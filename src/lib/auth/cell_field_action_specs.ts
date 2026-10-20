@@ -15,6 +15,7 @@ import { z } from 'zod';
 import { Uuid } from '../primitive_schemas.ts';
 
 import { ActingActor } from '../http/auth_shape.ts';
+import { CellRelationListLimit } from './cell_relation_list_limit.ts';
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
 
 // -- Error reasons ----------------------------------------------------------
@@ -89,10 +90,11 @@ export type CellFieldDeleteOutput = z.infer<typeof CellFieldDeleteOutput>;
  * both / neither). Reverse listing has 2-layer authz (target view-check
  * gates the call; per-source view-check filters the rows).
  *
- * Forward listing supports cursor pagination via `name_after` (return
- * rows whose `name > name_after` lex). The reverse listing doesn't
- * paginate (the result set is small in practice — number of sources
- * pointing at a given target).
+ * Either direction returns a page of up to `limit` fields (default
+ * `CELL_RELATION_LIST_LIMIT_DEFAULT`) whose other end the caller can view —
+ * the view check runs before the limit. Forward listing pages on via
+ * `name_after` (return rows whose `name > name_after` lex); the reverse
+ * listing has no cursor, oldest field first.
  */
 export const CellFieldListInput = z
 	.strictObject({
@@ -106,10 +108,7 @@ export const CellFieldListInput = z
 			description:
 				'Cursor for forward pagination — return rows whose name > this lex. Forward only.'
 		}),
-		limit: z.number().int().positive().max(500).optional().meta({
-			description:
-				'Page size cap (max 500). Forward only. Omit for unbounded — explicit list calls escape the bundled `cell_get` cap.'
-		}),
+		limit: CellRelationListLimit,
 		acting: ActingActor
 	})
 	.refine((v) => Boolean(v.source_id) !== Boolean(v.target_id), {

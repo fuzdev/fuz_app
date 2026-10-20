@@ -9,11 +9,13 @@
  *   couldn't otherwise see). Idempotent UPSERT on `(source_id, name)`.
  * - `cell_field_delete` — admin / owner / editor-grant on `source`.
  *   Idempotent: `deleted: false` when no row matched.
- * - `cell_field_list` — bidirectional. Forward (pass `source_id`) is
- *   gated on `can_view_cell(source)` and filters targets to those the
- *   caller may view (strict target-visibility, batched). Reverse (pass
- *   `target_id`) has 2-layer authz: gate on `can_view_cell(target)`
- *   first, then filter rows by `can_view_cell(source)`.
+ * - `cell_field_list` — bidirectional, a page of up to `limit` fields
+ *   whose other end the caller may view (filtered in SQL, before the
+ *   limit). Forward (pass `source_id`) is gated on `can_view_cell(source)`
+ *   and pages the fields whose target is viewable (strict
+ *   target-visibility). Reverse (pass `target_id`) has 2-layer authz: gate
+ *   on `can_view_cell(target)` first, then page the fields whose source is
+ *   viewable.
  *
  * IDOR-mask 404s on cell-miss / cell-unviewable, mirroring the existence-
  * leak guards in `auth/cell_actions.ts` / `auth/cell_grant_actions.ts`.
@@ -46,8 +48,8 @@ import {
 	type FieldJson
 } from './cell_field_action_specs.ts';
 import { ERROR_CELL_NOT_FOUND } from './cell_action_specs.ts';
-import { can_view_cell, can_edit_cell } from './cell_authorize.ts';
-import { filter_visible_target_ids } from './cell_relation_visibility.ts';
+import { can_view_cell, can_edit_cell, cell_viewer_from_auth } from './cell_authorize.ts';
+import { CELL_RELATION_LIST_LIMIT_DEFAULT } from './cell_relation_list_limit.ts';
 import { query_cell_get } from '../db/cell_queries.ts';
 import { query_cell_grant_list_for_cell } from '../db/cell_grant_queries.ts';
 import {
@@ -152,8 +154,11 @@ export const create_cell_field_actions = (deps: CellFieldActionDeps): Array<RpcA
 		ctx: ActionContext
 	): Promise<CellFieldListOutput> => {
 		const auth = ctx.auth;
-		// Forward listing: gate on can_view_cell(source), then filter the
-		// targets to those the caller may view (strict target-visibility).
+		// an omitted limit is the default page, either direction
+		const limit = input.limit ?? CELL_RELATION_LIST_LIMIT_DEFAULT;
+		// Forward listing: gate on can_view_cell(source), then page the fields
+		// whose target the caller may view (strict target-visibility, in SQL
+		// before the limit).
 		if (input.source_id !== undefined) {
 			const source = await query_cell_get(ctx, input.source_id);
 			if (!source) {
@@ -163,16 +168,13 @@ export const create_cell_field_actions = (deps: CellFieldActionDeps): Array<RpcA
 			if (!can_view_cell(auth, source, source_grants)) {
 				throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
 			}
-			const rows = await query_cell_field_list_for_source(ctx, source.id, {
-				limit: input.limit,
-				name_after: input.name_after
-			});
-			const visible_targets = await filter_visible_target_ids(
+			const rows = await query_cell_field_list_for_source(
 				ctx,
-				auth,
-				rows.map((r) => r.target_id)
+				cell_viewer_from_auth(auth),
+				source.id,
+				{ limit, name_after: input.name_after }
 			);
-			return { fields: rows.filter((r) => visible_targets.has(r.target_id)).map(to_field_json) };
+			return { fields: rows.map(to_field_json) };
 		}
 		// Reverse listing: 2-layer authz. First, can_view_cell(target).
 		// Without this, the count of returned rows leaks "at least N
@@ -185,17 +187,19 @@ export const create_cell_field_actions = (deps: CellFieldActionDeps): Array<RpcA
 		if (!can_view_cell(auth, target, target_grants)) {
 			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
 		}
-		// Then filter rows by per-source can_view_cell. Batched (not N+1):
-		// one bulk visibility filter over all source ids, same as the forward
-		// branch. Bounded by `limit` at the query so a heavily inbound-linked
-		// target can't force an unbounded fetch on this public endpoint.
-		const rows = await query_cell_field_list_for_target(ctx, target.id, { limit: input.limit });
-		const visible_sources = await filter_visible_target_ids(
+		// Then page the fields whose source the caller may view — filtered in
+		// SQL before the limit, so hidden sources never crowd out visible ones,
+		// and bounded so a heavily inbound-linked target can't force an
+		// unbounded read on this public endpoint.
+		const rows = await query_cell_field_list_for_target(
 			ctx,
-			auth,
-			rows.map((r) => r.source_id)
+			cell_viewer_from_auth(auth),
+			target.id,
+			{
+				limit
+			}
 		);
-		return { fields: rows.filter((r) => visible_sources.has(r.source_id)).map(to_field_json) };
+		return { fields: rows.map(to_field_json) };
 	};
 
 	return [

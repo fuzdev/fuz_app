@@ -16,8 +16,9 @@
  * **Where it must not** — every other read keeps `can_view_cell` alone:
  * `cell_clone` (a steward copying a contribution out from under its
  * moderation), the parent check on `cell_create` (a steward contributing under
- * a pending post), the relation endpoint gates and `filter_visible_target_ids`
- * (the `cell_get` bundle, the field / item lists and their list gates),
+ * a pending post), the relation endpoint gates, `filter_visible_target_ids`
+ * (the `cell_get` bundle), the field / item lists' SQL view filter
+ * (`db/cell_view_sql.ts`),
  * `cell_list`'s `shared_with` semi-join (a grant footprint, not a moderation
  * queue), and `cell_grant_revoke`'s `still_admitted` recompute. Widening one of
  * these is a decision, not a sweep. Twin of the Rust `fuz_cell::cell_steward`.

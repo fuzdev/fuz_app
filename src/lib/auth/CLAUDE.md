@@ -281,15 +281,21 @@ delete / list / clone / moderate`), error reasons, and `all_cell_action_specs`
   module doc names where the arm applies (`cell_get`, `cell_moderate`, the
   cell-scoped fact route, `cell_list`'s SQL) and where it must not (clone,
   contribution parents, relation reads, `shared_with`, grant recompute).
-- `auth/cell_relation_visibility.ts` — `filter_visible_target_ids(deps,
-auth, ids)`: batched strict relation-read filter. Every relation read —
-  the `cell_get` bundle, **forward and reverse** `cell_field_list` /
-  `cell_item_list`, and the deep-clone walk (children bulk-loaded via
-  `query_cell_load_many`) — drops edges whose far endpoint the caller can't
-  view, so a viewer of a parent can't enumerate private linked cells by id.
-  Two queries for the whole id-set (avoids the N+1 of a per-row check). The
-  reverse list verbs additionally cap the fetch by the wire `limit` so a
-  heavily inbound-linked target can't force an unbounded scan.
+- Strict relation-read visibility — every relation read drops edges whose far
+  endpoint the caller can't view, so a viewer of a parent can't enumerate
+  private linked cells by id. **Forward and reverse** `cell_field_list` /
+  `cell_item_list` filter in SQL before their limit
+  (`db/cell_view_sql.ts`'s `can_view_cell_sql`, bound through
+  `cell_viewer_from_auth`), so a page is up to `limit` edges whose other end
+  the caller can view — `CELL_RELATION_LIST_LIMIT_DEFAULT` (50) when omitted,
+  `CELL_RELATION_LIST_LIMIT_MAX` (500) at most
+  (`auth/cell_relation_list_limit.ts`), and hidden ends never crowd out
+  visible ones. The `cell_get` bundle (whose `*_truncated` counts raw edges)
+  and the clone walk read with `CELL_VIEWER_UNRESTRICTED` and filter after,
+  through `auth/cell_relation_visibility.ts`'s `filter_visible_target_ids(deps,
+auth, ids)`: two queries for the whole id-set, the cells read through the
+  narrow `CELL_VIEW_COLUMNS` projection (`query_cell_view_load_many`), never
+  the payload.
 - `auth/cell_actions.ts` — `create_cell_actions(deps)`, the generic
   handlers. `cell_create` stamps `created_by` + writes the top-level `kind`
   column; `path` writes are admin-only. It also resolves the directory tree:

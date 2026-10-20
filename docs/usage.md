@@ -1543,6 +1543,13 @@ partial surface.
 - Items — `cell_item_insert`, `cell_item_move`, `cell_item_delete`, `cell_item_list`
 - Audit — `cell_audit_list`
 
+`cell_field_list` and `cell_item_list` return a page in either direction: up
+to `limit` edges whose other end the caller can view, the view check applied
+before the limit. `limit` defaults to 50 (`CELL_RELATION_LIST_LIMIT_DEFAULT`)
+and caps at 500; the forward lists page on with `name_after` /
+`position_after`, and the reverse lists (`target_id` / `child_id`) have no
+cursor.
+
 For typed-client codegen, the matching specs are aggregated as
 `all_cell_action_specs` in `@fuzdev/fuz_app/auth/cell_action_specs.ts`.
 

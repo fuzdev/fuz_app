@@ -326,7 +326,9 @@ export type CellGetInput = z.infer<typeof CellGetInput>;
  * Output for `cell_get`. Bundles relation arrays (`fields` + `items`)
  * server-side via JOINs so the common "show this cell with its
  * children" flow needs one round-trip. Targets are filtered to those the
- * caller may view (strict target-visibility). Per-relation `LIMIT
+ * caller may view (strict target-visibility); `*_truncated` reports the
+ * relation's size before that filter, so it can be `true` while fewer than
+ * `CELL_RELATIONS_BUNDLE_LIMIT` edges are returned. Per-relation `LIMIT
  * CELL_RELATIONS_BUNDLE_LIMIT`; clients paginate via
  * `cell_item_list({parent_id, position_after})` /
  * `cell_field_list({source_id})` when truncated.

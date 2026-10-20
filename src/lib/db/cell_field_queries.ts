@@ -8,7 +8,10 @@
  * not by allowing duplicate field rows.
  *
  * Reads filter both endpoints by `cell.deleted_at IS NULL` so relations
- * dangling off a soft-deleted cell don't surface to the live graph.
+ * dangling off a soft-deleted cell don't surface to the live graph, and the
+ * list reads apply the view predicate (`db/cell_view_sql.ts`) to the far end
+ * before `LIMIT` — a page is up to `limit` edges whose far end the caller can
+ * view.
  *
  * `query_cell_field_set` upserts on the `(source_id, name)` PK so
  * re-pointing a name updates `target_id` in place — JSON-object semantics
@@ -21,6 +24,12 @@ import type { QueryDeps } from './query_deps.ts';
 import type { Uuid } from '../primitive_schemas.ts';
 import { assert_row } from './assert_row.ts';
 import { columns_sql, iso8601_timestamp_expr, qualify_columns } from './sql_columns.ts';
+import {
+	can_view_cell_sql,
+	caller_role_grants_cte,
+	cell_viewer_params,
+	type CellViewer
+} from './cell_view_sql.ts';
 
 /** Row shape returned by `cell_field` SELECTs. */
 export interface CellFieldRow {
@@ -129,63 +138,67 @@ export const query_cell_field_delete = async (
 /**
  * Forward fields list (`source.fields[]`).
  *
- * Filters target by `deleted_at IS NULL` so relations to tombstoned cells
- * don't surface; the source filter is the caller's responsibility (gated
- * upstream by `can_view_cell(source)`).
+ * Up to `limit` fields whose target is live and one `viewer` may view
+ * (`can_view_cell_sql`, applied before the limit); `name_after` pages on.
+ * The source-view gate is the caller's responsibility.
  *
  * @param deps - query deps
+ * @param viewer - who is reading; `CELL_VIEWER_UNRESTRICTED` filters nothing
  * @param source_id - source cell id
- * @param options - `limit` caps the row count; `name_after` resumes after a
- *   name (keyset pagination)
+ * @param options - `limit` caps the row count (omitted = unbounded); `name_after`
+ *   resumes after a name (keyset pagination)
  * @returns matching rows in lex `name` order
  */
 export const query_cell_field_list_for_source = async (
 	deps: QueryDeps,
+	viewer: CellViewer,
 	source_id: Uuid,
 	options?: { limit?: number; name_after?: string }
 ): Promise<Array<CellFieldRow>> => {
 	const limit = options?.limit ?? null;
 	const name_after = options?.name_after ?? null;
 	return deps.db.query<CellFieldRow>(
-		`SELECT ${qualify_columns(CELL_FIELD_COLUMNS, 'f', cell_field_expr('f'))} FROM cell_field f
+		`WITH ${caller_role_grants_cte('$6', '$7')}
+		 SELECT ${qualify_columns(CELL_FIELD_COLUMNS, 'f', cell_field_expr('f'))} FROM cell_field f
 		 JOIN cell t ON t.id = f.target_id
 		 WHERE f.source_id = $1
 		   AND t.deleted_at IS NULL
+		   AND ${can_view_cell_sql('t', { is_admin: '$4', actor_id: '$5' })}
 		   AND ($3::text IS NULL OR f.name > $3)
 		 ORDER BY f.name ASC
 		 LIMIT $2`,
-		[source_id, limit, name_after]
+		[source_id, limit, name_after, ...cell_viewer_params(viewer)]
 	);
 };
 
 /**
  * Reverse fields list (`target.upfields[]`).
  *
- * Returns rows whose `target_id = $1`, joined to `cell` on `source_id` so
- * relations from tombstoned sources don't surface. The caller-side
- * authz filter (per-source `can_view_cell`) runs after the SQL fetch
- * — see the 2-layer authz contract on `cell_field_list({target_id})`.
- *
- * Bounded by `limit` (the wire `cell_field_list` cap) so a heavily
- * inbound-linked target can't force an unbounded fetch + per-source authz
- * pass on the public, IP-rate-limited reverse endpoint.
+ * Up to `limit` fields whose source is live and one `viewer` may view —
+ * filtered before the limit (`can_view_cell_sql`), so sources the caller
+ * can't see never crowd out ones it can. The target-view gate is the
+ * caller's responsibility.
  *
  * @param deps - query deps
+ * @param viewer - who is reading; `CELL_VIEWER_UNRESTRICTED` filters nothing
  * @param target_id - target cell id
- * @param options - `limit` caps the row count
- * @returns matching rows, oldest field first (by the field row's `created_at`)
+ * @param options - `limit` caps the row count (omitted = unbounded)
+ * @returns matching rows, oldest field first (by the field row's `created_at`, then its key)
  */
 export const query_cell_field_list_for_target = async (
 	deps: QueryDeps,
+	viewer: CellViewer,
 	target_id: Uuid,
 	options?: { limit?: number }
 ): Promise<Array<CellFieldRow>> =>
 	deps.db.query<CellFieldRow>(
-		`SELECT ${qualify_columns(CELL_FIELD_COLUMNS, 'f', cell_field_expr('f'))} FROM cell_field f
+		`WITH ${caller_role_grants_cte('$5', '$6')}
+		 SELECT ${qualify_columns(CELL_FIELD_COLUMNS, 'f', cell_field_expr('f'))} FROM cell_field f
 		 JOIN cell s ON s.id = f.source_id
 		 WHERE f.target_id = $1
 		   AND s.deleted_at IS NULL
-		 ORDER BY f.created_at ASC
+		   AND ${can_view_cell_sql('s', { is_admin: '$3', actor_id: '$4' })}
+		 ORDER BY f.created_at ASC, f.source_id ASC, f.name ASC
 		 LIMIT $2`,
-		[target_id, options?.limit ?? null]
+		[target_id, options?.limit ?? null, ...cell_viewer_params(viewer)]
 	);

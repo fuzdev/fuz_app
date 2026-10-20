@@ -100,9 +100,12 @@ delete / set_moderation`, `_list_by_kind / _list_by_creator`, the
   generic `query_cell_list` (filter + SQL-side visibility predicate mirroring
   `can_view_cell`, moderation admission included; the `kind` filter narrows
   by the `cell.kind` column, the `ref` filter by `cell.refs`, plus `root_id` /
-  `moderation` filters for the per-root feed + mod queue), and
-  `query_cell_load_many` (bulk id load, no visibility filter — feeds the
-  strict relation-read filter). `query_cell_set_moderation` is the dedicated
+  `moderation` filters for the per-root feed + mod queue),
+  `query_cell_load_many` (bulk id load of full rows, no visibility filter —
+  the deep-clone walk), and `query_cell_view_load_many` (the
+  `CELL_VIEW_COLUMNS` view facts alone — feeds `filter_visible_target_ids`,
+  the in-memory relation filter the `cell_get` bundle and the clone walk
+  run). `query_cell_set_moderation` is the dedicated
   `cell_moderate` write (`moderation` is absent from `CellUpdatePatch`, so an
   author can't self-approve via `cell_update`). `cell.refs` derived from
   `data` via `extract_refs` on create/update. `CellRow.grant_count` is a
@@ -112,6 +115,13 @@ delete / set_moderation`, `_list_by_kind / _list_by_creator`, the
   `_sql`: the allowlist unmoderated ‖ `'approved'`), composed by
   `auth/cell_authorize.ts` and `query_cell_list` so the two can't drift; the
   `CELL_MODERATION_*` literals. Twin of the Rust `fuz_cell::cell_moderation`.
+- **`cell_view_sql.ts`** — `can_view_cell` in SQL: `can_view_cell_sql`
+  (admin ‖ owner ‖ moderation-admitted public or grant), the
+  `caller_role_grants_cte` its role-shaped grant arm reads, and `CellViewer`
+  (the caller it binds — `auth/cell_authorize.ts`'s `cell_viewer_from_auth`
+  builds one; `CELL_VIEWER_UNRESTRICTED` filters nothing). `query_cell_list`
+  embeds it beside its steward arm, and the relation lists apply it to the
+  far end before `LIMIT`. Twin of the Rust `fuz_cell::cell_view_sql`.
 - **`cell_grant_queries.ts`** — resource-side ACL: `query_cell_grant_create`
   (UPSERT on the partial unique index, actor- vs role-shaped principal),
   `_get`, `_delete` (returns deleted row), `_list_for_cell`,
@@ -121,11 +131,14 @@ delete / set_moderation`, `_list_by_kind / _list_by_creator`, the
 - **`cell_field_queries.ts`** — named relations (`(source_id, name) →
 target_id`): `query_cell_field_set` (UPSERT), `_get`, `_delete`,
   `_list_for_source` (`{limit, name_after}`), `_list_for_target`. Reads JOIN
-  cell with `deleted_at IS NULL` so dangling relations don't surface.
+  cell with `deleted_at IS NULL` so dangling relations don't surface; the
+  list reads take a `CellViewer` and keep only edges whose far end it can
+  view, before `LIMIT`.
 - **`cell_item_queries.ts`** — ordered children (`(parent_id, position) →
 child_id`, fractional-index keyed): `query_cell_item_insert` (throws
   `23505` on collision), `_get`, `_move`, `_delete`, `_list_for_parent`
-  (`{limit, position_after}`), `_list_for_child`. Same soft-delete JOIN.
+  (`{limit, position_after}`), `_list_for_child`. Same soft-delete JOIN and
+  viewer filter.
 - **`cell_audit_queries.ts`** — `query_audit_log_list_by_cell`: matches
   `audit_log` rows whose `metadata` names the cell on any of six cell-domain
   keys (`cell_id` / `source_id` / `new_id` / `parent_id` / `child_id` /

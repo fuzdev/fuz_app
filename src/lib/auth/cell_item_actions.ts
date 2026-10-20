@@ -12,11 +12,12 @@
  *   collision-error shape as insert.
  * - `cell_item_delete` — admin / owner / editor-grant on `parent`.
  *   Idempotent: `deleted: false` when no row matched.
- * - `cell_item_list` — bidirectional. Forward (pass `parent_id`) is
- *   gated on `can_view_cell(parent)` and filters children to those the
- *   caller may view (strict target-visibility, batched). Reverse (pass
- *   `child_id`) has 2-layer authz: gate on `can_view_cell(child)`, then
- *   filter rows by `can_view_cell(parent)`.
+ * - `cell_item_list` — bidirectional, a page of up to `limit` items whose
+ *   other end the caller may view (filtered in SQL, before the limit).
+ *   Forward (pass `parent_id`) is gated on `can_view_cell(parent)` and
+ *   pages the items whose child is viewable (strict target-visibility).
+ *   Reverse (pass `child_id`) has 2-layer authz: gate on
+ *   `can_view_cell(child)`, then page the items whose parent is viewable.
  *
  * IDOR-mask 404s on cell-miss / cell-unviewable, mirroring the existence-
  * leak guards in `auth/cell_actions.ts`.
@@ -55,8 +56,8 @@ import {
 	type ItemJson
 } from './cell_item_action_specs.ts';
 import { ERROR_CELL_NOT_FOUND } from './cell_action_specs.ts';
-import { can_view_cell, can_edit_cell } from './cell_authorize.ts';
-import { filter_visible_target_ids } from './cell_relation_visibility.ts';
+import { can_view_cell, can_edit_cell, cell_viewer_from_auth } from './cell_authorize.ts';
+import { CELL_RELATION_LIST_LIMIT_DEFAULT } from './cell_relation_list_limit.ts';
 import { query_cell_get } from '../db/cell_queries.ts';
 import { query_cell_grant_list_for_cell } from '../db/cell_grant_queries.ts';
 import {
@@ -213,8 +214,11 @@ export const create_cell_item_actions = (deps: CellItemActionDeps): Array<RpcAct
 		ctx: ActionContext
 	): Promise<CellItemListOutput> => {
 		const auth = ctx.auth;
-		// Forward listing: gate on can_view_cell(parent), then filter the
-		// children to those the caller may view (strict target-visibility).
+		// an omitted limit is the default page, either direction
+		const limit = input.limit ?? CELL_RELATION_LIST_LIMIT_DEFAULT;
+		// Forward listing: gate on can_view_cell(parent), then page the items
+		// whose child the caller may view (strict target-visibility, in SQL
+		// before the limit).
 		if (input.parent_id !== undefined) {
 			const parent = await query_cell_get(ctx, input.parent_id);
 			if (!parent) {
@@ -224,16 +228,13 @@ export const create_cell_item_actions = (deps: CellItemActionDeps): Array<RpcAct
 			if (!can_view_cell(auth, parent, parent_grants)) {
 				throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
 			}
-			const rows = await query_cell_item_list_for_parent(ctx, parent.id, {
-				limit: input.limit,
-				position_after: input.position_after
-			});
-			const visible_children = await filter_visible_target_ids(
+			const rows = await query_cell_item_list_for_parent(
 				ctx,
-				auth,
-				rows.map((r) => r.child_id)
+				cell_viewer_from_auth(auth),
+				parent.id,
+				{ limit, position_after: input.position_after }
 			);
-			return { items: rows.filter((r) => visible_children.has(r.child_id)).map(to_item_json) };
+			return { items: rows.map(to_item_json) };
 		}
 		// Reverse listing: 2-layer authz. First, can_view_cell(child).
 		const child = await query_cell_get(ctx, input.child_id!);
@@ -244,17 +245,14 @@ export const create_cell_item_actions = (deps: CellItemActionDeps): Array<RpcAct
 		if (!can_view_cell(auth, child, child_grants)) {
 			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
 		}
-		// Then filter rows by per-parent can_view_cell. Batched (not N+1):
-		// one bulk visibility filter over all parent ids, same as the forward
-		// branch. Bounded by `limit` at the query so a heavily inbound-linked
-		// child can't force an unbounded fetch on this public endpoint.
-		const rows = await query_cell_item_list_for_child(ctx, child.id, { limit: input.limit });
-		const visible_parents = await filter_visible_target_ids(
-			ctx,
-			auth,
-			rows.map((r) => r.parent_id)
-		);
-		return { items: rows.filter((r) => visible_parents.has(r.parent_id)).map(to_item_json) };
+		// Then page the items whose parent the caller may view — filtered in
+		// SQL before the limit, so hidden parents never crowd out visible ones,
+		// and bounded so a heavily inbound-linked child can't force an
+		// unbounded read on this public endpoint.
+		const rows = await query_cell_item_list_for_child(ctx, cell_viewer_from_auth(auth), child.id, {
+			limit
+		});
+		return { items: rows.map(to_item_json) };
 	};
 
 	return [

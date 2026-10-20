@@ -60,6 +60,7 @@ import {
 } from '../../auth/cell_action_specs.ts';
 import { CellItemInsertOutput, CellItemListOutput } from '../../auth/cell_item_action_specs.ts';
 import { CellGrantCreateOutput } from '../../auth/cell_grant_action_specs.ts';
+import { CellFieldListOutput, CellFieldSetOutput } from '../../auth/cell_field_action_specs.ts';
 import { z } from 'zod';
 import { FactHashSchema } from '../../primitive_schemas.ts';
 import { JSONRPC_ERROR_CODES } from '../../http/jsonrpc_errors.ts';
@@ -433,7 +434,9 @@ export const describe_cell_gated_create_cross_tests = (
  *   stops admitting once it is rejected, on `cell_get` and `shared_with: 'me'`.
  * - **an approved post is live** — the control.
  * - **relation reads follow** — a pending post in a public collection is
- *   omitted from anon `cell_item_list`, beside a live sibling that isn't.
+ *   omitted from anon `cell_item_list`, beside a live sibling that isn't; at
+ *   the far end of all four relation lists, a pending post is hidden from
+ *   anon even flipped public, and a rejected one from its grant holder.
  * - **fact serving follows** — a pending post's fact is 404 to anon, even
  *   with the post flipped public (also gated on `capabilities.fact_serving`).
  *
@@ -989,6 +992,124 @@ export const describe_cell_moderate_cross_tests = (
 					'anon sees the live sibling only'
 				);
 				assert.deepStrictEqual(await items(author_h), [post.cell.id, react.cell.id]);
+			}
+		);
+
+		test_if(
+			capabilities.cell_gated_create,
+			'every relation list hides a pending end, and a rejected one from its grant holder',
+			async () => {
+				const { fixture, author, post } = await setup_pending_post();
+				const author_h = author.create_session_headers();
+				const holder = await fixture.create_account({ username: 'relation_grant_holder' });
+				const holder_h = holder.create_session_headers();
+				const create = async (kind: string) =>
+					expect_output(
+						await cross_rpc_call(
+							fixture.transport,
+							rpc_path,
+							'cell_create',
+							{ kind, data: {}, visibility: 'public' },
+							author_h
+						),
+						CellCreateOutput
+					).cell.id;
+				const call = async (method: string, params: Record<string, unknown>) =>
+					cross_rpc_call(fixture.transport, rpc_path, method, params, author_h);
+				// The post at the far end of all four lists: a public source and
+				// collection point at it, and it points at a public target and child.
+				const source = await create('note');
+				const collection = await create('collection');
+				const target = await create('note');
+				const child = await create('note');
+				const post_id = post.cell.id;
+				expect_output(
+					await call('cell_field_set', { source_id: source, name: 'post', target_id: post_id }),
+					CellFieldSetOutput
+				);
+				expect_output(
+					await call('cell_item_insert', {
+						parent_id: collection,
+						child_id: post_id,
+						position: 'a0'
+					}),
+					CellItemInsertOutput
+				);
+				expect_output(
+					await call('cell_field_set', { source_id: post_id, name: 'link', target_id: target }),
+					CellFieldSetOutput
+				);
+				expect_output(
+					await call('cell_item_insert', { parent_id: post_id, child_id: child, position: 'a0' }),
+					CellItemInsertOutput
+				);
+				// Which lists show the post to a caller — `null` headers = anon.
+				const reach = async (headers: Record<string, string> | null) => {
+					const list = async (method: string, params: Record<string, unknown>) =>
+						headers === null
+							? cross_rpc_call(
+									fixture.fresh_transport({ origin: null }),
+									rpc_path,
+									method,
+									params,
+									{}
+								)
+							: cross_rpc_call(fixture.transport, rpc_path, method, params, headers);
+					const forward_fields = expect_output(
+						await list('cell_field_list', { source_id: source }),
+						CellFieldListOutput
+					).fields.map((f) => f.target_id);
+					const forward_items = expect_output(
+						await list('cell_item_list', { parent_id: collection }),
+						CellItemListOutput
+					).items.map((i) => i.child_id);
+					const reverse_fields = expect_output(
+						await list('cell_field_list', { target_id: target }),
+						CellFieldListOutput
+					).fields.map((f) => f.source_id);
+					const reverse_items = expect_output(
+						await list('cell_item_list', { child_id: child }),
+						CellItemListOutput
+					).items.map((i) => i.parent_id);
+					return [forward_fields, forward_items, reverse_fields, reverse_items].map((ids) =>
+						ids.includes(post_id)
+					);
+				};
+				const everywhere = [true, true, true, true];
+				const nowhere = [false, false, false, false];
+
+				// pending, flipped public: the audience sees nothing, the author all
+				await set_visibility(fixture, author_h, post_id, 'public');
+				assert.deepStrictEqual(await reach(null), nowhere, 'anon, pending + public');
+				assert.deepStrictEqual(await reach(author_h), everywhere, 'author, pending + public');
+
+				// approved and granted, then private: the grant admits it
+				await moderate(fixture, post_id, 'approved');
+				expect_output(
+					await cross_rpc_call(
+						fixture.transport,
+						rpc_path,
+						'cell_grant_create',
+						{
+							cell_id: post_id,
+							level: 'viewer',
+							principal: { kind: 'actor', actor_id: holder.actor.id }
+						},
+						author_h
+					),
+					CellGrantCreateOutput
+				);
+				await set_visibility(fixture, author_h, post_id, 'private');
+				assert.deepStrictEqual(await reach(holder_h), everywhere, 'grant holder, approved');
+				assert.deepStrictEqual(await reach(null), nowhere, 'anon, approved + private');
+
+				// rejected: the grant admits nothing, public or not
+				await moderate(fixture, post_id, 'rejected');
+				assert.deepStrictEqual(await reach(holder_h), nowhere, 'grant holder, rejected');
+				await set_visibility(fixture, author_h, post_id, 'public');
+				assert.deepStrictEqual(await reach(holder_h), nowhere, 'grant holder, rejected + public');
+				assert.deepStrictEqual(await reach(null), nowhere, 'anon, rejected + public');
+				assert.deepStrictEqual(await reach(author_h), everywhere, 'author, rejected');
 			}
 		);
 

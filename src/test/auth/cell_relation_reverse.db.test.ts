@@ -22,6 +22,7 @@ import {
 } from '#lib/auth/cell_field_action_specs.ts';
 import { cell_grant_create_action_spec } from '#lib/auth/cell_grant_action_specs.ts';
 import { ERROR_CELL_NOT_FOUND } from '#lib/auth/cell_action_specs.ts';
+import { CELL_RELATION_LIST_LIMIT_DEFAULT } from '#lib/auth/cell_relation_list_limit.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
 import type { TestApp, TestAccount } from '#lib/testing/app_server.ts';
 import { create_cell_test_app, create_cell, call } from './cell_test_helpers.ts';
@@ -168,6 +169,84 @@ describe_db('cell relation reverse authz', (get_db) => {
 			const res = await call(app, cell_field_list_action_spec, { target_id: target });
 			assert.ok(!res.ok);
 			assert.strictEqual(res.status, 404);
+		});
+	});
+
+	describe('reverse lists are capped', () => {
+		// one past the default page, so an omitted limit shows the cap
+		const inbound = CELL_RELATION_LIST_LIMIT_DEFAULT + 1;
+
+		test('cell_item_list({child_id}) defaults to the page cap and honors limit', async () => {
+			const app = await create_cell_test_app(get_db);
+			const owner = await app.create_account({ username: 'rv_cap_items' });
+			const h = owner.create_session_headers();
+			const { id: child } = await create_cell(app, { kind: 'note', data: {}, headers: h });
+			await create_cell(app, {
+				kind: 'collection',
+				data: {},
+				items: Array.from({ length: inbound }, () => child),
+				headers: h
+			});
+			const list = async (params: { limit?: number }) => {
+				const res = await call(app, cell_item_list_action_spec, { child_id: child, ...params }, h);
+				assert.ok(res.ok, JSON.stringify(res));
+				return res.result.items;
+			};
+			assert.strictEqual((await list({})).length, CELL_RELATION_LIST_LIMIT_DEFAULT);
+			assert.strictEqual((await list({ limit: inbound })).length, inbound);
+			const page = await list({ limit: 3 });
+			assert.strictEqual(page.length, 3);
+			// oldest first, the same rows a wider page starts with
+			assert.deepStrictEqual(
+				page.map((i) => i.position),
+				(await list({ limit: inbound })).slice(0, 3).map((i) => i.position)
+			);
+		});
+
+		test('cell_field_list({target_id}) defaults to the page cap and honors limit', async () => {
+			const app = await create_cell_test_app(get_db);
+			const owner = await app.create_account({ username: 'rv_cap_fields' });
+			const h = owner.create_session_headers();
+			const { id: target } = await create_cell(app, { kind: 'note', data: {}, headers: h });
+			const { id: source } = await create_cell(app, { kind: 'note', data: {}, headers: h });
+			for (let i = 0; i < inbound; i++) {
+				const r = await call(
+					app,
+					cell_field_set_action_spec,
+					{ source_id: source, name: `link_${i}` as CellFieldName, target_id: target },
+					h
+				);
+				assert.ok(r.ok, JSON.stringify(r));
+			}
+			const list = async (params: { limit?: number }) => {
+				const res = await call(
+					app,
+					cell_field_list_action_spec,
+					{ target_id: target, ...params },
+					h
+				);
+				assert.ok(res.ok, JSON.stringify(res));
+				return res.result.fields;
+			};
+			assert.strictEqual((await list({})).length, CELL_RELATION_LIST_LIMIT_DEFAULT);
+			assert.strictEqual((await list({ limit: inbound })).length, inbound);
+			assert.strictEqual((await list({ limit: 3 })).length, 3);
+		});
+
+		test('the forward lists default to the page cap too', async () => {
+			const app = await create_cell_test_app(get_db);
+			const owner = await app.create_account({ username: 'fw_cap' });
+			const h = owner.create_session_headers();
+			const { id: child } = await create_cell(app, { kind: 'note', data: {}, headers: h });
+			const { id: parent } = await create_cell(app, {
+				kind: 'collection',
+				data: {},
+				items: Array.from({ length: inbound }, () => child),
+				headers: h
+			});
+			const res = await call(app, cell_item_list_action_spec, { parent_id: parent }, h);
+			assert.ok(res.ok, JSON.stringify(res));
+			assert.strictEqual(res.result.items.length, CELL_RELATION_LIST_LIMIT_DEFAULT);
 		});
 	});
 });

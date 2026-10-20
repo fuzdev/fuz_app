@@ -25,6 +25,15 @@ import '../assert_dev_env.ts';
  *   couldn't reach without a grant principal).
  * - **fields** — `cell_field_set` UPSERT, forward + reverse `cell_field_list`,
  *   idempotent `cell_field_delete`.
+ * - **relation-list caps** — past the default page of inbound edges, a
+ *   reverse `cell_item_list` / `cell_field_list` with no `limit` answers the
+ *   default page, an explicit `limit` caps it in either direction, and the
+ *   forward list defaults the same — the same counts on both spines. A page is
+ *   visible edges: a page's worth of private ends older than one public end
+ *   still leaves the public one on an anonymous page, in all four lists. An
+ *   out-of-range or mistyped `limit` (`0`, `-1`, `1.5`, past the max, `null`,
+ *   a string) is `invalid_params` in every direction, and the reverse lists
+ *   read oldest edge first.
  * - **items** — `cell_item_insert` at fractional-index positions, forward
  *   (lex-ordered) + reverse `cell_item_list`, `cell_item_move`, idempotent
  *   `cell_item_delete`.
@@ -60,7 +69,10 @@ import '../assert_dev_env.ts';
  */
 
 import { describe, assert } from 'vitest';
-import { fractional_index_between } from '@fuzdev/fuz_util/fractional_index.ts';
+import {
+	fractional_index_between,
+	fractional_indices_between
+} from '@fuzdev/fuz_util/fractional_index.ts';
 
 import {
 	CellCreateOutput,
@@ -89,6 +101,11 @@ import {
 } from '../../auth/cell_item_action_specs.ts';
 import { CellAuditListOutput } from '../../auth/cell_audit_action_specs.ts';
 import type { FetchTransport } from '../transports/fetch_transport.ts';
+import { JSONRPC_INVALID_PARAMS } from '../../http/jsonrpc.ts';
+import {
+	CELL_RELATION_LIST_LIMIT_DEFAULT,
+	CELL_RELATION_LIST_LIMIT_MAX
+} from '../../auth/cell_relation_list_limit.ts';
 import { test_if } from './capabilities.ts';
 import { cross_rpc_call, error_reason, expect_output } from './cell_cross_helpers.ts';
 import type { RpcPathCapabilityGatedCrossSuiteOptions } from './setup.ts';
@@ -521,6 +538,266 @@ export const describe_cell_relations_cross_tests = (
 					CellFieldDeleteOutput
 				);
 				assert.strictEqual(del2.deleted, false);
+			}
+		);
+
+		test_if(
+			capabilities.cell_relations,
+			'relation lists default to a capped page and honor limit, forward and reverse',
+			async () => {
+				const fixture = await setup_test();
+				const owner = await fixture.create_account({ username: 'cell_list_cap_owner' });
+				const t = fixture.fresh_transport();
+				const h = owner.create_session_headers();
+				// one past the default page, so an omitted limit shows the cap
+				const inbound = CELL_RELATION_LIST_LIMIT_DEFAULT + 1;
+				const make = async (): Promise<string> =>
+					expect_output(
+						await cross_rpc_call(t, rpc_path, 'cell_create', { kind: 'note', data: {} }, h),
+						CellCreateOutput
+					).cell.id;
+				const hub = await make();
+				const parent = await make();
+				const source = await make();
+				const positions = fractional_indices_between(null, null, inbound);
+				for (let i = 0; i < inbound; i++) {
+					expect_output(
+						await cross_rpc_call(
+							t,
+							rpc_path,
+							'cell_item_insert',
+							{ parent_id: parent, child_id: hub, position: positions[i] },
+							h
+						),
+						CellItemInsertOutput
+					);
+					expect_output(
+						await cross_rpc_call(
+							t,
+							rpc_path,
+							'cell_field_set',
+							{ source_id: source, name: `link_${i}`, target_id: hub },
+							h
+						),
+						CellFieldSetOutput
+					);
+				}
+				const items = async (params: Record<string, unknown>): Promise<number> =>
+					expect_output(
+						await cross_rpc_call(t, rpc_path, 'cell_item_list', params, h),
+						CellItemListOutput
+					).items.length;
+				const fields = async (params: Record<string, unknown>): Promise<number> =>
+					expect_output(
+						await cross_rpc_call(t, rpc_path, 'cell_field_list', params, h),
+						CellFieldListOutput
+					).fields.length;
+				for (const [label, count] of [
+					['reverse items, no limit', await items({ child_id: hub })],
+					['reverse fields, no limit', await fields({ target_id: hub })],
+					['forward items, no limit', await items({ parent_id: parent })],
+					['forward fields, no limit', await fields({ source_id: source })]
+				] as const) {
+					assert.strictEqual(count, CELL_RELATION_LIST_LIMIT_DEFAULT, label);
+				}
+				assert.strictEqual(await items({ child_id: hub, limit: 3 }), 3, 'reverse items, limit 3');
+				assert.strictEqual(
+					await fields({ target_id: hub, limit: 3 }),
+					3,
+					'reverse fields, limit 3'
+				);
+				assert.strictEqual(
+					await items({ child_id: hub, limit: inbound }),
+					inbound,
+					'reverse items, limit past the default'
+				);
+				assert.strictEqual(
+					await fields({ target_id: hub, limit: inbound }),
+					inbound,
+					'reverse fields, limit past the default'
+				);
+			}
+		);
+
+		test_if(
+			capabilities.cell_relations,
+			'a relation page is visible edges: hidden ends never crowd out a visible one',
+			async () => {
+				const fixture = await setup_test();
+				const owner = await fixture.create_account({ username: 'cell_list_pad_owner' });
+				const t = fixture.fresh_transport();
+				const h = owner.create_session_headers();
+				const anon = fixture.fresh_transport({ origin: null });
+				const make = async (visibility: 'public' | 'private'): Promise<string> =>
+					expect_output(
+						await cross_rpc_call(
+							t,
+							rpc_path,
+							'cell_create',
+							{ kind: 'note', data: {}, visibility },
+							h
+						),
+						CellCreateOutput
+					).cell.id;
+				const call = async (method: string, params: Record<string, unknown>) =>
+					cross_rpc_call(t, rpc_path, method, params, h);
+				// A full default page of private edges, older (and, forward, named
+				// earlier) than one public edge, in all four lists.
+				const target = await make('public');
+				const child = await make('public');
+				const source = await make('public');
+				const parent = await make('public');
+				const padding = CELL_RELATION_LIST_LIMIT_DEFAULT + 1;
+				const positions = fractional_indices_between(null, null, padding + 1);
+				for (let i = 0; i <= padding; i++) {
+					const end = await make(i < padding ? 'private' : 'public');
+					const name = `link_${String(i).padStart(3, '0')}`;
+					expect_output(
+						await call('cell_field_set', { source_id: end, name: 'link', target_id: target }),
+						CellFieldSetOutput
+					);
+					expect_output(
+						await call('cell_item_insert', { parent_id: end, child_id: child, position: 'a0' }),
+						CellItemInsertOutput
+					);
+					expect_output(
+						await call('cell_field_set', { source_id: source, name, target_id: end }),
+						CellFieldSetOutput
+					);
+					expect_output(
+						await call('cell_item_insert', {
+							parent_id: parent,
+							child_id: end,
+							position: positions[i]
+						}),
+						CellItemInsertOutput
+					);
+				}
+				const anon_fields = async (params: Record<string, unknown>) =>
+					expect_output(
+						await cross_rpc_call(anon, rpc_path, 'cell_field_list', params, {}),
+						CellFieldListOutput
+					).fields;
+				const anon_items = async (params: Record<string, unknown>) =>
+					expect_output(
+						await cross_rpc_call(anon, rpc_path, 'cell_item_list', params, {}),
+						CellItemListOutput
+					).items;
+				assert.strictEqual(
+					(await anon_fields({ target_id: target })).length,
+					1,
+					'reverse fields: the public source, past a page of private ones'
+				);
+				assert.strictEqual(
+					(await anon_items({ child_id: child })).length,
+					1,
+					'reverse items: the public parent, past a page of private ones'
+				);
+				assert.strictEqual(
+					(await anon_fields({ source_id: source })).length,
+					1,
+					'forward fields: the public target, past a page of private ones'
+				);
+				assert.strictEqual(
+					(await anon_items({ parent_id: parent })).length,
+					1,
+					'forward items: the public child, past a page of private ones'
+				);
+				// the owner views every end: a full default page
+				const owned = expect_output(
+					await call('cell_field_list', { target_id: target }),
+					CellFieldListOutput
+				).fields;
+				assert.strictEqual(owned.length, CELL_RELATION_LIST_LIMIT_DEFAULT, "the owner's page");
+			}
+		);
+
+		test_if(
+			capabilities.cell_relations,
+			'relation-list limit: out-of-range and mistyped values refused alike, forward and reverse',
+			async () => {
+				const fixture = await setup_test();
+				const owner = await fixture.create_account({ username: 'cell_list_limit_owner' });
+				const t = fixture.fresh_transport();
+				const h = owner.create_session_headers();
+				const cell = expect_output(
+					await cross_rpc_call(t, rpc_path, 'cell_create', { kind: 'note', data: {} }, h),
+					CellCreateOutput
+				).cell.id;
+				const directions: Array<readonly [string, Record<string, unknown>]> = [
+					['cell_field_list', { source_id: cell }],
+					['cell_field_list', { target_id: cell }],
+					['cell_item_list', { parent_id: cell }],
+					['cell_item_list', { child_id: cell }]
+				];
+				for (const [method, base] of directions) {
+					for (const limit of [0, -1, 1.5, CELL_RELATION_LIST_LIMIT_MAX + 1, null, '5']) {
+						const res = await cross_rpc_call(t, rpc_path, method, { ...base, limit }, h);
+						const label = `${method} ${JSON.stringify(base)} limit ${JSON.stringify(limit)}`;
+						assert.ok(!res.ok, `${label} must be refused`);
+						assert.strictEqual(res.error?.code, JSONRPC_INVALID_PARAMS, label);
+						assert.strictEqual(error_reason(res), undefined, label);
+					}
+					for (const limit of [1, CELL_RELATION_LIST_LIMIT_MAX]) {
+						const res = await cross_rpc_call(t, rpc_path, method, { ...base, limit }, h);
+						assert.ok(res.ok, `${method} ${JSON.stringify(base)} limit ${limit}`);
+					}
+				}
+			}
+		);
+
+		test_if(
+			capabilities.cell_relations,
+			'reverse relation lists read oldest edge first, so a page of one is the oldest',
+			async () => {
+				const fixture = await setup_test();
+				const owner = await fixture.create_account({ username: 'cell_list_order_owner' });
+				const t = fixture.fresh_transport();
+				const h = owner.create_session_headers();
+				const make = async (): Promise<string> =>
+					expect_output(
+						await cross_rpc_call(t, rpc_path, 'cell_create', { kind: 'note', data: {} }, h),
+						CellCreateOutput
+					).cell.id;
+				const hub = await make();
+				// each edge its own call, so each has its own `created_at`, in order
+				const ends = [await make(), await make(), await make()];
+				for (const end of ends) {
+					expect_output(
+						await cross_rpc_call(
+							t,
+							rpc_path,
+							'cell_item_insert',
+							{ parent_id: end, child_id: hub, position: 'a0' },
+							h
+						),
+						CellItemInsertOutput
+					);
+					expect_output(
+						await cross_rpc_call(
+							t,
+							rpc_path,
+							'cell_field_set',
+							{ source_id: end, name: 'link', target_id: hub },
+							h
+						),
+						CellFieldSetOutput
+					);
+				}
+				const parents = async (limit?: number) =>
+					expect_output(
+						await cross_rpc_call(t, rpc_path, 'cell_item_list', { child_id: hub, limit }, h),
+						CellItemListOutput
+					).items.map((i) => i.parent_id);
+				const sources = async (limit?: number) =>
+					expect_output(
+						await cross_rpc_call(t, rpc_path, 'cell_field_list', { target_id: hub, limit }, h),
+						CellFieldListOutput
+					).fields.map((f) => f.source_id);
+				assert.deepStrictEqual(await parents(), ends, 'reverse items, oldest first');
+				assert.deepStrictEqual(await parents(1), [ends[0]], 'reverse items, a page of one');
+				assert.deepStrictEqual(await sources(), ends, 'reverse fields, oldest first');
+				assert.deepStrictEqual(await sources(1), [ends[0]], 'reverse fields, a page of one');
 			}
 		);
 

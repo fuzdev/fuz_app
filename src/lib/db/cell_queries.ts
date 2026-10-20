@@ -27,11 +27,16 @@ import type { Uuid } from '../primitive_schemas.ts';
 import { fact_hash_extract_refs } from '@fuzdev/fuz_util/fact_hash.ts';
 import type { FactHash } from '@fuzdev/fuz_util/hash_schemas.ts';
 import { assert_row } from './assert_row.ts';
-import { iso8601_timestamp_expr, qualify_columns } from './sql_columns.ts';
+import { columns_sql, iso8601_timestamp_expr, qualify_columns } from './sql_columns.ts';
 import {
 	cell_moderation_admits_audience_sql,
 	cell_moderation_is_stewardable_sql
 } from './cell_moderation.ts';
+import {
+	can_view_cell_sql,
+	caller_role_grants_cte,
+	cell_grant_admits_caller_sql
+} from './cell_view_sql.ts';
 
 import type { CellData } from '../auth/cell_data_schema.ts';
 import type { CellVisibility } from '../auth/cell_action_specs.ts';
@@ -116,6 +121,22 @@ const cell_expr = iso8601_timestamp_expr(CELL_COLUMNS, ['created_at', 'updated_a
  */
 export const cell_row_projection = (alias: string): string =>
 	`${qualify_columns(CELL_COLUMNS, alias, cell_expr(alias))}, (SELECT COUNT(*)::int FROM cell_grant WHERE cell_id = ${alias}.id) AS grant_count`;
+
+/**
+ * The columns a view check reads (`can_view_cell`) — the `CELL_COLUMNS`
+ * subset `query_cell_view_load_many` projects, typed against `CELL_COLUMNS`
+ * so the base const's drift guard covers it. Twin of `fuz_cell`'s
+ * `CELL_VIEW_COLUMNS`.
+ */
+export const CELL_VIEW_COLUMNS = [
+	'id',
+	'visibility',
+	'moderation',
+	'created_by'
+] as const satisfies ReadonlyArray<(typeof CELL_COLUMNS)[number]>;
+
+/** A cell read for its view check alone — the `CELL_VIEW_COLUMNS` projection. */
+export type CellViewRow = Pick<CellRow, (typeof CELL_VIEW_COLUMNS)[number]>;
 
 /**
  * Input for `query_cell_create`. `refs` is derived from `data`. `kind` is
@@ -242,11 +263,10 @@ export const query_cell_get_by_path = async (
 };
 
 /**
- * Bulk-load active cell rows by id, **no visibility filter applied**. Used
- * by the strict relation-read filter (`auth/cell_relation_visibility.ts`'s
- * `filter_visible_target_ids`), which runs `can_view_cell` per row in
- * memory rather than in SQL. Soft-deleted rows are excluded so relations
- * to tombstones never surface.
+ * Bulk-load active cell rows by id, **no visibility filter applied** — the
+ * full rows, for a caller that copies or returns them (the deep-clone walk).
+ * A caller that needs only the view check reads `query_cell_view_load_many`.
+ * Soft-deleted rows are excluded so relations to tombstones never surface.
  *
  * @param deps - query deps
  * @param ids - cell ids to load (duplicates are harmless)
@@ -259,6 +279,30 @@ export const query_cell_load_many = async (
 	if (ids.length === 0) return [];
 	return deps.db.query<CellRow>(
 		`SELECT ${cell_row_projection('cell')}
+		 FROM cell
+		 WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL`,
+		[ids]
+	);
+};
+
+/**
+ * Bulk-load the active cells among `ids` for a view check — the
+ * `CELL_VIEW_COLUMNS` alone, never the payload. Backs the strict
+ * relation-read filter (`auth/cell_relation_visibility.ts`'s
+ * `filter_visible_target_ids`), which runs `can_view_cell` per row in memory
+ * rather than in SQL. Soft-deleted rows and ids with no row are absent.
+ *
+ * @param deps - query deps
+ * @param ids - cell ids to load (duplicates are harmless)
+ * @returns active rows in arbitrary order (caller indexes by `id`)
+ */
+export const query_cell_view_load_many = async (
+	deps: QueryDeps,
+	ids: ReadonlyArray<Uuid>
+): Promise<Array<CellViewRow>> => {
+	if (ids.length === 0) return [];
+	return deps.db.query<CellViewRow>(
+		`SELECT ${columns_sql(CELL_VIEW_COLUMNS)}
 		 FROM cell
 		 WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL`,
 		[ids]
@@ -547,42 +591,17 @@ export const query_cell_list = async (
 };
 
 /**
- * The `cell_grant` admits-caller predicate, factored once and reused by
- * both SQL shapes (general visibility branch + shared-with-me semi-join).
- *
- * Resolves true when the grant row at `g_alias` admits the caller via
- * either an actor-shaped principal (`g.actor_id = $11`) or a
- * role-shaped principal whose `(role, scope_id)` matches a row in the
- * `caller_role_grants` CTE. NULL `g.scope_id` matches any scope, mirroring
- * `grant_admits` in `auth/cell_authorize.ts`.
+ * The caller's `(role, scope_id)` role_grant pairs, materialized once per
+ * query so the role-grant predicate doesn't re-scan `unnest()` per outer row.
+ * Shared by both SQL shapes.
  */
-const grant_admits_caller_predicate = (g_alias: string): string => `(
-	     ($11::uuid IS NOT NULL AND ${g_alias}.actor_id = $11)
-	     OR (
-	       ${g_alias}.role IS NOT NULL
-	       AND EXISTS (
-	         SELECT 1 FROM caller_role_grants p
-	         WHERE p.role = ${g_alias}.role
-	           AND (${g_alias}.scope_id IS NULL OR p.scope_id IS NOT DISTINCT FROM ${g_alias}.scope_id)
-	       )
-	     )
-	   )`;
-
-/**
- * Materialize the caller's `(role, scope_id)` role_grant pairs once per
- * query so the role-grant predicate doesn't re-scan `unnest()` per
- * outer row. PG 12+ inlines non-recursive single-use CTEs, so this is
- * planner-equivalent to a subquery — the form is for clarity.
- */
-const CALLER_ROLE_GRANTS_CTE = `WITH caller_role_grants AS (
-	   SELECT role, scope_id FROM unnest($12::text[], $13::uuid[]) AS p(role, scope_id)
-	 )`;
+const CALLER_ROLE_GRANTS_CTE = `WITH ${caller_role_grants_cte('$12', '$13')}`;
 
 /**
  * General `cell_list` SQL: cell-driven scan, full visibility predicate — the
- * `can_view_cell` arms, then the steward arm (`can_steward_cell`: the caller
- * owns the live governing root of a pending or rejected contribution; a global
- * admin is already in through `$6`).
+ * `can_view_cell` arms (`can_view_cell_sql`), then the steward arm
+ * (`can_steward_cell`: the caller owns the live governing root of a pending or
+ * rejected contribution; a global admin is already in through `$6`).
  */
 const build_general_sql = (order_column: string, order_direction: string): string =>
 	`${CALLER_ROLE_GRANTS_CTE}
@@ -597,15 +616,7 @@ const build_general_sql = (order_column: string, order_direction: string): strin
 	   AND ($15::uuid IS NULL OR c.root_id = $15)
 	   AND ($16::text IS NULL OR c.moderation = $16::text)
 	   AND (
-	     $6::bool
-	     OR ($7::uuid IS NOT NULL AND c.created_by = $7)
-	     OR (${cell_moderation_admits_audience_sql('c')} AND (
-	       c.visibility = 'public'
-	       OR ($7::uuid IS NOT NULL AND EXISTS (
-	         SELECT 1 FROM cell_grant g
-	         WHERE g.cell_id = c.id AND ${grant_admits_caller_predicate('g')}
-	       ))
-	     ))
+	     ${can_view_cell_sql('c', { is_admin: '$6', actor_id: '$7', grant_actor_id: '$11' })}
 	     OR ($7::uuid IS NOT NULL AND c.root_id IS NOT NULL AND ${cell_moderation_is_stewardable_sql('c')}
 	       AND EXISTS (
 	         SELECT 1 FROM cell r
@@ -648,7 +659,7 @@ const build_shared_with_sql = (order_column: string, order_direction: string): s
 	   AND ${cell_moderation_admits_audience_sql('c')}
 	   AND c.id IN (
 	     SELECT g.cell_id FROM cell_grant g
-	     WHERE ${grant_admits_caller_predicate('g')}
+	     WHERE ${cell_grant_admits_caller_sql('g', '$11')}
 	   )
 	   -- $6 (viewer_is_admin) intentionally not consulted: an admin
 	   -- asking "what's shared with me" wants their grant footprint, not

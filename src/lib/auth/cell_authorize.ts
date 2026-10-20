@@ -50,7 +50,8 @@ import { has_scoped_role, type RequestContext } from './request_context.ts';
 import { is_role_grant_active } from './account_schema.ts';
 import { ROLE_ADMIN } from './role_schema.ts';
 
-import type { CellRow } from '../db/cell_queries.ts';
+import type { CellRow, CellViewRow } from '../db/cell_queries.ts';
+import { CELL_VIEWER_ANONYMOUS, type CellViewer } from '../db/cell_view_sql.ts';
 import type { CellGrantRow } from '../db/cell_grant_queries.ts';
 import {
 	cell_moderation_admits_audience,
@@ -113,7 +114,7 @@ const grant_admits = (
  * a load-bearing property rather than relying on JS equality returning
  * false for NULL.
  */
-const is_owner = (auth: RequestContext, cell: CellRow): boolean =>
+const is_owner = (auth: RequestContext, cell: Pick<CellRow, 'created_by'>): boolean =>
 	auth.actor !== null && cell.created_by !== null && cell.created_by === auth.actor.id;
 
 /**
@@ -132,14 +133,17 @@ const is_owner = (auth: RequestContext, cell: CellRow): boolean =>
  * A pending or rejected contribution stays with its owner and admins even
  * when public or granted.
  *
+ * Reads only the view facts (`visibility`, `moderation`, `created_by`), so a
+ * full `CellRow` and the narrow `CellViewRow` both answer it.
+ *
  * @param auth - request context, or `null` for unauthenticated callers
- * @param cell - the cell row
+ * @param cell - the cell row, or its view facts
  * @param grants - the cell's grant list, or `null` to skip the grant branch
  * @returns whether the caller may view the cell
  */
 export const can_view_cell = (
 	auth: RequestContext | null,
-	cell: CellRow,
+	cell: Omit<CellViewRow, 'id'>,
 	grants: ReadonlyArray<CellGrantRow> | null
 ): boolean => {
 	if (auth && has_scoped_role(auth, ROLE_ADMIN, null)) return true;
@@ -148,6 +152,30 @@ export const can_view_cell = (
 	if (cell.visibility === 'public') return true;
 	if (auth && grant_admits(auth, grants, 'viewer')) return true;
 	return false;
+};
+
+/**
+ * The `CellViewer` a SQL view filter (`db/cell_view_sql.ts`) binds for
+ * `auth` — the facts `can_view_cell` reads, so the two admit the same cells:
+ * the acting actor, the global `admin` grant, and the active role grants
+ * `grant_admits` matches against.
+ *
+ * @param auth - request context, or `null` for unauthenticated callers
+ * @param now - the instant role-grant expiry is judged at
+ * @returns the viewer
+ */
+export const cell_viewer_from_auth = (
+	auth: RequestContext | null,
+	now: Date = new Date()
+): CellViewer => {
+	if (!auth) return CELL_VIEWER_ANONYMOUS;
+	const active = auth.role_grants.filter((p) => is_role_grant_active(p, now));
+	return {
+		actor_id: auth.actor?.id ?? null,
+		is_admin: has_scoped_role(auth, ROLE_ADMIN, null, now),
+		role_grant_roles: active.map((p) => p.role),
+		role_grant_scope_ids: active.map((p) => p.scope_id)
+	};
 };
 
 /**

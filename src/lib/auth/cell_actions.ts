@@ -124,8 +124,14 @@ import {
 	query_cell_item_list_for_parent,
 	type CellItemRow
 } from '../db/cell_item_queries.ts';
-import { can_view_cell, can_edit_cell, can_manage_cell } from './cell_authorize.ts';
+import {
+	can_view_cell,
+	can_edit_cell,
+	can_manage_cell,
+	cell_viewer_from_auth
+} from './cell_authorize.ts';
 import { filter_visible_target_ids } from './cell_relation_visibility.ts';
+import { CELL_VIEWER_UNRESTRICTED } from '../db/cell_view_sql.ts';
 import { cell_steward_admits } from './cell_steward.ts';
 import { to_grant_json } from './cell_grant_actions.ts';
 import { to_field_json } from './cell_field_actions.ts';
@@ -476,10 +482,10 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		// arm or returns false either way.
 		const [grants, fields, items] = await Promise.all([
 			auth ? query_cell_grant_list_for_cell(ctx, row.id) : Promise.resolve(null),
-			query_cell_field_list_for_source(ctx, row.id, {
+			query_cell_field_list_for_source(ctx, CELL_VIEWER_UNRESTRICTED, row.id, {
 				limit: CELL_RELATIONS_BUNDLE_LIMIT + 1
 			}),
-			query_cell_item_list_for_parent(ctx, row.id, {
+			query_cell_item_list_for_parent(ctx, CELL_VIEWER_UNRESTRICTED, row.id, {
 				limit: CELL_RELATIONS_BUNDLE_LIMIT + 1
 			})
 		]);
@@ -755,9 +761,13 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		// don't bloat the transaction. The fetch sees the world as of
 		// pre-transaction; the inserts inside the transaction commit
 		// atomically together.
-		const source_fields = await query_cell_field_list_for_source(ctx, source.id);
+		const source_fields = await query_cell_field_list_for_source(
+			ctx,
+			CELL_VIEWER_UNRESTRICTED,
+			source.id
+		);
 		const source_items = deep
-			? await query_cell_item_list_for_parent(ctx, source.id)
+			? await query_cell_item_list_for_parent(ctx, CELL_VIEWER_UNRESTRICTED, source.id)
 			: ([] as Array<CellItemRow>);
 
 		// In deep mode, pre-resolve which children are viewable so we can
@@ -848,7 +858,11 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 			// `cell_item_insert` enforce. Non-viewable children are skipped
 			// silently (no count surfaced — see the deep-walk note on the
 			// hidden-child-count leak).
-			const shallow_items = await query_cell_item_list_for_parent(ctx, source.id);
+			const shallow_items = await query_cell_item_list_for_parent(
+				ctx,
+				CELL_VIEWER_UNRESTRICTED,
+				source.id
+			);
 			const shallow_children_visible = await filter_visible_target_ids(
 				ctx,
 				auth,
@@ -905,13 +919,12 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 				reason: ERROR_CELL_LIST_SHARED_WITH_REQUIRES_AUTH
 			});
 		}
-		// Project the active role_grant set into parallel arrays for the
-		// `cell_grant` role-shaped EXISTS. Middleware (`request_context`)
-		// has already filtered to active-only role_grants; we trust that and
-		// pass NULL `scope_id`s through (global-scope role_grants).
-		const role_grant_roles = auth ? auth.role_grants.map((p) => p.role) : [];
-		const role_grant_scope_ids = auth ? auth.role_grants.map((p) => p.scope_id) : [];
-		const caller_actor_id = auth?.actor?.id ?? null;
+		// The caller the SQL view predicate binds — the facts `can_view_cell`
+		// reads, its active role grants projected into parallel arrays for the
+		// `cell_grant` role-shaped EXISTS (NULL `scope_id`s pass through as
+		// global-scope role_grants).
+		const viewer = cell_viewer_from_auth(auth);
+		const caller_actor_id = viewer.actor_id;
 		const rows = await query_cell_list(ctx, {
 			ids: input.ids,
 			kind: input.kind,
@@ -922,10 +935,10 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 			root_id: input.root_id,
 			moderation: input.moderation,
 			viewer_actor_id: caller_actor_id,
-			viewer_is_admin: auth ? has_scoped_role(auth, ROLE_ADMIN, null) : false,
+			viewer_is_admin: viewer.is_admin,
 			caller_actor_id,
-			caller_role_grant_roles: role_grant_roles,
-			caller_role_grant_scope_ids: role_grant_scope_ids,
+			caller_role_grant_roles: viewer.role_grant_roles,
+			caller_role_grant_scope_ids: viewer.role_grant_scope_ids,
 			shared_with_caller_only: input.shared_with === 'me',
 			order_by: input.order_by,
 			order_direction: input.order_direction,
@@ -940,8 +953,8 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 				ctx,
 				rows.map((r) => r.id),
 				caller_actor_id,
-				role_grant_roles,
-				role_grant_scope_ids
+				viewer.role_grant_roles,
+				viewer.role_grant_scope_ids
 			);
 			cell_grants = {};
 			for (const g of grant_rows) {

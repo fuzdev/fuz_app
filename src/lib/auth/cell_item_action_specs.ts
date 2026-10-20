@@ -18,6 +18,7 @@ import {
 } from '@fuzdev/fuz_util/fractional_index.ts';
 
 import { ActingActor } from '../http/auth_shape.ts';
+import { CellRelationListLimit } from './cell_relation_list_limit.ts';
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
 
 // -- Error reasons ----------------------------------------------------------
@@ -133,10 +134,11 @@ export type CellItemDeleteOutput = z.infer<typeof CellItemDeleteOutput>;
  * authz (child view-check gates the call; per-parent view-check filters
  * the rows).
  *
- * Forward listing supports cursor pagination via `position_after`
- * (return rows with `position > position_after`). The reverse listing
- * doesn't paginate (the result set is small in practice — number of
- * parents containing a given child).
+ * Either direction returns a page of up to `limit` items (default
+ * `CELL_RELATION_LIST_LIMIT_DEFAULT`) whose other end the caller can view —
+ * the view check runs before the limit. Forward listing pages on via
+ * `position_after` (return rows with `position > position_after`); the
+ * reverse listing has no cursor, oldest item first.
  */
 export const CellItemListInput = z
 	.strictObject({
@@ -149,10 +151,7 @@ export const CellItemListInput = z
 		position_after: CellItemPosition.optional().meta({
 			description: 'Cursor for forward pagination — return rows whose position > this.'
 		}),
-		limit: z.number().int().positive().max(500).optional().meta({
-			description:
-				'Page size cap (max 500). Omit for unbounded — explicit list calls escape the bundled `cell_get` cap.'
-		}),
+		limit: CellRelationListLimit,
 		acting: ActingActor
 	})
 	.refine((v) => Boolean(v.parent_id) !== Boolean(v.child_id), {
