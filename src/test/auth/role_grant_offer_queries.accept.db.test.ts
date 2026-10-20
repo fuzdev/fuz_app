@@ -3,7 +3,7 @@
  *
  * Covers the happy-path accept (role_grant insert + audit fan-out + has_role),
  * idempotent re-accept on race, the `already_terminal` rejection on
- * declined / retracted offers, and the recipient-mismatch IDOR guard
+ * declined / retracted offers and on a replay after the grant was revoked, and the recipient-mismatch IDOR guard
  * (404-over-403 with zero column mutation). Supersede semantics on accept
  * live in `role_grant_offer_queries.supersede.db.test.ts`.
  *
@@ -102,6 +102,31 @@ describe_db('role_grant_offer_queries.accept', (get_db) => {
 		// Doc: "empty on the race-loser path". Pin so a refactor that
 		// re-emits the supersede side on retry surfaces here.
 		assert.strictEqual(second.superseded_offers.length, 0);
+	});
+
+	test('a replay after the grant is revoked throws already_terminal, not the revoked grant', async () => {
+		const db = get_db();
+		const deps = { db };
+		const grantor = await make_account(db, 'grantor_replay_revoked');
+		const recipient = await make_account(db, 'recipient_replay_revoked');
+
+		const offer = await create_pending_offer(db, grantor, recipient);
+		const first = await query_accept_offer(deps, {
+			offer_id: offer.id,
+			to_account_id: recipient.account_id,
+			actor_id: recipient.actor_id
+		});
+		await db.query('UPDATE role_grant SET revoked_at = NOW() WHERE id = $1', [first.role_grant.id]);
+
+		const err = await assert_rejects(() =>
+			query_accept_offer(deps, {
+				offer_id: offer.id,
+				to_account_id: recipient.account_id,
+				actor_id: recipient.actor_id
+			})
+		);
+		assert.ok(err instanceof RoleGrantOfferAlreadyTerminalError);
+		assert.strictEqual(await query_role_grant_has_role(deps, recipient.actor_id, 'teacher'), false);
 	});
 
 	test('accept throws already_terminal for declined / retracted offers', async () => {

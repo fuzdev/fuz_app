@@ -16,6 +16,10 @@ import '../assert_dev_env.ts';
  *   re-assigning the active grant is idempotent (same id).
  * - **consent flow** — `role_grant_offer_create` of `participant` (admin-only)
  *   → the recipient `role_grant_offer_accept`s → a role_grant lands.
+ * - **offer replay** — re-accepting an accepted offer whose grant still
+ *   stands answers `200` with the same `role_grant_id` and writes no audit
+ *   row; once the grant is revoked, the replay is refused `invalid_request`
+ *   with reason `role_grant_offer_terminal` (never the revoked grant's id).
  * - **scoped assign** — `role_grant_assign` of `participant` with a paired
  *   `scope_kind` + `scope_id` lands a scoped grant carrying both, read back
  *   through `admin_account_list`, distinct from the global grant.
@@ -35,6 +39,9 @@ import '../assert_dev_env.ts';
 import { describe, test, assert } from 'vitest';
 
 import { rpc_call, type RpcCallResult } from '../rpc_helpers.ts';
+import { AuditLogListOutput } from '../../auth/admin_action_specs.ts';
+import { ERROR_ROLE_GRANT_OFFER_TERMINAL } from '../../auth/role_grant_offer_action_specs.ts';
+import { JSONRPC_INVALID_REQUEST } from '../../http/jsonrpc.ts';
 import { SPINE_PARTICIPANT_ROLE, SPINE_RPC_PATH } from './spine_surface_constants.ts';
 import type { SetupTest } from './setup.ts';
 
@@ -188,6 +195,103 @@ export const describe_role_grant_participation_cross_tests = (
 				typeof (accepted.result as { role_grant_id?: unknown }).role_grant_id === 'string',
 				'accept lands a role_grant for the app-role'
 			);
+		});
+
+		/** Offer `participant` to `recipient` as the keeper and accept it; returns the ids. */
+		const offer_and_accept = async (
+			fixture: Awaited<ReturnType<SetupTest>>,
+			recipient: Awaited<ReturnType<Awaited<ReturnType<SetupTest>>['create_account']>>
+		): Promise<{ offer_id: string; role_grant_id: string }> => {
+			const created = await rpc(
+				fixture.transport,
+				'role_grant_offer_create',
+				{ to_account_id: recipient.account.id, role: SPINE_PARTICIPANT_ROLE },
+				fixture.create_session_headers()
+			);
+			assert.ok(created.ok, `offer create must succeed: ${JSON.stringify(created)}`);
+			const offer_id = (created.result as { offer: { id: string } }).offer.id;
+			const accepted = await rpc(
+				fixture.fresh_transport(),
+				'role_grant_offer_accept',
+				{ offer_id },
+				recipient.create_session_headers()
+			);
+			assert.ok(accepted.ok, `accept must succeed: ${JSON.stringify(accepted)}`);
+			const { role_grant_id } = accepted.result as { role_grant_id: string };
+			return { offer_id, role_grant_id };
+		};
+
+		/** How many `event_type` audit rows the keeper can list. */
+		const count_audit_rows = async (
+			fixture: Awaited<ReturnType<SetupTest>>,
+			event_type: string
+		): Promise<number> => {
+			const listed = await rpc(
+				fixture.transport,
+				'audit_log_list',
+				{ event_type },
+				fixture.create_session_headers()
+			);
+			assert.ok(listed.ok, `audit_log_list must succeed: ${JSON.stringify(listed)}`);
+			return AuditLogListOutput.parse(listed.result).events.length;
+		};
+
+		test('re-accepting an accepted offer answers the same grant and writes no audit row', async () => {
+			const fixture = await setup_test();
+			const recipient = await fixture.create_account({ username: 'participation_replayer' });
+			const { offer_id, role_grant_id } = await offer_and_accept(fixture, recipient);
+			const accept_rows = await count_audit_rows(fixture, 'role_grant_offer_accept');
+			const create_rows = await count_audit_rows(fixture, 'role_grant_create');
+			assert.ok(accept_rows >= 1, 'the accept itself is audited');
+
+			const replayed = await rpc(
+				fixture.fresh_transport(),
+				'role_grant_offer_accept',
+				{ offer_id },
+				recipient.create_session_headers()
+			);
+
+			assert.ok(replayed.ok, `a replay of a held grant must succeed: ${JSON.stringify(replayed)}`);
+			assert.strictEqual(
+				(replayed.result as { role_grant_id: string }).role_grant_id,
+				role_grant_id,
+				'a replay answers the grant the accept minted'
+			);
+			assert.strictEqual(
+				await count_audit_rows(fixture, 'role_grant_offer_accept'),
+				accept_rows,
+				'a replay writes no role_grant_offer_accept row'
+			);
+			assert.strictEqual(
+				await count_audit_rows(fixture, 'role_grant_create'),
+				create_rows,
+				'a replay writes no role_grant_create row'
+			);
+		});
+
+		test('re-accepting an offer whose grant was revoked is refused as terminal', async () => {
+			const fixture = await setup_test();
+			const recipient = await fixture.create_account({ username: 'participation_revoked' });
+			const { offer_id, role_grant_id } = await offer_and_accept(fixture, recipient);
+			const revoked = await rpc(
+				fixture.transport,
+				'role_grant_revoke',
+				{ actor_id: recipient.actor.id, role_grant_id },
+				fixture.create_session_headers()
+			);
+			assert.ok(revoked.ok, `revoke must succeed: ${JSON.stringify(revoked)}`);
+
+			const replayed = await rpc(
+				fixture.fresh_transport(),
+				'role_grant_offer_accept',
+				{ offer_id },
+				recipient.create_session_headers()
+			);
+
+			assert.ok(!replayed.ok, `a replay after revoke must be refused: ${JSON.stringify(replayed)}`);
+			assert.strictEqual(replayed.status, 400);
+			assert.strictEqual(replayed.error.code, JSONRPC_INVALID_REQUEST);
+			assert.deepStrictEqual(replayed.error.data, { reason: ERROR_ROLE_GRANT_OFFER_TERMINAL });
 		});
 	});
 };

@@ -356,6 +356,41 @@ describe_db('role_grant_offer_actions notifications', (get_db) => {
 			assert.strictEqual(calls.length, 0);
 		});
 
+		test('a replay of an accepted offer produces no notification', async () => {
+			const calls: Array<CapturedNotificationCall> = [];
+			const sender = create_capture_sender(calls);
+			const test_app = await create_test_app({
+				session_options,
+				create_route_specs: create_notification_route_specs_factory(sender),
+				db: get_db(),
+				roles: [ROLE_ADMIN]
+			});
+			const recipient = await test_app.create_account({ username: 'notif_replay_recipient' });
+
+			const create_res = await send_rpc(
+				test_app.app,
+				RPC_PATH,
+				role_grant_offer_create_action_spec.method,
+				{ to_account_id: recipient.account.id, role: ROLE_ADMIN },
+				test_app.create_session_headers()
+			);
+			const offer_id = (await create_res.json()).result.offer.id;
+			const accept = (): Promise<Response> =>
+				send_rpc(
+					test_app.app,
+					RPC_PATH,
+					role_grant_offer_accept_action_spec.method,
+					{ offer_id },
+					recipient.create_session_headers()
+				);
+			assert.strictEqual((await accept()).status, 200);
+			calls.length = 0;
+
+			const replay = await accept();
+			assert.strictEqual(replay.status, 200);
+			assert.strictEqual(calls.length, 0, 'the grantor was notified once, by the accept');
+		});
+
 		test('decline on terminal offer produces no notification', async () => {
 			const calls: Array<CapturedNotificationCall> = [];
 			const sender = create_capture_sender(calls);

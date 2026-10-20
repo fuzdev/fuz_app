@@ -473,10 +473,12 @@ export const create_role_grant_offer_actions = (
 		// Look up the grantor's account_id inside the transaction so the
 		// post-commit notification has a valid target. One cheap SELECT by
 		// PK — the alternative (widening `query_accept_offer` again) would
-		// bleed transport concerns into the query layer.
-		const grantor_actor = notification_sender
-			? await query_actor_by_id(ctx, result.offer.from_actor_id)
-			: null;
+		// bleed transport concerns into the query layer. A replay
+		// (`created: false`) notifies nothing, so it skips the lookup.
+		const grantor_actor =
+			notification_sender && result.created
+				? await query_actor_by_id(ctx, result.offer.from_actor_id)
+				: null;
 		const grantor_account_id = grantor_actor?.account_id ?? null;
 
 		const offer_json = to_role_grant_offer_json(result.offer);
@@ -491,27 +493,33 @@ export const create_role_grant_offer_actions = (
 		// grantor sees "accepted" and each superseded grantor sees "supersede"
 		// only once the accept has durably committed — and never if it rolls
 		// back (the dispatch site discards `post_commit_effects` on rollback).
-		emit_after_commit(ctx, () => {
-			fan_out_audit_events(result.audit_events, audit);
-			if (notification_sender && grantor_account_id) {
-				notification_sender.send_to_account(
-					grantor_account_id,
-					build_role_grant_offer_accepted_notification({ offer: offer_json })
-				);
-			}
-			if (notification_sender) {
-				for (const sib of supersede_payloads) {
+		// A replay (or a race loser) wrote nothing — the accept that minted the
+		// grant already audited it and notified the grantor — so it queues
+		// nothing; repeating the notification would let any replay send them
+		// without bound.
+		if (result.created) {
+			emit_after_commit(ctx, () => {
+				fan_out_audit_events(result.audit_events, audit);
+				if (notification_sender && grantor_account_id) {
 					notification_sender.send_to_account(
-						sib.from_account_id,
-						build_role_grant_offer_supersede_notification({
-							offer: sib.offer,
-							reason: 'sibling_accepted',
-							cause_id: result.offer.id
-						})
+						grantor_account_id,
+						build_role_grant_offer_accepted_notification({ offer: offer_json })
 					);
 				}
-			}
-		});
+				if (notification_sender) {
+					for (const sib of supersede_payloads) {
+						notification_sender.send_to_account(
+							sib.from_account_id,
+							build_role_grant_offer_supersede_notification({
+								offer: sib.offer,
+								reason: 'sibling_accepted',
+								cause_id: result.offer.id
+							})
+						);
+					}
+				}
+			});
+		}
 
 		return {
 			role_grant_id: result.role_grant.id,

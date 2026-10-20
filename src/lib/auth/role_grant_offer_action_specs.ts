@@ -299,6 +299,10 @@ export const role_grant_offer_create_action_spec = {
 } satisfies RequestResponseActionSpec;
 
 /**
+ * `rate_limit: 'account'`, matching `role_grant_offer_create`: every call locks
+ * the offer row and reads its grant, and a replay of an accepted offer answers
+ * without minting anything, so the account bucket is what bounds a loop of them.
+ *
  * `credential_types: ['session']` — see `docs/security.md` §Credential-channel
  * gating. The only offer verb that moves the *caller's own* authority:
  * accepting a pending admin offer over a leaked API token is a privilege pivot
@@ -328,7 +332,8 @@ export const role_grant_offer_accept_action_spec = {
 		ERROR_ROLE_GRANT_OFFER_ROLE_NOT_GRANTABLE,
 		ERROR_ROLE_GRANT_BUILTIN_SCOPED,
 		ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED
-	]
+	],
+	rate_limit: 'account'
 } satisfies RequestResponseActionSpec;
 
 export const role_grant_offer_decline_action_spec = {

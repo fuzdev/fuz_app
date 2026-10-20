@@ -521,7 +521,7 @@ export interface AcceptOfferInput {
 export interface AcceptOfferResult {
 	role_grant: RoleGrant;
 	offer: RoleGrantOffer;
-	/** `true` if this call is the one that accepted the offer (new role_grant inserted); `false` on a race returning the already-created role_grant. */
+	/** `true` if this call is the one that accepted the offer (new role_grant inserted); `false` on a replay (or a race loser) returning the already-created, still-held role_grant — the caller then audits and notifies nothing. */
 	created: boolean;
 	/**
 	 * Sibling offers superseded by this accept — empty on the race-loser path.
@@ -542,15 +542,17 @@ export interface AcceptOfferResult {
  * inside a transaction — the caller's route spec should declare
  * `transaction: true` (or wrap explicitly).
  *
- * Idempotent on race: if a second concurrent call observes the offer
- * already accepted, returns the existing role_grant rather than creating a
- * duplicate or throwing.
+ * Idempotent on replay and on race: a call that observes the offer already
+ * accepted returns the existing role_grant (`created: false`) rather than
+ * creating a duplicate or throwing — while that grant is still held. A grant
+ * revoked since the accept, or gone, makes the offer terminal.
  *
  * Error map:
  * - `RoleGrantOfferNotFoundError` — offer does not exist, or belongs to a
  *   different recipient (IDOR guard). The offer row is untouched.
  * - `RoleGrantOfferAlreadyTerminalError` — offer is declined, retracted, or
- *   superseded.
+ *   superseded; or accepted, and its grant revoked, gone, or bound to another
+ *   actor.
  * - `RoleGrantOfferExpiredError` — offer is pending but past `expires_at`.
  * - `RoleGrantOfferActorMismatchError` — actor-targeted offer, different actor.
  * - `RoleGrantOfferBuiltinRefusedError` — a builtin-role offer that must not
@@ -567,7 +569,7 @@ export interface AcceptOfferResult {
  * @mutates `role_grant_offer` siblings - stamps `superseded_at` on every other pending offer for the tuple
  * @mutates `audit_log` table - emits `role_grant_offer_accept` + `role_grant_create` + one `role_grant_offer_supersede` per sibling
  * @throws RoleGrantOfferNotFoundError if the offer is missing or belongs to another recipient
- * @throws RoleGrantOfferAlreadyTerminalError if the offer is declined, retracted, or superseded
+ * @throws RoleGrantOfferAlreadyTerminalError if the offer is declined, retracted, or superseded, or accepted with its grant revoked, gone, or bound to another actor
  * @throws RoleGrantOfferExpiredError if the offer is pending but past `expires_at`
  * @throws RoleGrantOfferActorMismatchError if the offer is actor-targeted to a different actor
  * @throws RoleGrantOfferBuiltinRefusedError if a builtin-role offer must not mint (see `BuiltinOfferRefusal`)
@@ -609,18 +611,21 @@ export const query_accept_offer = async (
 	const { still_valid, ...locked } = locked_row;
 
 	if (locked.accepted_at) {
-		// Race winner already committed; return the pre-existing role_grant.
+		// Already accepted (a replay, or a race winner already committed);
+		// return the pre-existing role_grant.
 		// `role_grant_offer_role_grant_iff_accepted` CHECK guarantees resulting_role_grant_id is non-null.
-		const role_grant = assert_row(
-			await query_role_grant_by_id(deps, locked.resulting_role_grant_id!),
-			'resulting_role_grant lookup'
-		);
+		const role_grant = await query_role_grant_by_id(deps, locked.resulting_role_grant_id!);
+		// The idempotent answer stands only while the grant it names does. A
+		// grant revoked since the accept (or gone) makes a replay terminal:
+		// answering OK with the revoked grant's id would tell the caller "you
+		// hold this role" when they don't.
+		//
 		// Multi-actor guard: two actors on the same recipient account may
 		// both race an account-grain offer — the loser must not silently
 		// receive the winner's role_grant (which would tell them "you got it"
 		// while the actor on the role_grant is someone else). Treat the offer
 		// as terminal for the loser.
-		if (role_grant.actor_id !== actor_id) {
+		if (!role_grant || role_grant.revoked_at !== null || role_grant.actor_id !== actor_id) {
 			throw new RoleGrantOfferAlreadyTerminalError(offer_id);
 		}
 		return {

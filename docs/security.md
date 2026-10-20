@@ -1563,6 +1563,13 @@ Admin surface hardening on the offer flow:
   pending. `role_grant_assign` also re-checks the global admin grant in-handler
   behind the dispatcher gate, so a scoped `admin` can't assign itself a global
   one. Self-service eligibility refuses builtin roles at construction.
+- **A replayed accept confers nothing.** Re-accepting an accepted offer
+  answers the grant it minted while that grant stands — writing no audit row
+  and sending no notification, so a loop of replays costs only the
+  per-account rate limit `role_grant_offer_accept` carries (the same class
+  as `role_grant_offer_create`). Once that grant is revoked (or gone) the
+  offer is terminal: a replay answers 400 `role_grant_offer_terminal`, never
+  an OK carrying the revoked grant's id. Both spines.
 - **Admin retract via RPC, grantor-scoped** — admins cancel offers they
   issued by calling `role_grant_offer_retract` through the RPC surface.
   The grantor IDOR guard (`from_actor_id = ctx.actor.id`) enforces

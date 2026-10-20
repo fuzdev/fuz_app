@@ -327,7 +327,9 @@ builtin rules (an unpaired `scope_kind` / `scope_id` → 400, a scoped `admin` �
 non-global-admin → 403) — plus the imperative
 `describe_role_grant_participation_cross_tests` success paths (assign-lands +
 idempotency, a scoped assign round-tripping `scope_kind` through
-`admin_account_list`, offer→accept-lands); seeds a `participant` (`grant_paths:
+`admin_account_list`, offer→accept-lands, and offer replay — a re-accept of
+a held grant answers the same id with no new audit row, one after revoke is
+terminal); seeds a `participant` (`grant_paths:
 ['admin']`) app-role on both spines with the holder via `extra_accounts`;
 in-process leg `conformance_participation.db.test.ts`), and
 `origin.cross.test.ts` (the imperative `describe_origin_cross_tests` — Origin
