@@ -95,9 +95,6 @@ The wire schemas + RPC handlers + authz predicates for this layer live in
   authorizer's verdict + the `cell_moderate` verb, never in `data`. Nullable
   `created_by` / `updated_by` FKs to `actor` (NULL = system origin). GIN on `data`
   / `refs`; global partial-unique on `path`.
-- **`cell_history_ddl.ts`** — dormant `cell_history` table
-  (`CELL_HISTORY_MIGRATION_NS`, namespace `fuz_cell_history`), FK → `cell.id`.
-  Ships present-but-unwritten; no snapshot lifecycle yet.
 - **`cell_queries.ts`** — `query_cell_create / get / get_by_path / update /
 delete / set_moderation`, `_list_by_kind / _list_by_creator`, the
   generic `query_cell_list` (filter + SQL-side visibility predicate mirroring
@@ -191,22 +188,20 @@ DO NOTHING`), `_put_fact_refs`, `_get_fact` / `_get_fact_meta` / `_has_fact`
 FK dependency dictates order; consumers register via `migration_namespaces`
 on `create_app_backend` (after the built-in `fuz_auth` namespace). The fact
 namespace is FK-independent so its slot is free; the spine binary and every
-consumer place it last, keeping cell + its `cell_history` FK-child adjacent
-(cross-namespace order is immaterial to the `schema_version` rows — `sequence`
-is assigned per-namespace — so only the cell→cell_history FK constrains it):
+consumer place it last (cross-namespace order is immaterial to the
+`schema_version` rows — `sequence` is assigned per-namespace):
 
 ```
 auth_migration_ns (built-in, fuz_auth)
-  → CELL_MIGRATION_NS         (fuz_cell — FKs actor.id)
-  → CELL_HISTORY_MIGRATION_NS (fuz_cell_history — FKs cell.id)
-  → FACT_MIGRATION_NS         (fuz_facts — no external FK; slot is free)
+  → CELL_MIGRATION_NS (fuz_cell — FKs actor.id)
+  → FACT_MIGRATION_NS (fuz_facts — no external FK; slot is free)
 ```
 
 ### Pre-stable migration policy
 
-Scoped to the namespaces on this page (`fuz_cell` / `fuz_cell_history` /
-`fuz_facts`): each is a single `full_*_schema` entry, so when it needs to
-change shape, **rewrite the original in place** rather than appending a
+Scoped to the namespaces on this page (`fuz_cell` / `fuz_facts`): each is a
+single `full_*_schema` entry, so when it needs to change shape, **rewrite the
+original in place** rather than appending a
 follow-up — consumers re-bootstrap dev DBs on upgrade. The `fuz_auth`
 namespace is the opposite — frozen and append-only, since consumers hold
 deployed databases on it. See ../../../docs/migrations.md §Schema stability.

@@ -1519,12 +1519,6 @@ const backend = await create_app_backend({
 `cell_field`, and `cell_item`. It FKs into the `actor` table, so it must follow
 the builtin auth namespace.
 
-The dormant `cell_history` table is **not** part of that namespace — it lives in
-its own `fuz_cell_history` namespace (`CELL_HISTORY_MIGRATION_NS` in
-`db/cell_history_ddl.ts`), spliced after `fuz_cell`. A consumer that wants it
-must splice that namespace in as well. The split is deliberate and matches the
-Rust twin, so the `schema_version` trackers stay byte-identical across spines.
-
 ### Action surface
 
 Seventeen generic verbs, aggregated under one cell namespace so codegen and

@@ -1846,9 +1846,9 @@ so one fixture is the cross-impl contract): the TS spine via
 `import.meta.url` constant off `spine_surface_constants.ts`; the Rust
 `testing_spine_stub` via the absolute path `rust_spine_stub_backend_config`
 passes through `FUZ_RUST_SPINE_STUB_EXPECTED_SCHEMA_PATH`. The fixture covers the full
-spine bootstrap (auth + cell + cell_history + fact) and is regenerated +
+spine bootstrap (auth + cell + fact) and is regenerated +
 drift-guarded by `src/test/cross_backend/spine_expected_schema.db.test.ts`
-(`UPDATE_SCHEMA_READY=1`, then `gro format`).
+(`UPDATE_SCHEMA_READY=1`).
 
 ### Testing-backdoor credential gate — `cross_backend/testing_backdoor.ts`
 

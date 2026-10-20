@@ -120,7 +120,7 @@ export type SchemaSnapshot = z.infer<typeof SchemaSnapshot>;
  * to the schema snapshot — is a gated fact, not a latent interop break.
  */
 export const MigrationTrackerEntry = z.object({
-	/** Migration namespace (e.g. `fuz_cell`, `fuz_cell_history`). */
+	/** Migration namespace (e.g. `fuz_auth`, `fuz_cell`). */
 	namespace: z.string(),
 	/** Migration name within the namespace (e.g. `full_cell_schema`). */
 	name: z.string(),

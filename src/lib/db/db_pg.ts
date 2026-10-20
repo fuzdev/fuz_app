@@ -21,7 +21,7 @@ import { Db, no_nested_transaction, type DbDriverResult } from './db.ts';
  * call this, don't need `pg` installed) and coerces int8 (`BIGINT`, OID 20)
  * to a JS number. pg defaults to returning
  * int8 as a string to avoid 2^53 precision loss; our int8 columns today
- * (`audit_log.seq`, `cell_history.id`, `fact.size`) stay well under that
+ * (`audit_log.seq`, `fact.size`) stay well under that
  * bound, and reading as a number keeps the wire shape uniform with PGlite —
  * which returns int8 as a number — so `AuditLogEvent.seq` and friends
  * validate identically across both drivers.

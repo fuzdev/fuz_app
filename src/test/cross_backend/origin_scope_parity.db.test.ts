@@ -20,12 +20,11 @@ import {
 	spine_session_options
 } from '#lib/testing/cross_backend/default_spine_surface.ts';
 import { CELL_MIGRATION_NS } from '#lib/db/cell_ddl.ts';
-import { CELL_HISTORY_MIGRATION_NS } from '#lib/db/cell_history_ddl.ts';
 import { FACT_MIGRATION_NS } from '#lib/db/fact_ddl.ts';
 
 const setup_test = default_in_process_setup({
 	session_options: spine_session_options,
-	migration_namespaces: [CELL_MIGRATION_NS, CELL_HISTORY_MIGRATION_NS, FACT_MIGRATION_NS],
+	migration_namespaces: [CELL_MIGRATION_NS, FACT_MIGRATION_NS],
 	create_route_specs: () => [create_spine_ready_route_spec()]
 });
 

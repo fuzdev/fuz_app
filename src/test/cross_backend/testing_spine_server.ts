@@ -39,7 +39,6 @@ import { cell_audit_events } from '#lib/auth/cell_audit_events.ts';
 import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
 import { create_audit_log_config } from '#lib/auth/audit_log_schema.ts';
 import { CELL_MIGRATION_NS } from '#lib/db/cell_ddl.ts';
-import { CELL_HISTORY_MIGRATION_NS } from '#lib/db/cell_history_ddl.ts';
 import { FACT_MIGRATION_NS } from '#lib/db/fact_ddl.ts';
 import {
 	create_serve_cell_fact_route_spec,
@@ -246,11 +245,8 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 		// namespace so the cell verbs + the fact-serving routes below have their
 		// tables. Both stay off the standard declared surface
 		// (`create_spine_surface_spec`) — driven only by the dedicated cell /
-		// fact-serving cross suites, ws/sse-style. `CELL_HISTORY_MIGRATION_NS`
-		// stages the dormant `cell_history` table (the Rust `fuz_cell` migration
-		// bundles it; TS isolates it in its own namespace) so the schema-parity
-		// gate sees the same full spine schema on both backends.
-		migration_namespaces: [CELL_MIGRATION_NS, CELL_HISTORY_MIGRATION_NS, FACT_MIGRATION_NS]
+		// fact-serving cross suites, ws/sse-style.
+		migration_namespaces: [CELL_MIGRATION_NS, FACT_MIGRATION_NS]
 	});
 
 	// Facts dir for the disk-stream / X-Accel serving paths. The cross suite

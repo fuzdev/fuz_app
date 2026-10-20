@@ -56,10 +56,8 @@ export interface SyncExpectedSchemaFixtureResult {
  * ```
  *
  * When `update` writes the fixture it emits raw `JSON.stringify` (one array
- * element per line); Prettier collapses short arrays inline, so run `gro format`
- * after `UPDATE_SCHEMA_READY=1` before committing or the format check will flag
- * the regenerated file. (The content is identical either way — the regen test
- * compares values, not formatting.)
+ * element per line). `gro format` leaves JSON untouched and the regen test compares values, not
+ * formatting, so the layout is cosmetic.
  *
  * @returns the live column map and the committed map (post-write when `update`)
  */

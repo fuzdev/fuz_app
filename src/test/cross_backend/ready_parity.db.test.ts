@@ -3,7 +3,7 @@
  *
  * Runs `describe_ready_cross_tests` against the in-process Hono app (no process
  * boundary): a fresh in-memory database migrated with the full spine namespace set (auth +
- * cell + cell_history + fact) mounts `create_spine_ready_route_spec`, so an
+ * cell + fact) mounts `create_spine_ready_route_spec`, so an
  * anonymous `GET /ready` reports `200 {ready: true}` under a plain `gro test`.
  * The cross-process leg (`ready.cross.test.ts`) additionally drives the TS spine
  * binaries + Rust `testing_spine_stub` over real HTTP behind
@@ -24,12 +24,11 @@ import {
 	spine_session_options
 } from '#lib/testing/cross_backend/default_spine_surface.ts';
 import { CELL_MIGRATION_NS } from '#lib/db/cell_ddl.ts';
-import { CELL_HISTORY_MIGRATION_NS } from '#lib/db/cell_history_ddl.ts';
 import { FACT_MIGRATION_NS } from '#lib/db/fact_ddl.ts';
 
 const setup_test = default_in_process_setup({
 	session_options: spine_session_options,
-	migration_namespaces: [CELL_MIGRATION_NS, CELL_HISTORY_MIGRATION_NS, FACT_MIGRATION_NS],
+	migration_namespaces: [CELL_MIGRATION_NS, FACT_MIGRATION_NS],
 	create_route_specs: () => [create_spine_ready_route_spec()]
 });
 

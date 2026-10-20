@@ -30,8 +30,8 @@ fuz_app's own suites reach a database two ways:
   (`db_pglet_wasm_factory.ts`) — and binds `describe_db` over them, so each suite
   runs once per enabled driver. Three fixture modules call it once each, so
   importing one constructs only its own factories: `db_fixture.ts` (auth-only —
-  what most suites use), `cell_db_fixture.ts` (full spine: auth + cell + fact +
-  cell_history, for the cell suites), and `fact_db_fixture.ts` (facts alone, for
+  what most suites use), `cell_db_fixture.ts` (full spine: auth + cell + fact,
+  for the cell suites), and `fact_db_fixture.ts` (facts alone, for
   the `PgFactStore` suites).
 - **The default factory.** Everything else runs on one driver through
   `create_default_db_factory`: a suite's own `const factory` (bespoke
@@ -89,9 +89,9 @@ ln -s ../../../pglet/crates/pglet_wasm/pkg-npm node_modules/@fuzdev/pglet-wasm
 
 `db/column_projections.ts` + `db/column_projections.db.test.ts` is the
 named-projection registry: every `*_COLUMNS` const keyed by table, plus the
-reasoned exemptions (`schema_version`, `bootstrap_lock`, `cell_history`,
-`fact_ref`, `memo`), asserted against the live full-spine schema in one scan —
-so a new table fails the suite until it gets a const or an exemption entry.
+reasoned exemptions (`schema_version`, `bootstrap_lock`, `fact_ref`, `memo`),
+asserted against the live full-spine schema in one scan — so a new table fails
+the suite until it gets a const or an exemption entry.
 
 ### Integration Tests
 
@@ -480,8 +480,8 @@ missing, and drops and recreates its `public` schema before every spawn (the
 TS binary does not wipe at startup, and bootstrap refuses a database that
 already has an account); an unreachable server fails the project, never skips
 it. `schema_parity.cross.test.ts` diffs the two
-backends' full DDL (auth + cell + cell_history + fact + the `cell_visibility`
-enum) via `query_schema_snapshot` + `assert_schema_snapshots_equal`, **and**
+backends' full DDL (auth + cell + fact + the `cell_visibility` enum) via
+`query_schema_snapshot` + `assert_schema_snapshots_equal`, **and**
 their `schema_version` migration identity via `_testing_migration_tracker` +
 `assert_migration_trackers_equal` (the swap-freely gate the snapshot's
 `schema_version` exclusion can't cover); `action_manifest_parity.cross.test.ts`

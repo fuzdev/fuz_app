@@ -83,7 +83,7 @@ export const SPINE_ROLE_GATED_WS_ROLES: ReadonlyArray<string> = Object.freeze([
 
 /**
  * Committed expected-schema fixture for the spine `/ready` deploy gate — the
- * column map a fresh full spine bootstrap (auth + cell + cell_history + fact)
+ * column map a fresh full spine bootstrap (auth + cell + fact)
  * produces. Resolved relative to this module so the spawned TS binary (which
  * imports this source under its loader) reads it off disk via `node:fs`.
  * Regenerated + guarded by `src/test/cross_backend/spine_expected_schema.db.test.ts`.

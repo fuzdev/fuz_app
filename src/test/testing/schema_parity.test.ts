@@ -484,7 +484,6 @@ const spine_tracker: MigrationTracker = {
 		{ namespace: 'fuz_auth', name: 'full_auth_schema', sequence: 0 },
 		{ namespace: 'fuz_auth', name: 'role_grant_offer_and_scoped_role_grants', sequence: 1 },
 		{ namespace: 'fuz_cell', name: 'full_cell_schema', sequence: 0 },
-		{ namespace: 'fuz_cell_history', name: 'full_cell_history_schema', sequence: 0 },
 		{ namespace: 'fuz_facts', name: 'full_fact_schema', sequence: 0 }
 	]
 };
@@ -519,20 +518,20 @@ describe('diff_migration_trackers', () => {
 		]);
 	});
 
-	// The partitioning drift: one spine bundles cell_history into `fuz_cell`,
-	// the other isolates it in `fuz_cell_history`. The isolating side has a row
-	// the bundling side lacks.
+	// The partitioning drift: one spine bundles the fact DDL into `fuz_cell`,
+	// the other isolates it in `fuz_facts`. The isolating side has a row the
+	// bundling side lacks.
 	test('a missing namespace row surfaces as row_only_in', () => {
 		const bundled: MigrationTracker = {
-			entries: spine_tracker.entries.filter((e) => e.namespace !== 'fuz_cell_history')
+			entries: spine_tracker.entries.filter((e) => e.namespace !== 'fuz_facts')
 		};
 		const diffs = diff_migration_trackers(spine_tracker, bundled);
 		assert.deepStrictEqual(diffs, [
 			{
 				kind: 'tracker_row_only_in',
 				where: 'a',
-				namespace: 'fuz_cell_history',
-				name: 'full_cell_history_schema'
+				namespace: 'fuz_facts',
+				name: 'full_fact_schema'
 			}
 		]);
 	});

@@ -136,7 +136,7 @@ deployed DB converge. The `auth_migrations` module doc in
 `auth/migrations.ts` carries the incident that set the rule;
 `db/schema_ready.ts` is the runtime net when discipline lapses.
 
-`fuz_cell` / `fuz_cell_history` / `fuz_facts` are still pre-stable, each a
+`fuz_cell` / `fuz_facts` are still pre-stable, each a
 single `full_*_schema` entry rewritten in place; consumers drop and
 re-bootstrap across a change.
 
@@ -205,8 +205,7 @@ live in two sibling tables — `cell_field` (named) and `cell_item` (ordered) �
 and resource-side ACL in `cell_grant`. Authorization is pure predicates
 (`can_view_cell` / `can_edit_cell` / `can_manage_cell`) with strict
 relation-read visibility filtering and `404`-masking. The RPC surface is 17
-generic verbs. The dormant `cell_history` table is reserved for a future
-snapshot lifecycle. See usage.md §"Cell data layer".
+generic verbs. See usage.md §"Cell data layer".
 
 **Facts** (`db/fact_*`, `server/*fact*`, namespace `fuz_facts`) — the
 immutable, content-addressed byte store. `fact` holds bytes embedded in

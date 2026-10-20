@@ -510,9 +510,10 @@ export const format_migration_tracker_diffs = (
  * re-bootstrapping). This catches what `assert_schema_snapshots_equal` is blind
  * to by design: the snapshot excludes the tracker, so a migration-name or
  * partitioning divergence that yields an identical *schema* (e.g. `cell_v0` vs
- * `full_cell_schema`, or `cell_history` bundled vs isolated) passes schema
- * parity but breaks the runner's positional name-prefix check at boot
- * (`name-divergence-at-N`). The error names the impls and lists every diff.
+ * `full_cell_schema`, or a table bundled into one namespace vs isolated in its
+ * own) passes schema parity but breaks the runner's positional name-prefix
+ * check at boot (`name-divergence-at-N`). The error names the impls and lists
+ * every diff.
  */
 export const assert_migration_trackers_equal = (
 	a: MigrationTracker,

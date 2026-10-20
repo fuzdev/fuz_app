@@ -76,7 +76,6 @@
 		"role",
 		"scope_id"
 	],
-	"cell_history": ["action_id", "cell_id", "created_at", "fact_hash", "id"],
 	"cell_item": ["child_id", "created_at", "parent_id", "position"],
 	"fact": ["bytes", "content_type", "created_at", "external_url", "hash", "size"],
 	"fact_ref": ["source_hash", "target_hash"],

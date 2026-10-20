@@ -50,7 +50,6 @@ export const column_projection_exempt_tables: Record<string, string> = {
 	schema_version: 'migration tracker — framework bookkeeping read by name/sequence only',
 	bootstrap_lock:
 		'single-row lock — read as the `bootstrapped` flag and flipped by conditional UPDATE',
-	cell_history: 'dormant — present but unwritten and unread until the snapshot lifecycle lands',
 	fact_ref: 'edge table — read as `target_hash` lists, never as rows',
 	memo: 'reserved for MemoStore — no reads yet'
 };

@@ -19,7 +19,7 @@
  * the visiones cutover break.
  *
  * Both backends migrate the same namespaces (auth + `fuz_cell` +
- * `fuz_cell_history` + `fuz_facts`), so there are no excluded tables. The
+ * `fuz_facts`), so there are no excluded tables. The
  * snapshot now captures `CREATE TYPE ... AS ENUM` types, so a `cell_visibility`
  * label-set / ordering drift is a gated fact here, not invisible.
  *

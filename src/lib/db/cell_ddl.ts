@@ -29,8 +29,7 @@
  *
  * **Single-migration shape**: `full_cell_schema` creates the canonical
  * cell + cell_grant + cell_field + cell_item layout in one shot from the
- * live exported constants. The dormant `cell_history` table lives in the
- * separate `fuz_cell_history` namespace (`cell_history_ddl.ts`).
+ * live exported constants.
  *
  * @module
  */

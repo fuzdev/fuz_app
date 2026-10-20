@@ -20,7 +20,7 @@ never lands. Every change ships as a new appended entry with idempotent DDL
 bootstrap and an old deployed DB converge. `auth/migrations.ts`'s module doc
 carries the incident that set the rule.
 
-**`fuz_cell` / `fuz_cell_history` / `fuz_facts` are pre-stable**: each is a
+**`fuz_cell` / `fuz_facts` are pre-stable**: each is a
 single `full_*_schema` entry, rewritten in place when its shape changes, and
 consumers drop and re-bootstrap across the change. When one of them takes on
 long-lived consumer data it joins the frozen set, and the cliff will be
