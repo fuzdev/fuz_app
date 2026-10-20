@@ -241,7 +241,7 @@ export const CellJson = z.strictObject({
 	}),
 	visibility: CellVisibility.meta({
 		description:
-			"Access-control tag. `'public'` admits everyone (including unauthenticated visitors); `'private'` (default) admits admin / owner / `cell_grant`-admitted callers. Top-level column, not inside `data`."
+			"Access-control tag. `'public'` admits everyone (including unauthenticated visitors); `'private'` (default) admits admin / owner / `cell_grant`-admitted callers. Past admin and owner, either admits only while `moderation` is `null` or `'approved'`. Top-level column, not inside `data`."
 	}),
 	refs: z.array(FactHashSchema).nullable(),
 	parent_id: Uuid.nullable().meta({

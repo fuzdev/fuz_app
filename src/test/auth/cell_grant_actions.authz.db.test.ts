@@ -20,7 +20,21 @@
 
 import { describe, test, assert } from 'vitest';
 
-import { cell_get_action_spec, ERROR_CELL_NOT_FOUND } from '#lib/auth/cell_action_specs.ts';
+import {
+	cell_create_action_spec,
+	cell_delete_action_spec,
+	cell_get_action_spec,
+	cell_update_action_spec,
+	ERROR_CELL_NOT_FOUND
+} from '#lib/auth/cell_action_specs.ts';
+import {
+	cell_field_set_action_spec,
+	type CellFieldName
+} from '#lib/auth/cell_field_action_specs.ts';
+import {
+	cell_item_insert_action_spec,
+	type CellItemPosition
+} from '#lib/auth/cell_item_action_specs.ts';
 import {
 	cell_grant_create_action_spec,
 	cell_grant_revoke_action_spec,
@@ -183,6 +197,122 @@ describe_db('cell_grant_actions authz', (get_db) => {
 			const after = await call(app, cell_get_action_spec, { id }, viewer.create_session_headers());
 			assert.ok(!after.ok);
 			assert.strictEqual(after.status, 404);
+		});
+
+		test('leaving a rejected cell is not still admitted by a remaining role grant', async () => {
+			const app = await create_cell_test_app(get_db);
+			const owner = await app.create_account({ username: 'sr_owner' });
+			const holder = await app.create_account({ username: 'sr_holder', roles: [ROLE_MEMBER] });
+			const { id } = await create_cell(app, {
+				kind: 'note',
+				data: {},
+				headers: owner.create_session_headers()
+			});
+			const v = await grant_actor(app, owner, id, 'viewer', holder.actor.id);
+			assert.ok(v.ok, JSON.stringify(v));
+			const r = await call(
+				app,
+				cell_grant_create_action_spec,
+				{ cell_id: id, level: 'viewer', principal: { kind: 'role', role: ROLE_MEMBER } },
+				owner.create_session_headers()
+			);
+			assert.ok(r.ok, JSON.stringify(r));
+			await get_db().query('UPDATE cell SET moderation = $2 WHERE id = $1', [id, 'rejected']);
+
+			const self_revoke = await call(
+				app,
+				cell_grant_revoke_action_spec,
+				{ grant_id: v.result.grant.id },
+				holder.create_session_headers()
+			);
+			assert.ok(self_revoke.ok, JSON.stringify(self_revoke));
+			assert.strictEqual(self_revoke.result.still_admitted, false);
+		});
+	});
+
+	describe('moderation gates the editor grant', () => {
+		test('an editor grant stops admitting writes once its cell is rejected', async () => {
+			const app = await create_cell_test_app(get_db);
+			const owner = await app.create_account({ username: 'mr_owner' });
+			const editor = await app.create_account({ username: 'mr_editor' });
+			const { id } = await create_cell(app, {
+				kind: 'note',
+				data: {},
+				visibility: 'public',
+				headers: owner.create_session_headers()
+			});
+			const other = await create_cell(app, {
+				kind: 'note',
+				data: {},
+				visibility: 'public',
+				headers: editor.create_session_headers()
+			});
+			const e = await grant_actor(app, owner, id, 'editor', editor.actor.id);
+			assert.ok(e.ok, JSON.stringify(e));
+			const h = editor.create_session_headers();
+			const control = await call(app, cell_update_action_spec, { cell_id: id }, h);
+			assert.ok(control.ok, JSON.stringify(control));
+			await get_db().query('UPDATE cell SET moderation = $2 WHERE id = $1', [id, 'rejected']);
+
+			const results = [
+				await call(app, cell_update_action_spec, { cell_id: id }, h),
+				await call(
+					app,
+					cell_field_set_action_spec,
+					{ source_id: id, name: 'link' as CellFieldName, target_id: other.id },
+					h
+				),
+				await call(
+					app,
+					cell_item_insert_action_spec,
+					{ parent_id: id, child_id: other.id, position: 'a0' as CellItemPosition },
+					h
+				),
+				await call(app, cell_delete_action_spec, { cell_id: id }, h)
+			];
+			for (const r of results) {
+				assert.ok(!r.ok, JSON.stringify(r));
+				assert.strictEqual(r.status, 404);
+				assert.strictEqual(error_reason(r), ERROR_CELL_NOT_FOUND);
+			}
+			const by_owner = await call(
+				app,
+				cell_update_action_spec,
+				{ cell_id: id },
+				owner.create_session_headers()
+			);
+			assert.ok(by_owner.ok, 'the owner keeps the owner arm');
+		});
+
+		test("a steward's pre-rejection editor grant: cell_get admits, can_edit is false", async () => {
+			const app = await create_cell_test_app(get_db);
+			const root_owner = await app.create_account({ username: 'ms_root_owner' });
+			const author = await app.create_account({ username: 'ms_author' });
+			const root = await create_cell(app, {
+				kind: 'forum',
+				data: {},
+				visibility: 'public',
+				headers: root_owner.create_session_headers()
+			});
+			const post = await call(
+				app,
+				cell_create_action_spec,
+				{ kind: 'post', data: {}, parent_id: root.id, visibility: 'public' },
+				author.create_session_headers()
+			);
+			assert.ok(post.ok, JSON.stringify(post));
+			const post_id = post.result.cell.id;
+			const e = await grant_actor(app, author, post_id, 'editor', root_owner.actor.id);
+			assert.ok(e.ok, JSON.stringify(e));
+			await get_db().query('UPDATE cell SET moderation = $2 WHERE id = $1', [post_id, 'rejected']);
+
+			const h = root_owner.create_session_headers();
+			const got = await call(app, cell_get_action_spec, { id: post_id }, h);
+			assert.ok(got.ok, JSON.stringify(got));
+			assert.strictEqual(got.result.can_edit, false);
+			const write = await call(app, cell_update_action_spec, { cell_id: post_id }, h);
+			assert.ok(!write.ok, JSON.stringify(write));
+			assert.strictEqual(write.status, 404);
 		});
 	});
 

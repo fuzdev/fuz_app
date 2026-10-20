@@ -284,7 +284,10 @@ proofs (a non-admin `space` root → 403 `cell_create_forbidden`; a contribution
 gated by the root's `data.policy[kind]`; `moderation` set per the verdict
 (`pending`+private vs `approved`); **404** on a hidden parent vs **403** on a
 visible one; and the `cell_moderate` transition — admin approves → public,
-the author self-approve → 403, a non-viewer → 404, reject → private; and
+the author self-approve → 403, a non-viewer → 404, reject → private; the
+moderation read gate — a pending or rejected post, flipped public or granted
+while approved, reaches only its author and admins on `cell_get`, `cell_list`,
+`cell_item_list`, and fact serving; and
 `cell_clone` running the authorizer for every cell it writes — a non-admin
 clone of a viewable `space` root → 403 `cell_create_forbidden`; and a
 contribution under a soft-deleted root → 404 `cell_not_found`, the

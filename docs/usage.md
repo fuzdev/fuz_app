@@ -1588,11 +1588,17 @@ role-shaped grants validate against the app's role vocabulary.
 Access control is pure predicates over `(auth, cell, grants)` — no DB I/O.
 Owner is the `cell.created_by` actor. Three tiers:
 
-- **`can_view_cell`** — admin, or `visibility === 'public'` (admits an
-  unauthenticated reader), or owner, or any `viewer`+ grant.
+- **`can_view_cell`** — admin, or owner, or `visibility === 'public'`
+  (admits an unauthenticated reader), or any `viewer`+ grant. The public and
+  grant arms also require the cell's `moderation` to admit an audience —
+  unmoderated or `approved` (an allowlist, `db/cell_moderation.ts`) — so a
+  pending or rejected contribution is readable by its author and admins alone,
+  whatever its visibility or grants. `cell_list` applies the same rule in SQL.
 - **`can_edit_cell`** — owner, admin, or an `editor` grant. A
   system-origin cell (`created_by === null`) is never editable by a
-  non-admin, even with an editor grant.
+  non-admin, even with an editor grant. The `editor` grant arm requires the
+  same moderation admission as `can_view_cell`, so a grant made while a
+  contribution was approved admits no write once it is rejected.
 - **`can_manage_cell`** — `admin || owner`, not delegable. Gates
   `visibility` writes, all grant management, and the per-cell audit
   timeline.

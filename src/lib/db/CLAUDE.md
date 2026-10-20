@@ -98,15 +98,20 @@ The wire schemas + RPC handlers + authz predicates for this layer live in
 - **`cell_queries.ts`** — `query_cell_create / get / get_by_path / update /
 delete / set_moderation`, `_list_by_kind / _list_by_creator`, the
   generic `query_cell_list` (filter + SQL-side visibility predicate mirroring
-  `can_view_cell`; the `kind` filter narrows by the `cell.kind` column, the
-  `ref` filter by `cell.refs`, plus `root_id` / `moderation` filters for the
-  per-root feed + mod queue), and
+  `can_view_cell`, moderation admission included; the `kind` filter narrows
+  by the `cell.kind` column, the `ref` filter by `cell.refs`, plus `root_id` /
+  `moderation` filters for the per-root feed + mod queue), and
   `query_cell_load_many` (bulk id load, no visibility filter — feeds the
   strict relation-read filter). `query_cell_set_moderation` is the dedicated
   `cell_moderate` write (`moderation` is absent from `CellUpdatePatch`, so an
   author can't self-approve via `cell_update`). `cell.refs` derived from
   `data` via `extract_refs` on create/update. `CellRow.grant_count` is a
   derived projection (correlated subquery on `idx_cell_grant_cell`).
+- **`cell_moderation.ts`** — the `cell.moderation` read rules in pure and
+  SQL form side by side (`cell_moderation_admits_audience` /
+  `_sql`: the allowlist unmoderated ‖ `'approved'`), composed by
+  `auth/cell_authorize.ts` and `query_cell_list` so the two can't drift; the
+  `CELL_MODERATION_*` literals. Twin of the Rust `fuz_cell::cell_moderation`.
 - **`cell_grant_queries.ts`** — resource-side ACL: `query_cell_grant_create`
   (UPSERT on the partial unique index, actor- vs role-shaped principal),
   `_get`, `_delete` (returns deleted row), `_list_for_cell`,

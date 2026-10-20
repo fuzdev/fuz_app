@@ -48,12 +48,19 @@ import '../assert_dev_env.ts';
  */
 
 import { describe, assert } from 'vitest';
+import { fractional_index_between } from '@fuzdev/fuz_util/fractional_index.ts';
 
 import {
 	CellCloneOutput,
 	CellCreateOutput,
-	CellModerateOutput
+	CellListOutput,
+	CellModerateOutput,
+	CellUpdateOutput
 } from '../../auth/cell_action_specs.ts';
+import { CellItemInsertOutput, CellItemListOutput } from '../../auth/cell_item_action_specs.ts';
+import { CellGrantCreateOutput } from '../../auth/cell_grant_action_specs.ts';
+import { z } from 'zod';
+import { FactHashSchema } from '../../primitive_schemas.ts';
 import { JSONRPC_ERROR_CODES } from '../../http/jsonrpc_errors.ts';
 import { test_if } from './capabilities.ts';
 import { cross_rpc_call, error_reason, expect_output } from './cell_cross_helpers.ts';
@@ -74,6 +81,9 @@ const SPACE_POLICY = {
 		comment: { min_role: PARTICIPATION_ROLE, moderation_required: false }
 	}
 };
+
+/** `_testing_put_fact`'s output envelope. */
+const TestingPutFactOutput = z.strictObject({ hash: FactHashSchema });
 
 export const describe_cell_gated_create_cross_tests = (
 	options: RpcPathCapabilityGatedCrossSuiteOptions
@@ -408,6 +418,24 @@ export const describe_cell_gated_create_cross_tests = (
  *   contribution gets `cell_not_found`, never learns it exists.
  * - **reject** → `moderation: 'rejected'`, visibility stays private.
  *
+ * And that moderation gates reads — a cell's effective audience is its
+ * visibility or grants **and** its moderation admission (unmoderated or
+ * `approved`), so a pending or rejected contribution reaches no one past its
+ * author and admins:
+ *
+ * - **an author's self-flip to public admits nobody** — a pending post its
+ *   author makes public stays 404 to anon and a fresh non-admin on `cell_get`,
+ *   and out of their `cell_list`; the author and admin still read it.
+ * - **rejection holds a public post back** — pending → rejected → public, and
+ *   approved → rejected (approval made it public, rejection leaves visibility
+ *   alone), both 404 past the author; a grant made while the post was approved
+ *   stops admitting once it is rejected, on `cell_get` and `shared_with: 'me'`.
+ * - **an approved post is live** — the control.
+ * - **relation reads follow** — a pending post in a public collection is
+ *   omitted from anon `cell_item_list`, beside a live sibling that isn't.
+ * - **fact serving follows** — a pending post's fact is 404 to anon, even
+ *   with the post flipped public (also gated on `capabilities.fact_serving`).
+ *
  * Gated on `capabilities.cell_gated_create` — a `pending` contribution only
  * exists when the directory authorizer is mounted (reference spine binaries).
  */
@@ -417,10 +445,14 @@ export const describe_cell_moderate_cross_tests = (
 	const { setup_test, capabilities } = options;
 	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
 
+	type Fixture = Awaited<ReturnType<typeof setup_test>>;
+
 	// Build an admin-owned public space (moderated `post` policy) + a
 	// participant's pending post under it.
-	const setup_pending_post = async () => {
-		const fixture = await setup_test();
+	const setup_pending_post_on = async (
+		fixture: Fixture,
+		post_data: Record<string, unknown> = {}
+	) => {
 		const space = expect_output(
 			await cross_rpc_call(
 				fixture.transport,
@@ -440,13 +472,114 @@ export const describe_cell_moderate_cross_tests = (
 				fixture.transport,
 				rpc_path,
 				'cell_create',
-				{ kind: 'post', data: {}, parent_id: space.cell.id },
+				{ kind: 'post', data: post_data, parent_id: space.cell.id },
 				author.create_session_headers()
 			),
 			CellCreateOutput
 		);
-		return { fixture, author, post };
+		return { fixture, space, author, post };
 	};
+	const setup_pending_post = async () => setup_pending_post_on(await setup_test());
+
+	/** Seed an embedded fact over the daemon channel; returns its `blake3:` hash. */
+	const put_fact = async (fixture: Fixture, content: string): Promise<string> =>
+		expect_output(
+			await cross_rpc_call(
+				// origin-free — the daemon-token middleware discards the credential beside an `Origin`
+				fixture.fresh_transport({ origin: null }),
+				rpc_path,
+				'_testing_put_fact',
+				{ content },
+				fixture.create_daemon_token_headers()
+			),
+			TestingPutFactOutput
+		).hash;
+
+	/** The status of a fact GET — `null` headers = anon. */
+	const fact_status = async (
+		fixture: Fixture,
+		path: string,
+		headers: Record<string, string> | null
+	): Promise<number> => {
+		const transport =
+			headers === null ? fixture.fresh_transport({ origin: null }) : fixture.transport;
+		const res = await transport(path, { method: 'GET', headers: headers ?? {} });
+		await res.text();
+		return res.status;
+	};
+
+	/** `'ok'`, or the refusal reason, for one caller's RPC — `null` headers = anon. */
+	const outcome = async (
+		fixture: Fixture,
+		method: string,
+		params: Record<string, unknown>,
+		headers: Record<string, string> | null
+	): Promise<unknown> => {
+		const r =
+			headers === null
+				? await cross_rpc_call(
+						fixture.fresh_transport({ origin: null }),
+						rpc_path,
+						method,
+						params,
+						{}
+					)
+				: await cross_rpc_call(fixture.transport, rpc_path, method, params, headers);
+		return r.ok ? 'ok' : error_reason(r);
+	};
+
+	/** The ids a caller's `cell_list` returns — `null` headers = anon. */
+	const listed_ids = async (
+		fixture: Fixture,
+		params: Record<string, unknown>,
+		headers: Record<string, string> | null
+	): Promise<Array<string>> => {
+		const r =
+			headers === null
+				? await cross_rpc_call(
+						fixture.fresh_transport({ origin: null }),
+						rpc_path,
+						'cell_list',
+						params,
+						{}
+					)
+				: await cross_rpc_call(fixture.transport, rpc_path, 'cell_list', params, headers);
+		return expect_output(r, CellListOutput).cells.map((c) => c.id);
+	};
+
+	const moderate = async (
+		fixture: Fixture,
+		cell_id: string,
+		moderation: 'approved' | 'rejected',
+		headers: Record<string, string> = fixture.create_session_headers()
+	) =>
+		expect_output(
+			await cross_rpc_call(
+				fixture.transport,
+				rpc_path,
+				'cell_moderate',
+				{ cell_id, moderation },
+				headers
+			),
+			CellModerateOutput
+		).cell;
+
+	const set_visibility = async (
+		fixture: Fixture,
+		headers: Record<string, string>,
+		cell_id: string,
+		visibility: 'public' | 'private'
+	) =>
+		expect_output(
+			await cross_rpc_call(
+				fixture.transport,
+				rpc_path,
+				'cell_update',
+				{ cell_id, visibility },
+				headers
+			),
+			CellUpdateOutput
+		).cell;
 
 	describe('cell_moderate verb parity (root-authority-gated)', () => {
 		test_if(
@@ -530,6 +663,296 @@ export const describe_cell_moderate_cross_tests = (
 					'private',
 					'rejection leaves the post private'
 				);
+			}
+		);
+	});
+
+	describe('moderation gates reads (parity)', () => {
+		test_if(
+			capabilities.cell_gated_create,
+			'a pending post its author flips public stays hidden past the author and admins',
+			async () => {
+				const { fixture, space, author, post } = await setup_pending_post();
+				const author_h = author.create_session_headers();
+				const flipped = await set_visibility(fixture, author_h, post.cell.id, 'public');
+				assert.strictEqual(flipped.visibility, 'public', 'the author manages their own post');
+				assert.strictEqual(flipped.moderation, 'pending', 'a visibility write leaves moderation');
+
+				const stranger = await fixture.create_account({ username: 'flip_stranger' });
+				const stranger_h = stranger.create_session_headers();
+				const get = { id: post.cell.id };
+				assert.strictEqual(await outcome(fixture, 'cell_get', get, null), 'cell_not_found');
+				assert.strictEqual(await outcome(fixture, 'cell_get', get, stranger_h), 'cell_not_found');
+				assert.strictEqual(await outcome(fixture, 'cell_get', get, author_h), 'ok');
+				assert.strictEqual(
+					await outcome(fixture, 'cell_get', get, fixture.create_session_headers()),
+					'ok'
+				);
+
+				const feed = { root_id: space.cell.id };
+				assert.notInclude(await listed_ids(fixture, feed, null), post.cell.id, 'anon list');
+				assert.notInclude(await listed_ids(fixture, feed, stranger_h), post.cell.id, 'stranger');
+				assert.include(await listed_ids(fixture, feed, author_h), post.cell.id, 'author list');
+				assert.include(
+					await listed_ids(fixture, feed, fixture.create_session_headers()),
+					post.cell.id,
+					'admin list'
+				);
+			}
+		);
+
+		test_if(
+			capabilities.cell_gated_create,
+			'pending → rejected → public stays hidden past the author',
+			async () => {
+				const { fixture, author, post } = await setup_pending_post();
+				const author_h = author.create_session_headers();
+				assert.strictEqual(
+					(await moderate(fixture, post.cell.id, 'rejected')).moderation,
+					'rejected'
+				);
+				await set_visibility(fixture, author_h, post.cell.id, 'public');
+				const stranger = await fixture.create_account({ username: 'rejected_stranger' });
+				const get = { id: post.cell.id };
+				assert.strictEqual(await outcome(fixture, 'cell_get', get, null), 'cell_not_found');
+				assert.strictEqual(
+					await outcome(fixture, 'cell_get', get, stranger.create_session_headers()),
+					'cell_not_found'
+				);
+				assert.strictEqual(await outcome(fixture, 'cell_get', get, author_h), 'ok');
+			}
+		);
+
+		test_if(
+			capabilities.cell_gated_create,
+			'approved → rejected stays hidden, and a grant made while approved stops admitting',
+			async () => {
+				const { fixture, author, post } = await setup_pending_post();
+				const author_h = author.create_session_headers();
+				const friend = await fixture.create_account({ username: 'approved_friend' });
+				const friend_h = friend.create_session_headers();
+				const stranger = await fixture.create_account({ username: 'approved_stranger' });
+				const get = { id: post.cell.id };
+				const shared = { shared_with: 'me' };
+
+				// The control: approval publishes the post to everyone.
+				assert.strictEqual(
+					(await moderate(fixture, post.cell.id, 'approved')).visibility,
+					'public'
+				);
+				assert.strictEqual(await outcome(fixture, 'cell_get', get, null), 'ok', 'approved is live');
+				assert.strictEqual(
+					await outcome(fixture, 'cell_get', get, stranger.create_session_headers()),
+					'ok'
+				);
+
+				// A grant made while approved admits on its own once the post is private.
+				expect_output(
+					await cross_rpc_call(
+						fixture.transport,
+						rpc_path,
+						'cell_grant_create',
+						{
+							cell_id: post.cell.id,
+							level: 'viewer',
+							principal: { kind: 'actor', actor_id: friend.actor.id }
+						},
+						author_h
+					),
+					CellGrantCreateOutput
+				);
+				await set_visibility(fixture, author_h, post.cell.id, 'private');
+				assert.strictEqual(await outcome(fixture, 'cell_get', get, friend_h), 'ok', 'grant admits');
+				assert.include(await listed_ids(fixture, shared, friend_h), post.cell.id);
+
+				// Rejection holds it back from the grant holder ...
+				assert.strictEqual(
+					(await moderate(fixture, post.cell.id, 'rejected')).moderation,
+					'rejected'
+				);
+				assert.strictEqual(await outcome(fixture, 'cell_get', get, friend_h), 'cell_not_found');
+				assert.notInclude(await listed_ids(fixture, shared, friend_h), post.cell.id);
+
+				// ... and from everyone once public again; the author still reads it.
+				await set_visibility(fixture, author_h, post.cell.id, 'public');
+				assert.strictEqual(await outcome(fixture, 'cell_get', get, null), 'cell_not_found');
+				assert.strictEqual(
+					await outcome(fixture, 'cell_get', get, stranger.create_session_headers()),
+					'cell_not_found'
+				);
+				assert.strictEqual(await outcome(fixture, 'cell_get', get, friend_h), 'cell_not_found');
+				assert.strictEqual(await outcome(fixture, 'cell_get', get, author_h), 'ok');
+			}
+		);
+
+		test_if(
+			capabilities.cell_gated_create,
+			'approval leaves visibility to rejection: an approved-then-rejected post is still public, and hidden',
+			async () => {
+				const { fixture, post } = await setup_pending_post();
+				await moderate(fixture, post.cell.id, 'approved');
+				const rejected = await moderate(fixture, post.cell.id, 'rejected');
+				assert.strictEqual(rejected.visibility, 'public', 'rejection does not reset visibility');
+				assert.strictEqual(
+					await outcome(fixture, 'cell_get', { id: post.cell.id }, null),
+					'cell_not_found'
+				);
+			}
+		);
+
+		test_if(
+			capabilities.cell_gated_create,
+			'an editor grant made while approved admits no write once rejected; the author keeps the owner arm',
+			async () => {
+				const { fixture, author, post } = await setup_pending_post();
+				const author_h = author.create_session_headers();
+				const editor = await fixture.create_account({ username: 'rejected_editor' });
+				const editor_h = editor.create_session_headers();
+				const other = expect_output(
+					await cross_rpc_call(
+						fixture.transport,
+						rpc_path,
+						'cell_create',
+						{ kind: 'note', data: {}, visibility: 'public' },
+						editor_h
+					),
+					CellCreateOutput
+				);
+				await moderate(fixture, post.cell.id, 'approved');
+				expect_output(
+					await cross_rpc_call(
+						fixture.transport,
+						rpc_path,
+						'cell_grant_create',
+						{
+							cell_id: post.cell.id,
+							level: 'editor',
+							principal: { kind: 'actor', actor_id: editor.actor.id }
+						},
+						author_h
+					),
+					CellGrantCreateOutput
+				);
+				const update = { cell_id: post.cell.id };
+				assert.strictEqual(
+					await outcome(fixture, 'cell_update', update, editor_h),
+					'ok',
+					'the grant admits a write while approved'
+				);
+
+				await moderate(fixture, post.cell.id, 'rejected');
+				const writes: Array<[string, Record<string, unknown>]> = [
+					['cell_get', { id: post.cell.id }],
+					['cell_update', update],
+					['cell_field_set', { source_id: post.cell.id, name: 'link', target_id: other.cell.id }],
+					[
+						'cell_item_insert',
+						{ parent_id: post.cell.id, child_id: other.cell.id, position: 'a0' }
+					],
+					['cell_delete', { cell_id: post.cell.id }]
+				];
+				for (const [method, params] of writes) {
+					assert.strictEqual(
+						await outcome(fixture, method, params, editor_h),
+						'cell_not_found',
+						method
+					);
+				}
+				assert.strictEqual(await outcome(fixture, 'cell_update', update, author_h), 'ok', 'author');
+			}
+		);
+
+		test_if(
+			capabilities.cell_gated_create,
+			'a pending post in a public collection is omitted from anon cell_item_list',
+			async () => {
+				const { fixture, space, author, post } = await setup_pending_post();
+				const author_h = author.create_session_headers();
+				// A live sibling under the same space: a `react` is born approved + public.
+				const react = expect_output(
+					await cross_rpc_call(
+						fixture.transport,
+						rpc_path,
+						'cell_create',
+						{ kind: 'react', data: {}, parent_id: space.cell.id, visibility: 'public' },
+						author_h
+					),
+					CellCreateOutput
+				);
+				await set_visibility(fixture, author_h, post.cell.id, 'public');
+				const collection = expect_output(
+					await cross_rpc_call(
+						fixture.transport,
+						rpc_path,
+						'cell_create',
+						{ kind: 'collection', data: {}, visibility: 'public' },
+						author_h
+					),
+					CellCreateOutput
+				);
+				const pos_a = fractional_index_between(null, null);
+				const pos_b = fractional_index_between(pos_a, null);
+				for (const [child_id, position] of [
+					[post.cell.id, pos_a],
+					[react.cell.id, pos_b]
+				] as const) {
+					expect_output(
+						await cross_rpc_call(
+							fixture.transport,
+							rpc_path,
+							'cell_item_insert',
+							{ parent_id: collection.cell.id, child_id, position },
+							author_h
+						),
+						CellItemInsertOutput
+					);
+				}
+				const items = async (headers: Record<string, string> | null) => {
+					const params = { parent_id: collection.cell.id };
+					const r =
+						headers === null
+							? await cross_rpc_call(
+									fixture.fresh_transport({ origin: null }),
+									rpc_path,
+									'cell_item_list',
+									params,
+									{}
+								)
+							: await cross_rpc_call(
+									fixture.transport,
+									rpc_path,
+									'cell_item_list',
+									params,
+									headers
+								);
+					return expect_output(r, CellItemListOutput).items.map((i) => i.child_id);
+				};
+				assert.deepStrictEqual(
+					await items(null),
+					[react.cell.id],
+					'anon sees the live sibling only'
+				);
+				assert.deepStrictEqual(await items(author_h), [post.cell.id, react.cell.id]);
+			}
+		);
+
+		test_if(
+			capabilities.cell_gated_create && capabilities.fact_serving,
+			"a pending post's fact is 404 to anon, even flipped public; live once approved",
+			async () => {
+				const fixture = await setup_test();
+				const hash = await put_fact(fixture, 'pending-post-fact');
+				const { author, post } = await setup_pending_post_on(fixture, { cover: hash });
+				await set_visibility(fixture, author.create_session_headers(), post.cell.id, 'public');
+				const path = `/api/cells/${post.cell.id}/facts/${hash}`;
+				assert.strictEqual(await fact_status(fixture, path, null), 404, 'anon');
+				assert.strictEqual(
+					await fact_status(fixture, path, author.create_session_headers()),
+					200,
+					'author'
+				);
+				await moderate(fixture, post.cell.id, 'approved');
+				assert.strictEqual(await fact_status(fixture, path, null), 200, 'approved is live');
 			}
 		);
 	});

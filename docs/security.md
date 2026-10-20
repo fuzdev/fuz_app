@@ -1441,7 +1441,10 @@ role_grants/offers above, the cell surface applies it uniformly:
 (`ERROR_CELL_NOT_FOUND`) when the caller fails the verb's own authorization
 predicate — `can_view_cell` for the reads (`cell_get` / `cell_clone`),
 `can_edit_cell` for the writes (`cell_update` / `cell_delete`) — identical
-to a genuine miss (`auth/cell_actions.ts`). The uniform property is the
+to a genuine miss (`auth/cell_actions.ts`). `can_edit_cell`'s `editor` grant
+arm requires the cell's moderation admission, as the read does, so a grant
+made while a contribution was approved admits no write once it is rejected —
+the write answers the same 404. The uniform property is the
 **wire shape**, not a single shared predicate. A caller therefore cannot
 enumerate private cells (or offers, or another actor's grants) by id —
 found-and-unauthorized and not-found are wire-indistinguishable.

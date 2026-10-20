@@ -28,6 +28,7 @@ import { fact_hash_extract_refs } from '@fuzdev/fuz_util/fact_hash.ts';
 import type { FactHash } from '@fuzdev/fuz_util/hash_schemas.ts';
 import { assert_row } from './assert_row.ts';
 import { iso8601_timestamp_expr, qualify_columns } from './sql_columns.ts';
+import { cell_moderation_admits_audience_sql } from './cell_moderation.ts';
 
 import type { CellData } from '../auth/cell_data_schema.ts';
 import type { CellVisibility } from '../auth/cell_action_specs.ts';
@@ -432,10 +433,14 @@ export const query_cell_list_by_creator = async (
  *
  * ```
  * (viewer_is_admin
- *  OR cell.visibility = 'public'
  *  OR (viewer_actor_id IS NOT NULL AND created_by = viewer_actor_id)
- *  OR (viewer_actor_id IS NOT NULL AND <grant admits caller>))
+ *  OR (<moderation admits an audience> AND (
+ *       cell.visibility = 'public'
+ *       OR (viewer_actor_id IS NOT NULL AND <grant admits caller>))))
  * ```
+ *
+ * The moderation admission is `cell_moderation_admits_audience_sql`
+ * (`db/cell_moderation.ts`): unmoderated or `'approved'`.
  *
  * The grants branch closes parity with `can_view_cell`: a SQL `EXISTS`
  * over `cell_grant`, parameterized by the caller's `actor_id` and the
@@ -458,7 +463,8 @@ export const query_cell_list_by_creator = async (
  * owner-excluding, but the explicit `created_by IS DISTINCT FROM caller`
  * guards against any future deviation. The shared_with branch does NOT
  * bypass for admin: an admin asking "what's shared with me" wants their
- * own grant footprint, not every cell.
+ * own grant footprint, not every cell. A grant admits there only while the
+ * cell's moderation admits an audience, as in `can_view_cell`.
  *
  * Soft-deleted rows are excluded by default; opt-in via `include_deleted`.
  *
@@ -578,11 +584,13 @@ const build_general_sql = (order_column: string, order_direction: string): strin
 	   AND ($16::text IS NULL OR c.moderation = $16::text)
 	   AND (
 	     $6::bool
-	     OR c.visibility = 'public'
 	     OR ($7::uuid IS NOT NULL AND c.created_by = $7)
-	     OR ($7::uuid IS NOT NULL AND EXISTS (
-	       SELECT 1 FROM cell_grant g
-	       WHERE g.cell_id = c.id AND ${grant_admits_caller_predicate('g')}
+	     OR (${cell_moderation_admits_audience_sql('c')} AND (
+	       c.visibility = 'public'
+	       OR ($7::uuid IS NOT NULL AND EXISTS (
+	         SELECT 1 FROM cell_grant g
+	         WHERE g.cell_id = c.id AND ${grant_admits_caller_predicate('g')}
+	       ))
 	     ))
 	   )
 	 ORDER BY c.${order_column} ${order_direction} NULLS LAST
@@ -618,6 +626,7 @@ const build_shared_with_sql = (order_column: string, order_direction: string): s
 	   AND ($16::text IS NULL OR c.moderation = $16::text)
 	   AND $7::uuid IS NOT NULL
 	   AND c.created_by IS DISTINCT FROM $7
+	   AND ${cell_moderation_admits_audience_sql('c')}
 	   AND c.id IN (
 	     SELECT g.cell_id FROM cell_grant g
 	     WHERE ${grant_admits_caller_predicate('g')}

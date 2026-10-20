@@ -13,8 +13,11 @@
  *
  * Three tiers:
  *
- * - `can_view_cell` — admin / public / owner / any `viewer`+ grant.
- * - `can_edit_cell` — admin / owner / `editor` grant. NULL `created_by`
+ * - `can_view_cell` — admin / owner / public / any `viewer`+ grant, the
+ *   public and grant arms only while the cell's `moderation` admits an
+ *   audience (`db/cell_moderation.ts`: unmoderated or `'approved'`).
+ * - `can_edit_cell` — admin / owner / `editor` grant, the grant arm only
+ *   while the cell's `moderation` admits an audience. NULL `created_by`
  *   is admin-only (system-origin defense-in-depth).
  * - `can_manage_cell` — admin / owner only. Not delegable, not a grant
  *   level. Gates the manage tier: `visibility` writes and all grant
@@ -29,6 +32,13 @@
  * The admin bypass on every tier is the **global** `admin` grant
  * (`has_scoped_role(auth, ROLE_ADMIN, null)`), never a scoped one.
  *
+ * Moderation gates the audience: a cell's effective audience is its
+ * visibility or grants **and** its admission, so a pending, rejected, or
+ * unknown-marker contribution is readable through `can_view_cell` by its owner
+ * and a global admin alone, whatever its `visibility` or grants say. The
+ * `editor` grant arm of `can_edit_cell` follows the same admission; the owner,
+ * admin, and manage arms don't consult it.
+ *
  * @module
  */
 
@@ -38,8 +48,7 @@ import { ROLE_ADMIN } from './role_schema.ts';
 
 import type { CellRow } from '../db/cell_queries.ts';
 import type { CellGrantRow } from '../db/cell_grant_queries.ts';
-
-const cell_is_public = (cell: CellRow): boolean => cell.visibility === 'public';
+import { cell_moderation_admits_audience } from '../db/cell_moderation.ts';
 
 /**
  * Whether any grant admits `auth` at the given level.
@@ -104,13 +113,17 @@ const is_owner = (auth: RequestContext, cell: CellRow): boolean =>
  * View authorization for a cell.
  *
  * - Admin: always allowed.
- * - `cell.visibility === 'public'`: allowed for everyone, including
- *   unauthenticated callers (e.g. a public landing cell).
  * - Owner (`cell.created_by === auth.actor.id`): allowed.
+ * - `cell.visibility === 'public'`: allowed for everyone, including
+ *   unauthenticated callers (e.g. a public landing cell) — while the cell's
+ *   `moderation` admits an audience (`cell_moderation_admits_audience`).
  * - Any active grant on the cell admits the caller (actor-shaped:
  *   match on actor_id; role-shaped: match on `(role, scope_id?)`
- *   against an active role_grant).
+ *   against an active role_grant) — under the same moderation admission.
  * - Otherwise: false.
+ *
+ * A pending or rejected contribution stays with its owner and admins even
+ * when public or granted.
  *
  * @param auth - request context, or `null` for unauthenticated callers
  * @param cell - the cell row
@@ -123,8 +136,9 @@ export const can_view_cell = (
 	grants: ReadonlyArray<CellGrantRow> | null
 ): boolean => {
 	if (auth && has_scoped_role(auth, ROLE_ADMIN, null)) return true;
-	if (cell_is_public(cell)) return true;
 	if (auth && is_owner(auth, cell)) return true;
+	if (!cell_moderation_admits_audience(cell.moderation)) return false;
+	if (cell.visibility === 'public') return true;
 	if (auth && grant_admits(auth, grants, 'viewer')) return true;
 	return false;
 };
@@ -143,6 +157,12 @@ export const can_view_cell = (
  * `false` for NULL via JS equality semantics — the explicit branch
  * survives refactors and reads as a load-bearing security property.
  *
+ * The `editor` grant arm requires the cell's `moderation` to admit an
+ * audience (`cell_moderation_admits_audience`), as in `can_view_cell`: a
+ * grant made while a contribution was approved stops admitting once it is
+ * rejected, for writes as for reads (every write verb echoes or reveals the
+ * row it touched).
+ *
  * @param auth - request context, or `null` for unauthenticated callers
  * @param cell - the cell row
  * @param grants - the cell's grant list, or `null` to skip the grant branch
@@ -160,6 +180,8 @@ export const can_edit_cell = (
 	// (`actor: null`) cannot match an actor-id `created_by`. Grant-admit
 	// fallback below handles the actor-grain editor-grant path.
 	if (is_owner(auth, cell)) return true;
+	// the grant arm follows moderation admission, as in `can_view_cell`
+	if (!cell_moderation_admits_audience(cell.moderation)) return false;
 	if (grant_admits(auth, grants, 'editor')) return true;
 	return false;
 };

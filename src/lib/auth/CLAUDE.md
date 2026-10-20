@@ -269,7 +269,11 @@ delete / list / clone / moderate`), error reasons, and `all_cell_action_specs`
   manage grants or read the audit timeline. NULL
   `created_by` (system origin) is admin-only for edit/manage (explicit
   defense-in-depth). "Admin" on every tier is the **global** grant — a
-  scoped `admin` row bypasses nothing.
+  scoped `admin` row bypasses nothing. `can_view_cell`'s public and grant
+  arms also require the cell's `moderation` to admit an audience
+  (`db/cell_moderation.ts`: unmoderated or `approved`), so a pending or
+  rejected contribution is its author's and admins' alone; `can_edit_cell`'s
+  editor-grant arm requires the same admission.
 - `auth/cell_relation_visibility.ts` — `filter_visible_target_ids(deps,
 auth, ids)`: batched strict relation-read filter. Every relation read —
   the `cell_get` bundle, **forward and reverse** `cell_field_list` /

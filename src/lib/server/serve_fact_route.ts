@@ -52,7 +52,8 @@
  * (populated by the `/api/*` session middleware) by resolving the caller's
  * single actor and loading their role_grants. Unauthed callers pass through
  * with `req_ctx: null` and are admitted only by a `cell.visibility ===
- * 'public'` cell. Multi-actor accounts fall through with `req_ctx: null`
+ * 'public'` cell whose `moderation` admits an audience (unmoderated or
+ * `'approved'`). Multi-actor accounts fall through with `req_ctx: null`
  * — there's no `acting?` slot on a pure-public route, so multi-actor
  * callers are treated as anonymous.
  *
