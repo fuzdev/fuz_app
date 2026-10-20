@@ -901,7 +901,11 @@ expiry, a raw row delete — is under
 - **The handler.** Every handler that ends a credential queues a close on the
   request's post-commit queue: `queue_connection_close(ctx,
   deps.connection_closer, target)`. The queue runs once the handler's
-  transaction has committed and is discarded when the handler throws. The
+  transaction has committed and is discarded when the handler throws.
+  `/login` and `/password`, which run their writes in a transaction of their
+  own (`transaction: false` routes), close straight after that commit with
+  `close_connections_after_commit`, which logs a failing close rather than
+  failing the committed request. The
   close does not depend on the audit write, which is pool-routed and
   fail-open: a failed audit INSERT leaves the revocation in place and the
   connections closed. Nor does it wait for that write — the queue runs before

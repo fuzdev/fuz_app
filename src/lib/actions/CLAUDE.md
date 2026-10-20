@@ -641,16 +641,21 @@ closed) — so a closed transport or registry hosts nothing more. Its Rust
 counterpart is `ShutdownCloser::close_all_sockets`, a supertrait of
 `SocketRevoker`.
 
-**Every revocation closes after its commit.** A handler never calls a closer
-inline: it calls `queue_connection_close(ctx, deps.connection_closer, target)`,
+**Every revocation closes after its commit.** A handler inside a route or
+action transaction never calls a closer inline: it calls
+`queue_connection_close(ctx, deps.connection_closer, target)`,
 which puts the close on the request's post-commit queue (`emit_after_commit`).
 The close runs once the handler's transaction has committed and is discarded
 when the handler throws — a rolled-back revocation closes nothing. `target` is
 a `ConnectionCloseTarget` (`{kind: 'session', session_token_hash}` /
 `{kind: 'token', api_token_id}` / `{kind: 'account', account_id}` /
 `{kind: 'role', account_id, role}`);
-`close_connections(closer, target)` is the immediate form the queue runs. Twin
-of `queue_socket_close` / `SocketCloseTarget`.
+`close_connections(closer, target)` is the immediate form the queue runs. A
+handler with no wrapping transaction (`/login`, `/password`) opens its own
+around its writes and closes straight after that commit with
+`close_connections_after_commit(closer, target, log)`, which logs a failing
+close as the post-commit flush does. Twin of `queue_socket_close` /
+`SocketCloseTarget`.
 
 The order is load-bearing for admission: a connection registers, then re-reads
 its credential, so a close that missed the registration must belong to a
