@@ -14,6 +14,12 @@
  * global-admin arms don't: an author keeps reading and editing their own
  * pending or rejected contribution, and an admin reads everything.
  *
+ * **Stewardship** — `cell_moderation_is_stewardable` and
+ * `cell_moderation_is_stewardable_sql`: exactly `'pending'` or `'rejected'`, the
+ * states in which the governing root's manager reads a contribution its
+ * audience can't (`can_steward_cell`). An unknown marker is neither admitted
+ * nor stewardable, so only its owner and admins read it.
+ *
  * The pure and SQL forms are written once each here, next to each other, over
  * the same literal constants; every predicate and query composes them rather
  * than restating the rule. Twin of the Rust `fuz_cell::cell_moderation`.
@@ -50,3 +56,22 @@ export const cell_moderation_admits_audience = (moderation: string | null): bool
  */
 export const cell_moderation_admits_audience_sql = (alias: string): string =>
 	`(${alias}.moderation IS NULL OR ${alias}.moderation = '${CELL_MODERATION_APPROVED}')`;
+
+/**
+ * Whether a cell's `moderation` marker is one its governing root's manager
+ * stewards — exactly `'pending'` or `'rejected'`.
+ *
+ * @param moderation - the cell's `moderation` column
+ * @returns whether the steward read arm may admit the cell
+ */
+export const cell_moderation_is_stewardable = (moderation: string | null): boolean =>
+	moderation === CELL_MODERATION_PENDING || moderation === CELL_MODERATION_REJECTED;
+
+/**
+ * SQL form of `cell_moderation_is_stewardable` over the cell alias `alias`.
+ *
+ * @param alias - the `cell` table alias in the enclosing query
+ * @returns the SQL predicate
+ */
+export const cell_moderation_is_stewardable_sql = (alias: string): string =>
+	`${alias}.moderation IN ('${CELL_MODERATION_PENDING}', '${CELL_MODERATION_REJECTED}')`;

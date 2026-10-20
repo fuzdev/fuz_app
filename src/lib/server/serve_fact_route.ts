@@ -5,8 +5,10 @@
  *
  * - `GET /api/cells/:cell_id/facts/:hash` — the **per-reference read**.
  *   The request names the referencing cell. Authz is scoped to that one
- *   reference: `can_view_cell(caller, cell) AND cell.refs includes hash`.
- *   This is the path non-admin callers use, and the only path for
+ *   reference: `(can_view_cell(caller, cell) OR the steward arm) AND
+ *   cell.refs includes hash`, the steward arm being the governing root's
+ *   manager reading a pending or rejected contribution
+ *   (`auth/cell_steward.ts`). This is the path non-admin callers use, and the only path for
  *   confidential content.
  * - `GET /api/facts/:hash` — the **bare-hash read**, restricted to admins.
  *
@@ -118,6 +120,7 @@ import { query_get_fact, query_get_fact_meta } from '../db/fact_queries.ts';
 import { query_cell_get } from '../db/cell_queries.ts';
 import { query_cell_grant_list_for_cell } from '../db/cell_grant_queries.ts';
 import { can_view_cell } from '../auth/cell_authorize.ts';
+import { cell_steward_admits } from '../auth/cell_steward.ts';
 import { parse_file_fact_url } from '../db/file_fact_url.ts';
 import type { XAccelConfig } from './x_accel.ts';
 
@@ -325,7 +328,8 @@ const build_public_request_context = async (
  * — the per-reference read.
  *
  * Resolves the named cell (404 if missing / soft-deleted), requires
- * `can_view_cell(caller, cell)` AND `cell.refs` to include the hash
+ * `can_view_cell(caller, cell)` — or the steward arm,
+ * `cell_steward_admits` — AND `cell.refs` to include the hash
  * (else 404, masked), then serves the bytes. Authz is scoped to this one
  * `(cell, hash)` edge — never unioned across the fact's other referrers.
  *
@@ -343,7 +347,7 @@ export const create_serve_cell_fact_route_spec = (
 		auth: { account: 'none', actor: 'none' },
 		reads_credential: true,
 		description:
-			'Serve content-addressed fact bytes through a named referencing cell. 404 unless the cell admits the caller via can_view_cell AND references the hash (per-reference, never union-of-referrers).',
+			"Serve content-addressed fact bytes through a named referencing cell. 404 unless the cell admits the caller via can_view_cell (or the steward arm: the governing root's manager reading a pending or rejected contribution) AND references the hash (per-reference, never union-of-referrers).",
 		params: cell_fact_params_schema,
 		input: z.null(),
 		// The body is a binary stream; no JSON output schema applies.
@@ -375,7 +379,13 @@ export const create_serve_cell_fact_route_spec = (
 			const grants = req_ctx
 				? await query_cell_grant_list_for_cell({ db: route.db }, cell.id)
 				: null;
-			if (!can_view_cell(req_ctx, cell, grants)) {
+			// The governing root's manager also reads a pending or rejected
+			// contribution's facts (the steward arm, `auth/cell_steward.ts`),
+			// checked only once the view check denies.
+			if (
+				!can_view_cell(req_ctx, cell, grants) &&
+				!(await cell_steward_admits({ db: route.db }, req_ctx, cell))
+			) {
 				// 404 (not 403) so an unviewable cell→fact edge doesn't leak.
 				return c.body(null, 404);
 			}

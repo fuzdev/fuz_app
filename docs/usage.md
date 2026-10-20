@@ -1578,7 +1578,9 @@ CellCreateVerdict | Promise<CellCreateVerdict>`, where a verdict is
   scoped enforcement; `null` in v1.) The companion `cell_moderate` verb
   transitions a `pending` contribution (`approved | rejected`), gated on
   `can_manage` of the governing root — not the contribution, so the author can't
-  self-approve.
+  self-approve. The root's manager reads what they moderate through the
+  steward arm (below), so a non-admin root owner reaches the queue and the
+  verb.
 
 `create_cell_grant_actions` takes `roles` (a `create_role_schema()` result) so
 role-shaped grants validate against the app's role vocabulary.
@@ -1594,6 +1596,13 @@ Owner is the `cell.created_by` actor. Three tiers:
   unmoderated or `approved` (an allowlist, `db/cell_moderation.ts`) — so a
   pending or rejected contribution is readable by its author and admins alone,
   whatever its visibility or grants. `cell_list` applies the same rule in SQL.
+- **`can_steward_cell`** — the governing root's manager (global admin or root
+  owner) reading a `pending` or `rejected` contribution under a live root.
+  A separate arm, composed only where a moderator works: `cell_get`,
+  `cell_moderate`, the cell-scoped fact route, and `cell_list` (so
+  `cell_list({root_id, moderation: 'pending'})` is the root owner's queue).
+  Clone, contribution parents, relation reads, `shared_with: 'me'`, and the
+  grant paths keep `can_view_cell` alone (`auth/cell_steward.ts`).
 - **`can_edit_cell`** — owner, admin, or an `editor` grant. A
   system-origin cell (`created_by === null`) is never editable by a
   non-admin, even with an editor grant. The `editor` grant arm requires the

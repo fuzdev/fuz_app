@@ -495,8 +495,10 @@ export type CellModerationDecision = z.infer<typeof CellModerationDecision>;
  * Input for `cell_moderate` — the `pending → approved | rejected` transition,
  * gated on moderation authority over the **governing root** (admin / root
  * owner in v1), not the contribution (which the author manages, and could
- * otherwise self-approve). 404 when the target isn't viewable; 403 when it is
- * but the caller isn't a root manager (the author lands here).
+ * otherwise self-approve). 404 when the caller neither views the target nor
+ * stewards it (a root manager reads a pending or rejected contribution through
+ * the steward arm); 403 when the caller reaches it but isn't a root manager
+ * (the author lands here).
  */
 export const CellModerateInput = z.strictObject({
 	cell_id: Uuid.meta({ description: 'Contribution to moderate.' }),
@@ -604,7 +606,7 @@ export const cell_moderate_action_spec = {
 	async: true,
 	rate_limit: 'account',
 	description:
-		'Moderate a gated contribution (`pending → approved | rejected`). Gated on moderation authority over the governing root (admin / root owner), not the contribution — so the author cannot self-approve. Approval flips `moderation → approved` + `visibility → public`; rejection sets `moderation → rejected`. 404 on an unviewable target, 403 for a viewable target whose caller is not a root manager.'
+		'Moderate a gated contribution (`pending → approved | rejected`). Gated on moderation authority over the governing root (admin / root owner), not the contribution — so the author cannot self-approve. Approval flips `moderation → approved` + `visibility → public`; rejection sets `moderation → rejected`. 404 on a target the caller neither views nor stewards (a root manager reads a pending or rejected contribution), 403 for a viewable target whose caller is not a root manager.'
 } satisfies RequestResponseActionSpec;
 
 /**

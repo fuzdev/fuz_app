@@ -22,6 +22,10 @@
  * - `can_manage_cell` — admin / owner only. Not delegable, not a grant
  *   level. Gates the manage tier: `visibility` writes and all grant
  *   management (`cell_grant_create` / `_list` / `_revoke`).
+ * - `can_steward_cell` — the governing root's manager reading a pending or
+ *   rejected contribution under it. A separate read arm beside
+ *   `can_view_cell`, composed only at the surfaces a moderator works from
+ *   (`auth/cell_steward.ts` names them).
  *
  * Grant-admit branches: per-`actor_id` grants admit the matching
  * actor; `(role, scope_id?)` grants admit any holder of an active
@@ -48,7 +52,10 @@ import { ROLE_ADMIN } from './role_schema.ts';
 
 import type { CellRow } from '../db/cell_queries.ts';
 import type { CellGrantRow } from '../db/cell_grant_queries.ts';
-import { cell_moderation_admits_audience } from '../db/cell_moderation.ts';
+import {
+	cell_moderation_admits_audience,
+	cell_moderation_is_stewardable
+} from '../db/cell_moderation.ts';
 
 /**
  * Whether any grant admits `auth` at the given level.
@@ -206,3 +213,35 @@ export const can_manage_cell = (auth: RequestContext | null, cell: CellRow): boo
 	if (has_scoped_role(auth, ROLE_ADMIN, null)) return true;
 	return is_owner(auth, cell);
 };
+
+/**
+ * Steward authorization: whether `auth` manages `root` — the governing root of
+ * `cell` — and `cell` is a pending or rejected contribution under it.
+ *
+ * The moderator's read of a contribution its audience can't see: true when
+ * `cell.root_id` is `root.id`, `cell.moderation` is exactly `'pending'` or
+ * `'rejected'` (`cell_moderation_is_stewardable`), `root` is not soft-deleted,
+ * and `can_manage_cell` admits `auth` on `root` (global admin or the root's
+ * owner — no grant tier confers manage). Unauthenticated callers are never
+ * stewards. An approved contribution later narrowed to private is not
+ * stewarded — it reads like any cell its author narrowed.
+ *
+ * Not part of `can_view_cell`: the steward arm admits only where a moderator
+ * works (`auth/cell_steward.ts` names the sites), so the relation gates, clone,
+ * contribution parents, and the grant paths keep the narrower predicate.
+ *
+ * @param auth - request context, or `null` for unauthenticated callers
+ * @param cell - the contribution
+ * @param root - the cell's governing root
+ * @returns whether the caller stewards the contribution
+ */
+export const can_steward_cell = (
+	auth: RequestContext | null,
+	cell: CellRow,
+	root: CellRow
+): boolean =>
+	auth !== null &&
+	cell.root_id === root.id &&
+	cell_moderation_is_stewardable(cell.moderation) &&
+	root.deleted_at === null &&
+	can_manage_cell(auth, root);

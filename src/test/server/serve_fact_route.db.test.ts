@@ -44,6 +44,7 @@ import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import type { TestApp } from '#lib/testing/app_server.ts';
 import { create_test_extra_actor, soft_delete_test_actor } from '#lib/testing/db_entities.ts';
 import { create_cell_test_app, create_cell } from '../auth/cell_test_helpers.ts';
+import { query_cell_create } from '#lib/db/cell_queries.ts';
 import { describe_db } from '../cell_db_fixture.ts';
 
 const PUBLIC_HEADERS = { host: 'localhost:5173', origin: 'http://localhost:5173' };
@@ -415,5 +416,43 @@ describe_db('serve_fact_route', (get_db) => {
 		// cell. An unfiltered count would resolve the deleted actor → owner → 200.
 		const res = await get_cell_fact(app, cell.id, hash, ghost.create_session_headers());
 		assert.strictEqual(res.status, 404);
+	});
+
+	test('a pending contribution flipped public serves its author and steward only', async () => {
+		const app = await create_cell_test_app(get_db);
+		const root_owner = await app.create_account({ username: 'fact_steward_root' });
+		const author = await app.create_account({ username: 'fact_steward_author' });
+		const stranger = await app.create_account({ username: 'fact_steward_stranger' });
+		const bytes = encode('pending post bytes');
+		const hash = await put_embedded(bytes, 'application/octet-stream');
+		const root = await create_cell(app, {
+			kind: 'forum',
+			data: {},
+			visibility: 'public',
+			headers: root_owner.create_session_headers()
+		});
+		const post = await query_cell_create(
+			{ db: get_db() },
+			{
+				data: { cover: hash },
+				kind: 'post',
+				visibility: 'public',
+				parent_id: root.id,
+				root_id: root.id,
+				moderation: 'pending',
+				created_by: author.actor.id
+			}
+		);
+
+		assert.strictEqual((await get_cell_fact(app, post.id, hash)).status, 404, 'anon');
+		const status = async (headers: Record<string, string>) =>
+			(await get_cell_fact(app, post.id, hash, headers)).status;
+		assert.strictEqual(await status(stranger.create_session_headers()), 404, 'stranger');
+		assert.strictEqual(await status(author.create_session_headers()), 200, 'author');
+		assert.strictEqual(await status(root_owner.create_session_headers()), 200, 'steward');
+
+		// a tombstoned root stewards nothing
+		await get_db().query('UPDATE cell SET deleted_at = NOW() WHERE id = $1', [root.id]);
+		assert.strictEqual(await status(root_owner.create_session_headers()), 404, 'deleted root');
 	});
 });

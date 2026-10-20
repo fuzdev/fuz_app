@@ -53,6 +53,7 @@ import { fractional_index_between } from '@fuzdev/fuz_util/fractional_index.ts';
 import {
 	CellCloneOutput,
 	CellCreateOutput,
+	CellGetOutput,
 	CellListOutput,
 	CellModerateOutput,
 	CellUpdateOutput
@@ -436,6 +437,19 @@ export const describe_cell_gated_create_cross_tests = (
  * - **fact serving follows** — a pending post's fact is 404 to anon, even
  *   with the post flipped public (also gated on `capabilities.fact_serving`).
  *
+ * And the steward arm — the owner of a **non-admin** root (a parentless
+ * non-`space` kind carrying the same policy, which the test authorizer leaves
+ * open) reads the pending posts under it and moderates them:
+ *
+ * - **the queue** — `cell_list({root_id, moderation: 'pending'})` and
+ *   `cell_get` (with `can_edit` / `can_grant` false) → 200; a stranger 404s.
+ * - **moderation** — the root owner approves → 200; the author 403, a
+ *   stranger 404.
+ * - **the arm stops there** — the root owner's `cell_clone` of the pending
+ *   post and a contribution under it are both 404.
+ * - **fact serving** — the root owner fetches a pending post's fact → 200,
+ *   anon 404 (also gated on `capabilities.fact_serving`).
+ *
  * And that `cell_grant_create` refuses a pending contribution — **403**
  * `cell_grant_unapproved` for its author and an admin, actor- and role-shaped,
  * while a non-manager keeps the **404** mask; the same grant lands once the
@@ -485,6 +499,43 @@ export const describe_cell_moderate_cross_tests = (
 		return { fixture, space, author, post };
 	};
 	const setup_pending_post = async () => setup_pending_post_on(await setup_test());
+
+	// A non-admin's policy root (a parentless non-`space` kind stays open under
+	// the test authorizer, and contributions read the policy off any root) + a
+	// participant's pending post under it.
+	const setup_stewarded_post_on = async (
+		fixture: Fixture,
+		post_data: Record<string, unknown> = {}
+	) => {
+		const root_owner = await fixture.create_account({ username: 'steward_root_owner' });
+		const root = expect_output(
+			await cross_rpc_call(
+				fixture.transport,
+				rpc_path,
+				'cell_create',
+				{ kind: 'forum', data: SPACE_POLICY, visibility: 'public' },
+				root_owner.create_session_headers()
+			),
+			CellCreateOutput
+		);
+		const author = await fixture.create_account({
+			username: 'steward_author',
+			roles: [PARTICIPATION_ROLE]
+		});
+		const post = expect_output(
+			await cross_rpc_call(
+				fixture.transport,
+				rpc_path,
+				'cell_create',
+				{ kind: 'post', data: post_data, parent_id: root.cell.id },
+				author.create_session_headers()
+			),
+			CellCreateOutput
+		);
+		assert.strictEqual(post.cell.moderation, 'pending', "the root's policy gates the post");
+		return { fixture, root, root_owner, author, post };
+	};
+	const setup_stewarded_post = async () => setup_stewarded_post_on(await setup_test());
 
 	/** Seed an embedded fact over the daemon channel; returns its `blake3:` hash. */
 	const put_fact = async (fixture: Fixture, content: string): Promise<string> =>
@@ -958,6 +1009,150 @@ export const describe_cell_moderate_cross_tests = (
 				);
 				await moderate(fixture, post.cell.id, 'approved');
 				assert.strictEqual(await fact_status(fixture, path, null), 200, 'approved is live');
+			}
+		);
+	});
+
+	describe('the steward arm: a root owner moderates (parity)', () => {
+		test_if(
+			capabilities.cell_gated_create,
+			'a non-admin root owner reads the pending queue and the post, and moderates it',
+			async () => {
+				const { fixture, root, root_owner, author, post } = await setup_stewarded_post();
+				const steward_h = root_owner.create_session_headers();
+				const stranger = await fixture.create_account({ username: 'steward_stranger' });
+				const stranger_h = stranger.create_session_headers();
+
+				const queue = { root_id: root.cell.id, moderation: 'pending' };
+				assert.deepStrictEqual(await listed_ids(fixture, queue, steward_h), [post.cell.id]);
+				assert.deepStrictEqual(await listed_ids(fixture, queue, stranger_h), []);
+
+				const got = expect_output(
+					await cross_rpc_call(
+						fixture.transport,
+						rpc_path,
+						'cell_get',
+						{ id: post.cell.id },
+						steward_h
+					),
+					CellGetOutput
+				);
+				assert.strictEqual(got.cell.id, post.cell.id);
+				assert.isFalse(got.can_edit, 'a steward does not edit');
+				assert.isFalse(got.can_grant, 'a steward does not manage');
+				assert.strictEqual(
+					await outcome(fixture, 'cell_get', { id: post.cell.id }, stranger_h),
+					'cell_not_found'
+				);
+
+				// a self-flip to public still reaches no one past author, steward, and admin
+				await set_visibility(fixture, author.create_session_headers(), post.cell.id, 'public');
+				assert.strictEqual(
+					await outcome(fixture, 'cell_get', { id: post.cell.id }, null),
+					'cell_not_found'
+				);
+				assert.strictEqual(
+					await outcome(fixture, 'cell_get', { id: post.cell.id }, steward_h),
+					'ok'
+				);
+
+				const by_author = await cross_rpc_call(
+					fixture.transport,
+					rpc_path,
+					'cell_moderate',
+					{ cell_id: post.cell.id, moderation: 'approved' },
+					author.create_session_headers()
+				);
+				assert.strictEqual(error_reason(by_author), 'cell_moderate_forbidden');
+				assert.strictEqual(
+					await outcome(
+						fixture,
+						'cell_moderate',
+						{ cell_id: post.cell.id, moderation: 'approved' },
+						stranger_h
+					),
+					'cell_not_found'
+				);
+				const approved = await moderate(fixture, post.cell.id, 'approved', steward_h);
+				assert.strictEqual(approved.moderation, 'approved', 'the root owner moderates');
+				assert.strictEqual(approved.visibility, 'public');
+			}
+		);
+
+		test_if(
+			capabilities.cell_gated_create,
+			'the steward arm stops at the moderator surfaces: clone and create-under are 404',
+			async () => {
+				const { fixture, root_owner, post } = await setup_stewarded_post();
+				const steward_h = root_owner.create_session_headers();
+				assert.strictEqual(
+					await outcome(fixture, 'cell_clone', { source_id: post.cell.id }, steward_h),
+					'cell_not_found'
+				);
+				assert.strictEqual(
+					await outcome(
+						fixture,
+						'cell_create',
+						{ kind: 'comment', data: {}, parent_id: post.cell.id },
+						steward_h
+					),
+					'cell_not_found'
+				);
+			}
+		);
+
+		test_if(
+			capabilities.cell_gated_create,
+			'the steward arm keys on the governing root, not the parent: a rejected comment under an approved post',
+			async () => {
+				const { fixture, root_owner, author, post } = await setup_stewarded_post();
+				const steward_h = root_owner.create_session_headers();
+				await moderate(fixture, post.cell.id, 'approved', steward_h);
+				const commenter = await fixture.create_account({
+					username: 'steward_commenter',
+					roles: [PARTICIPATION_ROLE]
+				});
+				const commenter_h = commenter.create_session_headers();
+				const comment = expect_output(
+					await cross_rpc_call(
+						fixture.transport,
+						rpc_path,
+						'cell_create',
+						{ kind: 'comment', data: {}, parent_id: post.cell.id, visibility: 'public' },
+						commenter_h
+					),
+					CellCreateOutput
+				);
+				assert.strictEqual(comment.cell.root_id, post.cell.root_id, 'governed by the root');
+				const rejected = await moderate(fixture, comment.cell.id, 'rejected', steward_h);
+				assert.strictEqual(rejected.moderation, 'rejected');
+
+				const get = { id: comment.cell.id };
+				assert.strictEqual(await outcome(fixture, 'cell_get', get, steward_h), 'ok', 'root owner');
+				assert.strictEqual(
+					await outcome(fixture, 'cell_get', get, author.create_session_headers()),
+					'cell_not_found',
+					"the parent's author is not the steward"
+				);
+				assert.strictEqual(await outcome(fixture, 'cell_get', get, commenter_h), 'ok', 'author');
+				assert.strictEqual(await outcome(fixture, 'cell_get', get, null), 'cell_not_found', 'anon');
+			}
+		);
+
+		test_if(
+			capabilities.cell_gated_create && capabilities.fact_serving,
+			"the root owner fetches a pending post's fact; anon 404",
+			async () => {
+				const fixture = await setup_test();
+				const hash = await put_fact(fixture, 'stewarded-post-fact');
+				const { root_owner, post } = await setup_stewarded_post_on(fixture, { cover: hash });
+				const path = `/api/cells/${post.cell.id}/facts/${hash}`;
+				assert.strictEqual(await fact_status(fixture, path, null), 404, 'anon');
+				assert.strictEqual(
+					await fact_status(fixture, path, root_owner.create_session_headers()),
+					200,
+					'steward'
+				);
 			}
 		);
 	});

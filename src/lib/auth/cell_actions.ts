@@ -49,7 +49,11 @@ import {
 } from '../actions/action_rpc.ts';
 import { jsonrpc_errors, dev_only } from '../http/jsonrpc_errors.ts';
 import { is_pg_unique_violation } from '../db/pg_error.ts';
-import { has_scoped_role, type RequestActorContext } from './request_context.ts';
+import {
+	has_scoped_role,
+	type RequestActorContext,
+	type RequestContext
+} from './request_context.ts';
 import { ROLE_ADMIN } from './role_schema.ts';
 import type { ActionFactoryDeps } from './deps.ts';
 import type { Json } from '@fuzdev/fuz_util/json.ts';
@@ -107,8 +111,10 @@ import {
 } from '../db/cell_queries.ts';
 import {
 	query_cell_grant_list_for_cell,
-	query_cell_grants_for_caller_in_cells
+	query_cell_grants_for_caller_in_cells,
+	type CellGrantRow
 } from '../db/cell_grant_queries.ts';
+import type { QueryDeps } from '../db/query_deps.ts';
 import {
 	query_cell_field_list_for_source,
 	query_cell_field_set
@@ -120,6 +126,7 @@ import {
 } from '../db/cell_item_queries.ts';
 import { can_view_cell, can_edit_cell, can_manage_cell } from './cell_authorize.ts';
 import { filter_visible_target_ids } from './cell_relation_visibility.ts';
+import { cell_steward_admits } from './cell_steward.ts';
 import { to_grant_json } from './cell_grant_actions.ts';
 import { to_field_json } from './cell_field_actions.ts';
 import { to_item_json } from './cell_item_actions.ts';
@@ -264,6 +271,29 @@ const emit_cell_audit = (
 			path: row.path
 		} satisfies CellAuditMetadata
 	});
+};
+
+/**
+ * Gate a loaded cell on `can_view_cell` or, when that denies, the steward arm
+ * (`cell_steward_admits` — the governing root's manager reading a pending or
+ * rejected contribution), 404-masking a denial.
+ *
+ * The read gate of the surfaces a moderator works from: `cell_get` and
+ * `cell_moderate`'s view step. It is **not** for `cell_clone`'s source, a
+ * contribution's parent, the relation endpoint gates, or the grant paths —
+ * those keep `can_view_cell` alone (`auth/cell_steward.ts` says why), so a
+ * later sweep must not route them here. The steward check runs only after the
+ * view check denies, so an admitted read costs no root load.
+ */
+const admit_viewable_or_stewarded_cell = async (
+	deps: QueryDeps,
+	auth: RequestContext | null,
+	row: CellRow,
+	grants: ReadonlyArray<CellGrantRow> | null
+): Promise<void> => {
+	if (can_view_cell(auth, row, grants)) return;
+	if (await cell_steward_admits(deps, auth, row)) return;
+	throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
 };
 
 /** Create the six generic cell RPC actions. */
@@ -442,8 +472,8 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		// `row.id` and have no inter-dependency. Bundle fetches one over the
 		// cap so we can detect truncation without a separate count query.
 		// Skip the grant fetch for unauthenticated callers — no grant can
-		// admit a null auth, so the predicate either short-circuits via
-		// `cell_is_public` or returns false either way.
+		// admit a null auth, so the predicate either admits via the public
+		// arm or returns false either way.
 		const [grants, fields, items] = await Promise.all([
 			auth ? query_cell_grant_list_for_cell(ctx, row.id) : Promise.resolve(null),
 			query_cell_field_list_for_source(ctx, row.id, {
@@ -454,10 +484,11 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 			})
 		]);
 		// 404 covers both "no such cell" and "exists but caller can't view"
-		// — same response code so private-cell existence doesn't leak.
-		if (!can_view_cell(auth, row, grants)) {
-			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
-		}
+		// — same response code so private-cell existence doesn't leak. The
+		// governing root's manager also reads a pending or rejected
+		// contribution here (the steward arm); `can_edit` / `can_grant` stay on
+		// the base predicates, so a steward reads `false` / `false`.
+		await admit_viewable_or_stewarded_cell(ctx, auth, row, grants);
 		const can_edit = can_edit_cell(auth, row, grants);
 		// `can_grant` gates the share UI — managing grants is a manage-tier
 		// affordance (admin / owner), so it tracks `can_manage_cell` rather
@@ -587,13 +618,14 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 	): Promise<CellModerateOutput> => {
 		const auth = ctx.auth;
 		const existing = await query_cell_get(ctx, input.cell_id);
-		// 404 covers miss + unviewable so a pending (private) contribution
-		// doesn't leak existence to a non-viewer.
+		// 404 covers miss + unviewable so a pending contribution doesn't leak
+		// existence to a non-viewer; the governing root's manager stewards it,
+		// which is how a non-admin root owner reaches the root check below. An
+		// approved contribution its author narrowed to private is not
+		// stewarded, so its root owner gets the 404 there.
 		if (!existing) throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
 		const grants = await query_cell_grant_list_for_cell(ctx, existing.id);
-		if (!can_view_cell(auth, existing, grants)) {
-			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
-		}
+		await admit_viewable_or_stewarded_cell(ctx, auth, existing, grants);
 		// Only a contribution (with a governing root) is moderatable.
 		if (existing.root_id === null) {
 			throw jsonrpc_errors.invalid_params(

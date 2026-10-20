@@ -5,7 +5,10 @@
  * A cell's effective audience is its visibility or grants **and** its
  * moderation admission (unmoderated or `'approved'`): the public and grant
  * arms of the general predicate and the `shared_with` semi-join require it,
- * the owner and admin arms don't. Twin of the Rust
+ * the owner and admin arms don't. The general predicate's steward arm (the
+ * SQL twin of `can_steward_cell`) admits the owner of a live governing root to
+ * the pending and rejected contributions under it — the moderation queue — and
+ * the `shared_with` semi-join has no steward arm. Twin of the Rust
  * `fuz_cell/tests/cell_moderation_reads.rs`.
  *
  * @module
@@ -13,9 +16,17 @@
 
 import { assert, test } from 'vitest';
 
-import { query_cell_create, query_cell_list, type CellListParams } from '#lib/db/cell_queries.ts';
+import {
+	query_cell_create,
+	query_cell_delete,
+	query_cell_list,
+	type CellListParams
+} from '#lib/db/cell_queries.ts';
 import { query_cell_grant_create } from '#lib/db/cell_grant_queries.ts';
-import { cell_moderation_admits_audience } from '#lib/db/cell_moderation.ts';
+import {
+	cell_moderation_admits_audience,
+	cell_moderation_is_stewardable
+} from '#lib/db/cell_moderation.ts';
 import { query_create_account_with_actor } from '#lib/auth/account_queries.ts';
 import type { CellVisibility } from '#lib/auth/cell_action_specs.ts';
 import type { QueryDeps } from '#lib/db/query_deps.ts';
@@ -140,5 +151,91 @@ describe_db('query_cell_list moderation gating', (get_db) => {
 				assert.isTrue(admins.has(id), `admin reads ${m}`);
 			}
 		}
+	});
+
+	test('the steward arm admits the root owner to pending and rejected contributions', async () => {
+		const deps = { db: get_db() };
+		const root_owner = await seed_actor(deps, 'st_root_owner');
+		const other_root_owner = await seed_actor(deps, 'st_other_root_owner');
+		const author = await seed_actor(deps, 'st_author');
+		const commenter = await seed_actor(deps, 'st_commenter');
+		const stranger = await seed_actor(deps, 'st_stranger');
+		const create = async (
+			owner: Uuid,
+			kind: string,
+			tree: { parent_id: Uuid; root_id: Uuid } | null,
+			moderation: string | null
+		) =>
+			(
+				await query_cell_create(deps, {
+					data: {},
+					kind,
+					visibility: 'private',
+					parent_id: tree?.parent_id ?? null,
+					root_id: tree?.root_id ?? null,
+					moderation,
+					created_by: owner
+				})
+			).id;
+
+		const root = await create(root_owner, 'forum', null, null);
+		await create(other_root_owner, 'forum', null, null);
+		const posts: Array<{ moderation: string | null; id: Uuid }> = [];
+		for (const moderation of MODERATIONS) {
+			posts.push({
+				moderation,
+				id: await create(author, 'post', { parent_id: root, root_id: root }, moderation)
+			});
+		}
+		const pending_post = posts.find((p) => p.moderation === 'pending')!.id;
+		// nested: another author's pending comment under the pending post — its
+		// governing root is the forum, so the forum's owner stewards it and the
+		// post's author does not
+		const comment = await create(
+			commenter,
+			'comment',
+			{ parent_id: pending_post, root_id: root },
+			'pending'
+		);
+
+		const viewer = (actor: Uuid): CellListParams => ({
+			viewer_actor_id: actor,
+			viewer_is_admin: false,
+			caller_actor_id: actor,
+			root_id: root
+		});
+		const root_owners = await list_ids(deps, viewer(root_owner));
+		for (const { moderation, id } of posts) {
+			// an approved or unmoderated contribution narrowed to private is not
+			// stewarded — it reads like any cell its author narrowed
+			assert.strictEqual(
+				root_owners.has(id),
+				cell_moderation_is_stewardable(moderation),
+				`root owner ${String(moderation)}`
+			);
+		}
+		assert.isTrue(root_owners.has(comment), 'root owner reads a nested pending comment');
+		assert.strictEqual((await list_ids(deps, viewer(other_root_owner))).size, 0, 'other root');
+		assert.strictEqual((await list_ids(deps, viewer(stranger))).size, 0, 'stranger');
+		const authors = await list_ids(deps, viewer(author));
+		assert.isFalse(
+			authors.has(comment),
+			"a post's author is not the steward of a comment under it"
+		);
+		assert.strictEqual(authors.size, posts.length, 'the author reads their own posts');
+
+		const queue = await list_ids(deps, { ...viewer(root_owner), moderation: 'pending' });
+		assert.deepStrictEqual(queue, new Set([pending_post, comment]), 'the moderation queue');
+		const shared = await list_ids(deps, { ...viewer(root_owner), shared_with_caller_only: true });
+		assert.strictEqual(shared.size, 0, 'shared_with has no steward arm');
+
+		// a tombstoned root stewards nothing; its contributions stay live
+		assert.isTrue(await query_cell_delete(deps, root, { deleted_by: root_owner }));
+		assert.strictEqual(
+			(await list_ids(deps, viewer(root_owner))).size,
+			0,
+			'no steward arm under a deleted root'
+		);
+		assert.strictEqual((await list_ids(deps, viewer(author))).size, posts.length);
 	});
 });

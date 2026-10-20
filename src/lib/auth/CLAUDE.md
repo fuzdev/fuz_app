@@ -273,7 +273,14 @@ delete / list / clone / moderate`), error reasons, and `all_cell_action_specs`
   arms also require the cell's `moderation` to admit an audience
   (`db/cell_moderation.ts`: unmoderated or `approved`), so a pending or
   rejected contribution is its author's and admins' alone; `can_edit_cell`'s
-  editor-grant arm requires the same admission.
+  editor-grant arm requires the same admission. `can_steward_cell`
+  is the separate moderator read: the governing root's manager on a pending or
+  rejected contribution under a live root.
+- `auth/cell_steward.ts` — `cell_steward_admits(deps, auth, cell)`: the steward
+  arm with its governing-root load, run only after `can_view_cell` denies. Its
+  module doc names where the arm applies (`cell_get`, `cell_moderate`, the
+  cell-scoped fact route, `cell_list`'s SQL) and where it must not (clone,
+  contribution parents, relation reads, `shared_with`, grant recompute).
 - `auth/cell_relation_visibility.ts` — `filter_visible_target_ids(deps,
 auth, ids)`: batched strict relation-read filter. Every relation read —
   the `cell_get` bundle, **forward and reverse** `cell_field_list` /
@@ -312,7 +319,8 @@ auth, ids)`: batched strict relation-read filter. Every relation read —
   single-connection deadlock of the in-memory drivers). `None`/omitted = open create (the default;
   mirrors `validate_data`). `cell_moderate` is the `pending → approved | rejected`
   transition, gated on `can_manage_cell` of the **governing root** (admin / root
-  owner — the author lands a 403, the anti-self-approval guard); approve flips
+  owner — the author lands a 403, the anti-self-approval guard; a root owner
+  reaches the check through the steward arm); approve flips
   `moderation → approved` + `visibility → public`, reject sets `rejected`.
 - `auth/cell_grant_actions.ts` / `cell_field_actions.ts` /
   `cell_item_actions.ts` / `cell_audit_actions.ts` — the relation + ACL +

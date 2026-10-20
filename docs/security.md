@@ -1449,6 +1449,18 @@ the write answers the same 404. The uniform property is the
 enumerate private cells (or offers, or another actor's grants) by id —
 found-and-unauthorized and not-found are wire-indistinguishable.
 
+**Moderation gates reads.** A cell's effective audience is its visibility or
+grants **and** its moderation admission — unmoderated or `approved`, an
+allowlist over the free-text `moderation` column. `can_view_cell`'s public and
+grant arms and `cell_list`'s SQL twin require it, so a pending or rejected
+contribution reaches its author and admins alone, even after its author flips
+it public or after a grant made while it was approved. The governing root's
+manager reads it through a separate steward arm (`can_steward_cell`) at the
+moderation surfaces only — `cell_get`, `cell_moderate`, `cell_list`, and the
+fact route — never clone, a create under it, the relation reads, or the grant
+paths, so moderating a contribution never lets the moderator copy it out or
+build under it.
+
 **Cross-impl parity**: the 404 masks hold on both spines — the cell 404
 (`cell_get` / `cell_update` / `cell_delete` / `cell_clone`) and the
 role-grant / offer 404 return the same wire shape on the TS spine and the

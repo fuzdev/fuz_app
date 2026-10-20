@@ -286,8 +286,12 @@ gated by the root's `data.policy[kind]`; `moderation` set per the verdict
 visible one; and the `cell_moderate` transition — admin approves → public,
 the author self-approve → 403, a non-viewer → 404, reject → private; the
 moderation read gate — a pending or rejected post, flipped public or granted
-while approved, reaches only its author and admins on `cell_get`, `cell_list`,
-`cell_item_list`, and fact serving; and
+while approved, reaches no non-steward reader past its author and admins on
+`cell_get`, `cell_list`, `cell_item_list`, and fact serving; the steward arm —
+a non-admin root owner reads the pending queue and `cell_get`, moderates,
+fetches the fact, and still 404s on clone and create-under, and a nested
+comment's steward is the root's owner, not the post's author; `cell_grant_create` on a pending post → 403
+`cell_grant_unapproved`, non-manager 404; and
 `cell_clone` running the authorizer for every cell it writes — a non-admin
 clone of a viewable `space` root → 403 `cell_create_forbidden`; and a
 contribution under a soft-deleted root → 404 `cell_not_found`, the

@@ -1421,7 +1421,14 @@ moderation_required}`, with `moderation` set per the verdict (`pending`+private
   **visible** one **403**s; plain parentless creates stay open. The moderate
   suite then proves the `pending → approved | rejected` transition: an admin
   (root manager) approves → public, the **author** self-approve → 403
-  (anti-self-approval), a non-viewer → 404, reject → stays private. The
+  (anti-self-approval), a non-viewer → 404, reject → stays private. It also
+  pins the moderation read gate (a pending or rejected post reaches no
+  non-steward reader past its author and admins on `cell_get`, `cell_list`,
+  `cell_item_list`, and fact serving, even flipped public or granted while
+  approved), `cell_grant_create`'s
+  403 `cell_grant_unapproved`, and the steward arm (a non-admin root owner — a
+  non-`space` root the policy leaves open — reads the queue, `cell_get`, and
+  the fact, and moderates, but still 404s on clone and create-under). The
   authorizer _behavior_ adds no method/wire shape, so schema + manifest parity
   are **blind** to a divergence — these are the only gates that catch one (the
   `cell_moderate` verb itself is manifest-covered). In-process hook coverage is

@@ -28,7 +28,10 @@ import { fact_hash_extract_refs } from '@fuzdev/fuz_util/fact_hash.ts';
 import type { FactHash } from '@fuzdev/fuz_util/hash_schemas.ts';
 import { assert_row } from './assert_row.ts';
 import { iso8601_timestamp_expr, qualify_columns } from './sql_columns.ts';
-import { cell_moderation_admits_audience_sql } from './cell_moderation.ts';
+import {
+	cell_moderation_admits_audience_sql,
+	cell_moderation_is_stewardable_sql
+} from './cell_moderation.ts';
 
 import type { CellData } from '../auth/cell_data_schema.ts';
 import type { CellVisibility } from '../auth/cell_action_specs.ts';
@@ -429,18 +432,23 @@ export const query_cell_list_by_creator = async (
  * dimension — keep it simple) plus an optional viewer-aware visibility
  * predicate.
  *
- * The visibility predicate mirrors `can_view_cell` in SQL form:
+ * The visibility predicate mirrors `can_view_cell || can_steward_cell` in SQL
+ * form:
  *
  * ```
  * (viewer_is_admin
  *  OR (viewer_actor_id IS NOT NULL AND created_by = viewer_actor_id)
  *  OR (<moderation admits an audience> AND (
  *       cell.visibility = 'public'
- *       OR (viewer_actor_id IS NOT NULL AND <grant admits caller>))))
+ *       OR (viewer_actor_id IS NOT NULL AND <grant admits caller>)))
+ *  OR (viewer_actor_id IS NOT NULL AND <pending or rejected contribution>
+ *      AND <viewer owns its live governing root>))
  * ```
  *
- * The moderation admission is `cell_moderation_admits_audience_sql`
- * (`db/cell_moderation.ts`): unmoderated or `'approved'`.
+ * The moderation rules are `cell_moderation_admits_audience_sql` and
+ * `cell_moderation_is_stewardable_sql` (`db/cell_moderation.ts`). The last arm
+ * is the steward arm (`auth/cell_steward.ts`) — a root owner reads the
+ * moderation queue under their root; a global admin is already admitted.
  *
  * The grants branch closes parity with `can_view_cell`: a SQL `EXISTS`
  * over `cell_grant`, parameterized by the caller's `actor_id` and the
@@ -464,7 +472,8 @@ export const query_cell_list_by_creator = async (
  * guards against any future deviation. The shared_with branch does NOT
  * bypass for admin: an admin asking "what's shared with me" wants their
  * own grant footprint, not every cell. A grant admits there only while the
- * cell's moderation admits an audience, as in `can_view_cell`.
+ * cell's moderation admits an audience, as in `can_view_cell`, and the steward
+ * arm doesn't apply — a grant footprint is not a moderation queue.
  *
  * Soft-deleted rows are excluded by default; opt-in via `include_deleted`.
  *
@@ -569,7 +578,12 @@ const CALLER_ROLE_GRANTS_CTE = `WITH caller_role_grants AS (
 	   SELECT role, scope_id FROM unnest($12::text[], $13::uuid[]) AS p(role, scope_id)
 	 )`;
 
-/** General `cell_list` SQL: cell-driven scan, full visibility predicate. */
+/**
+ * General `cell_list` SQL: cell-driven scan, full visibility predicate — the
+ * `can_view_cell` arms, then the steward arm (`can_steward_cell`: the caller
+ * owns the live governing root of a pending or rejected contribution; a global
+ * admin is already in through `$6`).
+ */
 const build_general_sql = (order_column: string, order_direction: string): string =>
 	`${CALLER_ROLE_GRANTS_CTE}
 	 SELECT ${cell_row_projection('c')} FROM cell c
@@ -592,6 +606,11 @@ const build_general_sql = (order_column: string, order_direction: string): strin
 	         WHERE g.cell_id = c.id AND ${grant_admits_caller_predicate('g')}
 	       ))
 	     ))
+	     OR ($7::uuid IS NOT NULL AND c.root_id IS NOT NULL AND ${cell_moderation_is_stewardable_sql('c')}
+	       AND EXISTS (
+	         SELECT 1 FROM cell r
+	         WHERE r.id = c.root_id AND r.deleted_at IS NULL AND r.created_by = $7
+	       ))
 	   )
 	 ORDER BY c.${order_column} ${order_direction} NULLS LAST
 	 LIMIT $8 OFFSET $9`;
@@ -666,11 +685,10 @@ export interface CellListParams {
 	 * Filter by moderation lifecycle marker (`'pending'` drives the mod queue via
 	 * `idx_cell_moderation_pending`).
 	 *
-	 * Note: the visibility predicate still applies, so a `'pending'` (private)
-	 * queue surfaces only to viewers it admits — admin / owner / grant. A
-	 * non-admin container manager won't see pending children here until a
-	 * manager-scoped visibility branch is added, so for now the queue is an admin
-	 * surface (`cell_moderate` of a known id still works regardless).
+	 * The visibility predicate still applies, so `{root_id, moderation:
+	 * 'pending'}` is the queue for the callers who moderate it — a global admin,
+	 * and the governing root's owner through the steward arm — while each author
+	 * sees only their own entries.
 	 */
 	moderation?: string;
 	/**
