@@ -296,7 +296,9 @@ auth, ids)`: batched strict relation-read filter. Every relation read —
   parent-aware `authorize_create` dep (`CellCreateAuthorize` — wider input
   `{kind, data, parent_id, root_id, root_data, scope_id}` than `validate_data`,
   returning a `CellCreateVerdict` `{allow:false} | {allow:true, moderation_required}`)
-  gates create by capability; it runs after the validator + the parent-resolve.
+  gates create by capability; it runs after the validator + the parent-resolve
+  (which **404**s `cell_not_found` on a missing or soft-deleted root as on a
+  missing parent, authorizer or not).
   A **viewable**-parent / root-creation deny is **403** `cell_create_forbidden`
   (the create-path **404** mask is reserved for a hidden parent); `Allow` folds
   the moderation outcome (born `pending`+private vs `approved`+author-visibility).

@@ -15,6 +15,7 @@ import { describe, test, assert } from 'vitest';
 
 import {
 	cell_create_action_spec,
+	cell_delete_action_spec,
 	cell_update_action_spec,
 	cell_get_action_spec,
 	cell_list_action_spec,
@@ -27,7 +28,9 @@ import {
 	type CellUpdateInput
 } from '#lib/auth/cell_action_specs.ts';
 import type { CellCreateAuthorize } from '#lib/auth/cell_actions.ts';
+import type { Uuid } from '#lib/primitive_schemas.ts';
 import { install_audit_drift_guard } from '#lib/testing/audit_drift_guard.ts';
+import type { TestApp } from '#lib/testing/app_server.ts';
 import { create_cell_test_app, create_cell, call } from './cell_test_helpers.ts';
 import { error_reason } from './rpc_test_helpers.ts';
 import { describe_db } from '../cell_db_fixture.ts';
@@ -244,6 +247,90 @@ describe_db('cell create authorizer + kind invariants', (get_db) => {
 			const res = await call(app, cell_list_action_spec, { kind: '' }, h);
 			assert.ok(res.ok, JSON.stringify(res));
 			assert.strictEqual(res.result.cells.length, 0, 'empty kind matches no cells');
+		});
+	});
+
+	describe('a tombstoned root refuses contributions', () => {
+		const count_cells = async (): Promise<number> => {
+			const rows = await get_db().query<{ n: number }>(`SELECT count(*)::int AS n FROM cell`);
+			return rows[0]!.n;
+		};
+
+		// A public space with a post under it, a comment under the post that
+		// lands governed by the space (the live-root control), then the space is
+		// soft-deleted — soft delete doesn't cascade, so the post stays live.
+		const seed_post_under_deleted_space = async (
+			app: TestApp,
+			h: Record<string, string>
+		): Promise<Uuid> => {
+			const space = await call(
+				app,
+				cell_create_action_spec,
+				{ kind: 'space', data: {}, visibility: 'public' },
+				h
+			);
+			assert.ok(space.ok, JSON.stringify(space));
+			const space_id = space.result.cell.id;
+			const post = await call(
+				app,
+				cell_create_action_spec,
+				{ kind: 'post', data: {}, parent_id: space_id },
+				h
+			);
+			assert.ok(post.ok, JSON.stringify(post));
+			const post_id = post.result.cell.id;
+			const comment = await call(
+				app,
+				cell_create_action_spec,
+				{ kind: 'comment', data: {}, parent_id: post_id },
+				h
+			);
+			assert.ok(comment.ok, JSON.stringify(comment));
+			assert.strictEqual(comment.result.cell.root_id, space_id, 'live root: governed');
+			const deleted = await call(app, cell_delete_action_spec, { cell_id: space_id }, h);
+			assert.ok(deleted.ok, JSON.stringify(deleted));
+			return post_id;
+		};
+
+		test('no authorizer mounted → cell_not_found, nothing written', async () => {
+			const app = await create_cell_test_app(get_db);
+			const actor = await app.create_account({ username: 'tomb_open' });
+			const h = actor.create_session_headers();
+			const post_id = await seed_post_under_deleted_space(app, h);
+			const before = await count_cells();
+			const res = await call(
+				app,
+				cell_create_action_spec,
+				{ kind: 'comment', data: {}, parent_id: post_id },
+				h
+			);
+			assert.ok(!res.ok, 'a create under a deleted root must be refused');
+			assert.strictEqual(error_reason(res), ERROR_CELL_NOT_FOUND);
+			assert.strictEqual(await count_cells(), before, 'nothing was written');
+		});
+
+		test('an authorizer mounted → cell_not_found before it is consulted', async () => {
+			let calls = 0;
+			const counting_allow: CellCreateAuthorize = (auth, input) => {
+				calls++;
+				return allow_all(auth, input);
+			};
+			const app = await create_cell_test_app(get_db, [], counting_allow);
+			const actor = await app.create_account({ username: 'tomb_gated' });
+			const h = actor.create_session_headers();
+			const post_id = await seed_post_under_deleted_space(app, h);
+			const before = await count_cells();
+			const calls_before = calls;
+			const res = await call(
+				app,
+				cell_create_action_spec,
+				{ kind: 'comment', data: {}, parent_id: post_id },
+				h
+			);
+			assert.ok(!res.ok, 'a create under a deleted root must be refused');
+			assert.strictEqual(error_reason(res), ERROR_CELL_NOT_FOUND);
+			assert.strictEqual(await count_cells(), before, 'nothing was written');
+			assert.strictEqual(calls, calls_before, 'the authorizer is not consulted');
 		});
 	});
 });

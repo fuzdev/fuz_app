@@ -286,7 +286,9 @@ gated by the root's `data.policy[kind]`; `moderation` set per the verdict
 visible one; and the `cell_moderate` transition — admin approves → public,
 the author self-approve → 403, a non-viewer → 404, reject → private; and
 `cell_clone` running the authorizer for every cell it writes — a non-admin
-clone of a viewable `space` root → 403 `cell_create_forbidden`), gated on
+clone of a viewable `space` root → 403 `cell_create_forbidden`; and a
+contribution under a soft-deleted root → 404 `cell_not_found`, the
+missing-parent shape), gated on
 `capabilities.cell_gated_create` (cross-only, the test policy is a spine-binary
 fixture)), and `account_lifecycle.cross.test.ts`
 (`describe_account_lifecycle_cross_tests` — soft-delete → undelete round-trip,

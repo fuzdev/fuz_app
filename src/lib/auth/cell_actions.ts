@@ -146,7 +146,7 @@ export interface CellCreateAuthorizeInput {
 	parent_id: Uuid | null;
 	/** The governing root of the directory subtree, resolved by the handler from the parent (`parent.root_id ?? parent.id`). `null` for a root creation. */
 	root_id: Uuid | null;
-	/** The governing root's `data` — the handler reads it in-tx (when an authorizer is mounted) and hands it over, so a directory-aware authorizer resolves `root.data.policy[kind]` **without a DB read of its own** (pure predicate; reading in-tx avoids the single-connection PGlite deadlock a separate handle would hit). `null` for a root creation, or when no authorizer is mounted. */
+	/** The governing root's `data` — the handler reads it in-tx and hands it over, so a directory-aware authorizer resolves `root.data.policy[kind]` **without a DB read of its own** (pure predicate; reading in-tx avoids the single-connection PGlite deadlock a separate handle would hit). Non-null whenever `root_id` is — a missing or soft-deleted root answers `cell_not_found` before the authorizer runs — and `null` for a root creation. */
 	root_data: CellData | null;
 	/** Target scope — designed-in for M2 space-scoping; **always `null` in v1** (cells carry no scope column). */
 	scope_id: Uuid | null;
@@ -168,8 +168,8 @@ export type CellCreateVerdict = { allow: false } | { allow: true; moderation_req
  * contributions; answers "may *this actor* create *this kind* here?" and
  * returns a `CellCreateVerdict`. Runs in `cell_create` after `validate_data`
  * and after the handler resolves `root_id` from the parent (an unviewable
- * parent already 404-masks before this runs). Omitted = today's open create
- * (all consumers untouched). Async-capable (DB / policy calls) — a DB-backed
+ * parent or a missing or soft-deleted root already 404-masks before this runs).
+ * Omitted = today's open create (all consumers untouched). Async-capable (DB / policy calls) — a DB-backed
  * impl closes over its own `db` (the create handler stays unaware).
  */
 export type CellCreateAuthorize = (
@@ -328,11 +328,15 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		// not an authorizer is mounted — `root_id` is written regardless, and an
 		// unviewable parent 404-masks the attempt (the same IDOR mask the read
 		// path uses; never reveals a hidden container). A root creation
-		// (`parent_id` null/absent) has `root_id = null`. `root_data` is read
-		// **in-tx** (only when an authorizer is mounted), reusing the parent row
-		// when the parent *is* the root, else one read by `root_id` — so the
-		// authorizer stays pure + the read rides the handler's connection (no
-		// separate-handle deadlock on the single-connection in-memory drivers).
+		// (`parent_id` null/absent) has `root_id = null`. The root is read
+		// **in-tx**, reusing the parent row when the parent *is* the root, else
+		// one read by `root_id` — so the authorizer stays pure + the read rides
+		// the handler's connection (no separate-handle deadlock on the
+		// single-connection in-memory drivers). A missing or soft-deleted root
+		// answers `cell_not_found` like a missing parent (soft delete doesn't
+		// cascade, so a live parent can sit under a tombstoned root): nothing is
+		// written pointing at the tombstone, and an authorizer never sees a root
+		// id without its data.
 		const parent_id = input.parent_id ?? null;
 		let root_id: Uuid | null = null;
 		let root_data: CellData | null = null;
@@ -344,11 +348,12 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 				throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
 			}
 			root_id = parent.root_id ?? parent.id;
-			if (authorize_create) {
-				root_data =
-					root_id === parent.id
-						? parent.data
-						: ((await query_cell_get(ctx, root_id))?.data ?? null);
+			if (root_id === parent.id) {
+				root_data = parent.data;
+			} else {
+				const root = await query_cell_get(ctx, root_id);
+				if (!root) throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
+				root_data = root.data;
 			}
 		}
 		// Parent-aware creation authorizer (opt-in). Runs after shape validation

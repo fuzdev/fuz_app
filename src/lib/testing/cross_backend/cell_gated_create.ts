@@ -31,6 +31,10 @@ import '../assert_dev_env.ts';
  *   **private** space the caller can't view → **404** `cell_not_found` (the
  *   parent is masked); under a **public** space → **403** (you see it, you
  *   can't contribute).
+ * - **a soft-deleted root refuses contributions** — soft delete doesn't
+ *   cascade, so a live post can sit under a deleted space; a comment under it
+ *   → **404** `cell_not_found`, the same shape as a missing parent (the
+ *   authorizer never sees a root id without its data).
  * - **clone is no side door** — `cell_clone` runs the authorizer for every cell
  *   it writes as a parentless create, so a non-admin clone of a viewable
  *   `space` root → **403** `cell_create_forbidden`; admin → succeeds.
@@ -318,6 +322,69 @@ export const describe_cell_gated_create_cross_tests = (
 					'approved',
 					'the comment policy (moderation_required: false) resolved from the space, not the post'
 				);
+			}
+		);
+
+		test_if(
+			capabilities.cell_gated_create,
+			'a contribution under a soft-deleted root is 404 cell_not_found (the missing-parent shape)',
+			async () => {
+				const fixture = await setup_test();
+				const admin_headers = fixture.create_session_headers();
+				const space = expect_output(
+					await cross_rpc_call(
+						fixture.transport,
+						rpc_path,
+						'cell_create',
+						{ kind: SPACE_CELL_KIND, data: SPACE_POLICY, visibility: 'public' },
+						admin_headers
+					),
+					CellCreateOutput
+				);
+				const participant = await fixture.create_account({
+					username: 'tombstone_participant',
+					roles: [PARTICIPATION_ROLE]
+				});
+				const participant_headers = participant.create_session_headers();
+				const post = expect_output(
+					await cross_rpc_call(
+						fixture.transport,
+						rpc_path,
+						'cell_create',
+						{ kind: 'post', data: {}, parent_id: space.cell.id },
+						participant_headers
+					),
+					CellCreateOutput
+				);
+				// Soft delete doesn't cascade: the post stays live (and viewable by
+				// its author) under the tombstoned space.
+				const deleted = await cross_rpc_call(
+					fixture.transport,
+					rpc_path,
+					'cell_delete',
+					{ cell_id: space.cell.id },
+					admin_headers
+				);
+				assert.ok(deleted.ok, `cell_delete failed: ${JSON.stringify(deleted.error)}`);
+
+				const refused = await cross_rpc_call(
+					fixture.transport,
+					rpc_path,
+					'cell_create',
+					{ kind: 'comment', data: {}, parent_id: post.cell.id },
+					participant_headers
+				);
+				assert.ok(!refused.ok, 'a contribution under a deleted root must be refused');
+				assert.strictEqual(error_reason(refused), 'cell_not_found');
+				// Byte-identical to the missing-parent refusal.
+				const missing_parent = await cross_rpc_call(
+					fixture.transport,
+					rpc_path,
+					'cell_create',
+					{ kind: 'comment', data: {}, parent_id: '00000000-0000-4000-8000-000000000000' },
+					participant_headers
+				);
+				assert.deepStrictEqual(refused.error, missing_parent.error);
 			}
 		);
 	});

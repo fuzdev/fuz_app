@@ -1571,7 +1571,9 @@ string. Content stays duck-typed in `data`.
 CellCreateVerdict | Promise<CellCreateVerdict>`, where a verdict is
   `{allow: false}` or `{allow: true, moderation_required}`. Runs in `cell_create`
   after `validate_data` and after the handler resolves the directory tree
-  (`parent_id` → the governing `root_id`, **404**-masking a hidden parent). It
+  (`parent_id` → the governing `root_id`, **404**-masking a hidden parent; a
+  missing or soft-deleted root is the same **404** `cell_not_found`, with or
+  without an authorizer mounted). It
   gates both roots and contributions; a `{allow: false}` for a **viewable**
   parent / a root creation is **403** `cell_create_forbidden` (the 404 mask is
   reserved for the hidden-parent case). An `{allow: true}` folds the moderation
