@@ -252,6 +252,13 @@ authority is spelled at mint rather than defaulted into; sessions and daemon
 tokens resolve to `full` by construction. `parse_token_scope` fails closed —
 an unreadable document refuses the credential rather than widening it.
 
+The mint's `scope` is a closed shape on both spines: an unknown key is refused
+(400), `version` and `grandfathered` included — the first is stamped at mint,
+and the second marks tokens that predate scoping, which a minter forging it
+would launder — as are a `methods` list on `full` and a `null` one. Duplicate
+method names collapse into one. A document past the 4 KiB cap
+(`MAX_TOKEN_SCOPE_BYTES`) is refused 400 before anything is written.
+
 **A narrowed token is RPC-only.** `methods` denies every non-RPC spine
 surface outright, whatever its method list says: the db-admin table browser,
 the bare-hash fact read (`GET /api/facts/:hash`), the audit SSE stream

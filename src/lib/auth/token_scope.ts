@@ -93,9 +93,15 @@ export const token_scope_methods = (methods: Array<string>): TokenScope => ({
 	methods
 });
 
-/** Build the stored scope from a mint-time input. */
+/**
+ * Build the stored scope from a mint-time input.
+ *
+ * Duplicate method names collapse into one, first occurrence kept: the set is
+ * what the scope admits, and the Rust spine stores a set, so both count the
+ * same methods (the `account_token_list` label reads `N methods`).
+ */
 export const token_scope_from_input = (input: TokenScopeInput): TokenScope =>
-	input.kind === 'full' ? token_scope_full() : token_scope_methods(input.methods);
+	input.kind === 'full' ? token_scope_full() : token_scope_methods([...new Set(input.methods)]);
 
 /**
  * Does `scope` admit dispatching `method`?

@@ -28,7 +28,10 @@
  * @module
  */
 
+import { to_error_message } from '@fuzdev/fuz_util/error.ts';
+
 import { rpc_action, type ActionAuthContext, type RpcAction } from '../actions/action_rpc.ts';
+import { jsonrpc_errors } from '../http/jsonrpc_errors.ts';
 import { queue_connection_close } from '../actions/connection_closer.ts';
 import { to_session_account, type SessionAccountJson } from './account_schema.ts';
 import {
@@ -44,6 +47,7 @@ import {
 } from './api_token_queries.ts';
 import {
 	parse_stored_token_scope,
+	serialize_token_scope,
 	token_scope_from_input,
 	token_scope_label
 } from './token_scope.ts';
@@ -180,6 +184,14 @@ export const create_account_actions = (
 		// There is deliberately no permissive fallback here: an omitted scope is
 		// a validation error upstream, not a full-authority token.
 		const scope = token_scope_from_input(input.scope);
+		// Over the stored-document cap is a malformed request, refused before
+		// any write (the insert would otherwise throw it as a 500). Twin of the
+		// Rust spine's `invalid_params` on `TokenScopeError::TooLarge`.
+		try {
+			serialize_token_scope(scope);
+		} catch (err) {
+			throw jsonrpc_errors.invalid_params(`invalid scope: ${to_error_message(err)}`);
+		}
 		// `input.lifetime` is required for the same reason — an omitted lifetime
 		// is a validation error, never an eternal token.
 		const expires_at = token_lifetime_to_expires_at(input.lifetime);

@@ -288,7 +288,48 @@ const token_scope_cases: ReadonlyArray<ConformanceCase> = [
 			fields: { required_credential_types: ['session'] }
 		},
 		note: 'security.md §Credential-channel gating — the credential gate runs before the scope gate on both spines, so a bearer refused by channel is never told which scope it lacked'
-	}
+	},
+	// The mint's `scope` is decoded strictly on both spines. These assert the
+	// status only: the Rust spine names `invalid_token_scope` as the reason and
+	// the TS spine's schema refusal carries none.
+	{
+		name: 'session → account_token_create with a well-formed narrowed scope → 200 (control for the refusals below)',
+		request: {
+			method: 'account_token_create',
+			as: 'keeper',
+			params: {
+				scope: { kind: 'methods', methods: ['account_token_list', 'account_token_list'] },
+				lifetime: { kind: 'eternal' }
+			}
+		},
+		expect: { status: 200 },
+		note: 'security.md §API Token Security — a session mints a narrowed token; duplicate method names collapse into one on both spines'
+	},
+	...(
+		[
+			['an unknown key', { kind: 'full', junk: 1 }],
+			['a version', { kind: 'full', version: 99 }],
+			['a grandfathered flag', { kind: 'full', grandfathered: true }],
+			['methods on kind full', { kind: 'full', methods: ['account_token_list'] }],
+			['a null methods on kind full', { kind: 'full', methods: null }],
+			[
+				'an over-cap document',
+				{
+					kind: 'methods',
+					methods: Array.from({ length: 160 }, (_, i) => `scope_cap_method_${i}_${'x'.repeat(16)}`)
+				}
+			]
+		] as const
+	).map(([label, scope]): ConformanceCase => ({
+		name: `session → account_token_create with ${label} in scope → 400`,
+		request: {
+			method: 'account_token_create',
+			as: 'keeper',
+			params: { scope, lifetime: { kind: 'eternal' } }
+		},
+		expect: { status: 400 },
+		note: 'security.md §API Token Security — the mint scope is a closed shape on both spines: a minter cannot stamp the version or forge grandfathered, a full scope carries no method list, and a document past the 4 KiB cap is a malformed request, never a 500'
+	}))
 ];
 
 // --- Batch 2: privilege gates (declarative) ---------------------------
