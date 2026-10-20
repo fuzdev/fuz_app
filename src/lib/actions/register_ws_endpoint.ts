@@ -44,6 +44,7 @@ import {
 	require_token_scope
 } from '../auth/request_context.ts';
 import { verify_request_source } from '../http/origin.ts';
+import { parse_acting } from '../http/auth_shape.ts';
 import type { RoleName } from '../auth/role_schema.ts';
 import type { Db } from '../db/db.ts';
 import { ACCOUNT_ID_KEY, TEST_CONTEXT_PRESET_KEY } from '../hono_context.ts';
@@ -105,14 +106,11 @@ const create_ws_authorization_middleware = (db: Db): MiddlewareHandler => {
 			await next();
 			return;
 		}
-		const acting_param = c.req.query('acting');
+		// through the `ActingActor` schema like every other selector: lowercased,
+		// and a malformed value reads as omitted (`parse_acting`)
+		const acting = parse_acting(c.req.query('acting'));
 		const account_id: string | null = c.get(ACCOUNT_ID_KEY) ?? null;
-		const result = await apply_authorization_phase(
-			{ db },
-			account_id,
-			WS_UPGRADE_AUTH,
-			acting_param ?? undefined
-		);
+		const result = await apply_authorization_phase({ db }, account_id, WS_UPGRADE_AUTH, acting);
 		if (!result.ok) return c.json(result.body, result.status);
 		if (result.request_context !== null) {
 			c.set(REQUEST_CONTEXT_KEY, result.request_context);

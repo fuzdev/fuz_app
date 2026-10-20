@@ -76,9 +76,12 @@ export type ActingActor = z.infer<typeof ActingActor>;
  * instead would put an input-shape complaint ahead of the authority gates,
  * which is the ordering this pipeline exists to avoid.
  *
- * Both callers pass through here so that rule has one home: the action
+ * The dispatchers pass through here so that rule has one home: the action
  * dispatcher's `read_acting` and the REST authorization handler's
- * `read_route_acting`. Twin of the Rust dispatcher's `read_acting`.
+ * `read_route_acting`. Twin of the Rust dispatcher's `read_acting`. The status
+ * route and the WS upgrade read the raw `?acting=` through it too; neither has
+ * an input schema behind it, so there a malformed selector is final (the
+ * status route answers account-only).
  *
  * @param value - the raw `acting` field, from params / query / body
  * @returns the actor id, or `undefined` when absent or malformed

@@ -11,11 +11,13 @@
  */
 
 import { describe, test, assert } from 'vitest';
+import type { Uuid } from '#lib/primitive_schemas.ts';
 
 import { create_test_app } from '#lib/testing/app_server.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import {
 	role_grant_offer_create_action_spec,
+	role_grant_offer_history_action_spec,
 	role_grant_offer_list_action_spec
 } from '#lib/auth/role_grant_offer_action_specs.ts';
 import { query_role_grant_offer_create } from '#lib/auth/role_grant_offer_queries.ts';
@@ -106,6 +108,43 @@ describe_db('role_grant_offer_actions.list', (get_db) => {
 			assert.ok(res.ok);
 			assert.strictEqual(res.status, 200);
 			assert.strictEqual(res.result.offers.length, 1);
+		});
+
+		test('a non-admin listing their own inbox and history by uppercased id is self', async () => {
+			const test_app = await create_test_app({
+				session_options,
+				create_route_specs,
+				db: get_db(),
+				roles: [ROLE_ADMIN]
+			});
+			const recipient = await test_app.create_account({ username: 'list_upper_recipient' });
+			await rpc_call_for_spec({
+				app: test_app.app,
+				path: RPC_PATH,
+				spec: role_grant_offer_create_action_spec,
+				params: { to_account_id: recipient.account.id, role: ROLE_ADMIN },
+				headers: test_app.create_session_headers()
+			});
+			// `Uuid` lowercases the id, so it compares equal to the caller's own
+			// and needs no admin role
+			const account_id = recipient.account.id.toUpperCase() as Uuid;
+			const listed = await rpc_call_for_spec({
+				app: test_app.app,
+				path: RPC_PATH,
+				spec: role_grant_offer_list_action_spec,
+				params: { account_id },
+				headers: recipient.create_session_headers()
+			});
+			assert.ok(listed.ok, JSON.stringify(listed));
+			assert.strictEqual(listed.result.offers.length, 1);
+			const history = await rpc_call_for_spec({
+				app: test_app.app,
+				path: RPC_PATH,
+				spec: role_grant_offer_history_action_spec,
+				params: { account_id },
+				headers: recipient.create_session_headers()
+			});
+			assert.ok(history.ok, JSON.stringify(history));
 		});
 	});
 

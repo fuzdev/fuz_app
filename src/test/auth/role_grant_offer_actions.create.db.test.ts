@@ -11,6 +11,7 @@
  */
 
 import { describe, test, assert } from 'vitest';
+import type { Uuid } from '#lib/primitive_schemas.ts';
 
 import { create_test_app } from '#lib/testing/app_server.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
@@ -81,27 +82,33 @@ describe_db('role_grant_offer_actions.create', (get_db) => {
 			);
 		});
 
-		test('self-offer rejected with offer_self_target reason', async () => {
+		test('self-offer rejected with offer_self_target reason, in either case', async () => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
 				db: get_db(),
 				roles: [ROLE_ADMIN]
 			});
-			const res = await rpc_call_for_spec({
-				app: test_app.app,
-				path: RPC_PATH,
-				spec: role_grant_offer_create_action_spec,
-				params: { to_account_id: test_app.backend.account.id, role: ROLE_ADMIN },
-				headers: test_app.create_session_headers()
-			});
-			assert.ok(!res.ok);
-			assert.strictEqual(res.status, 400);
-			assert.strictEqual(res.error.code, JSONRPC_ERROR_CODES.invalid_params);
-			assert.strictEqual(
-				(res.error.data as { reason: string } | undefined)?.reason,
-				ERROR_ROLE_GRANT_OFFER_SELF_TARGET
-			);
+			// an uppercased own id is still self: `Uuid` lowercases it before the
+			// comparison against the stored (lowercase) grantor account
+			const own_id = test_app.backend.account.id;
+			for (const to_account_id of [own_id, own_id.toUpperCase() as Uuid]) {
+				const res = await rpc_call_for_spec({
+					app: test_app.app,
+					path: RPC_PATH,
+					spec: role_grant_offer_create_action_spec,
+					params: { to_account_id, role: ROLE_ADMIN },
+					headers: test_app.create_session_headers()
+				});
+				assert.ok(!res.ok, to_account_id);
+				assert.strictEqual(res.status, 400);
+				assert.strictEqual(res.error.code, JSONRPC_ERROR_CODES.invalid_params);
+				assert.strictEqual(
+					(res.error.data as { reason: string } | undefined)?.reason,
+					ERROR_ROLE_GRANT_OFFER_SELF_TARGET,
+					to_account_id
+				);
+			}
 		});
 	});
 

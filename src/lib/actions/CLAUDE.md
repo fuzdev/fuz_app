@@ -817,7 +817,7 @@ Composes the standard upgrade stack:
 1. `verify_request_source(allowed_origins)`
 2. `require_auth`
 3. `require_token_scope('surface:ws_upgrade')` — a narrowed token cannot hold a socket
-4. Upgrade-time authorization phase — resolves the acting actor, seeds `REQUEST_CONTEXT_KEY` for the inner `register_action_ws`
+4. Upgrade-time authorization phase — resolves the acting actor (`?acting=` through `parse_acting`; malformed reads as omitted), seeds `REQUEST_CONTEXT_KEY` for the inner `register_action_ws`
 5. Optional `require_role(required_roles)` — any-of disjunction (coarse upgrade-time gate; per-action `auth` in each spec still applies at dispatch time)
 6. Delegates to `register_action_ws`
 

@@ -32,7 +32,7 @@
 
 import { describe, test, assert, vi, afterEach } from 'vitest';
 
-import { apply_authorization_phase } from '#lib/auth/request_context.ts';
+import { apply_authorization_phase, resolve_acting_actor } from '#lib/auth/request_context.ts';
 import {
 	query_account_by_id,
 	query_actor_by_id,
@@ -246,6 +246,12 @@ describe('apply_authorization_phase — needs_actor: true', () => {
 			status: 400,
 			body: { error: ERROR_ACTOR_NOT_ON_ACCOUNT }
 		});
+	});
+
+	test('resolve_acting_actor matches a supplied acting id whatever its case', async () => {
+		vi.mocked(query_active_actors_by_account).mockResolvedValue([actor, second_actor]);
+		const result = await resolve_acting_actor(mock_deps, ACCOUNT_ID, SECOND_ACTOR_ID.toUpperCase());
+		assert.deepStrictEqual(result, { ok: true, actor_id: SECOND_ACTOR_ID });
 	});
 
 	test('returns 500 account_vanished when query_account_by_id is null after resolve (torn read)', async () => {

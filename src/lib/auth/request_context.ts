@@ -288,6 +288,10 @@ export type ResolveActingActorResult =
  *   The available list is intentionally not echoed in this branch (treat
  *   as opaque rejection).
  *
+ * `acting_actor_id` is compared lowercased, the form actor ids are stored and
+ * read back in, so a caller passing an id that skipped the `Uuid` schema
+ * still matches its actor whatever its case.
+ *
  * @param deps - query dependencies
  * @param account_id - the authenticated account
  * @param acting_actor_id - the requested acting actor id, or `undefined`
@@ -307,7 +311,8 @@ export const resolve_acting_actor = async (
 			available: actors.map((a) => ({ id: a.id, name: a.name }))
 		};
 	}
-	const match = actors.find((a) => a.id === acting_actor_id);
+	const acting = acting_actor_id.toLowerCase();
+	const match = actors.find((a) => a.id === acting);
 	if (!match) return { ok: false, reason: 'actor_not_on_account' };
 	return { ok: true, actor_id: match.id };
 };

@@ -53,6 +53,7 @@ import { ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY } from '../hono_context.ts';
 import { get_route_input, type RouteSpec } from '../http/route_spec.ts';
 import { get_client_ip } from '../http/client_ip.ts';
 import { rate_limit_ip_key } from '../http/ip_canonical.ts';
+import { parse_acting } from '../http/auth_shape.ts';
 import {
 	rate_limit_exceeded_response,
 	reserve_optional,
@@ -117,10 +118,16 @@ export const create_account_status_route_spec = (options?: AccountStatusOptions)
 		// Resolve actor + role_grants when the caller is unambiguous (single-actor
 		// account, or supplied `?acting=<uuid>`). On multi-actor accounts
 		// without `acting`, fall back to account-only so the frontend can
-		// surface a persona picker.
-		const acting = c.req.query('acting') ?? undefined;
-		const acting_result = await resolve_acting_actor(route, account_id, acting);
-		if (acting_result.ok) {
+		// surface a persona picker. The selector goes through the `ActingActor`
+		// schema, lowercased; a malformed value is a missing persona —
+		// account-only, never a default-actor resolve (as on the Rust spine).
+		const acting_raw = c.req.query('acting');
+		const acting = parse_acting(acting_raw);
+		const acting_result =
+			acting_raw !== undefined && acting === undefined
+				? null
+				: await resolve_acting_actor(route, account_id, acting);
+		if (acting_result?.ok) {
 			const ctx = await build_request_context(route, account_id, acting_result.actor_id);
 			if (ctx) {
 				const role_grants: Array<RoleGrantSummaryJson> = ctx.role_grants.map((p) => ({

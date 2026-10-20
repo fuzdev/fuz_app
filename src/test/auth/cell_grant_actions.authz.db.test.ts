@@ -328,10 +328,14 @@ describe_db('cell_grant_actions authz', (get_db) => {
 				data: {},
 				headers: owner.create_session_headers()
 			});
-			const res = await grant_actor(app, owner, id, 'viewer', owner.actor.id);
-			assert.ok(!res.ok);
-			assert.strictEqual(res.status, 400);
-			assert.strictEqual(error_reason(res), ERROR_CELL_GRANT_PRINCIPAL_IS_OWNER);
+			// an uppercased owner id is the owner too — `Uuid` lowercases it before
+			// the comparison against the stored `created_by`
+			for (const actor_id of [owner.actor.id, owner.actor.id.toUpperCase() as Uuid]) {
+				const res = await grant_actor(app, owner, id, 'viewer', actor_id);
+				assert.ok(!res.ok, actor_id);
+				assert.strictEqual(res.status, 400);
+				assert.strictEqual(error_reason(res), ERROR_CELL_GRANT_PRINCIPAL_IS_OWNER, actor_id);
+			}
 		});
 
 		test('unknown role is rejected', async () => {

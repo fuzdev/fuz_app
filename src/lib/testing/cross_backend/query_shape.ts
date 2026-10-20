@@ -13,8 +13,9 @@ import '../assert_dev_env.ts';
  * pinned here on both backends:
  *
  * - **`GET /api/account/status`** — NO query schema: a duplicated `acting`
- *   reads first-wins (the persona resolves), unknown keys are ignored, and an
- *   anonymous caller with junk query hears 401, never a query 400.
+ *   reads first-wins (the persona resolves), a malformed `acting` answers
+ *   account-only (never a default-actor resolve), unknown keys are ignored,
+ *   and an anonymous caller with junk query hears 401, never a query 400.
  * - **the JSON-RPC GET endpoint** — `method` / `id` / `params` read
  *   first-wins; a duplicated `method` must dispatch the first one on every
  *   backend (a last-wins reader dispatches a different method per backend on
@@ -76,6 +77,32 @@ export const describe_query_shape_cross_tests = (options: QueryShapeCrossTestOpt
 				assert.strictEqual(res.status, 200);
 				const body = (await res.json()) as { actor: { id: string } | null };
 				assert.strictEqual(body.actor?.id, fixture.actor.id, 'first acting occurrence must win');
+			}
+		);
+
+		test_if(
+			capabilities.account_status,
+			'status: a malformed acting is a missing persona, not a default-actor resolve',
+			async () => {
+				const fixture = await setup_test();
+				// The keeper has one actor: an omitted selector resolves it, while a
+				// malformed one answers account-only.
+				const omitted = await fixture.transport(STATUS_PATH, {
+					method: 'GET',
+					headers: fixture.create_session_headers()
+				});
+				assert.strictEqual(omitted.status, 200);
+				const omitted_body = (await omitted.json()) as { actor: { id: string } | null };
+				assert.strictEqual(omitted_body.actor?.id, fixture.actor.id);
+				for (const raw of ['not-a-uuid', '', `"${fixture.actor.id}"`]) {
+					const res = await fixture.transport(`${STATUS_PATH}?acting=${encodeURIComponent(raw)}`, {
+						method: 'GET',
+						headers: fixture.create_session_headers()
+					});
+					assert.strictEqual(res.status, 200, raw);
+					const body = (await res.json()) as { actor: { id: string } | null };
+					assert.strictEqual(body.actor, null, raw);
+				}
 			}
 		);
 

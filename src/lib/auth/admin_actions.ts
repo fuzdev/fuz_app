@@ -450,11 +450,9 @@ export const create_admin_actions = (
 		ctx: ActionActorContext
 	): Promise<AccountDeleteOutput> => {
 		const auth = ctx.auth;
-		// lowercased once so every comparison below is canonical: `Uuid` accepts
-		// either case and Postgres matches either, but `auth.account.id` is the
-		// lowercase form — an uppercased own id must still read as self
-		const target_account_id =
-			(input.account_id?.toLowerCase() as Uuid | undefined) ?? auth.account.id;
+		// `Uuid` outputs lowercase, the form `auth.account.id` is in, so an
+		// uppercased own id still reads as self
+		const target_account_id = input.account_id ?? auth.account.id;
 		// Self path: a session only (API and daemon tokens alike), with the
 		// dispatcher's own credential-type refusal, before the guards below say
 		// anything about the account — a leaked token can't end its own account.

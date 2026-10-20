@@ -17,6 +17,9 @@ import '../assert_dev_env.ts';
  * - **grant lifecycle** — owner grants an actor-shaped editor; the grantee
  *   gains edit (was 404 before the grant); `cell_grant_list` is manage-tier
  *   (owner sees it, the editor gets the IDOR 404); revoke drops the edit path.
+ * - **no owner principal** — a grant naming the cell's owner is refused
+ *   `cell_grant_principal_is_owner`, with the owner's actor id sent lowercase
+ *   or uppercase.
  * - **`cell_visibility_manage_only`** — the editor-grant holder can edit
  *   content but flipping `visibility` is 403 (the case the 5-verb CRUD cut
  *   couldn't reach without a grant principal).
@@ -68,6 +71,7 @@ import {
 } from '../../auth/cell_action_specs.ts';
 import { AuditLogListOutput } from '../../auth/admin_action_specs.ts';
 import {
+	ERROR_CELL_GRANT_PRINCIPAL_IS_OWNER,
 	CellGrantCreateOutput,
 	CellGrantListOutput,
 	CellGrantRevokeOutput
@@ -275,6 +279,34 @@ export const describe_cell_relations_cross_tests = (
 				);
 				assert.ok(!post.ok, 'revoked editor still edited');
 				assert.strictEqual(error_reason(post), 'cell_not_found');
+			}
+		);
+
+		test_if(
+			capabilities.cell_relations,
+			'a grant naming the owner is refused cell_grant_principal_is_owner, whatever the id case',
+			async () => {
+				const fixture = await setup_test();
+				const owner = await fixture.create_account({ username: 'cell_grant_self_owner' });
+				const t = fixture.fresh_transport();
+				const owner_h = owner.create_session_headers();
+				const cell = expect_output(
+					await cross_rpc_call(t, rpc_path, 'cell_create', { kind: 'note', data: {} }, owner_h),
+					CellCreateOutput
+				).cell;
+				// both spines canonicalize the id before comparing it with
+				// `created_by`, so the uppercased owner id is the owner too
+				for (const actor_id of [owner.actor.id, owner.actor.id.toUpperCase()]) {
+					const res = await cross_rpc_call(
+						t,
+						rpc_path,
+						'cell_grant_create',
+						{ cell_id: cell.id, level: 'viewer', principal: { kind: 'actor', actor_id } },
+						owner_h
+					);
+					assert.ok(!res.ok, `a grant to the owner must be refused (${actor_id})`);
+					assert.strictEqual(error_reason(res), ERROR_CELL_GRANT_PRINCIPAL_IS_OWNER, actor_id);
+				}
 			}
 		);
 

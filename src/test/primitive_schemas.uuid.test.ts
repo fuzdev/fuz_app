@@ -5,6 +5,7 @@
  */
 
 import { describe, assert, test } from 'vitest';
+import { z } from 'zod';
 
 import { create_uuid, Uuid, UuidWithDefault } from '#lib/primitive_schemas.ts';
 
@@ -47,6 +48,35 @@ describe('Uuid schema', () => {
 		assert.equal(Uuid.safeParse(123).success, false);
 		assert.equal(Uuid.safeParse(null).success, false);
 		assert.equal(Uuid.safeParse(undefined).success, false);
+	});
+
+	test('outputs lowercase, whatever the input case', () => {
+		assert.strictEqual(
+			Uuid.parse('F81D4FAE-7DEC-11D0-A765-00A0C91E6BF6'),
+			'f81d4fae-7dec-11d0-a765-00a0c91e6bf6'
+		);
+		assert.strictEqual(
+			Uuid.parse('f81D4fae-7DEC-11d0-A765-00a0C91e6bf6'),
+			'f81d4fae-7dec-11d0-a765-00a0c91e6bf6'
+		);
+		// the nil and max ids parse in lowercase only, as before
+		assert.strictEqual(
+			Uuid.parse('00000000-0000-0000-0000-000000000000'),
+			'00000000-0000-0000-0000-000000000000'
+		);
+		assert.strictEqual(
+			Uuid.parse('ffffffff-ffff-ffff-ffff-ffffffffffff'),
+			'ffffffff-ffff-ffff-ffff-ffffffffffff'
+		);
+		assert.equal(Uuid.safeParse('FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF').success, false);
+	});
+
+	test('its JSON schema is a plain uuid string', () => {
+		// the lowercasing is an overwrite, not a transform: the rendered schema
+		// is the one `z.uuid()` renders, input and output alike
+		for (const io of ['input', 'output'] as const) {
+			assert.deepEqual(z.toJSONSchema(Uuid, { io }), z.toJSONSchema(z.uuid(), { io }));
+		}
 	});
 });
 

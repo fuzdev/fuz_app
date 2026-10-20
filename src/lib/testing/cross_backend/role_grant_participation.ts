@@ -20,6 +20,11 @@ import '../assert_dev_env.ts';
  *   stands answers `200` with the same `role_grant_id` and writes no audit
  *   row; once the grant is revoked, the replay is refused `invalid_request`
  *   with reason `role_grant_offer_terminal` (never the revoked grant's id).
+ * - **no self-offer, in either case** — an admin offering to its own
+ *   account is refused `invalid_params` with reason
+ *   `role_grant_offer_self_target`, whether the id is sent lowercase or
+ *   uppercase: both spines canonicalize the id before comparing it with the
+ *   grantor's account.
  * - **scoped assign** — `role_grant_assign` of `participant` with a paired
  *   `scope_kind` + `scope_id` lands a scoped grant carrying both, read back
  *   through `admin_account_list`, distinct from the global grant.
@@ -40,8 +45,11 @@ import { describe, test, assert } from 'vitest';
 
 import { rpc_call, type RpcCallResult } from '../rpc_helpers.ts';
 import { AuditLogListOutput } from '../../auth/admin_action_specs.ts';
-import { ERROR_ROLE_GRANT_OFFER_TERMINAL } from '../../auth/role_grant_offer_action_specs.ts';
-import { JSONRPC_INVALID_REQUEST } from '../../http/jsonrpc.ts';
+import {
+	ERROR_ROLE_GRANT_OFFER_SELF_TARGET,
+	ERROR_ROLE_GRANT_OFFER_TERMINAL
+} from '../../auth/role_grant_offer_action_specs.ts';
+import { JSONRPC_INVALID_PARAMS, JSONRPC_INVALID_REQUEST } from '../../http/jsonrpc.ts';
 import { SPINE_PARTICIPANT_ROLE, SPINE_RPC_PATH } from './spine_surface_constants.ts';
 import type { SetupTest } from './setup.ts';
 
@@ -292,6 +300,30 @@ export const describe_role_grant_participation_cross_tests = (
 			assert.strictEqual(replayed.status, 400);
 			assert.strictEqual(replayed.error.code, JSONRPC_INVALID_REQUEST);
 			assert.deepStrictEqual(replayed.error.data, { reason: ERROR_ROLE_GRANT_OFFER_TERMINAL });
+		});
+
+		test('an admin offering to its own account is refused, whatever the id case', async () => {
+			const fixture = await setup_test();
+			const own_id = fixture.account.id;
+			for (const to_account_id of [own_id, own_id.toUpperCase()]) {
+				const res = await rpc(
+					fixture.transport,
+					'role_grant_offer_create',
+					{ to_account_id, role: SPINE_PARTICIPANT_ROLE },
+					fixture.create_session_headers()
+				);
+				assert.ok(
+					!res.ok,
+					`a self-offer must be refused (${to_account_id}): ${JSON.stringify(res)}`
+				);
+				assert.strictEqual(res.status, 400, to_account_id);
+				assert.strictEqual(res.error.code, JSONRPC_INVALID_PARAMS, to_account_id);
+				assert.deepStrictEqual(
+					res.error.data,
+					{ reason: ERROR_ROLE_GRANT_OFFER_SELF_TARGET },
+					to_account_id
+				);
+			}
 		});
 	});
 };

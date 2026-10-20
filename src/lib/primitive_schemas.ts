@@ -212,8 +212,17 @@ export type Email = z.infer<typeof Email>;
 /** Returns a new random (v4) `Uuid`. */
 export const create_uuid = (): Uuid => crypto.randomUUID() as Uuid;
 
-/** Branded UUID schema. */
-export const Uuid = z.uuid().brand('Uuid');
+/**
+ * Branded UUID schema. Accepts either case and outputs lowercase — the form
+ * Postgres renders a `uuid` in and every id the server mints — so a parsed id
+ * compares equal to the same id read back from the database. The Rust spine
+ * canonicalizes the same way.
+ *
+ * `.toLowerCase()` rather than `.transform()`: an overwrite keeps the output
+ * type and stays invisible to `z.toJSONSchema`, where a transform would leave
+ * no input schema to render.
+ */
+export const Uuid = z.uuid().toLowerCase().brand('Uuid');
 export type Uuid = z.infer<typeof Uuid>;
 
 /** `Uuid` that defaults to a fresh `create_uuid()` when the input is `undefined`. */
