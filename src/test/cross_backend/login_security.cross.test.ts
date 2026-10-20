@@ -39,5 +39,10 @@ describe('TS spine (node)', () => {
 });
 
 describe('Rust spine_stub', () => {
-	describe_login_security_cross_tests({ setup_test: default_cross_process_setup(rust) });
+	describe_login_security_cross_tests({
+		setup_test: default_cross_process_setup(rust),
+		// real Postgres behind a pool; the TS spine here runs on one pglet-wasm
+		// connection, which refuses concurrent top-level transactions
+		concurrent_transactions: true
+	});
 });

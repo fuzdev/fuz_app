@@ -10,6 +10,9 @@ import { Hono } from 'hono';
 
 import {
 	RateLimiter,
+	IN_FLIGHT_RETRY_AFTER_SECONDS,
+	try_reserve_optional,
+	reserve_optional,
 	create_rate_limiter,
 	rate_limit_exceeded_response,
 	default_login_ip_rate_limit,
@@ -596,7 +599,7 @@ describe('retry_after boundary', () => {
 });
 
 describe('check-then-record race window', () => {
-	test('concurrent checks all pass before any records (documented limitation)', () => {
+	test('concurrent checks all pass before any records (why handlers reserve instead)', () => {
 		const limiter = new RateLimiter({
 			max_attempts: 2,
 			window_ms: 60_000,
@@ -620,6 +623,329 @@ describe('check-then-record race window', () => {
 		assert.strictEqual(final.allowed, false);
 		assert.strictEqual(final.remaining, 0);
 
+		limiter.dispose();
+	});
+});
+
+describe('try_reserve', () => {
+	const reserve = (limiter: RateLimiter, key: string, now?: number) => {
+		const result = limiter.try_reserve(key, now);
+		assert.ok(result.ok, `expected ${key} to be admitted`);
+		return result.reservation;
+	};
+
+	test('reservations count against the cap until settled', () => {
+		const limiter = create_test_limiter(); // max 3
+		const first = reserve(limiter, 'alice');
+		const second = reserve(limiter, 'alice');
+		const third = reserve(limiter, 'alice');
+		// nothing recorded yet: the cap is reached by attempts in flight
+		assert.deepStrictEqual(limiter.try_reserve('alice'), {
+			ok: false,
+			retry_after: IN_FLIGHT_RETRY_AFTER_SECONDS
+		});
+		const checked = limiter.check('alice');
+		assert.strictEqual(checked.allowed, false, 'check counts in-flight attempts too');
+		assert.strictEqual(checked.retry_after, IN_FLIGHT_RETRY_AFTER_SECONDS);
+		// releasing gives the slot back
+		first.release();
+		const fourth = reserve(limiter, 'alice');
+		second.record();
+		third.record();
+		fourth.record();
+		// three recorded: limited until the oldest expires, not for one second
+		const limited = limiter.try_reserve('alice');
+		assert.ok(!limited.ok);
+		assert.ok(limited.retry_after > 1, `retry_after ${limited.retry_after}`);
+		assert.ok(limiter.try_reserve('bob').ok, 'other keys are unaffected');
+		limiter.dispose();
+	});
+
+	test('settling is idempotent — the first settle wins', () => {
+		const limiter = create_test_limiter();
+		const recorded = reserve(limiter, 'alice');
+		recorded.record();
+		recorded.release();
+		recorded.record();
+		assert.strictEqual(limiter.check('alice').remaining, MAX_ATTEMPTS - 1);
+
+		const released = reserve(limiter, 'alice');
+		released.release();
+		released.record();
+		assert.strictEqual(limiter.check('alice').remaining, MAX_ATTEMPTS - 1);
+		limiter.dispose();
+	});
+
+	test('a released, empty key is not left behind', () => {
+		const limiter = create_test_limiter();
+		for (let i = 0; i < 10; i++) reserve(limiter, 'alice').release();
+		assert.strictEqual(limiter.size, 0);
+		limiter.dispose();
+	});
+
+	test('a key with attempts in flight survives pruning and cleanup', () => {
+		const limiter = new RateLimiter({ max_attempts: 2, window_ms: 1000, cleanup_interval_ms: 0 });
+		limiter.record('k', 2000);
+		const held = reserve(limiter, 'k', 2100);
+		// every recorded attempt has expired, but one is still in flight
+		assert.ok(limiter.check('k', 5000).allowed);
+		limiter.cleanup(5000);
+		assert.strictEqual(limiter.size, 1, 'the entry must stay, or its count would be lost');
+		reserve(limiter, 'k', 5000);
+		assert.strictEqual(limiter.check('k', 5000).allowed, false, 'both in-flight attempts count');
+		held.record(5100);
+		limiter.dispose();
+	});
+
+	test('reset keeps attempts in flight', () => {
+		const limiter = create_test_limiter(); // max 3
+		limiter.record('alice');
+		limiter.record('alice');
+		const held = reserve(limiter, 'alice');
+		limiter.reset('alice');
+		// the recorded two are forgiven; the in-flight one still counts
+		const a = reserve(limiter, 'alice');
+		const b = reserve(limiter, 'alice');
+		assert.ok(!limiter.try_reserve('alice').ok, 'three in flight is the cap');
+		held.release();
+		a.release();
+		b.release();
+		assert.ok(limiter.check('alice').allowed);
+		limiter.dispose();
+	});
+
+	test('a reservation outliving its entry settles safely', () => {
+		// max_keys 1: reserving a second key evicts the first, in-flight count and all
+		const limiter = new RateLimiter({
+			max_attempts: 2,
+			window_ms: 60_000,
+			cleanup_interval_ms: 0,
+			max_keys: 1
+		});
+		const evicted = reserve(limiter, 'a');
+		reserve(limiter, 'b'); // evicts a
+		const newer = reserve(limiter, 'a'); // a newer entry, evicting b
+		// releasing the stale reservation must not free the newer entry's slot
+		evicted.release();
+		const second = reserve(limiter, 'a');
+		assert.ok(!limiter.try_reserve('a').ok, 'the stale release must not have freed a slot');
+		newer.record();
+		second.record();
+		assert.strictEqual(limiter.check('a').allowed, false);
+		limiter.dispose();
+
+		// a stale record still counts, against the key's current entry
+		const one = new RateLimiter({
+			max_attempts: 1,
+			window_ms: 60_000,
+			cleanup_interval_ms: 0,
+			max_keys: 1
+		});
+		const stale = reserve(one, 'a');
+		reserve(one, 'b').release(); // evicts a
+		stale.record();
+		assert.strictEqual(one.check('a').allowed, false, 'the stale record still counts');
+		one.dispose();
+	});
+
+	test('try_reserve_optional hands out an inert reservation without a limiter or a key', async () => {
+		const limiter = create_test_limiter();
+		for (const reserved of [
+			try_reserve_optional(null, 'ip'),
+			try_reserve_optional(limiter, null),
+			await reserve_optional(null, 'ip'),
+			await reserve_optional(limiter, null)
+		]) {
+			assert.ok(reserved.ok);
+			reserved.reservation.record();
+			reserved.reservation.release();
+		}
+		assert.strictEqual(limiter.size, 0, 'an inert reservation touches no limiter');
+		const reserved = try_reserve_optional(limiter, 'ip');
+		assert.ok(reserved.ok);
+		assert.strictEqual(limiter.check('ip').remaining, MAX_ATTEMPTS - 1);
+		reserved.reservation.release();
+		limiter.dispose();
+	});
+
+	test('record counts attempts in flight in what it returns', () => {
+		const limiter = create_test_limiter(); // max 3
+		const held = reserve(limiter, 'alice');
+		assert.strictEqual(limiter.record('alice').remaining, 1);
+		assert.strictEqual(limiter.record('alice').remaining, 0, 'two recorded + one in flight');
+		held.release();
+		limiter.dispose();
+	});
+});
+
+describe('reserve (waiting for an in-flight slot)', () => {
+	const hold = (limiter: RateLimiter, key: string, n: number) =>
+		Array.from({ length: n }, () => {
+			const result = limiter.try_reserve(key);
+			assert.ok(result.ok, 'the holds fit under the cap');
+			return result.reservation;
+		});
+
+	/** `'pending'` when `promise` has not settled within `ms`. */
+	const settled_within = <T>(promise: Promise<T>, ms: number): Promise<T | 'pending'> =>
+		Promise.race([promise, new Promise<'pending'>((r) => setTimeout(() => r('pending'), ms))]);
+
+	test('a reservation past the in-flight cap waits for a slot', async () => {
+		const limiter = create_test_limiter(); // max 3
+		const [first] = hold(limiter, 'k', MAX_ATTEMPTS);
+		const waiting = limiter.reserve('k', { max_wait_ms: 10_000 });
+		assert.strictEqual(await settled_within(waiting, 20), 'pending', 'it waits');
+		first!.release();
+		const admitted = await waiting;
+		assert.ok(admitted.ok, 'the freed slot goes to the waiter');
+		admitted.reservation.release();
+		limiter.dispose();
+	});
+
+	test('failures filling the cap refuse a waiter at once with the real retry_after', async () => {
+		const limiter = create_test_limiter();
+		const held = hold(limiter, 'k', MAX_ATTEMPTS);
+		const waiting = limiter.reserve('k', { max_wait_ms: 10_000 });
+		assert.strictEqual(await settled_within(waiting, 20), 'pending');
+		for (const reservation of held) reservation.record();
+		const refused = await settled_within(waiting, 20);
+		assert.ok(refused !== 'pending' && !refused.ok, 'refused as soon as the cap is recorded');
+		assert.ok(refused.retry_after > 1, `retry_after ${refused.retry_after}`);
+		limiter.dispose();
+	});
+
+	test('a plain record refuses a waiter at once', async () => {
+		const limiter = create_test_limiter();
+		const held = hold(limiter, 'k', MAX_ATTEMPTS);
+		const waiting = limiter.reserve('k', { max_wait_ms: 10_000 });
+		assert.strictEqual(await settled_within(waiting, 20), 'pending');
+		for (let i = 0; i < MAX_ATTEMPTS; i++) limiter.record('k');
+		const refused = await settled_within(waiting, 20);
+		assert.ok(refused !== 'pending' && !refused.ok, 'refused as soon as the cap is recorded');
+		for (const reservation of held) reservation.release();
+		limiter.dispose();
+	});
+
+	test('a reset wakes a waiter its forgiven attempts held out', async () => {
+		const limiter = create_test_limiter();
+		limiter.record('k');
+		const held = hold(limiter, 'k', MAX_ATTEMPTS - 1);
+		const waiting = limiter.reserve('k', { max_wait_ms: 10_000 });
+		assert.strictEqual(await settled_within(waiting, 20), 'pending');
+		limiter.reset('k');
+		const admitted = await settled_within(waiting, 20);
+		assert.ok(admitted !== 'pending' && admitted.ok, 'the forgiven slot goes to the waiter');
+		admitted.reservation.release();
+		for (const reservation of held) reservation.release();
+		limiter.dispose();
+	});
+
+	test("a settle wakes only its own key's waiters", async () => {
+		// A woken waiter re-parks with a fresh timer, so a wake on another key
+		// would show as a `setTimeout` call.
+		const limiter = new RateLimiter({
+			max_attempts: 1,
+			window_ms: WINDOW_MS,
+			cleanup_interval_ms: 0
+		});
+		const [held_b] = hold(limiter, 'b', 1);
+		const waiting = limiter.reserve('b', { max_wait_ms: 10_000 });
+		assert.strictEqual(await settled_within(waiting, 20), 'pending');
+		const set_timeout = vi.spyOn(globalThis, 'setTimeout');
+		try {
+			for (let i = 0; i < 20; i++) {
+				const a = limiter.try_reserve('a');
+				assert.ok(a.ok);
+				a.reservation.release();
+				const a2 = limiter.try_reserve('a');
+				assert.ok(a2.ok);
+				a2.reservation.record();
+				limiter.reset('a');
+				limiter.record('a');
+				limiter.reset('a');
+			}
+			// let a wrongly woken waiter run its re-check
+			await new Promise((resolve) => setImmediate(resolve));
+			assert.strictEqual(
+				set_timeout.mock.calls.length,
+				0,
+				'settles on another key woke the waiter'
+			);
+		} finally {
+			set_timeout.mockRestore();
+		}
+		held_b!.release();
+		const admitted = await waiting;
+		assert.ok(admitted.ok);
+		admitted.reservation.release();
+		limiter.dispose();
+	});
+
+	test('a key at its recorded cap refuses without waiting', async () => {
+		const limiter = create_test_limiter();
+		for (let i = 0; i < MAX_ATTEMPTS; i++) limiter.record('k');
+		const refused = await settled_within(limiter.reserve('k', { max_wait_ms: 10_000 }), 20);
+		assert.ok(refused !== 'pending' && !refused.ok);
+		limiter.dispose();
+	});
+
+	test('a wait that times out refuses with the in-flight retry_after and leaves no residue', async () => {
+		const limiter = create_test_limiter();
+		const held = hold(limiter, 'k', MAX_ATTEMPTS);
+		assert.deepStrictEqual(await limiter.reserve('k', { max_wait_ms: 30 }), {
+			ok: false,
+			retry_after: IN_FLIGHT_RETRY_AFTER_SECONDS
+		});
+		assert.strictEqual(limiter.waiter_keys, 0, "the timed-out waiter took the key's slot with it");
+		for (const reservation of held) reservation.release();
+		assert.strictEqual(limiter.size, 0, 'nothing is left on the key');
+		limiter.dispose();
+	});
+
+	test('at most max_attempts reservations wait on a key', async () => {
+		const limiter = create_test_limiter();
+		const held = hold(limiter, 'k', MAX_ATTEMPTS);
+		const waiters = Array.from({ length: MAX_ATTEMPTS }, () =>
+			limiter.reserve('k', { max_wait_ms: 10_000 })
+		);
+		// one more is refused without waiting
+		const refused = await settled_within(limiter.reserve('k', { max_wait_ms: 10_000 }), 20);
+		assert.deepStrictEqual(refused, { ok: false, retry_after: IN_FLIGHT_RETRY_AFTER_SECONDS });
+		for (const reservation of held) reservation.release();
+		for (const waiter of waiters) {
+			const admitted = await waiter;
+			assert.ok(admitted.ok, 'the parked waiters are admitted as slots free');
+			admitted.reservation.release();
+		}
+		assert.strictEqual(limiter.size, 0);
+		limiter.dispose();
+	});
+
+	test('an aborted wait refuses and leaves no residue', async () => {
+		const limiter = new RateLimiter({
+			max_attempts: 1,
+			window_ms: WINDOW_MS,
+			cleanup_interval_ms: 0
+		});
+		const [held] = hold(limiter, 'k', 1);
+		const controller = new AbortController();
+		const aborted = limiter.reserve('k', { max_wait_ms: 10_000, signal: controller.signal });
+		assert.strictEqual(await settled_within(aborted, 20), 'pending');
+		controller.abort();
+		assert.deepStrictEqual(await aborted, {
+			ok: false,
+			retry_after: IN_FLIGHT_RETRY_AFTER_SECONDS
+		});
+		assert.strictEqual(limiter.waiter_keys, 0, "the aborted waiter took the key's slot with it");
+		// The aborted waiter left the count: with a waiter cap of one, a new
+		// waiter parks rather than being refused at once.
+		const next = limiter.reserve('k', { max_wait_ms: 10_000 });
+		assert.strictEqual(await settled_within(next, 20), 'pending', 'the waiter slot is free');
+		held!.release();
+		const admitted = await next;
+		assert.ok(admitted.ok);
+		admitted.reservation.release();
+		assert.strictEqual(limiter.size, 0, 'nothing is left on the key');
 		limiter.dispose();
 	});
 });

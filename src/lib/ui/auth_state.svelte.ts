@@ -45,6 +45,26 @@ import {
 import { ROLE_ADMIN } from '../auth/role_schema.ts';
 
 /**
+ * The message a `429` shows, from its `retry_after` (seconds).
+ *
+ * A short wait reads as one — the spines answer `retry_after: 1` when the cap
+ * is held only by attempts still in flight — rather than rounding up to a
+ * minute; a missing value reads as a minute.
+ *
+ * @param retry_after - the response's `retry_after`, when it carried one
+ */
+export const format_rate_limit_message = (retry_after: unknown): string => {
+	const seconds = typeof retry_after === 'number' && retry_after > 0 ? retry_after : 60;
+	if (seconds <= 5) return 'Too many attempts. Try again in a moment.';
+	if (seconds < 60) {
+		const whole = Math.ceil(seconds);
+		return `Too many attempts. Try again in ${whole} second${whole === 1 ? '' : 's'}.`;
+	}
+	const minutes = Math.ceil(seconds / 60);
+	return `Too many attempts. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}.`;
+};
+
+/**
  * Svelte context for `AuthState`.
  * Use `auth_state_context.set(state)` in the provider and `auth_state_context.get()` to access.
  */
@@ -161,10 +181,7 @@ export class AuthState {
 			if (response.status === 429) {
 				try {
 					const data = await response.json();
-					const minutes = Math.ceil((data.retry_after ?? 60) / 60);
-					this.verify_error = `Too many attempts. Try again in ${minutes} minute${
-						minutes === 1 ? '' : 's'
-					}.`;
+					this.verify_error = format_rate_limit_message(data.retry_after);
 				} catch {
 					this.verify_error = 'Too many attempts. Try again later.';
 				}
@@ -252,10 +269,7 @@ export class AuthState {
 			if (response.status === 429) {
 				try {
 					const data = await response.json();
-					const minutes = Math.ceil((data.retry_after ?? 60) / 60);
-					this.verify_error = `Too many attempts. Try again in ${minutes} minute${
-						minutes === 1 ? '' : 's'
-					}.`;
+					this.verify_error = format_rate_limit_message(data.retry_after);
 				} catch {
 					this.verify_error = 'Too many attempts. Try again later.';
 				}

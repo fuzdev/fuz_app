@@ -25,6 +25,16 @@ import '../assert_dev_env.ts';
  *   not `429`). A backend that ignored XFF and keyed on the (loopback) TCP
  *   peer would 429 the fresh-IP request too — so the `401` proves the limiter
  *   keys on the resolved `X-Forwarded-For` client IP.
+ * - **a concurrent burst gets at most the cap past the limiter** — `2 ×
+ *   ip_limit` wrong logins sent at once from one fresh forwarded IP answer at
+ *   most `ip_limit` `401`s and `429` for the rest. A limiter checked before
+ *   the lookup and recorded after the verify lets the whole burst through; each
+ *   attempt is reserved instead, counted in flight from the check on.
+ * - **a burst of correct logins past the cap waits, then succeeds** — attempts
+ *   count while in flight whatever their outcome, so `2 × ip_limit` correct
+ *   logins at once from one address meet the cap; the ones past it wait for a
+ *   slot (at most the cap of them) and all answer `200`. Runs on a backend
+ *   that serves concurrent transactions (`concurrent_transactions`).
  * - **a success does not refund the per-IP budget** — the distributed-spray
  *   backstop. Failed guesses against *distinct* usernames from one forwarded
  *   IP, interleaved with the attacker's own successful logins, must still 429
@@ -65,6 +75,14 @@ export interface LoginSecurityCrossTestOptions {
 	readonly setup_test: SetupTest;
 	/** REST login route path. Default `/api/account/login` (the spine convention). */
 	readonly login_path?: string;
+	/**
+	 * Whether the backend serves concurrent logins — each its own database
+	 * transaction — at once, for the burst-of-correct-logins case. Default
+	 * `false`: a backend on one in-process connection (pglet-wasm, PGlite)
+	 * refuses a second top-level transaction while one runs, so concurrent
+	 * successful logins answer `500` there whatever the limiter does.
+	 */
+	readonly concurrent_transactions?: boolean;
 }
 
 /**
@@ -79,6 +97,8 @@ const XFF_IP_LIMIT = '203.0.113.1';
 const XFF_SEGREGATION_EXHAUST = '203.0.113.2';
 const XFF_SEGREGATION_FRESH = '203.0.113.3';
 const XFF_SPRAY = '203.0.113.4';
+const XFF_BURST = '203.0.113.5';
+const XFF_CORRECT_BURST = '203.0.113.7';
 
 /** A non-routable, non-existent identifier — login resolves to the not-found path (records the bucket, returns 401). */
 const PROBE_PASSWORD = 'login_security_wrong_password';
@@ -96,6 +116,7 @@ export const describe_login_security_cross_tests = (
 ): void => {
 	const { setup_test } = options;
 	const login_path = options.login_path ?? '/api/account/login';
+	const concurrent_transactions = options.concurrent_transactions ?? false;
 	/** Per-IP cap shared by both impls (TS `default_login_ip_rate_limit`, Rust `DEFAULT_LOGIN_IP_RATE_LIMIT`). */
 	const ip_limit = default_login_ip_rate_limit.max_attempts;
 	// The XFF-segregation case enables both limiters (one flag drives both), so
@@ -213,6 +234,54 @@ export const describe_login_security_cross_tests = (
 				"a fresh forwarded IP must not inherit another IP's limit"
 			);
 		});
+
+		test(`a concurrent burst of ${ip_limit * 2} wrong logins gets at most ${
+			ip_limit
+		} past the per-IP limit`, async () => {
+			const fixture = await setup_test();
+			// All sent at once, so every request reaches the limiter before any
+			// has been answered. Its own username keeps the per-account bucket
+			// (cap above the IP cap, asserted above) out of the count.
+			const outcomes = await Promise.all(
+				Array.from({ length: ip_limit * 2 }, () => attempt(fixture, XFF_BURST, 'probe_burst'))
+			);
+			const statuses = outcomes.map((o) => o.status);
+			const refused = statuses.filter((status) => status === 401).length;
+			const limited = statuses.filter((status) => status === 429).length;
+			// Exactly the cap: every admitted attempt fails and records, and the
+			// ones past it — waiting for a slot — are refused as those failures
+			// record, so the count is the same however the burst interleaves.
+			assert.strictEqual(
+				refused,
+				ip_limit,
+				`exactly ${ip_limit} may reach the verify (${statuses})`
+			);
+			assert.strictEqual(refused + limited, ip_limit * 2, `the rest must be 429 (${statuses})`);
+			// And the window is spent: the burst can't have left budget behind.
+			const after = await attempt(fixture, XFF_BURST, 'probe_burst');
+			assert.strictEqual(after.status, 429, 'the burst must leave the per-IP bucket full');
+		});
+
+		test.skipIf(!concurrent_transactions)(
+			`a concurrent burst of ${ip_limit * 2} correct logins all succeed past the per-IP cap`,
+			async () => {
+				const fixture = await setup_test();
+				const account = await fixture.create_account({
+					username: 'burst_correct',
+					password_value: 'burst_correct_password'
+				});
+				const statuses = await Promise.all(
+					Array.from({ length: ip_limit * 2 }, () =>
+						succeed(fixture, XFF_CORRECT_BURST, account.account.username, 'burst_correct_password')
+					)
+				);
+				assert.deepStrictEqual(
+					statuses,
+					Array<number>(ip_limit * 2).fill(200),
+					'the logins past the cap wait for a slot rather than being refused'
+				);
+			}
+		);
 
 		test('a success does not refund the per-IP budget (distributed-spray backstop)', async () => {
 			const fixture = await setup_test();

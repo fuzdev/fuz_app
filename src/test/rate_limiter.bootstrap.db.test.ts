@@ -213,6 +213,27 @@ describe('bootstrap handler rate limiting', () => {
 		limiter.dispose();
 	});
 
+	test('a concurrent burst of wrong tokens gets at most the cap past the limiter', async () => {
+		// Every request of the burst would pass a check made before the token
+		// read; the reservation counts each one in flight, so exactly the cap
+		// gets through.
+		const limiter = create_test_limiter();
+		const { app } = await create_bootstrap_app(limiter);
+
+		const responses = await Promise.all(
+			Array.from({ length: MAX_ATTEMPTS * 2 }, async () => bootstrap_request(app))
+		);
+
+		const statuses = responses.map((r) => r.status).sort((a, b) => a - b);
+		assert.deepStrictEqual(statuses, [
+			...Array<number>(MAX_ATTEMPTS).fill(401),
+			...Array<number>(MAX_ATTEMPTS).fill(429)
+		]);
+		assert.strictEqual(limiter.check(TEST_CONNECTION_IP).remaining, 0);
+
+		limiter.dispose();
+	});
+
 	test('failed bootstrap records an attempt', async () => {
 		const limiter = create_test_limiter();
 		const { app } = await create_bootstrap_app(limiter);

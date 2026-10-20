@@ -21,7 +21,12 @@ import type { Invite } from './invite_schema.ts';
 import { create_signup_route_shape, type SignupInput } from './signup_route_schema.ts';
 import { get_route_input, type RouteSpec } from '../http/route_spec.ts';
 import { get_client_ip } from '../http/client_ip.ts';
-import { rate_limit_exceeded_response, type RateLimiter } from '../rate_limiter.ts';
+import {
+	rate_limit_exceeded_response,
+	reserve_optional,
+	type RateLimiter,
+	type RateLimitReservation
+} from '../rate_limiter.ts';
 import type { RouteFactoryDeps } from './deps.ts';
 import { ERROR_NO_MATCHING_INVITE, ERROR_SIGNUP_CONFLICT } from '../http/error_schemas.ts';
 import { is_pg_unique_violation } from '../db/pg_error.ts';
@@ -65,9 +70,10 @@ export interface SignupRouteOptions extends AuthSessionRouteOptions {
 	 * disable. Its own instance, not login's: signup failures bound username
 	 * *enumeration* (the 403/409 split), not credential guessing, and an
 	 * open-signup deployment lets any unauthenticated caller spend this budget
-	 * — which must not cost anyone their login attempts. Never refunded on
-	 * success (see `RateLimiter.reset`). Mirrors the Rust spine's
-	 * `signup_ip_rate_limiter`.
+	 * — which must not cost anyone their login attempts. Charged by every
+	 * classified failure and by every successful open signup (an invite-gated
+	 * success spends an invite instead); never refunded on success (see
+	 * `RateLimiter.reset`). Mirrors the Rust spine's `signup_ip_rate_limiter`.
 	 */
 	signup_ip_rate_limiter: RateLimiter | null;
 	/** Rate limiter for signup attempts, keyed by submitted username. Pass `null` to disable. */
@@ -114,163 +120,189 @@ export const create_signup_route_specs = (
 				signup_account_rate_limited: signup_account_rate_limiter !== null
 			}),
 			handler: async (c, route) => {
-				// Per-IP rate limit check (before any work). 429 stays fast.
+				// Per-IP rate limit (before any work). 429 stays fast. Reserved,
+				// not checked: the attempt counts against the cap until it settles
+				// below, so a concurrent burst can't all pass before any of it
+				// records — and the Argon2 hash every attempt pays is bounded with
+				// it. The `finally` releases whatever no branch recorded.
 				const ip = signup_ip_rate_limiter ? get_client_ip(c) : null;
-				if (signup_ip_rate_limiter && ip) {
-					const check = signup_ip_rate_limiter.check(ip);
-					if (!check.allowed) {
-						return rate_limit_exceeded_response(c, check.retry_after);
-					}
+				const ip_reserved = await reserve_optional(signup_ip_rate_limiter, ip, {
+					signal: c.req.raw.signal
+				});
+				if (!ip_reserved.ok) {
+					return rate_limit_exceeded_response(c, ip_reserved.retry_after);
 				}
+				let account_reservation: RateLimitReservation | null = null;
+				try {
+					const { username, password: pw, email } = get_route_input<SignupInput>(c);
 
-				const { username, password: pw, email } = get_route_input<SignupInput>(c);
-
-				// Per-account rate limit check (after input parsing, before DB work).
-				// 429 stays fast — same precedent as login.
-				const account_key = username.toLowerCase();
-				if (signup_account_rate_limiter) {
-					const check = signup_account_rate_limiter.check(account_key);
-					if (!check.allowed) {
-						return rate_limit_exceeded_response(c, check.retry_after);
+					// Per-account rate limit (after input parsing, before DB work).
+					// 429 stays fast — same precedent as login.
+					const account_key = username.toLowerCase();
+					const account_reserved = await reserve_optional(
+						signup_account_rate_limiter,
+						account_key,
+						{ signal: c.req.raw.signal }
+					);
+					if (!account_reserved.ok) {
+						return rate_limit_exceeded_response(c, account_reserved.retry_after);
 					}
-				}
+					account_reservation = account_reserved.reservation;
 
-				// Load the open-signup toggle fresh from the DB on every
-				// request — the authoritative source, so multiple server
-				// processes never serve a stale in-memory value. Bounded by
-				// the per-IP + per-account rate limiters above.
-				const { open_signup } = await query_app_settings_load(route);
+					// Load the open-signup toggle fresh from the DB on every
+					// request — the authoritative source, so multiple server
+					// processes never serve a stale in-memory value. Its cost, and
+					// the hash below, are bounded per address by the per-IP
+					// reservation above: every classified failure and every
+					// successful open signup records it. What escapes is an
+					// invite-gated success (which spends an invite), a 5xx, and a
+					// request with no resolved client IP. The per-account limiter
+					// bounds retries of one username only.
+					const { open_signup } = await query_app_settings_load(route);
 
-				// Start the denial-time floor concurrently with failure work.
-				// Observed response time for 403 / 409 is `max(work, delay)`
-				// so the cheap `no_match` path (no Argon2, find returns
-				// nothing) and the expensive `signup_conflict` path (Argon2
-				// + tx + rollback) converge — closes the username-enumeration
-				// timing oracle. Mirrors login's `login_fail_delay`. Started
-				// after rate-limit checks so 429 stays fast.
-				const delay = signup_fail_delay(signup_fail_floor_ms, signup_fail_jitter_ms);
+					// Start the denial-time floor concurrently with failure work.
+					// Observed response time for 403 / 409 is `max(work, delay)`
+					// so the cheap `no_match` path (no Argon2, find returns
+					// nothing) and the expensive `signup_conflict` path (Argon2
+					// + tx + rollback) converge — closes the username-enumeration
+					// timing oracle. Mirrors login's `login_fail_delay`. Started
+					// after rate-limit checks so 429 stays fast.
+					const delay = signup_fail_delay(signup_fail_floor_ms, signup_fail_jitter_ms);
 
-				// Hash before the transaction so the connection isn't held
-				// across the ~100ms Argon2id. Paid unconditionally — bounded
-				// by the per-IP + per-account rate limiters above.
-				const password_hash = await password.hash_password(pw);
+					// Hash before the transaction so the connection isn't held
+					// across the ~100ms Argon2id. Paid on every attempt that gets
+					// here — bounded as described above.
+					const password_hash = await password.hash_password(pw);
 
-				// `invite` is assigned inside the tx by the FOR UPDATE find;
-				// captured at the outer scope so the failure-audit catch
-				// branch can still reference `invite.id` after the tx rolls
-				// back on PG unique violation.
-				let invite: Invite | undefined;
+					// `invite` is assigned inside the tx by the FOR UPDATE find;
+					// captured at the outer scope so the failure-audit catch
+					// branch can still reference `invite.id` after the tx rolls
+					// back on PG unique violation.
+					let invite: Invite | undefined;
 
-				const emit_failure_audit = (
-					reason: 'no_match' | 'signup_conflict' | 'internal_error'
-				): void => {
+					const emit_failure_audit = (
+						reason: 'no_match' | 'signup_conflict' | 'internal_error'
+					): void => {
+						deps.audit.emit(route, {
+							event_type: 'signup',
+							outcome: 'failure',
+							ip: get_client_ip(c),
+							metadata: {
+								username,
+								reason,
+								...(invite && { invite_id: invite.id }),
+								...(email != null && { email }),
+								...(open_signup && { open_signup: true })
+							}
+						});
+					};
+
+					let result: { account: Account; actor: Actor };
+					try {
+						result = await route.db.transaction(async (tx) => {
+							const tx_deps = { db: tx };
+
+							// Find + claim run inside the same transaction so the
+							// row lock makes them atomic. Concurrent signups for
+							// the same (username, email) tuple block on the lock
+							// and observe the post-commit state on retry — the
+							// loser's `find_for_update` returns no row (winner
+							// flipped `claimed_at`) and falls through to
+							// `ERROR_NO_MATCHING_INVITE`. No race window.
+							if (!open_signup) {
+								invite = await query_invite_find_unclaimed_match_for_update(
+									tx_deps,
+									email ?? null,
+									username
+								);
+								if (!invite) {
+									throw new NoMatchingInviteError();
+								}
+							}
+
+							const { account, actor } = await query_create_account_with_actor(tx_deps, {
+								username,
+								password_hash,
+								email
+							});
+
+							if (invite) {
+								// Guaranteed to succeed: FOR UPDATE held the row
+								// for the duration of the tx, so no concurrent
+								// claim could flip `claimed_at` between the find
+								// and this UPDATE.
+								await query_invite_claim_unscoped(tx_deps, invite.id, account.id);
+							}
+
+							await create_session_and_set_cookie({
+								keyring,
+								deps: tx_deps,
+								c,
+								account_id: account.id,
+								session_options
+							});
+
+							return { account, actor };
+						});
+					} catch (e: unknown) {
+						if (e instanceof NoMatchingInviteError) {
+							ip_reserved.reservation.record();
+							account_reservation?.record();
+							emit_failure_audit('no_match');
+							await delay;
+							return c.json({ error: ERROR_NO_MATCHING_INVITE }, 403);
+						}
+						// Unique constraint violation: username or email already exists.
+						if (is_pg_unique_violation(e)) {
+							ip_reserved.reservation.record();
+							account_reservation?.record();
+							emit_failure_audit('signup_conflict');
+							await delay;
+							return c.json({ error: ERROR_SIGNUP_CONFLICT }, 409);
+						}
+						// Unclassified failure (e.g. session create error, Argon2
+						// fault on hash, DB outage mid-tx). Tx is rolled back so
+						// no account persists, but the *attempt* should leave a
+						// forensic trail — emit `outcome: 'failure'` with reason
+						// `internal_error` before rethrowing. 5xx responses are
+						// not floored: they aren't response-time-controlled
+						// enumeration oracles.
+						emit_failure_audit('internal_error');
+						throw e;
+					}
+
+					// Clear the account-grain bucket only — the IP aggregate stands.
+					// This is the cheapest version of the spray path `RateLimiter.reset`
+					// describes: where login at least costs the attacker a credential,
+					// an open-signup deployment let an *unauthenticated* caller zero a
+					// shared IP budget by creating throwaway accounts, and the
+					// per-account limiter never applies to the attacker's own signups.
+					account_reservation?.release();
+					if (signup_account_rate_limiter) signup_account_rate_limiter.reset(account_key);
+					// A successful *open* signup is charged to the IP bucket like a
+					// failure: with no invite to spend, account creation is otherwise
+					// unbounded from a single address — throwaway accounts, each one a
+					// session and a row. An invite-gated success is bounded by the
+					// invites an admin minted, so it records nothing (a class signing up
+					// on its invites from one NAT egress would otherwise run the bucket
+					// dry); the `finally` releases it.
+					if (open_signup) ip_reserved.reservation.record();
+
 					deps.audit.emit(route, {
 						event_type: 'signup',
-						outcome: 'failure',
+						account_id: result.account.id,
 						ip: get_client_ip(c),
-						metadata: {
-							username,
-							reason,
-							...(invite && { invite_id: invite.id }),
-							...(email != null && { email }),
-							...(open_signup && { open_signup: true })
-						}
+						metadata: invite ? { invite_id: invite.id, username } : { open_signup: true, username }
 					});
-				};
-
-				let result: { account: Account; actor: Actor };
-				try {
-					result = await route.db.transaction(async (tx) => {
-						const tx_deps = { db: tx };
-
-						// Find + claim run inside the same transaction so the
-						// row lock makes them atomic. Concurrent signups for
-						// the same (username, email) tuple block on the lock
-						// and observe the post-commit state on retry — the
-						// loser's `find_for_update` returns no row (winner
-						// flipped `claimed_at`) and falls through to
-						// `ERROR_NO_MATCHING_INVITE`. No race window.
-						if (!open_signup) {
-							invite = await query_invite_find_unclaimed_match_for_update(
-								tx_deps,
-								email ?? null,
-								username
-							);
-							if (!invite) {
-								throw new NoMatchingInviteError();
-							}
-						}
-
-						const { account, actor } = await query_create_account_with_actor(tx_deps, {
-							username,
-							password_hash,
-							email
-						});
-
-						if (invite) {
-							// Guaranteed to succeed: FOR UPDATE held the row
-							// for the duration of the tx, so no concurrent
-							// claim could flip `claimed_at` between the find
-							// and this UPDATE.
-							await query_invite_claim_unscoped(tx_deps, invite.id, account.id);
-						}
-
-						await create_session_and_set_cookie({
-							keyring,
-							deps: tx_deps,
-							c,
-							account_id: account.id,
-							session_options
-						});
-
-						return { account, actor };
+					return c.json({
+						ok: true,
+						account: { id: result.account.id, username: result.account.username },
+						actor: { id: result.actor.id }
 					});
-				} catch (e: unknown) {
-					if (e instanceof NoMatchingInviteError) {
-						if (signup_ip_rate_limiter && ip) signup_ip_rate_limiter.record(ip);
-						if (signup_account_rate_limiter) signup_account_rate_limiter.record(account_key);
-						emit_failure_audit('no_match');
-						await delay;
-						return c.json({ error: ERROR_NO_MATCHING_INVITE }, 403);
-					}
-					// Unique constraint violation: username or email already exists.
-					if (is_pg_unique_violation(e)) {
-						if (signup_ip_rate_limiter && ip) signup_ip_rate_limiter.record(ip);
-						if (signup_account_rate_limiter) signup_account_rate_limiter.record(account_key);
-						emit_failure_audit('signup_conflict');
-						await delay;
-						return c.json({ error: ERROR_SIGNUP_CONFLICT }, 409);
-					}
-					// Unclassified failure (e.g. session create error, Argon2
-					// fault on hash, DB outage mid-tx). Tx is rolled back so
-					// no account persists, but the *attempt* should leave a
-					// forensic trail — emit `outcome: 'failure'` with reason
-					// `internal_error` before rethrowing. 5xx responses are
-					// not floored: they aren't response-time-controlled
-					// enumeration oracles.
-					emit_failure_audit('internal_error');
-					throw e;
+				} finally {
+					ip_reserved.reservation.release();
+					account_reservation?.release();
 				}
-
-				// Clear the account-grain bucket only — the IP aggregate stands.
-				// This is the cheapest version of the spray path `RateLimiter.reset`
-				// describes: where login at least costs the attacker a credential,
-				// an open-signup deployment let an *unauthenticated* caller zero a
-				// shared IP budget by creating throwaway accounts, and the
-				// per-account limiter never applies to the attacker's own signups.
-				if (signup_account_rate_limiter) signup_account_rate_limiter.reset(account_key);
-
-				deps.audit.emit(route, {
-					event_type: 'signup',
-					account_id: result.account.id,
-					ip: get_client_ip(c),
-					metadata: invite ? { invite_id: invite.id, username } : { open_signup: true, username }
-				});
-				return c.json({
-					ok: true,
-					account: { id: result.account.id, username: result.account.username },
-					actor: { id: result.actor.id }
-				});
 			}
 		}
 	];

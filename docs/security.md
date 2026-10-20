@@ -1006,9 +1006,14 @@ backstop: if a success refunded one, an attacker holding any one credential
 could interleave their own logins with guesses against arbitrary victim
 usernames and spray indefinitely from a single address — and under open signup
 the cheapest version needs no credential at all, since creating a throwaway
-account would zero the budget. Nothing records on an IP bucket on success on any
-path, so with no reset each is a pure monotone-within-window failure counter that
-only time clears.
+account would zero the budget. No success clears an IP bucket, so with no reset
+each is a monotone-within-window counter that only time clears.
+
+**A successful open signup is charged to the signup IP bucket** like a failure.
+With no invite to spend, account creation is otherwise unbounded from a single
+address — throwaway accounts, each one a row and a session. An invite-gated
+success charges nothing: it spends an invite an admin minted, and a class
+signing up on its invites from one NAT egress would otherwise run the bucket dry.
 
 **One IP bucket per surface, not one shared across all four.** Because they are
 monotone, a shared instance would mean a failure on any surface spends the budget that
@@ -1056,7 +1061,8 @@ Costs to accept, both bounded by the split above but not eliminated by it:
   success-forgiveness the method's TSDoc forbids.
 
 Pinned on both spines by the `login_security` cross-backend suite (interleaved
-successes must still 429 within a bounded request budget) and, in-process, by
+successes must still 429 within a bounded request budget, and a concurrent burst
+gets at most the cap past the limiter) and, in-process, by
 `rate_limiter.handlers.test.ts` (login + signup), `password_change.test.ts`, and
 `rate_limiter.bootstrap.db.test.ts`.
 
@@ -1117,15 +1123,46 @@ indexed lookup. Either way the request soft-fails to "no credential".
 
 ### Rate Limiter Limitations
 
-- **Check-then-record race**: the login handler uses check-then-record —
-  `check(ip)` is sync; async Argon2 work follows (~100ms). Concurrent requests
-  from the same IP may all pass the check before any records. Practical impact:
-  up to `max_attempts + N_concurrent` may pass per window. Single-process
-  architecture limits concurrency. The alternative (record-before-validate)
-  closes the window but throttles concurrent *legitimate* callers, which is why
-  bearer auth dropped its limiter rather than keeping that shape.
-- **Blocked requests don't extend lockout**: A 429 response calls `check()` but
-  not `record()`. Continued abuse during lockout doesn't extend the window.
+- **Reserve, then settle**: a handler that checked the limiter, awaited the
+  Argon2 work, and recorded afterwards let every request of a concurrent burst
+  pass the check before any of them recorded — a burst of any size got
+  through. Every password-bearing handler (login, password change, signup,
+  bootstrap) instead reserves the attempt, which admits it and counts it in
+  flight in one synchronous step; the attempt counts against the cap until the
+  handler settles it — `record` on the outcomes that count, `release` (in a
+  `finally`) on the rest. A burst gets at most `max_attempts` past the limiter.
+  The Rust spine reserves the same way (released on drop).
+- **Attempts count while in flight, whatever their outcome — so excess
+  concurrent attempts wait briefly.** An in-flight attempt might be a
+  correct one, but until it settles it holds a slot, so a burst of *correct*
+  logins from one address (a class behind one NAT) meets the cap too. The
+  password surfaces therefore reserve with `RateLimiter.reserve` (Rust
+  `RateLimiter::reserve`): when the cap is reached only because of attempts in
+  flight, the request waits up to `RESERVATION_WAIT_MAX_MS` (5 s, Rust
+  `RESERVATION_WAIT_MAX`) for a slot instead of refusing. Each settle, record,
+  or reset on a key wakes that key's waiters — no other key's — to re-decide:
+  a freed slot is taken; recorded failures reaching the cap refuse at once
+  with their real `retry_after`; the wait running out answers `429` with
+  `retry_after: IN_FLIGHT_RETRY_AFTER_SECONDS` (1). At most
+  `max_attempts` requests wait on one key — one more is refused at once — so a
+  flood can't park requests without bound, and a request that leaves the wait
+  (timed out, aborted, or cancelled) leaves the waiter count as it found it. A
+  burst of up to twice the cap from one address all succeeds, the later half
+  after a short delay; past that, the excess answers `429` with
+  `retry_after: 1` and retries. A burst of wrong guesses still gets exactly
+  `max_attempts` past, the waiters refused as soon as those failures record.
+  The action dispatchers' limiters don't wait: they count every pass at once.
+  A waiter holds no place in a queue: on each wake every waiter on the key
+  re-decides, so one can lose every race for a freed slot until its wait runs
+  out (at most 5 s). A waiting request holds no database connection on
+  either spine: login and password change run their writes in a transaction of
+  their own, opened after the wait and the Argon2 work (the TS routes are
+  `transaction: false`).
+- **Bearer auth's reason for having no limiter** (below) is the same cost
+  without the wait: a limiter there would count *successful* concurrent
+  requests, and bearer automation bursts by design.
+- **Blocked requests don't extend lockout**: A 429 reserves nothing and records
+  nothing. Continued abuse during lockout doesn't extend the window.
 - **Single-process**: See [Known Limitations](#known-limitations).
 
 ### Rate Limiting in Multi-Process Deployments
@@ -1715,7 +1752,9 @@ Without the floor, an attacker can distinguish `no_match` (~5ms, bails
 before tx) from `signup_conflict` (~50ms+, Argon2id + tx + rollback) by
 response time and use the gap as a username-enumeration oracle. The
 Argon2id hash now runs before the tx so legitimate denial paths
-unconditionally pay the hash cost (bounded by rate limiters), which
+unconditionally pay the hash cost (bounded per address by the signup IP
+limiter, which every classified failure and every open-signup success
+records), which
 also flattens the timing budget the floor has to cover. 429 (rate
 limit) stays fast — same precedent as login.
 

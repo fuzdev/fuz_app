@@ -1092,6 +1092,8 @@ describe_db('connection_closer wiring', (get_db) => {
 				emit: boolean;
 				/** The audit INSERT rejects — the fail-open audit write is lost. */
 				audit_write: boolean;
+				/** The probed close throws, after recording itself — one transport failing. */
+				close: boolean;
 			};
 			/** What "the revocation committed" means for the site under test. */
 			committed: { read: ((db: Db) => Promise<boolean>) | null };
@@ -1118,7 +1120,7 @@ describe_db('connection_closer wiring', (get_db) => {
 		): Promise<SiteHarness> => {
 			const gated: GatedDb = create_gated_db(db);
 			const closes: Array<ProbedClose> = [];
-			const failing = { emit: false, audit_write: false };
+			const failing = { emit: false, audit_write: false, close: false };
 			const committed: SiteHarness['committed'] = { read: null };
 			const record = (method: ProbedClose['method'], id: string): number => {
 				closes.push({
@@ -1127,6 +1129,7 @@ describe_db('connection_closer wiring', (get_db) => {
 					open_transactions: gated.open_transactions(),
 					committed: committed.read ? committed.read(db) : Promise.resolve(false)
 				});
+				if (failing.close) throw new Error('injected close failure');
 				return 0;
 			};
 			const probe: ConnectionCloser = {
@@ -1256,6 +1259,11 @@ describe_db('connection_closer wiring', (get_db) => {
 
 		interface Site {
 			name: string;
+			/**
+			 * The route opens its own transaction around just its writes (no route
+			 * transaction), and closes straight after that commits.
+			 */
+			own_transaction?: boolean;
 			max_sessions?: number;
 			max_tokens?: number;
 			arrange: (h: SiteHarness) => Promise<Arranged>;
@@ -1421,6 +1429,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			},
 			{
 				name: 'POST /password',
+				own_transaction: true,
 				arrange: async (h) => {
 					const [session_id] = await session_ids(h);
 					return {
@@ -1449,6 +1458,7 @@ describe_db('connection_closer wiring', (get_db) => {
 				// the session cap: a login past it evicts the oldest session, whose
 				// connections must end with it
 				name: 'POST /login (cap eviction)',
+				own_transaction: true,
 				max_sessions: 1,
 				arrange: async (h) => {
 					const [evicted_hash] = await session_ids(h);
@@ -1558,7 +1568,7 @@ describe_db('connection_closer wiring', (get_db) => {
 					await h.test_app.cleanup();
 				});
 
-				test('a handler that throws closes nothing', async () => {
+				test.skipIf(site.own_transaction)('a handler that throws closes nothing', async () => {
 					const { h, arranged, ...connections } = await arrange_site(site, get_db());
 
 					h.failing.emit = true;
@@ -1570,6 +1580,55 @@ describe_db('connection_closer wiring', (get_db) => {
 					assert_open(connections.victim, 'victim');
 					assert_open(connections.sibling, 'sibling');
 					assert_open(connections.bystander, 'bystander');
+					await h.test_app.cleanup();
+				});
+
+				test.runIf(site.own_transaction)('a failed commit closes nothing', async () => {
+					const { h, arranged, ...connections } = await arrange_site(site, get_db());
+
+					const held = h.gated.hold_commit();
+					const acting = arranged.act();
+					await held.reached;
+					held.fail(new Error('injected commit failure'));
+					assert.strictEqual(await acting, false, 'the request failed');
+
+					assert.deepStrictEqual(h.closes, [], 'no close for a revocation that rolled back');
+					assert.strictEqual(await arranged.committed(h.db), false, 'and nothing was revoked');
+					assert_open(connections.victim, 'victim');
+					assert_open(connections.sibling, 'sibling');
+					assert_open(connections.bystander, 'bystander');
+					await h.test_app.cleanup();
+				});
+
+				test.runIf(site.own_transaction)(
+					'a handler that throws after its commit still closes',
+					async () => {
+						const { h, arranged, ...connections } = await arrange_site(site, get_db());
+
+						h.failing.emit = true;
+						assert.strictEqual(await arranged.act(), false, 'the request failed');
+						h.failing.emit = false;
+
+						// the revocation committed before the throw, so the close it owes
+						// has run — a queued one would have been dropped with the throw
+						assert.strictEqual(await arranged.committed(h.db), true, 'the revocation stands');
+						assert_site_closed(arranged, h.closes, connections);
+						await h.test_app.cleanup();
+					}
+				);
+
+				test('a close that throws after the commit still answers and still closes the rest', async () => {
+					const { h, arranged, ...connections } = await arrange_site(site, get_db());
+
+					h.failing.close = true;
+					// one transport failing to close must not fail a revocation that
+					// committed: the response, the audit row, and the other
+					// transports' closes all still follow it
+					assert.strictEqual(await arranged.act(), true, 'the committed revocation still answers');
+					h.failing.close = false;
+
+					assert.strictEqual(await arranged.committed(h.db), true, 'the revocation stands');
+					assert_site_closed(arranged, h.closes, connections);
 					await h.test_app.cleanup();
 				});
 

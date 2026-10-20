@@ -11,7 +11,7 @@
 
 import { describe, test, assert, vi, beforeEach, afterEach } from 'vitest';
 
-import { AuthState } from '#lib/ui/auth_state.svelte.ts';
+import { AuthState, format_rate_limit_message } from '#lib/ui/auth_state.svelte.ts';
 import type { RoleGrantSummaryJson } from '#lib/auth/account_schema.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
 
@@ -50,6 +50,21 @@ beforeEach(() => {
 
 afterEach(() => {
 	vi.restoreAllMocks();
+});
+
+describe('format_rate_limit_message', () => {
+	const cases: Array<[label: string, retry_after: unknown, expected: string]> = [
+		['an in-flight wait', 1, 'Too many attempts. Try again in a moment.'],
+		['five seconds', 5, 'Too many attempts. Try again in a moment.'],
+		['under a minute', 42, 'Too many attempts. Try again in 42 seconds.'],
+		['a minute', 60, 'Too many attempts. Try again in 1 minute.'],
+		['minutes, rounded up', 121, 'Too many attempts. Try again in 3 minutes.'],
+		['missing', undefined, 'Too many attempts. Try again in 1 minute.'],
+		['not a number', '5', 'Too many attempts. Try again in 1 minute.']
+	];
+	test.each(cases)('%s', (_label, retry_after, expected) => {
+		assert.strictEqual(format_rate_limit_message(retry_after), expected);
+	});
 });
 
 describe('check_session', () => {
@@ -172,6 +187,15 @@ describe('login', () => {
 		assert.strictEqual(result, false);
 		assert.ok(state.verify_error);
 		assert.ok(state.verify_error.includes('2 minutes'));
+	});
+
+	test('429 with a short retry_after reads as a moment, not a minute', async () => {
+		fetch_mock.mockResolvedValueOnce(json_response({ retry_after: 1 }, 429));
+
+		const state = new AuthState();
+		await state.login('alice', 'password');
+
+		assert.strictEqual(state.verify_error, 'Too many attempts. Try again in a moment.');
 	});
 
 	test('429 with default retry_after uses 1 minute', async () => {

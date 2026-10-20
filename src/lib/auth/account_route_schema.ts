@@ -166,6 +166,10 @@ export const create_account_route_shapes = (
 		input: LoginInput,
 		output: LoginOutput,
 		rate_limit: 'both',
+		// The handler opens its own transaction around just the session writes,
+		// so a reservation waiting for a slot, and the Argon2 verify, hold no
+		// database connection.
+		transaction: false,
 		errors: {
 			400: z.looseObject({
 				error: z.enum([ERROR_INVALID_JSON_BODY, ERROR_INVALID_REQUEST_BODY])
@@ -194,6 +198,10 @@ export const create_account_route_shapes = (
 		input: PasswordChangeInput,
 		output: PasswordChangeOutput,
 		rate_limit: options.login_account_rate_limited ? 'both' : 'ip',
+		// The handler opens its own transaction around just the password update
+		// and the revocations, so a reservation waiting for a slot, and the
+		// Argon2 verify and hash, hold no database connection.
+		transaction: false,
 		errors: {
 			400: z.looseObject({
 				error: z.enum([ERROR_INVALID_JSON_BODY, ERROR_INVALID_REQUEST_BODY])

@@ -14,7 +14,11 @@
 import { describe, test, assert, vi, afterEach } from 'vitest';
 import { Hono } from 'hono';
 
-import { RateLimiter } from '#lib/rate_limiter.ts';
+import {
+	IN_FLIGHT_RETRY_AFTER_SECONDS,
+	RateLimiter,
+	RESERVATION_WAIT_MAX_MS
+} from '#lib/rate_limiter.ts';
 import { create_proxy_middleware } from '#lib/http/proxy.ts';
 import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import { create_signup_route_specs } from '#lib/auth/signup_routes.ts';
@@ -30,6 +34,7 @@ import {
 } from '#lib/testing/entities.ts';
 import { ERROR_RATE_LIMIT_EXCEEDED, ERROR_INVALID_CREDENTIALS } from '#lib/http/error_schemas.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
+import { Db } from '#lib/db/db.ts';
 import { create_stub_db, create_noop_stub, create_test_audit_emitter } from '#lib/testing/stubs.ts';
 import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
 
@@ -46,7 +51,8 @@ const {
 	mock_role_grant_find_active,
 	mock_invite_find_unclaimed_match,
 	mock_invite_claim,
-	mock_create_account_with_actor
+	mock_create_account_with_actor,
+	mock_app_settings_load
 } = vi.hoisted(() => ({
 	mock_find_by_username_or_email: vi.fn((..._args: Array<any>) => Promise.resolve(null)),
 	mock_session_create: vi.fn((..._args: Array<any>) => Promise.resolve()),
@@ -61,6 +67,9 @@ const {
 	mock_invite_claim: vi.fn((..._args: Array<any>): Promise<any> => Promise.resolve(true)),
 	mock_create_account_with_actor: vi.fn((..._args: Array<any>): Promise<any> =>
 		Promise.resolve({ account: { id: 'acc_new' }, actor: { id: 'act_new' } })
+	),
+	mock_app_settings_load: vi.fn((..._args: Array<any>): Promise<any> =>
+		Promise.resolve({ open_signup: false, updated_at: null, updated_by: null })
 	)
 }));
 
@@ -82,10 +91,10 @@ vi.mock('#lib/auth/invite_queries.ts', () => ({
 }));
 
 // The signup handler reads `open_signup` fresh on every request; these tests
-// run against mocked queries (no DB), so stub the load to the closed default.
+// run against mocked queries (no DB), so stub the load — the closed default,
+// reset per signup app; the open-signup cases override it.
 vi.mock('#lib/auth/app_settings_queries.ts', () => ({
-	query_app_settings_load: (..._a: Array<any>) =>
-		Promise.resolve({ open_signup: false, updated_at: null, updated_by: null })
+	query_app_settings_load: (...a: Array<any>) => mock_app_settings_load(...a)
 }));
 
 vi.mock('#lib/auth/session_queries.ts', async (importOriginal) => {
@@ -132,7 +141,22 @@ const create_test_limiter = (): RateLimiter =>
 const keyring = create_keyring('integration_test_key_a')!;
 const session_options = create_session_config('test_session');
 
-const db = create_stub_db();
+/**
+ * Transactions open on `db` right now — to pin that a request waiting for a
+ * rate-limit slot, or in its Argon2 work, holds none.
+ */
+const transactions = { open: 0 };
+const db = new Db({
+	client: { query: async () => ({ rows: [] }) },
+	transaction: async (fn) => {
+		transactions.open++;
+		try {
+			return await fn(create_stub_db());
+		} finally {
+			transactions.open--;
+		}
+	}
+});
 const noop = create_noop_stub('deps');
 
 const fake_account = {
@@ -337,6 +361,104 @@ describe('login handler rate limiting', () => {
 		);
 
 		limiter.dispose();
+	});
+
+	test('a concurrent burst gets at most the cap past the limiter', async () => {
+		// Every request of the burst would pass a check made before the lookup;
+		// the reservation counts each one in flight, so exactly the cap gets
+		// through.
+		const limiter = create_test_limiter();
+		const { app, mock_verify_dummy } = create_login_app(limiter);
+
+		const responses = await Promise.all(
+			Array.from({ length: MAX_ATTEMPTS * 2 }, async () => login_request(app))
+		);
+
+		const statuses = responses.map((r) => r.status).sort((a, b) => a - b);
+		assert.deepStrictEqual(statuses, [
+			...Array<number>(MAX_ATTEMPTS).fill(401),
+			...Array<number>(MAX_ATTEMPTS).fill(429)
+		]);
+		assert.strictEqual(mock_verify_dummy.mock.calls.length, MAX_ATTEMPTS);
+		assert.strictEqual(limiter.check(TEST_CONNECTION_IP).remaining, 0);
+
+		limiter.dispose();
+	});
+
+	test('a concurrent burst of correct logins past the cap all succeed, later', async () => {
+		// Attempts count while in flight whatever their outcome, so a burst of
+		// correct logins meets the cap too. The ones past it wait for a slot (at
+		// most the cap of them) rather than being refused.
+		const limiter = create_test_limiter();
+		const { app, find_by_username_or_email, mock_verify_password } = create_login_app(limiter);
+		find_by_username_or_email.mockImplementation(() => Promise.resolve(fake_account));
+		mock_verify_password.mockImplementation(() => Promise.resolve(true));
+
+		const responses = await Promise.all(
+			Array.from({ length: MAX_ATTEMPTS * 2 }, async () => login_request(app))
+		);
+
+		assert.deepStrictEqual(
+			responses.map((r) => r.status),
+			Array<number>(MAX_ATTEMPTS * 2).fill(200)
+		);
+		assert.strictEqual(limiter.check(TEST_CONNECTION_IP).remaining, MAX_ATTEMPTS);
+
+		limiter.dispose();
+	});
+
+	test('a login waiting for a slot, or in its verify, holds no database transaction', async () => {
+		const limiter = create_test_limiter();
+		const { app, find_by_username_or_email, mock_verify_password } = create_login_app(limiter);
+		find_by_username_or_email.mockImplementation(() => Promise.resolve(fake_account));
+		const verifies: Array<(valid: boolean) => void> = [];
+		mock_verify_password.mockImplementation(
+			() => new Promise<boolean>((resolve) => verifies.push(resolve))
+		);
+		const requests = Array.from({ length: MAX_ATTEMPTS * 2 }, async () => login_request(app));
+		while (verifies.length < MAX_ATTEMPTS) await new Promise((r) => setImmediate(r));
+		await new Promise((r) => setImmediate(r));
+
+		// the cap's worth in the verify, as many again parked on the limiter
+		assert.strictEqual(verifies.length, MAX_ATTEMPTS);
+		assert.strictEqual(transactions.open, 0, 'a parked or verifying login holds no transaction');
+
+		mock_verify_password.mockImplementation(() => Promise.resolve(true));
+		for (const resolve of verifies) resolve(true);
+		for (const res of await Promise.all(requests)) assert.strictEqual(res.status, 200);
+		limiter.dispose();
+	});
+
+	test('a login that waits out RESERVATION_WAIT_MAX_MS answers 429 with retry_after 1', async () => {
+		vi.useFakeTimers();
+		try {
+			const limiter = create_test_limiter();
+			const { app, find_by_username_or_email, mock_verify_password } = create_login_app(limiter);
+			find_by_username_or_email.mockImplementation(() => Promise.resolve(fake_account));
+			// The first logins hold their slots in the verify until released.
+			const verifies: Array<(valid: boolean) => void> = [];
+			mock_verify_password.mockImplementation(
+				() => new Promise<boolean>((resolve) => verifies.push(resolve))
+			);
+			const holding = Array.from({ length: MAX_ATTEMPTS }, async () => login_request(app));
+			await vi.advanceTimersByTimeAsync(0);
+			assert.strictEqual(verifies.length, MAX_ATTEMPTS);
+
+			const waiting = Promise.resolve(login_request(app));
+			await vi.advanceTimersByTimeAsync(RESERVATION_WAIT_MAX_MS);
+			const res = await waiting;
+			assert.strictEqual(res.status, 429);
+			assert.deepStrictEqual(await res.json(), {
+				error: ERROR_RATE_LIMIT_EXCEEDED,
+				retry_after: IN_FLIGHT_RETRY_AFTER_SECONDS
+			});
+
+			for (const resolve of verifies) resolve(true);
+			for (const res of await Promise.all(holding)) assert.strictEqual(res.status, 200);
+			limiter.dispose();
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	test('failed login (account not found) records an attempt', async () => {
@@ -598,6 +720,23 @@ describe('login handler per-account rate limiting', () => {
 		account_limiter.dispose();
 	});
 
+	test('a concurrent burst gets at most the per-account cap past the limiter', async () => {
+		const account_limiter = create_test_limiter();
+		const { app } = create_login_app(null, account_limiter);
+
+		const responses = await Promise.all(
+			Array.from({ length: MAX_ATTEMPTS * 2 }, async () => login_request(app))
+		);
+
+		const statuses = responses.map((r) => r.status).sort((a, b) => a - b);
+		assert.deepStrictEqual(statuses, [
+			...Array<number>(MAX_ATTEMPTS).fill(401),
+			...Array<number>(MAX_ATTEMPTS).fill(429)
+		]);
+
+		account_limiter.dispose();
+	});
+
 	test('failure paths record against canonical key (account.id if found, normalized input otherwise)', async () => {
 		const account_limiter = new RateLimiter({
 			max_attempts: MAX_ATTEMPTS,
@@ -839,6 +978,29 @@ describe('login handler per-account rate limiting', () => {
 		ip_limiter.dispose();
 		account_limiter.dispose();
 	});
+
+	test('an account-limited 429 gives back the per-IP reservation', async () => {
+		const ip_limiter = create_test_limiter();
+		const account_limiter = new RateLimiter({
+			max_attempts: 1,
+			window_ms: WINDOW_MS,
+			cleanup_interval_ms: 0
+		});
+		const { app } = create_login_app(ip_limiter, account_limiter);
+		const headers = { 'X-Forwarded-For': '10.0.0.30' };
+
+		// One failure spends the account bucket and one IP attempt.
+		assert.strictEqual((await login_request(app, headers)).status, 401);
+		// Each of these reserves an IP attempt, then answers the account 429;
+		// a leaked reservation would leave the IP bucket full after the cap.
+		for (let i = 0; i < MAX_ATTEMPTS + 1; i++) {
+			assert.strictEqual((await login_request(app, headers)).status, 429);
+		}
+		assert.strictEqual(ip_limiter.check('10.0.0.30').remaining, MAX_ATTEMPTS - 1);
+
+		ip_limiter.dispose();
+		account_limiter.dispose();
+	});
 });
 
 describe('login error response consistency (account enumeration prevention)', () => {
@@ -1032,6 +1194,11 @@ const create_signup_app = (
 	signup_account_rate_limiter: RateLimiter | null = null
 ): Hono => {
 	// Reset signup-related mocks
+	mock_app_settings_load
+		.mockReset()
+		.mockImplementation(() =>
+			Promise.resolve({ open_signup: false, updated_at: null, updated_by: null })
+		);
 	mock_invite_find_unclaimed_match.mockReset().mockImplementation(() => Promise.resolve(null));
 	mock_invite_claim.mockReset().mockImplementation(() => Promise.resolve(true));
 	mock_create_account_with_actor
@@ -1234,5 +1401,69 @@ describe('signup handler per-account rate limiting', () => {
 
 		ip_limiter.dispose();
 		account_limiter.dispose();
+	});
+});
+
+describe('signup handler per-IP rate limiting', () => {
+	const open_signup = () =>
+		mock_app_settings_load.mockImplementation(() =>
+			Promise.resolve({ open_signup: true, updated_at: null, updated_by: null })
+		);
+
+	test('successful open signups count toward the per-IP limit', async () => {
+		// With no invite to spend, an open signup is charged to the IP bucket
+		// like a failure — otherwise one address mints accounts without bound.
+		const ip_limiter = create_test_limiter();
+		const app = create_signup_app(ip_limiter, null);
+		open_signup();
+
+		for (let i = 0; i < MAX_ATTEMPTS; i++) {
+			const res = await signup_request(app, `open_user_${i}`);
+			assert.strictEqual(res.status, 200);
+		}
+		const res = await signup_request(app, 'open_user_last');
+		assert.strictEqual(res.status, 429);
+		assert.strictEqual(mock_create_account_with_actor.mock.calls.length, MAX_ATTEMPTS);
+
+		ip_limiter.dispose();
+	});
+
+	test('a successful invite-gated signup does not count toward the per-IP limit', async () => {
+		// An invite-gated success spends an invite an admin minted, so it
+		// charges nothing — a class signing up on invites from one address
+		// keeps going.
+		const ip_limiter = create_test_limiter();
+		const app = create_signup_app(ip_limiter, null);
+		mock_invite_find_unclaimed_match.mockImplementation(() => Promise.resolve({ id: 'inv_1' }));
+
+		for (let i = 0; i < MAX_ATTEMPTS + 1; i++) {
+			const res = await signup_request(app, `invited_user_${i}`);
+			assert.strictEqual(res.status, 200);
+		}
+		assert.strictEqual(ip_limiter.check(TEST_CONNECTION_IP).remaining, MAX_ATTEMPTS);
+
+		ip_limiter.dispose();
+	});
+
+	test('a concurrent burst gets at most the cap past the limiter', async () => {
+		// Invite-gated with no invite: every attempt hashes, then fails
+		// `no_matching_invite`. A check before the hash let the whole burst
+		// through; the reservation lets exactly the cap through.
+		const ip_limiter = create_test_limiter();
+		const app = create_signup_app(ip_limiter, null);
+
+		const responses = await Promise.all(
+			Array.from({ length: MAX_ATTEMPTS * 2 }, async (_, i) =>
+				signup_request(app, `burst_user_${i}`)
+			)
+		);
+
+		const statuses = responses.map((r) => r.status).sort((a, b) => a - b);
+		assert.deepStrictEqual(statuses, [
+			...Array<number>(MAX_ATTEMPTS).fill(403),
+			...Array<number>(MAX_ATTEMPTS).fill(429)
+		]);
+
+		ip_limiter.dispose();
 	});
 });

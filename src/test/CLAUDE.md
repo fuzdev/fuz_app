@@ -491,7 +491,8 @@ limiters enabled + the loopback proxy trusted, providing
 `security_handle_a`/`_b` and the action limiters' cap as
 `security_action_rate_limit_max_attempts`). The first drives
 `describe_login_security_cross_tests` against each impl: the per-IP login
-`429` and `Retry-After` shape, the `X-Forwarded-For` bucket keying, and the
+`429` and `Retry-After` shape, the `X-Forwarded-For` bucket keying, a
+concurrent burst getting at most the cap past the limiter, and the
 distributed-spray backstop (a success must not refund the per-IP budget). The
 second drives `describe_ws_action_rate_limit_cross_tests`: an account-limited
 action refused on the WS call past the cap, one account budget across HTTP RPC

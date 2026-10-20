@@ -48,6 +48,7 @@
 
 import type { Uuid } from '../primitive_schemas.ts';
 import { UnreachableError } from '@fuzdev/fuz_util/error.ts';
+import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { emit_after_commit, type EmitAfterCommitContext } from '../http/pending_effects.ts';
 
@@ -142,6 +143,32 @@ export const close_connections = (
 };
 
 /**
+ * Close the connections `target` names, now, for a revocation that has
+ * already committed — logging a close that throws instead of throwing it.
+ *
+ * For a handler with no route transaction, closing straight after its own
+ * commit: a throw there would fail a request whose revocation stands, and skip
+ * the work after the close (the response, the audit row). A closer over several
+ * transports closes the rest before it rethrows, so catching loses no close.
+ * The twin of the post-commit flush, which catches and logs the same way.
+ *
+ * @param closer - the closer to run, `deps.connection_closer` in a handler
+ * @param target - the connections to close
+ * @param log - where a failing close is reported
+ */
+export const close_connections_after_commit = (
+	closer: ConnectionCloser,
+	target: ConnectionCloseTarget,
+	log: Logger
+): void => {
+	try {
+		close_connections(closer, target);
+	} catch (err) {
+		log.error('connection close after commit failed:', err);
+	}
+};
+
+/**
  * Queue a connection close on `ctx`'s post-commit queue, so it runs only after
  * the request's transaction commits and never when the handler throws.
  *
@@ -149,8 +176,9 @@ export const close_connections = (
  * why an in-transaction revocation must not close inline.
  *
  * In a handler with no wrapping transaction a throw still drops the queued
- * close while an autocommit write stays; close with `close_connections`
- * straight after the write there.
+ * close while an autocommit write stays; such a handler closes inline straight
+ * after its own commit instead, with `close_connections_after_commit`, which
+ * catches and logs a failing close as the post-commit flush does.
  *
  * @param ctx - the route or action context of the request doing the revoking
  * @param closer - the closer to run, `deps.connection_closer` in a handler

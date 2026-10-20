@@ -23,6 +23,7 @@ import { create_keyring } from '#lib/auth/keyring.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { PASSWORD_LENGTH_MIN, PASSWORD_LENGTH_MAX } from '#lib/auth/password.ts';
 import { ERROR_RATE_LIMIT_EXCEEDED, ERROR_INVALID_CREDENTIALS } from '#lib/http/error_schemas.ts';
+import { Db } from '#lib/db/db.ts';
 import { create_stub_db, create_noop_stub, create_test_audit_emitter } from '#lib/testing/stubs.ts';
 import { create_recording_audit_emitter } from '#lib/testing/audit_drift_guard.ts';
 import type { AuditLogInput } from '#lib/auth/audit_log_schema.ts';
@@ -97,7 +98,22 @@ const create_test_limiter = (): RateLimiter =>
 const keyring = create_keyring('integration_test_key_a')!;
 const session_options = create_session_config('test_session');
 
-const db = create_stub_db();
+/**
+ * Transactions open on `db` right now — to pin that a request waiting for a
+ * rate-limit slot, or in its Argon2 work, holds none.
+ */
+const transactions = { open: 0 };
+const db = new Db({
+	client: { query: async () => ({ rows: [] }) },
+	transaction: async (fn) => {
+		transactions.open++;
+		try {
+			return await fn(create_stub_db());
+		} finally {
+			transactions.open--;
+		}
+	}
+});
 const noop = create_noop_stub('deps');
 
 const fake_account = {
@@ -453,6 +469,49 @@ describe('password change rate limiting', () => {
 		limiter.dispose();
 	});
 
+	test('a concurrent burst of wrong current passwords gets at most the cap past the limiter', async () => {
+		// Every request of the burst would pass a check made before the verify;
+		// the reservation counts each one in flight, so exactly the cap gets
+		// through.
+		const limiter = create_test_limiter();
+		const { app, mock_verify_password } = create_password_change_app(limiter);
+
+		const responses = await Promise.all(
+			Array.from({ length: MAX_ATTEMPTS * 2 }, async () => password_change_request(app))
+		);
+
+		const statuses = responses.map((r) => r.status).sort((a, b) => a - b);
+		assert.deepStrictEqual(statuses, [
+			...Array<number>(MAX_ATTEMPTS).fill(401),
+			...Array<number>(MAX_ATTEMPTS).fill(429)
+		]);
+		assert.strictEqual(mock_verify_password.mock.calls.length, MAX_ATTEMPTS);
+
+		limiter.dispose();
+	});
+
+	test('a change waiting for a slot, or in its verify, holds no database transaction', async () => {
+		const limiter = create_test_limiter();
+		const { app, mock_verify_password } = create_password_change_app(limiter);
+		const verifies: Array<(valid: boolean) => void> = [];
+		mock_verify_password.mockImplementation(
+			() => new Promise<boolean>((resolve) => verifies.push(resolve))
+		);
+		const requests = Array.from({ length: MAX_ATTEMPTS * 2 }, async () =>
+			password_change_request(app)
+		);
+		while (verifies.length < MAX_ATTEMPTS) await new Promise((r) => setImmediate(r));
+		await new Promise((r) => setImmediate(r));
+
+		assert.strictEqual(verifies.length, MAX_ATTEMPTS);
+		assert.strictEqual(transactions.open, 0, 'a parked or verifying change holds no transaction');
+
+		mock_verify_password.mockImplementation(() => Promise.resolve(false));
+		for (const resolve of verifies) resolve(false);
+		await Promise.all(requests);
+		limiter.dispose();
+	});
+
 	test('blocked request skips password verification', async () => {
 		const limiter = create_test_limiter();
 		const { app, mock_verify_password } = create_password_change_app(limiter);
@@ -583,6 +642,23 @@ describe('password change per-account rate limiting', () => {
 		assert.strictEqual(body.error, ERROR_RATE_LIMIT_EXCEEDED);
 		assert.strictEqual(typeof body.retry_after, 'number');
 		assert.ok(body.retry_after > 0);
+
+		account_limiter.dispose();
+	});
+
+	test('a concurrent burst gets at most the per-account cap past the limiter', async () => {
+		const account_limiter = create_test_limiter();
+		const { app } = create_password_change_app(null, account_limiter);
+
+		const responses = await Promise.all(
+			Array.from({ length: MAX_ATTEMPTS * 2 }, async () => password_change_request(app))
+		);
+
+		const statuses = responses.map((r) => r.status).sort((a, b) => a - b);
+		assert.deepStrictEqual(statuses, [
+			...Array<number>(MAX_ATTEMPTS).fill(401),
+			...Array<number>(MAX_ATTEMPTS).fill(429)
+		]);
 
 		account_limiter.dispose();
 	});
