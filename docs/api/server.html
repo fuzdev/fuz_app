@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/BTZoVLbz.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CAODFmXb.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.biOxQU5A.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.xNLDaD56.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.D_CUHAjL.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.Dg-zOP3M.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BcwQFYZ2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/C3BYcZ2u.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/B9s6dVBv.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/DJeoKSja.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.De5NwgAl.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/BKHD3Y5L.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.B87qSGpB.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BL7ZH9U-.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DhdQKFKC.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -71,8 +71,10 @@ origins, routes); <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->cr
 status, surface generation, and Hono app assembly.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/server/env.ts"><!--[-1-->server/env.ts<!--]--></a><!--]--><!----></h3> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Base server environment schema and validation.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Provides <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/server/env.ts#BaseServerEnv"><!--[0--><!--[-1-->BaseServerEnv<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> — a shared Zod schema for common server env vars
 that apps can use directly or extend with app-specific fields.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Generic env loading lives in <!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/env/load.ts"><!--[0--><!--[-1-->env/load.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/server/serve_fact_route.ts"><!--[-1-->server/serve_fact_route.ts<!--]--></a><!--]--><!----></h3> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Content-addressed fact serving — cell-scoped, per-reference reads.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Two routes serve fact bytes from the PG-backed fact store:<!--]--><!--]--><!----></p><!--]--><!--[9--><!--[-1--><ul><!--[--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->GET /api/cells/:cell_id/facts/:hash<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> — the <!--]--><!--[4--><strong><!--[--><!--[2-->per-reference read<!--]--><!--]--><!----></strong><!--]--><!--[2-->.
 The request names the referencing cell. Authz is scoped to that one
-reference: <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->can_view_cell(caller, cell) AND cell.refs includes hash<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->.
-This is the path non-admin callers use, and the only path for
+reference: `(can_view_cell(caller, cell) OR the steward arm) AND
+cell.refs includes hash`, the steward arm being the governing root's
+manager reading a pending or rejected contribution
+(<!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/auth/cell_steward.ts"><!--[0--><!--[-1-->auth/cell_steward.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->). This is the path non-admin callers use, and the only path for
 confidential content.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->GET /api/facts/:hash<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> — the <!--]--><!--[4--><strong><!--[--><!--[2-->bare-hash read<!--]--><!--]--><!----></strong><!--]--><!--[2-->, restricted to admins.<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--[8--><p><!--[--><!--[2-->Embedded facts stream from the <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->fact.bytes<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> PG column; external facts
 (filesystem-backed <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->file:&lt;shard>/&lt;rest><!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> URLs) either return an
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->X-Accel-Redirect<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> header pointing into nginx's internal facts location
@@ -103,7 +105,8 @@ so the handler builds the <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a
 (populated by the <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->/api/*<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> session middleware) by resolving the caller's
 single actor and loading their role_grants. Unauthed callers pass through
 with <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->req_ctx: null<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> and are admitted only by a `cell.visibility ===
-'public'<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1--> cell. Multi-actor accounts fall through with <!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->req_ctx: null`
+'public'<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1--> cell whose <!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->moderation` admits an audience (unmoderated or
+<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->'approved'<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->). Multi-actor accounts fall through with <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->req_ctx: null<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->
 — there's no <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->acting?<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> slot on a pure-public route, so multi-actor
 callers are treated as anonymous.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->404 is the universal "not viewable" response: missing fact, missing or
 unviewable cell, or the cell doesn't reference the hash. We deliberately
@@ -141,16 +144,16 @@ fuz_app validates; there is no general config validator.<!--]--><!--]--><!----><
 			
 			<script>
 				{
-					__sveltekit_vsbxum = {
+					__sveltekit_kj9zth = {
 						base: "",
-						version: "c402dcd68717098af87628ff65c28bf118c5c1fc"
+						version: "c451ae975fba44b8309c35766f5bc62a3976144f"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.CXlCZqzx.js").then(async (kit) => {
-						kit.init(__sveltekit_vsbxum);
-						const app = await import("/_app/immutable/entry/app.biOxQU5A.js");
+						kit.init(__sveltekit_kj9zth);
+						const app = await import("/_app/immutable/entry/app.D_CUHAjL.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],

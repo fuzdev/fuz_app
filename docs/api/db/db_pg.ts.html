@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/BTZoVLbz.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CAODFmXb.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.biOxQU5A.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.xNLDaD56.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.D_CUHAjL.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.Dg-zOP3M.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BcwQFYZ2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/C3BYcZ2u.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/B9s6dVBv.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/DJeoKSja.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.De5NwgAl.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/BKHD3Y5L.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.B87qSGpB.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BL7ZH9U-.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DhdQKFKC.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -67,7 +67,7 @@ per transaction.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div>
 call this, don't need <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->pg<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> installed) and coerces int8 (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->BIGINT<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, OID 20)
 to a JS number. pg defaults to returning
 int8 as a string to avoid 2^53 precision loss; our int8 columns today
-(<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->audit_log.seq<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->cell_history.id<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->fact.size<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) stay well under that
+(<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->audit_log.seq<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->fact.size<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) stay well under that
 bound, and reading as a number keeps the wire shape uniform with PGlite —
 which returns int8 as a number — so <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->AuditLogEvent.seq<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> and friends
 validate identically across both drivers.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Both <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/db/create_db.ts#create_db"><!--[0--><!--[-1-->create_db<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> (production) and the test pg factory (<!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/testing/db.ts"><!--[0--><!--[-1-->testing/db.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->)
@@ -81,16 +81,16 @@ localize via a per-pool <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-
 			
 			<script>
 				{
-					__sveltekit_vsbxum = {
+					__sveltekit_kj9zth = {
 						base: "",
-						version: "c402dcd68717098af87628ff65c28bf118c5c1fc"
+						version: "c451ae975fba44b8309c35766f5bc62a3976144f"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.CXlCZqzx.js").then(async (kit) => {
-						kit.init(__sveltekit_vsbxum);
-						const app = await import("/_app/immutable/entry/app.biOxQU5A.js");
+						kit.init(__sveltekit_kj9zth);
+						const app = await import("/_app/immutable/entry/app.D_CUHAjL.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],
