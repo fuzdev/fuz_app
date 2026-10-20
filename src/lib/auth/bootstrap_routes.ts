@@ -18,6 +18,7 @@ import { bootstrap_route_shape, type BootstrapInput } from './bootstrap_route_sc
 import type { Db } from '../db/db.ts';
 import { get_route_input, type RouteSpec } from '../http/route_spec.ts';
 import { get_client_ip } from '../http/client_ip.ts';
+import { rate_limit_ip_key } from '../http/ip_canonical.ts';
 import {
 	rate_limit_exceeded_response,
 	reserve_optional,
@@ -154,8 +155,9 @@ export const create_bootstrap_route_specs = (
 				// checked: the attempt counts against the cap until it settles, so
 				// a concurrent burst of token guesses can't all pass before any of
 				// it records. The `finally` releases it unless a failure recorded it.
-				const ip = bootstrap_ip_rate_limiter ? get_client_ip(c) : null;
-				const ip_reserved = await reserve_optional(bootstrap_ip_rate_limiter, ip, {
+				// keyed by the address's rate-limit key (an IPv6 client's /64)
+				const ip_key = bootstrap_ip_rate_limiter ? rate_limit_ip_key(get_client_ip(c)) : null;
+				const ip_reserved = await reserve_optional(bootstrap_ip_rate_limiter, ip_key, {
 					signal: c.req.raw.signal
 				});
 				if (!ip_reserved.ok) {

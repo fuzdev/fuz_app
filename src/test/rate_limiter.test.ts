@@ -58,20 +58,117 @@ describe('RateLimiter', () => {
 			limiter.dispose();
 		});
 
-		test('max_attempts 0 allows fresh keys but blocks after first record', () => {
+		test('refuses options that are not safe integers in range', () => {
+			const base = { max_attempts: 3, window_ms: WINDOW_MS, cleanup_interval_ms: 0 };
+			for (const bad of [
+				{ max_attempts: -1 },
+				{ max_attempts: 1.5 },
+				{ max_attempts: NaN },
+				{ max_attempts: Infinity },
+				{ window_ms: -1 },
+				{ window_ms: 0.5 },
+				{ cleanup_interval_ms: -1 },
+				{ cleanup_interval_ms: NaN },
+				// past the largest delay a timer honours, `setInterval` fires every millisecond
+				{ cleanup_interval_ms: 2 ** 31 },
+				{ max_keys: 0 },
+				{ max_keys: -1 },
+				{ max_keys: 2.5 }
+			]) {
+				assert.throws(
+					() => new RateLimiter({ ...base, ...bad }),
+					RangeError,
+					undefined,
+					JSON.stringify(bad)
+				);
+			}
+			for (const ok of [
+				{ max_attempts: 0 },
+				{ window_ms: 0 },
+				{ cleanup_interval_ms: 2 ** 31 - 1 },
+				{ max_keys: null },
+				{ max_keys: 1 }
+			]) {
+				new RateLimiter({ ...base, ...ok }).dispose();
+			}
+		});
+
+		test('max_attempts 0 refuses a fresh key and tracks nothing', () => {
 			const limiter = new RateLimiter({
 				max_attempts: 0,
 				window_ms: WINDOW_MS,
 				cleanup_interval_ms: 0
 			});
-			// fresh key with no prior record is allowed (no timestamps to exceed limit)
 			const fresh = limiter.check('ip1');
-			assert.strictEqual(fresh.allowed, true);
+			assert.strictEqual(fresh.allowed, false);
 			assert.strictEqual(fresh.remaining, 0);
-			// after one record, the key is blocked
+			assert.strictEqual(fresh.retry_after, WINDOW_MS / 1000);
+			assert.deepStrictEqual(limiter.try_reserve('ip1'), {
+				ok: false,
+				retry_after: WINDOW_MS / 1000
+			});
+			assert.strictEqual(limiter.size, 0);
+			// a recorded attempt changes nothing
 			limiter.record('ip1');
-			const after = limiter.check('ip1');
-			assert.strictEqual(after.allowed, false);
+			assert.strictEqual(limiter.check('ip1').allowed, false);
+			limiter.dispose();
+		});
+
+		test('max_attempts 0 waits at least a second', () => {
+			for (const [window_ms, retry_after] of [
+				[0, 1],
+				[1, 1],
+				[1_500, 2]
+			] as const) {
+				const limiter = new RateLimiter({ max_attempts: 0, window_ms, cleanup_interval_ms: 0 });
+				assert.strictEqual(limiter.check('k').retry_after, retry_after);
+				limiter.dispose();
+			}
+		});
+
+		test('max_attempts 0 reserve refuses at once without parking', async () => {
+			const limiter = new RateLimiter({
+				max_attempts: 0,
+				window_ms: WINDOW_MS,
+				cleanup_interval_ms: 0
+			});
+			const started = Date.now();
+			const result = await limiter.reserve('k', { max_wait_ms: 60_000 });
+			assert.deepStrictEqual(result, { ok: false, retry_after: WINDOW_MS / 1000 });
+			assert.ok(Date.now() - started < 1000, 'refused without waiting');
+			assert.strictEqual(limiter.waiter_keys, 0);
+			assert.strictEqual(limiter.size, 0);
+			limiter.dispose();
+		});
+
+		test('max_attempts 0 with an attempt in flight never reports NaN', () => {
+			// an in-flight-only entry made under a cap of one, read under zero
+			const limiter = new RateLimiter({
+				max_attempts: 1,
+				window_ms: WINDOW_MS,
+				cleanup_interval_ms: 0
+			});
+			const held = limiter.try_reserve('k');
+			assert.ok(held.ok);
+			(limiter.options as { max_attempts: number }).max_attempts = 0;
+			const checked = limiter.check('k');
+			assert.strictEqual(checked.allowed, false);
+			assert.strictEqual(checked.retry_after, WINDOW_MS / 1000);
+			held.reservation.release();
+			limiter.dispose();
+		});
+
+		test('max_attempts 1 still admits one', () => {
+			const limiter = new RateLimiter({
+				max_attempts: 1,
+				window_ms: WINDOW_MS,
+				cleanup_interval_ms: 0
+			});
+			assert.ok(limiter.check('k').allowed);
+			const reserved = limiter.try_reserve('k');
+			assert.ok(reserved.ok);
+			reserved.reservation.record();
+			assert.ok(!limiter.check('k').allowed);
 			limiter.dispose();
 		});
 	});

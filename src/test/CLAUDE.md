@@ -505,14 +505,16 @@ limiters enabled + the loopback proxy trusted, providing
 `security_action_rate_limit_max_attempts`). The first drives
 `describe_login_security_cross_tests` against each impl: the per-IP login
 `429` and `Retry-After` shape, the `X-Forwarded-For` bucket keying (every
-header line read — a raw-socket case, given the handle's `base_url`), a
-concurrent burst getting at most the cap past the limiter, and the
-distributed-spray backstop (a success must not refund the per-IP budget). The
-second drives `describe_ws_action_rate_limit_cross_tests`: an account-limited
-action refused on the WS call past the cap, one account budget across HTTP RPC
-and WS, the per-IP axis keyed by the forwarded client IP on both
-transports, and the account axis at the RPC and WS dispatchers (`cell_create`,
-which the Rust stub charges there rather than in-handler, and which both spines
+header line read — a raw-socket case, given the handle's `base_url`; an IPv6
+client keyed by its `/64`, its audit rows keeping the full address, and a
+password change from an exhausted `/64` refused), a concurrent burst getting at
+most the cap past the limiter, and the distributed-spray backstop (a success
+must not refund the per-IP budget). The second drives
+`describe_ws_action_rate_limit_cross_tests`: an account-limited action refused
+on the WS call past the cap, one account budget across HTTP RPC and WS, the
+per-IP axis keyed by the forwarded client IP on both transports, an IPv6 one by
+its `/64` (over HTTP), and the account axis at the RPC and WS dispatchers
+(`cell_create`, which the Rust stub charges there rather than in-handler, and which both spines
 serve on WS — the TS spine mounts its full action set there, as the Rust stub
 serves one registry on both transports) — over a real socket, against limiters each binary builds from
 `FUZ_ACTION_RATE_LIMIT_ENABLED` + `FUZ_ACTION_RATE_LIMIT_MAX_ATTEMPTS` and

@@ -21,6 +21,7 @@ import type { Invite } from './invite_schema.ts';
 import { create_signup_route_shape, type SignupInput } from './signup_route_schema.ts';
 import { get_route_input, type RouteSpec } from '../http/route_spec.ts';
 import { get_client_ip } from '../http/client_ip.ts';
+import { rate_limit_ip_key } from '../http/ip_canonical.ts';
 import {
 	rate_limit_exceeded_response,
 	reserve_optional,
@@ -125,8 +126,9 @@ export const create_signup_route_specs = (
 				// below, so a concurrent burst can't all pass before any of it
 				// records — and the Argon2 hash every attempt pays is bounded with
 				// it. The `finally` releases whatever no branch recorded.
-				const ip = signup_ip_rate_limiter ? get_client_ip(c) : null;
-				const ip_reserved = await reserve_optional(signup_ip_rate_limiter, ip, {
+				// keyed by the address's rate-limit key (an IPv6 client's /64)
+				const ip_key = signup_ip_rate_limiter ? rate_limit_ip_key(get_client_ip(c)) : null;
+				const ip_reserved = await reserve_optional(signup_ip_rate_limiter, ip_key, {
 					signal: c.req.raw.signal
 				});
 				if (!ip_reserved.ok) {

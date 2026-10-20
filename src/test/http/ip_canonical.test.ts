@@ -14,7 +14,8 @@ import { describe, test, assert } from 'vitest';
 import {
 	canonicalize_ip,
 	ipv6_bigint_to_canonical,
-	IP_LITERAL_CHARS
+	IP_LITERAL_CHARS,
+	rate_limit_ip_key
 } from '#lib/http/ip_canonical.ts';
 
 // --- ipv6_bigint_to_canonical — pure helper ---
@@ -446,5 +447,73 @@ describe('canonicalize_ip', () => {
 			assert.strictEqual(canonicalize_ip('1.2.3.256'), '1.2.3.256');
 			assert.strictEqual(canonicalize_ip('1.2.3.4.5'), '1.2.3.4.5');
 		});
+	});
+});
+
+// --- rate_limit_ip_key ---
+
+/**
+ * The key table, kept identical with the Rust spine's
+ * `fuz_http::ip_canonical` tests — the twins must bucket alike.
+ */
+const RATE_LIMIT_IP_KEY_CASES: ReadonlyArray<readonly [string, string]> = [
+	// IPv6 keys its /64
+	['2001:db8:1:2::1', '2001:db8:1:2::/64'],
+	['2001:db8:1:2:ffff:ffff:ffff:ffff', '2001:db8:1:2::/64'],
+	// the /65 bit is still inside the /64
+	['2001:db8:1:2:8000::', '2001:db8:1:2::/64'],
+	// the /64 bit is not
+	['2001:db8:1:3::', '2001:db8:1:3::/64'],
+	['2001:db8:1:3::1', '2001:db8:1:3::/64'],
+	// so is the /63 bit
+	['2001:db8:1:1::', '2001:db8:1:1::/64'],
+	// equivalent forms, uppercase, full width
+	['2001:0DB8:0001:0002:0000:0000:0000:0001', '2001:db8:1:2::/64'],
+	['2001:db8:0:0:1::', '2001:db8::/64'],
+	// the all-zero prefix
+	['::1', '::/64'],
+	['::', '::/64'],
+	// canonical compression of the prefix: longest zero run, first on a tie
+	['2001:0:0:1:abcd::', '2001:0:0:1::/64'],
+	['1:0:0:0::5', '1::/64'],
+	['fe80::1', 'fe80::/64'],
+	// a zone is dropped
+	['fe80::1%eth0', 'fe80::/64'],
+	['FE80::ABCD%25', 'fe80::/64'],
+	// IPv4 unchanged, no /32
+	['203.0.113.7', '203.0.113.7'],
+	['127.0.0.1', '127.0.0.1'],
+	// IPv4-mapped IPv6 keys the IPv4 address
+	['::ffff:203.0.113.7', '203.0.113.7'],
+	['::ffff:cb00:7107', '203.0.113.7'],
+	// not an address: unchanged — not lowercased, the zone kept
+	['unknown', 'unknown'],
+	['UNKNOWN', 'UNKNOWN'],
+	['unknown%eth0', 'unknown%eth0'],
+	['', ''],
+	['attacker:controlled', 'attacker:controlled'],
+	['[::1]:8080', '[::1]:8080']
+];
+
+describe('rate_limit_ip_key', () => {
+	test('key table', () => {
+		for (const [ip, key] of RATE_LIMIT_IP_KEY_CASES) {
+			assert.strictEqual(rate_limit_ip_key(ip), key, ip);
+		}
+	});
+
+	test('shares a bucket within a /64 only', () => {
+		const a = rate_limit_ip_key('2001:db8:1:2::1');
+		assert.strictEqual(rate_limit_ip_key('2001:db8:1:2:8000::'), a);
+		assert.strictEqual(rate_limit_ip_key('2001:db8:1:2:dead:beef:0:1'), a);
+		assert.notStrictEqual(rate_limit_ip_key('2001:db8:1:3::'), a);
+		assert.notStrictEqual(rate_limit_ip_key('2001:db8:1:1:ffff:ffff:ffff:ffff'), a);
+	});
+
+	test('idempotent', () => {
+		for (const [ip] of RATE_LIMIT_IP_KEY_CASES) {
+			const once = rate_limit_ip_key(ip);
+			assert.strictEqual(rate_limit_ip_key(once), once, ip);
+		}
 	});
 });

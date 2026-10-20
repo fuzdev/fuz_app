@@ -25,6 +25,11 @@ import '../assert_dev_env.ts';
  *   not `429`). A backend that ignored XFF and keyed on the (loopback) TCP
  *   peer would 429 the fresh-IP request too — so the `401` proves the limiter
  *   keys on the resolved `X-Forwarded-For` client IP.
+ * - **IPv6 clients share a bucket per `/64`** — after one forwarded IPv6
+ *   address exhausts its bucket, another address in the same `/64` is `429`
+ *   and one in the next `/64` is not; the login audit rows keep each full
+ *   address, never the bucket key. A password change, which shares the
+ *   per-IP login limiter, from an address in an exhausted `/64` is `429` too.
  * - **a concurrent burst gets at most the cap past the limiter** — `2 ×
  *   ip_limit` wrong logins sent at once from one fresh forwarded IP answer at
  *   most `ip_limit` `401`s and `429` for the rest. A limiter checked before
@@ -74,6 +79,9 @@ import {
 	default_login_ip_rate_limit
 } from '../../rate_limiter.ts';
 import type { SetupTest } from './setup.ts';
+import { AuditLogListOutput } from '../../auth/admin_action_specs.ts';
+import { cross_rpc_call, expect_output } from './cell_cross_helpers.ts';
+import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
 /** Options for the login-security parity suite. */
 export interface LoginSecurityCrossTestOptions {
@@ -81,6 +89,8 @@ export interface LoginSecurityCrossTestOptions {
 	readonly setup_test: SetupTest;
 	/** REST login route path. Default `/api/account/login` (the spine convention). */
 	readonly login_path?: string;
+	/** REST password-change route path. Default `/api/account/password`. */
+	readonly password_path?: string;
 	/**
 	 * Whether the backend serves concurrent logins — each its own database
 	 * transaction — at once, for the burst-of-correct-logins case. Default
@@ -114,6 +124,20 @@ const XFF_CORRECT_BURST = '203.0.113.7';
 const XFF_REPEATED_LINES = '203.0.113.6';
 /** RFC 5737 TEST-NET-2 — the address a client writes into its own first line. */
 const XFF_SPOOFED_LINE = '198.51.100.77';
+/**
+ * RFC 3849 documentation (`2001:db8::/32`) addresses: two in one `/64` — the
+ * second differs past bit 64 only — and one in the next `/64`.
+ */
+const XFF_V6_EXHAUST = '2001:db8:e3:1::1';
+const XFF_V6_SAME_64 = '2001:db8:e3:1:8000::2';
+const XFF_V6_OTHER_64 = '2001:db8:e3:2::1';
+/**
+ * Two addresses in one more `/64`: login exhausts the first, and a password
+ * change — which reserves on the same per-IP login limiter — comes from the
+ * second.
+ */
+const XFF_V6_PASSWORD_EXHAUST = '2001:db8:e3:5::1';
+const XFF_V6_PASSWORD_SAME_64 = '2001:db8:e3:5:8000::2';
 
 /** How long a raw exchange waits for the login's answer. */
 const RAW_READ_TIMEOUT_MS = 5000;
@@ -134,6 +158,7 @@ export const describe_login_security_cross_tests = (
 ): void => {
 	const { setup_test } = options;
 	const login_path = options.login_path ?? '/api/account/login';
+	const password_path = options.password_path ?? '/api/account/password';
 	const concurrent_transactions = options.concurrent_transactions ?? false;
 	const base_url = options.base_url ?? null;
 	/** Per-IP cap shared by both impls (TS `default_login_ip_rate_limit`, Rust `DEFAULT_LOGIN_IP_RATE_LIMIT`). */
@@ -252,6 +277,76 @@ export const describe_login_security_cross_tests = (
 				401,
 				"a fresh forwarded IP must not inherit another IP's limit"
 			);
+		});
+
+		test('IPv6 clients share a bucket per /64, and the audit row keeps the full address', async () => {
+			const fixture = await setup_test();
+			for (let i = 0; i < ip_limit; i++) {
+				const outcome = await attempt(fixture, XFF_V6_EXHAUST, 'probe_v6');
+				assert.strictEqual(outcome.status, 401, `attempt ${i + 1} from ${XFF_V6_EXHAUST}`);
+			}
+			// another address in the same /64 draws the same budget
+			const same = await attempt(fixture, XFF_V6_SAME_64, 'probe_v6');
+			assert.strictEqual(same.status, 429, 'an address in the same /64 must be rate-limited');
+			// the next /64 has its own
+			const other = await attempt(fixture, XFF_V6_OTHER_64, 'probe_v6');
+			assert.strictEqual(other.status, 401, 'the next /64 must keep its own budget');
+
+			// The limiter keys the /64; the audit trail keeps the address. Drain
+			// the fire-and-forget audit writes, then read this test's login rows
+			// (`_testing_reset` wiped the log at setup).
+			const drained = await cross_rpc_call(
+				fixture.fresh_transport({ origin: null }),
+				SPINE_RPC_PATH,
+				'_testing_drain_effects',
+				undefined,
+				fixture.create_daemon_token_headers()
+			);
+			assert.ok(drained.ok, `_testing_drain_effects failed: ${JSON.stringify(drained.error)}`);
+			const listed = expect_output(
+				await cross_rpc_call(
+					fixture.transport,
+					SPINE_RPC_PATH,
+					'audit_log_list',
+					{ event_type: 'login', outcome: 'failure' },
+					fixture.create_session_headers()
+				),
+				AuditLogListOutput
+			);
+			const ips = listed.events.map((e) => e.ip);
+			assert.ok(ips.includes(XFF_V6_EXHAUST), `audit ips: ${JSON.stringify(ips)}`);
+			assert.ok(ips.includes(XFF_V6_OTHER_64), `audit ips: ${JSON.stringify(ips)}`);
+			assert.ok(
+				ips.every((ip) => ip === null || !ip.includes('/')),
+				`no audit row may carry a rate-limit key: ${JSON.stringify(ips)}`
+			);
+		});
+
+		test('a password change from the /64 an exhausted IPv6 login shares is rate-limited', async () => {
+			const fixture = await setup_test();
+			for (let i = 0; i < ip_limit; i++) {
+				const outcome = await attempt(fixture, XFF_V6_PASSWORD_EXHAUST, 'probe_v6_password');
+				assert.strictEqual(outcome.status, 401, `attempt ${i + 1} from ${XFF_V6_PASSWORD_EXHAUST}`);
+			}
+			// The keeper's session, from another address in the same /64: the
+			// password route reserves on the per-IP login limiter before it
+			// reads the credential or the body, so the /64's spent budget
+			// answers. Keyed on the full address instead, the wrong
+			// `current_password` would answer `401`.
+			const res = await fixture.fresh_transport()(password_path, {
+				method: 'POST',
+				headers: fixture.create_session_headers({
+					'content-type': 'application/json',
+					'x-forwarded-for': XFF_V6_PASSWORD_SAME_64
+				}),
+				body: JSON.stringify({
+					current_password: PROBE_PASSWORD,
+					new_password: 'login_security_new_password'
+				})
+			});
+			const body = (await res.json().catch(() => undefined)) as { error?: unknown } | undefined;
+			assert.strictEqual(res.status, 429, `password change answered ${JSON.stringify(body)}`);
+			assert.strictEqual(body?.error, ERROR_RATE_LIMIT_EXCEEDED);
 		});
 
 		test(`a concurrent burst of ${ip_limit * 2} wrong logins gets at most ${

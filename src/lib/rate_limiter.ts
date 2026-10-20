@@ -28,6 +28,7 @@ import type { Context } from 'hono';
 import { LruMap } from '@fuzdev/fuz_util/lru_map.ts';
 
 import { ERROR_RATE_LIMIT_EXCEEDED } from './http/error_schemas.ts';
+import { PERIODIC_INTERVAL_MS_MAX } from './periodic.ts';
 
 /**
  * Default tracked-key cap: bounds worst-case memory under key-enumeration
@@ -42,11 +43,19 @@ export const DEFAULT_RATE_LIMITER_MAX_KEYS = 100_000;
  * Configuration for a rate limiter instance.
  */
 export interface RateLimiterOptions {
-	/** Maximum allowed attempts within the window. */
+	/**
+	 * Maximum allowed attempts within the window, a safe integer ≥ 0. `0`
+	 * refuses every attempt — `check`, `try_reserve`, and `reserve` answer at
+	 * once with the window's length as `retry_after`, tracking nothing.
+	 */
 	max_attempts: number;
-	/** Sliding window duration in milliseconds. */
+	/** Sliding window duration in milliseconds, a safe integer ≥ 0. */
 	window_ms: number;
-	/** Interval for pruning stale entries (0 disables the timer). */
+	/**
+	 * Interval for pruning stale entries, an integer from `0` to
+	 * `PERIODIC_INTERVAL_MS_MAX` (`0` disables the timer) — the largest delay
+	 * a timer honours; past it `setInterval` fires every millisecond.
+	 */
 	cleanup_interval_ms: number;
 	/**
 	 * Maximum tracked keys. When exceeded, the least-recently-used key is
@@ -62,6 +71,8 @@ export interface RateLimiterOptions {
 	 * can, however, drop out of the table and reset their budget — set
 	 * `max_keys` high enough to fit the expected legitimate key set and
 	 * this stays theoretical.
+	 *
+	 * A number must be a positive safe integer.
 	 */
 	max_keys?: number | null;
 }
@@ -306,7 +317,31 @@ export class RateLimiter {
 	 */
 	readonly #waiters: Map<string, RateLimitKeyWaiters> = new Map();
 
+	/**
+	 * @param options - the limiter's bounds
+	 * @throws {RangeError} when `max_attempts`, `window_ms`, or `cleanup_interval_ms` is not a safe integer ≥ 0, `cleanup_interval_ms` exceeds `PERIODIC_INTERVAL_MS_MAX`, or `max_keys` is neither `null` nor a positive safe integer
+	 */
 	constructor(options: RateLimiterOptions) {
+		for (const field of ['max_attempts', 'window_ms', 'cleanup_interval_ms'] as const) {
+			const value = options[field];
+			if (!Number.isSafeInteger(value) || value < 0) {
+				throw new RangeError(`RateLimiterOptions.${field} must be a safe integer ≥ 0: ${value}`);
+			}
+		}
+		if (options.cleanup_interval_ms > PERIODIC_INTERVAL_MS_MAX) {
+			throw new RangeError(
+				`RateLimiterOptions.cleanup_interval_ms must be at most ${PERIODIC_INTERVAL_MS_MAX}: ${options.cleanup_interval_ms}`
+			);
+		}
+		if (
+			options.max_keys !== undefined &&
+			options.max_keys !== null &&
+			!(Number.isSafeInteger(options.max_keys) && options.max_keys > 0)
+		) {
+			throw new RangeError(
+				`RateLimiterOptions.max_keys must be null or a positive safe integer: ${options.max_keys}`
+			);
+		}
 		this.options = options;
 		const max_keys =
 			options.max_keys === undefined ? DEFAULT_RATE_LIMITER_MAX_KEYS : options.max_keys;
@@ -379,6 +414,12 @@ export class RateLimiter {
 	/** Where `key` stands against the cap, pruning expired timestamps first. */
 	#load(key: string, now: number): RateLimitLoad {
 		const { max_attempts, window_ms } = this.options;
+		// A cap of zero refuses before reading the key: no entry is created or
+		// promoted, and no reservation parks. The wait it names is the whole
+		// window, at least a second.
+		if (max_attempts === 0) {
+			return { kind: 'recorded', retry_after: Math.max(1, Math.ceil(window_ms / 1000)) };
+		}
 		const entry = this.#attempts.get(key);
 		if (!entry) return { kind: 'free', used: 0 };
 

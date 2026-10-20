@@ -327,6 +327,28 @@ describe('bootstrap handler rate limiting', () => {
 
 		limiter.dispose();
 	});
+
+	test('an IPv6 client buckets with its /64', async () => {
+		const limiter = create_test_limiter();
+		const { app } = await create_bootstrap_app(limiter);
+
+		for (let i = 0; i < MAX_ATTEMPTS; i++) {
+			await bootstrap_request(app, { 'X-Forwarded-For': '2001:db8:1:2::1' });
+		}
+
+		// another address in the same /64 draws the same budget
+		assert.strictEqual(
+			(await bootstrap_request(app, { 'X-Forwarded-For': '2001:db8:1:2:8000::2' })).status,
+			429
+		);
+		// the next /64 has its own
+		assert.strictEqual(
+			(await bootstrap_request(app, { 'X-Forwarded-For': '2001:db8:1:3::1' })).status,
+			401
+		);
+
+		limiter.dispose();
+	});
 });
 
 describe('unreadable token file closes the window', () => {

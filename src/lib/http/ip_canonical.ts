@@ -27,9 +27,15 @@
  *    canonicalization because the dotted form is the only form the
  *    strip can recognize symmetrically.
  *
- * Mirrors `zzz_server::proxy::normalize_ip` (landed 2026-05-16) which
- * uses the same parse-then-canonicalize-then-strip ordering for the
- * same rate-limit-key-poisoning surface.
+ * Mirrors the Rust spine's `fuz_http::normalize_ip`, which uses the same
+ * parse-then-canonicalize-then-strip ordering for the same
+ * rate-limit-key-poisoning surface.
+ *
+ * `rate_limit_ip_key` is the bucket key an IP-keyed rate limiter uses: an
+ * IPv6 address collapses to its `/64`, the smallest block a host is commonly
+ * assigned, so rotating through one's own subnet buys no fresh budget. Only
+ * the limiter call sites apply it — the client IP stays the full address
+ * everywhere else (audit rows, token `last_used_ip`, `REMOTE_ADDR`).
  *
  * @module
  */
@@ -200,4 +206,43 @@ export const ipv6_bigint_to_canonical = (bits: bigint): string => {
 		.map(to_hex)
 		.join(':');
 	return before + '::' + after;
+};
+
+/** The high 64 bits of an IPv6 address — its `/64` network prefix. */
+const IPV6_PREFIX_64_MASK = ((1n << 64n) - 1n) << 64n;
+
+/**
+ * The bucket key an IP-keyed rate limiter uses for client IP `ip`.
+ *
+ * An IPv6 address keys its `/64`: the low 64 bits masked off, rendered in
+ * RFC 5952 canonical form with a `/64` suffix (`2001:db8:1:2::/64`; the
+ * all-zero prefix is `::/64`). A zone suffix (`%eth0`) is dropped first. An
+ * IPv4 address — an IPv4-mapped IPv6 one included — keys its canonical form,
+ * with no suffix. Anything that doesn't parse (`'unknown'` among them) is
+ * returned unchanged. Twin of the Rust spine's `fuz_http::rate_limit_ip_key`.
+ *
+ * For limiter keys only: audit rows and every other record of the client
+ * keep the full address.
+ *
+ * @example
+ * rate_limit_ip_key('2001:db8:1:2::1')        // → '2001:db8:1:2::/64'
+ * rate_limit_ip_key('2001:db8:1:2:8000::')    // → '2001:db8:1:2::/64'
+ * rate_limit_ip_key('fe80::1%eth0')           // → 'fe80::/64'
+ * rate_limit_ip_key('203.0.113.7')            // → '203.0.113.7'
+ * rate_limit_ip_key('unknown')                // → 'unknown'
+ */
+export const rate_limit_ip_key = (ip: string): string => {
+	const zone_at = ip.indexOf('%');
+	const canonical = canonicalize_ip(zone_at === -1 ? ip : ip.slice(0, zone_at));
+	if (!IP_LITERAL_CHARS.test(canonical)) return ip;
+	const family = distinctRemoteAddr(canonical);
+	if (family === 'IPv4') return canonical;
+	if (family !== 'IPv6') return ip;
+	let bits: bigint;
+	try {
+		bits = convertIPv6ToBinary(canonical);
+	} catch {
+		return ip;
+	}
+	return `${ipv6_bigint_to_canonical(bits & IPV6_PREFIX_64_MASK)}/64`;
 };

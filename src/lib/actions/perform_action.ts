@@ -67,6 +67,7 @@ import {
 import { type CredentialType } from '../hono_context.ts';
 import type { Db } from '../db/db.ts';
 import { to_input_params } from '../http/schema_helpers.ts';
+import { rate_limit_ip_key } from '../http/ip_canonical.ts';
 import { dispatch_with_post_commit_rollback } from '../http/pending_effects.ts';
 import {
 	JSONRPC_VERSION,
@@ -270,22 +271,25 @@ export const perform_action = async (
 	// budget it should, and so a throttled caller pays no schema work.
 	const rate_limit = spec.rate_limit;
 	if (rate_limit) {
-		const ip_check = action_ip_rate_limiter && (rate_limit === 'ip' || rate_limit === 'both');
+		const ip_limiter = rate_limit === 'ip' || rate_limit === 'both' ? action_ip_rate_limiter : null;
 		const account_keyed_context =
 			action_account_rate_limiter &&
 			request_context !== null &&
 			(rate_limit === 'account' || rate_limit === 'both')
 				? request_context
 				: null;
-		if (ip_check) {
-			const result = action_ip_rate_limiter.check(client_ip);
+		// keyed by the address's rate-limit key (an IPv6 client's /64); the
+		// audit trail keeps `client_ip` whole
+		const ip_key = ip_limiter ? rate_limit_ip_key(client_ip) : '';
+		if (ip_limiter) {
+			const result = ip_limiter.check(ip_key);
 			if (!result.allowed) return rate_limited_result(result.retry_after);
 		}
 		if (account_keyed_context) {
 			const result = action_account_rate_limiter!.check(account_keyed_context.account.id);
 			if (!result.allowed) return rate_limited_result(result.retry_after);
 		}
-		if (ip_check) action_ip_rate_limiter.record(client_ip);
+		if (ip_limiter) ip_limiter.record(ip_key);
 		if (account_keyed_context) {
 			action_account_rate_limiter!.record(account_keyed_context.account.id);
 		}

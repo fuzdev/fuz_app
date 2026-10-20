@@ -633,6 +633,28 @@ describe('login handler rate limiting', () => {
 		limiter.dispose();
 	});
 
+	test('an IPv6 client buckets with its /64', async () => {
+		const limiter = create_test_limiter();
+		const { app } = create_login_app(limiter);
+
+		for (let i = 0; i < MAX_ATTEMPTS; i++) {
+			await login_request(app, { 'X-Forwarded-For': '2001:db8:1:2::1' });
+		}
+
+		// another address in the same /64 draws the same budget
+		assert.strictEqual(
+			(await login_request(app, { 'X-Forwarded-For': '2001:db8:1:2:8000::2' })).status,
+			429
+		);
+		// the next /64 has its own
+		assert.strictEqual(
+			(await login_request(app, { 'X-Forwarded-For': '2001:db8:1:3::1' })).status,
+			401
+		);
+
+		limiter.dispose();
+	});
+
 	test('different IPs are rate-limited independently', async () => {
 		const limiter = create_test_limiter();
 		const { app } = create_login_app(limiter);
@@ -1441,6 +1463,33 @@ describe('signup handler per-IP rate limiting', () => {
 			assert.strictEqual(res.status, 200);
 		}
 		assert.strictEqual(ip_limiter.check(TEST_CONNECTION_IP).remaining, MAX_ATTEMPTS);
+
+		ip_limiter.dispose();
+	});
+
+	test('an IPv6 client buckets with its /64', async () => {
+		// Invite-gated with no invite: each attempt fails `no_matching_invite`
+		// and records the bucket.
+		const ip_limiter = create_test_limiter();
+		const app = create_signup_app(ip_limiter, null);
+
+		for (let i = 0; i < MAX_ATTEMPTS; i++) {
+			const res = await signup_request(app, `v6_user_${i}`, {
+				'X-Forwarded-For': '2001:db8:1:2::1'
+			});
+			assert.strictEqual(res.status, 403);
+		}
+
+		// another address in the same /64 draws the same budget
+		const same = await signup_request(app, 'v6_user_same', {
+			'X-Forwarded-For': '2001:db8:1:2:8000::2'
+		});
+		assert.strictEqual(same.status, 429);
+		// the next /64 has its own
+		const other = await signup_request(app, 'v6_user_other', {
+			'X-Forwarded-For': '2001:db8:1:3::1'
+		});
+		assert.strictEqual(other.status, 403);
 
 		ip_limiter.dispose();
 	});

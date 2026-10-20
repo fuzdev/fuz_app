@@ -24,7 +24,9 @@ import '../assert_dev_env.ts';
  *   'ip'`, public) with malformed params, from one `X-Forwarded-For` address
  *   over anonymous HTTP and over a WS whose upgrade carried the same header:
  *   the call past the cap is refused on both, while a second address keeps its
- *   own budget on both.
+ *   own budget on both. Over HTTP, IPv6 addresses bucket by their `/64`:
+ *   another address in the same `/64` is refused once one has spent the
+ *   budget, while one in the next `/64` keeps its own.
  * - **account axis at the dispatchers** — `cell_create` (`rate_limit:
  *   'account'`, on both spines' RPC and WS mounts) with malformed params: the
  *   call past the cap answers `429` over HTTP and `rate_limited` over WS, calls
@@ -99,6 +101,13 @@ const IP_LIMITED_BAD_PARAMS = { nonce: 'not_a_number' };
  */
 const XFF_IP_EXHAUSTED = '198.51.100.1';
 const XFF_IP_FRESH = '198.51.100.2';
+/**
+ * RFC 3849 documentation addresses: two in one `/64` — the second differs past
+ * bit 64 only — and one in the next `/64`. Distinct from `login_security.ts`'s.
+ */
+const XFF_V6_EXHAUSTED = '2001:db8:e3a:1::1';
+const XFF_V6_SAME_64 = '2001:db8:e3a:1:8000::2';
+const XFF_V6_OTHER_64 = '2001:db8:e3a:2::1';
 
 /** Generous per-response wait — the cases assert the server's answer, not a timeout. */
 const RESPONSE_TIMEOUT_MS = 5000;
@@ -419,6 +428,25 @@ export const describe_ws_action_rate_limit_cross_tests = (
 				await ws_exhausted.close();
 				await ws_fresh.close();
 			}
+		});
+
+		test('an IP-limited action buckets IPv6 clients by /64', async () => {
+			const fixture = await setup_test();
+			const call = (forwarded_for: string): Promise<RpcOutcome> =>
+				call_http(fixture, IP_LIMITED_METHOD, IP_LIMITED_BAD_PARAMS, {
+					'x-forwarded-for': forwarded_for
+				});
+			for (let i = 1; i <= max_attempts; i++) {
+				assert_charged_not_limited(
+					await call(XFF_V6_EXHAUSTED),
+					`call ${i} from ${XFF_V6_EXHAUSTED}`
+				);
+			}
+			assert_rate_limited(await call(XFF_V6_SAME_64), `a call from ${XFF_V6_SAME_64}, same /64`);
+			assert_charged_not_limited(
+				await call(XFF_V6_OTHER_64),
+				`a call from ${XFF_V6_OTHER_64}, the next /64`
+			);
 		});
 	});
 };

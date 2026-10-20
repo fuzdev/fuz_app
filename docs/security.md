@@ -1018,6 +1018,14 @@ signup — the password-bearing surfaces. **Bearer auth carries no rate limiter*
 - Login account rate limiter (10 attempts / 30 min) — Per `account.id` when the account exists, per normalized submitted identifier otherwise. Per `account.id` on password change.
 - Signup account rate limiter (10 attempts / 30 min) — Per submitted username (lowercased), signup only
 
+**An IPv6 client is keyed by its `/64`.** Every IP-keyed limiter — these three
+and the action dispatcher's — buckets by `rate_limit_ip_key`
+(`http/ip_canonical.ts`): an IPv6 address keys its `/64` network
+(`2001:db8:1:2::/64`), the smallest block a host is commonly handed, so cycling
+through one's own subnet buys no fresh budget; an IPv4 address keys itself.
+Only the limiter key changes — audit rows and `last_used_ip` keep the full
+address. A `max_attempts` of `0` refuses every attempt.
+
 **Success clears the account bucket only.** A successful login, password change,
 or signup resets that principal's *account-grain* counter — forgiving a user's
 own typos, which is safe because the key **is** the account being attacked, so
