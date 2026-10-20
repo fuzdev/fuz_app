@@ -35,6 +35,11 @@ import '../assert_dev_env.ts';
  *   logins at once from one address meet the cap; the ones past it wait for a
  *   slot (at most the cap of them) and all answer `200`. Runs on a backend
  *   that serves concurrent transactions (`concurrent_transactions`).
+ * - **every `X-Forwarded-For` line is read** — a client that sends its own
+ *   line ahead of the one the trusted proxy appended can't choose its bucket:
+ *   after exhausting one forwarded IP, a raw request carrying a spoofed line
+ *   first and that IP last still `429`s. Raw socket only (`fetch` merges
+ *   repeated headers into one line), so it runs when `base_url` is given.
  * - **a success does not refund the per-IP budget** — the distributed-spray
  *   backstop. Failed guesses against *distinct* usernames from one forwarded
  *   IP, interleaved with the attacker's own successful logins, must still 429
@@ -63,6 +68,7 @@ import '../assert_dev_env.ts';
 import { describe, test, assert } from 'vitest';
 
 import { ERROR_RATE_LIMIT_EXCEEDED } from '../../http/error_schemas.ts';
+import { raw_http_exchange, raw_http_parse_response } from '../transports/raw_http.ts';
 import {
 	default_login_account_rate_limit,
 	default_login_ip_rate_limit
@@ -83,6 +89,12 @@ export interface LoginSecurityCrossTestOptions {
 	 * successful logins answer `500` there whatever the limiter does.
 	 */
 	readonly concurrent_transactions?: boolean;
+	/**
+	 * The backend's base URL, for the repeated-`X-Forwarded-For` case, which
+	 * needs a raw socket to send two header lines. `null` (the default) skips
+	 * that case.
+	 */
+	readonly base_url?: string | null;
 }
 
 /**
@@ -99,6 +111,12 @@ const XFF_SEGREGATION_FRESH = '203.0.113.3';
 const XFF_SPRAY = '203.0.113.4';
 const XFF_BURST = '203.0.113.5';
 const XFF_CORRECT_BURST = '203.0.113.7';
+const XFF_REPEATED_LINES = '203.0.113.6';
+/** RFC 5737 TEST-NET-2 — the address a client writes into its own first line. */
+const XFF_SPOOFED_LINE = '198.51.100.77';
+
+/** How long a raw exchange waits for the login's answer. */
+const RAW_READ_TIMEOUT_MS = 5000;
 
 /** A non-routable, non-existent identifier — login resolves to the not-found path (records the bucket, returns 401). */
 const PROBE_PASSWORD = 'login_security_wrong_password';
@@ -117,6 +135,7 @@ export const describe_login_security_cross_tests = (
 	const { setup_test } = options;
 	const login_path = options.login_path ?? '/api/account/login';
 	const concurrent_transactions = options.concurrent_transactions ?? false;
+	const base_url = options.base_url ?? null;
 	/** Per-IP cap shared by both impls (TS `default_login_ip_rate_limit`, Rust `DEFAULT_LOGIN_IP_RATE_LIMIT`). */
 	const ip_limit = default_login_ip_rate_limit.max_attempts;
 	// The XFF-segregation case enables both limiters (one flag drives both), so
@@ -279,6 +298,46 @@ export const describe_login_security_cross_tests = (
 					statuses,
 					Array<number>(ip_limit * 2).fill(200),
 					'the logins past the cap wait for a slot rather than being refused'
+				);
+			}
+		);
+
+		test.skipIf(base_url === null)(
+			'every X-Forwarded-For line is read (a spoofed first line picks no bucket)',
+			async () => {
+				assert.ok(base_url !== null);
+				const fixture = await setup_test();
+				for (let i = 0; i < ip_limit; i++) {
+					await attempt(fixture, XFF_REPEATED_LINES, 'probe_xff_lines');
+				}
+				const exhausted = await attempt(fixture, XFF_REPEATED_LINES, 'probe_xff_lines');
+				assert.strictEqual(exhausted.status, 429, 'the forwarded IP must be exhausted first');
+
+				// The client's own line first, the address the proxy appended last.
+				// A backend that read only the first line would key this on the
+				// fresh spoofed address and answer 401.
+				const url = new URL(base_url);
+				const body = JSON.stringify({ username: 'probe_xff_lines', password: PROBE_PASSWORD });
+				const request =
+					`POST ${login_path} HTTP/1.1\r\n` +
+					`host: ${url.host}\r\n` +
+					`content-type: application/json\r\n` +
+					`x-forwarded-for: ${XFF_SPOOFED_LINE}\r\n` +
+					`x-forwarded-for: ${XFF_REPEATED_LINES}\r\n` +
+					`content-length: ${body.length}\r\n` +
+					`connection: close\r\n` +
+					`\r\n` +
+					body;
+				const { received } = await raw_http_exchange(base_url, request, {
+					read_timeout_ms: RAW_READ_TIMEOUT_MS,
+					until: 'response'
+				});
+				const response = raw_http_parse_response(received);
+				assert.ok(response, `no whole response; received: ${received.slice(0, 200)}`);
+				assert.strictEqual(
+					response.status,
+					429,
+					`the request must key on the proxy-appended line (body: ${response.body})`
 				);
 			}
 		);

@@ -2083,6 +2083,11 @@ should own the app data directory and have no other privileges.
 Client IP is resolved from `X-Forwarded-For` before auth and rate limiting:
 
 - Rightmost-first XFF walk — strip known trusted proxy entries (CIDR-aware)
+- Every `X-Forwarded-For` line is walked: repeated lines join with `", "` in
+  order, their bytes read as Latin-1, so a proxy that appends a line of its own
+  after the client's keeps the last word (Node joins them so; the Rust spine
+  joins them the same way, and a non-ASCII byte makes one malformed entry the
+  walk skips rather than dropping the header)
 - Untrusted connection with an XFF header → header is ignored (spoofed XFF)
 - `normalize_ip` strips IPv4-mapped IPv6 (`::ffff:`) and lowercases for consistent
   key comparisons
@@ -2092,7 +2097,8 @@ Client IP is resolved from `X-Forwarded-For` before auth and rate limiting:
 resolution end-to-end on both spines — distinct `X-Forwarded-For` IPs get
 independent rate-limit buckets (a fresh forwarded IP is unaffected by another's
 exhausted bucket), proving the limiter keys on the resolved client IP rather than
-the loopback TCP peer the request actually arrives on.
+the loopback TCP peer the request actually arrives on — and, over a raw socket,
+that a spoofed first line ahead of the proxy's own picks no bucket.
 
 ### Deployment: nginx XFF Header
 
