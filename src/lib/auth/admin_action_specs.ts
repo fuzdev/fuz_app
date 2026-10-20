@@ -503,7 +503,12 @@ export const invite_delete_action_spec = {
 /**
  * Soft-delete an account (reversible tombstone). Self-or-admin: the
  * caller may delete their own account; deleting another requires the
- * admin role (handler-enforced elevation). No `admin_` prefix — the
+ * admin role (handler-enforced elevation). The self path is session-only,
+ * also handler-enforced — the spec declares no `credential_types` so an
+ * admin deleting another account keeps any credential, and a self-delete
+ * over an API or daemon token gets the dispatcher's own 403
+ * `credential_type_required` (`required_credential_types: ['session']`),
+ * ahead of the keeper / last-admin guards. No `admin_` prefix — the
  * privilege lives in the auth check, not the name, so self-service
  * deletion stays open (`delete` = soft, `purge` = hard).
  */

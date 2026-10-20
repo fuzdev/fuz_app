@@ -102,6 +102,19 @@ revocation closes by that id, so a consumer that widens the channel loses no
 close. The route's `required_scope` is the separate rule-3 declaration and is
 unreachable behind this gate on the default mount; see §Token scoping.
 
+**`account_delete` self path — handler-enforced.** A self-delete (no
+`account_id`, or the caller's own) is session-only: a leaked API or daemon
+token can't end the account it belongs to. The spec declares no
+`credential_types`, because the same verb is how an admin deletes _another_
+account and that path keeps any credential (operator scripting, as above), so
+the handler checks the channel on its input instead — before the keeper and
+last-admin guards, so a refused token learns nothing about the account — and
+refuses with the dispatcher's own body: 403 `ERROR_CREDENTIAL_TYPE_REQUIRED`
+with `required_credential_types: ['session']`. Both spine impls build it with
+the dispatcher's builder (`credential_type_required_error` /
+`fuz_auth::credential_type_required`). Because the gate is in the handler, it
+does not show in the action manifest's `credential_types`.
+
 **Defense in depth — audit metadata.** Every gated event records the
 minting `credential_type` in audit metadata (`token_create`,
 `token_revoke`, `session_revoke`, `session_revoke_all`, and all three

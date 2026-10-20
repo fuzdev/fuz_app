@@ -3,7 +3,9 @@ import '../assert_dev_env.ts';
 /**
  * Cross-backend parity suite for the account-lifecycle admin verbs:
  * `account_delete` (soft), `account_undelete` (reactivation), and
- * `account_purge` (keeper hard-delete), plus the keeper guard.
+ * `account_purge` (keeper hard-delete), plus the keeper guard and the
+ * session-only self-delete (an API token can't end its own account; an admin
+ * token still deletes another).
  *
  * Like the cell suites, these verbs can't ride the generic
  * `describe_rpc_round_trip_tests`: they're stateful and destructive (a
@@ -28,8 +30,10 @@ import {
 } from '../../auth/admin_action_specs.ts';
 import {
 	ERROR_ACCOUNT_NOT_FOUND,
-	ERROR_AUTHENTICATION_REQUIRED
+	ERROR_AUTHENTICATION_REQUIRED,
+	ERROR_CREDENTIAL_TYPE_REQUIRED
 } from '../../http/error_schemas.ts';
+import { JSONRPC_ERROR_CODES } from '../../http/jsonrpc_errors.ts';
 import { test_if } from './capabilities.ts';
 import { cross_rpc_call, error_reason, expect_output } from './cell_cross_helpers.ts';
 import { assert_iso8601_seconds } from './wire_shapes.ts';
@@ -132,6 +136,87 @@ export const describe_account_lifecycle_cross_tests = (
 				);
 				assert.strictEqual(purge.ok, false, 'purge of keeper account must be refused');
 				assert.strictEqual(error_reason(purge), ERROR_CANNOT_DELETE_KEEPER);
+			}
+		);
+
+		test_if(
+			capabilities.account_lifecycle,
+			'self-delete is session-only; an admin bearer still deletes another account',
+			async () => {
+				const fixture = await setup_test();
+				const member = await fixture.create_account({ username: 'lifecycle_self_bearer' });
+
+				// The member's own bearer may not end its account (handler-enforced,
+				// the dispatcher's credential-type refusal).
+				const refused = await cross_rpc_call(
+					fixture.fresh_transport({ origin: null }),
+					rpc_path,
+					'account_delete',
+					{},
+					member.create_bearer_headers()
+				);
+				assert.strictEqual(refused.ok, false, 'a bearer self-delete must be refused');
+				assert.strictEqual(refused.error?.code, JSONRPC_ERROR_CODES.forbidden);
+				assert.strictEqual(error_reason(refused), ERROR_CREDENTIAL_TYPE_REQUIRED);
+				assert.deepStrictEqual(
+					(refused.error?.data as { required_credential_types?: unknown } | undefined)
+						?.required_credential_types,
+					['session']
+				);
+
+				// An explicit own id is self in either case (`Uuid` admits both) — the
+				// keeper's too, whose refusal is the credential one, not the keeper guard.
+				for (const [label, account_id, headers] of [
+					['member', member.account.id, member.create_bearer_headers()],
+					['keeper', fixture.account.id, fixture.create_bearer_headers()]
+				] as const) {
+					const upper = await cross_rpc_call(
+						fixture.fresh_transport({ origin: null }),
+						rpc_path,
+						'account_delete',
+						{ account_id: account_id.toUpperCase() },
+						headers
+					);
+					assert.strictEqual(upper.ok, false, `${label}: an uppercased own id is self`);
+					assert.deepStrictEqual(upper.error, refused.error, label);
+				}
+
+				// Nothing was tombstoned: the member's session still verifies.
+				const still = await cross_rpc_call(
+					fixture.fresh_transport(),
+					rpc_path,
+					'account_verify',
+					undefined,
+					member.create_session_headers()
+				);
+				assert.ok(still.ok, 'the refused self-delete leaves the account live');
+
+				// The keeper's bearer (admin-capable) deletes another account.
+				const deleted = expect_output(
+					await cross_rpc_call(
+						fixture.fresh_transport({ origin: null }),
+						rpc_path,
+						'account_delete',
+						{ account_id: member.account.id },
+						fixture.create_bearer_headers()
+					),
+					AccountDeleteOutput
+				);
+				assert.strictEqual(deleted.deleted, true);
+
+				// A self-delete over a session goes through.
+				const self = await fixture.create_account({ username: 'lifecycle_self_session' });
+				const self_deleted = expect_output(
+					await cross_rpc_call(
+						fixture.fresh_transport(),
+						rpc_path,
+						'account_delete',
+						{},
+						self.create_session_headers()
+					),
+					AccountDeleteOutput
+				);
+				assert.strictEqual(self_deleted.deleted, true);
 			}
 		);
 

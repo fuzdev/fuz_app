@@ -107,7 +107,9 @@ const GATED_ACTION_SPECS: Record<string, { credential_types: Array<string>; reas
  * to assign roles mints a token scoped to `rpc:role_grant_assign`, which
  * narrows, where widening the spec would loosen every caller.
  * `role_grant_offer_create` is the offering side; `_decline` / `_retract`
- * destroy a pending offer and confer nothing.
+ * destroy a pending offer and confer nothing. `account_delete` stays open for
+ * an admin deleting another account; its self path is session-only in the
+ * handler (`account_delete.credential_gate.db.test.ts`).
  *
  * Moving an entry out of this list is the narrowing pass. Moving one *in*
  * should be argued.

@@ -292,7 +292,9 @@ missing-parent shape), gated on
 `capabilities.cell_gated_create` (cross-only, the test policy is a spine-binary
 fixture)), and `account_lifecycle.cross.test.ts`
 (`describe_account_lifecycle_cross_tests` — soft-delete → undelete round-trip,
-keeper-confirmed purge, the `cannot_delete_keeper` guard, fail-closed
+keeper-confirmed purge, the `cannot_delete_keeper` guard, the session-only
+self-delete (a bearer self-delete → 403 `credential_type_required` with the
+session still live, an admin bearer still deleting another), fail-closed
 (a soft-deleted account's session + bearer no longer authenticate),
 deterministic double-undelete → not\*found, the keeper-guard
 `account_delete outcome=failure` audit row read back via

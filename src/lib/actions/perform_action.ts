@@ -434,6 +434,23 @@ const check_action_auth_pre_authorization = (
 };
 
 /**
+ * The credential-type 403 — one builder, so the dispatcher's gate below and a
+ * handler that gates a credential channel on its input (`account_delete`'s
+ * self path) emit a byte-identical error. Twin of the Rust
+ * `fuz_auth::credential_type_required`.
+ *
+ * @param required_credential_types - the channels that would be admitted
+ * @returns the `forbidden` error object with reason `credential_type_required`
+ */
+export const credential_type_required_error = (
+	required_credential_types: ReadonlyArray<string>
+): JsonrpcErrorObject =>
+	jsonrpc_error_messages.forbidden('forbidden', {
+		reason: ERROR_CREDENTIAL_TYPE_REQUIRED,
+		required_credential_types
+	});
+
+/**
  * Post-authorization auth gate — fires after the authorization phase
  * resolved the actor + role_grants. Enforces `auth.credential_types` and
  * `auth.roles`.
@@ -466,10 +483,7 @@ const check_action_auth_post_authorization = (
 ): JsonrpcErrorObject | null => {
 	if (auth.credential_types?.length) {
 		if (!credential_type || !auth.credential_types.includes(credential_type)) {
-			return jsonrpc_error_messages.forbidden('forbidden', {
-				reason: ERROR_CREDENTIAL_TYPE_REQUIRED,
-				required_credential_types: auth.credential_types
-			});
+			return credential_type_required_error(auth.credential_types);
 		}
 	}
 	// Token-scope gate — second of three. See the doc comment for why the order

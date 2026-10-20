@@ -162,7 +162,10 @@ const credential_ceiling_cases: ReadonlyArray<ConformanceCase> = [
 		expect: {
 			status: 403,
 			error_reason: ERROR_CREDENTIAL_TYPE_REQUIRED,
-			fields: { required_credential_types: ['session'] }
+			fields: { required_credential_types: ['session'] },
+			// With the `account_delete` self-path rows: the handler-enforced
+			// refusal is byte-identical to this dispatcher one.
+			equivalence_group: 'session_only_refusal'
 		},
 		note: 'security.md §Credential-channel gating — token minting requires a browser-context session, closing bearer/daemon-spawn-bearer persistence'
 	},
@@ -354,6 +357,31 @@ const privilege_gate_cases: ReadonlyArray<ConformanceCase> = [
 		request: { method: 'account_delete', as: 'keeper', params: {} },
 		expect: { status: 403, error_reason: ERROR_CANNOT_DELETE_KEEPER },
 		note: 'security.md §Authorization "Account-removal target guards" — a keeper-role account is never API-removable; auth + daemon-token resolution both pivot on it'
+	},
+	{
+		// The same self-delete over the keeper's API token: the handler's
+		// session-only check on the self path runs before the keeper guard, so
+		// the refusal is the credential one and says nothing about the account.
+		name: 'api_token self-delete → account_delete → 403 credential_type_required (before the keeper guard)',
+		request: { method: 'account_delete', as: 'token', params: {} },
+		expect: {
+			status: 403,
+			error_reason: ERROR_CREDENTIAL_TYPE_REQUIRED,
+			fields: { required_credential_types: ['session'] },
+			equivalence_group: 'session_only_refusal'
+		},
+		note: 'security.md §Credential-channel gating "account_delete self path" — a leaked bearer cannot end the account it belongs to; handler-enforced, since an admin deleting another account keeps any credential'
+	},
+	{
+		name: 'daemon token self-delete → account_delete → 403 credential_type_required (before the keeper guard)',
+		request: { method: 'account_delete', as: 'daemon', params: {} },
+		expect: {
+			status: 403,
+			error_reason: ERROR_CREDENTIAL_TYPE_REQUIRED,
+			fields: { required_credential_types: ['session'] },
+			equivalence_group: 'session_only_refusal'
+		},
+		note: 'security.md §Credential-channel gating "account_delete self path" — the daemon token is refused too: the self path admits a session and nothing else'
 	}
 ];
 

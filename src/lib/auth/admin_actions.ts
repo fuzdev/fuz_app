@@ -31,7 +31,8 @@
 
 import { rpc_action, type ActionActorContext, type RpcAction } from '../actions/action_rpc.ts';
 import { queue_connection_close } from '../actions/connection_closer.ts';
-import { jsonrpc_errors } from '../http/jsonrpc_errors.ts';
+import { credential_type_required_error } from '../actions/perform_action.ts';
+import { jsonrpc_errors, ThrownJsonrpcError } from '../http/jsonrpc_errors.ts';
 import {
 	builtin_role_specs_by_name,
 	list_roles_with_grant_path,
@@ -438,7 +439,9 @@ export const create_admin_actions = (
 	};
 
 	// Soft-delete an account (reversible tombstone). Self-or-admin:
-	// deleting another account requires the admin role. Tombstones the
+	// deleting another account requires the admin role. A self-delete is
+	// session-only — enforced here, not on the spec, whose gate stays open so
+	// an admin deleting another account keeps any credential. Tombstones the
 	// account + its actor(s), revokes sessions/tokens, closes sockets, and
 	// emits `account_delete` + one `actor_delete` per soft-deleted actor —
 	// each carrying its identity snapshot. `delete` = soft.
@@ -447,7 +450,18 @@ export const create_admin_actions = (
 		ctx: ActionActorContext
 	): Promise<AccountDeleteOutput> => {
 		const auth = ctx.auth;
-		const target_account_id = input.account_id ?? auth.account.id;
+		// lowercased once so every comparison below is canonical: `Uuid` accepts
+		// either case and Postgres matches either, but `auth.account.id` is the
+		// lowercase form — an uppercased own id must still read as self
+		const target_account_id =
+			(input.account_id?.toLowerCase() as Uuid | undefined) ?? auth.account.id;
+		// Self path: a session only (API and daemon tokens alike), with the
+		// dispatcher's own credential-type refusal, before the guards below say
+		// anything about the account — a leaked token can't end its own account.
+		if (target_account_id === auth.account.id && ctx.credential_type !== 'session') {
+			const refusal = credential_type_required_error(['session']);
+			throw new ThrownJsonrpcError(refusal.code, refusal.message, refusal.data);
+		}
 		// Self-or-admin elevation: deleting someone else needs the **global**
 		// admin grant — a scoped `admin` row confers no cross-account authority.
 		if (target_account_id !== auth.account.id && !has_scoped_role(auth, ROLE_ADMIN, null)) {
