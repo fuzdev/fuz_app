@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/BTZoVLbz.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CAODFmXb.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.r6Y-UOU4.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.C98UX3kP.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.Btco8ZFx.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.B9rzlLBu.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BcwQFYZ2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/C3BYcZ2u.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/B9s6dVBv.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/DmbhTFk7.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.MmCeQZ0H.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/DE-kY9aR.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.CVQTkuTs.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BL7ZH9U-.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DhdQKFKC.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -94,7 +94,24 @@ optimization with zero authz consequence — whether two owners' bytes
 share a <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->fact<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> row is invisible to the read check.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->The cell-scoped route resolves the named cell, requires
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->can_view_cell(caller, cell)<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, and requires <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->cell.refs<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> to include the
 hash. B publishing identical bytes from B's public cell makes them
-readable *via B's cell* — it never touches A's private reference.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->The bare-hash route is <!--]--><!--[4--><strong><!--[--><!--[2-->admin-only<!--]--><!--]--><!----></strong><!--]--><!--[2-->: an admin's reach already spans
+readable *via B's cell* — it never touches A's private reference.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->The edge is only as safe as what may create it. A cell's <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->refs<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> derive
+from its <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->data<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, and any account that can write a cell writes its <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->data<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> —
+so this route alone would make a known hash a read capability: name it in
+a cell you own, flip the cell public, and the bytes serve to the world,
+while a 200 against a 404 says whether the fact exists. What closes that is
+<!--]--><!--[4--><strong><!--[--><!--[2-->possession-gated ref admission<!--]--><!--]--><!----></strong><!--]--><!--[2--> on the cell verbs
+(<!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/auth/cell_ref_admission.ts"><!--[0--><!--[-1-->auth/cell_ref_admission.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->): a non-admin <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->cell_create<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> / <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->cell_update<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> /
+<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->cell_clone<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> may introduce a ref only to a fact its acting actor holds —
+one it put the bytes of, recorded in <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->fact_holder<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> on every put, a
+deduplicated put included — and is refused <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->403 cell_ref_not_held<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->
+otherwise, the same answer whether or not a fact is stored. Refs a cell
+already carries stay admitted through updates and clones, so a viewer who
+clones a cell carries its refs: what a viewer can read through a cell, it
+can republish — no more than downloading the bytes and uploading them
+again. A serve is a snapshot of the edge at read time; revoking someone's
+access to a cell does not withdraw refs they already wrote elsewhere.
+Writers that bypass the verbs (seeds, raw inserts) are trusted and not
+admitted.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->The bare-hash route is <!--]--><!--[4--><strong><!--[--><!--[2-->admin-only<!--]--><!--]--><!----></strong><!--]--><!--[2-->: an admin's reach already spans
 every cell, so serving by bare hash grants no escalation. Non-admin
 callers are rejected at the auth phase and never reach the handler.
 (Explicitly-public facts — a producer opting bytes into world-readable
@@ -111,10 +128,11 @@ with <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->req_ctx: null<!
 callers are treated as anonymous.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->404 is the universal "not viewable" response: missing fact, missing or
 unviewable cell, or the cell doesn't reference the hash. We deliberately
 don't distinguish 403 from 404 — neither the existence of a fact nor the
-existence of a cell→fact edge should leak through the public surface.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Content-addressed serving of inline <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->blake3:<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> images (a markdown doc cell
-with embedded image refs) works through this model: the referencing cell
-is the doc cell, so serving goes view-doc-cell → doc-cell-refs-include-hash
-→ serve.<!--]--><!--]--><!----></p><!--]--><!--[14--><!----><h2 id="untrusted-content-hardening"><!--[--><!--[2-->Untrusted-content hardening<!--]--><!--]--><!----></h2><!----><!--]--><!--[8--><p><!--[--><!--[2-->Fact bytes are served with a producer-supplied <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->content_type<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> emitted
+existence of a cell→fact edge should leak through the public surface.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->A ref is a <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->data<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> string value that is exactly a fact hash
+(<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/db/cell_queries.ts#derive_cell_refs"><!--[0--><!--[-1-->derive_cell_refs<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->) — a hash inside prose or markup is not one. So a doc
+cell that shows images stores each image's hash as its own string value
+(an attachment list, say) beside the text that places them; serving then
+goes view-doc-cell → doc-cell-refs-include-hash → serve.<!--]--><!--]--><!----></p><!--]--><!--[14--><!----><h2 id="untrusted-content-hardening"><!--[--><!--[2-->Untrusted-content hardening<!--]--><!--]--><!----></h2><!----><!--]--><!--[8--><p><!--[--><!--[2-->Fact bytes are served with a producer-supplied <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->content_type<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> emitted
 verbatim, inline. To stop a fact stored as (or sniffable to) <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->text/html<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->
 from executing as stored XSS for any reader of a referencing cell, <!--]--><!--[4--><strong><!--[--><!--[2-->every<!--]--><!--]--><!----></strong><!--]--><!--[2-->
 served-fact response carries <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->X-Content-Type-Options: nosniff<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> +
@@ -144,16 +162,16 @@ fuz_app validates; there is no general config validator.<!--]--><!--]--><!----><
 			
 			<script>
 				{
-					__sveltekit_ii6trp = {
+					__sveltekit_i081ic = {
 						base: "",
-						version: "aa5bfaca3719c9e8e6d706defb2a2671471b7e8a"
+						version: "7735ac88311b563c410bdebefc2af0f1166d214c"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.CXlCZqzx.js").then(async (kit) => {
-						kit.init(__sveltekit_ii6trp);
-						const app = await import("/_app/immutable/entry/app.r6Y-UOU4.js");
+						kit.init(__sveltekit_i081ic);
+						const app = await import("/_app/immutable/entry/app.Btco8ZFx.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],
