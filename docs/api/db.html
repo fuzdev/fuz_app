@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/BTZoVLbz.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CAODFmXb.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.Btco8ZFx.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.B9rzlLBu.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.BT0Quutp.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.ceArHmqh.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BcwQFYZ2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/C3BYcZ2u.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/B9s6dVBv.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/DE-kY9aR.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.CVQTkuTs.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/o5LkJvyc.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.Di34Tgrq.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BL7ZH9U-.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DhdQKFKC.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -203,7 +203,7 @@ deduplicated puts included: identical bytes put again by a second actor
 make that actor a holder too. Cell ref admission
 (<!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/auth/cell_ref_admission.ts"><!--[0--><!--[-1-->auth/cell_ref_admission.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->) reads it back — a write may introduce a fact
 ref only for a fact the acting actor holds.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Same discipline as <!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/db/fact_queries.ts"><!--[0--><!--[-1-->db/fact_queries.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->: <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->deps: QueryDeps<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> first (the caller
-owns the transaction), no audit side effects, idempotent inserts.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/db/fact_queries.ts"><!--[-1-->db/fact_queries.ts<!--]--></a><!--]--><!----></h3> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Raw queries against the <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->fact<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> and <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->fact_ref<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> tables.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Convention: <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->deps: QueryDeps<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> first, no audit side effects, mutations are
+owns the transaction), no audit side effects, idempotent writes.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/db/fact_queries.ts"><!--[-1-->db/fact_queries.ts<!--]--></a><!--]--><!----></h3> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Raw queries against the <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->fact<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> and <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->fact_ref<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> tables.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Convention: <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->deps: QueryDeps<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> first, no audit side effects, mutations are
 idempotent (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->ON CONFLICT DO NOTHING<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) so the same hash can be written by
 two callers without the second observing an error.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Higher-level lifecycle (verify-on-read, JSON ref auto-extraction,
 embedded-vs-referenced selection) lives in <!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/db/fact_store.ts"><!--[0--><!--[-1-->db/fact_store.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->. Queries
@@ -349,16 +349,16 @@ renders <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->DIVERGED<!--
 			
 			<script>
 				{
-					__sveltekit_i081ic = {
+					__sveltekit_1ttntfg = {
 						base: "",
-						version: "7735ac88311b563c410bdebefc2af0f1166d214c"
+						version: "7495c788fa11a171f23884ac4536d5b41d9f68ad"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.CXlCZqzx.js").then(async (kit) => {
-						kit.init(__sveltekit_i081ic);
-						const app = await import("/_app/immutable/entry/app.Btco8ZFx.js");
+						kit.init(__sveltekit_1ttntfg);
+						const app = await import("/_app/immutable/entry/app.BT0Quutp.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],
