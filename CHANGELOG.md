@@ -1,5 +1,16 @@
 # @fuzdev/fuz_app
 
+## 0.145.0
+
+### Minor Changes
+
+- **breaking** fix: peer '@fuzdev/pglet-wasm' `>=0.1.2`, whose server-runtime `transaction()` queues a concurrent top-level call instead of rejecting it — concurrent fact puts on pglet no longer fail ([ed6bb36](https://github.com/fuzdev/fuz_app/commit/ed6bb36))
+- **breaking** fix: `create_x_accel_config` tokenizes the nginx config as nginx does and refuses a config that passed before unless every location serving the facts prefix is a `location ^~` directly in a `server` block, holds only simple directives (no nested block, no `include`), and carries `internal;` plus `add_header X-Content-Type-Options "nosniff" always;` and `add_header Content-Security-Policy "default-src 'none'; sandbox" always;`; an `=` or regex location over the prefix is refused. New `server/fact_security_headers.ts` exports `FACT_X_CONTENT_TYPE_OPTIONS`, `FACT_CONTENT_SECURITY_POLICY`, `FACT_SECURITY_HEADERS`, and `fact_security_header_directives` ([7495c78](https://github.com/fuzdev/fuz_app/commit/7495c78))
+
+### Patch Changes
+
+- fix: the orphan-fact queries keep a fact any holder put within the `older_than` window, and `query_put_fact_holder` refreshes a repeat put's `created_at`, so a sweep between a deduplicated re-upload and its cell write no longer deletes the fact ([2302d1d](https://github.com/fuzdev/fuz_app/commit/2302d1d))
+
 ## 0.144.0
 
 ### Minor Changes
