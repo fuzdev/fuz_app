@@ -1,5 +1,22 @@
 # @fuzdev/fuz_app
 
+## 0.143.0
+
+### Minor Changes
+
+- break: `_testing_origin_check` moves to `testing/cross_backend/testing_origin_check.ts` ([aa5bfac](https://github.com/fuzdev/fuz_app/commit/aa5bfac))
+
+  - `TestingOriginCheckInput`, `TestingOriginCheckOutput`, `run_testing_origin_check`, `testing_origin_check_action_spec`, and `create_testing_origin_check_action` move out of `testing/cross_backend/testing_reset_actions.ts`; import them from the new path
+  - the new module is hono-free, so `origin_conformance.ts` no longer pulls the in-process app server and a consumer without `hono` can run the origin conformance table
+  - exports `TESTING_ACTION_AUTH`, the shared `auth` of every `_testing_*` spec, from `testing/cross_backend/spine_surface_constants.ts`
+
+### Patch Changes
+
+- fix: `actions/perform_action.ts` loads without the optional `hono` peer ([aa5bfac](https://github.com/fuzdev/fuz_app/commit/aa5bfac))
+
+  - `http/ip_canonical.ts` parses addresses itself instead of importing `hono/utils/ipaddr`; since 0.142.0 the dispatcher keys its IP limiter through `rate_limit_ip_key`, so a consumer without `hono` couldn't load the cross-process suites (`Could not resolve "hono/utils/ipaddr"`)
+  - adds `parse_ipv4_bits` and `parse_ipv6_bits`, to the grammar of Rust's `IpAddr::from_str`; `canonicalize_ip` and `rate_limit_ip_key` answer as before
+
 ## 0.142.0
 
 ### Minor Changes
