@@ -1,9 +1,10 @@
 import '../assert_dev_env.ts';
 
 /**
- * Pure spine-surface constants — wire paths, roles, the fixture URL, and the
- * env-var names the backend configs set for the spawned spine binaries. A
- * hono-free leaf split out of `default_spine_surface.ts`.
+ * Pure spine-surface constants — wire paths, roles, the fixture URL, the
+ * `_testing_*` seams' shared `auth` shape, and the env-var names the backend
+ * configs set for the spawned spine binaries. A hono-free leaf split out of
+ * `default_spine_surface.ts`.
  *
  * Cross-process suite modules (which drive a separately-spawned backend binary
  * over HTTP) need only the wire path / role / fixture-URL, not the in-process
@@ -22,6 +23,23 @@ import '../assert_dev_env.ts';
  *
  * @module
  */
+
+import type { RouteAuth } from '../../http/auth_shape.ts';
+
+/**
+ * Shared `auth` axis for every `_testing_*` action: keeper-only via the
+ * daemon-token credential, no acting actor. This is the entire structural
+ * fence on the backdoor surface (these actions run direct DB writes the
+ * production wire never exposes), so every `_testing_*` spec references this
+ * one const rather than re-declaring it — a single source of truth the gate test
+ * (`testing_actions_auth.test.ts`) pins. Mirrors the Rust `DAEMON_TOKEN_ONLY`
+ * / shared `AuthSpec` in `fuz_testing`.
+ */
+export const TESTING_ACTION_AUTH = {
+	account: 'required',
+	actor: 'none',
+	credential_types: ['daemon_token']
+} as const satisfies RouteAuth;
 
 /** RPC endpoint mount path — matches the binary's `/api/rpc`. */
 export const SPINE_RPC_PATH = '/api/rpc';

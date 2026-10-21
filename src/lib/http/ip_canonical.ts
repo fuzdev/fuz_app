@@ -18,7 +18,8 @@
  *    strings (`'unknown'`, `'attacker:controlled'`, `'::1\n'`) pass
  *    through unchanged so downstream strict validators can still
  *    reject them.
- * 2. Parses via Hono's `convertIPv*ToBinary` family.
+ * 2. Parses with `parse_ipv4_bits` / `parse_ipv6_bits` — the grammar of
+ *    Rust's `IpAddr::from_str`, which the spine parses with.
  * 3. Re-emits the canonical RFC 5952 string (lowercase hex,
  *    longest-zero-run compressed, IPv4-mapped emitted in the dotted
  *    form mandated by RFC 5952 §5).
@@ -37,10 +38,87 @@
  * the limiter call sites apply it — the client IP stays the full address
  * everywhere else (audit rows, token `last_used_ip`, `REMOTE_ADDR`).
  *
+ * The module imports nothing: the action dispatcher keys its IP limiter
+ * through it, so it must not pull the optional `hono` peer.
+ *
  * @module
  */
 
-import { convertIPv6ToBinary, distinctRemoteAddr } from 'hono/utils/ipaddr';
+/** A dotted-quad IPv4 address: four decimal octets, 0–255, no leading zeros. */
+const IPV4_REGEX =
+	/^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])$/;
+
+/** One IPv6 group: one to four hex digits. */
+const IPV6_GROUP_REGEX = /^[0-9a-fA-F]{1,4}$/;
+
+/**
+ * Parse a dotted-quad IPv4 address to its 32-bit value.
+ *
+ * Four decimal octets, each 0–255 with no leading zeros (`01.2.3.4` is
+ * refused, as Rust's `Ipv4Addr::from_str` refuses it).
+ *
+ * @returns the address as an unsigned 32-bit number, or `null` when `ip` isn't one
+ */
+export const parse_ipv4_bits = (ip: string): number | null => {
+	if (!IPV4_REGEX.test(ip)) return null;
+	let bits = 0;
+	for (const octet of ip.split('.')) bits = bits * 256 + Number(octet);
+	return bits;
+};
+
+/**
+ * Parse the colon-separated groups on one side of a `::` (or the whole
+ * address when there is none), `null` on a malformed one. Only the last group
+ * of the address may be a dotted-quad IPv4 tail, which fills two groups.
+ */
+const parse_ipv6_groups = (part: string, allow_ipv4_tail: boolean): Array<number> | null => {
+	if (part === '') return [];
+	const pieces = part.split(':');
+	const groups: Array<number> = [];
+	for (let i = 0; i < pieces.length; i++) {
+		const piece = pieces[i]!;
+		if (allow_ipv4_tail && i === pieces.length - 1 && piece.includes('.')) {
+			const ipv4 = parse_ipv4_bits(piece);
+			if (ipv4 === null) return null;
+			groups.push(Math.floor(ipv4 / 0x10000), ipv4 % 0x10000);
+		} else if (IPV6_GROUP_REGEX.test(piece)) {
+			groups.push(parseInt(piece, 16));
+		} else {
+			return null;
+		}
+	}
+	return groups;
+};
+
+/**
+ * Parse an IPv6 address to its 128-bit value.
+ *
+ * The grammar of Rust's `Ipv6Addr::from_str`: eight groups of one to four
+ * hex digits (either case), or fewer around a single `::` standing for one or
+ * more zero groups, the last two groups optionally written as a dotted-quad
+ * IPv4 address. No zone (`%eth0`) — callers strip it first.
+ *
+ * @returns the address as a `bigint` in `[0, 2^128)`, or `null` when `ip` isn't one
+ */
+export const parse_ipv6_bits = (ip: string): bigint | null => {
+	const halves = ip.split('::');
+	let groups: Array<number>;
+	if (halves.length === 1) {
+		const all = parse_ipv6_groups(ip, true);
+		if (all === null || all.length !== 8) return null;
+		groups = all;
+	} else if (halves.length === 2) {
+		const head = parse_ipv6_groups(halves[0]!, false);
+		const tail = parse_ipv6_groups(halves[1]!, true);
+		if (head === null || tail === null || head.length + tail.length > 7) return null;
+		groups = [...head, ...new Array<number>(8 - head.length - tail.length).fill(0), ...tail];
+	} else {
+		return null;
+	}
+	let bits = 0n;
+	for (const group of groups) bits = (bits << 16n) | BigInt(group);
+	return bits;
+};
 
 /**
  * Allowed character set for a bare IP literal.
@@ -89,38 +167,25 @@ export const IP_LITERAL_CHARS = /^[0-9a-fA-F.:]+$/;
 export const canonicalize_ip = (ip: string): string => {
 	const lowered = ip.toLowerCase();
 	// Strict char-set filter — reject brackets, whitespace, control bytes,
-	// letters g-z before invoking the parser. Hono's `convertIPv6ToBinary`
-	// silently accepts `'::1\n'` and similar; canonicalizing those would
-	// erase the malformed form so downstream `validate_ip_strict` could no
-	// longer reject it. Pass-through preserves the original string.
+	// letters g-z, and `%` (so a zone) before invoking the parser, so a
+	// malformed form passes through for downstream `validate_ip_strict` to
+	// reject
 	if (!IP_LITERAL_CHARS.test(lowered)) return lowered;
 
-	const family = distinctRemoteAddr(lowered);
-	if (family === 'IPv4') {
-		// IPv4's dotted-decimal form is already canonical — no transform
-		// needed. Malformed forms (`999.999.999.999`) still pass through
-		// here; downstream `validate_ip_strict` rejects them via its own
-		// round-trip parse.
-		return lowered;
+	// IPv4's dotted-decimal form is already canonical — no transform needed.
+	// Malformed forms (`999.999.999.999`) fail both parsers and pass through.
+	if (parse_ipv4_bits(lowered) !== null) return lowered;
+	const bits = parse_ipv6_bits(lowered);
+	if (bits === null) return lowered;
+	const canonical = ipv6_bigint_to_canonical(bits);
+	// Strip `::ffff:` only when the canonical form is dotted IPv4-mapped
+	// (`::ffff:X.X.X.X`). Pure IPv6 values that happen to start with
+	// `::ffff:` (e.g. `::ffff:1` → `0:0:0:0:0:0:ffff:1`, where group[5] is 0
+	// not 0xffff) emit without the dot and are preserved.
+	if (canonical.startsWith('::ffff:') && canonical.substring(7).includes('.')) {
+		return canonical.substring(7);
 	}
-	if (family === 'IPv6') {
-		try {
-			const bits = convertIPv6ToBinary(lowered);
-			const canonical = ipv6_bigint_to_canonical(bits);
-			// Strip `::ffff:` only when the canonical form is dotted
-			// IPv4-mapped (`::ffff:X.X.X.X`). Pure IPv6 values that happen
-			// to start with `::ffff:` (e.g. `::ffff:1` → `0:0:0:0:0:0:ffff:1`,
-			// where group[5] is 0 not 0xffff) emit without the dot and
-			// are preserved.
-			if (canonical.startsWith('::ffff:') && canonical.substring(7).includes('.')) {
-				return canonical.substring(7);
-			}
-			return canonical;
-		} catch {
-			return lowered;
-		}
-	}
-	return lowered;
+	return canonical;
 };
 
 /**
@@ -135,7 +200,7 @@ export const canonicalize_ip = (ip: string): string => {
  *
  * Pure helper exported for the test suite to exercise the
  * canonicalization invariants directly without a full
- * `convertIPv6ToBinary` round-trip.
+ * `parse_ipv6_bits` round-trip.
  *
  * @param bits - the 128-bit IPv6 value as `bigint`. Must satisfy `0n <= bits < 2n ** 128n`;
  *   throws `RangeError` otherwise. Silent truncation would mask caller bugs since the
@@ -235,14 +300,8 @@ export const rate_limit_ip_key = (ip: string): string => {
 	const zone_at = ip.indexOf('%');
 	const canonical = canonicalize_ip(zone_at === -1 ? ip : ip.slice(0, zone_at));
 	if (!IP_LITERAL_CHARS.test(canonical)) return ip;
-	const family = distinctRemoteAddr(canonical);
-	if (family === 'IPv4') return canonical;
-	if (family !== 'IPv6') return ip;
-	let bits: bigint;
-	try {
-		bits = convertIPv6ToBinary(canonical);
-	} catch {
-		return ip;
-	}
+	if (parse_ipv4_bits(canonical) !== null) return canonical;
+	const bits = parse_ipv6_bits(canonical);
+	if (bits === null) return ip;
 	return `${ipv6_bigint_to_canonical(bits & IPV6_PREFIX_64_MASK)}/64`;
 };

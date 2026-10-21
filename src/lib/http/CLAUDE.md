@@ -24,7 +24,7 @@ effects, see ../../../docs/architecture.md.
 - `http/surface_query.ts` — pure filters/groupings over `AppSurface`.
 - `http/proxy.ts` — trusted-proxy middleware, CIDR parsing, rightmost-first XFF resolution. Pulls `hono/utils/ipaddr` for CIDR matching.
 - `http/client_ip.ts` — `get_client_ip(c)` — reads the resolved IP off the context (set by `proxy.ts`'s middleware). Split out of `proxy.ts` so it's hono-free: dispatch + route modules that only _read_ the IP don't pull `hono/utils/ipaddr`, keeping cross-process test surfaces free of the optional `hono` peer.
-- `http/ip_canonical.ts` — RFC 5952 IPv6 canonicalization + IPv4-mapped collapse; `IP_LITERAL_CHARS` regex.
+- `http/ip_canonical.ts` — RFC 5952 IPv6 canonicalization + IPv4-mapped collapse, `rate_limit_ip_key` (an IPv6 client's `/64`), and its own `parse_ipv4_bits` / `parse_ipv6_bits` (the grammar of Rust's `IpAddr::from_str`); `IP_LITERAL_CHARS` regex. Imports nothing — the dispatcher keys its IP limiter through it, so it must stay hono-free (`src/test/hono_free_modules.test.ts` walks every `src/lib` module's graph).
 - `http/origin.ts` — origin allowlist: the strict pattern grammar shared with the Rust spine, typed refusals, and the Origin-only middleware.
 - `http/jsonrpc.ts` — JSON-RPC 2.0 envelope schemas (MCP superset), `JsonrpcErrorCode`, `_meta`.
 - `http/jsonrpc_errors.ts` — `ThrownJsonrpcError`, `jsonrpc_errors` throwers, HTTP-status mappings.

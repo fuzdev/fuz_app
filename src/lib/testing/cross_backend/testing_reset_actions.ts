@@ -16,17 +16,17 @@ import '../assert_dev_env.ts';
  * of notifications onto the caller's own WebSocket connection, to push its
  * outbound queue past its byte budget).
  *
- * Three further daemon-token actions live here but are **not** bundled by
+ * Two further daemon-token actions live here but are **not** bundled by
  * `create_testing_actions`, and are appended at the full-mount layer
  * (`build_full_spine_rpc_actions`) instead: **`_testing_action_manifest`**
  * (dump the live RPC registry for cross-impl method-set + auth-shape parity —
  * it must enumerate *every* mounted method, so it goes where the complete list
- * exists), **`_testing_origin_check`** (answer the origin allowlist's parse
- * and request check for the cross-impl origin conformance table), and
- * **`_testing_shorten_credential_expiry`** (pull an account's credential
- * expiries in to seconds from now, shorten-only, for the credential-deadline
- * cases) — the last two kept out of the bundle so a consumer whose Rust binary
- * doesn't mount their mirrors keeps a green manifest gate.
+ * exists) and **`_testing_shorten_credential_expiry`** (pull an account's
+ * credential expiries in to seconds from now, shorten-only, for the
+ * credential-deadline cases) — the latter kept out of the bundle so a consumer
+ * whose Rust binary doesn't mount its mirror keeps a green manifest gate.
+ * `_testing_origin_check`, mounted the same way, lives in the hono-free
+ * `testing_origin_check.ts`.
  *
  * `_testing_reset` — full DB wipe + keeper re-seed + optional
  * secondary-account seeding. The
@@ -87,7 +87,6 @@ import { emit_after_commit } from '../../http/pending_effects.ts';
 import { protocol_action_specs } from '../../actions/protocol.ts';
 import { query_put_fact } from '../../db/fact_queries.ts';
 import type { RequestResponseActionSpec } from '../../actions/action_spec.ts';
-import type { RouteAuth } from '../../http/auth_shape.ts';
 import type { AppDeps } from '../../auth/deps.ts';
 import type { AuditEmitter } from '../../auth/audit_emitter.ts';
 import type { SessionOptions } from '../../auth/session_cookie.ts';
@@ -104,26 +103,7 @@ import { ActionManifest, build_action_manifest } from './action_manifest.ts';
 import { query_create_actor } from '../../auth/account_queries.ts';
 import { create_test_account_with_credentials, mint_test_session } from '../app_server.ts';
 import { DEFAULT_TEST_PASSWORD } from '../test_credentials.ts';
-import {
-	AllowedOriginsErrorKind,
-	parse_allowed_origins,
-	should_allow_origin
-} from '../../http/origin.ts';
-
-/**
- * Shared `auth` axis for every `_testing_*` action: keeper-only via the
- * daemon-token credential, no acting actor. This is the entire structural
- * fence on the backdoor surface (these actions run direct DB writes the
- * production wire never exposes), so every `_testing_*` spec references this
- * one const rather than re-declaring it — a single source of truth the gate test
- * (`testing_actions_auth.test.ts`) pins. Mirrors the Rust `DAEMON_TOKEN_ONLY`
- * / shared `AuthSpec` in `fuz_testing`.
- */
-const TESTING_ACTION_AUTH = {
-	account: 'required',
-	actor: 'none',
-	credential_types: ['daemon_token']
-} as const satisfies RouteAuth;
+import { TESTING_ACTION_AUTH } from './spine_surface_constants.ts';
 
 /** Output shape for an individual seeded account (keeper or extra). */
 const SeededAccountShape = z.strictObject({
@@ -518,91 +498,6 @@ export const create_testing_migration_tracker_action = (): RpcAction =>
 	rpc_action(testing_migration_tracker_action_spec, async (_input, ctx) =>
 		query_migration_tracker(ctx.db)
 	);
-
-/** Input of `_testing_origin_check`. */
-export const TestingOriginCheckInput = z.strictObject({
-	/** An allowlist value, as `FUZ_ALLOWED_ORIGINS` would carry it. */
-	patterns: z.string(),
-	/** One `Origin` header's value, or `null` for a request without one. */
-	origin: z.string().nullable()
-});
-export type TestingOriginCheckInput = z.infer<typeof TestingOriginCheckInput>;
-
-/**
- * Output of `_testing_origin_check`: the request-level answer when the list
- * parses, else every refusal — `index` the 1-based entry position, absent for
- * a list-level refusal.
- */
-export const TestingOriginCheckOutput = z.union([
-	z.strictObject({ ok: z.literal(true), allowed: z.boolean() }),
-	z.strictObject({
-		ok: z.literal(false),
-		errors: z.array(
-			z.strictObject({ index: z.number().int().min(1).optional(), kind: AllowedOriginsErrorKind })
-		)
-	})
-]);
-export type TestingOriginCheckOutput = z.infer<typeof TestingOriginCheckOutput>;
-
-/**
- * Answer one `_testing_origin_check` input: parse `patterns` with
- * `parse_allowed_origins`, then run the request-level check for one `Origin`
- * carrying `origin` (`null` — no `Origin` — passes). The action handler and
- * the conformance table's unit test both call this, so the table checks the
- * same function the wire serves.
- *
- * @param input - the allowlist value and the `Origin` value
- * @returns the answer the Rust twin returns for the same input
- */
-export const run_testing_origin_check = (
-	input: TestingOriginCheckInput
-): TestingOriginCheckOutput => {
-	const parsed = parse_allowed_origins(input.patterns);
-	if (!parsed.ok) {
-		return {
-			ok: false,
-			errors: parsed.errors.map(({ index, kind }) =>
-				index === undefined ? { kind } : { index, kind }
-			)
-		};
-	}
-	return {
-		ok: true,
-		allowed: input.origin === null || should_allow_origin(input.origin, parsed.origins)
-	};
-};
-
-/**
- * `_testing_origin_check` — run the origin allowlist's parse and request
- * check for one `{patterns, origin}` pair, so the shared conformance table
- * (`origin_conformance.json`) checks each backend's grammar and matcher over
- * the wire, row by row. Pure: no database, no state. The Rust mirror is
- * `fuz_testing::create_testing_origin_check_action_spec`.
- *
- * Like `_testing_action_manifest`, it is **not** bundled by
- * `create_testing_actions`: a consumer whose Rust binary doesn't mount the
- * mirror would fail its action-manifest parity gate. The spine test binary
- * appends it at the full-mount layer (`build_full_spine_rpc_actions`).
- *
- * `auth` gates on the daemon-token credential, matching `_testing_reset`.
- */
-export const testing_origin_check_action_spec = {
-	method: '_testing_origin_check',
-	kind: 'request_response',
-	initiator: 'frontend',
-	auth: TESTING_ACTION_AUTH,
-	side_effects: false,
-	input: TestingOriginCheckInput,
-	output: TestingOriginCheckOutput,
-	async: true,
-	description:
-		"Test-binary only — answer the origin allowlist's parse and request check for one " +
-		'{patterns, origin} pair, for the cross-impl origin conformance table.'
-} as const satisfies RequestResponseActionSpec;
-
-/** Build the standalone `_testing_origin_check` action (see the spec doc). */
-export const create_testing_origin_check_action = (): RpcAction =>
-	rpc_action(testing_origin_check_action_spec, async (input) => run_testing_origin_check(input));
 
 /** The shortest expiry `_testing_shorten_credential_expiry` sets, in seconds from now. */
 export const TESTING_SHORTEN_CREDENTIAL_EXPIRY_MIN_SECONDS = 1;

@@ -21,7 +21,7 @@ import {
 	load_origin_conformance,
 	to_origin_conformance_checks
 } from '#lib/testing/cross_backend/origin_conformance.ts';
-import { run_testing_origin_check } from '#lib/testing/cross_backend/testing_reset_actions.ts';
+import { run_testing_origin_check } from '#lib/testing/cross_backend/testing_origin_check.ts';
 
 const table = load_origin_conformance();
 const checks = to_origin_conformance_checks(table);

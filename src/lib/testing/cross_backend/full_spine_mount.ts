@@ -51,9 +51,9 @@ import { create_actor_search_actions } from '../../auth/actor_search_actions.ts'
 import {
 	create_testing_action_manifest_action,
 	create_testing_actions,
-	create_testing_origin_check_action,
 	create_testing_shorten_credential_expiry_action
 } from './testing_reset_actions.ts';
+import { create_testing_origin_check_action } from './testing_origin_check.ts';
 import { test_cell_gated_create_authorize } from './test_cell_gated_create_authorize.ts';
 import { spine_roles, spine_session_options } from './default_spine_surface.ts';
 

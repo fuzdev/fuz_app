@@ -34,7 +34,7 @@ import {
 	TestingOriginCheckOutput,
 	testing_origin_check_action_spec,
 	type TestingOriginCheckInput
-} from './testing_reset_actions.ts';
+} from './testing_origin_check.ts';
 
 /** One expected refusal of a parse row. */
 export const OriginConformanceError = z.strictObject({

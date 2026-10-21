@@ -1607,7 +1607,8 @@ are `src/test/auth/cell_crud_parity.db.test.ts`
   payload-expiry tests never reached. Daemon-token-gated like its siblings; the
   Rust mirror is `fuz_testing::create_testing_mint_session_action_spec`.
 
-  Also in the module and **not** bundled: `_testing_origin_check`
+  In the hono-free sibling `testing/cross_backend/testing_origin_check.ts`,
+  **not** bundled: `_testing_origin_check`
   (`create_testing_origin_check_action()`, `run_testing_origin_check(input)`,
   `TestingOriginCheckInput` / `TestingOriginCheckOutput`) — answers the origin
   allowlist's parse and request check for one `{patterns, origin}` pair:
@@ -1617,7 +1618,8 @@ are `src/test/auth/cell_crud_parity.db.test.ts`
   keeps an exact action-manifest gate; the spine binary appends it in
   `build_full_spine_rpc_actions`.
 
-  Also **not** bundled: `_testing_shorten_credential_expiry`
+  Back in `testing_reset_actions.ts`, also **not** bundled:
+  `_testing_shorten_credential_expiry`
   (`create_testing_shorten_credential_expiry_action()`) — pulls an account's
   `auth_session` and `api_token` expiries in to `seconds` (1–60) from now,
   shorten-only (`LEAST`, an eternal token gaining one), answering
@@ -1628,8 +1630,8 @@ are `src/test/auth/cell_crud_parity.db.test.ts`
   `_testing_origin_check`. The Rust mirror is
   `fuz_testing::create_testing_shorten_credential_expiry_action_spec`.
 
-  Also in the module — but **not** bundled by `create_testing_actions` —
-  `_testing_action_manifest` (+ `create_testing_action_manifest_action(mounted)`):
+  Also in `testing_reset_actions.ts` — but **not** bundled by
+  `create_testing_actions` — `_testing_action_manifest` (+ `create_testing_action_manifest_action(mounted)`):
   dumps the live RPC registry as a normalized `ActionManifest` for the
   cross-impl manifest-parity gate (see §Cross-impl RPC-manifest parity). It must
   enumerate _every_ mounted method, which `create_testing_actions` (one
