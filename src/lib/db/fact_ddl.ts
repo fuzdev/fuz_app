@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS memo (
  * Both FKs cascade: deleting an actor erases its possession, and deleting a
  * fact (the orphan sweep) drops its holders. The primary key leads with
  * `actor_id`, serving the admission lookup and the actor-side cascade.
+ * `created_at` is the holder's most recent put, not the first.
  */
 export const FACT_HOLDER_SCHEMA = `
 CREATE TABLE IF NOT EXISTS fact_holder (

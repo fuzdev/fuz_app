@@ -194,6 +194,22 @@ export const query_delete_fact = async (
 };
 
 /**
+ * The grace-window half of the orphan cutoff: no `fact_holder` row was
+ * recorded (or refreshed) at or after `$1`. A dedup put adds no `fact` row,
+ * so `fact.created_at` stays at the first insert — without this, an old
+ * orphan an actor re-uploads looks stale, and a sweep between the upload and
+ * the cell write that references it deletes the fact (and, by cascade, the
+ * possession the write needs). A fact counts as recent when its own
+ * `created_at` or any holder's is within the window. Served by
+ * `idx_fact_holder_hash`. Twin of the Rust `ORPHAN_FACT_NOT_RECENTLY_HELD`.
+ */
+const ORPHAN_FACT_NOT_RECENTLY_HELD = `NOT EXISTS (
+		   SELECT 1 FROM fact_holder h
+		   WHERE h.hash = f.hash
+		     AND h.created_at >= $1::timestamptz
+		 )`;
+
+/**
  * Summary + sample shape returned by `query_orphan_facts_list`. The sample
  * is a small page (default 20 rows) shown in the admin panel so the
  * operator has *some* visibility into what they're about to delete.
@@ -222,14 +238,15 @@ export interface OrphanFactsListResult {
  * outputs? external fact mirrors?) the predicate moves to a generic
  * `fact_consumers` registry; today the cell layer is the only consumer.
  *
- * The `older_than` filter applies to `fact.created_at`. Pass `null`
- * to skip the filter (used by the list-summary preview); the delete
- * handler always passes a non-null cutoff (default 0, meaning "any
- * orphan").
+ * The `older_than` filter is the grace cutoff: a fact passes it when both
+ * its `created_at` and every `fact_holder` row's are older (a re-put
+ * refreshes the holder row). Pass `null` to skip the filter (used by the
+ * list-summary preview); the delete handler always passes a non-null
+ * cutoff (default 0, meaning "any orphan").
  *
  * @param deps - query deps
- * @param older_than - filter to facts created before this Date (or null
- *   to skip)
+ * @param older_than - filter to facts created, and last put by any holder,
+ *   before this Date (or null to skip)
  * @param sample_limit - row cap for the returned `sample`
  */
 export const query_orphan_facts_list = async (
@@ -248,7 +265,8 @@ export const query_orphan_facts_list = async (
 		   WHERE c.refs @> ARRAY[f.hash]::text[]
 		     AND c.deleted_at IS NULL
 		 )
-		 AND ($1::timestamptz IS NULL OR f.created_at < $1::timestamptz)`,
+		 AND ($1::timestamptz IS NULL
+		      OR (f.created_at < $1::timestamptz AND ${ORPHAN_FACT_NOT_RECENTLY_HELD}))`,
 		[older_than]
 	);
 	const sample_rows = await deps.db.query<{
@@ -264,7 +282,8 @@ export const query_orphan_facts_list = async (
 		   WHERE c.refs @> ARRAY[f.hash]::text[]
 		     AND c.deleted_at IS NULL
 		 )
-		 AND ($1::timestamptz IS NULL OR f.created_at < $1::timestamptz)
+		 AND ($1::timestamptz IS NULL
+		      OR (f.created_at < $1::timestamptz AND ${ORPHAN_FACT_NOT_RECENTLY_HELD}))
 		 ORDER BY f.created_at ASC
 		 LIMIT $2`,
 		[older_than, sample_limit]
@@ -286,7 +305,9 @@ export const query_orphan_facts_list = async (
  * (no row-count limit) — callers iterate to unlink disk files. The
  * `older_than` cutoff is required (non-null) here: bulk delete should
  * always be operator-scoped to a time window. A "delete all" sweep
- * passes a far-future cutoff, not `null`.
+ * passes a far-future cutoff, not `null`. It is the same grace cutoff as
+ * `query_orphan_facts_list`: a fact put — or re-put, deduplicated — by an
+ * actor within the window is kept, whatever its own `created_at`.
  */
 export const query_orphan_facts_select_for_delete = async (
 	deps: QueryDeps,
@@ -304,7 +325,8 @@ export const query_orphan_facts_select_for_delete = async (
 		   WHERE c.refs @> ARRAY[f.hash]::text[]
 		     AND c.deleted_at IS NULL
 		 )
-		 AND f.created_at < $1::timestamptz`,
+		 AND f.created_at < $1::timestamptz
+		 AND ${ORPHAN_FACT_NOT_RECENTLY_HELD}`,
 		[older_than]
 	);
 	return rows.map((r) => ({ hash: r.hash, size: Number(r.size), external_url: r.external_url }));

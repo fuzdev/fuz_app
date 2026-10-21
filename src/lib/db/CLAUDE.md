@@ -177,9 +177,13 @@ records who holds them. Optional — minimal consumers never migrate it.
 DO NOTHING`), `_put_fact_refs`, `_get_fact` / `_get_fact_meta` / `_has_fact`
   / `_get_fact_refs`, `_delete_fact` (returns `{size, external_url}` for
   external unlink), and the cell-coupled orphan queries `query_orphan_facts_list`
-  / `_select_for_delete` (a fact is orphan when no active `cell.refs` names it).
+  / `_select_for_delete` (a fact is orphan when no active `cell.refs` names it;
+  the `older_than` cutoff keeps a fact whose `created_at` or any
+  `fact_holder.created_at` is within the window, so a deduplicated re-upload
+  survives any sweep whose window covers it).
 - **`fact_holder_queries.ts`** — `FACT_HOLDER_COLUMNS`, `query_put_fact_holder`
-  (idempotent), and the admission reads `query_fact_holder_table_exists` /
+  (idempotent upsert — a repeat put refreshes the row's `created_at` to the
+  most recent put), and the admission reads `query_fact_holder_table_exists` /
   `query_fact_holder_unheld` (answered from holder rows alone).
 - **`fact_store.ts`** — `PgFactStore`, implementing `HeldFactStore` (reads per
   the `@fuzdev/fuz_util/fact_store.ts` `FactStore` contract; puts take

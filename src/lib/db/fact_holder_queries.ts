@@ -9,7 +9,7 @@
  * ref only for a fact the acting actor holds.
  *
  * Same discipline as `db/fact_queries.ts`: `deps: QueryDeps` first (the caller
- * owns the transaction), no audit side effects, idempotent inserts.
+ * owns the transaction), no audit side effects, idempotent writes.
  *
  * @module
  */
@@ -40,13 +40,17 @@ export const FACT_HOLDER_COLUMNS = [
 ] as const satisfies ReadonlyArray<keyof FactHolderRow>;
 
 /**
- * Record `actor_id` as a holder of `hash`. Idempotent (`ON CONFLICT DO
- * NOTHING`); the `fact` row must already exist (FK).
+ * Record `actor_id` as a holder of `hash`, or refresh the row's `created_at`
+ * when it already holds it. The `fact` row must already exist (FK).
+ *
+ * `created_at` is the holder's most recent put, which the orphan sweep reads
+ * as the fact's grace window: a re-put keeps an old orphan out of any
+ * sweep whose window covers the put.
  *
  * @param deps - query deps
  * @param actor_id - the actor that brought the bytes
  * @param hash - the fact's hash
- * @mutates fact_holder - inserts the `(actor_id, hash)` row when absent
+ * @mutates fact_holder - inserts the `(actor_id, hash)` row, or sets an existing row's `created_at` to now
  */
 export const query_put_fact_holder = async (
 	deps: QueryDeps,
@@ -55,7 +59,7 @@ export const query_put_fact_holder = async (
 ): Promise<void> => {
 	await deps.db.query(
 		`INSERT INTO fact_holder (actor_id, hash) VALUES ($1, $2)
-		 ON CONFLICT (actor_id, hash) DO NOTHING`,
+		 ON CONFLICT (actor_id, hash) DO UPDATE SET created_at = NOW()`,
 		[actor_id, hash]
 	);
 };

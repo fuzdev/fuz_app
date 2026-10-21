@@ -28,6 +28,7 @@ import {
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { PgFactStore } from '#lib/db/fact_store.ts';
 import { query_cell_create } from '#lib/db/cell_queries.ts';
+import { query_delete_fact, query_orphan_facts_select_for_delete } from '#lib/db/fact_queries.ts';
 import type { Db } from '#lib/db/db.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
 import {
@@ -52,6 +53,20 @@ const UNSTORED_HASH = `blake3:${'e'.repeat(64)}`;
 
 const count_cells = async (db: Db): Promise<number> =>
 	(await db.query<{ n: number }>('SELECT count(*)::int AS n FROM cell'))[0]!.n;
+
+/**
+ * Run the orphan sweep the way an admin delete does — select past a one-hour
+ * cutoff, then drop each row (cascading its holders) — returning the swept
+ * hashes, sorted.
+ */
+const sweep_orphans_past_an_hour = async (db: Db): Promise<Array<string>> => {
+	const candidates = await query_orphan_facts_select_for_delete(
+		{ db },
+		new Date(Date.now() - 3_600_000)
+	);
+	for (const { hash } of candidates) await query_delete_fact({ db }, hash);
+	return candidates.map((c) => c.hash).sort();
+};
 
 const by_json = (x: Array<string>, y: Array<string>): number =>
 	JSON.stringify(x).localeCompare(JSON.stringify(y));
@@ -149,6 +164,50 @@ describe_db('cell ref admission', (get_db) => {
 		);
 		assert.ok(prose.ok);
 		assert.strictEqual(prose.result.cell.refs, null);
+	});
+
+	test('a sweep between a re-upload and its cell write keeps the fact', async () => {
+		// An old orphan re-uploaded (a dedup hit: the `fact` row keeps its old
+		// `created_at`) must survive a sweep that runs before the cell write
+		// naming it — else the sweep cascades the fresh holder row away and the
+		// write is refused as unheld.
+		const db = get_db();
+		const app = await create_cell_test_app(get_db);
+		const alice = await app.create_account({ username: 'adm_sweep_alice' });
+		const bob = await app.create_account({ username: 'adm_sweep_bob' });
+		const photo = await put('alice photo', alice.actor.id);
+		const draft = await put('alice draft', alice.actor.id);
+		const stale = await put('alice stale file', alice.actor.id);
+		const aged = new Date(Date.now() - 48 * 3_600_000);
+		await db.query('UPDATE fact SET created_at = $1', [aged]);
+		await db.query('UPDATE fact_holder SET created_at = $1', [aged]);
+
+		// Bob re-uploads the photo; Alice repeats her put of the draft.
+		assert.strictEqual(await put('alice photo', bob.actor.id), photo);
+		assert.strictEqual(await put('alice draft', alice.actor.id), draft);
+		assert.deepEqual(await sweep_orphans_past_an_hour(db), [stale]);
+
+		// both writes land after the sweep
+		const alice_headers = alice.create_session_headers();
+		const bobs = await call(
+			app,
+			cell_create_action_spec,
+			{ data: { cover: photo } },
+			bob.create_session_headers()
+		);
+		assert.ok(bobs.ok, JSON.stringify(bobs));
+		assert.deepEqual(bobs.result.cell.refs, [photo]);
+		const alices = await call(
+			app,
+			cell_create_action_spec,
+			{ data: { file: draft } },
+			alice_headers
+		);
+		assert.ok(alices.ok, JSON.stringify(alices));
+		assert.deepEqual(alices.result.cell.refs, [draft]);
+		// the swept fact took its possession with it
+		const gone = await call(app, cell_create_action_spec, { data: { file: stale } }, alice_headers);
+		assert.strictEqual(error_reason(gone), ERROR_CELL_REF_NOT_HELD);
 	});
 
 	test('update keeps existing refs and refuses new unheld ones', async () => {

@@ -1692,7 +1692,10 @@ Every put names its `holder`: the acting actor of the request that carried the
 bytes (`ctx.auth.actor.id` in an upload handler), or `null` for a system put
 (seeds, server-side imports). A named holder gets a `fact_holder` row on every
 put — a put of bytes already stored included — in the transaction that writes
-the fact row. The cell verbs read those rows: a non-admin `cell_create`,
+the fact row; a repeat put refreshes the row's `created_at`, so the orphan-fact
+queries keep a fact any holder put within their cutoff window even when the fact
+row itself is old. A system put records no holder, so it refreshes no grace
+window. The cell verbs read those rows: a non-admin `cell_create`,
 `cell_update`, or `cell_clone` whose `data` introduces a ref its acting actor
 holds no row for is refused `403` with reason `cell_ref_not_held`, the same
 answer whether or not the fact is stored. Refs a cell already carries stay
