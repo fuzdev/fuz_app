@@ -159,10 +159,10 @@ if a consumer genuinely owns protocol actions in their typed API.
 
 **Consumer tiers.** Single-source consumers (zzz) drop into the helpers
 and accept the default `* as specs` namespace import. Multi-source
-consumers (fuz_forge, visiones — stitching local specs with
-`all_admin_action_specs` / `all_role_grant_offer_action_specs` /
-`all_account_action_specs` / `all_self_service_role_action_specs` from
-fuz_app) call `create_namespace_qualifier` once, then pass the returned
+consumers (stitching local specs with `all_admin_action_specs` /
+`all_role_grant_offer_action_specs` / `all_account_action_specs` /
+`all_self_service_role_action_specs` from fuz_app) call
+`create_namespace_qualifier` once, then pass the returned
 `qualify_spec` callback to multi-source helpers.
 
 **Tier 1** (HTTP-only) emits a smaller surface — typically
