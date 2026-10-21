@@ -131,4 +131,28 @@ describe_db('pg_fact_store holders', (get_db) => {
 		assert.ok(await store.delete(dropped));
 		assert.deepEqual(await held_by(db, keeper), [kept]);
 	});
+
+	test('a put overlapping a running transaction queues behind it', async () => {
+		// Every put opens a transaction. A concurrent upload's put can start
+		// while another request's transaction callback is mid-flight; on a
+		// single-connection driver it must wait its turn, not fail.
+		const db = get_db();
+		const store = new PgFactStore({ deps: { db } });
+		const { actor_id } = await seed_actor('holder_overlap');
+		let release!: () => void;
+		const gate = new Promise<void>((resolve) => (release = resolve));
+		let entered!: () => void;
+		const inside = new Promise<void>((resolve) => (entered = resolve));
+		const running = db.transaction(async (tx) => {
+			entered();
+			await gate;
+			await tx.query('SELECT 1');
+		});
+		await inside; // the first callback is now running
+		const put = store.put(encode('overlapping'), { holder: actor_id });
+		release();
+		await running;
+		const hash = await put;
+		assert.deepEqual(await held_by(db, actor_id), [hash]);
+	});
 });
