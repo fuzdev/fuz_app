@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/BTZoVLbz.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CAODFmXb.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.D_CUHAjL.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.Dg-zOP3M.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.r6Y-UOU4.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.C98UX3kP.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BcwQFYZ2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/C3BYcZ2u.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/B9s6dVBv.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/BKHD3Y5L.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.B87qSGpB.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/DmbhTFk7.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.MmCeQZ0H.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BL7ZH9U-.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DhdQKFKC.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -146,7 +146,8 @@ IPv6 forms (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->::ffff:1
 bare <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->127.0.0.1<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) — three keys for one address.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Canonicalization runs through <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/ip_canonical.ts#canonicalize_ip"><!--[0--><!--[-1-->canonicalize_ip<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> which:<!--]--><!--]--><!----></p><!--]--><!--[9--><!--[0--><ol><!--[--><!--[10--><li><!--[--><!--[2-->Lowercases and char-set filters (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/ip_canonical.ts#IP_LITERAL_CHARS"><!--[0--><!--[-1-->IP_LITERAL_CHARS<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->) — non-IP
 strings (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->'unknown'<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->'attacker:controlled'<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->'::1\n'<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) pass
 through unchanged so downstream strict validators can still
-reject them.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->Parses via Hono's <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->convertIPv*ToBinary<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> family.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->Re-emits the canonical RFC 5952 string (lowercase hex,
+reject them.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->Parses with <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/ip_canonical.ts#parse_ipv4_bits"><!--[0--><!--[-1-->parse_ipv4_bits<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> / <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/ip_canonical.ts#parse_ipv6_bits"><!--[0--><!--[-1-->parse_ipv6_bits<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> — the grammar of
+Rust's <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->IpAddr::from_str<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, which the spine parses with.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->Re-emits the canonical RFC 5952 string (lowercase hex,
 longest-zero-run compressed, IPv4-mapped emitted in the dotted
 form mandated by RFC 5952 §5).<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->Strips the <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->::ffff:<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> prefix from dotted IPv4-mapped forms so the
 bucket collapses to plain IPv4 — the strip moves AFTER
@@ -157,7 +158,8 @@ rate-limit-key-poisoning surface.<!--]--><!--]--><!----></p><!--]--><!--[8--><p>
 IPv6 address collapses to its <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->/64<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, the smallest block a host is commonly
 assigned, so rotating through one's own subnet buys no fresh budget. Only
 the limiter call sites apply it — the client IP stays the full address
-everywhere else (audit rows, token <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->last_used_ip<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->REMOTE_ADDR<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->).<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/http/jsonrpc_errors.ts"><!--[-1-->http/jsonrpc_errors.ts<!--]--></a><!--]--><!----></h3> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->JSON-RPC error infrastructure for fuz_app routes.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Provides error types, named constructors, and HTTP status mapping
+everywhere else (audit rows, token <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->last_used_ip<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->REMOTE_ADDR<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->).<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->The module imports nothing: the action dispatcher keys its IP limiter
+through it, so it must not pull the optional <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->hono<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> peer.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/http/jsonrpc_errors.ts"><!--[-1-->http/jsonrpc_errors.ts<!--]--></a><!--]--><!----></h3> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->JSON-RPC error infrastructure for fuz_app routes.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Provides error types, named constructors, and HTTP status mapping
 for the throw/catch error pattern used by <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/route_spec.ts#apply_route_specs"><!--[0--><!--[-1-->apply_route_specs<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->.
 Core error codes (5 standard + 10 general application). Domain-specific
 codes stay in consumers — add by casting <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->as JsonrpcErrorCode<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/jsonrpc.ts#JsonrpcErrorCode"><!--[0--><!--[-1-->JsonrpcErrorCode<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> and <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/jsonrpc.ts#JsonrpcErrorObject"><!--[0--><!--[-1-->JsonrpcErrorObject<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> types are Zod-inferred
@@ -253,16 +255,16 @@ derived views over the authority axes (<!--]--><!--[3--><!--[0--><!--[--><!--[-1
 			
 			<script>
 				{
-					__sveltekit_kj9zth = {
+					__sveltekit_ii6trp = {
 						base: "",
-						version: "c451ae975fba44b8309c35766f5bc62a3976144f"
+						version: "aa5bfaca3719c9e8e6d706defb2a2671471b7e8a"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.CXlCZqzx.js").then(async (kit) => {
-						kit.init(__sveltekit_kj9zth);
-						const app = await import("/_app/immutable/entry/app.D_CUHAjL.js");
+						kit.init(__sveltekit_ii6trp);
+						const app = await import("/_app/immutable/entry/app.r6Y-UOU4.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],
