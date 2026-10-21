@@ -501,6 +501,7 @@ describe('canonicalize_ip', () => {
 				'1:2:3:4:5:6:7:8:9',
 				':::',
 				'::ffff:',
+				'::ffff:::1.2.3.4',
 				'1::2::3'
 			]) {
 				assert.strictEqual(canonicalize_ip(ip), ip);
@@ -563,7 +564,9 @@ const RATE_LIMIT_IP_KEY_CASES: ReadonlyArray<readonly [string, string]> = [
 	['unknown%eth0', 'unknown%eth0'],
 	['', ''],
 	['attacker:controlled', 'attacker:controlled'],
-	['[::1]:8080', '[::1]:8080']
+	['[::1]:8080', '[::1]:8080'],
+	// an unparseable mapped form keeps its `::ffff:` — stripped, `::1.2.3.4` would parse
+	['::ffff:::1.2.3.4', '::ffff:::1.2.3.4']
 ];
 
 describe('rate_limit_ip_key', () => {
