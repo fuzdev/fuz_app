@@ -134,6 +134,7 @@ describe_db('pg_fact_store streaming', (get_db) => {
 		const bytes = new TextEncoder().encode('small streamed body');
 
 		const outcome = await store.put_stream(stream_of(bytes), 1_000_000, {
+			holder: null,
 			content_type: 'text/plain'
 		});
 		assert.equal(outcome.hash, fact_hash_bytes(bytes));
@@ -156,6 +157,7 @@ describe_db('pg_fact_store streaming', (get_db) => {
 		for (let i = 0; i < bytes.length; i++) bytes[i] = (i * 31) & 0xff;
 
 		const outcome = await store.put_stream(stream_of_chunks(bytes, 100), 1_000_000, {
+			holder: null,
 			content_type: 'application/octet-stream'
 		});
 		assert.equal(outcome.hash, fact_hash_bytes(bytes));
@@ -185,7 +187,7 @@ describe_db('pg_fact_store streaming', (get_db) => {
 		const bytes = new Uint8Array(2048).fill(7);
 
 		const err = await assert_rejects(
-			() => store.put_stream(stream_of_chunks(bytes, 256), 512),
+			() => store.put_stream(stream_of_chunks(bytes, 256), 512, { holder: null }),
 			/payload too large/
 		);
 		assert(err instanceof FactPayloadTooLargeError);
@@ -199,7 +201,7 @@ describe_db('pg_fact_store streaming', (get_db) => {
 		const store = make_store(facts_dir, 16);
 		const bytes = new TextEncoder().encode('this content is well over sixteen bytes long');
 
-		const hash = await store.put(bytes, { content_type: 'text/plain' });
+		const hash = await store.put(bytes, { holder: null, content_type: 'text/plain' });
 		assert.equal(hash, fact_hash_bytes(bytes));
 		const meta = await store.get_meta(hash);
 		assert(meta !== null);
@@ -214,7 +216,7 @@ describe_db('pg_fact_store streaming', (get_db) => {
 		const facts_dir = await make_facts_dir();
 		const store = make_store(facts_dir, 16);
 		const bytes = new TextEncoder().encode('original content, over sixteen bytes');
-		const hash = await store.put(bytes);
+		const hash = await store.put(bytes, { holder: null });
 		assert.deepEqual(await store.get(hash), bytes);
 
 		// Swap the CAS body for different bytes of the same length.
@@ -232,7 +234,7 @@ describe_db('pg_fact_store streaming', (get_db) => {
 		const facts_dir = await make_facts_dir();
 		const store = make_store(facts_dir, 16);
 		const bytes = new TextEncoder().encode('about to lose its file on disk');
-		const hash = await store.put(bytes);
+		const hash = await store.put(bytes, { holder: null });
 
 		const { shard, rest } = fact_disk_path(hash);
 		await rm(join(facts_dir, shard, rest));
@@ -280,10 +282,10 @@ describe_db('pg_fact_store streaming', (get_db) => {
 
 		// The insert is `ON CONFLICT DO NOTHING`, so putting the bytes again
 		// leaves the row as it is; deleting it first lets the put replace it.
-		assert.equal(await with_disk.put(bytes), hash);
+		assert.equal(await with_disk.put(bytes, { holder: null }), hash);
 		assert.equal(await with_disk.get(hash), null);
 		assert.deepEqual(await with_disk.delete(hash), { size: bytes.length, external_url: url });
-		assert.equal(await with_disk.put(bytes), hash);
+		assert.equal(await with_disk.put(bytes, { holder: null }), hash);
 		assert.deepEqual(await with_disk.get(hash), bytes);
 	});
 
@@ -309,7 +311,7 @@ describe_db('pg_fact_store streaming', (get_db) => {
 
 		// The recorder sees a genuine disk read, under the root.
 		const genuine = new TextEncoder().encode('a genuine disk-backed fact body');
-		const genuine_hash = await store.put(genuine);
+		const genuine_hash = await store.put(genuine, { holder: null });
 		assert.deepEqual(await store.get(genuine_hash), genuine);
 		const { shard, rest } = fact_disk_path(genuine_hash);
 		assert.deepEqual(read_paths.splice(0), [join(facts_dir, shard, rest)]);
@@ -350,7 +352,7 @@ describe_db('pg_fact_store streaming', (get_db) => {
 	test('a disk-backed row reads as null with no disk root and fetches nothing', async () => {
 		const facts_dir = await make_facts_dir();
 		const bytes = new TextEncoder().encode('written to disk by a store that has one');
-		const hash = await make_store(facts_dir, 16).put(bytes);
+		const hash = await make_store(facts_dir, 16).put(bytes, { holder: null });
 
 		const { log, warnings } = create_warn_log();
 		const without_disk = new PgFactStore({ deps: { db: get_db() }, log });
@@ -375,7 +377,7 @@ describe_db('pg_fact_store streaming', (get_db) => {
 		const facts_dir = await make_facts_dir();
 		const store = make_store(facts_dir, 16);
 		const bytes = new TextEncoder().encode('disk-backed and about to be deleted');
-		const hash = await store.put(bytes);
+		const hash = await store.put(bytes, { holder: null });
 		const { shard, rest } = fact_disk_path(hash);
 
 		const result = await store.delete(hash);
@@ -415,6 +417,7 @@ describe_db('pg_fact_store streaming', (get_db) => {
 		for (let i = 0; i < bytes.length; i++) bytes[i] = (i * 17) & 0xff;
 
 		await store.put_stream(stream_of_chunks(bytes, 256), 1_000_000, {
+			holder: null,
 			content_type: 'application/octet-stream'
 		});
 
@@ -434,9 +437,11 @@ describe_db('pg_fact_store streaming', (get_db) => {
 		for (let i = 0; i < bytes.length; i++) bytes[i] = (i * 13) & 0xff;
 
 		const first = await store.put_stream(stream_of_chunks(bytes, 128), 1_000_000, {
+			holder: null,
 			content_type: 'application/octet-stream'
 		});
 		const second = await store.put_stream(stream_of_chunks(bytes, 256), 1_000_000, {
+			holder: null,
 			content_type: 'application/octet-stream'
 		});
 		assert.equal(first.hash, second.hash);

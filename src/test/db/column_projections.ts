@@ -22,6 +22,7 @@ import { CELL_GRANT_COLUMNS } from '#lib/db/cell_grant_queries.ts';
 import { CELL_FIELD_COLUMNS } from '#lib/db/cell_field_queries.ts';
 import { CELL_ITEM_COLUMNS } from '#lib/db/cell_item_queries.ts';
 import { FACT_COLUMNS } from '#lib/db/fact_queries.ts';
+import { FACT_HOLDER_COLUMNS } from '#lib/db/fact_holder_queries.ts';
 
 /** Table → the exported const every read of that table projects through. */
 export const column_projections: Record<string, ReadonlyArray<string>> = {
@@ -38,7 +39,8 @@ export const column_projections: Record<string, ReadonlyArray<string>> = {
 	cell_grant: CELL_GRANT_COLUMNS,
 	cell_field: CELL_FIELD_COLUMNS,
 	cell_item: CELL_ITEM_COLUMNS,
-	fact: FACT_COLUMNS
+	fact: FACT_COLUMNS,
+	fact_holder: FACT_HOLDER_COLUMNS
 };
 
 /**

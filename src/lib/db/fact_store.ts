@@ -1,8 +1,8 @@
 /**
- * PG-backed `FactStore` implementation.
+ * PG-backed `HeldFactStore` implementation.
  *
  * Wraps the raw queries in `db/fact_queries.ts` with the lifecycle the
- * `FactStore` interface promises:
+ * `HeldFactStore` interface promises:
  *
  * - sync hash on `put`; `put_stream` hashes as it streams
  * - idempotent insert (`ON CONFLICT DO NOTHING` in the queries layer)
@@ -33,10 +33,24 @@
  * `external_url` has any other shape, and any external row on a store with no
  * disk CAS configured, as unavailable: a warning and `null`.
  *
+ * ## Holders
+ *
+ * Every put names its holder (`HeldFactPutOptions.holder`): the actor whose
+ * request carried the bytes, or `null` for a system put (seeds, server-side
+ * imports). A named holder gets a `fact_holder` row on every put — a
+ * deduplicated put included, since bringing identical bytes is possession. The
+ * `fact` row, its refs, and the holder row commit in one transaction. Cell ref
+ * admission (`auth/cell_ref_admission.ts`) reads the holder rows. The holder is
+ * a spine concept, so `PgFactStore` implements `HeldFactStore` — the
+ * `@fuzdev/fuz_util` `FactStore` reads plus puts that take `HeldFactPutOptions` —
+ * rather than the backend-agnostic `FactStore`, whose puts name no actor.
+ *
  * @module
  */
 
 import type { QueryDeps } from './query_deps.ts';
+import type { Db } from './db.ts';
+import type { Uuid } from '../primitive_schemas.ts';
 import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
@@ -60,8 +74,10 @@ import {
 	query_get_fact_refs,
 	query_has_fact,
 	query_put_fact,
-	query_put_fact_refs
+	query_put_fact_refs,
+	type PutFactInput
 } from './fact_queries.ts';
+import { query_put_fact_holder } from './fact_holder_queries.ts';
 import { is_file_fact_url } from './file_fact_url.ts';
 import {
 	read_fact_bytes_from_disk,
@@ -69,6 +85,49 @@ import {
 	write_fact_bytes_to_disk,
 	type FactDiskStorageDeps
 } from './fact_disk_storage.ts';
+
+/**
+ * Options for `HeldFactStore.put` / `put_stream`: the `@fuzdev/fuz_util`
+ * `FactPutOptions` plus the required `holder`.
+ *
+ * `holder` is the actor that brought these bytes, recorded in `fact_holder`
+ * whether or not the fact already existed. `null` is a system put (seeds,
+ * server-side imports) that records no holder — a cell write can newly
+ * reference such a fact only as a global admin or as an actor that puts the
+ * same bytes itself (refs a cell already carries stay admitted through update
+ * and clone). Required, so a put on behalf of a caller can't silently skip the
+ * possession record. Twin of the Rust `PutOptions::holder`.
+ */
+export interface HeldFactPutOptions extends FactPutOptions {
+	holder: Uuid | null;
+}
+
+/**
+ * A fact store whose puts record possession: the `@fuzdev/fuz_util`
+ * `FactStore` reads, plus `put` / `put_stream` taking `HeldFactPutOptions` with
+ * its required `holder`.
+ *
+ * The holder is required — a store typed by the generic `FactStore` cannot
+ * record possession, so cell ref admission (`auth/cell_ref_admission.ts`)
+ * could never admit a ref to a fact put through it. `AppDeps.fact_store` is
+ * typed by this interface; `PgFactStore` implements it.
+ */
+export interface HeldFactStore extends Omit<FactStore, 'put' | 'put_stream'> {
+	/**
+	 * Idempotent like `FactStore.put`; records `options.holder` (when non-null)
+	 * on a fresh insert and a dedup hit alike.
+	 */
+	put: (bytes: Uint8Array, options: HeldFactPutOptions) => Promise<FactHash>;
+	/**
+	 * Idempotent like `FactStore.put_stream`; records `options.holder` (when
+	 * non-null) on a fresh insert and a dedup hit alike.
+	 */
+	put_stream: (
+		stream: ReadableStream<Uint8Array>,
+		max_bytes: number,
+		options: HeldFactPutOptions
+	) => Promise<PutStreamOutcome>;
+}
 
 /** Default embedded-vs-referenced cutoff (1 MiB). */
 export const FACT_EMBEDDED_THRESHOLD_DEFAULT = 1024 * 1024;
@@ -102,10 +161,11 @@ export interface PgFactStoreDeps {
 }
 
 /**
- * PG-backed `FactStore`. Delegates to `db/fact_queries.ts` for I/O and adds
- * the lifecycle layer described in the module doc.
+ * PG-backed fact store. Delegates to `db/fact_queries.ts` for I/O and adds
+ * the lifecycle layer described in the module doc. Implements `HeldFactStore`:
+ * the `@fuzdev/fuz_util` `FactStore` reads, puts taking `HeldFactPutOptions`.
  */
-export class PgFactStore implements FactStore {
+export class PgFactStore implements HeldFactStore {
 	readonly #deps: QueryDeps;
 	readonly #embedded_threshold: number;
 	readonly #disk_root: string | undefined;
@@ -126,9 +186,12 @@ export class PgFactStore implements FactStore {
 	 * are configured) at `<facts_dir>/<shard>/<rest>` with a `file:` URL. Oversize
 	 * without a disk root throws: the store has nowhere to put bytes it cannot
 	 * embed. Idempotent — `ON CONFLICT DO NOTHING` + content-addressed disk
-	 * filenames make a re-write a no-op.
+	 * filenames make a re-write a no-op. `options.holder`, when set, is recorded
+	 * as a holder on a fresh insert and a dedup hit alike.
+	 *
+	 * @mutates fact_holder - records `options.holder` (when non-null) in the transaction that writes the `fact` row
 	 */
-	async put(bytes: Uint8Array, options?: FactPutOptions): Promise<FactHash> {
+	async put(bytes: Uint8Array, options: HeldFactPutOptions): Promise<FactHash> {
 		const hash = fact_hash_bytes(bytes);
 		let row_bytes: Uint8Array | null;
 		let row_external_url: string | null;
@@ -146,16 +209,17 @@ export class PgFactStore implements FactStore {
 			row_bytes = bytes;
 			row_external_url = null;
 		}
-		const inserted = await query_put_fact(this.#deps, {
-			hash,
-			bytes: row_bytes,
-			external_url: row_external_url,
-			content_type: options?.content_type ?? null,
-			size: bytes.length
-		});
-		if (inserted) {
-			await query_put_fact_refs(this.#deps, hash, resolve_refs(bytes, options));
-		}
+		await this.#insert_row(
+			{
+				hash,
+				bytes: row_bytes,
+				external_url: row_external_url,
+				content_type: options.content_type ?? null,
+				size: bytes.length
+			},
+			resolve_refs(bytes, options),
+			options.holder
+		);
 		return hash;
 	}
 
@@ -174,12 +238,14 @@ export class PgFactStore implements FactStore {
 	 *
 	 * Requires `fs` (and, for the over-threshold spill, `disk_root`) to be
 	 * configured. The streaming twin of `put`; mirrors the Rust
-	 * `FactStore::put_stream`.
+	 * `FactStore::put_stream`. Records `options.holder` the way `put` does.
+	 *
+	 * @mutates fact_holder - records `options.holder` (when non-null) in the transaction that writes the `fact` row
 	 */
 	async put_stream(
 		stream: ReadableStream<Uint8Array>,
 		max_bytes: number,
-		options?: FactPutOptions
+		options: HeldFactPutOptions
 	): Promise<PutStreamOutcome> {
 		if (this.#fs === undefined) {
 			throw new Error(
@@ -196,17 +262,35 @@ export class PgFactStore implements FactStore {
 		const row_bytes = streamed.placement.kind === 'embedded' ? streamed.placement.bytes : null;
 		const row_external_url =
 			streamed.placement.kind === 'disk' ? streamed.placement.external_url : null;
-		const inserted = await query_put_fact(this.#deps, {
-			hash: streamed.hash,
-			bytes: row_bytes,
-			external_url: row_external_url,
-			content_type: options?.content_type ?? null,
-			size: streamed.size
-		});
-		if (inserted && options?.refs && options.refs.length > 0) {
-			await query_put_fact_refs(this.#deps, streamed.hash, options.refs);
-		}
+		await this.#insert_row(
+			{
+				hash: streamed.hash,
+				bytes: row_bytes,
+				external_url: row_external_url,
+				content_type: options.content_type ?? null,
+				size: streamed.size
+			},
+			options.refs ?? [],
+			options.holder
+		);
 		return { hash: streamed.hash, sha256: streamed.sha256, size: streamed.size };
+	}
+
+	/**
+	 * Insert the `fact` row, then — in the same transaction — its refs (fresh
+	 * insert only) and the holder row (every put, a dedup hit included). Shared
+	 * by `put` and `put_stream`; twin of the Rust `PgFactStore::insert_row`.
+	 */
+	async #insert_row(row: PutFactInput, refs: Array<FactHash>, holder: Uuid | null): Promise<void> {
+		await this.#deps.db.transaction(async (db: Db) => {
+			const inserted = await query_put_fact({ db }, row);
+			if (inserted && refs.length > 0) {
+				await query_put_fact_refs({ db }, row.hash, refs);
+			}
+			if (holder !== null) {
+				await query_put_fact_holder({ db }, holder, row.hash);
+			}
+		});
 	}
 
 	/**
@@ -308,9 +392,9 @@ export class PgFactStore implements FactStore {
  * Resolve refs for a `put` call: explicit `refs` win; otherwise auto-extract
  * from JSON content; otherwise no refs.
  */
-const resolve_refs = (bytes: Uint8Array, options: FactPutOptions | undefined): Array<FactHash> => {
-	if (options?.refs !== undefined) return options.refs;
-	if (options?.content_type !== 'application/json') return [];
+const resolve_refs = (bytes: Uint8Array, options: FactPutOptions): Array<FactHash> => {
+	if (options.refs !== undefined) return options.refs;
+	if (options.content_type !== 'application/json') return [];
 	let value: unknown;
 	try {
 		value = JSON.parse(new TextDecoder().decode(bytes));

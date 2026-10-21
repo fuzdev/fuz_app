@@ -20,11 +20,16 @@ never lands. Every change ships as a new appended entry with idempotent DDL
 bootstrap and an old deployed DB converge. `auth/migrations.ts`'s module doc
 carries the incident that set the rule.
 
-**`fuz_cell` / `fuz_facts` are pre-stable**: each is a
-single `full_*_schema` entry, rewritten in place when its shape changes, and
-consumers drop and re-bootstrap across the change. When one of them takes on
-long-lived consumer data it joins the frozen set, and the cliff will be
-called out in that release's notes.
+**`fuz_facts` is frozen too**: `full_fact_schema`, then `fact_holder`, each
+appended the same way. `fact_holder.actor_id` references `fuz_auth`'s `actor`
+table, so the namespace runs after `fuz_auth` (`create_app_backend` already
+runs `fuz_auth` ahead of every `migration_namespaces` entry; a standalone
+runner orders it first).
+
+**`fuz_cell` is pre-stable**: a single `full_cell_schema` entry, rewritten in
+place when its shape changes, and consumers drop and re-bootstrap across the
+change. When it takes on long-lived consumer data it joins the frozen set, and
+the cliff will be called out in that release's notes.
 
 Every entry, frozen or not, is twinned by an identically named migration on
 the Rust spine — the `_testing_migration_tracker` parity gate compares the

@@ -27,6 +27,13 @@
  *   silently truncate pages. The handler rejects the `created_by` filter
  *   for null auth (account-id enumeration guard).
  *
+ * - `cell_create`, `cell_update`, and `cell_clone` gate the fact refs their
+ *   `data` introduces on **possession**: a non-admin write may add a ref only
+ *   to a fact its acting actor holds, else 403 `ERROR_CELL_REF_NOT_HELD` —
+ *   answered from `fact_holder` rows alone, so it says nothing about whether a
+ *   fact exists. Refs a cell (or a clone's source row) already carries stay
+ *   admitted. The last gate before the write; see `auth/cell_ref_admission.ts`.
+ *
  * Mutations emit `cell_create` / `cell_update` / `cell_delete` audit
  * events via `deps.audit.emit(...)`. The `AuditLogConfig` threaded through
  * the consumer's `audit_factory` (see `create_app_backend`) must declare
@@ -133,6 +140,7 @@ import {
 import { filter_visible_target_ids } from './cell_relation_visibility.ts';
 import { CELL_VIEWER_UNRESTRICTED } from '../db/cell_view_sql.ts';
 import { cell_steward_admits } from './cell_steward.ts';
+import { require_new_refs_held } from './cell_ref_admission.ts';
 import { to_grant_json } from './cell_grant_actions.ts';
 import { to_field_json } from './cell_field_actions.ts';
 import { to_item_json } from './cell_item_actions.ts';
@@ -432,6 +440,11 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 				}
 			}
 		}
+		// Possession-gated ref admission, the last gate before the write — every
+		// ref is new on a create. On the validated data — what the row stores and
+		// what `derive_cell_refs` writes into `cell.refs` — not the raw input
+		// `authorize_create` sees.
+		await require_new_refs_held(ctx, auth, null, validated_data as unknown as Json);
 		let row: CellRow;
 		try {
 			row = await query_cell_create(ctx, {
@@ -571,6 +584,12 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		if (input.data !== undefined) reject_kind_in_data(input.data);
 		const validated_data =
 			input.data !== undefined ? validate_data_or_throw(input.data) : undefined;
+		// Possession-gated ref admission against the cell's current refs: refs
+		// the cell already carries stay, whoever introduced them. A write with no
+		// `data` writes no refs and reads no holders.
+		if (validated_data !== undefined) {
+			await require_new_refs_held(ctx, auth, existing.refs, validated_data as unknown as Json);
+		}
 		let updated: CellRow | null;
 		try {
 			updated = await query_cell_update(ctx, input.cell_id, {
@@ -690,6 +709,11 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 	 * no container to be moderated under). So clone is no side door past the
 	 * creation policy: a caller denied a root `cell_create` of some kind can't
 	 * clone a viewable cell of that kind into one they own.
+	 *
+	 * Each row then passes ref admission against **its own source row's** refs
+	 * (`require_new_refs_held`): what the source already carries is cloned
+	 * without holding it, and only a ref the root's `patch` adds needs
+	 * possession.
 	 */
 	const clone_one_cell_row = async (
 		ctx: ActionContext | ActionActorContext,
@@ -727,6 +751,12 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 				});
 			}
 		}
+		// Possession-gated ref admission against the source row's refs: a clone
+		// carries what the source already serves to this viewer; a patch adding a
+		// ref needs the caller to hold it. On the validated data — what the row
+		// stores and what `derive_cell_refs` writes into `cell.refs` — not the
+		// merged data `authorize_create` sees.
+		await require_new_refs_held(ctx, auth, source.refs, validated_data as unknown as Json);
 		return query_cell_create(ctx, {
 			// Boundary cast (see `create_handler`).
 			data: validated_data as unknown as Json,

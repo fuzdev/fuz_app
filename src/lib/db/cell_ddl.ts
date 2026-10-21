@@ -5,8 +5,9 @@
  * is interpreted by view shape. Parent→child membership and named
  * relationships live in two sibling tables — `cell_item` (ordered
  * children, fractional-indexing keyed) and `cell_field` (named edges).
- * `refs text[]` carries `blake3:` fact hashes auto-extracted from `data`
- * by application code on every write.
+ * `refs text[]` carries the fact hashes derived from `data` (string values
+ * that are exactly a fact hash, `derive_cell_refs`) by application code on
+ * every `data` write.
  *
  * Soft delete via `deleted_at`. Most indexes are partial on
  * `deleted_at IS NULL` so active-cell queries skip tombstones.

@@ -4,11 +4,11 @@
  * Convention: `deps: QueryDeps` first, no audit side effects, mutations
  * return the affected row (or `null` for not-found).
  *
- * `cell.refs` is auto-extracted from `data` on every create and update via
- * `fact_hash_extract_refs` (depth-first walk for `blake3:`-prefixed strings). Callers
- * never pass `refs` directly — the column is a derived projection of
- * `data` for cells-by-fact discovery, mirroring what a fact store does for
- * JSON facts.
+ * `cell.refs` is derived from `data` on every create and update via
+ * `derive_cell_refs` (depth-first walk for string values that are exactly a
+ * fact hash). Callers never pass `refs` directly — the column is a derived
+ * projection of `data`, what fact serving admits a read through and what
+ * cell ref admission (`auth/cell_ref_admission.ts`) gates on a write.
  *
  * Soft delete via `deleted_at`. All `get` / `list` queries exclude
  * tombstones by default; `include_deleted: true` opts in for admin /
@@ -24,8 +24,7 @@
 import type { QueryDeps } from './query_deps.ts';
 import type { Json } from '@fuzdev/fuz_util/json.ts';
 import type { Uuid } from '../primitive_schemas.ts';
-import { fact_hash_extract_refs } from '@fuzdev/fuz_util/fact_hash.ts';
-import type { FactHash } from '@fuzdev/fuz_util/hash_schemas.ts';
+import { is_fact_hash, type FactHash } from '@fuzdev/fuz_util/hash_schemas.ts';
 import { assert_row } from './assert_row.ts';
 import { columns_sql, iso8601_timestamp_expr, qualify_columns } from './sql_columns.ts';
 import {
@@ -195,7 +194,7 @@ export const query_cell_create = async (
 	deps: QueryDeps,
 	input: CellCreateQueryInput
 ): Promise<CellRow> => {
-	const refs = derive_refs(input.data);
+	const refs = derive_cell_refs(input.data);
 	const row = await deps.db.query_one<CellRow>(
 		`INSERT INTO cell
 		   (data, kind, visibility, path, refs, parent_id, root_id, moderation, created_by)
@@ -328,7 +327,7 @@ export const query_cell_update = async (
 	patch: CellUpdatePatch
 ): Promise<CellRow | null> => {
 	const data_provided = patch.data !== undefined;
-	const refs = data_provided ? derive_refs(patch.data as Json) : null;
+	const refs = data_provided ? derive_cell_refs(patch.data as Json) : null;
 	const visibility_provided = patch.visibility !== undefined;
 	const row = await deps.db.query_one<CellRow>(
 		`UPDATE cell SET
@@ -765,20 +764,44 @@ export interface CellListParams {
 }
 
 /**
- * Derive the `refs` array column value from a cell's `data`.
+ * Derive the `refs` array column value from a cell's `data`: the string
+ * values that are exactly a fact hash, deduped and sorted.
+ *
+ * A ref is a **whole** string value matching the wire fact-hash grammar —
+ * `blake3:` followed by exactly sixty-four lowercase hex characters
+ * (`is_fact_hash`, `FACT_HASH_EXACT`). A hash inside prose or markup, an
+ * uppercase-hex digest, or a `blake3:` string of any other length is not a
+ * ref. Refs are what fact serving admits a read through and what cell ref
+ * admission gates on a write, so the grammar is exact: a string either is an
+ * address or isn't one. Object keys are not walked — only values. (JSON facts'
+ * `fact_ref` edges keep `fact_hash_extract_refs`, the substring scan.)
  *
  * Returns `null` (rather than `[]`) when no refs are present — the column
  * is nullable and the `idx_cell_refs` partial index is `WHERE refs IS NOT
  * NULL`, so an empty array would force every cell into the index.
  *
- * Sorts the deduped refs lexicographically so the stored `text[]` is
- * deterministic and byte-identical to the Rust twin (`fuz_cell`'s
- * `extract_refs`, which sorts the same `blake3:`-prefixed element form).
- * The shared `fact_hash_extract_refs` deliberately preserves traversal
- * order per its contract, so the sort lives here at the storage boundary,
- * not in the util.
+ * Sorts the deduped refs so the stored `text[]` is deterministic and
+ * byte-identical to the Rust twin (`fuz_cell`'s `extract_refs`); every ref is
+ * ASCII, so the code-unit sort here and the byte sort there agree.
+ *
+ * @param data - the cell's `data`
+ * @returns the sorted refs, or `null` when there are none
  */
-const derive_refs = (data: Json): Array<FactHash> | null => {
-	const refs = fact_hash_extract_refs(data);
-	return refs.length > 0 ? refs.sort() : null;
+export const derive_cell_refs = (data: Json): Array<FactHash> | null => {
+	const found: Set<FactHash> = new Set();
+	collect_cell_refs(data, found);
+	return found.size > 0 ? [...found].sort() : null;
+};
+
+const collect_cell_refs = (value: Json, found: Set<FactHash>): void => {
+	if (typeof value === 'string') {
+		if (is_fact_hash(value)) found.add(value);
+		return;
+	}
+	if (value === null || typeof value !== 'object') return;
+	if (Array.isArray(value)) {
+		for (const item of value) collect_cell_refs(item, found);
+		return;
+	}
+	for (const v of Object.values(value)) collect_cell_refs(v, found);
 };

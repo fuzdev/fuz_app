@@ -136,9 +136,10 @@ deployed DB converge. The `auth_migrations` module doc in
 `auth/migrations.ts` carries the incident that set the rule;
 `db/schema_ready.ts` is the runtime net when discipline lapses.
 
-`fuz_cell` / `fuz_facts` are still pre-stable, each a
-single `full_*_schema` entry rewritten in place; consumers drop and
-re-bootstrap across a change.
+`fuz_facts` is frozen and append-only the same way, and runs after
+`fuz_auth` (`fact_holder` references `actor`). `fuz_cell` is still
+pre-stable, a single `full_cell_schema` entry rewritten in place; consumers
+drop and re-bootstrap across a change.
 
 Either way the entry is twinned: the Rust spine ships an identically named
 migration, and the `_testing_migration_tracker` parity gate asserts both
@@ -200,8 +201,8 @@ mutable data primitive. A `cell` row carries identity, a `jsonb data` body,
 ownership (`created_by`/`updated_by`), `visibility`, an optional global
 `path`, an optional write-once `kind` (the capability/identity axis a
 creation authorizer gates on — a top-level column, not a `data` field), and
-auto-extracted `blake3:` fact refs. Cell-to-cell relationships
-live in two sibling tables — `cell_field` (named) and `cell_item` (ordered) —
+fact refs derived from `data` (string values that are exactly a fact hash).
+Cell-to-cell relationships live in two sibling tables — `cell_field` (named) and `cell_item` (ordered) —
 and resource-side ACL in `cell_grant`. Authorization is pure predicates
 (`can_view_cell` / `can_edit_cell` / `can_manage_cell`) with strict
 relation-read visibility filtering and `404`-masking. The RPC surface is 17
@@ -211,13 +212,16 @@ generic verbs. See usage.md §"Cell data layer".
 immutable, content-addressed byte store. `fact` holds bytes embedded in
 Postgres (small) or referenced on a sharded filesystem tree (large);
 `fact_ref` is the dependency graph; `memo` is reserved for computation
-caching (MemoStore, not yet implemented). The `FactStore` interface lives in
-`@fuzdev/fuz_util`; fuz_app ships `PgFactStore` plus two serving routes: the
-admin-only `GET /api/facts/:hash` (`create_serve_fact_route_spec`) and the
-per-reference `GET /api/cells/:cell_id/facts/:hash`
-(`create_serve_cell_fact_route_spec`), which authorizes through the
-referencing cell (`can_view_cell` AND the cell references the hash). See
-usage.md §"Fact store".
+caching (MemoStore, not yet implemented); `fact_holder` records which actors
+hold which facts. The `FactStore` interface lives in `@fuzdev/fuz_util`;
+fuz_app ships `PgFactStore` — whose puts name a holder, recorded on every put —
+plus two serving routes: the admin-only `GET /api/facts/:hash`
+(`create_serve_fact_route_spec`) and the per-reference
+`GET /api/cells/:cell_id/facts/:hash` (`create_serve_cell_fact_route_spec`),
+which authorizes through the referencing cell (`can_view_cell` AND the cell
+references the hash). The cell verbs admit a new ref only for a fact the
+writer holds (security.md §"Fact Access Control"). See usage.md §"Fact
+store".
 
 Cells and facts are both TS + Rust twin-impl: the Rust `testing_spine_stub`
 migrates the `fuz_cell` and `fuz_facts` namespaces and serves facts, gated by

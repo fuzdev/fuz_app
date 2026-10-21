@@ -66,6 +66,15 @@ export interface FactMetaRow {
 	created_at: Date;
 }
 
+/** Input for `query_put_fact` — one `fact` row. Twin of the Rust `PutFactInput`. */
+export interface PutFactInput {
+	hash: FactHash;
+	bytes: Uint8Array | null;
+	external_url: string | null;
+	content_type: string | null;
+	size: number;
+}
+
 /**
  * Idempotently insert a fact row.
  *
@@ -75,16 +84,7 @@ export interface FactMetaRow {
  * inserted, `false` when a row already existed (caller can use this to
  * decide whether to also write `fact_ref`).
  */
-export const query_put_fact = async (
-	deps: QueryDeps,
-	input: {
-		hash: FactHash;
-		bytes: Uint8Array | null;
-		external_url: string | null;
-		content_type: string | null;
-		size: number;
-	}
-): Promise<boolean> => {
+export const query_put_fact = async (deps: QueryDeps, input: PutFactInput): Promise<boolean> => {
 	const row = await deps.db.query_one<{ hash: FactHash }>(
 		`INSERT INTO fact (hash, bytes, external_url, content_type, size)
 		 VALUES ($1, $2, $3, $4, $5)

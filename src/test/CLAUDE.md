@@ -420,6 +420,13 @@ role reaching `role_not_web_grantable` as the control; cross-only), and
 `fact_serving.cross.test.ts` (the cell-gated fact-serving routes
 `GET /api/cells/:cell_id/facts/:hash` + the admin-only `GET /api/facts/:hash`
 via `describe_fact_serving_cross_tests`, gated on `capabilities.fact_serving`),
+and `cell_ref_admission.cross.test.ts` (possession-gated cell ref admission via
+`describe_cell_ref_admission_cross_tests` — unheld refs refused with one answer
+for stored and unstored hashes, holders by upload or re-upload, editors keeping
+existing refs, clones carrying source refs per row, the admin bypass, a revoked
+grantee, the exact ref grammar, and admission after the 404 masks; gated on
+`capabilities.fact_serving`; in-process legs
+`auth/cell_ref_admission{,.fact_less}.db.test.ts`),
 and `body_size.cross.test.ts` (the 1 MiB request-body cap:
 `describe_body_size_cross_tests` — over-limit cap+1 → 413 `payload_too_large`,
 at-limit exactly-the-cap → not size-rejected, under-limit → 200, and an

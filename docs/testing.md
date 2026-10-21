@@ -1075,7 +1075,7 @@ consumer config.
 - `cell_crud` — Backend live-mounts the cell CRUD verbs (gates `describe_cell_crud_cross_tests`).
 - `cell_relations` — Backend live-mounts the cell relation / ACL / audit verbs (gates `describe_cell_relations_cross_tests`).
 - `account_lifecycle` — Backend live-mounts `account_delete` / `_undelete` / `_purge` (gates `describe_account_lifecycle_cross_tests`).
-- `fact_serving` — Backend live-mounts the cell-gated fact-serving routes + `_testing_put_fact` (gates `describe_fact_serving_cross_tests`).
+- `fact_serving` — Backend live-mounts the cell-gated fact-serving routes + `_testing_put_fact` (gates `describe_fact_serving_cross_tests` and `describe_cell_ref_admission_cross_tests`). A non-admin account's cell may reference only a fact it holds, so a consumer suite seeding facts for one passes `_testing_put_fact` its `holder` (`cross_put_fact` in `testing/cross_backend/fact_serving.ts`).
 - `ready` — Backend live-mounts the public `/ready` schema-drift deploy gate (gates `describe_ready_cross_tests`).
 - `account_status` — Backend serves `GET /api/account/status` (bundled into `create_account_route_specs`; `true` for every spine). Gates the integration suite's status wire-shape case — fail-loud on a missing route rather than a silent skip.
 - `peer_request` — Backend can initiate a server→client request and await the typed reply (ActionPeer — `BackendWebsocketTransport.request_connection`). Gates `describe_peer_ping_ws_tests`. `true` on the Rust spine and the TS spine; `ts_default_capabilities` keeps it off until a backend wires the `peer/ping` HTTP + WS mount.

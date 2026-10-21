@@ -9,7 +9,7 @@
  */
 
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
-import type { FactStore } from '@fuzdev/fuz_util/fact_store.ts';
+import type { HeldFactStore } from '../db/fact_store.ts';
 
 import type { Keyring } from './keyring.ts';
 import type { PasswordHashDeps } from './password.ts';
@@ -66,9 +66,12 @@ export interface AppDeps {
 	 * serve binary content (facts) — minimal consumers leave it unset. The
 	 * consumer constructs a `PgFactStore` (`db/fact_store.ts`) over its facts
 	 * directory (`disk_root` + `fs`) at its own backend assembly and assigns it
-	 * here; `create_app_backend` stays facts-agnostic.
+	 * here; `create_app_backend` stays facts-agnostic. Typed `HeldFactStore`, not
+	 * the `@fuzdev/fuz_util` `FactStore`: its puts name a holder
+	 * (`HeldFactPutOptions.holder`), the possession record cell ref admission
+	 * reads.
 	 */
-	fact_store?: FactStore;
+	fact_store?: HeldFactStore;
 }
 
 /**

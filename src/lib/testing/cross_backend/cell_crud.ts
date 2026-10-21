@@ -158,15 +158,18 @@ export const describe_cell_crud_cross_tests = (
 			'refs are deduped and lexicographically sorted (deterministic, cross-impl-identical)',
 			async () => {
 				const fixture = await setup_test();
-				const owner = await fixture.create_account({ username: 'cell_refs_owner' });
 				const t = fixture.fresh_transport();
-				const owner_headers = owner.create_session_headers();
+				// The keeper — a global admin, whom ref admission doesn't gate — so
+				// fabricated hashes nobody holds are writable refs (a non-admin
+				// writing them is `cell_ref_not_held`, the admission suite's
+				// subject), and the case runs on backends without the fact chain.
+				const owner_headers = fixture.create_session_headers();
 
 				// Three valid distinct fact hashes that sort a < b < c, embedded in
 				// `data` in a deliberately unsorted, nested, duplicated order. Both
 				// spines must derive `refs` as the sorted [a, b, c] regardless of
 				// traversal order or `HashSet` iteration — the byte-identical
-				// cross-backend contract (Rust `extract_refs` ↔ TS `derive_refs`).
+				// cross-backend contract (Rust `extract_refs` ↔ TS `derive_cell_refs`).
 				const ref_a = `blake3:${'a'.repeat(64)}`;
 				const ref_b = `blake3:${'b'.repeat(64)}`;
 				const ref_c = `blake3:${'c'.repeat(64)}`;

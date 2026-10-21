@@ -1686,12 +1686,68 @@ cannot balloon a payload.
 ## Fact Access Control
 
 Facts are immutable, content-addressed bytes (blake3 hash → bytes), stored in
-the optional fact layer and referenced by cells through `cell.refs`
-(auto-extracted `blake3:` hashes from `cell.data`). Because facts are
+the optional fact layer and referenced by cells through `cell.refs` (the
+string values in `cell.data` that are exactly a fact hash). Because facts are
 content-addressed, identical bytes from different owners **deduplicate to one
 `fact` row** — there is no per-fact owner. Authorization therefore lives on the
 **cell→fact edge** (this owner references these bytes from this cell), never on
 the anonymous, owner-less hash.
+
+**Facts carry no ACL; sharing is cell sharing.** A fact is readable by exactly
+the callers who can view some cell that references it. To share a fact, share
+a cell that refs it — public visibility, an actor grant, or a role-scoped
+grant; to share one file, put it in a cell of its own. There is no per-fact
+permission to set, and none is planned.
+
+**Refs are possession-gated.** The edge is only as safe as what may create it:
+a cell's refs derive from its `data`, which any writer of the cell controls. If
+any writer could name any hash, a hash seen once — in a serve URL, a referer, a
+screenshot, an audit row — would be a permanent bearer read capability: put it
+in a cell you own, make the cell public, and the bytes serve to the world;
+the serve answer (200 against 404) would also say whether a fact exists. So
+`cell_create`, `cell_update`, and `cell_clone` admit a **new** ref, in the
+`data` the write stores (the validator's output), only to a fact the acting
+actor **holds** — one it has put the bytes of. Every put that
+names a holder records a `fact_holder` row, a put of bytes already stored
+included: bringing identical bytes is possession. A write introducing an
+unheld ref is refused `403` with reason `cell_ref_not_held` and nothing is
+written. The answer is read from holder rows alone, so it is identical for a
+stored hash and an unstored one — no existence oracle. Admission runs last,
+after the `404` masks, the per-kind validator, and the creation policy, so a
+hidden cell still answers its `404` whatever its `data` names
+(`auth/cell_ref_admission.ts`).
+
+- **New means not already carried.** `cell_create` checks every ref;
+  `cell_update` checks only refs the cell doesn't already carry, so an editor
+  keeps refs another writer introduced; `cell_clone` checks each cloned row
+  against its own source row's refs, so a clone — shallow or deep — carries
+  what the source carries without holding it, and only refs a
+  `with_data_patch` adds need possession.
+- **Clone carries refs.** A viewer of a cell can clone it and make the clone
+  public. That republishes nothing the viewer couldn't already: what a caller
+  can read through a cell it can download and upload again.
+- **Global admins are not gated** — their reach already spans every cell. A
+  scoped `admin` grant is not the global grant and is gated.
+- **Holding is per actor.** `fact_holder` rows cascade with their actor (an
+  account purge erases its possession) and with their fact.
+- **A system put holds nothing.** Seeds and server-side imports put with no
+  holder; their facts are referenced by cells an admin or a trusted writer
+  outside the cell verbs (a seed script) creates, or by an actor that uploads
+  the same bytes itself.
+- **A schema without the fact chain** (a consumer mounting the cell verbs but
+  no fact store) has no holders, so every new ref is refused there.
+
+**Reads are a snapshot of the edges.** A serve checks the edge as it is at
+read time. Revoking someone's access to a cell stops their reads through that
+cell, but does not withdraw refs they already wrote into cells of their own
+while they could read it — they could equally have downloaded the bytes.
+Possession-gating bounds who can create an edge; it does not make a past read
+revocable.
+
+**Ref grammar is exact.** A ref is a whole string value matching
+`blake3:` + 64 lowercase hex. A hash inside prose or markup, an uppercase
+digest, or a `blake3:` string of another length is not a ref — it neither
+serves nor needs holding. Both spines derive refs by this grammar.
 
 **Cell-scoped, per-reference reads.** Fact bytes are served through a named
 referencing cell:

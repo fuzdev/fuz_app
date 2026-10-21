@@ -141,6 +141,20 @@ export const ERROR_CELL_CREATE_FORBIDDEN = 'cell_create_forbidden' as const;
 export const ERROR_CELL_MODERATE_FORBIDDEN = 'cell_moderate_forbidden' as const;
 
 /**
+ * Error reason — a non-admin write's `data` introduces a fact ref the acting
+ * actor does not hold. A **403** `forbidden`.
+ *
+ * A ref is new when the write's derived refs carry a hash its base doesn't —
+ * nothing on `cell_create`, the cell's current refs on `cell_update`, the
+ * source row's refs on each row `cell_clone` writes — and held when the acting
+ * actor has put the fact's bytes (a `fact_holder` row). The answer reads holder
+ * rows only, so it is the same for a fact that is stored and one that isn't.
+ * The gate is `auth/cell_ref_admission.ts` (twin of the Rust
+ * `ERROR_CELL_REF_NOT_HELD`).
+ */
+export const ERROR_CELL_REF_NOT_HELD = 'cell_ref_not_held' as const;
+
+/**
  * Error reason — `cell_moderate` target has no governing root (`root_id` is
  * null): it's a root or an unparented cell, not a gated contribution, so there
  * is nothing to moderate. A **400** `invalid_params` (twin of the Rust

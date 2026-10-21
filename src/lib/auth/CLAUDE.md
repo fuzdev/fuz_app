@@ -328,6 +328,14 @@ auth, ids)`: two queries for the whole id-set, the cells read through the
   owner — the author lands a 403, the anti-self-approval guard; a root owner
   reaches the check through the steward arm); approve flips
   `moderation → approved` + `visibility → public`, reject sets `rejected`.
+- `auth/cell_ref_admission.ts` — `require_new_refs_held`, the
+  possession gate `cell_create` / `cell_update` / `cell_clone` run last before
+  their write: a non-admin write introducing a fact ref (beyond the cell's
+  current refs on update, each cloned row's source refs on clone) that its
+  acting actor holds no `fact_holder` row for is 403 `cell_ref_not_held`,
+  answered from holder rows alone (stored and unstored hashes read the same);
+  a schema without the fact chain refuses every new ref. Global admin bypasses;
+  a scoped admin doesn't. Twin of the Rust `cell_ref_admission`.
 - `auth/cell_grant_actions.ts` / `cell_field_actions.ts` /
   `cell_item_actions.ts` / `cell_audit_actions.ts` — the relation + ACL +
   audit handlers, exporting `to_grant_json` / `to_field_json` /

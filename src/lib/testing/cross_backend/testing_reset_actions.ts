@@ -86,6 +86,7 @@ import { jsonrpc_errors } from '../../http/jsonrpc_errors.ts';
 import { emit_after_commit } from '../../http/pending_effects.ts';
 import { protocol_action_specs } from '../../actions/protocol.ts';
 import { query_put_fact } from '../../db/fact_queries.ts';
+import { query_put_fact_holder } from '../../db/fact_holder_queries.ts';
 import type { RequestResponseActionSpec } from '../../actions/action_spec.ts';
 import type { AppDeps } from '../../auth/deps.ts';
 import type { AuditEmitter } from '../../auth/audit_emitter.ts';
@@ -289,8 +290,11 @@ export const create_testing_drain_effects_action = (audit: AuditEmitter): RpcAct
  * cross-process fact-serving suite, which drives over real HTTP and has no
  * `PgFactStore` to call. Hashes the UTF-8 `content` (blake3, via
  * `fact_hash_bytes` — the same hash the Rust `_testing_put_fact` computes),
- * inserts the row idempotently, and returns `{hash}`. The referencing cell is
- * seeded separately via the `cell_create` RPC. Embedded-only is enough for the
+ * inserts the row idempotently, and returns `{hash}`. `holder` names the actor
+ * the put is on behalf of — recorded in `fact_holder` (deduplicated puts
+ * included), as a real upload records its uploader, so the suites can drive
+ * cell ref admission; absent, the put is a system put with no holder. The
+ * referencing cell is seeded separately via the `cell_create` RPC. Embedded-only is enough for the
  * authz assertions (cell-scoped admit, cross-owner-no-leak, 404-mask, bare-hash
  * admin-only); external / X-Accel parity stays covered by the forge's own gate.
  *
@@ -306,7 +310,8 @@ export const testing_put_fact_action_spec = {
 	side_effects: true,
 	input: z.strictObject({
 		content: z.string(),
-		content_type: z.string().optional()
+		content_type: z.string().optional(),
+		holder: Uuid.optional()
 	}),
 	output: z.strictObject({ hash: FactHashSchema }),
 	async: true,
@@ -844,6 +849,11 @@ export const create_testing_actions = (
 					size: bytes.length
 				}
 			);
+			// the holder row, on a dedup hit too (`PgFactStore`'s put records it the
+			// same way); an unknown actor fails the FK
+			if (input.holder !== undefined) {
+				await query_put_fact_holder({ db: ctx.db }, input.holder, hash);
+			}
 			return { hash };
 		}),
 		create_testing_drain_effects_action(deps.audit),

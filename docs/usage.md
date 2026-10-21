@@ -1489,9 +1489,9 @@ test stubs and the `has_rpc` gate per state class.
 ## Cell data layer
 
 The **cell** is a universal data primitive — a `jsonb` content row with
-identity, ownership, soft-delete, an optional global `path`, and
-auto-extracted `blake3:` fact references. Cell-to-cell relationships live in
-two sibling tables: `cell_field` (named, one target per name — the
+identity, ownership, soft-delete, an optional global `path`, and fact refs
+derived from `data` (string values that are exactly a fact hash). Cell-to-cell
+relationships live in two sibling tables: `cell_field` (named, one target per name — the
 JSON-object shape) and `cell_item` (ordered, fractional-indexed, multiset —
 the JSON-array shape). Resource-side access control lives in `cell_grant`.
 Content carries no enforced schema; views interpret a cell by the shape of
@@ -1632,14 +1632,19 @@ return `403` rather than the masking `404`.
 The **fact store** is the immutable, content-addressed sibling of the cell
 layer: arbitrary bytes keyed by their `blake3:` hash. Small payloads are
 stored embedded in Postgres; large ones are written to a sharded filesystem
-tree and referenced. Cells point into facts — any `blake3:` string in a
-cell's `data` is auto-extracted to `cell.refs`, which is how binary content
-(images, documents, snapshots) attaches to cells.
+tree and referenced. Cells point into facts — every string value in a cell's
+`data` that is exactly a fact hash (`blake3:` plus 64 lowercase hex, never a
+substring of a longer string) is derived into `cell.refs`, which is how binary
+content (images, documents, snapshots) attaches to cells. A non-admin cell
+write may add a ref only to a fact its acting actor holds — see "Holders"
+below.
 
-The store interface lives in `@fuzdev/fuz_util/fact_store.ts` (`FactStore`:
-`put` / `put_stream` / `get` / `has` / `get_meta` / `get_refs` / `delete`).
-fuz_app ships the Postgres implementation and the HTTP serving plumbing; facts
-are **opt-in** — a consumer wires them at backend assembly.
+The generic store interface lives in `@fuzdev/fuz_util/fact_store.ts`
+(`FactStore`: `put` / `put_stream` / `get` / `has` / `get_meta` / `get_refs` /
+`delete`). fuz_app ships `PgFactStore` (implementing `HeldFactStore` —
+`FactStore`'s reads plus puts that take a required `holder`,
+`HeldFactPutOptions`), plus the HTTP serving plumbing; facts are **opt-in** — a
+consumer wires them at backend assembly.
 
 ### Migration
 
@@ -1648,7 +1653,9 @@ import { FACT_MIGRATION_NS } from '@fuzdev/fuz_app/db/fact_ddl.ts';
 ```
 
 `FACT_MIGRATION_NS` (namespace `fuz_facts`) creates `fact`, `fact_ref`,
-and `memo`. Splice it into `migration_namespaces` like any other namespace.
+`memo`, and `fact_holder`. Splice it into `migration_namespaces` like any
+other namespace; `fact_holder` references `actor`, and `create_app_backend`
+runs `fuz_auth` ahead of every spliced namespace.
 
 ### Wiring the store
 
@@ -1667,17 +1674,32 @@ const fact_store = new PgFactStore({
 deps.fact_store = fact_store;
 ```
 
-`put(bytes)` is idempotent (same bytes → same hash → one row) and routes by
+`put(bytes, {holder})` is idempotent (same bytes → same hash → one row) and routes by
 size: content at or under `embedded_threshold` is stored in Postgres; larger
 content is written to the disk CAS (a temp file, fsynced, then renamed into the
 shard tree) and its row records a `file:<shard>/<rest>` URL.
-`put_stream(stream, max_bytes)` does the same for an upload without buffering
+`put_stream(stream, max_bytes, {holder})` does the same for an upload without buffering
 it, enforcing `max_bytes` as it reads. Without `disk_root` and `fs` the store
 has nowhere to put content it cannot embed, and an oversize write throws
 (`put_stream` needs `fs` for a body of any size). Reads
 of disk-backed facts verify the hash and return `null` on mismatch. The disk CAS
 is the only place the store reads external bytes from — it makes no network
 request, and a row it cannot read from disk reads as `null`.
+
+### Holders
+
+Every put names its `holder`: the acting actor of the request that carried the
+bytes (`ctx.auth.actor.id` in an upload handler), or `null` for a system put
+(seeds, server-side imports). A named holder gets a `fact_holder` row on every
+put — a put of bytes already stored included — in the transaction that writes
+the fact row. The cell verbs read those rows: a non-admin `cell_create`,
+`cell_update`, or `cell_clone` whose `data` introduces a ref its acting actor
+holds no row for is refused `403` with reason `cell_ref_not_held`, the same
+answer whether or not the fact is stored. Refs a cell already carries stay
+admitted through `cell_update`, and a clone carries its source's refs; a global
+admin is not gated. So an upload handler passes the uploader as `holder`, and a
+fact a system put stored is referenced through a cell an admin writes, or by an
+actor that puts the same bytes itself. See security.md §"Fact Access Control".
 
 ### Serving facts
 

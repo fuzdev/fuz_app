@@ -968,7 +968,9 @@ source of truth for wire-shape conformance.
   gates `describe_fact_serving_cross_tests` (the cell-scoped per-reference +
   admin-only bare-hash fact-serving parity suite); like cells it stays off the
   declared surface and is `true` on every spine that mounts the serve routes +
-  the `_testing_put_fact` seeder. `ready` gates `describe_ready_cross_tests`
+  the `_testing_put_fact` seeder (whose optional `holder` records a
+  `fact_holder` row, so a non-admin can reference what it seeds) — it also
+  gates `describe_cell_ref_admission_cross_tests`. `ready` gates `describe_ready_cross_tests`
   (anonymous `GET /ready` → `200 {ready: true}` on a clean spine bootstrap);
   like cells/sse the `/ready` deploy gate stays off the declared surface, `true`
   on every spine that live-mounts it over the shared `expected_schema.json`.
@@ -1639,6 +1641,28 @@ are `src/test/auth/cell_crud_parity.db.test.ts`
   (`full_spine_mount.ts` `build_full_spine_rpc_actions`), closing over the
   complete action list plus its own spec. Daemon-token-gated like its siblings;
   the Rust mirror is `fuz_testing::create_testing_action_manifest_action_spec`.
+
+### Cell ref admission parity — `cross_backend/cell_ref_admission.ts`
+
+`describe_cell_ref_admission_cross_tests({setup_test, capabilities, rpc_path?})`
+— possession-gated ref admission over real HTTP: a non-admin `cell_create`
+naming a stored fact it never put and one naming an unstored hash get one
+identical `403 cell_ref_not_held` (status + error body); a system-put fact is
+refused too; the uploader's public cell serves the bytes to anyone; a second
+actor putting identical bytes becomes a holder; an editor keeps refs another
+writer introduced and is refused adding (or restoring a dropped) unheld one; a
+shallow and a deep clone carry each row's source refs, while a patch adding an
+unheld ref or moving a child's ref onto the root is refused; the keeper (a
+global admin) is ungated; a grantee who read a fact through a granted cell
+can't name its hash in a cell of its own, before or after the revoke; the ref
+grammar is exact (prose, markup, `blake3:zz`, uppercase, object keys are not
+refs); and a hidden cell's update, a create under a hidden parent, and a clone
+of a hidden source answer `404` whatever `data` names. Facts are put through
+`cross_put_fact` (exported by `fact_serving.ts`), whose `holder` maps onto
+`_testing_put_fact`'s optional `holder` key. Gated on
+`capabilities.fact_serving`; cross-process only. fuz_app's own wiring is
+`src/test/cross_backend/cell_ref_admission.cross.test.ts`; the in-process
+cases are `src/test/auth/cell_ref_admission{,.fact_less}.db.test.ts`.
 
 ### Token-scope surface parity — `cross_backend/token_scope_surface.ts`
 

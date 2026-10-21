@@ -27,7 +27,10 @@ import '../assert_dev_env.ts';
  *
  * Facts are seeded **embedded** via `_testing_put_fact` (the cross-process
  * driver has no DB handle); the referencing cell via the `cell_create` RPC
- * (`extract_refs` lifts the `blake3:` hash in `data` into `cell.refs`). Gated
+ * (the hash, a whole string value in `data`, is derived into `cell.refs`). A
+ * non-admin owner's cell may reference only a fact it holds, so a fact a
+ * non-admin references is put with that owner as its `holder` (the keeper is
+ * a global admin, whom ref admission doesn't gate). Gated
  * on `capabilities.fact_serving`; runs under every `cross_backend_*` project —
  * the TS spine binary and the Rust `testing_spine_stub` both mount the serve
  * routes + the seeder.
@@ -44,7 +47,7 @@ import type { FetchTransport } from '../transports/fetch_transport.ts';
 import { test_if } from './capabilities.ts';
 import { cross_rpc_call, expect_output } from './cell_cross_helpers.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
-import type { RpcPathCapabilityGatedCrossSuiteOptions, SetupTest } from './setup.ts';
+import type { RpcPathCapabilityGatedCrossSuiteOptions, SetupTest, TestFixture } from './setup.ts';
 
 /**
  * The fact suite adds one optional knob to the shared cell options: a setup
@@ -70,6 +73,43 @@ const NIL_UUID = '00000000-0000-0000-0000-000000000000';
  */
 const TestingPutFactOutput = z.strictObject({ hash: FactHashSchema });
 
+/** Input for `cross_put_fact` — `_testing_put_fact`'s params. */
+export interface CrossPutFactInput {
+	readonly content: string;
+	readonly content_type?: string;
+	/** The actor the put is on behalf of — recorded as a holder. Omit for a system put. */
+	readonly holder?: string;
+}
+
+/**
+ * Seed an embedded fact over the daemon channel via `_testing_put_fact`;
+ * returns its `blake3:` hash. A `holder` is recorded in `fact_holder` (a
+ * deduplicated put included), as a real upload records its uploader.
+ *
+ * @param fixture - the test fixture (its daemon token drives the backdoor)
+ * @param rpc_path - the backend's RPC path
+ * @param input - the content, optional content type, and optional holder
+ * @returns the fact hash
+ */
+export const cross_put_fact = async (
+	fixture: Pick<TestFixture, 'fresh_transport' | 'create_daemon_token_headers'>,
+	rpc_path: string,
+	input: CrossPutFactInput
+): Promise<string> =>
+	expect_output(
+		await cross_rpc_call(
+			// Origin-free transport — the daemon-token middleware discards the
+			// credential when an `Origin` / `Referer` is present (browser
+			// context), and cross-process `fixture.transport` auto-adds `Origin`.
+			fixture.fresh_transport({ origin: null }),
+			rpc_path,
+			'_testing_put_fact',
+			input,
+			fixture.create_daemon_token_headers()
+		),
+		TestingPutFactOutput
+	).hash;
+
 /** GET a fact over a cross-process `FetchTransport`; returns `{status, content_type, text}`. */
 const fact_get = async (
 	transport: FetchTransport,
@@ -90,25 +130,13 @@ export const describe_fact_serving_cross_tests = (options: FactServingCrossTestO
 
 	type Fixture = Awaited<ReturnType<typeof setup_test>>;
 
-	/** Seed an embedded fact over the daemon channel; returns its `blake3:` hash. */
-	const put_fact = async (
-		fixture: Fixture,
-		content: string,
-		content_type?: string
-	): Promise<string> =>
-		expect_output(
-			await cross_rpc_call(
-				// Origin-free transport — the daemon-token middleware discards the
-				// credential when an `Origin` / `Referer` is present (browser
-				// context), and cross-process `fixture.transport` auto-adds `Origin`.
-				fixture.fresh_transport({ origin: null }),
-				rpc_path,
-				'_testing_put_fact',
-				content_type === undefined ? { content } : { content, content_type },
-				fixture.create_daemon_token_headers()
-			),
-			TestingPutFactOutput
-		).hash;
+	/** Seed an embedded system-put fact; returns its `blake3:` hash. */
+	const put_fact = (fixture: Fixture, content: string, content_type?: string): Promise<string> =>
+		cross_put_fact(
+			fixture,
+			rpc_path,
+			content_type === undefined ? { content } : { content, content_type }
+		);
 
 	/**
 	 * Create a cell referencing `hash` (`extract_refs` lifts it into `cell.refs`).
@@ -168,8 +196,19 @@ export const describe_fact_serving_cross_tests = (options: FactServingCrossTestO
 				const fixture = await setup_test();
 				const a = await fixture.create_account({ username: 'fact_owner_a' });
 				const b = await fixture.create_account({ username: 'fact_owner_b' });
-				// One fact, identical bytes from both owners — deduped to a single row.
-				const hash = await put_fact(fixture, 'shared-deduped-bytes');
+				// One fact, identical bytes put by both owners — deduped to a single
+				// row, each owner a holder.
+				const hash = await cross_put_fact(fixture, rpc_path, {
+					content: 'shared-deduped-bytes',
+					holder: a.actor.id
+				});
+				assert.strictEqual(
+					await cross_put_fact(fixture, rpc_path, {
+						content: 'shared-deduped-bytes',
+						holder: b.actor.id
+					}),
+					hash
+				);
 				const t = fixture.fresh_transport();
 				const a_cell = await create_cell_with_ref(t, a.create_session_headers(), hash, 'private');
 				const b_cell = await create_cell_with_ref(t, b.create_session_headers(), hash, 'public');

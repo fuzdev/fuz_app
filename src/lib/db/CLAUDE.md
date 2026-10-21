@@ -71,8 +71,10 @@ the code.
 
 The universal mutable content primitive: a single `cell` table whose `data`
 JSONB is interpreted by view shape, with normalized relation + ACL sibling
-tables. `cell.refs` carries `blake3:` fact hashes auto-extracted from `data`
-on every write (cells-by-fact discovery). `path` is the **global** namespace
+tables. `cell.refs` carries the fact hashes derived from `data` on every write
+(`derive_cell_refs`: string values that are exactly a fact hash) — what fact
+serving admits reads through, gated on write by possession
+(`auth/cell_ref_admission.ts`). `path` is the **global** namespace
 axis — no tenant/hub scoping; globally unique on active rows. Soft delete via
 `deleted_at`; most indexes are partial on `deleted_at IS NULL`.
 
@@ -108,7 +110,8 @@ delete / set_moderation`, `_list_by_kind / _list_by_creator`, the
   run). `query_cell_set_moderation` is the dedicated
   `cell_moderate` write (`moderation` is absent from `CellUpdatePatch`, so an
   author can't self-approve via `cell_update`). `cell.refs` derived from
-  `data` via `extract_refs` on create/update. `CellRow.grant_count` is a
+  `data` via the exported `derive_cell_refs` on create/update (exact
+  whole-string hashes, sorted — byte-identical with the Rust `extract_refs`). `CellRow.grant_count` is a
   derived projection (correlated subquery on `idx_cell_grant_cell`).
 - **`cell_moderation.ts`** — the `cell.moderation` read rules in pure and
   SQL form side by side (`cell_moderation_admits_audience` /
@@ -148,7 +151,7 @@ child_id`, fractional-index keyed): `query_cell_item_insert` (throws
 **Named projections** (rationale + helpers: ../../../docs/architecture.md
 §Query Modules). The consts on this side: `CELL_COLUMNS`,
 `CELL_GRANT_COLUMNS`, `CELL_FIELD_COLUMNS`, `CELL_ITEM_COLUMNS`, `FACT_COLUMNS`
-(the meta read derives `minus bytes`). The derived `grant_count` stays an
+(the meta read derives `minus bytes`), `FACT_HOLDER_COLUMNS`. The derived `grant_count` stays an
 appended expression in the exported `cell_row_projection(alias)` rather than a
 `CELL_COLUMNS` entry, so the const is exactly the table's column set. Column
 order twins the Rust `fuz_cell` / `fuz_fact` `*_COLUMNS` consts. Every const is pinned to
@@ -159,21 +162,31 @@ exemption — by `src/test/db/column_projections.db.test.ts`; the cell
 ## Fact layer
 
 Content-addressed byte store. Cells reference facts by blake3 hash
-(`cell.refs`, auto-extracted from `data`); the fact layer stores the bytes.
-Optional — minimal consumers never migrate it.
+(`cell.refs`, derived from `data`); the fact layer stores the bytes and
+records who holds them. Optional — minimal consumers never migrate it.
 
 - **`fact_ddl.ts`** — `fact` (content-addressed bytes: embedded `bytes` xor
   `external_url`, CHECK enforces exactly one) + `fact_ref` (declared
   dependency edges; `target_hash` deliberately not an FK, for federation) +
-  `memo` (`(fn_id, input_hash) → output_hash`). `FACT_MIGRATION_NS`, namespace
-  `fuz_facts`.
+  `memo` (`(fn_id, input_hash) → output_hash`) + `fact_holder` (`(actor_id,
+  hash)` possession rows, both FKs cascading). `FACT_MIGRATION_NS`, namespace
+  `fuz_facts` — frozen and append-only (`full_fact_schema`, then
+  `fact_holder`), each entry statement-identical with the Rust `fuz_fact`
+  migration of the same name.
 - **`fact_queries.ts`** — mechanical `query_put_fact` (idempotent `ON CONFLICT
 DO NOTHING`), `_put_fact_refs`, `_get_fact` / `_get_fact_meta` / `_has_fact`
   / `_get_fact_refs`, `_delete_fact` (returns `{size, external_url}` for
   external unlink), and the cell-coupled orphan queries `query_orphan_facts_list`
   / `_select_for_delete` (a fact is orphan when no active `cell.refs` names it).
-- **`fact_store.ts`** — `PgFactStore implements FactStore` (the interface lives
-  in `@fuzdev/fuz_util/fact_store.ts`): size-routed writes (embedded ≤
+- **`fact_holder_queries.ts`** — `FACT_HOLDER_COLUMNS`, `query_put_fact_holder`
+  (idempotent), and the admission reads `query_fact_holder_table_exists` /
+  `query_fact_holder_unheld` (answered from holder rows alone).
+- **`fact_store.ts`** — `PgFactStore`, implementing `HeldFactStore` (reads per
+  the `@fuzdev/fuz_util/fact_store.ts` `FactStore` contract; puts take
+  `HeldFactPutOptions`, whose required `holder` —
+  an actor id, or `null` for a system put — is recorded in `fact_holder` on
+  every put, a dedup hit included, in one transaction with the fact row and its
+  refs): size-routed writes (embedded ≤
   `embedded_threshold` / disk CAS above it), JSON ref auto-extract, idempotent
   put, verify-on-read for disk-backed content. With `disk_root` + `fs` (the
   `runtime/*Deps`) configured, oversize `put` and the streaming `put_stream`
@@ -204,22 +217,22 @@ DO NOTHING`), `_put_fact_refs`, `_get_fact` / `_get_fact_meta` / `_has_fact`
 ### Migration namespace order
 
 FK dependency dictates order; consumers register via `migration_namespaces`
-on `create_app_backend` (after the built-in `fuz_auth` namespace). The fact
-namespace is FK-independent so its slot is free; the spine binary and every
-consumer place it last (cross-namespace order is immaterial to the
-`schema_version` rows — `sequence` is assigned per-namespace):
+on `create_app_backend` (after the built-in `fuz_auth` namespace). Both
+`fuz_cell` and `fuz_facts` FK into `actor`, so both follow `fuz_auth`; the
+spine binary and every consumer place facts last (cross-namespace order is
+otherwise immaterial to the `schema_version` rows — `sequence` is assigned
+per-namespace):
 
 ```
 auth_migration_ns (built-in, fuz_auth)
   → CELL_MIGRATION_NS (fuz_cell — FKs actor.id)
-  → FACT_MIGRATION_NS (fuz_facts — no external FK; slot is free)
+  → FACT_MIGRATION_NS (fuz_facts — fact_holder FKs actor.id)
 ```
 
 ### Pre-stable migration policy
 
-Scoped to the namespaces on this page (`fuz_cell` / `fuz_facts`): each is a
-single `full_*_schema` entry, so when it needs to change shape, **rewrite the
-original in place** rather than appending a
-follow-up — consumers re-bootstrap dev DBs on upgrade. The `fuz_auth`
-namespace is the opposite — frozen and append-only, since consumers hold
-deployed databases on it. See ../../../docs/migrations.md §Schema stability.
+Scoped to `fuz_cell`: a single `full_cell_schema` entry, so when it needs to
+change shape, **rewrite the original in place** rather than appending a
+follow-up — consumers re-bootstrap dev DBs on upgrade. `fuz_facts` and
+`fuz_auth` are the opposite — frozen and append-only, since consumers hold
+deployed databases on them. See ../../../docs/migrations.md §Schema stability.

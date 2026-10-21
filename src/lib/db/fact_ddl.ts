@@ -1,7 +1,7 @@
 /**
- * Fact + memo PG schema.
+ * Fact + memo + possession PG schema.
  *
- * Three tables:
+ * Tables:
  *
  * - `fact` — content-addressed bytes. `hash = 'blake3:<hex64>'`. Either
  *   embedded (`bytes`) or referenced (`external_url`); the CHECK constraint
@@ -11,6 +11,20 @@
  *   `target_hash` is intentionally **not** a foreign key: in federation a
  *   reference may target a fact stored on another instance.
  * - `memo` — `(fn_id, input_hash) → output_hash` for memoized computations.
+ * - `fact_holder` — which actors hold which facts: one row per `(actor, fact)`
+ *   the actor has put, the possession record cell ref admission reads.
+ *
+ * `fact_holder.actor_id` references the auth schema's `actor` table, so the
+ * namespace runs after `fuz_auth`.
+ *
+ * **The released chain is frozen — every schema change ships as an appended
+ * migration.** Migrations are tracked by `(namespace, name)` with no checksum,
+ * so editing a released entry in place never reruns on a database that already
+ * recorded it. Never edit, rename, reorder, or re-purpose an entry in
+ * `FACT_MIGRATIONS`; append a new one with idempotent DDL. Each entry is
+ * twinned with the Rust `fuz_fact` migration of the same name and position,
+ * statement for statement (the `_testing_migration_tracker` and schema-parity
+ * gates compare the two).
  *
  * @module
  */
@@ -56,10 +70,30 @@ CREATE TABLE IF NOT EXISTS memo (
 	PRIMARY KEY (fn_id, input_hash)
 )`;
 
-/** Tables created by `FACT_MIGRATION_NS`, in drop order (children first). */
-export const FACT_DROP_TABLES = ['memo', 'fact_ref', 'fact'] as const;
+/**
+ * `fact_holder` table — the possession record: one row per `(actor, fact)` the
+ * actor has put, a deduplicated put by a second actor included.
+ *
+ * Both FKs cascade: deleting an actor erases its possession, and deleting a
+ * fact (the orphan sweep) drops its holders. The primary key leads with
+ * `actor_id`, serving the admission lookup and the actor-side cascade.
+ */
+export const FACT_HOLDER_SCHEMA = `
+CREATE TABLE IF NOT EXISTS fact_holder (
+	actor_id UUID NOT NULL REFERENCES actor(id) ON DELETE CASCADE,
+	hash TEXT NOT NULL REFERENCES fact(hash) ON DELETE CASCADE,
+	created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+	PRIMARY KEY (actor_id, hash)
+)`;
 
-/** Fact + memo migrations. */
+/** Serves the fact-side cascade of `fact_holder`. */
+export const FACT_HOLDER_HASH_INDEX = `
+CREATE INDEX IF NOT EXISTS idx_fact_holder_hash ON fact_holder(hash)`;
+
+/** Tables created by `FACT_MIGRATION_NS`, in drop order (children first). */
+export const FACT_DROP_TABLES = ['fact_holder', 'memo', 'fact_ref', 'fact'] as const;
+
+/** Fact + memo + possession migrations. Frozen + append-only — see the module doc. */
 export const FACT_MIGRATIONS: Array<Migration> = [
 	{
 		name: 'full_fact_schema',
@@ -68,6 +102,13 @@ export const FACT_MIGRATIONS: Array<Migration> = [
 			await db.query(FACT_REFS_SCHEMA);
 			await db.query(FACT_REFS_TARGET_INDEX);
 			await db.query(MEMOS_SCHEMA);
+		}
+	},
+	{
+		name: 'fact_holder',
+		up: async (db: Db): Promise<void> => {
+			await db.query(FACT_HOLDER_SCHEMA);
+			await db.query(FACT_HOLDER_HASH_INDEX);
 		}
 	}
 ];

@@ -45,6 +45,7 @@ import type { TestApp } from '#lib/testing/app_server.ts';
 import { create_test_extra_actor, soft_delete_test_actor } from '#lib/testing/db_entities.ts';
 import { create_cell_test_app, create_cell } from '../auth/cell_test_helpers.ts';
 import { query_cell_create } from '#lib/db/cell_queries.ts';
+import type { Uuid } from '#lib/primitive_schemas.ts';
 import { describe_db } from '../cell_db_fixture.ts';
 
 const PUBLIC_HEADERS = { host: 'localhost:5173', origin: 'http://localhost:5173' };
@@ -71,9 +72,17 @@ const get_bare_fact = (app: TestApp, hash: string, headers?: Record<string, stri
 	});
 
 describe_db('serve_fact_route', (get_db) => {
-	/** Store embedded bytes directly in the test DB and return the hash. */
-	const put_embedded = (bytes: Uint8Array, content_type: string): Promise<FactHash> =>
-		new PgFactStore({ deps: { db: get_db() } }).put(bytes, { content_type });
+	/**
+	 * Store embedded bytes directly in the test DB and return the hash. `holder`
+	 * is the actor the put records as holding the bytes — the non-admin owner
+	 * whose cell will reference them (`null` for a system put).
+	 */
+	const put_embedded = (
+		bytes: Uint8Array,
+		content_type: string,
+		holder: Uuid | null
+	): Promise<FactHash> =>
+		new PgFactStore({ deps: { db: get_db() } }).put(bytes, { content_type, holder });
 
 	test('malformed hash param → 400', async () => {
 		const app = await create_cell_test_app(get_db);
@@ -106,7 +115,7 @@ describe_db('serve_fact_route', (get_db) => {
 		// A public cell exists, and the fact bytes exist — but the cell does
 		// not reference this hash. A caller naming this (cell, hash) pair must
 		// get 404, never "the fact exists elsewhere".
-		const hash = await put_embedded(encode('unreferenced bytes'), 'text/plain');
+		const hash = await put_embedded(encode('unreferenced bytes'), 'text/plain', null);
 		const cell = await create_cell(app, {
 			kind: 'note',
 			data: { text: 'no refs' },
@@ -121,7 +130,7 @@ describe_db('serve_fact_route', (get_db) => {
 		const app = await create_cell_test_app(get_db);
 		const owner = await app.create_account({ username: 'fact_pub_owner' });
 		const bytes = encode('public cover bytes');
-		const hash = await put_embedded(bytes, 'text/plain');
+		const hash = await put_embedded(bytes, 'text/plain', owner.actor.id);
 		const cell = await create_cell(app, {
 			kind: 'image',
 			data: { cover: hash },
@@ -145,7 +154,11 @@ describe_db('serve_fact_route', (get_db) => {
 		const app = await create_cell_test_app(get_db);
 		// Store the bytes AS text/html — the exact stored-XSS shape the headers
 		// neutralize.
-		const hash = await put_embedded(encode('<script>alert(1)</script>'), 'text/html');
+		const hash = await put_embedded(
+			encode('<script>alert(1)</script>'),
+			'text/html',
+			app.backend.actor.id
+		);
 		const cell = await create_cell(app, {
 			kind: 'image',
 			data: { cover: hash },
@@ -165,7 +178,7 @@ describe_db('serve_fact_route', (get_db) => {
 		const owner = await app.create_account({ username: 'fact_priv_owner' });
 		const other = await app.create_account({ username: 'fact_priv_other' });
 		const bytes = encode('secret cover bytes');
-		const hash = await put_embedded(bytes, 'application/octet-stream');
+		const hash = await put_embedded(bytes, 'application/octet-stream', owner.actor.id);
 		const cell = await create_cell(app, {
 			kind: 'image',
 			data: { cover: hash }, // private (default visibility)
@@ -192,7 +205,7 @@ describe_db('serve_fact_route', (get_db) => {
 		const member = await app.create_account({ username: 'bare_member' });
 		const admin = await app.create_account({ username: 'bare_admin', roles: [ROLE_ADMIN] });
 		const bytes = encode('bare-hash admin bytes');
-		const hash = await put_embedded(bytes, 'text/plain');
+		const hash = await put_embedded(bytes, 'text/plain', app.backend.actor.id);
 		// Reference it from a public cell so the only thing gating the bare-hash
 		// read is the admin auth, not reachability.
 		await create_cell(app, { kind: 'image', data: { cover: hash }, visibility: 'public' });
@@ -254,7 +267,7 @@ describe_db('serve_fact_route', (get_db) => {
 		const app = await create_cell_test_app(get_db);
 		const admin = await app.create_account({ username: 'qs_dup_admin', roles: [ROLE_ADMIN] });
 		const bytes = encode('query-shape bytes');
-		const hash = await put_embedded(bytes, 'text/plain');
+		const hash = await put_embedded(bytes, 'text/plain', null);
 
 		// First occurrence is the admin's real actor; the second is garbage.
 		// Hono keeps the first, so the request succeeds — last-wins (or a
@@ -293,8 +306,8 @@ describe_db('serve_fact_route', (get_db) => {
 
 		// Identical bytes. Content-dedup collapses them to ONE fact row.
 		const shared = encode('identical bytes from two owners');
-		const hash_a = await put_embedded(shared, 'text/plain');
-		const hash_b = await put_embedded(shared, 'text/plain');
+		const hash_a = await put_embedded(shared, 'text/plain', a.actor.id);
+		const hash_b = await put_embedded(shared, 'text/plain', b.actor.id);
 		assert.strictEqual(hash_a, hash_b); // same hash → same fact row (dedup)
 		const hash = hash_a;
 
@@ -351,7 +364,7 @@ describe_db('serve_fact_route', (get_db) => {
 		const app = await create_cell_test_app(get_db);
 		const owner = await app.create_account({ username: 'tomb_control_owner' });
 		const bytes = encode('control private bytes');
-		const hash = await put_embedded(bytes, 'text/plain');
+		const hash = await put_embedded(bytes, 'text/plain', owner.actor.id);
 		const cell = await create_cell(app, {
 			kind: 'image',
 			data: { cover: hash }, // private (default)
@@ -371,7 +384,7 @@ describe_db('serve_fact_route', (get_db) => {
 		const app = await create_cell_test_app(get_db);
 		const owner = await app.create_account({ username: 'tomb_extra_owner' });
 		const bytes = encode('extra-actor private bytes');
-		const hash = await put_embedded(bytes, 'text/plain');
+		const hash = await put_embedded(bytes, 'text/plain', owner.actor.id);
 		const cell = await create_cell(app, {
 			kind: 'image',
 			data: { cover: hash }, // private (default)
@@ -398,7 +411,7 @@ describe_db('serve_fact_route', (get_db) => {
 		const app = await create_cell_test_app(get_db);
 		const ghost = await app.create_account({ username: 'tomb_ghost_owner' });
 		const bytes = encode('ghost private bytes');
-		const hash = await put_embedded(bytes, 'text/plain');
+		const hash = await put_embedded(bytes, 'text/plain', ghost.actor.id);
 		// Create the private cell while the actor is still active (so it owns it).
 		const cell = await create_cell(app, {
 			kind: 'image',
@@ -424,7 +437,7 @@ describe_db('serve_fact_route', (get_db) => {
 		const author = await app.create_account({ username: 'fact_steward_author' });
 		const stranger = await app.create_account({ username: 'fact_steward_stranger' });
 		const bytes = encode('pending post bytes');
-		const hash = await put_embedded(bytes, 'application/octet-stream');
+		const hash = await put_embedded(bytes, 'application/octet-stream', author.actor.id);
 		const root = await create_cell(app, {
 			kind: 'forum',
 			data: {},

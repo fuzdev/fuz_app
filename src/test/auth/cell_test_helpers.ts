@@ -30,7 +30,7 @@ import { create_role_schema, ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_sche
 import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
 import { create_audit_log_config } from '#lib/auth/audit_log_schema.ts';
 import { create_all_cell_actions } from '#lib/auth/all_cell_actions.ts';
-import type { CellCreateAuthorize } from '#lib/auth/cell_actions.ts';
+import type { CellActionDeps, CellCreateAuthorize } from '#lib/auth/cell_actions.ts';
 import { cell_audit_events } from '#lib/auth/cell_audit_events.ts';
 import {
 	cell_create_action_spec,
@@ -84,14 +84,17 @@ export const cell_test_facts_dir = mkdtempSync(join(tmpdir(), 'fuz-cell-facts-')
  * generic-layer suites.
  */
 export const create_cell_route_specs =
-	(authorize_create?: CellCreateAuthorize) =>
+	(authorize_create?: CellCreateAuthorize, validate_data?: CellActionDeps['validate_data']) =>
 	(ctx: AppServerContext): Array<RouteSpec> => [
 		...create_rpc_endpoint({
 			action_ip_rate_limiter: null,
 			action_account_rate_limiter: null,
 			path: RPC_PATH,
 			actions: [
-				...create_all_cell_actions({ ...ctx.deps, authorize_create }, { roles: cell_test_roles })
+				...create_all_cell_actions(
+					{ ...ctx.deps, authorize_create, validate_data },
+					{ roles: cell_test_roles }
+				)
 			],
 			log: ctx.deps.log
 		}),
@@ -131,13 +134,15 @@ const cell_audit_factory: AuditFactory = ({ db, log }) =>
 export const create_cell_test_app = (
 	get_db: () => Db,
 	roles?: Array<string>,
-	authorize_create?: CellCreateAuthorize
+	authorize_create?: CellCreateAuthorize,
+	validate_data?: CellActionDeps['validate_data']
 ): Promise<TestApp> =>
 	create_test_app({
 		session_options,
-		create_route_specs: authorize_create
-			? create_cell_route_specs(authorize_create)
-			: create_route_specs,
+		create_route_specs:
+			authorize_create || validate_data
+				? create_cell_route_specs(authorize_create, validate_data)
+				: create_route_specs,
 		audit_factory: cell_audit_factory,
 		db: get_db(),
 		roles: roles ?? []

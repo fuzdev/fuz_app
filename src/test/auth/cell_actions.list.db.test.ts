@@ -28,6 +28,7 @@ import {
 } from '#lib/auth/cell_action_specs.ts';
 import { cell_grant_create_action_spec } from '#lib/auth/cell_grant_action_specs.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
+import { query_put_fact_holder } from '#lib/db/fact_holder_queries.ts';
 import type { FactHash } from '@fuzdev/fuz_util/hash_schemas.ts';
 import { create_cell_test_app, create_cell, call } from './cell_test_helpers.ts';
 import { error_reason } from './rpc_test_helpers.ts';
@@ -114,6 +115,12 @@ describe_db('cell_actions cell_list', (get_db) => {
 			const app = await create_cell_test_app(get_db);
 			const owner = await app.create_account({ username: 'l_ref' });
 			const h = owner.create_session_headers();
+			// the owner holds the fact (`FACT_HASH` names no real bytes, so the row
+			// is seeded directly) — a non-admin cell may reference only a held fact
+			await get_db().query(`INSERT INTO fact (hash, bytes, size) VALUES ($1, ''::bytea, 0)`, [
+				FACT_HASH
+			]);
+			await query_put_fact_holder({ db: get_db() }, owner.actor.id, FACT_HASH);
 			const { id } = await create_cell(app, {
 				kind: 'note',
 				data: { cover: FACT_HASH },

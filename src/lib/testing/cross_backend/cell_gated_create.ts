@@ -469,12 +469,33 @@ export const describe_cell_moderate_cross_tests = (
 
 	type Fixture = Awaited<ReturnType<typeof setup_test>>;
 
-	// Build an admin-owned public space (moderated `post` policy) + a
-	// participant's pending post under it.
-	const setup_pending_post_on = async (
+	// Seed `content` as an embedded fact the author holds (as their upload
+	// would) — a non-admin cell may reference only a fact its writer holds —
+	// and return the post `data` referencing it, `{}` for no fact.
+	const author_post_data = async (
 		fixture: Fixture,
-		post_data: Record<string, unknown> = {}
-	) => {
+		author: { actor: { id: string } },
+		post_fact_content: string | undefined
+	): Promise<{ post_data: Record<string, unknown>; hash: string | null }> => {
+		if (post_fact_content === undefined) return { post_data: {}, hash: null };
+		const { hash } = expect_output(
+			await cross_rpc_call(
+				// origin-free — the daemon-token middleware discards the credential beside an `Origin`
+				fixture.fresh_transport({ origin: null }),
+				rpc_path,
+				'_testing_put_fact',
+				{ content: post_fact_content, holder: author.actor.id },
+				fixture.create_daemon_token_headers()
+			),
+			TestingPutFactOutput
+		);
+		return { post_data: { cover: hash }, hash };
+	};
+
+	// Build an admin-owned public space (moderated `post` policy) + a
+	// participant's pending post under it, optionally carrying a fact the
+	// author put.
+	const setup_pending_post_on = async (fixture: Fixture, post_fact_content?: string) => {
 		const space = expect_output(
 			await cross_rpc_call(
 				fixture.transport,
@@ -489,6 +510,7 @@ export const describe_cell_moderate_cross_tests = (
 			username: 'moderate_author',
 			roles: [PARTICIPATION_ROLE]
 		});
+		const { post_data, hash } = await author_post_data(fixture, author, post_fact_content);
 		const post = expect_output(
 			await cross_rpc_call(
 				fixture.transport,
@@ -499,17 +521,15 @@ export const describe_cell_moderate_cross_tests = (
 			),
 			CellCreateOutput
 		);
-		return { fixture, space, author, post };
+		return { fixture, space, author, post, hash };
 	};
 	const setup_pending_post = async () => setup_pending_post_on(await setup_test());
 
 	// A non-admin's policy root (a parentless non-`space` kind stays open under
 	// the test authorizer, and contributions read the policy off any root) + a
-	// participant's pending post under it.
-	const setup_stewarded_post_on = async (
-		fixture: Fixture,
-		post_data: Record<string, unknown> = {}
-	) => {
+	// participant's pending post under it, optionally carrying a fact the author
+	// put.
+	const setup_stewarded_post_on = async (fixture: Fixture, post_fact_content?: string) => {
 		const root_owner = await fixture.create_account({ username: 'steward_root_owner' });
 		const root = expect_output(
 			await cross_rpc_call(
@@ -525,6 +545,7 @@ export const describe_cell_moderate_cross_tests = (
 			username: 'steward_author',
 			roles: [PARTICIPATION_ROLE]
 		});
+		const { post_data, hash } = await author_post_data(fixture, author, post_fact_content);
 		const post = expect_output(
 			await cross_rpc_call(
 				fixture.transport,
@@ -536,23 +557,9 @@ export const describe_cell_moderate_cross_tests = (
 			CellCreateOutput
 		);
 		assert.strictEqual(post.cell.moderation, 'pending', "the root's policy gates the post");
-		return { fixture, root, root_owner, author, post };
+		return { fixture, root, root_owner, author, post, hash };
 	};
 	const setup_stewarded_post = async () => setup_stewarded_post_on(await setup_test());
-
-	/** Seed an embedded fact over the daemon channel; returns its `blake3:` hash. */
-	const put_fact = async (fixture: Fixture, content: string): Promise<string> =>
-		expect_output(
-			await cross_rpc_call(
-				// origin-free — the daemon-token middleware discards the credential beside an `Origin`
-				fixture.fresh_transport({ origin: null }),
-				rpc_path,
-				'_testing_put_fact',
-				{ content },
-				fixture.create_daemon_token_headers()
-			),
-			TestingPutFactOutput
-		).hash;
 
 	/** The status of a fact GET — `null` headers = anon. */
 	const fact_status = async (
@@ -1117,9 +1124,11 @@ export const describe_cell_moderate_cross_tests = (
 			capabilities.cell_gated_create && capabilities.fact_serving,
 			"a pending post's fact is 404 to anon, even flipped public; live once approved",
 			async () => {
-				const fixture = await setup_test();
-				const hash = await put_fact(fixture, 'pending-post-fact');
-				const { author, post } = await setup_pending_post_on(fixture, { cover: hash });
+				const { fixture, author, post, hash } = await setup_pending_post_on(
+					await setup_test(),
+					'pending-post-fact'
+				);
+				assert.ok(hash !== null);
 				await set_visibility(fixture, author.create_session_headers(), post.cell.id, 'public');
 				const path = `/api/cells/${post.cell.id}/facts/${hash}`;
 				assert.strictEqual(await fact_status(fixture, path, null), 404, 'anon');
@@ -1264,9 +1273,11 @@ export const describe_cell_moderate_cross_tests = (
 			capabilities.cell_gated_create && capabilities.fact_serving,
 			"the root owner fetches a pending post's fact; anon 404",
 			async () => {
-				const fixture = await setup_test();
-				const hash = await put_fact(fixture, 'stewarded-post-fact');
-				const { root_owner, post } = await setup_stewarded_post_on(fixture, { cover: hash });
+				const { fixture, root_owner, post, hash } = await setup_stewarded_post_on(
+					await setup_test(),
+					'stewarded-post-fact'
+				);
+				assert.ok(hash !== null);
 				const path = `/api/cells/${post.cell.id}/facts/${hash}`;
 				assert.strictEqual(await fact_status(fixture, path, null), 404, 'anon');
 				assert.strictEqual(

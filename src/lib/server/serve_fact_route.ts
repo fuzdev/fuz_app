@@ -41,6 +41,25 @@
  * hash. B publishing identical bytes from B's public cell makes them
  * readable *via B's cell* — it never touches A's private reference.
  *
+ * The edge is only as safe as what may create it. A cell's `refs` derive
+ * from its `data`, and any account that can write a cell writes its `data` —
+ * so this route alone would make a known hash a read capability: name it in
+ * a cell you own, flip the cell public, and the bytes serve to the world,
+ * while a 200 against a 404 says whether the fact exists. What closes that is
+ * **possession-gated ref admission** on the cell verbs
+ * (`auth/cell_ref_admission.ts`): a non-admin `cell_create` / `cell_update` /
+ * `cell_clone` may introduce a ref only to a fact its acting actor holds —
+ * one it put the bytes of, recorded in `fact_holder` on every put, a
+ * deduplicated put included — and is refused `403 cell_ref_not_held`
+ * otherwise, the same answer whether or not a fact is stored. Refs a cell
+ * already carries stay admitted through updates and clones, so a viewer who
+ * clones a cell carries its refs: what a viewer can read through a cell, it
+ * can republish — no more than downloading the bytes and uploading them
+ * again. A serve is a snapshot of the edge at read time; revoking someone's
+ * access to a cell does not withdraw refs they already wrote elsewhere.
+ * Writers that bypass the verbs (seeds, raw inserts) are trusted and not
+ * admitted.
+ *
  * The bare-hash route is **admin-only**: an admin's reach already spans
  * every cell, so serving by bare hash grants no escalation. Non-admin
  * callers are rejected at the auth phase and never reach the handler.
@@ -64,10 +83,11 @@
  * don't distinguish 403 from 404 — neither the existence of a fact nor the
  * existence of a cell→fact edge should leak through the public surface.
  *
- * Content-addressed serving of inline `blake3:` images (a markdown doc cell
- * with embedded image refs) works through this model: the referencing cell
- * is the doc cell, so serving goes view-doc-cell → doc-cell-refs-include-hash
- * → serve.
+ * A ref is a `data` string value that is exactly a fact hash
+ * (`derive_cell_refs`) — a hash inside prose or markup is not one. So a doc
+ * cell that shows images stores each image's hash as its own string value
+ * (an attachment list, say) beside the text that places them; serving then
+ * goes view-doc-cell → doc-cell-refs-include-hash → serve.
  *
  * ## Untrusted-content hardening
  *

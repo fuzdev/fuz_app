@@ -46,8 +46,8 @@ describe_db('pg_fact_store', (get_db) => {
 		const store = make_store();
 		const bytes = encode('hello fact layer');
 
-		const hash_a = await store.put(bytes);
-		const hash_b = await store.put(bytes);
+		const hash_a = await store.put(bytes, { holder: null });
+		const hash_b = await store.put(bytes, { holder: null });
 		assert.equal(hash_a, hash_b);
 		assert.equal(hash_a, fact_hash_bytes(bytes));
 
@@ -62,7 +62,7 @@ describe_db('pg_fact_store', (get_db) => {
 		const store = make_store();
 		const bytes = encode('round trip me');
 
-		const hash = await store.put(bytes);
+		const hash = await store.put(bytes, { holder: null });
 		const back = await store.get(hash);
 		assert(back !== null);
 		assert.deepEqual(back, bytes);
@@ -71,10 +71,11 @@ describe_db('pg_fact_store', (get_db) => {
 
 	test('declared refs on put are queryable via get_refs', async () => {
 		const store = make_store();
-		const cover = await store.put(encode('cover image bytes'));
-		const detail = await store.put(encode('detail image bytes'));
+		const cover = await store.put(encode('cover image bytes'), { holder: null });
+		const detail = await store.put(encode('detail image bytes'), { holder: null });
 
 		const manifest = await store.put(encode('opaque binary manifest'), {
+			holder: null,
 			content_type: 'application/octet-stream',
 			refs: [cover, detail]
 		});
@@ -86,8 +87,8 @@ describe_db('pg_fact_store', (get_db) => {
 	test('JSON content auto-extracts refs when no explicit refs passed', async () => {
 		const store = make_store();
 		// Real hashes — auto-extraction must produce hashes that pass is_fact_hash
-		const cover = await store.put(encode('cover'));
-		const item = await store.put(encode('item'));
+		const cover = await store.put(encode('cover'), { holder: null });
+		const item = await store.put(encode('item'), { holder: null });
 
 		const manifest_json = JSON.stringify({
 			kind: 'collection',
@@ -97,6 +98,7 @@ describe_db('pg_fact_store', (get_db) => {
 			fake_hex_not_a_ref: 'af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262'
 		});
 		const manifest_hash = await store.put(encode(manifest_json), {
+			holder: null,
 			content_type: 'application/json'
 		});
 
@@ -109,6 +111,7 @@ describe_db('pg_fact_store', (get_db) => {
 		// JSON-shaped string but content_type is octet-stream → should NOT auto-extract
 		const json_text = JSON.stringify({ cover: FAKE_BLAKE });
 		const hash = await store.put(encode(json_text), {
+			holder: null,
 			content_type: 'application/octet-stream'
 		});
 		const refs = await store.get_refs(hash);
@@ -125,7 +128,7 @@ describe_db('pg_fact_store', (get_db) => {
 	test('get_meta returns content_type, size, created_at, external=false', async () => {
 		const store = make_store();
 		const bytes = encode('meta probe');
-		const hash = await store.put(bytes, { content_type: 'text/plain' });
+		const hash = await store.put(bytes, { holder: null, content_type: 'text/plain' });
 
 		const meta = await store.get_meta(hash);
 		assert(meta !== null);
@@ -139,7 +142,10 @@ describe_db('pg_fact_store', (get_db) => {
 		const store = make_store({ embedded_threshold: 16 });
 		const bytes = encode('this string is definitely longer than sixteen bytes');
 		// The message names the configuration that would accept the bytes.
-		await assert_rejects(() => store.put(bytes), /embedded threshold.*disk_root and fs/);
+		await assert_rejects(
+			() => store.put(bytes, { holder: null }),
+			/embedded threshold.*disk_root and fs/
+		);
 		// Nothing was stored.
 		assert.equal(await store.has(fact_hash_bytes(bytes)), false);
 	});
@@ -147,7 +153,7 @@ describe_db('pg_fact_store', (get_db) => {
 	test('delete drops the row and returns size + external_url', async () => {
 		const store = make_store();
 		const bytes = encode('about to be deleted');
-		const hash = await store.put(bytes);
+		const hash = await store.put(bytes, { holder: null });
 
 		const result = await store.delete(hash);
 		assert(result !== null);
