@@ -1716,9 +1716,10 @@ import { create_x_accel_config } from '@fuzdev/fuz_app/server/x_accel.ts';
 const serve_options = {
 	facts_dir,
 	// Production: a validated X-Accel handle. `create_x_accel_config` throws
-	// unless the facts `location` in `nginx_config` is `internal;`, so the
-	// redirect can't be enabled against a public facts location that would
-	// bypass every cell-visibility check. Dev/tests omit it → stream from disk.
+	// unless the facts `location` in `nginx_config` is `internal;` and carries
+	// the `fact_security_header_directives` lines, so the redirect can't be
+	// enabled against a public facts location that would bypass every
+	// cell-visibility check. Dev/tests omit it → stream from disk.
 	x_accel: x_accel_redirect_prefix
 		? create_x_accel_config(x_accel_redirect_prefix, nginx_config)
 		: undefined,
@@ -1741,7 +1742,11 @@ stream from disk in dev/test. The redirect prefix is wrapped in a validated
 `XAccelConfig` (built via `create_x_accel_config`), which fails loud at boot
 unless the facts nginx `location` is `internal;` — a public facts location
 would serve any fact's bytes to anyone who guesses the path, bypassing every
-cell-visibility check. Env: `FUZ_FACTS_DIR`, `FUZ_FACTS_X_ACCEL_REDIRECT_PREFIX`.
+cell-visibility check — and a server-level `location ^~` carrying the fact
+hardening headers, since the location's own `add_header` set replaces the
+server-level one. Render them into the location with
+`fact_security_header_directives` (`server/fact_security_headers.ts`);
+security.md §Fact Access Control has the rules and an example block. Env: `FUZ_FACTS_DIR`, `FUZ_FACTS_X_ACCEL_REDIRECT_PREFIX`.
 
 ### Status
 

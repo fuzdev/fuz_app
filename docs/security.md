@@ -1820,18 +1820,59 @@ trusted to address the filesystem, even though the write path only ever emits
 that shape — defense-in-depth against a future row-injection bug handing nginx
 an attacker-controlled path.
 
-**X-Accel facts location must be `internal;` (fail-loud at boot).** The
-`X-Accel-Redirect` path's confidentiality depends on the nginx facts `location`
-being marked `internal;` — only the authz'd handler's internal redirect may
-reach it. A _public_ facts location would serve any fact's bytes to anyone who
-guesses the `<shard>/<rest>` path, bypassing every cell-visibility check. The
-redirect prefix is therefore gated behind a validated `XAccelConfig`
+**X-Accel facts location must be `internal;` and carry the fact headers
+(fail-loud at boot).** The `X-Accel-Redirect` path's confidentiality depends on
+the nginx facts `location` being marked `internal;` — only the authz'd
+handler's internal redirect may reach it. A _public_ facts location would serve
+any fact's bytes to anyone who guesses the `<shard>/<rest>` path, bypassing
+every cell-visibility check. A location with its own `add_header` also stops
+the server-level headers from applying, so the facts location must carry the
+fact hardening pair itself, as the lines `fact_security_header_directives`
+(`server/fact_security_headers.ts`) renders from `FACT_SECURITY_HEADERS`. A
+direct child of the `server` block:
+
+```nginx
+location ^~ /_facts/ {
+	internal;
+	alias /srv/app/facts/;
+	add_header X-Content-Type-Options "nosniff" always;
+	add_header Content-Security-Policy "default-src 'none'; sandbox" always;
+}
+```
+
+The redirect prefix is gated behind a validated `XAccelConfig`
 (`server/x_accel.ts`): it can only be constructed via `create_x_accel_config`,
-which runs `validate_facts_internal_location` and throws at boot on a missing or
-non-`internal;` location — so X-Accel serving is impossible to enable without
-proving the location is internal. This is a best-effort string check, not a full
-nginx parser. It is the only nginx property fuz_app validates — see
-§Config Validation.
+which runs `validate_facts_internal_location` and throws at boot unless every
+location serving the prefix — a prefix-type location on the prefix or below it,
+in any `server` block — uses `^~`, is a direct child of its `server` block,
+holds only simple directives (no nested block, no `include`), and has a
+top-level `internal;` plus both header lines. `^~` at server level is what
+keeps regex locations out: nginx never evaluates them for a path whose longest
+prefix match is such a location. An `=` location on the prefix, and a regex
+location whose pattern spells it out, are refused too. The prefix may appear
+only in its own location lines and their bodies: `internal;` admits every
+internal redirect and subrequest, so any other directive naming it — a
+`rewrite`, `try_files`, `error_page`, `index`, `add_before_body`, or a `set` /
+`map` value a redirect later reads — is refused, in any block. The config is
+tokenized as nginx reads it; files named by `include` are not followed, so keep
+facts-related locations out of included files.
+
+The threat model is operator mistakes, not an adversarial config author: the
+prefix check is textual, so a value assembled from pieces (`/_fac$1`) evades
+it. Beyond the config text:
+
+- The validator checks URL paths only — another `root` or `alias` that maps
+  onto the facts directory would serve its files publicly, so keep the facts
+  directory outside every other location's root.
+- nginx honours `X-Accel-Redirect` from any proxied upstream (`proxy_pass`,
+  `fastcgi_pass`, `uwsgi_pass`, `scgi_pass`, `grpc_pass`), so every upstream in
+  the server is trusted to point into the prefix; an untrusted one needs
+  `proxy_ignore_headers X-Accel-Redirect;` (or the `fastcgi_` / `uwsgi_` /
+  `scgi_` equivalent).
+- Module code can redirect internally too (ssi `include virtual`, njs
+  `internalRedirect`, perl, echo), so run trusted modules and content only.
+
+It is the only nginx property fuz_app validates — see §Config Validation.
 
 ## Signup
 
@@ -2087,8 +2128,8 @@ removed rather than left to drift further from what the recipes build.
 The one nginx property that *is* checked is the facts location, because
 confidentiality depends on it: `XAccelConfig` (`server/x_accel.ts`) can only be
 constructed by passing the config through a check that the facts location is
-`internal;`, so X-Accel fact serving cannot be enabled un-validated. See
-§Serving Facts.
+`internal;` and carries the fact hardening headers, so X-Accel fact serving
+cannot be enabled un-validated. See §Fact Access Control.
 
 Recommended locations:
 

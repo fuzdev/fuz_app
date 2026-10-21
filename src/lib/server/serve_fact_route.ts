@@ -20,7 +20,8 @@
  * `XAccelConfig` (built via
  * `create_x_accel_config` in `server/x_accel.ts`) set in prod, unset in dev.
  * The handle can only be obtained by proving the facts nginx location is
- * `internal;`, so X-Accel serving can't be enabled against a public location.
+ * `internal;` and carries the fact hardening headers, so X-Accel serving can't
+ * be enabled against a public or header-less location.
  *
  * REST, not RPC: binary responses don't fit the JSON-RPC envelope.
  *
@@ -96,8 +97,13 @@
  * from executing as stored XSS for any reader of a referencing cell, **every**
  * served-fact response carries `X-Content-Type-Options: nosniff` +
  * `Content-Security-Policy: default-src 'none'; sandbox` (the
- * `FACT_SECURITY_HEADERS` set, applied in all three serve branches). The same
- * pair, byte-identical, is set by the Rust twin (`fuz_fact_serving::serve`).
+ * `FACT_SECURITY_HEADERS` set from `server/fact_security_headers.ts`,
+ * byte-identical with the Rust twin `fuz_fact_serving`). The embedded and
+ * disk-stream branches set them on the response. On the `X-Accel-Redirect`
+ * branch nginx serves the bytes, and the headers the client sees come from the
+ * internal facts location, not this response — that location must carry the
+ * lines `fact_security_header_directives` renders, which `create_x_accel_config`
+ * enforces.
  * `Content-Disposition: attachment` is deliberately **not** added — it would
  * force-download and break legitimate inline image rendering.
  *
@@ -143,37 +149,10 @@ import { can_view_cell } from '../auth/cell_authorize.ts';
 import { cell_steward_admits } from '../auth/cell_steward.ts';
 import { parse_file_fact_url } from '../db/file_fact_url.ts';
 import type { XAccelConfig } from './x_accel.ts';
+import { FACT_SECURITY_HEADERS } from './fact_security_headers.ts';
 
 /** `Cache-Control` for fact responses — 5 min revocation window. */
 const CACHE_CONTROL = 'private, max-age=300';
-
-/**
- * `X-Content-Type-Options` for fact responses — block MIME sniffing so an
- * `application/octet-stream` fact can't be sniffed into executable HTML.
- */
-const X_CONTENT_TYPE_OPTIONS = 'nosniff';
-
-/**
- * `Content-Security-Policy` for fact responses. Fact bytes carry a
- * producer-supplied `content_type` served verbatim inline, so a fact stored as
- * (or sniffable to) `text/html` would otherwise execute as stored XSS for any
- * reader of a referencing cell. `default-src 'none'; sandbox` neutralizes
- * script execution and sub-resource loads even when a fact is rendered inline;
- * harmless for directly-served images (they load no sub-resources). The same
- * pair, byte-identical, is set by the Rust twin (`fuz_fact_serving::serve`).
- */
-const CONTENT_SECURITY_POLICY = "default-src 'none'; sandbox";
-
-/**
- * The untrusted-content hardening headers applied to every served-fact
- * response across all three branches (embedded, `X-Accel-Redirect`,
- * disk-stream). `Content-Disposition: attachment` is deliberately omitted — it
- * would force-download and break legitimate inline image rendering.
- */
-const FACT_SECURITY_HEADERS = {
-	'X-Content-Type-Options': X_CONTENT_TYPE_OPTIONS,
-	'Content-Security-Policy': CONTENT_SECURITY_POLICY
-} as const;
 
 /**
  * Path-param schema for the bare-hash route. Matching the canonical
@@ -300,6 +279,8 @@ const serve_fact_bytes = async (
 
 	if (x_accel !== undefined) {
 		// Production: hand off to nginx via the validated `internal;` facts location.
+		// nginx answers with that location's own `add_header` set, not these
+		// headers, which is why the validator requires the fact pair there.
 		return c.body(null, 200, {
 			'Content-Type': content_type,
 			'Content-Length': size,

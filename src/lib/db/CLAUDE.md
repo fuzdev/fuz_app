@@ -216,7 +216,7 @@ DO NOTHING`), `_put_fact_refs`, `_get_fact` / `_get_fact_meta` / `_has_fact`
 - **`fact_store_errors.ts`** — `FactPayloadTooLargeError` / `FactStorageFullError` (+
   `is_enospc_error`) thrown by `put_stream`, for a consumer route's 413 / 507.
 - The HTTP serving plumbing lives under `server/` (`serve_fact_route.ts`,
-  `x_accel.ts`).
+  `x_accel.ts`, `fact_security_headers.ts`).
 
 ### Migration namespace order
 
