@@ -77,7 +77,11 @@
  * 'public'` cell whose `moderation` admits an audience (unmoderated or
  * `'approved'`). Multi-actor accounts fall through with `req_ctx: null`
  * — there's no `acting?` slot on a pure-public route, so multi-actor
- * callers are treated as anonymous.
+ * callers are treated as anonymous. A scope-narrowed API token is treated as
+ * anonymous too, not refused: a narrowed token reaches no non-RPC surface
+ * (`token_scope_admits_non_rpc`), but on a route that admits anonymous callers
+ * a 403 would enforce nothing — the holder drops the `Authorization` header and
+ * re-reads every public cell anyway.
  *
  * 404 is the universal "not viewable" response: missing fact, missing or
  * unviewable cell, or the cell doesn't reference the hash. We deliberately
@@ -137,7 +141,8 @@ import {
 } from '../auth/request_context.ts';
 import { ROLE_ADMIN } from '../auth/role_schema.ts';
 import { ActingActor } from '../http/auth_shape.ts';
-import { ACCOUNT_ID_KEY } from '../hono_context.ts';
+import { ACCOUNT_ID_KEY, TOKEN_SCOPE_KEY } from '../hono_context.ts';
+import { token_scope_admits_non_rpc } from '../auth/token_scope.ts';
 import { query_active_actors_by_account } from '../auth/account_queries.ts';
 import { get_route_params, type RouteContext, type RouteSpec } from '../http/route_spec.ts';
 import { ERROR_INVALID_ROUTE_PARAMS } from '../http/error_schemas.ts';
@@ -305,7 +310,9 @@ const serve_fact_bytes = async (
 
 /**
  * Resolve the caller's `RequestContext` on a pure-public route from the
- * session-middleware-set account id. Multi-actor accounts return `null`
+ * session-middleware-set account id. A scope-narrowed API token returns
+ * `null` — downgraded to anonymous, not refused (see the module doc).
+ * Multi-actor accounts return `null`
  * (no `acting?` slot on a public route to disambiguate); single active-actor
  * accounts resolve their actor and role_grants for owner / grant / admin
  * admission paths. Unauthenticated callers return `null`. Soft-deleted
@@ -319,6 +326,9 @@ const build_public_request_context = async (
 ): Promise<RequestContext | null> => {
 	const account_id = c.get(ACCOUNT_ID_KEY);
 	if (!account_id) return null;
+	// rule 3 in its public-read disposition: anonymous, never a refusal
+	const scope = c.get(TOKEN_SCOPE_KEY);
+	if (scope && !token_scope_admits_non_rpc(scope)) return null;
 	const actors = await query_active_actors_by_account({ db: route.db }, account_id);
 	if (actors.length !== 1) return null;
 	return build_request_context({ db: route.db }, account_id, actors[0]!.id);

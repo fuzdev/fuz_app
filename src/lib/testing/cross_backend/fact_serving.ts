@@ -23,7 +23,10 @@ import '../assert_dev_env.ts';
  *   read its own *private* fact there (admitted only by public cells). Opt-in
  *   (needs the multi-actor setup); every spine resolves the acting actor at the
  *   dispatcher's authorization phase from account-grain credentials, so the
- *   multi-actor account is drivable on TS and Rust alike.
+ *   multi-actor account is drivable on TS and Rust alike;
+ * - **narrowed-token downgrade** — a scope-narrowed API token on the
+ *   cell-scoped route is anonymous, not refused: its owner's private fact 404s
+ *   exactly as for an anonymous caller, while a public cell still serves.
  *
  * Facts are seeded **embedded** via `_testing_put_fact` (the cross-process
  * driver has no DB handle); the referencing cell via the `cell_create` RPC
@@ -46,6 +49,7 @@ import { CellCreateOutput } from '../../auth/cell_action_specs.ts';
 import type { FetchTransport } from '../transports/fetch_transport.ts';
 import { test_if } from './capabilities.ts';
 import { cross_rpc_call, expect_output } from './cell_cross_helpers.ts';
+import { mint_narrowed_api_token } from './narrowed_api_token.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 import type { RpcPathCapabilityGatedCrossSuiteOptions, SetupTest, TestFixture } from './setup.ts';
 
@@ -303,6 +307,59 @@ export const describe_fact_serving_cross_tests = (options: FactServingCrossTestO
 			const as_anon = await fact_get(anon, `/api/facts/${hash}`, {});
 			assert.strictEqual(as_anon.status, 401, 'anon reached the bare-hash route');
 		});
+
+		// A narrowed token reaches no non-RPC surface; on this anonymous-admitting
+		// route it is downgraded to anonymous rather than refused (a 403 would
+		// enforce nothing — the holder drops the header). So the owner's narrowed
+		// token reads exactly what an anonymous caller reads: its private fact
+		// 404s, a public cell still serves. The owner's full-scope bearer reading
+		// the private fact pins that the 404 is the scope, not the bearer.
+		test_if(
+			capabilities.fact_serving,
+			'narrowed api token is treated as anonymous on the cell-scoped route',
+			async () => {
+				const fixture = await setup_test();
+				const owner = await fixture.create_account({ username: 'fact_narrowed_owner' });
+				const hash = await cross_put_fact(fixture, rpc_path, {
+					content: 'narrowed-token-bytes',
+					holder: owner.actor.id
+				});
+				const t = fixture.fresh_transport();
+				const session = owner.create_session_headers();
+				const private_cell = await create_cell_with_ref(t, session, hash, 'private');
+				const public_cell = await create_cell_with_ref(t, session, hash, 'public');
+				const token = await mint_narrowed_api_token({
+					app: fixture.transport,
+					rpc_path,
+					session_headers: session,
+					methods: ['cell_get']
+				});
+				// no `Origin` — a bearer in a browser context is discarded
+				const bare = fixture.fresh_transport({ origin: null });
+				const narrowed = { authorization: `Bearer ${token}` };
+
+				const full = await fact_get(
+					bare,
+					cell_fact_path(private_cell, hash),
+					owner.create_bearer_headers()
+				);
+				assert.strictEqual(full.status, 200, `full-scope bearer read failed: ${full.text}`);
+
+				const anon_private = await fact_get(bare, cell_fact_path(private_cell, hash), {});
+				const narrowed_private = await fact_get(bare, cell_fact_path(private_cell, hash), narrowed);
+				assert.strictEqual(anon_private.status, 404, 'anon read a private fact');
+				assert.strictEqual(narrowed_private.status, 404, 'narrowed token read a private fact');
+				assert.strictEqual(
+					narrowed_private.text,
+					anon_private.text,
+					'narrowed 404 differs from anon'
+				);
+
+				const narrowed_public = await fact_get(bare, cell_fact_path(public_cell, hash), narrowed);
+				assert.strictEqual(narrowed_public.status, 200, 'narrowed token refused a public cell');
+				assert.strictEqual(narrowed_public.text, 'narrowed-token-bytes');
+			}
+		);
 
 		// The cell-scoped route is pure-public — no `acting?` slot — so the handler
 		// can't disambiguate a multi-actor account and resolves it to a null

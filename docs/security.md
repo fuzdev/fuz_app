@@ -285,6 +285,13 @@ browsable rows can still carry secrets in data columns, and could be gated on
 a global role a bearer satisfies), so a token whose UI badge read "scoped to
 `cell_get`" could still bulk-read and delete browsable rows.
 
+One non-RPC surface downgrades rather than refuses: the per-cell fact read
+(`GET /api/cells/:cell_id/facts/:hash`) admits anonymous callers, so a 403
+there would enforce nothing — the holder drops the `Authorization` header and
+re-reads every public cell anyway. A narrowed token on that route resolves to
+the anonymous caller instead: it reads public cells and nothing its account
+could otherwise view.
+
 Enforcement sits at two kinds of site, both ahead of the role gate:
 
 - **Per method**, inside `perform_action` — between the credential gate and
