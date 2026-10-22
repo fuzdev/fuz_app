@@ -54,11 +54,9 @@ import '../assert_dev_env.ts';
  * The last cases are gated on `capabilities.ws_account_actions` — the backend's
  * WS endpoint mounts the self-service account actions: a socket that revokes
  * its own sessions *over that socket* is closed with
- * `WS_CLOSE_SESSION_REVOKED`, and — on a backend declaring
- * `capabilities.ws_self_revocation_reply` — reads the reply to its request
- * first. The TS spine queues the close behind the commit and sends the reply
- * ahead of it, so the caller is never left without an answer; the Rust spine
- * does not answer yet, which that flag records. Under the same gate (and
+ * `WS_CLOSE_SESSION_REVOKED` after reading the reply to its request — both
+ * spines answer the revoking request ahead of the close, so the caller is
+ * never left without an answer. Under the same gate (and
  * `rpc_path`), a socket mints an API token over WS and the token's
  * `token_create` audit row is read back after `_testing_drain_effects` — the
  * barrier a WS mutation needs, since a WS reply can precede its audit write.
@@ -399,16 +397,13 @@ export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptio
 			}
 		);
 
-		// A socket that revokes the session it is running on. It must be closed;
-		// and where the backend declares `ws_self_revocation_reply`, the request
-		// is answered first, the close following from behind the revocation's
+		// A socket that revokes the session it is running on. Its request is
+		// answered first, the close following from behind the revocation's
 		// commit. A caller left with only the close cannot tell a completed
 		// revocation from a dropped connection.
 		test_if(
 			capabilities.ws && capabilities.ws_account_actions,
-			capabilities.ws_self_revocation_reply
-				? 'a socket that revokes its own sessions reads the reply, then the revocation close'
-				: 'a socket that revokes its own sessions is closed with the revocation code',
+			'a socket that revokes its own sessions reads the reply, then the revocation close',
 			async () => {
 				const client = await open_authed();
 				try {
@@ -422,17 +417,15 @@ export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptio
 					const closed = await client.wait_for_close(2000);
 					assert.ok(closed, 'socket did not close within 2s of revoking its own sessions');
 					assert.strictEqual(client.close_code, WS_CLOSE_SESSION_REVOKED);
-					if (capabilities.ws_self_revocation_reply) {
-						// frames arrive in wire order and nothing arrives after the
-						// close, so a reply in hand was written ahead of it
-						const reply = client.messages.find(is_response_for(revoke_id)) as
-							JsonrpcSuccessResponseFrame | JsonrpcErrorResponseFrame | undefined;
-						assert.ok(reply, 'the reply must reach the caller before the close');
-						assert.ok('result' in reply, JSON.stringify(reply));
-						const result = reply.result as { ok?: boolean; count?: number };
-						assert.strictEqual(result.ok, true);
-						assert.ok((result.count ?? 0) >= 1, "at least the socket's own session was revoked");
-					}
+					// frames arrive in wire order and nothing arrives after the
+					// close, so a reply in hand was written ahead of it
+					const reply = client.messages.find(is_response_for(revoke_id)) as
+						JsonrpcSuccessResponseFrame | JsonrpcErrorResponseFrame | undefined;
+					assert.ok(reply, 'the reply must reach the caller before the close');
+					assert.ok('result' in reply, JSON.stringify(reply));
+					const result = reply.result as { ok?: boolean; count?: number };
+					assert.strictEqual(result.ok, true);
+					assert.ok((result.count ?? 0) >= 1, "at least the socket's own session was revoked");
 				} finally {
 					await client.close();
 				}

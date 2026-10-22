@@ -962,8 +962,9 @@ answer. The close hands the frames still waiting in the connection's outbound
 queue to the socket ahead of the close frame while the socket's buffer is below
 `WS_WRITE_HIGH_WATER_BYTES`, so the reply arrives when it was queued behind
 another frame of the same run on a socket that is keeping up, and is discarded
-when the socket is backed up past that mark. (The Rust spine does flush first, and drops the response: a divergence
-the cross-backend WS suite records as `capabilities.ws_self_revocation_reply`.)
+when the socket is backed up past that mark. (The Rust spine drains first but marks the reply owed beforehand, and its
+socket loop writes that reply ahead of the close — the same order on the wire,
+held by the cross-backend WS suite.)
 
 **Lifecycle hooks.** `on_socket_open({ws, connection_id, identity, notify, signal})`
 fires once the connection is admitted and before the first message dispatches

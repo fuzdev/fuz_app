@@ -1000,11 +1000,12 @@ rejects on the `WS_CLOSE_SESSION_REVOKED` close as it does on the Rust spine
 ([Outbound Bounds](#outbound-bounds)).
 
 The Rust spine closes after commit at every site as well (`SocketRevoker`,
-`queue_socket_close`, `RealtimeRevoker`). It differs on the self-revoking
-socket: its dispatch runs the post-commit queue before the socket loop writes
-the response, so the caller gets the close without the reply. The revocation
-took effect either way; the cross-backend WebSocket suite records the
-difference as `capabilities.ws_self_revocation_reply`.
+`queue_socket_close`, `RealtimeRevoker`), and answers the self-revoking socket
+the same way: the dispatcher marks the request's reply owed before its
+post-commit drain closes the connection, and the socket loop writes that reply
+ahead of the close, within a short bounded wait (everything else queued is
+discarded). The cross-backend
+WebSocket suite holds both spines to the reply-then-close order.
 
 ## Rate Limiting
 

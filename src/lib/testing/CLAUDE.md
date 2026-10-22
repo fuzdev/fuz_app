@@ -932,10 +932,10 @@ source of truth for wire-shape conformance.
   (the **gating** flags `ws` / `sse` / `cell_crud` / `cell_relations` /
   `cell_gated_create` / `account_lifecycle` / `fact_serving` / `ready` /
   `account_status` / `peer_request` /
-  `ws_handshake_pipelining` / `ws_account_actions` / `ws_self_revocation_reply` /
+  `ws_handshake_pipelining` / `ws_account_actions` /
   `ws_role_gated` / `ws_refusal_body` — each has a `test_if`
-  reader (`ws_self_revocation_reply` forks one case's assertion instead, and
-  `ws_refusal_body` how the front-door table reads a WS refusal); `peer_request` (server-initiated requests — the ActionPeer
+  reader (`ws_refusal_body` picks how the front-door table reads a WS
+  refusal instead); `peer_request` (server-initiated requests — the ActionPeer
   `peer/ping` round-trip) is `true` for both the Rust spine and the TS spine
   (`BackendWebsocketTransport.request_connection`); `ts_default_capabilities`
   keeps it `false` like sse/ready until a backend wires the `peer/ping` HTTP +
@@ -992,10 +992,8 @@ source of truth for wire-shape conformance.
   `ws_account_actions` (the WS endpoint mounts the account actions — `true` on
   fuz_app's own spine presets, `false` in the family defaults) gates the WS
   round-trip suite's self-revocation case and, with `rpc_path`, its
-  WS-mutation audit case (which calls `_testing_drain_effects`);
-  `ws_self_revocation_reply` says what the self-revocation case requires: the reply ahead of the close (`true`, the TS
-  family) or the close alone (`false`, the Rust family, whose socket loop
-  drops the response once the connection is closed — a recorded divergence).
+  WS-mutation audit case (which calls `_testing_drain_effects`); that case
+  requires the reply ahead of the close on every backend.
 
 ### `cross_backend/standard.ts` — `describe_standard_cross_process_tests`
 
@@ -1144,8 +1142,7 @@ validity. Omit `rpc_path` to skip the close cases (consumers without the
 standard account and admin actions on their RPC endpoint). Two cases are gated
 on `capabilities.ws_account_actions` (the WS endpoint mounts the account
 actions): a socket that revokes its own sessions over that socket is closed
-with `WS_CLOSE_SESSION_REVOKED`, and — where the backend declares
-`capabilities.ws_self_revocation_reply` — reads the reply first; and (with
+with `WS_CLOSE_SESSION_REVOKED` after reading the reply to its request; and (with
 `rpc_path`) a socket mints an API token over WS, and its `token_create` audit
 row is read back after `_testing_drain_effects` — a WS reply can precede its
 audit write, so the drain is the barrier (the binary mounts it via

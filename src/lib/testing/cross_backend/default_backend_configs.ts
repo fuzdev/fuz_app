@@ -102,9 +102,6 @@ export const ts_default_capabilities: BackendCapabilities = Object.freeze({
 	// fuz_app's spine configs opt in (the spine binary mounts the account
 	// actions on `/api/ws`); a consumer does once its endpoint carries them.
 	ws_account_actions: false,
-	// `register_action_ws` sends a request's response before it flushes the
-	// post-commit queue a self-revocation's close is on.
-	ws_self_revocation_reply: true,
 	// Off by default — the `cell_gated_create` test policy is a fuz_app test
 	// fixture, mounted only on the spine binaries (`ts_spine_*`), not generic
 	// consumers.
@@ -144,10 +141,6 @@ export const rust_default_capabilities: BackendCapabilities = Object.freeze({
 	// Off by default, as on the TS family: a consumer opts in once its WS
 	// endpoint mounts the account actions. The `testing_spine_stub` preset does.
 	ws_account_actions: false,
-	// The Rust dispatch runs the post-commit queue — the self-revocation's
-	// close — before the socket loop writes the response, and the loop then
-	// drops it. A divergence from the TS spine; see the flag's doc.
-	ws_self_revocation_reply: false,
 	// Off by default — the `testing_spine_stub` preset opts in (it mounts the
 	// `TestCellGatedCreateAuthorize` policy); a generic Rust consumer doesn't.
 	cell_gated_create: false,
