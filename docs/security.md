@@ -1872,7 +1872,10 @@ which runs `validate_facts_internal_location` and throws at boot unless every
 location serving the prefix — a prefix-type location on the prefix or below it,
 in any `server` block — uses `^~`, is a direct child of its `server` block,
 holds only simple directives (no nested block, no `include`), and has a
-top-level `internal;` plus both header lines. `^~` at server level is what
+top-level `internal;` plus both header lines — and no other `add_header` for
+those two names (matched case-insensitively): nginx sends every value and a
+client may read only the first, so `add_header X-Content-Type-Options "sniff"`
+ahead of the required line would turn nosniff off. `^~` at server level is what
 keeps regex locations out: nginx never evaluates them for a path whose longest
 prefix match is such a location. An `=` location on the prefix, and a regex
 location whose pattern spells it out, are refused too. The prefix may appear
@@ -1882,6 +1885,18 @@ internal redirect and subrequest, so any other directive naming it — a
 `map` value a redirect later reads — is refused, in any block. The config is
 tokenized as nginx reads it; files named by `include` are not followed, so keep
 facts-related locations out of included files.
+
+The prefix must end in exactly one `/` (the server appends `<shard>/<rest>`
+straight onto it, so `/_facts` would redirect to `/_factsab/…`, outside the
+validated location), and a location must sit exactly at it (`/_facts` or
+`/_facts/`) — one only below it (`location ^~ /_facts/00/`) is refused, and so is
+`/_facts//` alone, since nginx compares location paths byte-for-byte. `ssi` with any value but `off` is
+refused anywhere in the config: SSI `include virtual` is a subrequest, which
+`internal;` admits, so any SSI-processed response could include a fact's bytes.
+`more_set_headers` / `more_clear_headers` (headers-more) are refused everywhere
+except inside a `location` that doesn't serve the prefix, since they run after
+`add_header` and can strip the hardening headers. Blocks nested more than 64 deep are a
+parse error.
 
 The threat model is operator mistakes, not an adversarial config author: the
 prefix check is textual, so a value assembled from pieces (`/_fac$1`) evades
@@ -1895,8 +1910,8 @@ it. Beyond the config text:
   the server is trusted to point into the prefix; an untrusted one needs
   `proxy_ignore_headers X-Accel-Redirect;` (or the `fastcgi_` / `uwsgi_` /
   `scgi_` equivalent).
-- Module code can redirect internally too (ssi `include virtual`, njs
-  `internalRedirect`, perl, echo), so run trusted modules and content only.
+- Other module code can redirect internally too (njs `internalRedirect`, perl,
+  echo), so run trusted modules and content only.
 
 It is the only nginx property fuz_app validates — see §Config Validation.
 

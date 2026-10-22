@@ -72,7 +72,8 @@ export const BaseServerEnv = z.strictObject({
 		description: 'Directory for referenced (large) fact bytes, sharded <shard>/<rest>'
 	}),
 	FUZ_FACTS_X_ACCEL_REDIRECT_PREFIX: z.string().optional().meta({
-		description: 'Internal nginx prefix for X-Accel-Redirect fact delivery (production only)'
+		description:
+			'Internal nginx prefix for X-Accel-Redirect fact delivery, ending in `/` (production only)'
 	})
 });
 export type BaseServerEnv = z.infer<typeof BaseServerEnv>;

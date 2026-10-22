@@ -72,6 +72,17 @@ describe('validate_facts_internal_location', () => {
 		assert.ok(result.errors[0]!.includes('absolute path below'));
 	});
 
+	test('refuses deep nesting without overflowing', () => {
+		// past the cap the parser stops recursing, so even a huge nesting is a clean refusal
+		const depth = 100_000;
+		const result = validate_facts_internal_location(
+			'a {'.repeat(depth) + '}'.repeat(depth),
+			'/_facts/'
+		);
+		assert.ok(!result.ok);
+		assert.ok(result.errors[0]!.includes('blocks nested deeper than 64 levels'), result.errors[0]);
+	});
+
 	test('the security docs example passes', () => {
 		// the facts block docs/security.md recommends must itself validate
 		const doc = readFileSync(new URL('../../../docs/security.md', import.meta.url), 'utf8');

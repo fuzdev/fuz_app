@@ -33,6 +33,10 @@
  * - carry, as top-level directives of its own body, an exact `internal;` and
  *   each `fact_security_header_directives` line (token-equal: whitespace and
  *   quoting are free, the words are not);
+ * - set those headers with no other `add_header` — one naming a
+ *   `FACT_SECURITY_HEADERS` header (ASCII case-insensitive) that is not
+ *   token-equal to its required line is refused, since nginx sends both values
+ *   and a client may read only the first (`sniff, nosniff`);
  * - hold only simple directives — any nested block (`location`, `if`,
  *   `limit_except`, …) is refused, and so is `include`, since included files
  *   are not followed.
@@ -53,13 +57,34 @@
  * own modifier and path words and the bodies of the locations serving the
  * prefix.
  *
+ * The prefix itself must be an absolute path ending in exactly one `/` — the
+ * server appends `<shard>/<rest>` straight onto it, so `/_facts` would redirect
+ * to `/_factsab/…`, outside the validated location. At least one location
+ * serving the prefix must sit exactly at it (`/_facts` or `/_facts/`): one only
+ * below it (`location ^~ /_facts/00/`) leaves every other redirect path to
+ * whatever location matches next, and nginx compares location paths
+ * byte-for-byte, so `/_facts//` sits below it too.
+ *
+ * Module directives that undo those guarantees are refused too:
+ *
+ * - `ssi` with any value but `off`, anywhere in the config. SSI `include
+ *   virtual` is a subrequest, which `internal;` admits, so an SSI-processed
+ *   response — a fact inheriting `ssi on` from `http` or `server`, or any page
+ *   carrying user content — could include another fact's bytes.
+ * - `more_set_headers` / `more_clear_headers` (headers-more) everywhere except
+ *   inside a `location` that doesn't serve the prefix (or a block within one):
+ *   they run after `add_header` and can strip the hardening headers, so they
+ *   are refused in the facts location and at every level above it, including
+ *   any block there (`if`, another `server`).
+ *
  * Also refused: an `=` location on the prefix or below it (it can't serve the
  * nested paths the redirect emits); a regex location (`~` / `~*`) whose pattern
  * spells out the prefix (after unescaping `\/`, ASCII case-folded for `~*`) —
- * dead under the rules above, refused for the clearer message; and a config
- * with no location serving the prefix. `include` at server level is allowed,
- * but its file is not read — keep facts-related locations out of included
- * files.
+ * dead under the rules above, refused for the clearer message; a config with no
+ * location at the prefix; and blocks nested more than 64 deep (a parse error, so
+ * the walks can't exhaust the stack). `include` at server level is allowed, but
+ * its file is not read — keep facts-related locations and the directives above
+ * out of included files.
  *
  * The threat model is operator mistakes, not an adversarial config author: the
  * prefix check is textual, so a value assembled from pieces (`/_fac$1`) evades
@@ -73,8 +98,8 @@
  *   the server is trusted to point into the prefix; an untrusted one needs
  *   `proxy_ignore_headers X-Accel-Redirect;` (or the `fastcgi_` / `uwsgi_` /
  *   `scgi_` equivalent).
- * - Module code can redirect internally too (ssi `include virtual`, njs
- *   `internalRedirect`, perl, echo), so run trusted modules and content only.
+ * - Other module code can redirect internally too (njs `internalRedirect`, perl,
+ *   echo), so run trusted modules and content only.
  *
  * The Rust twin is `fuz_fact_serving`'s `nginx.rs`, held to the same rules and
  * the same fixture corpus.
@@ -142,6 +167,13 @@ const collect_errors = (config: string, facts_location: string): Array<string> =
 				`(e.g. \`/_facts/\`).`
 		];
 	}
+	if (facts_location.length !== prefix.length + 1) {
+		return [
+			`X-Accel redirect prefix \`${facts_location}\` must end in exactly one \`/\` (e.g. ` +
+				`\`/_facts/\`) — the server appends \`<shard>/<rest>\` straight onto it, so any other ` +
+				`ending redirects outside the validated location.`
+		];
+	}
 	const directives = parse_directives(tokenize(config));
 	const locations: Array<NginxLocation> = [];
 	collect_locations(directives, null, locations);
@@ -155,7 +187,7 @@ const collect_errors = (config: string, facts_location: string): Array<string> =
 	const rendered = fact_security_header_directives();
 
 	const errors: Array<string> = [];
-	let matched = false;
+	let at_prefix = false;
 	for (const location of locations) {
 		const label = location_label(location);
 		switch (location.modifier) {
@@ -164,7 +196,9 @@ const collect_errors = (config: string, facts_location: string): Array<string> =
 			case 'prefix':
 			case 'prefix_no_regex': {
 				if (!path_is_under(location.path, prefix)) break;
-				matched = true;
+				// nginx compares location paths byte-for-byte, so `/_facts//` never matches
+				// `/_facts/ab/…` — only `/_facts` and `/_facts/` sit at the prefix
+				if (location.path === prefix || location.path === prefix + '/') at_prefix = true;
 				if (location.modifier !== 'prefix_no_regex') {
 					errors.push(
 						`${label} must use \`^~\` (\`location ^~ ${location.path}\`) — on a plain prefix ` +
@@ -196,6 +230,20 @@ const collect_errors = (config: string, facts_location: string): Array<string> =
 				}
 				for (const directive of location.body) {
 					const name = directive.args[0] ?? '';
+					const header = directive.args[1];
+					if (directive.block === null && name === 'add_header' && header !== undefined) {
+						const index = required.findIndex(
+							(args) => to_ascii_lowercase(args[1]!) === to_ascii_lowercase(header)
+						);
+						if (index !== -1 && !args_equal(directive.args, required[index]!)) {
+							errors.push(
+								`${label} has another \`add_header ${header}\` (line ${directive.line}) — nginx ` +
+									`sends every \`add_header\` for a header and a client may read only the ` +
+									`first, so the facts location may set \`${required[index]![1]}\` only with ` +
+									`\`${rendered[index]}\`.`
+							);
+						}
+					}
 					if (directive.block !== null) {
 						errors.push(
 							`${label} contains a nested \`${name}\` block (line ${directive.line}) — the facts ` +
@@ -239,12 +287,14 @@ const collect_errors = (config: string, facts_location: string): Array<string> =
 		}
 	}
 	collect_prefix_mention_errors(directives, prefix, errors);
-	if (!matched) {
+	collect_module_errors(directives, prefix, true, errors);
+	if (!at_prefix) {
 		errors.unshift(
 			`No nginx \`location ^~ ${facts_location}\` block found — the X-Accel facts ` +
-				`location must exist and be marked \`internal;\` so only the authz'd handler's ` +
-				`redirect can reach it. A public facts location bypasses every cell-visibility ` +
-				`check.`
+				`location must exist exactly at the prefix (one only below it leaves the other ` +
+				`redirect paths uncovered) and be marked \`internal;\` so only the authz'd ` +
+				`handler's redirect can reach it. A public facts location bypasses every ` +
+				`cell-visibility check.`
 		);
 	}
 	return errors;
@@ -291,12 +341,13 @@ export class XAccelConfigError extends Error {
  * The make-impossible-states gate: serving can only emit `X-Accel-Redirect`
  * into a location proven `internal;` and header-carrying at boot.
  *
- * @param redirect_prefix - the X-Accel redirect prefix (e.g. `/_facts/`)
+ * @param redirect_prefix - the X-Accel redirect prefix, ending in `/` (e.g. `/_facts/`)
  * @param nginx_config - the nginx config string to validate against
  * @returns the validated `XAccelConfig` carrying `redirect_prefix`
  * @throws `XAccelConfigError` carrying every violation
- *   `validate_facts_internal_location` finds — a missing, public, header-less,
- *   exact-match, or regex-shadowed facts location.
+ *   `validate_facts_internal_location` finds — a prefix not ending in `/`, a
+ *   missing, public, header-less, re-headered, exact-match, or regex-shadowed
+ *   facts location, or `ssi` / headers-more reaching it.
  */
 export const create_x_accel_config = (
 	redirect_prefix: string,
@@ -327,10 +378,11 @@ const path_is_under = (path: string, prefix: string): boolean => {
  * `args` (a block directive with those words doesn't count).
  */
 const has_directive = (body: Array<NginxDirective>, args: Array<string>): boolean =>
-	body.some(
-		(d) =>
-			d.block === null && d.args.length === args.length && d.args.every((a, i) => a === args[i])
-	);
+	body.some((d) => d.block === null && args_equal(d.args, args));
+
+/** `true` when `a` and `b` hold the same words in the same order. */
+const args_equal = (a: Array<string>, b: Array<string>): boolean =>
+	a.length === b.length && a.every((word, i) => word === b[i]);
 
 type LocationModifier =
 	'prefix' | 'prefix_no_regex' | 'exact' | 'regex' | 'regex_caseless' | 'named';
@@ -432,6 +484,71 @@ const collect_prefix_mention_errors = (
 			);
 		}
 		if (directive.block !== null) collect_prefix_mention_errors(directive.block, prefix, errors);
+	}
+};
+
+/**
+ * The headers-more module's response-header directives, which run after
+ * `add_header` and so can strip or rewrite the fact hardening headers.
+ */
+const HEADERS_MORE_DIRECTIVES: ReadonlySet<string> = new Set([
+	'more_set_headers',
+	'more_clear_headers'
+]);
+
+/**
+ * Refuse the module directives that undo the facts location's guarantees:
+ *
+ * - `ssi` with any value but `off`, in any block at any depth. SSI `include
+ *   virtual` is a subrequest, which `internal;` admits, so an SSI-processed
+ *   response — a fact served from the facts location (inheriting `ssi on` from
+ *   `http` or `server`), or any page carrying user content — could include
+ *   another fact's bytes by its path. A sibling location's `ssi on` is as
+ *   dangerous as an inherited one, so the rule is config-wide.
+ * - a headers-more directive anywhere except inside a `location` that doesn't
+ *   serve the prefix (or a block within one): in the facts location's body, or
+ *   at any level above it (`http`, `server`, top level, and any block there such
+ *   as `if` or another `server`).
+ *
+ * `reaches_facts` is `true` while the walk is in a scope the facts location
+ * inherits from or is.
+ */
+const collect_module_errors = (
+	directives: Array<NginxDirective>,
+	prefix: string,
+	reaches_facts: boolean,
+	errors: Array<string>
+): void => {
+	for (const directive of directives) {
+		const name = directive.args[0] ?? '';
+		if (directive.block === null) {
+			if (
+				name === 'ssi' &&
+				!(directive.args.length === 2 && to_ascii_lowercase(directive.args[1]!) === 'off')
+			) {
+				errors.push(
+					`\`ssi\` (line ${directive.line}) is not \`off\` — SSI \`include virtual\` subrequests ` +
+						`reach the \`internal;\` facts location, so an SSI-processed response could ` +
+						`include any fact's bytes by its path. Remove it or set \`ssi off;\`.`
+				);
+			} else if (reaches_facts && HEADERS_MORE_DIRECTIVES.has(name)) {
+				errors.push(
+					`\`${name}\` (line ${directive.line}) applies to the facts location — a ` +
+						`headers-more directive in or above it can strip or rewrite the fact hardening ` +
+						`headers after \`add_header\` sets them. Move it into the locations that need it.`
+				);
+			}
+			continue;
+		}
+		let reaches = reaches_facts;
+		if (name === 'location') {
+			const parsed = parse_location_args(directive.args.slice(1));
+			reaches =
+				parsed !== null &&
+				(parsed.modifier === 'prefix' || parsed.modifier === 'prefix_no_regex') &&
+				path_is_under(parsed.path, prefix);
+		}
+		collect_module_errors(directive.block, prefix, reaches, errors);
 	}
 };
 
@@ -630,15 +747,26 @@ interface NginxDirective {
 	block: Array<NginxDirective> | null;
 }
 
+/**
+ * The deepest block nesting the parser accepts — far beyond any real config, and
+ * low enough that the recursive walks can't exhaust the stack.
+ */
+const MAX_NESTING_DEPTH = 64;
+
 const parse_directives = (tokens: Array<NginxToken>): Array<NginxDirective> => {
 	const cursor = { pos: 0 };
-	return parse_block(tokens, cursor, null);
+	return parse_block(tokens, cursor, null, 0);
 };
 
+/**
+ * Parse one block's directives; `depth` is the number of blocks enclosing them
+ * (`0` at the top level).
+ */
 const parse_block = (
 	tokens: Array<NginxToken>,
 	cursor: { pos: number },
-	open_line: number | null
+	open_line: number | null,
+	depth: number
 ): Array<NginxDirective> => {
 	const out: Array<NginxDirective> = [];
 	for (;;) {
@@ -669,8 +797,13 @@ const parse_block = (
 				out.push({ args, line, block: null });
 				break;
 			} else if (next?.kind === '{') {
+				if (depth >= MAX_NESTING_DEPTH) {
+					throw new NginxParseError(
+						`blocks nested deeper than ${MAX_NESTING_DEPTH} levels (line ${next.line})`
+					);
+				}
 				cursor.pos++;
-				const block = parse_block(tokens, cursor, next.line);
+				const block = parse_block(tokens, cursor, next.line, depth + 1);
 				out.push({ args, line, block });
 				break;
 			} else {

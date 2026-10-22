@@ -20,10 +20,11 @@
 			"ok": true
 		},
 		{
-			"name": "safe_prefix_without_trailing_slash",
+			"name": "prefix_without_trailing_slash",
 			"prefix": "/_facts",
 			"config": "server {\nlocation ^~ /_facts/ { internal; alias /var/facts/; add_header X-Content-Type-Options \"nosniff\" always; add_header Content-Security-Policy \"default-src 'none'; sandbox\" always; }\n}\n",
-			"ok": true
+			"ok": false,
+			"error": "must end in exactly one `/`"
 		},
 		{
 			"name": "safe_in_http",
@@ -104,6 +105,39 @@
 			"ok": true
 		},
 		{
+			"name": "duplicate_nosniff_header",
+			"prefix": "/_facts/",
+			"config": "server {\nlocation ^~ /_facts/ { internal; alias /var/facts/; add_header X-Content-Type-Options \"sniff\" always; add_header X-Content-Type-Options \"nosniff\" always; add_header Content-Security-Policy \"default-src 'none'; sandbox\" always; }\n}\n",
+			"ok": false,
+			"error": "may set `X-Content-Type-Options` only with"
+		},
+		{
+			"name": "duplicate_csp_header",
+			"prefix": "/_facts/",
+			"config": "server {\nlocation ^~ /_facts/ { internal; alias /var/facts/; add_header X-Content-Type-Options \"nosniff\" always; add_header Content-Security-Policy \"default-src 'none'; sandbox\" always; add_header content-security-policy \"default-src *\"; }\n}\n",
+			"ok": false,
+			"error": "may set `Content-Security-Policy` only with"
+		},
+		{
+			"name": "duplicate_nosniff_without_always",
+			"prefix": "/_facts/",
+			"config": "server {\nlocation ^~ /_facts/ { internal; alias /var/facts/; add_header X-Content-Type-Options \"nosniff\" always; add_header Content-Security-Policy \"default-src 'none'; sandbox\" always; add_header X-Content-Type-Options nosniff; }\n}\n",
+			"ok": false,
+			"error": "has another `add_header X-Content-Type-Options` (line 2)"
+		},
+		{
+			"name": "required_header_line_repeated",
+			"prefix": "/_facts/",
+			"config": "server {\nlocation ^~ /_facts/ { internal; alias /var/facts/; add_header X-Content-Type-Options \"nosniff\" always; add_header Content-Security-Policy \"default-src 'none'; sandbox\" always; add_header X-Content-Type-Options nosniff always; }\n}\n",
+			"ok": true
+		},
+		{
+			"name": "csp_report_only_beside_required",
+			"prefix": "/_facts/",
+			"config": "server {\nlocation ^~ /_facts/ { internal; alias /var/facts/; add_header X-Content-Type-Options \"nosniff\" always; add_header Content-Security-Policy \"default-src 'none'; sandbox\" always; add_header Content-Security-Policy-Report-Only \"default-src 'self'\" always; }\n}\n",
+			"ok": true
+		},
+		{
 			"name": "named_location",
 			"prefix": "/_facts/",
 			"config": "server {\nlocation ^~ /_facts/ { internal; alias /var/facts/; add_header X-Content-Type-Options \"nosniff\" always; add_header Content-Security-Policy \"default-src 'none'; sandbox\" always; }\nlocation @_facts { root /var; }\n}\n",
@@ -173,6 +207,24 @@
 			"name": "doc_example",
 			"prefix": "/_facts/",
 			"config": "server {\nlisten 443 ssl;\nlocation ^~ /_facts/ {\n\tinternal;\n\talias /srv/app/facts/;\n\tadd_header X-Content-Type-Options \"nosniff\" always;\n\tadd_header Content-Security-Policy \"default-src 'none'; sandbox\" always;\n}\n}\n",
+			"ok": true
+		},
+		{
+			"name": "ssi_off_everywhere",
+			"prefix": "/_facts/",
+			"config": "http {\nssi off;\nserver {\nssi OFF;\nlocation ^~ /_facts/ { internal; alias /var/facts/; ssi off; add_header X-Content-Type-Options \"nosniff\" always; add_header Content-Security-Policy \"default-src 'none'; sandbox\" always; }\nlocation / { ssi off; proxy_pass http://app; }\n}\n}\n",
+			"ok": true
+		},
+		{
+			"name": "more_clear_headers_other_location",
+			"prefix": "/_facts/",
+			"config": "server {\nlocation ^~ /_facts/ { internal; alias /var/facts/; add_header X-Content-Type-Options \"nosniff\" always; add_header Content-Security-Policy \"default-src 'none'; sandbox\" always; }\nlocation / { more_clear_headers Server; proxy_pass http://app; }\n}\n",
+			"ok": true
+		},
+		{
+			"name": "nesting_at_cap",
+			"prefix": "/_facts/",
+			"config": "server {\nlocation ^~ /_facts/ { internal; alias /var/facts/; add_header X-Content-Type-Options \"nosniff\" always; add_header Content-Security-Policy \"default-src 'none'; sandbox\" always; }\n}\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n",
 			"ok": true
 		},
 		{
@@ -561,6 +613,90 @@
 			"prefix": "/_facts/",
 			"config": "server {\nlocation ^~ /_facts/ { internal; alias /var/facts/; add_header X-Content-Type-Options \"nosniff\" always; add_header Content-Security-Policy \"default-src 'none'; sandbox\" always; }\nlocation / { try_files $uri /index.html; }\nerror_page 404 /404.html;\n}\n",
 			"ok": true
+		},
+		{
+			"name": "prefix_double_trailing_slash",
+			"prefix": "/_facts//",
+			"config": "server {\nlocation ^~ /_facts/ { internal; alias /var/facts/; add_header X-Content-Type-Options \"nosniff\" always; add_header Content-Security-Policy \"default-src 'none'; sandbox\" always; }\n}\n",
+			"ok": false,
+			"error": "must end in exactly one `/`"
+		},
+		{
+			"name": "only_below_prefix",
+			"prefix": "/_facts/",
+			"config": "server {\nlocation ^~ /_facts/00/ { internal; alias /var/facts/; add_header X-Content-Type-Options \"nosniff\" always; add_header Content-Security-Policy \"default-src 'none'; sandbox\" always; }\n}\n",
+			"ok": false,
+			"error": "must exist exactly at the prefix"
+		},
+		{
+			"name": "prefix_location_double_slash",
+			"prefix": "/_facts/",
+			"config": "server {\nlocation ^~ /_facts// { internal; alias /var/facts/; add_header X-Content-Type-Options \"nosniff\" always; add_header Content-Security-Policy \"default-src 'none'; sandbox\" always; }\nlocation ~ ^/_f { alias /var/facts/; }\n}\n",
+			"ok": false,
+			"error": "must exist exactly at the prefix"
+		},
+		{
+			"name": "ssi_on_in_http",
+			"prefix": "/_facts/",
+			"config": "http {\nssi on;\nserver {\nlocation ^~ /_facts/ { internal; alias /var/facts/; add_header X-Content-Type-Options \"nosniff\" always; add_header Content-Security-Policy \"default-src 'none'; sandbox\" always; }\n}\n}\n",
+			"ok": false,
+			"error": "`ssi` (line 2) is not `off`"
+		},
+		{
+			"name": "ssi_on_in_server",
+			"prefix": "/_facts/",
+			"config": "server {\nssi on;\nlocation ^~ /_facts/ { internal; alias /var/facts/; add_header X-Content-Type-Options \"nosniff\" always; add_header Content-Security-Policy \"default-src 'none'; sandbox\" always; }\n}\n",
+			"ok": false,
+			"error": "`ssi` (line 2) is not `off`"
+		},
+		{
+			"name": "ssi_on_in_facts",
+			"prefix": "/_facts/",
+			"config": "server {\nlocation ^~ /_facts/ { internal; alias /var/facts/; ssi on; add_header X-Content-Type-Options \"nosniff\" always; add_header Content-Security-Policy \"default-src 'none'; sandbox\" always; }\n}\n",
+			"ok": false,
+			"error": "`ssi` (line 2) is not `off`"
+		},
+		{
+			"name": "ssi_on_in_other_location",
+			"prefix": "/_facts/",
+			"config": "server {\nlocation ^~ /_facts/ { internal; alias /var/facts/; add_header X-Content-Type-Options \"nosniff\" always; add_header Content-Security-Policy \"default-src 'none'; sandbox\" always; }\nlocation / { ssi on; proxy_pass http://app; }\n}\n",
+			"ok": false,
+			"error": "`ssi` (line 3) is not `off`"
+		},
+		{
+			"name": "ssi_variable",
+			"prefix": "/_facts/",
+			"config": "server {\nssi $ssi_mode;\nlocation ^~ /_facts/ { internal; alias /var/facts/; add_header X-Content-Type-Options \"nosniff\" always; add_header Content-Security-Policy \"default-src 'none'; sandbox\" always; }\n}\n",
+			"ok": false,
+			"error": "`ssi` (line 2) is not `off`"
+		},
+		{
+			"name": "more_clear_headers_in_http",
+			"prefix": "/_facts/",
+			"config": "http {\nmore_clear_headers Server;\nserver {\nlocation ^~ /_facts/ { internal; alias /var/facts/; add_header X-Content-Type-Options \"nosniff\" always; add_header Content-Security-Policy \"default-src 'none'; sandbox\" always; }\n}\n}\n",
+			"ok": false,
+			"error": "`more_clear_headers` (line 2) applies to the facts location"
+		},
+		{
+			"name": "more_clear_headers_in_server",
+			"prefix": "/_facts/",
+			"config": "server {\nmore_clear_headers X-Content-Type-Options;\nlocation ^~ /_facts/ { internal; alias /var/facts/; add_header X-Content-Type-Options \"nosniff\" always; add_header Content-Security-Policy \"default-src 'none'; sandbox\" always; }\n}\n",
+			"ok": false,
+			"error": "`more_clear_headers` (line 2) applies to the facts location"
+		},
+		{
+			"name": "more_set_headers_in_facts",
+			"prefix": "/_facts/",
+			"config": "server {\nlocation ^~ /_facts/ { internal; alias /var/facts/; more_set_headers 'Content-Security-Policy: default-src *'; add_header X-Content-Type-Options \"nosniff\" always; add_header Content-Security-Policy \"default-src 'none'; sandbox\" always; }\n}\n",
+			"ok": false,
+			"error": "`more_set_headers` (line 2) applies to the facts location"
+		},
+		{
+			"name": "nesting_over_cap",
+			"prefix": "/_facts/",
+			"config": "server {\nlocation ^~ /_facts/ { internal; alias /var/facts/; add_header X-Content-Type-Options \"nosniff\" always; add_header Content-Security-Policy \"default-src 'none'; sandbox\" always; }\n}\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\na {\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n}\n",
+			"ok": false,
+			"error": "blocks nested deeper than 64 levels (line 68)"
 		},
 		{
 			"name": "missing_csp",
