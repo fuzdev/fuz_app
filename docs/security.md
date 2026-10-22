@@ -1171,7 +1171,11 @@ indexed lookup. Either way the request soft-fails to "no credential".
   flight in one synchronous step; the attempt counts against the cap until the
   handler settles it — `record` on the outcomes that count, `release` (in a
   `finally`) on the rest. A burst gets at most `max_attempts` past the limiter.
-  The Rust spine reserves the same way (released on drop).
+  The Rust spine reserves the same way (released on drop), except that a
+  request dropped during its Argon2 work — a client that disconnects
+  mid-verify, which cancels the Rust handler but not the TS one — is recorded:
+  the work runs on regardless, and the TS handler settles every attempt that
+  reaches the verify.
 - **Attempts count while in flight, whatever their outcome — so excess
   concurrent attempts wait briefly.** An in-flight attempt might be a
   correct one, but until it settles it holds a slot, so a burst of *correct*
