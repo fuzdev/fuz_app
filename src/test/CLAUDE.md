@@ -512,7 +512,9 @@ limiters enabled + the loopback proxy trusted, providing
 `security_action_rate_limit_max_attempts`). The first drives
 `describe_login_security_cross_tests` against each impl: the per-IP login
 `429` and `Retry-After` shape, the `X-Forwarded-For` bucket keying (every
-header line read — a raw-socket case, given the handle's `base_url`; an IPv6
+header line read — a raw-socket case, given the handle's `base_url`; a
+malformed hop such as `ip:port` stopping the walk, so the request keys on the
+connection IP rather than the client-written entry left of it; an IPv6
 client keyed by its `/64`, its audit rows keeping the full address, and a
 password change from an exhausted `/64` refused), a concurrent burst getting at
 most the cap past the limiter, and the distributed-spray backstop (a success

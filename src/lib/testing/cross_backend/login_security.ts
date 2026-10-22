@@ -45,6 +45,12 @@ import '../assert_dev_env.ts';
  *   after exhausting one forwarded IP, a raw request carrying a spoofed line
  *   first and that IP last still `429`s. Raw socket only (`fetch` merges
  *   repeated headers into one line), so it runs when `base_url` is given.
+ * - **a malformed hop stops the walk** — a trusted proxy that appends a
+ *   non-bare-IP token (`ip:port` here) leaves the client's own entry to its
+ *   left. After exhausting one forwarded IP, a chain with that IP left of an
+ *   `ip:port` entry answers `401`, not `429`: the walk stopped at the malformed
+ *   entry and keyed the request on the connection IP (its audit row says so),
+ *   never on the client-written entry past it.
  * - **a success does not refund the per-IP budget** — the distributed-spray
  *   backstop. Failed guesses against *distinct* usernames from one forwarded
  *   IP, interleaved with the attacker's own successful logins, must still 429
@@ -122,6 +128,9 @@ const XFF_SPRAY = '203.0.113.4';
 const XFF_BURST = '203.0.113.5';
 const XFF_CORRECT_BURST = '203.0.113.7';
 const XFF_REPEATED_LINES = '203.0.113.6';
+const XFF_MALFORMED_HOP = '203.0.113.8';
+/** What a trusted hop that appends `ip:port` (an Azure App Gateway, IIS ARR) writes. */
+const XFF_PORT_SUFFIXED_HOP = '198.51.100.7:5555';
 /** RFC 5737 TEST-NET-2 — the address a client writes into its own first line. */
 const XFF_SPOOFED_LINE = '198.51.100.77';
 /**
@@ -276,6 +285,56 @@ export const describe_login_security_cross_tests = (
 				fresh.status,
 				401,
 				"a fresh forwarded IP must not inherit another IP's limit"
+			);
+		});
+
+		test('a malformed hop stops the walk: the request keys on the connection IP', async () => {
+			const fixture = await setup_test();
+			for (let i = 0; i < ip_limit; i++) {
+				await attempt(fixture, XFF_MALFORMED_HOP, 'probe_malformed_hop');
+			}
+			const exhausted = await attempt(fixture, XFF_MALFORMED_HOP, 'probe_malformed_hop');
+			assert.strictEqual(exhausted.status, 429, 'the exhausted forwarded IP must be rate-limited');
+			// The client-written entry sits left of the hop's malformed one. A walk
+			// that skipped the malformed entry would key on it again → 429; one
+			// that stops keys on the (loopback) connection IP → 401.
+			const stopped = await attempt(
+				fixture,
+				`${XFF_MALFORMED_HOP}, ${XFF_PORT_SUFFIXED_HOP}`,
+				'probe_malformed_hop'
+			);
+			assert.strictEqual(
+				stopped.status,
+				401,
+				'the walk must stop at the malformed hop, not reach the entry left of it'
+			);
+
+			const drained = await cross_rpc_call(
+				fixture.fresh_transport({ origin: null }),
+				SPINE_RPC_PATH,
+				'_testing_drain_effects',
+				undefined,
+				fixture.create_daemon_token_headers()
+			);
+			assert.ok(drained.ok, `_testing_drain_effects failed: ${JSON.stringify(drained.error)}`);
+			const listed = expect_output(
+				await cross_rpc_call(
+					fixture.transport,
+					SPINE_RPC_PATH,
+					'audit_log_list',
+					{ event_type: 'login', outcome: 'failure' },
+					fixture.create_session_headers()
+				),
+				AuditLogListOutput
+			);
+			const ips = listed.events.map((e) => e.ip);
+			assert.ok(
+				ips.some((ip) => ip === '127.0.0.1' || ip === '::1'),
+				`the stopped walk must key on the loopback connection IP: ${JSON.stringify(ips)}`
+			);
+			assert.ok(
+				!ips.includes(XFF_PORT_SUFFIXED_HOP),
+				`a malformed entry is never a client IP: ${JSON.stringify(ips)}`
 			);
 		});
 

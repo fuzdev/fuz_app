@@ -553,17 +553,16 @@ describe('resolve_client_ip', () => {
 		assert.strictEqual(resolve_client_ip(' , , ', localhost), undefined);
 	});
 
-	test('port-suffixed XFF entry is skipped during right-to-left walk', () => {
+	test('port-suffixed XFF entry stops the right-to-left walk', () => {
 		// Non-standard proxies may include ports (e.g. 203.0.113.1:8080).
 		// Hono's `distinctRemoteAddr` lazily classifies anything-with-colons
 		// as IPv6, but `validate_ip_strict` round-trips through
 		// `convertIPv*ToBinary` which throws on this entry — so the strict
-		// check rejects it. Walk continues past the port-suffixed entry and
-		// returns the next untrusted, strictly-valid entry.
-		// Walk: 127.0.0.1 (trusted, skip) → 203.0.113.1:8080 (malformed, skip)
-		// → 198.51.100.7 (strictly-valid, untrusted) → return.
+		// check rejects it, and the walk stops there: 198.51.100.7, left of
+		// it, was written before any trusted hop vouched for it.
+		// Walk: 127.0.0.1 (trusted, skip) → 203.0.113.1:8080 (malformed, stop).
 		const result = resolve_client_ip('198.51.100.7, 203.0.113.1:8080, 127.0.0.1', localhost);
-		assert.strictEqual(result, '198.51.100.7');
+		assert.strictEqual(result, undefined);
 	});
 
 	test('colon-injection bypass is blocked — attacker:controlled is rejected', () => {
@@ -571,16 +570,15 @@ describe('resolve_client_ip', () => {
 		// IPv6 (any-string-with-colons). A naive `!distinctRemoteAddr` skip
 		// would let this through. The strict round-trip through
 		// `convertIPv6ToBinary` throws (NaN→BigInt), so `validate_ip_strict`
-		// rejects it and the walk skips. Falls through to the trusted-only
-		// branch and returns the trusted proxy as leftmost-valid.
+		// rejects it and the walk stops — the middleware uses the connection IP.
 		const result = resolve_client_ip('attacker:controlled, 127.0.0.1', localhost);
-		assert.strictEqual(result, '127.0.0.1');
+		assert.strictEqual(result, undefined);
 	});
 
-	test('bracketed IPv6 with port is skipped (not a valid IP form here)', () => {
+	test('bracketed IPv6 with port stops the walk (not a valid IP form here)', () => {
 		// `[::1]:8080` and `[2001:db8::1]:8080` are URL-style host:port forms,
 		// not valid bare IPs. validate_ip_strict rejects them.
-		assert.strictEqual(resolve_client_ip('[::1]:8080, 127.0.0.1', localhost), '127.0.0.1');
+		assert.strictEqual(resolve_client_ip('[::1]:8080, 127.0.0.1', localhost), undefined);
 	});
 
 	test('normalizes XFF entries with ::ffff: prefix', () => {
@@ -599,37 +597,60 @@ describe('resolve_client_ip', () => {
 		assert.strictEqual(resolve_client_ip('203.0.113.1,,127.0.0.1', localhost), '203.0.113.1');
 	});
 
-	test('malformed non-IP entry in chain is skipped', () => {
+	test('malformed non-IP entry in chain stops the walk', () => {
 		// Malformed entry can't be returned as the client IP — that would let
-		// an attacker controlling XFF poison the rate-limit key. With only a
-		// trusted-proxy entry left after the skip, the walk falls through and
-		// returns undefined; the middleware then falls back to the connection IP.
-		assert.strictEqual(resolve_client_ip('not-an-ip, 127.0.0.1', localhost), '127.0.0.1');
-	});
-
-	test('rightmost malformed entry is skipped, walk continues to untrusted-valid', () => {
-		// Companion to the malformed-then-trusted case above: when the
-		// rightmost entry fails `validate_ip_strict` but a leftmost entry is
-		// strictly-valid + untrusted, the walker skips the garbage and returns
-		// the valid entry. Without an explicit case, an attacker-controlled
-		// rightmost garbage entry that suppressed the walk (returning undefined
-		// or the garbage value) would slip past — but only the multi-entry
-		// trusted-malformed-fallback path tests the skip on the trusted side.
-		assert.strictEqual(resolve_client_ip('203.0.113.1, garbage', localhost), '203.0.113.1');
-		// And with a port-suffix malformed rightmost (the legitimate non-standard
-		// proxy case the JSDoc tradeoff documents).
+		// an attacker controlling XFF poison the rate-limit key — and the walk
+		// goes no further left; the middleware falls back to the connection IP.
+		assert.strictEqual(resolve_client_ip('not-an-ip, 127.0.0.1', localhost), undefined);
 		assert.strictEqual(
-			resolve_client_ip('203.0.113.1, 198.51.100.7:8080', localhost),
-			'203.0.113.1'
+			resolve_client_ip('198.51.100.7, attacker-controlled, 127.0.0.1', localhost),
+			undefined
 		);
 	});
 
-	test('multiple malformed entries are all skipped', () => {
-		// Both garbage entries skipped, only 127.0.0.1 remains (trusted) — the
-		// "every entry trusted (or malformed)" branch returns the leftmost
-		// well-formed entry, which is the trusted proxy itself. Middleware
-		// logs a misconfiguration warn on this path.
-		assert.strictEqual(resolve_client_ip('garbage, also-bad, 127.0.0.1', localhost), '127.0.0.1');
+	test('rightmost malformed entry stops the walk — the client-written entry left of it is never returned', () => {
+		// A trusted hop that appends a non-bare-IP token (`ip:port` from an
+		// Azure App Gateway or IIS ARR, `unknown` from Squid, `unix:` from
+		// nginx on a unix socket) leaves the client's own `X-Forwarded-For`
+		// value as the entry to its left. Skipping the token and walking on
+		// would hand the rate-limit key to the client: a fresh bucket on every
+		// request.
+		for (const appended of [
+			'garbage',
+			'198.51.100.7:8080',
+			'[2001:db8::1]:8080',
+			'unknown',
+			'unix:'
+		]) {
+			assert.strictEqual(
+				resolve_client_ip(`203.0.113.1, ${appended}`, localhost),
+				undefined,
+				appended
+			);
+		}
+	});
+
+	test('an untrusted entry right of a malformed one is returned before the walk meets it', () => {
+		assert.strictEqual(
+			resolve_client_ip('garbage, 198.51.100.7, 127.0.0.1', localhost),
+			'198.51.100.7'
+		);
+	});
+
+	test('a malformed entry left of only trusted ones stops the walk', () => {
+		// Formerly the "every entry trusted (or malformed)" branch returned the
+		// leftmost well-formed (trusted) entry; the walk now stops at the
+		// malformed one and the middleware falls back to the connection IP.
+		assert.strictEqual(resolve_client_ip('garbage, also-bad, 127.0.0.1', localhost), undefined);
+	});
+
+	test('the entry trim is JS `trim`: U+00A0 is trimmed, U+0085 is not', () => {
+		// the Rust spine trims the same set (`fuz_http::trim_js_whitespace`)
+		assert.strictEqual(
+			resolve_client_ip('198.51.100.7, \u00a0203.0.113.6\u00a0', localhost),
+			'203.0.113.6'
+		);
+		assert.strictEqual(resolve_client_ip('198.51.100.7, 203.0.113.6\u0085', localhost), undefined);
 	});
 
 	test('all-malformed XFF returns undefined (middleware falls back to connection IP)', () => {
@@ -897,26 +918,27 @@ describe('create_proxy_middleware', () => {
 		assert.strictEqual(body.ip, '127.0.0.1');
 	});
 
-	test('malformed XFF entry is skipped — attacker cannot poison rate-limit key', async () => {
-		// `resolve_client_ip` skips entries that fail `distinctRemoteAddr`
-		// during the right-to-left walk so an attacker who controls XFF
-		// cannot rotate non-IP strings as fresh per-IP rate-limit buckets.
-		// The walk falls through to the leftmost well-formed entry (here
-		// the trusted proxy itself, which triggers the "All XFF entries are
-		// trusted" misconfiguration warn), and the middleware then exposes
-		// `client_ip` as that resolved value.
+	test('malformed XFF entry stops the walk — the request keys on the connection IP', async () => {
+		// A malformed entry is never the client IP (an attacker who controls
+		// XFF would rotate non-IP strings as fresh per-IP rate-limit buckets),
+		// and neither is the client-written entry left of it: the walk stops
+		// and the middleware falls back to the connection IP.
 		//
 		// Tradeoff: legitimate non-standard proxies that include ports in
-		// XFF entries (e.g. `203.0.113.1:8080`) also fail `distinctRemoteAddr`
-		// and lose per-client distinction in rate limiting. nginx + cloud
-		// LBs don't include ports — the regression is bounded by operator
-		// configuration. See `resolve_client_ip` JSDoc.
+		// XFF entries (e.g. `203.0.113.1:8080`) lose per-client distinction in
+		// rate limiting. nginx + cloud LBs append bare IPs — the regression is
+		// bounded by operator configuration. See `resolve_client_ip` TSDoc.
 		const app = create_test_app(['127.0.0.1']);
-		const res = await app.request('/ip', {
-			headers: { 'X-Forwarded-For': 'attacker-controlled, 127.0.0.1' }
-		});
-		const body = await res.json();
-		assert.strictEqual(body.ip, '127.0.0.1');
+		for (const header of [
+			'198.51.100.7, attacker-controlled',
+			'198.51.100.7, 203.0.113.9:5555',
+			'198.51.100.7, unknown, 127.0.0.1',
+			'garbage, also-bad'
+		]) {
+			const res = await app.request('/ip', { headers: { 'X-Forwarded-For': header } });
+			const body = await res.json();
+			assert.strictEqual(body.ip, '127.0.0.1', header);
+		}
 	});
 
 	test('handles multiple XFF headers (Hono concatenation)', async () => {

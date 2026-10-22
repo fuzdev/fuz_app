@@ -199,30 +199,30 @@ export const is_trusted_ip = (ip: string, proxies: Array<ParsedProxy>): boolean 
 /**
  * Resolve the real client IP from an `X-Forwarded-For` header value.
  *
- * Walks right-to-left, skipping trusted proxy entries AND any entry
- * that fails strict IP validation (`validate_ip_strict`). The first
- * untrusted, strictly-valid entry is the client IP. If every walked
- * entry is trusted or malformed, returns the leftmost strictly-valid
- * (trusted) entry (likely-misconfigured all-trusted case) or
- * `undefined` (everything was malformed — middleware falls back to
- * the connection IP). All entries are normalized before matching and
- * in the returned value.
+ * Walks right-to-left, skipping trusted proxy entries. The first untrusted
+ * entry is the client IP. The walk **stops** at the first entry that fails
+ * strict IP validation (`validate_ip_strict`) and returns `undefined`, so the
+ * middleware falls back to the connection IP: an entry is only as
+ * trustworthy as the hop that wrote it, and everything left of a malformed
+ * one was written before any trusted hop vouched for it. If every entry is
+ * trusted, returns the leftmost one (likely-misconfigured all-trusted case).
+ * Empty entries are dropped before the walk. All entries are normalized
+ * before matching and in the returned value.
  *
- * Skipping malformed entries is the rate-limit-key fix for the
- * "attacker controls XFF and the proxy passes it through" surface —
- * without the skip, an attacker could rotate arbitrary strings (incl.
+ * Stopping, not skipping, is the rate-limit-key rule. Returning a malformed
+ * entry would let an attacker rotate arbitrary strings (incl.
  * `'attacker:controlled'`, which Hono's lax `distinctRemoteAddr`
- * misclassifies as IPv6) as XFF values to get fresh per-IP rate-limit
- * buckets. Tradeoff: legitimate non-standard proxies that include
- * ports in XFF entries (e.g. `203.0.113.1:8080`) also fail strict
- * validation, so those entries get skipped and the rate-limit bucket
- * collapses to the proxy's connection IP (one bucket for everyone
- * behind that proxy). Standard proxies (nginx, cloud LBs) don't
- * include ports.
+ * misclassifies as IPv6) into fresh per-IP rate-limit buckets; skipping it
+ * and walking on would hand the key to the entry the client wrote whenever a
+ * trusted hop appends a non-bare-IP token (`ip:port`, `[v6]:port`,
+ * `unknown`, `unix:`). Tradeoff: behind such a proxy every client collapses
+ * to the proxy's connection IP in rate limiting (one bucket for everyone
+ * behind it). Standard proxies (nginx's `$remote_addr`, cloud LBs) append
+ * bare IPs.
  *
  * @param forwarded_for - the `X-Forwarded-For` header value
  * @param proxies - parsed trusted proxy entries
- * @returns the normalized client IP, or `undefined` if the header is empty / all entries malformed
+ * @returns the normalized client IP, or `undefined` if the header is empty or the walk met a malformed entry
  */
 export const resolve_client_ip = (
 	forwarded_for: string,
@@ -235,24 +235,19 @@ export const resolve_client_ip = (
 	}
 	if (entries.length === 0) return undefined;
 
-	// Walk from right to left, skip trusted proxies and malformed entries.
-	// Returning a malformed entry as the client IP would let an attacker
-	// who controls XFF poison the per-IP rate-limit key.
+	// Walk from right to left, skipping trusted proxies; stop at a malformed
+	// entry. Everything left of it is client-written, so neither it nor any
+	// entry past it may pick the per-IP rate-limit key.
 	for (let i = entries.length - 1; i >= 0; i--) {
 		const entry = entries[i]!;
-		if (!validate_ip_strict(entry)) continue;
+		if (!validate_ip_strict(entry)) return undefined;
 		if (!is_trusted_ip(entry, proxies)) {
 			return entry;
 		}
 	}
-	// Every entry was trusted or malformed. Prefer the leftmost
-	// strictly-valid (trusted) entry — the misconfiguration warn in
-	// the middleware fires on it. If none, fall through to undefined
-	// and let the middleware fall back to the connection IP.
-	for (const entry of entries) {
-		if (validate_ip_strict(entry)) return entry;
-	}
-	return undefined;
+	// Every entry was valid and trusted — the leftmost one; the
+	// misconfiguration warn in the middleware fires on it.
+	return entries[0];
 };
 
 /**
@@ -266,7 +261,8 @@ export const resolve_client_ip = (
  * 2. `X-Forwarded-For` present but connection is untrusted → ignore header
  *    (spoofed by a direct attacker), use connection IP.
  * 3. `X-Forwarded-For` present and connection is trusted → walk header
- *    right-to-left, strip trusted entries, use first untrusted entry.
+ *    right-to-left, strip trusted entries, use first untrusted entry; a
+ *    malformed entry stops the walk and the connection IP is used.
  *
  * @param options - trusted proxy configuration
  * @mutates `c.var.client_ip` - set to the resolved (or `'unknown'`) client IP per request

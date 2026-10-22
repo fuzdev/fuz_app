@@ -1973,6 +1973,10 @@ over real HTTP on both spines:
 - **XFF keying** — exhaust one forwarded IP to 429, then a _distinct_ forwarded IP
   → 401 (not 429), proving the limiter keys on the resolved `X-Forwarded-For` IP,
   not the loopback TCP peer (a backend ignoring XFF would 429 the fresh IP too).
+- **a malformed hop stops the walk** — after exhausting one forwarded IP, a
+  chain with that IP left of an `ip:port` entry → 401, not 429: the walk stops at
+  the malformed entry and keys on the connection IP (its audit row says so),
+  never on the client-written entry past it.
 - **a success does not refund the per-IP budget** — the distributed-spray
   backstop. Failed guesses against distinct usernames from one forwarded IP,
   interleaved with the attacker's own successful logins, must still 429 within a

@@ -315,7 +315,7 @@ rate-limiting middleware (see root ../../../CLAUDE.md §Middleware Ordering).
 
 Per-symbol semantics on TSDoc; the cross-cutting properties:
 
-- **Rightmost-first XFF walk**, skipping trusted entries AND entries that fail strict validation. Closes a rate-limit-key-poisoning surface where an attacker who controls XFF and transits through a trusted proxy could rotate garbage strings to evade per-IP limits.
+- **Rightmost-first XFF walk, skipping trusted entries; the first entry that fails strict validation **stops** the walk and the request keys on the connection IP.** Stopping, not skipping, keeps a client-written entry left of a non-bare-IP hop (`ip:port`, `unknown`) from picking the bucket.
 - **`validate_ip_strict(ip)`** is defensive against Hono's lax `distinctRemoteAddr` (which classifies anything-with-colons as IPv6 and accepts `'[::1]:8080'`, `'::1\n'` as binary-valid). Two-layer check: character-set pre-filter + round-trip through `convertIPv*ToBinary`.
 - **`normalize_ip(ip)`** delegates to `canonicalize_ip` from `http/ip_canonical.ts` — RFC 5952 lowercase + longest-zero-run compression, IPv4-mapped IPv6 stripped to plain IPv4 so buckets collapse. Idempotent, safe on non-IP strings, strict char-set filter preserves malformed forms unchanged.
 - **Three-branch middleware logic**: no XFF → use connection IP; XFF + connection untrusted → ignore XFF, use connection IP (spoof-proof, debug log); XFF + connection trusted → resolve from header, warn if all entries turn out trusted.
