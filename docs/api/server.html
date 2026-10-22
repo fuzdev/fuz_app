@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/BTZoVLbz.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CAODFmXb.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.BT0Quutp.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.ceArHmqh.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.C_CLqaFr.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.B2ZPK9-a.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BcwQFYZ2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/C3BYcZ2u.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/B9s6dVBv.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/o5LkJvyc.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.Di34Tgrq.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/Bus_S4I5.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.CRUZ-bae.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BL7ZH9U-.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DhdQKFKC.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -130,14 +130,18 @@ callers are rejected at the auth phase and never reach the handler.
 status — are a future refinement; there is no such concept today, so
 the bare-hash route stays strictly admin-gated.)<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Auth shape on the cell-scoped route is <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->{account: 'none', actor: 'none'}<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->
 — the dispatcher's authorization phase is skipped for pure-public routes,
-so the handler builds the <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/request_context.ts#RequestContext"><!--[0--><!--[-1-->RequestContext<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> itself from <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->c.var.account_id<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->
-(populated by the <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->/api/*<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> session middleware) by resolving the caller's
-single actor and loading their role_grants. Unauthed callers pass through
-with <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->req_ctx: null<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> and are admitted only by a `cell.visibility ===
-'public'<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1--> cell whose <!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->moderation` admits an audience (unmoderated or
+so the handler builds the <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/request_context.ts#RequestContext"><!--[0--><!--[-1-->RequestContext<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> itself from the resolved account
+id (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/request_context.ts#get_public_account_id"><!--[0--><!--[-1-->get_public_account_id<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->, over what the <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->/api/*<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> auth middleware set) by
+resolving the caller's single actor and loading their role_grants.
+Unauthed callers pass through with <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->req_ctx: null<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> and are admitted only by
+a <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->cell.visibility === 'public'<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> cell whose <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->moderation<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> admits an audience (unmoderated or
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->'approved'<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->). Multi-actor accounts fall through with <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->req_ctx: null<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->
 — there's no <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->acting?<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> slot on a pure-public route, so multi-actor
-callers are treated as anonymous.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->404 is the universal "not viewable" response: missing fact, missing or
+callers are treated as anonymous. A scope-narrowed API token is treated as
+anonymous too, not refused (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/request_context.ts#get_public_account_id"><!--[0--><!--[-1-->get_public_account_id<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->): a narrowed token
+reaches no non-RPC surface, but on a route that admits anonymous callers
+a 403 would enforce nothing — the holder drops the <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Authorization<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> header and
+re-reads every public cell anyway.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->404 is the universal "not viewable" response: missing fact, missing or
 unviewable cell, or the cell doesn't reference the hash. We deliberately
 don't distinguish 403 from 404 — neither the existence of a fact nor the
 existence of a cell→fact edge should leak through the public surface.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->A ref is a <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->data<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> string value that is exactly a fact hash
@@ -186,7 +190,10 @@ the prefix* when it is a prefix-type location (no modifier, or <!--]--><!--[3-->
 path is the prefix or below it. Each one must:<!--]--><!--]--><!----></p><!--]--><!--[9--><!--[-1--><ul><!--[--><!--[10--><li><!--[--><!--[2-->use <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->^~<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> — a plain prefix location is refused;<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->be a direct child of a <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->server<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> block — one nested in another location is
 refused;<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->carry, as top-level directives of its own body, an exact <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->internal;<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> and
 each <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/server/fact_security_headers.ts#fact_security_header_directives"><!--[0--><!--[-1-->fact_security_header_directives<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> line (token-equal: whitespace and
-quoting are free, the words are not);<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->hold only simple directives — any nested block (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->location<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->if<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->,
+quoting are free, the words are not);<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->set those headers with no other <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->add_header<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> — one naming a
+<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/server/fact_security_headers.ts#FACT_SECURITY_HEADERS"><!--[0--><!--[-1-->FACT_SECURITY_HEADERS<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> header (ASCII case-insensitive) that is not
+token-equal to its required line is refused, since nginx sends both values
+and a client may read only the first (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->sniff, nosniff<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->);<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->hold only simple directives — any nested block (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->location<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->if<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->,
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->limit_except<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, …) is refused, and so is <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->include<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, since included files
 are not followed.<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--[8--><p><!--[--><!--[2-->The first two rules are what keep regex locations out: nginx never evaluates
 regex locations for a path whose longest prefix match is a <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->^~<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> location at
@@ -200,13 +207,27 @@ directive with a word naming the prefix (trailing slash trimmed, so
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->try_files<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->error_page<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->index<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->add_before_body<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, or a <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->set<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> / <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->map<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->
 value that a redirect later reads. The only exemptions are each <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->location<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->'s
 own modifier and path words and the bodies of the locations serving the
-prefix.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Also refused: an <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->=<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> location on the prefix or below it (it can't serve the
+prefix.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->The prefix itself must be an absolute path ending in exactly one <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->/<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> — the
+server appends <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->&lt;shard>/&lt;rest><!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> straight onto it, so <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->/_facts<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> would redirect
+to <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->/_factsab/…<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, outside the validated location. At least one location
+serving the prefix must sit exactly at it (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->/_facts<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> or <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->/_facts/<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->): one only
+below it (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->location ^~ /_facts/00/<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) leaves every other redirect path to
+whatever location matches next, and nginx compares location paths
+byte-for-byte, so <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->/_facts//<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> sits below it too.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Module directives that undo those guarantees are refused too:<!--]--><!--]--><!----></p><!--]--><!--[9--><!--[-1--><ul><!--[--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->ssi<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> with any value but <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->off<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, anywhere in the config. SSI `include
+virtual<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1--> is a subrequest, which <!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->internal;` admits, so an SSI-processed
+response — a fact inheriting <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->ssi on<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> from <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->http<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> or <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->server<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, or any page
+carrying user content — could include another fact's bytes.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->more_set_headers<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> / <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->more_clear_headers<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (headers-more) everywhere except
+inside a <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->location<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> that doesn't serve the prefix (or a block within one):
+they run after <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->add_header<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> and can strip the hardening headers, so they
+are refused in the facts location and at every level above it, including
+any block there (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->if<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, another <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->server<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->).<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--[8--><p><!--[--><!--[2-->Also refused: an <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->=<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> location on the prefix or below it (it can't serve the
 nested paths the redirect emits); a regex location (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->~<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> / <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->~*<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) whose pattern
 spells out the prefix (after unescaping <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->\/<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, ASCII case-folded for <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->~*<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) —
-dead under the rules above, refused for the clearer message; and a config
-with no location serving the prefix. <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->include<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> at server level is allowed,
-but its file is not read — keep facts-related locations out of included
-files.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->The threat model is operator mistakes, not an adversarial config author: the
+dead under the rules above, refused for the clearer message; a config with no
+location at the prefix; and blocks nested more than 64 deep (a parse error, so
+the walks can't exhaust the stack). <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->include<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> at server level is allowed, but
+its file is not read — keep facts-related locations and the directives above
+out of included files.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->The threat model is operator mistakes, not an adversarial config author: the
 prefix check is textual, so a value assembled from pieces (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->/_fac$1<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) evades
 it. Beyond the config text:<!--]--><!--]--><!----></p><!--]--><!--[9--><!--[-1--><ul><!--[--><!--[10--><li><!--[--><!--[2-->The validator checks URL paths only — another <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->root<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> or <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->alias<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> that maps
 onto the facts directory would serve its files publicly, so keep the facts
@@ -214,8 +235,10 @@ directory outside every other location's root.<!--]--><!--]--><!----></li><!--]-
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->fastcgi_pass<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->uwsgi_pass<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->scgi_pass<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->grpc_pass<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->), so every upstream in
 the server is trusted to point into the prefix; an untrusted one needs
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->proxy_ignore_headers X-Accel-Redirect;<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (or the <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->fastcgi_<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> / <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->uwsgi_<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> /
-<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->scgi_<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> equivalent).<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->Module code can redirect internally too (ssi <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->include virtual<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, njs
-<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->internalRedirect<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, perl, echo), so run trusted modules and content only.<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--[8--><p><!--[--><!--[2-->The Rust twin is <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->fuz_fact_serving<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->'s <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->nginx.rs<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, held to the same rules and
+<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->scgi_<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> equivalent).<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->Other module code can redirect internally too (njs <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->internalRedirect<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, perl,
+echo), or strip the hardening headers as headers-more can (njs
+<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->js_header_filter<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, lua-nginx-module <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->header_filter_by_lua*<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->), and the
+check sees none of it, so run trusted modules and content only.<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--[8--><p><!--[--><!--[2-->The Rust twin is <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->fuz_fact_serving<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->'s <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->nginx.rs<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, held to the same rules and
 the same fixture corpus.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->@example<!--]--><!--]--><!----></p><!--]--><!--[15--><!--[0--><!--[--><code data-lang="ts" class="svelte-jqsy8a"><!--[-1--><!----><span class="token_keyword">const</span> x_accel <span class="token_operator">=</span> <span class="token_function">create_x_accel_config</span><span class="token_punctuation">(</span>
 	<span class="token_string">'/_facts/'</span><span class="token_punctuation">,</span>
 	<span class="token_template_string"><span class="token_template_punctuation token_string">`</span><span class="token_string">server {
@@ -229,16 +252,16 @@ the same fixture corpus.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><
 			
 			<script>
 				{
-					__sveltekit_1ttntfg = {
+					__sveltekit_c09v8e = {
 						base: "",
-						version: "7495c788fa11a171f23884ac4536d5b41d9f68ad"
+						version: "bb9fbaf549576c2bf3127e17535c6551d685c3bf"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.CXlCZqzx.js").then(async (kit) => {
-						kit.init(__sveltekit_1ttntfg);
-						const app = await import("/_app/immutable/entry/app.BT0Quutp.js");
+						kit.init(__sveltekit_c09v8e);
+						const app = await import("/_app/immutable/entry/app.C_CLqaFr.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],
