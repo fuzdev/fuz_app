@@ -1,5 +1,49 @@
 # @fuzdev/fuz_app
 
+## 0.146.0
+
+### Minor Changes
+
+- **breaking** fix: a scope-narrowed API token is answered as anonymous on the account status and cell fact reads, and refused the `/verify` probe ([1adf212](https://github.com/fuzdev/fuz_app/commit/1adf212))
+
+  - `GET /api/account/verify` declares `required_scope: 'surface:account_verify'` (a new `TOKEN_SURFACES` entry, TS spine only): a narrowed token gets 403 `token_scope_required`, so it no longer passes an nginx `auth_request` gate as its account
+  - `GET /api/account/status` answers a narrowed token as the anonymous caller — 401 with the bootstrap flag, byte for byte — instead of returning the account, as the Rust spine now does
+  - `GET /api/cells/:cell_id/facts/:hash` resolves a narrowed token to the anonymous caller, as the Rust spine already did: it reads public cells' facts only, never a private cell its account can view; use a full-scope token or a session for those
+  - new `get_public_account_id(c)` (`auth/request_context.ts`) is that downgrade as one call — the account id, or `null` for an anonymous caller or a narrowed token; the status and cell fact routes read the credential through it, and a consumer's own `reads_credential` route should too, so a narrowed token is answered as anonymous there (the RPC endpoint excepted — its dispatcher gates each method)
+  - regenerate a committed attack-surface snapshot (the `/verify` route's `auth` gains `required_scope` and its description names the 403, and the `TokenCreateInput.scope` description changes), and add `surface:account_verify` to a token-surface census that lists the spine's declared surfaces
+  - `describe_token_scope_surface_cross_tests` pins the status answer (with `capabilities.account_status`) and `describe_fact_serving_cross_tests` the fact downgrade (with `capabilities.fact_serving`)
+
+- test: shipped cross-backend suites pin the revocation closes, fact headers, creation-username padding, and malformed JSON bodies ([1109d98](https://github.com/fuzdev/fuz_app/commit/1109d98))
+
+  - `describe_cross_process_ws_tests` (with `rpc_path`) requires a second account's socket closed with `WS_CLOSE_SESSION_REVOKED` and its reason on `account_token_revoke` (that token's bearer socket only), `admin_token_revoke_all`, `POST /logout`, `POST /password`, `account_purge` (also gated on `capabilities.account_lifecycle`), and a token the per-account cap evicts; bearer sockets open with no `Origin`. New options `logout_path` / `password_path` (default `/api/account/logout` / `/api/account/password`) and `max_tokens` (default `DEFAULT_MAX_TOKENS`, `null` skips the cap case)
+  - the session revoke-all, account delete, and self-revocation closes now also require `WS_CLOSE_SESSION_REVOKED_REASON` (session revoke-all used to accept any close)
+  - `describe_cross_process_sse_tests` (with `rpc_path`) requires a second admin's stream closed on `admin_token_revoke_all`, `POST /logout`, `POST /password`, and `account_purge` (also gated on `capabilities.account_lifecycle`); it takes the same `logout_path` / `password_path`
+  - both suites drive those account-wide revocations from one table, `create_account_revocations` in the new `testing/cross_backend/revocation_drivers.ts`, which also exports the drivers `cross_post_as`, `cross_admin_token_revoke_all`, and `cross_account_purge`
+  - `describe_fact_serving_cross_tests` requires a served fact's `X-Content-Type-Options`, `Content-Security-Policy`, and `Cache-Control: private, max-age=300` on the cell-scoped and the admin bare-hash read (a `text/html` fact there), and a bodiless masked 404; `FACT_CACHE_CONTROL` is exported from `server/fact_security_headers.ts` beside the two hardening values
+  - `describe_identity_parity_cross_tests` requires a padded creation username refused 400 at signup and at bootstrap — at bootstrap ahead of the window check, so after bootstrap completed too — and the login trim set of JS `trim` (U+FEFF trimmed, U+0085 not); new `bootstrap_path` option (default `/api/account/bootstrap`, `null` for a surface without the route)
+  - `describe_identity_parity_cross_tests` also requires an unparseable (`{`) or non-object (`[]`) JSON body answered 400 `{"error": "invalid_json_body"}` and nothing else on login, signup, bootstrap, and the password change with a session (an anonymous one still 401); new `password_path` option (default `/api/account/password`, `null` skips). A Rust spine backend passes only once it includes the spine's matching JSON body-parse fix
+
+- **breaking** test: remove `BackendCapabilities.ws_self_revocation_reply` ([3500904](https://github.com/fuzdev/fuz_app/commit/3500904))
+
+  - the Rust spine now answers a socket's self-revoking request before the revocation close, so the self-revocation case of `describe_cross_process_ws_tests` requires the reply, then `WS_CLOSE_SESSION_REVOKED`, on every backend
+  - drop the field from capability presets; a Rust backend running the case (`ws_account_actions: true`) needs a spine with the reply-first fix
+
+- **breaking** fix: `create_x_accel_config` refuses more nginx configs at boot, matching the Rust `XAccelConfig` ([64f9c48](https://github.com/fuzdev/fuz_app/commit/64f9c48))
+
+  - the redirect prefix must end in exactly one `/` (`/_facts/`, not `/_facts` or `/_facts//`)
+  - a location must sit exactly at the prefix (`/_facts` or `/_facts/`); one only below it, `/_facts//` included, no longer satisfies the check — nginx compares location paths byte for byte
+  - the facts location may set `X-Content-Type-Options` and `Content-Security-Policy` only with their required lines: another `add_header` for either name, in any case, is refused
+  - `ssi` with any value but `off` is refused anywhere in the config, and `more_set_headers` / `more_clear_headers` everywhere except inside a location that doesn't serve the prefix
+  - blocks nested more than 64 deep are refused as a parse error instead of throwing `RangeError`
+  - `validate_facts_internal_location` reports the same errors
+  - the `FUZ_FACTS_X_ACCEL_REDIRECT_PREFIX` env description says the prefix ends in `/`
+
+- **breaking** fix: the `X-Forwarded-For` walk stops at the first malformed entry ([3a2136b](https://github.com/fuzdev/fuz_app/commit/3a2136b))
+
+  - `resolve_client_ip` still walks right to left past trusted proxies, but an entry that fails `validate_ip_strict` (`ip:port`, `[v6]:port`, `unknown`, `unix:`) now ends the walk with `undefined`, so `create_proxy_middleware` takes the connection IP as the client IP — for rate limits and audit rows alike. It used to skip the entry and walk on into client-written ones, and a malformed entry left of only trusted ones resolved to the leftmost trusted entry
+  - behind a proxy that appends anything but a bare IP, every client now shares the proxy's rate-limit bucket and audit rows record the proxy's address; have it append bare IPs (nginx's `$remote_addr` does)
+  - `describe_login_security_cross_tests` gains the case: after one forwarded IP is exhausted, a chain with that IP left of an `ip:port` entry answers 401, and its audit row carries the connection IP
+
 ## 0.145.0
 
 ### Minor Changes
