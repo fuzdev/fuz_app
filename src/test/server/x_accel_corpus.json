@@ -597,9 +597,9 @@
 			"ok": true
 		},
 		{
-			"name": "alias_visiones_style",
+			"name": "alias_nested_dir",
 			"prefix": "/_facts/",
-			"config": "server {\nlocation ^~ /_facts/ { internal; alias /srv/visiones/facts/; add_header X-Content-Type-Options \"nosniff\" always; add_header Content-Security-Policy \"default-src 'none'; sandbox\" always; }\n}\n",
+			"config": "server {\nlocation ^~ /_facts/ { internal; alias /srv/site/facts/; add_header X-Content-Type-Options \"nosniff\" always; add_header Content-Security-Policy \"default-src 'none'; sandbox\" always; }\n}\n",
 			"ok": true
 		},
 		{
