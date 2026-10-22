@@ -966,7 +966,8 @@ source of truth for wire-shape conformance.
   generic round-trip can't drive (it can't delete the subject). `true` on every
   spine. `fact_serving`
   gates `describe_fact_serving_cross_tests` (the cell-scoped per-reference +
-  admin-only bare-hash fact-serving parity suite); like cells it stays off the
+  admin-only bare-hash fact-serving parity suite, incl. the served fact's
+  hardening headers and bodyless masked 404s); like cells it stays off the
   declared surface and is `true` on every spine that mounts the serve routes +
   the `_testing_put_fact` seeder (whose optional `holder` records a
   `fact_holder` row, so a non-admin can reference what it seeds) — it also
@@ -1115,7 +1116,8 @@ call (not folded into `describe_standard_cross_process_tests`) because it
 needs raw `base_url` / `ws_path` the standard bundle doesn't carry, mirroring
 how `describe_ws_round_trip_tests` sits beside `describe_standard_tests`
 in-process. `describe_cross_process_ws_tests({setup_test, capabilities,
-base_url, ws_path, origin?, rpc_path?, max_message_bytes?})` opens a live
+base_url, ws_path, origin?, rpc_path?, max_message_bytes?, logout_path?,
+password_path?, max_tokens?})` opens a live
 `WebSocket` via `create_ws_transport` (the `ws` npm package) and asserts
 cases against the upgrade stack `register_ws_endpoint` wires (origin →
 `require_auth` → dispatch): authed upgrade round-trips `heartbeat`,
@@ -1134,7 +1136,15 @@ mid-connection (`account_session_revoke_all` over the keeper session channel;
 asserted via `WsClient.wait_for_close`) and when its account is deleted
 (`account_delete` by the keeper, also gated on
 `capabilities.account_lifecycle`; the close code is
-`WS_CLOSE_SESSION_REVOKED`). Per-connection auth is enforced **at upgrade
+`WS_CLOSE_SESSION_REVOKED`). The rest of the revocation table closes a second
+account's socket with `WS_CLOSE_SESSION_REVOKED` and
+`WS_CLOSE_SESSION_REVOKED_REASON`: `account_token_revoke` its revoked token's
+bearer socket (a socket on its other token stays open);
+`admin_token_revoke_all`, `POST /logout` (`logout_path`), `POST /password`
+(`password_path`) and `account_purge` (also gated on
+`capabilities.account_lifecycle`) its bearer and session sockets; and
+`max_tokens` further mints (default `DEFAULT_MAX_TOKENS`; `null` skips) the
+bearer socket of the token the cap evicts. Per-connection auth is enforced **at upgrade
 time**, so the negative upgrade cases assert the upgrade itself rejects, not
 a per-message error; the close cases prove a revocation closes an
 already-open socket, since per-message dispatch never re-checks credential
@@ -1346,7 +1356,10 @@ account-wide close) and then just the one (`account_session_revoke`, the
 session-scoped close), each dropping the live stream (asserted via
 `SseTransport.wait_for_close`); the keeper soft-deletes a second admin whose
 stream is open (`account_delete`, also gated on
-`capabilities.account_lifecycle`), dropping it; and one stream past the per-session cap
+`capabilities.account_lifecycle`), dropping it; `admin_token_revoke_all`,
+`POST /logout` (`logout_path`), `POST /password` (`password_path`) and
+`account_purge` (also gated on `capabilities.account_lifecycle`) of a second
+admin each drop its stream; and one stream past the per-session cap
 (`max_per_scope`, default `AUDIT_LOG_SSE_MAX_PER_SCOPE`; `null` skips) on one
 session closes the oldest and leaves the rest open. The data-frame + close
 cases gate on `rpc_path` (they drive the standard account/admin actions); all

@@ -17,6 +17,7 @@
  */
 
 import {
+	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_CREDENTIAL_TYPE_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,
 	ERROR_INVALID_CREDENTIALS,
@@ -502,7 +503,7 @@ const phase_order_cases: ReadonlyArray<ConformanceCase> = [
 			as: 'anonymous',
 			params: { session_id: 12345 }
 		},
-		expect: { status: 401 },
+		expect: { status: 401, error_reason: ERROR_AUTHENTICATION_REQUIRED },
 		note: 'security.md §Authorization "Phase ordering hides route shape from callers who lack the authority to call" — the 401 → authz → 403 → 429 → 400 dispatch order: pre-authorization auth fires before input validation, so an unauthenticated caller never learns route shape from a parse failure'
 	},
 	{
@@ -514,7 +515,7 @@ const phase_order_cases: ReadonlyArray<ConformanceCase> = [
 			as: 'anonymous',
 			params: { current_password: 999, new_password: false }
 		},
-		expect: { status: 401 },
+		expect: { status: 401, error_reason: ERROR_AUTHENTICATION_REQUIRED },
 		note: 'security.md §Authorization "Phase ordering hides route shape from callers who lack the authority to call" — require_auth fires before body parsing, so an unauthenticated caller never sees route-shape information from input parse failures'
 	}
 ];

@@ -39,9 +39,7 @@ export const conformance_expiry_cases: ReadonlyArray<ConformanceCase> = [
 	{
 		name: 'expired server-side session → POST /logout → 401',
 		request: { method: '/logout', as: 'expired_session' },
-		// REST 401 — status pins the denial class (the in-process skip this
-		// replaces asserted status only).
-		expect: { status: 401 },
+		expect: { status: 401, error_reason: ERROR_AUTHENTICATION_REQUIRED },
 		note: 'security.md §Session Security — the DB-row expiry gate refuses an expired session on a mutation route too'
 	}
 ];

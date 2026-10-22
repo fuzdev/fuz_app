@@ -214,8 +214,9 @@ so the same files run under every `cross_backend_*` project; each project's
 HTTP + RPC), `ws.cross.test.ts` (the real-upgrade
 `describe_cross_process_ws_tests` suite — live WebSocket, including
 requests sent at open and frames sent with the handshake (answered once the
-connection is admitted, never dropped), close-on-revoke and close on account
-delete, a self-revoking socket closed after its reply, and a WS mutation's
+connection is admitted, never dropped), a close on each listed revocation (session
+and token revokes, admin token revoke-all, logout, password change, token-cap
+eviction, account delete and purge), a self-revoking socket closed after its reply, and a WS mutation's
 audit row read back after `_testing_drain_effects`), `credential_deadline.cross.test.ts` (the
 `describe_credential_deadline_cross_tests` suite — a socket on a session or an
 API token closes with `WS_CLOSE_SESSION_REVOKED` "Credential expired" at its
@@ -268,7 +269,8 @@ in-flight ceiling shed `queue_overflow` with the socket left open; requests held
 with `peer/ping`, so gated on `capabilities.peer_request`), `sse.cross.test.ts` (the real-streaming-`fetch`
 `describe_cross_process_sse_tests` suite — live audit-log SSE: connect,
 data frame, account-wide close-on-revoke, session-scoped close-on-revoke,
-close on account delete, the per-session stream cap),
+close on account delete, admin token revoke-all, logout, password change and
+purge, the per-session stream cap),
 `cell.cross.test.ts` (the cell parity suites:
 `describe_cell_crud_cross_tests` — the CRUD lifecycle + authz matrix — and
 `describe_cell_relations_cross_tests` — grant / field / item / clone / audit,

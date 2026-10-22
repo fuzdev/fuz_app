@@ -15,7 +15,11 @@ import '../assert_dev_env.ts';
  *   though the identical bytes are world-readable via B's cell (one deduped
  *   `fact` row; authz lives on the `(cell, hash)` edge, never unioned);
  * - **404-mask** — a missing cell and a viewable cell that doesn't reference
- *   the hash both 404 (never 403, never "exists elsewhere");
+ *   the hash both 404 (never 403, never "exists elsewhere"), and every masked
+ *   404 is bodyless, so its shape names no branch;
+ * - **hardening headers** — a served fact carries `X-Content-Type-Options:
+ *   nosniff`, the `default-src 'none'; sandbox` CSP, and `Cache-Control:
+ *   private, max-age=300`, whatever its content type;
  * - **bare-hash admin-only** — `GET /api/facts/:hash` is admin (keeper) only:
  *   non-admin → 403, anonymous → 401;
  * - **multi-actor fallthrough** — a multi-actor caller resolves to a null
@@ -46,6 +50,10 @@ import { z } from 'zod';
 import { FactHashSchema } from '../../primitive_schemas.ts';
 
 import { CellCreateOutput } from '../../auth/cell_action_specs.ts';
+import {
+	FACT_CONTENT_SECURITY_POLICY,
+	FACT_X_CONTENT_TYPE_OPTIONS
+} from '../../server/fact_security_headers.ts';
 import type { FetchTransport } from '../transports/fetch_transport.ts';
 import { test_if } from './capabilities.ts';
 import { cross_rpc_call, expect_output } from './cell_cross_helpers.ts';
@@ -114,18 +122,56 @@ export const cross_put_fact = async (
 		TestingPutFactOutput
 	).hash;
 
-/** GET a fact over a cross-process `FetchTransport`; returns `{status, content_type, text}`. */
+/**
+ * `Cache-Control` both spines serve a fact with — private, five minutes (the
+ * revocation window a cached read outlives).
+ */
+const FACT_CACHE_CONTROL = 'private, max-age=300';
+
+/** GET a fact over a cross-process `FetchTransport`; returns `{status, content_type, text, headers}`. */
 const fact_get = async (
 	transport: FetchTransport,
 	path: string,
 	headers: Record<string, string>
-): Promise<{ status: number; content_type: string | null; text: string }> => {
+): Promise<{ status: number; content_type: string | null; text: string; headers: Headers }> => {
 	const res = await transport(path, { method: 'GET', headers });
 	return {
 		status: res.status,
 		content_type: res.headers.get('content-type'),
-		text: await res.text()
+		text: await res.text(),
+		headers: res.headers
 	};
+};
+
+/**
+ * Assert a served fact carries the hardening headers — `nosniff`, the
+ * sandboxing CSP — and the private cache policy. A spine that dropped either
+ * hardening header would serve a user-typed `content_type` (or a sniffable
+ * octet-stream) as executable HTML.
+ */
+const assert_fact_headers = (headers: Headers, label: string): void => {
+	assert.strictEqual(
+		headers.get('x-content-type-options'),
+		FACT_X_CONTENT_TYPE_OPTIONS,
+		`${label}: X-Content-Type-Options`
+	);
+	assert.strictEqual(
+		headers.get('content-security-policy'),
+		FACT_CONTENT_SECURITY_POLICY,
+		`${label}: Content-Security-Policy`
+	);
+	assert.strictEqual(headers.get('cache-control'), FACT_CACHE_CONTROL, `${label}: Cache-Control`);
+};
+
+/**
+ * Assert a 404 is the masked one: no body, so the response says nothing about
+ * which check refused it.
+ */
+const assert_masked_404 = (got: { status: number; text: string }, label: string): void => {
+	assert.strictEqual(got.status, 404, `${label} did not 404`);
+	assert.strictEqual(got.text, '', `${label}: a masked 404 has no body`);
+	// TODO: the content type isn't pinned — the Node TS spine answers the
+	// bodyless 404 with `text/plain; charset=UTF-8`, Deno, Bun and Rust with none
 };
 
 export const describe_fact_serving_cross_tests = (options: FactServingCrossTestOptions): void => {
@@ -190,6 +236,7 @@ export const describe_fact_serving_cross_tests = (options: FactServingCrossTestO
 				assert.strictEqual(got.text, 'public-fact-bytes');
 				// The served `Content-Type` echoes the seeded value on both backends.
 				assert.strictEqual(got.content_type, 'text/plain', 'served content-type drifted');
+				assert_fact_headers(got.headers, 'cell-scoped text/plain fact');
 			}
 		);
 
@@ -231,13 +278,14 @@ export const describe_fact_serving_cross_tests = (options: FactServingCrossTestO
 					'application/octet-stream',
 					'no-content-type fact should serve as octet-stream'
 				);
+				assert_fact_headers(via_b.headers, 'octet-stream fact');
 
 				// A's PRIVATE reference must NOT leak — to anon or to B — even though
 				// the identical bytes are world-readable via B's public cell.
 				const a_via_anon = await fact_get(anon, cell_fact_path(a_cell, hash), {});
-				assert.strictEqual(a_via_anon.status, 404, "A's private reference leaked to anon");
+				assert_masked_404(a_via_anon, "A's private reference read by anon");
 				const a_via_b = await fact_get(t, cell_fact_path(a_cell, hash), b.create_session_headers());
-				assert.strictEqual(a_via_b.status, 404, "A's private reference leaked to B");
+				assert_masked_404(a_via_b, "A's private reference read by B");
 
 				// A can read its own private cell's fact.
 				const a_via_a = await fact_get(t, cell_fact_path(a_cell, hash), a.create_session_headers());
@@ -256,7 +304,7 @@ export const describe_fact_serving_cross_tests = (options: FactServingCrossTestO
 
 				// Missing cell → 404.
 				const missing = await fact_get(t, cell_fact_path(NIL_UUID, hash), admin_headers);
-				assert.strictEqual(missing.status, 404, 'missing cell did not 404');
+				assert_masked_404(missing, 'missing cell');
 
 				// A viewable (keeper-owned, public) cell that references a DIFFERENT
 				// hash → 404 (missing cell→fact edge), even though the caller can view
@@ -268,7 +316,7 @@ export const describe_fact_serving_cross_tests = (options: FactServingCrossTestO
 					'public'
 				);
 				const no_edge = await fact_get(t, cell_fact_path(unrelated_cell, hash), admin_headers);
-				assert.strictEqual(no_edge.status, 404, 'cell without the edge did not 404');
+				assert_masked_404(no_edge, 'cell without the edge');
 
 				// Edge present but no `fact` row: the same cell DOES reference
 				// `UNRELATED_HASH`, which was never seeded. Cell + edge + view all
@@ -279,7 +327,7 @@ export const describe_fact_serving_cross_tests = (options: FactServingCrossTestO
 					cell_fact_path(unrelated_cell, UNRELATED_HASH),
 					admin_headers
 				);
-				assert.strictEqual(edge_no_bytes.status, 404, 'edge to an absent fact did not 404');
+				assert_masked_404(edge_no_bytes, 'edge to an absent fact');
 			}
 		);
 

@@ -1036,7 +1036,7 @@ signup — the password-bearing surfaces. **Bearer auth carries no rate limiter*
 
 - Login IP rate limiter (5 attempts / 15 min) — Per resolved client IP, shared by login + password change (the same instance, mirroring the Rust spine's `login_ip_rate_limiter`)
 - Signup IP rate limiter (5 attempts / 15 min) — Per resolved client IP, signup only
-- Bootstrap IP rate limiter (5 attempts / 15 min) — Per resolved client IP, bootstrap only
+- Bootstrap IP rate limiter (5 attempts / 15 min) — Per resolved client IP, bootstrap only. TS only: the Rust spine's bootstrap carries no limiter on purpose (a 32-byte token compared in constant time, and no retry path for first-admin creation)
 - Login account rate limiter (10 attempts / 30 min) — Per `account.id` when the account exists, per normalized submitted identifier otherwise. Per `account.id` on password change.
 - Signup account rate limiter (10 attempts / 30 min) — Per submitted username (lowercased), signup only
 
