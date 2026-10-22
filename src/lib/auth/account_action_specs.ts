@@ -95,7 +95,8 @@ export const TokenCreateInput = z.strictObject({
 		description:
 			"What the token may do. `{kind:'full'}` for full account authority, or " +
 			"`{kind:'methods',methods:[…]}` to narrow it to named RPC methods — a " +
-			'narrowed token is RPC-only and reaches no non-RPC surface.'
+			'narrowed token is RPC-only and reaches no non-RPC surface that reads ' +
+			'account data or carries authority.'
 	}),
 	lifetime: TokenLifetimeInput.meta({
 		description:

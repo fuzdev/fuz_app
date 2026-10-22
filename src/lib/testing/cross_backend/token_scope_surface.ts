@@ -36,6 +36,11 @@ import '../assert_dev_env.ts';
  *   `surface:audit_stream`'s own capability string is consequently unreachable
  *   on the default mount and has no cross-impl pin — each spine's census holds
  *   its declaration, the way the WS upgrade's is held.
+ * - **The account status read answers a narrowed token as anonymous** —
+ *   `GET /api/account/status` answers anonymous callers, so rule 3 there is the
+ *   anonymous answer (`401` plus the bootstrap flag), byte for byte, never the
+ *   account's email, its verification, or its role grants. A full-scope bearer
+ *   reading the account is the control.
  * - **Scope outranks role** — a narrowed token whose account *also* lacks the
  *   gating role must hear `token_scope_required`, not
  *   `insufficient_permissions`. This is the observable the TS↔Rust ordering
@@ -79,6 +84,9 @@ import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
 /** Default audit-log SSE path — the `audit_stream` surface. */
 const DEFAULT_SSE_PATH = '/api/admin/audit/stream';
+
+/** The account status read, which answers a narrowed token as anonymous. */
+const STATUS_PATH = '/api/account/status';
 
 /**
  * A well-formed hash that no fact has. The scope gate is a pre-authorization
@@ -245,6 +253,41 @@ export const describe_token_scope_surface_cross_tests = (
 					ERROR_TOKEN_SCOPE_REQUIRED,
 					'a full-authority bearer must not be refused on scope grounds'
 				);
+			}
+		);
+
+		/**
+		 * The status read answers anonymous callers, so a narrowed token is
+		 * answered as one — byte for byte, status and body — rather than refused.
+		 * The full-scope bearer of the same account reads the account, so the
+		 * 401 is the scope, not the bearer.
+		 */
+		test_if(
+			capabilities.account_status,
+			'a narrowed token reads the account status as the anonymous caller',
+			async () => {
+				const fixture = await setup_test();
+				const token = await mint_narrowed_api_token({
+					app: fixture.transport,
+					rpc_path,
+					session_headers: fixture.create_session_headers(),
+					methods: [ADMITTED_METHOD]
+				});
+				const anonymous = await fixture.fresh_transport({ origin: null })(STATUS_PATH, {});
+				const narrowed = await fixture.fresh_transport({ origin: null })(STATUS_PATH, {
+					headers: { authorization: `Bearer ${token}` }
+				});
+				assert.strictEqual(anonymous.status, 401, 'anonymous status must be 401');
+				assert.strictEqual(narrowed.status, 401, 'a narrowed token must read status as anonymous');
+				assert.strictEqual(
+					await narrowed.text(),
+					await anonymous.text(),
+					'the narrowed answer must be the anonymous one, byte for byte'
+				);
+				const full = await fixture.fresh_transport({ origin: null })(STATUS_PATH, {
+					headers: fixture.create_bearer_headers()
+				});
+				assert.strictEqual(full.status, 200, 'a full-scope bearer must read the account');
 			}
 		);
 

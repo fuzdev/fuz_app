@@ -15,7 +15,8 @@ import { create_account_status_route_spec } from '#lib/auth/account_routes.ts';
 import { apply_route_specs } from '#lib/http/route_spec.ts';
 import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
 import { REQUEST_CONTEXT_KEY, type RequestContext } from '#lib/auth/request_context.ts';
-import { ACCOUNT_ID_KEY, TEST_CONTEXT_PRESET_KEY } from '#lib/hono_context.ts';
+import { ACCOUNT_ID_KEY, TEST_CONTEXT_PRESET_KEY, TOKEN_SCOPE_KEY } from '#lib/hono_context.ts';
+import { token_scope_full, token_scope_methods, type TokenScope } from '#lib/auth/token_scope.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
 import { create_stub_db } from '#lib/testing/stubs.ts';
 
@@ -50,10 +51,11 @@ const create_test_ctx = (): RequestContext => ({
 	role_grants: []
 });
 
-/** Create a test Hono app with route specs and optional auth context. */
+/** Create a test Hono app with route specs, optional auth context, and its token scope. */
 const create_test_app = (
 	specs: Parameters<typeof apply_route_specs>[1],
-	auth_ctx?: RequestContext
+	auth_ctx?: RequestContext,
+	scope?: TokenScope
 ): Hono => {
 	const app = new Hono();
 	if (auth_ctx) {
@@ -61,6 +63,7 @@ const create_test_app = (
 			(c as any).set(ACCOUNT_ID_KEY, auth_ctx.account.id);
 			(c as any).set(REQUEST_CONTEXT_KEY, auth_ctx);
 			(c as any).set(TEST_CONTEXT_PRESET_KEY, true);
+			if (scope) (c as any).set(TOKEN_SCOPE_KEY, scope);
 			await next();
 		});
 	}
@@ -203,5 +206,34 @@ describe('account status authenticated', () => {
 		assert.strictEqual(res.status, 200);
 		const body = await res.json();
 		assert.ok(!('bootstrap_available' in body));
+	});
+});
+
+describe('account status narrowed token', () => {
+	// Rule 3 in the disposition of a route that answers anonymous callers: a
+	// scope-narrowed token gets the anonymous answer byte for byte, never the
+	// account's email, its verification, or the actor's role grants.
+	for (const available of [false, true]) {
+		test(`answers as the anonymous caller (bootstrap available: ${available})`, async () => {
+			const spec = create_account_status_route_spec({ bootstrap_status: { available } });
+			const anonymous = await create_test_app([spec]).request('/status');
+			const narrowed = await create_test_app(
+				[spec],
+				create_test_ctx(),
+				token_scope_methods(['account_verify'])
+			).request('/status');
+			assert.strictEqual(narrowed.status, 401);
+			assert.strictEqual(narrowed.status, anonymous.status);
+			assert.strictEqual(await narrowed.text(), await anonymous.text());
+		});
+	}
+
+	test('a full-scope token reads the account', async () => {
+		const spec = create_account_status_route_spec({ bootstrap_status: { available: true } });
+		const app = create_test_app([spec], create_test_ctx(), token_scope_full());
+		const res = await app.request('/status');
+		assert.strictEqual(res.status, 200);
+		const body = await res.json();
+		assert.strictEqual(body.account.email, 'alice@example.com');
 	});
 });

@@ -19,9 +19,12 @@
  * 2. **`methods` denies every method it does not list.** An empty list is legal
  *    and renders the token inert for RPC — unlike an empty `credential_types`
  *    allowlist, which is rejected because it renders an *action* unreachable.
- * 3. **A narrowed token is RPC-only.** `methods` denies every non-RPC spine
- *    surface outright — the db-admin browser, the bare-hash fact read, the
- *    audit SSE stream, and the WS upgrade. See `token_scope_admits_non_rpc`.
+ * 3. **A narrowed token is RPC-only.** `methods` denies outright every non-RPC
+ *    spine surface that reads account data or carries authority — the
+ *    db-admin browser, the bare-hash fact read, the audit SSE stream, the WS
+ *    upgrade, the surface explorer, and the `auth_request` probe. See
+ *    `token_scope_admits_non_rpc`, and `docs/security.md` §Token scoping for
+ *    the reads that answer it as anonymous and the server status read.
  *
  * @module
  */
@@ -114,7 +117,8 @@ export const token_scope_admits_method = (scope: TokenScope, method: string): bo
 /**
  * Does `scope` admit a non-RPC spine surface?
  *
- * **A narrowed token reaches no non-RPC surface at all** — the load-bearing
+ * **A narrowed token reaches no non-RPC surface that reads account data or
+ * carries authority** — the load-bearing
  * half of token scoping, and what "rule 3" names wherever this module's
  * callers and the Rust twin use that shorthand. See `docs/security.md`
  * §Token scoping.
@@ -133,9 +137,11 @@ export const token_scope_admits_non_rpc = (scope: TokenScope): boolean => scope.
 
 /**
  * The non-RPC surfaces the **spine itself** mounts (rule 3). Twin of the Rust
- * `TokenSurface` enum, name for name, except `app_surface` — the opt-in
- * `GET /api/surface` explorer (`server/surface_route.ts`), which only the TS
- * spine serves.
+ * `TokenSurface` enum, name for name, except the two only the TS spine serves:
+ * `app_surface`, the opt-in `GET /api/surface` explorer
+ * (`server/surface_route.ts`), and `account_verify`, the
+ * `GET /api/account/verify` nginx `auth_request` probe
+ * (`auth/account_route_schema.ts`).
  *
  * Not a registry a consumer registers into. `RouteAuth.required_scope` accepts
  * any well-formed `surface:<name>` (see `parse_token_scope_capability`), so a
@@ -154,7 +160,8 @@ export const TOKEN_SURFACES = [
 	'fact_bare',
 	'audit_stream',
 	'ws_upgrade',
-	'app_surface'
+	'app_surface',
+	'account_verify'
 ] as const;
 export type TokenSurface = (typeof TOKEN_SURFACES)[number];
 

@@ -152,7 +152,14 @@ export const create_account_route_shapes = (
 	{
 		method: 'GET',
 		path: '/verify',
-		auth: { account: 'required', actor: 'none' },
+		// a non-RPC surface: the probe answers 200 for the account behind a
+		// credential, so a narrowed token is refused it (it would otherwise pass
+		// an nginx `auth_request` gate as its account)
+		auth: {
+			account: 'required',
+			actor: 'none',
+			required_scope: 'surface:account_verify'
+		},
 		description: 'Session-validity probe for nginx auth_request (empty body, 200 or 401)',
 		input: z.null(),
 		output: z.null()

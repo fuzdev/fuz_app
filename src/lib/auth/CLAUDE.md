@@ -811,7 +811,10 @@ Options: `roles?: RoleSchemaResult` (drives admin-grant-path lookup),
 
 `account_verify` is intentionally on both surfaces: the REST `GET /verify`
 shim is a status-only nginx probe; the RPC action returns
-`SessionAccountJson` for programmatic callers.
+`SessionAccountJson` for programmatic callers. Only the RPC action is open to a
+narrowed token that names it: the REST probe is the `surface:account_verify`
+rule-3 surface, refused to every narrowed token, and `GET /status` answers one
+as the anonymous caller.
 
 `session_id` validates as `Blake3Hash`; `token_id` as `ApiTokenId`
 (`tok_[A-Za-z0-9_-]{12}`).

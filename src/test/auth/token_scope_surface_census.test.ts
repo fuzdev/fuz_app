@@ -151,6 +151,18 @@ const CENSUS: ReadonlyArray<CensusEntry> = [
 			'declares `token_surface: fact_bare` — the admin-only bare-hash read serves any stored fact with no per-reference cell check; the sibling per-cell route is ungated because its authz is the `(cell, hash)` edge, which a narrowed token can already reach through the RPC methods it names'
 	},
 	{
+		file: 'auth/account_route_schema.ts',
+		role: 'consults',
+		reason:
+			'declares `token_surface: account_verify` on the `/verify` shape — the nginx `auth_request` probe answers 200 for the account behind any credential, so a narrowed token would pass every location the probe guards as its account; it is not an RPC method, so a narrowed token is refused it'
+	},
+	{
+		file: 'auth/account_routes.ts',
+		role: 'consults',
+		reason:
+			"`/status` hands out the account's email, its verification, and the acting actor's role grants — a non-RPC surface, so a narrowed token is answered as the anonymous caller (401 plus the bootstrap flag): the route answers anonymous callers, so a 403 would add nothing to that. `/verify` takes its rule-3 gate from its shape; `/login` mints and `/logout` tears down; `/password` is already credential-gated to the session channel, so no bearer credential arrives"
+	},
+	{
 		file: 'server/surface_route.ts',
 		role: 'consults',
 		reason:
@@ -168,12 +180,6 @@ const CENSUS: ReadonlyArray<CensusEntry> = [
 		role: 'exempt',
 		reason:
 			'gathers the credential the middleware already resolved and re-reads whether it still authenticates, for a connection being admitted — it can only refuse, never admit: both callers (the WS upgrade, the audit stream) ran their rule-3 gate first, and the scope is not re-read because nothing rewrites it after the mint'
-	},
-	{
-		file: 'auth/account_routes.ts',
-		role: 'exempt',
-		reason:
-			"`/status` and `/verify` read back the caller's own credential state, which crosses no boundary; `/login` mints and `/logout` tears down; `/password` is already credential-gated to the session channel, so no bearer credential arrives"
 	}
 ];
 
@@ -294,6 +300,10 @@ const RULE_3_SURFACE_SITES: Record<TokenSurface, { file: string; source: string 
 	app_surface: {
 		file: 'server/surface_route.ts',
 		source: "required_scope: 'surface:app_surface'"
+	},
+	account_verify: {
+		file: 'auth/account_route_schema.ts',
+		source: "required_scope: 'surface:account_verify'"
 	},
 	db_admin: null
 };
@@ -438,6 +448,8 @@ describe('token scope surface census', () => {
 			'actions/perform_action.ts',
 			'actions/register_action_ws.ts',
 			'actions/register_ws_endpoint.ts',
+			'auth/account_route_schema.ts',
+			'auth/account_routes.ts',
 			'auth/audit_log_route_schema.ts',
 			'server/serve_fact_route.ts',
 			'server/surface_route.ts'

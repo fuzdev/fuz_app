@@ -378,7 +378,9 @@ fixture guard `cross_backend/spine_expected_schema.db.test.ts`), and
 `token_scope_surface.cross.test.ts` (the `surface:<name>` half of token
 scoping via `describe_token_scope_surface_cross_tests` — a narrowed bearer
 refused the audit stream + the bare-hash fact read with the exact flat
-`{error: 'token_scope_required', required_scope}` both spines contract on, plus
+`{error: 'token_scope_required', required_scope}` both spines contract on, the
+account status read answering a narrowed bearer as the anonymous caller byte
+for byte, plus
 the **scope-outranks-role** pin: a narrowed token whose account also lacks the
 gating role must hear about its scope, not the role. The conformance slate's
 `token_scope_cases` cover only the `rpc:<method>` arm, and no other gate can see

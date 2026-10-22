@@ -272,11 +272,12 @@ would launder — as are a `methods` list on `full` and a `null` one. Duplicate
 method names collapse into one. A document past the 4 KiB cap
 (`MAX_TOKEN_SCOPE_BYTES`) is refused 400 before anything is written.
 
-**A narrowed token is RPC-only.** `methods` denies every non-RPC spine
-surface outright, whatever its method list says: the db-admin table browser,
-the bare-hash fact read (`GET /api/facts/:hash`), the audit SSE stream
+**A narrowed token is RPC-only.** `methods` denies outright every non-RPC
+spine surface that reads account data or carries authority, whatever its
+method list says: the db-admin table browser, the bare-hash fact read (`GET /api/facts/:hash`), the audit SSE stream
 (`GET /audit/stream`), the surface explorer (`GET /api/surface`, when
-mounted), and the WebSocket upgrade. This is the load-bearing
+mounted), the nginx `auth_request` probe (`GET /api/account/verify`, TS spine
+only), and the WebSocket upgrade. This is the load-bearing
 half of the design, and it is strictly more restrictive than naming each
 surface. A method-name allowlist alone would have been a false promise — the
 db-admin browser serves paginated rows of every browsable table plus row
@@ -285,14 +286,25 @@ browsable rows can still carry secrets in data columns, and could be gated on
 a global role a bearer satisfies), so a token whose UI badge read "scoped to
 `cell_get`" could still bulk-read and delete browsable rows.
 
-One non-RPC surface downgrades rather than refuses: the per-cell fact read
-(`GET /api/cells/:cell_id/facts/:hash`) admits anonymous callers, so a 403
-there would enforce nothing — the holder drops the `Authorization` header and
-re-reads every public cell anyway. A narrowed token on that route resolves to
-the anonymous caller instead: it reads public cells and nothing its account
-could otherwise view.
+Two non-RPC surfaces answer anonymous callers, and a narrowed token on either
+is answered as one rather than refused — a 403 there would enforce nothing,
+since the holder drops the `Authorization` header and gets the anonymous answer
+anyway:
 
-Enforcement sits at two kinds of site, both ahead of the role gate:
+- the per-cell fact read (`GET /api/cells/:cell_id/facts/:hash`) — the token
+  reads public cells and nothing its account could otherwise view;
+- the account status read (`GET /api/account/status`) — the token gets the
+  anonymous `401` with the bootstrap flag, byte for byte, never the account's
+  email, its verification state, or the acting actor's role grants.
+
+One opt-in route answers a narrowed token as it answers any authenticated
+credential: the server status read (`GET /api/server/status`, from
+`create_server_status_route_spec`) declares no `required_scope`, so the token
+reads the server's version and uptime. That is non-account metadata — no
+account data, no authority.
+
+Refusals sit at two kinds of site, both ahead of the role gate (the two
+anonymous answers above sit in their handlers' own credential reads):
 
 - **Per method**, inside `perform_action` — between the credential gate and
   the role gate, so the order is credential → scope → role. Every transport
@@ -308,9 +320,11 @@ back, and it has two arms:
 
 - `surface:<name>` — a non-RPC surface, refused to **every** narrowed token
   whatever its method list says. `surface:audit_stream`, `surface:fact_bare`,
-  and `surface:app_surface` (the opt-in, admin-only `GET /api/surface`
-  explorer — TS spine only) are the spine's route-spec surfaces; the WS
-  upgrade and the db-admin browser round out the set the spine knows.
+  `surface:app_surface` (the opt-in, admin-only `GET /api/surface` explorer —
+  TS spine only), and `surface:account_verify` (the `GET /api/account/verify`
+  nginx `auth_request` probe — TS spine only) are the spine's route-spec
+  surfaces; the WS upgrade and the db-admin browser round out the set the
+  spine knows.
 
   **`/audit/stream` carries a channel gate as well as rule 3.** A narrowed
   token is what rule 3 refuses; a **full-scope** bearer passes it. The audit
@@ -2103,7 +2117,9 @@ compensating control below.
    treatment to their own high-consequence mutations rather than leaving them at
    "any authenticated credential".
 2. **Per-token scoping.** A token minted with a narrowed scope calls only the
-   RPC methods it names and reaches no non-RPC spine surface at all. This is
+   RPC methods it names and reaches no non-RPC spine surface that reads
+   account data or carries authority (see §Token scoping for the
+   anonymous-answer reads and the server status read). This is
    the strongest available control and the right one to reach for when issuing
    a token to automation. See §Token scoping.
 3. **Revocation**, which bounds the window but not the reach. (Bearer auth is

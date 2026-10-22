@@ -1666,7 +1666,8 @@ cases are `src/test/auth/cell_ref_admission{,.fact_less}.db.test.ts`.
 `describe_token_scope_surface_cross_tests({setup_test, capabilities, rpc_path?,
 sse_path?})` — the `surface:<name>` twin of the conformance slate's
 `token_scope_cases`, which cover only the `rpc:<method>` arm. Token scoping's
-RPC-only rule (_a narrowed api token reaches no non-RPC surface_) is the
+RPC-only rule (_a narrowed api token reaches no non-RPC surface that reads
+account data or carries authority_) is the
 load-bearing half of the design and had **no** cross-impl gate: the schema gate
 can't see it (no column), the action-manifest gate can't see it (no method), and
 the spec-derived suites can't see it (REST routes, off the declared RPC surface).
@@ -1679,7 +1680,12 @@ fact read (`capabilities.fact_serving`) — asserting the exact flat
 contract on (`token_scope_denied_body` ↔
 `fuz_auth::token_scope_surface_denied_response`).
 
-The fifth case is the one with no prior pin anywhere: **scope outranks role**. A
+The account status read (`capabilities.account_status`) answers anonymous
+callers, so rule 3 there is the anonymous answer: a narrowed token on
+`GET /api/account/status` gets the anonymous `401`, status and body byte for
+byte, while the same account's full-scope bearer reads the account.
+
+One case has no prior pin anywhere: **scope outranks role**. A
 narrowed token on an account that _also_ lacks the gating role must hear
 `token_scope_required`, not `insufficient_permissions` — the observable the
 TS↔Rust ordering divergence produced before both spines converged on running the

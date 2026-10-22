@@ -146,9 +146,9 @@ export const RouteAuth = z
 		 *
 		 * - `surface:<name>` — a non-RPC surface, refused to every narrowed token
 		 *   whatever its method list says (token scoping's rule that a narrowed
-		 *   token is RPC-only). `surface:audit_stream`, `surface:fact_bare`, and
-		 *   `surface:app_surface` are the spine's route-spec ones; a consumer names
-		 *   its own without registering it.
+		 *   token is RPC-only). `surface:audit_stream`, `surface:fact_bare`,
+		 *   `surface:account_verify`, and `surface:app_surface` are the spine's
+		 *   route-spec ones; a consumer names its own without registering it.
 		 * - `rpc:<method>` — one action method, refused unless the token lists it.
 		 *   What a route bridged from an `ActionSpec` declares: it carries the
 		 *   method's identity but never reaches the dispatcher's per-method gate.
@@ -159,9 +159,10 @@ export const RouteAuth = z
 		 * account lacks the role would be told about the role rather than about the
 		 * scope).
 		 *
-		 * Opt-in rather than blanket: the account REST routes cross no boundary, and
-		 * the RPC endpoint runs its own per-method check inside the dispatcher — and
-		 * both are route specs too.
+		 * Opt-in rather than blanket: no narrowed token reaches login (which reads
+		 * no credential) or logout and the password change (session-only), and the
+		 * RPC endpoint runs its own per-method check inside the dispatcher — and
+		 * all are route specs too.
 		 *
 		 * Typed as a plain string here to keep `http/` from importing `auth/`; the
 		 * resolver parses it at registration and throws on a malformed one.
