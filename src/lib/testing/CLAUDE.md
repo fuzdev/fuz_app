@@ -992,9 +992,9 @@ source of truth for wire-shape conformance.
   write raw bytes to).
   `ws_account_actions` (the WS endpoint mounts the account actions — `true` on
   fuz_app's own spine presets, `false` in the family defaults) gates the WS
-  round-trip suite's self-revocation case and, with `rpc_path`, its
-  WS-mutation audit case (which calls `_testing_drain_effects`); that case
-  requires the reply ahead of the close on every backend.
+  round-trip suite's self-revocation case (which requires the reply ahead of
+  the close on every backend) and, with `rpc_path`, its WS-mutation audit case
+  (which calls `_testing_drain_effects`).
 
 ### `cross_backend/standard.ts` — `describe_standard_cross_process_tests`
 
@@ -1135,8 +1135,8 @@ anonymous upgrade refused, disallowed-origin upgrade refused, and — gated on
 mid-connection (`account_session_revoke_all` over the keeper session channel;
 asserted via `WsClient.wait_for_close`) and when its account is deleted
 (`account_delete` by the keeper, also gated on
-`capabilities.account_lifecycle`; the close code is
-`WS_CLOSE_SESSION_REVOKED`). The rest of the revocation table closes a second
+`capabilities.account_lifecycle`), each with `WS_CLOSE_SESSION_REVOKED` and
+`WS_CLOSE_SESSION_REVOKED_REASON`. The rest of the revocation table closes a second
 account's socket with `WS_CLOSE_SESSION_REVOKED` and
 `WS_CLOSE_SESSION_REVOKED_REASON`: `account_token_revoke` its revoked token's
 bearer socket (a socket on its other token stays open);
@@ -1144,7 +1144,10 @@ bearer socket (a socket on its other token stays open);
 (`password_path`) and `account_purge` (also gated on
 `capabilities.account_lifecycle`) its bearer and session sockets; and
 `max_tokens` further mints (default `DEFAULT_MAX_TOKENS`; `null` skips) the
-bearer socket of the token the cap evicts. Per-connection auth is enforced **at upgrade
+bearer socket of the token the cap evicts. The account-wide rows come from
+`cross_backend/revocation_drivers.ts` (`create_account_revocations`, shared
+with the SSE suite), and a case that opens several sockets closes whichever
+opened when a later open fails. Per-connection auth is enforced **at upgrade
 time**, so the negative upgrade cases assert the upgrade itself rejects, not
 a per-message error; the close cases prove a revocation closes an
 already-open socket, since per-message dispatch never re-checks credential
@@ -1152,7 +1155,7 @@ validity. Omit `rpc_path` to skip the close cases (consumers without the
 standard account and admin actions on their RPC endpoint). Two cases are gated
 on `capabilities.ws_account_actions` (the WS endpoint mounts the account
 actions): a socket that revokes its own sessions over that socket is closed
-with `WS_CLOSE_SESSION_REVOKED` after reading the reply to its request; and (with
+with `WS_CLOSE_SESSION_REVOKED` and its reason after reading the reply to its request; and (with
 `rpc_path`) a socket mints an API token over WS, and its `token_create` audit
 row is read back after `_testing_drain_effects` — a WS reply can precede its
 audit write, so the drain is the barrier (the binary mounts it via
@@ -1359,7 +1362,8 @@ stream is open (`account_delete`, also gated on
 `capabilities.account_lifecycle`), dropping it; `admin_token_revoke_all`,
 `POST /logout` (`logout_path`), `POST /password` (`password_path`) and
 `account_purge` (also gated on `capabilities.account_lifecycle`) of a second
-admin each drop its stream; and one stream past the per-session cap
+admin each drop its stream — the rows `create_account_revocations`
+(`cross_backend/revocation_drivers.ts`) shares with the WS suite; and one stream past the per-session cap
 (`max_per_scope`, default `AUDIT_LOG_SSE_MAX_PER_SCOPE`; `null` skips) on one
 session closes the oldest and leaves the rest open. The data-frame + close
 cases gate on `rpc_path` (they drive the standard account/admin actions); all
@@ -1368,6 +1372,20 @@ cases gate on `capabilities.sse`. Cross-process only — wire from a
 `src/test/cross_backend/sse.cross.test.ts`, which runs on every backend — the
 TS spines wire `audit_log_sse` and the Rust `spine_stub` serves the same
 stream.
+
+### `cross_backend/revocation_drivers.ts` — shared revocation drivers
+
+The account-wide revocations both transport suites close a live connection on,
+as one table: `create_account_revocations({capabilities, rpc_path,
+logout_path, password_path})` → `AccountRevocation` rows (`{label, slug,
+gate, revoke(fixture, target)}`) for `admin_token_revoke_all`, `POST /logout`,
+`POST /password`, and `account_purge` (`gate` reads
+`capabilities.account_lifecycle`). `revoke` asserts the revocation succeeded;
+the target must hold `DEFAULT_TEST_PASSWORD`. A revocation added here is
+covered on WS and SSE at once. The drivers stand alone too: `cross_post_as`
+(a JSON `POST` on an account's session, asserting 200),
+`cross_admin_token_revoke_all`, and `cross_account_purge` (over the daemon
+token, no `Origin`).
 
 ### `cross_backend/cell_crud.ts` + `cell_relations.ts` + `cell_gated_create.ts` — cell parity suites
 
@@ -1927,11 +1945,11 @@ asserting each spec declares `credential_types: ['daemon_token']`) + the
 
 ### Identity-primitive parity — `cross_backend/identity_parity.ts`
 
-`describe_identity_parity_cross_tests({setup_test, login_path?, signup_path?, bootstrap_path?})` —
+`describe_identity_parity_cross_tests({setup_test, login_path?, signup_path?, bootstrap_path?, password_path?})` —
 the imperative suite pinning the `primitive_schemas` twins (`Username`,
 `UsernameProvided`, `Email`) + login/signup input handling end-to-end over real
 HTTP (flat REST `/login` + `/signup`, so imperative, not a `conformance_table`
-row). Six facets, each a TS↔Rust reimplementation pair that the spec-derived
+row). The facets, each a TS↔Rust reimplementation pair that the spec-derived
 round-trip / conformance suites never vary:
 
 - **Login canonicalization** — case-insensitive + whitespace-trim lookup
@@ -1970,6 +1988,13 @@ USERNAME_LENGTH_MAX]` = `[3, 39]` boundary edges (just-outside → 400,
   Zod's `z.email()` rejects — the deliberately-looser shared rule. **Closed a
   real divergence**: the Rust spine previously length-checked the email only,
   accepting any non-empty string TS rejected.
+- **Malformed JSON body** — an unparseable (`{`) or non-object (`[]`) body typed
+  `application/json` → 400 `{error: "invalid_json_body"}` and nothing else, on
+  login, signup, bootstrap (ahead of its window check), and the password change
+  (`password_path`, default `/api/account/password`, `null` skips; parsed after
+  its credential and session-only gates, so the case sends a session and an
+  anonymous one still answers 401). A Rust backend needs the spine's
+  `parse_json_body`.
 
 Ungated (login + signup are on every spine). Runs both legs via the shared
 `{setup_test}` protocol: in-process (`identity_parity.db.test.ts`, plain

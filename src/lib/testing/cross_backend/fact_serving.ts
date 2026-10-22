@@ -51,6 +51,7 @@ import { FactHashSchema } from '../../primitive_schemas.ts';
 
 import { CellCreateOutput } from '../../auth/cell_action_specs.ts';
 import {
+	FACT_CACHE_CONTROL,
 	FACT_CONTENT_SECURITY_POLICY,
 	FACT_X_CONTENT_TYPE_OPTIONS
 } from '../../server/fact_security_headers.ts';
@@ -121,12 +122,6 @@ export const cross_put_fact = async (
 		),
 		TestingPutFactOutput
 	).hash;
-
-/**
- * `Cache-Control` both spines serve a fact with — private, five minutes (the
- * revocation window a cached read outlives).
- */
-const FACT_CACHE_CONTROL = 'private, max-age=300';
 
 /** GET a fact over a cross-process `FetchTransport`; returns `{status, content_type, text, headers}`. */
 const fact_get = async (
@@ -334,13 +329,17 @@ export const describe_fact_serving_cross_tests = (options: FactServingCrossTestO
 		test_if(capabilities.fact_serving, 'bare-hash route is admin-only', async () => {
 			const fixture = await setup_test();
 			const non_admin = await fixture.create_account({ username: 'fact_non_admin' });
-			const hash = await put_fact(fixture, 'bare-hash-bytes');
+			// stored as `text/html` — the type a dropped hardening header would let
+			// execute in the admin's session
+			const hash = await put_fact(fixture, 'bare-hash-bytes', 'text/html');
 			const t = fixture.fresh_transport();
 
-			// keeper holds ROLE_ADMIN → 200 + the actual bytes.
+			// keeper holds ROLE_ADMIN → 200 + the actual bytes, hardened.
 			const as_admin = await fact_get(t, `/api/facts/${hash}`, fixture.create_session_headers());
 			assert.strictEqual(as_admin.status, 200, `admin bare-hash read failed: ${as_admin.text}`);
 			assert.strictEqual(as_admin.text, 'bare-hash-bytes', 'bare-hash route served wrong bytes');
+			assert.strictEqual(as_admin.content_type, 'text/html', 'served content-type drifted');
+			assert_fact_headers(as_admin.headers, 'bare-hash text/html fact');
 
 			// non-admin → 403.
 			const as_non_admin = await fact_get(
@@ -395,13 +394,8 @@ export const describe_fact_serving_cross_tests = (options: FactServingCrossTestO
 
 				const anon_private = await fact_get(bare, cell_fact_path(private_cell, hash), {});
 				const narrowed_private = await fact_get(bare, cell_fact_path(private_cell, hash), narrowed);
-				assert.strictEqual(anon_private.status, 404, 'anon read a private fact');
-				assert.strictEqual(narrowed_private.status, 404, 'narrowed token read a private fact');
-				assert.strictEqual(
-					narrowed_private.text,
-					anon_private.text,
-					'narrowed 404 differs from anon'
-				);
+				assert_masked_404(anon_private, 'anon read of a private fact');
+				assert_masked_404(narrowed_private, 'narrowed-token read of a private fact');
 
 				const narrowed_public = await fact_get(bare, cell_fact_path(public_cell, hash), narrowed);
 				assert.strictEqual(narrowed_public.status, 200, 'narrowed token refused a public cell');
@@ -439,11 +433,7 @@ export const describe_fact_serving_cross_tests = (options: FactServingCrossTestO
 				// Owns a PRIVATE cell, yet reading its own fact back resolves to a null
 				// (anonymous) context → 404. The owner path never runs.
 				const own_private = await fact_get(t, cell_fact_path(private_cell, hash), keeper);
-				assert.strictEqual(
-					own_private.status,
-					404,
-					"multi-actor owner's private read was admitted"
-				);
+				assert_masked_404(own_private, "multi-actor owner's private read");
 
 				// A PUBLIC cell still admits the anonymous-treated caller → 200, proving
 				// the 404 above is the multi-actor fallthrough, not a blanket block.

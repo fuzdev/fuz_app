@@ -44,18 +44,21 @@ import '../assert_dev_env.ts';
  * server-initiated close.
  * Per-message dispatch never re-checks credential validity, so an open socket
  * ends only when a revocation closes it — which every revocation does, once
- * its transaction commits. An authenticated socket is dropped when the
- * account's sessions are revoked over the keeper's session channel
+ * its transaction commits, and every close here is asserted with
+ * `WS_CLOSE_SESSION_REVOKED` and `WS_CLOSE_SESSION_REVOKED_REASON`, so a
+ * dropped connection can't pass for one. An authenticated socket is dropped
+ * when the account's sessions are revoked over the keeper's session channel
  * (`account_session_revoke_all`), and when its account is deleted
  * (`account_delete`, also gated on `capabilities.account_lifecycle`). The
  * rest of the revocation table follows, each closing a second account's
- * socket with `WS_CLOSE_SESSION_REVOKED` and `WS_CLOSE_SESSION_REVOKED_REASON`:
+ * socket:
  * `account_token_revoke` closes the revoked token's bearer socket and leaves
  * a socket on the account's other token open; `admin_token_revoke_all`,
  * `POST /logout`, `POST /password`, and `account_purge` (also gated on
  * `capabilities.account_lifecycle`) close the account's bearer and session
- * sockets; and a token the per-account cap evicts (`max_tokens` further
- * mints) has its bearer socket closed. Omit `rpc_path` to skip them
+ * sockets — the rows `create_account_revocations` shares with the SSE suite;
+ * and a token the per-account cap evicts (`max_tokens` further mints) has its
+ * bearer socket closed. Omit `rpc_path` to skip them
  * (consumers without the standard account and admin actions on their RPC
  * endpoint).
  *
@@ -98,8 +101,6 @@ import {
 import { DEFAULT_MAX_TOKENS } from '../../auth/account_route_schema.ts';
 import {
 	account_delete_action_spec,
-	account_purge_action_spec,
-	admin_token_revoke_all_action_spec,
 	audit_log_list_action_spec,
 	AuditLogListOutput
 } from '../../auth/admin_action_specs.ts';
@@ -120,6 +121,7 @@ import { create_rpc_post_init } from '../rpc_helpers.ts';
 import { DEFAULT_TEST_PASSWORD } from '../test_credentials.ts';
 import { type BackendCapabilities, test_if } from './capabilities.ts';
 import { cross_rpc_call, expect_output } from './cell_cross_helpers.ts';
+import { create_account_revocations } from './revocation_drivers.ts';
 import type { SetupTest, TestAccountFixture, TestFixture } from './setup.ts';
 
 /** Origin guaranteed to fail the `http://localhost:*` allowlist the test backends run with. */
@@ -358,6 +360,59 @@ export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptio
 			);
 		});
 
+		// Every revocation closes with 4001 "Session revoked" — the code and its
+		// reason, so a dropped connection (1006) or a crash can't pass for one.
+		const assert_revoked_close = async (client: WsClient, label: string): Promise<void> => {
+			assert.ok(await client.wait_for_close(2000), `socket did not close within 2s after ${label}`);
+			assert.strictEqual(client.close_code, WS_CLOSE_SESSION_REVOKED, label);
+			assert.strictEqual(client.close_reason, WS_CLOSE_SESSION_REVOKED_REASON, label);
+		};
+
+		// A bearer socket opens outside a browser context (no Origin, no cookie),
+		// as a CLI client's would.
+		const open_bearer = (token: string): Promise<WsClient> =>
+			create_admitted_ws_transport({
+				base_url,
+				ws_path,
+				cookies: [],
+				origin: null,
+				headers: { Authorization: `Bearer ${token}` }
+			});
+
+		const open_session = (account: TestAccountFixture): Promise<WsClient> => {
+			const { cookie } = account.create_session_headers();
+			assert.ok(cookie, 'expected a session cookie');
+			return create_admitted_ws_transport({ base_url, ws_path, cookies: [cookie], origin });
+		};
+
+		/**
+		 * Open each socket in turn, run `fn` over them, and close every socket
+		 * that opened — also when a later open fails, so a refused upgrade leaves
+		 * no socket registered on the shared backend for the rest of the run.
+		 *
+		 * Every close is awaited whatever the others do. When the open or `fn`
+		 * failed, that error propagates and a close error is dropped, so it never
+		 * hides the case's own failure; when they succeeded, the first close error
+		 * is thrown, so a transport error surfacing at close still fails the case.
+		 */
+		const with_sockets = async <const T extends ReadonlyArray<() => Promise<WsClient>>>(
+			opens: T,
+			fn: (...clients: { -readonly [K in keyof T]: WsClient }) => Promise<void>
+		): Promise<void> => {
+			const clients: Array<WsClient> = [];
+			try {
+				for (const open of opens) clients.push(await open());
+				await fn(...(clients as { -readonly [K in keyof T]: WsClient }));
+			} catch (error) {
+				await Promise.allSettled(clients.map((c) => c.close()));
+				throw error;
+			}
+			const closes = await Promise.allSettled(clients.map((c) => c.close()));
+			for (const close of closes) {
+				if (close.status === 'rejected') throw close.reason;
+			}
+		};
+
 		// Per-message dispatch never re-checks credential validity, so a live
 		// socket drops only when a revocation closes it. Revoke the keeper's
 		// sessions over its own session channel → the handler's post-commit
@@ -387,8 +442,7 @@ export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptio
 						200,
 						`account_session_revoke_all RPC failed (status=${res.status})`
 					);
-					const closed = await client.wait_for_close(2000);
-					assert.ok(closed, 'socket did not close within 2s after session_revoke_all');
+					await assert_revoked_close(client, 'account_session_revoke_all');
 				} finally {
 					await client.close();
 				}
@@ -419,9 +473,7 @@ export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptio
 						})
 					);
 					assert.strictEqual(res.status, 200, `account_delete RPC failed (status=${res.status})`);
-					const closed = await client.wait_for_close(2000);
-					assert.ok(closed, 'socket did not close within 2s after account_delete');
-					assert.strictEqual(client.close_code, WS_CLOSE_SESSION_REVOKED);
+					await assert_revoked_close(client, 'account_delete');
 				} finally {
 					await client.close();
 				}
@@ -430,29 +482,7 @@ export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptio
 
 		// The rest of the revocation table (docs/security.md §Closing on
 		// Revocation), one case per revocation, each closing a socket of a second
-		// account with 4001 "Session revoked". A bearer socket opens outside a
-		// browser context (no Origin, no cookie), as a CLI client's would.
-
-		const open_bearer = (token: string): Promise<WsClient> =>
-			create_admitted_ws_transport({
-				base_url,
-				ws_path,
-				cookies: [],
-				origin: null,
-				headers: { Authorization: `Bearer ${token}` }
-			});
-
-		const open_session = (account: TestAccountFixture): Promise<WsClient> => {
-			const { cookie } = account.create_session_headers();
-			assert.ok(cookie, 'expected a session cookie');
-			return create_admitted_ws_transport({ base_url, ws_path, cookies: [cookie], origin });
-		};
-
-		const assert_revoked_close = async (client: WsClient, label: string): Promise<void> => {
-			assert.ok(await client.wait_for_close(2000), `socket did not close within 2s after ${label}`);
-			assert.strictEqual(client.close_code, WS_CLOSE_SESSION_REVOKED, label);
-			assert.strictEqual(client.close_reason, WS_CLOSE_SESSION_REVOKED_REASON, label);
-		};
+		// account with 4001 "Session revoked".
 
 		/** Mint a token for `account` over its own session. */
 		const mint_token = async (
@@ -480,92 +510,58 @@ export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptio
 				const fixture = await setup_test();
 				const target = await fixture.create_account({ username: 'ws_token_revoke' });
 				const minted = await mint_token(fixture, target, 'ws revoke probe');
-				const revoked = await open_bearer(minted.token);
-				const other = await open_bearer(target.api_token);
-				try {
-					const res = expect_output(
-						await cross_rpc_call(
-							fixture.fresh_transport(),
-							rpc_path!,
-							account_token_revoke_action_spec.method,
-							{ token_id: minted.id },
-							target.create_session_headers()
-						),
-						TokenRevokeOutput
-					);
-					assert.strictEqual(res.revoked, true);
-					await assert_revoked_close(revoked, 'account_token_revoke');
-					// the account's other token keeps its socket
-					assert.deepStrictEqual(await other.request(2, heartbeat_action_spec.method, {}), {});
-					assert.strictEqual(other.close_code, null);
-				} finally {
-					await revoked.close();
-					await other.close();
-				}
+				await with_sockets(
+					[() => open_bearer(minted.token), () => open_bearer(target.api_token)],
+					async (revoked, other) => {
+						const res = expect_output(
+							await cross_rpc_call(
+								fixture.fresh_transport(),
+								rpc_path!,
+								account_token_revoke_action_spec.method,
+								{ token_id: minted.id },
+								target.create_session_headers()
+							),
+							TokenRevokeOutput
+						);
+						assert.strictEqual(res.revoked, true);
+						await assert_revoked_close(revoked, 'account_token_revoke');
+						// the account's other token keeps its socket
+						assert.deepStrictEqual(await other.request(2, heartbeat_action_spec.method, {}), {});
+						assert.strictEqual(other.close_code, null);
+					}
+				);
 			}
 		);
 
-		// `admin_token_revoke_all` closes the account's connections — its bearer
-		// socket, and its session socket too.
-		test_if(
-			capabilities.ws && rpc_path !== undefined,
-			"admin_token_revoke_all closes the account's bearer and session sockets",
-			async () => {
-				const fixture = await setup_test();
-				const target = await fixture.create_account({ username: 'ws_token_revoke_all' });
-				const bearer = await open_bearer(target.api_token);
-				const session = await open_session(target);
-				try {
-					const res = await cross_rpc_call(
-						fixture.transport,
-						rpc_path!,
-						admin_token_revoke_all_action_spec.method,
-						{ account_id: target.account.id },
-						fixture.create_session_headers()
-					);
-					assert.ok(res.ok, `admin_token_revoke_all failed: ${JSON.stringify(res.error)}`);
-					await assert_revoked_close(bearer, 'admin_token_revoke_all (bearer socket)');
-					await assert_revoked_close(session, 'admin_token_revoke_all (session socket)');
-				} finally {
-					await bearer.close();
-					await session.close();
-				}
-			}
-		);
-
-		// `POST /logout` and `POST /password` close the account's connections.
-		for (const [route, path, body] of [
-			['logout', logout_path, {}],
-			[
-				'password',
-				password_path,
-				{ current_password: DEFAULT_TEST_PASSWORD, new_password: 'ws-new-password-456' }
-			]
-		] as const) {
+		// The account-wide revocations (`revocation_drivers.ts`, shared with the
+		// SSE suite) close the account's connections — its bearer socket, and its
+		// session socket too.
+		// Without `rpc_path` the rows still register, as skipped cases, and never
+		// run — so the empty path is never sent.
+		const revocations = create_account_revocations({
+			capabilities,
+			rpc_path: rpc_path ?? '',
+			logout_path,
+			password_path
+		});
+		for (const { label, slug, gate, revoke } of revocations) {
 			test_if(
-				capabilities.ws && rpc_path !== undefined,
-				`POST /${route} closes the account's bearer and session sockets`,
+				capabilities.ws && gate && rpc_path !== undefined,
+				`${label} closes the account's bearer and session sockets`,
 				async () => {
 					const fixture = await setup_test();
 					const target = await fixture.create_account({
-						username: `ws_${route}_target`,
+						username: `ws_revoke_${slug}`,
 						password_value: DEFAULT_TEST_PASSWORD
 					});
-					const bearer = await open_bearer(target.api_token);
-					const session = await open_session(target);
-					try {
-						const res = await fixture.fresh_transport()(path, {
-							method: 'POST',
-							headers: { 'content-type': 'application/json', ...target.create_session_headers() },
-							body: JSON.stringify(body)
-						});
-						assert.strictEqual(res.status, 200, `POST /${route}: ${await res.text()}`);
-						await assert_revoked_close(bearer, `POST /${route} (bearer socket)`);
-						await assert_revoked_close(session, `POST /${route} (session socket)`);
-					} finally {
-						await bearer.close();
-						await session.close();
-					}
+					await with_sockets(
+						[() => open_bearer(target.api_token), () => open_session(target)],
+						async (bearer, session) => {
+							await revoke(fixture, target);
+							await assert_revoked_close(bearer, `${label} (bearer socket)`);
+							await assert_revoked_close(session, `${label} (session socket)`);
+						}
+					);
 				}
 			);
 		}
@@ -592,34 +588,6 @@ export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptio
 			}
 		);
 
-		// `account_purge` (keeper, daemon token) closes the purged account's
-		// connections.
-		test_if(
-			capabilities.ws && capabilities.account_lifecycle && rpc_path !== undefined,
-			"account_purge closes the purged account's bearer and session sockets",
-			async () => {
-				const fixture = await setup_test();
-				const target = await fixture.create_account({ username: 'ws_purge_target' });
-				const bearer = await open_bearer(target.api_token);
-				const session = await open_session(target);
-				try {
-					const res = await cross_rpc_call(
-						fixture.fresh_transport({ origin: null }),
-						rpc_path!,
-						account_purge_action_spec.method,
-						{ account_id: target.account.id, confirm: true },
-						fixture.create_daemon_token_headers()
-					);
-					assert.ok(res.ok, `account_purge failed: ${JSON.stringify(res.error)}`);
-					await assert_revoked_close(bearer, 'account_purge (bearer socket)');
-					await assert_revoked_close(session, 'account_purge (session socket)');
-				} finally {
-					await bearer.close();
-					await session.close();
-				}
-			}
-		);
-
 		// A socket that revokes the session it is running on. Its request is
 		// answered first, the close following from behind the revocation's
 		// commit. A caller left with only the close cannot tell a completed
@@ -637,9 +605,7 @@ export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptio
 						id: revoke_id,
 						method: account_session_revoke_all_action_spec.method
 					});
-					const closed = await client.wait_for_close(2000);
-					assert.ok(closed, 'socket did not close within 2s of revoking its own sessions');
-					assert.strictEqual(client.close_code, WS_CLOSE_SESSION_REVOKED);
+					await assert_revoked_close(client, 'revoking its own sessions');
 					// frames arrive in wire order and nothing arrives after the
 					// close, so a reply in hand was written ahead of it
 					const reply = client.messages.find(is_response_for(revoke_id)) as

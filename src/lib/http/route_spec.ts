@@ -196,6 +196,14 @@ export interface RouteSpec {
 	 * and it would see every caller as anonymous, so assembly refuses it
 	 * there (`assert_credential_routes_in_auth_scope`), as it does a route
 	 * whose `auth.account` is not `'none'`.
+	 *
+	 * The handler owns the token-scope rule a gate would otherwise apply: a
+	 * scope-narrowed API token reaches no non-RPC surface that reads account
+	 * data, and `auth.required_scope` is refused on a route that admits
+	 * anonymous callers. Read the credential through `get_public_account_id`
+	 * (`auth/request_context.ts`), not `ACCOUNT_ID_KEY`, so a narrowed token is
+	 * answered as the anonymous caller. The RPC endpoint is the exception — its
+	 * dispatcher gates each method against the scope.
 	 */
 	reads_credential?: boolean;
 	/**

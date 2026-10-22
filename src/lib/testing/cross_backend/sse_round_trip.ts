@@ -39,7 +39,8 @@ import '../assert_dev_env.ts';
  * 6. **close on the other account-wide revocations** (gated on `rpc_path`;
  *    purge also on `capabilities.account_lifecycle`) — `admin_token_revoke_all`,
  *    `POST /logout`, `POST /password`, and `account_purge` of a second admin
- *    each close its stream.
+ *    each close its stream — the rows `create_account_revocations` shares with
+ *    the WS suite.
  * 7. **per-session cap** — one stream past `max_per_scope` on one session
  *    closes the oldest (evict-oldest, no final frame) and leaves every other
  *    stream open. Needs no RPC: the cap runs inside the subscribe itself.
@@ -68,9 +69,7 @@ import {
 } from '../../auth/account_action_specs.ts';
 import {
 	account_delete_action_spec,
-	account_purge_action_spec,
-	admin_session_revoke_all_action_spec,
-	admin_token_revoke_all_action_spec
+	admin_session_revoke_all_action_spec
 } from '../../auth/admin_action_specs.ts';
 import { ROLE_ADMIN } from '../../auth/role_schema.ts';
 import {
@@ -82,8 +81,8 @@ import { create_sse_transport, type SseTransport } from '../transports/sse_trans
 import { create_rpc_post_init } from '../rpc_helpers.ts';
 import { DEFAULT_TEST_PASSWORD } from '../test_credentials.ts';
 import { type BackendCapabilities, test_if } from './capabilities.ts';
-import { cross_rpc_call } from './cell_cross_helpers.ts';
-import type { SetupTest, TestAccountFixture, TestFixture } from './setup.ts';
+import { create_account_revocations } from './revocation_drivers.ts';
+import type { SetupTest } from './setup.ts';
 
 /** Default audit-log SSE stream path — the standard fuz_app `/api/admin/audit/stream`. */
 const DEFAULT_SSE_PATH = '/api/admin/audit/stream';
@@ -171,21 +170,6 @@ export const describe_cross_process_sse_tests = (options: CrossProcessSseTestOpt
 	const sse_path = options.sse_path ?? DEFAULT_SSE_PATH;
 	const max_per_scope =
 		options.max_per_scope === undefined ? AUDIT_LOG_SSE_MAX_PER_SCOPE : options.max_per_scope;
-
-	/** POST a JSON body to a REST route on `account`'s session, asserting 200. */
-	const post_as = async (
-		fixture: TestFixture,
-		account: TestAccountFixture,
-		path: string,
-		body: unknown
-	): Promise<void> => {
-		const res = await fixture.fresh_transport()(path, {
-			method: 'POST',
-			headers: { 'content-type': 'application/json', ...account.create_session_headers() },
-			body: JSON.stringify(body)
-		});
-		assert.strictEqual(res.status, 200, `POST ${path}: ${await res.text()}`);
-	};
 
 	describe('cross-process sse', () => {
 		test_if(capabilities.sse, 'connects and emits the connected comment', async () => {
@@ -388,65 +372,24 @@ export const describe_cross_process_sse_tests = (options: CrossProcessSseTestOpt
 			}
 		);
 
-		// The account-wide revocations past session revoke-all and delete each
-		// close the target admin's stream: `admin_token_revoke_all`,
-		// `POST /logout`, `POST /password`, and `account_purge`.
-		const revocations: Array<{
-			label: string;
-			gate: boolean;
-			revoke: (fixture: TestFixture, target: TestAccountFixture) => Promise<void>;
-		}> = [
-			{
-				label: 'admin_token_revoke_all',
-				gate: true,
-				revoke: async (fixture, target) => {
-					const res = await cross_rpc_call(
-						fixture.transport,
-						rpc_path!,
-						admin_token_revoke_all_action_spec.method,
-						{ account_id: target.account.id },
-						fixture.create_session_headers()
-					);
-					assert.ok(res.ok, `admin_token_revoke_all failed: ${JSON.stringify(res.error)}`);
-				}
-			},
-			{
-				label: 'POST /logout',
-				gate: true,
-				revoke: (fixture, target) => post_as(fixture, target, logout_path, {})
-			},
-			{
-				label: 'POST /password',
-				gate: true,
-				revoke: (fixture, target) =>
-					post_as(fixture, target, password_path, {
-						current_password: DEFAULT_TEST_PASSWORD,
-						new_password: 'sse-new-password-456'
-					})
-			},
-			{
-				label: 'account_purge',
-				gate: capabilities.account_lifecycle,
-				revoke: async (fixture, target) => {
-					const res = await cross_rpc_call(
-						fixture.fresh_transport({ origin: null }),
-						rpc_path!,
-						account_purge_action_spec.method,
-						{ account_id: target.account.id, confirm: true },
-						fixture.create_daemon_token_headers()
-					);
-					assert.ok(res.ok, `account_purge failed: ${JSON.stringify(res.error)}`);
-				}
-			}
-		];
-		for (const { label, gate, revoke } of revocations) {
+		// The account-wide revocations past session revoke-all and delete
+		// (`revocation_drivers.ts`, shared with the WS suite) each close the
+		// target admin's stream. Without `rpc_path` the rows still register, as
+		// skipped cases, and never run — so the empty path is never sent.
+		const revocations = create_account_revocations({
+			capabilities,
+			rpc_path: rpc_path ?? '',
+			logout_path,
+			password_path
+		});
+		for (const { label, slug, gate, revoke } of revocations) {
 			test_if(
 				capabilities.sse && gate && rpc_path !== undefined,
 				`stream closes on ${label} of the subscriber account`,
 				async () => {
 					const fixture = await setup_test();
 					const target = await fixture.create_account({
-						username: `sse_revoke_${label.replace(/\W+/g, '_').replace(/^_/, '')}`,
+						username: `sse_revoke_${slug}`,
 						password_value: DEFAULT_TEST_PASSWORD,
 						roles: [ROLE_ADMIN]
 					});

@@ -42,7 +42,7 @@ const ctx: RequestContext = {
 	role_grants: []
 };
 
-/** The `/verify` shape with the live handler's answer, under a credential of `scope`. */
+/** The `/verify` shape with a stand-in for the live handler's answer, under a credential of `scope`. */
 const create_verify_app = (scope: TokenScope): Hono => {
 	const [verify_shape] = create_account_route_shapes({ login_account_rate_limited: false });
 	const spec: RouteSpec = { ...verify_shape, handler: (c) => c.body(null, 200) };

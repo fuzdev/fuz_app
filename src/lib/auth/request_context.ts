@@ -65,6 +65,7 @@ import { credential_deadline_after } from './credential_deadline.ts';
 import {
 	parse_token_scope_capability,
 	token_scope_admits_capability,
+	token_scope_admits_non_rpc,
 	token_scope_denied_body,
 	token_scope_full,
 	type TokenScopeCapability
@@ -430,6 +431,36 @@ const token_scope_denial = (c: Context, capability: TokenScopeCapability): Respo
  */
 export const token_scope_surface_denial = (c: Context, capability: string): Response | null =>
 	token_scope_denial(c, { kind: 'surface', capability });
+
+/**
+ * The account id a public route — one that answers anonymous callers and reads
+ * the credential (`reads_credential`) — may act on: `null` for the anonymous
+ * caller **and for a scope-narrowed API token**. Rule 3 in its
+ * anonymous-admitting disposition — the downgrade the Rust
+ * `AuthGate::public_request_context` applies.
+ *
+ * A narrowed token reaches no non-RPC surface that reads account data
+ * (`token_scope_admits_non_rpc`). On a route that refuses anonymous callers
+ * that is a 403 (`auth.required_scope`); on one that answers them, a 403
+ * would enforce nothing — the holder drops the `Authorization` header and
+ * reads the anonymous answer anyway — so the narrowed token *is* the
+ * anonymous caller there. Read the credential through this on any
+ * `reads_credential` route instead of `ACCOUNT_ID_KEY` directly, so the
+ * downgrade is one decision rather than an `&&` hand-rolled per handler.
+ *
+ * The RPC endpoint is the exception: its dispatcher gates each method against
+ * the scope, so it reads the full credential.
+ *
+ * @param c - the request context, after the auth middleware chain
+ * @returns the account id, or `null` for an anonymous caller or a narrowed token
+ */
+export const get_public_account_id = (c: Context): string | null => {
+	const account_id: string | null = c.get(ACCOUNT_ID_KEY) ?? null;
+	if (!account_id) return null;
+	const scope = c.get(TOKEN_SCOPE_KEY);
+	if (scope && !token_scope_admits_non_rpc(scope)) return null;
+	return account_id;
+};
 
 /**
  * Create middleware refusing a route to a credential whose scope does not admit

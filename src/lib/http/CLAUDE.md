@@ -52,7 +52,7 @@ consumers.
 - `input: z.ZodType` — request body schema; `z.null()` for no-body (GET/DELETE)
 - `output: z.ZodType` — success response schema
 - `mints_credential?: boolean` — the route issues a session cookie while declaring no auth (login, signup, bootstrap); assembly refuses it outside `AUTH_MIDDLEWARE_PATH`, as it does any route whose `auth.account` is not `'none'` (`assert_credential_routes_in_auth_scope` in `auth/middleware.ts`)
-- `reads_credential?: boolean` — the handler reads the resolved account while the route declares no auth gate, answering an anonymous caller itself (account status, the cell-scoped fact read, `create_rpc_endpoint`'s pair, whose dispatcher gates per action); held inside `AUTH_MIDDLEWARE_PATH` by the same assertion
+- `reads_credential?: boolean` — the handler reads the resolved account while the route declares no auth gate, answering an anonymous caller itself (account status, the cell-scoped fact read, `create_rpc_endpoint`'s pair, whose dispatcher gates per action); held inside `AUTH_MIDDLEWARE_PATH` by the same assertion. Such a handler reads the account through `get_public_account_id` (`auth/request_context.ts`), which answers a scope-narrowed token as anonymous — the RPC pair excepted, its dispatcher gating each method
 - `rate_limit?: RateLimitKey` — metadata only (`'ip' | 'account' | 'both'`); auto-derives 429
 - `errors?: RouteErrorSchemas` — handler-specific error schemas keyed by HTTP status
 - `transaction?: boolean` — declarative transaction wrapping (see below)
@@ -315,7 +315,7 @@ rate-limiting middleware (see root ../../../CLAUDE.md §Middleware Ordering).
 
 Per-symbol semantics on TSDoc; the cross-cutting properties:
 
-- **Rightmost-first XFF walk, skipping trusted entries; the first entry that fails strict validation **stops** the walk and the request keys on the connection IP.** Stopping, not skipping, keeps a client-written entry left of a non-bare-IP hop (`ip:port`, `unknown`) from picking the bucket.
+- **Rightmost-first XFF walk, skipping trusted entries; the first entry that fails strict validation stops the walk and the request keys on the connection IP.** Stopping, not skipping, keeps a client-written entry left of a non-bare-IP hop (`ip:port`, `unknown`) from picking the bucket.
 - **`validate_ip_strict(ip)`** is defensive against Hono's lax `distinctRemoteAddr` (which classifies anything-with-colons as IPv6 and accepts `'[::1]:8080'`, `'::1\n'` as binary-valid). Two-layer check: character-set pre-filter + round-trip through `convertIPv*ToBinary`.
 - **`normalize_ip(ip)`** delegates to `canonicalize_ip` from `http/ip_canonical.ts` — RFC 5952 lowercase + longest-zero-run compression, IPv4-mapped IPv6 stripped to plain IPv4 so buckets collapse. Idempotent, safe on non-IP strings, strict char-set filter preserves malformed forms unchanged.
 - **Three-branch middleware logic**: no XFF → use connection IP; XFF + connection untrusted → ignore XFF, use connection IP (spoof-proof, debug log); XFF + connection trusted → resolve from header, warn if all entries turn out trusted.

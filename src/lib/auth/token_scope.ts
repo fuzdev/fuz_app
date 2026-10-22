@@ -118,10 +118,9 @@ export const token_scope_admits_method = (scope: TokenScope, method: string): bo
  * Does `scope` admit a non-RPC spine surface?
  *
  * **A narrowed token reaches no non-RPC surface that reads account data or
- * carries authority** — the load-bearing
- * half of token scoping, and what "rule 3" names wherever this module's
- * callers and the Rust twin use that shorthand. See `docs/security.md`
- * §Token scoping.
+ * carries authority** — the load-bearing half of token scoping, and what
+ * "rule 3" names wherever this module's callers and the Rust twin use that
+ * shorthand. See `docs/security.md` §Token scoping.
  *
  * A method-name allowlist alone would have been a false promise: the db-admin
  * browser serves paginated rows of any `public` table (including
@@ -129,9 +128,12 @@ export const token_scope_admits_method = (scope: TokenScope, method: string): bo
  * gated on a global role a bearer credential satisfies. A token whose UI badge
  * read "scoped to `cell_get`" could still delete an account row.
  *
- * Denying every non-RPC surface outright is strictly more restrictive than
- * naming each one, keeps no vocabulary to maintain, and fits in one sentence a
- * user can hold: *a scoped token is RPC-only*.
+ * The predicate is all-or-nothing: no per-surface vocabulary decides anything,
+ * so it fits in one sentence a user can hold — *a scoped token is RPC-only*.
+ * Placement is per site: a route that refuses anonymous callers declares
+ * `auth.required_scope`, one that answers them reads the credential through
+ * `get_public_account_id` and answers a narrowed token as anonymous, and the
+ * surface census pins every site.
  */
 export const token_scope_admits_non_rpc = (scope: TokenScope): boolean => scope.kind === 'full';
 

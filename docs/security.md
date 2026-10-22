@@ -274,17 +274,20 @@ method names collapse into one. A document past the 4 KiB cap
 
 **A narrowed token is RPC-only.** `methods` denies outright every non-RPC
 spine surface that reads account data or carries authority, whatever its
-method list says: the db-admin table browser, the bare-hash fact read (`GET /api/facts/:hash`), the audit SSE stream
-(`GET /audit/stream`), the surface explorer (`GET /api/surface`, when
-mounted), the nginx `auth_request` probe (`GET /api/account/verify`, TS spine
-only), and the WebSocket upgrade. This is the load-bearing
-half of the design, and it is strictly more restrictive than naming each
-surface. A method-name allowlist alone would have been a false promise — the
-db-admin browser serves paginated rows of every browsable table plus row
-`DELETE` (the credential tables sit behind `NON_BROWSABLE_TABLES` now, but
-browsable rows can still carry secrets in data columns, and could be gated on
-a global role a bearer satisfies), so a token whose UI badge read "scoped to
-`cell_get`" could still bulk-read and delete browsable rows.
+method list says: the db-admin table browser, the bare-hash fact read
+(`GET /api/facts/:hash`), the audit SSE stream (`GET /audit/stream`), the
+surface explorer (`GET /api/surface`, when mounted), the nginx `auth_request`
+probe (`GET /api/account/verify`, TS spine only), and the WebSocket upgrade.
+This is the load-bearing half of the design. The predicate is all-or-nothing
+— no per-surface vocabulary decides what a narrowed token may reach — while
+its placement is per site: each surface declares its refusal (or, below,
+reads the credential through the anonymous downgrade), and the surface census
+pins every site. A method-name allowlist alone would have been a false
+promise — the db-admin browser serves paginated rows of every browsable table
+plus row `DELETE` (the credential tables sit behind `NON_BROWSABLE_TABLES` now,
+but browsable rows can still carry secrets in data columns, and could be gated
+on a global role a bearer satisfies), so a token whose UI badge read "scoped
+to `cell_get`" could still bulk-read and delete browsable rows.
 
 Two non-RPC surfaces answer anonymous callers, and a narrowed token on either
 is answered as one rather than refused — a 403 there would enforce nothing,
@@ -304,7 +307,8 @@ reads the server's version and uptime. That is non-account metadata — no
 account data, no authority.
 
 Refusals sit at two kinds of site, both ahead of the role gate (the two
-anonymous answers above sit in their handlers' own credential reads):
+anonymous answers above read the credential through `get_public_account_id`,
+which a consumer's own `reads_credential` route uses the same way):
 
 - **Per method**, inside `perform_action` — between the credential gate and
   the role gate, so the order is credential → scope → role. Every transport
@@ -1890,13 +1894,14 @@ The prefix must end in exactly one `/` (the server appends `<shard>/<rest>`
 straight onto it, so `/_facts` would redirect to `/_factsab/…`, outside the
 validated location), and a location must sit exactly at it (`/_facts` or
 `/_facts/`) — one only below it (`location ^~ /_facts/00/`) is refused, and so is
-`/_facts//` alone, since nginx compares location paths byte-for-byte. `ssi` with any value but `off` is
-refused anywhere in the config: SSI `include virtual` is a subrequest, which
-`internal;` admits, so any SSI-processed response could include a fact's bytes.
-`more_set_headers` / `more_clear_headers` (headers-more) are refused everywhere
-except inside a `location` that doesn't serve the prefix, since they run after
-`add_header` and can strip the hardening headers. Blocks nested more than 64 deep are a
-parse error.
+`/_facts//` alone, since nginx compares location paths byte-for-byte. `ssi`
+with any value but `off` is refused anywhere in the config: SSI `include
+virtual` is a subrequest, which `internal;` admits, so any SSI-processed
+response could include a fact's bytes. `more_set_headers` /
+`more_clear_headers` (headers-more) are refused everywhere except inside a
+`location` that doesn't serve the prefix, since they run after `add_header` and
+can strip the hardening headers. Blocks nested more than 64 deep are a parse
+error.
 
 The threat model is operator mistakes, not an adversarial config author: the
 prefix check is textual, so a value assembled from pieces (`/_fac$1`) evades
@@ -1911,7 +1916,9 @@ it. Beyond the config text:
   `proxy_ignore_headers X-Accel-Redirect;` (or the `fastcgi_` / `uwsgi_` /
   `scgi_` equivalent).
 - Other module code can redirect internally too (njs `internalRedirect`, perl,
-  echo), so run trusted modules and content only.
+  echo), or strip the hardening headers as headers-more can (njs
+  `js_header_filter`, lua-nginx-module `header_filter_by_lua*`), and the check
+  sees none of it, so run trusted modules and content only.
 
 It is the only nginx property fuz_app validates — see §Config Validation.
 

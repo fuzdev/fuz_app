@@ -130,7 +130,7 @@ const CENSUS: ReadonlyArray<CensusEntry> = [
 		file: 'auth/audit_log_route_schema.ts',
 		role: 'consults',
 		reason:
-			'declares `token_surface: audit_stream` on the route shape — a long-lived admin SSE feed with no point after open at which a narrowing could be applied. Its sibling `credential_types` gate is the one that actually keeps a bearer off the stream (rule 3 refuses a *narrowed* token; a full-scope one passes it, and SSE subscribers are keyed by session hash, so `token_revoke` could not close it) — the scope declaration stays as the rule-3 statement, governing a consumer that widens the channel'
+			"declares `required_scope: 'surface:audit_stream'` on the route shape — a long-lived admin SSE feed with no point after open at which a narrowing could be applied. Its sibling `credential_types` gate is the one that actually keeps a bearer off the stream (rule 3 refuses a *narrowed* token; a full-scope one passes it, and SSE subscribers are keyed by session hash, so `token_revoke` could not close it) — the scope declaration stays as the rule-3 statement, governing a consumer that widens the channel"
 	},
 	{
 		file: 'actions/perform_action.ts',
@@ -148,25 +148,25 @@ const CENSUS: ReadonlyArray<CensusEntry> = [
 		file: 'server/serve_fact_route.ts',
 		role: 'consults',
 		reason:
-			'declares `token_surface: fact_bare` — the admin-only bare-hash read serves any stored fact with no per-reference cell check; the sibling per-cell route is ungated because its authz is the `(cell, hash)` edge, which a narrowed token can already reach through the RPC methods it names'
+			"declares `required_scope: 'surface:fact_bare'` — the admin-only bare-hash read serves any stored fact with no per-reference cell check. The sibling per-cell route answers anonymous callers, so it reads the credential through `get_public_account_id`: a narrowed token is the anonymous caller there and reads public cells' facts only, never one its account could otherwise view"
 	},
 	{
 		file: 'auth/account_route_schema.ts',
 		role: 'consults',
 		reason:
-			'declares `token_surface: account_verify` on the `/verify` shape — the nginx `auth_request` probe answers 200 for the account behind any credential, so a narrowed token would pass every location the probe guards as its account; it is not an RPC method, so a narrowed token is refused it'
+			"declares `required_scope: 'surface:account_verify'` on the `/verify` shape — the nginx `auth_request` probe answers 200 for the account behind any credential, so a narrowed token would pass every location the probe guards as its account; it is not an RPC method, so a narrowed token is refused it"
 	},
 	{
 		file: 'auth/account_routes.ts',
 		role: 'consults',
 		reason:
-			"`/status` hands out the account's email, its verification, and the acting actor's role grants — a non-RPC surface, so a narrowed token is answered as the anonymous caller (401 plus the bootstrap flag): the route answers anonymous callers, so a 403 would add nothing to that. `/verify` takes its rule-3 gate from its shape; `/login` mints and `/logout` tears down; `/password` is already credential-gated to the session channel, so no bearer credential arrives"
+			"`/status` hands out the account's email, its verification, and the acting actor's role grants — a non-RPC surface, so it reads the credential through `get_public_account_id` and a narrowed token is answered as the anonymous caller (401 plus the bootstrap flag): the route answers anonymous callers, so a 403 would add nothing to that. `/verify` takes its rule-3 gate from its shape; `/login` mints and `/logout` tears down; `/password` is already credential-gated to the session channel, so no bearer credential arrives"
 	},
 	{
 		file: 'server/surface_route.ts',
 		role: 'consults',
 		reason:
-			'declares `token_surface: app_surface` — the opt-in surface explorer serves a map of every route, its auth, and its schemas; it is not an RPC method, so a narrowed token gets none of it, ahead of the admin role gate'
+			"declares `required_scope: 'surface:app_surface'` — the opt-in surface explorer serves a map of every route, its auth, and its schemas; it is not an RPC method, so a narrowed token gets none of it, ahead of the admin role gate"
 	},
 	// --- Exempt, with reasons ---
 	{
@@ -202,6 +202,7 @@ const CREDENTIAL_MARKERS: ReadonlyArray<string | RegExp> = [
 	'require_request_context',
 	'get_request_context',
 	'token_scope_surface_denial',
+	'get_public_account_id',
 	// Building a capability string is deciding what a credential's scope must
 	// admit, which is a census-worthy act even in a file that never reads one:
 	// it is how `actions/action_bridge.ts` gates a route the dispatcher can't.
@@ -307,6 +308,40 @@ const RULE_3_SURFACE_SITES: Record<TokenSurface, { file: string; source: string 
 	},
 	db_admin: null
 };
+
+/**
+ * The rule-3 surfaces that answer anonymous callers, and the exact call each
+ * handler must make.
+ *
+ * Such a route can't declare `required_scope` (the guard resolver refuses it on
+ * an unrestricted route — the holder would drop the credential and read the
+ * anonymous answer anyway), so it applies rule 3 itself by reading the
+ * credential through `get_public_account_id`, which answers a narrowed token
+ * as anonymous. Pinned by exact source for the same reason as
+ * `RULE_3_SURFACE_SITES`: a handler that reverts to reading `ACCOUNT_ID_KEY`
+ * directly would hand a narrowed token the account's view with nothing else
+ * failing.
+ */
+const RULE_3_DOWNGRADE_SITES: ReadonlyArray<{ file: string; source: string }> = [
+	{ file: 'auth/account_routes.ts', source: 'const account_id = get_public_account_id(c);' },
+	{ file: 'server/serve_fact_route.ts', source: 'const account_id = get_public_account_id(c);' }
+];
+
+/**
+ * The raw reads of the resolved account id — the context key by constant
+ * (`ACCOUNT_ID_KEY`), by literal (`'auth_account_id'`, which `c.get(...)` and
+ * `c.var.auth_account_id` both spell), and the whole resolved credential
+ * (`get_resolved_auth`).
+ *
+ * A `RULE_3_DOWNGRADE_SITES` file holds none of them: the downgrade call pins
+ * that the site *makes* the downgrade, not that it acts on its answer, so a
+ * raw read beside the call would hand a narrowed token the account's view
+ * with the call still present. Whole-file, so a later handler in the same
+ * module that needs the full credential has to move or be exempted here by
+ * name. Only whole comment lines are stripped, so a trailing comment or a
+ * string spelling one of these names counts too — reword it.
+ */
+const RAW_ACCOUNT_ID_READ = /\bACCOUNT_ID_KEY\b|\bauth_account_id\b|\bget_resolved_auth\s*\(/u;
 
 /**
  * Matches any `'surface:<name>'` literal — a route spec's `required_scope`
@@ -500,6 +535,30 @@ describe('token scope surface census', () => {
 			assert.ok(
 				strip_comment_lines(read_lib_source(site.file)).includes(site.source),
 				`${site.file} gates the ${surface} surface but does not contain \`${site.source}\``
+			);
+		}
+	});
+
+	/**
+	 * Every anonymous-admitting rule-3 surface reads the credential through the
+	 * downgrade and no raw read beside it, and is censused as consulting the
+	 * scope.
+	 */
+	test('every anonymous-admitting rule-3 surface downgrades a narrowed token', () => {
+		const consulting = new Set(CENSUS.filter((e) => e.role === 'consults').map((e) => e.file));
+		for (const site of RULE_3_DOWNGRADE_SITES) {
+			assert.ok(
+				consulting.has(site.file),
+				`${site.file} downgrades a narrowed token but is not censused as consulting scope`
+			);
+			assert.ok(
+				strip_comment_lines(read_lib_source(site.file)).includes(site.source),
+				`${site.file} answers anonymous callers but does not contain \`${site.source}\` — a narrowed token would read the account's view`
+			);
+			const raw_read = RAW_ACCOUNT_ID_READ.exec(strip_comment_lines(read_lib_source(site.file)));
+			assert.ok(
+				raw_read === null,
+				`${site.file} answers anonymous callers but reads the account id raw (\`${raw_read?.[0]}\`) beside the downgrade — a narrowed token would read the account's view`
 			);
 		}
 	});

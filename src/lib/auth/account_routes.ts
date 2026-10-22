@@ -45,12 +45,12 @@ import { query_revoke_all_api_tokens_for_account } from './api_token_queries.ts'
 import {
 	build_account_context,
 	build_request_context,
+	get_public_account_id,
 	get_request_context,
 	require_request_context,
 	resolve_acting_actor
 } from './request_context.ts';
-import { ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY, TOKEN_SCOPE_KEY } from '../hono_context.ts';
-import { token_scope_admits_non_rpc } from './token_scope.ts';
+import { CREDENTIAL_TYPE_KEY } from '../hono_context.ts';
 import { get_route_input, type RouteSpec } from '../http/route_spec.ts';
 import { get_client_ip } from '../http/client_ip.ts';
 import { rate_limit_ip_key } from '../http/ip_canonical.ts';
@@ -80,7 +80,8 @@ import { ERROR_AUTHENTICATION_REQUIRED, ERROR_INVALID_CREDENTIALS } from '../htt
  * (`token_scope_admits_non_rpc`), and this one hands out the account's email,
  * its verification state, and the acting actor's role grants; the route
  * already answers anonymous callers, so that answer is the refusal — a 403
- * would tell the holder nothing that dropping the header doesn't.
+ * would tell the holder nothing that dropping the header doesn't. The handler
+ * reads the credential through `get_public_account_id`, which applies it.
  *
  * This eliminates the need for a separate `/health` fetch on page load —
  * the frontend gets both session state and bootstrap availability in one request.
@@ -92,11 +93,9 @@ export const create_account_status_route_spec = (options?: AccountStatusOptions)
 	...account_status_route_shape,
 	path: options?.path ?? account_status_route_shape.path,
 	handler: async (c, route) => {
-		const account_id: string | null = c.get(ACCOUNT_ID_KEY) ?? null;
-		// rule 3 in its anonymous-admitting disposition: a narrowed token is the
-		// anonymous caller here, never a refusal
-		const scope = c.get(TOKEN_SCOPE_KEY);
-		if (!account_id || (scope && !token_scope_admits_non_rpc(scope))) {
+		// a narrowed token is the anonymous caller here, never a refusal
+		const account_id = get_public_account_id(c);
+		if (!account_id) {
 			return c.json(
 				{
 					error: ERROR_AUTHENTICATION_REQUIRED,

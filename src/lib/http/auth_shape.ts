@@ -160,9 +160,13 @@ export const RouteAuth = z
 		 * scope).
 		 *
 		 * Opt-in rather than blanket: no narrowed token reaches login (which reads
-		 * no credential) or logout and the password change (session-only), and the
-		 * RPC endpoint runs its own per-method check inside the dispatcher — and
-		 * all are route specs too.
+		 * no credential) or logout and the password change (session-only), the
+		 * RPC endpoint runs its own per-method check inside the dispatcher, the
+		 * `reads_credential` routes that answer anonymous callers (account status,
+		 * the cell-scoped fact read) can't take the field and answer a narrowed
+		 * token as anonymous in their handler (`get_public_account_id`), and the
+		 * server-status route admits a narrowed token by design — and all are
+		 * route specs too.
 		 *
 		 * Typed as a plain string here to keep `http/` from importing `auth/`; the
 		 * resolver parses it at registration and throws on a malformed one.

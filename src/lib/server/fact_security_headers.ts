@@ -37,6 +37,12 @@ export const FACT_X_CONTENT_TYPE_OPTIONS = 'nosniff';
 export const FACT_CONTENT_SECURITY_POLICY = "default-src 'none'; sandbox";
 
 /**
+ * `Cache-Control` for fact responses — private, five minutes: the window a
+ * cached read outlives a revoked view.
+ */
+export const FACT_CACHE_CONTROL = 'private, max-age=300';
+
+/**
  * The fact hardening headers, in render order. `Content-Disposition:
  * attachment` is deliberately absent — it would force-download and break
  * legitimate inline image rendering.

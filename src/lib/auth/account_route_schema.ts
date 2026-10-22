@@ -160,7 +160,8 @@ export const create_account_route_shapes = (
 			actor: 'none',
 			required_scope: 'surface:account_verify'
 		},
-		description: 'Session-validity probe for nginx auth_request (empty body, 200 or 401)',
+		description:
+			'Session-validity probe for nginx auth_request (empty body; 200, 401, or 403 for a narrowed token)',
 		input: z.null(),
 		output: z.null()
 	},

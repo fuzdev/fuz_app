@@ -99,7 +99,9 @@
  *   `proxy_ignore_headers X-Accel-Redirect;` (or the `fastcgi_` / `uwsgi_` /
  *   `scgi_` equivalent).
  * - Other module code can redirect internally too (njs `internalRedirect`, perl,
- *   echo), so run trusted modules and content only.
+ *   echo), or strip the hardening headers as headers-more can (njs
+ *   `js_header_filter`, lua-nginx-module `header_filter_by_lua*`), and the
+ *   check sees none of it, so run trusted modules and content only.
  *
  * The Rust twin is `fuz_fact_serving`'s `nginx.rs`, held to the same rules and
  * the same fixture corpus.

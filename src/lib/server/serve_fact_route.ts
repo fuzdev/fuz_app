@@ -70,16 +70,16 @@
  *
  * Auth shape on the cell-scoped route is `{account: 'none', actor: 'none'}`
  * — the dispatcher's authorization phase is skipped for pure-public routes,
- * so the handler builds the `RequestContext` itself from `c.var.account_id`
- * (populated by the `/api/*` session middleware) by resolving the caller's
- * single actor and loading their role_grants. Unauthed callers pass through
- * with `req_ctx: null` and are admitted only by a `cell.visibility ===
- * 'public'` cell whose `moderation` admits an audience (unmoderated or
+ * so the handler builds the `RequestContext` itself from the resolved account
+ * id (`get_public_account_id`, over what the `/api/*` auth middleware set) by
+ * resolving the caller's single actor and loading their role_grants.
+ * Unauthed callers pass through with `req_ctx: null` and are admitted only by
+ * a `cell.visibility === 'public'` cell whose `moderation` admits an audience (unmoderated or
  * `'approved'`). Multi-actor accounts fall through with `req_ctx: null`
  * — there's no `acting?` slot on a pure-public route, so multi-actor
  * callers are treated as anonymous. A scope-narrowed API token is treated as
- * anonymous too, not refused: a narrowed token reaches no non-RPC surface
- * (`token_scope_admits_non_rpc`), but on a route that admits anonymous callers
+ * anonymous too, not refused (`get_public_account_id`): a narrowed token
+ * reaches no non-RPC surface, but on a route that admits anonymous callers
  * a 403 would enforce nothing — the holder drops the `Authorization` header and
  * re-reads every public cell anyway.
  *
@@ -135,14 +135,13 @@ import { z } from 'zod';
 
 import {
 	build_request_context,
+	get_public_account_id,
 	get_request_context,
 	has_scoped_role,
 	type RequestContext
 } from '../auth/request_context.ts';
 import { ROLE_ADMIN } from '../auth/role_schema.ts';
 import { ActingActor } from '../http/auth_shape.ts';
-import { ACCOUNT_ID_KEY, TOKEN_SCOPE_KEY } from '../hono_context.ts';
-import { token_scope_admits_non_rpc } from '../auth/token_scope.ts';
 import { query_active_actors_by_account } from '../auth/account_queries.ts';
 import { get_route_params, type RouteContext, type RouteSpec } from '../http/route_spec.ts';
 import { ERROR_INVALID_ROUTE_PARAMS } from '../http/error_schemas.ts';
@@ -154,10 +153,7 @@ import { can_view_cell } from '../auth/cell_authorize.ts';
 import { cell_steward_admits } from '../auth/cell_steward.ts';
 import { parse_file_fact_url } from '../db/file_fact_url.ts';
 import type { XAccelConfig } from './x_accel.ts';
-import { FACT_SECURITY_HEADERS } from './fact_security_headers.ts';
-
-/** `Cache-Control` for fact responses — 5 min revocation window. */
-const CACHE_CONTROL = 'private, max-age=300';
+import { FACT_CACHE_CONTROL, FACT_SECURITY_HEADERS } from './fact_security_headers.ts';
 
 /**
  * Path-param schema for the bare-hash route. Matching the canonical
@@ -266,7 +262,7 @@ const serve_fact_bytes = async (
 		return c.body(bytes as unknown as ArrayBuffer, 200, {
 			'Content-Type': content_type,
 			'Content-Length': size,
-			'Cache-Control': CACHE_CONTROL,
+			'Cache-Control': FACT_CACHE_CONTROL,
 			...FACT_SECURITY_HEADERS
 		});
 	}
@@ -289,7 +285,7 @@ const serve_fact_bytes = async (
 		return c.body(null, 200, {
 			'Content-Type': content_type,
 			'Content-Length': size,
-			'Cache-Control': CACHE_CONTROL,
+			'Cache-Control': FACT_CACHE_CONTROL,
 			'X-Accel-Redirect': `${x_accel.redirect_prefix}${shard}/${rest}`,
 			...FACT_SECURITY_HEADERS
 		});
@@ -303,32 +299,32 @@ const serve_fact_bytes = async (
 	return c.body(web_stream, 200, {
 		'Content-Type': content_type,
 		'Content-Length': size,
-		'Cache-Control': CACHE_CONTROL,
+		'Cache-Control': FACT_CACHE_CONTROL,
 		...FACT_SECURITY_HEADERS
 	});
 };
 
 /**
  * Resolve the caller's `RequestContext` on a pure-public route from the
- * session-middleware-set account id. A scope-narrowed API token returns
- * `null` — downgraded to anonymous, not refused (see the module doc).
- * Multi-actor accounts return `null`
- * (no `acting?` slot on a public route to disambiguate); single active-actor
- * accounts resolve their actor and role_grants for owner / grant / admin
- * admission paths. Unauthenticated callers return `null`. Soft-deleted
- * (tombstoned) actors are excluded from the count
- * (`query_active_actors_by_account`), matching the acting-actor resolution
- * path — a tombstoned actor is never resolvable here.
+ * session-middleware-set account id, read through `get_public_account_id`, so
+ * a scope-narrowed API token returns `null` — downgraded to anonymous, not
+ * refused (see the module doc). Twin of the Rust
+ * `AuthGate::public_request_context`.
+ *
+ * Multi-actor accounts return `null` (no `acting?` slot on a public route to
+ * disambiguate); single active-actor accounts resolve their actor and
+ * role_grants for owner / grant / admin admission paths. Unauthenticated
+ * callers return `null`. Soft-deleted (tombstoned) actors are excluded from the
+ * count (`query_active_actors_by_account`), matching the acting-actor
+ * resolution path — a tombstoned actor is never resolvable here.
  */
 const build_public_request_context = async (
 	c: Context,
 	route: RouteContext
 ): Promise<RequestContext | null> => {
-	const account_id = c.get(ACCOUNT_ID_KEY);
+	// a narrowed token is the anonymous caller here, never a refusal
+	const account_id = get_public_account_id(c);
 	if (!account_id) return null;
-	// rule 3 in its public-read disposition: anonymous, never a refusal
-	const scope = c.get(TOKEN_SCOPE_KEY);
-	if (scope && !token_scope_admits_non_rpc(scope)) return null;
 	const actors = await query_active_actors_by_account({ db: route.db }, account_id);
 	if (actors.length !== 1) return null;
 	return build_request_context({ db: route.db }, account_id, actors[0]!.id);
@@ -345,7 +341,8 @@ const build_public_request_context = async (
  * `(cell, hash)` edge — never unioned across the fact's other referrers.
  *
  * Pure-public auth — the handler builds the per-request `RequestContext`
- * from `c.var.account_id` and enforces visibility per-reference.
+ * from the resolved account id (`get_public_account_id`) and enforces
+ * visibility per-reference.
  */
 export const create_serve_cell_fact_route_spec = (
 	options: CreateServeFactRouteSpecOptions
