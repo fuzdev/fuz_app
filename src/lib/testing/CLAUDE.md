@@ -1908,7 +1908,7 @@ asserting each spec declares `credential_types: ['daemon_token']`) + the
 
 ### Identity-primitive parity — `cross_backend/identity_parity.ts`
 
-`describe_identity_parity_cross_tests({setup_test, login_path?, signup_path?})` —
+`describe_identity_parity_cross_tests({setup_test, login_path?, signup_path?, bootstrap_path?})` —
 the imperative suite pinning the `primitive_schemas` twins (`Username`,
 `UsernameProvided`, `Email`) + login/signup input handling end-to-end over real
 HTTP (flat REST `/login` + `/signup`, so imperative, not a `conformance_table`
@@ -1916,8 +1916,10 @@ row). Six facets, each a TS↔Rust reimplementation pair that the spec-derived
 round-trip / conformance suites never vary:
 
 - **Login canonicalization** — case-insensitive + whitespace-trim lookup
-  (`UsernameProvided` `.trim().toLowerCase()` + `LOWER(username)`), plus a
-  Turkish-`İ` homograph **no-Unicode-fold-collision** negative.
+  (`UsernameProvided` `.trim().toLowerCase()` + `LOWER(username)`), the trimmed
+  set being JS `String.prototype.trim`'s on every spine (U+FEFF padding trimmed,
+  U+0085 not), plus a Turkish-`İ` homograph **no-Unicode-fold-collision**
+  negative.
 - **Username-or-email login** — an account created with an email logs in via
   that email, case-insensitively both directions; username login still works;
   non-existent email → 401. This is the corner that surfaced and closed the Rust
@@ -1930,7 +1932,11 @@ round-trip / conformance suites never vary:
   `account_login` (closed a cluster where three of these fell through to a
   lookup-miss 401 on Rust and a whitespace-only identifier 401'd on TS). Asserted
   by error reason, not just status.
-- **ASCII-only creation invariant** — non-ASCII username → 400 at signup.
+- **ASCII-only creation invariant** — non-ASCII username → 400 at signup, and a
+  padded creation name (space, tab, U+0085) → 400, never trimmed into a legal
+  one — at signup, and at bootstrap (`bootstrap_path`, default
+  `/api/account/bootstrap`, `null` to skip), where the body is validated ahead
+  of the window check, so the 400 holds after bootstrap completed.
 - **Length + format regex parity** — both `[USERNAME_LENGTH_MIN,
 USERNAME_LENGTH_MAX]` = `[3, 39]` boundary edges (just-outside → 400,
   just-inside → 403 no-matching-invite) and the creation regex shape (leading

@@ -31,4 +31,5 @@ const setup_test = default_in_process_setup({
 	rpc_endpoints: spine_rpc_endpoints
 });
 
-describe_identity_parity_cross_tests({ setup_test });
+// the in-process spine surface mounts no bootstrap route
+describe_identity_parity_cross_tests({ setup_test, bootstrap_path: null });

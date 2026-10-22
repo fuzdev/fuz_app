@@ -26,7 +26,9 @@ import '../assert_dev_env.ts';
  *   all-uppercase submission (proves the *lookup* folds case, not merely that
  *   the stored form was lowercased).
  * - **whitespace-trim login** — the same shape logs in with surrounding
- *   whitespace (proves `.trim()` on the lookup path).
+ *   whitespace (proves `.trim()` on the lookup path). The trimmed set is JS
+ *   `String.prototype.trim`'s on every spine: U+FEFF padding is trimmed (→
+ *   200, and alone → 400 empty), U+0085 is not (→ 401 lookup miss).
  * - **no Unicode case-fold collision (negative)** — a Turkish-`İ` (U+0130)
  *   variant of an existing ASCII username must NOT match. Both JS
  *   `.toLowerCase()` and Rust `str::to_lowercase()` map `İ` → `i` + U+0307
@@ -68,6 +70,10 @@ import '../assert_dev_env.ts';
  * with mid-string `_`/`-` accepted siblings as the don't-over-reject control.
  * Signup is also strict-object on both spines (TS `z.strictObject`, Rust
  * `#[serde(deny_unknown_fields)]`), so an unknown signup body key → 400.
+ * Nothing trims a creation username: a padded one is refused 400 at signup and
+ * at bootstrap, never trimmed into a legal name. Bootstrap validates its body
+ * before its window check, so the padded bootstrap answers 400 even after
+ * bootstrap completed.
  *
  * **Email format (creation):** the optional signup `email` is validated to a
  * loose `local@domain.tld` shape on both spines — TS `Email`
@@ -98,6 +104,7 @@ import {
 } from '../../http/error_schemas.ts';
 import { DEFAULT_TEST_PASSWORD } from '../test_credentials.ts';
 import type { SetupTest } from './setup.ts';
+import { test_if } from './capabilities.ts';
 
 /**
  * The flat-REST `{error}` reason each terminal login/signup status carries on
@@ -123,6 +130,12 @@ export interface IdentityParityCrossTestOptions {
 	readonly login_path?: string;
 	/** REST signup route path. Default `/api/account/signup` (the spine convention). */
 	readonly signup_path?: string;
+	/**
+	 * REST bootstrap route path. Default `/api/account/bootstrap` (the spine
+	 * convention); `null` skips the bootstrap case, for a surface that mounts no
+	 * bootstrap route.
+	 */
+	readonly bootstrap_path?: string | null;
 }
 
 /**
@@ -287,6 +300,8 @@ export const describe_identity_parity_cross_tests = (
 	const { setup_test } = options;
 	const login_path = options.login_path ?? '/api/account/login';
 	const signup_path = options.signup_path ?? '/api/account/signup';
+	const bootstrap_path =
+		options.bootstrap_path === undefined ? '/api/account/bootstrap' : options.bootstrap_path;
 
 	type Fixture = Awaited<ReturnType<typeof setup_test>>;
 	/** The status + flat-REST `error` reason an attempt settled to. */
@@ -396,6 +411,34 @@ export const describe_identity_parity_cross_tests = (
 			const fixture = await setup_test();
 			await fixture.create_account({ username: 'Canon_Trim_User' });
 			assert_attempt(await login(fixture, '  canon_trim_user  '), 200, 'whitespace-trim login');
+		});
+
+		// JS `trim` and Rust `str::trim` disagree on two code points: U+FEFF is JS
+		// whitespace but not Unicode `White_Space`, U+0085 the reverse. Every
+		// spine trims the JS set (TS is the oracle).
+		test('U+FEFF padding is trimmed on lookup → 200', async () => {
+			const fixture = await setup_test();
+			await fixture.create_account({ username: 'canon_bom_user' });
+			assert_attempt(
+				await login(fixture, '\ufeffcanon_bom_user\ufeff'),
+				200,
+				'U+FEFF-padded login'
+			);
+		});
+
+		test('U+FEFF alone is empty after the trim → 400', async () => {
+			const fixture = await setup_test();
+			assert_attempt(await login(fixture, '\ufeff'), 400, 'U+FEFF-only login');
+		});
+
+		test('U+0085 padding is not trimmed → 401 lookup miss', async () => {
+			const fixture = await setup_test();
+			await fixture.create_account({ username: 'canon_nel_user' });
+			assert_attempt(
+				await login(fixture, '\u0085canon_nel_user\u0085'),
+				401,
+				'U+0085-padded login'
+			);
 		});
 
 		test('no Unicode case-fold collision — Turkish İ variant of an ASCII username → 401', async () => {
@@ -599,5 +642,42 @@ export const describe_identity_parity_cross_tests = (
 				'signup unknown body key'
 			);
 		});
+
+		// `Username` validates the raw value — nothing trims a creation username,
+		// so padding is refused, never repaired into a legal name (which would
+		// reach the invite gate → 403, or create the account under open signup).
+		for (const [username, label] of [
+			[' padded_signup_user ', 'space padding'],
+			['padded_signup_user\t', 'trailing tab'],
+			['\u0085padded_signup_user', 'leading U+0085']
+		] as const) {
+			test(`padded username (${label}) → 400, not trimmed`, async () => {
+				const fixture = await setup_test();
+				assert_attempt(await signup(fixture, username), 400, `signup ${label}`);
+			});
+		}
+	});
+
+	describe('bootstrap input validation parity', () => {
+		// The body is validated before the bootstrap window is consulted on every
+		// spine (the TS route schema runs ahead of the handler), so a padded
+		// username answers 400 `invalid_request_body` even after bootstrap
+		// completed — not the closed window's refusal.
+		test_if(
+			bootstrap_path !== null,
+			'padded username → 400, not trimmed, ahead of the window check',
+			async () => {
+				const fixture = await setup_test();
+				assert_attempt(
+					await post_json(fixture, bootstrap_path!, {
+						token: 'identity-parity-not-the-token',
+						username: ' padded_keeper ',
+						password: DEFAULT_TEST_PASSWORD
+					}),
+					400,
+					'bootstrap padded username'
+				);
+			}
+		);
 	});
 };
