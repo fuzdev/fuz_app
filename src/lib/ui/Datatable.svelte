@@ -156,8 +156,8 @@
 		position: sticky;
 		top: 0;
 		z-index: 1;
-		background: var(--shade_00, Canvas);
-		border-bottom: var(--border_width, 1px) solid var(--border_color);
+		background: var(--shade_00);
+		border-bottom: var(--border_width) solid var(--border_color);
 	}
 
 	.datatable-header-cell {
@@ -187,7 +187,7 @@
 		grid-template-columns: subgrid;
 		align-items: start;
 		min-width: 0; /* override grid auto minimum to respect column widths */
-		border-bottom: var(--border_width, 1px) solid var(--border_color);
+		border-bottom: var(--border_width) solid var(--border_color);
 	}
 
 	.datatable-cell {
