@@ -47,7 +47,6 @@ import type { UpgradeWebSocket, WSEvents } from 'hono/ws';
 import { z } from 'zod';
 import { create_uuid, type Uuid } from '#lib/primitive_schemas.ts';
 
-import { create_keyring } from '#lib/auth/keyring.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_health_route_spec } from '#lib/http/common_routes.ts';
 import {
@@ -85,6 +84,7 @@ import { all_standard_action_specs } from '#lib/auth/standard_action_specs.ts';
 import { create_standard_rpc_actions } from '#lib/auth/standard_rpc_actions.ts';
 import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
 import { AUTH_MIDDLEWARE_PATH } from '#lib/auth/middleware.ts';
+import { create_test_keyring } from '../auth/session_test_helpers.ts';
 
 /** Parse an allowlist the test knows is valid. */
 const parse_origins = (raw: string): Array<RegExp> => {
@@ -94,7 +94,7 @@ const parse_origins = (raw: string): Array<RegExp> => {
 };
 
 const TEST_KEY = 'test-key-that-is-at-least-32-chars-long!!';
-const keyring = create_keyring(TEST_KEY)!;
+const keyring = create_test_keyring(TEST_KEY);
 const session_options = create_session_config('test_session');
 const log = new Logger('test', { level: 'off' });
 

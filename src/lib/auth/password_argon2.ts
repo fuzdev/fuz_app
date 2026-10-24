@@ -13,20 +13,30 @@ import { hash, verify } from '@node-rs/argon2';
 
 import type { PasswordHashDeps } from './password.ts';
 
+/** @node-rs/argon2 `Algorithm.Argon2id` — const enum, cannot import with isolatedModules. */
+const ARGON2ID = 2 as const;
+
 /**
  * Argon2id options following OWASP recommendations.
  *
  * @see https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html
  */
-/** @node-rs/argon2 `Algorithm.Argon2id` — const enum, cannot import with isolatedModules. */
-const ARGON2ID = 2 as const;
-
 const ARGON2_OPTIONS = {
 	algorithm: ARGON2ID,
 	memoryCost: 19456, // 19 MiB
 	timeCost: 2,
 	parallelism: 1
 };
+
+/**
+ * A fixed Argon2id PHC string with the production parameters, verified against
+ * on an account-lookup miss so that path does the same work as a real
+ * verification. No password matches it in practice (its digest is all zero
+ * bytes). Precomputed, so the first miss costs no hash either. Byte-identical
+ * with the Rust `DUMMY_HASH` (`fuz_auth`).
+ */
+const DUMMY_HASH =
+	'$argon2id$v=19$m=19456,t=2,p=1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 
 /**
  * Hash a password using Argon2id.
@@ -56,9 +66,6 @@ export const verify_password = async (
 	}
 };
 
-/** Cached dummy hash for timing attack resistance. */
-let dummy_hash: string | null = null;
-
 /**
  * Verify a password against a dummy hash for timing attack resistance.
  *
@@ -69,10 +76,7 @@ let dummy_hash: string | null = null;
  * @returns always `false`
  */
 export const verify_dummy = async (password: string): Promise<boolean> => {
-	if (!dummy_hash) {
-		dummy_hash = await hash_password('dummy_password_for_timing_resistance');
-	}
-	await verify_password(password, dummy_hash);
+	await verify_password(password, DUMMY_HASH);
 	return false;
 };
 

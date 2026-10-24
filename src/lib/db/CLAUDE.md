@@ -187,32 +187,34 @@ DO NOTHING`), `_put_fact_refs`, `_get_fact` / `_get_fact_meta` / `_has_fact`
   `query_fact_holder_unheld` (answered from holder rows alone).
 - **`fact_store.ts`** — `PgFactStore`, implementing `HeldFactStore` (reads per
   the `@fuzdev/fuz_util/fact_store.ts` `FactStore` contract; puts take
-  `HeldFactPutOptions`, whose required `holder` —
-  an actor id, or `null` for a system put — is recorded in `fact_holder` on
-  every put, a dedup hit included, in one transaction with the fact row and its
-  refs): size-routed writes (embedded ≤
-  `embedded_threshold` / disk CAS above it), JSON ref auto-extract, idempotent
-  put, verify-on-read for disk-backed content. With `disk_root` + `fs` (the
+  `HeldFactPutOptions`, whose required `holder` — an actor id, or `null` for a
+  system put — is recorded in `fact_holder` on every put, a dedup hit included,
+  in one transaction with the fact row and its refs): size-routed writes
+  (embedded ≤ `embedded_threshold` / disk CAS above it), refs exactly as each
+  put declares them (the bytes are never scanned), idempotent put,
+  verify-on-read for disk-backed content. With `disk_root` + `fs` (the
   `runtime/*Deps`) configured, oversize `put` and the streaming `put_stream`
   write to the `<shard>/<rest>` disk CAS and `get` reads from it; without them
   an oversize write throws (`put_stream` needs `fs` for a body of any size).
   The disk CAS is the only place `get` reads external bytes from; the store
   makes no network request. A row whose `external_url` is not a
   `file:<shard>/<rest>` URL (the store never writes one), and any external row
-  on a store with no disk CAS, reads as `null` with a warning; the serve route
-  404s the former.
+  on a store with no disk CAS, reads as `null` with a warning; one naming another
+  fact's file reads as `null` with an error. The serve route 404s both.
 - **`file_fact_url.ts`** — the canonical `file:<shard>/<rest>` URL shape
   (`FileFactUrl` brand, `mint_file_fact_url` / `parse_file_fact_url` /
   `FILE_FACT_URL_PATTERN`) plus `fact_disk_path(hash) → {shard, rest}`, the
-  single source of truth for the on-disk layout (twins the Rust `fuz_fact`).
+  single source of truth for the on-disk layout, and `file_fact_url_addresses`,
+  the check that a URL names its own hash's file (twins the Rust `fuz_fact`).
 - **`fact_disk_storage.ts`** — the filesystem CAS over `runtime/{FsStream,FsWrite,FsRemove,FsRead}Deps`
-  (not raw `node:fs`): `stream_fact_to_disk` (bounded-memory blake3+sha256 single
-  pass, buffer→spill, fsync-then-atomic-rename, dedup-drop if the CAS path already
-  exists), `write_fact_bytes_to_disk` (buffering twin), `read_fact_bytes_from_disk`,
-  and `sweep_orphan_temps` (reaps stale `.tmp` spills by mtime). The temp is
-  `fsync`ed before the rename publishes it (twins the Rust `fuz_fact` §fsync
-  posture: data-sync before rename, parent-dir fsync waived) — the serve path
-  streams the file without re-hashing, so write-time durability is the guard.
+  (not raw `node:fs`): `stream_fact_to_disk` (bounded-memory blake3 as it
+  streams, buffer→spill, fsync-then-atomic-rename — over a file already at the
+  CAS path, so a repeat put heals a corrupt one), `write_fact_bytes_to_disk`
+  (buffering twin), `read_fact_bytes_from_disk`, and `sweep_orphan_temps`
+  (reaps stale `.tmp` spills by mtime). The temp is `fsync`ed before the
+  rename publishes it (twins the Rust `fuz_fact` §fsync posture: data-sync
+  before rename, parent-dir fsync waived) — the serve path streams the file
+  without re-hashing, so write-time durability is the guard.
 - **`fact_store_errors.ts`** — `FactPayloadTooLargeError` / `FactStorageFullError` (+
   `is_enospc_error`) thrown by `put_stream`, for a consumer route's 413 / 507.
 - The HTTP serving plumbing lives under `server/` (`serve_fact_route.ts`,

@@ -1677,9 +1677,12 @@ deps.fact_store = fact_store;
 `put(bytes, {holder})` is idempotent (same bytes → same hash → one row) and routes by
 size: content at or under `embedded_threshold` is stored in Postgres; larger
 content is written to the disk CAS (a temp file, fsynced, then renamed into the
-shard tree) and its row records a `file:<shard>/<rest>` URL.
+shard tree, over any file already there, so a repeat put heals a corrupt one)
+and its row records a `file:<shard>/<rest>` URL.
 `put_stream(stream, max_bytes, {holder})` does the same for an upload without buffering
-it, enforcing `max_bytes` as it reads. Without `disk_root` and `fs` the store
+it, enforcing `max_bytes` as it reads, and returns the fact `hash` and `size`. A
+fact's own refs (`fact_ref`) are exactly the `refs` its put declares — the bytes
+are never scanned, whatever the `content_type`. Without `disk_root` and `fs` the store
 has nowhere to put content it cannot embed, and an oversize write throws
 (`put_stream` needs `fs` for a body of any size). Reads
 of disk-backed facts verify the hash and return `null` on mismatch. The disk CAS

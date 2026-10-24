@@ -10,7 +10,6 @@
 
 import { assert, describe, test } from 'vitest';
 
-import { create_keyring } from '#lib/auth/keyring.ts';
 import {
 	create_session_cookie_value,
 	process_session_cookie,
@@ -92,7 +91,7 @@ describe('process_session_cookie', () => {
 		// key rotation no longer refreshes. The old-key cookie keeps verifying
 		// until the retired key leaves the keyring (safe after
 		// `SESSION_AGE_MAX`, when every cookie it signed has expired).
-		const old_keyring = create_keyring(OLD_KEY)!;
+		const old_keyring = create_test_keyring(OLD_KEY);
 		const now = 1000;
 		const signed = await create_session_cookie_value(
 			old_keyring,
@@ -101,7 +100,7 @@ describe('process_session_cookie', () => {
 			now
 		);
 
-		const rotated_keyring = create_keyring(TEST_KEY + '__' + OLD_KEY)!;
+		const rotated_keyring = create_test_keyring(TEST_KEY + '__' + OLD_KEY);
 		const result = await process_session_cookie(
 			signed,
 			rotated_keyring,

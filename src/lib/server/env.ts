@@ -11,7 +11,7 @@
 
 import { z } from 'zod';
 
-import { create_validated_keyring, type Keyring } from '../auth/keyring.ts';
+import { create_keyring, type Keyring } from '../auth/keyring.ts';
 import { format_allowed_origins_error, parse_allowed_origins } from '../http/origin.ts';
 
 /**
@@ -110,7 +110,7 @@ export type ServerEnvOptionsResult = ServerEnvOptions | ServerEnvOptionsError;
  * @returns `{ok: true, keyring, allowed_origins, bootstrap_token_path}` or `{ok: false, field, errors}`
  */
 export const validate_server_env = (env: BaseServerEnv): ServerEnvOptionsResult => {
-	const keyring_result = create_validated_keyring(env.SECRET_FUZ_COOKIE_KEYS);
+	const keyring_result = create_keyring(env.SECRET_FUZ_COOKIE_KEYS);
 	if (!keyring_result.ok) {
 		return { ok: false, field: 'SECRET_FUZ_COOKIE_KEYS', errors: keyring_result.errors };
 	}

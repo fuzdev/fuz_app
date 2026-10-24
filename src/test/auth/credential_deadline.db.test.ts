@@ -21,7 +21,6 @@ import { query_create_account_with_actor } from '#lib/auth/account_queries.ts';
 import { generate_api_token } from '#lib/auth/api_token.ts';
 import { query_create_api_token, query_validate_api_token } from '#lib/auth/api_token_queries.ts';
 import { create_bearer_auth_middleware } from '#lib/auth/bearer_auth.ts';
-import { create_keyring } from '#lib/auth/keyring.ts';
 import { create_request_context_middleware } from '#lib/auth/request_context.ts';
 import { get_resolved_auth } from '#lib/auth/resolved_auth.ts';
 import {
@@ -40,6 +39,7 @@ import { token_scope_full } from '#lib/auth/token_scope.ts';
 import type { Db } from '#lib/db/db.ts';
 
 import { describe_db } from '../db_fixture.ts';
+import { create_test_keyring } from './session_test_helpers.ts';
 
 const DAY_MS = 86_400_000;
 
@@ -67,7 +67,7 @@ const set_expiry = async (db: Db, table: string, interval: string): Promise<void
 	await db.query(`UPDATE ${table} SET expires_at = NOW() + INTERVAL '${interval}'`);
 };
 
-const keyring = create_keyring('k'.repeat(32))!;
+const keyring = create_test_keyring('k'.repeat(32));
 
 /**
  * An app over the session → request-context → bearer chain whose route

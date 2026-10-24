@@ -81,13 +81,17 @@ created via `create_auth_middleware_specs()` from `auth/middleware.ts`.
 
 ## Keyring
 
-`create_keyring(keys)` returns `{sign, verify}` using HMAC-SHA256. Keys are
-`__`-separated for rotation — first key signs, all keys verify. `verify` returns
-`{value, key_index}` so callers know when to re-sign with the current key.
+`create_keyring(keys)` is the one way to build a `Keyring`: it validates the
+keys value and returns `{ok: true, keyring}` or `{ok: false, errors}`, refusing
+a value with no key or with any key shorter than 32 characters (the Rust
+`Keyring::new` rule). The keyring signs with HMAC-SHA256. Keys are
+`__`-separated for rotation — first key signs, all keys verify. `verify`
+returns `{value, key_index}`; nothing re-signs a cookie, so `key_index` is
+informational (rotation: ./security.md §Cookie Key Rotation).
 
-`create_validated_keyring(key_string)` validates the key string and returns
-`{ok: true, keyring}` or `{ok: false, errors}` — the recommended entry point
-for callers that need error handling (server startup, env validation).
+A signature must be the exact padded standard base64 of a 32-byte MAC — 43
+characters ending in one `=`, with no whitespace and no non-zero trailing bits
+— so one MAC has one accepted spelling, as on the Rust spine.
 
 ## Database Initialization
 

@@ -15,7 +15,6 @@ import { ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY, TEST_CONTEXT_PRESET_KEY } from '#l
 import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import { apply_route_specs } from '#lib/http/route_spec.ts';
 import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
-import { create_keyring } from '#lib/auth/keyring.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { RateLimiter } from '#lib/rate_limiter.ts';
 import { create_proxy_middleware } from '#lib/http/proxy.ts';
@@ -28,6 +27,7 @@ import {
 } from '#lib/testing/audit_drift_guard.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
+import { create_test_keyring } from './session_test_helpers.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -133,7 +133,7 @@ vi.mock('#lib/auth/audit_log_queries.ts', async (importOriginal) => {
 const ACC_TEST = '00000000-0000-4000-8000-000000000001' as Uuid;
 const ACT_TEST = '00000000-0000-4000-8000-000000000002' as Uuid;
 
-const keyring = create_keyring('audit_integration_test_key')!;
+const keyring = create_test_keyring('audit-integration-test-key-at-least-32-chars');
 const session_options = create_session_config('test_session');
 
 /** Simulated connection IP for test requests. */

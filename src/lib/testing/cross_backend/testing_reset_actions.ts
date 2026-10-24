@@ -294,9 +294,12 @@ export const create_testing_drain_effects_action = (audit: AuditEmitter): RpcAct
  * the put is on behalf of — recorded in `fact_holder` (deduplicated puts
  * included), as a real upload records its uploader, so the suites can drive
  * cell ref admission; absent, the put is a system put with no holder. The
- * referencing cell is seeded separately via the `cell_create` RPC. Embedded-only is enough for the
- * authz assertions (cell-scoped admit, cross-owner-no-leak, 404-mask, bare-hash
- * admin-only); external / X-Accel parity stays covered by the forge's own gate.
+ * referencing cell is seeded separately via the `cell_create` RPC. Embedded is
+ * enough for the authz assertions (cell-scoped admit, cross-owner-no-leak,
+ * 404-mask, bare-hash admin-only); external / X-Accel parity stays covered by
+ * the forge's own gate. `external_url`, when given, writes the row the way a
+ * writer past the store could — no bytes, that URL verbatim, unvalidated — so
+ * the suite can prove a serve refuses a URL that is not its hash's own address.
  *
  * `auth` gates on the daemon-token credential, matching `_testing_reset` — the
  * action does a direct `fact` insert the production wire never exposes. The
@@ -311,13 +314,15 @@ export const testing_put_fact_action_spec = {
 	input: z.strictObject({
 		content: z.string(),
 		content_type: z.string().optional(),
-		holder: Uuid.optional()
+		holder: Uuid.optional(),
+		external_url: z.string().optional()
 	}),
 	output: z.strictObject({ hash: FactHashSchema }),
 	async: true,
 	description:
-		'Test-binary only — seed an embedded fact (blake3 of the UTF-8 content) and return its hash, ' +
-		'so the cross-process fact-serving suite can store bytes without a DB handle.'
+		'Test-binary only — seed a fact row for the blake3 of the UTF-8 content (embedded, or with ' +
+		'external_url an external row naming that URL) and return its hash, so the cross-process ' +
+		'fact-serving suite can store facts without a DB handle.'
 } as const satisfies RequestResponseActionSpec;
 
 /** The wire method of each notification `_testing_flood_notifications` queues. */
@@ -843,8 +848,8 @@ export const create_testing_actions = (
 				{ db: ctx.db },
 				{
 					hash,
-					bytes,
-					external_url: null,
+					bytes: input.external_url === undefined ? bytes : null,
+					external_url: input.external_url ?? null,
 					content_type: input.content_type ?? null,
 					size: bytes.length
 				}

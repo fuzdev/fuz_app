@@ -22,6 +22,10 @@ import '../assert_dev_env.ts';
  *   private, max-age=300`, whatever its content type;
  * - **bare-hash admin-only** — `GET /api/facts/:hash` is admin (keeper) only:
  *   non-admin → 403, anonymous → 401;
+ * - **URL bound to hash** — a row whose `external_url` is a well-formed
+ *   `file:` URL naming another hash's file is a masked 404 on both routes,
+ *   refused before any disk read (each spine's unit suite proves the bytes
+ *   behind such a URL never serve);
  * - **multi-actor fallthrough** — a multi-actor caller resolves to a null
  *   (anonymous) context on the (`acting`-less) cell-scoped route, so it can't
  *   read its own *private* fact there (admitted only by public cells). Opt-in
@@ -33,7 +37,8 @@ import '../assert_dev_env.ts';
  *   exactly as for an anonymous caller, while a public cell still serves.
  *
  * Facts are seeded **embedded** via `_testing_put_fact` (the cross-process
- * driver has no DB handle); the referencing cell via the `cell_create` RPC
+ * driver has no DB handle), or as a bare external row through its
+ * `external_url`; the referencing cell via the `cell_create` RPC
  * (the hash, a whole string value in `data`, is derived into `cell.refs`). A
  * non-admin owner's cell may reference only a fact it holds, so a fact a
  * non-admin references is put with that owner as its `holder` (the keeper is
@@ -92,6 +97,11 @@ export interface CrossPutFactInput {
 	readonly content_type?: string;
 	/** The actor the put is on behalf of — recorded as a holder. Omit for a system put. */
 	readonly holder?: string;
+	/**
+	 * Store an external row naming this URL, verbatim and with no bytes, instead
+	 * of an embedded one.
+	 */
+	readonly external_url?: string;
 }
 
 /**
@@ -323,6 +333,42 @@ export const describe_fact_serving_cross_tests = (options: FactServingCrossTestO
 					admin_headers
 				);
 				assert_masked_404(edge_no_bytes, 'edge to an absent fact');
+			}
+		);
+
+		test_if(
+			capabilities.fact_serving,
+			"an external_url naming another fact's file is a masked 404 on both routes",
+			async () => {
+				const fixture = await setup_test();
+				const owner = await fixture.create_account({ username: 'fact_url_owner' });
+				// a row written past the store: well-formed `file:` URL, but the
+				// address of another hash, so serving it would hand out that fact's
+				// bytes under this one's name
+				const other = 'ab' + 'cd'.repeat(31);
+				const hash = await cross_put_fact(fixture, rpc_path, {
+					content: 'row-with-a-foreign-url',
+					content_type: 'text/plain',
+					holder: owner.actor.id,
+					external_url: `file:${other.slice(0, 2)}/${other.slice(2)}`
+				});
+				const t = fixture.fresh_transport();
+				const cell_id = await create_cell_with_ref(
+					t,
+					owner.create_session_headers(),
+					hash,
+					'public'
+				);
+
+				const anon = fixture.fresh_transport({ origin: null });
+				assert_masked_404(
+					await fact_get(anon, cell_fact_path(cell_id, hash), {}),
+					'foreign-url fact via a public cell'
+				);
+				assert_masked_404(
+					await fact_get(t, `/api/facts/${hash}`, fixture.create_session_headers()),
+					'foreign-url fact by bare hash, as admin'
+				);
 			}
 		);
 

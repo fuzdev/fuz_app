@@ -113,13 +113,17 @@
  *
  * ## Defense-in-depth
  *
- * `external_url` is re-validated against the `file:<shard>/<rest>` shape
- * before it addresses the filesystem or an `X-Accel-Redirect`. `PgFactStore`
- * writes only that shape, but the column is free text and `query_put_fact`
+ * `external_url` is re-validated before it addresses the filesystem or an
+ * `X-Accel-Redirect`: it must have the `file:<shard>/<rest>` shape, and it must
+ * be the requested hash's own address (`file_fact_url_addresses`). `PgFactStore`
+ * writes only such URLs, but the column is free text and `query_put_fact`
  * inserts what it is given, so a row written past the store — or a
  * row-injection bug upstream — would otherwise hand nginx an
- * attacker-controlled path. Any other shape is a logged 404, the same
- * unavailable that `PgFactStore.get` reports for it as `null`.
+ * attacker-controlled path, or serve another fact's bytes under this hash,
+ * behind this hash's admission. The serve path never re-hashes what it
+ * streams, so this binding is what ties the bytes to the name. Either refusal
+ * is a logged error and the masked 404, the same unavailable that
+ * `PgFactStore.get` reports as `null`. Twin of the Rust `fuz_fact_serving`.
  *
  * @module
  */
@@ -151,7 +155,7 @@ import { query_cell_get } from '../db/cell_queries.ts';
 import { query_cell_grant_list_for_cell } from '../db/cell_grant_queries.ts';
 import { can_view_cell } from '../auth/cell_authorize.ts';
 import { cell_steward_admits } from '../auth/cell_steward.ts';
-import { parse_file_fact_url } from '../db/file_fact_url.ts';
+import { file_fact_url_addresses, parse_file_fact_url } from '../db/file_fact_url.ts';
 import type { XAccelConfig } from './x_accel.ts';
 import { FACT_CACHE_CONTROL, FACT_SECURITY_HEADERS } from './fact_security_headers.ts';
 
@@ -268,12 +272,16 @@ const serve_fact_bytes = async (
 	}
 
 	// External — defense-in-depth re-validate the URL before trusting it
-	// to address the filesystem.
+	// to address the filesystem: its shape, then that it is this hash's file
 	const parsed = parse_file_fact_url(meta.external_url);
 	if (!parsed) {
 		log.error(
 			`serve_fact: external_url for ${hash} is not a file:<shard>/<rest> URL; answering 404`
 		);
+		return c.body(null, 404);
+	}
+	if (!file_fact_url_addresses(parsed, hash)) {
+		log.error(`serve_fact: external_url for ${hash} addresses another fact's file; answering 404`);
 		return c.body(null, 404);
 	}
 	const { shard, rest } = parsed;

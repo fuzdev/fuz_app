@@ -72,12 +72,25 @@ export interface BootstrapAccountDeps {
 }
 
 /**
+ * Strip exactly one trailing `\n` from the operator-written token bytes.
+ *
+ * Not `trim()`: trimming widens the set of accepted tokens — `tok\r\n`,
+ * `tok  \n`, or a leading newline would all pass. One trailing LF is the
+ * newline a POSIX editor appends; anything else stays in the bytes and fails
+ * the compare, so operators write the token exactly. Twin of the Rust
+ * `strip_one_trailing_newline` (`fuz_auth`).
+ */
+const strip_one_trailing_newline = (bytes: Uint8Array): Uint8Array =>
+	bytes.at(-1) === 0x0a ? bytes.subarray(0, -1) : bytes;
+
+/**
  * Bootstrap the first account with keeper and admin privileges.
  *
  * Uses an atomic `bootstrap_lock` UPDATE to prevent concurrent bootstrap
  * attempts (TOCTOU). The full flow runs in a single transaction:
  *
- * 1. Read and verify the bootstrap token (before transaction)
+ * 1. Read and verify the bootstrap token (before transaction) — the file's
+ *    raw bytes less one optional trailing LF, compared in constant time
  * 2. Hash the password (CPU-intensive, before transaction)
  * 3. Acquire the bootstrap lock atomically (inside transaction)
  * 4. Create account + actor
@@ -103,18 +116,20 @@ export const bootstrap_account = async (
 	// secure read fails loud on a symlink / non-regular file / permissive mode /
 	// oversized file — every refusal masks as the same TOKEN_FILE_MISSING the
 	// wire always carried, with the specific reason logged for the operator.
-	let expected_token: string;
+	let expected_token: Uint8Array;
 	try {
-		expected_token = new TextDecoder().decode(await read_secure_file(token_path)).trim();
+		expected_token = strip_one_trailing_newline(await read_secure_file(token_path));
 	} catch (err) {
 		log.warn(`bootstrap token file rejected: ${to_error_message(err)}`);
 		return { ok: false, error: ERROR_TOKEN_FILE_MISSING, status: 404 };
 	}
-	// Defense-in-depth: no .trim() on provided_token — tokens must match exactly.
-	// The expected_token is already trimmed above.
+	// raw bytes on both sides, nothing trimmed — the provided token must be the
+	// file's bytes exactly, less the one newline an editor appends
 	const provided_buf = Buffer.from(provided_token);
-	const expected_buf = Buffer.from(expected_token);
-	if (provided_buf.length !== expected_buf.length || !timingSafeEqual(provided_buf, expected_buf)) {
+	if (
+		provided_buf.length !== expected_token.length ||
+		!timingSafeEqual(provided_buf, expected_token)
+	) {
 		return { ok: false, error: ERROR_INVALID_TOKEN, status: 401 };
 	}
 

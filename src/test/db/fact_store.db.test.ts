@@ -6,8 +6,8 @@
  * - embedded round-trip preserves bytes exactly across pg + pglite
  * - `fact_hash_verify(hash, await get(hash))` is true on a stored fact
  * - declared refs on `put` are queryable via `get_refs`
- * - JSON content auto-extracts refs when no explicit `refs` is passed;
- *   binary content does NOT auto-extract
+ * - refs are only what a put declares: JSON content naming hashes, `put` or
+ *   `put_stream`, records none unless they are passed as `refs`
  * - `has` / `get` / `get_meta` return false / null on absent hashes
  * - `put` rejects bytes over the embedded threshold when no disk root is
  *   configured
@@ -84,31 +84,30 @@ describe_db('pg_fact_store', (get_db) => {
 		assert.deepEqual(new Set(refs), new Set([cover, detail]));
 	});
 
-	test('JSON content auto-extracts refs when no explicit refs passed', async () => {
+	test('JSON content naming hashes records no refs unless they are declared', async () => {
 		const store = make_store();
-		// Real hashes — auto-extraction must produce hashes that pass is_fact_hash
 		const cover = await store.put(encode('cover'), { holder: null });
 		const item = await store.put(encode('item'), { holder: null });
 
-		const manifest_json = JSON.stringify({
-			kind: 'collection',
-			cover,
-			items: [item],
-			label: 'Auto-extract test',
-			fake_hex_not_a_ref: 'af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262'
-		});
-		const manifest_hash = await store.put(encode(manifest_json), {
+		const manifest_json = JSON.stringify({ kind: 'collection', cover, items: [item] });
+		const undeclared = await store.put(encode(manifest_json), {
 			holder: null,
 			content_type: 'application/json'
 		});
+		assert.deepEqual(await store.get_refs(undeclared), []);
 
-		const refs = await store.get_refs(manifest_hash);
-		assert.deepEqual(new Set(refs), new Set([cover, item]));
+		// declared refs are recorded as given, whatever else the JSON names
+		const declared_json = JSON.stringify({ kind: 'collection', cover, items: [item], v: 2 });
+		const declared = await store.put(encode(declared_json), {
+			holder: null,
+			content_type: 'application/json',
+			refs: [cover]
+		});
+		assert.deepEqual(await store.get_refs(declared), [cover]);
 	});
 
 	test('binary content with no explicit refs records no refs', async () => {
 		const store = make_store();
-		// JSON-shaped string but content_type is octet-stream → should NOT auto-extract
 		const json_text = JSON.stringify({ cover: FAKE_BLAKE });
 		const hash = await store.put(encode(json_text), {
 			holder: null,

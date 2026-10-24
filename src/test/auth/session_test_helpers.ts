@@ -12,7 +12,15 @@ export const TEST_KEY = 'a'.repeat(32);
 export const OLD_KEY = 'b'.repeat(32);
 export const TEST_IDENTITY = 'user-123';
 
-export const create_test_keyring = (): Keyring => create_keyring(TEST_KEY)!;
+/**
+ * Build a keyring for a test, throwing with the refusal reasons when `key` is
+ * not a valid keys value.
+ */
+export const create_test_keyring = (key: string = TEST_KEY): Keyring => {
+	const result = create_keyring(key);
+	if (!result.ok) throw new Error(`test keyring refused: ${result.errors.join('; ')}`);
+	return result.keyring;
+};
 
 export const test_session_options: SessionOptions<string> = {
 	cookie_name: 'test_session',

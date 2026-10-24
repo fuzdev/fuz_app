@@ -28,6 +28,9 @@ const VALUE_SEPARATOR = ':';
 /** Strict integer matcher for the embedded `expires_at` field. */
 const EXPIRES_AT_INTEGER_RE = /^\d+$/;
 
+/** The largest `expires_at` the Rust spine's `u64` parse accepts. */
+const EXPIRES_AT_MAX = 18446744073709551615n;
+
 /**
  * Cookie options for session cookies.
  */
@@ -163,8 +166,9 @@ export const parse_session = async <TIdentity>(
 	// `' 123'` as `123`. HMAC integrity makes such a tampered value
 	// theoretical, but stricter parsing closes the gap as defense-in-depth.
 	if (!EXPIRES_AT_INTEGER_RE.test(expires_at_str)) return null;
+	// refuse what the Rust spine's `u64` parse refuses, leading zeros allowed
+	if (BigInt(expires_at_str) > EXPIRES_AT_MAX) return null;
 	const expires_at = parseInt(expires_at_str, 10);
-	if (!Number.isFinite(expires_at)) return null;
 
 	// Check expiration
 	const now = now_seconds ?? Math.floor(Date.now() / 1000);

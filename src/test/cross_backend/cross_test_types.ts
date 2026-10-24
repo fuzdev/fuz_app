@@ -17,6 +17,8 @@
 
 import type { SerializableBootstrappedBackendHandle } from '#lib/testing/cross_backend/setup.ts';
 
+import type { BootstrapTokenProbeResult } from './bootstrap_token_probe.ts';
+
 declare module 'vitest' {
 	export interface ProvidedContext {
 		// Serializable subset; vitest 4 hard-rejects non-serializable provide
@@ -24,6 +26,9 @@ declare module 'vitest' {
 		// the globalSetup process. Test files call `reconstruct_bootstrapped_handle`
 		// on the injected value to rebuild a usable handle.
 		backend_handle: SerializableBootstrappedBackendHandle;
+		// what the single-backend setup's pre-bootstrap token-file probe got
+		// back (`bootstrap_token_probe.ts`), asserted by `bootstrap_token.cross.test.ts`
+		bootstrap_token_probe: Array<BootstrapTokenProbeResult>;
 		// The dual-spawn schema-parity project (`global_setup_schema_parity.ts`)
 		// provides both backends' handles at once — `a` = TS spine (node),
 		// `b` = Rust `testing_spine_stub` — so `schema_parity.cross.test.ts`

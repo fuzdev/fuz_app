@@ -17,7 +17,6 @@ import { create_bootstrap_route_specs } from '#lib/auth/bootstrap_routes.ts';
 import { BootstrapOutput } from '#lib/auth/bootstrap_route_schema.ts';
 import { apply_route_specs } from '#lib/http/route_spec.ts';
 import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
-import { create_keyring } from '#lib/auth/keyring.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { PASSWORD_LENGTH_MAX } from '#lib/auth/password.ts';
 import { run_migrations } from '#lib/db/migrate.ts';
@@ -31,6 +30,7 @@ import {
 } from '#lib/http/error_schemas.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
+import { create_test_keyring } from './auth/session_test_helpers.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -54,7 +54,7 @@ const MAX_ATTEMPTS = 3;
 const create_test_limiter = (): RateLimiter =>
 	new RateLimiter({ max_attempts: MAX_ATTEMPTS, window_ms: WINDOW_MS, cleanup_interval_ms: 0 });
 
-const keyring = create_keyring('integration_test_key_a')!;
+const keyring = create_test_keyring('integration-test-key-at-least-32-chars');
 const session_options = create_session_config('test_session');
 
 // --- Bootstrap helpers ---

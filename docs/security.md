@@ -186,6 +186,10 @@ legitimate operator.
   without preventing the bootstrap success response
 - **Input validation**: Bootstrap username uses the `Username` schema (same
   constraints as signup), not a weaker `min(1)` check
+- **Exact token compare**: the provided token must equal the token file's raw
+  bytes less one optional trailing LF, compared in constant time — nothing is
+  trimmed, so a file holding `tok\r\n`, `tok  \n`, or a leading newline
+  refuses `tok`. Write the token exactly; both spines apply the same rule.
 
 ## Session Security
 
@@ -212,6 +216,16 @@ legitimate operator.
   session cookie, so a compromised credential does not persist after
   rotation. The handler closes the account's WebSockets and SSE streams once
   the change commits (see [Closing on Revocation](#closing-on-revocation))
+
+### Cookie Signing Keys
+
+`SECRET_FUZ_COOKIE_KEYS` must hold at least one key, and every key must be at
+least 32 characters: `create_keyring` refuses the value otherwise, with every
+reason, so a weak key fails at startup instead of signing cookies (the Rust
+spine's `Keyring::new` applies the same rule). The cookie MAC is HMAC-SHA256,
+written as padded standard base64, and decoded strictly: exactly 43 characters
+then one `=`, no whitespace, no non-zero trailing bits. One MAC has one
+accepted spelling, on both spines.
 
 ### Cookie Key Rotation
 
@@ -1849,6 +1863,16 @@ re-validated against the canonical `file:<shard>/<rest>` shape before it is
 trusted to address the filesystem, even though the write path only ever emits
 that shape — defense-in-depth against a future row-injection bug handing nginx
 an attacker-controlled path.
+
+**The URL is bound to the hash.** A well-formed URL must also be the requested
+hash's own address — `<shard>` + `<rest>` spells its hex
+(`file_fact_url_addresses`). Neither serve path re-hashes the bytes it hands
+out, so without the binding a row for hash H whose URL names another fact's
+file would serve that fact's bytes as H, behind H's admission: a private
+fact's bytes under a public cell's ref. A row that fails the binding is a
+logged error and the masked 404, and `PgFactStore.get` refuses it the same
+way. The Rust spine applies the same binding on its serve paths and in its
+store.
 
 **X-Accel facts location must be `internal;` and carry the fact headers
 (fail-loud at boot).** The `X-Accel-Redirect` path's confidentiality depends on

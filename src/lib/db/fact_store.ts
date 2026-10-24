@@ -6,8 +6,8 @@
  *
  * - sync hash on `put`; `put_stream` hashes as it streams
  * - idempotent insert (`ON CONFLICT DO NOTHING` in the queries layer)
- * - JSON ref auto-extraction when `content_type` signals JSON and the
- *   caller didn't pass an explicit `refs` array
+ * - refs are exactly the caller's `options.refs` — the bytes are never
+ *   scanned for hashes, whatever the `content_type`
  * - verify-on-read for disk-backed content; embedded reads skip verify
  *   because PG storage IS the hash table
  * - mismatched disk bytes return `null` + log warning (treat as
@@ -17,10 +17,10 @@
  * land in the PG `bytes` column; larger bytes go to the disk CAS at
  * `<facts_dir>/<shard>/<rest>` (`db/fact_disk_storage.ts`) and the row records a
  * `file:<shard>/<rest>` `external_url`. `put` takes fully-buffered bytes;
- * `put_stream` is the bounded-memory streaming twin (hash BLAKE3 + SHA-256 in
- * one pass, spill past the threshold, enforce `max_bytes` / `ENOSPC`). `put`
- * needs `disk_root` + `fs` (the `runtime/*Deps`) for the over-threshold path
- * only: without them the store has nowhere to put bytes it cannot embed, and an
+ * `put_stream` is the bounded-memory streaming twin (hash BLAKE3 as it streams,
+ * spill past the threshold, enforce `max_bytes` / `ENOSPC`). `put` needs
+ * `disk_root` + `fs` (the `runtime/*Deps`) for the over-threshold path only:
+ * without them the store has nowhere to put bytes it cannot embed, and an
  * oversize `put` throws. `put_stream` needs `fs` for a body of any size — with
  * none it throws before reading the stream — and `disk_root` for the
  * over-threshold spill: with none, a body that passes the threshold throws
@@ -31,7 +31,9 @@
  * — the store makes no network request. The column is free text
  * (`query_put_fact` inserts what it is given), so `get` treats a row whose
  * `external_url` has any other shape, and any external row on a store with no
- * disk CAS configured, as unavailable: a warning and `null`.
+ * disk CAS configured, as unavailable: a warning and `null`. A `file:` URL
+ * naming another fact's file (`file_fact_url_addresses`) is refused the same
+ * way, logged as an error, before the file is read.
  *
  * ## Holders
  *
@@ -54,11 +56,7 @@ import type { Uuid } from '../primitive_schemas.ts';
 import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import {
-	fact_hash_bytes,
-	fact_hash_verify,
-	fact_hash_extract_refs
-} from '@fuzdev/fuz_util/fact_hash.ts';
+import { fact_hash_bytes, fact_hash_verify } from '@fuzdev/fuz_util/fact_hash.ts';
 import type { FactHash } from '@fuzdev/fuz_util/hash_schemas.ts';
 import type {
 	FactMeta,
@@ -78,7 +76,7 @@ import {
 	type PutFactInput
 } from './fact_queries.ts';
 import { query_put_fact_holder } from './fact_holder_queries.ts';
-import { is_file_fact_url } from './file_fact_url.ts';
+import { file_fact_url_addresses, parse_file_fact_url } from './file_fact_url.ts';
 import {
 	read_fact_bytes_from_disk,
 	stream_fact_to_disk,
@@ -186,8 +184,9 @@ export class PgFactStore implements HeldFactStore {
 	 * are configured) at `<facts_dir>/<shard>/<rest>` with a `file:` URL. Oversize
 	 * without a disk root throws: the store has nowhere to put bytes it cannot
 	 * embed. Idempotent — `ON CONFLICT DO NOTHING` + content-addressed disk
-	 * filenames make a re-write a no-op. `options.holder`, when set, is recorded
-	 * as a holder on a fresh insert and a dedup hit alike.
+	 * filenames make a re-write harmless (it renames verified bytes over the same
+	 * file). Refs are exactly `options.refs` (none when omitted). `options.holder`,
+	 * when set, is recorded as a holder on a fresh insert and a dedup hit alike.
 	 *
 	 * @mutates fact_holder - records `options.holder` (when non-null) in the transaction that writes the `fact` row
 	 */
@@ -217,24 +216,22 @@ export class PgFactStore implements HeldFactStore {
 				content_type: options.content_type ?? null,
 				size: bytes.length
 			},
-			resolve_refs(bytes, options),
+			options.refs ?? [],
 			options.holder
 		);
 		return hash;
 	}
 
 	/**
-	 * Stream bytes into the store with bounded memory, returning the finalized
-	 * digests + size. Delegates the byte path to `stream_fact_to_disk` (hash
-	 * BLAKE3 + SHA-256 in one pass, buffer to the embedded threshold, spill to the
-	 * disk CAS), then inserts the `fact` row by placement — embedded bytes go to
-	 * the PG `bytes` column, disk-spilled bytes record the `file:` `external_url`.
+	 * Stream bytes into the store with bounded memory, returning the fact hash +
+	 * size. Delegates the byte path to `stream_fact_to_disk` (hash BLAKE3 as it
+	 * streams, buffer to the embedded threshold, spill to the disk CAS), then
+	 * inserts the `fact` row by placement — embedded bytes go to the PG `bytes`
+	 * column, disk-spilled bytes record the `file:` `external_url`.
 	 * The cap is enforced mid-stream (`FactPayloadTooLargeError`); a disk-full mid-
 	 * stream throws `FactStorageFullError`.
 	 *
-	 * Refs: explicit `options.refs` are recorded; JSON auto-extraction is NOT
-	 * attempted (it would need a buffered re-read, defeating the bounded-memory
-	 * contract) — streamed uploads are opaque blobs.
+	 * Refs are exactly `options.refs` (none when omitted), as on `put`.
 	 *
 	 * Requires `fs` (and, for the over-threshold spill, `disk_root`) to be
 	 * configured. The streaming twin of `put`; mirrors the Rust
@@ -273,7 +270,7 @@ export class PgFactStore implements HeldFactStore {
 			options.refs ?? [],
 			options.holder
 		);
-		return { hash: streamed.hash, sha256: streamed.sha256, size: streamed.size };
+		return { hash: streamed.hash, size: streamed.size };
 	}
 
 	/**
@@ -301,7 +298,8 @@ export class PgFactStore implements HeldFactStore {
 	 * Returns `null`, with a warning log, for an external row the store cannot
 	 * serve — an `external_url` that is not a `file:<shard>/<rest>` URL, no disk
 	 * CAS configured (`disk_root` + `fs`), a failed disk read, or bytes that
-	 * don't match the hash. Never makes a network request.
+	 * don't match the hash — and, with an error log, for a URL that names
+	 * another fact's file. Never makes a network request.
 	 */
 	async get(hash: FactHash): Promise<Uint8Array | null> {
 		const row = await query_get_fact(this.#deps, hash);
@@ -314,9 +312,16 @@ export class PgFactStore implements HeldFactStore {
 		}
 		// the URL is not echoed — the column is free text, so its shape and
 		// length are whatever the row's writer chose
-		if (!is_file_fact_url(row.external_url)) {
+		const parsed = parse_file_fact_url(row.external_url);
+		if (!parsed) {
 			this.#log?.warn(
 				`PgFactStore.get external_url for ${hash} is not a file:<shard>/<rest> URL; treating as not-found`
+			);
+			return null;
+		}
+		if (!file_fact_url_addresses(parsed, hash)) {
+			this.#log?.error(
+				`PgFactStore.get external_url for ${hash} addresses another fact's file; treating as not-found`
 			);
 			return null;
 		}
@@ -387,25 +392,6 @@ export class PgFactStore implements HeldFactStore {
 		return query_delete_fact(this.#deps, hash);
 	}
 }
-
-/**
- * Resolve refs for a `put` call: explicit `refs` win; otherwise auto-extract
- * from JSON content; otherwise no refs.
- */
-const resolve_refs = (bytes: Uint8Array, options: FactPutOptions): Array<FactHash> => {
-	if (options.refs !== undefined) return options.refs;
-	if (options.content_type !== 'application/json') return [];
-	let value: unknown;
-	try {
-		value = JSON.parse(new TextDecoder().decode(bytes));
-	} catch {
-		// Malformed JSON — caller mislabeled content_type. Fall back to no refs;
-		// the alternative (throwing) would surprise callers who set
-		// content_type advisorially.
-		return [];
-	}
-	return fact_hash_extract_refs(value as never);
-};
 
 /**
  * Coerce whatever the driver returns for BYTEA into a `Uint8Array`.

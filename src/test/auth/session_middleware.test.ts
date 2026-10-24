@@ -10,7 +10,7 @@
 import { describe, test, assert } from 'vitest';
 import { Hono } from 'hono';
 
-import { create_keyring } from '#lib/auth/keyring.ts';
+import type { Keyring } from '#lib/auth/keyring.ts';
 import {
 	create_session_config,
 	create_session_cookie_value,
@@ -19,19 +19,14 @@ import {
 } from '#lib/auth/session_cookie.ts';
 import { create_session_middleware } from '#lib/auth/session_middleware.ts';
 
-import { OLD_KEY, TEST_KEY } from './session_test_helpers.ts';
-
-const create_test_keyring = (key = TEST_KEY) => create_keyring(key)!;
+import { OLD_KEY, TEST_KEY, create_test_keyring } from './session_test_helpers.ts';
 
 const create_config = (cookie_name = 'test_session') => create_session_config(cookie_name);
 
 /** Create a Hono test app with session middleware and a test handler that echoes the identity. */
-const create_test_app = (
-	keyring: ReturnType<typeof create_keyring>,
-	options: SessionOptions<string>
-): Hono => {
+const create_test_app = (keyring: Keyring, options: SessionOptions<string>): Hono => {
 	const app = new Hono();
-	app.use('/*', create_session_middleware(keyring!, options));
+	app.use('/*', create_session_middleware(keyring, options));
 	app.get('/test', (c) => {
 		const identity = (c as any).get(options.context_key);
 		return c.json({ identity });
@@ -101,7 +96,7 @@ describe('create_session_middleware', () => {
 		const cookie_value = await create_session_cookie_value(old_keyring, 'user-42', options);
 
 		// New keyring has new key first, old key second (for rotation)
-		const rotated_keyring = create_keyring(`${TEST_KEY}__${OLD_KEY}`);
+		const rotated_keyring = create_test_keyring(`${TEST_KEY}__${OLD_KEY}`);
 		const app = create_test_app(rotated_keyring, options);
 
 		const res = await app.request('/test', {

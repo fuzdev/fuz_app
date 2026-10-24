@@ -14,7 +14,6 @@ import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { z } from 'zod';
 
-import { create_keyring } from '#lib/auth/keyring.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_health_route_spec } from '#lib/http/common_routes.ts';
 import {
@@ -35,10 +34,11 @@ import { create_default_db_factory } from '#lib/testing/db.ts';
 import { run_migrations } from '#lib/db/migrate.ts';
 import { auth_migration_ns } from '#lib/auth/migrations.ts';
 import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
+import { create_test_keyring } from '../auth/session_test_helpers.ts';
 
 // 32+ char key for keyring
 const TEST_KEY = 'test-key-that-is-at-least-32-chars-long!!';
-const keyring = create_keyring(TEST_KEY)!;
+const keyring = create_test_keyring(TEST_KEY);
 const session_options = create_session_config('test_session');
 
 const log = new Logger('test', { level: 'off' });

@@ -5,9 +5,8 @@
  * idempotent (`ON CONFLICT DO NOTHING`) so the same hash can be written by
  * two callers without the second observing an error.
  *
- * Higher-level lifecycle (verify-on-read, JSON ref auto-extraction,
- * embedded-vs-referenced selection) lives in `db/fact_store.ts`. Queries
- * here are deliberately mechanical.
+ * Higher-level lifecycle (verify-on-read, embedded-vs-referenced selection)
+ * lives in `db/fact_store.ts`. Queries here are deliberately mechanical.
  *
  * @module
  */

@@ -10,7 +10,7 @@ import { assert, test } from 'vitest';
 import { Hono } from 'hono';
 
 import { create_session_and_set_cookie, get_session_cookie } from '#lib/auth/session_middleware.ts';
-import { create_keyring, type Keyring } from '#lib/auth/keyring.ts';
+import type { Keyring } from '#lib/auth/keyring.ts';
 import { create_session_config, parse_session } from '#lib/auth/session_cookie.ts';
 import {
 	hash_session_token,
@@ -21,7 +21,7 @@ import type { Db } from '#lib/db/db.ts';
 import { create_test_account_with_actor } from '#lib/testing/db_entities.ts';
 
 import { describe_db } from '../db_fixture.ts';
-import { TEST_KEY } from './session_test_helpers.ts';
+import { TEST_KEY, create_test_keyring } from './session_test_helpers.ts';
 
 const SESSION_OPTIONS = create_session_config('test_session');
 
@@ -74,7 +74,7 @@ const read_session_token = async (set_cookie: string, keyring: Keyring): Promise
 describe_db('create_session_and_set_cookie', (get_db) => {
 	test('cookie verifies and decoded token hashes to a real DB session row', async () => {
 		const db = get_db();
-		const keyring = create_keyring(TEST_KEY)!;
+		const keyring = create_test_keyring(TEST_KEY);
 		const { account } = await create_test_account_with_actor(db, { username: 'alice' });
 
 		const set_cookie = await fire_create_session({ keyring, db, account_id: account.id });
@@ -93,7 +93,7 @@ describe_db('create_session_and_set_cookie', (get_db) => {
 
 	test('max_sessions caps the per-account session count by evicting oldest', async () => {
 		const db = get_db();
-		const keyring = create_keyring(TEST_KEY)!;
+		const keyring = create_test_keyring(TEST_KEY);
 		const { account } = await create_test_account_with_actor(db, { username: 'cap' });
 
 		const tokens: Array<string> = [];
@@ -134,7 +134,7 @@ describe_db('create_session_and_set_cookie', (get_db) => {
 
 	test('max_sessions: null does not enforce a cap', async () => {
 		const db = get_db();
-		const keyring = create_keyring(TEST_KEY)!;
+		const keyring = create_test_keyring(TEST_KEY);
 		const { account } = await create_test_account_with_actor(db, { username: 'no_cap' });
 
 		for (let i = 0; i < 5; i++) {

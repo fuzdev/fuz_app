@@ -205,6 +205,52 @@ describe_db('bootstrap_account', (get_db) => {
 		assert.strictEqual(await get_lock_state(db), false);
 	});
 
+	test('accepts a token file with one trailing LF', async () => {
+		const db = get_db();
+		const fs = create_mock_fs({ '/token': `${TEST_TOKEN}\n` });
+		const result = await bootstrap_account(create_deps(db, { fs }), TEST_TOKEN, {
+			username: 'keeper',
+			password: 'password_12_chars'
+		});
+		assert.strictEqual(result.ok, true);
+	});
+
+	// the Rust twin's rule: the file's raw bytes less one optional trailing LF,
+	// nothing else trimmed
+	const REFUSED_TOKEN_FILES: Array<[string, string]> = [
+		['CRLF', `${TEST_TOKEN}\r\n`],
+		['two trailing LFs', `${TEST_TOKEN}\n\n`],
+		['trailing spaces', `${TEST_TOKEN}  \n`],
+		['trailing tab', `${TEST_TOKEN}\t`],
+		['leading LF', `\n${TEST_TOKEN}`],
+		['leading space', ` ${TEST_TOKEN}`]
+	];
+
+	test.each(REFUSED_TOKEN_FILES)('refuses a token file with %s', async (_label, content) => {
+		const db = get_db();
+		const fs = create_mock_fs({ '/token': content });
+		const result = await bootstrap_account(create_deps(db, { fs }), TEST_TOKEN, {
+			username: 'keeper',
+			password: 'password_12_chars'
+		});
+		assert.strictEqual(result.ok, false);
+		if (!result.ok) assert.strictEqual(result.error, ERROR_INVALID_TOKEN);
+		assert.strictEqual(await get_lock_state(db), false);
+		// the token file stays for a corrected attempt
+		assert.ok('/token' in fs.files);
+	});
+
+	test('refuses a provided token that carries the trailing LF the file lost', async () => {
+		const db = get_db();
+		const fs = create_mock_fs({ '/token': `${TEST_TOKEN}\n` });
+		const result = await bootstrap_account(create_deps(db, { fs }), `${TEST_TOKEN}\n`, {
+			username: 'keeper',
+			password: 'password_12_chars'
+		});
+		assert.strictEqual(result.ok, false);
+		if (!result.ok) assert.strictEqual(result.error, ERROR_INVALID_TOKEN);
+	});
+
 	test('fails when token file is missing', async () => {
 		const db = get_db();
 		const fs = create_mock_fs({});

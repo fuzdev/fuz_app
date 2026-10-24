@@ -4,9 +4,9 @@
  * The pattern is the one guard between a `fact.external_url` — free text in
  * the row — and a filesystem path or an `X-Accel-Redirect`, and the serve path
  * streams what it resolves without re-hashing, so every shape it must refuse is
- * listed here. Each case is checked through all four exported forms
- * (`FILE_FACT_URL_PATTERN`, `is_file_fact_url`, `parse_file_fact_url`, the
- * `FileFactUrl` schema) so they cannot disagree.
+ * listed here. Each case is checked through all three exported forms
+ * (`FILE_FACT_URL_PATTERN`, `parse_file_fact_url`, the `FileFactUrl` schema)
+ * so they cannot disagree.
  *
  * @module
  */
@@ -18,7 +18,7 @@ import {
 	FILE_FACT_URL_PATTERN,
 	FileFactUrl,
 	fact_disk_path,
-	is_file_fact_url,
+	file_fact_url_addresses,
 	mint_file_fact_url,
 	parse_file_fact_url
 } from '#lib/db/file_fact_url.ts';
@@ -82,7 +82,6 @@ describe('file fact url grammar', () => {
 	test('accepts a well-formed URL and splits it into shard + rest', () => {
 		for (const [label, url, shard, rest] of ACCEPTED) {
 			assert(FILE_FACT_URL_PATTERN.test(url), `pattern accepts: ${label}`);
-			assert(is_file_fact_url(url), `is_file_fact_url accepts: ${label}`);
 			assert(FileFactUrl.safeParse(url).success, `FileFactUrl accepts: ${label}`);
 			assert.deepEqual(parse_file_fact_url(url), { url, shard, rest }, label);
 		}
@@ -91,7 +90,6 @@ describe('file fact url grammar', () => {
 	test('rejects every other shape', () => {
 		for (const [label, url] of REJECTED) {
 			assert(!FILE_FACT_URL_PATTERN.test(url), `pattern rejects: ${label}`);
-			assert(!is_file_fact_url(url), `is_file_fact_url rejects: ${label}`);
 			assert(!FileFactUrl.safeParse(url).success, `FileFactUrl rejects: ${label}`);
 			assert.equal(parse_file_fact_url(url), null, `parse_file_fact_url rejects: ${label}`);
 		}
@@ -100,7 +98,7 @@ describe('file fact url grammar', () => {
 	test('the pattern keeps no state between calls', () => {
 		// A `g` or `y` flag would make `test` / `exec` alternate on one input.
 		for (let i = 0; i < 3; i++) {
-			assert(is_file_fact_url(VALID));
+			assert(FILE_FACT_URL_PATTERN.test(VALID));
 			assert(parse_file_fact_url(VALID) !== null);
 		}
 	});
@@ -112,5 +110,23 @@ describe('file fact url grammar', () => {
 		const url = mint_file_fact_url(shard, rest);
 		assert.equal(url, VALID);
 		assert.deepEqual(parse_file_fact_url(url), { url, shard, rest });
+	});
+});
+
+describe('file_fact_url_addresses', () => {
+	const hash = `blake3:${SHARD}${REST}` as FactHash;
+
+	test('a URL addresses the hash whose hex it spells', () => {
+		assert.isTrue(file_fact_url_addresses(parse_file_fact_url(VALID)!, hash));
+	});
+
+	test('a URL does not address another hash', () => {
+		const other = `blake3:${'0'.repeat(64)}` as FactHash;
+		assert.isFalse(file_fact_url_addresses(parse_file_fact_url(VALID)!, other));
+		// a shard-only or rest-only match is not the address either
+		const same_shard = `blake3:${SHARD}${'0'.repeat(62)}` as FactHash;
+		const same_rest = `blake3:00${REST}` as FactHash;
+		assert.isFalse(file_fact_url_addresses(parse_file_fact_url(VALID)!, same_shard));
+		assert.isFalse(file_fact_url_addresses(parse_file_fact_url(VALID)!, same_rest));
 	});
 });

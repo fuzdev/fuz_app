@@ -32,7 +32,7 @@ import { create_app_backend } from '@fuzdev/fuz_app/server/app_backend.ts';
 import { create_app_server } from '@fuzdev/fuz_app/server/app_server.ts';
 import { create_session_config } from '@fuzdev/fuz_app/auth/session_cookie.ts';
 import { argon2_password_deps } from '@fuzdev/fuz_app/auth/password_argon2.ts';
-import { create_validated_keyring } from '@fuzdev/fuz_app/auth/keyring.ts';
+import { create_keyring } from '@fuzdev/fuz_app/auth/keyring.ts';
 import { create_audit_emitter } from '@fuzdev/fuz_app/auth/audit_emitter.ts';
 import { BaseServerEnv } from '@fuzdev/fuz_app/server/env.ts';
 import { create_health_route_spec } from '@fuzdev/fuz_app/http/common_routes.ts';
@@ -42,7 +42,7 @@ import { create_deno_runtime } from '@fuzdev/fuz_app/runtime/deno.ts';
 const runtime = create_deno_runtime([]);
 
 // 1. Init backend — PGlite file-based DB, auth migrations run automatically
-const keyring_result = create_validated_keyring(cookie_secret);
+const keyring_result = create_keyring(cookie_secret);
 if (!keyring_result.ok) {
 	throw new Error(`Invalid keyring: ${keyring_result.errors.join(', ')}`);
 }

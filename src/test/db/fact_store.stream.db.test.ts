@@ -9,7 +9,7 @@
  * - `put_stream` of a sub-threshold body embeds (bytes in PG, `external = false`)
  * - `put_stream` of an over-threshold (chunked) body spills to
  *   `<facts_dir>/<shard>/<rest>`, records a `file:` URL, round-trips via `get`,
- *   and reports the correct blake3 hash + SHA-256 + size
+ *   and reports the correct blake3 hash + size
  * - `put_stream` aborts mid-stream with `FactPayloadTooLargeError` past `max_bytes`,
  *   inserting no row
  * - oversize `put` (with `disk_root` + `fs`) routes to disk instead of throwing
@@ -27,15 +27,14 @@
  *   leaves the file for the caller to unlink
  * - `put_stream` fsyncs the temp before the publishing rename (durability twin
  *   of the Rust `fuz_fact` §fsync posture)
- * - `put_stream` of identical over-threshold bytes dedups: the second put drops
- *   its temp instead of renaming over (twin of Rust `stream_dedup_second_put_drops_temp`)
+ * - a repeat put of over-threshold bytes renames its verified temp over the CAS
+ *   file, so a corrupt file on disk is replaced (streamed and buffered puts)
  * - `sweep_orphan_temps` reaps stale `.tmp` files but spares fresh ones
  *
  * @module
  */
 
 import { test, assert, afterEach } from 'vitest';
-import { createHash } from 'node:crypto';
 import { mkdtemp, rm, writeFile, mkdir, utimes, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -68,8 +67,6 @@ afterEach(async () => {
 		await rm(dir, { recursive: true, force: true });
 	}
 });
-
-const sha256_hex = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
 
 /**
  * Run `fn` with `globalThis.fetch` replaced by a stub that records the request
@@ -138,7 +135,6 @@ describe_db('pg_fact_store streaming', (get_db) => {
 			content_type: 'text/plain'
 		});
 		assert.equal(outcome.hash, fact_hash_bytes(bytes));
-		assert.equal(outcome.sha256, sha256_hex(bytes));
 		assert.equal(outcome.size, bytes.length);
 
 		const meta = await store.get_meta(outcome.hash);
@@ -161,7 +157,6 @@ describe_db('pg_fact_store streaming', (get_db) => {
 			content_type: 'application/octet-stream'
 		});
 		assert.equal(outcome.hash, fact_hash_bytes(bytes));
-		assert.equal(outcome.sha256, sha256_hex(bytes));
 		assert.equal(outcome.size, bytes.length);
 
 		// The fact row is external (disk-backed), and the bytes live at
@@ -430,7 +425,7 @@ describe_db('pg_fact_store streaming', (get_db) => {
 		assert.equal(events[fsync_i], events[rename_i]!.replace('rename:', 'fsync:'));
 	});
 
-	test('put_stream of identical over-threshold bytes dedups: second put drops its temp', async () => {
+	test('a repeat put_stream renames its temp over the CAS file, healing a corrupt one', async () => {
 		const facts_dir = await make_facts_dir();
 		const store = make_store(facts_dir, 64);
 		const bytes = new Uint8Array(4096);
@@ -440,21 +435,39 @@ describe_db('pg_fact_store streaming', (get_db) => {
 			holder: null,
 			content_type: 'application/octet-stream'
 		});
+		const { shard, rest } = fact_disk_path(first.hash);
+		const cas_path = join(facts_dir, shard, rest);
+		// corrupt the published file: `get` re-hashes and refuses it
+		await writeFile(cas_path, new Uint8Array(bytes.length));
+		assert.equal(await store.get(first.hash), null);
+
 		const second = await store.put_stream(stream_of_chunks(bytes, 256), 1_000_000, {
 			holder: null,
 			content_type: 'application/octet-stream'
 		});
 		assert.equal(first.hash, second.hash);
 
-		// The CAS body is present once, and no temp lingers (the dedup path dropped
-		// it rather than renaming over the existing content-addressed file).
-		const hex = first.hash.slice(FACT_HASH_PREFIX.length);
-		assert(await runtime.stat(join(facts_dir, hex.slice(0, 2), hex.slice(2))));
+		// the second put's verified bytes replaced the corrupt file, and no temp lingers
+		assert.deepEqual(new Uint8Array(await runtime.read_file(cas_path)), bytes);
 		const tmp_entries = await runtime.readdir(join(facts_dir, FACT_TMP_DIRNAME));
 		assert.equal(tmp_entries.filter((e) => e.endsWith('.tmp')).length, 0);
+		assert.deepEqual(await store.get(first.hash), bytes);
+	});
 
-		const back = await store.get(first.hash);
-		assert.deepEqual(back, bytes);
+	test('a repeat oversize put renames its temp over the CAS file, healing a corrupt one', async () => {
+		const facts_dir = await make_facts_dir();
+		const store = make_store(facts_dir, 64);
+		const bytes = new Uint8Array(2048);
+		for (let i = 0; i < bytes.length; i++) bytes[i] = (i * 7) & 0xff;
+
+		const hash = await store.put(bytes, { holder: null });
+		const { shard, rest } = fact_disk_path(hash);
+		const cas_path = join(facts_dir, shard, rest);
+		await writeFile(cas_path, new TextEncoder().encode('torn'));
+		assert.equal(await store.get(hash), null);
+
+		assert.equal(await store.put(bytes, { holder: null }), hash);
+		assert.deepEqual(await store.get(hash), bytes);
 	});
 });
 

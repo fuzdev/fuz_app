@@ -24,7 +24,6 @@ import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import { create_signup_route_specs } from '#lib/auth/signup_routes.ts';
 import { apply_route_specs } from '#lib/http/route_spec.ts';
 import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
-import { create_keyring } from '#lib/auth/keyring.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { PASSWORD_LENGTH_MAX } from '#lib/auth/password.ts';
 import { create_bearer_auth_middleware } from '#lib/auth/bearer_auth.ts';
@@ -37,6 +36,7 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { Db } from '#lib/db/db.ts';
 import { create_stub_db, create_noop_stub, create_test_audit_emitter } from '#lib/testing/stubs.ts';
 import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
+import { create_test_keyring } from './auth/session_test_helpers.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -138,7 +138,7 @@ const MAX_ATTEMPTS = 3;
 const create_test_limiter = (): RateLimiter =>
 	new RateLimiter({ max_attempts: MAX_ATTEMPTS, window_ms: WINDOW_MS, cleanup_interval_ms: 0 });
 
-const keyring = create_keyring('integration_test_key_a')!;
+const keyring = create_test_keyring('integration-test-key-at-least-32-chars');
 const session_options = create_session_config('test_session');
 
 /**

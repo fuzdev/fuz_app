@@ -27,7 +27,6 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
 
-import { create_keyring } from '#lib/auth/keyring.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_health_route_spec } from '#lib/http/common_routes.ts';
 import { create_app_server, type AppServerOptions } from '#lib/server/app_server.ts';
@@ -53,8 +52,9 @@ import {
 
 import { describe_db } from '../db_fixture.ts';
 import { create_gated_db, type GatedDb } from '../gated_db.ts';
+import { create_test_keyring } from '../auth/session_test_helpers.ts';
 
-const keyring = create_keyring('test-key-that-is-at-least-32-chars-long!!')!;
+const keyring = create_test_keyring('test-key-that-is-at-least-32-chars-long!!');
 const log = new Logger('test', { level: 'off' });
 const hour_ms = 60 * 60 * 1000;
 /** The short interval of the tests that run a schedule and then stop it. */

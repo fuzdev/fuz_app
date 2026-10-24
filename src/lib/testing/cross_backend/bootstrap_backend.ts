@@ -31,6 +31,17 @@ import { bootstrap } from '../transports/bootstrap.ts';
 import { create_fetch_transport } from '../transports/fetch_transport.ts';
 import type { BootstrappedBackendHandle } from './setup.ts';
 
+/** Options for `bootstrap_backend`. */
+export interface BootstrapBackendOptions {
+	/**
+	 * Runs after the binary is up and before the keeper bootstrap — the one
+	 * window in a backend's life where `POST {bootstrap_path}` still answers on
+	 * the token, so probes of the bootstrap route itself go here. A throw tears
+	 * the backend down like a failed bootstrap.
+	 */
+	readonly before_bootstrap?: (config: BackendConfig) => Promise<void>;
+}
+
 /**
  * Spawn the test binary described by `config`, bootstrap a keeper, and
  * return the enriched handle.
@@ -44,10 +55,12 @@ import type { BootstrappedBackendHandle } from './setup.ts';
  * otherwise hand-roll in every consumer's `globalSetup`.
  */
 export const bootstrap_backend = async (
-	config: BackendConfig
+	config: BackendConfig,
+	options?: BootstrapBackendOptions
 ): Promise<BootstrappedBackendHandle> => {
 	const handle = await spawn_backend(config);
 	try {
+		await options?.before_bootstrap?.(config);
 		const keeper_transport = create_fetch_transport({ base_url: config.base_url });
 		const keeper = await bootstrap({ transport: keeper_transport, config });
 		return {

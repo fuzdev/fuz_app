@@ -11,9 +11,11 @@
  *
  * Centralizing the regex + the `fact_disk_path` split keeps the shape in one
  * place: `PgFactStore`'s disk CAS (`db/fact_disk_storage.ts`), the
- * `serve_fact_route` defense-in-depth check, and the disk read
+ * `serve_fact_route` defense-in-depth checks (shape, then
+ * `file_fact_url_addresses`), and the disk read
  * (`read_fact_bytes_from_disk`) all derive the layout here, so the write path
- * and the read path can't drift. The TS twin of the Rust `fact_disk_path` (`fuz_fact`).
+ * and the read path can't drift. The TS twin of the Rust `fact_disk_path`
+ * (`fuz_fact`).
  *
  * Defense-in-depth: a `..` segment can't match (`.` isn't in `[0-9a-f]`),
  * neither can absolute paths, query strings, or any non-hex character.
@@ -36,9 +38,6 @@ export const FILE_FACT_URL_PATTERN = /^file:([0-9a-f]{2})\/([0-9a-f]{62})$/;
  */
 export const FileFactUrl = z.string().regex(FILE_FACT_URL_PATTERN).brand('FileFactUrl');
 export type FileFactUrl = z.infer<typeof FileFactUrl>;
-
-/** Type guard. Useful when discriminating a `string | null` column. */
-export const is_file_fact_url = (s: string): s is FileFactUrl => FILE_FACT_URL_PATTERN.test(s);
 
 /**
  * Split a `FactHash` into its on-disk `<shard>/<rest>` parts — the first 2
@@ -63,6 +62,25 @@ export const parse_file_fact_url = (
 	const m = FILE_FACT_URL_PATTERN.exec(url);
 	if (!m) return null;
 	return { url: url as FileFactUrl, shard: m[1]!, rest: m[2]! };
+};
+
+/**
+ * Whether a parsed `file:<shard>/<rest>` URL is the disk address of `hash` —
+ * `shard` + `rest` is its hex.
+ *
+ * The shape check (`parse_file_fact_url`) says a URL is safe to join onto the
+ * facts directory; this says it names `hash`'s own file. A reader checks both
+ * before it serves the file as `hash`'s bytes: a row whose `external_url` names
+ * another fact's file would otherwise serve those bytes under this hash, past
+ * this hash's admission. Twin of the Rust `ParsedFactUrl::addresses`
+ * (`fuz_fact`).
+ */
+export const file_fact_url_addresses = (
+	parsed: { shard: string; rest: string },
+	hash: FactHash
+): boolean => {
+	const { shard, rest } = fact_disk_path(hash);
+	return parsed.shard === shard && parsed.rest === rest;
 };
 
 /**

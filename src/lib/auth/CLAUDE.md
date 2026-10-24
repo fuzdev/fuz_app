@@ -31,7 +31,7 @@ over the pool so rows persist when request transactions roll back. See root
 
 ### Crypto primitives (pure, I/O-free)
 
-- `auth/keyring.ts` — `Keyring`, `create_keyring`, `validate_keyring`, `create_validated_keyring`.
+- `auth/keyring.ts` — `Keyring`, `create_keyring` (validates — the one way to build a `Keyring`), `validate_keyring`.
 - `auth/session_cookie.ts` — `SessionOptions<T>`, `parse_session`, `process_session_cookie` (`'none' | 'clear'` — no refresh action; the 30-day lifetime is an absolute cap signed once at mint), `create_session_config`, `fuz_session_config`, `SESSION_AGE_MAX`.
 - `auth/password.ts` — `Password`, `PasswordProvided`, `PasswordHashDeps`, `PASSWORD_LENGTH_MIN` (12, OWASP), `PASSWORD_LENGTH_MAX` (300).
 - `auth/password_argon2.ts` — `hash_password`, `verify_password`, `verify_dummy`, `argon2_password_deps`.

@@ -22,7 +22,7 @@ import type { Uuid } from '../primitive_schemas.ts';
 
 import { DEFAULT_TEST_PASSWORD } from './test_credentials.ts';
 import { ROLE_KEEPER } from '../auth/role_schema.ts';
-import { create_validated_keyring, type Keyring } from '../auth/keyring.ts';
+import { create_keyring, type Keyring } from '../auth/keyring.ts';
 import { generate_api_token } from '../auth/api_token.ts';
 import type { Db, DbType } from '../db/db.ts';
 import type { PasswordHashDeps } from '../auth/password.ts';
@@ -420,7 +420,7 @@ const _build_test_backend = async (
 		);
 	}
 
-	const keyring_result = create_validated_keyring(TEST_COOKIE_SECRET);
+	const keyring_result = create_keyring(TEST_COOKIE_SECRET);
 	if (!keyring_result.ok) {
 		throw new Error(`Test keyring failed: ${keyring_result.errors.join(', ')}`);
 	}

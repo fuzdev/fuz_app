@@ -20,15 +20,16 @@
  * re-hashing it (`server/serve_fact_route.ts`). This twins the Rust `fuz_fact`
  * §fsync posture: data-sync before the rename; the parent-dir fsync stays
  * deliberately waived (a lost dirent is regenerable under content addressing).
- * If the final path already exists the temp is dropped instead of renamed over
- * — idempotent dedup (same hash → byte-identical content), mirroring the Rust
- * commit path. `.tmp/` is a sibling of `<shard>/` under the same `facts_dir` so
- * `rename` is always same-filesystem (no EXDEV).
+ * The temp is renamed over the final path even when a file is already there:
+ * the temp's bytes are the ones just hashed, so the rename is a no-op for a
+ * sound file and replaces a corrupt one (a torn write, bit rot) with bytes that
+ * match their name — a re-upload heals the CAS. `.tmp/` is a sibling of
+ * `<shard>/` under the same `facts_dir` so `rename` is always same-filesystem
+ * (no EXDEV).
  *
  * @module
  */
 
-import { createHash, type Hash } from 'node:crypto';
 import { join } from 'node:path';
 
 import { Blake3Hasher } from '@fuzdev/blake3-wasm';
@@ -79,23 +80,21 @@ export type StreamPlacement =
 
 /**
  * Outcome of streaming an upload to storage: the `blake3:`-prefixed fact hash,
- * the bare-hex SHA-256, the byte count, and where the bytes landed.
+ * the byte count, and where the bytes landed.
  * `PgFactStore.put_stream` turns this into the `fact` row insert.
  */
 export interface StreamFactToDiskResult {
 	hash: FactHash;
-	sha256: string;
 	size: number;
 	placement: StreamPlacement;
 }
 
 /**
- * Stream `source` to storage with bounded memory: hash BLAKE3 + SHA-256
- * incrementally in one pass, buffer in memory until the bytes cross
- * `embedded_threshold`, then spill the buffer + remaining chunks through a temp
- * file and atomically land it in the disk CAS. Peak heap is
- * `O(chunk + embedded_threshold)`, never `O(artifact)`, so a multi-GB upload
- * never buffers in RAM.
+ * Stream `source` to storage with bounded memory: hash BLAKE3 incrementally,
+ * buffer in memory until the bytes cross `embedded_threshold`, then spill the
+ * buffer + remaining chunks through a temp file and atomically land it in the
+ * disk CAS. Peak heap is `O(chunk + embedded_threshold)`, never `O(artifact)`, so a
+ * multi-GB upload never buffers in RAM.
  *
  * - **Embedded vs disk.** A body `<= embedded_threshold` stays in memory and is
  *   returned as `{kind: 'embedded'}` for the PG `bytes` column. Above it (with a
@@ -112,10 +111,7 @@ export interface StreamFactToDiskResult {
  * @mutates `facts_dir` filesystem
  */
 export const stream_fact_to_disk = async (
-	deps: Pick<
-		FactDiskStorageDeps,
-		'mkdir' | 'rename' | 'remove' | 'write_file_stream' | 'fsync' | 'stat'
-	>,
+	deps: Pick<FactDiskStorageDeps, 'mkdir' | 'rename' | 'remove' | 'write_file_stream' | 'fsync'>,
 	facts_dir: string | undefined,
 	source: ReadableStream<Uint8Array>,
 	max_bytes: number,
@@ -123,7 +119,6 @@ export const stream_fact_to_disk = async (
 ): Promise<StreamFactToDiskResult> => {
 	await blake3_ready;
 	const blake3 = new Blake3Hasher();
-	const sha256: Hash = createHash('sha256');
 	let size = 0;
 	// Buffer leading bytes until they cross the embedded threshold; small facts
 	// stay embedded (no disk), large ones never buffer past the threshold.
@@ -135,7 +130,6 @@ export const stream_fact_to_disk = async (
 		size += chunk.length;
 		if (size > max_bytes) throw new FactPayloadTooLargeError(size, max_bytes);
 		blake3.update(chunk);
-		sha256.update(chunk);
 	};
 
 	try {
@@ -160,7 +154,6 @@ export const stream_fact_to_disk = async (
 			const hash = (FACT_HASH_PREFIX + to_hex(blake3.finalize())) as FactHash;
 			return {
 				hash,
-				sha256: sha256.digest('hex'),
 				size,
 				placement: { kind: 'embedded', bytes: concat_chunks(buffered, buffered_len) }
 			};
@@ -218,7 +211,6 @@ export const stream_fact_to_disk = async (
 		const { shard, rest } = await commit_temp_to_cas(deps, tmp_path, facts_dir, hash);
 		return {
 			hash,
-			sha256: sha256.digest('hex'),
 			size,
 			placement: { kind: 'disk', external_url: mint_file_fact_url(shard, rest) }
 		};
@@ -235,14 +227,14 @@ export const stream_fact_to_disk = async (
 /**
  * Write fully-buffered `bytes` for `hash` to the canonical
  * `<facts_dir>/<shard>/<rest>` path, then publish via `commit_temp_to_cas`
- * (fsync'd temp + atomic rename, dedup-aware). The buffering twin of
+ * (fsync'd temp + atomic rename). The buffering twin of
  * `stream_fact_to_disk`, used by `PgFactStore.put` for oversize sync bytes.
  * Returns the `file:` `external_url` for the `fact` row.
  *
  * @mutates `facts_dir` filesystem
  */
 export const write_fact_bytes_to_disk = async (
-	deps: Pick<FactDiskStorageDeps, 'mkdir' | 'rename' | 'remove' | 'write_file' | 'fsync' | 'stat'>,
+	deps: Pick<FactDiskStorageDeps, 'mkdir' | 'rename' | 'remove' | 'write_file' | 'fsync'>,
 	facts_dir: string,
 	hash: FactHash,
 	bytes: Uint8Array
@@ -337,16 +329,19 @@ export const sweep_orphan_temps = async (
  * Publish a written temp file into the CAS at `<facts_dir>/<shard>/<rest>`:
  * `fsync` the temp's data (durability before the rename — the serve path streams
  * the file without re-hashing, so the bytes must be stable before they become
- * the canonical body), then either drop the temp (byte-identical content already
- * present — idempotent dedup) or atomically `rename` it into place. On any
- * failure the temp is unlinked and an `ENOSPC` is surfaced as `FactStorageFullError`.
- * The single commit path shared by both writers above — twins the Rust `fuz_fact`
- * `SpillFile::rename_into_cas` (data-sync before rename; parent-dir fsync waived).
+ * the canonical body), then atomically `rename` it into place, over a file
+ * already there. The temp holds the bytes `hash` was computed from, so
+ * replacing an existing file is harmless when it is sound and heals it when it
+ * is not; a reader holding the old file open keeps reading the old inode. On
+ * any failure the temp is unlinked and an `ENOSPC` is surfaced as
+ * `FactStorageFullError`. The single commit path shared by both writers above
+ * (data-sync before rename; parent-dir fsync waived, as on the Rust `fuz_fact`
+ * disk CAS).
  *
  * @mutates `facts_dir` filesystem
  */
 const commit_temp_to_cas = async (
-	deps: Pick<FactDiskStorageDeps, 'mkdir' | 'rename' | 'remove' | 'fsync' | 'stat'>,
+	deps: Pick<FactDiskStorageDeps, 'mkdir' | 'rename' | 'remove' | 'fsync'>,
 	tmp_path: string,
 	facts_dir: string,
 	hash: FactHash
@@ -355,12 +350,8 @@ const commit_temp_to_cas = async (
 	const final_path = join(facts_dir, shard, rest);
 	try {
 		await deps.fsync(tmp_path);
-		if (await deps.stat(final_path)) {
-			await deps.remove(tmp_path).catch(() => undefined);
-		} else {
-			await deps.mkdir(join(facts_dir, shard), { recursive: true });
-			await deps.rename(tmp_path, final_path);
-		}
+		await deps.mkdir(join(facts_dir, shard), { recursive: true });
+		await deps.rename(tmp_path, final_path);
 	} catch (err) {
 		await deps.remove(tmp_path).catch(() => undefined);
 		if (is_enospc_error(err)) throw new FactStorageFullError(err);

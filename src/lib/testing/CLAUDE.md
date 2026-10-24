@@ -154,7 +154,7 @@ Key module-scope values:
 
 - `stub_password_deps` — `PasswordHashDeps` hashing via `stub_hash_${password}` and verifying by equality. Deterministic, no Argon2 cost — use for every test not specifically exercising password hashing.
 - `create_loopback_app_server_options()` — the loopback `create_app_server` options an in-process test server takes (`localhost` origins, the loopback proxy trusted, an empty env schema), fresh per call; `create_test_app` and `create_test_app_for_bootstrap` spread it under their own defaults (`rate_limiters: 'disabled_for_testing'`, `await_pending_effects: true`).
-- `TEST_COOKIE_SECRET` — 64-hex-char deterministic cookie secret. Produces a valid `Keyring` via `create_validated_keyring`. Never used in production — the stub guard plus fixed value is the contract.
+- `TEST_COOKIE_SECRET` — 64-hex-char deterministic cookie secret. Produces a valid `Keyring` via `create_keyring`. Never used in production — the stub guard plus fixed value is the contract.
 - `fallback_db_factory` — module-level auth-only default factory (`create_default_db_factory`) `create_test_app_server` uses when no `db` is passed, reusing its driver's WASM cache. When `migration_namespaces` is supplied, a memoized sibling factory (keyed by namespace set) migrating `[auth_migration_ns, ...migration_namespaces]` is used instead — same shared WASM, extra tables.
 
 Two helpers share the "insert account + actor + roles + API token + session +
@@ -970,7 +970,9 @@ source of truth for wire-shape conformance.
   hardening headers and bodyless masked 404s); like cells it stays off the
   declared surface and is `true` on every spine that mounts the serve routes +
   the `_testing_put_fact` seeder (whose optional `holder` records a
-  `fact_holder` row, so a non-admin can reference what it seeds) — it also
+  `fact_holder` row, so a non-admin can reference what it seeds, and whose
+  optional `external_url` writes a bare external row naming that URL, so the
+  suite can pin that a URL naming another hash's file is refused) — it also
   gates `describe_cell_ref_admission_cross_tests`. `ready` gates `describe_ready_cross_tests`
   (anonymous `GET /ready` → `200 {ready: true}` on a clean spine bootstrap);
   like cells/sse the `/ready` deploy gate stays off the declared surface, `true`
@@ -1916,6 +1918,21 @@ passes through `FUZ_RUST_SPINE_STUB_EXPECTED_SCHEMA_PATH`. The fixture covers th
 spine bootstrap (auth + cell + fact) and is regenerated +
 drift-guarded by `src/test/cross_backend/spine_expected_schema.db.test.ts`
 (`UPDATE_SCHEMA_READY=1`).
+
+### Session cookie codec parity — `cross_backend/session_cookie_codec.ts`
+
+`describe_session_cookie_codec_cross_tests({setup_test, cookie_name,
+cookie_keys, rpc_path?})` — both spines accept exactly one spelling of a signed
+session cookie. The suite holds the backend's `SECRET_FUZ_COOKIE_KEYS`
+(`cookie_keys`), signs `token:expires_at` itself, and probes `account_verify`
+with: a signature whose final character carries non-zero trailing bits (the
+same MAC under `atob`), an unpadded signature, and correctly signed
+`expires_at` values `+N`, ` N`, `N.0` and one past `u64::MAX` — each refused
+with `authentication_required`. Controls: re-signing the keeper cookie's
+payload reproduces it byte for byte and it authenticates, and a leading-zero
+`0N` authenticates (the `u64` bound is on the value, not the digit count).
+Ungated; cross-process only. fuz_app's own wiring is
+`src/test/cross_backend/session_cookie_codec.cross.test.ts`.
 
 ### Testing-backdoor credential gate — `cross_backend/testing_backdoor.ts`
 

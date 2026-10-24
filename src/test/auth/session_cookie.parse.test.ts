@@ -10,7 +10,6 @@
 
 import { assert, describe, test } from 'vitest';
 
-import { create_keyring } from '#lib/auth/keyring.ts';
 import {
 	create_session_cookie_value,
 	parse_session,
@@ -119,7 +118,7 @@ describe('parse_session', () => {
 	});
 
 	test('key rotation sets should_refresh_signature', async () => {
-		const old_keyring = create_keyring(OLD_KEY)!;
+		const old_keyring = create_test_keyring(OLD_KEY);
 		const now = 1000;
 		const signed = await create_session_cookie_value(
 			old_keyring,
@@ -128,7 +127,7 @@ describe('parse_session', () => {
 			now
 		);
 
-		const rotated_keyring = create_keyring(TEST_KEY + '__' + OLD_KEY)!;
+		const rotated_keyring = create_test_keyring(TEST_KEY + '__' + OLD_KEY);
 		const result = await parse_session(signed, rotated_keyring, test_session_options, now + 1);
 		assert.ok(result);
 		assert.strictEqual(result.identity, TEST_IDENTITY);
@@ -136,7 +135,7 @@ describe('parse_session', () => {
 	});
 
 	test('returns null when no key can verify', async () => {
-		const other_keyring = create_keyring('completely-different-key-32-chars!')!;
+		const other_keyring = create_test_keyring('completely-different-key-32-chars!');
 		const now = 1000;
 		const signed = await create_session_cookie_value(
 			other_keyring,
@@ -230,6 +229,32 @@ describe('parse_session', () => {
 		const signed = await keyring.sign(`${TEST_IDENTITY}:${expires_at_str}`);
 		const result = await parse_session(signed, keyring, test_session_options, 1000);
 		assert.strictEqual(result, null);
+	});
+
+	test('rejects an all-digit expires_at beyond u64::MAX', async () => {
+		// the Rust spine parses `expires_at` as `u64`, so one past its max is refused
+		// there; `parseInt` alone would read it as a finite far-future float
+		const keyring = create_test_keyring();
+		const signed = await keyring.sign(`${TEST_IDENTITY}:18446744073709551616`);
+		const result = await parse_session(signed, keyring, test_session_options, 1000);
+		assert.strictEqual(result, null);
+	});
+
+	test('accepts expires_at at exactly u64::MAX', async () => {
+		const keyring = create_test_keyring();
+		const signed = await keyring.sign(`${TEST_IDENTITY}:18446744073709551615`);
+		const result = await parse_session(signed, keyring, test_session_options, 1000);
+		assert.ok(result);
+		assert.strictEqual(result.identity, TEST_IDENTITY);
+	});
+
+	test('accepts leading zeros past twenty digits when the value fits u64', async () => {
+		// `u64::from_str` takes leading zeros, so the bound is on the value, not the length
+		const keyring = create_test_keyring();
+		const signed = await keyring.sign(`${TEST_IDENTITY}:000000000000000000000002000`);
+		const result = await parse_session(signed, keyring, test_session_options, 1000);
+		assert.ok(result);
+		assert.strictEqual(result.expires_at, 2000);
 	});
 
 	test('returns null when identity payload is empty (default decoder)', async () => {

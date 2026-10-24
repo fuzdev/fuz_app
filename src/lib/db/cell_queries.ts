@@ -773,8 +773,9 @@ export interface CellListParams {
  * uppercase-hex digest, or a `blake3:` string of any other length is not a
  * ref. Refs are what fact serving admits a read through and what cell ref
  * admission gates on a write, so the grammar is exact: a string either is an
- * address or isn't one. Object keys are not walked — only values. (JSON facts'
- * `fact_ref` edges keep `fact_hash_extract_refs`, the substring scan.)
+ * address or isn't one. Object keys are not walked — only values. (A fact's
+ * own `fact_ref` edges are never derived from its bytes — they are the refs its
+ * put declares.)
  *
  * Returns `null` (rather than `[]`) when no refs are present — the column
  * is nullable and the `idx_cell_refs` partial index is `WHERE refs IS NOT
