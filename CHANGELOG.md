@@ -1,5 +1,49 @@
 # @fuzdev/fuz_app
 
+## 0.147.0
+
+### Minor Changes
+
+- **breaking** fix: `bootstrap_account` compares the token with the token file's raw bytes less one optional trailing LF, the Rust spine's rule ([d1924c4](https://github.com/fuzdev/fuz_app/commit/d1924c4))
+
+  - the file is no longer trimmed: a token file holding `tok\r\n`, `tok  \n`, two trailing newlines, or a leading newline now refuses `tok` with `invalid_token`; write the token exactly, with at most one trailing LF
+
+- fix: the disk CAS renames a verified temp over an existing file, so a repeat put heals a corrupt one ([d1924c4](https://github.com/fuzdev/fuz_app/commit/d1924c4))
+
+  - applies to `put` (oversize bodies) and `put_stream`; `stream_fact_to_disk` and `write_fact_bytes_to_disk` no longer take `stat` in their deps
+
+- **breaking** feat: `PgFactStore.put` records only the refs a put declares ([d1924c4](https://github.com/fuzdev/fuz_app/commit/d1924c4))
+
+  - JSON content (`content_type: 'application/json'`) is no longer scanned for fact hashes when `refs` is omitted; pass `refs` explicitly, as `put_stream` and the Rust spine already required
+
+- **breaking** feat: the fact streaming path hashes BLAKE3 only ([d1924c4](https://github.com/fuzdev/fuz_app/commit/d1924c4))
+
+  - `PgFactStore.put_stream` returns `{hash, size}` (the `@fuzdev/fuz_util` `PutStreamOutcome`), and `StreamFactToDiskResult` drops `sha256`
+  - requires the `@fuzdev/fuz_util` release whose `PutStreamOutcome` drops `sha256`
+
+- **breaking** fix: fact serving refuses an `external_url` that is not the requested hash's own address ([d1924c4](https://github.com/fuzdev/fuz_app/commit/d1924c4))
+
+  - both serve routes answer the masked 404, with an error log, for a row whose well-formed `file:<shard>/<rest>` URL names another fact's file, so another fact's bytes never serve under a hash; `PgFactStore.get` refuses it the same way before reading the file. Twin of the Rust spine
+  - new `file_fact_url_addresses(parsed, hash)` in `db/file_fact_url.ts`
+  - `is_file_fact_url` is removed: a shape check alone doesn't bind a URL to its hash; call `parse_file_fact_url` then `file_fact_url_addresses`
+
+- **breaking** chore: peer '@fuzdev/fuz_util' `>=0.78.0`, the first whose `PutStreamOutcome` drops `sha256` ([a41945c](https://github.com/fuzdev/fuz_app/commit/a41945c))
+- **breaking** fix: `create_keyring` validates its keys and decodes cookie signatures strictly ([d1924c4](https://github.com/fuzdev/fuz_app/commit/d1924c4))
+
+  - `create_keyring(value)` returns `{ok: true, keyring}` or `{ok: false, errors}` and refuses a value with no key or any key shorter than 32 characters, the Rust spine's `Keyring::new` rule; it was unvalidated and returned `Keyring | null`
+  - `create_validated_keyring` and `ValidatedKeyringResult` are removed: call `create_keyring` (type `CreateKeyringResult`); `validate_keyring` stays
+  - a cookie signature must be the exact padded standard base64 of the 32-byte MAC (43 characters then one `=`, no whitespace, no non-zero trailing bits), as on the Rust spine; `atob`'s other spellings of the same MAC no longer verify
+  - a session cookie whose `expires_at` is all digits but past `u64::MAX` no longer parses, as on the Rust spine
+  - add `describe_session_cookie_codec_cross_tests` (`testing/cross_backend/session_cookie_codec.ts`), a cross-backend suite that signs cookie variants with the backend's keyring and asserts each spine accepts one spelling
+
+- test: cross-backend harness pins the fact URL binding and gains a pre-bootstrap hook ([d1924c4](https://github.com/fuzdev/fuz_app/commit/d1924c4))
+
+  - `_testing_put_fact` takes an optional `external_url`, writing a bare external row naming that URL verbatim; a backend's Rust binary needs the `fuz_testing` spec that takes the same key for the new fact case to pass
+  - `describe_fact_serving_cross_tests` requires a row whose `external_url` names another hash's file answered as the masked 404 on the cell-scoped and the bare-hash read; `CrossPutFactInput` gains `external_url`
+  - `bootstrap_backend(config, {before_bootstrap?})` runs a hook after the binary is up and before the keeper bootstrap, the one window where the bootstrap route still answers on the token
+
+- fix: `verify_dummy` verifies against a precomputed PHC string (the Rust spine's `DUMMY_HASH`), so the first account-lookup miss costs no extra hash ([d1924c4](https://github.com/fuzdev/fuz_app/commit/d1924c4))
+
 ## 0.146.1
 
 ### Patch Changes
