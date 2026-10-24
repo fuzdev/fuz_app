@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.146.1
+
+### Patch Changes
+
+- fix: `Datatable` reads the `--shade_00` and `--border_width` fuz_css tokens without redundant fallbacks, so svelte-docinfo no longer lists them as its styling API ([5c24736](https://github.com/fuzdev/fuz_app/commit/5c24736))
+
 ## 0.146.0
 
 ### Minor Changes
