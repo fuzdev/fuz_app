@@ -11,6 +11,10 @@
  * `assert_no_audit_drift` — the check `install_audit_drift_guard` runs after
  * each test: a write an emitter lost fails it.
  *
+ * `assert_audit_event_metadata` — the declared parse refuses a mistyped or
+ * `null` field but admits a consumer-added key; the closed-world parse
+ * refuses that key too.
+ *
  * @module
  */
 
@@ -19,6 +23,7 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
 
 import {
+	assert_audit_event_metadata,
 	assert_no_audit_drift,
 	create_recording_audit_emitter,
 	install_audit_drift_guard
@@ -198,5 +203,58 @@ describe('install_audit_drift_guard', () => {
 
 	test('resets the write-failure counter before each test', () => {
 		assert.strictEqual(get_audit_write_failures(), 0);
+	});
+});
+
+describe('assert_audit_event_metadata', () => {
+	const offer_id = '11111111-1111-4111-8111-111111111111';
+	const decline = (metadata: Record<string, unknown>) => ({
+		event_type: 'role_grant_offer_decline',
+		outcome: 'success' as const,
+		metadata
+	});
+
+	test('admits metadata its event declares, under either parse', () => {
+		const event = decline({ offer_id, role: 'admin', scope_id: null, reason: 'not now' });
+		assert_audit_event_metadata(event);
+		assert_audit_event_metadata(event, { reject_unknown_keys: true });
+	});
+
+	test('refuses a null where the event declares an optional string', () => {
+		const event = decline({ offer_id, role: 'admin', scope_id: null, reason: null });
+		assert.throws(() => assert_audit_event_metadata(event), /reason/);
+		assert.throws(
+			() => assert_audit_event_metadata(event, { reject_unknown_keys: true }),
+			/reason/
+		);
+	});
+
+	test('admits a key the event does not declare unless the world is closed', () => {
+		const event = decline({ offer_id, role: 'admin', scope_id: null, source_invite_id: offer_id });
+		assert_audit_event_metadata(event);
+		assert.throws(
+			() => assert_audit_event_metadata(event, { reject_unknown_keys: true }),
+			/source_invite_id/
+		);
+	});
+
+	test('admits null metadata where the event declares it nullable', () => {
+		const event = { event_type: 'login', outcome: 'failure' as const, metadata: null };
+		assert_audit_event_metadata(event, { reject_unknown_keys: true });
+	});
+
+	test('closes the world through a nullable schema too', () => {
+		const event = {
+			event_type: 'login',
+			outcome: 'success' as const,
+			metadata: { username: 'keeper', extra: 1 }
+		};
+		assert_audit_event_metadata(event);
+		assert.throws(() => assert_audit_event_metadata(event, { reject_unknown_keys: true }), /extra/);
+	});
+
+	test('passes a consumer-registered event type unexamined', () => {
+		const event = { event_type: 'app_thing', outcome: 'success' as const, metadata: { x: 1 } };
+		assert_audit_event_metadata(event, { reject_unknown_keys: true });
 	});
 });

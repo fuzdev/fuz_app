@@ -43,6 +43,7 @@ import {
 	DEFAULT_INTEGRATION_ERROR_COVERAGE
 } from './error_coverage.ts';
 import {
+	find_rpc_action,
 	rpc_call_for_spec,
 	require_rpc_endpoint_path,
 	resolve_rpc_endpoints_for_setup,
@@ -56,6 +57,11 @@ import {
 import {
 	admin_account_list_action_spec,
 	ADMIN_ACCOUNT_LIST_LIMIT_MAX,
+	app_settings_get_action_spec,
+	app_settings_update_action_spec,
+	AUDIT_LOG_LIST_LIMIT_MAX,
+	invite_create_action_spec,
+	invite_delete_action_spec,
 	admin_session_list_action_spec,
 	admin_session_revoke_all_action_spec,
 	admin_token_revoke_all_action_spec,
@@ -64,9 +70,13 @@ import {
 	audit_log_role_grant_history_action_spec
 } from '../auth/admin_action_specs.ts';
 import {
+	account_session_list_action_spec,
+	account_session_revoke_action_spec,
 	account_token_create_action_spec,
+	account_token_revoke_action_spec,
 	account_verify_action_spec
 } from '../auth/account_action_specs.ts';
+import { assert_audit_event_metadata } from './audit_drift_guard.ts';
 import type { AppSurfaceSpec } from '../http/surface.ts';
 import type { SetupTest, TestFixture } from './cross_backend/setup.ts';
 import { to_route_content_type } from './schema_generators.ts';
@@ -247,6 +257,11 @@ export const describe_standard_admin_integration_tests = (
 					headers: fixture.create_session_headers()
 				});
 				assert.ok(audit_res.ok, 'audit_log_list should succeed');
+				for (const event of audit_res.result.events) {
+					assert_audit_event_metadata(event, {
+						reject_unknown_keys: fixture.reject_unknown_audit_metadata_keys ?? false
+					});
+				}
 				const failure = audit_res.result.events.find((e) => e.outcome === 'failure');
 				if (failure || Date.now() >= deadline) return failure;
 				await new Promise((resolve) => setTimeout(resolve, AUDIT_FAILURE_ROW_POLL_INTERVAL));
@@ -835,6 +850,76 @@ export const describe_standard_admin_integration_tests = (
 					`account_token_create failed: ${token_res.ok ? '' : JSON.stringify(token_res.error)}`
 				);
 
+				/** Call `spec` on the keeper's session, asserting success. */
+				const call_ok = async <TSpec extends Parameters<typeof rpc_call_for_spec>[0]['spec']>(
+					spec: TSpec,
+					params: Parameters<typeof rpc_call_for_spec<TSpec>>[0]['params'],
+					headers: Record<string, string> = fixture.create_session_headers()
+				) => {
+					const res = await rpc_call_for_spec({
+						app: { request: fixture.transport },
+						path: rpc_path,
+						spec,
+						params,
+						headers
+					});
+					if (!res.ok) assert.fail(`${spec.method} failed: ${JSON.stringify(res.error)}`);
+					return res.result;
+				};
+
+				// Steps 5a–5d each drive actions a consumer surface may not mount;
+				// a step whose actions are missing is skipped, and its event isn't
+				// expected.
+				const mounted = (...specs: Array<{ method: string }>): boolean =>
+					specs.every((spec) => find_rpc_action(rpc_endpoints_for_setup, spec.method));
+				const driven_types: Array<string> = [];
+
+				// 5a. revoke that token (RPC)
+				if (mounted(account_token_revoke_action_spec)) {
+					const token_revoked = await call_ok(account_token_revoke_action_spec, {
+						token_id: token_res.result.id
+					});
+					assert.strictEqual(token_revoked.revoked, true);
+					driven_types.push('token_revoke');
+				}
+
+				// 5b. user_two revokes its own session — the last use of that session
+				if (mounted(account_session_list_action_spec, account_session_revoke_action_spec)) {
+					const user_two_headers = user_two.create_session_headers();
+					const { sessions } = await call_ok(
+						account_session_list_action_spec,
+						undefined,
+						user_two_headers
+					);
+					assert.ok(sessions[0], 'user_two has a session to revoke');
+					const session_revoked = await call_ok(
+						account_session_revoke_action_spec,
+						{ session_id: sessions[0].id },
+						user_two_headers
+					);
+					assert.strictEqual(session_revoked.revoked, true);
+					driven_types.push('session_revoke');
+				}
+
+				// 5c. an invite created and deleted unclaimed
+				if (mounted(invite_create_action_spec, invite_delete_action_spec)) {
+					const { invite } = await call_ok(invite_create_action_spec, {
+						email: 'audit_invitee@example.com',
+						username: 'audit_invitee'
+					});
+					await call_ok(invite_delete_action_spec, { invite_id: invite.id });
+					driven_types.push('invite_create', 'invite_delete');
+				}
+
+				// 5d. open signup flipped and restored
+				if (mounted(app_settings_get_action_spec, app_settings_update_action_spec)) {
+					const { settings } = await call_ok(app_settings_get_action_spec, {});
+					for (const open_signup of [!settings.open_signup, settings.open_signup]) {
+						await call_ok(app_settings_update_action_spec, { open_signup });
+					}
+					driven_types.push('app_settings_update');
+				}
+
 				// 6. password change
 				await fixture.transport(password_route.path, {
 					method: 'POST',
@@ -877,7 +962,7 @@ export const describe_standard_admin_integration_tests = (
 					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: audit_log_list_action_spec,
-					params: {},
+					params: { limit: AUDIT_LOG_LIST_LIMIT_MAX },
 					headers: relogin_headers
 				});
 				assert.ok(
@@ -885,10 +970,19 @@ export const describe_standard_admin_integration_tests = (
 					`audit_log_list failed: ${audit_res.ok ? '' : JSON.stringify(audit_res.error)}`
 				);
 				const events = audit_res.result.events;
+				// every row's metadata holds to its event type's schema — the
+				// wire leaves it a loose record
+				for (const event of events) {
+					assert_audit_event_metadata(event, {
+						reject_unknown_keys: fixture.reject_unknown_audit_metadata_keys ?? false
+					});
+				}
 
 				// check that each operation produced at least one event.
 				// `role_grant_offer_create` fires on the admin RPC; `role_grant_create`
 				// fires when the recipient accepts (driven by offer_and_accept).
+				// No `signup` is expected: in-process, `create_account` inserts
+				// user_two directly, writing no audit row.
 				const expected_types = [
 					'login',
 					'logout',
@@ -897,7 +991,8 @@ export const describe_standard_admin_integration_tests = (
 					'role_grant_create',
 					'role_grant_revoke',
 					'token_create',
-					'password_change'
+					'password_change',
+					...driven_types
 				];
 				for (const event_type of expected_types) {
 					const found = events.filter((e) => e.event_type === event_type);

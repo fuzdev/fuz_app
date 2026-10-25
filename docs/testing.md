@@ -1023,6 +1023,7 @@ impls actually boot.
 - `create_rpc_get_url` (`testing/rpc_helpers.ts`) — Build GET URL with JSON-RPC query parameters
 - `assert_jsonrpc_error_response` (`testing/rpc_helpers.ts`) — Assert valid JSON-RPC error response structure
 - `assert_jsonrpc_success_response` (`testing/rpc_helpers.ts`) — Assert valid JSON-RPC success response (optional output schema)
+- `assert_audit_event_metadata` (`testing/audit_drift_guard.ts`) — Parse a read audit row's metadata against its event type's schema (`reject_unknown_keys` refuses undeclared keys)
 - `create_mock_runtime` (`runtime/mock.ts`) — Mock runtime for command tests
 - `create_default_db_factory` (`testing/db.ts`) — the default in-memory DB factory: pglet-wasm, or the builder `set_default_db_factory` installed
 - `create_pglite_factory` / `create_pglet_wasm_factory` (`testing/db.ts`) — a PGlite / pglet-wasm DB factory (one shared WASM instance per driver)
@@ -1164,6 +1165,23 @@ The reset action factory is `create_testing_actions(deps, {session_options,
 daemon_token_state, reset_state})` — the consumer's test binary registers it
 with a `reset_state` closure that clears its own domain state (workspaces,
 terminals, etc.).
+
+A suite that reads audit rows goes through `list_audit_events`
+(`testing/cross_backend/audit_cross_helpers.ts`): it calls the
+`_testing_drain_effects` barrier, lists, and parses each row's `metadata`
+against its event type's schema as declared (`assert_audit_event_metadata`),
+so a backend whose metadata drifts from the event's contract — a mistyped,
+`null`, or missing field — fails the read. The admin integration suite's
+audit reads run the same parse. A key the event doesn't declare passes, since
+consumers may add fields to builtin events; pass
+`reject_unknown_audit_metadata_keys: true` to the setup to refuse those too,
+when no code of yours adds any. Consumer-registered event types pass
+unexamined.
+
+The role-grant-offer notification suite
+(`describe_role_grant_offer_notification_ws_tests`) opens a third account's
+socket in every case and fails if it receives anything but the answers to its
+own requests, so a fan-out that reaches past its target account fails there.
 
 ### TS spine binaries — three JS runtimes
 

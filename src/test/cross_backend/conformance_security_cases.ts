@@ -402,6 +402,26 @@ const idor_and_enumeration_cases: ReadonlyArray<ConformanceCase> = [
 		note: 'security.md §Authorization "404-over-403 is the general mask" — a missing offer and an offer the caller cannot view are wire-indistinguishable'
 	},
 	{
+		name: 'decline nonexistent offer → 404 (existence not disclosed)',
+		request: {
+			method: 'role_grant_offer_decline',
+			as: 'fresh_non_admin',
+			params: { offer_id: NIL_UUID }
+		},
+		expect: { status: 404, error_reason: ERROR_ROLE_GRANT_OFFER_NOT_FOUND },
+		note: 'security.md §Authorization "404-over-403 is the general mask" — decline is scoped to the recipient account, so another account’s offer answers this same 404 (role_grant_offer_lifecycle.ts pins the identity)'
+	},
+	{
+		name: 'retract nonexistent offer → 404 (existence not disclosed)',
+		request: {
+			method: 'role_grant_offer_retract',
+			as: 'fresh_non_admin',
+			params: { offer_id: NIL_UUID }
+		},
+		expect: { status: 404, error_reason: ERROR_ROLE_GRANT_OFFER_NOT_FOUND },
+		note: 'security.md §Authorization "404-over-403 is the general mask" — retract is scoped to the grantor actor, so another actor’s offer answers this same 404 (role_grant_offer_lifecycle.ts pins the identity)'
+	},
+	{
 		name: 'admin revokes nonexistent role_grant → 404 (existence not disclosed)',
 		request: {
 			method: 'role_grant_revoke',

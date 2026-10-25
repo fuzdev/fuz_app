@@ -21,7 +21,9 @@ import { describe_role_grant_role_grammar_cross_tests } from '#lib/testing/cross
 import './cross_test_types.ts';
 
 const handle = reconstruct_bootstrapped_handle(inject('backend_handle'));
-const setup_test = default_cross_process_setup(handle);
+const setup_test = default_cross_process_setup(handle, {
+	reject_unknown_audit_metadata_keys: true
+});
 const { rpc_path } = handle.config;
 
 describe_role_grant_role_grammar_cross_tests({ setup_test, rpc_path });

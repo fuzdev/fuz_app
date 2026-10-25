@@ -87,5 +87,6 @@ export const create_cell_parity_setup = (
 		roles: [ROLE_KEEPER, ROLE_ADMIN],
 		migration_namespaces: [CELL_MIGRATION_NS],
 		audit_factory: cell_parity_audit_factory,
-		extra_accounts
+		extra_accounts,
+		reject_unknown_audit_metadata_keys: true
 	});

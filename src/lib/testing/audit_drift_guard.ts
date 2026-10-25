@@ -1,6 +1,7 @@
 import './assert_dev_env.ts';
 
 import { assert, beforeEach, afterEach } from 'vitest';
+import { z } from 'zod';
 
 import {
 	get_audit_metadata_validation_failures,
@@ -13,7 +14,12 @@ import {
 	reset_audit_write_failures,
 	type AuditEmitter
 } from '../auth/audit_emitter.ts';
-import type { AuditLogEvent, AuditLogInput } from '../auth/audit_log_schema.ts';
+import {
+	audit_metadata_schemas,
+	type AuditLogEvent,
+	type AuditLogEventJson,
+	type AuditLogInput
+} from '../auth/audit_log_schema.ts';
 
 /**
  * Register per-test `beforeEach` + `afterEach` hooks that catch any audit
@@ -159,4 +165,74 @@ export const create_recording_audit_emitter = (
 		drain_inflight: () => Promise.resolve()
 	};
 	return { emitter, calls };
+};
+
+/**
+ * The closed-world twin of a builtin event's `audit_metadata_schemas` entry:
+ * the same fields, with unknown keys refused. The registry's schemas are
+ * `z.looseObject` so a consumer can add fields to a builtin event (a builtin's
+ * schema can't be overridden), so this is opt-in.
+ */
+const to_closed_metadata_schema = (schema: z.ZodType): z.ZodType => {
+	if (schema instanceof z.ZodNullable) {
+		return to_closed_metadata_schema(schema.unwrap() as z.ZodType).nullable();
+	}
+	if (schema instanceof z.ZodObject) return z.strictObject(schema.shape);
+	return schema;
+};
+
+const declared_metadata_schemas: Map<string, z.ZodType> = new Map(
+	Object.entries(audit_metadata_schemas)
+);
+
+const closed_metadata_schemas: Map<string, z.ZodType> = new Map(
+	Object.entries(audit_metadata_schemas).map(([event_type, schema]) => [
+		event_type,
+		to_closed_metadata_schema(schema)
+	])
+);
+
+/** Options for `assert_audit_event_metadata`. */
+export interface AssertAuditEventMetadataOptions {
+	/**
+	 * Refuse metadata keys the event type doesn't declare. Off by default: the
+	 * builtin schemas admit consumer-added fields. For a suite whose backend
+	 * adds none — a spine's own — so an undeclared key on any spine fails.
+	 */
+	readonly reject_unknown_keys?: boolean;
+}
+
+/**
+ * Assert an audit row read off the wire carries the metadata its event type
+ * declares — parsed against `audit_metadata_schemas[event_type]` as declared,
+ * so a mistyped, `null`, or missing field fails, and with
+ * `reject_unknown_keys` so does a key the event doesn't declare. The wire
+ * schema (`AuditLogEventJson.metadata`) is a loose record, and only the TS
+ * spine validates metadata, at insert and fail-open, so this is the check that
+ * holds a spine's rows to their event's contract.
+ *
+ * Builtin event types only: a consumer-registered type has no entry here, and
+ * passes unexamined.
+ *
+ * @param event - an audit row from `audit_log_list` or an audit read like it
+ * @param options - `reject_unknown_keys` for the closed-world check
+ * @throws AssertionError naming the event type and the schema issues
+ */
+export const assert_audit_event_metadata = (
+	event: Pick<AuditLogEventJson, 'event_type' | 'outcome' | 'metadata'>,
+	options?: AssertAuditEventMetadataOptions
+): void => {
+	const schema = (
+		options?.reject_unknown_keys ? closed_metadata_schemas : declared_metadata_schemas
+	).get(event.event_type);
+	if (!schema) return;
+	const parsed = schema.safeParse(event.metadata);
+	if (parsed.success) return;
+	assert.fail(
+		`audit row ${event.event_type} (outcome=${event.outcome}) carries metadata outside its ` +
+			`audit_metadata_schemas entry: ${JSON.stringify(event.metadata)} — ` +
+			parsed.error.issues
+				.map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`)
+				.join('; ')
+	);
 };

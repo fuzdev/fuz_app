@@ -41,6 +41,7 @@ const handle = reconstruct_bootstrapped_handle(inject('backend_handle'));
 // `role_holder` principal (its `grant_paths: ['admin']` would otherwise reject
 // at offer time, so the bootstrap-cradle seed is the only path).
 const setup_test = default_cross_process_setup(handle, {
+	reject_unknown_audit_metadata_keys: true,
 	extra_keeper_roles: [ROLE_ADMIN],
 	extra_accounts: [{ username: PARTICIPATION_HOLDER_USERNAME, roles: [SPINE_PARTICIPANT_ROLE] }]
 });

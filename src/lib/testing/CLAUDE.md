@@ -103,6 +103,7 @@ mismatch.
 ### `audit_drift_guard.ts` — audit-emission validation
 
 - `install_audit_drift_guard()` — `beforeEach` resets + `afterEach` zero-checks the `audit_metadata_validation_failures` + `audit_unknown_event_type_failures` counters from `auth/audit_log_queries.ts` and the emitter's write-failure counter (`get_audit_write_failures` in `auth/audit_emitter.ts`). Call once at the top of any `describe_db` block firing audit emits — production validation and the emitter's write are fail-open, so without this any regression shipping a typo'd `event_type` or undeclared metadata field, or losing a row the database refused, is silent. A test that fails a write on purpose resets the counter (`reset_audit_write_failures`) once it has asserted it.
+- `assert_audit_event_metadata(event, {reject_unknown_keys?})` — the wire-side twin: parses a read audit row's `metadata` against its builtin event type's `audit_metadata_schemas` entry as declared, so a mistyped, `null`, or missing field fails while a consumer-added key passes (the schemas are `z.looseObject`, and a builtin's schema can't be overridden, so added keys are a consumer's only extension path). `reject_unknown_keys` closes the world: an undeclared key fails too, for a suite whose backend adds none. The wire schema leaves `metadata` a loose record and only the TS spine validates it, at insert and fail-open, so this is what holds every spine's rows to their event's contract. A consumer-registered event type passes unexamined. `list_audit_events` and the admin suite run it on every row they read, with `reject_unknown_keys` from the fixture's `reject_unknown_audit_metadata_keys` (a setup option on `default_cross_process_setup`, `default_in_process_setup` and `default_in_process_suite_options`); fuz_app's own spine wiring turns it on.
 - `assert_no_audit_drift()` — the zero-check itself, for a test that manages the counters. Pair with `await_pending_effects: true` (the `create_test_app` default) so fire-and-forget audit writes complete by response time.
 - `create_recording_audit_emitter(calls_ref?)` — no-op `AuditEmitter` pushing every `emit` and `emit_pool` call into `calls`. Pass `calls_ref` to write into a caller-owned array; omit to let the helper allocate. Returns `{emitter, calls}` — destructure `emitter` as the `audit` dep and read `calls` to assert. `add_listener` records (never fires) and returns a remover with the production semantics, so `listener_count` tracks what a server registered and released. Replaces per-file capturing emitters previously duplicated across `password_change.test.ts`, `audit_log.test.ts`, etc.
 - `RecordingAuditEmitter` — `{emitter: AuditEmitter; calls: Array<AuditLogInput>}`.
@@ -753,7 +754,12 @@ lifecycle (via `role_grant_offer_create` + `role_grant_offer_accept` +
 `role_grant_revoke` RPC flows — **not** REST, **not** direct
 `query_accept_offer`; see `auth/CLAUDE.md` for
 `role_grant_offer_action_specs.ts` + `role_grant_offer_actions.ts`),
-session / token management, audit log reads (RPC), admin-to-admin
+session / token management, audit log reads (RPC — every row read is
+parsed by `assert_audit_event_metadata`, closed to undeclared keys when the
+fixture asks, and the completeness test drives login, logout, the offer flow,
+grant + revoke, token create, password change, and — each where the surface
+mounts its actions — token revoke, session revoke, invite create + delete and
+`app_settings_update`), admin-to-admin
 isolation, error coverage, response schema validation.
 
 The shared `role_grant_offer_and_accept` helper (`role_grant_helpers.ts`)
@@ -765,6 +771,12 @@ isolation, not the consent path) go through `create_test_role_grant_direct`
 from `db_entities.ts`.
 
 Required options: `{setup_test, surface_source, session_options, rpc_endpoints: RpcEndpointsSuiteOption, roles: RoleSchemaResult, admin_prefix?}`.
+
+fuz_app runs it cross-process through the standard bundle
+(`auth.cross.test.ts`) and in-process as a consumer wires it
+(`cross_backend/admin_integration_spine.db.test.ts`) — the in-process fixture's
+`create_account` inserts rows directly, writing no `invite_create` or `signup`
+audit row, so the suite expects neither from it.
 
 `rpc_endpoints` is `Array<RpcEndpointSpec> | ((ctx: AppServerContext) => Array<RpcEndpointSpec>)` —
 the same `RpcEndpointsSuiteOption` union every DB-backed suite accepts
@@ -1317,7 +1329,23 @@ lifecycle RPC over `fixture.transport`, then
 strict-parses the delivered frame against its canonical params schema from
 `auth/role_grant_offer_notifications.ts` (the guard against serialization drift —
 field / null / datetime / the flat revoke shape / the supersede `reason` +
-`cause_id`). Unlike `describe_cross_process_ws_tests` (consumer-agnostic,
+`cause_id`). Every case also opens a **bystander** — a third account's
+admitted socket, party to nothing the case drives — and once the targeted
+frame has landed sends a `heartbeat` on it and asserts it received nothing
+but the answers to its own requests. The barrier is what makes the silence
+mean something: both spines queue a fan-out to every recipient in one pass
+with no await in it, and neither writes a response ahead of a notification
+already queued for the same connection — the TS transport sends both through
+one outbound queue, and the Rust loop writes a connection's queued frames
+before a response (`flush_queued_frames`). So a frame the pass addressed to
+the bystander reaches it ahead of the barrier's response. That is strict on TS,
+which sends a fan-out in one synchronous closure. On Rust, `deliver_all` pushes
+to recipients one after another on one worker while the target's connection
+loop runs on another, so the target's frame can be written while the pass is
+still pushing — a window the barrier's round trip outlasts in practice. The
+check covers every pass of the drain: the Rust `PostCommitEffects::drain_all`
+joins effects whose notify futures push synchronously, so every pass
+completes in the drain's first poll. Unlike `describe_cross_process_ws_tests` (consumer-agnostic,
 `heartbeat`-only), this drives a real **domain** notification family — but one
 built from spine primitives only (accounts / role-grants / offers / WS), zero
 consumer domain, so it lives here and runs against any backend that wires the
@@ -1536,7 +1564,13 @@ payload-field drift. Call-site primitives (`cross_rpc_call` / `error_reason` /
 suite that reads audit rows goes through `cross_backend/audit_cross_helpers.ts`
 — `list_audit_events(fixture, params, rpc_path?)` drains
 (`cross_drain_effects`, the `_testing_drain_effects` barrier) before it lists and
-parses, so no reader skips the barrier; the shared
+parses, so no reader skips the barrier, and parses every row's metadata
+(`assert_audit_event_metadata`, closed to undeclared keys when the fixture's
+setup asked), so every reader holds the rows it reads to their event's
+schema. A suite pinning a row's values uses `assert_audit_metadata_fields(fixture,
+metadata, expected, absent?)` — each field compared on its own so a consumer's
+added key passes, the `absent` keys refused, and the whole object compared only
+when the fixture closed the world; the shared
 options shape is `RpcPathCapabilityGatedCrossSuiteOptions` from
 `cross_backend/setup.ts`. `cross_backend/wire_shapes.ts` carries
 `assert_iso8601_seconds` / `assert_iso8601_seconds_nullable` — the byte-level
@@ -2335,6 +2369,38 @@ node/deno/bun + Rust stub). Landing the TS `role_grant_assign` action also turne
 the `cross_backend_parity` action-manifest gate green (it was Rust-only before).
 Cited property: `docs/identity.md` + the role-gated-participation design
 (admin-only conferral, immediate assign).
+
+### Offer decline + retract refusals — `cross_backend/role_grant_offer_lifecycle.ts`
+
+`describe_role_grant_offer_lifecycle_cross_tests({setup_test, rpc_path?})` —
+the error paths of the two verbs that end a pending offer without a grant,
+which the WS notification suite drives only on the happy path. Canonical
+answers, from the handlers and the queries behind them
+(`auth/role_grant_offer_actions.ts`, `auth/role_grant_offer_queries.ts`):
+
+- **not a party → 404** `not_found` with reason `role_grant_offer_not_found`.
+  Decline is scoped to the recipient account and retract to the grantor actor,
+  so a stranger, the grantor declining, or the recipient retracting hears what
+  a missing offer answers — the case compares the two refusals whole — and the
+  offer stays pending (`docs/security.md` §"404-over-403 is the general mask").
+  The scope check runs before the terminal check, so a stranger hears 404 on
+  a decided offer too.
+- **decided → 400** `invalid_request` with reason `role_grant_offer_terminal`:
+  a decline or retract after an accept, a second decline, a second retract,
+  and either after the other.
+- **audit**: a decline writes one `role_grant_offer_decline` row
+  (`account_id` / `actor_id` the recipient, `target_*` the grantor, metadata
+  `{offer_id, role, scope_id}` plus `reason` only when one was given), a
+  retract one `role_grant_offer_retract` row (the grantor, targeting the
+  recipient, no target actor on an account-grain offer); refusals write none.
+  Read through `list_audit_events`.
+
+The single-request rows — decline and retract of an id naming no offer → 404
+— are in the conformance security slate, so the differential sends them to
+both spines. The keeper is the grantor and offers `SPINE_PARTICIPANT_ROLE`;
+ungated. fuz_app's own wiring is
+`src/test/cross_backend/role_grant_offer_lifecycle.cross.test.ts`, with the
+in-process leg on the drained setup of `conformance_participation.db.test.ts`.
 
 ### Building a TS test-server binary — `testing_server_core.ts` + adapters
 

@@ -49,6 +49,7 @@ const handle = reconstruct_bootstrapped_handle(inject('backend_handle'));
 // is bootstrap-only (no offer/accept grant path), so it can't go through
 // `create_account` — the cradle is the only way to seed it.
 const setup_test = default_cross_process_setup(handle, {
+	reject_unknown_audit_metadata_keys: true,
 	extra_keeper_roles: [ROLE_ADMIN],
 	extra_accounts: [{ username: 'non_admin_keeper', roles: [ROLE_KEEPER] }]
 });

@@ -31,6 +31,7 @@ const RPC_PATH = '/api/rpc';
 const session_options = create_session_config('test_session');
 
 const setup_test = default_in_process_setup({
+	reject_unknown_audit_metadata_keys: true,
 	session_options,
 	// Keeper is also admin (matches the cross-process fresh keeper) so its
 	// session reaches the admin-gated delete/undelete verbs.

@@ -83,6 +83,11 @@ export interface InProcessSetupOptions extends CreateTestAppOptions {
 	 * DB (in-process has no wire hop).
 	 */
 	readonly extra_actors?: ReadonlyArray<string>;
+	/**
+	 * Refuse undeclared audit metadata keys in the fixture's audit reads — see
+	 * `CrossProcessSetupOptions.reject_unknown_audit_metadata_keys`.
+	 */
+	readonly reject_unknown_audit_metadata_keys?: boolean;
 }
 
 /**
@@ -161,6 +166,7 @@ export const default_in_process_setup =
 			create_account: test_app.create_account,
 			extra_accounts,
 			extra_actors,
+			reject_unknown_audit_metadata_keys: options.reject_unknown_audit_metadata_keys ?? false,
 			// Forge directly against the live backend's DB + keyring — no wire
 			// hop needed in-process.
 			mint_expired_session: async () => {
@@ -219,6 +225,11 @@ export interface DefaultInProcessSuiteOptions {
 	 * `fixture.extra_actors`. See `TestFixtureBase.extra_actors`.
 	 */
 	extra_actors?: ReadonlyArray<string>;
+	/**
+	 * Refuse undeclared audit metadata keys in the fixture's audit reads — see
+	 * `CrossProcessSetupOptions.reject_unknown_audit_metadata_keys`.
+	 */
+	reject_unknown_audit_metadata_keys?: boolean;
 	/**
 	 * Pre-built `AppSurfaceSpec` — overrides the default which calls
 	 * `create_test_app_surface_spec` against the same factory inputs.
@@ -286,7 +297,8 @@ export const default_in_process_suite_options = <const O extends DefaultInProces
 		app_options: options.app_options,
 		roles: [ROLE_KEEPER, ...(options.extra_keeper_roles ?? [])],
 		extra_accounts: options.extra_accounts,
-		extra_actors: options.extra_actors
+		extra_actors: options.extra_actors,
+		reject_unknown_audit_metadata_keys: options.reject_unknown_audit_metadata_keys
 	}),
 	surface_source:
 		options.surface_source ??

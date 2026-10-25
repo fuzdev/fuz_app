@@ -33,7 +33,7 @@ import {
 	ERROR_CREDENTIAL_TYPE_REQUIRED
 } from '../../http/error_schemas.ts';
 import { JSONRPC_ERROR_CODES } from '../../http/jsonrpc_errors.ts';
-import { list_audit_events } from './audit_cross_helpers.ts';
+import { assert_audit_metadata_fields, list_audit_events } from './audit_cross_helpers.ts';
 import { test_if } from './capabilities.ts';
 import { cross_rpc_call, error_reason, expect_output } from './cell_cross_helpers.ts';
 import { assert_iso8601_seconds } from './wire_shapes.ts';
@@ -88,6 +88,22 @@ export const describe_account_lifecycle_cross_tests = (
 					AccountUndeleteOutput
 				);
 				assert.strictEqual(undeleted.undeleted, true);
+
+				// each verb audits the victim's identity snapshot, attributed to
+				// the admin (`list_audit_events` parses the metadata)
+				for (const event_type of ['account_delete', 'account_undelete'] as const) {
+					const events = await list_audit_events(fixture, { event_type }, rpc_path);
+					const row = events.find(
+						(e) => e.outcome === 'success' && e.target_account_id === victim.account.id
+					);
+					assert.ok(row, `${event_type} writes a success row targeting the victim`);
+					assert.strictEqual(row.account_id, fixture.account.id, event_type);
+					assert.strictEqual(
+						(row.metadata as { username?: unknown } | null)?.username,
+						victim.account.username,
+						`${event_type} snapshots the username`
+					);
+				}
 			}
 		);
 
@@ -107,6 +123,18 @@ export const describe_account_lifecycle_cross_tests = (
 				AccountPurgeOutput
 			);
 			assert.strictEqual(purged.purged, true);
+
+			// the purge row outlives the account it names, carrying its identity
+			const events = await list_audit_events(fixture, { event_type: 'account_purge' }, rpc_path);
+			const row = events.find(
+				(e) => e.outcome === 'success' && e.target_account_id === victim.account.id
+			);
+			assert.ok(row, 'account_purge writes a success row targeting the victim');
+			assert.strictEqual(
+				(row.metadata as { username?: unknown } | null)?.username,
+				victim.account.username,
+				'account_purge snapshots the username'
+			);
 		});
 
 		test_if(
@@ -369,6 +397,18 @@ export const describe_account_lifecycle_cross_tests = (
 				);
 				assert.strictEqual(again.ok, false, 'double-undelete must not silently succeed');
 				assert.strictEqual(error_reason(again), ERROR_ACCOUNT_NOT_FOUND);
+
+				// the refused undelete is audited as a failure naming the probed id
+				const events = await list_audit_events(
+					fixture,
+					{ event_type: 'account_undelete', outcome: 'failure' },
+					rpc_path
+				);
+				assert.strictEqual(events.length, 1, 'one account_undelete failure row');
+				assert_audit_metadata_fields(fixture, events[0]!.metadata, {
+					reason: ERROR_ACCOUNT_NOT_FOUND,
+					attempted_account_id: victim.account.id
+				});
 			}
 		);
 

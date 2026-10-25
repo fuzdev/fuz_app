@@ -23,7 +23,9 @@ import { describe_account_lifecycle_cross_tests } from '#lib/testing/cross_backe
 import './cross_test_types.ts';
 
 const handle = reconstruct_bootstrapped_handle(inject('backend_handle'));
-const setup_test = default_cross_process_setup(handle);
+const setup_test = default_cross_process_setup(handle, {
+	reject_unknown_audit_metadata_keys: true
+});
 const { capabilities, rpc_path } = handle.config;
 
 describe_account_lifecycle_cross_tests({ setup_test, capabilities, rpc_path });

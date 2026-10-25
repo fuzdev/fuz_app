@@ -36,14 +36,14 @@ const rust = reconstruct_bootstrapped_handle(inject('security_handle_b'));
 
 describe('TS spine (node)', () => {
 	describe_login_security_cross_tests({
-		setup_test: default_cross_process_setup(ts),
+		setup_test: default_cross_process_setup(ts, { reject_unknown_audit_metadata_keys: true }),
 		base_url: ts.config.base_url
 	});
 });
 
 describe('Rust spine_stub', () => {
 	describe_login_security_cross_tests({
-		setup_test: default_cross_process_setup(rust),
+		setup_test: default_cross_process_setup(rust, { reject_unknown_audit_metadata_keys: true }),
 		base_url: rust.config.base_url,
 		// real Postgres behind a pool; the TS spine here runs on one pglet-wasm
 		// connection, which refuses concurrent top-level transactions

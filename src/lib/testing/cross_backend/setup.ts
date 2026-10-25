@@ -222,6 +222,13 @@ export interface TestFixtureBase {
 	 * RPC over the keeper's daemon-token channel (the driver has no keyring).
 	 */
 	readonly mint_expired_session: () => Promise<string>;
+	/**
+	 * Whether the suites' audit reads refuse metadata keys an event type
+	 * doesn't declare — the setup's `reject_unknown_audit_metadata_keys`.
+	 * `list_audit_events` and the admin suite's readers pass it to
+	 * `assert_audit_event_metadata`.
+	 */
+	readonly reject_unknown_audit_metadata_keys?: boolean;
 }
 
 /**
@@ -469,6 +476,16 @@ export interface CrossProcessSetupOptions {
 	 * `TestFixtureBase.extra_actors`.
 	 */
 	readonly extra_actors?: ReadonlyArray<string>;
+	/**
+	 * Hold every audit row the fixture's readers parse to a closed world:
+	 * metadata keys its event type doesn't declare are refused, not just
+	 * mistyped or missing ones (`assert_audit_event_metadata`'s
+	 * `reject_unknown_keys`). Off by default, since the builtin schemas are
+	 * open for consumer-added fields; a backend's own spine suite turns it on
+	 * so neither spine can add an undeclared key. Exposed on
+	 * `fixture.reject_unknown_audit_metadata_keys`.
+	 */
+	readonly reject_unknown_audit_metadata_keys?: boolean;
 }
 
 /**
@@ -1126,6 +1143,7 @@ export const default_cross_process_setup = (
 			create_account,
 			extra_accounts,
 			extra_actors,
+			reject_unknown_audit_metadata_keys: options?.reject_unknown_audit_metadata_keys ?? false,
 			// Forge over the wire — the cross-process driver has no keyring,
 			// so `_testing_mint_session` mints the backdated row + signs the
 			// cookie server-side over the keeper's daemon-token channel.

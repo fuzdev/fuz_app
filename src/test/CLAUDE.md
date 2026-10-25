@@ -240,7 +240,9 @@ over HTTP refuses for want of a connection),
 real-upgrade `describe_role_grant_offer_notification_ws_tests` suite — the seven
 consentful-role-grants WS notifications: received / accepted / declined /
 retracted / flat revoke + supersede on both the accept and revoke cascades, each
-strict-parsed against its canonical params schema; the TS spine threads its
+strict-parsed against its canonical params schema, each with a bystander
+account's socket that must receive nothing but its own responses behind a
+`heartbeat` barrier; the TS spine threads its
 `ws_transport` as the `notification_sender` via
 `spine_rpc_endpoints({notification_sender})`), `peer_ping_ws.cross.test.ts` (the
 real-upgrade `describe_peer_ping_ws_tests` suite — the server→client `peer/ping`
@@ -305,9 +307,11 @@ keeper-confirmed purge, the `cannot_delete_keeper` guard, the session-only
 self-delete (a bearer self-delete → 403 `credential_type_required` with the
 session still live, an admin bearer still deleting another), fail-closed
 (a soft-deleted account's session + bearer no longer authenticate),
-deterministic double-undelete → not\*found, the keeper-guard
-`account_delete outcome=failure` audit row read back via
-`_testing_drain_effects` + `audit_log_list`, and the `admin_account_list`
+deterministic double-undelete → not\*found with its `account_undelete
+outcome=failure` row naming the probed id, the delete, undelete and purge
+success rows snapshotting the victim's username, the keeper-guard
+`account_delete outcome=failure` audit row — each read back via
+`_testing_drain_effects` + `audit_log_list` — and the `admin_account_list`
 `include_deleted` listing shape (tombstoned rows surface with `deleted_at`
 set), gated on `capabilities.account_lifecycle`; unlike cells these verbs are
 **on** the declared surface (in `create_admin_actions`, auto-enumerated for
@@ -353,6 +357,14 @@ a held grant answers the same id with no new audit row, one after revoke is
 terminal); seeds a `participant` (`grant_paths:
 ['admin']`) app-role on both spines with the holder via `extra_accounts`;
 in-process leg `conformance_participation.db.test.ts`), and
+`role_grant_offer_lifecycle.cross.test.ts`
+(`describe_role_grant_offer_lifecycle_cross_tests` — a decline by anyone but
+the recipient and a retract by anyone but the grantor → 404
+`role_grant_offer_not_found`, identical to a missing offer and leaving it
+pending; a decline or retract of a decided offer → 400
+`role_grant_offer_terminal`; one audit row per success with its attribution
+and metadata, none per refusal; in-process leg on the drained setup of
+`conformance_participation.db.test.ts`), and
 `origin.cross.test.ts` (the imperative `describe_origin_cross_tests` — Origin
 allowlist: absent → pass; in-process leg `auth/origin_parity.db.test.ts`), and
 `origin_scope.cross.test.ts` (`describe_origin_scope_cross_tests` — the check
