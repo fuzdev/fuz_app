@@ -30,7 +30,7 @@ import { z } from 'zod';
 /**
  * Closed enum of fixture-provisioned principals a case runs `as`. Each
  * value maps to a `TestFixture` accessor (or a seeded `extra_accounts`
- * entry) in the runner's `resolve_principal` — there is **no** inline
+ * entry) in the runner's `resolve_conformance_principal` — there is **no** inline
  * credential minting in a case (that would be the setup-DSL trap).
  *
  * - `keeper` — the per-test bootstrapped keeper (holds `ROLE_KEEPER` +

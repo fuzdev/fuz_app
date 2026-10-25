@@ -432,7 +432,7 @@ Also exported: `describe_adversarial_auth(options)` (group 3 on its own) and
 `build_error_schema_lookup(specs, middleware_specs?)` (pre-built
 `Map<string, RouteErrorSchemas>` for per-response validation).
 
-### `adversarial_input.ts` — schema-walk payload generation
+### `adversarial_input.ts` + `adversarial_input_cases.ts` — schema-walk payload generation
 
 `describe_adversarial_input({build, roles})` — fires input body / params /
 query validation failures at every route with correct-auth credentials so
@@ -440,11 +440,12 @@ validation middleware is actually exercised (not short-circuited by 401).
 All cases expect 400 with one of `ERROR_INVALID_REQUEST_BODY` /
 `_INVALID_JSON_BODY` / `_INVALID_ROUTE_PARAMS` / `_INVALID_QUERY_PARAMS`.
 
-Exported generators:
+The generators live in the hono-free `adversarial_input_cases.ts`, so the
+cross-process suites reuse them:
 
-- `generate_input_test_cases(input_schema)` — whole-body structural (non-object, extra key when `strictObject`), missing required fields, one wrong-type per field, null for required non-nullable, one format violation per constrained field, numeric/array/string boundary cases via JSON Schema introspection.
-- `generate_params_test_cases(params_schema)` — format violations only (unconstrained string params accept anything).
-- `generate_query_test_cases(query_schema)` — missing required + format violations.
+- `generate_input_test_cases(input_schema)` → `InputTestCase[]` — whole-body structural (non-object, extra key when `strictObject`), missing required fields, one wrong-type per field, null for required non-nullable, one format violation per constrained field, numeric/array/string boundary cases via JSON Schema introspection.
+- `generate_params_test_cases(params_schema)` → `ParamsTestCase[]` — format violations only (unconstrained string params accept anything).
+- `generate_query_test_cases(query_schema)` → `QueryTestCase[]` — missing required + format violations.
 
 GET-with-input routes hit the RPC `?params=` query convention; invalid-JSON
 arrays there collapse to `ERROR_INVALID_REQUEST_BODY` (schema failure)
@@ -851,7 +852,7 @@ Registry lookups:
 - `RpcEndpointsSuiteOption` — union `Array<RpcEndpointSpec> | ((ctx: AppServerContext) => Array<RpcEndpointSpec>)` accepted by every DB-backed suite's `rpc_endpoints` field.
 - `resolve_rpc_endpoints_for_setup(rpc_endpoints, session_options)` — resolves the union to an array for setup-time inspection (path lookup, `find_rpc_action` presence checks). Factory form is invoked once with a stub `AppServerContext`; the produced actions are discarded because `create_app_server` invokes the factory a second time per-test with its real ctx. Safe when the factory is pure wrt endpoint `path` and action `spec.method` list.
 
-### `rpc_attack_surface.ts` — `describe_rpc_attack_surface_tests`
+### `rpc_attack_surface.ts` + `rpc_envelope_cases.ts` — `describe_rpc_attack_surface_tests`
 
 3 test groups for JSON-RPC endpoints:
 
@@ -862,8 +863,8 @@ Registry lookups:
    - **keeper rejects non-daemon credentials** — session and api_token credentials are rejected even when the account has the keeper role (only `daemon_token` passes). The credential-type gate fires before the role gate (see `auth/CLAUDE.md` §Keeper auth shape).
    - correct auth passes (not 401/403)
    - GET unauthenticated for `side_effects: false` reads
-2. **RPC adversarial envelopes** — fixed set exercising dispatcher steps 1–2: non-JSON body, wrong `jsonrpc` version, missing `jsonrpc` / `method` / `id`, batch array, unknown method, GET missing `method`/`id`, GET invalid JSON params, GET non-object params, GET mutation method → `invalid_request`.
-3. **RPC adversarial params** — reuses `generate_input_test_cases` but filters out structural cases (those hit envelope validation at step 1, not params validation at step 5). Every case expects 400 `invalid_params`.
+2. **RPC adversarial envelopes** — the fixed set `create_rpc_envelope_cases(endpoint, {skip_methods?})` builds, exercising the envelope parse, method lookup, and GET read restriction: non-JSON body → `parse_error`, wrong `jsonrpc` version, missing `jsonrpc` / `method` / `id`, batch array, non-object POST `params` → `invalid_request`, unknown method → `method_not_found`, GET missing `method`/`id` → `invalid_request`, GET invalid-JSON params → `invalid_params`, GET non-object params on **every** read (each of `RPC_NON_OBJECT_PARAMS`: a number, an array, a string, a boolean) → `invalid_params`, GET mutation method → `invalid_request`, plus three ordering cases sent with no credential (an anonymous GET mutation and an anonymous batch, both `invalid_request`, never 401; an anonymous GET with non-object params on a protected read, the 401 — params validation runs after authorization). Each case is sent by the app its method's auth admits (`select_auth_app`) and pins status, code, echoed `id`, and `data.reason` (exact where the dispatcher sets one, absent otherwise) via `assert_rpc_envelope_refusal`. The cases are data (`RpcEnvelopeCase`) in the hono-free `rpc_envelope_cases.ts`, shared with the cross-process `describe_rpc_adversarial_cross_tests`; `to_rpc_envelope_request` builds a case's request, and `rpc_get_side_effects_reason(method)` is the GET read restriction's reason.
+3. **RPC adversarial params** — `generate_rpc_params_test_cases(input)` (`rpc_envelope_cases.ts`): `generate_input_test_cases` minus its structural cases (a non-object `params` is refused at the envelope, not at params validation). Every case expects 400 `invalid_params`. Shared with the cross-process suite.
 
 Skips silently when `surface.rpc_endpoints` is empty. Uses stub deps — no
 DB needed.
@@ -1125,7 +1126,7 @@ setup_test, surface_source, capabilities, rpc_endpoints, session_options,
 principals?, suite_name?})`. Same `{setup_test, surface_source,
 capabilities}` protocol every Tier 1 suite uses, so **one case array runs
   both transports** — in-process (`gro test`) and cross-process (the gate,
-  each backend's real auth resolution). `resolve_principal` maps the five
+  each backend's real auth resolution). `resolve_conformance_principal` (exported) maps the five
   always-available principals to fixture accessors; `role_holder` /
   `wrong_role` read a seeded `extra_accounts` username named via
   `options.principals`.
@@ -1765,6 +1766,42 @@ of a hidden source answer `404` whatever `data` names. Facts are put through
 `capabilities.fact_serving`; cross-process only. fuz_app's own wiring is
 `src/test/cross_backend/cell_ref_admission.cross.test.ts`; the in-process
 cases are `src/test/auth/cell_ref_admission{,.fact_less}.db.test.ts`.
+
+### Malformed-envelope and invalid-params parity — `cross_backend/rpc_adversarial.ts`
+
+`describe_rpc_adversarial_cross_tests({setup_test, surface_source, rpc_path?,
+skip_methods?})` — the envelope and params groups of
+`describe_rpc_attack_surface_tests`, sent over `fixture.transport` to a
+spawned backend. The in-process groups run on stub apps, while the Rust spine
+parses envelopes and params by hand and the action-manifest parity gate
+compares no param schemas, so this is what holds the spines to one answer.
+
+- **envelopes** — every `create_rpc_envelope_cases` case, one test each, on a
+  fresh fixture; status, code, echoed `id`, and `data.reason` per case, and a
+  guard test that the endpoint has both a read and an authenticated mutation to
+  carry them.
+- **params** — one test per declared method, sending every
+  `generate_rpc_params_test_cases` case and failing with the list of cases not
+  answered 400 `invalid_params` with no `data.reason`. `xfail_params`
+  (`RpcParamsXfail` — `{method, labels, tracking_id, reason}`) moves the named
+  cases of a method into one `xfail_until` test each, for a known divergence on
+  one backend; the method's other cases keep their test, and an entry naming no
+  generated case fails. Pass it only for the backend that diverges — fuz_app
+  keys it on `RUST_SPINE_STUB_DEFAULT_NAME`.
+
+The authorized principal is the keeper on the first channel the method's auth
+admits — its session, else its daemon token or API token over a no-`Origin`
+transport — resolved through `resolve_conformance_principal`.
+**Preconditions:** the keeper holds every role a declared method gates on
+(`default_cross_process_setup` seeds `keeper` and `admin`; `extra_keeper_roles`
+for others) and has a single actor. No generated body carries a valid `acting`,
+and a malformed one reads as omitted ahead of validation on both spines, so a
+single-actor keeper resolves its actor and validation refuses; a keeper with a
+second actor answers `actor_required` first, so such a suite lists the
+actor-required methods in `skip_methods`. Skips `_testing_*` and
+`PROTOCOL_ACTION_METHODS`, as `generate_rpc_auth_conformance_cases` does.
+Ungated; cross-process only. fuz_app's own wiring is
+`src/test/cross_backend/rpc_adversarial.cross.test.ts`.
 
 ### Token-scope surface parity — `cross_backend/token_scope_surface.ts`
 

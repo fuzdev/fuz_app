@@ -219,9 +219,11 @@ auth/validation/dispatch pipeline is shared with the WebSocket dispatcher.
 throttle, validate after — a caller the authority gates refuse never learns
 the action's input shape, the coarse authority facts settle before the fine
 ones, and a malformed flood burns the budget it should. The Rust spine's
-dispatcher enforces the same order: it validates the `acting` selector at
-the dispatcher after the rate limit and leaves every other field to the
-handlers.
+dispatcher enforces the same order: after the rate limit it refuses a
+non-object `params` (which only `GET`'s `?params=` can carry past the
+envelope) and validates the `acting` selector, and leaves every other field
+to the handlers. So an anonymous `GET` with `?params=42` is a 401 on both
+spines, and an authorized one is `invalid_params`.
 
 Shim responsibilities (per-request):
 

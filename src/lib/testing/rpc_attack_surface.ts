@@ -34,15 +34,19 @@ import {
 	create_test_request_context,
 	select_auth_app
 } from './auth_apps.ts';
-import { generate_input_test_cases } from './adversarial_input.ts';
 import { generate_valid_body } from './schema_generators.ts';
-import { ERROR_INVALID_JSON_BODY } from '../http/error_schemas.ts';
 import type { RpcAction } from '../actions/action_rpc.ts';
 import {
 	create_rpc_post_init,
 	create_rpc_get_url,
 	assert_jsonrpc_error_response
 } from './rpc_helpers.ts';
+import {
+	assert_rpc_envelope_refusal,
+	create_rpc_envelope_cases,
+	generate_rpc_params_test_cases,
+	to_rpc_envelope_request
+} from './rpc_envelope_cases.ts';
 
 // --- Types ---
 
@@ -261,8 +265,8 @@ const describe_rpc_auth = (options: RpcAttackSurfaceOptions): void => {
 /**
  * Generate adversarial envelope tests for RPC endpoints.
  *
- * Fixed set of malformation cases that exercise the dispatcher's
- * envelope parsing (step 1) and method lookup (step 2).
+ * Runs `create_rpc_envelope_cases` for each endpoint: the dispatcher's
+ * envelope parsing, method lookup, and GET read restriction.
  */
 const describe_rpc_adversarial_envelopes = (options: RpcAttackSurfaceOptions): void => {
 	const { build, roles } = options;
@@ -270,163 +274,21 @@ const describe_rpc_adversarial_envelopes = (options: RpcAttackSurfaceOptions): v
 
 	if (surface.rpc_endpoints.length === 0) return;
 
-	// public app for envelope errors (happen before auth checks)
-	const apps = create_auth_test_apps(route_specs, []);
-	// authed apps for the GET mutation test (needs correct auth to reach the side_effects check)
+	const public_apps = create_auth_test_apps(route_specs, []);
 	const authed_apps = create_auth_test_apps(route_specs, roles);
 
 	describe('RPC adversarial envelopes', () => {
 		for (const endpoint of surface.rpc_endpoints) {
-			// find a mutation method for GET-restriction testing
-			const mutation_method = endpoint.methods.find((m) => m.side_effects);
-
 			describe(endpoint.path, () => {
-				// --- POST envelope malformation ---
-
-				test('non-JSON body → parse_error', async () => {
-					const res = await apps.public.request(endpoint.path, {
-						method: 'POST',
-						headers: { 'Content-Type': 'application/json' },
-						body: 'not-json'
-					});
-					assert.strictEqual(res.status, 400);
-					const body = await res.json();
-					assert_jsonrpc_error_response(body, JSONRPC_ERROR_CODES.parse_error);
-				});
-
-				test('wrong jsonrpc version → invalid_request', async () => {
-					const res = await apps.public.request(endpoint.path, {
-						method: 'POST',
-						headers: { 'Content-Type': 'application/json' },
-						body: JSON.stringify({
-							jsonrpc: '1.0',
-							id: 'test',
-							method: endpoint.methods[0]?.name ?? 'any'
-						})
-					});
-					assert.strictEqual(res.status, 400);
-					const body = await res.json();
-					assert_jsonrpc_error_response(body, JSONRPC_ERROR_CODES.invalid_request);
-				});
-
-				test('missing jsonrpc field → invalid_request', async () => {
-					const res = await apps.public.request(endpoint.path, {
-						method: 'POST',
-						headers: { 'Content-Type': 'application/json' },
-						body: JSON.stringify({
-							id: 'test',
-							method: endpoint.methods[0]?.name ?? 'any'
-						})
-					});
-					assert.strictEqual(res.status, 400);
-					const body = await res.json();
-					assert_jsonrpc_error_response(body, JSONRPC_ERROR_CODES.invalid_request);
-				});
-
-				test('missing method field → invalid_request', async () => {
-					const res = await apps.public.request(endpoint.path, {
-						method: 'POST',
-						headers: { 'Content-Type': 'application/json' },
-						body: JSON.stringify({ jsonrpc: '2.0', id: 'test' })
-					});
-					assert.strictEqual(res.status, 400);
-					const body = await res.json();
-					assert_jsonrpc_error_response(body, JSONRPC_ERROR_CODES.invalid_request);
-				});
-
-				test('missing id field → invalid_request', async () => {
-					const res = await apps.public.request(endpoint.path, {
-						method: 'POST',
-						headers: { 'Content-Type': 'application/json' },
-						body: JSON.stringify({
-							jsonrpc: '2.0',
-							method: endpoint.methods[0]?.name ?? 'any'
-						})
-					});
-					assert.strictEqual(res.status, 400);
-					const body = await res.json();
-					assert_jsonrpc_error_response(body, JSONRPC_ERROR_CODES.invalid_request);
-				});
-
-				test('batch (array) body → invalid_request', async () => {
-					const res = await apps.public.request(endpoint.path, {
-						method: 'POST',
-						headers: { 'Content-Type': 'application/json' },
-						body: JSON.stringify([
-							{ jsonrpc: '2.0', id: '1', method: endpoint.methods[0]?.name ?? 'any' }
-						])
-					});
-					assert.strictEqual(res.status, 400);
-					const body = await res.json();
-					assert_jsonrpc_error_response(body, JSONRPC_ERROR_CODES.invalid_request);
-					assert.strictEqual(body.id, null, 'batch has no extractable id');
-				});
-
-				test('unknown method name → method_not_found', async () => {
-					const res = await apps.public.request(
-						endpoint.path,
-						create_rpc_post_init('__nonexistent_method__')
-					);
-					assert.strictEqual(res.status, 404);
-					const body = await res.json();
-					assert_jsonrpc_error_response(body, JSONRPC_ERROR_CODES.method_not_found);
-				});
-
-				// --- GET envelope malformation ---
-
-				test('GET missing method → invalid_request', async () => {
-					const res = await apps.public.request(`${endpoint.path}?id=test`);
-					assert.strictEqual(res.status, 400);
-					const body = await res.json();
-					assert_jsonrpc_error_response(body, JSONRPC_ERROR_CODES.invalid_request);
-				});
-
-				test('GET missing id → invalid_request', async () => {
-					const first_method = endpoint.methods[0]?.name ?? 'any';
-					const res = await apps.public.request(`${endpoint.path}?method=${first_method}`);
-					assert.strictEqual(res.status, 400);
-					const body = await res.json();
-					assert_jsonrpc_error_response(body, JSONRPC_ERROR_CODES.invalid_request);
-				});
-
-				test('GET invalid JSON params → invalid_params', async () => {
-					const read_method = endpoint.methods.find((m) => !m.side_effects);
-					// skip if no read methods exist
-					if (!read_method) return;
-					const res = await apps.public.request(
-						`${endpoint.path}?method=${read_method.name}&id=test&params=not-json`
-					);
-					assert.strictEqual(res.status, 400);
-					const body = await res.json();
-					assert_jsonrpc_error_response(body, JSONRPC_ERROR_CODES.invalid_params);
-				});
-
-				test('GET non-object params → error', async () => {
-					const read_method = endpoint.methods.find((m) => !m.side_effects);
-					// skip if no read methods exist
-					if (!read_method) return;
-					// valid JSON but not an object — hits dispatcher's params validation
-					const res = await apps.public.request(
-						`${endpoint.path}?method=${read_method.name}&id=test&params=42`
-					);
-					// should reject: either invalid_params (validation) or auth error
-					assert.ok(
-						res.status >= 400,
-						`expected error status for non-object params, got ${res.status}`
-					);
-					const body = await res.json();
-					assert_jsonrpc_error_response(body);
-				});
-
-				if (mutation_method) {
-					test('GET mutation method → invalid_request (side effects)', async () => {
-						const url = create_rpc_get_url(endpoint.path, mutation_method.name);
-						// need correct auth to reach the side_effects check
-						const app = select_auth_app(authed_apps, mutation_method.auth);
-						const res = await app.request(url);
-						assert.strictEqual(res.status, 400);
-						const body = await res.json();
-						assert_jsonrpc_error_response(body, JSONRPC_ERROR_CODES.invalid_request);
+				for (const c of create_rpc_envelope_cases(endpoint)) {
+					test(c.name, async () => {
+						const app =
+							c.as === 'anonymous'
+								? public_apps.public
+								: select_auth_app(authed_apps, c.method.auth);
+						const { url, init } = to_rpc_envelope_request(endpoint.path, c);
+						const res = await app.request(url, init);
+						assert_rpc_envelope_refusal(res.status, await res.json(), c);
 					});
 				}
 			});
@@ -471,12 +333,7 @@ const describe_rpc_adversarial_params = (options: RpcAttackSurfaceOptions): void
 						continue;
 					}
 
-					// filter out structural cases (non-object body) — those fail at
-					// envelope validation (invalid_request) not params validation (invalid_params).
-					// Envelope-level structural errors are covered by adversarial envelopes.
-					const test_cases = generate_input_test_cases(action.spec.input).filter(
-						(tc) => tc.expected_error !== ERROR_INVALID_JSON_BODY
-					);
+					const test_cases = generate_rpc_params_test_cases(action.spec.input);
 					if (test_cases.length === 0) continue;
 					total_cases += test_cases.length;
 

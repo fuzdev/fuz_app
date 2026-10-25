@@ -15,7 +15,7 @@ import '../assert_dev_env.ts';
  * `output` schema from the live spec registry (RPC) or `RouteSpec` (the 6
  * REST auth routes) — the row never carries a schema. The principal the
  * row runs `as` resolves to a `TestFixture` accessor via
- * `resolve_principal` — no inline credential minting.
+ * `resolve_conformance_principal` — no inline credential minting.
  *
  * Every response also passes an always-on **no-fingerprint** invariant
  * (`assert_no_fingerprint_headers` over `FINGERPRINT_HEADERS` — `Server` /
@@ -90,7 +90,7 @@ export interface ConformanceTableOptions {
 }
 
 /** A resolved principal: the transport + headers a case fires through. */
-interface ResolvedPrincipal {
+export interface ResolvedConformancePrincipal {
 	readonly transport: FetchTransport;
 	readonly headers: Record<string, string>;
 	/**
@@ -154,13 +154,21 @@ const mint_scoped_token = async (
  * `role_holder` / `wrong_role` read a seeded `extra_accounts` entry named
  * via `options.principals` (throws a clear setup error when unconfigured);
  * `scoped_token` mints its narrowed credential over the production path.
+ * Also used outside the table by suites that send a principal's requests
+ * themselves (`describe_rpc_adversarial_cross_tests`).
+ *
+ * @param fixture - the per-test fixture
+ * @param as - the principal
+ * @param principals - usernames for `role_holder` / `wrong_role`
+ * @param resolved_rpc_endpoints - the endpoints `scoped_token` mints through
+ * @returns the transport and headers the principal sends with
  */
-const resolve_principal = async (
+export const resolve_conformance_principal = async (
 	fixture: TestFixture,
 	as: ConformancePrincipal,
-	principals: ConformancePrincipalConfig | undefined,
-	resolved_rpc_endpoints: ReturnType<typeof resolve_rpc_endpoints_for_setup>
-): Promise<ResolvedPrincipal> => {
+	principals?: ConformancePrincipalConfig,
+	resolved_rpc_endpoints: ReturnType<typeof resolve_rpc_endpoints_for_setup> = []
+): Promise<ResolvedConformancePrincipal> => {
 	switch (as) {
 		case 'keeper':
 			// Keeper carries its session cookie via `create_session_headers`
@@ -420,7 +428,7 @@ const run_case = async (
 	resolved_rpc_endpoints: ReturnType<typeof resolve_rpc_endpoints_for_setup>
 ): Promise<NormalizedResponse> => {
 	const fixture = await options.setup_test();
-	const { transport, headers, suppress_default_origin } = await resolve_principal(
+	const { transport, headers, suppress_default_origin } = await resolve_conformance_principal(
 		fixture,
 		c.request.as,
 		options.principals,

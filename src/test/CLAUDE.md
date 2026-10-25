@@ -429,6 +429,16 @@ verbs via `describe_role_grant_role_grammar_cross_tests` — an off-grammar
 `role` on `role_grant_assign` / `role_grant_offer_create` → `invalid_params`
 with no reason and no audit row carrying it, with an on-grammar unregistered
 role reaching `role_not_web_grantable` as the control; cross-only), and
+`rpc_adversarial.cross.test.ts` (`describe_rpc_adversarial_cross_tests` — the
+in-process attack-surface suite's malformed-envelope cases and generated
+invalid-params cases sent to each backend as a principal the method admits,
+pinning status, code, echoed `id` and `data.reason`, incl. an anonymous `GET` of
+a mutating method and an anonymous batch → 400 `invalid_request`, never 401, and
+an anonymous `GET` with non-object params → 401; a non-object `GET` params on
+every read; on the Rust stub only, the `account_token_create` schema refusals
+that carry a Rust-only `data.reason` run as `xfail_until`
+`rust-token-create-schema-reason` rows; cross-only,
+`describe_rpc_attack_surface_tests` runs the same cases in-process), and
 `fact_serving.cross.test.ts` (the cell-gated fact-serving routes
 `GET /api/cells/:cell_id/facts/:hash` + the admin-only `GET /api/facts/:hash`
 via `describe_fact_serving_cross_tests`, gated on `capabilities.fact_serving`),

@@ -96,6 +96,9 @@ const rust_spine_stub_capabilities = Object.freeze({
 /** Default listening port — slots beside zzz's 1175/1176; matches the binary's `DEFAULT_PORT`. */
 export const RUST_SPINE_STUB_DEFAULT_PORT = 1177;
 
+/** The preset's default backend name — its spawn label and temp directory. */
+export const RUST_SPINE_STUB_DEFAULT_NAME = 'spine_stub';
+
 /** Default Postgres database — real PG (PGlite isn't reachable from `tokio-postgres`). */
 export const RUST_SPINE_STUB_DEFAULT_DATABASE_URL =
 	'postgres://localhost/fuz_app_test_rust_spine_stub';
@@ -112,7 +115,7 @@ export interface SpineStubBackendConfigOptions {
 	 * Backend name — labels the spawn in errors and logs, and names its
 	 * directory under `os.tmpdir()` (`build_test_backend_paths`), which holds
 	 * the bootstrap token, the daemon token and the fact store. Default
-	 * `spine_stub`. Give each stub spawned alongside another its own name, so
+	 * `RUST_SPINE_STUB_DEFAULT_NAME`. Give each stub spawned alongside another its own name, so
 	 * those files don't collide.
 	 */
 	readonly name?: string;
@@ -176,7 +179,7 @@ export const rust_spine_stub_backend_config = (
 		binary_path = process.env[RUST_SPINE_STUB_BIN_ENV],
 		enable_login_rate_limit,
 		trusted_proxies,
-		name = 'spine_stub'
+		name = RUST_SPINE_STUB_DEFAULT_NAME
 	} = options;
 	if (!binary_path) {
 		throw new Error(

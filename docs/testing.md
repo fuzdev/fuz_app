@@ -1355,3 +1355,44 @@ Deferred-by-design rows mark themselves with `xfail`
 `test.fails` wrapper that stays visible in the report and turns red the
 moment the gap closes, forcing the marker's removal. In-scope gaps don't
 get a marker — they fail loud as a normal red `test`.
+
+### Malformed envelopes and invalid params
+
+`describe_rpc_adversarial_cross_tests({setup_test, surface_source, rpc_path?,
+skip_methods?})` (`cross_backend/rpc_adversarial.ts`) sends the in-process
+attack-surface suite's envelope and params cases to a spawned backend, since a
+backend that parses envelopes or params by hand can drift on either and the
+action-manifest parity gate doesn't compare param schemas:
+
+- **envelopes** — `create_rpc_envelope_cases` (`testing/rpc_envelope_cases.ts`):
+  non-JSON body, wrong or missing `jsonrpc`, missing `method` or `id`, a batch
+  array, non-object POST params, an unknown method, `GET` missing `method` or
+  `id`, `GET` invalid-JSON params, `GET` non-object params on every read, and a
+  `GET` of a mutating method. Each is sent by a principal the method admits,
+  and pins status, JSON-RPC code, the echoed `id` and `data.reason`. Three go
+  without a credential to pin ordering: an anonymous `GET` of a mutating
+  method and an anonymous batch are both 400 `invalid_request`, never 401 — the
+  envelope and read-restriction checks run before authorization, and batches
+  are unsupported — while an anonymous `GET` with non-object params is the 401,
+  since params validation runs after it.
+- **params** — for each declared method, `generate_rpc_params_test_cases`
+  (the input generator minus its structural cases), each sent as the method's
+  authorized principal and owing 400 `invalid_params` with no `data.reason`.
+  A known divergence on one backend goes in `xfail_params` (`{method, labels,
+  tracking_id, reason}`), which runs each named case as its own `xfail_until`
+  test and leaves the method's other cases in place.
+
+The authorized principal is the keeper on the first channel the method admits
+(session, else daemon token or API token without `Origin`), so the keeper must
+hold every role a declared method gates on (`extra_keeper_roles` for roles
+beyond `keeper` and `admin`) and have a single actor. `_testing_*` and protocol
+methods are skipped, as in the per-method auth rows. Cross-process only — the
+in-process `describe_rpc_attack_surface_tests` runs the same cases:
+
+```ts
+describe_rpc_adversarial_cross_tests({
+	setup_test,
+	surface_source: create_spine_surface_spec(),
+	rpc_path
+});
+```
