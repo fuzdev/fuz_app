@@ -132,8 +132,9 @@ export const describe_ws_connection_cap_cross_tests = (
 	};
 
 	// each case opens more than a cap's worth of real sockets in sequence, so its
-	// time scales with the cap and the backend's upgrade cost
-	describe('per-account websocket connection cap parity', { timeout: 30_000 }, () => {
+	// time scales with the cap and the backend's upgrade cost — inside the 30 s
+	// budget `make_cross_backend_project` gives every case
+	describe('per-account websocket connection cap parity', () => {
 		test_if(
 			enabled,
 			'one connection past the cap closes the oldest with WS_CLOSE_CONNECTION_LIMIT, and only it',

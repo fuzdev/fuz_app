@@ -10,94 +10,87 @@ import { vite_plugin_fuz_css } from '@fuzdev/fuz_css/vite_plugin_fuz_css.ts';
 import svelte_docinfo from 'svelte-docinfo/vite.js';
 import { vite_plugin_pkg_json } from '@fuzdev/fuz_ui/vite_plugin_pkg_json.ts';
 
+import {
+	make_cross_backend_project,
+	type CrossBackendProjectOptions
+} from './src/lib/testing/cross_backend/make_cross_backend_project.ts';
+
 const max_threads = Math.max(1, Math.ceil(availableParallelism() / 2));
 
 /**
  * The `cross_backend_*` projects each spawn one backend in their own
- * `globalSetup` and run the same `*.cross.test.ts` bodies against it
- * (`isolate` + `fileParallelism` off so the single spawned instance is
- * shared across files in a run).
+ * `globalSetup` and run the same `*.cross.test.ts` bodies against it, built
+ * with the shipped `make_cross_backend_project` (`isolate` + `fileParallelism`
+ * off so the single spawned instance is shared across files in a run, and a
+ * 30 s test + hook budget in place of vitest's 5 s / 10 s defaults).
  *
  * They are **opt-in** — excluded from the default run (so a bare `gro test`
  * is just `unit` + `db`) because they spawn external backends: the TS ones
- * recursively spawn `gro run` / `deno` / `bun`, the Rust one needs Postgres
- * + a prebuilt binary. Enable them with `FUZ_TEST_CROSS_BACKEND=1`, then
- * select one, e.g.:
+ * recursively spawn `gro run` / `deno` / `bun`, the Rust ones need a local
+ * Postgres and a Cargo workspace to rebuild the stub from. Enable them with
+ * `FUZ_TEST_CROSS_BACKEND=1`, then select one, e.g.:
  *
  *   FUZ_TEST_CROSS_BACKEND=1 npx vitest run --project cross_backend_ts_node
  *
  * - `cross_backend_ts_node` / `cross_backend_ts_deno` / `cross_backend_ts_bun`
- *   — fuz_app's own TS impl over real HTTP, in-memory PGlite, no external
+ *   — fuz_app's own TS impl over real HTTP, in-memory pglet, no external
  *   infra (the `ts_deno` / `ts_bun` ones need `deno` / `bun` on PATH).
- * - `cross_backend_rust_spine_stub` — Rust spine over real Postgres;
- *   additionally needs `FUZ_TESTING_RUST_SPINE_STUB_BIN` pointing at a prebuilt
- *   binary and a created DB (see `rust_spine_stub_backend_config`).
+ * - `cross_backend_rust_spine_stub` — Rust spine over real Postgres; its
+ *   `globalSetup` rebuilds the `testing_spine_stub` binary and creates its
+ *   database first (see `global_setup_helpers.ts`).
+ * - `cross_backend_parity` / `cross_backend_security` — dual-spawn gates,
+ *   below.
  */
 const cross_backend_enabled = process.env.FUZ_TEST_CROSS_BACKEND === '1';
 
-// The parity gates spawn BOTH backends in one run (their shared `globalSetup`
-// provides `parity_handle_a` + `_b`), so their test files are excluded from
-// the single-backend projects — those provide only `backend_handle` — and run
-// in a later groupOrder to avoid contending for the stub's port with
-// `cross_backend_rust_spine_stub`. One dual-spawn serves both gates: schema
-// parity (live DDL) and action-manifest parity (live RPC method set + auth).
-const PARITY_TESTS = [
-	'src/test/cross_backend/schema_parity.cross.test.ts',
-	'src/test/cross_backend/action_manifest_parity.cross.test.ts'
-];
+/** The single-backend projects' test files. */
+const CROSS_BACKEND_TESTS = ['src/test/cross_backend/*.cross.test.ts'];
 
-// The security gates spawn BOTH backends with the login and action limiters
-// enabled — a config nothing else can share (the standard suites fire many
-// loopback logins and actions a live limiter would throttle), so they run under
-// their own dual-spawn project (`cross_backend_security`) and are excluded from
-// the single-backend glob.
-const SECURITY_TESTS = [
-	'src/test/cross_backend/login_security.cross.test.ts',
-	'src/test/cross_backend/ws_action_rate_limit.cross.test.ts'
-];
-
-const cross_backend_project = (name: string, global_setup: string) => ({
-	extends: true as const,
-	test: {
-		name,
-		include: ['src/test/cross_backend/*.cross.test.ts'],
-		exclude: [...PARITY_TESTS, ...SECURITY_TESTS],
-		globalSetup: [global_setup],
-		isolate: false,
-		fileParallelism: false,
-		sequence: { groupOrder: 3 }
-	}
-});
-
-const cross_backend_parity_project = () => ({
-	extends: true as const,
-	test: {
+/**
+ * The dual-spawn projects — each spawns BOTH backends in its own `globalSetup`
+ * and provides two handles instead of `backend_handle`, so its files are
+ * excluded from the single-backend projects (`DUAL_SPAWN_TESTS`, derived
+ * here). Each runs in a later `groupOrder` and is invoked as its own script
+ * (`npm run test:cross:parity` / `test:cross:security`), never alongside the
+ * other Rust projects in one `vitest` run: they reuse the stub's port + DB,
+ * and vitest initializes every project's `globalSetup` upfront, so two
+ * port-sharing spawns can't share an invocation.
+ */
+const DUAL_SPAWN_PROJECTS: ReadonlyArray<CrossBackendProjectOptions> = [
+	// One dual-spawn serves both parity gates: schema parity (live DDL) and
+	// action-manifest parity (live RPC method set + auth).
+	{
 		name: 'cross_backend_parity',
-		include: PARITY_TESTS,
-		globalSetup: ['./src/test/cross_backend/global_setup_schema_parity.ts'],
-		isolate: false,
-		fileParallelism: false,
-		sequence: { groupOrder: 4 }
-	}
-});
-
-// Dual-spawn security gates (TS spine + Rust stub, login + action limiters on).
-// Reuses the parity / single-backend ports + the stub DB, so — like every cross
-// project — it's invoked as its own script (`npm run test:cross:security`), never
-// alongside the other Rust projects in one `vitest` run (vitest initializes all
-// projects' globalSetups upfront, so two port-sharing dual-spawns can't share an
-// invocation). `groupOrder: 5` only orders it last if it ever is in a shared run.
-const cross_backend_security_project = () => ({
-	extends: true as const,
-	test: {
+		global_setup: './src/test/cross_backend/global_setup_schema_parity.ts',
+		include: [
+			'src/test/cross_backend/schema_parity.cross.test.ts',
+			'src/test/cross_backend/action_manifest_parity.cross.test.ts'
+		],
+		group_order: 4
+	},
+	// The security gates spawn both backends with the login and action limiters
+	// enabled — a config nothing else can share (the standard suites fire many
+	// loopback logins and actions a live limiter would throttle).
+	{
 		name: 'cross_backend_security',
-		include: SECURITY_TESTS,
-		globalSetup: ['./src/test/cross_backend/global_setup_login_security.ts'],
-		isolate: false,
-		fileParallelism: false,
-		sequence: { groupOrder: 5 }
+		global_setup: './src/test/cross_backend/global_setup_login_security.ts',
+		include: [
+			'src/test/cross_backend/login_security.cross.test.ts',
+			'src/test/cross_backend/ws_action_rate_limit.cross.test.ts'
+		],
+		group_order: 5
 	}
-});
+];
+
+const DUAL_SPAWN_TESTS = DUAL_SPAWN_PROJECTS.flatMap((project) => project.include ?? []);
+
+const single_backend_project = (name: string, global_setup: string) =>
+	make_cross_backend_project({
+		name,
+		global_setup,
+		include: CROSS_BACKEND_TESTS,
+		exclude: DUAL_SPAWN_TESTS
+	});
 
 export default defineConfig({
 	server: {
@@ -163,24 +156,23 @@ export default defineConfig({
 			},
 			...(cross_backend_enabled
 				? [
-						cross_backend_project(
+						single_backend_project(
 							'cross_backend_rust_spine_stub',
 							'./src/test/cross_backend/global_setup.ts'
 						),
-						cross_backend_project(
+						single_backend_project(
 							'cross_backend_ts_node',
 							'./src/test/cross_backend/global_setup_ts_node.ts'
 						),
-						cross_backend_project(
+						single_backend_project(
 							'cross_backend_ts_deno',
 							'./src/test/cross_backend/global_setup_ts_deno.ts'
 						),
-						cross_backend_project(
+						single_backend_project(
 							'cross_backend_ts_bun',
 							'./src/test/cross_backend/global_setup_ts_bun.ts'
 						),
-						cross_backend_parity_project(),
-						cross_backend_security_project()
+						...DUAL_SPAWN_PROJECTS.map(make_cross_backend_project)
 					]
 				: [])
 		]

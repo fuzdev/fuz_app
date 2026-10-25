@@ -211,7 +211,7 @@ export const describe_ws_outbound_overflow_cross_tests = (
 		assert.strictEqual(client.close_code, null, message);
 	};
 
-	describe('websocket outbound overflow parity', { timeout: 30_000 }, () => {
+	describe('websocket outbound overflow parity', () => {
 		test_if(
 			capabilities.ws,
 			'a burst within the budget arrives in order, ahead of its response',

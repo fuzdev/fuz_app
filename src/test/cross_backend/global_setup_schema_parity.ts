@@ -48,6 +48,7 @@ import {
 	ensure_database,
 	prepare_rust_spine_backend,
 	resolve_rust_spine_stub_database_url,
+	RUST_SPINE_STUB_CRATE,
 	to_maintenance_database_url
 } from './global_setup_helpers.ts';
 
@@ -135,7 +136,7 @@ const empty_ts_spine_parity_database = async (database_url: string): Promise<voi
 const setup = async (project: TestProject): Promise<() => Promise<void>> => {
 	// Make the Rust stub binary current + ensure its DB before the dual spawn.
 	// (The same URL `global_setup.ts` resolves, so both projects share the DB.)
-	prepare_rust_spine_backend({ crate: 'testing_spine_stub' });
+	prepare_rust_spine_backend({ crate: RUST_SPINE_STUB_CRATE });
 	const ts_database_url = resolve_ts_spine_parity_database_url();
 	// on the server the URL names — the wipe below connects through the URL
 	ensure_database(TS_SPINE_PARITY_DATABASE, ts_database_url);

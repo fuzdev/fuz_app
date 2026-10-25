@@ -1,6 +1,6 @@
 /**
  * Tests for `global_setup_helpers.ts` — the Postgres URL the Rust stub is
- * handed, as resolved from its env var.
+ * handed, as resolved from its env var, and the rebuild-skip switch.
  *
  * @module
  */
@@ -12,7 +12,10 @@ import {
 	RUST_SPINE_STUB_DEFAULT_DATABASE_URL
 } from '#lib/testing/cross_backend/rust_spine_stub_backend_config.ts';
 
-import { resolve_rust_spine_stub_database_url } from './global_setup_helpers.ts';
+import {
+	is_no_rebuild_requested,
+	resolve_rust_spine_stub_database_url
+} from './global_setup_helpers.ts';
 
 describe('resolve_rust_spine_stub_database_url', () => {
 	let saved: string | undefined;
@@ -72,6 +75,20 @@ describe('resolve_rust_spine_stub_database_url', () => {
 			assert.ok(error.message.includes(RUST_SPINE_STUB_DATABASE_URL_ENV), 'names the variable');
 			assert.ok(error.message.includes('postgres://'), 'says what form is expected');
 			assert.ok(!error.message.includes(value), 'does not echo the value');
+		}
+	});
+});
+
+describe('is_no_rebuild_requested', () => {
+	test('skips the rebuild only for an explicit 1 or true', () => {
+		for (const value of ['1', 'true', 'TRUE', 'True']) {
+			assert.ok(is_no_rebuild_requested(value), `${value} skips the rebuild`);
+		}
+	});
+
+	test('rebuilds when unset or set to anything else', () => {
+		for (const value of [undefined, '', '0', 'false', 'no', ' 1', 'yes']) {
+			assert.ok(!is_no_rebuild_requested(value), `${String(value)} rebuilds`);
 		}
 	});
 });

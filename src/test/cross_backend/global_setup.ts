@@ -6,7 +6,7 @@
  * Rebuild-by-default keeps a stale binary from masquerading as a regression
  * (`cargo build` is incremental, so it's cheap when current). Override the
  * Cargo workspace with `FUZ_RUST_SPINE_STUB_WORKSPACE_DIR`, skip the rebuild with
- * `FUZ_TESTING_NO_REBUILD`, or pin a prebuilt binary with
+ * `FUZ_TESTING_NO_REBUILD=1`, or pin a prebuilt binary with
  * `FUZ_TESTING_RUST_SPINE_STUB_BIN` — see `global_setup_helpers.ts` and
  * `rust_spine_stub_backend_config`.
  *
@@ -15,8 +15,8 @@
 
 import { rust_spine_stub_backend_config } from '#lib/testing/cross_backend/rust_spine_stub_backend_config.ts';
 
-import { make_rust_spine_global_setup } from './global_setup_helpers.ts';
+import { make_rust_spine_global_setup, RUST_SPINE_STUB_CRATE } from './global_setup_helpers.ts';
 
 export default make_rust_spine_global_setup(rust_spine_stub_backend_config, {
-	crate: 'testing_spine_stub'
+	crate: RUST_SPINE_STUB_CRATE
 });

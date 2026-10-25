@@ -1109,7 +1109,11 @@ Ctrl+C doesn't leak processes.
 
 The typical layout: spawn the backend once per project in a vitest
 `globalSetup`, reconstruct the handle in each test file, and mint a fresh
-per-test account via `default_cross_process_setup`.
+per-test account via `default_cross_process_setup`. Build each project with
+`make_cross_backend_project` (`testing/cross_backend/make_cross_backend_project.ts`):
+the shared suites need its 30 s `testTimeout` / `hookTimeout` — a case often
+starts with a full `_testing_reset` over a real socket, which vitest's 5 s / 10 s
+defaults don't cover — and they set no timeout of their own.
 
 ```ts
 // global_setup.ts — one backend per vitest project

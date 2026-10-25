@@ -32,7 +32,7 @@ import { rust_spine_stub_backend_config } from '#lib/testing/cross_backend/rust_
 import type { TestProject } from 'vitest/node';
 
 import './cross_test_types.ts';
-import { prepare_rust_spine_backend } from './global_setup_helpers.ts';
+import { prepare_rust_spine_backend, RUST_SPINE_STUB_CRATE } from './global_setup_helpers.ts';
 
 /**
  * The action limiters' `max_attempts` on both backends — small, so a case
@@ -69,7 +69,7 @@ const setup = (project: TestProject): Promise<() => Promise<void>> => {
 	// Make the Rust stub binary current + ensure its DB before the dual spawn.
 	// (Matches `global_setup.ts` / `global_setup_schema_parity.ts` so all the Rust
 	// projects share the one DB.)
-	prepare_rust_spine_backend({ crate: 'testing_spine_stub' });
+	prepare_rust_spine_backend({ crate: RUST_SPINE_STUB_CRATE });
 	project.provide('security_action_rate_limit_max_attempts', ACTION_RATE_LIMIT_MAX_ATTEMPTS);
 	return dual_spawn(project);
 };

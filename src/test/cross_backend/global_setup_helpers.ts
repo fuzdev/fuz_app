@@ -30,8 +30,24 @@ import {
 } from './bootstrap_token_probe.ts';
 import './cross_test_types.ts';
 
-/** Env var skipping the Rust rebuild (set to any value for fast iteration on a known-current binary). */
+/**
+ * Env var skipping the Rust rebuild, for fast iteration on a known-current
+ * binary: `1` or `true` skips it, any other value (`0`, `false`, empty)
+ * rebuilds.
+ */
 export const NO_REBUILD_ENV = 'FUZ_TESTING_NO_REBUILD';
+
+/** The Cargo package the fuz_app Rust projects build and spawn — the Rust spine stub. */
+export const RUST_SPINE_STUB_CRATE = 'testing_spine_stub';
+
+/**
+ * Whether an `NO_REBUILD_ENV` value asks to skip the rebuild — only an
+ * explicit `1` / `true`, so `FUZ_TESTING_NO_REBUILD=0` still rebuilds.
+ *
+ * @param value - the variable's value, `undefined` when unset
+ */
+export const is_no_rebuild_requested = (value: string | undefined): boolean =>
+	value === '1' || value?.toLowerCase() === 'true';
 
 /** Env var pointing at the Cargo workspace where the spine-stub crate lives. */
 export const RUST_WORKSPACE_DIR_ENV = 'FUZ_RUST_SPINE_STUB_WORKSPACE_DIR';
@@ -100,7 +116,7 @@ export const resolve_rust_spine_stub_database_url = (): string => {
  * `method not found` while auth cases pass, so a lagging build reads as a
  * regression rather than "rebuild me". `cargo build` is incremental, so an
  * unconditional rebuild is cheap when nothing changed. Set `NO_REBUILD_ENV`
- * to skip the rebuild for fast iteration on a known-current binary.
+ * to `1` to skip the rebuild for fast iteration on a known-current binary.
  *
  * Lives in the runner wiring (test-only, Rust-aware), not the shipped
  * `src/lib` harness, which stays Rust-agnostic.
@@ -108,7 +124,7 @@ export const resolve_rust_spine_stub_database_url = (): string => {
 export const prepare_rust_spine_backend = (options: RustSpineGlobalSetupOptions): void => {
 	const workspace_dir = resolve_workspace_dir(options.workspace_dir);
 
-	if (process.env[NO_REBUILD_ENV] == null) {
+	if (!is_no_rebuild_requested(process.env[NO_REBUILD_ENV])) {
 		// `stdio: 'inherit'` surfaces build output; a failed build throws and
 		// fails the project loudly (the point — never spawn a stale binary).
 		execFileSync('cargo', ['build', '-p', options.crate, '--release'], {

@@ -82,7 +82,7 @@ export const describe_role_grant_role_grammar_cross_tests = (
 	const { setup_test } = options;
 	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
 
-	describe('grant verbs refuse an off-grammar role at validation', { timeout: 30_000 }, () => {
+	describe('grant verbs refuse an off-grammar role at validation', () => {
 		for (const method of GRANT_METHODS) {
 			test(`${method}: an off-grammar role is invalid_params with no reason`, async () => {
 				const fixture = await setup_test();
