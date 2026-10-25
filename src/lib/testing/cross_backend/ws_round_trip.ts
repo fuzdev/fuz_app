@@ -99,11 +99,7 @@ import {
 	TokenRevokeOutput
 } from '../../auth/account_action_specs.ts';
 import { DEFAULT_MAX_TOKENS } from '../../auth/account_route_schema.ts';
-import {
-	account_delete_action_spec,
-	audit_log_list_action_spec,
-	AuditLogListOutput
-} from '../../auth/admin_action_specs.ts';
+import { account_delete_action_spec } from '../../auth/admin_action_specs.ts';
 import { JSONRPC_ERROR_CODES } from '../../http/jsonrpc_errors.ts';
 import {
 	is_response_for,
@@ -119,6 +115,7 @@ import {
 } from '../transports/ws_raw_client.ts';
 import { create_rpc_post_init } from '../rpc_helpers.ts';
 import { DEFAULT_TEST_PASSWORD } from '../test_credentials.ts';
+import { list_audit_events } from './audit_cross_helpers.ts';
 import { type BackendCapabilities, test_if } from './capabilities.ts';
 import { cross_rpc_call, expect_output } from './cell_cross_helpers.ts';
 import { create_account_revocations } from './revocation_drivers.ts';
@@ -645,30 +642,12 @@ export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptio
 					await client.close();
 				}
 
-				const drained = await cross_rpc_call(
-					fixture.fresh_transport({ origin: null }),
-					rpc_path!,
-					'_testing_drain_effects',
-					undefined,
-					fixture.create_daemon_token_headers()
-				);
-				assert.ok(drained.ok, `_testing_drain_effects failed: ${JSON.stringify(drained.error)}`);
-
 				// `_testing_reset` wiped audit_log at setup, so the mint is the only
 				// token_create event
-				const listed = expect_output(
-					await cross_rpc_call(
-						fixture.transport,
-						rpc_path!,
-						audit_log_list_action_spec.method,
-						{ event_type: 'token_create' },
-						fixture.create_session_headers()
-					),
-					AuditLogListOutput
-				);
-				assert.strictEqual(listed.events.length, 1, JSON.stringify(listed.events));
-				assert.strictEqual(listed.events[0]!.outcome, 'success');
-				assert.strictEqual(listed.events[0]!.account_id, fixture.account.id);
+				const events = await list_audit_events(fixture, { event_type: 'token_create' }, rpc_path);
+				assert.strictEqual(events.length, 1, JSON.stringify(events));
+				assert.strictEqual(events[0]!.outcome, 'success');
+				assert.strictEqual(events[0]!.account_id, fixture.account.id);
 			}
 		);
 	});

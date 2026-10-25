@@ -85,9 +85,7 @@ import {
 	default_login_ip_rate_limit
 } from '../../rate_limiter.ts';
 import type { SetupTest } from './setup.ts';
-import { AuditLogListOutput } from '../../auth/admin_action_specs.ts';
-import { cross_rpc_call, expect_output } from './cell_cross_helpers.ts';
-import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
+import { list_audit_events } from './audit_cross_helpers.ts';
 
 /** Options for the login-security parity suite. */
 export interface LoginSecurityCrossTestOptions {
@@ -309,25 +307,8 @@ export const describe_login_security_cross_tests = (
 				'the walk must stop at the malformed hop, not reach the entry left of it'
 			);
 
-			const drained = await cross_rpc_call(
-				fixture.fresh_transport({ origin: null }),
-				SPINE_RPC_PATH,
-				'_testing_drain_effects',
-				undefined,
-				fixture.create_daemon_token_headers()
-			);
-			assert.ok(drained.ok, `_testing_drain_effects failed: ${JSON.stringify(drained.error)}`);
-			const listed = expect_output(
-				await cross_rpc_call(
-					fixture.transport,
-					SPINE_RPC_PATH,
-					'audit_log_list',
-					{ event_type: 'login', outcome: 'failure' },
-					fixture.create_session_headers()
-				),
-				AuditLogListOutput
-			);
-			const ips = listed.events.map((e) => e.ip);
+			const events = await list_audit_events(fixture, { event_type: 'login', outcome: 'failure' });
+			const ips = events.map((e) => e.ip);
 			assert.ok(
 				ips.some((ip) => ip === '127.0.0.1' || ip === '::1'),
 				`the stopped walk must key on the loopback connection IP: ${JSON.stringify(ips)}`
@@ -351,28 +332,11 @@ export const describe_login_security_cross_tests = (
 			const other = await attempt(fixture, XFF_V6_OTHER_64, 'probe_v6');
 			assert.strictEqual(other.status, 401, 'the next /64 must keep its own budget');
 
-			// The limiter keys the /64; the audit trail keeps the address. Drain
-			// the fire-and-forget audit writes, then read this test's login rows
-			// (`_testing_reset` wiped the log at setup).
-			const drained = await cross_rpc_call(
-				fixture.fresh_transport({ origin: null }),
-				SPINE_RPC_PATH,
-				'_testing_drain_effects',
-				undefined,
-				fixture.create_daemon_token_headers()
-			);
-			assert.ok(drained.ok, `_testing_drain_effects failed: ${JSON.stringify(drained.error)}`);
-			const listed = expect_output(
-				await cross_rpc_call(
-					fixture.transport,
-					SPINE_RPC_PATH,
-					'audit_log_list',
-					{ event_type: 'login', outcome: 'failure' },
-					fixture.create_session_headers()
-				),
-				AuditLogListOutput
-			);
-			const ips = listed.events.map((e) => e.ip);
+			// The limiter keys the /64; the audit trail keeps the address. Read
+			// this test's login rows behind the drain barrier (`_testing_reset`
+			// wiped the log at setup).
+			const events = await list_audit_events(fixture, { event_type: 'login', outcome: 'failure' });
+			const ips = events.map((e) => e.ip);
 			assert.ok(ips.includes(XFF_V6_EXHAUST), `audit ips: ${JSON.stringify(ips)}`);
 			assert.ok(ips.includes(XFF_V6_OTHER_64), `audit ips: ${JSON.stringify(ips)}`);
 			assert.ok(

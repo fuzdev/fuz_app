@@ -25,7 +25,6 @@ import {
 	AccountUndeleteOutput,
 	AccountPurgeOutput,
 	AdminAccountListOutput,
-	AuditLogListOutput,
 	ERROR_CANNOT_DELETE_KEEPER
 } from '../../auth/admin_action_specs.ts';
 import {
@@ -34,6 +33,7 @@ import {
 	ERROR_CREDENTIAL_TYPE_REQUIRED
 } from '../../http/error_schemas.ts';
 import { JSONRPC_ERROR_CODES } from '../../http/jsonrpc_errors.ts';
+import { list_audit_events } from './audit_cross_helpers.ts';
 import { test_if } from './capabilities.ts';
 import { cross_rpc_call, error_reason, expect_output } from './cell_cross_helpers.ts';
 import { assert_iso8601_seconds } from './wire_shapes.ts';
@@ -304,32 +304,11 @@ export const describe_account_lifecycle_cross_tests = (
 				);
 				assert.strictEqual(error_reason(del), ERROR_CANNOT_DELETE_KEEPER);
 
-				// Deterministic barrier before reading: await in-flight
-				// fire-and-forget audit writes on either spine.
-				const td = fixture.fresh_transport({ origin: null });
-				const drained = await cross_rpc_call(
-					td,
-					rpc_path,
-					'_testing_drain_effects',
-					undefined,
-					fixture.create_daemon_token_headers()
-				);
-				assert.ok(drained.ok, `_testing_drain_effects failed: ${JSON.stringify(drained.error)}`);
-
-				// The failure row is now authoritative on both spines. `_testing_reset`
-				// wiped audit_log at setup, so the refused delete is the only
-				// account_delete event.
-				const listed = expect_output(
-					await cross_rpc_call(
-						t,
-						rpc_path,
-						'audit_log_list',
-						{ event_type: 'account_delete' },
-						fixture.create_session_headers()
-					),
-					AuditLogListOutput
-				);
-				const failure = listed.events.find(
+				// Read behind the drain barrier, so the failure row is authoritative
+				// on both spines. `_testing_reset` wiped audit_log at setup, so the
+				// refused delete is the only account_delete event.
+				const events = await list_audit_events(fixture, { event_type: 'account_delete' }, rpc_path);
+				const failure = events.find(
 					(e) =>
 						e.outcome === 'failure' &&
 						(e.metadata as { reason?: unknown } | null)?.reason === ERROR_CANNOT_DELETE_KEEPER

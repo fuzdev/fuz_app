@@ -81,7 +81,6 @@ import {
 	CellGetOutput,
 	CellListOutput
 } from '../../auth/cell_action_specs.ts';
-import { AuditLogListOutput } from '../../auth/admin_action_specs.ts';
 import {
 	ERROR_CELL_GRANT_PRINCIPAL_IS_OWNER,
 	CellGrantCreateOutput,
@@ -106,6 +105,7 @@ import {
 	CELL_RELATION_LIST_LIMIT_DEFAULT,
 	CELL_RELATION_LIST_LIMIT_MAX
 } from '../../auth/cell_relation_list_limit.ts';
+import { list_audit_events } from './audit_cross_helpers.ts';
 import { test_if } from './capabilities.ts';
 import { cross_rpc_call, error_reason, expect_output } from './cell_cross_helpers.ts';
 import type { RpcPathCapabilityGatedCrossSuiteOptions } from './setup.ts';
@@ -177,21 +177,6 @@ const wire_children = async (
 		),
 		CellFieldSetOutput
 	);
-};
-
-/**
- * Await in-flight fire-and-forget audit writes so a following `audit_log_list`
- * is authoritative on both spines (the real await on Rust; satisfied by
- * construction on the TS spine's `await_pending_effects`). Mirrors the
- * `account_lifecycle` cross suite's barrier.
- */
-const drain_effects = async (
-	td: FetchTransport,
-	rpc_path: string,
-	daemon_h: Record<string, string>
-): Promise<void> => {
-	const drained = await cross_rpc_call(td, rpc_path, '_testing_drain_effects', undefined, daemon_h);
-	assert.ok(drained.ok, `_testing_drain_effects failed: ${JSON.stringify(drained.error)}`);
 };
 
 export const describe_cell_relations_cross_tests = (
@@ -1243,18 +1228,7 @@ export const describe_cell_relations_cross_tests = (
 				// No skipped-child count surfaced in the clone's audit row — the
 				// hidden child's existence must not leak to the cloner. (`_testing_reset`
 				// wiped audit_log at setup, so this is the only cell_clone event.)
-				const td = fixture.fresh_transport({ origin: null });
-				await drain_effects(td, rpc_path, fixture.create_daemon_token_headers());
-				const events = expect_output(
-					await cross_rpc_call(
-						t,
-						rpc_path,
-						'audit_log_list',
-						{ event_type: 'cell_clone' },
-						admin_h
-					),
-					AuditLogListOutput
-				).events;
+				const events = await list_audit_events(fixture, { event_type: 'cell_clone' }, rpc_path);
 				const ev = events.find(
 					(e) => (e.metadata as { new_id?: unknown } | null)?.new_id === clone.id
 				);
@@ -1318,18 +1292,7 @@ export const describe_cell_relations_cross_tests = (
 					'deep clone reused the original child instead of cloning it'
 				);
 
-				const td = fixture.fresh_transport({ origin: null });
-				await drain_effects(td, rpc_path, fixture.create_daemon_token_headers());
-				const events = expect_output(
-					await cross_rpc_call(
-						t,
-						rpc_path,
-						'audit_log_list',
-						{ event_type: 'cell_clone' },
-						admin_h
-					),
-					AuditLogListOutput
-				).events;
+				const events = await list_audit_events(fixture, { event_type: 'cell_clone' }, rpc_path);
 				const ev = events.find(
 					(e) => (e.metadata as { new_id?: unknown } | null)?.new_id === clone.id
 				);

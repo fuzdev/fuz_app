@@ -44,12 +44,12 @@ import '../assert_dev_env.ts';
 import { describe, test, assert } from 'vitest';
 
 import { rpc_call, type RpcCallResult } from '../rpc_helpers.ts';
-import { AuditLogListOutput } from '../../auth/admin_action_specs.ts';
 import {
 	ERROR_ROLE_GRANT_OFFER_SELF_TARGET,
 	ERROR_ROLE_GRANT_OFFER_TERMINAL
 } from '../../auth/role_grant_offer_action_specs.ts';
 import { JSONRPC_INVALID_PARAMS, JSONRPC_INVALID_REQUEST } from '../../http/jsonrpc.ts';
+import { list_audit_events } from './audit_cross_helpers.ts';
 import { SPINE_PARTICIPANT_ROLE, SPINE_RPC_PATH } from './spine_surface_constants.ts';
 import type { SetupTest } from './setup.ts';
 
@@ -229,20 +229,15 @@ export const describe_role_grant_participation_cross_tests = (
 			return { offer_id, role_grant_id };
 		};
 
-		/** How many `event_type` audit rows the keeper can list. */
+		/**
+		 * How many `event_type` audit rows the keeper can list, behind the drain
+		 * barrier — without it a replay's late row could land after the count,
+		 * and the no-new-row assertions would pass vacuously.
+		 */
 		const count_audit_rows = async (
 			fixture: Awaited<ReturnType<SetupTest>>,
 			event_type: string
-		): Promise<number> => {
-			const listed = await rpc(
-				fixture.transport,
-				'audit_log_list',
-				{ event_type },
-				fixture.create_session_headers()
-			);
-			assert.ok(listed.ok, `audit_log_list must succeed: ${JSON.stringify(listed)}`);
-			return AuditLogListOutput.parse(listed.result).events.length;
-		};
+		): Promise<number> => (await list_audit_events(fixture, { event_type }, rpc_path)).length;
 
 		test('re-accepting an accepted offer answers the same grant and writes no audit row', async () => {
 			const fixture = await setup_test();

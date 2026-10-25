@@ -35,6 +35,7 @@ import { assert, describe, test } from 'vitest';
 
 import { ERROR_ROLE_NOT_WEB_GRANTABLE } from '../../http/error_schemas.ts';
 import { JSONRPC_ERROR_CODES } from '../../http/jsonrpc_errors.ts';
+import { list_audit_events } from './audit_cross_helpers.ts';
 import { cross_rpc_call, error_reason } from './cell_cross_helpers.ts';
 import type { RpcPathCrossSuiteOptions } from './setup.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
@@ -148,21 +149,10 @@ export const describe_role_grant_role_grammar_cross_tests = (
 				'a role at the length cap passes validation'
 			);
 
-			// a barrier before reading the log: both spines write audit rows off
-			// the request path
-			const drained = await cross_rpc_call(
-				fixture.fresh_transport({ origin: null }),
-				rpc_path,
-				'_testing_drain_effects',
-				undefined,
-				fixture.create_daemon_token_headers()
-			);
-			assert.ok(drained.ok, `_testing_drain_effects failed: ${JSON.stringify(drained.error)}`);
-
+			// both spines write audit rows off the request path, so each read is
+			// behind the drain barrier
 			for (const event_type of GRANT_EVENT_TYPES) {
-				const listed = await cross_rpc_call(t, rpc_path, 'audit_log_list', { event_type }, session);
-				assert.ok(listed.ok, `audit_log_list failed: ${JSON.stringify(listed.error)}`);
-				const events = (listed.result as { events: Array<{ metadata: unknown }> }).events;
+				const events = await list_audit_events(fixture, { event_type }, rpc_path);
 				const roles = events.map((event) => (event.metadata as { role?: unknown } | null)?.role);
 				for (const role of roles) {
 					assert.ok(

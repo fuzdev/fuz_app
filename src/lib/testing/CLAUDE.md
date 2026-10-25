@@ -1400,7 +1400,11 @@ cell validators (`describe_standard_cross_process_tests`' generic round-trip
 never sees them). Both parse every success response against the verb's Zod
 **output** schema, so a TS↔Rust envelope drift fails the suite — not just a
 payload-field drift. Call-site primitives (`cross_rpc_call` / `error_reason` /
-`expect_output`) live in `cross_backend/cell_cross_helpers.ts`; the shared
+`expect_output`) live in `cross_backend/cell_cross_helpers.ts`, and every
+suite that reads audit rows goes through `cross_backend/audit_cross_helpers.ts`
+— `list_audit_events(fixture, params, rpc_path?)` drains
+(`cross_drain_effects`, the `_testing_drain_effects` barrier) before it lists and
+parses, so no reader skips the barrier; the shared
 options shape is `RpcPathCapabilityGatedCrossSuiteOptions` from
 `cross_backend/setup.ts`. `cross_backend/wire_shapes.ts` carries
 `assert_iso8601_seconds` / `assert_iso8601_seconds_nullable` — the byte-level
@@ -2150,6 +2154,10 @@ need a real recipient): admin **assigns** `participant` to a fresh account
 `participant` → recipient **accepts** → a role_grant lands. The `role_holder`
 principal is seeded via `extra_accounts: [{username, roles: ['participant']}]`
 (bootstrap-cradle direct grant) and named through `principals.role_holder`.
+The replay cases count audit rows behind `_testing_drain_effects`, so the
+backend must mount it — every spine binary does; an in-process leg mounts
+`create_testing_drain_effects_action` over an emitter built with
+`track_inflight: true` (`conformance_participation.db.test.ts`).
 
 Both legs run in-process (`conformance_participation.db.test.ts`, plain
 `gro test`) and cross-process (`conformance_participation.cross.test.ts`, TS
