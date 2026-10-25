@@ -40,8 +40,8 @@ import '../assert_dev_env.ts';
  * Raw-socket by necessity (`fetch` can't emit duplicate or malformed headers),
  * so — like `body_size_smuggling.ts` — this is **cross-process only** and
  * fixture-free: it needs only the base URL, the RPC path, and a valid daemon
- * token (`handle.daemon_token`, kept current for the run by the same rotation
- * the `_testing_reset` channel relies on). Cited property: `docs/security.md`
+ * token (`handle.daemon_token`, read once at spawn and static for the run, the
+ * same credential the `_testing_reset` channel uses). Cited property: `docs/security.md`
  * §"Credential Type Hierarchy" (a leaked / conflicting credential header can't
  * escalate the credential ceiling) + §"API Token Security" (bearer handling).
  *

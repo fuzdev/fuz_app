@@ -259,13 +259,16 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 	// writer lands the token in.
 	await runtime.mkdir(dirname(daemon_token_path), { recursive: true });
 
-	// Daemon-token rotation is required — `_testing_reset` gates on the
-	// daemon-token credential, and the harness reads the rotated token to
-	// authenticate the keeper channel.
+	// The daemon token is required — `_testing_reset` gates on the
+	// daemon-token credential, and the harness reads the token file to
+	// authenticate the keeper channel. It reads it once at spawn, and only one
+	// previous token stays valid, so the token is held static for the run with
+	// a long interval, as the Rust stub does by never rotating
+	// (≤ `setInterval`'s ~24.8-day max).
 	const daemon_token_rotation = await start_daemon_token_rotation(
 		runtime,
 		{ db: app_backend.deps.db },
-		{ token_path: daemon_token_path },
+		{ token_path: daemon_token_path, rotation_interval_ms: 24 * 60 * 60 * 1000 },
 		log
 	);
 
