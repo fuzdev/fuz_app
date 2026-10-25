@@ -26,6 +26,7 @@ import {
 	reconstruct_bootstrapped_handle
 } from '#lib/testing/cross_backend/setup.ts';
 import { describe_standard_cross_process_tests } from '#lib/testing/cross_backend/standard.ts';
+import { create_spine_rpc_success_fixtures } from '#lib/testing/cross_backend/rpc_success_fixtures.ts';
 
 import {
 	create_spine_surface_spec,
@@ -59,5 +60,6 @@ describe_standard_cross_process_tests({
 	capabilities,
 	session_options: spine_session_options,
 	rpc_endpoints: spine_rpc_endpoints,
-	roles: spine_roles
+	roles: spine_roles,
+	rpc_success_fixtures: create_spine_rpc_success_fixtures()
 });

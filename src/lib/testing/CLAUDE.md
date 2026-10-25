@@ -521,9 +521,32 @@ picks them up separately.
 DB-backed round-trip for RPC: one POST test for all methods, one GET test
 for `side_effects: false` methods. Successful responses validate against
 `action.spec.output`; error responses validate as well-formed JSON-RPC error
-envelopes. Options: `{setup_test, surface_source, session_options, rpc_endpoints, skip_methods?, input_overrides?, success_fixtures?}`.
+envelopes. Two refusals fail instead of passing as an envelope: `method not
+found` (the backend lacks a method the surface declares) and a crash — HTTP
+500, the `internal_error` code (-32603), or a ≥500 whose body is no JSON-RPC
+envelope. A ≥500 carrying a declared code (`service_unavailable` 503,
+`timeout` 504, a consumer code mapped in `JSONRPC_ERROR_CODE_TO_HTTP_STATUS`)
+is a server condition and passes like a 4xx. The failure names the method,
+status, code and message; a non-JSON body is reported as text. Options: `{setup_test, surface_source, session_options, rpc_endpoints, skip_methods?, input_overrides?, success_fixtures?}`.
 The admin RPC auth test picks a session-based identity (`authed` / `admin` /
 bootstrapped keeper) based on `method.auth`; keeper uses the daemon token.
+
+`success_fixtures` (`RpcSuccessFixtures`, method → `(fixture) =>
+Promise<RpcSuccessFixtureCase>`) drives a **success** response for a method
+whose generated nil ids can only refuse: the factory builds the row, then
+returns `{params, headers?}` — `headers` replaces the picked identity, for a
+row only its owner may act on. The response must be `ok`, not an internal
+failure, and parse against `output`. `cross_backend/rpc_success_fixtures.ts`
+— `create_spine_rpc_success_fixtures({rpc_path?})` builds the map for the
+standard spine methods that act on an existing row (`account_token_revoke`,
+`account_session_revoke`, `invite_delete`, `role_grant_revoke`,
+`role_grant_offer_accept` / `_decline` / `_retract`) from standard RPC
+actions and the builtin `ROLE_ADMIN` only, each factory on fresh accounts
+and calling as one of them, so any consumer mounting
+`create_standard_rpc_actions` can pass it. The fixtures run last on the
+describe's fixture, since they mutate.
+fuz_app wires it in `auth.cross.test.ts` and the in-process
+`cross_backend/rpc_round_trip_spine.db.test.ts`.
 
 ### `sse_round_trip.ts` — `describe_sse_route_tests`
 
@@ -762,6 +785,12 @@ pre-bootstrapped keeper) coexist in one bundle without cost. Each test
 invokes the right per-test fixture. Consumers wiring the standard surface
 call once instead of seven times; forgetting a suite no longer silently
 loses coverage.
+
+`rpc_success_fixtures`, `rpc_skip_methods` and `rpc_input_overrides`
+forward to the RPC round-trip's `success_fixtures`, `skip_methods` and
+`input_overrides` (same options on `describe_standard_cross_process_tests`)
+— `rpc_skip_methods` is the consumer escape hatch for a method the generic
+round-trip can't drive in its test wiring.
 
 `StandardTestOptions` requires `create_route_specs` (for rate_limiting) and
 `rpc_endpoints` (for admin/audit_completeness/rpc_round_trip); the admin

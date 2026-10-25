@@ -10,9 +10,11 @@ import './assert_dev_env.ts';
  * fixture-producing callback.
  *
  * Cadence: per-describe `setup_test()` call (see `testing/round_trip.ts` module
- * docstring). RPC round-trip tests fire one JSON-RPC envelope per
+ * docstring). The generic POST and GET cases fire one JSON-RPC envelope per
  * method-direction and don't mutate state in a way that contaminates the
- * next case.
+ * next case. The `success_fixtures` case does mutate — each fixture builds a
+ * row and the call revokes, deletes, or decides it — so it runs last on the
+ * describe's fixture, and each factory seeds its own rows.
  *
  * @module
  */
@@ -20,7 +22,12 @@ import './assert_dev_env.ts';
 import { describe, test, beforeAll, assert } from 'vitest';
 
 import { ROLE_ADMIN } from '../auth/role_schema.ts';
-import { JSONRPC_METHOD_NOT_FOUND, JsonrpcErrorResponse } from '../http/jsonrpc.ts';
+import {
+	JSONRPC_INTERNAL_ERROR,
+	JSONRPC_METHOD_NOT_FOUND,
+	JsonrpcErrorResponse
+} from '../http/jsonrpc.ts';
+import { JSONRPC_ERROR_CODE_TO_HTTP_STATUS } from '../http/jsonrpc_errors.ts';
 import type { TestAccount } from './app_server.ts';
 import { generate_valid_body } from './schema_generators.ts';
 import type { AppSurfaceSpec, AppSurfaceRpcMethod } from '../http/surface.ts';
@@ -87,9 +94,32 @@ export interface RpcRoundTripTestOptions {
 	 *
 	 * Fired as POST. The factory runs against the shared per-describe fixture,
 	 * so it must not assume a clean slate between entries (seed unique state).
+	 * By default the request carries the identity the generic loop picks for
+	 * the method's auth (`authed` / `admin` / keeper); a case that returns
+	 * `headers` sends those instead — for methods whose row must belong to the
+	 * caller (revoking one's own token or session, retracting one's own offer).
+	 * `create_spine_rpc_success_fixtures` (`cross_backend/rpc_success_fixtures.ts`)
+	 * builds the map for the standard spine methods.
 	 */
-	success_fixtures?: Map<string, (fixture: TestFixture) => Promise<Record<string, unknown>>>;
+	success_fixtures?: RpcSuccessFixtures;
 }
+
+/** One success-fixture request: the params, and optionally the caller's headers. */
+export interface RpcSuccessFixtureCase {
+	/** Params that drive a success response. */
+	params: Record<string, unknown>;
+	/**
+	 * Auth headers to send in place of the identity the suite picks from the
+	 * method's auth — for a row that only its owner may act on.
+	 */
+	headers?: Record<string, string>;
+}
+
+/** One success-fixture factory: builds the row against the per-test fixture, then returns the request. */
+export type RpcSuccessFixture = (fixture: TestFixture) => Promise<RpcSuccessFixtureCase>;
+
+/** Success-case fixtures, method name → async factory. See `RpcRoundTripTestOptions.success_fixtures`. */
+export type RpcSuccessFixtures = Map<string, RpcSuccessFixture>;
 
 /**
  * Pick auth headers matching an RPC method's auth requirement. Accepts
@@ -142,6 +172,85 @@ const assert_method_implemented = (method: string, body: unknown): void => {
 };
 
 /**
+ * Read a response body as JSON, falling back to the raw text — a crashed
+ * backend may answer with a non-JSON body (an HTML or plain-text 500), and
+ * the round-trip must report that response, not a JSON parse error with no
+ * method attached.
+ */
+const read_rpc_body = async (res: Response): Promise<unknown> => {
+	const text = await res.text();
+	try {
+		return JSON.parse(text);
+	} catch {
+		return text;
+	}
+};
+
+/** The HTTP status an `internal_error` maps to, read off the shared status table. */
+const INTERNAL_ERROR_HTTP_STATUS = JSONRPC_ERROR_CODE_TO_HTTP_STATUS[JSONRPC_INTERNAL_ERROR];
+
+/**
+ * Guard against a backend that crashes on schema-valid input. A response is
+ * a crash when any of these holds:
+ *
+ * - its HTTP status is the one `internal_error` maps to (500) — what an
+ *   uncaught throw and an unmapped error code both answer
+ * - its JSON-RPC code is `internal_error` (-32603)
+ * - its status is ≥500 and its body is not a well-formed JSON-RPC error
+ *   envelope (an HTML or plain-text crash page)
+ *
+ * Any other ≥500 that carries a well-formed envelope with a declared code
+ * passes like a 4xx: `service_unavailable` (503), `timeout` (504), or a
+ * consumer's own code mapped in `JSONRPC_ERROR_CODE_TO_HTTP_STATUS` (a 502).
+ * Those are server conditions a handler declares on purpose — a dependency
+ * the test environment doesn't provide — while an undeclared 500 or -32603
+ * is a handler that failed where it owed an answer.
+ *
+ * @param method - the RPC method name
+ * @param status - the HTTP status
+ * @param body - the parsed response body (or raw text when not JSON)
+ * @param expected - what the call owed: a refusal (the generic nil-id loop)
+ *   or a success (a declared success fixture), for the failure message
+ */
+const assert_not_crash = (
+	method: string,
+	status: number,
+	body: unknown,
+	expected: 'refusal' | 'success'
+): void => {
+	const parsed = JsonrpcErrorResponse.safeParse(body);
+	const code = parsed.success ? parsed.data.error.code : null;
+	const crashed = parsed.success
+		? status === INTERNAL_ERROR_HTTP_STATUS || code === JSONRPC_INTERNAL_ERROR
+		: status >= 500;
+	if (!crashed) return;
+	const message = parsed.success
+		? parsed.data.error.message
+		: typeof body === 'string'
+			? body.slice(0, 500)
+			: JSON.stringify(body).slice(0, 500);
+	assert.fail(
+		`method '${method}' crashed on ${
+			expected === 'success' ? 'its success fixture' : 'schema-valid params'
+		} (status ${status}, code ${code ?? 'none'}, message ${JSON.stringify(message)})` +
+			(expected === 'success'
+				? ' — the fixture built a real row, so the backend owed a success here'
+				: ' — the backend owes a declared refusal here (a 4xx, or a declared 5xx code)')
+	);
+};
+
+/**
+ * Assert a non-ok response is an acceptable refusal: the method exists, the
+ * failure is not a crash (`assert_not_crash`), and the body is a well-formed
+ * JSON-RPC error envelope.
+ */
+const assert_rpc_refusal = (method: string, status: number, body: unknown): void => {
+	assert_method_implemented(method, body);
+	assert_not_crash(method, status, body, 'refusal');
+	assert_jsonrpc_error_response(body);
+};
+
+/**
  * Run schema-driven round-trip validation for RPC endpoints.
  *
  * For each method:
@@ -153,10 +262,15 @@ const assert_method_implemented = (method: string, body: unknown): void => {
  *
  * Error responses (from missing DB state, etc.) are expected and validated
  * as well-formed JSON-RPC errors. Successful responses are validated against
- * `action.spec.output`. A `method not found` (-32601) error is the one
- * exception — it means the backend is missing a method the local surface
- * advertises, so the round-trip fails loud (`assert_method_implemented`)
- * rather than accepting it as a valid error envelope.
+ * `action.spec.output`. Two error classes fail loud instead of passing as a
+ * valid envelope: `method not found` (-32601) means the backend is missing a
+ * method the local surface advertises (`assert_method_implemented`), and a
+ * crash — HTTP 500, `internal_error` (-32603), or a ≥500 with no JSON-RPC
+ * envelope — means the backend failed on schema-valid input
+ * (`assert_not_crash`). A declared ≥500 code (`service_unavailable`,
+ * `timeout`) passes as a refusal. A method the suite can't drive generically
+ * goes in `skip_methods`; one whose generated params can't reach its handler
+ * gets an `input_overrides` entry.
  */
 export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions): void => {
 	const skip_set = new Set(options.skip_methods);
@@ -213,14 +327,13 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 					Object.assign(init.headers as Record<string, string>, headers);
 
 					const res = await fixture.transport(ep_spec.path, init);
-					const body = await res.json();
+					const body = await read_rpc_body(res);
 
 					try {
 						if (res.ok) {
 							assert_jsonrpc_success_response(body, action.spec.output);
 						} else {
-							assert_method_implemented(action.spec.method, body);
-							assert_jsonrpc_error_response(body);
+							assert_rpc_refusal(action.spec.method, res.status, body);
 						}
 					} catch (e) {
 						throw new Error(
@@ -257,14 +370,13 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 
 					const url = create_rpc_get_url(ep_spec.path, action.spec.method, params);
 					const res = await fixture.transport(url, { headers });
-					const body = await res.json();
+					const body = await read_rpc_body(res);
 
 					try {
 						if (res.ok) {
 							assert_jsonrpc_success_response(body, action.spec.output);
 						} else {
-							assert_method_implemented(action.spec.method, body);
-							assert_jsonrpc_error_response(body);
+							assert_rpc_refusal(action.spec.method, res.status, body);
 						}
 					} catch (e) {
 						throw new Error(
@@ -286,20 +398,18 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 				const surface = find_rpc_method(surface_rpc_endpoints, method);
 				assert.ok(surface, `success_fixtures method '${method}' missing from generated surface`);
 
-				const params = await build(fixture);
-				const headers = pick_rpc_auth_headers(
-					surface.method_spec,
-					fixture,
-					authed_account,
-					admin_account
-				);
-				const init = create_rpc_post_init(method, params);
+				const fixture_case = await build(fixture);
+				const headers =
+					fixture_case.headers ??
+					pick_rpc_auth_headers(surface.method_spec, fixture, authed_account, admin_account);
+				const init = create_rpc_post_init(method, fixture_case.params);
 				Object.assign(init.headers as Record<string, string>, headers);
 
 				const res = await fixture.transport(located.path, init);
-				const body = await res.json();
+				const body = await read_rpc_body(res);
 				try {
 					assert_method_implemented(method, body);
+					assert_not_crash(method, res.status, body, 'success');
 					assert.ok(
 						res.ok,
 						`success fixture expected a success response, got status ${

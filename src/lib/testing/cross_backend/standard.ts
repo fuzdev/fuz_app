@@ -46,7 +46,7 @@ import type { AppSurfaceSpec } from '../../http/surface.ts';
 import { describe_standard_integration_tests } from '../integration.ts';
 import { describe_standard_admin_integration_tests } from '../admin_integration.ts';
 import { describe_round_trip_validation } from '../round_trip.ts';
-import { describe_rpc_round_trip_tests } from '../rpc_round_trip.ts';
+import { describe_rpc_round_trip_tests, type RpcSuccessFixtures } from '../rpc_round_trip.ts';
 import { describe_data_exposure_tests } from '../data_exposure.ts';
 import type { RpcEndpointsSuiteOption } from '../rpc_helpers.ts';
 import type { BackendCapabilities } from './capabilities.ts';
@@ -120,7 +120,23 @@ export interface StandardCrossProcessTestOptions {
 	 * schema on each backend — the success-shape parity check. See
 	 * `RpcRoundTripTestOptions.success_fixtures`.
 	 */
-	rpc_success_fixtures?: Map<string, (fixture: TestFixture) => Promise<Record<string, unknown>>>;
+	rpc_success_fixtures?: RpcSuccessFixtures;
+	/**
+	 * Forwarded to `describe_rpc_round_trip_tests` as `skip_methods` — the
+	 * consumer escape hatch for a method the generic round-trip can't drive at
+	 * all (a handler whose test wiring stubs out the deps it reaches, or reads
+	 * tables the suite's database doesn't migrate). Each entry hides the
+	 * method from both the crash check and the envelope check, so name the
+	 * reason beside it.
+	 */
+	rpc_skip_methods?: Array<string>;
+	/**
+	 * Forwarded to `describe_rpc_round_trip_tests` as `input_overrides`
+	 * (method name → params) — for a method whose generated params can't
+	 * reach its handler cleanly. The response is held to the same rules as a
+	 * generated one.
+	 */
+	rpc_input_overrides?: Map<string, Record<string, unknown>>;
 	/**
 	 * Forwarded to `describe_round_trip_validation` as `success_fixtures`
 	 * (`'METHOD /path'` → async `{url?, body?}` factory) for referential REST
@@ -159,6 +175,8 @@ export const describe_standard_cross_process_tests = (
 		surface_source: options.surface_source,
 		session_options: options.session_options,
 		rpc_endpoints: options.rpc_endpoints,
+		skip_methods: options.rpc_skip_methods,
+		input_overrides: options.rpc_input_overrides,
 		success_fixtures: options.rpc_success_fixtures
 	});
 	describe_data_exposure_tests({

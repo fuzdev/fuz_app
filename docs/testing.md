@@ -913,7 +913,7 @@ assert_error_coverage(collector, route_specs, {
 - `describe_adversarial_404` (`testing/adversarial_404.ts`) — Adversarial 404 tests for param routes
 - `describe_data_exposure_tests` (`testing/data_exposure.ts`) — Schema-level + runtime sensitive field blocklist audit
 - `describe_rpc_attack_surface_tests` (`testing/rpc_attack_surface.ts`) — 3-group RPC attack surface (auth, envelopes, params)
-- `describe_rpc_round_trip_tests` (`testing/rpc_round_trip.ts`) — DB-backed round-trip for RPC methods (POST + GET)
+- `describe_rpc_round_trip_tests` (`testing/rpc_round_trip.ts`) — DB-backed round-trip for RPC methods (POST + GET); a crash on schema-valid params (500, `internal_error`, or a ≥500 with no JSON-RPC envelope) fails the method, while a declared 503/504 passes. `rpc_skip_methods` / `rpc_input_overrides` on the standard bundles forward to its `skip_methods` / `input_overrides`. Pass `success_fixtures: create_spine_rpc_success_fixtures()` (`testing/cross_backend/rpc_success_fixtures.ts`; `rpc_success_fixtures` on the standard bundles) to check the success body of the standard methods that act on an existing row
 - `describe_conformance_table_tests` (`testing/cross_backend/conformance_table.ts`) — Declarative behavioral/security cases — one row array, both transports (see §Cross-Backend Integration)
 - `create_describe_db` (`testing/db.ts`) — Create a `describe_db` bound to factories + truncate tables
 
