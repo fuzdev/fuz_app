@@ -47,7 +47,12 @@ import type { AppSurfaceSpec } from '../../http/surface.ts';
 import type { SessionOptions } from '../../auth/session_cookie.ts';
 import { resolve_rpc_endpoints_for_setup, type RpcEndpointsSuiteOption } from '../rpc_helpers.ts';
 import type { ConformanceCase } from './conformance_case.ts';
-import { send_conformance_case, type ConformancePrincipalConfig } from './conformance_table.ts';
+import {
+	is_ws_conformance_case,
+	send_conformance_case,
+	type ConformancePrincipalConfig,
+	type ConformanceWsTarget
+} from './conformance_table.ts';
 import {
 	diff_differential_responses,
 	differential_path_covers,
@@ -64,6 +69,13 @@ export interface DifferentialBackend {
 	readonly name: string;
 	/** Per-test fixture producer for this backend. */
 	readonly setup_test: SetupTest;
+	/**
+	 * The backend's WebSocket endpoint. Set on both backends to send the cases
+	 * over a socket instead of HTTP — only the cases `is_ws_conformance_case`
+	 * admits, and the ledger is checked against those. Set on one alone, the
+	 * suite throws at registration.
+	 */
+	readonly ws?: ConformanceWsTarget;
 }
 
 /**
@@ -227,7 +239,7 @@ const format_what_differs = (d: KnownDivergence): string =>
 export const describe_differential_conformance_tests = (
 	options: DifferentialConformanceOptions
 ): void => {
-	const { cases, backends, surface_source, principals } = options;
+	const { backends, surface_source, principals } = options;
 	const ledger = options.known_divergences ?? [];
 	const resolved_rpc_endpoints = resolve_rpc_endpoints_for_setup(
 		options.rpc_endpoints,
@@ -235,6 +247,14 @@ export const describe_differential_conformance_tests = (
 	);
 	const [a, b] = backends;
 	const labels = { a: a.name, b: b.name };
+	if ((a.ws === undefined) !== (b.ws === undefined)) {
+		throw new Error(
+			`differential: backend '${(a.ws ? b : a).name}' has no ws target while ` +
+				`'${(a.ws ? a : b).name}' does — set ws on both backends or neither.`
+		);
+	}
+	const over_ws = a.ws !== undefined;
+	const cases = over_ws ? options.cases.filter(is_ws_conformance_case) : options.cases;
 
 	const send = async (
 		backend: DifferentialBackend,
@@ -245,7 +265,8 @@ export const describe_differential_conformance_tests = (
 				fixture: await backend.setup_test(),
 				surface_source,
 				...(principals && { principals }),
-				resolved_rpc_endpoints
+				resolved_rpc_endpoints,
+				...(backend.ws && { ws: backend.ws })
 			})
 		);
 

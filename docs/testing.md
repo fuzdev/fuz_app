@@ -1324,6 +1324,11 @@ A case is **data** (`ConformanceCase` in `cross_backend/conformance_case.ts`):
   401 carries `authentication_required`; when a denial carries no reason (a
   handler's bare `forbidden`), `status` pins the denial class.
 - `expect.fields` adds specific field-value assertions on the result/error.
+- `request.acting` binds `params.acting` at run time to a real actor id:
+  `principal` (the actor of the account the principal's credential names),
+  `extra_actor` (the keeper's first `extra_actors` entry), or `keeper_actor`
+  (the keeper's bootstrap actor, foreign to any other principal). A row can
+  then act as a named actor of a multi-actor keeper without knowing its id.
 
 The runner takes the same `{setup_test, surface_source, capabilities}`
 protocol every standard suite uses, so **one case definition runs both
@@ -1331,6 +1336,27 @@ transports** — in-process (fast, every `gro test`) and cross-process (the
 gate, against each backend's real auth resolution). Wire it from a
 `.db.test.ts` (in-process) and a `.cross.test.ts` (cross-process) with the
 same case array.
+
+Pass `ws: {base_url, ws_path, origin?}` to run the same cases over the
+backend's WebSocket endpoint. Each case's principal opens an admitted socket
+(its cookie, bearer or daemon token on the upgrade, its own actor as
+`?acting=`) and sends the request as one frame, so the per-message gates
+answer it. Only the TS spine resolves an actor at the upgrade, refusing a
+multi-actor account's upgrade without `?acting=` (400 `actor_required`); the
+Rust spine's upgrade resolves the account and ignores `?acting=`. Per-frame
+dispatch resolves the actor from each frame on both. The leg always sends
+`?acting=`, so it does not cover that upgrade-level difference — the
+front-door table's multi-actor row (`multi_actor` on
+`describe_transport_composition_cross_tests`) does. The frame carries the same JSON-RPC envelope the HTTP body does;
+the runner reads it through the status the HTTP binding maps its error code
+to, so `expect.status` means the same on both. Only the cases
+`is_ws_conformance_case` admits run: RPC methods sent as `POST`, pinning no
+header value, as a principal that can hold a socket. `anonymous`, the
+discarded or malformed bearers, `expired_session` and `scoped_token` can't —
+the upgrade refuses them before any frame (a narrowed token is refused
+`surface:ws_upgrade`, so a per-frame scope refusal is unreachable). An
+equivalence group left with one member on the WS leg is dropped. The WS leg
+needs the RPC actions mounted on the socket, and runs cross-process only.
 
 #### Per-method auth rows
 
@@ -1348,15 +1374,15 @@ only the methods someone wrote a row for:
   `insufficient_permissions`, with `required_roles`
 - public methods → no rows
 
-Rows send schema-valid params minus `acting`, so only the gate can refuse.
+Rows send schema-valid params, so only the gate can refuse.
 `_testing_*` methods and the protocol actions are skipped.
 
-The credential rows need a single-actor keeper: both spines resolve the
-acting actor before the credential gate, so a keeper with a second actor
-(`extra_actors`) answers `actor_required` (400) on actor-required methods
-instead. A suite seeding one lists those methods in `skip_methods`, which drops
-every generated row for them, the anonymous 401 included. Spread the result
-into the same case array on both legs:
+Both spines resolve the acting actor before the credential gate, so a keeper
+with a second actor (`extra_actors`) would answer `actor_required` (400) to an
+actor-bound method called with no `acting`. The credential and role rows on
+those methods bind `acting: 'principal'`, so they hold for a single-actor and
+a multi-actor keeper alike. Spread the result into the same case array on
+both legs:
 
 ```ts
 cases: [
@@ -1400,6 +1426,10 @@ describe_differential_conformance_tests({
 - Each case runs on a fresh fixture per backend and is sent through the
   table's own `send_conformance_case`; the per-case expectations are not
   asserted here, since each backend's conformance leg already holds them.
+- Set `ws` on both backends (`{name, setup_test, ws: {base_url, ws_path}}`)
+  to compare their WebSocket answers instead; the cases are filtered as the
+  table's WS leg filters them, and the ledger is checked against what is left.
+  A frame has no headers, so a header divergence has no place in a WS ledger.
 - `normalize_differential_response` (`cross_backend/differential_normalize.ts`)
   gives `{status, body, header_names}`. API tokens, token ids, UUIDs,
   second-precision timestamps and bare 64-hex digests become positional

@@ -821,12 +821,14 @@ const mint_account = async (
 	// it. The keeper holds `ROLE_ADMIN` from bootstrap (see
 	// `bootstrap_account.ts` — both `ROLE_KEEPER` and `ROLE_ADMIN` grants
 	// are created in the bootstrap transaction), so `invite_create` (admin-
-	// only) authorizes without any extra grants.
+	// only) authorizes without any extra grants. It acts as the keeper's
+	// bootstrap actor, the one holding those grants, so a keeper seeded with
+	// `extra_actors` resolves it too rather than answering `actor_required`.
 	const invite_result = (await rpc_via_transport(
 		handle.keeper_transport,
 		handle.config.rpc_path,
 		'invite_create',
-		{ username },
+		{ username, acting: handle.keeper_actor.id },
 		handle.config.name
 	)) as { ok?: true; invite?: { id?: string } } | undefined;
 	if (!invite_result?.invite?.id) {
@@ -935,7 +937,8 @@ const grant_roles_via_offer_accept = async (
 			handle.keeper_transport,
 			handle.config.rpc_path,
 			'role_grant_offer_create',
-			{ to_account_id: minted.account.id, role },
+			// as the keeper's bootstrap actor, like `mint_account`'s invite
+			{ to_account_id: minted.account.id, role, acting: handle.keeper_actor.id },
 			`${handle.config.name}, role=${role}`
 		)) as { offer?: { id?: string } } | undefined;
 		if (!offer_result?.offer?.id) {

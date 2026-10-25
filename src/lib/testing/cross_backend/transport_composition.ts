@@ -57,6 +57,15 @@ import '../assert_dev_env.ts';
  * in-process transport, whole bodies included, and the WebSocket rows skip
  * (there is no socket to upgrade).
  *
+ * **Multi-actor upgrade.** One more WS row needs a keeper seeded with a
+ * second actor (`extra_actors`), so it runs only given `multi_actor`: a
+ * multi-actor keeper's session upgrading with no `?acting=` → 400
+ * `actor_required`, the flat body the TS spine's upgrade-time authorization
+ * phase answers. The upgrade resolves an actor there, and a multi-actor
+ * account must name one. A backend whose upgrade resolves no actor admits
+ * the socket instead; `multi_actor.xfail` runs the row as `xfail_until` for
+ * it.
+ *
  * Wire it for any backend that serves the spine's account routes, RPC
  * endpoint, WebSocket endpoint and audit stream; the WS and SSE rows gate on
  * `capabilities.ws` and `capabilities.sse`.
@@ -64,11 +73,12 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import { assert, describe } from 'vitest';
+import { assert, describe, test } from 'vitest';
 import { randomBytes } from 'node:crypto';
 
 import { account_verify_action_spec } from '../../auth/account_action_specs.ts';
 import {
+	ERROR_ACTOR_REQUIRED,
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_CREDENTIAL_TYPE_REQUIRED,
 	ERROR_FORBIDDEN_ORIGIN,
@@ -79,8 +89,9 @@ import { create_rpc_get_url } from '../rpc_helpers.ts';
 import { raw_http_exchange, raw_http_parse_response } from '../transports/raw_http.ts';
 import { test_if, type BackendCapabilities } from './capabilities.ts';
 import { mint_narrowed_api_token } from './narrowed_api_token.ts';
-import type { RpcPathCapabilityGatedCrossSuiteOptions, TestFixture } from './setup.ts';
+import type { RpcPathCapabilityGatedCrossSuiteOptions, SetupTest, TestFixture } from './setup.ts';
 import { SPINE_RPC_PATH, SPINE_SSE_PATH } from './spine_surface_constants.ts';
+import { xfail_until } from './xfail.ts';
 
 /** A transport's front door, as the table's rows name it. */
 export type TransportCompositionSurface =
@@ -93,7 +104,8 @@ export type TransportCompositionProbe =
 	| 'duplicated_origin'
 	| 'over_cap_foreign_origin'
 	| 'no_credential'
-	| 'narrowed_token';
+	| 'narrowed_token'
+	| 'multi_actor_no_acting';
 
 /** The refusal a case expects. */
 export interface TransportCompositionExpect {
@@ -198,6 +210,27 @@ export const transport_composition_cases: ReadonlyArray<TransportCompositionCase
 	{ surface: 'sse', probe: 'narrowed_token', expect: SESSION_ONLY, gate: 'sse' }
 ];
 
+/**
+ * The rows that need a multi-actor keeper — run only given
+ * `TransportCompositionCrossTestOptions.multi_actor`, on its fixture.
+ */
+export const transport_composition_multi_actor_cases: ReadonlyArray<TransportCompositionCase> = [
+	{
+		surface: 'ws_upgrade',
+		probe: 'multi_actor_no_acting',
+		expect: { status: 400, error: ERROR_ACTOR_REQUIRED },
+		gate: 'ws'
+	}
+];
+
+/** The multi-actor rows' fixture, and how a backend known to diverge runs them. */
+export interface TransportCompositionMultiActorOptions {
+	/** Per-test fixture whose keeper is seeded with at least one `extra_actors` entry. */
+	readonly setup_test: SetupTest;
+	/** Run the multi-actor rows as `xfail_until` — for a backend known to admit them. */
+	readonly xfail?: { readonly tracking_id: string; readonly reason: string };
+}
+
 /** Options for `describe_transport_composition_cross_tests`. */
 export interface TransportCompositionCrossTestOptions extends RpcPathCapabilityGatedCrossSuiteOptions {
 	/**
@@ -220,6 +253,8 @@ export interface TransportCompositionCrossTestOptions extends RpcPathCapabilityG
 	readonly ws_path?: string;
 	/** Audit-log SSE path. Default `/api/admin/audit/stream`. */
 	readonly sse_path?: string;
+	/** Run the multi-actor rows (`transport_composition_multi_actor_cases`). */
+	readonly multi_actor?: TransportCompositionMultiActorOptions;
 }
 
 /** The shared 1 MiB default cap both spines ship, as in `body_size.ts`. */
@@ -355,6 +390,10 @@ export const describe_transport_composition_cross_tests = (
 			case 'no_credential':
 				credential = { origin: allowed_origin };
 				break;
+			case 'multi_actor_no_acting':
+				// the multi-actor keeper's session, no `?acting=` on the path
+				credential = { ...fixture.create_session_headers(), origin: allowed_origin };
+				break;
 			case 'narrowed_token': {
 				const token = await mint_narrowed_api_token({
 					app: fixture.transport,
@@ -469,24 +508,40 @@ export const describe_transport_composition_cross_tests = (
 		return { status: response.status, text: response.body };
 	};
 
+	const run_case = async (c: TransportCompositionCase, fixture_setup: SetupTest): Promise<void> => {
+		const fixture = await fixture_setup();
+		const res = await send_probe(fixture, await build_probe(c, fixture));
+		assert.strictEqual(
+			res.status,
+			c.expect.status,
+			`${case_name(c)}: status (body: ${res.text.slice(0, 200)})`
+		);
+		// a backend that declares no WS refusal body (Node's `@hono/node-ws`)
+		// may answer with an empty one; a body it does send is still asserted
+		if (c.surface === 'ws_upgrade' && !capabilities.ws_refusal_body && res.text === '') return;
+		assert_refusal_body(c, parse_json(res.text), res.text);
+	};
+	const is_runnable = (c: TransportCompositionCase): boolean =>
+		(c.gate === undefined || capabilities[c.gate]) &&
+		// an upgrade needs a socket; in-process there is none
+		(c.surface !== 'ws_upgrade' || base_url !== null);
+
 	describe('transport composition (front door)', () => {
 		for (const c of transport_composition_cases) {
-			const gated = c.gate === undefined || capabilities[c.gate];
-			// an upgrade needs a socket; in-process there is none
-			const reachable = c.surface !== 'ws_upgrade' || base_url !== null;
-			test_if(gated && reachable, case_name(c), async () => {
-				const fixture = await setup_test();
-				const res = await send_probe(fixture, await build_probe(c, fixture));
-				assert.strictEqual(
-					res.status,
-					c.expect.status,
-					`${case_name(c)}: status (body: ${res.text.slice(0, 200)})`
-				);
-				// a backend that declares no WS refusal body (Node's `@hono/node-ws`)
-				// may answer with an empty one; a body it does send is still asserted
-				if (c.surface === 'ws_upgrade' && !capabilities.ws_refusal_body && res.text === '') return;
-				assert_refusal_body(c, parse_json(res.text), res.text);
-			});
+			test_if(is_runnable(c), case_name(c), () => run_case(c, setup_test));
+		}
+		const { multi_actor } = options;
+		if (!multi_actor) return;
+		for (const c of transport_composition_multi_actor_cases) {
+			const name = case_name(c);
+			const body = (): Promise<void> => run_case(c, multi_actor.setup_test);
+			if (!is_runnable(c)) {
+				test_if(false, name, body);
+			} else if (multi_actor.xfail) {
+				xfail_until(multi_actor.xfail.tracking_id, multi_actor.xfail.reason, name, body);
+			} else {
+				test(name, body);
+			}
 		}
 	});
 };

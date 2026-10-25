@@ -30,20 +30,19 @@ import '../assert_dev_env.ts';
  *   role-less principal would hit the credential gate first.
  * - **public** — no rows.
  *
- * **Precondition: a single-actor keeper.** On both spines the authorization
- * phase resolves the acting actor before the credential gate runs, and the
- * rows send no `acting`. A single-actor keeper resolves its actor without
- * one, so on an actor-required method the credential gate is the first thing
- * that can refuse. A keeper with a second actor (`extra_actors`) answers
- * `actor_required` (400) there instead, failing the credential rows of every
- * actor-required credential-gated method; a suite seeding one must list those
- * methods in `skip_methods`, which drops every generated row for them (the
- * anonymous 401 included). The role rows hold for the same reason:
- * `fresh_non_admin` is a fresh single-actor account.
+ * **Acting.** On both spines the authorization phase resolves the acting
+ * actor before the credential gate runs, so a keeper with a second actor
+ * (`extra_actors`) would answer `actor_required` (400) to a request with no
+ * `acting` on an actor-bound method. Every credential and role row on such a
+ * method therefore binds `acting` to its principal's own actor at run time
+ * (`request.acting: 'principal'`): a single-actor account resolves the same
+ * actor with or without it, a multi-actor keeper resolves the one holding its
+ * roles, and either way the gate under test is the first that can refuse. The
+ * anonymous rows send none — the 401 precedes actor resolution.
  *
  * Every refusal row sends schema-valid params where they can be generated
- * (`generate_valid_body`, minus `acting`, which the authorization phase reads
- * before validation), so the gate is the only thing that can refuse. A backend
+ * (`generate_valid_body`, its generated `acting` dropped for the binding),
+ * so the gate is the only thing that can refuse. A backend
  * whose gate is missing reaches its handler and answers something else. The
  * rows therefore pin each gate, not the gate order against validation — the
  * 401-before-400 rows of the security slate pin that.
@@ -109,10 +108,11 @@ export interface RpcAuthConformanceOptions {
 /**
  * Generate schema-valid params for a method's input, without `acting`.
  *
- * `acting` is read raw by the authorization phase ahead of the gates, so a
- * generated actor id would answer `actor_not_on_account` instead of the gate
- * under test. A schema the generator can't satisfy sends no params: every
- * gate fires before validation, so the row still pins the gate.
+ * `acting` is read raw by the authorization phase ahead of the gates, so the
+ * generator's actor id would answer `actor_not_on_account` instead of the gate
+ * under test; the rows bind the principal's real actor instead. A schema the
+ * generator can't satisfy sends no params: every gate fires before
+ * validation, so the row still pins the gate.
  */
 const to_gate_params = (input: z.ZodType): Record<string, unknown> | undefined => {
 	let body: Record<string, unknown> | undefined;
@@ -148,6 +148,8 @@ export const generate_rpc_auth_conformance_cases = (
 			if (!authenticated) continue; // public or identity-optional: no gate refuses a caller
 			const params = to_gate_params(input);
 			const declared = `declared auth ${format_auth(auth)}`;
+			// the actor-bound methods resolve an actor ahead of the gates
+			const acting = auth.actor !== 'none' ? ({ acting: 'principal' } as const) : undefined;
 
 			cases.push({
 				name: `generated: anonymous → ${method} → 401`,
@@ -166,13 +168,13 @@ export const generate_rpc_auth_conformance_cases = (
 					if (credential_types.includes(principal.credential_type)) continue;
 					cases.push({
 						name: `generated: ${principal.credential_type} → ${method} → 403 credential_type_required`,
-						request: { method, as: principal.as, ...(params && { params }) },
+						request: { method, as: principal.as, ...acting, ...(params && { params }) },
 						expect: {
 							status: 403,
 							error_reason: ERROR_CREDENTIAL_TYPE_REQUIRED,
 							fields: { required_credential_types: [...credential_types] }
 						},
-						note: `${declared}; the single-actor keeper resolves its actor without \`acting\`, so the credential gate is the first that can refuse (a multi-actor keeper answers actor_required)`
+						note: `${declared}; the keeper on another channel${acting ? ', acting as its own actor,' : ''} meets the credential gate first`
 					});
 				}
 			}
@@ -184,7 +186,7 @@ export const generate_rpc_auth_conformance_cases = (
 			if (roles?.length && session_admitted) {
 				cases.push({
 					name: `generated: fresh non-admin → ${method} → 403 insufficient_permissions`,
-					request: { method, as: 'fresh_non_admin', ...(params && { params }) },
+					request: { method, as: 'fresh_non_admin', ...acting, ...(params && { params }) },
 					expect: {
 						status: 403,
 						error_reason: ERROR_INSUFFICIENT_PERMISSIONS,

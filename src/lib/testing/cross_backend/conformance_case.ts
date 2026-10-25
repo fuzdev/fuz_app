@@ -126,6 +126,32 @@ export type ConformancePrincipal = z.infer<typeof ConformancePrincipal>;
  */
 export const SCOPED_TOKEN_ADMITTED_METHOD = 'account_verify';
 
+/**
+ * Which actor the runner writes into a case's `params.acting` at run time.
+ *
+ * An actor id exists only once a fixture has seeded it, so a case names the
+ * actor by its relation to the fixture and the runner fills in the id:
+ *
+ * - `principal` — the actor of the account the principal's credential names:
+ *   the keeper's bootstrap actor for the keeper-credential principals
+ *   (`keeper`, `daemon`, `token`, `scoped_token`, …), the account's one actor
+ *   for `fresh_non_admin` / `role_holder` / `wrong_role`. Binding it makes a
+ *   row hold whether the account has one actor or several: a single-actor
+ *   account resolves the same actor with or without the selector, a
+ *   multi-actor one needs it.
+ * - `extra_actor` — the keeper's first seeded extra actor
+ *   (`fixture.extra_actors[0]`); the fixture must declare `extra_actors`.
+ *   With a keeper-credential principal, the request acts as a sibling actor
+ *   on the keeper's own account that holds none of the keeper's roles.
+ * - `keeper_actor` — the keeper's bootstrap actor whatever the principal, so
+ *   a principal on another account names a real actor that is not its own.
+ *
+ * Unavailable for principals that present no account (`anonymous`,
+ * `bearer_browser`, `malformed_bearer`) — the runner throws.
+ */
+export const ConformanceActingBinding = z.enum(['principal', 'extra_actor', 'keeper_actor']);
+export type ConformanceActingBinding = z.infer<typeof ConformanceActingBinding>;
+
 /** The request a conformance case issues. */
 export const ConformanceCaseRequest = z.strictObject({
 	method: z.string().meta({
@@ -139,6 +165,11 @@ export const ConformanceCaseRequest = z.strictObject({
 		.optional()
 		.meta({ description: 'Request params / body. Omit for nullary methods.' }),
 	as: ConformancePrincipal,
+	acting: ConformanceActingBinding.optional().meta({
+		description:
+			'Bind `params.acting` at run time to the named actor (`ConformanceActingBinding`). ' +
+			'Params must be an object or omitted, and must not carry `acting` themselves.'
+	}),
 	verb: z
 		.enum(['POST', 'GET'])
 		.optional()

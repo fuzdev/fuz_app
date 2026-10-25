@@ -79,6 +79,15 @@ across the auth test suite. Use for query-level tests needing real DB rows
 but not a full session/token bundle. For tests also needing an API token +
 session cookie + role_grants, use `bootstrap_test_keeper` from `app_server.ts`.
 
+`create_test_extra_actor(db, account_id, name)` adds an actor to an
+account — the multi-actor edge — with `created_at` read from the wall clock
+(`clock_timestamp()`), not the transaction-fixed `NOW()` default. Actor lists
+sort `created_at, id`, so a shared `created_at` would order them by random id;
+seeded through it, the account's first actor sorts first and the extras in
+insert order. `_testing_reset` and the in-process setup seed `extra_actors`
+with it, as the Rust reset does with `query_create_actor_with_clock_timestamp`,
+so both spines list a multi-actor keeper's actors in one order.
+
 `create_test_role_grant_direct(db, input)` wraps `query_create_role_grant`
 for tests needing an active role_grant seeded directly, bypassing the
 production offer/accept consent flow. Use only when the test focuses on
@@ -325,12 +334,16 @@ field a loose output schema passes on one spine, shows up as a difference.
   side lacks diffs key by key, and an empty one against a missing one at its
   own path), `differential_path_covers(covered, path)`,
   `format_differential_diffs(diffs, labels)`.
-- `cross_backend/differential.ts` — `describe_differential_conformance_tests({cases,
-  backends: [a, b], surface_source, rpc_endpoints, session_options,
-  principals?, known_divergences?, suite_name?})`. Per case, each backend's own
-  `setup_test` (separate databases and keepers), the principal resolved and
-  the request sent through `send_conformance_case` (`conformance_table.ts`),
-  both answers normalized and diffed. The per-case `expect` is not asserted —
+- `cross_backend/differential.ts` —
+  `describe_differential_conformance_tests({cases, backends: [a, b],
+  surface_source, rpc_endpoints, session_options, principals?,
+  known_divergences?, suite_name?})`, each backend `{name, setup_test, ws?}`.
+  `ws` on both runs the cases over their WebSocket endpoints, filtered by
+  `is_ws_conformance_case`, with the ledger checked against what is left; on
+  one alone, registration throws. Per case, each backend's own `setup_test`
+  (separate databases and keepers), the principal resolved and the request
+  sent through `send_conformance_case` (`conformance_table.ts`), both answers
+  normalized and diffed. The per-case `expect` is not asserted —
   each backend's conformance leg holds it. `KnownDivergence` is the ledger
   row: `{case_name | method, tracking_id, reason, what_differs}`, the names a
   string or a list, `what_differs` the diff paths covered (a path covers
@@ -353,9 +366,12 @@ fuz_app runs it under the `cross_backend_parity` project
 (`differential.cross.test.ts`, its ledger `differential_known_divergences.ts`
 in `src/test/cross_backend/`): every `conformance_*_cases.ts` array plus the
 generated auth rows, TS spine vs `testing_spine_stub`, both on Postgres so no
-engine difference reads as a body difference. The TS spine runs under `DEV`
-there, so its DEV-only diagnostics (Zod `issues` on `invalid_params`, the
-`X-Fuz-Auth-Debug` header) are ledger rows. Two TS runtimes can be held to
+engine difference reads as a body difference. The same cases run again over
+WS, against `differential_ws_known_divergences` (the HTTP ledger without its
+header row). The multi-actor `conformance_acting_cases.ts` rows run with the
+generated rows on a keeper seeded with `extra_actors`, over both transports.
+The TS spine runs under `DEV` there, so its DEV-only diagnostics (Zod
+`issues` on `invalid_params`, the `X-Fuz-Auth-Debug` header) are ledger rows. Two TS runtimes can be held to
 each other the same way (a dual spawn of two TS spine binaries, both on
 `memory://`) — not wired today.
 
@@ -1142,7 +1158,7 @@ conformance cases assert _expected behavior_ — the security negatives
 wire-shape check passes green on even when behavior is wrong.
 
 - `conformance_case.ts` — `ConformanceCase` Zod schema:
-  `{name, request: {method, params?, as, verb?}, expect: {status,
+  `{name, request: {method, params?, as, acting?, verb?}, expect: {status,
 error_reason?, fields?, headers?, equivalence_group?}, note?, xfail?}`. A case is **data** — `method`
   resolves its `input`/`output` from the live registry (RPC) or `RouteSpec`
   (the 6 REST auth routes), so the case never carries a schema. `as` is the
@@ -1175,6 +1191,12 @@ error_reason?, fields?, headers?, equivalence_group?}, note?, xfail?}`. A case i
   `expired_session` is the keeper behind an expired server-side session
   (`fixture.mint_expired_session()`: a backdated `auth_session` row behind a
   still-valid signed cookie, so the DB-row expiry gate is what refuses it).
+  `acting` (`ConformanceActingBinding`) has the runner fill `params.acting`
+  with a real actor id: `principal` (the actor of the account the
+  principal's credential names), `extra_actor` (`fixture.extra_actors[0]`),
+  `keeper_actor` (`fixture.actor`, foreign to every non-keeper principal);
+  params must then be an object or omitted, without an `acting` of their own,
+  and a principal presenting no account throws.
   `error_reason` is the imported
   `ERROR_*` constant (asserted against the RPC `error.data.reason` or the
   REST flat-body `error`; the dispatcher's 401 carries
@@ -1199,7 +1221,7 @@ error_reason?, fields?, headers?, equivalence_group?}, note?, xfail?}`. A case i
   `equivalence_group` `{status, body}` comparison (`Set-Cookie` / `Date` vary).
 - `conformance_table.ts` — `describe_conformance_table_tests({cases,
 setup_test, surface_source, capabilities, rpc_endpoints, session_options,
-principals?, suite_name?})`. Same `{setup_test, surface_source,
+principals?, ws?, suite_name?})`. Same `{setup_test, surface_source,
 capabilities}` protocol every Tier 1 suite uses, so **one case array runs
   both transports** — in-process (`gro test`) and cross-process (the gate,
   each backend's real auth resolution). `resolve_conformance_principal` (exported) maps the five
@@ -1209,6 +1231,26 @@ capabilities}` protocol every Tier 1 suite uses, so **one case array runs
   resolved_rpc_endpoints})` (exported) is the send half — principal resolved,
   request sent, the raw `{target, status, headers, body}` back unasserted; the
   table asserts on it, and the cross-backend differential compares two.
+  **WS leg:** `ws: ConformanceWsTarget` (`{base_url, ws_path, origin?}`) on
+  either sends each case as one frame on an admitted socket the principal
+  opens — its headers on the upgrade, no `Origin` where the HTTP leg
+  suppresses it, its own actor as `?acting=`. Only the TS spine resolves an
+  actor at the upgrade, refusing a multi-actor account's upgrade without
+  `?acting=` (400 `actor_required`); the Rust spine's upgrade resolves the
+  account and ignores it. Per-frame dispatch resolves each frame's `acting` on
+  both. The leg always sends `?acting=`, so it does not cover that
+  upgrade-level difference; the front-door table's multi-actor row does. The frame is the envelope the HTTP
+  body is (`perform_action_result_to_envelope` on TS), so the response reads
+  `{status, headers: {}, body: frame}` with `status` the code's
+  `jsonrpc_error_code_to_http_status` (200 for a result) and every row holds
+  unchanged. What WS loses is headers — the TS DEV-only `X-Fuz-Auth-Debug`
+  among them. `is_ws_conformance_case(c)` (exported) is the filter: RPC, sent
+  `POST`, no header value pinned, a principal that can hold a socket — not
+  `anonymous` / `bearer_browser` / `malformed_bearer` / `expired_session`,
+  refused at the upgrade, nor `scoped_token`, refused `surface:ws_upgrade`
+  there (a narrowed bearer can never send a frame, so no per-frame scope row
+  exists; the front-door table pins the upgrade refusal). An equivalence
+  group left with one member on the WS leg is dropped. Cross-process only.
 - `conformance_rpc_auth.ts` — `generate_rpc_auth_conformance_cases({surface_source,
   skip_methods?})` → `ConformanceCase[]` from each declared RPC method's
   `RouteAuth`: `anonymous` → 401 `authentication_required` for every method
@@ -1219,15 +1261,16 @@ capabilities}` protocol every Tier 1 suite uses, so **one case array runs
   keeper) → 403 `credential_type_required` with `required_credential_types`;
   for `roles` on a method admitting a session, `fresh_non_admin` → 403
   `insufficient_permissions` with `required_roles`; public methods get
-  nothing. Params are `generate_valid_body` minus `acting` (read before
-  validation, so a generated actor id would answer `actor_not_on_account`),
-  so a missing gate reaches the handler rather than a 400. The rows pin each
+  nothing. Params are `generate_valid_body` minus its generated `acting`
+  (read before validation, so the generator's id would answer
+  `actor_not_on_account`), so a missing gate reaches the handler rather than
+  a 400. On an actor-bound method the credential and role rows bind
+  `acting: 'principal'` instead — both spines resolve the acting actor before
+  the credential gate, so a keeper with a second actor (`extra_actors`) would
+  otherwise answer `actor_required` — and the rows hold for a single-actor and
+  a multi-actor keeper alike. The rows pin each
   gate, not its order against validation (the security slate's
-  401-before-400 rows do). **Precondition:** a single-actor keeper — both
-  spines resolve the acting actor before the credential gate, so a keeper
-  with a second actor (`extra_actors`) answers `actor_required` on
-  actor-required methods, and a suite seeding one lists those methods in
-  `skip_methods`. Skips `_testing_*` (the backdoor suite's) and
+  401-before-400 rows do). Skips `_testing_*` (the backdoor suite's) and
   `PROTOCOL_ACTION_METHODS` (fixed shared specs, WS-scoped — `cancel` has no
   reply, `peer/ping` is public — and covered by the WS suites). Exists
   because the action-manifest parity gate compares declarations, not the
@@ -1252,7 +1295,15 @@ offer reads' cross-account refusal being identical for the keeper's real id
 and the nil id (`describe_offer_cross_account_tests` in
 `offer_cross_account.ts` — the existing id is known only to the fixture).
 `cell_list` paging isn't among the bounds rows: the table resolves declared methods only, and
-the cells are off the declared surface.
+the cells are off the declared surface. The cross leg runs the same cases
+over WS too, and both legs run `conformance_acting_cases.ts` with the
+generated rows on a keeper seeded with `extra_actors`: no `acting` or a
+malformed one → 400 `actor_required`; the nil id, an unused id and another
+account's real actor → one identical 400 `actor_not_on_account`; acting as
+the extra actor (no grants) → 403 `insufficient_permissions` on an admin
+method over a session and a bearer, and on the keeper-gated `account_purge`
+over the daemon token; acting as the bootstrap actor passes the same gates.
+The role gate reads the resolved actor's grants on both spines.
 
 ### `cross_backend/ws_round_trip.ts` — `describe_cross_process_ws_tests`
 
@@ -1949,7 +2000,8 @@ censuses). Cross-process only; fuz_app's own wiring is
 ### Front-door contract — `cross_backend/transport_composition.ts`
 
 `describe_transport_composition_cross_tests({setup_test, capabilities, base_url,
-rpc_path?, origin?, rest_path?, password_path?, ws_path?, sse_path?})` — the per-transport
+rpc_path?, origin?, rest_path?, password_path?, ws_path?, sse_path?,
+multi_actor?})` — the per-transport
 composition table: what each transport answers before per-action dispatch,
 when one request trips several refusals. Rows are REST `POST` (session-only
 `/api/account/logout`), RPC `POST`, RPC `GET`, the WS upgrade (gated on
@@ -1966,7 +2018,13 @@ envelope's `error.data`. A WS refusal's body is required where the backend
 declares `capabilities.ws_refusal_body`; where it doesn't (Node's
 `@hono/node-ws` drops the body), an empty body passes on its status and a sent
 one is still asserted. The table
-is the exported `transport_composition_cases` data. Given `base_url`, every
+is the exported `transport_composition_cases` data. `multi_actor:
+{setup_test, xfail?}` adds `transport_composition_multi_actor_cases`, run on
+a fixture whose keeper has `extra_actors`: the keeper's session upgrading with
+no `?acting=` → 400 `actor_required` (flat body), the TS upgrade's actor
+resolution. The Rust spine's upgrade resolves no actor and admits the socket,
+so fuz_app passes `xfail` (tracking id `rust-ws-upgrade-acting-fail-open`) for
+the Rust stub only. Given `base_url`, every
 probe is written to the socket (`raw_http_exchange`) and an over-cap request
 sends its head alone; with `base_url: null` the probes go through the
 fixture's transport and the WS rows skip. Not in the standard bundle. fuz_app's

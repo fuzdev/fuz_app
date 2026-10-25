@@ -339,8 +339,12 @@ channels, every role gate's fresh non-admin) and `conformance_admin_cases.ts`
 bounds), with the two-request duplicate-invite check
 (`describe_invite_duplicate_tests`) and the offer reads' existing-vs-absent
 account refusal identity (`describe_offer_cross_account_tests`) beside the
-table; the in-process leg is
-`conformance.db.test.ts`, same cases both transports), and
+table; the same cases again over the WS endpoint (the runner's `ws` leg —
+per-frame gates on an admitted socket); and `conformance_acting_cases.ts` with
+the generated rows on a keeper seeded with `extra_actors` (`actor_required`,
+`actor_not_on_account`, the role gate over the resolved actor), on both
+transports; the in-process leg is
+`conformance.db.test.ts`, same cases, HTTP only), and
 `conformance_participation.cross.test.ts` (the role-gated-participation capstone
 — TS↔Rust agreement on app-role conferral: the declarative
 `conformance_participation_cases.ts` single-request matrix — grantability
@@ -539,7 +543,8 @@ diffs the two backends' live RPC method set + per-method auth shape via
 `_testing_action_manifest` + `assert_action_manifests_equal` (exact parity —
 method set + every auth axis); `differential.cross.test.ts` sends every
 conformance case (the `conformance_*_cases.ts` arrays, participation's with its
-`role_holder` seed, plus the generated auth rows) to both and asserts the
+`role_holder` seed, plus the generated auth rows — over HTTP and again over
+WS, and the multi-actor `acting` rows on both) to both and asserts the
 normalized answers equal via `describe_differential_conformance_tests` —
 status, header names and the whole body, so an extra field one spine sends,
 or a body difference on a row pinned by status alone, fails. Tracked

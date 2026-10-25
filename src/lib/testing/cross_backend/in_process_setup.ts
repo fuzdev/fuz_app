@@ -25,7 +25,7 @@ import type { BootstrapServerOptions } from '../../server/app_server.ts';
 import type { AppServerContext } from '../../server/app_server_context.ts';
 import type { SessionOptions } from '../../auth/session_cookie.ts';
 import { ROLE_KEEPER } from '../../auth/role_schema.ts';
-import { query_create_actor } from '../../auth/account_queries.ts';
+import { create_test_extra_actor } from '../db_entities.ts';
 import {
 	create_test_app,
 	create_test_account_with_credentials,
@@ -141,11 +141,12 @@ export const default_in_process_setup =
 		// Seed additional keeper actors directly against the same DB. Mirrors
 		// the cross-process `_testing_reset` `extra_actors` path; no production
 		// wire mints a second actor, so this bootstrap-cradle insert is the
-		// only way into a multi-actor keeper state.
+		// only way into a multi-actor keeper state. Seeded at the wall clock,
+		// like the reset, so they sort after the bootstrap actor.
 		const extra_actors: Array<{ id: Uuid; name: string }> = [];
 		for (const name of options.extra_actors ?? []) {
-			const seeded_actor = await query_create_actor(
-				{ db: test_app.backend.deps.db },
+			const seeded_actor = await create_test_extra_actor(
+				test_app.backend.deps.db,
 				test_app.backend.account.id,
 				name
 			);

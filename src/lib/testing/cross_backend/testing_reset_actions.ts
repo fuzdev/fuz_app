@@ -101,7 +101,7 @@ import {
 	MigrationTracker
 } from '../schema_introspect.ts';
 import { ActionManifest, build_action_manifest } from './action_manifest.ts';
-import { query_create_actor } from '../../auth/account_queries.ts';
+import { create_test_extra_actor } from '../db_entities.ts';
 import { create_test_account_with_credentials, mint_test_session } from '../app_server.ts';
 import { DEFAULT_TEST_PASSWORD } from '../test_credentials.ts';
 import { TESTING_ACTION_AUTH } from './spine_surface_constants.ts';
@@ -803,10 +803,13 @@ export const create_testing_actions = (
 			//    bypass as extra_accounts — no production wire path mints a
 			//    second actor, so the multi-actor `acting` branches need this
 			//    direct insert. Order-preserving so the fixture can address
-			//    them positionally.
+			//    them positionally, and seeded at the wall clock so they sort
+			//    after the keeper's bootstrap actor in insert order
+			//    (`create_test_extra_actor`), as on the Rust spine
+			//    (`query_create_actor_with_clock_timestamp`).
 			const extra_actors: Array<{ id: Uuid; name: string }> = [];
 			for (const name of input.extra_actors ?? []) {
-				const seeded_actor = await query_create_actor({ db: ctx.db }, keeper.account.id, name);
+				const seeded_actor = await create_test_extra_actor(ctx.db, keeper.account.id, name);
 				extra_actors.push({ id: seeded_actor.id, name: seeded_actor.name });
 			}
 

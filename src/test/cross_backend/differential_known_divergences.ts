@@ -90,6 +90,13 @@ export const differential_known_divergences: ReadonlyArray<KnownDivergence> = [
 	ts_dev_auth_debug_header
 ];
 
+/**
+ * Divergences the main conformance arrays show over the WebSocket leg: the
+ * HTTP ledger minus the header row, since a frame carries no headers.
+ */
+export const differential_ws_known_divergences: ReadonlyArray<KnownDivergence> =
+	differential_known_divergences.filter((d) => d !== ts_dev_auth_debug_header);
+
 /** Divergences the participation cases show. */
 export const differential_participation_known_divergences: ReadonlyArray<KnownDivergence> = [
 	ts_dev_zod_issues(['role_grant_assign', 'role_grant_offer_create'])

@@ -20,7 +20,7 @@ import './assert_dev_env.ts';
 
 import {
 	query_create_account_with_actor,
-	query_create_actor,
+	query_actor_by_id,
 	query_actor_soft_delete
 } from '../auth/account_queries.ts';
 import { query_create_role_grant } from '../auth/role_grant_queries.ts';
@@ -79,15 +79,39 @@ export const create_test_role_grant_direct = async (
 /**
  * Add a second `actor` to an existing test account — the multi-actor edge.
  *
- * Wraps the production `query_create_actor`; the TS twin of the Rust
- * `tests/common` `seed_extra_actor` helper. Lets a `.db.test.ts` suite build a
- * multi-actor account without reimplementing the raw insert.
+ * Its `created_at` is read from the wall clock (`clock_timestamp()`) rather
+ * than the transaction-fixed `NOW()` default the production
+ * `query_create_actor` relies on. Actors listed for an account sort by
+ * `created_at ASC, id ASC`, so an extra actor seeded in the transaction that
+ * created the account's first one would share its `created_at` and order by
+ * random id, and the multi-actor `actor_required` `available` list would come
+ * out in a random order. Seeded through here, the first actor sorts first and
+ * the extras in insert order. The bootstrap-cradle seeding of `extra_actors`
+ * uses it — the `_testing_reset` action and the in-process setup — as the Rust
+ * reset seeds them with `query_create_actor_with_clock_timestamp`.
+ *
+ * @param db - the database, or the transaction the account was seeded in
+ * @param account_id - the account the actor joins
+ * @param name - the actor's name
+ * @returns the created actor
+ * @mutates `actor` table - inserts the new row
  */
 export const create_test_extra_actor = async (
 	db: Db,
 	account_id: string,
 	name: string
-): Promise<Actor> => query_create_actor({ db }, account_id, name);
+): Promise<Actor> => {
+	// two steps: the actor projection's timestamp expression is private to
+	// `account_queries.ts`, so the row is read back through `query_actor_by_id`
+	const inserted = await db.query_one<{ id: string }>(
+		`INSERT INTO actor (account_id, name, created_at) VALUES ($1, $2, clock_timestamp()) RETURNING id`,
+		[account_id, name]
+	);
+	if (!inserted) throw new Error('create_test_extra_actor: INSERT returned no row');
+	const actor = await query_actor_by_id({ db }, inserted.id);
+	if (!actor) throw new Error('create_test_extra_actor: inserted actor not found');
+	return actor;
+};
 
 /**
  * Soft-delete (tombstone) one actor via the production `query_actor_soft_delete`
