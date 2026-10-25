@@ -50,6 +50,7 @@ import {
 } from '#lib/actions/transports.ts';
 import { type CredentialType } from '#lib/hono_context.ts';
 import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
+import { ERROR_INSUFFICIENT_PERMISSIONS } from '#lib/http/error_schemas.ts';
 import { RateLimiter } from '#lib/rate_limiter.ts';
 import { create_stub_db } from '#lib/testing/stubs.ts';
 import { create_test_audit_event } from '#lib/testing/entities.ts';
@@ -678,7 +679,11 @@ describe('register_action_ws', () => {
 
 		const res = parse_json(h.fake.sends[0]!);
 		assert.strictEqual(res.error.code, JSONRPC_ERROR_CODES.forbidden);
-		assert.match(res.error.message, /requires role: admin/i);
+		assert.strictEqual(res.error.message, 'forbidden');
+		assert.deepEqual(res.error.data, {
+			reason: ERROR_INSUFFICIENT_PERMISSIONS,
+			required_roles: ['admin']
+		});
 	});
 
 	test('invalid params return invalid_params with issues', async () => {

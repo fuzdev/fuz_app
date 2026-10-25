@@ -500,7 +500,7 @@ const check_action_auth_post_authorization = (
 	}
 	if (auth.roles?.length) {
 		if (!has_any_scoped_role(request_context, auth.roles, null)) {
-			return jsonrpc_error_messages.forbidden(`requires role: ${auth.roles.join(' or ')}`, {
+			return jsonrpc_error_messages.forbidden('forbidden', {
 				reason: ERROR_INSUFFICIENT_PERMISSIONS,
 				required_roles: auth.roles
 			});
