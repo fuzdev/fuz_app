@@ -18,6 +18,7 @@ import {
 	reconstruct_bootstrapped_handle
 } from '#lib/testing/cross_backend/setup.ts';
 import { describe_conformance_table_tests } from '#lib/testing/cross_backend/conformance_table.ts';
+import { generate_rpc_auth_conformance_cases } from '#lib/testing/cross_backend/conformance_rpc_auth.ts';
 import {
 	create_spine_surface_spec,
 	spine_rpc_endpoints,
@@ -29,6 +30,9 @@ import { conformance_security_cases } from './conformance_security_cases.ts';
 import { conformance_expiry_cases } from './conformance_expiry_cases.ts';
 import { conformance_app_settings_cases } from './conformance_app_settings_cases.ts';
 import { conformance_void_params_cases } from './conformance_void_params_cases.ts';
+import { conformance_admin_cases } from './conformance_admin_cases.ts';
+import { describe_invite_duplicate_tests } from './invite_duplicate.ts';
+import { describe_offer_cross_account_tests } from './offer_cross_account.ts';
 import './cross_test_types.ts';
 
 const handle = reconstruct_bootstrapped_handle(inject('backend_handle'));
@@ -43,7 +47,9 @@ describe_conformance_table_tests({
 		...conformance_security_cases,
 		...conformance_expiry_cases,
 		...conformance_app_settings_cases,
-		...conformance_void_params_cases
+		...conformance_void_params_cases,
+		...conformance_admin_cases,
+		...generate_rpc_auth_conformance_cases({ surface_source: create_spine_surface_spec() })
 	],
 	setup_test,
 	surface_source: create_spine_surface_spec(),
@@ -52,3 +58,6 @@ describe_conformance_table_tests({
 	session_options: spine_session_options,
 	suite_name: 'conformance table (cross-process)'
 });
+
+describe_invite_duplicate_tests({ setup_test });
+describe_offer_cross_account_tests({ setup_test });

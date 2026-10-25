@@ -176,6 +176,9 @@ export const RoleGrantRevokeInput = z.strictObject({
 });
 export type RoleGrantRevokeInput = z.infer<typeof RoleGrantRevokeInput>;
 
+/** Max `role_grant_offer_history` page size. */
+export const ROLE_GRANT_OFFER_HISTORY_LIMIT_MAX = 500;
+
 /**
  * Input for `role_grant_offer_history`. Returns every offer involving the account
  * in either direction (recipient or grantor), including terminal rows, newest
@@ -186,7 +189,7 @@ export const RoleGrantOfferHistoryInput = z
 		account_id: Uuid.nullish().meta({
 			description: 'Admin-only — history for another account. Defaults to the caller.'
 		}),
-		limit: z.number().int().min(1).max(500).nullish().meta({
+		limit: z.number().int().min(1).max(ROLE_GRANT_OFFER_HISTORY_LIMIT_MAX).nullish().meta({
 			description: 'Max rows to return (default 100).'
 		}),
 		offset: z.number().int().min(0).nullish().meta({

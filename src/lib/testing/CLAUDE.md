@@ -1100,8 +1100,9 @@ error_reason?, fields?, headers?, equivalence_group?}, note?, xfail?}`. A case i
   still-valid signed cookie, so the DB-row expiry gate is what refuses it).
   `error_reason` is the imported
   `ERROR_*` constant (asserted against the RPC `error.data.reason` or the
-  REST flat-body `error`; the bare `unauthenticated()` 401 carries no
-  reason, so `status` pins that denial class). `equivalence_group` is the
+  REST flat-body `error`; the dispatcher's 401 carries
+  `authentication_required`, and a denial with no reason — a handler's bare
+  `forbidden` — is pinned by `status`). `equivalence_group` is the
   **negative-space** axis: every case tagged with the same group string must
   produce a **byte-identical** normalized response (`{status, body}`),
   asserted per impl after the case loop. It promotes a masked pair
@@ -1128,6 +1129,31 @@ capabilities}` protocol every Tier 1 suite uses, so **one case array runs
   always-available principals to fixture accessors; `role_holder` /
   `wrong_role` read a seeded `extra_accounts` username named via
   `options.principals`.
+- `conformance_rpc_auth.ts` — `generate_rpc_auth_conformance_cases({surface_source,
+  skip_methods?})` → `ConformanceCase[]` from each declared RPC method's
+  `RouteAuth`: `anonymous` → 401 `authentication_required` for every method
+  needing an account or actor (all in the
+  `RPC_AUTH_ANONYMOUS_EQUIVALENCE_GROUP`, since the 401 must not vary by
+  method); for a `credential_types` gate, each builtin channel it refuses
+  (`keeper` = session, `token` = api_token, `daemon` = daemon_token, each the
+  keeper) → 403 `credential_type_required` with `required_credential_types`;
+  for `roles` on a method admitting a session, `fresh_non_admin` → 403
+  `insufficient_permissions` with `required_roles`; public methods get
+  nothing. Params are `generate_valid_body` minus `acting` (read before
+  validation, so a generated actor id would answer `actor_not_on_account`),
+  so a missing gate reaches the handler rather than a 400. The rows pin each
+  gate, not its order against validation (the security slate's
+  401-before-400 rows do). **Precondition:** a single-actor keeper — both
+  spines resolve the acting actor before the credential gate, so a keeper
+  with a second actor (`extra_actors`) answers `actor_required` on
+  actor-required methods, and a suite seeding one lists those methods in
+  `skip_methods`. Skips `_testing_*` (the backdoor suite's) and
+  `PROTOCOL_ACTION_METHODS` (fixed shared specs, WS-scoped — `cancel` has no
+  reply, `peer/ping` is public — and covered by the WS suites). Exists
+  because the action-manifest parity gate compares declarations, not the
+  live gates, and the Rust spine dispatches its own. Input-dependent handler
+  checks stay hand-written rows. fuz_app spreads it into both conformance
+  legs.
 - `xfail.ts` — `xfail_until(tracking_id, reason, name, fn)`, a thin
   `test.fails` wrapper for deferred-by-design rows (visible + self-cleaning:
   turns red when the gap closes, forcing marker removal). In-scope gaps fail
@@ -1137,7 +1163,16 @@ capabilities}` protocol every Tier 1 suite uses, so **one case array runs
 Wire from a `.db.test.ts` (in-process) and a `.cross.test.ts`
 (cross-process) with the same case array — fuz_app's own runner-proof is
 `../../test/cross_backend/conformance.{db,cross}.test.ts` sharing
-`conformance_proof_cases.ts`.
+`conformance_proof_cases.ts`, the generated auth rows, and
+`conformance_admin_cases.ts` (offer list/history across accounts, invite
+errors, pagination bounds on the admin lists); two checks the table can't
+express ride beside it on both legs: the duplicate-invite refusal (two
+requests, `describe_invite_duplicate_tests` in `invite_duplicate.ts`) and the
+offer reads' cross-account refusal being identical for the keeper's real id
+and the nil id (`describe_offer_cross_account_tests` in
+`offer_cross_account.ts` — the existing id is known only to the fixture).
+`cell_list` paging isn't among the bounds rows: the table resolves declared methods only, and
+the cells are off the declared surface.
 
 ### `cross_backend/ws_round_trip.ts` — `describe_cross_process_ws_tests`
 

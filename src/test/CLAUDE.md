@@ -327,7 +327,15 @@ always-on no-fingerprint header invariant (`FINGERPRINT_HEADERS` absent on
 **every** response, both transports) + the opt-in `expect.headers` axis — plus
 the expiry slate
 `conformance_expiry_cases.ts` (the `expired_session` principal → expired
-server-side session → 401 on a read + a mutation route); the in-process leg is
+server-side session → 401 on a read + a mutation route) — plus the per-method
+auth rows `generate_rpc_auth_conformance_cases` derives from the declared
+surface (every authed method's anonymous 401, every credential gate's refused
+channels, every role gate's fresh non-admin) and `conformance_admin_cases.ts`
+(offer list/history across accounts, invite errors, admin-list pagination
+bounds), with the two-request duplicate-invite check
+(`describe_invite_duplicate_tests`) and the offer reads' existing-vs-absent
+account refusal identity (`describe_offer_cross_account_tests`) beside the
+table; the in-process leg is
 `conformance.db.test.ts`, same cases both transports), and
 `conformance_participation.cross.test.ts` (the role-gated-participation capstone
 — TS↔Rust agreement on app-role conferral: the declarative

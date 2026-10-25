@@ -1301,8 +1301,9 @@ A case is **data** (`ConformanceCase` in `cross_backend/conformance_case.ts`):
   server-side `auth_session` row (a still-valid signed cookie over an expired
   DB row), isolating the DB-row expiry gate.
 - `error_reason` is the imported `ERROR_*` constant, asserted against the
-  RPC `error.data.reason` (or the REST flat-body `error`); when an RPC
-  denial carries no reason (the bare 401), `status` pins the denial class.
+  RPC `error.data.reason` (or the REST flat-body `error`). The dispatcher's
+  401 carries `authentication_required`; when a denial carries no reason (a
+  handler's bare `forbidden`), `status` pins the denial class.
 - `expect.fields` adds specific field-value assertions on the result/error.
 
 The runner takes the same `{setup_test, surface_source, capabilities}`
@@ -1311,6 +1312,43 @@ transports** — in-process (fast, every `gro test`) and cross-process (the
 gate, against each backend's real auth resolution). Wire it from a
 `.db.test.ts` (in-process) and a `.cross.test.ts` (cross-process) with the
 same case array.
+
+#### Per-method auth rows
+
+`generate_rpc_auth_conformance_cases({surface_source, skip_methods?})`
+(`cross_backend/conformance_rpc_auth.ts`) turns each declared RPC method's
+auth into rows, so every method's live gate is checked on every backend, not
+only the methods someone wrote a row for:
+
+- account or actor required → `anonymous` → 401 `authentication_required`,
+  all in one equivalence group (the 401 is the same whatever the method)
+- `credential_types` → each builtin channel the gate refuses (`keeper` for
+  `session`, `token` for `api_token`, `daemon` for `daemon_token`) → 403
+  `credential_type_required`, with `required_credential_types`
+- `roles`, on a method a session may call → `fresh_non_admin` → 403
+  `insufficient_permissions`, with `required_roles`
+- public methods → no rows
+
+Rows send schema-valid params minus `acting`, so only the gate can refuse.
+`_testing_*` methods and the protocol actions are skipped.
+
+The credential rows need a single-actor keeper: both spines resolve the
+acting actor before the credential gate, so a keeper with a second actor
+(`extra_actors`) answers `actor_required` (400) on actor-required methods
+instead. A suite seeding one lists those methods in `skip_methods`, which drops
+every generated row for them, the anonymous 401 included. Spread the result
+into the same case array on both legs:
+
+```ts
+cases: [
+  ...my_cases,
+  ...generate_rpc_auth_conformance_cases({surface_source}),
+],
+```
+
+The rows cover the declared gates only. Checks a handler makes from its
+input (an admin-only `account_id`, a self-only path) still need hand-written
+rows.
 
 Deferred-by-design rows mark themselves with `xfail`
 (`xfail_until(tracking_id, reason, ...)` from `cross_backend/xfail.ts`) — a
