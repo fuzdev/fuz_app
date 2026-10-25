@@ -107,6 +107,14 @@ export interface TsSpineBackendConfigOptions {
 	/** Database URL. Default `'memory://'` (in-memory pglet). */
 	readonly database_url?: string;
 	/**
+	 * Backend name — labels the spawn in errors and logs, and names its
+	 * directory under `os.tmpdir()` (`build_test_backend_paths`). Defaults per
+	 * runtime (`ts_spine_node`, `ts_spine_deno`, `ts_spine_bun`). Give each
+	 * backend spawned alongside another of its runtime its own name, so their
+	 * bootstrap and daemon-token files don't collide.
+	 */
+	readonly name?: string;
+	/**
 	 * Enable the per-IP + per-account login rate limiters on the spawned binary
 	 * (`FUZ_LOGIN_RATE_LIMIT_ENABLED=true`). Off by default — the standard cross
 	 * suites fire many loopback logins a live limiter would 429. Set `true` only
@@ -150,8 +158,12 @@ const login_rate_limit_env = (enable: boolean | undefined): Record<string, strin
 export const ts_spine_node_backend_config = (
 	options: TsSpineBackendConfigOptions = {}
 ): BackendConfig => {
-	const { port = TS_SPINE_NODE_DEFAULT_PORT, database_url, enable_login_rate_limit } = options;
-	const name = 'ts_spine_node';
+	const {
+		port = TS_SPINE_NODE_DEFAULT_PORT,
+		database_url,
+		enable_login_rate_limit,
+		name = 'ts_spine_node'
+	} = options;
 	const paths = build_test_backend_paths(name);
 	return {
 		...make_default_ts_backend_config({
@@ -181,8 +193,12 @@ export const ts_spine_node_backend_config = (
 export const ts_spine_bun_backend_config = (
 	options: TsSpineBackendConfigOptions = {}
 ): BackendConfig => {
-	const { port = TS_SPINE_BUN_DEFAULT_PORT, database_url, enable_login_rate_limit } = options;
-	const name = 'ts_spine_bun';
+	const {
+		port = TS_SPINE_BUN_DEFAULT_PORT,
+		database_url,
+		enable_login_rate_limit,
+		name = 'ts_spine_bun'
+	} = options;
 	const paths = build_test_backend_paths(name);
 	return {
 		...make_default_ts_backend_config({
@@ -216,8 +232,12 @@ export const ts_spine_bun_backend_config = (
 export const ts_spine_deno_backend_config = (
 	options: TsSpineBackendConfigOptions = {}
 ): BackendConfig => {
-	const { port = TS_SPINE_DENO_DEFAULT_PORT, database_url, enable_login_rate_limit } = options;
-	const name = 'ts_spine_deno';
+	const {
+		port = TS_SPINE_DENO_DEFAULT_PORT,
+		database_url,
+		enable_login_rate_limit,
+		name = 'ts_spine_deno'
+	} = options;
 	const paths = build_test_backend_paths(name);
 	return {
 		...make_default_ts_backend_config({

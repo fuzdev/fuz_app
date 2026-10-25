@@ -1,6 +1,7 @@
 /**
  * Tests for `global_setup_helpers.ts` — the Postgres URL the Rust stub is
- * handed, as resolved from its env var, and the rebuild-skip switch.
+ * handed, as resolved from its env var, the per-project database swap, and
+ * the rebuild-skip switch.
  *
  * @module
  */
@@ -14,7 +15,9 @@ import {
 
 import {
 	is_no_rebuild_requested,
-	resolve_rust_spine_stub_database_url
+	resolve_rust_spine_stub_database_url,
+	to_maintenance_database_url,
+	with_database_name
 } from './global_setup_helpers.ts';
 
 describe('resolve_rust_spine_stub_database_url', () => {
@@ -90,5 +93,28 @@ describe('is_no_rebuild_requested', () => {
 		for (const value of [undefined, '', '0', 'false', 'no', ' 1', 'yes']) {
 			assert.ok(!is_no_rebuild_requested(value), `${String(value)} rebuilds`);
 		}
+	});
+});
+
+describe('with_database_name', () => {
+	test('replaces the database and keeps the server, role and query', () => {
+		assert.strictEqual(
+			with_database_name('postgres://user:pw@db.local:5433/first?sslmode=disable', 'second'),
+			'postgres://user:pw@db.local:5433/second?sslmode=disable'
+		);
+	});
+
+	test('adds a database to a URL naming none', () => {
+		assert.strictEqual(
+			with_database_name('postgres://localhost', 'fuz_app_test_x'),
+			'postgres://localhost/fuz_app_test_x'
+		);
+	});
+
+	test('to_maintenance_database_url names the postgres database', () => {
+		assert.strictEqual(
+			to_maintenance_database_url('postgresql://localhost/fuz_app_test_rust_spine_stub'),
+			'postgresql://localhost/postgres'
+		);
 	});
 });

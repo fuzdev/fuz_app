@@ -108,6 +108,14 @@ export interface SpineStubBackendConfigOptions {
 	 */
 	readonly database_url?: string;
 	/**
+	 * Backend name — labels the spawn in errors and logs, and names its
+	 * directory under `os.tmpdir()` (`build_test_backend_paths`), which holds
+	 * the bootstrap token, the daemon token and the fact store. Default
+	 * `spine_stub`. Give each stub spawned alongside another its own name, so
+	 * those files don't collide.
+	 */
+	readonly name?: string;
+	/**
 	 * Prebuilt binary path. Overrides the `FUZ_TESTING_RUST_SPINE_STUB_BIN` env
 	 * var. When neither is set the preset throws.
 	 */
@@ -166,7 +174,8 @@ export const rust_spine_stub_backend_config = (
 			RUST_SPINE_STUB_DEFAULT_DATABASE_URL,
 		binary_path = process.env[RUST_SPINE_STUB_BIN_ENV],
 		enable_login_rate_limit,
-		trusted_proxies
+		trusted_proxies,
+		name = 'spine_stub'
 	} = options;
 	if (!binary_path) {
 		throw new Error(
@@ -177,7 +186,6 @@ export const rust_spine_stub_backend_config = (
 				'or pass `binary_path`.'
 		);
 	}
-	const name = 'spine_stub';
 	const paths = build_test_backend_paths(name);
 	return make_default_rust_backend_config({
 		name,

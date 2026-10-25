@@ -16,14 +16,16 @@ import '../assert_dev_env.ts';
  * 3. `child_process.spawn(...)` the binary with `detached: true` —
  *    creates a new process group so a `SIGTERM` to the negative PID
  *    tears down any descendants the binary spawned (PTYs, child
- *    workers). vitest worker death + Ctrl+C handlers also fire the
- *    group teardown so ports never strand.
+ *    workers). vitest worker death + `SIGINT` / `SIGTERM` / `SIGHUP`
+ *    handlers also fire the group teardown so ports never strand.
  * 4. Poll `{base_url}{health_path}` until it returns 2xx or
  *    `startup_timeout_ms` elapses — each probe bounded by its own timeout, so
  *    a listener that accepts but never answers can't outlast the deadline.
  * 5. Read `config.bootstrap.daemon_token_path` to load the binary's
  *    deterministic daemon token; thread it onto `BackendHandle` so
  *    `_testing_reset` and other keeper-credential calls can authenticate.
+ * 6. Log one line with the time from spawn to step 5 done, so a run shows
+ *    what each backend costs to bring up.
  *
  * The child's stderr is kept as a bounded tail (`STDERR_TAIL_MAX_BYTES`):
  * a startup failure reports it with the exit code or signal, and an exit
@@ -252,6 +254,9 @@ const install_process_handlers = (): void => {
 	};
 	process.on('SIGINT', () => passthrough_signal('SIGINT'));
 	process.on('SIGTERM', () => passthrough_signal('SIGTERM'));
+	// a closed terminal: without a handler the default action kills the process
+	// before `'exit'` runs, and the detached backends would keep their ports
+	process.on('SIGHUP', () => passthrough_signal('SIGHUP'));
 };
 
 /**
@@ -334,6 +339,7 @@ export const spawn_backend = async (config: BackendConfig): Promise<BackendHandl
 	install_process_handlers();
 
 	const [command, ...args] = config.start_command;
+	const spawned_at = performance.now();
 	const child = spawn(command!, args, {
 		env: { ...process.env, ...config.env },
 		// Own process group so SIGTERM to the negative PID tears down the
@@ -495,6 +501,9 @@ export const spawn_backend = async (config: BackendConfig): Promise<BackendHandl
 		);
 		const daemon_token = await read_daemon_token(config.bootstrap.daemon_token_path);
 		started = true;
+		console.log(
+			`spawn_backend(${config.name}): healthy in ${Math.round(performance.now() - spawned_at)}ms`
+		);
 		return { config, child, daemon_token, teardown };
 	} catch (err) {
 		await teardown();

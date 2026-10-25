@@ -492,9 +492,10 @@ as the engine renders them, and pglet — the TS spine's `memory://` default
 everywhere else — leaves sort direction, `NULLS` placement, operator classes
 and `NULLS NOT DISTINCT` out of `indexdef`, so a pglet leg would report every
 such index as drift. The setup gives the TS spine
-`fuz_app_test_ts_spine_parity` on the server the stub's URL names
-(`FUZ_TESTING_RUST_SPINE_STUB_DATABASE_URL` moves both), creates it when
-missing, and drops and recreates its `public` schema before every spawn (the
+`fuz_app_test_ts_spine_parity` and the stub `fuz_app_test_rust_spine_stub_parity`
+on the server the stub's URL names
+(`FUZ_TESTING_RUST_SPINE_STUB_DATABASE_URL` moves both), creates them when
+missing, and drops and recreates the TS spine's `public` schema before every spawn (the
 TS binary does not wipe at startup, and bootstrap refuses a database that
 already has an account); an unreachable server fails the project, never skips
 it. `schema_parity.cross.test.ts` diffs the two
@@ -535,7 +536,9 @@ shares between its RPC and WS mounts (both binaries parse the flags as a
 stringbool and the cap as a `u32`, refusing garbage at boot). They need a dedicated project because the
 limiters can only be enabled on a backend nothing else shares — the standard
 suites fire many loopback logins and actions a live limiter would throttle — so
-the standard backends keep every limiter null. `npm run test:cross:security`;
+the standard backends keep every limiter null. The stub runs over its own
+`fuz_app_test_rust_spine_stub_security`, the TS leg on `memory://`.
+`npm run test:cross:security`;
 cross-process only (the in-process limiter + proxy paths already have
 `describe_rate_limiting_tests`, the `http/proxy` middleware tests, and the
 assembled-app WS dispatch tests in `server/create_app_server_ws_endpoints.dispatch.db.test.ts`).
@@ -572,9 +575,23 @@ backends:
 
 **Opt-in.** The `cross_backend_*` projects are gated in `vite.config.ts`
 behind `FUZ_TEST_CROSS_BACKEND=1` and excluded from a bare `gro test` (they
-spawn external backends). Run one with:
+spawn external backends). They are listed in
+`cross_backend/cross_backend_projects.ts`, whose module doc tables each one's
+ports (`1177`–`1184`), Postgres databases and backend names: no two projects
+share any, so any set of them can run at once. `npm run test:cross` does
+that — `cross_backend/run_cross.ts` rebuilds the Rust stub once, runs each
+project in its own `vitest` invocation concurrently (with
+`FUZ_TESTING_NO_REBUILD=1`), prints each invocation's output as it finishes,
+then one summary of counts and failed tests. One `vitest` invocation over
+several projects also works, but runs them one after another: vitest gives a
+project with `fileParallelism` off one worker, a `groupOrder` group runs on
+its projects' worker count, and each project's `globalSetup` is awaited in
+turn. Every spawn logs one `spawn_backend(<name>): healthy in <ms>` line.
 
 ```bash
+# the whole matrix, concurrently, one summary:
+npm run test:cross
+# or one project:
 FUZ_TEST_CROSS_BACKEND=1 npx vitest run --project cross_backend_ts_node
 FUZ_TEST_CROSS_BACKEND=1 npx vitest run --project cross_backend_ts_deno
 FUZ_TEST_CROSS_BACKEND=1 npx vitest run --project cross_backend_ts_bun

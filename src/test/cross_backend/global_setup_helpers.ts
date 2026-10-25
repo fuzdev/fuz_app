@@ -52,17 +52,10 @@ export const is_no_rebuild_requested = (value: string | undefined): boolean =>
 /** Env var pointing at the Cargo workspace where the spine-stub crate lives. */
 export const RUST_WORKSPACE_DIR_ENV = 'FUZ_RUST_SPINE_STUB_WORKSPACE_DIR';
 
-/** Options for `make_rust_spine_global_setup`. */
-export interface RustSpineGlobalSetupOptions {
+/** Options for `rebuild_rust_spine_stub`. */
+export interface RustSpineRebuildOptions {
 	/** Cargo package to build; also the produced `target/release/<crate>` binary name. */
 	readonly crate: string;
-	/**
-	 * The Postgres URL the binary connects to. The database it names is created
-	 * when missing (idempotent `createdb`), on the server it names. Defaults to
-	 * `resolve_rust_spine_stub_database_url()` — the URL
-	 * `rust_spine_stub_backend_config` hands the stub. `null` skips database setup.
-	 */
-	readonly database_url?: string | null;
 	/**
 	 * Cargo workspace directory. Defaults to `$FUZ_RUST_SPINE_STUB_WORKSPACE_DIR`,
 	 * then `~/dev/private_fuz`. This file is test-only (never shipped in the
@@ -70,6 +63,17 @@ export interface RustSpineGlobalSetupOptions {
 	 * content — CI/operators set the env var.
 	 */
 	readonly workspace_dir?: string;
+}
+
+/** Options for `prepare_rust_spine_backend` and `make_rust_spine_global_setup`. */
+export interface RustSpineGlobalSetupOptions extends RustSpineRebuildOptions {
+	/**
+	 * The Postgres URL the binary connects to. The database it names is created
+	 * when missing (idempotent `createdb`), on the server it names. Defaults to
+	 * `resolve_rust_spine_stub_database_url()` — the URL
+	 * `rust_spine_stub_backend_config` hands the stub. `null` skips database setup.
+	 */
+	readonly database_url?: string | null;
 }
 
 /** The URL protocols a Postgres connection string carries. */
@@ -104,24 +108,33 @@ export const resolve_rust_spine_stub_database_url = (): string => {
 };
 
 /**
- * Make the Rust spine binary current before it spawns — rebuild by
- * default, fold in `createdb`, and default the binary-path env so the
- * common path is one command (`npm run test:cross:rust-spine-stub`).
+ * `database_url` with its database replaced by `database` — how a project
+ * that spawns a backend of its own beside the single-backend stub lands on
+ * the same server under a database nothing else uses, so one env var moves
+ * every project to another server and no two share a database.
  *
- * The database created is the one the binary's URL names, on the server that
- * URL names — so `FUZ_TESTING_RUST_SPINE_STUB_DATABASE_URL` alone moves the
- * run to another server or another database.
- *
- * Rationale: a stale prebuilt binary fails every cell/RPC case with
- * `method not found` while auth cases pass, so a lagging build reads as a
- * regression rather than "rebuild me". `cargo build` is incremental, so an
- * unconditional rebuild is cheap when nothing changed. Set `NO_REBUILD_ENV`
- * to `1` to skip the rebuild for fast iteration on a known-current binary.
- *
- * Lives in the runner wiring (test-only, Rust-aware), not the shipped
- * `src/lib` harness, which stays Rust-agnostic.
+ * @param database_url - a `postgres://` URL on the target server
+ * @param database - the database name to put in it
+ * @returns the URL naming `database` on the same server
  */
-export const prepare_rust_spine_backend = (options: RustSpineGlobalSetupOptions): void => {
+export const with_database_name = (database_url: string, database: string): string => {
+	const url = new URL(database_url);
+	url.pathname = `/${database}`;
+	return url.href;
+};
+
+/**
+ * Rebuild the Rust spine binary unless `NO_REBUILD_ENV` asks to skip it, and
+ * default the binary-path env the backend config reads to the build's output
+ * when the operator didn't pin one.
+ *
+ * Runs at most one build at a time without any lock: vitest awaits each
+ * project's `globalSetup` in turn and the build is synchronous, so one
+ * invocation selecting several Rust-backed projects builds, then finds the
+ * build current. `npm run test:cross` (`run_cross.ts`) calls this once before
+ * its concurrent invocations and hands each `NO_REBUILD_ENV=1`.
+ */
+export const rebuild_rust_spine_stub = (options: RustSpineRebuildOptions): void => {
 	const workspace_dir = resolve_workspace_dir(options.workspace_dir);
 
 	if (!is_no_rebuild_requested(process.env[NO_REBUILD_ENV])) {
@@ -137,6 +150,29 @@ export const prepare_rust_spine_backend = (options: RustSpineGlobalSetupOptions)
 	if (process.env[RUST_SPINE_STUB_BIN_ENV] == null) {
 		process.env[RUST_SPINE_STUB_BIN_ENV] = join(workspace_dir, 'target', 'release', options.crate);
 	}
+};
+
+/**
+ * Make the Rust spine binary current before it spawns — rebuild by
+ * default (`rebuild_rust_spine_stub`), fold in `createdb`, and default the
+ * binary-path env so the common path is one command
+ * (`npm run test:cross:rust-spine-stub`).
+ *
+ * The database created is the one the binary's URL names, on the server that
+ * URL names — so `FUZ_TESTING_RUST_SPINE_STUB_DATABASE_URL` alone moves the
+ * run to another server or another database.
+ *
+ * Rationale: a stale prebuilt binary fails every cell/RPC case with
+ * `method not found` while auth cases pass, so a lagging build reads as a
+ * regression rather than "rebuild me". `cargo build` is incremental, so an
+ * unconditional rebuild is cheap when nothing changed. Set `NO_REBUILD_ENV`
+ * to `1` to skip the rebuild for fast iteration on a known-current binary.
+ *
+ * Lives in the runner wiring (test-only, Rust-aware), not the shipped
+ * `src/lib` harness, which stays Rust-agnostic.
+ */
+export const prepare_rust_spine_backend = (options: RustSpineGlobalSetupOptions): void => {
+	rebuild_rust_spine_stub(options);
 
 	const database_url =
 		options.database_url === undefined
@@ -199,11 +235,8 @@ export const ensure_database = (database: string, server_url?: string): void => 
  * @param server_url - a `postgres://` URL on the target server
  * @returns the URL of that server's `postgres` maintenance database
  */
-export const to_maintenance_database_url = (server_url: string): string => {
-	const url = new URL(server_url);
-	url.pathname = '/postgres';
-	return url.href;
-};
+export const to_maintenance_database_url = (server_url: string): string =>
+	with_database_name(server_url, 'postgres');
 
 /**
  * Like `make_spine_global_setup`, but first makes the Rust spine

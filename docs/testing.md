@@ -1239,11 +1239,14 @@ binary before spawning, so the common path is one command:
 npm run test:cross:rust-spine-stub
 ```
 
-That `globalSetup`:
+That `globalSetup` (and the parity and security projects', each over a
+database of its own):
 
 1. Runs `cargo build -p testing_spine_stub --release` (incremental — cheap
    when nothing changed). Skip it with `FUZ_TESTING_NO_REBUILD=1` when you
-   know the binary is current.
+   know the binary is current. `npm run test:cross`, which runs every cross
+   project concurrently, builds once up front and hands each project
+   `FUZ_TESTING_NO_REBUILD=1`.
 2. Folds in an idempotent `createdb` for the Postgres database the
    spine-stub's URL names, on the server that URL names (the harness itself
    never issues `CREATE DATABASE`, to avoid forcing a `CREATEDB` grant on the
