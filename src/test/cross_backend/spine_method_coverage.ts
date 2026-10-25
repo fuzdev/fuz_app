@@ -187,9 +187,12 @@ export const SPINE_METHOD_COVERAGE: ReadonlyArray<MethodCoverageEntry> = [
 
 	// --- Off-surface: opt-in actor resolvers (ungated) ---
 	// Not in `create_standard_rpc_actions`; always mounted on the spine, their
-	// cross suites run unconditionally (no capability flag).
+	// coverage runs unconditionally (no capability flag). `actor_search` is
+	// table rows alone (`conformance_actor_cases.ts`, resolved through the
+	// runner's `live_rpc_endpoints`); `actor_lookup` keeps an imperative suite for
+	// the round trip that names the fixture's actor, beside its table rows.
 	{ method: 'actor_lookup', tier: 'off_surface', suite: 'describe_actor_lookup_cross_tests' },
-	{ method: 'actor_search', tier: 'off_surface', suite: 'describe_actor_search_cross_tests' },
+	{ method: 'actor_search', tier: 'off_surface', suite: 'conformance_actor_cases.ts' },
 
 	// --- Off-surface: peer/ping protocol action (capability `peer_request`) ---
 	// A protocol action (filtered from the action manifest), but live-mounted on

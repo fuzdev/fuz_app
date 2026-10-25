@@ -7,18 +7,18 @@ import '../assert_dev_env.ts';
  * (`{ids} → {actors: [{id, username, display_name?}]}`), not folded into the
  * standard bundle. It's live-mounted on the spine RPC path but kept off the
  * declared surface (`create_spine_surface_spec`) — like cells / ws / sse — so
- * the standard cross suite's generic round-trip never drives it; this
- * dedicated suite is its validator. Three cases over raw transport calls:
+ * the standard cross suite's generic round-trip never drives it.
  *
- * - **anonymous → 401** — the account-grain auth gate refuses an
- *   unauthenticated caller before the handler runs.
+ * Its single-request refusals are conformance-table rows on a table given the
+ * live mount (`live_rpc_endpoints`): the anonymous 401 a generated auth row,
+ * the empty-`ids` 400 a hand-written one. This suite holds what a row can't
+ * say, because it names the fixture's own actor:
+ *
  * - **keeper resolves own actor → 200** — the populated round trip: the
  *   returned row carries the keeper's `id` + `username`, and **no**
  *   `account_id` / `email` / timestamp / role field (the wire shape's
  *   deliberate info-leak posture). This is the assertion that exercises the
  *   Rust row→JSON mapping against the TS canonical shape.
- * - **empty `ids` → 400** — the `min(1)` input bound is enforced on both
- *   spines (TS Zod, Rust `parse_ids`).
  *
  * Runs both legs via the shared `{setup_test}` protocol: the in-process leg
  * (`auth/actor_lookup_parity.db.test.ts`, plain `gro test`) and the
@@ -55,16 +55,6 @@ export const describe_actor_lookup_cross_tests = (options: ActorLookupCrossTestO
 	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
 
 	describe('actor_lookup parity', () => {
-		test('anonymous → 401 (account-grain auth gate)', async () => {
-			const fixture = await setup_test();
-			const res = await fixture.fresh_transport()(rpc_path, {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: lookup_envelope([fixture.actor.id], 'anon-lookup')
-			});
-			assert.strictEqual(res.status, 401, 'unauthenticated actor_lookup must be refused');
-		});
-
 		test('keeper resolves own actor → 200 with id + username, no control fields', async () => {
 			const fixture = await setup_test();
 			const res = await fixture.transport(rpc_path, {
@@ -88,16 +78,6 @@ export const describe_actor_lookup_cross_tests = (options: ActorLookupCrossTestO
 			for (const key of forbidden_row_keys) {
 				assert(!(key in row), `actor_lookup row must not leak '${key}'`);
 			}
-		});
-
-		test('empty ids → 400 (min(1) input bound)', async () => {
-			const fixture = await setup_test();
-			const res = await fixture.transport(rpc_path, {
-				method: 'POST',
-				headers: { ...fixture.create_session_headers(), 'content-type': 'application/json' },
-				body: lookup_envelope([], 'empty-lookup')
-			});
-			assert.strictEqual(res.status, 400, 'empty ids must fail input validation');
 		});
 	});
 };

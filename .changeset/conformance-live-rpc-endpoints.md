@@ -1,0 +1,5 @@
+---
+'@fuzdev/fuz_app': minor
+---
+
+break: the conformance table resolves methods off the declared surface — `live_rpc_endpoints` on `describe_conformance_table_tests` and `describe_differential_conformance_tests` (looked up after `rpc_endpoints`; `resolve_conformance_rpc_endpoints` builds the lookup list), and on `generate_rpc_auth_conformance_cases`, which now generates rows for the live-mounted methods the declared surface lacks and no longer skips `_testing_*` methods; `create_spine_live_rpc_endpoints` (`testing/cross_backend/full_spine_mount.ts`) is the spine binary's whole live mount as that value; `describe_actor_search_cross_tests` (`testing/cross_backend/actor_search.ts`) is removed and `describe_actor_lookup_cross_tests` keeps only its keeper round trip — their single-request rows are conformance rows now; `describe_cell_crud_cross_tests` pages `cell_list` (`limit` + `offset`, hidden rows never crowding a page), `describe_cell_relations_cross_tests` refuses an insert or move onto a taken item position (`cell_item_position_taken`), and `describe_cell_moderate_cross_tests` refuses moderating a cell with no governing root (`cell_not_a_contribution`)

@@ -419,6 +419,9 @@ export const describe_cell_gated_create_cross_tests = (
  * - **a non-viewer is 404-masked** → a stranger who can't see the pending
  *   contribution gets `cell_not_found`, never learns it exists.
  * - **reject** → `moderation: 'rejected'`, visibility stays private.
+ * - **a cell with no governing root** → `400 cell_not_a_contribution` for any
+ *   viewer (owner, admin), the cell left unmoderated; a non-viewer gets the
+ *   `cell_not_found` mask first.
  *
  * And that moderation gates reads — a cell's effective audience is its
  * visibility or grants **and** its moderation admission (unmoderated or
@@ -729,6 +732,68 @@ export const describe_cell_moderate_cross_tests = (
 					'private',
 					'rejection leaves the post private'
 				);
+			}
+		);
+
+		test_if(
+			capabilities.cell_gated_create,
+			'moderating a cell with no governing root → 400 cell_not_a_contribution, after the view check',
+			async () => {
+				const fixture = await setup_test();
+				const owner = await fixture.create_account({ username: 'moderate_root_owner' });
+				const owner_h = owner.create_session_headers();
+				const create = async (visibility: 'public' | 'private') =>
+					expect_output(
+						await cross_rpc_call(
+							fixture.transport,
+							rpc_path,
+							'cell_create',
+							{ kind: 'note', data: {}, visibility },
+							owner_h
+						),
+						CellCreateOutput
+					).cell;
+				const pub = await create('public');
+				const priv = await create('private');
+				// a viewer of a parentless cell — its owner, an admin, anyone on a
+				// public one — reaches the root check and is refused there
+				for (const [label, cell_id, headers] of [
+					['the owner', priv.id, owner_h],
+					['an admin', priv.id, fixture.create_session_headers()],
+					['the owner, public', pub.id, owner_h]
+				] as const) {
+					const refused = await cross_rpc_call(
+						fixture.transport,
+						rpc_path,
+						'cell_moderate',
+						{ cell_id, moderation: 'approved' },
+						headers
+					);
+					assert.ok(!refused.ok, `${label}: moderated a cell with no governing root`);
+					assert.strictEqual(
+						refused.error?.code,
+						JSONRPC_ERROR_CODES.invalid_params,
+						`${label}: code`
+					);
+					assert.strictEqual(error_reason(refused), 'cell_not_a_contribution', `${label}: reason`);
+				}
+				// a non-viewer meets the 404 mask first, never the shape refusal
+				const stranger = await fixture.create_account({ username: 'moderate_root_stranger' });
+				const masked = await cross_rpc_call(
+					fixture.transport,
+					rpc_path,
+					'cell_moderate',
+					{ cell_id: priv.id, moderation: 'approved' },
+					stranger.create_session_headers()
+				);
+				assert.strictEqual(error_reason(masked), 'cell_not_found');
+				// the refusals left the cell unmoderated
+				const got = expect_output(
+					await cross_rpc_call(fixture.transport, rpc_path, 'cell_get', { id: priv.id }, owner_h),
+					CellGetOutput
+				);
+				assert.strictEqual(got.cell.moderation, null);
+				assert.strictEqual(got.cell.visibility, 'private');
 			}
 		);
 	});

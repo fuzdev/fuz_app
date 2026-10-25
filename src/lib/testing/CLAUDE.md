@@ -336,8 +336,10 @@ field a loose output schema passes on one spine, shows up as a difference.
   `format_differential_diffs(diffs, labels)`.
 - `cross_backend/differential.ts` —
   `describe_differential_conformance_tests({cases, backends: [a, b],
-  surface_source, rpc_endpoints, session_options, principals?,
-  known_divergences?, suite_name?})`, each backend `{name, setup_test, ws?}`.
+  surface_source, rpc_endpoints, live_rpc_endpoints?, session_options,
+  principals?, known_divergences?, suite_name?})`, each backend `{name,
+  setup_test, ws?}`; methods resolve as the table resolves them
+  (`resolve_conformance_rpc_endpoints`).
   `ws` on both runs the cases over their WebSocket endpoints, filtered by
   `is_ws_conformance_case`, with the ledger checked against what is left; on
   one alone, registration throws. Per case, each backend's own `setup_test`
@@ -365,8 +367,10 @@ field a loose output schema passes on one spine, shows up as a difference.
 fuz_app runs it under the `cross_backend_parity` project
 (`differential.cross.test.ts`, its ledger `differential_known_divergences.ts`
 in `src/test/cross_backend/`): every `conformance_*_cases.ts` array plus the
-generated auth rows, TS spine vs `testing_spine_stub`, both on Postgres so no
-engine difference reads as a body difference. The same cases run again over
+generated auth rows (over the live mount too, so the cell verbs, the actor
+resolvers and the `_testing_*` backdoors are compared), TS spine vs
+`testing_spine_stub`, both on Postgres so no engine difference reads as a body
+difference. The same cases run again over
 WS, against `differential_ws_known_divergences` (the HTTP ledger without its
 header row). The multi-actor `conformance_acting_cases.ts` rows run with the
 generated rows on a keeper seeded with `extra_actors`, over both transports.
@@ -1220,8 +1224,17 @@ error_reason?, fields?, headers?, equivalence_group?}, note?, xfail?}`. A case i
   backend-fingerprinting oracle). Headers are deliberately kept out of the
   `equivalence_group` `{status, body}` comparison (`Set-Cookie` / `Date` vary).
 - `conformance_table.ts` — `describe_conformance_table_tests({cases,
-setup_test, surface_source, capabilities, rpc_endpoints, session_options,
-principals?, ws?, suite_name?})`. Same `{setup_test, surface_source,
+setup_test, surface_source, capabilities, rpc_endpoints, live_rpc_endpoints?,
+session_options, principals?, ws?, suite_name?})`. A case's RPC method
+  resolves from `rpc_endpoints` first, then from `live_rpc_endpoints` — the
+  endpoints the backend live-mounts, for methods kept off the declared surface
+  (cell verbs, opt-in resolvers, `_testing_*` backdoors); a backend's whole
+  live mount is a fine value, since a declared method still resolves from the
+  declared surface. `resolve_conformance_rpc_endpoints({rpc_endpoints,
+  live_rpc_endpoints?, session_options})` (exported) builds that lookup list,
+  for the table and the differential alike. fuz_app's spine value is
+  `create_spine_live_rpc_endpoints()` (`full_spine_mount.ts`), the binary's
+  whole mount built on stub deps for resolution only. Same `{setup_test, surface_source,
 capabilities}` protocol every Tier 1 suite uses, so **one case array runs
   both transports** — in-process (`gro test`) and cross-process (the gate,
   each backend's real auth resolution). `resolve_conformance_principal` (exported) maps the five
@@ -1252,8 +1265,10 @@ capabilities}` protocol every Tier 1 suite uses, so **one case array runs
   exists; the front-door table pins the upgrade refusal). An equivalence
   group left with one member on the WS leg is dropped. Cross-process only.
 - `conformance_rpc_auth.ts` — `generate_rpc_auth_conformance_cases({surface_source,
-  skip_methods?})` → `ConformanceCase[]` from each declared RPC method's
-  `RouteAuth`: `anonymous` → 401 `authentication_required` for every method
+  live_rpc_endpoints?, skip_methods?})` → `ConformanceCase[]` from each declared RPC method's
+  `RouteAuth`, then each live-mounted one the declared surface lacks
+  (`live_rpc_endpoints`, resolved — the rows then need the same endpoints on
+  the runner's `live_rpc_endpoints`): `anonymous` → 401 `authentication_required` for every method
   needing an account or actor (all in the
   `RPC_AUTH_ANONYMOUS_EQUIVALENCE_GROUP`, since the 401 must not vary by
   method); for a `credential_types` gate, each builtin channel it refuses
@@ -1270,9 +1285,11 @@ capabilities}` protocol every Tier 1 suite uses, so **one case array runs
   otherwise answer `actor_required` — and the rows hold for a single-actor and
   a multi-actor keeper alike. The rows pin each
   gate, not its order against validation (the security slate's
-  401-before-400 rows do). Skips `_testing_*` (the backdoor suite's) and
-  `PROTOCOL_ACTION_METHODS` (fixed shared specs, WS-scoped — `cancel` has no
-  reply, `peer/ping` is public — and covered by the WS suites). Exists
+  401-before-400 rows do). Skips `PROTOCOL_ACTION_METHODS` (fixed shared specs,
+  WS-scoped — `cancel` has no reply, `peer/ping` is public — and covered by
+  the WS suites). Given the live mount, the `_testing_*` backdoors get rows too:
+  each is daemon-token-gated, so anonymous → 401 and the keeper's session and
+  API token → 403 `credential_type_required`. Exists
   because the action-manifest parity gate compares declarations, not the
   live gates, and the Rust spine dispatches its own. Input-dependent handler
   checks stay hand-written rows. fuz_app spreads it into both conformance
@@ -1294,8 +1311,19 @@ requests, `describe_invite_duplicate_tests` in `invite_duplicate.ts`) and the
 offer reads' cross-account refusal being identical for the keeper's real id
 and the nil id (`describe_offer_cross_account_tests` in
 `offer_cross_account.ts` — the existing id is known only to the fixture).
-`cell_list` paging isn't among the bounds rows: the table resolves declared methods only, and
-the cells are off the declared surface. The cross leg runs the same cases
+The cross legs pass the spine's live mount, so the table also runs
+`conformance_actor_cases.ts` (`actor_lookup`'s empty-`ids` bound, the
+`actor_search` scope gate) and `conformance_cell_cases.ts` (the cell refusals
+one request reaches with no cell in place: `kind` inside `data`, `cell_get`
+naming neither `id` nor `path`, the relation lists naming neither or both
+endpoints — each `invalid_params` with its declared reason — a grant miss
+`cell_grant_not_found`, the `cell_list` pagination bounds and enum-valued
+filters, and the schema-first rows where a bad page or filter value must answer
+before a handler's reason; `conformance_cell_cases.test.ts` requires a `{}` row
+with a reason for every `EMPTY_INPUT_HANDLER_GUARDED_METHODS` member), with the
+generated rows over the off-surface methods; the in-process leg for those is
+`conformance_off_surface.db.test.ts`, over an app mounting the cell surface
+and the two resolvers. The cross leg runs the same cases
 over WS too, and both legs run `conformance_acting_cases.ts` with the
 generated rows on a keeper seeded with `extra_actors`: no `acting` or a
 malformed one → 400 `actor_required`; the nil id, an unused id and another
@@ -1634,7 +1662,7 @@ an audit row, an admin account listing, and an offer's `created_at` /
 imperative cross suite aliases: `CrossSuiteOptions` (`setup_test` alone),
 `CapabilityGatedCrossSuiteOptions` (+ `capabilities` — `ready`),
 `RpcPathCrossSuiteOptions` (+ `rpc_path?` — origin, body-size (which adds `base_url`), actor
-lookup/search, app settings, testing backdoor), and the intersection
+lookup, app settings, testing backdoor), and the intersection
 `RpcPathCapabilityGatedCrossSuiteOptions` (every `cell_*` suite, query-shape,
 token-scope surface, fact-serving, account lifecycle). A suite takes the
 capability-carrying variant only when it actually gates cases on a flag, so
@@ -1647,14 +1675,19 @@ the option type states whether the bundle is read.
   `path` write by non-admin → 403 on create + update; `cell_get` with no
   id/path → `invalid_params`; null-auth `cell_list` `created_by` →
   `invalid_params`; a `kind` at `CELL_KIND_LENGTH_MAX` stored whole, one
-  UTF-16 code unit past it → `invalid_params` on create and as a list filter).
+  UTF-16 code unit past it → `invalid_params` on create and as a list filter;
+  `cell_list` pages honoring `limit` + `offset`, a page holding visible rows
+  only and filling to `limit` past a newer run of rows the caller can't see —
+  two owners' private cells, read by a non-owner and by anon — and an admin's
+  pages tiling every row).
 - **`describe_cell_relations_cross_tests`** (gates on
   `capabilities.cell_relations`) — the verbs beyond CRUD: grant lifecycle
   (actor-shaped editor grant enables edit, manage-tier `cell_grant_list`,
   revoke), the now-reachable `cell_visibility_manage_only` 403 (editor-grant
   holder can't flip visibility), field set / forward+reverse list / idempotent
   delete, item insert / ordered forward+reverse list / move / idempotent
-  delete, clone shallow (shares edges) vs deep (clones children), and
+  delete, an insert or move onto a taken position → `cell_item_position_taken`
+  with the rows unchanged, clone shallow (shares edges) vs deep (clones children), and
   manage-tier `cell_audit_list` (owner reads the timeline; a viewer-grant
   holder who can `cell_get` still gets the IDOR 404). Only **actor-shaped**
   grants are exercised — role-shaped principals need a closed role registry the
@@ -1674,7 +1707,9 @@ moderation_required}`, with `moderation` set per the verdict (`pending`+private
   **visible** one **403**s; plain parentless creates stay open. The moderate
   suite then proves the `pending → approved | rejected` transition: an admin
   (root manager) approves → public, the **author** self-approve → 403
-  (anti-self-approval), a non-viewer → 404, reject → stays private. It also
+  (anti-self-approval), a non-viewer → 404, reject → stays private, and a cell
+  with no governing root → 400 `cell_not_a_contribution` for any viewer, the
+  404 mask first for a non-viewer. It also
   pins the moderation read gate (a pending or rejected post reaches no
   non-steward reader past its author and admins on `cell_get`, `cell_list`,
   `cell_item_list`, and fact serving, even flipped public or granted while
@@ -1950,8 +1985,9 @@ for others) and has a single actor. No generated body carries a valid `acting`,
 and a malformed one reads as omitted ahead of validation on both spines, so a
 single-actor keeper resolves its actor and validation refuses; a keeper with a
 second actor answers `actor_required` first, so such a suite lists the
-actor-required methods in `skip_methods`. Skips `_testing_*` and
-`PROTOCOL_ACTION_METHODS`, as `generate_rpc_auth_conformance_cases` does.
+actor-required methods in `skip_methods`. Skips `_testing_*` (off the
+declared surface it walks) and `PROTOCOL_ACTION_METHODS`, which
+`generate_rpc_auth_conformance_cases` skips too.
 Ungated; cross-process only. fuz_app's own wiring is
 `src/test/cross_backend/rpc_adversarial.cross.test.ts`.
 
@@ -2228,7 +2264,11 @@ suites); ungated, since every cross backend that uses
 `src/test/cross_backend/testing_backdoor.cross.test.ts`. The complement is the
 in-process spec-level gate test (`src/test/testing/testing_actions_auth.test.ts`,
 asserting each spec declares `credential_types: ['daemon_token']`) + the
-`assert_no_testing_methods` surface invariant.
+`assert_no_testing_methods` surface invariant. fuz_app's conformance table
+also covers the same gates, through the auth rows it generates over the live
+mount (`live_rpc_endpoints`), which the differential compares across spines;
+this suite stays for consumers whose backends mount the `_testing_*` actions
+without a conformance table over their live mount.
 
 ### Identity-primitive parity — `cross_backend/identity_parity.ts`
 
@@ -2471,7 +2511,7 @@ re-roll the serve / daemon-info / WS-attach / drain boilerplate:
 - `testing/cross_backend/testing_server_deno.ts` — `create_deno_testing_adapter()` (`Deno.serve` + `@hono/deno`, an optional peer dep; `Deno` declared locally so it typechecks under the Node toolchain). Spawn the entry with `--sloppy-imports` (Deno doesn't do `.js`→`.ts`; Gro's loader does, so the Node path needs no flag).
 - `testing/cross_backend/testing_server_bun.ts` — `create_bun_testing_adapter()` (`Bun.serve` + `@hono/bun`'s module-level `getConnInfo`, `upgradeWebSocket`, and `websocket`; `Bun.serve` declared locally so it typechecks under the Node toolchain). Needs the optional `@hono/bun` peer dep (the counterpart to Node's `@hono/node-server` + `@hono/node-ws`; `Bun.serve` is built in), and Bun resolves `.js`→`.ts` natively (no flag, unlike Deno). Reuses `create_node_runtime` (Bun implements the `node:fs`/`node:process` surface). WS is module-level + stateless (like Deno) — the `websocket` handler is threaded into `serve`, where `Bun.serve` wants it, so no post-serve attach. It carries `maxPayloadLength` at twice `max_message_bytes` rather than Bun's 16 MiB default: past its cap Bun drops the socket without a close frame (1006), so the headroom leaves a message just over the limit to the per-message check (`WS_CLOSE_MESSAGE_TOO_BIG`, as on Node), while a grossly oversized one is refused before Bun buffers it whole.
 - `testing/cross_backend/default_spine_surface.ts` — the canonical no-domain spine surface (account/admin/audit/signup + bootstrap): `spine_session_options`, `spine_roles`, `create_spine_route_specs`, `spine_rpc_endpoints`, `create_spine_surface_spec`. This is the **declared** surface — the `create_standard_rpc_actions` bundle the spec-derived suites auto-enumerate. It passes `daemon_token: true` (both spine binaries mount the daemon-token layer) and leaves `GET /api/surface` at its default, off — the TS spine binary does too, and the Rust `testing_spine_stub` serves none. Shared by the spine_stub cross test, the TS cross tests, and the binary.
-- `testing/cross_backend/full_spine_mount.ts` — `build_full_spine_rpc_actions(deps, options)` — the **full** live RPC mount: the declared bundle **plus** the off-declared-surface families the binary live-mounts (`_testing_*` backdoors, the cell verb set, the opt-in `actor_lookup` / `actor_search` resolvers). `build_full_spine_mount(deps, options)` builds it once for both of the binary's endpoints, returning `FullSpineMount` (`{rpc_actions, ws_actions}`): the WS list is `protocol_actions` plus every RPC action not already among them, twinning the Rust `testing_spine_stub`, which serves one registry on RPC and WS (the one difference is `cancel` — a registered protocol action on TS, owned by the read loop on Rust). Single-sources the mount so the binary and the `spine_method_coverage` reconciliation test build the same list.
+- `testing/cross_backend/full_spine_mount.ts` — `build_full_spine_rpc_actions(deps, options)` — the **full** live RPC mount: the declared bundle **plus** the off-declared-surface families the binary live-mounts (`_testing_*` backdoors, the cell verb set, the opt-in `actor_lookup` / `actor_search` resolvers). `build_full_spine_mount(deps, options)` builds it once for both of the binary's endpoints, returning `FullSpineMount` (`{rpc_actions, ws_actions}`): the WS list is `protocol_actions` plus every RPC action not already among them, twinning the Rust `testing_spine_stub`, which serves one registry on RPC and WS (the one difference is `cancel` — a registered protocol action on TS, owned by the read loop on Rust). Single-sources the mount so the binary and the `spine_method_coverage` reconciliation test build the same list. `create_spine_live_rpc_endpoints()` wraps the list, built on stub deps, as one endpoint at `SPINE_RPC_PATH` — the `live_rpc_endpoints` value the conformance table, the differential and the auth-row generator resolve off-surface methods from (no handler built there runs).
 - `testing/cross_backend/ts_spine_backend_config.ts` — `ts_spine_node_backend_config()` / `ts_spine_deno_backend_config()` / `ts_spine_bun_backend_config()` presets (in-memory pglet, no external infra), the TS analog of `rust_spine_stub_backend_config()`.
 
 fuz_app's own binary wiring (`src/test/cross_backend/testing_spine_server{,_node,_deno,_bun}.ts`) is the worked example: ~one `build_app` over `create_app_backend` + `create_app_server` (`rate_limiters: 'disabled_for_testing'` plus whichever login / action limiters its env toggles built, `build_full_spine_mount`'s two lists on one `rpc_endpoints` entry and two `ws_endpoints` entries — `/api/ws` and the role-gated `SPINE_ROLE_GATED_WS_PATH` — sharing one `transport`, which is also the role-grant-offer `notification_sender`), reusing `default_spine_surface`. `src/test/cross_backend/testing_spine_server.db.test.ts` builds it with the Node adapter in-process and asserts its surface lists both WS endpoints (the gated one with its `required_roles`) and passes the surface invariants. The `_node`/`_deno`/`_bun` entries differ only in which adapter they wire — `build_spine_app` is runtime-agnostic. It leaves `create_app_server`'s `auth_cleanup` off, as the Rust `testing_spine_stub` leaves its twin unscheduled: a background pass would delete rows and write audit rows under a running suite. A consumer's cross-process test binary may schedule it when nothing its suites seed is already expired (the conformance table's `expired_session` principal seeds a backdated session row); an in-process harness leaves it off.

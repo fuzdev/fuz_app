@@ -1358,11 +1358,19 @@ the upgrade refuses them before any frame (a narrowed token is refused
 equivalence group left with one member on the WS leg is dropped. The WS leg
 needs the RPC actions mounted on the socket, and runs cross-process only.
 
+A case's RPC method resolves from the declared `rpc_endpoints`. Pass
+`live_rpc_endpoints` — the endpoints the backend live-mounts, in the same
+`RpcEndpointsSuiteOption` form — to reach the methods kept off the declared
+surface (cell verbs, opt-in resolvers, `_testing_*` backdoors). The declared
+surface is looked up first, so the backend's whole live mount is a fine value.
+The differential takes the same option.
+
 #### Per-method auth rows
 
-`generate_rpc_auth_conformance_cases({surface_source, skip_methods?})`
-(`cross_backend/conformance_rpc_auth.ts`) turns each declared RPC method's
-auth into rows, so every method's live gate is checked on every backend, not
+`generate_rpc_auth_conformance_cases({surface_source, live_rpc_endpoints?,
+skip_methods?})` (`cross_backend/conformance_rpc_auth.ts`) turns each declared
+RPC method's auth into rows — and, given the resolved live mount, each
+live-mounted method the declared surface lacks — so every method's live gate is checked on every backend, not
 only the methods someone wrote a row for:
 
 - account or actor required → `anonymous` → 401 `authentication_required`,
@@ -1374,8 +1382,9 @@ only the methods someone wrote a row for:
   `insufficient_permissions`, with `required_roles`
 - public methods → no rows
 
-Rows send schema-valid params, so only the gate can refuse.
-`_testing_*` methods and the protocol actions are skipped.
+Rows send schema-valid params, so only the gate can refuse. The protocol
+actions are skipped. Rows on live-mounted methods need the runner's
+`live_rpc_endpoints` to resolve them.
 
 Both spines resolve the acting actor before the credential gate, so a keeper
 with a second actor (`extra_actors`) would answer `actor_required` (400) to an

@@ -75,15 +75,17 @@ const cell_parity_audit_factory: AuditFactory = ({ db, log }) =>
  *
  * `extra_accounts` seeds bootstrap-cradle secondaries (e.g. a `cell_editor`
  * holder for the role-shaped-grant parity suite, whose role has no grant
- * path and so can't be offered).
+ * path and so can't be offered). `rpc_endpoints` replaces the mount, for a
+ * leg that needs more than the cell surface beside it.
  */
 export const create_cell_parity_setup = (
-	extra_accounts: ReadonlyArray<ExtraAccountSpec> = []
+	extra_accounts: ReadonlyArray<ExtraAccountSpec> = [],
+	rpc_endpoints: (ctx: AppServerContext) => Array<RpcEndpointSpec> = cell_parity_rpc_endpoints
 ): SetupTest =>
 	default_in_process_setup({
 		session_options: spine_session_options,
 		create_route_specs: () => [],
-		rpc_endpoints: cell_parity_rpc_endpoints,
+		rpc_endpoints,
 		roles: [ROLE_KEEPER, ROLE_ADMIN],
 		migration_namespaces: [CELL_MIGRATION_NS],
 		audit_factory: cell_parity_audit_factory,

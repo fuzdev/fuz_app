@@ -281,14 +281,18 @@ visibility filter** (anon + viewer-grant see only independently-viewable
 children in the `cell_get` bundle + forward lists — no-existence-leak-via-edge),
 and **clone D8** (a cloner who can't view a child silently drops it; an admin
 read of the clone confirms, and the `cell_clone` audit row records no skipped
-count) — each response parsed against its Zod output schema — and
+count), and a taken item position → `cell_item_position_taken` — each response
+parsed against its Zod output schema; the CRUD suite also pages `cell_list`,
+holding a page to visible rows filled to `limit` past a newer run of hidden
+ones — and
 `describe_cell_gated_create_cross_tests` + `describe_cell_moderate_cross_tests` —
 the parent-aware `CellCreateAuthorize` (directory model) + `cell_moderate` parity
 proofs (a non-admin `space` root → 403 `cell_create_forbidden`; a contribution
 gated by the root's `data.policy[kind]`; `moderation` set per the verdict
 (`pending`+private vs `approved`); **404** on a hidden parent vs **403** on a
 visible one; and the `cell_moderate` transition — admin approves → public,
-the author self-approve → 403, a non-viewer → 404, reject → private; the
+the author self-approve → 403, a non-viewer → 404, reject → private, a cell
+with no governing root → 400 `cell_not_a_contribution`; the
 moderation read gate — a pending or rejected post, flipped public or granted
 while approved, reaches no non-steward reader past its author and admins on
 `cell_get`, `cell_list`, `cell_item_list`, and fact serving; the steward arm —
@@ -333,10 +337,17 @@ the expiry slate
 `conformance_expiry_cases.ts` (the `expired_session` principal → expired
 server-side session → 401 on a read + a mutation route) — plus the per-method
 auth rows `generate_rpc_auth_conformance_cases` derives from the declared
-surface (every authed method's anonymous 401, every credential gate's refused
-channels, every role gate's fresh non-admin) and `conformance_admin_cases.ts`
-(offer list/history across accounts, invite errors, admin-list pagination
-bounds), with the two-request duplicate-invite check
+surface and the spine's live mount (every authed method's anonymous 401, every
+credential gate's refused channels, every role gate's fresh non-admin — the
+cell verbs, actor resolvers and `_testing_*` backdoors included) and
+`conformance_admin_cases.ts` (offer list/history across accounts, invite
+errors, admin-list pagination bounds) — plus, resolved through the runner's
+`live_rpc_endpoints` (`create_spine_live_rpc_endpoints`), the off-surface rows
+`conformance_actor_cases.ts` (`actor_lookup`'s empty-`ids` bound, the
+`actor_search` scope gate) and `conformance_cell_cases.ts` (`kind` inside
+`data`, `cell_get` naming neither `id` nor `path`, the relation lists naming
+neither or both endpoints, a grant miss, the `cell_list` pagination bounds) —
+with the two-request duplicate-invite check
 (`describe_invite_duplicate_tests`) and the offer reads' existing-vs-absent
 account refusal identity (`describe_offer_cross_account_tests`) beside the
 table; the same cases again over the WS endpoint (the runner's `ws` leg —
@@ -344,7 +355,9 @@ per-frame gates on an admitted socket); and `conformance_acting_cases.ts` with
 the generated rows on a keeper seeded with `extra_actors` (`actor_required`,
 `actor_not_on_account`, the role gate over the resolved actor), on both
 transports; the in-process leg is
-`conformance.db.test.ts`, same cases, HTTP only), and
+`conformance.db.test.ts`, same cases, HTTP only, and
+`conformance_off_surface.db.test.ts` for the off-surface rows, over an app
+mounting the cell surface and both actor resolvers), and
 `conformance_participation.cross.test.ts` (the role-gated-participation capstone
 — TS↔Rust agreement on app-role conferral: the declarative
 `conformance_participation_cases.ts` single-request matrix — grantability
@@ -418,13 +431,12 @@ gate: every `_testing_*` action fired as
 anonymous → 401, session → 403, bearer → 403 over HTTP RPC, and on a session
 socket → `credential_type_required` over WS, proving the daemon-token gate
 holds on the off-surface actions every spine live-mounts; cross-process-only,
-no in-process leg since the actions aren't mounted in-process), and
-`actor_lookup.cross.test.ts` (the opt-in `actor_lookup` resolver — anonymous →
-401, keeper resolves its own actor → 200 with the info-leak-safe wire shape,
-empty ids → 400), and `actor_search.cross.test.ts` (the opt-in `actor_search`
-resolver + its empty-`scope_ids` admin gate — anonymous → 401, non-admin
-no-scope → 400 `actor_search_scope_required`, non-admin scoped → 200, admin
-no-scope → 200), and `app_settings.cross.test.ts` (the `open_signup` effect —
+no in-process leg since the actions aren't mounted in-process; the
+conformance table's generated rows over the live mount pin the same gates), and
+`actor_lookup.cross.test.ts` (the opt-in `actor_lookup` resolver — the keeper
+resolves its own actor → 200 with the info-leak-safe wire shape; its
+anonymous 401 and empty-`ids` 400 are table rows, and so is all of
+`actor_search`, in `conformance_actor_cases.ts`), and `app_settings.cross.test.ts` (the `open_signup` effect —
 the admin `app_settings_update` toggle then an anonymous `POST /signup`,
 proving the signup handler reads the toggle fresh from the database), and
 `cell_grant_role.cross.test.ts` (role-shaped `cell_grant` parity — the

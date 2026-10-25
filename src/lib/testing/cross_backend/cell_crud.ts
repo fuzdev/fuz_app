@@ -24,6 +24,9 @@ import '../assert_dev_env.ts';
  * - a non-owner non-admin editing / reading / deleting another's private cell
  *   gets 404 (IDOR mask), never 403;
  * - admin reaches any cell;
+ * - `cell_list` pages honor `limit` + `offset`, and a page is visible rows:
+ *   a newer run of cells the caller can't see never crowds the visible ones
+ *   out, for a non-owner and for anon, and an admin's pages tile every row;
  * - duplicate active `path` → 409 (`cell_path_taken`);
  * - `path` write by a non-admin → 403 (`cell_path_admin_only`), on both create
  *   and update (even by the owner);
@@ -59,6 +62,7 @@ import {
 import { test_if } from './capabilities.ts';
 import { cross_rpc_call, error_reason, expect_output } from './cell_cross_helpers.ts';
 import { assert_iso8601_seconds, assert_iso8601_seconds_nullable } from './wire_shapes.ts';
+import type { FetchTransport } from '../transports/fetch_transport.ts';
 import type { RpcPathCapabilityGatedCrossSuiteOptions } from './setup.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
@@ -399,6 +403,99 @@ export const describe_cell_crud_cross_tests = (
 				);
 				assert.ok(!update_path.ok, 'non-admin set a path on update');
 				assert.strictEqual(error_reason(update_path), 'cell_path_admin_only');
+			}
+		);
+
+		test_if(
+			capabilities.cell_crud,
+			'cell_list pages: limit + offset honored; hidden rows never crowd visible ones out of a page',
+			async () => {
+				const fixture = await setup_test();
+				const owner = await fixture.create_account({ username: 'cell_page_owner' });
+				const other = await fixture.create_account({ username: 'cell_page_other' });
+				const viewer = await fixture.create_account({ username: 'cell_page_viewer' });
+				const t = fixture.fresh_transport();
+				const kind = 'page_probe';
+				const create = async (
+					headers: Record<string, string>,
+					visibility: 'public' | 'private'
+				): Promise<string> =>
+					expect_output(
+						await cross_rpc_call(
+							t,
+							rpc_path,
+							'cell_create',
+							{ kind, data: {}, visibility },
+							headers
+						),
+						CellCreateOutput
+					).cell.id;
+				const owner_h = owner.create_session_headers();
+				const other_h = other.create_session_headers();
+				// oldest first: the visible rows, then a newer run of hidden ones —
+				// two owners' private cells — longer than a page, so the newest
+				// `limit` rows are all hidden from the viewer
+				const visible: Array<string> = [];
+				for (let i = 0; i < 5; i++) {
+					visible.push(await create(i % 2 === 0 ? owner_h : other_h, 'public'));
+				}
+				const hidden: Array<string> = [];
+				for (let i = 0; i < 6; i++) {
+					hidden.push(await create(i % 2 === 0 ? owner_h : other_h, 'private'));
+				}
+				const limit = 3;
+				const page = async (
+					transport: FetchTransport,
+					headers: Record<string, string>,
+					params: Record<string, unknown>
+				): Promise<Array<string>> =>
+					expect_output(
+						await cross_rpc_call(transport, rpc_path, 'cell_list', { kind, ...params }, headers),
+						CellListOutput
+					).cells.map((c) => c.id);
+				// newest first (the default order), so the visible rows, newest first
+				const visible_desc = [...visible].reverse();
+
+				for (const [label, transport, headers] of [
+					['a non-owner viewer', t, viewer.create_session_headers()],
+					['anon', fixture.fresh_transport({ origin: null }), {}]
+				] as const) {
+					const first = await page(transport, headers, { limit });
+					assert.deepStrictEqual(
+						first,
+						visible_desc.slice(0, limit),
+						`${label}: the first page is the newest visible rows, full to limit`
+					);
+					const second = await page(transport, headers, { limit, offset: limit });
+					assert.deepStrictEqual(
+						second,
+						visible_desc.slice(limit),
+						`${label}: the next page is the rest of the visible rows`
+					);
+					const past = await page(transport, headers, { limit, offset: visible.length });
+					assert.deepStrictEqual(past, [], `${label}: a page past the visible rows is empty`);
+					for (const id of [...first, ...second]) {
+						assert.ok(!hidden.includes(id), `${label}: a page leaked a hidden row`);
+					}
+				}
+
+				// an admin sees every row, paged the same way
+				const admin_h = fixture.create_session_headers();
+				const all_desc = [...visible, ...hidden].reverse();
+				const admin_pages: Array<string> = [];
+				for (let offset = 0; offset < all_desc.length; offset += 4) {
+					const rows = await page(t, admin_h, { limit: 4, offset });
+					assert.ok(rows.length <= 4, `admin page at offset ${offset} exceeds limit`);
+					admin_pages.push(...rows);
+				}
+				assert.deepStrictEqual(admin_pages, all_desc, 'admin pages tile the whole list in order');
+				// the owner sees its own private rows beside every public one
+				const owner_rows = await page(t, owner_h, { limit: 50 });
+				assert.deepStrictEqual(
+					owner_rows,
+					all_desc.filter((id) => visible.includes(id) || hidden.indexOf(id) % 2 === 0),
+					'the owner reads public rows plus its own private ones'
+				);
 			}
 		);
 

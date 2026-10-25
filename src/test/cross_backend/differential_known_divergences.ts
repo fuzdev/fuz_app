@@ -86,7 +86,15 @@ export const differential_known_divergences: ReadonlyArray<KnownDivergence> = [
 		reason: 'Rust names a refused scope in data.reason; TS sends none',
 		what_differs: [{ path: 'body.error.data.reason', a: undefined, b: 'invalid_token_scope' }]
 	},
-	ts_dev_zod_issues([...PAGED_LIST_METHODS, 'account_token_create', 'account_verify']),
+	ts_dev_zod_issues([
+		...PAGED_LIST_METHODS,
+		'account_token_create',
+		'account_verify',
+		'actor_lookup',
+		'cell_list',
+		'cell_field_list',
+		'cell_item_list'
+	]),
 	ts_dev_auth_debug_header
 ];
 

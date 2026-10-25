@@ -34,12 +34,17 @@ import '../assert_dev_env.ts';
  * actor id at run time (`ConformanceActingBinding`), so rows can act as a
  * named actor of a multi-actor keeper without knowing its id.
  *
+ * A case's RPC method resolves from the declared `rpc_endpoints` first, then
+ * from `live_rpc_endpoints` when given — the methods a backend live-mounts
+ * off the declared surface (cell verbs, opt-in resolvers, `_testing_*`
+ * backdoors), so rows can reach them too.
+ *
  * @module
  */
 
 import { assert, describe, test } from 'vitest';
 
-import type { AppSurfaceSpec } from '../../http/surface.ts';
+import type { AppSurfaceSpec, RpcEndpointSpec } from '../../http/surface.ts';
 import type { RouteMethod, RouteSpec } from '../../http/route_spec.ts';
 import type { RpcAction } from '../../actions/action_rpc.ts';
 import type { SessionOptions } from '../../auth/session_cookie.ts';
@@ -99,6 +104,14 @@ export interface ConformanceTableOptions {
 	readonly capabilities: BackendCapabilities;
 	/** RPC endpoints — resolved to find each method's action spec. */
 	readonly rpc_endpoints: RpcEndpointsSuiteOption;
+	/**
+	 * The RPC endpoints the backend live-mounts, for methods kept off the
+	 * declared `rpc_endpoints` (cell verbs, opt-in resolvers, `_testing_*`
+	 * backdoors). A method resolves from `rpc_endpoints` first and from here
+	 * only when the declared surface lacks it, so passing a backend's whole
+	 * live mount is fine. Omitted, only declared methods resolve.
+	 */
+	readonly live_rpc_endpoints?: RpcEndpointsSuiteOption;
 	/** Session options — needed to resolve the `rpc_endpoints` factory form. */
 	readonly session_options: SessionOptions<string>;
 	/** Maps the `role_holder` / `wrong_role` principals to seeded usernames. */
@@ -123,6 +136,34 @@ export interface ConformanceWsTarget {
 	/** `Origin` for a browser-context principal's upgrade. Defaults to `base_url`. */
 	readonly origin?: string;
 }
+
+/** What `resolve_conformance_rpc_endpoints` reads. */
+export interface ConformanceRpcEndpointsOptions {
+	/** The declared RPC endpoints. */
+	readonly rpc_endpoints: RpcEndpointsSuiteOption;
+	/** The live-mounted RPC endpoints, for methods off the declared surface. */
+	readonly live_rpc_endpoints?: RpcEndpointsSuiteOption;
+	/** Session options — needed to resolve the factory forms. */
+	readonly session_options: SessionOptions<string>;
+}
+
+/**
+ * Resolve the endpoints a conformance case's RPC method is looked up in: the
+ * declared `rpc_endpoints`, then `live_rpc_endpoints`. `find_rpc_action`
+ * takes the first match, so a declared method resolves from the declared
+ * surface even when the live mount repeats it.
+ *
+ * @param options - the declared and live endpoints, and the session options
+ * @returns the endpoints in lookup order
+ */
+export const resolve_conformance_rpc_endpoints = (
+	options: ConformanceRpcEndpointsOptions
+): Array<RpcEndpointSpec> => [
+	...resolve_rpc_endpoints_for_setup(options.rpc_endpoints, options.session_options),
+	...(options.live_rpc_endpoints
+		? resolve_rpc_endpoints_for_setup(options.live_rpc_endpoints, options.session_options)
+		: [])
+];
 
 /**
  * Principals that cannot hold a socket: each presents no usable credential
@@ -517,7 +558,10 @@ export interface SendConformanceCaseOptions {
 	readonly surface_source: AppSurfaceSpec;
 	/** Usernames for the `role_holder` / `wrong_role` principals. */
 	readonly principals?: ConformancePrincipalConfig;
-	/** The endpoints RPC methods (and the `scoped_token` mint) resolve against. */
+	/**
+	 * The endpoints RPC methods (and the `scoped_token` mint) resolve against —
+	 * `resolve_conformance_rpc_endpoints` of the declared and live endpoints.
+	 */
 	readonly resolved_rpc_endpoints: ReturnType<typeof resolve_rpc_endpoints_for_setup>;
 	/** Send the request as a frame on a socket at this endpoint instead of over HTTP. */
 	readonly ws?: ConformanceWsTarget;
@@ -615,7 +659,8 @@ export const send_conformance_case = async (
 	if (!found) {
 		throw new Error(
 			`conformance: RPC method '${c.request.method}' not found on the surface — ` +
-				`check the method name or that the action is registered on rpc_endpoints.`
+				`check the method name or that the action is registered on rpc_endpoints ` +
+				`(or, for a method off the declared surface, on live_rpc_endpoints).`
 		);
 	}
 	if (ws) {
@@ -855,10 +900,7 @@ const assert_rest_case = (
  * capabilities}` protocol.
  */
 export const describe_conformance_table_tests = (options: ConformanceTableOptions): void => {
-	const resolved_rpc_endpoints = resolve_rpc_endpoints_for_setup(
-		options.rpc_endpoints,
-		options.session_options
-	);
+	const resolved_rpc_endpoints = resolve_conformance_rpc_endpoints(options);
 	// Per-group normalized responses, populated as the member case tests run
 	// and consulted by the per-group byte-identity assertions registered after
 	// the case loop — vitest runs a describe's tests in registration order, so

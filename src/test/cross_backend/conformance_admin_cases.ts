@@ -18,7 +18,9 @@
  *   it is the imperative `describe_invite_duplicate_tests`.
  * - **pagination bounds** — `limit` below 1, past the method's max, or
  *   non-integer, and a negative `offset`, are `invalid_params` (400); `limit`
- *   at the max is admitted. Neither spine clamps an out-of-range page. The TS
+ *   at the max is admitted; an `offset` past `Number.MAX_SAFE_INTEGER` is
+ *   refused too (one row, on `admin_account_list`), and so is a `since_seq`
+ *   cursor past it on `audit_log_list`. Neither spine clamps an out-of-range page. The TS
  *   refusal carries no `data.reason`, so `status` pins it.
  *
  * Each `note` cites where its property is stated: the input schemas and
@@ -126,8 +128,33 @@ const pagination_cases: Array<ConformanceCase> = PAGED_LISTS.flatMap(
 	}
 );
 
+/**
+ * An offset past `Number.MAX_SAFE_INTEGER` — `int()` refuses it, with no
+ * reason; one list stands for the shared pagination parser.
+ */
+const unsafe_offset_case: ConformanceCase = {
+	name: 'admin → admin_account_list {offset: 1e16} → 400',
+	request: { method: 'admin_account_list', as: 'keeper', params: { offset: 1e16 } },
+	expect: { status: 400 },
+	note:
+		'auth/admin_action_specs.ts — `offset` is `int()`, which refuses an integer past ' +
+		'`Number.MAX_SAFE_INTEGER`'
+};
+
+/** The audit list's `since_seq` cursor, `int().min(0)` — the same safe-integer bound. */
+const unsafe_since_seq_case: ConformanceCase = {
+	name: 'admin → audit_log_list {since_seq: 1e16} → 400',
+	request: { method: 'audit_log_list', as: 'keeper', params: { since_seq: 1e16 } },
+	expect: { status: 400 },
+	note:
+		'auth/admin_action_specs.ts — `since_seq` is `int().min(0)`, which refuses an integer past ' +
+		'`Number.MAX_SAFE_INTEGER`'
+};
+
 export const conformance_admin_cases: ReadonlyArray<ConformanceCase> = [
 	...offer_cross_account_cases,
 	...invite_cases,
-	...pagination_cases
+	...pagination_cases,
+	unsafe_offset_case,
+	unsafe_since_seq_case
 ];

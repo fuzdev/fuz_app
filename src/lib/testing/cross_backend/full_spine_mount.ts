@@ -49,6 +49,8 @@ import { create_all_cell_actions } from '../../auth/all_cell_actions.ts';
 import { create_actor_lookup_actions } from '../../auth/actor_lookup_actions.ts';
 import { create_actor_search_actions } from '../../auth/actor_search_actions.ts';
 import type { Db } from '../../db/db.ts';
+import type { RpcEndpointSpec } from '../../http/surface.ts';
+import { create_stub_app_deps } from '../stubs.ts';
 import { CELL_DROP_TABLES } from '../../db/cell_ddl.ts';
 import { FACT_DROP_TABLES } from '../../db/fact_ddl.ts';
 import {
@@ -59,6 +61,7 @@ import {
 import { create_testing_origin_check_action } from './testing_origin_check.ts';
 import { test_cell_gated_create_authorize } from './test_cell_gated_create_authorize.ts';
 import { spine_roles, spine_session_options } from './default_spine_surface.ts';
+import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
 /**
  * The domain tables the spine binary's `_testing_reset` empties beside the
@@ -202,3 +205,36 @@ export const build_full_spine_mount = (
 		]
 	};
 };
+
+/**
+ * Daemon-token state for building the mount only to read it — the
+ * `_testing_reset` handler that would write it never runs.
+ */
+const RESOLUTION_ONLY_DAEMON_TOKEN_STATE: DaemonTokenState = {
+	current_token: 'resolution_only',
+	previous_token: null,
+	rotated_at: new Date(0),
+	keeper_account_id: null
+};
+
+/**
+ * The spine binary's whole live RPC mount as an endpoint list, built on stub
+ * deps for method resolution only — no handler built here ever runs.
+ *
+ * What a suite resolving off-surface methods takes as its `live_rpc_endpoints`
+ * (the conformance table, the differential, and the auth-row generator), so
+ * rows can name the cell verbs, the actor resolvers and the `_testing_*`
+ * backdoors the spines mount beside the declared surface. The requests go to
+ * the spawned backend, which runs its own handlers. Both spines mount this
+ * method set (the action-manifest parity gate holds them to it).
+ *
+ * @returns one endpoint at `SPINE_RPC_PATH` carrying `build_full_spine_rpc_actions`'s list
+ */
+export const create_spine_live_rpc_endpoints = (): Array<RpcEndpointSpec> => [
+	{
+		path: SPINE_RPC_PATH,
+		actions: build_full_spine_rpc_actions(create_stub_app_deps(), {
+			daemon_token_state: RESOLUTION_ONLY_DAEMON_TOKEN_STATE
+		})
+	}
+];

@@ -2,7 +2,7 @@ import '../assert_dev_env.ts';
 
 /**
  * Per-method RPC auth rows for the conformance table, generated from the
- * declared surface.
+ * declared surface and, when given, the methods a backend live-mounts off it.
  *
  * `describe_rpc_attack_surface_tests` walks every declared method's auth, but
  * only in-process against stub apps with no database, so it never reaches a
@@ -47,8 +47,14 @@ import '../assert_dev_env.ts';
  * rows therefore pin each gate, not the gate order against validation — the
  * 401-before-400 rows of the security slate pin that.
  *
- * Skipped: `_testing_*` methods (live-mounted only, owned by the backdoor
- * suite) and the protocol actions (`PROTOCOL_ACTION_METHODS`): their auth is
+ * **Off the declared surface.** `live_rpc_endpoints` adds the methods a
+ * backend mounts beyond the declared surface — cell verbs, opt-in resolvers,
+ * the `_testing_*` backdoors — read from their action specs the same way, a
+ * method the declared surface already has taken from there. The rows then
+ * need the same endpoints to resolve: pass them to the table runner's
+ * `live_rpc_endpoints` too.
+ *
+ * Skipped: the protocol actions (`PROTOCOL_ACTION_METHODS`): their auth is
  * fixed by fuz_app's shared specs rather than declared per consumer, they are
  * WebSocket-scoped (`cancel` is a notification with no reply to assert,
  * `peer/ping` is public, `heartbeat` rides an admitted socket), and the WS
@@ -57,7 +63,7 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import type { AppSurfaceSpec } from '../../http/surface.ts';
+import type { AppSurfaceSpec, RpcEndpointSpec } from '../../http/surface.ts';
 import type { RouteAuth } from '../../http/auth_shape.ts';
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
@@ -70,7 +76,6 @@ import {
 	CREDENTIAL_TYPE_SESSION
 } from '../../auth/credential_type_schema.ts';
 import { PROTOCOL_ACTION_METHODS } from '../../actions/action_codegen.ts';
-import { TESTING_METHOD_PREFIX } from '../surface_invariants.ts';
 import { generate_valid_body } from '../schema_generators.ts';
 import type { ConformanceCase, ConformancePrincipal } from './conformance_case.ts';
 import type { z } from 'zod';
@@ -101,7 +106,13 @@ const PROTOCOL_METHODS: ReadonlySet<string> = new Set(PROTOCOL_ACTION_METHODS);
 export interface RpcAuthConformanceOptions {
 	/** The declared surface; its `rpc_endpoints` supply each method's auth and input schema. */
 	readonly surface_source: AppSurfaceSpec;
-	/** Methods to leave out, beyond the `_testing_*` and protocol actions always skipped. */
+	/**
+	 * The endpoints the backend live-mounts, for rows on the methods the
+	 * declared surface lacks (resolved — `resolve_rpc_endpoints_for_setup` turns
+	 * the factory form into this). Omitted, only declared methods get rows.
+	 */
+	readonly live_rpc_endpoints?: ReadonlyArray<RpcEndpointSpec>;
+	/** Methods to leave out, beyond the protocol actions always skipped. */
 	readonly skip_methods?: ReadonlyArray<string>;
 }
 
@@ -129,20 +140,30 @@ const to_gate_params = (input: z.ZodType): Record<string, unknown> | undefined =
 const format_auth = (auth: RouteAuth): string => JSON.stringify(auth);
 
 /**
- * Generate the per-method auth rows for every declared RPC method.
+ * Generate the per-method auth rows for every declared RPC method, then every
+ * live-mounted one the declared surface lacks.
  *
- * @param options - the declared surface and any methods to skip
- * @returns the conformance rows, grouped by method in declaration order
+ * @param options - the declared surface, the live mount, and any methods to skip
+ * @returns the conformance rows, grouped by method in declaration order, then
+ *   live-mount order
  */
 export const generate_rpc_auth_conformance_cases = (
 	options: RpcAuthConformanceOptions
 ): Array<ConformanceCase> => {
 	const skip = new Set(options.skip_methods);
+	const seen: Set<string> = new Set();
 	const cases: Array<ConformanceCase> = [];
-	for (const endpoint of options.surface_source.rpc_endpoints) {
+	const endpoints = [
+		...options.surface_source.rpc_endpoints,
+		...(options.live_rpc_endpoints ?? [])
+	];
+	for (const endpoint of endpoints) {
 		for (const action of endpoint.actions) {
 			const { method, auth, input } = action.spec;
-			if (method.startsWith(TESTING_METHOD_PREFIX) || PROTOCOL_METHODS.has(method)) continue;
+			// a live mount repeats the declared methods; the first spec wins
+			if (seen.has(method)) continue;
+			seen.add(method);
+			if (PROTOCOL_METHODS.has(method)) continue;
 			if (skip.has(method)) continue;
 			const authenticated = auth.account === 'required' || auth.actor === 'required';
 			if (!authenticated) continue; // public or identity-optional: no gate refuses a caller

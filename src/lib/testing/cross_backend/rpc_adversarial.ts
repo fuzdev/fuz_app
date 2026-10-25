@@ -48,10 +48,10 @@ import '../assert_dev_env.ts';
  * second actor answers `actor_required` first; such a suite lists the
  * actor-required methods in `skip_methods`.
  *
- * Skipped: `_testing_*` methods (live-mounted only, owned by the backdoor
- * suite) and the protocol actions (`PROTOCOL_ACTION_METHODS`, fixed shared
- * specs covered by the WS suites) — the same set
- * `generate_rpc_auth_conformance_cases` skips.
+ * Skipped: `_testing_*` methods (live-mounted only, off the declared surface
+ * this suite walks) and the protocol actions (`PROTOCOL_ACTION_METHODS`, fixed
+ * shared specs covered by the WS suites, which
+ * `generate_rpc_auth_conformance_cases` skips too).
  *
  * Cross-process only: in-process, `describe_rpc_attack_surface_tests` runs
  * the same envelope cases and params generator.

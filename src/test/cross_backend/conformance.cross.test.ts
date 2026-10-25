@@ -13,6 +13,11 @@
  * multi-actor `acting` rows and the generated auth rows, which bind `acting`
  * to their principal's actor, on both transports.
  *
+ * The rows reach the methods the spines mount off the declared surface too
+ * (cell verbs, the actor resolvers, the `_testing_*` backdoors): the runner
+ * resolves them from the spine's whole live mount (`live_rpc_endpoints`), and
+ * the generated auth rows cover them from the same list.
+ *
  * @module
  */
 
@@ -30,6 +35,7 @@ import {
 	spine_rpc_endpoints,
 	spine_session_options
 } from '#lib/testing/cross_backend/default_spine_surface.ts';
+import { create_spine_live_rpc_endpoints } from '#lib/testing/cross_backend/full_spine_mount.ts';
 
 import { conformance_proof_cases } from './conformance_proof_cases.ts';
 import { conformance_security_cases } from './conformance_security_cases.ts';
@@ -37,6 +43,8 @@ import { conformance_expiry_cases } from './conformance_expiry_cases.ts';
 import { conformance_app_settings_cases } from './conformance_app_settings_cases.ts';
 import { conformance_void_params_cases } from './conformance_void_params_cases.ts';
 import { conformance_admin_cases } from './conformance_admin_cases.ts';
+import { conformance_actor_cases } from './conformance_actor_cases.ts';
+import { conformance_cell_cases } from './conformance_cell_cases.ts';
 import { ACTING_EXTRA_ACTOR_NAME, conformance_acting_cases } from './conformance_acting_cases.ts';
 import { describe_invite_duplicate_tests } from './invite_duplicate.ts';
 import { describe_offer_cross_account_tests } from './offer_cross_account.ts';
@@ -48,6 +56,11 @@ const handle = reconstruct_bootstrapped_handle(inject('backend_handle'));
 const setup_test = default_cross_process_setup(handle, { extra_keeper_roles: [ROLE_ADMIN] });
 const { capabilities, base_url, ws_path } = handle.config;
 const surface_source = create_spine_surface_spec();
+const live_rpc_endpoints = create_spine_live_rpc_endpoints();
+const generated_auth_cases = generate_rpc_auth_conformance_cases({
+	surface_source,
+	live_rpc_endpoints
+});
 const cases = [
 	...conformance_proof_cases,
 	...conformance_security_cases,
@@ -55,12 +68,15 @@ const cases = [
 	...conformance_app_settings_cases,
 	...conformance_void_params_cases,
 	...conformance_admin_cases,
-	...generate_rpc_auth_conformance_cases({ surface_source })
+	...conformance_actor_cases,
+	...conformance_cell_cases,
+	...generated_auth_cases
 ];
 const table_options = {
 	surface_source,
 	capabilities,
 	rpc_endpoints: spine_rpc_endpoints,
+	live_rpc_endpoints,
 	session_options: spine_session_options
 };
 // The WS leg sends every case's method on the socket — account, admin and
@@ -90,10 +106,7 @@ const multi_actor_setup_test = default_cross_process_setup(handle, {
 	extra_keeper_roles: [ROLE_ADMIN],
 	extra_actors: [ACTING_EXTRA_ACTOR_NAME]
 });
-const multi_actor_cases = [
-	...conformance_acting_cases,
-	...generate_rpc_auth_conformance_cases({ surface_source })
-];
+const multi_actor_cases = [...conformance_acting_cases, ...generated_auth_cases];
 
 describe_conformance_table_tests({
 	...table_options,

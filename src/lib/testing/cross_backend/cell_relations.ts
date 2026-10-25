@@ -36,7 +36,8 @@ import '../assert_dev_env.ts';
  *   read oldest edge first.
  * - **items** — `cell_item_insert` at fractional-index positions, forward
  *   (lex-ordered) + reverse `cell_item_list`, `cell_item_move`, idempotent
- *   `cell_item_delete`.
+ *   `cell_item_delete`; an insert or a move onto a taken position →
+ *   `invalid_params` `cell_item_position_taken`, leaving the rows as they were.
  * - **clone** — shallow copies item / field *edges* (shared `child_id` /
  *   `target_id`); deep clones each viewable child into a fresh cell at the
  *   same position. Both null `path` and stamp the caller as owner.
@@ -886,6 +887,76 @@ export const describe_cell_relations_cross_tests = (
 					CellItemDeleteOutput
 				);
 				assert.strictEqual(del2.deleted, false);
+			}
+		);
+
+		test_if(
+			capabilities.cell_relations,
+			'a taken item position → invalid_params cell_item_position_taken, on insert and on move',
+			async () => {
+				const fixture = await setup_test();
+				const owner = await fixture.create_account({ username: 'cell_item_taken' });
+				const t = fixture.fresh_transport();
+				const h = owner.create_session_headers();
+				const make = async (): Promise<string> =>
+					expect_output(
+						await cross_rpc_call(t, rpc_path, 'cell_create', { kind: 'note', data: {} }, h),
+						CellCreateOutput
+					).cell.id;
+				const parent = await make();
+				const child_a = await make();
+				const child_b = await make();
+				const child_c = await make();
+				const pos_a = fractional_index_between(null, null);
+				const pos_b = fractional_index_between(pos_a, null);
+				for (const [child_id, position] of [
+					[child_a, pos_a],
+					[child_b, pos_b]
+				] as const) {
+					expect_output(
+						await cross_rpc_call(
+							t,
+							rpc_path,
+							'cell_item_insert',
+							{ parent_id: parent, child_id, position },
+							h
+						),
+						CellItemInsertOutput
+					);
+				}
+				const refusals = {
+					insert: await cross_rpc_call(
+						t,
+						rpc_path,
+						'cell_item_insert',
+						{ parent_id: parent, child_id: child_c, position: pos_a },
+						h
+					),
+					move: await cross_rpc_call(
+						t,
+						rpc_path,
+						'cell_item_move',
+						{ parent_id: parent, position: pos_b, new_position: pos_a },
+						h
+					)
+				};
+				for (const [label, refused] of Object.entries(refusals)) {
+					assert.ok(!refused.ok, `${label} onto a taken position succeeded`);
+					assert.strictEqual(refused.error?.code, JSONRPC_INVALID_PARAMS, `${label}: code`);
+					assert.strictEqual(error_reason(refused), 'cell_item_position_taken', `${label}: reason`);
+				}
+				// neither refusal added or moved a row
+				const items = expect_output(
+					await cross_rpc_call(t, rpc_path, 'cell_item_list', { parent_id: parent }, h),
+					CellItemListOutput
+				).items;
+				assert.deepStrictEqual(
+					items.map((item) => [item.position, item.child_id]),
+					[
+						[pos_a, child_a],
+						[pos_b, child_b]
+					]
+				);
 			}
 		);
 

@@ -19,9 +19,11 @@ import '../assert_dev_env.ts';
  * each spec's `auth` axis. A test binary live-mounts them on its RPC
  * endpoint (and, on fuz_app's spine binary and the Rust stub, its WS
  * endpoint) but keeps them off the declared surface — so the spec-derived
- * `describe_rpc_attack_surface_tests` never enumerates them, and nothing
- * else fires them with a non-daemon credential to prove the gate holds
- * end-to-end. This suite does, against each impl's real auth resolution.
+ * `describe_rpc_attack_surface_tests` never enumerates them. This suite fires
+ * them with non-daemon credentials to prove the gate holds end-to-end, against
+ * each impl's real auth resolution; a conformance table given the live mount
+ * (`live_rpc_endpoints`) fires the same refusals through the auth rows
+ * `generate_rpc_auth_conformance_cases` generates for them.
  *
  * For every backdoor method, three principals:
  *

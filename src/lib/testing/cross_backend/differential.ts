@@ -45,10 +45,11 @@ import { assert, describe, test } from 'vitest';
 
 import type { AppSurfaceSpec } from '../../http/surface.ts';
 import type { SessionOptions } from '../../auth/session_cookie.ts';
-import { resolve_rpc_endpoints_for_setup, type RpcEndpointsSuiteOption } from '../rpc_helpers.ts';
+import type { RpcEndpointsSuiteOption } from '../rpc_helpers.ts';
 import type { ConformanceCase } from './conformance_case.ts';
 import {
 	is_ws_conformance_case,
+	resolve_conformance_rpc_endpoints,
 	send_conformance_case,
 	type ConformancePrincipalConfig,
 	type ConformanceWsTarget
@@ -143,6 +144,12 @@ export interface DifferentialConformanceOptions {
 	readonly surface_source: AppSurfaceSpec;
 	/** RPC endpoints — resolved to find each method's action spec. */
 	readonly rpc_endpoints: RpcEndpointsSuiteOption;
+	/**
+	 * The RPC endpoints both backends live-mount, for methods off the declared
+	 * `rpc_endpoints` — resolved the way the table runner resolves them
+	 * (`resolve_conformance_rpc_endpoints`).
+	 */
+	readonly live_rpc_endpoints?: RpcEndpointsSuiteOption;
 	/** Session options — needed to resolve the `rpc_endpoints` factory form. */
 	readonly session_options: SessionOptions<string>;
 	/** Maps the `role_holder` / `wrong_role` principals to seeded usernames. */
@@ -241,10 +248,7 @@ export const describe_differential_conformance_tests = (
 ): void => {
 	const { backends, surface_source, principals } = options;
 	const ledger = options.known_divergences ?? [];
-	const resolved_rpc_endpoints = resolve_rpc_endpoints_for_setup(
-		options.rpc_endpoints,
-		options.session_options
-	);
+	const resolved_rpc_endpoints = resolve_conformance_rpc_endpoints(options);
 	const [a, b] = backends;
 	const labels = { a: a.name, b: b.name };
 	if ((a.ws === undefined) !== (b.ws === undefined)) {
