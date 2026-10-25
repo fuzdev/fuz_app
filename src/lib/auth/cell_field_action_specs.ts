@@ -20,7 +20,7 @@ import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
 
 // -- Error reasons ----------------------------------------------------------
 
-/** Error reason — `cell_field_list` got neither `source_id` nor `target_id`. */
+/** Error reason — `cell_field_list` got neither or both of `source_id` and `target_id`. */
 export const ERROR_CELL_FIELD_LIST_REQUIRES_SOURCE_OR_TARGET =
 	'cell_field_list_requires_source_or_target' as const;
 
@@ -86,8 +86,9 @@ export type CellFieldDeleteOutput = z.infer<typeof CellFieldDeleteOutput>;
 
 /**
  * Input for `cell_field_list`. Pass `source_id` for forward fields or
- * `target_id` for reverse upfields — exactly one (the schema rejects
- * both / neither). Reverse listing has 2-layer authz (target view-check
+ * `target_id` for reverse upfields — exactly one; both or neither is
+ * `invalid_params` with `ERROR_CELL_FIELD_LIST_REQUIRES_SOURCE_OR_TARGET`,
+ * from the handler (the schema leaves both optional). Reverse listing has 2-layer authz (target view-check
  * gates the call; per-source view-check filters the rows).
  *
  * Either direction returns a page of up to `limit` fields (default
@@ -96,24 +97,19 @@ export type CellFieldDeleteOutput = z.infer<typeof CellFieldDeleteOutput>;
  * `name_after` (return rows whose `name > name_after` lex); the reverse
  * listing has no cursor, oldest field first.
  */
-export const CellFieldListInput = z
-	.strictObject({
-		source_id: Uuid.optional().meta({
-			description: 'List forward fields whose source is this cell.'
-		}),
-		target_id: Uuid.optional().meta({
-			description: 'List reverse upfields whose target is this cell.'
-		}),
-		name_after: CellFieldName.optional().meta({
-			description:
-				'Cursor for forward pagination — return rows whose name > this lex. Forward only.'
-		}),
-		limit: CellRelationListLimit,
-		acting: ActingActor
-	})
-	.refine((v) => Boolean(v.source_id) !== Boolean(v.target_id), {
-		message: ERROR_CELL_FIELD_LIST_REQUIRES_SOURCE_OR_TARGET
-	});
+export const CellFieldListInput = z.strictObject({
+	source_id: Uuid.optional().meta({
+		description: 'List forward fields whose source is this cell.'
+	}),
+	target_id: Uuid.optional().meta({
+		description: 'List reverse upfields whose target is this cell.'
+	}),
+	name_after: CellFieldName.optional().meta({
+		description: 'Cursor for forward pagination — return rows whose name > this lex. Forward only.'
+	}),
+	limit: CellRelationListLimit,
+	acting: ActingActor
+});
 export type CellFieldListInput = z.infer<typeof CellFieldListInput>;
 
 export const CellFieldListOutput = z.strictObject({

@@ -45,7 +45,8 @@ import {
 	type CellFieldDeleteOutput,
 	type CellFieldListInput,
 	type CellFieldListOutput,
-	type FieldJson
+	type FieldJson,
+	ERROR_CELL_FIELD_LIST_REQUIRES_SOURCE_OR_TARGET
 } from './cell_field_action_specs.ts';
 import { ERROR_CELL_NOT_FOUND } from './cell_action_specs.ts';
 import { can_view_cell, can_edit_cell, cell_viewer_from_auth } from './cell_authorize.ts';
@@ -154,6 +155,13 @@ export const create_cell_field_actions = (deps: CellFieldActionDeps): Array<RpcA
 		ctx: ActionContext
 	): Promise<CellFieldListOutput> => {
 		const auth = ctx.auth;
+		// exactly one endpoint — both optional on the wire, so the handler
+		// holds the rule and names it in the reason
+		if ((input.source_id === undefined) === (input.target_id === undefined)) {
+			throw jsonrpc_errors.invalid_params('invalid params', {
+				reason: ERROR_CELL_FIELD_LIST_REQUIRES_SOURCE_OR_TARGET
+			});
+		}
 		// an omitted limit is the default page, either direction
 		const limit = input.limit ?? CELL_RELATION_LIST_LIMIT_DEFAULT;
 		// Forward listing: gate on can_view_cell(source), then page the fields

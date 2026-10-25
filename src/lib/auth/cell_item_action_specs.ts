@@ -23,7 +23,7 @@ import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
 
 // -- Error reasons ----------------------------------------------------------
 
-/** Error reason — `cell_item_list` got neither `parent_id` nor `child_id`. */
+/** Error reason — `cell_item_list` got neither or both of `parent_id` and `child_id`. */
 export const ERROR_CELL_ITEM_LIST_REQUIRES_PARENT_OR_CHILD =
 	'cell_item_list_requires_parent_or_child' as const;
 
@@ -130,7 +130,9 @@ export type CellItemDeleteOutput = z.infer<typeof CellItemDeleteOutput>;
 
 /**
  * Input for `cell_item_list`. Pass `parent_id` for forward items or
- * `child_id` for reverse lists — exactly one. Reverse listing has 2-layer
+ * `child_id` for reverse lists — exactly one; both or neither is
+ * `invalid_params` with `ERROR_CELL_ITEM_LIST_REQUIRES_PARENT_OR_CHILD`, from
+ * the handler (the schema leaves both optional). Reverse listing has 2-layer
  * authz (child view-check gates the call; per-parent view-check filters
  * the rows).
  *
@@ -140,23 +142,19 @@ export type CellItemDeleteOutput = z.infer<typeof CellItemDeleteOutput>;
  * `position_after` (return rows with `position > position_after`); the
  * reverse listing has no cursor, oldest item first.
  */
-export const CellItemListInput = z
-	.strictObject({
-		parent_id: Uuid.optional().meta({
-			description: 'List forward items whose parent is this cell.'
-		}),
-		child_id: Uuid.optional().meta({
-			description: 'List reverse parents whose child is this cell.'
-		}),
-		position_after: CellItemPosition.optional().meta({
-			description: 'Cursor for forward pagination — return rows whose position > this.'
-		}),
-		limit: CellRelationListLimit,
-		acting: ActingActor
-	})
-	.refine((v) => Boolean(v.parent_id) !== Boolean(v.child_id), {
-		message: ERROR_CELL_ITEM_LIST_REQUIRES_PARENT_OR_CHILD
-	});
+export const CellItemListInput = z.strictObject({
+	parent_id: Uuid.optional().meta({
+		description: 'List forward items whose parent is this cell.'
+	}),
+	child_id: Uuid.optional().meta({
+		description: 'List reverse parents whose child is this cell.'
+	}),
+	position_after: CellItemPosition.optional().meta({
+		description: 'Cursor for forward pagination — return rows whose position > this.'
+	}),
+	limit: CellRelationListLimit,
+	acting: ActingActor
+});
 export type CellItemListInput = z.infer<typeof CellItemListInput>;
 
 export const CellItemListOutput = z.strictObject({

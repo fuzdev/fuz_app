@@ -471,9 +471,8 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 	};
 
 	const get_handler = async (input: CellGetInput, ctx: ActionContext): Promise<CellGetOutput> => {
-		// Defense in depth: spec already refines for "id or path". Surface
-		// the same error code from the handler so adversarial callers that
-		// bypass the wire schema get the same error shape.
+		// both optional on the wire, so the handler holds "id or path" and
+		// names it in the reason (`id` wins when both are given)
 		if (input.id === undefined && input.path === undefined) {
 			throw jsonrpc_errors.invalid_params('cell_get requires id or path', {
 				reason: ERROR_CELL_GET_REQUIRES_ID_OR_PATH

@@ -44,6 +44,7 @@ import {
 	cell_item_delete_action_spec,
 	cell_item_list_action_spec,
 	ERROR_CELL_ITEM_POSITION_TAKEN,
+	ERROR_CELL_ITEM_LIST_REQUIRES_PARENT_OR_CHILD,
 	type CellItemInsertInput,
 	type CellItemInsertOutput,
 	type CellItemMoveInput,
@@ -214,6 +215,13 @@ export const create_cell_item_actions = (deps: CellItemActionDeps): Array<RpcAct
 		ctx: ActionContext
 	): Promise<CellItemListOutput> => {
 		const auth = ctx.auth;
+		// exactly one endpoint — both optional on the wire, so the handler
+		// holds the rule and names it in the reason
+		if ((input.parent_id === undefined) === (input.child_id === undefined)) {
+			throw jsonrpc_errors.invalid_params('invalid params', {
+				reason: ERROR_CELL_ITEM_LIST_REQUIRES_PARENT_OR_CHILD
+			});
+		}
 		// an omitted limit is the default page, either direction
 		const limit = input.limit ?? CELL_RELATION_LIST_LIMIT_DEFAULT;
 		// Forward listing: gate on can_view_cell(parent), then page the items

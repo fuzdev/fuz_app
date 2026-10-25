@@ -321,19 +321,17 @@ export type CellCreateOutput = z.infer<typeof CellCreateOutput>;
 
 /**
  * Input for `cell_get`. Pass `id` OR `path` (exactly one expected; both
- * accepted, `id` takes precedence). The handler responds with 404 when no
+ * accepted, `id` takes precedence). Neither is `invalid_params` with
+ * `ERROR_CELL_GET_REQUIRES_ID_OR_PATH`, from the handler (the schema leaves
+ * both optional). The handler responds with 404 when no
  * row matches OR when `can_view_cell` rejects the caller — same code so
  * private-cell existence doesn't leak.
  */
-export const CellGetInput = z
-	.strictObject({
-		id: Uuid.optional(),
-		path: CellPath.optional(),
-		acting: ActingActor
-	})
-	.refine((v) => v.id !== undefined || v.path !== undefined, {
-		message: ERROR_CELL_GET_REQUIRES_ID_OR_PATH
-	});
+export const CellGetInput = z.strictObject({
+	id: Uuid.optional(),
+	path: CellPath.optional(),
+	acting: ActingActor
+});
 export type CellGetInput = z.infer<typeof CellGetInput>;
 
 /**

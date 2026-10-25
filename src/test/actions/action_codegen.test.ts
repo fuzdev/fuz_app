@@ -32,6 +32,9 @@ import {
 	PROTOCOL_ACTION_METHODS,
 	is_protocol_action_method
 } from '#lib/actions/action_codegen.ts';
+import { cell_get_action_spec, cell_list_action_spec } from '#lib/auth/cell_action_specs.ts';
+import { cell_field_list_action_spec } from '#lib/auth/cell_field_action_specs.ts';
+import { cell_item_list_action_spec } from '#lib/auth/cell_item_action_specs.ts';
 import type { ActionSpecUnion } from '#lib/actions/action_spec.ts';
 import { protocol_action_specs } from '#lib/actions/protocol.ts';
 
@@ -245,6 +248,21 @@ describe('generate_actions_api_method_signature', () => {
 		assert.ok(
 			built.includes("import type {JsonrpcErrorObject} from '@fuzdev/fuz_app/http/jsonrpc.ts'")
 		);
+	});
+
+	test('a handler-guarded method keeps its input required though its schema accepts {}', () => {
+		for (const spec of [
+			cell_get_action_spec,
+			cell_field_list_action_spec,
+			cell_item_list_action_spec
+		]) {
+			assert.ok(spec.input.safeParse({}).success, `${spec.method}: precondition`);
+			const sig = generate_actions_api_method_signature(spec, new ImportBuilder());
+			assert.ok(sig.includes(`input: ActionInputs['${spec.method}']`), sig);
+		}
+		// an all-optional input outside the list stays optional
+		const sig = generate_actions_api_method_signature(cell_list_action_spec, new ImportBuilder());
+		assert.ok(sig.includes("input?: ActionInputs['cell_list']"), sig);
 	});
 
 	test('remote_notification — Promise<Result<{value: void}>> with options arg', () => {
