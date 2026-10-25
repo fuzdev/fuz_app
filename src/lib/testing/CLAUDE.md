@@ -295,6 +295,69 @@ assert_schema_snapshots_equal(snapshot_deno, snapshot_rust, { a: 'deno', b: 'rus
 Each impl's _own_ tests still gate its DDL correctness independently — this
 pair is purely the cross-impl drift check.
 
+## Cross-impl differential
+
+The behavioral twin of the two parity gates above: where they compare
+declarations (DDL, the method set), this compares answers. Each impl is the
+oracle for the other — a case the table pins by status alone, or an extra
+field a loose output schema passes on one spine, shows up as a difference.
+
+- `cross_backend/differential_normalize.ts` — `normalize_differential_response({status, headers, body})`
+  → `DifferentialResponse` `{status, body, header_names}`. Volatile values
+  become positional placeholders per kind (`VOLATILE_VALUE_PATTERNS`: API
+  tokens, `tok_` token ids, lowercase UUIDs, `ISO8601_SECONDS` timestamps,
+  bare 64-hex digests — matched inside any string, object keys included): the
+  first UUID is `<uuid:1>`, a repeat of it `<uuid:1>` again, so identity
+  relations within one response survive while the values differ across
+  backends. Placeholders are positional, not tied to fixture identity, so two
+  ids that appear once each and trade places normalize equal. Only the
+  canonical spelling is placeholdered — an uppercase UUID or a millisecond
+  timestamp stays raw and differs — and a `blake3:` content address is
+  compared verbatim (equal bytes hash equal on both spines). Keys are sorted (and visited
+  in that order when numbering); array order is kept. `header_names` is the
+  sorted name set minus `VOLATILE_HEADER_NAMES` (framing and per-request
+  headers each server sets its own way); values are never compared —
+  `set-cookie` carries a fresh credential, and the contract header values are
+  the conformance table's `expect.headers` + no-fingerprint floor.
+  `diff_differential_responses(a, b)` → `DifferentialDiff[]`, one per leaf
+  path (`status`, `headers.<name>`, `body.error.data.reason`; an object one
+  side lacks diffs key by key, and an empty one against a missing one at its
+  own path), `differential_path_covers(covered, path)`,
+  `format_differential_diffs(diffs, labels)`.
+- `cross_backend/differential.ts` — `describe_differential_conformance_tests({cases,
+  backends: [a, b], surface_source, rpc_endpoints, session_options,
+  principals?, known_divergences?, suite_name?})`. Per case, each backend's own
+  `setup_test` (separate databases and keepers), the principal resolved and
+  the request sent through `send_conformance_case` (`conformance_table.ts`),
+  both answers normalized and diffed. The per-case `expect` is not asserted —
+  each backend's conformance leg holds it. `KnownDivergence` is the ledger
+  row: `{case_name | method, tracking_id, reason, what_differs}`, the names a
+  string or a list, `what_differs` the diff paths covered (a path covers
+  everything under it), each a string or a `KnownDivergencePath`
+  `{path, a?, b?}` pinning the value a side shows there (`undefined` for
+  nothing). A pin is compared with the normalized leaf value at the differing
+  path, so a placeholdered value never matches the raw one, an object pin
+  must list its keys sorted, and a parent-path pin never matches. A case may
+  differ at the paths of the entries it matches, with their values, and
+  nowhere else. `xfail_until`'s turns-red semantics clean
+  the ledger: a case a `case_name` entry names must still show it (checked in
+  that case's test), a `method` entry must still show on one of its cases
+  (checked by a closing test once they all ran — a filtered or failed run
+  leaves it unjudged, and the test skips when nothing was judged), and an
+  entry matching no case, or listing a case name that doesn't exist, fails —
+  the static half is `check_known_divergence_ledger(cases, ledger)`, exported
+  for checking a ledger without a backend. No other ignore path exists.
+
+fuz_app runs it under the `cross_backend_parity` project
+(`differential.cross.test.ts`, its ledger `differential_known_divergences.ts`
+in `src/test/cross_backend/`): every `conformance_*_cases.ts` array plus the
+generated auth rows, TS spine vs `testing_spine_stub`, both on Postgres so no
+engine difference reads as a body difference. The TS spine runs under `DEV`
+there, so its DEV-only diagnostics (Zod `issues` on `invalid_params`, the
+`X-Fuz-Auth-Debug` header) are ledger rows. Two TS runtimes can be held to
+each other the same way (a dual spawn of two TS spine binaries, both on
+`memory://`) — not wired today.
+
 ## Assertions, coverage, helpers
 
 ### `assertions.ts` — surface + error-schema assertions
@@ -840,6 +903,7 @@ One-shot transport:
 - `RpcCallResult` — discriminated `{ok: true, status, headers, result}` / `{ok: false, status, headers, error: {code, message, data?}}`. `headers` is the lowercased-key response-header snapshot so callers can assert header-level properties (e.g. the conformance runner's no-fingerprint invariant).
 - `headers_to_record(headers)` — snapshot a `Headers` into a lowercased-key `Record<string, string>` (multi-value collapses to the comma-joined form; `Set-Cookie` excluded). Used by `rpc_call` and the conformance table's REST branch to thread response headers through for assertions.
 - `RpcCallArgs` — `{app, path, method, params?, headers?, id?, verb?}`. `verb` defaults to `'POST'`; use `'GET'` for `side_effects: false` methods.
+- `rpc_call_raw(args)` — the same request as `rpc_call`, the response unparsed: `RpcCallRawResult` `{status, headers, body}` with the whole envelope. `parse_rpc_call_result(raw, method)` turns it into an `RpcCallResult`; `rpc_call` is the two composed.
 - `rpc_call(args)` — merges `RPC_CALL_DEFAULT_HEADERS` (`host: 'localhost'`, `origin: 'http://localhost:5173'`, `Content-Type: 'application/json'`) under caller headers. Envelope-shape violations throw; JSON-RPC errors return `{ok: false, error}` so callers assert on `error.code` / `error.data.reason`.
 - `rpc_call_typed<T>(args, output_schema)` — parses the success `result` through the schema; throws on envelope failure, error response, or schema mismatch. Use `rpc_call` when the test needs to assert on error shapes.
 - `rpc_call_for_spec<TSpec>(args)` — spec-bound variant: takes `{..., spec, params}` in place of `{..., method, params}`. `params` is typed from `spec.input` and the success `result` is typed from `spec.output` (runtime-validated, same contract as `rpc_call_typed`). Error branch stays untyped (JSON-RPC `error.data` shapes vary per call site). Use at happy-path + denial-path call sites; fall back to `rpc_call` for adversarial tests that send deliberately-malformed params.
@@ -1129,7 +1193,10 @@ capabilities}` protocol every Tier 1 suite uses, so **one case array runs
   each backend's real auth resolution). `resolve_conformance_principal` (exported) maps the five
   always-available principals to fixture accessors; `role_holder` /
   `wrong_role` read a seeded `extra_accounts` username named via
-  `options.principals`.
+  `options.principals`. `send_conformance_case(c, {fixture, surface_source, principals?,
+  resolved_rpc_endpoints})` (exported) is the send half — principal resolved,
+  request sent, the raw `{target, status, headers, body}` back unasserted; the
+  table asserts on it, and the cross-backend differential compares two.
 - `conformance_rpc_auth.ts` — `generate_rpc_auth_conformance_cases({surface_source,
   skip_methods?})` → `ConformanceCase[]` from each declared RPC method's
   `RouteAuth`: `anonymous` → 401 `authentication_required` for every method

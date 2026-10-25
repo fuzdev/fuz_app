@@ -350,7 +350,9 @@ specific divergence. fuz_app gates its own TS spine ↔ `testing_spine_stub`
 schema (auth + cell + fact + the `cell_visibility` enum) **and** tracker identity via
 the `cross_backend_parity` project (`npm run test:cross:parity`), which also
 runs the action-manifest parity gate (the RPC method-set + per-method
-auth-shape twin of schema parity).
+auth-shape twin of schema parity) and the differential, which sends every
+conformance case to both spines and compares the normalized answers
+(`testing/cross_backend/differential.ts`).
 
 When working on tests, touch both directories together:
 

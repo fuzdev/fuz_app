@@ -499,12 +499,13 @@ reason, not just the status. The `create_account({email})` fixture plumbing ride
 production signup body against the username-scoped invite. In-process leg
 `identity_parity.db.test.ts`).
 
-Two more files — `schema_parity.cross.test.ts` and
-`action_manifest_parity.cross.test.ts` — are **not** among the single-backend files above:
-they run under the shared dual-spawn `cross_backend_parity` project
-(`global_setup_schema_parity.ts` brings up the TS spine + `testing_spine_stub`
-together and provides `parity_handle_a`/`_b`), so both are excluded from the
-single-backend projects' glob. **Both spines run on real Postgres here**, each
+The dual-spawn files — `schema_parity.cross.test.ts`,
+`action_manifest_parity.cross.test.ts` and `differential.cross.test.ts` — are
+**not** among the single-backend files above: they run under the shared
+dual-spawn `cross_backend_parity` project (`global_setup_schema_parity.ts`
+brings up the TS spine + `testing_spine_stub` together and provides
+`parity_handle_a`/`_b`), so they are excluded from the single-backend
+projects' glob (`DUAL_SPAWN_PROJECTS` in `cross_backend_projects.ts`). **Both spines run on real Postgres here**, each
 over its own database on one server: the snapshot compares index definitions
 as the engine renders them, and pglet — the TS spine's `memory://` default
 everywhere else — leaves sort direction, `NULLS` placement, operator classes
@@ -524,7 +525,15 @@ their `schema_version` migration identity via `_testing_migration_tracker` +
 `schema_version` exclusion can't cover); `action_manifest_parity.cross.test.ts`
 diffs the two backends' live RPC method set + per-method auth shape via
 `_testing_action_manifest` + `assert_action_manifests_equal` (exact parity —
-method set + every auth axis) — all under `npm run test:cross:parity`.
+method set + every auth axis); `differential.cross.test.ts` sends every
+conformance case (the `conformance_*_cases.ts` arrays, participation's with its
+`role_holder` seed, plus the generated auth rows) to both and asserts the
+normalized answers equal via `describe_differential_conformance_tests` —
+status, header names and the whole body, so an extra field one spine sends,
+or a body difference on a row pinned by status alone, fails. Tracked
+differences live in `differential_known_divergences.ts`, each with its
+tracking id and the paths it differs at, and the ledger's closing test fails
+on an entry that no longer differs — all under `npm run test:cross:parity`.
 
 Two more files, `login_security.cross.test.ts` and
 `ws_action_rate_limit.cross.test.ts`, run under their own dual-spawn
@@ -619,7 +628,7 @@ npm run test:cross:ts
 npm run test:cross:rust-spine-stub
 # skip the rebuild when the binary is known current:
 FUZ_TESTING_NO_REBUILD=1 npm run test:cross:rust-spine-stub
-# the dual-spawn parity gates (schema + action-manifest):
+# the dual-spawn parity gates (schema, action-manifest, differential):
 npm run test:cross:parity
 # the dual-spawn login + action rate-limit gates (limiters enabled on both spines):
 npm run test:cross:security

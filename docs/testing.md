@@ -915,6 +915,7 @@ assert_error_coverage(collector, route_specs, {
 - `describe_rpc_attack_surface_tests` (`testing/rpc_attack_surface.ts`) — 3-group RPC attack surface (auth, envelopes, params)
 - `describe_rpc_round_trip_tests` (`testing/rpc_round_trip.ts`) — DB-backed round-trip for RPC methods (POST + GET); a crash on schema-valid params (500, `internal_error`, or a ≥500 with no JSON-RPC envelope) fails the method, while a declared 503/504 passes. `rpc_skip_methods` / `rpc_input_overrides` on the standard bundles forward to its `skip_methods` / `input_overrides`. Pass `success_fixtures: create_spine_rpc_success_fixtures()` (`testing/cross_backend/rpc_success_fixtures.ts`; `rpc_success_fixtures` on the standard bundles) to check the success body of the standard methods that act on an existing row
 - `describe_conformance_table_tests` (`testing/cross_backend/conformance_table.ts`) — Declarative behavioral/security cases — one row array, both transports (see §Cross-Backend Integration)
+- `describe_differential_conformance_tests` (`testing/cross_backend/differential.ts`) — The same cases sent to two backends, normalized responses compared, tracked differences in a ledger (see §Cross-backend differential)
 - `create_describe_db` (`testing/db.ts`) — Create a `describe_db` bound to factories + truncate tables
 
 ### Cross-Impl Schema Parity
@@ -1355,6 +1356,60 @@ Deferred-by-design rows mark themselves with `xfail`
 `test.fails` wrapper that stays visible in the report and turns red the
 moment the gap closes, forcing the marker's removal. In-scope gaps don't
 get a marker — they fail loud as a normal red `test`.
+
+#### Cross-backend differential
+
+A conformance case pins status and reason on one backend at a time, and a
+loose output schema passes an extra field. A consumer with two backends can
+hold each to the other: `describe_differential_conformance_tests`
+(`cross_backend/differential.ts`) sends every case to both, normalizes both
+responses, and asserts they are equal.
+
+```ts
+describe_differential_conformance_tests({
+  cases: [...my_cases, ...generate_rpc_auth_conformance_cases({surface_source})],
+  backends: [
+    {name: 'ts', setup_test: default_cross_process_setup(ts_handle)},
+    {name: 'rust', setup_test: default_cross_process_setup(rust_handle)},
+  ],
+  surface_source,
+  rpc_endpoints,
+  session_options,
+  known_divergences: my_ledger,
+});
+```
+
+- Each case runs on a fresh fixture per backend and is sent through the
+  table's own `send_conformance_case`; the per-case expectations are not
+  asserted here, since each backend's conformance leg already holds them.
+- `normalize_differential_response` (`cross_backend/differential_normalize.ts`)
+  gives `{status, body, header_names}`. API tokens, token ids, UUIDs,
+  second-precision timestamps and bare 64-hex digests become positional
+  placeholders (`<uuid:1>` for the first UUID, the same placeholder for a
+  repeat), so identity within a response survives while values differ. Only
+  each value's canonical spelling is placeholdered, so a format divergence
+  still shows, and a `blake3:` content address is compared verbatim, since
+  equal bytes hash equal on both spines. Placeholders are positional, not
+  tied to fixture identity: two ids that appear once each and trade places
+  normalize equal. Object key order is ignored; array order is not. Header
+  values are not compared, and `VOLATILE_HEADER_NAMES` (`connection`,
+  `content-length`, `date`, `keep-alive`, `transfer-encoding`) are left
+  out of the names.
+- A tracked difference goes in the ledger: `KnownDivergence` —
+  `{case_name | method, tracking_id, reason, what_differs}`, the names a
+  string or a list, `what_differs` the diff paths it covers
+  (`body.error.data.reason`, `headers.x-example`), each a string or
+  `{path, a?, b?}` pinning the value a side shows there (`undefined` for
+  nothing). A matched case may differ there and nowhere else. Name cases
+  where the divergence is case-specific: each named case must still differ,
+  checked in its own test. A method-matched entry must still differ on one
+  of its cases, checked once they have all run; an entry matching no case, or
+  listing a case name that doesn't exist, fails
+  (`check_known_divergence_ledger(cases, ledger)` is that check alone). So the
+  ledger cleans itself.
+
+Both backends need the same database engine, or engine differences show up
+as body differences. Run it in a dual-spawn project.
 
 ### Malformed envelopes and invalid params
 

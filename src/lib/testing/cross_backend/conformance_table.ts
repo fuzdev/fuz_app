@@ -29,7 +29,8 @@ import '../assert_dev_env.ts';
 import { assert, describe, test } from 'vitest';
 
 import type { AppSurfaceSpec } from '../../http/surface.ts';
-import type { RouteMethod } from '../../http/route_spec.ts';
+import type { RouteMethod, RouteSpec } from '../../http/route_spec.ts';
+import type { RpcAction } from '../../actions/action_rpc.ts';
 import type { SessionOptions } from '../../auth/session_cookie.ts';
 import { DAEMON_TOKEN_HEADER } from '../../auth/daemon_token.ts';
 import {
@@ -40,7 +41,8 @@ import {
 import {
 	find_rpc_action,
 	headers_to_record,
-	rpc_call,
+	parse_rpc_call_result,
+	rpc_call_raw,
 	resolve_rpc_endpoints_for_setup,
 	type RpcEndpointsSuiteOption
 } from '../rpc_helpers.ts';
@@ -417,6 +419,110 @@ interface NormalizedResponse {
 	readonly body: unknown;
 }
 
+/** What `send_conformance_case` needs besides the case. */
+export interface SendConformanceCaseOptions {
+	/** The per-test fixture the principal resolves from. */
+	readonly fixture: TestFixture;
+	/** Surface spec — supplies the `RouteSpec`s for the REST branch. */
+	readonly surface_source: AppSurfaceSpec;
+	/** Usernames for the `role_holder` / `wrong_role` principals. */
+	readonly principals?: ConformancePrincipalConfig;
+	/** The endpoints RPC methods (and the `scoped_token` mint) resolve against. */
+	readonly resolved_rpc_endpoints: ReturnType<typeof resolve_rpc_endpoints_for_setup>;
+}
+
+/** The spec a sent case resolved to — the RPC action, or the REST route. */
+export type ConformanceCaseTarget =
+	| { readonly kind: 'rpc'; readonly path: string; readonly action: RpcAction }
+	| { readonly kind: 'rest'; readonly route: RouteSpec };
+
+/**
+ * One case's request as sent and its response unparsed: the HTTP status, the
+ * response-headers snapshot (lowercased keys), and the JSON body exactly as
+ * the server sent it — the whole JSON-RPC envelope for an RPC method,
+ * `undefined` for a REST body that is not JSON.
+ */
+export interface ConformanceCaseResponse {
+	readonly target: ConformanceCaseTarget;
+	readonly status: number;
+	readonly headers: Record<string, string>;
+	readonly body: unknown;
+}
+
+/**
+ * Resolve a case's principal on `fixture` and send its request, asserting
+ * nothing about the response.
+ *
+ * The send half of the table runner, shared with the cross-backend
+ * differential (`describe_differential_conformance_tests`), which sends one
+ * case to two backends and compares what came back.
+ *
+ * @param c - the case
+ * @param options - the fixture, surface and endpoints to send through
+ * @returns the resolved target and the raw response
+ * @throws Error when the method is on neither the RPC surface nor the REST
+ *   auth routes
+ */
+export const send_conformance_case = async (
+	c: ConformanceCase,
+	options: SendConformanceCaseOptions
+): Promise<ConformanceCaseResponse> => {
+	const { fixture, surface_source, principals, resolved_rpc_endpoints } = options;
+	const { transport, headers, suppress_default_origin } = await resolve_conformance_principal(
+		fixture,
+		c.request.as,
+		principals,
+		resolved_rpc_endpoints
+	);
+
+	if (c.request.method.startsWith('/')) {
+		const suffix = c.request.method as RestAuthRouteSuffix;
+		if (!rest_auth_route_suffixes.includes(suffix)) {
+			throw new Error(
+				`conformance: REST method '${c.request.method}' is not a known auth-route suffix ` +
+					`(${rest_auth_route_suffixes.join(', ')}). Use an RPC method name for RPC actions.`
+			);
+		}
+		const verb: RouteMethod = c.request.verb ?? 'POST';
+		const route = find_auth_route(surface_source.route_specs, suffix, verb);
+		if (!route) {
+			throw new Error(`conformance: no REST route spec for ${verb} ${suffix} on the surface.`);
+		}
+		const init: RequestInit = {
+			method: verb,
+			headers: { 'Content-Type': 'application/json', ...headers },
+			...(verb !== 'GET' &&
+				c.request.params !== undefined && { body: JSON.stringify(c.request.params) })
+		};
+		const response = await transport(route.path, init);
+		const body: unknown = await response.json().catch(() => undefined);
+		return {
+			target: { kind: 'rest', route },
+			status: response.status,
+			headers: headers_to_record(response.headers),
+			body
+		};
+	}
+
+	const found = find_rpc_action(resolved_rpc_endpoints, c.request.method);
+	if (!found) {
+		throw new Error(
+			`conformance: RPC method '${c.request.method}' not found on the surface — ` +
+				`check the method name or that the action is registered on rpc_endpoints.`
+		);
+	}
+	const raw = await rpc_call_raw({
+		app: transport,
+		path: found.path,
+		method: c.request.method,
+		params: c.request.params,
+		headers,
+		...(c.request.verb && { verb: c.request.verb }),
+		...(suppress_default_origin && { suppress_default_origin: true })
+	});
+	return { target: { kind: 'rpc', ...found }, ...raw };
+};
+
 /**
  * Run one conformance case end-to-end: resolve the principal, dispatch the
  * request, and assert the expected status / reason / fields. Returns the
@@ -427,17 +533,18 @@ const run_case = async (
 	options: ConformanceTableOptions,
 	resolved_rpc_endpoints: ReturnType<typeof resolve_rpc_endpoints_for_setup>
 ): Promise<NormalizedResponse> => {
-	const fixture = await options.setup_test();
-	const { transport, headers, suppress_default_origin } = await resolve_conformance_principal(
-		fixture,
-		c.request.as,
-		options.principals,
+	const sent = await send_conformance_case(c, {
+		fixture: await options.setup_test(),
+		surface_source: options.surface_source,
+		...(options.principals && { principals: options.principals }),
 		resolved_rpc_endpoints
-	);
+	});
+	assert_response_headers(sent.headers, c);
 
-	const normalized = c.request.method.startsWith('/')
-		? await run_rest_case(c, options, transport, headers)
-		: await run_rpc_case(c, transport, headers, suppress_default_origin, resolved_rpc_endpoints);
+	const normalized =
+		sent.target.kind === 'rest'
+			? assert_rest_case(c, sent.target.route, sent)
+			: assert_rpc_case(c, sent.target.action, sent);
 
 	// Negative-space field check, uniform across REST + RPC and success + error
 	// bodies: a sensitive column (`password_hash`, `token_hash`) must not appear
@@ -448,33 +555,13 @@ const run_case = async (
 	return normalized;
 };
 
-/** Dispatch + assert a case targeting an RPC method. */
-const run_rpc_case = async (
+/** Assert a case targeting an RPC method. */
+const assert_rpc_case = (
 	c: ConformanceCase,
-	transport: FetchTransport,
-	headers: Record<string, string>,
-	suppress_default_origin: boolean | undefined,
-	resolved_rpc_endpoints: ReturnType<typeof resolve_rpc_endpoints_for_setup>
-): Promise<NormalizedResponse> => {
-	const found = find_rpc_action(resolved_rpc_endpoints, c.request.method);
-	if (!found) {
-		throw new Error(
-			`conformance: RPC method '${c.request.method}' not found on the surface — ` +
-				`check the method name or that the action is registered on rpc_endpoints.`
-		);
-	}
-
-	const res = await rpc_call({
-		app: transport,
-		path: found.path,
-		method: c.request.method,
-		params: c.request.params,
-		headers,
-		...(c.request.verb && { verb: c.request.verb }),
-		...(suppress_default_origin && { suppress_default_origin: true })
-	});
-
-	assert_response_headers(res.headers, c);
+	action: RpcAction,
+	sent: ConformanceCaseResponse
+): NormalizedResponse => {
+	const res = parse_rpc_call_result(sent, c.request.method);
 
 	if (is_success_status(c.expect.status)) {
 		assert.ok(
@@ -484,7 +571,7 @@ const run_rpc_case = async (
 			)}`
 		);
 		assert.strictEqual(res.status, c.expect.status, `${c.name}: status`);
-		const parsed = found.action.spec.output.safeParse(res.result);
+		const parsed = action.spec.output.safeParse(res.result);
 		assert.ok(
 			parsed.success,
 			`${c.name}: result does not match spec.output: ${JSON.stringify(
@@ -512,37 +599,14 @@ const run_rpc_case = async (
 	return { status: res.status, body: res.error };
 };
 
-/** Dispatch + assert a case targeting one of the 6 REST auth routes. */
-const run_rest_case = async (
+/** Assert a case targeting one of the 6 REST auth routes. */
+const assert_rest_case = (
 	c: ConformanceCase,
-	options: ConformanceTableOptions,
-	transport: FetchTransport,
-	headers: Record<string, string>
-): Promise<NormalizedResponse> => {
-	const suffix = c.request.method as RestAuthRouteSuffix;
-	if (!rest_auth_route_suffixes.includes(suffix)) {
-		throw new Error(
-			`conformance: REST method '${c.request.method}' is not a known auth-route suffix ` +
-				`(${rest_auth_route_suffixes.join(', ')}). Use an RPC method name for RPC actions.`
-		);
-	}
-	const verb: RouteMethod = c.request.verb ?? 'POST';
-	const route = find_auth_route(options.surface_source.route_specs, suffix, verb);
-	if (!route) {
-		throw new Error(`conformance: no REST route spec for ${verb} ${suffix} on the surface.`);
-	}
-
-	const init: RequestInit = {
-		method: verb,
-		headers: { 'Content-Type': 'application/json', ...headers },
-		...(verb !== 'GET' &&
-			c.request.params !== undefined && { body: JSON.stringify(c.request.params) })
-	};
-	const response = await transport(route.path, init);
-	assert_response_headers(headers_to_record(response.headers), c);
-	assert.strictEqual(response.status, c.expect.status, `${c.name}: status`);
-
-	const body: unknown = await response.json().catch(() => undefined);
+	route: RouteSpec,
+	sent: ConformanceCaseResponse
+): NormalizedResponse => {
+	const { status, body } = sent;
+	assert.strictEqual(status, c.expect.status, `${c.name}: status`);
 	if (is_success_status(c.expect.status)) {
 		const parsed = route.output.safeParse(body);
 		assert.ok(
@@ -556,7 +620,7 @@ const run_rest_case = async (
 		assert.strictEqual(error, c.expect.error_reason, `${c.name}: body.error`);
 	}
 	if (c.expect.fields) assert_fields(body, c.expect.fields, c.name);
-	return { status: response.status, body };
+	return { status, body };
 };
 
 /**

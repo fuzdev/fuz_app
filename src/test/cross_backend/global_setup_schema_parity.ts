@@ -2,10 +2,11 @@
  * Vitest `globalSetup` for the `cross_backend_parity` project — spawns +
  * bootstraps BOTH backends in one run (the TS spine on Node as `a`, the Rust
  * `testing_spine_stub` as `b`, each over its own database on one real Postgres
- * server) and provides both serialized handles, so both parity gates that run
- * under this project — `schema_parity.cross.test.ts` (live DDL) and
- * `action_manifest_parity.cross.test.ts` (live RPC method set + auth) — can
- * capture each backend and diff. One dual-spawn serves both.
+ * server) and provides both serialized handles, so the gates that run under this
+ * project — `schema_parity.cross.test.ts` (live DDL),
+ * `action_manifest_parity.cross.test.ts` (live RPC method set + auth) and
+ * `differential.cross.test.ts` (every conformance case's answer) — can
+ * capture each backend and diff. One dual-spawn serves all three.
  *
  * **Both legs run on Postgres.** The schema snapshot compares index
  * definitions as the engine renders them (`pg_indexes.indexdef`), and pglet —

@@ -303,18 +303,27 @@ const RPC_CALL_DEFAULT_HEADERS: Readonly<Record<string, string>> = {
 };
 
 /**
- * One-shot JSON-RPC call over a Hono app.
- *
- * Merges sensible defaults (`host`, `origin`, `Content-Type`) under
- * caller-provided headers, fires POST (default) or GET, parses the envelope,
- * and returns a discriminated result.
- *
- * @throws Error if the response body is neither a valid `JsonrpcResponse`
- *   nor `JsonrpcErrorResponse` envelope — protocol-level failures the caller
- *   should never tolerate. All JSON-RPC errors come back via `{ok: false, error}`
- *   so assertions can focus on `error.code` / `error.data.reason`.
+ * The unparsed response `rpc_call_raw` returns: the HTTP status, the
+ * response-headers snapshot (lowercased keys), and the JSON body exactly as
+ * the server sent it — the whole envelope, `jsonrpc` and `id` included.
  */
-export const rpc_call = async (args: RpcCallArgs): Promise<RpcCallResult> => {
+export interface RpcCallRawResult {
+	status: number;
+	headers: Record<string, string>;
+	body: unknown;
+}
+
+/**
+ * Send one JSON-RPC request the way `rpc_call` does — same defaults, verbs
+ * and header merging — and return the response unparsed.
+ *
+ * For callers that compare whole bodies (the cross-backend differential),
+ * where `rpc_call`'s envelope parse would hide anything outside `result` /
+ * `error`.
+ *
+ * @throws Error if the response body is not JSON
+ */
+export const rpc_call_raw = async (args: RpcCallArgs): Promise<RpcCallRawResult> => {
 	const {
 		app,
 		path,
@@ -346,20 +355,30 @@ export const rpc_call = async (args: RpcCallArgs): Promise<RpcCallResult> => {
 	}
 
 	const res = await (typeof app === 'function' ? app(url, init) : app.request(url, init));
-	const status = res.status;
-	const response_headers = headers_to_record(res.headers);
-	const body = await res.json();
+	return { status: res.status, headers: headers_to_record(res.headers), body: await res.json() };
+};
 
+/**
+ * Parse a raw JSON-RPC response into `rpc_call`'s discriminated result.
+ *
+ * @param raw - the response `rpc_call_raw` returned
+ * @param method - the method called, for the error message
+ * @returns the success or error branch
+ * @throws Error if the body is neither a valid `JsonrpcResponse` nor
+ *   `JsonrpcErrorResponse` envelope
+ */
+export const parse_rpc_call_result = (raw: RpcCallRawResult, method: string): RpcCallResult => {
+	const { status, headers, body } = raw;
 	const success = JsonrpcResponse.safeParse(body);
 	if (success.success) {
-		return { ok: true, status, headers: response_headers, result: success.data.result };
+		return { ok: true, status, headers, result: success.data.result };
 	}
 	const error = JsonrpcErrorResponse.safeParse(body);
 	if (error.success) {
 		return {
 			ok: false,
 			status,
-			headers: response_headers,
+			headers,
 			error: {
 				code: error.data.error.code,
 				message: error.data.error.message,
@@ -373,6 +392,21 @@ export const rpc_call = async (args: RpcCallArgs): Promise<RpcCallResult> => {
 		}): ${JSON.stringify(body)}`
 	);
 };
+
+/**
+ * One-shot JSON-RPC call over a Hono app.
+ *
+ * Merges sensible defaults (`host`, `origin`, `Content-Type`) under
+ * caller-provided headers, fires POST (default) or GET, parses the envelope,
+ * and returns a discriminated result.
+ *
+ * @throws Error if the response body is neither a valid `JsonrpcResponse`
+ *   nor `JsonrpcErrorResponse` envelope — protocol-level failures the caller
+ *   should never tolerate. All JSON-RPC errors come back via `{ok: false, error}`
+ *   so assertions can focus on `error.code` / `error.data.reason`.
+ */
+export const rpc_call = async (args: RpcCallArgs): Promise<RpcCallResult> =>
+	parse_rpc_call_result(await rpc_call_raw(args), args.method);
 
 /**
  * Same as `rpc_call` but without the default `origin` header. Use for
