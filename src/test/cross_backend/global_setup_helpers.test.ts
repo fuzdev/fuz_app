@@ -1,7 +1,7 @@
 /**
  * Tests for `global_setup_helpers.ts` — the Postgres URL the Rust stub is
- * handed, as resolved from its env var, the per-project database swap, and
- * the rebuild-skip switch.
+ * handed, as resolved from its env var, the per-project database swap, the
+ * built binary's path, and the rebuild-skip switch.
  *
  * @module
  */
@@ -17,6 +17,7 @@ import {
 	is_no_rebuild_requested,
 	resolve_rust_spine_stub_database_url,
 	to_maintenance_database_url,
+	to_rust_spine_stub_bin_path,
 	with_database_name
 } from './global_setup_helpers.ts';
 
@@ -116,5 +117,25 @@ describe('with_database_name', () => {
 			to_maintenance_database_url('postgresql://localhost/fuz_app_test_rust_spine_stub'),
 			'postgresql://localhost/postgres'
 		);
+	});
+});
+
+describe('to_rust_spine_stub_bin_path', () => {
+	test('puts the binary under the target directory cargo reports', () => {
+		const metadata = JSON.stringify({
+			packages: [],
+			workspace_root: '/work/fuz',
+			target_directory: '/elsewhere/cargo-target'
+		});
+		assert.strictEqual(
+			to_rust_spine_stub_bin_path(metadata, 'testing_spine_stub'),
+			'/elsewhere/cargo-target/cross-test/testing_spine_stub'
+		);
+	});
+
+	test('throws when the output names no target directory', () => {
+		for (const metadata of ['{}', '{"target_directory": ""}', '{"target_directory": 7}']) {
+			assert.throws(() => to_rust_spine_stub_bin_path(metadata, 'testing_spine_stub'));
+		}
 	});
 });

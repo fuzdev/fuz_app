@@ -14,9 +14,10 @@ import '../assert_dev_env.ts';
  * path in. `FUZ_TESTING_RUST_SPINE_STUB_BIN` (or the `binary_path` option) must
  * point at a prebuilt binary; the preset throws a clear error when neither
  * is set rather than guessing. Build once with
- * `cargo build -p testing_spine_stub --release` and point the env var at
- * the resulting `target/release/testing_spine_stub`; operators / CI cache
- * the binary across runs for fast spawns.
+ * `cargo build -p testing_spine_stub --profile cross-test` (the workspace's
+ * non-LTO test profile; `--release` works too, slower to rebuild) and point
+ * the env var at the resulting `target/cross-test/testing_spine_stub`;
+ * operators / CI cache the binary across runs for fast spawns.
  *
  * **Operator setup** — the target Postgres database must exist before the
  * harness runs (the harness never issues `CREATE DATABASE`, to avoid
@@ -182,7 +183,7 @@ export const rust_spine_stub_backend_config = (
 			`rust_spine_stub_backend_config: no binary path — set ${
 				RUST_SPINE_STUB_BIN_ENV
 			} to a prebuilt ` +
-				'`testing_spine_stub` binary (build it with `cargo build -p testing_spine_stub --release`) ' +
+				'`testing_spine_stub` binary (build it with `cargo build -p testing_spine_stub --profile cross-test`) ' +
 				'or pass `binary_path`.'
 		);
 	}

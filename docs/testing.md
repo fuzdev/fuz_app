@@ -1242,17 +1242,23 @@ npm run test:cross:rust-spine-stub
 That `globalSetup` (and the parity and security projects', each over a
 database of its own):
 
-1. Runs `cargo build -p testing_spine_stub --release` (incremental — cheap
-   when nothing changed). Skip it with `FUZ_TESTING_NO_REBUILD=1` when you
-   know the binary is current. `npm run test:cross`, which runs every cross
+1. Runs `cargo build -p testing_spine_stub --profile cross-test` — the
+   workspace's test profile: release optimization without LTO, with parallel
+   codegen and incremental compilation, so a rebuild after a spine edit takes
+   seconds and one with nothing changed is a no-op. Skip it with
+   `FUZ_TESTING_NO_REBUILD=1` when you know the binary is current. `npm run test:cross`, which runs every cross
    project concurrently, builds once up front and hands each project
    `FUZ_TESTING_NO_REBUILD=1`.
 2. Folds in an idempotent `createdb` for the Postgres database the
    spine-stub's URL names, on the server that URL names (the harness itself
    never issues `CREATE DATABASE`, to avoid forcing a `CREATEDB` grant on the
    test role).
-3. Defaults `FUZ_TESTING_RUST_SPINE_STUB_BIN` to the conventional
-   `target/release` location when it's unset.
+3. Defaults `FUZ_TESTING_RUST_SPINE_STUB_BIN` to that build's output,
+   `cross-test/testing_spine_stub` under the target directory `cargo metadata`
+   reports (so `CARGO_TARGET_DIR` and `build.target-dir` are honoured), when
+   it's unset — so `FUZ_TESTING_NO_REBUILD=1` without a pinned binary still
+   needs cargo on PATH. When it is set and a rebuild ran, a pin elsewhere gets
+   a one-line warning: the rebuilt binary is not the one spawned.
 
 Point the build at the Cargo workspace with `FUZ_RUST_SPINE_STUB_WORKSPACE_DIR`
 (CI / non-default checkouts), or pin a prebuilt binary directly with
