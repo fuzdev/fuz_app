@@ -1099,11 +1099,13 @@ and the declared `capabilities`. Consumers supply factories (`deno_backend_confi
 `rust_backend_config()`, …) near their own backend; fuz_app knows nothing
 about Cargo, Deno, or any specific binary.
 
-`spawn_backend(config)` (`cross_backend/spawn_backend.ts`) launches the
+`spawn_backend(config)` (`cross_backend/spawn_backend.ts`) refuses a
+`base_url` whose port already accepts connections (another cross run or a
+stale backend), deletes a previous run's daemon-token file, launches the
 binary in its own process group, polls `health_path` until ready, and
-returns a `BackendHandle` with the transports + a `cleanup()` that
-SIGINT/SIGKILLs the child. A `SIGINT` handler tracks live children so
-Ctrl+C doesn't leak processes.
+returns a `BackendHandle` with the daemon token + a `teardown()` that sends
+SIGTERM to the process group and SIGKILL after a grace window. `SIGINT` /
+`SIGTERM` handlers track live children so Ctrl+C doesn't leak processes.
 
 ### Consumer wire-up recipe
 
@@ -1123,7 +1125,7 @@ import { my_backend_config } from './my_backend_config.ts';
 export default async function () {
 	const handle = await spawn_backend(my_backend_config());
 	// serialize the handle for the test workers via vitest `provide`
-	return async () => handle.cleanup();
+	return async () => handle.teardown();
 }
 ```
 

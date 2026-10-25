@@ -47,7 +47,8 @@ export interface BackendBootstrapConfig {
 	 * (env: `*_DAEMON_TOKEN_PATH`). `spawn_backend` reads this file once
 	 * after the health probe succeeds and threads the token onto
 	 * `BackendHandle.daemon_token` for `_testing_reset` calls plus any
-	 * other admin/keeper-gated cross-process tests.
+	 * other admin/keeper-gated cross-process tests. `spawn_backend` deletes
+	 * the file before each spawn, so a token a previous run left is never read.
 	 */
 	readonly daemon_token_path: string;
 }

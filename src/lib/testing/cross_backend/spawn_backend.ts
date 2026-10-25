@@ -6,18 +6,28 @@ import '../assert_dev_env.ts';
  *
  * Lifecycle:
  *
- * 1. Write the bootstrap token (`config.bootstrap.token`) to
- *    `config.bootstrap.token_path` so the binary picks it up at startup.
- * 2. `child_process.spawn(...)` the binary with `detached: true` —
+ * 1. Refuse when `config.base_url`'s port already accepts a TCP connection —
+ *    another cross run or a stale backend holds it, and the health probe
+ *    would otherwise drive that process instead of the one spawned here.
+ * 2. Write the bootstrap token (`config.bootstrap.token`) to
+ *    `config.bootstrap.token_path` so the binary picks it up at startup, and
+ *    delete any `config.bootstrap.daemon_token_path` a previous run left, so
+ *    step 5 can only read the token this binary writes.
+ * 3. `child_process.spawn(...)` the binary with `detached: true` —
  *    creates a new process group so a `SIGTERM` to the negative PID
  *    tears down any descendants the binary spawned (PTYs, child
  *    workers). vitest worker death + Ctrl+C handlers also fire the
  *    group teardown so ports never strand.
- * 3. Poll `{base_url}{health_path}` until it returns 2xx or
- *    `startup_timeout_ms` elapses.
- * 4. Read `config.bootstrap.daemon_token_path` to load the binary's
+ * 4. Poll `{base_url}{health_path}` until it returns 2xx or
+ *    `startup_timeout_ms` elapses — each probe bounded by its own timeout, so
+ *    a listener that accepts but never answers can't outlast the deadline.
+ * 5. Read `config.bootstrap.daemon_token_path` to load the binary's
  *    deterministic daemon token; thread it onto `BackendHandle` so
  *    `_testing_reset` and other keeper-credential calls can authenticate.
+ *
+ * The child's stderr is kept as a bounded tail (`STDERR_TAIL_MAX_BYTES`):
+ * a startup failure reports it with the exit code or signal, and an exit
+ * after startup that teardown didn't cause is logged with it.
  *
  * Bootstrapping (`POST /api/account/bootstrap`) is a separate concern —
  * the caller composes `bootstrap()` from `testing/transports/bootstrap.ts`
@@ -29,7 +39,8 @@ import '../assert_dev_env.ts';
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, rm } from 'node:fs/promises';
+import { connect } from 'node:net';
 import { dirname } from 'node:path';
 
 import type { BackendConfig } from './backend_config.ts';
@@ -50,14 +61,35 @@ export interface BackendHandle {
 	 */
 	readonly daemon_token: string;
 	/**
-	 * SIGTERM the child's process group, drain stderr, await exit. Idempotent —
-	 * calls after the first are no-ops.
+	 * SIGTERM the child's process group — even when the child itself has
+	 * exited, so no descendant outlives it — and await the group's exit,
+	 * escalating to SIGKILL after a grace window. Idempotent — later calls
+	 * await the same exit. A descendant that left the group — spawned detached,
+	 * or one that called `setsid` — is out of reach and survives teardown.
 	 */
 	readonly teardown: () => Promise<void>;
 }
 
 /** Number of ms between health-probe attempts. Tuned to be cheap on busy CI runners. */
 const HEALTH_PROBE_INTERVAL_MS = 100;
+
+/**
+ * Upper bound on one health-probe request (ms), further capped by the time
+ * left before `startup_timeout_ms`. A backend answers `/health` in
+ * milliseconds once it listens; this only fires for a listener that accepts
+ * and never responds.
+ */
+const HEALTH_PROBE_REQUEST_TIMEOUT_MS = 2_000;
+
+/** How long the pre-spawn port check waits for a TCP connection (ms). */
+const PORT_PROBE_TIMEOUT_MS = 1_000;
+
+/**
+ * How much of the child's stderr is kept (bytes) — the tail a startup failure
+ * or an unexpected exit reports. Bounded so a backend that logs to stderr for
+ * a whole suite doesn't grow the runner's memory with it.
+ */
+export const STDERR_TAIL_MAX_BYTES = 16 * 1024;
 
 /**
  * Grace window after teardown's SIGTERM before escalating to SIGKILL on the
@@ -67,6 +99,9 @@ const HEALTH_PROBE_INTERVAL_MS = 100;
  * the await below can't strand the whole run forever.
  */
 const TEARDOWN_SIGKILL_GRACE_MS = 3_000;
+
+/** How often teardown checks whether the process group has exited (ms). */
+const TEARDOWN_POLL_INTERVAL_MS = 20;
 
 /**
  * Sleep helper for the probe loop. Resolves after `ms`.
@@ -81,14 +116,15 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 const wait_for_health = async (
 	url: string,
 	timeout_ms: number,
-	is_alive: () => boolean
+	exit_status: () => string | null
 ): Promise<void> => {
 	const deadline = Date.now() + timeout_ms;
 	let last_error: unknown;
 	while (Date.now() < deadline) {
-		if (!is_alive()) {
+		const exited = exit_status();
+		if (exited !== null) {
 			throw new Error(
-				`backend process exited before becoming healthy${
+				`backend process ${exited} before becoming healthy${
 					last_error
 						? ` (last probe error: ${(last_error as Error).message ?? String(last_error)})`
 						: ''
@@ -96,7 +132,11 @@ const wait_for_health = async (
 			);
 		}
 		try {
-			const response = await fetch(url);
+			const request_timeout_ms = Math.max(
+				1,
+				Math.min(HEALTH_PROBE_REQUEST_TIMEOUT_MS, deadline - Date.now())
+			);
+			const response = await fetch(url, { signal: AbortSignal.timeout(request_timeout_ms) });
 			if (response.ok) {
 				// Drain the body so the connection can be released back to
 				// the agent pool — unconsumed bodies keep the socket open.
@@ -115,6 +155,70 @@ const wait_for_health = async (
 		})`
 	);
 };
+
+/**
+ * Whether something accepts TCP connections at `base_url`'s host and port.
+ * A refused connection, an unresolvable host or no answer within
+ * `PORT_PROBE_TIMEOUT_MS` all read as free.
+ *
+ * @param base_url - an `http://` or `https://` URL; a missing port is the scheme's default
+ */
+export const is_port_accepting = (base_url: string): Promise<boolean> => {
+	const url = new URL(base_url);
+	const port = Number(url.port || (url.protocol === 'https:' ? 443 : 80));
+	// `URL` keeps an IPv6 literal's brackets, which `connect` doesn't take
+	const host = url.hostname.replace(/^\[(.*)\]$/, '$1');
+	return new Promise((resolve) => {
+		const socket = connect({ host, port });
+		const settle = (accepting: boolean): void => {
+			socket.destroy();
+			resolve(accepting);
+		};
+		socket.setTimeout(PORT_PROBE_TIMEOUT_MS, () => settle(false));
+		socket.once('connect', () => settle(true));
+		socket.once('error', () => settle(false));
+	});
+};
+
+/**
+ * A byte-bounded tail of a stream's output: keeps the last `max_bytes`
+ * written, dropping the oldest.
+ */
+export interface OutputTail {
+	readonly push: (chunk: Buffer) => void;
+	/** The kept bytes as UTF-8, prefixed with a marker when older output was dropped. */
+	readonly text: () => string;
+}
+
+/**
+ * Create an `OutputTail` keeping at most `max_bytes`.
+ *
+ * @param max_bytes - how many trailing bytes to keep
+ */
+export const create_output_tail = (max_bytes: number): OutputTail => {
+	let chunks: Array<Buffer> = [];
+	let size = 0;
+	let dropped = false;
+	return {
+		push: (chunk) => {
+			chunks.push(chunk);
+			size += chunk.length;
+			if (size <= max_bytes) return;
+			dropped = true;
+			const joined = Buffer.concat(chunks).subarray(size - max_bytes);
+			chunks = [joined];
+			size = joined.length;
+		},
+		text: () => {
+			const text = Buffer.concat(chunks).toString('utf-8');
+			return dropped ? `[earlier output dropped]\n${text}` : text;
+		}
+	};
+};
+
+/** `code=N` or `signal=SIG` for a child's exit, as `ChildProcess`'s `'exit'` reports it. */
+const format_exit = (code: number | null, signal: NodeJS.Signals | null): string =>
+	signal !== null ? `signal=${signal}` : `code=${code}`;
 
 /**
  * Process-level cleanup registry — every `spawn_backend` registers its
@@ -200,16 +304,32 @@ const read_daemon_token = async (path: string): Promise<string> => {
  *
  * Errors at any stage SIGTERM the child group before rethrowing — the
  * caller never sees a half-started backend.
+ *
+ * @throws Error when `config.base_url`'s port already accepts connections,
+ *   before anything is spawned; when the child exits before it is healthy
+ *   (with its exit code or signal and stderr tail); or when the health probe
+ *   or the daemon-token read times out
  */
 export const spawn_backend = async (config: BackendConfig): Promise<BackendHandle> => {
 	if (config.start_command.length === 0) {
 		throw new Error(`spawn_backend(${config.name}): start_command is empty`);
 	}
 
+	// a process already on the port would answer the health probe and every
+	// request after it, so the run would drive it instead of this spawn
+	if (await is_port_accepting(config.base_url)) {
+		throw new Error(
+			`spawn_backend(${config.name}): ${config.base_url} already accepts connections — ` +
+				'another cross run or a stale backend?'
+		);
+	}
+
 	// Write the bootstrap token file before spawn so the binary reads it
 	// at boot.
 	await mkdir(dirname(config.bootstrap.token_path), { recursive: true });
 	await writeFile(config.bootstrap.token_path, config.bootstrap.token, { mode: 0o600 });
+	// a token a previous run left would read as this binary's
+	await rm(config.bootstrap.daemon_token_path, { force: true });
 
 	install_process_handlers();
 
@@ -222,11 +342,15 @@ export const spawn_backend = async (config: BackendConfig): Promise<BackendHandl
 		stdio: ['ignore', 'pipe', 'pipe']
 	});
 
-	// Buffer stderr so a startup-time crash surfaces with context.
-	const stderr_chunks: Array<Buffer> = [];
+	// Keep a bounded stderr tail so a crash surfaces with context.
+	const stderr_tail = create_output_tail(STDERR_TAIL_MAX_BYTES);
 	child.stderr?.on('data', (chunk: Buffer) => {
-		stderr_chunks.push(chunk);
+		stderr_tail.push(chunk);
 	});
+	const format_stderr_tail = (): string => {
+		const text = stderr_tail.text();
+		return text.length > 0 ? `\nstderr:\n${text}` : '';
+	};
 
 	// Drain stdout — discard, but the read is mandatory. `stdio: 'pipe'`
 	// leaves the stream paused until something consumes it; an unread
@@ -245,55 +369,120 @@ export const spawn_backend = async (config: BackendConfig): Promise<BackendHandl
 	// long suite.
 	child.stdout?.on('data', () => {});
 
-	let exit_info: { code: number | null; signal: NodeJS.Signals | null } | null = null;
-	child.on('exit', (code, signal) => {
-		exit_info = { code, signal };
-	});
-
-	const is_alive = (): boolean => exit_info === null;
-
+	// how the child ended: an exit, or a spawn that never produced a process
+	// (a command that doesn't exist emits `'error'` and never `'exit'`)
+	let exit_info:
+		| { kind: 'exit'; code: number | null; signal: NodeJS.Signals | null }
+		| { kind: 'spawn_error'; message: string }
+		| null = null;
+	let started = false;
 	let teardown_invoked = false;
-	const teardown_sync = (): void => {
-		if (teardown_invoked) return;
-		teardown_invoked = true;
-		if (child.pid !== undefined && exit_info === null) {
-			try {
-				// Negative pid → process group.
-				process.kill(-child.pid, 'SIGTERM');
-			} catch {
-				// Already dead; ignore.
-			}
+
+	// The child leads its own process group (`detached: true`), so its pid is
+	// the group id; a descendant stays in the group after the child exits. Once
+	// the group is seen empty it is never signalled again: its id is a pid the
+	// kernel may hand to an unrelated process, whose new group a later
+	// `kill(-pid)` would hit — say a backend that crashed mid-run, torn down
+	// minutes later. One window stays open: a crash that left a descendant
+	// running keeps the flag false, and if that descendant exits on its own,
+	// the next signal goes out before its ESRCH sets the flag. Closing it needs
+	// a pidfd, which Node lacks.
+	let group_gone = false;
+	const signal_group = (signal: NodeJS.Signals | 0): boolean => {
+		if (child.pid === undefined || group_gone) return false;
+		try {
+			// Negative pid → process group.
+			process.kill(-child.pid, signal);
+			return true;
+		} catch (err) {
+			const code = (err as NodeJS.ErrnoException).code;
+			// ESRCH: no process is left in the group; EPERM: one is, but not ours
+			// to signal
+			if (code === 'ESRCH') group_gone = true;
+			return code === 'EPERM';
 		}
 	};
 
-	const teardown = async (): Promise<void> => {
+	child.on('exit', (code, signal) => {
+		exit_info = { kind: 'exit', code, signal };
+		// a crash that left no descendant marks the group gone now, before its
+		// id can be reused
+		signal_group(0);
+		// a startup failure is reported by the throw below; an exit teardown
+		// caused is expected
+		if (started && !teardown_invoked) {
+			console.error(
+				`spawn_backend(${config.name}): backend exited unexpectedly (${format_exit(code, signal)})` +
+					format_stderr_tail()
+			);
+		}
+	});
+	child.on('error', (err) => {
+		if (child.pid === undefined) {
+			// never spawned — the health wait below reports it
+			exit_info ??= { kind: 'spawn_error', message: err.message };
+		} else {
+			// Node emits `'error'` on a spawned child only from `child.kill()` or
+			// `child.send()`, neither of which this module calls (it signals the
+			// group through `process.kill`), so this branch is not expected to run;
+			// it logs rather than recording an exit, since `'exit'` still follows
+			console.error(`spawn_backend(${config.name}): ${err.message}`);
+		}
+	});
+
+	const exit_status = (): string | null => {
+		if (exit_info === null) return null;
+		return exit_info.kind === 'spawn_error'
+			? `failed to spawn (${exit_info.message})`
+			: `exited (${format_exit(exit_info.code, exit_info.signal)})`;
+	};
+
+	/** Whether the child or any process left in its group is still running. */
+	const is_group_running = (): boolean =>
+		child.pid !== undefined && (exit_info === null || signal_group(0));
+
+	const teardown_sync = (): void => {
+		if (teardown_invoked) return;
+		teardown_invoked = true;
+		// the group, not just the child: a descendant outlives a child that has
+		// already exited, and would hold the port or the database
+		signal_group('SIGTERM');
+	};
+
+	let teardown_done: Promise<void> | null = null;
+	const teardown = (): Promise<void> => {
 		teardown_sync();
 		live_teardowns.delete(teardown_sync);
-		if (exit_info !== null) return;
-		// Wait for the child to actually exit so callers can be sure the port
-		// is free. A backend that ignores SIGTERM — or whose graceful shutdown
-		// wedges (e.g. a runtime whose `server.stop()` never resolves) — would
-		// otherwise hang this await forever and strand the run, so escalate to
-		// SIGKILL on the process group after a grace window. SIGKILL is
-		// uncatchable, so the child then exits and the `'exit'` listener
-		// resolves. Defense-in-depth: the per-runtime adapter shutdown is the
-		// primary fix; this guarantees teardown completes regardless.
-		await new Promise<void>((resolve) => {
-			const kill_timer = setTimeout(() => {
-				if (child.pid !== undefined && exit_info === null) {
-					try {
-						// Negative pid → process group.
-						process.kill(-child.pid, 'SIGKILL');
-					} catch {
-						// Already dead; ignore.
-					}
-				}
-			}, TEARDOWN_SIGKILL_GRACE_MS);
-			child.once('exit', () => {
-				clearTimeout(kill_timer);
-				resolve();
-			});
-		});
+		return (teardown_done ??= wait_for_group_exit());
+	};
+
+	// Wait for the child and every process left in its group to exit, so callers
+	// can be sure the port is free. A backend that ignores SIGTERM — or whose
+	// graceful shutdown wedges (e.g. a runtime whose `server.stop()` never
+	// resolves) — would otherwise hold this wait forever and strand the run, so
+	// escalate to SIGKILL on the process group after a grace window. SIGKILL is
+	// uncatchable, so the group then exits. Defense-in-depth: the per-runtime
+	// adapter shutdown is the primary fix; this guarantees teardown completes
+	// regardless — bounded at a second grace window after the SIGKILL, which
+	// only a process stuck in the kernel outlasts.
+	const wait_for_group_exit = async (): Promise<void> => {
+		const kill_at = Date.now() + TEARDOWN_SIGKILL_GRACE_MS;
+		const give_up_at = kill_at + TEARDOWN_SIGKILL_GRACE_MS;
+		let killed = false;
+		while (is_group_running()) {
+			const now = Date.now();
+			if (now >= give_up_at) {
+				console.error(
+					`spawn_backend(${config.name}): teardown gave up with the process group still running`
+				);
+				return;
+			}
+			if (!killed && now >= kill_at) {
+				killed = true;
+				signal_group('SIGKILL');
+			}
+			await sleep(TEARDOWN_POLL_INTERVAL_MS);
+		}
 	};
 
 	live_teardowns.add(teardown_sync);
@@ -302,16 +491,15 @@ export const spawn_backend = async (config: BackendConfig): Promise<BackendHandl
 		await wait_for_health(
 			`${config.base_url}${config.health_path}`,
 			config.startup_timeout_ms,
-			is_alive
+			exit_status
 		);
 		const daemon_token = await read_daemon_token(config.bootstrap.daemon_token_path);
+		started = true;
 		return { config, child, daemon_token, teardown };
 	} catch (err) {
 		await teardown();
-		const stderr_dump = Buffer.concat(stderr_chunks).toString('utf-8');
-		const stderr_tail = stderr_dump.length > 0 ? `\nstderr:\n${stderr_dump}` : '';
 		throw new Error(
-			`spawn_backend(${config.name}) failed: ${(err as Error).message}${stderr_tail}`
+			`spawn_backend(${config.name}) failed: ${(err as Error).message}${format_stderr_tail()}`
 		);
 	}
 };

@@ -1487,10 +1487,14 @@ are `src/test/auth/cell_crud_parity.db.test.ts`
   third spine consumer, but otherwise backend-specific paths and env are a
   consumer concern.
 - `testing/cross_backend/spawn_backend.ts` — `spawn_backend(config) => BackendHandle`.
-  Writes the bootstrap token, spawns `detached: true` in its own process
-  group (so SIGTERM to the negative pid tears down descendants), polls
-  health, reads the deterministic daemon token from the binary-written
-  file. Registers exit-time + signal cleanup so vitest worker death or
+  Refuses a port that already accepts connections, writes the bootstrap
+  token, deletes a stale daemon-token file, spawns `detached: true` in its
+  own process group (so SIGTERM to the negative pid tears down descendants),
+  polls health (each probe request timed out), reads the deterministic daemon
+  token from the binary-written file. Keeps a bounded stderr tail
+  (`create_output_tail`) for an early exit's error — with its exit code or
+  signal — and for the log line an unexpected exit after startup writes.
+  Registers exit-time + signal cleanup so vitest worker death or
   Ctrl+C kills children before they strand ports.
 - `testing/transports/fetch_transport.ts` — cookie-threading HTTP transport
   satisfying `RpcTestTransport`. Carries a name-keyed cookie jar that

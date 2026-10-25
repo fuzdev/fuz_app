@@ -28,7 +28,9 @@ import { join } from 'node:path';
  * - `bootstrap_token_path` — `FUZ_BOOTSTRAP_TOKEN_PATH`; harness writes
  *   the bootstrap token here before spawn.
  * - `daemon_token_path` — where `init_daemon_token` (Rust) and the TS
- *   server's daemon-token writer land the token (under `{root}/run/`).
+ *   server's daemon-token writer land the token (under `{root}/run/`);
+ *   `spawn_backend` deletes it before each spawn, so a token a previous run
+ *   left is never read.
  */
 export interface TestBackendPaths {
 	readonly root: string;
