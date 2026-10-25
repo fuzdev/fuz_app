@@ -48,6 +48,9 @@ import { create_standard_rpc_actions } from '../../auth/standard_rpc_actions.ts'
 import { create_all_cell_actions } from '../../auth/all_cell_actions.ts';
 import { create_actor_lookup_actions } from '../../auth/actor_lookup_actions.ts';
 import { create_actor_search_actions } from '../../auth/actor_search_actions.ts';
+import type { Db } from '../../db/db.ts';
+import { CELL_DROP_TABLES } from '../../db/cell_ddl.ts';
+import { FACT_DROP_TABLES } from '../../db/fact_ddl.ts';
 import {
 	create_testing_action_manifest_action,
 	create_testing_actions,
@@ -56,6 +59,26 @@ import {
 import { create_testing_origin_check_action } from './testing_origin_check.ts';
 import { test_cell_gated_create_authorize } from './test_cell_gated_create_authorize.ts';
 import { spine_roles, spine_session_options } from './default_spine_surface.ts';
+
+/**
+ * The domain tables the spine binary's `_testing_reset` empties beside the
+ * auth ones: the `fuz_cell` and `fuz_facts` namespaces' drop lists
+ * (`CELL_DROP_TABLES`, `FACT_DROP_TABLES`), children first. Without it a test
+ * would see the cells and facts a previous test left. The Rust
+ * `testing_spine_stub` empties the same set, taken from its `fuz_cell` /
+ * `fuz_fact` column registries.
+ */
+const SPINE_DOMAIN_RESET_TABLES = [...CELL_DROP_TABLES, ...FACT_DROP_TABLES];
+
+/**
+ * `_testing_reset`'s `reset_state` for the full spine mount — empties
+ * `SPINE_DOMAIN_RESET_TABLES` on the reset's own transaction.
+ */
+const reset_spine_domain_state = async (db: Db): Promise<void> => {
+	for (const table of SPINE_DOMAIN_RESET_TABLES) {
+		await db.query(`DELETE FROM ${table}`);
+	}
+};
 
 /** Options for `build_full_spine_rpc_actions` / `build_full_spine_mount`. */
 export interface FullSpineMountOptions {
@@ -100,7 +123,8 @@ export const build_full_spine_rpc_actions = (
 		),
 		...create_testing_actions(deps, {
 			session_options: spine_session_options,
-			daemon_token_state: options.daemon_token_state
+			daemon_token_state: options.daemon_token_state,
+			reset_state: reset_spine_domain_state
 		}),
 		// Mount the directory-model `cell_gated_create` test policy (twin of the
 		// Rust stub's `TestCellGatedCreateAuthorize`) so the cross-backend

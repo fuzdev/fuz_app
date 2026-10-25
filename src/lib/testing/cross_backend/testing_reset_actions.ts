@@ -694,8 +694,9 @@ export interface CreateTestingActionsOptions {
 	 * `db` rather than a separately-pooled connection — under the in-memory
 	 * drivers' single connection (pglet, PGlite) a second connection deadlocks against this still-open
 	 * transaction. `testing_zzz_server` clears in-memory workspace registry +
-	 * terminals + scoped-FS scratch (ignores `db`); `testing_spine_stub` has
-	 * no domain layer and omits the option. Runs inside the same RPC dispatch
+	 * terminals + scoped-FS scratch (ignores `db`); the spine binaries
+	 * (`testing/cross_backend/full_spine_mount.ts` and the Rust `testing_spine_stub`) empty
+	 * the cell and fact tables. Runs inside the same RPC dispatch
 	 * as the auth-table writes, so a throw surfaces to the caller as a
 	 * JSON-RPC error and the per-test fixture short-circuits.
 	 */
@@ -823,7 +824,8 @@ export const create_testing_actions = (
 			});
 
 			// 7. Fire domain-state reset (zzz workspaces/terminals/scratch,
-			//    fuz_forge cell/fact/file truncation, or no-op for spine_stub).
+			//    fuz_forge cell/fact/file truncation, the spine binaries' cell +
+			//    fact wipe).
 			//    Pass the transactional `ctx.db` so DB-domain truncation runs
 			//    on the same connection — a separate pool connection deadlocks
 			//    against this open transaction under the in-memory drivers.
