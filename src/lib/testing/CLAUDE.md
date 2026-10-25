@@ -1791,7 +1791,9 @@ stream on a session (`capabilities.sse`) ends; and a second seam call asking
 for a later expiry moves nothing (the seam only shortens). API token × audit
 stream is not reachable over the wire — the stock stream is session-only — so
 the Rust spine pins it on a widened gate and the TS twin shares one deadline
-wait across both transports. Cross-process only; fuz_app's own wiring is
+wait across both transports. The cases run concurrently (`describe.concurrent`)
+under one `setup_test()` for the suite, each on its own account, so a leg waits
+out one deadline rather than one per case. Cross-process only; fuz_app's own wiring is
 `src/test/cross_backend/credential_deadline.cross.test.ts`.
 
 ### Origin check scope parity — `cross_backend/origin_scope.ts`

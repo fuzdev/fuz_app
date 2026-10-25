@@ -239,8 +239,9 @@ export interface TestFixtureBase {
 export type TestFixture = TestFixtureBase;
 
 /**
- * Per-test fixture-producing function. Invoked once inside every
- * `test()` body. The implementation captures factory inputs (in-process)
+ * Fixture-producing function. Invoked once inside every `test()` body by
+ * default; a suite whose cases share no state past the reset may call it once
+ * in `beforeAll` instead. The implementation captures factory inputs (in-process)
  * or a long-running backend handle (cross-process) and creates
  * a fresh per-test bundle on each call.
  */

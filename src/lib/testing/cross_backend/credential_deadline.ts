@@ -30,13 +30,18 @@ import '../assert_dev_env.ts';
  * covers it below the wire — the Rust stream route on a widened credential
  * gate, the TS deadline wait shared by both transports.
  *
+ * The cases run concurrently, each on its own account under one reset for the
+ * suite: the seam shortens only the account it names, so each case waits out
+ * its own deadline and the suite takes about one. Every case keeps the full
+ * `expiry_seconds` margin — the "open short of the deadline" check needs it.
+ *
  * Gated on `capabilities.ws` (cases 1, 2, 4) and `capabilities.sse` (case 3);
  * cross-process only — the seam is mounted on the spine test binaries.
  *
  * @module
  */
 
-import { assert, describe } from 'vitest';
+import { assert, beforeAll, describe } from 'vitest';
 
 import { heartbeat_action_spec } from '../../actions/heartbeat.ts';
 import {
@@ -74,7 +79,7 @@ const EARLIEST_CLOSE_MS = EXPIRY_SECONDS * 1000 - 300;
 
 /** Configuration for `describe_credential_deadline_cross_tests`. */
 export interface CredentialDeadlineCrossTestOptions {
-	/** Per-test fixture producer (`default_cross_process_setup(handle)`). */
+	/** Fixture producer (`default_cross_process_setup(handle)`), called once for the suite. */
 	readonly setup_test: SetupTest;
 	/** Backend capability flags — the WebSocket cases gate on `ws`, the stream case on `sse`. */
 	readonly capabilities: BackendCapabilities;
@@ -155,12 +160,23 @@ export const describe_credential_deadline_cross_tests = (
 		assert.strictEqual(client.close_reason, WS_CLOSE_CREDENTIAL_EXPIRED_REASON);
 	};
 
-	describe('credential deadline (cross-process)', () => {
+	describe.concurrent('credential deadline (cross-process)', () => {
+		// One reset for the suite: the cases share no state past it, since each
+		// mints its own account and the seam touches only that account.
+		let suite_fixture: TestFixture | null = null;
+		beforeAll(async () => {
+			if (capabilities.ws || capabilities.sse) suite_fixture = await setup_test();
+		});
+		const get_fixture = (): TestFixture => {
+			assert.ok(suite_fixture, 'the suite fixture was not set up');
+			return suite_fixture;
+		};
+
 		test_if(
 			capabilities.ws,
 			'a session socket closes with 4001 "Credential expired" at the deadline',
 			async () => {
-				const fixture = await setup_test();
+				const fixture = get_fixture();
 				const account = await fixture.create_account();
 				const { called_at, sessions } = await shorten(fixture, account, EXPIRY_SECONDS);
 				assert.ok(sessions >= 1, 'the seam shortened the account session');
@@ -183,7 +199,7 @@ export const describe_credential_deadline_cross_tests = (
 			capabilities.ws,
 			'an API token socket closes with 4001 "Credential expired" at the deadline',
 			async () => {
-				const fixture = await setup_test();
+				const fixture = get_fixture();
 				const account = await fixture.create_account();
 				const { called_at, api_tokens } = await shorten(fixture, account, EXPIRY_SECONDS);
 				assert.ok(api_tokens >= 1, 'the seam shortened the account API token');
@@ -205,7 +221,7 @@ export const describe_credential_deadline_cross_tests = (
 		);
 
 		test_if(capabilities.sse, 'a session audit stream ends at the deadline', async () => {
-			const fixture = await setup_test();
+			const fixture = get_fixture();
 			const account = await fixture.create_account({ roles: [ROLE_ADMIN] });
 			const { called_at } = await shorten(fixture, account, EXPIRY_SECONDS);
 
@@ -239,7 +255,7 @@ export const describe_credential_deadline_cross_tests = (
 			capabilities.ws,
 			'the expiry seam only shortens: a later expiry moves nothing',
 			async () => {
-				const fixture = await setup_test();
+				const fixture = get_fixture();
 				const account = await fixture.create_account();
 				const { called_at } = await shorten(fixture, account, EXPIRY_SECONDS);
 				// asks for a minute; the credentials stay due at the first deadline
