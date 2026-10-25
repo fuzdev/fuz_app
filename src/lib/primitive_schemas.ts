@@ -58,7 +58,8 @@ export interface BoundedStringOptions {
  * @param options - the bounds, in UTF-16 code units
  * @returns the bounded string schema
  */
-export const bounded_string = ({ min, max, max_message }: BoundedStringOptions): z.ZodString => {
+export const bounded_string = (options: BoundedStringOptions): z.ZodString => {
+	const { min, max, max_message } = options;
 	let schema = z.string();
 	if (min !== undefined) schema = schema.min(min);
 	schema = max_message === undefined ? schema.max(max) : schema.max(max, max_message);
