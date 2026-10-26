@@ -91,7 +91,10 @@ ln -s ../../../pglet/crates/pglet_wasm/pkg-npm node_modules/@fuzdev/pglet-wasm
 named-projection registry: every `*_COLUMNS` const keyed by table, plus the
 reasoned exemptions (`schema_version`, `bootstrap_lock`, `fact_ref`, `memo`),
 asserted against the live full-spine schema in one scan — so a new table fails
-the suite until it gets a const or an exemption entry.
+the suite until it gets a const or an exemption entry. Its reset-list sibling,
+`db/drop_tables.db.test.ts`, migrates the cell and fact namespaces one at a
+time and holds `CELL_DROP_TABLES` / `FACT_DROP_TABLES` to the tables each one
+created, children first.
 
 ### Integration Tests
 
