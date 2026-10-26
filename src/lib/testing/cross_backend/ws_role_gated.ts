@@ -37,7 +37,6 @@ import { ROLE_ADMIN } from '../../auth/role_schema.ts';
 import { ROLE_GRANT_OFFER_RECEIVED_NOTIFICATION_METHOD } from '../../auth/role_grant_offer_notifications.ts';
 import { rpc_call } from '../rpc_helpers.ts';
 import { is_notification_with, type WsClient } from '../transports/ws_client.ts';
-import { create_admitted_ws_transport, create_ws_transport } from '../transports/ws_transport.ts';
 import { type BackendCapabilities, test_if } from './capabilities.ts';
 import {
 	create_active_role_grant,
@@ -45,20 +44,19 @@ import {
 } from './role_grant_cross_helpers.ts';
 import type { SetupTest, TestAccountFixture, TestFixture } from './setup.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
+import { open_session_ws, type WsEndpointTarget } from './ws_endpoint.ts';
 
 /** How long a socket that must stay open is watched for a close it must not get. */
 const STAYS_OPEN_MS = 1500;
 
 /** Configuration for `describe_ws_role_gated_cross_tests`. */
-export interface WsRoleGatedCrossTestOptions {
+export interface WsRoleGatedCrossTestOptions extends WsEndpointTarget {
+	/** The ungated WebSocket endpoint path (e.g. `/api/ws`). */
+	readonly ws_path: string;
 	/** Per-test fixture producer (`default_cross_process_setup(handle)`). */
 	readonly setup_test: SetupTest;
 	/** Backend capability flags; every case gates on `ws` and `ws_role_gated`. */
 	readonly capabilities: BackendCapabilities;
-	/** Base URL the backend is reachable at. */
-	readonly base_url: string;
-	/** The ungated WebSocket endpoint path (e.g. `/api/ws`). */
-	readonly ws_path: string;
 	/** The role-gated WebSocket endpoint path. */
 	readonly gated_ws_path: string;
 	/**
@@ -87,8 +85,6 @@ export const describe_ws_role_gated_cross_tests = (options: WsRoleGatedCrossTest
 	const {
 		setup_test,
 		capabilities,
-		base_url,
-		ws_path,
 		gated_ws_path,
 		gated_roles,
 		scoped_role,
@@ -108,19 +104,15 @@ export const describe_ws_role_gated_cross_tests = (options: WsRoleGatedCrossTest
 		headers: Record<string, string> = fixture.create_session_headers()
 	) => rpc_call({ app: fixture.transport, path: rpc_path, method, params, headers });
 
-	const cookie_of = (account: TestAccountFixture): string => {
-		const { cookie } = account.create_session_headers();
-		assert.ok(cookie, 'expected a session cookie for the WS upgrade');
-		return cookie;
+	/** The role-gated endpoint, on the ungated one's backend and origin. */
+	const gated_target: WsEndpointTarget = {
+		base_url: options.base_url,
+		ws_path: gated_ws_path,
+		...(options.origin !== undefined && { origin: options.origin })
 	};
 
-	const open = (path: string, account: TestAccountFixture): Promise<WsClient> =>
-		create_admitted_ws_transport({
-			base_url,
-			ws_path: path,
-			cookies: [cookie_of(account)],
-			origin: base_url
-		});
+	const open = (target: WsEndpointTarget, account: TestAccountFixture): Promise<WsClient> =>
+		open_session_ws(target, account, { admitted: true });
 
 	describe('role-gated websocket (cross-process)', () => {
 		test_if(
@@ -131,8 +123,8 @@ export const describe_ws_role_gated_cross_tests = (options: WsRoleGatedCrossTest
 				const target = await fixture.create_account({ roles: [ROLE_ADMIN] });
 				const role_grant_id = await create_active_role_grant(fixture, target, { rpc_path });
 
-				const gated = await open(gated_ws_path, target);
-				const ungated = await open(ws_path, target);
+				const gated = await open(gated_target, target);
+				const ungated = await open(options, target);
 				try {
 					const revoked = await rpc(fixture, 'role_grant_revoke', {
 						actor_id: target.actor.id,
@@ -168,13 +160,7 @@ export const describe_ws_role_gated_cross_tests = (options: WsRoleGatedCrossTest
 
 					// and the gate refuses the account a new gated socket
 					await assert_rejects(
-						() =>
-							create_ws_transport({
-								base_url,
-								ws_path: gated_ws_path,
-								cookies: [cookie_of(target)],
-								origin: base_url
-							}),
+						() => open_session_ws(gated_target, target, { admitted: false }),
 						/403/
 					);
 				} finally {
@@ -204,7 +190,7 @@ export const describe_ws_role_gated_cross_tests = (options: WsRoleGatedCrossTest
 				scope_id: '33333333-3333-4333-8333-333333333333'
 			});
 
-			const gated = await open(gated_ws_path, target);
+			const gated = await open(gated_target, target);
 			try {
 				const revoked = await rpc(fixture, 'role_grant_revoke', {
 					actor_id: target.actor.id,

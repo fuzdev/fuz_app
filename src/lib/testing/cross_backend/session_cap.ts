@@ -58,6 +58,7 @@ import { create_ws_transport } from '../transports/ws_transport.ts';
 import { test_if } from './capabilities.ts';
 import type { SetupTest } from './setup.ts';
 import { SPINE_ACCOUNT_LOGIN_PATH, SPINE_ACCOUNT_STATUS_PATH } from './spine_surface_constants.ts';
+import type { WsEndpointTarget } from './ws_endpoint.ts';
 
 /** Options for the session-cap parity suite. */
 export interface SessionCapCrossTestOptions {
@@ -78,14 +79,7 @@ export interface SessionCapCrossTestOptions {
 	 * session's socket is closed. Pass it when the backend has a WS transport
 	 * (`capabilities.ws`); omitted, that case is skipped.
 	 */
-	readonly ws?: {
-		/** Base URL the backend is reachable at (e.g. `http://localhost:1178`). */
-		readonly base_url: string;
-		/** WebSocket endpoint path on the backend (e.g. `/api/ws`). */
-		readonly ws_path: string;
-		/** Origin for the upgrade. Defaults to `base_url`. */
-		readonly origin?: string;
-	};
+	readonly ws?: WsEndpointTarget;
 }
 
 export const describe_session_cap_cross_tests = (options: SessionCapCrossTestOptions): void => {

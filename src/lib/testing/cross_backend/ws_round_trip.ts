@@ -124,26 +124,21 @@ import {
 	SPINE_ACCOUNT_LOGOUT_PATH,
 	SPINE_ACCOUNT_PASSWORD_PATH
 } from './spine_surface_constants.ts';
+import { open_session_ws, type WsEndpointTarget } from './ws_endpoint.ts';
 
 /** Origin guaranteed to fail the `http://localhost:*` allowlist the test backends run with. */
 const DISALLOWED_ORIGIN = 'http://disallowed.example';
 
 /** Configuration for `describe_cross_process_ws_tests`. */
-export interface CrossProcessWsTestOptions {
+export interface CrossProcessWsTestOptions extends WsEndpointTarget {
 	/**
 	 * Per-test fixture producer (`default_cross_process_setup(handle)`).
-	 * The authenticated case reads the fresh-per-test keeper's session
-	 * cookies from `fixture.transport.cookies()` to thread onto the upgrade.
+	 * The authenticated cases upgrade on the fresh-per-test keeper's session
+	 * cookie (`open_session_ws`).
 	 */
 	readonly setup_test: SetupTest;
 	/** Backend capability flags; every case gates on `capabilities.ws`. */
 	readonly capabilities: BackendCapabilities;
-	/** Base URL the backend is reachable at (e.g. `http://localhost:1178`). */
-	readonly base_url: string;
-	/** WebSocket endpoint path on the backend (e.g. `/api/ws`). */
-	readonly ws_path: string;
-	/** Origin for the authenticated upgrade. Defaults to `base_url`. */
-	readonly origin?: string;
 	/**
 	 * RPC endpoint path (e.g. `/api/rpc`) used by the close-on-revoke case to
 	 * fire `account_session_revoke_all` over the keeper's session channel.
@@ -197,7 +192,7 @@ export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptio
 
 	const open_authed = async (): Promise<WsClient> => {
 		const fixture = await setup_test();
-		return create_ws_transport({ base_url, ws_path, cookies: fixture.transport.cookies(), origin });
+		return open_session_ws(options, fixture, { admitted: false });
 	};
 
 	describe('cross-process websocket', () => {
@@ -380,11 +375,8 @@ export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptio
 				headers: { Authorization: `Bearer ${token}` }
 			});
 
-		const open_session = (account: TestAccountFixture): Promise<WsClient> => {
-			const { cookie } = account.create_session_headers();
-			assert.ok(cookie, 'expected a session cookie');
-			return create_admitted_ws_transport({ base_url, ws_path, cookies: [cookie], origin });
-		};
+		const open_session = (account: TestAccountFixture): Promise<WsClient> =>
+			open_session_ws(options, account, { admitted: true });
 
 		/**
 		 * Open each socket in turn, run `fn` over them, and close every socket
@@ -424,12 +416,7 @@ export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptio
 			'session revocation closes the live socket',
 			async () => {
 				const fixture = await setup_test();
-				const client = await create_ws_transport({
-					base_url,
-					ws_path,
-					cookies: fixture.transport.cookies(),
-					origin
-				});
+				const client = await open_session_ws(options, fixture, { admitted: false });
 				try {
 					// Confirm the socket dispatches before revoking, so a failed
 					// close assertion can't be confused with a dead connection.
@@ -460,9 +447,7 @@ export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptio
 			async () => {
 				const fixture = await setup_test();
 				const target = await fixture.create_account({ username: 'ws_delete_target', roles: [] });
-				const cookie = target.create_session_headers().cookie;
-				assert.ok(cookie, 'expected a session cookie for the target account');
-				const client = await create_ws_transport({ base_url, ws_path, cookies: [cookie], origin });
+				const client = await open_session_ws(options, target, { admitted: false });
 				try {
 					// admitted and dispatching before the delete, so a failed close
 					// assertion can't be confused with a dead connection
@@ -630,12 +615,7 @@ export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptio
 			"a WS mutation's audit row is visible after _testing_drain_effects",
 			async () => {
 				const fixture = await setup_test();
-				const client = await create_ws_transport({
-					base_url,
-					ws_path,
-					cookies: fixture.transport.cookies(),
-					origin
-				});
+				const client = await open_session_ws(options, fixture, { admitted: false });
 				try {
 					await client.request(1, account_token_create_action_spec.method, {
 						name: 'ws drain probe',

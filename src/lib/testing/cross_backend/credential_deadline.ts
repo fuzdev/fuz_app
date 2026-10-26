@@ -57,6 +57,7 @@ import { create_admitted_ws_transport } from '../transports/ws_transport.ts';
 import { type BackendCapabilities, test_if } from './capabilities.ts';
 import type { SetupTest, TestAccountFixture, TestFixture } from './setup.ts';
 import { SPINE_RPC_PATH, SPINE_SSE_PATH } from './spine_surface_constants.ts';
+import { open_session_ws, to_session_cookie, type WsEndpointTarget } from './ws_endpoint.ts';
 
 /** The shortened lifetime each case gives its credentials, in seconds. */
 const EXPIRY_SECONDS = 2;
@@ -75,15 +76,11 @@ const CLOSE_GRACE_MS = 4000;
 const EARLIEST_CLOSE_MS = EXPIRY_SECONDS * 1000 - 300;
 
 /** Configuration for `describe_credential_deadline_cross_tests`. */
-export interface CredentialDeadlineCrossTestOptions {
+export interface CredentialDeadlineCrossTestOptions extends WsEndpointTarget {
 	/** Fixture producer (`default_cross_process_setup(handle)`), called once for the suite. */
 	readonly setup_test: SetupTest;
 	/** Backend capability flags — the WebSocket cases gate on `ws`, the stream case on `sse`. */
 	readonly capabilities: BackendCapabilities;
-	/** Base URL the backend is reachable at. */
-	readonly base_url: string;
-	/** The WebSocket endpoint path (e.g. `/api/ws`). */
-	readonly ws_path: string;
 	/** The audit-log stream path. Default `/api/admin/audit/stream`. */
 	readonly sse_path?: string;
 	/** JSON-RPC endpoint path. Default `SPINE_RPC_PATH`. */
@@ -131,12 +128,6 @@ export const describe_credential_deadline_cross_tests = (
 		return { called_at, ...counts };
 	};
 
-	const cookie_of = (account: TestAccountFixture): string => {
-		const { cookie } = account.create_session_headers();
-		assert.ok(cookie, 'expected a session cookie');
-		return cookie;
-	};
-
 	/**
 	 * Assert `client` is open short of the deadline, then closes with 4001
 	 * "Credential expired" at it.
@@ -178,12 +169,7 @@ export const describe_credential_deadline_cross_tests = (
 				const { called_at, sessions } = await shorten(fixture, account, EXPIRY_SECONDS);
 				assert.ok(sessions >= 1, 'the seam shortened the account session');
 
-				const client = await create_admitted_ws_transport({
-					base_url,
-					ws_path,
-					cookies: [cookie_of(account)],
-					origin: base_url
-				});
+				const client = await open_session_ws(options, account, { admitted: true });
 				try {
 					await assert_closes_at_deadline(client, called_at);
 				} finally {
@@ -225,7 +211,7 @@ export const describe_credential_deadline_cross_tests = (
 			const sse = await create_sse_transport({
 				base_url,
 				sse_path,
-				cookies: [cookie_of(account)],
+				cookies: [to_session_cookie(account)],
 				origin: base_url
 			});
 			try {
@@ -258,12 +244,7 @@ export const describe_credential_deadline_cross_tests = (
 				// asks for a minute; the credentials stay due at the first deadline
 				await shorten(fixture, account, 60);
 
-				const client = await create_admitted_ws_transport({
-					base_url,
-					ws_path,
-					cookies: [cookie_of(account)],
-					origin: base_url
-				});
+				const client = await open_session_ws(options, account, { admitted: true });
 				try {
 					await assert_closes_at_deadline(client, called_at);
 				} finally {

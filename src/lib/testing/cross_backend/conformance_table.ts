@@ -78,6 +78,7 @@ import type { BackendCapabilities } from './capabilities.ts';
 import type { SetupTest, TestFixture } from './setup.ts';
 import { mint_narrowed_api_token } from './narrowed_api_token.ts';
 import { xfail_until } from './xfail.ts';
+import type { WsEndpointTarget } from './ws_endpoint.ts';
 
 /**
  * Names a seeded `extra_accounts` username for the `role_holder` /
@@ -122,19 +123,9 @@ export interface ConformanceTableOptions {
 	 * frame. Only the cases `is_ws_conformance_case` admits run; the rest are
 	 * left out, and so is an equivalence group left with fewer than two members.
 	 */
-	readonly ws?: ConformanceWsTarget;
+	readonly ws?: WsEndpointTarget;
 	/** `describe` block label. Defaults to `'conformance table'`. */
 	readonly suite_name?: string;
-}
-
-/** Where a backend's WebSocket endpoint is, for the conformance WS leg. */
-export interface ConformanceWsTarget {
-	/** Base URL the backend is reachable at (e.g. `http://localhost:1178`). */
-	readonly base_url: string;
-	/** WebSocket endpoint path on the backend (e.g. `/api/ws`). */
-	readonly ws_path: string;
-	/** `Origin` for a browser-context principal's upgrade. Defaults to `base_url`. */
-	readonly origin?: string;
 }
 
 /** What `resolve_conformance_rpc_endpoints` reads. */
@@ -564,7 +555,7 @@ export interface SendConformanceCaseOptions {
 	 */
 	readonly resolved_rpc_endpoints: ReturnType<typeof resolve_rpc_endpoints_for_setup>;
 	/** Send the request as a frame on a socket at this endpoint instead of over HTTP. */
-	readonly ws?: ConformanceWsTarget;
+	readonly ws?: WsEndpointTarget;
 }
 
 /** The spec a sent case resolved to — the RPC action, or the REST route. */
@@ -708,7 +699,7 @@ const send_ws_frame = async (
 	method: string,
 	params: unknown,
 	principal: ResolvedConformancePrincipal,
-	ws: ConformanceWsTarget
+	ws: WsEndpointTarget
 ): Promise<Omit<ConformanceCaseResponse, 'target'>> => {
 	const client = await create_admitted_ws_transport({
 		base_url: ws.base_url,

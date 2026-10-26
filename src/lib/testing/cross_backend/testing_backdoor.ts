@@ -73,11 +73,11 @@ import { ERROR_CREDENTIAL_TYPE_REQUIRED } from '../../http/error_schemas.ts';
 import { JSONRPC_ERROR_CODES } from '../../http/jsonrpc_errors.ts';
 import { rpc_call } from '../rpc_helpers.ts';
 import type { FetchTransport } from '../transports/fetch_transport.ts';
-import { create_admitted_ws_transport } from '../transports/ws_transport.ts';
 import { is_response_for, type JsonrpcErrorResponseFrame } from '../transports/ws_client.ts';
 import { test_if } from './capabilities.ts';
 import type { RpcPathCrossSuiteOptions, TestFixture } from './setup.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
+import { open_session_ws, type WsEndpointTarget } from './ws_endpoint.ts';
 
 /** A well-formed UUID that never names a real row. */
 const NIL_UUID = '00000000-0000-0000-0000-000000000000';
@@ -172,14 +172,7 @@ export interface TestingBackdoorCrossTestOptions extends RpcPathCrossSuiteOption
 	 * Pass it when the backend serves the `_testing_*` actions on its WS
 	 * endpoint too; omitted, those cases are skipped.
 	 */
-	readonly ws?: {
-		/** Base URL the backend is reachable at (e.g. `http://localhost:1178`). */
-		readonly base_url: string;
-		/** WebSocket endpoint path on the backend (e.g. `/api/ws`). */
-		readonly ws_path: string;
-		/** Origin for the upgrade. Defaults to `base_url`. */
-		readonly origin?: string;
-	};
+	readonly ws?: WsEndpointTarget;
 }
 
 export const describe_testing_backdoor_cross_tests = (
@@ -226,12 +219,7 @@ export const describe_testing_backdoor_cross_tests = (
 				`${method} over a session socket → forbidden ${ERROR_CREDENTIAL_TYPE_REQUIRED}`,
 				async () => {
 					const fixture = await setup_test();
-					const client = await create_admitted_ws_transport({
-						base_url: ws!.base_url,
-						ws_path: ws!.ws_path,
-						cookies: fixture.transport.cookies(),
-						origin: ws!.origin
-					});
+					const client = await open_session_ws(ws!, fixture, { admitted: true });
 					try {
 						const id = `backdoor_${method}`;
 						await client.send({ jsonrpc: '2.0', id, method, params });

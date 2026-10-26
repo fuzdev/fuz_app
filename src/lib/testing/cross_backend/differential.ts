@@ -51,8 +51,7 @@ import {
 	is_ws_conformance_case,
 	resolve_conformance_rpc_endpoints,
 	send_conformance_case,
-	type ConformancePrincipalConfig,
-	type ConformanceWsTarget
+	type ConformancePrincipalConfig
 } from './conformance_table.ts';
 import {
 	diff_differential_responses,
@@ -63,6 +62,7 @@ import {
 	type DifferentialResponse
 } from './differential_normalize.ts';
 import type { SetupTest } from './setup.ts';
+import type { WsEndpointTarget } from './ws_endpoint.ts';
 
 /** One side of the differential. */
 export interface DifferentialBackend {
@@ -76,7 +76,7 @@ export interface DifferentialBackend {
 	 * admits, and the ledger is checked against those. Set on one alone, the
 	 * suite throws at registration.
 	 */
-	readonly ws?: ConformanceWsTarget;
+	readonly ws?: WsEndpointTarget;
 }
 
 /**

@@ -33,7 +33,6 @@ import '../assert_dev_env.ts';
 import { assert, describe } from 'vitest';
 
 import { create_jsonrpc_request } from '../../http/jsonrpc_helpers.ts';
-import { create_ws_transport } from '../transports/ws_transport.ts';
 import {
 	is_response_for,
 	type JsonrpcErrorResponseFrame,
@@ -42,7 +41,8 @@ import {
 	type WsRequestResponder
 } from '../transports/ws_client.ts';
 import { type BackendCapabilities, test_if } from './capabilities.ts';
-import type { SetupTest } from './setup.ts';
+import type { SetupTest, TestFixture } from './setup.ts';
+import { open_session_ws, type WsEndpointTarget } from './ws_endpoint.ts';
 
 /** `data.reason` of the duplicate-id refusal. */
 const REASON_DUPLICATE_REQUEST_ID = 'duplicate_request_id';
@@ -60,15 +60,11 @@ const HEARTBEAT_METHOD = 'heartbeat';
 const FRAME_TIMEOUT_MS = 12_000;
 
 /** Configuration for `describe_ws_inbound_dispatch_cross_tests`. */
-export interface WsInboundDispatchCrossTestOptions {
+export interface WsInboundDispatchCrossTestOptions extends WsEndpointTarget {
 	/** Per-test fixture producer (`default_cross_process_setup(handle)`). */
 	readonly setup_test: SetupTest;
 	/** Backend capability flags; every case gates on `capabilities.peer_request`. */
 	readonly capabilities: BackendCapabilities;
-	/** Base URL the backend is reachable at (e.g. `http://localhost:1177`). */
-	readonly base_url: string;
-	/** WebSocket endpoint path on the backend (e.g. `/api/ws`). */
-	readonly ws_path: string;
 }
 
 /**
@@ -141,22 +137,14 @@ const is_error_for =
 export const describe_ws_inbound_dispatch_cross_tests = (
 	options: WsInboundDispatchCrossTestOptions
 ): void => {
-	const { setup_test, capabilities, base_url, ws_path } = options;
+	const { setup_test, capabilities } = options;
 
-	const open_ws = (
-		cookie: string | undefined,
-		on_request: WsRequestResponder
-	): Promise<WsClient> => {
-		assert.ok(cookie, 'expected a session cookie for the WS upgrade');
-		return create_ws_transport({
-			base_url,
-			ws_path,
-			cookies: [cookie],
-			origin: base_url,
+	const open_ws = (fixture: TestFixture, on_request: WsRequestResponder): Promise<WsClient> =>
+		open_session_ws(options, fixture, {
+			admitted: false,
 			on_request,
 			default_timeout_ms: FRAME_TIMEOUT_MS
 		});
-	};
 
 	const send_ping = (ws: WsClient, id: number | string, nonce: number): Promise<void> =>
 		ws.send(create_jsonrpc_request(PEER_PING_METHOD, { nonce }, id));
@@ -179,7 +167,7 @@ export const describe_ws_inbound_dispatch_cross_tests = (
 			async () => {
 				const fixture = await setup_test();
 				const { responder, release, pinged } = create_holding_responder();
-				const ws = await open_ws(fixture.create_session_headers().cookie, responder);
+				const ws = await open_ws(fixture, responder);
 				try {
 					const id = 'held';
 					await send_ping(ws, id, 41);
@@ -219,7 +207,7 @@ export const describe_ws_inbound_dispatch_cross_tests = (
 			async () => {
 				const fixture = await setup_test();
 				const { responder, release } = create_holding_responder();
-				const ws = await open_ws(fixture.create_session_headers().cookie, responder);
+				const ws = await open_ws(fixture, responder);
 				try {
 					for (let n = 0; n < MAX_INBOUND_DISPATCHES; n++) {
 						await send_ping(ws, n, n);

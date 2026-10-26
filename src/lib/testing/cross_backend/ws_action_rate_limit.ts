@@ -57,7 +57,6 @@ import '../assert_dev_env.ts';
 import { assert, describe, test } from 'vitest';
 
 import { create_jsonrpc_request } from '../../http/jsonrpc_helpers.ts';
-import { create_ws_transport } from '../transports/ws_transport.ts';
 import {
 	is_response_for,
 	type JsonrpcErrorResponseFrame,
@@ -66,6 +65,7 @@ import {
 } from '../transports/ws_client.ts';
 import type { SetupTest } from './setup.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
+import { open_session_ws, type WsEndpointTarget } from './ws_endpoint.ts';
 
 // Wire literals are deliberate independent copies of the producers'
 // constants (`JSONRPC_ERROR_CODES` on TS, the `JsonrpcError` taxonomy on
@@ -114,13 +114,9 @@ const XFF_V6_OTHER_64 = '2001:db8:e3a:2::1';
 const RESPONSE_TIMEOUT_MS = 5000;
 
 /** Options for `describe_ws_action_rate_limit_cross_tests`. */
-export interface WsActionRateLimitCrossTestOptions {
+export interface WsActionRateLimitCrossTestOptions extends WsEndpointTarget {
 	/** Per-test fixture producer (cross-process only — see the module doc). */
 	readonly setup_test: SetupTest;
-	/** Base URL the backend is reachable at (e.g. `http://localhost:1177`). */
-	readonly base_url: string;
-	/** WebSocket endpoint path (e.g. `/api/ws`). */
-	readonly ws_path: string;
 	/** JSON-RPC endpoint path. Default `/api/rpc` (the spine convention). */
 	readonly rpc_path?: string;
 	/**
@@ -155,7 +151,7 @@ const outcome_from_frame = (
 export const describe_ws_action_rate_limit_cross_tests = (
 	options: WsActionRateLimitCrossTestOptions
 ): void => {
-	const { setup_test, base_url, ws_path, max_attempts } = options;
+	const { setup_test, max_attempts } = options;
 	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
 	assert(
 		Number.isInteger(max_attempts) && max_attempts >= 2,
@@ -195,17 +191,11 @@ export const describe_ws_action_rate_limit_cross_tests = (
 	};
 
 	/** Open a socket on the keeper's session, optionally behind a forwarded IP. */
-	const open_ws = (fixture: Fixture, forwarded_for?: string): Promise<WsClient> => {
-		const cookie = fixture.create_session_headers().cookie;
-		assert.ok(cookie, 'expected a session cookie for the WS upgrade');
-		return create_ws_transport({
-			base_url,
-			ws_path,
-			cookies: [cookie],
-			origin: base_url,
+	const open_ws = (fixture: Fixture, forwarded_for?: string): Promise<WsClient> =>
+		open_session_ws(options, fixture, {
+			admitted: false,
 			headers: forwarded_for ? { 'x-forwarded-for': forwarded_for } : undefined
 		});
-	};
 
 	const assert_charged_not_limited = (outcome: RpcOutcome, label: string): void => {
 		assert.strictEqual(

@@ -39,7 +39,6 @@ import '../assert_dev_env.ts';
 import { assert, describe } from 'vitest';
 
 import { rpc_call } from '../rpc_helpers.ts';
-import { create_ws_transport } from '../transports/ws_transport.ts';
 import {
 	is_response_for,
 	type JsonrpcErrorResponseFrame,
@@ -49,8 +48,9 @@ import {
 } from '../transports/ws_client.ts';
 import { create_jsonrpc_request, is_jsonrpc_request } from '../../http/jsonrpc_helpers.ts';
 import { type BackendCapabilities, test_if } from './capabilities.ts';
-import type { SetupTest } from './setup.ts';
+import type { SetupTest, TestFixture } from './setup.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
+import { open_session_ws, type WsEndpointTarget } from './ws_endpoint.ts';
 
 // The wire literals below are deliberate independent copies of the
 // producers' constants (`actions/peer_ping.ts` on TS, `REASON_PEER_*` /
@@ -71,15 +71,11 @@ const REASON_PEER_NO_TRANSPORT = 'peer_no_transport';
 const valid_reply = (nonce: number) => ({ nonce, protocol_version: 1 });
 
 /** Configuration for `describe_peer_ping_ws_tests`. */
-export interface PeerPingWsTestOptions {
+export interface PeerPingWsTestOptions extends WsEndpointTarget {
 	/** Per-test fixture producer (`default_cross_process_setup(handle, ...)`). */
 	readonly setup_test: SetupTest;
 	/** Backend capability flags; every case gates on `capabilities.peer_request`. */
 	readonly capabilities: BackendCapabilities;
-	/** Base URL the backend is reachable at (e.g. `http://localhost:1177`). */
-	readonly base_url: string;
-	/** WebSocket endpoint path on the backend (e.g. `/api/ws`). */
-	readonly ws_path: string;
 }
 
 /**
@@ -90,24 +86,13 @@ export interface PeerPingWsTestOptions {
  * the HTTP no-transport path). Gated on `capabilities.peer_request`.
  */
 export const describe_peer_ping_ws_tests = (options: PeerPingWsTestOptions): void => {
-	const { setup_test, capabilities, base_url, ws_path } = options;
+	const { setup_test, capabilities } = options;
 
 	// -- shared helpers -------------------------------------------------------
 
-	/** Open a WS transport for a session cookie, with an optional responder. */
-	const open_ws = (
-		cookie: string | undefined,
-		on_request?: WsRequestResponder
-	): Promise<WsClient> => {
-		assert.ok(cookie, 'expected a session cookie for the WS upgrade');
-		return create_ws_transport({
-			base_url,
-			ws_path,
-			cookies: [cookie],
-			origin: base_url,
-			on_request
-		});
-	};
+	/** Open a WS transport on the fixture's session, with an optional responder. */
+	const open_ws = (fixture: TestFixture, on_request?: WsRequestResponder): Promise<WsClient> =>
+		open_session_ws(options, fixture, { admitted: false, on_request });
 
 	/** A responder that echoes a valid `PingResponse` for every `peer/ping`. */
 	const echo_responder: WsRequestResponder = (req) => {
@@ -146,7 +131,7 @@ export const describe_peer_ping_ws_tests = (options: PeerPingWsTestOptions): voi
 			'a client peer/ping round-trips: server pings back, validates the echo, returns it',
 			async () => {
 				const fixture = await setup_test();
-				const ws = await open_ws(fixture.create_session_headers().cookie, echo_responder);
+				const ws = await open_ws(fixture, echo_responder);
 				try {
 					const result = await ws.request<{ nonce: number; protocol_version: number }>(
 						1,
@@ -168,7 +153,7 @@ export const describe_peer_ping_ws_tests = (options: PeerPingWsTestOptions): voi
 			async () => {
 				const fixture = await setup_test();
 				// Responder swallows the ping (returns nothing) — the half-open peer.
-				const ws = await open_ws(fixture.create_session_headers().cookie, () => undefined);
+				const ws = await open_ws(fixture, () => undefined);
 				try {
 					// Short server-side deadline so the negative runs fast.
 					const frame = await ping_raw(ws, 2, { nonce: 1, timeout_ms: 300 });
@@ -187,7 +172,7 @@ export const describe_peer_ping_ws_tests = (options: PeerPingWsTestOptions): voi
 				const fixture = await setup_test();
 				// Reply that fails `PingResponse` validation (nonce wrong type,
 				// protocol_version missing).
-				const ws = await open_ws(fixture.create_session_headers().cookie, () => ({
+				const ws = await open_ws(fixture, () => ({
 					result: { nonce: 'not-a-number' }
 				}));
 				try {
@@ -208,7 +193,7 @@ export const describe_peer_ping_ws_tests = (options: PeerPingWsTestOptions): voi
 			'a reply with an undeclared key is accepted and the key is dropped',
 			async () => {
 				const fixture = await setup_test();
-				const ws = await open_ws(fixture.create_session_headers().cookie, (req) => {
+				const ws = await open_ws(fixture, (req) => {
 					const nonce = (req.params as { nonce?: number } | undefined)?.nonce ?? 0;
 					return { result: { ...valid_reply(nonce), added_later: true } };
 				});
@@ -227,7 +212,7 @@ export const describe_peer_ping_ws_tests = (options: PeerPingWsTestOptions): voi
 			'a client JSON-RPC error reply surfaces as the action error (ClientError forwarded)',
 			async () => {
 				const fixture = await setup_test();
-				const ws = await open_ws(fixture.create_session_headers().cookie, () => ({
+				const ws = await open_ws(fixture, () => ({
 					error: { code: -32603, message: 'client refused', data: { reason: 'client_says_no' } }
 				}));
 				try {
@@ -246,7 +231,7 @@ export const describe_peer_ping_ws_tests = (options: PeerPingWsTestOptions): voi
 			'an unsolicited response is dropped: it resolves nothing and the socket survives',
 			async () => {
 				const fixture = await setup_test();
-				const ws = await open_ws(fixture.create_session_headers().cookie, echo_responder);
+				const ws = await open_ws(fixture, echo_responder);
 				try {
 					// Inject a reply for an id the server never issued on this socket.
 					await ws.send({ jsonrpc: '2.0', id: 's999999', result: valid_reply(7) });
@@ -273,8 +258,8 @@ export const describe_peer_ping_ws_tests = (options: PeerPingWsTestOptions): voi
 				// A has NO responder, so the inbound server-initiated request is
 				// surfaced as a message A can observe (to learn its server id);
 				// A never answers it.
-				const ws_a = await open_ws(fixture.create_session_headers().cookie);
-				const ws_b = await open_ws(fixture.create_session_headers().cookie, echo_responder);
+				const ws_a = await open_ws(fixture);
+				const ws_b = await open_ws(fixture, echo_responder);
 				try {
 					// A invokes peer/ping with a short server-side deadline; don't
 					// await yet — observe the server→client request first.

@@ -1248,7 +1248,7 @@ capabilities}` protocol every Tier 1 suite uses, so **one case array runs
   resolved_rpc_endpoints})` (exported) is the send half — principal resolved,
   request sent, the raw `{target, status, headers, body}` back unasserted; the
   table asserts on it, and the cross-backend differential compares two.
-  **WS leg:** `ws: ConformanceWsTarget` (`{base_url, ws_path, origin?}`) on
+  **WS leg:** `ws: WsEndpointTarget` (`{base_url, ws_path, origin?}`) on
   either sends each case as one frame on an admitted socket the principal
   opens — its headers on the upgrade, no `Origin` where the HTTP leg
   suppresses it, its own actor as `?acting=`. Only the TS spine resolves an
@@ -1794,6 +1794,18 @@ are `src/test/auth/cell_crud_parity.db.test.ts`
   opens and round-trips `heartbeat` (response id `WS_ADMISSION_PROBE_ID`) so the
   connection is admitted when it resolves; suites that wait for a push, or need
   connections registered in a known order, open through it.
+- `testing/cross_backend/ws_endpoint.ts` — `WsEndpointTarget`
+  (`{base_url, ws_path, origin?}`), the endpoint shape the socket-driving
+  cross suites take (flat, or as an optional `ws` on
+  `describe_session_cap_cross_tests`, `describe_testing_backdoor_cross_tests`
+  and the conformance table; `describe_transport_composition_cross_tests`
+  keeps its own nullable `base_url` and defaulted `ws_path`), and
+  `open_session_ws(target, account, {admitted, on_request?, headers?,
+  default_timeout_ms?})`, which opens a socket on an account's session cookie
+  (`to_session_cookie`, asserted present) with `target.origin` or `base_url`
+  as the `Origin` — through `create_admitted_ws_transport` when `admitted`,
+  `create_ws_transport` otherwise. The cookie is the account's static one, so
+  a session rotated through `fixture.transport` upgrades stale.
 - `testing/transports/ws_raw_client.ts` — `connect_raw_ws({port, hostname?, path, headers?, pipelined?})`
   → `RawWsClient` (`{frames, send_text, wait_for, destroy}`), a WebSocket client
   over a raw `node:net` socket for the two things a client library can't do:

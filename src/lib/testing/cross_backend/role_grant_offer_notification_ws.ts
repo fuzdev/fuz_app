@@ -62,7 +62,7 @@ import '../assert_dev_env.ts';
 import { assert, describe } from 'vitest';
 
 import { rpc_call } from '../rpc_helpers.ts';
-import { create_admitted_ws_transport, WS_ADMISSION_PROBE_ID } from '../transports/ws_transport.ts';
+import { WS_ADMISSION_PROBE_ID } from '../transports/ws_transport.ts';
 import { is_notification_with, is_response_for, type WsClient } from '../transports/ws_client.ts';
 import { ROLE_ADMIN } from '../../auth/role_schema.ts';
 import { WS_CLOSE_PERMISSION_REVOKED } from '../../actions/transports.ts';
@@ -87,20 +87,17 @@ import {
 } from './role_grant_cross_helpers.ts';
 import type { SetupTest, TestFixture } from './setup.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
+import { open_session_ws, type WsEndpointTarget, type WsSessionAccount } from './ws_endpoint.ts';
 
 /** The request id the bystander's barrier `heartbeat` goes out under. */
 const BYSTANDER_BARRIER_ID = 'bystander_barrier';
 
 /** Configuration for `describe_role_grant_offer_notification_ws_tests`. */
-export interface RoleGrantOfferNotificationWsTestOptions {
+export interface RoleGrantOfferNotificationWsTestOptions extends WsEndpointTarget {
 	/** Per-test fixture producer (`default_cross_process_setup(handle, ...)`). */
 	readonly setup_test: SetupTest;
 	/** Backend capability flags; every case gates on `capabilities.ws`. */
 	readonly capabilities: BackendCapabilities;
-	/** Base URL the backend is reachable at (e.g. `http://localhost:1178`). */
-	readonly base_url: string;
-	/** WebSocket endpoint path on the backend (e.g. `/api/ws`). */
-	readonly ws_path: string;
 	/**
 	 * The roles `ws_path` gates its upgrade on (its `required_roles`), or
 	 * omitted / `[]` for an ungated endpoint. Declare them for a backend whose
@@ -122,25 +119,18 @@ export interface RoleGrantOfferNotificationWsTestOptions {
 export const describe_role_grant_offer_notification_ws_tests = (
 	options: RoleGrantOfferNotificationWsTestOptions
 ): void => {
-	const { setup_test, capabilities, base_url, ws_path, ws_required_roles = [] } = options;
+	const { setup_test, capabilities, ws_required_roles = [] } = options;
 	const revoke_closes_the_socket = ws_required_roles.includes(ROLE_ADMIN);
 
 	// -- shared helpers -------------------------------------------------------
 
 	/**
-	 * Open a WS transport for a single session cookie (`<name>=<value>`),
-	 * admitted before it resolves: a targeted notification is delivered only to
-	 * an admitted connection, and the handshake alone doesn't say it is one.
+	 * Open a WS transport on an account's session, admitted before it resolves:
+	 * a targeted notification is delivered only to an admitted connection, and
+	 * the handshake alone doesn't say it is one.
 	 */
-	const open_ws = (cookie: string | undefined) => {
-		assert.ok(cookie, 'expected a session cookie for the WS upgrade');
-		return create_admitted_ws_transport({
-			base_url,
-			ws_path,
-			cookies: [cookie],
-			origin: base_url
-		});
-	};
+	const open_ws = (account: WsSessionAccount): Promise<WsClient> =>
+		open_session_ws(options, account, { admitted: true });
 
 	/**
 	 * A third account's admitted socket — party to nothing a case drives. It
@@ -150,7 +140,7 @@ export const describe_role_grant_offer_notification_ws_tests = (
 	 */
 	const open_bystander = async (fixture: TestFixture): Promise<WsClient> => {
 		const bystander = await fixture.create_account({ roles: [ROLE_ADMIN] });
-		return open_ws(bystander.create_session_headers().cookie);
+		return open_ws(bystander);
 	};
 
 	/**
@@ -225,7 +215,7 @@ export const describe_role_grant_offer_notification_ws_tests = (
 
 				const bystander_ws = await open_bystander(fixture);
 				try {
-					const recipient_ws = await open_ws(recipient.create_session_headers().cookie);
+					const recipient_ws = await open_ws(recipient);
 					try {
 						// The keeper (grantor, holds ROLE_ADMIN) offers the recipient a
 						// role over RPC — fresh pending offer, emits the notification
@@ -271,7 +261,7 @@ export const describe_role_grant_offer_notification_ws_tests = (
 				// Grantor = keeper; open its socket BEFORE the recipient accepts.
 				const bystander_ws = await open_bystander(fixture);
 				try {
-					const grantor = await open_ws(fixture.create_session_headers().cookie);
+					const grantor = await open_ws(fixture);
 					try {
 						const offer = await create_pending_offer(fixture, recipient.account.id);
 						const accepted = await rpc(
@@ -311,7 +301,7 @@ export const describe_role_grant_offer_notification_ws_tests = (
 
 				const bystander_ws = await open_bystander(fixture);
 				try {
-					const grantor = await open_ws(fixture.create_session_headers().cookie);
+					const grantor = await open_ws(fixture);
 					try {
 						const offer = await create_pending_offer(fixture, recipient.account.id);
 						const declined = await rpc(
@@ -353,7 +343,7 @@ export const describe_role_grant_offer_notification_ws_tests = (
 				// Recipient learns their pending offer was pulled — open its socket.
 				const bystander_ws = await open_bystander(fixture);
 				try {
-					const recipient_ws = await open_ws(recipient.create_session_headers().cookie);
+					const recipient_ws = await open_ws(recipient);
 					try {
 						const offer = await create_pending_offer(fixture, recipient.account.id);
 						const retracted = await rpc(
@@ -400,7 +390,7 @@ export const describe_role_grant_offer_notification_ws_tests = (
 
 				const bystander_ws = await open_bystander(fixture);
 				try {
-					const revokee_ws = await open_ws(revokee.create_session_headers().cookie);
+					const revokee_ws = await open_ws(revokee);
 					try {
 						const revoked = await rpc(
 							fixture,
@@ -471,7 +461,7 @@ export const describe_role_grant_offer_notification_ws_tests = (
 				// when the recipient accepts grantor 2's offer.
 				const bystander_ws = await open_bystander(fixture);
 				try {
-					const grantor1_ws = await open_ws(fixture.create_session_headers().cookie);
+					const grantor1_ws = await open_ws(fixture);
 					try {
 						const accepted = await rpc(
 							fixture,
@@ -527,7 +517,7 @@ export const describe_role_grant_offer_notification_ws_tests = (
 				// Watch the sibling grantor's socket for the supersede push.
 				const bystander_ws = await open_bystander(fixture);
 				try {
-					const grantor_ws = await open_ws(grantor.create_session_headers().cookie);
+					const grantor_ws = await open_ws(grantor);
 					try {
 						const revoked = await rpc(
 							fixture,

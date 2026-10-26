@@ -73,6 +73,7 @@ import {
 import { type BackendCapabilities, test_if } from './capabilities.ts';
 import { cross_rpc_call } from './cell_cross_helpers.ts';
 import type { SetupTest, TestFixture } from './setup.ts';
+import { open_session_ws, type WsEndpointTarget } from './ws_endpoint.ts';
 
 /** The close code both spines send on an outbound overflow. */
 const WS_CLOSE_OUTBOUND_OVERFLOW = 4005;
@@ -157,17 +158,11 @@ const LARGE_BURST_TIMEOUT_MS = 15_000;
 const CLOSE_TIMEOUT_MS = 15_000;
 
 /** Options for the outbound-overflow parity suite. */
-export interface WsOutboundOverflowCrossTestOptions {
+export interface WsOutboundOverflowCrossTestOptions extends WsEndpointTarget {
 	/** Per-test fixture producer (`default_cross_process_setup(handle)`). */
 	readonly setup_test: SetupTest;
 	/** Backend capability flags; every WebSocket case gates on `capabilities.ws`. */
 	readonly capabilities: BackendCapabilities;
-	/** Base URL the backend is reachable at (e.g. `http://localhost:1178`). */
-	readonly base_url: string;
-	/** WebSocket endpoint path on the backend (e.g. `/api/ws`). */
-	readonly ws_path: string;
-	/** Origin for the session socket's upgrade. Defaults to `base_url`. */
-	readonly origin?: string;
 	/**
 	 * The backend's RPC endpoint path, for the over-HTTP refusal. Omitted, that
 	 * case is skipped.
@@ -184,7 +179,7 @@ export interface WsOutboundOverflowCrossTestOptions {
 export const describe_ws_outbound_overflow_cross_tests = (
 	options: WsOutboundOverflowCrossTestOptions
 ): void => {
-	const { setup_test, capabilities, base_url, ws_path, origin, rpc_path } = options;
+	const { setup_test, capabilities, base_url, ws_path, rpc_path } = options;
 
 	/** A daemon-token socket the backend has admitted — the one that floods itself. */
 	const open_flooder = (fixture: TestFixture): Promise<WsClient> =>
@@ -281,12 +276,7 @@ export const describe_ws_outbound_overflow_cross_tests = (
 			async () => {
 				const fixture = await setup_test();
 				// a second connection on the same account (the keeper's session)
-				const bystander = await create_admitted_ws_transport({
-					base_url,
-					ws_path,
-					cookies: fixture.transport.cookies(),
-					origin
-				});
+				const bystander = await open_session_ws(options, fixture, { admitted: true });
 				const client = await open_flooder(fixture);
 				try {
 					await client.send(create_jsonrpc_request(FLOOD_METHOD, OVERFLOWS, 'overflows'));
