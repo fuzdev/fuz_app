@@ -58,15 +58,6 @@ export interface CreateTestAccountOptions {
 }
 
 /**
- * Shape returned by `TestFixture.create_account`. Aliased to the
- * existing `TestAccount` interface from `testing/app_server.ts` — same shape,
- * stable name on the cross-backend testing surface so call sites read
- * `fixture.create_account(...)` returning `TestAccountFixture` without
- * crossing module boundaries.
- */
-export type TestAccountFixture = TestAccount;
-
-/**
  * Spec for a bootstrap-time secondary account seeded alongside the
  * keeper by `_testing_reset` (cross-process) or `create_test_app`
  * (in-process). Used for accounts whose required roles aren't
@@ -85,28 +76,21 @@ export interface ExtraAccountSpec {
 	readonly roles: ReadonlyArray<string>;
 }
 
-/** Bootstrap-time-seeded secondary account exposed on the fixture. */
-export interface ExtraAccountFixture {
-	readonly account: { readonly id: Uuid; readonly username: string };
-	readonly actor: { readonly id: Uuid };
-	readonly api_token: string;
-	readonly session_cookie: string;
-	readonly create_session_headers: (extra?: Record<string, string>) => Record<string, string>;
-	readonly create_bearer_headers: (extra?: Record<string, string>) => Record<string, string>;
-}
-
 /**
- * Build an `ExtraAccountFixture` from a seeded `{account, actor,
- * api_token, session_cookie}` bundle and the session cookie name.
+ * Build a `TestAccount` from a seeded `{account, actor, api_token,
+ * session_cookie}` bundle and the session cookie name — the header builders
+ * close over its credentials.
  *
- * Same shape produced by either path that seeds bootstrap-time
- * secondaries: in-process via `create_test_account_with_credentials`
- * against the live backend's DB, or cross-process via the
- * `_testing_reset` RPC's `extra_accounts` output. Both call this
- * helper so the fixture-side header builders + field plumbing stays
- * in one place.
+ * Every fixture path that hands out a secondary account builds it here: the
+ * bootstrap-time `extra_accounts` (in-process via
+ * `create_test_account_with_credentials`, cross-process from the
+ * `_testing_reset` output) and the cross-process `fixture.create_account`.
+ *
+ * @param seeded - the account's identity and credentials
+ * @param cookie_name - the backend's session cookie name
+ * @returns the account with its header builders
  */
-export const build_extra_account_fixture = (
+export const to_test_account = (
 	seeded: {
 		account: { id: Uuid; username: string };
 		actor: { id: Uuid };
@@ -114,7 +98,7 @@ export const build_extra_account_fixture = (
 		session_cookie: string;
 	},
 	cookie_name: string
-): ExtraAccountFixture => ({
+): TestAccount => ({
 	account: seeded.account,
 	actor: seeded.actor,
 	api_token: seeded.api_token,
@@ -130,8 +114,16 @@ export const build_extra_account_fixture = (
 });
 
 /**
- * Fields shared by every `TestFixture` regardless of transport. The
- * discriminated union below adds in-process-only fields conditionally.
+ * The per-test bundle returned by `SetupTest`. Every Tier 1 suite body
+ * reads exclusively from this shape — no `test_app.backend.*` reads remain
+ * in the suite bodies.
+ *
+ * Transport-agnostic: in-process and cross-process producers return the
+ * same shape. Behaviors that once needed raw backend access (keyring for
+ * forging cookies) are reached through wire-shaped seams instead —
+ * `mint_expired_session()` mints over the `_testing_mint_session` channel
+ * cross-process and directly in-process, so suite bodies never branch on
+ * the transport.
  *
  * **Keeper ≠ admin.** `fixture.account` / `fixture.actor` refer to the
  * **fresh keeper** seeded per test. The keeper account holds
@@ -143,7 +135,7 @@ export const build_extra_account_fixture = (
  * via `extra_accounts: [{username, roles: [ROLE_KEEPER]}]` and read it
  * from `fixture.extra_accounts[username]`.
  */
-export interface TestFixtureBase {
+export interface TestFixture {
 	/**
 	 * Transport for this test's HTTP requests. Typed as `FetchTransport`
 	 * so cross-process tests can call `transport.cookies()` for WS upgrade
@@ -193,14 +185,14 @@ export interface TestFixtureBase {
 	 * cross-process: goes through the consumer-supplied DB-admin
 	 * channel.
 	 */
-	readonly create_account: (options?: CreateTestAccountOptions) => Promise<TestAccountFixture>;
+	readonly create_account: (options?: CreateTestAccountOptions) => Promise<TestAccount>;
 	/**
 	 * Bootstrap-time-seeded secondaries, keyed by their declared
 	 * `username`. Populated from the `extra_accounts` option passed to
 	 * `default_in_process_setup` / `default_cross_process_setup`. Empty
 	 * for suites that don't declare any.
 	 */
-	readonly extra_accounts: Readonly<Record<string, ExtraAccountFixture>>;
+	readonly extra_accounts: Readonly<Record<string, TestAccount>>;
 	/**
 	 * Additional actors seeded on the **keeper** account (beyond its single
 	 * bootstrap `actor`), in declaration order. Populated from the
@@ -231,20 +223,6 @@ export interface TestFixtureBase {
 	 */
 	readonly reject_unknown_audit_metadata_keys?: boolean;
 }
-
-/**
- * The per-test bundle returned by `SetupTest`. Every Tier 1 suite body
- * reads exclusively from this shape — no `test_app.backend.*` reads remain
- * in the suite bodies.
- *
- * Transport-agnostic: in-process and cross-process producers return the
- * same shape. Behaviors that once needed raw backend access (keyring for
- * forging cookies) are reached through wire-shaped seams instead —
- * `mint_expired_session()` mints over the `_testing_mint_session` channel
- * cross-process and directly in-process, so suite bodies never branch on
- * the transport.
- */
-export type TestFixture = TestFixtureBase;
 
 /**
  * Fixture-producing function. Invoked once inside every `test()` body by
@@ -474,7 +452,7 @@ export interface CrossProcessSetupOptions {
 	 * single bootstrap actor — exposed on `fixture.extra_actors`. Declare
 	 * to put the keeper into a multi-actor state so the `actor_required` /
 	 * explicit-`acting` branches are reachable cross-process. See
-	 * `TestFixtureBase.extra_actors`.
+	 * `TestFixture.extra_actors`.
 	 */
 	readonly extra_actors?: ReadonlyArray<string>;
 	/**
@@ -1116,28 +1094,15 @@ export const default_cross_process_setup = (
 			if (account_options?.roles && account_options.roles.length > 0) {
 				await grant_roles_via_offer_accept(refreshed_handle, other, account_options.roles);
 			}
-			return {
-				account: other.account,
-				actor: other.actor,
-				session_cookie: other.session_cookie,
-				api_token: other.api_token,
-				create_session_headers: (extra?: Record<string, string>): Record<string, string> => ({
-					cookie: `${cookie_name}=${other.session_cookie}`,
-					...extra
-				}),
-				create_bearer_headers: (extra?: Record<string, string>): Record<string, string> => ({
-					authorization: `Bearer ${other.api_token}`,
-					...extra
-				})
-			};
+			return to_test_account(other, cookie_name);
 		};
 
-		const extra_accounts: Record<string, ExtraAccountFixture> = {};
+		const extra_accounts: Record<string, TestAccount> = {};
 		for (let i = 0; i < extra_account_specs.length; i++) {
 			const spec = extra_account_specs[i];
 			const seeded = seeded_extras[i];
 			if (!spec || !seeded) continue;
-			extra_accounts[spec.username] = build_extra_account_fixture(seeded, cookie_name);
+			extra_accounts[spec.username] = to_test_account(seeded, cookie_name);
 		}
 
 		// Per-test transport — fresh jar carrying the new keeper's cookie

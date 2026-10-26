@@ -119,7 +119,8 @@ import { list_audit_events } from './audit_cross_helpers.ts';
 import { type BackendCapabilities, test_if } from './capabilities.ts';
 import { cross_rpc_call, expect_output } from './cell_cross_helpers.ts';
 import { create_account_revocations } from './revocation_drivers.ts';
-import type { SetupTest, TestAccountFixture, TestFixture } from './setup.ts';
+import type { TestAccount } from '../app_server.ts';
+import type { SetupTest, TestFixture } from './setup.ts';
 import {
 	SPINE_ACCOUNT_LOGOUT_PATH,
 	SPINE_ACCOUNT_PASSWORD_PATH
@@ -375,7 +376,7 @@ export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptio
 				headers: { Authorization: `Bearer ${token}` }
 			});
 
-		const open_session = (account: TestAccountFixture): Promise<WsClient> =>
+		const open_session = (account: TestAccount): Promise<WsClient> =>
 			open_session_ws(options, account, { admitted: true });
 
 		/**
@@ -473,7 +474,7 @@ export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptio
 		/** Mint a token for `account` over its own session. */
 		const mint_token = async (
 			fixture: TestFixture,
-			account: TestAccountFixture,
+			account: TestAccount,
 			name: string
 		): Promise<TokenCreateOutput> =>
 			expect_output(

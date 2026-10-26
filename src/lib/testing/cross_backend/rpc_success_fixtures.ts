@@ -39,7 +39,8 @@ import type { RpcSuccessFixture, RpcSuccessFixtures } from '../rpc_round_trip.ts
 import type { RequestResponseActionSpec } from '../../actions/action_spec.ts';
 import type { z } from 'zod';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
-import type { TestAccountFixture, TestFixture } from './setup.ts';
+import type { TestAccount } from '../app_server.ts';
+import type { TestFixture } from './setup.ts';
 
 /** Options for `create_spine_rpc_success_fixtures`. */
 export interface SpineRpcSuccessFixturesOptions {
@@ -78,12 +79,12 @@ export const create_spine_rpc_success_fixtures = (
 			spec.output as z.ZodType<z.infer<TSpec['output']>>
 		);
 
-	const create_grantor = (fixture: TestFixture): Promise<TestAccountFixture> =>
+	const create_grantor = (fixture: TestFixture): Promise<TestAccount> =>
 		fixture.create_account({ roles: [ROLE_ADMIN] });
 
 	const create_pending_offer = async (
 		fixture: TestFixture
-	): Promise<{ grantor: TestAccountFixture; recipient: TestAccountFixture; offer_id: string }> => {
+	): Promise<{ grantor: TestAccount; recipient: TestAccount; offer_id: string }> => {
 		const grantor = await create_grantor(fixture);
 		const recipient = await fixture.create_account();
 		const { offer } = await call(

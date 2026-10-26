@@ -32,7 +32,7 @@ export interface AuditReadFixture {
 	/** The keeper's session headers — the keeper holds the admin role the audit read needs. */
 	readonly create_session_headers: (extra?: Record<string, string>) => Record<string, string>;
 	readonly create_daemon_token_headers: (extra?: Record<string, string>) => Record<string, string>;
-	/** Refuse undeclared metadata keys — see `TestFixtureBase.reject_unknown_audit_metadata_keys`. */
+	/** Refuse undeclared metadata keys — see `TestFixture.reject_unknown_audit_metadata_keys`. */
 	readonly reject_unknown_audit_metadata_keys?: boolean;
 }
 

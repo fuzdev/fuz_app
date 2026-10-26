@@ -31,7 +31,8 @@ import {
 	create_test_account_with_credentials,
 	mint_test_session,
 	type CreateTestAppOptions,
-	type SuiteAppOptions
+	type SuiteAppOptions,
+	type TestAccount
 } from '../app_server.ts';
 import { create_test_app_surface_spec } from '../stubs.ts';
 import {
@@ -42,16 +43,15 @@ import {
 import { in_process_capabilities, type BackendCapabilities } from './capabilities.ts';
 import type { FetchTransport } from '../transports/fetch_transport.ts';
 import {
-	build_extra_account_fixture,
 	EXPIRED_SESSION_OFFSET_SECONDS,
+	to_test_account,
 	type SetupTest,
-	type ExtraAccountFixture,
 	type ExtraAccountSpec
 } from './setup.ts';
 
 /**
  * Wrap a Hono-style app into a `FetchTransport`-shaped object so the
- * shared `TestFixtureBase.transport` type holds for both in-process and
+ * shared `TestFixture.transport` type holds for both in-process and
  * cross-process setups. In-process has no real cookie jar — the no-op
  * `cookies()` returns `[]`; in-process tests build cookies via
  * `fixture.create_session_headers()` instead.
@@ -79,7 +79,7 @@ export interface InProcessSetupOptions extends CreateTestAppOptions {
 	/**
 	 * Additional actor names to seed on the bootstrapped keeper — exposed on
 	 * `fixture.extra_actors`. See `CrossProcessSetupOptions.extra_actors` /
-	 * `TestFixtureBase.extra_actors`. Seeded directly against the live backend
+	 * `TestFixture.extra_actors`. Seeded directly against the live backend
 	 * DB (in-process has no wire hop).
 	 */
 	readonly extra_actors?: ReadonlyArray<string>;
@@ -123,7 +123,7 @@ export const default_in_process_setup =
 		// just landed on. Direct-insert is the only path for roles whose
 		// `grant_paths` excludes `'admin'` (e.g. `ROLE_KEEPER`) — see
 		// `ExtraAccountSpec` for why this bypass is bootstrap-cradle-only.
-		const extra_accounts: Record<string, ExtraAccountFixture> = {};
+		const extra_accounts: Record<string, TestAccount> = {};
 		const { cookie_name } = options.session_options;
 		for (const spec of options.extra_accounts ?? []) {
 			const seeded = await create_test_account_with_credentials({
@@ -135,7 +135,7 @@ export const default_in_process_setup =
 				password_value: spec.password_value,
 				roles: [...spec.roles]
 			});
-			extra_accounts[spec.username] = build_extra_account_fixture(seeded, cookie_name);
+			extra_accounts[spec.username] = to_test_account(seeded, cookie_name);
 		}
 
 		// Seed additional keeper actors directly against the same DB. Mirrors
@@ -223,7 +223,7 @@ export interface DefaultInProcessSuiteOptions {
 	extra_accounts?: ReadonlyArray<ExtraAccountSpec>;
 	/**
 	 * Additional actor names to seed on the bootstrapped keeper — exposed on
-	 * `fixture.extra_actors`. See `TestFixtureBase.extra_actors`.
+	 * `fixture.extra_actors`. See `TestFixture.extra_actors`.
 	 */
 	extra_actors?: ReadonlyArray<string>;
 	/**

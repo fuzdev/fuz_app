@@ -55,7 +55,8 @@ import { create_sse_transport } from '../transports/sse_transport.ts';
 import type { WsClient } from '../transports/ws_client.ts';
 import { create_admitted_ws_transport } from '../transports/ws_transport.ts';
 import { type BackendCapabilities, test_if } from './capabilities.ts';
-import type { SetupTest, TestAccountFixture, TestFixture } from './setup.ts';
+import type { TestAccount } from '../app_server.ts';
+import type { SetupTest, TestFixture } from './setup.ts';
 import { SPINE_RPC_PATH, SPINE_SSE_PATH } from './spine_surface_constants.ts';
 import { open_session_ws, to_session_cookie, type WsEndpointTarget } from './ws_endpoint.ts';
 
@@ -110,7 +111,7 @@ export const describe_credential_deadline_cross_tests = (
 	 */
 	const shorten = async (
 		fixture: TestFixture,
-		account: TestAccountFixture,
+		account: TestAccount,
 		seconds: number
 	): Promise<{ called_at: number; sessions: number; api_tokens: number }> => {
 		const called_at = performance.now();

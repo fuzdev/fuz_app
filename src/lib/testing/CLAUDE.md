@@ -1003,7 +1003,9 @@ source of truth for wire-shape conformance.
 ### Fixture protocol + capabilities
 
 - `testing/cross_backend/setup.ts` — `SetupTest` / `TestFixture` /
-  `TestAccountFixture` / `CreateTestAccountOptions` types,
+  `CreateTestAccountOptions` types (`fixture.create_account` and
+  `fixture.extra_accounts` hand out `TestAccount`s from `app_server.ts`, built
+  by `to_test_account`),
   `default_in_process_setup(options)` (wraps `create_test_app`; pass
   `migration_namespaces` for suites needing tables beyond the auth-only
   default — the cell parity suite passes `[CELL_MIGRATION_NS]`, and

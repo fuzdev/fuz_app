@@ -18,7 +18,8 @@ import { assert } from 'vitest';
 import { rpc_call } from '../rpc_helpers.ts';
 import { ROLE_ADMIN } from '../../auth/role_schema.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
-import type { TestAccountFixture, TestFixture } from './setup.ts';
+import type { TestAccount } from '../app_server.ts';
+import type { TestFixture } from './setup.ts';
 
 /** Options for the role-grant fixtures. */
 export interface RoleGrantFixtureOptions {
@@ -69,7 +70,7 @@ export const create_pending_role_grant_offer = async (
  */
 export const create_active_role_grant = async (
 	fixture: TestFixture,
-	recipient: TestAccountFixture,
+	recipient: TestAccount,
 	options: RoleGrantFixtureOptions = {}
 ): Promise<string> => {
 	const offer = await create_pending_role_grant_offer(

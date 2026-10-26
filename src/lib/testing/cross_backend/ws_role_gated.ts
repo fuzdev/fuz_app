@@ -42,7 +42,8 @@ import {
 	create_active_role_grant,
 	create_pending_role_grant_offer
 } from './role_grant_cross_helpers.ts';
-import type { SetupTest, TestAccountFixture, TestFixture } from './setup.ts';
+import type { TestAccount } from '../app_server.ts';
+import type { SetupTest, TestFixture } from './setup.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 import { open_session_ws, type WsEndpointTarget } from './ws_endpoint.ts';
 
@@ -111,7 +112,7 @@ export const describe_ws_role_gated_cross_tests = (options: WsRoleGatedCrossTest
 		...(options.origin !== undefined && { origin: options.origin })
 	};
 
-	const open = (target: WsEndpointTarget, account: TestAccountFixture): Promise<WsClient> =>
+	const open = (target: WsEndpointTarget, account: TestAccount): Promise<WsClient> =>
 		open_session_ws(target, account, { admitted: true });
 
 	describe('role-gated websocket (cross-process)', () => {

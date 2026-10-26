@@ -47,7 +47,8 @@ import { JSONRPC_INVALID_REQUEST } from '../../http/jsonrpc.ts';
 import { JSONRPC_ERROR_CODES } from '../../http/jsonrpc_errors.ts';
 import { assert_audit_metadata_fields, list_audit_events } from './audit_cross_helpers.ts';
 import { create_pending_role_grant_offer } from './role_grant_cross_helpers.ts';
-import type { RpcPathCrossSuiteOptions, TestAccountFixture, TestFixture } from './setup.ts';
+import type { TestAccount } from '../app_server.ts';
+import type { RpcPathCrossSuiteOptions, TestFixture } from './setup.ts';
 import { SPINE_PARTICIPANT_ROLE, SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
 /** A well-formed UUID that names no offer. */
@@ -71,7 +72,7 @@ export const describe_role_grant_offer_lifecycle_cross_tests = (
 		rpc_call({ app: fixture.fresh_transport(), path: rpc_path, method, params, headers });
 
 	/** A pending `participant` offer from the keeper to `recipient`. */
-	const create_offer = (fixture: TestFixture, recipient: TestAccountFixture) =>
+	const create_offer = (fixture: TestFixture, recipient: TestAccount) =>
 		create_pending_role_grant_offer(fixture, recipient.account.id, undefined, {
 			role: SPINE_PARTICIPANT_ROLE,
 			rpc_path
@@ -122,7 +123,7 @@ export const describe_role_grant_offer_lifecycle_cross_tests = (
 	/** Whether `offer_id` is still in the recipient's pending inbox. */
 	const is_pending = async (
 		fixture: TestFixture,
-		recipient: TestAccountFixture,
+		recipient: TestAccount,
 		offer_id: string
 	): Promise<boolean> => {
 		const listed = await rpc(

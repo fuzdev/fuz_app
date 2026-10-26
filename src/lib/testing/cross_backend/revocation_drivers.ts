@@ -28,7 +28,8 @@ import {
 import { DEFAULT_TEST_PASSWORD } from '../test_credentials.ts';
 import type { BackendCapabilities } from './capabilities.ts';
 import { cross_rpc_call } from './cell_cross_helpers.ts';
-import type { TestAccountFixture, TestFixture } from './setup.ts';
+import type { TestAccount } from '../app_server.ts';
+import type { TestFixture } from './setup.ts';
 
 /**
  * POST a JSON body to a REST route on `account`'s session, asserting `200`.
@@ -40,7 +41,7 @@ import type { TestAccountFixture, TestFixture } from './setup.ts';
  */
 export const cross_post_as = async (
 	fixture: TestFixture,
-	account: TestAccountFixture,
+	account: TestAccount,
 	path: string,
 	body: unknown
 ): Promise<void> => {
@@ -115,7 +116,7 @@ export interface AccountRevocation {
 	 * `target` must have been created with `DEFAULT_TEST_PASSWORD`, which the
 	 * password-change row presents.
 	 */
-	readonly revoke: (fixture: TestFixture, target: TestAccountFixture) => Promise<void>;
+	readonly revoke: (fixture: TestFixture, target: TestAccount) => Promise<void>;
 }
 
 /** Configuration for `create_account_revocations`. */
