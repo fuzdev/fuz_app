@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/BTZoVLbz.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CAODFmXb.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.IlXHKlrH.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.CgXVaXzN.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.BjCgqxWl.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.ESNOnx4g.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BcwQFYZ2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/C3BYcZ2u.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/B0ywOZhm.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/MUONDIzd.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.OX-W4mnj.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/DDDJ9Jcj.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.CkrylAQ1.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BL7ZH9U-.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DhdQKFKC.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -272,7 +272,8 @@ returned by <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declar
 the query layer, or the offer-expiry rows <!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/auth/cleanup.ts"><!--[0--><!--[-1-->auth/cleanup.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> writes in
 its sweep transaction). Runs every registered listener; per-listener
 throws are isolated.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->drain_inflight()<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> — test-binary barrier: await every in-flight <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->emit<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->
-write, on an emitter built with <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->track_inflight: true<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--[14--><!----><h2 id="when-listeners-hear-about-a-row"><!--[--><!--[2-->When listeners hear about a row<!--]--><!--]--><!----></h2><!----><!--]--><!--[8--><p><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->emit<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> writes the row at once, on the pool, whatever its outcome — the write
+write, on an emitter built with <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->track_inflight: true<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->is_tracking_inflight()<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> — whether that barrier can wait on anything, so a
+test binary built without tracking is caught rather than racing.<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--[14--><!----><h2 id="when-listeners-hear-about-a-row"><!--[--><!--[2-->When listeners hear about a row<!--]--><!--]--><!----></h2><!----><!--]--><!--[8--><p><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->emit<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> writes the row at once, on the pool, whatever its outcome — the write
 is outside the request's transaction, so it survives a rollback. Listener
 fan-out is a separate step, and it depends on the outcome:<!--]--><!--]--><!----></p><!--]--><!--[9--><!--[-1--><ul><!--[--><!--[10--><li><!--[--><!--[2-->A <!--]--><!--[4--><strong><!--[--><!--[2-->failure<!--]--><!--]--><!----></strong><!--]--><!--[2--> row is announced as soon as it is written. It records an
 attempt, which happened whether or not the request's transaction commits.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->A <!--]--><!--[4--><strong><!--[--><!--[2-->success<!--]--><!--]--><!----></strong><!--]--><!--[2--> row is announced only after the request's transaction
@@ -941,16 +942,16 @@ the reads that answer it as anonymous and the server status read.<!--]--><!--]--
 			
 			<script>
 				{
-					__sveltekit_1dgwvn1 = {
+					__sveltekit_1t95zs8 = {
 						base: "",
-						version: "039287f1847523c260cb7a25b62ae2fe543e415d"
+						version: "62616beb7df5ca20c88e6ceb1cf27a4a0dce149b"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.CXlCZqzx.js").then(async (kit) => {
-						kit.init(__sveltekit_1dgwvn1);
-						const app = await import("/_app/immutable/entry/app.IlXHKlrH.js");
+						kit.init(__sveltekit_1t95zs8);
+						const app = await import("/_app/immutable/entry/app.BjCgqxWl.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],

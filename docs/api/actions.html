@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/BTZoVLbz.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CAODFmXb.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.IlXHKlrH.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.CgXVaXzN.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.BjCgqxWl.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.ESNOnx4g.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BcwQFYZ2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/C3BYcZ2u.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/B0ywOZhm.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/MUONDIzd.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.OX-W4mnj.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/DDDJ9Jcj.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.CkrylAQ1.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BL7ZH9U-.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DhdQKFKC.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -266,7 +266,10 @@ for schema work. The account key is the credential's own account
 (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->request_context.account.id<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->), settled by authentication, so the gate
 sits behind the authority gates by choice rather than necessity: a
 caller those gates refuse is answered 403, not 429.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->Validate params (400)<!--]--><!--]--><!----></strong><!--]--><!--[2--> — <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->spec.input.safeParse(raw_params)<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> with
-<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->z.void()<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> / <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->?? {}<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> rules (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/schema_helpers.ts#to_input_params"><!--[0--><!--[-1-->to_input_params<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->). Runs <!--]--><!--[4--><strong><!--[--><!--[2-->after<!--]--><!--]--><!----></strong><!--]--><!--[2--> the authority gates: a
+<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->z.void()<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> / <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->?? {}<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> rules (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/schema_helpers.ts#to_input_params"><!--[0--><!--[-1-->to_input_params<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->). A refusal is the generic
+<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->invalid params<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, with <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->data.reason<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> when the first issue's field
+declares an <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->invalid_reason<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/perform_action.ts#to_invalid_params_error"><!--[0--><!--[-1-->to_invalid_params_error<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->) and the Zod
+issues under DEV only. Runs <!--]--><!--[4--><strong><!--[--><!--[2-->after<!--]--><!--]--><!----></strong><!--]--><!--[2--> the authority gates: a
 400 describing the action's input shape to a caller those gates
 refuse would confirm the method exists and describe how to call it,
 to a channel that should have learned nothing. Coarse authority
@@ -583,16 +586,16 @@ until the runtime or the client ends it.<!--]--><!--]--><!----></p><!--]--><!--]
 			
 			<script>
 				{
-					__sveltekit_1dgwvn1 = {
+					__sveltekit_1t95zs8 = {
 						base: "",
-						version: "039287f1847523c260cb7a25b62ae2fe543e415d"
+						version: "62616beb7df5ca20c88e6ceb1cf27a4a0dce149b"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.CXlCZqzx.js").then(async (kit) => {
-						kit.init(__sveltekit_1dgwvn1);
-						const app = await import("/_app/immutable/entry/app.IlXHKlrH.js");
+						kit.init(__sveltekit_1t95zs8);
+						const app = await import("/_app/immutable/entry/app.BjCgqxWl.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],

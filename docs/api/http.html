@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/BTZoVLbz.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CAODFmXb.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.IlXHKlrH.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.CgXVaXzN.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.BjCgqxWl.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.ESNOnx4g.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BcwQFYZ2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/C3BYcZ2u.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/B0ywOZhm.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/MUONDIzd.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.OX-W4mnj.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/DDDJ9Jcj.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.CkrylAQ1.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BL7ZH9U-.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DhdQKFKC.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -162,7 +162,8 @@ everywhere else (audit rows, token <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><
 through it, so it must not pull the optional <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->hono<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> peer.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/http/jsonrpc_errors.ts"><!--[-1-->http/jsonrpc_errors.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->JSON-RPC error infrastructure for fuz_app routes.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Provides error types, named constructors, and HTTP status mapping
 for the throw/catch error pattern used by <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/route_spec.ts#apply_route_specs"><!--[0--><!--[-1-->apply_route_specs<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->.
 Core error codes (5 standard + 10 general application). Domain-specific
-codes stay in consumers — add by casting <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->as JsonrpcErrorCode<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/jsonrpc.ts#JsonrpcErrorCode"><!--[0--><!--[-1-->JsonrpcErrorCode<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> and <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/jsonrpc.ts#JsonrpcErrorObject"><!--[0--><!--[-1-->JsonrpcErrorObject<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> types are Zod-inferred
+codes stay in consumers — add by casting <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->as JsonrpcErrorCode<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, and
+declare each one's HTTP status with <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/jsonrpc_errors.ts#register_jsonrpc_error_code"><!--[0--><!--[-1-->register_jsonrpc_error_code<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/jsonrpc.ts#JsonrpcErrorCode"><!--[0--><!--[-1-->JsonrpcErrorCode<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> and <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/jsonrpc.ts#JsonrpcErrorObject"><!--[0--><!--[-1-->JsonrpcErrorObject<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> types are Zod-inferred
 from <!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/http/jsonrpc.ts"><!--[0--><!--[-1-->http/jsonrpc.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> — this module re-uses those as the single source
 of truth.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Complementary to <!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/http/error_schemas.ts"><!--[0--><!--[-1-->http/error_schemas.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->: that module is declarative
 (Zod schemas for surface introspection), this one is runtime
@@ -254,16 +255,16 @@ derived views over the authority axes (<!--]--><!--[3--><!--[0--><!--[--><!--[-1
 			
 			<script>
 				{
-					__sveltekit_1dgwvn1 = {
+					__sveltekit_1t95zs8 = {
 						base: "",
-						version: "039287f1847523c260cb7a25b62ae2fe543e415d"
+						version: "62616beb7df5ca20c88e6ceb1cf27a4a0dce149b"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.CXlCZqzx.js").then(async (kit) => {
-						kit.init(__sveltekit_1dgwvn1);
-						const app = await import("/_app/immutable/entry/app.IlXHKlrH.js");
+						kit.init(__sveltekit_1t95zs8);
+						const app = await import("/_app/immutable/entry/app.BjCgqxWl.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],
