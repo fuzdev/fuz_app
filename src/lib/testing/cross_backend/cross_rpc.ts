@@ -21,6 +21,8 @@ import type { FetchTransport } from '../transports/fetch_transport.ts';
 
 /** Minimal JSON-RPC envelope shape the suites read off responses. */
 export interface RpcResult {
+	/** The HTTP status the reply carried. */
+	readonly status: number;
 	readonly ok: boolean;
 	readonly result?: unknown;
 	readonly error?: { readonly code: number; readonly message: string; readonly data?: unknown };
@@ -40,7 +42,7 @@ const BODY_HEAD_LENGTH = 200;
  * @param method - the JSON-RPC method
  * @param params - the request params
  * @param headers - auth and other headers, merged over the JSON defaults
- * @returns the response's `ok`, `result` and `error`
+ * @returns the response's HTTP `status`, `ok`, `result` and `error`
  * @throws Error when the reply is not a JSON object — naming the method, the
  *   HTTP status and the head of the body, so a proxy page or a crash reads
  *   as what it is
@@ -69,7 +71,7 @@ export const cross_rpc_call = async (
 		);
 	}
 	const envelope = body as { result?: unknown; error?: RpcResult['error'] };
-	return { ok: res.ok, result: envelope.result, error: envelope.error };
+	return { status: res.status, ok: res.ok, result: envelope.result, error: envelope.error };
 };
 
 /** Pull `error.data.reason` off an RPC error envelope (undefined if absent). */

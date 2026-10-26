@@ -17,7 +17,19 @@ describe('cross_rpc_call', () => {
 			{},
 			{}
 		);
-		assert.deepEqual(res, { ok: true, result: { ok: true }, error: undefined });
+		assert.deepEqual(res, { status: 200, ok: true, result: { ok: true }, error: undefined });
+	});
+
+	test('reads an error envelope with its status', async () => {
+		const error = { code: -32602, message: 'invalid params' };
+		const res = await cross_rpc_call(
+			replying(400, JSON.stringify({ jsonrpc: '2.0', id: 1, error })),
+			'/api/rpc',
+			'probe',
+			{},
+			{}
+		);
+		assert.deepEqual(res, { status: 400, ok: false, result: undefined, error });
 	});
 
 	test('a non-JSON reply throws with the method, the status and the body head', async () => {

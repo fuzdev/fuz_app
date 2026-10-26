@@ -1880,7 +1880,8 @@ never sees them). Both parse every success response against the verb's Zod
 **output** schema, so a TS↔Rust envelope drift fails the suite — not just a
 payload-field drift. Call-site primitives (`cross_rpc_call` / `error_reason` /
 `expect_output`) live in `cross_backend/cross_rpc.ts`, shared by every
-stateful cross suite (a reply that is no JSON object throws naming the method,
+stateful cross suite (`RpcResult` carries the HTTP `status` beside the
+envelope; a reply that is no JSON object throws naming the method,
 the HTTP status and the body's head), and every
 suite that reads audit rows goes through `cross_backend/audit_cross_helpers.ts`
 — `list_audit_events(fixture, params, rpc_path?)` drains
@@ -1922,7 +1923,15 @@ the option type states whether the bundle is read.
   `cell_list` pages honoring `limit` + `offset`, a page holding visible rows
   only and filling to `limit` past a newer run of rows the caller can't see —
   two owners' private cells, read by a non-owner and by anon — and an admin's
-  pages tiling every row).
+  pages tiling every row; a `data` that is no `CellData` — a non-object, or a
+  non-string `label` / `summary` — refused 400 `invalid_params` with the
+  generic message and no reason (no `data` beyond a TS spine's DEV-only
+  `issues`, an array of Zod issues) on `cell_create`, on `cell_update` of a
+  missing and of a hidden cell, and, with `cell_relations`, on `cell_clone`'s
+  `with_data_patch` — ahead of the 404 mask the same hidden-cell call answers
+  when well-typed, with the keeper's cell count unchanged; those cases run as
+  the keeper and plain accounts only, so a backend that refuses a non-admin
+  root cell can keep them through `exclude_cases` while excluding the rest).
 - **`describe_cell_relations_cross_tests`** (gates on
   `capabilities.cell_relations`) — the verbs beyond CRUD: grant lifecycle
   (actor-shaped editor grant enables edit, manage-tier `cell_grant_list`,

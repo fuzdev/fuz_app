@@ -39,7 +39,13 @@ import '../assert_dev_env.ts';
  *   accepted as a list filter that matches nothing;
  * - a `kind` of exactly `CELL_KIND_LENGTH_MAX` UTF-16 code units is stored
  *   whole, and one unit past it is `invalid_params` on create and as a list
- *   filter.
+ *   filter;
+ * - a `data` that is no `CellData` — not an object, or a `label` / `summary`
+ *   that is no string — is 400 `invalid_params` with the generic message and
+ *   no reason on `cell_create`, `cell_update` and (with
+ *   `capabilities.cell_relations`) `cell_clone`'s `with_data_patch`, ahead of
+ *   every cell check (a missing or hidden cell refuses it the same way, never
+ *   with the 404 mask), and writes no cell.
  *
  * The visibility-manage-tier 403 (`cell_visibility_manage_only`) needs a
  * non-owner editor, which only a `cell_grant` can produce, so it lives in
@@ -51,8 +57,11 @@ import '../assert_dev_env.ts';
 
 import { describe, assert } from 'vitest';
 
+import { jsonrpc_error_messages } from '../../http/jsonrpc_errors.ts';
+
 import {
 	CELL_KIND_LENGTH_MAX,
+	CELL_LIST_LIMIT_MAX,
 	CellCreateOutput,
 	CellDeleteOutput,
 	CellGetOutput,
@@ -60,11 +69,72 @@ import {
 	CellUpdateOutput
 } from '../../auth/cell_action_specs.ts';
 import { test_if } from './capabilities.ts';
-import { cross_rpc_call, error_reason, expect_output } from './cross_rpc.ts';
+import { cross_rpc_call, error_reason, expect_output, type RpcResult } from './cross_rpc.ts';
 import { assert_iso8601_seconds, assert_iso8601_seconds_nullable } from './wire_shapes.ts';
 import type { FetchTransport } from '../transports/fetch_transport.ts';
 import type { RpcPathCapabilityGatedCrossSuiteOptions } from './setup.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
+
+/**
+ * `data` values that are no `CellData` — not an object, or an object whose
+ * `label` / `summary` is no string. Twin of the Rust spine's mistyped-data
+ * table in its cell authz tests.
+ */
+const MISTYPED_CELL_DATA: ReadonlyArray<unknown> = [
+	'not_an_object',
+	42,
+	true,
+	[1],
+	{ label: 123 },
+	{ label: null },
+	{ summary: {} },
+	{ summary: false }
+];
+
+/** The message every schema refusal answers, naming no field. */
+const INVALID_PARAMS_MESSAGE = jsonrpc_error_messages.invalid_params().message;
+
+/**
+ * Assert `r` is a schema refusal: 400 `invalid_params` with the generic
+ * message and no `data`, save the Zod `issues` a TS spine adds under DEV
+ * alone — an array of issue objects, each with a string `code` and
+ * `message`, and never a `reason`.
+ */
+const assert_schema_refusal = (r: RpcResult, label: string): void => {
+	const detail = `${label}: got ${r.status} ${JSON.stringify(r.error ?? r.result)}`;
+	assert.strictEqual(r.status, 400, detail);
+	const { error } = r;
+	assert.ok(error, detail);
+	assert.strictEqual(error.code, -32602, detail);
+	assert.strictEqual(error.message, INVALID_PARAMS_MESSAGE, detail);
+	const { data } = error;
+	if (data === undefined) return;
+	assert.ok(
+		typeof data === 'object' && data !== null && Object.keys(data).join() === 'issues',
+		`${detail} — data beyond the DEV-only issues`
+	);
+	const { issues } = data as { issues: unknown };
+	assert.ok(Array.isArray(issues), `${detail} — DEV-only issues that are no array`);
+	for (const issue of issues as Array<unknown>) {
+		assert.ok(
+			typeof issue === 'object' &&
+				issue !== null &&
+				typeof (issue as { code?: unknown }).code === 'string' &&
+				typeof (issue as { message?: unknown }).message === 'string',
+			`${detail} — a DEV-only issue that is no Zod issue`
+		);
+	}
+};
+
+/**
+ * Assert `r` is the IDOR mask: 404 with reason `cell_not_found` — the
+ * well-typed control beside a schema refusal of the same call.
+ */
+const assert_cell_not_found = (r: RpcResult, label: string): void => {
+	const detail = `${label}: got ${r.status} ${JSON.stringify(r.error ?? r.result)}`;
+	assert.strictEqual(r.status, 404, detail);
+	assert.strictEqual(error_reason(r), 'cell_not_found', detail);
+};
 
 export const describe_cell_crud_cross_tests = (
 	options: RpcPathCapabilityGatedCrossSuiteOptions
@@ -672,5 +742,148 @@ export const describe_cell_crud_cross_tests = (
 				}
 			}
 		);
+
+		describe('mistyped data', () => {
+			/** Count every cell, read as the keeper (an admin sees every row). */
+			const count_cells = async (
+				t: FetchTransport,
+				keeper_headers: Record<string, string>
+			): Promise<number> => {
+				const { cells } = expect_output(
+					await cross_rpc_call(
+						t,
+						rpc_path,
+						'cell_list',
+						{ limit: CELL_LIST_LIMIT_MAX },
+						keeper_headers
+					),
+					CellListOutput
+				);
+				assert.ok(
+					cells.length < CELL_LIST_LIMIT_MAX,
+					'the count needs a page that holds every cell'
+				);
+				return cells.length;
+			};
+
+			test_if(
+				capabilities.cell_crud,
+				'cell_create and cell_update refuse it as invalid_params before any cell check',
+				async () => {
+					const fixture = await setup_test();
+					const writer = await fixture.create_account({ username: 'cell_data_writer' });
+					const stranger = await fixture.create_account({ username: 'cell_data_stranger' });
+					const t = fixture.fresh_transport();
+					const keeper_headers = fixture.create_session_headers();
+					const writer_headers = writer.create_session_headers();
+					// the keeper's private cell, hidden from the stranger; the keeper
+					// creates it so a backend that refuses a non-admin root runs the case
+					const hidden = expect_output(
+						await cross_rpc_call(
+							t,
+							rpc_path,
+							'cell_create',
+							{ kind: 'note', data: {} },
+							keeper_headers
+						),
+						CellCreateOutput
+					).cell.id;
+					const missing = crypto.randomUUID();
+					const before = await count_cells(t, keeper_headers);
+
+					for (const data of MISTYPED_CELL_DATA) {
+						const shown = JSON.stringify(data);
+						assert_schema_refusal(
+							await cross_rpc_call(t, rpc_path, 'cell_create', { data }, writer_headers),
+							`cell_create data ${shown}`
+						);
+						for (const [cell_id, headers, who] of [
+							[missing, writer_headers, 'a missing cell'],
+							[hidden, stranger.create_session_headers(), 'a hidden cell']
+						] as const) {
+							assert_schema_refusal(
+								await cross_rpc_call(t, rpc_path, 'cell_update', { cell_id, data }, headers),
+								`cell_update of ${who} data ${shown}`
+							);
+						}
+					}
+					// the control: well-typed, the same call meets the 404 mask, so the
+					// 400s above came before the cell check
+					assert_cell_not_found(
+						await cross_rpc_call(
+							t,
+							rpc_path,
+							'cell_update',
+							{ cell_id: hidden, data: {} },
+							stranger.create_session_headers()
+						),
+						'cell_update of a hidden cell data {}'
+					);
+					assert.strictEqual(
+						await count_cells(t, keeper_headers),
+						before,
+						'a refused write wrote a cell'
+					);
+				}
+			);
+
+			test_if(
+				capabilities.cell_crud && capabilities.cell_relations,
+				'cell_clone refuses it in with_data_patch as invalid_params before any cell check',
+				async () => {
+					const fixture = await setup_test();
+					const writer = await fixture.create_account({ username: 'cell_patch_writer' });
+					const stranger = await fixture.create_account({ username: 'cell_patch_stranger' });
+					const t = fixture.fresh_transport();
+					const keeper_headers = fixture.create_session_headers();
+					const hidden = expect_output(
+						await cross_rpc_call(
+							t,
+							rpc_path,
+							'cell_create',
+							{ kind: 'note', data: {} },
+							keeper_headers
+						),
+						CellCreateOutput
+					).cell.id;
+					const missing = crypto.randomUUID();
+					const before = await count_cells(t, keeper_headers);
+
+					for (const with_data_patch of MISTYPED_CELL_DATA) {
+						for (const [source_id, headers, who] of [
+							[missing, writer.create_session_headers(), 'a missing cell'],
+							[hidden, stranger.create_session_headers(), 'a hidden cell']
+						] as const) {
+							assert_schema_refusal(
+								await cross_rpc_call(
+									t,
+									rpc_path,
+									'cell_clone',
+									{ source_id, with_data_patch },
+									headers
+								),
+								`cell_clone of ${who} with_data_patch ${JSON.stringify(with_data_patch)}`
+							);
+						}
+					}
+					// the control: well-typed, the same clone meets the 404 mask
+					assert_cell_not_found(
+						await cross_rpc_call(
+							t,
+							rpc_path,
+							'cell_clone',
+							{ source_id: hidden, with_data_patch: { label: 'patched' } },
+							stranger.create_session_headers()
+						),
+						'cell_clone of a hidden cell with_data_patch {label}'
+					);
+					assert.strictEqual(
+						await count_cells(t, keeper_headers),
+						before,
+						'a refused clone wrote a cell'
+					);
+				}
+			);
+		});
 	});
 };
