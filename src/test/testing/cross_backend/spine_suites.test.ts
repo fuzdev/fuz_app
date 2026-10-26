@@ -118,6 +118,36 @@ describe('describe_spine_cross_suites option validation', () => {
 		);
 	});
 
+	test('an rpc_input_overrides key naming no mounted method throws', () => {
+		const surface_source = {
+			surface: { rpc_endpoints: [{ path: '/api/rpc', methods: [{ name: 'gizmo_get' }] }] }
+		} as unknown as SpineCrossSuitesOptions['surface_source'];
+		const live_rpc_endpoints = [
+			{ path: '/api/rpc', actions: [{ spec: { method: 'gizmo_live' } }] }
+		] as unknown as SpineCrossSuitesOptions['live_rpc_endpoints'];
+		assert.throws(
+			call({
+				surface_source,
+				live_rpc_endpoints,
+				rpc_input_overrides: new Map([['gizmo_gte', {}]])
+			}),
+			/rpc_input_overrides names 'gizmo_gte', a method on neither/
+		);
+		// a method on only the declared surface or only the live mount passes the check
+		for (const method of ['gizmo_get', 'gizmo_live']) {
+			assert.throws(
+				call({
+					surface_source,
+					live_rpc_endpoints,
+					rpc_input_overrides: new Map([[method, {}]]),
+					exclude: { ready: '' }
+				}),
+				/exclude 'ready' needs a reason/,
+				method
+			);
+		}
+	});
+
 	test('a suite cannot be both excluded and overridden', () => {
 		assert.throws(
 			call({ exclude: { ready: 'no /ready' }, overrides: { ready: {} } }),
@@ -177,5 +207,31 @@ describe('describe_spine_cross_suites required options', () => {
 		const derived = received as { setup_test?: unknown; capabilities?: unknown };
 		assert.strictEqual(typeof derived.setup_test, 'function');
 		assert.strictEqual(derived.capabilities, capabilities);
+	});
+
+	test('rpc_input_overrides reaches rpc_adversarial as input_overrides', () => {
+		const rpc_input_overrides = new Map([['gizmo_get', { id: 'seeded' }]]);
+		const surface_source = {
+			surface: { rpc_endpoints: [{ path: '/api/rpc', methods: [{ name: 'gizmo_get' }] }] }
+		} as unknown as SpineCrossSuitesOptions['surface_source'];
+		let received: unknown;
+		assert.throws(
+			() =>
+				describe_spine_cross_suites(handle, {
+					...only('rpc_adversarial', {
+						rpc_adversarial: (derived) => {
+							received = derived;
+							return { setup_test: undefined };
+						}
+					}),
+					surface_source,
+					rpc_input_overrides
+				}),
+			/'rpc_adversarial' needs `setup_test`/
+		);
+		assert.strictEqual(
+			(received as { input_overrides?: unknown }).input_overrides,
+			rpc_input_overrides
+		);
 	});
 });

@@ -1019,6 +1019,7 @@ impls actually boot.
 - `generate_valid_body` (`testing/schema_generators.ts`) — Generate valid request body from Zod schema
 - `detect_format` (`testing/schema_generators.ts`) — Detect format constraints (uuid, email, pattern)
 - `generate_valid_value` (`testing/schema_generators.ts`) — Generate valid value for a Zod field
+- `generate_valid_object` (`testing/schema_generators.ts`) — Generate a valid object, filling optional fields until its refinements pass
 - `create_rpc_post_init` (`testing/rpc_helpers.ts`) — Build `RequestInit` for JSON-RPC POST request
 - `create_rpc_get_url` (`testing/rpc_helpers.ts`) — Build GET URL with JSON-RPC query parameters
 - `assert_jsonrpc_error_response` (`testing/rpc_helpers.ts`) — Assert valid JSON-RPC error response structure
@@ -1298,8 +1299,13 @@ capabilities, so state every mount flag truthfully and the rest follows.
   Pass the mount of the backend under test: a method it doesn't mount answers
   `method_not_found` and fails, it doesn't skip.
 - `rpc_success_fixtures` / `rpc_skip_methods` / `rpc_input_overrides` go to the
-  standard bundle; `setup` is the base `default_cross_process_setup` options
-  every suite starts from.
+  standard bundle, and `rpc_input_overrides` also seeds `rpc_adversarial`'s
+  params cases: one valid body per method, for an input the generators can't
+  satisfy, serves the round-trip and the invalid-params cases alike. The
+  params cases are sent as a single-actor principal, so an override omits
+  `acting`, and a key naming a method on neither the declared surface nor
+  `live_rpc_endpoints` throws at collection. `setup` is the base
+  `default_cross_process_setup` options every suite starts from.
 - `rpc_max_body_bytes` / `ws_max_message_bytes` are your RPC path's body cap
   and your WS message cap, when they aren't the spine defaults (1 MiB, and
   `DEFAULT_WS_MAX_MESSAGE_BYTES`): the body-size suites, the front-door
@@ -1687,6 +1693,9 @@ action-manifest parity gate doesn't compare param schemas:
 - **params** — for each declared method, `generate_rpc_params_test_cases`
   (the input generator minus its structural cases), each sent as the method's
   authorized principal and owing 400 `invalid_params` with no `data.reason`.
+  `input_overrides` (method name → valid params) replaces a method's generated
+  base, the body each case breaks one field of; an override its input schema
+  refuses throws at collection, naming the method.
   A known divergence on one backend goes in `xfail_params` (`{method, labels,
   tracking_id, reason}`), which runs each named case as its own `xfail_until`
   test and leaves the method's other cases in place.

@@ -26,7 +26,10 @@ import '../assert_dev_env.ts';
  *   built on a derived value. A required option the merge leaves `undefined`
  *   throws at collection.
  * - `rpc_success_fixtures` / `rpc_skip_methods` / `rpc_input_overrides` go to
- *   the standard bundle's RPC round-trip.
+ *   the standard bundle's RPC round-trip; `rpc_input_overrides` also seeds
+ *   `rpc_adversarial`'s params cases (each override is the valid base they
+ *   break one field of). A key naming a method on neither the declared surface
+ *   nor `live_rpc_endpoints` throws at collection.
  * - `ws_required_roles` names the roles the backend's WS upgrade requires, so the
  *   suites that open sockets for accounts they create give them those roles.
  * - `suite_roles` names the roles the role-shaped suites use when the backend's
@@ -464,7 +467,14 @@ export interface SpineCrossSuitesOptions {
 	readonly rpc_success_fixtures?: RpcSuccessFixtures;
 	/** Forwarded to the standard bundle (`StandardCrossProcessTestOptions.rpc_skip_methods`). */
 	readonly rpc_skip_methods?: Array<string>;
-	/** Forwarded to the standard bundle (`StandardCrossProcessTestOptions.rpc_input_overrides`). */
+	/**
+	 * Forwarded to the standard bundle (`StandardCrossProcessTestOptions.rpc_input_overrides`)
+	 * and to `rpc_adversarial` (`RpcAdversarialCrossTestOptions.input_overrides`),
+	 * where each override seeds the method's params cases. Those cases are sent
+	 * as a single-actor principal, so an override omits `acting`. A key naming a
+	 * method on neither the declared surface nor `live_rpc_endpoints` throws at
+	 * collection.
+	 */
 	readonly rpc_input_overrides?: Map<string, Record<string, unknown>>;
 }
 
@@ -705,7 +715,8 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			live_rpc_endpoints:
 				c.options.live_rpc_endpoints &&
 				resolve_rpc_endpoints_for_setup(c.options.live_rpc_endpoints, c.options.session_options),
-			rpc_path: c.config.rpc_path
+			rpc_path: c.config.rpc_path,
+			input_overrides: c.options.rpc_input_overrides
 		}),
 		describe: describe_rpc_adversarial_cross_tests,
 		required: { setup_test: true, surface_source: true }
@@ -886,6 +897,31 @@ const is_suite_name = (name: string): name is SuiteName =>
  * both excluded and overridden — before anything is registered.
  */
 const validate_spine_cross_suites_options = (options: SpineCrossSuitesOptions): void => {
+	if (options.rpc_input_overrides?.size) {
+		// a key the round-trip (the declared surface) and `rpc_adversarial` (that
+		// and the live mount) both lack would be ignored silently — a typo
+		const methods: Set<string> = new Set();
+		for (const endpoint of options.surface_source.surface.rpc_endpoints) {
+			for (const method of endpoint.methods) methods.add(method.name);
+		}
+		if (options.live_rpc_endpoints) {
+			const live = resolve_rpc_endpoints_for_setup(
+				options.live_rpc_endpoints,
+				options.session_options
+			);
+			for (const endpoint of live) {
+				for (const action of endpoint.actions) methods.add(action.spec.method);
+			}
+		}
+		for (const method of options.rpc_input_overrides.keys()) {
+			if (!methods.has(method)) {
+				throw new Error(
+					`describe_spine_cross_suites: rpc_input_overrides names '${method}', ` +
+						`a method on neither the declared surface nor the live mount`
+				);
+			}
+		}
+	}
 	for (const [name, reason] of Object.entries(options.exclude ?? {})) {
 		if (!is_suite_name(name)) {
 			throw new Error(`describe_spine_cross_suites: exclude names unknown suite '${name}'`);

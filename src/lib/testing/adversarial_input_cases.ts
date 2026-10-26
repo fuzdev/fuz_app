@@ -19,7 +19,7 @@ import { z } from 'zod';
 import { zod_unwrap_to_object, zod_extract_fields } from '../zod.ts';
 import { is_null_schema } from '../http/schema_helpers.ts';
 import { ERROR_INVALID_REQUEST_BODY, ERROR_INVALID_JSON_BODY } from '../http/error_schemas.ts';
-import { detect_format, generate_valid_value } from './schema_generators.ts';
+import { detect_format, format_zod_issues, generate_valid_object } from './schema_generators.ts';
 
 // --- Payload generation ---
 
@@ -85,6 +85,20 @@ export interface QueryTestCase {
 
 // --- Input test case generation ---
 
+/** Options for `generate_input_test_cases`. */
+export interface InputTestCaseOptions {
+	/**
+	 * A valid body to build the cases from, in place of the generated one —
+	 * for an input whose valid shape the generator can't reach, or one whose
+	 * generated body the handler can't run. Each case is this body with one
+	 * field broken, so it must pass the input schema itself: one that doesn't
+	 * throws.
+	 */
+	base?: Record<string, unknown>;
+	/** Names the input in error messages — the RPC method or route it belongs to. */
+	label?: string;
+}
+
 /**
  * Generate adversarial test cases for a route's input schema.
  *
@@ -95,11 +109,20 @@ export interface QueryTestCase {
  * - Null for required non-nullable fields
  * - One format violation per constrained field
  *
- * @throws Error if the seed body built by `generate_valid_value` fails
- *   `input_schema.safeParse` — surfaces broken generation logic with the
- *   Zod issues path rather than producing nonsense adversarial cases.
+ * Each case breaks one field of a valid base body: `options.base` when given,
+ * else one built by `generate_valid_object`.
+ *
+ * @param input_schema - the input schema to attack
+ * @param options - a base body to seed the cases, and a label for errors
+ * @throws Error if the base body fails `input_schema.safeParse` — a seeded
+ *   base the schema refuses, or a generated one that surfaces broken
+ *   generation logic — naming the issues rather than producing nonsense
+ *   adversarial cases.
  */
-export const generate_input_test_cases = (input_schema: z.ZodType): Array<InputTestCase> => {
+export const generate_input_test_cases = (
+	input_schema: z.ZodType,
+	options?: InputTestCaseOptions
+): Array<InputTestCase> => {
 	if (is_null_schema(input_schema)) return [];
 
 	const object_schema = zod_unwrap_to_object(input_schema);
@@ -107,33 +130,28 @@ export const generate_input_test_cases = (input_schema: z.ZodType): Array<InputT
 
 	const fields = zod_extract_fields(object_schema);
 	const cases: Array<InputTestCase> = [];
+	const for_label = options?.label === undefined ? '' : ` for '${options.label}'`;
 
-	// build a base object with valid-ish values — must pass validation itself
-	// skip optional fields without defaults to avoid generating invalid nested values
-	const base: Record<string, unknown> = {};
-	for (const field of fields) {
-		if (!field.required && !field.has_default) continue;
-		base[field.name] = generate_valid_value(field, object_schema.shape[field.name] as z.ZodType);
-	}
-	let base_result = input_schema.safeParse(base);
-	if (!base_result.success) {
-		// Fallback for schemas with a top-level `.refine()` that requires at
-		// least one of N optional fields. Fill optional fields until the base
-		// satisfies validation; surfaces a clear error if no combination works.
-		for (const field of fields) {
-			if (field.required || field.has_default || field.name in base) continue;
-			base[field.name] = generate_valid_value(field, object_schema.shape[field.name] as z.ZodType);
-			base_result = input_schema.safeParse(base);
-			if (base_result.success) break;
+	// the base object every case breaks one field of — must pass validation itself
+	let base: Record<string, unknown>;
+	if (options?.base) {
+		base = { ...options.base };
+		const base_result = input_schema.safeParse(base);
+		if (!base_result.success) {
+			throw new Error(
+				`adversarial_input: the seeded base${for_label} fails validation — ` +
+					`fix the base for: ${format_zod_issues(base_result.error)}`
+			);
 		}
-	}
-	if (!base_result.success) {
-		throw new Error(
-			`adversarial_input: generated base object fails validation for schema — ` +
-				`fix generate_valid_value for: ${base_result.error.issues
-					.map((i) => `${i.path.join('.')}: ${i.message}`)
-					.join(', ')}`
-		);
+	} else {
+		const generated = generate_valid_object(object_schema, input_schema);
+		if (!generated.result.success) {
+			throw new Error(
+				`adversarial_input: generated base object fails validation${for_label} — ` +
+					`fix generate_valid_value for: ${format_zod_issues(generated.result.error)}`
+			);
+		}
+		base = generated.value;
 	}
 
 	// whole-body structural: send array instead of object

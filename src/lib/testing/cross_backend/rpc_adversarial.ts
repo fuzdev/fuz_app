@@ -43,7 +43,9 @@ import '../assert_dev_env.ts';
  * role a declared method gates on (`default_cross_process_setup` seeds
  * `keeper` and `admin`; pass `extra_keeper_roles` for others), and it has a
  * single actor. No generated body carries a valid `acting` — the generator's
- * base fills only required and defaulted fields — and a malformed `acting` is
+ * base fills required and defaulted fields, and an optional one only where a
+ * refinement needs it (each alone first, so an `acting` declared ahead of an
+ * at-least-one or exactly-one-of pair stays out) — and a malformed `acting` is
  * read as omitted ahead of validation on both spines, so a single-actor
  * keeper resolves its actor and validation is what refuses. A keeper with a
  * second actor answers `actor_required` first; such a suite lists the
@@ -114,6 +116,15 @@ export interface RpcAdversarialCrossTestOptions extends RpcPathCrossSuiteOptions
 	readonly live_rpc_endpoints?: ReadonlyArray<RpcEndpointSpec>;
 	/** Methods to leave out, beyond the protocol actions always skipped. */
 	readonly skip_methods?: ReadonlyArray<string>;
+	/**
+	 * Valid params per method (method name → params) to build its params cases
+	 * from, in place of the generated base — for an input whose valid shape
+	 * the generator can't reach. Each must pass the method's input schema; one
+	 * that doesn't throws at collection, naming the method. The cases are sent
+	 * as a single-actor principal, so an override omits `acting`.
+	 * `describe_spine_cross_suites` passes its `rpc_input_overrides` here.
+	 */
+	readonly input_overrides?: ReadonlyMap<string, Record<string, unknown>>;
 	/**
 	 * Generated params cases a backend is known to answer otherwise, each run
 	 * as its own `xfail_until` test; the method's other cases keep their test.
@@ -344,7 +355,10 @@ export const describe_rpc_adversarial_cross_tests = (
 			const { method, input } = action.spec;
 			if (PROTOCOL_METHODS.has(method)) continue;
 			if (skip.has(method)) continue;
-			const all_cases = generate_rpc_params_test_cases(input);
+			const all_cases = generate_rpc_params_test_cases(input, {
+				base: options.input_overrides?.get(method),
+				label: method
+			});
 			if (all_cases.length === 0) continue;
 			total += all_cases.length;
 			const param_cases: Array<InputTestCase> = [];

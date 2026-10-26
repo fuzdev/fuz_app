@@ -23,7 +23,11 @@ import { ERROR_AUTHENTICATION_REQUIRED, ERROR_INVALID_JSON_BODY } from '../http/
 import { PROTOCOL_ACTION_METHODS } from '../actions/action_codegen.ts';
 import { TESTING_METHOD_PREFIX } from './surface_invariants.ts';
 import { assert_jsonrpc_error_response } from './rpc_helpers.ts';
-import { generate_input_test_cases, type InputTestCase } from './adversarial_input_cases.ts';
+import {
+	generate_input_test_cases,
+	type InputTestCase,
+	type InputTestCaseOptions
+} from './adversarial_input_cases.ts';
 
 const PROTOCOL_METHODS: ReadonlySet<string> = new Set(PROTOCOL_ACTION_METHODS);
 
@@ -325,7 +329,15 @@ export const assert_rpc_envelope_refusal = (
  * cover it. Every case returned owes 400 `invalid_params`.
  *
  * @param input - the method's input schema
+ * @param options - a valid base `params` to seed the cases (`InputTestCaseOptions.base`),
+ *   and the method name for error messages
  * @returns the cases, each a `params` object
+ * @throws Error if the base `params`, seeded or generated, fails the input schema
  */
-export const generate_rpc_params_test_cases = (input: z.ZodType): Array<InputTestCase> =>
-	generate_input_test_cases(input).filter((tc) => tc.expected_error !== ERROR_INVALID_JSON_BODY);
+export const generate_rpc_params_test_cases = (
+	input: z.ZodType,
+	options?: InputTestCaseOptions
+): Array<InputTestCase> =>
+	generate_input_test_cases(input, options).filter(
+		(tc) => tc.expected_error !== ERROR_INVALID_JSON_BODY
+	);

@@ -210,17 +210,12 @@ export const generate_valid_value = (field: ZodFieldInfo, field_schema: z.ZodTyp
 			return Array.from({ length: min_items }, () => item);
 		}
 		case 'object': {
-			// Recursively generate valid nested objects
+			// recurse with the same optional-field fallback as the top level, so a
+			// nested `.refine()` over optional fields (exactly-one-of) is satisfied;
+			// a nested object that still fails is returned as built, and the
+			// top-level parse reports it
 			const nested_schema = zod_unwrap_to_object(field_schema);
-			if (nested_schema) {
-				const nested_fields = zod_extract_fields(nested_schema);
-				const nested: Record<string, unknown> = {};
-				for (const nf of nested_fields) {
-					if (!nf.required && !nf.has_default) continue;
-					nested[nf.name] = generate_valid_value(nf, nested_schema.shape[nf.name] as z.ZodType);
-				}
-				return nested;
-			}
+			if (nested_schema) return generate_valid_object(nested_schema, field_schema).value;
 			return {};
 		}
 		case 'null':
@@ -270,6 +265,69 @@ export const generate_valid_value = (field: ZodFieldInfo, field_schema: z.ZodTyp
 			return 'test_value';
 	}
 };
+
+/**
+ * Generate a valid object for an object schema: its required and defaulted
+ * fields first; when `schema` still refuses it, each optional field alone on
+ * top of those, in declaration order, taking the first that parses; and
+ * failing that, the optional fields added one at a time, in declaration
+ * order, until it parses. The fill covers a `.refine()` over optional fields
+ * (at least one of, exactly one of, both of), which the required-only object
+ * can't satisfy, and the single-field pass keeps an unrelated optional field
+ * declared ahead of the refined ones (an `acting`, a note) out of the object.
+ *
+ * Shared by the top-level body generators and `generate_valid_value`'s
+ * nested-object case, so a refined object validates the same way at any depth.
+ *
+ * @param object_schema - the unwrapped object whose fields are generated
+ * @param schema - the schema the object must satisfy, refinements included
+ *   (`object_schema` or a schema wrapping it)
+ * @returns the generated object and its last `safeParse` result — the caller
+ *   decides whether a failure throws
+ */
+export const generate_valid_object = (
+	object_schema: z.ZodObject,
+	schema: z.ZodType
+): { value: Record<string, unknown>; result: z.ZodSafeParseResult<unknown> } => {
+	const fields = zod_extract_fields(object_schema);
+	const base: Record<string, unknown> = {};
+	const optional_fields: Array<ZodFieldInfo> = [];
+	for (const field of fields) {
+		if (!field.required && !field.has_default) {
+			optional_fields.push(field);
+			continue;
+		}
+		base[field.name] = generate_valid_value(field, object_schema.shape[field.name] as z.ZodType);
+	}
+	let result = schema.safeParse(base);
+	if (result.success) return { value: base, result };
+	// each optional field alone, so one the refinement doesn't need stays out
+	const generated: Array<unknown> = optional_fields.map((field) =>
+		generate_valid_value(field, object_schema.shape[field.name] as z.ZodType)
+	);
+	for (let i = 0; i < optional_fields.length; i++) {
+		const value = { ...base, [optional_fields[i]!.name]: generated[i] };
+		const single_result = schema.safeParse(value);
+		if (single_result.success) return { value, result: single_result };
+	}
+	// then cumulatively, for a refinement needing several
+	const value = { ...base };
+	for (let i = 0; i < optional_fields.length; i++) {
+		value[optional_fields[i]!.name] = generated[i];
+		result = schema.safeParse(value);
+		if (result.success) break;
+	}
+	return { value, result };
+};
+
+/**
+ * Format Zod issues as `path: message` pairs for a generator's error message.
+ *
+ * @param error - the failed parse's error
+ * @returns the issues, comma-separated
+ */
+export const format_zod_issues = (error: z.ZodError): string =>
+	error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ');
 
 /**
  * The `Content-Type` a well-formed request to a route sends: `application/json`,
@@ -336,31 +394,12 @@ export const generate_valid_body = (
 	if (is_null_schema(input_schema)) return undefined;
 	const object_schema = zod_unwrap_to_object(input_schema);
 	if (!object_schema) return undefined;
-	const fields = zod_extract_fields(object_schema);
-	const body: Record<string, unknown> = {};
-	for (const field of fields) {
-		if (!field.required && !field.has_default) continue;
-		body[field.name] = generate_valid_value(field, object_schema.shape[field.name] as z.ZodType);
-	}
-	let result = input_schema.safeParse(body);
-	if (!result.success) {
-		// Fallback for schemas with a top-level `.refine()` that requires at
-		// least one of N optional fields. Fill optional fields until the body
-		// satisfies validation.
-		for (const field of fields) {
-			if (field.required || field.has_default || field.name in body) continue;
-			body[field.name] = generate_valid_value(field, object_schema.shape[field.name] as z.ZodType);
-			result = input_schema.safeParse(body);
-			if (result.success) break;
-		}
-	}
+	const { value, result } = generate_valid_object(object_schema, input_schema);
 	if (!result.success) {
 		throw new Error(
 			`generate_valid_body: generated body fails validation — ` +
-				`fix generate_valid_value for: ${result.error.issues
-					.map((i) => `${i.path.join('.')}: ${i.message}`)
-					.join(', ')}`
+				`fix generate_valid_value for: ${format_zod_issues(result.error)}`
 		);
 	}
-	return body;
+	return value;
 };

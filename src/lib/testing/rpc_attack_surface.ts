@@ -56,6 +56,16 @@ export interface RpcAttackSurfaceOptions {
 	build: () => AppSurfaceSpec;
 	/** All roles in the app (e.g. `['admin', 'keeper']`). */
 	roles: Array<string>;
+	/**
+	 * Valid params per method (method name → params) to build its adversarial
+	 * params cases from, in place of the generated base — for an input whose
+	 * valid shape the generator can't reach. Each must pass the method's input
+	 * schema; one that doesn't throws at collection, naming the method. The
+	 * cases are sent as a single-actor principal, so an override omits
+	 * `acting`. The cross-process twin is
+	 * `RpcAdversarialCrossTestOptions.input_overrides`.
+	 */
+	input_overrides?: ReadonlyMap<string, Record<string, unknown>>;
 }
 
 // --- Helpers ---
@@ -303,8 +313,8 @@ const describe_rpc_adversarial_envelopes = (options: RpcAttackSurfaceOptions): v
  *
  * For each method with a non-null input schema, generates test cases
  * from the schema (wrong types, missing fields, format violations)
- * and wraps them in valid JSON-RPC envelopes. Reuses
- * `generate_input_test_cases` from `testing/adversarial_input.ts`.
+ * and wraps them in valid JSON-RPC envelopes, via `generate_rpc_params_test_cases`;
+ * a method's `input_overrides` entry, when given, is the base they're built from.
  */
 const describe_rpc_adversarial_params = (options: RpcAttackSurfaceOptions): void => {
 	const { build, roles } = options;
@@ -333,7 +343,10 @@ const describe_rpc_adversarial_params = (options: RpcAttackSurfaceOptions): void
 						continue;
 					}
 
-					const test_cases = generate_rpc_params_test_cases(action.spec.input);
+					const test_cases = generate_rpc_params_test_cases(action.spec.input, {
+						base: options.input_overrides?.get(method.name),
+						label: method.name
+					});
 					if (test_cases.length === 0) continue;
 					total_cases += test_cases.length;
 

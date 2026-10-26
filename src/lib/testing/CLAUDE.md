@@ -475,10 +475,11 @@ Support functions:
 Walks Zod schemas to generate valid values for adversarial/round-trip tests.
 
 - `detect_format(field_schema)` — reads `format` / `pattern` from the JSON Schema representation.
-- `generate_valid_value(field, field_schema)` — base-type switch producing a valid sample (UUIDs → nil UUID, strings → `'xxxxxxxxxx'`, numbers → `1`, objects → recurse, enums → first entry, etc.). For branded-string refinements, walks a fallback chain synthesized from the `pattern` string the JSON Schema representation exposes: fixed-length hex (`^[0-9a-f]{N}$` — blake3 / sha256 / md5 digests; `0`.repeat(N)), prefix-lengthed slug (`^<prefix>_[A-Za-z0-9_-]{N}$` — `ApiTokenId`-style ids; `<prefix>_` + `x`.repeat(N)), absolute path prefix, URL prefix. First candidate that `safeParse` accepts is used.
+- `generate_valid_value(field, field_schema)` — base-type switch producing a valid sample (UUIDs → nil UUID, strings → `'xxxxxxxxxx'`, numbers → `1`, objects → `generate_valid_object` against the field schema, so a nested refinement is satisfied too, enums → first entry, etc.). For branded-string refinements, walks a fallback chain synthesized from the `pattern` string the JSON Schema representation exposes: fixed-length hex (`^[0-9a-f]{N}$` — blake3 / sha256 / md5 digests; `0`.repeat(N)), prefix-lengthed slug (`^<prefix>_[A-Za-z0-9_-]{N}$` — `ApiTokenId`-style ids; `<prefix>_` + `x`.repeat(N)), absolute path prefix, URL prefix. First candidate that `safeParse` accepts is used.
 - `resolve_valid_path(path, params_schema?)` — swaps `:param` for a value the params schema accepts. Prefers `test_<name>` wherever the field schema admits it (the param name keeps failure messages readable); otherwise a UUID param takes the nil UUID and anything else is synthesized from the schema, percent-encoded. A synthesized value containing `/` is refused (it would route elsewhere) and falls back to `test_<name>`.
 - `to_route_content_type(route)` — the `Content-Type` a well-formed request to the route sends: `application/json`, or `application/octet-stream` for a `raw_body` route. Every `POST` route refuses anything else with 415 before its other gates, so every probe in the harnesses (auth, params and query fuzz, 404, data exposure, round trip) sends it, body or not.
-- `generate_valid_body(input_schema) => Record<string, unknown> | undefined` — builds a body satisfying the input schema. Throws with Zod `issues` if the generated body fails validation — surfaces broken generation logic with a descriptive error rather than a confusing 400 downstream.
+- `generate_valid_object(object_schema, schema) => {value, result}` — required and defaulted fields; when `schema` (refinements included) refuses those, each optional field alone in declaration order, the first that parses; failing that, the optional fields added cumulatively until it parses. Covers a `.refine()` over optional fields (at least one of, exactly one of, both of) at any depth, and, where one optional field suffices, keeps the others (an `acting` declared first) out. Returns the last `safeParse` result and leaves the throw to the caller. `format_zod_issues(error)` renders the issues for those errors.
+- `generate_valid_body(input_schema) => Record<string, unknown> | undefined` — builds a body satisfying the input schema (`generate_valid_object`). Throws with Zod `issues` if the generated body fails validation — surfaces broken generation logic with a descriptive error rather than a confusing 400 downstream.
 
 ### `integration_helpers.ts` — route lookup + body checks
 
@@ -534,7 +535,7 @@ All cases expect 400 with one of `ERROR_INVALID_REQUEST_BODY` /
 The generators live in the hono-free `adversarial_input_cases.ts`, so the
 cross-process suites reuse them:
 
-- `generate_input_test_cases(input_schema)` → `InputTestCase[]` — whole-body structural (non-object, extra key when `strictObject`), missing required fields, one wrong-type per field, null for required non-nullable, one format violation per constrained field, numeric/array/string boundary cases via JSON Schema introspection.
+- `generate_input_test_cases(input_schema, options?)` → `InputTestCase[]` — whole-body structural (non-object, extra key when `strictObject`), missing required fields, one wrong-type per field, null for required non-nullable, one format violation per constrained field, numeric/array/string boundary cases via JSON Schema introspection. Each case breaks one field of a valid base: `generate_valid_object`'s, or `options.base` (`InputTestCaseOptions`) for an input whose valid shape the generator can't reach. Either base failing the schema throws, naming `options.label` (the method or route) when given.
 - `generate_params_test_cases(params_schema)` → `ParamsTestCase[]` — format violations only (unconstrained string params accept anything).
 - `generate_query_test_cases(query_schema)` → `QueryTestCase[]` — missing required + format violations.
 
@@ -927,9 +928,10 @@ loses coverage.
 
 `rpc_success_fixtures`, `rpc_skip_methods` and `rpc_input_overrides`
 forward to the RPC round-trip's `success_fixtures`, `skip_methods` and
-`input_overrides` (same options on `describe_standard_cross_process_tests`)
-— `rpc_skip_methods` is the consumer escape hatch for a method the generic
-round-trip can't drive in its test wiring.
+`input_overrides` (same options on `describe_standard_cross_process_tests`;
+`describe_spine_cross_suites` also forwards `rpc_input_overrides` to
+`rpc_adversarial`) — `rpc_skip_methods` is the consumer escape hatch for a
+method the generic round-trip can't drive in its test wiring.
 
 `StandardTestOptions` requires `create_route_specs` (for rate_limiting) and
 `rpc_endpoints` (for admin/audit_completeness/rpc_round_trip); the admin
@@ -1003,12 +1005,12 @@ Registry lookups:
    - correct auth passes (not 401/403)
    - GET unauthenticated for `side_effects: false` reads
 2. **RPC adversarial envelopes** — the fixed set `create_rpc_envelope_cases(endpoint, {skip_methods?})` builds, exercising the envelope parse, method lookup, and GET read restriction: non-JSON body → `parse_error`, wrong `jsonrpc` version, missing `jsonrpc` / `method` / `id`, batch array, non-object POST `params` → `invalid_request`, unknown method → `method_not_found`, GET missing `method`/`id` → `invalid_request`, GET invalid-JSON params → `invalid_params`, GET non-object params on **every** read (each of `RPC_NON_OBJECT_PARAMS`: a number, an array, a string, a boolean) → `invalid_params`, GET mutation method → `invalid_request`, plus three ordering cases sent with no credential (an anonymous GET mutation and an anonymous batch, both `invalid_request`, never 401; an anonymous GET with non-object params on a read requiring an identity, the 401 — params validation runs after authorization). Each case is sent by the app its method's auth admits (`select_auth_app`) and pins status, code, echoed `id`, and `data.reason` (exact where the dispatcher sets one, absent otherwise) via `assert_rpc_envelope_refusal`. The cases are data (`RpcEnvelopeCase`) in the hono-free `rpc_envelope_cases.ts`, shared with the cross-process `describe_rpc_adversarial_cross_tests`; `to_rpc_envelope_request` builds a case's request, and `rpc_get_side_effects_reason(method)` is the GET read restriction's reason.
-3. **RPC adversarial params** — `generate_rpc_params_test_cases(input)` (`rpc_envelope_cases.ts`): `generate_input_test_cases` minus its structural cases (a non-object `params` is refused at the envelope, not at params validation). Every case expects 400 `invalid_params`. Shared with the cross-process suite.
+3. **RPC adversarial params** — `generate_rpc_params_test_cases(input, options?)` (`rpc_envelope_cases.ts`): `generate_input_test_cases` minus its structural cases (a non-object `params` is refused at the envelope, not at params validation), taking the same `{base?, label?}`. Every case expects 400 `invalid_params`. Shared with the cross-process suite. `input_overrides` (method name → valid params) seeds a method's cases from that base; an override its schema refuses throws at collection, naming the method.
 
 Skips silently when `surface.rpc_endpoints` is empty. Uses stub deps — no
 DB needed.
 
-Options: `{build: () => AppSurfaceSpec, roles: Array<string>}`.
+Options: `{build: () => AppSurfaceSpec, roles: Array<string>, input_overrides?}`.
 
 **Opt-in bundles need their own per-bundle suite file.** Action bundles not
 folded into `create_standard_rpc_actions` (today `self_service_role_actions`,
@@ -1227,8 +1229,12 @@ session_options, rpc_endpoints, live_rpc_endpoints?, roles?, setup?, exclude?,
 overrides?, rpc_success_fixtures?, rpc_skip_methods?, rpc_input_overrides?,
 rpc_max_body_bytes?, ws_max_message_bytes?})`.
 `live_rpc_endpoints` is the backend's whole live mount; given, `rpc_adversarial`
-also walks the methods it keeps off the declared surface. Without it a
-consumer writes a file per suite, and a suite added here never reaches it.
+also walks the methods it keeps off the declared surface. `rpc_input_overrides`
+reaches the standard bundle's RPC round-trip and `rpc_adversarial`'s
+`input_overrides`, so one valid body per method serves both; a key naming a
+method on neither the declared surface nor `live_rpc_endpoints` throws at
+collection. Without it a consumer writes a file per suite, and a suite added
+here never reaches it.
 
 - **The registry.** `SUITE_NAMES` / `SuiteName` — the closed set of suites the
   call runs, each named by its module (`ws_round_trip` is
@@ -2210,10 +2216,11 @@ cases are `src/test/auth/cell_ref_admission{,.fact_less}.db.test.ts`.
 ### Malformed-envelope and invalid-params parity — `cross_backend/rpc_adversarial.ts`
 
 `describe_rpc_adversarial_cross_tests({setup_test, surface_source, rpc_path?,
-live_rpc_endpoints?, skip_methods?})` — the envelope and params groups of
-`describe_rpc_attack_surface_tests`, sent over `fixture.transport` to a
-spawned backend. The in-process groups run on stub apps, while the Rust spine
-parses envelopes and params by hand and the action-manifest parity gate
+live_rpc_endpoints?, skip_methods?, input_overrides?, xfail_params?})` — the
+envelope and params groups of `describe_rpc_attack_surface_tests`, sent over
+`fixture.transport` to a spawned backend. The in-process groups run on stub
+apps, while the Rust spine parses envelopes and params by hand and the
+action-manifest parity gate
 compares no param schemas, so this is what holds the spines to one answer.
 
 - **envelopes** — every `create_rpc_envelope_cases` case, one test each, on a
@@ -2221,8 +2228,10 @@ compares no param schemas, so this is what holds the spines to one answer.
   guard test that the endpoint has both a read and an authenticated mutation to
   carry them.
 - **params** — one test per declared method, sending every
-  `generate_rpc_params_test_cases` case and failing with the list of cases not
-  answered 400 `invalid_params` with no `data.reason`. `xfail_params`
+  `generate_rpc_params_test_cases` case (seeded from the method's
+  `input_overrides` entry when it has one — the cases go as a single-actor
+  principal, so an override omits `acting`) and failing with the list of
+  cases not answered 400 `invalid_params` with no `data.reason`. `xfail_params`
   (`RpcParamsXfail` — `{method, labels, tracking_id, reason}`) moves the named
   cases of a method into one `xfail_until` test each, for a known divergence on
   one backend; the method's other cases keep their test, and an entry naming no
