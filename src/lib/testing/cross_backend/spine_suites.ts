@@ -18,7 +18,14 @@ import '../assert_dev_env.ts';
  *
  * - `exclude` names a suite with the reason it can't run on this backend; the
  *   reason is required and shows in the run as a skipped test, so a skip is
- *   stated in code and visible in the report.
+ *   stated in code and visible in the report. `testing_backdoor` can't be
+ *   excluded, by suite or by case, nor its `capabilities.testing_backdoors`
+ *   changed: it checks the declaration the backdoor gating reads.
+ * - `exclude_cases` names single tests of a suite that does run, each by its
+ *   name path (describe titles and test name, joined with `' > '`) with a
+ *   required reason; one `beforeEach` skips them at run time, so each shows as
+ *   skipped with its reason, and an entry matching no collected test of its
+ *   suite fails the closing check test.
  * - `overrides` replaces a suite's derived options, field by field (a shallow
  *   merge over what the handle gives) — a role list the backend's WS upgrade
  *   requires, an `xfail` for a tracked divergence, a narrower capability set.
@@ -45,6 +52,15 @@ import '../assert_dev_env.ts';
  * config's `SECRET_FUZ_COOKIE_KEYS`), else from `overrides`; when neither has
  * it, the call throws naming the suite — provide it or exclude the suite.
  *
+ * **Backdoors.** The backend's `capabilities.testing_backdoors` must declare
+ * `SPINE_SUITES_REQUIRED_BACKDOORS` (the per-test reset and the audit
+ * barrier), and `_testing_put_fact` when it declares `fact_serving`; the call
+ * throws otherwise. A suite every case of which drives another backdoor
+ * (`credential_deadline`, `origin_conformance`, `ws_outbound_overflow`) skips
+ * itself on a backend not declaring it, shown like an exclude with a reason
+ * naming the backdoor — so an exclude, override or `exclude_cases` entry for
+ * it is refused as dead.
+ *
  * **Not in the one call** (`STANDALONE_CROSS_SUITES`, with the reasons): the
  * suites that need two handles (the differential), a backend spawned with live
  * limiters (`login_security`, `ws_action_rate_limit` — the standard suites would
@@ -52,12 +68,23 @@ import '../assert_dev_env.ts';
  * cases. Each keeps its own entry point.
  *
  * Suites are registered without a wrapping `describe`, so their test names are
- * the same as when each is called on its own.
+ * the same as when each is called on its own — and an `exclude_cases` path is
+ * the name the reporter prints after the file and any `describe` wrapping the
+ * call.
  *
  * @module
  */
 
-import { describe, test } from 'vitest';
+import {
+	beforeAll,
+	beforeEach,
+	describe,
+	test,
+	TestRunner,
+	type RunnerTask,
+	type RunnerTestFile,
+	type RunnerTestSuite
+} from 'vitest';
 
 import { ROLE_KEEPER, ROLE_ADMIN, type RoleSchemaResult } from '../../auth/role_schema.ts';
 import type { SessionOptions } from '../../auth/session_cookie.ts';
@@ -175,7 +202,8 @@ import {
 import {
 	SPINE_PARTICIPANT_ROLE,
 	SPINE_ROLE_GATED_WS_PATH,
-	SPINE_ROLE_GATED_WS_ROLES
+	SPINE_ROLE_GATED_WS_ROLES,
+	type TestingBackdoorMethod
 } from './spine_surface_constants.ts';
 import {
 	describe_cross_process_sse_tests,
@@ -296,6 +324,17 @@ export const STANDALONE_CROSS_SUITES: Readonly<Record<StandaloneSuiteName, strin
 	conformance_table: "a runner over the consumer's own cases, not a suite"
 };
 
+/**
+ * The backdoors `describe_spine_cross_suites` requires of every backend, since
+ * the suites share them: `_testing_reset` is every `setup_test`'s per-test
+ * reset, and `_testing_drain_effects` the barrier every audit read waits on. A
+ * backend whose `capabilities.testing_backdoors` lacks one fails at collection.
+ */
+export const SPINE_SUITES_REQUIRED_BACKDOORS: ReadonlyArray<TestingBackdoorMethod> = Object.freeze([
+	'_testing_reset',
+	'_testing_drain_effects'
+]);
+
 /** The options each suite takes, by `SuiteName` — what `overrides` entries are partials of. */
 export interface SuiteOptionsMap {
 	account_lifecycle: AccountLifecycleCrossTestOptions;
@@ -353,6 +392,16 @@ export type SuiteOverride<K extends SuiteName> =
 
 /** Per-suite option overrides, each merged over the options the handle gives. */
 export type SuiteOverrides = { readonly [K in SuiteName]?: SuiteOverride<K> };
+
+/**
+ * Per-suite test exclusions: each test's name path — its describe titles and
+ * its own name, joined with `' > '`, as the reporter prints it after the file
+ * (and after any `describe` wrapping the call) — mapped to why it can't run on
+ * this backend.
+ */
+export type SuiteCaseExclusions = Readonly<
+	Partial<Record<SuiteName, Readonly<Record<string, string>>>>
+>;
 
 /** The keys `T` requires — the ones an override must not leave `undefined`. */
 type RequiredKeys<T> = {
@@ -434,9 +483,17 @@ export interface SpineCrossSuitesOptions {
 	readonly setup?: CrossProcessSetupOptions;
 	/**
 	 * Suites this backend doesn't run, each with a non-empty reason. Each shows
-	 * in the run as one skipped test carrying the reason.
+	 * in the run as one skipped test carrying the reason. Not `testing_backdoor`,
+	 * nor a suite that already skips itself for an undeclared backdoor.
 	 */
 	readonly exclude?: Readonly<Partial<Record<SuiteName, string>>>;
+	/**
+	 * Single tests this backend doesn't run, by suite, each by its name path
+	 * (`SuiteCaseExclusions`) with a non-empty reason; each shows in the run as
+	 * skipped with its reason. An entry naming a suite the call doesn't run,
+	 * `testing_backdoor`, or a path no collected test of that suite has, fails.
+	 */
+	readonly exclude_cases?: SuiteCaseExclusions;
 	/** Per-suite option overrides, a shallow merge over what the handle gives. */
 	readonly overrides?: SuiteOverrides;
 	/** The roles the role-shaped suites use, when the backend lacks the spine's own. */
@@ -498,6 +555,12 @@ interface SuiteEntry<K extends SuiteName> {
 	 * handle doesn't carry (`cookie_keys`), fails at collection.
 	 */
 	readonly required: RequiredKeySet<SuiteOptionsMap[K]>;
+	/**
+	 * The backdoors every case of the suite drives, beyond
+	 * `SPINE_SUITES_REQUIRED_BACKDOORS`; a backend not declaring one skips the
+	 * whole suite, with a reason naming it.
+	 */
+	readonly backdoors?: ReadonlyArray<TestingBackdoorMethod>;
 }
 
 /** The capability-gated RPC-path shape the cell suites and several others share. */
@@ -597,7 +660,8 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			ws_account_roles: c.options.ws_required_roles
 		}),
 		describe: describe_credential_deadline_cross_tests,
-		required: { setup_test: true, capabilities: true, base_url: true, ws_path: true }
+		required: { setup_test: true, capabilities: true, base_url: true, ws_path: true },
+		backdoors: ['_testing_shorten_credential_expiry']
 	},
 	credential_header_robustness: {
 		derive: (c) => ({
@@ -630,7 +694,8 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 	origin_conformance: {
 		derive: (c) => ({ setup_test: c.setup(), rpc_path: c.config.rpc_path }),
 		describe: describe_origin_conformance_cross_tests,
-		required: { setup_test: true }
+		required: { setup_test: true },
+		backdoors: ['_testing_origin_check']
 	},
 	origin_scope: {
 		derive: (c) => ({
@@ -782,9 +847,9 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 		}
 	},
 	testing_backdoor: {
-		derive: (c) => ({ setup_test: c.setup(), rpc_path: c.config.rpc_path, ws: c.ws }),
+		derive: (c) => ({ ...rpc_gated(c), ws: c.ws }),
 		describe: describe_testing_backdoor_cross_tests,
-		required: { setup_test: true }
+		required: { setup_test: true, capabilities: true }
 	},
 	token_lifetime: {
 		derive: (c) => ({ setup_test: c.setup(), rpc_path: c.config.rpc_path }),
@@ -837,7 +902,8 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			rpc_path: c.config.rpc_path
 		}),
 		describe: describe_ws_outbound_overflow_cross_tests,
-		required: { setup_test: true, capabilities: true, base_url: true, ws_path: true }
+		required: { setup_test: true, capabilities: true, base_url: true, ws_path: true },
+		backdoors: ['_testing_flood_notifications']
 	},
 	ws_role_gated: {
 		// the reference spines' role-gated endpoint; a backend mounting its own
@@ -889,14 +955,53 @@ const merge_setup_options = (
 	extra_actors: [...(base?.extra_actors ?? []), ...(seed?.extra_actors ?? [])]
 });
 
+/**
+ * The backdoors every case of `name` drives beyond
+ * `SPINE_SUITES_REQUIRED_BACKDOORS` — a backend not declaring one skips the
+ * suite.
+ *
+ * @param name - the suite
+ * @returns its `SuiteEntry.backdoors`, empty for a suite needing none
+ * @internal
+ */
+export const get_spine_suite_backdoors = (name: SuiteName): ReadonlyArray<TestingBackdoorMethod> =>
+	SUITE_ENTRIES[name].backdoors ?? [];
+
 const is_suite_name = (name: string): name is SuiteName =>
 	(SUITE_NAMES as ReadonlyArray<string>).includes(name);
 
 /**
- * Refuse an exclude with an empty reason, an unknown suite name, and a suite
- * both excluded and overridden — before anything is registered.
+ * Each suite whose backdoors `declared` lacks, with the generated reason it is
+ * skipped — the suites whose every case drives a backdoor (`SuiteEntry.backdoors`).
  */
-const validate_spine_cross_suites_options = (options: SpineCrossSuitesOptions): void => {
+const to_backdoor_skips = (declared: ReadonlyArray<string>): Map<SuiteName, string> => {
+	const skips: Map<SuiteName, string> = new Map();
+	for (const name of SUITE_NAMES) {
+		const missing = get_spine_suite_backdoors(name).filter((m) => !declared.includes(m));
+		if (missing.length > 0) {
+			skips.set(
+				name,
+				`needs ${missing.map((m) => `\`${m}\``).join(', ')}, which capabilities.testing_backdoors doesn't declare`
+			);
+		}
+	}
+	return skips;
+};
+
+/**
+ * Refuse an exclude with an empty reason, an unknown suite name, a suite both
+ * excluded and overridden, a backend missing a backdoor the suites share, an
+ * exclude or override of a suite that skips itself for an undeclared
+ * backdoor, any exclusion of `testing_backdoor`, and an `exclude_cases` entry
+ * naming a suite the call doesn't run or carrying no reason — before anything
+ * is registered.
+ */
+const validate_spine_cross_suites_options = (
+	options: SpineCrossSuitesOptions,
+	declared: ReadonlyArray<string>,
+	backdoor_skips: ReadonlyMap<SuiteName, string>,
+	capabilities: BackendCapabilities
+): void => {
 	if (options.rpc_input_overrides?.size) {
 		// a key the round-trip (the declared surface) and `rpc_adversarial` (that
 		// and the live mount) both lack would be ignored silently — a typo
@@ -932,11 +1037,76 @@ const validate_spine_cross_suites_options = (options: SpineCrossSuitesOptions): 
 		if (options.overrides?.[name] !== undefined) {
 			throw new Error(`describe_spine_cross_suites: '${name}' is both excluded and overridden`);
 		}
+		if (name === 'testing_backdoor') {
+			throw new Error(
+				"describe_spine_cross_suites: 'testing_backdoor' can't be excluded — it checks the " +
+					'capabilities.testing_backdoors declaration the other suites gate on'
+			);
+		}
+		const skip = backdoor_skips.get(name);
+		if (skip !== undefined) {
+			throw new Error(
+				`describe_spine_cross_suites: exclude '${name}' is redundant — the suite skips itself (${skip})`
+			);
+		}
 	}
 	for (const name of Object.keys(options.overrides ?? {})) {
 		if (!is_suite_name(name)) {
 			throw new Error(`describe_spine_cross_suites: overrides names unknown suite '${name}'`);
 		}
+		const skip = backdoor_skips.get(name);
+		if (skip !== undefined) {
+			throw new Error(
+				`describe_spine_cross_suites: overrides names '${name}', which skips itself (${skip})`
+			);
+		}
+	}
+	for (const [name, cases] of Object.entries(options.exclude_cases ?? {})) {
+		if (!is_suite_name(name)) {
+			throw new Error(`describe_spine_cross_suites: exclude_cases names unknown suite '${name}'`);
+		}
+		if (options.exclude?.[name] !== undefined) {
+			throw new Error(
+				`describe_spine_cross_suites: '${name}' is excluded, so its exclude_cases entries name nothing`
+			);
+		}
+		if (name === 'testing_backdoor') {
+			throw new Error(
+				"describe_spine_cross_suites: exclude_cases can't name 'testing_backdoor' — it checks the " +
+					'capabilities.testing_backdoors declaration the other suites gate on, and a declared ' +
+					'backdoor failing its credential row is a bug, not a case to skip'
+			);
+		}
+		const skip = backdoor_skips.get(name);
+		if (skip !== undefined) {
+			throw new Error(
+				`describe_spine_cross_suites: exclude_cases names '${name}', which skips itself (${skip})`
+			);
+		}
+		const entries = Object.entries(cases ?? {});
+		if (entries.length === 0) {
+			throw new Error(`describe_spine_cross_suites: exclude_cases '${name}' names no test`);
+		}
+		for (const [test_name, reason] of entries) {
+			if (typeof reason !== 'string' || reason.trim() === '') {
+				throw new Error(
+					`describe_spine_cross_suites: exclude_cases '${name}' › '${test_name}' needs a reason`
+				);
+			}
+		}
+	}
+	const missing = SPINE_SUITES_REQUIRED_BACKDOORS.filter((m) => !declared.includes(m));
+	if (missing.length > 0) {
+		throw new Error(
+			`describe_spine_cross_suites: capabilities.testing_backdoors must declare ${missing.join(', ')} ` +
+				'— every suite resets through _testing_reset and reads audit rows behind _testing_drain_effects'
+		);
+	}
+	if (capabilities.fact_serving && !declared.includes('_testing_put_fact')) {
+		throw new Error(
+			'describe_spine_cross_suites: capabilities.fact_serving needs _testing_put_fact in ' +
+				'capabilities.testing_backdoors — the fact suites seed through it'
+		);
 	}
 };
 
@@ -955,7 +1125,147 @@ const run_suite = <K extends SuiteName>(name: K, context: SuiteContext): void =>
 			);
 		}
 	}
+	// the backdoor suite checks the declaration the gating read, so an override
+	// can't hand it another; it reads nothing else of `capabilities`, so a copy
+	// keeping the list passes
+	if (name === 'testing_backdoor') {
+		const checked = (suite_options as SuiteOptionsMap['testing_backdoor']).capabilities
+			.testing_backdoors;
+		const declared = context.config.capabilities.testing_backdoors;
+		// the same entries, each as often, in any order
+		if ([...checked].sort().join(' ') !== [...declared].sort().join(' ')) {
+			throw new Error(
+				"describe_spine_cross_suites: overrides can't change 'testing_backdoor' " +
+					'capabilities.testing_backdoors — it checks the declaration the other suites gate on'
+			);
+		}
+	}
 	entry.describe(suite_options);
+};
+
+/** The top-level tasks one suite registered, as indices into the calling suite's tasks. */
+export interface SuiteTaskRange {
+	readonly name: SuiteName;
+	readonly start: number;
+	readonly end: number;
+}
+
+/**
+ * Where `task` sits below `root`: its name path (its describe titles and its
+ * name) and its top-level ancestor, one of `root`'s own tasks — or `null`
+ * outside `root`.
+ */
+const locate_task = (
+	task: RunnerTask,
+	root: RunnerTask
+): { path: Array<string>; top: RunnerTask } | null => {
+	const path: Array<string> = [];
+	let current: RunnerTask = task;
+	for (;;) {
+		path.unshift(current.name);
+		// a test or describe at a file's top level has no `suite`, only its `file`
+		const parent: RunnerTask | undefined = current.suite ?? current.file;
+		if (parent === root) return { path, top: current };
+		if (!parent || parent === current) return null;
+		current = parent;
+	}
+};
+
+/** Every test under `task`, as name paths starting with `prefix`. */
+const collect_test_paths = (task: RunnerTask, prefix: Array<string>, out: Set<string>): void => {
+	const path = [...prefix, task.name];
+	if (task.type === 'suite') {
+		for (const child of task.tasks) collect_test_paths(child, path, out);
+	} else {
+		out.add(path.join(' > '));
+	}
+};
+
+/**
+ * Check every `exclude_cases` entry against the test paths each suite
+ * collected — the static half of the case exclusions, which the closing test
+ * `register_spine_case_exclusions` registers runs.
+ *
+ * @param exclude_cases - the entries, by suite
+ * @param collected - each run suite's collected test paths
+ * @throws Error - naming every entry whose suite collected no test at its path
+ * @internal
+ */
+export const check_spine_case_exclusions = (
+	exclude_cases: SuiteCaseExclusions,
+	collected: ReadonlyMap<SuiteName, ReadonlySet<string>>
+): void => {
+	const dead: Array<string> = [];
+	for (const [name, cases] of Object.entries(exclude_cases) as Array<
+		[SuiteName, Readonly<Record<string, string>> | undefined]
+	>) {
+		const paths = collected.get(name);
+		for (const test_name of Object.keys(cases ?? {})) {
+			if (!paths?.has(test_name)) dead.push(`${name} › ${test_name}`);
+		}
+	}
+	if (dead.length > 0) {
+		throw new Error(
+			`exclude_cases entries naming no collected test of their suite (a renamed or removed ` +
+				`test, or a path missing a describe title): ${dead.join('; ')}`
+		);
+	}
+};
+
+/**
+ * Skip the `exclude_cases` tests, and fail on an entry no collected test has.
+ * `describe_spine_cross_suites` calls it after registering the suites, in the
+ * same suite.
+ *
+ * One `beforeEach` on the calling suite: it finds the test's top-level task
+ * among the ranges the suites registered, and calls `ctx.skip(reason)` when
+ * that suite's entries name the test's path — so the suite files stay as they
+ * are, and the test shows as skipped with its reason. A closing test holds
+ * every entry to a test its suite collected (`check_spine_case_exclusions`;
+ * the paths are read at collection, so a filtered run still checks them).
+ * A skipped test's own `beforeEach` hooks don't run, but its `afterEach`
+ * hooks and its suite's `beforeAll` still do.
+ *
+ * @param exclude_cases - the entries, by suite
+ * @param ranges - each run suite's top-level tasks in the calling suite
+ * @internal
+ */
+export const register_spine_case_exclusions = (
+	exclude_cases: SuiteCaseExclusions,
+	ranges: ReadonlyArray<SuiteTaskRange>
+): void => {
+	let root: Readonly<RunnerTestSuite | RunnerTestFile> | undefined;
+	const collected: Map<SuiteName, Set<string>> = new Map();
+	const suite_of = (index: number): SuiteName | undefined =>
+		ranges.find((r) => index >= r.start && index < r.end)?.name;
+
+	// vitest passes the suite a hook is registered on as the second argument,
+	// and requires the first be destructured
+	// eslint-disable-next-line no-empty-pattern
+	beforeAll(({}, suite) => {
+		root = suite;
+		for (const range of ranges) {
+			const paths: Set<string> = new Set();
+			for (const task of suite.tasks.slice(range.start, range.end)) {
+				collect_test_paths(task, [], paths);
+			}
+			collected.set(range.name, paths);
+		}
+	});
+
+	beforeEach((ctx) => {
+		if (!root) return;
+		const located = locate_task(ctx.task, root);
+		if (!located) return;
+		const name = suite_of(root.tasks.indexOf(located.top));
+		if (name === undefined) return;
+		const reason = exclude_cases[name]?.[located.path.join(' > ')];
+		if (reason !== undefined) ctx.skip(`excluded on this backend: ${reason}`);
+	});
+
+	test('spine cross suites: every exclude_cases entry names a collected test', () => {
+		check_spine_case_exclusions(exclude_cases, collected);
+	});
 };
 
 /**
@@ -963,17 +1273,23 @@ const run_suite = <K extends SuiteName>(name: K, context: SuiteContext): void =>
  * see the module doc for what the options add and what stays outside.
  *
  * @param handle - the backend, as `inject_backend_handle()` returns it
- * @param options - the declared surface, plus excludes and overrides
+ * @param options - the declared surface, plus excludes, case exclusions and overrides
  * @throws Error - on an exclude with no reason, an unknown suite name, a suite
- *   both excluded and overridden, or a suite missing an input the handle
- *   doesn't carry
+ *   both excluded and overridden, an excluded `testing_backdoor` (or one of
+ *   its cases, or an override changing its `capabilities.testing_backdoors`), an exclude,
+ *   override or `exclude_cases` entry for a suite that skips itself or isn't
+ *   run, a backend not declaring `SPINE_SUITES_REQUIRED_BACKDOORS` (or
+ *   `_testing_put_fact` with `fact_serving`), or a suite missing an input the
+ *   handle doesn't carry
  */
 export const describe_spine_cross_suites = (
 	handle: ReconstructedBootstrappedBackendHandle,
 	options: SpineCrossSuitesOptions
 ): void => {
-	validate_spine_cross_suites_options(options);
 	const config = to_cross_suite_options(handle);
+	const declared: ReadonlyArray<string> = config.capabilities.testing_backdoors;
+	const backdoor_skips = to_backdoor_skips(declared);
+	validate_spine_cross_suites_options(options, declared, backdoor_skips, config.capabilities);
 	const context: SuiteContext = {
 		handle,
 		config,
@@ -981,14 +1297,28 @@ export const describe_spine_cross_suites = (
 		setup: (seed) => default_cross_process_setup(handle, merge_setup_options(options.setup, seed)),
 		ws: config.capabilities.ws ? { base_url: config.base_url, ws_path: config.ws_path } : undefined
 	};
-	const excluded = Object.entries(options.exclude ?? {});
+	// each suite's top-level tasks, by index, so the case exclusions know which
+	// suite a test belongs to
+	const collector = TestRunner.getCurrentSuite();
+	const ranges: Array<SuiteTaskRange> = [];
+	const skipped: Array<[string, string]> = Object.entries(options.exclude ?? {});
 	for (const name of SUITE_NAMES) {
 		if (options.exclude?.[name] !== undefined) continue;
+		const skip = backdoor_skips.get(name);
+		if (skip !== undefined) {
+			skipped.push([name, skip]);
+			continue;
+		}
+		const start = collector.tasks.length;
 		run_suite(name, context);
+		ranges.push({ name, start, end: collector.tasks.length });
 	}
-	if (excluded.length > 0) {
+	if (Object.keys(options.exclude_cases ?? {}).length > 0) {
+		register_spine_case_exclusions(options.exclude_cases!, ranges);
+	}
+	if (skipped.length > 0) {
 		describe('spine cross suites excluded on this backend', () => {
-			for (const [name, reason] of excluded) test.skip(`${name}: ${reason}`, () => {});
+			for (const [name, reason] of skipped) test.skip(`${name}: ${reason}`, () => {});
 		});
 	}
 };

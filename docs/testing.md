@@ -1086,6 +1086,7 @@ consumer config.
 - `ws_handshake_pipelining` — Backend's HTTP server accepts WebSocket frames written in the same TCP write as the upgrade request (`true` for Node/Deno/Rust; `false` for a Bun backend that upgrades after an asynchronous check, as one behind auth does — Bun answers such a request `400`). Gates the WS round-trip suite's frames-with-the-handshake case — the ordering-forced form of "frames that arrive before the connection is admitted wait for admission".
 - `ws_account_actions` — Backend's WebSocket endpoint mounts the self-service account actions, so a socket can revoke the session it runs on (`true` on fuz_app's own spine presets; a consumer states it `true` once its endpoint mounts them). Gates the WS round-trip suite's self-revocation case, and its WS-mutation audit case (which also calls `_testing_drain_effects`).
 - `cell_gated_create` — Backend live-mounts a test `CellCreateAuthorize` policy on its cell layer (`true` only on the reference spine binaries that mount it). Gates `describe_cell_gated_create_cross_tests`.
+- `testing_backdoors` — Not a flag: the `_testing_*` backdoors the backend mounts, from `TESTING_BACKDOOR_METHODS`. Checked by `describe_testing_backdoor_cross_tests`, which fires its credential rows at the ones listed; `describe_spine_cross_suites` gates suites on it (below). `[]` in-process.
 
 Wiring facts that gate nothing are not capabilities, and the harness doesn't record them.
 
@@ -1100,10 +1101,10 @@ reference runtime — Node for TS, hyper for Rust; a backend on another runtime
 (Deno, Bun) overrides them. The flags that describe a backend's own mounts —
 `MountFlag`: `ws`, `sse`, `cell_crud`, `cell_relations`, `cell_gated_create`,
 `fact_serving`, `fact_serving_admin_hash`, `ready`, `peer_request`, `ws_account_actions`,
-`ws_role_gated` — have no default. The family defaults are typed
-`FamilyDefaultCapabilities` (they omit them) and `capabilities` is required,
-so a config states each one, and one left out fails typecheck by name instead
-of silently skipping its suites:
+`ws_role_gated` — have no default, and neither does `testing_backdoors`. The
+family defaults are typed `FamilyDefaultCapabilities` (they omit them) and
+`capabilities` is required, so a config states each one, and one left out
+fails typecheck by name instead of silently skipping its suites:
 
 ```ts
 capabilities: {
@@ -1112,8 +1113,22 @@ capabilities: {
   cell_crud: false, cell_relations: false, cell_gated_create: false,
   fact_serving: false, fact_serving_admin_hash: false,
   ws_account_actions: false, ws_role_gated: false,
+  testing_backdoors: ['_testing_reset', '_testing_drain_effects'],
 }
 ```
+
+`testing_backdoors` lists the `_testing_*` backdoors your test binary mounts,
+from `TESTING_BACKDOOR_METHODS` (`spine_surface_constants.ts`) — your own seams
+stay off it. The testing-backdoor suite holds the list to the backend: each
+known backdoor it leaves out must answer `method_not_found` (both spines look a
+method up before authenticating, so an anonymous call shows whether it is
+mounted), and each it names gets the refused-credential rows. The one call
+requires `_testing_reset` and `_testing_drain_effects`, requires
+`_testing_put_fact` with `fact_serving`, and skips each suite needing another
+undeclared backdoor — `credential_deadline`
+(`_testing_shorten_credential_expiry`), `origin_conformance`
+(`_testing_origin_check`), `ws_outbound_overflow`
+(`_testing_flood_notifications`) — naming it in the skip.
 
 ### Lifecycle — `BackendConfig` + `spawn_backend`
 
@@ -1205,7 +1220,10 @@ export const rust_backend_config = (): BackendConfig =>
 		start_command: [resolve_cargo_binary_path(MY_CARGO_BINARY)],
 		database_url: 'postgres://localhost/my_app_test_rust',
 		daemon_token_dir_env: 'MY_APP_DAEMON_TOKEN_DIR',
-		capabilities: { ...rust_default_capabilities /* every MountFlag stated */ }
+		capabilities: {
+			...rust_default_capabilities /* every MountFlag stated */,
+			testing_backdoors: ['_testing_reset', '_testing_drain_effects']
+		}
 	});
 
 // global_setup.ts
@@ -1278,10 +1296,31 @@ capabilities, so state every mount flag truthfully and the rest follows.
 
 - `exclude` names a suite with a non-empty reason, shown in the run as a
   skipped test; an empty reason, an unknown name, or a suite both excluded and
-  overridden throws.
+  overridden throws, as does excluding `testing_backdoor` (it checks the
+  backdoor declaration) or a suite already skipping itself for an undeclared
+  backdoor.
+- `exclude_cases` names single tests of a suite that runs, by suite, each by
+  its name path — the describe titles and the test name joined with `' > '`,
+  as the reporter prints them after the file — with a non-empty reason:
+
+  ```ts
+  exclude_cases: {
+  	cell_crud: {
+  		'cell CRUD parity > owner lifecycle: create → get → update → delete → list':
+  			'our create policy refuses a non-admin root cell'
+  	}
+  }
+  ```
+
+  Each is skipped at run time with its reason. An entry for an excluded or
+  self-skipping suite, or for `testing_backdoor` (a declared backdoor failing
+  its credential row is a bug, not a case to skip), throws at collection, and one naming no test the suite
+  collected fails the closing check test — so a renamed case can't leave a
+  stale entry behind.
 - `overrides` is a shallow merge over a suite's derived options, typed per
   suite (`SuiteOverrides`): a role list, an `xfail` for a tracked divergence, a
-  narrower capability set. An entry can also be a function of the derived
+  narrower capability set (not for `testing_backdoor`, whose
+  `capabilities.testing_backdoors` must stay the backend's). An entry can also be a function of the derived
   options returning the patch — to add to a derived value (an `xfail` on the
   derived multi-actor setup) without restating it. A required option the
   merge leaves `undefined` throws, naming the suite and key.

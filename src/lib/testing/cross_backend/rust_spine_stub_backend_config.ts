@@ -43,7 +43,8 @@ import type { BackendCapabilities } from './capabilities.ts';
 import { build_test_backend_paths } from './build_test_backend_paths.ts';
 import {
 	LOGIN_RATE_LIMIT_ENABLED_ENV,
-	SPINE_EXPECTED_SCHEMA_URL
+	SPINE_EXPECTED_SCHEMA_URL,
+	TESTING_BACKDOOR_METHODS
 } from './spine_surface_constants.ts';
 import {
 	action_rate_limit_env,
@@ -82,7 +83,9 @@ export const RUST_SPINE_STUB_EXPECTED_SCHEMA_PATH_ENV = 'FUZ_RUST_SPINE_STUB_EXP
  * serves one action registry on `/api/rpc` and `/api/ws`), `cell_gated_create`
  * (it mounts the `TestCellGatedCreateAuthorize` policy on its cell layer), and
  * `ws_role_gated` (it mounts the role-gated WS endpoint at
- * `SPINE_ROLE_GATED_WS_PATH`, sharing its connection registry). Named
+ * `SPINE_ROLE_GATED_WS_PATH`, sharing its connection registry), and every
+ * `TESTING_BACKDOOR_METHODS` entry as `testing_backdoors` (it mounts them all,
+ * on one registry for both transports). Named
  * (not inline) so every spine preset is greppable, mirroring
  * `ts_spine_capabilities`.
  */
@@ -98,7 +101,8 @@ const rust_spine_stub_capabilities: BackendCapabilities = Object.freeze({
 	ready: true,
 	ws_account_actions: true,
 	cell_gated_create: true,
-	ws_role_gated: true
+	ws_role_gated: true,
+	testing_backdoors: TESTING_BACKDOOR_METHODS
 });
 
 /** Default listening port — slots beside zzz's 1175/1176; matches the binary's `DEFAULT_PORT`. */

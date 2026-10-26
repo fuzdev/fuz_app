@@ -449,12 +449,17 @@ gating role must hear about its scope, not the role. The conformance slate's
 this one — no column for the schema gate, no method for the manifest gate, off
 the declared surface for the spec-derived suites), and
 `testing_backdoor` (the imperative
-`describe_testing_backdoor_cross_tests` — the `_testing_*` backdoor credential
-gate: every `_testing_*` action fired as
+`describe_testing_backdoor_cross_tests` — the backdoor declaration check (a
+known backdoor `capabilities.testing_backdoors` leaves out must answer
+`method_not_found`; the spines declare every one, so none is probed there;
+the in-process leg `cross_backend/testing_backdoor_parity.db.test.ts` probes
+every one) and
+the `_testing_*` backdoor credential
+gate: every declared `_testing_*` action fired as
 anonymous → 401, session → 403, bearer → 403 over HTTP RPC, and on a session
 socket → `credential_type_required` over WS, proving the daemon-token gate
-holds on the off-surface actions every spine live-mounts; cross-process-only,
-no in-process leg since the actions aren't mounted in-process; the
+holds on the off-surface actions every spine live-mounts; the credential rows run
+cross-process only, since they need the actions mounted; the
 conformance table's generated rows over the live mount pin the same gates), and
 `actor_lookup` (the opt-in `actor_lookup` resolver — the keeper
 resolves its own actor → 200 with the info-leak-safe wire shape; its

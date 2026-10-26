@@ -116,8 +116,8 @@ export const action_rate_limit_env = (
 /**
  * Capabilities shared by TS-family backends — only what the family
  * guarantees: the declared spine surface's mounts and the behavior of its
- * reference runtime, Node. Carries no `MountFlag`; each backend config states
- * those itself (`FamilyDefaultCapabilities`).
+ * reference runtime, Node. Carries no `MountFlag` and no `testing_backdoors`;
+ * each backend config states those itself (`FamilyDefaultCapabilities`).
  */
 export const ts_default_capabilities: FamilyDefaultCapabilities = Object.freeze({
 	// The account-lifecycle verbs are on the declared surface
@@ -140,7 +140,7 @@ export const ts_default_capabilities: FamilyDefaultCapabilities = Object.freeze(
 /**
  * Capabilities for the Rust family — only what the family guarantees, as with
  * `ts_default_capabilities`: the declared spine surface's mounts and the
- * behavior of hyper. Carries no `MountFlag`.
+ * behavior of hyper. Carries no `MountFlag` and no `testing_backdoors`.
  */
 export const rust_default_capabilities: FamilyDefaultCapabilities = Object.freeze({
 	// The account-lifecycle verbs are in the spine's admin action set, on the
@@ -183,8 +183,9 @@ export interface MakeDefaultTsBackendConfigOptions {
 	readonly extra_env?: Readonly<Record<string, string>>;
 	/**
 	 * Every capability, stated: spread `ts_default_capabilities` and add each
-	 * `MountFlag`. Required, so a mount flag left out is a type error rather
-	 * than a suite that silently skips.
+	 * `MountFlag` and the `testing_backdoors` list. Required, so a mount flag or
+	 * the backdoor list left out is a type error rather than a suite that
+	 * silently skips.
 	 */
 	readonly capabilities: BackendCapabilities;
 	/** Pre-computed paths; defaults to `build_test_backend_paths(name)`. */
@@ -282,8 +283,9 @@ export interface MakeDefaultRustBackendConfigOptions {
 	readonly extra_env?: Readonly<Record<string, string>>;
 	/**
 	 * Every capability, stated: spread `rust_default_capabilities` and add each
-	 * `MountFlag`. Required, so a mount flag left out is a type error rather
-	 * than a suite that silently skips.
+	 * `MountFlag` and the `testing_backdoors` list. Required, so a mount flag or
+	 * the backdoor list left out is a type error rather than a suite that
+	 * silently skips.
 	 */
 	readonly capabilities: BackendCapabilities;
 	/** Pre-computed paths; defaults to `build_test_backend_paths(name)`. */

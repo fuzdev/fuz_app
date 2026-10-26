@@ -20,6 +20,7 @@ import {
 	type SuiteName
 } from '#lib/testing/cross_backend/spine_suites.ts';
 import type { BackendCapabilities } from '#lib/testing/cross_backend/capabilities.ts';
+import { TESTING_BACKDOOR_METHODS } from '#lib/testing/cross_backend/spine_surface_constants.ts';
 import {
 	CELL_EDITOR_ROLE,
 	CELL_ROLE_HOLDER_USERNAME
@@ -29,6 +30,13 @@ import type {
 	ReconstructedBootstrappedBackendHandle
 } from '#lib/testing/cross_backend/setup.ts';
 
+// `testing_backdoor` can't be excluded, so it registers beside the suite under
+// test — as nothing, to keep the calls collection-free
+vi.mock('#lib/testing/cross_backend/testing_backdoor.ts', async (import_original) => ({
+	...(await import_original<typeof import('#lib/testing/cross_backend/testing_backdoor.ts')>()),
+	describe_testing_backdoor_cross_tests: () => {}
+}));
+
 vi.mock('#lib/testing/cross_backend/setup.ts', async (import_original) => ({
 	...(await import_original<typeof import('#lib/testing/cross_backend/setup.ts')>()),
 	// a setup carrying the options it was built from, for the test to read
@@ -37,7 +45,13 @@ vi.mock('#lib/testing/cross_backend/setup.ts', async (import_original) => ({
 }));
 
 const handle = {
-	config: { capabilities: { ws: true } as unknown as BackendCapabilities, env: {} }
+	config: {
+		capabilities: {
+			ws: true,
+			testing_backdoors: TESTING_BACKDOOR_METHODS
+		} as unknown as BackendCapabilities,
+		env: {}
+	}
 } as unknown as ReconstructedBootstrappedBackendHandle;
 
 /** The derived option fields these tests read. */
@@ -59,7 +73,10 @@ const derive = (
 			describe_spine_cross_suites(handle, {
 				...options,
 				exclude: Object.fromEntries(
-					SUITE_NAMES.filter((n) => n !== name).map((n) => [n, 'not under test'])
+					SUITE_NAMES.filter((n) => n !== name && n !== 'testing_backdoor').map((n) => [
+						n,
+						'not under test'
+					])
 				),
 				overrides: {
 					[name]: (d: unknown) => {

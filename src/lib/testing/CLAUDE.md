@@ -1130,7 +1130,10 @@ file; the dual-spawn and limiter-enabled suites name their own files.
   `fact_serving_admin_hash`, `ready`,
   `peer_request`, `ws_account_actions`, `ws_role_gated`), and the family
   defaults (`ts_default_capabilities` / `rust_default_capabilities`, typed
-  `FamilyDefaultCapabilities`) omit them, with `capabilities` required on
+  `FamilyDefaultCapabilities`) omit them and the `testing_backdoors` list (the
+  `_testing_*` backdoors the backend mounts, from `TESTING_BACKDOOR_METHODS` —
+  §Testing-backdoor declaration below; `[]` in-process, every one on fuz_app's
+  spine presets), with `capabilities` required on
   `make_default_{ts,rust}_backend_config` — so a config that leaves one out
   fails typecheck naming it, rather than silently skipping its suites. The
   family defaults carry the declared surface's mounts (`account_lifecycle`,
@@ -1226,7 +1229,7 @@ the omitted suites.
 One call that runs every shipped single-backend cross suite against one
 spawned backend: `describe_spine_cross_suites(handle, {surface_source,
 session_options, rpc_endpoints, live_rpc_endpoints?, roles?, setup?, exclude?,
-overrides?, rpc_success_fixtures?, rpc_skip_methods?, rpc_input_overrides?,
+exclude_cases?, overrides?, rpc_success_fixtures?, rpc_skip_methods?, rpc_input_overrides?,
 rpc_max_body_bytes?, ws_max_message_bytes?})`.
 `live_rpc_endpoints` is the backend's whole live mount; given, `rpc_adversarial`
 also walks the methods it keeps off the declared surface. `rpc_input_overrides`
@@ -1276,13 +1279,51 @@ here never reaches it.
   takes it as `rpc_max_body_bytes`), the second `ws_round_trip`'s
   `max_message_bytes` — one value per limit for every suite probing it.
 - **`exclude`** — `{[suite]: reason}`; the reason is required and shows in the
-  run as a skipped test. An empty reason, an unknown suite name, or a suite
-  both excluded and overridden throws before anything registers.
+  run as a skipped test. An empty reason, an unknown suite name, a suite
+  both excluded and overridden, `testing_backdoor` (it checks the backdoor
+  declaration the gating reads), or a suite already skipping itself for an
+  undeclared backdoor throws before anything registers.
+- **Backdoors.** `capabilities.testing_backdoors` must declare
+  `SPINE_SUITES_REQUIRED_BACKDOORS` (`_testing_reset`, every setup's per-test
+  reset, and `_testing_drain_effects`, the audit-read barrier), and
+  `_testing_put_fact` when `fact_serving` is declared; the call throws
+  otherwise. A suite every case of which drives another backdoor
+  (`SuiteEntry.backdoors`: `credential_deadline` →
+  `_testing_shorten_credential_expiry`, `origin_conformance` →
+  `_testing_origin_check`, `ws_outbound_overflow` →
+  `_testing_flood_notifications`) skips itself on a backend not declaring it,
+  as a skipped test beside the excludes whose reason names the backdoor; an
+  exclude, override or `exclude_cases` entry for it throws as dead.
+  `spine_suites.test.ts` holds the backdoors each suite module names — quoted
+  `_testing_*` names, `testing_*_action_spec` references, and the
+  `cross_put_fact` / `cross_drain_effects` seeders — to its entry's
+  `backdoors`, the required pair, or `_testing_put_fact` under
+  `capabilities.fact_serving`; a helper module the suite calls isn't read.
+- **`exclude_cases`** — `SuiteCaseExclusions`, `{[suite]: {[name path]:
+  reason}}`: single tests of a suite that runs, each by its name path (the
+  describe titles and the test name joined with `' > '` — what the reporter
+  prints after the file and any `describe` wrapping the call; a full path, not
+  a leaf name, so a title repeated under two describes names one test). One
+  `beforeEach` on the calling suite (`register_spine_case_exclusions`) skips
+  them at run time with `ctx.skip(reason)`, so the suite files stay as they
+  are and each shows as skipped with its reason; it finds a test's suite
+  from the top-level task ranges each suite registered (read through
+  `TestRunner.getCurrentSuite()` at collection), so an entry matches only
+  below its own suite. A reasonless entry, an empty suite map, or an entry for
+  an unknown, excluded or self-skipping suite, or for `testing_backdoor`,
+  throws at collection; an entry
+  naming no test its suite collected fails the closing test
+  (`check_spine_case_exclusions`, which reads the collected paths, so a
+  filtered run still checks them) — the dead-name check, as the known-divergence
+  ledger has.
 - **`overrides`** — `SuiteOverrides`, per suite a `Partial` of its own options
   (`SuiteOptionsMap`), shallow-merged over the derived ones: a role list, an
   `xfail`, a narrower capability set, `ws: undefined` to drop optional socket
-  cases (`session_cap` and `testing_backdoor` take no `capabilities`, so `ws` is
-  their only socket switch). An entry can instead be a function of the derived
+  cases (`session_cap` and `testing_backdoor` gate no case on `capabilities.ws`,
+  so `ws` is their only socket switch), `extra_methods` to fire a consumer's own
+  daemon-token seams through `testing_backdoor` (whose
+  `capabilities.testing_backdoors` an override can't change — the call throws
+  unless the merge keeps the backend's list). An entry can instead be a function of the derived
   options returning the patch (`SuiteOverride`), for a change built on a
   derived value — an `xfail` added to the derived multi-actor setup — so the
   seeding isn't restated. After the merge, every option the suite's type
@@ -1857,9 +1898,9 @@ an audit row, an admin account listing, and an offer's `created_at` /
 imperative cross suite aliases: `CrossSuiteOptions` (`setup_test` alone),
 `CapabilityGatedCrossSuiteOptions` (+ `capabilities` — `ready`),
 `RpcPathCrossSuiteOptions` (+ `rpc_path?` — origin, body-size (which adds `base_url`), actor
-lookup, app settings, testing backdoor), and the intersection
+lookup, app settings), and the intersection
 `RpcPathCapabilityGatedCrossSuiteOptions` (every `cell_*` suite, query-shape,
-token-scope surface, fact-serving, account lifecycle). A suite takes the
+token-scope surface, fact-serving, account lifecycle, testing backdoor). A suite takes the
 capability-carrying variant only when it actually gates cases on a flag, so
 the option type states whether the bundle is read.
 
@@ -2508,12 +2549,33 @@ payload reproduces it byte for byte and it authenticates, and a leading-zero
 `0N` authenticates (the `u64` bound is on the value, not the digit count).
 Ungated; cross-process only.
 
-### Testing-backdoor credential gate — `cross_backend/testing_backdoor.ts`
+### Testing-backdoor declaration + credential gate — `cross_backend/testing_backdoor.ts`
 
-`describe_testing_backdoor_cross_tests({setup_test, rpc_path?, ws?})` —
-the negative-credential parity suite for the `_testing_*` backdoor actions.
-For each `_testing_*` action (the privileged writes, the audit barrier, the
-connection flood, and the introspection reads) it fires three principals over real HTTP: **anonymous** →
+`describe_testing_backdoor_cross_tests({setup_test, capabilities, rpc_path?,
+ws?, extra_methods?})` — the backend's backdoor declaration, then the
+negative-credential parity suite for the `_testing_*` backdoor actions.
+
+**Declaration.** `capabilities.testing_backdoors` lists the backdoors the
+backend mounts, from `TESTING_BACKDOOR_METHODS` (`spine_surface_constants.ts`,
+the one list; `spine_surface_constants.testing_backdoors.test.ts` holds it to
+the `_testing_*` actions fuz_app's spine binary mounts). Each known backdoor
+the list leaves out is sent anonymously and must answer `method_not_found`
+(404): both spines look the method up before they authenticate (the TS
+dispatcher's lookup step, the Rust `perform_action`'s), so an unmounted method
+answers that whatever the credential, and a mounted one a 401. Each declared
+one gets the rows below, whose anonymous row fails as "declared but not
+mounted" on a `method_not_found`. So the declaration can't lie in either
+direction, and the suites gated on it skip only what the backend lacks. A
+declared name outside the known list, or a duplicate, throws at collection.
+The suite runs on every backend, one declaring only the required backdoors
+included — `describe_spine_cross_suites` refuses to exclude it, skip any of
+its cases, or hand it other `capabilities` through `overrides`.
+
+**Credential gate.** For each declared backdoor (the privileged writes, the
+audit barrier, the connection flood, and the introspection reads), and each
+`extra_methods` entry (`TestingBackdoorProbe` `{method, params?}` — a
+consumer's own daemon-token seam, which must start with `_testing_` and not be
+a known backdoor), it fires three principals over real HTTP: **anonymous** →
 401 `unauthenticated`, **session** → 403 `forbidden` `credential_type_required`,
 **bearer** → 403 `forbidden` `credential_type_required` — and, when `ws`
 (`{base_url, ws_path, origin?}`) is passed, sends each on a socket opened with
@@ -2524,18 +2586,23 @@ on the real dispatcher (the spec-derived `describe_rpc_attack_surface_tests`
 never enumerates them because they're off the declared surface). Each method is
 sent with **valid** params so each case varies only the credential (validation
 runs after the gates — order is 401 → authz → 403 → 429 → 400); the handler never
-runs. Cited property: `docs/security.md`
-§Test Backdoor Actions. Cross-process only (the `_testing_*` actions are
-mounted on the spawned binary, not the in-process app — like the ws/sse
-suites); ungated, since every cross backend that uses
-`default_cross_process_setup` mounts them. The complement is the
+runs. The known backdoors' params are a `Record<TestingBackdoorMethod, …>`, so a
+backdoor added to the list fails typecheck until it has them. Cited property:
+`docs/security.md` §Test Backdoor Actions. The credential rows run
+cross-process only (the `_testing_*` actions are mounted on the spawned binary,
+not the in-process app — like the ws/sse suites); in-process, an app mounting
+none declares none and gets the declaration rows alone, one per known backdoor
+— fuz_app's in-process leg is `cross_backend/testing_backdoor_parity.db.test.ts`,
+while its cross legs declare every backdoor, so they run no declaration row.
+The complement is the
 in-process spec-level gate test (`src/test/testing/testing_actions_auth.test.ts`,
 asserting each spec declares `credential_types: ['daemon_token']`) + the
 `assert_no_testing_methods` surface invariant. fuz_app's conformance table
 also covers the same gates, through the auth rows it generates over the live
 mount (`live_rpc_endpoints`), which the differential compares across spines;
 this suite stays for consumers whose backends mount the `_testing_*` actions
-without a conformance table over their live mount.
+without a conformance table over their live mount, and for the declaration
+check.
 
 ### Identity-primitive parity — `cross_backend/identity_parity.ts`
 

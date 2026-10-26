@@ -267,7 +267,7 @@ export interface CapabilityGatedCrossSuiteOptions extends CrossSuiteOptions {
  * `CrossSuiteOptions` plus the RPC endpoint path the suite dispatches
  * against — the shape every JSON-RPC-driven imperative suite takes (cell
  * verbs, origin, body-size, actor lookup, account lifecycle, app
- * settings, testing backdoor). Suites alias this under a self-documenting
+ * settings). Suites alias this under a self-documenting
  * per-suite name (e.g. `OriginCrossTestOptions = RpcPathCrossSuiteOptions`).
  */
 export interface RpcPathCrossSuiteOptions extends CrossSuiteOptions {
@@ -280,7 +280,7 @@ export interface RpcPathCrossSuiteOptions extends CrossSuiteOptions {
  * of `RpcPathCrossSuiteOptions` and `CapabilityGatedCrossSuiteOptions`, and
  * the most common option shape among the imperative cross suites (every
  * `cell_*` suite, `query_shape`, `token_scope_surface`, `fact_serving`,
- * `account_lifecycle`).
+ * `account_lifecycle`, `testing_backdoor`).
  */
 export interface RpcPathCapabilityGatedCrossSuiteOptions
 	extends RpcPathCrossSuiteOptions, CapabilityGatedCrossSuiteOptions {}

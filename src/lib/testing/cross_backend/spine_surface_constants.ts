@@ -41,6 +41,34 @@ export const TESTING_ACTION_AUTH = {
 	credential_types: ['daemon_token']
 } as const satisfies RouteAuth;
 
+/**
+ * Every `_testing_*` backdoor the shipped cross suites know: the daemon-token
+ * actions a test binary may mount for the harness to drive. The one list a
+ * backend's `capabilities.testing_backdoors` declares from, the
+ * testing-backdoor suite probes, and `describe_spine_cross_suites` gates suites
+ * on. A consumer's own seams stay off it — the testing-backdoor suite takes
+ * those as `extra_methods`.
+ *
+ * `spine_surface_constants.testing_backdoors.test.ts` holds it to the `_testing_*` methods
+ * fuz_app's spine binary mounts, so an action added there fails until it is
+ * listed here.
+ */
+export const TESTING_BACKDOOR_METHODS = [
+	'_testing_reset',
+	'_testing_drain_effects',
+	'_testing_mint_session',
+	'_testing_put_fact',
+	'_testing_flood_notifications',
+	'_testing_schema_snapshot',
+	'_testing_migration_tracker',
+	'_testing_action_manifest',
+	'_testing_origin_check',
+	'_testing_shorten_credential_expiry'
+] as const;
+
+/** A `_testing_*` backdoor the shipped cross suites know — see `TESTING_BACKDOOR_METHODS`. */
+export type TestingBackdoorMethod = (typeof TESTING_BACKDOOR_METHODS)[number];
+
 /** RPC endpoint mount path — matches the binary's `/api/rpc`. */
 export const SPINE_RPC_PATH = '/api/rpc';
 

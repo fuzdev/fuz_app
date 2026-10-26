@@ -29,6 +29,7 @@ import {
 import {
 	LOGIN_RATE_LIMIT_ENABLED_ENV,
 	SPINE_SSE_PATH,
+	TESTING_BACKDOOR_METHODS,
 	TS_SPINE_DIR_ENV
 } from './spine_surface_constants.ts';
 
@@ -46,7 +47,9 @@ import {
  * the account actions among them),
  * `cell_gated_create` (the binary's `full_spine_mount` mounts the
  * `test_cell_gated_create_authorize` policy), and `ws_role_gated` (the binary
- * mounts the role-gated WS endpoint at `SPINE_ROLE_GATED_WS_PATH`). The Node
+ * mounts the role-gated WS endpoint at `SPINE_ROLE_GATED_WS_PATH`), and every
+ * `TESTING_BACKDOOR_METHODS` entry as `testing_backdoors` (`full_spine_mount`
+ * mounts them all, on `/api/rpc` and `/api/ws`). The Node
  * binary's preset; `ws_refusal_body` stays `false`, as `@hono/node-ws` drops a
  * refused upgrade's body.
  */
@@ -62,7 +65,8 @@ const ts_spine_capabilities: BackendCapabilities = Object.freeze({
 	peer_request: true,
 	ws_account_actions: true,
 	cell_gated_create: true,
-	ws_role_gated: true
+	ws_role_gated: true,
+	testing_backdoors: TESTING_BACKDOOR_METHODS
 });
 
 /**

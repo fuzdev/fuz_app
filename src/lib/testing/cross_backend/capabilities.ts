@@ -29,9 +29,9 @@ import '../assert_dev_env.ts';
  *   `rust_spine_stub_backend_config.ts` (the rust family default plus every mount flag).
  *
  * **Mount flags have no default.** A flag naming something a backend mounts
- * (a `MountFlag`) is never inherited: the family defaults are
- * `FamilyDefaultCapabilities`, which omits them, so every backend config states
- * each one. The family defaults carry only what the family guarantees — the
+ * (a `MountFlag`) is never inherited, nor is the `testing_backdoors` list: the
+ * family defaults are `FamilyDefaultCapabilities`, which omits them, so every
+ * backend config states each one. The family defaults carry only what the family guarantees — the
  * declared spine surface's mounts (`account_lifecycle`, `account_status`) and
  * the runtime behavior of its reference runtime (`ws_handshake_pipelining`,
  * `ws_refusal_body`: Node for TS, hyper for Rust), which a backend on another
@@ -39,13 +39,16 @@ import '../assert_dev_env.ts';
  *
  * **Gating flags only.** `BackendCapabilities` holds only flags a suite
  * actually gates on (each has a `test_if(capabilities.X, ...)` reader, or —
- * `ws_refusal_body` — picks how a case reads a refusal). A wiring fact no suite
- * reads is not a capability.
+ * `ws_refusal_body` — picks how a case reads a refusal), plus the
+ * `testing_backdoors` list the backdoor suite and `describe_spine_cross_suites`
+ * read. A wiring fact no suite reads is not a capability.
  *
  * @module
  */
 
 import { test } from 'vitest';
+
+import type { TestingBackdoorMethod } from './spine_surface_constants.ts';
 
 /**
  * Optional behaviors a backend may support. Each flag's TSDoc names the
@@ -109,7 +112,8 @@ export interface BackendCapabilities {
 	/**
 	 * The cell-gated fact-serving route (`GET /api/cells/:cell_id/facts/:hash`)
 	 * is live-mounted on the backend, its DB carries the `fuz_facts` migration
-	 * namespace, and it registers the `_testing_put_fact` seeder. Gates
+	 * namespace, and it mounts the `_testing_put_fact` seeder — declared in
+	 * `testing_backdoors`, which `describe_spine_cross_suites` requires. Gates
 	 * `describe_fact_serving_cross_tests`' per-reference read model (cell-scoped
 	 * admit via a viewable cell, cross-owner-dedup-no-leak, 404-mask),
 	 * `describe_cell_ref_admission_cross_tests`, and the fact cases of the
@@ -239,6 +243,25 @@ export interface BackendCapabilities {
 	 * Deno, Bun, and the Rust spine, which send the response as built.
 	 */
 	readonly ws_refusal_body: boolean;
+	/**
+	 * The `_testing_*` backdoors the backend mounts on its RPC endpoint, from
+	 * `TESTING_BACKDOOR_METHODS` (a consumer's own seams stay off it). Not a
+	 * flag, but declared like a `MountFlag`: no family default, so every config
+	 * states it. `describe_testing_backdoor_cross_tests` checks the declaration
+	 * against the backend — a declared method must be mounted, an undeclared one
+	 * must answer `method_not_found` — and runs its credential-gate rows over
+	 * the declared ones; `describe_spine_cross_suites` requires `_testing_reset`
+	 * and `_testing_drain_effects` (the per-test reset and the audit barrier),
+	 * skips a suite whose backdoor is undeclared, naming it — `credential_deadline`
+	 * (`_testing_shorten_credential_expiry`), `origin_conformance`
+	 * (`_testing_origin_check`), `ws_outbound_overflow`
+	 * (`_testing_flood_notifications`) — and requires `_testing_put_fact` of a
+	 * backend declaring `fact_serving`.
+	 *
+	 * fuz_app's spine presets declare every one; the in-process transport none
+	 * (the backdoor suites are cross-process only).
+	 */
+	readonly testing_backdoors: ReadonlyArray<TestingBackdoorMethod>;
 }
 
 /**
@@ -266,8 +289,9 @@ export type MountFlag = keyof Pick<
 >;
 
 /**
- * A family's default capabilities: every flag but the `MountFlag`s, which
- * each backend config states itself. Spread one and add every mount flag:
+ * A family's default capabilities: every flag but the `MountFlag`s and the
+ * `testing_backdoors` list, which each backend config states itself. Spread
+ * one and add every mount flag and the backdoor list:
  *
  * ```ts
  * capabilities: {
@@ -276,10 +300,11 @@ export type MountFlag = keyof Pick<
  *   cell_crud: false, cell_relations: false, cell_gated_create: false,
  *   fact_serving: false, fact_serving_admin_hash: false,
  *   ws_account_actions: false, ws_role_gated: false,
+ *   testing_backdoors: ['_testing_reset', '_testing_drain_effects'],
  * }
  * ```
  */
-export type FamilyDefaultCapabilities = Omit<BackendCapabilities, MountFlag>;
+export type FamilyDefaultCapabilities = Omit<BackendCapabilities, MountFlag | 'testing_backdoors'>;
 
 /**
  * Capability declarations for the in-process Hono transport. Nearly every
@@ -318,7 +343,10 @@ export const in_process_capabilities: BackendCapabilities = Object.freeze({
 	ws_role_gated: false,
 	// Read only by the front-door table's WS rows, which skip in-process (no
 	// socket to upgrade); Hono's own refusals carry their bodies.
-	ws_refusal_body: true
+	ws_refusal_body: true,
+	// The in-process app mounts no `_testing_*` action; the suites reading this
+	// are cross-process only.
+	testing_backdoors: Object.freeze([])
 });
 
 /**
