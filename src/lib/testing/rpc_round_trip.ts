@@ -35,7 +35,7 @@ import {
 	JSONRPC_METHOD_NOT_FOUND,
 	JsonrpcErrorResponse
 } from '../http/jsonrpc.ts';
-import { JSONRPC_ERROR_CODE_TO_HTTP_STATUS } from '../http/jsonrpc_errors.ts';
+import { jsonrpc_error_code_to_http_status } from '../http/jsonrpc_errors.ts';
 import type { TestAccount } from './app_server.ts';
 import { generate_valid_body } from './schema_generators.ts';
 import type { AppSurfaceSpec, AppSurfaceRpcMethod } from '../http/surface.ts';
@@ -239,7 +239,7 @@ const read_rpc_body = async (res: Response): Promise<unknown> => {
 };
 
 /** The HTTP status an `internal_error` maps to, read off the shared status table. */
-const INTERNAL_ERROR_HTTP_STATUS = JSONRPC_ERROR_CODE_TO_HTTP_STATUS[JSONRPC_INTERNAL_ERROR];
+const INTERNAL_ERROR_HTTP_STATUS = jsonrpc_error_code_to_http_status(JSONRPC_INTERNAL_ERROR);
 
 /**
  * Guard against a backend that crashes on schema-valid input. A response is
@@ -253,7 +253,7 @@ const INTERNAL_ERROR_HTTP_STATUS = JSONRPC_ERROR_CODE_TO_HTTP_STATUS[JSONRPC_INT
  *
  * Any other ≥500 that carries a well-formed envelope with a declared code
  * passes like a 4xx: `service_unavailable` (503), `timeout` (504), or a
- * consumer's own code mapped in `JSONRPC_ERROR_CODE_TO_HTTP_STATUS` (a 502).
+ * consumer's own code declared with `register_jsonrpc_error_code` (a 502).
  * Those are server conditions a handler declares on purpose — a dependency
  * the test environment doesn't provide — while an undeclared 500 or -32603
  * is a handler that failed where it owed an answer.

@@ -13,7 +13,8 @@ import {
 	jsonrpc_errors,
 	jsonrpc_error_messages,
 	jsonrpc_error_code_to_http_status,
-	JSONRPC_ERROR_CODE_TO_HTTP_STATUS,
+	jsonrpc_error_code_to_name,
+	register_jsonrpc_error_code,
 	HTTP_STATUS_TO_JSONRPC_ERROR_CODE,
 	http_status_to_jsonrpc_error_code
 } from '#lib/http/jsonrpc_errors.ts';
@@ -242,28 +243,92 @@ describe('jsonrpc_error_code_to_http_status', () => {
 	});
 
 	test('unrecognized code defaults to 500', () => {
-		assert.strictEqual(jsonrpc_error_code_to_http_status(-32099 as JsonrpcErrorCode), 500);
+		assert.strictEqual(jsonrpc_error_code_to_http_status(-32097 as JsonrpcErrorCode), 500);
 		assert.strictEqual(jsonrpc_error_code_to_http_status(-32020 as JsonrpcErrorCode), 500);
 	});
 });
 
-describe('JSONRPC_ERROR_CODE_TO_HTTP_STATUS', () => {
-	test('has entries for all 15 codes', () => {
-		for (const code of Object.values(JSONRPC_ERROR_CODES)) {
-			assert.ok(
-				(code as number) in JSONRPC_ERROR_CODE_TO_HTTP_STATUS,
-				`code ${code} should have a mapping`
+// Registration is module state that persists for the file, so every case
+// registers its own code, disjoint from the others and from the -32020 and
+// -32097 the fallback case above reads as unregistered.
+describe('register_jsonrpc_error_code', () => {
+	test('a registered code answers its status', () => {
+		const code = -32050 as JsonrpcErrorCode;
+		assert.strictEqual(jsonrpc_error_code_to_http_status(code), 500);
+		register_jsonrpc_error_code(code, 502);
+		assert.strictEqual(jsonrpc_error_code_to_http_status(code), 502);
+	});
+
+	test('the range ends are registrable', () => {
+		register_jsonrpc_error_code(-32000 as JsonrpcErrorCode, 418);
+		register_jsonrpc_error_code(-32099 as JsonrpcErrorCode, 451);
+		assert.strictEqual(jsonrpc_error_code_to_http_status(-32000 as JsonrpcErrorCode), 418);
+		assert.strictEqual(jsonrpc_error_code_to_http_status(-32099 as JsonrpcErrorCode), 451);
+	});
+
+	test('registering again with the same status is a no-op', () => {
+		const code = -32051 as JsonrpcErrorCode;
+		register_jsonrpc_error_code(code, 400);
+		register_jsonrpc_error_code(code, 400);
+		assert.strictEqual(jsonrpc_error_code_to_http_status(code), 400);
+	});
+
+	test('registering again with another status throws and keeps the first', () => {
+		const code = -32052 as JsonrpcErrorCode;
+		register_jsonrpc_error_code(code, 502);
+		assert.throws(
+			() => register_jsonrpc_error_code(code, 503),
+			/already registered with status 502, not 503/
+		);
+		assert.strictEqual(jsonrpc_error_code_to_http_status(code), 502);
+	});
+
+	test('every base-set code is refused and keeps its status', () => {
+		for (const [name, code] of Object.entries(JSONRPC_ERROR_CODES)) {
+			const before = jsonrpc_error_code_to_http_status(code);
+			// a status no base code answers, so a silent remap would show
+			assert.throws(
+				() => register_jsonrpc_error_code(code, 507),
+				// the five standard codes sit outside the range, and are refused by it
+				code > -32100 ? /may not reuse a base-set code/ : /must be an integer in -32099 to -32000/,
+				name
 			);
+			assert.strictEqual(jsonrpc_error_code_to_http_status(code), before, name);
 		}
 	});
 
-	test('values match jsonrpc_error_code_to_http_status function', () => {
-		for (const code of Object.values(JSONRPC_ERROR_CODES)) {
-			assert.strictEqual(
-				JSONRPC_ERROR_CODE_TO_HTTP_STATUS[code as number],
-				jsonrpc_error_code_to_http_status(code)
+	test('a code outside -32099 to -32000 is refused', () => {
+		for (const code of [-32100, -31999, -32768, 0, 500, -32050.5, Number.NaN]) {
+			assert.throws(
+				() => register_jsonrpc_error_code(code as JsonrpcErrorCode, 502),
+				/must be an integer in -32099 to -32000/,
+				String(code)
+			);
+			assert.strictEqual(jsonrpc_error_code_to_http_status(code as JsonrpcErrorCode), 500);
+		}
+	});
+
+	test('a status outside 400 to 599 is refused', () => {
+		const code = -32053 as JsonrpcErrorCode;
+		for (const status of [200, 399, 600, 302, 450.5, Number.NaN]) {
+			assert.throws(
+				() => register_jsonrpc_error_code(code, status),
+				/must answer a 4xx or 5xx status/,
+				String(status)
 			);
 		}
+		assert.strictEqual(jsonrpc_error_code_to_http_status(code), 500);
+		// the boundary statuses are admitted
+		register_jsonrpc_error_code(code, 400);
+		register_jsonrpc_error_code(-32054 as JsonrpcErrorCode, 599);
+	});
+
+	test('a registered code joins neither the reverse map nor the name map', () => {
+		const code = -32055 as JsonrpcErrorCode;
+		register_jsonrpc_error_code(code, 507);
+		assert.strictEqual(jsonrpc_error_code_to_http_status(code), 507);
+		assert.strictEqual(http_status_to_jsonrpc_error_code(507), JSONRPC_ERROR_CODES.internal_error);
+		assert.strictEqual(jsonrpc_error_code_to_name(code), 'internal_error');
 	});
 });
 
@@ -284,6 +349,10 @@ describe('HTTP_STATUS_TO_JSONRPC_ERROR_CODE', () => {
 		assert.strictEqual(HTTP_STATUS_TO_JSONRPC_ERROR_CODE[504], JSONRPC_ERROR_CODES.timeout);
 	});
 
+	test('is frozen', () => {
+		assert.ok(Object.isFrozen(HTTP_STATUS_TO_JSONRPC_ERROR_CODE));
+	});
+
 	test('400 maps to invalid_params (last of parse_error, invalid_request, invalid_params)', () => {
 		assert.strictEqual(HTTP_STATUS_TO_JSONRPC_ERROR_CODE[400], JSONRPC_ERROR_CODES.invalid_params);
 	});
@@ -293,9 +362,9 @@ describe('HTTP_STATUS_TO_JSONRPC_ERROR_CODE', () => {
 	});
 
 	test('429 maps to rate_limited, not queue_overflow (server-side wins over client-side)', () => {
-		// Load-bearing: `JSONRPC_ERROR_CODE_TO_HTTP_STATUS` lists `queue_overflow`
-		// before `rate_limited` so the last-wins reverse map resolves 429 to the
-		// server-side code. Anyone re-sorting the forward map must preserve this.
+		// Load-bearing: the forward status table lists `queue_overflow` before
+		// `rate_limited` so the last-wins reverse map resolves 429 to the
+		// server-side code. Anyone re-sorting the forward table must preserve this.
 		assert.strictEqual(HTTP_STATUS_TO_JSONRPC_ERROR_CODE[429], JSONRPC_ERROR_CODES.rate_limited);
 	});
 });

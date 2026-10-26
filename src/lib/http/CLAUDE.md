@@ -396,7 +396,8 @@ per-action schemas so mismatches surface as `invalid_params` rather than
 ### 15-code error taxonomy
 
 Five standard codes + ten general application codes (consumers add their
-own by casting `as JsonrpcErrorCode`):
+own by casting `as JsonrpcErrorCode`, and declare each one's HTTP status with
+`register_jsonrpc_error_code` — see below):
 
 - `parse_error` (-32700, HTTP 400) — JSON parse failure.
 - `invalid_request` (-32600, HTTP 400) — envelope malformed.
@@ -423,13 +424,24 @@ business rules.
 limiting is the default interpretation when translating generic HTTP back
 to a JSON-RPC code.
 
+**Consumer codes** — a consumer code answers 500 until
+`register_jsonrpc_error_code(code, http_status)` declares its status, called
+once at module load beside the code (list that module in `sideEffects`). It
+throws when the code is outside -32099..-32000, is any code
+`JSONRPC_ERROR_CODES` defines, or is already registered with another status,
+or when the status is outside 400–599; the same code and status again is a
+no-op. A registered code joins neither the reverse map nor
+`JSONRPC_ERROR_CODE_TO_NAME`. Twin of the Rust spine's `ConsumerErrorCode::new`,
+which holds a declaration to the same rules.
+
 ### API map
 
 - `JSONRPC_ERROR_CODES` — `Record<JsonrpcErrorName, JsonrpcErrorCode>` (frozen)
 - `jsonrpc_error_messages` — named constructors returning `JsonrpcErrorObject`
 - `jsonrpc_errors` — named constructors returning `ThrownJsonrpcError` (derived from `jsonrpc_error_messages` via `create_error_thrower`). Usage: `throw jsonrpc_errors.not_found('user')`, `throw jsonrpc_errors.forbidden()`
 - `ThrownJsonrpcError` — `Error` subclass carrying `code` + optional `data`
-- `JSONRPC_ERROR_CODE_TO_HTTP_STATUS` / `HTTP_STATUS_TO_JSONRPC_ERROR_CODE` + `jsonrpc_error_code_to_http_status` / `http_status_to_jsonrpc_error_code` accessors (fall back to 500 / `internal_error`)
+- `jsonrpc_error_code_to_http_status` / `http_status_to_jsonrpc_error_code` (fall back to 500 / `internal_error`) — the code → status table is module-private; `HTTP_STATUS_TO_JSONRPC_ERROR_CODE` (frozen) is the reverse over the base set
+- `register_jsonrpc_error_code(code, http_status)` — declares a consumer code's status (see **Consumer codes** above)
 - Envelope schemas in `http/jsonrpc.ts`: `JsonrpcRequest`, `JsonrpcNotification`, `JsonrpcResponse`, `JsonrpcErrorResponse`, `JsonrpcResponseOrError`, `JsonrpcMessage`, `JsonrpcMessageFromClientToServer`, `JsonrpcMessageFromServerToClient`. Also `JsonrpcRequestId`, `JsonrpcMethod`, `JsonrpcProgressToken`, `JsonrpcMcpMeta`, `JsonrpcRequestParamsMeta`
 - Builders in `http/jsonrpc_helpers.ts`: `create_jsonrpc_request`, `create_jsonrpc_notification`, `create_jsonrpc_response`, `create_jsonrpc_error_response`, `create_jsonrpc_error_response_from_thrown` (preserves code/message/data on `ThrownJsonrpcError`; plain `Error` → `internal_error` with `{stack}` in DEV)
 - Type guards: `is_jsonrpc_request_id` (rejects NaN/Infinity), `is_jsonrpc_object`, `is_jsonrpc_message`, `is_jsonrpc_request` / `_notification` / `_response` / `_error_response`

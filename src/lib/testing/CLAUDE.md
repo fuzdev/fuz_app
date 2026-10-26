@@ -633,8 +633,8 @@ envelope — and a 401 to a non-public call (`assert_rpc_authenticated`): the
 call carried a credential its auth admits, so a 401 means it stopped working.
 A public method may still answer 401 (a wrong-password login), and so may a
 handler naming its own reason (below). A ≥500 carrying a declared code
-(`service_unavailable` 503, `timeout` 504, a consumer code mapped in
-`JSONRPC_ERROR_CODE_TO_HTTP_STATUS`) is a server condition and passes like a
+(`service_unavailable` 503, `timeout` 504, a consumer code declared with
+`register_jsonrpc_error_code`) is a server condition and passes like a
 4xx. The failure names the method, status, code and message; a non-JSON body
 is reported as text. Options: `{setup_test, surface_source, session_options,
 rpc_endpoints, skip_methods?, input_overrides?, success_fixtures?}`.

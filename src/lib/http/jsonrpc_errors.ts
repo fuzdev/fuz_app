@@ -4,7 +4,8 @@
  * Provides error types, named constructors, and HTTP status mapping
  * for the throw/catch error pattern used by `apply_route_specs`.
  * Core error codes (5 standard + 10 general application). Domain-specific
- * codes stay in consumers — add by casting `as JsonrpcErrorCode`.
+ * codes stay in consumers — add by casting `as JsonrpcErrorCode`, and
+ * declare each one's HTTP status with `register_jsonrpc_error_code`.
  *
  * `JsonrpcErrorCode` and `JsonrpcErrorObject` types are Zod-inferred
  * from `http/jsonrpc.ts` — this module re-uses those as the single source
@@ -26,6 +27,8 @@ import {
 	JSONRPC_METHOD_NOT_FOUND,
 	JSONRPC_INVALID_PARAMS,
 	JSONRPC_INTERNAL_ERROR,
+	JSONRPC_SERVER_ERROR_START,
+	JSONRPC_SERVER_ERROR_END,
 	type JsonrpcErrorCode,
 	type JsonrpcErrorObject
 } from './jsonrpc.ts';
@@ -55,7 +58,8 @@ export type JsonrpcErrorName =
  * Standard JSON-RPC error codes (5) plus general application codes (10).
  *
  * Extensible — consumers add domain-specific codes to their own objects
- * by casting `as JsonrpcErrorCode`. Application codes use the -32000 to
+ * by casting `as JsonrpcErrorCode`, and declare each one's HTTP status with
+ * `register_jsonrpc_error_code`. Application codes use the -32000 to
  * -32099 range reserved by the JSON-RPC spec.
  *
  * Frozen with `Object.freeze` to convert accidental mutation (test
@@ -292,60 +296,125 @@ export const jsonrpc_errors = {
 // --- HTTP status mapping ---
 
 /**
- * Maps JSON-RPC error codes to HTTP status codes.
+ * The HTTP status each JSON-RPC error code answers — the base set, plus each
+ * consumer code `register_jsonrpc_error_code` adds.
  *
- * Extensible — consumers with domain-specific error codes assign directly
- * (`JSONRPC_ERROR_CODE_TO_HTTP_STATUS[-32020] = 502`) at module load. The
- * lookup function reads at call time, so mutation is the supported
- * extension mechanism.
+ * Module-private so a consumer can't remap a base code or skip the checks
+ * registration makes; read it through `jsonrpc_error_code_to_http_status`.
  */
-export const JSONRPC_ERROR_CODE_TO_HTTP_STATUS: Record<number, number> = {
-	[-32700]: 400, // parse_error
-	[-32600]: 400, // invalid_request
-	[-32601]: 404, // method_not_found
-	[-32602]: 400, // invalid_params
-	[-32603]: 500, // internal_error
-	[-32001]: 401, // unauthenticated
-	[-32002]: 403, // forbidden
-	[-32003]: 404, // not_found
-	[-32004]: 409, // conflict
-	[-32005]: 422, // validation_error
-	// queue_overflow shares 429 with rate_limited — listed first so reverse
-	// map wins with rate_limited (a policy) rather than a full buffer.
-	[-32009]: 429, // queue_overflow (backpressure)
-	[-32006]: 429, // rate_limited
-	[-32007]: 503, // service_unavailable
-	[-32008]: 504, // timeout
-	[-32010]: 499 // request_cancelled (nginx "client closed request")
+const jsonrpc_error_code_http_statuses = new Map<number, number>([
+	[JSONRPC_PARSE_ERROR, 400],
+	[JSONRPC_INVALID_REQUEST, 400],
+	[JSONRPC_METHOD_NOT_FOUND, 404],
+	[JSONRPC_INVALID_PARAMS, 400],
+	[JSONRPC_INTERNAL_ERROR, 500],
+	[JSONRPC_ERROR_CODES.unauthenticated, 401],
+	[JSONRPC_ERROR_CODES.forbidden, 403],
+	[JSONRPC_ERROR_CODES.not_found, 404],
+	[JSONRPC_ERROR_CODES.conflict, 409],
+	[JSONRPC_ERROR_CODES.validation_error, 422],
+	// queue_overflow shares 429 with rate_limited — listed first so the
+	// last-wins reverse map resolves 429 to rate_limited (a policy) rather
+	// than a full buffer
+	[JSONRPC_ERROR_CODES.queue_overflow, 429],
+	[JSONRPC_ERROR_CODES.rate_limited, 429],
+	[JSONRPC_ERROR_CODES.service_unavailable, 503],
+	[JSONRPC_ERROR_CODES.timeout, 504],
+	[JSONRPC_ERROR_CODES.request_cancelled, 499] // nginx "client closed request"
+]);
+
+/** Every code `JSONRPC_ERROR_CODES` defines — the numbers a consumer code may not reuse. */
+const BASE_JSONRPC_ERROR_CODE_SET: ReadonlySet<number> = new Set(
+	Object.values(JSONRPC_ERROR_CODES)
+);
+
+/**
+ * Declare a consumer JSON-RPC error code and the HTTP status it answers, so
+ * `jsonrpc_error_code_to_http_status` maps it instead of falling back to 500.
+ *
+ * Call once at module load, beside the code's declaration — the module's
+ * import is then a side effect, so list it in the package's `sideEffects`.
+ * Registering the same code again with the same status is a no-op, so a
+ * module evaluated twice (a duplicated dependency, a test reload) is fine.
+ * A registered code joins neither `HTTP_STATUS_TO_JSONRPC_ERROR_CODE` (a bare
+ * status carries no consumer meaning, e.g. a proxy's envelope-less 502) nor
+ * `JSONRPC_ERROR_CODE_TO_NAME` (its name lives in the consumer's own
+ * taxonomy), matching the Rust spine's `ConsumerErrorCode`, which carries a
+ * code and a status only.
+ *
+ * @param code - a new code in the -32099 to -32000 server-error range
+ * @param http_status - the 4xx or 5xx status the code answers
+ * @throws Error when `code` is not an integer in -32099 to -32000, is a code
+ *   `JSONRPC_ERROR_CODES` defines, or is already registered with another
+ *   status, or when `http_status` is not an integer in 400 to 599
+ * @example
+ * ```ts
+ * export const JSONRPC_ERROR_CODES = {
+ * 	...BASE_JSONRPC_ERROR_CODES,
+ * 	ai_provider_error: -32020 as JsonrpcErrorCode
+ * } as const;
+ * register_jsonrpc_error_code(JSONRPC_ERROR_CODES.ai_provider_error, 502);
+ * ```
+ */
+export const register_jsonrpc_error_code = (code: JsonrpcErrorCode, http_status: number): void => {
+	if (
+		!Number.isInteger(code) ||
+		code < JSONRPC_SERVER_ERROR_END ||
+		code > JSONRPC_SERVER_ERROR_START
+	) {
+		throw new Error(
+			`a consumer JSON-RPC error code must be an integer in ${JSONRPC_SERVER_ERROR_END} to ${JSONRPC_SERVER_ERROR_START}, got ${code}`
+		);
+	}
+	if (BASE_JSONRPC_ERROR_CODE_SET.has(code)) {
+		throw new Error(`a consumer JSON-RPC error code may not reuse a base-set code, got ${code}`);
+	}
+	if (!Number.isInteger(http_status) || http_status < 400 || http_status > 599) {
+		throw new Error(
+			`a consumer JSON-RPC error code must answer a 4xx or 5xx status, got ${http_status} for ${code}`
+		);
+	}
+	const registered = jsonrpc_error_code_http_statuses.get(code);
+	if (registered === undefined) {
+		jsonrpc_error_code_http_statuses.set(code, http_status);
+	} else if (registered !== http_status) {
+		throw new Error(
+			`JSON-RPC error code ${code} is already registered with status ${registered}, not ${http_status}`
+		);
+	}
 };
 
 /**
- * Maps HTTP status codes to JSON-RPC error codes (reverse mapping).
+ * Maps HTTP status codes to JSON-RPC error codes (reverse mapping), over the
+ * base set only — built once at module load, before any consumer code is
+ * registered, and frozen.
  *
  * When multiple error codes map to the same HTTP status (e.g. parse_error
  * and invalid_request both map to 400), the last one wins. Use for
  * best-effort HTTP → JSON-RPC translation.
  */
-export const HTTP_STATUS_TO_JSONRPC_ERROR_CODE: Record<number, JsonrpcErrorCode> =
-	Object.fromEntries(
-		Object.entries(JSONRPC_ERROR_CODE_TO_HTTP_STATUS).map(([code, status]) => [
-			status,
-			Number(code) as JsonrpcErrorCode
-		])
+export const HTTP_STATUS_TO_JSONRPC_ERROR_CODE: Readonly<Record<number, JsonrpcErrorCode>> =
+	Object.freeze(
+		Object.fromEntries(
+			Array.from(jsonrpc_error_code_http_statuses, ([code, status]) => [
+				status,
+				code as JsonrpcErrorCode
+			])
+		)
 	);
 
 /**
  * Map a JSON-RPC error code to an HTTP status code.
  *
- * Returns 500 for unrecognized codes (consumer-defined codes
- * without a mapping default to internal server error). The return
+ * Returns 500 for unrecognized codes (a consumer code never passed to
+ * `register_jsonrpc_error_code` answers internal server error). The return
  * is narrowed to Hono's `ContentfulStatusCode` so call sites can
  * pass the result to `c.json(body, status)` without `as any` —
  * 499 (nginx "client closed request") is non-standard and gets
  * absorbed by the cast here rather than at every dispatcher branch.
  */
 export const jsonrpc_error_code_to_http_status = (code: JsonrpcErrorCode): ContentfulStatusCode =>
-	(JSONRPC_ERROR_CODE_TO_HTTP_STATUS[code as number] ?? 500) as ContentfulStatusCode;
+	(jsonrpc_error_code_http_statuses.get(code) ?? 500) as ContentfulStatusCode;
 
 /**
  * Map an HTTP status code to a JSON-RPC error code.
@@ -363,8 +432,9 @@ export const http_status_to_jsonrpc_error_code = (status: number): JsonrpcErrorC
  * without inventing a separate vocabulary. Built once at module load
  * from the canonical `JSONRPC_ERROR_CODES` map so the two cannot drift.
  *
- * Consumer-defined codes outside the standard taxonomy are not present;
- * `jsonrpc_error_code_to_name` falls back to `'internal_error'` so the
+ * Consumer-defined codes outside the standard taxonomy are not present —
+ * registering one with `register_jsonrpc_error_code` gives it a status, not
+ * a name; `jsonrpc_error_code_to_name` falls back to `'internal_error'` so the
  * REST shape always carries some reason rather than `undefined`.
  */
 export const JSONRPC_ERROR_CODE_TO_NAME: Readonly<Record<number, JsonrpcErrorName>> = Object.freeze(
