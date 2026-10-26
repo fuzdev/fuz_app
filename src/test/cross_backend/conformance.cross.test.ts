@@ -21,13 +21,9 @@
  * @module
  */
 
-import { inject } from 'vitest';
-
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
-import {
-	default_cross_process_setup,
-	reconstruct_bootstrapped_handle
-} from '#lib/testing/cross_backend/setup.ts';
+import { inject_backend_handle } from '#lib/testing/cross_backend/provided_context.ts';
+import { default_cross_process_setup } from '#lib/testing/cross_backend/setup.ts';
 import { describe_conformance_table_tests } from '#lib/testing/cross_backend/conformance_table.ts';
 import { generate_rpc_auth_conformance_cases } from '#lib/testing/cross_backend/conformance_rpc_auth.ts';
 import {
@@ -48,9 +44,8 @@ import { conformance_cell_cases } from './conformance_cell_cases.ts';
 import { ACTING_EXTRA_ACTOR_NAME, conformance_acting_cases } from './conformance_acting_cases.ts';
 import { describe_invite_duplicate_tests } from './invite_duplicate.ts';
 import { describe_offer_cross_account_tests } from './offer_cross_account.ts';
-import './cross_test_types.ts';
 
-const handle = reconstruct_bootstrapped_handle(inject('backend_handle'));
+const handle = inject_backend_handle();
 // `ROLE_ADMIN` on the fresh-per-test keeper so the success case can list
 // accounts; `ROLE_KEEPER` alone does not grant admin reach.
 const setup_test = default_cross_process_setup(handle, { extra_keeper_roles: [ROLE_ADMIN] });

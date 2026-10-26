@@ -23,7 +23,7 @@ import '../assert_dev_env.ts';
  *
  * Cites `security.md` §Signup. Runs both legs via the shared `{setup_test}`
  * protocol: in-process (`auth/app_settings_parity.db.test.ts`) +
- * cross-process (`cross_backend/app_settings.cross.test.ts`, TS spine
+ * cross-process (`cross_backend/spine_suites.cross.test.ts`, TS spine
  * binaries + Rust `testing_spine_stub`). Mounted on every spine, so the
  * suite is ungated.
  *

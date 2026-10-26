@@ -3,7 +3,7 @@
  *
  * Runs `describe_origin_cross_tests` against the in-process Hono app (no
  * process boundary), so the absent-Origin → pass contract is verified under a
- * plain `gro test` — the cross-process leg (`origin.cross.test.ts`)
+ * plain `gro test` — the cross-process leg (`spine_suites.cross.test.ts`)
  * additionally drives the TS spine binary + Rust `testing_spine_stub` over
  * real HTTP behind `FUZ_TEST_CROSS_BACKEND=1`. The disallowed-Origin → 403
  * side is the front-door table's (`transport_composition_parity.db.test.ts`).

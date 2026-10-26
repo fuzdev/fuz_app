@@ -91,7 +91,7 @@ export const create_bun_testing_adapter = (): TestingServerAdapter => {
 				// hang), and the client runtime — a single server-closed WS is
 				// necessary and sufficient. Client-initiated close or leaving the
 				// socket open both stop cleanly in ~0ms. In this suite the trigger is
-				// any server-initiated WS close — a revocation's (the `ws.cross.test.ts`
+				// any server-initiated WS close — a revocation's (the WS round-trip suite's
 				// close-on-revoke cases), a cap eviction's, an oversized message's —
 				// which is why teardown hangs after those and not under HTTP-only or
 				// client-closed WS traffic.

@@ -18,9 +18,7 @@
  * @module
  */
 
-import { inject } from 'vitest';
-
-import { reconstruct_bootstrapped_handle } from '#lib/testing/cross_backend/setup.ts';
+import { inject_parity_handles } from '#lib/testing/cross_backend/provided_context.ts';
 
 import {
 	differential_known_divergences,
@@ -28,12 +26,13 @@ import {
 	differential_ws_known_divergences
 } from './differential_known_divergences.ts';
 import { describe_spine_differential_suites } from './spine_differential.ts';
-import './cross_test_types.ts';
+
+const parity = inject_parity_handles();
 
 describe_spine_differential_suites({
 	backends: [
-		{ name: 'ts', handle: reconstruct_bootstrapped_handle(inject('parity_handle_a')) },
-		{ name: 'rust', handle: reconstruct_bootstrapped_handle(inject('parity_handle_b')) }
+		{ name: 'ts', handle: parity.a },
+		{ name: 'rust', handle: parity.b }
 	],
 	known_divergences: {
 		http: differential_known_divergences,

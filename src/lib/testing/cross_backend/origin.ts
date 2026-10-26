@@ -17,7 +17,7 @@ import '../assert_dev_env.ts';
  *
  * Runs both legs via the shared `setup_test` protocol: the
  * in-process leg (`auth/origin_parity.db.test.ts`, plain `gro test`) and the
- * cross-process leg (`cross_backend/origin.cross.test.ts`, the TS spine
+ * cross-process leg (`cross_backend/spine_suites.cross.test.ts`, the TS spine
  * binaries + Rust `testing_spine_stub` over real HTTP). Origin middleware is
  * on every spine, so the suite is ungated.
  *

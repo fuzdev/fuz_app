@@ -4,7 +4,7 @@
  * Runs `describe_cell_grant_role_cross_tests` against the in-process Hono app
  * under a plain `gro test` — role grant admits a holder / excludes a
  * non-holder, unregistered-role rejection at create, and editor-level edit.
- * The cross-process leg (`cell_grant_role.cross.test.ts`) additionally drives
+ * The cross-process leg (`spine_suites.cross.test.ts`) additionally drives
  * the TS spine binary + Rust `testing_spine_stub` over real HTTP behind
  * `FUZ_TEST_CROSS_BACKEND=1`.
  *

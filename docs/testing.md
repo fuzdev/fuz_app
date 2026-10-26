@@ -1133,40 +1133,96 @@ SIGTERM to the process group and SIGKILL after a grace window. `SIGINT` /
 ### Consumer wire-up recipe
 
 The typical layout: spawn the backend once per project in a vitest
-`globalSetup`, reconstruct the handle in each test file, and mint a fresh
-per-test account via `default_cross_process_setup`. Build each project with
+`globalSetup`, read the handle in each test file with `inject_backend_handle`,
+run every shipped suite with one `describe_spine_cross_suites` call, and write
+the consumer's own suites against `default_cross_process_setup`, which mints a
+fresh per-test keeper. Build each project with
 `make_cross_backend_project` (`testing/cross_backend/make_cross_backend_project.ts`):
 the shared suites need its 30 s `testTimeout` / `hookTimeout` — a case often
 starts with a full `_testing_reset` over a real socket, which vitest's 5 s / 10 s
 defaults don't cover — and they set no timeout of their own.
 
 ```ts
-// global_setup.ts — one backend per vitest project
-import { spawn_backend } from '@fuzdev/fuz_app/testing/cross_backend/spawn_backend.ts';
-import { my_backend_config } from './my_backend_config.ts';
+// global_setup.ts — one backend per vitest project, provided as `backend_handle`
+import { create_cross_backend_global_setup } from '@fuzdev/fuz_app/testing/cross_backend/create_cross_backend_global_setup.ts';
+import { deno_backend_config, rust_backend_config } from './my_backend_config.ts';
 
-export default async function () {
-	const handle = await spawn_backend(my_backend_config());
-	// serialize the handle for the test workers via vitest `provide`
-	return async () => handle.teardown();
-}
+export default create_cross_backend_global_setup({
+	configs: { deno: deno_backend_config, rust: rust_backend_config }
+});
 ```
 
 ```ts
+// spine_suites.cross.test.ts — every shipped suite the capabilities admit
+import { ROLE_ADMIN } from '@fuzdev/fuz_app/auth/role_schema.ts';
+import { inject_backend_handle } from '@fuzdev/fuz_app/testing/cross_backend/provided_context.ts';
+import { describe_spine_cross_suites } from '@fuzdev/fuz_app/testing/cross_backend/spine_suites.ts';
+
+const handle = inject_backend_handle();
+
+describe_spine_cross_suites(handle, {
+	surface_source: create_my_app_surface_spec(),
+	session_options: my_session_options,
+	rpc_endpoints: my_rpc_endpoints,
+	roles: my_roles,
+	exclude: {
+		actor_lookup: 'no actor_lookup resolver mounted'
+	},
+	overrides: {
+		// the WS upgrade requires admin, so revoking it closes the socket
+		role_grant_offer_notification_ws: { ws_required_roles: [ROLE_ADMIN] }
+	}
+});
+```
+
+The call runs each suite in `SUITE_NAMES` (`testing/cross_backend/spine_suites.ts`),
+named by its module, with options from the handle: the paths, cookie name and
+capabilities from `handle.config` (`to_cross_suite_options`), and each suite's
+`setup_test` with the seeding it needs. Each suite gates its cases on the
+capabilities, so state every mount flag truthfully and the rest follows.
+
+- `exclude` names a suite with a non-empty reason, shown in the run as a
+  skipped test; an empty reason, an unknown name, or a suite both excluded and
+  overridden throws.
+- `overrides` is a shallow merge over a suite's derived options, typed per
+  suite (`SuiteOverrides`): a role list, an `xfail` for a tracked divergence, a
+  narrower capability set. An entry can also be a function of the derived
+  options returning the patch — to add to a derived value (an `xfail` on the
+  derived multi-actor setup) without restating it. A required option the
+  merge leaves `undefined` throws, naming the suite and key.
+- `rpc_success_fixtures` / `rpc_skip_methods` / `rpc_input_overrides` go to the
+  standard bundle; `setup` is the base `default_cross_process_setup` options
+  every suite starts from.
+- An input the handle doesn't carry comes from `overrides` — or from the
+  config when it can (`session_cookie_codec`'s `cookie_keys` from
+  `SECRET_FUZ_COOKIE_KEYS`); with neither, the call throws naming the suite.
+- The suites needing two handles or a limiter-enabled spawn
+  (`STANDALONE_CROSS_SUITES`: the differential, `login_security`,
+  `ws_action_rate_limit`) and the conformance runner over your own cases stay
+  separate calls.
+
+`inject_backend_handle` / `inject_parity_handles`
+(`testing/cross_backend/provided_context.ts`) read what the global setups
+provide; the module augments vitest's `ProvidedContext` with `backend_handle`
+and the dual-spawn `parity_handle_a` / `parity_handle_b`, so importing it is the
+whole type wiring. Other keys you provide (a dual spawn under its own
+`provide_keys`) need an augmentation of your own.
+
+A consumer's own suite:
+
+```ts
 // some_feature.cross.test.ts
-import { describe, test, inject, assert } from 'vitest';
-import {
-	default_cross_process_setup,
-	reconstruct_bootstrapped_handle
-} from '@fuzdev/fuz_app/testing/cross_backend/setup.ts';
+import { describe, test, assert } from 'vitest';
+import { inject_backend_handle } from '@fuzdev/fuz_app/testing/cross_backend/provided_context.ts';
+import { default_cross_process_setup } from '@fuzdev/fuz_app/testing/cross_backend/setup.ts';
 import { rpc_call } from '@fuzdev/fuz_app/testing/rpc_helpers.ts';
 
-const handle = reconstruct_bootstrapped_handle(inject('backend_handle'));
+const handle = inject_backend_handle();
 const setup_test = default_cross_process_setup(handle);
 
 describe('some feature cross-backend', () => {
 	test('round-trips', async () => {
-		const fixture = await setup_test(); // fresh account, signed-up + logged-in
+		const fixture = await setup_test(); // fresh keeper, reset per test
 		const res = await rpc_call({
 			app: fixture.transport,
 			path: handle.config.rpc_path,

@@ -5,7 +5,7 @@
  * boundary): a fresh in-memory database migrated with the full spine namespace set (auth +
  * cell + fact) mounts `create_spine_ready_route_spec`, so an
  * anonymous `GET /ready` reports `200 {ready: true}` under a plain `gro test`.
- * The cross-process leg (`ready.cross.test.ts`) additionally drives the TS spine
+ * The cross-process leg (`spine_suites.cross.test.ts`) additionally drives the TS spine
  * binaries + Rust `testing_spine_stub` over real HTTP behind
  * `FUZ_TEST_CROSS_BACKEND=1`.
  *

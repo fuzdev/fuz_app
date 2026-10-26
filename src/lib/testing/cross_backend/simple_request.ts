@@ -17,7 +17,7 @@ import '../assert_dev_env.ts';
  *
  * Runs both legs via the shared `setup_test` protocol: in-process
  * (`auth/simple_request_parity.db.test.ts`) and cross-process
- * (`cross_backend/simple_request.cross.test.ts`). Every spine has the gate,
+ * (`cross_backend/spine_suites.cross.test.ts`). Every spine has the gate,
  * so the suite is ungated.
  *
  * @module

@@ -5,7 +5,7 @@
  * process boundary): the same spine-migrated database and `/ready` route the
  * readiness leg mounts (`ready_parity.db.test.ts`), so the origin check's
  * every-path scope is pinned off `/api` under a plain `gro test`. The
- * cross-process leg (`origin_scope.cross.test.ts`) additionally drives the TS
+ * cross-process leg (`spine_suites.cross.test.ts`) additionally drives the TS
  * spine binaries + Rust `testing_spine_stub` over real HTTP behind
  * `FUZ_TEST_CROSS_BACKEND=1`.
  *

@@ -4,7 +4,7 @@
  * Runs `describe_actor_lookup_cross_tests` against the in-process Hono app (no
  * process boundary), so the auth gate / populated round trip / input-bound
  * contract is verified under a plain `gro test` — the cross-process leg
- * (`actor_lookup.cross.test.ts`) additionally drives the TS spine binary +
+ * (`spine_suites.cross.test.ts`) additionally drives the TS spine binary +
  * Rust `testing_spine_stub` over real HTTP behind `FUZ_TEST_CROSS_BACKEND=1`.
  *
  * `actor_lookup` is opt-in (not in `create_standard_rpc_actions`), so the

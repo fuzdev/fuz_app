@@ -73,7 +73,7 @@ import '../assert_dev_env.ts';
  * imperative suite, not a `conformance_table` row. Runs both legs via the
  * shared `setup_test` protocol: the in-process leg
  * (`auth/body_size_parity.db.test.ts`, plain `gro test`) and the cross-process
- * leg (`cross_backend/body_size.cross.test.ts`, the TS spine binaries + Rust
+ * leg (`cross_backend/spine_suites.cross.test.ts`, the TS spine binaries + Rust
  * `testing_spine_stub` over real HTTP). The body-size limit is on every spine,
  * so the suite is ungated.
  *

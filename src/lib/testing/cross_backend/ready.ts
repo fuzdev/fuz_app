@@ -14,13 +14,13 @@ import '../assert_dev_env.ts';
  * `/ready` is a plain public REST route — not an RPC method, not one of the six
  * REST auth routes — and it's deliberately **off** the declared spine surface
  * (`create_spine_surface_spec`), like ws/sse/cells/fact-serving. So it needs a
- * bespoke imperative suite (à la `origin.cross.test.ts`), gated on
+ * bespoke imperative suite (à la `describe_origin_cross_tests`), gated on
  * `capabilities.ready`, rather than a `conformance_table` row or generic
  * round-trip enumeration. The drift → `503` path stays per-impl unit tests.
  *
  * Runs both legs via the shared `{setup_test, capabilities}` protocol: the
  * in-process leg (`cross_backend/ready_parity.db.test.ts`, plain `gro test`) and
- * the cross-process leg (`cross_backend/ready.cross.test.ts`, the TS spine
+ * the cross-process leg (`cross_backend/spine_suites.cross.test.ts`, the TS spine
  * binaries + Rust `testing_spine_stub` over real HTTP).
  *
  * @module

@@ -4,7 +4,7 @@
  * Runs `describe_simple_request_cross_tests` against the in-process Hono app
  * (no process boundary), so the untyped / `text/plain` / form `POST` → 415
  * contract is verified under a plain `gro test` — the cross-process leg
- * (`simple_request.cross.test.ts`) additionally drives the TS spine binary +
+ * (`spine_suites.cross.test.ts`) additionally drives the TS spine binary +
  * Rust `testing_spine_stub` over real HTTP behind `FUZ_TEST_CROSS_BACKEND=1`.
  * The app mounts the RPC endpoint and the account routes, since the suite
  * probes login and logout as well as RPC.

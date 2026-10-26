@@ -5,7 +5,7 @@
  * under a plain `gro test` — grant lifecycle, field / item bidirectional
  * relations, clone shallow + deep, the manage-tier audit gate, and the
  * editor-grant `cell_visibility_manage_only` 403. The cross-process legs
- * (`cell.cross.test.ts`) additionally drive the TS spine binary + Rust
+ * (`spine_suites.cross.test.ts`) additionally drive the TS spine binary + Rust
  * `testing_spine_stub` over real HTTP behind `FUZ_TEST_CROSS_BACKEND=1`.
  *
  * Shares the full-surface `create_cell_parity_setup` with the CRUD leg.

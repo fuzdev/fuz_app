@@ -4,7 +4,7 @@
  * Runs `describe_body_size_cross_tests` against the in-process Hono app (no
  * process boundary), so the oversized → 413 / under-limit → pass contract is
  * verified under a plain `gro test` — the cross-process leg
- * (`body_size.cross.test.ts`) additionally drives the TS spine binary + Rust
+ * (`spine_suites.cross.test.ts`) additionally drives the TS spine binary + Rust
  * `testing_spine_stub` over real HTTP behind `FUZ_TEST_CROSS_BACKEND=1`.
  *
  * `create_test_app` applies the default 1 MiB `bodyLimit` (it does not pass

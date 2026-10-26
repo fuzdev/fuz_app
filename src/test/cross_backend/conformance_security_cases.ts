@@ -11,7 +11,7 @@
  * Every `note` cites a **public** `security.md` property (the table ships
  * in a public package — no internal-planning refs). Stateful invariants
  * (fail-closed tombstone, last-admin guard, deterministic lifecycle) are
- * imperative and live in `account_lifecycle.cross.test.ts`, not here.
+ * imperative and live in `describe_account_lifecycle_cross_tests`, not here.
  *
  * @module
  */
@@ -337,7 +337,7 @@ const token_scope_cases: ReadonlyArray<ConformanceCase> = [
 ];
 
 // --- Batch 2: privilege gates (declarative) ---------------------------
-// Stateful fail-closed/last-admin cases live in account_lifecycle.cross.test.ts.
+// Stateful fail-closed/last-admin cases live in describe_account_lifecycle_cross_tests.
 
 const privilege_gate_cases: ReadonlyArray<ConformanceCase> = [
 	{

@@ -4,7 +4,7 @@
  * Runs the per-transport composition table against the in-process spine
  * surface, audit stream included, under a plain `gro test`. There is no
  * socket in-process, so the WebSocket rows skip; the cross-process leg
- * (`cross_backend/transport_composition.cross.test.ts`) runs them over real
+ * (`cross_backend/spine_suites.cross.test.ts`) runs them over real
  * HTTP against the TS spine binaries and the Rust `testing_spine_stub`.
  *
  * @module

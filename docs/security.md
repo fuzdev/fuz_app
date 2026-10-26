@@ -1482,7 +1482,7 @@ authenticated, so the 403 leaks nothing across a trust boundary, and masking it
 would only obscure a legitimate "not yours to accept, pick the right persona"
 signal. The cross-account lookup (an offer on another account) stays 404. Both
 arms hold identically on the TS and Rust spines
-(`role_grant_offer_enumeration.cross.test.ts`).
+(`describe_role_grant_offer_enumeration_cross_tests`).
 
 **404-over-403 is the general mask, not a per-handler quirk.** Any
 resource-scoped lookup where existence itself is privileged returns the

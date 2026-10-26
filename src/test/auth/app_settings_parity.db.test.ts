@@ -4,7 +4,7 @@
  * Runs `describe_app_settings_cross_tests` against the in-process Hono app
  * (no process boundary), so the admin-toggle → fresh-read-on-signup contract
  * is verified under a plain `gro test` — the cross-process leg
- * (`app_settings.cross.test.ts`) additionally drives the TS spine binary +
+ * (`spine_suites.cross.test.ts`) additionally drives the TS spine binary +
  * Rust `testing_spine_stub` over real HTTP behind `FUZ_TEST_CROSS_BACKEND=1`.
  *
  * Reuses the spine surface helpers (standard RPC bundle + the `/api/account`

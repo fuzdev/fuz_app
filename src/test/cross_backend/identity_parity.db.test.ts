@@ -6,7 +6,7 @@
  * lookup, the no-Unicode-fold-collision negative, login/signup input validation,
  * and the username + email creation rules (ASCII-only, length/format,
  * `local@domain.tld` email shape) are verified under a plain `gro test` — the
- * cross-process leg (`identity_parity.cross.test.ts`) additionally drives the TS
+ * cross-process leg (`spine_suites.cross.test.ts`) additionally drives the TS
  * spine binaries + Rust `testing_spine_stub` over real HTTP behind
  * `FUZ_TEST_CROSS_BACKEND=1`.
  *

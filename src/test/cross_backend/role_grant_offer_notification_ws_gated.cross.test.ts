@@ -9,21 +9,15 @@
  * @module
  */
 
-import { inject } from 'vitest';
-
-import {
-	default_cross_process_setup,
-	reconstruct_bootstrapped_handle
-} from '#lib/testing/cross_backend/setup.ts';
+import { inject_backend_handle } from '#lib/testing/cross_backend/provided_context.ts';
+import { default_cross_process_setup } from '#lib/testing/cross_backend/setup.ts';
 import { describe_role_grant_offer_notification_ws_tests } from '#lib/testing/cross_backend/role_grant_offer_notification_ws.ts';
 import {
 	SPINE_ROLE_GATED_WS_PATH,
 	SPINE_ROLE_GATED_WS_ROLES
 } from '#lib/testing/cross_backend/spine_surface_constants.ts';
 
-import './cross_test_types.ts';
-
-const handle = reconstruct_bootstrapped_handle(inject('backend_handle'));
+const handle = inject_backend_handle();
 const setup_test = default_cross_process_setup(handle);
 const { capabilities, base_url } = handle.config;
 

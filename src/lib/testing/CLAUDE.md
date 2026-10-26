@@ -637,7 +637,7 @@ actions and the builtin `ROLE_ADMIN` only, each factory on fresh accounts
 and calling as one of them, so any consumer mounting
 `create_standard_rpc_actions` can pass it. The fixtures run last on the
 describe's fixture, since they mutate.
-fuz_app wires it in `auth.cross.test.ts` and the in-process
+fuz_app wires it through the standard bundle and in the in-process
 `cross_backend/rpc_round_trip_spine.db.test.ts`.
 
 ### `sse_round_trip.ts` — `describe_sse_route_tests`
@@ -800,7 +800,7 @@ from `db_entities.ts`.
 Required options: `{setup_test, surface_source, session_options, rpc_endpoints: RpcEndpointsSuiteOption, roles: RoleSchemaResult, admin_prefix?}`.
 
 fuz_app runs it cross-process through the standard bundle
-(`auth.cross.test.ts`) and in-process as a consumer wires it
+and in-process as a consumer wires it
 (`cross_backend/admin_integration_spine.db.test.ts`) — the in-process fixture's
 `create_account` inserts rows directly, writing no `invite_create` or `signup`
 audit row, so the suite expects neither from it.
@@ -1007,6 +1007,11 @@ test-server core below (fuz_app's own domain-free `testing_spine_server`, run
 on Node + Deno + Bun). In-process is the fast feedback path; cross-process is the
 source of truth for wire-shape conformance.
 
+fuz_app's own spines run every single-backend suite below through one
+`describe_spine_cross_suites` call, `src/test/cross_backend/spine_suites.cross.test.ts`
+(§`cross_backend/spine_suites.ts`), so a suite's section names the suite, not a
+file; the dual-spawn and limiter-enabled suites name their own files.
+
 ### Fixture protocol + capabilities
 
 - `testing/cross_backend/setup.ts` — `SetupTest` / `TestFixture` /
@@ -1171,6 +1176,84 @@ consumer needs partial opt-out, add the knob then.
 `StandardTestOptions` minus the in-process-only knobs (`create_route_specs`,
 `bootstrap`, `rate_limiting_app_options`, `bootstrap_token`) — those drive
 the omitted suites.
+
+### `cross_backend/spine_suites.ts` — `describe_spine_cross_suites`
+
+One call that runs every shipped single-backend cross suite against one
+spawned backend: `describe_spine_cross_suites(handle, {surface_source,
+session_options, rpc_endpoints, roles?, setup?, exclude?, overrides?,
+rpc_success_fixtures?, rpc_skip_methods?, rpc_input_overrides?})`. Without it a
+consumer writes a file per suite, and a suite added here never reaches it.
+
+- **The registry.** `SUITE_NAMES` / `SuiteName` — the closed set of suites the
+  call runs, each named by its module (`ws_round_trip` is
+  `describe_cross_process_ws_tests`, `standard` the standard bundle).
+  `STANDALONE_CROSS_SUITES` (keyed by the closed `StandaloneSuiteName`) names
+  the modules left out, each with why: the
+  `differential` (two handles), `login_security` and `ws_action_rate_limit`
+  (a backend spawned with live limiters, which the standard suites would
+  exhaust), and the `conformance_table` runner (the consumer's own cases).
+  `src/test/testing/cross_backend/spine_suites.test.ts` imports every module
+  under `cross_backend/` and holds the two lists to the ones exporting a
+  `describe_*` function, whatever the export form (the Bun and Deno adapters,
+  which load only on their own runtime, are held to naming no `describe_` at
+  all), so a new suite fails until it is registered or stated standalone; the
+  dispatch table
+  is a `Record<SuiteName, …>`, so a registered name without an entry fails
+  typecheck.
+- **Options from the handle.** Paths, cookie name and capabilities come from
+  `handle.config` — `to_cross_suite_options(handle)`, exported for a suite
+  called on its own — the daemon token from the handle, and each suite's
+  `setup_test` from `default_cross_process_setup` over the `setup` options
+  plus the seeding the suite needs (concatenated): a keeper-only
+  `non_admin_keeper` for the standard bundle's keeper ≠ admin probe, the
+  multi-actor keepers of `fact_serving` and `transport_composition`, the
+  offer grantor of `role_grant_offer_enumeration`, the `cell_editor` holder of
+  `cell_grant_role`. Suites are registered without a wrapping `describe`, so
+  test names match a standalone call.
+- **`exclude`** — `{[suite]: reason}`; the reason is required and shows in the
+  run as a skipped test. An empty reason, an unknown suite name, or a suite
+  both excluded and overridden throws before anything registers.
+- **`overrides`** — `SuiteOverrides`, per suite a `Partial` of its own options
+  (`SuiteOptionsMap`), shallow-merged over the derived ones: a role list, an
+  `xfail`, a narrower capability set, `ws: undefined` to drop optional socket
+  cases (`session_cap` and `testing_backdoor` take no `capabilities`, so `ws` is
+  their only socket switch). An entry can instead be a function of the derived
+  options returning the patch (`SuiteOverride`), for a change built on a
+  derived value — an `xfail` added to the derived multi-actor setup — so the
+  seeding isn't restated. After the merge, every option the suite's type
+  requires (each entry's `required` set, exhaustive by type) must be neither
+  `undefined` nor `''`, or the call throws at collection naming suite and key.
+- **Inputs the handle doesn't carry.** The declared surface is a required
+  option. Paths and roles that name the reference spines' mounts (the
+  role-gated WS endpoint and its roles) default to the `SPINE_*` constants —
+  a suite whose flag is off never reads them, and a backend mounting its own
+  overrides them. Anything else comes from the config when it can
+  (`session_cookie_codec`'s `cookie_keys` from `SECRET_FUZ_COOKIE_KEYS`), else
+  from `overrides`; with neither, the call throws naming the suite and the
+  field — provide it or exclude the suite.
+
+Each suite reads its own capability flags, so a backend's truthful
+`BackendConfig.capabilities` decides what runs. A suite that hardcodes the
+spine's own roles (`cell_grant_role`'s `cell_editor`, the `participant` of
+`role_grant_offer_lifecycle` and `role_grant_participation`) needs them in the
+backend's role registry, or an `exclude`. fuz_app's own wiring is
+`src/test/cross_backend/spine_suites.cross.test.ts`.
+
+### `cross_backend/provided_context.ts` — `inject_backend_handle`
+
+Augments vitest's `ProvidedContext` with the keys the shipped global setups
+provide — `backend_handle` (`create_cross_backend_global_setup`) and
+`parity_handle_a` / `parity_handle_b` (`create_dual_spawn_global_setup`'s
+default keys) — and reads them: `inject_backend_handle()` /
+`inject_parity_handles()` return the handles rebuilt by
+`reconstruct_bootstrapped_handle`. The augmentation ships in the module's
+`.d.ts`, so a test file importing either helper gets the typed `inject` with
+no augmentation of its own — a type-only import of the module carries it too,
+and a global setup built on the shipped makers needs none. A project providing other
+keys — a dual spawn under its own `provide_keys`, a probe result — augments
+`ProvidedContext` for those itself; fuz_app's are in
+`src/test/cross_backend/cross_test_types.ts`.
 
 ### `cross_backend/conformance_table.ts` + `conformance_case.ts` + `xfail.ts` — declarative behavioral/security cases
 
@@ -1412,7 +1495,7 @@ so it validates the transport without touching domain WS methods. Gated on
 `capabilities.ws`; cross-process only (needs a real bound socket — wire from
 a `*.cross.test.ts`, never an in-process setup). Authed cookies come from the
 fresh-per-test keeper via `fixture.transport.cookies()`, not the stale
-globalSetup handle. fuz_app's own wiring is `src/test/cross_backend/ws.cross.test.ts`.
+globalSetup handle.
 
 ### `cross_backend/role_grant_offer_notification_ws.ts` — `describe_role_grant_offer_notification_ws_tests`
 
@@ -1464,8 +1547,7 @@ grant and expects its socket to close with `WS_CLOSE_PERMISSION_REVOKED` (the
 notification may or may not land first, and is held to the flat shape when it
 does), where an ungated socket expects the frame. The offer/accept fixtures are `create_pending_role_grant_offer` /
 `create_active_role_grant` (`cross_backend/role_grant_cross_helpers.ts`).
-Gated on `capabilities.ws`; cross-process only. fuz_app's own wiring is
-`src/test/cross_backend/role_grant_offer_notification_ws.cross.test.ts`, and
+Gated on `capabilities.ws`; cross-process only. fuz_app's
 `role_grant_offer_notification_ws_gated.cross.test.ts` runs it again over the
 spine binaries' role-gated endpoint with `ws_required_roles` declared.
 
@@ -1487,7 +1569,6 @@ must hold `ROLE_ADMIN` and `scoped_role` (a role an admin can grant scoped).
 fuz_app's spine binaries mount `SPINE_ROLE_GATED_WS_PATH` gated on
 `SPINE_ROLE_GATED_WS_ROLES` (`admin` + `participant`). Gated on
 `capabilities.ws` and `capabilities.ws_role_gated`; cross-process only.
-fuz_app's own wiring is `src/test/cross_backend/ws_role_gated.cross.test.ts`.
 
 ### `cross_backend/peer_ping_ws.ts` — `describe_peer_ping_ws_tests`
 
@@ -1511,8 +1592,7 @@ the HTTP no-transport path. Gated on `capabilities.peer_request` — `true` on
 both the Rust spine and the TS spine (the `BackendWebsocketTransport.request_connection`
 path + `register_action_ws` response correlation); `peer/ping` is a protocol
 action (manifest-excluded), so parity is behavioral here, not via the manifest
-gate. Cross-process only; fuz_app's own wiring is
-`src/test/cross_backend/peer_ping_ws.cross.test.ts`.
+gate. Cross-process only.
 
 ### `cross_backend/ws_inbound_dispatch.ts` — `describe_ws_inbound_dispatch_cross_tests`
 
@@ -1527,8 +1607,7 @@ client's responder withholds the server's ping echo until the test releases
 it — so the suite gates on `capabilities.peer_request`.
 `describe_ws_inbound_dispatch_cross_tests({setup_test, capabilities, base_url,
 ws_path})`. The wire literals are independent copies of the producers'
-constants, so a value changed on one spine fails here. Cross-process only;
-fuz_app's own wiring is `src/test/cross_backend/ws_inbound_dispatch.cross.test.ts`.
+constants, so a value changed on one spine fails here. Cross-process only.
 
 ### `cross_backend/ws_outbound_overflow.ts` — `describe_ws_outbound_overflow_cross_tests`
 
@@ -1557,8 +1636,7 @@ flood action is daemon-token-gated, so the flooding socket upgrades with the
 daemon token and no `Origin` (`create_ws_transport`'s `origin: null`). The wire
 literals are independent copies of the producers' constants. Gated on
 `capabilities.ws`; cross-process only, and only for a backend that mounts the
-flood action on its WS endpoint. fuz_app's own wiring is
-`src/test/cross_backend/ws_outbound_overflow.cross.test.ts`.
+flood action on its WS endpoint.
 
 ### `cross_backend/ws_connection_cap.ts` — `describe_ws_connection_cap_cross_tests`
 
@@ -1586,8 +1664,7 @@ overridden; pass the consumer's value when it sets one, `null` (cap disabled)
 to skip. **Consumer-agnostic** like the WS round-trip suite (`heartbeat` only).
 A separate call rather than more cases on that suite because each case opens
 more than a cap's worth of real sockets. Gated on `capabilities.ws`;
-cross-process only. fuz_app's own wiring is
-`src/test/cross_backend/ws_connection_cap.cross.test.ts`.
+cross-process only.
 
 ### `cross_backend/session_cap.ts` — `describe_session_cap_cross_tests`
 
@@ -1599,8 +1676,7 @@ status_path?, ws?})` — pass `ws` (`{base_url, ws_path, origin?}`) to also
 assert that the evicted session's socket is closed with
 `WS_CLOSE_SESSION_REVOKED` once the evicting login commits; omitted, that case
 is skipped, so a caller passes it only for a backend with `capabilities.ws`.
-Cross-process only. fuz_app's own wiring is
-`src/test/cross_backend/session_cap.cross.test.ts`.
+Cross-process only.
 
 ### `cross_backend/sse_round_trip.ts` — `describe_cross_process_sse_tests`
 
@@ -1630,8 +1706,7 @@ admin each drop its stream — the rows `create_account_revocations`
 session closes the oldest and leaves the rest open. The data-frame + close
 cases gate on `rpc_path` (they drive the standard account/admin actions); all
 cases gate on `capabilities.sse`. Cross-process only — wire from a
-`*.cross.test.ts`. fuz_app's own wiring is
-`src/test/cross_backend/sse.cross.test.ts`, which runs on every backend — the
+`*.cross.test.ts`. It runs on every fuz_app backend — the
 TS spines wire `audit_log_sse` and the Rust `spine_stub` serves the same
 stream.
 
@@ -1751,8 +1826,7 @@ moderation_required}`, with `moderation` set per the verdict (`pending`+private
 
 `cell_crud` / `cell_relations` gate `true` on TS + Rust (cells run on both, no
 `.skip`); `cell_gated_create` is cross-only (the policy is a spine-binary
-fixture). Cross-process wiring is `src/test/cross_backend/cell.cross.test.ts`
-(all the cell suites); the in-process legs (plain `gro test`) for crud/relations
+fixture). The in-process legs (plain `gro test`) for crud/relations
 are `src/test/auth/cell_crud_parity.db.test.ts`
 
 - `cell_relations_parity.db.test.ts`, sharing the full-surface
@@ -1992,8 +2066,7 @@ refs); and a hidden cell's update, a create under a hidden parent, and a clone
 of a hidden source answer `404` whatever `data` names. Facts are put through
 `cross_put_fact` (exported by `fact_serving.ts`), whose `holder` maps onto
 `_testing_put_fact`'s optional `holder` key. Gated on
-`capabilities.fact_serving`; cross-process only. fuz_app's own wiring is
-`src/test/cross_backend/cell_ref_admission.cross.test.ts`; the in-process
+`capabilities.fact_serving`; cross-process only. The in-process
 cases are `src/test/auth/cell_ref_admission{,.fact_less}.db.test.ts`.
 
 ### Malformed-envelope and invalid-params parity — `cross_backend/rpc_adversarial.ts`
@@ -2030,8 +2103,7 @@ second actor answers `actor_required` first, so such a suite lists the
 actor-required methods in `skip_methods`. Skips `_testing_*` (off the
 declared surface it walks) and `PROTOCOL_ACTION_METHODS`, which
 `generate_rpc_auth_conformance_cases` skips too.
-Ungated; cross-process only. fuz_app's own wiring is
-`src/test/cross_backend/rpc_adversarial.cross.test.ts`.
+Ungated; cross-process only.
 
 ### Token-scope surface parity — `cross_backend/token_scope_surface.ts`
 
@@ -2072,8 +2144,7 @@ _does_ name, and a full bearer must get past the scope gate on the same route.
 The WS upgrade is deliberately omitted — `create_ws_transport` threads cookies,
 not bearer headers, and a refused upgrade's body isn't readable, so it can't
 serve a body-parity gate (its per-spine coverage stays in the two surface
-censuses). Cross-process only; fuz_app's own wiring is
-`src/test/cross_backend/token_scope_surface.cross.test.ts`.
+censuses). Cross-process only.
 
 ### Front-door contract — `cross_backend/transport_composition.ts`
 
@@ -2106,8 +2177,7 @@ the Rust stub only. Given `base_url`, every
 probe is written to the socket (`raw_http_exchange`) and an over-cap request
 sends its head alone; with `base_url: null` the probes go through the
 fixture's transport and the WS rows skip. Not in the standard bundle. fuz_app's
-own wiring is `src/test/cross_backend/transport_composition.cross.test.ts` and
-the in-process `src/test/auth/transport_composition_parity.db.test.ts`.
+in-process leg is `src/test/auth/transport_composition_parity.db.test.ts`.
 
 `cross_backend/narrowed_api_token.ts` — `mint_narrowed_api_token({app,
 rpc_path, session_headers, methods, name?})` mints a method-scoped api token
@@ -2131,8 +2201,7 @@ stream is not reachable over the wire — the stock stream is session-only — s
 the Rust spine pins it on a widened gate and the TS twin shares one deadline
 wait across both transports. The cases run concurrently (`describe.concurrent`)
 under one `setup_test()` for the suite, each on its own account, so a leg waits
-out one deadline rather than one per case. Cross-process only; fuz_app's own wiring is
-`src/test/cross_backend/credential_deadline.cross.test.ts`.
+out one deadline rather than one per case. Cross-process only.
 
 ### Origin check scope parity — `cross_backend/origin_scope.ts`
 
@@ -2141,7 +2210,7 @@ the origin check covers paths outside `/api`: on `GET /ready` (`probe_path`), a
 foreign `Origin` → 403 `forbidden_origin`, an absent or allowed one → 200. Gated
 on `capabilities.ready`. Runs both legs (the in-process
 `cross_backend/origin_scope_parity.db.test.ts` + the cross-process
-`origin_scope.cross.test.ts`).
+one call).
 
 ### Origin verification parity — `cross_backend/origin.ts`
 
@@ -2151,7 +2220,7 @@ imperative Origin-verification suite: absent `Origin` → request passes
 table's. Imperative (not a conformance-table row) because absent-Origin needs
 `fresh_transport({origin: null})`. Runs both legs (the
 in-process `auth/origin_parity.db.test.ts` + the cross-process
-`origin.cross.test.ts`). The promotion surfaced a twin-impl divergence — the
+one call). The promotion surfaced a twin-impl divergence — the
 Rust spine returned a plain-text body — now converged to the canonical TS
 `{error: "forbidden_origin"}` via `fuz_http::forbidden_origin_response()`.
 
@@ -2171,7 +2240,6 @@ keeper's daemon-token channel; the TS unit leg runs the same rows through
 `run_testing_origin_check` (`src/test/http/origin.conformance.test.ts`), so the
 Rust spine is held to the table without reading the file. Ungated; edit the
 table by hand — it is the statement of the grammar, not generated output.
-fuz_app's own wiring is `src/test/cross_backend/origin_conformance.cross.test.ts`.
 
 ### CORS simple-request parity — `cross_backend/simple_request.ts`
 
@@ -2187,7 +2255,7 @@ and login, form-encoded login, a forged `text/plain` logout with a session
 `application/json` with a charset is dispatched. The TS spine checks per route
 (`apply_route_specs`), the Rust spine in each JSON handler. Runs both legs:
 the in-process `auth/simple_request_parity.db.test.ts` and the cross-process
-`simple_request.cross.test.ts`.
+one call.
 
 ### Query-string shape parity — `cross_backend/query_shape.ts`
 
@@ -2207,8 +2275,7 @@ after the Rust spine's derived-serde `Query` extractors were converged onto
 "duplicate field" 400 is an anonymously observable backend fingerprint).
 Cross-process only — the per-surface in-process TS pins live beside each
 module's own tests (`account_status.test.ts`, `action_rpc.test.ts`,
-`serve_fact_route.db.test.ts`); fuz_app's own wiring is
-`cross_backend/query_shape.cross.test.ts`.
+`serve_fact_route.db.test.ts`);
 
 ### Grant-verb role grammar parity — `cross_backend/role_grant_role_grammar.ts`
 
@@ -2223,8 +2290,7 @@ vacuous, and the same refusal for a role exactly at the length cap pins that
 boundary. Exists because the action-manifest parity gate captures no param
 schemas while the Rust spine parses params by hand, and the grant verbs write
 the role they refuse into their failure rows. Ungated; cross-process only (it
-reads the audit log behind `_testing_drain_effects`). fuz_app's own wiring is
-`src/test/cross_backend/role_grant_role_grammar.cross.test.ts`.
+reads the audit log behind `_testing_drain_effects`).
 
 ### API-token lifetime parity — `cross_backend/token_lifetime.ts`
 
@@ -2239,7 +2305,7 @@ schemas while the Rust spine hand-parses params — a spine that silently
 dropped the field would answer the same mint with a 200 and an eternal
 token; only the stored-state read-back catches it. Ungated (mint + list are
 on every spine's standard surface). Runs both legs
-(`token_lifetime_parity.db.test.ts` + `token_lifetime.cross.test.ts`).
+(`token_lifetime_parity.db.test.ts` + the cross-process one call).
 
 ### Readiness probe parity — `cross_backend/ready.ts`
 
@@ -2254,7 +2320,7 @@ success-path gate. Gated on `capabilities.ready`. Imperative (not a
 JSON-RPC envelope, and the probe needs `fresh_transport({origin: null})` —
 the same reasons the sibling `cross_backend/origin.ts` suite is imperative.
 Runs both legs (`cross_backend/ready_parity.db.test.ts` +
-`cross_backend/ready.cross.test.ts`).
+the cross-process one call).
 
 Both backends read the **same** committed
 `testing/cross_backend/expected_schema.json` (column-presence is engine-portable,
@@ -2279,8 +2345,7 @@ same MAC under `atob`), an unpadded signature, and correctly signed
 with `authentication_required`. Controls: re-signing the keeper cookie's
 payload reproduces it byte for byte and it authenticates, and a leading-zero
 `0N` authenticates (the `u64` bound is on the value, not the digit count).
-Ungated; cross-process only. fuz_app's own wiring is
-`src/test/cross_backend/session_cookie_codec.cross.test.ts`.
+Ungated; cross-process only.
 
 ### Testing-backdoor credential gate — `cross_backend/testing_backdoor.ts`
 
@@ -2302,8 +2367,7 @@ runs. Cited property: `docs/security.md`
 §Test Backdoor Actions. Cross-process only (the `_testing_*` actions are
 mounted on the spawned binary, not the in-process app — like the ws/sse
 suites); ungated, since every cross backend that uses
-`default_cross_process_setup` mounts them. fuz_app's own wiring is
-`src/test/cross_backend/testing_backdoor.cross.test.ts`. The complement is the
+`default_cross_process_setup` mounts them. The complement is the
 in-process spec-level gate test (`src/test/testing/testing_actions_auth.test.ts`,
 asserting each spec declares `credential_types: ['daemon_token']`) + the
 `assert_no_testing_methods` surface invariant. fuz_app's conformance table
@@ -2367,7 +2431,7 @@ USERNAME_LENGTH_MAX]` = `[3, 39]` boundary edges (just-outside → 400,
 
 Ungated (login + signup are on every spine). Runs both legs via the shared
 `{setup_test}` protocol: in-process (`identity_parity.db.test.ts`, plain
-`gro test`) and cross-process (`identity_parity.cross.test.ts`).
+`gro test`) and cross-process (the one call).
 The accepted-case 403s rely on `create_spine_route_specs` zeroing
 `signup_fail_floor_ms` (mirroring `login_fail_floor_ms: 0`) so they don't each
 pay the 250ms denial floor.
@@ -2538,9 +2602,8 @@ answers, from the handlers and the queries behind them
 The single-request rows — decline and retract of an id naming no offer → 404
 — are in the conformance security slate, so the differential sends them to
 both spines. The keeper is the grantor and offers `SPINE_PARTICIPANT_ROLE`;
-ungated. fuz_app's own wiring is
-`src/test/cross_backend/role_grant_offer_lifecycle.cross.test.ts`, with the
-in-process leg on the drained setup of `conformance_participation.db.test.ts`.
+ungated. The
+in-process leg is on the drained setup of `conformance_participation.db.test.ts`.
 
 ### Building a TS test-server binary — `testing_server_core.ts` + adapters
 

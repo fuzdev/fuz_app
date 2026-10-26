@@ -209,29 +209,43 @@ the test helpers' route list.
 ## Cross-backend self-tests (`src/test/cross_backend/`)
 
 `fuz_app` verifies its own spine over real HTTP (not just in-process) against
-spawned backends. `*.cross.test.ts` bodies are runtime-agnostic — they
-`inject('backend_handle')` and drive `default_spine_surface` over the wire —
-so the same files run under every `cross_backend_*` project; each project's
-`globalSetup` spawns a different backend. The cross files today include:
-`auth.cross.test.ts` (the `describe_standard_cross_process_tests` bundle —
-HTTP + RPC), `ws.cross.test.ts` (the real-upgrade
+spawned backends. `*.cross.test.ts` bodies are runtime-agnostic — they read the
+spawned backend with `inject_backend_handle()`
+(`#lib/testing/cross_backend/provided_context.ts`, which augments vitest's
+`ProvidedContext`; `cross_test_types.ts` adds the keys only fuz_app's own
+projects provide) and drive `default_spine_surface` over the wire — so the same
+files run under every `cross_backend_*` project; each project's `globalSetup`
+spawns a different backend.
+
+Every shipped single-backend suite runs from one file,
+`spine_suites.cross.test.ts`: one `describe_spine_cross_suites` call
+(`#lib/testing/cross_backend/spine_suites.ts`) over the spine's surface, every
+audit row held to a closed world (`reject_unknown_audit_metadata_keys`), the
+Rust stub's tracked divergences as `overrides`, nothing excluded. A suite added
+to `SUITE_NAMES` runs on every backend with no file of its own, and none runs
+twice. Beside it sit the spine-specific extras: the conformance runner over the
+case files, the notification suite again on the role-gated endpoint, the
+reset-isolation pair, and the bootstrap-token probe. What each covers — a suite
+named by its module, a file by its name:
+`standard` (the `describe_standard_cross_process_tests` bundle —
+HTTP + RPC), `ws_round_trip` (the real-upgrade
 `describe_cross_process_ws_tests` suite — live WebSocket, including
 requests sent at open and frames sent with the handshake (answered once the
 connection is admitted, never dropped), a close on each listed revocation (session
 and token revokes, admin token revoke-all, logout, password change, token-cap
 eviction, account delete and purge), a self-revoking socket closed after its reply, and a WS mutation's
-audit row read back after `_testing_drain_effects`), `credential_deadline.cross.test.ts` (the
+audit row read back after `_testing_drain_effects`), `credential_deadline` (the
 `describe_credential_deadline_cross_tests` suite — a socket on a session or an
 API token closes with `WS_CLOSE_SESSION_REVOKED` "Credential expired" at its
 credential's expiry, an audit stream on a session ends there, and the
 `_testing_shorten_credential_expiry` seam only shortens),
-`session_cap.cross.test.ts` (the
+`session_cap` (the
 `describe_session_cap_cross_tests` suite — logging in past the per-account
-session cap evicts the oldest session, and closes the socket it had open), `ws_connection_cap.cross.test.ts` (the real-upgrade
+session cap evicts the oldest session, and closes the socket it had open), `ws_connection_cap` (the real-upgrade
 `describe_ws_connection_cap_cross_tests` suite — one socket past the
 per-account connection cap closes the oldest with `WS_CLOSE_CONNECTION_LIMIT`
 and nothing else, and a closed connection frees its slot),
-`ws_outbound_overflow.cross.test.ts` (the real-upgrade
+`ws_outbound_overflow` (the real-upgrade
 `describe_ws_outbound_overflow_cross_tests` suite — a daemon-token socket
 floods itself through `_testing_flood_notifications`: a burst within the
 outbound budget — a small one, and a multi-megabyte one — arrives whole and in
@@ -239,7 +253,7 @@ order, one past it closes the socket with
 `WS_CLOSE_OUTBOUND_OVERFLOW` and no response while the account's other
 connection keeps dispatching, an oversized burst is refused, and the action
 over HTTP refuses for want of a connection),
-`role_grant_offer_notification_ws.cross.test.ts` (the
+`role_grant_offer_notification_ws` (the
 real-upgrade `describe_role_grant_offer_notification_ws_tests` suite — the seven
 consentful-role-grants WS notifications: received / accepted / declined /
 retracted / flat revoke + supersede on both the accept and revoke cascades, each
@@ -247,7 +261,7 @@ strict-parsed against its canonical params schema, each with a bystander
 account's socket that must receive nothing but its own responses behind a
 `heartbeat` barrier; the TS spine threads its
 `ws_transport` as the `notification_sender` via
-`spine_rpc_endpoints({notification_sender})`), `peer_ping_ws.cross.test.ts` (the
+`spine_rpc_endpoints({notification_sender})`), `peer_ping_ws` (the
 real-upgrade `describe_peer_ping_ws_tests` suite — the server→client `peer/ping`
 request/response sibling of the notification suite: a client invokes the
 `peer/ping` action, the server pings back over the same socket via ActionPeer,
@@ -257,7 +271,7 @@ isolation, never-reply `Timeout`, wrong-shape rejection, client-error
 forwarding, HTTP no-transport); gated on `capabilities.peer_request`, now `true`
 on both the Rust `spine_stub` and the TS spines (the
 `BackendWebsocketTransport.request_connection` path)),
-`ws_role_gated.cross.test.ts` (the real-upgrade
+`ws_role_gated` (the real-upgrade
 `describe_ws_role_gated_cross_tests` suite — both spines mount a second,
 role-gated WS endpoint beside `/api/ws`; a revoked global grant of a gating role
 closes the account's gated socket with `WS_CLOSE_PERMISSION_REVOKED`, leaves its
@@ -267,16 +281,16 @@ nothing; gated on `capabilities.ws_role_gated`),
 notification suite again, over the role-gated endpoint with
 `ws_required_roles` declared — the revoke case expects the close; gated on
 `capabilities.ws_role_gated`),
-`ws_inbound_dispatch.cross.test.ts` (the real-upgrade
+`ws_inbound_dispatch` (the real-upgrade
 `describe_ws_inbound_dispatch_cross_tests` suite — a request reusing a live id
 refused `invalid_request` / `duplicate_request_id`, and one past the per-socket
 in-flight ceiling shed `queue_overflow` with the socket left open; requests held
-with `peer/ping`, so gated on `capabilities.peer_request`), `sse.cross.test.ts` (the real-streaming-`fetch`
+with `peer/ping`, so gated on `capabilities.peer_request`), `sse_round_trip` (the real-streaming-`fetch`
 `describe_cross_process_sse_tests` suite — live audit-log SSE: connect,
 data frame, account-wide close-on-revoke, session-scoped close-on-revoke,
 close on account delete, admin token revoke-all, logout, password change and
 purge, the per-session stream cap),
-`cell.cross.test.ts` (the cell parity suites:
+`cell_*` (the cell parity suites:
 `describe_cell_crud_cross_tests` — the CRUD lifecycle + authz matrix — and
 `describe_cell_relations_cross_tests` — grant / field / item / clone / audit,
 incl. the editor-grant `cell_visibility_manage_only` 403, the **D8 relation-read
@@ -308,7 +322,7 @@ clone of a viewable `space` root → 403 `cell_create_forbidden`; and a
 contribution under a soft-deleted root → 404 `cell_not_found`, the
 missing-parent shape), gated on
 `capabilities.cell_gated_create` (cross-only, the test policy is a spine-binary
-fixture)), and `account_lifecycle.cross.test.ts`
+fixture)), and `account_lifecycle`
 (`describe_account_lifecycle_cross_tests` — soft-delete → undelete round-trip,
 keeper-confirmed purge, the `cannot_delete_keeper` guard, the session-only
 self-delete (a bearer self-delete → 403 `credential_type_required` with the
@@ -369,15 +383,15 @@ gate-pass-404 vs gate-403 on **both** `role_grant_assign` and
 dispatcher admin gate, anon-401, `to_actor_id`-mismatch, and the global-only
 builtin rules (an unpaired `scope_kind` / `scope_id` → 400, a scoped `admin` →
 400 `role_grant_builtin_scoped` on assign + offer, a builtin offer from a
-non-global-admin → 403) — plus the imperative
-`describe_role_grant_participation_cross_tests` success paths (assign-lands +
+non-global-admin → 403) — whose imperative twin, `role_grant_participation` in
+the one call, drives the success paths (assign-lands +
 idempotency, a scoped assign round-tripping `scope_kind` through
 `admin_account_list`, offer→accept-lands, and offer replay — a re-accept of
 a held grant answers the same id with no new audit row, one after revoke is
 terminal); seeds a `participant` (`grant_paths:
 ['admin']`) app-role on both spines with the holder via `extra_accounts`;
 in-process leg `conformance_participation.db.test.ts`), and
-`role_grant_offer_lifecycle.cross.test.ts`
+`role_grant_offer_lifecycle`
 (`describe_role_grant_offer_lifecycle_cross_tests` — a decline by anyone but
 the recipient and a retract by anyone but the grantor → 404
 `role_grant_offer_not_found`, identical to a missing offer and leaving it
@@ -385,16 +399,16 @@ pending; a decline or retract of a decided offer → 400
 `role_grant_offer_terminal`; one audit row per success with its attribution
 and metadata, none per refusal; in-process leg on the drained setup of
 `conformance_participation.db.test.ts`), and
-`origin.cross.test.ts` (the imperative `describe_origin_cross_tests` — Origin
+`origin` (the imperative `describe_origin_cross_tests` — Origin
 allowlist: absent → pass; in-process leg `auth/origin_parity.db.test.ts`), and
-`origin_scope.cross.test.ts` (`describe_origin_scope_cross_tests` — the check
+`origin_scope` (`describe_origin_scope_cross_tests` — the check
 off `/api`: a foreign `Origin` on `GET /ready` → 403, an absent or allowed one
 passes; in-process leg `cross_backend/origin_scope_parity.db.test.ts`), and
-`origin_conformance.cross.test.ts` (`describe_origin_conformance_cross_tests` —
+`origin_conformance` (`describe_origin_conformance_cross_tests` —
 every row of the shared allowlist grammar + matcher table
 `origin_conformance.json` through each backend's `_testing_origin_check`; TS
 unit leg `http/origin.conformance.test.ts`), and
-`transport_composition.cross.test.ts` (the front-door table via
+`transport_composition` (the front-door table via
 `describe_transport_composition_cross_tests` — on REST `POST /logout`, RPC
 `POST` and `GET`, the WS upgrade and the audit stream: a foreign `Origin` →
 403 `forbidden_origin`, an over-cap declared length with a foreign `Origin` and
@@ -402,22 +416,22 @@ no credential → 413 on the body-carrying surfaces, no credential → 401
 `authentication_required` (on `/password` too), a narrowed bearer → each
 surface's denial, status and body, a WS refusal's body required where the
 backend declares `capabilities.ws_refusal_body`; in-process leg `auth/transport_composition_parity.db.test.ts`, where
-the WS rows skip), `simple_request.cross.test.ts` (the
+the WS rows skip), `simple_request` (the
 imperative `describe_simple_request_cross_tests` — untyped / CORS-safelisted /
 non-JSON `POST`s to JSON routes → 415 `unsupported_content_type`; in-process leg
-`auth/simple_request_parity.db.test.ts`), and `query_shape.cross.test.ts` (the
+`auth/simple_request_parity.db.test.ts`), and `query_shape` (the
 imperative `describe_query_shape_cross_tests` — duplicate-key / unknown-key /
 phase-order query semantics on the status route, the JSON-RPC GET endpoint,
 and the bare-hash fact route: first-occurrence-wins duplicates everywhere,
 strict-schema 400 `invalid_query_params` before the 401 guard on the fact
 route vs. ignored unknown keys on the schema-less status route; cross-only —
-the in-process TS pins live beside each module's own tests), and `ready.cross.test.ts` (the imperative
+the in-process TS pins live beside each module's own tests), and `ready` (the imperative
 `describe_ready_cross_tests` — the `/ready` schema-drift deploy gate: anonymous
 `GET /ready` → `200 {ready: true}` on a clean spine bootstrap, gated on
 `capabilities.ready`, both backends reading the same committed
 `expected_schema.json`; in-process leg `cross_backend/ready_parity.db.test.ts`,
 fixture guard `cross_backend/spine_expected_schema.db.test.ts`), and
-`token_scope_surface.cross.test.ts` (the `surface:<name>` half of token
+`token_scope_surface` (the `surface:<name>` half of token
 scoping via `describe_token_scope_surface_cross_tests` — a narrowed bearer
 refused the audit stream + the bare-hash fact read with the exact flat
 `{error: 'token_scope_required', required_scope}` both spines contract on, the
@@ -428,7 +442,7 @@ gating role must hear about its scope, not the role. The conformance slate's
 `token_scope_cases` cover only the `rpc:<method>` arm, and no other gate can see
 this one — no column for the schema gate, no method for the manifest gate, off
 the declared surface for the spec-derived suites), and
-`testing_backdoor.cross.test.ts` (the imperative
+`testing_backdoor` (the imperative
 `describe_testing_backdoor_cross_tests` — the `_testing_*` backdoor credential
 gate: every `_testing_*` action fired as
 anonymous → 401, session → 403, bearer → 403 over HTTP RPC, and on a session
@@ -436,31 +450,31 @@ socket → `credential_type_required` over WS, proving the daemon-token gate
 holds on the off-surface actions every spine live-mounts; cross-process-only,
 no in-process leg since the actions aren't mounted in-process; the
 conformance table's generated rows over the live mount pin the same gates), and
-`actor_lookup.cross.test.ts` (the opt-in `actor_lookup` resolver — the keeper
+`actor_lookup` (the opt-in `actor_lookup` resolver — the keeper
 resolves its own actor → 200 with the info-leak-safe wire shape; its
 anonymous 401 and empty-`ids` 400 are table rows, and so is all of
-`actor_search`, in `conformance_actor_cases.ts`), and `app_settings.cross.test.ts` (the `open_signup` effect —
+`actor_search`, in `conformance_actor_cases.ts`), and `app_settings` (the `open_signup` effect —
 the admin `app_settings_update` toggle then an anonymous `POST /signup`,
 proving the signup handler reads the toggle fresh from the database), and
-`cell_grant_role.cross.test.ts` (role-shaped `cell_grant` parity — the
+`cell_grant_role` (role-shaped `cell_grant` parity — the
 role-validity gate: admit holder, exclude non-holder, reject unregistered role,
 editor-level edit, and the `cell_list shared_with:'me'` **role-admit** branch
 (the `caller_role_grants` CTE arm, with an ungranted control cell — the one
 pin on the CTE copy of the grant predicate, which the storage-half EXISTS in
 `fuz_cell/tests` can otherwise drift from); the actor-shaped grants live in
-`cell.cross.test.ts`), and `token_lifetime.cross.test.ts` (the api-token
+`cell_*`), and `token_lifetime` (the api-token
 `lifetime` round-trip via `describe_token_lifetime_cross_tests` — ttl mint →
 non-null `expires_at` on create output + `account_token_list` read-back,
 eternal → NULL control, omitted/out-of-range → 400 on both spines; the
 manifest parity gate is blind to param schemas, so this round-trip is what
 keeps a spine from silently dropping the field; in-process leg
 `token_lifetime_parity.db.test.ts`), and
-`role_grant_role_grammar.cross.test.ts` (the `RoleName` grammar on the grant
+`role_grant_role_grammar` (the `RoleName` grammar on the grant
 verbs via `describe_role_grant_role_grammar_cross_tests` — an off-grammar
 `role` on `role_grant_assign` / `role_grant_offer_create` → `invalid_params`
 with no reason and no audit row carrying it, with an on-grammar unregistered
 role reaching `role_not_web_grantable` as the control; cross-only), and
-`rpc_adversarial.cross.test.ts` (`describe_rpc_adversarial_cross_tests` — the
+`rpc_adversarial` (`describe_rpc_adversarial_cross_tests` — the
 in-process attack-surface suite's malformed-envelope cases and generated
 invalid-params cases sent to each backend as a principal the method admits,
 pinning status, code, echoed `id` and `data.reason`, incl. an anonymous `GET` of
@@ -470,17 +484,17 @@ every read; on the Rust stub only, the `account_token_create` schema refusals
 that carry a Rust-only `data.reason` run as `xfail_until`
 `rust-token-create-schema-reason` rows; cross-only,
 `describe_rpc_attack_surface_tests` runs the same cases in-process), and
-`fact_serving.cross.test.ts` (the cell-gated fact-serving routes
+`fact_serving` (the cell-gated fact-serving routes
 `GET /api/cells/:cell_id/facts/:hash` + the admin-only `GET /api/facts/:hash`
 via `describe_fact_serving_cross_tests`, gated on `capabilities.fact_serving`),
-and `cell_ref_admission.cross.test.ts` (possession-gated cell ref admission via
+and `cell_ref_admission` (possession-gated cell ref admission via
 `describe_cell_ref_admission_cross_tests` — unheld refs refused with one answer
 for stored and unstored hashes, holders by upload or re-upload, editors keeping
 existing refs, clones carrying source refs per row, the admin bypass, a revoked
 grantee, the exact ref grammar, and admission after the 404 masks; gated on
 `capabilities.fact_serving`; in-process legs
 `auth/cell_ref_admission{,.fact_less}.db.test.ts`),
-and `body_size.cross.test.ts` (the 1 MiB request-body cap:
+and `body_size` (the 1 MiB request-body cap:
 `describe_body_size_cross_tests` — over-limit cap+1 → 413 `payload_too_large`,
 at-limit exactly-the-cap → not size-rejected, under-limit → 200, and an
 authenticated over-limit chunked body → 413; the cap answering ahead of the
@@ -507,7 +521,7 @@ cap by `Content-Length` and by streamed bytes, `Transfer-Encoding` beside
 neither refusal reading the request body — are pinned by
 `http/body_limit.test.ts`; `server/create_app_server.db.test.ts` pins both
 refusals through the assembled app, and the unread body for the 413); the
-smuggling probe is cross-only), and `identity_parity.cross.test.ts` (the
+smuggling probe is cross-only), and `identity_parity` (the
 imperative `describe_identity_parity_cross_tests` suite —
 `testing/cross_backend/identity_parity.ts` — pinning the `primitive_schemas`
 twins (`Username`, `UsernameProvided`, `Email`) + login/signup input handling

@@ -35,24 +35,21 @@
  * @module
  */
 
-import { inject, describe, test } from 'vitest';
+import { describe, test } from 'vitest';
 
+import { inject_parity_handles } from '#lib/testing/cross_backend/provided_context.ts';
 import {
 	capture_schema_snapshot,
-	capture_migration_tracker,
-	reconstruct_bootstrapped_handle
+	capture_migration_tracker
 } from '#lib/testing/cross_backend/setup.ts';
 import {
 	assert_schema_snapshots_equal,
 	assert_migration_trackers_equal
 } from '#lib/testing/schema_parity.ts';
 
-import './cross_test_types.ts';
-
 describe('cross-backend schema parity', () => {
 	test('TS spine (node) and Rust spine_stub schemas match', async () => {
-		const ts = reconstruct_bootstrapped_handle(inject('parity_handle_a'));
-		const rust = reconstruct_bootstrapped_handle(inject('parity_handle_b'));
+		const { a: ts, b: rust } = inject_parity_handles();
 		const [ts_snapshot, rust_snapshot] = await Promise.all([
 			capture_schema_snapshot(ts),
 			capture_schema_snapshot(rust)
@@ -70,8 +67,7 @@ describe('cross-backend schema parity', () => {
 	// cutover and that the snapshot gate (which excludes `schema_version`)
 	// could not see.
 	test('TS spine (node) and Rust spine_stub record identical migration identity', async () => {
-		const ts = reconstruct_bootstrapped_handle(inject('parity_handle_a'));
-		const rust = reconstruct_bootstrapped_handle(inject('parity_handle_b'));
+		const { a: ts, b: rust } = inject_parity_handles();
 		const [ts_tracker, rust_tracker] = await Promise.all([
 			capture_migration_tracker(ts),
 			capture_migration_tracker(rust)

@@ -8,7 +8,7 @@
  * Same-green both legs pins that the conferral algorithm is transport- and
  * impl-independent. The offer decline/retract refusal suite rides the same
  * drained setup; its cross-process leg is
- * `role_grant_offer_lifecycle.cross.test.ts`.
+ * `spine_suites.cross.test.ts`.
  *
  * @module
  */

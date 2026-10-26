@@ -4,7 +4,7 @@
  * Runs `describe_account_lifecycle_cross_tests` against the in-process Hono
  * app (no process boundary), so the soft-delete → undelete → purge wire
  * contract + keeper guard are verified under a plain `gro test` — the
- * cross-process leg (`account_lifecycle.cross.test.ts`) additionally drives
+ * cross-process leg (`spine_suites.cross.test.ts`) additionally drives
  * the TS spine binary + Rust `testing_spine_stub` over real HTTP behind
  * `FUZ_TEST_CROSS_BACKEND=1`.
  *

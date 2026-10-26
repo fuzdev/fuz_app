@@ -3,7 +3,7 @@
  * every row of `testing/cross_backend/origin_conformance.json` through
  * `run_testing_origin_check` — the function the `_testing_origin_check`
  * action serves, over `parse_allowed_origins` and `should_allow_origin`. The
- * cross-process leg (`cross_backend/origin_conformance.cross.test.ts`) sends
+ * cross-process leg (`cross_backend/spine_suites.cross.test.ts`) sends
  * the same rows to every backend.
  *
  * @module

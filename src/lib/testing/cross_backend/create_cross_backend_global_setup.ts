@@ -7,8 +7,8 @@ import '../assert_dev_env.ts';
  * sets its own `test.name`, and this factory derives the backend name from
  * that project name (vitest 4 passes the `TestProject` to globalSetup), picks
  * the matching `BackendConfig`, spawns + bootstraps it via `bootstrap_backend`,
- * and `provide`s a serializable handle that `*.cross.test.ts` files
- * `inject` and rebuild with `reconstruct_bootstrapped_handle`.
+ * and `provide`s a serializable handle that `*.cross.test.ts` files read
+ * with `inject_backend_handle` (`provided_context.ts`).
  *
  * A consumer's `global_setup.ts` collapses to:
  *
@@ -16,7 +16,6 @@ import '../assert_dev_env.ts';
  * import {create_cross_backend_global_setup} from
  *   '@fuzdev/fuz_app/testing/cross_backend/create_cross_backend_global_setup.ts';
  * import {deno_backend_config, rust_backend_config} from './my_backend_config.js';
- * import './cross_test_types.js'; // augments inject('backend_handle')
  *
  * export default create_cross_backend_global_setup({
  *   configs: {deno: deno_backend_config, rust: rust_backend_config},
@@ -59,7 +58,8 @@ export interface CrossBackendGlobalSetupOptions {
 	readonly derive_name?: (project_name: string) => string;
 	/**
 	 * Key passed to `project.provide` (and read by `inject` in test files).
-	 * Default `'backend_handle'`. Augment vitest's `ProvidedContext` for it.
+	 * Default `'backend_handle'`, which `provided_context.ts` declares on vitest's
+	 * `ProvidedContext`; augment it yourself for another key.
 	 */
 	readonly provide_key?: string;
 }

@@ -4,7 +4,7 @@
  * Runs `describe_token_lifetime_cross_tests` against the in-process Hono spine
  * surface (no process boundary), so the ttl-mint → list round-trip, the
  * eternal control, and the required-`lifetime` refusals are verified under a
- * plain `gro test` — the cross-process leg (`token_lifetime.cross.test.ts`)
+ * plain `gro test` — the cross-process leg (`spine_suites.cross.test.ts`)
  * additionally drives the TS spine binaries + Rust `testing_spine_stub` over
  * real HTTP behind `FUZ_TEST_CROSS_BACKEND=1`.
  *

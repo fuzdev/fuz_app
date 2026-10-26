@@ -20,15 +20,14 @@ import '../assert_dev_env.ts';
  * import {create_dual_spawn_global_setup} from
  *   '@fuzdev/fuz_app/testing/cross_backend/create_dual_spawn_global_setup.ts';
  * import {deno_backend_config, rust_backend_config} from './my_backend_config.js';
- * import './cross_test_types.js'; // augments the two provide keys
  *
  * export default create_dual_spawn_global_setup({
  *   configs: {a: deno_backend_config, b: rust_backend_config},
  * });
  * ```
  *
- * The `.cross.test.ts` `inject`s both keys, rebuilds each with
- * `reconstruct_bootstrapped_handle`, and asserts. Run this project in a
+ * The `.cross.test.ts` reads both with `inject_parity_handles`
+ * (`provided_context.ts`, which declares the default keys) and asserts. Run this project in a
  * later `groupOrder` than the single-backend projects (or with distinct
  * ports) — it reuses both configs' ports, so it must not run concurrently
  * with the per-backend projects.
@@ -52,8 +51,9 @@ export interface DualSpawnGlobalSetupOptions {
 	/**
 	 * `project.provide` keys for the two serialized handles (read by
 	 * `inject` in the test). Default `parity_handle_a` / `parity_handle_b`
-	 * (the primary parity use); override for other dual-spawn gates. Augment
-	 * vitest's `ProvidedContext` for whichever keys you use.
+	 * (the primary parity use, declared on vitest's `ProvidedContext` by
+	 * `provided_context.ts`); override for other dual-spawn gates, augmenting
+	 * `ProvidedContext` for those keys yourself.
 	 */
 	readonly provide_keys?: { readonly a: string; readonly b: string };
 }

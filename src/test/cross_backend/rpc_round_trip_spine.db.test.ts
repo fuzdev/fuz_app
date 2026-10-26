@@ -5,7 +5,7 @@
  * `create_spine_rpc_success_fixtures`, so the row-acting methods (token and
  * session revoke, invite delete, role grant revoke, offer accept / decline /
  * retract) have their success bodies validated in-process too. The
- * cross-process leg is `auth.cross.test.ts`, through the standard bundle.
+ * cross-process leg is `spine_suites.cross.test.ts`, through the standard bundle.
  *
  * @module
  */
