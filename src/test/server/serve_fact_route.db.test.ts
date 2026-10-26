@@ -39,6 +39,9 @@
  */
 
 import { test, assert } from 'vitest';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { PgFactStore } from '#lib/db/fact_store.ts';
 import type { FactHash } from '@fuzdev/fuz_util/hash_schemas.ts';
@@ -46,11 +49,7 @@ import { ERROR_INVALID_QUERY_PARAMS, ERROR_INVALID_ROUTE_PARAMS } from '#lib/htt
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import type { TestApp } from '#lib/testing/app_server.ts';
 import { create_test_extra_actor, soft_delete_test_actor } from '#lib/testing/db_entities.ts';
-import {
-	create_cell_test_app,
-	create_cell,
-	cell_test_facts_dir
-} from '../auth/cell_test_helpers.ts';
+import { create_cell_test_app, create_cell } from '../auth/cell_test_helpers.ts';
 import { query_cell_create } from '#lib/db/cell_queries.ts';
 import { query_put_fact } from '#lib/db/fact_queries.ts';
 import { query_put_fact_holder } from '#lib/db/fact_holder_queries.ts';
@@ -360,68 +359,73 @@ describe_db('serve_fact_route', (get_db) => {
 	});
 
 	test("a disk fact streams; an external_url naming another fact's file → 404", async () => {
-		const app = await create_cell_test_app(get_db);
-		const owner = await app.create_account({ username: 'disk_fact_owner' });
-		const disk_store = new PgFactStore({
-			deps: { db: get_db() },
-			embedded_threshold: 0,
-			disk_root: cell_test_facts_dir,
-			fs: create_node_runtime()
-		});
+		const facts_dir = await mkdtemp(join(tmpdir(), 'fuz_serve_fact_disk_'));
+		try {
+			const app = await create_cell_test_app(get_db, [], undefined, undefined, facts_dir);
+			const owner = await app.create_account({ username: 'disk_fact_owner' });
+			const disk_store = new PgFactStore({
+				deps: { db: get_db() },
+				embedded_threshold: 0,
+				disk_root: facts_dir,
+				fs: create_node_runtime()
+			});
 
-		// the private bytes, on disk, referenced by no public cell
-		const secret = encode('private bytes on disk');
-		const secret_hash = await disk_store.put(secret, {
-			content_type: 'text/plain',
-			holder: null
-		});
-		const secret_row = await get_db().query_one<{ external_url: string }>(
-			'SELECT external_url FROM fact WHERE hash = $1',
-			[secret_hash]
-		);
-		assert.ok(secret_row?.external_url.startsWith('file:'));
-
-		// control: a disk fact of its own serves through a public cell
-		const own = encode('public bytes on disk');
-		const own_hash = await disk_store.put(own, {
-			content_type: 'text/plain',
-			holder: owner.actor.id
-		});
-		const own_cell = await create_cell(app, {
-			kind: 'image',
-			data: { cover: own_hash },
-			visibility: 'public',
-			headers: owner.create_session_headers()
-		});
-		const own_res = await get_cell_fact(app, own_cell.id, own_hash);
-		assert.strictEqual(own_res.status, 200);
-		assert.deepEqual(new Uint8Array(await own_res.arrayBuffer()), own);
-
-		// a row written past the store: another hash whose URL is the private
-		// fact's file, referenced from a public cell
-		const hijack_hash = fact_hash_bytes(encode('the hijacking row'));
-		await query_put_fact(
-			{ db: get_db() },
-			{
-				hash: hijack_hash,
-				bytes: null,
-				external_url: secret_row!.external_url,
+			// the private bytes, on disk, referenced by no public cell
+			const secret = encode('private bytes on disk');
+			const secret_hash = await disk_store.put(secret, {
 				content_type: 'text/plain',
-				size: secret.length
-			}
-		);
-		await query_put_fact_holder({ db: get_db() }, owner.actor.id, hijack_hash);
-		const hijack_cell = await create_cell(app, {
-			kind: 'image',
-			data: { cover: hijack_hash },
-			visibility: 'public',
-			headers: owner.create_session_headers()
-		});
-		const hijack = await get_cell_fact(app, hijack_cell.id, hijack_hash);
-		assert.strictEqual(hijack.status, 404);
-		assert.strictEqual(await hijack.text(), '');
-		// and the store's own read refuses it
-		assert.strictEqual(await disk_store.get(hijack_hash), null);
+				holder: null
+			});
+			const secret_row = await get_db().query_one<{ external_url: string }>(
+				'SELECT external_url FROM fact WHERE hash = $1',
+				[secret_hash]
+			);
+			assert.ok(secret_row?.external_url.startsWith('file:'));
+
+			// control: a disk fact of its own serves through a public cell
+			const own = encode('public bytes on disk');
+			const own_hash = await disk_store.put(own, {
+				content_type: 'text/plain',
+				holder: owner.actor.id
+			});
+			const own_cell = await create_cell(app, {
+				kind: 'image',
+				data: { cover: own_hash },
+				visibility: 'public',
+				headers: owner.create_session_headers()
+			});
+			const own_res = await get_cell_fact(app, own_cell.id, own_hash);
+			assert.strictEqual(own_res.status, 200);
+			assert.deepEqual(new Uint8Array(await own_res.arrayBuffer()), own);
+
+			// a row written past the store: another hash whose URL is the private
+			// fact's file, referenced from a public cell
+			const hijack_hash = fact_hash_bytes(encode('the hijacking row'));
+			await query_put_fact(
+				{ db: get_db() },
+				{
+					hash: hijack_hash,
+					bytes: null,
+					external_url: secret_row!.external_url,
+					content_type: 'text/plain',
+					size: secret.length
+				}
+			);
+			await query_put_fact_holder({ db: get_db() }, owner.actor.id, hijack_hash);
+			const hijack_cell = await create_cell(app, {
+				kind: 'image',
+				data: { cover: hijack_hash },
+				visibility: 'public',
+				headers: owner.create_session_headers()
+			});
+			const hijack = await get_cell_fact(app, hijack_cell.id, hijack_hash);
+			assert.strictEqual(hijack.status, 404);
+			assert.strictEqual(await hijack.text(), '');
+			// and the store's own read refuses it
+			assert.strictEqual(await disk_store.get(hijack_hash), null);
+		} finally {
+			await rm(facts_dir, { recursive: true, force: true });
+		}
 	});
 
 	// A6 follow-up: the pure-public read path

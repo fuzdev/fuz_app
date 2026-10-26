@@ -16,9 +16,6 @@
 
 import { assert } from 'vitest';
 import { z } from 'zod';
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import {
@@ -69,11 +66,14 @@ export const cell_test_roles = create_role_schema([{ name: 'member' }]);
 export const ROLE_MEMBER = 'member';
 
 /**
- * Per-suite-process temp facts directory. Embedded facts never touch it
- * (`serve_fact_route` only reads disk for external `file:` facts), but the
- * route factory requires a path; this gives it a real, writable one.
+ * Default facts directory for the fact-serving routes — a path that is never
+ * created. Embedded facts never touch it (`serve_fact_route` only reads disk
+ * for external `file:` facts), but the route factory requires a path. A suite
+ * that stores disk facts owns a temp dir and passes it as `facts_dir`; a stray
+ * disk read or write against this default fails loudly instead of leaking a
+ * directory.
  */
-export const cell_test_facts_dir = mkdtempSync(join(tmpdir(), 'fuz-cell-facts-'));
+export const CELL_TEST_FACTS_DIR_UNUSED = '/nonexistent/fuz_app_cell_test_facts';
 
 /**
  * Mounts the full cell RPC surface on `/api/rpc` plus both fact-serving
@@ -81,10 +81,14 @@ export const cell_test_facts_dir = mkdtempSync(join(tmpdir(), 'fuz-cell-facts-')
  * (`GET /api/cells/:cell_id/facts/:hash`) and the admin-only bare-hash read
  * (`GET /api/facts/:hash`). `validate_data` is left unset (pass-through) —
  * per-kind shape validation is sub-API and out of scope for the
- * generic-layer suites.
+ * generic-layer suites. `facts_dir` defaults to `CELL_TEST_FACTS_DIR_UNUSED`.
  */
 export const create_cell_route_specs =
-	(authorize_create?: CellCreateAuthorize, validate_data?: CellActionDeps['validate_data']) =>
+	(
+		authorize_create?: CellCreateAuthorize,
+		validate_data?: CellActionDeps['validate_data'],
+		facts_dir: string = CELL_TEST_FACTS_DIR_UNUSED
+	) =>
 	(ctx: AppServerContext): Array<RouteSpec> => [
 		...create_rpc_endpoint({
 			action_ip_rate_limiter: null,
@@ -100,12 +104,12 @@ export const create_cell_route_specs =
 		}),
 		create_serve_cell_fact_route_spec({
 			deps: ctx.deps,
-			facts_dir: cell_test_facts_dir,
+			facts_dir,
 			log: ctx.deps.log
 		}),
 		create_serve_fact_route_spec({
 			deps: ctx.deps,
-			facts_dir: cell_test_facts_dir,
+			facts_dir,
 			log: ctx.deps.log
 		})
 	];
@@ -129,19 +133,21 @@ const cell_audit_factory: AuditFactory = ({ db, log }) =>
 /**
  * Create a cell test app bound to `get_db`, with cell events registered.
  * Pass `authorize_create` to mount a `CellCreateAuthorize` creation gate
- * (default: open create).
+ * (default: open create), and `facts_dir` when the suite serves disk facts
+ * from a temp dir it owns (default: `CELL_TEST_FACTS_DIR_UNUSED`).
  */
 export const create_cell_test_app = (
 	get_db: () => Db,
 	roles?: Array<string>,
 	authorize_create?: CellCreateAuthorize,
-	validate_data?: CellActionDeps['validate_data']
+	validate_data?: CellActionDeps['validate_data'],
+	facts_dir?: string
 ): Promise<TestApp> =>
 	create_test_app({
 		session_options,
 		create_route_specs:
-			authorize_create || validate_data
-				? create_cell_route_specs(authorize_create, validate_data)
+			authorize_create || validate_data || facts_dir
+				? create_cell_route_specs(authorize_create, validate_data, facts_dir)
 				: create_route_specs,
 		audit_factory: cell_audit_factory,
 		db: get_db(),

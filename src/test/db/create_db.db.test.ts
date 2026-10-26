@@ -179,18 +179,19 @@ describe('create_db', () => {
 		const { mkdtemp } = await import('node:fs/promises');
 		const { tmpdir } = await import('node:os');
 		const { join } = await import('node:path');
-		const temp_dir = await mkdtemp(join(tmpdir(), 'fuz-test-'));
-
-		const result = await create_db(`file://${temp_dir}`);
-
-		assert.strictEqual(result.db_type, 'pglite-file');
-		assert.strictEqual(result.db_name, temp_dir);
-
-		await result.close();
-
-		// Clean up
 		const { rm } = await import('node:fs/promises');
-		await rm(temp_dir, { recursive: true, force: true });
+		const temp_dir = await mkdtemp(join(tmpdir(), 'fuz-test-'));
+		try {
+			const result = await create_db(`file://${temp_dir}`);
+			try {
+				assert.strictEqual(result.db_type, 'pglite-file');
+				assert.strictEqual(result.db_name, temp_dir);
+			} finally {
+				await result.close();
+			}
+		} finally {
+			await rm(temp_dir, { recursive: true, force: true });
+		}
 	});
 
 	test('unsupported URL scheme throws', async () => {
