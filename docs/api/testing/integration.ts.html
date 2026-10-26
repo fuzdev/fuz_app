@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/BTZoVLbz.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CAODFmXb.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.DKiIIxGC.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.C5J0CZeB.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.IlXHKlrH.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.CgXVaXzN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BcwQFYZ2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/C3BYcZ2u.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/B0ywOZhm.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/DbghZNwo.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.BAFgKCUF.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/MUONDIzd.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.OX-W4mnj.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BL7ZH9U-.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DhdQKFKC.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -88,7 +88,7 @@ suite hard-fails via `require_rpc_endpoint_path` rather than running
 tests that would crash mid-suite trying to dispatch
 `account_verify` / `account_session_*` / `account_token_*`.<!--]--></li><!--]--></ul></section><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--><!----></article><!----></section><section><header><!----><h3 class="tome-section-header svelte-dz8ld7"><div class="flex:1"><!--[0--><div class="word-break:break-all">StandardIntegrationTestOptions</div><!----><!--]--></div> <a aria-label="hashlink" class="hashlink  svelte-1aeep1w" href="#StandardIntegrationTestOptions"><!--[-1-->#<!--]--></a> <span class="hashlink-scroll-target svelte-1aeep1w" id="StandardIntegrationTestOptions" aria-hidden="true"></span><!----><!----></h3><!----></header><!----> <article id="StandardIntegrationTestOptions"><p class="row justify-content:space-between"><!--[0--><a class="module-link chip " href="/docs/api/testing/integration.ts"><!--[-1-->testing/integration.ts<!--]--></a><!--]--><!----> <!--[0--><a class="chip" href="https://github.com/fuzdev/fuz_app/blob/main/src/lib/testing/integration.ts#L67" target="_blank" rel="noopener">view source</a><!--]--></p>  <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[0--><code data-lang="ts" class="svelte-jqsy8a"><!--[-1--><!----><span class="token_capitalized_identifier token_class_name">StandardIntegrationTestOptions</span><!----><!--]--></code><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <code data-lang="ts" class="svelte-jqsy8a"><!--[-1--><!----><span class="token_special_keyword">import</span> <span class="token_import_type_keyword token_special_keyword">type</span> <span class="token_punctuation">{</span><span class="token_capitalized_identifier token_class_name">StandardIntegrationTestOptions</span><span class="token_punctuation">}</span> <span class="token_special_keyword">from</span> <span class="token_string">'@fuzdev/fuz_app/testing/integration.js'</span><span class="token_punctuation">;</span><!----><!--]--></code><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Configuration for <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/integration.ts#describe_standard_integration_tests"><!--[0--><!--[-1-->describe_standard_integration_tests<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[0--><section class="svelte-pitz0d"><!--[--><section class="svelte-pitz0d"><h4><code>setup_test<!--[-1--><!--]--></code></h4> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Per-test fixture-producing function. The integration suite calls
 this in every <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->test()<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> body — auth_integration_truncate_tables
-clears <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->account<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, so each test re-bootstraps the keeper.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--> <!--[0--><p class="row gap_md"><strong>type</strong> <!--[-1--><code data-lang="ts" class="svelte-jqsy8a inline"><!--[-1--><!----><span class="token_punctuation">()</span><span class="token_type_annotation"><span class="token_:">:</span> <span class="token_type"><span class="token_type_name token_class_name">Promise</span><span class="token_operator">&lt;</span><span class="token_type_name token_class_name">TestFixtureBase</span><span class="token_operator">></span></span></span><!----><!--]--></code><!--]--><!----></p><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[0--><div class="row gap_md"><strong>returns</strong> <!--[0--><!--[-1--><code class="type-json-view svelte-jzdoj9" title="Promise&lt;TestFixtureBase>"><!--[--><!--[1--><!--[-1--><code data-lang="ts" class="svelte-jqsy8a inline"><!--[-1--><!----><span class="token_capitalized_identifier token_class_name">Promise</span><!----><!--]--></code><!--]--><!--]--><!--[0-->&lt;<!--]--><!--[1--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/cross_backend/setup.ts#TestFixtureBase"><!--[-1-->TestFixtureBase<!--]--></a><!--]--><!--]--><!--]--><!--[0-->><!--]--><!--]--></code><!--]--><!--]--><!----></div> <!--[-1--><!--]--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--><!----></section><section class="svelte-pitz0d"><h4><code>surface_source<!--[-1--><!--]--></code></h4> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->App surface (with route specs + middleware specs) for route iteration
+clears <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->account<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, so each test re-bootstraps the keeper.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--> <!--[0--><p class="row gap_md"><strong>type</strong> <!--[-1--><code data-lang="ts" class="svelte-jqsy8a inline"><!--[-1--><!----><span class="token_punctuation">()</span><span class="token_type_annotation"><span class="token_:">:</span> <span class="token_type"><span class="token_type_name token_class_name">Promise</span><span class="token_operator">&lt;</span><span class="token_type_name token_class_name">TestFixture</span><span class="token_operator">></span></span></span><!----><!--]--></code><!--]--><!----></p><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[0--><div class="row gap_md"><strong>returns</strong> <!--[0--><!--[-1--><code class="type-json-view svelte-jzdoj9" title="Promise&lt;TestFixture>"><!--[--><!--[1--><!--[-1--><code data-lang="ts" class="svelte-jqsy8a inline"><!--[-1--><!----><span class="token_capitalized_identifier token_class_name">Promise</span><!----><!--]--></code><!--]--><!--]--><!--[0-->&lt;<!--]--><!--[1--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/cross_backend/setup.ts#TestFixture"><!--[-1-->TestFixture<!--]--></a><!--]--><!--]--><!--]--><!--[0-->><!--]--><!--]--></code><!--]--><!--]--><!----></div> <!--[-1--><!--]--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--><!----></section><section class="svelte-pitz0d"><h4><code>surface_source<!--[-1--><!--]--></code></h4> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->App surface (with route specs + middleware specs) for route iteration
 and error-coverage scoping. The same shape feeds both in-process and
 cross-process tests — the test process always constructs the spec in
 TS (via <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/stubs.ts#create_test_app_surface_spec"><!--[0--><!--[-1-->create_test_app_surface_spec<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> or a consumer's equivalent);
@@ -114,16 +114,16 @@ denial-path drivers.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></
 			
 			<script>
 				{
-					__sveltekit_jm282q = {
+					__sveltekit_1dgwvn1 = {
 						base: "",
-						version: "a41945c6ebdc36dde9330f62abc3dda0bd40d00a"
+						version: "039287f1847523c260cb7a25b62ae2fe543e415d"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.CXlCZqzx.js").then(async (kit) => {
-						kit.init(__sveltekit_jm282q);
-						const app = await import("/_app/immutable/entry/app.DKiIIxGC.js");
+						kit.init(__sveltekit_1dgwvn1);
+						const app = await import("/_app/immutable/entry/app.IlXHKlrH.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],

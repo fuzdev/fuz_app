@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/BTZoVLbz.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CAODFmXb.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.DKiIIxGC.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.C5J0CZeB.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.IlXHKlrH.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.CgXVaXzN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BcwQFYZ2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/C3BYcZ2u.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/B0ywOZhm.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/DbghZNwo.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.BAFgKCUF.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/MUONDIzd.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.OX-W4mnj.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BL7ZH9U-.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DhdQKFKC.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -80,7 +80,8 @@ operations.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!---
 (env: <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->*_DAEMON_TOKEN_PATH<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->). <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/cross_backend/spawn_backend.ts#spawn_backend"><!--[0--><!--[-1-->spawn_backend<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> reads this file once
 after the health probe succeeds and threads the token onto
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->BackendHandle.daemon_token<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> for <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->_testing_reset<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> calls plus any
-other admin/keeper-gated cross-process tests.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--> <!--[0--><p class="row gap_md"><strong>type</strong> <!--[-1--><code data-lang="ts" class="svelte-jqsy8a inline"><!--[-1--><!----><span class="token_builtin">string</span><!----><!--]--></code><!--]--><!----></p><!--]--> <!--[0--><div class="row gap_md flex-wrap:wrap"><!--[0--><!--[--><span class="chip">readonly</span><!--]--><!--]--> <!--[-1--><!--]--></div><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--><!----></section><!--]--></section><!--]--><!----></article><!----></section><section><header><!----><h3 class="tome-section-header svelte-dz8ld7"><div class="flex:1"><!--[0--><div class="word-break:break-all">BackendConfig</div><!----><!--]--></div> <a aria-label="hashlink" class="hashlink  svelte-1aeep1w" href="#BackendConfig"><!--[-1-->#<!--]--></a> <span class="hashlink-scroll-target svelte-1aeep1w" id="BackendConfig" aria-hidden="true"></span><!----><!----></h3><!----></header><!----> <article id="BackendConfig"><p class="row justify-content:space-between"><!--[0--><a class="module-link chip " href="/docs/api/testing/cross_backend/backend_config.ts"><!--[-1-->testing/cross_backend/backend_config.ts<!--]--></a><!--]--><!----> <!--[0--><a class="chip" href="https://github.com/fuzdev/fuz_app/blob/main/src/lib/testing/cross_backend/backend_config.ts#L66" target="_blank" rel="noopener">view source</a><!--]--></p>  <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[0--><code data-lang="ts" class="svelte-jqsy8a"><!--[-1--><!----><span class="token_capitalized_identifier token_class_name">BackendConfig</span><!----><!--]--></code><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <code data-lang="ts" class="svelte-jqsy8a"><!--[-1--><!----><span class="token_special_keyword">import</span> <span class="token_import_type_keyword token_special_keyword">type</span> <span class="token_punctuation">{</span><span class="token_capitalized_identifier token_class_name">BackendConfig</span><span class="token_punctuation">}</span> <span class="token_special_keyword">from</span> <span class="token_string">'@fuzdev/fuz_app/testing/cross_backend/backend_config.js'</span><span class="token_punctuation">;</span><!----><!--]--></code><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Configuration for one spawnable test backend. Consumer factories
+other admin/keeper-gated cross-process tests. <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/cross_backend/spawn_backend.ts#spawn_backend"><!--[0--><!--[-1-->spawn_backend<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> deletes
+the file before each spawn, so a token a previous run left is never read.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--> <!--[0--><p class="row gap_md"><strong>type</strong> <!--[-1--><code data-lang="ts" class="svelte-jqsy8a inline"><!--[-1--><!----><span class="token_builtin">string</span><!----><!--]--></code><!--]--><!----></p><!--]--> <!--[0--><div class="row gap_md flex-wrap:wrap"><!--[0--><!--[--><span class="chip">readonly</span><!--]--><!--]--> <!--[-1--><!--]--></div><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--><!----></section><!--]--></section><!--]--><!----></article><!----></section><section><header><!----><h3 class="tome-section-header svelte-dz8ld7"><div class="flex:1"><!--[0--><div class="word-break:break-all">BackendConfig</div><!----><!--]--></div> <a aria-label="hashlink" class="hashlink  svelte-1aeep1w" href="#BackendConfig"><!--[-1-->#<!--]--></a> <span class="hashlink-scroll-target svelte-1aeep1w" id="BackendConfig" aria-hidden="true"></span><!----><!----></h3><!----></header><!----> <article id="BackendConfig"><p class="row justify-content:space-between"><!--[0--><a class="module-link chip " href="/docs/api/testing/cross_backend/backend_config.ts"><!--[-1-->testing/cross_backend/backend_config.ts<!--]--></a><!--]--><!----> <!--[0--><a class="chip" href="https://github.com/fuzdev/fuz_app/blob/main/src/lib/testing/cross_backend/backend_config.ts#L67" target="_blank" rel="noopener">view source</a><!--]--></p>  <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[0--><code data-lang="ts" class="svelte-jqsy8a"><!--[-1--><!----><span class="token_capitalized_identifier token_class_name">BackendConfig</span><!----><!--]--></code><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <code data-lang="ts" class="svelte-jqsy8a"><!--[-1--><!----><span class="token_special_keyword">import</span> <span class="token_import_type_keyword token_special_keyword">type</span> <span class="token_punctuation">{</span><span class="token_capitalized_identifier token_class_name">BackendConfig</span><span class="token_punctuation">}</span> <span class="token_special_keyword">from</span> <span class="token_string">'@fuzdev/fuz_app/testing/cross_backend/backend_config.js'</span><span class="token_punctuation">;</span><!----><!--]--></code><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Configuration for one spawnable test backend. Consumer factories
 (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->deno_backend_config()<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->rust_backend_config()<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) produce these and
 the runner consumes them through <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/cross_backend/spawn_backend.ts#spawn_backend"><!--[0--><!--[-1-->spawn_backend<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Path defaults match the standard fuz_app surface — Deno + Rust spine
 (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->zzz_server<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->fuz_forge_server<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->testing_spine_stub<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) all converge on
@@ -105,16 +106,16 @@ existing flags.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><
 			
 			<script>
 				{
-					__sveltekit_jm282q = {
+					__sveltekit_1dgwvn1 = {
 						base: "",
-						version: "a41945c6ebdc36dde9330f62abc3dda0bd40d00a"
+						version: "039287f1847523c260cb7a25b62ae2fe543e415d"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.CXlCZqzx.js").then(async (kit) => {
-						kit.init(__sveltekit_jm282q);
-						const app = await import("/_app/immutable/entry/app.DKiIIxGC.js");
+						kit.init(__sveltekit_1dgwvn1);
+						const app = await import("/_app/immutable/entry/app.IlXHKlrH.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],
