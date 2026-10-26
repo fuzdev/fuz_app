@@ -1354,7 +1354,9 @@ RPC surface, so each test starts from clean state without dropping the DB.
 The reset action factory is `create_testing_actions(deps, {session_options,
 daemon_token_state, reset_state})` — the consumer's test binary registers it
 with a `reset_state` closure that clears its own domain state (workspaces,
-terminals, etc.).
+terminals, domain tables, etc.). The closure runs first, before the auth wipe,
+so a domain table with a restricting FK to `actor` or `account` empties before
+the rows it references are deleted; it can't see the fresh keeper.
 
 A suite that reads audit rows goes through `list_audit_events`
 (`testing/cross_backend/audit_cross_helpers.ts`): it calls the

@@ -2087,22 +2087,25 @@ are `src/test/auth/cell_crud_parity.db.test.ts`
   `create_testing_actions(deps, options)` factory returning the
   `_testing_reset` RPC action. Test binaries register it on their RPC
   endpoint; `default_cross_process_setup` fires it unconditionally per
-  test. Handler DELETEs every auth-namespace row (no keeper-preserve
-  filter), resets `app_settings` to production defaults, flips
-  `bootstrap_lock.bootstrapped = true`, inline-seeds a fresh keeper via
-  `create_test_account_with_credentials` (same primitive in-process uses,
-  keeping write semantics in parity), seeds any `extra_accounts` at the
-  same bootstrap-equivalent step (the only path for roles like
-  `ROLE_KEEPER` whose `grant_paths` is bootstrap-only), queues the refresh
+  test. Handler first fires the consumer-supplied `reset_state(db)`
+  callback for domain-state reset — before the auth wipe, because domain
+  rows depend on auth rows (a domain table with a restricting FK to `actor`
+  must empty before the actor delete) — then DELETEs every auth-namespace
+  row (no keeper-preserve filter), resets `app_settings` to production
+  defaults, flips `bootstrap_lock.bootstrapped = true`, inline-seeds a fresh
+  keeper via `create_test_account_with_credentials` (same primitive
+  in-process uses, keeping write semantics in parity), queues the refresh
   of `DaemonTokenState.keeper_account_id` to the new row as a post-commit
-  effect (so a reset that rolls back — a throwing `reset_state`, a failed
-  commit — leaves the cache on the keeper still in the database, and the
-  next reset can still authenticate), then fires the
-  consumer-supplied `reset_state(db)` callback for domain-state reset —
-  passed the **transactional** `Db` the auth wipe ran on, so DB-domain
-  consumers (e.g. fuz_forge truncating its cell / fact / file tables) reset
-  on the same connection rather than a separately-pooled one that would
-  deadlock against this open transaction under the in-memory drivers. Auth
+  effect as soon as the keeper exists (so a reset that rolls back — a
+  failing extra seed, a failed commit — leaves the cache on the keeper
+  still in the database, and the next reset can still authenticate), then
+  seeds any `extra_accounts` at the same bootstrap-equivalent step (the
+  only path for roles like `ROLE_KEEPER` whose `grant_paths` is
+  bootstrap-only). `reset_state` is passed the **transactional** `Db` the
+  auth wipe then runs on, so DB-domain consumers (e.g. fuz_forge truncating
+  its cell / fact / file tables) reset on the same connection rather than a
+  separately-pooled one that would deadlock against this open transaction
+  under the in-memory drivers. Auth
   gates on `credential_types: ['daemon_token']` — effectively keeper-only
   without forcing the `actor: 'required'` ⟺ `acting?: ActingActor`
   biconditional. No free-form runtime grant action exists — see the

@@ -30,13 +30,16 @@ import '../assert_dev_env.ts';
  *
  * `_testing_reset` — full DB wipe + keeper re-seed + optional
  * secondary-account seeding. The
- * handler wipes every auth-namespace row (no keeper-preserve filter),
+ * handler first fires the consumer-supplied domain-state callback (domain
+ * rows depend on auth rows, so a domain table with a restricting FK to
+ * `actor` empties before the rows it references go), then wipes every
+ * auth-namespace row (no keeper-preserve filter),
  * flips `bootstrap_lock` back to its post-bootstrap shape, seeds a
  * fresh keeper account inline (reusing `create_test_account_with_credentials`
- * so cross-process matches in-process write semantics), seeds any
- * caller-requested `extra_accounts` (also direct-inserted at this
- * setup step), refreshes the daemon-token cache to point at the new
- * keeper, and fires the consumer-supplied domain-state callback. The
+ * so cross-process matches in-process write semantics), queues the
+ * daemon-token cache refresh to point at the new keeper once the reset
+ * commits, and seeds any caller-requested `extra_accounts` (also
+ * direct-inserted at this setup step). The
  * new keeper + secondary credentials return as the action output so
  * the per-test fixture closes over them.
  *
@@ -688,17 +691,22 @@ export interface CreateTestingActionsOptions {
 	 */
 	readonly daemon_token_state: DaemonTokenState;
 	/**
-	 * Consumer-supplied callback invoked after the auth-table reset, passed
-	 * the same transactional `Db` the auth wipes ran on. DB-domain consumers
+	 * Consumer-supplied callback invoked first, before the auth-table wipe and
+	 * keeper re-seed, passed the same transactional `Db` the auth wipes then
+	 * run on. It runs while the previous test's accounts and actors still
+	 * exist, so a domain table with a restricting FK to `actor` / `account`
+	 * empties before the auth wipe deletes what it references; it must not
+	 * depend on the fresh keeper, which doesn't exist yet. DB-domain consumers
 	 * (e.g. fuz_forge truncating its cell / fact / file tables) MUST use this
 	 * `db` rather than a separately-pooled connection — under the in-memory
-	 * drivers' single connection (pglet, PGlite) a second connection deadlocks against this still-open
-	 * transaction. `testing_zzz_server` clears in-memory workspace registry +
-	 * terminals + scoped-FS scratch (ignores `db`); the spine binaries
-	 * (`testing/cross_backend/full_spine_mount.ts` and the Rust `testing_spine_stub`) empty
-	 * the cell and fact tables. Runs inside the same RPC dispatch
-	 * as the auth-table writes, so a throw surfaces to the caller as a
-	 * JSON-RPC error and the per-test fixture short-circuits.
+	 * drivers' single connection (pglet, PGlite) a second connection deadlocks
+	 * against this still-open transaction. `testing_zzz_server` clears
+	 * in-memory workspace registry + terminals + scoped-FS scratch (ignores
+	 * `db`); the spine binaries (`testing/cross_backend/full_spine_mount.ts` and
+	 * the Rust `testing_spine_stub`) empty the cell and fact tables. Runs inside
+	 * the same RPC dispatch as the auth-table writes, so a throw rolls the whole
+	 * reset back and surfaces to the caller as a JSON-RPC error and the per-test
+	 * fixture short-circuits.
 	 */
 	readonly reset_state?: (db: Db) => Promise<void> | void;
 }
@@ -726,9 +734,19 @@ export const create_testing_actions = (
 	const log = deps.log;
 	return [
 		rpc_action(testing_reset_action_spec, async (input, ctx) => {
-			log.info('[_testing_reset] resetting auth state + re-seeding keeper');
+			log.info('[_testing_reset] resetting domain + auth state + re-seeding keeper');
 
-			// 1. Wipe every auth-namespace row. No keeper-preserve filter —
+			// 1. Fire domain-state reset (zzz workspaces/terminals/scratch,
+			//    fuz_forge cell/fact/file truncation, the spine binaries' cell +
+			//    fact wipe) first: domain rows depend on auth rows, so a domain
+			//    table with a restricting FK to `actor` would make the auth wipe
+			//    below fail once it holds a row.
+			//    Pass the transactional `ctx.db` so DB-domain truncation runs
+			//    on the same connection — a separate pool connection deadlocks
+			//    against this open transaction under the in-memory drivers.
+			if (reset_state) await reset_state(ctx.db);
+
+			// 2. Wipe every auth-namespace row. No keeper-preserve filter —
 			//    the fresh-keeper-per-test contract means mutation-cascade
 			//    tests (password change, revoke-all) and hardcoded-username
 			//    signup-uniqueness tests can't leak between cases.
@@ -746,7 +764,7 @@ export const create_testing_actions = (
 			await ctx.db.query('DELETE FROM actor');
 			await ctx.db.query('DELETE FROM account');
 
-			// 2. Reset singleton `app_settings` to production defaults
+			// 3. Reset singleton `app_settings` to production defaults
 			//    (matches in-process `_build_test_backend` behavior in
 			//    `app_server.ts`). Tests that flipped `open_signup` mid-run
 			//    revert.
@@ -755,7 +773,7 @@ export const create_testing_actions = (
 					'WHERE open_signup = true OR updated_at IS NOT NULL'
 			);
 
-			// 3. Flip `bootstrap_lock` to its post-bootstrap shape. Production
+			// 4. Flip `bootstrap_lock` to its post-bootstrap shape. Production
 			//    `bootstrap_account` flips this to `true` on success; the
 			//    in-process `bootstrap_test_keeper` mirrors the flip. We're
 			//    about to seed the keeper here, so the final state needs to
@@ -764,7 +782,7 @@ export const create_testing_actions = (
 			//    UPDATE.
 			await ctx.db.query('UPDATE bootstrap_lock SET bootstrapped = true WHERE id = 1');
 
-			// 4. Seed the fresh keeper inline. Reuses the same primitive
+			// 5. Seed the fresh keeper inline. Reuses the same primitive
 			//    in-process tests use (`create_test_account_with_credentials`)
 			//    so cross-process and in-process write semantics stay in
 			//    parity — same hash, same account+actor+role_grants+
@@ -782,7 +800,20 @@ export const create_testing_actions = (
 				roles: [ROLE_KEEPER, ROLE_ADMIN, ...(input.extra_keeper_roles ?? [])]
 			});
 
-			// 5. Seed any caller-requested extras. These are bootstrap-time
+			// 6. Refresh the daemon-token cache so subsequent daemon-token
+			//    requests resolve to the freshly seeded keeper. The
+			//    middleware's lazy-refresh path only fires when the cached
+			//    id is null, so the reset sets it — after the commit, queued as
+			//    soon as the keeper exists, so a reset that rolls back after it
+			//    (a failing extra seed, a failed COMMIT) leaves the cache on the
+			//    keeper still in the database rather than one that never
+			//    landed, and the next reset can still authenticate.
+			const keeper_account_id = keeper.account.id;
+			emit_after_commit(ctx, () => {
+				daemon_token_state.keeper_account_id = keeper_account_id;
+			});
+
+			// 7. Seed any caller-requested extras. These are bootstrap-time
 			//    secondaries — the bypass exists in the same cradle the
 			//    keeper does, not as a free-form runtime action.
 			const extras: Array<Awaited<ReturnType<typeof create_test_account_with_credentials>>> = [];
@@ -799,7 +830,7 @@ export const create_testing_actions = (
 				extras.push(seeded);
 			}
 
-			// 5b. Seed any additional keeper actors. Same bootstrap-cradle
+			// 8. Seed any additional keeper actors. Same bootstrap-cradle
 			//    bypass as extra_accounts — no production wire path mints a
 			//    second actor, so the multi-actor `acting` branches need this
 			//    direct insert. Order-preserving so the fixture can address
@@ -812,27 +843,6 @@ export const create_testing_actions = (
 				const seeded_actor = await create_test_extra_actor(ctx.db, keeper.account.id, name);
 				extra_actors.push({ id: seeded_actor.id, name: seeded_actor.name });
 			}
-
-			// 6. Refresh the daemon-token cache so subsequent daemon-token
-			//    requests resolve to the freshly seeded keeper. The
-			//    middleware's lazy-refresh path only fires when the cached
-			//    id is null, so the reset sets it — after the commit, so a
-			//    reset that rolls back (a throwing `reset_state`, a failed
-			//    COMMIT) leaves the cache on the keeper still in the database
-			//    rather than one that never landed, and the next reset can
-			//    still authenticate.
-			const keeper_account_id = keeper.account.id;
-			emit_after_commit(ctx, () => {
-				daemon_token_state.keeper_account_id = keeper_account_id;
-			});
-
-			// 7. Fire domain-state reset (zzz workspaces/terminals/scratch,
-			//    fuz_forge cell/fact/file truncation, the spine binaries' cell +
-			//    fact wipe).
-			//    Pass the transactional `ctx.db` so DB-domain truncation runs
-			//    on the same connection — a separate pool connection deadlocks
-			//    against this open transaction under the in-memory drivers.
-			if (reset_state) await reset_state(ctx.db);
 
 			return { ...keeper, extra_accounts: extras, extra_actors };
 		}),
