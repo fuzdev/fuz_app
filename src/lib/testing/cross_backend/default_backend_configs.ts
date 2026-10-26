@@ -18,7 +18,11 @@ import '../assert_dev_env.ts';
  *   and the `FUZ_TESTING_RESET_DB_ON_STARTUP=true` self-wipe gate.
  *
  * Both builders default `port_env_var` to `'PORT'`. Consumers whose
- * binary reads a different name (e.g. zzz's `ZZZ_PORT`) override.
+ * binary reads a different name (e.g. zzz's `ZZZ_PORT`) override. Both bind
+ * `HOST` to `DEFAULT_TEST_BACKEND_HOST` (`127.0.0.1`), and, given the name of
+ * the binary's daemon-token directory env var (`daemon_token_dir_env`), set it
+ * to the `{dir}` whose `{dir}/run/daemon_token` is the bootstrap's
+ * `daemon_token_path` (`to_daemon_token_dir`).
  *
  * Common across both families: `/api/rpc`, `/api/ws`, `/health`,
  * `/api/account/bootstrap`, `cookie_name: 'fuz_session'`, the standard
@@ -28,6 +32,8 @@ import '../assert_dev_env.ts';
  *
  * @module
  */
+
+import { basename, dirname } from 'node:path';
 
 import type { BackendBootstrapConfig, BackendConfig } from './backend_config.ts';
 import type { BackendCapabilities, FamilyDefaultCapabilities } from './capabilities.ts';
@@ -45,6 +51,46 @@ import {
 	SPINE_RPC_PATH,
 	SPINE_WS_PATH
 } from './spine_surface_constants.ts';
+
+/**
+ * The `HOST` both builders bind a backend to — loopback IPv4, since
+ * `localhost` can resolve to `::1` and a backend bound there misses a client
+ * that connects to `127.0.0.1` (the raw-socket suites, a git hook calling
+ * back). `base_url` stays `http://localhost:<port>`, which reaches it.
+ */
+export const DEFAULT_TEST_BACKEND_HOST = '127.0.0.1';
+
+/**
+ * The directory a binary writing its daemon token to `{dir}/run/daemon_token`
+ * is given, so the token lands at `daemon_token_path`.
+ *
+ * @param daemon_token_path - where the harness reads the token
+ * @returns the `{dir}` of that layout
+ * @throws Error when the path is not `.../run/daemon_token`, which no such
+ *   directory can produce
+ */
+export const to_daemon_token_dir = (daemon_token_path: string): string => {
+	const run_dir = dirname(daemon_token_path);
+	if (basename(daemon_token_path) !== 'daemon_token' || basename(run_dir) !== 'run') {
+		throw new Error(
+			`daemon_token_dir_env needs a daemon_token_path of the form {dir}/run/daemon_token, ` +
+				`got ${daemon_token_path}`
+		);
+	}
+	return dirname(run_dir);
+};
+
+/**
+ * The env entry `daemon_token_dir_env` names, pointing the binary at the
+ * directory whose layout puts the token at the bootstrap's `daemon_token_path`.
+ */
+const daemon_token_dir_entry = (
+	daemon_token_dir_env: string | undefined,
+	bootstrap: BackendBootstrapConfig
+): Record<string, string> =>
+	daemon_token_dir_env === undefined
+		? {}
+		: { [daemon_token_dir_env]: to_daemon_token_dir(bootstrap.daemon_token_path) };
 
 /** Options for `action_rate_limit_env`. */
 export interface ActionRateLimitEnvOptions {
@@ -159,6 +205,15 @@ export interface MakeDefaultTsBackendConfigOptions {
 	 * `create_account` path (e.g. fuz_forge uses `'fuz_forge_session'`).
 	 */
 	readonly cookie_name?: string;
+	/**
+	 * Env var naming the directory the binary writes its daemon token under
+	 * (`{dir}/run/daemon_token`), e.g. `'MY_APP_DAEMON_TOKEN_DIR'`. Given, it
+	 * is set to the directory that layout puts the token at the bootstrap's
+	 * `daemon_token_path` (`to_daemon_token_dir`) — the file `spawn_backend`
+	 * reads — and a path in another layout throws. Omit it for a binary that
+	 * derives the path otherwise.
+	 */
+	readonly daemon_token_dir_env?: string;
 }
 
 /**
@@ -180,8 +235,10 @@ export const make_default_ts_backend_config = (
 		paths = build_test_backend_paths(name),
 		bootstrap_overrides,
 		port_env_var = 'PORT',
-		cookie_name = 'fuz_session'
+		cookie_name = 'fuz_session',
+		daemon_token_dir_env
 	} = opts;
+	const bootstrap = build_default_bootstrap(paths, bootstrap_overrides);
 	return {
 		name,
 		start_command,
@@ -194,15 +251,16 @@ export const make_default_ts_backend_config = (
 		startup_timeout_ms: 30_000,
 		env: {
 			NODE_ENV: 'development',
-			HOST: 'localhost',
+			HOST: DEFAULT_TEST_BACKEND_HOST,
 			[port_env_var]: String(port),
 			DATABASE_URL: database_url,
 			SECRET_FUZ_COOKIE_KEYS: default_test_cookie_keys,
 			FUZ_ALLOWED_ORIGINS: 'http://localhost:*',
 			FUZ_BOOTSTRAP_TOKEN_PATH: paths.bootstrap_token_path,
+			...daemon_token_dir_entry(daemon_token_dir_env, bootstrap),
 			...extra_env
 		},
-		bootstrap: build_default_bootstrap(paths, bootstrap_overrides),
+		bootstrap,
 		capabilities
 	};
 };
@@ -249,6 +307,15 @@ export interface MakeDefaultRustBackendConfigOptions {
 	 * Must match the consumer's session config (see the TS builder's note).
 	 */
 	readonly cookie_name?: string;
+	/**
+	 * Env var naming the directory the binary writes its daemon token under
+	 * (`{dir}/run/daemon_token`), e.g. `'MY_APP_DAEMON_TOKEN_DIR'`. Given, it
+	 * is set to the directory that layout puts the token at the bootstrap's
+	 * `daemon_token_path` (`to_daemon_token_dir`) — the file `spawn_backend`
+	 * reads — and a path in another layout throws. Omit it for a binary that
+	 * derives the path otherwise.
+	 */
+	readonly daemon_token_dir_env?: string;
 }
 
 /**
@@ -271,8 +338,10 @@ export const make_default_rust_backend_config = (
 		bootstrap_overrides,
 		port_env_var = 'PORT',
 		rust_log = 'info',
-		cookie_name = 'fuz_session'
+		cookie_name = 'fuz_session',
+		daemon_token_dir_env
 	} = opts;
+	const bootstrap = build_default_bootstrap(paths, bootstrap_overrides);
 	return {
 		name,
 		start_command,
@@ -285,7 +354,7 @@ export const make_default_rust_backend_config = (
 		startup_timeout_ms: 120_000,
 		env: {
 			RUST_LOG: rust_log,
-			HOST: 'localhost',
+			HOST: DEFAULT_TEST_BACKEND_HOST,
 			[port_env_var]: String(port),
 			DATABASE_URL: database_url,
 			SECRET_FUZ_COOKIE_KEYS: default_test_cookie_keys,
@@ -298,9 +367,10 @@ export const make_default_rust_backend_config = (
 			// `fuz_db::run_migrations`. The `_testing_reset` RPC action
 			// (per-test reset) is orthogonal.
 			FUZ_TESTING_RESET_DB_ON_STARTUP: 'true',
+			...daemon_token_dir_entry(daemon_token_dir_env, bootstrap),
 			...extra_env
 		},
-		bootstrap: build_default_bootstrap(paths, bootstrap_overrides),
+		bootstrap,
 		capabilities
 	};
 };

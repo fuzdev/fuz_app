@@ -1863,6 +1863,33 @@ are `src/test/auth/cell_crud_parity.db.test.ts`
   `rust_spine_stub_backend_config()` as a convenience preset for the non-domain
   third spine consumer, but otherwise backend-specific paths and env are a
   consumer concern.
+- `testing/cross_backend/default_backend_configs.ts` —
+  `make_default_ts_backend_config` / `make_default_rust_backend_config`, the
+  family builders a consumer config composes: the env baseline (`HOST` bound
+  to `DEFAULT_TEST_BACKEND_HOST`, `127.0.0.1`; the port under
+  `port_env_var`; cookie keys; allowed origins; the bootstrap token path; the
+  Rust startup self-wipe), the default paths, and the required `capabilities`.
+  `daemon_token_dir_env` names the env var the binary reads its daemon-token
+  directory from, set to the `{dir}` whose `{dir}/run/daemon_token` is the
+  bootstrap's `daemon_token_path` (`to_daemon_token_dir`, which throws for a
+  path in another layout).
+- `testing/cross_backend/create_cross_backend_global_setup.ts` —
+  `create_cross_backend_global_setup({configs, derive_name?, provide_key?,
+  ensure_databases?})`, the single-backend `globalSetup` maker: the backend
+  name derived from the vitest project name selects a config, which is
+  spawned, bootstrapped and provided. `ensure_databases: true` first creates
+  the database the config's `postgres:` `env.DATABASE_URL` names
+  (`ensure_database_for_url`).
+- `testing/cross_backend/postgres_database.ts` — `ensure_database(database,
+  server_url?, deps?)` (idempotent `createdb` on the server the URL names, its
+  password passed in the environment; `createdb`'s already-exists refusal is
+  the quiet success case, `is_createdb_already_exists`, and any other failure
+  is reported through `deps.warn` — `console.warn` by default — with
+  `createdb`'s stderr, never thrown), `ensure_database_for_url(url, deps?)` (the
+  database a `postgres:` URL names; anything else left alone),
+  `with_database_name`, `to_maintenance_database_url`, `redact_database_url`
+  (a URL fit to print), `is_postgres_url`. The harness creates a database only
+  when a setup asks, so a test role needs no `CREATEDB` grant otherwise.
 - `testing/cross_backend/spawn_backend.ts` — `spawn_backend(config) => BackendHandle`.
   Refuses a port that already accepts connections, writes the bootstrap
   token, deletes a stale daemon-token file, spawns `detached: true` in its

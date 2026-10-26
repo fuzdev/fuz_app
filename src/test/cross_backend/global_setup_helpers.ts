@@ -18,6 +18,10 @@ import type { TestProject } from 'vitest/node';
 
 import type { BackendConfig } from '#lib/testing/cross_backend/backend_config.ts';
 import { bootstrap_backend } from '#lib/testing/cross_backend/bootstrap_backend.ts';
+import {
+	ensure_database_for_url,
+	is_postgres_url
+} from '#lib/testing/cross_backend/postgres_database.ts';
 import { serialize_bootstrapped_handle } from '#lib/testing/cross_backend/setup.ts';
 import {
 	RUST_SPINE_STUB_BIN_ENV,
@@ -85,9 +89,6 @@ export interface RustSpineGlobalSetupOptions extends RustSpineRebuildOptions {
 	readonly database_url?: string | null;
 }
 
-/** The URL protocols a Postgres connection string carries. */
-const POSTGRES_URL_PROTOCOLS: ReadonlySet<string> = new Set(['postgres:', 'postgresql:']);
-
 const resolve_workspace_dir = (override: string | undefined): string =>
 	override ?? process.env[RUST_WORKSPACE_DIR_ENV] ?? join(homedir(), 'dev', 'private_fuz');
 
@@ -104,32 +105,13 @@ const resolve_workspace_dir = (override: string | undefined): string =>
 export const resolve_rust_spine_stub_database_url = (): string => {
 	const from_env = process.env[RUST_SPINE_STUB_DATABASE_URL_ENV];
 	if (!from_env) return RUST_SPINE_STUB_DEFAULT_DATABASE_URL;
-	// `URL.canParse` alone admits a scheme-less `localhost:5432/db`, which it
-	// reads as protocol `localhost:` — the stub then refuses it as no
-	// connection string at all
-	if (!URL.canParse(from_env) || !POSTGRES_URL_PROTOCOLS.has(new URL(from_env).protocol)) {
+	if (!is_postgres_url(from_env)) {
 		throw new Error(
 			`${RUST_SPINE_STUB_DATABASE_URL_ENV} is not a valid URL — expected the form ` +
 				`postgres://user@host:port/database`
 		);
 	}
 	return from_env;
-};
-
-/**
- * `database_url` with its database replaced by `database` — how a project
- * that spawns a backend of its own beside the single-backend stub lands on
- * the same server under a database nothing else uses, so one env var moves
- * every project to another server and no two share a database.
- *
- * @param database_url - a `postgres://` URL on the target server
- * @param database - the database name to put in it
- * @returns the URL naming `database` on the same server
- */
-export const with_database_name = (database_url: string, database: string): string => {
-	const url = new URL(database_url);
-	url.pathname = `/${database}`;
-	return url.href;
 };
 
 /**
@@ -296,65 +278,10 @@ export const prepare_rust_spine_backend = (options: RustSpineGlobalSetupOptions)
 		options.database_url === undefined
 			? resolve_rust_spine_stub_database_url()
 			: options.database_url;
-	if (database_url !== null) {
-		// the stub connects to the database its URL names, so that is the one to
-		// ensure; a URL naming none leaves the choice to the server, and nothing
-		// here knows what to create
-		const database = decodeURIComponent(new URL(database_url).pathname.slice(1));
-		if (database) ensure_database(database, database_url);
-	}
+	// the stub connects to the database its URL names, so that is the one to
+	// ensure; a URL naming none leaves the choice to the server
+	if (database_url !== null) ensure_database_for_url(database_url);
 };
-
-/**
- * Create a Postgres database when it is missing, with `createdb`.
- *
- * Which server it lands on depends on `server_url`. Given one, the database is
- * created on the server that URL names: `createdb` connects through the URL
- * with its database swapped for the `postgres` maintenance database, so host,
- * port, role and query parameters all come from the URL. Without one,
- * `createdb` reads the libpq environment (`PGHOST` / `PGPORT` / `PGUSER`), and
- * the caller is responsible for that environment naming the server its URL
- * does.
- *
- * Idempotent and silent: `createdb` errors when the database already exists,
- * and that error is ignored along with every other (no `createdb` on PATH, no
- * server, a role that may not create databases) — whatever connects next
- * reports a database that is really missing. The shipped harness never issues
- * `CREATE DATABASE` itself (avoids forcing a `CREATEDB` grant on the test
- * role); this is the runner doing it once.
- *
- * @param database - the database name
- * @param server_url - a `postgres://` URL on the server to create it on; its database name is ignored
- */
-export const ensure_database = (database: string, server_url?: string): void => {
-	const args = [database];
-	const env = { ...process.env };
-	if (server_url !== undefined) {
-		const url = new URL(to_maintenance_database_url(server_url));
-		// a password goes to `createdb` in its environment, not its arguments,
-		// which any local user can read from the process list
-		const password = url.searchParams.get('password') ?? decodeURIComponent(url.password);
-		if (password) env.PGPASSWORD = password;
-		url.password = '';
-		url.searchParams.delete('password');
-		args.unshift(`--maintenance-db=${url.href}`);
-	}
-	try {
-		execFileSync('createdb', args, { stdio: 'ignore', env });
-	} catch {
-		// already exists, or it could not be created — see the doc above
-	}
-};
-
-/**
- * The URL `createdb` connects through to create a database on the server
- * `server_url` names — the same URL with its database replaced by `postgres`.
- *
- * @param server_url - a `postgres://` URL on the target server
- * @returns the URL of that server's `postgres` maintenance database
- */
-export const to_maintenance_database_url = (server_url: string): string =>
-	with_database_name(server_url, 'postgres');
 
 /**
  * Like `make_spine_global_setup`, but first makes the Rust spine

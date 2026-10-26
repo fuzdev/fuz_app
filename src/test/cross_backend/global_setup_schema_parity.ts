@@ -41,6 +41,12 @@ import {
 	RUST_SPINE_STUB_DATABASE_URL_ENV,
 	rust_spine_stub_backend_config
 } from '#lib/testing/cross_backend/rust_spine_stub_backend_config.ts';
+import {
+	ensure_database,
+	redact_database_url,
+	to_maintenance_database_url,
+	with_database_name
+} from '#lib/testing/cross_backend/postgres_database.ts';
 import { reset_public_schema } from '#lib/testing/db.ts';
 import { create_db } from '#lib/db/create_db.ts';
 import { pg_error_code } from '#lib/db/pg_error.ts';
@@ -48,12 +54,9 @@ import type { TestProject } from 'vitest/node';
 
 import './cross_test_types.ts';
 import {
-	ensure_database,
 	prepare_rust_spine_backend,
 	resolve_rust_spine_stub_database_url,
-	RUST_SPINE_STUB_CRATE,
-	to_maintenance_database_url,
-	with_database_name
+	RUST_SPINE_STUB_CRATE
 } from './global_setup_helpers.ts';
 
 /**
@@ -90,19 +93,6 @@ const resolve_parity_database_urls = (): { ts: string; stub: string } => {
 /** A connection failure's text — a refused connection carries a `code` and an empty message. */
 const describe_error = (error: unknown): string =>
 	(error instanceof Error && error.message) || pg_error_code(error) || String(error);
-
-/**
- * A database URL fit to print: the password, when there is one, replaced.
- * The whole URL rather than its host, which is empty for a socket URL that
- * names its server in the query string.
- */
-const redact_database_url = (database_url: string): string => {
-	const url = new URL(database_url);
-	if (url.password) url.password = 'REDACTED';
-	// `pg` and libpq also take the password as a query parameter
-	if (url.searchParams.has('password')) url.searchParams.set('password', 'REDACTED');
-	return url.href;
-};
 
 /**
  * Drop and recreate the `public` schema of the TS leg's database, so the spine

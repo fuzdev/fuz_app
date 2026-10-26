@@ -181,8 +181,8 @@ export const ts_spine_node_backend_config = (
 			start_command: ['gro', 'run', TS_SPINE_NODE_ENTRY],
 			database_url,
 			paths,
+			daemon_token_dir_env: TS_SPINE_DIR_ENV,
 			extra_env: {
-				[TS_SPINE_DIR_ENV]: paths.root,
 				...login_rate_limit_env(enable_login_rate_limit),
 				...action_rate_limit_env(options)
 			},
@@ -216,8 +216,8 @@ export const ts_spine_bun_backend_config = (
 			start_command: ['bun', 'run', TS_SPINE_BUN_ENTRY],
 			database_url,
 			paths,
+			daemon_token_dir_env: TS_SPINE_DIR_ENV,
 			extra_env: {
-				[TS_SPINE_DIR_ENV]: paths.root,
 				...login_rate_limit_env(enable_login_rate_limit),
 				...action_rate_limit_env(options)
 			},
@@ -268,8 +268,8 @@ export const ts_spine_deno_backend_config = (
 			],
 			database_url,
 			paths,
+			daemon_token_dir_env: TS_SPINE_DIR_ENV,
 			extra_env: {
-				[TS_SPINE_DIR_ENV]: paths.root,
 				...login_rate_limit_env(enable_login_rate_limit),
 				...action_rate_limit_env(options)
 			},

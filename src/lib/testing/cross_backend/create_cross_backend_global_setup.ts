@@ -19,6 +19,7 @@ import '../assert_dev_env.ts';
  *
  * export default create_cross_backend_global_setup({
  *   configs: {deno: deno_backend_config, rust: rust_backend_config},
+ *   ensure_databases: true,
  * });
  * ```
  *
@@ -34,6 +35,7 @@ import type { TestProject } from 'vitest/node';
 
 import type { BackendConfig } from './backend_config.ts';
 import { bootstrap_backend } from './bootstrap_backend.ts';
+import { ensure_database_for_url } from './postgres_database.ts';
 import { serialize_bootstrapped_handle } from './setup.ts';
 
 /**
@@ -62,6 +64,16 @@ export interface CrossBackendGlobalSetupOptions {
 	 * `ProvidedContext`; augment it yourself for another key.
 	 */
 	readonly provide_key?: string;
+	/**
+	 * Create the database the selected config's `env.DATABASE_URL` names, on
+	 * the server it names, when it is missing and the URL is `postgres:`
+	 * (`ensure_database_for_url` — idempotent `createdb`; a URL like
+	 * `memory://` is left alone). Off by default, so a test role without
+	 * `CREATEDB` is never required unless the setup asks.
+	 *
+	 * @default false
+	 */
+	readonly ensure_databases?: boolean;
 }
 
 /**
@@ -71,7 +83,8 @@ export interface CrossBackendGlobalSetupOptions {
 export const create_cross_backend_global_setup = ({
 	configs,
 	derive_name = (project_name) => project_name.replace(DEFAULT_PROJECT_NAME_PREFIX, ''),
-	provide_key = 'backend_handle'
+	provide_key = 'backend_handle',
+	ensure_databases = false
 }: CrossBackendGlobalSetupOptions): ((project: TestProject) => Promise<() => Promise<void>>) => {
 	return async (project) => {
 		const name = derive_name(project.name);
@@ -82,7 +95,10 @@ export const create_cross_backend_global_setup = ({
 					`(derived name '${name}') — expected one of: ${Object.keys(configs).join(', ')}`
 			);
 		}
-		const bootstrapped = await bootstrap_backend(factory());
+		const config = factory();
+		const database_url = config.env.DATABASE_URL;
+		if (ensure_databases && database_url !== undefined) ensure_database_for_url(database_url);
+		const bootstrapped = await bootstrap_backend(config);
 		// vitest's `provide` is keyed on the consumer-augmented `ProvidedContext`;
 		// the generic key is a plain string, so cast past the keyof constraint.
 		(project.provide as (key: string, value: unknown) => void)(

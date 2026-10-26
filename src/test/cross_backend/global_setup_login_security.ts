@@ -27,14 +27,14 @@
 import { create_dual_spawn_global_setup } from '#lib/testing/cross_backend/create_dual_spawn_global_setup.ts';
 import { ts_spine_node_backend_config } from '#lib/testing/cross_backend/ts_spine_backend_config.ts';
 import { rust_spine_stub_backend_config } from '#lib/testing/cross_backend/rust_spine_stub_backend_config.ts';
+import { with_database_name } from '#lib/testing/cross_backend/postgres_database.ts';
 import type { TestProject } from 'vitest/node';
 
 import './cross_test_types.ts';
 import {
 	prepare_rust_spine_backend,
 	resolve_rust_spine_stub_database_url,
-	RUST_SPINE_STUB_CRATE,
-	with_database_name
+	RUST_SPINE_STUB_CRATE
 } from './global_setup_helpers.ts';
 
 /**

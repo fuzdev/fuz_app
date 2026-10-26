@@ -20,12 +20,9 @@ import '../assert_dev_env.ts';
  * operators / CI cache the binary across runs for fast spawns.
  *
  * **Operator setup** — the target Postgres database must exist before the
- * harness runs (the harness never issues `CREATE DATABASE`, to avoid
- * forcing a `CREATEDB` grant on the test role):
- *
- * ```bash
- * createdb fuz_app_test_rust_spine_stub 2>/dev/null || true
- * ```
+ * stub boots. The harness creates it only when a setup asks
+ * (`ensure_database_for_url`, or `create_cross_backend_global_setup`'s
+ * `ensure_databases`), so a test role needs no `CREATEDB` grant otherwise.
  *
  * `FUZ_TESTING_RUST_SPINE_STUB_DATABASE_URL` points the stub at another
  * server (e.g. a scratch cluster on a spare port).
@@ -212,12 +209,12 @@ export const rust_spine_stub_backend_config = (
 		port_env_var: 'FUZ_RUST_SPINE_STUB_PORT',
 		rust_log: 'info,testing_spine_stub=info',
 		paths,
+		// The binary writes its daemon-token JSON to
+		// `{FUZ_RUST_SPINE_STUB_DIR}/run/daemon_token`; the builder anchors the
+		// dir to `paths.root`, which makes that `paths.daemon_token_path`, the
+		// file `spawn_backend` reads after the health probe.
+		daemon_token_dir_env: 'FUZ_RUST_SPINE_STUB_DIR',
 		extra_env: {
-			// The binary writes its daemon-token JSON to
-			// `{FUZ_RUST_SPINE_STUB_DIR}/run/daemon_token`; anchoring the dir to
-			// `paths.root` makes that equal `paths.daemon_token_path`, which
-			// `spawn_backend` reads after the health probe.
-			FUZ_RUST_SPINE_STUB_DIR: paths.root,
 			// Absolute path to the committed spine `expected_schema.json` — the
 			// stub's `/ready` gate introspects the live DB against it. The SAME
 			// file the TS spine reads, so the two backends share one cross-impl

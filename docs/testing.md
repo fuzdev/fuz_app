@@ -1148,9 +1148,27 @@ import { create_cross_backend_global_setup } from '@fuzdev/fuz_app/testing/cross
 import { deno_backend_config, rust_backend_config } from './my_backend_config.ts';
 
 export default create_cross_backend_global_setup({
-	configs: { deno: deno_backend_config, rust: rust_backend_config }
+	configs: { deno: deno_backend_config, rust: rust_backend_config },
+	// `createdb` for each config's `postgres:` DATABASE_URL, when it's missing
+	ensure_databases: true
 });
 ```
+
+The backend configs come from `make_default_rust_backend_config` /
+`make_default_ts_backend_config` (`testing/cross_backend/default_backend_configs.ts`),
+which own the env baseline: `HOST` is loopback IPv4
+(`DEFAULT_TEST_BACKEND_HOST`, `127.0.0.1` — `localhost` can resolve to `::1`),
+the port under `port_env_var`, the cookie keys, the allowed origins, the
+bootstrap token path, and — given `daemon_token_dir_env`, the name of the env
+var your binary reads its daemon-token directory from — that directory set so
+`{dir}/run/daemon_token` is the `daemon_token_path` `spawn_backend` reads
+(`to_daemon_token_dir`; a path in another layout throws). With
+`ensure_databases`, the database a config's `postgres:` `DATABASE_URL` names is
+created on the server it names when it's missing (idempotent `createdb`;
+`ensure_database_for_url` in `testing/cross_backend/postgres_database.ts` is
+the same for a setup of your own), so there is no manual `createdb` step. The
+same module has `with_database_name`, `to_maintenance_database_url` and
+`redact_database_url` for a setup that runs a second backend beside the first.
 
 ```ts
 // spine_suites.cross.test.ts — every shipped suite the capabilities admit
