@@ -1,5 +1,0 @@
----
-'@fuzdev/fuz_app': minor
----
-
-break: `CellGetInput`, `CellFieldListInput` and `CellItemListInput` drop their top-level `.refine()`, so each is a plain `z.strictObject` that admits `{}` and, for the relation lists, both endpoints; their handlers refuse those requests as `invalid_params` carrying the declared reason (`cell_get_requires_id_or_path`, `cell_field_list_requires_source_or_target`, `cell_item_list_requires_parent_or_child`), as the Rust spine does, where the schema step used to answer a reason-less `invalid params`; the typed client keeps their input required — each carries `.meta({empty_input_handler_guarded: true})` (`SchemaFieldMeta`, read by `is_empty_input_handler_guarded` in `schema_meta.ts`, which a consumer sets on its own handler-guarded inputs), and `action_input_is_optional` (`actions/action_codegen.ts`) is the rule codegen emits `input?:` by, which an input-shape invariant test should read too (skipping the marked inputs); the key also appears in those inputs' generated JSON Schema, so a committed attack-surface snapshot listing them needs regenerating
