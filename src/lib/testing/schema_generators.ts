@@ -172,8 +172,22 @@ export const generate_valid_value = (field: ZodFieldInfo, field_schema: z.ZodTyp
 			if (format === 'date-time') return '2020-01-01T00:00:00.000Z';
 			return generate_valid_string(field_schema);
 		case 'number':
-		case 'int':
-			return 1;
+		case 'int': {
+			// 1, unless the schema's bounds rule it out (`.negative()`, `.min(10)`)
+			for (const candidate of [1, -1, 0]) {
+				if (field_schema.safeParse(candidate).success) return candidate;
+			}
+			try {
+				const json = z.toJSONSchema(field_schema) as Record<string, unknown>;
+				if (typeof json.minimum === 'number') return Math.ceil(json.minimum);
+				if (typeof json.exclusiveMinimum === 'number') return Math.floor(json.exclusiveMinimum) + 1;
+				if (typeof json.maximum === 'number') return Math.floor(json.maximum);
+				if (typeof json.exclusiveMaximum === 'number') return Math.ceil(json.exclusiveMaximum) - 1;
+			} catch {
+				// no bounds to read
+			}
+			return 1; // fall through — generate_valid_body will report the failure
+		}
 		case 'boolean':
 			return true;
 		case 'array': {

@@ -94,7 +94,7 @@ export const rpc_get_side_effects_reason = (method: string): string =>
  * after the method lookup and before authorization), a batch array is
  * refused `invalid_request` with `id: null` (the envelope parse runs first,
  * and batches are unsupported), and a `GET` with non-object params on a
- * protected read is the 401 (params validation runs after authorization).
+ * read requiring an identity is the 401 (params validation runs after authorization).
  *
  * @param endpoint - the endpoint from the generated surface
  * @param options - methods never chosen
@@ -207,8 +207,12 @@ export const create_rpc_envelope_cases = (
 	}
 
 	// params validation runs after authorization: an anonymous non-object
-	// `params` hears the 401 of any anonymous call, not a 400 about its input
-	const protected_read = eligible.find((r) => !r.side_effects && !is_public_auth(r.auth));
+	// `params` hears the 401 of any anonymous call, not a 400 about its input.
+	// The read must require an identity — an identity-optional one admits the
+	// anonymous caller, whose params validation then refuses
+	const protected_read = eligible.find(
+		(r) => !r.side_effects && (r.auth.account === 'required' || r.auth.actor === 'required')
+	);
 	if (protected_read) {
 		cases.push({
 			name: 'ordering: anonymous GET non-object params → 401, not invalid_params',
