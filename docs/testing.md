@@ -1175,6 +1175,34 @@ describe_spine_cross_suites(handle, {
 });
 ```
 
+A consumer served by the Rust spine builds its declared surface from its own
+action specs, since the spine routes the usual such server mounts are the same
+whatever its domain:
+
+```ts
+import {
+	create_rust_spine_consumer_rpc_endpoints,
+	create_rust_spine_consumer_surface_spec
+} from '@fuzdev/fuz_app/testing/cross_backend/rust_spine_consumer_surface.ts';
+
+const surface_options = {
+	session_options: my_session_options,
+	domain_action_specs: all_my_action_specs, // protocol and notification specs are skipped
+	roles: my_roles,
+	exclude_methods: ['my_refined_input_method'] // ones the generic round-trip can't drive
+};
+const surface_source = create_rust_spine_consumer_surface_spec(surface_options);
+const rpc_endpoints = create_rust_spine_consumer_rpc_endpoints(surface_options);
+```
+
+It declares `/health`, the routes `fuz_auth::account_router` mounts
+(`ACCOUNT_ROUTER_PATHS` — no `/verify`, which only the TS spine serves),
+signup, bootstrap, and one RPC endpoint with the standard actions, any
+`extra_rpc_actions` (opt-in families such as `create_actor_lookup_actions`),
+and the domain specs. `host_gate: true` declares the `host_validation` layer,
+for a server that turns on the spine's opt-in host gate. A server without a
+signup router (a single-keeper daemon) is not this shape.
+
 The call runs each suite in `SUITE_NAMES` (`testing/cross_backend/spine_suites.ts`),
 named by its module, with options from the handle: the paths, cookie name and
 capabilities from `handle.config` (`to_cross_suite_options`), and each suite's

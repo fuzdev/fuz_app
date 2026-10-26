@@ -1240,6 +1240,27 @@ spine's own roles (`cell_grant_role`'s `cell_editor`, the `participant` of
 backend's role registry, or an `exclude`. fuz_app's own wiring is
 `src/test/cross_backend/spine_suites.cross.test.ts`.
 
+### `cross_backend/rust_spine_consumer_surface.ts` — `create_rust_spine_consumer_surface_spec`
+
+The declared surface of a consumer served by the Rust spine, for its cross
+suites: `create_rust_spine_consumer_surface_spec({session_options,
+domain_action_specs, extra_rpc_actions?, roles?, exclude_methods?,
+rpc_path?, host_gate?})`, built on `create_test_app_surface_spec` from the hono-free route
+shapes. It declares `/health`, the `ACCOUNT_ROUTER_PATHS` under
+`/api/account` (`/status`, `/login`, `/logout`, `/password` — what
+`fuz_auth::account_router` mounts, so the TS-only `/verify` stays off), signup,
+bootstrap as a `surface_only` shape, the daemon-token layer the consumer test
+binaries wire, a `host_validation` stub layer at the head of the middleware
+list when `host_gate` says the server turns on the spine's opt-in host gate
+(default off), and one RPC endpoint: the standard actions (over `roles`), the
+`extra_rpc_actions` (opt-in families built against the stub context), then the
+request-response, non-protocol `domain_action_specs` minus `exclude_methods`
+(methods the spec-derived suites can't drive; an entry naming no domain spec
+throws). `create_rust_spine_consumer_rpc_endpoints(options)` is that endpoint
+alone, for `describe_spine_cross_suites`'s `rpc_endpoints`. Handlers are
+no-ops — live dispatch happens in the spawned binary. A server mounting no
+signup router (a single-keeper daemon) is not this shape.
+
 ### `cross_backend/provided_context.ts` — `inject_backend_handle`
 
 Augments vitest's `ProvidedContext` with the keys the shipped global setups
