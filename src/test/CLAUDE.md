@@ -225,7 +225,12 @@ Rust stub's tracked divergences as `overrides`, nothing excluded. A suite added
 to `SUITE_NAMES` runs on every backend with no file of its own, and none runs
 twice. Beside it sit the spine-specific extras: the conformance runner over the
 case files, the notification suite again on the role-gated endpoint, the
-reset-isolation pair, and the bootstrap-token probe. What each covers — a suite
+reset-isolation pair, the bootstrap-token probe, and — under
+`cross_backend_ts_node` alone (`NODE_ONLY_CROSS_TESTS` in
+`cross_backend_projects.ts`), since the option paths are the harness's —
+`builtin_roles.cross.test.ts`, the role-shaped suites on the builtin roles a
+backend with no app roles uses (`cell_grant_role` on `keeper`, the conferral
+suites on `admin`). What each covers — a suite
 named by its module, a file by its name:
 `standard` (the `describe_standard_cross_process_tests` bundle —
 HTTP + RPC), `ws_round_trip` (the real-upgrade
@@ -456,7 +461,9 @@ anonymous 401 and empty-`ids` 400 are table rows, and so is all of
 `actor_search`, in `conformance_actor_cases.ts`), and `app_settings` (the `open_signup` effect —
 the admin `app_settings_update` toggle then an anonymous `POST /signup`,
 proving the signup handler reads the toggle fresh from the database), and
-`cell_grant_role` (role-shaped `cell_grant` parity — the
+`cell_grant_role` (role-shaped `cell_grant` parity, on the spine's
+`cell_editor` — the role, like the conferred one of the two `role_grant_*`
+suites, is the default of `describe_spine_cross_suites`'s `suite_roles` — the
 role-validity gate: admit holder, exclude non-holder, reject unregistered role,
 editor-level edit, and the `cell_list shared_with:'me'` **role-admit** branch
 (the `caller_role_grants` CTE arm, with an ungranted control cell — the one

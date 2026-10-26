@@ -1234,10 +1234,18 @@ consumer writes a file per suite, and a suite added here never reaches it.
   field — provide it or exclude the suite.
 
 Each suite reads its own capability flags, so a backend's truthful
-`BackendConfig.capabilities` decides what runs. A suite that hardcodes the
-spine's own roles (`cell_grant_role`'s `cell_editor`, the `participant` of
-`role_grant_offer_lifecycle` and `role_grant_participation`) needs them in the
-backend's role registry, or an `exclude`. fuz_app's own wiring is
+`BackendConfig.capabilities` decides what runs. The role-shaped suites default
+to the spine's own roles — `cell_grant_role`'s `cell_editor`, the
+`participant` `role_grant_offer_lifecycle` offers and
+`role_grant_participation` confers — and take another through `suite_roles`
+(`SpineSuiteRoles`: `cell_grant`, `conferral`), which the call also seeds on
+the holder each needs (set it there, not in `overrides`, which would leave the
+seed on the default). A backend with only the builtin roles passes
+`{cell_grant: ROLE_KEEPER, conferral: ROLE_ADMIN}`: keeper reach is not admin
+reach, so every `cell_grant_role` arm still turns on the grant, while an admin
+views and edits every cell — `describe_cell_grant_role_cross_tests` refuses
+`ROLE_ADMIN` — and the scoped-assign case of `role_grant_participation` skips
+for a builtin. fuz_app's own wiring is
 `src/test/cross_backend/spine_suites.cross.test.ts`.
 
 ### `cross_backend/rust_spine_consumer_surface.ts` — `create_rust_spine_consumer_surface_spec`
@@ -2631,6 +2639,11 @@ The replay cases count audit rows behind `_testing_drain_effects`, so the
 backend must mount it — every spine binary does; an in-process leg mounts
 `create_testing_drain_effects_action` over an emitter built with
 `track_inflight: true` (`conformance_participation.db.test.ts`).
+`role` (default `SPINE_PARTICIPANT_ROLE`) names the role conferred, which must
+be admin-grantable in the backend's registry; `scope_kind` (default `'space'`,
+or `null` for a builtin role) is the scope the scoped-assign case uses, and
+`null` skips it. A backend with only the builtin roles runs the suite with
+`ROLE_ADMIN` — the scoped case skips, as a builtin is global-only.
 
 Both legs run in-process (`conformance_participation.db.test.ts`, plain
 `gro test`) and cross-process (`conformance_participation.cross.test.ts`, TS
@@ -2641,7 +2654,7 @@ Cited property: `docs/identity.md` + the role-gated-participation design
 
 ### Offer decline + retract refusals — `cross_backend/role_grant_offer_lifecycle.ts`
 
-`describe_role_grant_offer_lifecycle_cross_tests({setup_test, rpc_path?})` —
+`describe_role_grant_offer_lifecycle_cross_tests({setup_test, rpc_path?, role?})` —
 the error paths of the two verbs that end a pending offer without a grant,
 which the WS notification suite drives only on the happy path. Canonical
 answers, from the handlers and the queries behind them
@@ -2666,8 +2679,9 @@ answers, from the handlers and the queries behind them
 
 The single-request rows — decline and retract of an id naming no offer → 404
 — are in the conformance security slate, so the differential sends them to
-both spines. The keeper is the grantor and offers `SPINE_PARTICIPANT_ROLE`;
-ungated. The
+both spines. The keeper is the grantor and offers `role` — an admin-grantable
+role, `SPINE_PARTICIPANT_ROLE` by default; `ROLE_ADMIN` serves a backend with
+only the builtin roles. Ungated. The
 in-process leg is on the drained setup of `conformance_participation.db.test.ts`.
 
 ### Building a TS test-server binary — `testing_server_core.ts` + adapters

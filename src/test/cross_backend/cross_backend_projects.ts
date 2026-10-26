@@ -83,14 +83,22 @@ const DUAL_SPAWN_PROJECTS: ReadonlyArray<CrossBackendProjectOptions> = [
 
 const DUAL_SPAWN_TESTS = DUAL_SPAWN_PROJECTS.flatMap((project) => project.include ?? []);
 
+/**
+ * Single-backend files that run under `cross_backend_ts_node` alone: they pin
+ * harness option paths that are the same on every backend, which the
+ * per-backend suites already cover there.
+ */
+const NODE_ONLY_CROSS_TESTS = ['src/test/cross_backend/builtin_roles.cross.test.ts'];
+
 const single_backend_project = (
 	name: string,
-	global_setup: string
+	global_setup: string,
+	{ with_node_only = false }: { with_node_only?: boolean } = {}
 ): CrossBackendProjectOptions => ({
 	name,
 	global_setup,
 	include: CROSS_BACKEND_TESTS,
-	exclude: DUAL_SPAWN_TESTS
+	exclude: with_node_only ? DUAL_SPAWN_TESTS : [...DUAL_SPAWN_TESTS, ...NODE_ONLY_CROSS_TESTS]
 });
 
 /** Every cross project, in the order `run_cross.ts` reports them. */
@@ -101,7 +109,8 @@ export const CROSS_BACKEND_PROJECTS: ReadonlyArray<CrossBackendProjectOptions> =
 	),
 	single_backend_project(
 		'cross_backend_ts_node',
-		'./src/test/cross_backend/global_setup_ts_node.ts'
+		'./src/test/cross_backend/global_setup_ts_node.ts',
+		{ with_node_only: true }
 	),
 	single_backend_project(
 		'cross_backend_ts_deno',

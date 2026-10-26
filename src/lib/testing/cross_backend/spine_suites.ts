@@ -27,6 +27,9 @@ import '../assert_dev_env.ts';
  *   throws at collection.
  * - `rpc_success_fixtures` / `rpc_skip_methods` / `rpc_input_overrides` go to
  *   the standard bundle's RPC round-trip.
+ * - `suite_roles` names the roles the role-shaped suites use when the backend's
+ *   registry lacks the spine's own (`cell_editor`, `participant`); the call
+ *   seeds the holder each needs.
  *
  * **Inputs the handle doesn't carry.** The declared surface (`surface_source`,
  * `session_options`, `rpc_endpoints`, `roles`) is a required option. Paths and
@@ -79,7 +82,8 @@ import { describe_cell_gated_create_cross_tests } from './cell_gated_create.ts';
 import {
 	CELL_EDITOR_ROLE,
 	CELL_ROLE_HOLDER_USERNAME,
-	describe_cell_grant_role_cross_tests
+	describe_cell_grant_role_cross_tests,
+	type CellGrantRoleCrossTestOptions
 } from './cell_grant_role.ts';
 import { describe_cell_moderate_cross_tests } from './cell_moderate.ts';
 import { describe_cell_ref_admission_cross_tests } from './cell_ref_admission.ts';
@@ -296,7 +300,7 @@ export interface SuiteOptionsMap {
 	body_size_smuggling: BodySizeSmugglingCrossTestOptions;
 	cell_crud: RpcPathCapabilityGatedCrossSuiteOptions;
 	cell_gated_create: RpcPathCapabilityGatedCrossSuiteOptions;
-	cell_grant_role: RpcPathCapabilityGatedCrossSuiteOptions;
+	cell_grant_role: CellGrantRoleCrossTestOptions;
 	cell_moderate: RpcPathCapabilityGatedCrossSuiteOptions;
 	cell_ref_admission: RpcPathCapabilityGatedCrossSuiteOptions;
 	cell_relations: RpcPathCapabilityGatedCrossSuiteOptions;
@@ -377,6 +381,27 @@ export const to_cross_suite_options = (
 	return { capabilities, base_url, rpc_path, ws_path, sse_path, cookie_name };
 };
 
+/**
+ * The roles the role-shaped suites use, for a backend whose registry lacks
+ * the spine's own. Set them here rather than in `overrides`: the call seeds
+ * the holder each needs.
+ */
+export interface SpineSuiteRoles {
+	/**
+	 * The role `cell_grant_role`'s grants name, seeded on its holder at reset.
+	 * Default `SPINE_CELL_EDITOR_ROLE`. `ROLE_KEEPER` serves a backend with only
+	 * the builtin roles; `ROLE_ADMIN` can't (an admin reaches every cell).
+	 */
+	readonly cell_grant?: string;
+	/**
+	 * The admin-grantable role `role_grant_offer_lifecycle` offers and
+	 * `role_grant_participation` confers. Default `SPINE_PARTICIPANT_ROLE`;
+	 * `ROLE_ADMIN` serves a backend with only the builtin roles (the scoped
+	 * assign case then skips, as a builtin is global-only).
+	 */
+	readonly conferral?: string;
+}
+
 /** Options for `describe_spine_cross_suites`. */
 export interface SpineCrossSuitesOptions {
 	/** The declared surface — the standard bundle and `rpc_adversarial` enumerate it. */
@@ -401,6 +426,8 @@ export interface SpineCrossSuitesOptions {
 	readonly exclude?: Readonly<Partial<Record<SuiteName, string>>>;
 	/** Per-suite option overrides, a shallow merge over what the handle gives. */
 	readonly overrides?: SuiteOverrides;
+	/** The roles the role-shaped suites use, when the backend lacks the spine's own. */
+	readonly suite_roles?: SpineSuiteRoles;
 	/** Forwarded to the standard bundle (`StandardCrossProcessTestOptions.rpc_success_fixtures`). */
 	readonly rpc_success_fixtures?: RpcSuccessFixtures;
 	/** Forwarded to the standard bundle (`StandardCrossProcessTestOptions.rpc_skip_methods`). */
@@ -480,10 +507,15 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 	},
 	cell_grant_role: {
 		// the holder is seeded at reset: `CELL_EDITOR_ROLE` has no grant path
-		derive: (c) =>
-			rpc_gated(c, {
-				extra_accounts: [{ username: CELL_ROLE_HOLDER_USERNAME, roles: [CELL_EDITOR_ROLE] }]
-			}),
+		derive: (c) => {
+			const role = c.options.suite_roles?.cell_grant ?? CELL_EDITOR_ROLE;
+			return {
+				...rpc_gated(c, {
+					extra_accounts: [{ username: CELL_ROLE_HOLDER_USERNAME, roles: [role] }]
+				}),
+				role
+			};
+		},
 		describe: describe_cell_grant_role_cross_tests,
 		required: { setup_test: true, capabilities: true }
 	},
@@ -595,7 +627,11 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 		required: { setup_test: true }
 	},
 	role_grant_offer_lifecycle: {
-		derive: (c) => ({ setup_test: c.setup(), rpc_path: c.config.rpc_path }),
+		derive: (c) => ({
+			setup_test: c.setup(),
+			rpc_path: c.config.rpc_path,
+			role: c.options.suite_roles?.conferral
+		}),
 		describe: describe_role_grant_offer_lifecycle_cross_tests,
 		required: { setup_test: true }
 	},
@@ -610,7 +646,11 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 		required: { setup_test: true, capabilities: true, base_url: true, ws_path: true }
 	},
 	role_grant_participation: {
-		derive: (c) => ({ setup_test: c.setup(), rpc_path: c.config.rpc_path }),
+		derive: (c) => ({
+			setup_test: c.setup(),
+			rpc_path: c.config.rpc_path,
+			role: c.options.suite_roles?.conferral
+		}),
 		describe: describe_role_grant_participation_cross_tests,
 		required: { setup_test: true }
 	},

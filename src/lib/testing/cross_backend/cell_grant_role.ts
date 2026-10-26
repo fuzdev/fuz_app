@@ -19,10 +19,13 @@ import '../assert_dev_env.ts';
  *   role grant can `cell_update` the cell's content.
  *
  * The holder is seeded via `extra_accounts` under `CELL_ROLE_HOLDER_USERNAME`
- * holding `CELL_EDITOR_ROLE` (the role has no grant path, so it can't be
- * offered — the bootstrap-cradle seed is the only path). Both legs configure
- * that seed and register `CELL_EDITOR_ROLE` in their role registry; the Rust
- * `testing_spine_stub` mirrors the same membership in its `known_roles`.
+ * holding the suite's `role` — `CELL_EDITOR_ROLE` by default, which has no
+ * grant path, so it can't be offered and the bootstrap-cradle seed is the only
+ * path. Both legs configure that seed and register `CELL_EDITOR_ROLE` in their
+ * role registry; the Rust `testing_spine_stub` mirrors the same membership in
+ * its `known_roles`. A backend with only the builtin roles passes `ROLE_KEEPER`
+ * (no admin reach, so every arm still turns on the grant); `ROLE_ADMIN` is
+ * refused, since an admin reaches every cell whatever its grants.
  *
  * Cites `security.md` §Authorization (role-shaped cell-grant validation).
  * Runs both legs via the shared `{setup_test}` protocol: in-process
@@ -46,6 +49,7 @@ import {
 	CellGrantCreateOutput,
 	ERROR_CELL_GRANT_UNKNOWN_ROLE
 } from '../../auth/cell_grant_action_specs.ts';
+import { ROLE_ADMIN } from '../../auth/role_schema.ts';
 import { test_if } from './capabilities.ts';
 import { cross_rpc_call, error_reason, expect_output } from './cross_rpc.ts';
 import type { RpcPathCapabilityGatedCrossSuiteOptions } from './setup.ts';
@@ -54,17 +58,37 @@ import { SPINE_CELL_EDITOR_ROLE, SPINE_RPC_PATH } from './spine_surface_constant
 /** App role the holder is seeded with; matches the spine's registered role. */
 export const CELL_EDITOR_ROLE = SPINE_CELL_EDITOR_ROLE;
 
-/** Username the fixture seeds (via `extra_accounts`) holding `CELL_EDITOR_ROLE`. */
+/** Username the fixture seeds (via `extra_accounts`) holding the suite's `role`. */
 export const CELL_ROLE_HOLDER_USERNAME = 'cell_role_holder';
 
 /** A role string deliberately absent from the registry. */
 const UNREGISTERED_ROLE = 'not_a_registered_role';
 
+/** Options for `describe_cell_grant_role_cross_tests`. */
+export interface CellGrantRoleCrossTestOptions extends RpcPathCapabilityGatedCrossSuiteOptions {
+	/**
+	 * The role the grants name, which the `CELL_ROLE_HOLDER_USERNAME` account
+	 * the setup seeds must hold and the backend's cell role registry must
+	 * know. Default `CELL_EDITOR_ROLE`. It must not be `ROLE_ADMIN`: a global
+	 * admin views and edits every cell, so the holder arms would pass without
+	 * the grant — the call throws. `ROLE_KEEPER` serves a backend with only
+	 * the builtin roles, since keeper reach is not admin reach.
+	 */
+	readonly role?: string;
+}
+
 export const describe_cell_grant_role_cross_tests = (
-	options: RpcPathCapabilityGatedCrossSuiteOptions
+	options: CellGrantRoleCrossTestOptions
 ): void => {
 	const { setup_test, capabilities } = options;
 	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
+	const role = options.role ?? CELL_EDITOR_ROLE;
+	if (role === ROLE_ADMIN) {
+		throw new Error(
+			'describe_cell_grant_role_cross_tests: `role` must not be admin — an admin reaches every ' +
+				'cell, so the holder cases would pass without the grant'
+		);
+	}
 
 	describe('cell_grant role-shaped parity', () => {
 		test_if(
@@ -80,7 +104,7 @@ export const describe_cell_grant_role_cross_tests = (
 				const stranger = await fixture.create_account({ username: 'cell_role_stranger' });
 
 				// Owner creates a private cell (default visibility) and grants
-				// view access to anyone holding CELL_EDITOR_ROLE.
+				// view access to anyone holding the role.
 				const created = expect_output(
 					await cross_rpc_call(t, rpc_path, 'cell_create', { kind: 'note', data: {} }, owner_h),
 					CellCreateOutput
@@ -91,7 +115,7 @@ export const describe_cell_grant_role_cross_tests = (
 						t,
 						rpc_path,
 						'cell_grant_create',
-						{ cell_id, level: 'viewer', principal: { kind: 'role', role: CELL_EDITOR_ROLE } },
+						{ cell_id, level: 'viewer', principal: { kind: 'role', role } },
 						owner_h
 					),
 					CellGrantCreateOutput
@@ -175,7 +199,7 @@ export const describe_cell_grant_role_cross_tests = (
 						{
 							cell_id: granted.cell.id,
 							level: 'viewer',
-							principal: { kind: 'role', role: CELL_EDITOR_ROLE }
+							principal: { kind: 'role', role }
 						},
 						owner_h
 					),
@@ -268,7 +292,7 @@ export const describe_cell_grant_role_cross_tests = (
 						t,
 						rpc_path,
 						'cell_grant_create',
-						{ cell_id, level: 'editor', principal: { kind: 'role', role: CELL_EDITOR_ROLE } },
+						{ cell_id, level: 'editor', principal: { kind: 'role', role } },
 						owner_h
 					),
 					CellGrantCreateOutput

@@ -1283,6 +1283,11 @@ capabilities, so state every mount flag truthfully and the rest follows.
   options returning the patch — to add to a derived value (an `xfail` on the
   derived multi-actor setup) without restating it. A required option the
   merge leaves `undefined` throws, naming the suite and key.
+- `suite_roles` names the roles the role-shaped suites use when your registry
+  lacks the spine's own `cell_editor` / `participant`; the call seeds the holder
+  each needs. With only the builtin roles, pass
+  `{cell_grant: ROLE_KEEPER, conferral: ROLE_ADMIN}` (`ROLE_ADMIN` can't serve
+  `cell_grant_role`: an admin reaches every cell whatever its grants).
 - `rpc_success_fixtures` / `rpc_skip_methods` / `rpc_input_overrides` go to the
   standard bundle; `setup` is the base `default_cross_process_setup` options
   every suite starts from.

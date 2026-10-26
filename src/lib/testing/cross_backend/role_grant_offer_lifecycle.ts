@@ -30,8 +30,9 @@ import '../assert_dev_env.ts';
  * that names no offer — live in the conformance security slate. The verbs are
  * on every spine's standard RPC surface, so the suite is ungated. The keeper
  * is the grantor, so the fixture's keeper must hold `ROLE_ADMIN`
- * (`extra_keeper_roles`), and it offers the admin-grantable
- * `SPINE_PARTICIPANT_ROLE`.
+ * (`extra_keeper_roles`), and it offers an admin-grantable role — the
+ * `role` option, `SPINE_PARTICIPANT_ROLE` by default; `ROLE_ADMIN` serves a
+ * backend with only the builtin roles.
  *
  * @module
  */
@@ -55,13 +56,21 @@ import { SPINE_PARTICIPANT_ROLE, SPINE_RPC_PATH } from './spine_surface_constant
 const NIL_UUID = '00000000-0000-0000-0000-000000000000';
 
 /** Options for `describe_role_grant_offer_lifecycle_cross_tests`. */
-export type RoleGrantOfferLifecycleCrossTestOptions = RpcPathCrossSuiteOptions;
+export interface RoleGrantOfferLifecycleCrossTestOptions extends RpcPathCrossSuiteOptions {
+	/**
+	 * The role offered — one the backend's registry holds with the `admin`
+	 * grant path. Default `SPINE_PARTICIPANT_ROLE`, the spine's own; a backend
+	 * with only the builtin roles passes `ROLE_ADMIN`.
+	 */
+	readonly role?: string;
+}
 
 export const describe_role_grant_offer_lifecycle_cross_tests = (
 	options: RoleGrantOfferLifecycleCrossTestOptions
 ): void => {
 	const { setup_test } = options;
 	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
+	const role = options.role ?? SPINE_PARTICIPANT_ROLE;
 
 	const rpc = (
 		fixture: TestFixture,
@@ -71,10 +80,10 @@ export const describe_role_grant_offer_lifecycle_cross_tests = (
 	): Promise<RpcCallResult> =>
 		rpc_call({ app: fixture.fresh_transport(), path: rpc_path, method, params, headers });
 
-	/** A pending `participant` offer from the keeper to `recipient`. */
+	/** A pending `role` offer from the keeper to `recipient`. */
 	const create_offer = (fixture: TestFixture, recipient: TestAccount) =>
 		create_pending_role_grant_offer(fixture, recipient.account.id, undefined, {
-			role: SPINE_PARTICIPANT_ROLE,
+			role,
 			rpc_path
 		});
 
@@ -296,8 +305,8 @@ export const describe_role_grant_offer_lifecycle_cross_tests = (
 					fixture,
 					row.metadata,
 					reason === undefined
-						? { offer_id, role: SPINE_PARTICIPANT_ROLE, scope_id: null }
-						: { offer_id, role: SPINE_PARTICIPANT_ROLE, scope_id: null, reason },
+						? { offer_id, role, scope_id: null }
+						: { offer_id, role, scope_id: null, reason },
 					reason === undefined ? ['reason'] : []
 				);
 			}
@@ -313,7 +322,7 @@ export const describe_role_grant_offer_lifecycle_cross_tests = (
 			assert.strictEqual(retract_row.target_actor_id, null);
 			assert_audit_metadata_fields(fixture, retract_row.metadata, {
 				offer_id: retracted.id,
-				role: SPINE_PARTICIPANT_ROLE,
+				role,
 				scope_id: null
 			});
 
