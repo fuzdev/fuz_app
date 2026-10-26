@@ -124,8 +124,12 @@ const create_admin_observer = (fixture: TestFixture): Promise<TestAccount> =>
  * `observer` is a dedicated admin account (see `create_admin_observer`)
  * — its credentials are never the subject of the mutation under test, so the
  * read works uniformly across every flow including session-revoking ones.
+ *
+ * In-process only, so no drain precedes the read (`create_test_app` settles a
+ * request's effects before it responds) — the cross-process reader is
+ * `cross_backend/audit_cross_helpers.ts`'s `list_audit_events`.
  */
-const list_audit_events = async (
+const read_audit_log = async (
 	app: RpcCallArgs['app'],
 	rpc_path: string,
 	observer: TestAccount,
@@ -237,7 +241,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				});
 				assert.strictEqual(res.status, 200);
 
-				const events = await list_audit_events({ request: fixture.transport }, rpc_path, observer);
+				const events = await read_audit_log({ request: fixture.transport }, rpc_path, observer);
 				assert_has_event(events, 'login', 'POST /login (success)');
 			});
 
@@ -257,7 +261,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				});
 				assert.strictEqual(res.status, 401);
 
-				const events = await list_audit_events({ request: fixture.transport }, rpc_path, observer);
+				const events = await read_audit_log({ request: fixture.transport }, rpc_path, observer);
 				assert_has_event(events, 'login', 'POST /login (failure)');
 			});
 
@@ -273,7 +277,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				});
 				assert.strictEqual(res.status, 200);
 
-				const events = await list_audit_events({ request: fixture.transport }, rpc_path, observer);
+				const events = await read_audit_log({ request: fixture.transport }, rpc_path, observer);
 				assert_has_event(events, 'logout', 'POST /logout');
 			});
 
@@ -296,7 +300,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 					`account_token_create failed: ${res.ok ? '' : JSON.stringify(res.error)}`
 				);
 
-				const events = await list_audit_events({ request: fixture.transport }, rpc_path, observer);
+				const events = await read_audit_log({ request: fixture.transport }, rpc_path, observer);
 				assert_has_event(events, 'token_create', 'account_token_create RPC');
 				assert_event_credential_type(events, 'token_create', 'session', 'account_token_create RPC');
 			});
@@ -329,7 +333,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 					`account_token_revoke failed: ${res.ok ? '' : JSON.stringify(res.error)}`
 				);
 
-				const events = await list_audit_events({ request: fixture.transport }, rpc_path, observer);
+				const events = await read_audit_log({ request: fixture.transport }, rpc_path, observer);
 				assert_has_event(events, 'token_revoke', 'account_token_revoke RPC');
 				assert_event_credential_type(events, 'token_revoke', 'session', 'account_token_revoke RPC');
 			});
@@ -377,7 +381,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 					`account_session_revoke failed: ${res.ok ? '' : JSON.stringify(res.error)}`
 				);
 
-				const events = await list_audit_events({ request: fixture.transport }, rpc_path, observer);
+				const events = await read_audit_log({ request: fixture.transport }, rpc_path, observer);
 				assert_has_event(events, 'session_revoke', 'account_session_revoke RPC');
 				assert_event_credential_type(
 					events,
@@ -403,7 +407,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 					`account_session_revoke_all failed: ${res.ok ? '' : JSON.stringify(res.error)}`
 				);
 
-				const events = await list_audit_events({ request: fixture.transport }, rpc_path, observer);
+				const events = await read_audit_log({ request: fixture.transport }, rpc_path, observer);
 				assert_has_event(events, 'session_revoke_all', 'account_session_revoke_all RPC');
 				assert_event_credential_type(
 					events,
@@ -429,7 +433,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				});
 				assert.strictEqual(res.status, 200);
 
-				const events = await list_audit_events({ request: fixture.transport }, rpc_path, observer);
+				const events = await read_audit_log({ request: fixture.transport }, rpc_path, observer);
 				assert_has_event(events, 'password_change', 'POST /password');
 				assert_event_credential_type(events, 'password_change', 'session', 'POST /password');
 			});
@@ -460,7 +464,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				// Admin offer emits `role_grant_offer_create` only — the role_grant doesn't
 				// exist yet. Drive the accept to confirm `role_grant_offer_accept` and
 				// `role_grant_create` both fire on the downstream consent transition.
-				const events_after_offer = await list_audit_events(
+				const events_after_offer = await read_audit_log(
 					{ request: fixture.transport },
 					rpc_path,
 					observer
@@ -483,7 +487,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 					`role_grant_offer_accept failed: ${accept_res.ok ? '' : JSON.stringify(accept_res.error)}`
 				);
 
-				const events_after_accept = await list_audit_events(
+				const events_after_accept = await read_audit_log(
 					{ request: fixture.transport },
 					rpc_path,
 					observer
@@ -522,7 +526,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 					`role_grant_revoke failed: ${revoke_res.ok ? '' : JSON.stringify(revoke_res.error)}`
 				);
 
-				const events = await list_audit_events({ request: fixture.transport }, rpc_path, observer);
+				const events = await read_audit_log({ request: fixture.transport }, rpc_path, observer);
 				assert_has_event(events, 'role_grant_revoke', 'role_grant_revoke RPC');
 
 				// Audit envelope must populate both target columns —
@@ -551,7 +555,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 					`admin_session_revoke_all failed: ${res.ok ? '' : JSON.stringify(res.error)}`
 				);
 
-				const events = await list_audit_events({ request: fixture.transport }, rpc_path, observer);
+				const events = await read_audit_log({ request: fixture.transport }, rpc_path, observer);
 				// admin session revoke-all also produces session_revoke_all
 				assert_has_event(events, 'session_revoke_all', 'admin_session_revoke_all RPC');
 			});
@@ -573,7 +577,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 					`admin_token_revoke_all failed: ${res.ok ? '' : JSON.stringify(res.error)}`
 				);
 
-				const events = await list_audit_events({ request: fixture.transport }, rpc_path, observer);
+				const events = await read_audit_log({ request: fixture.transport }, rpc_path, observer);
 				assert_has_event(events, 'token_revoke_all', 'admin_token_revoke_all RPC');
 			});
 		});
@@ -610,7 +614,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 					`invite_delete failed: ${delete_res.ok ? '' : JSON.stringify(delete_res.error)}`
 				);
 
-				const events = await list_audit_events({ request: fixture.transport }, rpc_path, observer);
+				const events = await read_audit_log({ request: fixture.transport }, rpc_path, observer);
 				assert_has_event(events, 'invite_create', 'invite_create RPC');
 				assert_has_event(events, 'invite_delete', 'invite_delete RPC');
 			});
@@ -632,7 +636,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				});
 				assert.ok(res.ok, `app_settings_update failed: ${res.ok ? '' : JSON.stringify(res.error)}`);
 
-				const events = await list_audit_events({ request: fixture.transport }, rpc_path, observer);
+				const events = await read_audit_log({ request: fixture.transport }, rpc_path, observer);
 				assert_has_event(events, 'app_settings_update', 'app_settings_update RPC');
 			});
 		});
@@ -654,7 +658,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				});
 				assert.ok(res.ok, `account_delete failed: ${res.ok ? '' : JSON.stringify(res.error)}`);
 
-				const events = await list_audit_events({ request: fixture.transport }, rpc_path, observer);
+				const events = await read_audit_log({ request: fixture.transport }, rpc_path, observer);
 				assert_has_event(events, 'account_delete', 'account_delete RPC');
 				assert_has_event(events, 'actor_delete', 'account_delete RPC (per-actor cascade)');
 			});
@@ -677,7 +681,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				});
 				assert.ok(res.ok, `account_purge failed: ${res.ok ? '' : JSON.stringify(res.error)}`);
 
-				const events = await list_audit_events({ request: fixture.transport }, rpc_path, observer);
+				const events = await read_audit_log({ request: fixture.transport }, rpc_path, observer);
 				assert_has_event(events, 'account_purge', 'account_purge RPC');
 				assert_has_event(events, 'actor_purge', 'account_purge RPC (per-actor cascade)');
 			});
@@ -705,7 +709,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				});
 				assert.ok(res.ok, `account_undelete failed: ${res.ok ? '' : JSON.stringify(res.error)}`);
 
-				const events = await list_audit_events({ request: fixture.transport }, rpc_path, observer);
+				const events = await read_audit_log({ request: fixture.transport }, rpc_path, observer);
 				assert_has_event(events, 'account_undelete', 'account_undelete RPC');
 				assert_has_event(events, 'actor_undelete', 'account_undelete RPC (per-actor cascade)');
 			});
@@ -749,7 +753,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				});
 				assert.strictEqual(res.status, 200);
 
-				const events = await list_audit_events({ request: fixture.transport }, rpc_path, observer);
+				const events = await read_audit_log({ request: fixture.transport }, rpc_path, observer);
 				assert_has_event(events, 'signup', 'POST /signup');
 			});
 		});
