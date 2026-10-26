@@ -296,32 +296,44 @@ export const jsonrpc_errors = {
 // --- HTTP status mapping ---
 
 /**
+ * The HTTP status each base JSON-RPC error code answers, keyed by name so a
+ * builtin added without a status is a type error. Entry order is the reverse
+ * map's tie-break (last wins).
+ */
+const BASE_JSONRPC_ERROR_CODE_HTTP_STATUSES = {
+	parse_error: 400,
+	invalid_request: 400,
+	method_not_found: 404,
+	invalid_params: 400,
+	internal_error: 500,
+	unauthenticated: 401,
+	forbidden: 403,
+	not_found: 404,
+	conflict: 409,
+	validation_error: 422,
+	// queue_overflow shares 429 with rate_limited — listed first so the
+	// last-wins reverse map resolves 429 to rate_limited (a policy) rather
+	// than a full buffer
+	queue_overflow: 429,
+	rate_limited: 429,
+	service_unavailable: 503,
+	timeout: 504,
+	request_cancelled: 499 // nginx "client closed request"
+} as const satisfies Record<JsonrpcErrorName, number>;
+
+/**
  * The HTTP status each JSON-RPC error code answers — the base set, plus each
  * consumer code `register_jsonrpc_error_code` adds.
  *
  * Module-private so a consumer can't remap a base code or skip the checks
  * registration makes; read it through `jsonrpc_error_code_to_http_status`.
  */
-const jsonrpc_error_code_http_statuses = new Map<number, number>([
-	[JSONRPC_PARSE_ERROR, 400],
-	[JSONRPC_INVALID_REQUEST, 400],
-	[JSONRPC_METHOD_NOT_FOUND, 404],
-	[JSONRPC_INVALID_PARAMS, 400],
-	[JSONRPC_INTERNAL_ERROR, 500],
-	[JSONRPC_ERROR_CODES.unauthenticated, 401],
-	[JSONRPC_ERROR_CODES.forbidden, 403],
-	[JSONRPC_ERROR_CODES.not_found, 404],
-	[JSONRPC_ERROR_CODES.conflict, 409],
-	[JSONRPC_ERROR_CODES.validation_error, 422],
-	// queue_overflow shares 429 with rate_limited — listed first so the
-	// last-wins reverse map resolves 429 to rate_limited (a policy) rather
-	// than a full buffer
-	[JSONRPC_ERROR_CODES.queue_overflow, 429],
-	[JSONRPC_ERROR_CODES.rate_limited, 429],
-	[JSONRPC_ERROR_CODES.service_unavailable, 503],
-	[JSONRPC_ERROR_CODES.timeout, 504],
-	[JSONRPC_ERROR_CODES.request_cancelled, 499] // nginx "client closed request"
-]);
+const jsonrpc_error_code_http_statuses = new Map<number, number>(
+	Object.entries(BASE_JSONRPC_ERROR_CODE_HTTP_STATUSES).map(([name, status]) => [
+		JSONRPC_ERROR_CODES[name as JsonrpcErrorName],
+		status
+	])
+);
 
 /** Every code `JSONRPC_ERROR_CODES` defines — the numbers a consumer code may not reuse. */
 const BASE_JSONRPC_ERROR_CODE_SET: ReadonlySet<number> = new Set(

@@ -16,7 +16,8 @@ import {
 	jsonrpc_error_code_to_name,
 	register_jsonrpc_error_code,
 	HTTP_STATUS_TO_JSONRPC_ERROR_CODE,
-	http_status_to_jsonrpc_error_code
+	http_status_to_jsonrpc_error_code,
+	type JsonrpcErrorName
 } from '#lib/http/jsonrpc_errors.ts';
 
 describe('JSONRPC_ERROR_CODES', () => {
@@ -235,10 +236,31 @@ describe('jsonrpc_error_code_to_http_status', () => {
 		);
 	});
 
-	test('all 15 codes have mappings', () => {
+	test('every base code answers its own status, not the unregistered fallback', () => {
+		// keyed by name, so a builtin added to the taxonomy without a row here is a type error
+		const expected = {
+			parse_error: 400,
+			invalid_request: 400,
+			method_not_found: 404,
+			invalid_params: 400,
+			internal_error: 500,
+			unauthenticated: 401,
+			forbidden: 403,
+			not_found: 404,
+			conflict: 409,
+			validation_error: 422,
+			queue_overflow: 429,
+			rate_limited: 429,
+			service_unavailable: 503,
+			timeout: 504,
+			request_cancelled: 499
+		} satisfies Record<JsonrpcErrorName, number>;
 		for (const [name, code] of Object.entries(JSONRPC_ERROR_CODES)) {
-			const status = jsonrpc_error_code_to_http_status(code);
-			assert.ok(status >= 400 && status <= 599, `${name} should map to 4xx or 5xx status`);
+			assert.strictEqual(
+				jsonrpc_error_code_to_http_status(code),
+				expected[name as JsonrpcErrorName],
+				name
+			);
 		}
 	});
 
