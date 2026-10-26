@@ -40,6 +40,7 @@ import { create_test_app_surface_spec } from '../stubs.ts';
 // (→ `session_middleware` → `hono/cookie`). Import only the constants this
 // module uses internally; callers that need a bare constant reach for the leaf.
 import {
+	SPINE_ACCOUNT_PATH_PREFIX,
 	SPINE_CELL_EDITOR_ROLE,
 	SPINE_EXPECTED_SCHEMA_URL,
 	SPINE_PARTICIPANT_ROLE,
@@ -129,7 +130,7 @@ export const spine_rpc_endpoints = (
  * the stream at `SPINE_SSE_PATH`.
  */
 export const create_spine_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
-	...prefix_route_specs('/api/account', [
+	...prefix_route_specs(SPINE_ACCOUNT_PATH_PREFIX, [
 		...create_account_route_specs(ctx.deps, {
 			session_options: spine_session_options,
 			// Honor the limiters the server was assembled with (on `AppServerContext`

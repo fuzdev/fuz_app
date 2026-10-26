@@ -83,9 +83,11 @@ import { DEFAULT_TEST_PASSWORD } from '../test_credentials.ts';
 import { type BackendCapabilities, test_if } from './capabilities.ts';
 import { create_account_revocations } from './revocation_drivers.ts';
 import type { SetupTest } from './setup.ts';
-
-/** Default audit-log SSE stream path — the standard fuz_app `/api/admin/audit/stream`. */
-const DEFAULT_SSE_PATH = '/api/admin/audit/stream';
+import {
+	SPINE_ACCOUNT_LOGOUT_PATH,
+	SPINE_ACCOUNT_PASSWORD_PATH,
+	SPINE_SSE_PATH
+} from './spine_surface_constants.ts';
 
 /** Configuration for `describe_cross_process_sse_tests`. */
 export interface CrossProcessSseTestOptions {
@@ -164,10 +166,10 @@ export const describe_cross_process_sse_tests = (options: CrossProcessSseTestOpt
 		base_url,
 		rpc_path,
 		origin,
-		logout_path = '/api/account/logout',
-		password_path = '/api/account/password'
+		logout_path = SPINE_ACCOUNT_LOGOUT_PATH,
+		password_path = SPINE_ACCOUNT_PASSWORD_PATH
 	} = options;
-	const sse_path = options.sse_path ?? DEFAULT_SSE_PATH;
+	const sse_path = options.sse_path ?? SPINE_SSE_PATH;
 	const max_per_scope =
 		options.max_per_scope === undefined ? AUDIT_LOG_SSE_MAX_PER_SCOPE : options.max_per_scope;
 

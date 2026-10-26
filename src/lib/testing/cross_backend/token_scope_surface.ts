@@ -80,13 +80,11 @@ import { cross_rpc_call } from './cell_cross_helpers.ts';
 import { mint_narrowed_api_token } from './narrowed_api_token.ts';
 import type { RpcPathCapabilityGatedCrossSuiteOptions } from './setup.ts';
 import type { FetchTransport } from '../transports/fetch_transport.ts';
-import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
-
-/** Default audit-log SSE path — the `audit_stream` surface. */
-const DEFAULT_SSE_PATH = '/api/admin/audit/stream';
-
-/** The account status read, which answers a narrowed token as anonymous. */
-const STATUS_PATH = '/api/account/status';
+import {
+	SPINE_ACCOUNT_STATUS_PATH,
+	SPINE_RPC_PATH,
+	SPINE_SSE_PATH
+} from './spine_surface_constants.ts';
 
 /**
  * A well-formed hash that no fact has. The scope gate is a pre-authorization
@@ -169,7 +167,7 @@ export const describe_token_scope_surface_cross_tests = (
 ): void => {
 	const { setup_test, capabilities } = options;
 	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
-	const sse_path = options.sse_path ?? DEFAULT_SSE_PATH;
+	const sse_path = options.sse_path ?? SPINE_SSE_PATH;
 
 	describe('token scope non-RPC surface parity', () => {
 		/**
@@ -273,10 +271,16 @@ export const describe_token_scope_surface_cross_tests = (
 					session_headers: fixture.create_session_headers(),
 					methods: [ADMITTED_METHOD]
 				});
-				const anonymous = await fixture.fresh_transport({ origin: null })(STATUS_PATH, {});
-				const narrowed = await fixture.fresh_transport({ origin: null })(STATUS_PATH, {
-					headers: { authorization: `Bearer ${token}` }
-				});
+				const anonymous = await fixture.fresh_transport({ origin: null })(
+					SPINE_ACCOUNT_STATUS_PATH,
+					{}
+				);
+				const narrowed = await fixture.fresh_transport({ origin: null })(
+					SPINE_ACCOUNT_STATUS_PATH,
+					{
+						headers: { authorization: `Bearer ${token}` }
+					}
+				);
 				assert.strictEqual(anonymous.status, 401, 'anonymous status must be 401');
 				assert.strictEqual(narrowed.status, 401, 'a narrowed token must read status as anonymous');
 				assert.strictEqual(
@@ -284,7 +288,7 @@ export const describe_token_scope_surface_cross_tests = (
 					await anonymous.text(),
 					'the narrowed answer must be the anonymous one, byte for byte'
 				);
-				const full = await fixture.fresh_transport({ origin: null })(STATUS_PATH, {
+				const full = await fixture.fresh_transport({ origin: null })(SPINE_ACCOUNT_STATUS_PATH, {
 					headers: fixture.create_bearer_headers()
 				});
 				assert.strictEqual(full.status, 200, 'a full-scope bearer must read the account');

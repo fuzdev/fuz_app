@@ -116,6 +116,12 @@ import {
 import { DEFAULT_TEST_PASSWORD } from '../test_credentials.ts';
 import type { SetupTest } from './setup.ts';
 import { test_if } from './capabilities.ts';
+import {
+	SPINE_ACCOUNT_BOOTSTRAP_PATH,
+	SPINE_ACCOUNT_LOGIN_PATH,
+	SPINE_ACCOUNT_PASSWORD_PATH,
+	SPINE_ACCOUNT_SIGNUP_PATH
+} from './spine_surface_constants.ts';
 
 /**
  * The flat-REST `{error}` reason each terminal login/signup status carries on
@@ -314,12 +320,12 @@ export const describe_identity_parity_cross_tests = (
 	options: IdentityParityCrossTestOptions
 ): void => {
 	const { setup_test } = options;
-	const login_path = options.login_path ?? '/api/account/login';
-	const signup_path = options.signup_path ?? '/api/account/signup';
+	const login_path = options.login_path ?? SPINE_ACCOUNT_LOGIN_PATH;
+	const signup_path = options.signup_path ?? SPINE_ACCOUNT_SIGNUP_PATH;
 	const bootstrap_path =
-		options.bootstrap_path === undefined ? '/api/account/bootstrap' : options.bootstrap_path;
+		options.bootstrap_path === undefined ? SPINE_ACCOUNT_BOOTSTRAP_PATH : options.bootstrap_path;
 	const password_path =
-		options.password_path === undefined ? '/api/account/password' : options.password_path;
+		options.password_path === undefined ? SPINE_ACCOUNT_PASSWORD_PATH : options.password_path;
 
 	type Fixture = Awaited<ReturnType<typeof setup_test>>;
 	/** The status + flat-REST `error` reason an attempt settled to. */

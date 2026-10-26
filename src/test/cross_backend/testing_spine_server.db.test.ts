@@ -28,7 +28,8 @@ import {
 } from '#lib/testing/surface_invariants.ts';
 import {
 	SPINE_ROLE_GATED_WS_PATH,
-	SPINE_ROLE_GATED_WS_ROLES
+	SPINE_ROLE_GATED_WS_ROLES,
+	SPINE_WS_PATH
 } from '#lib/testing/cross_backend/spine_surface_constants.ts';
 
 import { build_spine_app } from './testing_spine_server.ts';
@@ -53,7 +54,7 @@ test('the Node-built spine surface lists its WS endpoints and passes the surface
 	});
 	try {
 		const ws_paths = built.surface.ws_endpoints.map((endpoint) => endpoint.path);
-		assert.deepStrictEqual(ws_paths, ['/api/ws', SPINE_ROLE_GATED_WS_PATH]);
+		assert.deepStrictEqual(ws_paths, [SPINE_WS_PATH, SPINE_ROLE_GATED_WS_PATH]);
 		const gated = built.surface.ws_endpoints.find((e) => e.path === SPINE_ROLE_GATED_WS_PATH);
 		assert.ok(gated);
 		assert.deepStrictEqual(gated.required_roles, SPINE_ROLE_GATED_WS_ROLES);

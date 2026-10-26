@@ -45,7 +45,10 @@ import {
 } from './default_secrets.ts';
 import {
 	ACTION_RATE_LIMIT_ENABLED_ENV,
-	ACTION_RATE_LIMIT_MAX_ATTEMPTS_ENV
+	ACTION_RATE_LIMIT_MAX_ATTEMPTS_ENV,
+	SPINE_ACCOUNT_BOOTSTRAP_PATH,
+	SPINE_RPC_PATH,
+	SPINE_WS_PATH
 } from './spine_surface_constants.ts';
 
 /** Options for `action_rate_limit_env`. */
@@ -248,10 +251,10 @@ export const make_default_ts_backend_config = (
 		name,
 		start_command,
 		base_url: `http://localhost:${port}`,
-		rpc_path: '/api/rpc',
-		ws_path: '/api/ws',
+		rpc_path: SPINE_RPC_PATH,
+		ws_path: SPINE_WS_PATH,
 		health_path: '/health',
-		bootstrap_path: '/api/account/bootstrap',
+		bootstrap_path: SPINE_ACCOUNT_BOOTSTRAP_PATH,
 		cookie_name,
 		startup_timeout_ms: 30_000,
 		env: {
@@ -335,10 +338,10 @@ export const make_default_rust_backend_config = (
 		name,
 		start_command,
 		base_url: `http://localhost:${port}`,
-		rpc_path: '/api/rpc',
-		ws_path: '/api/ws',
+		rpc_path: SPINE_RPC_PATH,
+		ws_path: SPINE_WS_PATH,
 		health_path: '/health',
-		bootstrap_path: '/api/account/bootstrap',
+		bootstrap_path: SPINE_ACCOUNT_BOOTSTRAP_PATH,
 		cookie_name,
 		startup_timeout_ms: 120_000,
 		env: {

@@ -28,7 +28,11 @@ import { describe, test, assert } from 'vitest';
 import { account_verify_action_spec } from '../../auth/account_action_specs.ts';
 import { ERROR_UNSUPPORTED_CONTENT_TYPE } from '../../http/error_schemas.ts';
 import type { RpcPathCrossSuiteOptions, TestFixture } from './setup.ts';
-import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
+import {
+	SPINE_ACCOUNT_LOGIN_PATH,
+	SPINE_ACCOUNT_LOGOUT_PATH,
+	SPINE_RPC_PATH
+} from './spine_surface_constants.ts';
 
 /** Options for the simple-request parity suite. */
 export interface SimpleRequestCrossTestOptions extends RpcPathCrossSuiteOptions {
@@ -54,8 +58,8 @@ export const describe_simple_request_cross_tests = (
 ): void => {
 	const { setup_test } = options;
 	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
-	const login_path = options.login_path ?? '/api/account/login';
-	const logout_path = options.logout_path ?? '/api/account/logout';
+	const login_path = options.login_path ?? SPINE_ACCOUNT_LOGIN_PATH;
+	const logout_path = options.logout_path ?? SPINE_ACCOUNT_LOGOUT_PATH;
 
 	/** POST a JSON `account_verify` with the fixture's session — 200 while it's valid. */
 	const verify_session = async (fixture: TestFixture, id: string): Promise<number> => {

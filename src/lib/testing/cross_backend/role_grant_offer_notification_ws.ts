@@ -86,9 +86,7 @@ import {
 	create_pending_role_grant_offer
 } from './role_grant_cross_helpers.ts';
 import type { SetupTest, TestFixture } from './setup.ts';
-
-/** JSON-RPC endpoint path — matches the spine's `/api/rpc` (and the forge's). */
-const RPC_PATH = '/api/rpc';
+import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
 /** The request id the bystander's barrier `heartbeat` goes out under. */
 const BYSTANDER_BARRIER_ID = 'bystander_barrier';
@@ -197,7 +195,7 @@ export const describe_role_grant_offer_notification_ws_tests = (
 		method: string,
 		params: unknown,
 		headers: Record<string, string>
-	) => rpc_call({ app: fixture.transport, path: RPC_PATH, method, params, headers });
+	) => rpc_call({ app: fixture.transport, path: SPINE_RPC_PATH, method, params, headers });
 
 	/** A fresh pending `ROLE_ADMIN` offer, from the keeper unless a grantor is given. */
 	const create_pending_offer = (
@@ -206,7 +204,7 @@ export const describe_role_grant_offer_notification_ws_tests = (
 		grantor_headers?: Record<string, string>
 	): Promise<{ id: string }> =>
 		create_pending_role_grant_offer(fixture, to_account_id, grantor_headers, {
-			rpc_path: RPC_PATH
+			rpc_path: SPINE_RPC_PATH
 		});
 
 	// -- tests ----------------------------------------------------------------
@@ -397,7 +395,7 @@ export const describe_role_grant_offer_notification_ws_tests = (
 				const revokee = await fixture.create_account({ roles: [ROLE_ADMIN] });
 
 				const role_grant_id = await create_active_role_grant(fixture, revokee, {
-					rpc_path: RPC_PATH
+					rpc_path: SPINE_RPC_PATH
 				});
 
 				const bystander_ws = await open_bystander(fixture);
@@ -515,7 +513,7 @@ export const describe_role_grant_offer_notification_ws_tests = (
 				const revokee = await fixture.create_account({ roles: [ROLE_ADMIN] });
 
 				const role_grant_id = await create_active_role_grant(fixture, revokee, {
-					rpc_path: RPC_PATH
+					rpc_path: SPINE_RPC_PATH
 				});
 
 				// A *pending* sibling offer for the same (account, role) — this is what

@@ -43,6 +43,7 @@ import { describe, test, assert } from 'vitest';
 
 import { DEFAULT_TEST_PASSWORD } from '../test_credentials.ts';
 import type { SetupTest } from './setup.ts';
+import { SPINE_ACCOUNT_LOGIN_PATH, SPINE_ACCOUNT_LOGOUT_PATH } from './spine_surface_constants.ts';
 
 /** Options for the session-cookie-attribute parity suite. */
 export interface CookieAttributesCrossTestOptions {
@@ -131,8 +132,8 @@ export const describe_cookie_attributes_cross_tests = (
 	options: CookieAttributesCrossTestOptions
 ): void => {
 	const { setup_test, cookie_name } = options;
-	const login_path = options.login_path ?? '/api/account/login';
-	const logout_path = options.logout_path ?? '/api/account/logout';
+	const login_path = options.login_path ?? SPINE_ACCOUNT_LOGIN_PATH;
+	const logout_path = options.logout_path ?? SPINE_ACCOUNT_LOGOUT_PATH;
 	// Fresh-keeper-per-test wipes the DB between tests, so a literal username
 	// never collides (see `setup.ts`). Each test mints it fresh.
 	const username = 'cookie_attr_user';

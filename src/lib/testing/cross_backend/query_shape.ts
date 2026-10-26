@@ -39,7 +39,7 @@ import { account_verify_action_spec } from '../../auth/account_action_specs.ts';
 import { ERROR_INVALID_QUERY_PARAMS } from '../../http/error_schemas.ts';
 import { test_if } from './capabilities.ts';
 import type { RpcPathCapabilityGatedCrossSuiteOptions } from './setup.ts';
-import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
+import { SPINE_ACCOUNT_STATUS_PATH, SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
 /**
  * Options for the query-shape parity suite. The standard capability-gating
@@ -48,9 +48,6 @@ import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
  * rather than minting a duplicate.
  */
 export type QueryShapeCrossTestOptions = RpcPathCapabilityGatedCrossSuiteOptions;
-
-/** The status route every spine serves (bundled into the account family). */
-const STATUS_PATH = '/api/account/status';
 
 /** A well-formed blake3 hash that references no stored fact. */
 const MISSING_HASH = `blake3:${'a'.repeat(64)}`;
@@ -71,7 +68,7 @@ export const describe_query_shape_cross_tests = (options: QueryShapeCrossTestOpt
 				// derived-serde extractor would 400 before the handler ran.
 				const nil = '00000000-0000-0000-0000-000000000000';
 				const res = await fixture.transport(
-					`${STATUS_PATH}?acting=${fixture.actor.id}&acting=${nil}`,
+					`${SPINE_ACCOUNT_STATUS_PATH}?acting=${fixture.actor.id}&acting=${nil}`,
 					{ method: 'GET', headers: fixture.create_session_headers() }
 				);
 				assert.strictEqual(res.status, 200);
@@ -87,7 +84,7 @@ export const describe_query_shape_cross_tests = (options: QueryShapeCrossTestOpt
 				const fixture = await setup_test();
 				// The keeper has one actor: an omitted selector resolves it, while a
 				// malformed one answers account-only.
-				const omitted = await fixture.transport(STATUS_PATH, {
+				const omitted = await fixture.transport(SPINE_ACCOUNT_STATUS_PATH, {
 					method: 'GET',
 					headers: fixture.create_session_headers()
 				});
@@ -95,10 +92,13 @@ export const describe_query_shape_cross_tests = (options: QueryShapeCrossTestOpt
 				const omitted_body = (await omitted.json()) as { actor: { id: string } | null };
 				assert.strictEqual(omitted_body.actor?.id, fixture.actor.id);
 				for (const raw of ['not-a-uuid', '', `"${fixture.actor.id}"`]) {
-					const res = await fixture.transport(`${STATUS_PATH}?acting=${encodeURIComponent(raw)}`, {
-						method: 'GET',
-						headers: fixture.create_session_headers()
-					});
+					const res = await fixture.transport(
+						`${SPINE_ACCOUNT_STATUS_PATH}?acting=${encodeURIComponent(raw)}`,
+						{
+							method: 'GET',
+							headers: fixture.create_session_headers()
+						}
+					);
 					assert.strictEqual(res.status, 200, raw);
 					const body = (await res.json()) as { actor: { id: string } | null };
 					assert.strictEqual(body.actor, null, raw);
@@ -115,9 +115,9 @@ export const describe_query_shape_cross_tests = (options: QueryShapeCrossTestOpt
 				// The status route has no query schema — an anonymous prober with a
 				// junk query must hear the same 401 as a clean one (a pre-handler
 				// query reject here is a backend fingerprint).
-				const dup = await anon(`${STATUS_PATH}?acting=a&acting=b`, { method: 'GET' });
+				const dup = await anon(`${SPINE_ACCOUNT_STATUS_PATH}?acting=a&acting=b`, { method: 'GET' });
 				assert.strictEqual(dup.status, 401);
-				const unknown = await anon(`${STATUS_PATH}?foo=1&bar=2`, { method: 'GET' });
+				const unknown = await anon(`${SPINE_ACCOUNT_STATUS_PATH}?foo=1&bar=2`, { method: 'GET' });
 				assert.strictEqual(unknown.status, 401);
 			}
 		);
@@ -127,7 +127,7 @@ export const describe_query_shape_cross_tests = (options: QueryShapeCrossTestOpt
 			'status: unknown query keys are ignored for an authed caller (no strict schema)',
 			async () => {
 				const fixture = await setup_test();
-				const res = await fixture.transport(`${STATUS_PATH}?foo=1`, {
+				const res = await fixture.transport(`${SPINE_ACCOUNT_STATUS_PATH}?foo=1`, {
 					method: 'GET',
 					headers: fixture.create_session_headers()
 				});

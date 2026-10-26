@@ -34,6 +34,7 @@ import { create_fetch_transport, type FetchTransport } from '../transports/fetch
 import { MigrationTracker, type SchemaSnapshot } from '../schema_introspect.ts';
 import { ActionManifest } from './action_manifest.ts';
 import type { BackendHandle } from './spawn_backend.ts';
+import { SPINE_ACCOUNT_LOGIN_PATH, SPINE_ACCOUNT_SIGNUP_PATH } from './spine_surface_constants.ts';
 
 /**
  * Options for `TestFixture.create_account` — mints an additional
@@ -486,6 +487,14 @@ export interface CrossProcessSetupOptions {
 	 * `fixture.reject_unknown_audit_metadata_keys`.
 	 */
 	readonly reject_unknown_audit_metadata_keys?: boolean;
+	/**
+	 * REST signup route `fixture.create_account` mints through. Default
+	 * `SPINE_ACCOUNT_SIGNUP_PATH`; set it for a backend mounting the account
+	 * routes under another prefix.
+	 */
+	readonly signup_path?: string;
+	/** REST login route `fixture.create_account` logs in through. Default `SPINE_ACCOUNT_LOGIN_PATH`. */
+	readonly login_path?: string;
 }
 
 /**
@@ -796,7 +805,13 @@ const extract_cookie_value = (
  */
 const mint_account = async (
 	handle: ReconstructedBootstrappedBackendHandle,
-	options: { username?: string; password_value?: string; email?: string }
+	options: {
+		username?: string;
+		password_value?: string;
+		email?: string;
+		signup_path: string;
+		login_path: string;
+	}
 ): Promise<{
 	transport: FetchTransport;
 	account: { id: Uuid; username: string };
@@ -846,7 +861,7 @@ const mint_account = async (
 	// `app_server.ts`): "requested" is `undefined` vs present, so a
 	// caller-supplied value is forwarded verbatim and signup validates it,
 	// rather than the truthy form silently dropping an empty string.
-	const signup_response = await transport('/api/account/signup', {
+	const signup_response = await transport(options.signup_path, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({
@@ -871,7 +886,7 @@ const mint_account = async (
 		);
 	}
 
-	const login_response = await transport('/api/account/login', {
+	const login_response = await transport(options.login_path, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ username, password })
@@ -1031,6 +1046,8 @@ export const default_cross_process_setup = (
 	const extra_keeper_roles = options?.extra_keeper_roles ?? [];
 	const extra_account_specs = options?.extra_accounts ?? [];
 	const extra_actor_names = options?.extra_actors ?? [];
+	const signup_path = options?.signup_path ?? SPINE_ACCOUNT_SIGNUP_PATH;
+	const login_path = options?.login_path ?? SPINE_ACCOUNT_LOGIN_PATH;
 	const { cookie_name } = handle.config;
 	return async () => {
 		const {
@@ -1088,6 +1105,8 @@ export const default_cross_process_setup = (
 			account_options?: CreateTestAccountOptions
 		): Promise<TestAccount> => {
 			const other = await mint_account(refreshed_handle, {
+				signup_path,
+				login_path,
 				...(account_options?.username !== undefined && { username: account_options.username }),
 				...(account_options?.password_value !== undefined && {
 					password_value: account_options.password_value

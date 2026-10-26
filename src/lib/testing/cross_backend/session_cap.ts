@@ -57,6 +57,7 @@ import type { FetchTransport } from '../transports/fetch_transport.ts';
 import { create_ws_transport } from '../transports/ws_transport.ts';
 import { test_if } from './capabilities.ts';
 import type { SetupTest } from './setup.ts';
+import { SPINE_ACCOUNT_LOGIN_PATH, SPINE_ACCOUNT_STATUS_PATH } from './spine_surface_constants.ts';
 
 /** Options for the session-cap parity suite. */
 export interface SessionCapCrossTestOptions {
@@ -90,8 +91,8 @@ export interface SessionCapCrossTestOptions {
 export const describe_session_cap_cross_tests = (options: SessionCapCrossTestOptions): void => {
 	const { setup_test, ws } = options;
 	const max_sessions = options.max_sessions ?? DEFAULT_MAX_SESSIONS;
-	const login_path = options.login_path ?? '/api/account/login';
-	const status_path = options.status_path ?? '/api/account/status';
+	const login_path = options.login_path ?? SPINE_ACCOUNT_LOGIN_PATH;
+	const status_path = options.status_path ?? SPINE_ACCOUNT_STATUS_PATH;
 	// Fresh-keeper-per-test wipes the DB between tests, so a literal username
 	// never collides (see `setup.ts`).
 	const username = 'session_cap_user';

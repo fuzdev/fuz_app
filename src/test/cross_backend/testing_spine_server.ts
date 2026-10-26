@@ -68,7 +68,8 @@ import {
 	LOGIN_RATE_LIMIT_ENABLED_ENV,
 	SPINE_ROLE_GATED_WS_PATH,
 	SPINE_ROLE_GATED_WS_ROLES,
-	SPINE_RPC_PATH
+	SPINE_RPC_PATH,
+	SPINE_WS_PATH
 } from '#lib/testing/cross_backend/spine_surface_constants.ts';
 import type {
 	BuildTestingAppContext,
@@ -107,7 +108,6 @@ export interface BuiltSpineApp extends BuiltTestingApp {
 	readonly surface: AppSurface;
 }
 
-const WS_PATH_DEFAULT = '/api/ws';
 const HEALTH_PATH = '/health';
 
 /**
@@ -220,7 +220,7 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 		get_connection_ip,
 		daemon_token_path,
 		prepare_websocket,
-		ws_path = WS_PATH_DEFAULT
+		ws_path = SPINE_WS_PATH
 	} = options;
 	const log = new Logger('[testing_spine_server]');
 

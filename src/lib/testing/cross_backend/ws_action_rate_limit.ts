@@ -65,6 +65,7 @@ import {
 	type WsClient
 } from '../transports/ws_client.ts';
 import type { SetupTest } from './setup.ts';
+import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
 // Wire literals are deliberate independent copies of the producers'
 // constants (`JSONRPC_ERROR_CODES` on TS, the `JsonrpcError` taxonomy on
@@ -155,7 +156,7 @@ export const describe_ws_action_rate_limit_cross_tests = (
 	options: WsActionRateLimitCrossTestOptions
 ): void => {
 	const { setup_test, base_url, ws_path, max_attempts } = options;
-	const rpc_path = options.rpc_path ?? '/api/rpc';
+	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
 	assert(
 		Number.isInteger(max_attempts) && max_attempts >= 2,
 		'ws_action_rate_limit needs max_attempts >= 2 to split a budget across transports'

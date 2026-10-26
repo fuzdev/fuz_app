@@ -90,7 +90,13 @@ import { raw_http_exchange, raw_http_parse_response } from '../transports/raw_ht
 import { test_if, type BackendCapabilities } from './capabilities.ts';
 import { mint_narrowed_api_token } from './narrowed_api_token.ts';
 import type { RpcPathCapabilityGatedCrossSuiteOptions, SetupTest, TestFixture } from './setup.ts';
-import { SPINE_RPC_PATH, SPINE_SSE_PATH } from './spine_surface_constants.ts';
+import {
+	SPINE_ACCOUNT_LOGOUT_PATH,
+	SPINE_ACCOUNT_PASSWORD_PATH,
+	SPINE_RPC_PATH,
+	SPINE_SSE_PATH,
+	SPINE_WS_PATH
+} from './spine_surface_constants.ts';
 import { xfail_until } from './xfail.ts';
 
 /** A transport's front door, as the table's rows name it. */
@@ -356,9 +362,9 @@ export const describe_transport_composition_cross_tests = (
 ): void => {
 	const { setup_test, capabilities, base_url } = options;
 	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
-	const rest_path = options.rest_path ?? '/api/account/logout';
-	const password_path = options.password_path ?? '/api/account/password';
-	const ws_path = options.ws_path ?? '/api/ws';
+	const rest_path = options.rest_path ?? SPINE_ACCOUNT_LOGOUT_PATH;
+	const password_path = options.password_path ?? SPINE_ACCOUNT_PASSWORD_PATH;
+	const ws_path = options.ws_path ?? SPINE_WS_PATH;
 	const sse_path = options.sse_path ?? SPINE_SSE_PATH;
 	const allowed_origin =
 		options.origin ?? (base_url === null ? 'http://localhost:5173' : new URL(base_url).origin);

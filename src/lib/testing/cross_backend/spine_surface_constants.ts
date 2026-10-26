@@ -44,6 +44,34 @@ export const TESTING_ACTION_AUTH = {
 /** RPC endpoint mount path — matches the binary's `/api/rpc`. */
 export const SPINE_RPC_PATH = '/api/rpc';
 
+/** Ungated WebSocket endpoint mount path — matches the binaries' `/api/ws`. */
+export const SPINE_WS_PATH = '/api/ws';
+
+/**
+ * Mount prefix of the account REST routes (login, logout, password, status,
+ * signup, bootstrap) on both spine binaries. The `SPINE_ACCOUNT_*_PATH`
+ * constants below are the routes under it the suites drive.
+ */
+export const SPINE_ACCOUNT_PATH_PREFIX = '/api/account';
+
+/** REST login route. */
+export const SPINE_ACCOUNT_LOGIN_PATH = '/api/account/login';
+
+/** REST logout route. */
+export const SPINE_ACCOUNT_LOGOUT_PATH = '/api/account/logout';
+
+/** REST password-change route. */
+export const SPINE_ACCOUNT_PASSWORD_PATH = '/api/account/password';
+
+/** REST account-status route. */
+export const SPINE_ACCOUNT_STATUS_PATH = '/api/account/status';
+
+/** REST signup route. */
+export const SPINE_ACCOUNT_SIGNUP_PATH = '/api/account/signup';
+
+/** REST bootstrap route — the default `BackendConfig.bootstrap_path`. */
+export const SPINE_ACCOUNT_BOOTSTRAP_PATH = '/api/account/bootstrap';
+
 /**
  * Audit-log SSE stream path — `/api/admin` prefix + the
  * `create_audit_log_route_specs` `/audit/stream` route. Matches the default

@@ -86,6 +86,10 @@ import {
 } from '../../rate_limiter.ts';
 import type { SetupTest } from './setup.ts';
 import { list_audit_events } from './audit_cross_helpers.ts';
+import {
+	SPINE_ACCOUNT_LOGIN_PATH,
+	SPINE_ACCOUNT_PASSWORD_PATH
+} from './spine_surface_constants.ts';
 
 /** Options for the login-security parity suite. */
 export interface LoginSecurityCrossTestOptions {
@@ -164,8 +168,8 @@ export const describe_login_security_cross_tests = (
 	options: LoginSecurityCrossTestOptions
 ): void => {
 	const { setup_test } = options;
-	const login_path = options.login_path ?? '/api/account/login';
-	const password_path = options.password_path ?? '/api/account/password';
+	const login_path = options.login_path ?? SPINE_ACCOUNT_LOGIN_PATH;
+	const password_path = options.password_path ?? SPINE_ACCOUNT_PASSWORD_PATH;
 	const concurrent_transactions = options.concurrent_transactions ?? false;
 	const base_url = options.base_url ?? null;
 	/** Per-IP cap shared by both impls (TS `default_login_ip_rate_limit`, Rust `DEFAULT_LOGIN_IP_RATE_LIMIT`). */

@@ -56,10 +56,7 @@ import type { WsClient } from '../transports/ws_client.ts';
 import { create_admitted_ws_transport } from '../transports/ws_transport.ts';
 import { type BackendCapabilities, test_if } from './capabilities.ts';
 import type { SetupTest, TestAccountFixture, TestFixture } from './setup.ts';
-import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
-
-/** Default audit-log stream path. */
-const DEFAULT_SSE_PATH = '/api/admin/audit/stream';
+import { SPINE_RPC_PATH, SPINE_SSE_PATH } from './spine_surface_constants.ts';
 
 /** The shortened lifetime each case gives its credentials, in seconds. */
 const EXPIRY_SECONDS = 2;
@@ -106,7 +103,7 @@ export const describe_credential_deadline_cross_tests = (
 		capabilities,
 		base_url,
 		ws_path,
-		sse_path = DEFAULT_SSE_PATH,
+		sse_path = SPINE_SSE_PATH,
 		rpc_path = SPINE_RPC_PATH
 	} = options;
 

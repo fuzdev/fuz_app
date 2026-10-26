@@ -120,6 +120,10 @@ import { type BackendCapabilities, test_if } from './capabilities.ts';
 import { cross_rpc_call, expect_output } from './cell_cross_helpers.ts';
 import { create_account_revocations } from './revocation_drivers.ts';
 import type { SetupTest, TestAccountFixture, TestFixture } from './setup.ts';
+import {
+	SPINE_ACCOUNT_LOGOUT_PATH,
+	SPINE_ACCOUNT_PASSWORD_PATH
+} from './spine_surface_constants.ts';
 
 /** Origin guaranteed to fail the `http://localhost:*` allowlist the test backends run with. */
 const DISALLOWED_ORIGIN = 'http://disallowed.example';
@@ -186,8 +190,8 @@ export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptio
 		origin,
 		rpc_path,
 		max_message_bytes = DEFAULT_WS_MAX_MESSAGE_BYTES,
-		logout_path = '/api/account/logout',
-		password_path = '/api/account/password'
+		logout_path = SPINE_ACCOUNT_LOGOUT_PATH,
+		password_path = SPINE_ACCOUNT_PASSWORD_PATH
 	} = options;
 	const max_tokens = options.max_tokens === undefined ? DEFAULT_MAX_TOKENS : options.max_tokens;
 

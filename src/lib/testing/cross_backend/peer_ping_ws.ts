@@ -50,6 +50,7 @@ import {
 import { create_jsonrpc_request, is_jsonrpc_request } from '../../http/jsonrpc_helpers.ts';
 import { type BackendCapabilities, test_if } from './capabilities.ts';
 import type { SetupTest } from './setup.ts';
+import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
 // The wire literals below are deliberate independent copies of the
 // producers' constants (`actions/peer_ping.ts` on TS, `REASON_PEER_*` /
@@ -65,9 +66,6 @@ const PEER_PING_METHOD = 'peer/ping';
 const REASON_PEER_TIMEOUT = 'peer_timeout';
 const REASON_PEER_PING_INVALID_REPLY = 'peer_ping_invalid_reply';
 const REASON_PEER_NO_TRANSPORT = 'peer_no_transport';
-
-/** JSON-RPC endpoint path — matches the spine's `/api/rpc` (and the forge's). */
-const RPC_PATH = '/api/rpc';
 
 /** A reply payload that satisfies the Rust `PingResponse` shape. */
 const valid_reply = (nonce: number) => ({ nonce, protocol_version: 1 });
@@ -314,7 +312,7 @@ export const describe_peer_ping_ws_tests = (options: PeerPingWsTestOptions): voi
 				const fixture = await setup_test();
 				const res = await rpc_call({
 					app: fixture.transport,
-					path: RPC_PATH,
+					path: SPINE_RPC_PATH,
 					method: PEER_PING_METHOD,
 					params: { nonce: 1 },
 					headers: fixture.create_session_headers()

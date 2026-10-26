@@ -1039,7 +1039,11 @@ source of truth for wire-shape conformance.
   lands with an email set — the hook the username-or-email login parity suite
   uses; the in-process path sets it directly on the inserted row. Must be a
   valid, per-test-unique `Email` (the `LOWER(email)` partial-unique index
-  rejects collisions). Caller-supplied `username`s pass through _as-is_ now that the DB
+  rejects collisions). The signup and login it drives go to the setup's
+  `signup_path` / `login_path` (default `SPINE_ACCOUNT_SIGNUP_PATH` /
+  `SPINE_ACCOUNT_LOGIN_PATH`, from `spine_surface_constants.ts`, which also
+  carries the other account routes, `SPINE_WS_PATH`, and the prefix).
+  Caller-supplied `username`s pass through _as-is_ now that the DB
   wipes between tests — hardcoded names like `'user_two'` work and the
   earlier uniquification prefix is gone. Every `TestFixture` also exposes
   `fresh_transport({origin?: string | null})` — cookie-jar-free probe;

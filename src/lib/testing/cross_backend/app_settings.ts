@@ -35,13 +35,10 @@ import { describe, test, assert } from 'vitest';
 import { app_settings_update_action_spec } from '../../auth/admin_action_specs.ts';
 import { ERROR_NO_MATCHING_INVITE } from '../../http/error_schemas.ts';
 import type { RpcPathCrossSuiteOptions } from './setup.ts';
-import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
+import { SPINE_ACCOUNT_SIGNUP_PATH, SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
 /** Options for the app-settings effect suite (the standard RPC-dispatched shape). */
 export type AppSettingsCrossTestOptions = RpcPathCrossSuiteOptions;
-
-/** REST signup path on the spine surface (`/api/account` prefix + `/signup`). */
-const SIGNUP_PATH = '/api/account/signup';
 
 /** A password that satisfies the creation-strength schema (min 12). */
 const SIGNUP_PASSWORD = 'securepassword123';
@@ -70,7 +67,7 @@ export const describe_app_settings_cross_tests = (options: AppSettingsCrossTestO
 			});
 			assert.strictEqual(enable.status, 200, 'admin app_settings_update must succeed');
 
-			const res = await fixture.fresh_transport()(SIGNUP_PATH, {
+			const res = await fixture.fresh_transport()(SPINE_ACCOUNT_SIGNUP_PATH, {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({ username: 'open_signup_user', password: SIGNUP_PASSWORD })
@@ -99,7 +96,7 @@ export const describe_app_settings_cross_tests = (options: AppSettingsCrossTestO
 			});
 			assert.strictEqual(disable.status, 200, 'admin app_settings_update (disable) must succeed');
 
-			const res = await fixture.fresh_transport()(SIGNUP_PATH, {
+			const res = await fixture.fresh_transport()(SPINE_ACCOUNT_SIGNUP_PATH, {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({ username: 'closed_signup_user', password: SIGNUP_PASSWORD })
