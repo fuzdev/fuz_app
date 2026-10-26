@@ -61,9 +61,9 @@ import '../assert_dev_env.ts';
  * **Multi-actor upgrade.** One more WS row needs a keeper seeded with a
  * second actor (`extra_actors`), so it runs only given `multi_actor`: a
  * multi-actor keeper's session upgrading with no `?acting=` → 400
- * `actor_required`, the flat body the TS spine's upgrade-time authorization
- * phase answers. The upgrade resolves an actor there, and a multi-actor
- * account must name one. A backend whose upgrade resolves no actor admits
+ * `actor_required`, the flat body both spines' upgrade-time actor resolution
+ * answers. The upgrade resolves an actor there, and a multi-actor account
+ * must name one. A backend whose upgrade resolves no actor admits
  * the socket instead; `multi_actor.xfail` runs the row as `xfail_until` for
  * it.
  *

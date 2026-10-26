@@ -1490,12 +1490,11 @@ capabilities}` protocol every Tier 1 suite uses, so **one case array runs
   **WS leg:** `ws: WsEndpointTarget` (`{base_url, ws_path, origin?}`) on
   either sends each case as one frame on an admitted socket the principal
   opens — its headers on the upgrade, no `Origin` where the HTTP leg
-  suppresses it, its own actor as `?acting=`. Only the TS spine resolves an
-  actor at the upgrade, refusing a multi-actor account's upgrade without
-  `?acting=` (400 `actor_required`); the Rust spine's upgrade resolves the
-  account and ignores it. Per-frame dispatch resolves each frame's `acting` on
-  both. The leg always sends `?acting=`, so it does not cover that
-  upgrade-level difference; the front-door table's multi-actor row does. The frame is the envelope the HTTP
+  suppresses it, its own actor as `?acting=`. Both spines resolve an actor at
+  the upgrade, refusing a multi-actor account's upgrade without `?acting=`
+  (400 `actor_required`), and per-frame dispatch resolves each frame's
+  `acting` on both. The leg always sends `?acting=`, so it does not cover that
+  upgrade refusal; the front-door table's multi-actor row does. The frame is the envelope the HTTP
   body is (`perform_action_result_to_envelope` on TS), so the response reads
   `{status, headers: {}, body: frame}` with `status` the code's
   `jsonrpc_error_code_to_http_status` (200 for a result) and every row holds
@@ -2388,10 +2387,9 @@ one is still asserted. The table
 is the exported `transport_composition_cases` data. `multi_actor:
 {setup_test, xfail?}` adds `transport_composition_multi_actor_cases`, run on
 a fixture whose keeper has `extra_actors`: the keeper's session upgrading with
-no `?acting=` → 400 `actor_required` (flat body), the TS upgrade's actor
-resolution. The Rust spine's upgrade resolves no actor and admits the socket,
-so fuz_app passes `xfail` (tracking id `rust-ws-upgrade-acting-fail-open`) for
-the Rust stub only. Given `base_url`, every
+no `?acting=` → 400 `actor_required` (flat body), the upgrade's actor
+resolution on both spines. `xfail` is for a backend known to admit the
+socket; fuz_app passes none. Given `base_url`, every
 probe is written to the socket (`raw_http_exchange`) and an over-cap request
 sends its head alone; with `base_url: null` the probes go through the
 fixture's transport and the WS rows skip. Not in the standard bundle. fuz_app's

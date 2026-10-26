@@ -1584,11 +1584,10 @@ Pass `ws: {base_url, ws_path, origin?}` to run the same cases over the
 backend's WebSocket endpoint. Each case's principal opens an admitted socket
 (its cookie, bearer or daemon token on the upgrade, its own actor as
 `?acting=`) and sends the request as one frame, so the per-message gates
-answer it. Only the TS spine resolves an actor at the upgrade, refusing a
-multi-actor account's upgrade without `?acting=` (400 `actor_required`); the
-Rust spine's upgrade resolves the account and ignores `?acting=`. Per-frame
-dispatch resolves the actor from each frame on both. The leg always sends
-`?acting=`, so it does not cover that upgrade-level difference — the
+answer it. Both spines resolve an actor at the upgrade, refusing a
+multi-actor account's upgrade without `?acting=` (400 `actor_required`), and
+per-frame dispatch resolves the actor from each frame on both. The leg always
+sends `?acting=`, so it does not cover that upgrade refusal — the
 front-door table's multi-actor row (`multi_actor` on
 `describe_transport_composition_cross_tests`) does. The frame carries the same JSON-RPC envelope the HTTP body does;
 the runner reads it through the status the HTTP binding maps its error code

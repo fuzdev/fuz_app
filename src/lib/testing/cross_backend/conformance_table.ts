@@ -685,15 +685,14 @@ const CONFORMANCE_REQUEST_ID = 'test';
  * The upgrade carries the principal's headers (its cookie, bearer or daemon
  * token) and the `Origin` the HTTP leg would send: none for a principal that
  * suppresses it, the target's otherwise. It also names the principal's own
- * actor as `?acting=`. Only the TS spine resolves an actor at the upgrade,
- * refusing a multi-actor account's upgrade without one (400
- * `actor_required`); the Rust spine's upgrade resolves the account and
- * ignores `?acting=`. Per-frame dispatch resolves the actor from each frame's
+ * actor as `?acting=`, which both spines resolve at the upgrade (a
+ * multi-actor account's upgrade without one is refused 400
+ * `actor_required`). Per-frame dispatch resolves the actor from each frame's
  * own `acting` on both. Because the leg always sends `?acting=`, it does not
- * cover that upgrade-level difference — the front-door table's multi-actor
- * row does. The socket closes afterwards; a
- * close error is not the case's subject (a request that revokes its own
- * credential closes the socket after its reply).
+ * cover the upgrade's own refusal — the front-door table's multi-actor row
+ * does. The socket closes afterwards; a close error is not the case's subject
+ * (a request that revokes its own credential closes the socket after its
+ * reply).
  */
 const send_ws_frame = async (
 	method: string,
