@@ -556,6 +556,11 @@ export interface SendConformanceCaseOptions {
 	readonly resolved_rpc_endpoints: ReturnType<typeof resolve_rpc_endpoints_for_setup>;
 	/** Send the request as a frame on a socket at this endpoint instead of over HTTP. */
 	readonly ws?: WsEndpointTarget;
+	/**
+	 * Headers added to the HTTP request beneath the principal's, which win on
+	 * a name clash. Not sent on the WS leg (a frame carries no headers).
+	 */
+	readonly request_headers?: Readonly<Record<string, string>>;
 }
 
 /** The spec a sent case resolved to — the RPC action, or the REST route. */
@@ -600,7 +605,8 @@ export const send_conformance_case = async (
 	c: ConformanceCase,
 	options: SendConformanceCaseOptions
 ): Promise<ConformanceCaseResponse> => {
-	const { fixture, surface_source, principals, resolved_rpc_endpoints, ws } = options;
+	const { fixture, surface_source, principals, resolved_rpc_endpoints, ws, request_headers } =
+		options;
 	if (ws && !is_ws_conformance_case(c)) {
 		throw new Error(
 			`conformance: case '${c.name}' cannot run over a WebSocket (is_ws_conformance_case) — ` +
@@ -613,7 +619,10 @@ export const send_conformance_case = async (
 		principals,
 		resolved_rpc_endpoints
 	);
-	const { transport, headers, suppress_default_origin } = principal;
+	const { transport, suppress_default_origin } = principal;
+	const headers = request_headers
+		? { ...request_headers, ...principal.headers }
+		: principal.headers;
 	const params = c.request.acting
 		? bind_acting(c, resolve_acting_binding(c, c.request.acting, fixture, principal))
 		: c.request.params;

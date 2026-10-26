@@ -345,7 +345,11 @@ field a loose output schema passes on one spine, shows up as a difference.
   one alone, registration throws. Per case, each backend's own `setup_test`
   (separate databases and keepers), the principal resolved and the request
   sent through `send_conformance_case` (`conformance_table.ts`), both answers
-  normalized and diffed. The per-case `expect` is not asserted —
+  normalized and diffed. Every HTTP request carries
+  `DIFFERENTIAL_REQUEST_HEADERS` (`accept-encoding: identity`), so a runtime's
+  own compression (`Deno.serve` gzips for a request accepting it, as Node's
+  `fetch` sends by default) never reads as a `content-encoding` / `vary`
+  difference. The per-case `expect` is not asserted —
   each backend's conformance leg holds it. `KnownDivergence` is the ledger
   row: `{case_name | method, tracking_id, reason, what_differs}`, the names a
   string or a list, `what_differs` the diff paths covered (a path covers
@@ -1484,9 +1488,11 @@ capabilities}` protocol every Tier 1 suite uses, so **one case array runs
   always-available principals to fixture accessors; `role_holder` /
   `wrong_role` read a seeded `extra_accounts` username named via
   `options.principals`. `send_conformance_case(c, {fixture, surface_source, principals?,
-  resolved_rpc_endpoints})` (exported) is the send half — principal resolved,
+  resolved_rpc_endpoints, request_headers?})` (exported) is the send half — principal resolved,
   request sent, the raw `{target, status, headers, body}` back unasserted; the
   table asserts on it, and the cross-backend differential compares two.
+  `request_headers` go on the HTTP request beneath the principal's (the
+  differential's identity encoding); the WS leg sends none.
   **WS leg:** `ws: WsEndpointTarget` (`{base_url, ws_path, origin?}`) on
   either sends each case as one frame on an admitted socket the principal
   opens — its headers on the upgrade, no `Origin` where the HTTP leg

@@ -1677,6 +1677,12 @@ describe_differential_conformance_tests({
 - Each case runs on a fresh fixture per backend and is sent through the
   table's own `send_conformance_case`; the per-case expectations are not
   asserted here, since each backend's conformance leg already holds them.
+- Every HTTP request asks for an uncompressed response
+  (`DIFFERENTIAL_REQUEST_HEADERS`, `accept-encoding: identity`): content
+  negotiation is the server runtime's, not the app's — `Deno.serve`
+  compresses for a request accepting gzip, as Node's `fetch` sends by
+  default — so it would otherwise read as a `content-encoding` and `vary`
+  difference on every case.
 - Set `ws` on both backends (`{name, setup_test, ws: {base_url, ws_path}}`)
   to compare their WebSocket answers instead; the cases are filtered as the
   table's WS leg filters them, and the ledger is checked against what is left.

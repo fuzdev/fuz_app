@@ -20,6 +20,13 @@ import '../assert_dev_env.ts';
  * each backend's conformance leg already holds them; the differential holds
  * the two answers to each other.
  *
+ * Every HTTP request asks for an uncompressed response
+ * (`DIFFERENTIAL_REQUEST_HEADERS`): content negotiation is the transport's,
+ * not the app's — Deno's `Deno.serve` compresses a response whose request
+ * accepts gzip, as Node's `fetch` sends by default, while other servers send
+ * it as is — so letting a server choose would read as a `content-encoding` and
+ * `vary` difference on every case.
+ *
  * A difference that is tracked and accepted goes in the **known-divergence
  * ledger** (`KnownDivergence`), matched by case names or by methods, naming
  * the paths that differ (`what_differs`), each optionally with the value each
@@ -63,6 +70,16 @@ import {
 } from './differential_normalize.ts';
 import type { SetupTest } from './setup.ts';
 import type { WsEndpointTarget } from './ws_endpoint.ts';
+
+/**
+ * Headers every HTTP request the differential sends carries, beneath the
+ * principal's: `accept-encoding: identity`, so each backend answers
+ * uncompressed and a runtime's own compression (`Deno.serve` compresses for a
+ * request that accepts gzip) never reads as a header difference.
+ */
+export const DIFFERENTIAL_REQUEST_HEADERS: Readonly<Record<string, string>> = {
+	'accept-encoding': 'identity'
+};
 
 /** One side of the differential. */
 export interface DifferentialBackend {
@@ -279,6 +296,7 @@ export const describe_differential_conformance_tests = (
 				surface_source,
 				...(principals && { principals }),
 				resolved_rpc_endpoints,
+				request_headers: DIFFERENTIAL_REQUEST_HEADERS,
 				...(backend.ws && { ws: backend.ws })
 			})
 		);
