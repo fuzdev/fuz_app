@@ -1,5 +1,6 @@
 import { UnreachableError } from '@fuzdev/fuz_util/error.ts';
 import { zod_get_base_type } from '../zod.ts';
+import { is_empty_input_handler_guarded } from '../schema_meta.ts';
 
 import type { ActionSpecUnion, ActionEventPhase } from './action_spec.ts';
 import { ActionRegistry } from './action_registry.ts';
@@ -391,41 +392,18 @@ export const to_action_property_key = (method: string): string =>
 	/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(method) ? method : `'${method}'`;
 
 /**
- * Methods whose input schema accepts `{}` by design while the handler refuses
- * it: each takes one of several optional selectors, and the handler names the
- * missing or conflicting selector in a declared reason, as the Rust spine does
- * (a schema-level refine would answer a reason-less `invalid_params` first).
- *
- * - `cell_get` — `id` or `path` (`cell_get_requires_id_or_path`)
- * - `cell_field_list` — exactly one of `source_id` / `target_id`
- *   (`cell_field_list_requires_source_or_target`)
- * - `cell_item_list` — exactly one of `parent_id` / `child_id`
- *   (`cell_item_list_requires_parent_or_child`)
- *
- * A call with no input is never valid for them, so the typed surface keeps
- * `input:` required (`action_input_is_optional`), and the input-shape
- * invariant ("an input accepting `{}` accepts `undefined` too") exempts them.
- */
-export const EMPTY_INPUT_HANDLER_GUARDED_METHODS: ReadonlySet<string> = new Set([
-	'cell_get',
-	'cell_field_list',
-	'cell_item_list'
-]);
-
-/**
  * Whether a caller may omit an action's input: its schema accepts `undefined`,
- * or accepts `{}` (what an omitted input is validated as) on a method not in
- * `EMPTY_INPUT_HANDLER_GUARDED_METHODS`. The rule codegen emits `input?:` by
- * and the input-shape invariant tests read.
+ * or accepts `{}` (what an omitted input is validated as) and is not marked
+ * `empty_input_handler_guarded` (`SchemaFieldMeta`, read by
+ * `is_empty_input_handler_guarded`). The rule codegen emits `input?:` by and
+ * the input-shape invariant tests read.
  *
  * @param spec - the action spec
  * @returns whether the typed surface makes the input optional
  */
-export const action_input_is_optional = (
-	spec: Pick<ActionSpecUnion, 'method' | 'input'>
-): boolean => {
+export const action_input_is_optional = (spec: Pick<ActionSpecUnion, 'input'>): boolean => {
 	if (spec.input.safeParse(undefined).success) return true;
-	if (EMPTY_INPUT_HANDLER_GUARDED_METHODS.has(spec.method)) return false;
+	if (is_empty_input_handler_guarded(spec.input)) return false;
 	return spec.input.safeParse({}).success;
 };
 
@@ -466,9 +444,9 @@ ActingActor})` and other all-optional-fields strict objects. The second
  * schema is asked to validate. A schema with required fields fails both
  * probes and stays `input:` (required at the typed surface). Refinements
  * and transforms run as part of `safeParse`, so their accept/reject
- * decisions feed into the optional/required choice naturally. The methods in
- * `EMPTY_INPUT_HANDLER_GUARDED_METHODS` are the exception: their schema
- * accepts `{}` but the handler refuses it, so they stay `input:`
+ * decisions feed into the optional/required choice naturally. An input
+ * marked `empty_input_handler_guarded` is the exception: its schema accepts
+ * `{}` but the handler refuses it, so it stays `input:`
  * (`action_input_is_optional` is the one rule).
  *
  * @param options.sync_returns_value - When true (default), sync `local_call`

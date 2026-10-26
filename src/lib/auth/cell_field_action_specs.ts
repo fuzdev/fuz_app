@@ -13,6 +13,7 @@
 
 import { z } from 'zod';
 import { Uuid } from '../primitive_schemas.ts';
+import type { SchemaFieldMeta } from '../schema_meta.ts';
 
 import { ActingActor } from '../http/auth_shape.ts';
 import { CellRelationListLimit } from './cell_relation_list_limit.ts';
@@ -97,19 +98,22 @@ export type CellFieldDeleteOutput = z.infer<typeof CellFieldDeleteOutput>;
  * `name_after` (return rows whose `name > name_after` lex); the reverse
  * listing has no cursor, oldest field first.
  */
-export const CellFieldListInput = z.strictObject({
-	source_id: Uuid.optional().meta({
-		description: 'List forward fields whose source is this cell.'
-	}),
-	target_id: Uuid.optional().meta({
-		description: 'List reverse upfields whose target is this cell.'
-	}),
-	name_after: CellFieldName.optional().meta({
-		description: 'Cursor for forward pagination — return rows whose name > this lex. Forward only.'
-	}),
-	limit: CellRelationListLimit,
-	acting: ActingActor
-});
+export const CellFieldListInput = z
+	.strictObject({
+		source_id: Uuid.optional().meta({
+			description: 'List forward fields whose source is this cell.'
+		}),
+		target_id: Uuid.optional().meta({
+			description: 'List reverse upfields whose target is this cell.'
+		}),
+		name_after: CellFieldName.optional().meta({
+			description:
+				'Cursor for forward pagination — return rows whose name > this lex. Forward only.'
+		}),
+		limit: CellRelationListLimit,
+		acting: ActingActor
+	})
+	.meta({ empty_input_handler_guarded: true } satisfies SchemaFieldMeta);
 export type CellFieldListInput = z.infer<typeof CellFieldListInput>;
 
 export const CellFieldListOutput = z.strictObject({

@@ -127,7 +127,7 @@ and options on each function's TSDoc.
 - `get_executor_phases(spec, executor)` — phases an executor participates in for the spec.
 - `get_handler_return_type` — TS type a phase handler must return; side-effect imports `ActionOutputs`.
 - `generate_phase_handlers` — per-action typed handler-map fragment.
-- `generate_actions_api_method_signature` — single source of truth for the typed `FrontendActionsApi` method shape. Its `input?:` follows `action_input_is_optional` — the schema accepts `undefined`, or accepts `{}` on a method outside `EMPTY_INPUT_HANDLER_GUARDED_METHODS` (`cell_get`, `cell_field_list`, `cell_item_list`, whose `{}` reaches a handler guard that refuses it with a declared reason, so their input stays required); an input-shape invariant test reads the same rule.
+- `generate_actions_api_method_signature` — single source of truth for the typed `FrontendActionsApi` method shape. Its `input?:` follows `action_input_is_optional` — the schema accepts `undefined`, or accepts `{}` and is not marked `.meta({empty_input_handler_guarded: true})` (`SchemaFieldMeta`, read by `is_empty_input_handler_guarded` in `schema_meta.ts` — set on `cell_get`, `cell_field_list` and `cell_item_list`, whose `{}` reaches a handler guard that refuses it with a declared reason, so their input stays required; a consumer marks its own the same way); an input-shape invariant test reads the same rule.
 - `generate_action_method_enums` — up to nine `z.enum` + `z.infer` pairs.
 - `generate_action_method_enum_block` — lower-level escape hatch for cross-product enums.
 - `generate_typed_action_event_alias` — fixed-shape `TypedActionEvent<TMethod, TPhase, TStep>` alias.

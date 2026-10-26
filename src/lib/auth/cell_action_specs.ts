@@ -8,6 +8,7 @@
 
 import { z } from 'zod';
 import { Uuid, FactHashSchema, bounded_string } from '../primitive_schemas.ts';
+import type { SchemaFieldMeta } from '../schema_meta.ts';
 
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
 import { ActingActor } from '../http/auth_shape.ts';
@@ -327,11 +328,13 @@ export type CellCreateOutput = z.infer<typeof CellCreateOutput>;
  * row matches OR when `can_view_cell` rejects the caller — same code so
  * private-cell existence doesn't leak.
  */
-export const CellGetInput = z.strictObject({
-	id: Uuid.optional(),
-	path: CellPath.optional(),
-	acting: ActingActor
-});
+export const CellGetInput = z
+	.strictObject({
+		id: Uuid.optional(),
+		path: CellPath.optional(),
+		acting: ActingActor
+	})
+	.meta({ empty_input_handler_guarded: true } satisfies SchemaFieldMeta);
 export type CellGetInput = z.infer<typeof CellGetInput>;
 
 /**

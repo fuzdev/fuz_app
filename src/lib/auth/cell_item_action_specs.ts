@@ -12,6 +12,7 @@
 
 import { z } from 'zod';
 import { Uuid, bounded_string } from '../primitive_schemas.ts';
+import type { SchemaFieldMeta } from '../schema_meta.ts';
 import {
 	FRACTIONAL_INDEX_LENGTH_MAX,
 	FRACTIONAL_INDEX_REGEX
@@ -142,19 +143,21 @@ export type CellItemDeleteOutput = z.infer<typeof CellItemDeleteOutput>;
  * `position_after` (return rows with `position > position_after`); the
  * reverse listing has no cursor, oldest item first.
  */
-export const CellItemListInput = z.strictObject({
-	parent_id: Uuid.optional().meta({
-		description: 'List forward items whose parent is this cell.'
-	}),
-	child_id: Uuid.optional().meta({
-		description: 'List reverse parents whose child is this cell.'
-	}),
-	position_after: CellItemPosition.optional().meta({
-		description: 'Cursor for forward pagination — return rows whose position > this.'
-	}),
-	limit: CellRelationListLimit,
-	acting: ActingActor
-});
+export const CellItemListInput = z
+	.strictObject({
+		parent_id: Uuid.optional().meta({
+			description: 'List forward items whose parent is this cell.'
+		}),
+		child_id: Uuid.optional().meta({
+			description: 'List reverse parents whose child is this cell.'
+		}),
+		position_after: CellItemPosition.optional().meta({
+			description: 'Cursor for forward pagination — return rows whose position > this.'
+		}),
+		limit: CellRelationListLimit,
+		acting: ActingActor
+	})
+	.meta({ empty_input_handler_guarded: true } satisfies SchemaFieldMeta);
 export type CellItemListInput = z.infer<typeof CellItemListInput>;
 
 export const CellItemListOutput = z.strictObject({

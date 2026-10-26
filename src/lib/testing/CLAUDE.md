@@ -1324,7 +1324,8 @@ endpoints — each `invalid_params` with its declared reason — a grant miss
 `cell_grant_not_found`, the `cell_list` pagination bounds and enum-valued
 filters, and the schema-first rows where a bad page or filter value must answer
 before a handler's reason; `conformance_cell_cases.test.ts` requires a `{}` row
-with a reason for every `EMPTY_INPUT_HANDLER_GUARDED_METHODS` member), with the
+with a reason for every cell action whose input is marked
+`empty_input_handler_guarded`), with the
 generated rows over the off-surface methods; the in-process leg for those is
 `conformance_off_surface.db.test.ts`, over an app mounting the cell surface
 and the two resolvers. The cross leg runs the same cases

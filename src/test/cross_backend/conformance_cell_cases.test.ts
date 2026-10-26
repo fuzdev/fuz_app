@@ -1,26 +1,45 @@
 /**
- * Ties `EMPTY_INPUT_HANDLER_GUARDED_METHODS` to the runtime guard it stands
- * for.
+ * Ties the `empty_input_handler_guarded` input marker (`SchemaFieldMeta`) to
+ * the runtime guard it stands for.
  *
- * Membership exempts a method from the input-shape invariant and keeps its
+ * The marker exempts an action from the input-shape invariant and keeps its
  * typed input required, on the claim that its handler refuses `{}` with a
- * declared reason. Every listed method must therefore have a `{}` row in
- * `conformance_cell_cases` pinning a 400 with an `error_reason`, which the
- * conformance legs run on every spine — so a method added to the list without
- * a guard fails there, and one added without a row fails here.
+ * declared reason. Every cell action whose input carries it must therefore
+ * have a `{}` row in `conformance_cell_cases` pinning a 400 with an
+ * `error_reason`, which the conformance legs run on every spine — so a schema
+ * marked without a guard fails there, and one marked without a row fails here.
  *
  * @module
  */
 
 import { describe, test, assert } from 'vitest';
 
-import { EMPTY_INPUT_HANDLER_GUARDED_METHODS } from '#lib/actions/action_codegen.ts';
+import { all_cell_action_specs } from '#lib/auth/cell_action_specs.ts';
+import { all_cell_audit_action_specs } from '#lib/auth/cell_audit_action_specs.ts';
+import { all_cell_field_action_specs } from '#lib/auth/cell_field_action_specs.ts';
+import { all_cell_grant_action_specs } from '#lib/auth/cell_grant_action_specs.ts';
+import { all_cell_item_action_specs } from '#lib/auth/cell_item_action_specs.ts';
+import { is_empty_input_handler_guarded } from '#lib/schema_meta.ts';
 
 import { conformance_cell_cases } from './conformance_cell_cases.ts';
 
+const guarded_methods = [
+	...all_cell_action_specs,
+	...all_cell_grant_action_specs,
+	...all_cell_field_action_specs,
+	...all_cell_item_action_specs,
+	...all_cell_audit_action_specs
+]
+	.filter((spec) => is_empty_input_handler_guarded(spec.input))
+	.map((spec) => spec.method);
+
 describe('handler-guarded empty inputs', () => {
-	test('every listed method has a {} row pinning a 400 with a reason', () => {
-		for (const method of EMPTY_INPUT_HANDLER_GUARDED_METHODS) {
+	test('some cell action marks its input', () => {
+		assert.ok(guarded_methods.length > 0);
+	});
+
+	test('every marked method has a {} row pinning a 400 with a reason', () => {
+		for (const method of guarded_methods) {
 			const rows = conformance_cell_cases.filter(
 				(c) =>
 					c.request.method === method &&

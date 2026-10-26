@@ -143,7 +143,7 @@ that subtree.
 
 - `crypto.ts` — `generate_random_base64url(byte_length?)` — shared randomness source
 - `sensitivity.ts` — `Sensitivity = 'secret'`
-- `schema_meta.ts` — `SchemaFieldMeta` for Zod `.meta()` (description + sensitivity)
+- `schema_meta.ts` — `SchemaFieldMeta` for Zod `.meta()` (description, sensitivity, and the action-input marker `empty_input_handler_guarded`, read by `is_empty_input_handler_guarded`)
 - `hono_context.ts` — Hono `ContextVariableMap` augmentation (includes `db: Db` for declarative transactions)
 - `rate_limiter.ts` — sliding-window `RateLimiter`, `RateLimiterMode` (`'enforced' | 'disabled_for_testing'` — what `create_app_server` makes of an omitted limiter; the disabled mode's once-per-process stderr banner is `announce_rate_limiters_disabled`), `rate_limit_exceeded_response(c, retry_after)` 429 helper
 - `periodic.ts` — `start_periodic(name, interval_ms, pass, log)` → `{stop}`: the loop a scheduled sweep runs on (a pass at once, one per interval, no overlap, a slow pass delays rather than bursts, a failed pass logged and retried, unref'd timer, `stop()` waits for a pass in progress). Twin of the Rust `fuz_sys::periodic::spawn_periodic`; `start_auth_cleanup` is built on it
