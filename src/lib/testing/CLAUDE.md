@@ -1634,7 +1634,7 @@ covered on WS and SSE at once. The drivers stand alone too: `cross_post_as`
 `cross_admin_token_revoke_all`, and `cross_account_purge` (over the daemon
 token, no `Origin`).
 
-### `cross_backend/cell_crud.ts` + `cell_relations.ts` + `cell_gated_create.ts` — cell parity suites
+### `cross_backend/cell_crud.ts` + `cell_relations.ts` + `cell_gated_create.ts` + `cell_moderate.ts` — cell parity suites
 
 The cell-layer parity coverage is split across two sibling suites. Cells
 can't ride the generic `describe_rpc_round_trip_tests` (stateful verbs need a
@@ -1700,8 +1700,11 @@ the option type states whether the bundle is read.
   holder who can `cell_get` still gets the IDOR 404). Only **actor-shaped**
   grants are exercised — role-shaped principals need a closed role registry the
   Rust spine deliberately lacks.
-- **`describe_cell_gated_create_cross_tests`** + **`describe_cell_moderate_cross_tests`**
-  (gate on `capabilities.cell_gated_create`, **cross-only**) — the parent-aware
+- **`describe_cell_gated_create_cross_tests`** (`cell_gated_create.ts`) +
+  **`describe_cell_moderate_cross_tests`** (`cell_moderate.ts`)
+  (gate on `capabilities.cell_gated_create`, **cross-only**; both build their
+  spaces on `TEST_SPACE_POLICY`, exported beside the authorizer in
+  `test_cell_gated_create_authorize.ts`) — the parent-aware
   cell-creation authorizer (`CellCreateAuthorize`, **directory model**) +
   the `cell_moderate` verb parity proofs. Both spines mount the same
   `test_cell_gated_create_authorize` policy (its admin bypass and `min_role`

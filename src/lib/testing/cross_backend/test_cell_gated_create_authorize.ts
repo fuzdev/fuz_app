@@ -43,6 +43,22 @@ export const SPACE_CELL_KIND = 'space';
  */
 export const PARTICIPATION_ROLE = SPINE_PARTICIPANT_ROLE;
 
+/**
+ * A space `data.policy` mirroring the test ladder: gated `post` (moderated) +
+ * `react` (live) + `comment` (live), each on `PARTICIPATION_ROLE`. `comment`
+ * exists so a suite can create a comment under a post (`root_id !==
+ * parent_id`) and prove the policy resolves from the governing root (the
+ * space), not the immediate parent. Shared by the gated-create and moderate
+ * cross suites.
+ */
+export const TEST_SPACE_POLICY = {
+	policy: {
+		post: { min_role: PARTICIPATION_ROLE, moderation_required: true },
+		react: { min_role: PARTICIPATION_ROLE, moderation_required: false },
+		comment: { min_role: PARTICIPATION_ROLE, moderation_required: false }
+	}
+} as const;
+
 /** A space's per-kind contribution rule (the shape stamped into `space.data.policy`). */
 export interface ContributionRule {
 	min_role?: string;
