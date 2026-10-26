@@ -31,6 +31,8 @@
  *   throws are isolated.
  * - `drain_inflight()` — test-binary barrier: await every in-flight `emit`
  *   write, on an emitter built with `track_inflight: true`.
+ * - `is_tracking_inflight()` — whether that barrier can wait on anything, so a
+ *   test binary built without tracking is caught rather than racing.
  *
  * ## When listeners hear about a row
  *
@@ -243,6 +245,18 @@ export interface AuditEmitter {
 	 * to wait for. Twin of the Rust `fuz_auth` `AuditEmitter::drain_inflight`.
 	 */
 	drain_inflight(): Promise<void>;
+	/**
+	 * Whether this emitter tracks its in-flight `emit` writes — `true` only
+	 * when built with `track_inflight: true`. When `false`, `drain_inflight`
+	 * resolves at once and waits on nothing.
+	 *
+	 * The `_testing_drain_effects` action reports it as `tracked`, and the
+	 * `list_audit_events` reads refuse `false`: a test binary whose emitter was
+	 * built without tracking would otherwise answer the drain at once and its
+	 * audit reads would race the writes. Twin of the Rust `fuz_auth`
+	 * `AuditEmitter::is_tracking_inflight`.
+	 */
+	is_tracking_inflight(): boolean;
 }
 
 /**
@@ -410,6 +424,8 @@ export const create_audit_emitter = (options: CreateAuditEmitterOptions): AuditE
 		}
 	};
 
+	const is_tracking_inflight = (): boolean => inflight !== null;
+
 	const base_emit: AuditEmitFn = (ctx, input) => {
 		if (input.outcome === 'failure') {
 			// an attempt happened whether or not the transaction commits
@@ -475,6 +491,7 @@ export const create_audit_emitter = (options: CreateAuditEmitterOptions): AuditE
 		notify,
 		add_listener,
 		listener_count,
-		drain_inflight
+		drain_inflight,
+		is_tracking_inflight
 	});
 };

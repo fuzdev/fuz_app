@@ -42,6 +42,12 @@ export interface AuditReadFixture {
  * backend must mount the action — every spine test binary does; in-process
  * suites mount `create_testing_drain_effects_action`.
  *
+ * Refuses an answer without `tracked: true`. A binary whose audit emitter was
+ * built without in-flight tracking answers the drain at once, waiting on
+ * nothing, and its audit reads race the writes — an absent row then reads as
+ * a pass. Every audit read runs through here, so each one checks the barrier
+ * is live.
+ *
  * @param fixture - the per-test fixture, whose daemon token authorizes the drain
  * @param rpc_path - the RPC endpoint the drain action is mounted on
  */
@@ -57,6 +63,16 @@ export const cross_drain_effects = async (
 		fixture.create_daemon_token_headers()
 	);
 	assert.ok(drained.ok, `_testing_drain_effects failed: ${JSON.stringify(drained.error)}`);
+	const tracked =
+		typeof drained.result === 'object' && drained.result !== null
+			? (drained.result as Record<string, unknown>).tracked
+			: undefined;
+	assert.strictEqual(
+		tracked,
+		true,
+		"_testing_drain_effects must answer tracked: true — the backend's audit emitter does not " +
+			`track in-flight writes, so the drain waits on nothing (got ${JSON.stringify(drained.result)})`
+	);
 };
 
 /**

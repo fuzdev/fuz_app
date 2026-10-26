@@ -1409,7 +1409,9 @@ the rows it references are deleted; it can't see the fresh keeper.
 
 A suite that reads audit rows goes through `list_audit_events`
 (`testing/cross_backend/audit_cross_helpers.ts`): it calls the
-`_testing_drain_effects` barrier, lists, and parses each row's `metadata`
+`_testing_drain_effects` barrier — refusing an answer without `tracked: true`,
+so a binary whose audit emitter doesn't track its in-flight writes fails
+here rather than racing them — lists, and parses each row's `metadata`
 against its event type's schema as declared (`assert_audit_event_metadata`),
 so a backend whose metadata drifts from the event's contract — a mistyped,
 `null`, or missing field — fails the read. The admin integration suite's

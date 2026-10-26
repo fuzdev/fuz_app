@@ -130,6 +130,7 @@ its registered listeners + optional `AuditLogConfig`. Its methods:
 - `add_listener(listener)` — listener registration, returning a remover for that registration (idempotent; the same function registered twice is two registrations, each with its own remover). Twin of Rust `fuz_auth` `AuditEmitter::add_listener` in firing order and snapshot-at-notify
 - `listener_count()` — registered-listener count, for tests / diagnostics
 - `drain_inflight()` — test-binary barrier: waits until no `emit` write is in flight, writes started while waiting included. Only an emitter built with `track_inflight: true` tracks; otherwise it resolves at once (production never tracks). Backs `_testing_drain_effects` (twin of Rust `AuditEmitter::drain_inflight` / `new_with_inflight_tracking`)
+- `is_tracking_inflight()` — whether the emitter was built with `track_inflight: true`, i.e. whether `drain_inflight` can wait on anything. `_testing_drain_effects` reports it as `tracked`, and `cross_drain_effects` (every `list_audit_events` read) refuses `false` (twin of Rust `AuditEmitter::is_tracking_inflight`)
 
 Listeners are closure-private; they change only through `add_listener` and
 its removers. `create_app_server` registers the audit-log SSE listener,

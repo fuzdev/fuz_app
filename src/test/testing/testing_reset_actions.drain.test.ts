@@ -26,7 +26,8 @@ describe('create_testing_actions — _testing_drain_effects', () => {
 				drain_inflight: async () => {
 					drain_calls++;
 					await gate.promise;
-				}
+				},
+				is_tracking_inflight: () => true
 			}
 		};
 		const actions = create_testing_actions(deps, {
@@ -46,6 +47,20 @@ describe('create_testing_actions — _testing_drain_effects', () => {
 		assert.ok(!done, 'the bundled drain answered before deps.audit drained');
 
 		gate.resolve();
-		assert.deepStrictEqual(await result, { ok: true });
+		assert.deepStrictEqual(await result, { ok: true, tracked: true });
+	});
+
+	test('answers tracked: false over an untracked emitter', async () => {
+		const deps = { ...create_stub_app_deps(), audit: create_test_audit_emitter() };
+		const actions = create_testing_actions(deps, {
+			session_options: create_session_config('test_session'),
+			daemon_token_state: {} as DaemonTokenState
+		});
+		const drain = actions.find((a) => a.spec.method === '_testing_drain_effects');
+		assert.ok(drain);
+		const result = await drain.handler(undefined, null as never);
+		assert.deepStrictEqual(result, { ok: true, tracked: false });
+		// the answer satisfies the spec's strict output schema either way
+		assert.ok(drain.spec.output.safeParse(result).success);
 	});
 });

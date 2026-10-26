@@ -143,9 +143,10 @@ const stub_db = create_noop_stub('stub_db');
  * wires a listener fails loudly instead of silently never firing
  * (`create_recording_audit_emitter` accepts listeners); `listener_count`
  * returns 0; `drain_inflight` resolves immediately, since nothing is ever
- * written. Tests asserting on real audit-row persistence (or on listener
- * fan-out) build a real emitter via `create_audit_emitter` against a stub or
- * real DB — `create_test_app` already does this on the test backend.
+ * written, and `is_tracking_inflight` answers `false`. Tests asserting on
+ * real audit-row persistence (or on listener fan-out) build a real emitter
+ * via `create_audit_emitter` against a stub or real DB — `create_test_app`
+ * already does this on the test backend.
  */
 export const create_test_audit_emitter = (): AuditEmitter => ({
 	emit: () => {},
@@ -158,7 +159,8 @@ export const create_test_audit_emitter = (): AuditEmitter => ({
 		);
 	},
 	listener_count: () => 0,
-	drain_inflight: async () => {}
+	drain_inflight: async () => {},
+	is_tracking_inflight: () => false
 });
 
 /**

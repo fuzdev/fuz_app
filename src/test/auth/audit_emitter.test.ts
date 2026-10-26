@@ -947,4 +947,21 @@ describe('create_audit_emitter — drain_inflight', () => {
 		assert.ok(drain.done(), 'an untracked emitter has nothing to wait for');
 		gates[0]!.resolve();
 	});
+
+	test('is_tracking_inflight reports the construction', () => {
+		const { db } = create_gated_db();
+		assert.strictEqual(
+			create_audit_emitter({ db, log, track_inflight: true }).is_tracking_inflight(),
+			true
+		);
+		assert.strictEqual(
+			create_audit_emitter({ db, log, track_inflight: false }).is_tracking_inflight(),
+			false
+		);
+		assert.strictEqual(
+			create_audit_emitter({ db, log }).is_tracking_inflight(),
+			false,
+			'untracked by default'
+		);
+	});
 });

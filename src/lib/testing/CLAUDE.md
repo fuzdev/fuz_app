@@ -32,7 +32,7 @@ time (never runtime), where a throwing guard would break `vite build`.
 - `stub_handler()` — fresh `Response('stub')`.
 - `stub_mw` — pass-through middleware (`async (_c, next) => next()`).
 - `create_stub_app_deps()` — factory: fresh `AppDeps` with no-op keyring/password/`delete_file`, a `read_secure_file` that throws ENOENT (the no-token-file state), a `create_noop_stub` DB, silent `Logger`, no-op `audit`, an empty `connection_closer`.
-- `create_test_audit_emitter()` — no-op `AuditEmitter`; `emit` / `emit_role_grant_target` no-op, `emit_pool` resolves immediately, `notify` no-op, `add_listener` throws (use `create_recording_audit_emitter` for a listener-accepting emitter), `listener_count` returns 0, `drain_inflight` resolves immediately.
+- `create_test_audit_emitter()` — no-op `AuditEmitter`; `emit` / `emit_role_grant_target` no-op, `emit_pool` resolves immediately, `notify` no-op, `add_listener` throws (use `create_recording_audit_emitter` for a listener-accepting emitter), `listener_count` returns 0, `drain_inflight` resolves immediately, `is_tracking_inflight` returns `false`.
 - `create_stub_audit_sse()` — no-op `AuditLogSse` for surface-test wiring without booting real SSE. `on_audit_event` no-op (nothing is broadcast); `required_role` is `admin`; `registry` is a fresh `SubscriberRegistry` (live `.count` / `.close_*` for registry-state tests, isolated per call). For real SSE plumbing build via `create_audit_log_sse` against `create_test_app`.
 - `create_stub_api_middleware({include_daemon_token?, origin_carve_outs?})` — stub `MiddlewareSpec[]` matching `create_auth_middleware_specs`'s output (origin/session/request_context/bearer_auth, optional daemon_token) for surface generation without booting real auth — the same names, paths, order, and declared `errors` (`origin` declares a 403; `bearer_auth` and `daemon_token` declare none, since both soft-fail through `next()`), pinned against the real factory by `auth/middleware.mounted.test.ts`. The surface merges middleware errors into every route under the path, so a stub declaring more would widen the test surface with statuses the live server never returns. Each spec gets its own pass-through handler (not the shared `stub_mw`), so `assert_middleware_stack_mounted` tells the layers apart. See `auth/CLAUDE.md` §Middleware for the real stack.
 - `create_stub_app_backend(options?)` — stub `AppBackend` with no database: `create_stub_app_deps()` (or `options.deps`), no migration results, a `close` that does nothing (or `options.close`). For assembling a server in tests that never reach the database.
@@ -1884,8 +1884,9 @@ stateful cross suite (a reply that is no JSON object throws naming the method,
 the HTTP status and the body's head), and every
 suite that reads audit rows goes through `cross_backend/audit_cross_helpers.ts`
 — `list_audit_events(fixture, params, rpc_path?)` drains
-(`cross_drain_effects`, the `_testing_drain_effects` barrier) before it lists and
-parses, so no reader skips the barrier, and parses every row's metadata
+(`cross_drain_effects`, the `_testing_drain_effects` barrier, refusing an answer
+without `tracked: true`) before it lists and parses, so no reader skips the
+barrier and every read checks the barrier is live, and parses every row's metadata
 (`assert_audit_event_metadata`, closed to undeclared keys when the fixture's
 setup asked), so every reader holds the rows it reads to their event's
 schema. A suite pinning a row's values uses `assert_audit_metadata_fields(fixture,
@@ -2173,6 +2174,10 @@ are `src/test/auth/cell_crud_parity.db.test.ts`
   emitter must be built with `create_audit_emitter({track_inflight: true})`
   (the spine binary's `audit_factory` does — pinned by
   `cross_backend/testing_spine_server.audit.test.ts`), or the drain resolves at once.
+  The action answers `{ok: true, tracked}`, `tracked` read from
+  `audit.is_tracking_inflight()`, and `cross_drain_effects` refuses anything but
+  `tracked: true` — so a binary built over an untracked emitter fails its first
+  audit read rather than racing it. The Rust twin answers the same shape.
   The barrier is needed whatever the transport: HTTP on a binary running
   `await_pending_effects: true` settles a mutation's writes before
   responding, but WS replies before its effects flush, so a WS mutation's

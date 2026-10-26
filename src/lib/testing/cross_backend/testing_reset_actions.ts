@@ -202,6 +202,11 @@ export const testing_reset_action_spec = {
  * not — nor are eager writes outside `emit` (session touch, token usage),
  * which only the dispatching transport's own flush awaits.
  *
+ * The output's `tracked` is `AuditEmitter.is_tracking_inflight` — whether the
+ * drain could wait on anything. `cross_drain_effects` refuses `tracked: false`,
+ * so a binary whose emitter was built without tracking fails its first audit
+ * read instead of racing it. The Rust twin answers the same shape.
+ *
  * `auth` gates on the daemon-token credential, matching `_testing_reset`.
  */
 export const testing_drain_effects_action_spec = {
@@ -211,7 +216,14 @@ export const testing_drain_effects_action_spec = {
 	auth: TESTING_ACTION_AUTH,
 	side_effects: false,
 	input: z.void(),
-	output: z.strictObject({ ok: z.boolean() }),
+	output: z.strictObject({
+		ok: z.boolean(),
+		tracked: z.boolean().meta({
+			description:
+				"Whether the backend's audit emitter tracks in-flight writes — false means the drain " +
+				'waited on nothing and is no barrier.'
+		})
+	}),
 	async: true,
 	description:
 		'Test-binary only — await in-flight fire-and-forget audit writes so a following audit_log_list read is authoritative.'
@@ -278,14 +290,15 @@ export const testing_mint_session_action_spec = {
  * emitter the backend's handlers emit through (`deps.audit`), built with
  * `track_inflight: true` (see the spec doc). Mount it on any test endpoint
  * whose suite asserts on audit rows (the spine binary bundles it via
- * `create_testing_actions`; in-process suites mount it directly).
+ * `create_testing_actions`; in-process suites mount it directly). Answers
+ * `{ok: true, tracked}`, `tracked` read from `audit.is_tracking_inflight()`.
  *
  * @param audit - the backend's emitter, whose in-flight writes the action awaits
  */
 export const create_testing_drain_effects_action = (audit: AuditEmitter): RpcAction =>
 	rpc_action(testing_drain_effects_action_spec, async () => {
 		await audit.drain_inflight();
-		return { ok: true };
+		return { ok: true, tracked: audit.is_tracking_inflight() };
 	});
 
 /**

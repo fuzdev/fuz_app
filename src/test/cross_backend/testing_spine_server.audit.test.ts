@@ -16,6 +16,8 @@ import type { Uuid } from '#lib/primitive_schemas.ts';
 import type { AuditLogEvent } from '#lib/auth/audit_log_schema.ts';
 import type { Db } from '#lib/db/db.ts';
 
+import { create_testing_drain_effects_action } from '#lib/testing/cross_backend/testing_reset_actions.ts';
+
 import { cell_audit_factory } from './testing_spine_server.ts';
 
 const log = new Logger('test', { level: 'off' });
@@ -63,4 +65,14 @@ test('cell_audit_factory tracks in-flight writes, so the drain waits on them', a
 	gates[0]!.resolve();
 	await drain;
 	assert.ok(drained);
+});
+
+test('the TS spine binary answers the drain with tracked: true', async () => {
+	const audit = cell_audit_factory({ db: { query: async () => [] } as unknown as Db, log });
+	assert.ok(audit.is_tracking_inflight());
+	const drain = create_testing_drain_effects_action(audit);
+	assert.deepStrictEqual(await drain.handler(undefined, null as never), {
+		ok: true,
+		tracked: true
+	});
 });
