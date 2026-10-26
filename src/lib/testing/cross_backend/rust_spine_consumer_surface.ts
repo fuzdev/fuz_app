@@ -11,7 +11,7 @@ import '../assert_dev_env.ts';
  * actions plus the consumer's own. This module builds that surface from the
  * hono-free route shapes and the consumer's action specs, so a consumer
  * supplies only what is its own. A server that mounts no signup router (a
- * single-keeper daemon such as mageguild's) is not this shape.
+ * single-keeper daemon) is not this shape.
  *
  * The route shapes come from `create_account_route_shapes` and friends, never
  * the live route factories, which statically pull `hono/cookie` and
