@@ -163,6 +163,9 @@ export const create_gated_db = (inner: Db): GatedDb => {
 export const is_session_read = (sql: string): boolean =>
 	sql.includes('FROM auth_session WHERE id = $1');
 
+/** Matches the audit emitter's pool write. */
+export const is_audit_insert = (sql: string): boolean => sql.includes('INSERT INTO audit_log');
+
 /** Matches the by-id API token read only the admission re-read runs. */
 export const is_api_token_live_read = (sql: string): boolean =>
 	sql.includes('SELECT account_id FROM api_token WHERE id = $1');

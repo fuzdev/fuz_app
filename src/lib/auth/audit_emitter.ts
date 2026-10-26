@@ -43,7 +43,8 @@
  * - A **failure** row is announced as soon as it is written. It records an
  *   attempt, which happened whether or not the request's transaction commits.
  * - A **success** row is announced only after the request's transaction
- *   commits, and never when the handler throws: the fan-out is queued on
+ *   commits (after the handler returns, on a route without one), and never
+ *   when the handler throws: the fan-out is queued on
  *   `ctx.post_commit_effects` and awaits the write. A success row reports a
  *   state change, and the listeners act on it — the revocation listeners close
  *   connections, the audit stream broadcasts it. Announced before the commit,
@@ -53,8 +54,13 @@
  * A success row emitted by a handler that later throws is still in the table —
  * the write is outside the transaction — but is never announced.
  *
- * The Rust spine reaches the same order by writing a success row inside the
- * transaction and queueing its fan-out behind the commit.
+ * A route that runs without a request transaction and opens its own around
+ * just its writes (`/login`, `/password`) emits its success row once that
+ * transaction has committed, so the row is written after the change it
+ * reports. The Rust spine follows the same order: a success row emitted inside
+ * a request transaction is written in that transaction and its fan-out queued
+ * behind the commit, and `/login` and `/password` emit on the pool after their
+ * own transaction commits.
  *
  * Listeners are a documented registration seam — `create_app_server`
  * registers additional listeners via `add_listener` after the backend is

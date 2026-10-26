@@ -119,14 +119,11 @@ import type { AuditLogEvent } from '#lib/auth/audit_log_schema.ts';
 import type { SseNotification, SseStream } from '#lib/realtime/sse.ts';
 
 import { describe_db } from '../db_fixture.ts';
-import { create_gated_db, type GatedDb } from '../gated_db.ts';
+import { create_gated_db, is_audit_insert, type GatedDb } from '../gated_db.ts';
 
 const session_options = create_session_config('test_session');
 const RPC_PATH = '/api/rpc';
 const log = new Logger('test', { level: 'off' });
-
-/** Matches the audit emitter's pool write. */
-const is_audit_insert = (sql: string): boolean => sql.includes('INSERT INTO audit_log');
 
 /** Poll until `predicate` holds, failing with `message` after two seconds. */
 const until = async (predicate: () => boolean, message: string): Promise<void> => {

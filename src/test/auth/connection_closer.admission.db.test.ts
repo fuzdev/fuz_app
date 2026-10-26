@@ -14,10 +14,13 @@
  *
  * 1. the revoking request runs its handler and is held **just before its
  *    commit** (`create_gated_db`'s `hold_commit`) — the row is deleted, the
- *    delete uncommitted. The case then waits for the request's audit row to
- *    land: that write is pool-routed and eager, so it lands while the
- *    transaction is held, and anything that reacts to the *write* rather than
- *    the commit has reacted by now;
+ *    delete uncommitted. Where the handler emits its audit row inside the held
+ *    transaction, the case then waits for that row to land: the write is
+ *    pool-routed and eager, so it lands while the transaction is held, and
+ *    anything that reacts to the *write* rather than the commit has reacted
+ *    by now. `/login` and `/password` open their own transaction around just
+ *    their writes and emit after it commits, so for them the case checks
+ *    instead that no audit INSERT has been issued yet (`AuditWrite`);
  * 2. a connection on the revoked credential opens. Its admission re-read goes
  *    through the pool, sees the row (the delete is invisible to it), and
  *    admits;
@@ -79,7 +82,7 @@ import { DEFAULT_TEST_PASSWORD } from '#lib/testing/test_credentials.ts';
 import { create_fake_ws, create_stub_upgrade, type FakeWs } from '#lib/testing/ws_round_trip.ts';
 
 import { pg_factory } from '../db_fixture.ts';
-import { create_gated_db, type GatedDb } from '../gated_db.ts';
+import { create_gated_db, is_audit_insert, type GatedDb } from '../gated_db.ts';
 
 const log = new Logger('test', { level: 'off' });
 const session_options = create_session_config('test_session');
@@ -251,10 +254,24 @@ const login_headers = {
 	'Content-Type': 'application/json'
 };
 
+/**
+ * When the revoking request writes its success audit row, relative to the
+ * commit `with_uncommitted` holds.
+ *
+ * - `'before_commit'` — the handler runs inside the route's transaction and
+ *   emits there; the pool-routed write lands while the commit is held.
+ * - `'after_commit'` — the route is `transaction: false` and opens its own
+ *   transaction around just its writes (`/login`, `/password`); it emits once
+ *   that transaction has committed, so no audit INSERT is issued while the
+ *   commit is held.
+ */
+type AuditWrite = 'before_commit' | 'after_commit';
+
 /** A revocation, and the account whose credential it ends. */
 interface Revocation {
 	/** The audit event the revoking request writes on success. */
 	event_type: string;
+	audit_write: AuditWrite;
 	/** The account whose credential the revocation ends. */
 	account: { id: Uuid };
 	/** Session headers of that account — its one session is the credential a stream opens on. */
@@ -267,18 +284,20 @@ interface Site {
 	name: string;
 	/** The audit event the site writes on success. */
 	event_type: string;
+	/** Default `'before_commit'`. */
+	audit_write?: AuditWrite;
 	max_sessions?: number;
 	max_tokens?: number;
 	/** Which credential of the account the revocation ends. */
 	revokes: 'session' | 'token';
 	/** The revoked account must hold `admin` for its session to open the audit stream. */
-	arrange: (h: Harness) => Promise<Omit<Revocation, 'event_type'>>;
+	arrange: (h: Harness) => Promise<Omit<Revocation, 'event_type' | 'audit_write'>>;
 }
 
 const keeper_revocation = (
 	h: Harness,
 	act: () => Promise<boolean>
-): Omit<Revocation, 'event_type'> => ({
+): Omit<Revocation, 'event_type' | 'audit_write'> => ({
 	account: h.test_app.backend.account,
 	session_headers: keeper_headers(h),
 	act
@@ -424,6 +443,7 @@ const sites: Array<Site> = [
 	{
 		name: 'POST /password',
 		event_type: 'password_change',
+		audit_write: 'after_commit',
 		revokes: 'session',
 		arrange: (h) =>
 			Promise.resolve(
@@ -446,6 +466,7 @@ const sites: Array<Site> = [
 	{
 		name: 'POST /login (cap eviction)',
 		event_type: 'login',
+		audit_write: 'after_commit',
 		revokes: 'session',
 		max_sessions: 1,
 		arrange: (h) =>
@@ -475,35 +496,65 @@ const with_uncommitted = async (
 	revocation: Revocation,
 	during: () => Promise<void>
 ): Promise<void> => {
+	// an after-commit site issues no audit INSERT while its commit is held: the
+	// stall catches one issued, landed or not
+	const audit_insert =
+		revocation.audit_write === 'after_commit' ? h.gated.stall(is_audit_insert) : null;
+	let audit_insert_issued = false;
+	void audit_insert?.reached.then(() => {
+		audit_insert_issued = true;
+	});
 	const held = h.gated.hold_commit();
 	const request = revocation.act();
 	await held.reached;
 	try {
-		await audit_row_landed(h, revocation.event_type);
+		if (revocation.audit_write === 'before_commit') {
+			await audit_row_landed(h, revocation.event_type);
+		} else {
+			await wait();
+			assert.ok(
+				!audit_insert_issued,
+				`the '${revocation.event_type}' audit row is written only after the commit`
+			);
+			// release before `during`, which may write audit rows of its own — a released
+			// stall lets its match straight through
+			audit_insert?.release();
+		}
 		await during();
 	} finally {
+		audit_insert?.release();
 		held.release();
 	}
 	assert.strictEqual(await request, true, 'the revoking request succeeded');
+	assert.strictEqual(
+		await count_success_rows(h, revocation.event_type),
+		1,
+		`the '${revocation.event_type}' audit row is written`
+	);
 };
+
+/** Count the success audit rows of `event_type` visible through the pool. */
+const count_success_rows = async (h: Harness, event_type: string): Promise<number> =>
+	(
+		await h.db.query(`SELECT 1 FROM audit_log WHERE event_type = $1 AND outcome = 'success'`, [
+			event_type
+		])
+	).length;
 
 /**
  * Wait until the revoking request's success audit row is visible through the
  * pool, then let the emitter's continuation run.
  *
- * The audit write is eager and pool-routed, so it lands while the revocation's
- * transaction is still held. Waiting for it fixes the schedule: a listener
- * that closes on the *write* has run before the connection opens, and found
- * nothing — only a close made after the commit can reach the connection.
+ * A `'before_commit'` site's audit write is eager and pool-routed, so it
+ * lands while the revocation's transaction is still held. Waiting for it fixes
+ * the schedule: a listener that closes on the *write* has run before the
+ * connection opens, and found nothing — only a close made after the commit can
+ * reach the connection.
  */
 const audit_row_landed = async (h: Harness, event_type: string): Promise<void> => {
 	const deadline = Date.now() + 2000;
 	for (;;) {
-		const rows = await h.db.query(
-			`SELECT 1 FROM audit_log WHERE event_type = $1 AND outcome = 'success'`,
-			[event_type]
-		);
-		if (rows.length > 0) break;
+		if ((await count_success_rows(h, event_type)) > 0) break;
 		assert.ok(Date.now() < deadline, `no '${event_type}' audit row landed within 2s`);
 		await wait(5);
 	}
@@ -529,7 +580,11 @@ describe_pg('a connection admitted while its revocation is uncommitted', (get_db
 
 			test('a WebSocket is closed at the commit, by the handler', async () => {
 				const h = await create_harness(get_db(), site);
-				const revocation = { ...(await site.arrange(h)), event_type: site.event_type };
+				const revocation = {
+					...(await site.arrange(h)),
+					event_type: site.event_type,
+					audit_write: site.audit_write ?? 'before_commit'
+				};
 				const credential = await victim_credential(h, revocation);
 				const endpoint = h.ws_closed_by_handlers;
 
@@ -553,7 +608,11 @@ describe_pg('a connection admitted while its revocation is uncommitted', (get_db
 				'a WebSocket only the audit listener reaches is closed at the commit too',
 				async () => {
 					const h = await create_harness(get_db(), site);
-					const revocation = { ...(await site.arrange(h)), event_type: site.event_type };
+					const revocation = {
+						...(await site.arrange(h)),
+						event_type: site.event_type,
+						audit_write: site.audit_write ?? 'before_commit'
+					};
 					const credential = await victim_credential(h, revocation);
 					const endpoint = h.ws_closed_by_listener;
 
@@ -575,7 +634,11 @@ describe_pg('a connection admitted while its revocation is uncommitted', (get_db
 			// stream of its own to close.
 			test.skipIf(site.revokes === 'token')('an audit stream is closed at the commit', async () => {
 				const h = await create_harness(get_db(), site);
-				const revocation = { ...(await site.arrange(h)), event_type: site.event_type };
+				const revocation = {
+					...(await site.arrange(h)),
+					event_type: site.event_type,
+					audit_write: site.audit_write ?? 'before_commit'
+				};
 
 				let res: Response | undefined;
 				await with_uncommitted(h, revocation, async () => {
@@ -608,6 +671,7 @@ describe_pg('a connection admitted while its revocation is uncommitted', (get_db
 		assert.strictEqual(grants.length, 1);
 		const revocation: Revocation = {
 			event_type: 'role_grant_revoke',
+			audit_write: 'before_commit',
 			account: target.account,
 			session_headers: target.create_session_headers(),
 			act: () =>
