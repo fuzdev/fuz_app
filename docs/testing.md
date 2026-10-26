@@ -1017,9 +1017,13 @@ impls actually boot.
 - `extract_declared_error_codes` (`testing/error_coverage.ts`) — Extract literal/enum codes from an error response schema
 - `resolve_valid_path` (`testing/schema_generators.ts`) — Resolve route path with valid param values
 - `generate_valid_body` (`testing/schema_generators.ts`) — Generate valid request body from Zod schema
+- `to_field_json_schema` (`testing/schema_generators.ts`) — A field's input-side JSON Schema (through transforms, pipes and a nullable's `anyOf`)
 - `detect_format` (`testing/schema_generators.ts`) — Detect format constraints (uuid, email, pattern)
+- `detect_json_schema_format` (`testing/schema_generators.ts`) — The format constraint of a field's JSON Schema
 - `generate_valid_value` (`testing/schema_generators.ts`) — Generate valid value for a Zod field
 - `generate_valid_object` (`testing/schema_generators.ts`) — Generate a valid object, filling optional fields until its refinements pass
+- `generate_valid_object_with_field` (`testing/schema_generators.ts`) — A valid object carrying one field, built from a valid base — the body a single-fault case on that field changes
+- `generate_valid_string_param` (`testing/schema_generators.ts`) — A string a route param or query field accepts
 - `create_rpc_post_init` (`testing/rpc_helpers.ts`) — Build `RequestInit` for JSON-RPC POST request
 - `create_rpc_get_url` (`testing/rpc_helpers.ts`) — Build GET URL with JSON-RPC query parameters
 - `assert_jsonrpc_error_response` (`testing/rpc_helpers.ts`) — Assert valid JSON-RPC error response structure
@@ -1734,7 +1738,14 @@ action-manifest parity gate doesn't compare param schemas:
   authorized principal and owing 400 `invalid_params` with the `data.reason`
   the broken field declares (`invalid_reason` in its `.meta()`), or none for
   an undeclared field or a whole-body case — `describe_rpc_attack_surface_tests`
-  holds its in-process params cases to the same.
+  holds its in-process params cases to the same. Format and boundary cases
+  come from each field's input-side JSON Schema, so a field behind a
+  `.transform()`, a pipe or `.nullish()` (a `Username`) gets its pattern,
+  empty-string and over-`maxLength` cases; a bound only a `.refine()`
+  enforces gets none. Each case is valid but for the field it breaks: a field
+  the base omits is cased on a valid body that carries it (its paired field
+  added, or the other branch of an exactly-one-of rule dropped), and a field
+  no valid body carries gets no format or boundary cases.
   `input_overrides` (method name → valid params) replaces a method's generated
   base, the body each case breaks one field of; an override its input schema
   refuses throws at collection, naming the method.

@@ -22,27 +22,74 @@ import {
 import { is_null_schema } from '../http/schema_helpers.ts';
 
 /**
- * Detect format constraints on a field by converting to JSON Schema.
- * Returns format string (e.g. 'uuid', 'email') or null.
+ * The JSON Schema of a field's input side — where its format, pattern and
+ * bounds live — or `null` when JSON Schema can't render the field or any part
+ * of it (`z.date()`, `z.custom()`, a union with a `z.date()` branch).
+ *
+ * Rendered with `io: 'input'`, so a field carrying a `.transform()` or a pipe
+ * (`Username`) still yields the constraints its input is checked against;
+ * the default output side throws on a transform. A pipe yields its input
+ * side only, so constraints of the stage after it are not here. A
+ * `.nullable()` / `.nullish()` field renders as
+ * `anyOf: [{…}, {type: 'null'}]`; its one non-null branch is returned, so
+ * the bounds and pattern read the same as on the bare field. A union of two
+ * or more non-null branches returns the whole schema — its branches' bounds
+ * are no single field's bounds.
+ *
+ * A `.refine()` is never here: JSON Schema can't express one, so a bound a
+ * refinement enforces (a code-point length, a cross-field rule) generates no
+ * boundary case.
+ *
+ * @param field_schema - the field to read
+ * @returns the field's input-side JSON Schema, or `null` when it can't be rendered
  */
-export const detect_format = (field_schema: z.ZodType): string | null => {
+export const to_field_json_schema = (field_schema: z.ZodType): Record<string, unknown> | null => {
+	let json: Record<string, unknown>;
 	try {
-		const json = z.toJSONSchema(field_schema) as Record<string, unknown>;
-		if (typeof json.format === 'string') return json.format;
-		if (typeof json.pattern === 'string') return 'pattern';
-		// `.nullish()` / `.nullable()` produce `anyOf: [{format, …}, {type: 'null'}]`
-		// — descend into the first non-null branch so format/pattern surface.
-		if (Array.isArray(json.anyOf)) {
-			for (const branch of json.anyOf as Array<Record<string, unknown>>) {
-				if (branch.type === 'null') continue;
-				if (typeof branch.format === 'string') return branch.format;
-				if (typeof branch.pattern === 'string') return 'pattern';
-			}
-		}
+		json = z.toJSONSchema(field_schema, { io: 'input' });
 	} catch {
-		// schema can't be converted, no format
+		return null; // a type JSON Schema can't represent
+	}
+	if (Array.isArray(json.anyOf)) {
+		const branches = (json.anyOf as Array<Record<string, unknown>>).filter(
+			(branch) => branch.type !== 'null'
+		);
+		if (branches.length === 1) return branches[0]!;
+	}
+	return json;
+};
+
+/**
+ * The format constraint a field's input-side JSON Schema carries: its
+ * `format` (e.g. `'uuid'`, `'email'`), `'pattern'` for a regex, or `null`.
+ * A union (`anyOf` of several non-null branches) answers its first branch
+ * carrying one — a value violating every branch is what the caller needs,
+ * and the generators check the field refuses the candidate.
+ *
+ * @param json - a field's JSON Schema, as `to_field_json_schema` returns it
+ * @returns the format, `'pattern'`, or `null`
+ */
+export const detect_json_schema_format = (json: Record<string, unknown>): string | null => {
+	if (typeof json.format === 'string') return json.format;
+	if (typeof json.pattern === 'string') return 'pattern';
+	if (Array.isArray(json.anyOf)) {
+		for (const branch of json.anyOf as Array<Record<string, unknown>>) {
+			if (branch.type === 'null') continue;
+			if (typeof branch.format === 'string') return branch.format;
+			if (typeof branch.pattern === 'string') return 'pattern';
+		}
 	}
 	return null;
+};
+
+/**
+ * Detect format constraints on a field from its input-side JSON Schema
+ * (`to_field_json_schema`). Returns the format string (e.g. `'uuid'`,
+ * `'email'`), `'pattern'` for a regex, or `null`.
+ */
+export const detect_format = (field_schema: z.ZodType): string | null => {
+	const json = to_field_json_schema(field_schema);
+	return json && detect_json_schema_format(json);
 };
 
 /**
@@ -113,13 +160,11 @@ const generate_valid_string = (field_schema: z.ZodType): string => {
 	let min_length = 0;
 	let max_length = Infinity;
 	let pattern: string | null = null;
-	try {
-		const json = z.toJSONSchema(field_schema) as Record<string, unknown>;
+	const json = to_field_json_schema(field_schema);
+	if (json) {
 		if (typeof json.minLength === 'number') min_length = json.minLength;
 		if (typeof json.maxLength === 'number') max_length = json.maxLength;
 		if (typeof json.pattern === 'string') pattern = json.pattern;
-	} catch {
-		// no constraints
 	}
 	const target = Math.max(min_length, Math.min(10, max_length));
 	const base = 'x'.repeat(target) || 'test_value';
@@ -155,6 +200,10 @@ const generate_valid_string = (field_schema: z.ZodType): string => {
 	const as_url = 'https://example.com/' + base;
 	if (field_schema.safeParse(as_url).success) return as_url;
 
+	// Two-segment path refinement (an `owner/name` repo slug)
+	const segments = `${base}/${base}`;
+	if (field_schema.safeParse(segments).success) return segments;
+
 	return base; // fall through — generate_valid_body will report the failure
 };
 
@@ -177,27 +226,20 @@ export const generate_valid_value = (field: ZodFieldInfo, field_schema: z.ZodTyp
 			for (const candidate of [1, -1, 0]) {
 				if (field_schema.safeParse(candidate).success) return candidate;
 			}
-			try {
-				const json = z.toJSONSchema(field_schema) as Record<string, unknown>;
+			const json = to_field_json_schema(field_schema);
+			if (json) {
 				if (typeof json.minimum === 'number') return Math.ceil(json.minimum);
 				if (typeof json.exclusiveMinimum === 'number') return Math.floor(json.exclusiveMinimum) + 1;
 				if (typeof json.maximum === 'number') return Math.floor(json.maximum);
 				if (typeof json.exclusiveMaximum === 'number') return Math.ceil(json.exclusiveMaximum) - 1;
-			} catch {
-				// no bounds to read
 			}
 			return 1; // fall through — generate_valid_body will report the failure
 		}
 		case 'boolean':
 			return true;
 		case 'array': {
-			let min_items = 0;
-			try {
-				const json = z.toJSONSchema(field_schema) as Record<string, unknown>;
-				if (typeof json.minItems === 'number') min_items = json.minItems;
-			} catch {
-				// no constraint
-			}
+			const json = to_field_json_schema(field_schema);
+			const min_items = typeof json?.minItems === 'number' ? json.minItems : 0;
 			if (min_items === 0) return [];
 			const def = zod_unwrap_def(field_schema) as { element?: z.ZodType };
 			const element_schema = def.element;
@@ -289,35 +331,149 @@ export const generate_valid_object = (
 	object_schema: z.ZodObject,
 	schema: z.ZodType
 ): { value: Record<string, unknown>; result: z.ZodSafeParseResult<unknown> } => {
-	const fields = zod_extract_fields(object_schema);
 	const base: Record<string, unknown> = {};
-	const optional_fields: Array<ZodFieldInfo> = [];
-	for (const field of fields) {
-		if (!field.required && !field.has_default) {
-			optional_fields.push(field);
-			continue;
-		}
-		base[field.name] = generate_valid_value(field, object_schema.shape[field.name] as z.ZodType);
+	const optional: Array<[string, unknown]> = [];
+	for (const field of zod_extract_fields(object_schema)) {
+		const value = generate_valid_value(field, object_schema.shape[field.name] as z.ZodType);
+		if (is_optional_field(field)) optional.push([field.name, value]);
+		else base[field.name] = value;
 	}
-	let result = schema.safeParse(base);
-	if (result.success) return { value: base, result };
+	return fill_optional_fields(schema, base, optional);
+};
+
+/** A field the object may omit — optional and without a default Zod fills. */
+const is_optional_field = (field: ZodFieldInfo): boolean => !field.required && !field.has_default;
+
+/**
+ * `start` as is when `schema` accepts it; else `start` plus each candidate
+ * alone, in order, taking the first that parses; else the candidates added
+ * one at a time, in order, until it parses.
+ *
+ * @param schema - the schema the object must satisfy
+ * @param start - the fields every result keeps
+ * @param candidates - optional fields and their values, in declaration order
+ * @returns the object and its last `safeParse` result
+ */
+const fill_optional_fields = (
+	schema: z.ZodType,
+	start: Record<string, unknown>,
+	candidates: ReadonlyArray<readonly [string, unknown]>
+): { value: Record<string, unknown>; result: z.ZodSafeParseResult<unknown> } => {
+	let result = schema.safeParse(start);
+	if (result.success) return { value: start, result };
 	// each optional field alone, so one the refinement doesn't need stays out
-	const generated: Array<unknown> = optional_fields.map((field) =>
-		generate_valid_value(field, object_schema.shape[field.name] as z.ZodType)
-	);
-	for (let i = 0; i < optional_fields.length; i++) {
-		const value = { ...base, [optional_fields[i]!.name]: generated[i] };
+	for (const [name, field_value] of candidates) {
+		const value = { ...start, [name]: field_value };
 		const single_result = schema.safeParse(value);
 		if (single_result.success) return { value, result: single_result };
 	}
 	// then cumulatively, for a refinement needing several
-	const value = { ...base };
-	for (let i = 0; i < optional_fields.length; i++) {
-		value[optional_fields[i]!.name] = generated[i];
+	const value = { ...start };
+	for (const [name, field_value] of candidates) {
+		value[name] = field_value;
 		result = schema.safeParse(value);
 		if (result.success) break;
 	}
 	return { value, result };
+};
+
+/**
+ * A valid object that carries `field`, built from `base`, a valid object of
+ * `object_schema` — the body a case breaking `field` changes, so the case
+ * breaks that field and nothing else. `base` itself when it carries the
+ * field. Otherwise the field takes a generated value and joins `base`, with
+ * the optional fields `base` omits filled as `generate_valid_object` fills
+ * them (a pair rule: adding `scope_kind` needs `scope_id`); failing that, it
+ * replaces `base`'s optional fields, refilled the same way around it (an
+ * exactly-one-of rule: adding `slug` means dropping `id`).
+ *
+ * @param object_schema - the unwrapped object `base` is an instance of
+ * @param schema - the schema the object must satisfy, refinements included
+ * @param base - a valid object, the generated or seeded base
+ * @param field - the field the object must carry
+ * @returns the object, or `null` when no object the generator can build
+ *   carries the field and passes `schema`
+ */
+export const generate_valid_object_with_field = (
+	object_schema: z.ZodObject,
+	schema: z.ZodType,
+	base: Record<string, unknown>,
+	field: ZodFieldInfo
+): Record<string, unknown> | null => {
+	if (Object.hasOwn(base, field.name)) return base;
+	const fields = zod_extract_fields(object_schema);
+	const value_of = (f: ZodFieldInfo): unknown =>
+		Object.hasOwn(base, f.name)
+			? base[f.name]
+			: generate_valid_value(f, object_schema.shape[f.name] as z.ZodType);
+	const field_value = value_of(field);
+	// the field joins the base, which keeps its optional fields
+	const absent: Array<[string, unknown]> = fields
+		.filter((f) => f.name !== field.name && is_optional_field(f) && !Object.hasOwn(base, f.name))
+		.map((f) => [f.name, value_of(f)]);
+	const joined = fill_optional_fields(schema, { ...base, [field.name]: field_value }, absent);
+	if (joined.result.success) return joined.value;
+	// the field in place of the base's optional fields, which are refilled around it
+	const optional_names = new Set(fields.filter(is_optional_field).map((f) => f.name));
+	const core: Record<string, unknown> = {};
+	for (const [k, v] of Object.entries(base)) {
+		if (!optional_names.has(k)) core[k] = v;
+	}
+	core[field.name] = field_value;
+	const others: Array<[string, unknown]> = fields
+		.filter((f) => f.name !== field.name && is_optional_field(f))
+		.map((f) => [f.name, value_of(f)]);
+	const replaced = fill_optional_fields(schema, core, others);
+	return replaced.result.success ? replaced.value : null;
+};
+
+const NIL_UUID = '00000000-0000-0000-0000-000000000000';
+
+/**
+ * A string a URL-sourced field accepts — a route param or a query value, which
+ * arrive as strings whatever the schema parses them into. The nil UUID for a
+ * UUID field; else the first the field accepts of `test_value`, the generated
+ * valid value written as a string, `1`, `0`, `true` and `false`, the field's
+ * JSON Schema `default` or lower bound written as a string (a preprocessed
+ * integer whose minimum is above one), and a string synthesized from the
+ * field's constraints.
+ *
+ * @param field - the field's info, from `zod_extract_fields`
+ * @param field_schema - the field's schema
+ * @returns the string, or `null` when no candidate passes
+ */
+export const generate_valid_string_param = (
+	field: ZodFieldInfo,
+	field_schema: z.ZodType
+): string | null => {
+	const candidates: Array<string> = [];
+	if (field.base_type === 'uuid' || detect_format(field_schema) === 'uuid') {
+		candidates.push(NIL_UUID);
+	}
+	candidates.push('test_value');
+	const generated = generate_valid_value(field, field_schema);
+	if (
+		typeof generated === 'string' ||
+		typeof generated === 'number' ||
+		typeof generated === 'boolean'
+	) {
+		candidates.push(String(generated));
+	}
+	candidates.push('1', '0', 'true', 'false');
+	// a number the URL string is preprocessed into: its default or its lower bound
+	const json = to_field_json_schema(field_schema);
+	if (json) {
+		const fallback = json.default;
+		if (typeof fallback === 'number' || typeof fallback === 'string') {
+			candidates.push(String(fallback));
+		}
+		if (typeof json.minimum === 'number') candidates.push(String(Math.ceil(json.minimum)));
+		if (typeof json.exclusiveMinimum === 'number') {
+			candidates.push(String(Math.floor(json.exclusiveMinimum) + 1));
+		}
+	}
+	candidates.push(generate_valid_string(field_schema));
+	return candidates.find((c) => field_schema.safeParse(c).success) ?? null;
 };
 
 /**
