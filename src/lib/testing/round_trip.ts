@@ -9,11 +9,15 @@ import './assert_dev_env.ts';
  * `setup_test` fixture-producing callback.
  *
  * Cadence: per-describe `setup_test()` call. Each test in the suite
- * fires one HTTP request against a shared fixture — no test mutates
- * state in a way that contaminates the next, so the per-test cost of
- * re-bootstrapping isn't justified here. Suites with state-isolation
- * requirements (integration, admin_integration, audit_completeness)
- * call `setup_test()` per test.
+ * fires one HTTP request against a shared fixture, so the per-test cost of
+ * re-bootstrapping isn't paid here. A mutation called as the authed account
+ * runs on a fresh account of its own (`round_trip_uses_fresh_account`) — a
+ * generated logout or self-delete would otherwise end the shared account's
+ * credential — and a 401 to any non-public request fails
+ * (`is_unauthenticated_refusal`), so a credential lost some other way goes
+ * red rather than vacuous. Suites with state-isolation requirements
+ * (integration, admin_integration, audit_completeness) call `setup_test()`
+ * per test.
  *
  * @module
  */
@@ -21,9 +25,17 @@ import './assert_dev_env.ts';
 import { describe, test, beforeAll, assert } from 'vitest';
 
 import { ROLE_ADMIN } from '../auth/role_schema.ts';
-import { is_public_auth, needs_actor, input_schema_declares_acting } from '../http/auth_shape.ts';
+import { needs_actor, input_schema_declares_acting } from '../http/auth_shape.ts';
 import type { TestAccount } from './app_server.ts';
-import { assert_response_matches_spec, pick_auth_headers } from './integration_helpers.ts';
+import {
+	assert_response_matches_spec,
+	is_unauthenticated_refusal,
+	pick_auth_headers,
+	pick_auth_principal,
+	round_trip_uses_fresh_account,
+	to_principal_headers,
+	type AuthPrincipal
+} from './integration_helpers.ts';
 import {
 	resolve_valid_path,
 	generate_valid_body,
@@ -31,7 +43,6 @@ import {
 } from './schema_generators.ts';
 import type { SetupTest, TestFixture } from './cross_backend/setup.ts';
 import type { AppSurfaceSpec } from '../http/surface.ts';
-import type { RouteSpec } from '../http/route_spec.ts';
 
 /** Options for `describe_round_trip_validation`. */
 export interface RoundTripTestOptions {
@@ -72,6 +83,38 @@ export interface RoundTripTestOptions {
 }
 
 /**
+ * Guard against a refusal that says the request carried no valid credential
+ * when it carried one (`is_unauthenticated_refusal`), the REST twin of
+ * `assert_rpc_authenticated`. Every non-public route is sent a live
+ * credential its auth admits, so a 401 reading `authentication_required`, or
+ * naming no reason, means the credential stopped working — most often because
+ * an earlier request ended it. A public route may answer 401 (a login with a
+ * wrong password), and so may a handler refusing an authenticated request
+ * with a reason of its own (`invalid_credentials`).
+ *
+ * @param route_key - the route, as `METHOD /path`
+ * @param status - the HTTP status
+ * @param body - the parsed response body, or `undefined` when not JSON
+ * @param principal - the principal the request was sent as
+ */
+export const assert_route_authenticated = (
+	route_key: string,
+	status: number,
+	body: unknown,
+	principal: AuthPrincipal
+): void => {
+	if (principal === 'public') return;
+	const reason =
+		body !== null && typeof body === 'object' ? (body as { error?: unknown }).error : undefined;
+	if (!is_unauthenticated_refusal(status, reason)) return;
+	assert.fail(
+		`${route_key} answered 401 (${JSON.stringify(reason ?? null)}) to the ${principal}` +
+			` principal's credential — the request carried a credential its auth admits,` +
+			` so a 401 here means that credential stopped working`
+	);
+};
+
+/**
  * Run schema-driven round-trip validation tests.
  *
  * For each route:
@@ -104,20 +147,23 @@ export const describe_round_trip_validation = (options: RoundTripTestOptions): v
 			});
 		});
 
-		// Mirror `pick_auth_headers`' account selection to recover the actor id
-		// of whichever account it authed as — so an `actor: 'required'` route
-		// that declares `acting?: ActingActor` gets the matching actor supplied
-		// explicitly (its sole actor, here), rather than relying on implicit
-		// single-actor resolution. Keeps such routes drivable without a
-		// consumer skip-list entry. Returns `null` for public routes.
-		const pick_acting_actor_id = (spec: RouteSpec): string | null => {
-			const { auth } = spec;
-			if (is_public_auth(auth)) return null;
-			if (auth.credential_types?.includes('daemon_token')) return fixture.actor.id;
-			if (auth.roles?.length) {
-				return auth.roles.includes(ROLE_ADMIN) ? admin_account.actor.id : fixture.actor.id;
+		// The actor id of whichever account the principal calls as — so an
+		// `actor: 'required'` route that declares `acting?: ActingActor` gets the
+		// matching actor supplied explicitly (its sole actor, here), rather than
+		// relying on implicit single-actor resolution. Keeps such routes drivable
+		// without a consumer skip-list entry. `null` for public routes.
+		const to_acting_actor_id = (principal: AuthPrincipal, authed: TestAccount): string | null => {
+			switch (principal) {
+				case 'public':
+					return null;
+				case 'admin':
+					return admin_account.actor.id;
+				case 'authed':
+					return authed.actor.id;
+				case 'daemon_token':
+				case 'keeper':
+					return fixture.actor.id;
 			}
-			return authed_account.actor.id;
 		};
 
 		test.each(describe_time_specs)('$method $path produces schema-valid response', async (spec) => {
@@ -134,14 +180,20 @@ export const describe_round_trip_validation = (options: RoundTripTestOptions): v
 			const override = options.input_overrides?.get(route_key);
 			let body = override ?? generate_valid_body(spec.input);
 
-			const headers = pick_auth_headers(spec, fixture, authed_account, admin_account);
+			// a mutation called as the authed account runs on a fresh one, so a
+			// logout or a self-delete can't end the shared account's credential
+			const principal = pick_auth_principal(spec.auth);
+			const authed = round_trip_uses_fresh_account(principal, spec.method !== 'GET')
+				? await fixture.create_account({ roles: [] })
+				: authed_account;
+			const headers = to_principal_headers(principal, fixture, authed, admin_account);
 
 			// Auto-supply `acting` for actor-required routes that declare it. The
 			// `actor !== 'none' ⟺ acting declared` registry invariant means a
 			// route either declares `acting` in `query` (REST GET/body-less) or
 			// `input` — supply the picked account's actor in the matching channel.
 			let request_url = url;
-			const acting_id = needs_actor(spec.auth) ? pick_acting_actor_id(spec) : null;
+			const acting_id = needs_actor(spec.auth) ? to_acting_actor_id(principal, authed) : null;
 			if (acting_id !== null) {
 				if (spec.query && input_schema_declares_acting(spec.query)) {
 					request_url = `${url}${url.includes('?') ? '&' : '?'}acting=${acting_id}`;
@@ -164,6 +216,13 @@ export const describe_round_trip_validation = (options: RoundTripTestOptions): v
 			}
 
 			try {
+				if (res.status === 401) {
+					const body: unknown = await res
+						.clone()
+						.json()
+						.catch(() => undefined);
+					assert_route_authenticated(route_key, res.status, body, principal);
+				}
 				await assert_response_matches_spec(describe_time_specs, spec.method, url, res);
 			} catch (e) {
 				throw new Error(

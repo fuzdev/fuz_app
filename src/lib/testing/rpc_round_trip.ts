@@ -11,10 +11,18 @@ import './assert_dev_env.ts';
  *
  * Cadence: per-describe `setup_test()` call (see `testing/round_trip.ts` module
  * docstring). The generic POST and GET cases fire one JSON-RPC envelope per
- * method-direction and don't mutate state in a way that contaminates the
- * next case. The `success_fixtures` case does mutate — each fixture builds a
- * row and the call revokes, deletes, or decides it — so it runs last on the
- * describe's fixture, and each factory seeds its own rows.
+ * method-direction against shared principals (an authed account, an admin
+ * account, the keeper). A side-effecting method called as the authed account
+ * runs on a fresh account of its own (`round_trip_uses_fresh_account`):
+ * the generated params of a self-targeting method act on the caller — an
+ * `account_delete` with no `account_id` deletes it, an
+ * `account_session_revoke_all` ends its session — and on the shared account
+ * that would leave every later call refused as unauthenticated. A 401 to any
+ * non-public call fails (`assert_rpc_authenticated`), so a credential lost
+ * some other way goes red rather than vacuous. The `success_fixtures` case
+ * also mutates — each fixture builds a row and the call revokes, deletes, or
+ * decides it — so it runs last on the describe's fixture, and each factory
+ * seeds its own rows.
  *
  * @module
  */
@@ -31,7 +39,6 @@ import { JSONRPC_ERROR_CODE_TO_HTTP_STATUS } from '../http/jsonrpc_errors.ts';
 import type { TestAccount } from './app_server.ts';
 import { generate_valid_body } from './schema_generators.ts';
 import type { AppSurfaceSpec, AppSurfaceRpcMethod } from '../http/surface.ts';
-import { is_public_auth } from '../http/auth_shape.ts';
 import {
 	create_rpc_post_init,
 	create_rpc_get_url,
@@ -42,7 +49,14 @@ import {
 	find_rpc_method,
 	type RpcEndpointsSuiteOption
 } from './rpc_helpers.ts';
-import type { KeeperHeaderProvider } from './integration_helpers.ts';
+import {
+	is_unauthenticated_refusal,
+	pick_auth_principal,
+	round_trip_uses_fresh_account,
+	to_principal_headers,
+	type AuthPrincipal,
+	type KeeperHeaderProvider
+} from './integration_helpers.ts';
 import type { SetupTest, TestFixture } from './cross_backend/setup.ts';
 import type { SessionOptions } from '../auth/session_cookie.ts';
 
@@ -121,31 +135,69 @@ export type RpcSuccessFixture = (fixture: TestFixture) => Promise<RpcSuccessFixt
 /** Success-case fixtures, method name → async factory. See `RpcRoundTripTestOptions.success_fixtures`. */
 export type RpcSuccessFixtures = Map<string, RpcSuccessFixture>;
 
+/** A picked principal and the headers that carry its credential. */
+export interface RpcRoundTripAuth {
+	principal: AuthPrincipal;
+	headers: Record<string, string>;
+}
+
 /**
- * Pick auth headers matching an RPC method's auth requirement. Accepts
- * any `KeeperHeaderProvider` — both `TestApp` (in-process) and
- * `TestFixture` (cross-backend) satisfy the shape structurally.
+ * Pick the principal matching an RPC method's auth requirement
+ * (`pick_auth_principal`, shared with the REST round-trip), and the headers
+ * carrying its credential. Accepts any `KeeperHeaderProvider` — both `TestApp`
+ * (in-process) and `TestFixture` (cross-backend) satisfy the shape
+ * structurally.
  */
-const pick_rpc_auth_headers = (
+export const pick_rpc_auth = (
 	method: AppSurfaceRpcMethod,
 	keeper: KeeperHeaderProvider,
 	authed_account: TestAccount,
 	admin_account: TestAccount
-): Record<string, string> => {
-	const { auth } = method;
-	if (is_public_auth(auth)) {
-		return { host: 'localhost', origin: 'http://localhost:5173' };
-	}
-	if (auth.credential_types?.includes('daemon_token')) {
-		return keeper.create_daemon_token_headers();
-	}
-	if (auth.roles?.length) {
-		if (auth.roles.includes(ROLE_ADMIN)) {
-			return admin_account.create_session_headers();
-		}
-		return keeper.create_session_headers();
-	}
-	return authed_account.create_session_headers();
+): RpcRoundTripAuth => {
+	const principal = pick_auth_principal(method.auth);
+	return {
+		principal,
+		headers: to_principal_headers(principal, keeper, authed_account, admin_account)
+	};
+};
+
+/**
+ * Guard against a refusal that says the call carried no valid credential
+ * when it carried one (`is_unauthenticated_refusal`). The round-trip sends
+ * every non-public method a live credential its auth admits, so such a 401
+ * means the backend failed to authenticate it — most often because an earlier
+ * call destroyed it (a self-delete, a revoke-all), which would turn every
+ * later method's coverage into a vacuous refusal. A public method may still
+ * answer 401 (a login with a wrong password), and so may a handler refusing
+ * an authenticated call with a reason of its own (`invalid_credentials`).
+ *
+ * @param method - the RPC method name
+ * @param status - the HTTP status
+ * @param body - the parsed response body (or raw text when not JSON)
+ * @param principal - the principal the call was sent as
+ */
+export const assert_rpc_authenticated = (
+	method: string,
+	status: number,
+	body: unknown,
+	principal: AuthPrincipal
+): void => {
+	if (principal === 'public') return;
+	const parsed = JsonrpcErrorResponse.safeParse(body);
+	const data = parsed.success ? parsed.data.error.data : undefined;
+	const reason =
+		data !== null && typeof data === 'object' ? (data as { reason?: unknown }).reason : undefined;
+	if (!is_unauthenticated_refusal(status, reason)) return;
+	const detail = parsed.success
+		? `code ${parsed.data.error.code}, message ${JSON.stringify(parsed.data.error.message)}${
+				data === undefined ? '' : `, data ${JSON.stringify(data)}`
+			}`
+		: `body ${typeof body === 'string' ? body.slice(0, 500) : JSON.stringify(body).slice(0, 500)}`;
+	assert.fail(
+		`method '${method}' answered 401 to the ${principal} principal's credential (${detail})` +
+			' — the call carried a credential its auth admits, so the backend owed an' +
+			' authenticated answer; a 401 here means that credential stopped working'
+	);
 };
 
 /**
@@ -241,12 +293,19 @@ const assert_not_crash = (
 
 /**
  * Assert a non-ok response is an acceptable refusal: the method exists, the
- * failure is not a crash (`assert_not_crash`), and the body is a well-formed
- * JSON-RPC error envelope.
+ * failure is not a crash (`assert_not_crash`), an authenticated call was not
+ * refused as unauthenticated (`assert_rpc_authenticated`), and the body is a
+ * well-formed JSON-RPC error envelope.
  */
-const assert_rpc_refusal = (method: string, status: number, body: unknown): void => {
+const assert_rpc_refusal = (
+	method: string,
+	status: number,
+	body: unknown,
+	principal: AuthPrincipal
+): void => {
 	assert_method_implemented(method, body);
 	assert_not_crash(method, status, body, 'refusal');
+	assert_rpc_authenticated(method, status, body, principal);
 	assert_jsonrpc_error_response(body);
 };
 
@@ -316,12 +375,18 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 					const override = options.input_overrides?.get(action.spec.method);
 					const params = override ?? generate_valid_body(action.spec.input) ?? null;
 
-					const headers = pick_rpc_auth_headers(
-						surface_method,
-						fixture,
-						authed_account,
-						admin_account
-					);
+					const picked = pick_rpc_auth(surface_method, fixture, authed_account, admin_account);
+					const { principal, headers } = round_trip_uses_fresh_account(
+						picked.principal,
+						action.spec.side_effects
+					)
+						? pick_rpc_auth(
+								surface_method,
+								fixture,
+								await fixture.create_account({ roles: [] }),
+								admin_account
+							)
+						: picked;
 
 					const init = create_rpc_post_init(action.spec.method, params);
 					Object.assign(init.headers as Record<string, string>, headers);
@@ -333,7 +398,7 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 						if (res.ok) {
 							assert_jsonrpc_success_response(body, action.spec.output);
 						} else {
-							assert_rpc_refusal(action.spec.method, res.status, body);
+							assert_rpc_refusal(action.spec.method, res.status, body, principal);
 						}
 					} catch (e) {
 						throw new Error(
@@ -361,7 +426,7 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 					const override = options.input_overrides?.get(action.spec.method);
 					const params = override ?? generate_valid_body(action.spec.input) ?? undefined;
 
-					const headers = pick_rpc_auth_headers(
+					const { principal, headers } = pick_rpc_auth(
 						surface_method,
 						fixture,
 						authed_account,
@@ -376,7 +441,7 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 						if (res.ok) {
 							assert_jsonrpc_success_response(body, action.spec.output);
 						} else {
-							assert_rpc_refusal(action.spec.method, res.status, body);
+							assert_rpc_refusal(action.spec.method, res.status, body, principal);
 						}
 					} catch (e) {
 						throw new Error(
@@ -401,7 +466,7 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 				const fixture_case = await build(fixture);
 				const headers =
 					fixture_case.headers ??
-					pick_rpc_auth_headers(surface.method_spec, fixture, authed_account, admin_account);
+					pick_rpc_auth(surface.method_spec, fixture, authed_account, admin_account).headers;
 				const init = create_rpc_post_init(method, fixture_case.params);
 				Object.assign(init.headers as Record<string, string>, headers);
 

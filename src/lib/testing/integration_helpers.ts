@@ -10,7 +10,8 @@ import { assert } from 'vitest';
 
 import type { RouteSpec, RouteMethod } from '../http/route_spec.ts';
 import { is_null_schema, merge_error_schemas } from '../http/schema_helpers.ts';
-import { is_public_auth } from '../http/auth_shape.ts';
+import { is_public_auth, type RouteAuth } from '../http/auth_shape.ts';
+import { ERROR_AUTHENTICATION_REQUIRED } from '../http/error_schemas.ts';
 import type { Keyring } from '../auth/keyring.ts';
 import { create_session_cookie_value, type SessionOptions } from '../auth/session_cookie.ts';
 import { ROLE_ADMIN } from '../auth/role_schema.ts';
@@ -328,9 +329,62 @@ export interface KeeperHeaderProvider {
 }
 
 /**
- * Pick request headers matching a route spec's auth requirement.
+ * Who a generated request calls as, picked from the declared auth: no
+ * credential for a public route or method, else the keeper's daemon token
+ * (`credential_types` names it), the admin account's session (an
+ * admin-gated one), the keeper's session (another role), or the authed
+ * account's session.
+ */
+export type AuthPrincipal = 'public' | 'daemon_token' | 'admin' | 'keeper' | 'authed';
+
+/**
+ * Pick the principal a generated request calls as, from its declared auth.
+ * Shared by the REST and RPC round-trips (`pick_auth_headers`,
+ * `pick_rpc_auth`), so both call each auth shape as the same principal.
  *
- * Maps `RouteAuth` onto a test account's credentials:
+ * Every principal but `'public'` carries a live credential of the kind the
+ * auth names, so the backend must authenticate it; a role mismatch (a keeper
+ * session on a role the keeper lacks) still refuses as 403, after
+ * authentication.
+ */
+export const pick_auth_principal = (auth: RouteAuth): AuthPrincipal => {
+	if (is_public_auth(auth)) return 'public';
+	if (auth.credential_types?.includes('daemon_token')) return 'daemon_token';
+	if (auth.roles?.length) return auth.roles.includes(ROLE_ADMIN) ? 'admin' : 'keeper';
+	return 'authed';
+};
+
+/**
+ * The request headers carrying a principal's credential.
+ *
+ * @param principal - the principal `pick_auth_principal` chose
+ * @param keeper - the keeper's header builders
+ * @param authed_account - the account the `'authed'` principal calls as
+ * @param admin_account - the account the `'admin'` principal calls as
+ */
+export const to_principal_headers = (
+	principal: AuthPrincipal,
+	keeper: KeeperHeaderProvider,
+	authed_account: TestAccount,
+	admin_account: TestAccount
+): Record<string, string> => {
+	switch (principal) {
+		case 'public':
+			return { host: 'localhost', origin: 'http://localhost:5173' };
+		case 'daemon_token':
+			return keeper.create_daemon_token_headers();
+		case 'admin':
+			return admin_account.create_session_headers();
+		case 'keeper':
+			return keeper.create_session_headers();
+		case 'authed':
+			return authed_account.create_session_headers();
+	}
+};
+
+/**
+ * Pick request headers matching a route spec's auth requirement
+ * (`pick_auth_principal`, then `to_principal_headers`):
  * - `none` — origin headers only
  * - `authenticated` — the authed account's session cookie
  * - `role: admin` — the admin account's session cookie
@@ -342,19 +396,42 @@ export const pick_auth_headers = (
 	keeper: KeeperHeaderProvider,
 	authed_account: TestAccount,
 	admin_account: TestAccount
-): Record<string, string> => {
-	const { auth } = spec;
-	if (is_public_auth(auth)) {
-		return { host: 'localhost', origin: 'http://localhost:5173' };
-	}
-	if (auth.credential_types?.includes('daemon_token')) {
-		return keeper.create_daemon_token_headers();
-	}
-	if (auth.roles?.length) {
-		if (auth.roles.includes(ROLE_ADMIN)) {
-			return admin_account.create_session_headers();
-		}
-		return keeper.create_session_headers();
-	}
-	return authed_account.create_session_headers();
-};
+): Record<string, string> =>
+	to_principal_headers(pick_auth_principal(spec.auth), keeper, authed_account, admin_account);
+
+/**
+ * Whether a round-trip sends a request as a fresh account rather than the
+ * shared authed one: a side-effecting request picked for the `'authed'`
+ * principal. Generated input omits optional fields, and an omitted target on
+ * a self-service action is the caller — `account_delete` deletes it,
+ * `account_session_revoke_all`, a logout or a password change end its
+ * session — so any side-effecting call may destroy the credential it was sent
+ * with, and on a shared account every later call would refuse as
+ * unauthenticated. Keyed on the request's own side-effect signal (an action's
+ * `side_effects`, a route's non-`GET` method) rather than a list of known
+ * destroyers, so a consumer's self-targeting action is covered without
+ * registering it. The other principals stay shared: the keeper and its daemon
+ * token are one per fixture, and an admin-gated request with generated nil ids
+ * targets no existing account. A credential they lose still fails the
+ * round-trip on its 401 check (`is_unauthenticated_refusal`).
+ *
+ * @param principal - the principal `pick_auth_principal` chose
+ * @param side_effects - whether the request can change state
+ */
+export const round_trip_uses_fresh_account = (
+	principal: AuthPrincipal,
+	side_effects: boolean
+): boolean => principal === 'authed' && side_effects;
+
+/**
+ * Whether a response says the request carried no valid credential: a 401
+ * whose reason is `authentication_required`, or that names no reason. A 401
+ * naming another reason is a handler's own answer to an authenticated call —
+ * `invalid_credentials` for a wrong current password — and is not this.
+ *
+ * @param status - the HTTP status
+ * @param reason - the refusal's reason: a REST body's `error`, a JSON-RPC
+ *   error's `data.reason`
+ */
+export const is_unauthenticated_refusal = (status: number, reason: unknown): boolean =>
+	status === 401 && (reason === undefined || reason === ERROR_AUTHENTICATION_REQUIRED);

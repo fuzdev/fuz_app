@@ -601,9 +601,15 @@ the response against declared schemas. DB-backed via `create_test_app`.
 Per-route test (`test.each`) — one line per route in the vitest output.
 
 Options: `{setup_test, surface_source, skip_routes?, input_overrides?, success_fixtures?}`.
-`input_overrides` is a `Map<"METHOD /path", body>` — override generated
-bodies for routes whose input schema can't round-trip cleanly (e.g. fields
-that must reference DB state).
+Principals and the 401 check are the RPC round-trip's (`pick_auth_principal`;
+`assert_route_authenticated` over `is_unauthenticated_refusal`, reading the
+flat `error`), and a non-`GET` route called as the authed
+account runs on a fresh account — a generated logout would otherwise end the
+shared session, leaving `/password` and every later authed route a vacuous
+401. `src/test/testing/round_trip.test.ts` pins both, the RPC test's twin.
+`input_overrides` is a `Map<"METHOD /path", body>` — override generated bodies
+for routes whose input schema can't round-trip cleanly (e.g. fields that must
+reference DB state).
 
 SSE routes are skipped by Content-Type sniff; `describe_sse_route_tests`
 picks them up separately.
@@ -613,15 +619,45 @@ picks them up separately.
 DB-backed round-trip for RPC: one POST test for all methods, one GET test
 for `side_effects: false` methods. Successful responses validate against
 `action.spec.output`; error responses validate as well-formed JSON-RPC error
-envelopes. Two refusals fail instead of passing as an envelope: `method not
-found` (the backend lacks a method the surface declares) and a crash — HTTP
+envelopes. Three refusals fail instead of passing as an envelope: `method not
+found` (the backend lacks a method the surface declares), a crash — HTTP
 500, the `internal_error` code (-32603), or a ≥500 whose body is no JSON-RPC
-envelope. A ≥500 carrying a declared code (`service_unavailable` 503,
-`timeout` 504, a consumer code mapped in `JSONRPC_ERROR_CODE_TO_HTTP_STATUS`)
-is a server condition and passes like a 4xx. The failure names the method,
-status, code and message; a non-JSON body is reported as text. Options: `{setup_test, surface_source, session_options, rpc_endpoints, skip_methods?, input_overrides?, success_fixtures?}`.
-The admin RPC auth test picks a session-based identity (`authed` / `admin` /
-bootstrapped keeper) based on `method.auth`; keeper uses the daemon token.
+envelope — and a 401 to a non-public call (`assert_rpc_authenticated`): the
+call carried a credential its auth admits, so a 401 means it stopped working.
+A public method may still answer 401 (a wrong-password login), and so may a
+handler naming its own reason (below). A ≥500 carrying a declared code
+(`service_unavailable` 503, `timeout` 504, a consumer code mapped in
+`JSONRPC_ERROR_CODE_TO_HTTP_STATUS`) is a server condition and passes like a
+4xx. The failure names the method, status, code and message; a non-JSON body
+is reported as text. Options: `{setup_test, surface_source, session_options,
+rpc_endpoints, skip_methods?, input_overrides?, success_fixtures?}`.
+`pick_rpc_auth` picks the principal from `method.auth` through
+`pick_auth_principal` (`integration_helpers.ts`, shared with the REST
+round-trip; `AuthPrincipal`): none for a public method, the keeper's daemon
+token when `credential_types` names it, the admin account's session for an
+admin-gated method, the keeper's session for another role, else the authed
+account's session. The 401 check is `is_unauthenticated_refusal`: a 401
+reading `authentication_required` or naming no reason fails; a handler's own
+401 reason on an authenticated call (`invalid_credentials` for a wrong current
+password) passes. So a handler that answers 401 to a valid credential must name
+its reason — `data.reason` over RPC, the flat `error` over REST: a reason-less
+401 reads as unauthenticated and fails the round-trip. TS's
+`jsonrpc_errors.unauthenticated(message)` sends no `data` unless given one, so
+pass `{reason}` as its second argument.
+
+A side-effecting method picked for the authed account runs on a fresh account
+of its own (`round_trip_uses_fresh_account`, keyed on the spec's
+`side_effects`): generated params omit optional fields, and an omitted target
+on a self-service method is the caller — `account_delete` with no
+`account_id` deletes it, `account_session_revoke_all` ends its session — which
+on the shared account would turn every later account method into a 401. Keyed
+on `side_effects` rather than a list of known destroyers, so a consumer's
+self-targeting method is covered without registering it. The keeper, its
+daemon token and the admin account stay shared (one keeper per fixture, and
+admin methods with generated nil ids target no existing account); a
+credential they lose still fails on the 401 check.
+`src/test/testing/rpc_round_trip.test.ts` pins both against a fake backend
+whose side-effecting method ends the caller's session.
 
 `success_fixtures` (`RpcSuccessFixtures`, method → `(fixture) =>
 Promise<RpcSuccessFixtureCase>`) drives a **success** response for a method
