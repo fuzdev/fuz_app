@@ -27,6 +27,8 @@ import '../assert_dev_env.ts';
  *   throws at collection.
  * - `rpc_success_fixtures` / `rpc_skip_methods` / `rpc_input_overrides` go to
  *   the standard bundle's RPC round-trip.
+ * - `ws_required_roles` names the roles the backend's WS upgrade requires, so the
+ *   suites that open sockets for accounts they create give them those roles.
  * - `suite_roles` names the roles the role-shaped suites use when the backend's
  *   registry lacks the spine's own (`cell_editor`, `participant`); the call
  *   seeds the holder each needs.
@@ -428,6 +430,15 @@ export interface SpineCrossSuitesOptions {
 	readonly overrides?: SuiteOverrides;
 	/** The roles the role-shaped suites use, when the backend lacks the spine's own. */
 	readonly suite_roles?: SpineSuiteRoles;
+	/**
+	 * The roles the backend's WS upgrade on `ws_path` requires (an admin-gated
+	 * `/api/ws`: `[ROLE_ADMIN]`). Given, the suites that open sockets for
+	 * accounts they create — `credential_deadline`, `session_cap`,
+	 * `ws_round_trip` — create them holding these (`ws_account_roles`), and
+	 * `role_grant_offer_notification_ws` expects revoking one to close the
+	 * socket (`ws_required_roles`). Each must be admin-grantable.
+	 */
+	readonly ws_required_roles?: ReadonlyArray<string>;
 	/** Forwarded to the standard bundle (`StandardCrossProcessTestOptions.rpc_success_fixtures`). */
 	readonly rpc_success_fixtures?: RpcSuccessFixtures;
 	/** Forwarded to the standard bundle (`StandardCrossProcessTestOptions.rpc_skip_methods`). */
@@ -546,7 +557,8 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			base_url: c.config.base_url,
 			ws_path: c.config.ws_path,
 			sse_path: c.config.sse_path,
-			rpc_path: c.config.rpc_path
+			rpc_path: c.config.rpc_path,
+			ws_account_roles: c.options.ws_required_roles
 		}),
 		describe: describe_credential_deadline_cross_tests,
 		required: { setup_test: true, capabilities: true, base_url: true, ws_path: true }
@@ -640,7 +652,8 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			setup_test: c.setup(),
 			capabilities: c.config.capabilities,
 			base_url: c.config.base_url,
-			ws_path: c.config.ws_path
+			ws_path: c.config.ws_path,
+			ws_required_roles: c.options.ws_required_roles
 		}),
 		describe: describe_role_grant_offer_notification_ws_tests,
 		required: { setup_test: true, capabilities: true, base_url: true, ws_path: true }
@@ -669,7 +682,11 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 		required: { setup_test: true, surface_source: true }
 	},
 	session_cap: {
-		derive: (c) => ({ setup_test: c.setup(), ws: c.ws }),
+		derive: (c) => ({
+			setup_test: c.setup(),
+			ws: c.ws,
+			ws_account_roles: c.options.ws_required_roles
+		}),
 		describe: describe_session_cap_cross_tests,
 		required: { setup_test: true }
 	},
@@ -810,7 +827,8 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			capabilities: c.config.capabilities,
 			base_url: c.config.base_url,
 			ws_path: c.config.ws_path,
-			rpc_path: c.config.rpc_path
+			rpc_path: c.config.rpc_path,
+			ws_account_roles: c.options.ws_required_roles
 		}),
 		describe: describe_cross_process_ws_tests,
 		required: { setup_test: true, capabilities: true, base_url: true, ws_path: true }

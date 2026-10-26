@@ -230,7 +230,8 @@ reset-isolation pair, the bootstrap-token probe, and — under
 `cross_backend_projects.ts`), since the option paths are the harness's —
 `builtin_roles.cross.test.ts`, the role-shaped suites on the builtin roles a
 backend with no app roles uses (`cell_grant_role` on `keeper`, the conferral
-suites on `admin`). What each covers — a suite
+suites on `admin`) and the socket-opening suites with their accounts holding
+`admin` (`ws_account_roles`). What each covers — a suite
 named by its module, a file by its name:
 `standard` (the `describe_standard_cross_process_tests` bundle —
 HTTP + RPC), `ws_round_trip` (the real-upgrade

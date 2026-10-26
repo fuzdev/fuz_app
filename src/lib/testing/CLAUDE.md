@@ -1211,6 +1211,12 @@ consumer writes a file per suite, and a suite added here never reaches it.
   offer grantor of `role_grant_offer_enumeration`, the `cell_editor` holder of
   `cell_grant_role`. Suites are registered without a wrapping `describe`, so
   test names match a standalone call.
+- **`ws_required_roles`** — the roles the backend's WS upgrade on `ws_path`
+  requires (an admin-gated `/api/ws`: `[ROLE_ADMIN]`). The suites that open
+  sockets for accounts they create (`credential_deadline`, `session_cap`,
+  `ws_round_trip`) create them holding these (`ws_account_roles`), and
+  `role_grant_offer_notification_ws` expects revoking one to close the socket
+  (its `ws_required_roles`) — one option for every socket a role gates.
 - **`exclude`** — `{[suite]: reason}`; the reason is required and shows in the
   run as a skipped test. An empty reason, an unknown suite name, or a suite
   both excluded and overridden throws before anything registers.
@@ -1475,7 +1481,7 @@ needs raw `base_url` / `ws_path` the standard bundle doesn't carry, mirroring
 how `describe_ws_round_trip_tests` sits beside `describe_standard_tests`
 in-process. `describe_cross_process_ws_tests({setup_test, capabilities,
 base_url, ws_path, origin?, rpc_path?, max_message_bytes?, logout_path?,
-password_path?, max_tokens?})` opens a live
+password_path?, max_tokens?, ws_account_roles?})` opens a live
 `WebSocket` via `create_ws_transport` (the `ws` npm package) and asserts
 cases against the upgrade stack `register_ws_endpoint` wires (origin →
 `require_auth` → dispatch): authed upgrade round-trips `heartbeat`,
@@ -1505,7 +1511,9 @@ bearer socket (a socket on its other token stays open);
 bearer socket of the token the cap evicts. The account-wide rows come from
 `cross_backend/revocation_drivers.ts` (`create_account_revocations`, shared
 with the SSE suite), and a case that opens several sockets closes whichever
-opened when a later open fails. Per-connection auth is enforced **at upgrade
+opened when a later open fails. The second accounts are created holding
+`ws_account_roles`, for a backend whose WS upgrade requires a role (an
+admin-gated `/api/ws` refuses a roleless account). Per-connection auth is enforced **at upgrade
 time**, so the negative upgrade cases assert the upgrade itself rejects, not
 a per-message error; the close cases prove a revocation closes an
 already-open socket, since per-message dispatch never re-checks credential
@@ -1701,10 +1709,12 @@ Parity for the per-account session cap over real HTTP: logging in past
 `max_sessions` (default `DEFAULT_MAX_SESSIONS`) never refuses a login and
 evicts the oldest session.
 `describe_session_cap_cross_tests({setup_test, max_sessions?, login_path?,
-status_path?, ws?})` — pass `ws` (`{base_url, ws_path, origin?}`) to also
+status_path?, ws?, ws_account_roles?})` — pass `ws` (`{base_url, ws_path, origin?}`) to also
 assert that the evicted session's socket is closed with
 `WS_CLOSE_SESSION_REVOKED` once the evicting login commits; omitted, that case
-is skipped, so a caller passes it only for a backend with `capabilities.ws`.
+is skipped, so a caller passes it only for a backend with `capabilities.ws`;
+`ws_account_roles` gives that case's account roles, for a backend whose WS
+upgrade requires one.
 Cross-process only.
 
 ### `cross_backend/sse_round_trip.ts` — `describe_cross_process_sse_tests`
@@ -2262,7 +2272,7 @@ principal.
 ### Credential deadline parity — `cross_backend/credential_deadline.ts`
 
 `describe_credential_deadline_cross_tests({setup_test, capabilities, base_url,
-ws_path, sse_path?, rpc_path?})` — a connection closes when the credential it
+ws_path, sse_path?, rpc_path?, ws_account_roles?})` — a connection closes when the credential it
 opened on expires: each case pulls a fresh account's credential expiries in to
 two seconds with `_testing_shorten_credential_expiry` before the open, then
 checks the connection still dispatches short of the deadline and closes at it.
@@ -2274,7 +2284,9 @@ stream is not reachable over the wire — the stock stream is session-only — s
 the Rust spine pins it on a widened gate and the TS twin shares one deadline
 wait across both transports. The cases run concurrently (`describe.concurrent`)
 under one `setup_test()` for the suite, each on its own account, so a leg waits
-out one deadline rather than one per case. Cross-process only.
+out one deadline rather than one per case. `ws_account_roles` gives the
+socket cases' accounts roles, for a backend whose WS upgrade requires one.
+Cross-process only.
 
 ### Origin check scope parity — `cross_backend/origin_scope.ts`
 

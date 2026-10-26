@@ -1233,10 +1233,9 @@ describe_spine_cross_suites(handle, {
 	exclude: {
 		actor_lookup: 'no actor_lookup resolver mounted'
 	},
-	overrides: {
-		// the WS upgrade requires admin, so revoking it closes the socket
-		role_grant_offer_notification_ws: { ws_required_roles: [ROLE_ADMIN] }
-	}
+	// the WS upgrade requires admin: the suites' socket accounts hold it, and
+	// revoking it closes the socket
+	ws_required_roles: [ROLE_ADMIN]
 });
 ```
 
@@ -1283,6 +1282,9 @@ capabilities, so state every mount flag truthfully and the rest follows.
   options returning the patch — to add to a derived value (an `xfail` on the
   derived multi-actor setup) without restating it. A required option the
   merge leaves `undefined` throws, naming the suite and key.
+- `ws_required_roles` names the roles your WS upgrade requires; the suites that
+  open sockets for accounts they create give those accounts the roles, and the
+  notification suite expects revoking one to close the socket.
 - `suite_roles` names the roles the role-shaped suites use when your registry
   lacks the spine's own `cell_editor` / `participant`; the call seeds the holder
   each needs. With only the builtin roles, pass

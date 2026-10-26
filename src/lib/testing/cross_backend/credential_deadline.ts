@@ -86,6 +86,13 @@ export interface CredentialDeadlineCrossTestOptions extends WsEndpointTarget {
 	readonly sse_path?: string;
 	/** JSON-RPC endpoint path. Default `SPINE_RPC_PATH`. */
 	readonly rpc_path?: string;
+	/**
+	 * Roles each account this suite opens a socket for is created with, for a
+	 * backend whose WS upgrade requires a role (an admin-gated `/api/ws`
+	 * refuses a roleless account's upgrade). Each must be admin-grantable — the
+	 * fixture offers it. Default none.
+	 */
+	readonly ws_account_roles?: ReadonlyArray<string>;
 }
 
 /**
@@ -102,8 +109,10 @@ export const describe_credential_deadline_cross_tests = (
 		base_url,
 		ws_path,
 		sse_path = SPINE_SSE_PATH,
-		rpc_path = SPINE_RPC_PATH
+		rpc_path = SPINE_RPC_PATH,
+		ws_account_roles = []
 	} = options;
+	const ws_account = { roles: [...ws_account_roles] };
 
 	/**
 	 * Pull `account`'s credential expiries in to `seconds` from now through the
@@ -166,7 +175,7 @@ export const describe_credential_deadline_cross_tests = (
 			'a session socket closes with 4001 "Credential expired" at the deadline',
 			async () => {
 				const fixture = get_fixture();
-				const account = await fixture.create_account();
+				const account = await fixture.create_account(ws_account);
 				const { called_at, sessions } = await shorten(fixture, account, EXPIRY_SECONDS);
 				assert.ok(sessions >= 1, 'the seam shortened the account session');
 
@@ -184,7 +193,7 @@ export const describe_credential_deadline_cross_tests = (
 			'an API token socket closes with 4001 "Credential expired" at the deadline',
 			async () => {
 				const fixture = get_fixture();
-				const account = await fixture.create_account();
+				const account = await fixture.create_account(ws_account);
 				const { called_at, api_tokens } = await shorten(fixture, account, EXPIRY_SECONDS);
 				assert.ok(api_tokens >= 1, 'the seam shortened the account API token');
 
@@ -240,7 +249,7 @@ export const describe_credential_deadline_cross_tests = (
 			'the expiry seam only shortens: a later expiry moves nothing',
 			async () => {
 				const fixture = get_fixture();
-				const account = await fixture.create_account();
+				const account = await fixture.create_account(ws_account);
 				const { called_at } = await shorten(fixture, account, EXPIRY_SECONDS);
 				// asks for a minute; the credentials stay due at the first deadline
 				await shorten(fixture, account, 60);

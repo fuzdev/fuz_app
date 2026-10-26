@@ -80,10 +80,17 @@ export interface SessionCapCrossTestOptions {
 	 * (`capabilities.ws`); omitted, that case is skipped.
 	 */
 	readonly ws?: WsEndpointTarget;
+	/**
+	 * The roles the account whose socket the `ws` case watches is created with, for a
+	 * backend whose WS upgrade requires a role (an admin-gated `/api/ws`
+	 * refuses a roleless account's upgrade). Each must be admin-grantable — the
+	 * fixture offers it. Default none.
+	 */
+	readonly ws_account_roles?: ReadonlyArray<string>;
 }
 
 export const describe_session_cap_cross_tests = (options: SessionCapCrossTestOptions): void => {
-	const { setup_test, ws } = options;
+	const { setup_test, ws, ws_account_roles = [] } = options;
 	const max_sessions = options.max_sessions ?? DEFAULT_MAX_SESSIONS;
 	const login_path = options.login_path ?? SPINE_ACCOUNT_LOGIN_PATH;
 	const status_path = options.status_path ?? SPINE_ACCOUNT_STATUS_PATH;
@@ -149,7 +156,11 @@ export const describe_session_cap_cross_tests = (options: SessionCapCrossTestOpt
 		// held before it (`create_account` seeds one on some cradles).
 		test_if(ws !== undefined, 'a session the cap evicts has its open socket closed', async () => {
 			const fixture = await setup_test();
-			await fixture.create_account({ username, password_value: DEFAULT_TEST_PASSWORD });
+			await fixture.create_account({
+				username,
+				password_value: DEFAULT_TEST_PASSWORD,
+				roles: [...ws_account_roles]
+			});
 			const victim = await login(fixture, 'the login whose socket is watched');
 			const client = await create_ws_transport({
 				base_url: ws!.base_url,

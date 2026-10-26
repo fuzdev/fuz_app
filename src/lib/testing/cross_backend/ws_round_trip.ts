@@ -164,6 +164,14 @@ export interface CrossProcessWsTestOptions extends WsEndpointTarget {
 	 * cap disabled) skips the case.
 	 */
 	readonly max_tokens?: number | null;
+	/**
+	 * Roles each second account whose socket a revocation case watches is created
+	 * with, for a
+	 * backend whose WS upgrade requires a role (an admin-gated `/api/ws`
+	 * refuses a roleless account's upgrade). Each must be admin-grantable — the
+	 * fixture offers it. Default none.
+	 */
+	readonly ws_account_roles?: ReadonlyArray<string>;
 }
 
 /**
@@ -187,7 +195,8 @@ export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptio
 		rpc_path,
 		max_message_bytes = DEFAULT_WS_MAX_MESSAGE_BYTES,
 		logout_path = SPINE_ACCOUNT_LOGOUT_PATH,
-		password_path = SPINE_ACCOUNT_PASSWORD_PATH
+		password_path = SPINE_ACCOUNT_PASSWORD_PATH,
+		ws_account_roles = []
 	} = options;
 	const max_tokens = options.max_tokens === undefined ? DEFAULT_MAX_TOKENS : options.max_tokens;
 
@@ -447,7 +456,10 @@ export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptio
 			'an account delete closes the live socket of the deleted account',
 			async () => {
 				const fixture = await setup_test();
-				const target = await fixture.create_account({ username: 'ws_delete_target', roles: [] });
+				const target = await fixture.create_account({
+					username: 'ws_delete_target',
+					roles: [...ws_account_roles]
+				});
 				const client = await open_session_ws(options, target, { admitted: false });
 				try {
 					// admitted and dispatching before the delete, so a failed close
@@ -495,7 +507,10 @@ export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptio
 			"account_token_revoke closes the revoked token's bearer socket only",
 			async () => {
 				const fixture = await setup_test();
-				const target = await fixture.create_account({ username: 'ws_token_revoke' });
+				const target = await fixture.create_account({
+					username: 'ws_token_revoke',
+					roles: [...ws_account_roles]
+				});
 				const minted = await mint_token(fixture, target, 'ws revoke probe');
 				await with_sockets(
 					[() => open_bearer(minted.token), () => open_bearer(target.api_token)],
@@ -539,7 +554,8 @@ export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptio
 					const fixture = await setup_test();
 					const target = await fixture.create_account({
 						username: `ws_revoke_${slug}`,
-						password_value: DEFAULT_TEST_PASSWORD
+						password_value: DEFAULT_TEST_PASSWORD,
+						roles: [...ws_account_roles]
 					});
 					await with_sockets(
 						[() => open_bearer(target.api_token), () => open_session(target)],
@@ -561,7 +577,10 @@ export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptio
 			'a token the cap evicts has its bearer socket closed',
 			async () => {
 				const fixture = await setup_test();
-				const target = await fixture.create_account({ username: 'ws_token_cap' });
+				const target = await fixture.create_account({
+					username: 'ws_token_cap',
+					roles: [...ws_account_roles]
+				});
 				const watched = await mint_token(fixture, target, 'ws cap victim');
 				const client = await open_bearer(watched.token);
 				try {
