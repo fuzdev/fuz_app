@@ -28,7 +28,8 @@ import '../assert_dev_env.ts';
  *   with `id: null` (the envelope parse runs before auth, and batches are
  *   unsupported), and an anonymous `GET` with non-object params is the 401
  *   (params validation runs after authorization).
- * - **Params** — for each declared method, `generate_rpc_params_test_cases`
+ * - **Params** — for each declared method (and each live-mounted one, below),
+ *   `generate_rpc_params_test_cases`
  *   (the in-process generator minus its structural cases), each sent as the
  *   method's authorized principal and owing 400 `invalid_params` with no
  *   `data.reason`. One test per method, reporting every case that answers
@@ -48,10 +49,18 @@ import '../assert_dev_env.ts';
  * second actor answers `actor_required` first; such a suite lists the
  * actor-required methods in `skip_methods`.
  *
- * Skipped: `_testing_*` methods (live-mounted only, off the declared surface
- * this suite walks) and the protocol actions (`PROTOCOL_ACTION_METHODS`, fixed
- * shared specs covered by the WS suites, which
- * `generate_rpc_auth_conformance_cases` skips too).
+ * **Off the declared surface.** `live_rpc_endpoints` adds the methods the
+ * backend live-mounts at `rpc_path` beyond the declared surface — cell verbs,
+ * opt-in resolvers, the `_testing_*` backdoors. Both groups run over them too:
+ * the envelope cases built from those methods, in a group of their own, and a
+ * params test per method, `_testing_*` included (a daemon-only backdoor is
+ * sent with the keeper's daemon token). A spine that keeps a method family off
+ * its declared surface still owes the twin's answer to bad params there.
+ *
+ * Skipped: `_testing_*` methods on the declared surface (a declared surface
+ * lists them only by accident; the live mount is where they are walked), and
+ * the protocol actions (`PROTOCOL_ACTION_METHODS`, fixed shared specs covered
+ * by the WS suites, which `generate_rpc_auth_conformance_cases` skips too).
  *
  * Cross-process only: in-process, `describe_rpc_attack_surface_tests` runs
  * the same envelope cases and params generator.
@@ -61,7 +70,13 @@ import '../assert_dev_env.ts';
 
 import { assert, describe, test } from 'vitest';
 
-import type { AppSurfaceRpcMethod, AppSurfaceSpec } from '../../http/surface.ts';
+import type { RpcAction } from '../../actions/action_rpc.ts';
+import {
+	generate_app_surface,
+	type AppSurfaceRpcEndpoint,
+	type AppSurfaceSpec,
+	type RpcEndpointSpec
+} from '../../http/surface.ts';
 import { is_public_auth, type RouteAuth } from '../../http/auth_shape.ts';
 import { JSONRPC_ERROR_CODES } from '../../http/jsonrpc_errors.ts';
 import {
@@ -90,7 +105,14 @@ import type { InputTestCase } from '../adversarial_input_cases.ts';
 export interface RpcAdversarialCrossTestOptions extends RpcPathCrossSuiteOptions {
 	/** The declared surface; the endpoint at `rpc_path` supplies the methods and their input schemas. */
 	readonly surface_source: AppSurfaceSpec;
-	/** Methods to leave out, beyond the `_testing_*` and protocol actions always skipped. */
+	/**
+	 * The endpoints the backend live-mounts (resolved —
+	 * `resolve_rpc_endpoints_for_setup` turns the factory form into this). The
+	 * methods the one at `rpc_path` carries beyond the declared surface run
+	 * through both groups too. Omitted, only declared methods run.
+	 */
+	readonly live_rpc_endpoints?: ReadonlyArray<RpcEndpointSpec>;
+	/** Methods to leave out, beyond the protocol actions always skipped. */
 	readonly skip_methods?: ReadonlyArray<string>;
 	/**
 	 * Generated params cases a backend is known to answer otherwise, each run
@@ -148,12 +170,12 @@ const to_authorized_principal = (auth: RouteAuth): ConformancePrincipal => {
 
 const send_as = async (
 	fixture: TestFixture,
-	method: AppSurfaceRpcMethod,
+	auth: RouteAuth,
 	as: 'authorized' | 'anonymous',
 	url: string,
 	init: RequestInit
 ): Promise<{ status: number; body: unknown }> => {
-	const principal = as === 'anonymous' ? 'anonymous' : to_authorized_principal(method.auth);
+	const principal = as === 'anonymous' ? 'anonymous' : to_authorized_principal(auth);
 	const { transport, headers } = await resolve_conformance_principal(fixture, principal);
 	const res = await transport(url, {
 		...init,
@@ -177,9 +199,39 @@ const reason_of = (body: unknown): unknown => {
 };
 
 /**
+ * The live-mounted actions at `rpc_path` the declared endpoint lacks, each
+ * method once, in mount order, with their surface form.
+ */
+const to_off_surface = (
+	rpc_path: string,
+	declared: ReadonlySet<string>,
+	live_rpc_endpoints: ReadonlyArray<RpcEndpointSpec> | undefined
+): { actions: Array<RpcAction>; endpoint: AppSurfaceRpcEndpoint } | null => {
+	const seen = new Set(declared);
+	const actions: Array<RpcAction> = [];
+	for (const live of live_rpc_endpoints ?? []) {
+		if (live.path !== rpc_path) continue;
+		for (const action of live.actions) {
+			if (seen.has(action.spec.method)) continue;
+			seen.add(action.spec.method);
+			actions.push(action);
+		}
+	}
+	if (actions.length === 0) return null;
+	const surface = generate_app_surface({
+		route_specs: [],
+		middleware_specs: [],
+		rpc_endpoints: [{ path: rpc_path, actions }]
+	});
+	const endpoint = surface.rpc_endpoints[0];
+	if (!endpoint) throw new Error(`rpc_adversarial: no surface for the live mount at '${rpc_path}'`);
+	return { actions, endpoint };
+};
+
+/**
  * Run the cross-process malformed-envelope and invalid-params suite.
  *
- * @param options - the fixture, the declared surface, the RPC path, and methods to skip
+ * @param options - the fixture, the declared surface and live mount, the RPC path, and methods to skip
  */
 export const describe_rpc_adversarial_cross_tests = (
 	options: RpcAdversarialCrossTestOptions
@@ -190,6 +242,19 @@ export const describe_rpc_adversarial_cross_tests = (
 
 	const endpoint = surface_source.surface.rpc_endpoints.find((e) => e.path === rpc_path);
 	const endpoint_spec = surface_source.rpc_endpoints.find((e) => e.path === rpc_path);
+	const off_surface = endpoint
+		? to_off_surface(
+				rpc_path,
+				// a `_testing_*` method listed on the declared surface is skipped there,
+				// so it must stay eligible here, where the live mount walks it
+				new Set(
+					endpoint.methods
+						.map((m) => m.name)
+						.filter((name) => !name.startsWith(TESTING_METHOD_PREFIX))
+				),
+				options.live_rpc_endpoints
+			)
+		: null;
 
 	describe('RPC adversarial envelopes (cross-process)', () => {
 		if (!endpoint || !endpoint_spec) {
@@ -215,11 +280,26 @@ export const describe_rpc_adversarial_cross_tests = (
 			test(c.name, async () => {
 				const fixture = await setup_test();
 				const { url, init } = to_rpc_envelope_request(rpc_path, c);
-				const { status, body } = await send_as(fixture, c.method, c.as, url, init);
+				const { status, body } = await send_as(fixture, c.method.auth, c.as, url, init);
 				assert_rpc_envelope_refusal(status, body, c);
 			});
 		}
 	});
+
+	if (off_surface) {
+		describe('RPC adversarial envelopes, live-mounted methods off the declared surface (cross-process)', () => {
+			for (const c of create_rpc_envelope_cases(off_surface.endpoint, {
+				skip_methods: options.skip_methods
+			})) {
+				test(c.name, async () => {
+					const fixture = await setup_test();
+					const { url, init } = to_rpc_envelope_request(rpc_path, c);
+					const { status, body } = await send_as(fixture, c.method.auth, c.as, url, init);
+					assert_rpc_envelope_refusal(status, body, c);
+				});
+			}
+		});
+	}
 
 	describe('RPC adversarial params (cross-process)', () => {
 		if (!endpoint || !endpoint_spec) return;
@@ -233,15 +313,15 @@ export const describe_rpc_adversarial_cross_tests = (
 		/** Send one case; a refusal message when it is not the canonical 400. */
 		const check_case = async (
 			fixture: TestFixture,
-			surface_method: AppSurfaceRpcMethod,
+			action: RpcAction,
 			tc: InputTestCase
 		): Promise<string | null> => {
 			const { status, body } = await send_as(
 				fixture,
-				surface_method,
+				action.spec.auth,
 				'authorized',
 				rpc_path,
-				create_rpc_post_init(surface_method.name, tc.body)
+				create_rpc_post_init(action.spec.method, tc.body)
 			);
 			const code = (body as { error?: { code?: unknown } } | null)?.error?.code;
 			if (
@@ -254,12 +334,16 @@ export const describe_rpc_adversarial_cross_tests = (
 			return `[${tc.label}] params ${JSON.stringify(tc.body)} → ${status} ${JSON.stringify(body)}`;
 		};
 
-		for (const action of endpoint_spec.actions) {
+		// the declared methods, then the live-mounted ones the declared surface lacks
+		const declared_actions = endpoint_spec.actions.filter(
+			(action) =>
+				!action.spec.method.startsWith(TESTING_METHOD_PREFIX) &&
+				endpoint.methods.some((m) => m.name === action.spec.method)
+		);
+		for (const action of [...declared_actions, ...(off_surface?.actions ?? [])]) {
 			const { method, input } = action.spec;
-			if (method.startsWith(TESTING_METHOD_PREFIX) || PROTOCOL_METHODS.has(method)) continue;
+			if (PROTOCOL_METHODS.has(method)) continue;
 			if (skip.has(method)) continue;
-			const surface_method = endpoint.methods.find((m) => m.name === method);
-			if (!surface_method) continue;
 			const all_cases = generate_rpc_params_test_cases(input);
 			if (all_cases.length === 0) continue;
 			total += all_cases.length;
@@ -277,7 +361,7 @@ export const describe_rpc_adversarial_cross_tests = (
 					xfail.reason,
 					`${method}: [${tc.label}] → 400 invalid_params`,
 					async () => {
-						const failure = await check_case(await setup_test(), surface_method, tc);
+						const failure = await check_case(await setup_test(), action, tc);
 						assert.strictEqual(failure, null);
 					}
 				);
@@ -288,7 +372,7 @@ export const describe_rpc_adversarial_cross_tests = (
 				const fixture = await setup_test();
 				const failures: Array<string> = [];
 				for (const tc of param_cases) {
-					const failure = await check_case(fixture, surface_method, tc);
+					const failure = await check_case(fixture, action, tc);
 					if (failure) failures.push(failure);
 				}
 				assert.deepStrictEqual(

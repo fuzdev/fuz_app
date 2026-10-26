@@ -3,7 +3,10 @@
  * `describe_spine_cross_suites` call — under each single-backend project, so
  * against the TS spine binaries (Node, Deno, Bun) and the Rust
  * `testing_spine_stub`. The spines mount everything, so nothing is excluded;
- * the overrides are the Rust stub's tracked divergences.
+ * the overrides are the Rust stub's tracked divergences. `live_rpc_endpoints`
+ * is the spine binary's whole mount, so `rpc_adversarial` also walks the
+ * methods kept off the declared surface — the cell verbs, the actor
+ * resolvers and the `_testing_*` backdoors.
  *
  * The audit-reading suites hold every row to a closed world
  * (`reject_unknown_audit_metadata_keys`), so neither spine can add an
@@ -18,6 +21,7 @@
  * @module
  */
 
+import { create_spine_live_rpc_endpoints } from '#lib/testing/cross_backend/full_spine_mount.ts';
 import { create_spine_rpc_success_fixtures } from '#lib/testing/cross_backend/rpc_success_fixtures.ts';
 import {
 	create_spine_surface_spec,
@@ -64,6 +68,7 @@ describe_spine_cross_suites(handle, {
 	surface_source: create_spine_surface_spec(),
 	session_options: spine_session_options,
 	rpc_endpoints: spine_rpc_endpoints,
+	live_rpc_endpoints: create_spine_live_rpc_endpoints(),
 	roles: spine_roles,
 	rpc_success_fixtures: create_spine_rpc_success_fixtures(),
 	setup: { reject_unknown_audit_metadata_keys: true },

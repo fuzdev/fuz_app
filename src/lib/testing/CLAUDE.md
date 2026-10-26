@@ -1187,8 +1187,10 @@ the omitted suites.
 
 One call that runs every shipped single-backend cross suite against one
 spawned backend: `describe_spine_cross_suites(handle, {surface_source,
-session_options, rpc_endpoints, roles?, setup?, exclude?, overrides?,
-rpc_success_fixtures?, rpc_skip_methods?, rpc_input_overrides?})`. Without it a
+session_options, rpc_endpoints, live_rpc_endpoints?, roles?, setup?, exclude?,
+overrides?, rpc_success_fixtures?, rpc_skip_methods?, rpc_input_overrides?})`.
+`live_rpc_endpoints` is the backend's whole live mount; given, `rpc_adversarial`
+also walks the methods it keeps off the declared surface. Without it a
 consumer writes a file per suite, and a suite added here never reaches it.
 
 - **The registry.** `SUITE_NAMES` / `SuiteName` — the closed set of suites the
@@ -2161,7 +2163,7 @@ cases are `src/test/auth/cell_ref_admission{,.fact_less}.db.test.ts`.
 ### Malformed-envelope and invalid-params parity — `cross_backend/rpc_adversarial.ts`
 
 `describe_rpc_adversarial_cross_tests({setup_test, surface_source, rpc_path?,
-skip_methods?})` — the envelope and params groups of
+live_rpc_endpoints?, skip_methods?})` — the envelope and params groups of
 `describe_rpc_attack_surface_tests`, sent over `fixture.transport` to a
 spawned backend. The in-process groups run on stub apps, while the Rust spine
 parses envelopes and params by hand and the action-manifest parity gate
@@ -2189,8 +2191,15 @@ for others) and has a single actor. No generated body carries a valid `acting`,
 and a malformed one reads as omitted ahead of validation on both spines, so a
 single-actor keeper resolves its actor and validation refuses; a keeper with a
 second actor answers `actor_required` first, so such a suite lists the
-actor-required methods in `skip_methods`. Skips `_testing_*` (off the
-declared surface it walks) and `PROTOCOL_ACTION_METHODS`, which
+actor-required methods in `skip_methods`.
+
+**Off the declared surface.** `live_rpc_endpoints` (resolved) adds the methods
+the endpoint at `rpc_path` live-mounts beyond the declared surface — cell
+verbs, opt-in resolvers, `_testing_*` backdoors — to both groups: their
+envelope cases in a group of their own, and a params test per method,
+`_testing_*` included (a daemon-only backdoor goes with the keeper's daemon
+token). fuz_app's spine self-test passes `create_spine_live_rpc_endpoints()`.
+Skips `_testing_*` on the declared surface and `PROTOCOL_ACTION_METHODS`, which
 `generate_rpc_auth_conformance_cases` skips too.
 Ungated; cross-process only.
 

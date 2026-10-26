@@ -59,7 +59,7 @@ import { describe, test } from 'vitest';
 import { ROLE_KEEPER, ROLE_ADMIN, type RoleSchemaResult } from '../../auth/role_schema.ts';
 import type { SessionOptions } from '../../auth/session_cookie.ts';
 import type { AppSurfaceSpec } from '../../http/surface.ts';
-import type { RpcEndpointsSuiteOption } from '../rpc_helpers.ts';
+import { resolve_rpc_endpoints_for_setup, type RpcEndpointsSuiteOption } from '../rpc_helpers.ts';
 import type { RpcSuccessFixtures } from '../rpc_round_trip.ts';
 import {
 	describe_account_lifecycle_cross_tests,
@@ -412,6 +412,14 @@ export interface SpineCrossSuitesOptions {
 	readonly session_options: SessionOptions<string>;
 	/** The backend's RPC endpoints, for the standard bundle. */
 	readonly rpc_endpoints: RpcEndpointsSuiteOption;
+	/**
+	 * The RPC endpoints the backend live-mounts, for the methods it keeps off
+	 * the declared surface (cell verbs, opt-in resolvers, `_testing_*`
+	 * backdoors); given, `rpc_adversarial` sends them bad envelopes and params
+	 * too. A backend's whole live mount is a fine value — a declared method
+	 * still runs once, from the declared surface.
+	 */
+	readonly live_rpc_endpoints?: RpcEndpointsSuiteOption;
 	/** The backend's role schema; given, the standard bundle runs its admin suite. */
 	readonly roles?: RoleSchemaResult;
 	/**
@@ -676,6 +684,9 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 		derive: (c) => ({
 			setup_test: c.setup(),
 			surface_source: c.options.surface_source,
+			live_rpc_endpoints:
+				c.options.live_rpc_endpoints &&
+				resolve_rpc_endpoints_for_setup(c.options.live_rpc_endpoints, c.options.session_options),
 			rpc_path: c.config.rpc_path
 		}),
 		describe: describe_rpc_adversarial_cross_tests,

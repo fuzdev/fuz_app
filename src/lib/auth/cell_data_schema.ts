@@ -2,7 +2,7 @@
  * Generic cell-data base schema.
  *
  * The wire-side shape every cell consumer can read without per-kind
- * knowledge: a permissive bag with three universally-relevant typed
+ * knowledge: a permissive bag with two universally-relevant typed
  * fields. Per-kind schemas extend this and narrow `kind` to a literal.
  *
  * Loose object: arbitrary additional fields pass through unvalidated,

@@ -1292,6 +1292,11 @@ capabilities, so state every mount flag truthfully and the rest follows.
   each needs. With only the builtin roles, pass
   `{cell_grant: ROLE_KEEPER, conferral: ROLE_ADMIN}` (`ROLE_ADMIN` can't serve
   `cell_grant_role`: an admin reaches every cell whatever its grants).
+- `live_rpc_endpoints` is your whole live RPC mount, for the methods you keep
+  off the declared surface (cell verbs, opt-in resolvers, `_testing_*`
+  backdoors); given, `rpc_adversarial` sends them bad envelopes and params too.
+  Pass the mount of the backend under test: a method it doesn't mount answers
+  `method_not_found` and fails, it doesn't skip.
 - `rpc_success_fixtures` / `rpc_skip_methods` / `rpc_input_overrides` go to the
   standard bundle; `setup` is the base `default_cross_process_setup` options
   every suite starts from.
@@ -1655,7 +1660,7 @@ normally empty, since DEV-only output shows on both sides alike.
 ### Malformed envelopes and invalid params
 
 `describe_rpc_adversarial_cross_tests({setup_test, surface_source, rpc_path?,
-skip_methods?})` (`cross_backend/rpc_adversarial.ts`) sends the in-process
+live_rpc_endpoints?, skip_methods?})` (`cross_backend/rpc_adversarial.ts`) sends the in-process
 attack-surface suite's envelope and params cases to a spawned backend, since a
 backend that parses envelopes or params by hand can drift on either and the
 action-manifest parity gate doesn't compare param schemas:
@@ -1681,9 +1686,16 @@ action-manifest parity gate doesn't compare param schemas:
 The authorized principal is the keeper on the first channel the method admits
 (session, else daemon token or API token without `Origin`), so the keeper must
 hold every role a declared method gates on (`extra_keeper_roles` for roles
-beyond `keeper` and `admin`) and have a single actor. `_testing_*` and protocol
-methods are skipped, as in the per-method auth rows. Cross-process only — the
-in-process `describe_rpc_attack_surface_tests` runs the same cases:
+beyond `keeper` and `admin`) and have a single actor. Protocol methods are
+skipped, as in the per-method auth rows.
+
+`live_rpc_endpoints` (resolved, as `resolve_rpc_endpoints_for_setup` returns
+them) adds the methods your endpoint mounts beyond the declared surface — cell
+verbs, opt-in resolvers, `_testing_*` backdoors — to both groups: their
+envelope cases in a group of their own and a params test each, a daemon-only
+backdoor sent with the keeper's daemon token. Without it, `_testing_*` methods
+are skipped. Cross-process only — the in-process
+`describe_rpc_attack_surface_tests` runs the same cases:
 
 ```ts
 describe_rpc_adversarial_cross_tests({

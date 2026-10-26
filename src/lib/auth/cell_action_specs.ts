@@ -481,7 +481,7 @@ export const CellCloneInput = z.strictObject({
 		description: 'Recurse into `items[]` (depth=1 — clones direct children only). Default false.'
 	}),
 	// TODO: cap `with_data_patch` size/depth once a consumer measures the
-	// upper bound. `z.json()` is unbounded — a multi-MB patch is in scope
+	// upper bound. `CellData` is a loose object, unbounded — a multi-MB patch is in scope
 	// today, gated only by the JSON-RPC body limit. Realistic patches are
 	// O(few KB); a `.refine` on serialized size would tighten the surface
 	// without disturbing the patch-wins-last semantics.
