@@ -62,8 +62,12 @@ import '../assert_dev_env.ts';
 
 import { describe, test, assert } from 'vitest';
 
-import { raw_http_count_responses, raw_http_exchange } from '../transports/raw_http.ts';
-import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
+import {
+	raw_http_count_responses,
+	raw_http_exchange,
+	RAW_HTTP_READ_TIMEOUT_MS
+} from '../transports/raw_http.ts';
+import { SPINE_BODY_LIMIT_DEFAULT_BYTES, SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
 /** Options for the smuggling probe — needs the raw URL, not a transport. */
 export interface BodySizeSmugglingCrossTestOptions {
@@ -72,15 +76,6 @@ export interface BodySizeSmugglingCrossTestOptions {
 	/** RPC endpoint path to target. Default `/api/rpc`. */
 	readonly rpc_path?: string;
 }
-
-/** The shared 1 MiB cap (see `body_size.ts` for why it's a local constant). */
-const BODY_LIMIT_DEFAULT_BYTES = 1024 * 1024;
-
-/**
- * How long each raw exchange waits for the server to finish answering. An
- * exchange the backend does not end by closing runs the whole window.
- */
-const RAW_READ_TIMEOUT_MS = 2000;
 
 export const describe_body_size_smuggling_cross_tests = (
 	options: BodySizeSmugglingCrossTestOptions
@@ -99,7 +94,7 @@ export const describe_body_size_smuggling_cross_tests = (
 				`GET ${rpc_path} HTTP/1.1\r\nHost: ${host}\r\n\r\n` +
 				`GET ${rpc_path} HTTP/1.1\r\nHost: ${host}\r\nConnection: close\r\n\r\n`;
 			const { received: response } = await raw_http_exchange(base_url, two_requests, {
-				read_timeout_ms: RAW_READ_TIMEOUT_MS
+				read_timeout_ms: RAW_HTTP_READ_TIMEOUT_MS
 			});
 			const n = raw_http_count_responses(response);
 			assert.ok(
@@ -111,7 +106,7 @@ export const describe_body_size_smuggling_cross_tests = (
 		});
 
 		test('oversized POST + pipelined GET → no request smuggled', async () => {
-			const oversized_len = BODY_LIMIT_DEFAULT_BYTES + 1024;
+			const oversized_len = SPINE_BODY_LIMIT_DEFAULT_BYTES + 1024;
 			const pipelined_get = `GET ${rpc_path} HTTP/1.1\r\nHost: ${host}\r\n\r\n`;
 			// One write: an over-cap POST (rejected on Content-Length) immediately
 			// followed by a GET.
@@ -125,7 +120,7 @@ export const describe_body_size_smuggling_cross_tests = (
 				pipelined_get;
 
 			const { received: response } = await raw_http_exchange(base_url, payload, {
-				read_timeout_ms: RAW_READ_TIMEOUT_MS
+				read_timeout_ms: RAW_HTTP_READ_TIMEOUT_MS
 			});
 			const n = raw_http_count_responses(response);
 
@@ -171,7 +166,7 @@ export const describe_body_size_smuggling_cross_tests = (
 					`GET ${rpc_path} HTTP/1.1\r\nHost: ${host}\r\n\r\n`;
 
 				const { received, closed_by_server } = await raw_http_exchange(base_url, payload, {
-					read_timeout_ms: RAW_READ_TIMEOUT_MS
+					read_timeout_ms: RAW_HTTP_READ_TIMEOUT_MS
 				});
 				const n = raw_http_count_responses(received);
 				// Refused with 400 or answered — the status is the implementation's.
@@ -187,7 +182,7 @@ export const describe_body_size_smuggling_cross_tests = (
 					closed_by_server,
 					`expected the server to close the connection after a request carrying both ` +
 						`Content-Length and Transfer-Encoding; it was still open after ` +
-						`${RAW_READ_TIMEOUT_MS}ms. Raw head: ${received.slice(0, 120)}`
+						`${RAW_HTTP_READ_TIMEOUT_MS}ms. Raw head: ${received.slice(0, 120)}`
 				);
 			});
 		}

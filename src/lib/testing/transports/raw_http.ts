@@ -21,6 +21,14 @@ import '../assert_dev_env.ts';
 
 import { connect } from 'node:net';
 
+/**
+ * The read window a raw exchange gets by default in the cross suites. The
+ * server holds every byte it will get when the wait starts, so a backend that
+ * answers on what it has answers at once, and one that waits for more runs the
+ * whole window.
+ */
+export const RAW_HTTP_READ_TIMEOUT_MS = 2000;
+
 /** What a raw exchange read back, and how it ended. */
 export interface RawHttpExchange {
 	/** Every byte the server sent, `latin1`-decoded. */
@@ -106,6 +114,31 @@ export const raw_http_exchange = (
 		socket.on('error', () => {}); // EPIPE/ECONNRESET on a mid-write close is expected
 		socket.on('close', () => finish(true));
 	});
+
+/**
+ * Render request headers as raw HTTP/1.1 header lines, each ending in CRLF.
+ *
+ * @param headers - header names to values, sent in iteration order
+ * @returns the lines, concatenated
+ */
+export const raw_http_header_lines = (headers: Record<string, string>): string =>
+	Object.entries(headers)
+		.map(([name, value]) => `${name}: ${value}\r\n`)
+		.join('');
+
+/**
+ * Parse a response body as JSON.
+ *
+ * @param body - the body text
+ * @returns the parsed value, or `undefined` when the body is not JSON
+ */
+export const raw_http_parse_json = (body: string): unknown => {
+	try {
+		return JSON.parse(body);
+	} catch {
+		return undefined;
+	}
+};
 
 /**
  * Count HTTP response status lines in a raw byte stream. Deliberately

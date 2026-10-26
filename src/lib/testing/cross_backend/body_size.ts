@@ -56,7 +56,7 @@ import '../assert_dev_env.ts';
  *
  * - a **declared** over-cap length is sent as the request head alone —
  *   `Content-Length` one over the cap and not one body byte. The 413 must
- *   arrive within `RAW_READ_TIMEOUT_MS`, which also pins that the refusal is
+ *   arrive within `RAW_HTTP_READ_TIMEOUT_MS`, which also pins that the refusal is
  *   made on the header: a backend that reads the body before refusing, or has
  *   no cap, waits for bytes that never come and fails the case.
  * - the **chunked** body is sent up to one byte past the cap and never
@@ -88,11 +88,14 @@ import { account_verify_action_spec } from '../../auth/account_action_specs.ts';
 import { ERROR_PAYLOAD_TOO_LARGE } from '../../http/error_schemas.ts';
 import {
 	raw_http_exchange,
+	raw_http_header_lines,
+	raw_http_parse_json,
 	raw_http_parse_response,
+	RAW_HTTP_READ_TIMEOUT_MS,
 	type RawHttpResponse
 } from '../transports/raw_http.ts';
 import type { RpcPathCrossSuiteOptions, TestFixture } from './setup.ts';
-import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
+import { SPINE_BODY_LIMIT_DEFAULT_BYTES, SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
 /**
  * Options for the body-size parity suite — the standard RPC-dispatched
@@ -115,15 +118,6 @@ export interface BodySizeCrossTestOptions extends RpcPathCrossSuiteOptions {
 	 */
 	readonly base_url: string | null;
 }
-
-/**
- * The shared 1 MiB default both impls ship (`DEFAULT_MAX_BODY_SIZE` in TS,
- * `DEFAULT_BODY_LIMIT_BYTES` in `fuz_http`). Kept as a local cross-impl
- * contract value rather than imported from either impl — the boundary it
- * pins is the shared default, and a change to either is a deliberate
- * cross-impl decision that would revisit this suite regardless.
- */
-const BODY_LIMIT_DEFAULT_BYTES = 1024 * 1024;
 
 /**
  * Build an `account_verify` JSON-RPC envelope whose serialized length is
@@ -168,13 +162,6 @@ const streamed_body = (total_bytes: number): ReadableStream<Uint8Array> => {
 	});
 };
 
-/**
- * How long a raw over-cap exchange waits for the refusal. The server has every
- * byte it will get when the wait starts, so a backend that refuses on what it
- * has answers at once and one that waits for more runs the whole window.
- */
-const RAW_READ_TIMEOUT_MS = 2000;
-
 /** The status and parsed JSON body the over-cap cases assert on. */
 interface SizedResponse {
 	readonly status: number;
@@ -185,20 +172,6 @@ const to_sized_response = async (res: Response): Promise<SizedResponse> => ({
 	status: res.status,
 	body: await res.json().catch(() => undefined)
 });
-
-const parse_json = (text: string): unknown => {
-	try {
-		return JSON.parse(text);
-	} catch {
-		return undefined;
-	}
-};
-
-/** Render request headers as raw header lines. */
-const to_header_lines = (headers: Record<string, string>): string =>
-	Object.entries(headers)
-		.map(([name, value]) => `${name}: ${value}\r\n`)
-		.join('');
 
 /**
  * Write `request_bytes` to the backend's socket and read the one response it
@@ -212,7 +185,7 @@ const exchange_withholding = async (
 	withheld: string
 ): Promise<SizedResponse> => {
 	const { received, closed_by_server } = await raw_http_exchange(base_url, request_bytes, {
-		read_timeout_ms: RAW_READ_TIMEOUT_MS,
+		read_timeout_ms: RAW_HTTP_READ_TIMEOUT_MS,
 		until: 'response'
 	});
 	const response: RawHttpResponse | null = raw_http_parse_response(received);
@@ -221,11 +194,11 @@ const exchange_withholding = async (
 		`expected a whole response with ${withheld} withheld; ` +
 			(closed_by_server
 				? `the server closed the connection first`
-				: `none arrived within ${RAW_READ_TIMEOUT_MS}ms — the backend is waiting for bytes ` +
+				: `none arrived within ${RAW_HTTP_READ_TIMEOUT_MS}ms — the backend is waiting for bytes ` +
 					`it should refuse without`) +
 			`. Received: ${received ? received.slice(0, 120) : 'nothing'}`
 	);
-	return { status: response.status, body: parse_json(response.body) };
+	return { status: response.status, body: raw_http_parse_json(response.body) };
 };
 
 /** Assert a response is the canonical over-cap refusal. */
@@ -256,7 +229,7 @@ export const describe_body_size_cross_tests = (options: BodySizeCrossTestOptions
 		id: string
 	): Promise<SizedResponse> => {
 		const headers = fixture.create_session_headers();
-		const content_length = BODY_LIMIT_DEFAULT_BYTES + 1;
+		const content_length = SPINE_BODY_LIMIT_DEFAULT_BYTES + 1;
 		if (base_url === null) {
 			return to_sized_response(
 				await fixture.transport(rpc_path, {
@@ -270,7 +243,7 @@ export const describe_body_size_cross_tests = (options: BodySizeCrossTestOptions
 		return exchange_withholding(
 			base_url,
 			`POST ${rpc_path} HTTP/1.1\r\n` +
-				to_header_lines({
+				raw_http_header_lines({
 					host: url.host,
 					origin: url.origin,
 					...headers,
@@ -293,7 +266,7 @@ export const describe_body_size_cross_tests = (options: BodySizeCrossTestOptions
 				await fixture.transport(rpc_path, {
 					method: 'POST',
 					headers: { ...fixture.create_session_headers(), 'content-type': 'application/json' },
-					body: streamed_body(BODY_LIMIT_DEFAULT_BYTES + 1024),
+					body: streamed_body(SPINE_BODY_LIMIT_DEFAULT_BYTES + 1024),
 					// a streamed request body needs half-duplex `fetch`
 					duplex: 'half'
 				} as RequestInit)
@@ -307,7 +280,7 @@ export const describe_body_size_cross_tests = (options: BodySizeCrossTestOptions
 		return exchange_withholding(
 			base_url,
 			`POST ${rpc_path} HTTP/1.1\r\n` +
-				to_header_lines({
+				raw_http_header_lines({
 					host: url.host,
 					origin: url.origin,
 					...fixture.create_session_headers(),
@@ -315,7 +288,7 @@ export const describe_body_size_cross_tests = (options: BodySizeCrossTestOptions
 					'transfer-encoding': 'chunked'
 				}) +
 				`\r\n` +
-				whole_chunk.repeat(BODY_LIMIT_DEFAULT_BYTES / STREAM_CHUNK_BYTES) +
+				whole_chunk.repeat(SPINE_BODY_LIMIT_DEFAULT_BYTES / STREAM_CHUNK_BYTES) +
 				`1\r\nx`,
 			`the chunked body's end`
 		);
@@ -336,7 +309,7 @@ export const describe_body_size_cross_tests = (options: BodySizeCrossTestOptions
 			// Exactly at the cap is one byte under the `>` threshold, so it clears
 			// the size gate and reaches the dispatcher. Whatever the dispatcher
 			// then returns, it must not be the 413 — that's the lower boundary.
-			const res = await post(fixture, sized_envelope('at-limit', BODY_LIMIT_DEFAULT_BYTES));
+			const res = await post(fixture, sized_envelope('at-limit', SPINE_BODY_LIMIT_DEFAULT_BYTES));
 			assert.notStrictEqual(res.status, 413, 'a body exactly at the cap must not be size-rejected');
 		});
 

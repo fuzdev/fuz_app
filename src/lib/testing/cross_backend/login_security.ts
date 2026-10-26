@@ -151,7 +151,7 @@ const XFF_V6_PASSWORD_EXHAUST = '2001:db8:e3:5::1';
 const XFF_V6_PASSWORD_SAME_64 = '2001:db8:e3:5:8000::2';
 
 /** How long a raw exchange waits for the login's answer. */
-const RAW_READ_TIMEOUT_MS = 5000;
+const LOGIN_RAW_READ_TIMEOUT_MS = 5000;
 
 /** A non-routable, non-existent identifier — login resolves to the not-found path (records the bucket, returns 401). */
 const PROBE_PASSWORD = 'login_security_wrong_password';
@@ -451,7 +451,7 @@ export const describe_login_security_cross_tests = (
 					`\r\n` +
 					body;
 				const { received } = await raw_http_exchange(base_url, request, {
-					read_timeout_ms: RAW_READ_TIMEOUT_MS,
+					read_timeout_ms: LOGIN_RAW_READ_TIMEOUT_MS,
 					until: 'response'
 				});
 				const response = raw_http_parse_response(received);

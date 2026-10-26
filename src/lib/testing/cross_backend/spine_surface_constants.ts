@@ -82,6 +82,16 @@ export const SPINE_ACCOUNT_BOOTSTRAP_PATH = '/api/account/bootstrap';
 export const SPINE_SSE_PATH = '/api/admin/audit/stream';
 
 /**
+ * The request-body cap both spines ship by default, 1 MiB
+ * (`DEFAULT_MAX_BODY_SIZE` in TS, `DEFAULT_BODY_LIMIT_BYTES` in `fuz_http`).
+ * Kept here as the cross-impl contract value rather than imported from either
+ * impl — the boundary the body-size suites pin is the shared default, and a
+ * change to either is a deliberate cross-impl decision that would revisit them
+ * regardless.
+ */
+export const SPINE_BODY_LIMIT_DEFAULT_BYTES = 1024 * 1024;
+
+/**
  * App role the role-shaped-`cell_grant` cross suite exercises. Registered
  * with no grant path (`grant_paths: []`) so it stays a valid registry member
  * without entering the admin / self-service grant flows — holders are seeded

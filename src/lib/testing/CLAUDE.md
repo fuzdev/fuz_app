@@ -1815,8 +1815,12 @@ are `src/test/auth/cell_crud_parity.db.test.ts`
   `raw_http_parse_response` (the first response, `null` until its head and
   framed body are whole), `raw_http_count_responses` (unanchored status-line
   count, so a response concatenated after a body is seen),
-  `raw_http_first_status`. Shared by the body-size, body-size smuggling, and
-  credential-header suites.
+  `raw_http_first_status`, `raw_http_header_lines` (headers as CRLF lines),
+  `raw_http_parse_json` (a body's JSON, `undefined` when it isn't), and
+  `RAW_HTTP_READ_TIMEOUT_MS`, the suites' default read window. Shared by the
+  body-size, body-size smuggling, credential-header, origin-scope and
+  transport-composition suites, which take the 1 MiB cap they probe from
+  `SPINE_BODY_LIMIT_DEFAULT_BYTES` (`spine_surface_constants.ts`).
 - `testing/transports/sse_frame_reader.ts` — `create_sse_frame_reader(reader, default_timeout_ms?)`,
   the transport-agnostic SSE framing core over a
   `ReadableStreamDefaultReader<Uint8Array>`: `\n\n` framing, per-read timeout,

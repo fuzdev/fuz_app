@@ -86,13 +86,20 @@ import {
 	ERROR_TOKEN_SCOPE_REQUIRED
 } from '../../http/error_schemas.ts';
 import { create_rpc_get_url } from '../rpc_helpers.ts';
-import { raw_http_exchange, raw_http_parse_response } from '../transports/raw_http.ts';
+import {
+	raw_http_exchange,
+	raw_http_header_lines,
+	raw_http_parse_json,
+	raw_http_parse_response,
+	RAW_HTTP_READ_TIMEOUT_MS
+} from '../transports/raw_http.ts';
 import { test_if, type BackendCapabilities } from './capabilities.ts';
 import { mint_narrowed_api_token } from './narrowed_api_token.ts';
 import type { RpcPathCapabilityGatedCrossSuiteOptions, SetupTest, TestFixture } from './setup.ts';
 import {
 	SPINE_ACCOUNT_LOGOUT_PATH,
 	SPINE_ACCOUNT_PASSWORD_PATH,
+	SPINE_BODY_LIMIT_DEFAULT_BYTES,
 	SPINE_RPC_PATH,
 	SPINE_SSE_PATH,
 	SPINE_WS_PATH
@@ -263,14 +270,8 @@ export interface TransportCompositionCrossTestOptions extends RpcPathCapabilityG
 	readonly multi_actor?: TransportCompositionMultiActorOptions;
 }
 
-/** The shared 1 MiB default cap both spines ship, as in `body_size.ts`. */
-const BODY_LIMIT_DEFAULT_BYTES = 1024 * 1024;
-
 /** An `Origin` no backend's allowlist admits. */
 const DISALLOWED_ORIGIN = 'http://evil.com';
-
-/** How long a raw exchange waits for the refusal. */
-const RAW_READ_TIMEOUT_MS = 2000;
 
 /** One probe request, before it's put on a transport. */
 interface ProbeRequest {
@@ -299,19 +300,6 @@ const rpc_envelope = (method: string, id: string): string =>
 const sized_json = (bytes: number): string => {
 	const base = JSON.stringify({ pad: '' });
 	return JSON.stringify({ pad: 'x'.repeat(Math.max(0, bytes - base.length)) });
-};
-
-const to_header_lines = (headers: Record<string, string>): string =>
-	Object.entries(headers)
-		.map(([name, value]) => `${name}: ${value}\r\n`)
-		.join('');
-
-const parse_json = (text: string): unknown => {
-	try {
-		return JSON.parse(text);
-	} catch {
-		return undefined;
-	}
 };
 
 const case_name = (c: TransportCompositionCase): string =>
@@ -422,7 +410,7 @@ export const describe_transport_composition_cross_tests = (
 					method: 'POST',
 					path: c.surface === 'rest_post' ? rest_path : password_path,
 					headers: { ...credential, 'content-type': 'application/json' },
-					body: over_cap ? sized_json(BODY_LIMIT_DEFAULT_BYTES + 1) : '{}',
+					body: over_cap ? sized_json(SPINE_BODY_LIMIT_DEFAULT_BYTES + 1) : '{}',
 					over_cap,
 					repeated_headers
 				};
@@ -431,7 +419,9 @@ export const describe_transport_composition_cross_tests = (
 					method: 'POST',
 					path: rpc_path,
 					headers: { ...credential, 'content-type': 'application/json' },
-					body: over_cap ? sized_json(BODY_LIMIT_DEFAULT_BYTES + 1) : rpc_envelope(rpc_method, id),
+					body: over_cap
+						? sized_json(SPINE_BODY_LIMIT_DEFAULT_BYTES + 1)
+						: rpc_envelope(rpc_method, id),
 					over_cap,
 					repeated_headers
 				};
@@ -488,18 +478,18 @@ export const describe_transport_composition_cross_tests = (
 		const url = new URL(base_url);
 		const body = probe.over_cap ? '' : (probe.body ?? '');
 		const length_header: Record<string, string> = probe.over_cap
-			? { 'content-length': String(BODY_LIMIT_DEFAULT_BYTES + 1) }
+			? { 'content-length': String(SPINE_BODY_LIMIT_DEFAULT_BYTES + 1) }
 			: probe.body === null
 				? {}
 				: { 'content-length': String(body.length) };
 		const request =
 			`${probe.method} ${probe.path} HTTP/1.1\r\n` +
-			to_header_lines({ host: url.host, ...probe.headers, ...length_header }) +
+			raw_http_header_lines({ host: url.host, ...probe.headers, ...length_header }) +
 			(probe.repeated_headers ?? []).map(([name, value]) => `${name}: ${value}\r\n`).join('') +
 			`\r\n` +
 			body;
 		const { received, closed_by_server } = await raw_http_exchange(base_url, request, {
-			read_timeout_ms: RAW_READ_TIMEOUT_MS,
+			read_timeout_ms: RAW_HTTP_READ_TIMEOUT_MS,
 			until: 'response'
 		});
 		const response = raw_http_parse_response(received);
@@ -508,7 +498,7 @@ export const describe_transport_composition_cross_tests = (
 			`${probe.method} ${probe.path}: expected a whole response; ` +
 				(closed_by_server
 					? 'the server closed the connection first'
-					: `none arrived within ${RAW_READ_TIMEOUT_MS}ms`) +
+					: `none arrived within ${RAW_HTTP_READ_TIMEOUT_MS}ms`) +
 				`. Received: ${received ? received.slice(0, 200) : 'nothing'}`
 		);
 		return { status: response.status, text: response.body };
@@ -525,7 +515,7 @@ export const describe_transport_composition_cross_tests = (
 		// a backend that declares no WS refusal body (Node's `@hono/node-ws`)
 		// may answer with an empty one; a body it does send is still asserted
 		if (c.surface === 'ws_upgrade' && !capabilities.ws_refusal_body && res.text === '') return;
-		assert_refusal_body(c, parse_json(res.text), res.text);
+		assert_refusal_body(c, raw_http_parse_json(res.text), res.text);
 	};
 	const is_runnable = (c: TransportCompositionCase): boolean =>
 		(c.gate === undefined || capabilities[c.gate]) &&

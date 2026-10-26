@@ -40,21 +40,20 @@ import '../assert_dev_env.ts';
 import { describe, assert, test } from 'vitest';
 
 import { ERROR_FORBIDDEN_ORIGIN, ERROR_PAYLOAD_TOO_LARGE } from '../../http/error_schemas.ts';
-import { raw_http_exchange, raw_http_parse_response } from '../transports/raw_http.ts';
+import {
+	raw_http_exchange,
+	raw_http_parse_response,
+	RAW_HTTP_READ_TIMEOUT_MS
+} from '../transports/raw_http.ts';
 import { test_if } from './capabilities.ts';
 import type { CapabilityGatedCrossSuiteOptions } from './setup.ts';
+import { SPINE_BODY_LIMIT_DEFAULT_BYTES } from './spine_surface_constants.ts';
 
 /** An origin no spine test server allows. */
 const FOREIGN_ORIGIN = 'https://evil.example';
 
 /** A path no spine test server routes — it reaches the fallback. */
 const UNROUTED_PATH = '/origin-scope-unrouted';
-
-/** The shared 1 MiB default cap both spines ship, as in `body_size.ts`. */
-const BODY_LIMIT_DEFAULT_BYTES = 1024 * 1024;
-
-/** How long a raw exchange waits for the refusal. */
-const RAW_READ_TIMEOUT_MS = 2000;
 
 /** Options for the origin-scope parity suite. */
 export interface OriginScopeCrossTestOptions extends CapabilityGatedCrossSuiteOptions {
@@ -126,7 +125,7 @@ export const describe_origin_scope_cross_tests = (options: OriginScopeCrossTestO
 		});
 
 		test('an over-cap POST to an unrouted path with a foreign Origin → 413 payload_too_large', async () => {
-			const over = BODY_LIMIT_DEFAULT_BYTES + 1;
+			const over = SPINE_BODY_LIMIT_DEFAULT_BYTES + 1;
 			let status: number;
 			let text: string;
 			if (base_url === null) {
@@ -149,7 +148,7 @@ export const describe_origin_scope_cross_tests = (options: OriginScopeCrossTestO
 					`content-length: ${over}\r\n` +
 					`\r\n`;
 				const { received } = await raw_http_exchange(base_url, request, {
-					read_timeout_ms: RAW_READ_TIMEOUT_MS,
+					read_timeout_ms: RAW_HTTP_READ_TIMEOUT_MS,
 					until: 'response'
 				});
 				const response = raw_http_parse_response(received);

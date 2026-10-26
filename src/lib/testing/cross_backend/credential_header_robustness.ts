@@ -54,7 +54,8 @@ import { DAEMON_TOKEN_HEADER } from '../../auth/daemon_token.ts';
 import {
 	raw_http_count_responses,
 	raw_http_exchange,
-	raw_http_first_status
+	raw_http_first_status,
+	RAW_HTTP_READ_TIMEOUT_MS
 } from '../transports/raw_http.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
@@ -74,12 +75,9 @@ const NIL_UUID = '00000000-0000-0000-0000-000000000000';
 /** A value that is never a real credential — used for the conflicting / garbage copies. */
 const GARBAGE_TOKEN = 'not-a-real-credential-value';
 
-/** How long each raw exchange waits for the server to finish answering. */
-const RAW_READ_TIMEOUT_MS = 2000;
-
 /** Write `request_bytes` to a fresh raw socket and read until the server closes. */
 const send_raw = async (base_url: string, request_bytes: string): Promise<string> =>
-	(await raw_http_exchange(base_url, request_bytes, { read_timeout_ms: RAW_READ_TIMEOUT_MS }))
+	(await raw_http_exchange(base_url, request_bytes, { read_timeout_ms: RAW_HTTP_READ_TIMEOUT_MS }))
 		.received;
 
 const is_success_status = (status: number): boolean => status >= 200 && status < 300;
