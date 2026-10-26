@@ -173,6 +173,23 @@ export const ERROR_ROLE_GRANT_NOT_FOUND = 'role_grant_not_found' as const;
 /** Query parameter `event_type` is not a valid audit event type. */
 export const ERROR_INVALID_EVENT_TYPE = 'invalid_event_type' as const;
 
+// --- Declared input reasons (paged reads) ---
+// each is a field's `invalid_reason` (`schema_meta.ts`): every refusal of the
+// field carries it, whatever the fault — a wrong type or an unsafe integer
+// included; each is named `<field>_invalid`
+
+/** `limit` on a paged read refused — out of `[1, max]`, or not an integer. */
+export const ERROR_LIMIT_INVALID = 'limit_invalid' as const;
+
+/** `offset` on a paged read refused — negative, or not a safe integer. */
+export const ERROR_OFFSET_INVALID = 'offset_invalid' as const;
+
+/** `audit_log_list`'s `since_seq` cursor refused — negative, or not a safe integer. */
+export const ERROR_SINCE_SEQ_INVALID = 'since_seq_invalid' as const;
+
+/** `audit_log_list`'s `outcome` filter refused — not `'success'` or `'failure'`. */
+export const ERROR_OUTCOME_INVALID = 'outcome_invalid' as const;
+
 // --- DB table browser ---
 
 /** DELETE blocked by a foreign key constraint. */

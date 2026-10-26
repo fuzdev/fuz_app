@@ -20,8 +20,9 @@
  *   non-integer, and a negative `offset`, are `invalid_params` (400); `limit`
  *   at the max is admitted; an `offset` past `Number.MAX_SAFE_INTEGER` is
  *   refused too (one row, on `admin_account_list`), and so is a `since_seq`
- *   cursor past it on `audit_log_list`. Neither spine clamps an out-of-range page. The TS
- *   refusal carries no `data.reason`, so `status` pins it.
+ *   cursor past it on `audit_log_list`. Neither spine clamps an out-of-range page. Each
+ *   refusal carries the reason its field declares (`limit_invalid`,
+ *   `offset_invalid`, `since_seq_invalid`), whatever the fault.
  *
  * Each `note` cites where its property is stated: the input schemas and
  * their TSDoc in `auth/admin_action_specs.ts` and
@@ -38,7 +39,10 @@ import {
 import { ROLE_GRANT_OFFER_HISTORY_LIMIT_MAX } from '#lib/auth/role_grant_offer_action_specs.ts';
 import {
 	ERROR_INVITE_ACCOUNT_EXISTS_USERNAME,
-	ERROR_INVITE_NOT_FOUND
+	ERROR_INVITE_NOT_FOUND,
+	ERROR_LIMIT_INVALID,
+	ERROR_OFFSET_INVALID,
+	ERROR_SINCE_SEQ_INVALID
 } from '#lib/http/error_schemas.ts';
 import type { ConformanceCase } from '#lib/testing/cross_backend/conformance_case.ts';
 import { default_test_keeper_username } from '#lib/testing/cross_backend/default_secrets.ts';
@@ -106,18 +110,22 @@ const PAGED_LISTS: ReadonlyArray<{ readonly method: string; readonly max: number
 const pagination_cases: Array<ConformanceCase> = PAGED_LISTS.flatMap(
 	({ method, max }): Array<ConformanceCase> => {
 		const note =
-			'auth/admin_action_specs.ts + auth/role_grant_offer_action_specs.ts — the input schemas bound `limit` to [1, max] and `offset` to >= 0, so an out-of-range page is refused, not clamped';
-		const refused = (label: string, params: Record<string, unknown>): ConformanceCase => ({
+			'auth/admin_action_specs.ts + auth/role_grant_offer_action_specs.ts — the input schemas bound `limit` to [1, max] and `offset` to >= 0, so an out-of-range page is refused, not clamped, with the reason each field declares';
+		const refused = (
+			label: string,
+			params: Record<string, unknown>,
+			error_reason: string
+		): ConformanceCase => ({
 			name: `admin → ${method} ${label} → 400`,
 			request: { method, as: 'keeper', params },
-			expect: { status: 400 },
+			expect: { status: 400, error_reason },
 			note
 		});
 		return [
-			refused('{limit: 0}', { limit: 0 }),
-			refused('{limit: max + 1}', { limit: max + 1 }),
-			refused('{limit: 1.5}', { limit: 1.5 }),
-			refused('{offset: -1}', { offset: -1 }),
+			refused('{limit: 0}', { limit: 0 }, ERROR_LIMIT_INVALID),
+			refused('{limit: max + 1}', { limit: max + 1 }, ERROR_LIMIT_INVALID),
+			refused('{limit: 1.5}', { limit: 1.5 }, ERROR_LIMIT_INVALID),
+			refused('{offset: -1}', { offset: -1 }, ERROR_OFFSET_INVALID),
 			{
 				name: `admin → ${method} {limit: max} → 200`,
 				request: { method, as: 'keeper', params: { limit: max } },
@@ -129,13 +137,14 @@ const pagination_cases: Array<ConformanceCase> = PAGED_LISTS.flatMap(
 );
 
 /**
- * An offset past `Number.MAX_SAFE_INTEGER` — `int()` refuses it, with no
- * reason; one list stands for the shared pagination parser.
+ * An offset past `Number.MAX_SAFE_INTEGER` — `int()` refuses it, with the
+ * reason `offset` declares for every refusal; one list stands for the shared
+ * pagination parser.
  */
 const unsafe_offset_case: ConformanceCase = {
 	name: 'admin → admin_account_list {offset: 1e16} → 400',
 	request: { method: 'admin_account_list', as: 'keeper', params: { offset: 1e16 } },
-	expect: { status: 400 },
+	expect: { status: 400, error_reason: ERROR_OFFSET_INVALID },
 	note:
 		'auth/admin_action_specs.ts — `offset` is `int()`, which refuses an integer past ' +
 		'`Number.MAX_SAFE_INTEGER`'
@@ -145,7 +154,7 @@ const unsafe_offset_case: ConformanceCase = {
 const unsafe_since_seq_case: ConformanceCase = {
 	name: 'admin → audit_log_list {since_seq: 1e16} → 400',
 	request: { method: 'audit_log_list', as: 'keeper', params: { since_seq: 1e16 } },
-	expect: { status: 400 },
+	expect: { status: 400, error_reason: ERROR_SINCE_SEQ_INVALID },
 	note:
 		'auth/admin_action_specs.ts — `since_seq` is `int().min(0)`, which refuses an integer past ' +
 		'`Number.MAX_SAFE_INTEGER`'

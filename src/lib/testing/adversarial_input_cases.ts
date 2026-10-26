@@ -17,6 +17,7 @@ import './assert_dev_env.ts';
 import { z } from 'zod';
 
 import { zod_unwrap_to_object, zod_extract_fields } from '../zod.ts';
+import { resolve_invalid_reason } from '../schema_meta.ts';
 import { is_null_schema } from '../http/schema_helpers.ts';
 import { ERROR_INVALID_REQUEST_BODY, ERROR_INVALID_JSON_BODY } from '../http/error_schemas.ts';
 import { detect_format, format_zod_issues, generate_valid_object } from './schema_generators.ts';
@@ -68,6 +69,12 @@ const format_violation = (format: string): { label: string; value: string } | nu
 export interface InputTestCase {
 	label: string;
 	body: unknown;
+	/**
+	 * The one top-level field the case breaks; absent on a whole-body case (a
+	 * non-object body, an extra unknown key). An RPC refusal of the case owes
+	 * the field's declared `invalid_reason` (`expected_invalid_reason`).
+	 */
+	field?: string;
 	expected_error: typeof ERROR_INVALID_REQUEST_BODY | typeof ERROR_INVALID_JSON_BODY;
 }
 
@@ -184,6 +191,7 @@ export const generate_input_test_cases = (
 			cases.push({
 				label: `missing: ${field.name}`,
 				body: without,
+				field: field.name,
 				expected_error: ERROR_INVALID_REQUEST_BODY
 			});
 		}
@@ -194,6 +202,7 @@ export const generate_input_test_cases = (
 			cases.push({
 				label: `wrong type: ${field.name} (${wrong.label})`,
 				body: { ...base, [field.name]: wrong.value },
+				field: field.name,
 				expected_error: ERROR_INVALID_REQUEST_BODY
 			});
 		}
@@ -203,6 +212,7 @@ export const generate_input_test_cases = (
 			cases.push({
 				label: `null: ${field.name}`,
 				body: { ...base, [field.name]: null },
+				field: field.name,
 				expected_error: ERROR_INVALID_REQUEST_BODY
 			});
 		}
@@ -215,6 +225,7 @@ export const generate_input_test_cases = (
 				cases.push({
 					label: `format: ${field.name} (${violation.label})`,
 					body: { ...base, [field.name]: violation.value },
+					field: field.name,
 					expected_error: ERROR_INVALID_REQUEST_BODY
 				});
 			}
@@ -234,6 +245,7 @@ export const generate_input_test_cases = (
 					cases.push({
 						label: `empty string: ${field.name}`,
 						body: { ...base, [field.name]: '' },
+						field: field.name,
 						expected_error: ERROR_INVALID_REQUEST_BODY
 					});
 				}
@@ -241,6 +253,7 @@ export const generate_input_test_cases = (
 					cases.push({
 						label: `over maxLength: ${field.name} (${json.maxLength + 1} chars)`,
 						body: { ...base, [field.name]: 'x'.repeat(json.maxLength + 1) },
+						field: field.name,
 						expected_error: ERROR_INVALID_REQUEST_BODY
 					});
 				}
@@ -252,6 +265,7 @@ export const generate_input_test_cases = (
 					cases.push({
 						label: `below minimum: ${field.name} (${json.minimum - 1})`,
 						body: { ...base, [field.name]: json.minimum - 1 },
+						field: field.name,
 						expected_error: ERROR_INVALID_REQUEST_BODY
 					});
 				}
@@ -259,6 +273,7 @@ export const generate_input_test_cases = (
 					cases.push({
 						label: `above maximum: ${field.name} (${json.maximum + 1})`,
 						body: { ...base, [field.name]: json.maximum + 1 },
+						field: field.name,
 						expected_error: ERROR_INVALID_REQUEST_BODY
 					});
 				}
@@ -266,6 +281,7 @@ export const generate_input_test_cases = (
 					cases.push({
 						label: `at exclusive minimum: ${field.name} (${json.exclusiveMinimum})`,
 						body: { ...base, [field.name]: json.exclusiveMinimum },
+						field: field.name,
 						expected_error: ERROR_INVALID_REQUEST_BODY
 					});
 				}
@@ -273,6 +289,7 @@ export const generate_input_test_cases = (
 					cases.push({
 						label: `at exclusive maximum: ${field.name} (${json.exclusiveMaximum})`,
 						body: { ...base, [field.name]: json.exclusiveMaximum },
+						field: field.name,
 						expected_error: ERROR_INVALID_REQUEST_BODY
 					});
 				}
@@ -281,11 +298,13 @@ export const generate_input_test_cases = (
 					cases.push({
 						label: `zero for positive-only: ${field.name}`,
 						body: { ...base, [field.name]: 0 },
+						field: field.name,
 						expected_error: ERROR_INVALID_REQUEST_BODY
 					});
 					cases.push({
 						label: `negative for positive-only: ${field.name}`,
 						body: { ...base, [field.name]: -1 },
+						field: field.name,
 						expected_error: ERROR_INVALID_REQUEST_BODY
 					});
 				}
@@ -297,6 +316,7 @@ export const generate_input_test_cases = (
 					cases.push({
 						label: `empty array for minItems > 0: ${field.name}`,
 						body: { ...base, [field.name]: [] },
+						field: field.name,
 						expected_error: ERROR_INVALID_REQUEST_BODY
 					});
 				}
@@ -305,6 +325,7 @@ export const generate_input_test_cases = (
 					cases.push({
 						label: `over maxItems: ${field.name} (${json.maxItems + 1} items)`,
 						body: { ...base, [field.name]: Array.from({ length: json.maxItems + 1 }, () => null) },
+						field: field.name,
 						expected_error: ERROR_INVALID_REQUEST_BODY
 					});
 				}
@@ -316,6 +337,24 @@ export const generate_input_test_cases = (
 
 	return cases;
 };
+
+/**
+ * The `error.data.reason` an RPC refusal of `test_case` owes: the declared
+ * `invalid_reason` of the field it breaks, resolved as the dispatcher resolves
+ * a failure on that field (`resolve_invalid_reason`), or `undefined` — no
+ * reason — for an undeclared field or a whole-body case.
+ *
+ * @param input_schema - the input schema the case was generated from
+ * @param test_case - a case `generate_input_test_cases` produced from it
+ * @returns the owed reason, or `undefined` when the refusal carries none
+ */
+export const expected_invalid_reason = (
+	input_schema: z.ZodType,
+	test_case: InputTestCase
+): string | undefined =>
+	test_case.field === undefined
+		? undefined
+		: resolve_invalid_reason(input_schema, [test_case.field]);
 
 // --- Params test case generation ---
 

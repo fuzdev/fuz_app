@@ -493,9 +493,8 @@ invalid-params cases sent to each backend as a principal the method admits,
 pinning status, code, echoed `id` and `data.reason`, incl. an anonymous `GET` of
 a mutating method and an anonymous batch → 400 `invalid_request`, never 401, and
 an anonymous `GET` with non-object params → 401; a non-object `GET` params on
-every read; on the Rust stub only, the `account_token_create` schema refusals
-that carry a Rust-only `data.reason` run as `xfail_until`
-`rust-token-create-schema-reason` rows; cross-only,
+every read; each generated params case owes its broken field's declared
+`invalid_reason` as `data.reason`, or none; cross-only,
 `describe_rpc_attack_surface_tests` runs the same cases in-process), and
 `fact_serving` (the cell-gated fact-serving routes
 `GET /api/cells/:cell_id/facts/:hash` + the admin-only `GET /api/facts/:hash`

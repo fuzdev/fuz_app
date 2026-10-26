@@ -109,6 +109,26 @@ export const zod_get_innermost_type = (schema: z.ZodType): z.ZodType => {
 };
 
 /**
+ * Every layer of a schema, from the schema itself through each wrapper
+ * (optional, nullable, default, transform, pipe, prefault) to the innermost
+ * non-wrapper — for reading `.meta()` a wrapper does not carry over from the
+ * schema it wraps.
+ *
+ * @returns the layers, outermost first, ending at `zod_get_innermost_type(schema)`
+ */
+export const zod_get_schema_layers = (schema: z.ZodType): Array<z.ZodType> => {
+	const layers: Array<z.ZodType> = [schema];
+	let s = schema;
+	while (ZOD_WRAPPER_TYPES.has(s.def.type)) {
+		const sub = zod_to_subschema(s.def);
+		if (!sub) break;
+		layers.push(sub);
+		s = sub;
+	}
+	return layers;
+};
+
+/**
  * Get all property keys from an object schema, unwrapping wrappers.
  * Returns an empty array if the innermost type is not an object.
  *

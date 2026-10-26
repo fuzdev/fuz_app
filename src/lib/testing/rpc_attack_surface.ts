@@ -47,6 +47,7 @@ import {
 	generate_rpc_params_test_cases,
 	to_rpc_envelope_request
 } from './rpc_envelope_cases.ts';
+import { expected_invalid_reason } from './adversarial_input_cases.ts';
 
 // --- Types ---
 
@@ -315,6 +316,8 @@ const describe_rpc_adversarial_envelopes = (options: RpcAttackSurfaceOptions): v
  * from the schema (wrong types, missing fields, format violations)
  * and wraps them in valid JSON-RPC envelopes, via `generate_rpc_params_test_cases`;
  * a method's `input_overrides` entry, when given, is the base they're built from.
+ * Each owes 400 `invalid_params` with the broken field's declared
+ * `invalid_reason` as `data.reason`, or no reason (`expected_invalid_reason`).
  */
 const describe_rpc_adversarial_params = (options: RpcAttackSurfaceOptions): void => {
 	const { build, roles } = options;
@@ -366,6 +369,17 @@ const describe_rpc_adversarial_params = (options: RpcAttackSurfaceOptions): void
 								);
 								const body = await res.json();
 								assert_jsonrpc_error_response(body, JSONRPC_ERROR_CODES.invalid_params);
+								// the broken field's declared reason, or none
+								const data = (body as { error: { data?: unknown } }).error.data;
+								const reason =
+									typeof data === 'object' && data !== null
+										? (data as { reason?: unknown }).reason
+										: undefined;
+								assert.strictEqual(
+									reason,
+									expected_invalid_reason(action.spec.input, tc),
+									`data.reason for ${method.name} [${tc.label}]`
+								);
 							});
 						}
 					});

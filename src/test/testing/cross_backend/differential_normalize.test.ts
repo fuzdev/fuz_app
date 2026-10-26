@@ -152,13 +152,11 @@ describe('diff_differential_responses', () => {
 			{ status: 400, body: { error: { code: -32602 } }, header_names: [] },
 			{
 				status: 400,
-				body: { error: { code: -32602, data: { reason: 'limit_out_of_range' } } },
+				body: { error: { code: -32602, data: { reason: 'limit_invalid' } } },
 				header_names: []
 			}
 		);
-		assert.deepEqual(diffs, [
-			{ path: 'body.error.data.reason', a: undefined, b: 'limit_out_of_range' }
-		]);
+		assert.deepEqual(diffs, [{ path: 'body.error.data.reason', a: undefined, b: 'limit_invalid' }]);
 	});
 
 	test('an empty object against a missing one differs', () => {

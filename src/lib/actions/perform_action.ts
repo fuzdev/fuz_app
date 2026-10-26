@@ -28,7 +28,10 @@
  *    sits behind the authority gates by choice rather than necessity: a
  *    caller those gates refuse is answered 403, not 429.
  * 5. **Validate params (400)** — `spec.input.safeParse(raw_params)` with
- *    `z.void()` / `?? {}` rules (`to_input_params`). Runs **after** the authority gates: a
+ *    `z.void()` / `?? {}` rules (`to_input_params`). A refusal is the generic
+ *    `invalid params`, with `data.reason` when the first issue's field
+ *    declares an `invalid_reason` (`to_invalid_params_error`) and the Zod
+ *    issues under DEV only. Runs **after** the authority gates: a
  *    400 describing the action's input shape to a caller those gates
  *    refuse would confirm the method exists and describe how to call it,
  *    to a channel that should have learned nothing. Coarse authority
@@ -57,6 +60,7 @@
 
 import { DEV } from 'esm-env';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
+import type { z } from 'zod';
 import type { Uuid } from '../primitive_schemas.ts';
 
 import {
@@ -66,6 +70,7 @@ import {
 } from '../auth/request_context.ts';
 import { type CredentialType } from '../hono_context.ts';
 import type { Db } from '../db/db.ts';
+import { resolve_issues_invalid_reason } from '../schema_meta.ts';
 import { to_input_params } from '../http/schema_helpers.ts';
 import { rate_limit_ip_key } from '../http/ip_canonical.ts';
 import { dispatch_with_post_commit_rollback } from '../http/pending_effects.ts';
@@ -303,12 +308,7 @@ export const perform_action = async (
 	const params = to_input_params(spec.input, raw_params);
 	const parse_result = spec.input.safeParse(params);
 	if (!parse_result.success) {
-		return error_result(
-			jsonrpc_error_messages.invalid_params(
-				'invalid params',
-				dev_only({ issues: parse_result.error.issues })
-			)
-		);
+		return error_result(to_invalid_params_error(spec.input, parse_result.error.issues));
 	}
 	const validated_input = parse_result.data;
 
@@ -376,6 +376,29 @@ export const perform_action = async (
 			)
 		);
 	}
+};
+
+/**
+ * The `invalid_params` error an input validation failure answers: the generic
+ * `invalid params` message, `data.reason` when the field the first issue lands
+ * on declares an `invalid_reason` and no issue sits on the input itself
+ * (`resolve_issues_invalid_reason`), and the Zod issues under DEV only
+ * (`dev_only`). With no declared reason, production sends no `data` at all.
+ *
+ * @param input - the action's input schema
+ * @param issues - the failed parse's issues, in Zod's order
+ * @returns the JSON-RPC error object
+ */
+export const to_invalid_params_error = (
+	input: z.ZodType,
+	issues: ReadonlyArray<z.core.$ZodIssue>
+): JsonrpcErrorObject => {
+	const reason = resolve_issues_invalid_reason(input, issues);
+	const issues_data = dev_only({ issues });
+	return jsonrpc_error_messages.invalid_params(
+		'invalid params',
+		reason === undefined ? issues_data : { reason, ...issues_data }
+	);
 };
 
 const error_result = (error: JsonrpcErrorObject): PerformActionResult => ({

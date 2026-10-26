@@ -40,16 +40,6 @@ const handle = inject_backend_handle();
 
 /** The Rust stub's tracked divergences, each `xfail_until` its tracking id. */
 const rust_overrides: SuiteOverrides = {
-	rpc_adversarial: {
-		xfail_params: [
-			{
-				method: 'account_token_create',
-				labels: ['missing: scope', 'null: scope', 'missing: lifetime', 'null: lifetime'],
-				tracking_id: 'rust-token-create-schema-reason',
-				reason: 'Rust adds invalid_token_scope / invalid_token_lifetime to schema refusals'
-			}
-		]
-	},
 	// on the derived multi-actor setup, so its seeding stays the one call's
 	transport_composition: (derived) => ({
 		multi_actor: derived.multi_actor && {

@@ -72,6 +72,20 @@ export type SessionRevokeAllOutput = z.infer<typeof SessionRevokeAllOutput>;
 export const API_TOKEN_NAME_LENGTH_MAX = 255;
 
 /**
+ * `error.data.reason` on any refusal of `account_token_create`'s `scope` —
+ * missing, `null`, an unknown `kind` or key, a malformed `methods`, an
+ * over-cap document. The field's declared `invalid_reason`.
+ */
+export const ERROR_TOKEN_SCOPE_INVALID = 'token_scope_invalid' as const;
+
+/**
+ * `error.data.reason` on any refusal of `account_token_create`'s `lifetime` —
+ * missing, `null`, an unknown `kind` or key, a `days` out of range. The
+ * field's declared `invalid_reason`.
+ */
+export const ERROR_TOKEN_LIFETIME_INVALID = 'token_lifetime_invalid' as const;
+
+/**
  * Input for `account_token_create`.
  *
  * `scope` is **required** — default-deny at mint. There is deliberately no
@@ -96,12 +110,14 @@ export const TokenCreateInput = z.strictObject({
 			"What the token may do. `{kind:'full'}` for full account authority, or " +
 			"`{kind:'methods',methods:[…]}` to narrow it to named RPC methods — a " +
 			'narrowed token is RPC-only and reaches no non-RPC surface that reads ' +
-			'account data or carries authority.'
+			'account data or carries authority.',
+		invalid_reason: ERROR_TOKEN_SCOPE_INVALID
 	}),
 	lifetime: TokenLifetimeInput.meta({
 		description:
 			"How long the token lives. `{kind:'eternal'}` never expires; " +
-			"`{kind:'ttl',days:N}` expires N days from mint."
+			"`{kind:'ttl',days:N}` expires N days from mint.",
+		invalid_reason: ERROR_TOKEN_LIFETIME_INVALID
 	})
 });
 export type TokenCreateInput = z.infer<typeof TokenCreateInput>;

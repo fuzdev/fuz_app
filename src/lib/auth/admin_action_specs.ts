@@ -34,6 +34,12 @@ import {
 } from './audit_log_schema.ts';
 import { InviteJson, InviteWithUsernamesJson } from './invite_schema.ts';
 import { AppSettingsWithUsernameJson } from './app_settings_schema.ts';
+import {
+	ERROR_LIMIT_INVALID,
+	ERROR_OFFSET_INVALID,
+	ERROR_OUTCOME_INVALID,
+	ERROR_SINCE_SEQ_INVALID
+} from '../http/error_schemas.ts';
 
 /** Max audit-log page size. */
 export const AUDIT_LOG_LIST_LIMIT_MAX = 200;
@@ -58,9 +64,15 @@ export const AdminAccountListInput = z
 			.meta({
 				description: `Max accounts to return (default ${ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT}, max ${
 					ADMIN_ACCOUNT_LIST_LIMIT_MAX
-				}).`
+				}).`,
+				invalid_reason: ERROR_LIMIT_INVALID
 			}),
-		offset: z.number().int().min(0).nullish().meta({ description: 'Pagination offset.' }),
+		offset: z
+			.number()
+			.int()
+			.min(0)
+			.nullish()
+			.meta({ description: 'Pagination offset.', invalid_reason: ERROR_OFFSET_INVALID }),
 		include_deleted: z.boolean().nullish().meta({
 			description:
 				'Include soft-deleted (tombstoned) accounts in the listing. Default false (active only). Used by the admin UI to surface accounts for reactivation via `account_undelete`.'
@@ -131,7 +143,8 @@ export const AuditLogListInput = z
 				'Filter by event type. Accepts builtin or consumer-registered names (regex-validated).'
 		}),
 		outcome: AuditOutcome.nullish().meta({
-			description: 'Filter by outcome (`success` or `failure`).'
+			description: 'Filter by outcome (`success` or `failure`).',
+			invalid_reason: ERROR_OUTCOME_INVALID
 		}),
 		account_id: Uuid.nullish().meta({ description: 'Filter by actor account id.' }),
 		limit: z
@@ -143,11 +156,18 @@ export const AuditLogListInput = z
 			.meta({
 				description: `Max rows to return (default ${AUDIT_LOG_DEFAULT_LIMIT}, max ${
 					AUDIT_LOG_LIST_LIMIT_MAX
-				}).`
+				}).`,
+				invalid_reason: ERROR_LIMIT_INVALID
 			}),
-		offset: z.number().int().min(0).nullish().meta({ description: 'Pagination offset.' }),
+		offset: z
+			.number()
+			.int()
+			.min(0)
+			.nullish()
+			.meta({ description: 'Pagination offset.', invalid_reason: ERROR_OFFSET_INVALID }),
 		since_seq: z.number().int().min(0).nullish().meta({
-			description: 'Gap-fill from this seq forward. Used for SSE reconnection.'
+			description: 'Gap-fill from this seq forward. Used for SSE reconnection.',
+			invalid_reason: ERROR_SINCE_SEQ_INVALID
 		}),
 		acting: ActingActor
 	})
@@ -172,9 +192,15 @@ export const AuditLogRoleGrantHistoryInput = z
 			.meta({
 				description: `Max rows to return (default ${AUDIT_LOG_DEFAULT_LIMIT}, max ${
 					AUDIT_LOG_LIST_LIMIT_MAX
-				}).`
+				}).`,
+				invalid_reason: ERROR_LIMIT_INVALID
 			}),
-		offset: z.number().int().min(0).nullish().meta({ description: 'Pagination offset.' }),
+		offset: z
+			.number()
+			.int()
+			.min(0)
+			.nullish()
+			.meta({ description: 'Pagination offset.', invalid_reason: ERROR_OFFSET_INVALID }),
 		acting: ActingActor
 	})
 	.default({});

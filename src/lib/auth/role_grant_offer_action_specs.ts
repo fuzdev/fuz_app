@@ -27,6 +27,8 @@ import { Uuid, bounded_string } from '../primitive_schemas.ts';
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
 import {
 	ERROR_INSUFFICIENT_PERMISSIONS,
+	ERROR_LIMIT_INVALID,
+	ERROR_OFFSET_INVALID,
 	ERROR_ROLE_GRANT_NOT_FOUND,
 	ERROR_ROLE_NOT_WEB_GRANTABLE
 } from '../http/error_schemas.ts';
@@ -190,10 +192,12 @@ export const RoleGrantOfferHistoryInput = z
 			description: 'Admin-only — history for another account. Defaults to the caller.'
 		}),
 		limit: z.number().int().min(1).max(ROLE_GRANT_OFFER_HISTORY_LIMIT_MAX).nullish().meta({
-			description: 'Max rows to return (default 100).'
+			description: 'Max rows to return (default 100).',
+			invalid_reason: ERROR_LIMIT_INVALID
 		}),
 		offset: z.number().int().min(0).nullish().meta({
-			description: 'Pagination offset (default 0).'
+			description: 'Pagination offset (default 0).',
+			invalid_reason: ERROR_OFFSET_INVALID
 		}),
 		acting: ActingActor
 	})

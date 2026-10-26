@@ -27,6 +27,7 @@ import {
 	UNKNOWN_ERROR_MESSAGE
 } from '../http/jsonrpc_errors.ts';
 import { safe_parse_dropping_unknown_keys } from '../http/schema_helpers.ts';
+import { resolve_issues_invalid_reason } from '../schema_meta.ts';
 import type {
 	JsonrpcRequest,
 	JsonrpcResponseOrError,
@@ -54,6 +55,22 @@ import {
  * `invalid_params` / `validation_error` a caller's own bad input produces.
  */
 export const ERROR_RESPONSE_OUTPUT_INVALID = 'response_output_invalid' as const;
+
+/**
+ * `error.data` for a local input parse failure: the issues, and the declared
+ * `invalid_reason` of the first issue's field — the reason the server would
+ * answer the same input with, so a caller matching `data.reason` reads one
+ * value whichever side refused.
+ */
+const to_local_invalid_params_data = (
+	input: z.ZodType,
+	issues: Array<z.core.$ZodIssue>
+): { validation_errors: Array<z.core.$ZodIssue>; reason?: string } => {
+	const reason = resolve_issues_invalid_reason(input, issues);
+	return reason === undefined
+		? { validation_errors: issues }
+		: { validation_errors: issues, reason };
+};
 
 // TODO maybe just use runes in this module and remove `observe`
 export type ActionEventChangeObserver<TMethod extends string = string> = (
@@ -205,7 +222,7 @@ export class ActionEvent<
 				// no need to protect this info
 				jsonrpc_error_messages.invalid_params(
 					`failed to parse input: ${z.prettifyError(parsed.error)}`,
-					{ validation_errors: parsed.error.issues }
+					to_local_invalid_params_data(this.spec.input, parsed.error.issues)
 				)
 			);
 		}

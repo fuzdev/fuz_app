@@ -30,6 +30,7 @@ import {
 	ERROR_PURGE_NOT_CONFIRMED
 } from '#lib/auth/admin_action_specs.ts';
 import { ERROR_ROLE_GRANT_OFFER_NOT_FOUND } from '#lib/auth/role_grant_offer_action_specs.ts';
+import { ERROR_TOKEN_SCOPE_INVALID } from '#lib/auth/account_action_specs.ts';
 import { DEFAULT_TEST_PASSWORD } from '#lib/testing/test_credentials.ts';
 import {
 	SCOPED_TOKEN_ADMITTED_METHOD,
@@ -293,9 +294,8 @@ const token_scope_cases: ReadonlyArray<ConformanceCase> = [
 		},
 		note: 'security.md §Credential-channel gating — the credential gate runs before the scope gate on both spines, so a bearer refused by channel is never told which scope it lacked'
 	},
-	// The mint's `scope` is decoded strictly on both spines. These assert the
-	// status only: the Rust spine names `invalid_token_scope` as the reason and
-	// the TS spine's schema refusal carries none.
+	// The mint's `scope` is decoded strictly on both spines, and every refusal
+	// carries the `token_scope_invalid` the field declares.
 	{
 		name: 'session → account_token_create with a well-formed narrowed scope → 200 (control for the refusals below)',
 		request: {
@@ -331,8 +331,8 @@ const token_scope_cases: ReadonlyArray<ConformanceCase> = [
 			as: 'keeper',
 			params: { scope, lifetime: { kind: 'eternal' } }
 		},
-		expect: { status: 400 },
-		note: 'security.md §API Token Security — the mint scope is a closed shape on both spines: a minter cannot stamp the version or forge grandfathered, a full scope carries no method list, and a document past the 4 KiB cap is a malformed request, never a 500'
+		expect: { status: 400, error_reason: ERROR_TOKEN_SCOPE_INVALID },
+		note: 'security.md §API Token Security — the mint scope is a closed shape on both spines: a minter cannot stamp the version or forge grandfathered, a full scope carries no method list, and a document past the 4 KiB cap is a malformed request, never a 500 — each refused with the reason `scope` declares'
 	}))
 ];
 

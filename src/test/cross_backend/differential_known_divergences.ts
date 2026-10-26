@@ -43,7 +43,7 @@ const ts_dev_auth_debug_header: KnownDivergence = {
 	what_differs: [{ path: 'headers.x-fuz-auth-debug', a: true, b: undefined }]
 };
 
-/** The admin lists whose out-of-range pages Rust names in `data.reason`. */
+/** The admin lists with `limit` / `offset` paging. */
 const PAGED_LIST_METHODS = [
 	'admin_account_list',
 	'audit_log_list',
@@ -51,41 +51,8 @@ const PAGED_LIST_METHODS = [
 	'role_grant_offer_history'
 ];
 
-/**
- * Rust's structured reason on one pagination refusal, TS sending none. Named
- * by case, each with its exact reason, so a reason appearing on another
- * refusal (a non-integer `limit`, which neither spine names) or the TS side
- * adopting one fails rather than hiding under the row.
- */
-const rust_pagination_reason = (
-	labels: ReadonlyArray<string>,
-	reason: string
-): KnownDivergence => ({
-	case_name: PAGED_LIST_METHODS.flatMap((method) =>
-		labels.map((label) => `admin → ${method} ${label} → 400`)
-	),
-	tracking_id: 'rust-pagination-reason',
-	reason: 'Rust names an out-of-range limit or a negative offset in data.reason; TS sends none',
-	what_differs: [{ path: 'body.error.data.reason', a: undefined, b: reason }]
-});
-
 /** Divergences the main conformance arrays show. */
 export const differential_known_divergences: ReadonlyArray<KnownDivergence> = [
-	rust_pagination_reason(['{limit: 0}', '{limit: max + 1}'], 'limit_out_of_range'),
-	rust_pagination_reason(['{offset: -1}'], 'offset_negative'),
-	{
-		case_name: [
-			'an unknown key',
-			'a version',
-			'a grandfathered flag',
-			'methods on kind full',
-			'a null methods on kind full',
-			'an over-cap document'
-		].map((label) => `session → account_token_create with ${label} in scope → 400`),
-		tracking_id: 'rust-token-create-schema-reason',
-		reason: 'Rust names a refused scope in data.reason; TS sends none',
-		what_differs: [{ path: 'body.error.data.reason', a: undefined, b: 'invalid_token_scope' }]
-	},
 	ts_dev_zod_issues([
 		...PAGED_LIST_METHODS,
 		'account_token_create',

@@ -1731,7 +1731,10 @@ action-manifest parity gate doesn't compare param schemas:
   since params validation runs after it.
 - **params** — for each declared method, `generate_rpc_params_test_cases`
   (the input generator minus its structural cases), each sent as the method's
-  authorized principal and owing 400 `invalid_params` with no `data.reason`.
+  authorized principal and owing 400 `invalid_params` with the `data.reason`
+  the broken field declares (`invalid_reason` in its `.meta()`), or none for
+  an undeclared field or a whole-body case — `describe_rpc_attack_surface_tests`
+  holds its in-process params cases to the same.
   `input_overrides` (method name → valid params) replaces a method's generated
   base, the body each case breaks one field of; an override its input schema
   refuses throws at collection, naming the method.

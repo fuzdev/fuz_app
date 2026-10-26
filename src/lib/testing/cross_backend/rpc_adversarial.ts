@@ -31,8 +31,10 @@ import '../assert_dev_env.ts';
  * - **Params** — for each declared method (and each live-mounted one, below),
  *   `generate_rpc_params_test_cases`
  *   (the in-process generator minus its structural cases), each sent as the
- *   method's authorized principal and owing 400 `invalid_params` with no
- *   `data.reason`. One test per method, reporting every case that answers
+ *   method's authorized principal and owing 400 `invalid_params` with the
+ *   `data.reason` the broken field declares (`invalid_reason` in its
+ *   `.meta()`, read by `expected_invalid_reason`) — none for an undeclared
+ *   field or a whole-body case. One test per method, reporting every case that answers
  *   otherwise; `xfail_params` runs named cases of a method as their own
  *   `xfail_until` tests, for a known divergence on one backend.
  *
@@ -101,7 +103,7 @@ import { resolve_conformance_principal } from './conformance_table.ts';
 import type { RpcPathCrossSuiteOptions, TestFixture } from './setup.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 import { xfail_until } from './xfail.ts';
-import type { InputTestCase } from '../adversarial_input_cases.ts';
+import { expected_invalid_reason, type InputTestCase } from '../adversarial_input_cases.ts';
 
 /** Options for `describe_rpc_adversarial_cross_tests`. */
 export interface RpcAdversarialCrossTestOptions extends RpcPathCrossSuiteOptions {
@@ -335,14 +337,18 @@ export const describe_rpc_adversarial_cross_tests = (
 				create_rpc_post_init(action.spec.method, tc.body)
 			);
 			const code = (body as { error?: { code?: unknown } } | null)?.error?.code;
+			const expected_reason = expected_invalid_reason(action.spec.input, tc);
 			if (
 				status === 400 &&
 				code === JSONRPC_ERROR_CODES.invalid_params &&
-				reason_of(body) === undefined
+				reason_of(body) === expected_reason
 			) {
 				return null;
 			}
-			return `[${tc.label}] params ${JSON.stringify(tc.body)} → ${status} ${JSON.stringify(body)}`;
+			const owed = expected_reason === undefined ? 'no reason' : `reason '${expected_reason}'`;
+			return `[${tc.label}] params ${JSON.stringify(tc.body)} → ${status} ${JSON.stringify(
+				body
+			)} (owed 400 invalid_params, ${owed})`;
 		};
 
 		// the declared methods, then the live-mounted ones the declared surface lacks

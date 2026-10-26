@@ -64,6 +64,7 @@ import {
 	account_token_create_action_spec,
 	account_token_list_action_spec,
 	account_token_revoke_action_spec,
+	ERROR_TOKEN_SCOPE_INVALID,
 	type VerifyInput,
 	type SessionListInput,
 	type SessionListOutput,
@@ -185,12 +186,15 @@ export const create_account_actions = (
 		// a validation error upstream, not a full-authority token.
 		const scope = token_scope_from_input(input.scope);
 		// Over the stored-document cap is a malformed request, refused before
-		// any write (the insert would otherwise throw it as a 500). Twin of the
-		// Rust spine's `invalid_params` on `TokenScopeError::TooLarge`.
+		// any write (the insert would otherwise throw it as a 500), with the
+		// reason the schema declares for every other `scope` refusal. Twin of
+		// the Rust spine's `invalid_params` on `TokenScopeError::TooLarge`.
 		try {
 			serialize_token_scope(scope);
 		} catch (err) {
-			throw jsonrpc_errors.invalid_params(`invalid scope: ${to_error_message(err)}`);
+			throw jsonrpc_errors.invalid_params(`invalid scope: ${to_error_message(err)}`, {
+				reason: ERROR_TOKEN_SCOPE_INVALID
+			});
 		}
 		// `input.lifetime` is required for the same reason — an omitted lifetime
 		// is a validation error, never an eternal token.

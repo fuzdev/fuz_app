@@ -535,7 +535,8 @@ All cases expect 400 with one of `ERROR_INVALID_REQUEST_BODY` /
 The generators live in the hono-free `adversarial_input_cases.ts`, so the
 cross-process suites reuse them:
 
-- `generate_input_test_cases(input_schema, options?)` → `InputTestCase[]` — whole-body structural (non-object, extra key when `strictObject`), missing required fields, one wrong-type per field, null for required non-nullable, one format violation per constrained field, numeric/array/string boundary cases via JSON Schema introspection. Each case breaks one field of a valid base: `generate_valid_object`'s, or `options.base` (`InputTestCaseOptions`) for an input whose valid shape the generator can't reach. Either base failing the schema throws, naming `options.label` (the method or route) when given.
+- `generate_input_test_cases(input_schema, options?)` → `InputTestCase[]` — whole-body structural (non-object, extra key when `strictObject`), missing required fields, one wrong-type per field, null for required non-nullable, one format violation per constrained field, numeric/array/string boundary cases via JSON Schema introspection. Each case breaks one field of a valid base: `generate_valid_object`'s, or `options.base` (`InputTestCaseOptions`) for an input whose valid shape the generator can't reach. Either base failing the schema throws, naming `options.label` (the method or route) when given. A per-field case names the field it breaks (`InputTestCase.field`; absent on the whole-body cases).
+- `expected_invalid_reason(input_schema, test_case)` → `string | undefined` — the `data.reason` an RPC refusal of the case owes: the broken field's `invalid_reason` (`schema_meta.ts`), resolved by the same `resolve_invalid_reason` the dispatcher resolves through, or none for an undeclared field or a whole-body case.
 - `generate_params_test_cases(params_schema)` → `ParamsTestCase[]` — format violations only (unconstrained string params accept anything).
 - `generate_query_test_cases(query_schema)` → `QueryTestCase[]` — missing required + format violations.
 
@@ -1005,7 +1006,7 @@ Registry lookups:
    - correct auth passes (not 401/403)
    - GET unauthenticated for `side_effects: false` reads
 2. **RPC adversarial envelopes** — the fixed set `create_rpc_envelope_cases(endpoint, {skip_methods?})` builds, exercising the envelope parse, method lookup, and GET read restriction: non-JSON body → `parse_error`, wrong `jsonrpc` version, missing `jsonrpc` / `method` / `id`, batch array, non-object POST `params` → `invalid_request`, unknown method → `method_not_found`, GET missing `method`/`id` → `invalid_request`, GET invalid-JSON params → `invalid_params`, GET non-object params on **every** read (each of `RPC_NON_OBJECT_PARAMS`: a number, an array, a string, a boolean) → `invalid_params`, GET mutation method → `invalid_request`, plus three ordering cases sent with no credential (an anonymous GET mutation and an anonymous batch, both `invalid_request`, never 401; an anonymous GET with non-object params on a read requiring an identity, the 401 — params validation runs after authorization). Each case is sent by the app its method's auth admits (`select_auth_app`) and pins status, code, echoed `id`, and `data.reason` (exact where the dispatcher sets one, absent otherwise) via `assert_rpc_envelope_refusal`. The cases are data (`RpcEnvelopeCase`) in the hono-free `rpc_envelope_cases.ts`, shared with the cross-process `describe_rpc_adversarial_cross_tests`; `to_rpc_envelope_request` builds a case's request, and `rpc_get_side_effects_reason(method)` is the GET read restriction's reason.
-3. **RPC adversarial params** — `generate_rpc_params_test_cases(input, options?)` (`rpc_envelope_cases.ts`): `generate_input_test_cases` minus its structural cases (a non-object `params` is refused at the envelope, not at params validation), taking the same `{base?, label?}`. Every case expects 400 `invalid_params`. Shared with the cross-process suite. `input_overrides` (method name → valid params) seeds a method's cases from that base; an override its schema refuses throws at collection, naming the method.
+3. **RPC adversarial params** — `generate_rpc_params_test_cases(input, options?)` (`rpc_envelope_cases.ts`): `generate_input_test_cases` minus its structural cases (a non-object `params` is refused at the envelope, not at params validation), taking the same `{base?, label?}`. Every case expects 400 `invalid_params` with `data.reason` the broken field's declared `invalid_reason` (`expected_invalid_reason`), absent for an undeclared field. Shared with the cross-process suite. `input_overrides` (method name → valid params) seeds a method's cases from that base; an override its schema refuses throws at collection, naming the method.
 
 Skips silently when `surface.rpc_endpoints` is empty. Uses stub deps — no
 DB needed.
@@ -2272,7 +2273,9 @@ compares no param schemas, so this is what holds the spines to one answer.
   `generate_rpc_params_test_cases` case (seeded from the method's
   `input_overrides` entry when it has one — the cases go as a single-actor
   principal, so an override omits `acting`) and failing with the list of
-  cases not answered 400 `invalid_params` with no `data.reason`. `xfail_params`
+  cases not answered 400 `invalid_params` with the broken field's declared
+  `invalid_reason` as `data.reason` (`expected_invalid_reason`; none for an
+  undeclared field or a whole-body case). `xfail_params`
   (`RpcParamsXfail` — `{method, labels, tracking_id, reason}`) moves the named
   cases of a method into one `xfail_until` test each, for a known divergence on
   one backend; the method's other cases keep their test, and an entry naming no
