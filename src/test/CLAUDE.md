@@ -602,17 +602,20 @@ cross-process only (the in-process limiter + proxy paths already have
 `describe_rate_limiting_tests`, the `http/proxy` middleware tests, and the
 assembled-app WS dispatch tests in `server/create_app_server_ws_endpoints.dispatch.db.test.ts`).
 
-Every backend now advertises `capabilities.sse` and serves
+Every fuz_app spine preset advertises `capabilities.sse` and serves
 `/api/admin/audit/stream`: the TS spines wire `audit_log_sse`, and the Rust
 `spine_stub` serves it from the spine `fuz_realtime::SseRegistry` +
 `register_audit_sse_listener`. So the SSE cases run on every
-`cross_backend*\*`project (no`.skip`, no tripwire). Cells live-mount the full surface on every backend and stay
-**off** the declared surface (`create_spine_surface_spec`) — like ws/sse — so
-`cell_crud`+`cell_relations`are`true`everywhere and the cell cases run on
-both TS and Rust (no`.skip`); the standard bundle's generic round-trip never
-sees them. The in-process counterparts are `auth/cell_crud_parity.db.test.ts`+`auth/cell_relations_parity.db.test.ts`(same suites, plain`gro test`, sharing
-the full-surface `create_cell_parity_setup`from`auth/cell_parity_helpers.ts`,
-which migrates the `fuz_cell`namespace and registers`cell_audit_events`, and
+`cross_backend_*` project (no `.skip`, no tripwire). Cells live-mount the full
+surface on every backend and stay **off** the declared surface
+(`create_spine_surface_spec`) — like ws/sse — so `cell_crud` + `cell_relations`
+are `true` on every fuz_app spine preset (mount flags have no family default;
+each config states them) and the cell cases run on both TS and Rust (no
+`.skip`); the standard bundle's generic round-trip never sees them. The
+in-process counterparts are `auth/cell_crud_parity.db.test.ts` +
+`auth/cell_relations_parity.db.test.ts` (same suites, plain `gro test`, sharing
+the full-surface `create_cell_parity_setup` from `auth/cell_parity_helpers.ts`,
+which migrates the `fuz_cell` namespace and registers `cell_audit_events`, and
 also mounts the standard surface + `_testing_drain_effects` so the clone-D8
 no-count-leak check reaches `audit_log_list` in-process). The
 backends:

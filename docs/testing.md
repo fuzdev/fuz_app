@@ -1080,9 +1080,9 @@ consumer config.
 - `fact_serving` — Backend live-mounts the cell-gated fact-serving routes + `_testing_put_fact` (gates `describe_fact_serving_cross_tests` and `describe_cell_ref_admission_cross_tests`). A non-admin account's cell may reference only a fact it holds, so a consumer suite seeding facts for one passes `_testing_put_fact` its `holder` (`cross_put_fact` in `testing/cross_backend/fact_serving.ts`).
 - `ready` — Backend live-mounts the public `/ready` schema-drift deploy gate (gates `describe_ready_cross_tests`).
 - `account_status` — Backend serves `GET /api/account/status` (bundled into `create_account_route_specs`; `true` for every spine). Gates the integration suite's status wire-shape case — fail-loud on a missing route rather than a silent skip.
-- `peer_request` — Backend can initiate a server→client request and await the typed reply (ActionPeer — `BackendWebsocketTransport.request_connection`). Gates `describe_peer_ping_ws_tests`. `true` on the Rust spine and the TS spine; `ts_default_capabilities` keeps it off until a backend wires the `peer/ping` HTTP + WS mount.
+- `peer_request` — Backend can initiate a server→client request and await the typed reply (ActionPeer — `BackendWebsocketTransport.request_connection`). Gates `describe_peer_ping_ws_tests`. `true` on fuz_app's own spine presets; a backend states it `true` once it wires the `peer/ping` HTTP + WS mount.
 - `ws_handshake_pipelining` — Backend's HTTP server accepts WebSocket frames written in the same TCP write as the upgrade request (`true` for Node/Deno/Rust; `false` for a Bun backend that upgrades after an asynchronous check, as one behind auth does — Bun answers such a request `400`). Gates the WS round-trip suite's frames-with-the-handshake case — the ordering-forced form of "frames that arrive before the connection is admitted wait for admission".
-- `ws_account_actions` — Backend's WebSocket endpoint mounts the self-service account actions, so a socket can revoke the session it runs on (`true` on fuz_app's own spine presets; `false` in the family defaults until a consumer's endpoint mounts them). Gates the WS round-trip suite's self-revocation case, and its WS-mutation audit case (which also calls `_testing_drain_effects`).
+- `ws_account_actions` — Backend's WebSocket endpoint mounts the self-service account actions, so a socket can revoke the session it runs on (`true` on fuz_app's own spine presets; a consumer states it `true` once its endpoint mounts them). Gates the WS round-trip suite's self-revocation case, and its WS-mutation audit case (which also calls `_testing_drain_effects`).
 - `cell_gated_create` — Backend live-mounts a test `CellCreateAuthorize` policy on its cell layer (`true` only on the reference spine binaries that mount it). Gates `describe_cell_gated_create_cross_tests`.
 
 Wiring facts that gate nothing are not capabilities, and the harness doesn't record them.
@@ -1090,6 +1090,27 @@ Wiring facts that gate nothing are not capabilities, and the harness doesn't rec
 `in_process_capabilities` (every gating flag on except `peer_request`, `ws_handshake_pipelining`, `ws_account_actions`, and `cell_gated_create`, whose cases are cross-process-only) and the `ts_default_capabilities` /
 `rust_default_capabilities` presets in `default_backend_configs.ts` are the
 starting points consumers extend.
+
+A family default carries only what the family guarantees: the declared spine
+surface's mounts (`account_lifecycle`, `account_status`) and the
+runtime-behavior flags (`ws_handshake_pipelining`, `ws_refusal_body`) of its
+reference runtime — Node for TS, hyper for Rust; a backend on another runtime
+(Deno, Bun) overrides them. The flags that describe a backend's own mounts —
+`MountFlag`: `ws`, `sse`, `cell_crud`, `cell_relations`, `cell_gated_create`,
+`fact_serving`, `ready`, `peer_request`, `ws_account_actions`,
+`ws_role_gated` — have no default. The family defaults are typed
+`FamilyDefaultCapabilities` (they omit them) and `capabilities` is required,
+so a config states each one, and one left out fails typecheck by name instead
+of silently skipping its suites:
+
+```ts
+capabilities: {
+  ...rust_default_capabilities,
+  ws: true, sse: true, ready: true, peer_request: true,
+  cell_crud: false, cell_relations: false, cell_gated_create: false,
+  fact_serving: false, ws_account_actions: false, ws_role_gated: false,
+}
+```
 
 ### Lifecycle — `BackendConfig` + `spawn_backend`
 

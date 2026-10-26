@@ -19,13 +19,23 @@ import '../assert_dev_env.ts';
  * - `in_process_capabilities` — here; every flag `true` except the
  *   cross-process-only ones.
  * - `ts_default_capabilities` / `rust_default_capabilities` — consumer-facing
- *   family defaults, in `default_backend_configs.ts` (full literals, so adding
- *   a capability is a compile error until each family declares it).
+ *   family defaults, in `default_backend_configs.ts` — every flag but the
+ *   `MountFlag`s (`FamilyDefaultCapabilities`), as full literals, so adding a
+ *   non-mount capability is a compile error until each family declares it.
  * - `ts_spine_capabilities` / `ts_spine_bun_capabilities` — fuz_app's own TS
- *   spine presets, in `ts_spine_backend_config.ts` (deltas off the family
- *   default; Bun flips `ws_handshake_pipelining`).
+ *   spine presets, in `ts_spine_backend_config.ts` (the family
+ *   default plus every mount flag; Bun flips `ws_handshake_pipelining`).
  * - `rust_spine_stub_capabilities` — fuz_app's Rust spine-stub preset, in
- *   `rust_spine_stub_backend_config.ts` (delta off the rust family default).
+ *   `rust_spine_stub_backend_config.ts` (the rust family default plus every mount flag).
+ *
+ * **Mount flags have no default.** A flag naming something a backend mounts
+ * (a `MountFlag`) is never inherited: the family defaults are
+ * `FamilyDefaultCapabilities`, which omits them, so every backend config states
+ * each one. The family defaults carry only what the family guarantees — the
+ * declared spine surface's mounts (`account_lifecycle`, `account_status`) and
+ * the runtime behavior of its reference runtime (`ws_handshake_pipelining`,
+ * `ws_refusal_body`: Node for TS, hyper for Rust), which a backend on another
+ * runtime overrides.
  *
  * **Gating flags only.** `BackendCapabilities` holds only flags a suite
  * actually gates on (each has a `test_if(capabilities.X, ...)` reader, or —
@@ -134,13 +144,12 @@ export interface BackendCapabilities {
 	 * rejection, per-connection id isolation, never-replying `Timeout`,
 	 * wrong-shape reply rejection).
 	 *
-	 * `true` for both the Rust spine (server-initiated requests landed
-	 * Rust-first canonical) and the TS spine
-	 * (`BackendWebsocketTransport.request_connection` drives the round-trip,
-	 * correlated by `register_action_ws`). The conservative
-	 * `ts_default_capabilities` keeps it `false` like sse/ready — a TS backend
-	 * opts in once it mounts `peer/ping` on a WS endpoint **and** the HTTP RPC
-	 * endpoint (the no-transport refusal). Like ws/sse/cells, `peer/ping` stays
+	 * `true` on fuz_app's own spine presets — the Rust `testing_spine_stub` and
+	 * the TS spine (`BackendWebsocketTransport.request_connection` drives the
+	 * round-trip, correlated by `register_action_ws`). A `MountFlag`: a backend
+	 * states `true` once it mounts `peer/ping` on a WS endpoint **and** the HTTP
+	 * RPC endpoint (the no-transport refusal).
+	 * Like ws/sse/cells, `peer/ping` stays
 	 * off the standard declared surface (it's a protocol action,
 	 * manifest-excluded), so this flag is the only opt-in into the peer parity
 	 * coverage.
@@ -175,9 +184,9 @@ export interface BackendCapabilities {
 	 *
 	 * `true` on fuz_app's own spine presets — the TS spine binary mounts its
 	 * full action set on `/api/ws`, and the Rust `testing_spine_stub` serves
-	 * one action registry on RPC and WS. `false` in the family defaults:
-	 * a consumer's WS endpoint carries whatever its domain mounts, so it opts in
-	 * once the account actions are there.
+	 * one action registry on RPC and WS. A `MountFlag`: a consumer's WS endpoint
+	 * carries whatever its domain mounts, so it states `true` once the account
+	 * actions are there.
 	 */
 	readonly ws_account_actions: boolean;
 	/**
@@ -219,6 +228,44 @@ export interface BackendCapabilities {
 	 */
 	readonly ws_refusal_body: boolean;
 }
+
+/**
+ * The capabilities that describe a backend's own mounts, never a runtime
+ * trait: what a consumer chooses to serve. They have no family default —
+ * state each flag in your backend config's `capabilities`; a missing one
+ * would silently skip its suites, so leaving one out is a type error.
+ *
+ * `Pick` keeps the list honest: a name that is not a `BackendCapabilities`
+ * flag fails to compile.
+ */
+export type MountFlag = keyof Pick<
+	BackendCapabilities,
+	| 'ws'
+	| 'sse'
+	| 'cell_crud'
+	| 'cell_relations'
+	| 'cell_gated_create'
+	| 'fact_serving'
+	| 'ready'
+	| 'peer_request'
+	| 'ws_account_actions'
+	| 'ws_role_gated'
+>;
+
+/**
+ * A family's default capabilities: every flag but the `MountFlag`s, which
+ * each backend config states itself. Spread one and add every mount flag:
+ *
+ * ```ts
+ * capabilities: {
+ *   ...rust_default_capabilities,
+ *   ws: true, sse: true, ready: true, peer_request: true,
+ *   cell_crud: false, cell_relations: false, cell_gated_create: false,
+ *   fact_serving: false, ws_account_actions: false, ws_role_gated: false,
+ * }
+ * ```
+ */
+export type FamilyDefaultCapabilities = Omit<BackendCapabilities, MountFlag>;
 
 /**
  * Capability declarations for the in-process Hono transport. Nearly every

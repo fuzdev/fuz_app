@@ -42,6 +42,7 @@ import '../assert_dev_env.ts';
 import { fileURLToPath } from 'node:url';
 
 import type { BackendConfig } from './backend_config.ts';
+import type { BackendCapabilities } from './capabilities.ts';
 import { build_test_backend_paths } from './build_test_backend_paths.ts';
 import {
 	LOGIN_RATE_LIMIT_ENABLED_ENV,
@@ -74,7 +75,10 @@ export const RUST_SPINE_STUB_EXPECTED_SCHEMA_PATH_ENV = 'FUZ_RUST_SPINE_STUB_EXP
 
 /**
  * Capabilities for the Rust `testing_spine_stub` — `rust_default_capabilities`
- * plus `sse` (the stub serves `GET /api/admin/audit/stream` over the spine
+ * with every `MountFlag` stated, all `true`: `ws` (it mounts `/api/ws`), `peer_request` (its registry carries
+ * `peer/ping` on both transports), `cell_crud` + `cell_relations` (it mounts the
+ * full cell surface over the `fuz_cell` namespace), `fact_serving` (both serve
+ * routes, the `fuz_facts` namespace and `_testing_put_fact`), `sse` (the stub serves `GET /api/admin/audit/stream` over the spine
  * `fuz_realtime::SseRegistry` + audit listener), `ready` (it live-mounts
  * `/ready` over the env-supplied fixture path), `ws_account_actions` (it
  * serves one action registry on `/api/rpc` and `/api/ws`), `cell_gated_create`
@@ -84,9 +88,14 @@ export const RUST_SPINE_STUB_EXPECTED_SCHEMA_PATH_ENV = 'FUZ_RUST_SPINE_STUB_EXP
  * (not inline) so every spine preset is greppable, mirroring
  * `ts_spine_capabilities`.
  */
-const rust_spine_stub_capabilities = Object.freeze({
+const rust_spine_stub_capabilities: BackendCapabilities = Object.freeze({
 	...rust_default_capabilities,
+	ws: true,
+	peer_request: true,
 	sse: true,
+	cell_crud: true,
+	cell_relations: true,
+	fact_serving: true,
 	ready: true,
 	ws_account_actions: true,
 	cell_gated_create: true,

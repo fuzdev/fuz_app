@@ -30,7 +30,7 @@ import '../assert_dev_env.ts';
  */
 
 import type { BackendBootstrapConfig, BackendConfig } from './backend_config.ts';
-import type { BackendCapabilities } from './capabilities.ts';
+import type { BackendCapabilities, FamilyDefaultCapabilities } from './capabilities.ts';
 import { build_test_backend_paths, type TestBackendPaths } from './build_test_backend_paths.ts';
 import {
 	default_test_bootstrap_token,
@@ -68,78 +68,45 @@ export const action_rate_limit_env = (
 });
 
 /**
- * Capabilities shared by TS-family backends — same canonical implementation,
- * same feature set.
+ * Capabilities shared by TS-family backends — only what the family
+ * guarantees: the declared spine surface's mounts and the behavior of its
+ * reference runtime, Node. Carries no `MountFlag`; each backend config states
+ * those itself (`FamilyDefaultCapabilities`).
  */
-export const ts_default_capabilities: BackendCapabilities = Object.freeze({
-	ws: true,
-	sse: false,
-	cell_crud: true,
-	cell_relations: true,
+export const ts_default_capabilities: FamilyDefaultCapabilities = Object.freeze({
+	// The account-lifecycle verbs are on the declared surface
+	// (`create_admin_actions`), which every TS backend running the standard
+	// suites mounts.
 	account_lifecycle: true,
-	fact_serving: true,
-	// Off by default like `sse` — a generic TS consumer backend may not mount
-	// `/ready`. fuz_app's own spine configs (`ts_spine_*`) opt in.
-	ready: false,
 	// `GET /api/account/status` is bundled into `create_account_route_specs`, so
 	// every TS backend mounting account routes serves it.
 	account_status: true,
-	// Off by default like `sse`/`ready`: the WS backend transport *can* initiate
-	// server→client requests (`BackendWebsocketTransport.request_connection`),
-	// but driving the full `peer/ping` suite also needs `peer/ping` mounted on
-	// the HTTP RPC endpoint (the no-transport case). The TS spine config opts in;
-	// a generic consumer enables it once it wires that mount.
-	peer_request: false,
 	// Node (`ws`) and Deno hand frames pipelined with the upgrade request to the
-	// socket. A Bun-served consumer overrides to `false` (see the bun spine
+	// socket. A Bun-served backend overrides to `false` (see the bun spine
 	// config) — `Bun.serve` answers such a request `400` when the upgrade
 	// follows an asynchronous check.
 	ws_handshake_pipelining: true,
-	// Off by default: a consumer's WS endpoint mounts its own domain's actions.
-	// fuz_app's spine configs opt in (the spine binary mounts the account
-	// actions on `/api/ws`); a consumer does once its endpoint carries them.
-	ws_account_actions: false,
-	// Off by default — the `cell_gated_create` test policy is a fuz_app test
-	// fixture, mounted only on the spine binaries (`ts_spine_*`), not generic
-	// consumers.
-	cell_gated_create: false,
-	// Off by default — the second, role-gated WS endpoint is a spine-binary
-	// mount (`SPINE_ROLE_GATED_WS_PATH`); fuz_app's spine configs opt in.
-	ws_role_gated: false,
-	// Off by default: `@hono/node-ws` drops a refused upgrade's body, so a
-	// Node-served consumer sends none. A Deno- or Bun-served one may opt in.
+	// `@hono/node-ws` drops a refused upgrade's body, so a Node-served backend
+	// sends none. A Deno- or Bun-served one overrides to `true`.
 	ws_refusal_body: false
 });
 
-/** Capabilities for the Rust family. */
-export const rust_default_capabilities: BackendCapabilities = Object.freeze({
-	ws: true,
-	sse: false,
-	cell_crud: true,
-	cell_relations: true,
+/**
+ * Capabilities for the Rust family — only what the family guarantees, as with
+ * `ts_default_capabilities`: the declared spine surface's mounts and the
+ * behavior of hyper. Carries no `MountFlag`.
+ */
+export const rust_default_capabilities: FamilyDefaultCapabilities = Object.freeze({
+	// The account-lifecycle verbs are in the spine's admin action set, on the
+	// declared surface every Rust spine backend running the standard suites
+	// mounts.
 	account_lifecycle: true,
-	fact_serving: true,
-	// Off by default like `sse`; the spine-stub preset opts in (it mounts
-	// `/ready` over the env-supplied fixture path).
-	ready: false,
 	// The Rust `account_router` bundles `/status` into the account routes, so
 	// every Rust spine serving the account surface serves it.
 	account_status: true,
-	// Server-initiated requests landed Rust-first canonical — the Rust spine
-	// drives the `peer/ping` round-trip, so the family opts into the suite.
-	peer_request: true,
 	// hyper hands bytes pipelined after the upgrade request to the upgraded
 	// stream, where they wait for the read loop that starts at admission.
 	ws_handshake_pipelining: true,
-	// Off by default, as on the TS family: a consumer opts in once its WS
-	// endpoint mounts the account actions. The `testing_spine_stub` preset does.
-	ws_account_actions: false,
-	// Off by default — the `testing_spine_stub` preset opts in (it mounts the
-	// `TestCellGatedCreateAuthorize` policy); a generic Rust consumer doesn't.
-	cell_gated_create: false,
-	// Off by default — the `testing_spine_stub` preset opts in (it mounts the
-	// role-gated WS endpoint at `SPINE_ROLE_GATED_WS_PATH`).
-	ws_role_gated: false,
 	// axum sends a refused upgrade's response as built, body included.
 	ws_refusal_body: true
 });
@@ -168,8 +135,12 @@ export interface MakeDefaultTsBackendConfigOptions {
 	readonly database_url?: string;
 	/** Merged on top of the generic env baseline; later keys win. */
 	readonly extra_env?: Readonly<Record<string, string>>;
-	/** Defaults to `ts_default_capabilities`. */
-	readonly capabilities?: BackendCapabilities;
+	/**
+	 * Every capability, stated: spread `ts_default_capabilities` and add each
+	 * `MountFlag`. Required, so a mount flag left out is a type error rather
+	 * than a suite that silently skips.
+	 */
+	readonly capabilities: BackendCapabilities;
 	/** Pre-computed paths; defaults to `build_test_backend_paths(name)`. */
 	readonly paths?: TestBackendPaths;
 	/** Override individual bootstrap fields (username/password/token). */
@@ -205,7 +176,7 @@ export const make_default_ts_backend_config = (
 		start_command,
 		database_url = 'memory://',
 		extra_env,
-		capabilities = ts_default_capabilities,
+		capabilities,
 		paths = build_test_backend_paths(name),
 		bootstrap_overrides,
 		port_env_var = 'PORT',
@@ -251,8 +222,12 @@ export interface MakeDefaultRustBackendConfigOptions {
 	readonly database_url: string;
 	/** Merged on top of the generic env baseline; later keys win. */
 	readonly extra_env?: Readonly<Record<string, string>>;
-	/** Defaults to `rust_default_capabilities`. */
-	readonly capabilities?: BackendCapabilities;
+	/**
+	 * Every capability, stated: spread `rust_default_capabilities` and add each
+	 * `MountFlag`. Required, so a mount flag left out is a type error rather
+	 * than a suite that silently skips.
+	 */
+	readonly capabilities: BackendCapabilities;
 	/** Pre-computed paths; defaults to `build_test_backend_paths(name)`. */
 	readonly paths?: TestBackendPaths;
 	/** Override individual bootstrap fields (username/password/token). */
@@ -291,7 +266,7 @@ export const make_default_rust_backend_config = (
 		start_command,
 		database_url,
 		extra_env,
-		capabilities = rust_default_capabilities,
+		capabilities,
 		paths = build_test_backend_paths(name),
 		bootstrap_overrides,
 		port_env_var = 'PORT',

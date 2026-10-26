@@ -1069,13 +1069,23 @@ source of truth for wire-shape conformance.
   `ws_role_gated` / `ws_refusal_body` — each has a `test_if`
   reader (`ws_refusal_body` picks how the front-door table reads a WS
   refusal instead); `peer_request` (server-initiated requests — the ActionPeer
-  `peer/ping` round-trip) is `true` for both the Rust spine and the TS spine
-  (`BackendWebsocketTransport.request_connection`); `ts_default_capabilities`
-  keeps it `false` like sse/ready until a backend wires the `peer/ping` HTTP +
-  WS mount), `test_if(cond, name, fn)`
+  `peer/ping` round-trip) is `true` on fuz_app's Rust and TS spine presets
+  (`BackendWebsocketTransport.request_connection`); a backend states it
+  `true` once it wires the `peer/ping` HTTP + WS mount), `test_if(cond, name, fn)`
   for capability-gated cases, and `in_process_capabilities` preset. Only
   flags a suite reads are capabilities — a wiring fact that gates nothing is
-  not recorded. `cell_crud`
+  not recorded. **Mount flags have no family default**: `MountFlag` names the
+  flags that describe a backend's own mounts (`ws`, `sse`, `cell_crud`,
+  `cell_relations`, `cell_gated_create`, `fact_serving`, `ready`,
+  `peer_request`, `ws_account_actions`, `ws_role_gated`), and the family
+  defaults (`ts_default_capabilities` / `rust_default_capabilities`, typed
+  `FamilyDefaultCapabilities`) omit them, with `capabilities` required on
+  `make_default_{ts,rust}_backend_config` — so a config that leaves one out
+  fails typecheck naming it, rather than silently skipping its suites. The
+  family defaults carry the declared surface's mounts (`account_lifecycle`,
+  `account_status`) and the runtime-behavior flags (`ws_handshake_pipelining`,
+  `ws_refusal_body`) of the family's reference runtime — Node for TS, hyper
+  for Rust; a backend on another runtime (Deno, Bun) overrides them. `cell_crud`
   gates the CRUD parity suite, `cell_relations` the relation / ACL / audit
   parity suite — both `true` on every backend that live-mounts the full cell
   surface (TS spine binary, in-process app, Rust stub). A backend mounting only
@@ -1123,7 +1133,7 @@ source of truth for wire-shape conformance.
   as it does behind auth, and `false` in-process, where there is no socket to
   write raw bytes to).
   `ws_account_actions` (the WS endpoint mounts the account actions — `true` on
-  fuz_app's own spine presets, `false` in the family defaults) gates the WS
+  fuz_app's own spine presets; a consumer states it like every mount flag) gates the WS
   round-trip suite's self-revocation case (which requires the reply ahead of
   the close on every backend) and, with `rpc_path`, its WS-mutation audit case
   (which calls `_testing_drain_effects`).

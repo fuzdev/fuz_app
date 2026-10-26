@@ -19,6 +19,7 @@ import '../assert_dev_env.ts';
  */
 
 import type { BackendConfig } from './backend_config.ts';
+import type { BackendCapabilities } from './capabilities.ts';
 import { build_test_backend_paths } from './build_test_backend_paths.ts';
 import {
 	action_rate_limit_env,
@@ -32,7 +33,11 @@ import {
 } from './spine_surface_constants.ts';
 
 /**
- * Capabilities for the TS spine binary — `ts_default_capabilities` plus `sse`
+ * Capabilities for the TS spine binary — `ts_default_capabilities` with every `MountFlag` stated, all `true`: `ws`
+ * (the binary mounts `/api/ws` through `create_app_server`'s `ws_endpoints`),
+ * `cell_crud` + `cell_relations` (`full_spine_mount` live-mounts the full cell
+ * surface over the `fuz_cell` namespace), `fact_serving` (it mounts both serve
+ * routes, the `fuz_facts` namespace and `_testing_put_fact`), `sse`
  * (the binary wires `audit_log_sse`), `ready` (the binary live-mounts the
  * `/ready` deploy gate in `build_spine_app`), `peer_request` (the backend
  * WS transport's `request_connection` path drives server→client `peer/ping`),
@@ -44,9 +49,13 @@ import {
  * binary's preset; `ws_refusal_body` stays `false`, as `@hono/node-ws` drops a
  * refused upgrade's body.
  */
-const ts_spine_capabilities = Object.freeze({
+const ts_spine_capabilities: BackendCapabilities = Object.freeze({
 	...ts_default_capabilities,
+	ws: true,
 	sse: true,
+	cell_crud: true,
+	cell_relations: true,
+	fact_serving: true,
 	ready: true,
 	peer_request: true,
 	ws_account_actions: true,

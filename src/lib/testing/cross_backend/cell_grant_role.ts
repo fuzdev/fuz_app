@@ -28,7 +28,8 @@ import '../assert_dev_env.ts';
  * Runs both legs via the shared `{setup_test}` protocol: in-process
  * (`auth/cell_grant_role_parity.db.test.ts`) + cross-process
  * (`cross_backend/cell_grant_role.cross.test.ts`). Gated on
- * `capabilities.cell_relations` (true on every spine, so it never skips).
+ * `capabilities.cell_relations` (`true` on the in-process app and fuz_app's
+ * spine presets; a consumer states it like every `MountFlag`).
  *
  * @module
  */
