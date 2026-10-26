@@ -45,5 +45,11 @@ declare module 'vitest' {
 		security_handle_a: SerializableBootstrappedBackendHandle;
 		security_handle_b: SerializableBootstrappedBackendHandle;
 		security_action_rate_limit_max_attempts: number;
+		// The dual-spawn TS-runtime differential project
+		// (`global_setup_ts_differential.ts`) provides the TS spine binary's
+		// handle on two runtimes — `a` = Node, `b` = Bun — for
+		// `differential_ts.cross.test.ts`.
+		ts_differential_handle_a: SerializableBootstrappedBackendHandle;
+		ts_differential_handle_b: SerializableBootstrappedBackendHandle;
 	}
 }

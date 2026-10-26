@@ -1,5 +1,5 @@
-# Runs the Deno and Bun legs of the cross-backend suites on the latest release
-# of each runtime, weekly. `check.yml`'s `cross-ts` job pins both to the
+# Runs the Deno and Bun legs of the cross-backend suites, and the Node-vs-Bun
+# differential, on the latest release of each runtime, weekly. `check.yml`'s `cross-ts` job pins both to the
 # versions the suites are green on; this workflow is where a newer runtime that
 # changed a behavior the suites assert shows up first. It gates nothing: it
 # runs on a schedule and by hand, never on a push or a pull request. A red run
@@ -51,4 +51,5 @@ jobs:
       - run: npm ci
       - run: npx svelte-kit sync
       # The Node leg is left to the gating job, where Node is pinned as it is here.
-      - run: FUZ_TEST_CROSS_BACKEND=1 npx vitest run --project cross_backend_ts_deno --project cross_backend_ts_bun
+      # The TS differential diffs latest Bun against that pinned Node.
+      - run: FUZ_TEST_CROSS_BACKEND=1 npx vitest run --project cross_backend_ts_deno --project cross_backend_ts_bun --project cross_backend_ts_differential

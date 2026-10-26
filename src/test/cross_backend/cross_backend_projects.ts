@@ -17,6 +17,8 @@
  * - `cross_backend_security` — `ts_spine_node_security` on 1183 on
  *   `memory://`, `spine_stub_security` on 1184 over
  *   `fuz_app_test_rust_spine_stub_security`
+ * - `cross_backend_ts_differential` — `ts_spine_node_differential` on 1185,
+ *   `ts_spine_bun_differential` on 1186, each on `memory://`
  *
  * A backend's name is also its directory under `os.tmpdir()`.
  *
@@ -69,6 +71,13 @@ const DUAL_SPAWN_PROJECTS: ReadonlyArray<CrossBackendProjectOptions> = [
 			'src/test/cross_backend/login_security.cross.test.ts',
 			'src/test/cross_backend/ws_action_rate_limit.cross.test.ts'
 		]
+	},
+	// The differential again, between two JS runtimes: the TS spine on Node and
+	// on Bun, both on `memory://` — no Rust, no Postgres, so it runs in CI.
+	{
+		name: 'cross_backend_ts_differential',
+		global_setup: './src/test/cross_backend/global_setup_ts_differential.ts',
+		include: ['src/test/cross_backend/differential_ts.cross.test.ts']
 	}
 ];
 

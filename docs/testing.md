@@ -1489,6 +1489,11 @@ describe_differential_conformance_tests({
 Both backends need the same database engine, or engine differences show up
 as body differences. Run it in a dual-spawn project.
 
+The two sides need not be two implementations. One backend on two JS
+runtimes (the same TS binary on Node and on Bun, both on `memory://`) is a
+differential too: every difference is the runtime's, and its ledger is
+normally empty, since DEV-only output shows on both sides alike.
+
 ### Malformed envelopes and invalid params
 
 `describe_rpc_adversarial_cross_tests({setup_test, surface_source, rpc_path?,

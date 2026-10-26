@@ -376,9 +376,15 @@ WS, against `differential_ws_known_divergences` (the HTTP ledger without its
 header row). The multi-actor `conformance_acting_cases.ts` rows run with the
 generated rows on a keeper seeded with `extra_actors`, over both transports.
 The TS spine runs under `DEV` there, so its DEV-only diagnostics (Zod
-`issues` on `invalid_params`, the `X-Fuz-Auth-Debug` header) are ledger rows. Two TS runtimes can be held to
-each other the same way (a dual spawn of two TS spine binaries, both on
-`memory://`) — not wired today.
+`issues` on `invalid_params`, the `X-Fuz-Auth-Debug` header) are ledger rows.
+The suite composition is `describe_spine_differential_suites`
+(`src/test/cross_backend/spine_differential.ts`), which takes the two
+backends and their ledgers. fuz_app also holds two TS runtimes to each other
+with it: the `cross_backend_ts_differential` project
+(`differential_ts.cross.test.ts`) dual-spawns the TS spine binary on Node and
+on Bun, both on `memory://`, against an empty ledger — both run under `DEV`,
+so the DEV-only rows show on both sides and differ nowhere. It needs no Rust
+or Postgres and runs in the `cross-ts` CI job.
 
 ## Assertions, coverage, helpers
 

@@ -566,6 +566,15 @@ or a body difference on a row pinned by status alone, fails. Tracked
 differences live in `differential_known_divergences.ts`, each with its
 tracking id and the paths it differs at, and the ledger's closing test fails
 on an entry that no longer differs — all under `npm run test:cross:parity`.
+The differential's suite composition is `spine_differential.ts`
+(`describe_spine_differential_suites`), shared with a second dual-spawn
+project: `cross_backend_ts_differential` (`global_setup_ts_differential.ts`
+brings up the TS spine binary on Node and on Bun, both on `memory://`,
+providing `ts_differential_handle_a`/`_b`) runs
+`differential_ts.cross.test.ts`, the same suites between the two runtimes
+with an empty ledger — the TS-vs-Rust rows are TS-against-Rust differences,
+and the DEV-only ones show on both sides, since both binaries run under
+`DEV`. `npm run test:cross:ts-differential`; no Rust, no Postgres.
 
 Two more files, `login_security.cross.test.ts` and
 `ws_action_rate_limit.cross.test.ts`, run under their own dual-spawn
@@ -639,7 +648,7 @@ backends:
 behind `FUZ_TEST_CROSS_BACKEND=1` and excluded from a bare `gro test` (they
 spawn external backends). They are listed in
 `cross_backend/cross_backend_projects.ts`, whose module doc tables each one's
-ports (`1177`–`1184`), Postgres databases and backend names: no two projects
+ports (`1177`–`1186`), Postgres databases and backend names: no two projects
 share any, so any set of them can run at once. `npm run test:cross` does
 that — `cross_backend/run_cross.ts` rebuilds the Rust stub once, runs each
 project in its own `vitest` invocation concurrently (with
@@ -667,14 +676,17 @@ FUZ_TESTING_NO_REBUILD=1 npm run test:cross:rust-spine-stub
 npm run test:cross:parity
 # the dual-spawn login + action rate-limit gates (limiters enabled on both spines):
 npm run test:cross:security
+# the dual-spawn differential between the TS spine on Node and on Bun:
+npm run test:cross:ts-differential
 ```
 
 **CI.** `.github/workflows/check.yml`'s `cross-ts` job runs
-`npm run test:cross:ts` on every push to `main` and every pull request, with
+`npm run test:cross:ts` and `npm run test:cross:ts-differential` on every push
+to `main` and every pull request, with
 Deno and Bun pinned in the job's `env` to the versions the suites are green
 on; a bump there is a deliberate re-measure. `.github/workflows/cross-canary.yml`
-runs the Deno and Bun legs weekly (and by hand) on the latest release of each
-and gates nothing. The Rust-backed projects (`cross_backend_rust_spine_stub`,
+runs the Deno and Bun legs and the Node-vs-Bun differential weekly (and by
+hand) on the latest release of each and gates nothing. The Rust-backed projects (`cross_backend_rust_spine_stub`,
 `cross_backend_parity`, `cross_backend_security`) run locally only.
 
 The TS binary + the reusable test-server core/adapters it's built on live in

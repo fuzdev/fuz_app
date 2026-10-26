@@ -65,9 +65,10 @@ jobs:
 
   # The TS spine over real HTTP, WebSocket and SSE on each JS runtime — the
   # `cross_backend_ts_node`, `cross_backend_ts_deno` and `cross_backend_ts_bun`
-  # vitest projects, which `gro check` leaves out (they exist only under
-  # `FUZ_TEST_CROSS_BACKEND=1`). Each spawns the spine test binary on an
-  # in-memory database, so the job needs no service.
+  # vitest projects — and the differential between its Node and Bun runs
+  # (`cross_backend_ts_differential`), which `gro check` leaves out (they exist
+  # only under `FUZ_TEST_CROSS_BACKEND=1`). Each spawns the spine test binary on
+  # an in-memory database, so the job needs no service.
   #
   # Not run in CI: `cross_backend_rust_spine_stub`, `cross_backend_parity` and
   # `cross_backend_security`. They build and spawn the Rust spine's test binary
@@ -115,3 +116,5 @@ jobs:
       - run: npx svelte-kit sync
       # `npm run` puts `node_modules/.bin` on PATH: the Node leg spawns `gro run`.
       - run: npm run test:cross:ts
+      # every conformance case sent to the spine on Node and on Bun, the answers compared
+      - run: npm run test:cross:ts-differential
