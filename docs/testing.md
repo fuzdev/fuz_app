@@ -1300,6 +1300,12 @@ capabilities, so state every mount flag truthfully and the rest follows.
 - `rpc_success_fixtures` / `rpc_skip_methods` / `rpc_input_overrides` go to the
   standard bundle; `setup` is the base `default_cross_process_setup` options
   every suite starts from.
+- `rpc_max_body_bytes` / `ws_max_message_bytes` are your RPC path's body cap
+  and your WS message cap, when they aren't the spine defaults (1 MiB, and
+  `DEFAULT_WS_MAX_MESSAGE_BYTES`): the body-size suites, the front-door
+  table's RPC over-cap row, and the WS oversized-message case probe them.
+- A backend whose fallback serves an SPA shell answers an unrouted `GET` `200`:
+  pass `overrides: {origin_scope: {unrouted_status: 200}}`.
 - An input the handle doesn't carry comes from `overrides` — or from the
   config when it can (`session_cookie_codec`'s `cookie_keys` from
   `SECRET_FUZ_COOKIE_KEYS`); with neither, the call throws naming the suite.

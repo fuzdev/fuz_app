@@ -1224,7 +1224,8 @@ the omitted suites.
 One call that runs every shipped single-backend cross suite against one
 spawned backend: `describe_spine_cross_suites(handle, {surface_source,
 session_options, rpc_endpoints, live_rpc_endpoints?, roles?, setup?, exclude?,
-overrides?, rpc_success_fixtures?, rpc_skip_methods?, rpc_input_overrides?})`.
+overrides?, rpc_success_fixtures?, rpc_skip_methods?, rpc_input_overrides?,
+rpc_max_body_bytes?, ws_max_message_bytes?})`.
 `live_rpc_endpoints` is the backend's whole live mount; given, `rpc_adversarial`
 also walks the methods it keeps off the declared surface. Without it a
 consumer writes a file per suite, and a suite added here never reaches it.
@@ -1261,6 +1262,13 @@ consumer writes a file per suite, and a suite added here never reaches it.
   `ws_round_trip`) create them holding these (`ws_account_roles`), and
   `role_grant_offer_notification_ws` expects revoking one to close the socket
   (its `ws_required_roles`) — one option for every socket a role gates.
+- **`rpc_max_body_bytes`** / **`ws_max_message_bytes`** — the backend's
+  request-body cap on `rpc_path` and its inbound WS message cap, when they
+  aren't the spine defaults (`SPINE_BODY_LIMIT_DEFAULT_BYTES`,
+  `DEFAULT_WS_MAX_MESSAGE_BYTES`). The first reaches `body_size`,
+  `body_size_smuggling` and `transport_composition`'s RPC over-cap row (each
+  takes it as `rpc_max_body_bytes`), the second `ws_round_trip`'s
+  `max_message_bytes` — one value per limit for every suite probing it.
 - **`exclude`** — `{[suite]: reason}`; the reason is required and shows in the
   run as a skipped test. An empty reason, an unknown suite name, or a suite
   both excluded and overridden throws before anything registers.
@@ -2284,14 +2292,15 @@ censuses). Cross-process only.
 
 `describe_transport_composition_cross_tests({setup_test, capabilities, base_url,
 rpc_path?, origin?, rest_path?, password_path?, ws_path?, sse_path?,
-multi_actor?})` — the per-transport
+multi_actor?, rpc_max_body_bytes?})` — the per-transport
 composition table: what each transport answers before per-action dispatch,
 when one request trips several refusals. Rows are REST `POST` (session-only
 `/api/account/logout`), RPC `POST`, RPC `GET`, the WS upgrade (gated on
 `capabilities.ws`) and the audit stream (`capabilities.sse`); columns are a
 foreign `Origin` with the keeper's session (→ 403 `forbidden_origin`), an
 over-cap declared length with a foreign `Origin` and no credential (→ 413
-`payload_too_large`, body-carrying rows only), no credential (→ 401
+`payload_too_large`, body-carrying rows only; one byte past the spine default,
+or past `rpc_max_body_bytes` on the RPC row), no credential (→ 401
 `authentication_required`), and a narrowed bearer with no `Origin` (→ 403
 `token_scope_required` naming `rpc:<method>` on RPC and `surface:ws_upgrade` on
 the upgrade; 403 `credential_type_required` on the session-only REST route and
@@ -2341,10 +2350,14 @@ Cross-process only.
 
 ### Origin check scope parity — `cross_backend/origin_scope.ts`
 
-`describe_origin_scope_cross_tests({setup_test, capabilities, probe_path?})` —
-the origin check covers paths outside `/api`: on `GET /ready` (`probe_path`), a
-foreign `Origin` → 403 `forbidden_origin`, an absent or allowed one → 200. Gated
-on `capabilities.ready`. Runs both legs (the in-process
+`describe_origin_scope_cross_tests({setup_test, capabilities, probe_path?,
+base_url?, unrouted_status?})` — the origin check covers paths outside `/api`:
+on `GET /ready` (`probe_path`), a foreign `Origin` → 403 `forbidden_origin`, an
+absent or allowed one → 200, gated on `capabilities.ready`. On an unrouted
+path, ungated: a foreign `Origin` → 403, an absent one passes to the fallback
+(`unrouted_status`, default 404 — a backend whose fallback serves an SPA shell
+passes 200; the in-process leg runs that shape too), and an over-cap `POST`
+with a foreign `Origin` → 413. Runs both legs (the in-process
 `cross_backend/origin_scope_parity.db.test.ts` + the cross-process
 one call).
 

@@ -5,7 +5,8 @@ import '../assert_dev_env.ts';
  *
  * `create_app_server` (TS) and the Rust spine both cap the request body at a
  * 1 MiB default (`DEFAULT_MAX_BODY_SIZE` / `fuz_http`'s
- * `DEFAULT_BODY_LIMIT_BYTES`) and reject oversized payloads with `413` and the
+ * `DEFAULT_BODY_LIMIT_BYTES`; a backend capping its RPC path elsewhere passes
+ * `rpc_max_body_bytes`) and reject oversized payloads with `413` and the
  * canonical flat REST body `{error: 'payload_too_large'}`. A declared
  * `Content-Length` over the cap is refused on the header, *before* auth,
  * origin, or dispatch run (middleware step 4). Each impl unit-tests this in
@@ -117,6 +118,12 @@ export interface BodySizeCrossTestOptions extends RpcPathCrossSuiteOptions {
 	 * time.
 	 */
 	readonly base_url: string | null;
+	/**
+	 * The backend's request-body cap on `rpc_path`, in bytes — the boundary the
+	 * cases probe. Default `SPINE_BODY_LIMIT_DEFAULT_BYTES`; pass the backend's
+	 * value when it caps its RPC path elsewhere.
+	 */
+	readonly rpc_max_body_bytes?: number;
 }
 
 /**
@@ -127,6 +134,10 @@ export interface BodySizeCrossTestOptions extends RpcPathCrossSuiteOptions {
  * middleware measures. `account_verify` takes no params, but at/over the cap
  * the size check fires before input validation, so the padded shape is never
  * reached on the rejection path.
+ *
+ * The envelope with an empty pad is already 70-odd bytes (more with a longer
+ * `id`), so a smaller target overshoots: the body comes out at that floor, not
+ * at `target_bytes`.
  */
 const sized_envelope = (id: string, target_bytes: number): string => {
 	const method = account_verify_action_spec.method;
@@ -210,6 +221,7 @@ const assert_payload_too_large = (res: SizedResponse, message: string): void => 
 export const describe_body_size_cross_tests = (options: BodySizeCrossTestOptions): void => {
 	const { setup_test, base_url } = options;
 	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
+	const cap = options.rpc_max_body_bytes ?? SPINE_BODY_LIMIT_DEFAULT_BYTES;
 
 	/** POST `body` to the RPC path as the keeper. */
 	const post = (fixture: TestFixture, body: string): Promise<Response> =>
@@ -229,7 +241,7 @@ export const describe_body_size_cross_tests = (options: BodySizeCrossTestOptions
 		id: string
 	): Promise<SizedResponse> => {
 		const headers = fixture.create_session_headers();
-		const content_length = SPINE_BODY_LIMIT_DEFAULT_BYTES + 1;
+		const content_length = cap + 1;
 		if (base_url === null) {
 			return to_sized_response(
 				await fixture.transport(rpc_path, {
@@ -266,17 +278,18 @@ export const describe_body_size_cross_tests = (options: BodySizeCrossTestOptions
 				await fixture.transport(rpc_path, {
 					method: 'POST',
 					headers: { ...fixture.create_session_headers(), 'content-type': 'application/json' },
-					body: streamed_body(SPINE_BODY_LIMIT_DEFAULT_BYTES + 1024),
+					body: streamed_body(cap + 1024),
 					// a streamed request body needs half-duplex `fetch`
 					duplex: 'half'
 				} as RequestInit)
 			);
 		}
 		const url = new URL(base_url);
-		// whole chunks up to exactly the cap, then a one-byte chunk's size line
-		// and its byte — and neither that chunk's closing CRLF nor the
-		// terminating chunk, so the last byte sent is the first one past the cap
-		const whole_chunk = `${STREAM_CHUNK_BYTES.toString(16)}\r\n${'x'.repeat(STREAM_CHUNK_BYTES)}\r\n`;
+		// chunks up to exactly the cap, then a one-byte chunk's size line and its
+		// byte — and neither that chunk's closing CRLF nor the terminating chunk,
+		// so the last byte sent is the first one past the cap
+		const to_chunk = (size: number): string => `${size.toString(16)}\r\n${'x'.repeat(size)}\r\n`;
+		const remainder = cap % STREAM_CHUNK_BYTES;
 		return exchange_withholding(
 			base_url,
 			`POST ${rpc_path} HTTP/1.1\r\n` +
@@ -288,7 +301,8 @@ export const describe_body_size_cross_tests = (options: BodySizeCrossTestOptions
 					'transfer-encoding': 'chunked'
 				}) +
 				`\r\n` +
-				whole_chunk.repeat(SPINE_BODY_LIMIT_DEFAULT_BYTES / STREAM_CHUNK_BYTES) +
+				to_chunk(STREAM_CHUNK_BYTES).repeat(Math.floor(cap / STREAM_CHUNK_BYTES)) +
+				(remainder === 0 ? '' : to_chunk(remainder)) +
 				`1\r\nx`,
 			`the chunked body's end`
 		);
@@ -309,7 +323,7 @@ export const describe_body_size_cross_tests = (options: BodySizeCrossTestOptions
 			// Exactly at the cap is one byte under the `>` threshold, so it clears
 			// the size gate and reaches the dispatcher. Whatever the dispatcher
 			// then returns, it must not be the 413 — that's the lower boundary.
-			const res = await post(fixture, sized_envelope('at-limit', SPINE_BODY_LIMIT_DEFAULT_BYTES));
+			const res = await post(fixture, sized_envelope('at-limit', cap));
 			assert.notStrictEqual(res.status, 413, 'a body exactly at the cap must not be size-rejected');
 		});
 

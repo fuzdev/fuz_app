@@ -75,6 +75,11 @@ export interface BodySizeSmugglingCrossTestOptions {
 	readonly base_url: string;
 	/** RPC endpoint path to target. Default `/api/rpc`. */
 	readonly rpc_path?: string;
+	/**
+	 * The backend's request-body cap on `rpc_path`, in bytes; the oversized
+	 * `POST` declares a length past it. Default `SPINE_BODY_LIMIT_DEFAULT_BYTES`.
+	 */
+	readonly rpc_max_body_bytes?: number;
 }
 
 export const describe_body_size_smuggling_cross_tests = (
@@ -106,7 +111,7 @@ export const describe_body_size_smuggling_cross_tests = (
 		});
 
 		test('oversized POST + pipelined GET → no request smuggled', async () => {
-			const oversized_len = SPINE_BODY_LIMIT_DEFAULT_BYTES + 1024;
+			const oversized_len = (options.rpc_max_body_bytes ?? SPINE_BODY_LIMIT_DEFAULT_BYTES) + 1024;
 			const pipelined_get = `GET ${rpc_path} HTTP/1.1\r\nHost: ${host}\r\n\r\n`;
 			// One write: an over-cap POST (rejected on Content-Length) immediately
 			// followed by a GET.

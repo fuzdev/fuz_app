@@ -9,8 +9,14 @@
  * spine binaries + Rust `testing_spine_stub` over real HTTP behind
  * `FUZ_TEST_CROSS_BACKEND=1`.
  *
+ * A second run serves an SPA shell from a catch-all after the routes, as a
+ * backend with a static frontend does, and passes `unrouted_status: 200`: the
+ * unrouted rows still pin the origin check ahead of that fallback.
+ *
  * @module
  */
+
+import { describe } from 'vitest';
 
 import { default_in_process_setup } from '#lib/testing/cross_backend/in_process_setup.ts';
 import { in_process_capabilities } from '#lib/testing/cross_backend/capabilities.ts';
@@ -29,3 +35,24 @@ const setup_test = default_in_process_setup({
 });
 
 describe_origin_scope_cross_tests({ setup_test, capabilities: in_process_capabilities });
+
+describe('an SPA fallback', () => {
+	describe_origin_scope_cross_tests({
+		setup_test: default_in_process_setup({
+			session_options: spine_session_options,
+			migration_namespaces: [CELL_MIGRATION_NS, FACT_MIGRATION_NS],
+			create_route_specs: () => [create_spine_ready_route_spec()],
+			app_options: {
+				post_route_middleware: [
+					{
+						name: 'spa_shell',
+						path: '*',
+						handler: async (c) => c.html('<!doctype html><title>spa</title>')
+					}
+				]
+			}
+		}),
+		capabilities: in_process_capabilities,
+		unrouted_status: 200
+	});
+});

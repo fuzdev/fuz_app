@@ -21,8 +21,11 @@ import '../assert_dev_env.ts';
  *
  * And on a path neither server routes, which reaches each spine's fallback:
  *
- * - **foreign `Origin` → 403 `forbidden_origin`**, **absent → 404** — the
- *   fallback is behind the check, not attached after it.
+ * - **foreign `Origin` → 403 `forbidden_origin`**, **absent → the fallback's
+ *   own answer** — the fallback is behind the check, not attached after it.
+ *   The absent row pins that the check let the request through to the
+ *   fallback: `404` by default, or `unrouted_status` for a backend whose
+ *   fallback serves an SPA shell (`200`).
  * - **an over-cap `POST` with a declared `Content-Length` and a foreign
  *   `Origin` → 413 `payload_too_large`** — the body cap comes ahead of the
  *   origin check on the fallback too (413-first holds for a declared length).
@@ -66,12 +69,19 @@ export interface OriginScopeCrossTestOptions extends CapabilityGatedCrossSuiteOp
 	 * default) sends the whole body through the fixture's in-process transport.
 	 */
 	readonly base_url?: string | null;
+	/**
+	 * The status the backend's fallback answers an unrouted `GET` with, once
+	 * the origin check has passed it. Default `404`; a backend serving an SPA
+	 * shell from its fallback passes `200`.
+	 */
+	readonly unrouted_status?: number;
 }
 
 export const describe_origin_scope_cross_tests = (options: OriginScopeCrossTestOptions): void => {
 	const { setup_test, capabilities } = options;
 	const probe_path = options.probe_path ?? '/ready';
 	const base_url = options.base_url ?? null;
+	const unrouted_status = options.unrouted_status ?? 404;
 
 	describe('origin check scope parity', () => {
 		test_if(
@@ -116,12 +126,16 @@ export const describe_origin_scope_cross_tests = (options: OriginScopeCrossTestO
 			assert.strictEqual(body?.error, ERROR_FORBIDDEN_ORIGIN);
 		});
 
-		test('an absent Origin on an unrouted path → 404', async () => {
+		test(`an absent Origin on an unrouted path → passes to the fallback (${unrouted_status})`, async () => {
 			const fixture = await setup_test();
 			const res = await fixture.fresh_transport({ origin: null })(UNROUTED_PATH, {
 				method: 'GET'
 			});
-			assert.strictEqual(res.status, 404, 'the fallback answers its own 404 past the check');
+			assert.strictEqual(
+				res.status,
+				unrouted_status,
+				'a request with no Origin must pass the check and reach the fallback'
+			);
 		});
 
 		test('an over-cap POST to an unrouted path with a foreign Origin → 413 payload_too_large', async () => {

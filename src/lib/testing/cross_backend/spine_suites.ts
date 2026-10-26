@@ -447,6 +447,19 @@ export interface SpineCrossSuitesOptions {
 	 * socket (`ws_required_roles`). Each must be admin-grantable.
 	 */
 	readonly ws_required_roles?: ReadonlyArray<string>;
+	/**
+	 * The backend's request-body cap on `rpc_path`, in bytes, when it isn't the
+	 * spine default (`SPINE_BODY_LIMIT_DEFAULT_BYTES`): the boundary
+	 * `body_size`, `body_size_smuggling` and `transport_composition`'s RPC
+	 * over-cap row probe.
+	 */
+	readonly rpc_max_body_bytes?: number;
+	/**
+	 * The backend's inbound WebSocket message cap on `ws_path`, in bytes, when
+	 * it isn't the spine default (`DEFAULT_WS_MAX_MESSAGE_BYTES`): the boundary
+	 * `ws_round_trip`'s oversized-message case sends past.
+	 */
+	readonly ws_max_message_bytes?: number;
 	/** Forwarded to the standard bundle (`StandardCrossProcessTestOptions.rpc_success_fixtures`). */
 	readonly rpc_success_fixtures?: RpcSuccessFixtures;
 	/** Forwarded to the standard bundle (`StandardCrossProcessTestOptions.rpc_skip_methods`). */
@@ -504,13 +517,18 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 		derive: (c) => ({
 			setup_test: c.setup(),
 			rpc_path: c.config.rpc_path,
-			base_url: c.config.base_url
+			base_url: c.config.base_url,
+			rpc_max_body_bytes: c.options.rpc_max_body_bytes
 		}),
 		describe: describe_body_size_cross_tests,
 		required: { setup_test: true, base_url: true }
 	},
 	body_size_smuggling: {
-		derive: (c) => ({ base_url: c.config.base_url, rpc_path: c.config.rpc_path }),
+		derive: (c) => ({
+			base_url: c.config.base_url,
+			rpc_path: c.config.rpc_path,
+			rpc_max_body_bytes: c.options.rpc_max_body_bytes
+		}),
 		describe: describe_body_size_smuggling_cross_tests,
 		required: { base_url: true }
 	},
@@ -773,7 +791,8 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			base_url: c.config.base_url,
 			ws_path: c.config.ws_path,
 			sse_path: c.config.sse_path,
-			multi_actor: { setup_test: c.setup({ extra_actors: ['keeper_second_persona'] }) }
+			multi_actor: { setup_test: c.setup({ extra_actors: ['keeper_second_persona'] }) },
+			rpc_max_body_bytes: c.options.rpc_max_body_bytes
 		}),
 		describe: describe_transport_composition_cross_tests,
 		required: { setup_test: true, capabilities: true, base_url: true }
@@ -839,7 +858,8 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			base_url: c.config.base_url,
 			ws_path: c.config.ws_path,
 			rpc_path: c.config.rpc_path,
-			ws_account_roles: c.options.ws_required_roles
+			ws_account_roles: c.options.ws_required_roles,
+			max_message_bytes: c.options.ws_max_message_bytes
 		}),
 		describe: describe_cross_process_ws_tests,
 		required: { setup_test: true, capabilities: true, base_url: true, ws_path: true }

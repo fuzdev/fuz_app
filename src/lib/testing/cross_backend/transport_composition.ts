@@ -32,9 +32,10 @@ import '../assert_dev_env.ts';
  *   Rust spine) or one value joined from them (the TS runtimes), so a check that
  *   reads only the first lets it through.
  * - **over cap + foreign `Origin`** declares a `Content-Length` one byte over
- *   the shared 1 MiB cap and carries no credential: the cap answers on the
- *   header, ahead of both the origin check and auth. Only the surfaces that
- *   take a body have the column.
+ *   the route's cap — the shared 1 MiB default, or `rpc_max_body_bytes` on the
+ *   RPC row — and carries no credential: the cap answers on the header, ahead
+ *   of both the origin check and auth. Only the surfaces that take a body have
+ *   the column.
  * - **no credential** sends an allowed `Origin` and nothing else.
  * - **narrowed token** sends a bearer minted with a method-scoped scope, and no
  *   `Origin` (a bearer in a browser context is discarded, not refused). The RPC
@@ -268,6 +269,13 @@ export interface TransportCompositionCrossTestOptions extends RpcPathCapabilityG
 	readonly sse_path?: string;
 	/** Run the multi-actor rows (`transport_composition_multi_actor_cases`). */
 	readonly multi_actor?: TransportCompositionMultiActorOptions;
+	/**
+	 * The backend's request-body cap on `rpc_path`, in bytes; the RPC row's
+	 * over-cap probe declares a length one past it. Default
+	 * `SPINE_BODY_LIMIT_DEFAULT_BYTES`. The REST rows probe past that default,
+	 * the cap a backend keeps off its RPC path.
+	 */
+	readonly rpc_max_body_bytes?: number;
 }
 
 /** An `Origin` no backend's allowlist admits. */
@@ -282,8 +290,8 @@ interface ProbeRequest {
 	readonly repeated_headers?: ReadonlyArray<readonly [string, string]>;
 	/** The body, or `null`. An over-cap body is sent whole only in-process. */
 	readonly body: string | null;
-	/** Declare a `Content-Length` one byte over the cap. */
-	readonly over_cap: boolean;
+	/** The `Content-Length` to declare, one byte over the route's cap, or `null`. */
+	readonly over_cap_length: number | null;
 }
 
 /** What a probe read back. */
@@ -351,6 +359,7 @@ export const describe_transport_composition_cross_tests = (
 	const { setup_test, capabilities, base_url } = options;
 	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
 	const rest_path = options.rest_path ?? SPINE_ACCOUNT_LOGOUT_PATH;
+	const rpc_max_body_bytes = options.rpc_max_body_bytes ?? SPINE_BODY_LIMIT_DEFAULT_BYTES;
 	const password_path = options.password_path ?? SPINE_ACCOUNT_PASSWORD_PATH;
 	const ws_path = options.ws_path ?? SPINE_WS_PATH;
 	const sse_path = options.sse_path ?? SPINE_SSE_PATH;
@@ -411,7 +420,7 @@ export const describe_transport_composition_cross_tests = (
 					path: c.surface === 'rest_post' ? rest_path : password_path,
 					headers: { ...credential, 'content-type': 'application/json' },
 					body: over_cap ? sized_json(SPINE_BODY_LIMIT_DEFAULT_BYTES + 1) : '{}',
-					over_cap,
+					over_cap_length: over_cap ? SPINE_BODY_LIMIT_DEFAULT_BYTES + 1 : null,
 					repeated_headers
 				};
 			case 'rpc_post': {
@@ -419,10 +428,8 @@ export const describe_transport_composition_cross_tests = (
 					method: 'POST',
 					path: rpc_path,
 					headers: { ...credential, 'content-type': 'application/json' },
-					body: over_cap
-						? sized_json(SPINE_BODY_LIMIT_DEFAULT_BYTES + 1)
-						: rpc_envelope(rpc_method, id),
-					over_cap,
+					body: over_cap ? sized_json(rpc_max_body_bytes + 1) : rpc_envelope(rpc_method, id),
+					over_cap_length: over_cap ? rpc_max_body_bytes + 1 : null,
 					repeated_headers
 				};
 			}
@@ -432,7 +439,7 @@ export const describe_transport_composition_cross_tests = (
 					path: create_rpc_get_url(rpc_path, rpc_method, undefined, id),
 					headers: credential,
 					body: null,
-					over_cap,
+					over_cap_length: null,
 					repeated_headers
 				};
 			case 'ws_upgrade':
@@ -447,7 +454,7 @@ export const describe_transport_composition_cross_tests = (
 						'sec-websocket-version': '13'
 					},
 					body: null,
-					over_cap,
+					over_cap_length: null,
 					repeated_headers
 				};
 			case 'sse':
@@ -456,7 +463,7 @@ export const describe_transport_composition_cross_tests = (
 					path: sse_path,
 					headers: { ...credential, accept: 'text/event-stream' },
 					body: null,
-					over_cap,
+					over_cap_length: null,
 					repeated_headers
 				};
 		}
@@ -476,12 +483,13 @@ export const describe_transport_composition_cross_tests = (
 			return { status: res.status, text: await res.text() };
 		}
 		const url = new URL(base_url);
-		const body = probe.over_cap ? '' : (probe.body ?? '');
-		const length_header: Record<string, string> = probe.over_cap
-			? { 'content-length': String(SPINE_BODY_LIMIT_DEFAULT_BYTES + 1) }
-			: probe.body === null
-				? {}
-				: { 'content-length': String(body.length) };
+		const body = probe.over_cap_length === null ? (probe.body ?? '') : '';
+		const length_header: Record<string, string> =
+			probe.over_cap_length !== null
+				? { 'content-length': String(probe.over_cap_length) }
+				: probe.body === null
+					? {}
+					: { 'content-length': String(body.length) };
 		const request =
 			`${probe.method} ${probe.path} HTTP/1.1\r\n` +
 			raw_http_header_lines({ host: url.host, ...probe.headers, ...length_header }) +
