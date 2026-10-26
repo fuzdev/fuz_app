@@ -46,6 +46,15 @@ describe('check_known_divergence_ledger', () => {
 		);
 	});
 
+	test('a dead method behind a live one is reported', () => {
+		assert.deepEqual(
+			check_known_divergence_ledger(CASES, [
+				entry({ method: ['admin_account_list', 'admin_acount_list'] })
+			]),
+			["'probe' names a method no case sends: 'admin_acount_list'"]
+		);
+	});
+
 	test('an entry matching no case is reported once', () => {
 		assert.deepEqual(check_known_divergence_ledger(CASES, [entry({ case_name: 'ghost case' })]), [
 			"'probe' matches no case — fix its case name or method"

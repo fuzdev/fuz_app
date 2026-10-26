@@ -360,7 +360,8 @@ field a loose output schema passes on one spine, shows up as a difference.
   that case's test), a `method` entry must still show on one of its cases
   (checked by a closing test once they all ran — a filtered or failed run
   leaves it unjudged, and the test skips when nothing was judged), and an
-  entry matching no case, or listing a case name that doesn't exist, fails —
+  entry matching no case, or listing a case name that doesn't exist or a
+  method no case sends, fails —
   the static half is `check_known_divergence_ledger(cases, ledger)`, exported
   for checking a ledger without a backend. No other ignore path exists.
 

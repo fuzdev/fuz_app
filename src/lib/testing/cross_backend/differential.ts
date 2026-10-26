@@ -176,8 +176,9 @@ const find_known_divergences = (
 
 /**
  * The ledger's static problems against a case list: an entry that matches no
- * case, and every `case_name` it lists that no case carries — a dead name
- * would otherwise ride along behind a live one in the same entry.
+ * case, and every `case_name` it lists that no case carries, or every `method`
+ * no case sends — a dead name would otherwise ride along behind a live one in
+ * the same entry.
  *
  * Needs no backend; the differential's closing test reports these, and a
  * consumer can check its ledger with it directly.
@@ -192,6 +193,7 @@ export const check_known_divergence_ledger = (
 ): Array<string> => {
 	const problems: Array<string> = [];
 	const case_names = new Set(cases.map((c) => c.name));
+	const case_methods = new Set(cases.map((c) => c.request.method));
 	for (const d of ledger) {
 		if (!cases.some((c) => find_known_divergences(c, [d]).length > 0)) {
 			problems.push(`'${d.tracking_id}' matches no case — fix its case name or method`);
@@ -202,6 +204,13 @@ export const check_known_divergence_ledger = (
 			if (dead.length > 0) {
 				problems.push(
 					`'${d.tracking_id}' names no such case: ${dead.map((n) => `'${n}'`).join(', ')}`
+				);
+			}
+		} else {
+			const dead = as_list(d.method).filter((method) => !case_methods.has(method));
+			if (dead.length > 0) {
+				problems.push(
+					`'${d.tracking_id}' names a method no case sends: ${dead.map((m) => `'${m}'`).join(', ')}`
 				);
 			}
 		}
