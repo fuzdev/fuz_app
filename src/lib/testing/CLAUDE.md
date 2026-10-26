@@ -1875,11 +1875,28 @@ are `src/test/auth/cell_crud_parity.db.test.ts`
   path in another layout).
 - `testing/cross_backend/create_cross_backend_global_setup.ts` —
   `create_cross_backend_global_setup({configs, derive_name?, provide_key?,
-  ensure_databases?})`, the single-backend `globalSetup` maker: the backend
-  name derived from the vitest project name selects a config, which is
-  spawned, bootstrapped and provided. `ensure_databases: true` first creates
-  the database the config's `postgres:` `env.DATABASE_URL` names
-  (`ensure_database_for_url`).
+  ensure_databases?, before_spawn?})`, the single-backend `globalSetup` maker:
+  the backend name derived from the vitest project name selects a config,
+  which is spawned, bootstrapped and provided. `before_spawn` (by backend
+  name; a key naming no config, an inherited one included, throws at
+  construction) runs first for the selected backend — `prepare_cargo_binary`
+  for a Rust one — then its config factory, then `ensure_databases: true`
+  creates the database the config's `postgres:` `env.DATABASE_URL` names
+  (`ensure_database_for_url`), then the spawn. A second argument
+  (`CrossBackendGlobalSetupDeps`) swaps the database creator and the spawn,
+  for testing the setup itself.
+- `testing/cross_backend/cargo_binary.ts` — `prepare_cargo_binary({workspace_dir,
+  package, bin?, profile?})` builds a Cargo binary (`cargo build -p --bin
+  --profile`, output inherited, a failed build throws) unless
+  `NO_REBUILD_ENV` (`FUZ_TESTING_NO_REBUILD`, `is_no_rebuild_requested`) asks
+  to skip it, and returns its path; `resolve_cargo_binary_path(options)` is the
+  path alone, for a config's `start_command` — under the `target_directory`
+  `cargo metadata` reports (memoized per process per workspace), in the
+  profile's directory (`to_cargo_profile_dir`: `dev` → `debug`;
+  `to_cargo_binary_path` reads it from the metadata JSON). Run as
+  `create_cross_backend_global_setup`'s `before_spawn` hook, the build happens
+  before the spawn's startup window, with its output shown. fuz_app's own stub
+  rebuild (`rebuild_rust_spine_stub`) is built on it.
 - `testing/cross_backend/postgres_database.ts` — `ensure_database(database,
   server_url?, deps?)` (idempotent `createdb` on the server the URL names, its
   password passed in the environment; `createdb`'s already-exists refusal is

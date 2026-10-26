@@ -1170,6 +1170,53 @@ the same for a setup of your own), so there is no manual `createdb` step. The
 same module has `with_database_name`, `to_maintenance_database_url` and
 `redact_database_url` for a setup that runs a second backend beside the first.
 
+A Rust backend spawns its built binary, not `cargo run`: a build inside the
+spawn runs in the startup window, where a cold one can time out, and its output
+is hidden in the spawn's stderr tail. `prepare_cargo_binary`
+(`testing/cross_backend/cargo_binary.ts`) builds it first with its output shown,
+as the `before_spawn` hook, and the config names the binary
+`resolve_cargo_binary_path` reports (under the target directory `cargo
+metadata` gives, so `CARGO_TARGET_DIR` is honoured). `FUZ_TESTING_NO_REBUILD=1`
+skips the build:
+
+```ts
+// my_backend_config.ts
+import { fileURLToPath } from 'node:url';
+import type { BackendConfig } from '@fuzdev/fuz_app/testing/cross_backend/backend_config.ts';
+import { resolve_cargo_binary_path } from '@fuzdev/fuz_app/testing/cross_backend/cargo_binary.ts';
+import {
+	make_default_rust_backend_config,
+	rust_default_capabilities
+} from '@fuzdev/fuz_app/testing/cross_backend/default_backend_configs.ts';
+
+export const MY_CARGO_BINARY = {
+	workspace_dir: fileURLToPath(new URL('../../..', import.meta.url)),
+	package: 'testing_my_server',
+	bin: 'testing_myd' // default the package name; `profile` defaults to `dev`
+};
+
+export const rust_backend_config = (): BackendConfig =>
+	make_default_rust_backend_config({
+		name: 'rust',
+		port: 14141,
+		start_command: [resolve_cargo_binary_path(MY_CARGO_BINARY)],
+		database_url: 'postgres://localhost/my_app_test_rust',
+		daemon_token_dir_env: 'MY_APP_DAEMON_TOKEN_DIR',
+		capabilities: { ...rust_default_capabilities /* every MountFlag stated */ }
+	});
+
+// global_setup.ts
+import { prepare_cargo_binary } from '@fuzdev/fuz_app/testing/cross_backend/cargo_binary.ts';
+import { create_cross_backend_global_setup } from '@fuzdev/fuz_app/testing/cross_backend/create_cross_backend_global_setup.ts';
+import { MY_CARGO_BINARY, rust_backend_config } from './my_backend_config.ts';
+
+export default create_cross_backend_global_setup({
+	configs: { rust: rust_backend_config },
+	ensure_databases: true,
+	before_spawn: { rust: () => prepare_cargo_binary(MY_CARGO_BINARY) }
+});
+```
+
 ```ts
 // spine_suites.cross.test.ts — every shipped suite the capabilities admit
 import { ROLE_ADMIN } from '@fuzdev/fuz_app/auth/role_schema.ts';
@@ -1407,9 +1454,9 @@ Point the build at the Cargo workspace with `FUZ_RUST_SPINE_STUB_WORKSPACE_DIR`
 `FUZ_TESTING_RUST_SPINE_STUB_BIN`. Point the stub at another Postgres server
 or database (e.g. a scratch cluster on a spare port) with
 `FUZ_TESTING_RUST_SPINE_STUB_DATABASE_URL`; step 2's `createdb` follows the
-URL, and a value that is not a URL fails the project naming the variable. The rebuild lives in the consumer/runner
-wiring — the exported `testing/` harness stays runtime-agnostic and knows
-nothing about Cargo.
+URL, and a value that is not a URL fails the project naming the variable. The rebuild is
+`prepare_cargo_binary` in the `cross-test` profile, the helper a consumer's
+`before_spawn` hook uses too; the harness runs it only when a setup asks.
 
 ### Declarative conformance table
 

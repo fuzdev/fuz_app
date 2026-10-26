@@ -10,7 +10,6 @@
  * @module
  */
 
-import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -18,6 +17,11 @@ import type { TestProject } from 'vitest/node';
 
 import type { BackendConfig } from '#lib/testing/cross_backend/backend_config.ts';
 import { bootstrap_backend } from '#lib/testing/cross_backend/bootstrap_backend.ts';
+import {
+	is_no_rebuild_requested,
+	NO_REBUILD_ENV,
+	prepare_cargo_binary
+} from '#lib/testing/cross_backend/cargo_binary.ts';
 import {
 	ensure_database_for_url,
 	is_postgres_url
@@ -35,13 +39,6 @@ import {
 } from './bootstrap_token_probe.ts';
 import './cross_test_types.ts';
 
-/**
- * Env var skipping the Rust rebuild, for fast iteration on a known-current
- * binary: `1` or `true` skips it, any other value (`0`, `false`, empty)
- * rebuilds.
- */
-export const NO_REBUILD_ENV = 'FUZ_TESTING_NO_REBUILD';
-
 /** The Cargo package the fuz_app Rust projects build and spawn — the Rust spine stub. */
 export const RUST_SPINE_STUB_CRATE = 'testing_spine_stub';
 
@@ -52,15 +49,6 @@ export const RUST_SPINE_STUB_CRATE = 'testing_spine_stub';
  * full LTO relink. Its output lands in `cross-test/` under the target directory.
  */
 export const RUST_SPINE_STUB_CARGO_PROFILE = 'cross-test';
-
-/**
- * Whether an `NO_REBUILD_ENV` value asks to skip the rebuild — only an
- * explicit `1` / `true`, so `FUZ_TESTING_NO_REBUILD=0` still rebuilds.
- *
- * @param value - the variable's value, `undefined` when unset
- */
-export const is_no_rebuild_requested = (value: string | undefined): boolean =>
-	value === '1' || value?.toLowerCase() === 'true';
 
 /** Env var pointing at the Cargo workspace where the spine-stub crate lives. */
 export const RUST_WORKSPACE_DIR_ENV = 'FUZ_RUST_SPINE_STUB_WORKSPACE_DIR';
@@ -114,53 +102,17 @@ export const resolve_rust_spine_stub_database_url = (): string => {
 	return from_env;
 };
 
-/**
- * The binary `cargo build -p <crate> --profile cross-test` writes, read from
- * `cargo metadata --no-deps --format-version 1` output: under the workspace's
- * resolved `target_directory`, so `CARGO_TARGET_DIR` and `build.target-dir`
- * are honoured.
- *
- * @param metadata_json - the `cargo metadata` output
- * @param crate - the Cargo package, also the binary's name
- * @returns the binary's absolute path
- * @throws Error when the output carries no `target_directory`
- */
-export const to_rust_spine_stub_bin_path = (metadata_json: string, crate: string): string => {
-	const metadata = JSON.parse(metadata_json) as { target_directory?: unknown };
-	if (typeof metadata.target_directory !== 'string' || !metadata.target_directory) {
-		throw new Error('`cargo metadata` output has no `target_directory`');
-	}
-	return join(metadata.target_directory, RUST_SPINE_STUB_CARGO_PROFILE, crate);
+/** Pins `rebuild_rust_spine_stub` already warned about, shared across one vitest process. */
+const WARNED_PINS_KEY = '__fuz_app_rust_spine_stub_warned_pins';
+
+const get_warned_pins = (): Set<string> => {
+	const holder = globalThis as unknown as Record<string, Set<string> | undefined>;
+	return (holder[WARNED_PINS_KEY] ??= new Set());
 };
-
-/**
- * Per-process memo of the built binary paths (keyed by workspace and crate)
- * and of the pins already warned about. On `globalThis` rather than in module
- * scope, so every project's `globalSetup` in one vitest process shares it
- * whether or not they share this module's instance.
- */
-interface RustSpineStubMemo {
-	readonly bin_paths: Map<string, string>;
-	readonly warned_pins: Set<string>;
-}
-
-const RUST_SPINE_STUB_MEMO_KEY = '__fuz_app_rust_spine_stub_memo';
-
-const get_memo = (): RustSpineStubMemo => {
-	const holder = globalThis as unknown as Record<string, RustSpineStubMemo | undefined>;
-	return (holder[RUST_SPINE_STUB_MEMO_KEY] ??= { bin_paths: new Map(), warned_pins: new Set() });
-};
-
-/**
- * How long `cargo metadata` may take (ms). Usually well under a second, but
- * the first run in a checkout can have rustup install the pinned toolchain.
- */
-const CARGO_METADATA_TIMEOUT_MS = 120_000;
 
 /**
  * Throw naming the workspace and its env var when the workspace directory is
- * missing — a spawn with a missing `cwd` otherwise fails as `spawnSync cargo
- * ENOENT`, which reads as cargo not being installed.
+ * missing, before cargo is asked to run there.
  */
 const assert_workspace_dir = (workspace_dir: string): void => {
 	if (!existsSync(workspace_dir)) {
@@ -171,45 +123,14 @@ const assert_workspace_dir = (workspace_dir: string): void => {
 	}
 };
 
-/** The built binary's path, from `cargo metadata` once per process per workspace and crate. */
-const resolve_built_bin_path = (workspace_dir: string, crate: string): string => {
-	const { bin_paths } = get_memo();
-	const key = JSON.stringify([workspace_dir, crate]);
-	let path = bin_paths.get(key);
-	if (path === undefined) {
-		assert_workspace_dir(workspace_dir);
-		let metadata_json: string;
-		try {
-			metadata_json = execFileSync('cargo', ['metadata', '--no-deps', '--format-version', '1'], {
-				cwd: workspace_dir,
-				encoding: 'utf-8',
-				stdio: ['ignore', 'pipe', 'inherit'],
-				maxBuffer: 64 * 1024 * 1024,
-				timeout: CARGO_METADATA_TIMEOUT_MS
-			});
-		} catch (error) {
-			const code = (error as NodeJS.ErrnoException).code;
-			throw new Error(
-				code === 'ETIMEDOUT'
-					? `\`cargo metadata\` in ${workspace_dir} took over ${CARGO_METADATA_TIMEOUT_MS}ms`
-					: `\`cargo metadata\` in ${workspace_dir} failed: ${(error as Error).message}`,
-				{ cause: error }
-			);
-		}
-		path = to_rust_spine_stub_bin_path(metadata_json, crate);
-		bin_paths.set(key, path);
-	}
-	return path;
-};
-
 /**
- * Rebuild the Rust spine binary unless `NO_REBUILD_ENV` asks to skip it, and
- * default the binary-path env the backend config reads to the build's output
- * (`to_rust_spine_stub_bin_path`) when the operator didn't pin one. When they
- * did and a rebuild ran, a pin elsewhere gets a one-line warning: the rebuilt
- * binary is not the one that spawns. Resolving the default runs
- * `cargo metadata`, so `NO_REBUILD_ENV=1` with no pinned binary still needs
- * cargo on PATH.
+ * Rebuild the Rust spine binary unless `NO_REBUILD_ENV` asks to skip it
+ * (`prepare_cargo_binary`, in the `cross-test` profile), and default the
+ * binary-path env the backend config reads to the build's output when the
+ * operator didn't pin one. When they did and a rebuild ran, a pin elsewhere
+ * gets a one-line warning: the rebuilt binary is not the one that spawns.
+ * Resolving the path runs `cargo metadata`, so `NO_REBUILD_ENV=1` with no
+ * pinned binary still needs cargo on PATH.
  *
  * Runs at most one build at a time without any lock: vitest awaits each
  * project's `globalSetup` in turn and the build is synchronous, so one
@@ -218,31 +139,22 @@ const resolve_built_bin_path = (workspace_dir: string, crate: string): string =>
  * its concurrent invocations and hands each `NO_REBUILD_ENV=1` and the path.
  */
 export const rebuild_rust_spine_stub = (options: RustSpineRebuildOptions): void => {
-	const workspace_dir = resolve_workspace_dir(options.workspace_dir);
 	const rebuild = !is_no_rebuild_requested(process.env[NO_REBUILD_ENV]);
-
-	if (rebuild) {
-		assert_workspace_dir(workspace_dir);
-		// `stdio: 'inherit'` surfaces build output; a failed build throws and
-		// fails the project loudly (the point — never spawn a stale binary).
-		execFileSync(
-			'cargo',
-			['build', '-p', options.crate, '--profile', RUST_SPINE_STUB_CARGO_PROFILE],
-			{
-				cwd: workspace_dir,
-				stdio: 'inherit'
-			}
-		);
-	}
-
 	const pinned = process.env[RUST_SPINE_STUB_BIN_ENV];
+	// a pinned binary and no rebuild: nothing to build or resolve
+	if (pinned != null && !rebuild) return;
+	const workspace_dir = resolve_workspace_dir(options.workspace_dir);
+	assert_workspace_dir(workspace_dir);
+	const built = prepare_cargo_binary({
+		workspace_dir,
+		package: options.crate,
+		profile: RUST_SPINE_STUB_CARGO_PROFILE
+	});
 	if (pinned == null) {
-		process.env[RUST_SPINE_STUB_BIN_ENV] = resolve_built_bin_path(workspace_dir, options.crate);
+		process.env[RUST_SPINE_STUB_BIN_ENV] = built;
 		return;
 	}
-	if (!rebuild) return;
-	const built = resolve_built_bin_path(workspace_dir, options.crate);
-	const { warned_pins } = get_memo();
+	const warned_pins = get_warned_pins();
 	if (resolve(pinned) !== built && !warned_pins.has(pinned)) {
 		warned_pins.add(pinned);
 		console.warn(

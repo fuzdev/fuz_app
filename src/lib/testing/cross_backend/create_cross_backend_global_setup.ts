@@ -20,6 +20,7 @@ import '../assert_dev_env.ts';
  * export default create_cross_backend_global_setup({
  *   configs: {deno: deno_backend_config, rust: rust_backend_config},
  *   ensure_databases: true,
+ *   before_spawn: {rust: () => prepare_cargo_binary(my_cargo_binary)},
  * });
  * ```
  *
@@ -74,31 +75,70 @@ export interface CrossBackendGlobalSetupOptions {
 	 * @default false
 	 */
 	readonly ensure_databases?: boolean;
+	/**
+	 * Hooks run before a backend's config is built and spawned, by backend
+	 * name — the Cargo build of a Rust binary (`prepare_cargo_binary`), so it
+	 * runs with its output shown and outside the spawn's startup window, and
+	 * the config can spawn the built binary. Runs only for the selected
+	 * backend; a key naming no config throws.
+	 */
+	readonly before_spawn?: Readonly<Record<string, () => unknown>>;
 }
+
+/**
+ * What `create_cross_backend_global_setup` creates databases and spawns
+ * backends with — `ensure_database_for_url` and `bootstrap_backend` by default.
+ */
+export interface CrossBackendGlobalSetupDeps {
+	readonly ensure_database_for_url: (database_url: string) => unknown;
+	readonly bootstrap_backend: typeof bootstrap_backend;
+}
+
+const default_cross_backend_global_setup_deps: CrossBackendGlobalSetupDeps = {
+	ensure_database_for_url,
+	bootstrap_backend
+};
 
 /**
  * Build a vitest `globalSetup` default export. Returns the
  * `(project) => teardown` function vitest 4 expects.
+ *
+ * @param options - the configs, and what runs before the spawn
+ * @param deps - the database creator and the spawn, the shipped ones by default
+ * @throws Error when a `before_spawn` key names no config
  */
-export const create_cross_backend_global_setup = ({
-	configs,
-	derive_name = (project_name) => project_name.replace(DEFAULT_PROJECT_NAME_PREFIX, ''),
-	provide_key = 'backend_handle',
-	ensure_databases = false
-}: CrossBackendGlobalSetupOptions): ((project: TestProject) => Promise<() => Promise<void>>) => {
+export const create_cross_backend_global_setup = (
+	{
+		configs,
+		derive_name = (project_name) => project_name.replace(DEFAULT_PROJECT_NAME_PREFIX, ''),
+		provide_key = 'backend_handle',
+		ensure_databases = false,
+		before_spawn = {}
+	}: CrossBackendGlobalSetupOptions,
+	deps: CrossBackendGlobalSetupDeps = default_cross_backend_global_setup_deps
+): ((project: TestProject) => Promise<() => Promise<void>>) => {
+	for (const name of Object.keys(before_spawn)) {
+		if (!Object.hasOwn(configs, name)) {
+			throw new Error(
+				`create_cross_backend_global_setup: before_spawn names '${name}', which has no config — ` +
+					`expected one of: ${Object.keys(configs).join(', ')}`
+			);
+		}
+	}
 	return async (project) => {
 		const name = derive_name(project.name);
-		const factory = configs[name];
+		const factory = Object.hasOwn(configs, name) ? configs[name] : undefined;
 		if (!factory) {
 			throw new Error(
 				`Could not derive backend config from vitest project '${project.name}' ` +
 					`(derived name '${name}') — expected one of: ${Object.keys(configs).join(', ')}`
 			);
 		}
+		if (Object.hasOwn(before_spawn, name)) await before_spawn[name]!();
 		const config = factory();
 		const database_url = config.env.DATABASE_URL;
-		if (ensure_databases && database_url !== undefined) ensure_database_for_url(database_url);
-		const bootstrapped = await bootstrap_backend(config);
+		if (ensure_databases && database_url !== undefined) deps.ensure_database_for_url(database_url);
+		const bootstrapped = await deps.bootstrap_backend(config);
 		// vitest's `provide` is keyed on the consumer-augmented `ProvidedContext`;
 		// the generic key is a plain string, so cast past the keyof constraint.
 		(project.provide as (key: string, value: unknown) => void)(

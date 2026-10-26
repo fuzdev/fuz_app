@@ -43,12 +43,10 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 
+import { NO_REBUILD_ENV } from '#lib/testing/cross_backend/cargo_binary.ts';
+
 import { CROSS_BACKEND_ENV, CROSS_BACKEND_PROJECTS } from './cross_backend_projects.ts';
-import {
-	NO_REBUILD_ENV,
-	rebuild_rust_spine_stub,
-	RUST_SPINE_STUB_CRATE
-} from './global_setup_helpers.ts';
+import { rebuild_rust_spine_stub, RUST_SPINE_STUB_CRATE } from './global_setup_helpers.ts';
 
 /**
  * How long one project's invocation may run (ms) before it is stopped and
