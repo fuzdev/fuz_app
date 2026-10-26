@@ -1,11 +1,11 @@
 import '../assert_dev_env.ts';
 
 /**
- * Shared call-site primitives for the cell cross-backend parity suites
- * (`testing/cross_backend/cell_crud.ts` + `testing/cross_backend/cell_relations.ts`).
+ * JSON-RPC call-site primitives for the cross-backend suites.
  *
- * The cell verbs are stateful and authz-shaped, so both suites POST raw
- * JSON-RPC envelopes (threading ids + auth headers across calls) and parse
+ * The stateful suites (the cell verbs, account lifecycle, role grants, tokens,
+ * facts, audit reads) POST raw JSON-RPC envelopes over a cross-process
+ * `FetchTransport`, threading ids and auth headers across calls, and parse
  * every success `result` against the verb's declared Zod **output** schema —
  * the wire-shape parity gate. A TS↔Rust envelope drift, not just a payload
  * field drift, fails the assertion.
@@ -26,11 +26,24 @@ export interface RpcResult {
 	readonly error?: { readonly code: number; readonly message: string; readonly data?: unknown };
 }
 
+/** How much of a non-envelope reply body `cross_rpc_call`'s error quotes. */
+const BODY_HEAD_LENGTH = 200;
+
 /**
  * POST a JSON-RPC call over a cross-process `FetchTransport` with the given
  * auth headers. Distinct from `testing/rpc_helpers.ts`'s `app`-based `rpc_call`: this
  * variant drives the cookie-jar `FetchTransport` the cross-backend harness
- * spawns against, and returns the slim `RpcResult` the cell suites read.
+ * spawns against, and returns the slim `RpcResult` the suites read.
+ *
+ * @param transport - the transport to send on
+ * @param path - the RPC endpoint path
+ * @param method - the JSON-RPC method
+ * @param params - the request params
+ * @param headers - auth and other headers, merged over the JSON defaults
+ * @returns the response's `ok`, `result` and `error`
+ * @throws Error when the reply is not a JSON object — naming the method, the
+ *   HTTP status and the head of the body, so a proxy page or a crash reads
+ *   as what it is
  */
 export const cross_rpc_call = async (
 	transport: FetchTransport,
@@ -42,8 +55,21 @@ export const cross_rpc_call = async (
 	const init = create_rpc_post_init(method, params);
 	Object.assign(init.headers as Record<string, string>, headers);
 	const res = await transport(path, init);
-	const body = (await res.json()) as { result?: unknown; error?: RpcResult['error'] };
-	return { ok: res.ok, result: body.result, error: body.error };
+	const text = await res.text();
+	let body: unknown;
+	try {
+		body = JSON.parse(text);
+	} catch {
+		body = undefined;
+	}
+	if (body === null || typeof body !== 'object') {
+		throw new Error(
+			`${method}: expected a JSON-RPC envelope, got status ${res.status} with body: ` +
+				JSON.stringify(text.slice(0, BODY_HEAD_LENGTH))
+		);
+	}
+	const envelope = body as { result?: unknown; error?: RpcResult['error'] };
+	return { ok: res.ok, result: envelope.result, error: envelope.error };
 };
 
 /** Pull `error.data.reason` off an RPC error envelope (undefined if absent). */

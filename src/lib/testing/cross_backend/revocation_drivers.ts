@@ -27,7 +27,7 @@ import {
 } from '../../auth/admin_action_specs.ts';
 import { DEFAULT_TEST_PASSWORD } from '../test_credentials.ts';
 import type { BackendCapabilities } from './capabilities.ts';
-import { cross_rpc_call } from './cell_cross_helpers.ts';
+import { cross_rpc_call } from './cross_rpc.ts';
 import type { TestAccount } from '../app_server.ts';
 import type { TestFixture } from './setup.ts';
 

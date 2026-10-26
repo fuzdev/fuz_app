@@ -31,7 +31,7 @@ import { describe, test, assert } from 'vitest';
 
 import { create_keyring, type Keyring } from '../../auth/keyring.ts';
 import { ERROR_AUTHENTICATION_REQUIRED } from '../../http/error_schemas.ts';
-import { cross_rpc_call, error_reason } from './cell_cross_helpers.ts';
+import { cross_rpc_call, error_reason } from './cross_rpc.ts';
 import type { SetupTest, TestFixture } from './setup.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 

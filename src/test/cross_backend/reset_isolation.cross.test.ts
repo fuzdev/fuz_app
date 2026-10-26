@@ -15,7 +15,7 @@ import { describe, assert, inject } from 'vitest';
 
 import { CellCreateOutput, CellListOutput } from '#lib/auth/cell_action_specs.ts';
 import { test_if } from '#lib/testing/cross_backend/capabilities.ts';
-import { cross_rpc_call, expect_output } from '#lib/testing/cross_backend/cell_cross_helpers.ts';
+import { cross_rpc_call, expect_output } from '#lib/testing/cross_backend/cross_rpc.ts';
 import { cross_put_fact } from '#lib/testing/cross_backend/fact_serving.ts';
 import {
 	default_cross_process_setup,

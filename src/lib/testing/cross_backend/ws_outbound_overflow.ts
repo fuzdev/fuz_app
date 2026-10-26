@@ -71,7 +71,7 @@ import {
 	type WsClient
 } from '../transports/ws_client.ts';
 import { type BackendCapabilities, test_if } from './capabilities.ts';
-import { cross_rpc_call } from './cell_cross_helpers.ts';
+import { cross_rpc_call } from './cross_rpc.ts';
 import type { SetupTest, TestFixture } from './setup.ts';
 import { open_session_ws, type WsEndpointTarget } from './ws_endpoint.ts';
 

@@ -60,7 +60,7 @@ import {
 	CellUpdateOutput
 } from '../../auth/cell_action_specs.ts';
 import { test_if } from './capabilities.ts';
-import { cross_rpc_call, error_reason, expect_output } from './cell_cross_helpers.ts';
+import { cross_rpc_call, error_reason, expect_output } from './cross_rpc.ts';
 import { assert_iso8601_seconds, assert_iso8601_seconds_nullable } from './wire_shapes.ts';
 import type { FetchTransport } from '../transports/fetch_transport.ts';
 import type { RpcPathCapabilityGatedCrossSuiteOptions } from './setup.ts';

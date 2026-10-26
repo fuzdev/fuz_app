@@ -49,12 +49,7 @@ import { CellGrantCreateOutput } from '../../auth/cell_grant_action_specs.ts';
 import { create_rpc_post_init } from '../rpc_helpers.ts';
 import type { FetchTransport } from '../transports/fetch_transport.ts';
 import { test_if } from './capabilities.ts';
-import {
-	cross_rpc_call,
-	error_reason,
-	expect_output,
-	type RpcResult
-} from './cell_cross_helpers.ts';
+import { cross_rpc_call, error_reason, expect_output, type RpcResult } from './cross_rpc.ts';
 import { cross_put_fact } from './fact_serving.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 import type { RpcPathCapabilityGatedCrossSuiteOptions } from './setup.ts';

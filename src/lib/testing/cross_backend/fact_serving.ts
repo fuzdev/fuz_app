@@ -62,7 +62,7 @@ import {
 } from '../../server/fact_security_headers.ts';
 import type { FetchTransport } from '../transports/fetch_transport.ts';
 import { test_if } from './capabilities.ts';
-import { cross_rpc_call, expect_output } from './cell_cross_helpers.ts';
+import { cross_rpc_call, expect_output } from './cross_rpc.ts';
 import { mint_narrowed_api_token } from './narrowed_api_token.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 import type { RpcPathCapabilityGatedCrossSuiteOptions, SetupTest, TestFixture } from './setup.ts';

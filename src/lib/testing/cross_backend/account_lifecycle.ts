@@ -35,7 +35,7 @@ import {
 import { JSONRPC_ERROR_CODES } from '../../http/jsonrpc_errors.ts';
 import { assert_audit_metadata_fields, list_audit_events } from './audit_cross_helpers.ts';
 import { test_if } from './capabilities.ts';
-import { cross_rpc_call, error_reason, expect_output } from './cell_cross_helpers.ts';
+import { cross_rpc_call, error_reason, expect_output } from './cross_rpc.ts';
 import { assert_iso8601_seconds } from './wire_shapes.ts';
 import type { RpcPathCapabilityGatedCrossSuiteOptions } from './setup.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';

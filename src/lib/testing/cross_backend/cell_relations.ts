@@ -108,7 +108,7 @@ import {
 } from '../../auth/cell_relation_list_limit.ts';
 import { list_audit_events } from './audit_cross_helpers.ts';
 import { test_if } from './capabilities.ts';
-import { cross_rpc_call, error_reason, expect_output } from './cell_cross_helpers.ts';
+import { cross_rpc_call, error_reason, expect_output } from './cross_rpc.ts';
 import type { RpcPathCapabilityGatedCrossSuiteOptions } from './setup.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 

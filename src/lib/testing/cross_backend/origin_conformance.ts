@@ -27,7 +27,7 @@ import { assert, describe, test } from 'vitest';
 import { z } from 'zod';
 
 import { AllowedOriginsErrorKind } from '../../http/origin.ts';
-import { cross_rpc_call } from './cell_cross_helpers.ts';
+import { cross_rpc_call } from './cross_rpc.ts';
 import type { RpcPathCrossSuiteOptions } from './setup.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 import {

@@ -46,7 +46,7 @@ import {
 	TokenCreateOutput,
 	TokenListOutput
 } from '../../auth/account_action_specs.ts';
-import { cross_rpc_call, error_reason, expect_output } from './cell_cross_helpers.ts';
+import { cross_rpc_call, error_reason, expect_output } from './cross_rpc.ts';
 import { assert_iso8601_seconds } from './wire_shapes.ts';
 import type { SetupTest } from './setup.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';

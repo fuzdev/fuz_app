@@ -23,7 +23,7 @@ import { AuditLogListOutput } from '../../auth/admin_action_specs.ts';
 import type { AuditLogEventWithUsernamesJson } from '../../auth/audit_log_schema.ts';
 import { assert_audit_event_metadata } from '../audit_drift_guard.ts';
 import type { FetchTransport } from '../transports/fetch_transport.ts';
-import { cross_rpc_call, expect_output } from './cell_cross_helpers.ts';
+import { cross_rpc_call, expect_output } from './cross_rpc.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
 /** The fixture members an audit read uses — every `TestFixture` has them. */

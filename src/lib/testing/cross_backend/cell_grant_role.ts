@@ -46,7 +46,7 @@ import {
 	ERROR_CELL_GRANT_UNKNOWN_ROLE
 } from '../../auth/cell_grant_action_specs.ts';
 import { test_if } from './capabilities.ts';
-import { cross_rpc_call, error_reason, expect_output } from './cell_cross_helpers.ts';
+import { cross_rpc_call, error_reason, expect_output } from './cross_rpc.ts';
 import type { RpcPathCapabilityGatedCrossSuiteOptions } from './setup.ts';
 import { SPINE_CELL_EDITOR_ROLE, SPINE_RPC_PATH } from './spine_surface_constants.ts';
 

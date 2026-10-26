@@ -76,7 +76,7 @@ import {
 	ERROR_TOKEN_SCOPE_REQUIRED
 } from '../../http/error_schemas.ts';
 import { test_if } from './capabilities.ts';
-import { cross_rpc_call } from './cell_cross_helpers.ts';
+import { cross_rpc_call } from './cross_rpc.ts';
 import { mint_narrowed_api_token } from './narrowed_api_token.ts';
 import type { RpcPathCapabilityGatedCrossSuiteOptions } from './setup.ts';
 import type { FetchTransport } from '../transports/fetch_transport.ts';

@@ -65,7 +65,7 @@ import { z } from 'zod';
 import { FactHashSchema } from '../../primitive_schemas.ts';
 import { JSONRPC_ERROR_CODES } from '../../http/jsonrpc_errors.ts';
 import { test_if } from './capabilities.ts';
-import { cross_rpc_call, error_reason, expect_output } from './cell_cross_helpers.ts';
+import { cross_rpc_call, error_reason, expect_output } from './cross_rpc.ts';
 import type { RpcPathCapabilityGatedCrossSuiteOptions } from './setup.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 import { SPACE_CELL_KIND, PARTICIPATION_ROLE } from './test_cell_gated_create_authorize.ts';

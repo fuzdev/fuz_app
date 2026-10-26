@@ -36,7 +36,7 @@ import { assert, describe, test } from 'vitest';
 import { ERROR_ROLE_NOT_WEB_GRANTABLE } from '../../http/error_schemas.ts';
 import { JSONRPC_ERROR_CODES } from '../../http/jsonrpc_errors.ts';
 import { list_audit_events } from './audit_cross_helpers.ts';
-import { cross_rpc_call, error_reason } from './cell_cross_helpers.ts';
+import { cross_rpc_call, error_reason } from './cross_rpc.ts';
 import type { RpcPathCrossSuiteOptions } from './setup.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 

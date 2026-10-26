@@ -1645,7 +1645,9 @@ cell validators (`describe_standard_cross_process_tests`' generic round-trip
 never sees them). Both parse every success response against the verb's Zod
 **output** schema, so a TS↔Rust envelope drift fails the suite — not just a
 payload-field drift. Call-site primitives (`cross_rpc_call` / `error_reason` /
-`expect_output`) live in `cross_backend/cell_cross_helpers.ts`, and every
+`expect_output`) live in `cross_backend/cross_rpc.ts`, shared by every
+stateful cross suite (a reply that is no JSON object throws naming the method,
+the HTTP status and the body's head), and every
 suite that reads audit rows goes through `cross_backend/audit_cross_helpers.ts`
 — `list_audit_events(fixture, params, rpc_path?)` drains
 (`cross_drain_effects`, the `_testing_drain_effects` barrier) before it lists and
