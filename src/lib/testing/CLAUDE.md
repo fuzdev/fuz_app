@@ -1072,12 +1072,9 @@ source of truth for wire-shape conformance.
   (`BackendWebsocketTransport.request_connection`); `ts_default_capabilities`
   keeps it `false` like sse/ready until a backend wires the `peer/ping` HTTP +
   WS mount), `test_if(cond, name, fn)`
-  for capability-gated cases, and `in_process_capabilities` preset. The
-  non-gating wiring facts (`bearer_auth` / `trusted_proxy` / `login_rate_limit`,
-  no `test_if` readers) live in the parallel `BackendShapeNotes` record
-  (`in_process_shape_notes`; `ts_default_shape_notes` / `rust_default_shape_notes`
-  in `default_backend_configs.ts`) — split out so the capability type stops
-  claiming gating it doesn't do. `cell_crud`
+  for capability-gated cases, and `in_process_capabilities` preset. Only
+  flags a suite reads are capabilities — a wiring fact that gates nothing is
+  not recorded. `cell_crud`
   gates the CRUD parity suite, `cell_relations` the relation / ACL / audit
   parity suite — both `true` on every backend that live-mounts the full cell
   surface (TS spine binary, in-process app, Rust stub). A backend mounting only

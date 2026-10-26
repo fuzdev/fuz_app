@@ -27,14 +27,10 @@ import '../assert_dev_env.ts';
  * - `rust_spine_stub_capabilities` — fuz_app's Rust spine-stub preset, in
  *   `rust_spine_stub_backend_config.ts` (delta off the rust family default).
  *
- * **Gating flags vs shape notes.** `BackendCapabilities` holds only flags a
- * suite actually gates on (each has a `test_if(capabilities.X, ...)` reader,
- * or — `ws_refusal_body` — picks how a case reads a refusal).
- * Wiring facts that gate nothing — `bearer_auth` / `trusted_proxy` /
- * `login_rate_limit` — live in the parallel `BackendShapeNotes` record
- * (`in_process_shape_notes` here, `ts_default_shape_notes` /
- * `rust_default_shape_notes` in `default_backend_configs.ts`) so the
- * capability type never claims gating power it doesn't have.
+ * **Gating flags only.** `BackendCapabilities` holds only flags a suite
+ * actually gates on (each has a `test_if(capabilities.X, ...)` reader, or —
+ * `ws_refusal_body` — picks how a case reads a refusal). A wiring fact no suite
+ * reads is not a capability.
  *
  * @module
  */
@@ -42,45 +38,10 @@ import '../assert_dev_env.ts';
 import { test } from 'vitest';
 
 /**
- * Backend wiring facts recorded for documentation — **not** gating flags.
- *
- * The companion to `BackendCapabilities`: where each capability flag is read
- * by a suite (a `test_if(capabilities.X, ...)` gate, or a fork of one case's
- * assertion), nothing reads these. They record middleware / limiter wiring that
- * differs between the TS and Rust families (a backend-shape record) but gates
- * no cross test today. They live in their own type precisely so
- * `BackendCapabilities` stops claiming gating power it doesn't have — fold a
- * flag in here the moment it has no `test_if` reader, and promote it back the
- * day a suite genuinely gates on it.
- */
-export interface BackendShapeNotes {
-	/**
-	 * Bearer-token auth (`Authorization: Bearer <token>`) is wired through the
-	 * backend's middleware stack. `true` on every spine — the bearer-token cases
-	 * in `describe_standard_integration_tests` / `describe_rate_limiting_tests`
-	 * run unconditionally.
-	 */
-	readonly bearer_auth: boolean;
-	/**
-	 * Trusted-proxy XFF parsing (`X-Forwarded-For` etc.) is wired. Records the
-	 * proxy-default difference between the TS family (`false` — the test binary
-	 * leaves proxy parsing off) and the Rust family (`true` — the client-IP
-	 * middleware is always wired; the env-gate only chooses XFF vs the TCP peer).
-	 */
-	readonly trusted_proxy: boolean;
-	/**
-	 * Per-account login rate limiting is wired. `false` for the TS family (the
-	 * canonical path leaves the limiter null in test mode), `true` for the Rust
-	 * family (env-gated bucket on `/login` + `/password`).
-	 */
-	readonly login_rate_limit: boolean;
-}
-
-/**
  * Optional behaviors a backend may support. Each flag's TSDoc names the
  * tests that gate on it; add a new flag here before referencing it from
- * a suite body, and document the gating tests inline. Wiring facts that gate
- * nothing belong in `BackendShapeNotes`, not here.
+ * a suite body, and document the gating tests inline. A wiring fact no
+ * suite reads doesn't belong here.
  */
 export interface BackendCapabilities {
 	/**
@@ -296,17 +257,6 @@ export const in_process_capabilities: BackendCapabilities = Object.freeze({
 	// Read only by the front-door table's WS rows, which skip in-process (no
 	// socket to upgrade); Hono's own refusals carry their bodies.
 	ws_refusal_body: true
-});
-
-/**
- * Shape notes for the in-process Hono transport — every wiring fact present
- * (the in-process app exercises the full middleware stack). Documentation
- * only, like every `BackendShapeNotes` (nothing reads it).
- */
-export const in_process_shape_notes: BackendShapeNotes = Object.freeze({
-	bearer_auth: true,
-	trusted_proxy: true,
-	login_rate_limit: true
 });
 
 /**

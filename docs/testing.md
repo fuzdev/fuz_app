@@ -1085,7 +1085,7 @@ consumer config.
 - `ws_account_actions` — Backend's WebSocket endpoint mounts the self-service account actions, so a socket can revoke the session it runs on (`true` on fuz_app's own spine presets; `false` in the family defaults until a consumer's endpoint mounts them). Gates the WS round-trip suite's self-revocation case, and its WS-mutation audit case (which also calls `_testing_drain_effects`).
 - `cell_gated_create` — Backend live-mounts a test `CellCreateAuthorize` policy on its cell layer (`true` only on the reference spine binaries that mount it). Gates `describe_cell_gated_create_cross_tests`.
 
-Wiring facts that gate nothing — `bearer_auth`, `trusted_proxy`, `login_rate_limit` — are not capabilities: they live in the parallel `BackendShapeNotes` record (`in_process_shape_notes`, `ts_default_shape_notes` / `rust_default_shape_notes`), which no suite reads.
+Wiring facts that gate nothing are not capabilities, and the harness doesn't record them.
 
 `in_process_capabilities` (every gating flag on except `peer_request`, `ws_handshake_pipelining`, `ws_account_actions`, and `cell_gated_create`, whose cases are cross-process-only) and the `ts_default_capabilities` /
 `rust_default_capabilities` presets in `default_backend_configs.ts` are the

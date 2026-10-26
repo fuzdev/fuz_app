@@ -12,15 +12,10 @@ import '../assert_dev_env.ts';
  *
  * Defaults baked in by family:
  *
- * - **TS** — `'memory://'` (in-memory pglet), 30s startup window. Its shape notes
- *   (`ts_default_shape_notes`) record `trusted_proxy: false` /
- *   `login_rate_limit: false` — the TS canonical path leaves those limiters
- *   null in test mode.
+ * - **TS** — `'memory://'` (in-memory pglet), 30s startup window.
  * - **Rust** — caller-supplied real Postgres URL (an in-process WASM database isn't reachable
- *   from `tokio-postgres`), 120s startup window (cargo first-build cost), the
- *   `FUZ_TESTING_RESET_DB_ON_STARTUP=true` self-wipe gate, and shape notes
- *   (`rust_default_shape_notes`) recording `trusted_proxy: true` +
- *   `login_rate_limit: true`.
+ *   from `tokio-postgres`), 120s startup window (cargo first-build cost),
+ *   and the `FUZ_TESTING_RESET_DB_ON_STARTUP=true` self-wipe gate.
  *
  * Both builders default `port_env_var` to `'PORT'`. Consumers whose
  * binary reads a different name (e.g. zzz's `ZZZ_PORT`) override.
@@ -35,7 +30,7 @@ import '../assert_dev_env.ts';
  */
 
 import type { BackendBootstrapConfig, BackendConfig } from './backend_config.ts';
-import type { BackendCapabilities, BackendShapeNotes } from './capabilities.ts';
+import type { BackendCapabilities } from './capabilities.ts';
 import { build_test_backend_paths, type TestBackendPaths } from './build_test_backend_paths.ts';
 import {
 	default_test_bootstrap_token,
@@ -74,8 +69,7 @@ export const action_rate_limit_env = (
 
 /**
  * Capabilities shared by TS-family backends — same canonical implementation,
- * same feature set. The non-gating wiring facts (`bearer_auth` /
- * `trusted_proxy` / `login_rate_limit`) live in `ts_default_shape_notes`.
+ * same feature set.
  */
 export const ts_default_capabilities: BackendCapabilities = Object.freeze({
 	ws: true,
@@ -117,11 +111,7 @@ export const ts_default_capabilities: BackendCapabilities = Object.freeze({
 	ws_refusal_body: false
 });
 
-/**
- * Capabilities for the Rust family. The non-gating wiring facts live in
- * `rust_default_shape_notes` (which records the family's `trusted_proxy` +
- * `login_rate_limit` differences from the TS family).
- */
+/** Capabilities for the Rust family. */
 export const rust_default_capabilities: BackendCapabilities = Object.freeze({
 	ws: true,
 	sse: false,
@@ -152,32 +142,6 @@ export const rust_default_capabilities: BackendCapabilities = Object.freeze({
 	ws_role_gated: false,
 	// axum sends a refused upgrade's response as built, body included.
 	ws_refusal_body: true
-});
-
-/**
- * Shape notes for TS-family backends — wiring facts, not gating flags.
- * `trusted_proxy: false` (the test binary doesn't enable proxy parsing) and
- * `login_rate_limit: false` (the TS canonical path leaves the limiter null in
- * test mode); bearer auth is always wired. Documentation only — see
- * `BackendShapeNotes`.
- */
-export const ts_default_shape_notes: BackendShapeNotes = Object.freeze({
-	bearer_auth: true,
-	trusted_proxy: false,
-	login_rate_limit: false
-});
-
-/**
- * Shape notes for Rust-family backends — wiring facts, not gating flags. Adds
- * `trusted_proxy: true` (the Rust spine's client-IP middleware is always wired;
- * the env-gate only chooses XFF vs the TCP peer IP) and `login_rate_limit: true`
- * (env-gated bucket on `/login` + `/password`). Documentation only — see
- * `BackendShapeNotes`.
- */
-export const rust_default_shape_notes: BackendShapeNotes = Object.freeze({
-	bearer_auth: true,
-	trusted_proxy: true,
-	login_rate_limit: true
 });
 
 /** Bootstrap block built from the default secrets + supplied paths. */
