@@ -20,7 +20,7 @@ import '../assert_dev_env.ts';
  *   first-wins; a duplicated `method` must dispatch the first one on every
  *   backend (a last-wins reader dispatches a different method per backend on
  *   the same request).
- * - **`GET /api/facts/:hash`** (gated on `capabilities.fact_serving`) —
+ * - **`GET /api/facts/:hash`** (gated on `capabilities.fact_serving_admin_hash`) —
  *   strict query schema: unknown keys and a malformed `acting` are 400
  *   `invalid_query_params` even for an anonymous caller (query precedes the
  *   401 guard), while a duplicated `acting` takes the first occurrence.
@@ -151,7 +151,7 @@ export const describe_query_shape_cross_tests = (options: QueryShapeCrossTestOpt
 		});
 
 		test_if(
-			capabilities.fact_serving,
+			capabilities.fact_serving_admin_hash,
 			'bare-hash facts: unknown query key → 400 invalid_query_params, even anonymous',
 			async () => {
 				const fixture = await setup_test();
@@ -176,7 +176,7 @@ export const describe_query_shape_cross_tests = (options: QueryShapeCrossTestOpt
 		);
 
 		test_if(
-			capabilities.fact_serving,
+			capabilities.fact_serving_admin_hash,
 			'bare-hash facts: duplicated acting takes the first occurrence; malformed acting → 400',
 			async () => {
 				const fixture = await setup_test();

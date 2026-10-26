@@ -74,8 +74,9 @@ export const RUST_SPINE_STUB_EXPECTED_SCHEMA_PATH_ENV = 'FUZ_RUST_SPINE_STUB_EXP
  * Capabilities for the Rust `testing_spine_stub` — `rust_default_capabilities`
  * with every `MountFlag` stated, all `true`: `ws` (it mounts `/api/ws`), `peer_request` (its registry carries
  * `peer/ping` on both transports), `cell_crud` + `cell_relations` (it mounts the
- * full cell surface over the `fuz_cell` namespace), `fact_serving` (both serve
- * routes, the `fuz_facts` namespace and `_testing_put_fact`), `sse` (the stub serves `GET /api/admin/audit/stream` over the spine
+ * full cell surface over the `fuz_cell` namespace), `fact_serving` (the
+ * cell-gated serve route, the `fuz_facts` namespace and `_testing_put_fact`),
+ * `fact_serving_admin_hash` (the admin bare-hash route), `sse` (the stub serves `GET /api/admin/audit/stream` over the spine
  * `fuz_realtime::SseRegistry` + audit listener), `ready` (it live-mounts
  * `/ready` over the env-supplied fixture path), `ws_account_actions` (it
  * serves one action registry on `/api/rpc` and `/api/ws`), `cell_gated_create`
@@ -93,6 +94,7 @@ const rust_spine_stub_capabilities: BackendCapabilities = Object.freeze({
 	cell_crud: true,
 	cell_relations: true,
 	fact_serving: true,
+	fact_serving_admin_hash: true,
 	ready: true,
 	ws_account_actions: true,
 	cell_gated_create: true,

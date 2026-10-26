@@ -107,15 +107,27 @@ export interface BackendCapabilities {
 	 */
 	readonly account_lifecycle: boolean;
 	/**
-	 * The cell-gated fact-serving routes (`GET /api/cells/:cell_id/facts/:hash`
-	 * + the admin-only `GET /api/facts/:hash`) are live-mounted on the backend,
-	 * its DB carries the `fuz_facts` migration namespace, and it registers the
-	 * `_testing_put_fact` seeder. Gates `describe_fact_serving_cross_tests` —
-	 * the per-reference read model (cell-scoped admit via a viewable cell,
-	 * cross-owner-dedup-no-leak, 404-mask, bare-hash admin-only). Like cells,
-	 * the serve routes stay off the standard declared surface.
+	 * The cell-gated fact-serving route (`GET /api/cells/:cell_id/facts/:hash`)
+	 * is live-mounted on the backend, its DB carries the `fuz_facts` migration
+	 * namespace, and it registers the `_testing_put_fact` seeder. Gates
+	 * `describe_fact_serving_cross_tests`' per-reference read model (cell-scoped
+	 * admit via a viewable cell, cross-owner-dedup-no-leak, 404-mask),
+	 * `describe_cell_ref_admission_cross_tests`, and the fact cases of the
+	 * moderation suite. Like cells, the serve route stays off the standard
+	 * declared surface. The admin bare-hash route is its own flag,
+	 * `fact_serving_admin_hash`.
 	 */
 	readonly fact_serving: boolean;
+	/**
+	 * The admin-only bare-hash fact route (`GET /api/facts/:hash`) is
+	 * live-mounted. Gates the bare-hash cases of
+	 * `describe_fact_serving_cross_tests` (with `fact_serving`, whose seeder
+	 * they use), `describe_query_shape_cross_tests` and
+	 * `describe_token_scope_surface_cross_tests`. A backend serving only the
+	 * cell-gated route states `fact_serving: true, fact_serving_admin_hash:
+	 * false`.
+	 */
+	readonly fact_serving_admin_hash: boolean;
 	/**
 	 * The `/ready` readiness deploy gate (`GET /ready`) is live-mounted on the
 	 * backend — the public column-presence schema-drift probe over the committed
@@ -246,6 +258,7 @@ export type MountFlag = keyof Pick<
 	| 'cell_relations'
 	| 'cell_gated_create'
 	| 'fact_serving'
+	| 'fact_serving_admin_hash'
 	| 'ready'
 	| 'peer_request'
 	| 'ws_account_actions'
@@ -261,7 +274,8 @@ export type MountFlag = keyof Pick<
  *   ...rust_default_capabilities,
  *   ws: true, sse: true, ready: true, peer_request: true,
  *   cell_crud: false, cell_relations: false, cell_gated_create: false,
- *   fact_serving: false, ws_account_actions: false, ws_role_gated: false,
+ *   fact_serving: false, fact_serving_admin_hash: false,
+ *   ws_account_actions: false, ws_role_gated: false,
  * }
  * ```
  */
@@ -287,6 +301,7 @@ export const in_process_capabilities: BackendCapabilities = Object.freeze({
 	cell_relations: true,
 	account_lifecycle: true,
 	fact_serving: true,
+	fact_serving_admin_hash: true,
 	ready: true,
 	account_status: true,
 	peer_request: false,

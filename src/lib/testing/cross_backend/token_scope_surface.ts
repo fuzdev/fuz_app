@@ -209,7 +209,7 @@ export const describe_token_scope_surface_cross_tests = (
 		);
 
 		test_if(
-			capabilities.fact_serving,
+			capabilities.fact_serving_admin_hash,
 			'a narrowed token is refused the bare-hash fact read (surface:fact_bare)',
 			async () => {
 				const fixture = await setup_test();
@@ -237,7 +237,7 @@ export const describe_token_scope_surface_cross_tests = (
 		 * response must *not* be.
 		 */
 		test_if(
-			capabilities.fact_serving,
+			capabilities.fact_serving_admin_hash,
 			'a full token is not refused by the scope gate on the same route',
 			async () => {
 				const fixture = await setup_test();
@@ -309,7 +309,7 @@ export const describe_token_scope_surface_cross_tests = (
 		 * exactly why this divergence survived as long as it did.
 		 */
 		test_if(
-			capabilities.fact_serving,
+			capabilities.fact_serving_admin_hash,
 			'scope outranks role — a narrowed token lacking the role hears about its scope',
 			async () => {
 				const fixture = await setup_test();

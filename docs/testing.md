@@ -1077,7 +1077,8 @@ consumer config.
 - `cell_crud` — Backend live-mounts the cell CRUD verbs (gates `describe_cell_crud_cross_tests`).
 - `cell_relations` — Backend live-mounts the cell relation / ACL / audit verbs (gates `describe_cell_relations_cross_tests`).
 - `account_lifecycle` — Backend live-mounts `account_delete` / `_undelete` / `_purge` (gates `describe_account_lifecycle_cross_tests`).
-- `fact_serving` — Backend live-mounts the cell-gated fact-serving routes + `_testing_put_fact` (gates `describe_fact_serving_cross_tests` and `describe_cell_ref_admission_cross_tests`). A non-admin account's cell may reference only a fact it holds, so a consumer suite seeding facts for one passes `_testing_put_fact` its `holder` (`cross_put_fact` in `testing/cross_backend/fact_serving.ts`).
+- `fact_serving` — Backend live-mounts the cell-gated fact-serving route (`GET /api/cells/:cell_id/facts/:hash`) + `_testing_put_fact` (gates `describe_fact_serving_cross_tests` and `describe_cell_ref_admission_cross_tests`). A non-admin account's cell may reference only a fact it holds, so a consumer suite seeding facts for one passes `_testing_put_fact` its `holder` (`cross_put_fact` in `testing/cross_backend/fact_serving.ts`).
+- `fact_serving_admin_hash` — Backend live-mounts the admin-only bare-hash fact route (`GET /api/facts/:hash`). Gates the bare-hash cases of the fact-serving, query-shape and token-scope-surface suites, so a backend serving only the cell-gated route states `fact_serving: true, fact_serving_admin_hash: false` and runs the rest.
 - `ready` — Backend live-mounts the public `/ready` schema-drift deploy gate (gates `describe_ready_cross_tests`).
 - `account_status` — Backend serves `GET /api/account/status` (bundled into `create_account_route_specs`; `true` for every spine). Gates the integration suite's status wire-shape case — fail-loud on a missing route rather than a silent skip.
 - `peer_request` — Backend can initiate a server→client request and await the typed reply (ActionPeer — `BackendWebsocketTransport.request_connection`). Gates `describe_peer_ping_ws_tests`. `true` on fuz_app's own spine presets; a backend states it `true` once it wires the `peer/ping` HTTP + WS mount.
@@ -1097,7 +1098,7 @@ runtime-behavior flags (`ws_handshake_pipelining`, `ws_refusal_body`) of its
 reference runtime — Node for TS, hyper for Rust; a backend on another runtime
 (Deno, Bun) overrides them. The flags that describe a backend's own mounts —
 `MountFlag`: `ws`, `sse`, `cell_crud`, `cell_relations`, `cell_gated_create`,
-`fact_serving`, `ready`, `peer_request`, `ws_account_actions`,
+`fact_serving`, `fact_serving_admin_hash`, `ready`, `peer_request`, `ws_account_actions`,
 `ws_role_gated` — have no default. The family defaults are typed
 `FamilyDefaultCapabilities` (they omit them) and `capabilities` is required,
 so a config states each one, and one left out fails typecheck by name instead
@@ -1108,7 +1109,8 @@ capabilities: {
   ...rust_default_capabilities,
   ws: true, sse: true, ready: true, peer_request: true,
   cell_crud: false, cell_relations: false, cell_gated_create: false,
-  fact_serving: false, ws_account_actions: false, ws_role_gated: false,
+  fact_serving: false, fact_serving_admin_hash: false,
+  ws_account_actions: false, ws_role_gated: false,
 }
 ```
 

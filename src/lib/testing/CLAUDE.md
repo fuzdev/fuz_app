@@ -1074,7 +1074,8 @@ file; the dual-spawn and limiter-enabled suites name their own files.
 
 - `testing/cross_backend/capabilities.ts` — `BackendCapabilities` vocabulary
   (the **gating** flags `ws` / `sse` / `cell_crud` / `cell_relations` /
-  `cell_gated_create` / `account_lifecycle` / `fact_serving` / `ready` /
+  `cell_gated_create` / `account_lifecycle` / `fact_serving` /
+  `fact_serving_admin_hash` / `ready` /
   `account_status` / `peer_request` /
   `ws_handshake_pipelining` / `ws_account_actions` /
   `ws_role_gated` / `ws_refusal_body` — each has a `test_if`
@@ -1087,7 +1088,8 @@ file; the dual-spawn and limiter-enabled suites name their own files.
   flags a suite reads are capabilities — a wiring fact that gates nothing is
   not recorded. **Mount flags have no family default**: `MountFlag` names the
   flags that describe a backend's own mounts (`ws`, `sse`, `cell_crud`,
-  `cell_relations`, `cell_gated_create`, `fact_serving`, `ready`,
+  `cell_relations`, `cell_gated_create`, `fact_serving`,
+  `fact_serving_admin_hash`, `ready`,
   `peer_request`, `ws_account_actions`, `ws_role_gated`), and the family
   defaults (`ts_default_capabilities` / `rust_default_capabilities`, typed
   `FamilyDefaultCapabilities`) omit them, with `capabilities` required on
@@ -1116,15 +1118,19 @@ file; the dual-spawn and limiter-enabled suites name their own files.
   auto-enumerated for shape/auth) — the flag gates the behavioral parity the
   generic round-trip can't drive (it can't delete the subject). `true` on every
   spine. `fact_serving`
-  gates `describe_fact_serving_cross_tests` (the cell-scoped per-reference +
-  admin-only bare-hash fact-serving parity suite, incl. the served fact's
-  hardening headers and bodyless masked 404s); like cells it stays off the
-  declared surface and is `true` on every spine that mounts the serve routes +
+  gates `describe_fact_serving_cross_tests` (the cell-scoped per-reference
+  fact-serving parity suite, incl. the served fact's hardening headers and
+  bodyless masked 404s); like cells it stays off the declared surface and is
+  `true` on every spine that mounts the cell-gated serve route +
   the `_testing_put_fact` seeder (whose optional `holder` records a
   `fact_holder` row, so a non-admin can reference what it seeds, and whose
   optional `external_url` writes a bare external row naming that URL, so the
   suite can pin that a URL naming another hash's file is refused) — it also
-  gates `describe_cell_ref_admission_cross_tests`. `ready` gates `describe_ready_cross_tests`
+  gates `describe_cell_ref_admission_cross_tests`. `fact_serving_admin_hash`
+  is the admin-only bare-hash route (`GET /api/facts/:hash`), its own flag
+  because a backend can serve the cell-gated route alone: it gates the
+  fact-serving suite's bare-hash cases (with `fact_serving`) and the bare-hash
+  cases of the query-shape and token-scope-surface suites. `ready` gates `describe_ready_cross_tests`
   (anonymous `GET /ready` → `200 {ready: true}` on a clean spine bootstrap);
   like cells/sse the `/ready` deploy gate stays off the declared surface, `true`
   on every spine that live-mounts it over the shared `expected_schema.json`.
@@ -2202,7 +2208,7 @@ the spec-derived suites can't see it (REST routes, off the declared RPC surface)
 Mints a narrowed bearer through the production `account_token_create` path and
 fires it at the two surfaces whose denial **body** is observable over plain
 HTTP — the audit SSE stream (`capabilities.sse`) and the admin-only bare-hash
-fact read (`capabilities.fact_serving`) — asserting the exact flat
+fact read (`capabilities.fact_serving_admin_hash`) — asserting the exact flat
 `{error: 'token_scope_required', required_scope: 'surface:<name>'}` both spines
 contract on (`token_scope_denied_body` ↔
 `fuz_auth::token_scope_surface_denied_response`).
@@ -2351,7 +2357,7 @@ suite over the three spine surfaces that read a query:
 unknown keys ignored, anonymous junk query → 401 never a query 400), the
 JSON-RPC GET endpoint (`method` / `id` / `params` first-wins — a last-wins
 reader dispatches a different method per backend on the same request), and
-`GET /api/facts/:hash` (gated on `capabilities.fact_serving`; strict schema —
+`GET /api/facts/:hash` (gated on `capabilities.fact_serving_admin_hash`; strict schema —
 unknown key / malformed `acting` → 400 `invalid_query_params` **before** the
 401 guard, duplicated `acting` first-wins). Imperative because duplicated
 query keys can't be expressed through the structured RPC helpers. Pinned

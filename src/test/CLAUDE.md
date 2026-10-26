@@ -494,7 +494,8 @@ that carry a Rust-only `data.reason` run as `xfail_until`
 `describe_rpc_attack_surface_tests` runs the same cases in-process), and
 `fact_serving` (the cell-gated fact-serving routes
 `GET /api/cells/:cell_id/facts/:hash` + the admin-only `GET /api/facts/:hash`
-via `describe_fact_serving_cross_tests`, gated on `capabilities.fact_serving`),
+via `describe_fact_serving_cross_tests`, gated on `capabilities.fact_serving`,
+the bare-hash cases also on `capabilities.fact_serving_admin_hash`),
 and `cell_ref_admission` (possession-gated cell ref admission via
 `describe_cell_ref_admission_cross_tests` — unheld refs refused with one answer
 for stored and unstored hashes, holders by upload or re-upload, editors keeping

@@ -21,7 +21,7 @@ import '../assert_dev_env.ts';
  *   nosniff`, the `default-src 'none'; sandbox` CSP, and `Cache-Control:
  *   private, max-age=300`, whatever its content type;
  * - **bare-hash admin-only** — `GET /api/facts/:hash` is admin (keeper) only:
- *   non-admin → 403, anonymous → 401;
+ *   non-admin → 403, anonymous → 401 (gated on `fact_serving_admin_hash` too);
  * - **URL bound to hash** — a row whose `external_url` is a well-formed
  *   `file:` URL naming another hash's file is a masked 404 on both routes,
  *   refused before any disk read (each spine's unit suite proves the bytes
@@ -43,9 +43,11 @@ import '../assert_dev_env.ts';
  * non-admin owner's cell may reference only a fact it holds, so a fact a
  * non-admin references is put with that owner as its `holder` (the keeper is
  * a global admin, whom ref admission doesn't gate). Gated
- * on `capabilities.fact_serving`; runs under every `cross_backend_*` project —
- * the TS spine binary and the Rust `testing_spine_stub` both mount the serve
- * routes + the seeder.
+ * on `capabilities.fact_serving` (the cell-gated route + the seeder), the
+ * bare-hash cases on `capabilities.fact_serving_admin_hash` as well, so a
+ * backend serving only the cell-gated route runs the rest; runs under every
+ * `cross_backend_*` project — the TS spine binary and the Rust
+ * `testing_spine_stub` both mount both routes + the seeder.
  *
  * @module
  */
@@ -336,25 +338,30 @@ export const describe_fact_serving_cross_tests = (options: FactServingCrossTestO
 			}
 		);
 
+		/**
+		 * Seed a row written past the store: a well-formed `file:` URL, but the
+		 * address of another hash, so serving it would hand out that fact's bytes
+		 * under this one's name.
+		 */
+		const put_foreign_url_fact = (fixture: Fixture, holder?: string): Promise<string> => {
+			const other = 'ab' + 'cd'.repeat(31);
+			return cross_put_fact(fixture, rpc_path, {
+				content: 'row-with-a-foreign-url',
+				content_type: 'text/plain',
+				...(holder === undefined ? {} : { holder }),
+				external_url: `file:${other.slice(0, 2)}/${other.slice(2)}`
+			});
+		};
+
 		test_if(
 			capabilities.fact_serving,
-			"an external_url naming another fact's file is a masked 404 on both routes",
+			"an external_url naming another fact's file is a masked 404 on the cell route",
 			async () => {
 				const fixture = await setup_test();
 				const owner = await fixture.create_account({ username: 'fact_url_owner' });
-				// a row written past the store: well-formed `file:` URL, but the
-				// address of another hash, so serving it would hand out that fact's
-				// bytes under this one's name
-				const other = 'ab' + 'cd'.repeat(31);
-				const hash = await cross_put_fact(fixture, rpc_path, {
-					content: 'row-with-a-foreign-url',
-					content_type: 'text/plain',
-					holder: owner.actor.id,
-					external_url: `file:${other.slice(0, 2)}/${other.slice(2)}`
-				});
-				const t = fixture.fresh_transport();
+				const hash = await put_foreign_url_fact(fixture, owner.actor.id);
 				const cell_id = await create_cell_with_ref(
-					t,
+					fixture.fresh_transport(),
 					owner.create_session_headers(),
 					hash,
 					'public'
@@ -365,41 +372,58 @@ export const describe_fact_serving_cross_tests = (options: FactServingCrossTestO
 					await fact_get(anon, cell_fact_path(cell_id, hash), {}),
 					'foreign-url fact via a public cell'
 				);
+			}
+		);
+
+		test_if(
+			capabilities.fact_serving && capabilities.fact_serving_admin_hash,
+			"an external_url naming another fact's file is a masked 404 on the bare-hash route",
+			async () => {
+				const fixture = await setup_test();
+				const hash = await put_foreign_url_fact(fixture);
 				assert_masked_404(
-					await fact_get(t, `/api/facts/${hash}`, fixture.create_session_headers()),
+					await fact_get(
+						fixture.fresh_transport(),
+						`/api/facts/${hash}`,
+						fixture.create_session_headers()
+					),
 					'foreign-url fact by bare hash, as admin'
 				);
 			}
 		);
 
-		test_if(capabilities.fact_serving, 'bare-hash route is admin-only', async () => {
-			const fixture = await setup_test();
-			const non_admin = await fixture.create_account({ username: 'fact_non_admin' });
-			// stored as `text/html` — the type a dropped hardening header would let
-			// execute in the admin's session
-			const hash = await put_fact(fixture, 'bare-hash-bytes', 'text/html');
-			const t = fixture.fresh_transport();
+		test_if(
+			capabilities.fact_serving && capabilities.fact_serving_admin_hash,
+			'bare-hash route is admin-only',
+			async () => {
+				const fixture = await setup_test();
+				const non_admin = await fixture.create_account({ username: 'fact_non_admin' });
+				// stored as `text/html` — the type a dropped hardening header would let
+				// execute in the admin's session
+				const hash = await put_fact(fixture, 'bare-hash-bytes', 'text/html');
+				const t = fixture.fresh_transport();
 
-			// keeper holds ROLE_ADMIN → 200 + the actual bytes, hardened.
-			const as_admin = await fact_get(t, `/api/facts/${hash}`, fixture.create_session_headers());
-			assert.strictEqual(as_admin.status, 200, `admin bare-hash read failed: ${as_admin.text}`);
-			assert.strictEqual(as_admin.text, 'bare-hash-bytes', 'bare-hash route served wrong bytes');
-			assert.strictEqual(as_admin.content_type, 'text/html', 'served content-type drifted');
-			assert_fact_headers(as_admin.headers, 'bare-hash text/html fact');
+				// keeper holds ROLE_ADMIN → 200 + the actual bytes, hardened.
+				const as_admin = await fact_get(t, `/api/facts/${hash}`, fixture.create_session_headers());
+				assert.strictEqual(as_admin.status, 200, `admin bare-hash read failed: ${as_admin.text}`);
+				assert.strictEqual(as_admin.text, 'bare-hash-bytes', 'bare-hash route served wrong bytes');
+				assert.strictEqual(as_admin.content_type, 'text/html', 'served content-type drifted');
+				assert_fact_headers(as_admin.headers, 'bare-hash text/html fact');
 
-			// non-admin → 403.
-			const as_non_admin = await fact_get(
-				t,
-				`/api/facts/${hash}`,
-				non_admin.create_session_headers()
-			);
-			assert.strictEqual(as_non_admin.status, 403, 'non-admin reached the bare-hash route');
+				// non-admin → 403.
+				const as_non_admin = await fact_get(
+					t,
+					`/api/facts/${hash}`,
+					non_admin.create_session_headers()
+				);
+				assert.strictEqual(as_non_admin.status, 403, 'non-admin reached the bare-hash route');
 
-			// anonymous → 401.
-			const anon = fixture.fresh_transport({ origin: null });
-			const as_anon = await fact_get(anon, `/api/facts/${hash}`, {});
-			assert.strictEqual(as_anon.status, 401, 'anon reached the bare-hash route');
-		});
+				// anonymous → 401.
+				const anon = fixture.fresh_transport({ origin: null });
+				const as_anon = await fact_get(anon, `/api/facts/${hash}`, {});
+				assert.strictEqual(as_anon.status, 401, 'anon reached the bare-hash route');
+			}
+		);
 
 		// A narrowed token reaches no non-RPC surface; on this anonymous-admitting
 		// route it is downgraded to anonymous rather than refused (a 403 would

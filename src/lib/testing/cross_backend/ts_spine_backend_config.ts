@@ -36,8 +36,9 @@ import {
  * Capabilities for the TS spine binary — `ts_default_capabilities` with every `MountFlag` stated, all `true`: `ws`
  * (the binary mounts `/api/ws` through `create_app_server`'s `ws_endpoints`),
  * `cell_crud` + `cell_relations` (`full_spine_mount` live-mounts the full cell
- * surface over the `fuz_cell` namespace), `fact_serving` (it mounts both serve
- * routes, the `fuz_facts` namespace and `_testing_put_fact`), `sse`
+ * surface over the `fuz_cell` namespace), `fact_serving` (the cell-gated serve
+ * route, the `fuz_facts` namespace and `_testing_put_fact`),
+ * `fact_serving_admin_hash` (the admin bare-hash route), `sse`
  * (the binary wires `audit_log_sse`), `ready` (the binary live-mounts the
  * `/ready` deploy gate in `build_spine_app`), `peer_request` (the backend
  * WS transport's `request_connection` path drives server→client `peer/ping`),
@@ -56,6 +57,7 @@ const ts_spine_capabilities: BackendCapabilities = Object.freeze({
 	cell_crud: true,
 	cell_relations: true,
 	fact_serving: true,
+	fact_serving_admin_hash: true,
 	ready: true,
 	peer_request: true,
 	ws_account_actions: true,
