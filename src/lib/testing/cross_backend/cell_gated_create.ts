@@ -15,9 +15,10 @@ import '../assert_dev_env.ts';
  * `create_test_cell_gated_create_authorize`, the Rust `testing_spine_stub` via
  * `TestCellGatedCreateAuthorize`): admin bypasses; a non-admin creating a
  * `kind: 'space'` **root** is denied (admin-only); a **contribution** under a
- * space is gated by the space's `data.policy[kind] = {min_role, moderation_required}`,
- * with the moderation outcome folded into the verdict; plain parentless creates
- * stay open. The suite asserts all spines agree on:
+ * space is gated by the space's `policy[kind] = {min_role, moderation_required}`
+ * (the root's manage-tier `policy` column), with the moderation outcome folded
+ * into the verdict; plain parentless creates stay open. The suite asserts all
+ * spines agree on:
  *
  * - **root-create admin-only** — a non-admin `space` root → **403**
  *   `cell_create_forbidden`; admin → succeeds.
@@ -38,6 +39,15 @@ import '../assert_dev_env.ts';
  * - **clone is no side door** — `cell_clone` runs the authorizer for every cell
  *   it writes as a parentless create, so a non-admin clone of a viewable
  *   `space` root → **403** `cell_create_forbidden`; admin → succeeds.
+ * - **the root policy is the manager's** — `cell_policy_set` writes it (the new
+ *   and the previous policy audited), answers an editor-grant holder **403**
+ *   `cell_policy_manage_only` and a non-viewer the 404 mask, refuses a
+ *   contribution `cell_policy_root_only` (as `cell_create` refuses a policy
+ *   beside a `parent_id`), and passes each policy through the authorizer's
+ *   validation (`cell_policy_invalid`); an editor rewriting the root's
+ *   `data.policy` leaves moderation as the column says. The refusal with no
+ *   authorizer mounted (`cell_policy_unsupported`) can't run here — both spines
+ *   mount one — and is pinned in-process on each.
  *
  * Gated on `capabilities.cell_gated_create` — `true` only on the reference
  * spine binaries that mount the policy, so it skips for generic consumers and
@@ -49,7 +59,14 @@ import '../assert_dev_env.ts';
 
 import { describe, assert } from 'vitest';
 
-import { CellCreateOutput } from '../../auth/cell_action_specs.ts';
+import {
+	CellCreateOutput,
+	CellGetOutput,
+	CellPolicySetOutput,
+	CellUpdateOutput
+} from '../../auth/cell_action_specs.ts';
+import { CellGrantCreateOutput } from '../../auth/cell_grant_action_specs.ts';
+import { list_audit_events } from './audit_cross_helpers.ts';
 import { test_if } from './capabilities.ts';
 import { cross_rpc_call, error_reason, expect_output } from './cross_rpc.ts';
 import type { RpcPathCapabilityGatedCrossSuiteOptions } from './setup.ts';
@@ -88,7 +105,7 @@ export const describe_cell_gated_create_cross_tests = (
 						fixture.transport,
 						rpc_path,
 						'cell_create',
-						{ kind: SPACE_CELL_KIND, data: TEST_SPACE_POLICY, visibility: 'public' },
+						{ kind: SPACE_CELL_KIND, data: {}, policy: TEST_SPACE_POLICY, visibility: 'public' },
 						fixture.create_session_headers()
 					),
 					CellCreateOutput
@@ -114,7 +131,7 @@ export const describe_cell_gated_create_cross_tests = (
 						fixture.transport,
 						rpc_path,
 						'cell_create',
-						{ kind: SPACE_CELL_KIND, data: TEST_SPACE_POLICY, visibility: 'public' },
+						{ kind: SPACE_CELL_KIND, data: {}, policy: TEST_SPACE_POLICY, visibility: 'public' },
 						fixture.create_session_headers()
 					),
 					CellCreateOutput
@@ -162,7 +179,7 @@ export const describe_cell_gated_create_cross_tests = (
 						fixture.transport,
 						rpc_path,
 						'cell_create',
-						{ kind: SPACE_CELL_KIND, data: TEST_SPACE_POLICY, visibility: 'public' },
+						{ kind: SPACE_CELL_KIND, data: {}, policy: TEST_SPACE_POLICY, visibility: 'public' },
 						fixture.create_session_headers()
 					),
 					CellCreateOutput
@@ -217,7 +234,7 @@ export const describe_cell_gated_create_cross_tests = (
 						fixture.transport,
 						rpc_path,
 						'cell_create',
-						{ kind: SPACE_CELL_KIND, data: TEST_SPACE_POLICY, visibility: 'private' },
+						{ kind: SPACE_CELL_KIND, data: {}, policy: TEST_SPACE_POLICY, visibility: 'private' },
 						fixture.create_session_headers()
 					),
 					CellCreateOutput
@@ -249,7 +266,7 @@ export const describe_cell_gated_create_cross_tests = (
 						fixture.transport,
 						rpc_path,
 						'cell_create',
-						{ kind: SPACE_CELL_KIND, data: TEST_SPACE_POLICY, visibility: 'public' },
+						{ kind: SPACE_CELL_KIND, data: {}, policy: TEST_SPACE_POLICY, visibility: 'public' },
 						fixture.create_session_headers()
 					),
 					CellCreateOutput
@@ -260,8 +277,8 @@ export const describe_cell_gated_create_cross_tests = (
 				});
 
 				// A post lives directly under the space — the shallow case
-				// (`root_id === parent_id`), so the handler reuses the parent row as
-				// `root_data`. The post is gated `moderation_required: true`, so it's
+				// (`root_id === parent_id`), so the handler reuses the parent row's
+				// `policy`. The post is gated `moderation_required: true`, so it's
 				// born pending + private; the author can still view their own pending
 				// cell, so it's a valid parent for the comment below.
 				const post = expect_output(
@@ -280,7 +297,7 @@ export const describe_cell_gated_create_cross_tests = (
 				// `root_id !== parent_id`, so the handler must read the governing
 				// root (the space) *through* the post (the separate in-tx root read),
 				// and the authorizer must resolve `policy.comment` from the SPACE's
-				// data, not the post's. This is the only case that exercises the
+				// policy, not the post's. This is the only case that exercises the
 				// deep-read branch on both spines.
 				const comment = expect_output(
 					await cross_rpc_call(
@@ -321,7 +338,7 @@ export const describe_cell_gated_create_cross_tests = (
 						fixture.transport,
 						rpc_path,
 						'cell_create',
-						{ kind: SPACE_CELL_KIND, data: TEST_SPACE_POLICY, visibility: 'public' },
+						{ kind: SPACE_CELL_KIND, data: {}, policy: TEST_SPACE_POLICY, visibility: 'public' },
 						admin_headers
 					),
 					CellCreateOutput
@@ -372,5 +389,278 @@ export const describe_cell_gated_create_cross_tests = (
 				assert.deepStrictEqual(refused.error, missing_parent.error);
 			}
 		);
+
+		describe('cell root policy parity', () => {
+			test_if(
+				capabilities.cell_gated_create,
+				'a root takes a policy at create and through cell_policy_set, audited old and new',
+				async () => {
+					const fixture = await setup_test();
+					const admin_headers = fixture.create_session_headers();
+					const space = expect_output(
+						await cross_rpc_call(
+							fixture.transport,
+							rpc_path,
+							'cell_create',
+							{ kind: SPACE_CELL_KIND, data: {}, policy: TEST_SPACE_POLICY, visibility: 'public' },
+							admin_headers
+						),
+						CellCreateOutput
+					);
+					assert.deepStrictEqual(
+						space.cell.policy,
+						TEST_SPACE_POLICY,
+						'the create stores the policy'
+					);
+					// Any viewer reads it.
+					const stranger = await fixture.create_account({ username: 'policy_reader' });
+					const read = expect_output(
+						await cross_rpc_call(
+							fixture.transport,
+							rpc_path,
+							'cell_get',
+							{ id: space.cell.id },
+							stranger.create_session_headers()
+						),
+						CellGetOutput
+					);
+					assert.deepStrictEqual(read.cell.policy, TEST_SPACE_POLICY);
+
+					const opened = { post: { min_role: PARTICIPATION_ROLE, moderation_required: false } };
+					const set = expect_output(
+						await cross_rpc_call(
+							fixture.transport,
+							rpc_path,
+							'cell_policy_set',
+							{ cell_id: space.cell.id, policy: opened },
+							admin_headers
+						),
+						CellPolicySetOutput
+					);
+					assert.deepStrictEqual(set.cell.policy, opened);
+					const participant = await fixture.create_account({
+						username: 'policy_participant',
+						roles: [PARTICIPATION_ROLE]
+					});
+					const post = expect_output(
+						await cross_rpc_call(
+							fixture.transport,
+							rpc_path,
+							'cell_create',
+							{ kind: 'post', data: {}, parent_id: space.cell.id },
+							participant.create_session_headers()
+						),
+						CellCreateOutput
+					);
+					assert.strictEqual(post.cell.moderation, 'approved', 'the new policy governs');
+					assert.strictEqual(post.cell.policy, null, 'a contribution carries no policy');
+
+					const cleared = expect_output(
+						await cross_rpc_call(
+							fixture.transport,
+							rpc_path,
+							'cell_policy_set',
+							{ cell_id: space.cell.id, policy: null },
+							admin_headers
+						),
+						CellPolicySetOutput
+					);
+					assert.strictEqual(cleared.cell.policy, null);
+
+					const events = await list_audit_events(
+						fixture,
+						{ event_type: 'cell_policy_set' },
+						rpc_path
+					);
+					assert.deepStrictEqual(
+						events.map((e) => e.metadata).reverse(),
+						[
+							{ cell_id: space.cell.id, policy: opened, previous_policy: TEST_SPACE_POLICY },
+							{ cell_id: space.cell.id, policy: null, previous_policy: opened }
+						],
+						'each set is audited with the policy it wrote and the one it replaced'
+					);
+				}
+			);
+
+			test_if(
+				capabilities.cell_gated_create,
+				'a policy is root-only and must pass the authorizer',
+				async () => {
+					const fixture = await setup_test();
+					const admin_headers = fixture.create_session_headers();
+					const space = expect_output(
+						await cross_rpc_call(
+							fixture.transport,
+							rpc_path,
+							'cell_create',
+							{ kind: SPACE_CELL_KIND, data: {}, policy: TEST_SPACE_POLICY, visibility: 'public' },
+							admin_headers
+						),
+						CellCreateOutput
+					);
+					const react = expect_output(
+						await cross_rpc_call(
+							fixture.transport,
+							rpc_path,
+							'cell_create',
+							{ kind: 'react', data: {}, parent_id: space.cell.id },
+							admin_headers
+						),
+						CellCreateOutput
+					);
+					const on_contribution = await cross_rpc_call(
+						fixture.transport,
+						rpc_path,
+						'cell_policy_set',
+						{ cell_id: react.cell.id, policy: TEST_SPACE_POLICY },
+						admin_headers
+					);
+					assert.ok(!on_contribution.ok);
+					assert.strictEqual(error_reason(on_contribution), 'cell_policy_root_only');
+					const beside_parent = await cross_rpc_call(
+						fixture.transport,
+						rpc_path,
+						'cell_create',
+						{ kind: 'react', data: {}, parent_id: space.cell.id, policy: TEST_SPACE_POLICY },
+						admin_headers
+					);
+					assert.ok(!beside_parent.ok);
+					assert.strictEqual(error_reason(beside_parent), 'cell_policy_root_only');
+
+					for (const bad of [
+						{ post: true },
+						{ post: { min_role: 1 } },
+						{ post: { other: true } }
+					]) {
+						const refused = await cross_rpc_call(
+							fixture.transport,
+							rpc_path,
+							'cell_policy_set',
+							{ cell_id: space.cell.id, policy: bad },
+							admin_headers
+						);
+						assert.ok(!refused.ok, JSON.stringify(bad));
+						assert.strictEqual(error_reason(refused), 'cell_policy_invalid', JSON.stringify(bad));
+						const refused_create = await cross_rpc_call(
+							fixture.transport,
+							rpc_path,
+							'cell_create',
+							{ kind: SPACE_CELL_KIND, data: {}, policy: bad },
+							admin_headers
+						);
+						assert.strictEqual(
+							error_reason(refused_create),
+							'cell_policy_invalid',
+							JSON.stringify(bad)
+						);
+					}
+				}
+			);
+
+			test_if(
+				capabilities.cell_gated_create,
+				"an editor-grant holder can't change a root's policy, through the verb or through data",
+				async () => {
+					const fixture = await setup_test();
+					// A non-admin's root (a parentless non-`space` kind is open), its
+					// policy moderating posts.
+					const owner = await fixture.create_account({ username: 'policy_owner' });
+					const owner_headers = owner.create_session_headers();
+					const root = expect_output(
+						await cross_rpc_call(
+							fixture.transport,
+							rpc_path,
+							'cell_create',
+							{ kind: 'forum', data: {}, policy: TEST_SPACE_POLICY, visibility: 'public' },
+							owner_headers
+						),
+						CellCreateOutput
+					);
+					const editor = await fixture.create_account({ username: 'policy_editor' });
+					expect_output(
+						await cross_rpc_call(
+							fixture.transport,
+							rpc_path,
+							'cell_grant_create',
+							{
+								cell_id: root.cell.id,
+								level: 'editor',
+								principal: { kind: 'actor', actor_id: editor.actor.id }
+							},
+							owner_headers
+						),
+						CellGrantCreateOutput
+					);
+					const editor_headers = editor.create_session_headers();
+					const opened = { post: { min_role: PARTICIPATION_ROLE, moderation_required: false } };
+					const refused = await cross_rpc_call(
+						fixture.transport,
+						rpc_path,
+						'cell_policy_set',
+						{ cell_id: root.cell.id, policy: opened },
+						editor_headers
+					);
+					assert.ok(!refused.ok, 'an editor must not set the policy');
+					assert.strictEqual(error_reason(refused), 'cell_policy_manage_only');
+
+					// The editor may rewrite `data` — a `data.policy` is just content.
+					const edited = expect_output(
+						await cross_rpc_call(
+							fixture.transport,
+							rpc_path,
+							'cell_update',
+							{ cell_id: root.cell.id, data: { policy: opened } },
+							editor_headers
+						),
+						CellUpdateOutput
+					);
+					assert.deepStrictEqual(
+						edited.cell.policy,
+						TEST_SPACE_POLICY,
+						'a data write leaves the policy'
+					);
+					const participant = await fixture.create_account({
+						username: 'policy_poster',
+						roles: [PARTICIPATION_ROLE]
+					});
+					const post = expect_output(
+						await cross_rpc_call(
+							fixture.transport,
+							rpc_path,
+							'cell_create',
+							{ kind: 'post', data: {}, parent_id: root.cell.id },
+							participant.create_session_headers()
+						),
+						CellCreateOutput
+					);
+					assert.strictEqual(
+						post.cell.moderation,
+						'pending',
+						"moderation follows the root's policy column, not its `data.policy`"
+					);
+
+					// Someone who can't view a private root gets the mask.
+					const hidden = expect_output(
+						await cross_rpc_call(
+							fixture.transport,
+							rpc_path,
+							'cell_create',
+							{ kind: 'forum', data: {}, policy: TEST_SPACE_POLICY },
+							owner_headers
+						),
+						CellCreateOutput
+					);
+					const masked = await cross_rpc_call(
+						fixture.transport,
+						rpc_path,
+						'cell_policy_set',
+						{ cell_id: hidden.cell.id, policy: opened },
+						editor_headers
+					);
+					assert.strictEqual(error_reason(masked), 'cell_not_found');
+				}
+			);
+		});
 	});
 };

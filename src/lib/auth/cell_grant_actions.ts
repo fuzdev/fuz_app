@@ -15,7 +15,9 @@
  *   principals against the role schema; rejects owner-as-principal.
  *   Actor-shaped principals carry a pre-resolved `actor_id` (callers pick
  *   via `actor_search`). Idempotent — re-granting the same principal
- *   updates `level` via UPSERT.
+ *   updates `level` via UPSERT. A mounted `authorize_grant_create` is asked
+ *   after the spine's own gates, before the owner check and the write (403
+ *   `cell_grant_not_authorized` on refusal).
  * - `cell_grant_revoke` — admin / owner, plus self for actor-shaped grants
  *   ("leave shared cell"). Returns `still_admitted` computed by re-running
  *   `can_view_cell` against the remaining grants.
@@ -36,11 +38,14 @@ import { rpc_action, type ActionActorContext, type RpcAction } from '../actions/
 import { jsonrpc_errors } from '../http/jsonrpc_errors.ts';
 import type { RoleSchemaResult } from './role_schema.ts';
 import type { ActionFactoryDeps } from './deps.ts';
+import type { RequestActorContext } from './request_context.ts';
+import type { Uuid } from '../primitive_schemas.ts';
 
 import {
 	cell_grant_create_action_spec,
 	cell_grant_revoke_action_spec,
 	cell_grant_list_action_spec,
+	ERROR_CELL_GRANT_NOT_AUTHORIZED,
 	ERROR_CELL_GRANT_NOT_FOUND,
 	ERROR_CELL_GRANT_PRINCIPAL_IS_OWNER,
 	ERROR_CELL_GRANT_UNAPPROVED,
@@ -72,14 +77,47 @@ import type {
 } from './cell_grant_audit_metadata.ts';
 
 /**
+ * Input to a `CellGrantCreateAuthorize` callback — the twin of the Rust
+ * `CellGrantCreateAuthorizeInput`.
+ */
+export interface CellGrantCreateAuthorizeInput {
+	/** The cell the grant names. */
+	cell_id: Uuid;
+	/** The cell's owner (`null` = a system cell). */
+	cell_created_by: Uuid | null;
+	/** The level the grant confers — on an upsert, the new level. */
+	level: CellGrantCreateInput['level'];
+	/** Who the grant admits, as the wire named them. */
+	principal: CellGrantPrincipalQueryInput;
+}
+
+/**
+ * Opt-in gate on `cell_grant_create` — the TS twin of the Rust
+ * `CellGrantCreateAuthorize` trait. Asked after the spine's own gates — the
+ * manage tier (a non-manager gets the 404 mask and never reaches it), the
+ * moderation admission, and the role registry — and before the owner check
+ * and the write, for a new grant and a level change alike. `false` refuses
+ * with 403 `ERROR_CELL_GRANT_NOT_AUTHORIZED`, writing neither the grant nor an
+ * audit row. A consumer narrows sharing with it (say, role-shaped grants only
+ * to roles of the cell's own space); it can't widen it, as every caller it
+ * sees already manages the cell. Omitted = no gate past the spine's.
+ */
+export type CellGrantCreateAuthorize = (
+	auth: RequestActorContext,
+	input: CellGrantCreateAuthorizeInput
+) => boolean | Promise<boolean>;
+
+/**
  * Dependencies for `create_cell_grant_actions`.
  *
  * `roles` is the role schema — read for the role-validity gate on
- * `cell_grant_create`. The other slots match `CellActionDeps` so
+ * `cell_grant_create`; `authorize_grant_create` is the optional consumer gate
+ * (`CellGrantCreateAuthorize`). The other slots match `CellActionDeps` so
  * audit-log emit goes through the same fire-and-forget plumbing.
  */
 export type CellGrantActionDeps = ActionFactoryDeps & {
 	roles: RoleSchemaResult;
+	authorize_grant_create?: CellGrantCreateAuthorize;
 };
 
 export const to_grant_json = (row: CellGrantRow): GrantJson => ({
@@ -141,7 +179,7 @@ const assert_principal_is_not_owner = (
 
 /** Create the three `cell_grant_*` RPC actions. */
 export const create_cell_grant_actions = (deps: CellGrantActionDeps): Array<RpcAction> => {
-	const { roles } = deps;
+	const { roles, authorize_grant_create } = deps;
 
 	const create_handler = async (
 		input: CellGrantCreateInput,
@@ -181,6 +219,21 @@ export const create_cell_grant_actions = (deps: CellGrantActionDeps): Array<RpcA
 			throw jsonrpc_errors.invalid_params(`unknown role "${principal.role}"`, {
 				reason: ERROR_CELL_GRANT_UNKNOWN_ROLE
 			});
+		}
+		// The consumer's gate, asked only of a manager past the spine's gates;
+		// a refusal writes nothing.
+		if (authorize_grant_create) {
+			const allowed = await authorize_grant_create(auth, {
+				cell_id: cell.id,
+				cell_created_by: cell.created_by,
+				level: input.level,
+				principal
+			});
+			if (!allowed) {
+				throw jsonrpc_errors.forbidden('cell grant is not permitted here', {
+					reason: ERROR_CELL_GRANT_NOT_AUTHORIZED
+				});
+			}
 		}
 		assert_principal_is_not_owner(cell, principal);
 		const row = await query_cell_grant_create(ctx, {

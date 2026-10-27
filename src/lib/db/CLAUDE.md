@@ -94,7 +94,10 @@ The wire schemas + RPC handlers + authz predicates for this layer live in
   `cell.moderation text` (nullable — `pending` / `approved` / `rejected`) is the
   approval-lifecycle marker, peer to `visibility` (partial `idx_cell_moderation_pending`
   on `root_id WHERE moderation = 'pending'` for the mod queue), set by the create
-  authorizer's verdict + the `cell_moderate` verb, never in `data`. Nullable
+  authorizer's verdict + the `cell_moderate` verb, never in `data`.
+  `cell.policy jsonb` (nullable) is a root's contribution policy, opaque to the
+  spine — a table CHECK holds it to roots and to JSON objects (`policy @> '{}'`,
+  the object test pglet runs too). Nullable
   `created_by` / `updated_by` FKs to `actor` (NULL = system origin). GIN on `data`
   / `refs`; global partial-unique on `path`.
 - **`cell_queries.ts`** — `query_cell_create / get / get_by_path / update /
@@ -111,7 +114,9 @@ delete / set_moderation`, `_list_by_kind / _list_by_creator`, the
   `cell_moderate` write (`moderation` is absent from `CellUpdatePatch`, so an
   author can't self-approve via `cell_update`); approval moves only a
   `pending` row and rejection a `pending` or `approved` one (the takedown) —
-  the `WHERE` carries the from-state. `cell.refs` derived from
+  the `WHERE` carries the from-state. `query_cell_set_policy` is the dedicated
+  `cell_policy_set` write (`policy` is absent from `CellUpdatePatch`; its
+  `WHERE` matches roots only). `cell.refs` derived from
   `data` via the exported `derive_cell_refs` on create/update (exact
   whole-string hashes, sorted — byte-identical with the Rust `extract_refs`). `CellRow.grant_count` is a
   derived projection (correlated subquery on `idx_cell_grant_cell`).

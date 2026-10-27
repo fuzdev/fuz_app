@@ -24,18 +24,20 @@ describe('test_cell_gated_create_authorize reads the global grant', () => {
 		data: {},
 		parent_id: null,
 		root_id: null,
-		root_data: null,
+		root_policy: null,
 		scope_id: null
 	};
 
 	test('a scoped admin may not create a space root', async () => {
 		const auth = scoped_admin();
-		assert.deepEqual(await test_cell_gated_create_authorize(auth, space_root), { allow: false });
+		assert.deepEqual(await test_cell_gated_create_authorize.authorize(auth, space_root), {
+			allow: false
+		});
 	});
 
 	test('a global admin may', async () => {
 		const auth = create_test_context([{ role: ROLE_ADMIN }]);
-		assert.deepEqual(await test_cell_gated_create_authorize(auth, space_root), {
+		assert.deepEqual(await test_cell_gated_create_authorize.authorize(auth, space_root), {
 			allow: true,
 			moderation_required: false
 		});
@@ -47,19 +49,36 @@ describe('test_cell_gated_create_authorize reads the global grant', () => {
 			data: {},
 			parent_id: CELL_ID,
 			root_id: CELL_ID,
-			root_data: { policy: { post: { min_role: 'participant' } } },
+			root_policy: { post: { min_role: 'participant' } },
 			scope_id: null
 		};
 		const scoped = create_test_context([
 			{ role: 'participant', scope_kind: 'space', scope_id: CELL_ID }
 		]);
-		assert.deepEqual(await test_cell_gated_create_authorize(scoped, contribution), {
+		assert.deepEqual(await test_cell_gated_create_authorize.authorize(scoped, contribution), {
 			allow: false
 		});
 		const global = create_test_context([{ role: 'participant' }]);
-		assert.deepEqual(await test_cell_gated_create_authorize(global, contribution), {
+		assert.deepEqual(await test_cell_gated_create_authorize.authorize(global, contribution), {
 			allow: true,
 			moderation_required: false
 		});
+	});
+
+	test('validate_policy accepts the ladder shape and refuses anything else', () => {
+		const { validate_policy } = test_cell_gated_create_authorize;
+		assert.ok(validate_policy);
+		validate_policy({});
+		validate_policy({ post: { min_role: 'participant', moderation_required: true }, react: {} });
+		for (const bad of [
+			{ post: true },
+			{ post: null },
+			{ post: [] },
+			{ post: { min_role: 1 } },
+			{ post: { moderation_required: 'yes' } },
+			{ post: { other: true } }
+		]) {
+			assert.throws(() => validate_policy(bad), /invalid space policy/, JSON.stringify(bad));
+		}
 	});
 });

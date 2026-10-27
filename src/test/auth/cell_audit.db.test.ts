@@ -26,6 +26,7 @@ import {
 	cell_delete_action_spec,
 	cell_clone_action_spec,
 	cell_moderate_action_spec,
+	cell_policy_set_action_spec,
 	ERROR_CELL_NOT_FOUND
 } from '#lib/auth/cell_action_specs.ts';
 import {
@@ -168,6 +169,12 @@ describe_db('cell audit', (get_db) => {
 						h
 					)
 				).ok
+			);
+
+			// cell_policy_set — clearing needs no authorizer (a non-null policy
+			// would, and none is mounted here).
+			assert.ok(
+				(await call(app, cell_policy_set_action_spec, { cell_id: parent, policy: null }, h)).ok
 			);
 
 			// cell_delete

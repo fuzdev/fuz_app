@@ -86,6 +86,14 @@ END $$`;
  * (nullable text — `pending` / `approved` / `rejected`; `NULL` = unmoderated)
  * is the approval-lifecycle marker, peer to `visibility` (a control field with
  * a non-author writer — see `auth/cell_actions.ts`), never inside `data`.
+ *
+ * `policy` (nullable JSONB) is a root's contribution policy — an object opaque
+ * to the spine, read by the consumer's create authorizer (`NULL` = its floor
+ * governs). The table CHECK holds it to roots (`parent_id IS NULL`) and to JSON
+ * objects (`policy @> '{}'` holds for an object and for nothing else — the
+ * object test every driver runs, where `jsonb_typeof` is not on pglet). A
+ * manage-tier control field: written at a root's create and by
+ * `cell_policy_set`, never through `data`, which an editor grant can write.
  */
 export const CELL_SCHEMA = `
 CREATE TABLE IF NOT EXISTS cell (
@@ -98,11 +106,13 @@ CREATE TABLE IF NOT EXISTS cell (
 	parent_id UUID REFERENCES cell(id) ON DELETE SET NULL,
 	root_id UUID REFERENCES cell(id) ON DELETE SET NULL,
 	moderation TEXT,
+	policy JSONB,
 	created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 	updated_at TIMESTAMPTZ,
 	deleted_at TIMESTAMPTZ,
 	created_by UUID REFERENCES actor(id) ON DELETE SET NULL,
-	updated_by UUID REFERENCES actor(id) ON DELETE SET NULL
+	updated_by UUID REFERENCES actor(id) ON DELETE SET NULL,
+	CHECK (policy IS NULL OR (parent_id IS NULL AND policy @> '{}'::jsonb))
 )`;
 
 /**

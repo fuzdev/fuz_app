@@ -311,7 +311,10 @@ ones — and
 `describe_cell_gated_create_cross_tests` + `describe_cell_moderate_cross_tests` —
 the parent-aware `CellCreateAuthorize` (directory model) + `cell_moderate` parity
 proofs (a non-admin `space` root → 403 `cell_create_forbidden`; a contribution
-gated by the root's `data.policy[kind]`; `moderation` set per the verdict
+gated by the root's `policy[kind]` (its manage-tier `policy` column — an
+editor-grant holder's `cell_policy_set` → 403 `cell_policy_manage_only`, and its
+rewrite of `data.policy` moves nothing; a contribution's → 400
+`cell_policy_root_only`; each set audited old and new); `moderation` set per the verdict
 (`pending`+private vs `approved`); **404** on a hidden parent vs **403** on a
 visible one; and the `cell_moderate` transition — admin approves → public,
 the author self-approve → 403, a non-viewer → 404, reject → private, a cell

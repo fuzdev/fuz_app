@@ -62,3 +62,15 @@ export const CellModerateAuditMetadata = z.looseObject({
 	moderation: z.enum(['approved', 'rejected'])
 });
 export type CellModerateAuditMetadata = z.infer<typeof CellModerateAuditMetadata>;
+
+/**
+ * Metadata envelope for `cell_policy_set`. `cell_id` is the root; `policy` is
+ * the policy written (`null` when cleared) and `previous_policy` the one it
+ * replaced, so the audit trail carries every policy a root has had.
+ */
+export const CellPolicySetAuditMetadata = z.looseObject({
+	cell_id: Uuid,
+	policy: z.record(z.string(), z.unknown()).nullable(),
+	previous_policy: z.record(z.string(), z.unknown()).nullable()
+});
+export type CellPolicySetAuditMetadata = z.infer<typeof CellPolicySetAuditMetadata>;

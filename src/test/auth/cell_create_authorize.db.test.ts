@@ -40,17 +40,21 @@ import { describe_db } from '../cell_db_fixture.ts';
 // `test_cell_gated_create_authorize`). These creates are parentless (roots), so
 // a `{allow: false}` verdict surfaces as the 403 `cell_create_forbidden` (the
 // 404 mask is reserved for a *hidden parent*, which never runs the authorizer).
-const deny_all: CellCreateAuthorize = () => ({ allow: false });
-const allow_all: CellCreateAuthorize = () => ({ allow: true, moderation_required: false });
-const deny_gated: CellCreateAuthorize = (_auth, input) =>
-	input.kind === 'gated' ? { allow: false } : { allow: true, moderation_required: false };
+const deny_all: CellCreateAuthorize = { authorize: () => ({ allow: false }) };
+const allow_all: CellCreateAuthorize = {
+	authorize: () => ({ allow: true, moderation_required: false })
+};
+const deny_gated: CellCreateAuthorize = {
+	authorize: (_auth, input) =>
+		input.kind === 'gated' ? { allow: false } : { allow: true, moderation_required: false }
+};
 
 describe_db('cell create authorizer + kind invariants', (get_db) => {
 	install_audit_drift_guard();
 
 	describe('authorize_create gate', () => {
 		test('deny-all → cell_create is forbidden (403) for a parentless create', async () => {
-			const app = await create_cell_test_app(get_db, [], deny_all);
+			const app = await create_cell_test_app(get_db, [], { authorize_create: deny_all });
 			const actor = await app.create_account({ username: 'authz_deny' });
 			const res = await call(
 				app,
@@ -63,7 +67,7 @@ describe_db('cell create authorizer + kind invariants', (get_db) => {
 		});
 
 		test('allow-all → create succeeds and stamps the kind column', async () => {
-			const app = await create_cell_test_app(get_db, [], allow_all);
+			const app = await create_cell_test_app(get_db, [], { authorize_create: allow_all });
 			const actor = await app.create_account({ username: 'authz_allow' });
 			const res = await call(
 				app,
@@ -76,7 +80,7 @@ describe_db('cell create authorizer + kind invariants', (get_db) => {
 		});
 
 		test('gate-by-kind → gated denied, ungated open, typeless open', async () => {
-			const app = await create_cell_test_app(get_db, [], deny_gated);
+			const app = await create_cell_test_app(get_db, [], { authorize_create: deny_gated });
 			const actor = await app.create_account({ username: 'authz_gate' });
 			const h = actor.create_session_headers();
 			const gated = await call(app, cell_create_action_spec, { kind: 'gated', data: {} }, h);
@@ -102,8 +106,10 @@ describe_db('cell create authorizer + kind invariants', (get_db) => {
 		});
 
 		test('an async authorizer is awaited', async () => {
-			const async_deny: CellCreateAuthorize = () => Promise.resolve({ allow: false });
-			const app = await create_cell_test_app(get_db, [], async_deny);
+			const async_deny: CellCreateAuthorize = {
+				authorize: () => Promise.resolve({ allow: false })
+			};
+			const app = await create_cell_test_app(get_db, [], { authorize_create: async_deny });
 			const actor = await app.create_account({ username: 'authz_async' });
 			const res = await call(
 				app,
@@ -311,11 +317,13 @@ describe_db('cell create authorizer + kind invariants', (get_db) => {
 
 		test('an authorizer mounted → cell_not_found before it is consulted', async () => {
 			let calls = 0;
-			const counting_allow: CellCreateAuthorize = (auth, input) => {
-				calls++;
-				return allow_all(auth, input);
+			const counting_allow: CellCreateAuthorize = {
+				authorize: (auth, input) => {
+					calls++;
+					return allow_all.authorize(auth, input);
+				}
 			};
-			const app = await create_cell_test_app(get_db, [], counting_allow);
+			const app = await create_cell_test_app(get_db, [], { authorize_create: counting_allow });
 			const actor = await app.create_account({ username: 'tomb_gated' });
 			const h = actor.create_session_headers();
 			const post_id = await seed_post_under_deleted_space(app, h);

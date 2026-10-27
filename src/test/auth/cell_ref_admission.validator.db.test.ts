@@ -43,7 +43,7 @@ describe_db('cell ref admission on the validator output', (get_db) => {
 		new PgFactStore({ deps: { db: get_db() } }).put(new TextEncoder().encode(bytes), { holder });
 
 	test('a validator-injected ref is admitted on what it injects', async () => {
-		const app = await create_cell_test_app(get_db, [], undefined, transforming_validator);
+		const app = await create_cell_test_app(get_db, [], { validate_data: transforming_validator });
 		const bob = await app.create_account({ username: 'val_inject_bob' });
 		const headers = bob.create_session_headers();
 		const created = await call(
@@ -73,7 +73,7 @@ describe_db('cell ref admission on the validator output', (get_db) => {
 	});
 
 	test('a ref the validator strips needs no holding and is not stored', async () => {
-		const app = await create_cell_test_app(get_db, [], undefined, transforming_validator);
+		const app = await create_cell_test_app(get_db, [], { validate_data: transforming_validator });
 		const alice = await app.create_account({ username: 'val_strip_alice' });
 		const bob = await app.create_account({ username: 'val_strip_bob' });
 		const alices = await put('alice stripped bytes', alice.actor.id);

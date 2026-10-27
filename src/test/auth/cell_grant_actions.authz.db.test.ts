@@ -14,6 +14,10 @@
  * - a role-shaped grant admits a holder of that role.
  * - a cell whose `moderation` doesn't admit an audience refuses every grant —
  *   owner and admin alike, actor- and role-shaped — after the manage gate.
+ * - a mounted `authorize_grant_create` runs only for a manager past the spine's
+ *   gates (a non-manager's 404 and an unknown role's 400 never reach it), for a
+ *   new grant and a level change alike; its refusal is 403
+ *   `cell_grant_not_authorized` with no grant row and no audit row.
  *
  * Part of the focused first-pass checklist suite.
  *
@@ -41,6 +45,7 @@ import {
 	cell_grant_create_action_spec,
 	cell_grant_revoke_action_spec,
 	cell_grant_list_action_spec,
+	ERROR_CELL_GRANT_NOT_AUTHORIZED,
 	ERROR_CELL_GRANT_PRINCIPAL_IS_OWNER,
 	ERROR_CELL_GRANT_UNAPPROVED,
 	ERROR_CELL_GRANT_UNKNOWN_ROLE
@@ -48,6 +53,10 @@ import {
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
 import type { TestApp, TestAccount } from '#lib/testing/app_server.ts';
+import type {
+	CellGrantCreateAuthorize,
+	CellGrantCreateAuthorizeInput
+} from '#lib/auth/cell_grant_actions.ts';
 import { create_cell_test_app, create_cell, call, ROLE_MEMBER } from './cell_test_helpers.ts';
 import { error_reason } from './rpc_test_helpers.ts';
 import { describe_db } from '../cell_db_fixture.ts';
@@ -438,6 +447,92 @@ describe_db('cell_grant_actions authz', (get_db) => {
 			const got = await call(app, cell_get_action_spec, { id }, member.create_session_headers());
 			assert.ok(got.ok, JSON.stringify(got));
 			assert.strictEqual(got.result.cell.id, id);
+		});
+	});
+
+	describe('authorize_grant_create', () => {
+		/** A grant authorizer answering `allow`, recording what it saw. */
+		const recording = (allow: boolean) => {
+			const seen: Array<CellGrantCreateAuthorizeInput> = [];
+			const authorize: CellGrantCreateAuthorize = (_auth, input) => {
+				seen.push(input);
+				return Promise.resolve(allow);
+			};
+			return { authorize, seen };
+		};
+
+		const count_rows = async (): Promise<{ grants: number; audits: number }> => {
+			const [grants] = await get_db().query<{ n: number }>(
+				'SELECT count(*)::int AS n FROM cell_grant'
+			);
+			const [audits] = await get_db().query<{ n: number }>(
+				`SELECT count(*)::int AS n FROM audit_log WHERE event_type = 'cell_grant_create'`
+			);
+			return { grants: grants!.n, audits: audits!.n };
+		};
+
+		test('it gates a manager after the spine gates, and a refusal writes nothing', async () => {
+			const deny = recording(false);
+			const app = await create_cell_test_app(get_db, [], {
+				authorize_grant_create: deny.authorize
+			});
+			const owner = await app.create_account({ username: 'ga_owner' });
+			const stranger = await app.create_account({ username: 'ga_stranger' });
+			const target = await app.create_account({ username: 'ga_target' });
+			const { id } = await create_cell(app, {
+				kind: 'note',
+				data: {},
+				visibility: 'public',
+				headers: owner.create_session_headers()
+			});
+			const before = await count_rows();
+
+			const masked = await grant_actor(app, stranger, id, 'viewer', target.actor.id);
+			assert.strictEqual(error_reason(masked), ERROR_CELL_NOT_FOUND);
+			const unknown_role = await call(
+				app,
+				cell_grant_create_action_spec,
+				{ cell_id: id, level: 'viewer', principal: { kind: 'role', role: 'nobody' } },
+				owner.create_session_headers()
+			);
+			assert.strictEqual(error_reason(unknown_role), ERROR_CELL_GRANT_UNKNOWN_ROLE);
+			assert.strictEqual(deny.seen.length, 0, 'the hook sees only managers past the gates');
+
+			const refused = await grant_actor(app, owner, id, 'viewer', target.actor.id);
+			assert.ok(!refused.ok);
+			assert.strictEqual(error_reason(refused), ERROR_CELL_GRANT_NOT_AUTHORIZED);
+			assert.deepStrictEqual(deny.seen, [
+				{
+					cell_id: id,
+					cell_created_by: owner.actor.id,
+					level: 'viewer',
+					principal: { kind: 'actor', actor_id: target.actor.id }
+				}
+			]);
+			assert.deepStrictEqual(await count_rows(), before, 'no grant and no audit row');
+		});
+
+		test('a level change goes through it, and an allow writes', async () => {
+			const allow = recording(true);
+			const app = await create_cell_test_app(get_db, [], {
+				authorize_grant_create: allow.authorize
+			});
+			const owner = await app.create_account({ username: 'gb_owner' });
+			const target = await app.create_account({ username: 'gb_target' });
+			const { id } = await create_cell(app, {
+				kind: 'note',
+				data: {},
+				headers: owner.create_session_headers()
+			});
+			const first = await grant_actor(app, owner, id, 'viewer', target.actor.id);
+			assert.ok(first.ok, JSON.stringify(first));
+			const upserted = await grant_actor(app, owner, id, 'editor', target.actor.id);
+			assert.ok(upserted.ok, JSON.stringify(upserted));
+			assert.strictEqual(upserted.result.grant.level, 'editor');
+			assert.deepStrictEqual(
+				allow.seen.map((i) => i.level),
+				['viewer', 'editor']
+			);
 		});
 	});
 });

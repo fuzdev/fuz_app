@@ -41,7 +41,7 @@ import {
 } from './cell_view_sql.ts';
 
 import type { CellData } from '../auth/cell_data_schema.ts';
-import type { CellVisibility } from '../auth/cell_action_specs.ts';
+import type { CellPolicy, CellVisibility } from '../auth/cell_action_specs.ts';
 
 /**
  * Row shape returned by `cell` SELECTs. `data` is typed as `CellData` —
@@ -66,6 +66,7 @@ export interface CellRow {
 	parent_id: Uuid | null;
 	root_id: Uuid | null;
 	moderation: string | null;
+	policy: CellPolicy | null;
 	created_at: string;
 	updated_at: string | null;
 	deleted_at: string | null;
@@ -94,6 +95,7 @@ export const CELL_COLUMNS = [
 	'parent_id',
 	'root_id',
 	'moderation',
+	'policy',
 	'created_at',
 	'updated_at',
 	'deleted_at',
@@ -147,7 +149,9 @@ export type CellViewRow = Pick<CellRow, (typeof CELL_VIEW_COLUMNS)[number]>;
  * `parent_id` / `root_id` / `moderation` are the directory-tree + lifecycle
  * columns the handler derives (parent containment, governing root, the
  * create-authorizer verdict) — likewise write-once / control-gated, never on
- * `CellUpdatePatch`.
+ * `CellUpdatePatch`. `policy` is a root's contribution policy (the table CHECK
+ * refuses one beside a `parent_id`), changed later only by
+ * `query_cell_set_policy`.
  */
 export interface CellCreateQueryInput {
 	data: Json;
@@ -157,6 +161,7 @@ export interface CellCreateQueryInput {
 	parent_id?: Uuid | null;
 	root_id?: Uuid | null;
 	moderation?: string | null;
+	policy?: CellPolicy | null;
 	created_by?: Uuid | null;
 }
 
@@ -200,8 +205,8 @@ export const query_cell_create = async (
 	const refs = derive_cell_refs(input.data);
 	const row = await deps.db.query_one<CellRow>(
 		`INSERT INTO cell
-		   (data, kind, visibility, path, refs, parent_id, root_id, moderation, created_by)
-		 VALUES ($1::jsonb, $2, COALESCE($3::cell_visibility, 'private'::cell_visibility), $4, $5::text[], $6, $7, $8, $9)
+		   (data, kind, visibility, path, refs, parent_id, root_id, moderation, policy, created_by)
+		 VALUES ($1::jsonb, $2, COALESCE($3::cell_visibility, 'private'::cell_visibility), $4, $5::text[], $6, $7, $8, $9::jsonb, $10)
 		 RETURNING ${cell_row_projection('cell')}`,
 		[
 			JSON.stringify(input.data),
@@ -212,6 +217,7 @@ export const query_cell_create = async (
 			input.parent_id ?? null,
 			input.root_id ?? null,
 			input.moderation ?? null,
+			input.policy == null ? null : JSON.stringify(input.policy),
 			input.created_by ?? null
 		]
 	);
@@ -429,6 +435,65 @@ export const query_cell_set_moderation = async (
 		[id, moderation, options.set_visibility_public, options.updated_by ?? null]
 	);
 	return row ?? null;
+};
+
+/** What `query_cell_set_policy` answers: the updated root and the policy it replaced. */
+export interface CellSetPolicyResult {
+	cell: CellRow;
+	/** The root's `policy` as the `UPDATE` found it, under the row lock it writes with. */
+	previous_policy: CellPolicy | null;
+}
+
+/**
+ * Replace a root's contribution `policy` (the `cell_policy_set` verb's write);
+ * `null` clears it.
+ *
+ * The `WHERE` carries `parent_id IS NULL`, so only a root ever takes a policy
+ * — the table CHECK's rule restated where the write is. `updated_at` /
+ * `updated_by` are stamped.
+ *
+ * The replaced policy is read by the statement that writes, from a
+ * `FOR UPDATE` subquery: a concurrent set waits on that row lock and then
+ * reads the committed value, so the audit's `previous_policy` is the value
+ * this write replaced, never one a racing set already overwrote.
+ *
+ * `policy` is deliberately **not** writable through `query_cell_update` (it's
+ * absent from `CellUpdatePatch`): `data` writes gate on edit authority, which
+ * an editor grant carries, and the policy decides who may contribute under the
+ * root, so it changes only through this query behind the handler's
+ * manage-tier check.
+ *
+ * @param deps - query deps
+ * @param id - the root's id
+ * @param policy - the new policy, or `null` to clear it
+ * @param options - `updated_by` records the manager
+ * @returns the updated row and the policy it replaced, or `null` when no active root
+ *   matched (a raced delete)
+ * @mutates `cell` - sets `policy` on one root
+ */
+export const query_cell_set_policy = async (
+	deps: QueryDeps,
+	id: Uuid,
+	policy: CellPolicy | null,
+	options: { updated_by?: Uuid | null }
+): Promise<CellSetPolicyResult | null> => {
+	const row = await deps.db.query_one<CellRow & { previous_policy: CellPolicy | null }>(
+		`UPDATE cell SET
+		   policy = $2::jsonb,
+		   updated_by = $3,
+		   updated_at = NOW()
+		 FROM (
+		   SELECT p.id, p.policy AS previous_policy FROM cell p
+		   WHERE p.id = $1 AND p.deleted_at IS NULL AND p.parent_id IS NULL
+		   FOR UPDATE
+		 ) prev
+		 WHERE cell.id = prev.id
+		 RETURNING ${cell_row_projection('cell')}, prev.previous_policy`,
+		[id, policy === null ? null : JSON.stringify(policy), options.updated_by ?? null]
+	);
+	if (!row) return null;
+	const { previous_policy, ...cell } = row;
+	return { cell, previous_policy };
 };
 
 /**

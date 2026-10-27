@@ -27,6 +27,7 @@ import { create_role_schema, ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_sche
 import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
 import { create_audit_log_config } from '#lib/auth/audit_log_schema.ts';
 import { create_all_cell_actions } from '#lib/auth/all_cell_actions.ts';
+import type { CellGrantCreateAuthorize } from '#lib/auth/cell_grant_actions.ts';
 import type { CellActionDeps, CellCreateAuthorize } from '#lib/auth/cell_actions.ts';
 import { cell_audit_events } from '#lib/auth/cell_audit_events.ts';
 import {
@@ -75,49 +76,63 @@ export const ROLE_MEMBER = 'member';
  */
 export const CELL_TEST_FACTS_DIR_UNUSED = '/nonexistent/fuz_app_cell_test_facts';
 
+/** The optional cell seams a cell test app mounts. */
+export interface CellTestAppOptions {
+	/** The creation gate (default: open create, every policy write refused). */
+	authorize_create?: CellCreateAuthorize;
+	/** The grant gate (default: none past the spine's). */
+	authorize_grant_create?: CellGrantCreateAuthorize;
+	/** The per-kind data validator (default: pass-through). */
+	validate_data?: CellActionDeps['validate_data'];
+	/** Where disk facts live (default: `CELL_TEST_FACTS_DIR_UNUSED`). */
+	facts_dir?: string;
+}
+
 /**
  * Mounts the full cell RPC surface on `/api/rpc` plus both fact-serving
  * REST routes: the cell-scoped per-reference read
  * (`GET /api/cells/:cell_id/facts/:hash`) and the admin-only bare-hash read
- * (`GET /api/facts/:hash`). `validate_data` is left unset (pass-through) —
- * per-kind shape validation is sub-API and out of scope for the
- * generic-layer suites. `facts_dir` defaults to `CELL_TEST_FACTS_DIR_UNUSED`.
+ * (`GET /api/facts/:hash`), with the seams `options` names.
  */
 export const create_cell_route_specs =
-	(
-		authorize_create?: CellCreateAuthorize,
-		validate_data?: CellActionDeps['validate_data'],
-		facts_dir: string = CELL_TEST_FACTS_DIR_UNUSED
-	) =>
-	(ctx: AppServerContext): Array<RouteSpec> => [
-		...create_rpc_endpoint({
-			action_ip_rate_limiter: null,
-			action_account_rate_limiter: null,
-			path: RPC_PATH,
-			actions: [
-				...create_all_cell_actions(
-					{ ...ctx.deps, authorize_create, validate_data },
-					{ roles: cell_test_roles }
-				)
-			],
-			log: ctx.deps.log
-		}),
-		create_serve_cell_fact_route_spec({
-			deps: ctx.deps,
-			facts_dir,
-			log: ctx.deps.log
-		}),
-		create_serve_fact_route_spec({
-			deps: ctx.deps,
-			facts_dir,
-			log: ctx.deps.log
-		})
-	];
+	(options: CellTestAppOptions = {}) =>
+	(ctx: AppServerContext): Array<RouteSpec> => {
+		const {
+			authorize_create,
+			authorize_grant_create,
+			validate_data,
+			facts_dir = CELL_TEST_FACTS_DIR_UNUSED
+		} = options;
+		return [
+			...create_rpc_endpoint({
+				action_ip_rate_limiter: null,
+				action_account_rate_limiter: null,
+				path: RPC_PATH,
+				actions: [
+					...create_all_cell_actions(
+						{ ...ctx.deps, authorize_create, authorize_grant_create, validate_data },
+						{ roles: cell_test_roles }
+					)
+				],
+				log: ctx.deps.log
+			}),
+			create_serve_cell_fact_route_spec({
+				deps: ctx.deps,
+				facts_dir,
+				log: ctx.deps.log
+			}),
+			create_serve_fact_route_spec({
+				deps: ctx.deps,
+				facts_dir,
+				log: ctx.deps.log
+			})
+		];
+	};
 
 /**
- * Default cell route specs — open create (no creation authorizer). Pass a
- * `CellCreateAuthorize` to `create_cell_route_specs` (or the third arg of
- * `create_cell_test_app`) to gate `cell_create`.
+ * Default cell route specs — open create (no creation authorizer). Pass
+ * `CellTestAppOptions` to `create_cell_route_specs` (or the third arg of
+ * `create_cell_test_app`) to mount a seam.
  */
 export const create_route_specs = create_cell_route_specs();
 
@@ -132,23 +147,17 @@ const cell_audit_factory: AuditFactory = ({ db, log }) =>
 
 /**
  * Create a cell test app bound to `get_db`, with cell events registered.
- * Pass `authorize_create` to mount a `CellCreateAuthorize` creation gate
- * (default: open create), and `facts_dir` when the suite serves disk facts
- * from a temp dir it owns (default: `CELL_TEST_FACTS_DIR_UNUSED`).
+ * `options` mounts the seams (`CellTestAppOptions`) — `facts_dir` when the
+ * suite serves disk facts from a temp dir it owns.
  */
 export const create_cell_test_app = (
 	get_db: () => Db,
 	roles?: Array<string>,
-	authorize_create?: CellCreateAuthorize,
-	validate_data?: CellActionDeps['validate_data'],
-	facts_dir?: string
+	options?: CellTestAppOptions
 ): Promise<TestApp> =>
 	create_test_app({
 		session_options,
-		create_route_specs:
-			authorize_create || validate_data || facts_dir
-				? create_cell_route_specs(authorize_create, validate_data, facts_dir)
-				: create_route_specs,
+		create_route_specs: options ? create_cell_route_specs(options) : create_route_specs,
 		audit_factory: cell_audit_factory,
 		db: get_db(),
 		roles: roles ?? []

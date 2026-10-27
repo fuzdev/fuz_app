@@ -1,10 +1,18 @@
 import type { RpcAction } from '../actions/action_rpc.ts';
 import { create_cell_actions, type CellActionDeps } from './cell_actions.ts';
-import { create_cell_grant_actions } from './cell_grant_actions.ts';
+import { create_cell_grant_actions, type CellGrantCreateAuthorize } from './cell_grant_actions.ts';
 import { create_cell_field_actions } from './cell_field_actions.ts';
 import { create_cell_item_actions } from './cell_item_actions.ts';
 import { create_cell_audit_actions } from './cell_audit_actions.ts';
 import type { RoleSchemaResult } from './role_schema.ts';
+
+/**
+ * Dependencies for `create_all_cell_actions` — the CRUD factory's
+ * `CellActionDeps` plus the grant factory's optional `authorize_grant_create`.
+ */
+export type AllCellActionDeps = CellActionDeps & {
+	authorize_grant_create?: CellGrantCreateAuthorize;
+};
 
 /**
  * Options for `create_all_cell_actions`.
@@ -33,12 +41,13 @@ export interface AllCellActionsOptions {
  * Distinct from `create_cell_actions` (the CRUD-only factory this bundles) —
  * reach for this whenever a backend mounts the complete cell layer.
  *
- * @param deps - `CellActionDeps` (`log`, `audit`, optional `validate_data`)
+ * @param deps - `AllCellActionDeps` (`log`, `audit`, the optional `validate_data`,
+ *   `authorize_create`, and `authorize_grant_create`)
  * @param options - the role schema for grant validation
  * @returns every cell `RpcAction`, in mount order
  */
 export const create_all_cell_actions = (
-	deps: CellActionDeps,
+	deps: AllCellActionDeps,
 	options: AllCellActionsOptions
 ): Array<RpcAction> => [
 	...create_cell_actions(deps),

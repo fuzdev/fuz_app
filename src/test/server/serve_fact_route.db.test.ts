@@ -361,7 +361,7 @@ describe_db('serve_fact_route', (get_db) => {
 	test("a disk fact streams; an external_url naming another fact's file → 404", async () => {
 		const facts_dir = await mkdtemp(join(tmpdir(), 'fuz_serve_fact_disk_'));
 		try {
-			const app = await create_cell_test_app(get_db, [], undefined, undefined, facts_dir);
+			const app = await create_cell_test_app(get_db, [], { facts_dir });
 			const owner = await app.create_account({ username: 'disk_fact_owner' });
 			const disk_store = new PgFactStore({
 				deps: { db: get_db() },

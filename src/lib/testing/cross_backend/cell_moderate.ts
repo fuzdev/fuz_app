@@ -138,7 +138,7 @@ export const describe_cell_moderate_cross_tests = (
 				fixture.transport,
 				rpc_path,
 				'cell_create',
-				{ kind: SPACE_CELL_KIND, data: TEST_SPACE_POLICY, visibility: 'public' },
+				{ kind: SPACE_CELL_KIND, data: {}, policy: TEST_SPACE_POLICY, visibility: 'public' },
 				fixture.create_session_headers()
 			),
 			CellCreateOutput
@@ -173,7 +173,7 @@ export const describe_cell_moderate_cross_tests = (
 				fixture.transport,
 				rpc_path,
 				'cell_create',
-				{ kind: 'forum', data: TEST_SPACE_POLICY, visibility: 'public' },
+				{ kind: 'forum', data: {}, policy: TEST_SPACE_POLICY, visibility: 'public' },
 				root_owner.create_session_headers()
 			),
 			CellCreateOutput
@@ -445,7 +445,7 @@ export const describe_cell_moderate_cross_tests = (
 						fixture.transport,
 						rpc_path,
 						'cell_create',
-						{ kind: 'forum', data: TEST_SPACE_POLICY, visibility: 'public' },
+						{ kind: 'forum', data: {}, policy: TEST_SPACE_POLICY, visibility: 'public' },
 						root_owner.create_session_headers()
 					),
 					CellCreateOutput
@@ -1213,7 +1213,7 @@ export const describe_cell_moderate_cross_tests = (
 						fixture.transport,
 						rpc_path,
 						'cell_create',
-						{ kind: SPACE_CELL_KIND, data: TEST_SPACE_POLICY, visibility: 'public' },
+						{ kind: SPACE_CELL_KIND, data: {}, policy: TEST_SPACE_POLICY, visibility: 'public' },
 						fixture.create_session_headers()
 					),
 					CellCreateOutput

@@ -1,10 +1,11 @@
 /**
  * Generic cell RPC action handlers.
  *
- * Six `request_response` actions bound to the specs in
+ * The generic `request_response` actions bound to the specs in
  * `auth/cell_action_specs.ts`:
  *
- * - Mutations: `cell_create`, `cell_update`, `cell_delete`, `cell_clone`.
+ * - Mutations: `cell_create`, `cell_update`, `cell_delete`, `cell_clone`,
+ *   `cell_moderate`, `cell_policy_set`.
  * - Reads: `cell_get`, `cell_list`.
  *
  * Authorization model:
@@ -20,6 +21,11 @@
  *   with per-row `can_edit_cell` enforcement. `path` writes on update
  *   are admin-only; `visibility` writes require the manage tier
  *   (`can_manage_cell`).
+ * - `cell_policy_set` is the one writer of a root's contribution `policy` past
+ *   its create — manage-tier, root-only, and validated by the mounted
+ *   `authorize_create` (the authorizer that interprets the policy is what
+ *   accepts one; none mounted refuses every non-null policy). `cell_update`
+ *   never touches it.
  * - `cell_list` is `optional` auth at the spec level. The SQL-side
  *   visibility predicate in `query_cell_list` admits null auth to
  *   public-only rows and authed callers to owned + public + grant-admitted
@@ -74,6 +80,7 @@ import {
 	cell_list_action_spec,
 	cell_clone_action_spec,
 	cell_moderate_action_spec,
+	cell_policy_set_action_spec,
 	ERROR_CELL_NOT_FOUND,
 	ERROR_CELL_PATH_ADMIN_ONLY,
 	ERROR_CELL_PATH_TAKEN,
@@ -85,12 +92,18 @@ import {
 	ERROR_CELL_MODERATE_FORBIDDEN,
 	ERROR_CELL_NOT_A_CONTRIBUTION,
 	ERROR_CELL_NOT_PENDING,
+	ERROR_CELL_POLICY_MANAGE_ONLY,
+	ERROR_CELL_POLICY_ROOT_ONLY,
+	ERROR_CELL_POLICY_UNSUPPORTED,
 	ERROR_CELL_LIST_CREATED_BY_REQUIRES_AUTH,
 	ERROR_CELL_LIST_SHARED_WITH_REQUIRES_AUTH,
 	CELL_LIST_LIMIT_DEFAULT,
 	CELL_RELATIONS_BUNDLE_LIMIT,
 	type CellModerateInput,
 	type CellModerateOutput,
+	type CellPolicy,
+	type CellPolicySetInput,
+	type CellPolicySetOutput,
 	type CellCreateInput,
 	type CellCreateOutput,
 	type CellGetInput,
@@ -113,6 +126,7 @@ import {
 	query_cell_update,
 	query_cell_delete,
 	query_cell_set_moderation,
+	query_cell_set_policy,
 	query_cell_list,
 	query_cell_load_many,
 	type CellRow
@@ -149,15 +163,16 @@ import type { GrantJson } from './cell_grant_action_specs.ts';
 import type {
 	CellAuditMetadata,
 	CellCloneAuditMetadata,
-	CellModerateAuditMetadata
+	CellModerateAuditMetadata,
+	CellPolicySetAuditMetadata
 } from './cell_audit_metadata.ts';
 import type { CellData } from './cell_data_schema.ts';
 
 /**
- * Input to a `CellCreateAuthorize` callback — the TS twin of the Rust
+ * Input to `CellCreateAuthorize.authorize` — the TS twin of the Rust
  * `CellCreateAuthorizeInput`. **Parent-aware**: it carries the directory
- * context (`parent_id` / the handler-resolved `root_id`) so the authorizer can
- * resolve the governing root's policy.
+ * context (`parent_id` / the handler-resolved `root_id`) and the governing
+ * root's `policy`, so the authorizer resolves the rule that applies.
  */
 export interface CellCreateAuthorizeInput {
 	/** The cell's `kind` (the top-level `cell.kind` value); `null` for a typeless cell. */
@@ -168,8 +183,8 @@ export interface CellCreateAuthorizeInput {
 	parent_id: Uuid | null;
 	/** The governing root of the directory subtree, resolved by the handler from the parent (`parent.root_id ?? parent.id`). `null` for a root creation. */
 	root_id: Uuid | null;
-	/** The governing root's `data` — the handler reads it in-tx and hands it over, so a directory-aware authorizer resolves `root.data.policy[kind]` **without a DB read of its own** (pure predicate; reading in-tx avoids the single-connection PGlite deadlock a separate handle would hit). Non-null whenever `root_id` is — a missing or soft-deleted root answers `cell_not_found` before the authorizer runs — and `null` for a root creation. */
-	root_data: CellData | null;
+	/** The governing root's contribution `policy` column — the handler reads the root in-tx and hands its policy over, so a directory-aware authorizer resolves `root_policy[kind]` **without a DB read of its own** (pure predicate; reading in-tx avoids the single-connection deadlock a separate handle would hit on the in-memory drivers). `null` for a root creation and for a root carrying no policy (the authorizer's floor governs); a missing or soft-deleted root answers `cell_not_found` before the authorizer runs. Never the root's `data`: an editor grant can rewrite `data`, so a policy read from it would be the editor's to loosen. */
+	root_policy: CellPolicy | null;
 	/** Target scope — designed-in for M2 space-scoping; **always `null` in v1** (cells carry no scope column). */
 	scope_id: Uuid | null;
 }
@@ -186,18 +201,33 @@ export type CellCreateVerdict = { allow: false } | { allow: true; moderation_req
 
 /**
  * Opt-in, parent-aware creation authorizer — the TS twin of the Rust
- * `CellCreateAuthorize` trait. Gates both roots (`parent_id = null`) and
- * contributions; answers "may *this actor* create *this kind* here?" and
- * returns a `CellCreateVerdict`. Runs in `cell_create` after `validate_data`
- * and after the handler resolves `root_id` from the parent (an unviewable
- * parent or a missing or soft-deleted root already 404-masks before this runs).
- * Omitted = today's open create (all consumers untouched). Async-capable (DB / policy calls) — a DB-backed
- * impl closes over its own `db` (the create handler stays unaware).
+ * `CellCreateAuthorize` trait, its two members the trait's two methods.
+ * Omitted = open create, and every non-null policy write refused
+ * `ERROR_CELL_POLICY_UNSUPPORTED`.
+ *
+ * - `authorize` gates both roots (`parent_id = null`) and contributions;
+ *   answers "may *this actor* create *this kind* here?" and returns a
+ *   `CellCreateVerdict`. Runs in `cell_create` after `validate_data` and after
+ *   the handler resolves `root_id` and `root_policy` from the parent (an
+ *   unviewable parent or a missing or soft-deleted root already 404-masks
+ *   before this runs). Async-capable — a DB-backed impl closes over its own
+ *   `db` (the create handler stays unaware).
+ * - `validate_policy` accepts or refuses a root `policy` before it is written
+ *   (a root's `cell_create`, `cell_policy_set`) — the shape `authorize` reads.
+ *   It runs after the manage and root-only gates, so it decides validity, never
+ *   authority: throw `jsonrpc_errors.invalid_params` with
+ *   `ERROR_CELL_POLICY_INVALID` (or a reason of the consumer's), or a
+ *   `ZodError`, which the handler turns into `invalid_params`. **Omitted
+ *   refuses every policy** (`ERROR_CELL_POLICY_UNSUPPORTED`, the Rust trait's
+ *   default): an authorizer that reads no policy stores none.
  */
-export type CellCreateAuthorize = (
-	auth: RequestActorContext,
-	input: CellCreateAuthorizeInput
-) => CellCreateVerdict | Promise<CellCreateVerdict>;
+export interface CellCreateAuthorize {
+	authorize: (
+		auth: RequestActorContext,
+		input: CellCreateAuthorizeInput
+	) => CellCreateVerdict | Promise<CellCreateVerdict>;
+	validate_policy?: (policy: CellPolicy) => void;
+}
 
 /**
  * Dependencies for `create_cell_actions`.
@@ -211,7 +241,8 @@ export type CellCreateAuthorize = (
  * omitted, payloads pass through as-is.
  *
  * `authorize_create` is the optional creation-gate hook (see
- * `CellCreateAuthorize`). When omitted, create is open (today's behavior).
+ * `CellCreateAuthorize`). When omitted, create is open, and every non-null
+ * root policy write is refused.
  */
 export type CellActionDeps = ActionFactoryDeps & {
 	validate_data?: (data: CellData) => CellData;
@@ -226,6 +257,18 @@ export type CellActionDeps = ActionFactoryDeps & {
  */
 const path_taken_error = (): ReturnType<typeof jsonrpc_errors.conflict> =>
 	jsonrpc_errors.conflict('cell.path is already taken', { reason: ERROR_CELL_PATH_TAKEN });
+
+/** The refusal of a policy write nothing can interpret. */
+const cell_policy_unsupported_error = (): ReturnType<typeof jsonrpc_errors.invalid_params> =>
+	jsonrpc_errors.invalid_params('cell.policy needs a create authorizer that accepts it', {
+		reason: ERROR_CELL_POLICY_UNSUPPORTED
+	});
+
+/** The refusal of a policy write on a cell with a parent. */
+const cell_policy_root_only_error = (): ReturnType<typeof jsonrpc_errors.invalid_params> =>
+	jsonrpc_errors.invalid_params('cell.policy is set only on a root (a cell without a parent)', {
+		reason: ERROR_CELL_POLICY_ROOT_ONLY
+	});
 
 /** The `cell_moderate` refusal of a transition the contribution's state doesn't allow. */
 const cell_not_pending_error = (): ReturnType<typeof jsonrpc_errors.invalid_params> =>
@@ -261,6 +304,7 @@ export const to_cell_json = (row: CellRow): CellJson => ({
 	parent_id: row.parent_id,
 	root_id: row.root_id,
 	moderation: row.moderation,
+	policy: row.policy,
 	created_by: row.created_by,
 	updated_by: row.updated_by,
 	created_at: row.created_at,
@@ -317,7 +361,7 @@ const admit_viewable_or_stewarded_cell = async (
 	throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
 };
 
-/** Create the six generic cell RPC actions. */
+/** Create the generic cell RPC actions. */
 export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 	const { validate_data, authorize_create } = deps;
 
@@ -336,6 +380,27 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 			if (err instanceof z.ZodError) {
 				throw jsonrpc_errors.invalid_params(
 					'cell.data shape validation failed',
+					dev_only({ issues: err.issues })
+				);
+			}
+			throw err;
+		}
+	};
+
+	/**
+	 * Validate a non-null policy write through the mounted authorizer's
+	 * `validate_policy` — `ERROR_CELL_POLICY_UNSUPPORTED` when there is none
+	 * (no authorizer, or one without the member). A thrown `ZodError` becomes
+	 * `invalid_params`, as `validate_data_or_throw` does.
+	 */
+	const validate_policy_write = (policy: CellPolicy): void => {
+		if (authorize_create?.validate_policy === undefined) throw cell_policy_unsupported_error();
+		try {
+			authorize_create.validate_policy(policy);
+		} catch (err) {
+			if (err instanceof z.ZodError) {
+				throw jsonrpc_errors.invalid_params(
+					'cell.policy validation failed',
 					dev_only({ issues: err.issues })
 				);
 			}
@@ -374,8 +439,17 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		// known kinds with malformed payloads surface as invalid_params.
 		const validated_data = validate_data_or_throw(input.data);
 		const kind = input.kind ?? null;
+		const parent_id = input.parent_id ?? null;
+		const policy = input.policy ?? null;
+		// A contribution policy is a root's alone, and the mounted authorizer —
+		// what interprets it — must accept it (none mounted refuses it). The
+		// authorizer does not gate it: a root's creator manages the root anyway.
+		if (policy !== null) {
+			if (parent_id !== null) throw cell_policy_root_only_error();
+			validate_policy_write(policy);
+		}
 		// Directory tree: resolve the governing `root_id` from the parent (and
-		// the root's `data` for the authorizer's policy read). Runs whether or
+		// the root's `policy` for the authorizer). Runs whether or
 		// not an authorizer is mounted — `root_id` is written regardless, and an
 		// unviewable parent 404-masks the attempt (the same IDOR mask the read
 		// path uses; never reveals a hidden container). A root creation
@@ -387,10 +461,9 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		// answers `cell_not_found` like a missing parent (soft delete doesn't
 		// cascade, so a live parent can sit under a tombstoned root): nothing is
 		// written pointing at the tombstone, and an authorizer never sees a root
-		// id without its data.
-		const parent_id = input.parent_id ?? null;
+		// id it can't read.
 		let root_id: Uuid | null = null;
-		let root_data: CellData | null = null;
+		let root_policy: CellPolicy | null = null;
 		if (parent_id !== null) {
 			const parent = await query_cell_get(ctx, parent_id);
 			if (!parent) throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
@@ -400,11 +473,11 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 			}
 			root_id = parent.root_id ?? parent.id;
 			if (root_id === parent.id) {
-				root_data = parent.data;
+				root_policy = parent.policy;
 			} else {
 				const root = await query_cell_get(ctx, root_id);
 				if (!root) throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
-				root_data = root.data;
+				root_policy = root.policy;
 			}
 		}
 		// Parent-aware creation authorizer (opt-in). Runs after shape validation
@@ -419,12 +492,12 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		let moderation: string | null = null;
 		let visibility = input.visibility;
 		if (authorize_create) {
-			const verdict = await authorize_create(auth, {
+			const verdict = await authorize_create.authorize(auth, {
 				kind,
 				data: input.data,
 				parent_id,
 				root_id,
-				root_data,
+				root_policy,
 				scope_id: null
 			});
 			if (!verdict.allow) {
@@ -467,6 +540,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 				parent_id,
 				root_id,
 				moderation,
+				policy,
 				created_by: auth.actor.id
 			});
 		} catch (err) {
@@ -704,6 +778,55 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 	};
 
 	/**
+	 * `cell_policy_set` — replace (or clear) a root's contribution policy,
+	 * manage-tier on the root. Order: the 404 mask (a caller who can't view the
+	 * cell), the manage check (403 `cell_policy_manage_only` — an editor grant
+	 * edits `data` but never the policy that decides who may contribute),
+	 * root-only (400 `cell_policy_root_only`), then a non-null policy's
+	 * validation through the mounted authorizer. Audited with the policy written
+	 * and the one it replaced.
+	 */
+	const policy_set_handler = async (
+		input: CellPolicySetInput,
+		ctx: ActionActorContext
+	): Promise<CellPolicySetOutput> => {
+		const auth = ctx.auth;
+		const existing = await query_cell_get(ctx, input.cell_id);
+		if (!existing) throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
+		const grants = await query_cell_grant_list_for_cell(ctx, existing.id);
+		if (!can_view_cell(auth, existing, grants)) {
+			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
+		}
+		if (!can_manage_cell(auth, existing)) {
+			throw jsonrpc_errors.forbidden('cell.policy is manage-tier only', {
+				reason: ERROR_CELL_POLICY_MANAGE_ONLY
+			});
+		}
+		if (existing.parent_id !== null) throw cell_policy_root_only_error();
+		if (input.policy !== null) validate_policy_write(input.policy);
+		const result = await query_cell_set_policy(ctx, input.cell_id, input.policy, {
+			updated_by: auth.actor.id
+		});
+		// Raced with a deleter between the gates and the UPDATE.
+		if (!result) throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
+		const updated = result.cell;
+		deps.audit.emit(ctx, {
+			event_type: 'cell_policy_set',
+			actor_id: auth.actor.id,
+			account_id: auth.account.id,
+			ip: ctx.client_ip,
+			metadata: {
+				cell_id: updated.id,
+				policy: updated.policy,
+				// read under the UPDATE's row lock, not from `existing`, which a set
+				// racing past the gates may already have overwritten
+				previous_policy: result.previous_policy
+			} satisfies CellPolicySetAuditMetadata
+		});
+		return { cell: to_cell_json(updated) };
+	};
+
+	/**
 	 * Insert one cloned cell row owned by the caller.
 	 *
 	 * `data` is `{...source.data, ...patch}` — patch wins last for
@@ -746,16 +869,16 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		// could violate the kind shape (e.g., remove a required field).
 		const validated_data = validate_data_or_throw(merged_data);
 		// Creation-capability gate, after the shape check (the `cell_create`
-		// order). The clone is parentless, so no `root_id` / `root_data`; the
+		// order). The clone is parentless, so no `root_id` / `root_policy`; the
 		// authorizer sees the merged (pre-normalization) data, as `cell_create`
 		// hands it the raw input.
 		if (authorize_create) {
-			const verdict = await authorize_create(auth, {
+			const verdict = await authorize_create.authorize(auth, {
 				kind: source.kind,
 				data: merged_data,
 				parent_id: null,
 				root_id: null,
-				root_data: null,
+				root_policy: null,
 				scope_id: null
 			});
 			if (!verdict.allow) {
@@ -778,6 +901,8 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 			kind: source.kind,
 			visibility: source.visibility,
 			path: null, // admin-only paths cannot auto-clone
+			// no `policy`: a clone is born without one, so cloning a root never
+			// copies its governance onto a cell the cloner owns
 			created_by: auth.actor.id
 		});
 	};
@@ -1014,6 +1139,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		rpc_action(cell_delete_action_spec, delete_handler),
 		rpc_action(cell_list_action_spec, list_handler),
 		rpc_action(cell_clone_action_spec, clone_handler),
-		rpc_action(cell_moderate_action_spec, moderate_handler)
+		rpc_action(cell_moderate_action_spec, moderate_handler),
+		rpc_action(cell_policy_set_action_spec, policy_set_handler)
 	];
 };

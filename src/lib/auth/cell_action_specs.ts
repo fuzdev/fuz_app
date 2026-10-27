@@ -1,6 +1,6 @@
 /**
- * Cell RPC action specs — the declarative contract for the six generic
- * cell verbs. App vocabulary (galleries, posts, events) lives in
+ * Cell RPC action specs — the declarative contract for the generic cell
+ * verbs. App vocabulary (galleries, posts, events) lives in
  * client-side helpers; the wire stays generic.
  *
  * @module
@@ -176,6 +176,38 @@ export const ERROR_CELL_NOT_A_CONTRIBUTION = 'cell_not_a_contribution' as const;
 export const ERROR_CELL_NOT_PENDING = 'cell_not_pending' as const;
 
 /**
+ * Error reason — a policy write (a `cell_create` carrying `policy`, or
+ * `cell_policy_set`) targeted a cell with a parent. Only a root carries a
+ * contribution policy. A **400** `invalid_params` (twin of the Rust
+ * `ERROR_CELL_POLICY_ROOT_ONLY`).
+ */
+export const ERROR_CELL_POLICY_ROOT_ONLY = 'cell_policy_root_only' as const;
+
+/**
+ * Error reason — a non-null policy write found nothing to interpret it: no
+ * `authorize_create` is mounted, or the mounted one has no `validate_policy`.
+ * The policy is opaque to the spine, so the write is refused rather than
+ * stored inert. A **400** `invalid_params` (twin of the Rust
+ * `ERROR_CELL_POLICY_UNSUPPORTED`).
+ */
+export const ERROR_CELL_POLICY_UNSUPPORTED = 'cell_policy_unsupported' as const;
+
+/**
+ * Error reason — a `cell_policy_set` caller can view the root but can't manage
+ * it (not admin, not the owner — an editor grant included). A **403**
+ * `forbidden`; a caller who can't view the root gets the 404 mask first (twin
+ * of the Rust `ERROR_CELL_POLICY_MANAGE_ONLY`).
+ */
+export const ERROR_CELL_POLICY_MANAGE_ONLY = 'cell_policy_manage_only' as const;
+
+/**
+ * Error reason — the conventional refusal a `CellCreateAuthorize.validate_policy`
+ * throws for a policy it can't interpret. The spine never answers it itself
+ * (twin of the Rust `ERROR_CELL_POLICY_INVALID`).
+ */
+export const ERROR_CELL_POLICY_INVALID = 'cell_policy_invalid' as const;
+
+/**
  * Error reason — null-auth `cell_list` caller passed a `created_by`
  * filter. The filter is a soft account-id enumeration vector ("does
  * account X have any public cells?"), so we require an authenticated
@@ -193,6 +225,18 @@ export const ERROR_CELL_LIST_SHARED_WITH_REQUIRES_AUTH =
 	'cell_list_shared_with_requires_auth' as const;
 
 // -- Shared schemas ---------------------------------------------------------
+
+/**
+ * A root's contribution policy — any JSON object. Opaque to the spine: the
+ * consumer's create authorizer validates it (`CellCreateAuthorize.validate_policy`)
+ * and interprets it (`CellCreateAuthorizeInput.root_policy`). Loose for that
+ * reason — the keys are the consumer's. Twin of the Rust `CellPolicy`.
+ */
+export const CellPolicy = z.looseObject({}).meta({
+	description:
+		"A root's contribution policy — a JSON object the mounted create authorizer validates and interprets; the spine stores it without reading it."
+});
+export type CellPolicy = z.infer<typeof CellPolicy>;
 
 /**
  * Wire form for `cell.path`.
@@ -283,6 +327,10 @@ export const CellJson = z.strictObject({
 		description:
 			"Approval-lifecycle marker for a gated contribution (`'pending'` / `'approved'` / `'rejected'`); `null` = unmoderated. A control field with a non-author writer — peer to `visibility`, never inside `data` (set by the create authorizer's verdict, transitioned only by `cell_moderate`)."
 	}),
+	policy: CellPolicy.nullable().meta({
+		description:
+			"A root's contribution policy, read by the create authorizer for every contribution under it; `null` = the authorizer's floor governs, and always `null` on a cell with a parent. A manage-tier control field — set at the root's `cell_create`, changed only by `cell_policy_set`, never inside `data`."
+	}),
 	created_by: Uuid.nullable(),
 	updated_by: Uuid.nullable(),
 	created_at: z.string(),
@@ -322,6 +370,10 @@ export const CellCreateInput = z.strictObject({
 	parent_id: Uuid.nullish().meta({
 		description:
 			'Immediate container — the directory this cell is created in. Omit / null = a root (parentless). The handler resolves `root_id` from it and gates the create through the parent-aware authorizer; `root_id` / `moderation` are handler-derived, never wire input.'
+	}),
+	policy: CellPolicy.nullish().meta({
+		description:
+			"The new root's contribution policy. Root-only (beside a `parent_id` it is refused `ERROR_CELL_POLICY_ROOT_ONLY`), and the mounted create authorizer must accept it (`ERROR_CELL_POLICY_UNSUPPORTED` when none can). Omit / null = no policy."
 	}),
 	acting: ActingActor
 });
@@ -545,6 +597,28 @@ export type CellModerateInput = z.infer<typeof CellModerateInput>;
 export const CellModerateOutput = z.strictObject({ cell: CellJson });
 export type CellModerateOutput = z.infer<typeof CellModerateOutput>;
 
+// -- cell_policy_set --------------------------------------------------------
+
+/**
+ * Input for `cell_policy_set` — replace a root's contribution policy, or clear
+ * it with `null`. Manage-tier on the root: 404 when the caller can't view it,
+ * 403 `ERROR_CELL_POLICY_MANAGE_ONLY` when they can but don't manage it (an
+ * editor grant included), 400 `ERROR_CELL_POLICY_ROOT_ONLY` on a cell with a
+ * parent, then the mounted authorizer's validation of a non-null policy
+ * (`ERROR_CELL_POLICY_UNSUPPORTED` when none can).
+ */
+export const CellPolicySetInput = z.strictObject({
+	cell_id: Uuid.meta({ description: 'Root whose policy to set.' }),
+	policy: CellPolicy.nullable().meta({
+		description: 'The new policy (a JSON object), or `null` to clear it.'
+	}),
+	acting: ActingActor
+});
+export type CellPolicySetInput = z.infer<typeof CellPolicySetInput>;
+
+export const CellPolicySetOutput = z.strictObject({ cell: CellJson });
+export type CellPolicySetOutput = z.infer<typeof CellPolicySetOutput>;
+
 // -- Action specs -----------------------------------------------------------
 
 export const cell_create_action_spec = {
@@ -642,12 +716,25 @@ export const cell_moderate_action_spec = {
 		'Moderate a gated contribution (`pending → approved | rejected`, and the `approved → rejected` takedown). Gated on moderation authority over the governing root (admin / root owner), not the contribution — so the author cannot self-approve. Approval flips `moderation → approved` + `visibility → public`; rejection sets `moderation → rejected` and leaves visibility alone. 404 on a target the caller neither views nor stewards (a root manager reads a pending or rejected contribution), 403 for a viewable target whose caller is not a root manager, 400 `cell_not_pending` for a transition the target does not allow (approving a contribution that is not pending; rejecting one already rejected or never moderated).'
 } satisfies RequestResponseActionSpec;
 
+export const cell_policy_set_action_spec = {
+	method: 'cell_policy_set',
+	kind: 'request_response',
+	initiator: 'frontend',
+	auth: { account: 'required', actor: 'required' },
+	side_effects: true,
+	input: CellPolicySetInput,
+	output: CellPolicySetOutput,
+	async: true,
+	rate_limit: 'account',
+	description:
+		"Set or clear a root's contribution policy. Manage-tier on the root (admin / owner) — an editor grant edits `data` but never the policy that decides who may contribute. 404 on a root the caller can't view, 403 `cell_policy_manage_only` for a viewer who doesn't manage it, 400 `cell_policy_root_only` on a cell with a parent; a non-null policy must pass the mounted create authorizer's validation (400 `cell_policy_unsupported` when none can). Audited as `cell_policy_set` with the new and the previous policy."
+} satisfies RequestResponseActionSpec;
+
 /**
  * All cell-layer action specs — composed by app registries. Bundles the
- * seven generic verbs (this module), the three `cell_grant_*` specs, the
- * three `cell_field_*` specs, the four `cell_item_*` specs, and the
- * `cell_audit_list` spec so codegen + UI clients see a single cell
- * namespace.
+ * generic verbs (this module) with the `cell_grant_*`, `cell_field_*`,
+ * `cell_item_*`, and `cell_audit_list` specs so codegen + UI clients see a
+ * single cell namespace.
  */
 export const all_cell_action_specs = [
 	cell_create_action_spec,
@@ -657,6 +744,7 @@ export const all_cell_action_specs = [
 	cell_list_action_spec,
 	cell_clone_action_spec,
 	cell_moderate_action_spec,
+	cell_policy_set_action_spec,
 	...all_cell_grant_action_specs,
 	...all_cell_field_action_specs,
 	...all_cell_item_action_specs,

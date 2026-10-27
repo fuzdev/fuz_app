@@ -47,6 +47,14 @@ export const ERROR_CELL_GRANT_UNKNOWN_ROLE = 'cell_grant_unknown_role' as const;
  */
 export const ERROR_CELL_GRANT_UNAPPROVED = 'cell_grant_unapproved' as const;
 
+/**
+ * Error reason — the mounted `CellGrantCreateAuthorize` refused a manager's
+ * `cell_grant_create`. A **403** `forbidden`, answered only to a caller who
+ * manages the cell (everyone else gets the 404 mask before the hook runs).
+ * Twin of the Rust `ERROR_CELL_GRANT_NOT_AUTHORIZED`.
+ */
+export const ERROR_CELL_GRANT_NOT_AUTHORIZED = 'cell_grant_not_authorized' as const;
+
 // -- Shared schemas ---------------------------------------------------------
 
 /** Grant level — view-only or view-plus-edit. */

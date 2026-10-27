@@ -1539,7 +1539,8 @@ const cell_rpc_actions = create_all_cell_actions({ log, audit, validate_data }, 
 they expose. Compose those factories individually only for a deliberately
 partial surface.
 
-- Core — `cell_create`, `cell_get`, `cell_update`, `cell_delete`, `cell_list`, `cell_clone`
+- Core — `cell_create`, `cell_get`, `cell_update`, `cell_delete`, `cell_list`, `cell_clone`,
+  `cell_moderate`, `cell_policy_set`
 - Grants — `cell_grant_create`, `cell_grant_revoke`, `cell_grant_list`
 - Fields — `cell_field_set`, `cell_field_delete`, `cell_field_list`
 - Items — `cell_item_insert`, `cell_item_move`, `cell_item_delete`, `cell_item_list`
@@ -1569,10 +1570,11 @@ string. Content stays duck-typed in `data`.
   payload (create, update, clone-merge) and may throw a `ZodError`, which
   surfaces as `invalid_params` (`-32602`). Omit to pass payloads through
   unchecked.
-- `authorize_create` — a **parent-aware capability gate** (`CellCreateAuthorize`):
-  `(auth, {kind, data, parent_id, root_id, root_data, scope_id}) =>
-CellCreateVerdict | Promise<CellCreateVerdict>`, where a verdict is
-  `{allow: false}` or `{allow: true, moderation_required}`. Runs in `cell_create`
+- `authorize_create` — a **parent-aware capability gate** (`CellCreateAuthorize`),
+  an object of two members. `authorize(auth, {kind, data, parent_id, root_id,
+root_policy, scope_id}) => CellCreateVerdict | Promise<CellCreateVerdict>`,
+  where a verdict is `{allow: false}` or `{allow: true, moderation_required}`,
+  runs in `cell_create`
   after `validate_data` and after the handler resolves the directory tree
   (`parent_id` → the governing `root_id`, **404**-masking a hidden parent; a
   missing or soft-deleted root is the same **404** `cell_not_found`, with or
@@ -1582,8 +1584,10 @@ CellCreateVerdict | Promise<CellCreateVerdict>`, where a verdict is
   reserved for the hidden-parent case). An `{allow: true}` folds the moderation
   outcome — `moderation_required: true` → born `pending` + private; `false` →
   born `approved` at the author's visibility. The predicate is **pure**: it
-  reads the governing root's policy off the handler-supplied `root_data` (no DB
-  read of its own). Omit for open create. (`scope_id` is designed-in for future
+  reads the governing root's policy off the handler-supplied `root_policy` (no
+  DB read of its own). `validate_policy(policy)` accepts or refuses a root
+  policy before it is written (below); omitted, every policy is refused. Omit
+  the whole gate for open create. (`scope_id` is designed-in for future
   scoped enforcement; `null` in v1.) The companion `cell_moderate` verb
   transitions a `pending` contribution (`approved | rejected`), gated on
   `can_manage` of the governing root — not the contribution, so the author can't
@@ -1595,8 +1599,35 @@ CellCreateVerdict | Promise<CellCreateVerdict>`, where a verdict is
   steward arm (below), so a non-admin root owner reaches the queue and the
   verb.
 
+A root's contribution policy is its `policy` column — a JSON object the spine
+stores without reading, `null` on every cell with a parent (a table CHECK), and
+readable on `CellJson` by anyone who can view the root. It is never `data`: an
+editor grant can rewrite `data`, and the policy decides who may contribute.
+
+- **Set at create** — `cell_create`'s `policy`, on a root only (beside a
+  `parent_id`: 400 `cell_policy_root_only`).
+- **Changed by `cell_policy_set`** `{cell_id, policy}` (`null` clears) — the
+  404 mask for a caller who can't view the cell, 403
+  `cell_policy_manage_only` for one who can but doesn't manage it (an editor
+  grant included), 400 `cell_policy_root_only` on a contribution. Audited as
+  `cell_policy_set` with the policy written and the one it replaced.
+- **Validated by the authorizer** — every non-null policy passes
+  `authorize_create.validate_policy`, which throws (conventionally
+  `invalid_params` with `cell_policy_invalid`) for one it can't interpret; with
+  no authorizer, or one without `validate_policy`, the write is 400
+  `cell_policy_unsupported`. Clearing needs no authorizer.
+- **A clone is born without one** — cloning a root never copies its governance
+  onto a cell the cloner owns.
+
 `create_cell_grant_actions` takes `roles` (a `create_role_schema()` result) so
-role-shaped grants validate against the app's role vocabulary.
+role-shaped grants validate against the app's role vocabulary, and an optional
+`authorize_grant_create` (`CellGrantCreateAuthorize`): `(auth, {cell_id,
+cell_created_by, level, principal}) => boolean | Promise<boolean>`, asked of a
+manager's `cell_grant_create` after the spine's own gates (the 404 mask, the
+moderation admission, the role registry) and before the write — a level change
+included. `false` is 403 `cell_grant_not_authorized`, writing no grant and no
+audit row. It narrows sharing; it can't widen it. `create_all_cell_actions`
+passes both on from its deps.
 
 ### Authorization model
 

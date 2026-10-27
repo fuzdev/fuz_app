@@ -107,11 +107,9 @@ describe_db('cell actions global-admin authority', (get_db) => {
 	});
 
 	test('cell_clone runs the create authorizer for every cell it writes', async () => {
-		const app = await create_cell_test_app(
-			get_db,
-			[ROLE_KEEPER, ROLE_ADMIN],
-			test_cell_gated_create_authorize
-		);
+		const app = await create_cell_test_app(get_db, [ROLE_KEEPER, ROLE_ADMIN], {
+			authorize_create: test_cell_gated_create_authorize
+		});
 		const member = await app.create_account({ username: 'clone_member' });
 		const member_headers = member.create_session_headers();
 
@@ -162,11 +160,9 @@ describe_db('cell actions global-admin authority', (get_db) => {
 	});
 
 	test('a scoped admin gets no clone bypass of the creation policy', async () => {
-		const app = await create_cell_test_app(
-			get_db,
-			[ROLE_KEEPER, ROLE_ADMIN],
-			test_cell_gated_create_authorize
-		);
+		const app = await create_cell_test_app(get_db, [ROLE_KEEPER, ROLE_ADMIN], {
+			authorize_create: test_cell_gated_create_authorize
+		});
 		const space = await create_cell(app, { kind: SPACE_CELL_KIND, data: {}, visibility: 'public' });
 		const scoped = await app.create_account({ username: 'clone_scoped_admin' });
 		await create_test_role_grant_direct(get_db(), {

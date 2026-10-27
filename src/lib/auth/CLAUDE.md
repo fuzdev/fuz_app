@@ -251,8 +251,9 @@ consumer's `validate_data` pass-through callback on `CellActionDeps`.
 - `auth/cell_action_specs.ts` — `CellVisibility` enum, `CellPath` brand,
   `CELL_KIND_LENGTH_MAX` (64 — the wire `kind` on `cell_create` and the
   `cell_list` filter; the tag is copied into the cell's audit rows),
-  `CellJson`, the generic verb specs (`cell_create / get / update /
-delete / list / clone / moderate`), error reasons, and `all_cell_action_specs`
+  `CellJson`, `CellPolicy` (a root's contribution policy, `z.looseObject`), the
+  generic verb specs (`cell_create / get / update / delete / list / clone /
+moderate / policy_set`), error reasons, and `all_cell_action_specs`
   (spreads in the grant / field / item / audit registries so codegen + UI
   see one cell namespace). `CellJson` has no hub axis; `path` is global. The
   directory-tree columns `parent_id` / `root_id` (containment, immutable in v1)
@@ -315,21 +316,32 @@ auth, ids)`: two queries for the whole id-set, the cells read through the
   the mounted `authorize_create` for **every** cell it writes as a parentless
   create — a denial is the same 403 `cell_create_forbidden`, so clone is no
   side door past the creation policy. The optional
-  parent-aware `authorize_create` dep (`CellCreateAuthorize` — wider input
-  `{kind, data, parent_id, root_id, root_data, scope_id}` than `validate_data`,
-  returning a `CellCreateVerdict` `{allow:false} | {allow:true, moderation_required}`)
+  parent-aware `authorize_create` dep (`CellCreateAuthorize` — an object whose
+  `authorize` takes a wider input `{kind, data, parent_id, root_id, root_policy,
+scope_id}` than `validate_data` and returns a `CellCreateVerdict`
+  `{allow:false} | {allow:true, moderation_required}`, and whose optional
+  `validate_policy` accepts or refuses a root policy write)
   gates create by capability; it runs after the validator + the parent-resolve
   (which **404**s `cell_not_found` on a missing or soft-deleted root as on a
   missing parent, authorizer or not).
   A **viewable**-parent / root-creation deny is **403** `cell_create_forbidden`
   (the create-path **404** mask is reserved for a hidden parent); `Allow` folds
   the moderation outcome (born `pending`+private vs `approved`+author-visibility).
-  The authorizer is **pure** — the handler reads the governing root's `data`
-  in-tx and hands it over as `root_data`, so a directory policy resolves
-  `root.data.policy[kind]` without its own DB read (which also dodges the
-  single-connection deadlock of the in-memory drivers). `None`/omitted = open create (the default;
-  mirrors `validate_data`). `cell_moderate` is the `pending → approved | rejected`
-  transition (plus `approved → rejected`, the takedown), gated on
+  The authorizer is **pure** — the handler reads the governing root in-tx and
+  hands its `policy` column over as `root_policy`, so a directory policy
+  resolves `root_policy[kind]` without its own DB read (which also dodges the
+  single-connection deadlock of the in-memory drivers). `None`/omitted = open
+  create (the default; mirrors `validate_data`), and every non-null policy write
+  refused `cell_policy_unsupported`. A root's `policy` (a JSON object, roots only
+  by table CHECK, opaque to the spine, readable on `CellJson`) is set at a
+  root's `cell_create` and changed only by `cell_policy_set` — the 404 mask, then
+  manage-tier (403 `cell_policy_manage_only`, an editor grant included), then
+  root-only (400 `cell_policy_root_only`), then the authorizer's
+  `validate_policy`; audited with the new and the previous policy. `cell_update`
+  never writes it (an editor can rewrite `data`, so a policy read from `data`
+  would be the editor's to loosen), and a clone is born without one.
+  `cell_moderate` is the `pending → approved | rejected` transition (plus
+  `approved → rejected`, the takedown), gated on
   `can_manage_cell` of the **governing root** (admin / root owner — the author
   lands a 403, the anti-self-approval guard; a root owner reaches the check
   through the steward arm); approve flips
@@ -348,7 +360,10 @@ auth, ids)`: two queries for the whole id-set, the cells read through the
 - `auth/cell_grant_actions.ts` / `cell_field_actions.ts` /
   `cell_item_actions.ts` / `cell_audit_actions.ts` — the relation + ACL +
   audit handlers, exporting `to_grant_json` / `to_field_json` /
-  `to_item_json` reused by the `cell_get` bundle.
+  `to_item_json` reused by the `cell_get` bundle. `cell_grant_create` takes an
+  optional `authorize_grant_create` (`CellGrantCreateAuthorize`), asked of a
+  manager after the spine's gates and before the write (a level change too);
+  `false` is 403 `cell_grant_not_authorized`, nothing written.
 - `auth/all_cell_actions.ts` — `create_all_cell_actions(deps, {roles})`, the
   handler-side twin of `all_cell_action_specs` and sibling of
   `create_standard_rpc_actions`: bundles all five cell factories (CRUD + grant
@@ -365,8 +380,8 @@ auth, ids)`: two queries for the whole id-set, the cells read through the
   Consumers spread it into `extra_events` to register the whole layer in
   one call (aggregator by design, not a compat shim).
 
-The cell event types (`cell_create` / `_update` / `_delete` / `_clone`,
-`cell_grant_create` / `_revoke`, `cell_field_set` / `_delete`,
+The cell event types (`cell_create` / `_update` / `_delete` / `_clone` /
+`_moderate`, `cell_policy_set`, `cell_grant_create` / `_revoke`, `cell_field_set` / `_delete`,
 `cell_item_insert` / `_move` / `_delete`) are consumer-registered extras,
 not built-ins — see §Audit event extensibility.
 

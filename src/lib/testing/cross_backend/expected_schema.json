@@ -72,6 +72,7 @@
 		"moderation",
 		"parent_id",
 		"path",
+		"policy",
 		"refs",
 		"root_id",
 		"updated_at",

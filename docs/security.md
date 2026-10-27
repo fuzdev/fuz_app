@@ -1534,6 +1534,18 @@ fact route — never clone, a create under it, the relation reads, or the grant
 paths, so moderating a contribution never lets the moderator copy it out or
 build under it.
 
+**A root's contribution policy is manage-tier.** The policy that decides who
+may contribute under a root lives in the root's own `policy` column, never in
+its `data`: an editor grant can rewrite `data`, so a policy read from it would
+be the editor's to loosen. `cell_policy_set` is its one writer past creation,
+in this order: the 404 mask for a caller who can't view the cell, **403**
+`cell_policy_manage_only` for one who can't manage it, **400**
+`cell_policy_root_only` on a cell with a parent, then a non-null policy's
+validation through the mounted create authorizer's `validate_policy` —
+`cell_policy_unsupported` when none is mounted, since a policy nothing
+interprets would look like a rule while enforcing none. A clone is born
+without a policy, so cloning a root never copies its rules out.
+
 **Cross-impl parity**: the 404 masks hold on both spines — the cell 404
 (`cell_get` / `cell_update` / `cell_delete` / `cell_clone`) and the
 role-grant / offer 404 return the same wire shape on the TS spine and the
@@ -1574,7 +1586,10 @@ doesn't admit an audience — pending, rejected, or any marker but `approved` �
 is refused with `forbidden` / `cell_grant_unapproved`, first thing after the
 manage-tier authorization and with no admin exemption: the read predicate
 wouldn't honor the grant until approval, so minting it would only stage access
-for later.
+for later. A consumer's `authorize_grant_create` hook, asked after these
+gates and before the write, can narrow who a manager may share with (403
+`cell_grant_not_authorized`), never widen it — the spine's gates have already
+run.
 
 **Actor-search scope gate**: `actor_search` (the prefix-search picker over
 `actor.name`) is account-grain authenticated, but an **unbounded global

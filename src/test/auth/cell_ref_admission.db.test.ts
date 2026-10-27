@@ -339,7 +339,9 @@ describe_db('cell ref admission', (get_db) => {
 	});
 
 	test('admission answers after the 404 masks and the create policy', async () => {
-		const app = await create_cell_test_app(get_db, [], test_cell_gated_create_authorize);
+		const app = await create_cell_test_app(get_db, [], {
+			authorize_create: test_cell_gated_create_authorize
+		});
 		const alice = await app.create_account({ username: 'adm_mask_alice' });
 		const bob = await app.create_account({ username: 'adm_mask_bob' });
 		const bob_headers = bob.create_session_headers();

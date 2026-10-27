@@ -184,6 +184,15 @@ export const SPINE_METHOD_COVERAGE: ReadonlyArray<MethodCoverageEntry> = [
 		capability: 'cell_gated_create',
 		suite: 'describe_cell_moderate_cross_tests'
 	},
+	// A root's contribution policy. Its validation runs through the mounted
+	// create authorizer, so its behavioral coverage rides the same
+	// `cell_gated_create` capability as the authorizer itself.
+	{
+		method: 'cell_policy_set',
+		tier: 'off_surface',
+		capability: 'cell_gated_create',
+		suite: 'describe_cell_gated_create_cross_tests'
+	},
 
 	// --- Off-surface: opt-in actor resolvers (ungated) ---
 	// Not in `create_standard_rpc_actions`; always mounted on the spine, their

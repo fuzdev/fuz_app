@@ -1962,10 +1962,16 @@ the option type states whether the bundle is read.
   admin-only (a non-admin → **403** `cell_create_forbidden`, and the same for a
   non-admin `cell_clone` of a viewable space — clone runs the authorizer for
   every cell it writes); a **contribution**
-  under a space is gated by the root's `data.policy[kind] = {min_role,
-moderation_required}`, with `moderation` set per the verdict (`pending`+private
-  vs `approved`+author-visibility); a **hidden** parent **404**-masks vs a
-  **visible** one **403**s; plain parentless creates stay open. The moderate
+  under a space is gated by the root's `policy[kind] = {min_role,
+moderation_required}` (the root's manage-tier `policy` column), with
+  `moderation` set per the verdict (`pending`+private vs
+  `approved`+author-visibility); a **hidden** parent **404**-masks vs a
+  **visible** one **403**s; plain parentless creates stay open. The root policy
+  itself: `cell_policy_set` writes it (audited old and new), answers an
+  editor-grant holder 403 `cell_policy_manage_only` and a non-viewer the 404,
+  refuses a contribution `cell_policy_root_only`, and runs each policy through
+  the authorizer's `validate_policy` (`cell_policy_invalid`); an editor
+  rewriting the root's `data.policy` leaves moderation as the column says. The moderate
   suite then proves the `pending → approved | rejected` transition and the
   `approved → rejected` takedown: an admin (root manager) approves → public,
   the **author** self-approve → 403 (anti-self-approval), a non-viewer → 404, reject → stays private, and a cell
