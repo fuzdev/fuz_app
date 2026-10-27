@@ -1,5 +1,6 @@
 /**
- * HTTP transport — sends JSON-RPC messages via HTTP POST (or GET for reads).
+ * HTTP transport — sends JSON-RPC messages via HTTP POST, or GET for a read
+ * whose params can ride the URL.
  *
  * @module
  */
@@ -29,6 +30,8 @@ import {
 	type JsonrpcResponseOrError
 } from '../http/jsonrpc.ts';
 import type { Transport, TransportSendOptions } from './transports.ts';
+import type { ActionSpecUnion } from './action_spec.ts';
+import { schema_has_sensitive_field } from '../schema_meta.ts';
 
 /** Headers every request carries unless the caller's replace them. */
 const DEFAULT_HEADERS: Readonly<Record<string, string>> = {
@@ -37,9 +40,52 @@ const DEFAULT_HEADERS: Readonly<Record<string, string>> = {
 };
 
 /**
- * Thin `fetch` adapter for the JSON-RPC endpoint. POST by default; GET when
- * the optional `has_side_effects(method)` callback returns `false` for the
- * method (matches `create_rpc_endpoint`'s GET convention). Always reports ready.
+ * The longest path and query a read is sent as a `GET` with — 4096
+ * characters. Past it the call goes as a `POST`: a `cell_list` naming its
+ * full id cap runs over it, and proxies refuse a request line past their own
+ * limit (nginx's default 8 KiB buffer) with a `414` the RPC client could not
+ * read.
+ */
+export const DEFAULT_MAX_GET_URL_LENGTH = 4096;
+
+/** Options for `FrontendHttpTransport`. */
+export interface FrontendHttpTransportOptions {
+	/** The JSON-RPC endpoint, absolute or relative to the page. */
+	url: string;
+	/**
+	 * Extra headers, merged over the JSON `content-type` and `accept` defaults
+	 * case-insensitively — a `POST` without `application/json` is refused
+	 * (415). A `GET` carries no `content-type`.
+	 */
+	headers?: Record<string, string>;
+	/**
+	 * The spec of a method, which decides how its calls are sent: a request for
+	 * a read (`side_effects: false`) is a `GET`, unless its input carries a
+	 * `'secret'` or `'personal'` value at any depth (`schema_has_sensitive_field`)
+	 * — a `GET` puts the params in the URL, which proxies and server logs
+	 * record, so that input stays in a `POST` body. Every other call is a
+	 * `POST`, including one for a method the lookup doesn't know.
+	 * `create_frontend_rpc_client` passes its registry's lookup; a hand-built
+	 * transport passes the same one its dispatcher environment uses.
+	 */
+	lookup_action_spec: (method: string) => ActionSpecUnion | undefined;
+	/**
+	 * The longest path and query a read is sent as a `GET` with; a longer one
+	 * is a `POST`.
+	 *
+	 * @default DEFAULT_MAX_GET_URL_LENGTH
+	 */
+	max_get_url_length?: number;
+}
+
+/**
+ * Thin `fetch` adapter for the JSON-RPC endpoint. `POST` by default; a
+ * request for a read — its spec (`lookup_action_spec`) has `side_effects:
+ * false` — is a `GET` with `method`, `id`, and `params` in the query string
+ * (matching `create_rpc_endpoint`'s GET convention), unless its input carries
+ * a sensitive value (`schema_has_sensitive_field`, checked once per spec) or
+ * its path and query run past `max_get_url_length`. A notification, and a
+ * call for a method without a spec, is always a `POST`. Always reports ready.
  *
  * On non-OK HTTP responses, a body that is a JSON-RPC error response for this
  * request (same `id`, or `null` when the server couldn't read one) is returned
@@ -55,28 +101,58 @@ export class FrontendHttpTransport implements Transport {
 
 	#url: string;
 	#headers: Record<string, string>;
-	#has_side_effects: ((method: string) => boolean) | undefined;
+	#get_headers: Record<string, string>;
+	#lookup_action_spec: (method: string) => ActionSpecUnion | undefined;
+	/** Whether each looked-up spec's input carries a sensitive value. */
+	#sensitive_input_by_spec: WeakMap<ActionSpecUnion, boolean> = new WeakMap();
+	#max_get_url_length: number;
 
-	/**
-	 * @param url - the JSON-RPC endpoint
-	 * @param headers - extra headers, merged over the JSON `content-type` and
-	 *   `accept` defaults case-insensitively — a POST without
-	 *   `application/json` is refused (415)
-	 * @param has_side_effects - when it returns `false` for a method, the call is a GET
-	 */
-	constructor(
-		url: string,
-		headers?: Record<string, string>,
-		has_side_effects?: (method: string) => boolean
-	) {
-		this.#url = url;
+	constructor(options: FrontendHttpTransportOptions) {
+		this.#url = options.url;
 		this.#headers = { ...DEFAULT_HEADERS };
-		if (headers) {
-			for (const [name, value] of Object.entries(headers)) {
+		if (options.headers) {
+			for (const [name, value] of Object.entries(options.headers)) {
 				this.#headers[name.toLowerCase()] = value;
 			}
 		}
-		this.#has_side_effects = has_side_effects;
+		// a GET has no body to describe
+		const { 'content-type': _, ...get_headers } = this.#headers;
+		this.#get_headers = get_headers;
+		this.#lookup_action_spec = options.lookup_action_spec;
+		this.#max_get_url_length = options.max_get_url_length ?? DEFAULT_MAX_GET_URL_LENGTH;
+	}
+
+	/**
+	 * The `GET` URL of `message` when it goes as one: a request for a read
+	 * whose input carries no sensitive value and whose path and query fit.
+	 */
+	#to_get_url(message: JsonrpcMessageFromClientToServer): string | null {
+		if (!('id' in message)) return null;
+		const spec = this.#lookup_action_spec(message.method);
+		// an unknown method is a POST, whatever it does
+		if (!spec || spec.side_effects) return null;
+		if (this.#has_sensitive_input(spec)) return null;
+		const search_params = new URLSearchParams();
+		search_params.set('method', message.method);
+		search_params.set('id', String(message.id));
+		if (message.params !== undefined) {
+			search_params.set('params', JSON.stringify(message.params));
+		}
+		const separator = this.#url.includes('?') ? '&' : '?';
+		const url = `${this.#url}${separator}${search_params.toString()}`;
+		// the path and query, whatever origin the URL names
+		const target = new URL(url, 'http://localhost');
+		if (target.pathname.length + target.search.length > this.#max_get_url_length) return null;
+		return url;
+	}
+
+	#has_sensitive_input(spec: ActionSpecUnion): boolean {
+		let sensitive = this.#sensitive_input_by_spec.get(spec);
+		if (sensitive === undefined) {
+			sensitive = schema_has_sensitive_field(spec.input);
+			this.#sensitive_input_by_spec.set(spec, sensitive);
+		}
+		return sensitive;
 	}
 
 	async send(
@@ -93,29 +169,15 @@ export class FrontendHttpTransport implements Transport {
 	): Promise<JsonrpcMessageFromServerToClient | null> {
 		const signal = options?.signal;
 		try {
-			let response: Response;
-			if (this.#has_side_effects && !this.#has_side_effects(message.method) && 'id' in message) {
-				// GET for read-only actions (matching fuz_app's create_rpc_endpoint GET convention)
-				const search_params = new URLSearchParams();
-				search_params.set('method', message.method);
-				search_params.set('id', String(message.id));
-				if (message.params !== undefined) {
-					search_params.set('params', JSON.stringify(message.params));
-				}
-				const separator = this.#url.includes('?') ? '&' : '?';
-				response = await fetch(`${this.#url}${separator}${search_params.toString()}`, {
-					method: 'GET',
-					headers: this.#headers,
-					signal
-				});
-			} else {
-				response = await fetch(this.#url, {
-					method: 'POST',
-					headers: this.#headers,
-					body: JSON.stringify(message),
-					signal
-				});
-			}
+			const get_url = this.#to_get_url(message);
+			const response = get_url
+				? await fetch(get_url, { method: 'GET', headers: this.#get_headers, signal })
+				: await fetch(this.#url, {
+						method: 'POST',
+						headers: this.#headers,
+						body: JSON.stringify(message),
+						signal
+					});
 
 			if (!response.ok) {
 				const id = to_jsonrpc_message_id(message);

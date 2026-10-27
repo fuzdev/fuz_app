@@ -16,9 +16,10 @@ import { zod_get_schema_layers, zod_unwrap_to_object } from './zod.ts';
 export interface SchemaFieldMeta {
 	description?: string;
 	/**
-	 * Sensitivity level for masking/redaction. `'secret'` masks the value.
-	 * Read through every wrapping layer (`schema_sensitivity`), so
-	 * `.meta({sensitivity: 'secret'}).optional()` masks too.
+	 * Sensitivity level (`Sensitivity`): `'secret'` masks the value,
+	 * `'personal'` only keeps it out of URLs. Read through every wrapping
+	 * layer (`schema_sensitivity`), so `.meta({sensitivity: 'secret'}).optional()`
+	 * masks too.
 	 */
 	sensitivity?: Sensitivity;
 	/**
@@ -99,44 +100,101 @@ export const schema_invalid_reason = (schema: z.ZodType): string | undefined =>
 	schema_meta_value(schema, 'invalid_reason');
 
 /**
- * The `sensitivity` a schema declares anywhere among its wrapping layers, so
- * a secret stays masked however the field is wrapped. Fail-safe where
- * `schema_meta_value` reads one chain: the walk follows the `innerType` of
+ * The strongest `sensitivity` declared on any schema `walk_sensitivity`
+ * reaches from `schema` — `'secret'` over `'personal'` — visiting each schema
+ * once, so a recursive `z.lazy()` terminates. It follows the `innerType` of
  * every wrapper that has one (optional, nullable, default, prefault,
- * nonoptional, catch, readonly), both sides of a pipe (so `.transform()`,
- * `z.preprocess()` and `.pipe(secret)` all reach the secret), and a
- * `z.lazy()` getter, and every member of a union or intersection (the
- * value is one of them), visiting each schema once, and answers `'secret'`
- * when any layer reached declares it. It stops at structural schemas — an
- * object's fields and an array's element carry their own.
- *
- * @param schema - a field schema, possibly wrapped
- * @returns `'secret'` when any reachable layer declares it, else `undefined`
+ * nonoptional, catch, readonly, promise), both sides of a pipe and an
+ * intersection, every member of a union (discriminated or not), a
+ * template literal's schema parts, and a `z.lazy()` getter; with
+ * `structural`, also an object's fields and catchall, an array's element, a
+ * tuple's items and rest, and a record's, map's or set's keys and values.
  */
-export const schema_sensitivity = (schema: z.ZodType): Sensitivity | undefined => {
+const walk_sensitivity = (schema: z.ZodType, structural: boolean): Sensitivity | undefined => {
+	let found: Sensitivity | undefined;
 	const seen: Set<z.ZodType> = new Set();
 	const pending: Array<z.ZodType> = [schema];
+	const push = (sub: unknown): void => {
+		if (sub && typeof sub === 'object' && 'def' in sub) pending.push(sub as z.ZodType);
+	};
 	while (pending.length > 0) {
 		const layer = pending.pop()!;
 		if (seen.has(layer)) continue;
 		seen.add(layer);
-		if ((layer.meta() as SchemaFieldMeta | undefined)?.sensitivity === 'secret') return 'secret';
+		const sensitivity = (layer.meta() as SchemaFieldMeta | undefined)?.sensitivity;
+		if (sensitivity === 'secret') return 'secret';
+		if (sensitivity === 'personal') found = 'personal';
 		const def = layer.def as unknown as Record<string, unknown>;
 		if (def.type === 'lazy') {
-			pending.push((layer as z.ZodLazy)._zod.innerType as z.ZodType);
+			push((layer as z.ZodLazy)._zod.innerType);
 			continue;
 		}
 		if (def.type === 'union' && Array.isArray(def.options)) {
-			pending.push(...(def.options as Array<z.ZodType>));
+			for (const option of def.options) push(option);
 			continue;
 		}
-		for (const key of ['innerType', 'in', 'out', 'left', 'right'] as const) {
-			const sub = def[key];
-			if (sub && typeof sub === 'object' && 'def' in sub) pending.push(sub as z.ZodType);
+		// the value is one string containing each part, so its schema parts count
+		// like a wrapper's; `push` skips the literal parts (strings, numbers, …)
+		if (def.type === 'template_literal' && Array.isArray(def.parts)) {
+			for (const part of def.parts) push(part);
+		}
+		for (const key of ['innerType', 'in', 'out', 'left', 'right'] as const) push(def[key]);
+		if (!structural) continue;
+		if (def.type === 'object') {
+			for (const field of Object.values((layer as z.ZodObject).shape)) push(field);
+			push(def.catchall);
+		} else if (def.type === 'array' || def.type === 'set') {
+			push(def.element);
+			push(def.valueType);
+		} else if (def.type === 'tuple') {
+			if (Array.isArray(def.items)) for (const item of def.items) push(item);
+			push(def.rest);
+		} else if (def.type === 'record' || def.type === 'map') {
+			push(def.keyType);
+			push(def.valueType);
 		}
 	}
-	return undefined;
+	return found;
 };
+
+/**
+ * The `sensitivity` a schema declares anywhere among its wrapping layers, so
+ * a secret stays masked however the field is wrapped. Fail-safe where
+ * `schema_meta_value` reads one chain: the walk follows the `innerType` of
+ * every wrapper that has one (optional, nullable, default, prefault,
+ * nonoptional, catch, readonly, promise), both sides of a pipe (so
+ * `.transform()`, `z.preprocess()` and `.pipe(secret)` all reach the
+ * secret), a `z.lazy()` getter, every member of a union (the value is one of
+ * them), both sides of an intersection (it is both), and a template
+ * literal's schema parts (the value contains them), visiting each schema
+ * once, and answers the strongest level any layer reached declares —
+ * `'secret'` over `'personal'`. It stops at structural schemas — an object's fields and an
+ * array's element carry their own.
+ *
+ * @param schema - a field schema, possibly wrapped
+ * @returns the strongest level any reachable layer declares, else `undefined`
+ */
+export const schema_sensitivity = (schema: z.ZodType): Sensitivity | undefined =>
+	walk_sensitivity(schema, false);
+
+/**
+ * Whether an input schema carries a sensitive value at any depth — `'secret'`
+ * or `'personal'` on the schema itself or anywhere inside it: through its
+ * wrappers (as `schema_sensitivity`), and into object fields, array and set
+ * elements, tuple items, record and map keys and values, template literal
+ * parts, union members and intersection sides.
+ *
+ * What keeps a read's input off the URL: `FrontendHttpTransport` sends a
+ * read (`side_effects: false`) as a `GET` with the params in the query string,
+ * which proxies and server logs record, unless its input carries a sensitive
+ * value — that call goes as a `POST` (the transport walks each spec's input
+ * once).
+ *
+ * @param schema - an action input schema
+ * @returns `true` when any value the schema admits may hold a sensitive field
+ */
+export const schema_has_sensitive_field = (schema: z.ZodType): boolean =>
+	walk_sensitivity(schema, true) !== undefined;
 
 /**
  * The `error.data.reason` an input validation failure at `path` carries: the

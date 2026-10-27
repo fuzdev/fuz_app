@@ -876,7 +876,7 @@ Key behaviors:
 
 - Single endpoint at mount path (e.g., `/api/rpc`) — GET + POST
 - POST: JSON-RPC 2.0 envelope body (`{jsonrpc: "2.0", method, params, id}`)
-- GET: `?method=...&id=...&params=...` for cacheable reads (`side_effects: false` only)
+- GET: `?method=...&id=...&params=...` for reads (`side_effects: false` only), answered with `Cache-Control: no-store`
 - Per-action auth inside dispatcher (route-level auth is `{account: 'none', actor: 'none'}`)
 - Per-action transaction scope (mutations get DB transaction, reads get pool)
 - Handler errors roll back the transaction — the catch sits outside the transaction boundary. Post-commit effects the handler queued via `emit_after_commit` are **discarded** on rollback (they run iff the transaction commits); eager `pending_effects` pool writes (audit attempts) survive rollback by design (see ./architecture.md §Fire-and-Forget Pending Effects)
@@ -1171,23 +1171,44 @@ protocol primitive (no Error allocation, cheap inspect-error paths);
 throwing is the ergonomic wrapper. Pick per call site; both surfaces
 the same transport and types.
 
-Pass `transports` for WS-first or mixed setups; pass `path` to override
-the default `/api/rpc`. Pass `transport_for_method` for per-method
-routing (e.g. action methods on WS, REST RPC on HTTP — a
-mixed split):
+The HTTP transport sends a read (`side_effects: false`) as a `GET` — unless
+its input carries a sensitive value or its path and query exceed
+`max_get_url_length` (4096 by default), which go as `POST` — and the endpoint
+answers every `GET` with `Cache-Control: no-store`. A read's params ride in
+the URL, which proxies and server logs record, so tag a credential-like read
+input `.meta({sensitivity: 'secret'})`, or `'personal'` for personal data
+such as a search term about people, to keep it in a `POST` body. Pass `path`
+to override the default `/api/rpc`, `http_headers` for extra headers. A
+hand-built `FrontendHttpTransport` derives the same policy from the
+`lookup_action_spec` it is given; a method the lookup doesn't know is a `POST`.
+
+Pass `ws` for a WebSocket lane: you build the client, and every
+`request_response` method routes to it, with HTTP as the fallback while it is
+down. `ws.queue: true` makes requests wait out a reconnect in the socket's
+durable queue instead (a client-authoritative app); after a close that
+schedules no reconnect (superseded, permission revoked, `disconnect()`) they
+fall back to HTTP:
 
 ```typescript
+import { FrontendWebsocketClient } from '@fuzdev/fuz_app/actions/socket.svelte.ts';
+import { to_same_origin_ws_url } from '@fuzdev/fuz_app/actions/transports_ws.ts';
+
+const socket = new FrontendWebsocketClient(to_same_origin_ws_url('/api/ws'));
 const { api, api_result } = create_frontend_rpc_client<FrontendActionsApi>({
-	specs: all_specs,
-	transports: [ws_transport, http_transport],
-	transport_for_method: (method) =>
-		method.startsWith('tx_') ? 'frontend_websocket_rpc' : 'frontend_http_rpc'
+	specs: [...protocol_action_specs, ...all_specs],
+	ws: { client: socket },
+	lookup_action_handler // server-pushed notifications on the socket
 });
+// in the browser, once the session exists:
+socket.connect();
 ```
 
-Pass `actions` (a duck-typed `RpcClientActionHistory` with `add_from_json`)
-for zzz-style consumers that observe every dispatched `ActionEvent`
-through a reactive Cell. The returned `peer` and `environment` are
+Pass `transport_for_method` for other per-method routing, or `transports` to
+replace the built-in transports entirely.
+
+Pass `on_action_event` for zzz-style consumers that observe every
+dispatched `ActionEvent` through a reactive Cell (`add_from_json` +
+`listen_to_action_event`). The returned `peer` and `environment` are
 exposed for advanced consumers that need to register more transports
 or attach a notification handler registry.
 

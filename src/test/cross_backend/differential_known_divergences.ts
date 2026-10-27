@@ -43,6 +43,18 @@ const ts_dev_auth_debug_header: KnownDivergence = {
 	what_differs: [{ path: 'headers.x-fuz-auth-debug', a: true, b: undefined }]
 };
 
+/**
+ * The TS spine answers every RPC `GET` with `Cache-Control: no-store`
+ * (`RPC_GET_CACHE_CONTROL`); the Rust spine's `GET` dispatch does not send it
+ * yet. Delete this entry when it does.
+ */
+const ts_rpc_get_no_store: KnownDivergence = {
+	case_name: 'keeper → account_session_list via GET with ?params={} → 200',
+	tracking_id: 'rpc-get-no-store-rust-half',
+	reason: 'TS sends Cache-Control: no-store on RPC GET responses; the Rust twin does not yet',
+	what_differs: [{ path: 'headers.cache-control', a: true, b: undefined }]
+};
+
 /** The admin lists with `limit` / `offset` paging. */
 const PAGED_LIST_METHODS = [
 	'admin_account_list',
@@ -62,15 +74,18 @@ export const differential_known_divergences: ReadonlyArray<KnownDivergence> = [
 		'cell_field_list',
 		'cell_item_list'
 	]),
-	ts_dev_auth_debug_header
+	ts_dev_auth_debug_header,
+	ts_rpc_get_no_store
 ];
 
 /**
  * Divergences the main conformance arrays show over the WebSocket leg: the
- * HTTP ledger minus the header row, since a frame carries no headers.
+ * HTTP ledger minus the header rows, since a frame carries no headers.
  */
 export const differential_ws_known_divergences: ReadonlyArray<KnownDivergence> =
-	differential_known_divergences.filter((d) => d !== ts_dev_auth_debug_header);
+	differential_known_divergences.filter(
+		(d) => d !== ts_dev_auth_debug_header && d !== ts_rpc_get_no_store
+	);
 
 /** Divergences the participation cases show. */
 export const differential_participation_known_divergences: ReadonlyArray<KnownDivergence> = [

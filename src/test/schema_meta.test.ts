@@ -1,6 +1,7 @@
 /**
  * Tests for `schema_meta.ts` — reading a field's declared `invalid_reason`
- * and `sensitivity` through its wrappers, along a validation issue's path, and over a failed
+ * and `sensitivity` through its wrappers, an input's sensitive fields at any
+ * depth, and the reason along a validation issue's path and over a failed
  * parse's issues.
  *
  * @module
@@ -12,6 +13,7 @@ import { z } from 'zod';
 import {
 	resolve_invalid_reason,
 	resolve_issues_invalid_reason,
+	schema_has_sensitive_field,
 	schema_invalid_reason,
 	schema_sensitivity
 } from '#lib/schema_meta.ts';
@@ -126,6 +128,12 @@ describe('schema_sensitivity', () => {
 		assert.strictEqual(schema_sensitivity(z.array(secret)), undefined);
 	});
 
+	test("a template literal's schema part counts — the value contains it", () => {
+		const secret = z.string().meta({ sensitivity: 'secret' });
+		assert.strictEqual(schema_sensitivity(z.templateLiteral(['k_', secret])), 'secret');
+		assert.strictEqual(schema_sensitivity(z.templateLiteral(['k_', z.string(), 1])), undefined);
+	});
+
 	test('a recursive lazy schema terminates', () => {
 		interface Node {
 			next?: Node;
@@ -134,6 +142,78 @@ describe('schema_sensitivity', () => {
 		const self_lazy: z.ZodType = z.lazy(() => self_lazy.optional());
 		assert.strictEqual(schema_sensitivity(node), undefined);
 		assert.strictEqual(schema_sensitivity(self_lazy), undefined);
+	});
+	test('personal is read like secret, and secret wins over it', () => {
+		const personal = z.string().meta({ sensitivity: 'personal' });
+		const secret = z.string().meta({ sensitivity: 'secret' });
+		assert.strictEqual(schema_sensitivity(personal.optional()), 'personal');
+		assert.strictEqual(schema_sensitivity(z.union([personal, secret])), 'secret');
+		assert.strictEqual(schema_sensitivity(z.union([secret, personal])), 'secret');
+		assert.strictEqual(schema_sensitivity(personal.meta({ sensitivity: 'secret' })), 'secret');
+	});
+});
+
+describe('schema_has_sensitive_field', () => {
+	const secret = z.string().meta({ sensitivity: 'secret' });
+	const personal = z.string().meta({ sensitivity: 'personal' });
+
+	test('finds a secret or personal value at any depth', () => {
+		for (const sensitive of [secret, personal]) {
+			const cases: Array<[string, z.ZodType]> = [
+				['root', sensitive],
+				['root field', z.strictObject({ a: sensitive })],
+				['optional field', z.strictObject({ a: sensitive.optional() })],
+				['nullable field', z.strictObject({ a: sensitive.nullable() })],
+				['default field', z.strictObject({ a: sensitive.default('x') })],
+				['optional input', z.strictObject({ a: sensitive }).optional()],
+				['nested object', z.strictObject({ a: z.strictObject({ b: sensitive }) })],
+				['array of objects', z.strictObject({ a: z.array(z.strictObject({ b: sensitive })) })],
+				[
+					'union of objects',
+					z.strictObject({
+						a: z.union([z.strictObject({ b: z.number() }), z.strictObject({ c: sensitive })])
+					})
+				],
+				[
+					'discriminated union',
+					z.discriminatedUnion('kind', [
+						z.strictObject({ kind: z.literal('a') }),
+						z.strictObject({ kind: z.literal('b'), q: sensitive })
+					])
+				],
+				[
+					'intersection',
+					z.intersection(z.strictObject({ a: z.number() }), z.looseObject({ b: sensitive }))
+				],
+				['record value', z.strictObject({ a: z.record(z.string(), sensitive) })],
+				['tuple item', z.strictObject({ a: z.tuple([z.number(), sensitive]) })],
+				['template literal part', z.strictObject({ a: z.templateLiteral(['k_', sensitive]) })],
+				['lazy', z.strictObject({ a: z.lazy(() => z.strictObject({ b: sensitive })) })]
+			];
+			for (const [label, schema] of cases) {
+				assert.isTrue(
+					schema_has_sensitive_field(schema),
+					`${label}: ${schema_sensitivity(sensitive)}`
+				);
+			}
+		}
+	});
+
+	test('an input with no sensitive value has none', () => {
+		interface Node {
+			next?: Node;
+		}
+		const node: z.ZodType<Node> = z.lazy(() => z.strictObject({ next: node.optional() }));
+		for (const schema of [
+			z.null(),
+			z.strictObject({ a: z.string(), b: z.array(z.strictObject({ c: z.number() })).optional() }),
+			z.union([z.strictObject({ a: z.string() }), z.strictObject({ b: z.uuid() })]),
+			z.strictObject({ a: z.record(z.string(), z.string()) }),
+			z.templateLiteral(['k_', z.string(), 1]),
+			node
+		]) {
+			assert.isFalse(schema_has_sensitive_field(schema));
+		}
 	});
 });
 

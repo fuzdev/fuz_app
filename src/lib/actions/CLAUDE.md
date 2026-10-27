@@ -201,7 +201,7 @@ Shim responsibilities (per-request):
 
 1. Parse envelope (POST body / GET query string); parse errors → `parse_error` 400. GET reads `method` / `id` / `params` via Hono's `c.req.query()` — first occurrence wins on a duplicated key, unknown keys are ignored, and an empty value counts as missing. This is the cross-impl contract (the Rust GET dispatch mirrors it via `fuz_http`'s `query_first`, including the id numeric-vs-string normalization), pinned by the `query_shape` cross suite.
 2. Lookup method in the `compile_action_registry`-built map; unknown → `method_not_found`.
-3. GET read restriction — GET rejected for `side_effects: true` actions.
+3. GET read restriction — GET rejected for `side_effects: true` actions. Every response the GET handler writes, its refusals included, carries `Cache-Control: no-store` (`RPC_GET_CACHE_CONTROL`; a pre-handler middleware refusal, like the origin 403, does not): a read answers one caller at one moment.
 4. Build `PerformActionInput` from `c.var` + `get_client_ip` + `c.req.raw.signal`. Test-preset escape hatch reads `TEST_CONTEXT_PRESET_KEY` + `REQUEST_CONTEXT_KEY`.
 5. Call `perform_action` (shared core).
 6. Bind result via `serialize_action_result(id, result, method, log)` (`actions/perform_action.ts`, shared with WS) → `{body, status}`, written with `c.json`'s content type.
@@ -317,20 +317,43 @@ Validation for full rationale.
 
 `Transport` is the unifying interface — overloaded `send(message, options?)`
 returning `Promise<JsonrpcResponseOrError>` for requests and
-`Promise<JsonrpcErrorResponse | null>` for notifications, plus `is_ready()`
-and optional `dispose()`. All transports share `TransportSendOptions`:
+`Promise<JsonrpcErrorResponse | null>` for notifications, plus `is_ready()`,
+optional `queues` (a request sent with `queue` waits on it while not ready —
+`FrontendWebsocketTransport`, while its connection `will_reconnect`), and
+optional `dispose()`. All transports share
+`TransportSendOptions`:
 
 - `signal?: AbortSignal` — per-call cancel. Bottoms out at
   `FrontendWebsocketClient.request({signal})` on WS (sends `cancel`
   notification on abort) and at `fetch({signal})` on HTTP.
 - `queue?: boolean` — per-call durable-queue opt-in. Honored only by
   `FrontendWebsocketTransport` on the `request_response` path (default
-  `false`). HTTP, backend, and WS notifications all ignore it.
+  `false`). HTTP and WS notifications ignore it.
 
-`Transports` registry holds multiple transports with a `current` selection
-and `allow_fallback: boolean` (default `true`). Explicit
-`transport_for_method` (on `rpc_client`) or
-`default_send_options.transport_name` (on `ActionDispatcher`) takes precedence.
+`Transports` holds transports by name; the first registered is the default.
+`get_transport(name?, {queue?})` returns the preferred transport — the named
+one, else the default — when it is ready, or when it is not but the call is a
+queued request and it `queues`; otherwise the first ready transport, the
+default first. Explicit `transport_for_method` (on `rpc_client`) or
+`default_send_options.transport_name` (on `ActionDispatcher`) names it.
+
+**Queue routing.** `ActionDispatcher.send` resolves a request's `queue` once —
+the call's, else `default_send_options.queue`, else off — and it drives both
+the transport choice and the send, so a WS-routed request on a disconnected
+socket waits in the client's durable queue and replays on reconnect (or
+rejects when its `signal` aborts; the queue is size-bounded, not timed). It
+queues only while a reconnect is coming: `FrontendWebsocketTransport.queues`
+reads the connection's `will_reconnect` (`FrontendWebsocketClient`:
+`connecting` or `reconnecting`), so after a close that reopens nothing on its
+own — superseded (4004), permission revoked (4006), `disconnect()`,
+`cancel_reconnect()`, auto-reconnect off — the request falls back to a ready
+transport (HTTP) rather than wait for a `connect()`. (Requests already queued
+before a `cancel_reconnect()` or `set_reconnect(false)` stay queued for the
+next `connect()`.) A notification never queues: it fails fast, or falls back to
+a ready transport.
+The RPC layer defaults it off; a client-authoritative app opts in on the peer
+(`create_frontend_rpc_client`'s `ws.queue`). `FrontendWebsocketClient`'s own
+raw `request()` keeps its default-on queue.
 
 ### WS close codes (`actions/transports.ts`)
 
@@ -347,8 +370,8 @@ and `allow_fallback: boolean` (default `true`). Explicit
 
 ### Transport modules
 
-- `actions/transports_http.ts` — `frontend_http_rpc`; thin `fetch` adapter, POST default, GET on `has_side_effects(method) === false`.
-- `actions/transports_ws.ts` — `frontend_websocket_rpc`; thin adapter over `WebsocketRpcConnection` (default impl: `FrontendWebsocketClient`). Answers inbound server→client requests: a built-in `peer_ping_responder` for `peer/ping` (zero-wiring liveness), any other request routed through `peer.receive` with the response sent back over the socket (the frontend half of the ActionPeer receive loop).
+- `actions/transports_http.ts` — `frontend_http_rpc`; thin `fetch` adapter over `FrontendHttpTransportOptions` (`{url, headers?, lookup_action_spec, max_get_url_length?}`). The transport owns the request policy, derived from the spec `lookup_action_spec` returns, so a hand-built transport can't drop a rule: POST by default; a read (`side_effects: false`) is a GET with no `content-type`, unless its input carries a `'secret'` or `'personal'` value at any depth (`schema_has_sensitive_field`, walked once per spec — a GET puts the params in the URL, which proxies and logs record) or its path and query exceed `max_get_url_length` (`DEFAULT_MAX_GET_URL_LENGTH`, 4096), which go as POST. A method the lookup doesn't know is a POST. The endpoint answers every GET with `Cache-Control: no-store` (`RPC_GET_CACHE_CONTROL`).
+- `actions/transports_ws.ts` — `frontend_websocket_rpc`; thin adapter over `WebsocketRpcConnection` (default impl: `FrontendWebsocketClient`), `queues` while the connection `will_reconnect`. Also `to_same_origin_ws_url(path)`, the page-origin WebSocket URL a same-origin backend is reached at (`path` itself off the browser). Answers inbound server→client requests: a built-in `peer_ping_responder` for `peer/ping` (zero-wiring liveness), any other request routed through `peer.receive` with the response sent back over the socket (the frontend half of the ActionPeer receive loop).
 - `actions/transports_ws_backend.ts` — `BackendWebsocketTransport`, server-side WS with session tracking, two-phase registration (`register_pending` / `admit`), the per-account cap, and the per-connection outbound budget; the broadcast target of `create_broadcast_api` (`broadcast`, `broadcast_filtered`). Not a `Transport`: it sends nothing a client requested. Server→client requests via `request_connection` (correlation registry in `actions/peer_request.ts`).
 - `actions/ws_outbound_writer.ts` — `WsOutboundWriter`, the outbound queue and write pump of one connection, which every frame the transport sends goes through; `realtime/outbound_budget.ts` is the accounting it shares with SSE.
 
@@ -1150,7 +1173,7 @@ doesn't get probed as a thenable by `await`.
 
 ### Frontend factory (`actions/frontend_rpc_client.ts`)
 
-`create_frontend_rpc_client<TApi>({specs, path?, transports?, transport_for_method?, on_action_event?, lookup_action_handler?, log?})`
+`create_frontend_rpc_client<TApi>({specs, path?, http_headers?, max_get_url_length?, ws?, transports?, transport_for_method?, on_action_event?, lookup_action_handler?, log?})`
 bundles `ActionRegistry + ActionEventEnvironment + Transports + ActionDispatcher +
 create_rpc_client + create_throwing_api` boilerplate every consumer
 repeats — plus the `lookup_action_handler: () => undefined` stub (frontend
@@ -1162,12 +1185,21 @@ Returns both Proxy shapes from one factory call:
 - `api: ThrowingApi<TApi>` — typed throwing Proxy. Default for hot-path call sites.
 - `api_result: TApi` — typed Result-shaped Proxy. For sites that inspect `error.data.reason` without try/catch.
 - `peer`, `environment` — exposed for advanced consumers.
+- `socket` — the `ws.client`, or `null`.
 
-Default transport is `FrontendHttpTransport(path ?? '/api/rpc')`. Pass
-`transports` for WS-first or mixed setups (the default HTTP transport is
-**not** registered when `transports` is supplied). `local_call` specs in
-`specs` silently no-op because `lookup_action_handler` always returns
-`undefined`.
+Transports: a `FrontendHttpTransport` on `path ?? '/api/rpc'` over the
+registry's `lookup_action_spec` (a hand-built transport passes its own
+environment's), so a read goes as a GET; and, with `ws: {client, queue?, max_message_bytes?}`, a
+`FrontendWebsocketTransport` over the caller's client, registered after it,
+which every `request_response` method routes to unless `transport_for_method`
+says otherwise (HTTP stays the fallback while the socket is down). The caller
+builds and connects the client — `new
+FrontendWebsocketClient(to_same_origin_ws_url('/api/ws'))` — so the factory
+never imports `socket.svelte.ts` and an HTTP-only bundle stays socket-free.
+`ws.queue` sets the peer's default `queue` (Queue routing above). Pass
+`transports` to replace the built-ins (exclusive with `ws`, `http_headers`,
+`max_get_url_length`). `local_call` specs in `specs` silently no-op because
+`lookup_action_handler` always returns `undefined`.
 
 `all_standard_action_specs` (in `auth/standard_action_specs.ts`) is
 transport-agnostic — when a consumer spreads `create_standard_rpc_actions`

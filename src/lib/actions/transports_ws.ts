@@ -54,6 +54,24 @@ import { PEER_PING_METHOD, peer_ping_responder } from './peer_ping.ts';
 // TODO logging - maybe add a getter to Cell that falls back to the app logger?
 
 /**
+ * The WebSocket URL of `path` on the page's own origin — `ws:` for an `http:`
+ * page, `wss:` for `https:` — the shape a backend served behind the same origin
+ * as the frontend (nginx in production, the Vite dev proxy in dev) is reached
+ * at. Absolute because older browsers reject a relative WebSocket URL.
+ *
+ * Off the browser (SSR, prerender) there is no page origin and nothing
+ * connects, so `path` comes back unchanged.
+ *
+ * @param path - the endpoint path, e.g. `/api/ws`
+ * @returns the absolute same-origin WebSocket URL in a browser, else `path`
+ */
+export const to_same_origin_ws_url = (path: string): string => {
+	if (typeof location === 'undefined') return path;
+	const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+	return `${protocol}//${location.host}${path}`;
+};
+
+/**
  * Minimal interface for a WebSocket connection, decoupled from the concrete Socket Cell.
  */
 export interface WebsocketConnection {
@@ -76,6 +94,13 @@ export interface WebsocketConnection {
  * underlying client's `request`.
  */
 export interface WebsocketRpcConnection extends WebsocketConnection {
+	/**
+	 * Whether the connection is down but opening on its own (connecting, or
+	 * waiting out a scheduled reconnect), so a request queued now will be
+	 * sent without a `connect()` call. `FrontendWebsocketTransport` queues
+	 * only while this holds.
+	 */
+	readonly will_reconnect: boolean;
 	request: (
 		method: string,
 		params: unknown,
@@ -127,6 +152,18 @@ export const create_message_too_large_error = (
  */
 export class FrontendWebsocketTransport implements Transport {
 	readonly transport_name = 'frontend_websocket_rpc' as const;
+
+	/**
+	 * A request sent with `queue: true` waits in the connection's durable queue
+	 * while disconnected — but only while the connection `will_reconnect` on
+	 * its own. After a close that won't reopen (superseded, permission revoked,
+	 * `disconnect()`, auto-reconnect off) this is `false`, so
+	 * `Transports.get_transport` falls back to a ready transport (HTTP) rather
+	 * than leave the request waiting on a `connect()` nobody may call.
+	 */
+	get queues(): boolean {
+		return this.#connection.will_reconnect;
+	}
 
 	#connection: WebsocketRpcConnection;
 	#receive: (data: unknown) => Promise<unknown>;

@@ -41,6 +41,12 @@ import { create_jsonrpc_error_response, to_jsonrpc_envelope_id } from '../http/j
 import type { RateLimiter } from '../rate_limiter.ts';
 import { perform_action, serialize_action_result } from './perform_action.ts';
 
+/**
+ * The `Cache-Control` every response of the RPC endpoint's `GET` route carries
+ * — a read is per caller and per moment, so nothing may store it.
+ */
+export const RPC_GET_CACHE_CONTROL = 'no-store';
+
 /** Options for `create_rpc_endpoint`. */
 export interface CreateRpcEndpointOptions {
 	/** Mount path for the endpoint (e.g., `/api/rpc`). */
@@ -95,7 +101,9 @@ export interface CreateRpcEndpointOptions {
  * 8. **Dispatch** — acquire DB handle (transaction for mutations, pool for reads),
  *    construct `ActionContext`, call handler, return JSON-RPC response.
  *
- * GET is restricted to `side_effects: false` actions (cacheable reads).
+ * GET is restricted to `side_effects: false` actions, and every response the
+ * GET handler writes, its refusals included, carries `Cache-Control: no-store`
+ * (`RPC_GET_CACHE_CONTROL`) — a refusal by middleware ahead of it does not.
  * All errors use JSON-RPC format: `{jsonrpc, id, error: {code, message, data?}}`.
  *
  * The RouteSpecs use `auth: {type: 'none'}` because auth is checked per-action
@@ -245,6 +253,10 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 
 	// GET handler — extract method and params from query string
 	const get_handler = async (c: Context, route: RouteContext): Promise<Response> => {
+		// A read answers for one caller at one moment: no cache — the browser's,
+		// a proxy's — may keep it and answer a later call, or another caller,
+		// with it. Every response of the route, errors included.
+		c.header('Cache-Control', RPC_GET_CACHE_CONTROL);
 		// step 1: parse from query string
 		const method_name = c.req.query('method');
 		if (!method_name) {
@@ -310,6 +322,8 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 			auth: { account: 'none', actor: 'none' }, // per-action auth inside dispatcher
 			reads_credential: true,
 			handler: get_handler,
+			// TODO: "cacheable" predates `RPC_GET_CACHE_CONTROL` — the label is in every
+			// consumer's committed surface snapshot, so renaming it is its own sweep
 			description: `JSON-RPC 2.0 endpoint (cacheable reads) — ${actions.length} method${
 				actions.length === 1 ? '' : 's'
 			}`,

@@ -9,7 +9,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
+import { create_rpc_endpoint, RPC_GET_CACHE_CONTROL } from '#lib/actions/action_rpc.ts';
 import type { RpcAction } from '#lib/actions/action_types.ts';
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import { apply_route_specs } from '#lib/http/route_spec.ts';
@@ -961,6 +961,38 @@ describe('POST dispatcher', () => {
 });
 
 describe('GET dispatcher', () => {
+	/**
+	 * A read answers one caller at one moment, so no browser or proxy cache may
+	 * store it — on every GET response, refusals included — while the POST
+	 * route sends no such header.
+	 */
+	test('every GET response is Cache-Control: no-store, the POST route sets none', async () => {
+		const app = create_test_app(
+			[
+				{ spec: create_get_spec(), handler: () => ({ items: [] }) },
+				{ spec: create_post_spec(), handler: () => ({ id: 'x' }) }
+			],
+			{ auth_context: create_test_request_context() }
+		);
+		for (const url of [
+			'/api/rpc?method=thing_list&id=1',
+			'/api/rpc?method=nope&id=1',
+			'/api/rpc?method=thing_create&id=1',
+			'/api/rpc?id=1'
+		]) {
+			const res = await app.request(url);
+			assert.strictEqual(res.headers.get('cache-control'), RPC_GET_CACHE_CONTROL, url);
+		}
+		assert.strictEqual(RPC_GET_CACHE_CONTROL, 'no-store');
+		const post = await app.request('/api/rpc', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: rpc_request('thing_create', { name: 'x' })
+		});
+		assert.strictEqual(post.status, 200);
+		assert.isNull(post.headers.get('cache-control'));
+	});
+
 	test('dispatches side_effects:false action via query string', async () => {
 		let received_input: unknown = 'sentinel';
 		const app = create_test_app([

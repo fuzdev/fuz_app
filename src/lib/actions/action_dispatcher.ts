@@ -87,6 +87,16 @@ export class ActionDispatcher {
 	 * and forward the message. Catches unexpected throws and converts them
 	 * to JSON-RPC error responses — this method never throws.
 	 *
+	 * A request's `queue` (per call, else `default_send_options.queue`) is
+	 * resolved once and drives both the transport choice and the send: with it
+	 * set, a disconnected transport that `queues` is chosen and the request
+	 * waits in its durable queue for the reconnect — or until its `signal`
+	 * aborts; the queue is size-bounded, not timed. A WebSocket transport
+	 * `queues` only while its connection will reopen on its own
+	 * (`will_reconnect`); after a close that schedules no reconnect, the
+	 * request goes to a ready transport (HTTP) instead. A notification never
+	 * queues.
+	 *
 	 * @returns the response envelope for requests, or `null` for successful
 	 *   notifications (`JsonrpcErrorResponse` if the notification's transport
 	 *   send failed)
@@ -105,8 +115,15 @@ export class ActionDispatcher {
 		options?: ActionDispatcherSendOptions
 	): Promise<JsonrpcMessageFromServerToClient | null> {
 		try {
+			// resolved once, for requests only: a notification has no queue — it
+			// fails fast when its transport is down rather than read as sent
+			const is_request = is_jsonrpc_request(message);
+			const queue = is_request
+				? (options?.queue ?? this.default_send_options.queue ?? false)
+				: false;
 			const transport = this.transports.get_transport(
-				options?.transport_name ?? this.default_send_options.transport_name
+				options?.transport_name ?? this.default_send_options.transport_name,
+				{ queue }
 			);
 
 			if (!transport) {
@@ -117,17 +134,14 @@ export class ActionDispatcher {
 				);
 			}
 
-			const message_type = is_jsonrpc_request(message) ? 'request' : 'notification';
+			const message_type = is_request ? 'request' : 'notification';
 			this.#log?.debug(
 				`[peer] send ${message_type}:`,
 				message.method,
 				`via ${transport.transport_name}`
 			);
 
-			const result = await transport.send(message, {
-				signal: options?.signal,
-				queue: options?.queue ?? this.default_send_options.queue
-			});
+			const result = await transport.send(message, { signal: options?.signal, queue });
 
 			if (result && 'error' in result) {
 				this.#log?.error(

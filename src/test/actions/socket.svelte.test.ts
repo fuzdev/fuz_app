@@ -11,6 +11,7 @@
  */
 
 import { describe, test, assert, vi, beforeEach, afterEach } from 'vitest';
+import { z } from 'zod';
 
 vi.mock('esm-env', () => ({ BROWSER: true, DEV: true, NODE: true }));
 
@@ -43,6 +44,8 @@ import {
 import { cancel_action_spec } from '#lib/actions/cancel.ts';
 import { heartbeat_action_spec } from '#lib/actions/heartbeat.ts';
 import { FrontendWebsocketTransport } from '#lib/actions/transports_ws.ts';
+import { create_frontend_rpc_client } from '#lib/actions/frontend_rpc_client.ts';
+import type { ActionSpecUnion } from '#lib/actions/action_spec.ts';
 import { create_jsonrpc_request } from '#lib/http/jsonrpc_helpers.ts';
 import { JSONRPC_ERROR_CODES, ThrownJsonrpcError } from '#lib/http/jsonrpc_errors.ts';
 
@@ -2556,4 +2559,89 @@ describe('full lifecycle', () => {
 		assert.strictEqual(client.status, 'closed');
 		assert.deepStrictEqual(messages, ['one', 'two']);
 	});
+});
+
+describe('will_reconnect and ws.queue routing', () => {
+	const echo_spec = {
+		method: 'echo',
+		kind: 'request_response',
+		initiator: 'frontend',
+		auth: { account: 'none', actor: 'none' },
+		side_effects: true,
+		input: z.strictObject({ message: z.string() }),
+		output: z.strictObject({ message: z.string() }),
+		async: true,
+		description: 'Echo back the input'
+	} satisfies ActionSpecUnion;
+
+	/** A connected client behind `create_frontend_rpc_client` with `ws.queue`, HTTP answering every call. */
+	const setup = (options?: ConstructorParameters<typeof FrontendWebsocketClient>[1]) => {
+		vi.useFakeTimers();
+		const client = new FrontendWebsocketClient(TEST_URL, options);
+		client.connect();
+		last_ws().fire_open();
+		const fetch_spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+			const { id } = JSON.parse(init!.body as string);
+			return new Response(
+				JSON.stringify({ jsonrpc: '2.0', id, result: { message: 'over http' } }),
+				{
+					status: 200,
+					headers: { 'content-type': 'application/json' }
+				}
+			);
+		});
+		const { api_result } = create_frontend_rpc_client<{
+			echo: (input: { message: string }) => Promise<{ ok: boolean; value?: unknown }>;
+		}>({ specs: [echo_spec], ws: { client, queue: true } });
+		return { client, fetch_spy, api_result };
+	};
+
+	test('will_reconnect holds only while the socket is opening on its own', () => {
+		vi.useFakeTimers();
+		const client = new FrontendWebsocketClient(TEST_URL);
+		assert.isFalse(client.will_reconnect, 'initial');
+		client.connect();
+		assert.isTrue(client.will_reconnect, 'connecting');
+		last_ws().fire_open();
+		assert.isFalse(client.will_reconnect, 'connected');
+		last_ws().fire_close(1006);
+		assert.isTrue(client.will_reconnect, 'reconnecting');
+		client.cancel_reconnect();
+		assert.isFalse(client.will_reconnect, 'reconnect cancelled');
+	});
+
+	test('during a reconnect a queued request waits for the socket', async () => {
+		const { client, fetch_spy, api_result } = setup();
+		last_ws().fire_close(1006);
+		assert.strictEqual(client.status, 'reconnecting');
+		const pending = api_result.echo({ message: 'x' });
+		await vi.advanceTimersByTimeAsync(DEFAULT_RECONNECT_DELAY);
+		last_ws().fire_open();
+		const frame = JSON.parse(last_ws().sent.at(-1)!);
+		assert.strictEqual(frame.method, 'echo');
+		last_ws().fire_message(
+			JSON.stringify({ jsonrpc: '2.0', id: frame.id, result: { message: 'over ws' } })
+		);
+		const result = await pending;
+		assert.deepStrictEqual(result.value, { message: 'over ws' });
+		assert.strictEqual(fetch_spy.mock.calls.length, 0, 'never went over HTTP');
+	});
+
+	const no_reconnect_cases: Array<[string, (client: FrontendWebsocketClient) => void, object?]> = [
+		['a superseded close', () => last_ws().fire_close(WS_CLOSE_CONNECTION_LIMIT)],
+		['a permission-revoked close', () => last_ws().fire_close(WS_CLOSE_PERMISSION_REVOKED)],
+		['disconnect()', (client) => client.disconnect()],
+		['a close with reconnect disabled', () => last_ws().fire_close(1006), { reconnect: false }]
+	];
+	for (const [label, close, options] of no_reconnect_cases) {
+		test(`after ${label} a queued request goes over HTTP`, async () => {
+			const { client, fetch_spy, api_result } = setup(options);
+			close(client);
+			assert.strictEqual(client.status, 'closed');
+			assert.isFalse(client.will_reconnect);
+			const result = await api_result.echo({ message: 'x' });
+			assert.deepStrictEqual(result.value, { message: 'over http' });
+			assert.strictEqual(fetch_spy.mock.calls.length, 1);
+		});
+	}
 });

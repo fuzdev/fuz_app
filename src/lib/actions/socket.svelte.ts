@@ -275,6 +275,18 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 
 	readonly connected: boolean = $derived(this.status === 'connected');
 
+	/**
+	 * Whether the socket is down but opening on its own — `connecting`, or
+	 * `reconnecting` (waiting out a scheduled reconnect) — so a request queued
+	 * now is sent without anyone calling `connect()`. `false` when connected,
+	 * and when `closed` or `initial`: after a close that schedules no reconnect
+	 * (`superseded`, permission revoked, `revoked`, auto-reconnect off),
+	 * `disconnect()`, or `cancel_reconnect()`.
+	 */
+	readonly will_reconnect: boolean = $derived(
+		this.status === 'connecting' || this.status === 'reconnecting'
+	);
+
 	constructor(url: string, options: FrontendWebsocketClientOptions = {}) {
 		this.#url = url;
 		const reconnect = options.reconnect;

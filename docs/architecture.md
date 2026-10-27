@@ -353,7 +353,7 @@ Pass the extended schema to `load_env()` (from `env/load.js`) and optionally to
 across env schemas and auth input schemas:
 
 - `description` — human-readable field description (env surface, docs)
-- `sensitivity: 'secret'` — marks sensitive values for masking/redaction (scalable to future levels like `'pii'`)
+- `sensitivity: 'secret'` — marks sensitive values for masking/redaction; `'personal'` marks personal data (a search term about people), not masked but, like a secret, kept out of read URLs (`schema_has_sensitive_field`)
 
 `env_schema_to_surface` reads these properties into `AppSurfaceEnv` entries.
 `generate_valid_value` uses type-based heuristics (format detection, length constraints, enum extraction) to produce valid test values.

@@ -106,7 +106,8 @@ export const ActorSearchInput = z.strictObject({
 	query: bounded_string({ min: 1, max: ACTOR_SEARCH_QUERY_LENGTH_MAX }).meta({
 		description: `Case-insensitive prefix match against \`actor.name\`. Length 1–${
 			ACTOR_SEARCH_QUERY_LENGTH_MAX
-		}.`
+		}.`,
+		sensitivity: 'personal'
 	}),
 	scope_ids: z.array(Uuid).optional().meta({
 		description:

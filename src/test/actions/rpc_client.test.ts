@@ -243,7 +243,7 @@ describe('create_rpc_client', () => {
 		assert.strictEqual(captured[0]!.options?.queue, true);
 	});
 
-	test('remote_notification method forwards per-call queue to transport', async () => {
+	test('remote_notification never queues — a per-call queue reaches the transport off', async () => {
 		const env = new TestEnvironment([ping_notification_spec]);
 		const transports = new Transports();
 		const captured: Array<CapturedSend> = [];
@@ -254,8 +254,9 @@ describe('create_rpc_client', () => {
 
 		await client.pong_notify!(null, { queue: true });
 
+		// a notification fails fast on a down transport rather than read as sent
 		assert.strictEqual(captured.length, 1);
-		assert.strictEqual(captured[0]!.options?.queue, true);
+		assert.strictEqual(captured[0]!.options?.queue, false);
 	});
 
 	test('peer default_send_options.queue applies through transport_for_method selection', async () => {

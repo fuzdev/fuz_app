@@ -8,6 +8,15 @@
  * to wire WS-pushed `remote_notification` dispatch or a `receive_error` /
  * `local_call` hook.
  *
+ * Transports: always a `FrontendHttpTransport` on `path` — a read
+ * (`side_effects: false`) goes as a `GET` unless its input carries a
+ * sensitive value (`'secret'` or `'personal'`) or its URL runs long, both
+ * derived from `specs` — and, with `ws`, a
+ * `FrontendWebsocketTransport` over the WebSocket client the caller passes,
+ * which every `request_response` method routes to. The caller builds and
+ * connects the client (`FrontendWebsocketClient`, its URL from
+ * `to_same_origin_ws_url`), so an HTTP-only bundle never imports the socket.
+ *
  * Returns both Proxy shapes from one factory call:
  *
  * - `api` — typed throwing Proxy. `await api.foo(input)` returns the
@@ -50,6 +59,7 @@ import { ActionRegistry } from './action_registry.ts';
 import { ActionDispatcher } from './action_dispatcher.ts';
 import { Transports, type Transport } from './transports.ts';
 import { FrontendHttpTransport } from './transports_http.ts';
+import { FrontendWebsocketTransport, type WebsocketRpcConnection } from './transports_ws.ts';
 import {
 	create_rpc_client,
 	create_throwing_api,
@@ -83,17 +93,36 @@ export interface CreateFrontendRpcClientOptions<TApi extends object = object> {
 	 * Defaults to `/api/rpc`. Ignored when `transports` is provided.
 	 */
 	path?: string;
+	/** Extra headers on every HTTP RPC call — see `FrontendHttpTransportOptions.headers`. */
+	http_headers?: Record<string, string>;
+	/**
+	 * The longest path and query a read is sent as a `GET` with — see
+	 * `FrontendHttpTransportOptions.max_get_url_length`.
+	 */
+	max_get_url_length?: number;
+	/**
+	 * A WebSocket lane: a `FrontendWebsocketTransport` over `client`, registered
+	 * after the HTTP transport, which every `request_response` method routes to
+	 * unless `transport_for_method` says otherwise — the HTTP transport stays
+	 * the fallback while the socket is down. Server-pushed requests and
+	 * notifications on the socket dispatch through the peer
+	 * (`lookup_action_handler`).
+	 */
+	ws?: FrontendRpcClientWsOptions;
 	/**
 	 * Optional explicit transport list. When provided, the default
 	 * `FrontendHttpTransport(path)` is **not** registered — the caller is
-	 * responsible for at least one ready transport. Use for WS-first or
-	 * WS+HTTP mixed setups.
+	 * responsible for at least one ready transport. Exclusive with `ws`,
+	 * `http_headers`, and `max_get_url_length`, which configure the built-in
+	 * transports.
 	 */
 	transports?: ReadonlyArray<Transport>;
 	/**
 	 * Optional per-method transport selector — pure pass-through to
 	 * `create_rpc_client`. Return the transport name to use for a given
 	 * method, or `undefined` to fall back to the peer's default selection.
+	 * With `ws` set it defaults to routing every `request_response` method to
+	 * the WebSocket.
 	 *
 	 * Useful when methods are registered on different backend dispatchers
 	 * (e.g. streaming actions on WS, REST RPC on HTTP) — a tx-style mixed
@@ -138,6 +167,26 @@ export interface CreateFrontendRpcClientOptions<TApi extends object = object> {
 	log?: ActionEventEnvironment['log'];
 }
 
+/** The WebSocket lane of `create_frontend_rpc_client`. */
+export interface FrontendRpcClientWsOptions {
+	/**
+	 * The WebSocket client — typically a `FrontendWebsocketClient` over
+	 * `to_same_origin_ws_url('/api/ws')`. The caller owns its lifecycle
+	 * (`connect()` in the browser, `close()`).
+	 */
+	client: WebsocketRpcConnection;
+	/**
+	 * The peer's default `queue` — `true` for a client-authoritative app whose
+	 * requests should wait out a disconnect in the socket's durable queue
+	 * rather than fail. Per call, `RpcClientCallOptions.queue` overrides it.
+	 *
+	 * @default false
+	 */
+	queue?: boolean;
+	/** See `FrontendWebsocketTransportOptions.max_message_bytes`. */
+	max_message_bytes?: number | null;
+}
+
 /** Bundle returned by `create_frontend_rpc_client`. */
 export interface FrontendRpcClient<TApi> {
 	/**
@@ -155,6 +204,8 @@ export interface FrontendRpcClient<TApi> {
 	api_result: TApi;
 	/** Underlying peer — exposed for consumers that need to register more transports or send raw messages. */
 	peer: ActionDispatcher;
+	/** The `ws.client` the WebSocket lane runs over, or `null` without one. */
+	socket: WebsocketRpcConnection | null;
 	/** Action environment — exposed for consumers that need to share it (e.g. attach a notification handler registry). */
 	environment: ActionEventEnvironment;
 }
@@ -163,6 +214,15 @@ export interface FrontendRpcClient<TApi> {
 export const create_frontend_rpc_client = <TApi extends object>(
 	options: CreateFrontendRpcClientOptions<TApi>
 ): FrontendRpcClient<TApi> => {
+	const { ws } = options;
+	if (
+		options.transports &&
+		(ws || options.http_headers !== undefined || options.max_get_url_length !== undefined)
+	) {
+		throw new Error(
+			'create_frontend_rpc_client: `transports` replaces the built-in transports, which `ws`, `http_headers`, and `max_get_url_length` configure — pass one or the other'
+		);
+	}
 	const registry = new ActionRegistry([...options.specs]);
 	const environment: ActionEventEnvironment = {
 		executor: 'frontend',
@@ -171,18 +231,45 @@ export const create_frontend_rpc_client = <TApi extends object>(
 		log: options.log
 	};
 	const transports = new Transports();
+	const peer = new ActionDispatcher({
+		environment,
+		transports,
+		default_send_options: ws?.queue ? { queue: true } : undefined
+	});
+	let ws_transport: FrontendWebsocketTransport | null = null;
 	if (options.transports) {
 		for (const t of options.transports) transports.register_transport(t);
 	} else {
-		transports.register_transport(new FrontendHttpTransport(options.path ?? '/api/rpc'));
+		transports.register_transport(
+			new FrontendHttpTransport({
+				url: options.path ?? '/api/rpc',
+				headers: options.http_headers,
+				lookup_action_spec: environment.lookup_action_spec,
+				max_get_url_length: options.max_get_url_length
+			})
+		);
+		if (ws) {
+			ws_transport = new FrontendWebsocketTransport(ws.client, (data) => peer.receive(data), {
+				max_message_bytes: ws.max_message_bytes
+			});
+			transports.register_transport(ws_transport);
+		}
 	}
-	const peer = new ActionDispatcher({ environment, transports });
+	const ws_transport_name = ws_transport?.transport_name;
+	const transport_for_method: TransportForMethod | undefined =
+		options.transport_for_method ??
+		(ws_transport_name
+			? (method) =>
+					registry.spec_by_method.get(method)?.kind === 'request_response'
+						? ws_transport_name
+						: undefined
+			: undefined);
 	const api_result = create_rpc_client<TApi>({
 		peer,
 		environment,
 		on_action_event: options.on_action_event,
-		transport_for_method: options.transport_for_method
+		transport_for_method
 	});
 	const api = create_throwing_api(api_result);
-	return { api, api_result, peer, environment };
+	return { api, api_result, peer, socket: ws?.client ?? null, environment };
 };

@@ -5,6 +5,7 @@
  * Mirrors the symmetry check in ./actor_lookup_action_specs.test.ts.
  * One method today, but pinning the inverse so a future "added spec,
  * forgot handler" (or "added handler, forgot registry") fails fast.
+ * Also pins the input's `'personal'` query, which keeps a search off the URL.
  *
  * @module
  */
@@ -12,8 +13,12 @@
 import { describe, test, assert } from 'vitest';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import { all_actor_search_action_specs } from '#lib/auth/actor_search_action_specs.ts';
+import {
+	ActorSearchInput,
+	all_actor_search_action_specs
+} from '#lib/auth/actor_search_action_specs.ts';
 import { create_actor_search_actions } from '#lib/auth/actor_search_actions.ts';
+import { schema_has_sensitive_field, schema_sensitivity } from '#lib/schema_meta.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -36,5 +41,12 @@ describe('all_actor_search_action_specs', () => {
 				`registry has ${spec.method} but create_actor_search_actions doesn't mount it`
 			);
 		}
+	});
+});
+
+describe('ActorSearchInput', () => {
+	test('its query is personal, so a search goes as a POST, never in a GET URL', () => {
+		assert.strictEqual(schema_sensitivity(ActorSearchInput.shape.query), 'personal');
+		assert.isTrue(schema_has_sensitive_field(ActorSearchInput));
 	});
 });

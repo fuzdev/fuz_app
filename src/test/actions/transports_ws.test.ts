@@ -48,6 +48,7 @@ const create_fake_connection = (
 		get connected() {
 			return connected;
 		},
+		will_reconnect: false,
 		add_message_handler: (handler) => {
 			message_handler = handler;
 			return () => {
