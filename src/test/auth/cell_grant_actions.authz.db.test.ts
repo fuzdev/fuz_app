@@ -644,6 +644,42 @@ describe_db('cell_grant_actions authz', (get_db) => {
 			assert.ok(!('self' in audits[0]!));
 		});
 
+		test('a steward revoke deletes only the grant at the level the callback judged', async () => {
+			// stands in for a concurrent `cell_grant_create` upsert landing between
+			// the callback's read and the delete — it writes through the request's
+			// own handle, which a real callback must never do
+			const raced: CellGrantRevokeAuthorize = async (_auth, input, ctx) => {
+				await ctx.db.query(`UPDATE cell_grant SET level = 'editor' WHERE id = $1`, [
+					input.grant_id
+				]);
+				return true;
+			};
+			const app = await create_cell_test_app(get_db, [], { authorize_grant_revoke: raced });
+			const owner = await app.create_account({ username: 'rv_race_owner' });
+			const steward = await app.create_account({ username: 'rv_race_steward' });
+			const { id } = await create_cell(app, {
+				kind: 'note',
+				data: {},
+				headers: owner.create_session_headers()
+			});
+			const grant_id = await grant(app, owner, id, {
+				kind: 'role',
+				role: ROLE_MEMBER,
+				scope_id: SCOPE_ID
+			});
+			const res = await revoke(app, steward, grant_id);
+			assert.strictEqual(error_reason(res), ERROR_CELL_GRANT_NOT_FOUND);
+			assert.ok(await grant_exists(grant_id), 'the grant is kept');
+			assert.strictEqual((await revoke_audits()).length, 0, 'no audit row');
+			// the callback's UPDATE rode the request transaction, so the refusal
+			// rolled it back with everything else
+			const rows = await get_db().query<{ level: string }>(
+				'SELECT level FROM cell_grant WHERE id = $1',
+				[grant_id]
+			);
+			assert.strictEqual(rows[0]?.level, 'viewer', "the callback's level change rolled back");
+		});
+
 		test('a refusal is the 404 mask — no audit row, the grant kept', async () => {
 			const deny = recording(false);
 			const app = await create_cell_test_app(get_db, [], {

@@ -1637,8 +1637,9 @@ asked only when the caller neither manages the cell nor holds the grant, and
 only for a role-shaped grant with a non-null `scope_id`, so an actor-shaped
 grant or a scopeless role grant never reaches it, and a soft-deleted cell 404s
 first. `true` revokes as a manager would, the `cell_grant_revoke` audit row
-stamped `steward: true`; `false` is the same 404 `cell_grant_not_found` mask as
-no hook. A callback needing the database reads
+stamped `steward: true`, its delete matching the level the callback saw (a
+level change in between answers the 404); `false` is the same 404
+`cell_grant_not_found` mask as no hook. A callback needing the database reads
 through `ctx.db`, the request transaction, and only reads.
 `create_all_cell_actions` passes all three on from its deps.
 

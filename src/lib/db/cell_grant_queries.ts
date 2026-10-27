@@ -139,22 +139,28 @@ export const query_cell_grant_get = async (
 /**
  * Delete a grant by id, returning the deleted row.
  *
+ * With `expected_level`, only a grant still at that level is deleted — a
+ * caller whose decision read the level fences the delete to the row it
+ * decided on, so a level change landing in between deletes nothing.
+ *
  * Returning the row lets the caller audit the principal + level after the
  * delete and (for self-revoke) recompute `still_admitted` against the
  * remaining grants on the cell without a second fetch.
  *
  * @param deps - query deps
  * @param grant_id - grant id
+ * @param expected_level - when given, the level the grant must still hold
  * @returns the deleted row or `null` when no row matched
  * @mutates `cell_grant` - deletes one row
  */
 export const query_cell_grant_delete = async (
 	deps: QueryDeps,
-	grant_id: Uuid
+	grant_id: Uuid,
+	expected_level?: CellGrantLevel
 ): Promise<CellGrantRow | null> => {
 	const row = await deps.db.query_one<CellGrantRow>(
-		`DELETE FROM cell_grant WHERE id = $1 RETURNING ${columns_sql(CELL_GRANT_COLUMNS, cell_grant_expr(''))}`,
-		[grant_id]
+		`DELETE FROM cell_grant WHERE id = $1 AND ($2::text IS NULL OR level = $2) RETURNING ${columns_sql(CELL_GRANT_COLUMNS, cell_grant_expr(''))}`,
+		[grant_id, expected_level ?? null]
 	);
 	return row ?? null;
 };

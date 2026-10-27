@@ -374,8 +374,8 @@ root_policy}` than `validate_data` and returns a `CellCreateVerdict`
   `cell_grant_revoke` takes an optional `authorize_grant_revoke`
   (`CellGrantRevokeAuthorize`), the steward widening: asked only of a caller
   who neither manages the cell nor holds the grant, for a role-shaped grant
-  with a `scope_id`; `true` revokes (audit `steward: true`), `false` keeps the
-  404 mask. Both callbacks, like
+  with a `scope_id`; `true` revokes (audit `steward: true`) with a delete
+  matching the level it saw, `false` keeps the 404 mask. Both callbacks, like
   the create authorizer and the offer callback, take the request `ctx` last —
   `ctx.db` is the request transaction — and must only read through it.
 - `auth/all_cell_actions.ts` — `create_all_cell_actions(deps, {roles})`, the

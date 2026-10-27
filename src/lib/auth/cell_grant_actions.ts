@@ -166,7 +166,10 @@ export interface CellGrantRevokeAuthorizeInput {
  * it is not masked, so refuse with `false`, never a throw.
  * Omitted = revoke is the manager's and the self-revoker's alone.
  *
- * `ctx.db` is the request transaction
+ * The grant it decides on is the grant revoked: the delete matches the grant's
+ * `level` as the callback saw it, so a level change landing between the read
+ * and the delete answers the 404 mask rather than revoking a grant the
+ * callback never judged. `ctx.db` is the request transaction
  * (`cell_grant_revoke` has side effects), read through like
  * `CellGrantCreateAuthorize`'s, and read-only like it.
  */
@@ -382,10 +385,16 @@ export const create_cell_grant_actions = (deps: CellGrantActionDeps): Array<RpcA
 		if (!is_manager && !is_self_actor_grant && !is_steward) {
 			throw jsonrpc_errors.not_found('cell grant', { reason: ERROR_CELL_GRANT_NOT_FOUND });
 		}
-		const deleted = await query_cell_grant_delete(ctx, grant.id);
+		// A steward's admission was decided on the grant's level, so its delete
+		// matches that level: a level change landing in between deletes nothing.
+		const deleted = await query_cell_grant_delete(
+			ctx,
+			grant.id,
+			is_steward ? grant.level : undefined
+		);
 		if (!deleted) {
-			// Raced with another revoker. Same shape as cell_actions.ts —
-			// 404 covers the gap.
+			// Raced with another revoker, or (a steward's) with a level change.
+			// Same shape as cell_actions.ts — 404 covers the gap.
 			throw jsonrpc_errors.not_found('cell grant', { reason: ERROR_CELL_GRANT_NOT_FOUND });
 		}
 		// Recompute admit state against the remaining grants. Always true for
