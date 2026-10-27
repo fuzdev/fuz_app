@@ -1259,10 +1259,8 @@ export interface SpecSource {
  * `{qualify_spec, all_specs}` ready to thread through the high-level
  * helpers.
  *
- * Closes the per-file boilerplate gap that kept tx + visiones on hand-rolled
- * template strings even after `qualify_spec?` landed in API review II — the
- * per-call callback wasn't enough; the import dance + dup-check was the
- * real boilerplate.
+ * A per-call `qualify_spec` callback alone leaves each consumer the import
+ * registration and the duplicate-method check; this does both.
  *
  * @throws Error if two sources contain the same method name (same-method
  *   detection is the consumer's primary debugging signal). Also throws if

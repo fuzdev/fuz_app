@@ -59,8 +59,8 @@ export const spine_session_options: SessionOptions<string> = create_session_conf
  * suite's bootstrap-seeded role) and `SPINE_PARTICIPANT_ROLE`
  * (`grant_paths: ['admin']`; the role-gated-participation suite's
  * admin-grantable role). Threaded into the cell spec set's role-validity gate
- * **and** the auth grantability gates; the Rust stub mirrors the same
- * membership in both its `RoleRegistry` and `known_roles`. The `participant`
+ * **and** the auth grantability gates; the same membership is in the Rust
+ * stub's `RoleRegistry` (which the cell spec set also reads). The `participant`
  * entry also gives the admin suite real app-role grant-path coverage
  * (`admin_account_list.grantable_roles` carries it on both spines).
  */

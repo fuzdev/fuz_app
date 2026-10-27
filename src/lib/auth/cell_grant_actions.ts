@@ -26,9 +26,11 @@
  * - `cell_grant_list` — admin / owner only. Viewers and editors alike get
  *   the IDOR-mask 404 (the share list is the manager's to curate).
  *
- * All three 404 with `cell_not_found` on cell-miss / cell-unviewable, and
- * with `cell_grant_not_found` on grant-miss, mirroring the existence-leak
- * guards in `auth/cell_actions.ts`.
+ * Every miss and every authority denial is a 404 mask, as in
+ * `auth/cell_actions.ts`: `cell_grant_create` and `cell_grant_list` answer
+ * `cell_not_found` for a missing cell and a non-manager alike;
+ * `cell_grant_revoke` answers `cell_grant_not_found` for a missing grant, a
+ * grant whose cell is gone, and a caller with no authority to revoke it.
  *
  * Audit events `cell_grant_create` / `cell_grant_revoke` carry IDs only
  * (no display-name snapshots); see `auth/cell_grant_audit_metadata.ts`.
@@ -90,7 +92,7 @@ export interface CellGrantCreateAuthorizeInput {
 	cell_created_by: Uuid | null;
 	/** The level the grant confers — on an upsert, the new level. */
 	level: CellGrantCreateInput['level'];
-	/** Who the grant admits, as the wire named them. */
+	/** Who the grant admits: an actor, or a role at an optional scope. */
 	principal: CellGrantPrincipalQueryInput;
 }
 

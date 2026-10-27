@@ -11,7 +11,7 @@ workspace-wide DI vocabulary: Skill(fuz-stack) §Dependency Injection.
 
 **CLAUDE.md is a map; TSDoc is the detail.** Per-symbol semantics
 (parameters, error shapes, invariants, fire-and-forget contracts) live on
-TSDoc next to the code. This file orients you across the ~60 modules and
+TSDoc next to the code. This file orients you across the modules and
 documents the cross-cutting invariants that don't fit on any single symbol.
 
 ## AppDeps split
@@ -64,7 +64,7 @@ Convention — `*_schema.ts` is Zod-only; `*_ddl.ts` holds DDL strings.
 - `auth/token_lifetime.ts` — the temporal axis of a minted token: `TokenLifetimeInput` (required union on `account_token_create` — `{kind:'eternal'}` or `{kind:'ttl', days}`), `token_lifetime_to_expires_at`, `TOKEN_TTL_DAYS_MAX`. No default — `expires_at IS NULL` always means "deliberately eternal".
 - `auth/token_scope.ts` — per-credential authority narrowing stored on `api_token.scope`: `TokenScope` / `TokenScopeInput` + constructors, `parse_stored_token_scope` (fail-closed), `token_scope_admits_method` / `_non_rpc`, and the `<section>:<id>` capability vocabulary `RouteAuth.required_scope` is written in (`parse_token_scope_capability`, `token_scope_admits_capability`, `token_scope_denied_body`, `TOKEN_SURFACES`). Not an open registry — see ../../../docs/security.md §Token scoping for why the identifier half is deliberately unregistered.
 - `auth/auth_ddl.ts` — `CREATE TABLE` / index / seed strings for the core identity tables.
-- `auth/audit_log_schema.ts` — `AUDIT_EVENT_TYPES` (27 builtins), `AuditEventType` / `AuditEventTypeName`, `audit_metadata_schemas`, `AuditLogEvent`, `AuditLogInput`, `AuditLogConfig`, `create_audit_log_config`.
+- `auth/audit_log_schema.ts` — `AUDIT_EVENT_TYPES` (the builtin event types), `AuditEventType` / `AuditEventTypeName`, `audit_metadata_schemas`, `AuditLogEvent`, `AuditLogInput`, `AuditLogConfig`, `create_audit_log_config`.
 - `auth/audit_log_ddl.ts` — `audit_log` table DDL with `seq BIGSERIAL` for cursor-based gap fill (BIGSERIAL converges with the Rust spine; `create_db` registers a `pg.types` int8 parser so `seq` still reads as a JS number).
 - `auth/invite_schema.ts` — `Invite`, `CreateInviteInput`.
 - `auth/app_settings_schema.ts` — `AppSettings`, `UpdateAppSettingsInput` (single-row via `CHECK (id = 1)`).
@@ -262,8 +262,8 @@ moderate / policy_set`), error reasons, and `all_cell_action_specs`
     verdict + the `cell_moderate` verb, never in `data`).
 - `auth/cell_grant_action_specs.ts` / `cell_field_action_specs.ts` /
   `cell_item_action_specs.ts` / `cell_audit_action_specs.ts` — the
-  `cell_grant_*` (3) / `cell_field_*` (3) / `cell_item_*` (4) /
-  `cell_audit_list` (1) specs + their wire JSON shapes.
+  `cell_grant_*` / `cell_field_*` / `cell_item_*` / `cell_audit_list`
+  specs + their wire JSON shapes.
 - `auth/cell_authorize.ts` — pure predicates over
   `(RequestContext | null, CellRow, grants)`: `can_view_cell`,
   `can_edit_cell`, and `can_manage_cell` (= admin ‖ owner, where owner is

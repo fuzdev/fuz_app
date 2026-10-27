@@ -1,9 +1,9 @@
 /**
  * Role grant offer RPC action handlers — the consentful-role-grants action surface.
  *
- * Eight actions: six offer-lifecycle methods (create / accept / decline /
- * retract / list / history) plus `role_grant_revoke` and `role_grant_assign`
- * (both admin-only). All mount
+ * The offer-lifecycle methods (create / accept / decline / retract / list /
+ * history) plus `role_grant_revoke` and `role_grant_assign` (both
+ * admin-only). All mount
  * on a consumer's JSON-RPC endpoint via `create_rpc_endpoint`. The action
  * specs themselves live in `auth/role_grant_offer_action_specs.ts`. Mutations
  * declare `side_effects: true` so the RPC dispatcher wraps the handler in
@@ -251,8 +251,8 @@ const default_authorize: RoleGrantOfferCreateAuthorize = async (auth, _input, _d
 // -- Action factory ---------------------------------------------------------
 
 /**
- * Create the eight role-grant-offer RPC actions (six offer-lifecycle methods
- * plus `role_grant_revoke` and the immediate `role_grant_assign`).
+ * Create the role-grant-offer RPC actions: the offer-lifecycle methods plus
+ * `role_grant_revoke` and the immediate `role_grant_assign`.
  *
  * @param deps - `ActionFactoryDeps` (`log`, `audit`) plus optional `notification_sender` for WS fan-out — when absent, WS fan-out is silently skipped (DB-only side effects still happen). Consumers wiring `BackendWebsocketTransport` assign its instance directly (the transport's `send_to_account` signature accepts the broader `JsonrpcMessageFromServerToClient`, which is contravariantly compatible)
  * @param options - role schema, default TTL, authorization override

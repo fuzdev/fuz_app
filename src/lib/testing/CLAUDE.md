@@ -2797,8 +2797,8 @@ Cross-process only; fuz_app's own wiring is
 The role-gated-participation capstone — TS↔Rust agreement that an **app-defined
 role is conferred identically** on both spines. A `participant`
 (`grant_paths: ['admin']`) app-role is registered on both spines (`spine_roles`
-in `default_spine_surface.ts` + the Rust `testing_spine_stub`'s `RoleRegistry`
-and `known_roles`); the cross legs prove the three conferral properties agree.
+in `default_spine_surface.ts` + the Rust `testing_spine_stub`'s `RoleRegistry`,
+which its auth and cell surfaces both read); the cross legs prove the three conferral properties agree.
 
 **Declarative-max, imperative-as-escape-hatch.** The single-request matrix is
 declarative (`conformance_participation_cases.ts`, run via

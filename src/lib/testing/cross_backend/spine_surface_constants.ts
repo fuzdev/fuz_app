@@ -124,7 +124,8 @@ export const SPINE_BODY_LIMIT_DEFAULT_BYTES = 1024 * 1024;
  * with no grant path (`grant_paths: []`) so it stays a valid registry member
  * without entering the admin / self-service grant flows — holders are seeded
  * directly via `extra_accounts`. Must match the `cell_editor` entry in the
- * Rust `testing_spine_stub`'s `known_roles` (cross-language test contract).
+ * Rust stub's `RoleRegistry` (which the cell spec set also reads) — a
+ * cross-language test contract.
  */
 export const SPINE_CELL_EDITOR_ROLE = 'cell_editor';
 
@@ -133,9 +134,8 @@ export const SPINE_CELL_EDITOR_ROLE = 'cell_editor';
  * Registered with `grant_paths: ['admin']` so it enters the admin grant flow —
  * the cross-backend proof that an app-defined role is conferrable (offer /
  * `role_grant_assign`) admin-only on **both** spines. Must match the
- * `participant` entry in the Rust `testing_spine_stub`'s `RoleRegistry`
- * **and** its `known_roles` (the registry feeds the cell vocabulary too) — a
- * cross-language test contract. Distinct from `SPINE_CELL_EDITOR_ROLE`
+ * `participant` entry in the Rust stub's `RoleRegistry` (which the cell spec
+ * set also reads) — a cross-language test contract. Distinct from `SPINE_CELL_EDITOR_ROLE`
  * (no grant path): this one is the *grantable* role, that one is the
  * bootstrap-seed-only cell role.
  */

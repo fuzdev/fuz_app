@@ -22,8 +22,8 @@ import '../assert_dev_env.ts';
  * holding the suite's `role` — `CELL_EDITOR_ROLE` by default, which has no
  * grant path, so it can't be offered and the bootstrap-cradle seed is the only
  * path. Both legs configure that seed and register `CELL_EDITOR_ROLE` in their
- * role registry; the Rust `testing_spine_stub` mirrors the same membership in
- * its `known_roles`. A backend with only the builtin roles passes `ROLE_KEEPER`
+ * role registry; the same membership is in the Rust stub's `RoleRegistry`
+ * (which the cell spec set also reads). A backend with only the builtin roles passes `ROLE_KEEPER`
  * (no admin reach, so every arm still turns on the grant); `ROLE_ADMIN` is
  * refused, since an admin reaches every cell whatever its grants.
  *
