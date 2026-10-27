@@ -169,6 +169,16 @@ describe('create_action_route_spec', () => {
 		);
 	});
 
+	for (const rate_limit of ['ip', 'account', 'both'] as const) {
+		test(`throws for rate_limit '${rate_limit}' — the bridged route would be unthrottled`, () => {
+			const spec: ActionSpec = { ...create_request_response_spec(), rate_limit };
+			assert.throws(
+				() => create_action_route_spec(spec, { path: '/api/x', handler: noop_handler }),
+				new RegExp(`declares rate_limit '${rate_limit}'`)
+			);
+		});
+	}
+
 	test('description comes from action spec', () => {
 		const spec = create_public_get_spec();
 		const route = create_action_route_spec(spec, {

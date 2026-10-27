@@ -86,10 +86,12 @@ export type AuditEventHandler = (event: AuditLogEvent) => void;
  * - `none` → nothing — every other event, and any event type fuz_app does not
  *   define
  *
- * Ignores `outcome === 'failure'` events — they carry attacker-controlled
- * identifiers (e.g. a `session_revoke` that the DB rejected still records
- * the submitted session_id), so reacting to them would let any authenticated
- * user close another user's socket by guessing a session hash or token id.
+ * Acts only on `outcome === 'success'` events — a failure carries
+ * attacker-controlled identifiers (e.g. a `session_revoke` that the DB
+ * rejected still records the submitted session_id), so reacting to it would
+ * let any authenticated user close another user's socket by guessing a
+ * session hash or token id. Matching the success rather than skipping the
+ * failure keeps an outcome outside the enum inert, as on the Rust spine.
  *
  * @param closer - what to close on — a `BackendWebsocketTransport`, or a
  *   `RealtimeCloser` to reach every transport from one listener
@@ -101,8 +103,9 @@ export type AuditEventHandler = (event: AuditLogEvent) => void;
  */
 export const create_ws_auth_guard = (closer: ConnectionCloser, log: Logger): AuditEventHandler => {
 	return (event: AuditLogEvent): void => {
-		// Failed mutations carry attacker-controlled metadata — never act on them.
-		if (event.outcome === 'failure') return;
+		// only a committed revocation closes — failed mutations carry
+		// attacker-controlled metadata, and anything else is not a revocation
+		if (event.outcome !== 'success') return;
 
 		const scope = to_revocation_scope(event.event_type);
 		switch (scope) {

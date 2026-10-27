@@ -299,6 +299,19 @@ describe('create_ws_auth_guard: safety', () => {
 		assert.strictEqual(closes.length, 0);
 	});
 
+	test('ignores an outcome outside the enum — only a success revokes', () => {
+		const transport = new BackendWebsocketTransport();
+		const guard = create_ws_auth_guard(transport, silent_log);
+		const { ws, closes } = create_fake_ws();
+		transport.add_connection(ws, HASH_A, ACCOUNT_A);
+
+		guard({
+			...create_audit_event({ event_type: 'session_revoke', metadata: { session_id: HASH_A } }),
+			outcome: 'unknown' as 'success'
+		});
+		assert.strictEqual(closes.length, 0);
+	});
+
 	test('ignores logout with outcome=failure', () => {
 		const transport = new BackendWebsocketTransport();
 		const guard = create_ws_auth_guard(transport, silent_log);

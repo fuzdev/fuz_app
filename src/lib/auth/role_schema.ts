@@ -88,7 +88,7 @@ export const is_builtin_role = (name: string): name is BuiltinRole =>
 /**
  * Configuration for a role.
  *
- * Each role declares the credential types its holders must use, the
+ * Each role declares the credential types its holders are meant to use, the
  * scope kinds it applies to, and the grant paths through which it can
  * be granted. Every cross-axis field is an open-registry string array —
  * `required_credential_types` against `create_credential_type_schema`,
@@ -117,10 +117,13 @@ export interface RoleSpec {
 	/** Admin-UI-facing copy describing the role's intent. */
 	description?: string;
 	/**
-	 * Credential types whose holders are permitted to exercise this
-	 * role. Each entry is checked at construction time against the
-	 * `credential_types` registry passed to `create_role_schema`. Empty
-	 * array = any authenticated credential type.
+	 * Credential types whose holders are meant to exercise this role.
+	 * Informative only: each entry is checked at construction time against
+	 * the `credential_types` registry passed to `create_role_schema`, but no
+	 * middleware or dispatcher reads it per request — a route or action
+	 * gates credentials with its own `auth.credential_types` (the keeper
+	 * verbs declare `['daemon_token']` there). Empty array = any
+	 * authenticated credential type.
 	 */
 	required_credential_types?: ReadonlyArray<string>;
 	/**
@@ -220,9 +223,12 @@ const validate_registry_membership = (
  *
  * Call once at server init. The returned `Role` schema validates role
  * strings at I/O boundaries (grant endpoint, role_grant queries). The
- * `role_specs` map is read by middleware for `required_credential_types`
- * checks and by admin / self-service factories to derive their default
- * eligibility filters from `RoleSpec.grant_paths`.
+ * `role_specs` map is read by the admin / self-service factories to derive
+ * their default eligibility filters from `RoleSpec.grant_paths`, and by the
+ * cell grant verbs to refuse an unregistered role principal.
+ * `RoleSpec.required_credential_types` is validated here but enforced
+ * nowhere — credential gating lives on each route's and action's
+ * `auth.credential_types`.
  *
  * Construction-time guards (all fire on misconfiguration):
  *

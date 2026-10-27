@@ -70,7 +70,7 @@ export interface ActionEventEnvironment {
 	 * notifications and requests. Unset falls back to `console_action_log`;
 	 * `null` silences them.
 	 */
-	readonly log?: Logger | null;
+	readonly log?: ActionLog | null;
 }
 
 /** The logging surface the action dispatch path uses. */

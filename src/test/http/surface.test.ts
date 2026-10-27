@@ -441,6 +441,19 @@ describe('env_schema_to_surface', () => {
 		assert.strictEqual(entries[0]!.description, 'The API key');
 	});
 
+	test('reads sensitivity and description under wrappers', () => {
+		const schema = z.strictObject({
+			OPTIONAL_KEY: z.string().meta({ sensitivity: 'secret', description: 'Optional' }).optional(),
+			DEFAULT_KEY: z.string().meta({ sensitivity: 'secret', description: 'Default' }).default('x'),
+			NULLABLE_KEY: z.string().meta({ sensitivity: 'secret', description: 'Nullable' }).nullable()
+		});
+
+		for (const entry of env_schema_to_surface(schema)) {
+			assert.strictEqual(entry.sensitivity, 'secret', entry.name);
+			assert.notStrictEqual(entry.description, '', entry.name);
+		}
+	});
+
 	test('non-sensitive fields default to sensitivity=null', () => {
 		const schema = z.strictObject({
 			PORT: z.number().default(3000)

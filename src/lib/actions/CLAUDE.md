@@ -70,7 +70,8 @@ dropping per-spec `*_METHOD` constants (readers dereference `.method`). See
 - `local_call` — none (no REST, no RPC, no WS, no SSE).
 
 `create_action_route_spec` throws if `spec.auth` is null (notifications and
-local calls cannot become routes). `create_action_event_spec` throws on any
+local calls cannot become routes) or `spec.rate_limit` is set (a bridged route
+never reaches the `perform_action` limiters). `create_action_event_spec` throws on any
 non-`remote_notification` kind.
 
 ## Registry compile (`actions/compile_action_registry.ts`)
@@ -177,7 +178,7 @@ and `FrontendActionHandlers`.
 Derives transport-specific specs from action specs. HTTP-specific concerns
 (path, handler, errors) come from options, not the action spec.
 
-- `create_action_route_spec(spec, options)` — one action → one `RouteSpec`. HTTP method defaults by `side_effects` (`true` → POST, `false` → GET; override via `options.http_method`). `route.auth` is `spec.auth` plus a derived `required_scope`. `transaction: spec.side_effects`. Throws if `spec.auth` is null.
+- `create_action_route_spec(spec, options)` — one action → one `RouteSpec`. HTTP method defaults by `side_effects` (`true` → POST, `false` → GET; override via `options.http_method`). `route.auth` is `spec.auth` plus a derived `required_scope`. `transaction: spec.side_effects`. Throws if `spec.auth` is null, or if `spec.rate_limit` is set (the action limiters run in `perform_action`, which a bridged route never reaches).
 
 **The bridge carries the token-scope gate across.** A bridged route runs
 `options.handler` through the REST pipeline and never reaches
@@ -235,9 +236,10 @@ Shim responsibilities (per-request):
 6. Bind result via `perform_action_result_to_envelope(id, result)`; `c.json(envelope, result.status)`.
 
 Error paths: `ThrownJsonrpcError` (duck-typed via `err instanceof Error &&
-typeof err.code === 'number'` to handle cross-copy `instanceof` misses,
+is_jsonrpc_error_code(err.code)` to handle cross-copy `instanceof` misses,
 e.g. when consumers like zzz throw their own `ThrownJsonrpcError`)
-preserves code + data verbatim. Generic throws become `internal_error` 500;
+preserves code + data verbatim; an error whose numeric `code` is not a
+JSON-RPC one (a `DOMException`) takes the generic path. Generic throws become `internal_error` 500;
 message is the raw error under `DEV`, "internal server error" otherwise.
 
 A result `c.json` cannot serialize (a `bigint`, a cycle) answers the same
@@ -736,8 +738,8 @@ guard reads too — one declaration, so the two can't drift:
 - `none` → nothing — every other event, and any event type fuz_app doesn't
   define
 
-`outcome === 'failure'` events are ignored — they carry attacker-controlled
-identifiers. Reacting to them would let an authenticated caller close
+Only `outcome === 'success'` events act — a failure carries attacker-controlled
+identifiers, and an outcome outside the enum is no revocation. Reacting to them would let an authenticated caller close
 another user's socket by guessing a session hash or token id.
 
 ## WebSocket dispatch — three layered entry points

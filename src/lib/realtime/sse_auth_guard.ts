@@ -118,8 +118,9 @@ export const create_sse_auth_guard = <T>(
 		// attacker-controlled identifiers (e.g., session_revoke with outcome=failure
 		// carries the submitted session_id even when the DB rejected the cross-account
 		// mutation) — reacting to them lets any authenticated user close another
-		// user's SSE stream by guessing or leaking a session hash.
-		if (event.outcome === 'failure') return;
+		// user's SSE stream by guessing or leaking a session hash. Matching the
+		// success keeps an outcome outside the enum inert, as on the Rust spine.
+		if (event.outcome !== 'success') return;
 
 		const scope = to_revocation_scope(event.event_type);
 		switch (scope) {

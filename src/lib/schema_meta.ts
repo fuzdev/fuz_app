@@ -15,7 +15,11 @@ import { zod_get_schema_layers, zod_unwrap_to_object } from './zod.ts';
 /** Zod `.meta()` shape for fuz_app schema metadata conventions. */
 export interface SchemaFieldMeta {
 	description?: string;
-	/** Sensitivity level for masking/redaction. `'secret'` masks the value. */
+	/**
+	 * Sensitivity level for masking/redaction. `'secret'` masks the value.
+	 * Read through every wrapping layer (`schema_sensitivity`), so
+	 * `.meta({sensitivity: 'secret'}).optional()` masks too.
+	 */
 	sensitivity?: Sensitivity;
 	/**
 	 * Set on an action's **input** schema that accepts `{}` by design while
@@ -64,16 +68,72 @@ export const is_empty_input_handler_guarded = (schema: z.ZodType): boolean =>
 	(schema.meta() as SchemaFieldMeta | undefined)?.empty_input_handler_guarded === true;
 
 /**
+ * A `SchemaFieldMeta` key's value as a schema declares it, read through its
+ * optional, nullable, default, prefault, transform and pipe layers — Zod
+ * keeps `.meta()` on the instance it was set on, so a wrapper added after it
+ * carries none — the outermost declaration winning.
+ *
+ * @param schema - a field schema, possibly wrapped
+ * @param key - the metadata key to read
+ * @returns the declared value, or `undefined` when no layer declares one
+ */
+export const schema_meta_value = <TKey extends keyof SchemaFieldMeta>(
+	schema: z.ZodType,
+	key: TKey
+): SchemaFieldMeta[TKey] | undefined => {
+	for (const layer of zod_get_schema_layers(schema)) {
+		const value = (layer.meta() as SchemaFieldMeta | undefined)?.[key];
+		if (value !== undefined) return value;
+	}
+	return undefined;
+};
+
+/**
  * The `invalid_reason` a schema declares, read through its wrappers, the
  * outermost declaration winning.
  *
  * @param schema - a field schema, possibly wrapped
  * @returns the declared reason, or `undefined` when no layer declares one
  */
-export const schema_invalid_reason = (schema: z.ZodType): string | undefined => {
-	for (const layer of zod_get_schema_layers(schema)) {
-		const reason = (layer.meta() as SchemaFieldMeta | undefined)?.invalid_reason;
-		if (reason !== undefined) return reason;
+export const schema_invalid_reason = (schema: z.ZodType): string | undefined =>
+	schema_meta_value(schema, 'invalid_reason');
+
+/**
+ * The `sensitivity` a schema declares anywhere among its wrapping layers, so
+ * a secret stays masked however the field is wrapped. Fail-safe where
+ * `schema_meta_value` reads one chain: the walk follows the `innerType` of
+ * every wrapper that has one (optional, nullable, default, prefault,
+ * nonoptional, catch, readonly), both sides of a pipe (so `.transform()`,
+ * `z.preprocess()` and `.pipe(secret)` all reach the secret), and a
+ * `z.lazy()` getter, and every member of a union or intersection (the
+ * value is one of them), visiting each schema once, and answers `'secret'`
+ * when any layer reached declares it. It stops at structural schemas — an
+ * object's fields and an array's element carry their own.
+ *
+ * @param schema - a field schema, possibly wrapped
+ * @returns `'secret'` when any reachable layer declares it, else `undefined`
+ */
+export const schema_sensitivity = (schema: z.ZodType): Sensitivity | undefined => {
+	const seen: Set<z.ZodType> = new Set();
+	const pending: Array<z.ZodType> = [schema];
+	while (pending.length > 0) {
+		const layer = pending.pop()!;
+		if (seen.has(layer)) continue;
+		seen.add(layer);
+		if ((layer.meta() as SchemaFieldMeta | undefined)?.sensitivity === 'secret') return 'secret';
+		const def = layer.def as unknown as Record<string, unknown>;
+		if (def.type === 'lazy') {
+			pending.push((layer as z.ZodLazy)._zod.innerType as z.ZodType);
+			continue;
+		}
+		if (def.type === 'union' && Array.isArray(def.options)) {
+			pending.push(...(def.options as Array<z.ZodType>));
+			continue;
+		}
+		for (const key of ['innerType', 'in', 'out', 'left', 'right'] as const) {
+			const sub = def[key];
+			if (sub && typeof sub === 'object' && 'def' in sub) pending.push(sub as z.ZodType);
+		}
 	}
 	return undefined;
 };

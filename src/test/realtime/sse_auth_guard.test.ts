@@ -320,6 +320,24 @@ describe('create_sse_auth_guard', () => {
 		assert.ok(!bearer.closed);
 	});
 
+	test('skips an outcome outside the enum — only a success revokes', () => {
+		const registry = new SubscriberRegistry<string>();
+		const bearer = create_mock_stream<string>();
+		registry.subscribe(bearer, { scope: 'tok_revoked', groups: ['account-1'] });
+
+		const guard = create_sse_auth_guard(registry, 'admin', log);
+		guard({
+			...create_audit_event({
+				event_type: 'token_revoke',
+				account_id: 'account-1',
+				metadata: { token_id: 'tok_revoked' }
+			}),
+			outcome: 'unknown' as 'success'
+		});
+
+		assert.ok(!bearer.closed);
+	});
+
 	test('ignores events with null target_account_id', () => {
 		const registry = new SubscriberRegistry<string>();
 		const stream = create_mock_stream<string>();

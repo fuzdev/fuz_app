@@ -75,10 +75,17 @@ const CONTENT_LENGTH_DIGITS = /^[0-9]+$/;
 /**
  * Create the body size limit middleware.
  *
- * @param max_size - the largest accepted body, in bytes
+ * @param max_size - the largest accepted body, in bytes; a safe integer, `0` or more
  * @returns middleware answering `413` `{error: 'payload_too_large'}` past the cap and `400` `{error: 'invalid_content_length'}` to a `Content-Length` that is not a run of digits
+ * @throws Error when `max_size` is not a safe integer `0` or more — a `NaN` cap
+ *   compares false against every length and would admit any body
  */
 export const create_body_limit_middleware = (max_size: number): MiddlewareHandler => {
+	if (!Number.isSafeInteger(max_size) || max_size < 0) {
+		throw new Error(
+			`create_body_limit_middleware: max_size must be a safe integer 0 or more, got ${max_size}`
+		);
+	}
 	const streaming_limit = bodyLimit({
 		maxSize: max_size,
 		onError: (c) => c.json({ error: ERROR_PAYLOAD_TOO_LARGE }, 413)

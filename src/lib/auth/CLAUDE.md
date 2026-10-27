@@ -147,12 +147,16 @@ the next event, and one removed mid-fan-out still hears the in-flight event
 **failure** row is announced as soon as it is written — the attempt happened
 whatever the transaction does; a **success** row is announced only after the
 request's transaction commits (a thunk on `ctx.post_commit_effects` that awaits
-the write) and never when the handler throws. The listeners act on a success
-row — the revocation guards close connections, the audit stream broadcasts it
-— so announcing one before its commit would close while the revoked credential
-still reads as valid, and a rolled-back revocation would close anyway. The
-Rust spine gets the same order by writing a success row in the transaction and
-queueing its fan-out behind the commit. `AuditEmitterContext` is therefore
+the write; after the handler returns, on a route without one) and never when
+the handler throws. The listeners act on a success row — the revocation guards
+close connections, the audit stream broadcasts it — so announcing one before
+its commit would close while the revoked credential still reads as valid, and
+a rolled-back revocation would close anyway. A route that runs without a
+request transaction and opens its own around just its writes (`/login`,
+`/password`) emits its success row after that transaction commits. The Rust
+spine follows the same order: a success row emitted inside a request
+transaction is written in it with its fan-out queued behind the commit, and
+`/login` and `/password` emit after their own commit. `AuditEmitterContext` is therefore
 `{pending_effects, post_commit_effects}` — `RouteContext` and `ActionContext`
 both satisfy it.
 
@@ -832,7 +836,7 @@ required `connection_closer`. Each revoking handler queues its close
 after the handler's transaction commits and is dropped if it throws;
 `account_token_create` queues a token close for each token its cap evicts.
 Failure outcomes (`revoked: false`) queue no close — mirrors the listeners'
-`outcome === 'failure'` guard so attacker-guessable ids can't target
+`outcome === 'success'` guard so attacker-guessable ids can't target
 arbitrary connections.
 
 ### Standard RPC bundle

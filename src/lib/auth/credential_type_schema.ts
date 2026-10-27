@@ -6,8 +6,9 @@
  * Open-string registry on top so consumers can declare additional
  * credential types (e.g. `'sso_assertion'`, `'agent_token'`) without an
  * upstream release. `RoleSpec.required_credential_types` references
- * entries from this registry; v1 keeps the field informative-only
- * (consumed by `auth/middleware.ts` and the dispatcher). Mirrors the
+ * entries from this registry; v1 keeps the field informative-only —
+ * validated at construction, enforced nowhere; routes and actions gate
+ * with `auth.credential_types`. Mirrors the
  * open-registry pattern used for `RoleName`, `ScopeKindName`,
  * `GrantPathName`, and `AuditEventTypeName`.
  *

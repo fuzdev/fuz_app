@@ -77,6 +77,25 @@ const create_body_spy_request = (
 };
 
 describe('create_body_limit_middleware', () => {
+	describe('max_size', () => {
+		for (const max_size of [NaN, -1, 1.5, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+			test(`${max_size} throws rather than building an uncapped middleware`, () => {
+				assert.throws(
+					() => create_body_limit_middleware(max_size),
+					/max_size must be a safe integer/
+				);
+			});
+		}
+
+		test('0 refuses any body', async () => {
+			const app = new Hono();
+			app.use(create_body_limit_middleware(0));
+			app.post('/echo', (c) => c.json({ ok: true }));
+			const res = await post(app, { 'content-type': 'text/plain' }, 'x');
+			assert.strictEqual(res.status, 413);
+		});
+	});
+
 	describe('Content-Length', () => {
 		test('a body exactly at the cap passes', async () => {
 			const { app } = create_test_app();

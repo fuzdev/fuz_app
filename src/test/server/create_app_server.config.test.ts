@@ -122,7 +122,8 @@ describe('collect_config_diagnostics', () => {
 			collect_config_diagnostics({
 				cookie_options: undefined,
 				rate_limiter_mode: 'enforced',
-				rate_limiters: enforced()
+				rate_limiters: enforced(),
+				max_body_size: undefined
 			}),
 			[]
 		);
@@ -130,7 +131,8 @@ describe('collect_config_diagnostics', () => {
 			collect_config_diagnostics({
 				cookie_options: { secure: true, sameSite: 'strict', httpOnly: true },
 				rate_limiter_mode: 'enforced',
-				rate_limiters: enforced()
+				rate_limiters: enforced(),
+				max_body_size: undefined
 			}),
 			[],
 			'the default cookie settings, spelled out, warn about nothing'
@@ -142,7 +144,8 @@ describe('collect_config_diagnostics', () => {
 			collect_config_diagnostics({
 				cookie_options: { secure: false, sameSite: 'lax', httpOnly: false },
 				rate_limiter_mode: 'enforced',
-				rate_limiters: enforced()
+				rate_limiters: enforced(),
+				max_body_size: undefined
 			}),
 			[
 				{
@@ -169,7 +172,8 @@ describe('collect_config_diagnostics', () => {
 		const messages = collect_config_diagnostics({
 			cookie_options: { httpOnly: false },
 			rate_limiter_mode: 'enforced',
-			rate_limiters: limiters
+			rate_limiters: limiters,
+			max_body_size: undefined
 		}).map((d) => d.message);
 		assert.deepStrictEqual(messages, [
 			'Session cookie httpOnly=false — cookie accessible to JS',
@@ -178,11 +182,33 @@ describe('collect_config_diagnostics', () => {
 		]);
 	});
 
+	test('a disabled body size limit warns; a set or omitted one does not', () => {
+		const diagnose = (max_body_size: number | null | undefined) =>
+			collect_config_diagnostics({
+				cookie_options: undefined,
+				rate_limiter_mode: 'enforced',
+				rate_limiters: enforced(),
+				max_body_size
+			});
+		assert.deepStrictEqual(diagnose(undefined), []);
+		assert.deepStrictEqual(diagnose(100), []);
+		assert.deepStrictEqual(diagnose(null), [
+			{
+				level: 'warning',
+				category: 'security',
+				message:
+					'request body size limit explicitly disabled (max_body_size: null) — ' +
+					'every route must cap its own body'
+			}
+		]);
+	});
+
 	test('the disabled mode is one warning, whatever it nulled', () => {
 		const diagnostics = collect_config_diagnostics({
 			cookie_options: undefined,
 			rate_limiter_mode: 'disabled_for_testing',
-			rate_limiters: all_null()
+			rate_limiters: all_null(),
+			max_body_size: undefined
 		});
 		assert.deepStrictEqual(diagnostics, [
 			{

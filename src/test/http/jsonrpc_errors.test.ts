@@ -6,7 +6,11 @@
 
 import { describe, assert, test } from 'vitest';
 
-import type { JsonrpcErrorCode, JsonrpcErrorObject } from '#lib/http/jsonrpc.ts';
+import {
+	is_jsonrpc_error_code,
+	JsonrpcErrorCode,
+	type JsonrpcErrorObject
+} from '#lib/http/jsonrpc.ts';
 import {
 	JSONRPC_ERROR_CODES,
 	ThrownJsonrpcError,
@@ -401,5 +405,42 @@ describe('http_status_to_jsonrpc_error_code', () => {
 	test('unrecognized status defaults to internal_error', () => {
 		assert.strictEqual(http_status_to_jsonrpc_error_code(418), JSONRPC_ERROR_CODES.internal_error);
 		assert.strictEqual(http_status_to_jsonrpc_error_code(200), JSONRPC_ERROR_CODES.internal_error);
+	});
+});
+
+describe('is_jsonrpc_error_code', () => {
+	test('agrees with the JsonrpcErrorCode schema', () => {
+		for (const value of [
+			-32700,
+			-32600,
+			-32601,
+			-32602,
+			-32603,
+			-32000,
+			-32050,
+			-32099,
+			-32100,
+			-31999,
+			-32604,
+			0,
+			20,
+			23,
+			404,
+			NaN,
+			Infinity,
+			'-32000',
+			null,
+			undefined
+		]) {
+			assert.strictEqual(
+				is_jsonrpc_error_code(value),
+				JsonrpcErrorCode.safeParse(value).success,
+				String(value)
+			);
+		}
+	});
+
+	test('refuses a fractional code in the server range, which JSON-RPC forbids', () => {
+		assert.isFalse(is_jsonrpc_error_code(-32000.5));
 	});
 });

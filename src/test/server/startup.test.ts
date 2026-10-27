@@ -6,9 +6,10 @@
 
 import { describe, test, assert } from 'vitest';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
+import { z } from 'zod';
 
 import { log_startup_summary } from '#lib/server/startup.ts';
-import type { AppSurface } from '#lib/http/surface.ts';
+import { env_schema_to_surface, type AppSurface } from '#lib/http/surface.ts';
 
 const create_surface = (overrides?: Partial<AppSurface>): AppSurface => ({
 	middleware: [{ name: 'origin', path: '/api/*', error_schemas: null }],
@@ -218,6 +219,19 @@ describe('log_startup_summary', () => {
 		assert.ok(secret_line);
 		assert.include(secret_line, '***');
 		assert.notInclude(secret_line, 'hunter2');
+	});
+
+	test('masks a secret declared under a wrapper', () => {
+		const lines: Array<string> = [];
+		const log = create_test_logger(lines);
+		const env = env_schema_to_surface(
+			z.strictObject({ SECRET: z.string().meta({ sensitivity: 'secret' }).optional() })
+		);
+		log_startup_summary(create_surface({ env }), log, { SECRET: 'hunter2' });
+		const secret_line = lines.find((l) => l.includes('SECRET='));
+		assert.ok(secret_line);
+		assert.include(secret_line, '***');
+		assert.notInclude(lines.join('\n'), 'hunter2');
 	});
 
 	test('custom prefix works', () => {

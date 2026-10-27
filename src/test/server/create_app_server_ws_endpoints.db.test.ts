@@ -379,6 +379,19 @@ describe('create_app_server.ws_endpoints', () => {
 		assert.match(err.message, /duplicate ws_endpoints path: \/api\/ws/);
 	});
 
+	test('throws on an endpoint whose own allowed_origins is empty', async () => {
+		const stub = create_stub_upgrade();
+		const { config } = await create_test_setup();
+		const err = await assert_rejects(() =>
+			create_tracked_app_server({
+				...config,
+				create_upgrade_websocket: () => stub.upgradeWebSocket,
+				ws_endpoints: [build_minimal_spec({ path: '/api/ws_open', allowed_origins: [] })]
+			})
+		);
+		assert.match(err.message, /ws_endpoints allowed_origins is empty for \/api\/ws_open/);
+	});
+
 	test('multi-endpoint: separate paths get separate auto-created transports', async () => {
 		const stub = create_stub_upgrade();
 		const { config } = await create_test_setup();

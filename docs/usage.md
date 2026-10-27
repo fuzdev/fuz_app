@@ -351,8 +351,10 @@ Consumer migration namespaces must not appear in `reserved_migration_namespaces`
 
 Consumer-specific code (env loading, error formatting/exit, custom
 middleware) stays in the consumer. Body size limiting defaults to 1 MiB
-(`DEFAULT_MAX_BODY_SIZE`); pass `max_body_size` to override or `null` to
-disable.
+(`DEFAULT_MAX_BODY_SIZE`); pass `max_body_size` to override (a safe integer
+`0` or more — anything else throws at assembly) or `null` to disable, which
+adds a security warning to the startup diagnostics. An empty
+`allowed_origins` throws at assembly, on the server or on a WS endpoint.
 
 Custom middleware goes in through `transform_middleware`, which receives
 shallow copies of the trusted-proxy spec followed by the auth stack, in a fresh
@@ -655,7 +657,7 @@ audit row is announced: `role_grant_revoke` of a global grant (role match —
 the guard is the only closer for this one), `session_revoke` (session-scoped), `token_revoke`
 (token-scoped), and the account-wide events (`session_revoke_all`,
 `token_revoke_all`, `password_change`, `logout`, `account_delete`,
-`account_purge`). Events with `outcome='failure'` are ignored (they may carry
+`account_purge`). Only `outcome='success'` events act (a failure may carry
 attacker-submitted identifiers).
 The audit log SSE route subscribes with `scope = session_hash` and
 `groups = [account_id]`, so `session_revoke` closes only the affected tab
@@ -995,8 +997,8 @@ for `token_revoke`, and the whole account for `session_revoke_all`,
 `account_purge`; and for `role_grant_revoke` of a global grant, the account's
 sockets on endpoints whose `required_roles` list the role, with
 `WS_CLOSE_PERMISSION_REVOKED` (a socket admitted by a role gate receives every
-push its endpoint sends, which no message dispatch re-checks). It ignores
-`outcome === 'failure'` events to avoid acting on attacker-controlled
+push its endpoint sends, which no message dispatch re-checks). It acts
+only on `outcome === 'success'` events, to avoid acting on attacker-controlled
 identifiers — see `actions/transports_ws_auth_guard.ts` for the full
 rationale. It accepts any
 `ConnectionCloser`, so one guard over `backend.deps.connection_closer` covers

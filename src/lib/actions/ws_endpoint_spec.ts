@@ -41,7 +41,7 @@ export interface WsEndpointSpec {
 	 * `AppServerOptions.allowed_origins`, the list the HTTP routes check.
 	 * Set it only to narrow one endpoint: the auth middleware's origin check
 	 * runs on the upgrade too, so a request reaches the endpoint only when
-	 * its origin passes both lists.
+	 * its origin passes both lists. An empty list throws at assembly.
 	 */
 	allowed_origins?: ReadonlyArray<RegExp>;
 	/**

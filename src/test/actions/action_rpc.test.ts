@@ -682,6 +682,39 @@ describe('POST dispatcher', () => {
 		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.internal_error);
 	});
 
+	// a numeric `code` alone is not a JSON-RPC error: a DOMException carries one
+	for (const [label, thrown] of [
+		['a DOMException', () => new DOMException('The operation was aborted.', 'AbortError')],
+		[
+			'an Error with a non-JSON-RPC numeric code',
+			() => Object.assign(new Error('x'), { code: 42 })
+		],
+		[
+			'an Error with a fractional code in the server range',
+			() => Object.assign(new Error('x'), { code: -32000.5 })
+		]
+	] as const) {
+		test(`${label} is an internal error, not its own code`, async () => {
+			const app = create_test_app([
+				{
+					spec: create_get_spec(),
+					handler: () => {
+						throw thrown();
+					}
+				}
+			]);
+
+			const res = await app.request('/api/rpc', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: rpc_request('thing_list')
+			});
+			assert.strictEqual(res.status, 500);
+			const body = await res.json();
+			assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.internal_error);
+		});
+	}
+
 	test('dispatches side_effects:false action via POST', async () => {
 		const app = create_test_app([
 			{

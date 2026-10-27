@@ -89,11 +89,18 @@ export const derive_http_method = (side_effects: ActionSideEffects): RouteMethod
  * same holder reaches the route by dropping the credential, so the guard would
  * enforce nothing — the shape `fuz_auth_guard_resolver` refuses outright.
  *
+ * **A rate-limited action is refused.** The action limiters run in
+ * `perform_action`, which a bridged route never reaches, and a route spec has
+ * no limiter of its own — so bridging a `rate_limit` action would serve it
+ * unthrottled beside the throttled RPC and WS paths, a way around its budget.
+ * Serve it over RPC or WS instead.
+ *
  * @param spec - the action spec (must have non-null `auth`)
  * @param options - HTTP-specific options (path, handler, optional overrides)
  * @returns a `RouteSpec` ready for `apply_route_specs`
  * @throws Error if `spec.auth` is null (only `request_response` actions can
  *   become routes; notifications and local calls cannot)
+ * @throws Error if `spec.rate_limit` is set (the bridged route would be unthrottled)
  */
 export const create_action_route_spec = (
 	spec: ActionSpec,
@@ -104,6 +111,13 @@ export const create_action_route_spec = (
 			`Cannot derive route spec from action '${
 				spec.method
 			}': auth is null (only request_response actions with non-null auth can become routes)`
+		);
+	}
+	if (spec.rate_limit) {
+		throw new Error(
+			`Cannot derive route spec from action '${spec.method}': it declares rate_limit '${
+				spec.rate_limit
+			}', which a bridged route would not enforce (serve it over RPC or WS instead)`
 		);
 	}
 	const auth = options.auth ?? spec.auth;

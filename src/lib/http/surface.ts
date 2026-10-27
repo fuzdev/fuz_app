@@ -25,7 +25,7 @@ import {
 	is_strict_object_schema
 } from './schema_helpers.ts';
 import type { Sensitivity } from '../sensitivity.ts';
-import type { SchemaFieldMeta } from '../schema_meta.ts';
+import { schema_meta_value, schema_sensitivity } from '../schema_meta.ts';
 
 // --- Surface types ---
 
@@ -235,7 +235,9 @@ export const collect_middleware_errors = (
 };
 
 /**
- * Convert env schema to surface entries using `.meta()` metadata.
+ * Convert env schema to surface entries using `.meta()` metadata, read
+ * through each field's wrappers — `schema_meta_value` for the description,
+ * the wider fail-safe `schema_sensitivity` walk for secrets.
  *
  * @param schema - Zod object schema with `.meta()` on fields
  */
@@ -243,12 +245,12 @@ export const env_schema_to_surface = (schema: z.ZodObject): Array<AppSurfaceEnv>
 	const entries: Array<AppSurfaceEnv> = [];
 	for (const [name, field_schema] of Object.entries(schema.shape)) {
 		const field = field_schema as z.ZodType;
-		const meta = field.meta() as SchemaFieldMeta | undefined;
 		const undef_result = field.safeParse(undefined);
 		entries.push({
 			name,
-			description: meta?.description ?? '',
-			sensitivity: meta?.sensitivity ?? null,
+			// read through wrappers — a `.meta()` under `.optional()` is not on the outer schema
+			description: schema_meta_value(field, 'description') ?? '',
+			sensitivity: schema_sensitivity(field) ?? null,
 			has_default: undef_result.success && undef_result.data !== undefined,
 			optional: undef_result.success
 		});

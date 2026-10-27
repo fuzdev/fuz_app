@@ -13,9 +13,8 @@
  * **DB-layer caveat.** The TS binaries run in-memory pglet while the Rust
  * spine runs real Postgres (`tokio-postgres` can't reach an in-process database) — so the
  * TS-vs-Rust columns are NOT apples-to-apples at the DB layer; the
- * TS-node-vs-TS-deno-vs-TS-bun comparison is (same driver). zzz's
- * `benchmark:cross-impl` carries the same caveat. The Rust column only appears when
- * `FUZ_TESTING_RUST_SPINE_STUB_BIN` is set (+ its Postgres DB exists — see
+ * TS-node-vs-TS-deno-vs-TS-bun comparison is (same driver). The Rust column
+ * only appears when `FUZ_TESTING_RUST_SPINE_STUB_BIN` is set (+ its Postgres DB exists — see
  * `rust_spine_stub_backend_config`); TS-only is the zero-infra default.
  *
  * @module

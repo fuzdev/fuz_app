@@ -8,7 +8,7 @@
  * @module
  */
 
-import { Hono, type Context } from 'hono';
+import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { logger } from 'hono/logger';
 import type { UpgradeWebSocket } from 'hono/ws';
 import { z } from 'zod';
@@ -154,7 +154,10 @@ export interface AppServerOptions {
 	backend: AppBackend;
 	/** Session options for cookie-based auth. */
 	session_options: SessionOptions<string>;
-	/** Parsed allowed origin patterns. */
+	/**
+	 * Parsed allowed origin patterns. Must not be empty — an empty list would
+	 * refuse every browser request, so assembly throws.
+	 */
 	allowed_origins: Array<RegExp>;
 	/**
 	 * Paths the origin check skips, each with its reason. The check covers
@@ -256,9 +259,11 @@ export interface AppServerOptions {
 	 */
 	action_account_rate_limiter?: RateLimiter | null;
 	/**
-	 * Maximum allowed request body size in bytes.
-	 * Omit or `undefined` to use the default (1 MiB).
-	 * Pass `null` to explicitly disable body size limiting.
+	 * Maximum allowed request body size in bytes, a safe integer `0` or more
+	 * (anything else throws at assembly). Omit or `undefined` to use the
+	 * default (1 MiB). Pass `null` to explicitly disable body size limiting,
+	 * which adds a security warning to the surface's diagnostics (logged at
+	 * startup).
 	 */
 	max_body_size?: number | null;
 	/** Daemon token state for keeper auth. Omit to disable. */
@@ -690,6 +695,8 @@ export interface ConfigDiagnosticsInput {
 	rate_limiter_mode: RateLimiterMode;
 	/** The resolved limiters, from `resolve_rate_limiters`. */
 	rate_limiters: Record<AppServerRateLimiterKey, RateLimiter | null>;
+	/** `AppServerOptions.max_body_size` as passed; `null` disables the body size limit. */
+	max_body_size: number | null | undefined;
 }
 
 /**
@@ -697,7 +704,8 @@ export interface ConfigDiagnosticsInput {
  * spec-level ones: a weakened session cookie, and an open rate-limited
  * surface — one warning for `'disabled_for_testing'`, otherwise one per
  * explicitly-null limiter, so a deployment that disables login's limiter but
- * keeps signup's reads differently from one that disables both.
+ * keeps signup's reads differently from one that disables both — and a
+ * disabled request body size limit (`max_body_size: null`).
  *
  * @internal
  */
@@ -750,6 +758,15 @@ export const collect_config_diagnostics = (
 				});
 			}
 		}
+	}
+	if (input.max_body_size === null) {
+		diagnostics.push({
+			level: 'warning',
+			category: 'security',
+			message:
+				'request body size limit explicitly disabled (max_body_size: null) — ' +
+				'every route must cap its own body'
+		});
 	}
 	return diagnostics;
 };
@@ -828,6 +845,20 @@ const assemble_app_server = async (
 	const { backend } = options;
 	const { deps } = backend;
 	const { log } = deps;
+
+	// option checks first, before anything is acquired
+	if (options.allowed_origins.length === 0) {
+		throw new Error(
+			'create_app_server: allowed_origins is empty — list at least one origin pattern ' +
+				'(an empty list refuses every browser request)'
+		);
+	}
+	// body size limit — rejects oversized payloads before auth/validation; the
+	// middleware throws on a cap that is not a safe integer 0 or more
+	const body_limit_middleware: MiddlewareHandler | null =
+		options.max_body_size === null
+			? null
+			: create_body_limit_middleware(options.max_body_size ?? DEFAULT_MAX_BODY_SIZE);
 
 	// Rate limiters — the ones built here are the server's to dispose, on
 	// close or when assembly fails.
@@ -1006,7 +1037,8 @@ const assemble_app_server = async (
 	// WS path checks — pure data, so they run before anything mounts.
 	// `register_ws_endpoint` mounts a `GET path` upgrade route: a duplicate
 	// path, or one a `RouteSpec` already registered as `GET path`, would be
-	// silently shadowed by Hono's last-wins semantics — fail fast instead.
+	// silently shadowed by Hono's last-wins semantics — fail fast instead. An
+	// endpoint's own empty `allowed_origins` would refuse every browser upgrade.
 	if (ws_mount) {
 		const route_spec_get_paths: Set<string> = new Set();
 		for (const r of route_specs) {
@@ -1020,6 +1052,13 @@ const assemble_app_server = async (
 			if (route_spec_get_paths.has(endpoint.path)) {
 				throw new Error(
 					`create_app_server: ws_endpoints path collides with a GET RouteSpec: ${endpoint.path}`
+				);
+			}
+			if (endpoint.allowed_origins.length === 0) {
+				throw new Error(
+					`create_app_server: ws_endpoints allowed_origins is empty for ${endpoint.path} — ` +
+						'list at least one origin pattern, or omit it to take the server list ' +
+						'(an empty list refuses every browser upgrade)'
 				);
 			}
 			seen_paths.add(endpoint.path);
@@ -1047,7 +1086,8 @@ const assemble_app_server = async (
 	const config_diagnostics = collect_config_diagnostics({
 		cookie_options: options.session_options.cookie_options,
 		rate_limiter_mode,
-		rate_limiters
+		rate_limiters,
+		max_body_size: options.max_body_size
 	});
 	if (config_diagnostics.length) {
 		surface_spec.surface.diagnostics = [...surface_spec.surface.diagnostics, ...config_diagnostics];
@@ -1107,11 +1147,9 @@ const assemble_app_server = async (
 		app.use(logger((msg) => log.info(msg)));
 	}
 
-	// Body size limit — rejects oversized payloads before auth/validation.
-	// Default 1 MiB; pass null to disable.
-	if (options.max_body_size !== null) {
-		const max_size = options.max_body_size ?? DEFAULT_MAX_BODY_SIZE;
-		app.use(create_body_limit_middleware(max_size));
+	// body size limit, built with the option checks above
+	if (body_limit_middleware) {
+		app.use(body_limit_middleware);
 	}
 
 	apply_middleware_specs(app, middleware_specs);

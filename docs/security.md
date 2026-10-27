@@ -568,8 +568,8 @@ enforcement:
     revoke closes nothing). The guard is the only
     closer for this one: no handler closes for a role. The WebSocket guard
     closes the account's sockets gated on the role on the same rows
-- **Failure guard**: Events with `outcome='failure'` are ignored. Failed
-  revoke attempts carry attacker-submitted identifiers (e.g. guessed session
+- **Success guard**: Only `outcome='success'` events act — an outcome outside
+  the enum is inert. Failed revoke attempts carry attacker-submitted identifiers (e.g. guessed session
   hashes) in metadata — acting on them would let any authenticated user close
   another user's SSE stream by guessing or leaking a hash.
 - **No polling**: Disconnection is reactive — triggered by the revocation
@@ -1265,7 +1265,9 @@ For v1 single-process deployments, the in-memory limiter is sufficient.
 auth and route handling. Default: 1 MiB (`DEFAULT_MAX_BODY_SIZE`). Oversized
 payloads are rejected with 413 and `{error: 'payload_too_large'}`
 (`PayloadTooLargeError` schema). Configure via `max_body_size` on
-`AppServerOptions`; pass `null` to disable.
+`AppServerOptions`; pass `null` to disable. A non-safe-integer or negative
+value throws at assembly; `null` adds a security warning to the startup
+diagnostics.
 
 On both spines the 413 comes first for a declared `Content-Length` over the
 cap; a length-less (chunked) body over the cap is refused too, but which

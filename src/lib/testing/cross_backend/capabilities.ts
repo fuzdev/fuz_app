@@ -116,7 +116,8 @@ export interface BackendCapabilities {
 	 * `testing_backdoors`, which `describe_spine_cross_suites` requires. Gates
 	 * `describe_fact_serving_cross_tests`' per-reference read model (cell-scoped
 	 * admit via a viewable cell, cross-owner-dedup-no-leak, 404-mask),
-	 * `describe_cell_ref_admission_cross_tests`, and the fact cases of the
+	 * `describe_cell_ref_admission_cross_tests` (its grant, item, and clone
+	 * cases with `cell_relations`), and the fact cases of the
 	 * moderation suite. Like cells, the serve route stays off the standard
 	 * declared surface. The admin bare-hash route is its own flag,
 	 * `fact_serving_admin_hash`.

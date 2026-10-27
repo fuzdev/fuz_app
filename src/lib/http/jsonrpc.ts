@@ -133,6 +133,25 @@ export const JsonrpcErrorCode = z.union([
 ]);
 export type JsonrpcErrorCode = z.infer<typeof JsonrpcErrorCode>;
 
+/**
+ * Whether `value` is a valid JSON-RPC error code — the codes `JsonrpcErrorCode`
+ * parses, but integer-only in the server range. A numeric `code` alone doesn't make an error a
+ * JSON-RPC one: a `DOMException`'s `code` is a small positive number.
+ *
+ * @param value - the candidate code
+ * @returns whether `value` is one of the standard codes or an integer in the server range
+ */
+export const is_jsonrpc_error_code = (value: unknown): value is JsonrpcErrorCode =>
+	typeof value === 'number' &&
+	(value === JSONRPC_PARSE_ERROR ||
+		value === JSONRPC_INVALID_REQUEST ||
+		value === JSONRPC_METHOD_NOT_FOUND ||
+		value === JSONRPC_INVALID_PARAMS ||
+		value === JSONRPC_INTERNAL_ERROR ||
+		(Number.isInteger(value) &&
+			value >= JSONRPC_SERVER_ERROR_END &&
+			value <= JSONRPC_SERVER_ERROR_START));
+
 /** Error object within a JSON-RPC error response. */
 export const JsonrpcErrorObject = z.looseObject({
 	code: JsonrpcErrorCode,

@@ -1,6 +1,6 @@
 /**
  * Tests for `schema_meta.ts` — reading a field's declared `invalid_reason`
- * through its wrappers, along a validation issue's path, and over a failed
+ * and `sensitivity` through its wrappers, along a validation issue's path, and over a failed
  * parse's issues.
  *
  * @module
@@ -12,7 +12,8 @@ import { z } from 'zod';
 import {
 	resolve_invalid_reason,
 	resolve_issues_invalid_reason,
-	schema_invalid_reason
+	schema_invalid_reason,
+	schema_sensitivity
 } from '#lib/schema_meta.ts';
 
 const Inner = z.strictObject({
@@ -63,6 +64,76 @@ describe('schema_invalid_reason', () => {
 			invalid_reason: 'outer'
 		});
 		assert.strictEqual(schema_invalid_reason(schema), 'outer');
+	});
+});
+
+describe('schema_sensitivity', () => {
+	test('reads a secret on any member of a union or intersection', () => {
+		const secret = z.string().meta({ sensitivity: 'secret' });
+		for (const schema of [
+			z.union([secret, z.literal('')]),
+			z.union([z.literal(''), secret]).optional(),
+			z.intersection(secret, z.string().min(1)),
+			z.intersection(z.string().min(1), secret)
+		]) {
+			assert.strictEqual(schema_sensitivity(schema), 'secret');
+		}
+		assert.strictEqual(schema_sensitivity(z.union([z.string(), z.literal('')])), undefined);
+	});
+
+	test('reads a secret under optional, nullable, and default wrappers', () => {
+		const secret = z.string().meta({ sensitivity: 'secret' });
+		for (const schema of [
+			secret,
+			secret.optional(),
+			secret.nullable(),
+			secret.default('x'),
+			secret.optional().nullable()
+		]) {
+			assert.strictEqual(schema_sensitivity(schema), 'secret');
+		}
+	});
+
+	test('reads a secret under every wrapping layer', () => {
+		const secret = z.string().meta({ sensitivity: 'secret' });
+		const cases: Array<[string, z.ZodType]> = [
+			['optional', secret.optional()],
+			['nullable + default', secret.nullable().default(null)],
+			['transform', secret.transform((v) => v.trim())],
+			['coerce + optional', z.coerce.string().meta({ sensitivity: 'secret' }).optional()],
+			['outer meta', z.string().optional().meta({ sensitivity: 'secret' })],
+			['catch', secret.catch('x')],
+			['readonly', secret.readonly()],
+			['nonoptional', secret.optional().nonoptional()],
+			['preprocess', z.preprocess((v) => v, secret)],
+			['pipe out', z.string().pipe(secret)],
+			['catch under optional', secret.catch('x').optional()],
+			['lazy', z.lazy(() => secret).optional()]
+		];
+		for (const [label, schema] of cases) {
+			assert.strictEqual(schema_sensitivity(schema), 'secret', label);
+		}
+	});
+
+	test('an undeclared field has none', () => {
+		assert.strictEqual(schema_sensitivity(z.string().optional()), undefined);
+		assert.strictEqual(schema_sensitivity(z.string().pipe(z.string()).catch('x')), undefined);
+	});
+
+	test('a secret inside a structural schema does not mark it', () => {
+		const secret = z.string().meta({ sensitivity: 'secret' });
+		assert.strictEqual(schema_sensitivity(z.strictObject({ token: secret })), undefined);
+		assert.strictEqual(schema_sensitivity(z.array(secret)), undefined);
+	});
+
+	test('a recursive lazy schema terminates', () => {
+		interface Node {
+			next?: Node;
+		}
+		const node: z.ZodType<Node> = z.lazy(() => z.strictObject({ next: node.optional() }));
+		const self_lazy: z.ZodType = z.lazy(() => self_lazy.optional());
+		assert.strictEqual(schema_sensitivity(node), undefined);
+		assert.strictEqual(schema_sensitivity(self_lazy), undefined);
 	});
 });
 

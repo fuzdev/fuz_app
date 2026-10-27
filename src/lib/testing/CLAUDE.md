@@ -1177,7 +1177,8 @@ file; the dual-spawn and limiter-enabled suites name their own files.
   `fact_holder` row, so a non-admin can reference what it seeds, and whose
   optional `external_url` writes a bare external row naming that URL, so the
   suite can pin that a URL naming another hash's file is refused) — it also
-  gates `describe_cell_ref_admission_cross_tests`. `fact_serving_admin_hash`
+  gates `describe_cell_ref_admission_cross_tests` (its grant, item, and clone
+  cases with `cell_relations`). `fact_serving_admin_hash`
   is the admin-only bare-hash route (`GET /api/facts/:hash`), its own flag
   because a backend can serve the cell-gated route alone: it gates the
   fact-serving suite's bare-hash cases (with `fact_serving`) and the bare-hash

@@ -32,7 +32,9 @@ import '../assert_dev_env.ts';
  *
  * Facts are put through `_testing_put_fact`, with `holder` naming the actor a
  * real upload would record. Gated on `capabilities.fact_serving` (the
- * seeder + the serve routes); runs under every `cross_backend_*` project.
+ * seeder + the serve routes), and the cases driving a grant, item, or clone
+ * verb on `capabilities.cell_relations` as well; runs under every
+ * `cross_backend_*` project.
  *
  * @module
  */
@@ -182,7 +184,7 @@ export const describe_cell_ref_admission_cross_tests = (
 		);
 
 		test_if(
-			capabilities.fact_serving,
+			capabilities.fact_serving && capabilities.cell_relations,
 			'update keeps existing refs and refuses new unheld ones',
 			async () => {
 				const fixture = await setup_test();
@@ -277,7 +279,7 @@ export const describe_cell_ref_admission_cross_tests = (
 		);
 
 		test_if(
-			capabilities.fact_serving,
+			capabilities.fact_serving && capabilities.cell_relations,
 			'clone carries source refs per row without holding them',
 			async () => {
 				const fixture = await setup_test();
@@ -402,7 +404,7 @@ export const describe_cell_ref_admission_cross_tests = (
 		});
 
 		test_if(
-			capabilities.fact_serving,
+			capabilities.fact_serving && capabilities.cell_relations,
 			'a revoked grantee cannot re-reference a fact it read',
 			async () => {
 				const fixture = await setup_test();
@@ -526,14 +528,14 @@ export const describe_cell_ref_admission_cross_tests = (
 			}
 		);
 
-		test_if(capabilities.fact_serving, 'ref admission answers after the 404 masks', async () => {
+		/** Alice's private cell over her own fact, which Bob cannot see. */
+		const setup_hidden_cell = async (prefix: string) => {
 			const fixture = await setup_test();
-			const alice = await fixture.create_account({ username: 'ref_mask_alice' });
-			const bob = await fixture.create_account({ username: 'ref_mask_bob' });
+			const alice = await fixture.create_account({ username: `${prefix}_alice` });
+			const bob = await fixture.create_account({ username: `${prefix}_bob` });
 			const t = fixture.fresh_transport();
-			const bob_headers = bob.create_session_headers();
 			const alices = await cross_put_fact(fixture, rpc_path, {
-				content: 'alice hidden bytes',
+				content: `${prefix} hidden bytes`,
 				holder: alice.actor.id
 			});
 			const hidden = expect_output(
@@ -546,6 +548,11 @@ export const describe_cell_ref_admission_cross_tests = (
 				),
 				CellCreateOutput
 			).cell.id;
+			return { t, bob_headers: bob.create_session_headers(), alices, hidden };
+		};
+
+		test_if(capabilities.fact_serving, 'ref admission answers after the 404 masks', async () => {
+			const { t, bob_headers, alices, hidden } = await setup_hidden_cell('ref_mask');
 
 			// An update of a hidden cell answers its mask whatever `data` names —
 			// an unheld new ref or the hidden cell's own ref alike.
@@ -567,14 +574,22 @@ export const describe_cell_ref_admission_cross_tests = (
 				bob_headers
 			);
 			assert.strictEqual(error_reason(under), 'cell_not_found', 'create under a hidden parent');
-			const clone = await cross_rpc_call(
-				t,
-				rpc_path,
-				'cell_clone',
-				{ source_id: hidden, with_data_patch: { extra: UNSTORED_HASH } },
-				bob_headers
-			);
-			assert.strictEqual(error_reason(clone), 'cell_not_found', 'clone of a hidden source');
 		});
+
+		test_if(
+			capabilities.fact_serving && capabilities.cell_relations,
+			'clone ref admission answers after the 404 mask',
+			async () => {
+				const { t, bob_headers, hidden } = await setup_hidden_cell('ref_clone_mask');
+				const clone = await cross_rpc_call(
+					t,
+					rpc_path,
+					'cell_clone',
+					{ source_id: hidden, with_data_patch: { extra: UNSTORED_HASH } },
+					bob_headers
+				);
+				assert.strictEqual(error_reason(clone), 'cell_not_found', 'clone of a hidden source');
+			}
+		);
 	});
 };

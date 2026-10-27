@@ -77,7 +77,7 @@ import { dispatch_with_post_commit_rollback } from '../http/pending_effects.ts';
 import {
 	JSONRPC_VERSION,
 	type JsonrpcRequestId,
-	type JsonrpcErrorCode,
+	is_jsonrpc_error_code,
 	type JsonrpcErrorObject
 } from '../http/jsonrpc.ts';
 import {
@@ -355,12 +355,15 @@ export const perform_action = async (
 			use_transaction ? db.transaction((tx) => execute(tx)) : execute(db)
 		);
 	} catch (err) {
-		// Duck-type check: Error with numeric `code` signals a JSON-RPC error.
-		// Avoids cross-realm `instanceof` misses when consumers throw their own
-		// `ThrownJsonrpcError` (structurally identical, different class identity).
+		// Duck-type check: an Error whose `code` is a JSON-RPC error code signals
+		// a JSON-RPC error. Avoids cross-realm `instanceof` misses when consumers
+		// throw their own `ThrownJsonrpcError` (structurally identical, different
+		// class identity). The code must be a valid JSON-RPC one, not just a
+		// number — a `DOMException` (`code` 20, 23, ...) is an internal error,
+		// logged and masked like any other.
 		const error_like = err as { code?: unknown; data?: unknown };
-		if (err instanceof Error && typeof error_like.code === 'number') {
-			const code = error_like.code as JsonrpcErrorCode;
+		if (err instanceof Error && is_jsonrpc_error_code(error_like.code)) {
+			const code = error_like.code;
 			const status = jsonrpc_error_code_to_http_status(code);
 			const error: JsonrpcErrorObject = { code, message: err.message };
 			if (error_like.data !== undefined) error.data = error_like.data;

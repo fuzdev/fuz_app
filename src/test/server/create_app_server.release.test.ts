@@ -386,3 +386,33 @@ describe('AppServer.close releases what assembly acquired', () => {
 		);
 	});
 });
+
+describe('option checks fail before anything is acquired', () => {
+	for (const max_body_size of [NaN, -1, 1.5, Infinity]) {
+		test(`max_body_size: ${max_body_size}`, async () => {
+			const harness = create_harness();
+			const dispose = vi.spyOn(RateLimiter.prototype, 'dispose');
+			const thrown = await assemble_rejects({
+				...acquiring_options(harness.backend),
+				max_body_size
+			});
+			assert.instanceOf(thrown, Error);
+			assert.match(thrown.message, /max_size must be a safe integer 0 or more/);
+			assert.deepStrictEqual(current(harness), harness.baseline);
+			assert.strictEqual(dispose.mock.contexts.length, 0, 'no limiter was built');
+		});
+	}
+
+	test('an empty allowed_origins', async () => {
+		const harness = create_harness();
+		const dispose = vi.spyOn(RateLimiter.prototype, 'dispose');
+		const thrown = await assemble_rejects({
+			...acquiring_options(harness.backend),
+			allowed_origins: []
+		});
+		assert.instanceOf(thrown, Error);
+		assert.match(thrown.message, /allowed_origins is empty/);
+		assert.deepStrictEqual(current(harness), harness.baseline);
+		assert.strictEqual(dispose.mock.contexts.length, 0, 'no limiter was built');
+	});
+});
