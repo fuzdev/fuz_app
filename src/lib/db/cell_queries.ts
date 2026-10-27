@@ -521,29 +521,6 @@ export const query_cell_list_by_kind = async (
 	);
 
 /**
- * List active cells created by an actor, newest first. Backed by the
- * `idx_cell_created_by` partial index.
- *
- * @param deps - query deps
- * @param actor_id - the creator's actor id
- * @param options - pagination
- * @returns matching active rows
- */
-export const query_cell_list_by_creator = async (
-	deps: QueryDeps,
-	actor_id: Uuid,
-	options?: Pick<CellListOptions, 'limit' | 'offset'>
-): Promise<Array<CellRow>> =>
-	deps.db.query<CellRow>(
-		`SELECT ${cell_row_projection('cell')}
-		 FROM cell
-		 WHERE created_by = $1 AND deleted_at IS NULL
-		 ORDER BY cell.created_at DESC
-		 LIMIT $2 OFFSET $3`,
-		[actor_id, options?.limit ?? null, options?.offset ?? 0]
-	);
-
-/**
  * Filterable list query for the generic `cell_list` RPC.
  *
  * Takes a flat filter shape (single optional clause per dimension; the

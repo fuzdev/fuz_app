@@ -190,8 +190,6 @@ export interface CellCreateAuthorizeInput {
 	root_id: Uuid | null;
 	/** The governing root's contribution `policy` column — the handler reads the root in-tx and hands its policy over, so a directory-aware authorizer resolves `root_policy[kind]` **without a DB read of its own** (pure predicate; reading in-tx avoids the single-connection deadlock a separate handle would hit on the in-memory drivers). `null` for a root creation and for a root carrying no policy (the authorizer's floor governs); a missing or soft-deleted root answers `cell_not_found` before the authorizer runs. Never the root's `data`: an editor grant can rewrite `data`, so a policy read from it would be the editor's to loosen. */
 	root_policy: CellPolicy | null;
-	/** Target scope — designed-in for M2 space-scoping; **always `null` in v1** (cells carry no scope column). */
-	scope_id: Uuid | null;
 }
 
 /**
@@ -490,9 +488,9 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		// `forbidden` (not the 404 mask); an `{allow: true}` verdict folds the
 		// moderation outcome. Receives the **raw** `input.data` (not the
 		// `validate_data`-normalized value) to match the Rust twin, so a consumer
-		// with a transforming validator can't diverge TS↔Rust. `scope_id` is
-		// `null` in v1. Without an authorizer, create is open: `moderation` stays
-		// null and the author's visibility holds.
+		// with a transforming validator can't diverge TS↔Rust. Without an
+		// authorizer, create is open: `moderation` stays null and the author's
+		// visibility holds.
 		let moderation: string | null = null;
 		let visibility = input.visibility;
 		if (authorize_create) {
@@ -501,8 +499,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 				data: input.data,
 				parent_id,
 				root_id,
-				root_policy,
-				scope_id: null
+				root_policy
 			});
 			if (!verdict.allow) {
 				throw jsonrpc_errors.forbidden('cell creation is not permitted here', {
@@ -847,8 +844,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 				data: merged_data,
 				parent_id: null,
 				root_id: null,
-				root_policy: null,
-				scope_id: null
+				root_policy: null
 			});
 			if (!verdict.allow) {
 				throw jsonrpc_errors.forbidden('cell creation is not permitted here', {

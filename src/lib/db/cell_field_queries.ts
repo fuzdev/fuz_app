@@ -91,30 +91,6 @@ export const query_cell_field_set = async (
 };
 
 /**
- * Fetch one field row by primary key.
- *
- * Does NOT JOIN cell — the caller decides whether to filter by
- * `deleted_at`. Used by handlers that need the row's current target_id
- * for audit envelopes before issuing the delete.
- *
- * @param deps - query deps
- * @param source_id - source cell id
- * @param name - field name
- * @returns the row or `null` when not found
- */
-export const query_cell_field_get = async (
-	deps: QueryDeps,
-	source_id: Uuid,
-	name: string
-): Promise<CellFieldRow | null> => {
-	const row = await deps.db.query_one<CellFieldRow>(
-		`SELECT ${columns_sql(CELL_FIELD_COLUMNS, cell_field_expr(''))} FROM cell_field WHERE source_id = $1 AND name = $2`,
-		[source_id, name]
-	);
-	return row ?? null;
-};
-
-/**
  * Delete a field row by primary key. Returns the deleted row so callers
  * can audit the prior target_id without a pre-fetch.
  *

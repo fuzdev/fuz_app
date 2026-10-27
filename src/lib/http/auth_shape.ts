@@ -240,13 +240,6 @@ export const is_public_auth = (auth: RouteAuth): boolean =>
  */
 export const needs_actor = (auth: RouteAuth): boolean => auth.actor !== 'none';
 
-/**
- * True iff the route declares an account axis (`'optional'` or
- * `'required'`). Per registry-time invariant 3 this is implied by
- * `needs_actor(auth)` in v1 (no accountless actors yet).
- */
-export const needs_account = (auth: RouteAuth): boolean => auth.account !== 'none';
-
 /** True iff the route declares any role gate (`auth.roles?.length`). */
 export const is_role_auth = (auth: RouteAuth): boolean => !!auth.roles?.length;
 

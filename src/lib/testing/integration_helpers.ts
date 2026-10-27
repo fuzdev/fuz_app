@@ -12,8 +12,6 @@ import type { RouteSpec, RouteMethod } from '../http/route_spec.ts';
 import { is_null_schema, merge_error_schemas } from '../http/schema_helpers.ts';
 import { is_public_auth, type RouteAuth } from '../http/auth_shape.ts';
 import { ERROR_AUTHENTICATION_REQUIRED } from '../http/error_schemas.ts';
-import type { Keyring } from '../auth/keyring.ts';
-import { create_session_cookie_value, type SessionOptions } from '../auth/session_cookie.ts';
 import { ROLE_ADMIN } from '../auth/role_schema.ts';
 import type { TestAccount } from './app_server.ts';
 
@@ -159,34 +157,6 @@ export const assert_response_matches_spec = async (
 	}
 };
 
-/**
- * Create an expired test cookie — validly signed but with an expiry timestamp in 1970.
- */
-export const create_expired_test_cookie = async (
-	keyring: Keyring,
-	session_options: SessionOptions<string>
-): Promise<string> => {
-	// now_seconds=1 puts the expiry at 1 + max_age seconds past epoch — still in 1970
-	return create_session_cookie_value(keyring, 'expired_test_token', session_options, 1);
-};
-
-/**
- * Known safe fields that may appear in any error response.
- *
- * Error schemas use `z.looseObject` so extra context fields are allowed in production,
- * but test responses should not contain fields that leak internal details (stack traces,
- * SQL, file paths). This set lists the fields that are safe to appear.
- */
-const KNOWN_SAFE_ERROR_FIELDS = new Set([
-	'error',
-	'issues',
-	'required_roles',
-	'required_credential_types',
-	'retry_after',
-	'has_references',
-	'ok'
-]);
-
 /** Fields in error responses that indicate information leakage. */
 const LEAKY_FIELD_PATTERNS = [
 	'stack',
@@ -199,24 +169,6 @@ const LEAKY_FIELD_PATTERNS = [
 	'secret',
 	'token'
 ];
-
-/**
- * List the fields in an error response body that are not in the known-safe set.
- *
- * Error schemas use `z.looseObject` (intentional — multiple producers), but
- * test responses should be checked for fields that could leak information.
- *
- * @returns array of unexpected field names (empty = clean)
- */
-export const check_error_response_fields = (body: Record<string, unknown>): Array<string> => {
-	const unexpected: Array<string> = [];
-	for (const key of Object.keys(body)) {
-		if (!KNOWN_SAFE_ERROR_FIELDS.has(key)) {
-			unexpected.push(key);
-		}
-	}
-	return unexpected;
-};
 
 /**
  * Assert that an error response contains no leaky field values.

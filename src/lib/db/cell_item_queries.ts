@@ -89,24 +89,6 @@ export const query_cell_item_insert = async (
 };
 
 /**
- * Fetch one item row by `(parent_id, position)`. Used by move + delete
- * handlers to confirm the row exists before issuing the mutation.
- *
- * @returns the row or `null` when not found
- */
-export const query_cell_item_get = async (
-	deps: QueryDeps,
-	parent_id: Uuid,
-	position: string
-): Promise<CellItemRow | null> => {
-	const row = await deps.db.query_one<CellItemRow>(
-		`SELECT ${columns_sql(CELL_ITEM_COLUMNS, cell_item_expr(''))} FROM cell_item WHERE parent_id = $1 AND position = $2`,
-		[parent_id, position]
-	);
-	return row ?? null;
-};
-
-/**
  * Move an item row from `position_old` to `position_new` (same parent).
  *
  * Implemented as an UPDATE on the PK; throws `23505` on collision with

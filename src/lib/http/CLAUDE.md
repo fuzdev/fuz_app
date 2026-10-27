@@ -281,7 +281,7 @@ No side effects, no state — filters and groupings over `AppSurface`:
 
 The per-route auth predicates these filters compose over (`is_public_auth`,
 `is_role_auth`, `is_credential_gated_auth`, `is_keeper_auth`,
-`is_plain_authenticated_auth`, plus `needs_actor` / `needs_account`) live
+`is_plain_authenticated_auth`, plus `needs_actor`) live
 in `http/auth_shape.ts` next to the canonical `RouteAuth` schema — import
 them from there, not from this module. Same predicates back the
 dispatcher's authorization phase, the route-spec auth-guard resolver,

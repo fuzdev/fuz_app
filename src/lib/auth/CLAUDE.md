@@ -317,8 +317,8 @@ auth, ids)`: two queries for the whole id-set, the cells read through the
   create — a denial is the same 403 `cell_create_forbidden`, so clone is no
   side door past the creation policy. The optional
   parent-aware `authorize_create` dep (`CellCreateAuthorize` — an object whose
-  `authorize` takes a wider input `{kind, data, parent_id, root_id, root_policy,
-scope_id}` than `validate_data` and returns a `CellCreateVerdict`
+  `authorize` takes a wider input `{kind, data, parent_id, root_id,
+root_policy}` than `validate_data` and returns a `CellCreateVerdict`
   `{allow:false} | {allow:true, moderation_required}`, and whose optional
   `validate_policy` accepts or refuses a root policy write)
   gates create by capability; it runs after the validator + the parent-resolve
@@ -516,8 +516,8 @@ list queries, the `audit_log_list` RPC, and SSE identically to builtins.
 `AuditLogEvent.event_type` / `AuditLogEventJson.event_type` / the
 `audit_log_list` filter input are all `AuditEventTypeName` (regex-validated
 string) — widened from the closed enum so consumer rows round-trip. The
-write side (`AuditLogInput<T>`, `AuditMetadataMap`) stays closed-enum so
-metadata-narrowing helpers like `get_audit_metadata` keep their type guard.
+write side (`AuditLogInput<T>`, `AuditMetadataMap`) stays closed-enum so a
+builtin event's metadata narrows by its type.
 
 ### `AUDIT_EVENT_TYPES` builtins
 

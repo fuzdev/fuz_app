@@ -591,17 +591,6 @@ export interface AuditLogEvent {
 	metadata: Record<string, unknown> | null;
 }
 
-/**
- * Narrow metadata type for a known event type.
- *
- * Use after checking `event_type` to get typed metadata access.
- */
-export const get_audit_metadata = <T extends AuditEventType>(
-	event: AuditLogEvent & { event_type: T }
-): AuditMetadataMap[T] | null => {
-	return event.metadata as AuditMetadataMap[T] | null;
-};
-
 /** Input for creating an audit log entry. */
 export interface AuditLogInput<T extends string = AuditEventType> {
 	event_type: T;
@@ -741,7 +730,7 @@ export interface AuditLogListOptions {
  * types registered via `create_audit_log_config({extra_events})` round-trip
  * through queries, `on_audit_event` callbacks, and JSON-RPC responses
  * identically to builtins. `AuditLogInput<T>` stays parameterized on the
- * write side so `AuditMetadataMap` narrowing via `get_audit_metadata` works.
+ * write side so `AuditMetadataMap` narrows metadata per event type.
  */
 export const AuditLogEventJson = z.strictObject({
 	id: Uuid,

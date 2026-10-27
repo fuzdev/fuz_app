@@ -493,8 +493,6 @@ Walks Zod schemas to generate valid values for adversarial/round-trip tests.
 - `find_route_spec(specs, method, path)` — exact match then parameterized match (`:foo` matches any segment).
 - `find_auth_route(specs, suffix, method)` — suffix-ending match for REST auth routes; decouples tests from consumer prefix. `suffix` is typed as `RestAuthRouteSuffix` and throws at runtime on unknown values (only login/logout/password/verify/signup/bootstrap remain on REST).
 - `assert_response_matches_spec(specs, method, path, response)` — 2xx → validates against `spec.output`; non-2xx → validates against merged error schemas for that status. Non-JSON responses allowed only when no schema applies.
-- `create_expired_test_cookie(keyring, session_options)` — validly signed cookie with `expires_at` in 1970.
-- `check_error_response_fields(body)` — returns the list of fields outside `KNOWN_SAFE_ERROR_FIELDS` (`error`, `issues`, `required_roles`, `required_credential_types`, `retry_after`, `has_references`, `ok`).
 - `assert_no_error_info_leakage(body, context)` — rejects field-name patterns (`stack`, `trace`, `sql`, …) + value patterns (`node_modules`, stack-like `at …`, `.ts:NN`).
 - `assert_rate_limit_retry_after_header(response, body)` — `Retry-After` numeric header equals `Math.ceil(body.retry_after)`.
 - `sensitive_field_blocklist` — `['password_hash', 'token_hash']`; never in any response body.

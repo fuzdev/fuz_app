@@ -1,0 +1,5 @@
+---
+'@fuzdev/fuz_app': minor
+---
+
+break: remove exports nothing imports — `query_cell_list_by_creator` (`db/cell_queries.ts`), `query_cell_field_get` (`db/cell_field_queries.ts`), `query_cell_item_get` (`db/cell_item_queries.ts`), `parse_action_event` (`actions/action_event.ts`), the action-event guards `is_receive_request` / `is_send_response` / `is_receive_response` / `is_notification_receive` / `is_execute` / `is_handling` (`actions/action_event_helpers.ts`), `get_audit_metadata` (`auth/audit_log_schema.ts`), `needs_account` (`http/auth_shape.ts`), and the testing helpers `create_expired_test_cookie` / `check_error_response_fields` (`testing/integration_helpers.ts`); and drop the always-`null` `scope_id` from `CellCreateAuthorizeInput`, so a `CellCreateAuthorize.authorize` reads `{kind, data, parent_id, root_id, root_policy}`. To migrate: read `metadata` off the event directly where `get_audit_metadata` narrowed it, test `auth.account !== 'none'` for `needs_account`, compare `data.kind` / `data.phase` / `data.step` for the removed guards, and stop reading `scope_id` in a create authorizer

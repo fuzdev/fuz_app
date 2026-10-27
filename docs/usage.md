@@ -1572,7 +1572,7 @@ string. Content stays duck-typed in `data`.
   unchecked.
 - `authorize_create` — a **parent-aware capability gate** (`CellCreateAuthorize`),
   an object of two members. `authorize(auth, {kind, data, parent_id, root_id,
-root_policy, scope_id}) => CellCreateVerdict | Promise<CellCreateVerdict>`,
+root_policy}) => CellCreateVerdict | Promise<CellCreateVerdict>`,
   where a verdict is `{allow: false}` or `{allow: true, moderation_required}`,
   runs in `cell_create`
   after `validate_data` and after the handler resolves the directory tree
@@ -1587,8 +1587,7 @@ root_policy, scope_id}) => CellCreateVerdict | Promise<CellCreateVerdict>`,
   reads the governing root's policy off the handler-supplied `root_policy` (no
   DB read of its own). `validate_policy(policy)` accepts or refuses a root
   policy before it is written (below); omitted, every policy is refused. Omit
-  the whole gate for open create. (`scope_id` is designed-in for future
-  scoped enforcement; `null` in v1.) The companion `cell_moderate` verb
+  the whole gate for open create. The companion `cell_moderate` verb
   transitions a `pending` contribution (`approved | rejected`), gated on
   `can_manage` of the governing root — not the contribution, so the author can't
   self-approve. Approval needs a pending contribution; rejection a pending or

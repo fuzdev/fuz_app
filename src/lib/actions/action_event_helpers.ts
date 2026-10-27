@@ -41,35 +41,10 @@ export const is_send_request = (
 ): data is ActionEventRequestResponseData & { phase: 'send_request' } =>
 	data.kind === 'request_response' && data.phase === 'send_request';
 
-export const is_receive_request = (
-	data: ActionEventData
-): data is ActionEventRequestResponseData & { phase: 'receive_request' } =>
-	data.kind === 'request_response' && data.phase === 'receive_request';
-
-export const is_send_response = (
-	data: ActionEventData
-): data is ActionEventRequestResponseData & { phase: 'send_response' } =>
-	data.kind === 'request_response' && data.phase === 'send_response';
-
-export const is_receive_response = (
-	data: ActionEventData
-): data is ActionEventRequestResponseData & { phase: 'receive_response' } =>
-	data.kind === 'request_response' && data.phase === 'receive_response';
-
 export const is_notification_send = (
 	data: ActionEventData
 ): data is ActionEventRemoteNotificationData & { phase: 'send' } =>
 	data.kind === 'remote_notification' && data.phase === 'send';
-
-export const is_notification_receive = (
-	data: ActionEventData
-): data is ActionEventRemoteNotificationData & { phase: 'receive' } =>
-	data.kind === 'remote_notification' && data.phase === 'receive';
-
-export const is_execute = (
-	data: ActionEventData
-): data is ActionEventLocalCallData & { phase: 'execute' } =>
-	data.kind === 'local_call' && data.phase === 'execute';
 
 // Step state guards
 export const is_initial = (data: ActionEventData): data is ActionEventData & { step: 'initial' } =>
@@ -77,10 +52,6 @@ export const is_initial = (data: ActionEventData): data is ActionEventData & { s
 
 export const is_parsed = (data: ActionEventData): data is ActionEventData & { step: 'parsed' } =>
 	data.step === 'parsed';
-
-export const is_handling = (
-	data: ActionEventData
-): data is ActionEventData & { step: 'handling' } => data.step === 'handling';
 
 export const is_handled = (data: ActionEventData): data is ActionEventData & { step: 'handled' } =>
 	data.step === 'handled';

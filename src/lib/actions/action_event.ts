@@ -36,7 +36,7 @@ import type {
 	JsonrpcResult
 } from '../http/jsonrpc.ts';
 import type { ActionEventEnvironment, ActionEventStep } from './action_event_types.ts';
-import { ActionEventData, type ActionEventDataUnion } from './action_event_data.ts';
+import type { ActionEventData, ActionEventDataUnion } from './action_event_data.ts';
 import {
 	validate_step_transition,
 	validate_phase_transition,
@@ -613,14 +613,4 @@ export const create_action_event_from_json = <TMethod extends string = string>(
 	}
 
 	return new ActionEvent(environment, spec, json);
-};
-
-// TODO this and the above one arent used atm, see the comment on `create_action_event` too
-// TODO how to avoid casting? this should generally be safe but we dont have schemas for each possible action event state
-export const parse_action_event = (
-	raw_json: unknown,
-	environment: ActionEventEnvironment
-): ActionEvent => {
-	const json = ActionEventData.parse(raw_json);
-	return create_action_event_from_json(json as ActionEventDataUnion, environment);
 };

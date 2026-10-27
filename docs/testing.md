@@ -1004,7 +1004,6 @@ impls actually boot.
 - `assert_response_matches_spec` (`testing/integration_helpers.ts`) — Validate response body against route spec schemas
 - `assert_rate_limit_retry_after_header` (`testing/integration_helpers.ts`) — Assert 429 `Retry-After` header matches body
 - `find_route_spec` (`testing/integration_helpers.ts`) — Look up route spec by method + path
-- `create_expired_test_cookie` (`testing/integration_helpers.ts`) — Generate expired session cookie for testing
 - `assert_no_sensitive_fields_in_json` (`testing/integration_helpers.ts`) — Assert no blocklisted fields in parsed JSON
 - `collect_json_keys_recursive` (`testing/integration_helpers.ts`) — Recursively collect all key names from JSON
 - `sensitive_field_blocklist` (`testing/integration_helpers.ts`) — Fields that must never appear in any response
