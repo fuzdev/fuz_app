@@ -1382,5 +1382,44 @@ export const describe_cell_relations_cross_tests = (
 				);
 			}
 		);
+
+		test_if(
+			capabilities.cell_relations,
+			'cell mutation audit metadata omits a null kind and path',
+			async () => {
+				const fixture = await setup_test();
+				const owner = await fixture.create_account({ username: 'cell_audit_meta_owner' });
+				const t = fixture.fresh_transport();
+				const owner_h = owner.create_session_headers();
+
+				const bare = await create_cell(t, rpc_path, owner_h, { data: {} });
+				const kinded = await create_cell(t, rpc_path, owner_h, { kind: 'note', data: {} });
+				expect_output(
+					await cross_rpc_call(
+						t,
+						rpc_path,
+						'cell_update',
+						{ cell_id: bare, data: { label: 'v2' } },
+						owner_h
+					),
+					CellUpdateOutput
+				);
+
+				const metadata_of = async (event_type: string, cell_id: string) => {
+					const events = await list_audit_events(fixture, { event_type }, rpc_path);
+					const ev = events.find(
+						(e) => (e.metadata as { cell_id?: unknown } | null)?.cell_id === cell_id
+					);
+					assert.ok(ev, `no ${event_type} audit row for ${cell_id}`);
+					return ev.metadata;
+				};
+				assert.deepStrictEqual(await metadata_of('cell_create', bare), { cell_id: bare });
+				assert.deepStrictEqual(await metadata_of('cell_update', bare), { cell_id: bare });
+				assert.deepStrictEqual(await metadata_of('cell_create', kinded), {
+					cell_id: kinded,
+					kind: 'note'
+				});
+			}
+		);
 	});
 };

@@ -333,7 +333,7 @@ const emit_cell_audit = (
 		metadata: {
 			cell_id: row.id,
 			kind: row.kind ?? undefined,
-			path: row.path
+			path: row.path ?? undefined
 		} satisfies CellAuditMetadata
 	});
 };

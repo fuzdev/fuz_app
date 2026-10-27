@@ -23,7 +23,7 @@ import { Uuid } from '../primitive_schemas.ts';
 export const CellAuditMetadata = z.looseObject({
 	cell_id: Uuid,
 	kind: z.string().optional(),
-	path: z.string().nullable().optional()
+	path: z.string().optional()
 });
 export type CellAuditMetadata = z.infer<typeof CellAuditMetadata>;
 
