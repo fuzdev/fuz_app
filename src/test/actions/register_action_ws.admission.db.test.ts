@@ -50,6 +50,7 @@ import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { query_create_role_grant, query_revoke_role_grant } from '#lib/auth/role_grant_queries.ts';
 import {
 	query_account_soft_delete,
+	query_actor_soft_delete,
 	query_create_account_with_actor
 } from '#lib/auth/account_queries.ts';
 import { generate_api_token } from '#lib/auth/api_token.ts';
@@ -1056,6 +1057,39 @@ describe_db('register_action_ws admission', (get_db) => {
 				{ code: WS_CLOSE_INTERNAL_ERROR, reason: 'internal error' }
 			]);
 			assert.strictEqual(endpoint.transport.get_connection_count(), 0);
+		});
+
+		test('an acting actor soft-deleted during the upgrade is closed with 4001', async () => {
+			const db = get_db();
+			const { actor_id, c } = await create_admin_upgrade(db);
+			const endpoint = create_endpoint(db, { required_roles: [ROLE_ADMIN] });
+
+			const { socket, stalled } = await open_stalled(endpoint, c);
+			// the actor's tombstone alone — its account, session, and grant are live
+			assert.ok(await query_actor_soft_delete({ db }, actor_id, null));
+			stalled.release();
+			await socket.opening;
+
+			assert.deepStrictEqual(socket.fake.closes, [REVOKED_CLOSE]);
+			assert.strictEqual(endpoint.transport.get_connection_count(), 0);
+			assert.strictEqual(endpoint.transport.get_pending_connection_count(), 0);
+			assert.deepStrictEqual(endpoint.opened, []);
+		});
+
+		test('an ungated endpoint refuses an acting actor soft-deleted during the upgrade', async () => {
+			const db = get_db();
+			const { actor_id, c } = await create_admin_upgrade(db);
+			const endpoint = create_endpoint(db);
+
+			const { socket, stalled } = await open_stalled(endpoint, c);
+			assert.ok(await query_actor_soft_delete({ db }, actor_id, null));
+			stalled.release();
+			await socket.opening;
+
+			assert.deepStrictEqual(socket.fake.closes, [REVOKED_CLOSE]);
+			assert.deepStrictEqual(socket.fake.sends, [], 'nothing is written to a refused socket');
+			assert.strictEqual(endpoint.transport.get_connection_count(), 0);
+			assert.deepStrictEqual(endpoint.opened, []);
 		});
 
 		test('an ungated endpoint reads no role', async () => {

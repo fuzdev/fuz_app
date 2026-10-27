@@ -164,6 +164,18 @@ export const ERROR_CELL_REF_NOT_HELD = 'cell_ref_not_held' as const;
 export const ERROR_CELL_NOT_A_CONTRIBUTION = 'cell_not_a_contribution' as const;
 
 /**
+ * Error reason — `cell_moderate` names a transition the target's `moderation`
+ * doesn't allow: an approval of a contribution that is not `'pending'`
+ * (approved or rejected already, or never moderated), or a rejection of one
+ * that is neither `'pending'` nor `'approved'` (rejected already, or never
+ * moderated). A **400** `invalid_params`, answered to a caller holding
+ * moderation authority over the governing root (the 404 mask and the 403 come
+ * first). Without it an approval would force any reachable contribution public
+ * (twin of the Rust `ERROR_CELL_NOT_PENDING`).
+ */
+export const ERROR_CELL_NOT_PENDING = 'cell_not_pending' as const;
+
+/**
  * Error reason — null-auth `cell_list` caller passed a `created_by`
  * filter. The filter is a soft account-id enumeration vector ("does
  * account X have any public cells?"), so we require an authenticated
@@ -502,20 +514,24 @@ export type CellCloneOutput = z.infer<typeof CellCloneOutput>;
  * The terminal transition a `cell_moderate` call applies to a gated
  * contribution's `moderation` lifecycle. The born state (`'pending'`) is set
  * by the create authorizer, never on the wire; the verb only moves it to a
- * terminal state. `'approved'` publishes (also flips `visibility → 'public'`);
- * `'rejected'` leaves it private.
+ * terminal state. `'approved'` publishes a pending contribution (also flips
+ * `visibility → 'public'`); `'rejected'` holds a pending one back or takes an
+ * approved one down, leaving visibility as it was.
  */
 export const CellModerationDecision = z.enum(['approved', 'rejected']);
 export type CellModerationDecision = z.infer<typeof CellModerationDecision>;
 
 /**
- * Input for `cell_moderate` — the `pending → approved | rejected` transition,
- * gated on moderation authority over the **governing root** (admin / root
- * owner in v1), not the contribution (which the author manages, and could
- * otherwise self-approve). 404 when the caller neither views the target nor
- * stewards it (a root manager reads a pending or rejected contribution through
- * the steward arm); 403 when the caller reaches it but isn't a root manager
- * (the author lands here).
+ * Input for `cell_moderate` — the `pending → approved | rejected` decision, plus
+ * the `approved → rejected` takedown, gated on moderation authority over the
+ * **governing root** (admin / root owner in v1), not the contribution (which
+ * the author manages, and could otherwise self-approve). 404 when the caller
+ * neither views the target nor stewards it (a root manager reads a pending or
+ * rejected contribution through the steward arm); 403 when the caller reaches
+ * it but isn't a root manager (the author lands here); 400 `cell_not_pending`
+ * when a root manager names a transition the contribution's state doesn't
+ * allow — approving one that is not pending, or rejecting one already rejected
+ * or never moderated.
  */
 export const CellModerateInput = z.strictObject({
 	cell_id: Uuid.meta({ description: 'Contribution to moderate.' }),
@@ -623,7 +639,7 @@ export const cell_moderate_action_spec = {
 	async: true,
 	rate_limit: 'account',
 	description:
-		'Moderate a gated contribution (`pending → approved | rejected`). Gated on moderation authority over the governing root (admin / root owner), not the contribution — so the author cannot self-approve. Approval flips `moderation → approved` + `visibility → public`; rejection sets `moderation → rejected`. 404 on a target the caller neither views nor stewards (a root manager reads a pending or rejected contribution), 403 for a viewable target whose caller is not a root manager.'
+		'Moderate a gated contribution (`pending → approved | rejected`, and the `approved → rejected` takedown). Gated on moderation authority over the governing root (admin / root owner), not the contribution — so the author cannot self-approve. Approval flips `moderation → approved` + `visibility → public`; rejection sets `moderation → rejected` and leaves visibility alone. 404 on a target the caller neither views nor stewards (a root manager reads a pending or rejected contribution), 403 for a viewable target whose caller is not a root manager, 400 `cell_not_pending` for a transition the target does not allow (approving a contribution that is not pending; rejecting one already rejected or never moderated).'
 } satisfies RequestResponseActionSpec;
 
 /**

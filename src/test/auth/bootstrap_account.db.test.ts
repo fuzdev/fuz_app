@@ -22,7 +22,7 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { describe_db } from '../db_fixture.ts';
 
 const log = new Logger('test', { level: 'off' });
-const TEST_TOKEN = 'bootstrap_secret_token_abc123';
+const TEST_TOKEN = 'bootstrap_secret_token_abc123_xyz789';
 
 const create_mock_fs = (
 	files: Record<string, string> = {}
@@ -175,8 +175,9 @@ describe_db('bootstrap_account', (get_db) => {
 		assert.strictEqual(first.ok, true);
 
 		// second attempt with new token file
-		const fs2 = create_mock_fs({ '/token': 'new_token' });
-		const result = await bootstrap_account(create_deps(db, { fs: fs2 }), 'new_token', {
+		const new_token = 'new_bootstrap_token_for_the_second_try';
+		const fs2 = create_mock_fs({ '/token': new_token });
+		const result = await bootstrap_account(create_deps(db, { fs: fs2 }), new_token, {
 			username: 'second_keeper',
 			password: 'password_12_chars'
 		});
@@ -249,6 +250,49 @@ describe_db('bootstrap_account', (get_db) => {
 		});
 		assert.strictEqual(result.ok, false);
 		if (!result.ok) assert.strictEqual(result.error, ERROR_INVALID_TOKEN);
+	});
+
+	// the minimum is 32 bytes, written out rather than derived from
+	// `BOOTSTRAP_TOKEN_MIN_BYTES`, so changing the constant fails here
+	const TOKEN_31_BYTES = 'k'.repeat(31);
+	const TOKEN_32_BYTES = 'k'.repeat(32);
+
+	// an empty or lone-newline file can never match, and a short one is
+	// guessable — each reads as unreadable, however exactly the caller matches it
+	const SHORT_TOKEN_FILES: Array<[string, string, string]> = [
+		['an empty file', '', ''],
+		['a lone LF', '\n', ''],
+		['one byte under the minimum', TOKEN_31_BYTES, TOKEN_31_BYTES],
+		['one byte under the minimum plus its LF', `${TOKEN_31_BYTES}\n`, TOKEN_31_BYTES]
+	];
+
+	test.each(SHORT_TOKEN_FILES)(
+		'refuses %s as a missing token file',
+		async (_label, content, provided) => {
+			const db = get_db();
+			const fs = create_mock_fs({ '/token': content });
+			const result = await bootstrap_account(create_deps(db, { fs }), provided, {
+				username: 'keeper',
+				password: 'password_12_chars'
+			});
+			assert.strictEqual(result.ok, false);
+			if (!result.ok) {
+				assert.strictEqual(result.error, ERROR_TOKEN_FILE_MISSING);
+				assert.strictEqual(result.status, 404);
+			}
+			assert.strictEqual(await get_lock_state(db), false);
+		}
+	);
+
+	test('accepts a token at exactly the minimum length', async () => {
+		const db = get_db();
+		const token = TOKEN_32_BYTES;
+		const fs = create_mock_fs({ '/token': `${token}\n` });
+		const result = await bootstrap_account(create_deps(db, { fs }), token, {
+			username: 'keeper',
+			password: 'password_12_chars'
+		});
+		assert.strictEqual(result.ok, true);
 	});
 
 	test('fails when token file is missing', async () => {

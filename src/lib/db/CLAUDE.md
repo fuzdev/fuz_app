@@ -109,7 +109,9 @@ delete / set_moderation`, `_list_by_kind / _list_by_creator`, the
   the in-memory relation filter the `cell_get` bundle and the clone walk
   run). `query_cell_set_moderation` is the dedicated
   `cell_moderate` write (`moderation` is absent from `CellUpdatePatch`, so an
-  author can't self-approve via `cell_update`). `cell.refs` derived from
+  author can't self-approve via `cell_update`); approval moves only a
+  `pending` row and rejection a `pending` or `approved` one (the takedown) —
+  the `WHERE` carries the from-state. `cell.refs` derived from
   `data` via the exported `derive_cell_refs` on create/update (exact
   whole-string hashes, sorted — byte-identical with the Rust `extract_refs`). `CellRow.grant_count` is a
   derived projection (correlated subquery on `idx_cell_grant_cell`).

@@ -18,7 +18,7 @@ import {
 	query_role_grant_revoke_role,
 	query_role_grant_revoke_for_scope,
 	query_account_has_active_global_role,
-	query_count_active_accounts_with_global_role,
+	query_count_active_accounts_with_global_role_for_update,
 	query_account_has_global_role
 } from '#lib/auth/role_grant_queries.ts';
 import { query_role_grant_offer_create } from '#lib/auth/role_grant_offer_queries.ts';
@@ -1032,7 +1032,10 @@ describe_db('RoleGrantQueries', (get_db) => {
 		await soft_delete_test_actor(db, a2_extra);
 
 		// Only account 1 counts; account 2's admin grant is on a tombstone.
-		assert.strictEqual(await query_count_active_accounts_with_global_role(deps, ROLE_ADMIN), 1);
+		assert.strictEqual(
+			await query_count_active_accounts_with_global_role_for_update(deps, ROLE_ADMIN),
+			1
+		);
 		assert.strictEqual(
 			await query_account_has_active_global_role(deps, a1.account_id, ROLE_ADMIN),
 			true
@@ -1048,7 +1051,10 @@ describe_db('RoleGrantQueries', (get_db) => {
 			role: ROLE_ADMIN,
 			granted_by: null
 		});
-		assert.strictEqual(await query_count_active_accounts_with_global_role(deps, ROLE_ADMIN), 2);
+		assert.strictEqual(
+			await query_count_active_accounts_with_global_role_for_update(deps, ROLE_ADMIN),
+			2
+		);
 	});
 
 	test('tombstoned keeper actor is excluded from resolution but not the removability guard', async () => {

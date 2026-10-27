@@ -41,8 +41,9 @@ export interface ActorLookupRow {
 
 /**
  * Resolve a batch of actor ids to `(id, username, display_name)`. Empty
- * input fast-paths to `[]`. Hard-deleted actors (or account-cascade-
- * orphaned rows) drop out of the result silently.
+ * input fast-paths to `[]`. Hard-deleted and soft-deleted actors — and the
+ * actors of a soft-deleted account — drop out of the result silently,
+ * indistinguishable from never-existed.
  */
 export const query_actors_by_ids = async (
 	deps: QueryDeps,
@@ -53,7 +54,9 @@ export const query_actors_by_ids = async (
 		`SELECT act.id, a.username, act.name AS display_name
 		 FROM actor act
 		 JOIN account a ON a.id = act.account_id
-		 WHERE act.id = ANY($1)`,
+		 WHERE act.id = ANY($1)
+		   AND act.deleted_at IS NULL
+		   AND a.deleted_at IS NULL`,
 		[ids]
 	);
 };

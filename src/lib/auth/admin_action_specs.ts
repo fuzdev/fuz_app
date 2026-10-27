@@ -310,10 +310,10 @@ export const ERROR_CANNOT_DELETE_KEEPER = 'cannot_delete_keeper' as const;
  * `data.reason` (403) on `account_delete` / `account_purge` when the target
  * is the **sole remaining active admin** — removing it would leave the
  * system with no account that can authenticate into the admin surface (and
- * `account_undelete` is itself admin-gated). Unlike the keeper guard this is
- * keeper-recoverable (a keeper can re-grant admin), but the guard avoids the
- * foot-gun of an admin tombstoning the last admin in one call. Soft-deleted
- * admins don't count toward the tally (they can't log in). Mirrors the Rust
+ * `account_undelete` is itself admin-gated), and no web path re-grants admin.
+ * Soft-deleted admins don't count toward the tally (they can't log in), and
+ * the count locks the rows it counted, so two removals racing for the last
+ * two admins can't both pass. Mirrors the Rust
  * `ERROR_CANNOT_DELETE_LAST_ADMIN`.
  */
 export const ERROR_CANNOT_DELETE_LAST_ADMIN = 'cannot_delete_last_admin' as const;

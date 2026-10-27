@@ -404,21 +404,25 @@ export const audit_metadata_schemas = Object.freeze({
 	}),
 	// Emitted when an offer is obsoleted by an external event. `reason`
 	// distinguishes the trigger; `cause_id` points to the accepted offer
-	// (for `sibling_accepted`), the revoked role_grant (for `role_grant_revoked`),
-	// or the destroyed parent scope row (for `scope_destroyed`).
+	// (for `sibling_accepted`), the revoked role_grant (for `role_grant_revoked`
+	// — the recipient's grant of the offered role, or a grant of the grantor's),
+	// the destroyed parent scope row (for `scope_destroyed`), or the grantor's
+	// removed account (for `account_deleted`).
 	role_grant_offer_supersede: z.looseObject({
 		offer_id: Uuid.meta({ description: 'Id of the superseded offer.' }),
 		role: z.string().meta({ description: 'Role that was offered.' }),
 		scope_id: Uuid.nullish().meta({
 			description: 'Scope of the offered role; null for global offers.'
 		}),
-		reason: z.enum(['sibling_accepted', 'role_grant_revoked', 'scope_destroyed']).meta({
-			description:
-				'Trigger that obsoleted the offer: a sibling offer was accepted, the resulting role_grant was revoked, or the parent scope row was destroyed.'
-		}),
+		reason: z
+			.enum(['sibling_accepted', 'role_grant_revoked', 'scope_destroyed', 'account_deleted'])
+			.meta({
+				description:
+					"Trigger that obsoleted the offer: a sibling offer was accepted, the resulting role_grant or one of the grantor's was revoked, the parent scope row was destroyed, or the grantor's account was deleted or purged."
+			}),
 		cause_id: Uuid.meta({
 			description:
-				'Row that caused the supersede: accepted offer (`sibling_accepted`), revoked role_grant (`role_grant_revoked`), or destroyed parent scope row (`scope_destroyed`).'
+				"Row that caused the supersede: accepted offer (`sibling_accepted`), revoked role_grant (`role_grant_revoked`), destroyed parent scope row (`scope_destroyed`), or the grantor's account (`account_deleted`)."
 		})
 	}),
 	invite_create: z.looseObject({

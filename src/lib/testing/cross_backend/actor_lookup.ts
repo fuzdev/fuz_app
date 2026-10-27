@@ -19,6 +19,8 @@ import '../assert_dev_env.ts';
  *   `account_id` / `email` / timestamp / role field (the wire shape's
  *   deliberate info-leak posture). This is the assertion that exercises the
  *   Rust row→JSON mapping against the TS canonical shape.
+ * - **a soft-deleted account's actor doesn't resolve** — beside a live one,
+ *   after the keeper's `account_delete`.
  *
  * Runs both legs via the shared `{setup_test}` protocol: the in-process leg
  * (`auth/actor_lookup_parity.db.test.ts`, plain `gro test`) and the
@@ -78,6 +80,36 @@ export const describe_actor_lookup_cross_tests = (options: ActorLookupCrossTestO
 			for (const key of forbidden_row_keys) {
 				assert(!(key in row), `actor_lookup row must not leak '${key}'`);
 			}
+		});
+
+		test("a soft-deleted account's actor no longer resolves", async () => {
+			const fixture = await setup_test();
+			const gone = await fixture.create_account({ username: 'lookup_soft_deleted' });
+			const live = await fixture.create_account({ username: 'lookup_live' });
+			const deleted = await fixture.transport(rpc_path, {
+				method: 'POST',
+				headers: { ...fixture.create_session_headers(), 'content-type': 'application/json' },
+				body: JSON.stringify({
+					jsonrpc: '2.0',
+					method: 'account_delete',
+					params: { account_id: gone.account.id },
+					id: 'delete'
+				})
+			});
+			assert.strictEqual(deleted.status, 200, 'the admin deletes the account');
+			await deleted.text();
+			const res = await fixture.transport(rpc_path, {
+				method: 'POST',
+				headers: { ...fixture.create_session_headers(), 'content-type': 'application/json' },
+				body: lookup_envelope([gone.actor.id, live.actor.id], 'tombstone-lookup')
+			});
+			assert.strictEqual(res.status, 200);
+			const body = (await res.json()) as { result?: { actors?: Array<{ id: string }> } };
+			assert.deepStrictEqual(
+				body.result?.actors?.map((a) => a.id),
+				[live.actor.id],
+				'the tombstoned actor drops out, the live one resolves'
+			);
 		});
 	});
 };

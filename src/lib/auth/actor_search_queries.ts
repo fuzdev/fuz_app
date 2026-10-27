@@ -26,8 +26,11 @@
  * multiple matching role_grants in the supplied scope set into one row.
  *
  * When `scope_ids` is omitted (admin-only global path; the handler
- * gates), no role_grant join — every actor with a matching prefix is
- * returned.
+ * gates), no role_grant join — every active actor with a matching prefix
+ * is returned.
+ *
+ * Both paths return only active actors of active accounts: a soft-deleted
+ * actor, or any actor of a soft-deleted account, is never a search result.
  *
  * ## Info-leak posture (see `auth/actor_search_action_specs.ts` §audit)
  *
@@ -95,7 +98,9 @@ export const query_actor_search = async (
 			`SELECT act.id, a.username, act.name AS display_name
 			 FROM actor act
 			 JOIN account a ON a.id = act.account_id
-			 WHERE LOWER(act.name) LIKE $1 || '%' ESCAPE '\\'
+			 WHERE act.deleted_at IS NULL
+			   AND a.deleted_at IS NULL
+			   AND LOWER(act.name) LIKE $1 || '%' ESCAPE '\\'
 			 ORDER BY display_name, id
 			 LIMIT $2`,
 			[escaped_prefix, input.limit]
@@ -115,7 +120,9 @@ export const query_actor_search = async (
 		   AND rg.scope_id = ANY($2)
 		   AND rg.revoked_at IS NULL
 		   AND (rg.expires_at IS NULL OR rg.expires_at > NOW())
-		 WHERE LOWER(act.name) LIKE $1 || '%' ESCAPE '\\'
+		 WHERE act.deleted_at IS NULL
+		   AND a.deleted_at IS NULL
+		   AND LOWER(act.name) LIKE $1 || '%' ESCAPE '\\'
 		 ORDER BY display_name, id
 		 LIMIT $3`,
 		[escaped_prefix, scope_ids, input.limit]

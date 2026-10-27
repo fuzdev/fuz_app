@@ -18,6 +18,13 @@ import '../assert_dev_env.ts';
  * - **already decided → 400** `invalid_request` with reason
  *   `role_grant_offer_terminal` — a decline or retract after an accept, a
  *   second decline, a second retract, and either one after the other.
+ * - **a grantor's lost authority ends its pending offers.** Revoking a
+ *   grantor's grant, or deleting its account, supersedes every pending offer
+ *   it made — gone from the recipient's inbox, an accept answers
+ *   `role_grant_offer_terminal`, and a `role_grant_offer_supersede` row records
+ *   it (`role_grant_revoked` with the grant as cause, `account_deleted` with
+ *   the account). The keeper's own `admin` grant refuses a revoke, 403
+ *   `cannot_revoke_keeper_admin`.
  * - **one audit row per success, none per refusal.** A decline writes
  *   `role_grant_offer_decline` attributed to the recipient and targeting the
  *   grantor, a retract `role_grant_offer_retract` attributed to the grantor
@@ -41,13 +48,20 @@ import { assert, describe, test } from 'vitest';
 
 import { rpc_call, type RpcCallResult } from '../rpc_helpers.ts';
 import {
+	ERROR_CANNOT_REVOKE_KEEPER_ADMIN,
 	ERROR_ROLE_GRANT_OFFER_NOT_FOUND,
 	ERROR_ROLE_GRANT_OFFER_TERMINAL
 } from '../../auth/role_grant_offer_action_specs.ts';
+import { AdminAccountListOutput } from '../../auth/admin_action_specs.ts';
+import { ROLE_ADMIN } from '../../auth/role_schema.ts';
+import { expect_output } from './cross_rpc.ts';
 import { JSONRPC_INVALID_REQUEST } from '../../http/jsonrpc.ts';
 import { JSONRPC_ERROR_CODES } from '../../http/jsonrpc_errors.ts';
 import { assert_audit_metadata_fields, list_audit_events } from './audit_cross_helpers.ts';
-import { create_pending_role_grant_offer } from './role_grant_cross_helpers.ts';
+import {
+	create_active_role_grant,
+	create_pending_role_grant_offer
+} from './role_grant_cross_helpers.ts';
 import type { TestAccount } from '../app_server.ts';
 import type { RpcPathCrossSuiteOptions, TestFixture } from './setup.ts';
 import { SPINE_PARTICIPANT_ROLE, SPINE_RPC_PATH } from './spine_surface_constants.ts';
@@ -346,6 +360,118 @@ export const describe_role_grant_offer_lifecycle_cross_tests = (
 			const after = await read();
 			assert.strictEqual(after.declines.length, before.declines.length, 'no decline row added');
 			assert.strictEqual(after.retracts.length, before.retracts.length, 'no retract row added');
+		});
+	});
+
+	describe("a grantor's lost authority ends its pending offers", () => {
+		/** A grantor holding a global `admin` grant (offer authority) and its id. */
+		const setup_grantor = async (fixture: TestFixture, username: string) => {
+			const grantor = await fixture.create_account({ username });
+			const grant_id = await create_active_role_grant(fixture, grantor, {
+				role: ROLE_ADMIN,
+				rpc_path
+			});
+			return { grantor, grant_id };
+		};
+
+		/** The pending `role` offer `grantor` makes to `recipient`. */
+		const offer_from = (fixture: TestFixture, grantor: TestAccount, recipient: TestAccount) =>
+			create_pending_role_grant_offer(
+				fixture,
+				recipient.account.id,
+				grantor.create_session_headers(),
+				{ role, rpc_path }
+			);
+
+		const assert_superseded = async (
+			fixture: TestFixture,
+			recipient: TestAccount,
+			offer_id: string,
+			cause: { reason: string; cause_id: string }
+		): Promise<void> => {
+			assert.ok(!(await is_pending(fixture, recipient, offer_id)), 'gone from the recipient inbox');
+			assert_terminal(
+				await accept(fixture, offer_id, recipient.create_session_headers()),
+				'an accept of the superseded offer'
+			);
+			const rows = (
+				await list_audit_events(fixture, { event_type: 'role_grant_offer_supersede' }, rpc_path)
+			).filter((e) => (e.metadata as { offer_id?: unknown } | null)?.offer_id === offer_id);
+			assert.strictEqual(rows.length, 1, 'one role_grant_offer_supersede row');
+			assert_audit_metadata_fields(fixture, rows[0]!.metadata, {
+				offer_id,
+				role,
+				scope_id: null,
+				...cause
+			});
+		};
+
+		test("revoking the grantor's grant supersedes its pending offers", async () => {
+			const fixture = await setup_test();
+			const { grantor, grant_id } = await setup_grantor(fixture, 'lost_authority_revoked');
+			const recipient = await fixture.create_account({ username: 'lost_authority_to' });
+			const offer = await offer_from(fixture, grantor, recipient);
+			// another grantor's offer to the same recipient is the control
+			const control = await create_offer(fixture, recipient);
+
+			assert_ok(
+				await rpc(
+					fixture,
+					'role_grant_revoke',
+					{ actor_id: grantor.actor.id, role_grant_id: grant_id },
+					fixture.create_session_headers()
+				),
+				'revoke'
+			);
+			await assert_superseded(fixture, recipient, offer.id, {
+				reason: 'role_grant_revoked',
+				cause_id: grant_id
+			});
+			assert.ok(await is_pending(fixture, recipient, control.id), "the keeper's offer stays");
+		});
+
+		test("deleting the grantor's account supersedes its pending offers", async () => {
+			const fixture = await setup_test();
+			const { grantor } = await setup_grantor(fixture, 'lost_authority_deleted');
+			const recipient = await fixture.create_account({ username: 'lost_authority_del_to' });
+			const offer = await offer_from(fixture, grantor, recipient);
+
+			assert_ok(
+				await rpc(
+					fixture,
+					'account_delete',
+					{ account_id: grantor.account.id },
+					fixture.create_session_headers()
+				),
+				'account_delete'
+			);
+			await assert_superseded(fixture, recipient, offer.id, {
+				reason: 'account_deleted',
+				cause_id: grantor.account.id
+			});
+		});
+
+		test("the keeper's admin grant refuses a revoke → 403 cannot_revoke_keeper_admin", async () => {
+			const fixture = await setup_test();
+			const listed = expect_output(
+				await rpc(fixture, 'admin_account_list', {}, fixture.create_session_headers()),
+				AdminAccountListOutput
+			);
+			const keeper = listed.accounts.find((a) => a.account.id === fixture.account.id);
+			const keeper_admin = keeper?.role_grants.find(
+				(g) => g.role === ROLE_ADMIN && g.scope_id === null
+			);
+			assert.ok(keeper_admin, "the keeper's global admin grant");
+			const refused = await rpc(
+				fixture,
+				'role_grant_revoke',
+				{ actor_id: fixture.actor.id, role_grant_id: keeper_admin.id },
+				fixture.create_session_headers()
+			);
+			assert.ok(!refused.ok, 'the keeper keeps its admin grant');
+			assert.strictEqual(refused.status, 403);
+			assert.strictEqual(refused.error.code, JSONRPC_ERROR_CODES.forbidden);
+			assert.deepStrictEqual(refused.error.data, { reason: ERROR_CANNOT_REVOKE_KEEPER_ADMIN });
 		});
 	});
 };

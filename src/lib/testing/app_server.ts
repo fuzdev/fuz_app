@@ -797,7 +797,9 @@ export interface CreateTestAppForBootstrapOptions {
 	/**
 	 * Token contents the stub fs returns when reading `bootstrap.token_path`.
 	 * The test posts a body containing this same value as `token` to satisfy
-	 * the timing-safe equality check inside `bootstrap_account`.
+	 * the timing-safe equality check inside `bootstrap_account`. At least
+	 * `BOOTSTRAP_TOKEN_MIN_BYTES` long, or the read refuses it as a missing
+	 * file.
 	 */
 	bootstrap_token: string;
 	db?: Db;

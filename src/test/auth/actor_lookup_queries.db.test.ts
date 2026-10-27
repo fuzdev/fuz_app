@@ -13,7 +13,11 @@ import { describe, test, assert } from 'vitest';
 import { create_uuid } from '#lib/primitive_schemas.ts';
 
 import { query_actors_by_ids } from '#lib/auth/actor_lookup_queries.ts';
-import { query_purge_account } from '#lib/auth/account_queries.ts';
+import {
+	query_account_soft_delete,
+	query_actor_soft_delete,
+	query_purge_account
+} from '#lib/auth/account_queries.ts';
 import { create_test_account_with_actor } from '#lib/testing/db_entities.ts';
 
 import { describe_db } from '../db_fixture.ts';
@@ -65,6 +69,21 @@ describe_db('actor_lookup_queries', (get_db) => {
 			await query_purge_account({ db }, account.id);
 			const rows = await query_actors_by_ids({ db }, [actor.id]);
 			assert.deepStrictEqual(rows, []);
+		});
+
+		test('soft-deleted actors and the actors of soft-deleted accounts drop out silently', async () => {
+			const db = get_db();
+			const { actor: live } = await create_test_account_with_actor(db, { username: 'alice' });
+			const { actor: actor_gone } = await create_test_account_with_actor(db, { username: 'bob' });
+			const { account: account_gone, actor: of_gone_account } =
+				await create_test_account_with_actor(db, { username: 'carol' });
+			assert.ok(await query_actor_soft_delete({ db }, actor_gone.id, null));
+			assert.ok(await query_account_soft_delete({ db }, account_gone.id, null));
+			const rows = await query_actors_by_ids({ db }, [live.id, actor_gone.id, of_gone_account.id]);
+			assert.deepStrictEqual(
+				rows.map((r) => r.id),
+				[live.id]
+			);
 		});
 
 		test('row shape projects only {id, username, display_name} — no account_id leak', async () => {

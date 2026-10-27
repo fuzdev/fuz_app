@@ -54,6 +54,12 @@
  * admits a revoked credential; `docs/security.md` §Connection Admission says
  * what that rests on.
  *
+ * The acting actor the upgrade resolved is re-read beside the credential on
+ * every endpoint, gated or not: an actor soft-deleted under its live account
+ * keeps the account's sessions and tokens and its own grant rows, so neither
+ * the credential nor the role re-read would refuse it. A tombstoned acting
+ * actor is refused like a dead credential.
+ *
  * An endpoint gated on `required_roles` re-reads them beside the credential:
  * its upgrade passed the role gate before the socket registered, so a role
  * revocation landing in between would close nothing (`close_sockets_for_role`
@@ -62,9 +68,9 @@
  * admits on a global grant of any listed role, as the gate did.
  *
  * A refused upgrade is closed with `WS_CLOSE_SESSION_REVOKED` (4001, the
- * reason a revoked socket gets) for a dead credential,
+ * reason a revoked socket gets) for a dead credential or a deleted acting actor,
  * `WS_CLOSE_PERMISSION_REVOKED` (4006) for a lost role, or
- * `WS_CLOSE_INTERNAL_ERROR` (1011) when either re-read itself failed — fail
+ * `WS_CLOSE_INTERNAL_ERROR` (1011) when a re-read itself failed — fail
  * closed, never admitted unchecked. The handshake has already answered `101`,
  * so a refusal can only be a close frame.
  *
@@ -129,6 +135,7 @@ import {
 } from '../auth/request_context.ts';
 import type { RoleName } from '../auth/role_schema.ts';
 import { get_resolved_auth, revalidate_resolved_auth } from '../auth/resolved_auth.ts';
+import { query_active_actors_by_account } from '../auth/account_queries.ts';
 import { schedule_credential_deadline } from '../auth/credential_deadline.ts';
 import { get_client_ip } from '../http/client_ip.ts';
 import { flush_pending_effects, flush_post_commit_effects } from '../http/pending_effects.ts';
@@ -910,14 +917,24 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 
 				if (!upgrade_preset) {
 					let credential_is_live: boolean;
+					let actor_is_active = true;
 					let role_is_held = true;
 					try {
 						// pool-level `db`: the statements must see every revocation
 						// committed before they start
 						credential_is_live = await revalidate_resolved_auth({ db }, resolved);
+						// The acting actor the upgrade resolved, on every endpoint: a
+						// soft-deleted actor keeps its account's credential and its
+						// grant rows, so neither re-read above or below refuses it.
+						const acting_actor = upgrade_context.actor;
+						if (credential_is_live && acting_actor) {
+							actor_is_active = (await query_active_actors_by_account({ db }, account_id)).some(
+								(a) => a.id === acting_actor.id
+							);
+						}
 						// Global grants only, like the gate in front: a scoped grant
 						// never admitted this socket.
-						if (credential_is_live && required_roles.length > 0) {
+						if (credential_is_live && actor_is_active && required_roles.length > 0) {
 							role_is_held = has_any_scoped_role(
 								await refresh_role_grants(upgrade_context, { db }),
 								required_roles,
@@ -931,7 +948,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 						if (transport.is_closing()) {
 							log.info('ws upgrade admission: re-check ended by the shutdown', error);
 						} else {
-							log.error('ws upgrade admission: credential or role re-check failed', error);
+							log.error('ws upgrade admission: credential, actor, or role re-check failed', error);
 						}
 						refuse_upgrade(ws, WS_CLOSE_INTERNAL_ERROR, 'internal error');
 						return null;
@@ -939,6 +956,15 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 					if (!credential_is_live) {
 						log.info(
 							'ws upgrade admission: credential revoked during the upgrade',
+							connection_id,
+							account_id
+						);
+						refuse_upgrade(ws, WS_CLOSE_SESSION_REVOKED, WS_CLOSE_SESSION_REVOKED_REASON);
+						return null;
+					}
+					if (!actor_is_active) {
+						log.info(
+							'ws upgrade admission: acting actor deleted during the upgrade',
 							connection_id,
 							account_id
 						);

@@ -28,6 +28,9 @@ import { is_fact_hash, type FactHash } from '@fuzdev/fuz_util/hash_schemas.ts';
 import { assert_row } from './assert_row.ts';
 import { columns_sql, iso8601_timestamp_expr, qualify_columns } from './sql_columns.ts';
 import {
+	CELL_MODERATION_APPROVED,
+	CELL_MODERATION_PENDING,
+	CELL_MODERATION_REJECTED,
 	cell_moderation_admits_audience_sql,
 	cell_moderation_is_stewardable_sql
 } from './cell_moderation.ts';
@@ -385,9 +388,15 @@ export const query_cell_delete = async (
 
 /**
  * Transition a contribution's `moderation` marker (the `cell_moderate` verb's
- * write). On `set_visibility_public` (an approval) it also flips `visibility`
- * to `'public'` so the approved contribution goes live; a rejection leaves
- * visibility untouched (stays private). `updated_at` / `updated_by` are stamped.
+ * write). The `WHERE` carries the allowed from-states: an approval moves only a
+ * `'pending'` row, and a rejection a `'pending'` or `'approved'` one (the
+ * moderator's takedown). A rejected or unmoderated cell never moves, and nothing
+ * already approved is approved again — without the from-state an approval would
+ * force any cell its caller can reach public. On `set_visibility_public` (an
+ * approval) it also flips `visibility` to `'public'` so the approved
+ * contribution goes live; a rejection leaves visibility untouched — a pending
+ * post stays as its author set it, and a taken-down one keeps its visibility,
+ * hidden by the marker alone. `updated_at` / `updated_by` are stamped.
  *
  * `moderation` is deliberately **not** writable through `query_cell_update`
  * (it's absent from `CellUpdatePatch`) — gating the transition on a dedicated
@@ -398,7 +407,7 @@ export const query_cell_delete = async (
  * @param id - cell id
  * @param moderation - the terminal marker to write (`'approved'` | `'rejected'`)
  * @param options - `set_visibility_public` flips visibility on approval; `updated_by` records the moderator
- * @returns the updated row, or `null` when no active row matched (raced delete)
+ * @returns the updated row, or `null` when no active row in an allowed from-state matched (a raced delete or decision, or a refused transition)
  * @mutates `cell` - sets `moderation` (+ maybe `visibility`) on one row
  */
 export const query_cell_set_moderation = async (
@@ -414,6 +423,8 @@ export const query_cell_set_moderation = async (
 		   updated_by = $4,
 		   updated_at = NOW()
 		 WHERE id = $1 AND deleted_at IS NULL
+		   AND (moderation = '${CELL_MODERATION_PENDING}'
+		     OR ($2::text = '${CELL_MODERATION_REJECTED}' AND moderation = '${CELL_MODERATION_APPROVED}'))
 		 RETURNING ${cell_row_projection('cell')}`,
 		[id, moderation, options.set_visibility_public, options.updated_by ?? null]
 	);

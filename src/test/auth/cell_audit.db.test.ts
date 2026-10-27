@@ -146,8 +146,9 @@ describe_db('cell audit', (get_db) => {
 			// cell_moderate — create a contribution under `parent` (the owner owns
 			// `parent`, so it manages the governing root), then moderate it. No
 			// authorizer is mounted in-process, so the contribution is born
-			// unmoderated; the verb still flips the marker + emits its event, which
-			// is what the completeness check counts.
+			// unmoderated; the marker is set to `pending` directly (the verb decides
+			// only a pending contribution), and the decision emits the event the
+			// completeness check counts.
 			const contribution = await call(
 				app,
 				cell_create_action_spec,
@@ -155,6 +156,9 @@ describe_db('cell audit', (get_db) => {
 				h
 			);
 			assert.ok(contribution.ok, JSON.stringify(contribution));
+			await get_db().query(`UPDATE cell SET moderation = 'pending' WHERE id = $1`, [
+				contribution.result.cell.id
+			]);
 			assert.ok(
 				(
 					await call(

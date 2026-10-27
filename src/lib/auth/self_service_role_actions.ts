@@ -240,6 +240,26 @@ export const create_self_service_role_actions = (
 				self_service: true
 			}
 		});
+		// Supersede cascade — `query_revoke_role_grant` marks any pending offers
+		// for the same `(account, role, scope)` superseded as a side effect, and
+		// each gets its forensic row like the admin revoke's (empty in practice:
+		// offer creation gates on the role's `grant_paths`, so only a role that is
+		// both offerable and self-service-eligible has siblings). The WS supersede
+		// notification to each grantor is not sent (twin of the Rust path).
+		for (const offer of result.superseded_offers) {
+			deps.audit.emit_role_grant_target(ctx, auth, {
+				event_type: 'role_grant_offer_supersede',
+				target_account_id: offer.to_account_id,
+				target_actor_id: offer.to_actor_id,
+				metadata: {
+					offer_id: offer.id,
+					role: offer.role,
+					scope_id: offer.scope_id,
+					reason: 'role_grant_revoked',
+					cause_id: result.id
+				}
+			});
+		}
 
 		return { ok: true, enabled: false, changed: true };
 	};

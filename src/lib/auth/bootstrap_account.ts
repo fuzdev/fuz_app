@@ -84,13 +84,50 @@ const strip_one_trailing_newline = (bytes: Uint8Array): Uint8Array =>
 	bytes.at(-1) === 0x0a ? bytes.subarray(0, -1) : bytes;
 
 /**
+ * The fewest bytes a bootstrap token holds, counted after its one optional
+ * trailing LF. A shorter file is read as unreadable: an empty or `"\n"` file
+ * would otherwise leave bootstrap advertised as open while nothing can ever
+ * match it, and a short token is guessable. Every generator writes at least
+ * this much (32 random bytes, base64url or hex encoded). Twin of the Rust
+ * `BOOTSTRAP_TOKEN_MIN_BYTES` (`fuz_auth`).
+ */
+export const BOOTSTRAP_TOKEN_MIN_BYTES = 32;
+
+/**
+ * Read the bootstrap token the way both the availability check and the
+ * request-time compare need it: the hardened secure read, less one trailing
+ * LF, refused when shorter than `BOOTSTRAP_TOKEN_MIN_BYTES`. A short token
+ * logs an error naming the file before the throw — it is a misconfiguration
+ * the operator must fix, never a quiet "unavailable". Twin of the Rust
+ * `bootstrap_token_from_file`.
+ *
+ * @param deps - the secure read and a logger for the short-token error
+ * @param token_path - the bootstrap token file
+ * @returns the token bytes the provided token is compared against
+ * @throws Error when the secure read refuses the file or the token is too short
+ */
+export const read_bootstrap_token = async (
+	deps: Pick<BootstrapAccountDeps, 'read_secure_file' | 'log'>,
+	token_path: string
+): Promise<Uint8Array> => {
+	const token = strip_one_trailing_newline(await deps.read_secure_file(token_path));
+	if (token.length < BOOTSTRAP_TOKEN_MIN_BYTES) {
+		const message = `bootstrap token at ${token_path} is ${token.length} bytes, under the ${BOOTSTRAP_TOKEN_MIN_BYTES}-byte minimum — regenerate it`;
+		deps.log.error(message);
+		throw new Error(message);
+	}
+	return token;
+};
+
+/**
  * Bootstrap the first account with keeper and admin privileges.
  *
  * Uses an atomic `bootstrap_lock` UPDATE to prevent concurrent bootstrap
  * attempts (TOCTOU). The full flow runs in a single transaction:
  *
  * 1. Read and verify the bootstrap token (before transaction) — the file's
- *    raw bytes less one optional trailing LF, compared in constant time
+ *    raw bytes less one optional trailing LF, at least
+ *    `BOOTSTRAP_TOKEN_MIN_BYTES` long, compared in constant time
  * 2. Hash the password (CPU-intensive, before transaction)
  * 3. Acquire the bootstrap lock atomically (inside transaction)
  * 4. Create account + actor
@@ -114,11 +151,12 @@ export const bootstrap_account = async (
 
 	// 1. Read and verify token (non-destructive, before transaction). The
 	// secure read fails loud on a symlink / non-regular file / permissive mode /
-	// oversized file — every refusal masks as the same TOKEN_FILE_MISSING the
-	// wire always carried, with the specific reason logged for the operator.
+	// oversized file, and the read refuses a token under the minimum length —
+	// every refusal masks as the same TOKEN_FILE_MISSING the wire always
+	// carried, with the specific reason logged for the operator.
 	let expected_token: Uint8Array;
 	try {
-		expected_token = strip_one_trailing_newline(await read_secure_file(token_path));
+		expected_token = await read_bootstrap_token({ read_secure_file, log }, token_path);
 	} catch (err) {
 		log.warn(`bootstrap token file rejected: ${to_error_message(err)}`);
 		return { ok: false, error: ERROR_TOKEN_FILE_MISSING, status: 404 };

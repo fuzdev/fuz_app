@@ -84,6 +84,7 @@ import {
 	ERROR_CELL_CREATE_FORBIDDEN,
 	ERROR_CELL_MODERATE_FORBIDDEN,
 	ERROR_CELL_NOT_A_CONTRIBUTION,
+	ERROR_CELL_NOT_PENDING,
 	ERROR_CELL_LIST_CREATED_BY_REQUIRES_AUTH,
 	ERROR_CELL_LIST_SHARED_WITH_REQUIRES_AUTH,
 	CELL_LIST_LIMIT_DEFAULT,
@@ -225,6 +226,12 @@ export type CellActionDeps = ActionFactoryDeps & {
  */
 const path_taken_error = (): ReturnType<typeof jsonrpc_errors.conflict> =>
 	jsonrpc_errors.conflict('cell.path is already taken', { reason: ERROR_CELL_PATH_TAKEN });
+
+/** The `cell_moderate` refusal of a transition the contribution's state doesn't allow. */
+const cell_not_pending_error = (): ReturnType<typeof jsonrpc_errors.invalid_params> =>
+	jsonrpc_errors.invalid_params('cell is not pending moderation', {
+		reason: ERROR_CELL_NOT_PENDING
+	});
 
 /**
  * Reject a `kind` key supplied inside `data`. `kind` is the top-level
@@ -668,13 +675,20 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 				{ reason: ERROR_CELL_MODERATE_FORBIDDEN }
 			);
 		}
+		// The UPDATE carries the allowed from-states: an approval moves only a
+		// pending contribution, a rejection a pending or approved one (the
+		// takedown); a rejected or unmoderated one never moves.
 		const approved = input.moderation === 'approved';
 		const updated = await query_cell_set_moderation(ctx, input.cell_id, input.moderation, {
 			set_visibility_public: approved,
 			updated_by: auth.actor.id
 		});
-		// Raced with a deleter between the authz check and the UPDATE.
-		if (!updated) throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
+		if (!updated) {
+			// No row in an allowed from-state: the transition is refused (or
+			// another moderator moved it first) — or a deleter won the race (404).
+			if (await query_cell_get(ctx, input.cell_id)) throw cell_not_pending_error();
+			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
+		}
 		deps.audit.emit(ctx, {
 			event_type: 'cell_moderate',
 			actor_id: auth.actor.id,

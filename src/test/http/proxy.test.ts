@@ -23,6 +23,11 @@ import {
 } from '#lib/http/proxy.ts';
 import { get_client_ip } from '#lib/http/client_ip.ts';
 
+// A `/0` built directly — `parse_proxy_entry` refuses one, so the matcher
+// tests that cover the wildcard prefix construct it.
+const IPV4_SLASH_ZERO: ParsedProxy = { type: 'cidr', network: 0n, prefix: 0, address_type: 'IPv4' };
+const IPV6_SLASH_ZERO: ParsedProxy = { type: 'cidr', network: 0n, prefix: 0, address_type: 'IPv6' };
+
 // --- normalize_ip ---
 
 describe('normalize_ip', () => {
@@ -221,13 +226,22 @@ describe('parse_proxy_entry', () => {
 		}
 	});
 
-	test('parses IPv6 /0 as CIDR', () => {
-		const result = parse_proxy_entry('::/0');
-		assert.strictEqual(result.type, 'cidr');
-		if (result.type === 'cidr') {
-			assert.strictEqual(result.prefix, 0);
-			assert.strictEqual(result.address_type, 'IPv6');
+	test('refuses a /0 prefix for either family, naming the entry', () => {
+		// a /0 trusts every client as a proxy — the client's own XFF would pick
+		// every per-IP bucket — so it fails at parse time, aligned or not
+		for (const entry of ['0.0.0.0/0', '::/0', '10.0.0.0/0', 'fe80::/0', '::ffff:0.0.0.0/0']) {
+			assert.throws(
+				() => parse_proxy_entry(entry),
+				`CIDR prefix 0 trusts every address as a proxy: ${entry}`
+			);
 		}
+		// the narrowest real ranges still parse
+		for (const entry of ['0.0.0.0/1', '::/1']) {
+			const result = parse_proxy_entry(entry);
+			assert.strictEqual(result.type === 'cidr' && result.prefix, 1, entry);
+		}
+		// shape errors still come first
+		assert.throws(() => parse_proxy_entry('hello/0'), /Invalid proxy CIDR/);
 	});
 
 	test('throws on non-network-aligned IPv4 CIDR', () => {
@@ -341,7 +355,8 @@ describe('is_trusted_ip', () => {
 	});
 
 	test('matches IPv4 CIDR /0 (all)', () => {
-		const proxies = [parse_proxy_entry('0.0.0.0/0')];
+		// constructed directly — the parser refuses a /0; this pins the matcher alone
+		const proxies: Array<ParsedProxy> = [IPV4_SLASH_ZERO];
 		assert.ok(is_trusted_ip('1.2.3.4', proxies));
 		assert.ok(is_trusted_ip('255.255.255.255', proxies));
 	});
@@ -378,7 +393,7 @@ describe('is_trusted_ip', () => {
 	});
 
 	test('matches IPv6 CIDR /0 (all)', () => {
-		const proxies = [parse_proxy_entry('::/0')];
+		const proxies: Array<ParsedProxy> = [IPV6_SLASH_ZERO];
 		assert.ok(is_trusted_ip('fe80::1', proxies));
 		assert.ok(is_trusted_ip('2001:db8::1', proxies));
 		assert.ok(is_trusted_ip('::1', proxies));
@@ -459,14 +474,14 @@ describe('is_trusted_ip', () => {
 
 	test('IPv4 /0 CIDR does not match IPv6 addresses', () => {
 		// 0.0.0.0/0 is "all IPv4" — the cross-family guard must hold even for wildcard prefixes
-		const proxies = [parse_proxy_entry('0.0.0.0/0')];
+		const proxies: Array<ParsedProxy> = [IPV4_SLASH_ZERO];
 		assert.ok(!is_trusted_ip('::1', proxies));
 		assert.ok(!is_trusted_ip('fe80::1', proxies));
 	});
 
 	test('IPv6 /0 CIDR does not match IPv4 addresses', () => {
 		// ::/0 is "all IPv6" — must not bleed into IPv4 space
-		const proxies = [parse_proxy_entry('::/0')];
+		const proxies: Array<ParsedProxy> = [IPV6_SLASH_ZERO];
 		assert.ok(!is_trusted_ip('127.0.0.1', proxies));
 		assert.ok(!is_trusted_ip('10.0.0.1', proxies));
 	});
@@ -1015,13 +1030,14 @@ describe('CIDR boundary IPs', () => {
 			cidr: '10.0.0.0/24',
 			expected: false
 		},
-		{ name: '0.0.0.0 is in 0.0.0.0/0', ip: '0.0.0.0', cidr: '0.0.0.0/0', expected: true },
+		{ name: '0.0.0.0 is in 0.0.0.0/1', ip: '0.0.0.0', cidr: '0.0.0.0/1', expected: true },
 		{
-			name: '255.255.255.255 is in 0.0.0.0/0',
-			ip: '255.255.255.255',
-			cidr: '0.0.0.0/0',
+			name: '127.255.255.255 is in 0.0.0.0/1',
+			ip: '127.255.255.255',
+			cidr: '0.0.0.0/1',
 			expected: true
 		},
+		{ name: '128.0.0.0 is outside 0.0.0.0/1', ip: '128.0.0.0', cidr: '0.0.0.0/1', expected: false },
 		{ name: '/32 matches only the exact IP', ip: '10.0.0.1', cidr: '10.0.0.1/32', expected: true },
 		{ name: '/32 rejects adjacent IP', ip: '10.0.0.2', cidr: '10.0.0.1/32', expected: false }
 	];

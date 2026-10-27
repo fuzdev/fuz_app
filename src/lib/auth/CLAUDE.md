@@ -37,7 +37,7 @@ over the pool so rows persist when request transactions roll back. See root
 - `auth/password_argon2.ts` — `hash_password`, `verify_password`, `verify_dummy`, `argon2_password_deps`.
 - `auth/api_token.ts` — `API_TOKEN_PREFIX` (`secret_fuz_token_`), `hash_api_token`, `generate_api_token`, and the shape precheck `is_api_token_shaped` (`API_TOKEN_REGEX`: the prefix plus exactly `API_TOKEN_BODY_LENGTH` = 43 base64url chars).
 - `auth/daemon_token.ts` — `DaemonToken`, `DAEMON_TOKEN_HEADER` (`X-Daemon-Token`), `generate_daemon_token`, `validate_daemon_token`, `DaemonTokenState`.
-- `auth/bootstrap_account.ts` — `bootstrap_account` (one-shot, `bootstrap_lock`-protected).
+- `auth/bootstrap_account.ts` — `bootstrap_account` (one-shot, `bootstrap_lock`-protected) + `read_bootstrap_token`, the read both it and `check_bootstrap_status` use: the secure read less one trailing LF, a token under `BOOTSTRAP_TOKEN_MIN_BYTES` (32) refused as unreadable with an error log.
 
 Cross-cutting notes that don't live on any single symbol:
 
@@ -77,8 +77,8 @@ Convention — `*_schema.ts` is Zod-only; `*_ddl.ts` holds DDL strings.
 All take `deps: QueryDeps = {db}` first; `query_validate_api_token` adds `log` and returns a `ValidatedApiToken` — the row with `scope` parsed, refusing (returning `undefined` for) a row whose stored scope is unreadable.
 
 - `auth/account_queries.ts` — account CRUD, actor resolution, password update with verify-write race guard, paged `query_admin_account_list`.
-- `auth/actor_lookup_queries.ts` — batched `actor` ⨝ `account` for the labels arc.
-- `auth/actor_search_queries.ts` — case-insensitive prefix search on `actor.name`, scope-filtered when not admin.
+- `auth/actor_lookup_queries.ts` — batched `actor` ⨝ `account` for the labels arc; active actors of active accounts only.
+- `auth/actor_search_queries.ts` — case-insensitive prefix search on `actor.name`, scope-filtered when not admin; active actors of active accounts only.
 - `auth/role_grant_queries.ts` — idempotent create, IDOR-guarded revoke (with in-tx supersede), scope-aware lookup, role/account predicates, `query_role_grant_revoke_for_scope` parent-scope cascade.
 - `auth/role_grant_offer_queries.ts` — offer create/decline/retract/list/history/sweep, atomic `query_accept_offer` with sibling supersede; error classes `RoleGrantOfferSelfTargetError` / `_AlreadyTerminalError` / `_ExpiredError` / `_NotFoundError` / `_ActorAccountMismatchError` / `_ActorMismatchError`.
 - `auth/session_queries.ts` — server-side sessions (blake3-hashed), `query_session_revoke_by_hash_unscoped` (logout only), `query_session_enforce_limit` (transaction-required; returns the evicted sessions' ids — their token hashes — so the caller closes their connections after the commit), `query_session_cleanup_expired` (returns the swept sessions' ids for the same close — `cleanup_expired_sessions` is its caller). No touch/renewal query — `expires_at` is an absolute cap set at mint (`AUTH_SESSION_LIFETIME_MS`).
@@ -329,10 +329,14 @@ auth, ids)`: two queries for the whole id-set, the cells read through the
   `root.data.policy[kind]` without its own DB read (which also dodges the
   single-connection deadlock of the in-memory drivers). `None`/omitted = open create (the default;
   mirrors `validate_data`). `cell_moderate` is the `pending → approved | rejected`
-  transition, gated on `can_manage_cell` of the **governing root** (admin / root
-  owner — the author lands a 403, the anti-self-approval guard; a root owner
-  reaches the check through the steward arm); approve flips
-  `moderation → approved` + `visibility → public`, reject sets `rejected`.
+  transition (plus `approved → rejected`, the takedown), gated on
+  `can_manage_cell` of the **governing root** (admin / root owner — the author
+  lands a 403, the anti-self-approval guard; a root owner reaches the check
+  through the steward arm); approve flips
+  `moderation → approved` + `visibility → public`, reject sets `rejected`
+  (visibility untouched). The write carries the from-state: approve moves only
+  a pending contribution, reject a pending or approved one (the takedown); any
+  other transition answers 400 `cell_not_pending`.
 - `auth/cell_ref_admission.ts` — `require_new_refs_held`, the
   possession gate `cell_create` / `cell_update` / `cell_clone` run last before
   their write: a non-admin write introducing a fact ref (beyond the cell's
@@ -646,8 +650,8 @@ omits `confirm: true`, `ERROR_CANNOT_DELETE_KEEPER` (403) when `account_delete` 
 `account_purge` targets a keeper-role account (the keeper account is never
 API-removable — auth + daemon-token both pivot on it),
 `ERROR_CANNOT_DELETE_LAST_ADMIN` (403) when `account_delete` / `account_purge`
-targets the sole remaining active admin (keeper-recoverable, but not in one
-click; soft-deleted admins don't count), `ERROR_INVITE_ACCOUNT_EXISTS_USERNAME` /
+targets the sole remaining active admin (soft-deleted admins don't count; the
+count locks its rows, so concurrent removals can't both pass), `ERROR_INVITE_ACCOUNT_EXISTS_USERNAME` /
 `_EMAIL` / `ERROR_INVITE_DUPLICATE` on invite create, `ERROR_INVITE_NOT_FOUND`
 on invite delete. `invite_create` empty input is rejected at the schema via
 `.refine()` and surfaces as `invalid_params` with `error.data.issues`.
@@ -698,6 +702,15 @@ event additionally records `credential_type` in metadata (defense in depth).
 - `role_grant_offer_list_action_spec` — input `{account_id?}`; output `{offers}`.
 - `role_grant_offer_history_action_spec` — input `{account_id?, limit?, offset?}`; output `{offers}`.
 - `role_grant_revoke_action_spec` — input `{actor_id, role_grant_id, reason?}`; output `{ok, revoked}`.
+  A global `admin` grant is guarded: the keeper account's is refused
+  (`ERROR_CANNOT_REVOKE_KEEPER_ADMIN`, 403) and so is one whose revoke would
+  leave no active admin account (`ERROR_CANNOT_REVOKE_LAST_ADMIN`, 403, under
+  the locked count `query_count_active_accounts_with_global_role_for_update`,
+  which leaves the revoked grant out). Besides the
+  revokee's incoming sibling offers, the revoke supersedes every pending offer
+  the revokee's actor made (`query_role_grant_offer_supersede_outgoing`) —
+  `account_delete` / `account_purge` do the same for every actor of the account
+  (`reason: 'account_deleted'`, audited, no notification).
 - `role_grant_assign_action_spec` — global-admin-only immediate conferral (no
   consent step); input `{to_account_id, to_actor_id?, role, scope_kind?, scope_id?}`
   (the pair as on offer-create); output `{ok, role_grant_id}`. The handler:
@@ -706,6 +719,9 @@ event additionally records `credential_type` in metadata (defense in depth).
     `admin` (`invalid_params` + `ERROR_ROLE_GRANT_BUILTIN_SCOPED`; a scoped
     `keeper` stays 403 `ERROR_ROLE_NOT_WEB_GRANTABLE`, since `keeper` is never
     web-grantable);
+  - runs the consumer's `RoleGrantOfferCreateAuthorize` callback (the offer
+    policy binds the consent-free path too — a refusal is 403
+    `ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED`, failure-audited);
   - resolves the target actor (named `to_actor_id` ∈ the account's active
     actors, else its sole active actor — multi-actor → `invalid_params`,
     actorless → 404);
@@ -715,6 +731,7 @@ event additionally records `credential_type` in metadata (defense in depth).
 
   No WS notification in v1. Reasons: `ERROR_INSUFFICIENT_PERMISSIONS`,
   `ERROR_ROLE_NOT_WEB_GRANTABLE`, `ERROR_ROLE_GRANT_BUILTIN_SCOPED`,
+  `ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED`,
   `ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH`.
 
 Every input carries `acting?: ActingActor` (registry-time invariant 2).
@@ -730,7 +747,9 @@ holder-propagation (holding the offered role confers no power to offer it). The
 global check (`has_scoped_role(_, ROLE_ADMIN, null)`) stops a scoped `admin`
 escalating into global authority over the offer surface. A consumer needing
 scope-aware delegation (e.g. a classroom teacher offering within their own
-scope) supplies a custom `authorize` callback.
+scope) supplies a custom `authorize` callback. The callback receives
+`{to_account_id, role, scope_kind, scope_id}` and also gates
+`role_grant_assign`.
 
 **Builtin roles (`admin` / `keeper`) are global-only**, decided by the spine
 ahead of any callback. Offer-create refuses a scoped `admin`
@@ -782,7 +801,7 @@ Post-commit via `emit_after_commit` (see `http/CLAUDE.md` §Pending Effects):
 - Retract — `role_grant_offer_retracted` → recipient.
 - Accept — `role_grant_offer_accepted` → grantor + `_supersede` per sibling.
 - Decline — `role_grant_offer_declined` → grantor.
-- Revoke — `role_grant_revoke` → revokee + `_supersede` per superseded sibling.
+- Revoke — `role_grant_revoke` → revokee + `_supersede` per superseded offer (the revokee's incoming siblings and its own outgoing offers, each to its grantor).
 
 Spec module is `auth/role_grant_offer_notifications.ts` — six
 `RemoteNotificationActionSpec`s with Zod params schemas and notification

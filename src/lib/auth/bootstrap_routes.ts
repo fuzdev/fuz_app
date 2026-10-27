@@ -13,7 +13,11 @@ import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import type { SessionOptions } from './session_cookie.ts';
 import { create_session_and_set_cookie } from './session_middleware.ts';
-import { bootstrap_account, type BootstrapAccountSuccess } from './bootstrap_account.ts';
+import {
+	bootstrap_account,
+	read_bootstrap_token,
+	type BootstrapAccountSuccess
+} from './bootstrap_account.ts';
 import { bootstrap_route_shape, type BootstrapInput } from './bootstrap_route_schema.ts';
 import type { Db } from '../db/db.ts';
 import { get_route_input, type RouteSpec } from '../http/route_spec.ts';
@@ -81,10 +85,11 @@ export interface CheckBootstrapStatusDeps {
  * Bootstrap is available when:
  * 1. A token path is configured
  * 2. The token file passes the secure read (exists, not a symlink, mode
- *    `0600`/`0400`, within the size cap)
+ *    `0600`/`0400`, within the size cap) and holds at least
+ *    `BOOTSTRAP_TOKEN_MIN_BYTES` (a shorter one logs an error)
  * 3. The `bootstrap_lock` table shows `bootstrapped = false`
  *
- * The probe **reads through the same `read_secure_file` the request-time
+ * The probe **reads through the same `read_bootstrap_token` the request-time
  * read uses**, so "bootstrap is available" and "the token file can actually
  * be read" can't drift apart — an availability check laxer than the read it
  * gates is the misconfiguration that reports green at boot and fails at
@@ -106,7 +111,7 @@ export const check_bootstrap_status = async (
 	}
 
 	try {
-		await read_secure_file(token_path);
+		await read_bootstrap_token({ read_secure_file, log }, token_path);
 	} catch (err) {
 		log.info(`Bootstrap unavailable: ${to_error_message(err)}`);
 		return { available: false, token_path };

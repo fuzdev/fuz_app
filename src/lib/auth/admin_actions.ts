@@ -44,10 +44,11 @@ import { has_scoped_role } from './request_context.ts';
 import {
 	query_account_has_global_role,
 	query_account_has_active_global_role,
-	query_count_active_accounts_with_global_role
+	query_count_active_accounts_with_global_role_for_update
 } from './role_grant_queries.ts';
 import type { Uuid } from '../primitive_schemas.ts';
 import { GRANT_PATH_ADMIN } from './grant_path_schema.ts';
+import { query_role_grant_offer_supersede_outgoing } from './role_grant_offer_queries.ts';
 import {
 	query_account_by_email,
 	query_account_by_id,
@@ -394,9 +395,10 @@ export const create_admin_actions = (
 	//      keeper/daemon auth with no recovery (keeper role is non-web-
 	//      revocable and purge itself needs keeper auth). Out-of-band only.
 	//   2. **Last admin** — the sole remaining *active* admin is protected
-	//      (soft-deleted admins can't log in, so they don't count). Unlike
-	//      the keeper guard this is keeper-recoverable, but it stops an admin
-	//      tombstoning the last admin in one call.
+	//      (soft-deleted admins can't log in, so they don't count). The count
+	//      locks the rows it counted, so two removals racing for the last two
+	//      admins serialize and the second is refused — no web path re-grants
+	//      a lost admin. `role_grant_revoke` guards the admin grant the same way.
 	// A missing account holds neither role here and falls through to the
 	// handler's own not-found path. `event_type` selects the audit event so
 	// the failure row matches the operation in flight.
@@ -432,9 +434,39 @@ export const create_admin_actions = (
 		// unconditional; the last-admin branch fires only for an *active* target.
 		if (
 			(await query_account_has_active_global_role(ctx, target_account_id, ROLE_ADMIN)) &&
-			(await query_count_active_accounts_with_global_role(ctx, ROLE_ADMIN)) <= 1
+			(await query_count_active_accounts_with_global_role_for_update(ctx, ROLE_ADMIN)) <= 1
 		) {
 			deny(ERROR_CANNOT_DELETE_LAST_ADMIN, `cannot ${verb} the last admin account`);
+		}
+	};
+
+	// Supersede every pending offer the removed account's actors made, audited
+	// — the cascade a revoke runs on the revokee's offers. An offer records no
+	// authority, so one outliving its grantor's account would still confer on
+	// accept. No supersede notification: a cascade notifies the grantor, and the
+	// grantor's connections close with its account. `cause_id` is the account.
+	const cancel_outgoing_offers = async (
+		ctx: ActionActorContext,
+		target_account_id: Uuid,
+		actors: ReadonlyArray<{ id: Uuid }>
+	): Promise<void> => {
+		const superseded = await query_role_grant_offer_supersede_outgoing(
+			ctx,
+			actors.map((a) => a.id)
+		);
+		for (const offer of superseded) {
+			deps.audit.emit_role_grant_target(ctx, ctx.auth, {
+				event_type: 'role_grant_offer_supersede',
+				target_account_id: offer.to_account_id,
+				target_actor_id: offer.to_actor_id,
+				metadata: {
+					offer_id: offer.id,
+					role: offer.role,
+					scope_id: offer.scope_id,
+					reason: 'account_deleted',
+					cause_id: target_account_id
+				}
+			});
 		}
 	};
 
@@ -442,7 +474,8 @@ export const create_admin_actions = (
 	// deleting another account requires the admin role. A self-delete is
 	// session-only — enforced here, not on the spec, whose gate stays open so
 	// an admin deleting another account keeps any credential. Tombstones the
-	// account + its actor(s), revokes sessions/tokens, closes sockets, and
+	// account + its actor(s), supersedes the pending offers its actors made,
+	// revokes sessions/tokens, closes sockets, and
 	// emits `account_delete` + one `actor_delete` per soft-deleted actor —
 	// each carrying its identity snapshot. `delete` = soft.
 	const account_delete_handler = async (
@@ -484,6 +517,7 @@ export const create_admin_actions = (
 			});
 			throw jsonrpc_errors.not_found('account', { reason: ERROR_ACCOUNT_NOT_FOUND });
 		}
+		await cancel_outgoing_offers(ctx, target_account_id, actors);
 		const soft_deleted_actors = [];
 		for (const actor of actors) {
 			if (await query_actor_soft_delete(ctx, actor.id, auth.actor.id)) {
@@ -540,6 +574,9 @@ export const create_admin_actions = (
 		await assert_account_removable(ctx, input.account_id, 'account_purge');
 		// Snapshot actors before the cascade removes them.
 		const actors = await query_actors_by_account(ctx, input.account_id);
+		// Before the cascade, whose `ON DELETE CASCADE` would take the offers
+		// with no audit row.
+		await cancel_outgoing_offers(ctx, input.account_id, actors);
 		const snapshot = await query_purge_account(ctx, input.account_id);
 		if (!snapshot) {
 			deps.audit.emit(ctx, {

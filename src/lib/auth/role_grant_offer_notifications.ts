@@ -102,8 +102,9 @@ export type RoleGrantOfferDeclinedParams = z.infer<typeof RoleGrantOfferDeclined
 /**
  * Params for `role_grant_offer_supersede`. Fires to the grantor's sockets when
  * their pending offer is obsoleted — either by a sibling accept
- * (`reason: 'sibling_accepted'`), by revoke of the resulting role_grant
- * (`reason: 'role_grant_revoked'`), or by deletion of the parent scope row
+ * (`reason: 'sibling_accepted'`), by revoke of the resulting role_grant or of
+ * one of the grantor's own (`reason: 'role_grant_revoked'`), or by deletion of
+ * the parent scope row
  * the offer was bound to (`reason: 'scope_destroyed'`). `cause_id` points
  * at the accepted offer id, the revoked role_grant id, or the destroyed scope
  * row id respectively.

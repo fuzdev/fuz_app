@@ -20,8 +20,11 @@ import { create_test_app } from '#lib/testing/app_server.ts';
 import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
 import {
 	role_grant_assign_action_spec,
-	ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH
+	role_grant_offer_create_action_spec,
+	ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH,
+	ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED
 } from '#lib/auth/role_grant_offer_action_specs.ts';
+import type { RoleGrantOfferCreateAuthorize } from '#lib/auth/role_grant_offer_actions.ts';
 import { query_create_actor } from '#lib/auth/account_queries.ts';
 import {
 	ERROR_INSUFFICIENT_PERMISSIONS,
@@ -35,6 +38,8 @@ import { install_audit_drift_guard } from '#lib/testing/audit_drift_guard.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 import {
 	RPC_PATH,
+	TEST_APP_ROLE,
+	create_app_role_route_specs,
 	create_route_specs,
 	describe_db,
 	session_options
@@ -312,6 +317,90 @@ describe_db('role_grant_offer_actions.assign', (get_db) => {
 				[second_actor.id, ROLE_ADMIN]
 			);
 			assert.strictEqual(rows.length, 1, 'the named actor holds the new grant');
+		});
+	});
+
+	describe('the consumer authorize callback', () => {
+		// a consumer policy: `TEST_APP_ROLE` exists only scoped to a `classroom`
+		const inputs: Array<Parameters<RoleGrantOfferCreateAuthorize>[1]> = [];
+		const scoped_only: RoleGrantOfferCreateAuthorize = (_auth, input) => {
+			inputs.push(input);
+			return input.scope_kind === 'classroom' && input.scope_id !== null;
+		};
+		const setup = async () => {
+			inputs.length = 0;
+			const events: Array<AuditLogEvent> = [];
+			const test_app = await create_test_app({
+				session_options,
+				create_route_specs: create_app_role_route_specs({ authorize: scoped_only }),
+				db: get_db(),
+				roles: [ROLE_ADMIN],
+				audit_factory: (params) =>
+					create_audit_emitter({
+						...params,
+						on_audit_event: (event) => {
+							events.push(event);
+						}
+					})
+			});
+			const target = await test_app.create_account({ username: 'assign_authorize_target' });
+			return { test_app, target, events };
+		};
+
+		test('a grant the callback refuses is refused on assign, as on offer-create, and audited', async () => {
+			const { test_app, target, events } = await setup();
+			for (const spec of [role_grant_assign_action_spec, role_grant_offer_create_action_spec]) {
+				const res = await rpc_call_for_spec({
+					app: test_app.app,
+					path: RPC_PATH,
+					spec,
+					params: { to_account_id: target.account.id, role: TEST_APP_ROLE },
+					headers: test_app.create_session_headers()
+				});
+				assert.ok(!res.ok, spec.method);
+				assert.strictEqual(res.status, 403, spec.method);
+				assert.deepStrictEqual(
+					res.error.data,
+					{ reason: ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED },
+					spec.method
+				);
+			}
+			const rows = await get_db().query(
+				`SELECT 1 FROM role_grant WHERE actor_id = $1 AND role = $2`,
+				[target.actor.id, TEST_APP_ROLE]
+			);
+			assert.strictEqual(rows.length, 0, 'no grant was written');
+			const failure = events.find(
+				(e) => e.event_type === 'role_grant_create' && e.outcome === 'failure'
+			);
+			assert.ok(failure, 'the refused assign is failure-audited');
+			assert.strictEqual(failure.target_account_id, target.account.id);
+		});
+
+		test('the callback receives scope_kind, and an admitted scoped grant lands', async () => {
+			const { test_app, target } = await setup();
+			const scope_id = create_uuid();
+			const res = await rpc_call_for_spec({
+				app: test_app.app,
+				path: RPC_PATH,
+				spec: role_grant_assign_action_spec,
+				params: {
+					to_account_id: target.account.id,
+					role: TEST_APP_ROLE,
+					scope_kind: 'classroom',
+					scope_id
+				},
+				headers: test_app.create_session_headers()
+			});
+			assert.ok(res.ok, JSON.stringify(res));
+			assert.deepStrictEqual(inputs, [
+				{
+					to_account_id: target.account.id,
+					role: TEST_APP_ROLE,
+					scope_kind: 'classroom',
+					scope_id
+				}
+			]);
 		});
 	});
 });

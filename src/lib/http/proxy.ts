@@ -58,10 +58,12 @@ export type ParsedProxy =
  *
  * Accepts plain IPs (`'127.0.0.1'`, `'::1'`) and CIDR notation (`'10.0.0.0/8'`, `'fe80::/10'`).
  * Plain IPs are normalized (lowercase, IPv4-mapped IPv6 stripped) and validated.
- * CIDR prefixes are validated against address family bounds.
+ * CIDR prefixes are validated against address family bounds. A `/0` prefix is
+ * refused for either family: it trusts every client as a proxy, so the client's
+ * own `X-Forwarded-For` would choose the IP every per-IP limiter keys on.
  *
  * @param entry - IP address or CIDR notation
- * @throws Error on invalid IP, invalid CIDR network, or NaN/negative/over-range prefix
+ * @throws Error on invalid IP, invalid CIDR network, NaN/negative/over-range prefix, or a `/0` prefix
  */
 export const parse_proxy_entry = (entry: string): ParsedProxy => {
 	const slash_index = entry.indexOf('/');
@@ -85,6 +87,9 @@ export const parse_proxy_entry = (entry: string): ParsedProxy => {
 		throw new Error(`Invalid CIDR prefix (not an integer): ${entry}`);
 	}
 	const address_type = distinctRemoteAddr(network_str);
+	if (prefix === 0 && (address_type === 'IPv4' || address_type === 'IPv6')) {
+		throw new Error(`CIDR prefix 0 trusts every address as a proxy: ${entry}`);
+	}
 	if (address_type === 'IPv4') {
 		if (prefix > 32) {
 			throw new Error(`Invalid CIDR prefix for IPv4 (max 32): ${entry}`);

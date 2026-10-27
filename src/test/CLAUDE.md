@@ -315,7 +315,11 @@ gated by the root's `data.policy[kind]`; `moderation` set per the verdict
 (`pending`+private vs `approved`); **404** on a hidden parent vs **403** on a
 visible one; and the `cell_moderate` transition — admin approves → public,
 the author self-approve → 403, a non-viewer → 404, reject → private, a cell
-with no governing root → 400 `cell_not_a_contribution`; the
+with no governing root → 400 `cell_not_a_contribution`, a transition the
+from-state doesn't allow (approving a contribution not pending — born approved
+and shared with the root owner, or already decided — or rejecting a rejected
+one) → 400 `cell_not_pending`, left as it was, while an approved post can be
+taken down (rejected, visibility untouched); the
 moderation read gate — a pending or rejected post, flipped public or granted
 while approved, reaches no non-steward reader past its author and admins on
 `cell_get`, `cell_list`, `cell_item_list`, and fact serving; the steward arm —

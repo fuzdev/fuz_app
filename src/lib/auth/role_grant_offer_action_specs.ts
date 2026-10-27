@@ -65,6 +65,22 @@ export const ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH =
  * `role_grant_assign`, `role_grant_offer_create`, and `role_grant_offer_accept`.
  */
 export const ERROR_ROLE_GRANT_BUILTIN_SCOPED = 'role_grant_builtin_scoped' as const;
+/**
+ * Error reason — `role_grant_revoke` targeted the **keeper** account's global
+ * `admin` grant. A **403**: no web path grants `admin` to the keeper again
+ * (bootstrap is one-shot and keeper is not web-grantable), so revoking it would
+ * lock the keeper out of the admin surface for good. Twin of the Rust
+ * `ERROR_CANNOT_REVOKE_KEEPER_ADMIN`.
+ */
+export const ERROR_CANNOT_REVOKE_KEEPER_ADMIN = 'cannot_revoke_keeper_admin' as const;
+/**
+ * Error reason — `role_grant_revoke` targeted a global `admin` grant whose
+ * revoke would leave no active admin account. A **403**, counted as
+ * `account_delete`'s last-admin guard counts (active accounts, active actors),
+ * less the grant being revoked, under the same row locks. Twin of the Rust
+ * `ERROR_CANNOT_REVOKE_LAST_ADMIN`.
+ */
+export const ERROR_CANNOT_REVOKE_LAST_ADMIN = 'cannot_revoke_last_admin' as const;
 
 /**
  * Whether a grant input's `scope_kind` + `scope_id` are paired — both absent
@@ -411,8 +427,13 @@ export const role_grant_revoke_action_spec = {
 	output: RoleGrantRevokeOutput,
 	async: true,
 	description:
-		'Revoke an active role_grant on a target actor. Admin-only. Supersedes any pending offers for the same (account, role, scope). Fires role_grant_revoke + role_grant_offer_supersede notifications.',
-	error_reasons: [ERROR_ROLE_GRANT_NOT_FOUND, ERROR_ROLE_NOT_WEB_GRANTABLE],
+		"Revoke an active role_grant on a target actor. Admin-only. Refuses the keeper account's global admin grant and the last active admin's. Supersedes any pending offers for the same (account, role, scope), and every pending offer the target actor made. Fires role_grant_revoke + role_grant_offer_supersede notifications.",
+	error_reasons: [
+		ERROR_ROLE_GRANT_NOT_FOUND,
+		ERROR_ROLE_NOT_WEB_GRANTABLE,
+		ERROR_CANNOT_REVOKE_KEEPER_ADMIN,
+		ERROR_CANNOT_REVOKE_LAST_ADMIN
+	],
 	rate_limit: 'account'
 } satisfies RequestResponseActionSpec;
 
@@ -431,11 +452,12 @@ export const role_grant_assign_action_spec = {
 	output: RoleGrantAssignOutput,
 	async: true,
 	description:
-		"Immediately assign a role_grant to a target account — global-admin-only, no consent step (the capability-unlock UX). The role's `grant_paths` must include `'admin'`; `scope_kind` + `scope_id` are paired, and a builtin role is global-only. Idempotent: re-assigning an active grant returns it. Emits a role_grant_create audit event.",
+		"Immediately assign a role_grant to a target account — global-admin-only, no consent step (the capability-unlock UX). The role's `grant_paths` must include `'admin'`, and the consumer's offer `authorize` callback must admit it; `scope_kind` + `scope_id` are paired, and a builtin role is global-only. Idempotent: re-assigning an active grant returns it. Emits a role_grant_create audit event.",
 	error_reasons: [
 		ERROR_INSUFFICIENT_PERMISSIONS,
 		ERROR_ROLE_NOT_WEB_GRANTABLE,
 		ERROR_ROLE_GRANT_BUILTIN_SCOPED,
+		ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED,
 		ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH
 	],
 	rate_limit: 'account'

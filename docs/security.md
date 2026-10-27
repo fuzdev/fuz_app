@@ -190,6 +190,13 @@ legitimate operator.
   bytes less one optional trailing LF, compared in constant time — nothing is
   trimmed, so a file holding `tok\r\n`, `tok  \n`, or a leading newline
   refuses `tok`. Write the token exactly; both spines apply the same rule.
+- **Minimum token length**: a token under `BOOTSTRAP_TOKEN_MIN_BYTES` (32,
+  counted after that one LF) reads as unreadable — at boot bootstrap is
+  unavailable, at request time the window closes as for a missing file — and
+  logs an error naming the file. An empty or `"\n"` file would otherwise
+  advertise an open window nothing can match, and a short token is guessable.
+  The generators (`setup_bootstrap_token`, the deploy recipes) write 32 random
+  bytes encoded.
 
 ## Session Security
 
@@ -800,7 +807,10 @@ admission:
    revocation event, so only its account is re-read. The re-read uses the
    resolve path's own queries and liveness predicate, writes nothing, and does
    not touch a token's `last_used_at` — re-checking a credential is not using
-   it. The audit stream, and a WebSocket endpoint with `required_roles`, also
+   it. A WebSocket also re-reads its acting actor, on every endpoint: an
+   actor soft-deleted under its live account keeps the account's credentials
+   and its own grant rows, so it is refused like a dead credential. The audit
+   stream, and a WebSocket endpoint with `required_roles`, also
    re-read the acting actor's role grants, since a role revocation closes
    them too: a lost role refuses the stream with 403, and the socket with
    `WS_CLOSE_PERMISSION_REVOKED`.
@@ -816,7 +826,7 @@ after it commits, so every revocation is one or the other.
 
 - **WebSocket.** The handshake has already answered `101`, so a refusal is a
   close frame: `WS_CLOSE_SESSION_REVOKED` (4001, reason `Session revoked`) for
-  a dead credential or a registration closed while pending — the same frame a
+  a dead credential, a deleted acting actor, or a registration closed while pending — the same frame a
   socket revoked a moment later gets, so the two are indistinguishable — and
   `WS_CLOSE_INTERNAL_ERROR` (1011, reason `internal error`) when the re-read
   itself failed. Admission **fails closed**: a credential that could not be
@@ -1465,9 +1475,18 @@ purge itself requires keeper auth); keeper removal stays out-of-band.
 `ERROR_CANNOT_DELETE_LAST_ADMIN` (403) blocks the sole remaining _active_ admin —
 the admin count and the target's own admin check both filter `deleted_at IS NULL`,
 so a soft-deleted admin can't authenticate, doesn't count toward the tally, and
-can itself be removed once another active admin exists. The keeper guard is a
-hard lockout stop; the last-admin guard is keeper-recoverable (a keeper can
-re-grant admin) and intended only to stop a one-call foot-gun.
+can itself be removed once another active admin exists. The count locks the rows
+it counted (`FOR UPDATE`), so two removals racing for the last two admins
+serialize and the second is refused.
+
+**Admin-grant guards on revoke**: `role_grant_revoke` guards a global `admin`
+grant the way removal guards its account. `ERROR_CANNOT_REVOKE_KEEPER_ADMIN`
+(403) refuses the keeper account's — no web path grants it back (bootstrap is
+one-shot, keeper is not web-grantable), so revoking it would lock the keeper
+out of the admin surface for good. `ERROR_CANNOT_REVOKE_LAST_ADMIN` (403)
+refuses one whose revoke would leave no active admin account, under the same
+locked count less the revoked grant. Neither guard is
+recoverable from inside the app, so both are invariants, not foot-gun stops.
 
 **IDOR guard**: `query_revoke_role_grant()` requires an `actor_id` constraint. The
 revoke handler resolves the target actor from the URL and returns 404 on mismatch —
@@ -1696,7 +1715,14 @@ closes the revoke-bypass path:
   (`reason: 'sibling_accepted'`, `cause_id: A.id`).
 - On revoke of a role_grant, every pending offer for the revoked
   `(actor's account, role, scope)` is marked superseded in the same
-  transaction (`reason: 'role_grant_revoked'`, `cause_id: <revoked role_grant id>`).
+  transaction (`reason: 'role_grant_revoked'`, `cause_id: <revoked role_grant id>`)
+  — and so is every pending offer the revokee's actor **made**. An offer
+  records no authority, so one made under the revoked grant would still confer
+  on accept; all of the actor's outgoing offers go, whatever grant they relied
+  on.
+- On `account_delete` / `account_purge`, every pending offer any of the
+  account's actors made is marked superseded (`reason: 'account_deleted'`,
+  `cause_id: <account id>`; purge does it before its cascade deletes them).
 - On parent-scope cascade (consumer's polymorphic `scope_id` row deleted
   via `query_role_grant_revoke_for_scope`), every pending offer at the scope
   is marked superseded — tuple-matched and orphan, undifferentiated —
@@ -2315,7 +2341,10 @@ Client IP is resolved from `X-Forwarded-For` before auth and rate limiting:
 - Untrusted connection with an XFF header → header is ignored (spoofed XFF)
 - `normalize_ip` strips IPv4-mapped IPv6 (`::ffff:`) and lowercases for consistent
   key comparisons
-- CIDR prefixes validated at parse time (NaN, negative, over-range rejected)
+- CIDR prefixes validated at parse time (NaN, negative, over-range rejected),
+  and a `/0` entry (`0.0.0.0/0`, `::/0`) is refused naming the entry: it would
+  trust every client as a proxy, letting any caller's `X-Forwarded-For` pick
+  the IP every per-IP limiter keys on
 
 **Cross-impl parity**: the `login_security` cross-backend suite pins XFF
 resolution end-to-end on both spines — distinct `X-Forwarded-For` IPs get
@@ -2451,18 +2480,16 @@ window to expire. Use nginx-level `limit_req` as a complementary defense —
 nginx rate limit state persists across app restarts and provides IP-based
 protection independent of the application.
 
-### Last-Admin Guard Is a Foot-Gun Stop, Not a Race-Safe Invariant
+### Last-Admin Guard Locks Its Count
 
-The last-admin guard (`ERROR_CANNOT_DELETE_LAST_ADMIN`) reads the active-admin
-count and then deletes in separate statements (no `SELECT … FOR UPDATE` /
-serializable wrap), so two concurrent `account_delete` / `account_purge` calls
-targeting the last two distinct active admins can each observe `count = 2` and
-both commit, leaving zero active admins. This is accepted: the guard stops the
-one-call foot-gun, not concurrent races; the outcome is keeper-recoverable
-(re-grant admin), and the keeper account holds admin at bootstrap and is itself
-protected by the stricter keeper guard. The keeper guard has no equivalent race
-(single, non-web-revocable target). Revisit if a threat model makes concurrent
-admin-removal a real concern.
+The last-admin guards (`ERROR_CANNOT_DELETE_LAST_ADMIN` on `account_delete` /
+`account_purge`, `ERROR_CANNOT_REVOKE_LAST_ADMIN` on `role_grant_revoke`) count
+the active admins with `SELECT … FOR UPDATE` inside the removal's transaction,
+locking every counted `role_grant`, `actor`, and `account` row. Two concurrent
+removals targeting the last two active admins serialize: the second waits for
+the first to commit, re-reads the rows it changed, counts one, and is refused.
+No web path grants admin back once the last active admin is gone, so the guard
+holds as an invariant rather than a recoverable foot-gun stop.
 
 ### PostgreSQL Error Code Detection
 

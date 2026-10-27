@@ -134,11 +134,12 @@ export const query_role_grant_by_id = async (
 	);
 
 /**
- * Look up the role of an active role_grant (constrained to a specific
- * actor) plus the actor's `account_id`.
+ * Look up the role and scope of an active role_grant (constrained to a
+ * specific actor) plus the actor's `account_id`.
  *
  * Used by admin routes to inspect the role_grant's role before acting
- * (e.g., enforcing the admin-grant-path gate on revoke). The actor constraint
+ * (e.g., enforcing the admin-grant-path gate and the global-`admin` guards on
+ * revoke). The actor constraint
  * mirrors `query_revoke_role_grant` so IDOR protection is consistent:
  * a caller can only see role_grants belonging to the target actor.
  *
@@ -155,15 +156,15 @@ export const query_role_grant_by_id = async (
  * @param deps - query dependencies
  * @param role_grant_id - the role_grant id to look up
  * @param actor_id - the actor that must own the role_grant
- * @returns `{role, account_id}` on a match, or `null`
+ * @returns `{role, scope_id, account_id}` on a match, or `null`
  */
 export const query_role_grant_find_active_role_for_actor = async (
 	deps: QueryDeps,
 	role_grant_id: string,
 	actor_id: string
-): Promise<{ role: string; account_id: Uuid } | null> => {
-	const row = await deps.db.query_one<{ role: string; account_id: Uuid }>(
-		`SELECT role_grant.role, actor.account_id
+): Promise<{ role: string; scope_id: Uuid | null; account_id: Uuid } | null> => {
+	const row = await deps.db.query_one<{ role: string; scope_id: Uuid | null; account_id: Uuid }>(
+		`SELECT role_grant.role, role_grant.scope_id, actor.account_id
 		   FROM role_grant
 		   JOIN actor ON actor.id = role_grant.actor_id
 		  WHERE role_grant.id = $1 AND role_grant.actor_id = $2 AND role_grant.revoked_at IS NULL`,
@@ -362,7 +363,7 @@ export const query_account_has_global_role = async (
  * Like `query_account_has_global_role`, but only counts the grant when the
  * **account and the granting actor are both active** (`deleted_at IS NULL`).
  * Used by the last-admin branch of the removability guard: a soft-deleted admin
- * can't log in and is excluded from `query_count_active_accounts_with_global_role`,
+ * can't log in and is excluded from `query_count_active_accounts_with_global_role_for_update`,
  * so the guard must use the same active predicate when testing whether the
  * *target* is an admin — otherwise removing an already-tombstoned admin is
  * falsely blocked as `cannot_delete_last_admin`. Soft-delete does **not** revoke
@@ -404,23 +405,44 @@ export const query_account_has_active_global_role = async (
 /**
  * Count **active** accounts (`deleted_at IS NULL`) holding an active global
  * role_grant for `role`, counting only grants on **active actors**
- * (`act.deleted_at IS NULL`). Used by the last-admin guard on `account_delete` /
- * `account_purge`: soft-delete revokes neither a tombstoned account's nor a
+ * (`act.deleted_at IS NULL`) — and lock what it counted. Used by the last-admin
+ * guards on `account_delete` / `account_purge` and on `role_grant_revoke` of an
+ * `admin` grant: soft-delete revokes neither a tombstoned account's nor a
  * tombstoned actor's admin grant, so an unfiltered count would include unusable
  * admins — this joins `account` *and* filters the actor, so an account whose
  * only admin grant sits on a tombstoned actor no longer counts (otherwise the
- * guard could fail-open and let the last usable admin be deleted).
+ * guard could fail-open and let the last usable admin be removed).
+ *
+ * **Locks** every counted `role_grant`, `actor`, and `account` row
+ * (`FOR UPDATE`) until the caller's transaction ends, so two guards racing to
+ * remove the last two admins serialize: the second waits for the first to
+ * commit, re-reads the rows it changed, and counts one. Run it inside the
+ * transaction that does the removal. Twin of the Rust
+ * `query_count_active_accounts_with_global_role_for_update`.
+ *
+ * `exclude_role_grant_id` leaves one grant out of the count, so a revoke asks
+ * whether any active admin account would remain without that grant — an
+ * account holding the grant on two actors keeps counting through the other.
+ * The excluded grant is still locked, so two revokes of each other's grant
+ * serialize rather than deadlock.
  *
  * @param deps - query dependencies
  * @param role - the role to count (e.g. `ROLE_ADMIN`)
+ * @param exclude_role_grant_id - a grant to leave out of the count (the one being revoked)
  * @returns the number of distinct active accounts with an active global `role` grant
+ * @mutates `role_grant` / `actor` / `account` rows - row-locks the counted rows for the transaction
  */
-export const query_count_active_accounts_with_global_role = async (
+export const query_count_active_accounts_with_global_role_for_update = async (
 	deps: QueryDeps,
-	role: string
+	role: string,
+	exclude_role_grant_id: Uuid | null = null
 ): Promise<number> => {
-	const row = await deps.db.query_one<{ count: string | number }>(
-		`SELECT COUNT(DISTINCT a.id) AS count
+	// `FOR UPDATE` refuses an aggregate, so the rows come back and are counted
+	// here. The excluded grant is dropped in code, not SQL: filtering it in the
+	// WHERE would leave it unlocked, and two cross-revokes (each locking only the
+	// other's grant, then updating it) would deadlock instead of serializing
+	const rows = await deps.db.query<{ account_id: Uuid; role_grant_id: Uuid }>(
+		`SELECT a.id AS account_id, rg.id AS role_grant_id
 		 FROM account a
 		 JOIN actor act ON act.account_id = a.id
 		 JOIN role_grant rg ON rg.actor_id = act.id
@@ -429,10 +451,15 @@ export const query_count_active_accounts_with_global_role = async (
 		   AND rg.role = $1
 		   AND rg.scope_id IS NULL
 		   AND rg.revoked_at IS NULL
-		   AND (rg.expires_at IS NULL OR rg.expires_at > NOW())`,
+		   AND (rg.expires_at IS NULL OR rg.expires_at > NOW())
+		 FOR UPDATE`,
 		[role]
 	);
-	return Number(row?.count ?? 0);
+	const account_ids: Set<Uuid> = new Set();
+	for (const row of rows) {
+		if (row.role_grant_id !== exclude_role_grant_id) account_ids.add(row.account_id);
+	}
+	return account_ids.size;
 };
 
 /**

@@ -17,6 +17,7 @@ import { Uuid, create_uuid } from '#lib/primitive_schemas.ts';
 import { query_actor_search } from '#lib/auth/actor_search_queries.ts';
 import { query_create_role_grant } from '#lib/auth/role_grant_queries.ts';
 import { create_test_account_with_actor } from '#lib/testing/db_entities.ts';
+import { query_account_soft_delete, query_actor_soft_delete } from '#lib/auth/account_queries.ts';
 import type { Db } from '#lib/db/db.ts';
 
 import { describe_db } from '../db_fixture.ts';
@@ -298,6 +299,44 @@ describe_db('actor_search_queries', (get_db) => {
 				}
 			);
 			assert.deepStrictEqual(rows, []);
+		});
+	});
+
+	describe('tombstones', () => {
+		// a soft-deleted actor, or any actor of a soft-deleted account, is never
+		// a result — on the admin-global path and the scoped one
+		test('excludes soft-deleted actors and the actors of soft-deleted accounts', async () => {
+			const db = get_db();
+			const scope = create_uuid();
+			const seed = async (username: string) => {
+				const { account, actor } = await create_test_account_with_actor(db, { username });
+				await set_actor_name(db, actor.id, `tomb-${username}`);
+				await query_create_role_grant(
+					{ db },
+					{
+						actor_id: actor.id,
+						role: 'classroom_student',
+						scope_kind: 'classroom',
+						scope_id: scope,
+						granted_by: null
+					}
+				);
+				return { account, actor };
+			};
+			const live = await seed('live');
+			const actor_gone = await seed('actor_gone');
+			const account_gone = await seed('account_gone');
+			assert.ok(await query_actor_soft_delete({ db }, actor_gone.actor.id, null));
+			assert.ok(await query_account_soft_delete({ db }, account_gone.account.id, null));
+
+			for (const scope_ids of [[], [scope]]) {
+				const rows = await query_actor_search({ db }, { query: 'tomb-', scope_ids, limit: 10 });
+				assert.deepStrictEqual(
+					rows.map((r) => r.id),
+					[live.actor.id],
+					`scope_ids: ${scope_ids.length}`
+				);
+			}
 		});
 	});
 

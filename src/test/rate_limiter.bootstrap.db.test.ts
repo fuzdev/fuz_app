@@ -77,12 +77,14 @@ const bootstrap_factory = create_default_db_factory(async (db) => {
  * repeated WASM cold-start overhead. The schema is reset between calls.
  *
  * @param rate_limiter - Rate limiter to wire in (null to disable)
- * @param read_secure_file - Override for the token file read. Defaults to returning 'wrong_token'
+ * @param read_secure_file - Override for the token file read. Defaults to returning 'wrong_token_wrong_token_wrong_token'
  *   so bootstrap always fails with `invalid_token` (status 401) in most tests.
  */
 const create_bootstrap_app = async (
 	bootstrap_ip_rate_limiter: RateLimiter | null,
-	read_secure_file = vi.fn(() => Promise.resolve(new TextEncoder().encode('wrong_token'))),
+	read_secure_file = vi.fn(() =>
+		Promise.resolve(new TextEncoder().encode('wrong_token_wrong_token_wrong_token'))
+	),
 	extra?: {
 		on_bootstrap?: (result: any, c: any) => Promise<void>;
 		delete_file?: (path: string) => Promise<void>;
@@ -134,7 +136,7 @@ const bootstrap_request = (
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json', ...headers },
 		body: JSON.stringify({
-			token: 'test_token',
+			token: 'test_token_test_token_test_token_32',
 			username: 'admin',
 			password: 'secure_password_123'
 		})
@@ -152,7 +154,7 @@ afterEach(() => {
 });
 
 describe('bootstrap handler rate limiting', () => {
-	// Bootstrap failure: read_secure_file returns 'wrong_token', request sends 'test_token' → token mismatch → 401
+	// Bootstrap failure: read_secure_file returns 'wrong_token_wrong_token_wrong_token', request sends 'test_token_test_token_test_token_32' → token mismatch → 401
 	test('returns 429 when limit exhausted', async () => {
 		const limiter = create_test_limiter();
 		const { app } = await create_bootstrap_app(limiter);
@@ -250,9 +252,9 @@ describe('bootstrap handler rate limiting', () => {
 		// read_secure_file fails first 2 calls (wrong token), succeeds on 3rd (matching token)
 		const read_secure_file = vi
 			.fn()
-			.mockResolvedValueOnce(new TextEncoder().encode('wrong_token'))
-			.mockResolvedValueOnce(new TextEncoder().encode('wrong_token'))
-			.mockResolvedValue(new TextEncoder().encode('test_token'));
+			.mockResolvedValueOnce(new TextEncoder().encode('wrong_token_wrong_token_wrong_token'))
+			.mockResolvedValueOnce(new TextEncoder().encode('wrong_token_wrong_token_wrong_token'))
+			.mockResolvedValue(new TextEncoder().encode('test_token_test_token_test_token_32'));
 
 		const { app, bootstrap_status } = await create_bootstrap_app(limiter, read_secure_file);
 
@@ -387,7 +389,11 @@ describe('password max length validation', () => {
 		const res = await app.request('/bootstrap', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ token: 'test_token', username: 'admin', password: oversized_password })
+			body: JSON.stringify({
+				token: 'test_token_test_token_test_token_32',
+				username: 'admin',
+				password: oversized_password
+			})
 		});
 		assert.strictEqual(res.status, 400);
 	});
@@ -411,7 +417,11 @@ describe('username validation', () => {
 		const res = await app.request('/bootstrap', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ token: 'test_token', username: 'ab', password: 'secure_password_123' })
+			body: JSON.stringify({
+				token: 'test_token_test_token_test_token_32',
+				username: 'ab',
+				password: 'secure_password_123'
+			})
 		});
 		assert.strictEqual(res.status, 400);
 	});
@@ -422,7 +432,7 @@ describe('username validation', () => {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
-				token: 'test_token',
+				token: 'test_token_test_token_test_token_32',
 				username: '1admin',
 				password: 'secure_password_123'
 			})
@@ -436,7 +446,7 @@ describe('username validation', () => {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
-				token: 'test_token',
+				token: 'test_token_test_token_test_token_32',
 				username: 'admin@test',
 				password: 'secure_password_123'
 			})
@@ -447,7 +457,9 @@ describe('username validation', () => {
 
 describe('on_bootstrap callback error handling', () => {
 	test('on_bootstrap failure does not prevent success response', async () => {
-		const read_secure_file = vi.fn().mockResolvedValue(new TextEncoder().encode('test_token'));
+		const read_secure_file = vi
+			.fn()
+			.mockResolvedValue(new TextEncoder().encode('test_token_test_token_test_token_32'));
 		const on_bootstrap = vi.fn(async () => {
 			throw new Error('callback failed');
 		});
@@ -462,7 +474,9 @@ describe('on_bootstrap callback error handling', () => {
 
 describe('token file deletion failure', () => {
 	test('returns 500 when token file deletion fails', async () => {
-		const read_secure_file = vi.fn().mockResolvedValue(new TextEncoder().encode('test_token'));
+		const read_secure_file = vi
+			.fn()
+			.mockResolvedValue(new TextEncoder().encode('test_token_test_token_test_token_32'));
 		const delete_file = vi.fn().mockRejectedValue(new Error('EPERM'));
 
 		const { app } = await create_bootstrap_app(null, read_secure_file, { delete_file });

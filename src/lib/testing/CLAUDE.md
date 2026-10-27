@@ -1966,11 +1966,13 @@ the option type states whether the bundle is read.
 moderation_required}`, with `moderation` set per the verdict (`pending`+private
   vs `approved`+author-visibility); a **hidden** parent **404**-masks vs a
   **visible** one **403**s; plain parentless creates stay open. The moderate
-  suite then proves the `pending → approved | rejected` transition: an admin
-  (root manager) approves → public, the **author** self-approve → 403
-  (anti-self-approval), a non-viewer → 404, reject → stays private, and a cell
+  suite then proves the `pending → approved | rejected` transition and the
+  `approved → rejected` takedown: an admin (root manager) approves → public,
+  the **author** self-approve → 403 (anti-self-approval), a non-viewer → 404, reject → stays private, and a cell
   with no governing root → 400 `cell_not_a_contribution` for any viewer, the
-  404 mask first for a non-viewer. It also
+  404 mask first for a non-viewer; approval needs a pending post and rejection
+  a pending or approved one (the takedown), else 400 `cell_not_pending` — so a
+  root owner shown a private born-approved contribution can't publish it. It also
   pins the moderation read gate (a pending or rejected post reaches no
   non-steward reader past its author and admins on `cell_get`, `cell_list`,
   `cell_item_list`, and fact serving, even flipped public or granted while

@@ -5,8 +5,10 @@
  *
  * Covers success, non-admin denial, IDOR guard, admin-grant-path
  * denial with failure-outcome audit, 404 on missing role_grant, reason
- * persistence, and sibling-offer supersede in the same transaction as
- * the revoke.
+ * persistence, sibling-offer supersede in the same transaction as
+ * the revoke, the revokee's own outgoing offers superseded with it, and the
+ * keeper and last-admin guards on a global `admin` grant (counted without the
+ * grant being revoked, so a second admin actor on the account still counts).
  *
  * @module
  */
@@ -15,8 +17,13 @@ import { describe, test, assert } from 'vitest';
 
 import { create_test_app } from '#lib/testing/app_server.ts';
 import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
-import { role_grant_revoke_action_spec } from '#lib/auth/role_grant_offer_action_specs.ts';
+import {
+	ERROR_CANNOT_REVOKE_KEEPER_ADMIN,
+	ERROR_CANNOT_REVOKE_LAST_ADMIN,
+	role_grant_revoke_action_spec
+} from '#lib/auth/role_grant_offer_action_specs.ts';
 import { query_create_role_grant } from '#lib/auth/role_grant_queries.ts';
+import { query_create_actor } from '#lib/auth/account_queries.ts';
 import { query_role_grant_offer_create } from '#lib/auth/role_grant_offer_queries.ts';
 import {
 	ERROR_INSUFFICIENT_PERMISSIONS,
@@ -287,6 +294,240 @@ describe_db('role_grant_offer_actions.revoke', (get_db) => {
 				[offer.id]
 			);
 			assert.ok(offer_after[0]?.superseded_at);
+		});
+
+		test("supersedes the revokee's own pending offers, audited, and leaves others'", async () => {
+			const events: Array<AuditLogEvent> = [];
+			const test_app = await create_test_app({
+				session_options,
+				create_route_specs,
+				db: get_db(),
+				roles: [ROLE_ADMIN],
+				audit_factory: (params) =>
+					create_audit_emitter({
+						...params,
+						on_audit_event: (event) => {
+							events.push(event);
+						}
+					})
+			});
+			const db = get_db();
+			const grantor = await test_app.create_account({
+				username: 'revoke_outgoing_grantor',
+				roles: [ROLE_ADMIN]
+			});
+			const recipient_a = await test_app.create_account({ username: 'revoke_outgoing_a' });
+			const recipient_b = await test_app.create_account({ username: 'revoke_outgoing_b' });
+			const grant = await db.query_one<{ id: Uuid }>(
+				`SELECT id FROM role_grant WHERE actor_id = $1 AND role = $2 AND revoked_at IS NULL`,
+				[grantor.actor.id, ROLE_ADMIN]
+			);
+			assert.ok(grant);
+			const offer = (from: Uuid, to: Uuid) =>
+				query_role_grant_offer_create(
+					{ db },
+					{
+						from_actor_id: from,
+						to_account_id: to,
+						role: ROLE_ADMIN,
+						expires_at: new Date(Date.now() + 60 * 60 * 1000)
+					}
+				);
+			const outgoing = [
+				await offer(grantor.actor.id, recipient_a.account.id),
+				await offer(grantor.actor.id, recipient_b.account.id)
+			];
+			const control = await offer(test_app.backend.actor.id, recipient_a.account.id);
+
+			const res = await rpc_call_for_spec({
+				app: test_app.app,
+				path: RPC_PATH,
+				spec: role_grant_revoke_action_spec,
+				params: { actor_id: grantor.actor.id, role_grant_id: grant.id },
+				headers: test_app.create_session_headers()
+			});
+			assert.ok(res.ok, JSON.stringify(res));
+
+			const superseded_at = async (id: Uuid) =>
+				(
+					await db.query_one<{ superseded_at: string | null }>(
+						`SELECT superseded_at FROM role_grant_offer WHERE id = $1`,
+						[id]
+					)
+				)?.superseded_at ?? null;
+			for (const o of outgoing) {
+				assert.ok(await superseded_at(o.id), 'the revokee offer is superseded');
+				const row = events.find(
+					(e) =>
+						e.event_type === 'role_grant_offer_supersede' &&
+						(e.metadata as { offer_id?: string }).offer_id === o.id
+				);
+				assert.ok(row, 'supersede audited');
+				assert.include(row.metadata, { reason: 'role_grant_revoked', cause_id: grant.id });
+			}
+			assert.strictEqual(await superseded_at(control.id), null, "another grantor's offer stays");
+		});
+
+		describe('the global admin grant', () => {
+			const revoke = (
+				test_app: Awaited<ReturnType<typeof create_test_app>>,
+				actor_id: Uuid,
+				role_grant_id: Uuid,
+				headers: Record<string, string>,
+				acting?: Uuid
+			) =>
+				rpc_call_for_spec({
+					app: test_app.app,
+					path: RPC_PATH,
+					spec: role_grant_revoke_action_spec,
+					params: { actor_id, role_grant_id, acting },
+					headers
+				});
+			const admin_grant_of = async (actor_id: Uuid): Promise<Uuid> => {
+				const row = await get_db().query_one<{ id: Uuid }>(
+					`SELECT id FROM role_grant
+					 WHERE actor_id = $1 AND role = $2 AND scope_id IS NULL AND revoked_at IS NULL`,
+					[actor_id, ROLE_ADMIN]
+				);
+				assert.ok(row, 'an active admin grant');
+				return row.id;
+			};
+			const is_active = async (id: Uuid) =>
+				(
+					await get_db().query_one<{ active: boolean }>(
+						`SELECT revoked_at IS NULL AS active FROM role_grant WHERE id = $1`,
+						[id]
+					)
+				)?.active;
+
+			test("the keeper account's admin grant is never revoked", async () => {
+				const test_app = await create_test_app({
+					session_options,
+					create_route_specs,
+					db: get_db(),
+					roles: [ROLE_KEEPER, ROLE_ADMIN]
+				});
+				// another admin exists, so only the keeper guard can refuse
+				const other = await test_app.create_account({
+					username: 'keeper_guard_other_admin',
+					roles: [ROLE_ADMIN]
+				});
+				const keeper_admin = await admin_grant_of(test_app.backend.actor.id);
+				for (const headers of [test_app.create_session_headers(), other.create_session_headers()]) {
+					const res = await revoke(test_app, test_app.backend.actor.id, keeper_admin, headers);
+					assert.ok(!res.ok);
+					assert.strictEqual(res.status, 403);
+					assert.deepStrictEqual(res.error.data, { reason: ERROR_CANNOT_REVOKE_KEEPER_ADMIN });
+				}
+				assert.isTrue(await is_active(keeper_admin));
+			});
+
+			test("the last active admin's admin grant is not revoked; a second admin lifts the guard", async () => {
+				const test_app = await create_test_app({
+					session_options,
+					create_route_specs,
+					db: get_db(),
+					roles: [ROLE_ADMIN]
+				});
+				// the keeper drops out of the count (its grant revoked out of band),
+				// leaving one active admin, who tries to revoke their own grant
+				const keeper_admin = await admin_grant_of(test_app.backend.actor.id);
+				await get_db().query(`UPDATE role_grant SET revoked_at = NOW() WHERE id = $1`, [
+					keeper_admin
+				]);
+				const sole = await test_app.create_account({
+					username: 'last_admin_sole',
+					roles: [ROLE_ADMIN]
+				});
+				const sole_admin = await admin_grant_of(sole.actor.id);
+				const refused = await revoke(
+					test_app,
+					sole.actor.id,
+					sole_admin,
+					sole.create_session_headers()
+				);
+				assert.ok(!refused.ok);
+				assert.strictEqual(refused.status, 403);
+				assert.deepStrictEqual(refused.error.data, { reason: ERROR_CANNOT_REVOKE_LAST_ADMIN });
+				assert.isTrue(await is_active(sole_admin));
+
+				await test_app.create_account({ username: 'last_admin_second', roles: [ROLE_ADMIN] });
+				const allowed = await revoke(
+					test_app,
+					sole.actor.id,
+					sole_admin,
+					sole.create_session_headers()
+				);
+				assert.ok(allowed.ok, JSON.stringify(allowed));
+				assert.isFalse(await is_active(sole_admin));
+			});
+
+			// the sole admin account with its admin grant on two actors
+			const create_sole_admin_with_two_actors = async () => {
+				const test_app = await create_test_app({
+					session_options,
+					create_route_specs,
+					db: get_db(),
+					roles: [ROLE_ADMIN]
+				});
+				const keeper_admin = await admin_grant_of(test_app.backend.actor.id);
+				await get_db().query(`UPDATE role_grant SET revoked_at = NOW() WHERE id = $1`, [
+					keeper_admin
+				]);
+				const sole = await test_app.create_account({
+					username: 'two_actor_admin',
+					roles: [ROLE_ADMIN]
+				});
+				const second = await query_create_actor(
+					{ db: get_db() },
+					sole.account.id,
+					'second_persona'
+				);
+				await query_create_role_grant(
+					{ db: get_db() },
+					{ actor_id: second.id, role: ROLE_ADMIN, granted_by: sole.actor.id }
+				);
+				return {
+					test_app,
+					sole,
+					first_admin: await admin_grant_of(sole.actor.id),
+					second_id: second.id,
+					second_admin: await admin_grant_of(second.id)
+				};
+			};
+
+			test('a second admin actor on the sole admin account keeps it counted', async () => {
+				const { test_app, sole, first_admin, second_id, second_admin } =
+					await create_sole_admin_with_two_actors();
+				const headers = sole.create_session_headers();
+
+				const allowed = await revoke(test_app, second_id, second_admin, headers, sole.actor.id);
+				assert.ok(allowed.ok, JSON.stringify(allowed));
+				assert.isFalse(await is_active(second_admin));
+
+				const refused = await revoke(test_app, sole.actor.id, first_admin, headers, sole.actor.id);
+				assert.ok(!refused.ok);
+				assert.strictEqual(refused.status, 403);
+				assert.deepStrictEqual(refused.error.data, { reason: ERROR_CANNOT_REVOKE_LAST_ADMIN });
+				assert.isTrue(await is_active(first_admin));
+			});
+
+			test("a tombstoned actor's admin grant is revocable while an active admin remains", async () => {
+				const { test_app, sole, first_admin, second_id, second_admin } =
+					await create_sole_admin_with_two_actors();
+				await get_db().query(`UPDATE actor SET deleted_at = NOW() WHERE id = $1`, [second_id]);
+
+				const allowed = await revoke(
+					test_app,
+					second_id,
+					second_admin,
+					sole.create_session_headers(),
+					sole.actor.id
+				);
+				assert.ok(allowed.ok, JSON.stringify(allowed));
+				assert.isFalse(await is_active(second_admin));
+				assert.isTrue(await is_active(first_admin));
+			});
 		});
 	});
 });

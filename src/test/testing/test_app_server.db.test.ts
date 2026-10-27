@@ -136,7 +136,7 @@ test('create_test_app_for_bootstrap exposes the assembled server', async () => {
 		db,
 		create_route_specs: () => [],
 		bootstrap: { mode: 'live', token_path: '/nonexistent/bootstrap_token' },
-		bootstrap_token: 'bootstrap-token'
+		bootstrap_token: 'bootstrap-token-bootstrap-token-0123'
 	});
 	try {
 		assert.strictEqual(test_app.server.app, test_app.app);

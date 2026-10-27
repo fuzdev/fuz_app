@@ -1004,7 +1004,7 @@ rationale. It accepts any
 `ConnectionCloser`, so one guard over `backend.deps.connection_closer` covers
 every transport.
 
-A socket is admitted only after its credential is re-read once the handshake completes: frames sent meanwhile wait and dispatch in order, a credential revoked mid-upgrade closes with `WS_CLOSE_SESSION_REVOKED`, a role in `required_roles` revoked mid-upgrade with `WS_CLOSE_PERMISSION_REVOKED`, and nothing the server pushes reaches the socket until then (./security.md §Connection Admission). On the client, `FrontendWebsocketClient` stays closed after a `WS_CLOSE_PERMISSION_REVOKED` close until `connect()` is called — a reconnect would be refused at the role gate — without setting `revoked` or `superseded`, and rejects its pending and queued requests with `forbidden`; `last_close_code` says why.
+A socket is admitted only after its credential is re-read once the handshake completes: frames sent meanwhile wait and dispatch in order, a credential revoked or an acting actor soft-deleted mid-upgrade closes with `WS_CLOSE_SESSION_REVOKED`, a role in `required_roles` revoked mid-upgrade with `WS_CLOSE_PERMISSION_REVOKED`, and nothing the server pushes reaches the socket until then (./security.md §Connection Admission). On the client, `FrontendWebsocketClient` stays closed after a `WS_CLOSE_PERMISSION_REVOKED` close until `connect()` is called — a reconnect would be refused at the role gate — without setting `revoked` or `superseded`, and rejects its pending and queued requests with `forbidden`; `last_close_code` says why.
 
 An account holds at most `DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT` (50) connections on a transport. One more is always admitted, and the account's oldest is closed with `WS_CLOSE_CONNECTION_LIMIT` to make room. Pass `max_connections_per_account` to change the cap (`null` disables it) — on `register_ws_endpoint` / `WsEndpointSpec` for the transport the mount creates, or on your own `new BackendWebsocketTransport({max_connections_per_account})`; passing both the option and a `transport` throws. On the client, `FrontendWebsocketClient` treats that close as closed-until-the-user-acts: it doesn't reconnect (that would close a newer socket in turn), it isn't `revoked`, and `superseded` turns `true` until the next `connect()`:
 
@@ -1587,7 +1587,11 @@ CellCreateVerdict | Promise<CellCreateVerdict>`, where a verdict is
   scoped enforcement; `null` in v1.) The companion `cell_moderate` verb
   transitions a `pending` contribution (`approved | rejected`), gated on
   `can_manage` of the governing root — not the contribution, so the author can't
-  self-approve. The root's manager reads what they moderate through the
+  self-approve. Approval needs a pending contribution; rejection a pending or
+  approved one (a moderator takes an approved contribution down — it keeps its
+  visibility, hidden by the marker). Any other transition (approving a decided
+  or never-moderated contribution, rejecting a rejected or never-moderated one)
+  answers 400 `cell_not_pending`. The root's manager reads what they moderate through the
   steward arm (below), so a non-admin root owner reaches the queue and the
   verb.
 

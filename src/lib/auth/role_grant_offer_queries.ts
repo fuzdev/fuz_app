@@ -822,3 +822,44 @@ export const query_accept_offer = async (
 		audit_events: [offer_accept_event, role_grant_create_event, ...supersede_events]
 	};
 };
+
+/**
+ * Supersede every pending offer **made by** one of `from_actor_ids` — the
+ * grantor-side cascade.
+ *
+ * An offer carries no record of the authority it was made under, so one
+ * outliving that authority would still confer its role on accept. Revoking a
+ * grant (`role_grant_revoke`, the revokee's actor) and removing an account
+ * (`account_delete` / `account_purge`, every actor of the account) end the
+ * grantor's outgoing pending offers in the same transaction. Each row carries
+ * the grantor's `from_account_id`, as every supersede cascade's does; the
+ * caller emits a `role_grant_offer_supersede` audit event per entry, and the
+ * revoke caller also sends the supersede notification. Twin of the Rust
+ * `query_role_grant_offer_supersede_outgoing`.
+ *
+ * @param deps - query dependencies
+ * @param from_actor_ids - the grantors whose pending offers end
+ * @returns the superseded offers, each with its grantor's account
+ * @mutates `role_grant_offer` rows - stamps `superseded_at` on every pending offer from `from_actor_ids`
+ */
+export const query_role_grant_offer_supersede_outgoing = async (
+	deps: QueryDeps,
+	from_actor_ids: ReadonlyArray<Uuid>
+): Promise<Array<SupersededOffer>> => {
+	if (from_actor_ids.length === 0) return [];
+	return deps.db.query<SupersededOffer>(
+		`WITH updated AS (
+			UPDATE role_grant_offer
+			SET superseded_at = NOW()
+			WHERE from_actor_id = ANY($1)
+			  AND accepted_at IS NULL
+			  AND declined_at IS NULL
+			  AND retracted_at IS NULL
+			  AND superseded_at IS NULL
+			-- raw columns; the outer grantor select formats them
+			RETURNING ${columns_sql(ROLE_GRANT_OFFER_COLUMNS)}
+		)
+		${ROLE_GRANT_OFFER_WITH_GRANTOR_SELECT}`,
+		[from_actor_ids]
+	);
+};

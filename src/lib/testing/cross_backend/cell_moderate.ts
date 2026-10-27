@@ -39,7 +39,8 @@ import {
 
 /**
  * Cross-backend parity for the **`cell_moderate` verb** (the `pending →
- * approved | rejected` transition) — root-authority-gated.
+ * approved | rejected` decision and the `approved → rejected` takedown) —
+ * root-authority-gated.
  *
  * Builds a moderated public space (admin) + a `participant`'s `post` (born
  * `pending` + private under the `moderation_required: true` policy), then
@@ -57,6 +58,11 @@ import {
  * - **a cell with no governing root** → `400 cell_not_a_contribution` for any
  *   viewer (owner, admin), the cell left unmoderated; a non-viewer gets the
  *   `cell_not_found` mask first.
+ * - **approval needs a pending contribution, rejection a pending or approved
+ *   one** → else `400 cell_not_pending`, the cell left as it was: a root owner
+ *   a private, born-approved contribution was shared with can't publish it by
+ *   "approving" it; an approved post is not approved again but can be taken
+ *   down (rejected, visibility untouched); a rejected post is final.
  *
  * And that moderation gates reads — a cell's effective audience is its
  * visibility or grants **and** its moderation admission (unmoderated or
@@ -422,6 +428,160 @@ export const describe_cell_moderate_cross_tests = (
 				);
 				assert.strictEqual(got.cell.moderation, null);
 				assert.strictEqual(got.cell.visibility, 'private');
+			}
+		);
+
+		test_if(
+			capabilities.cell_gated_create,
+			'a root owner shown a private approved contribution cannot publish it → 400 cell_not_pending',
+			async () => {
+				// the contribution is approved at birth (`comment` is unmoderated
+				// under the policy), so it was never pending; its author shares it
+				// with the root owner, who "approves" it
+				const fixture = await setup_test();
+				const root_owner = await fixture.create_account({ username: 'not_pending_root_owner' });
+				const root = expect_output(
+					await cross_rpc_call(
+						fixture.transport,
+						rpc_path,
+						'cell_create',
+						{ kind: 'forum', data: TEST_SPACE_POLICY, visibility: 'public' },
+						root_owner.create_session_headers()
+					),
+					CellCreateOutput
+				);
+				const author = await fixture.create_account({
+					username: 'not_pending_author',
+					roles: [PARTICIPATION_ROLE]
+				});
+				const author_h = author.create_session_headers();
+				const comment = expect_output(
+					await cross_rpc_call(
+						fixture.transport,
+						rpc_path,
+						'cell_create',
+						{ kind: 'comment', data: {}, parent_id: root.cell.id, visibility: 'private' },
+						author_h
+					),
+					CellCreateOutput
+				);
+				assert.strictEqual(comment.cell.moderation, 'approved', 'born approved');
+				expect_output(
+					await cross_rpc_call(
+						fixture.transport,
+						rpc_path,
+						'cell_grant_create',
+						{
+							cell_id: comment.cell.id,
+							level: 'viewer',
+							principal: { kind: 'actor', actor_id: root_owner.actor.id }
+						},
+						author_h
+					),
+					CellGrantCreateOutput
+				);
+				const refused = await cross_rpc_call(
+					fixture.transport,
+					rpc_path,
+					'cell_moderate',
+					{ cell_id: comment.cell.id, moderation: 'approved' },
+					root_owner.create_session_headers()
+				);
+				assert.ok(!refused.ok, 'an approved contribution is not approved again');
+				assert.strictEqual(refused.error?.code, JSONRPC_ERROR_CODES.invalid_params);
+				assert.strictEqual(error_reason(refused), 'cell_not_pending');
+				const after = expect_output(
+					await cross_rpc_call(
+						fixture.transport,
+						rpc_path,
+						'cell_get',
+						{ id: comment.cell.id },
+						author_h
+					),
+					CellGetOutput
+				).cell;
+				assert.strictEqual(after.visibility, 'private', 'the refusal publishes nothing');
+				assert.strictEqual(after.moderation, 'approved');
+				assert.strictEqual(
+					await outcome(fixture, 'cell_get', { id: comment.cell.id }, null),
+					'cell_not_found',
+					'still hidden from anon'
+				);
+			}
+		);
+
+		test_if(
+			capabilities.cell_gated_create,
+			'approval needs a pending post, rejection a pending or approved one → else 400 cell_not_pending',
+			async () => {
+				const try_moderate = async (
+					fixture: Fixture,
+					cell_id: string,
+					moderation: 'approved' | 'rejected'
+				) =>
+					outcome(
+						fixture,
+						'cell_moderate',
+						{ cell_id, moderation },
+						fixture.create_session_headers()
+					);
+				const state = async (fixture: Fixture, id: string) => {
+					const { cell } = expect_output(
+						await cross_rpc_call(
+							fixture.transport,
+							rpc_path,
+							'cell_get',
+							{ id },
+							fixture.create_session_headers()
+						),
+						CellGetOutput
+					);
+					return [cell.moderation, cell.visibility];
+				};
+
+				// approved: approving again is refused; the takedown is not
+				{
+					const { fixture, post } = await setup_pending_post();
+					await moderate(fixture, post.cell.id, 'approved');
+					assert.strictEqual(
+						await try_moderate(fixture, post.cell.id, 'approved'),
+						'cell_not_pending',
+						'approved, approve'
+					);
+					assert.deepStrictEqual(await state(fixture, post.cell.id), ['approved', 'public']);
+					assert.strictEqual(
+						await try_moderate(fixture, post.cell.id, 'rejected'),
+						'ok',
+						'approved, reject'
+					);
+					// rejected is terminal
+					for (const again of ['approved', 'rejected'] as const) {
+						assert.strictEqual(
+							await try_moderate(fixture, post.cell.id, again),
+							'cell_not_pending',
+							`taken down, ${again}`
+						);
+					}
+					assert.deepStrictEqual(await state(fixture, post.cell.id), ['rejected', 'public']);
+				}
+
+				// rejected from pending: neither decision moves it
+				{
+					const { fixture, post } = await setup_pending_post();
+					await moderate(fixture, post.cell.id, 'rejected');
+					for (const again of ['approved', 'rejected'] as const) {
+						assert.strictEqual(
+							await try_moderate(fixture, post.cell.id, again),
+							'cell_not_pending',
+							`rejected, ${again}`
+						);
+					}
+					assert.deepStrictEqual(await state(fixture, post.cell.id), ['rejected', 'private']);
+					assert.strictEqual(
+						await outcome(fixture, 'cell_get', { id: post.cell.id }, null),
+						'cell_not_found'
+					);
+				}
 			}
 		);
 	});
