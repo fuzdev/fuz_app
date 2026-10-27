@@ -9,6 +9,7 @@
 import { describe, test, assert } from 'vitest';
 import type { Uuid } from '#lib/primitive_schemas.ts';
 
+import type { CellCreateAuthorizeInput } from '#lib/auth/cell_actions.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { create_test_context } from '#lib/testing/entities.ts';
 import { test_cell_gated_create_authorize } from '#lib/testing/cross_backend/test_cell_gated_create_authorize.ts';
@@ -21,13 +22,13 @@ const scoped_admin = () =>
 	create_test_context([{ role: ROLE_ADMIN, scope_kind: 'space', scope_id: CELL_ID }]);
 
 describe('test_cell_gated_create_authorize reads the global grant', () => {
-	const space_root = {
+	const space_root: CellCreateAuthorizeInput = {
 		kind: 'space',
 		data: {},
 		parent_id: null,
+		parent_kind: null,
 		root_id: null,
-		root_policy: null,
-		scope_id: null
+		root_policy: null
 	};
 
 	test('a scoped admin may not create a space root', async () => {
@@ -60,13 +61,13 @@ describe('test_cell_gated_create_authorize reads the global grant', () => {
 	});
 
 	test('a min_role is satisfied only by the global grant', async () => {
-		const contribution = {
+		const contribution: CellCreateAuthorizeInput = {
 			kind: 'post',
 			data: {},
 			parent_id: CELL_ID,
+			parent_kind: 'space',
 			root_id: CELL_ID,
-			root_policy: { post: { min_role: 'participant' } },
-			scope_id: null
+			root_policy: { post: { min_role: 'participant' } }
 		};
 		const scoped = create_test_context([
 			{ role: 'participant', scope_kind: 'space', scope_id: CELL_ID }

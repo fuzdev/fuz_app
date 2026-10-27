@@ -186,6 +186,8 @@ export interface CellCreateAuthorizeInput {
 	data: CellData;
 	/** The immediate container the create targets. `null` = a root creation; otherwise a contribution under that parent. */
 	parent_id: Uuid | null;
+	/** The immediate container's `kind` column, read by the handler with the parent — so an authorizer checks the parent → child edge (which kinds may sit under which) without a read of its own. `null` for a root creation and for a typeless parent. */
+	parent_kind: string | null;
 	/** The governing root of the directory subtree, resolved by the handler from the parent (`parent.root_id ?? parent.id`). `null` for a root creation. */
 	root_id: Uuid | null;
 	/** The governing root's contribution `policy` column — the handler reads the root in-tx and hands its policy over, so a directory-aware authorizer resolves `root_policy[kind]` **without a DB read of its own**. `null` for a root creation and for a root carrying no policy (the authorizer's floor governs); a missing or soft-deleted root answers `cell_not_found` before the authorizer runs. Never the root's `data`: an editor grant can rewrite `data`, so a policy read from it would be the editor's to loosen. */
@@ -241,11 +243,16 @@ export interface CellCreateAuthorize {
  * Dependencies for `create_cell_actions`.
  *
  * `validate_data` is the optional sub-API hook for per-kind shape
- * validation (e.g., a collection/entry registry). It runs on every
- * incoming `data` payload (create, update, clone-merged) and may throw
- * a `ZodError` — the handler converts that into the standard
- * `invalid_params` JSON-RPC error so per-kind validation failures
- * surface to clients with code -32602 (not -32603 / internal). When
+ * validation (e.g., a collection/entry registry), the TS twin of the Rust
+ * `CellDataValidator`. It is called as `(kind, data)` — `kind` is the cell's
+ * top-level `kind` column, so it dispatches on it: the input's on create, the
+ * existing cell's on an update carrying `data` (`kind` is write-once), the
+ * source's for every row a clone writes (on the merged data). It accepts or
+ * throws, never rewrites: the handler stores the caller's `data` as sent, and
+ * it must not mutate it. A thrown `ZodError` becomes the standard
+ * `invalid_params` JSON-RPC error so per-kind validation failures surface to
+ * clients with code -32602 (not -32603 / internal); throw a `JsonrpcError`
+ * (`jsonrpc_errors.invalid_params` with a reason) to choose the reason. When
  * omitted, payloads pass through as-is.
  *
  * `authorize_create` is the optional creation-gate hook (see
@@ -253,7 +260,7 @@ export interface CellCreateAuthorize {
  * root policy write is refused.
  */
 export type CellActionDeps = ActionFactoryDeps & {
-	validate_data?: (data: CellData) => CellData;
+	validate_data?: (kind: string | null, data: Readonly<CellData>) => void;
 	authorize_create?: CellCreateAuthorize;
 };
 
@@ -384,10 +391,10 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 	 * -32603 / internal). The dispatcher only auto-converts ZodError for
 	 * wire-level input schemas; sub-API validation runs inside the handler.
 	 */
-	const validate_data_or_throw = (data: CellData): CellData => {
-		if (validate_data === undefined) return data;
+	const validate_data_or_throw = (kind: string | null, data: CellData): void => {
+		if (validate_data === undefined) return;
 		try {
-			return validate_data(data);
+			validate_data(kind, data);
 		} catch (err) {
 			if (err instanceof z.ZodError) {
 				throw jsonrpc_errors.invalid_params(
@@ -449,8 +456,8 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		}
 		// Per-kind shape validation (sub-API). Unknown kinds pass through;
 		// known kinds with malformed payloads surface as invalid_params.
-		const validated_data = validate_data_or_throw(input.data);
 		const kind = input.kind ?? null;
+		validate_data_or_throw(kind, input.data);
 		const parent_id = input.parent_id ?? null;
 		const policy = input.policy ?? null;
 		// A contribution policy is a root's alone, and the mounted authorizer —
@@ -476,8 +483,10 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		// id it can't read.
 		let root_id: Uuid | null = null;
 		let root_policy: CellPolicy | null = null;
+		let parent_kind: string | null = null;
 		if (parent_id !== null) {
 			const parent = await require_viewable_cell(ctx, auth, parent_id);
+			parent_kind = parent.kind;
 			root_id = parent.root_id ?? parent.id;
 			if (root_id === parent.id) {
 				root_policy = parent.policy;
@@ -491,11 +500,8 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		// and after the parent-resolve (a hidden parent already 404-masked).
 		// `{allow: false}` for a *viewable* parent / a root creation is a 403
 		// `forbidden` (not the 404 mask); an `{allow: true}` verdict folds the
-		// moderation outcome. Receives the **raw** `input.data` (not the
-		// `validate_data`-normalized value) to match the Rust twin, so a consumer
-		// with a transforming validator can't diverge TS↔Rust. Without an
-		// authorizer, create is open: `moderation` stays null and the author's
-		// visibility holds.
+		// moderation outcome. Without an authorizer, create is open: `moderation`
+		// stays null and the author's visibility holds.
 		let moderation: string | null = null;
 		let visibility = input.visibility;
 		if (authorize_create) {
@@ -505,6 +511,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 					kind,
 					data: input.data,
 					parent_id,
+					parent_kind,
 					root_id,
 					root_policy
 				},
@@ -531,10 +538,8 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 			}
 		}
 		// Possession-gated ref admission, the last gate before the write — every
-		// ref is new on a create. On the validated data — what the row stores and
-		// what `derive_cell_refs` writes into `cell.refs` — not the raw input
-		// `authorize_create` sees.
-		await require_new_refs_held(ctx, auth, null, validated_data as unknown as Json);
+		// ref is new on a create.
+		await require_new_refs_held(ctx, auth, null, input.data as unknown as Json);
 		let row: CellRow;
 		try {
 			row = await query_cell_create(ctx, {
@@ -543,7 +548,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 				// type carries `T | undefined` from `.optional()` which doesn't
 				// extend `Json`. The DB column is JSONB; the cast trusts the
 				// schema-validated runtime shape.
-				data: validated_data as unknown as Json,
+				data: input.data as unknown as Json,
 				kind,
 				visibility,
 				path: input.path ?? null,
@@ -657,26 +662,26 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 				reason: ERROR_CELL_VISIBILITY_MANAGE_ONLY
 			});
 		}
-		// Per-kind shape validation when `data` is supplied. Patch-only —
-		// we don't validate the existing row's data on update (validation
-		// is for incoming patches). `data` writes fully replace, so the
-		// patch IS the post-update state. A stray `kind` inside it is rejected
-		// (kind is the write-once top-level column — `cell_update` cannot
-		// change it, structurally: it is not even a field on `CellUpdateInput`).
-		if (input.data !== undefined) reject_kind_in_data(input.data);
-		const validated_data =
-			input.data !== undefined ? validate_data_or_throw(input.data) : undefined;
-		// Possession-gated ref admission against the cell's current refs: refs
-		// the cell already carries stay, whoever introduced them. A write with no
-		// `data` writes no refs and reads no holders.
-		if (validated_data !== undefined) {
-			await require_new_refs_held(ctx, auth, existing.refs, validated_data as unknown as Json);
+		// Per-kind shape validation when `data` is supplied, against the
+		// existing cell's `kind`. Patch-only — we don't validate the existing
+		// row's data on update (validation is for incoming patches). `data`
+		// writes fully replace, so the patch IS the post-update state. A stray
+		// `kind` inside it is rejected (kind is the write-once top-level column —
+		// `cell_update` cannot change it, structurally: it is not even a field on
+		// `CellUpdateInput`).
+		if (input.data !== undefined) {
+			reject_kind_in_data(input.data);
+			validate_data_or_throw(existing.kind, input.data);
+			// Possession-gated ref admission against the cell's current refs: refs
+			// the cell already carries stay, whoever introduced them. A write with
+			// no `data` writes no refs and reads no holders.
+			await require_new_refs_held(ctx, auth, existing.refs, input.data as unknown as Json);
 		}
 		let updated: CellRow | null;
 		try {
 			updated = await query_cell_update(ctx, input.cell_id, {
 				// Boundary cast (see `create_handler`).
-				data: validated_data as unknown as Json | undefined,
+				data: input.data as unknown as Json | undefined,
 				visibility: input.visibility,
 				path: path_provided ? (input.path ?? null) : undefined,
 				updated_by: auth.actor.id
@@ -839,14 +844,14 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		// objects). Patch-last shallow merge composes cleanly.
 		const merged_data: CellData =
 			options.patch_data !== undefined ? { ...source.data, ...options.patch_data } : source.data;
-		// Per-kind shape validation runs on the merged result (sub-API).
-		// Source rows are validated on their original create; the patch
-		// could violate the kind shape (e.g., remove a required field).
-		const validated_data = validate_data_or_throw(merged_data);
+		// Per-kind shape validation runs on the merged result (sub-API), under
+		// the source's kind (the clone inherits it). Source rows are validated
+		// on their original create; the patch could violate the kind shape
+		// (e.g., remove a required field).
+		validate_data_or_throw(source.kind, merged_data);
 		// Creation-capability gate, after the shape check (the `cell_create`
-		// order). The clone is parentless, so no `root_id` / `root_policy`; the
-		// authorizer sees the merged (pre-normalization) data, as `cell_create`
-		// hands it the raw input.
+		// order). The clone is parentless, so no `parent_kind` / `root_id` /
+		// `root_policy`.
 		if (authorize_create) {
 			const verdict = await authorize_create.authorize(
 				auth,
@@ -854,6 +859,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 					kind: source.kind,
 					data: merged_data,
 					parent_id: null,
+					parent_kind: null,
 					root_id: null,
 					root_policy: null
 				},
@@ -867,13 +873,11 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		}
 		// Possession-gated ref admission against the source row's refs: a clone
 		// carries what the source already serves to this viewer; a patch adding a
-		// ref needs the caller to hold it. On the validated data — what the row
-		// stores and what `derive_cell_refs` writes into `cell.refs` — not the
-		// merged data `authorize_create` sees.
-		await require_new_refs_held(ctx, auth, source.refs, validated_data as unknown as Json);
+		// ref needs the caller to hold it.
+		await require_new_refs_held(ctx, auth, source.refs, merged_data as unknown as Json);
 		return query_cell_create(ctx, {
 			// Boundary cast (see `create_handler`).
-			data: validated_data as unknown as Json,
+			data: merged_data as unknown as Json,
 			// Clone inherits the source's kind verbatim — kind is fixed at
 			// birth and a `with_data_patch` can't reach the column.
 			kind: source.kind,

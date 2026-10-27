@@ -241,7 +241,8 @@ invariants.
 The cell content primitive's wire schemas, RPC handlers, and authz live
 here; the schema + queries live in `db/` (see `db/CLAUDE.md` §Cell layer).
 Generic-only — no app vocabulary on the wire; per-kind shape is the
-consumer's `validate_data` pass-through callback on `CellActionDeps`.
+consumer's `validate_data(kind, data)` callback on `CellActionDeps`, which
+accepts or throws and never rewrites (the handler stores the caller's `data`).
 
 - `auth/cell_data_schema.ts` — `CellData` base (`z.looseObject` with
   optional `label` / `summary`); per-kind sub-API extends it. **`kind` is
@@ -317,8 +318,8 @@ auth, ids)`: two queries for the whole id-set, the cells read through the
   create — a denial is the same 403 `cell_create_forbidden`, so clone is no
   side door past the creation policy. The optional
   parent-aware `authorize_create` dep (`CellCreateAuthorize` — an object whose
-  `authorize` takes a wider input `{kind, data, parent_id, root_id,
-root_policy}` than `validate_data` and returns a `CellCreateVerdict`
+  `authorize` takes a wider input `{kind, data, parent_id, parent_kind,
+root_id, root_policy}` than `validate_data` and returns a `CellCreateVerdict`
   `{allow:false} | {allow:true, moderation_required}`, and whose optional
   `validate_policy` accepts or refuses a root policy write)
   gates create by capability; it runs after the validator + the parent-resolve

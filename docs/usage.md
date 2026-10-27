@@ -1566,13 +1566,15 @@ string. Content stays duck-typed in `data`.
 
 `create_cell_actions` takes two optional hooks on its deps:
 
-- `validate_data` — a per-kind **shape** hook; runs on every incoming `data`
-  payload (create, update, clone-merge) and may throw a `ZodError`, which
-  surfaces as `invalid_params` (`-32602`). Omit to pass payloads through
-  unchecked.
+- `validate_data(kind, data)` — a per-kind **shape** hook; runs on every
+  incoming `data` payload with the cell's `kind` — the input's on create, the
+  existing cell's on update (`kind` is write-once), the source's on each cloned
+  row (on the merged data). It accepts or throws, never rewrites: the handler
+  stores the caller's `data` as sent. A thrown `ZodError` surfaces as
+  `invalid_params` (`-32602`). Omit to pass payloads through unchecked.
 - `authorize_create` — a **parent-aware capability gate** (`CellCreateAuthorize`),
-  an object of two members. `authorize(auth, {kind, data, parent_id, root_id,
-root_policy}, ctx) => CellCreateVerdict | Promise<CellCreateVerdict>`,
+  an object of two members. `authorize(auth, {kind, data, parent_id, parent_kind,
+root_id, root_policy}, ctx) => CellCreateVerdict | Promise<CellCreateVerdict>`,
   where a verdict is `{allow: false}` or `{allow: true, moderation_required}`,
   runs in `cell_create`
   after `validate_data` and after the handler resolves the directory tree
@@ -1584,8 +1586,9 @@ root_policy}, ctx) => CellCreateVerdict | Promise<CellCreateVerdict>`,
   reserved for the hidden-parent case). An `{allow: true}` folds the moderation
   outcome — `moderation_required: true` → born `pending` + private; `false` →
   born `approved` at the author's visibility. A directory policy reads the
-  governing root's policy off the handler-supplied `root_policy`, no DB read
-  needed; one needing more reads through `ctx.db`, the request transaction —
+  governing root's policy off the handler-supplied `root_policy`, and checks
+  the parent → child edge against `parent_kind` (the parent's `kind`, `null`
+  for a root or a typeless parent), no DB read needed; one needing more reads through `ctx.db`, the request transaction —
   read-only, which nothing enforces. `validate_policy(policy)` accepts or refuses a root
   policy before it is written (below); omitted, every policy is refused. Omit
   the whole gate for open create. The companion `cell_moderate` verb
