@@ -116,11 +116,12 @@ active keeper role_grant.
 
 **Cookies are the only path to credential-minting / lockout / privilege-pivot
 operations.** The same `credential_types` axis goes the other direction on
-seven endpoints: `account_token_create` (mint), `account_token_revoke`
+eight endpoints: `account_token_create` (mint), `account_token_revoke`
 (sibling disruption), `account_session_revoke` +
 `account_session_revoke_all` (lockout), `POST /password` (lockout +
-credential reset), and `role_grant_offer_accept` + `self_service_role_set`
-(the caller moving its own authority). `credential_types: ['session']`
+credential reset), `role_grant_offer_create` (conferring a role on another
+account), and `role_grant_offer_accept` + `self_service_role_set` (the caller
+moving its own authority). `credential_types: ['session']`
 rejects API-token and daemon-token callers. Admin-side revoke specs stay
 unrestricted — admin CLI scripting is legitimate operator workflow. Two more
 endpoints carry the same gate for non-threat reasons — `POST /logout` and

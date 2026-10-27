@@ -299,12 +299,23 @@ export type RoleGrantAssignOutput = z.infer<typeof RoleGrantAssignOutput>;
  * `ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH`) as an enumeration
  * vector. Failure-outcome audit rows preserve the forensic trail; the
  * rate cap closes the budget.
+ *
+ * `credential_types: ['session']` — see `docs/security.md` §Credential-channel
+ * gating. Offering spends the caller's authority to confer a role. Over a
+ * leaked API token that is a privilege pivot onto another account: the leak
+ * offers a role to an account its holder controls, that account accepts over
+ * its own session, and the resulting role_grant outlives revoking the token.
+ * Under a consumer `authorize` that delegates offering (a scoped holder
+ * offering roles in its scope), every such holder's token would be a
+ * role-minting credential. An offer is the grantor's consent act, as accepting
+ * is the recipient's; scripted conferral is `role_grant_assign`'s, admin-gated
+ * and narrowable by a token scope.
  */
 export const role_grant_offer_create_action_spec = {
 	method: 'role_grant_offer_create',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: { account: 'required', actor: 'required' },
+	auth: { account: 'required', actor: 'required', credential_types: ['session'] },
 	side_effects: true,
 	input: RoleGrantOfferCreateInput,
 	output: RoleGrantOfferCreateOutput,
@@ -327,14 +338,14 @@ export const role_grant_offer_create_action_spec = {
  * without minting anything, so the account bucket is what bounds a loop of them.
  *
  * `credential_types: ['session']` — see `docs/security.md` §Credential-channel
- * gating. The only offer verb that moves the *caller's own* authority:
- * accepting a pending admin offer over a leaked API token is a privilege pivot
- * in the same family the credential-lifecycle mutations are gated to prevent
- * (the token is account-wide and non-expiring, and the resulting role_grant
- * outlives revoking it). Consent inherently belongs to a human at a browser,
- * and no automation accepts an offer on its own behalf. The sibling verbs stay
- * ungated deliberately — `_create` is the offering side, and `_decline` /
- * `_retract` destroy a pending offer and confer nothing.
+ * gating. The offer verb that moves the *caller's own* authority: accepting a
+ * pending admin offer over a leaked API token is a privilege pivot in the same
+ * family the credential-lifecycle mutations are gated to prevent (the token is
+ * account-wide and non-expiring, and the resulting role_grant outlives revoking
+ * it). Consent inherently belongs to a human at a browser, and no automation
+ * accepts an offer on its own behalf. `_create` carries the same gate (the
+ * grantor's side of the consent); `_decline` / `_retract` stay ungated
+ * deliberately — they destroy a pending offer and confer nothing.
  */
 export const role_grant_offer_accept_action_spec = {
 	method: 'role_grant_offer_accept',

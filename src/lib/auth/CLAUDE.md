@@ -609,7 +609,10 @@ are excluded.
   compose `account_session_list` + N×revoke to reach the same lockout.
   `role_grant_offer_accept` and `self_service_role_set` carry the gate for
   the privilege-pivot shape — both move the caller's own authority, and the
-  resulting grant outlives revoking the token.
+  resulting grant outlives revoking the token. `role_grant_offer_create`
+  carries it for the same pivot onto another account (a leaked bearer offers a
+  role to an account its holder controls); scripted conferral is
+  `role_grant_assign`'s.
   REST `POST /logout` also declares `credential_types: ['session']`, but
   for forensic fidelity rather than a threat — a bearer / daemon token
   holds no session to end, so the gate refuses it instead of returning a
@@ -710,8 +713,8 @@ event additionally records `credential_type` in metadata (defense in depth).
 > suite assume auto-accept and have to redesign their tests when they
 > discover otherwise.
 
-- `role_grant_offer_create_action_spec` — input `{to_account_id, to_actor_id?, role, scope_kind?, scope_id?, message?}` (`scope_kind` + `scope_id` paired — both or neither, else `invalid_params`); output `{offer}`.
-- `role_grant_offer_accept_action_spec` — input `{offer_id}`; output `{role_grant_id, offer, superseded_offer_ids}`. Refuses a builtin-role offer that must not mint (see below), leaving it pending.
+- `role_grant_offer_create_action_spec` — session-only; input `{to_account_id, to_actor_id?, role, scope_kind?, scope_id?, message?}` (`scope_kind` + `scope_id` paired — both or neither, else `invalid_params`); output `{offer}`.
+- `role_grant_offer_accept_action_spec` — session-only; input `{offer_id}`; output `{role_grant_id, offer, superseded_offer_ids}`. Refuses a builtin-role offer that must not mint (see below), leaving it pending.
 - `role_grant_offer_decline_action_spec` — input `{offer_id, reason?}`; output `{ok}`.
 - `role_grant_offer_retract_action_spec` — input `{offer_id}`; output `{ok}`.
 - `role_grant_offer_list_action_spec` — input `{account_id?}`; output `{offers}`.

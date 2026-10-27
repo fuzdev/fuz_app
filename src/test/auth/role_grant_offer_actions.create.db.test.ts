@@ -2,8 +2,8 @@
  * Integration tests for `role_grant_offer_create` — the creation-side flows.
  *
  * Covers the grantor path, self-target rejection, caller-without-role
- * denial, same-grantor re-offer upsert, and the custom `authorize`
- * callback override. Audit emission on create paths lives in
+ * denial, same-grantor re-offer upsert, the custom `authorize`
+ * callback override, and the session-only credential gate. Audit emission on create paths lives in
  * `role_grant_offer_actions.audit.db.test.ts`; scope-aware creation is
  * exercised in `role_grant_offer_actions.scoped.db.test.ts`.
  *
@@ -23,6 +23,7 @@ import {
 	ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED
 } from '#lib/auth/role_grant_offer_action_specs.ts';
 import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
+import { ERROR_CREDENTIAL_TYPE_REQUIRED } from '#lib/http/error_schemas.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
 import type { RouteSpec } from '#lib/http/route_spec.ts';
@@ -140,6 +141,57 @@ describe_db('role_grant_offer_actions.create', (get_db) => {
 			assert.ok(second.ok);
 			assert.strictEqual(second.result.offer.id, offer_id_1);
 			assert.strictEqual(second.result.offer.message, 'second');
+		});
+	});
+
+	describe('credential channel', () => {
+		// Session-only: a leaked api token must not confer roles on another
+		// account. The gate refuses before the handler, so a refused offer writes
+		// no row and no audit; the same admin's session still offers. Twin of the
+		// Rust `perform_action_dispatch` `role_grant_offer_create_is_session_only`.
+		test('an admin api token is refused 403 credential_type_required, writing nothing', async () => {
+			const test_app = await create_test_app({
+				session_options,
+				create_route_specs,
+				db: get_db(),
+				roles: [ROLE_ADMIN]
+			});
+			const recipient = await test_app.create_account({ username: 'bearer_offer_recipient' });
+			const count_rows = async (): Promise<{ offers: number; audits: number }> => {
+				const [offers] = await get_db().query<{ n: number }>(
+					'SELECT count(*)::int AS n FROM role_grant_offer'
+				);
+				const [audits] = await get_db().query<{ n: number }>(
+					`SELECT count(*)::int AS n FROM audit_log WHERE event_type = 'role_grant_offer_create'`
+				);
+				return { offers: offers!.n, audits: audits!.n };
+			};
+			const before = await count_rows();
+			const res = await rpc_call_for_spec({
+				app: test_app.app,
+				path: RPC_PATH,
+				spec: role_grant_offer_create_action_spec,
+				params: { to_account_id: recipient.account.id, role: ROLE_ADMIN },
+				headers: test_app.create_bearer_headers(),
+				suppress_default_origin: true
+			});
+			assert.ok(!res.ok);
+			assert.strictEqual(res.status, 403);
+			const data = res.error.data as
+				{ reason?: string; required_credential_types?: ReadonlyArray<string> } | undefined;
+			assert.strictEqual(data?.reason, ERROR_CREDENTIAL_TYPE_REQUIRED);
+			assert.deepStrictEqual(data?.required_credential_types, ['session']);
+			assert.deepStrictEqual(await count_rows(), before, 'no offer and no audit row');
+
+			const offered = await rpc_call_for_spec({
+				app: test_app.app,
+				path: RPC_PATH,
+				spec: role_grant_offer_create_action_spec,
+				params: { to_account_id: recipient.account.id, role: ROLE_ADMIN },
+				headers: test_app.create_session_headers()
+			});
+			assert.ok(offered.ok, JSON.stringify(offered));
+			assert.strictEqual(offered.result.offer.to_account_id, recipient.account.id);
 		});
 	});
 

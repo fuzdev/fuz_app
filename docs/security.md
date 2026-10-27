@@ -62,10 +62,10 @@ Session cookies and API tokens can grant admin-level access. Only a daemon token
 
 ### Credential-channel gating
 
-Nine endpoints declare `credential_types: ['session']` on their `auth`
+Ten endpoints declare `credential_types: ['session']` on their `auth`
 axis. The dispatcher rejects non-session credentials with 403
 `ERROR_CREDENTIAL_TYPE_REQUIRED` + `required_credential_types: ['session']`
-before the handler runs. Seven close a credential-minting, lockout, or
+before the handler runs. Eight close a credential-minting, lockout, or
 privilege-pivot threat (list below); the remaining two are gated for reasons
 that aren't a threat of their own — `POST /logout` for forensic fidelity, and
 `GET /audit/stream` because a long-lived admin feed is not handed to a
@@ -76,7 +76,8 @@ channel the deployment never chose (both noted after the list).
 - `account_session_revoke` — Lockout-by-composition — leaked bearer enumerates via `account_session_list` then revokes each session.
 - `account_session_revoke_all` — Lockout — leaked bearer revokes every session in one call.
 - `POST /password` (REST) — Lockout + credential reset — leaked bearer rotates the password to lock the legitimate user out.
-- `role_grant_offer_accept` — Privilege pivot — leaked bearer accepts a pending admin offer, and the resulting role grant outlives revoking the token. The sibling offer verbs stay ungated: `_create` is the offering side, `_decline` / `_retract` destroy a pending offer and confer nothing.
+- `role_grant_offer_create` — Privilege pivot onto another account — leaked bearer offers a role to an account its holder controls, which accepts over its own session, and the resulting role grant outlives revoking the token. Under a consumer `authorize` that delegates offering to scoped holders, every holder's token would be a role-minting credential. Scripted conferral is `role_grant_assign`'s (admin-gated, narrowable by a token scope).
+- `role_grant_offer_accept` — Privilege pivot — leaked bearer accepts a pending admin offer, and the resulting role grant outlives revoking the token. `_decline` / `_retract` stay ungated: they destroy a pending offer and confer nothing.
 - `self_service_role_set` — Privilege pivot — same shape, self-targeted: a leaked account-wide token grants itself an eligible role. The verb exists to serve a UI affordance, so the bearer channel buys nothing.
 
 Cookies are tied to a browser context (HttpOnly + SameSite=Strict + Secure)

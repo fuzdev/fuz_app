@@ -192,6 +192,22 @@ const credential_ceiling_cases: ReadonlyArray<ConformanceCase> = [
 		note: 'security.md §Credential-channel gating — a leaked bearer cannot mint sibling tokens to outlive revocation; the empty params also pin that no input-shape detail precedes the credential denial'
 	},
 	{
+		name: "api_token (bearer) → role_grant_offer_create → 403 credential_type_required (the keeper's admin authority doesn't ride a bearer)",
+		request: {
+			method: 'role_grant_offer_create',
+			as: 'token',
+			// Well-formed, so the row isolates the credential denial: over a
+			// session the keeper (a global admin) would reach the handler.
+			params: { to_account_id: NIL_UUID, role: 'admin' }
+		},
+		expect: {
+			status: 403,
+			error_reason: ERROR_CREDENTIAL_TYPE_REQUIRED,
+			fields: { required_credential_types: ['session'] }
+		},
+		note: 'security.md §Credential-channel gating — a leaked bearer cannot offer a role to an account its holder controls, whose own-session accept would leave a grant outliving the token'
+	},
+	{
 		name: 'api_token (bearer) → /logout → 403 credential_type_required',
 		request: { method: '/logout', as: 'token' },
 		expect: {

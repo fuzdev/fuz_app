@@ -79,10 +79,15 @@ const GATED_ACTION_SPECS: Record<string, { credential_types: Array<string>; reas
 		credential_types: [CREDENTIAL_TYPE_SESSION],
 		reason: 'lockout — a leaked bearer revokes every session in one call'
 	},
+	role_grant_offer_create: {
+		credential_types: [CREDENTIAL_TYPE_SESSION],
+		reason:
+			"privilege pivot onto another account — a leaked bearer offers a role to an account its holder controls, which accepts over its own session, and the grant outlives revoking the token; under a delegating `authorize` every scoped holder's token would mint roles"
+	},
 	role_grant_offer_accept: {
 		credential_types: [CREDENTIAL_TYPE_SESSION],
 		reason:
-			"privilege pivot — the only offer verb that moves the caller's own authority, and the resulting grant outlives revoking the token. `_create` is the offering side; `_decline` / `_retract` destroy a pending offer and confer nothing"
+			"privilege pivot — the offer verb that moves the caller's own authority, and the resulting grant outlives revoking the token. `_decline` / `_retract` destroy a pending offer and confer nothing"
 	},
 	self_service_role_set: {
 		credential_types: [CREDENTIAL_TYPE_SESSION],
@@ -106,8 +111,8 @@ const GATED_ACTION_SPECS: Record<string, { credential_types: Array<string>; reas
  * `role_grant_revoke` are reviewed and left open: an operator wanting a CLI
  * to assign roles mints a token scoped to `rpc:role_grant_assign`, which
  * narrows, where widening the spec would loosen every caller.
- * `role_grant_offer_create` is the offering side; `_decline` / `_retract`
- * destroy a pending offer and confer nothing. `account_delete` stays open for
+ * `role_grant_offer_decline` / `_retract` destroy a pending offer and confer
+ * nothing. `account_delete` stays open for
  * an admin deleting another account; its self path is session-only in the
  * handler (`account_delete.credential_gate.db.test.ts`).
  *
@@ -123,7 +128,6 @@ const ANY_CREDENTIAL_MUTATIONS: ReadonlyArray<string> = [
 	'invite_create',
 	'invite_delete',
 	'role_grant_assign',
-	'role_grant_offer_create',
 	'role_grant_offer_decline',
 	'role_grant_offer_retract',
 	'role_grant_revoke'
