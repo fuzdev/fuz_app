@@ -327,10 +327,11 @@ root_policy}` than `validate_data` and returns a `CellCreateVerdict`
   A **viewable**-parent / root-creation deny is **403** `cell_create_forbidden`
   (the create-path **404** mask is reserved for a hidden parent); `Allow` folds
   the moderation outcome (born `pending`+private vs `approved`+author-visibility).
-  The authorizer is **pure** — the handler reads the governing root in-tx and
-  hands its `policy` column over as `root_policy`, so a directory policy
-  resolves `root_policy[kind]` without its own DB read (which also dodges the
-  single-connection deadlock of the in-memory drivers). `None`/omitted = open
+  The handler reads the governing root in-tx and hands its `policy` column
+  over as `root_policy`, so a directory policy resolves `root_policy[kind]`
+  without a DB read; an authorizer needing more reads through its third
+  argument, the request `ctx` (`ctx.db` is the request transaction), and only
+  reads. `None`/omitted = open
   create (the default; mirrors `validate_data`), and every non-null policy write
   refused `cell_policy_unsupported`. A root's `policy` (a JSON object, roots only
   by table CHECK, opaque to the spine, readable on `CellJson`) is set at a
@@ -374,7 +375,9 @@ root_policy}` than `validate_data` and returns a `CellCreateVerdict`
   (`CellGrantRevokeAuthorize`), the steward widening: asked only of a caller
   who neither manages the cell nor holds the grant, for a role-shaped grant
   with a `scope_id`; `true` revokes (audit `steward: true`), `false` keeps the
-  404 mask.
+  404 mask. Both callbacks, like
+  the create authorizer and the offer callback, take the request `ctx` last —
+  `ctx.db` is the request transaction — and must only read through it.
 - `auth/all_cell_actions.ts` — `create_all_cell_actions(deps, {roles})`, the
   handler-side twin of `all_cell_action_specs` and sibling of
   `create_standard_rpc_actions`: bundles all five cell factories (CRUD + grant
@@ -777,7 +780,8 @@ global check (`has_scoped_role(_, ROLE_ADMIN, null)`) stops a scoped `admin`
 escalating into global authority over the offer surface. A consumer needing
 scope-aware delegation (e.g. a classroom teacher offering within their own
 scope) supplies a custom `authorize` callback. The callback receives
-`{to_account_id, role, scope_kind, scope_id}` and also gates
+`{to_account_id, role, scope_kind, scope_id}` and the request `ctx` (`ctx.db` is
+the request transaction, for read-only checks), and also gates
 `role_grant_assign`.
 
 **Builtin roles (`admin` / `keeper`) are global-only**, decided by the spine

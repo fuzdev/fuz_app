@@ -318,9 +318,9 @@ describe_db('cell create authorizer + kind invariants', (get_db) => {
 		test('an authorizer mounted → cell_not_found before it is consulted', async () => {
 			let calls = 0;
 			const counting_allow: CellCreateAuthorize = {
-				authorize: (auth, input) => {
+				authorize: (auth, input, ctx) => {
 					calls++;
-					return allow_all.authorize(auth, input);
+					return allow_all.authorize(auth, input, ctx);
 				}
 			};
 			const app = await create_cell_test_app(get_db, [], { authorize_create: counting_allow });

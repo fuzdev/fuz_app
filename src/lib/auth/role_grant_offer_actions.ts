@@ -171,6 +171,12 @@ import {
  * with no offer — runs it too, so a policy over which grants may exist (a
  * role that must be scoped, a scope that must be real) holds on both paths.
  * Twin of the Rust `OfferCreateAuthorize`.
+ *
+ * `ctx` is the request's: both verbs have side effects, so `ctx.db` is the
+ * request transaction, and a callback needing the database (a scope-existence
+ * check, say) reads through it. **Read-only** — the callback decides, it never
+ * writes; a write would commit or roll back with the request, and nothing
+ * enforces this but the callback.
  */
 export type RoleGrantOfferCreateAuthorize = (
 	auth: RequestContext,

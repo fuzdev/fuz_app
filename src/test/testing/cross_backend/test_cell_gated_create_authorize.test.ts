@@ -13,6 +13,8 @@ import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { create_test_context } from '#lib/testing/entities.ts';
 import { test_cell_gated_create_authorize } from '#lib/testing/cross_backend/test_cell_gated_create_authorize.ts';
 
+import { create_test_action_context } from '../../auth/rpc_test_helpers.ts';
+
 const CELL_ID = '33333333-3333-4333-8333-333333333333' as Uuid;
 
 const scoped_admin = () =>
@@ -30,17 +32,31 @@ describe('test_cell_gated_create_authorize reads the global grant', () => {
 
 	test('a scoped admin may not create a space root', async () => {
 		const auth = scoped_admin();
-		assert.deepEqual(await test_cell_gated_create_authorize.authorize(auth, space_root), {
-			allow: false
-		});
+		assert.deepEqual(
+			await test_cell_gated_create_authorize.authorize(
+				auth,
+				space_root,
+				create_test_action_context(auth)
+			),
+			{
+				allow: false
+			}
+		);
 	});
 
 	test('a global admin may', async () => {
 		const auth = create_test_context([{ role: ROLE_ADMIN }]);
-		assert.deepEqual(await test_cell_gated_create_authorize.authorize(auth, space_root), {
-			allow: true,
-			moderation_required: false
-		});
+		assert.deepEqual(
+			await test_cell_gated_create_authorize.authorize(
+				auth,
+				space_root,
+				create_test_action_context(auth)
+			),
+			{
+				allow: true,
+				moderation_required: false
+			}
+		);
 	});
 
 	test('a min_role is satisfied only by the global grant', async () => {
@@ -55,14 +71,28 @@ describe('test_cell_gated_create_authorize reads the global grant', () => {
 		const scoped = create_test_context([
 			{ role: 'participant', scope_kind: 'space', scope_id: CELL_ID }
 		]);
-		assert.deepEqual(await test_cell_gated_create_authorize.authorize(scoped, contribution), {
-			allow: false
-		});
+		assert.deepEqual(
+			await test_cell_gated_create_authorize.authorize(
+				scoped,
+				contribution,
+				create_test_action_context(scoped)
+			),
+			{
+				allow: false
+			}
+		);
 		const global = create_test_context([{ role: 'participant' }]);
-		assert.deepEqual(await test_cell_gated_create_authorize.authorize(global, contribution), {
-			allow: true,
-			moderation_required: false
-		});
+		assert.deepEqual(
+			await test_cell_gated_create_authorize.authorize(
+				global,
+				contribution,
+				create_test_action_context(global)
+			),
+			{
+				allow: true,
+				moderation_required: false
+			}
+		);
 	});
 
 	test('validate_policy accepts the ladder shape and refuses anything else', () => {

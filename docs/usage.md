@@ -1572,7 +1572,7 @@ string. Content stays duck-typed in `data`.
   unchecked.
 - `authorize_create` — a **parent-aware capability gate** (`CellCreateAuthorize`),
   an object of two members. `authorize(auth, {kind, data, parent_id, root_id,
-root_policy}) => CellCreateVerdict | Promise<CellCreateVerdict>`,
+root_policy}, ctx) => CellCreateVerdict | Promise<CellCreateVerdict>`,
   where a verdict is `{allow: false}` or `{allow: true, moderation_required}`,
   runs in `cell_create`
   after `validate_data` and after the handler resolves the directory tree
@@ -1583,9 +1583,10 @@ root_policy}) => CellCreateVerdict | Promise<CellCreateVerdict>`,
   parent / a root creation is **403** `cell_create_forbidden` (the 404 mask is
   reserved for the hidden-parent case). An `{allow: true}` folds the moderation
   outcome — `moderation_required: true` → born `pending` + private; `false` →
-  born `approved` at the author's visibility. The predicate is **pure**: it
-  reads the governing root's policy off the handler-supplied `root_policy` (no
-  DB read of its own). `validate_policy(policy)` accepts or refuses a root
+  born `approved` at the author's visibility. A directory policy reads the
+  governing root's policy off the handler-supplied `root_policy`, no DB read
+  needed; one needing more reads through `ctx.db`, the request transaction —
+  read-only, which nothing enforces. `validate_policy(policy)` accepts or refuses a root
   policy before it is written (below); omitted, every policy is refused. Omit
   the whole gate for open create. The companion `cell_moderate` verb
   transitions a `pending` contribution (`approved | rejected`), gated on
@@ -1621,14 +1622,14 @@ editor grant can rewrite `data`, and the policy decides who may contribute.
 `create_cell_grant_actions` takes `roles` (a `create_role_schema()` result) so
 role-shaped grants validate against the app's role vocabulary, and an optional
 `authorize_grant_create` (`CellGrantCreateAuthorize`): `(auth, {cell_id,
-cell_created_by, level, principal}) => boolean | Promise<boolean>`, asked of a
+cell_created_by, level, principal}, ctx) => boolean | Promise<boolean>`, asked of a
 manager's `cell_grant_create` after the spine's own gates (the 404 mask, the
 moderation admission, the role registry) and before the write — a level change
 included. `false` is 403 `cell_grant_not_authorized`, writing no grant and no
 audit row. It narrows sharing; it can't widen it.
 
 An optional `authorize_grant_revoke` (`CellGrantRevokeAuthorize`): `(auth,
-{grant_id, cell_id, cell_created_by, role, scope_id, level}) => boolean |
+{grant_id, cell_id, cell_created_by, role, scope_id, level}, ctx) => boolean |
 Promise<boolean>` widens `cell_grant_revoke` to a scope's steward — the
 role-shaped twin of self-revoke, since a role-shaped grant's grantee is the
 scope (a teacher removing a cell shared into their classroom). It is fenced:
@@ -1637,7 +1638,8 @@ only for a role-shaped grant with a non-null `scope_id`, so an actor-shaped
 grant or a scopeless role grant never reaches it, and a soft-deleted cell 404s
 first. `true` revokes as a manager would, the `cell_grant_revoke` audit row
 stamped `steward: true`; `false` is the same 404 `cell_grant_not_found` mask as
-no hook. A callback needing the database reads through its own handle.
+no hook. A callback needing the database reads
+through `ctx.db`, the request transaction, and only reads.
 `create_all_cell_actions` passes all three on from its deps.
 
 ### Authorization model

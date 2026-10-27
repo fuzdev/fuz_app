@@ -188,7 +188,7 @@ export interface CellCreateAuthorizeInput {
 	parent_id: Uuid | null;
 	/** The governing root of the directory subtree, resolved by the handler from the parent (`parent.root_id ?? parent.id`). `null` for a root creation. */
 	root_id: Uuid | null;
-	/** The governing root's contribution `policy` column — the handler reads the root in-tx and hands its policy over, so a directory-aware authorizer resolves `root_policy[kind]` **without a DB read of its own** (pure predicate; reading in-tx avoids the single-connection deadlock a separate handle would hit on the in-memory drivers). `null` for a root creation and for a root carrying no policy (the authorizer's floor governs); a missing or soft-deleted root answers `cell_not_found` before the authorizer runs. Never the root's `data`: an editor grant can rewrite `data`, so a policy read from it would be the editor's to loosen. */
+	/** The governing root's contribution `policy` column — the handler reads the root in-tx and hands its policy over, so a directory-aware authorizer resolves `root_policy[kind]` **without a DB read of its own**. `null` for a root creation and for a root carrying no policy (the authorizer's floor governs); a missing or soft-deleted root answers `cell_not_found` before the authorizer runs. Never the root's `data`: an editor grant can rewrite `data`, so a policy read from it would be the editor's to loosen. */
 	root_policy: CellPolicy | null;
 }
 
@@ -213,8 +213,12 @@ export type CellCreateVerdict = { allow: false } | { allow: true; moderation_req
  *   `CellCreateVerdict`. Runs in `cell_create` after `validate_data` and after
  *   the handler resolves `root_id` and `root_policy` from the parent (an
  *   unviewable parent or a missing or soft-deleted root already 404-masks
- *   before this runs). Async-capable — a DB-backed impl closes over its own
- *   `db` (the create handler stays unaware).
+ *   before this runs). `ctx` is the request's: `cell_create` and `cell_clone`
+ *   have side effects, so `ctx.db` is the request transaction, and an impl
+ *   needing more than `root_policy` (a content pre-screen, say) reads through
+ *   it. **Read-only** — the authorizer decides, it never writes; a write would
+ *   commit or roll back with the create, and nothing enforces this but the
+ *   impl.
  * - `validate_policy` accepts or refuses a root `policy` before it is written
  *   (a root's `cell_create`, `cell_policy_set`) — the shape `authorize` reads.
  *   It runs after the manage and root-only gates, so it decides validity, never
@@ -227,7 +231,8 @@ export type CellCreateVerdict = { allow: false } | { allow: true; moderation_req
 export interface CellCreateAuthorize {
 	authorize: (
 		auth: RequestActorContext,
-		input: CellCreateAuthorizeInput
+		input: CellCreateAuthorizeInput,
+		ctx: ActionContext
 	) => CellCreateVerdict | Promise<CellCreateVerdict>;
 	validate_policy?: (policy: CellPolicy) => void;
 }
@@ -494,13 +499,17 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		let moderation: string | null = null;
 		let visibility = input.visibility;
 		if (authorize_create) {
-			const verdict = await authorize_create.authorize(auth, {
-				kind,
-				data: input.data,
-				parent_id,
-				root_id,
-				root_policy
-			});
+			const verdict = await authorize_create.authorize(
+				auth,
+				{
+					kind,
+					data: input.data,
+					parent_id,
+					root_id,
+					root_policy
+				},
+				ctx
+			);
 			if (!verdict.allow) {
 				throw jsonrpc_errors.forbidden('cell creation is not permitted here', {
 					reason: ERROR_CELL_CREATE_FORBIDDEN
@@ -839,13 +848,17 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		// authorizer sees the merged (pre-normalization) data, as `cell_create`
 		// hands it the raw input.
 		if (authorize_create) {
-			const verdict = await authorize_create.authorize(auth, {
-				kind: source.kind,
-				data: merged_data,
-				parent_id: null,
-				root_id: null,
-				root_policy: null
-			});
+			const verdict = await authorize_create.authorize(
+				auth,
+				{
+					kind: source.kind,
+					data: merged_data,
+					parent_id: null,
+					root_id: null,
+					root_policy: null
+				},
+				ctx
+			);
 			if (!verdict.allow) {
 				throw jsonrpc_errors.forbidden('cell creation is not permitted here', {
 					reason: ERROR_CELL_CREATE_FORBIDDEN

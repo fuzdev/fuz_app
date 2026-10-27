@@ -38,7 +38,12 @@
  * @module
  */
 
-import { rpc_action, type ActionActorContext, type RpcAction } from '../actions/action_rpc.ts';
+import {
+	rpc_action,
+	type ActionActorContext,
+	type ActionContext,
+	type RpcAction
+} from '../actions/action_rpc.ts';
 import { jsonrpc_errors } from '../http/jsonrpc_errors.ts';
 import type { RoleSchemaResult } from './role_schema.ts';
 import type { ActionFactoryDeps } from './deps.ts';
@@ -106,10 +111,17 @@ export interface CellGrantCreateAuthorizeInput {
  * audit row. A consumer narrows sharing with it (say, role-shaped grants only
  * to roles of the cell's own space); it can't widen it, as every caller it
  * sees already manages the cell. Omitted = no gate past the spine's.
+ *
+ * `ctx` is the request's: `cell_grant_create` has side effects, so `ctx.db` is
+ * the request transaction, and a callback needing the database (a
+ * scope-existence check, say) reads through it. **Read-only** — the callback
+ * decides, it never writes; a write would commit or roll back with the grant,
+ * and nothing enforces this but the callback.
  */
 export type CellGrantCreateAuthorize = (
 	auth: RequestActorContext,
-	input: CellGrantCreateAuthorizeInput
+	input: CellGrantCreateAuthorizeInput,
+	ctx: ActionContext
 ) => boolean | Promise<boolean>;
 
 /**
@@ -152,13 +164,16 @@ export interface CellGrantRevokeAuthorizeInput {
  * `ERROR_CELL_GRANT_NOT_FOUND` mask as every other non-qualifying caller (not a
  * 403 — the caller mustn't learn the grant exists); a throw is a hard error —
  * it is not masked, so refuse with `false`, never a throw.
- * Omitted = revoke is the manager's and the self-revoker's alone. Pure like
- * `CellGrantCreateAuthorize`: one needing the database reads pre-existing
- * state through its own handle.
+ * Omitted = revoke is the manager's and the self-revoker's alone.
+ *
+ * `ctx.db` is the request transaction
+ * (`cell_grant_revoke` has side effects), read through like
+ * `CellGrantCreateAuthorize`'s, and read-only like it.
  */
 export type CellGrantRevokeAuthorize = (
 	auth: RequestActorContext,
-	input: CellGrantRevokeAuthorizeInput
+	input: CellGrantRevokeAuthorizeInput,
+	ctx: ActionContext
 ) => boolean | Promise<boolean>;
 
 /**
@@ -243,18 +258,23 @@ const steward_admits_revoke = async (
 	auth: RequestActorContext,
 	grant: CellGrantRow,
 	cell: CellRow,
-	authorize: CellGrantRevokeAuthorize | undefined
+	authorize: CellGrantRevokeAuthorize | undefined,
+	ctx: ActionContext
 ): Promise<boolean> => {
 	if (!authorize) return false;
 	if (grant.actor_id !== null || grant.role === null || grant.scope_id === null) return false;
-	return authorize(auth, {
-		grant_id: grant.id,
-		cell_id: grant.cell_id,
-		cell_created_by: cell.created_by,
-		role: grant.role,
-		scope_id: grant.scope_id,
-		level: grant.level
-	});
+	return authorize(
+		auth,
+		{
+			grant_id: grant.id,
+			cell_id: grant.cell_id,
+			cell_created_by: cell.created_by,
+			role: grant.role,
+			scope_id: grant.scope_id,
+			level: grant.level
+		},
+		ctx
+	);
 };
 
 /** Create the three `cell_grant_*` RPC actions. */
@@ -296,12 +316,16 @@ export const create_cell_grant_actions = (deps: CellGrantActionDeps): Array<RpcA
 		// The consumer's gate, asked only of a manager past the spine's gates;
 		// a refusal writes nothing.
 		if (authorize_grant_create) {
-			const allowed = await authorize_grant_create(auth, {
-				cell_id: cell.id,
-				cell_created_by: cell.created_by,
-				level: input.level,
-				principal
-			});
+			const allowed = await authorize_grant_create(
+				auth,
+				{
+					cell_id: cell.id,
+					cell_created_by: cell.created_by,
+					level: input.level,
+					principal
+				},
+				ctx
+			);
 			if (!allowed) {
 				throw jsonrpc_errors.forbidden('cell grant is not permitted here', {
 					reason: ERROR_CELL_GRANT_NOT_AUTHORIZED
@@ -350,7 +374,7 @@ export const create_cell_grant_actions = (deps: CellGrantActionDeps): Array<RpcA
 		const is_steward =
 			!is_manager &&
 			!is_self_actor_grant &&
-			(await steward_admits_revoke(auth, grant, cell, authorize_grant_revoke));
+			(await steward_admits_revoke(auth, grant, cell, authorize_grant_revoke, ctx));
 		// Grant management is manage-tier only (admin / owner); editor-grant
 		// holders cannot revoke grants (mirrors the create gate). The
 		// exceptions are self-revoke and a scope's steward. Non-qualifying
