@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/BTZoVLbz.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CAODFmXb.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.BjCgqxWl.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.ESNOnx4g.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.DCwMCc9z.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.DG2dzQog.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BcwQFYZ2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/C3BYcZ2u.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/B0ywOZhm.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/DDDJ9Jcj.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.CkrylAQ1.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/BhO1D5h9.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.BQYPq7Su.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BL7ZH9U-.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DhdQKFKC.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -336,15 +336,19 @@ the credential alive. Every one does: the revocation handlers queue their
 close behind the commit (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/connection_closer.ts#queue_connection_close"><!--[0--><!--[-1-->queue_connection_close<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->), and the audit emitter
 announces a success row to the listeners behind it too. So no interleaving
 admits a revoked credential; <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->docs/security.md<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> §Connection Admission says
-what that rests on.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->An endpoint gated on <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->required_roles<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> re-reads them beside the credential:
+what that rests on.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->The acting actor the upgrade resolved is re-read beside the credential on
+every endpoint, gated or not: an actor soft-deleted under its live account
+keeps the account's sessions and tokens and its own grant rows, so neither
+the credential nor the role re-read would refuse it. A tombstoned acting
+actor is refused like a dead credential.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->An endpoint gated on <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->required_roles<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> re-reads them beside the credential:
 its upgrade passed the role gate before the socket registered, so a role
 revocation landing in between would close nothing (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->close_sockets_for_role<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->
 matches registrations), and the socket would be admitted without the role
 for its lifetime. The re-read reads the acting actor's grants afresh and
 admits on a global grant of any listed role, as the gate did.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->A refused upgrade is closed with <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/transports.ts#WS_CLOSE_SESSION_REVOKED"><!--[0--><!--[-1-->WS_CLOSE_SESSION_REVOKED<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> (4001, the
-reason a revoked socket gets) for a dead credential,
+reason a revoked socket gets) for a dead credential or a deleted acting actor,
 <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/transports.ts#WS_CLOSE_PERMISSION_REVOKED"><!--[0--><!--[-1-->WS_CLOSE_PERMISSION_REVOKED<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> (4006) for a lost role, or
-<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/transports.ts#WS_CLOSE_INTERNAL_ERROR"><!--[0--><!--[-1-->WS_CLOSE_INTERNAL_ERROR<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> (1011) when either re-read itself failed — fail
+<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/transports.ts#WS_CLOSE_INTERNAL_ERROR"><!--[0--><!--[-1-->WS_CLOSE_INTERNAL_ERROR<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> (1011) when a re-read itself failed — fail
 closed, never admitted unchecked. The handshake has already answered <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->101<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->,
 so a refusal can only be a close frame.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Once the server is shutting down (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->AppServer.close<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> ran the transport's
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->close_all_sockets<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) a refusal is <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/transports.ts#WS_CLOSE_GOING_AWAY"><!--[0--><!--[-1-->WS_CLOSE_GOING_AWAY<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> instead, so the
@@ -586,16 +590,16 @@ until the runtime or the client ends it.<!--]--><!--]--><!----></p><!--]--><!--]
 			
 			<script>
 				{
-					__sveltekit_1t95zs8 = {
+					__sveltekit_ueicn6 = {
 						base: "",
-						version: "62616beb7df5ca20c88e6ceb1cf27a4a0dce149b"
+						version: "4db7c5dddca61759cff27a30f76189560491a737"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.CXlCZqzx.js").then(async (kit) => {
-						kit.init(__sveltekit_1t95zs8);
-						const app = await import("/_app/immutable/entry/app.BjCgqxWl.js");
+						kit.init(__sveltekit_ueicn6);
+						const app = await import("/_app/immutable/entry/app.DCwMCc9z.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],

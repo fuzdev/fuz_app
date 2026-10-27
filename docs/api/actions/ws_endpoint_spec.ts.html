@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/BTZoVLbz.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CAODFmXb.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.BjCgqxWl.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.ESNOnx4g.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.DCwMCc9z.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.DG2dzQog.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BcwQFYZ2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/C3BYcZ2u.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/B0ywOZhm.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/DDDJ9Jcj.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.CkrylAQ1.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/BhO1D5h9.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.BQYPq7Su.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BL7ZH9U-.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DhdQKFKC.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -70,7 +70,7 @@ reads the effective patterns.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]-->
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->AppServerOptions.allowed_origins<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, the list the HTTP routes check.
 Set it only to narrow one endpoint: the auth middleware's origin check
 runs on the upgrade too, so a request reaches the endpoint only when
-its origin passes both lists.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--> <!--[0--><p class="row gap_md"><strong>type</strong> <!--[0--><!--[-1--><code class="type-json-view svelte-jzdoj9" title="readonly RegExp[]"><!--[--><!--[0-->readonly <!--]--><!--[1--><!--[-1--><code data-lang="ts" class="svelte-jqsy8a inline"><!--[-1--><!----><span class="token_capitalized_identifier token_class_name">RegExp</span><!----><!--]--></code><!--]--><!--]--><!--[0-->[]<!--]--><!--]--></code><!--]--><!--]--><!----></p><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--><!----></section><section class="svelte-pitz0d"><h4><code>actions<!--[-1--><!--]--></code></h4> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->The actions registered on this endpoint. Spread <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/protocol.ts#protocol_actions"><!--[0--><!--[-1-->protocol_actions<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->
+its origin passes both lists. An empty list throws at assembly.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--> <!--[0--><p class="row gap_md"><strong>type</strong> <!--[0--><!--[-1--><code class="type-json-view svelte-jzdoj9" title="readonly RegExp[]"><!--[--><!--[0-->readonly <!--]--><!--[1--><!--[-1--><code data-lang="ts" class="svelte-jqsy8a inline"><!--[-1--><!----><span class="token_capitalized_identifier token_class_name">RegExp</span><!----><!--]--></code><!--]--><!--]--><!--[0-->[]<!--]--><!--]--></code><!--]--><!--]--><!----></p><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--><!----></section><section class="svelte-pitz0d"><h4><code>actions<!--[-1--><!--]--></code></h4> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->The actions registered on this endpoint. Spread <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/protocol.ts#protocol_actions"><!--[0--><!--[-1-->protocol_actions<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->
 from <!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/actions/protocol.ts"><!--[0--><!--[-1-->actions/protocol.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> first to complete the
 disconnect-detection + per-request cancel pairing with the frontend
 client.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--> <!--[0--><p class="row gap_md"><strong>type</strong> <!--[0--><!--[-1--><code class="type-json-view svelte-jzdoj9" title="readonly Action&lt;{ method: string; initiator: &quot;frontend&quot; | &quot;backend&quot; | &quot;both&quot;; side_effects: boolean; input: ZodType&lt;unknown, unknown, $ZodTypeInternals&lt;unknown, unknown>>; output: ZodType&lt;unknown, unknown, $ZodTypeInternals&lt;unknown, unknown>>; ... 6 more ...; rate_limit?: &quot;both&quot; | ... 2 more ... | undefined; } | { ...."><!--[--><!--[0-->readonly <!--]--><!--[1--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/action_types.ts#Action"><!--[-1-->Action<!--]--></a><!--]--><!--]--><!--]--><!--[0-->&lt;<!--]--><!--[1--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/action_spec.ts#ActionSpecUnion"><!--[-1-->ActionSpecUnion<!--]--></a><!--]--><!--]--><!--]--><!--[0-->>[]<!--]--><!--]--></code><!--]--><!--]--><!----></p><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--><!----></section><section class="svelte-pitz0d"><h4><code>required_roles<!--[0--><strong>?</strong><!--]--></code></h4> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Roles permitted to upgrade — any-of disjunction, global grants only.
@@ -128,7 +128,7 @@ actions from what dispatch actually serves.<!--]--><!--]--><!----></p><!--]--><!
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->AppServerOptions.allowed_origins<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, the list the HTTP routes check.
 Set it only to narrow one endpoint: the auth middleware's origin check
 runs on the upgrade too, so a request reaches the endpoint only when
-its origin passes both lists.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--> <!--[0--><p class="row gap_md"><strong>type</strong> <!--[0--><!--[-1--><code class="type-json-view svelte-jzdoj9" title="readonly RegExp[]"><!--[--><!--[0-->readonly <!--]--><!--[1--><!--[-1--><code data-lang="ts" class="svelte-jqsy8a inline"><!--[-1--><!----><span class="token_capitalized_identifier token_class_name">RegExp</span><!----><!--]--></code><!--]--><!--]--><!--[0-->[]<!--]--><!--]--></code><!--]--><!--]--><!----></p><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--><!----></section><section class="svelte-pitz0d"><h4><code>actions<!--[-1--><!--]--></code></h4> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->The actions registered on this endpoint. Spread <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/protocol.ts#protocol_actions"><!--[0--><!--[-1-->protocol_actions<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->
+its origin passes both lists. An empty list throws at assembly.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--> <!--[0--><p class="row gap_md"><strong>type</strong> <!--[0--><!--[-1--><code class="type-json-view svelte-jzdoj9" title="readonly RegExp[]"><!--[--><!--[0-->readonly <!--]--><!--[1--><!--[-1--><code data-lang="ts" class="svelte-jqsy8a inline"><!--[-1--><!----><span class="token_capitalized_identifier token_class_name">RegExp</span><!----><!--]--></code><!--]--><!--]--><!--[0-->[]<!--]--><!--]--></code><!--]--><!--]--><!----></p><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--><!----></section><section class="svelte-pitz0d"><h4><code>actions<!--[-1--><!--]--></code></h4> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->The actions registered on this endpoint. Spread <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/protocol.ts#protocol_actions"><!--[0--><!--[-1-->protocol_actions<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->
 from <!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/actions/protocol.ts"><!--[0--><!--[-1-->actions/protocol.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> first to complete the
 disconnect-detection + per-request cancel pairing with the frontend
 client.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--> <!--[0--><p class="row gap_md"><strong>type</strong> <!--[0--><!--[-1--><code class="type-json-view svelte-jzdoj9" title="readonly Action&lt;{ method: string; initiator: &quot;frontend&quot; | &quot;backend&quot; | &quot;both&quot;; side_effects: boolean; input: ZodType&lt;unknown, unknown, $ZodTypeInternals&lt;unknown, unknown>>; output: ZodType&lt;unknown, unknown, $ZodTypeInternals&lt;unknown, unknown>>; ... 6 more ...; rate_limit?: &quot;both&quot; | ... 2 more ... | undefined; } | { ...."><!--[--><!--[0-->readonly <!--]--><!--[1--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/action_types.ts#Action"><!--[-1-->Action<!--]--></a><!--]--><!--]--><!--]--><!--[0-->&lt;<!--]--><!--[1--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/action_spec.ts#ActionSpecUnion"><!--[-1-->ActionSpecUnion<!--]--></a><!--]--><!--]--><!--]--><!--[0-->>[]<!--]--><!--]--></code><!--]--><!--]--><!----></p><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--><!----></section><section class="svelte-pitz0d"><h4><code>required_roles<!--[0--><strong>?</strong><!--]--></code></h4> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Roles permitted to upgrade — any-of disjunction, global grants only.
@@ -181,16 +181,16 @@ fires twice.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!--
 			
 			<script>
 				{
-					__sveltekit_1t95zs8 = {
+					__sveltekit_ueicn6 = {
 						base: "",
-						version: "62616beb7df5ca20c88e6ceb1cf27a4a0dce149b"
+						version: "4db7c5dddca61759cff27a30f76189560491a737"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.CXlCZqzx.js").then(async (kit) => {
-						kit.init(__sveltekit_1t95zs8);
-						const app = await import("/_app/immutable/entry/app.BjCgqxWl.js");
+						kit.init(__sveltekit_ueicn6);
+						const app = await import("/_app/immutable/entry/app.DCwMCc9z.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],

@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/BTZoVLbz.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CAODFmXb.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.BjCgqxWl.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.ESNOnx4g.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.DCwMCc9z.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.DG2dzQog.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BcwQFYZ2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/C3BYcZ2u.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/B0ywOZhm.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/DDDJ9Jcj.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.CkrylAQ1.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/BhO1D5h9.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.BQYPq7Su.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BL7ZH9U-.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DhdQKFKC.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -94,9 +94,9 @@ in-process transport, whole bodies included, and the WebSocket rows skip
 (there is no socket to upgrade).<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[4--><strong><!--[--><!--[2-->Multi-actor upgrade.<!--]--><!--]--><!----></strong><!--]--><!--[2--> One more WS row needs a keeper seeded with a
 second actor (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->extra_actors<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->), so it runs only given <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->multi_actor<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->: a
 multi-actor keeper's session upgrading with no <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->?acting=<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> → 400
-<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->actor_required<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, the flat body the TS spine's upgrade-time authorization
-phase answers. The upgrade resolves an actor there, and a multi-actor
-account must name one. A backend whose upgrade resolves no actor admits
+<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->actor_required<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, the flat body both spines' upgrade-time actor resolution
+answers. The upgrade resolves an actor there, and a multi-actor account
+must name one. A backend whose upgrade resolves no actor admits
 the socket instead; <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->multi_actor.xfail<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> runs the row as <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/cross_backend/xfail.ts#xfail_until"><!--[0--><!--[-1-->xfail_until<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> for
 it.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Wire it for any backend that serves the spine's account routes, RPC
 endpoint, WebSocket endpoint and audit stream; the WS and SSE rows gate on
@@ -115,16 +115,16 @@ the cap a backend keeps off its RPC path.<!--]--><!--]--><!----></p><!--]--><!--
 			
 			<script>
 				{
-					__sveltekit_1t95zs8 = {
+					__sveltekit_ueicn6 = {
 						base: "",
-						version: "62616beb7df5ca20c88e6ceb1cf27a4a0dce149b"
+						version: "4db7c5dddca61759cff27a30f76189560491a737"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.CXlCZqzx.js").then(async (kit) => {
-						kit.init(__sveltekit_1t95zs8);
-						const app = await import("/_app/immutable/entry/app.BjCgqxWl.js");
+						kit.init(__sveltekit_ueicn6);
+						const app = await import("/_app/immutable/entry/app.DCwMCc9z.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],
