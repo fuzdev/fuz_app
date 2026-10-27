@@ -71,6 +71,7 @@ import { PEER_PING_METHOD } from '#lib/actions/peer_ping.ts';
 import type { RpcAction } from '#lib/actions/action_rpc.ts';
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import type { MiddlewareSpec } from '#lib/http/middleware_spec.ts';
+import type { EffectErrorContext } from '#lib/http/pending_effects.ts';
 import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
 import { create_rate_limiter, type RateLimiter } from '#lib/rate_limiter.ts';
 import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
@@ -599,6 +600,45 @@ describe('create_app_server.ws_endpoints dispatch through the assembled app', ()
 			// a failed assertion must not leave the dispatch held on the stall
 			stalled.release();
 		}
+	});
+
+	test('a rejected WS pending effect reaches the server on_effect_error', async () => {
+		const errors: Array<{ error: unknown; context: EffectErrorContext }> = [];
+		const failing_action: RpcAction = {
+			spec: {
+				method: 'failing_effect',
+				kind: 'request_response',
+				initiator: 'frontend',
+				auth: { account: 'required', actor: 'none' },
+				side_effects: false,
+				input: z.void(),
+				output: z.strictObject({ ok: z.literal(true) }),
+				async: true,
+				description: 'queues a rejecting pending effect'
+			},
+			handler: (_input, ctx) => {
+				ctx.pending_effects.push(Promise.reject(new Error('effect failed')));
+				return { ok: true };
+			}
+		};
+		const t = await create_test_server({
+			ws_endpoints: [
+				{ path: WS_PATH, actions: [...protocol_actions, failing_action], heartbeat: false }
+			],
+			on_effect_error: (error, context) => {
+				errors.push({ error, context });
+			}
+		});
+		const alice = await t.create_account('alice_effect');
+		const socket = await open_socket(t, alice.session_headers);
+		assert_ok(await socket.request('failing_effect'));
+		assert.strictEqual(errors.length, 1);
+		assert.ok(errors[0]!.error instanceof Error);
+		assert.deepStrictEqual(errors[0]!.context, {
+			transport: 'ws',
+			method: 'failing_effect',
+			path: WS_PATH
+		});
 	});
 });
 

@@ -52,6 +52,7 @@ import { type CredentialType } from '#lib/hono_context.ts';
 import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
 import { ERROR_INSUFFICIENT_PERMISSIONS } from '#lib/http/error_schemas.ts';
 import { RateLimiter } from '#lib/rate_limiter.ts';
+import type { EffectErrorContext } from '#lib/http/pending_effects.ts';
 import { create_stub_db } from '#lib/testing/stubs.ts';
 import { create_test_audit_event } from '#lib/testing/entities.ts';
 import { create_realtime_closer, queue_connection_close } from '#lib/actions/connection_closer.ts';
@@ -155,6 +156,7 @@ const build_harness = async (opts: {
 	action_ip_rate_limiter?: RateLimiter | null;
 	action_account_rate_limiter?: RateLimiter | null;
 	max_message_bytes?: number;
+	on_effect_error?: (error: unknown, context: EffectErrorContext) => void;
 }): Promise<Harness> => {
 	const stub = create_stub_upgrade();
 	const actions =
@@ -174,6 +176,7 @@ const build_harness = async (opts: {
 		action_ip_rate_limiter: opts.action_ip_rate_limiter ?? null,
 		action_account_rate_limiter: opts.action_account_rate_limiter ?? null,
 		max_message_bytes: opts.max_message_bytes,
+		on_effect_error: opts.on_effect_error,
 		log
 	});
 
@@ -815,6 +818,40 @@ describe('register_action_ws', () => {
 			log
 		});
 		assert.strictEqual(result.transport, supplied);
+	});
+});
+
+describe('register_action_ws effect flush', () => {
+	test('a rejected pending effect reaches on_effect_error after the reply', async () => {
+		const timeline: Array<string> = [];
+		const errors: Array<{ error: unknown; context: EffectErrorContext }> = [];
+		const h = await build_harness({
+			handlers: {
+				echo: (_input, ctx) => {
+					ctx.pending_effects.push(Promise.reject(new Error('effect failed')));
+					return { value: 'ok' };
+				}
+			},
+			on_effect_error: (error, context) => {
+				timeline.push(`error after ${h.fake.sends.length} sends`);
+				errors.push({ error, context });
+			}
+		});
+		await h.on_open();
+		await h.on_message({ jsonrpc: '2.0', id: 1, method: 'echo', params: { value: 'x' } });
+
+		assert.strictEqual(errors.length, 1);
+		const { error, context } = errors[0]!;
+		assert.ok(error instanceof Error);
+		assert.strictEqual(error.message, 'effect failed');
+		assert.deepStrictEqual(context, { transport: 'ws', method: 'echo', path: '/ws' });
+		// the reply is sent before the frame's effects flush
+		assert.deepStrictEqual(timeline, ['error after 1 sends']);
+		assert.deepStrictEqual(parse_json(h.fake.sends[0]!), {
+			jsonrpc: '2.0',
+			id: 1,
+			result: { value: 'ok' }
+		});
 	});
 });
 

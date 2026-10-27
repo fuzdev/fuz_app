@@ -34,6 +34,20 @@ import {
 import { create_jsonrpc_request } from '../../http/jsonrpc_helpers.ts';
 import { heartbeat_action_spec } from '../../actions/heartbeat.ts';
 
+/**
+ * A cross-process `WsClient` with one addition: `send_text` writes a frame
+ * verbatim, for the cases a JSON-serializing `send` cannot express (a frame
+ * that is not JSON at all).
+ */
+export interface WsTransportClient extends WsClient {
+	/**
+	 * Send `text` as one text frame, unserialized.
+	 *
+	 * @throws Error if called after the socket closed
+	 */
+	send_text: (text: string) => Promise<void>;
+}
+
 /** Construction options for `create_ws_transport`. */
 export interface WsTransportOptions {
 	/** Base URL the binary is reachable at — e.g. `http://localhost:8788`. Converted to `ws://` for the upgrade. */
@@ -99,7 +113,9 @@ export interface WsTransportOptions {
  *   message carries the underlying error so the test surfaces the real
  *   cause rather than hanging.
  */
-export const create_ws_transport = async (options: WsTransportOptions): Promise<WsClient> => {
+export const create_ws_transport = async (
+	options: WsTransportOptions
+): Promise<WsTransportClient> => {
 	const { base_url, ws_path, cookies, origin, default_timeout_ms, on_request } = options;
 	const default_timeout = default_timeout_ms ?? WS_CLIENT_DEFAULT_TIMEOUT_MS;
 
@@ -208,10 +224,11 @@ export const create_ws_transport = async (options: WsTransportOptions): Promise<
 		});
 	};
 
-	const send_impl = async (message: unknown): Promise<void> => {
+	const send_text_impl = async (text: string): Promise<void> => {
 		if (is_closed() || socket.readyState !== WebSocket.OPEN) throw new Error('send after close');
-		socket.send(JSON.stringify(message));
+		socket.send(text);
 	};
+	const send_impl = (message: unknown): Promise<void> => send_text_impl(JSON.stringify(message));
 
 	return {
 		get messages() {
@@ -224,6 +241,7 @@ export const create_ws_transport = async (options: WsTransportOptions): Promise<
 			return close_reason;
 		},
 		send: send_impl,
+		send_text: send_text_impl,
 		async request<R = unknown>(
 			id: number | string,
 			method: string,
@@ -277,7 +295,7 @@ export const WS_ADMISSION_PROBE_ID = 'admitted';
  */
 export const create_admitted_ws_transport = async (
 	options: WsTransportOptions
-): Promise<WsClient> => {
+): Promise<WsTransportClient> => {
 	const client = await create_ws_transport(options);
 	try {
 		await client.request(WS_ADMISSION_PROBE_ID, heartbeat_action_spec.method, {});

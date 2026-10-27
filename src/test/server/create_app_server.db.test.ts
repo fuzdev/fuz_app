@@ -268,7 +268,7 @@ describe('create_app_server', () => {
 	});
 
 	test('on_effect_error is called when a pending effect rejects', async () => {
-		const errors: Array<{ error: unknown; method: string; path: string }> = [];
+		const errors: Array<{ error: unknown; transport: string; method: string; path: string }> = [];
 		const result = await create_app_server(
 			await create_config({
 				await_pending_effects: false,
@@ -288,7 +288,7 @@ describe('create_app_server', () => {
 					}
 				],
 				on_effect_error: (error, ctx) => {
-					errors.push({ error, method: ctx.method, path: ctx.path });
+					errors.push({ error, transport: ctx.transport, method: ctx.method, path: ctx.path });
 				}
 			})
 		);
@@ -305,8 +305,43 @@ describe('create_app_server', () => {
 		const err = errors[0]!.error;
 		assert.ok(err instanceof Error);
 		assert.strictEqual(err.message, 'effect failed');
+		assert.strictEqual(errors[0]!.transport, 'http');
 		assert.strictEqual(errors[0]!.method, 'POST');
 		assert.strictEqual(errors[0]!.path, '/effect-test');
+	});
+
+	test('on_effect_error is called in await_pending_effects mode too, before the response', async () => {
+		const errors: Array<unknown> = [];
+		const result = await create_app_server(
+			await create_config({
+				await_pending_effects: true,
+				create_route_specs: () => [
+					{
+						method: 'POST',
+						path: '/effect-test',
+						auth: { account: 'none', actor: 'none' },
+						description: 'Route with failing effect',
+						input: z.null(),
+						output: z.strictObject({ ok: z.boolean() }),
+						handler: async (c) => {
+							c.var.pending_effects.push(Promise.reject(new Error('effect failed')));
+							return c.json({ ok: true });
+						}
+					}
+				],
+				on_effect_error: (error) => {
+					errors.push(error);
+				}
+			})
+		);
+
+		await result.app.request('/effect-test', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' }
+		});
+
+		// awaited mode: the flush settled before the response was returned
+		assert.strictEqual(errors.length, 1);
 	});
 
 	test('bootstrap routes skipped when bootstrap omitted', () => {

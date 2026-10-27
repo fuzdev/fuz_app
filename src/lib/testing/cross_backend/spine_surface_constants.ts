@@ -191,8 +191,7 @@ export const LOGIN_RATE_LIMIT_ENABLED_ENV = 'FUZ_LOGIN_RATE_LIMIT_ENABLED';
 /**
  * Env var both spine binaries read to enable their action rate limiters
  * (`'true'` on / unset off) — one per-IP and one per-account limiter, shared by
- * the RPC and WS endpoints (and, on the Rust stub, the auth-family handlers
- * that charge in-handler). The cross-language contract for the action
+ * the RPC and WS endpoints. The cross-language contract for the action
  * rate-limit cross suite (`ws_action_rate_limit.ts`); same delivery as
  * `LOGIN_RATE_LIMIT_ENABLED_ENV`. Off, neither spine builds an action
  * limiter.

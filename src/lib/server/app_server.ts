@@ -67,7 +67,7 @@ import {
 	type BootstrapStatus
 } from '../auth/bootstrap_routes.ts';
 import { create_surface_route_spec, type SurfaceRouteOptions } from './surface_route.ts';
-import { flush_pending_effects, flush_post_commit_effects } from '../http/pending_effects.ts';
+import { flush_request_effects, type EffectErrorContext } from '../http/pending_effects.ts';
 import {
 	assert_credential_routes_in_auth_scope,
 	assert_endpoint_in_auth_scope,
@@ -87,16 +87,6 @@ import {
 import { create_ws_auth_guard } from '../actions/transports_ws_auth_guard.ts';
 import type { BackendWebsocketTransport } from '../actions/transports_ws_backend.ts';
 import { start_auth_cleanup, type AuthCleanupScheduleOptions } from '../auth/cleanup.ts';
-
-/**
- * Context passed to `on_effect_error` when a pending effect rejects.
- */
-export interface EffectErrorContext {
-	/** HTTP method of the request that spawned the effect. */
-	method: string;
-	/** URL path of the request that spawned the effect. */
-	path: string;
-}
 
 /**
  * Bootstrap configuration for `AppServerOptions.bootstrap`.
@@ -487,9 +477,9 @@ export interface AppServerOptions {
 	await_pending_effects?: boolean;
 
 	/**
-	 * Called when a pending effect rejects.
-	 * Use for monitoring, metrics, or alerting in production.
-	 * Only called when `await_pending_effects` is `false` (production mode).
+	 * Called when an eager pending effect rejects, on HTTP requests and on the
+	 * frames of every WS endpoint the server mounts, in either
+	 * `await_pending_effects` mode. Use for monitoring, metrics, or alerting.
 	 */
 	on_effect_error?: (error: unknown, context: EffectErrorContext) => void;
 
@@ -1104,12 +1094,14 @@ const assemble_app_server = async (
 	// fire-and-forget promises (audit emits, api-token usage). `post_commit_effects` collects deferred thunks pushed via
 	// `emit_after_commit` (WS notifications, anything that must observe a
 	// committed transaction). Both queues drain here, after the handler
-	// (and any wrapping `db.transaction`) returns. In test mode both are
-	// awaited before the response returns; in production, eager-queue
-	// rejections are reported via `on_effect_error`. Either way the
-	// deferred thunks are invoked without waiting for the eager writes to
-	// settle — a revocation's connection close must not sit behind a slow
-	// audit INSERT.
+	// (and any wrapping `db.transaction`) returns, through the flush the WS
+	// dispatcher shares (`flush_request_effects`). In test mode the flush is
+	// awaited before the response returns; in production it runs
+	// fire-and-forget. Either way eager rejections reach `on_effect_error`,
+	// and the deferred thunks are invoked without waiting for the eager
+	// writes to settle — a revocation's connection close must not sit behind
+	// a slow audit INSERT.
+	const on_effect_error = options.on_effect_error;
 	app.use('*', async (c, next) => {
 		c.set('pending_effects', []);
 		c.set('post_commit_effects', []);
@@ -1119,26 +1111,19 @@ const assemble_app_server = async (
 			const eager = c.var.pending_effects;
 			const deferred = c.var.post_commit_effects;
 			if (eager.length || deferred.length) {
-				if (options.await_pending_effects) {
-					// run the deferred thunks before awaiting the eager writes,
-					// so neither mode holds them behind a write
-					const deferred_flush = flush_post_commit_effects(deferred, log);
-					await flush_pending_effects(eager, log);
-					await deferred_flush;
-				} else {
-					const error_ctx: EffectErrorContext = { method: c.req.method, path: c.req.path };
-					const callback = options.on_effect_error;
-					void flush_pending_effects(
-						eager,
-						log,
-						callback ? (reason) => callback(reason, error_ctx) : undefined
-					);
-					// `flush_post_commit_effects` is non-throwing: per-thunk
-					// errors are routed through `log.error` inside the helper,
-					// so production fire-and-forget skips the `on_effect_error`
-					// fan-out (deferred thunks are wrapped end-to-end already).
-					void flush_post_commit_effects(deferred, log);
-				}
+				const error_ctx: EffectErrorContext = {
+					transport: 'http',
+					method: c.req.method,
+					path: c.req.path
+				};
+				const flushed = flush_request_effects(
+					eager,
+					deferred,
+					log,
+					on_effect_error ? (reason) => on_effect_error(reason, error_ctx) : undefined
+				);
+				if (options.await_pending_effects) await flushed;
+				else void flushed;
 			}
 		}
 	});
@@ -1198,7 +1183,8 @@ const assemble_app_server = async (
 				log,
 				required_roles: endpoint.required_roles,
 				action_ip_rate_limiter,
-				action_account_rate_limiter
+				action_account_rate_limiter,
+				on_effect_error
 			});
 			mounted_ws_endpoints[endpoint.path] = endpoint_transport;
 			// every revocation handler's close reaches this transport

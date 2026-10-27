@@ -542,9 +542,10 @@ The flush middleware uses `try/finally` + `Promise.allSettled` to ensure the
 eager `pending_effects` queue flushes even when handlers throw.
 
 In test mode (`await_pending_effects: true`), effects are awaited before the response
-returns — eliminates polling workarounds in tests. In production, the optional
+returns — eliminates polling workarounds in tests. In either mode, the optional
 `on_effect_error` callback on `AppServerOptions` reports rejected effects with
-request context (`method`, `path`) — use for monitoring, metrics, or alerting.
+their context (`transport`, `method`, `path`) — HTTP requests and the frames of
+every mounted WS endpoint alike — use for monitoring, metrics, or alerting.
 
 For work that must run **only after the transaction commits** (WS fan-out:
 role_grant offer / revoke notifications; a revocation's connection closes, via

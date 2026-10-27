@@ -43,6 +43,18 @@
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
 /**
+ * Context passed to `on_effect_error` when an eager pending effect rejects.
+ */
+export interface EffectErrorContext {
+	/** The transport whose request spawned the effect. */
+	transport: 'http' | 'ws';
+	/** HTTP method of the request, or the JSON-RPC method of the WS frame. */
+	method: string;
+	/** URL path of the request, or the mount path of the WS endpoint. */
+	path: string;
+}
+
+/**
  * Minimal structural context required by `emit_after_commit` — just the
  * deferred queue. Both `RouteContext` and `ActionContext` satisfy this.
  * (No `log` here: the flush middleware owns the per-thunk `try/catch` +
@@ -146,7 +158,15 @@ export const flush_pending_effects = async (
 	for (const result of results) {
 		if (result.status === 'rejected') {
 			log.error('pending effect rejected:', result.reason);
-			on_rejection?.(result.reason);
+			if (on_rejection) {
+				// a throwing callback must not make the flush reject — the WS frame
+				// flush runs in a `finally` its adapter does not await
+				try {
+					on_rejection(result.reason);
+				} catch (err) {
+					log.error('on_effect_error threw:', err);
+				}
+			}
 		}
 	}
 };
@@ -180,4 +200,32 @@ export const flush_post_commit_effects = async (
 		}
 	}
 	if (promises.length) await Promise.allSettled(promises);
+};
+
+/**
+ * Drain both queues of one request or WS frame — the single flush every
+ * transport runs after its handler returns.
+ *
+ * The deferred thunks are invoked before the eager writes are awaited, so a
+ * revocation's connection close never sits behind a slow audit INSERT; a thunk
+ * that needs a write awaits it itself. Eager rejections are logged and passed
+ * to `on_rejection` (the server's `on_effect_error`). The caller picks whether
+ * to await the returned promise — HTTP awaits it in test mode only, WS awaits
+ * it per frame after the reply is sent. Never rejects.
+ *
+ * @param pending_effects - the eager queue of in-flight pool writes
+ * @param post_commit_effects - the deferred thunks queued by `emit_after_commit`
+ * @param log - receives every rejection and thunk failure
+ * @param on_rejection - optional fan-out for each eager rejection
+ */
+export const flush_request_effects = async (
+	pending_effects: ReadonlyArray<Promise<void>>,
+	post_commit_effects: ReadonlyArray<() => void | Promise<void>>,
+	log: Logger,
+	on_rejection?: (reason: unknown) => void
+): Promise<void> => {
+	// deferred first — invoked before the eager writes are awaited
+	const deferred = flush_post_commit_effects(post_commit_effects, log);
+	await flush_pending_effects(pending_effects, log, on_rejection);
+	await deferred;
 };

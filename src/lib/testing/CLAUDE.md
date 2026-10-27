@@ -1759,6 +1759,24 @@ it — so the suite gates on `capabilities.peer_request`.
 ws_path})`. The wire literals are independent copies of the producers'
 constants, so a value changed on one spine fails here. Cross-process only.
 
+### `cross_backend/ws_envelope.ts` — `describe_ws_envelope_cross_tests`
+
+Real-upgrade parity for the WS read loop's frame envelope — the socket twin of
+`rpc_adversarial`'s HTTP envelope cases. A frame that is not JSON answers
+`parse_error`, a scalar or bare-string frame and a batch array each answer
+`invalid_request`, all with `id: null` and the socket left open; a
+notification, a stray response matching no server-initiated request, and a
+`cancel` (unknown id, malformed params, or a request in flight) answer no
+frame. The in-flight cancel holds a `peer/ping` with
+`create_holding_peer_ping_responder` (exported from `ws_inbound_dispatch.ts`)
+and pins that the request still answers under its id — neither spine's
+`peer/ping` observes its signal, so the cancel's effect is a consumer seam's
+to pin. Silence is asserted positively: a `heartbeat` probe after the frames,
+and nothing but its response after the mark. Gated on `capabilities.ws`, the
+in-flight cancel also on `capabilities.peer_request`.
+`describe_ws_envelope_cross_tests({setup_test, capabilities, base_url,
+ws_path})`. Cross-process only.
+
 ### `cross_backend/ws_outbound_overflow.ts` — `describe_ws_outbound_overflow_cross_tests`
 
 Real-upgrade parity for the **per-connection outbound bound** — the byte
@@ -2090,7 +2108,7 @@ are `src/test/auth/cell_crud_parity.db.test.ts`
   request (`{result}` / `{error}` / `undefined` to swallow), the path
   `describe_peer_ping_ws_tests` drives. With no `on_request` the seam is inert
   (a server-initiated request flows to `messages` as before).
-- `testing/transports/ws_transport.ts` — `create_ws_transport({base_url, ws_path, cookies, origin?, on_request?, headers?})` (`origin: null` sends no `Origin`, which a daemon-token upgrade needs)
+- `testing/transports/ws_transport.ts` — `create_ws_transport({base_url, ws_path, cookies, origin?, on_request?, headers?})` (`origin: null` sends no `Origin`, which a daemon-token upgrade needs), returning a `WsTransportClient` — a `WsClient` plus `send_text(text)`, which writes one frame verbatim (a frame that is not JSON)
   builds a real-upgrade WS client using the `ws` npm package (optional
   peerDep; consumers wiring cross-process tests `npm install --save-dev ws`).
   Threads the keeper cookie onto the upgrade so per-action auth succeeds on
@@ -2779,12 +2797,12 @@ limiter (the action defaults' windows, the cap replacing both
 `max_attempts`) shared by RPC and WS, and refuse to boot on a cap without the
 flag. Off, neither spine builds an action limiter. Runs under the
 `cross_backend_security` dual-spawn beside the login-security suite. The TS
-spine charges every classed action in its dispatcher; the Rust stub charges
-`account_token_create` and the other auth-family specs inside their handlers
-and every other classed spec at its dispatcher states, the same limiter instances at both sites. So
-the `account_token_create` cases pin the Rust in-handler site, the IP case the
-Rust WS dispatcher's IP axis, and the `cell_create` cases the account axis of
-both Rust dispatchers, RPC and WS — reachable over WS on both spines because
+spine and the Rust stub both charge every classed action — the auth families
+included — in their dispatchers, after authorization and ahead of params
+validation. The `account_token_create` cases pin an auth family's class (a
+malformed `acting` selector, refused by the dispatcher's own params check,
+still charged), the IP case the WS dispatcher's IP axis, and the `cell_create`
+cases the account axis of a consumer-shaped spec, RPC and WS — reachable over WS on both spines because
 the TS spine serves its full action set on `/api/ws`, as the Rust stub serves
 one registry on both transports. The IP case's addresses are fixed per
 process and their bucket outlives `_testing_reset`, so a vitest retry of it

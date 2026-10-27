@@ -291,7 +291,12 @@ notification suite again, over the role-gated endpoint with
 `describe_ws_inbound_dispatch_cross_tests` suite — a request reusing a live id
 refused `invalid_request` / `duplicate_request_id`, and one past the per-socket
 in-flight ceiling shed `queue_overflow` with the socket left open; requests held
-with `peer/ping`, so gated on `capabilities.peer_request`), `sse_round_trip` (the real-streaming-`fetch`
+with `peer/ping`, so gated on `capabilities.peer_request`), `ws_envelope` (the
+real-upgrade `describe_ws_envelope_cross_tests` suite — a parse error, a
+non-object frame, and a batch each answered with `id: null`; a notification, a
+stray response, and `cancel` — unknown id, malformed params, in flight —
+answered with silence, asserted by a `heartbeat` probe; gated on
+`capabilities.ws`), `sse_round_trip` (the real-streaming-`fetch`
 `describe_cross_process_sse_tests` suite — live audit-log SSE: connect,
 data frame, account-wide close-on-revoke, session-scoped close-on-revoke,
 close on account delete, admin token revoke-all, logout, password change and
@@ -631,10 +636,11 @@ password change from an exhausted `/64` refused), a concurrent burst getting at
 most the cap past the limiter, and the distributed-spray backstop (a success
 must not refund the per-IP budget). The second drives
 `describe_ws_action_rate_limit_cross_tests`: an account-limited action refused
-on the WS call past the cap, one account budget across HTTP RPC and WS, the
+on the WS call past the cap, a malformed `acting` selector still charged (the
+throttle precedes params validation), one account budget across HTTP RPC and WS, the
 per-IP axis keyed by the forwarded client IP on both transports, an IPv6 one by
 its `/64` (over HTTP), and the account axis at the RPC and WS dispatchers
-(`cell_create`, which the Rust stub charges there rather than in-handler, and which both spines
+(`cell_create`, a consumer-shaped spec, which both spines
 serve on WS — the TS spine mounts its full action set there, as the Rust stub
 serves one registry on both transports) — over a real socket, against limiters each binary builds from
 `FUZ_ACTION_RATE_LIMIT_ENABLED` + `FUZ_ACTION_RATE_LIMIT_MAX_ATTEMPTS` and

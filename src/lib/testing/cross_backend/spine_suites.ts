@@ -239,6 +239,10 @@ import {
 	type WsInboundDispatchCrossTestOptions
 } from './ws_inbound_dispatch.ts';
 import {
+	describe_ws_envelope_cross_tests,
+	type WsEnvelopeCrossTestOptions
+} from './ws_envelope.ts';
+import {
 	describe_ws_outbound_overflow_cross_tests,
 	type WsOutboundOverflowCrossTestOptions
 } from './ws_outbound_overflow.ts';
@@ -298,6 +302,7 @@ export const SUITE_NAMES = [
 	'token_scope_surface',
 	'transport_composition',
 	'ws_connection_cap',
+	'ws_envelope',
 	'ws_inbound_dispatch',
 	'ws_outbound_overflow',
 	'ws_role_gated',
@@ -378,6 +383,7 @@ export interface SuiteOptionsMap {
 	token_scope_surface: TokenScopeSurfaceCrossTestOptions;
 	transport_composition: TransportCompositionCrossTestOptions;
 	ws_connection_cap: WsConnectionCapCrossTestOptions;
+	ws_envelope: WsEnvelopeCrossTestOptions;
 	ws_inbound_dispatch: WsInboundDispatchCrossTestOptions;
 	ws_outbound_overflow: WsOutboundOverflowCrossTestOptions;
 	ws_role_gated: WsRoleGatedCrossTestOptions;
@@ -889,6 +895,16 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			ws_path: c.config.ws_path
 		}),
 		describe: describe_ws_connection_cap_cross_tests,
+		required: { setup_test: true, capabilities: true, base_url: true, ws_path: true }
+	},
+	ws_envelope: {
+		derive: (c) => ({
+			setup_test: c.setup(),
+			capabilities: c.config.capabilities,
+			base_url: c.config.base_url,
+			ws_path: c.config.ws_path
+		}),
+		describe: describe_ws_envelope_cross_tests,
 		required: { setup_test: true, capabilities: true, base_url: true, ws_path: true }
 	},
 	ws_inbound_dispatch: {

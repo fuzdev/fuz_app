@@ -20,9 +20,9 @@ import { assert } from 'vitest';
 import {
 	create_admitted_ws_transport,
 	create_ws_transport,
+	type WsTransportClient,
 	type WsTransportOptions
 } from '../transports/ws_transport.ts';
-import type { WsClient } from '../transports/ws_client.ts';
 
 /** Where a backend's WebSocket endpoint is. */
 export interface WsEndpointTarget {
@@ -86,7 +86,7 @@ export const open_session_ws = (
 	target: WsEndpointTarget,
 	account: WsSessionAccount,
 	options: OpenSessionWsOptions
-): Promise<WsClient> => {
+): Promise<WsTransportClient> => {
 	const { admitted, ...transport_options } = options;
 	const open = admitted ? create_admitted_ws_transport : create_ws_transport;
 	return open({

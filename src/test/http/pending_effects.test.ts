@@ -290,4 +290,23 @@ describe('flush_pending_effects', () => {
 		});
 		assert.strictEqual(fanout_count.length, 2);
 	});
+
+	test('a throwing on_rejection is logged and the flush still resolves', async () => {
+		const { log, errors } = create_recording_logger();
+		const callback_error = new Error('callback boom');
+		const calls: Array<unknown> = [];
+		const effects: Array<Promise<void>> = [
+			Promise.reject(new Error('first')),
+			Promise.reject(new Error('second'))
+		];
+		await flush_pending_effects(effects, log, (reason) => {
+			calls.push(reason);
+			throw callback_error;
+		});
+		assert.strictEqual(calls.length, 2, 'a throwing callback does not stop later fan-outs');
+		assert.ok(
+			errors.some((args) => args.includes(callback_error)),
+			'error log must include the callback error'
+		);
+	});
 });

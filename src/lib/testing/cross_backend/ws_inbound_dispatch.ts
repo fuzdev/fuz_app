@@ -70,9 +70,13 @@ export interface WsInboundDispatchCrossTestOptions extends WsEndpointTarget {
 /**
  * A client responder that withholds every server-initiated `peer/ping` echo
  * until `release` — so each client `peer/ping` stays in flight on the server —
- * and answers at once after it.
+ * and answers at once after it. Shared with the WS envelope suite's cancel
+ * cases.
+ *
+ * @returns the responder, its `release`, and `pinged(count)`, resolving once
+ *   `count` pings have reached the client
  */
-const create_holding_responder = (): {
+export const create_holding_peer_ping_responder = (): {
 	responder: WsRequestResponder;
 	release: () => void;
 	/** Resolves once `count` pings have reached the client. */
@@ -166,7 +170,7 @@ export const describe_ws_inbound_dispatch_cross_tests = (
 			'a request reusing a live id is refused with that id; the first keeps it, then the id frees',
 			async () => {
 				const fixture = await setup_test();
-				const { responder, release, pinged } = create_holding_responder();
+				const { responder, release, pinged } = create_holding_peer_ping_responder();
 				const ws = await open_ws(fixture, responder);
 				try {
 					const id = 'held';
@@ -206,7 +210,7 @@ export const describe_ws_inbound_dispatch_cross_tests = (
 			'past the in-flight ceiling a request is shed with queue_overflow and the socket keeps serving',
 			async () => {
 				const fixture = await setup_test();
-				const { responder, release } = create_holding_responder();
+				const { responder, release } = create_holding_peer_ping_responder();
 				const ws = await open_ws(fixture, responder);
 				try {
 					for (let n = 0; n < MAX_INBOUND_DISPATCHES; n++) {

@@ -138,7 +138,7 @@ import { get_resolved_auth, revalidate_resolved_auth } from '../auth/resolved_au
 import { query_active_actors_by_account } from '../auth/account_queries.ts';
 import { schedule_credential_deadline } from '../auth/credential_deadline.ts';
 import { get_client_ip } from '../http/client_ip.ts';
-import { flush_pending_effects, flush_post_commit_effects } from '../http/pending_effects.ts';
+import { flush_request_effects, type EffectErrorContext } from '../http/pending_effects.ts';
 import type { RateLimiter } from '../rate_limiter.ts';
 import {
 	JsonrpcRequest,
@@ -522,6 +522,13 @@ export interface RegisterActionWsOptions {
 	 * dispatcher.
 	 */
 	action_account_rate_limiter: RateLimiter | null;
+	/**
+	 * Called when an eager pending effect of a frame's action rejects, after
+	 * the rejection is logged — the WS half of `create_app_server`'s
+	 * `on_effect_error`, which threads it here for the endpoints it mounts.
+	 * The context carries `transport: 'ws'`, the action method, and `path`.
+	 */
+	on_effect_error?: (error: unknown, context: EffectErrorContext) => void;
 }
 
 /** Result of `register_action_ws`. */
@@ -610,6 +617,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 		on_socket_close,
 		action_ip_rate_limiter,
 		action_account_rate_limiter,
+		on_effect_error,
 		required_roles = []
 	} = options;
 
@@ -1330,9 +1338,14 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 				} finally {
 					pending_controllers.delete(id);
 					// deferred first — see the ordering invariant above
-					const deferred = flush_post_commit_effects(post_commit_effects, log);
-					await flush_pending_effects(pending_effects, log);
-					await deferred;
+					await flush_request_effects(
+						pending_effects,
+						post_commit_effects,
+						log,
+						on_effect_error
+							? (reason) => on_effect_error(reason, { transport: 'ws', method, path })
+							: undefined
+					);
 				}
 			};
 

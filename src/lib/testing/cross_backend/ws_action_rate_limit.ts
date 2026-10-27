@@ -33,13 +33,17 @@ import '../assert_dev_env.ts';
  *   split between the two transports exhaust one budget, and a budget split
  *   between `cell_create` and `account_token_create` is one bucket.
  *
- * **Charge sites.** The TS spine charges every classed action in its
- * dispatcher. The Rust stub has two sites holding the same limiters: the auth
- * families (`account_token_create`) charge inside their handlers, and the
- * dispatcher states charge every other classed spec. So the
- * `account_token_create` cases pin the Rust in-handler site, `peer/ping` pins
- * the Rust WS dispatcher's IP axis, and `cell_create` pins the account axis of
- * both Rust dispatchers, RPC and WS.
+ * - **the throttle precedes the dispatcher's own params checks** —
+ *   `account_token_create` with a malformed `acting` selector, which each
+ *   spine refuses in its dispatcher (TS's input schema, Rust's
+ *   `check_acting_selector`) rather than in the handler: the call past the cap
+ *   still answers `rate_limited`, so the refusals charged.
+ *
+ * **Charge site.** Both spines charge every classed action — the auth
+ * families included — in the shared dispatch core (`perform_action`), after
+ * authorization and ahead of params validation. `account_token_create` pins
+ * the auth families' class, `peer/ping` the IP axis, and `cell_create` the
+ * account axis of a consumer-shaped spec, over RPC and WS.
  *
  * **Isolation.** Limiter state is in-memory and `_testing_reset` wipes only
  * the database, so every case reads a bucket no other case touched: the
@@ -49,7 +53,7 @@ import '../assert_dev_env.ts';
  *
  * Cross-process only: the composition under test is the spawned binary's
  * (`create_app_server` threading one limiter pair to both mounts on TS; the
- * stub's dispatcher states plus its auth-family builders on Rust).
+ * stub's dispatcher states on Rust).
  *
  * @module
  */
@@ -80,12 +84,18 @@ const CODE_RATE_LIMITED = -32006;
 const ACCOUNT_LIMITED_METHOD = 'account_token_create';
 /** Unknown key — refused by both spines' strict params decode, after the throttle. */
 const ACCOUNT_LIMITED_BAD_PARAMS = { not_a_param: true };
+/**
+ * A malformed `acting` selector — refused by both spines' dispatchers ahead of
+ * the handler (TS's input schema, Rust's `check_acting_selector`), after the
+ * throttle.
+ */
+const ACCOUNT_LIMITED_BAD_ACTING = { acting: 'not-a-uuid' };
 
 /**
- * An `account`-classed action the Rust stub charges at its dispatchers (not
- * in-handler, unlike `ACCOUNT_LIMITED_METHOD`), mounted on both spines' RPC
- * and WS. Actor-grain, so the keeper's actor resolves before the throttle; the same
- * unknown-key params are refused by both spines' strict decode, after it.
+ * An `account`-classed consumer-shaped action (not an auth family, unlike
+ * `ACCOUNT_LIMITED_METHOD`), mounted on both spines' RPC and WS. Actor-grain,
+ * so the keeper's actor resolves before the throttle; the same unknown-key
+ * params are refused by both spines' strict decode, after it.
  */
 const DISPATCHER_ACCOUNT_LIMITED_METHOD = 'cell_create';
 
@@ -237,6 +247,21 @@ export const describe_ws_action_rate_limit_cross_tests = (
 			} finally {
 				await ws.close();
 			}
+		});
+
+		test('a malformed acting selector is charged: the throttle precedes params validation', async () => {
+			const fixture = await setup_test();
+			const session = fixture.create_session_headers();
+			for (let i = 1; i <= max_attempts; i++) {
+				assert_charged_not_limited(
+					await call_http(fixture, ACCOUNT_LIMITED_METHOD, ACCOUNT_LIMITED_BAD_ACTING, session),
+					`HTTP call ${i}`
+				);
+			}
+			assert_rate_limited(
+				await call_http(fixture, ACCOUNT_LIMITED_METHOD, ACCOUNT_LIMITED_BAD_ACTING, session),
+				`HTTP call ${max_attempts + 1}`
+			);
 		});
 
 		test('HTTP RPC and WS calls draw one account budget', async () => {

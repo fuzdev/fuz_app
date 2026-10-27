@@ -370,7 +370,7 @@ and `allow_fallback: boolean` (default `true`). Explicit
 - `WS_CLOSE_PERMISSION_REVOKED = 4006` — the socket's account lost a role its endpoint's `required_roles` lists: a revoked global grant (reason `WS_CLOSE_PERMISSION_REVOKED_REASON`, `Permission revoked`), mid-life or at admission. Nothing is sent after it. Not a revocation of the credential: the client stays `closed` until `connect()` is called, without setting `revoked` or `superseded`, and rejects pending and queued requests `forbidden`. Twin of the Rust spine's constant.
 - `WS_CLOSE_GOING_AWAY = 1001` — the server is shutting down (reason `WS_CLOSE_GOING_AWAY_REASON`, `Server shutting down`): `close_all_sockets`, which `AppServer.close` runs. Also the close for an upgrade the shutdown refuses — pending at the close-all, or born closed after it. Not a revocation: the client reconnects under its ordinary backoff.
 - `WS_CLOSE_MESSAGE_TOO_BIG = 1009` — server received a message over its `max_message_bytes` cap (RFC 6455 "Message Too Big").
-- `WS_CLOSE_POLICY_VIOLATION = 1008` — a socket sent too much while it was still opening (before admission and `on_socket_open` completed): past `MAX_PRE_ADMISSION_FRAMES` frames or the `PRE_ADMISSION_QUEUE_BYTES_FACTOR` byte budget.
+- `WS_CLOSE_POLICY_VIOLATION = 1008` — a socket sent too much while it was still opening (before admission and `on_socket_open` completed): past `MAX_PRE_ADMISSION_FRAMES` frames or the `PRE_ADMISSION_QUEUE_BYTES_FACTOR` byte budget. TS-only: the Rust spine reads no frame before admission (they wait in the socket for its loop), so it has no pre-admission queue to overflow and never sends 1008.
 - `WS_CLOSE_INTERNAL_ERROR = 1011` — the admission credential re-check itself failed (reason `internal error`), `on_socket_open` threw (reason `socket bootstrap failed`), or the socket's connection was removed from the transport without a close (reason `connection unregistered`). Not a revocation: the client reconnects under its ordinary backoff. Twin of the Rust spine's constant.
 
 ### Transport modules
@@ -939,11 +939,13 @@ account delete, a cap eviction) still closes the socket — the revoking
 handler through `connection_closer`, `create_ws_auth_guard` again on the
 audit row.
 
-Per-message side-effect queues: `pending_effects` (eager) drains via
-`flush_pending_effects`; `post_commit_effects` (deferred — pushed by
-handlers via `emit_after_commit`) drains via `flush_post_commit_effects`.
-Both flush in the same `try/finally` that releases the request controller,
-after the reply is sent, and every rejection is logged. Nothing orders that
+Per-message side-effect queues: `pending_effects` (eager) and
+`post_commit_effects` (deferred — pushed by handlers via
+`emit_after_commit`) drain through `flush_request_effects`, the flush the
+HTTP middleware shares. Both flush in the same `try/finally` that releases
+the request controller, after the reply is sent; every rejection is logged
+and reaches `on_effect_error` (`create_app_server` threads its own to the
+endpoints it mounts) with `{transport: 'ws', method, path}`. Nothing orders that
 flush against other frames: frames on an admitted socket are not serialized
 (`handle_frame` calls aren't chained, and an adapter need not await
 `onMessage` — `@hono/node-ws` doesn't), so a message's effects can still be
