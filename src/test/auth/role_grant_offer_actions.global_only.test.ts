@@ -38,7 +38,7 @@ import { ERROR_INSUFFICIENT_PERMISSIONS } from '#lib/http/error_schemas.ts';
 import { JSONRPC_ERROR_CODES, ThrownJsonrpcError } from '#lib/http/jsonrpc_errors.ts';
 import { create_test_audit_emitter } from '#lib/testing/stubs.ts';
 import { create_test_context } from '#lib/testing/entities.ts';
-import type { RpcAction } from '#lib/actions/action_rpc.ts';
+import type { RpcAction } from '#lib/actions/action_types.ts';
 
 import { create_test_action_context } from './rpc_test_helpers.ts';
 

@@ -20,7 +20,7 @@ import {
 	type JsonrpcErrorCode
 } from '../http/jsonrpc.ts';
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
-import type { RpcAction } from '../actions/action_rpc.ts';
+import type { RpcAction } from '../actions/action_types.ts';
 import type {
 	AppSurfaceRpcEndpoint,
 	AppSurfaceRpcMethod,

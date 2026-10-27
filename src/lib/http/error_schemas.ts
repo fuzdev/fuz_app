@@ -298,8 +298,7 @@ export type CredentialTypeRequiredError = z.infer<typeof CredentialTypeRequiredE
  * `docs/security.md` §Token scoping.
  *
  * `required_scope` carries the capability string the route demands, verbatim
- * from its `auth.required_scope` — `surface:audit_stream` for a non-RPC
- * surface, `rpc:<method>` for a bridged action — matching the Rust
+ * from its `auth.required_scope` (`surface:audit_stream`, …) — matching the Rust
  * `token_scope_surface_denied_response` and the dispatcher's own per-method
  * denial. Third in the family with `PermissionError` and
  * `CredentialTypeRequiredError` — each names what the route demanded rather

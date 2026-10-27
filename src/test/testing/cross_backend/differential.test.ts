@@ -13,7 +13,7 @@ import {
 import type { TestFixture } from '#lib/testing/cross_backend/setup.ts';
 import type { FetchTransport } from '#lib/testing/transports/fetch_transport.ts';
 import type { AppSurfaceSpec } from '#lib/http/surface.ts';
-import { rpc_action } from '#lib/actions/action_rpc.ts';
+import { rpc_action } from '#lib/actions/action_types.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 
 const case_on = (name: string, method: string): ConformanceCase => ({

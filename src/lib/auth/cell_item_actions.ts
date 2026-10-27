@@ -33,7 +33,7 @@ import {
 	type ActionActorContext,
 	type ActionContext,
 	type RpcAction
-} from '../actions/action_rpc.ts';
+} from '../actions/action_types.ts';
 import { jsonrpc_errors } from '../http/jsonrpc_errors.ts';
 import { is_pg_unique_violation } from '../db/pg_error.ts';
 import type { ActionFactoryDeps } from './deps.ts';

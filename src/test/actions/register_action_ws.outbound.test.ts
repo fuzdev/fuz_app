@@ -16,7 +16,7 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { create_uuid, type Uuid } from '#lib/primitive_schemas.ts';
 
 import { register_action_ws } from '#lib/actions/register_action_ws.ts';
-import type { ActionContext } from '#lib/actions/action_rpc.ts';
+import type { ActionContext } from '#lib/actions/action_types.ts';
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import { heartbeat_action } from '#lib/actions/heartbeat.ts';
 import {

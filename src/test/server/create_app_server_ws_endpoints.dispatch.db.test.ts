@@ -68,7 +68,7 @@ import {
 } from '#lib/testing/ws_round_trip.ts';
 import { protocol_actions } from '#lib/actions/protocol.ts';
 import { PEER_PING_METHOD } from '#lib/actions/peer_ping.ts';
-import type { RpcAction } from '#lib/actions/action_rpc.ts';
+import type { RpcAction } from '#lib/actions/action_types.ts';
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import type { MiddlewareSpec } from '#lib/http/middleware_spec.ts';
 import type { EffectErrorContext } from '#lib/http/pending_effects.ts';

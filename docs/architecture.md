@@ -474,9 +474,7 @@ per transport family:
   `RouteSpec.output`, and non-2xx JSON responses against the matching
   declared error schema from the three-layer merge above. Streaming responses
   (SSE) are skipped via a `Content-Type` check. Clones the `Response` body
-  so validation does not consume the stream. The REST bridge for action
-  specs (`actions/action_bridge.ts` → `create_action_route_spec`) inherits
-  this site automatically.
+  so validation does not consume the stream.
 - **JSON-RPC + WebSocket actions** — the shared `perform_action` core in
   `actions/perform_action.ts`. Validates the handler return value against
   `spec.output` before the result envelope is written. Runs inside the

@@ -35,7 +35,7 @@ import {
 	select_auth_app
 } from './auth_apps.ts';
 import { generate_valid_body } from './schema_generators.ts';
-import type { RpcAction } from '../actions/action_rpc.ts';
+import type { RpcAction } from '../actions/action_types.ts';
 import {
 	create_rpc_post_init,
 	create_rpc_get_url,

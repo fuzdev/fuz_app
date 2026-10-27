@@ -14,7 +14,7 @@
  * @module
  */
 
-import type { ActionActorContext, ActionContext } from '../actions/action_rpc.ts';
+import type { ActionActorContext, ActionContext } from '../actions/action_types.ts';
 import { jsonrpc_errors } from '../http/jsonrpc_errors.ts';
 import type { QueryDeps } from '../db/query_deps.ts';
 import { query_cell_get, type CellRow } from '../db/cell_queries.ts';

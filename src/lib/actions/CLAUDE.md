@@ -1,12 +1,12 @@
 # actions/ — SAES (Symmetric Action Event System)
 
-> One declarative `ActionSpec` binds to three transport surfaces (REST,
-> JSON-RPC over HTTP, WebSocket) with uniform DEV-only output validation and
-> symmetric send/receive.
+> One declarative `ActionSpec` binds to two transport surfaces (JSON-RPC over
+> HTTP, WebSocket) with uniform DEV-only output validation and symmetric
+> send/receive.
 
 For consumer wiring (client-authoritative vs server-authoritative dispatch,
 role-grant-offer UI integration), see ../../../docs/usage.md §Deriving
-Route/Event Specs, §Single JSON-RPC 2.0 Endpoint, §WebSocket Endpoint. For
+Event Specs from Action Specs, §Single JSON-RPC 2.0 Endpoint, §WebSocket Endpoint. For
 DEV-only output validation semantics see ../../../docs/architecture.md
 §DEV-only Output Validation. For the SAES binding matrix and middleware
 ordering see the root ../../../CLAUDE.md §Action Spec System (SAES) and
@@ -32,7 +32,7 @@ Canonical source of truth. Three concrete kinds discriminate on `kind`:
 `RouteAuth` is the flat record
 `{account, actor, roles?, credential_types?, required_scope?}` from
 `http/auth_shape.ts` — same shape governs `RouteSpec.auth` so one auth
-surface drives REST and SAES. Cross-axis invariants: roles imply
+surface drives routes and SAES. Cross-axis invariants: roles imply
 `actor: 'required'`; `account: 'none'` implies `actor: 'none'` (no
 accountless actors in v1); the unrestricted leaf
 (`account: 'none', actor: 'none'`) cannot declare roles or credential
@@ -65,13 +65,11 @@ dropping per-spec `*_METHOD` constants (readers dereference `.method`). See
 
 ## Kind → binding matrix
 
-- `request_response` — REST `RouteSpec` via bridge; RPC `RouteSpec` via `create_rpc_endpoint`; WS dispatch yes; no SSE.
-- `remote_notification` — no REST/RPC routes; WS server push; SSE `EventSpec` via bridge.
-- `local_call` — none (no REST, no RPC, no WS, no SSE).
+- `request_response` — RPC `RouteSpec` via `create_rpc_endpoint`; WS dispatch yes; no SSE.
+- `remote_notification` — no RPC routes; WS server push; SSE `EventSpec` via `create_action_event_spec`.
+- `local_call` — none (no RPC, no WS, no SSE).
 
-`create_action_route_spec` throws if `spec.auth` is null (notifications and
-local calls cannot become routes) or `spec.rate_limit` is set (a bridged route
-never reaches the `perform_action` limiters). `create_action_event_spec` throws on any
+`create_action_event_spec` (`actions/action_bridge.ts`) throws on any
 non-`remote_notification` kind.
 
 ## Registry compile (`actions/compile_action_registry.ts`)
@@ -173,33 +171,6 @@ Never calls `generate_typed_action_event_alias` or
 zzz) emits the full set including `ActionEventDatas`, `TypedActionEvent`,
 and `FrontendActionHandlers`.
 
-## HTTP bridge (`actions/action_bridge.ts`)
-
-Derives transport-specific specs from action specs. HTTP-specific concerns
-(path, handler, errors) come from options, not the action spec.
-
-- `create_action_route_spec(spec, options)` — one action → one `RouteSpec`. HTTP method defaults by `side_effects` (`true` → POST, `false` → GET; override via `options.http_method`). `route.auth` is `spec.auth` plus a derived `required_scope`. `transaction: spec.side_effects`. Throws if `spec.auth` is null, or if `spec.rate_limit` is set (the action limiters run in `perform_action`, which a bridged route never reaches).
-
-**The bridge carries the token-scope gate across.** A bridged route runs
-`options.handler` through the REST pipeline and never reaches
-`perform_action`, so the dispatcher's per-method scope check cannot fire on it
-— leaving a bearer-reachable surface a **narrowed** token walks through, which
-is what the RPC-only rule exists to prevent. So the derived spec declares
-`auth.required_scope: 'rpc:<method>'` and `fuz_auth_guard_resolver` mounts the
-refusal ahead of the role gate. Per-method rather than a blanket refusal
-because a bridged route _has_ a method identity, which the non-RPC surfaces
-the RPC-only rule covers do not.
-
-Bridge something with no request/response shape — an SSE stream, a file
-download — and the whole-surface rule applies instead: pass `options.auth` with
-`required_scope: 'surface:<name>'`, naming your own surface (the vocabulary is
-open on the identifier). An `options.auth` that omits `required_scope` still
-gets the derived one; public actions get none (the guard would enforce
-nothing). fuz_app mounts no bridged routes itself; this is consumer-facing.
-
-- `create_action_event_spec(spec, {channel?})` — one notification action → one `EventSpec` for SSE surface + `create_validated_broadcaster`. Throws on non-`remote_notification` kind.
-- `derive_http_method(side_effects)` — exported for custom bridges.
-
 ## Single JSON-RPC 2.0 endpoint (`actions/action_rpc.ts`)
 
 `create_rpc_endpoint({path, actions, log, action_ip_rate_limiter, action_account_rate_limiter}): RouteSpec[]`
@@ -233,7 +204,7 @@ Shim responsibilities (per-request):
 3. GET read restriction — GET rejected for `side_effects: true` actions.
 4. Build `PerformActionInput` from `c.var` + `get_client_ip` + `c.req.raw.signal`. Test-preset escape hatch reads `TEST_CONTEXT_PRESET_KEY` + `REQUEST_CONTEXT_KEY`.
 5. Call `perform_action` (shared core).
-6. Bind result via `perform_action_result_to_envelope(id, result)`; `c.json(envelope, result.status)`.
+6. Bind result via `serialize_action_result(id, result, method, log)` (`actions/perform_action.ts`, shared with WS) → `{body, status}`, written with `c.json`'s content type.
 
 Error paths: `ThrownJsonrpcError` (duck-typed via `err instanceof Error &&
 is_jsonrpc_error_code(err.code)` to handle cross-copy `instanceof` misses,
@@ -242,15 +213,16 @@ preserves code + data verbatim; an error whose numeric `code` is not a
 JSON-RPC one (a `DOMException`) takes the generic path. Generic throws become `internal_error` 500;
 message is the raw error under `DEV`, "internal server error" otherwise.
 
-A result `c.json` cannot serialize (a `bigint`, a cycle) answers the same
-`internal_error` 500 rather than throwing. By then `perform_action` has
+A result that cannot be serialized (a `bigint`, a cycle) answers the same
+`internal_error` 500 rather than throwing (`serialize_action_result`, which the
+WS dispatcher shares). By then `perform_action` has
 committed, and a throw would have the route wrapper
 (`dispatch_with_post_commit_rollback`) discard the handler's
 `post_commit_effects` — the connection closes of a revocation that did land.
 
 ### Per-request handler shape
 
-Unified across HTTP RPC + WS via `ActionContext`:
+Unified across HTTP RPC + WS via `ActionContext` (`actions/action_types.ts`):
 
 ```ts
 interface ActionContext {
@@ -330,10 +302,10 @@ surface consistency.
 ## DEV-only output validation — uniform across surfaces
 
 Critical invariant: every action-handler surface applies DEV-only output
-validation and produces the **same failure mode** — log an error, return
+validation and produces the **same failure mode** as REST routes'
+`wrap_output_validation` (`http/route_spec.ts`) — log an error, return
 the response unchanged, do not throw, do not mutate status.
 
-- REST bridge — `http/route_spec.ts` `wrap_output_validation` (applied via `apply_route_specs`; inherited by `create_action_route_spec`). Production hot path short-circuits (no parse).
 - HTTP RPC + WebSocket dispatch — `actions/perform_action.ts` `if (DEV) spec.output.safeParse(output)` inside the shared dispatch core. Production hot path short-circuits (no parse).
 
 Caller-facing `input` schemas are validated **always** (DEV + production)
@@ -1026,8 +998,8 @@ Two const arrays:
 - `protocol_actions: ReadonlyArray<Action>` — for the server's `register_action_ws` `actions`. Spread before consumer-owned actions.
 - `protocol_action_specs: ReadonlyArray<ActionSpecUnion>` — derived via `.map(a => a.spec)` so the two arrays cannot drift. For the frontend `ActionRegistry`.
 
-Asymmetry intentional — server runs handlers (heartbeat echo, cancel
-stub, peer/ping round-trip), frontend registry only stores specs. Both
+Asymmetry intentional — server runs handlers (heartbeat echo, peer/ping
+round-trip; cancel is dispatcher-owned), frontend registry only stores specs. Both
 bundles plus the codegen `include_protocol_actions: false` default form a
 three-leg contract; `PROTOCOL_ACTION_METHODS` (in `actions/action_codegen.ts`)
 is the method-name set that drives both the codegen filter and the action-manifest
@@ -1041,8 +1013,8 @@ individual protocol actions without an opt-out flag.
 ### Individual actions
 
 - **`heartbeat_action`** — `request_response`, `initiator: 'frontend'`, `auth: 'authenticated'`, `side_effects: false`, parameterless `z.void()` input (absent / `null` / `{}` params — the Rust `require_void_params` shapes), empty-object output. Handler is a stateless no-op echo. Client's activity-aware heartbeat timer fires this whenever idle past `DEFAULT_HEARTBEAT_INTERVAL`; server's `register_action_ws` heartbeat tracker counts the incoming message as activity.
-- **`cancel_action`** — `remote_notification`, `initiator: 'frontend'`, `auth: null`, `side_effects: true`. Params: `CancelNotificationParams = z.strictObject({request_id: JsonrpcRequestId})`. **Handler is an empty stub** — cancel semantics are dispatcher-owned (`register_action_ws` has the `{request_id → AbortController}` map). Wire format is snake_case `cancel` + `{request_id}`, not MCP's `$/cancelRequest` + `{requestId}` — MCP adoption would happen at an MCP adapter's translation layer, not in the base transport.
-- **`peer_ping_action`** — `request_response`, `initiator: 'both'`, `auth: public`, `side_effects: false`. Input `PingActionInput = {nonce?, timeout_ms?}` (`.default({})`); output `PingResponse = {nonce, protocol_version}`. The client→server invocation drives the **server→client** direction: the handler calls `ctx.request_client('peer/ping', {nonce})`, awaits the echo, validates it against `PingResponse` + checks the nonce, and returns it. Over HTTP RPC (`ctx.request_client` absent) it refuses with `peer_no_transport`, so it's mounted on both the WS endpoint (via this bundle) and the HTTP RPC endpoint (the spine full mount). `timeout_ms` is clamped shorten-only. `data.reason` codes (`peer_timeout` / `peer_connection_gone` / `peer_no_transport` / `peer_too_many_in_flight` / `peer_ping_invalid_reply` / `peer_ping_nonce_mismatch`) + the `PingResponse` shape (whose `protocol_version` is `PEER_PROTOCOL_VERSION`) are the cross-impl wire contract (twins of the Rust `REASON_PEER_*`). The frontend half — `peer_ping_responder` (the echo a client sends back, wired into `FrontendWebsocketTransport`) — lives here too. `peer_ping_action` is a plain `RpcAction` literal (not `rpc_action(...)`), so the module stays free of the runtime `action_rpc.ts` import and `protocol_action_specs` doesn't drag the dispatch core into frontend bundles — same discipline as `heartbeat`/`cancel`. See `actions/peer_ping.ts`.
+- **`cancel_action`** — `remote_notification`, `initiator: 'frontend'`, `auth: null`, `side_effects: true`. Params: `CancelNotificationParams = z.strictObject({request_id: JsonrpcRequestId})`. **No handler** (`cancel_action = {spec}`) — cancel semantics are dispatcher-owned (`register_action_ws` has the `{request_id → AbortController}` map). Wire format is snake_case `cancel` + `{request_id}`, not MCP's `$/cancelRequest` + `{requestId}` — MCP adoption would happen at an MCP adapter's translation layer, not in the base transport.
+- **`peer_ping_action`** — `request_response`, `initiator: 'both'`, `auth: public`, `side_effects: false`. Input `PingActionInput = {nonce?, timeout_ms?}` (`.default({})`); output `PingResponse = {nonce, protocol_version}`. The client→server invocation drives the **server→client** direction: the handler calls `ctx.request_client('peer/ping', {nonce})`, awaits the echo, validates it against `PingResponse` + checks the nonce, and returns it. Over HTTP RPC (`ctx.request_client` absent) it refuses with `peer_no_transport`, so it's mounted on both the WS endpoint (via this bundle) and the HTTP RPC endpoint (the spine full mount). `timeout_ms` is clamped shorten-only. `data.reason` codes (`peer_timeout` / `peer_connection_gone` / `peer_no_transport` / `peer_too_many_in_flight` / `peer_ping_invalid_reply` / `peer_ping_nonce_mismatch`) + the `PingResponse` shape (whose `protocol_version` is `PEER_PROTOCOL_VERSION`) are the cross-impl wire contract (twins of the Rust `REASON_PEER_*`). The frontend half — `peer_ping_responder` (the echo a client sends back, wired into `FrontendWebsocketTransport`) — lives here too. `peer_ping_action` imports nothing from the dispatch core, so `protocol_action_specs` doesn't drag it into frontend bundles — same discipline as `heartbeat`/`cancel`. See `actions/peer_ping.ts`.
 
 ## Event state machine
 
@@ -1236,5 +1208,6 @@ Sits above `action_spec.ts` (pure Zod) and below the dispatchers. Extracted
 so composable primitives (e.g. `heartbeat_action`) can name the types
 without pulling in server-only modules.
 
-- `Action<TSpec>` — `{spec: TSpec, handler?: ActionHandler}`. Polymorphic on `kind`: `request_response` specs require a handler for dispatch; `remote_notification` specs may declare a stub for symmetry but are dispatcher-handled (e.g. `cancel`); `local_call` specs never reach a network dispatcher.
-- `RpcAction = Action<RequestResponseActionSpec> & {handler: ActionHandler}` — narrowing the HTTP RPC dispatcher accepts (`create_rpc_endpoint`) and the `rpc_action` binder produces.
+- `Action<TSpec>` — `{spec: TSpec, handler?: ActionHandler}`. Polymorphic on `kind`: `request_response` specs require a handler for dispatch; `remote_notification` specs are dispatcher-handled (e.g. `cancel`, which has no handler); `local_call` specs never reach a network dispatcher.
+- `ActionContext` + its narrowed tiers (`ActionAuthContext`, `ActionActorContext`), the handler signatures (`ActionHandler`, `AuthActionHandler`, `ActorActionHandler`), `HandlerForSpec`, and the `rpc_action` binder — the handler-side surface every action factory names. `actions/action_rpc.ts` keeps only `create_rpc_endpoint` + its options.
+- `RpcAction` — `{spec: RequestResponseActionSpec, handler: ActionHandler}`, what the dispatchers accept (`create_rpc_endpoint`, `register_action_ws`) and the `rpc_action` binder produces.

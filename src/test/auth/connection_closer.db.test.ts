@@ -72,7 +72,8 @@ import {
 	ERROR_CREDENTIAL_TYPE_REQUIRED,
 	ERROR_ACCOUNT_NOT_FOUND
 } from '#lib/http/error_schemas.ts';
-import { create_rpc_endpoint, rpc_action } from '#lib/actions/action_rpc.ts';
+import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
+import { rpc_action } from '#lib/actions/action_types.ts';
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import { queue_connection_close, type ConnectionCloser } from '#lib/actions/connection_closer.ts';
 import { register_action_ws } from '#lib/actions/register_action_ws.ts';
@@ -1103,7 +1104,6 @@ describe_db('connection_closer wiring', (get_db) => {
 					return closed;
 				},
 				send() {},
-				comment() {},
 				close() {
 					closed = true;
 				},

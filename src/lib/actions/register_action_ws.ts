@@ -180,7 +180,7 @@ import {
 } from './transports.ts';
 import { BackendWebsocketTransport, type ConnectionIdentity } from './transports_ws_backend.ts';
 import { audit_unmatched_peer_response, type RequestClient } from './peer_request.ts';
-import { perform_action, perform_action_result_to_envelope } from './perform_action.ts';
+import { perform_action, serialize_action_result } from './perform_action.ts';
 
 /** Default inactivity window before the server closes a silent socket. */
 export const DEFAULT_SERVER_HEARTBEAT_TIMEOUT = 60_000;
@@ -1313,24 +1313,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 							action_account_rate_limiter
 						}
 					);
-					let frame: string;
-					try {
-						frame = JSON.stringify(perform_action_result_to_envelope(id, result));
-					} catch (error) {
-						// The handler's output is not JSON (a `bigint`, a cycle). Answer
-						// `internal_error` rather than throwing: the adapter does not await
-						// this promise, so a rejection here is unhandled, and the caller
-						// would get no reply to a request that did run.
-						log.error(`action result is not serializable: ${method}`, error);
-						frame = JSON.stringify(
-							create_jsonrpc_error_response(
-								id,
-								jsonrpc_error_messages.internal_error(
-									dev_only(error instanceof Error ? error.message : undefined)
-								)
-							)
-						);
-					}
+					const { body: frame } = serialize_action_result(id, result, method, log);
 					// Refused when the connection is gone — closed while the handler
 					// ran, or closed by the handler's own notifications overflowing
 					// its outbound budget — so nothing follows a close frame.

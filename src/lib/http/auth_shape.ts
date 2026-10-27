@@ -12,8 +12,7 @@
  * - `credential_types` — restricts the credential channel (e.g. daemon_token);
  *   absent = any authenticated credential.
  * - `required_scope` — the capability an api token's scope must admit to reach
- *   this route (`rpc:<method>` or `surface:<name>`); route specs only,
- *   absent = no scope gate.
+ *   this route (`surface:<name>`); route specs only, absent = no scope gate.
  *
  * The same shape governs both `ActionSpec.auth` (in `actions/action_spec.ts`)
  * and `RouteSpec.auth` (in `http/route_spec.ts`). The canonical schema
@@ -149,9 +148,9 @@ export const RouteAuth = z
 		 *   token is RPC-only). `surface:audit_stream`, `surface:fact_bare`,
 		 *   `surface:account_verify`, and `surface:app_surface` are the spine's
 		 *   route-spec ones; a consumer names its own without registering it.
-		 * - `rpc:<method>` — one action method, refused unless the token lists it.
-		 *   What a route bridged from an `ActionSpec` declares: it carries the
-		 *   method's identity but never reaches the dispatcher's per-method gate.
+		 *
+		 * The `rpc:<method>` arm of that vocabulary is the dispatcher's per-method
+		 * gate, which a route never reaches, so a route may not declare it.
 		 *
 		 * Declaring it makes the guard resolver mount the refusal ahead of the role
 		 * gate, instead of the route hand-rolling the check in its handler (which
@@ -169,7 +168,8 @@ export const RouteAuth = z
 		 * route specs too.
 		 *
 		 * Typed as a plain string here to keep `http/` from importing `auth/`; the
-		 * resolver parses it at registration and throws on a malformed one.
+		 * resolver checks it at registration and throws on anything but a
+		 * well-formed `surface:<name>`.
 		 */
 		required_scope: z.string().optional()
 	})

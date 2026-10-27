@@ -25,7 +25,7 @@ import type {
 	RequestResponseActionSpec,
 	RemoteNotificationActionSpec
 } from '#lib/actions/action_spec.ts';
-import type { RpcAction } from '#lib/actions/action_rpc.ts';
+import type { RpcAction } from '#lib/actions/action_types.ts';
 import { protocol_actions } from '#lib/actions/protocol.ts';
 
 const rpc_account_verify_spec: RequestResponseActionSpec = {

@@ -15,7 +15,7 @@ import { describe, test, assert } from 'vitest';
 import { z } from 'zod';
 
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
-import type { RpcAction } from '#lib/actions/action_rpc.ts';
+import type { RpcAction } from '#lib/actions/action_types.ts';
 import type { AppSurfaceRpcMethod, RpcEndpointSpec } from '#lib/http/surface.ts';
 import type { RouteSpec } from '#lib/http/route_spec.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';

@@ -1,6 +1,6 @@
 /**
- * Shared cancel action — a fuz_app protocol action validating the
- * spec+handler tuple pattern on a notification-kind action.
+ * Shared cancel action — a fuz_app protocol action whose behavior the
+ * dispatcher owns, so it is a spec with no handler.
  *
  * Semantics: the client sends `{jsonrpc, method: 'cancel', params:
  * {request_id}}` to abort an in-flight request on the same socket.
@@ -9,10 +9,8 @@
  * races between response arrival and cancel delivery are safe without extra
  * coordination.
  *
- * The handler field is an empty stub: cancel semantics are dispatcher-owned
- * (the dispatcher has the `{request_id → AbortController}` map, not the
- * handler). The handler exists for symmetry with other protocol actions
- * like `heartbeat_action`; the dispatcher never calls it. Consumers
+ * There is no handler: cancel semantics are dispatcher-owned (the dispatcher
+ * has the `{request_id → AbortController}` map, not a handler). Consumers
  * spread `cancel_action` (or the `protocol_actions` bundle from
  * `actions/protocol.ts`) into their server's `actions` array so `spec_by_method`
  * knows about it (enabling input validation on incoming cancels) and so
@@ -67,14 +65,6 @@ export const cancel_action_spec = {
 } satisfies RemoteNotificationActionSpec;
 
 /**
- * Placeholder handler — cancel semantics are owned by `register_action_ws`,
- * not invoked per-handler. Exported for symmetry with the `Action`
- * tuple shape; the dispatcher short-circuits cancel notifications before any
- * handler lookup happens.
- */
-export const cancel_handler = (): void => {};
-
-/**
  * Protocol-action tuple — spread into the server's `actions` array (or via
  * `protocol_actions` from `actions/protocol.ts`) so the dispatcher registers the
  * spec for input validation and so `create_rpc_client` codegen sees the
@@ -82,7 +72,4 @@ export const cancel_handler = (): void => {};
  * `FrontendWebsocketClient.request({signal})` sends the cancel notification
  * automatically when the signal fires.
  */
-export const cancel_action: Action = {
-	spec: cancel_action_spec,
-	handler: cancel_handler
-};
+export const cancel_action: Action = { spec: cancel_action_spec };

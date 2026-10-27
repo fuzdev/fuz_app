@@ -139,12 +139,6 @@ const CENSUS: ReadonlyArray<CensusEntry> = [
 			'the shared dispatch core, and the per-method gate itself — runs between the credential gate and the role gate for every transport that reaches it (HTTP RPC and WS)'
 	},
 	{
-		file: 'actions/action_bridge.ts',
-		role: 'consults',
-		reason:
-			'derives `required_scope: rpc:<method>` onto every bridged route — a bridged handler runs through the REST pipeline and never reaches `perform_action`, so without this the per-method gate simply would not fire on that transport'
-	},
-	{
 		file: 'server/serve_fact_route.ts',
 		role: 'consults',
 		reason:
@@ -204,8 +198,7 @@ const CREDENTIAL_MARKERS: ReadonlyArray<string | RegExp> = [
 	'token_scope_surface_denial',
 	'get_public_account_id',
 	// Building a capability string is deciding what a credential's scope must
-	// admit, which is a census-worthy act even in a file that never reads one:
-	// it is how `actions/action_bridge.ts` gates a route the dispatcher can't.
+	// admit, which is a census-worthy act even in a file that never reads one.
 	'token_scope_method_capability',
 	// A route shape declaring the scope slot decides about a credential's
 	// scope without otherwise touching one, so it needs its own marker.
@@ -468,8 +461,7 @@ describe('token scope surface census', () => {
 
 	/**
 	 * The scope-consulting set is exactly the dispatch core and its two RPC
-	 * transports, the REST bridge that stands in for the core on a transport it
-	 * never reaches, and the non-RPC surfaces the spine mounts — pinned as an
+	 * transports, and the non-RPC surfaces the spine mounts — pinned as an
 	 * exact list so *narrowing* it (deleting a check) fails here too, not just
 	 * widening it.
 	 */
@@ -478,7 +470,6 @@ describe('token scope surface census', () => {
 			.map((e) => e.file)
 			.sort();
 		assert.deepStrictEqual(consulting, [
-			'actions/action_bridge.ts',
 			'actions/action_rpc.ts',
 			'actions/perform_action.ts',
 			'actions/register_action_ws.ts',
@@ -568,10 +559,8 @@ describe('token scope surface census', () => {
 	 *
 	 * `auth.required_scope` is deliberately open on the identifier — a consumer
 	 * names its own non-RPC surface without registering it upstream, because the
-	 * name decides nothing (rule 3 is all-or-nothing) and the sibling
-	 * `rpc:<method>` arm of the same wire field has always carried arbitrary
-	 * consumer method names. The resolver therefore checks *shape*, not
-	 * membership.
+	 * name decides nothing (rule 3 is all-or-nothing). The resolver therefore
+	 * checks *shape*, not membership.
 	 *
 	 * That leaves fuz_app's own declarations unguarded against a typo, which
 	 * this restores and then some: every `'surface:<name>'` literal in `src/lib`

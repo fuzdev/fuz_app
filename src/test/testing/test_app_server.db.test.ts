@@ -8,7 +8,7 @@ import { test, assert, beforeAll, beforeEach, afterAll } from 'vitest';
 import { z } from 'zod';
 
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
-import type { RpcAction } from '#lib/actions/action_rpc.ts';
+import type { RpcAction } from '#lib/actions/action_types.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { ROLE_KEEPER } from '#lib/auth/role_schema.ts';
 import { create_health_route_spec } from '#lib/http/common_routes.ts';

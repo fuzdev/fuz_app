@@ -9,7 +9,8 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import { create_rpc_endpoint, type RpcAction } from '#lib/actions/action_rpc.ts';
+import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
+import type { RpcAction } from '#lib/actions/action_types.ts';
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import { apply_route_specs } from '#lib/http/route_spec.ts';
 import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
@@ -271,6 +272,36 @@ describe('POST dispatcher', () => {
 		assert.strictEqual(body.jsonrpc, '2.0');
 		assert.strictEqual(body.id, '1');
 		assert.strictEqual(body.result.id, 'created-test');
+	});
+
+	/**
+	 * A dispatched result and a dispatched error are written as text by
+	 * `serialize_action_result`, not by `c.json`; the content type must stay
+	 * the one `c.json` writes on every other response of the endpoint.
+	 */
+	test('a dispatched response carries the JSON content type', async () => {
+		const app = create_test_app([
+			{
+				spec: create_post_spec(),
+				handler: (input: any) => ({ id: `created-${input.name}` })
+			}
+		]);
+		const ok_app = create_test_app(
+			[{ spec: create_post_spec(), handler: (input: any) => ({ id: `created-${input.name}` }) }],
+			{ auth_context: create_test_request_context() }
+		);
+		const post = (target: Hono) =>
+			target.request('/api/rpc', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: rpc_request('thing_create', { name: 'test' })
+			});
+		const ok = await post(ok_app);
+		assert.strictEqual(ok.status, 200);
+		assert.strictEqual(ok.headers.get('content-type'), 'application/json');
+		const refused = await post(app);
+		assert.strictEqual(refused.status, 401);
+		assert.strictEqual(refused.headers.get('content-type'), 'application/json');
 	});
 
 	test('returns parse_error for invalid JSON body', async () => {

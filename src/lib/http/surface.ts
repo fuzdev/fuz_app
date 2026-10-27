@@ -14,7 +14,7 @@ import type { MiddlewareSpec } from './middleware_spec.ts';
 import type { RouteSpec } from './route_spec.ts';
 import type { RouteAuth } from './auth_shape.ts';
 import type { RateLimitKey, RouteErrorSchemas } from './error_schemas.ts';
-import type { RpcAction } from '../actions/action_rpc.ts';
+import type { RpcAction } from '../actions/action_types.ts';
 import type { ActionKind } from '../actions/action_spec.ts';
 import type { ResolvedWsEndpointSpec } from '../actions/ws_endpoint_spec.ts';
 import {

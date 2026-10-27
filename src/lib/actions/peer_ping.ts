@@ -25,10 +25,10 @@
  * constants and `PingResponse` (parity by test, not codegen).
  *
  * **Frontend-safe.** Like `heartbeat.ts` / `cancel.ts`, this module names
- * the dispatcher types (`ActionContext`, `RpcAction`) type-only and builds
- * `peer_ping_action` as a plain literal — it never imports the runtime
- * `action_rpc.ts` (which would drag the HTTP dispatch core + Hono into any
- * frontend that pulls `protocol_action_specs`). The frontend responder
+ * the handler types (`ActionContext`, `RpcAction`) type-only from
+ * `actions/action_types.ts` and never imports the dispatch core
+ * (`action_rpc.ts`, which would drag Hono into any frontend that pulls
+ * `protocol_action_specs`). The frontend responder
  * (`peer_ping_responder`) lives here too so a real frontend can answer the
  * server's probe.
  *
@@ -40,7 +40,7 @@ import { z } from 'zod';
 import { ThrownJsonrpcError, JSONRPC_ERROR_CODES } from '../http/jsonrpc_errors.ts';
 import { safe_parse_dropping_unknown_keys } from '../http/schema_helpers.ts';
 import type { RequestResponseActionSpec } from './action_spec.ts';
-import type { ActionContext, RpcAction } from './action_rpc.ts';
+import type { ActionContext, RpcAction } from './action_types.ts';
 import { DEFAULT_PEER_REQUEST_TIMEOUT, type PeerRequestError } from './peer_request.ts';
 
 /** Wire method name (both directions). Twin of the Rust `PEER_PING_METHOD`. */
@@ -233,10 +233,8 @@ export const peer_ping_responder = (params: unknown): PingResponse => {
  * Protocol-action tuple — spread into the server's `actions` array (via
  * `protocol_actions` from `actions/protocol.ts`) so the dispatcher resolves the
  * `peer/ping` handler on both the WS endpoint and (for the no-transport refusal)
- * the HTTP RPC endpoint. A plain `RpcAction` literal (not `rpc_action(...)`) so
- * this module stays free of the runtime `action_rpc.ts` import — the same
- * frontend-safety discipline `heartbeat_action` / `cancel_action` follow; the
- * handler's input/output are already pinned by `peer_ping_handler`'s signature.
+ * the HTTP RPC endpoint. A plain `RpcAction` literal — the handler's
+ * input/output are already pinned by `peer_ping_handler`'s signature.
  * Usable directly in the spine's `RpcAction[]` full mount and the `Action[]`
  * protocol bundle alike.
  */

@@ -51,8 +51,7 @@
  *    throws, never mutates the result).
  *
  * The function is pure data — it never touches a Hono context, so HTTP
- * RPC, REST bridge (when on the action surface), and WS dispatch all
- * call into it the same way and bind the discriminated
+ * RPC and WS dispatch call into it the same way and bind the discriminated
  * `PerformActionResult` to their wire shape.
  *
  * @module
@@ -75,11 +74,13 @@ import { to_input_params } from '../http/schema_helpers.ts';
 import { rate_limit_ip_key } from '../http/ip_canonical.ts';
 import { dispatch_with_post_commit_rollback } from '../http/pending_effects.ts';
 import {
-	JSONRPC_VERSION,
 	type JsonrpcRequestId,
 	is_jsonrpc_error_code,
-	type JsonrpcErrorObject
+	type JsonrpcErrorObject,
+	type JsonrpcErrorResponse,
+	type JsonrpcResponse
 } from '../http/jsonrpc.ts';
+import { create_jsonrpc_error_response, create_jsonrpc_response } from '../http/jsonrpc_helpers.ts';
 import {
 	jsonrpc_error_messages,
 	jsonrpc_error_code_to_http_status,
@@ -95,7 +96,7 @@ import {
 } from '../http/error_schemas.ts';
 import type { RateLimiter } from '../rate_limiter.ts';
 import { is_public_auth, needs_actor, parse_acting, type RouteAuth } from '../http/auth_shape.ts';
-import type { ActionContext, ActionHandler, RpcAction } from './action_rpc.ts';
+import type { ActionContext, ActionHandler, RpcAction } from './action_types.ts';
 import type { RequestClient } from './peer_request.ts';
 import {
 	token_scope_admits_method,
@@ -542,11 +543,57 @@ const check_action_auth_post_authorization = (
 export const perform_action_result_to_envelope = (
 	id: JsonrpcRequestId,
 	result: PerformActionResult
-): { jsonrpc: string; id: JsonrpcRequestId } & (
-	{ result: unknown } | { error: JsonrpcErrorObject }
-) => {
-	if (result.kind === 'ok') {
-		return { jsonrpc: JSONRPC_VERSION, id, result: result.result };
+): JsonrpcResponse | JsonrpcErrorResponse =>
+	result.kind === 'ok'
+		? create_jsonrpc_response(id, result.result as JsonrpcResponse['result'])
+		: create_jsonrpc_error_response(id, result.error);
+
+/** A `PerformActionResult` serialized for the wire: the JSON body and its HTTP status. */
+export interface SerializedActionResult {
+	body: string;
+	/** `200` for a result, the error's status otherwise. WS ignores it. */
+	status: number;
+}
+
+/**
+ * Serialize a `PerformActionResult` to its JSON-RPC envelope text — the one
+ * step HTTP RPC and WS share after `perform_action` returns.
+ *
+ * A result that cannot be serialized (a `bigint`, a cycle) answers
+ * `internal_error` rather than throwing. By then the action has committed, so
+ * a throw would cost its effects: over HTTP the route wrapper reads it as a
+ * rollback and discards `post_commit_effects` (a revocation's connection
+ * closes among them); over WS the adapter does not await the frame handler, so
+ * the rejection is unhandled and the caller gets no reply to a request that
+ * did run.
+ *
+ * @param id - the request id the envelope echoes
+ * @param result - what `perform_action` returned
+ * @param method - the action method, for the log line
+ * @param log - where a serialization failure is logged
+ * @returns the envelope text and the HTTP status to send it with
+ */
+export const serialize_action_result = (
+	id: JsonrpcRequestId,
+	result: PerformActionResult,
+	method: string,
+	log: Logger
+): SerializedActionResult => {
+	const status = result.kind === 'error' ? result.status : 200;
+	try {
+		return { body: JSON.stringify(perform_action_result_to_envelope(id, result)), status };
+	} catch (error) {
+		log.error(`action result is not serializable: ${method}`, error);
+		return {
+			body: JSON.stringify(
+				create_jsonrpc_error_response(
+					id,
+					jsonrpc_error_messages.internal_error(
+						dev_only(error instanceof Error ? error.message : undefined)
+					)
+				)
+			),
+			status: jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.internal_error)
+		};
 	}
-	return { jsonrpc: JSONRPC_VERSION, id, error: result.error };
 };

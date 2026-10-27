@@ -41,8 +41,7 @@
  * @module
  */
 
-import type { Action } from './action_types.ts';
-import type { RpcAction } from './action_rpc.ts';
+import type { Action, RpcAction } from './action_types.ts';
 import { assert_route_auth_acting_biconditional } from '../http/auth_shape.ts';
 import { is_null_schema, is_void_schema } from '../http/schema_helpers.ts';
 

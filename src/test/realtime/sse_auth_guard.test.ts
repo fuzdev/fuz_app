@@ -39,7 +39,6 @@ const create_mock_stream = <T>(): SseStream<T> & { sent: Array<T>; closed: boole
 		send(data: T) {
 			sent.push(data);
 		},
-		comment() {},
 		close() {
 			closed = true;
 		},

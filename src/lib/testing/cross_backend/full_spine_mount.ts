@@ -37,8 +37,7 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import type { RpcAction } from '../../actions/action_rpc.ts';
-import type { Action } from '../../actions/action_types.ts';
+import type { Action, RpcAction } from '../../actions/action_types.ts';
 import { peer_ping_action } from '../../actions/peer_ping.ts';
 import { protocol_actions } from '../../actions/protocol.ts';
 import type { AppDeps } from '../../auth/deps.ts';

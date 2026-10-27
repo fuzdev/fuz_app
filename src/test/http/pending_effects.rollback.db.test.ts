@@ -36,7 +36,7 @@ import { auth_migration_ns } from '#lib/auth/migrations.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 import { emit_after_commit } from '#lib/http/pending_effects.ts';
 import { get_route_input, type RouteSpec } from '#lib/http/route_spec.ts';
-import { rpc_action } from '#lib/actions/action_rpc.ts';
+import { rpc_action } from '#lib/actions/action_types.ts';
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
 import type { Db } from '#lib/db/db.ts';

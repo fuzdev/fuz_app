@@ -37,7 +37,7 @@
  * @module
  */
 
-import { rpc_action, type ActionActorContext, type RpcAction } from '../actions/action_rpc.ts';
+import { rpc_action, type ActionActorContext, type RpcAction } from '../actions/action_types.ts';
 import { jsonrpc_errors } from '../http/jsonrpc_errors.ts';
 import {
 	builtin_role_specs_by_name,

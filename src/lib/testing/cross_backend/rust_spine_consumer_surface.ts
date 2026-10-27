@@ -22,7 +22,7 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import type { ActionHandler, RpcAction } from '../../actions/action_rpc.ts';
+import type { ActionHandler, RpcAction } from '../../actions/action_types.ts';
 import type { ActionSpecUnion, RequestResponseActionSpec } from '../../actions/action_spec.ts';
 import { is_protocol_action_method } from '../../actions/action_codegen.ts';
 import {

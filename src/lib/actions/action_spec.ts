@@ -2,8 +2,8 @@
  * Action spec types — the canonical source of truth for action contracts.
  *
  * Extracted from zzz's action system. Action specs define method, kind,
- * auth, side effects, and input/output schemas. Bridge functions in
- * `actions/action_bridge.ts` derive `RouteSpec` and `EventSpec` from them.
+ * auth, side effects, and input/output schemas. `actions/action_bridge.ts`
+ * derives the SSE `EventSpec` of a notification from one.
  *
  * @see `actions/action_rpc.ts` for the JSON-RPC dispatcher
  * @see `actions/register_action_ws.ts` for the WebSocket dispatcher

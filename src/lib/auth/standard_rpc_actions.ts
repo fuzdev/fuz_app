@@ -27,7 +27,7 @@ import {
 import { create_account_actions, type AccountActionOptions } from './account_actions.ts';
 import type { RevokingActionFactoryDeps } from './deps.ts';
 import type { NotificationSender } from './role_grant_offer_notifications.ts';
-import type { RpcAction } from '../actions/action_rpc.ts';
+import type { RpcAction } from '../actions/action_types.ts';
 
 /**
  * Options for `create_standard_rpc_actions`.

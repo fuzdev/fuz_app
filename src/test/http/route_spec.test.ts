@@ -309,35 +309,26 @@ describe('auth.required_scope', () => {
 	});
 
 	/**
-	 * The `rpc:` arm — what `create_action_route_spec` declares on a bridged
-	 * route, whose handler never reaches the dispatcher's per-method gate. The
-	 * two arms of the vocabulary answer different questions of the same scope,
-	 * so this pins that a listed method passes where rule 3 would have refused.
+	 * The `rpc:` arm is refused at registration. A route never reaches the
+	 * dispatcher's per-method gate, so `rpc:<method>` on a route would put a
+	 * method name in front of a REST handler no method gate guards — and a
+	 * narrowed token listing that method would walk onto a non-RPC surface.
 	 */
-	test('an rpc capability admits a narrowed token that lists the method', async () => {
-		const admitted = await build_app(
-			'admin',
-			token_scope_methods(['thing_create']),
-			'rpc:thing_create'
-		).request('/stream');
-		assert.strictEqual(admitted.status, 200);
-
-		const refused = await build_app(
-			'admin',
-			token_scope_methods(['cell_get']),
-			'rpc:thing_create'
-		).request('/stream');
-		assert.strictEqual(refused.status, 403);
-		assert.deepStrictEqual(await refused.json(), token_scope_denied_body('rpc:thing_create'));
+	test('an rpc capability is refused on a route', () => {
+		for (const capability of ['rpc:thing_create', 'rpc:peer/ping']) {
+			assert.throws(
+				() => build_app('admin', token_scope_full(), capability),
+				/not a valid token-scope capability for a route/u,
+				`expected "${capability}" to be refused at registration`
+			);
+		}
 	});
 
 	/**
 	 * The vocabulary is open on the identifier and closed on the prefix. A
 	 * consumer names its own surface without registering it — the name decides
 	 * nothing, since rule 3 is all-or-nothing — but an unknown section would
-	 * put an unreadable capability on the wire, and letting a route mint an
-	 * `rpc:`-shaped capability out of a surface gate would name a method in
-	 * front of a whole-surface refusal.
+	 * put an unreadable capability on the wire.
 	 */
 	test('a consumer surface name is admitted, a malformed capability is not', async () => {
 		const res = await build_app(

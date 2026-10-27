@@ -789,28 +789,13 @@ Readers can read `.method` directly off a spec import at a call site (e.g. for
 driving an integration test through `rpc_call`) — no need to keep a parallel
 `*_METHOD` constant in sync.
 
-## Deriving Route/Event Specs from Action Specs
+## Deriving Event Specs from Action Specs
 
-Action specs define the contract; bridge functions produce transport-specific specs:
+A `remote_notification` action spec doubles as the SSE `EventSpec` it pushes as:
 
 ```typescript
 import type { ActionSpec } from '@fuzdev/fuz_app/actions/action_spec.ts';
-import {
-	create_action_route_spec,
-	create_action_event_spec
-} from '@fuzdev/fuz_app/actions/action_bridge.ts';
-
-const thing_create_action: ActionSpec = {
-	method: 'thing_create',
-	kind: 'request_response',
-	initiator: 'frontend',
-	auth: { account: 'required', actor: 'none' },
-	side_effects: true,
-	async: true,
-	input: z.strictObject({ name: z.string() }),
-	output: z.strictObject({ id: z.string() }),
-	description: 'Create a thing'
-};
+import { create_action_event_spec } from '@fuzdev/fuz_app/actions/action_bridge.ts';
 
 const thing_created_action: ActionSpec = {
 	method: 'thing_created',
@@ -824,37 +809,22 @@ const thing_created_action: ActionSpec = {
 	description: 'A thing was created'
 };
 
-// Mix action-derived and hand-written specs freely
-const route_specs = [
-	create_action_route_spec(thing_create_action, {
-		path: '/things',
-		handler: async (c) => {
-			/* ... */
-		},
-		auth: {
-			account: 'required',
-			actor: 'required',
-			roles: ['keeper'],
-			credential_types: ['daemon_token']
-		} // override default auth mapping
-	}),
-	...existing_hand_written_specs
-];
-
 const event_specs = [create_action_event_spec(thing_created_action, { channel: 'things' })];
 
 // Wire into surface (snapshot-testable, always accurate)
 const surface = generate_app_surface({ middleware_specs, route_specs, env_schema, event_specs });
 ```
 
-Auth mapping: `route.auth` is `spec.auth` plus a derived `required_scope: 'rpc:<method>'` — both surfaces share the `RouteAuth` shape from `http/auth_shape.ts` (`{account, actor, roles?, credential_types?, required_scope?}`; `required_scope` is route-spec-only and rejected on an action spec, since the dispatcher derives it from `spec.method` there). The bridge fills it in because a bridged handler never reaches `perform_action`, so the per-method token-scope gate would otherwise not fire on this transport; pass `config.auth` with your own `required_scope` to name a different capability. HTTP method derived from side effects (`true` -> POST, `false` -> GET). Override via `config.auth` or `config.http_method`.
+Request/response actions are served by the RPC endpoint and the WS endpoint
+below, not as REST routes.
 
 ### Single JSON-RPC 2.0 Endpoint
 
 `create_rpc_endpoint` produces a single endpoint (GET + POST on the same path) with an internal dispatcher. Method name is in the JSON-RPC envelope (POST body or GET query string), not the URL.
 
 ```typescript
-import { create_rpc_endpoint, type RpcAction } from '@fuzdev/fuz_app/actions/action_rpc.ts';
+import { create_rpc_endpoint } from '@fuzdev/fuz_app/actions/action_rpc.ts';
+import type { RpcAction } from '@fuzdev/fuz_app/actions/action_types.ts';
 
 const actions: Array<RpcAction> = [
 	{

@@ -14,7 +14,7 @@
 
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import { rpc_action, type ActionContext, type RpcAction } from '../actions/action_rpc.ts';
+import { rpc_action, type ActionContext, type RpcAction } from '../actions/action_types.ts';
 
 import { query_actors_by_ids } from './actor_lookup_queries.ts';
 import {

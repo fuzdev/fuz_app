@@ -27,7 +27,7 @@
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { jsonrpc_errors } from '../http/jsonrpc_errors.ts';
-import { rpc_action, type ActionAuthContext, type RpcAction } from '../actions/action_rpc.ts';
+import { rpc_action, type ActionAuthContext, type RpcAction } from '../actions/action_types.ts';
 
 import { query_actor_search } from './actor_search_queries.ts';
 import { query_account_has_active_global_role } from './role_grant_queries.ts';

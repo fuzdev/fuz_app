@@ -11,7 +11,7 @@ import { describe, test, assert } from 'vitest';
 import { z } from 'zod';
 
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
-import type { RpcAction } from '#lib/actions/action_rpc.ts';
+import type { RpcAction } from '#lib/actions/action_types.ts';
 import { create_test_app_surface_spec } from '#lib/testing/stubs.ts';
 import { AUTH_MIDDLEWARE_PATH } from '#lib/auth/middleware.ts';
 import { create_health_route_spec } from '#lib/http/common_routes.ts';

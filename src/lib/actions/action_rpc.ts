@@ -7,284 +7,39 @@
  * inside the dispatcher.
  *
  * Handler signature: `(input: TInput, ctx: ActionContext) => TOutput`
- * where `ActionContext` provides auth identity, DB, and framework context.
+ * where `ActionContext` (`actions/action_types.ts`) provides auth identity,
+ * DB, and framework context.
  *
  * @module
  */
 
 import type { Context } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { z } from 'zod';
 import { DEV } from 'esm-env';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
-import type { Uuid } from '../primitive_schemas.ts';
 
-import type { RequestResponseActionSpec } from './action_spec.ts';
+import type { RpcAction } from './action_types.ts';
 import { type RouteContext, type RouteSpec } from '../http/route_spec.ts';
 import { get_client_ip } from '../http/client_ip.ts';
-import {
-	get_request_context,
-	type RequestActorContext,
-	type RequestContext
-} from '../auth/request_context.ts';
+import { get_request_context } from '../auth/request_context.ts';
 import {
 	ACCOUNT_ID_KEY,
 	CREDENTIAL_TYPE_KEY,
 	TOKEN_SCOPE_KEY,
-	TEST_CONTEXT_PRESET_KEY,
-	type CredentialType
+	TEST_CONTEXT_PRESET_KEY
 } from '../hono_context.ts';
-import type { Db } from '../db/db.ts';
-import type { RequestClient } from './peer_request.ts';
 import { compile_action_registry } from './compile_action_registry.ts';
-import {
-	JSONRPC_VERSION,
-	JsonrpcRequest,
-	type JsonrpcRequestId,
-	type JsonrpcErrorObject
-} from '../http/jsonrpc.ts';
+import { JsonrpcRequest, type JsonrpcRequestId } from '../http/jsonrpc.ts';
 import {
 	jsonrpc_error_messages,
 	jsonrpc_error_code_to_http_status,
 	JSONRPC_ERROR_CODES,
 	dev_only
 } from '../http/jsonrpc_errors.ts';
-import { to_jsonrpc_envelope_id } from '../http/jsonrpc_helpers.ts';
+import { create_jsonrpc_error_response, to_jsonrpc_envelope_id } from '../http/jsonrpc_helpers.ts';
 import type { RateLimiter } from '../rate_limiter.ts';
-import { perform_action, perform_action_result_to_envelope } from './perform_action.ts';
-
-/**
- * Per-request context provided to action handlers across every transport
- * (HTTP RPC, WebSocket, REST bridge). Built once per dispatched action by
- * `perform_action` and threaded into the handler.
- *
- * `auth` is `RequestContext | null` — handlers for authenticated actions
- * can narrow via the dispatcher's authorization-phase guarantee.
- *
- * Single handler context shape across every transport. Consumers inject
- * domain deps via factory closures the same way HTTP RPC factories do.
- */
-export interface ActionContext {
-	/** The authenticated identity, or `null` for public routes. */
-	auth: RequestContext | null;
-	/** The JSON-RPC request ID from the envelope. */
-	request_id: JsonrpcRequestId;
-	/**
-	 * Stable per-socket connection id on WebSocket transport; `undefined`
-	 * on HTTP RPC. Consumers key per-connection domain state on this
-	 * directly; HTTP handlers ignore it.
-	 */
-	connection_id?: Uuid;
-	/**
-	 * Initiate a JSON-RPC request to the originating client and await its typed
-	 * reply — the server→client direction of ActionPeer. Present only on the
-	 * WebSocket transport (it targets the originating socket); `undefined` on
-	 * HTTP RPC, where there is no return socket. Handlers that depend on it
-	 * must handle its absence — e.g. `peer/ping` surfaces `peer_no_transport`.
-	 */
-	request_client?: RequestClient;
-	/**
-	 * Transaction-scoped when `spec.side_effects` is true (the dispatcher
-	 * wraps in `db.transaction`); pool-level otherwise. Handlers that
-	 * need rollback-resilient writes call `deps.audit.emit(ctx, input)`,
-	 * which captures the pool inside its closure.
-	 */
-	db: Db;
-	/**
-	 * Eager fire-and-forget queue — push the in-flight `Promise<void>` for
-	 * pool writes already running (audit emits, api-token usage
-	 * tracking). Drained via `flush_pending_effects` after the
-	 * handler returns.
-	 */
-	pending_effects: Array<Promise<void>>;
-	/**
-	 * Deferred post-commit thunks — do not push directly; reach for
-	 * `emit_after_commit(ctx, fn)` from `http/pending_effects.ts`. The flush
-	 * site invokes each thunk after the handler (and any wrapping
-	 * `db.transaction`) returns.
-	 */
-	post_commit_effects: Array<() => void | Promise<void>>;
-	/**
-	 * Resolved client IP from the trusted-proxy middleware — `'unknown'` if the
-	 * middleware wasn't in the stack (e.g. WS dispatch) or couldn't resolve.
-	 * Thread into `deps.audit.emit` as `ip: ctx.client_ip` for every
-	 * user-initiated action so RPC audit rows match the REST convention. Pass
-	 * `null` only for rows written outside a request (e.g. the
-	 * `role_grant_offer_expire` cleanup sweep in `auth/cleanup.ts`).
-	 */
-	client_ip: string;
-	/**
-	 * Credential channel the request arrived on (`'session'` | `'api_token'` |
-	 * `'daemon_token'`), or `null` for anonymous requests. Same value the
-	 * dispatcher's `credential_types` gate consumed at step 3 — exposed here
-	 * so handlers can record it in audit metadata (defense in depth: the
-	 * gate may be loosened or bypassed in a future refactor, but the audit
-	 * row preserves what actually authenticated the request).
-	 */
-	credential_type: CredentialType | null;
-	/** Logger instance. */
-	log: Logger;
-	/**
-	 * Send a request-scoped JSON-RPC notification to the originator.
-	 *
-	 * On streaming transports (WebSocket) this routes to the originating
-	 * connection only. On the HTTP RPC transport this is a no-op with a
-	 * DEV-mode warn — non-streaming transports have no channel for mid-
-	 * request notifications. The `streams` field on an `ActionSpec` names
-	 * the notification method this handler is expected to emit.
-	 */
-	notify: (method: string, params: unknown) => void;
-	/**
-	 * AbortSignal that fires when the originating request is cancelled
-	 * (client disconnect on HTTP, socket close or per-request cancel
-	 * notification on WebSocket). Streaming handlers should check this
-	 * for early termination.
-	 */
-	signal: AbortSignal;
-}
-
-/**
- * Handler function for an RPC action.
- *
- * Receives validated input and an `ActionContext` with per-request deps.
- * Returns the output value (serialized to JSON by the wrapper).
- */
-export type ActionHandler<TInput = any, TOutput = any> = (
-	input: TInput,
-	ctx: ActionContext
-) => TOutput | Promise<TOutput>;
-
-/**
- * `ActionContext` narrowed to a non-null `RequestContext`.
- *
- * Used by handlers whose spec declares `auth.account === 'required'`
- * (with `auth.actor === 'none'`) — the dispatcher's pre-authorization 401
- * gate guarantees `request_context` is populated before the handler
- * runs, but the actor slot stays null because no `acting` resolution
- * happened. Selected automatically by `rpc_action`'s conditional return
- * type for the account-grain tier.
- */
-export interface ActionAuthContext extends Omit<ActionContext, 'auth'> {
-	auth: RequestContext;
-}
-
-/**
- * Handler signature for an account-grain RPC action — `auth.account === 'required'`
- * and `auth.actor === 'none'`. Mirrors `ActionHandler` but tightens the
- * `ctx.auth` slot to the non-null `RequestContext` (with `actor: null`).
- */
-export type AuthActionHandler<TInput = any, TOutput = any> = (
-	input: TInput,
-	ctx: ActionAuthContext
-) => TOutput | Promise<TOutput>;
-
-/**
- * `ActionContext` narrowed to a resolved acting actor.
- *
- * Used by handlers whose spec declares `auth.actor === 'required'` —
- * the dispatcher's authorization phase resolves an actor (per
- * registry-time invariant 2 the input declares `acting?: ActingActor`),
- * so `ctx.auth.actor` is non-null. Selected automatically by
- * `rpc_action`'s conditional return type for the actor-implying tier.
- */
-export interface ActionActorContext extends Omit<ActionContext, 'auth'> {
-	auth: RequestActorContext;
-}
-
-/**
- * Handler signature for an actor-implying RPC action — `auth.actor === 'required'`.
- * Mirrors `ActionHandler` but tightens the `ctx.auth` slot to the
- * non-null `RequestActorContext` (with non-null `actor`).
- */
-export type ActorActionHandler<TInput = any, TOutput = any> = (
-	input: TInput,
-	ctx: ActionActorContext
-) => TOutput | Promise<TOutput>;
-
-/**
- * An RPC action — combines an action spec with its handler.
- *
- * The spec defines the contract (method, auth, schemas, side effects).
- * The handler implements the behavior.
- */
-export interface RpcAction {
-	spec: RequestResponseActionSpec;
-	handler: ActionHandler;
-}
-
-/**
- * Conditional handler shape for `rpc_action` — picks the narrowest
- * `ctx.auth` type the dispatcher's runtime guarantee allows:
- *
- * - `auth.actor === 'required'` → `ActorActionHandler` (`ctx.auth: RequestActorContext`).
- * - `auth.account === 'required' && auth.actor === 'none'` → `AuthActionHandler` (`ctx.auth: RequestContext`).
- * - else (public, optional axes) → `ActionHandler` (`ctx.auth: RequestContext | null`).
- *
- * The bracketed form `[T] extends ['required']` defeats distributive
- * conditionals so a degraded `AuthAxisState` union (when the spec was
- * typed without preserving its literal) falls through to the loosest
- * tier instead of collapsing to the narrowest.
- */
-export type HandlerForSpec<TSpec extends RequestResponseActionSpec> = [
-	TSpec['auth']['actor']
-] extends ['required']
-	? ActorActionHandler<z.infer<TSpec['input']>, z.infer<TSpec['output']>>
-	: [TSpec['auth']['account']] extends ['required']
-		? AuthActionHandler<z.infer<TSpec['input']>, z.infer<TSpec['output']>>
-		: ActionHandler<z.infer<TSpec['input']>, z.infer<TSpec['output']>>;
-
-/**
- * Pair a spec with a handler while preserving per-method input/output types
- * and selecting the narrowest `ctx.auth` shape the spec literal admits.
- *
- * Constructing `{spec, handler}` literals widens `handler` to
- * `ActionHandler<any, any>`, so spec/handler drift (renamed Zod schema,
- * output field removal, input shape change) slips past the typechecker.
- * `rpc_action(spec, handler)` binds the handler signature to
- * `(input: z.infer<spec.input>, ctx) => z.infer<spec.output>` via the
- * generic spec parameter — drift surfaces at the call site.
- *
- * The `ctx.auth` narrowing follows the spec's `auth.account` /
- * `auth.actor` literals (see `HandlerForSpec`): an actor-implying spec
- * gets `ctx.auth: RequestActorContext`; an account-grain spec gets
- * `ctx.auth: RequestContext`; everything else stays `ctx.auth:
- * RequestContext | null`. Handlers can rely on the dispatcher's
- * runtime guarantee without a manual narrowing call.
- *
- * Fits fuz_app's factory-closure pattern (handlers close over
- * `grantable_roles`, `app_settings` ref, `notification_sender`, etc.).
- * zzz uses a different shape — a codegen-keyed `Record<Method, Handler>`
- * map typed via generated `ActionInputs`/`ActionOutputs` — which works when
- * handlers are pure (no closure state) and specs are codegen-enumerated.
- * fuz_app's admin + role-grant-offer actions have neither, so per-pair typing
- * at the registration site is the right fit.
- *
- * Spec-literal preservation is load-bearing: declare specs with
- * `satisfies RequestResponseActionSpec` (canonical) so `auth.actor`
- * keeps its `'required'` / `'none'` literal type. A spec typed
- * directly as `RequestResponseActionSpec` widens the axes to
- * `AuthAxisState` and the handler defaults to the loosest tier — sound,
- * but loses the ergonomic narrowing.
- *
- * @example
- * ```ts
- * // actor-implying spec → ctx.auth: RequestActorContext
- * rpc_action(role_grant_revoke_action_spec, async (input, ctx) => {
- *   const revoker_id = ctx.auth.actor.id; // no narrowing needed
- * });
- *
- * // account-grain spec → ctx.auth: RequestContext (actor: null)
- * rpc_action(account_verify_action_spec, (_input, ctx) => {
- *   return to_session_account(ctx.auth.account); // no narrowing needed
- * });
- * ```
- */
-export const rpc_action = <TSpec extends RequestResponseActionSpec>(
-	spec: TSpec,
-	handler: HandlerForSpec<TSpec>
-): RpcAction => ({
-	spec,
-	handler: handler as ActionHandler
-});
+import { perform_action, serialize_action_result } from './perform_action.ts';
 
 /** Options for `create_rpc_endpoint`. */
 export interface CreateRpcEndpointOptions {
@@ -314,22 +69,6 @@ export interface CreateRpcEndpointOptions {
 	 */
 	action_account_rate_limiter: RateLimiter | null;
 }
-
-/**
- * Build a JSON-RPC error envelope for transport-shape errors (envelope
- * parse failures, method-not-found, GET-on-mutation rejections). The
- * dispatch core in `perform_action` returns a `PerformActionResult`
- * directly; this helper covers only the wire-shape errors the HTTP shim
- * emits before / after the core runs.
- */
-const jsonrpc_error_envelope = (
-	id: JsonrpcRequestId | null,
-	error: JsonrpcErrorObject
-): { jsonrpc: string; id: JsonrpcRequestId | null; error: JsonrpcErrorObject } => ({
-	jsonrpc: JSONRPC_VERSION,
-	id,
-	error
-});
 
 /**
  * Single JSON-RPC 2.0 endpoint — the canonical RPC transport binding.
@@ -391,12 +130,11 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 	 * 1. Resolve the action by method name (HTTP-shape `method_not_found` envelope).
 	 * 2. Reject GET requests for `side_effects: true` actions (HTTP-only constraint).
 	 * 3. Hand off to `perform_action` for the post-parse pipeline.
-	 * 4. Bind the result to `c.json` — `'ok'` returns the result envelope,
-	 *    `'error'` returns the error envelope at the `result.status` HTTP code.
-	 *    A result that cannot be serialized answers `internal_error` rather
-	 *    than throwing: `perform_action` has already committed, and a throw
-	 *    here would have the route wrapper discard the post-commit effects
-	 *    the handler queued — a revocation's connection closes among them.
+	 * 4. Bind the result through `serialize_action_result` — `'ok'` returns the
+	 *    result envelope, `'error'` the error envelope at the `result.status`
+	 *    HTTP code, and a result that cannot be serialized `internal_error`
+	 *    rather than a throw that would discard the committed action's
+	 *    post-commit effects.
 	 *
 	 * @param restrict_to_reads - `true` for GET (rejects `side_effects: true` actions)
 	 */
@@ -411,14 +149,14 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 		const action = action_map.get(method_name);
 		if (!action) {
 			return c.json(
-				jsonrpc_error_envelope(id, jsonrpc_error_messages.method_not_found(method_name)),
+				create_jsonrpc_error_response(id, jsonrpc_error_messages.method_not_found(method_name)),
 				jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.method_not_found)
 			);
 		}
 
 		if (restrict_to_reads && action.spec.side_effects) {
 			return c.json(
-				jsonrpc_error_envelope(
+				create_jsonrpc_error_response(
 					id,
 					jsonrpc_error_messages.invalid_request({
 						reason: `method '${method_name}' has side effects and must use POST`
@@ -470,33 +208,14 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 			}
 		);
 
-		const envelope = perform_action_result_to_envelope(id, result);
-		if (result.kind === 'error') {
-			// `result.status` is one of the JSON-RPC → HTTP status codes the
-			// dispatcher emits; Hono types `c.json`'s second arg as
-			// `ContentfulStatusCode`, which the cast bridges (the value space
-			// is verified by `jsonrpc_error_code_to_http_status`).
-			return c.json(envelope, result.status as Parameters<typeof c.json>[1]);
-		}
-		try {
-			return c.json(envelope);
-		} catch (err) {
-			// The handler's output is not JSON (a `bigint`, a cycle). Its
-			// transaction has committed, so this must not propagate: the route
-			// wrapper reads a throw as a rollback and discards
-			// `post_commit_effects`, which would drop the closes of a
-			// revocation that did land.
-			log.error(`action result is not serializable: ${method_name}`, err);
-			return c.json(
-				jsonrpc_error_envelope(
-					id,
-					jsonrpc_error_messages.internal_error(
-						dev_only(err instanceof Error ? err.message : undefined)
-					)
-				),
-				jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.internal_error)
-			);
-		}
+		const { body, status } = serialize_action_result(id, result, method_name, log);
+		// `status` is 200 or one of the JSON-RPC → HTTP status codes the
+		// dispatcher emits (the value space is verified by
+		// `jsonrpc_error_code_to_http_status`), which the cast to Hono's
+		// `ContentfulStatusCode` bridges. The content type is `c.json`'s.
+		return c.body(body, status as ContentfulStatusCode, {
+			'Content-Type': 'application/json'
+		});
 	};
 
 	// POST handler — parse JSON-RPC envelope from body
@@ -506,7 +225,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 		try {
 			body = await c.req.json();
 		} catch {
-			const error = jsonrpc_error_envelope(null, jsonrpc_error_messages.parse_error());
+			const error = create_jsonrpc_error_response(null, jsonrpc_error_messages.parse_error());
 			return c.json(error, 400);
 		}
 
@@ -514,7 +233,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 		if (!envelope.success) {
 			// echo the id when the body is an object carrying one — the same
 			// extraction the WS path runs; a scalar body answers `id: null`
-			const error = jsonrpc_error_envelope(
+			const error = create_jsonrpc_error_response(
 				to_jsonrpc_envelope_id(body),
 				jsonrpc_error_messages.invalid_request(dev_only({ issues: envelope.error.issues }))
 			);
@@ -529,7 +248,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 		// step 1: parse from query string
 		const method_name = c.req.query('method');
 		if (!method_name) {
-			const error = jsonrpc_error_envelope(
+			const error = create_jsonrpc_error_response(
 				null,
 				jsonrpc_error_messages.invalid_request({ reason: 'missing method query parameter' })
 			);
@@ -538,7 +257,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 
 		const id_raw = c.req.query('id');
 		if (!id_raw) {
-			const error = jsonrpc_error_envelope(
+			const error = create_jsonrpc_error_response(
 				null,
 				jsonrpc_error_messages.invalid_request({ reason: 'missing id query parameter' })
 			);
@@ -558,7 +277,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 			try {
 				params = JSON.parse(params_raw);
 			} catch {
-				const error = jsonrpc_error_envelope(
+				const error = create_jsonrpc_error_response(
 					id,
 					jsonrpc_error_messages.invalid_params('params query parameter is not valid JSON')
 				);

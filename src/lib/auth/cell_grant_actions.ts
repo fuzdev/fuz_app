@@ -43,7 +43,7 @@ import {
 	type ActionActorContext,
 	type ActionContext,
 	type RpcAction
-} from '../actions/action_rpc.ts';
+} from '../actions/action_types.ts';
 import { jsonrpc_errors } from '../http/jsonrpc_errors.ts';
 import type { RoleSchemaResult } from './role_schema.ts';
 import type { ActionFactoryDeps } from './deps.ts';

@@ -84,7 +84,7 @@ import { z } from 'zod';
 import { Uuid, FactHashSchema } from '../../primitive_schemas.ts';
 import { fact_hash_bytes } from '@fuzdev/fuz_util/fact_hash.ts';
 
-import { rpc_action, type RpcAction } from '../../actions/action_rpc.ts';
+import { rpc_action, type RpcAction } from '../../actions/action_types.ts';
 import { jsonrpc_errors } from '../../http/jsonrpc_errors.ts';
 import { emit_after_commit } from '../../http/pending_effects.ts';
 import { protocol_action_specs } from '../../actions/protocol.ts';

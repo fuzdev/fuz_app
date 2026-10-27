@@ -1015,7 +1015,6 @@ describe('create_app_server.ws_endpoints', () => {
 		result.audit_sse.registry.subscribe(
 			{
 				send: () => {},
-				comment: () => {},
 				close: () => {
 					stream_closed = true;
 				},

@@ -74,7 +74,7 @@ import '../assert_dev_env.ts';
 
 import { assert, describe, test } from 'vitest';
 
-import type { RpcAction } from '../../actions/action_rpc.ts';
+import type { RpcAction } from '../../actions/action_types.ts';
 import {
 	generate_app_surface,
 	type AppSurfaceRpcEndpoint,

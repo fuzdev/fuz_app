@@ -59,7 +59,7 @@ import {
 	type ActionActorContext,
 	type ActionContext,
 	type RpcAction
-} from '../actions/action_rpc.ts';
+} from '../actions/action_types.ts';
 import { jsonrpc_errors, type ThrownJsonrpcError } from '../http/jsonrpc_errors.ts';
 import { emit_after_commit } from '../http/pending_effects.ts';
 import {

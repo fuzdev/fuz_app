@@ -29,7 +29,7 @@
  * @module
  */
 
-import { rpc_action, type ActionActorContext, type RpcAction } from '../actions/action_rpc.ts';
+import { rpc_action, type ActionActorContext, type RpcAction } from '../actions/action_types.ts';
 import { queue_connection_close } from '../actions/connection_closer.ts';
 import { credential_type_required_error } from '../actions/perform_action.ts';
 import { jsonrpc_errors, ThrownJsonrpcError } from '../http/jsonrpc_errors.ts';

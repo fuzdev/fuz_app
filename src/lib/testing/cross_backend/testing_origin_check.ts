@@ -15,7 +15,7 @@ import '../assert_dev_env.ts';
 
 import { z } from 'zod';
 
-import { rpc_action, type RpcAction } from '../../actions/action_rpc.ts';
+import { rpc_action, type RpcAction } from '../../actions/action_types.ts';
 import type { RequestResponseActionSpec } from '../../actions/action_spec.ts';
 import {
 	AllowedOriginsErrorKind,

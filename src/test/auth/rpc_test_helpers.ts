@@ -10,7 +10,7 @@
 
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import type { ActionContext } from '#lib/actions/action_rpc.ts';
+import type { ActionContext } from '#lib/actions/action_types.ts';
 import type { RequestContext } from '#lib/auth/request_context.ts';
 import { create_stub_db } from '#lib/testing/stubs.ts';
 

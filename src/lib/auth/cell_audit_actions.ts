@@ -14,7 +14,7 @@
  * @module
  */
 
-import { rpc_action, type ActionActorContext, type RpcAction } from '../actions/action_rpc.ts';
+import { rpc_action, type ActionActorContext, type RpcAction } from '../actions/action_types.ts';
 import type { AuditLogEvent } from './audit_log_schema.ts';
 
 import {

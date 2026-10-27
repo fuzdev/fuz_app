@@ -33,7 +33,7 @@ import {
 	type SocketCloseContext,
 	type SocketOpenContext
 } from '#lib/actions/register_action_ws.ts';
-import type { ActionContext } from '#lib/actions/action_rpc.ts';
+import type { ActionContext } from '#lib/actions/action_types.ts';
 import type { ActionSpecUnion, RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import {
 	BackendWebsocketTransport,

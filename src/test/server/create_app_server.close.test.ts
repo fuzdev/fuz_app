@@ -115,7 +115,6 @@ const create_mock_stream = (): SseStream & { closed: boolean } => {
 			return closed;
 		},
 		send() {},
-		comment() {},
 		close() {
 			closed = true;
 		},

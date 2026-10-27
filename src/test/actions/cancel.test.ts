@@ -18,8 +18,7 @@ import { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import {
 	CancelNotificationParams,
 	cancel_action,
-	cancel_action_spec,
-	cancel_handler
+	cancel_action_spec
 } from '#lib/actions/cancel.ts';
 import { create_ws_test_harness } from '#lib/testing/ws_round_trip.ts';
 
@@ -42,13 +41,9 @@ describe('cancel_action', () => {
 		);
 	});
 
-	test('handler is a no-op (dispatcher owns cancel semantics)', () => {
-		assert.doesNotThrow(cancel_handler);
-	});
-
-	test('composable tuple carries spec and handler', () => {
+	test('composable tuple carries the spec and no handler (dispatcher owns cancel)', () => {
 		assert.strictEqual(cancel_action.spec, cancel_action_spec);
-		assert.strictEqual(cancel_action.handler, cancel_handler);
+		assert.strictEqual(cancel_action.handler, undefined);
 	});
 });
 

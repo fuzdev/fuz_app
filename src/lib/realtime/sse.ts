@@ -20,6 +20,14 @@
  * between. The twin of the Rust spine's `fuz_realtime` SSE bound — the same
  * budget and charge.
  *
+ * ## Keep-alive
+ *
+ * Every `SSE_KEEP_ALIVE_INTERVAL_MS` an open stream writes
+ * `SSE_KEEP_ALIVE_COMMENT`, so a proxy's idle read timeout never cuts a quiet
+ * stream. The comment is a frame like any other — held to the same budget, so
+ * a client that stopped reading ends its stream on a keep-alive as on data —
+ * and the timer stops when the stream closes. `keep_alive_ms: null` turns it off.
+ *
  * @module
  */
 
@@ -31,7 +39,13 @@ import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { utf8_length } from '../actions/transports.ts';
 import { OutboundBudget } from './outbound_budget.ts';
-import { SSE_CONNECTED_COMMENT, SSE_OUTBOUND_QUEUE_BYTES } from './sse_constants.ts';
+import {
+	SSE_CONNECTED_COMMENT,
+	SSE_KEEP_ALIVE_COMMENT,
+	SSE_KEEP_ALIVE_INTERVAL_MS,
+	SSE_OUTBOUND_QUEUE_BYTES,
+	validate_sse_keep_alive_ms
+} from './sse_constants.ts';
 
 /**
  * Generic SSE stream controller interface.
@@ -45,8 +59,6 @@ export interface SseStream<T = unknown> {
 	 * "Outbound bound").
 	 */
 	send: (data: T) => void;
-	/** Send a comment (for keep-alive pings). */
-	comment: (text: string) => void;
 	/** Close the stream. */
 	close: () => void;
 	/**
@@ -77,6 +89,13 @@ export interface SseResponseOptions {
 	 * stream ends on its outbound budget.
 	 */
 	account_id?: string | null;
+	/**
+	 * How often the stream writes `SSE_KEEP_ALIVE_COMMENT`, in ms; `null` writes
+	 * none. Checked by `validate_sse_keep_alive_ms`.
+	 *
+	 * @default SSE_KEEP_ALIVE_INTERVAL_MS
+	 */
+	keep_alive_ms?: number | null;
 }
 
 /**
@@ -163,21 +182,29 @@ const watch_client_disconnect = (c: Context, on_gone: () => void): void => {
  *
  * @param log - logger for serialization and `on_close` listener errors, and
  *   for the warning when the stream ends on its outbound budget
- * @param options - what the overflow warning names
+ * @param options - what the overflow warning names, and the keep-alive interval
  * @returns object with the streaming `Response` and an `SseStream` controller
+ * @throws Error when `options.keep_alive_ms` is out of range
+ *   (`validate_sse_keep_alive_ms`)
  */
 export const create_sse_response = <T = unknown>(
 	c: Context,
 	log: Logger,
 	options?: SseResponseOptions
 ): { response: Response; stream: SseStream<T> } => {
+	validate_sse_keep_alive_ms(options?.keep_alive_ms);
 	const { promise, resolve } = Promise.withResolvers<void>();
 	const close_listeners: Array<() => void> = [];
 	let resolved = false;
+	let keep_alive_timer: ReturnType<typeof setInterval> | null = null;
 
 	const do_close = (): void => {
 		if (resolved) return;
 		resolved = true;
+		if (keep_alive_timer !== null) {
+			clearInterval(keep_alive_timer);
+			keep_alive_timer = null;
+		}
 		resolve();
 		for (const fn of close_listeners) {
 			try {
@@ -231,10 +258,6 @@ export const create_sse_response = <T = unknown>(
 				}
 				write(frame);
 			},
-			comment(text: string) {
-				if (resolved || hono_stream.aborted) return;
-				write(`: ${text}\n`);
-			},
 			close: do_close,
 			on_close(fn: () => void) {
 				if (!resolved) {
@@ -252,6 +275,17 @@ export const create_sse_response = <T = unknown>(
 		// flush an SSE comment to push headers through proxies (Vite, nginx),
 		// ensuring EventSource fires onopen without waiting for the first data event
 		write(SSE_CONNECTED_COMMENT);
+		const keep_alive_ms =
+			options?.keep_alive_ms === undefined ? SSE_KEEP_ALIVE_INTERVAL_MS : options.keep_alive_ms;
+		// a client that left before this ran has closed the stream already
+		if (keep_alive_ms !== null && !resolved) {
+			keep_alive_timer = setInterval(() => {
+				if (resolved || hono_stream.aborted) return;
+				write(SSE_KEEP_ALIVE_COMMENT);
+			}, keep_alive_ms);
+			// a stream left open never holds the process alive on its own
+			if (typeof keep_alive_timer === 'object') keep_alive_timer.unref?.();
+		}
 		await promise;
 	});
 	// after the callback above has built `sse_stream`, which runs synchronously

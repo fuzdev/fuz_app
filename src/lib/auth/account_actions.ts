@@ -30,7 +30,7 @@
 
 import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 
-import { rpc_action, type ActionAuthContext, type RpcAction } from '../actions/action_rpc.ts';
+import { rpc_action, type ActionAuthContext, type RpcAction } from '../actions/action_types.ts';
 import { jsonrpc_errors } from '../http/jsonrpc_errors.ts';
 import { queue_connection_close } from '../actions/connection_closer.ts';
 import { to_session_account, type SessionAccountJson } from './account_schema.ts';

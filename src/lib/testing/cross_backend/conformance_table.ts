@@ -46,7 +46,7 @@ import { assert, describe, test } from 'vitest';
 
 import type { AppSurfaceSpec, RpcEndpointSpec } from '../../http/surface.ts';
 import type { RouteMethod, RouteSpec } from '../../http/route_spec.ts';
-import type { RpcAction } from '../../actions/action_rpc.ts';
+import type { RpcAction } from '../../actions/action_types.ts';
 import type { SessionOptions } from '../../auth/session_cookie.ts';
 import { DAEMON_TOKEN_HEADER } from '../../auth/daemon_token.ts';
 import {

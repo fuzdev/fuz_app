@@ -1,4 +1,4 @@
-import type { RpcAction } from '../actions/action_rpc.ts';
+import type { RpcAction } from '../actions/action_types.ts';
 import { create_cell_actions, type CellActionDeps } from './cell_actions.ts';
 import {
 	create_cell_grant_actions,

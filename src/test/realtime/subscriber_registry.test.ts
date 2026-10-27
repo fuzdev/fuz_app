@@ -13,23 +13,17 @@ import type { SseStream } from '#lib/realtime/sse.ts';
 /** Create a mock SseStream that records sent data. */
 const create_mock_stream = <T>(): SseStream<T> & {
 	sent: Array<T>;
-	comments: Array<string>;
 	closed: boolean;
 } => {
 	const sent: Array<T> = [];
-	const comments: Array<string> = [];
 	let closed = false;
 	return {
 		sent,
-		comments,
 		get closed() {
 			return closed;
 		},
 		send(data: T) {
 			sent.push(data);
-		},
-		comment(text: string) {
-			comments.push(text);
 		},
 		close() {
 			closed = true;
@@ -237,7 +231,6 @@ describe('SubscriberRegistry', () => {
 		const before = create_mock_stream<string>();
 		const failing: SseStream<string> = {
 			send() {},
-			comment() {},
 			close() {
 				throw boom;
 			},
@@ -330,7 +323,6 @@ describe('SubscriberRegistry.close_all', () => {
 		registry.subscribe(before);
 		registry.subscribe({
 			send() {},
-			comment() {},
 			close() {
 				throw boom;
 			},
@@ -462,7 +454,6 @@ describe('SubscriberRegistry max_per_scope', () => {
 				send() {
 					throwing_sends++;
 				},
-				comment() {},
 				close() {
 					throw boom;
 				},

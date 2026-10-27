@@ -44,7 +44,7 @@ consumers.
 
 - `method` — `'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'`
 - `path` — Hono path (supports `:param` segments)
-- `auth: RouteAuth` — flat record `{account, actor, roles?, credential_types?, required_scope?}` from `http/auth_shape.ts`. `account` / `actor` are `'none' | 'optional' | 'required'`. `required_scope` names the capability a narrowed api token's scope must admit — `surface:<name>` (a non-RPC surface, refused to every narrowed token) or `rpc:<method>` (one action method) — and is route-spec-only: `compile_action_registry` rejects it on an `ActionSpec`, where the dispatcher derives the same capability from `spec.method`. Otherwise the same shape governs `ActionSpec.auth` (see `actions/CLAUDE.md`).
+- `auth: RouteAuth` — flat record `{account, actor, roles?, credential_types?, required_scope?}` from `http/auth_shape.ts`. `account` / `actor` are `'none' | 'optional' | 'required'`. `required_scope` names the capability a narrowed api token's scope must admit — `surface:<name>`, a non-RPC surface refused to every narrowed token (an `rpc:<method>` capability throws at registration: it is the dispatcher's per-method gate, which a route never reaches) — and is route-spec-only: `compile_action_registry` rejects it on an `ActionSpec`, where the dispatcher derives `rpc:<method>` from `spec.method`. Otherwise the same shape governs `ActionSpec.auth` (see `actions/CLAUDE.md`).
 - `handler: RouteHandler` — `(c: Context, route: RouteContext) => Response | Promise<Response>`
 - `description` — free-text, surfaced in `AppSurface`
 - `params?: z.ZodObject` — strict-object schema for URL path params
@@ -629,5 +629,5 @@ Interfaces exported for consumer use: `TableInfo`, `TableWithCount`,
 
 - **Middleware ordering** is assembled by `create_app_server` — see the root ../../../CLAUDE.md §Middleware Ordering. The invariants `http/` needs consumers to uphold: trusted-proxy runs before auth/rate-limit; origin verification runs before session parsing; `client_ip` must be set before any handler or rate limiter reads it
 - **No re-exports.** Import every symbol from its canonical source module. `http/surface.ts` no longer re-exports schema helpers — go through `http/schema_helpers.ts`
-- **Input/output schemas align with SAES.** When wiring RPC via `actions/action_rpc.ts` or bridging to `RouteSpec` via `actions/action_bridge.ts`, the same Zod types flow through unchanged (see `actions/CLAUDE.md` §Single JSON-RPC 2.0 endpoint and §HTTP bridge)
+- **Input/output schemas align with SAES.** When wiring RPC via `actions/action_rpc.ts`, the same Zod types flow through unchanged (see `actions/CLAUDE.md` §Single JSON-RPC 2.0 endpoint)
 - **Error modules are complementary, not redundant.** `http/error_schemas.ts` is Zod-first (for routes and surface); `http/jsonrpc_errors.ts` is throw-first (for handlers and the catch layer). A single `ERROR_*` code can be raised either way depending on whether the handler needs to also attach diagnostic fields

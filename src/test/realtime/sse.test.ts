@@ -16,7 +16,14 @@ import {
 	type EventSpec,
 	type SseStream
 } from '#lib/realtime/sse.ts';
-import { SSE_CONNECTED_COMMENT, SSE_OUTBOUND_QUEUE_BYTES } from '#lib/realtime/sse_constants.ts';
+import {
+	SSE_CONNECTED_COMMENT,
+	SSE_KEEP_ALIVE_COMMENT,
+	SSE_KEEP_ALIVE_INTERVAL_MS,
+	SSE_KEEP_ALIVE_INTERVAL_MS_MAX,
+	SSE_OUTBOUND_QUEUE_BYTES,
+	validate_sse_keep_alive_ms
+} from '#lib/realtime/sse_constants.ts';
 import { SubscriberRegistry } from '#lib/realtime/subscriber_registry.ts';
 import { OUTBOUND_FRAME_OVERHEAD_BYTES } from '#lib/realtime/outbound_budget.ts';
 
@@ -24,6 +31,19 @@ const log = new Logger('test', { level: 'off' });
 
 /** Helper — expected prefix for all SSE responses. */
 const C = SSE_CONNECTED_COMMENT;
+
+/** Bytes of one `send` frame carrying a string of `length` characters. */
+const frame_of = (text: string): string => `data: ${JSON.stringify(text)}\n\n`;
+
+/** A logger that records its `warn` calls. */
+const create_warn_log = (): { warn_log: Logger; warns: Array<Array<unknown>> } => {
+	const warns: Array<Array<unknown>> = [];
+	const warn_log = new Logger('test', { level: 'off' });
+	warn_log.warn = (...args: Array<unknown>) => {
+		warns.push(args);
+	};
+	return { warn_log, warns };
+};
 
 describe('create_sse_response', () => {
 	test('returns response with correct SSE headers', async () => {
@@ -55,21 +75,6 @@ describe('create_sse_response', () => {
 		const response = await app.request('/sse');
 		const text = await response.text();
 		assert.strictEqual(text, `${C}data: {"msg":"hello"}\n\n`);
-	});
-
-	test('stream.comment sends SSE comment format', async () => {
-		const app = new Hono();
-
-		app.get('/sse', (c) => {
-			const { response, stream } = create_sse_response(c, log);
-			stream.comment('keep-alive');
-			stream.close();
-			return response;
-		});
-
-		const response = await app.request('/sse');
-		const text = await response.text();
-		assert.strictEqual(text, `${C}: keep-alive\n`);
 	});
 
 	test('stream.send is a no-op after close', async () => {
@@ -150,22 +155,6 @@ describe('create_sse_response', () => {
 
 		await app.request('/sse');
 		assert.strictEqual(call_count, 1);
-	});
-
-	test('stream.comment is a no-op after close', async () => {
-		const app = new Hono();
-
-		app.get('/sse', (c) => {
-			const { response, stream } = create_sse_response(c, log);
-			stream.comment('before');
-			stream.close();
-			stream.comment('after'); // should be ignored
-			return response;
-		});
-
-		const response = await app.request('/sse');
-		const text = await response.text();
-		assert.strictEqual(text, `${C}: before\n`);
 	});
 
 	test('on_close registered after close runs at once, and only that once', async () => {
@@ -310,19 +299,6 @@ describe('create_sse_response', () => {
 });
 
 describe('create_sse_response outbound budget', () => {
-	/** Bytes of one `send` frame carrying a string of `length` characters. */
-	const frame_of = (text: string): string => `data: ${JSON.stringify(text)}\n\n`;
-
-	/** A logger that records its `warn` calls. */
-	const create_warn_log = (): { warn_log: Logger; warns: Array<Array<unknown>> } => {
-		const warns: Array<Array<unknown>> = [];
-		const warn_log = new Logger('test', { level: 'off' });
-		warn_log.warn = (...args: Array<unknown>) => {
-			warns.push(args);
-		};
-		return { warn_log, warns };
-	};
-
 	test('the budget is 1 MiB', () => {
 		assert.strictEqual(SSE_OUTBOUND_QUEUE_BYTES, 1024 * 1024);
 	});
@@ -400,7 +376,6 @@ describe('create_sse_response outbound budget', () => {
 
 		// an ended stream takes nothing more and warns no more
 		stream_ref.send('later');
-		stream_ref.comment('later');
 		assert.strictEqual(warns.length, 1);
 	});
 
@@ -452,50 +427,6 @@ describe('create_sse_response outbound budget', () => {
 			queued_frames: 1,
 			frame_bytes: room + 2
 		});
-	});
-
-	test('a comment is held to the budget like a data frame', async () => {
-		const app = new Hono();
-		const { warn_log, warns } = create_warn_log();
-		const text = 'k'.repeat(100_000);
-		// `: ` before it and a newline after
-		const comment_bytes = text.length + 3;
-		let closed = 0;
-		let written = 0;
-		let closed_after = -1;
-		app.get('/sse', (c) => {
-			const { response, stream } = create_sse_response(c, warn_log);
-			stream.on_close(() => {
-				closed++;
-				closed_after = written;
-			});
-			// nothing reads the body while these are written
-			for (let i = 0; i < 12; i++) {
-				stream.comment(text);
-				written++;
-			}
-			return response;
-		});
-		const response = await app.request('/sse');
-		assert.strictEqual(closed, 1, 'the stream ended on the comment that did not fit');
-		// the comments before it filled the budget: the connect comment and each
-		// one charged its bytes plus the per-frame overhead
-		const charge = comment_bytes + OUTBOUND_FRAME_OVERHEAD_BYTES;
-		const held = Math.floor(
-			(SSE_OUTBOUND_QUEUE_BYTES - C.length - OUTBOUND_FRAME_OVERHEAD_BYTES) / charge
-		);
-		assert.strictEqual(closed_after, held);
-		assert.strictEqual(warns.length, 1);
-		assert.strictEqual(warns[0]![0], 'sse: outbound queue overflow, ending the stream');
-		assert.deepStrictEqual(warns[0]![1], {
-			account_id: null,
-			queued_bytes: C.length + held * comment_bytes,
-			queued_frames: held + 1,
-			frame_bytes: comment_bytes
-		});
-		// the body ends without the comment that did not fit
-		const body = await response.text();
-		assert.ok(body.length < C.length + (held + 1) * comment_bytes);
 	});
 
 	test('a frame larger than the whole budget is delivered when nothing is unread', async () => {
@@ -668,7 +599,6 @@ describe('create_validated_broadcaster', () => {
 		const all_received: Array<SseNotification> = [];
 		const make_stream = (bucket: Array<SseNotification>): SseStream<SseNotification> => ({
 			send: (data) => bucket.push(data),
-			comment: () => {},
 			close: () => {},
 			on_close: () => {}
 		});
@@ -692,5 +622,168 @@ describe('create_validated_broadcaster', () => {
 		validated.broadcast('runs', { method: 'run_updated', params: { run_id: '1', status: 'done' } });
 		assert.strictEqual(runs_received.length, 1);
 		assert.strictEqual(all_received.length, 2);
+	});
+});
+
+describe('create_sse_response keep-alive', () => {
+	/**
+	 * Open a stream under fake timers and read its body as it arrives. Nothing
+	 * is sent but what the stream writes on its own.
+	 */
+	const open = async (
+		options?: Parameters<typeof create_sse_response>[2],
+		target_log: Logger = log
+	): Promise<{
+		stream: SseStream<string>;
+		read: () => Promise<string>;
+		closed: () => number;
+		cancel: () => Promise<void>;
+	}> => {
+		const app = new Hono();
+		let stream_ref!: SseStream<string>;
+		let closed = 0;
+		app.get('/sse', (c) => {
+			const { response, stream } = create_sse_response<string>(c, target_log, options);
+			stream_ref = stream;
+			stream.on_close(() => closed++);
+			return response;
+		});
+		const response = await app.request('/sse');
+		const reader = response.body!.getReader();
+		const decoder = new TextDecoder();
+		return {
+			stream: stream_ref,
+			read: async () => decoder.decode((await reader.read()).value),
+			closed: () => closed,
+			cancel: async () => {
+				await reader.cancel();
+			}
+		};
+	};
+
+	test('an idle stream writes the keep-alive comment every interval', async () => {
+		vi.useFakeTimers();
+		try {
+			const { stream, read, cancel } = await open();
+			assert.strictEqual(await read(), C);
+			await vi.advanceTimersByTimeAsync(SSE_KEEP_ALIVE_INTERVAL_MS - 1);
+			stream.send('marker');
+			// nothing but the data frame before the interval elapses
+			assert.strictEqual(await read(), 'data: "marker"\n\n');
+			await vi.advanceTimersByTimeAsync(1);
+			assert.strictEqual(await read(), SSE_KEEP_ALIVE_COMMENT);
+			await vi.advanceTimersByTimeAsync(SSE_KEEP_ALIVE_INTERVAL_MS);
+			assert.strictEqual(await read(), SSE_KEEP_ALIVE_COMMENT);
+			stream.close();
+			await cancel();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	test('the comment is a blank-line-terminated SSE comment', () => {
+		assert.strictEqual(SSE_KEEP_ALIVE_COMMENT, ': keepalive\n\n');
+		assert.strictEqual(SSE_KEEP_ALIVE_INTERVAL_MS, 15_000);
+	});
+
+	test('keep_alive_ms sets the interval and null turns it off', async () => {
+		vi.useFakeTimers();
+		try {
+			const custom = await open({ keep_alive_ms: 1_000 });
+			assert.strictEqual(await custom.read(), C);
+			await vi.advanceTimersByTimeAsync(1_000);
+			assert.strictEqual(await custom.read(), SSE_KEEP_ALIVE_COMMENT);
+			custom.stream.close();
+			await custom.cancel();
+
+			const timers_before = vi.getTimerCount();
+			const off = await open({ keep_alive_ms: null });
+			assert.strictEqual(vi.getTimerCount(), timers_before, 'no keep-alive timer is set');
+			assert.strictEqual(await off.read(), C);
+			await vi.advanceTimersByTimeAsync(SSE_KEEP_ALIVE_INTERVAL_MS * 4);
+			off.stream.send('marker');
+			assert.strictEqual(await off.read(), 'data: "marker"\n\n', 'no keep-alive came first');
+			off.stream.close();
+			await off.cancel();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	test('a keep_alive_ms a timer cannot honor throws', async () => {
+		for (const keep_alive_ms of [
+			0,
+			-1,
+			Number.NaN,
+			Number.POSITIVE_INFINITY,
+			SSE_KEEP_ALIVE_INTERVAL_MS_MAX + 1
+		]) {
+			assert.throws(() => validate_sse_keep_alive_ms(keep_alive_ms), /keep_alive_ms/);
+			const app = new Hono();
+			let thrown: unknown = null;
+			app.get('/sse', (c) => {
+				try {
+					return create_sse_response(c, log, { keep_alive_ms }).response;
+				} catch (error) {
+					thrown = error;
+					return c.text('refused', 500);
+				}
+			});
+			await app.request('/sse');
+			assert.instanceOf(thrown, Error, String(keep_alive_ms));
+		}
+		for (const keep_alive_ms of [undefined, null, 0.5, 15_000, SSE_KEEP_ALIVE_INTERVAL_MS_MAX]) {
+			validate_sse_keep_alive_ms(keep_alive_ms);
+		}
+	});
+
+	test('the timer stops when the stream closes', async () => {
+		vi.useFakeTimers();
+		try {
+			const timers_before = vi.getTimerCount();
+			const { stream, read, cancel } = await open();
+			assert.strictEqual(vi.getTimerCount(), timers_before + 1);
+			assert.strictEqual(await read(), C);
+			stream.close();
+			assert.strictEqual(vi.getTimerCount(), timers_before, 'the keep-alive timer is cleared');
+			await cancel();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	test('a keep-alive is held to the outbound budget like a data frame', async () => {
+		vi.useFakeTimers();
+		try {
+			const { warn_log, warns } = create_warn_log();
+			const keep_alive_charge = SSE_KEEP_ALIVE_COMMENT.length + OUTBOUND_FRAME_OVERHEAD_BYTES;
+			// the room behind the unread connect comment, less the filler's overhead
+			const room = SSE_OUTBOUND_QUEUE_BYTES - C.length - 2 * OUTBOUND_FRAME_OVERHEAD_BYTES;
+			const run = async (spare: number): Promise<number> => {
+				const app = new Hono();
+				let closed = 0;
+				app.get('/sse', (c) => {
+					const { response, stream } = create_sse_response<string>(c, warn_log);
+					stream.on_close(() => closed++);
+					// one synchronous run, so nothing the client could have read is
+					// released: fill the budget to `spare` bytes short of one more
+					// keep-alive, then let its interval elapse
+					stream.send('f'.repeat(room - frame_of('').length - keep_alive_charge + spare));
+					vi.advanceTimersByTime(SSE_KEEP_ALIVE_INTERVAL_MS);
+					return response;
+				});
+				const response = await app.request('/sse');
+				const closed_before_cancel = closed;
+				await response.body?.cancel();
+				return closed_before_cancel;
+			};
+			assert.strictEqual(await run(0), 0, 'a keep-alive that fits is written');
+			assert.deepStrictEqual(warns, []);
+			assert.strictEqual(await run(1), 1, 'a keep-alive that does not fit ends the stream');
+			assert.strictEqual(warns.length, 1);
+			assert.strictEqual(warns[0]![0], 'sse: outbound queue overflow, ending the stream');
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 });

@@ -371,17 +371,17 @@ back, and it has two arms:
   `AUDIT_EVENT_SPECS`. A consumer route with its own `SubscriberRegistry`
   registers the same identities to get the same closes.
 - `rpc:<method>` — one action method, refused unless the token lists it. What
-  `create_action_route_spec` puts on a bridged route (below), and what the
-  dispatcher's per-method gate reports.
+  the dispatcher's per-method gate reports; a route spec may not declare it
+  (registration throws), since a route never reaches that gate.
 
 **The identifier half is deliberately open.** A consumer names its own surface
 — `surface:file_store`, `surface:git_http` — with no upstream release and no
 registration. Nothing is lost by that: the RPC-only rule is all-or-nothing, so a
 surface
 name decides nothing and only labels which surface refused, and the sibling
-`rpc:` arm has always carried arbitrary consumer method names on the same wire
-field. Registration throws on a malformed capability (unknown section, empty or
-non-`[a-z_]` surface name), on the field appearing on an `ActionSpec` (the
+`rpc:` arm carries arbitrary consumer method names on the same wire field.
+Registration throws on a malformed capability (unknown section, empty or
+non-`[a-z_]` surface name, or `rpc:` on a route), on the field appearing on an `ActionSpec` (the
 dispatcher derives it from the method there), and on an unrestricted route (the
 same holder reaches it by dropping the credential) — each of the last two would
 be a control that silently does nothing.
@@ -426,15 +426,6 @@ A surface that isn't a route spec — your own WebSocket upgrade, anything Hono'
 `upgradeWebSocket` shape rules out — calls `token_scope_surface_denial(c, 'surface:<name>')`
 directly instead, which is what the spine's own WS gate does. Mount it in the
 position the resolver would have: after `require_auth`, before the role gate.
-
-**A bridged action gates itself.** `create_action_route_spec` runs its own
-handler through the REST pipeline and never reaches `perform_action`, so the
-dispatcher's per-method check cannot fire on it — the bridge therefore derives
-`required_scope: 'rpc:<method>'` onto the route it produces. A token minted for
-that method reaches the bridged route; one that wasn't gets the 403 it would
-have gotten over RPC. Bridge something with no request/response shape (an SSE
-stream, a file download) and the whole-surface rule applies instead: pass
-`options.auth` with your own `surface:<name>`.
 
 What the spine still cannot do for you is **know your surface exists**.
 `src/test/auth/token_scope_surface_census.test.ts` is the pattern: enumerate
@@ -1557,7 +1548,7 @@ genuine miss — so no distinguishing field (an id echo, a divergent message)
 can creep into one path.
 
 **Phase ordering hides route shape from callers who lack the authority to
-call.** Every dispatch surface (HTTP RPC, the REST bridge, WS) runs **401 →
+call.** Every dispatch surface (HTTP RPC, WS) runs **401 →
 authorization phase → 403 → 400 → handler**: authentication, then actor
 resolution, then the credential / scope / role gates, and only then input
 validation. A caller any of those refuse never learns the route's input
