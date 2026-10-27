@@ -364,6 +364,11 @@ scope_id}` than `validate_data` and returns a `CellCreateVerdict`
   optional `authorize_grant_create` (`CellGrantCreateAuthorize`), asked of a
   manager after the spine's gates and before the write (a level change too);
   `false` is 403 `cell_grant_not_authorized`, nothing written.
+  `cell_grant_revoke` takes an optional `authorize_grant_revoke`
+  (`CellGrantRevokeAuthorize`), the steward widening: asked only of a caller
+  who neither manages the cell nor holds the grant, for a role-shaped grant
+  with a `scope_id`; `true` revokes (audit `steward: true`), `false` keeps the
+  404 mask.
 - `auth/all_cell_actions.ts` — `create_all_cell_actions(deps, {roles})`, the
   handler-side twin of `all_cell_action_specs` and sibling of
   `create_standard_rpc_actions`: bundles all five cell factories (CRUD + grant

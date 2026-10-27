@@ -129,8 +129,8 @@ export type CellGrantRevokeInput = z.infer<typeof CellGrantRevokeInput>;
 /**
  * Output for `cell_grant_revoke`. `still_admitted` is `true` when the
  * caller retains some admit path on the cell after the revoke (other
- * grant, ownership, admin). Always `true` for non-self revokes (the
- * caller didn't admit via this row to begin with).
+ * grant, ownership, admin). Always `true` for a manager's revoke; a
+ * self-revoker or a scope steward may hold no other path.
  */
 export const CellGrantRevokeOutput = z.strictObject({
 	ok: z.literal(true),
@@ -176,7 +176,7 @@ export const cell_grant_revoke_action_spec = {
 	output: CellGrantRevokeOutput,
 	async: true,
 	description:
-		'Revoke a grant. Manage-tier only (admin / owner), plus self for actor-shaped grants ("leave shared cell"). Returns `still_admitted` so the UI can tell the recipient whether other admit paths remain.'
+		'Revoke a grant. Manage-tier only (admin / owner), plus self for actor-shaped grants ("leave shared cell"), plus the steward of a scoped role-shaped grant\'s scope when the consumer mounts a revoke authorizer. Returns `still_admitted` so the UI can tell the recipient whether other admit paths remain.'
 } satisfies RequestResponseActionSpec;
 
 export const cell_grant_list_action_spec = {

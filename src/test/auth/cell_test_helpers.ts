@@ -27,7 +27,10 @@ import { create_role_schema, ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_sche
 import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
 import { create_audit_log_config } from '#lib/auth/audit_log_schema.ts';
 import { create_all_cell_actions } from '#lib/auth/all_cell_actions.ts';
-import type { CellGrantCreateAuthorize } from '#lib/auth/cell_grant_actions.ts';
+import type {
+	CellGrantCreateAuthorize,
+	CellGrantRevokeAuthorize
+} from '#lib/auth/cell_grant_actions.ts';
 import type { CellActionDeps, CellCreateAuthorize } from '#lib/auth/cell_actions.ts';
 import { cell_audit_events } from '#lib/auth/cell_audit_events.ts';
 import {
@@ -82,6 +85,8 @@ export interface CellTestAppOptions {
 	authorize_create?: CellCreateAuthorize;
 	/** The grant gate (default: none past the spine's). */
 	authorize_grant_create?: CellGrantCreateAuthorize;
+	/** The steward revoke widening (default: none — managers and self only). */
+	authorize_grant_revoke?: CellGrantRevokeAuthorize;
 	/** The per-kind data validator (default: pass-through). */
 	validate_data?: CellActionDeps['validate_data'];
 	/** Where disk facts live (default: `CELL_TEST_FACTS_DIR_UNUSED`). */
@@ -100,6 +105,7 @@ export const create_cell_route_specs =
 		const {
 			authorize_create,
 			authorize_grant_create,
+			authorize_grant_revoke,
 			validate_data,
 			facts_dir = CELL_TEST_FACTS_DIR_UNUSED
 		} = options;
@@ -110,7 +116,13 @@ export const create_cell_route_specs =
 				path: RPC_PATH,
 				actions: [
 					...create_all_cell_actions(
-						{ ...ctx.deps, authorize_create, authorize_grant_create, validate_data },
+						{
+							...ctx.deps,
+							authorize_create,
+							authorize_grant_create,
+							authorize_grant_revoke,
+							validate_data
+						},
 						{ roles: cell_test_roles }
 					)
 				],

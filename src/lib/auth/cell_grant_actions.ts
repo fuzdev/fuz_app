@@ -19,8 +19,10 @@
  *   after the spine's own gates, before the owner check and the write (403
  *   `cell_grant_not_authorized` on refusal).
  * - `cell_grant_revoke` — admin / owner, plus self for actor-shaped grants
- *   ("leave shared cell"). Returns `still_admitted` computed by re-running
- *   `can_view_cell` against the remaining grants.
+ *   ("leave shared cell"), plus — when `authorize_grant_revoke` is mounted —
+ *   the steward of a scoped role-shaped grant's scope. Returns
+ *   `still_admitted` computed by re-running `can_view_cell` against the
+ *   remaining grants.
  * - `cell_grant_list` — admin / owner only. Viewers and editors alike get
  *   the IDOR-mask 404 (the share list is the manager's to curate).
  *
@@ -56,6 +58,7 @@ import {
 	type CellGrantRevokeOutput,
 	type CellGrantListInput,
 	type CellGrantListOutput,
+	type CellGrantLevel,
 	type GrantJson
 } from './cell_grant_action_specs.ts';
 import { ERROR_CELL_NOT_FOUND } from './cell_action_specs.ts';
@@ -108,16 +111,68 @@ export type CellGrantCreateAuthorize = (
 ) => boolean | Promise<boolean>;
 
 /**
+ * Input to a `CellGrantRevokeAuthorize` callback — the twin of the Rust
+ * `CellGrantRevokeAuthorizeInput`. Only a role-shaped grant with a scope
+ * reaches the callback, so `role` and `scope_id` are always present.
+ */
+export interface CellGrantRevokeAuthorizeInput {
+	/** The grant being revoked. */
+	grant_id: Uuid;
+	/** The cell the grant names. */
+	cell_id: Uuid;
+	/** The cell's owner (`null` = a system cell). */
+	cell_created_by: Uuid | null;
+	/** The role the grant admits. */
+	role: string;
+	/** The scope the grant is bound to — the scope whose steward the callback decides on. */
+	scope_id: Uuid;
+	/** The level the grant confers. */
+	level: CellGrantLevel;
+}
+
+/**
+ * Opt-in widening of `cell_grant_revoke` to a scope's steward — the TS twin of
+ * the Rust `CellGrantRevokeAuthorize` trait.
+ *
+ * The role-shaped twin of self-revoke: an actor-shaped grant's grantee may
+ * leave a cell, and for a role-shaped grant the grantee is the scope, so the
+ * scope's steward speaks for it (say, a teacher removing a cell shared into
+ * their classroom). The consumer decides what stewards a scope. The input
+ * carries the grant's role so a consumer whose scopes are stewarded only for
+ * certain roles can refuse the rest.
+ *
+ * Deliberately fenced. The spine asks it only when the caller neither manages
+ * the cell nor holds the grant (self-revoke), and only for a role-shaped grant
+ * with a non-null `scope_id` — an actor-shaped grant or a scopeless role grant
+ * never reaches it, and a soft-deleted cell 404s first. `true` revokes as a
+ * manager would — same delete, `still_admitted`, and `cell_grant_revoke` audit
+ * row, its metadata stamped `steward: true`; `false` answers the same 404
+ * `ERROR_CELL_GRANT_NOT_FOUND` mask as every other non-qualifying caller (not a
+ * 403 — the caller mustn't learn the grant exists); a throw is a hard error —
+ * it is not masked, so refuse with `false`, never a throw.
+ * Omitted = revoke is the manager's and the self-revoker's alone. Pure like
+ * `CellGrantCreateAuthorize`: one needing the database reads pre-existing
+ * state through its own handle.
+ */
+export type CellGrantRevokeAuthorize = (
+	auth: RequestActorContext,
+	input: CellGrantRevokeAuthorizeInput
+) => boolean | Promise<boolean>;
+
+/**
  * Dependencies for `create_cell_grant_actions`.
  *
  * `roles` is the role schema — read for the role-validity gate on
  * `cell_grant_create`; `authorize_grant_create` is the optional consumer gate
- * (`CellGrantCreateAuthorize`). The other slots match `CellActionDeps` so
- * audit-log emit goes through the same fire-and-forget plumbing.
+ * (`CellGrantCreateAuthorize`) and `authorize_grant_revoke` the optional
+ * steward widening of `cell_grant_revoke` (`CellGrantRevokeAuthorize`). The
+ * other slots match `CellActionDeps` so audit-log emit goes through the same
+ * fire-and-forget plumbing.
  */
 export type CellGrantActionDeps = ActionFactoryDeps & {
 	roles: RoleSchemaResult;
 	authorize_grant_create?: CellGrantCreateAuthorize;
+	authorize_grant_revoke?: CellGrantRevokeAuthorize;
 };
 
 export const to_grant_json = (row: CellGrantRow): GrantJson => ({
@@ -177,9 +232,32 @@ const assert_principal_is_not_owner = (
 	}
 };
 
+/**
+ * Whether the mounted `CellGrantRevokeAuthorize` admits `auth` as the steward
+ * of `grant`'s scope — `false` with no callback, for an actor-shaped grant,
+ * and for a scopeless role grant, none of which reach it.
+ */
+const steward_admits_revoke = async (
+	auth: RequestActorContext,
+	grant: CellGrantRow,
+	cell: CellRow,
+	authorize: CellGrantRevokeAuthorize | undefined
+): Promise<boolean> => {
+	if (!authorize) return false;
+	if (grant.actor_id !== null || grant.role === null || grant.scope_id === null) return false;
+	return authorize(auth, {
+		grant_id: grant.id,
+		cell_id: grant.cell_id,
+		cell_created_by: cell.created_by,
+		role: grant.role,
+		scope_id: grant.scope_id,
+		level: grant.level
+	});
+};
+
 /** Create the three `cell_grant_*` RPC actions. */
 export const create_cell_grant_actions = (deps: CellGrantActionDeps): Array<RpcAction> => {
-	const { roles, authorize_grant_create } = deps;
+	const { roles, authorize_grant_create, authorize_grant_revoke } = deps;
 
 	const create_handler = async (
 		input: CellGrantCreateInput,
@@ -278,10 +356,17 @@ export const create_cell_grant_actions = (deps: CellGrantActionDeps): Array<RpcA
 		// authority path. Owner-with-self-grant can't happen
 		// (`assert_principal_is_not_owner` blocks it at create time).
 		const is_self_actor_grant = grant.actor_id !== null && grant.actor_id === auth.actor.id;
+		// The steward of a scoped role grant's scope, asked only of a caller with
+		// neither of the above — so a manager or self-revoker never consults it.
+		const is_steward =
+			!is_manager &&
+			!is_self_actor_grant &&
+			(await steward_admits_revoke(auth, grant, cell, authorize_grant_revoke));
 		// Grant management is manage-tier only (admin / owner); editor-grant
-		// holders cannot revoke grants (mirrors the create gate). The sole
-		// exception is self-revoke. Non-qualifying callers get the IDOR mask.
-		if (!is_manager && !is_self_actor_grant) {
+		// holders cannot revoke grants (mirrors the create gate). The
+		// exceptions are self-revoke and a scope's steward. Non-qualifying
+		// callers get the IDOR mask.
+		if (!is_manager && !is_self_actor_grant && !is_steward) {
 			throw jsonrpc_errors.not_found('cell grant', { reason: ERROR_CELL_GRANT_NOT_FOUND });
 		}
 		const deleted = await query_cell_grant_delete(ctx, grant.id);
@@ -290,9 +375,10 @@ export const create_cell_grant_actions = (deps: CellGrantActionDeps): Array<RpcA
 			// 404 covers the gap.
 			throw jsonrpc_errors.not_found('cell grant', { reason: ERROR_CELL_GRANT_NOT_FOUND });
 		}
-		// Recompute admit state against the remaining grants. Always true
-		// for non-self revokes (caller didn't admit via this row), but the
-		// recompute is uniform shape — let `can_view_cell` decide.
+		// Recompute admit state against the remaining grants. Always true for
+		// a manager's revoke; a self-revoker or a steward may have admitted
+		// through nothing else, so the recompute is uniform shape — let
+		// `can_view_cell` decide.
 		const remaining = await query_cell_grant_list_for_cell(ctx, cell.id);
 		const still_admitted = can_view_cell(auth, cell, remaining);
 		const audit_metadata: CellGrantRevokeAuditMetadata = {
@@ -300,7 +386,8 @@ export const create_cell_grant_actions = (deps: CellGrantActionDeps): Array<RpcA
 			grant_id: deleted.id,
 			level: deleted.level,
 			principal: principal_from_row(deleted),
-			...(is_self_actor_grant ? { self: true as const } : {})
+			...(is_self_actor_grant ? { self: true as const } : {}),
+			...(is_steward ? { steward: true as const } : {})
 		};
 		deps.audit.emit(ctx, {
 			event_type: 'cell_grant_revoke',

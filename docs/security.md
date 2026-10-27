@@ -1590,7 +1590,13 @@ wouldn't honor the grant until approval, so minting it would only stage access
 for later. A consumer's `authorize_grant_create` hook, asked after these
 gates and before the write, can narrow who a manager may share with (403
 `cell_grant_not_authorized`), never widen it — the spine's gates have already
-run.
+run. Revoke is the manager's, the self-revoker's (an actor-shaped grant's own
+actor), and — only when a consumer mounts `authorize_grant_revoke` — a scope
+steward's: the hook is asked only of a caller who is neither, and only for a
+role-shaped grant with a `scope_id`, so it can't open an actor-shaped or
+scopeless grant to anyone. Its refusal keeps the 404 mask, so a non-manager
+never learns the grant exists, and an allowed revoke is audited `steward:
+true`.
 
 **Actor-search scope gate**: `actor_search` (the prefix-search picker over
 `actor.name`) is account-grain authenticated, but an **unbounded global

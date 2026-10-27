@@ -1156,7 +1156,11 @@ file; the dual-spawn and limiter-enabled suites name their own files.
   plain CRUD would declare `cell_crud: true, cell_relations: false`.
   `cell_gated_create` gates `describe_cell_gated_create_cross_tests` +
   `describe_cell_moderate_cross_tests` (the parent-aware-creation-authorizer +
-  `cell_moderate` parity proofs); unlike `cell_crud`/`cell_relations`
+  `cell_moderate` parity proofs) and, with `cell_relations`,
+  `describe_cell_grant_steward_cross_tests` (the steward-revoke seam: a scoped
+  `participant` grant stewards its scope under the
+  `test_cell_grant_steward_revoke_authorize` policy mounted beside the create
+  one); unlike `cell_crud`/`cell_relations`
   it is **cross-only** (`false` in-process) — `true` only on the reference
   spine binaries that live-mount the `test_cell_gated_create_authorize` policy
   (the TS spine `full_spine_mount` + the Rust `testing_spine_stub`), since the

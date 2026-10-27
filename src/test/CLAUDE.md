@@ -335,7 +335,11 @@ clone of a viewable `space` root → 403 `cell_create_forbidden`; and a
 contribution under a soft-deleted root → 404 `cell_not_found`, the
 missing-parent shape), gated on
 `capabilities.cell_gated_create` (cross-only, the test policy is a spine-binary
-fixture)), and `account_lifecycle`
+fixture)), `describe_cell_grant_steward_cross_tests` (the steward-revoke seam
+under the spine binaries' test policy — a scoped `participant` grant's holder
+revokes a role grant bound to that scope, audited `steward: true`; another
+scope's holder and a scopeless grant get the 404 mask; gated on
+`cell_relations` + `cell_gated_create`), and `account_lifecycle`
 (`describe_account_lifecycle_cross_tests` — soft-delete → undelete round-trip,
 keeper-confirmed purge, the `cannot_delete_keeper` guard, the session-only
 self-delete (a bearer self-delete → 403 `credential_type_required` with the

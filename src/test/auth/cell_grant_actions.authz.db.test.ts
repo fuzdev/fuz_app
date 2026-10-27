@@ -18,6 +18,11 @@
  *   gates (a non-manager's 404 and an unknown role's 400 never reach it), for a
  *   new grant and a level change alike; its refusal is 403
  *   `cell_grant_not_authorized` with no grant row and no audit row.
+ * - a mounted `authorize_grant_revoke` is asked only when the caller neither
+ *   manages the cell nor holds the grant, for a role-shaped grant with a scope;
+ *   its allow revokes with a `steward: true` audit row, its refusal is the same
+ *   404 `cell_grant_not_found` as no callback, and a soft-deleted cell 404s
+ *   before it runs.
  *
  * Part of the focused first-pass checklist suite.
  *
@@ -46,6 +51,7 @@ import {
 	cell_grant_revoke_action_spec,
 	cell_grant_list_action_spec,
 	ERROR_CELL_GRANT_NOT_AUTHORIZED,
+	ERROR_CELL_GRANT_NOT_FOUND,
 	ERROR_CELL_GRANT_PRINCIPAL_IS_OWNER,
 	ERROR_CELL_GRANT_UNAPPROVED,
 	ERROR_CELL_GRANT_UNKNOWN_ROLE
@@ -55,7 +61,9 @@ import type { Uuid } from '#lib/primitive_schemas.ts';
 import type { TestApp, TestAccount } from '#lib/testing/app_server.ts';
 import type {
 	CellGrantCreateAuthorize,
-	CellGrantCreateAuthorizeInput
+	CellGrantCreateAuthorizeInput,
+	CellGrantRevokeAuthorize,
+	CellGrantRevokeAuthorizeInput
 } from '#lib/auth/cell_grant_actions.ts';
 import { create_cell_test_app, create_cell, call, ROLE_MEMBER } from './cell_test_helpers.ts';
 import { error_reason } from './rpc_test_helpers.ts';
@@ -533,6 +541,193 @@ describe_db('cell_grant_actions authz', (get_db) => {
 				allow.seen.map((i) => i.level),
 				['viewer', 'editor']
 			);
+		});
+	});
+	describe('authorize_grant_revoke', () => {
+		/** A revoke authorizer answering `allow`, recording what it saw. */
+		const recording = (allow: boolean) => {
+			const seen: Array<CellGrantRevokeAuthorizeInput> = [];
+			const authorize: CellGrantRevokeAuthorize = (_auth, input) => {
+				seen.push(input);
+				return Promise.resolve(allow);
+			};
+			return { authorize, seen };
+		};
+
+		const SCOPE_ID = '44444444-4444-4444-8444-444444444444' as Uuid;
+
+		const grant = async (
+			app: TestApp,
+			owner: TestAccount,
+			cell_id: Uuid,
+			principal:
+				{ kind: 'actor'; actor_id: Uuid } | { kind: 'role'; role: string; scope_id?: Uuid | null }
+		): Promise<Uuid> => {
+			const res = await call(
+				app,
+				cell_grant_create_action_spec,
+				{ cell_id, level: 'viewer', principal },
+				owner.create_session_headers()
+			);
+			assert.ok(res.ok, JSON.stringify(res));
+			return res.result.grant.id;
+		};
+
+		const revoke = (app: TestApp, caller: TestAccount, grant_id: Uuid) =>
+			call(app, cell_grant_revoke_action_spec, { grant_id }, caller.create_session_headers());
+
+		const grant_exists = async (grant_id: Uuid): Promise<boolean> =>
+			(await get_db().query('SELECT 1 FROM cell_grant WHERE id = $1', [grant_id])).length > 0;
+
+		/** The `cell_grant_revoke` audit rows' metadata, oldest first. */
+		const revoke_audits = async (): Promise<Array<Record<string, unknown>>> =>
+			(
+				await get_db().query<{ metadata: Record<string, unknown> }>(
+					`SELECT metadata FROM audit_log WHERE event_type = 'cell_grant_revoke' ORDER BY seq`
+				)
+			).map((r) => r.metadata);
+
+		test('unmounted, a would-be steward gets the 404 mask', async () => {
+			const app = await create_cell_test_app(get_db);
+			const owner = await app.create_account({ username: 'rv_none_owner' });
+			const steward = await app.create_account({ username: 'rv_none_steward' });
+			const { id } = await create_cell(app, {
+				kind: 'note',
+				data: {},
+				headers: owner.create_session_headers()
+			});
+			const grant_id = await grant(app, owner, id, {
+				kind: 'role',
+				role: ROLE_MEMBER,
+				scope_id: SCOPE_ID
+			});
+			const res = await revoke(app, steward, grant_id);
+			assert.strictEqual(error_reason(res), ERROR_CELL_GRANT_NOT_FOUND);
+			assert.ok(await grant_exists(grant_id));
+		});
+
+		test('an allow revokes, audited `steward: true`, after asking with the grant', async () => {
+			const allow = recording(true);
+			const app = await create_cell_test_app(get_db, [], {
+				authorize_grant_revoke: allow.authorize
+			});
+			const owner = await app.create_account({ username: 'rv_allow_owner' });
+			const steward = await app.create_account({ username: 'rv_allow_steward' });
+			const { id } = await create_cell(app, {
+				kind: 'note',
+				data: {},
+				headers: owner.create_session_headers()
+			});
+			const grant_id = await grant(app, owner, id, {
+				kind: 'role',
+				role: ROLE_MEMBER,
+				scope_id: SCOPE_ID
+			});
+			const res = await revoke(app, steward, grant_id);
+			assert.ok(res.ok, JSON.stringify(res));
+			assert.deepStrictEqual(res.result, { ok: true, still_admitted: false });
+			assert.ok(!(await grant_exists(grant_id)), 'the grant is gone');
+			assert.deepStrictEqual(allow.seen, [
+				{
+					grant_id,
+					cell_id: id,
+					cell_created_by: owner.actor.id,
+					role: ROLE_MEMBER,
+					scope_id: SCOPE_ID,
+					level: 'viewer'
+				}
+			]);
+			const audits = await revoke_audits();
+			assert.strictEqual(audits.length, 1);
+			assert.strictEqual(audits[0]!.steward, true);
+			assert.strictEqual(audits[0]!.grant_id, grant_id);
+			assert.ok(!('self' in audits[0]!));
+		});
+
+		test('a refusal is the 404 mask — no audit row, the grant kept', async () => {
+			const deny = recording(false);
+			const app = await create_cell_test_app(get_db, [], {
+				authorize_grant_revoke: deny.authorize
+			});
+			const owner = await app.create_account({ username: 'rv_deny_owner' });
+			const stranger = await app.create_account({ username: 'rv_deny_stranger' });
+			const { id } = await create_cell(app, {
+				kind: 'note',
+				data: {},
+				visibility: 'public',
+				headers: owner.create_session_headers()
+			});
+			const grant_id = await grant(app, owner, id, {
+				kind: 'role',
+				role: ROLE_MEMBER,
+				scope_id: SCOPE_ID
+			});
+			const res = await revoke(app, stranger, grant_id);
+			assert.ok(!res.ok);
+			assert.strictEqual(res.status, 404);
+			assert.strictEqual(error_reason(res), ERROR_CELL_GRANT_NOT_FOUND);
+			assert.strictEqual(deny.seen.length, 1);
+			assert.ok(await grant_exists(grant_id), 'the grant is kept');
+			assert.deepStrictEqual(await revoke_audits(), [], 'no audit row');
+		});
+
+		test('fenced: actor-shaped, scopeless, manager, self, and deleted-cell revokes never ask', async () => {
+			const allow = recording(true);
+			const app = await create_cell_test_app(get_db, [], {
+				authorize_grant_revoke: allow.authorize
+			});
+			const owner = await app.create_account({ username: 'rv_fence_owner' });
+			const stranger = await app.create_account({ username: 'rv_fence_stranger' });
+			const holder = await app.create_account({ username: 'rv_fence_holder' });
+			const { id } = await create_cell(app, {
+				kind: 'note',
+				data: {},
+				headers: owner.create_session_headers()
+			});
+
+			const actor_shaped = await grant(app, owner, id, {
+				kind: 'actor',
+				actor_id: holder.actor.id
+			});
+			const scopeless = await grant(app, owner, id, { kind: 'role', role: ROLE_MEMBER });
+			for (const grant_id of [actor_shaped, scopeless]) {
+				const res = await revoke(app, stranger, grant_id);
+				assert.strictEqual(error_reason(res), ERROR_CELL_GRANT_NOT_FOUND);
+			}
+			assert.strictEqual(allow.seen.length, 0, 'neither grant shape reaches the callback');
+
+			// self-revoke and a manager's revoke take their own paths
+			const left = await revoke(app, holder, actor_shaped);
+			assert.ok(left.ok, JSON.stringify(left));
+			const scoped = await grant(app, owner, id, {
+				kind: 'role',
+				role: ROLE_MEMBER,
+				scope_id: SCOPE_ID
+			});
+			const managed = await revoke(app, owner, scoped);
+			assert.ok(managed.ok, JSON.stringify(managed));
+			assert.strictEqual(allow.seen.length, 0, 'a self-revoker and a manager never consult it');
+			const audits = await revoke_audits();
+			assert.strictEqual(audits.length, 2);
+			assert.strictEqual(audits[0]!.self, true);
+			for (const audit of audits) assert.ok(!('steward' in audit), JSON.stringify(audit));
+
+			// a soft-deleted cell 404s before the callback
+			const doomed = await grant(app, owner, id, {
+				kind: 'role',
+				role: ROLE_MEMBER,
+				scope_id: SCOPE_ID
+			});
+			const deleted = await call(
+				app,
+				cell_delete_action_spec,
+				{ cell_id: id },
+				owner.create_session_headers()
+			);
+			assert.ok(deleted.ok, JSON.stringify(deleted));
+			const gone = await revoke(app, stranger, doomed);
+			assert.strictEqual(error_reason(gone), ERROR_CELL_GRANT_NOT_FOUND);
+			assert.strictEqual(allow.seen.length, 0, 'a deleted cell never reaches the callback');
 		});
 	});
 });

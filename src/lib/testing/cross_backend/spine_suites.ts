@@ -117,6 +117,7 @@ import {
 	describe_cell_grant_role_cross_tests,
 	type CellGrantRoleCrossTestOptions
 } from './cell_grant_role.ts';
+import { describe_cell_grant_steward_cross_tests } from './cell_grant_steward.ts';
 import { describe_cell_moderate_cross_tests } from './cell_moderate.ts';
 import { describe_cell_ref_admission_cross_tests } from './cell_ref_admission.ts';
 import { describe_cell_relations_cross_tests } from './cell_relations.ts';
@@ -266,6 +267,7 @@ export const SUITE_NAMES = [
 	'cell_crud',
 	'cell_gated_create',
 	'cell_grant_role',
+	'cell_grant_steward',
 	'cell_moderate',
 	'cell_ref_admission',
 	'cell_relations',
@@ -345,6 +347,7 @@ export interface SuiteOptionsMap {
 	cell_crud: RpcPathCapabilityGatedCrossSuiteOptions;
 	cell_gated_create: RpcPathCapabilityGatedCrossSuiteOptions;
 	cell_grant_role: CellGrantRoleCrossTestOptions;
+	cell_grant_steward: RpcPathCapabilityGatedCrossSuiteOptions;
 	cell_moderate: RpcPathCapabilityGatedCrossSuiteOptions;
 	cell_ref_admission: RpcPathCapabilityGatedCrossSuiteOptions;
 	cell_relations: RpcPathCapabilityGatedCrossSuiteOptions;
@@ -627,6 +630,11 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			};
 		},
 		describe: describe_cell_grant_role_cross_tests,
+		required: { setup_test: true, capabilities: true }
+	},
+	cell_grant_steward: {
+		derive: (c) => rpc_gated(c),
+		describe: describe_cell_grant_steward_cross_tests,
 		required: { setup_test: true, capabilities: true }
 	},
 	cell_moderate: {

@@ -60,6 +60,7 @@ import {
 } from './testing_reset_actions.ts';
 import { create_testing_origin_check_action } from './testing_origin_check.ts';
 import { test_cell_gated_create_authorize } from './test_cell_gated_create_authorize.ts';
+import { test_cell_grant_steward_revoke_authorize } from './test_cell_grant_steward_revoke_authorize.ts';
 import { spine_roles, spine_session_options } from './default_spine_surface.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
@@ -136,9 +137,15 @@ export const build_full_spine_rpc_actions = (
 		// parentless creates stay open (the other cell suites are unaffected).
 		// The handler hands the governing root's `policy` to the (pure)
 		// authorizer, whose `validate_policy` accepts or refuses each policy
-		// write.
+		// write. Beside it the steward-revoke test policy (twin of the Rust
+		// stub's `TestCellGrantStewardRevokeAuthorize`): a scoped `participant`
+		// grant stewards its scope, for the `cell_grant_steward` cross suite.
 		...create_all_cell_actions(
-			{ ...deps, authorize_create: test_cell_gated_create_authorize },
+			{
+				...deps,
+				authorize_create: test_cell_gated_create_authorize,
+				authorize_grant_revoke: test_cell_grant_steward_revoke_authorize
+			},
 			{ roles: spine_roles }
 		),
 		...create_actor_lookup_actions(deps),

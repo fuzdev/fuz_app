@@ -217,7 +217,9 @@ export interface BackendCapabilities {
 	 * catches one. `true` only on the reference spine binaries that mount the
 	 * test policy (the TS spine `full_spine_mount` + the Rust
 	 * `testing_spine_stub`); consumers and the in-process default app don't
-	 * mount it.
+	 * mount it. The same binaries mount the steward-revoke test policy
+	 * (`test_cell_grant_steward_revoke_authorize`) beside it, so the flag also
+	 * gates `describe_cell_grant_steward_cross_tests` (with `cell_relations`).
 	 */
 	readonly cell_gated_create: boolean;
 	/**

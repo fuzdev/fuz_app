@@ -47,15 +47,18 @@ export type CellGrantCreateAuditMetadata = z.infer<typeof CellGrantCreateAuditMe
  *
  * `self: true` distinguishes the recipient-side "leave shared cell"
  * path (actor-shaped grant where the principal actor === caller
- * actor) from a delegator-side revoke. Single event type for both
- * — the boolean is enough for forensic review and avoids surface-
- * doubling with a parallel `cell_grant_leave` event.
+ * actor) from a delegator-side revoke, and `steward: true` a scope
+ * steward's revoke of a scoped role-shaped grant, admitted by the
+ * consumer's `CellGrantRevokeAuthorize`. Single event type for all
+ * three — the boolean is enough for forensic review and avoids
+ * surface-doubling with parallel events.
  */
 export const CellGrantRevokeAuditMetadata = z.looseObject({
 	cell_id: Uuid,
 	grant_id: Uuid,
 	level: z.enum(['viewer', 'editor']),
 	principal: CellGrantPrincipalAuditMetadata,
-	self: z.literal(true).optional()
+	self: z.literal(true).optional(),
+	steward: z.literal(true).optional()
 });
 export type CellGrantRevokeAuditMetadata = z.infer<typeof CellGrantRevokeAuditMetadata>;
