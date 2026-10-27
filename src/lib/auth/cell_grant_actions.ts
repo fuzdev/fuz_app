@@ -61,7 +61,7 @@ import {
 	type CellGrantLevel,
 	type GrantJson
 } from './cell_grant_action_specs.ts';
-import { ERROR_CELL_NOT_FOUND } from './cell_action_specs.ts';
+import { emit_cell_audit, require_manageable_cell } from './cell_action_helpers.ts';
 import { can_view_cell, can_manage_cell } from './cell_authorize.ts';
 import { query_cell_get, type CellRow } from '../db/cell_queries.ts';
 import { cell_moderation_admits_audience } from '../db/cell_moderation.ts';
@@ -264,21 +264,14 @@ export const create_cell_grant_actions = (deps: CellGrantActionDeps): Array<RpcA
 		ctx: ActionActorContext
 	): Promise<CellGrantCreateOutput> => {
 		const auth = ctx.auth;
-		const cell = await query_cell_get(ctx, input.cell_id);
-		if (!cell) {
-			// IDOR mask: same code as cell_get's miss/unviewable so probing
-			// for cells via the share endpoint is no easier than via cell_get.
-			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
-		}
 		// Grant management is manage-tier only (admin / owner). Editor-grant
 		// holders may edit the cell's content + relations but cannot mint
 		// grants of any level — delegating the share list would let editors
 		// widen access (or mint peer editors) and escape the manager's
-		// authority. Non-managers get the IDOR-mask 404, same as a non-viewer
-		// on the read path.
-		if (!can_manage_cell(auth, cell)) {
-			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
-		}
+		// authority. A miss and a non-manager both get the IDOR-mask 404, so
+		// probing for cells via the share endpoint is no easier than via
+		// cell_get.
+		const cell = await require_manageable_cell(ctx, auth, input.cell_id);
 		// A grant extends a cell's audience, and a contribution whose moderation
 		// doesn't admit one (pending, rejected, or an unknown marker) has none past
 		// its author and admins — `can_view_cell`'s grant arm wouldn't admit on it —
@@ -320,18 +313,12 @@ export const create_cell_grant_actions = (deps: CellGrantActionDeps): Array<RpcA
 			principal,
 			granted_by: auth.actor.id
 		});
-		deps.audit.emit(ctx, {
-			event_type: 'cell_grant_create',
-			actor_id: auth.actor.id,
-			account_id: auth.account.id,
-			ip: ctx.client_ip,
-			metadata: {
-				cell_id: row.cell_id,
-				grant_id: row.id,
-				level: row.level,
-				principal: principal_from_row(row)
-			} satisfies CellGrantCreateAuditMetadata
-		});
+		emit_cell_audit(ctx, deps.audit, auth, 'cell_grant_create', {
+			cell_id: row.cell_id,
+			grant_id: row.id,
+			level: row.level,
+			principal: principal_from_row(row)
+		} satisfies CellGrantCreateAuditMetadata);
 		return { grant: to_grant_json(row) };
 	};
 
@@ -389,13 +376,7 @@ export const create_cell_grant_actions = (deps: CellGrantActionDeps): Array<RpcA
 			...(is_self_actor_grant ? { self: true as const } : {}),
 			...(is_steward ? { steward: true as const } : {})
 		};
-		deps.audit.emit(ctx, {
-			event_type: 'cell_grant_revoke',
-			actor_id: auth.actor.id,
-			account_id: auth.account.id,
-			ip: ctx.client_ip,
-			metadata: audit_metadata
-		});
+		emit_cell_audit(ctx, deps.audit, auth, 'cell_grant_revoke', audit_metadata);
 		return { ok: true, still_admitted };
 	};
 
@@ -404,16 +385,10 @@ export const create_cell_grant_actions = (deps: CellGrantActionDeps): Array<RpcA
 		ctx: ActionActorContext
 	): Promise<CellGrantListOutput> => {
 		const auth = ctx.auth;
-		const cell = await query_cell_get(ctx, input.cell_id);
-		if (!cell) {
-			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
-		}
 		// Same authz gate as create — manage tier only (admin / owner). The
 		// share list is the manager's to curate; viewers and editors alike
 		// fall through to the IDOR-mask 404.
-		if (!can_manage_cell(auth, cell)) {
-			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
-		}
+		const cell = await require_manageable_cell(ctx, auth, input.cell_id);
 		const grants = await query_cell_grant_list_for_cell(ctx, cell.id);
 		return { grants: grants.map(to_grant_json) };
 	};

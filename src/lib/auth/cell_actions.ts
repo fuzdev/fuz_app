@@ -81,7 +81,6 @@ import {
 	cell_clone_action_spec,
 	cell_moderate_action_spec,
 	cell_policy_set_action_spec,
-	ERROR_CELL_NOT_FOUND,
 	ERROR_CELL_PATH_ADMIN_ONLY,
 	ERROR_CELL_PATH_TAKEN,
 	ERROR_CELL_VISIBILITY_MANAGE_ONLY,
@@ -155,6 +154,12 @@ import {
 import { filter_visible_target_ids } from './cell_relation_visibility.ts';
 import { CELL_VIEWER_UNRESTRICTED } from '../db/cell_view_sql.ts';
 import { cell_steward_admits } from './cell_steward.ts';
+import {
+	cell_not_found_error,
+	emit_cell_audit,
+	require_editable_cell,
+	require_viewable_cell
+} from './cell_action_helpers.ts';
 import { require_new_refs_held } from './cell_ref_admission.ts';
 import { to_grant_json } from './cell_grant_actions.ts';
 import { to_field_json } from './cell_field_actions.ts';
@@ -314,29 +319,16 @@ export const to_cell_json = (row: CellRow): CellJson => ({
 });
 
 /**
- * Emit a cell-mutation audit event with the standard `{cell_id, kind?,
- * path?}` envelope. Relation-graph mutations are tracked independently
- * via per-row `cell_item_*` / `cell_field_*` events.
+ * The `{cell_id, kind?, path?}` envelope of the `cell_create` /
+ * `cell_update` / `cell_delete` audit rows, `kind` and `path` omitted when
+ * null. Relation-graph mutations are tracked independently via per-row
+ * `cell_item_*` / `cell_field_*` events.
  */
-const emit_cell_audit = (
-	ctx: ActionContext | ActionActorContext,
-	event_type: 'cell_create' | 'cell_update' | 'cell_delete',
-	row: CellRow,
-	deps: CellActionDeps,
-	auth: RequestActorContext
-): void => {
-	deps.audit.emit(ctx, {
-		event_type,
-		actor_id: auth.actor.id,
-		account_id: auth.account.id,
-		ip: ctx.client_ip,
-		metadata: {
-			cell_id: row.id,
-			kind: row.kind ?? undefined,
-			path: row.path ?? undefined
-		} satisfies CellAuditMetadata
-	});
-};
+const cell_mutation_metadata = (row: CellRow): CellAuditMetadata => ({
+	cell_id: row.id,
+	...(row.kind !== null ? { kind: row.kind } : {}),
+	...(row.path !== null ? { path: row.path } : {})
+});
 
 /**
  * Gate a loaded cell on `can_view_cell` or, when that denies, the steward arm
@@ -358,7 +350,24 @@ const admit_viewable_or_stewarded_cell = async (
 ): Promise<void> => {
 	if (can_view_cell(auth, row, grants)) return;
 	if (await cell_steward_admits(deps, auth, row)) return;
-	throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
+	throw cell_not_found_error();
+};
+
+/**
+ * Load a cell and gate the caller through `admit_viewable_or_stewarded_cell`,
+ * 404-masking a miss and a denial alike. `cell_moderate`'s view step — it lets
+ * a non-admin root owner reach the root-authority check.
+ */
+const require_viewable_or_stewarded_cell = async (
+	deps: QueryDeps,
+	auth: RequestActorContext,
+	cell_id: Uuid
+): Promise<CellRow> => {
+	const row = await query_cell_get(deps, cell_id);
+	if (!row) throw cell_not_found_error();
+	const grants = await query_cell_grant_list_for_cell(deps, row.id);
+	await admit_viewable_or_stewarded_cell(deps, auth, row, grants);
+	return row;
 };
 
 /** Create the generic cell RPC actions. */
@@ -465,18 +474,13 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		let root_id: Uuid | null = null;
 		let root_policy: CellPolicy | null = null;
 		if (parent_id !== null) {
-			const parent = await query_cell_get(ctx, parent_id);
-			if (!parent) throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
-			const parent_grants = await query_cell_grant_list_for_cell(ctx, parent.id);
-			if (!can_view_cell(auth, parent, parent_grants)) {
-				throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
-			}
+			const parent = await require_viewable_cell(ctx, auth, parent_id);
 			root_id = parent.root_id ?? parent.id;
 			if (root_id === parent.id) {
 				root_policy = parent.policy;
 			} else {
 				const root = await query_cell_get(ctx, root_id);
-				if (!root) throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
+				if (!root) throw cell_not_found_error();
 				root_policy = root.policy;
 			}
 		}
@@ -547,7 +551,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 			if (input.path != null && is_pg_unique_violation(err)) throw path_taken_error();
 			throw err;
 		}
-		emit_cell_audit(ctx, 'cell_create', row, deps, auth);
+		emit_cell_audit(ctx, deps.audit, auth, 'cell_create', cell_mutation_metadata(row));
 		return { cell: to_cell_json(row) };
 	};
 
@@ -565,7 +569,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 				? await query_cell_get(ctx, input.id)
 				: await query_cell_get_by_path(ctx, input.path!);
 		if (!row) {
-			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
+			throw cell_not_found_error();
 		}
 		// Run the three post-cell fetches in parallel — they share only
 		// `row.id` and have no inter-dependency. Bundle fetches one over the
@@ -632,15 +636,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 				reason: ERROR_CELL_PATH_ADMIN_ONLY
 			});
 		}
-		const existing = await query_cell_get(ctx, input.cell_id);
-		if (!existing) {
-			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
-		}
-		const grants = await query_cell_grant_list_for_cell(ctx, existing.id);
-		if (!can_edit_cell(auth, existing, grants)) {
-			// IDOR mask: 404, not 403 — same shape as cell_get.
-			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
-		}
+		const existing = await require_editable_cell(ctx, auth, input.cell_id);
 		// Visibility writes are manage-tier only (admin / owner). An
 		// editor-grant holder may edit `data` but cannot flip the cell's
 		// visibility — that would let a delegated editor expose a private
@@ -687,9 +683,9 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		}
 		if (!updated) {
 			// Raced with a deleter between the visibility check and the UPDATE.
-			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
+			throw cell_not_found_error();
 		}
-		emit_cell_audit(ctx, 'cell_update', updated, deps, auth);
+		emit_cell_audit(ctx, deps.audit, auth, 'cell_update', cell_mutation_metadata(updated));
 		return { cell: to_cell_json(updated) };
 	};
 
@@ -700,20 +696,13 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		const auth = ctx.auth;
 		// Fetch first so we can audit `kind` + `path` after the soft-delete
 		// flips `deleted_at`.
-		const existing = await query_cell_get(ctx, input.cell_id);
-		if (!existing) {
-			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
-		}
-		const grants = await query_cell_grant_list_for_cell(ctx, existing.id);
-		if (!can_edit_cell(auth, existing, grants)) {
-			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
-		}
+		const existing = await require_editable_cell(ctx, auth, input.cell_id);
 		const deleted = await query_cell_delete(ctx, input.cell_id, { deleted_by: auth.actor.id });
 		if (!deleted) {
 			// Raced with another deleter.
-			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
+			throw cell_not_found_error();
 		}
-		emit_cell_audit(ctx, 'cell_delete', existing, deps, auth);
+		emit_cell_audit(ctx, deps.audit, auth, 'cell_delete', cell_mutation_metadata(existing));
 		return { ok: true, deleted: true };
 	};
 
@@ -722,15 +711,12 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		ctx: ActionActorContext
 	): Promise<CellModerateOutput> => {
 		const auth = ctx.auth;
-		const existing = await query_cell_get(ctx, input.cell_id);
 		// 404 covers miss + unviewable so a pending contribution doesn't leak
 		// existence to a non-viewer; the governing root's manager stewards it,
 		// which is how a non-admin root owner reaches the root check below. An
 		// approved contribution its author narrowed to private is not
 		// stewarded, so its root owner gets the 404 there.
-		if (!existing) throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
-		const grants = await query_cell_grant_list_for_cell(ctx, existing.id);
-		await admit_viewable_or_stewarded_cell(ctx, auth, existing, grants);
+		const existing = await require_viewable_or_stewarded_cell(ctx, auth, input.cell_id);
 		// Only a contribution (with a governing root) is moderatable.
 		if (existing.root_id === null) {
 			throw jsonrpc_errors.invalid_params(
@@ -742,7 +728,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		// contribution — the author manages the contribution and could otherwise
 		// self-approve. A viewable-but-unauthorized caller (incl. the author) → 403.
 		const root = await query_cell_get(ctx, existing.root_id);
-		if (!root) throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
+		if (!root) throw cell_not_found_error();
 		if (!can_manage_cell(auth, root)) {
 			throw jsonrpc_errors.forbidden(
 				'cell_moderate requires moderation authority over the governing root',
@@ -761,19 +747,13 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 			// No row in an allowed from-state: the transition is refused (or
 			// another moderator moved it first) — or a deleter won the race (404).
 			if (await query_cell_get(ctx, input.cell_id)) throw cell_not_pending_error();
-			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
+			throw cell_not_found_error();
 		}
-		deps.audit.emit(ctx, {
-			event_type: 'cell_moderate',
-			actor_id: auth.actor.id,
-			account_id: auth.account.id,
-			ip: ctx.client_ip,
-			metadata: {
-				cell_id: updated.id,
-				root_id: existing.root_id,
-				moderation: input.moderation
-			} satisfies CellModerateAuditMetadata
-		});
+		emit_cell_audit(ctx, deps.audit, auth, 'cell_moderate', {
+			cell_id: updated.id,
+			root_id: existing.root_id,
+			moderation: input.moderation
+		} satisfies CellModerateAuditMetadata);
 		return { cell: to_cell_json(updated) };
 	};
 
@@ -791,12 +771,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		ctx: ActionActorContext
 	): Promise<CellPolicySetOutput> => {
 		const auth = ctx.auth;
-		const existing = await query_cell_get(ctx, input.cell_id);
-		if (!existing) throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
-		const grants = await query_cell_grant_list_for_cell(ctx, existing.id);
-		if (!can_view_cell(auth, existing, grants)) {
-			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
-		}
+		const existing = await require_viewable_cell(ctx, auth, input.cell_id);
 		if (!can_manage_cell(auth, existing)) {
 			throw jsonrpc_errors.forbidden('cell.policy is manage-tier only', {
 				reason: ERROR_CELL_POLICY_MANAGE_ONLY
@@ -808,21 +783,15 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 			updated_by: auth.actor.id
 		});
 		// Raced with a deleter between the gates and the UPDATE.
-		if (!result) throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
+		if (!result) throw cell_not_found_error();
 		const updated = result.cell;
-		deps.audit.emit(ctx, {
-			event_type: 'cell_policy_set',
-			actor_id: auth.actor.id,
-			account_id: auth.account.id,
-			ip: ctx.client_ip,
-			metadata: {
-				cell_id: updated.id,
-				policy: updated.policy,
-				// read under the UPDATE's row lock, not from `existing`, which a set
-				// racing past the gates may already have overwritten
-				previous_policy: result.previous_policy
-			} satisfies CellPolicySetAuditMetadata
-		});
+		emit_cell_audit(ctx, deps.audit, auth, 'cell_policy_set', {
+			cell_id: updated.id,
+			policy: updated.policy,
+			// read under the UPDATE's row lock, not from `existing`, which a set
+			// racing past the gates may already have overwritten
+			previous_policy: result.previous_policy
+		} satisfies CellPolicySetAuditMetadata);
 		return { cell: to_cell_json(updated) };
 	};
 
@@ -912,16 +881,9 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		ctx: ActionActorContext
 	): Promise<CellCloneOutput> => {
 		const auth = ctx.auth;
-		const source = await query_cell_get(ctx, input.source_id);
-		if (!source) {
-			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
-		}
-		const source_grants = await query_cell_grant_list_for_cell(ctx, source.id);
 		// 404 covers both miss and unauthorized read — same shape as cell_get
 		// so the existence of private cells doesn't leak through clones.
-		if (!can_view_cell(auth, source, source_grants)) {
-			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
-		}
+		const source = await require_viewable_cell(ctx, auth, input.source_id);
 
 		const deep = input.deep === true;
 		// Pre-fetch source relations OUTSIDE the transaction so authz checks
@@ -1046,25 +1008,16 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 			}
 		}
 
-		// Audit envelope is richer than the standard cell-mutation envelope
-		// — emit directly rather than threading it through `emit_cell_audit`.
-		// `kind` is read from `source.data` (not the cloned row) so the
-		// audit trail attributes the clone to the source's shape.
-		const source_kind = source.kind ?? undefined;
+		// `kind` is the source's (not the cloned row's) so the audit trail
+		// attributes the clone to the source's shape.
 		const cloned_child_count = deep ? cloneable_items.length : 0;
-		deps.audit.emit(ctx, {
-			event_type: 'cell_clone',
-			actor_id: auth.actor.id,
-			account_id: auth.account.id,
-			ip: ctx.client_ip,
-			metadata: {
-				source_id: source.id,
-				new_id: cloned_root.id,
-				deep,
-				item_count: cloned_child_count,
-				...(source_kind !== undefined ? { kind: source_kind } : {})
-			} satisfies CellCloneAuditMetadata
-		});
+		emit_cell_audit(ctx, deps.audit, auth, 'cell_clone', {
+			source_id: source.id,
+			new_id: cloned_root.id,
+			deep,
+			item_count: cloned_child_count,
+			...(source.kind !== null ? { kind: source.kind } : {})
+		} satisfies CellCloneAuditMetadata);
 		return { cell: to_cell_json(cloned_root) };
 	};
 

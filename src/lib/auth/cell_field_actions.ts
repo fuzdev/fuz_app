@@ -48,11 +48,13 @@ import {
 	type FieldJson,
 	ERROR_CELL_FIELD_LIST_REQUIRES_SOURCE_OR_TARGET
 } from './cell_field_action_specs.ts';
-import { ERROR_CELL_NOT_FOUND } from './cell_action_specs.ts';
-import { can_view_cell, can_edit_cell, cell_viewer_from_auth } from './cell_authorize.ts';
+import { cell_viewer_from_auth } from './cell_authorize.ts';
+import {
+	emit_cell_audit,
+	require_editable_cell,
+	require_viewable_cell
+} from './cell_action_helpers.ts';
 import { CELL_RELATION_LIST_LIMIT_DEFAULT } from './cell_relation_list_limit.ts';
-import { query_cell_get } from '../db/cell_queries.ts';
-import { query_cell_grant_list_for_cell } from '../db/cell_grant_queries.ts';
 import {
 	query_cell_field_set,
 	query_cell_field_delete,
@@ -81,42 +83,21 @@ export const create_cell_field_actions = (deps: CellFieldActionDeps): Array<RpcA
 		ctx: ActionActorContext
 	): Promise<CellFieldSetOutput> => {
 		const auth = ctx.auth;
-		const source = await query_cell_get(ctx, input.source_id);
-		if (!source) {
-			// IDOR mask: same code as cell_get's miss/unviewable.
-			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
-		}
-		const source_grants = await query_cell_grant_list_for_cell(ctx, source.id);
-		if (!can_edit_cell(auth, source, source_grants)) {
-			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
-		}
-		const target = await query_cell_get(ctx, input.target_id);
-		if (!target) {
-			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
-		}
+		await require_editable_cell(ctx, auth, input.source_id);
 		// Target must be view-admitted — otherwise a caller could probe for
 		// the existence of private cells by trying to point a field at them
 		// (and observe whether the call 404s vs. succeeds).
-		const target_grants = await query_cell_grant_list_for_cell(ctx, target.id);
-		if (!can_view_cell(auth, target, target_grants)) {
-			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
-		}
+		await require_viewable_cell(ctx, auth, input.target_id);
 		const row = await query_cell_field_set(ctx, {
 			source_id: input.source_id,
 			name: input.name,
 			target_id: input.target_id
 		});
-		deps.audit.emit(ctx, {
-			event_type: 'cell_field_set',
-			actor_id: auth.actor.id,
-			account_id: auth.account.id,
-			ip: ctx.client_ip,
-			metadata: {
-				source_id: row.source_id,
-				name: row.name,
-				target_id: row.target_id
-			} satisfies CellFieldSetAuditMetadata
-		});
+		emit_cell_audit(ctx, deps.audit, auth, 'cell_field_set', {
+			source_id: row.source_id,
+			name: row.name,
+			target_id: row.target_id
+		} satisfies CellFieldSetAuditMetadata);
 		return { field: to_field_json(row) };
 	};
 
@@ -125,27 +106,14 @@ export const create_cell_field_actions = (deps: CellFieldActionDeps): Array<RpcA
 		ctx: ActionActorContext
 	): Promise<CellFieldDeleteOutput> => {
 		const auth = ctx.auth;
-		const source = await query_cell_get(ctx, input.source_id);
-		if (!source) {
-			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
-		}
-		const source_grants = await query_cell_grant_list_for_cell(ctx, source.id);
-		if (!can_edit_cell(auth, source, source_grants)) {
-			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
-		}
+		await require_editable_cell(ctx, auth, input.source_id);
 		const deleted = await query_cell_field_delete(ctx, input.source_id, input.name);
 		if (deleted) {
-			deps.audit.emit(ctx, {
-				event_type: 'cell_field_delete',
-				actor_id: auth.actor.id,
-				account_id: auth.account.id,
-				ip: ctx.client_ip,
-				metadata: {
-					source_id: deleted.source_id,
-					name: deleted.name,
-					target_id: deleted.target_id
-				} satisfies CellFieldDeleteAuditMetadata
-			});
+			emit_cell_audit(ctx, deps.audit, auth, 'cell_field_delete', {
+				source_id: deleted.source_id,
+				name: deleted.name,
+				target_id: deleted.target_id
+			} satisfies CellFieldDeleteAuditMetadata);
 		}
 		return { ok: true, deleted: deleted !== null };
 	};
@@ -168,14 +136,7 @@ export const create_cell_field_actions = (deps: CellFieldActionDeps): Array<RpcA
 		// whose target the caller may view (strict target-visibility, in SQL
 		// before the limit).
 		if (input.source_id !== undefined) {
-			const source = await query_cell_get(ctx, input.source_id);
-			if (!source) {
-				throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
-			}
-			const source_grants = auth ? await query_cell_grant_list_for_cell(ctx, source.id) : null;
-			if (!can_view_cell(auth, source, source_grants)) {
-				throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
-			}
+			const source = await require_viewable_cell(ctx, auth, input.source_id);
 			const rows = await query_cell_field_list_for_source(
 				ctx,
 				cell_viewer_from_auth(auth),
@@ -187,14 +148,7 @@ export const create_cell_field_actions = (deps: CellFieldActionDeps): Array<RpcA
 		// Reverse listing: 2-layer authz. First, can_view_cell(target).
 		// Without this, the count of returned rows leaks "at least N
 		// viewable cells link to this private target."
-		const target = await query_cell_get(ctx, input.target_id!);
-		if (!target) {
-			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
-		}
-		const target_grants = auth ? await query_cell_grant_list_for_cell(ctx, target.id) : null;
-		if (!can_view_cell(auth, target, target_grants)) {
-			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
-		}
+		const target = await require_viewable_cell(ctx, auth, input.target_id!);
 		// Then page the fields whose source the caller may view — filtered in
 		// SQL before the limit, so hidden sources never crowd out visible ones,
 		// and bounded so a heavily inbound-linked target can't force an

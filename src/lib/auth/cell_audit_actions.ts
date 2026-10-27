@@ -15,7 +15,6 @@
  */
 
 import { rpc_action, type ActionActorContext, type RpcAction } from '../actions/action_rpc.ts';
-import { jsonrpc_errors } from '../http/jsonrpc_errors.ts';
 import type { AuditLogEvent } from './audit_log_schema.ts';
 
 import {
@@ -25,10 +24,8 @@ import {
 	type CellAuditListInput,
 	type CellAuditListOutput
 } from './cell_audit_action_specs.ts';
-import { ERROR_CELL_NOT_FOUND } from './cell_action_specs.ts';
-import { query_cell_get } from '../db/cell_queries.ts';
 import { query_audit_log_list_by_cell } from '../db/cell_audit_queries.ts';
-import { can_manage_cell } from './cell_authorize.ts';
+import { require_manageable_cell } from './cell_action_helpers.ts';
 
 /**
  * Project a DB row onto the narrowed wire shape. `account_id` /
@@ -51,19 +48,13 @@ export const create_cell_audit_actions = (): Array<RpcAction> => {
 		ctx: ActionActorContext
 	): Promise<CellAuditListOutput> => {
 		const auth = ctx.auth;
-		const cell = await query_cell_get(ctx, input.cell_id);
-		if (!cell) {
-			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
-		}
 		// Manage-tier gate (admin / owner). A populated timeline leaks both
 		// the existence of the cell and the actor IDs that touched it (incl.
 		// across `cell_field` / `cell_item` / clone edges), so viewers — and
 		// any authed caller on a public cell — must NOT read it. Non-managers
 		// get the same 404 as a non-viewer on `cell_get` (IDOR mask). Grants
 		// aren't consulted (manage tier is owner/admin only).
-		if (!can_manage_cell(auth, cell)) {
-			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
-		}
+		const cell = await require_manageable_cell(ctx, auth, input.cell_id);
 		const rows = await query_audit_log_list_by_cell(ctx, cell.id, {
 			limit: CELL_AUDIT_LIST_DEFAULT_LIMIT
 		});

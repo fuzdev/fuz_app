@@ -349,6 +349,12 @@ scope_id}` than `validate_data` and returns a `CellCreateVerdict`
   (visibility untouched). The write carries the from-state: approve moves only
   a pending contribution, reject a pending or approved one (the takedown); any
   other transition answers 400 `cell_not_pending`.
+- `auth/cell_action_helpers.ts` — the cell verbs' shared gates, each loading
+  the cell and 404-masking a miss and a denial alike
+  (`require_viewable_cell` — `auth` may be `null`, which reads no grants —
+  `require_editable_cell`, `require_manageable_cell`), plus
+  `cell_not_found_error` and `emit_cell_audit(ctx, audit, auth, event_type,
+  metadata)`. Twins of the Rust `fuz_cell_actions` helpers.
 - `auth/cell_ref_admission.ts` — `require_new_refs_held`, the
   possession gate `cell_create` / `cell_update` / `cell_clone` run last before
   their write: a non-admin write introducing a fact ref (beyond the cell's
