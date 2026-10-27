@@ -118,13 +118,7 @@ const CENSUS: ReadonlyArray<CensusEntry> = [
 		file: 'actions/register_action_ws.ts',
 		role: 'consults',
 		reason:
-			'WS upgrade — rule 3 rejects a narrowed token at the boundary (server-initiated pushes have no per-recipient filter), and the socket retains the scope for the per-message gate'
-	},
-	{
-		file: 'actions/register_ws_endpoint.ts',
-		role: 'consults',
-		reason:
-			'the composed upgrade stack mounts the rule-3 guard between `require_auth` and the role guard, so a narrowed token hears about its scope rather than about a role it also lacks; `register_action_ws` repeats the check for consumers that mount it directly'
+			"WS upgrade — the route declares `required_scope: 'surface:ws_upgrade'` through `fuz_auth_guard_resolver`, so rule 3 rejects a narrowed token at the boundary ahead of the role gate (server-initiated pushes have no per-recipient filter), and the socket retains the scope for the per-message gate"
 	},
 	{
 		file: 'auth/audit_log_route_schema.ts',
@@ -235,19 +229,15 @@ const NON_SURFACE_SITES: ReadonlyArray<string> = [
  * Which file gates each rule-3 surface and the exact source it must contain,
  * or `null` when the spine does not mount the surface.
  *
- * Two shapes, because there are two kinds of surface. A route spec declares
- * `required_scope: 'surface:<name>'` on its `auth` and `fuz_auth_guard_resolver`
- * mounts the guard ahead of the role gate; the WS upgrade is not a route spec,
- * so it calls the shared decision directly. Both are exact-match, so a gate
- * that is imported and documented but never reached still fails — the original
- * miss's shape.
+ * Every site declares `required_scope: 'surface:<name>'` on an auth shape and
+ * `fuz_auth_guard_resolver` mounts the guard ahead of the role gate — a route
+ * spec's `auth`, or the WS upgrade's, which `register_action_ws` hands the same
+ * resolver. Exact-match, so a gate that is imported and documented but never
+ * reached still fails — the original miss's shape.
  *
- * Both spellings name the surface the same way — `'surface:<name>'` — so the
- * declaration scan below covers the direct call too, and every site here is
- * pinned twice: once by exact source, once by "names a surface we mount". The
- * direct-call form deliberately isn't type-narrowed to `TokenSurface` (a
- * consumer surface would have nothing to pass), so those two are what stands in
- * for the compile-time check.
+ * The declaration scan below covers the same literal, so every site here is
+ * pinned twice: once by exact source, once by "names a surface we mount" — what
+ * stands in for a compile-time check, since `required_scope` is a plain string.
  *
  * `db_admin` is `null`, but **not** because the spine ships no table browser —
  * `http/db_routes.ts` is exactly that, an allowlist-gated browser over the
@@ -285,7 +275,7 @@ const RULE_3_SURFACE_SITES: Record<TokenSurface, { file: string; source: string 
 	},
 	ws_upgrade: {
 		file: 'actions/register_action_ws.ts',
-		source: "token_scope_surface_denial(c, 'surface:ws_upgrade')"
+		source: "required_scope: 'surface:ws_upgrade'"
 	},
 	audit_stream: {
 		file: 'auth/audit_log_route_schema.ts',
@@ -473,7 +463,6 @@ describe('token scope surface census', () => {
 			'actions/action_rpc.ts',
 			'actions/perform_action.ts',
 			'actions/register_action_ws.ts',
-			'actions/register_ws_endpoint.ts',
 			'auth/account_route_schema.ts',
 			'auth/account_routes.ts',
 			'auth/audit_log_route_schema.ts',

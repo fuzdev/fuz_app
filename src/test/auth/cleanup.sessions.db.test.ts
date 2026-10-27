@@ -50,7 +50,7 @@ import {
 	WS_CLOSE_SESSION_REVOKED,
 	WS_CLOSE_SESSION_REVOKED_REASON
 } from '#lib/actions/transports.ts';
-import { create_audit_log_sse } from '#lib/realtime/sse_auth_guard.ts';
+import { create_audit_log_sse } from '#lib/realtime/audit_log_sse.ts';
 import type { SseNotification, SseStream } from '#lib/realtime/sse.ts';
 import { Db, no_nested_transaction } from '#lib/db/db.ts';
 import { create_recording_closer } from '#lib/testing/connection_closer_helpers.ts';

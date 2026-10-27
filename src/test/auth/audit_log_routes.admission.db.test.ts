@@ -16,6 +16,9 @@
  * closed and skips the re-read, and a shutdown landing in the re-read ends the
  * stream after its connect comment even when the re-read then fails.
  *
+ * An admitted stream's keep-alive interval comes from the server's
+ * `audit_log_sse` option, through `AuditLogSse` to the route.
+ *
  * @module
  */
 
@@ -25,6 +28,7 @@ import { Logger, type LogConsole } from '@fuzdev/fuz_util/log.ts';
 import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import { create_audit_log_route_specs } from '#lib/auth/audit_log_routes.ts';
 import { query_role_grant_revoke_role } from '#lib/auth/role_grant_queries.ts';
+import { query_actor_soft_delete } from '#lib/auth/account_queries.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import type { Db } from '#lib/db/db.ts';
@@ -37,8 +41,8 @@ import {
 	AUDIT_LOG_CHANNEL,
 	AUDIT_LOG_SSE_MAX_PER_SCOPE,
 	type AuditLogSse
-} from '#lib/realtime/sse_auth_guard.ts';
-import { SSE_CONNECTED_COMMENT } from '#lib/realtime/sse_constants.ts';
+} from '#lib/realtime/audit_log_sse.ts';
+import { SSE_CONNECTED_COMMENT, SSE_KEEP_ALIVE_COMMENT } from '#lib/realtime/sse_constants.ts';
 import { require_audit_sse } from '#lib/server/app_server.ts';
 import { create_test_app, type TestAccount, type TestApp } from '#lib/testing/app_server.ts';
 import { install_audit_drift_guard } from '#lib/testing/audit_drift_guard.ts';
@@ -197,6 +201,26 @@ describe_db('audit log stream admission', (get_db) => {
 		});
 		assert.strictEqual(h.audit_sse.registry.count, 0);
 		assert.strictEqual(h.audit_sse.registry.pending_count, 0);
+	});
+
+	/**
+	 * An actor soft-deleted under its live account keeps the account's session
+	 * and its own grant rows, so neither the credential nor the role re-read
+	 * refuses it — the acting-actor re-read does, as it does a WebSocket upgrade.
+	 */
+	test('an acting actor deleted during the request opens no stream', async () => {
+		const db = get_db();
+		const h = await create_harness(db);
+
+		const { response, stalled } = await open_stalled(h);
+		assert.ok(await query_actor_soft_delete({ db }, h.admin.actor.id, null));
+		stalled.release();
+		const res = await response;
+
+		assert.strictEqual(res.status, 401);
+		assert.deepStrictEqual(await res.json(), { error: ERROR_AUTHENTICATION_REQUIRED });
+		assert.strictEqual(h.audit_sse.registry.count, 0, 'no stream opened for the deleted actor');
+		assert.strictEqual(h.audit_sse.registry.pending_count, 0, 'the registration is removed');
 	});
 
 	test('a stream closed while pending ends after its connect comment', async () => {
@@ -368,5 +392,55 @@ describe_db('audit log stream admission', (get_db) => {
 			await oldest.cancel();
 			for (const stream of open_streams.slice(1)) await stream.body?.cancel();
 		}
+	});
+});
+
+describe_db('audit log stream keep-alive', (get_db) => {
+	install_audit_drift_guard();
+
+	test("audit_log_sse's keep_alive_ms reaches the route's streams", async () => {
+		const test_app = await create_test_app({
+			session_options,
+			db: get_db(),
+			app_options: { audit_log_sse: { keep_alive_ms: 20 } },
+			create_route_specs: (ctx) =>
+				prefix_route_specs(
+					'/api/admin',
+					create_audit_log_route_specs({ stream: require_audit_sse(ctx) })
+				)
+		});
+		assert.strictEqual(require_audit_sse(test_app.server).keep_alive_ms, 20);
+		const admin = await test_app.create_account({
+			username: `stream_admin_${admin_counter++}`,
+			roles: [ROLE_ADMIN]
+		});
+		const res = await test_app.app.request(STREAM_PATH, {
+			headers: admin.create_session_headers()
+		});
+		assert.strictEqual(res.status, 200);
+		const sse = create_sse_frame_reader(res.body!.getReader());
+		try {
+			assert.strictEqual((await sse.read_frame()) + '\n\n', SSE_CONNECTED_COMMENT);
+			// the default interval is 15 s; this one arrives within the test's timeout
+			assert.strictEqual((await sse.read_frame()) + '\n\n', SSE_KEEP_ALIVE_COMMENT);
+		} finally {
+			await sse.cancel();
+		}
+	});
+
+	test('a keep_alive_ms that is not positive fails assembly', async () => {
+		let error: unknown = null;
+		try {
+			await create_test_app({
+				session_options,
+				db: get_db(),
+				app_options: { audit_log_sse: { keep_alive_ms: 0 } },
+				create_route_specs: () => []
+			});
+		} catch (e) {
+			error = e;
+		}
+		assert.instanceOf(error, Error);
+		assert.include(error.message, 'keep_alive_ms');
 	});
 });

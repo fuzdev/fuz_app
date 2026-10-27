@@ -21,7 +21,7 @@ import { prefix_route_specs } from '#lib/http/route_spec.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
 import type { RpcEndpointSpec } from '#lib/http/surface.ts';
 import { describe_sse_route_tests } from '#lib/testing/sse_round_trip.ts';
-import { audit_log_event_specs } from '#lib/realtime/sse_auth_guard.ts';
+import { audit_log_event_specs } from '#lib/realtime/audit_log_sse.ts';
 import { create_admin_actions } from '#lib/auth/admin_actions.ts';
 import { create_account_actions } from '#lib/auth/account_actions.ts';
 import { admin_session_revoke_all_action_spec } from '#lib/auth/admin_action_specs.ts';

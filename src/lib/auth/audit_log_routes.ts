@@ -7,12 +7,13 @@
  * `GET /audit/stream` SSE route — streams aren't an action-kind, so they
  * stay on REST. The event payload broadcast on the stream surfaces via
  * `audit_log_event_specs` (one `EventSpec` per audit event type) declared
- * alongside the broadcaster in `realtime/sse_auth_guard.ts`.
+ * alongside the broadcaster in `realtime/audit_log_sse.ts`.
  *
  * @module
  */
 
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
+import { UnreachableError } from '@fuzdev/fuz_util/error.ts';
 
 import type { RouteSpec } from '../http/route_spec.ts';
 import {
@@ -25,16 +26,12 @@ import {
 	DEFAULT_AUDIT_STREAM_ROLE
 } from './audit_log_route_schema.ts';
 import { create_sse_response, type SseNotification } from '../realtime/sse.ts';
+import { validate_sse_keep_alive_ms } from '../realtime/sse_constants.ts';
 import type { SubscriberRegistry } from '../realtime/subscriber_registry.ts';
-import {
-	AUTH_SESSION_TOKEN_HASH_KEY,
-	has_scoped_role,
-	refresh_role_grants,
-	require_request_context
-} from './request_context.ts';
-import { get_resolved_auth, revalidate_resolved_auth } from './resolved_auth.ts';
+import { AUTH_SESSION_TOKEN_HASH_KEY, require_request_context } from './request_context.ts';
+import { get_resolved_auth, recheck_admission } from './resolved_auth.ts';
 import { schedule_credential_deadline } from './credential_deadline.ts';
-import { AUDIT_LOG_CHANNEL } from '../realtime/sse_auth_guard.ts';
+import { AUDIT_LOG_CHANNEL } from '../realtime/audit_log_sse.ts';
 
 /** Options for audit log route specs. */
 export interface AuditLogRouteOptions {
@@ -51,6 +48,13 @@ export interface AuditLogRouteOptions {
 	stream?: {
 		registry: SubscriberRegistry<SseNotification>;
 		log: Logger;
+		/**
+		 * Each stream's keep-alive interval (`SseResponseOptions.keep_alive_ms`)
+		 * — a test server shortens it. Validated here, at route creation.
+		 *
+		 * @default SSE_KEEP_ALIVE_INTERVAL_MS
+		 */
+		keep_alive_ms?: number | null;
 	};
 }
 
@@ -68,11 +72,13 @@ export interface AuditLogRouteOptions {
  * route-spec pipeline, before the handler and so before any stream is
  * registered — a revocation landing after them would close nothing. So the
  * handler registers the stream **pending**
- * (`SubscriberRegistry.subscribe_pending`), then re-reads the credential
- * (`revalidate_resolved_auth`) and the acting actor's role grants, and only
- * then admits (`SubscriberRegistry.admit`). A revocation that committed before
- * those reads is seen by them — `401 authentication_required` for a dead
- * credential, `403 insufficient_permissions` for a lost role — and one whose
+ * (`SubscriberRegistry.subscribe_pending`), then re-reads the credential, the
+ * acting actor, and its role grants (`recheck_admission`, which the WebSocket
+ * upgrade shares), and only then admits (`SubscriberRegistry.admit`). A
+ * revocation that committed before those reads is seen by them —
+ * `401 authentication_required` for a dead credential or an acting actor
+ * deleted since the gates ran, `403 insufficient_permissions` for a lost
+ * role — and one whose
  * close ran after the registration found the pending entry: admission then
  * fails, and the response is a `200` whose body is the connect comment and
  * nothing else — to an `EventSource`, a stream closed an instant after it
@@ -84,7 +90,7 @@ export interface AuditLogRouteOptions {
  * connect comment alone — as it is when the shutdown closes a registration
  * whose re-read is in flight, even if the re-read then fails. The twin of the
  * Rust spine's `audit_stream_router`, which registers before its role read
- * rather than repeating it.
+ * rather than repeating it (its acting-actor re-read is still to come).
  *
  * ## Credential deadline
  *
@@ -102,7 +108,8 @@ export interface AuditLogRouteOptions {
 export const create_audit_log_route_specs = (options?: AuditLogRouteOptions): Array<RouteSpec> => {
 	if (!options?.stream) return [];
 
-	const { registry, log } = options.stream;
+	const { registry, log, keep_alive_ms } = options.stream;
+	validate_sse_keep_alive_ms(keep_alive_ms);
 	const required_role = options.required_role ?? DEFAULT_AUDIT_STREAM_ROLE;
 	return [
 		{
@@ -144,23 +151,35 @@ export const create_audit_log_route_specs = (options?: AuditLogRouteOptions): Ar
 					if (!c.get(TEST_CONTEXT_PRESET_KEY) && !registry.closing) {
 						const reread = async (): Promise<Response | null> => {
 							const resolved = get_resolved_auth(c);
-							const credential_is_live =
-								resolved !== null && (await revalidate_resolved_auth(route, resolved));
-							if (!credential_is_live) {
-								log.info('audit stream: credential revoked during the request', ctx.account.id);
-								return c.json({ error: ERROR_AUTHENTICATION_REQUIRED }, 401);
-							}
 							// Global grants only, like the `require_role` gate that ran in
 							// the pipeline — a scoped grant must not open the instance-wide
 							// stream.
-							if (!has_scoped_role(await refresh_role_grants(ctx, route), required_role, null)) {
-								log.info('audit stream: role revoked during the request', ctx.account.id);
-								return c.json(
-									{ error: ERROR_INSUFFICIENT_PERMISSIONS, required_roles: [required_role] },
-									403
-								);
+							const recheck =
+								resolved === null
+									? 'credential_revoked'
+									: await recheck_admission(route, {
+											resolved,
+											request_context: ctx,
+											required_roles: [required_role]
+										});
+							switch (recheck) {
+								case 'admitted':
+									return null;
+								case 'credential_revoked':
+									log.info('audit stream: credential revoked during the request', ctx.account.id);
+									return c.json({ error: ERROR_AUTHENTICATION_REQUIRED }, 401);
+								case 'actor_inactive':
+									log.info('audit stream: acting actor deleted during the request', ctx.account.id);
+									return c.json({ error: ERROR_AUTHENTICATION_REQUIRED }, 401);
+								case 'role_revoked':
+									log.info('audit stream: role revoked during the request', ctx.account.id);
+									return c.json(
+										{ error: ERROR_INSUFFICIENT_PERMISSIONS, required_roles: [required_role] },
+										403
+									);
+								default:
+									throw new UnreachableError(recheck);
 							}
-							return null;
 						};
 						const refusal = await reread().catch((error: unknown) => {
 							// the shutdown closed the registration and then the database
@@ -186,7 +205,8 @@ export const create_audit_log_route_specs = (options?: AuditLogRouteOptions): Ar
 					// whose listener runs at once and removes the registration, so
 					// `admit` refuses it rather than evicting a live stream for it.
 					const { response, stream } = create_sse_response<SseNotification>(c, log, {
-						account_id: ctx.account.id
+						account_id: ctx.account.id,
+						keep_alive_ms
 					});
 					stream.on_close(pending.unsubscribe);
 					admitted = registry.admit(pending, stream);

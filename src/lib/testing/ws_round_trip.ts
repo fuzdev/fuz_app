@@ -477,6 +477,9 @@ export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsT
 		path: '/test/ws',
 		app: stub_app,
 		upgradeWebSocket: stub.upgradeWebSocket,
+		// the harness drives the captured events factory directly, so the
+		// route's guards — origin first — never run
+		allowed_origins: [],
 		actions,
 		db: stub_db,
 		transport,

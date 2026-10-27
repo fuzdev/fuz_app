@@ -17,7 +17,7 @@ import { AUTH_SESSION_TOKEN_HASH_KEY, REQUEST_CONTEXT_KEY } from '#lib/auth/requ
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { TEST_CONTEXT_PRESET_KEY } from '#lib/hono_context.ts';
 import type { RouteContext } from '#lib/http/route_spec.ts';
-import { create_audit_log_sse } from '#lib/realtime/sse_auth_guard.ts';
+import { create_audit_log_sse } from '#lib/realtime/audit_log_sse.ts';
 import { create_test_request_context } from '#lib/testing/auth_apps.ts';
 import { create_stub_db } from '#lib/testing/stubs.ts';
 

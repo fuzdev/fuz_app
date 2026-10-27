@@ -75,7 +75,7 @@ import { ROLE_ADMIN } from '../../auth/role_schema.ts';
 import {
 	AUDIT_LOG_SSE_MAX_PER_SCOPE,
 	audit_log_event_specs
-} from '../../realtime/sse_auth_guard.ts';
+} from '../../realtime/audit_log_sse.ts';
 import { SSE_CONNECTED_COMMENT } from '../../realtime/sse_constants.ts';
 import { create_sse_transport, type SseTransport } from '../transports/sse_transport.ts';
 import { create_rpc_post_init } from '../rpc_helpers.ts';

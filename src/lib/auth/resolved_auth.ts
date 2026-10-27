@@ -7,7 +7,8 @@
  * `ResolvedAuth` is that credential gathered into one value
  * (`get_resolved_auth`), so the connections that outlive their request — a
  * WebSocket, an SSE stream — can carry it past the handshake, re-read it with
- * `revalidate_resolved_auth`, and close at its `credential_deadline`.
+ * `revalidate_resolved_auth` (or the whole admission re-check,
+ * `recheck_admission`), and close at its `credential_deadline`.
  *
  * @module
  */
@@ -22,9 +23,14 @@ import {
 	CREDENTIAL_TYPE_KEY,
 	type CredentialType
 } from '../hono_context.ts';
-import { query_account_by_id } from './account_queries.ts';
+import { query_account_by_id, query_active_actors_by_account } from './account_queries.ts';
 import { query_api_token_live_account } from './api_token_queries.ts';
-import { AUTH_SESSION_TOKEN_HASH_KEY } from './request_context.ts';
+import {
+	AUTH_SESSION_TOKEN_HASH_KEY,
+	has_any_scoped_role,
+	refresh_role_grants,
+	type RequestContext
+} from './request_context.ts';
 import { query_session_get_valid } from './session_queries.ts';
 
 /**
@@ -164,4 +170,68 @@ export const revalidate_resolved_auth = async (
 	}
 	if (!credential_is_live) return false;
 	return (await query_account_by_id(deps, account_id)) !== undefined;
+};
+
+/**
+ * What `recheck_admission` found: `'admitted'`, or the first check that
+ * refused — the credential, the acting actor, or the endpoint's role.
+ */
+export type AdmissionRecheck =
+	'admitted' | 'credential_revoked' | 'actor_inactive' | 'role_revoked';
+
+/** The connection being admitted, for `recheck_admission`. */
+export interface RecheckAdmissionInput {
+	/** The credential the request authenticated with (`get_resolved_auth`). */
+	resolved: ResolvedAuth;
+	/** The request context the upgrade's gates ran against — its acting actor is re-read. */
+	request_context: RequestContext;
+	/**
+	 * The roles the connection's gate required, any-of; `[]` for an ungated
+	 * connection. A global grant of any of them admits, as the gate did.
+	 */
+	required_roles: ReadonlyArray<string>;
+}
+
+/**
+ * Re-read everything a long-lived connection's gates read, once the
+ * connection is registered pending — the admission step a WebSocket upgrade
+ * and the audit stream share (twin of the Rust spine's admission re-check).
+ *
+ * In order, stopping at the first refusal:
+ *
+ * 1. **The credential** (`revalidate_resolved_auth`) → `'credential_revoked'`.
+ * 2. **The acting actor** the gates resolved, when there is one: it must still
+ *    be an active actor of the account → `'actor_inactive'`. A soft-deleted
+ *    actor keeps its account's credentials and its own grant rows, so neither
+ *    other re-read would refuse it.
+ * 3. **The role**, when `required_roles` is non-empty: the acting actor's
+ *    grants read afresh (`refresh_role_grants`), a **global** grant of any
+ *    listed role admitting → `'role_revoked'`. A scoped grant never admits at
+ *    a role gate.
+ *
+ * Every read must see what committed before it started, so `deps.db` is the
+ * pool-level `Db` (see `revalidate_resolved_auth`).
+ *
+ * @param deps - query dependencies; the pool-level `Db`
+ * @param input - the credential, the gates' request context, and the required roles
+ * @returns `'admitted'`, or which check refused
+ * @throws Error propagated from the database. The caller must fail closed — an
+ *   unchecked connection is not an admitted one.
+ */
+export const recheck_admission = async (
+	deps: QueryDeps,
+	input: RecheckAdmissionInput
+): Promise<AdmissionRecheck> => {
+	const { resolved, request_context, required_roles } = input;
+	if (!(await revalidate_resolved_auth(deps, resolved))) return 'credential_revoked';
+	const acting_actor = request_context.actor;
+	if (acting_actor) {
+		const active = await query_active_actors_by_account(deps, resolved.account_id);
+		if (!active.some((a) => a.id === acting_actor.id)) return 'actor_inactive';
+	}
+	if (required_roles.length > 0) {
+		const refreshed = await refresh_role_grants(request_context, deps);
+		if (!has_any_scoped_role(refreshed, required_roles, null)) return 'role_revoked';
+	}
+	return 'admitted';
 };

@@ -177,7 +177,7 @@ and `FrontendActionHandlers`.
 produces **two** route specs on the same path (GET + POST) that share one
 internal dispatcher. The two limiters are required `RateLimiter | null` with
 no default — `null` is the explicit off switch — and the same holds on
-`register_action_ws` / `register_ws_endpoint`, so a hand mount can't run
+`register_action_ws`, so a hand mount can't run
 unthrottled by omission. `create_app_server` passes its own to every endpoint
 it mounts (../../../docs/usage.md §Rate limiters). Per-action auth lives inside the dispatcher; the outer routes
 use `auth: {account: 'none', actor: 'none'}` and `transaction: false`.
@@ -349,7 +349,7 @@ and `allow_fallback: boolean` (default `true`). Explicit
 
 - `actions/transports_http.ts` — `frontend_http_rpc`; thin `fetch` adapter, POST default, GET on `has_side_effects(method) === false`.
 - `actions/transports_ws.ts` — `frontend_websocket_rpc`; thin adapter over `WebsocketRpcConnection` (default impl: `FrontendWebsocketClient`). Answers inbound server→client requests: a built-in `peer_ping_responder` for `peer/ping` (zero-wiring liveness), any other request routed through `peer.receive` with the response sent back over the socket (the frontend half of the ActionPeer receive loop).
-- `actions/transports_ws_backend.ts` — `backend_websocket_rpc`; server-side WS with session tracking, two-phase registration (`register_pending` / `admit`), the per-account cap, and the per-connection outbound budget; satisfies `FilterableBroadcastTransport`. Server→client requests via `request_connection` (correlation registry in `actions/peer_request.ts`).
+- `actions/transports_ws_backend.ts` — `BackendWebsocketTransport`, server-side WS with session tracking, two-phase registration (`register_pending` / `admit`), the per-account cap, and the per-connection outbound budget; the broadcast target of `create_broadcast_api` (`broadcast`, `broadcast_filtered`). Not a `Transport`: it sends nothing a client requested. Server→client requests via `request_connection` (correlation registry in `actions/peer_request.ts`).
 - `actions/ws_outbound_writer.ts` — `WsOutboundWriter`, the outbound queue and write pump of one connection, which every frame the transport sends goes through; `realtime/outbound_budget.ts` is the accounting it shares with SSE.
 
 `FrontendHttpTransport` on non-OK HTTP returns the body as-is when it's a
@@ -407,10 +407,10 @@ The transport splits registration to close it (the twin of the Rust
 
 - `register_pending(ws, token_hash, account_id, api_token_id?, abort_controller?, required_roles?)`
   inserts the entry **un-admitted**. Every `close_sockets_for_*` matches it
-  from that instant. Otherwise it is inert: no `send` broadcast,
+  from that instant. Otherwise it is inert: no `broadcast`,
   `broadcast_filtered` (the predicate never sees it), `send_to_account`, or
-  `request_connection` (`connection_gone`) reaches it; `get_connection_count`,
-  `is_ready`, and `is_registered` don't see it
+  `request_connection` (`connection_gone`) reaches it; `get_connection_count`
+  and `is_registered` don't see it
   (`get_pending_connection_count` does); the cap neither counts nor evicts it.
 - the caller re-reads the credential (`revalidate_resolved_auth`).
 - `take_pending_close_code(connection_id)` — after a refused `admit`, the
@@ -554,12 +554,13 @@ synchronous step as the closes, so an admission that finds its entry gone
 during shutdown reads the shutdown, never a revocation. Twin of the Rust
 registry's closing flag.
 
-Fan-out, to admitted connections only: `send(notification)` broadcasts to every
-connection; `broadcast_filtered(message, predicate)` runs per-connection ACL
-predicate over `ConnectionIdentity`; `send_to_account` wraps `broadcast_filtered` and
+Fan-out, to admitted connections only, each returning how many connections
+accepted the message: `broadcast(notification)` to every connection;
+`broadcast_filtered(message, predicate)` runs per-connection ACL predicate over
+`ConnectionIdentity`; `send_to_account` wraps `broadcast_filtered` and
 structurally satisfies `NotificationSender` (see `auth/CLAUDE.md` §WS
-notifications). `send(request)` is a misuse (a request has no single
-broadcast target) and returns an error envelope.
+notifications). A server→client request has no broadcast form; it targets one
+connection (`request_connection`, below).
 
 Server→client request/response (ActionPeer): `request_connection(connection_id,
 method, params, {timeout_ms?})` sends a `{jsonrpc, method, params, id}` frame to
@@ -603,11 +604,11 @@ interface ConnectionCloser {
 ```
 
 `BackendWebsocketTransport` satisfies it structurally;
-`create_sse_connection_closer(registry, required_role)` (`realtime/sse_auth_guard.ts`) adapts
+`create_sse_connection_closer(registry, required_role)` (`realtime/audit_log_sse.ts`) adapts
 a `SubscriberRegistry` (`close_all_sockets` is `SubscriberRegistry.close_all`;
 `close_sockets_for_role` closes the account's streams when `role` is the
 registry's gating role). No handler closes for a role: a role revocation's
-closes come from the audit listeners alone.
+closes come from the revocation guard alone (below).
 Closing is idempotent and synchronous. `close_all_sockets` is the one method no
 revocation calls: `AppServer.close` runs it on `deps.connection_closer` to end
 every live connection of the backend at shutdown, and it has no
@@ -651,9 +652,9 @@ stays a member until every addition is removed — one owner releasing a shared
 transport leaves it reachable for the others.
 `create_app_backend` puts one on `AppDeps.connection_closer`; `create_app_server`
 adds each mounted WS transport and the audit stream registry itself (passing
-`connection_closer: null` to the mount functions so it holds the removers), and
-removes them when its assembly fails or `AppServer.close` runs — after
-`close_all_sockets` across them all. Twin of
+`connection_closer: null` to the mount functions so it holds the removers),
+registers the revocation guard on it, and removes them when its assembly fails
+or `AppServer.close` runs — after `close_all_sockets` across them all. Twin of
 `RealtimeRevoker`. A member that throws does not stop the fan-out — every
 member is called, then the first error is thrown for the caller to log;
 `BackendWebsocketTransport` and `SubscriberRegistry.close_by_identity` treat a
@@ -669,13 +670,13 @@ It is required where it is read, so it can't be forgotten:
 the connections of each expired session it deletes — `auth/CLAUDE.md`
 §Cleanup), and the
 `connection_closer: RealtimeCloser | null` option of `register_action_ws` /
-`register_ws_endpoint` / `create_audit_log_sse`, which add their transport to it
+`create_audit_log_sse`, which add their transport to it
 (`null` is the explicit opt-out, or for a caller that adds the transport itself
 to hold the remover, as `create_app_server` does).
 
-## WS auth guard (`actions/transports_ws_auth_guard.ts`)
+### Revocation guard (`create_revocation_guard`)
 
-The audit-listener half of revocation: `create_ws_auth_guard(closer, log)`
+The audit-listener half of revocation: `create_revocation_guard(closer, log)`
 returns an `on_audit_event` callback that repeats a revocation's close when its
 audit row is announced. It covers a revocation emitted by code that holds no
 closer; for the builtin handlers it is a repeat of the close they already
@@ -683,16 +684,16 @@ queued. A success row is announced only after its request's transaction commits
 (`auth/CLAUDE.md` §Audit emitter), so the guard's close is post-commit too. Its
 closes reach a connection still pending admission.
 
-`closer` is any `ConnectionCloser` — a `BackendWebsocketTransport`, or a
-`RealtimeCloser` to cover every transport from one listener. For standard WS
-endpoints mounted via `AppServerOptions.ws_endpoints`, `create_app_server`
-registers the guard via `backend.deps.audit.add_listener` automatically (per
-`WsEndpointSpec.auth_guard`). For custom wiring, register inside the consumer's
-`audit_factory` body.
+**One guard, on the fan-out.** `create_app_server` registers one on
+`deps.connection_closer` when it mounts a WS endpoint or the audit stream —
+after the audit stream's broadcast listener, so a revocation's row reaches the
+stream before the close — and the fan-out carries each close to every member:
+each WS transport and the audit stream registry (`create_sse_connection_closer`).
+A consumer wiring outside `create_app_server` registers its own, over a closer
+holding its transports, inside its `audit_factory` body.
 
 It dispatches on the `RevocationScope` each event declares in
-`audit_event_revocation_scopes` (`auth/audit_log_schema.ts`), the table the SSE
-guard reads too — one declaration, so the two can't drift:
+`audit_event_revocation_scopes` (`auth/audit_log_schema.ts`):
 
 - `session` (`session_revoke`) → `close_sockets_for_session(metadata.session_id)`
 - `token` (`token_revoke`) → `close_sockets_for_token(metadata.token_id)`
@@ -703,20 +704,19 @@ guard reads too — one declaration, so the two can't drift:
   account_id, metadata.role)` when the revoked grant was global
   (`to_global_role_revocation`); a scoped revoke closes nothing. Per-message
   dispatch re-authorizes each request against its own action, but nothing
-  re-checks what a socket admitted by a role gate receives — every push its
-  endpoint sends — so the socket closes, with `WS_CLOSE_PERMISSION_REVOKED`.
-  The SSE guard closes its streams on the same rows. No handler closes for a
-  role, so this guard is the one closer.
+  re-checks what a connection admitted by a role gate receives — every push its
+  endpoint sends, every row the stream sends — so a socket closes with
+  `WS_CLOSE_PERMISSION_REVOKED` and a stream gated on the role ends. No handler
+  closes for a role, so this guard is the one closer.
 - `none` → nothing — every other event, and any event type fuz_app doesn't
   define
 
 Only `outcome === 'success'` events act — a failure carries attacker-controlled
 identifiers, and an outcome outside the enum is no revocation. Reacting to them would let an authenticated caller close
-another user's socket by guessing a session hash or token id.
+another user's connection by guessing a session hash or token id. Twin of the
+Rust spine's `register_socket_revocation_listeners`.
 
-## WebSocket dispatch — three layered entry points
-
-In decreasing abstraction.
+## WebSocket endpoints
 
 ### `create_app_server.ws_endpoints` — canonical mount surface
 
@@ -725,7 +725,7 @@ of `WsEndpointSpec` or a factory
 `(ctx: AppServerContext) => ReadonlyArray<WsEndpointSpec>`; factory form
 runs after server context is assembled so action lists can depend on
 `ctx.deps` / `ctx.action_*_rate_limiter`. Each entry is auto-mounted via
-`register_ws_endpoint` against the assembled Hono app.
+`register_action_ws` against the assembled Hono app.
 
 `create_upgrade_websocket: (app: Hono) => UpgradeWebSocket` returns the
 Hono adapter helper. It is a factory because Node's `createNodeWebSocket({app})`
@@ -739,26 +739,29 @@ NOT trip the check, so feature-flag gated WS surfaces stay safe.
 What every auto-mount gets, so no hand mount has to remember it: the
 `action_ip_rate_limiter` / `action_account_rate_limiter` instances the RPC
 endpoints charge (one budget per action across transports), the server's
-`allowed_origins` when the spec sets none (`resolve_ws_endpoints`, read by
-both the mount and the surface), registration ahead of
-`post_route_middleware` and `static_serving`, the surface entry, and the
-guards below. A `ws_endpoints` or `rpc_endpoints` path outside the auth
-middleware's scope (`AUTH_MIDDLEWARE_PATH`, `'/api/*'`, from
-`auth/middleware.ts` — matched with `middleware_applies`, so `/api` itself is
-inside) throws at assembly (`assert_endpoint_in_auth_scope`, which
+`allowed_origins` when the spec sets none and the sole RPC endpoint's actions
+when it omits `actions` (`resolve_ws_endpoints`, read by both the mount and the
+surface), registration ahead of `post_route_middleware` and `static_serving`,
+the surface entry, and the revocation guard. A `ws_endpoints` or `rpc_endpoints`
+path outside the auth middleware's scope (`AUTH_MIDDLEWARE_PATH`, `'/api/*'`,
+from `auth/middleware.ts` — matched with `middleware_applies`, so `/api` itself
+is inside) throws at assembly (`assert_endpoint_in_auth_scope`, which
 `create_test_app_surface_spec` also runs): there no session or bearer is
 parsed and every caller would be unauthenticated.
 
 `WsEndpointSpec` fields: `path`, `allowed_origins?` (default: the server's),
-`actions`,
-`required_roles?`, `transport?`, `max_connections_per_account?`,
-`outbound_queue_bytes?`, `heartbeat?`,
-`artificial_delay?`, `max_message_bytes?`,
-`on_socket_open?`, `on_socket_close?`, `auth_guard?` (default `true`,
-deduped by reference identity via `WeakSet<BackendWebsocketTransport>`),
-`extra_audit_handlers?`. Every mounted transport is added to
-`deps.connection_closer`, whatever `auth_guard` says — the flag opts out of
-the audit listener, not of the handlers' closes.
+`actions?`, `required_roles?`, `transport?`, `max_connections_per_account?`,
+`outbound_queue_bytes?`, `heartbeat?`, `max_message_bytes?`,
+`on_socket_open?`, `on_socket_close?`. Every mounted transport is added to
+`deps.connection_closer`.
+
+**One action set across transports.** A spec that omits `actions` serves the
+actions of the server's sole `rpc_endpoints` entry through `to_ws_actions`
+(`actions/protocol.ts`): `protocol_actions` first, then the RPC list less any
+protocol action it carries (`peer_ping_action` rides the RPC list so an HTTP
+caller is refused `peer_no_transport` rather than `method_not_found`). One set
+of handler closures then runs on both transports. Assembly throws when a spec
+omits `actions` and no RPC endpoint, or more than one, resolves.
 
 `max_connections_per_account` sets the per-account connection cap on the
 transport the mount creates (`RegisterActionWsOptions` carries the same field).
@@ -777,37 +780,33 @@ Cross-surface collisions (same `GET <path>` on both `RouteSpec` and
 `GET /api/:resource` vs `/api/ws`) is not detected — Hono's specific-before-wildcard routing keeps
 those working but avoid the overlap.
 
-`auth_guard` is also the one closer of a role revocation: with it off for a
-transport, a revoked role closes none of its sockets. When multiple specs share a transport,
-**any** spec with `auth_guard !== false` wires the guard for that
-transport (OR-semantics).
-
 `AppSurfaceWsEndpoint.methods` surfaces `request_response` +
 `remote_notification` specs only — `local_call` specs are filtered out
 because they don't dispatch over WS.
 
-### `register_ws_endpoint` — middle tier
+### `register_action_ws` — the endpoint
 
-Composes the standard upgrade stack:
+Mounts one `GET path` route, its guards in the route-spec pipeline's
+coarse-to-fine order (from `fuz_auth_guard_resolver` over the upgrade's auth
+shape `{account: 'required', actor: 'required', roles?, required_scope:
+'surface:ws_upgrade'}`):
 
-1. `verify_request_source(allowed_origins)`
-2. `require_auth`
-3. `require_token_scope('surface:ws_upgrade')` — a narrowed token cannot hold a socket
-4. Upgrade-time authorization phase — resolves the acting actor (`?acting=` through `parse_acting`; malformed reads as omitted), seeds `REQUEST_CONTEXT_KEY` for the inner `register_action_ws`
-5. Optional `require_role(required_roles)` — any-of disjunction (coarse upgrade-time gate; per-action `auth` in each spec still applies at dispatch time)
-6. Delegates to `register_action_ws`
+1. `verify_request_source(allowed_origins)` — 403
+2. `require_auth` — 401
+3. `require_token_scope('surface:ws_upgrade')` — a narrowed token cannot hold a socket (403 `token_scope_required`)
+4. The authorization phase (`run_authorization_phase`, `auth/request_context.ts`) — resolves the acting actor (`?acting=` through `parse_acting`; malformed reads as omitted, and the route declares no query schema, so a credential-less `?acting=garbage` is still the 401), seeds `REQUEST_CONTEXT_KEY`
+5. `require_role(required_roles)` when the endpoint is gated — any-of disjunction (coarse upgrade-time gate; per-action `auth` in each spec still applies at dispatch time)
+6. `upgradeWebSocket`
 
-Extends `RegisterActionWsOptions` with `allowed_origins` (required here —
-there is no server list to default from) and optional `required_roles`, and
-inherits its required `connection_closer` and action limiters. Returns
-`{transport}`. Most consumers reach for
-`ws_endpoints` above. Call it directly only to mount a WS endpoint outside
-`create_app_server`'s assembly.
-
-### `register_action_ws` — lower-level dispatcher
-
-Exposed for tests (`create_ws_test_harness`) that need to drive the
-dispatcher without the origin/auth front-stack.
+Only `GET` is mounted (Hono serves `HEAD` through it, guards included), so any
+other method on the path is a 404. Takes
+`allowed_origins` (required — `create_app_server` passes the server's), the
+required `connection_closer` and action limiters, and optional
+`required_roles`; returns `{transport}`. Most consumers reach for
+`ws_endpoints` above; call it directly only to mount a WS endpoint outside
+`create_app_server`'s assembly. Tests drive the dispatcher without the
+guards through `create_ws_test_harness`, which invokes the captured events
+factory directly.
 
 Per-message dispatch delegates to `perform_action` — the shared core that
 HTTP RPC also calls. `register_action_ws` owns only WS-specific concerns:
@@ -819,23 +818,24 @@ HTTP RPC also calls. `register_action_ws` owns only WS-specific concerns:
 - **Socket-scoped notify** — `(method, params) => transport.send_to(connection_id, notification)`, threaded into `perform_action` as `notify`
 - **Every send through the transport** — responses, error frames, and notifications all go through `transport.send_to`, so they are held to the connection's outbound budget; a handler that sends past it closes its own socket with `WS_CLOSE_OUTBOUND_OVERFLOW` and gets no response written
 - **Composed abort signal** — `AbortSignal.any([socket_close, per_request_cancel])`, threaded as `signal`
-- **Connection lifecycle** — admission (`transport.register_pending` → credential re-read → `transport.admit`, which enforces the per-account connection cap) / `remove_connection`, `on_socket_open` / `_close` hooks, server heartbeat
+- **Connection lifecycle** — admission (`transport.register_pending` → `recheck_admission` → `transport.admit`, which enforces the per-account connection cap) / `remove_connection`, `on_socket_open` / `_close` hooks, server heartbeat
 - **The inbound gate** — frames queue until the socket is admitted and `on_socket_open` has completed; frames on a socket the server closed are dropped
 
 **Admission.** `onOpen` registers the connection pending (synchronously, with
-the socket's `AbortController`), re-reads the credential captured at upgrade
-(`revalidate_resolved_auth({db}, resolved)` — session row / token row / account
-row, no touch; `resolved` is `get_resolved_auth(c)`, the one derivation the
-audit stream shares, read off the keys the auth middleware set), then
-`transport.admit`s. A dead credential, or a pending entry a revocation closed
+the socket's `AbortController`), re-reads what the gates read
+(`recheck_admission({db}, {resolved, request_context, required_roles})`,
+`auth/resolved_auth.ts`, which the audit stream shares: the credential —
+session row / token row / account row, no touch — the acting actor, and the
+role; `resolved` is `get_resolved_auth(c)`, read off the keys the auth
+middleware set), then `transport.admit`s. A dead credential, or a pending entry a revocation closed
 meanwhile, closes the socket with `WS_CLOSE_SESSION_REVOKED` and the reason a
 revoked socket gets; a re-check that throws closes it with
 `WS_CLOSE_INTERNAL_ERROR` (`internal error`) — fail closed, never admitted
-unchecked. An endpoint with `required_roles` re-reads them beside the
-credential — the acting actor's grants afresh (`refresh_role_grants`), a global
-grant of any listed role admitting, as the gate in front did — and refuses a
-lost role with `WS_CLOSE_PERMISSION_REVOKED`; a failed role read is the same
-1011. During shutdown a refusal is the shutdown's instead: an upgrade
+unchecked. A soft-deleted acting actor is refused like a dead credential. An
+endpoint with `required_roles` re-reads them beside the credential — the acting
+actor's grants afresh (`refresh_role_grants`), a global grant of any listed role
+admitting, as the gate in front did — and refuses a lost role with
+`WS_CLOSE_PERMISSION_REVOKED`; a failed role read is the same 1011. During shutdown a refusal is the shutdown's instead: an upgrade
 pending at the close-all was closed by it with `WS_CLOSE_GOING_AWAY` and its
 controller aborted, so the refusal after the re-read — even one the closing
 database failed — writes nothing more; an upgrade that registers after it is
@@ -904,11 +904,11 @@ heartbeat activity.
 changes during a connection lifetime are picked up on the next message —
 no in-place refresh. A revoked global grant of a role the endpoint's
 `required_roles` lists closes the socket (`WS_CLOSE_PERMISSION_REVOKED`,
-through `create_ws_auth_guard`), since nothing else re-checks what it
+through the revocation guard), since nothing else re-checks what it
 receives. Authentication
 invalidation (a session or token revoke, `password_change`, a logout, an
 account delete, a cap eviction) still closes the socket — the revoking
-handler through `connection_closer`, `create_ws_auth_guard` again on the
+handler through `connection_closer`, the revocation guard again on the
 audit row.
 
 Per-message side-effect queues: `pending_effects` (eager) and
@@ -1005,7 +1005,7 @@ three-leg contract; `PROTOCOL_ACTION_METHODS` (in `actions/action_codegen.ts`)
 is the method-name set that drives both the codegen filter and the action-manifest
 exclusion.
 
-**Not auto-spread by `create_frontend_rpc_client` or `register_ws_endpoint`** —
+**Not auto-spread by `create_frontend_rpc_client` or `register_action_ws`** —
 bundled helpers stay pure factories so the dispatch surface stays
 grep-traceable at every registration site and consumers can override
 individual protocol actions without an opt-out flag.
@@ -1178,24 +1178,23 @@ route per-call (e.g. return `'frontend_websocket_rpc'` for `account_*` /
 
 ## Broadcast API (`actions/broadcast_api.ts`)
 
-`create_broadcast_api({peer, specs, log?, should_deliver?})` — builds a
+`create_broadcast_api({transport, specs, log?, should_deliver?})` — builds a
 typed `{method: (input) => Promise<void>}` object from a list of action
 specs. Counterpart to `register_action_ws`: that handles frontend-initiated
 request-scoped dispatch, this handles backend-initiated broadcast.
 Request-scoped streaming stays on `ctx.notify` inside a handler.
 
 Per-method call: validates input against `spec.input` (logs + returns on
-failure), wraps in `JsonrpcNotification`, sends via the peer's resolved
-transport. `transport_name` on `peer.default_send_options` pins the target
-deterministically — no fallback, because broadcast is 1→N over a specific
-primary transport and "any ready transport" could reach an unexpected
-audience. Silently skips when none ready.
+failure), wraps in `JsonrpcNotification`, and sends it on `transport` — a
+`BroadcastTarget`, `Pick<BackendWebsocketTransport, 'broadcast' |
+'broadcast_filtered'>`, typically `app_server.ws_endpoints[path]` or the
+transport a `WsEndpointSpec` supplies. No transport registry and no fallback:
+broadcast is 1→N over one named transport. No connections reaches nobody.
 
 `should_deliver: (identity, method, input) => boolean` — optional
 per-connection ACL predicate. When set, fans out via
-`transport.broadcast_filtered` (feature-detected via
-`is_filterable_broadcast_transport`). Errors logged but never thrown —
-broadcasts are fire-and-forget.
+`transport.broadcast_filtered`; otherwise `transport.broadcast`. Errors logged
+but never thrown — broadcasts are fire-and-forget.
 
 Typed surface: consumers declare an explicit `interface BackendActionsApi`
 and pin via `create_broadcast_api<BackendActionsApi>({...})` — unchecked

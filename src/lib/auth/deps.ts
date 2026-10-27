@@ -58,7 +58,7 @@ export interface AppDeps {
 	 * backend: `create_app_backend` creates it empty, and `create_app_server`
 	 * adds each WebSocket transport it mounts and its audit stream registry. A
 	 * transport mounted by hand is added through the `connection_closer`
-	 * option of `register_ws_endpoint` / `create_audit_log_sse`.
+	 * option of `register_action_ws` / `create_audit_log_sse`.
 	 */
 	connection_closer: RealtimeCloser;
 	/**

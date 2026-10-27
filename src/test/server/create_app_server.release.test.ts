@@ -75,7 +75,7 @@ const create_harness = (): Harness => {
 	};
 };
 
-/** One acquisition of each kind: audit SSE, built limiters, a WS endpoint with a guard and an extra handler. */
+/** One acquisition of each kind: audit SSE, the revocation guard, built limiters, a WS endpoint. */
 const acquiring_options = (backend: AppBackend): AppServerOptions => ({
 	...create_loopback_app_server_options(),
 	backend,
@@ -91,7 +91,6 @@ const ws_endpoint = (path: string, overrides?: Partial<WsEndpointSpec>): WsEndpo
 	path,
 	actions: [...protocol_actions],
 	heartbeat: false,
-	extra_audit_handlers: [() => {}],
 	...overrides
 });
 
@@ -210,7 +209,7 @@ describe('a failed assembly releases what it acquired', () => {
 	});
 
 	// the second endpoint's mount throws after the first endpoint has added its
-	// transport, its auth guard, and its extra handler
+	// transport, and after the revocation guard was registered
 	for (const { name, endpoint, message } of [
 		{
 			name: 'its registry fails to compile',
@@ -312,9 +311,9 @@ describe('AppServer.close releases what assembly acquired', () => {
 		const harness = create_harness();
 		const dispose = vi.spyOn(RateLimiter.prototype, 'dispose');
 		const server = await create_app_server(acquiring_options(harness.backend));
-		// the SSE listener, the WS auth guard, the extra handler; the registry, the transport
+		// the SSE listener, the revocation guard; the registry, the transport
 		assert.deepStrictEqual(current(harness), {
-			listeners: harness.baseline.listeners + 3,
+			listeners: harness.baseline.listeners + 2,
 			members: harness.baseline.members + 2
 		});
 
@@ -349,7 +348,6 @@ describe('AppServer.close releases what assembly acquired', () => {
 		await server.close();
 		// the limiters are built first, so they are disposed last
 		assert.deepStrictEqual(events, [
-			'listener',
 			'listener',
 			'listener',
 			...Array.from({ length: BUILT_LIMITER_COUNT }, () => 'dispose')

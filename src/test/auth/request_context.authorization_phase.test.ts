@@ -15,8 +15,8 @@
  * `{ok: true, request_context: null}`; resolved actor / account-only
  * contexts set `request_context` non-null. The test-harness escape hatch
  * (`TEST_CONTEXT_PRESET_KEY`) lives at each transport's wrapper
- * (`create_fuz_authorization_handler`, `create_ws_authorization_middleware`,
- * the HTTP RPC dispatcher) — see `request_context.test_context_preset.test.ts`
+ * (`run_authorization_phase`, which the route-spec handler and the WS upgrade
+ * share, and the HTTP RPC dispatcher) — see `request_context.test_context_preset.test.ts`
  * for that coverage.
  *
  * The torn-read 500 is unreachable from an integration test that

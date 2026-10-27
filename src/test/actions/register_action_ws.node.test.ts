@@ -114,6 +114,7 @@ const start_server = async (max_connections_per_account?: number): Promise<TestS
 		connection_closer: null,
 		app,
 		upgradeWebSocket,
+		allowed_origins: [],
 		actions: [
 			{
 				spec: record_spec,

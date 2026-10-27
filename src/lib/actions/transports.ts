@@ -84,7 +84,7 @@ export const WS_CLOSE_OUTBOUND_OVERFLOW = 4005;
 export const WS_CLOSE_OUTBOUND_OVERFLOW_REASON = 'outbound queue overflow';
 /**
  * WebSocket close code — the socket's account lost a role its endpoint
- * requires (`register_ws_endpoint`'s `required_roles`): a global grant of one
+ * requires (`register_action_ws`'s `required_roles`): a global grant of one
  * of those roles was revoked while the socket was open, or while its upgrade
  * was in flight (the admission re-read, `register_action_ws`). Nothing more
  * is sent on the socket.

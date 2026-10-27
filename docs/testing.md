@@ -778,10 +778,11 @@ comment, fires a trigger that produces one event frame, and validates the
 ```typescript
 import {describe_sse_route_tests} from '@fuzdev/fuz_app/testing/sse_round_trip.ts';
 import {SubscriberRegistry} from '@fuzdev/fuz_app/realtime/subscriber_registry.ts';
-import {create_sse_auth_guard} from '@fuzdev/fuz_app/realtime/sse_auth_guard.ts';
+import {create_sse_connection_closer} from '@fuzdev/fuz_app/realtime/audit_log_sse.ts';
+import {create_revocation_guard} from '@fuzdev/fuz_app/actions/connection_closer.ts';
 
 const registry = new SubscriberRegistry<SseNotification>();
-const guard = create_sse_auth_guard(registry, 'admin', log);
+const guard = create_revocation_guard(create_sse_connection_closer(registry, 'admin'), log);
 
 describe_sse_route_tests({
 	session_options: my_session_config,

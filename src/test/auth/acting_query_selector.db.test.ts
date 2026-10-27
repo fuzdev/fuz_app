@@ -27,7 +27,7 @@ import {
 	create_describe_db,
 	create_default_db_factory
 } from '#lib/testing/db.ts';
-import { register_ws_endpoint } from '#lib/actions/register_ws_endpoint.ts';
+import { register_action_ws } from '#lib/actions/register_action_ws.ts';
 import { heartbeat_action } from '#lib/actions/heartbeat.ts';
 import { parse_allowed_origins } from '#lib/http/origin.ts';
 import { ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY } from '#lib/hono_context.ts';
@@ -63,7 +63,7 @@ const build_ws_app = (db: Db, account_id: string) => {
 	const stub = create_stub_upgrade();
 	const parsed = parse_allowed_origins(ALLOWED_ORIGIN);
 	if (!parsed.ok) throw new Error('invalid allowlist');
-	register_ws_endpoint({
+	register_action_ws({
 		action_ip_rate_limiter: null,
 		action_account_rate_limiter: null,
 		path: '/api/ws',

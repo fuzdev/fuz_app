@@ -60,7 +60,7 @@ casts — the factory brands internally. Exported as `TestAccountOverrides` /
 - `create_test_context(role_grants?)` — `{account, actor, role_grants}`; pass `[{role: 'keeper'}, {role: 'admin'}]` for multi-role.
 - `create_test_raw_api_token(label?)` — a well-formed raw bearer value (`secret_fuz_token_` + `label` padded with `A` to 43 chars) that passes `is_api_token_shaped`, so a mocked-lookup test reaches token validation; distinct labels give distinct tokens.
 - `create_test_validated_api_token(overrides?)` — a `ValidatedApiToken` (what `query_validate_api_token` returns) with a `full` scope; override `scope` to test a narrowed one.
-- `create_test_audit_event(overrides?)` — `{id: 'evt-test', event_type: 'login', outcome: 'success', …}`, for SSE guard / audit tests.
+- `create_test_audit_event(overrides?)` — `{id: 'evt-test', event_type: 'login', outcome: 'success', …}`, for revocation-guard / audit tests.
 
 ### `mock_fs.ts` — in-memory filesystem
 
@@ -696,7 +696,7 @@ method and assert the stream closes within 2s.
 `SseRouteTestSpec` per route: `{path, trigger, event_specs?, assert_closes_on_revoke?}`.
 A consumer registry closes on the revoke when its route joined it to the
 backend's closer (`ctx.deps.connection_closer.add(create_sse_connection_closer(registry, role))`)
-or when the suite's `on_audit_event` option wires a guard (e.g. `create_sse_auth_guard`); with
+or when the suite's `on_audit_event` option wires a guard (e.g. `create_revocation_guard` over `create_sse_connection_closer(registry, role)`); with
 neither, the revoke assertion fails.
 
 Frame reading is delegated to the shared `create_sse_frame_reader`
@@ -1596,7 +1596,7 @@ in-process. `describe_cross_process_ws_tests({setup_test, capabilities,
 base_url, ws_path, origin?, rpc_path?, max_message_bytes?, logout_path?,
 password_path?, max_tokens?, ws_account_roles?})` opens a live
 `WebSocket` via `create_ws_transport` (the `ws` npm package) and asserts
-cases against the upgrade stack `register_ws_endpoint` wires (origin →
+cases against the upgrade route `register_action_ws` mounts (origin →
 `require_auth` → dispatch): authed upgrade round-trips `heartbeat`,
 requests sent the moment the socket opens are all answered (both spines admit a
 connection only after re-reading its credential; frames that arrive first wait

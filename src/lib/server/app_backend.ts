@@ -120,8 +120,8 @@ export interface CreateAppBackendOptions {
 	 * })
 	 * ```
 	 *
-	 * Additional listeners (factory-managed audit SSE, per-endpoint WS
-	 * auth guards) are registered at `create_app_server` time via
+	 * Additional listeners (factory-managed audit SSE, the revocation guard)
+	 * are registered at `create_app_server` time via
 	 * `audit.add_listener(...)`.
 	 */
 	audit_factory: AuditFactory;

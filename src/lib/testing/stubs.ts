@@ -32,13 +32,9 @@ import {
 	type AppSurfaceSpec,
 	type RpcEndpointSpec
 } from '../http/surface.ts';
-import {
-	resolve_ws_endpoints,
-	type ResolvedWsEndpointSpec,
-	type WsEndpointSpec
-} from '../actions/ws_endpoint_spec.ts';
+import { resolve_ws_endpoints, type WsEndpointSpec } from '../actions/ws_endpoint_spec.ts';
 import type { EventSpec, SseNotification } from '../realtime/sse.ts';
-import { AUDIT_LOG_SSE_MAX_PER_SCOPE, type AuditLogSse } from '../realtime/sse_auth_guard.ts';
+import { AUDIT_LOG_SSE_MAX_PER_SCOPE, type AuditLogSse } from '../realtime/audit_log_sse.ts';
 import { SubscriberRegistry } from '../realtime/subscriber_registry.ts';
 import { ROLE_ADMIN } from '../auth/role_schema.ts';
 import { BaseServerEnv } from '../server/env.ts';
@@ -387,21 +383,20 @@ export interface CreateTestAppSurfaceSpecOptions {
 }
 
 /**
- * Narrow a WS endpoint spec that carries its own `allowed_origins` — the only
+ * Check that a WS endpoint spec carries its own `allowed_origins` — the only
  * way it resolves when no server list is given to default from.
  *
  * @throws Error when the spec declares no `allowed_origins`
  */
-const to_self_resolved_ws_endpoint = (endpoint: WsEndpointSpec): ResolvedWsEndpointSpec => {
-	const { allowed_origins } = endpoint;
-	if (!allowed_origins) {
+const assert_self_resolved_ws_origins = (endpoint: WsEndpointSpec): WsEndpointSpec => {
+	if (!endpoint.allowed_origins) {
 		throw new Error(
 			`create_test_app_surface_spec: ws endpoint ${endpoint.path} has no allowed_origins — ` +
 				"pass the server's list as create_test_app_surface_spec's allowed_origins option, " +
 				'or set allowed_origins on the spec'
 		);
 	}
-	return { ...endpoint, allowed_origins };
+	return endpoint;
 };
 
 /**
@@ -461,12 +456,16 @@ export const create_test_app_surface_spec = (
 			});
 		}) ?? [];
 	// Resolve ws endpoints (mirrors create_app_server). Surface-only —
-	// no `register_ws_endpoint` call here, so no `create_upgrade_websocket` needed.
+	// no `register_action_ws` call here, so no `create_upgrade_websocket` needed.
 	const declared_ws_endpoints =
 		typeof options.ws_endpoints === 'function' ? options.ws_endpoints(ctx) : options.ws_endpoints;
-	const resolved_ws_endpoints = options.allowed_origins
-		? resolve_ws_endpoints(declared_ws_endpoints, options.allowed_origins)
-		: declared_ws_endpoints?.map(to_self_resolved_ws_endpoint);
+	const resolved_ws_endpoints = resolve_ws_endpoints(
+		options.allowed_origins
+			? declared_ws_endpoints
+			: declared_ws_endpoints?.map(assert_self_resolved_ws_origins),
+		// with no server list every spec carries its own, so the empty default never applies
+		{ allowed_origins: options.allowed_origins ?? [], rpc_endpoints: resolved_rpc_endpoints }
+	);
 	for (const endpoint of resolved_ws_endpoints ?? []) {
 		assert_endpoint_in_auth_scope('ws_endpoints', endpoint.path);
 	}

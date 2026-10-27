@@ -70,8 +70,8 @@ export const AuditEventType = z.enum(AUDIT_EVENT_TYPES);
 export type AuditEventType = z.infer<typeof AuditEventType>;
 
 /**
- * What a **successful** audit row invalidates — the axis both revocation
- * listeners (`create_ws_auth_guard`, `create_sse_auth_guard`) dispatch on.
+ * What a **successful** audit row invalidates — the axis the revocation
+ * listener (`create_revocation_guard`) dispatches on.
  *
  * - `none` — the row invalidates no live connection.
  * - `session` — one session: the connections whose session-token hash equals
@@ -83,8 +83,8 @@ export type AuditEventType = z.infer<typeof AuditEventType>;
  *   `metadata.role`, when the revoked grant was global
  *   (`to_global_role_revocation`).
  *
- * The scope says what the row invalidated; both listeners act on every scope
- * alike. On `role` that matters for the WebSocket too: per-message dispatch
+ * The scope says what the row invalidated; the listener acts on every scope
+ * alike, for every transport. On `role` that matters for the WebSocket too: per-message dispatch
  * re-authorizes each request against its own action, but a socket admitted by
  * a role gate also receives every server push its endpoint sends, which no
  * dispatch ever re-checks — so a socket that lost the gating role is closed,
@@ -95,9 +95,8 @@ export type AuditEventType = z.infer<typeof AuditEventType>;
 export type RevocationScope = 'none' | 'session' | 'token' | 'account' | 'role';
 
 /**
- * The `RevocationScope` of every builtin audit event — declared once, so the
- * WebSocket and SSE revocation listeners read one answer instead of keeping a
- * list each. Typed over `AuditEventType`, so a new event type does not compile
+ * The `RevocationScope` of every builtin audit event — declared once, the one
+ * answer the revocation listener reads, and the twin of the Rust spine's table. Typed over `AuditEventType`, so a new event type does not compile
  * until it declares its scope here.
  *
  * A scope other than `none` marks an event whose success invalidates a live
@@ -160,13 +159,13 @@ export const to_revocation_scope = (event_type: string): RevocationScope =>
  * The account and role a successful `role`-scope row took away, when the
  * revoked grant was **global** — `null` otherwise.
  *
- * A role gate (`register_ws_endpoint`'s `required_roles`, the audit stream's
+ * A role gate (`register_action_ws`'s `required_roles`, the audit stream's
  * `require_role`) admits on global grants only, so revoking a scoped grant
  * takes away nothing a gate admitted on and closes nothing. A row with no
  * `metadata.scope_id` reads as global: when unsure, closing is the safe side.
  * The target is `target_account_id ?? account_id`, as for the `account` scope.
- * Both revocation listeners read it, so a socket and a stream gated on one
- * role close on the same rows.
+ * The revocation guard reads it for every transport, so a socket and a
+ * stream gated on one role close on the same rows.
  *
  * Twin of the Rust spine's `global_role_revocation`.
  *

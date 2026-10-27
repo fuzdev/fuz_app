@@ -47,7 +47,7 @@ declare const Bun: {
  * How far above the endpoint's message limit Bun's own frame cap sits. Bun
  * drops a socket past `maxPayloadLength` without a close frame (the client sees
  * 1006), unlike Node's `ws`, which closes with `WS_CLOSE_MESSAGE_TOO_BIG` — so
- * the cap leaves headroom for the per-message check in `register_ws_endpoint`
+ * the cap leaves headroom for the per-message check in `register_action_ws`
  * to answer a message just over the limit with that code, and still refuses a
  * grossly oversized one before buffering it toward Bun's 16 MiB default.
  */

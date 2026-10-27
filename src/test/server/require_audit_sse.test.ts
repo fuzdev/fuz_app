@@ -2,7 +2,7 @@ import { describe, test, assert } from 'vitest';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { require_audit_sse } from '#lib/server/app_server.ts';
-import { create_audit_log_sse } from '#lib/realtime/sse_auth_guard.ts';
+import { create_audit_log_sse } from '#lib/realtime/audit_log_sse.ts';
 
 const log = new Logger('test:require_audit_sse', { level: 'off' });
 

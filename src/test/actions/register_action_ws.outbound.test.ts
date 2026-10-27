@@ -154,6 +154,7 @@ describe('register_action_ws outbound overflow', () => {
 			connection_closer: null,
 			app: new Hono(),
 			upgradeWebSocket: stub.upgradeWebSocket,
+			allowed_origins: [],
 			actions: [create_testing_flood_notifications_action()],
 			db: create_stub_db(),
 			outbound_queue_bytes: 5 * size,
@@ -260,6 +261,7 @@ describe('register_action_ws closes', () => {
 			connection_closer: null,
 			app: new Hono(),
 			upgradeWebSocket: stub.upgradeWebSocket,
+			allowed_origins: [],
 			actions: [
 				{
 					spec: revoke_spec,
@@ -328,6 +330,7 @@ describe('register_action_ws closes', () => {
 			connection_closer: null,
 			app: new Hono(),
 			upgradeWebSocket: stub.upgradeWebSocket,
+			allowed_origins: [],
 			actions: [],
 			db,
 			transport,
@@ -375,6 +378,7 @@ describe('register_action_ws outbound_queue_bytes', () => {
 			connection_closer: null,
 			app: new Hono(),
 			upgradeWebSocket: stub.upgradeWebSocket,
+			allowed_origins: [],
 			actions: [{ spec: echo_spec, handler: () => ({ value: 'x' }) }],
 			db: create_stub_db(),
 			heartbeat: false,

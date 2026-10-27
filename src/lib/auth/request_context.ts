@@ -782,6 +782,50 @@ export const apply_authorization_phase = async (
 };
 
 /**
+ * Run the authorization phase on a Hono request: resolve the acting actor from
+ * `acting` against the authenticated account, and set the resulting
+ * `RequestContext` on `REQUEST_CONTEXT_KEY` for the post-authorization guards
+ * (`require_role`, `require_credential_types`) and the handler.
+ *
+ * The phase every Hono-mounted surface shares — the route-spec handler
+ * (`create_fuz_authorization_handler`) and the WebSocket upgrade
+ * (`register_action_ws`, which reads `acting` off the query string). The HTTP
+ * RPC and WS dispatchers consume `apply_authorization_phase` per action
+ * directly instead.
+ *
+ * Skipped for a public `auth` shape, and under the test-preset escape hatch:
+ * harnesses that pre-populate `REQUEST_CONTEXT_KEY` flag
+ * `TEST_CONTEXT_PRESET_KEY = true` so the phase trusts the supplied context
+ * instead of running DB-backed resolution. Production middleware never sets
+ * that flag.
+ *
+ * @param c - the request context, after the pre-authorization guards
+ * @param deps - query deps for actor resolution
+ * @param auth - the route's auth shape
+ * @param acting - the `acting` selector, already through `parse_acting`; `undefined` when absent
+ * @returns the refusal to answer (`400` actor selection, `500` a vanished
+ *   account), or nothing when the request may proceed
+ */
+export const run_authorization_phase = async (
+	c: Context,
+	deps: QueryDeps,
+	auth: RouteAuth,
+	acting: string | undefined
+): Promise<Response | void> => {
+	if (c.get(TEST_CONTEXT_PRESET_KEY)) return;
+	if (is_public_auth(auth)) return;
+	const account_id: string | null = c.get(ACCOUNT_ID_KEY) ?? null;
+	const result = await apply_authorization_phase(deps, account_id, auth, acting);
+	if (!result.ok) return c.json(result.body, result.status);
+	if (result.request_context !== null) {
+		c.set(REQUEST_CONTEXT_KEY, result.request_context);
+	}
+	// `request_context: null` — public action or unauthenticated optional axis.
+	// Leave `REQUEST_CONTEXT_KEY` null; downstream `require_role` /
+	// `require_credential_types` enforce.
+};
+
+/**
  * Create the route-spec authorization handler used by `apply_route_specs`.
  *
  * Reads the `acting` selector via `read_route_acting` — `c.var.validated_query`
@@ -804,23 +848,10 @@ export const create_fuz_authorization_handler = (
 	deps: QueryDeps
 ): ((c: Context, spec: RouteSpec) => Promise<Response | void>) => {
 	return async (c, spec) => {
-		// Test escape hatch: harnesses that pre-populate `REQUEST_CONTEXT_KEY`
-		// flag `TEST_CONTEXT_PRESET_KEY = true` so the authorization phase
-		// trusts the supplied context instead of running DB-backed resolution.
-		// Production middleware never sets this flag.
-		if (c.get(TEST_CONTEXT_PRESET_KEY)) return;
-		if (is_public_auth(spec.auth)) return;
+		// the same skips `run_authorization_phase` makes, ahead of reading a body
+		if (c.get(TEST_CONTEXT_PRESET_KEY) || is_public_auth(spec.auth)) return;
 		const acting_value = needs_actor(spec.auth) ? await read_route_acting(c, spec) : undefined;
-		const account_id: string | null = c.get(ACCOUNT_ID_KEY) ?? null;
-		const result = await apply_authorization_phase(deps, account_id, spec.auth, acting_value);
-		if (!result.ok) return c.json(result.body, result.status);
-		if (result.request_context !== null) {
-			c.set(REQUEST_CONTEXT_KEY, result.request_context);
-		}
-		// `request_context: null` — public action or unauthenticated optional axis.
-		// Leave `REQUEST_CONTEXT_KEY` null; downstream `require_role` /
-		// `require_credential_types` enforce.
-		return;
+		return run_authorization_phase(c, deps, spec.auth, acting_value);
 	};
 };
 

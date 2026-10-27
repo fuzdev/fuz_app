@@ -335,9 +335,11 @@ also matches `/api` itself — where the auth middleware runs) — assembly thro
 otherwise, and so does `create_test_app_surface_spec`. Every mounted transport is added to `deps.connection_closer`, so
 a revocation handler closes its sockets once the revocation commits — a
 session or token revoke, a password change, a logout, an account delete, a
-cap eviction — without consumer wiring. Per-endpoint `auth_guard` defaults to
-`true` and registers `create_ws_auth_guard` against the mounted transport,
-which repeats the close when the audit row is announced. Pass `required_roles:
+cap eviction — without consumer wiring, and the one revocation guard
+`create_app_server` registers on that closer (`create_revocation_guard`)
+repeats the close when the audit row is announced. Omit `actions` to serve the
+sole RPC endpoint's actions (`to_ws_actions`: the protocol actions first, then
+the RPC list) — one action set on both transports. Pass `required_roles:
 [ROLE_ADMIN]` for an admin-only WS gate at upgrade time. `AppServer.ws_endpoints`
 returns the path-keyed `BackendWebsocketTransport` map for broadcast.
 
@@ -619,17 +621,20 @@ const { app, audit_sse } = await create_app_server({
 });
 ```
 
-When `audit_log_sse` is set, `create_app_server` creates the SSE registry,
-broadcaster, and auth guard internally, registers `audit_sse.on_audit_event` via
+When `audit_log_sse` is set, `create_app_server` creates the SSE registry and
+broadcaster internally, registers `audit_sse.on_audit_event` via
 `backend.deps.audit.add_listener` (no shallow-copy of `AppDeps`), adds the
-registry to `backend.deps.connection_closer` so revocations close its streams,
-and auto-appends `audit_log_event_specs` to the event specs. The `audit_sse`
+registry to `backend.deps.connection_closer` so revocations close its streams —
+the handlers' closes, and the one `create_revocation_guard` registered on that
+closer — and auto-appends `audit_log_event_specs` to the event specs. Pass
+`audit_log_sse: {role?, keep_alive_ms?}` to change the stream's role or its
+keep-alive interval. The `audit_sse`
 field on both `AppServerContext` and `AppServer` is `AuditLogSse | null`.
 
 For manual control, use `create_audit_log_sse()` directly:
 
 ```typescript
-import {create_audit_log_sse} from '@fuzdev/fuz_app/realtime/sse_auth_guard.ts';
+import {create_audit_log_sse} from '@fuzdev/fuz_app/realtime/audit_log_sse.ts';
 import {create_realtime_closer} from '@fuzdev/fuz_app/actions/connection_closer.ts';
 
 // One closer for the backend: the audit stream joins it here, and the same
@@ -637,11 +642,20 @@ import {create_realtime_closer} from '@fuzdev/fuz_app/actions/connection_closer.
 const connection_closer = create_realtime_closer();
 const audit_sse = create_audit_log_sse({log, connection_closer});
 
-// In create_app_backend options — the closer, and the listener composed
-// inside the audit_factory body:
+// In create_app_backend options — the closer, and the listeners composed
+// inside the audit_factory body (the broadcast first, then the guard):
 connection_closer,
-audit_factory: ({db, log}) =>
-	create_audit_emitter({db, log, on_audit_event: audit_sse.on_audit_event}),
+audit_factory: ({db, log}) => {
+	const guard = create_revocation_guard(connection_closer, log);
+	return create_audit_emitter({
+		db,
+		log,
+		on_audit_event: (event) => {
+			audit_sse.on_audit_event(event);
+			guard(event);
+		}
+	});
+},
 
 // In create_route_specs:
 create_audit_log_route_specs({stream: audit_sse});
@@ -652,8 +666,8 @@ event_specs: audit_log_event_specs,
 
 Streams close two ways. The revocation handlers close them directly, once
 their transaction commits, through the `connection_closer` the registry joined
-— that close does not depend on the audit write. The guard repeats it when the
-audit row is announced: `role_grant_revoke` of a global grant (role match —
+— that close does not depend on the audit write. The revocation guard on that
+closer repeats it when the audit row is announced: `role_grant_revoke` of a global grant (role match —
 the guard is the only closer for this one), `session_revoke` (session-scoped), `token_revoke`
 (token-scoped), and the account-wide events (`session_revoke_all`,
 `token_revoke_all`, `password_change`, `logout`, `account_delete`,
@@ -662,8 +676,8 @@ attacker-submitted identifiers).
 The audit log SSE route subscribes with `scope = session_hash` and
 `groups = [account_id]`, so `session_revoke` closes only the affected tab
 while the coarser events close every stream for the account. For lower-level
-control, use `create_sse_auth_guard()` and `create_sse_connection_closer()`
-directly with a `SubscriberRegistry`.
+control, adapt a `SubscriberRegistry` with `create_sse_connection_closer()` and
+add it to the closer a `create_revocation_guard()` listens through.
 
 `on_audit_event` is the first-listener slot on `CreateAuditEmitterOptions`
 (defaults to a noop) — the consumer threads it into the emitter inside
@@ -907,18 +921,18 @@ The attack surface suite runs 3 test groups: per-method auth enforcement (JSON-R
 
 ### WebSocket Endpoint
 
-`register_ws_endpoint` mounts a JSON-RPC 2.0 WebSocket endpoint with the standard upgrade stack (origin check + auth + token scope + actor resolution + optional role) and per-message dispatch. It is the primitive `create_app_server`'s `ws_endpoints` mounts each endpoint with — an app built by `create_app_server` declares its endpoints there instead (§Server Assembly above), which also supplies the limiters, the origin default, the surface entry, and the audit guard. Called directly:
+`register_action_ws` mounts a JSON-RPC 2.0 WebSocket endpoint — one `GET` upgrade route guarded by the origin check, auth, token scope, actor resolution, and an optional role (the route-spec pipeline's guards, in its order; any method but `GET` or `HEAD` on the path is a 404) — and per-message dispatch. It is the primitive `create_app_server`'s `ws_endpoints` mounts each endpoint with — an app built by `create_app_server` declares its endpoints there instead (§Server Assembly above), which also supplies the limiters, the origin default, the surface entry, and the revocation guard. Called directly:
 
 ```typescript
-import { register_ws_endpoint } from '@fuzdev/fuz_app/actions/register_ws_endpoint.ts';
+import { register_action_ws } from '@fuzdev/fuz_app/actions/register_action_ws.ts';
 import { protocol_actions } from '@fuzdev/fuz_app/actions/protocol.ts';
 import { ROLE_ADMIN } from '@fuzdev/fuz_app/auth/role_schema.ts';
 
-const { transport } = register_ws_endpoint({
+const { transport } = register_action_ws({
 	path: '/api/ws',
 	app,
 	upgradeWebSocket, // from the runtime adapter (`@hono/deno`, or `createNodeWebSocket({app})` on Node)
-	allowed_origins, // required here — `validate_server_env`'s `allowed_origins`
+	allowed_origins, // required — `validate_server_env`'s `allowed_origins`
 	required_roles: [ROLE_ADMIN], // optional — omit for any authenticated account
 	actions: [...protocol_actions, ...my_actions],
 	db: backend.deps.db, // pool-level — perform_action wraps in db.transaction for side_effects: true
@@ -930,7 +944,7 @@ const { transport } = register_ws_endpoint({
 });
 ```
 
-Spread `protocol_actions` from `actions/protocol.ts` into `actions` — the bundle holds fuz_app's wire-protocol primitives (`heartbeat`, `cancel`, `peer/ping`) that complete disconnect detection, per-request cancel, and the server→client `peer/ping` round-trip. The bundle is not auto-spread by `register_ws_endpoint`; consumers spread it explicitly so the dispatch surface stays grep-traceable and a custom heartbeat / cancel / peer/ping can replace the default by omitting it from the spread.
+Spread `protocol_actions` from `actions/protocol.ts` into `actions` — the bundle holds fuz_app's wire-protocol primitives (`heartbeat`, `cancel`, `peer/ping`) that complete disconnect detection, per-request cancel, and the server→client `peer/ping` round-trip. The bundle is not auto-spread by `register_action_ws`; consumers spread it explicitly so the dispatch surface stays grep-traceable and a custom heartbeat / cancel / peer/ping can replace the default by omitting it from the spread.
 
 Domain deps (backend handle, in-memory caches, repositories) reach action handlers via **factory closures** — define your actions inside a `create_my_actions(deps, options)` factory the same way `create_admin_actions` / `create_account_actions` do, and the handlers close over whatever they need. Per-message `ActionContext` carries the per-request slots only (`auth`, `request_id`, `connection_id`, `request_client`, `db`, `pending_effects`, `client_ip`, `log`, `notify`, `signal`); HTTP RPC and WebSocket handlers see the same shape (`connection_id` / `request_client` are populated on WS, `undefined` on HTTP). Audit fan-out runs through `deps.audit` (see ./architecture.md §Fire-and-Forget Pending Effects).
 
@@ -939,24 +953,29 @@ validated in DEV + production; output validated DEV-only, logging an error
 on mismatch without throwing. See ./architecture.md §DEV-only Output
 Validation.
 
-`connection_closer` is required: the endpoint adds its transport to it, and every revocation handler closes through it after its transaction commits (./security.md §Closing on Revocation). Left out of the closer, a transport's sockets would outlive a revoked credential whenever no audit row reaches a listener — a failed audit write, a session or token cap eviction. The add is the mount's last step, so a mount that throws adds nothing, and it is permanent — its remover is not returned. Pass `null` for a transport no revocation has to reach, or to add the transport yourself and hold the remover `RealtimeCloser.add` returns.
+`connection_closer` is required: the endpoint adds its transport to it, and every revocation handler closes through it after its transaction commits (./security.md §Closing on Revocation), as does the revocation guard. Left out of the closer, a transport's sockets would outlive a revoked credential. The add is the mount's last step, so a mount that throws adds nothing, and it is permanent — its remover is not returned. Pass `null` for a transport no revocation has to reach, or to add the transport yourself and hold the remover `RealtimeCloser.add` returns.
 
-The returned `transport: BackendWebsocketTransport` is also what you hand to `create_ws_auth_guard(transport, log)` to repeat those closes from the audit chain — `create_app_server` registers it for endpoints mounted through `ws_endpoints`; wire it yourself when mounting by hand:
+Mounting by hand outside `create_app_server`, register the revocation guard yourself, over the closer holding your transports, to repeat those closes from the audit chain:
 
 ```typescript
 import {
-	create_ws_auth_guard,
+	create_realtime_closer,
+	create_revocation_guard,
 	type AuditEventHandler
-} from '@fuzdev/fuz_app/actions/transports_ws_auth_guard.ts';
+} from '@fuzdev/fuz_app/actions/connection_closer.ts';
 
-const ws_guard = create_ws_auth_guard(transport, log);
-const on_audit_event: AuditEventHandler = (event) => {
-	ws_guard(event);
-	// Add your own handlers (e.g. domain-specific cleanup) by appending more calls.
-};
+const connection_closer = create_realtime_closer();
 const backend = await create_app_backend({
 	// ...
-	audit_factory: ({ db, log }) => create_audit_emitter({ db, log, on_audit_event })
+	connection_closer,
+	audit_factory: ({ db, log }) => {
+		const guard = create_revocation_guard(connection_closer, log);
+		const on_audit_event: AuditEventHandler = (event) => {
+			guard(event);
+			// Add your own handlers (e.g. domain-specific cleanup) by appending more calls.
+		};
+		return create_audit_emitter({ db, log, on_audit_event });
+	}
 });
 ```
 
@@ -967,16 +986,15 @@ for `token_revoke`, and the whole account for `session_revoke_all`,
 `account_purge`; and for `role_grant_revoke` of a global grant, the account's
 sockets on endpoints whose `required_roles` list the role, with
 `WS_CLOSE_PERMISSION_REVOKED` (a socket admitted by a role gate receives every
-push its endpoint sends, which no message dispatch re-checks). It acts
+push its endpoint sends, which no message dispatch re-checks), and the
+account's audit streams when the stream's role is the one revoked. It acts
 only on `outcome === 'success'` events, to avoid acting on attacker-controlled
-identifiers — see `actions/transports_ws_auth_guard.ts` for the full
-rationale. It accepts any
-`ConnectionCloser`, so one guard over `backend.deps.connection_closer` covers
-every transport.
+identifiers — see `create_revocation_guard` in `actions/connection_closer.ts`
+for the full rationale.
 
 A socket is admitted only after its credential is re-read once the handshake completes: frames sent meanwhile wait and dispatch in order, a credential revoked or an acting actor soft-deleted mid-upgrade closes with `WS_CLOSE_SESSION_REVOKED`, a role in `required_roles` revoked mid-upgrade with `WS_CLOSE_PERMISSION_REVOKED`, and nothing the server pushes reaches the socket until then (./security.md §Connection Admission). On the client, `FrontendWebsocketClient` stays closed after a `WS_CLOSE_PERMISSION_REVOKED` close until `connect()` is called — a reconnect would be refused at the role gate — without setting `revoked` or `superseded`, and rejects its pending and queued requests with `forbidden`; `last_close_code` says why.
 
-An account holds at most `DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT` (50) connections on a transport. One more is always admitted, and the account's oldest is closed with `WS_CLOSE_CONNECTION_LIMIT` to make room. Pass `max_connections_per_account` to change the cap (`null` disables it) — on `register_ws_endpoint` / `WsEndpointSpec` for the transport the mount creates, or on your own `new BackendWebsocketTransport({max_connections_per_account})`; passing both the option and a `transport` throws. On the client, `FrontendWebsocketClient` treats that close as closed-until-the-user-acts: it doesn't reconnect (that would close a newer socket in turn), it isn't `revoked`, and `superseded` turns `true` until the next `connect()`:
+An account holds at most `DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT` (50) connections on a transport. One more is always admitted, and the account's oldest is closed with `WS_CLOSE_CONNECTION_LIMIT` to make room. Pass `max_connections_per_account` to change the cap (`null` disables it) — on `register_action_ws` / `WsEndpointSpec` for the transport the mount creates, or on your own `new BackendWebsocketTransport({max_connections_per_account})`; passing both the option and a `transport` throws. On the client, `FrontendWebsocketClient` treats that close as closed-until-the-user-acts: it doesn't reconnect (that would close a newer socket in turn), it isn't `revoked`, and `superseded` turns `true` until the next `connect()`:
 
 ```svelte
 {#if socket.superseded}

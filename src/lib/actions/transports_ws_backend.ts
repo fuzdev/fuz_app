@@ -48,7 +48,7 @@
  *
  * Every frame the server sends a connection goes through one path —
  * `send_to`, which responses, error frames and socket-scoped notifications
- * use, and the fan-outs (`send`, `broadcast_filtered`, `send_to_account`,
+ * use, and the fan-outs (`broadcast`, `broadcast_filtered`, `send_to_account`,
  * `request_connection`) — into the connection's `WsOutboundWriter`
  * (`actions/ws_outbound_writer.ts`). A send never waits and never throws: one
  * recipient that stopped reading must not slow a producer or another
@@ -114,27 +114,17 @@
  */
 
 import type { WSContext } from 'hono/ws';
-import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { create_uuid, type Uuid } from '../primitive_schemas.ts';
 
 import type {
-	JsonrpcMessageFromClientToServer,
 	JsonrpcMessageFromServerToClient,
 	JsonrpcNotification,
-	JsonrpcRequest,
 	JsonrpcRequestParams,
 	JsonrpcResponse,
-	JsonrpcResponseOrError,
 	JsonrpcErrorResponse
 } from '../http/jsonrpc.ts';
-import { jsonrpc_error_messages } from '../http/jsonrpc_errors.ts';
-import {
-	create_jsonrpc_error_response,
-	create_jsonrpc_request,
-	to_jsonrpc_message_id,
-	is_jsonrpc_request
-} from '../http/jsonrpc_helpers.ts';
+import { create_jsonrpc_request } from '../http/jsonrpc_helpers.ts';
 import {
 	WS_CLOSE_CONNECTION_LIMIT,
 	WS_CLOSE_GOING_AWAY,
@@ -145,9 +135,7 @@ import {
 	WS_CLOSE_PERMISSION_REVOKED_REASON,
 	WS_CLOSE_SESSION_REVOKED,
 	WS_CLOSE_SESSION_REVOKED_REASON,
-	utf8_length,
-	type Transport,
-	type TransportSendOptions
+	utf8_length
 } from './transports.ts';
 import {
 	PendingPeerRequests,
@@ -187,29 +175,6 @@ export interface ConnectionIdentity {
 	 */
 	required_roles: ReadonlyArray<string>;
 }
-
-/**
- * Structural capability for transports that can broadcast with a
- * per-connection ACL predicate. Named separately from `Transport` so the
- * broadcast API can feature-detect without importing a concrete class.
- *
- * `ConnectionIdentity` is the auth-gated identity shape used today. When a
- * second implementation (e.g. SSE backend transport) lands with a
- * different identity, consider parameterizing on `TIdentity`.
- */
-export interface FilterableBroadcastTransport extends Transport {
-	broadcast_filtered: (
-		message: JsonrpcMessageFromServerToClient,
-		predicate: (identity: ConnectionIdentity) => boolean
-	) => number;
-}
-
-/** Type guard for `FilterableBroadcastTransport`. */
-export const is_filterable_broadcast_transport = (
-	transport: Transport
-): transport is FilterableBroadcastTransport =>
-	'broadcast_filtered' in transport &&
-	typeof (transport as FilterableBroadcastTransport).broadcast_filtered === 'function';
 
 /**
  * Default per-account WebSocket connection cap, applied by
@@ -300,9 +265,7 @@ interface ConnectionEntry {
 	writer: WsOutboundWriter;
 }
 
-export class BackendWebsocketTransport implements FilterableBroadcastTransport {
-	readonly transport_name = 'backend_websocket_rpc' as const;
-
+export class BackendWebsocketTransport {
 	// Per-account connection cap; `null` = uncapped.
 	readonly #max_connections_per_account: number | null;
 
@@ -877,59 +840,28 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 		}
 	}
 
-	// `send` is the broadcast/notification surface: notifications fan out to
-	// every socket. A *request* has no single target here — server→client
-	// request/response is `request_connection`, which targets one socket and
-	// correlates the reply. `send(request)` is therefore a misuse and returns
-	// an error rather than guessing a recipient.
-	async send(
-		message: JsonrpcRequest,
-		options?: TransportSendOptions
-	): Promise<JsonrpcResponseOrError>;
-	async send(
-		message: JsonrpcNotification,
-		options?: TransportSendOptions
-	): Promise<JsonrpcErrorResponse | null>;
-	async send(
-		message: JsonrpcMessageFromClientToServer,
-		_options?: TransportSendOptions
-	): Promise<JsonrpcMessageFromServerToClient | null> {
-		if (is_jsonrpc_request(message)) {
-			return create_jsonrpc_error_response(
-				message.id,
-				jsonrpc_error_messages.internal_error(
-					'backend WebSocket transport cannot broadcast a request expecting a response; ' +
-						'use request_connection(connection_id, ...) to target a single socket'
-				)
-			);
-		}
-
-		try {
-			await this.#broadcast(message);
-			return null;
-		} catch (error) {
-			return create_jsonrpc_error_response(
-				to_jsonrpc_message_id(message),
-				jsonrpc_error_messages.internal_error(
-					to_error_message(error, 'failed to broadcast notification')
-				)
-			);
-		}
-	}
-
-	#broadcast(message: JsonrpcMessageFromServerToClient): Promise<void> {
+	/**
+	 * Broadcast a notification to every admitted connection — a registration
+	 * pending admission is not a connection yet. A server→client *request* has
+	 * no single target here; that is `request_connection`.
+	 *
+	 * A connection the message overflows is closed and not counted (module doc,
+	 * "Outbound bound").
+	 *
+	 * @returns the number of connections that accepted the message
+	 */
+	broadcast(message: JsonrpcNotification): number {
 		const serialized = JSON.stringify(message);
 		// measured once, not once per recipient that has to queue it
 		const bytes = utf8_length(serialized);
+		let count = 0;
 		// deleting the current entry during Map iteration is safe — an overflow
 		// removes its connection
 		for (const [connection_id, entry] of this.#connections) {
-			// a registration pending admission is not a connection yet
 			if (!entry.admitted) continue;
-			this.#deliver(connection_id, entry, serialized, bytes);
+			if (this.#deliver(connection_id, entry, serialized, bytes)) count++;
 		}
-		// TODO hack - remove if not ever needed, I assume this will need to be async so let's hold that assumption
-		return Promise.resolve();
+		return count;
 	}
 
 	/**
@@ -938,8 +870,8 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	 *
 	 * Used by the broadcast API when a consumer supplies a subscription ACL hook
 	 * (e.g. an event that only reaches the account that owns the resource it reports).
-	 * When no ACL is needed, callers should prefer `send(message)` / `#broadcast`
-	 * to skip the per-connection predicate overhead.
+	 * When no ACL is needed, callers should prefer `broadcast` to skip the
+	 * per-connection predicate overhead.
 	 *
 	 * A connection the message overflows is closed and not counted (module doc,
 	 * "Outbound bound").
@@ -1086,10 +1018,6 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	 */
 	is_registered(connection_id: Uuid): boolean {
 		return this.#connections.get(connection_id)?.admitted === true;
-	}
-
-	is_ready(): boolean {
-		return this.get_connection_count() > 0;
 	}
 
 	/**

@@ -51,7 +51,7 @@ import {
 	WS_CLOSE_SESSION_REVOKED,
 	WS_CLOSE_SESSION_REVOKED_REASON
 } from '#lib/actions/transports.ts';
-import { create_ws_auth_guard } from '#lib/actions/transports_ws_auth_guard.ts';
+import { create_revocation_guard } from '#lib/actions/connection_closer.ts';
 import type { BackendWebsocketTransport } from '#lib/actions/transports_ws_backend.ts';
 import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import { create_audit_log_route_specs } from '#lib/auth/audit_log_routes.ts';
@@ -72,7 +72,7 @@ import {
 	TOKEN_SCOPE_KEY
 } from '#lib/hono_context.ts';
 import { prefix_route_specs } from '#lib/http/route_spec.ts';
-import type { AuditLogSse } from '#lib/realtime/sse_auth_guard.ts';
+import type { AuditLogSse } from '#lib/realtime/audit_log_sse.ts';
 import { require_audit_sse } from '#lib/server/app_server.ts';
 import { create_test_app, type TestAccount, type TestApp } from '#lib/testing/app_server.ts';
 import { install_audit_drift_guard } from '#lib/testing/audit_drift_guard.ts';
@@ -111,7 +111,7 @@ interface Harness {
 	/** Its transport is in `deps.connection_closer`: the revocation handlers close it. */
 	ws_closed_by_handlers: WsEndpoint;
 	/**
-	 * Its transport is *not* in the closer; only a `create_ws_auth_guard`
+	 * Its transport is *not* in the closer; only a `create_revocation_guard`
 	 * listener reaches it — the wiring of a consumer that relies on the audit
 	 * listeners alone.
 	 */
@@ -130,13 +130,14 @@ const create_ws_endpoint = (
 		path: '/ws',
 		app: new Hono(),
 		upgradeWebSocket: stub.upgradeWebSocket,
+		allowed_origins: [],
 		actions: [heartbeat_action],
 		db: h.gated.db,
 		connection_closer: closed_by === 'handlers' ? deps.connection_closer : null,
 		heartbeat: false,
 		log
 	});
-	if (closed_by === 'listener') deps.audit.add_listener(create_ws_auth_guard(transport, log));
+	if (closed_by === 'listener') deps.audit.add_listener(create_revocation_guard(transport, log));
 	return {
 		transport,
 		open: async (account_id, credential) => {

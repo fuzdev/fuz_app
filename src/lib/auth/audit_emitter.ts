@@ -64,8 +64,8 @@
  *
  * Listeners are a documented registration seam — `create_app_server`
  * registers additional listeners via `add_listener` after the backend is
- * built (the factory-managed audit-log SSE, per-endpoint WS auth guards, any
- * `extra_audit_handlers` on a `WsEndpointSpec`) before the first request
+ * built (the factory-managed audit-log SSE, the revocation guard) before the
+ * first request
  * runs, and removes each through the remover `add_listener` returns when its
  * assembly fails or the server closes. Consumers can also register
  * listeners directly on the emitter they return from `audit_factory` for
@@ -213,7 +213,7 @@ export interface AuditEmitter {
 	 * during its fan-out — it iterates a snapshot — and the next one does not.
 	 *
 	 * `create_app_server` registers the factory-managed audit-log SSE
-	 * listener and per-endpoint WS auth guards here so
+	 * listener and the one revocation guard (`create_revocation_guard`) here so
 	 * SSE + WS fan-out compose on top of the consumer's `on_audit_event`
 	 * callback without shallow-copying `AppDeps`, and removes them when its
 	 * assembly fails or the server closes. Consumers can also register

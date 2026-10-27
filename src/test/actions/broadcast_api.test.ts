@@ -3,7 +3,7 @@
  *
  * Covers the three surface contracts:
  * - input validation (silent skip + log on bad input)
- * - unfiltered broadcast (via peer.send → transport broadcast)
+ * - unfiltered broadcast (`transport.broadcast`)
  * - ACL path (per-connection predicate via BackendWebsocketTransport)
  *
  * @module
@@ -12,20 +12,15 @@
 import { describe, assert, test } from 'vitest';
 import { z } from 'zod';
 
-import { ActionDispatcher } from '#lib/actions/action_dispatcher.ts';
-import { create_broadcast_api, type ShouldDeliverFn } from '#lib/actions/broadcast_api.ts';
+import {
+	create_broadcast_api,
+	type BroadcastTarget,
+	type ShouldDeliverFn
+} from '#lib/actions/broadcast_api.ts';
 import { BackendWebsocketTransport } from '#lib/actions/transports_ws_backend.ts';
-import { Transports, type Transport } from '#lib/actions/transports.ts';
-import type {
-	JsonrpcErrorResponse,
-	JsonrpcMessageFromClientToServer,
-	JsonrpcMessageFromServerToClient,
-	JsonrpcNotification,
-	JsonrpcRequest,
-	JsonrpcResponseOrError
-} from '#lib/http/jsonrpc.ts';
+import type { JsonrpcNotification } from '#lib/http/jsonrpc.ts';
 import type { ActionSpecUnion } from '#lib/actions/action_spec.ts';
-import { MinimalActionEnvironment, create_fake_ws } from '#lib/testing/ws_round_trip.ts';
+import { create_fake_ws } from '#lib/testing/ws_round_trip.ts';
 import { create_uuid } from '#lib/primitive_schemas.ts';
 
 const thing_changed_spec = {
@@ -40,17 +35,6 @@ const thing_changed_spec = {
 	description: 'Broadcast notification for tests'
 } satisfies ActionSpecUnion;
 
-const create_test_peer = (transport: BackendWebsocketTransport): ActionDispatcher => {
-	const env = new MinimalActionEnvironment([thing_changed_spec]);
-	const transports = new Transports();
-	transports.register_transport(transport);
-	return new ActionDispatcher({
-		environment: env,
-		transports,
-		default_send_options: { transport_name: transport.transport_name }
-	});
-};
-
 interface TestApi {
 	thing_changed: (input: { id: string; owner_account_id?: string }) => Promise<void>;
 }
@@ -58,9 +42,8 @@ interface TestApi {
 describe('create_broadcast_api', () => {
 	test('exposes a method per spec', () => {
 		const transport = new BackendWebsocketTransport();
-		const peer = create_test_peer(transport);
 		const api = create_broadcast_api<TestApi>({
-			peer,
+			transport,
 			specs: [thing_changed_spec],
 			log: null
 		});
@@ -69,7 +52,6 @@ describe('create_broadcast_api', () => {
 
 	test('unfiltered broadcast sends to every connection', async () => {
 		const transport = new BackendWebsocketTransport();
-		const peer = create_test_peer(transport);
 		const account_a = create_uuid();
 		const account_b = create_uuid();
 		const a = create_fake_ws();
@@ -78,7 +60,7 @@ describe('create_broadcast_api', () => {
 		transport.add_connection(b.ws, 'hash_b', account_b);
 
 		const api = create_broadcast_api<TestApi>({
-			peer,
+			transport,
 			specs: [thing_changed_spec],
 			log: null
 		});
@@ -94,13 +76,12 @@ describe('create_broadcast_api', () => {
 
 	test('validates input and skips send on failure', async () => {
 		const transport = new BackendWebsocketTransport();
-		const peer = create_test_peer(transport);
 		const { ws } = create_fake_ws();
 		transport.add_connection(ws, 'hash_a', create_uuid());
 
 		const log_errors: Array<Array<unknown>> = [];
 		const api = create_broadcast_api<TestApi>({
-			peer,
+			transport,
 			specs: [thing_changed_spec],
 			log: {
 				error: (...args: Array<unknown>) => log_errors.push(args),
@@ -119,22 +100,20 @@ describe('create_broadcast_api', () => {
 		assert.include(String(first[0]), 'input validation failed');
 	});
 
-	test('silently no-ops when no transport is ready', async () => {
+	test('a broadcast with no connections reaches nobody and does not throw', async () => {
 		const transport = new BackendWebsocketTransport(); // no connections
-		const peer = create_test_peer(transport);
 		const api = create_broadcast_api<TestApi>({
-			peer,
+			transport,
 			specs: [thing_changed_spec],
 			log: null
 		});
 		// Should not throw
 		await api.thing_changed({ id: 'x' });
-		assert.strictEqual(transport.is_ready(), false);
+		assert.strictEqual(transport.get_connection_count() > 0, false);
 	});
 
 	test('should_deliver filters per connection by identity', async () => {
 		const transport = new BackendWebsocketTransport();
-		const peer = create_test_peer(transport);
 		const account_a = create_uuid();
 		const account_b = create_uuid();
 		const a = create_fake_ws();
@@ -148,7 +127,7 @@ describe('create_broadcast_api', () => {
 		};
 
 		const api = create_broadcast_api<TestApi>({
-			peer,
+			transport,
 			specs: [thing_changed_spec],
 			log: null,
 			should_deliver
@@ -159,52 +138,39 @@ describe('create_broadcast_api', () => {
 		assert.strictEqual(b.sends.length, 0);
 	});
 
-	test('should_deliver logs error and skips when transport is not filterable', async () => {
-		// Non-filterable transport — no `broadcast_filtered` method.
-		class NoopTransport implements Transport {
-			readonly transport_name = 'noop' as const;
-			sent: Array<JsonrpcMessageFromClientToServer> = [];
-			async send(message: JsonrpcRequest): Promise<JsonrpcResponseOrError>;
-			async send(message: JsonrpcNotification): Promise<JsonrpcErrorResponse | null>;
-			async send(
-				message: JsonrpcMessageFromClientToServer
-			): Promise<JsonrpcMessageFromServerToClient | null> {
-				this.sent.push(message);
-				return null;
+	test('takes any broadcast target, filtered or not', async () => {
+		const unfiltered: Array<JsonrpcNotification> = [];
+		const filtered: Array<JsonrpcNotification> = [];
+		const target: BroadcastTarget = {
+			broadcast: (message) => {
+				unfiltered.push(message);
+				return 0;
+			},
+			broadcast_filtered: (message) => {
+				filtered.push(message as JsonrpcNotification);
+				return 0;
 			}
-			is_ready(): boolean {
-				return true;
-			}
-		}
-		const transport = new NoopTransport();
-		const transports = new Transports();
-		transports.register_transport(transport);
-		const env = new MinimalActionEnvironment([thing_changed_spec]);
-		const peer = new ActionDispatcher({
-			environment: env,
-			transports,
-			default_send_options: { transport_name: transport.transport_name }
-		});
-
-		const log_errors: Array<Array<unknown>> = [];
-		const api = create_broadcast_api<TestApi>({
-			peer,
+		};
+		await create_broadcast_api<TestApi>({
+			transport: target,
 			specs: [thing_changed_spec],
-			log: {
-				error: (...args: Array<unknown>) => log_errors.push(args),
-				info: () => {},
-				warn: () => {},
-				debug: () => {},
-				trace: () => {}
-			} as never,
+			log: null
+		}).thing_changed({ id: 'x' });
+		await create_broadcast_api<TestApi>({
+			transport: target,
+			specs: [thing_changed_spec],
+			log: null,
 			should_deliver: () => true
-		});
+		}).thing_changed({ id: 'y' });
 
-		await api.thing_changed({ id: 'x' });
-
-		assert.strictEqual(transport.sent.length, 0);
-		assert.strictEqual(log_errors.length, 1);
-		assert.include(String(log_errors[0]![0]), 'does not support per-connection filtering');
+		assert.deepStrictEqual(
+			unfiltered.map((m) => m.params),
+			[{ id: 'x' }]
+		);
+		assert.deepStrictEqual(
+			filtered.map((m) => m.params),
+			[{ id: 'y' }]
+		);
 	});
 
 	test('registers a method for each spec', () => {
@@ -213,16 +179,8 @@ describe('create_broadcast_api', () => {
 			method: 'other_thing_changed'
 		};
 		const transport = new BackendWebsocketTransport();
-		const transports = new Transports();
-		transports.register_transport(transport);
-		const env = new MinimalActionEnvironment([thing_changed_spec, other_spec]);
-		const peer = new ActionDispatcher({
-			environment: env,
-			transports,
-			default_send_options: { transport_name: transport.transport_name }
-		});
 		const api = create_broadcast_api<Record<string, (input: unknown) => Promise<void>>>({
-			peer,
+			transport,
 			specs: [thing_changed_spec, other_spec],
 			log: null
 		});
@@ -232,7 +190,6 @@ describe('create_broadcast_api', () => {
 
 	test('should_deliver sees validated payload, not raw input', async () => {
 		const transport = new BackendWebsocketTransport();
-		const peer = create_test_peer(transport);
 		const { ws } = create_fake_ws();
 		transport.add_connection(ws, 'hash_a', create_uuid());
 
@@ -244,7 +201,7 @@ describe('create_broadcast_api', () => {
 			return true;
 		};
 		const api = create_broadcast_api<TestApi>({
-			peer,
+			transport,
 			specs: [thing_changed_spec],
 			log: null,
 			should_deliver

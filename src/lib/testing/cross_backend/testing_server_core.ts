@@ -65,7 +65,7 @@ export interface PrepareWebsocketOptions {
 	 * before it is buffered whole. Bun takes twice it as its frame cap
 	 * (`maxPayloadLength`): past its cap Bun drops the socket without a close
 	 * frame, so the headroom leaves a message just over the limit to the
-	 * per-message check `register_ws_endpoint` makes, while a grossly oversized
+	 * per-message check `register_action_ws` makes, while a grossly oversized
 	 * one is still refused before it is buffered whole. Deno ignores it — its
 	 * upgrade takes no frame cap — leaving that per-message check alone. Every
 	 * runtime closes a message just over the limit with

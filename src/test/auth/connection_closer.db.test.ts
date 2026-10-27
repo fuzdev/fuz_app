@@ -1263,6 +1263,12 @@ describe_db('connection_closer wiring', (get_db) => {
 			own_transaction?: boolean;
 			max_sessions?: number;
 			max_tokens?: number;
+			/**
+			 * The site writes no revocation audit row (a cap eviction), so the
+			 * revocation guard has nothing to repeat: the handler's close is the
+			 * only one.
+			 */
+			no_revocation_row?: boolean;
 			arrange: (h: SiteHarness) => Promise<Arranged>;
 		}
 
@@ -1319,6 +1325,7 @@ describe_db('connection_closer wiring', (get_db) => {
 				// the token cap: minting one past it evicts the oldest, whose
 				// connections must end with it
 				name: 'account_token_create (cap eviction)',
+				no_revocation_row: true,
 				max_tokens: 1,
 				arrange: async (h) => {
 					const [evicted_id] = await token_ids(h);
@@ -1455,6 +1462,7 @@ describe_db('connection_closer wiring', (get_db) => {
 				// the session cap: a login past it evicts the oldest session, whose
 				// connections must end with it
 				name: 'POST /login (cap eviction)',
+				no_revocation_row: true,
 				own_transaction: true,
 				max_sessions: 1,
 				arrange: async (h) => {
@@ -1527,14 +1535,25 @@ describe_db('connection_closer wiring', (get_db) => {
 			assert.ok(!connection.stream.closed, `${label}: the stream stays open`);
 		};
 
-		/** The close the site made, the connections it ended, and the ones it left. */
+		/**
+		 * The close the site made, the connections it ended, and the ones it left.
+		 *
+		 * The probe is a member of the backend's closer, so the revocation guard
+		 * the server registers on that closer repeats the handler's close when the
+		 * audit row is announced: two closes of the same target, or the handler's
+		 * alone when no row was announced (`only_handler`).
+		 */
 		const assert_site_closed = (
 			arranged: Arranged,
 			closes: Array<ProbedClose>,
-			connections: { victim: LiveConnection; sibling: LiveConnection; bystander: LiveConnection }
+			connections: { victim: LiveConnection; sibling: LiveConnection; bystander: LiveConnection },
+			only_handler = false
 		): void => {
-			assert.strictEqual(closes.length, 1, 'exactly one close');
-			assert_close_call(closes[0], arranged.expected.method, arranged.expected.id);
+			if (only_handler) assert.strictEqual(closes.length, 1, 'the handler closed, alone');
+			else assert.strictEqual(closes.length, 2, "the handler's close and the guard's repeat");
+			for (const close of closes) {
+				assert_close_call(close, arranged.expected.method, arranged.expected.id);
+			}
 			assert_closed(connections.victim, 'victim');
 			// an account-wide close takes the sibling with it; a session- or
 			// token-scoped one must not
@@ -1550,18 +1569,19 @@ describe_db('connection_closer wiring', (get_db) => {
 
 					assert.strictEqual(await arranged.act(), true);
 
-					assert_site_closed(arranged, h.closes, connections);
-					const close = h.closes[0]!;
-					assert.strictEqual(
-						close.open_transactions,
-						0,
-						'the close ran with no transaction open — after the commit'
-					);
-					assert.strictEqual(
-						await close.committed,
-						true,
-						'a pool read made when the close ran saw the revocation'
-					);
+					assert_site_closed(arranged, h.closes, connections, site.no_revocation_row);
+					for (const close of h.closes) {
+						assert.strictEqual(
+							close.open_transactions,
+							0,
+							'the close ran with no transaction open — after the commit'
+						);
+						assert.strictEqual(
+							await close.committed,
+							true,
+							'a pool read made when the close ran saw the revocation'
+						);
+					}
 					await h.test_app.cleanup();
 				});
 
@@ -1609,7 +1629,8 @@ describe_db('connection_closer wiring', (get_db) => {
 						// the revocation committed before the throw, so the close it owes
 						// has run — a queued one would have been dropped with the throw
 						assert.strictEqual(await arranged.committed(h.db), true, 'the revocation stands');
-						assert_site_closed(arranged, h.closes, connections);
+						// the throw was the success row's emit, so no row was announced
+						assert_site_closed(arranged, h.closes, connections, true);
 						await h.test_app.cleanup();
 					}
 				);
@@ -1625,7 +1646,7 @@ describe_db('connection_closer wiring', (get_db) => {
 					h.failing.close = false;
 
 					assert.strictEqual(await arranged.committed(h.db), true, 'the revocation stands');
-					assert_site_closed(arranged, h.closes, connections);
+					assert_site_closed(arranged, h.closes, connections, site.no_revocation_row);
 					await h.test_app.cleanup();
 				});
 
@@ -1643,7 +1664,7 @@ describe_db('connection_closer wiring', (get_db) => {
 					assert.strictEqual(await arranged.committed(h.db), true);
 					// no audit row was written, so no listener ran: the handler's own
 					// close is what ended the connections
-					assert_site_closed(arranged, h.closes, connections);
+					assert_site_closed(arranged, h.closes, connections, true);
 					await h.test_app.cleanup();
 				});
 			});
@@ -1693,6 +1714,7 @@ describe_db('connection_closer wiring', (get_db) => {
 					path: '/ws',
 					app: new Hono(),
 					upgradeWebSocket: stub.upgradeWebSocket,
+					allowed_origins: [],
 					actions: create_account_actions(deps),
 					db: deps.db,
 					connection_closer: deps.connection_closer,

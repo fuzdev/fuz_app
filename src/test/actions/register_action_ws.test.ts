@@ -55,8 +55,11 @@ import { RateLimiter } from '#lib/rate_limiter.ts';
 import type { EffectErrorContext } from '#lib/http/pending_effects.ts';
 import { create_stub_db } from '#lib/testing/stubs.ts';
 import { create_test_audit_event } from '#lib/testing/entities.ts';
-import { create_realtime_closer, queue_connection_close } from '#lib/actions/connection_closer.ts';
-import { create_ws_auth_guard } from '#lib/actions/transports_ws_auth_guard.ts';
+import {
+	create_realtime_closer,
+	create_revocation_guard,
+	queue_connection_close
+} from '#lib/actions/connection_closer.ts';
 import { SessionId } from '#lib/auth/account_schema.ts';
 import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
 import type { AuditLogEvent } from '#lib/auth/audit_log_schema.ts';
@@ -145,7 +148,6 @@ const build_harness = async (opts: {
 	handlers: Record<string, (input: unknown, ctx: ActionContext) => unknown>;
 	credential_type?: CredentialType;
 	role?: string;
-	artificial_delay?: number;
 	on_socket_open?: (ctx: SocketOpenContext) => void | Promise<void>;
 	on_socket_close?: (ctx: SocketCloseContext) => void | Promise<void>;
 	heartbeat?: boolean | { timeout?: number };
@@ -167,9 +169,9 @@ const build_harness = async (opts: {
 		connection_closer: null,
 		app: new Hono(),
 		upgradeWebSocket: stub.upgradeWebSocket,
+		allowed_origins: [],
 		actions,
 		db: stub_db,
-		artificial_delay: opts.artificial_delay,
 		on_socket_open: opts.on_socket_open,
 		on_socket_close: opts.on_socket_close,
 		heartbeat: opts.heartbeat ?? false,
@@ -338,6 +340,7 @@ describe('register_action_ws', () => {
 			connection_closer: null,
 			app: new Hono(),
 			upgradeWebSocket: stub.upgradeWebSocket,
+			allowed_origins: [],
 			actions: [{ spec: echo_spec, handler: () => ({ value: 'x' }) }],
 			db: stub_db,
 			heartbeat: false,
@@ -745,33 +748,13 @@ describe('register_action_ws', () => {
 		assert.ok(captured.value.connection_id, 'connection_id should be set on WS handlers');
 	});
 
-	test('artificial_delay waits before dispatching', async () => {
-		let dispatched_at = 0;
-		const h = await build_harness({
-			handlers: {
-				echo: (input) => {
-					dispatched_at = Date.now();
-					return { value: (input as { value: string }).value };
-				}
-			},
-			artificial_delay: 30
-		});
-		await h.on_open();
-		const sent_at = Date.now();
-		await h.on_message({ jsonrpc: '2.0', id: 1, method: 'echo', params: { value: 'x' } });
-		assert.ok(
-			dispatched_at - sent_at >= 25,
-			`expected ≥25ms delay, got ${dispatched_at - sent_at}ms`
-		);
-	});
-
 	test('transport tracks connections on open and removes on close', async () => {
 		const h = await build_harness({ handlers: { echo: () => ({ value: 'x' }) } });
-		assert.strictEqual(h.transport.is_ready(), false);
+		assert.strictEqual(h.transport.get_connection_count() > 0, false);
 		await h.on_open();
-		assert.strictEqual(h.transport.is_ready(), true);
+		assert.strictEqual(h.transport.get_connection_count() > 0, true);
 		await h.on_close();
-		assert.strictEqual(h.transport.is_ready(), false);
+		assert.strictEqual(h.transport.get_connection_count() > 0, false);
 	});
 
 	test('close removes the connection when the adapter hands onClose its own WSContext', async () => {
@@ -785,6 +768,7 @@ describe('register_action_ws', () => {
 			connection_closer: null,
 			app: new Hono(),
 			upgradeWebSocket: stub.upgradeWebSocket,
+			allowed_origins: [],
 			actions: [{ spec: echo_spec, handler: () => ({ value: 'x' }) }],
 			db: create_stub_db(),
 			heartbeat: false,
@@ -811,6 +795,7 @@ describe('register_action_ws', () => {
 			connection_closer: null,
 			app: new Hono(),
 			upgradeWebSocket: stub.upgradeWebSocket,
+			allowed_origins: [],
 			actions: [{ spec: echo_spec, handler: () => ({ value: 'x' }) }],
 			db: stub_db,
 			transport: supplied,
@@ -933,6 +918,7 @@ describe('register_action_ws max_connections_per_account', () => {
 			connection_closer: null,
 			app: new Hono(),
 			upgradeWebSocket: stub.upgradeWebSocket,
+			allowed_origins: [],
 			actions: [{ spec: echo_spec, handler: () => ({ value: 'x' }) }],
 			db: create_stub_db(),
 			max_connections_per_account: 1,
@@ -988,6 +974,7 @@ describe('register_action_ws max_connections_per_account', () => {
 			connection_closer: null,
 			app: new Hono(),
 			upgradeWebSocket: stub.upgradeWebSocket,
+			allowed_origins: [],
 			actions: [{ spec: echo_spec, handler: () => ({ value: 'x' }) }],
 			db: create_stub_db(),
 			max_connections_per_account: 1,
@@ -1038,6 +1025,7 @@ describe('register_action_ws max_connections_per_account', () => {
 			connection_closer: null,
 			app: new Hono(),
 			upgradeWebSocket: stub.upgradeWebSocket,
+			allowed_origins: [],
 			actions: [{ spec: echo_spec, handler: () => ({ value: 'x' }) }],
 			db: create_stub_db(),
 			max_connections_per_account: null,
@@ -1062,6 +1050,7 @@ describe('register_action_ws max_connections_per_account', () => {
 			connection_closer: null,
 			app: new Hono(),
 			upgradeWebSocket: stub.upgradeWebSocket,
+			allowed_origins: [],
 			actions: [{ spec: echo_spec, handler: () => ({ value: 'x' }) }],
 			db: create_stub_db(),
 			heartbeat: false,
@@ -1091,6 +1080,7 @@ describe('register_action_ws max_connections_per_account', () => {
 						connection_closer: null,
 						app: new Hono(),
 						upgradeWebSocket: stub.upgradeWebSocket,
+						allowed_origins: [],
 						actions: [{ spec: echo_spec, handler: () => ({ value: 'x' }) }],
 						db: create_stub_db(),
 						transport: new BackendWebsocketTransport(),
@@ -1116,6 +1106,7 @@ describe('register_action_ws connection_closer', () => {
 			connection_closer,
 			app: new Hono(),
 			upgradeWebSocket: create_stub_upgrade().upgradeWebSocket,
+			allowed_origins: [],
 			actions,
 			db: create_stub_db(),
 			heartbeat: false,
@@ -1167,7 +1158,7 @@ describe('register_action_ws socket lifecycle hooks', () => {
 		const h = await build_harness({
 			handlers: { echo: () => ({ value: 'x' }) },
 			on_socket_open: () => {
-				is_ready_inside = captured_transport!.is_ready();
+				is_ready_inside = captured_transport!.get_connection_count() > 0;
 			}
 		});
 		captured_transport = h.transport;
@@ -1281,12 +1272,12 @@ describe('register_action_ws socket lifecycle hooks', () => {
 			on_socket_close: (ctx) => {
 				close_seen_connection_id = ctx.connection_id;
 				close_seen_account_id = ctx.identity.account_id;
-				transport_ready_inside_close = h.transport.is_ready();
+				transport_ready_inside_close = h.transport.get_connection_count() > 0;
 			}
 		});
 
 		await h.on_open();
-		assert.strictEqual(h.transport.is_ready(), true);
+		assert.strictEqual(h.transport.get_connection_count() > 0, true);
 		await h.on_close();
 
 		// the hook saw the open-time connection_id and identity, with the
@@ -1295,7 +1286,7 @@ describe('register_action_ws socket lifecycle hooks', () => {
 		assert.strictEqual(close_seen_connection_id, open_seen_connection_id);
 		assert.strictEqual(close_seen_account_id, 'acc_1');
 		assert.strictEqual(transport_ready_inside_close, false);
-		assert.strictEqual(h.transport.is_ready(), false);
+		assert.strictEqual(h.transport.get_connection_count() > 0, false);
 	});
 
 	test('a slow on_socket_close never holds the closed connection in the transport', async () => {
@@ -1341,7 +1332,7 @@ describe('register_action_ws socket lifecycle hooks', () => {
 		// audit guard path — clears identity map and calls ws.close()
 		const closed = h.transport.close_sockets_for_account('acc_1' as never);
 		assert.strictEqual(closed, 1);
-		assert.strictEqual(h.transport.is_ready(), false); // identity map already cleared
+		assert.strictEqual(h.transport.get_connection_count() > 0, false); // identity map already cleared
 		// Hono would fire onClose in response to ws.close(); simulate that.
 		await h.on_close();
 
@@ -1358,10 +1349,10 @@ describe('register_action_ws socket lifecycle hooks', () => {
 		});
 
 		await h.on_open();
-		assert.strictEqual(h.transport.is_ready(), true);
+		assert.strictEqual(h.transport.get_connection_count() > 0, true);
 		// Must not throw despite the hook throwing.
 		await h.on_close();
-		assert.strictEqual(h.transport.is_ready(), false);
+		assert.strictEqual(h.transport.get_connection_count() > 0, false);
 	});
 
 	test('on_socket_close is skipped when the socket never opened', async () => {
@@ -1413,6 +1404,7 @@ describe('register_action_ws self-revocation', () => {
 			connection_closer: null,
 			app: new Hono(),
 			upgradeWebSocket: stub.upgradeWebSocket,
+			allowed_origins: [],
 			actions: [
 				{
 					spec: revoke_self_spec,
@@ -1486,7 +1478,7 @@ describe('register_action_ws self-revocation', () => {
 		const { timeline, request } = await open_self_revoking_socket((ctx, transport) => {
 			if (!guarded) {
 				guarded = true;
-				audit.add_listener(create_ws_auth_guard(transport, log));
+				audit.add_listener(create_revocation_guard(transport, log));
 			}
 			audit.emit(ctx, {
 				event_type: 'session_revoke',
@@ -1578,6 +1570,7 @@ describe('register_action_ws a server-closed socket dispatches nothing', () => {
 			connection_closer: null,
 			app: new Hono(),
 			upgradeWebSocket: stub.upgradeWebSocket,
+			allowed_origins: [],
 			actions: [
 				{
 					spec: echo_spec,
@@ -2114,6 +2107,7 @@ describe('register_action_ws rate limit', () => {
 					connection_closer: null,
 					app: new Hono(),
 					upgradeWebSocket: stub.upgradeWebSocket,
+					allowed_origins: [],
 					actions: [{ spec: bad_spec, handler: () => ({ value: 'x' }) }],
 					db: stub_db,
 					heartbeat: false,
@@ -2319,48 +2313,6 @@ describe('register_action_ws inbound dispatch', () => {
 		// answered, the id is free again — an error answer releases it like a result
 		await h.on_message({ jsonrpc: '2.0', id: 9, method: 'quick' });
 		assert.strictEqual(frames_for(9)[1]?.result, 'quick');
-	});
-
-	test('a duplicate during artificial_delay is refused — the request is live from acceptance', async () => {
-		vi.useFakeTimers();
-		try {
-			const stub = create_stub_upgrade();
-			register_action_ws({
-				path: '/ws',
-				connection_closer: null,
-				app: new Hono(),
-				upgradeWebSocket: stub.upgradeWebSocket,
-				actions: [{ spec: quick_spec, handler: () => 'quick' }],
-				db: create_stub_db(),
-				artificial_delay: 100,
-				heartbeat: false,
-				action_ip_rate_limiter: null,
-				action_account_rate_limiter: null,
-				log
-			});
-			const events = await stub.get_create_events()(
-				create_fake_hono_context({ credential_type: 'session' })
-			);
-			const fake = create_fake_ws();
-			await (events.onOpen?.(new Event('open'), fake.ws) as Promise<void> | void);
-			const send = (id: number) =>
-				dispatch_ws_message(
-					events.onMessage!,
-					new MessageEvent('message', {
-						data: JSON.stringify({ jsonrpc: '2.0', id, method: 'quick' })
-					}),
-					fake.ws
-				);
-			const first = send(1);
-			await send(1);
-			assert.strictEqual(fake.sends.length, 1);
-			assert_duplicate_refusal(parse_json(fake.sends[0]!), 1);
-			await vi.advanceTimersByTimeAsync(100);
-			await first;
-			assert.strictEqual(parse_json(fake.sends[1]!).result, 'quick');
-		} finally {
-			vi.useRealTimers();
-		}
 	});
 
 	test('past the ceiling a request is shed with queue_overflow and the socket keeps serving', async () => {

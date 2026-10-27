@@ -133,9 +133,9 @@ its registered listeners + optional `AuditLogConfig`. Its methods:
 - `is_tracking_inflight()` — whether the emitter was built with `track_inflight: true`, i.e. whether `drain_inflight` can wait on anything. `_testing_drain_effects` reports it as `tracked`, and `cross_drain_effects` (every `list_audit_events` read) refuses `false` (twin of Rust `AuditEmitter::is_tracking_inflight`)
 
 Listeners are closure-private; they change only through `add_listener` and
-its removers. `create_app_server` registers the audit-log SSE listener,
-per-endpoint WS auth guards, and any `extra_audit_handlers` via `add_listener`
-so SSE + WS fan-out compose on top of the consumer's `on_audit_event` callback
+its removers. `create_app_server` registers the audit-log SSE listener and the
+one revocation guard (`create_revocation_guard`) via `add_listener`
+so SSE fan-out and revocation closes compose on top of the consumer's `on_audit_event` callback
 without shallow-copying `AppDeps`, and removes them when its assembly fails or
 `AppServer.close` runs — the emitter outlives any one server on its backend.
 `notify` iterates a snapshot so a listener registered mid-fan-out fires only on
@@ -165,8 +165,8 @@ both satisfy it.
 successful row invalidates (`RevocationScope`: `none` / `session` / `token` /
 `account` / `role`), and `to_revocation_scope(event_type)` reads it (an unknown
 event type is `none`). Typed over `AuditEventType`, so a new event type does not
-compile until it declares its scope. Both revocation listeners
-(`create_ws_auth_guard`, `create_sse_auth_guard`) dispatch on it. Twin of the
+compile until it declares its scope. The revocation listener
+(`create_revocation_guard`, `actions/connection_closer.ts`) dispatches on it. Twin of the
 `revocation_scope` column on the Rust `AUDIT_EVENT_SPECS`.
 
 **Drift counters** (`auth/audit_log_queries.ts`) — `audit_metadata_validation_failures`

@@ -57,10 +57,10 @@ describe('BackendWebsocketTransport.add_connection', () => {
 
 	test('is_ready reflects connection count', () => {
 		const t = new BackendWebsocketTransport();
-		assert.strictEqual(t.is_ready(), false);
+		assert.strictEqual(t.get_connection_count() > 0, false);
 		const { ws } = create_fake_ws();
 		t.add_connection(ws, HASH_A, ACCOUNT_A);
-		assert.strictEqual(t.is_ready(), true);
+		assert.strictEqual(t.get_connection_count() > 0, true);
 	});
 
 	test('get_connection_count tracks add/remove', () => {
@@ -608,12 +608,15 @@ describe('BackendWebsocketTransport log', () => {
 		t.add_connection(ok.ws, HASH_B, ACCOUNT_B);
 		const notification: JsonrpcNotification = { jsonrpc: '2.0', method: 'ping' };
 
-		assert.strictEqual(await t.send(notification), null);
+		t.broadcast(notification);
 		assert.strictEqual(ok.sends.length, 1);
 		assert.deepStrictEqual(
 			errors.map((args) => args[0]),
 			['error sending to client:']
 		);
+		// a later turn, so the next fan-out is not part of the same synchronous run
+		// (whose frames after the first wait for the write pump)
+		await new Promise((resolve) => setTimeout(resolve, 0));
 
 		// the filtered fan-out counts only the send that went through
 		assert.strictEqual(
@@ -905,14 +908,14 @@ describe('BackendWebsocketTransport two-phase registration', () => {
 
 		assert.strictEqual(t.get_connection_count(), 0);
 		assert.strictEqual(t.get_pending_connection_count(), 1);
-		assert.strictEqual(t.is_ready(), false);
+		assert.strictEqual(t.get_connection_count() > 0, false);
 		assert.strictEqual(t.is_registered(id), false);
 
 		assert.strictEqual(t.admit(id), true);
 
 		assert.strictEqual(t.get_connection_count(), 1);
 		assert.strictEqual(t.get_pending_connection_count(), 0);
-		assert.strictEqual(t.is_ready(), true);
+		assert.strictEqual(t.get_connection_count() > 0, true);
 		assert.strictEqual(t.is_registered(id), true);
 	});
 
@@ -922,7 +925,7 @@ describe('BackendWebsocketTransport two-phase registration', () => {
 		const id = t.register_pending(fake.ws, HASH_A, ACCOUNT_A);
 
 		// every delivery path skips it
-		assert.strictEqual(await t.send(notification), null);
+		assert.strictEqual(t.broadcast(notification), 0);
 		assert.strictEqual(
 			t.broadcast_filtered(notification, () => true),
 			0
@@ -936,7 +939,7 @@ describe('BackendWebsocketTransport two-phase registration', () => {
 
 		assert.strictEqual(t.admit(id), true);
 
-		assert.strictEqual(await t.send(notification), null);
+		assert.strictEqual(t.broadcast(notification), 1);
 		assert.strictEqual(
 			t.broadcast_filtered(notification, () => true),
 			1

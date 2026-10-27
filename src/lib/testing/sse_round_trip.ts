@@ -82,10 +82,11 @@ export interface SseRouteTestOptions {
 	db_factories?: Array<DbFactory>;
 	/**
 	 * Backend audit event callback — threaded to `create_test_app_server`.
-	 * Use to wire a close-on-revoke guard for consumer SSE registries
-	 * (e.g., via `create_sse_auth_guard`) so `session_revoke_all` closes the
-	 * tested streams — not needed for a registry the route joined to
-	 * `ctx.deps.connection_closer`, which the revoking handler closes itself.
+	 * Use to wire a close-on-revoke guard for consumer SSE registries (e.g.
+	 * `create_revocation_guard(create_sse_connection_closer(registry, role), log)`)
+	 * so `session_revoke_all` closes the tested streams — not needed for a
+	 * registry the route joined to `ctx.deps.connection_closer`, which the
+	 * revoking handler closes itself.
 	 */
 	on_audit_event?: (event: AuditLogEvent) => void;
 	/**

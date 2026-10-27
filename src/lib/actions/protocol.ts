@@ -56,3 +56,23 @@ export const protocol_actions: ReadonlyArray<Action> = [
 export const protocol_action_specs: ReadonlyArray<ActionSpecUnion> = protocol_actions.map(
 	(a) => a.spec
 );
+
+const PROTOCOL_METHODS: ReadonlySet<string> = new Set(protocol_actions.map((a) => a.spec.method));
+
+/**
+ * The WebSocket action set for an RPC action list: `protocol_actions` first,
+ * then every action of `rpc_actions` that is not a protocol action — so one
+ * set of handler closures serves both transports, and a protocol action the
+ * RPC list carries (`peer_ping_action`, which an HTTP caller must reach to be
+ * refused `peer_no_transport`) is not registered twice.
+ *
+ * What a `WsEndpointSpec` that omits `actions` serves, from the server's sole
+ * RPC endpoint (`actions/ws_endpoint_spec.ts`).
+ *
+ * @param rpc_actions - the RPC endpoint's actions
+ * @returns the WS endpoint's actions
+ */
+export const to_ws_actions = (rpc_actions: ReadonlyArray<Action>): Array<Action> => [
+	...protocol_actions,
+	...rpc_actions.filter((a) => !PROTOCOL_METHODS.has(a.spec.method))
+];

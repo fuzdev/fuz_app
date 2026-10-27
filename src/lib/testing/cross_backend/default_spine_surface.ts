@@ -81,7 +81,7 @@ export interface SpineRpcEndpointsOptions {
 	 * *is* the connection registry, so a separate instance would fan out to an
 	 * empty registry and reach nobody (silently). The TS spine binary
 	 * constructs one `ws_transport` and threads it both here and into
-	 * `register_ws_endpoint`.
+	 * `register_action_ws`.
 	 *
 	 * Omitted (the default) for the shared `create_spine_surface_spec` path —
 	 * surface generation doesn't depend on it, and it must stay absent there so

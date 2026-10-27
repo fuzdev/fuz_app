@@ -359,7 +359,7 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 		bootstrap: bootstrap_token_path
 			? { mode: 'live', token_path: bootstrap_token_path }
 			: { mode: 'disabled' },
-		// Auto-wires the SSE registry + auth guard + broadcaster and sets
+		// Auto-wires the SSE registry + broadcaster (and the revocation guard) and sets
 		// `ctx.audit_sse`, which `create_spine_route_specs` reads to mount
 		// `GET /api/admin/audit/stream` (`audit_log_event_specs` join the
 		// surface automatically). Drives the cross-process SSE self-test.

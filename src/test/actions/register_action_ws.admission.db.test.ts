@@ -238,6 +238,7 @@ const create_endpoint = (
 		connection_closer: null,
 		app: new Hono(),
 		upgradeWebSocket: stub.upgradeWebSocket,
+		allowed_origins: [],
 		actions: [echo_spec, mark_spec].map((spec) => ({
 			spec,
 			handler: (input: unknown) => {
@@ -1115,7 +1116,7 @@ describe_db('register_action_ws admission', (get_db) => {
 			const c = await create_upgrade_context(db, account_id, session);
 
 			const { socket, stalled } = await open_stalled(endpoint, c);
-			await endpoint.transport.send(notification);
+			endpoint.transport.broadcast(notification);
 			assert.strictEqual(endpoint.transport.send_to_account(account_id, notification), 0);
 			assert.deepStrictEqual(socket.fake.sends, []);
 

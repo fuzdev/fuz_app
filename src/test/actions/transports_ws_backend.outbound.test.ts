@@ -132,7 +132,7 @@ describe('BackendWebsocketTransport outbound overflow', () => {
 			t.broadcast_filtered(notification('later'), () => true),
 			0
 		);
-		assert.strictEqual(await t.send(notification('later')), null);
+		assert.strictEqual(t.broadcast(notification('later')), 0);
 		assert.deepStrictEqual(await t.request_connection(id, 'peer/ping', {}), {
 			ok: false,
 			error: { kind: 'connection_gone' }
@@ -233,7 +233,7 @@ describe('BackendWebsocketTransport outbound overflow', () => {
 		for (const fan_out of [
 			(t: BackendWebsocketTransport) => t.broadcast_filtered(message, () => true),
 			(t: BackendWebsocketTransport) => t.send_to_account(ACCOUNT_A, message),
-			(t: BackendWebsocketTransport) => void t.send(message)
+			(t: BackendWebsocketTransport) => t.broadcast(message)
 		]) {
 			// room for exactly one waiting copy of the message, to the byte
 			const fits = new BackendWebsocketTransport({

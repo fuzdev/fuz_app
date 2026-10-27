@@ -2,7 +2,7 @@ import '../assert_dev_env.ts';
 
 /**
  * Cross-process **role-gated WebSocket** suite — a socket admitted by an
- * endpoint's role gate (`register_ws_endpoint`'s `required_roles`) loses it
+ * endpoint's role gate (`register_action_ws`'s `required_roles`) loses it
  * with the role.
  *
  * A role gate decides who may hold a socket, and so who receives the

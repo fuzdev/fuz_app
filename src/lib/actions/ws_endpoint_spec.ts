@@ -3,7 +3,8 @@
  * by `create_app_server`'s `ws_endpoints` option (mirror of `RpcEndpointSpec`
  * for HTTP RPC).
  *
- * Also `resolve_ws_endpoints`, which fills in the server's `allowed_origins`.
+ * Also `resolve_ws_endpoints`, which fills in the server's `allowed_origins`
+ * and, for a spec that omits them, the actions of the sole RPC endpoint.
  *
  * Lives in its own module so both `server/app_server.ts` (which mounts
  * endpoints from these specs) and `http/surface.ts` (which threads the
@@ -21,14 +22,15 @@ import type {
 	SocketCloseContext,
 	SocketOpenContext
 } from './register_action_ws.ts';
-import type { AuditEventHandler } from './transports_ws_auth_guard.ts';
+import type { RpcEndpointSpec } from '../http/surface.ts';
+import { to_ws_actions } from './protocol.ts';
 
 /**
  * Declarative description of a WebSocket endpoint to be auto-mounted by
  * `create_app_server`.
  *
  * Single source of truth for mount + surface — the same array drives
- * `register_ws_endpoint`-style upgrade wiring AND the `surface.ws_endpoints`
+ * `register_action_ws` upgrade wiring AND the `surface.ws_endpoints`
  * slot emitted into `AppSurface`, so consumers cannot drift their declared
  * actions from what dispatch actually serves.
  */
@@ -49,14 +51,20 @@ export interface WsEndpointSpec {
 	 * from `actions/protocol.ts` first to complete the
 	 * disconnect-detection + per-request cancel pairing with the frontend
 	 * client.
+	 *
+	 * Omit to serve the actions of the server's sole `rpc_endpoints` entry —
+	 * `to_ws_actions` of its list, the protocol actions first — so one action
+	 * set (one set of handler closures) runs on both transports. Assembly
+	 * throws when it is omitted and the server resolves no RPC endpoint or
+	 * more than one.
 	 */
-	actions: ReadonlyArray<Action>;
+	actions?: ReadonlyArray<Action>;
 	/**
 	 * Roles permitted to upgrade — any-of disjunction, global grants only.
 	 * Omit (or pass `[]`) to skip the upgrade-time role gate; per-action
 	 * `auth` on each spec still applies at dispatch time via
 	 * `perform_action`. Pass `[ROLE_ADMIN]` for an admin-only WS endpoint.
-	 * Held for the socket's life — see `register_ws_endpoint`'s
+	 * Held for the socket's life — see `register_action_ws`'s
 	 * `required_roles`.
 	 */
 	required_roles?: ReadonlyArray<RoleName>;
@@ -89,8 +97,6 @@ export interface WsEndpointSpec {
 	 * Cloudflare idle timeout) already owns disconnect detection.
 	 */
 	heartbeat?: boolean | ServerHeartbeatOptions;
-	/** Optional per-message delay for testing loading states. */
-	artificial_delay?: number;
 	/**
 	 * Cap on one inbound message, in bytes. See
 	 * `RegisterActionWsOptions.max_message_bytes`.
@@ -110,72 +116,59 @@ export interface WsEndpointSpec {
 	 * `RegisterActionWsOptions.on_socket_close`.
 	 */
 	on_socket_close?: (ctx: SocketCloseContext) => void | Promise<void>;
-	/**
-	 * Default `true` — registers `create_ws_auth_guard` against this
-	 * endpoint's transport via `deps.audit.add_listener`, so a revocation's
-	 * audit row closes its sockets. Wiring is deduped by
-	 * transport **reference identity** (`WeakSet<BackendWebsocketTransport>`),
-	 * so two `WsEndpointSpec`s sharing the exact same instance get a
-	 * single listener.
-	 *
-	 * The guard repeats what the revocation handlers already do: the
-	 * transport is always in `deps.connection_closer`, whatever this flag
-	 * says, and the handlers close through it after their commit. Turning the
-	 * guard off leaves those closes in place.
-	 *
-	 * **Shared-transport OR-semantics.** When multiple `WsEndpointSpec`s
-	 * share one transport, the guard is wired iff **any** of those specs
-	 * has `auth_guard !== false`. To opt out for a shared transport,
-	 * every sibling spec must pass `auth_guard: false`. The default is
-	 * "fail safe" — easier to enable than disable, and predictable
-	 * regardless of spec order.
-	 *
-	 * Reference-identity dedupe means **wrapped or proxied transports
-	 * dedupe as separate entries** — a consumer threading every
-	 * transport through a tracing / DI / metrics shim will get a fresh
-	 * listener per shimmed reference, even when the underlying
-	 * transport is the same. If you wrap or proxy, set `auth_guard:
-	 * false` on the duplicate `WsEndpointSpec`s and compose
-	 * `create_ws_auth_guard` against the underlying transport once.
-	 *
-	 * Set `false` when a consumer needs to compose their own callback
-	 * from scratch — or to opt out of the auto-wiring entirely.
-	 *
-	 * The guard is also the one closer of a role revocation: a revoked
-	 * global grant of a role in `required_roles` closes the account's
-	 * sockets on this endpoint with `WS_CLOSE_PERMISSION_REVOKED`. With the
-	 * guard off for a transport, nothing closes them.
-	 */
-	auth_guard?: boolean;
-	/**
-	 * Extra audit-event handlers registered via `deps.audit.add_listener`
-	 * AFTER the standard `auth_guard` wiring (when enabled). By the time
-	 * these run, the standard guard may have already closed sockets. Use
-	 * for custom analytics, a consumer's own revocation events, etc.
-	 *
-	 * Never deduped — consumer-owned; pass the same handler twice and it
-	 * fires twice.
-	 */
-	extra_audit_handlers?: ReadonlyArray<AuditEventHandler>;
 }
 
-/** A `WsEndpointSpec` whose `allowed_origins` is resolved — its own, or the server's. */
-export type ResolvedWsEndpointSpec = WsEndpointSpec & { allowed_origins: ReadonlyArray<RegExp> };
+/**
+ * A `WsEndpointSpec` with `allowed_origins` and `actions` resolved — its own,
+ * or the server's.
+ */
+export type ResolvedWsEndpointSpec = WsEndpointSpec & {
+	allowed_origins: ReadonlyArray<RegExp>;
+	actions: ReadonlyArray<Action>;
+};
+
+/** What `resolve_ws_endpoints` fills a spec's omitted fields from. */
+export interface ResolveWsEndpointsOptions {
+	/** The server's allowlist, the default `allowed_origins`. */
+	allowed_origins: ReadonlyArray<RegExp>;
+	/**
+	 * The server's resolved RPC endpoints — a spec that omits `actions` serves
+	 * the sole entry's, through `to_ws_actions`.
+	 */
+	rpc_endpoints: ReadonlyArray<RpcEndpointSpec> | undefined;
+}
 
 /**
- * Fill in the server's `allowed_origins` on each WS endpoint spec that omits
- * its own, so every consumer of the resolved list — the mount, the surface —
- * reads the effective patterns.
+ * Fill in each WS endpoint spec's omitted `allowed_origins` (the server's) and
+ * `actions` (the sole RPC endpoint's, through `to_ws_actions`), so every
+ * consumer of the resolved list — the mount, the surface — reads the effective
+ * values.
  *
  * @param ws_endpoints - the resolved `ws_endpoints` option
- * @param allowed_origins - the server's allowlist, the default
- * @returns the specs, each with `allowed_origins` set
+ * @param options - the server's allowlist and RPC endpoints, the defaults
+ * @returns the specs, each with `allowed_origins` and `actions` set
+ * @throws Error when a spec omits `actions` and `rpc_endpoints` does not hold
+ *   exactly one endpoint — there is no single action set to serve
  */
 export const resolve_ws_endpoints = (
 	ws_endpoints: ReadonlyArray<WsEndpointSpec> | undefined,
-	allowed_origins: ReadonlyArray<RegExp>
+	options: ResolveWsEndpointsOptions
 ): Array<ResolvedWsEndpointSpec> | undefined =>
-	ws_endpoints?.map((endpoint) => ({
-		...endpoint,
-		allowed_origins: endpoint.allowed_origins ?? allowed_origins
-	}));
+	ws_endpoints?.map((endpoint) => {
+		let { actions } = endpoint;
+		if (actions === undefined) {
+			const rpc_endpoints = options.rpc_endpoints ?? [];
+			if (rpc_endpoints.length !== 1) {
+				throw new Error(
+					`ws_endpoints ${endpoint.path} omits actions, which serves the sole rpc_endpoints entry's, ` +
+						`but ${rpc_endpoints.length} rpc endpoints resolved — pass the endpoint's actions explicitly`
+				);
+			}
+			actions = to_ws_actions(rpc_endpoints[0]!.actions);
+		}
+		return {
+			...endpoint,
+			allowed_origins: endpoint.allowed_origins ?? options.allowed_origins,
+			actions
+		};
+	});

@@ -26,7 +26,7 @@ import {
 	create_sse_connection_closer,
 	audit_log_event_specs,
 	type AuditLogSse
-} from '../realtime/sse_auth_guard.ts';
+} from '../realtime/audit_log_sse.ts';
 import { BaseServerEnv } from './env.ts';
 import {
 	RateLimiter,
@@ -78,13 +78,13 @@ import { fuz_auth_guard_resolver } from '../auth/auth_guard_resolver.ts';
 import { create_fuz_authorization_handler } from '../auth/request_context.ts';
 import { create_body_limit_middleware } from '../http/body_limit.ts';
 import { create_rpc_endpoint } from '../actions/action_rpc.ts';
-import { register_ws_endpoint } from '../actions/register_ws_endpoint.ts';
+import { register_action_ws } from '../actions/register_action_ws.ts';
 import {
 	resolve_ws_endpoints,
 	type ResolvedWsEndpointSpec,
 	type WsEndpointSpec
 } from '../actions/ws_endpoint_spec.ts';
-import { create_ws_auth_guard } from '../actions/transports_ws_auth_guard.ts';
+import { create_revocation_guard } from '../actions/connection_closer.ts';
 import type { BackendWebsocketTransport } from '../actions/transports_ws_backend.ts';
 import { start_auth_cleanup, type AuthCleanupScheduleOptions } from '../auth/cleanup.ts';
 
@@ -315,10 +315,12 @@ export interface AppServerOptions {
 	 * this option is set, the field is non-null. Use `require_audit_sse(ctx)` to
 	 * assert the invariant in route factories that depend on it.
 	 *
-	 * Pass `true` for defaults (admin role), or `{role: 'custom'}` for a custom role.
-	 * Omit to wire audit SSE manually.
+	 * Pass `true` for defaults (admin role), or `{role: 'custom'}` for a custom
+	 * role; `keep_alive_ms` sets the streams' keep-alive interval (a test server
+	 * shortens it; default `SSE_KEEP_ALIVE_INTERVAL_MS`). Omit to wire audit SSE
+	 * manually.
 	 */
-	audit_log_sse?: true | { role?: string };
+	audit_log_sse?: true | { role?: string; keep_alive_ms?: number | null };
 
 	/**
 	 * Schedule the auth cleanup beside the server: `start_auth_cleanup` over
@@ -401,8 +403,13 @@ export interface AppServerOptions {
 	/**
 	 * WebSocket endpoint specs — single source of truth for both surface
 	 * generation *and* live dispatch. Each entry is auto-mounted via
-	 * `register_ws_endpoint` against the assembled Hono app on every
-	 * runtime, so consumers don't call `register_ws_endpoint` themselves.
+	 * `register_action_ws` against the assembled Hono app on every
+	 * runtime, so consumers don't call `register_action_ws` themselves.
+	 *
+	 * An entry that omits `actions` serves the actions of the sole
+	 * `rpc_endpoints` entry (`to_ws_actions`: the protocol actions first, then
+	 * the RPC set), so one action set runs on both transports; assembly throws
+	 * unless exactly one RPC endpoint resolves.
 	 *
 	 * Accepts either an array (evaluated eagerly) or a factory
 	 * `(ctx: AppServerContext) => ReadonlyArray<WsEndpointSpec>`
@@ -428,18 +435,10 @@ export interface AppServerOptions {
 	 * mounts (Hono would silently shadow them otherwise).
 	 *
 	 * Every mounted transport is added to `deps.connection_closer`, so
-	 * the revocation handlers' post-commit closes reach its sockets —
-	 * unconditionally, since those closes are what ends a revoked
-	 * credential's connections. `AppServer.close` removes it again.
-	 *
-	 * Each spec's `auth_guard?` defaults to `true` — the factory
-	 * registers `create_ws_auth_guard` against the mounted transport via
-	 * `deps.audit.add_listener`, repeating the close on the audit row.
-	 * Wiring is deduped by transport **reference identity** so two specs
-	 * sharing one `BackendWebsocketTransport` instance get a single
-	 * listener; wrapped / proxied transports dedupe as separate
-	 * entries (set `auth_guard: false` on duplicates and compose
-	 * against the underlying transport once).
+	 * the revocation handlers' post-commit closes reach its sockets, and so
+	 * does the one revocation guard `create_app_server` registers on that
+	 * closer (`create_revocation_guard`) when it mounts a WS endpoint or the
+	 * audit stream. `AppServer.close` removes it again.
 	 */
 	ws_endpoints?:
 		ReadonlyArray<WsEndpointSpec> | ((context: AppServerContext) => ReadonlyArray<WsEndpointSpec>);
@@ -531,8 +530,7 @@ export interface AppServer {
 	 *    a closed transport hosts no other server
 	 * 3. release what assembly acquired, last acquired first: remove the
 	 *    audit listeners `create_app_server` registered on `deps.audit` (the
-	 *    audit-log SSE listener, the WS auth guards, each
-	 *    `extra_audit_handlers` entry) and the closer members it added to
+	 *    revocation guard, the audit-log SSE listener) and the closer members it added to
 	 *    `deps.connection_closer` (each mounted transport, the audit stream
 	 *    registry), and `dispose` the rate limiters it built for omitted
 	 *    options — never one passed in, which its caller owns. A release that
@@ -775,7 +773,10 @@ export const collect_config_diagnostics = (
  * `backend.deps.audit.add_listener` — no shallow-copy of `AppDeps`. That
  * registry and every WebSocket transport mounted from `ws_endpoints` are added
  * to `backend.deps.connection_closer`, so the revocation handlers built from
- * `ctx.deps` close their connections with no further wiring. The
+ * `ctx.deps` close their connections with no further wiring, and — when the
+ * server mounts either — one `create_revocation_guard` listener on that closer
+ * repeats each close on the audit row (the only closer of a role revocation).
+ * The
  * `audit_sse` field on the returned `AppServer` (and the
  * `AppServerContext` passed to `create_route_specs`) is non-null in that
  * case; consumers can call `require_audit_sse(ctx)` / `require_audit_sse(server)`
@@ -872,7 +873,9 @@ const assemble_app_server = async (
 	const audit_sse: AuditLogSse | null = options.audit_log_sse
 		? create_audit_log_sse({
 				log,
-				role: typeof options.audit_log_sse === 'object' ? options.audit_log_sse.role : undefined,
+				...(typeof options.audit_log_sse === 'object'
+					? { role: options.audit_log_sse.role, keep_alive_ms: options.audit_log_sse.keep_alive_ms }
+					: null),
 				connection_closer: null
 			})
 		: null;
@@ -982,17 +985,18 @@ const assemble_app_server = async (
 
 	// WS endpoint resolution — done here (alongside RPC) so the captured
 	// array threads into surface generation below. Actual mount happens
-	// after `apply_route_specs` because `register_ws_endpoint` mutates the
-	// live Hono `app` (origin / auth / role / authorization middleware +
-	// the `app.get(path, ...)` upgrade route), and `app` does not exist
-	// until the assembly phase below.
-	// A spec without `allowed_origins` takes the server's list — resolved here,
-	// once, so the mount and the surface read the same patterns.
+	// after `apply_route_specs` because `register_action_ws` mutates the
+	// live Hono `app` (the `app.get(path, ...)` upgrade route with its
+	// origin / auth / scope / authorization / role chain), and `app` does not
+	// exist until the assembly phase below.
+	// A spec without `allowed_origins` takes the server's list, and one without
+	// `actions` the sole RPC endpoint's — resolved here, once, so the mount and
+	// the surface read the same values.
 	const resolved_ws_endpoints = resolve_ws_endpoints(
 		typeof options.ws_endpoints === 'function'
 			? options.ws_endpoints(context)
 			: options.ws_endpoints,
-		options.allowed_origins
+		{ allowed_origins: options.allowed_origins, rpc_endpoints: resolved_rpc_endpoints }
 	);
 	// the endpoints to mount and the adapter factory they need — null when none resolve
 	let ws_mount: {
@@ -1013,6 +1017,15 @@ const assemble_app_server = async (
 		ws_mount = { endpoints: resolved_ws_endpoints, create_upgrade_websocket };
 	}
 
+	// The one revocation listener, registered when a WS endpoint or the audit
+	// stream is mounted — on the backend's closer, so it reaches every member:
+	// each WS transport the mount below adds, the audit stream registry, and any
+	// the consumer added by hand. After the audit stream's listener, so a
+	// revocation's row reaches the stream before the guard can close it.
+	if (audit_sse || ws_mount) {
+		releases.push(deps.audit.add_listener(create_revocation_guard(deps.connection_closer, log)));
+	}
+
 	// Surface route (opt-in)
 	if (options.surface_route) {
 		factory_routes.push(create_surface_route_spec(surface_ref));
@@ -1025,7 +1038,7 @@ const assemble_app_server = async (
 	assert_credential_routes_in_auth_scope(route_specs);
 
 	// WS path checks — pure data, so they run before anything mounts.
-	// `register_ws_endpoint` mounts a `GET path` upgrade route: a duplicate
+	// `register_action_ws` mounts a `GET path` upgrade route: a duplicate
 	// path, or one a `RouteSpec` already registered as `GET path`, would be
 	// silently shadowed by Hono's last-wins semantics — fail fast instead. An
 	// endpoint's own empty `allowed_origins` would refuse every browser upgrade.
@@ -1143,8 +1156,7 @@ const assemble_app_server = async (
 
 	// WS endpoint auto-mount — must run after `app` exists and
 	// `apply_route_specs` has registered the request routes. Each spec
-	// becomes a `register_ws_endpoint` call, plus optional `auth_guard`
-	// wiring onto the audit chain. `post_route_middleware` and static
+	// becomes a `register_action_ws` call. `post_route_middleware` and static
 	// serving register after this loop, so WS upgrade routes sit
 	// adjacent to the consumer routes and ahead of the static fallback —
 	// matches the "WS mount is route registration" mental model.
@@ -1153,17 +1165,8 @@ const assemble_app_server = async (
 		// the adapter helper — built from this app, which Node's
 		// `createNodeWebSocket({app})` needs, and only when there is something to mount
 		const upgrade_websocket = ws_mount.create_upgrade_websocket(app);
-		// Dedupe `auth_guard` wiring by transport reference — two specs
-		// sharing one transport instance get a single listener,
-		// otherwise revocation events would fire `close_sockets_for_*`
-		// twice per event (idempotent on the transport but log-spammy).
-		// Cross-spec OR-semantics: any spec with `auth_guard !== false`
-		// wires the guard for that transport; once wired, sibling specs
-		// (even with explicit `auth_guard: false`) cannot opt out. To
-		// disable, every spec sharing the transport must pass `auth_guard: false`.
-		const guarded_transports: WeakSet<BackendWebsocketTransport> = new WeakSet();
 		for (const endpoint of ws_mount.endpoints) {
-			const { transport: endpoint_transport } = register_ws_endpoint({
+			const { transport: endpoint_transport } = register_action_ws({
 				app,
 				path: endpoint.path,
 				upgradeWebSocket: upgrade_websocket,
@@ -1176,7 +1179,6 @@ const assemble_app_server = async (
 				max_connections_per_account: endpoint.max_connections_per_account,
 				outbound_queue_bytes: endpoint.outbound_queue_bytes,
 				heartbeat: endpoint.heartbeat,
-				artificial_delay: endpoint.artificial_delay,
 				max_message_bytes: endpoint.max_message_bytes,
 				on_socket_open: endpoint.on_socket_open,
 				on_socket_close: endpoint.on_socket_close,
@@ -1187,18 +1189,9 @@ const assemble_app_server = async (
 				on_effect_error
 			});
 			mounted_ws_endpoints[endpoint.path] = endpoint_transport;
-			// every revocation handler's close reaches this transport
+			// every revocation's close — the handlers' and the guard's — reaches
+			// this transport
 			releases.push(deps.connection_closer.add(endpoint_transport));
-
-			if (endpoint.auth_guard !== false && !guarded_transports.has(endpoint_transport)) {
-				guarded_transports.add(endpoint_transport);
-				releases.push(deps.audit.add_listener(create_ws_auth_guard(endpoint_transport, log)));
-			}
-			if (endpoint.extra_audit_handlers?.length) {
-				for (const handler of endpoint.extra_audit_handlers) {
-					releases.push(deps.audit.add_listener(handler));
-				}
-			}
 		}
 	}
 

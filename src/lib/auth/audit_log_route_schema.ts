@@ -45,8 +45,9 @@ export const create_audit_log_route_shape = (
 		// feed is not handed to a credential channel the deployment never
 		// chose. Widening the gate loses no close — the handler registers a
 		// bearer's stream under its API token id, and a token revocation closes
-		// by that id (`create_sse_connection_closer`, and the `token` scope in
-		// `create_sse_auth_guard`) — so widening is a consumer's explicit
+		// by that id (`create_sse_connection_closer`, which the handlers and the
+		// `token` scope of `create_revocation_guard` both close through) — so
+		// widening is a consumer's explicit
 		// choice about the channel, not a hole in revocation.
 		credential_types: ['session'],
 		// Rule 3 — a narrowed token holds no audit feed. Same reasoning as the

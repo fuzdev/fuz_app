@@ -364,9 +364,9 @@ back, and it has two arms:
   **Widening that gate loses no close.** The stream handler registers a
   bearer's stream under its API token id as well as its account id, and a
   token revocation closes by that id — the handler's own close through
-  `create_sse_connection_closer`, and the `token` scope `create_sse_auth_guard`
-  dispatches on. Which audit events close what is declared once, in
-  `audit_event_revocation_scopes`, and both revocation listeners read it; the
+  `create_sse_connection_closer`, and the revocation guard's `token` scope
+  through the same closer. Which audit events close what is declared once, in
+  `audit_event_revocation_scopes`, and the revocation guard reads it; the
   Rust twin does the same with the `RevocationScope` column on
   `AUDIT_EVENT_SPECS`. A consumer route with its own `SubscriberRegistry`
   registers the same identities to get the same closes.
@@ -423,8 +423,10 @@ const stream_route: RouteSpec = {
 ```
 
 A surface that isn't a route spec — your own WebSocket upgrade, anything Hono's
-`upgradeWebSocket` shape rules out — calls `token_scope_surface_denial(c, 'surface:<name>')`
-directly instead, which is what the spine's own WS gate does. Mount it in the
+`upgradeWebSocket` shape rules out — mounts the resolver's guards for an auth
+shape declaring the capability ahead of it, as the spine's own WS upgrade does
+(`register_action_ws` hands `fuz_auth_guard_resolver` the upgrade's shape), or
+calls `token_scope_surface_denial(c, 'surface:<name>')` directly in the
 position the resolver would have: after `require_auth`, before the role gate.
 
 What the spine still cannot do for you is **know your surface exists**.
@@ -550,10 +552,11 @@ enforcement:
   that closer through `create_sse_connection_closer(registry, role)` — one
   `close_by_identity` per session hash, API token id, or account id, and the
   account's streams for a revoked `role`.
-- **SSE auth guard**: `create_sse_auth_guard(registry, role, log)` returns an
+- **Revocation guard**: `create_revocation_guard(closer, log)` returns an
   `on_audit_event` callback that repeats those closes when the audit row is
-  announced, by the `RevocationScope` the event declares
-  (`audit_event_revocation_scopes`):
+  announced, through the same closer — `create_app_server` registers one on
+  `deps.connection_closer`, which holds the registry — by the
+  `RevocationScope` the event declares (`audit_event_revocation_scopes`):
   - `session` (`session_revoke`) — closes only the stream whose `scope`
     matches the revoked session's hash
   - `token` (`token_revoke`) — closes only the stream registered under the
@@ -565,8 +568,8 @@ enforcement:
     the revoked role is the one the stream requires and the revoked grant was
     global (the stream's role gate admits on global grants only, so a scoped
     revoke closes nothing). The guard is the only
-    closer for this one: no handler closes for a role. The WebSocket guard
-    closes the account's sockets gated on the role on the same rows
+    closer for this one: no handler closes for a role. The same guard closes
+    the account's sockets gated on the role on the same rows
 - **Success guard**: Only `outcome='success'` events act — an outcome outside
   the enum is inert. Failed revoke attempts carry attacker-submitted identifiers (e.g. guessed session
   hashes) in metadata — acting on them would let any authenticated user close
@@ -893,7 +896,7 @@ revocation the re-read sees.
   sessions its delete returned whatever became of its commit, since they are
   expired either way, and the next pass deletes any row the commit left.
 - A role revocation closes a role-gated WebSocket or audit stream through the
-  audit listeners alone, and a listener hears of a row only once its fail-open
+  revocation guard alone, and a listener hears of a row only once its fail-open
   audit write lands. If that write fails, the role is revoked, the request
   succeeds, and a socket or stream already open on that role stays open until
   it is closed some other way. The
@@ -965,12 +968,13 @@ expiry, a raw row delete — is under
   connections closed. Nor does it wait for that write — the queue runs before
   the request's in-flight pool writes are awaited, so a slow audit INSERT does
   not hold a revoked connection open.
-- **The audit listeners.** `create_ws_auth_guard` and `create_sse_auth_guard`
-  repeat the close when the audit row is announced. The emitter announces a
+- **The audit listener.** `create_revocation_guard`, registered once on the
+  backend's closer, repeats the close on every transport when the audit row is
+  announced. The emitter announces a
   **success** row from the same post-commit queue, waiting for the write — so
   a listener's close is post-commit too, and a rolled-back revocation is never
   announced. A **failure** row is announced as soon as it is written; the
-  listeners ignore it. Closing is idempotent, so the overlap with the
+  listener ignores it. Closing is idempotent, so the overlap with the
   handler's close is a repeat.
 
 **What closes.**
@@ -1017,7 +1021,7 @@ transport it mounts (`ws_endpoints`) and its audit stream registry
 (`audit_log_sse`), so the standard assembly needs no wiring. Assembling by
 hand:
 
-- `register_ws_endpoint` / `register_action_ws` and `create_audit_log_sse`
+- `register_action_ws` and `create_audit_log_sse`
   take `connection_closer` as a **required** option and add their transport to
   it. `null` is the explicit opt-out.
 - The action and route factories whose handlers revoke
@@ -2406,8 +2410,8 @@ Append-only is also enforced at the one HTTP surface that could have broken it:
 with `400 table_not_deletable`, ahead of the key-shape check. `audit_log` has a
 single-column primary key, so the keeper-gated browser would otherwise delete a
 trail row and report success. It is the sharpest of the four excluded tables
-because it is both the trail and part of how revocation propagates — the SSE and
-WS auth guards close live connections by listening to audit events, so a raw row
+because it is both the trail and part of how revocation propagates — the
+revocation guard closes live connections by listening to audit events, so a raw row
 delete would be invisible to them. The read side is gated the same way: the
 browser exposes only the consumer's declared `browsable_tables`, minus the
 `NON_BROWSABLE_TABLES` credential floor (`account`, `auth_session`,

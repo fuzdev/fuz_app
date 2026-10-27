@@ -20,7 +20,7 @@ import '../assert_dev_env.ts';
  * every WS endpoint — so the suite needs no knowledge of a consumer's domain
  * WS methods. It validates the transport, not the domain.
  *
- * Three cases mirror the upgrade stack `register_ws_endpoint` wires (origin
+ * Three cases mirror the upgrade route `register_action_ws` mounts (origin
  * check → `require_auth` → dispatch): an authenticated upgrade round-trips
  * `heartbeat` (the first case), and an anonymous upgrade and a
  * disallowed-origin upgrade are refused (after the spine-parity cases).

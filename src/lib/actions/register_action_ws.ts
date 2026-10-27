@@ -1,13 +1,37 @@
 /**
- * WebSocket JSON-RPC dispatch — the low-level WS transport binding.
+ * WebSocket JSON-RPC endpoint — the WS transport binding.
  *
  * Consumers declare WS endpoints on `create_app_server`'s `ws_endpoints`,
- * which mounts each through `register_ws_endpoint`
- * (`actions/register_ws_endpoint.ts`) — this function wrapped in the
- * standard upgrade stack (origin check + auth + token scope + actor
- * resolution + optional role). This module stays exported as the
- * lower-level entry point for tests that drive the dispatcher directly via
- * `create_ws_test_harness`.
+ * which mounts each through `register_action_ws`; call it directly only to
+ * mount an endpoint outside that assembly. Tests drive the dispatcher
+ * directly via `create_ws_test_harness`.
+ *
+ * ## The upgrade route
+ *
+ * One `GET path` route, its guards in coarse-to-fine order — the route-spec
+ * pipeline's, from `fuz_auth_guard_resolver`:
+ *
+ * 1. `verify_request_source(allowed_origins)` — a disallowed origin is
+ *    refused before the upgrade handshake runs (403).
+ * 2. `require_auth` — an unauthenticated upgrade is refused (401).
+ * 3. `require_token_scope('surface:ws_upgrade')` — rule 3: a narrowed token
+ *    cannot hold a socket (403 `token_scope_required`). Server-initiated
+ *    pushes (broadcasts, role-grant-offer notifications, peer requests)
+ *    reach whatever the account's connection reaches, with no per-recipient
+ *    filter to narrow them by, so a scoped token that could upgrade would
+ *    observe far more than it was granted.
+ * 4. **Authorization phase** (`run_authorization_phase`) — the acting actor
+ *    from the `?acting=<uuid>` query string (`parse_acting`; malformed reads
+ *    as omitted), against the authenticated account, building the
+ *    `RequestContext` per-message dispatch reads (400s on actor selection).
+ *    Multi-actor accounts must supply `?acting`; single-actor accounts work
+ *    without it.
+ * 5. `require_role(required_roles)`, for a gated endpoint (403).
+ *
+ * Only `GET` is mounted (Hono serves `HEAD` through it), so any other method
+ * on the path is a 404. The guards run as middleware ahead of
+ * `upgradeWebSocket`, whose callback must return `WSEvents` and so cannot
+ * produce a refusal.
  *
  * Symmetric to `create_rpc_endpoint` (from `actions/action_rpc.ts`):
  * both transports parse their wire envelope, then call the shared
@@ -18,13 +42,10 @@
  * phase, rate limiting, transactional dispatch, DEV output validation,
  * thrown-error normalization) is shared.
  *
- * ## Auth expectations
+ * ## Per-message auth
  *
- * The consumer is responsible for rejecting unauthenticated upgrades
- * *before* routing to this handler (fuz_app's `require_auth` middleware,
- * or `register_ws_endpoint` which wires it for you). Per-action auth
- * runs inside `perform_action` on every message via the same gates HTTP
- * RPC uses.
+ * Per-action auth runs inside `perform_action` on every message via the same
+ * gates HTTP RPC uses.
  *
  * ## Admission: the revocation race
  *
@@ -39,8 +60,9 @@
  *
  * `onOpen` closes the gap in three steps: register the connection **pending**
  * (`BackendWebsocketTransport.register_pending` — closeable by every
- * revocation, inert otherwise), re-read the credential
- * (`revalidate_resolved_auth`), then `BackendWebsocketTransport.admit`. A
+ * revocation, inert otherwise), re-read the credential, the acting actor, and
+ * the role (`recheck_admission`, which the audit stream shares), then
+ * `BackendWebsocketTransport.admit`. A
  * revocation whose close ran after the registration found the pending entry,
  * so `admit` refuses; one that committed before the re-read is seen by it. The
  * cap is enforced only by `admit`, so a refused upgrade evicts nothing, and
@@ -121,22 +143,26 @@
 
 import type { Hono } from 'hono';
 import type { UpgradeWebSocket, WSContext } from 'hono/ws';
-import { wait } from '@fuzdev/fuz_util/async.ts';
 import { Logger, type Logger as LoggerType } from '@fuzdev/fuz_util/log.ts';
+import { UnreachableError } from '@fuzdev/fuz_util/error.ts';
 import type { Uuid } from '../primitive_schemas.ts';
 
 import {
 	get_request_context,
-	has_any_scoped_role,
-	refresh_role_grants,
 	require_request_context,
-	token_scope_surface_denial,
+	run_authorization_phase,
 	type RequestContext
 } from '../auth/request_context.ts';
+import { fuz_auth_guard_resolver } from '../auth/auth_guard_resolver.ts';
 import type { RoleName } from '../auth/role_schema.ts';
-import { get_resolved_auth, revalidate_resolved_auth } from '../auth/resolved_auth.ts';
-import { query_active_actors_by_account } from '../auth/account_queries.ts';
+import {
+	get_resolved_auth,
+	recheck_admission,
+	type AdmissionRecheck
+} from '../auth/resolved_auth.ts';
 import { schedule_credential_deadline } from '../auth/credential_deadline.ts';
+import { verify_request_source } from '../http/origin.ts';
+import { parse_acting, type RouteAuth } from '../http/auth_shape.ts';
 import { get_client_ip } from '../http/client_ip.ts';
 import { flush_request_effects, type EffectErrorContext } from '../http/pending_effects.ts';
 import type { RateLimiter } from '../rate_limiter.ts';
@@ -383,6 +409,13 @@ export interface RegisterActionWsOptions {
 	/** Hono's `upgradeWebSocket` helper from the runtime adapter. */
 	upgradeWebSocket: UpgradeWebSocket;
 	/**
+	 * Origin allowlist regexes for the upgrade — passed straight to
+	 * `verify_request_source`, the route's first guard. `create_app_server`
+	 * passes the server's `allowed_origins` unless the `WsEndpointSpec` narrows
+	 * them.
+	 */
+	allowed_origins: ReadonlyArray<RegExp>;
+	/**
 	 * The actions registered on this endpoint — each carries a spec (drives
 	 * method lookup, per-action auth, input/output validation) and an
 	 * optional handler (omit for client-only specs like inbound
@@ -403,31 +436,33 @@ export interface RegisterActionWsOptions {
 	 */
 	db: Db;
 	/**
-	 * The roles the endpoint's upgrade gate requires (any-of) — what
-	 * `register_ws_endpoint` mounts as `require_role(required_roles)` ahead of
-	 * this handler. Recorded on every registration
+	 * Roles permitted to upgrade — any-of disjunction, global grants only,
+	 * mounted as the route's `require_role` gate (403). Omit (or pass `[]`)
+	 * for any authenticated account. The per-action `auth` in each spec still
+	 * applies at dispatch time — this is a coarse upgrade-time gate on who may
+	 * hold a socket, and so on who receives the endpoint's server pushes.
+	 *
+	 * It holds for the socket's life: recorded on every registration
 	 * (`ConnectionIdentity.required_roles`), so a revoked global grant of a
-	 * listed role closes the socket (`close_sockets_for_role`), and re-read at
-	 * admission against the acting actor's grants, so a revocation that landed
-	 * between the gate and the registration refuses the upgrade with
-	 * `WS_CLOSE_PERMISSION_REVOKED`. This handler does not gate on it before
-	 * the upgrade; mount the 403 gate in front (`register_ws_endpoint` does).
-	 * Omit, or pass `[]`, for an ungated endpoint.
+	 * listed role closes the socket (`close_sockets_for_role`, any listed role
+	 * — see its over-close), and re-read at admission against the acting
+	 * actor's grants, so a revocation that landed between the gate and the
+	 * registration refuses the upgrade with `WS_CLOSE_PERMISSION_REVOKED`.
 	 */
 	required_roles?: ReadonlyArray<RoleName>;
 	/**
 	 * Existing transport to register connections with. When omitted, a fresh
 	 * one is created and returned in the result. Pass your own to keep a
-	 * handle for `create_ws_auth_guard` and `send_to`/`broadcast`.
+	 * handle for `send_to` / `broadcast` before the mount.
 	 */
 	transport?: BackendWebsocketTransport;
 	/**
 	 * The backend's closer — `deps.connection_closer`. This endpoint's
 	 * transport is added to it, so every revocation handler's close reaches
 	 * the sockets opened here. Required so it can't be forgotten: left out of
-	 * the closer, a transport's sockets close only through the audit listener,
-	 * which a failed audit write or a session / token cap eviction never
-	 * reaches. Pass `null` only when no revocation has to reach this transport
+	 * the closer, no revocation closes a transport's sockets — neither the
+	 * handlers' closes nor the revocation guard, which closes through the same
+	 * closer. Pass `null` only when no revocation has to reach this transport
 	 * (a harness driving the dispatcher directly), or when the transport was
 	 * added by hand.
 	 *
@@ -466,8 +501,6 @@ export interface RegisterActionWsOptions {
 	 * already owns disconnect detection. Pass an object to tune the timeout.
 	 */
 	heartbeat?: boolean | ServerHeartbeatOptions;
-	/** Optional per-message delay for testing loading states. Ignored when `0`. */
-	artificial_delay?: number;
 	/**
 	 * Cap on one inbound message, in bytes (UTF-8 for text frames). A larger
 	 * message closes the socket with `WS_CLOSE_MESSAGE_TOO_BIG` before it's
@@ -538,8 +571,9 @@ export interface RegisterActionWsResult {
 }
 
 /**
- * Mount a JSON-RPC WebSocket endpoint that dispatches via the shared
- * `perform_action` core.
+ * Mount a JSON-RPC WebSocket endpoint — the upgrade route with its origin,
+ * auth, token-scope, acting-actor, and role guards (module doc, "The upgrade
+ * route") — that dispatches via the shared `perform_action` core.
  *
  * Wire behavior:
  * - Batch JSON-RPC is rejected (single-message only).
@@ -559,8 +593,8 @@ export interface RegisterActionWsResult {
  * - Authorization phase runs **per message** — role_grant changes during a
  *   connection lifetime are picked up on the next message without any
  *   in-place refresh. Authentication invalidation closes the socket: the
- *   revocation handlers through `connection_closer`, and `create_ws_auth_guard`
- *   on the audit row.
+ *   revocation handlers through `connection_closer`, and the revocation guard
+ *   (`create_revocation_guard`) on the audit row.
  * - Admission re-reads the credential once, after the handshake: a socket
  *   whose session or token was revoked while it was upgrading closes with
  *   `WS_CLOSE_SESSION_REVOKED`, one that lost a role `required_roles` lists
@@ -568,7 +602,7 @@ export interface RegisterActionWsResult {
  *   `WS_CLOSE_INTERNAL_ERROR`. Frames sent before admission wait for it.
  * - A revoked global grant of a role `required_roles` lists closes the
  *   account's sockets on this endpoint with `WS_CLOSE_PERMISSION_REVOKED`,
- *   through `create_ws_auth_guard`; nothing more is sent on them.
+ *   through the revocation guard; nothing more is sent on them.
  * - A socket the server has closed dispatches nothing more, whether or not
  *   its client answers the close.
  * - Every frame sent — responses, error frames, notifications — goes through
@@ -576,9 +610,9 @@ export interface RegisterActionWsResult {
  *   `outbound_queue_bytes` budget closes with `WS_CLOSE_OUTBOUND_OVERFLOW`, and
  *   the response of the request whose handler overflowed it is not sent.
  *
- * @returns the transport (supplied or freshly created) — retain it to wire
- *   `create_ws_auth_guard` or broadcast on audit events.
- * @mutates options.app - registers a `GET path` route via `upgradeWebSocket`
+ * @returns the transport (supplied or freshly created) — retain it to broadcast
+ * @mutates options.app - registers the `GET path` upgrade route, its guards
+ *   ahead of `upgradeWebSocket`
  * @mutates options.transport - per socket, registers, admits, and removes a
  *   connection via `register_pending` / `admit` / `remove_connection`
  * @mutates options.connection_closer - adds the endpoint's transport, once the
@@ -610,7 +644,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 		actions,
 		db,
 		heartbeat = true,
-		artificial_delay = 0,
+		allowed_origins,
 		max_message_bytes = DEFAULT_WS_MAX_MESSAGE_BYTES,
 		log = new Logger('[ws]'),
 		on_socket_open,
@@ -647,29 +681,36 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 	// dead-because-unresponsive that closing is arguably correct.
 	const heartbeat_tick_interval = Math.max(100, Math.floor(heartbeat_timeout / 2));
 
+	// The upgrade's auth shape: account and actor required, the endpoint's roles,
+	// and rule 3's surface — the guards the route-spec pipeline would mount for it
+	// (module doc, "The upgrade route").
+	const upgrade_auth: RouteAuth = {
+		account: 'required',
+		actor: 'required',
+		...(required_roles.length > 0 ? { roles: required_roles } : {}),
+		required_scope: 'surface:ws_upgrade'
+	};
+	const { pre_authorization, post_authorization } = fuz_auth_guard_resolver(upgrade_auth);
+
 	app.get(
 		path,
-		// Token-scope surface gate — a narrowed token cannot hold a socket.
-		//
-		// Mounted as pre-upgrade middleware rather than inside the
-		// `upgradeWebSocket` callback, which must return `WSEvents` and so has no
-		// way to produce a denial response.
-		//
-		// Rule 3, doing real work rather than being conservative for its own
-		// sake: server-initiated pushes (broadcasts, role-grant-offer
-		// notifications, peer requests) reach whatever the account's connection
-		// reaches, and there is no per-recipient filter to narrow them by. So a
-		// scoped token that could upgrade would observe far more than it was
-		// granted.
+		verify_request_source(allowed_origins),
+		...pre_authorization,
 		async (c, next) => {
-			const denied = token_scope_surface_denial(c, 'surface:ws_upgrade');
-			if (denied) return denied;
+			const refused = await run_authorization_phase(
+				c,
+				{ db },
+				upgrade_auth,
+				parse_acting(c.req.query('acting'))
+			);
+			if (refused) return refused;
 			return next();
 		},
+		...post_authorization,
 		upgradeWebSocket((c) => {
-			// Upgrade-time identity capture. `require_auth` middleware has
-			// already rejected unauthenticated upgrades, so request_context is
-			// non-null here. Per-message dispatch reads `account_id` +
+			// Upgrade-time identity capture. The route's `require_auth` has
+			// already rejected unauthenticated upgrades, and its authorization
+			// phase set the request context, so it is non-null here. Per-message dispatch reads `account_id` +
 			// `credential_type` from this closure; the live request_context is
 			// only used by the test-preset escape hatch (perform_action runs
 			// the authorization phase fresh on every message in production).
@@ -681,10 +722,10 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 			// revocation enforcement lives outside this dispatcher: the
 			// revocation handlers close through `deps.connection_closer`
 			// (which holds this endpoint's transport — see the
-			// `connection_closer` option), and the audit-driven WS auth guard
-			// (`transports_ws_auth_guard.ts`) repeats the close. With neither
-			// reaching this transport, `session_revoke` / `token_revoke` are
-			// no-ops for connections that are already open.
+			// `connection_closer` option), and the revocation guard on that
+			// closer repeats the close on the audit row. With the transport out
+			// of the closer, `session_revoke` / `token_revoke` are no-ops for
+			// connections that are already open.
 			const upgrade_context = require_request_context(c);
 			const account_id: Uuid = upgrade_context.account.id;
 			const client_ip = get_client_ip(c);
@@ -924,31 +965,14 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 				}
 
 				if (!upgrade_preset) {
-					let credential_is_live: boolean;
-					let actor_is_active = true;
-					let role_is_held = true;
+					let recheck: AdmissionRecheck;
 					try {
-						// pool-level `db`: the statements must see every revocation
-						// committed before they start
-						credential_is_live = await revalidate_resolved_auth({ db }, resolved);
-						// The acting actor the upgrade resolved, on every endpoint: a
-						// soft-deleted actor keeps its account's credential and its
-						// grant rows, so neither re-read above or below refuses it.
-						const acting_actor = upgrade_context.actor;
-						if (credential_is_live && acting_actor) {
-							actor_is_active = (await query_active_actors_by_account({ db }, account_id)).some(
-								(a) => a.id === acting_actor.id
-							);
-						}
-						// Global grants only, like the gate in front: a scoped grant
-						// never admitted this socket.
-						if (credential_is_live && actor_is_active && required_roles.length > 0) {
-							role_is_held = has_any_scoped_role(
-								await refresh_role_grants(upgrade_context, { db }),
-								required_roles,
-								null
-							);
-						}
+						// pool-level `db`: the reads must see every revocation committed
+						// before they start
+						recheck = await recheck_admission(
+							{ db },
+							{ resolved, request_context: upgrade_context, required_roles }
+						);
 					} catch (error) {
 						// fail closed — never admitted unchecked. During shutdown the
 						// database may close under the re-read; that is the shutdown's
@@ -961,32 +985,35 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 						refuse_upgrade(ws, WS_CLOSE_INTERNAL_ERROR, 'internal error');
 						return null;
 					}
-					if (!credential_is_live) {
-						log.info(
-							'ws upgrade admission: credential revoked during the upgrade',
-							connection_id,
-							account_id
-						);
-						refuse_upgrade(ws, WS_CLOSE_SESSION_REVOKED, WS_CLOSE_SESSION_REVOKED_REASON);
-						return null;
-					}
-					if (!actor_is_active) {
-						log.info(
-							'ws upgrade admission: acting actor deleted during the upgrade',
-							connection_id,
-							account_id
-						);
-						refuse_upgrade(ws, WS_CLOSE_SESSION_REVOKED, WS_CLOSE_SESSION_REVOKED_REASON);
-						return null;
-					}
-					if (!role_is_held) {
-						log.info(
-							'ws upgrade admission: role revoked during the upgrade',
-							connection_id,
-							account_id
-						);
-						refuse_upgrade(ws, WS_CLOSE_PERMISSION_REVOKED, WS_CLOSE_PERMISSION_REVOKED_REASON);
-						return null;
+					switch (recheck) {
+						case 'admitted':
+							break;
+						case 'credential_revoked':
+							log.info(
+								'ws upgrade admission: credential revoked during the upgrade',
+								connection_id,
+								account_id
+							);
+							refuse_upgrade(ws, WS_CLOSE_SESSION_REVOKED, WS_CLOSE_SESSION_REVOKED_REASON);
+							return null;
+						case 'actor_inactive':
+							log.info(
+								'ws upgrade admission: acting actor deleted during the upgrade',
+								connection_id,
+								account_id
+							);
+							refuse_upgrade(ws, WS_CLOSE_SESSION_REVOKED, WS_CLOSE_SESSION_REVOKED_REASON);
+							return null;
+						case 'role_revoked':
+							log.info(
+								'ws upgrade admission: role revoked during the upgrade',
+								connection_id,
+								account_id
+							);
+							refuse_upgrade(ws, WS_CLOSE_PERMISSION_REVOKED, WS_CLOSE_PERMISSION_REVOKED_REASON);
+							return null;
+						default:
+							throw new UnreachableError(recheck);
 					}
 				}
 
@@ -1234,9 +1261,9 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 
 				// Per-request controller — fires on explicit `cancel` or when the
 				// socket ends (via the socket_abort_controller chain below).
-				// Registered before dispatch — ahead of `artificial_delay` too, so
-				// the request is live (counted, and its id taken) from the moment
-				// it is accepted — so a cancel arriving mid-handler finds it;
+				// Registered before dispatch, so the request is live (counted, and
+				// its id taken) from the moment it is accepted — so a cancel
+				// arriving mid-handler finds it;
 				// cleared in `finally` so late cancels for a completed id (or a
 				// future request that reuses the id) can't null-abort the wrong
 				// handler.
@@ -1285,10 +1312,6 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 				const signal = AbortSignal.any([socket_abort_controller.signal, request_controller.signal]);
 
 				try {
-					if (artificial_delay > 0) {
-						log.debug(`throttling ${artificial_delay}ms`);
-						await wait(artificial_delay);
-					}
 					const result = await perform_action(
 						{
 							action,
