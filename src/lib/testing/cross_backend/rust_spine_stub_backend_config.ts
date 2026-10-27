@@ -147,10 +147,10 @@ export interface SpineStubBackendConfigOptions {
 	readonly enable_login_rate_limit?: boolean;
 	/**
 	 * Comma-separated trusted-proxy allowlist passed as `FUZ_TRUSTED_PROXIES`
-	 * (e.g. `'127.0.0.1,::1'`). Unset by default (the stub leaves XFF parsing
-	 * off, keying on the raw TCP peer). The login-security project sets the
-	 * loopback set so the limiter keys on the `X-Forwarded-For` client IP — the
-	 * TS spine binary wires the equivalent set unconditionally.
+	 * (e.g. `'127.0.0.1,::1'`). Unset, the stub trusts the loopback set
+	 * (`127.0.0.1`, `::1`), as the TS spine binary does unconditionally, so a
+	 * loopback caller's `X-Forwarded-For` names the client; `','` trusts none.
+	 * The login-security project passes the loopback set explicitly.
 	 */
 	readonly trusted_proxies?: string;
 	/**
