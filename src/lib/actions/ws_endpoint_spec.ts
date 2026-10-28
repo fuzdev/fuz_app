@@ -17,7 +17,7 @@
 import type { Action } from './action_types.ts';
 import type { RoleName } from '../auth/role_schema.ts';
 import type { ConnectionRegistry } from './connection_registry.ts';
-import type { SocketCloseContext, SocketOpenContext } from './register_action_ws.ts';
+import type { SocketCloseContext, SocketOpenContext } from './ws_socket_session.ts';
 import type { RpcEndpointSpec } from '../http/surface.ts';
 import { to_ws_actions } from './protocol.ts';
 

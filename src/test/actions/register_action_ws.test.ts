@@ -25,15 +25,17 @@ import { ActingActor } from '#lib/http/auth_shape.ts';
 
 import {
 	DEFAULT_WS_RECEIVE_TIMEOUT,
+	register_action_ws,
+	WS_RECEIVE_TIMEOUT_MAX
+} from '#lib/actions/register_action_ws.ts';
+import {
 	ERROR_DUPLICATE_REQUEST_ID,
 	MAX_INBOUND_DISPATCHES_PER_CONNECTION,
 	PRE_ADMISSION_QUEUE_BYTES_FACTOR,
-	register_action_ws,
 	WS_INBOUND_DISPATCH_OVERFLOW_MESSAGE,
-	WS_RECEIVE_TIMEOUT_MAX,
 	type SocketCloseContext,
 	type SocketOpenContext
-} from '#lib/actions/register_action_ws.ts';
+} from '#lib/actions/ws_socket_session.ts';
 import type { ActionContext } from '#lib/actions/action_types.ts';
 import type { ActionSpecUnion, RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import {

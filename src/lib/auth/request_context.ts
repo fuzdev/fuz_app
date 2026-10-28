@@ -481,9 +481,8 @@ export const require_auth: MiddlewareHandler = async (c, next): Promise<Response
  * **global / unscoped role_grants only**. A scoped role_grant
  * (`{role: 'admin', scope_id: <some uuid>}`) does not unlock route-spec
  * gates that are inherently global. The same scope-aware check is
- * mirrored in `actions/action_rpc.ts` (HTTP RPC dispatcher) and
- * `actions/register_action_ws.ts` (WS dispatcher) so all three
- * transports agree.
+ * run in `actions/perform_action.ts`, the core both the HTTP RPC and WS
+ * dispatchers call, so the transports agree.
  *
  * Multi-role disjunction (any-of) lets `auth.roles: ['admin', 'steward']`
  * specs translate to one middleware that admits either role. Single-role

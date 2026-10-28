@@ -639,7 +639,8 @@ The Rust spine applies the same cap, policy, close code, and reason.
 
 Requests on one socket dispatch concurrently — `@hono/node-ws` does not await
 `onMessage`, so nothing in the adapter serializes them. `register_action_ws`
-bounds them itself, the same way the Rust spine does:
+(its socket session, `actions/ws_socket_session.ts`) bounds them itself, the same
+way the Rust spine does:
 
 - **In-flight ceiling**: at most `MAX_INBOUND_DISPATCHES_PER_CONNECTION` (128)
   requests run at once per socket. One more is answered `queue_overflow` with

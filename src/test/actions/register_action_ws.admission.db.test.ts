@@ -27,12 +27,12 @@ import { wait } from '@fuzdev/fuz_util/async.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
+import { register_action_ws } from '#lib/actions/register_action_ws.ts';
 import {
 	MAX_PRE_ADMISSION_FRAMES,
-	register_action_ws,
 	type SocketCloseContext,
 	type SocketOpenContext
-} from '#lib/actions/register_action_ws.ts';
+} from '#lib/actions/ws_socket_session.ts';
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import { ConnectionRegistry } from '#lib/actions/connection_registry.ts';
 import {

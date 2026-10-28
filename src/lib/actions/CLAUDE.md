@@ -833,8 +833,19 @@ required `connection_closer` and action limiters, and optional
 guards through `create_ws_test_harness`, which invokes the captured events
 factory directly.
 
+The per-socket half lives in `actions/ws_socket_session.ts`:
+`create_ws_socket_events(endpoint, upgrade)` returns the `WSEvents` for one
+upgraded socket — admission, the pre-admission queue, the receive watchdog,
+the credential deadline, frame dispatch, and close. `register_action_ws` reads
+the Hono context at upgrade into a `WsSocketUpgrade` and derives the
+endpoint's `WsSocketEndpoint` once; the module never touches the Hono app.
+Its exports include the socket bounds (`MAX_PRE_ADMISSION_FRAMES`,
+`PRE_ADMISSION_QUEUE_BYTES_FACTOR`, `MAX_INBOUND_DISPATCHES_PER_CONNECTION`),
+the duplicate-id and overflow wire strings, and the `on_socket_open` /
+`on_socket_close` contexts (`SocketOpenContext`, `SocketCloseContext`).
+
 Per-message dispatch delegates to `perform_action` — the shared core that
-HTTP RPC also calls. `register_action_ws` owns only WS-specific concerns:
+HTTP RPC also calls. The socket session owns only WS-specific concerns:
 
 - **Wire envelope parsing** — JSON.parse → batch rejection → `classify_jsonrpc_message` (`http/jsonrpc_helpers.ts`, the twin of the Rust `fuz_http::classify`, the same classifier the HTTP POST path runs) → per-arm handling: an `invalid` answers its error on its id; a `response` routes to the socket's pending peer request; a `notification` routes `cancel` and is otherwise dropped; a `request` goes on to the duplicate-id and in-flight checks and dispatch. The classifier runs the twin's order — version, then the `method` axis, then `id`, then the `JsonrpcRequest` envelope — so `{method: 'x'}` and `{jsonrpc: '1.0', method: 'x'}` answer `invalid_request` rather than being dropped as notifications; a response is the twin's shape exactly (no string `method`, a string/number `id`, exactly one of `result` / `error`), so a hybrid like `{method, id, result}` stays a dispatchable request; and `params: null`, an array `params`, or a non-string/number `id` answers `invalid_request` (-32600) on both transports rather than reaching the dispatcher as `invalid_params`. Notifications stay unvalidated (they carry no id to echo). A non-object frame answers `id: null`. POST answers a notification or a response `invalid_request` on `id: null`, as the Rust spine does.
 - **Cancel-notification interception** — `{request_id → AbortController}` map; aborts the matching pending controller before the cancel bubbles past the dispatcher
@@ -911,7 +922,7 @@ completes — `@hono/node-ws` does, for up to the `ws` close timeout when the
 client withholds its close frame. So every server-side close removes the
 connection from the registry and aborts the socket's controller **at close
 time**: the registry does both for a revocation or a cap eviction, and
-`register_action_ws`'s `end_socket` does both — through
+`ws_socket_session.ts`'s `end_socket` does both — through
 `registry.close_connection` — for a heartbeat timeout, a credential
 expiry, an oversized message, a failed `on_socket_open`, and a refused
 admission.

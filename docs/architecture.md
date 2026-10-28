@@ -429,7 +429,7 @@ as `internal_error`:
   into a `PerformActionResult` of `{kind: 'error', error, status}`.
   The HTTP shim (`actions/action_rpc.ts`) binds this via `c.json`
   with the JSON-RPC envelope shape; the WebSocket shim
-  (`actions/register_action_ws.ts`) sends the same envelope over the
+  (`actions/ws_socket_session.ts`) sends the same envelope over the
   socket. Both wire shapes share a single normalization site.
 
 The two shapes diverge intentionally: REST clients consume the flat
@@ -487,7 +487,7 @@ per transport family:
   `actions/perform_action.ts`. Validates the handler return value against
   `spec.output` before the result envelope is written. Runs inside the
   shared dispatch core so HTTP RPC (`actions/action_rpc.ts`) and the WS
-  dispatcher (`actions/register_action_ws.ts`) cannot drift on validation
+  dispatcher (`actions/register_action_ws.ts`, `actions/ws_socket_session.ts`) cannot drift on validation
   semantics.
 
 Both sites **log an error on mismatch and return the response unchanged** —
