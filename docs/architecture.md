@@ -473,7 +473,10 @@ per transport family:
 - **REST routes** — `wrap_output_validation` in `http/route_spec.ts` (applied
   by `apply_route_specs`). Validates 2xx JSON responses against
   `RouteSpec.output`, and non-2xx JSON responses against the matching
-  declared error schema from the three-layer merge above. Streaming responses
+  declared error schema from the three-layer merge above — including the body
+  the error catch builds from a thrown `ThrownJsonrpcError`, since validation
+  wraps the catch. A 500 `internal_error` is always accepted: the catch
+  answers it for any generic throw, on any route. Streaming responses
   (SSE) are skipped via a `Content-Type` check. Clones the `Response` body
   so validation does not consume the stream.
 - **JSON-RPC + WebSocket actions** — the shared `perform_action` core in

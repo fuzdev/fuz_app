@@ -405,13 +405,23 @@ const create_query_validation = (query_schema?: z.ZodObject): Array<MiddlewareHa
 	return [validate];
 };
 
+/** Whether a JSON body is the catch layer's `{error: 'internal_error'}` shape. */
+const is_internal_error_body = (body: unknown): boolean =>
+	body !== null &&
+	typeof body === 'object' &&
+	(body as { error?: unknown }).error === 'internal_error';
+
 /**
  * Wrap a handler with DEV-only output and error validation.
  *
  * In development, validates 2xx JSON responses against the output schema
- * and non-2xx responses against declared error schemas.
+ * and non-2xx responses against declared error schemas. Wraps the error
+ * catch layer, so the body built from a thrown error is validated too — except
+ * a 500 `internal_error`, which the catch layer can answer on any route and so
+ * is always accepted.
  * Logs an error for mismatches and returns the response unchanged —
- * does not throw. In production, returns the handler unchanged.
+ * does not throw. Non-JSON responses (SSE, binary) are skipped. In
+ * production, returns the handler unchanged.
  */
 const wrap_output_validation = (
 	handler: Handler,
@@ -426,34 +436,25 @@ const wrap_output_validation = (
 		// Only validate JSON responses — streaming responses (SSE) would hang on .json().
 		const content_type = response.headers.get('Content-Type');
 		if (!content_type?.includes('application/json')) return response;
-		if (response.ok) {
-			try {
-				const cloned = response.clone();
-				const body = await cloned.json();
-				const result = output_schema.safeParse(body);
-				if (!result.success) {
-					log.error(`Output schema mismatch: ${c.req.method} ${c.req.path}`, result.error.issues);
-				}
-			} catch {
-				// clone() or json() failed on a response claiming application/json
-			}
-		} else if (error_schemas) {
-			const status_schema = error_schemas[response.status];
-			if (status_schema) {
-				try {
-					const cloned = response.clone();
-					const body = await cloned.json();
-					const result = status_schema.safeParse(body);
-					if (!result.success) {
-						log.error(
-							`Error schema mismatch (${response.status}): ${c.req.method} ${c.req.path}`,
-							result.error.issues
-						);
-					}
-				} catch {
-					// clone() or json() failed on a response claiming application/json
-				}
-			}
+		const schema = response.ok ? output_schema : error_schemas?.[response.status];
+		if (!schema) return response;
+		let body: unknown;
+		try {
+			body = await response.clone().json();
+		} catch {
+			// clone() or json() failed on a response claiming application/json
+			return response;
+		}
+		// the catch layer can answer `internal_error` on any route, so no route
+		// declares it — checking it against a route's 500 schema would only
+		// misreport a schema problem the route can't fix
+		if (response.status === 500 && is_internal_error_body(body)) return response;
+		const result = schema.safeParse(body);
+		if (!result.success) {
+			const label = response.ok
+				? 'Output schema mismatch'
+				: `Error schema mismatch (${response.status})`;
+			log.error(`${label}: ${c.req.method} ${c.req.path}`, result.error.issues);
 		}
 		return response;
 	};
@@ -657,10 +658,10 @@ export const apply_route_specs = (
 					: inner(c, { db, ...route_context })
 			);
 		};
-		// Step 2: output validation
-		handler = wrap_output_validation(handler, spec.output, merged_errors, log);
-		// Step 3: error catch layer
+		// Step 2: error catch layer — a thrown error becomes its REST body here
 		handler = wrap_error_catch(handler, log);
+		// Step 3: output validation, outside the catch so thrown-error bodies are checked too
+		handler = wrap_output_validation(handler, spec.output, merged_errors, log);
 		app.on(
 			spec.method,
 			[spec.path],

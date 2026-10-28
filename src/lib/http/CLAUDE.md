@@ -105,8 +105,8 @@ wrapper). See `auth/signup_routes.ts`.
 5. **Post-authorization auth guards** — `require_role(roles)` (403 `ERROR_INSUFFICIENT_PERMISSIONS` with `required_roles: ReadonlyArray<string>`) when `auth.roles?.length`. The only gate in this phase, because it is the only one that reads `REQUEST_CONTEXT_KEY` (populated by step 4) rather than the auth middleware's own context vars. Multi-role specs admit any-of via `has_any_scoped_role(ctx, roles, null)`.
 6. **Input validation** — JSON body parsed + validated; mismatch returns 400 `ERROR_INVALID_JSON_BODY` (not JSON) or `ERROR_INVALID_REQUEST_BODY` (schema failure with `issues`). Skipped on GET and `z.null()` inputs. The validated input lands on `c.var.validated_input`.
 7. **Handler** — wrapped in transaction when `use_transaction` (see above), receives `RouteContext`
-8. **DEV-only output + error validation** — wraps the handler (see below)
-9. **Error catch** — catches `ThrownJsonrpcError` → maps to HTTP status + the flat REST `ApiError` body (`{error: <reason>, message?, ...rest_data}`); catches generic `Error` → 500 `{error: 'internal_error', message?}` (message only in DEV). The reason string comes from `err.data.reason` when set (consumer-supplied canonical reason override) or from `jsonrpc_error_code_to_name(err.code)` (e.g. `-32003 → 'not_found'`). The flat shape matches what middleware and direct handlers emit — REST callers see one envelope across every emit site, while the JSON-RPC dispatcher keeps its own `{jsonrpc, id, error: {code, message, data}}` envelope on the RPC mount.
+8. **Error catch** — catches `ThrownJsonrpcError` → maps to HTTP status + the flat REST `ApiError` body (`{error: <reason>, message?, ...rest_data}`); catches generic `Error` → 500 `{error: 'internal_error', message?}` (message only in DEV). The reason string comes from `err.data.reason` when set (consumer-supplied canonical reason override) or from `jsonrpc_error_code_to_name(err.code)` (e.g. `-32003 → 'not_found'`). The flat shape matches what middleware and direct handlers emit — REST callers see one envelope across every emit site, while the JSON-RPC dispatcher keeps its own `{jsonrpc, id, error: {code, message, data}}` envelope on the RPC mount.
+9. **DEV-only output + error validation** — wraps the error catch (see below), so a body built from a thrown error is validated like a returned one
 
 **Ordering: 401 → authz → 403 → 400 → handler.** Mirrors the RPC dispatcher
 (`actions/action_rpc.ts`) so HTTP RPC and REST fail with the same priority, and
@@ -137,7 +137,8 @@ are the contract with external callers.
 
 - Skips streaming responses (non-`application/json` Content-Type) so SSE doesn't hang on `.json()`
 - On 2xx JSON: validates body against `spec.output`
-- On non-2xx JSON: validates body against the merged error schema for that HTTP status
+- On non-2xx JSON: validates body against the merged error schema for that HTTP status — returned or built by the error catch from a thrown error
+- Always accepts a 500 `{error: 'internal_error'}`: the error catch answers it for any generic throw, so no route declares it
 - **Logs on mismatch, returns the response unchanged** — never throws, never mutates the body
 
 Production short-circuits to the unwrapped handler — no parse work on the
