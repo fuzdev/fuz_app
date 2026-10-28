@@ -22,7 +22,8 @@
  * - `cross_backend_timing` — `ts_spine_node_timing` on 1187 on `memory://`,
  *   `spine_stub_timing` on 1188 over `fuz_app_test_rust_spine_stub_timing`
  *
- * A backend's name is also its directory under `os.tmpdir()`.
+ * A backend's name (prefixed with the repo directory) is also its directory
+ * under `os.tmpdir()`.
  *
  * The parity, security and timing databases sit on the server the stub's URL
  * names (`FUZ_TESTING_RUST_SPINE_STUB_DATABASE_URL`, else the local default);

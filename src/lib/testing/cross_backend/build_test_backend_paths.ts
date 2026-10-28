@@ -4,20 +4,24 @@ import '../assert_dev_env.ts';
  * Per-backend filesystem layout under `os.tmpdir()` for cross-process
  * tests.
  *
- * Isolation matters because vitest projects can run in parallel — a
- * shared `root` would mix daemon tokens across concurrently-running
- * backends. Each backend gets its own subtree via the `prefix` arg
- * (typically the `BackendConfig.name`).
+ * Isolation matters because vitest projects can run in parallel, and other
+ * repos' cross runs on the same machine share `os.tmpdir()` — a shared
+ * `root` would mix bootstrap and daemon tokens across concurrently-running
+ * backends. Each backend gets its own subtree: `default_test_backend_paths`
+ * (what the default builders use) names it after the running repo's
+ * directory plus the backend name, so two repos that both name a backend
+ * `'rust'` don't collide; `build_test_backend_paths` takes an explicit,
+ * already-unique prefix.
  *
- * Consumers compose: take the generic paths from
- * `build_test_backend_paths(name)`, add domain-specific dirs (e.g.
- * `zzz_dir`, `scoped_dir`) under the returned `root`.
+ * Consumers compose: take the generic paths from either builder and add
+ * domain-specific dirs (e.g. `zzz_dir`, `scoped_dir`) under the returned
+ * `root`.
  *
  * @module
  */
 
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 
 /**
  * Generic per-backend paths every cross-process test binary needs.
@@ -39,9 +43,10 @@ export interface TestBackendPaths {
 }
 
 /**
- * Build the generic path layout for a cross-process test backend.
- * `prefix` is typically the `BackendConfig.name` (e.g. `'deno'`,
- * `'rust'`, `'spine_stub'`).
+ * Build the generic path layout for a cross-process test backend under
+ * `os.tmpdir()/<prefix>`. `prefix` must be unique across every repo that
+ * runs cross tests on the machine (e.g. `'my_app_cross_rust'`); for a
+ * default derived from the backend name, use `default_test_backend_paths`.
  */
 export const build_test_backend_paths = (prefix: string): TestBackendPaths => {
 	const root = join(tmpdir(), prefix);
@@ -53,3 +58,25 @@ export const build_test_backend_paths = (prefix: string): TestBackendPaths => {
 		daemon_token_path: join(root, 'run', 'daemon_token')
 	};
 };
+
+/**
+ * The default per-backend tmpdir prefix: the running repo's directory name
+ * (`process.cwd()`'s basename — so run the tests from the repo root) plus the
+ * backend `name`, so the same backend name in two repos (`'rust'` in each)
+ * lands in two directories.
+ *
+ * @param name - the backend name (`BackendConfig.name`)
+ * @returns the prefix `default_test_backend_paths` passes to `build_test_backend_paths`
+ */
+export const default_test_backend_prefix = (name: string): string =>
+	`${basename(process.cwd())}_${name}`;
+
+/**
+ * The generic path layout under the default, repo-namespaced prefix
+ * (`default_test_backend_prefix`) — what the default backend builders use
+ * when given no `paths`.
+ *
+ * @param name - the backend name (`BackendConfig.name`)
+ */
+export const default_test_backend_paths = (name: string): TestBackendPaths =>
+	build_test_backend_paths(default_test_backend_prefix(name));

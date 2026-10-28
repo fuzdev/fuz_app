@@ -27,8 +27,8 @@ import '../assert_dev_env.ts';
  * Common across both families: `/api/rpc`, `/api/ws`, `/health`,
  * `/api/account/bootstrap`, `cookie_name: 'fuz_session'`, the standard
  * bootstrap block keyed off `default_test_*` constants. Builders call
- * `build_test_backend_paths(name)` internally when the optional `paths`
- * is omitted.
+ * `default_test_backend_paths(name)` (a repo-namespaced tmpdir) internally
+ * when the optional `paths` is omitted.
  *
  * @module
  */
@@ -37,7 +37,7 @@ import { basename, dirname } from 'node:path';
 
 import type { BackendBootstrapConfig, BackendConfig } from './backend_config.ts';
 import type { BackendCapabilities, FamilyDefaultCapabilities } from './capabilities.ts';
-import { build_test_backend_paths, type TestBackendPaths } from './build_test_backend_paths.ts';
+import { default_test_backend_paths, type TestBackendPaths } from './build_test_backend_paths.ts';
 import {
 	default_test_bootstrap_token,
 	default_test_cookie_keys,
@@ -196,7 +196,7 @@ const build_default_bootstrap = (
 });
 
 export interface MakeDefaultTsBackendConfigOptions {
-	/** Diagnostic label; also used as the tmpdir prefix when `paths` is omitted. */
+	/** Diagnostic label; also names the tmpdir (`default_test_backend_paths`) when `paths` is omitted. */
 	readonly name: string;
 	/** TCP port the binary listens on. */
 	readonly port: number;
@@ -213,7 +213,7 @@ export interface MakeDefaultTsBackendConfigOptions {
 	 * silently skips.
 	 */
 	readonly capabilities: BackendCapabilities;
-	/** Pre-computed paths; defaults to `build_test_backend_paths(name)`. */
+	/** Pre-computed paths; defaults to `default_test_backend_paths(name)`. */
 	readonly paths?: TestBackendPaths;
 	/** Override individual bootstrap fields (username/password/token). */
 	readonly bootstrap_overrides?: Partial<BackendBootstrapConfig>;
@@ -258,7 +258,7 @@ export const make_default_ts_backend_config = (
 		database_url = 'memory://',
 		extra_env,
 		capabilities,
-		paths = build_test_backend_paths(name),
+		paths = default_test_backend_paths(name),
 		bootstrap_overrides,
 		port_env_var = 'PORT',
 		cookie_name = 'fuz_session',
@@ -292,7 +292,7 @@ export const make_default_ts_backend_config = (
 };
 
 export interface MakeDefaultRustBackendConfigOptions {
-	/** Diagnostic label; also used as the tmpdir prefix when `paths` is omitted. */
+	/** Diagnostic label; also names the tmpdir (`default_test_backend_paths`) when `paths` is omitted. */
 	readonly name: string;
 	/** TCP port the binary listens on. */
 	readonly port: number;
@@ -313,7 +313,7 @@ export interface MakeDefaultRustBackendConfigOptions {
 	 * silently skips.
 	 */
 	readonly capabilities: BackendCapabilities;
-	/** Pre-computed paths; defaults to `build_test_backend_paths(name)`. */
+	/** Pre-computed paths; defaults to `default_test_backend_paths(name)`. */
 	readonly paths?: TestBackendPaths;
 	/** Override individual bootstrap fields (username/password/token). */
 	readonly bootstrap_overrides?: Partial<BackendBootstrapConfig>;
@@ -361,7 +361,7 @@ export const make_default_rust_backend_config = (
 		database_url,
 		extra_env,
 		capabilities,
-		paths = build_test_backend_paths(name),
+		paths = default_test_backend_paths(name),
 		bootstrap_overrides,
 		port_env_var = 'PORT',
 		rust_log = 'info',

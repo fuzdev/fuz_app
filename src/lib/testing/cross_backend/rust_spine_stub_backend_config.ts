@@ -40,7 +40,7 @@ import { fileURLToPath } from 'node:url';
 
 import type { BackendConfig } from './backend_config.ts';
 import type { BackendCapabilities } from './capabilities.ts';
-import { build_test_backend_paths } from './build_test_backend_paths.ts';
+import { default_test_backend_paths } from './build_test_backend_paths.ts';
 import {
 	LOGIN_RATE_LIMIT_ENABLED_ENV,
 	SPINE_EXPECTED_SCHEMA_URL,
@@ -126,7 +126,8 @@ export interface SpineStubBackendConfigOptions {
 	readonly database_url?: string;
 	/**
 	 * Backend name — labels the spawn in errors and logs, and names its
-	 * directory under `os.tmpdir()` (`build_test_backend_paths`), which holds
+	 * directory under `os.tmpdir()` (`default_test_backend_paths`, namespaced
+	 * by the running repo), which holds
 	 * the bootstrap token, the daemon token and the fact store. Default
 	 * `RUST_SPINE_STUB_DEFAULT_NAME`. Give each stub spawned alongside another its own name, so
 	 * those files don't collide.
@@ -214,7 +215,7 @@ export const rust_spine_stub_backend_config = (
 				'or pass `binary_path`.'
 		);
 	}
-	const paths = build_test_backend_paths(name);
+	const paths = default_test_backend_paths(name);
 	return make_default_rust_backend_config({
 		name,
 		port,

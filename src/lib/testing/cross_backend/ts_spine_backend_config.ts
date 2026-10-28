@@ -20,7 +20,7 @@ import '../assert_dev_env.ts';
 
 import type { BackendConfig } from './backend_config.ts';
 import type { BackendCapabilities } from './capabilities.ts';
-import { build_test_backend_paths } from './build_test_backend_paths.ts';
+import { default_test_backend_paths } from './build_test_backend_paths.ts';
 import {
 	action_rate_limit_env,
 	make_default_ts_backend_config,
@@ -124,8 +124,9 @@ export interface TsSpineBackendConfigOptions {
 	readonly database_url?: string;
 	/**
 	 * Backend name — labels the spawn in errors and logs, and names its
-	 * directory under `os.tmpdir()` (`build_test_backend_paths`). Defaults per
-	 * runtime (`ts_spine_node`, `ts_spine_deno`, `ts_spine_bun`). Give each
+	 * directory under `os.tmpdir()` (`default_test_backend_paths`, namespaced
+	 * by the running repo). Defaults per runtime (`ts_spine_node`,
+	 * `ts_spine_deno`, `ts_spine_bun`). Give each
 	 * backend spawned alongside another of its runtime its own name, so their
 	 * bootstrap and daemon-token files don't collide.
 	 */
@@ -193,7 +194,7 @@ export const ts_spine_node_backend_config = (
 		enable_login_rate_limit,
 		name = 'ts_spine_node'
 	} = options;
-	const paths = build_test_backend_paths(name);
+	const paths = default_test_backend_paths(name);
 	return {
 		...make_default_ts_backend_config({
 			name,
@@ -229,7 +230,7 @@ export const ts_spine_bun_backend_config = (
 		enable_login_rate_limit,
 		name = 'ts_spine_bun'
 	} = options;
-	const paths = build_test_backend_paths(name);
+	const paths = default_test_backend_paths(name);
 	return {
 		...make_default_ts_backend_config({
 			name,
@@ -269,7 +270,7 @@ export const ts_spine_deno_backend_config = (
 		enable_login_rate_limit,
 		name = 'ts_spine_deno'
 	} = options;
-	const paths = build_test_backend_paths(name);
+	const paths = default_test_backend_paths(name);
 	return {
 		...make_default_ts_backend_config({
 			name,
