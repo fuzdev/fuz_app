@@ -167,7 +167,8 @@ export const to_revocation_scope = (event_type: string): RevocationScope =>
  * The revocation guard reads it for every transport, so a socket and a
  * stream gated on one role close on the same rows.
  *
- * Twin of the Rust spine's `global_role_revocation`.
+ * Twin of the role arm of the Rust spine's
+ * `SocketCloseTarget::from_audit_event`.
  *
  * @param event - a row whose scope is `role` (the caller dispatched on it)
  * @returns the account and role to close on, or `null` when the row names no

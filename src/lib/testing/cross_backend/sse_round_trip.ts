@@ -278,8 +278,9 @@ export const describe_cross_process_sse_tests = (options: CrossProcessSseTestOpt
 		);
 
 		// Single `session_revoke` of the subscriber's OWN session → the
-		// session-hash-scoped close (the Rust registry's `close_for_session`, the
-		// TS registry's `close_by_identity(session_hash)`). The keeper holds
+		// session-hash-scoped close (the Rust registry's
+		// `SocketCloseTarget::Session` close, the TS registry's
+		// `close_by_identity(session_hash)`). The keeper holds
 		// exactly one session, so revoking it by its blake3 hash drops the stream
 		// opened under it. This is the close-on-revoke path the account-wide case
 		// above doesn't exercise; `role_grant_revoke`'s role-matched close is
