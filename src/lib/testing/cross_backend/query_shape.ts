@@ -19,7 +19,8 @@ import '../assert_dev_env.ts';
  * - **the JSON-RPC GET endpoint** — `method` / `id` / `params` read
  *   first-wins; a duplicated `method` must dispatch the first one on every
  *   backend (a last-wins reader dispatches a different method per backend on
- *   the same request).
+ *   the same request). Every response the GET handler writes — a dispatched
+ *   answer and its own query refusal alike — is `Cache-Control: no-store`.
  * - **`GET /api/facts/:hash`** (gated on `capabilities.fact_serving_admin_hash`) —
  *   strict query schema: unknown keys and a malformed `acting` are 400
  *   `invalid_query_params` even for an anonymous caller (query precedes the
@@ -48,6 +49,13 @@ import { SPINE_ACCOUNT_STATUS_PATH, SPINE_RPC_PATH } from './spine_surface_const
  * rather than minting a duplicate.
  */
 export type QueryShapeCrossTestOptions = RpcPathCapabilityGatedCrossSuiteOptions;
+
+/**
+ * The `Cache-Control` every RPC `GET` response carries — the value of
+ * `actions/action_rpc.ts`'s `RPC_GET_CACHE_CONTROL` and the Rust spine's,
+ * spelled out so this suite imports no server module.
+ */
+const RPC_GET_CACHE_CONTROL_EXPECTED = 'no-store';
 
 /** A well-formed blake3 hash that references no stored fact. */
 const MISSING_HASH = `blake3:${'a'.repeat(64)}`;
@@ -145,9 +153,28 @@ export const describe_query_shape_cross_tests = (options: QueryShapeCrossTestOpt
 				{ method: 'GET', headers: fixture.create_session_headers() }
 			);
 			assert.strictEqual(res.status, 200);
+			assert.strictEqual(
+				res.headers.get('cache-control'),
+				RPC_GET_CACHE_CONTROL_EXPECTED,
+				'a GET read is no-store'
+			);
 			const body = (await res.json()) as { id: unknown; result?: unknown };
 			assert.strictEqual(body.id, 7, 'first id occurrence must win');
 			assert.ok(body.result !== undefined, 'first method occurrence must dispatch');
+		});
+
+		test('rpc GET: the handler refusal is no-store too', async () => {
+			const fixture = await setup_test();
+			const res = await fixture.transport(`${rpc_path}?id=1`, {
+				method: 'GET',
+				headers: fixture.create_session_headers()
+			});
+			assert.strictEqual(res.status, 400);
+			assert.strictEqual(
+				res.headers.get('cache-control'),
+				RPC_GET_CACHE_CONTROL_EXPECTED,
+				'a missing-method refusal is no-store'
+			);
 		});
 
 		test_if(
