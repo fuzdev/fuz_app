@@ -10,6 +10,7 @@
  */
 
 import { z } from 'zod';
+import type { Result } from '@fuzdev/fuz_util/result.ts';
 
 import { create_keyring, type Keyring } from '../auth/keyring.ts';
 import { format_allowed_origins_error, parse_allowed_origins } from '../http/origin.ts';
@@ -53,8 +54,7 @@ export type BaseServerEnv = z.infer<typeof BaseServerEnv>;
 /**
  * Validated server env config — the artifacts `create_app_server()` needs.
  */
-export interface ServerEnvOptions {
-	ok: true;
+export interface ValidatedServerEnv {
 	keyring: Keyring;
 	allowed_origins: Array<RegExp>;
 	bootstrap_token_path: string | null;
@@ -63,13 +63,10 @@ export interface ServerEnvOptions {
 /**
  * Error from `validate_server_env` — keyring or origin validation failed.
  */
-export interface ServerEnvOptionsError {
-	ok: false;
+export interface ServerEnvValidationError {
 	field: 'SECRET_FUZ_COOKIE_KEYS' | 'FUZ_ALLOWED_ORIGINS';
 	errors: Array<string>;
 }
-
-export type ServerEnvOptionsResult = ServerEnvOptions | ServerEnvOptionsError;
 
 /**
  * Validate a loaded `BaseServerEnv` and produce the artifacts needed for server init.
@@ -81,7 +78,9 @@ export type ServerEnvOptionsResult = ServerEnvOptions | ServerEnvOptionsError;
  * @param env - a loaded and Zod-validated `BaseServerEnv`
  * @returns `{ok: true, keyring, allowed_origins, bootstrap_token_path}` or `{ok: false, field, errors}`
  */
-export const validate_server_env = (env: BaseServerEnv): ServerEnvOptionsResult => {
+export const validate_server_env = (
+	env: BaseServerEnv
+): Result<ValidatedServerEnv, ServerEnvValidationError> => {
 	const keyring_result = create_keyring(env.SECRET_FUZ_COOKIE_KEYS);
 	if (!keyring_result.ok) {
 		return { ok: false, field: 'SECRET_FUZ_COOKIE_KEYS', errors: keyring_result.errors };

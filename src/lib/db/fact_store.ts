@@ -399,8 +399,11 @@ export class PgFactStore implements HeldFactStore {
  * `pg` returns `Buffer` (a `Uint8Array` subclass), `pglite` already returns
  * `Uint8Array`. Wrapping `Buffer` in a fresh `Uint8Array` keeps the
  * downstream type honest without a copy.
+ *
+ * @param value - a BYTEA column value as the driver returned it
+ * @returns a plain `Uint8Array` over the same bytes
  */
-const to_uint8 = (value: Uint8Array): Uint8Array =>
+export const to_uint8 = (value: Uint8Array): Uint8Array =>
 	value instanceof Uint8Array && value.constructor === Uint8Array
 		? value
 		: new Uint8Array(value.buffer, value.byteOffset, value.byteLength);

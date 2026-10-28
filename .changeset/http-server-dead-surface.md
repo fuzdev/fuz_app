@@ -1,0 +1,5 @@
+---
+'@fuzdev/fuz_app': minor
+---
+
+break: trim http/server surface nothing reads — drop the unused `deps` option from `create_serve_cell_fact_route_spec` / `create_serve_fact_route_spec` (`CreateServeFactRouteSpecOptions`); delete the test-only `routes_by_auth_type`, `RouteAuthCategory`, `filter_authenticated_routes`, `filter_routes_for_role`, `filter_routes_by_prefix`, `filter_mutation_routes`, `filter_rate_limited_routes` (`http/surface_query.ts`) and `is_jsonrpc_message` (`http/jsonrpc_helpers.ts`); rename `ServerEnvOptions` / `ServerEnvOptionsError` to `ValidatedServerEnv` / `ServerEnvValidationError`, with `validate_server_env` returning fuz_util's `Result<ValidatedServerEnv, ServerEnvValidationError>` (`ServerEnvOptionsResult` is removed). To migrate: stop passing `deps` to the fact route factories, count auth buckets with `surface_auth_summary` or filter `surface.routes` inline, and rename the env types

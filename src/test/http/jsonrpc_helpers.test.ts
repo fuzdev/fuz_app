@@ -16,7 +16,6 @@ import {
 	create_jsonrpc_error_response_from_thrown,
 	is_jsonrpc_request_id,
 	is_jsonrpc_object,
-	is_jsonrpc_message,
 	is_jsonrpc_request,
 	is_jsonrpc_notification,
 	is_jsonrpc_response,
@@ -154,25 +153,6 @@ describe('is_jsonrpc_object', () => {
 		assert.ok(!is_jsonrpc_object([]));
 		assert.ok(!is_jsonrpc_object({ jsonrpc: '1.0' }));
 		assert.ok(!is_jsonrpc_object({}));
-	});
-});
-
-describe('is_jsonrpc_message', () => {
-	test('accepts single JSON-RPC objects', () => {
-		assert.ok(is_jsonrpc_message({ jsonrpc: '2.0', method: 'ping', id: 1 }));
-	});
-
-	test('accepts arrays of JSON-RPC objects', () => {
-		assert.ok(
-			is_jsonrpc_message([
-				{ jsonrpc: '2.0', method: 'a', id: 1 },
-				{ jsonrpc: '2.0', method: 'b', id: 2 }
-			])
-		);
-	});
-
-	test('rejects empty arrays', () => {
-		assert.ok(!is_jsonrpc_message([]));
 	});
 });
 

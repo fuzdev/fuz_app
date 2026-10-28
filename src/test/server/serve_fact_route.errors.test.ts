@@ -18,13 +18,8 @@ import {
 	create_serve_fact_route_spec,
 	create_serve_cell_fact_route_spec
 } from '#lib/server/serve_fact_route.ts';
-import type { AppDeps } from '#lib/auth/deps.ts';
 import { ERROR_INVALID_ROUTE_PARAMS } from '#lib/http/error_schemas.ts';
 
-// Neither factory reads `deps` at construction time (it exists on the
-// options for symmetry with sibling route factories), so a bare stub is
-// enough to reach the declared error schemas.
-const deps = {} as AppDeps;
 const log = new Logger('test', { level: 'off' });
 
 const route_400_schemas = [
@@ -35,7 +30,7 @@ const route_400_schemas = [
 describe('fact route 400 error schema', () => {
 	for (const [label, create] of route_400_schemas) {
 		describe(label, () => {
-			const schema = create({ deps, facts_dir: '/tmp/facts', log }).errors?.[400];
+			const schema = create({ facts_dir: '/tmp/facts', log }).errors?.[400];
 
 			test('declares a 400 schema', () => {
 				assert.ok(schema);

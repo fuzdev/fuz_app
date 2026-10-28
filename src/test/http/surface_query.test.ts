@@ -11,17 +11,11 @@ import {
 	filter_protected_routes,
 	filter_public_routes,
 	filter_role_routes,
-	filter_authenticated_routes,
 	filter_keeper_routes,
 	filter_credential_gated_routes,
-	filter_routes_for_role,
-	routes_by_auth_type,
-	filter_routes_by_prefix,
 	filter_routes_with_input,
 	filter_routes_with_params,
 	filter_routes_with_query,
-	filter_mutation_routes,
-	filter_rate_limited_routes,
 	format_route_key,
 	surface_auth_summary
 } from '#lib/http/surface_query.ts';
@@ -128,7 +122,7 @@ const test_specs: Array<RouteSpec> = [
 	{
 		// A session-channel gate with no role — the shape `POST /logout` and
 		// `POST /password` carry. It answers to neither the keeper filter nor
-		// `is_plain_authenticated_auth`, so before the `credential:<type>`
+		// `is_plain_authenticated_auth`, so before the `credential`
 		// bucket it fell through to `'other'` and went uncounted.
 		method: 'POST',
 		path: '/api/account/token',
@@ -176,83 +170,6 @@ describe('filter_keeper_routes', () => {
 	});
 });
 
-describe('filter_routes_by_prefix', () => {
-	test('filters by path prefix', () => {
-		const result = filter_routes_by_prefix(build_surface(), '/api/admin');
-		assert.strictEqual(result.length, 2);
-	});
-
-	test('returns empty for non-matching prefix', () => {
-		const result = filter_routes_by_prefix(build_surface(), '/nonexistent');
-		assert.strictEqual(result.length, 0);
-	});
-});
-
-describe('filter_authenticated_routes', () => {
-	test('includes only authenticated (no specific role) routes', () => {
-		const result = filter_authenticated_routes(build_surface());
-		assert.strictEqual(result.length, 1);
-		assert.strictEqual(result[0]!.path, '/api/me');
-	});
-});
-
-describe('filter_routes_for_role', () => {
-	test('filters by specific role name', () => {
-		const result = filter_routes_for_role(build_surface(), 'admin');
-		assert.strictEqual(result.length, 4);
-		assert.ok(result.every((r) => r.auth.roles?.includes('admin') ?? false));
-	});
-
-	test('returns empty for non-existent role', () => {
-		const result = filter_routes_for_role(build_surface(), 'viewer');
-		assert.strictEqual(result.length, 0);
-	});
-});
-
-describe('routes_by_auth_type', () => {
-	test('groups routes by auth type with role:name keys', () => {
-		const groups = routes_by_auth_type(build_surface());
-		assert.strictEqual(groups.get('none')!.length, 3);
-		assert.strictEqual(groups.get('authenticated')!.length, 1);
-		assert.strictEqual(groups.get('role:admin')!.length, 4);
-		assert.strictEqual(groups.get('keeper')!.length, 1);
-		assert.strictEqual(groups.size, 5);
-	});
-
-	test('a role-less channel gate buckets as credential:<type>, not other', () => {
-		const groups = routes_by_auth_type(build_surface());
-		assert.deepStrictEqual(
-			groups.get('credential:session')!.map((r) => r.path),
-			['/api/account/token']
-		);
-		assert.strictEqual(groups.get('other'), undefined);
-	});
-
-	test('keeper names the route, a session gate does not — the audit stream shape', () => {
-		const surface = generate_app_surface({
-			middleware_specs: [],
-			route_specs: [
-				{
-					method: 'GET',
-					path: '/api/admin/audit/stream',
-					auth: {
-						account: 'required',
-						actor: 'required',
-						roles: ['admin'],
-						credential_types: ['session']
-					},
-					handler: stub_handler,
-					description: 'Audit stream',
-					input: z.null(),
-					output: z.null()
-				}
-			]
-		});
-		const groups = routes_by_auth_type(surface);
-		assert.deepStrictEqual([...groups.keys()], ['role:admin']);
-	});
-});
-
 describe('filter_routes_with_input', () => {
 	test('includes only routes with non-null input schema', () => {
 		const result = filter_routes_with_input(build_surface());
@@ -274,24 +191,6 @@ describe('filter_routes_with_query', () => {
 		const result = filter_routes_with_query(build_surface());
 		assert.strictEqual(result.length, 1);
 		assert.strictEqual(result[0]!.path, '/api/audit-log');
-	});
-});
-
-describe('filter_mutation_routes', () => {
-	test('includes POST, DELETE but not GET routes', () => {
-		const result = filter_mutation_routes(build_surface());
-		assert.ok(result.every((r) => r.is_mutation));
-		assert.ok(result.every((r) => r.method !== 'GET'));
-		assert.ok(result.length > 0);
-	});
-});
-
-describe('filter_rate_limited_routes', () => {
-	test('includes only routes with rate_limit_key', () => {
-		const result = filter_rate_limited_routes(build_surface());
-		assert.strictEqual(result.length, 1);
-		assert.strictEqual(result[0]!.path, '/api/account/login');
-		assert.strictEqual(result[0]!.rate_limit_key, 'ip');
 	});
 });
 
@@ -329,6 +228,32 @@ describe('surface_auth_summary', () => {
 		assert.strictEqual(summary.credential.get('session'), 1);
 		assert.strictEqual(summary.keeper, 1);
 		assert.strictEqual(summary.other, 0);
+	});
+
+	test('keeper names the route, a session gate does not — the audit stream shape', () => {
+		const surface = generate_app_surface({
+			middleware_specs: [],
+			route_specs: [
+				{
+					method: 'GET',
+					path: '/api/admin/audit/stream',
+					auth: {
+						account: 'required',
+						actor: 'required',
+						roles: ['admin'],
+						credential_types: ['session']
+					},
+					handler: stub_handler,
+					description: 'Audit stream',
+					input: z.null(),
+					output: z.null()
+				}
+			]
+		});
+		const summary = surface_auth_summary(surface);
+		assert.deepStrictEqual([...summary.role], [['admin', 1]]);
+		assert.strictEqual(summary.credential.size, 0);
+		assert.strictEqual(summary.keeper, 0);
 	});
 
 	test('role map has correct entries', () => {

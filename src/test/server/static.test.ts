@@ -78,7 +78,7 @@ describe('create_static_middleware', () => {
 		assert.strictEqual(rewrite_path, '/200.html');
 	});
 
-	test('phase 3 skips /api/ paths by default', async () => {
+	test.each(['/api/zap/files', '/api'])('phase 3 skips %s by default', async (path) => {
 		let serve_static_called = false;
 		let next_called = false;
 		const factory: ServeStaticFactory = () => {
@@ -91,13 +91,30 @@ describe('create_static_middleware', () => {
 		const handlers = create_static_middleware(factory, { spa_fallback: '/200.html' });
 		const phase3 = handlers[2]!;
 
-		const c = { req: { path: '/api/zap/files' } } as any;
+		const c = { req: { path } } as any;
 		await phase3(c, async () => {
 			next_called = true;
 		});
 
 		assert.strictEqual(serve_static_called, false);
 		assert.strictEqual(next_called, true);
+	});
+
+	test('phase 3 serves the fallback for a path that only starts with /api', async () => {
+		let serve_static_called = false;
+		const factory: ServeStaticFactory = () => {
+			const handler: MiddlewareHandler = async () => {
+				serve_static_called = true;
+			};
+			return handler;
+		};
+
+		const handlers = create_static_middleware(factory, { spa_fallback: '/200.html' });
+		const phase3 = handlers[2]!;
+
+		await phase3({ req: { path: '/apiary' } } as any, async () => {});
+
+		assert.strictEqual(serve_static_called, true);
 	});
 
 	test('phase 3 respects custom is_spa_route', async () => {

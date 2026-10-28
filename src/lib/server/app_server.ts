@@ -521,7 +521,7 @@ export interface AppServer {
 	 *    own, so a shutdown with a deadline races it
 	 * 2. close every live connection on `deps.connection_closer`
 	 *    (`close_all_connections`) — each WebSocket with `WS_CLOSE_GOING_AWAY`, each
-	 *    audit stream — including transports supplied through
+	 *    audit stream — including registries supplied through
 	 *    `WsEndpointSpec.registry` or added by hand, since they are registered
 	 *    on the backend's closer and the backend is going away; a close that
 	 *    throws is logged and the shutdown goes on. Each connection and SSE registry

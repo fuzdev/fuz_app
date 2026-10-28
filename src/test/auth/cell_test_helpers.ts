@@ -129,12 +129,10 @@ export const create_cell_route_specs =
 				log: ctx.deps.log
 			}),
 			create_serve_cell_fact_route_spec({
-				deps: ctx.deps,
 				facts_dir,
 				log: ctx.deps.log
 			}),
 			create_serve_fact_route_spec({
-				deps: ctx.deps,
 				facts_dir,
 				log: ctx.deps.log
 			})

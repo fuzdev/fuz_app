@@ -24,7 +24,6 @@ import type { MiddlewareCarveOut } from '#lib/http/middleware_spec.ts';
 import { create_stub_app_deps } from '#lib/testing/stubs.ts';
 import { create_serve_cell_fact_route_spec } from '#lib/server/serve_fact_route.ts';
 import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
-import type { AppDeps } from '#lib/auth/deps.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 const create_options = (overrides?: Partial<AuthMiddlewareOptions>): AuthMiddlewareOptions => ({
@@ -289,7 +288,6 @@ describe('assert_credential_routes_in_auth_scope', () => {
 	// caller as anonymous
 	test('the cell-scoped fact read is marked as reading, and refused off /api', () => {
 		const spec = create_serve_cell_fact_route_spec({
-			deps: {} as AppDeps,
 			facts_dir: '/tmp/facts',
 			log: new Logger('test', { level: 'off' })
 		});

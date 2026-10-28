@@ -429,8 +429,8 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 			// driven by the dedicated `describe_ready_cross_tests` suite, not the
 			// generic round-trip.
 			create_spine_ready_route_spec(log),
-			create_serve_cell_fact_route_spec({ deps: ctx.deps, facts_dir, log }),
-			create_serve_fact_route_spec({ deps: ctx.deps, facts_dir, log })
+			create_serve_cell_fact_route_spec({ facts_dir, log }),
+			create_serve_fact_route_spec({ facts_dir, log })
 		],
 		// The full live RPC mount: the standard bundle plus the off-declared-surface
 		// families (`_testing_*` backdoors, the full cell verb set, the opt-in

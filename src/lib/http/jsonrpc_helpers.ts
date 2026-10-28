@@ -20,7 +20,6 @@ import {
 	type JsonrpcRequestParams,
 	type JsonrpcResponse,
 	type JsonrpcResult,
-	type JsonrpcMessage,
 	type JsonrpcErrorCode,
 	JSONRPC_VERSION
 } from './jsonrpc.ts';
@@ -131,14 +130,6 @@ export const is_jsonrpc_object = (
 	message !== null &&
 	!Array.isArray(message) &&
 	(message as any).jsonrpc === JSONRPC_VERSION;
-
-/** Checks if a value is any valid JSON-RPC message or batch array. */
-export const is_jsonrpc_message = (
-	message: unknown
-): message is JsonrpcMessage | Array<JsonrpcMessage> =>
-	Array.isArray(message)
-		? message.length > 0 && message.every((m) => is_jsonrpc_object(m))
-		: is_jsonrpc_object(message);
 
 /** Checks if a value is a JSON-RPC request (has method + id). */
 export const is_jsonrpc_request = (message: unknown): message is JsonrpcRequest =>

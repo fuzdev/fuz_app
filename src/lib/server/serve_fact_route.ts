@@ -149,8 +149,8 @@ import { ActingActor } from '../http/auth_shape.ts';
 import { query_active_actors_by_account } from '../auth/account_queries.ts';
 import { get_route_params, type RouteContext, type RouteSpec } from '../http/route_spec.ts';
 import { ERROR_INVALID_ROUTE_PARAMS } from '../http/error_schemas.ts';
-import type { AppDeps } from '../auth/deps.ts';
 import { query_get_fact, query_get_fact_meta } from '../db/fact_queries.ts';
+import { to_uint8 } from '../db/fact_store.ts';
 import { query_cell_get } from '../db/cell_queries.ts';
 import { query_cell_grant_list_for_cell } from '../db/cell_grant_queries.ts';
 import { can_view_cell } from '../auth/cell_authorize.ts';
@@ -193,14 +193,6 @@ const params_400_error = {
 } as const;
 
 export interface CreateServeFactRouteSpecOptions {
-	/**
-	 * App deps reference. Currently unused at handler time (cell + fact
-	 * tables are read via `RouteContext.db`); kept on the factory
-	 * signature for symmetry with sibling route factories and to give
-	 * future role_grant-scoped viewer extensions somewhere to read other
-	 * deps without changing the public shape.
-	 */
-	deps: AppDeps;
 	/** Absolute path of the facts directory. Used for the dev/test streaming path. */
 	facts_dir: string;
 	/**
@@ -446,9 +438,9 @@ export const create_serve_cell_fact_route_spec = (
  * post-authorization guard enforces the admin role before the handler runs.
  * The handler re-checks the **global** admin grant
  * (`has_scoped_role(_, admin, null)`, the auth phase's own reading) as
- * defense-in-depth so a future
- * mounting/auth-shape regression fails closed rather than serving by bare
- * hash to a non-admin.
+ * defense-in-depth so a future mounting/auth-shape regression fails closed —
+ * a masked 404, logged at error — rather than serving by bare hash to a
+ * non-admin.
  */
 export const create_serve_fact_route_spec = (
 	options: CreateServeFactRouteSpecOptions
@@ -487,8 +479,12 @@ export const create_serve_fact_route_spec = (
 			// Defense-in-depth: the auth phase already gated this on the admin
 			// role, but re-check the resolved context so a mounting/auth-shape
 			// regression fails closed instead of serving by bare hash. Global
-			// grant only — a scoped `admin` row must not read every fact.
+			// grant only — a scoped `admin` row must not read every fact. It
+			// fires only on such a regression, so it fails loud as well.
 			if (!has_scoped_role(get_request_context(c), ROLE_ADMIN, null)) {
+				log.error(
+					'bare-hash fact read reached the handler without a global admin grant — the auth gate did not run'
+				);
 				return c.body(null, 404);
 			}
 
@@ -496,13 +492,3 @@ export const create_serve_fact_route_spec = (
 		}
 	};
 };
-
-/**
- * Coerce whatever the driver returns for BYTEA into a `Uint8Array`. Same
- * shape as the helper in `PgFactStore.get` — `pg` returns a `Buffer`
- * (`Uint8Array` subclass), `pglite` already returns `Uint8Array`.
- */
-const to_uint8 = (value: Uint8Array): Uint8Array =>
-	value instanceof Uint8Array && value.constructor === Uint8Array
-		? value
-		: new Uint8Array(value.buffer, value.byteOffset, value.byteLength);

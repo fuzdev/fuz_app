@@ -274,11 +274,10 @@ the source specs, for tests that need to iterate over raw specs.
 No side effects, no state — filters and groupings over `AppSurface`:
 
 - `filter_protected_routes` / `filter_public_routes`
-- `filter_role_routes` / `filter_authenticated_routes` / `filter_keeper_routes` / `filter_credential_gated_routes` (any `auth.credential_types` gate — superset of keeper) / `filter_routes_for_role(role)`
-- `filter_routes_by_prefix(prefix)` / `filter_routes_with_input` / `filter_routes_with_params` / `filter_routes_with_query` / `filter_mutation_routes` / `filter_rate_limited_routes`
-- `routes_by_auth_type(surface)` — `Map<RouteAuthCategory, Array<AppSurfaceRoute>>` where `RouteAuthCategory = 'none' | 'authenticated' | 'optional' | 'keeper' | 'role:<name>' | 'credential:<type>' | 'other'`. Multi-role / multi-channel specs appear under each bucket. Keeper is tested before the role bucket and the general credential bucket after it — keeper is an authority _level_ and names the route, a session gate is a _channel_ restriction over the authority the route already declares (so the audit SSE stream buckets as `role:admin`)
+- `filter_role_routes` / `filter_keeper_routes` / `filter_credential_gated_routes` (any `auth.credential_types` gate — superset of keeper)
+- `filter_routes_with_input` / `filter_routes_with_params` / `filter_routes_with_query`
 - `format_route_key(route)` → `'METHOD /path'`
-- `surface_auth_summary(surface)` — counts per auth type, roles and credential channels broken out by name; buckets exactly as `routes_by_auth_type`
+- `surface_auth_summary(surface)` — counts per auth bucket (`none`, `keeper`, `role`, `credential`, `authenticated`, `optional`, `other`), roles and credential channels broken out by name; multi-role / multi-channel specs count once per name. One private categorizer decides the bucket: keeper is tested before the role bucket and the general credential bucket after it — keeper is an authority _level_ and names the route, a session gate is a _channel_ restriction over the authority the route already declares (so the audit SSE stream counts under `role`)
 
 The per-route auth predicates these filters compose over (`is_public_auth`,
 `is_role_auth`, `is_credential_gated_auth`, `is_keeper_auth`,
@@ -445,11 +444,12 @@ which holds a declaration to the same rules.
 - `register_jsonrpc_error_code(code, http_status)` — declares a consumer code's status (see **Consumer codes** above)
 - Envelope schemas in `http/jsonrpc.ts`: `JsonrpcRequest`, `JsonrpcNotification`, `JsonrpcResponse`, `JsonrpcErrorResponse`, `JsonrpcResponseOrError`, `JsonrpcMessage`, `JsonrpcMessageFromClientToServer`, `JsonrpcMessageFromServerToClient`. Also `JsonrpcRequestId`, `JsonrpcMethod`, `JsonrpcProgressToken`, `JsonrpcMcpMeta`, `JsonrpcRequestParamsMeta`
 - Builders in `http/jsonrpc_helpers.ts`: `create_jsonrpc_request`, `create_jsonrpc_notification`, `create_jsonrpc_response`, `create_jsonrpc_error_response`, `create_jsonrpc_error_response_from_thrown` (preserves code/message/data on `ThrownJsonrpcError`; plain `Error` → `internal_error` with `{stack}` in DEV)
-- Type guards: `is_jsonrpc_request_id` (rejects NaN/Infinity), `is_jsonrpc_object`, `is_jsonrpc_message`, `is_jsonrpc_request` / `_notification` / `_response` / `_error_response`
+- Type guards: `is_jsonrpc_request_id` (rejects NaN/Infinity), `is_jsonrpc_object`, `is_jsonrpc_request` / `_notification` / `_response` / `_error_response`
 - Converters: `to_jsonrpc_message_id`, `to_jsonrpc_params` (normalizes primitives to `{value}`)
 
 Handlers can `throw jsonrpc_errors.*` — `apply_route_specs`' error-catch
-layer converts to `{error: JsonrpcErrorObject}` at the correct HTTP status.
+layer converts to the flat REST body (`{error: <reason>, message?, ...rest_data}`)
+at the correct HTTP status.
 Generic `Error` maps to 500 `internal_error` (message in DEV only).
 
 ## Pending Effects

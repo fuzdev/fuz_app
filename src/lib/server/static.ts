@@ -27,8 +27,9 @@ export interface ServeStaticOptions {
  */
 export type ServeStaticFactory = (options: ServeStaticOptions) => MiddlewareHandler;
 
-/** Default SPA route filter — serves the SPA fallback for all paths except `/api/`. */
-const is_spa_route_default = (path: string): boolean => !path.startsWith('/api/');
+/** Default SPA route filter — serves the SPA fallback for all paths except `/api` and `/api/…`. */
+const is_spa_route_default = (path: string): boolean =>
+	path !== '/api' && !path.startsWith('/api/');
 
 /**
  * Create static file serving middleware for SvelteKit static builds.

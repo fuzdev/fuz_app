@@ -315,9 +315,10 @@ const create_content_type_check = (spec: RouteSpec): Array<MiddlewareHandler> =>
  * and for null-input routes (no body expected). For other routes with input
  * schemas, returns a middleware that parses and validates the JSON body,
  * storing the result on the context as `validated_input`. Input validation
- * runs before the authorization phase, so the authorization phase reads
- * `c.var.validated_input.acting` directly — no separate body pre-parse /
- * cache machinery is needed.
+ * runs after the authorization phase and the post-authorization guards, so a
+ * caller they refuse never sees a parse failure; the authorization phase reads
+ * `acting` off the raw body itself (`read_route_acting` in
+ * `auth/request_context.ts`), treating a malformed body as no selector.
  *
  * @mutates `c.var.validated_input` - set to the parsed and validated body on success
  */
