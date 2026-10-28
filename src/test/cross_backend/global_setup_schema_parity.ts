@@ -42,14 +42,10 @@ import {
 	rust_spine_stub_backend_config
 } from '#lib/testing/cross_backend/rust_spine_stub_backend_config.ts';
 import {
+	empty_owned_database,
 	ensure_database,
-	redact_database_url,
-	to_maintenance_database_url,
 	with_database_name
 } from '#lib/testing/cross_backend/postgres_database.ts';
-import { reset_public_schema } from '#lib/testing/db.ts';
-import { create_db } from '#lib/db/create_db.ts';
-import { pg_error_code } from '#lib/db/pg_error.ts';
 import type { TestProject } from 'vitest/node';
 
 import './cross_test_types.ts';
@@ -90,64 +86,17 @@ const resolve_parity_database_urls = (): { ts: string; stub: string } => {
 	};
 };
 
-/** A connection failure's text — a refused connection carries a `code` and an empty message. */
-const describe_error = (error: unknown): string =>
-	(error instanceof Error && error.message) || pg_error_code(error) || String(error);
-
-/**
- * Drop and recreate the `public` schema of the TS leg's database, so the spine
- * binary migrates and bootstraps from nothing on every run.
- *
- * Refuses any URL whose database is not `TS_SPINE_PARITY_DATABASE` — the wipe
- * takes everything, so it is tied to the one name this file owns rather than
- * to whatever URL reaches it.
- *
- * @param database_url - the TS leg's `postgres://` URL
- * @throws Error when the URL names another database, or when the database
- * cannot be emptied (with what to check)
- */
-const empty_ts_spine_parity_database = async (database_url: string): Promise<void> => {
-	const url = new URL(database_url);
-	const database = url.pathname.slice(1);
-	if (database !== TS_SPINE_PARITY_DATABASE) {
-		throw new Error(
-			`schema parity setup: refusing to empty database "${database}" — only ` +
-				`"${TS_SPINE_PARITY_DATABASE}" is wiped`
-		);
-	}
-	const { db, close } = await create_db(database_url);
-	try {
-		await reset_public_schema(db);
-	} catch (error) {
-		// 3D000 invalid_catalog_name — the server answered, the database is missing
-		const maintenance_url = redact_database_url(to_maintenance_database_url(database_url));
-		const fix =
-			pg_error_code(error) === '3D000'
-				? `the database does not exist and \`createdb\` did not create it — run ` +
-					`\`createdb --maintenance-db=${maintenance_url} ` +
-					`${TS_SPINE_PARITY_DATABASE}\` to see why (the URL's role needs to be ` +
-					`allowed to create databases), or create it there as another role`
-				: `check that Postgres is running there and that the URL's role can connect ` +
-					`and owns the database, or set ${RUST_SPINE_STUB_DATABASE_URL_ENV} to a ` +
-					`server both legs can use`;
-		throw new Error(
-			`schema parity setup: the TS spine leg needs the Postgres database ` +
-				`${redact_database_url(database_url)}, and it could not be emptied: ` +
-				`${describe_error(error)}. To fix: ${fix}.`,
-			{ cause: error }
-		);
-	} finally {
-		await close();
-	}
-};
-
 const setup = async (project: TestProject): Promise<() => Promise<void>> => {
 	const database_urls = resolve_parity_database_urls();
 	// Make the Rust stub binary current + ensure its DB before the dual spawn.
 	prepare_rust_spine_backend({ crate: RUST_SPINE_STUB_CRATE, database_url: database_urls.stub });
 	// on the server the URL names — the wipe below connects through the URL
 	ensure_database(TS_SPINE_PARITY_DATABASE, database_urls.ts);
-	await empty_ts_spine_parity_database(database_urls.ts);
+	await empty_owned_database(database_urls.ts, {
+		owned_name: TS_SPINE_PARITY_DATABASE,
+		label: 'schema parity setup',
+		hint: `or set ${RUST_SPINE_STUB_DATABASE_URL_ENV} to a server both legs can use`
+	});
 	const dual_spawn = create_dual_spawn_global_setup({
 		configs: {
 			a: () =>

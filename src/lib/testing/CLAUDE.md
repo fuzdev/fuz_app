@@ -2016,7 +2016,12 @@ are `src/test/auth/cell_crud_parity.db.test.ts`
   `createdb`'s stderr, never thrown), `ensure_database_for_url(url, deps?)` (the
   database a `postgres:` URL names; anything else left alone),
   `with_database_name`, `to_maintenance_database_url`, `redact_database_url`
-  (a URL fit to print), `is_postgres_url`. The harness creates a database only
+  (a URL fit to print), `is_postgres_url`, and `empty_owned_database(url,
+  {owned_name, label, hint?})` — drops and recreates the `public` schema of
+  the one database a setup owns (any other name in the URL is refused before
+  connecting), for a backend that does not wipe its own database; a missing
+  database (`3D000`), an unreachable server or a role that cannot connect
+  throws with what to check. The harness creates a database only
   when a setup asks, so a test role needs no `CREATEDB` grant otherwise.
 - `testing/cross_backend/spawn_backend.ts` — `spawn_backend(config) => BackendHandle`.
   Refuses a port that already accepts connections, writes the bootstrap

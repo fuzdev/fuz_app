@@ -1,13 +1,16 @@
 /**
- * Tests for `postgres_database.ts` — the URL checks, the database swap, and
- * the redaction a setup prints a URL through.
+ * Tests for `postgres_database.ts` — the URL checks, the database swap, the
+ * redaction a setup prints a URL through, and the owned-database wipe's name
+ * guard.
  *
  * @module
  */
 
 import { describe, test, assert } from 'vitest';
+import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
 import {
+	empty_owned_database,
 	ensure_database,
 	ensure_database_for_url,
 	is_createdb_already_exists,
@@ -109,5 +112,34 @@ describe('ensure_database', () => {
 		assert.ok(!ok);
 		assert.strictEqual(warnings.length, 1);
 		assert.include(warnings[0], 'createdb fuz_app_ensure_database_probe failed');
+	});
+});
+
+describe('empty_owned_database', () => {
+	test('refuses a URL naming any database but the owned one, before connecting', async () => {
+		// port 1 — a connect attempt would fail with a connect error, not the guard's
+		for (const url of [
+			'postgres://127.0.0.1:1/other_db',
+			'postgres://127.0.0.1:1/owned_db_suffix',
+			'postgres://127.0.0.1:1/'
+		]) {
+			await assert_rejects(
+				() => empty_owned_database(url, { owned_name: 'owned_db', label: 'test setup' }),
+				/^test setup: refusing to empty database ".*" — only "owned_db" is wiped$/
+			);
+		}
+	});
+
+	test('reports a server it cannot reach with the fix and the hint', async () => {
+		const error = await assert_rejects(
+			() =>
+				empty_owned_database('postgres://user:secret@127.0.0.1:1/owned_db', {
+					owned_name: 'owned_db',
+					label: 'test setup',
+					hint: 'or set SOME_ENV'
+				}),
+			/^test setup: the Postgres database postgres:\/\/user:REDACTED@127\.0\.0\.1:1\/owned_db could not be emptied: .*To fix: check that Postgres is running there.*, or set SOME_ENV\.$/s
+		);
+		assert.ok(error.cause, 'the connect error is kept as the cause');
 	});
 });

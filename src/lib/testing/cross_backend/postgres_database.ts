@@ -2,7 +2,8 @@ import '../assert_dev_env.ts';
 
 /**
  * Postgres database helpers for cross-backend global setups — creating the
- * database a backend's URL names, and printing such a URL safely.
+ * database a backend's URL names, emptying one a setup owns, and printing
+ * such a URL safely.
  *
  * The harness never creates a database by itself: a setup opts in
  * (`create_cross_backend_global_setup`'s `ensure_databases`, or a call to
@@ -13,6 +14,9 @@ import '../assert_dev_env.ts';
  */
 
 import { execFileSync } from 'node:child_process';
+
+import { create_db } from '../../db/create_db.ts';
+import { pg_error_code } from '../../db/pg_error.ts';
 
 /** The URL protocols a Postgres connection string carries. */
 export const POSTGRES_URL_PROTOCOLS: ReadonlySet<string> = new Set(['postgres:', 'postgresql:']);
@@ -158,4 +162,82 @@ export const ensure_database_for_url = (
 	if (!database) return false;
 	ensure_database(database, database_url, deps);
 	return true;
+};
+
+/** Options for `empty_owned_database`. */
+export interface EmptyOwnedDatabaseOptions {
+	/**
+	 * The one database name the call may empty — the setup's own. A URL naming
+	 * any other database is refused before anything connects.
+	 */
+	readonly owned_name: string;
+	/** Prefixes every error message, naming the setup (e.g. `'schema parity setup'`). */
+	readonly label: string;
+	/**
+	 * Appended to the fix a connect failure suggests — another way to reach a
+	 * usable server, such as the env var that points the setup elsewhere.
+	 */
+	readonly hint?: string;
+}
+
+/** A connection failure's text — a refused connection carries a `code` and an empty message. */
+const describe_connect_error = (error: unknown): string =>
+	(error instanceof Error && error.message) || pg_error_code(error) || String(error);
+
+/**
+ * Drop and recreate the `public` schema of a database a setup owns, so a
+ * backend that does not wipe its own database migrates and bootstraps from
+ * nothing on every run — bootstrap refuses a database that already holds an
+ * account.
+ *
+ * The wipe takes everything, so it is tied to `owned_name`, the one database
+ * the setup owns, rather than to whatever URL reaches it. Create the database
+ * first (`ensure_database_for_url`); a missing one, a server that cannot be
+ * reached and a role that cannot connect all fail with what to check.
+ *
+ * @param database_url - a `postgres://` URL naming the owned database
+ * @param options - the owned name, the setup's label, and an optional hint
+ * @throws Error when the URL names another database, or when the database
+ * cannot be emptied (with what to check)
+ */
+export const empty_owned_database = async (
+	database_url: string,
+	options: EmptyOwnedDatabaseOptions
+): Promise<void> => {
+	const { owned_name, label, hint } = options;
+	const database = decodeURIComponent(new URL(database_url).pathname.slice(1));
+	if (database !== owned_name) {
+		throw new Error(
+			`${label}: refusing to empty database "${database}" — only "${owned_name}" is wiped`
+		);
+	}
+	try {
+		// inside the `try`, so a connect error thrown here gets the fix too
+		const { db, close } = await create_db(database_url);
+		try {
+			// loaded here, not at module load: `../db.ts` pulls in `vitest`, which a
+			// global setup that only ensures databases must not load
+			const { reset_public_schema } = await import('../db.ts');
+			await reset_public_schema(db);
+		} finally {
+			await close();
+		}
+	} catch (error) {
+		// 3D000 invalid_catalog_name — the server answered, the database is missing
+		const maintenance_url = redact_database_url(to_maintenance_database_url(database_url));
+		const fix =
+			pg_error_code(error) === '3D000'
+				? `the database does not exist and \`createdb\` did not create it — run ` +
+					`\`createdb --maintenance-db=${maintenance_url} ${owned_name}\` to see why ` +
+					`(the URL's role needs to be allowed to create databases), or create it ` +
+					`there as another role`
+				: `check that Postgres is running there and that the URL's role can connect ` +
+					`and owns the database` +
+					(hint ? `, ${hint}` : '');
+		throw new Error(
+			`${label}: the Postgres database ${redact_database_url(database_url)} could not be ` +
+				`emptied: ${describe_connect_error(error)}. To fix: ${fix}.`,
+			{ cause: error }
+		);
+	}
 };
