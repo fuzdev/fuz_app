@@ -322,9 +322,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 			auth: { account: 'none', actor: 'none' }, // per-action auth inside dispatcher
 			reads_credential: true,
 			handler: get_handler,
-			// TODO: "cacheable" predates `RPC_GET_CACHE_CONTROL` — the label is in every
-			// consumer's committed surface snapshot, so renaming it is its own sweep
-			description: `JSON-RPC 2.0 endpoint (cacheable reads) — ${actions.length} method${
+			description: `JSON-RPC 2.0 endpoint (side-effect-free reads) — ${actions.length} method${
 				actions.length === 1 ? '' : 's'
 			}`,
 			input: z.null(), // params from query string, validated by dispatcher
