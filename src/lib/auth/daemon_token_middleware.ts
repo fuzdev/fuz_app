@@ -26,6 +26,7 @@ import {
 	TOKEN_SCOPE_KEY
 } from '../hono_context.ts';
 import { token_scope_full } from './token_scope.ts';
+import { AUTH_SESSION_TOKEN_HASH_KEY } from './request_context.ts';
 import { is_browser_context } from '../http/origin.ts';
 import { query_role_grant_find_account_id_for_role } from './role_grant_queries.ts';
 import type { QueryDeps } from '../db/query_deps.ts';
@@ -91,7 +92,7 @@ export const resolve_keeper_account_id = async (deps: QueryDeps): Promise<string
  * @param state - the daemon token runtime state
  * @param deps - query dependencies (pool-level db for keeper-account resolution)
  * @param log - the logger instance
- * @mutates Hono context - sets `ACCOUNT_ID_KEY`, `CREDENTIAL_TYPE_KEY`, `TOKEN_SCOPE_KEY`, `AUTH_API_TOKEN_ID_KEY`, and `CREDENTIAL_DEADLINE_KEY` on a valid token
+ * @mutates Hono context - sets `ACCOUNT_ID_KEY`, `CREDENTIAL_TYPE_KEY`, `TOKEN_SCOPE_KEY`, `AUTH_SESSION_TOKEN_HASH_KEY`, `AUTH_API_TOKEN_ID_KEY`, and `CREDENTIAL_DEADLINE_KEY` on a valid token (the session hash and token id to `null`)
  */
 export const create_daemon_token_middleware = (
 	state: DaemonTokenState,
@@ -167,9 +168,12 @@ export const create_daemon_token_middleware = (
 		// Singular, filesystem-proved, keeper-bound — no minting step at which a
 		// narrowing could have been chosen.
 		c.set(TOKEN_SCOPE_KEY, token_scope_full());
+		// It overrides a session cookie sent beside it, whose hash, like any
+		// API token id, must not ride along — the Rust spine resolves the daemon
+		// leg first and never reads the cookie.
+		c.set(AUTH_SESSION_TOKEN_HASH_KEY, null);
 		c.set(AUTH_API_TOKEN_ID_KEY, null);
-		// No row, no expiry — and it overrides a session cookie sent beside it,
-		// whose deadline must not ride along.
+		// No row, no expiry — nor the overridden session's deadline.
 		c.set(CREDENTIAL_DEADLINE_KEY, null);
 
 		await next();

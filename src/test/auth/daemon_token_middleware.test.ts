@@ -18,7 +18,14 @@ import {
 	create_daemon_token_middleware,
 	resolve_keeper_account_id
 } from '#lib/auth/daemon_token_middleware.ts';
-import { ACCOUNT_ID_KEY, AUTH_API_TOKEN_ID_KEY, CREDENTIAL_TYPE_KEY } from '#lib/hono_context.ts';
+import {
+	ACCOUNT_ID_KEY,
+	AUTH_API_TOKEN_ID_KEY,
+	CREDENTIAL_DEADLINE_KEY,
+	CREDENTIAL_TYPE_KEY
+} from '#lib/hono_context.ts';
+import { AUTH_SESSION_TOKEN_HASH_KEY } from '#lib/auth/request_context.ts';
+import { get_resolved_auth } from '#lib/auth/resolved_auth.ts';
 import { ROLE_KEEPER } from '#lib/auth/role_schema.ts';
 import type { QueryDeps } from '#lib/db/query_deps.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
@@ -398,6 +405,48 @@ describe('create_daemon_token_middleware', () => {
 		// daemon token overrides the session-derived account id
 		assert.strictEqual(body.account_id, 'acct-keeper');
 		assert.strictEqual(body.credential_type, 'daemon_token');
+	});
+
+	test('clears the overridden session hash, token id, and deadline', async () => {
+		const state = create_state();
+		const app = new Hono();
+		// what the session middleware sets for a valid cookie sent beside the daemon token
+		app.use('/*', async (c, next) => {
+			c.set(ACCOUNT_ID_KEY, 'acct-session-user');
+			c.set(CREDENTIAL_TYPE_KEY, 'session');
+			c.set(AUTH_SESSION_TOKEN_HASH_KEY, 'session-hash');
+			c.set(AUTH_API_TOKEN_ID_KEY, 'tok_stale');
+			c.set(CREDENTIAL_DEADLINE_KEY, 1234);
+			await next();
+		});
+		app.use('/*', create_daemon_token_middleware(state, mock_deps, test_log));
+		app.get('/test', (c) => {
+			const read = (value: unknown) => (value === undefined ? 'unset' : value);
+			return c.json({
+				token_hash: read(c.get(AUTH_SESSION_TOKEN_HASH_KEY)),
+				api_token_id: read(c.get(AUTH_API_TOKEN_ID_KEY)),
+				credential_deadline: read(c.get(CREDENTIAL_DEADLINE_KEY)),
+				resolved: get_resolved_auth(c)
+			});
+		});
+
+		const res = await app.request('/test', {
+			headers: { [DAEMON_TOKEN_HEADER]: state.current_token }
+		});
+		assert.strictEqual(res.status, 200);
+		const body = await res.json();
+		// set to null, not left unset — the raw keys carry nothing of the session
+		assert.deepStrictEqual(
+			[body.token_hash, body.api_token_id, body.credential_deadline],
+			[null, null, null]
+		);
+		assert.deepStrictEqual(body.resolved, {
+			account_id: 'acct-keeper',
+			credential_type: 'daemon_token',
+			token_hash: null,
+			api_token_id: null,
+			credential_deadline: null
+		});
 	});
 });
 

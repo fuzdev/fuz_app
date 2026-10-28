@@ -67,9 +67,10 @@ export interface ResolvedAuth {
  * Gather the credential the auth middleware resolved for this request.
  *
  * Reads the keys the session, bearer, and daemon-token middleware set and
- * keeps only the one that belongs to the winning credential type — a daemon
- * token overrides a session cookie sent alongside it without clearing that
- * session's hash, so the hash is carried for a session credential alone.
+ * keeps only the one that belongs to the winning credential type: the session
+ * hash for a session alone, the token id for an API token alone. The daemon
+ * token middleware clears both when it overrides a session cookie sent beside
+ * it; the filter keeps a key some other layer left behind from riding along.
  *
  * @param c - the request context, after the auth middleware chain
  * @returns the resolved credential, or `null` for an unauthenticated request

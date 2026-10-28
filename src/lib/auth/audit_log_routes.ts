@@ -20,7 +20,7 @@ import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS
 } from '../http/error_schemas.ts';
-import { AUTH_API_TOKEN_ID_KEY, TEST_CONTEXT_PRESET_KEY } from '../hono_context.ts';
+import { TEST_CONTEXT_PRESET_KEY } from '../hono_context.ts';
 import {
 	create_audit_log_route_shape,
 	DEFAULT_AUDIT_STREAM_ROLE
@@ -28,7 +28,7 @@ import {
 import { create_sse_response, type SseNotification } from '../realtime/sse.ts';
 import { validate_sse_keep_alive_ms } from '../realtime/sse_constants.ts';
 import type { SseRegistry } from '../realtime/sse_registry.ts';
-import { AUTH_SESSION_TOKEN_HASH_KEY, require_request_context } from './request_context.ts';
+import { require_request_context } from './request_context.ts';
 import { get_resolved_auth, recheck_admission } from './resolved_auth.ts';
 import { schedule_credential_deadline } from './credential_deadline.ts';
 import { AUDIT_LOG_CHANNEL } from '../realtime/audit_log_sse.ts';
@@ -126,8 +126,11 @@ export const create_audit_log_route_specs = (options?: AuditLogRouteOptions): Ar
 				// sessions only, so `api_token_id` is null here; it is registered
 				// when present so that a consumer widening the credential gate
 				// still has a revoked token's stream closed by `token_revoke`.
-				const token_hash = c.get(AUTH_SESSION_TOKEN_HASH_KEY) ?? null;
-				const api_token_id = c.get(AUTH_API_TOKEN_ID_KEY) ?? null;
+				// Both come off the resolved credential, which carries each only
+				// for its own credential type.
+				const resolved = get_resolved_auth(c);
+				const token_hash = resolved?.token_hash ?? null;
+				const api_token_id = resolved?.api_token_id ?? null;
 
 				// Register pending first: from here every revocation finds the
 				// stream (TSDoc, "Admission").
@@ -150,7 +153,6 @@ export const create_audit_log_route_specs = (options?: AuditLogRouteOptions): Ar
 					// refuses whatever they answer.
 					if (!c.get(TEST_CONTEXT_PRESET_KEY) && !registry.closing) {
 						const reread = async (): Promise<Response | null> => {
-							const resolved = get_resolved_auth(c);
 							// Global grants only, like the `require_role` gate that ran in
 							// the pipeline — a scoped grant must not open the instance-wide
 							// stream.
