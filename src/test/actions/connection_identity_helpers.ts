@@ -1,12 +1,12 @@
 /**
  * Test helper for building a `ConnectionIdentity` — the record
- * `BackendWebsocketTransport.register_pending` and `add_connection` take —
+ * `ConnectionRegistry.register_pending` and `add_connection` take —
  * with the non-session fields defaulted.
  *
  * @module
  */
 
-import type { ConnectionIdentity } from '#lib/actions/transports_ws_backend.ts';
+import type { ConnectionIdentity } from '#lib/actions/connection_registry.ts';
 
 /**
  * A `ConnectionIdentity` for `account_id`, every other field `null` or empty

@@ -95,8 +95,8 @@ export interface FullSpineMountOptions {
 	readonly daemon_token_state: DaemonTokenState;
 	/**
 	 * WS notification sender for the role-grant-offer fan-out. Pass the SAME
-	 * `BackendWebsocketTransport` the WS endpoint registers connections against
-	 * (the transport is the connection registry). Omitted for enumeration.
+	 * `ConnectionRegistry` the WS endpoint registers connections against
+	 * (the registry is the fan-out target). Omitted for enumeration.
 	 */
 	readonly notification_sender?: NotificationSender | null;
 }

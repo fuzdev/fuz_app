@@ -60,7 +60,7 @@ export const WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT_REASON = 'server heartbeat timeou
 /**
  * WebSocket close code — the server closed this socket to admit a newer
  * connection on the same account, past the per-account connection cap
- * (`BackendWebsocketTransport`'s `max_connections_per_account`, evict-oldest).
+ * (`ConnectionRegistry`'s `max_connections_per_account`, evict-oldest).
  *
  * Distinct from `WS_CLOSE_SESSION_REVOKED`: the credential is still good, so
  * a client must not enter its `revoked` state — but it must not auto-reconnect
@@ -78,7 +78,7 @@ export const WS_CLOSE_CONNECTION_LIMIT_REASON = 'connection limit';
 /**
  * WebSocket close code — the server had more waiting to be written to this
  * socket than the connection's outbound budget holds
- * (`BackendWebsocketTransport`'s `outbound_queue_bytes`), because the client
+ * (`ConnectionRegistry`'s `outbound_queue_bytes`), because the client
  * is reading slower than the server is sending to it, or not at all. The
  * frame that did not fit and everything still waiting are dropped, so the
  * close is the client's notice that it missed messages.
@@ -158,7 +158,7 @@ export const WS_CLOSE_PRE_ADMISSION_OVERFLOW_REASON = 'too much sent before the 
  * Sent when an upgraded socket can't be admitted because its credential
  * re-check itself failed (a database error), when an `on_socket_open` hook
  * throws, and when a frame arrives on a socket whose connection was removed
- * from the transport without a close (a bare `remove_connection`). The
+ * from the registry without a close (a bare `remove_connection`). The
  * handshake has already answered `101`, so an HTTP `500` is no longer
  * available. Not a revocation: the client's credential may be fine, so it
  * reconnects under its ordinary backoff rather than entering its `revoked`
@@ -178,7 +178,7 @@ export const WS_CLOSE_INTERNAL_ERROR_REASON = 'internal error';
 export const WS_CLOSE_SOCKET_OPEN_FAILED_REASON = 'socket bootstrap failed';
 /**
  * The close reason sent with `WS_CLOSE_INTERNAL_ERROR` when a frame arrives
- * on a socket whose connection was removed from the transport without a
+ * on a socket whose connection was removed from the registry without a
  * close (a bare `remove_connection`). TS-only: the Rust spine sends no such
  * close.
  */

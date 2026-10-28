@@ -260,7 +260,7 @@ const default_authorize: RoleGrantOfferCreateAuthorize = async (auth, _input, _d
  * Create the role-grant-offer RPC actions: the offer-lifecycle methods plus
  * `role_grant_revoke` and the immediate `role_grant_assign`.
  *
- * @param deps - `ActionFactoryDeps` (`log`, `audit`) plus optional `notification_sender` for WS fan-out — when absent, WS fan-out is silently skipped (DB-only side effects still happen). Consumers wiring `BackendWebsocketTransport` assign its instance directly (the transport's `send_to_account` signature accepts the broader `JsonrpcMessageFromServerToClient`, which is contravariantly compatible)
+ * @param deps - `ActionFactoryDeps` (`log`, `audit`) plus optional `notification_sender` for WS fan-out — when absent, WS fan-out is silently skipped (DB-only side effects still happen). Consumers wiring `ConnectionRegistry` assign its instance directly (the registry's `send_to_account` signature accepts the broader `JsonrpcMessageFromServerToClient`, which is contravariantly compatible)
  * @param options - role schema, default TTL, authorization override
  * @returns the `RpcAction` array to spread into a `create_rpc_endpoint` call
  */

@@ -96,8 +96,8 @@ export const get_resolved_auth = (c: Context): ResolvedAuth | null => {
  * and is authorized once, at open. Such a connection is closed on revocation
  * by identity, but only once it is *registered*; between the credential read
  * and the registration a revocation closes nothing. So the opener registers
- * first (un-admitted — `BackendWebsocketTransport.register_pending` /
- * `SubscriberRegistry.subscribe_pending`), then calls this, then admits. A
+ * first (un-admitted — `ConnectionRegistry.register_pending` /
+ * `SseRegistry.subscribe_pending`), then calls this, then admits. A
  * revocation that committed before this read is seen by it; one whose close
  * ran after the registration found the pending entry.
  *

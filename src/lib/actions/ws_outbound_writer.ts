@@ -5,7 +5,7 @@
  *
  * Every frame the server sends a connection goes through
  * `WsOutboundWriter.push`: a response, an error frame, a notification, a
- * broadcast, a server-initiated request. `BackendWebsocketTransport` owns one
+ * broadcast, a server-initiated request. `ConnectionRegistry` owns one
  * writer per connection and is its only caller.
  *
  * ## What waits

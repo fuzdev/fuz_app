@@ -18,8 +18,8 @@
  *    the revocation never happened.
  * 4. A failed audit INSERT still closes — the close does not ride on the
  *    fail-open audit write.
- * 5. The close reaches both transports: a real `BackendWebsocketTransport`
- *    socket and a real audit-stream `SubscriberRegistry` stream registered
+ * 5. The close reaches both transports: a real `ConnectionRegistry`
+ *    socket and a real audit-stream `SseRegistry` stream registered
  *    under the revoked identity both end, and a bystander's do not.
  * 6. Failure outcomes (revoked=false from IDOR mismatch or cross-account
  *    probe) close nothing — attackers cannot target arbitrary sessions/tokens
@@ -81,7 +81,7 @@ import {
 	type ConnectionCloseTarget
 } from '#lib/actions/connection_closer.ts';
 import { register_action_ws } from '#lib/actions/register_action_ws.ts';
-import { BackendWebsocketTransport } from '#lib/actions/transports_ws_backend.ts';
+import { ConnectionRegistry } from '#lib/actions/connection_registry.ts';
 import {
 	WS_CLOSE_SESSION_REVOKED,
 	WS_CLOSE_SESSION_REVOKED_REASON
@@ -1082,7 +1082,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			/** The gate the backend's `Db` runs through — its stall holds a pool write. */
 			gated: GatedDb;
 			closes: Array<ProbedClose>;
-			/** Open a connection of `identity` on the real transport and the real audit stream registry. */
+			/** Open a connection of `identity` on the real registry and the real audit stream registry. */
 			connect: (identity: {
 				account_id: Uuid;
 				session_hash?: string;
@@ -1094,7 +1094,7 @@ describe_db('connection_closer wiring', (get_db) => {
 				emit: boolean;
 				/** The audit INSERT rejects — the fail-open audit write is lost. */
 				audit_write: boolean;
-				/** The probed close throws, after recording itself — one transport failing. */
+				/** The probed close throws, after recording itself — one registry failing. */
 				close: boolean;
 			};
 			/** What "the revocation committed" means for the site under test. */
@@ -1138,17 +1138,17 @@ describe_db('connection_closer wiring', (get_db) => {
 					throw new Error('a revocation never closes every connection');
 				}
 			};
-			const transport = new BackendWebsocketTransport({ log });
+			const registry = new ConnectionRegistry({ log });
 			const test_app = await create_test_app({
 				session_options,
 				db: gated.db,
 				roles: [ROLE_KEEPER, ROLE_ADMIN],
 				// `create_app_server` adds the audit stream registry to the
-				// backend's closer; the transport is added by hand below, the way
+				// backend's closer; the registry is added by hand below, the way
 				// a `ws_endpoints` mount adds its own
 				app_options: { audit_log_sse: true },
 				create_route_specs: (ctx) => {
-					ctx.deps.connection_closer.add(transport);
+					ctx.deps.connection_closer.add(registry);
 					return make_create_route_specs(probe, options)(ctx);
 				},
 				audit_factory: ({ db: pool, log: audit_log }) =>
@@ -1183,7 +1183,7 @@ describe_db('connection_closer wiring', (get_db) => {
 				committed,
 				connect: (identity) => {
 					const ws = create_fake_ws();
-					transport.add_connection(
+					registry.add_connection(
 						ws.ws,
 						create_test_identity({
 							session_hash: identity.session_hash ?? null,
@@ -1639,7 +1639,7 @@ describe_db('connection_closer wiring', (get_db) => {
 					const { h, arranged, ...connections } = await arrange_site(site, get_db());
 
 					h.failing.close = true;
-					// one transport failing to close must not fail a revocation that
+					// one registry failing to close must not fail a revocation that
 					// committed: the response, the audit row, and the other
 					// transports' closes all still follow it
 					assert.strictEqual(await arranged.act(), true, 'the committed revocation still answers');

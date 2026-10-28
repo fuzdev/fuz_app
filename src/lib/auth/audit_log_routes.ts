@@ -27,7 +27,7 @@ import {
 } from './audit_log_route_schema.ts';
 import { create_sse_response, type SseNotification } from '../realtime/sse.ts';
 import { validate_sse_keep_alive_ms } from '../realtime/sse_constants.ts';
-import type { SubscriberRegistry } from '../realtime/subscriber_registry.ts';
+import type { SseRegistry } from '../realtime/sse_registry.ts';
 import { AUTH_SESSION_TOKEN_HASH_KEY, require_request_context } from './request_context.ts';
 import { get_resolved_auth, recheck_admission } from './resolved_auth.ts';
 import { schedule_credential_deadline } from './credential_deadline.ts';
@@ -46,7 +46,7 @@ export interface AuditLogRouteOptions {
 	 * (`create_audit_log_sse`, or `AppServerContext.audit_sse`) satisfies it.
 	 */
 	stream?: {
-		registry: SubscriberRegistry<SseNotification>;
+		registry: SseRegistry<SseNotification>;
 		log: Logger;
 		/**
 		 * Each stream's keep-alive interval (`SseResponseOptions.keep_alive_ms`)
@@ -72,9 +72,9 @@ export interface AuditLogRouteOptions {
  * route-spec pipeline, before the handler and so before any stream is
  * registered — a revocation landing after them would close nothing. So the
  * handler registers the stream **pending**
- * (`SubscriberRegistry.subscribe_pending`), then re-reads the credential, the
+ * (`SseRegistry.subscribe_pending`), then re-reads the credential, the
  * acting actor, and its role grants (`recheck_admission`, which the WebSocket
- * upgrade shares), and only then admits (`SubscriberRegistry.admit`). A
+ * upgrade shares), and only then admits (`SseRegistry.admit`). A
  * revocation that committed before those reads is seen by them —
  * `401 authentication_required` for a dead credential or an acting actor
  * deleted since the gates ran, `403 insufficient_permissions` for a lost
@@ -85,7 +85,7 @@ export interface AuditLogRouteOptions {
  * opened (the client's reconnect is answered by the gates, with the precise
  * status). A pending registration receives no audit row, counts toward no cap,
  * and is removed when a re-read refuses the request. Once the server is
- * shutting down (`SubscriberRegistry` class doc, "Shutdown") the registration
+ * shutting down (`SseRegistry` class doc, "Shutdown") the registration
  * is born closed, the re-reads are skipped, and the answer is that same
  * connect comment alone — as it is when the shutdown closes a registration
  * whose re-read is in flight, even if the re-read then fails. The twin of the

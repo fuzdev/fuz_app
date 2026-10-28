@@ -46,7 +46,7 @@
  * announced, which covers a revocation emitted by code that holds no closer,
  * and is the one closer of a role revocation. `create_app_server` registers one
  * on `deps.connection_closer` when it mounts a WebSocket endpoint or the audit
- * stream, so it reaches every member — each WebSocket transport and the audit
+ * stream, so it reaches every member — each WebSocket connection registry and the audit
  * stream registry — through the one fan-out.
  *
  * Twin of the Rust spine's `ConnectionCloser`, `ConnectionCloseTarget`,
@@ -79,8 +79,8 @@ import {
  * implementation attempts every matching connection, then throws the first
  * error it met.
  *
- * `BackendWebsocketTransport` satisfies this structurally, and
- * `create_sse_connection_closer` adapts a `SubscriberRegistry`. Twin of the
+ * `ConnectionRegistry` satisfies this structurally, and
+ * `create_sse_connection_closer` adapts an `SseRegistry`. Twin of the
  * Rust spine's `ConnectionCloser` (with its `ShutdownCloser` supertrait's
  * `close_all_connections`).
  */
@@ -96,9 +96,9 @@ export interface ConnectionCloser {
 	 * Close every connection, whoever opened it — the shutdown close
 	 * `AppServer.close` runs. Not a revocation: a WebSocket gets
 	 * `WS_CLOSE_GOING_AWAY`, so its client reconnects rather than treating
-	 * its credential as revoked. The transport is left closing: a
+	 * its credential as revoked. The registry is left closing: a
 	 * registration that arrives afterward is born closed, refused at once
-	 * (`BackendWebsocketTransport` and `SubscriberRegistry` both do).
+	 * (`ConnectionRegistry` and `SseRegistry` both do).
 	 */
 	close_all_connections: () => number;
 }
@@ -275,11 +275,11 @@ export const noop_connection_closer: ConnectionCloser = Object.freeze({
 });
 
 /**
- * One `ConnectionCloser` over every live-connection transport of a backend.
+ * One `ConnectionCloser` over every live-connection registry of a backend.
  *
  * Each close fans out to every member and returns the sum of what each
- * closed. A revocation handler holds this rather than one transport, so its
- * close reaches the WebSocket transports and the SSE registries alike, and
+ * closed. A revocation handler holds this rather than one registry, so its
+ * close reaches the WebSocket registries and the SSE registries alike, and
  * `AppServer.close` runs its `close_all_connections` to end every live connection
  * of the backend at shutdown.
  *
@@ -313,9 +313,9 @@ export interface RealtimeCloser extends ConnectionCloser {
  * Create an empty `RealtimeCloser`.
  *
  * `create_app_backend` creates the one on `AppDeps.connection_closer`, and
- * `create_app_server` adds each WebSocket transport it mounts and its audit
+ * `create_app_server` adds each WebSocket connection registry it mounts and its audit
  * stream registry, removing them when its assembly fails or the server
- * closes. A consumer that mounts a transport by hand adds it through
+ * closes. A consumer that mounts a connection registry by hand adds it through
  * the `connection_closer` option of `register_action_ws` /
  * `create_audit_log_sse`, or with `add`.
  */
@@ -393,7 +393,7 @@ export type AuditEventHandler = (event: AuditLogEvent) => void;
  * Twin of the Rust spine's `register_revocation_guard`.
  *
  * @param closer - what to close on — `deps.connection_closer`, the fan-out over
- *   every transport, which is what `create_app_server` registers it on
+ *   every registry, which is what `create_app_server` registers it on
  * @param log - logger for the closes (info level, when any connection closed)
  * @returns an `on_audit_event` callback for `create_audit_emitter`, or for
  *   `AuditEmitter.add_listener`

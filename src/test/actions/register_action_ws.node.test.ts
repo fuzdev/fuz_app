@@ -30,7 +30,7 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { register_action_ws } from '#lib/actions/register_action_ws.ts';
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
-import type { BackendWebsocketTransport } from '#lib/actions/transports_ws_backend.ts';
+import type { ConnectionRegistry } from '#lib/actions/connection_registry.ts';
 import { WS_CLOSE_CONNECTION_LIMIT, WS_CLOSE_SESSION_REVOKED } from '#lib/actions/transports.ts';
 import { AUTH_SESSION_TOKEN_HASH_KEY, REQUEST_CONTEXT_KEY } from '#lib/auth/request_context.ts';
 import { hash_session_token } from '#lib/auth/session_queries.ts';
@@ -81,7 +81,7 @@ const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve,
 
 interface TestServer {
 	port: number;
-	transport: BackendWebsocketTransport;
+	registry: ConnectionRegistry;
 	/** Values the `record` handler ran with, in order. */
 	recorded: Array<string>;
 	close: () => Promise<void>;
@@ -107,7 +107,7 @@ const start_server = async (max_connections_per_account?: number): Promise<TestS
 	});
 	const { upgradeWebSocket, injectWebSocket } = createNodeWebSocket({ app });
 	const recorded: Array<string> = [];
-	const { transport } = register_action_ws({
+	const { registry } = register_action_ws({
 		action_ip_rate_limiter: null,
 		action_account_rate_limiter: null,
 		path: '/ws',
@@ -135,7 +135,7 @@ const start_server = async (max_connections_per_account?: number): Promise<TestS
 	injectWebSocket(server);
 	return {
 		port: (server.address() as AddressInfo).port,
-		transport,
+		registry,
 		recorded,
 		close: () =>
 			new Promise((resolve, reject) => {
@@ -195,7 +195,7 @@ describe('register_action_ws on Node — a client that withholds its close frame
 		await client.wait_for(is_response_to(1));
 
 		assert.strictEqual(
-			server.transport.close_connections({ kind: 'account', account_id: ACCOUNT_ID as never }),
+			server.registry.close_connections({ kind: 'account', account_id: ACCOUNT_ID as never }),
 			1
 		);
 		const close = await client.wait_for(is_raw_ws_close);

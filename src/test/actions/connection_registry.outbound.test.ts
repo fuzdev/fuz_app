@@ -1,11 +1,11 @@
 /**
- * Tests for `BackendWebsocketTransport`'s outbound bound — the per-connection
+ * Tests for `ConnectionRegistry`'s outbound bound — the per-connection
  * byte budget, the `WS_CLOSE_OUTBOUND_OVERFLOW` close a frame that does not fit
  * causes, the write deadline, and what a close does on a backlogged
  * connection.
  *
  * The writer's own rules (what waits, the exact charge, the deadlines) are in
- * `ws_outbound_writer.test.ts`; this file pins what the transport does with
+ * `ws_outbound_writer.test.ts`; this file pins what the registry does with
  * them.
  *
  * @module
@@ -17,9 +17,9 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { create_uuid, type Uuid } from '#lib/primitive_schemas.ts';
 
 import {
-	BackendWebsocketTransport,
+	ConnectionRegistry,
 	DEFAULT_WS_OUTBOUND_QUEUE_BYTES
-} from '#lib/actions/transports_ws_backend.ts';
+} from '#lib/actions/connection_registry.ts';
 import {
 	DEFAULT_WS_MAX_MESSAGE_BYTES,
 	WS_CLOSE_CONNECTION_LIMIT,
@@ -66,7 +66,7 @@ afterEach(() => {
 	vi.useRealTimers();
 });
 
-describe('BackendWebsocketTransport outbound_queue_bytes', () => {
+describe('ConnectionRegistry outbound_queue_bytes', () => {
 	test('the default is 4 MiB, a constant of its own', () => {
 		assert.strictEqual(DEFAULT_WS_OUTBOUND_QUEUE_BYTES, 4 * 1024 * 1024);
 		// four default-size messages as it stands, but not derived from that cap
@@ -75,7 +75,7 @@ describe('BackendWebsocketTransport outbound_queue_bytes', () => {
 
 	test('the default budget holds a burst the override refuses', () => {
 		const frame = 'x'.repeat(1000);
-		const burst = (t: BackendWebsocketTransport): boolean => {
+		const burst = (t: ConnectionRegistry): boolean => {
 			const id = t.add_connection(
 				create_fake_ws().ws,
 				create_test_identity({ account_id: ACCOUNT_A })
@@ -84,9 +84,9 @@ describe('BackendWebsocketTransport outbound_queue_bytes', () => {
 			for (let i = 0; i < 100; i++) accepted = t.send_to(id, frame) && accepted;
 			return accepted;
 		};
-		assert.strictEqual(burst(new BackendWebsocketTransport({ log: null })), true);
+		assert.strictEqual(burst(new ConnectionRegistry({ log: null })), true);
 		assert.strictEqual(
-			burst(new BackendWebsocketTransport({ outbound_queue_bytes: 50_000, log: null })),
+			burst(new ConnectionRegistry({ outbound_queue_bytes: 50_000, log: null })),
 			false
 		);
 	});
@@ -94,7 +94,7 @@ describe('BackendWebsocketTransport outbound_queue_bytes', () => {
 	test('a budget that is not a positive integer is refused at construction', () => {
 		for (const bad of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
 			assert.throws(
-				() => new BackendWebsocketTransport({ outbound_queue_bytes: bad }),
+				() => new ConnectionRegistry({ outbound_queue_bytes: bad }),
 				/outbound_queue_bytes must be a positive integer/,
 				String(bad)
 			);
@@ -102,11 +102,11 @@ describe('BackendWebsocketTransport outbound_queue_bytes', () => {
 	});
 });
 
-describe('BackendWebsocketTransport outbound overflow', () => {
+describe('ConnectionRegistry outbound overflow', () => {
 	test('a frame that does not fit closes the connection with 4005 and removes it at once', async () => {
 		const { log, warns } = create_warn_log();
 		// room for exactly one waiting 10-byte frame
-		const t = new BackendWebsocketTransport({
+		const t = new ConnectionRegistry({
 			outbound_queue_bytes: 10 + OUTBOUND_FRAME_OVERHEAD_BYTES,
 			log
 		});
@@ -125,7 +125,7 @@ describe('BackendWebsocketTransport outbound overflow', () => {
 		assert.strictEqual(t.send_to(id, ''), false, 'an empty frame still costs its overhead');
 		// removed in the same synchronous step
 		assert.strictEqual(t.is_registered(id), false);
-		assert.strictEqual(t.get_connection_count(), 0);
+		assert.strictEqual(t.connection_count(), 0);
 		assert.strictEqual(controller.signal.aborted, true);
 		assert.deepStrictEqual(fake.closes, [
 			{ code: WS_CLOSE_OUTBOUND_OVERFLOW, reason: WS_CLOSE_OUTBOUND_OVERFLOW_REASON }
@@ -166,7 +166,7 @@ describe('BackendWebsocketTransport outbound overflow', () => {
 	});
 
 	test('the overflowing fan-out does not count the connection it closed', () => {
-		const t = new BackendWebsocketTransport({
+		const t = new ConnectionRegistry({
 			outbound_queue_bytes: OUTBOUND_FRAME_OVERHEAD_BYTES,
 			log: null
 		});
@@ -181,13 +181,13 @@ describe('BackendWebsocketTransport outbound overflow', () => {
 		assert.strictEqual(t.send_to_account(ACCOUNT_A, notification('x')), 1);
 		assert.strictEqual(full.closes[0]?.code, WS_CLOSE_OUTBOUND_OVERFLOW);
 		assert.deepStrictEqual(roomy.closes, []);
-		assert.strictEqual(t.get_connection_count(), 1);
+		assert.strictEqual(t.connection_count(), 1);
 	});
 
 	test('one stalled recipient overflows while a healthy one gets every broadcast', async () => {
 		const { log, warns } = create_warn_log();
 		const frame_bytes = 20_000;
-		const t = new BackendWebsocketTransport({ outbound_queue_bytes: 100_000, log });
+		const t = new ConnectionRegistry({ outbound_queue_bytes: 100_000, log });
 		const stalled = create_fake_ws({ stalled: true });
 		const healthy = create_fake_ws();
 		const stalled_controller = new AbortController();
@@ -246,12 +246,12 @@ describe('BackendWebsocketTransport outbound overflow', () => {
 		const text_bytes = new TextEncoder().encode(JSON.stringify(message)).byteLength;
 		assert.ok(text_bytes > JSON.stringify(message).length);
 		for (const fan_out of [
-			(t: BackendWebsocketTransport) => t.broadcast_filtered(message, () => true),
-			(t: BackendWebsocketTransport) => t.send_to_account(ACCOUNT_A, message),
-			(t: BackendWebsocketTransport) => t.broadcast(message)
+			(t: ConnectionRegistry) => t.broadcast_filtered(message, () => true),
+			(t: ConnectionRegistry) => t.send_to_account(ACCOUNT_A, message),
+			(t: ConnectionRegistry) => t.broadcast(message)
 		]) {
 			// room for exactly one waiting copy of the message, to the byte
-			const fits = new BackendWebsocketTransport({
+			const fits = new ConnectionRegistry({
 				outbound_queue_bytes: text_bytes + OUTBOUND_FRAME_OVERHEAD_BYTES,
 				log: null
 			});
@@ -265,7 +265,7 @@ describe('BackendWebsocketTransport outbound overflow', () => {
 			assert.strictEqual(fits.is_registered(fits_id), true);
 
 			// one byte less and the same message is the frame that does not fit
-			const tight = new BackendWebsocketTransport({
+			const tight = new ConnectionRegistry({
 				outbound_queue_bytes: text_bytes + OUTBOUND_FRAME_OVERHEAD_BYTES - 1,
 				log: null
 			});
@@ -284,7 +284,7 @@ describe('BackendWebsocketTransport outbound overflow', () => {
 	});
 
 	test('a server-initiated request that overflows its connection settles connection_gone', async () => {
-		const t = new BackendWebsocketTransport({
+		const t = new ConnectionRegistry({
 			outbound_queue_bytes: OUTBOUND_FRAME_OVERHEAD_BYTES,
 			log: null
 		});
@@ -301,7 +301,7 @@ describe('BackendWebsocketTransport outbound overflow', () => {
 	});
 
 	test('a server-initiated request the socket refuses settles connection_gone at once', async () => {
-		const t = new BackendWebsocketTransport({ log: null });
+		const t = new ConnectionRegistry({ log: null });
 		const ws = new WSContext({
 			send: () => {
 				throw new Error('socket is gone');
@@ -325,7 +325,7 @@ describe('BackendWebsocketTransport outbound overflow', () => {
 		log.error = (...args: Array<unknown>) => {
 			errors.push(args[0]);
 		};
-		const t = new BackendWebsocketTransport({
+		const t = new ConnectionRegistry({
 			outbound_queue_bytes: OUTBOUND_FRAME_OVERHEAD_BYTES,
 			log
 		});
@@ -346,11 +346,11 @@ describe('BackendWebsocketTransport outbound overflow', () => {
 	});
 });
 
-describe('BackendWebsocketTransport write deadline', () => {
+describe('ConnectionRegistry write deadline', () => {
 	test('a connection whose socket takes nothing for the deadline is dropped with no close frame', async () => {
 		vi.useFakeTimers();
 		const { log, warns } = create_warn_log();
-		const t = new BackendWebsocketTransport({ log });
+		const t = new ConnectionRegistry({ log });
 		const fake = create_fake_ws({ stalled: true });
 		const controller = new AbortController();
 		const id = t.add_connection(
@@ -368,7 +368,7 @@ describe('BackendWebsocketTransport write deadline', () => {
 
 		await vi.advanceTimersByTimeAsync(1);
 		assert.strictEqual(t.is_registered(id), false);
-		assert.strictEqual(t.get_connection_count(), 0);
+		assert.strictEqual(t.connection_count(), 0);
 		assert.strictEqual(controller.signal.aborted, true);
 		// the abnormal end: cut, no close frame (the client sees 1006)
 		assert.strictEqual(fake.socket.terminated, true);
@@ -388,7 +388,7 @@ describe('BackendWebsocketTransport write deadline', () => {
 
 	test('remove_connection clears the deadlines of a connection whose socket went away', async () => {
 		vi.useFakeTimers();
-		const t = new BackendWebsocketTransport({ log: null });
+		const t = new ConnectionRegistry({ log: null });
 		const fake = create_fake_ws({ stalled: true });
 		const id = t.add_connection(fake.ws, create_test_identity({ account_id: ACCOUNT_A }));
 		t.send_to(id, 'x'.repeat(WS_WRITE_HIGH_WATER_BYTES));
@@ -402,9 +402,9 @@ describe('BackendWebsocketTransport write deadline', () => {
 	});
 });
 
-describe('BackendWebsocketTransport.send_to', () => {
+describe('ConnectionRegistry.send_to', () => {
 	test('a connection pending admission is sent nothing until it is admitted', async () => {
-		const t = new BackendWebsocketTransport({ log: null });
+		const t = new ConnectionRegistry({ log: null });
 		const fake = create_fake_ws();
 		const id = t.register_pending(
 			fake.ws,
@@ -425,9 +425,9 @@ describe('BackendWebsocketTransport.send_to', () => {
 	});
 });
 
-describe('BackendWebsocketTransport closes on a backlogged connection', () => {
+describe('ConnectionRegistry closes on a backlogged connection', () => {
 	test('a revocation hands the backlog over ahead of the 4001, then nothing more', async () => {
-		const t = new BackendWebsocketTransport({ log: null });
+		const t = new ConnectionRegistry({ log: null });
 		const fake = create_fake_ws();
 		const id = t.add_connection(
 			fake.ws,
@@ -450,7 +450,7 @@ describe('BackendWebsocketTransport closes on a backlogged connection', () => {
 
 	test('a revoked connection whose client stopped reading is cut at the close deadline', async () => {
 		vi.useFakeTimers();
-		const t = new BackendWebsocketTransport({ log: null });
+		const t = new ConnectionRegistry({ log: null });
 		const fake = create_fake_ws({ stalled: true });
 		const controller = new AbortController();
 		const id = t.add_connection(
@@ -479,7 +479,7 @@ describe('BackendWebsocketTransport closes on a backlogged connection', () => {
 
 	test('every close that is not an overflow hands over what the socket has room for, no more', async () => {
 		const big = 'x'.repeat(WS_WRITE_HIGH_WATER_BYTES);
-		const closes: Array<[string, (t: BackendWebsocketTransport, id: Uuid) => void, number]> = [
+		const closes: Array<[string, (t: ConnectionRegistry, id: Uuid) => void, number]> = [
 			[
 				'revocation',
 				(t) => t.close_connections({ kind: 'account', account_id: ACCOUNT_A }),
@@ -499,7 +499,7 @@ describe('BackendWebsocketTransport closes on a backlogged connection', () => {
 			]
 		];
 		for (const [name, close, code] of closes) {
-			const t = new BackendWebsocketTransport({ max_connections_per_account: 1, log: null });
+			const t = new ConnectionRegistry({ max_connections_per_account: 1, log: null });
 			const fake = create_fake_ws({ stalled: true });
 			const id = t.add_connection(fake.ws, create_test_identity({ account_id: ACCOUNT_A }));
 			// one frame straight through, then three waiting in the same run
@@ -521,7 +521,7 @@ describe('BackendWebsocketTransport closes on a backlogged connection', () => {
 
 	test("the socket's close arriving clears the close deadline", async () => {
 		vi.useFakeTimers();
-		const t = new BackendWebsocketTransport({ log: null });
+		const t = new ConnectionRegistry({ log: null });
 		const fake = create_fake_ws({ stalled: true });
 		const id = t.add_connection(fake.ws, create_test_identity({ account_id: ACCOUNT_A }));
 		t.send_to(id, 'frame');
@@ -535,9 +535,9 @@ describe('BackendWebsocketTransport closes on a backlogged connection', () => {
 	});
 });
 
-describe('BackendWebsocketTransport.close_connection', () => {
+describe('ConnectionRegistry.close_connection', () => {
 	test('closes one connection, pending or admitted, removing and aborting it', () => {
-		const t = new BackendWebsocketTransport({ log: null });
+		const t = new ConnectionRegistry({ log: null });
 		const admitted = create_fake_ws();
 		const pending = create_fake_ws();
 		const controller = new AbortController();
@@ -558,7 +558,7 @@ describe('BackendWebsocketTransport.close_connection', () => {
 
 		assert.strictEqual(t.close_connection(pending_id, WS_CLOSE_INTERNAL_ERROR, 'why'), true);
 		assert.strictEqual(pending.closes.length, 1);
-		assert.strictEqual(t.get_pending_connection_count(), 0);
+		assert.strictEqual(t.pending_connection_count(), 0);
 
 		// nothing to close a second time, or for an id that names nothing
 		assert.strictEqual(t.close_connection(admitted_id, WS_CLOSE_INTERNAL_ERROR, 'why'), false);
@@ -574,7 +574,7 @@ describe('BackendWebsocketTransport.close_connection', () => {
 		log.error = (...args: Array<unknown>) => {
 			errors.push(args);
 		};
-		const t = new BackendWebsocketTransport({ log });
+		const t = new ConnectionRegistry({ log });
 		const close_error = new Error('socket is gone');
 		const ws = new WSContext({
 			send: () => {},
@@ -593,7 +593,7 @@ describe('BackendWebsocketTransport.close_connection', () => {
 		// called from a heartbeat timer, where a throw would be uncaught
 		assert.strictEqual(t.close_connection(connection_id, WS_CLOSE_INTERNAL_ERROR, 'why'), true);
 		assert.strictEqual(t.is_registered(connection_id), false);
-		assert.strictEqual(t.get_connection_count(), 0);
+		assert.strictEqual(t.connection_count(), 0);
 		assert.strictEqual(controller.signal.aborted, true);
 		assert.deepStrictEqual(errors, [
 			[`error closing client with ${WS_CLOSE_INTERNAL_ERROR}:`, close_error]

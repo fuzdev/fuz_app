@@ -452,7 +452,7 @@ If the route factory needs app-specific deps, wrap it:
 const create_test_route_specs = (ctx: AppServerContext): Array<RouteSpec> =>
 	create_my_route_specs(ctx, {
 		my_service: create_mock_service(),
-		my_registry: new SubscriberRegistry()
+		my_registry: new SseRegistry()
 	});
 
 describe_standard_integration_tests(
@@ -777,11 +777,11 @@ comment, fires a trigger that produces one event frame, and validates the
 
 ```typescript
 import {describe_sse_route_tests} from '@fuzdev/fuz_app/testing/sse_round_trip.ts';
-import {SubscriberRegistry} from '@fuzdev/fuz_app/realtime/subscriber_registry.ts';
+import {SseRegistry} from '@fuzdev/fuz_app/realtime/sse_registry.ts';
 import {create_sse_connection_closer} from '@fuzdev/fuz_app/realtime/audit_log_sse.ts';
 import {create_revocation_guard} from '@fuzdev/fuz_app/actions/connection_closer.ts';
 
-const registry = new SubscriberRegistry<SseNotification>();
+const registry = new SseRegistry<SseNotification>();
 const guard = create_revocation_guard(create_sse_connection_closer(registry, 'admin'), log);
 
 describe_sse_route_tests({
@@ -1086,7 +1086,7 @@ consumer config.
 - `fact_serving_admin_hash` — Backend live-mounts the admin-only bare-hash fact route (`GET /api/facts/:hash`). Gates the bare-hash cases of the fact-serving, query-shape and token-scope-surface suites, so a backend serving only the cell-gated route states `fact_serving: true, fact_serving_admin_hash: false` and runs the rest.
 - `ready` — Backend live-mounts the public `/ready` schema-drift deploy gate (gates `describe_ready_cross_tests`).
 - `account_status` — Backend serves `GET /api/account/status` (bundled into `create_account_route_specs`; `true` for every spine). Gates the integration suite's status wire-shape case — fail-loud on a missing route rather than a silent skip.
-- `peer_request` — Backend can initiate a server→client request and await the typed reply (ActionPeer — `BackendWebsocketTransport.request_connection`). Gates `describe_peer_ping_ws_tests`. `true` on fuz_app's own spine presets; a backend states it `true` once it wires the `peer/ping` HTTP + WS mount.
+- `peer_request` — Backend can initiate a server→client request and await the typed reply (ActionPeer — `ConnectionRegistry.request_connection`). Gates `describe_peer_ping_ws_tests`. `true` on fuz_app's own spine presets; a backend states it `true` once it wires the `peer/ping` HTTP + WS mount.
 - `ws_handshake_pipelining` — Backend's HTTP server accepts WebSocket frames written in the same TCP write as the upgrade request (`true` for Node/Deno/Rust; `false` for a Bun backend that upgrades after an asynchronous check, as one behind auth does — Bun answers such a request `400`). Gates the WS round-trip suite's frames-with-the-handshake case — the ordering-forced form of "frames that arrive before the connection is admitted wait for admission".
 - `ws_account_actions` — Backend's WebSocket endpoint mounts the self-service account actions, so a socket can revoke the session it runs on (`true` on fuz_app's own spine presets; a consumer states it `true` once its endpoint mounts them). Gates the WS round-trip suite's self-revocation case, and its WS-mutation audit case (which also calls `_testing_drain_effects`).
 - `cell_gated_create` — Backend live-mounts a test `CellCreateAuthorize` policy on its cell layer (`true` only on the reference spine binaries that mount it). Gates `describe_cell_gated_create_cross_tests` (the authorizer and the root `policy` it reads and validates) and `describe_cell_moderate_cross_tests`.

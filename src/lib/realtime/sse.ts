@@ -162,7 +162,7 @@ const watch_client_disconnect = (c: Context, on_gone: () => void): void => {
  * Create an SSE response for a Hono context.
  *
  * Wraps Hono's `streamSSE` to provide a `{response, stream}` API
- * compatible with `SubscriberRegistry` push-based broadcasting.
+ * compatible with `SseRegistry` push-based broadcasting.
  * The callback suspends via a promise that resolves on client disconnect
  * or explicit `close()`, keeping the stream alive for external sends.
  *
@@ -171,7 +171,7 @@ const watch_client_disconnect = (c: Context, on_gone: () => void): void => {
  * cancelling the body. A client already gone when this is called yields a
  * stream that is already closed, so register cleanup with `on_close` (which
  * runs a late listener at once) before handing the stream anywhere that would
- * count it — `SubscriberRegistry.admit` after `on_close(pending.unsubscribe)`
+ * count it — `SseRegistry.admit` after `on_close(pending.unsubscribe)`
  * refuses it.
  *
  * Uses `hono_stream.write()` directly (not `writeSSE`) to avoid
@@ -313,7 +313,7 @@ export interface EventSpec {
  * In DEV: warns on unknown methods and invalid params.
  * In production: passes through with zero overhead.
  *
- * @param broadcaster - duck-typed broadcaster (e.g. `SubscriberRegistry`)
+ * @param broadcaster - duck-typed broadcaster (e.g. `SseRegistry`)
  * @param event_specs - event specs to validate against
  * @param log - logger used to emit DEV warnings on unknown methods or param mismatches
  * @returns validated broadcaster wrapper (passthrough in production)

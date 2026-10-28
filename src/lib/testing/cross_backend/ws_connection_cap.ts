@@ -5,7 +5,7 @@ import '../assert_dev_env.ts';
  * over a real upgrade.
  *
  * Both spines bound an account's concurrent WebSocket connections
- * (`BackendWebsocketTransport`'s `max_connections_per_account` on the TS side,
+ * (`ConnectionRegistry`'s `max_connections_per_account` on the TS side,
  * the Rust `fuz_realtime` `ConnectionRegistry` on the other; both default to
  * `DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT`) with the same policy: **evict-oldest**
  * — a connection past the cap is always admitted, and the account's oldest is
@@ -49,7 +49,7 @@ import {
 	WS_CLOSE_CONNECTION_LIMIT,
 	WS_CLOSE_CONNECTION_LIMIT_REASON
 } from '../../actions/transports.ts';
-import { DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT } from '../../actions/transports_ws_backend.ts';
+import { DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT } from '../../actions/connection_registry.ts';
 import type { WsClient } from '../transports/ws_client.ts';
 import { type BackendCapabilities, test_if } from './capabilities.ts';
 import type { SetupTest, TestFixture } from './setup.ts';

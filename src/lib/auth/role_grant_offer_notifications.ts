@@ -1,7 +1,7 @@
 /**
  * Role grant offer WebSocket notification specs, builders, and the narrow
  * `NotificationSender` interface that decouples offer/revoke send sites
- * from `BackendWebsocketTransport`.
+ * from `ConnectionRegistry`.
  *
  * Six `RemoteNotificationActionSpec`s cover the consentful-role-grants
  * lifecycle events the server pushes to affected accounts:
@@ -46,11 +46,11 @@ import { ROLE_GRANT_REVOKED_REASON_LENGTH_MAX } from './account_schema.ts';
  * Narrow structural capability for sending a JSON-RPC notification to every
  * socket bound to an account.
  *
- * `BackendWebsocketTransport` satisfies this interface — its
+ * `ConnectionRegistry` satisfies this interface — its
  * `send_to_account(account_id, message)` signature accepts the broader
  * `JsonrpcMessageFromServerToClient` type, which is contravariantly
  * compatible with `JsonrpcNotification` here. The interface stays local so
- * handlers don't couple to the concrete transport, and tests can inject a
+ * handlers don't couple to the concrete registry, and tests can inject a
  * capturing stub with no WS machinery.
  *
  * Returns the number of sockets the notification was sent to — callers

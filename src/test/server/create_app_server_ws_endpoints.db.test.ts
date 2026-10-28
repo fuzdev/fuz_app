@@ -8,10 +8,10 @@
  *   at all when nothing mounts
  * - `allowed_origins` defaulting to the server's list, or narrowing it
  * - endpoint paths outside the auth middleware's scope throw (RPC and WS)
- * - multi-endpoint with per-path `BackendWebsocketTransport`
- * - `max_connections_per_account` threading into the auto-created transport
+ * - multi-endpoint with per-path `ConnectionRegistry`
+ * - `max_connections_per_account` threading into the auto-created registry
  * - one revocation guard on `deps.connection_closer`, whatever mounts
- * - every mounted transport, and the audit stream registry, joins
+ * - every mounted registry, and the audit stream registry, joins
  *   `deps.connection_closer`
  * - `actions` omitted: the sole RPC endpoint's set, through `to_ws_actions`
  * - standard actions over WS surface
@@ -69,9 +69,9 @@ import { protocol_actions, to_ws_actions } from '#lib/actions/protocol.ts';
 import { peer_ping_action } from '#lib/actions/peer_ping.ts';
 import { parse_allowed_origins } from '#lib/http/origin.ts';
 import {
-	BackendWebsocketTransport,
+	ConnectionRegistry,
 	DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT
-} from '#lib/actions/transports_ws_backend.ts';
+} from '#lib/actions/connection_registry.ts';
 import {
 	WS_CLOSE_CONNECTION_LIMIT,
 	WS_CLOSE_CONNECTION_LIMIT_REASON,
@@ -174,7 +174,7 @@ const build_minimal_spec = (overrides?: Partial<WsEndpointSpec>): WsEndpointSpec
 });
 
 describe('create_app_server.ws_endpoints', () => {
-	test('array form auto-mounts: AppServer.ws_endpoints carries the transport, surface lists the actions', async () => {
+	test('array form auto-mounts: AppServer.ws_endpoints carries the registry, surface lists the actions', async () => {
 		const stub = create_stub_upgrade();
 		const { config } = await create_test_setup();
 		const result = await create_tracked_app_server({
@@ -183,10 +183,10 @@ describe('create_app_server.ws_endpoints', () => {
 			ws_endpoints: [build_minimal_spec()]
 		});
 
-		// Path → transport map for broadcast / fan-out.
+		// Path → registry map for broadcast / fan-out.
 		const mounted_paths = Object.keys(result.ws_endpoints);
 		assert.deepStrictEqual(mounted_paths, ['/api/ws']);
-		assert.instanceOf(result.ws_endpoints['/api/ws'], BackendWebsocketTransport);
+		assert.instanceOf(result.ws_endpoints['/api/ws'], ConnectionRegistry);
 
 		// Surface reflects the endpoint and its methods.
 		const ws_endpoint = result.surface_spec.surface.ws_endpoints.find((e) => e.path === '/api/ws');
@@ -417,22 +417,22 @@ describe('create_app_server.ws_endpoints', () => {
 	test('multi-endpoint with supplied transports: AppServer.ws_endpoints returns the same references', async () => {
 		const stub = create_stub_upgrade();
 		const { config } = await create_test_setup();
-		const transport_a = new BackendWebsocketTransport();
-		const transport_b = new BackendWebsocketTransport();
+		const registry_a = new ConnectionRegistry();
+		const registry_b = new ConnectionRegistry();
 		const result = await create_tracked_app_server({
 			...config,
 			create_upgrade_websocket: () => stub.upgradeWebSocket,
 			ws_endpoints: [
-				build_minimal_spec({ path: '/api/ws_a', transport: transport_a }),
-				build_minimal_spec({ path: '/api/ws_b', transport: transport_b })
+				build_minimal_spec({ path: '/api/ws_a', registry: registry_a }),
+				build_minimal_spec({ path: '/api/ws_b', registry: registry_b })
 			]
 		});
 
-		assert.strictEqual(result.ws_endpoints['/api/ws_a'], transport_a);
-		assert.strictEqual(result.ws_endpoints['/api/ws_b'], transport_b);
+		assert.strictEqual(result.ws_endpoints['/api/ws_a'], registry_a);
+		assert.strictEqual(result.ws_endpoints['/api/ws_b'], registry_b);
 	});
 
-	test('max_connections_per_account configures the auto-created transport', async () => {
+	test('max_connections_per_account configures the auto-created registry', async () => {
 		const stub = create_stub_upgrade();
 		const { config } = await create_test_setup();
 		const result = await create_tracked_app_server({
@@ -473,7 +473,7 @@ describe('create_app_server.ws_endpoints', () => {
 		assert.ok(sockets.every((s) => s.closes.length === 0));
 	});
 
-	test('throws when max_connections_per_account is set alongside a supplied transport', async () => {
+	test('throws when max_connections_per_account is set alongside a supplied registry', async () => {
 		const stub = create_stub_upgrade();
 		const { config } = await create_test_setup();
 		await assert_rejects(
@@ -483,29 +483,29 @@ describe('create_app_server.ws_endpoints', () => {
 					create_upgrade_websocket: () => stub.upgradeWebSocket,
 					ws_endpoints: [
 						build_minimal_spec({
-							transport: new BackendWebsocketTransport(),
+							registry: new ConnectionRegistry(),
 							max_connections_per_account: 5
 						})
 					]
 				}),
-			/max_connections_per_account configures the transport created for \/api\/ws/
+			/max_connections_per_account configures the registry created for \/api\/ws/
 		);
 	});
 
 	test('the revocation guard: a session_revoke row closes the affected socket', async () => {
 		const stub = create_stub_upgrade();
 		const { config, audit } = await create_test_setup();
-		const transport = new BackendWebsocketTransport();
+		const registry = new ConnectionRegistry();
 		await create_tracked_app_server({
 			...config,
 			create_upgrade_websocket: () => stub.upgradeWebSocket,
-			ws_endpoints: [build_minimal_spec({ transport })]
+			ws_endpoints: [build_minimal_spec({ registry })]
 		});
 
 		const session_hash = 'session_hash_a';
 		const account_id: Uuid = create_uuid();
 		const fake_ws = create_fake_ws();
-		transport.add_connection(fake_ws.ws, create_test_identity({ session_hash, account_id }));
+		registry.add_connection(fake_ws.ws, create_test_identity({ session_hash, account_id }));
 
 		// `notify` walks the registered listeners synchronously — assembly
 		// registered the revocation guard on this same emitter.
@@ -520,25 +520,25 @@ describe('create_app_server.ws_endpoints', () => {
 		assert.strictEqual(fake_ws.closes[0]!.code, WS_CLOSE_SESSION_REVOKED);
 	});
 
-	test('one revocation guard however many endpoints share a transport', async () => {
-		// Two specs share one transport instance — one guard on the backend's
-		// closer, which holds the transport once.
+	test('one revocation guard however many endpoints share a registry', async () => {
+		// Two specs share one registry instance — one guard on the backend's
+		// closer, which holds the registry once.
 		const stub = create_stub_upgrade();
 		const { config, audit } = await create_test_setup();
-		const shared_transport = new BackendWebsocketTransport();
+		const shared_registry = new ConnectionRegistry();
 		const result = await create_tracked_app_server({
 			...config,
 			create_upgrade_websocket: () => stub.upgradeWebSocket,
 			ws_endpoints: [
-				build_minimal_spec({ path: '/api/ws_a', transport: shared_transport }),
-				build_minimal_spec({ path: '/api/ws_b', transport: shared_transport })
+				build_minimal_spec({ path: '/api/ws_a', registry: shared_registry }),
+				build_minimal_spec({ path: '/api/ws_b', registry: shared_registry })
 			]
 		});
 
-		assert.strictEqual(result.ws_endpoints['/api/ws_a'], shared_transport);
-		assert.strictEqual(result.ws_endpoints['/api/ws_b'], shared_transport);
+		assert.strictEqual(result.ws_endpoints['/api/ws_a'], shared_registry);
+		assert.strictEqual(result.ws_endpoints['/api/ws_b'], shared_registry);
 
-		// One guard, not two — and the closer holds the shared transport once.
+		// One guard, not two — and the closer holds the shared registry once.
 		assert.strictEqual(audit.listener_count(), 1);
 		assert.strictEqual(config.backend.deps.connection_closer.member_count(), 1);
 	});
@@ -633,17 +633,17 @@ describe('create_app_server.ws_endpoints', () => {
 		// each event's revocation scope, and `logout` is account-wide.
 		const stub = create_stub_upgrade();
 		const { config, audit } = await create_test_setup();
-		const transport = new BackendWebsocketTransport();
+		const registry = new ConnectionRegistry();
 		await create_tracked_app_server({
 			...config,
 			create_upgrade_websocket: () => stub.upgradeWebSocket,
-			ws_endpoints: [build_minimal_spec({ transport })]
+			ws_endpoints: [build_minimal_spec({ registry })]
 		});
 
 		const session_hash = 'session_hash_logout';
 		const account_id: Uuid = create_uuid();
 		const fake_ws = create_fake_ws();
-		transport.add_connection(fake_ws.ws, create_test_identity({ session_hash, account_id }));
+		registry.add_connection(fake_ws.ws, create_test_identity({ session_hash, account_id }));
 
 		const event: AuditLogEvent = create_test_audit_event({
 			event_type: 'logout',
@@ -661,12 +661,12 @@ describe('create_app_server.ws_endpoints', () => {
 		// listener composition must not break either consumer.
 		const stub = create_stub_upgrade();
 		const { config, audit } = await create_test_setup();
-		const transport = new BackendWebsocketTransport();
+		const registry = new ConnectionRegistry();
 		const result = await create_tracked_app_server({
 			...config,
 			audit_log_sse: true,
 			create_upgrade_websocket: () => stub.upgradeWebSocket,
-			ws_endpoints: [build_minimal_spec({ transport })]
+			ws_endpoints: [build_minimal_spec({ registry })]
 		});
 
 		assert.isDefined(result.audit_sse);
@@ -675,7 +675,7 @@ describe('create_app_server.ws_endpoints', () => {
 		const session_hash = 'session_hash_co_mount';
 		const account_id: Uuid = create_uuid();
 		const fake_ws = create_fake_ws();
-		transport.add_connection(fake_ws.ws, create_test_identity({ session_hash, account_id }));
+		registry.add_connection(fake_ws.ws, create_test_identity({ session_hash, account_id }));
 
 		// Chain length: 1 (audit_sse listener) + 1 (revocation guard).
 		assert.strictEqual(audit.listener_count(), 2);
@@ -770,8 +770,8 @@ describe('create_app_server.ws_endpoints', () => {
 
 		// `on_socket_open` ran with the registered connection id.
 		assert.strictEqual(open_events.length, 1);
-		const transport = result.ws_endpoints['/api/ws']!;
-		assert.strictEqual(transport.get_connection_count(), 1);
+		const registry = result.ws_endpoints['/api/ws']!;
+		assert.strictEqual(registry.connection_count(), 1);
 
 		// Drive a heartbeat request through the dispatcher.
 		assert.isDefined(events.onMessage);
@@ -793,7 +793,7 @@ describe('create_app_server.ws_endpoints', () => {
 		await Promise.resolve(
 			events.onClose?.(new CloseEvent('close', { code: 1000, reason: '' }), fake_ws.ws)
 		);
-		assert.strictEqual(transport.get_connection_count(), 0);
+		assert.strictEqual(registry.connection_count(), 0);
 	});
 
 	test('required_roles: ROLE_ADMIN appears on the surface and unauthenticated upgrade is rejected at the upgrade-time chain', async () => {
@@ -873,14 +873,14 @@ describe('create_app_server.ws_endpoints', () => {
 		// Two endpoints, two transports — one guard on the closer reaches both.
 		const stub = create_stub_upgrade();
 		const { config, audit } = await create_test_setup();
-		const transport_a = new BackendWebsocketTransport();
-		const transport_b = new BackendWebsocketTransport();
+		const registry_a = new ConnectionRegistry();
+		const registry_b = new ConnectionRegistry();
 		await create_tracked_app_server({
 			...config,
 			create_upgrade_websocket: () => stub.upgradeWebSocket,
 			ws_endpoints: [
-				build_minimal_spec({ path: '/api/ws_a', transport: transport_a }),
-				build_minimal_spec({ path: '/api/ws_b', transport: transport_b })
+				build_minimal_spec({ path: '/api/ws_a', registry: registry_a }),
+				build_minimal_spec({ path: '/api/ws_b', registry: registry_b })
 			]
 		});
 
@@ -888,11 +888,11 @@ describe('create_app_server.ws_endpoints', () => {
 		const account_id: Uuid = create_uuid();
 		const on_a = create_fake_ws();
 		const on_b = create_fake_ws();
-		transport_a.add_connection(
+		registry_a.add_connection(
 			on_a.ws,
 			create_test_identity({ session_hash: 'session_hash_a', account_id })
 		);
-		transport_b.add_connection(
+		registry_b.add_connection(
 			on_b.ws,
 			create_test_identity({ session_hash: 'session_hash_b', account_id })
 		);
@@ -943,20 +943,20 @@ describe('create_app_server.ws_endpoints', () => {
 		assert.strictEqual(result.audit_sse.registry.count, 0);
 	});
 
-	test('every mounted transport joins deps.connection_closer', async () => {
+	test('every mounted registry joins deps.connection_closer', async () => {
 		// The revocation handlers and the revocation guard close through
-		// `deps.connection_closer`. A transport left out of it would keep a
+		// `deps.connection_closer`. A registry left out of it would keep a
 		// revoked credential's sockets open, so the mount adds every
-		// transport, supplied or created.
+		// registry, supplied or created.
 		const stub = create_stub_upgrade();
 		const { config, audit } = await create_test_setup();
-		const supplied = new BackendWebsocketTransport();
+		const supplied = new ConnectionRegistry();
 		const result = await create_tracked_app_server({
 			...config,
 			create_upgrade_websocket: () => stub.upgradeWebSocket,
 			ws_endpoints: [
-				build_minimal_spec({ path: '/api/ws_a', transport: supplied }),
-				// no transport supplied — the mount creates one
+				build_minimal_spec({ path: '/api/ws_a', registry: supplied }),
+				// no registry supplied — the mount creates one
 				build_minimal_spec({ path: '/api/ws_b' })
 			]
 		});
@@ -993,19 +993,19 @@ describe('create_app_server.ws_endpoints', () => {
 	test('audit_log_sse joins deps.connection_closer alongside the WS transports', async () => {
 		const stub = create_stub_upgrade();
 		const { config } = await create_test_setup();
-		const transport = new BackendWebsocketTransport();
+		const registry = new ConnectionRegistry();
 		const result = await create_tracked_app_server({
 			...config,
 			audit_log_sse: true,
 			create_upgrade_websocket: () => stub.upgradeWebSocket,
-			ws_endpoints: [build_minimal_spec({ transport })]
+			ws_endpoints: [build_minimal_spec({ registry })]
 		});
 		assert.ok(result.audit_sse);
 
 		const account_id: Uuid = create_uuid();
 		const session_hash = 'session_hash_both_transports';
 		const fake_ws = create_fake_ws();
-		transport.add_connection(fake_ws.ws, create_test_identity({ session_hash, account_id }));
+		registry.add_connection(fake_ws.ws, create_test_identity({ session_hash, account_id }));
 		let stream_closed = false;
 		result.audit_sse.registry.subscribe(
 			{

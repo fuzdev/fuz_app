@@ -3,8 +3,8 @@
  *
  * Covers the three surface contracts:
  * - input validation (silent skip + log on bad input)
- * - unfiltered broadcast (`transport.broadcast`)
- * - ACL path (per-connection predicate via BackendWebsocketTransport)
+ * - unfiltered broadcast (`registry.broadcast`)
+ * - ACL path (per-connection predicate via ConnectionRegistry)
  *
  * @module
  */
@@ -17,7 +17,7 @@ import {
 	type BroadcastTarget,
 	type ShouldDeliverFn
 } from '#lib/actions/broadcast_api.ts';
-import { BackendWebsocketTransport } from '#lib/actions/transports_ws_backend.ts';
+import { ConnectionRegistry } from '#lib/actions/connection_registry.ts';
 import type { JsonrpcNotification } from '#lib/http/jsonrpc.ts';
 import type { ActionSpecUnion } from '#lib/actions/action_spec.ts';
 import { create_fake_ws } from '#lib/testing/ws_round_trip.ts';
@@ -42,9 +42,9 @@ interface TestApi {
 
 describe('create_broadcast_api', () => {
 	test('exposes a method per spec', () => {
-		const transport = new BackendWebsocketTransport();
+		const registry = new ConnectionRegistry();
 		const api = create_broadcast_api<TestApi>({
-			transport,
+			registry,
 			specs: [thing_changed_spec],
 			log: null
 		});
@@ -52,22 +52,22 @@ describe('create_broadcast_api', () => {
 	});
 
 	test('unfiltered broadcast sends to every connection', async () => {
-		const transport = new BackendWebsocketTransport();
+		const registry = new ConnectionRegistry();
 		const account_a = create_uuid();
 		const account_b = create_uuid();
 		const a = create_fake_ws();
 		const b = create_fake_ws();
-		transport.add_connection(
+		registry.add_connection(
 			a.ws,
 			create_test_identity({ session_hash: 'hash_a', account_id: account_a })
 		);
-		transport.add_connection(
+		registry.add_connection(
 			b.ws,
 			create_test_identity({ session_hash: 'hash_b', account_id: account_b })
 		);
 
 		const api = create_broadcast_api<TestApi>({
-			transport,
+			registry,
 			specs: [thing_changed_spec],
 			log: null
 		});
@@ -82,16 +82,16 @@ describe('create_broadcast_api', () => {
 	});
 
 	test('validates input and skips send on failure', async () => {
-		const transport = new BackendWebsocketTransport();
+		const registry = new ConnectionRegistry();
 		const { ws } = create_fake_ws();
-		transport.add_connection(
+		registry.add_connection(
 			ws,
 			create_test_identity({ session_hash: 'hash_a', account_id: create_uuid() })
 		);
 
 		const log_errors: Array<Array<unknown>> = [];
 		const api = create_broadcast_api<TestApi>({
-			transport,
+			registry,
 			specs: [thing_changed_spec],
 			log: {
 				error: (...args: Array<unknown>) => log_errors.push(args),
@@ -111,28 +111,28 @@ describe('create_broadcast_api', () => {
 	});
 
 	test('a broadcast with no connections reaches nobody and does not throw', async () => {
-		const transport = new BackendWebsocketTransport(); // no connections
+		const registry = new ConnectionRegistry(); // no connections
 		const api = create_broadcast_api<TestApi>({
-			transport,
+			registry,
 			specs: [thing_changed_spec],
 			log: null
 		});
 		// Should not throw
 		await api.thing_changed({ id: 'x' });
-		assert.strictEqual(transport.get_connection_count() > 0, false);
+		assert.strictEqual(registry.connection_count() > 0, false);
 	});
 
 	test('should_deliver filters per connection by identity', async () => {
-		const transport = new BackendWebsocketTransport();
+		const registry = new ConnectionRegistry();
 		const account_a = create_uuid();
 		const account_b = create_uuid();
 		const a = create_fake_ws();
 		const b = create_fake_ws();
-		transport.add_connection(
+		registry.add_connection(
 			a.ws,
 			create_test_identity({ session_hash: 'hash_a', account_id: account_a })
 		);
-		transport.add_connection(
+		registry.add_connection(
 			b.ws,
 			create_test_identity({ session_hash: 'hash_b', account_id: account_b })
 		);
@@ -143,7 +143,7 @@ describe('create_broadcast_api', () => {
 		};
 
 		const api = create_broadcast_api<TestApi>({
-			transport,
+			registry,
 			specs: [thing_changed_spec],
 			log: null,
 			should_deliver
@@ -168,12 +168,12 @@ describe('create_broadcast_api', () => {
 			}
 		};
 		await create_broadcast_api<TestApi>({
-			transport: target,
+			registry: target,
 			specs: [thing_changed_spec],
 			log: null
 		}).thing_changed({ id: 'x' });
 		await create_broadcast_api<TestApi>({
-			transport: target,
+			registry: target,
 			specs: [thing_changed_spec],
 			log: null,
 			should_deliver: () => true
@@ -194,9 +194,9 @@ describe('create_broadcast_api', () => {
 			...thing_changed_spec,
 			method: 'other_thing_changed'
 		};
-		const transport = new BackendWebsocketTransport();
+		const registry = new ConnectionRegistry();
 		const api = create_broadcast_api<Record<string, (input: unknown) => Promise<void>>>({
-			transport,
+			registry,
 			specs: [thing_changed_spec, other_spec],
 			log: null
 		});
@@ -205,9 +205,9 @@ describe('create_broadcast_api', () => {
 	});
 
 	test('should_deliver sees validated payload, not raw input', async () => {
-		const transport = new BackendWebsocketTransport();
+		const registry = new ConnectionRegistry();
 		const { ws } = create_fake_ws();
-		transport.add_connection(
+		registry.add_connection(
 			ws,
 			create_test_identity({ session_hash: 'hash_a', account_id: create_uuid() })
 		);
@@ -220,7 +220,7 @@ describe('create_broadcast_api', () => {
 			return true;
 		};
 		const api = create_broadcast_api<TestApi>({
-			transport,
+			registry,
 			specs: [thing_changed_spec],
 			log: null,
 			should_deliver

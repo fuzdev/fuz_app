@@ -1,5 +1,5 @@
 /**
- * Tests for backend_subscriber_registry - channel-based pub/sub.
+ * Tests for backend_sse_registry - channel-based pub/sub.
  *
  * @module
  */
@@ -7,7 +7,7 @@
 import { describe, assert, test, vi } from 'vitest';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import { SubscriberRegistry } from '#lib/realtime/subscriber_registry.ts';
+import { SseRegistry } from '#lib/realtime/sse_registry.ts';
 import type { SseStream } from '#lib/realtime/sse.ts';
 
 /** Create a mock SseStream that records sent data. */
@@ -32,21 +32,21 @@ const create_mock_stream = <T>(): SseStream<T> & {
 	};
 };
 
-describe('SubscriberRegistry', () => {
+describe('SseRegistry', () => {
 	test('starts with zero subscribers', () => {
-		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
+		const registry: SseRegistry<string> = new SseRegistry();
 		assert.strictEqual(registry.count, 0);
 	});
 
 	test('subscribe increments count', () => {
-		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
+		const registry: SseRegistry<string> = new SseRegistry();
 		const stream = create_mock_stream<string>();
 		registry.subscribe(stream);
 		assert.strictEqual(registry.count, 1);
 	});
 
 	test('unsubscribe decrements count', () => {
-		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
+		const registry: SseRegistry<string> = new SseRegistry();
 		const stream = create_mock_stream<string>();
 		const unsubscribe = registry.subscribe(stream);
 		assert.strictEqual(registry.count, 1);
@@ -55,7 +55,7 @@ describe('SubscriberRegistry', () => {
 	});
 
 	test('broadcast sends to all subscribers when no channel filter', () => {
-		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
+		const registry: SseRegistry<string> = new SseRegistry();
 		const stream1 = create_mock_stream<string>();
 		const stream2 = create_mock_stream<string>();
 		registry.subscribe(stream1);
@@ -68,7 +68,7 @@ describe('SubscriberRegistry', () => {
 	});
 
 	test('broadcast respects channel filters', () => {
-		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
+		const registry: SseRegistry<string> = new SseRegistry();
 		const runs_stream = create_mock_stream<string>();
 		const hosts_stream = create_mock_stream<string>();
 		const all_stream = create_mock_stream<string>();
@@ -85,7 +85,7 @@ describe('SubscriberRegistry', () => {
 	});
 
 	test('subscriber with multiple channels receives matching broadcasts', () => {
-		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
+		const registry: SseRegistry<string> = new SseRegistry();
 		const stream = create_mock_stream<string>();
 		registry.subscribe(stream, { channels: ['runs', 'hosts'] });
 
@@ -97,7 +97,7 @@ describe('SubscriberRegistry', () => {
 	});
 
 	test('empty channels array means all channels', () => {
-		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
+		const registry: SseRegistry<string> = new SseRegistry();
 		const stream = create_mock_stream<string>();
 		registry.subscribe(stream, { channels: [] });
 
@@ -107,7 +107,7 @@ describe('SubscriberRegistry', () => {
 	});
 
 	test('unsubscribed stream does not receive broadcasts', () => {
-		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
+		const registry: SseRegistry<string> = new SseRegistry();
 		const stream = create_mock_stream<string>();
 		const unsubscribe = registry.subscribe(stream);
 
@@ -119,7 +119,7 @@ describe('SubscriberRegistry', () => {
 	});
 
 	test('multiple subscribers can subscribe and unsubscribe independently', () => {
-		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
+		const registry: SseRegistry<string> = new SseRegistry();
 		const stream1 = create_mock_stream<string>();
 		const stream2 = create_mock_stream<string>();
 		const unsub1 = registry.subscribe(stream1);
@@ -136,21 +136,21 @@ describe('SubscriberRegistry', () => {
 	});
 
 	test('broadcast with no subscribers is a no-op', () => {
-		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
+		const registry: SseRegistry<string> = new SseRegistry();
 		// should not throw
 		registry.broadcast('ch', 'data');
 		assert.strictEqual(registry.count, 0);
 	});
 
 	test('subscribe with scope only', () => {
-		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
+		const registry: SseRegistry<string> = new SseRegistry();
 		const stream = create_mock_stream<string>();
 		registry.subscribe(stream, { channels: ['ch'], scope: 'session_x' });
 		assert.strictEqual(registry.count, 1);
 	});
 
 	test('close_by_identity matches scope', () => {
-		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
+		const registry: SseRegistry<string> = new SseRegistry();
 		const stream1 = create_mock_stream<string>();
 		const stream2 = create_mock_stream<string>();
 		const stream3 = create_mock_stream<string>();
@@ -171,7 +171,7 @@ describe('SubscriberRegistry', () => {
 	});
 
 	test('close_by_identity matches groups', () => {
-		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
+		const registry: SseRegistry<string> = new SseRegistry();
 		const stream1 = create_mock_stream<string>();
 		const stream2 = create_mock_stream<string>();
 
@@ -185,7 +185,7 @@ describe('SubscriberRegistry', () => {
 	});
 
 	test('close_by_identity matches both scope and groups on the same subscriber', () => {
-		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
+		const registry: SseRegistry<string> = new SseRegistry();
 		const stream = create_mock_stream<string>();
 		registry.subscribe(stream, { channels: ['ch'], scope: 'session_x', groups: ['account_a'] });
 
@@ -196,7 +196,7 @@ describe('SubscriberRegistry', () => {
 	});
 
 	test('close_by_identity returns 0 when no subscribers match', () => {
-		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
+		const registry: SseRegistry<string> = new SseRegistry();
 		const stream = create_mock_stream<string>();
 		registry.subscribe(stream, { channels: ['ch'], scope: 'session_a' });
 
@@ -208,7 +208,7 @@ describe('SubscriberRegistry', () => {
 	});
 
 	test('close_by_identity does not close subscribers without any identity', () => {
-		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
+		const registry: SseRegistry<string> = new SseRegistry();
 		const stream_with_scope = create_mock_stream<string>();
 		const stream_without_id = create_mock_stream<string>();
 
@@ -226,7 +226,7 @@ describe('SubscriberRegistry', () => {
 	test('a stream whose close throws does not spare the streams after it', () => {
 		// One broken stream ahead of the others would otherwise abort the loop
 		// and leave the rest open on a revoked credential.
-		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
+		const registry: SseRegistry<string> = new SseRegistry();
 		const boom = new Error('controller already closed');
 		const before = create_mock_stream<string>();
 		const failing: SseStream<string> = {
@@ -257,7 +257,7 @@ describe('SubscriberRegistry', () => {
 	});
 
 	test('closed subscriber no longer receives broadcasts', () => {
-		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
+		const registry: SseRegistry<string> = new SseRegistry();
 		const stream = create_mock_stream<string>();
 		registry.subscribe(stream, { channels: ['ch'], scope: 'session_a' });
 
@@ -269,13 +269,13 @@ describe('SubscriberRegistry', () => {
 	});
 
 	test('close_by_identity with empty registry is a no-op', () => {
-		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
+		const registry: SseRegistry<string> = new SseRegistry();
 		const closed = registry.close_by_identity('anything');
 		assert.strictEqual(closed, 0);
 	});
 
 	test('scope + groups together: close by either key closes the subscriber', () => {
-		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
+		const registry: SseRegistry<string> = new SseRegistry();
 		const stream = create_mock_stream<string>();
 		registry.subscribe(stream, { channels: ['ch'], scope: 'session_x', groups: ['account_a'] });
 
@@ -286,7 +286,7 @@ describe('SubscriberRegistry', () => {
 	});
 
 	test('subscribe with empty groups is treated as no groups', () => {
-		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
+		const registry: SseRegistry<string> = new SseRegistry();
 		const stream = create_mock_stream<string>();
 		registry.subscribe(stream, { channels: ['ch'], groups: [] });
 
@@ -296,9 +296,9 @@ describe('SubscriberRegistry', () => {
 	});
 });
 
-describe('SubscriberRegistry.close_all', () => {
+describe('SseRegistry.close_all', () => {
 	test('closes every subscriber, with or without an identity, pending ones included', () => {
-		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
+		const registry: SseRegistry<string> = new SseRegistry();
 		const scoped = create_mock_stream<string>();
 		const grouped = create_mock_stream<string>();
 		const anonymous = create_mock_stream<string>();
@@ -316,7 +316,7 @@ describe('SubscriberRegistry.close_all', () => {
 	});
 
 	test('a stream whose close throws does not spare the rest', () => {
-		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
+		const registry: SseRegistry<string> = new SseRegistry();
 		const boom = new Error('controller already closed');
 		const before = create_mock_stream<string>();
 		const after = create_mock_stream<string>();
@@ -339,9 +339,9 @@ describe('SubscriberRegistry.close_all', () => {
 	});
 });
 
-describe('SubscriberRegistry born-closed registrations', () => {
+describe('SseRegistry born-closed registrations', () => {
 	test('a pending registration after close_all is never registered and is refused at admission', () => {
-		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
+		const registry: SseRegistry<string> = new SseRegistry();
 		assert.strictEqual(registry.closing, false);
 		registry.close_all();
 		assert.strictEqual(registry.closing, true);
@@ -357,7 +357,7 @@ describe('SubscriberRegistry born-closed registrations', () => {
 	});
 
 	test('a one-step subscribe after close_all closes its stream at once', () => {
-		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
+		const registry: SseRegistry<string> = new SseRegistry();
 		registry.close_all();
 
 		const stream = create_mock_stream<string>();
@@ -370,9 +370,9 @@ describe('SubscriberRegistry born-closed registrations', () => {
 	});
 });
 
-describe('SubscriberRegistry max_per_scope', () => {
+describe('SseRegistry max_per_scope', () => {
 	test('closes oldest subscriber when scope cap is reached', () => {
-		const registry: SubscriberRegistry<string> = new SubscriberRegistry({ max_per_scope: 5 });
+		const registry: SseRegistry<string> = new SseRegistry({ max_per_scope: 5 });
 		const streams: Array<ReturnType<typeof create_mock_stream<string>>> = [];
 
 		for (let i = 0; i < 6; i++) {
@@ -390,7 +390,7 @@ describe('SubscriberRegistry max_per_scope', () => {
 	});
 
 	test('does not close subscribers for other scopes when cap is reached', () => {
-		const registry: SubscriberRegistry<string> = new SubscriberRegistry({ max_per_scope: 2 });
+		const registry: SseRegistry<string> = new SseRegistry({ max_per_scope: 2 });
 		const a1 = create_mock_stream<string>();
 		const a2 = create_mock_stream<string>();
 		const b1 = create_mock_stream<string>();
@@ -412,7 +412,7 @@ describe('SubscriberRegistry max_per_scope', () => {
 		// This is the core of the scope/groups split: the cap only applies to
 		// scope. A shared group identity (like account_id) is for coarse close
 		// targeting, not for resource capping.
-		const registry: SubscriberRegistry<string> = new SubscriberRegistry({ max_per_scope: 2 });
+		const registry: SseRegistry<string> = new SseRegistry({ max_per_scope: 2 });
 		const streams: Array<ReturnType<typeof create_mock_stream<string>>> = [];
 
 		// Five unique scopes all sharing one group — each scope is at the cap
@@ -436,7 +436,7 @@ describe('SubscriberRegistry max_per_scope', () => {
 	});
 
 	test('null (default) disables the cap', () => {
-		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
+		const registry: SseRegistry<string> = new SseRegistry();
 		for (let i = 0; i < 20; i++) {
 			registry.subscribe(create_mock_stream<string>(), { channels: ['ch'], scope: 'session_a' });
 		}
@@ -446,7 +446,7 @@ describe('SubscriberRegistry max_per_scope', () => {
 	test('an evicted stream whose close throws is still removed, and the admission stands', () => {
 		const log = new Logger('test', { level: 'off' });
 		const log_error = vi.spyOn(log, 'error');
-		const registry: SubscriberRegistry<string> = new SubscriberRegistry({ max_per_scope: 1, log });
+		const registry: SseRegistry<string> = new SseRegistry({ max_per_scope: 1, log });
 		const boom = new Error('controller already closed');
 		let throwing_sends = 0;
 		registry.subscribe(
@@ -476,7 +476,7 @@ describe('SubscriberRegistry max_per_scope', () => {
 	});
 
 	test('subscribers without a scope are not subject to the cap', () => {
-		const registry: SubscriberRegistry<string> = new SubscriberRegistry({ max_per_scope: 2 });
+		const registry: SseRegistry<string> = new SseRegistry({ max_per_scope: 2 });
 		for (let i = 0; i < 10; i++) {
 			registry.subscribe(create_mock_stream<string>(), { channels: ['ch'] });
 		}
@@ -484,9 +484,9 @@ describe('SubscriberRegistry max_per_scope', () => {
 	});
 });
 
-describe('SubscriberRegistry two-phase registration', () => {
+describe('SseRegistry two-phase registration', () => {
 	test('a pending subscription receives nothing until admitted', () => {
-		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
+		const registry: SseRegistry<string> = new SseRegistry();
 		const stream = create_mock_stream<string>();
 		const pending = registry.subscribe_pending({ channels: ['ch'], scope: 'session_a' });
 
@@ -504,7 +504,7 @@ describe('SubscriberRegistry two-phase registration', () => {
 	});
 
 	test('every close reaches a pending subscription', () => {
-		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
+		const registry: SseRegistry<string> = new SseRegistry();
 		const by_scope = registry.subscribe_pending({ scope: 'session_a', groups: ['account_a'] });
 		const by_group = registry.subscribe_pending({ scope: 'session_b', groups: ['account_b'] });
 		const untouched = registry.subscribe_pending({ scope: 'session_c', groups: ['account_c'] });
@@ -520,7 +520,7 @@ describe('SubscriberRegistry two-phase registration', () => {
 	});
 
 	test('a subscription closed while pending is refused and evicts nothing', () => {
-		const registry: SubscriberRegistry<string> = new SubscriberRegistry({ max_per_scope: 1 });
+		const registry: SseRegistry<string> = new SseRegistry({ max_per_scope: 1 });
 		const live = create_mock_stream<string>();
 		registry.subscribe(live, { scope: 'session_a', groups: ['account_a'] });
 		const pending = registry.subscribe_pending({ scope: 'session_a', groups: ['tab_b'] });
@@ -536,7 +536,7 @@ describe('SubscriberRegistry two-phase registration', () => {
 	});
 
 	test('the cap evicts at admission, not at registration', () => {
-		const registry: SubscriberRegistry<string> = new SubscriberRegistry({ max_per_scope: 1 });
+		const registry: SseRegistry<string> = new SseRegistry({ max_per_scope: 1 });
 		const live = create_mock_stream<string>();
 		registry.subscribe(live, { scope: 'session_a' });
 
@@ -549,7 +549,7 @@ describe('SubscriberRegistry two-phase registration', () => {
 	});
 
 	test('pending subscriptions do not count toward the cap', () => {
-		const registry: SubscriberRegistry<string> = new SubscriberRegistry({ max_per_scope: 2 });
+		const registry: SseRegistry<string> = new SseRegistry({ max_per_scope: 2 });
 		const live = create_mock_stream<string>();
 		registry.subscribe(live, { scope: 'session_a' });
 		for (let i = 0; i < 5; i++) registry.subscribe_pending({ scope: 'session_a' });
@@ -562,7 +562,7 @@ describe('SubscriberRegistry two-phase registration', () => {
 	});
 
 	test('the cap never evicts a pending subscription', () => {
-		const registry: SubscriberRegistry<string> = new SubscriberRegistry({ max_per_scope: 1 });
+		const registry: SseRegistry<string> = new SseRegistry({ max_per_scope: 1 });
 		// registered first, so it is the scope's oldest entry
 		const pending = registry.subscribe_pending({ scope: 'session_a' });
 		const first = create_mock_stream<string>();
@@ -580,7 +580,7 @@ describe('SubscriberRegistry two-phase registration', () => {
 	});
 
 	test('unsubscribe removes a pending registration, and its admission is refused', () => {
-		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
+		const registry: SseRegistry<string> = new SseRegistry();
 		const pending = registry.subscribe_pending({ scope: 'session_a' });
 
 		pending.unsubscribe();
@@ -591,7 +591,7 @@ describe('SubscriberRegistry two-phase registration', () => {
 	});
 
 	test('unsubscribe removes an admitted subscription', () => {
-		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
+		const registry: SseRegistry<string> = new SseRegistry();
 		const stream = create_mock_stream<string>();
 		const pending = registry.subscribe_pending({ channels: ['ch'] });
 		registry.admit(pending, stream);
@@ -604,8 +604,8 @@ describe('SubscriberRegistry two-phase registration', () => {
 	});
 
 	test('admit refuses a pending subscription from another registry', () => {
-		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
-		const other: SubscriberRegistry<string> = new SubscriberRegistry();
+		const registry: SseRegistry<string> = new SseRegistry();
+		const other: SseRegistry<string> = new SseRegistry();
 		const pending = other.subscribe_pending({ scope: 'session_a' });
 
 		assert.strictEqual(registry.admit(pending, create_mock_stream<string>()), false);
@@ -614,7 +614,7 @@ describe('SubscriberRegistry two-phase registration', () => {
 	});
 
 	test('admit refuses a subscription that is already admitted', () => {
-		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
+		const registry: SseRegistry<string> = new SseRegistry();
 		const first = create_mock_stream<string>();
 		const second = create_mock_stream<string>();
 		const pending = registry.subscribe_pending({ channels: ['ch'] });

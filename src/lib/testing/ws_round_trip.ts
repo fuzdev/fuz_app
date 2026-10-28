@@ -18,7 +18,7 @@ import './assert_dev_env.ts';
  *     and by consumers wiring tight one-off tests.
  *   - **Harness** (`create_ws_test_harness`) — the high-level driver.
  *     Give it specs + handlers, get back
- *     `{transport, connect()}`. `connect()` is async and resolves after
+ *     `{registry, connect()}`. `connect()` is async and resolves after
  *     `on_socket_open` completes, so broadcasts sent immediately after
  *     `await harness.connect()` reach the client. Returns a `WsClient`
  *     (shared interface — see `transports/ws_client.ts`); the same
@@ -32,7 +32,7 @@ import './assert_dev_env.ts';
  * Hono's wire upgrade is skipped — there is no server, so no runtime
  * adapter — but the full dispatch path is exercised
  * (per-action auth, input validation, `ctx.notify` back to the
- * originating socket, broadcast via `BackendWebsocketTransport`, and
+ * originating socket, broadcast via `ConnectionRegistry`, and
  * close-on-revoke).
  *
  * @module
@@ -54,7 +54,7 @@ import type { Action } from '../actions/action_types.ts';
 import type { ActionEventEnvironment } from '../actions/action_event_types.ts';
 import { register_action_ws, type RegisterActionWsOptions } from '../actions/register_action_ws.ts';
 import { create_stub_db } from './stubs.ts';
-import { BackendWebsocketTransport } from '../actions/transports_ws_backend.ts';
+import { ConnectionRegistry } from '../actions/connection_registry.ts';
 import {
 	AUTH_SESSION_TOKEN_HASH_KEY,
 	REQUEST_CONTEXT_KEY,
@@ -337,8 +337,8 @@ export interface CreateWsTestHarnessOptions {
 	 * alongside consumer-specific actions.
 	 */
 	actions: ReadonlyArray<Action>;
-	/** Pass a pre-created transport to share with a broadcast API. */
-	transport?: BackendWebsocketTransport;
+	/** Pass a pre-created registry to share with a broadcast API. */
+	registry?: ConnectionRegistry;
 	/**
 	 * Threaded through to `register_action_ws`. Defaults to `null` (off) in
 	 * tests — fake timers + receive-silence detection need explicit opt-in and
@@ -354,8 +354,7 @@ export interface CreateWsTestHarnessOptions {
 	/**
 	 * Optional responder for **server-initiated** requests, applied to every
 	 * `connect()`. Purely additive (and unexercised until the TS server
-	 * transport gains server-initiated requests — the deferred
-	 * `BackendWebsocketTransport.send()` convergence): with it set, an
+	 * gains server-initiated requests): with it set, an
 	 * inbound server→client request is answered rather than surfaced as a
 	 * message; without it, behavior is unchanged. Mirrors the cross-process
 	 * `create_ws_transport` seam so suite bodies share one shape.
@@ -363,12 +362,12 @@ export interface CreateWsTestHarnessOptions {
 	on_request?: WsRequestResponder;
 }
 
-/** A harness instance — transport handle + connection factory. */
+/** A harness instance — registry handle + connection factory. */
 export interface WsTestHarness {
-	transport: BackendWebsocketTransport;
+	registry: ConnectionRegistry;
 	/**
 	 * Open a mock connection. Resolves after `on_socket_open` (and the
-	 * transport's `register_ws`) completes, so broadcasts issued
+	 * registry's `register_ws`) completes, so broadcasts issued
 	 * immediately after the `await` reach the connection.
 	 *
 	 * Returns the shared `WsClient` interface — same surface the
@@ -453,7 +452,7 @@ const build_simple_request_context = (role?: string): RequestContext => ({
 export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsTestHarness => {
 	const {
 		actions,
-		transport = new BackendWebsocketTransport(),
+		registry = new ConnectionRegistry(),
 		receive_timeout = null,
 		log = new Logger('[ws-test]', { level: 'off' }),
 		on_socket_open,
@@ -482,9 +481,9 @@ export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsT
 		allowed_origins: [],
 		actions,
 		db: stub_db,
-		transport,
+		registry,
 		// the harness drives the dispatcher against a stub db — no revocation
-		// handler runs here, so there is no closer to reach this transport
+		// handler runs here, so there is no closer to reach this registry
 		connection_closer: null,
 		receive_timeout,
 		log,
@@ -570,7 +569,7 @@ export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsT
 
 		// Resolve the (possibly async) events factory and fire onOpen
 		// before returning the client. Awaiting the hook chain here
-		// means the transport has registered the connection and any
+		// means the registry has registered the connection and any
 		// `on_socket_open` bootstrap (sending an initial snapshot,
 		// populating per-connection state) has completed by the time
 		// the caller's `await harness.connect(...)` resolves.
@@ -675,5 +674,5 @@ export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsT
 		};
 	};
 
-	return { transport, connect };
+	return { registry, connect };
 };

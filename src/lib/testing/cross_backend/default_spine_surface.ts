@@ -76,11 +76,11 @@ export interface SpineRpcEndpointsOptions {
 	 * server-initiated fan-out (`role_grant_offer_received` / `_accepted` /
 	 * `_declined` / `_retracted` / `_supersede`, flat `role_grant_revoke`).
 	 *
-	 * **Shared-instance trap.** Pass the SAME `BackendWebsocketTransport`
-	 * instance the WS endpoint registers connections against — the transport
-	 * *is* the connection registry, so a separate instance would fan out to an
+	 * **Shared-instance trap.** Pass the SAME `ConnectionRegistry`
+	 * instance the WS endpoint registers connections against — the registry
+	 * *is* the fan-out target, so a separate instance would fan out to an
 	 * empty registry and reach nobody (silently). The TS spine binary
-	 * constructs one `ws_transport` and threads it both here and into
+	 * constructs one `ConnectionRegistry` and threads it both here and into
 	 * `register_action_ws`.
 	 *
 	 * Omitted (the default) for the shared `create_spine_surface_spec` path —

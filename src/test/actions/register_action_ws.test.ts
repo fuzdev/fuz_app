@@ -5,7 +5,7 @@
  * the `createEvents` callback, then feeds onOpen/onMessage/onClose with a fake
  * Hono context and a fake `WSContext`. Exercises: envelope parsing, batch
  * rejection, per-action auth, input validation, handler dispatch, DEV output
- * validation, socket-scoped notify, per-socket signal, transport bookkeeping,
+ * validation, socket-scoped notify, per-socket signal, registry bookkeeping,
  * the message size cap, the per-account connection cap, the socket lifecycle
  * hooks, self-revocation (reply before close), the drop of every frame on a
  * socket the server closed, the frame queue while a socket is opening, the
@@ -37,9 +37,9 @@ import {
 import type { ActionContext } from '#lib/actions/action_types.ts';
 import type { ActionSpecUnion, RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import {
-	BackendWebsocketTransport,
+	ConnectionRegistry,
 	DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT
-} from '#lib/actions/transports_ws_backend.ts';
+} from '#lib/actions/connection_registry.ts';
 import {
 	DEFAULT_WS_MAX_MESSAGE_BYTES,
 	WS_CLOSE_CONNECTION_LIMIT,
@@ -140,7 +140,7 @@ const specs: Array<ActionSpecUnion> = [echo_spec, no_input_spec, keeper_spec, ro
 // --- harness -------------------------------------------------------------
 
 interface Harness {
-	transport: BackendWebsocketTransport;
+	registry: ConnectionRegistry;
 	fake: FakeWs;
 	/** Returns a promise for async hooks; existing callers can still ignore it. */
 	on_open: () => Promise<void>;
@@ -169,7 +169,7 @@ const build_harness = async (opts: {
 	const actions =
 		opts.actions ?? specs.map((spec) => ({ spec, handler: opts.handlers[spec.method] }));
 	const stub_db = create_stub_db();
-	const { transport } = register_action_ws({
+	const { registry } = register_action_ws({
 		path: '/ws',
 		connection_closer: null,
 		app: new Hono(),
@@ -195,7 +195,7 @@ const build_harness = async (opts: {
 	const fake = create_fake_ws();
 
 	return {
-		transport,
+		registry,
 		fake,
 		on_open: async () => {
 			await (events.onOpen?.(new Event('open'), fake.ws) as Promise<void> | void);
@@ -753,20 +753,20 @@ describe('register_action_ws', () => {
 		assert.ok(captured.value.connection_id, 'connection_id should be set on WS handlers');
 	});
 
-	test('transport tracks connections on open and removes on close', async () => {
+	test('registry tracks connections on open and removes on close', async () => {
 		const h = await build_harness({ handlers: { echo: () => ({ value: 'x' }) } });
-		assert.strictEqual(h.transport.get_connection_count() > 0, false);
+		assert.strictEqual(h.registry.connection_count() > 0, false);
 		await h.on_open();
-		assert.strictEqual(h.transport.get_connection_count() > 0, true);
+		assert.strictEqual(h.registry.connection_count() > 0, true);
 		await h.on_close();
-		assert.strictEqual(h.transport.get_connection_count() > 0, false);
+		assert.strictEqual(h.registry.connection_count() > 0, false);
 	});
 
 	test('close removes the connection when the adapter hands onClose its own WSContext', async () => {
 		// `@hono/bun` builds a `WSContext` per event, so the one `onClose` gets is
 		// not the one `onOpen` registered
 		const stub = create_stub_upgrade();
-		const { transport } = register_action_ws({
+		const { registry } = register_action_ws({
 			action_ip_rate_limiter: null,
 			action_account_rate_limiter: null,
 			path: '/ws',
@@ -783,14 +783,14 @@ describe('register_action_ws', () => {
 			create_fake_hono_context({ credential_type: 'session' })
 		);
 		await (events.onOpen?.(new Event('open'), create_fake_ws().ws) as Promise<void> | void);
-		assert.strictEqual(transport.get_connection_count(), 1);
+		assert.strictEqual(registry.connection_count(), 1);
 
 		await (events.onClose?.(new CloseEvent('close'), create_fake_ws().ws) as Promise<void> | void);
-		assert.strictEqual(transport.get_connection_count(), 0);
+		assert.strictEqual(registry.connection_count(), 0);
 	});
 
-	test('returns the supplied transport when provided', async () => {
-		const supplied = new BackendWebsocketTransport();
+	test('returns the supplied registry when provided', async () => {
+		const supplied = new ConnectionRegistry();
 		const stub = create_stub_upgrade();
 		const stub_db = create_stub_db();
 		const result = register_action_ws({
@@ -803,11 +803,11 @@ describe('register_action_ws', () => {
 			allowed_origins: [],
 			actions: [{ spec: echo_spec, handler: () => ({ value: 'x' }) }],
 			db: stub_db,
-			transport: supplied,
+			registry: supplied,
 			receive_timeout: null,
 			log
 		});
-		assert.strictEqual(result.transport, supplied);
+		assert.strictEqual(result.registry, supplied);
 	});
 });
 
@@ -912,11 +912,11 @@ describe('register_action_ws max_connections_per_account', () => {
 		};
 	};
 
-	test('configures the created transport — past it the oldest socket closes with 4004', async () => {
+	test('configures the created registry — past it the oldest socket closes with 4004', async () => {
 		const stub = create_stub_upgrade();
 		const closed: Array<SocketCloseContext> = [];
 		const opened: Array<SocketOpenContext> = [];
-		const { transport } = register_action_ws({
+		const { registry } = register_action_ws({
 			action_ip_rate_limiter: null,
 			action_account_rate_limiter: null,
 			path: '/ws',
@@ -944,7 +944,7 @@ describe('register_action_ws max_connections_per_account', () => {
 			{ code: WS_CLOSE_CONNECTION_LIMIT, reason: WS_CLOSE_CONNECTION_LIMIT_REASON }
 		]);
 		assert.deepStrictEqual(second.fake.closes, []);
-		assert.strictEqual(transport.get_connection_count(), 1);
+		assert.strictEqual(registry.connection_count(), 1);
 		// the evicted socket's handlers are cancelled at eviction, not when its
 		// close handshake lands
 		assert.strictEqual(opened[0]!.signal.aborted, true);
@@ -956,16 +956,16 @@ describe('register_action_ws max_connections_per_account', () => {
 		assert.strictEqual(closed[0]!.connection_id, opened[0]!.connection_id);
 		assert.strictEqual(closed[0]!.identity.account_id, 'acc_1');
 		assert.strictEqual(opened[0]!.signal.aborted, true);
-		assert.strictEqual(transport.get_connection_count(), 1);
+		assert.strictEqual(registry.connection_count(), 1);
 		assert.strictEqual(opened[1]!.signal.aborted, false);
 
 		await second.on_close();
 		assert.strictEqual(closed.length, 2);
 		assert.strictEqual(closed[1]!.connection_id, opened[1]!.connection_id);
-		assert.strictEqual(transport.get_connection_count(), 0);
+		assert.strictEqual(registry.connection_count(), 0);
 	});
 
-	test('passes its logger to the created transport, which logs the eviction', async () => {
+	test('passes its logger to the created registry, which logs the eviction', async () => {
 		const infos: Array<Array<unknown>> = [];
 		const spy_log = new Logger('test', { level: 'off' });
 		spy_log.info = (...args: Array<unknown>) => {
@@ -998,7 +998,7 @@ describe('register_action_ws max_connections_per_account', () => {
 	test('through the harness: the evicted client sees the close, the rest keep dispatching', async () => {
 		const harness = create_ws_test_harness({
 			actions: [{ spec: echo_spec, handler: (input) => input }],
-			transport: new BackendWebsocketTransport({ max_connections_per_account: 2 })
+			registry: new ConnectionRegistry({ max_connections_per_account: 2 })
 		});
 		const account_id = create_uuid();
 		const first = await harness.connect({ account_id });
@@ -1018,12 +1018,12 @@ describe('register_action_ws max_connections_per_account', () => {
 			assert.strictEqual(client.close_code, null);
 			assert.deepStrictEqual(await client.request(1, 'echo', { value: 'hi' }), { value: 'hi' });
 		}
-		assert.strictEqual(harness.transport.get_connection_count(), 3);
+		assert.strictEqual(harness.registry.connection_count(), 3);
 	});
 
-	test('null disables the cap on the created transport', async () => {
+	test('null disables the cap on the created registry', async () => {
 		const stub = create_stub_upgrade();
-		const { transport } = register_action_ws({
+		const { registry } = register_action_ws({
 			action_ip_rate_limiter: null,
 			action_account_rate_limiter: null,
 			path: '/ws',
@@ -1043,12 +1043,12 @@ describe('register_action_ws max_connections_per_account', () => {
 			sockets.push(await open_socket(stub));
 		}
 		assert.ok(sockets.every((s) => s.fake.closes.length === 0));
-		assert.strictEqual(transport.get_connection_count(), DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT + 1);
+		assert.strictEqual(registry.connection_count(), DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT + 1);
 	});
 
 	test('defaults to DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT', async () => {
 		const stub = create_stub_upgrade();
-		const { transport } = register_action_ws({
+		const { registry } = register_action_ws({
 			action_ip_rate_limiter: null,
 			action_account_rate_limiter: null,
 			path: '/ws',
@@ -1070,10 +1070,10 @@ describe('register_action_ws max_connections_per_account', () => {
 			{ code: WS_CLOSE_CONNECTION_LIMIT, reason: WS_CLOSE_CONNECTION_LIMIT_REASON }
 		]);
 		assert.ok(sockets.slice(1).every((s) => s.fake.closes.length === 0));
-		assert.strictEqual(transport.get_connection_count(), DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT);
+		assert.strictEqual(registry.connection_count(), DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT);
 	});
 
-	test('throws alongside a supplied transport, which carries its own cap', () => {
+	test('throws alongside a supplied registry, which carries its own cap', () => {
 		const stub = create_stub_upgrade();
 		for (const max_connections_per_account of [1, null]) {
 			assert.throws(
@@ -1088,12 +1088,12 @@ describe('register_action_ws max_connections_per_account', () => {
 						allowed_origins: [],
 						actions: [{ spec: echo_spec, handler: () => ({ value: 'x' }) }],
 						db: create_stub_db(),
-						transport: new BackendWebsocketTransport(),
+						registry: new ConnectionRegistry(),
 						max_connections_per_account,
 						receive_timeout: null,
 						log
 					}),
-				/max_connections_per_account configures the transport created for \/ws/
+				/max_connections_per_account configures the registry created for \/ws/
 			);
 		}
 	});
@@ -1118,7 +1118,7 @@ describe('register_action_ws connection_closer', () => {
 			log
 		});
 
-	test('a successful mount adds its transport', () => {
+	test('a successful mount adds its registry', () => {
 		const closer = create_realtime_closer();
 		mount([{ spec: echo_spec, handler: () => ({ value: 'x' }) }], closer);
 		assert.strictEqual(closer.member_count(), 1);
@@ -1157,16 +1157,16 @@ describe('register_action_ws socket lifecycle hooks', () => {
 		assert.ok(ctx.signal instanceof AbortSignal);
 	});
 
-	test('on_socket_open runs after add_connection — transport is ready inside the hook', async () => {
+	test('on_socket_open runs after add_connection — registry is ready inside the hook', async () => {
 		let is_ready_inside: boolean | null = null;
-		let captured_transport: BackendWebsocketTransport | null = null;
+		let captured_registry: ConnectionRegistry | null = null;
 		const h = await build_harness({
 			handlers: { echo: () => ({ value: 'x' }) },
 			on_socket_open: () => {
-				is_ready_inside = captured_transport!.get_connection_count() > 0;
+				is_ready_inside = captured_registry!.connection_count() > 0;
 			}
 		});
-		captured_transport = h.transport;
+		captured_registry = h.registry;
 
 		await h.on_open();
 		assert.strictEqual(is_ready_inside, true);
@@ -1264,7 +1264,7 @@ describe('register_action_ws socket lifecycle hooks', () => {
 		assert.strictEqual(h.fake.closes[0]!.code, 1011);
 	});
 
-	test('on_socket_close fires with connection_id + identity after transport.remove_connection', async () => {
+	test('on_socket_close fires with connection_id + identity after registry.remove_connection', async () => {
 		let open_seen_connection_id: string | null = null;
 		let close_seen_connection_id: string | null = null;
 		let close_seen_account_id: string | null = null;
@@ -1277,24 +1277,24 @@ describe('register_action_ws socket lifecycle hooks', () => {
 			on_socket_close: (ctx) => {
 				close_seen_connection_id = ctx.connection_id;
 				close_seen_account_id = ctx.identity.account_id;
-				transport_ready_inside_close = h.transport.get_connection_count() > 0;
+				transport_ready_inside_close = h.registry.connection_count() > 0;
 			}
 		});
 
 		await h.on_open();
-		assert.strictEqual(h.transport.get_connection_count() > 0, true);
+		assert.strictEqual(h.registry.connection_count() > 0, true);
 		await h.on_close();
 
 		// the hook saw the open-time connection_id and identity, with the
-		// connection already gone from the transport
+		// connection already gone from the registry
 		assert.strictEqual(typeof close_seen_connection_id, 'string');
 		assert.strictEqual(close_seen_connection_id, open_seen_connection_id);
 		assert.strictEqual(close_seen_account_id, 'acc_1');
 		assert.strictEqual(transport_ready_inside_close, false);
-		assert.strictEqual(h.transport.get_connection_count() > 0, false);
+		assert.strictEqual(h.registry.connection_count() > 0, false);
 	});
 
-	test('a slow on_socket_close never holds the closed connection in the transport', async () => {
+	test('a slow on_socket_close never holds the closed connection in the registry', async () => {
 		// a dead entry would still be broadcast to and still count toward the
 		// per-account cap for as long as the hook runs
 		let release!: () => void;
@@ -1313,18 +1313,18 @@ describe('register_action_ws socket lifecycle hooks', () => {
 		await h.on_open();
 		const closing = h.on_close();
 		assert.strictEqual(hook_started, true);
-		assert.strictEqual(h.transport.get_connection_count(), 0);
+		assert.strictEqual(h.registry.connection_count(), 0);
 
 		release();
 		await closing;
-		assert.strictEqual(h.transport.get_connection_count(), 0);
+		assert.strictEqual(h.registry.connection_count(), 0);
 	});
 
-	test('on_socket_close identity stays readable after audit-revocation wipes transport state', async () => {
-		// Models the audit-guard path: `transport.close_connections` with an `account` target
-		// clears the transport's internal identity map and calls `ws.close()`.
+	test('on_socket_close identity stays readable after audit-revocation wipes registry state', async () => {
+		// Models the audit-guard path: `registry.close_connections` with an `account` target
+		// clears the registry's internal identity map and calls `ws.close()`.
 		// Hono then fires onClose. The hook must still see the identity because
-		// it was captured at open time, independently of the transport.
+		// it was captured at open time, independently of the registry.
 		let close_identity_account: string | null = null;
 		const h = await build_harness({
 			handlers: { echo: () => ({ value: 'x' }) },
@@ -1335,17 +1335,17 @@ describe('register_action_ws socket lifecycle hooks', () => {
 
 		await h.on_open();
 		// audit guard path — clears identity map and calls ws.close()
-		const closed = h.transport.close_connections({ kind: 'account', account_id: 'acc_1' as never });
+		const closed = h.registry.close_connections({ kind: 'account', account_id: 'acc_1' as never });
 		assert.strictEqual(closed, 1);
-		assert.strictEqual(h.transport.get_connection_count() > 0, false); // identity map already cleared
+		assert.strictEqual(h.registry.connection_count() > 0, false); // identity map already cleared
 		// Hono would fire onClose in response to ws.close(); simulate that.
 		await h.on_close();
 
-		// Identity still valid inside the hook despite transport having been wiped.
+		// Identity still valid inside the hook despite registry having been wiped.
 		assert.strictEqual(close_identity_account, 'acc_1');
 	});
 
-	test('on_socket_close error is logged and swallowed (transport still cleans up)', async () => {
+	test('on_socket_close error is logged and swallowed (registry still cleans up)', async () => {
 		const h = await build_harness({
 			handlers: { echo: () => ({ value: 'x' }) },
 			on_socket_close: () => {
@@ -1354,10 +1354,10 @@ describe('register_action_ws socket lifecycle hooks', () => {
 		});
 
 		await h.on_open();
-		assert.strictEqual(h.transport.get_connection_count() > 0, true);
+		assert.strictEqual(h.registry.connection_count() > 0, true);
 		// Must not throw despite the hook throwing.
 		await h.on_close();
-		assert.strictEqual(h.transport.get_connection_count() > 0, false);
+		assert.strictEqual(h.registry.connection_count() > 0, false);
 	});
 
 	test('on_socket_close is skipped when the socket never opened', async () => {
@@ -1399,10 +1399,10 @@ describe('register_action_ws self-revocation', () => {
 
 	/** Mount `revoke_self` and open one socket whose sends and closes land on one timeline. */
 	const open_self_revoking_socket = async (
-		handler: (ctx: ActionContext, transport: BackendWebsocketTransport) => void
+		handler: (ctx: ActionContext, registry: ConnectionRegistry) => void
 	): Promise<{ timeline: Array<string>; request: () => Promise<void> }> => {
 		const stub = create_stub_upgrade();
-		const { transport } = register_action_ws({
+		const { registry } = register_action_ws({
 			action_ip_rate_limiter: null,
 			action_account_rate_limiter: null,
 			path: '/ws',
@@ -1414,7 +1414,7 @@ describe('register_action_ws self-revocation', () => {
 				{
 					spec: revoke_self_spec,
 					handler: (_input: unknown, ctx: ActionContext) => {
-						handler(ctx, transport);
+						handler(ctx, registry);
 						return { revoked: true };
 					}
 				}
@@ -1450,8 +1450,8 @@ describe('register_action_ws self-revocation', () => {
 	};
 
 	test('a handler that closes its own socket post-commit is answered first', async () => {
-		const { timeline, request } = await open_self_revoking_socket((ctx, transport) => {
-			queue_connection_close(ctx, transport, {
+		const { timeline, request } = await open_self_revoking_socket((ctx, registry) => {
+			queue_connection_close(ctx, registry, {
 				kind: 'session',
 				session_hash: hash_session_token(SESSION_ID)
 			});
@@ -1480,10 +1480,10 @@ describe('register_action_ws self-revocation', () => {
 			log
 		});
 		let guarded = false;
-		const { timeline, request } = await open_self_revoking_socket((ctx, transport) => {
+		const { timeline, request } = await open_self_revoking_socket((ctx, registry) => {
 			if (!guarded) {
 				guarded = true;
-				audit.add_listener(create_revocation_guard(transport, log));
+				audit.add_listener(create_revocation_guard(registry, log));
 			}
 			audit.emit(ctx, {
 				event_type: 'session_revoke',
@@ -1533,7 +1533,7 @@ describe('register_action_ws a server-closed socket dispatches nothing', () => {
 		assert.strictEqual(h.fake.sends.length, 1);
 
 		assert.strictEqual(
-			h.transport.close_connections({ kind: 'account', account_id: 'acc_1' as never }),
+			h.registry.close_connections({ kind: 'account', account_id: 'acc_1' as never }),
 			1
 		);
 		assert.strictEqual(h.fake.closes[0]!.code, WS_CLOSE_SESSION_REVOKED);
@@ -1550,7 +1550,7 @@ describe('register_action_ws a server-closed socket dispatches nothing', () => {
 	test('an oversized frame on a revoked socket sends no second close', async () => {
 		const { h, runs } = await build_counting_harness({ max_message_bytes: 256 });
 		await h.on_open();
-		h.transport.close_connections({ kind: 'account', account_id: 'acc_1' as never });
+		h.registry.close_connections({ kind: 'account', account_id: 'acc_1' as never });
 		assert.strictEqual(h.fake.closes.length, 1);
 
 		await h.on_message({
@@ -1626,12 +1626,12 @@ describe('register_action_ws a server-closed socket dispatches nothing', () => {
 		try {
 			const { h, runs } = await build_counting_harness({ receive_timeout: 200 });
 			await h.on_open();
-			assert.strictEqual(h.transport.get_connection_count(), 1);
+			assert.strictEqual(h.registry.connection_count(), 1);
 
 			vi.advanceTimersByTime(250);
 			assert.strictEqual(h.fake.closes[0]!.code, WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT);
 			assert.strictEqual(
-				h.transport.get_connection_count(),
+				h.registry.connection_count(),
 				0,
 				'a socket the server closed is no longer a broadcast target'
 			);
@@ -1654,7 +1654,7 @@ describe('register_action_ws a server-closed socket dispatches nothing', () => {
 			params: { value: 'x'.repeat(300) }
 		});
 		assert.strictEqual(h.fake.closes[0]!.code, WS_CLOSE_MESSAGE_TOO_BIG);
-		assert.strictEqual(h.transport.get_connection_count(), 0);
+		assert.strictEqual(h.registry.connection_count(), 0);
 
 		await h.on_message(echo_request);
 		assert.strictEqual(runs(), 0);
@@ -1669,7 +1669,7 @@ describe('register_action_ws a server-closed socket dispatches nothing', () => {
 		});
 		await h.on_open();
 		assert.strictEqual(h.fake.closes[0]!.code, WS_CLOSE_INTERNAL_ERROR);
-		assert.strictEqual(h.transport.get_connection_count(), 0);
+		assert.strictEqual(h.registry.connection_count(), 0);
 		const sends_at_close = h.fake.sends.length;
 
 		await h.on_message(echo_request);
@@ -1677,7 +1677,7 @@ describe('register_action_ws a server-closed socket dispatches nothing', () => {
 		assert.strictEqual(h.fake.sends.length, sends_at_close);
 	});
 
-	test('a connection removed from the transport without a close is ended on its next frame', async () => {
+	test('a connection removed from the registry without a close is ended on its next frame', async () => {
 		const captured: { open: SocketOpenContext | null } = { open: null };
 		const { h, runs } = await build_counting_harness({
 			on_socket_open: (ctx) => {
@@ -1687,9 +1687,9 @@ describe('register_action_ws a server-closed socket dispatches nothing', () => {
 		await h.on_open();
 		assert.ok(captured.open);
 
-		// removal alone — no close frame, no abort: the transport is the
+		// removal alone — no close frame, no abort: the registry is the
 		// authority, and the socket must not linger reading and never answering
-		h.transport.remove_connection(captured.open.connection_id);
+		h.registry.remove_connection(captured.open.connection_id);
 		assert.deepStrictEqual(h.fake.closes, []);
 		await h.on_message(echo_request);
 
@@ -1716,7 +1716,7 @@ describe('register_action_ws a server-closed socket dispatches nothing', () => {
 				}
 			});
 			await h.on_open();
-			h.transport.remove_connection(captured.open!.connection_id);
+			h.registry.remove_connection(captured.open!.connection_id);
 
 			for (let i = 0; i < 5; i++) {
 				vi.advanceTimersByTime(1000);
@@ -1751,7 +1751,7 @@ describe('register_action_ws a server-closed socket dispatches nothing', () => {
 		const signal = await started.promise;
 		assert.strictEqual(signal.aborted, false);
 
-		h.transport.close_connections({ kind: 'account', account_id: 'acc_1' as never });
+		h.registry.close_connections({ kind: 'account', account_id: 'acc_1' as never });
 		// no `on_close` yet — the close handshake has not landed
 		assert.strictEqual(signal.aborted, true);
 
@@ -1850,7 +1850,7 @@ describe('register_action_ws frames during on_socket_open', () => {
 		await h.on_message(frame_of(100));
 
 		assert.deepStrictEqual(h.fake.closes, [PRE_OPEN_OVERFLOW_CLOSE]);
-		assert.strictEqual(h.transport.get_connection_count(), 0);
+		assert.strictEqual(h.registry.connection_count(), 0);
 		release();
 		await opening;
 		await Promise.all(queued);
@@ -1899,17 +1899,17 @@ describe('register_action_ws frames during on_socket_open', () => {
 			awaited: null,
 			detached: null
 		};
-		const holder: { transport: BackendWebsocketTransport | null } = { transport: null };
+		const holder: { registry: ConnectionRegistry | null } = { registry: null };
 		const h = await build_harness({
 			handlers: { echo: (input) => input },
 			on_socket_open: async (ctx) => {
-				const transport = holder.transport!;
+				const registry = holder.registry!;
 				// started without awaiting — resolves once the hook has returned
-				outcomes.detached = transport.request_connection(ctx.connection_id, 'peer/ping', {
+				outcomes.detached = registry.request_connection(ctx.connection_id, 'peer/ping', {
 					nonce: 1
 				});
 				// awaited — the client's reply is queued behind this very hook
-				outcomes.awaited = await transport.request_connection(
+				outcomes.awaited = await registry.request_connection(
 					ctx.connection_id,
 					'peer/ping',
 					{ nonce: 2 },
@@ -1917,7 +1917,7 @@ describe('register_action_ws frames during on_socket_open', () => {
 				);
 			}
 		});
-		holder.transport = h.transport;
+		holder.registry = h.registry;
 
 		const opening = h.on_open();
 		// let the hook run up to its await
@@ -2057,7 +2057,7 @@ describe('register_action_ws receive timeout', () => {
 		// revocation lands in between
 		const opening = h.on_open();
 		assert.strictEqual(
-			h.transport.close_connections({ kind: 'account', account_id: 'acc_1' as never }),
+			h.registry.close_connections({ kind: 'account', account_id: 'acc_1' as never }),
 			1
 		);
 		await opening;
@@ -2079,7 +2079,7 @@ describe('register_action_ws receive timeout', () => {
 			receive_timeout: 200
 		});
 		const opening = h.on_open();
-		h.transport.close_connections({ kind: 'account', account_id: 'acc_1' as never });
+		h.registry.close_connections({ kind: 'account', account_id: 'acc_1' as never });
 		await opening;
 
 		await h.on_close();

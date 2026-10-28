@@ -164,7 +164,7 @@ export interface BackendCapabilities {
 	 * wrong-shape reply rejection).
 	 *
 	 * `true` on fuz_app's own spine presets — the Rust `testing_spine_stub` and
-	 * the TS spine (`BackendWebsocketTransport.request_connection` drives the
+	 * the TS spine (`ConnectionRegistry.request_connection` drives the
 	 * round-trip, correlated by `register_action_ws`). A `MountFlag`: a backend
 	 * states `true` once it mounts `peer/ping` on a WS endpoint **and** the HTTP
 	 * RPC endpoint (the no-transport refusal).

@@ -29,7 +29,7 @@ import '../assert_dev_env.ts';
  *
  * Gated on `capabilities.peer_request`, which a backend declares once it
  * mounts `peer/ping` on a WS endpoint and the HTTP RPC endpoint — the TS
- * spine binaries (`BackendWebsocketTransport.request_connection`) and the
+ * spine binaries (`ConnectionRegistry.request_connection`) and the
  * Rust spine both do. Cross-process only: `create_ws_transport` needs a real bound
  * socket, so wire it from a `*.cross.test.ts`.
  *

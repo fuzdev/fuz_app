@@ -1,7 +1,7 @@
 import { describe, test, assert } from 'vitest';
 import { create_uuid } from '#lib/primitive_schemas.ts';
 
-import { BackendWebsocketTransport } from '#lib/actions/transports_ws_backend.ts';
+import { ConnectionRegistry } from '#lib/actions/connection_registry.ts';
 import {
 	create_jsonrpc_response,
 	create_jsonrpc_error_response
@@ -11,16 +11,16 @@ import { peer_ping_action_spec } from '#lib/actions/peer_ping.ts';
 import { create_fake_ws } from '#lib/testing/ws_round_trip.ts';
 import { create_test_identity } from './connection_identity_helpers.ts';
 
-// In-process coverage of the transport's server→client request path
+// In-process coverage of the registry's server→client request path
 // (`request_connection` / `resolve_peer_response`) over a fake `WSContext` —
 // the fast complement to the cross-process `describe_peer_ping_ws_tests`, which
 // needs a real bound socket. The registry mechanics (cap, isolation, timeout)
 // are unit-tested in `peer_request.test.ts`; here we exercise the socket send +
 // the delegation + close-driven drain.
 
-describe('BackendWebsocketTransport server→client requests', () => {
+describe('ConnectionRegistry server→client requests', () => {
 	test('request_connection frames the request to the one socket and resolve_peer_response settles it', async () => {
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		const { ws, sends } = create_fake_ws();
 		const conn = t.add_connection(ws, create_test_identity({ account_id: create_uuid() }));
 
@@ -45,7 +45,7 @@ describe('BackendWebsocketTransport server→client requests', () => {
 	});
 
 	test('a client error reply surfaces as client_error (envelope forwarded)', async () => {
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		const { ws, sends } = create_fake_ws();
 		const conn = t.add_connection(ws, create_test_identity({ account_id: create_uuid() }));
 
@@ -62,7 +62,7 @@ describe('BackendWebsocketTransport server→client requests', () => {
 	});
 
 	test('request_connection on an unknown connection is connection_gone (no send)', async () => {
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		assert.deepStrictEqual(await t.request_connection(create_uuid(), 'peer/ping', {}), {
 			ok: false,
 			error: { kind: 'connection_gone' }
@@ -70,7 +70,7 @@ describe('BackendWebsocketTransport server→client requests', () => {
 	});
 
 	test('params that cannot be serialized settle connection_gone, never throw, and send nothing', async () => {
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		const { ws, sends } = create_fake_ws();
 		const conn = t.add_connection(ws, create_test_identity({ account_id: create_uuid() }));
 
@@ -89,7 +89,7 @@ describe('BackendWebsocketTransport server→client requests', () => {
 	});
 
 	test('removing the connection drains its pending requests as connection_gone', async () => {
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		const { ws } = create_fake_ws();
 		const conn = t.add_connection(ws, create_test_identity({ account_id: create_uuid() }));
 
@@ -104,7 +104,7 @@ describe('BackendWebsocketTransport server→client requests', () => {
 	});
 
 	test('an unsolicited reply (unknown id) resolves nothing', () => {
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		const { ws } = create_fake_ws();
 		const conn = t.add_connection(ws, create_test_identity({ account_id: create_uuid() }));
 		assert.isFalse(t.resolve_peer_response(conn, create_jsonrpc_response('s999', { result: 1 })));

@@ -85,7 +85,7 @@ import {
 	type WsEndpointSpec
 } from '../actions/ws_endpoint_spec.ts';
 import { create_revocation_guard } from '../actions/connection_closer.ts';
-import type { BackendWebsocketTransport } from '../actions/transports_ws_backend.ts';
+import type { ConnectionRegistry } from '../actions/connection_registry.ts';
 import { start_auth_cleanup, type AuthCleanupScheduleOptions } from '../auth/cleanup.ts';
 
 /**
@@ -327,7 +327,7 @@ export interface AppServerOptions {
 	 * `backend.deps` — a pass as assembly finishes, then one per interval —
 	 * stopped by `AppServer.close`. Each pass deletes expired sessions and
 	 * closes the connections they opened through `deps.connection_closer`
-	 * (every WebSocket transport and audit stream this server mounts), and
+	 * (every WebSocket connection registry and audit stream this server mounts), and
 	 * audits each newly expired role_grant offer once.
 	 *
 	 * **Off by default; a production server should turn it on.** Without it
@@ -434,7 +434,7 @@ export interface AppServerOptions {
 	 * GET `RouteSpec` already claims, throw at assembly before any endpoint
 	 * mounts (Hono would silently shadow them otherwise).
 	 *
-	 * Every mounted transport is added to `deps.connection_closer`, so
+	 * Every mounted connection registry is added to `deps.connection_closer`, so
 	 * the revocation handlers' post-commit closes reach its sockets, and so
 	 * does the one revocation guard `create_app_server` registers on that
 	 * closer (`create_revocation_guard`) when it mounts a WS endpoint or the
@@ -502,8 +502,8 @@ export interface AppServer {
 	audit_sse: AuditLogSse | null;
 	/**
 	 * Path-keyed map of mounted WS endpoints. Each value is the
-	 * `BackendWebsocketTransport` `create_app_server` registered
-	 * connections against — supplied via `WsEndpointSpec.transport` or
+	 * `ConnectionRegistry` `create_app_server` registered
+	 * connections against — supplied via `WsEndpointSpec.registry` or
 	 * auto-created when omitted. Retain for broadcast / fan-out:
 	 *
 	 * ```ts
@@ -512,7 +512,7 @@ export interface AppServer {
 	 *
 	 * Empty when no `ws_endpoints` were mounted.
 	 */
-	ws_endpoints: Readonly<Record<string, BackendWebsocketTransport>>;
+	ws_endpoints: Readonly<Record<string, ConnectionRegistry>>;
 	/**
 	 * Shut the server's resources down, in order:
 	 *
@@ -522,16 +522,16 @@ export interface AppServer {
 	 * 2. close every live connection on `deps.connection_closer`
 	 *    (`close_all_connections`) — each WebSocket with `WS_CLOSE_GOING_AWAY`, each
 	 *    audit stream — including transports supplied through
-	 *    `WsEndpointSpec.transport` or added by hand, since they are registered
+	 *    `WsEndpointSpec.registry` or added by hand, since they are registered
 	 *    on the backend's closer and the backend is going away; a close that
-	 *    throws is logged and the shutdown goes on. Each transport and registry
+	 *    throws is logged and the shutdown goes on. Each connection and SSE registry
 	 *    is left closing, so an upgrade or stream that registers afterward is
 	 *    born closed — refused at once rather than outliving the server — and
-	 *    a closed transport hosts no other server
+	 *    a closed registry hosts no other server
 	 * 3. release what assembly acquired, last acquired first: remove the
 	 *    audit listeners `create_app_server` registered on `deps.audit` (the
 	 *    revocation guard, the audit-log SSE listener) and the closer members it added to
-	 *    `deps.connection_closer` (each mounted transport, the audit stream
+	 *    `deps.connection_closer` (each mounted connection registry, the audit stream
 	 *    registry), and `dispose` the rate limiters it built for omitted
 	 *    options — never one passed in, which its caller owns. A release that
 	 *    throws is logged and the rest still run. The backend's emitter and
@@ -774,7 +774,7 @@ export const collect_config_diagnostics = (
  *
  * When `audit_log_sse` is set, the SSE registry's listener is registered via
  * `backend.deps.audit.add_listener` — no shallow-copy of `AppDeps`. That
- * registry and every WebSocket transport mounted from `ws_endpoints` are added
+ * registry and every WebSocket connection registry mounted from `ws_endpoints` are added
  * to `backend.deps.connection_closer`, so the revocation handlers built from
  * `ctx.deps` close their connections with no further wiring, and — when the
  * server mounts either — one `create_revocation_guard` listener on that closer
@@ -800,7 +800,7 @@ export const collect_config_diagnostics = (
  * closes the database (`AppServer.close`).
  *
  * @returns the assembled Hono app with its surface, bootstrap status, migration results,
- *   audit SSE, mounted WS transports, and `close`
+ *   audit SSE, mounted WS registries, and `close`
  * @throws Error from any assembly step, after releasing what assembly acquired
  */
 export const create_app_server = async (options: AppServerOptions): Promise<AppServer> => {
@@ -1022,7 +1022,7 @@ const assemble_app_server = async (
 
 	// The one revocation listener, registered when a WS endpoint or the audit
 	// stream is mounted — on the backend's closer, so it reaches every member:
-	// each WS transport the mount below adds, the audit stream registry, and any
+	// each WS connection registry the mount below adds, the audit stream registry, and any
 	// the consumer added by hand. After the audit stream's listener, so a
 	// revocation's row reaches the stream before the guard can close it.
 	if (audit_sse || ws_mount) {
@@ -1163,20 +1163,20 @@ const assemble_app_server = async (
 	// serving register after this loop, so WS upgrade routes sit
 	// adjacent to the consumer routes and ahead of the static fallback —
 	// matches the "WS mount is route registration" mental model.
-	const mounted_ws_endpoints: Record<string, BackendWebsocketTransport> = {};
+	const mounted_ws_endpoints: Record<string, ConnectionRegistry> = {};
 	if (ws_mount) {
 		// the adapter helper — built from this app, which Node's
 		// `createNodeWebSocket({app})` needs, and only when there is something to mount
 		const upgrade_websocket = ws_mount.create_upgrade_websocket(app);
 		for (const endpoint of ws_mount.endpoints) {
-			const { transport: endpoint_transport } = register_action_ws({
+			const { registry: endpoint_registry } = register_action_ws({
 				app,
 				path: endpoint.path,
 				upgradeWebSocket: upgrade_websocket,
 				allowed_origins: endpoint.allowed_origins,
 				db: deps.db,
 				actions: endpoint.actions,
-				transport: endpoint.transport,
+				registry: endpoint.registry,
 				// added below instead, so the remover is the server's
 				connection_closer: null,
 				max_connections_per_account: endpoint.max_connections_per_account,
@@ -1191,10 +1191,10 @@ const assemble_app_server = async (
 				action_account_rate_limiter,
 				on_effect_error
 			});
-			mounted_ws_endpoints[endpoint.path] = endpoint_transport;
+			mounted_ws_endpoints[endpoint.path] = endpoint_registry;
 			// every revocation's close — the handlers' and the guard's — reaches
-			// this transport
-			releases.push(deps.connection_closer.add(endpoint_transport));
+			// this registry
+			releases.push(deps.connection_closer.add(endpoint_registry));
 		}
 	}
 

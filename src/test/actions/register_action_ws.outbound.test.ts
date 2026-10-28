@@ -1,6 +1,6 @@
 /**
  * Tests for `register_action_ws`'s outbound bound — every frame the dispatcher
- * sends goes through the transport's outbound queue, so a handler that sends
+ * sends goes through the registry's outbound queue, so a handler that sends
  * past its connection's budget closes it with `WS_CLOSE_OUTBOUND_OVERFLOW` and
  * gets no response written — plus the `outbound_queue_bytes` endpoint option
  * and the `_testing_flood_notifications` action that drives an overflow from
@@ -20,9 +20,9 @@ import type { ActionContext } from '#lib/actions/action_types.ts';
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import { heartbeat_action } from '#lib/actions/heartbeat.ts';
 import {
-	BackendWebsocketTransport,
+	ConnectionRegistry,
 	DEFAULT_WS_OUTBOUND_QUEUE_BYTES
-} from '#lib/actions/transports_ws_backend.ts';
+} from '#lib/actions/connection_registry.ts';
 import {
 	WS_CLOSE_OUTBOUND_OVERFLOW,
 	WS_CLOSE_OUTBOUND_OVERFLOW_REASON,
@@ -91,7 +91,7 @@ describe('register_action_ws outbound overflow', () => {
 	test('a burst within the budget arrives in order, ahead of its response', async () => {
 		const harness = create_ws_test_harness({
 			actions: [create_testing_flood_notifications_action()],
-			transport: new BackendWebsocketTransport({ log: null })
+			registry: new ConnectionRegistry({ log: null })
 		});
 		const client = await harness.connect({ credential_type: 'daemon_token' });
 		const result = await client.request('flood', FLOOD, { count: 3, size: 8 });
@@ -109,7 +109,7 @@ describe('register_action_ws outbound overflow', () => {
 		const harness = create_ws_test_harness({
 			actions: [create_testing_flood_notifications_action(), heartbeat_action],
 			// room for a few waiting frames of the burst, not all of it
-			transport: new BackendWebsocketTransport({ outbound_queue_bytes: 5 * size, log: null })
+			registry: new ConnectionRegistry({ outbound_queue_bytes: 5 * size, log: null })
 		});
 		const account_id = create_uuid();
 		const client = await harness.connect({ account_id, credential_type: 'daemon_token' });
@@ -139,7 +139,7 @@ describe('register_action_ws outbound overflow', () => {
 		// the account's other connection is untouched and keeps dispatching
 		assert.strictEqual(other.close_code, null);
 		assert.deepStrictEqual(await other.request('hb', 'heartbeat', {}), {});
-		assert.strictEqual(harness.transport.get_connection_count(), 1);
+		assert.strictEqual(harness.registry.connection_count(), 1);
 	});
 
 	test('no frame follows the close frame on the socket, the response included', async () => {
@@ -195,7 +195,7 @@ describe('register_action_ws outbound overflow', () => {
 		const harness = create_ws_test_harness({
 			actions: [{ spec: echo_spec, handler: (input: unknown) => input }],
 			// one waiting frame of overhead alone
-			transport: new BackendWebsocketTransport({
+			registry: new ConnectionRegistry({
 				outbound_queue_bytes: OUTBOUND_FRAME_OVERHEAD_BYTES,
 				log: null
 			})
@@ -212,7 +212,7 @@ describe('register_action_ws outbound overflow', () => {
 	});
 
 	test('a reply sent just before a self-revoking close still reaches the client first', async () => {
-		const transport = new BackendWebsocketTransport({ log: null });
+		const registry = new ConnectionRegistry({ log: null });
 		const revoke_spec = { ...echo_spec, method: 'revoke_self' } satisfies RequestResponseActionSpec;
 		const harness = create_ws_test_harness({
 			actions: [
@@ -222,13 +222,13 @@ describe('register_action_ws outbound overflow', () => {
 						// a notification, then the reply, then the close — one run
 						ctx.notify('before_reply', {});
 						ctx.post_commit_effects.push(() => {
-							transport.close_connections({ kind: 'account', account_id: ctx.auth!.account.id });
+							registry.close_connections({ kind: 'account', account_id: ctx.auth!.account.id });
 						});
 						return input;
 					}
 				}
 			],
-			transport
+			registry
 		});
 		const client = await harness.connect();
 		await client.send({
@@ -250,7 +250,7 @@ describe('register_action_ws closes', () => {
 	});
 
 	test('a reply queued behind a backed-up socket is not delivered ahead of a revoking close', async () => {
-		const transport = new BackendWebsocketTransport({ log: null });
+		const registry = new ConnectionRegistry({ log: null });
 		const big = 'x'.repeat(WS_WRITE_HIGH_WATER_BYTES);
 		const revoke_spec = { ...echo_spec, method: 'revoke_self' } satisfies RequestResponseActionSpec;
 		const stub = create_stub_upgrade();
@@ -270,14 +270,14 @@ describe('register_action_ws closes', () => {
 						ctx.notify('bulk', { big });
 						ctx.notify('bulk', { big });
 						ctx.post_commit_effects.push(() => {
-							transport.close_connections({ kind: 'account', account_id: ctx.auth!.account.id });
+							registry.close_connections({ kind: 'account', account_id: ctx.auth!.account.id });
 						});
 						return input;
 					}
 				}
 			],
 			db: create_stub_db(),
-			transport,
+			registry,
 			receive_timeout: null,
 			log
 		});
@@ -315,7 +315,7 @@ describe('register_action_ws closes', () => {
 
 	test('a pending socket a revocation closed keeps its close deadline through the refusal', async () => {
 		vi.useFakeTimers();
-		const transport = new BackendWebsocketTransport({ log: null });
+		const registry = new ConnectionRegistry({ log: null });
 		// the admission re-read, held until the test releases it
 		const re_read = Promise.withResolvers<{ rows: Array<never> }>();
 		const db: Db = new Db({
@@ -333,7 +333,7 @@ describe('register_action_ws closes', () => {
 			allowed_origins: [],
 			actions: [],
 			db,
-			transport,
+			registry,
 			receive_timeout: null,
 			log
 		});
@@ -348,10 +348,10 @@ describe('register_action_ws closes', () => {
 		// a client that is not reading: its close frame stays unwritten
 		const fake = create_fake_ws({ stalled: true });
 		const opened = Promise.resolve(events.onOpen?.(new Event('open'), fake.ws));
-		assert.strictEqual(transport.get_pending_connection_count(), 1);
+		assert.strictEqual(registry.pending_connection_count(), 1);
 
 		// the revocation lands while the re-read is in flight
-		assert.strictEqual(transport.close_connections({ kind: 'account', account_id }), 1);
+		assert.strictEqual(registry.close_connections({ kind: 'account', account_id }), 1);
 		assert.strictEqual(fake.closes[0]?.code, WS_CLOSE_SESSION_REVOKED);
 		// the re-read answers: the upgrade is refused, on a socket already closed
 		re_read.resolve({ rows: [] });
@@ -388,8 +388,8 @@ describe('register_action_ws outbound_queue_bytes', () => {
 		return { ...result, stub };
 	};
 
-	test('the created transport applies the default budget', async () => {
-		const opened: Array<Parameters<BackendWebsocketTransport['send_to']>[0]> = [];
+	test('the created registry applies the default budget', async () => {
+		const opened: Array<Parameters<ConnectionRegistry['send_to']>[0]> = [];
 		const mounted = mount({ on_socket_open: (ctx) => void opened.push(ctx.connection_id) });
 		const events = await mounted.stub.get_create_events()(
 			create_fake_hono_context({ credential_type: 'session' })
@@ -399,16 +399,16 @@ describe('register_action_ws outbound_queue_bytes', () => {
 		const frame = 'x'.repeat(1024 * 1024 - OUTBOUND_FRAME_OVERHEAD_BYTES);
 		const id = opened[0]!;
 		// one frame through, then exactly the default budget of waiting frames
-		assert.strictEqual(mounted.transport.send_to(id, 'first'), true);
+		assert.strictEqual(mounted.registry.send_to(id, 'first'), true);
 		for (let i = 0; i < DEFAULT_WS_OUTBOUND_QUEUE_BYTES / (1024 * 1024); i++) {
-			assert.strictEqual(mounted.transport.send_to(id, frame), true, `frame ${i}`);
+			assert.strictEqual(mounted.registry.send_to(id, frame), true, `frame ${i}`);
 		}
-		assert.strictEqual(mounted.transport.send_to(id, ''), false, 'one more does not fit');
+		assert.strictEqual(mounted.registry.send_to(id, ''), false, 'one more does not fit');
 		assert.strictEqual(fake.closes[0]?.code, WS_CLOSE_OUTBOUND_OVERFLOW);
 	});
 
-	test('an override configures the created transport', async () => {
-		const opened: Array<Parameters<BackendWebsocketTransport['send_to']>[0]> = [];
+	test('an override configures the created registry', async () => {
+		const opened: Array<Parameters<ConnectionRegistry['send_to']>[0]> = [];
 		const mounted = mount({
 			outbound_queue_bytes: 10 + OUTBOUND_FRAME_OVERHEAD_BYTES,
 			on_socket_open: (ctx) => void opened.push(ctx.connection_id)
@@ -419,9 +419,9 @@ describe('register_action_ws outbound_queue_bytes', () => {
 		const fake = create_fake_ws();
 		await (events.onOpen?.(new Event('open'), fake.ws) as Promise<void> | void);
 		const id = opened[0]!;
-		assert.strictEqual(mounted.transport.send_to(id, 'first'), true);
-		assert.strictEqual(mounted.transport.send_to(id, 'x'.repeat(10)), true);
-		assert.strictEqual(mounted.transport.send_to(id, ''), false);
+		assert.strictEqual(mounted.registry.send_to(id, 'first'), true);
+		assert.strictEqual(mounted.registry.send_to(id, 'x'.repeat(10)), true);
+		assert.strictEqual(mounted.registry.send_to(id, ''), false);
 		assert.deepStrictEqual(fake.closes, [
 			{ code: WS_CLOSE_OUTBOUND_OVERFLOW, reason: WS_CLOSE_OUTBOUND_OVERFLOW_REASON }
 		]);
@@ -437,10 +437,10 @@ describe('register_action_ws outbound_queue_bytes', () => {
 		}
 	});
 
-	test('a budget passed alongside a supplied transport is refused', () => {
+	test('a budget passed alongside a supplied registry is refused', () => {
 		assert.throws(
-			() => mount({ transport: new BackendWebsocketTransport(), outbound_queue_bytes: 1024 }),
-			/outbound_queue_bytes configures the transport created for \/ws/
+			() => mount({ registry: new ConnectionRegistry(), outbound_queue_bytes: 1024 }),
+			/outbound_queue_bytes configures the registry created for \/ws/
 		);
 	});
 });
@@ -481,7 +481,7 @@ describe('_testing_flood_notifications', () => {
 	): Promise<{ frame: JsonrpcErrorResponseFrame<{ reason?: string }>; flooded: number }> => {
 		const harness = create_ws_test_harness({
 			actions: [create_testing_flood_notifications_action()],
-			transport: new BackendWebsocketTransport({ log: null })
+			registry: new ConnectionRegistry({ log: null })
 		});
 		const client = await harness.connect({ credential_type: 'daemon_token' });
 		await client.send({ jsonrpc: '2.0', id: 'flood', method: FLOOD, params });
@@ -518,7 +518,7 @@ describe('_testing_flood_notifications', () => {
 		const harness = create_ws_test_harness({
 			actions: [create_testing_flood_notifications_action()],
 			// the whole burst fits: the limit under test is the action's, not the budget
-			transport: new BackendWebsocketTransport({
+			registry: new ConnectionRegistry({
 				outbound_queue_bytes: 2 * TESTING_FLOOD_MAX_TOTAL_BYTES,
 				log: null
 			})

@@ -24,7 +24,7 @@ import {
 	SSE_OUTBOUND_QUEUE_BYTES,
 	validate_sse_keep_alive_ms
 } from '#lib/realtime/sse_constants.ts';
-import { SubscriberRegistry } from '#lib/realtime/subscriber_registry.ts';
+import { SseRegistry } from '#lib/realtime/sse_registry.ts';
 import { OUTBOUND_FRAME_OVERHEAD_BYTES } from '#lib/realtime/outbound_budget.ts';
 
 const log = new Logger('test', { level: 'off' });
@@ -178,7 +178,7 @@ describe('create_sse_response', () => {
 
 	test('a request whose client aborts closes the stream without the body being read', async () => {
 		const app = new Hono();
-		const registry = new SubscriberRegistry<unknown>();
+		const registry = new SseRegistry<unknown>();
 		const controller = new AbortController();
 
 		app.get('/sse', (c) => {
@@ -198,7 +198,7 @@ describe('create_sse_response', () => {
 
 	test('a request already aborted yields a closed stream, and a late on_close cleans up', async () => {
 		const app = new Hono();
-		const registry = new SubscriberRegistry<string>();
+		const registry = new SseRegistry<string>();
 		const controller = new AbortController();
 		controller.abort();
 		let sent_after_close = false;
@@ -220,9 +220,9 @@ describe('create_sse_response', () => {
 		assert.strictEqual(await response.text(), C, 'nothing follows the connect comment');
 	});
 
-	test('on_close unsubscribes from SubscriberRegistry on close', async () => {
+	test('on_close unsubscribes from SseRegistry on close', async () => {
 		const app = new Hono();
-		const registry = new SubscriberRegistry<string>();
+		const registry = new SseRegistry<string>();
 
 		app.get('/sse', (c) => {
 			const { response, stream } = create_sse_response<string>(c, log);
@@ -280,7 +280,7 @@ describe('create_sse_response', () => {
 
 	test('broadcast after close does not throw', async () => {
 		const app = new Hono();
-		const registry = new SubscriberRegistry<string>();
+		const registry = new SseRegistry<string>();
 
 		app.get('/sse', (c) => {
 			const { response, stream } = create_sse_response<string>(c, log);
@@ -458,7 +458,7 @@ describe('create_sse_response outbound budget', () => {
 
 	test('a stream whose client is not reading ends while one beside it gets every frame', async () => {
 		const app = new Hono();
-		const registry = new SubscriberRegistry<string>();
+		const registry = new SseRegistry<string>();
 		const closed: Array<string> = [];
 		app.get('/sse/:name', (c) => {
 			const name = c.req.param('name');
@@ -590,8 +590,8 @@ describe('create_validated_broadcaster', () => {
 		warn.mockRestore();
 	});
 
-	test('broadcasts through SubscriberRegistry to subscribed streams', () => {
-		const registry = new SubscriberRegistry<SseNotification>();
+	test('broadcasts through SseRegistry to subscribed streams', () => {
+		const registry = new SseRegistry<SseNotification>();
 		const validated = create_validated_broadcaster(registry, test_specs, log);
 
 		// subscribe two mock streams to different channels

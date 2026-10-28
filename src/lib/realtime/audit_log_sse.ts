@@ -4,7 +4,7 @@
  *
  * An SSE stream is authorized once, at open, and then only emits — nothing
  * re-reads its credential or its role. `create_sse_connection_closer` adapts a
- * `SubscriberRegistry` to `ConnectionCloser`, and a registry added to the
+ * `SseRegistry` to `ConnectionCloser`, and a registry added to the
  * backend's `deps.connection_closer` is closed by every revocation: the
  * handlers' own post-commit closes (`queue_connection_close`), and the one
  * audit listener on that closer (`create_revocation_guard`), which is also the
@@ -25,7 +25,7 @@ import {
 	type AuditLogEvent
 } from '../auth/audit_log_schema.ts';
 import type { ConnectionCloser, RealtimeCloser } from '../actions/connection_closer.ts';
-import { SubscriberRegistry } from './subscriber_registry.ts';
+import { SseRegistry } from './sse_registry.ts';
 import type { SseNotification, EventSpec } from './sse.ts';
 import { validate_sse_keep_alive_ms } from './sse_constants.ts';
 
@@ -33,10 +33,10 @@ import { validate_sse_keep_alive_ms } from './sse_constants.ts';
 export const AUDIT_LOG_CHANNEL = 'audit_log';
 
 /**
- * Adapt a `SubscriberRegistry` to `ConnectionCloser`, so a revocation handler's
+ * Adapt an `SseRegistry` to `ConnectionCloser`, so a revocation handler's
  * close reaches its streams.
  *
- * `close_connections` is `SubscriberRegistry.close_by_identity` on the id its
+ * `close_connections` is `SseRegistry.close_by_identity` on the id its
  * target carries, so it closes the streams registered under that id as their
  * `scope` or in their `groups` — pending registrations included. The audit
  * stream route registers `scope = session hash` and `groups = [account id]`; a
@@ -44,7 +44,7 @@ export const AUDIT_LOG_CHANNEL = 'audit_log';
  * `token` target then reaches it. A `role` target closes the account's
  * streams when its `role` is the one the registry's streams are gated on — the
  * registry keeps one gating role for all its streams, not one per stream.
- * `close_all_connections` is `SubscriberRegistry.close_all` — every stream,
+ * `close_all_connections` is `SseRegistry.close_all` — every stream,
  * for shutdown.
  *
  * Twin of the Rust spine's `ConnectionCloser` impl on `SseRegistry`.
@@ -55,7 +55,7 @@ export const AUDIT_LOG_CHANNEL = 'audit_log';
  *   nothing)
  */
 export const create_sse_connection_closer = <T>(
-	registry: SubscriberRegistry<T>,
+	registry: SseRegistry<T>,
 	required_role: string | null
 ): ConnectionCloser => ({
 	close_connections: (target) => {
@@ -85,12 +85,12 @@ export const create_sse_connection_closer = <T>(
  */
 export interface AuditLogSse {
 	/**
-	 * The subscriber registry the audit stream route registers each stream on
+	 * The SSE registry the audit stream route registers each stream on
 	 * (two-phase: `subscribe_pending` then `admit`) — pass as part of the
 	 * `stream` option to `create_audit_log_route_specs`. Also exposed for
 	 * subscriber count monitoring.
 	 */
-	registry: SubscriberRegistry<SseNotification>;
+	registry: SseRegistry<SseNotification>;
 	/** Logger — pass as part of `stream` option to `create_audit_log_route_specs`. */
 	log: Logger;
 	/**
@@ -143,7 +143,7 @@ export const AUDIT_LOG_SSE_MAX_PER_SCOPE = 10;
  * Create a complete audit log SSE setup: the registry, its broadcaster, and its
  * connection closer.
  *
- * Builds the `SubscriberRegistry` and the broadcast callback, and adds the
+ * Builds the `SseRegistry` and the broadcast callback, and adds the
  * registry to `connection_closer` for good — the remover `add` returns is
  * dropped, so a caller that must take the registry out again passes `null` and
  * adds it itself. Revocations close the streams through that closer: the
@@ -223,7 +223,7 @@ export const create_audit_log_sse = (options: {
 	const role = options.role ?? 'admin';
 	const max_per_scope =
 		options.max_per_scope === undefined ? AUDIT_LOG_SSE_MAX_PER_SCOPE : options.max_per_scope;
-	const registry = new SubscriberRegistry<SseNotification>({ max_per_scope, log: options.log });
+	const registry = new SseRegistry<SseNotification>({ max_per_scope, log: options.log });
 	options.connection_closer?.add(create_sse_connection_closer(registry, role));
 
 	return {

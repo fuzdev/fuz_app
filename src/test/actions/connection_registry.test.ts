@@ -1,5 +1,5 @@
 /**
- * Tests for BackendWebsocketTransport — connection tracking, revocation, the
+ * Tests for ConnectionRegistry — connection tracking, revocation, the
  * per-account connection cap, and two-phase registration.
  *
  * Uses a fake `WSContextInit` to construct real `WSContext`
@@ -14,11 +14,11 @@ import { WSContext } from 'hono/ws';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import {
-	BackendWebsocketTransport,
+	ConnectionRegistry,
 	DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT,
 	type ConnectionIdentity,
 	connection_identity_matches
-} from '#lib/actions/transports_ws_backend.ts';
+} from '#lib/actions/connection_registry.ts';
 import {
 	WS_CLOSE_CONNECTION_LIMIT,
 	WS_CLOSE_CONNECTION_LIMIT_REASON,
@@ -99,9 +99,9 @@ describe('connection_identity_matches', () => {
 	});
 });
 
-describe('BackendWebsocketTransport.add_connection', () => {
+describe('ConnectionRegistry.add_connection', () => {
 	test('returns a unique id per connection', () => {
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		const a = create_fake_ws();
 		const b = create_fake_ws();
 		const id_a = t.add_connection(
@@ -116,7 +116,7 @@ describe('BackendWebsocketTransport.add_connection', () => {
 	});
 
 	test('api_token_id defaults to null (backward-compatible 3-arg call)', () => {
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		const { ws } = create_fake_ws();
 		t.add_connection(ws, create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }));
 		// revoking by a made-up token id closes nothing
@@ -124,34 +124,34 @@ describe('BackendWebsocketTransport.add_connection', () => {
 	});
 
 	test('is_ready reflects connection count', () => {
-		const t = new BackendWebsocketTransport();
-		assert.strictEqual(t.get_connection_count() > 0, false);
+		const t = new ConnectionRegistry();
+		assert.strictEqual(t.connection_count() > 0, false);
 		const { ws } = create_fake_ws();
 		t.add_connection(ws, create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }));
-		assert.strictEqual(t.get_connection_count() > 0, true);
+		assert.strictEqual(t.connection_count() > 0, true);
 	});
 
-	test('get_connection_count tracks add/remove', () => {
-		const t = new BackendWebsocketTransport();
-		assert.strictEqual(t.get_connection_count(), 0);
+	test('connection_count tracks add/remove', () => {
+		const t = new ConnectionRegistry();
+		assert.strictEqual(t.connection_count(), 0);
 		const a = create_fake_ws();
 		const b = create_fake_ws();
 		const id_a = t.add_connection(
 			a.ws,
 			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
 		);
-		assert.strictEqual(t.get_connection_count(), 1);
+		assert.strictEqual(t.connection_count(), 1);
 		t.add_connection(b.ws, create_test_identity({ session_hash: HASH_B, account_id: ACCOUNT_B }));
-		assert.strictEqual(t.get_connection_count(), 2);
+		assert.strictEqual(t.connection_count(), 2);
 		t.remove_connection(id_a);
-		assert.strictEqual(t.get_connection_count(), 1);
+		assert.strictEqual(t.connection_count(), 1);
 		t.close_connections({ kind: 'account', account_id: ACCOUNT_B });
-		assert.strictEqual(t.get_connection_count(), 0);
+		assert.strictEqual(t.connection_count(), 0);
 	});
 
 	test('keeps a copy of the identity — the caller changing its record moves nothing', () => {
 		for (const register of ['add_connection', 'register_pending'] as const) {
-			const t = new BackendWebsocketTransport();
+			const t = new ConnectionRegistry();
 			const { ws } = create_fake_ws();
 			const required_roles = ['admin'];
 			const identity = create_test_identity({
@@ -179,9 +179,9 @@ describe('BackendWebsocketTransport.add_connection', () => {
 	});
 });
 
-describe('BackendWebsocketTransport.close_connections session', () => {
+describe('ConnectionRegistry.close_connections session', () => {
 	test('closes only the matching session, returns count', () => {
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		const a = create_fake_ws();
 		const b = create_fake_ws();
 		t.add_connection(a.ws, create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }));
@@ -196,7 +196,7 @@ describe('BackendWebsocketTransport.close_connections session', () => {
 	});
 
 	test('closes all sockets sharing the session hash', () => {
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		const a = create_fake_ws();
 		const b = create_fake_ws();
 		t.add_connection(a.ws, create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }));
@@ -206,16 +206,16 @@ describe('BackendWebsocketTransport.close_connections session', () => {
 	});
 
 	test('returns 0 when no sockets match', () => {
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		const { ws } = create_fake_ws();
 		t.add_connection(ws, create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }));
 		assert.strictEqual(t.close_connections({ kind: 'session', session_hash: 'nope' }), 0);
 	});
 });
 
-describe('BackendWebsocketTransport.close_connections account', () => {
+describe('ConnectionRegistry.close_connections account', () => {
 	test('closes all sockets for the account across session and bearer', () => {
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		const session_ws = create_fake_ws();
 		const bearer_ws = create_fake_ws();
 		const daemon_ws = create_fake_ws();
@@ -242,9 +242,9 @@ describe('BackendWebsocketTransport.close_connections account', () => {
 	});
 });
 
-describe('BackendWebsocketTransport.close_connections token', () => {
+describe('ConnectionRegistry.close_connections token', () => {
 	test('closes only the socket bound to that api_token.id', () => {
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		const bearer_a = create_fake_ws();
 		const bearer_b = create_fake_ws();
 		const session_ws = create_fake_ws();
@@ -268,7 +268,7 @@ describe('BackendWebsocketTransport.close_connections token', () => {
 	});
 
 	test('does not affect session-authenticated sockets on the same account', () => {
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		const session_ws = create_fake_ws();
 		const bearer_ws = create_fake_ws();
 		t.add_connection(
@@ -285,16 +285,16 @@ describe('BackendWebsocketTransport.close_connections token', () => {
 	});
 
 	test('returns 0 when no bearer connections match', () => {
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		const { ws } = create_fake_ws();
 		t.add_connection(ws, create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }));
 		assert.strictEqual(t.close_connections({ kind: 'token', api_token_id: TOKEN_A }), 0);
 	});
 });
 
-describe('BackendWebsocketTransport.close_all_connections', () => {
+describe('ConnectionRegistry.close_all_connections', () => {
 	test('closes every connection, pending and admitted, with the going-away close', () => {
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		const session = create_fake_ws();
 		const bearer = create_fake_ws();
 		const daemon = create_fake_ws();
@@ -319,8 +319,8 @@ describe('BackendWebsocketTransport.close_all_connections', () => {
 				{ code: WS_CLOSE_GOING_AWAY, reason: WS_CLOSE_GOING_AWAY_REASON }
 			]);
 		}
-		assert.strictEqual(t.get_connection_count(), 0);
-		assert.strictEqual(t.get_pending_connection_count(), 0);
+		assert.strictEqual(t.connection_count(), 0);
+		assert.strictEqual(t.pending_connection_count(), 0);
 		// a pending registration closed at shutdown is refused at admission
 		assert.strictEqual(t.admit(pending_id), false);
 		// closing again closes nothing
@@ -328,7 +328,7 @@ describe('BackendWebsocketTransport.close_all_connections', () => {
 	});
 
 	test("aborts each closed connection's controller", () => {
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		const controller = new AbortController();
 		t.add_connection(
 			create_fake_ws().ws,
@@ -340,7 +340,7 @@ describe('BackendWebsocketTransport.close_all_connections', () => {
 	});
 
 	test('a socket whose close throws does not spare the rest', () => {
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		const before = create_fake_ws();
 		const after = create_fake_ws();
 		const boom = new Error('already closed');
@@ -364,17 +364,17 @@ describe('BackendWebsocketTransport.close_all_connections', () => {
 		assert.strictEqual(before.closes.length, 1);
 		assert.strictEqual(after.closes.length, 1, 'the socket after the throw was closed');
 		// the throwing socket's connection is removed too
-		assert.strictEqual(t.get_connection_count(), 0);
+		assert.strictEqual(t.connection_count(), 0);
 		// closing even though a close threw: a later registration is born closed
 		assert.strictEqual(t.is_closing(), true);
 	});
 });
 
-describe('BackendWebsocketTransport born-closed registrations', () => {
+describe('ConnectionRegistry born-closed registrations', () => {
 	const GOING_AWAY = { code: WS_CLOSE_GOING_AWAY, reason: WS_CLOSE_GOING_AWAY_REASON };
 
 	test('a pending registration after close_all is closed going-away and refused at admission', () => {
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		assert.strictEqual(t.is_closing(), false);
 		t.close_all_connections();
 		assert.strictEqual(t.is_closing(), true);
@@ -388,16 +388,16 @@ describe('BackendWebsocketTransport born-closed registrations', () => {
 		);
 		assert.deepStrictEqual(late.closes, [GOING_AWAY], 'closed before register_pending returns');
 		assert.strictEqual(controller.signal.aborted, true);
-		assert.strictEqual(t.get_pending_connection_count(), 0, 'never inserted');
+		assert.strictEqual(t.pending_connection_count(), 0, 'never inserted');
 		assert.strictEqual(t.admit(id), false);
-		assert.strictEqual(t.get_connection_count(), 0);
+		assert.strictEqual(t.connection_count(), 0);
 		// a revocation finds nothing to close
 		assert.strictEqual(t.close_connections({ kind: 'session', session_hash: HASH_A }), 0);
 		assert.strictEqual(late.closes.length, 1);
 	});
 
 	test('a one-step add_connection after close_all is closed going-away, never admitted', () => {
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		t.close_all_connections();
 
 		const late = create_fake_ws();
@@ -410,7 +410,7 @@ describe('BackendWebsocketTransport born-closed registrations', () => {
 		assert.deepStrictEqual(late.closes, [GOING_AWAY]);
 		assert.strictEqual(controller.signal.aborted, true);
 		assert.strictEqual(t.is_registered(id), false);
-		assert.strictEqual(t.get_connection_count(), 0);
+		assert.strictEqual(t.connection_count(), 0);
 		assert.strictEqual(t.send_to_account(ACCOUNT_A, { jsonrpc: '2.0', method: 'm' }), 0);
 	});
 
@@ -420,7 +420,7 @@ describe('BackendWebsocketTransport born-closed registrations', () => {
 		log.error = (...args: Array<unknown>) => {
 			errors.push(args);
 		};
-		const t = new BackendWebsocketTransport({ log });
+		const t = new ConnectionRegistry({ log });
 		t.close_all_connections();
 		const controller = new AbortController();
 		const throwing = new WSContext({
@@ -441,9 +441,9 @@ describe('BackendWebsocketTransport born-closed registrations', () => {
 	});
 });
 
-describe('BackendWebsocketTransport.remove_connection', () => {
+describe('ConnectionRegistry.remove_connection', () => {
 	test('clears all per-connection bookkeeping (cannot be revoked twice)', () => {
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		const a = create_fake_ws();
 		const id_a = t.add_connection(
 			a.ws,
@@ -459,7 +459,7 @@ describe('BackendWebsocketTransport.remove_connection', () => {
 	});
 
 	test('is idempotent — safe after revocation has already cleaned up', () => {
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		const a = create_fake_ws();
 		const id_a = t.add_connection(
 			a.ws,
@@ -473,7 +473,7 @@ describe('BackendWebsocketTransport.remove_connection', () => {
 	});
 
 	test('removes only the connection the id names', () => {
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		const a = create_fake_ws();
 		const b = create_fake_ws();
 		const id_a = t.add_connection(
@@ -482,19 +482,19 @@ describe('BackendWebsocketTransport.remove_connection', () => {
 		);
 		t.add_connection(b.ws, create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }));
 
-		// an id the transport never issued removes nothing
+		// an id the registry never issued removes nothing
 		t.remove_connection(create_uuid());
-		assert.strictEqual(t.get_connection_count(), 2);
+		assert.strictEqual(t.connection_count(), 2);
 
 		t.remove_connection(id_a);
-		assert.strictEqual(t.get_connection_count(), 1);
+		assert.strictEqual(t.connection_count(), 1);
 		assert.strictEqual(t.close_connections({ kind: 'session', session_hash: HASH_A }), 1);
 		assert.deepStrictEqual(a.closes, []);
 		assert.strictEqual(b.closes.length, 1);
 	});
 });
 
-describe('BackendWebsocketTransport per-account connection cap', () => {
+describe('ConnectionRegistry per-account connection cap', () => {
 	const CONNECTION_LIMIT_CLOSE = {
 		code: WS_CLOSE_CONNECTION_LIMIT,
 		reason: WS_CLOSE_CONNECTION_LIMIT_REASON
@@ -502,7 +502,7 @@ describe('BackendWebsocketTransport per-account connection cap', () => {
 
 	test('past the default cap the oldest connection closes with 4004', () => {
 		assert.strictEqual(DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT, 50);
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		const sockets = Array.from({ length: DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT }, () => {
 			const fake = create_fake_ws();
 			t.add_connection(
@@ -513,7 +513,7 @@ describe('BackendWebsocketTransport per-account connection cap', () => {
 		});
 		// at the cap, nothing has closed
 		assert.ok(sockets.every((s) => s.closes.length === 0));
-		assert.strictEqual(t.get_connection_count(), DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT);
+		assert.strictEqual(t.connection_count(), DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT);
 
 		const newest = create_fake_ws();
 		t.add_connection(
@@ -524,11 +524,11 @@ describe('BackendWebsocketTransport per-account connection cap', () => {
 		assert.deepStrictEqual(sockets[0]!.closes, [CONNECTION_LIMIT_CLOSE]);
 		assert.ok(sockets.slice(1).every((s) => s.closes.length === 0));
 		assert.deepStrictEqual(newest.closes, []);
-		assert.strictEqual(t.get_connection_count(), DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT);
+		assert.strictEqual(t.connection_count(), DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT);
 	});
 
 	test('evicts oldest-first, one per connection past the cap', () => {
-		const t = new BackendWebsocketTransport({ max_connections_per_account: 2 });
+		const t = new ConnectionRegistry({ max_connections_per_account: 2 });
 		const a = create_fake_ws();
 		const b = create_fake_ws();
 		const c = create_fake_ws();
@@ -545,11 +545,11 @@ describe('BackendWebsocketTransport per-account connection cap', () => {
 		assert.deepStrictEqual(b.closes, [CONNECTION_LIMIT_CLOSE]);
 		assert.deepStrictEqual(c.closes, []);
 		assert.deepStrictEqual(d.closes, []);
-		assert.strictEqual(t.get_connection_count(), 2);
+		assert.strictEqual(t.connection_count(), 2);
 	});
 
 	test('a cap of 1 closes the previous connection for each new one', () => {
-		const t = new BackendWebsocketTransport({ max_connections_per_account: 1 });
+		const t = new ConnectionRegistry({ max_connections_per_account: 1 });
 		const a = create_fake_ws();
 		const b = create_fake_ws();
 		t.add_connection(a.ws, create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }));
@@ -560,7 +560,7 @@ describe('BackendWebsocketTransport per-account connection cap', () => {
 	});
 
 	test('counts per account, across every credential type', () => {
-		const t = new BackendWebsocketTransport({ max_connections_per_account: 3 });
+		const t = new ConnectionRegistry({ max_connections_per_account: 3 });
 		const other = create_fake_ws();
 		t.add_connection(
 			other.ws,
@@ -605,11 +605,11 @@ describe('BackendWebsocketTransport per-account connection cap', () => {
 		assert.deepStrictEqual(daemon.closes, [CONNECTION_LIMIT_CLOSE]);
 
 		assert.deepStrictEqual(other.closes, []);
-		assert.strictEqual(t.get_connection_count(), 4);
+		assert.strictEqual(t.connection_count(), 4);
 	});
 
 	test('a removed or revoked connection frees its slot', () => {
-		const t = new BackendWebsocketTransport({ max_connections_per_account: 2 });
+		const t = new ConnectionRegistry({ max_connections_per_account: 2 });
 		const a = create_fake_ws();
 		const b = create_fake_ws();
 		const id_a = t.add_connection(
@@ -631,7 +631,7 @@ describe('BackendWebsocketTransport per-account connection cap', () => {
 	});
 
 	test('null disables the cap', () => {
-		const t = new BackendWebsocketTransport({ max_connections_per_account: null });
+		const t = new ConnectionRegistry({ max_connections_per_account: null });
 		const sockets = Array.from({ length: DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT + 5 }, () => {
 			const fake = create_fake_ws();
 			t.add_connection(
@@ -641,11 +641,11 @@ describe('BackendWebsocketTransport per-account connection cap', () => {
 			return fake;
 		});
 		assert.ok(sockets.every((s) => s.closes.length === 0));
-		assert.strictEqual(t.get_connection_count(), DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT + 5);
+		assert.strictEqual(t.connection_count(), DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT + 5);
 	});
 
 	test('an evicted connection is fully untracked — its later remove is a no-op', () => {
-		const t = new BackendWebsocketTransport({ max_connections_per_account: 1 });
+		const t = new ConnectionRegistry({ max_connections_per_account: 1 });
 		const a = create_fake_ws();
 		const b = create_fake_ws();
 		const id_a = t.add_connection(
@@ -660,7 +660,7 @@ describe('BackendWebsocketTransport per-account connection cap', () => {
 
 		// the runtime adapter fires onClose for the evicted socket afterwards
 		t.remove_connection(id_a);
-		assert.strictEqual(t.get_connection_count(), 1);
+		assert.strictEqual(t.connection_count(), 1);
 
 		// nothing reaches it any more: no broadcast, no second close
 		const notification: JsonrpcNotification = { jsonrpc: '2.0', method: 'ping' };
@@ -674,7 +674,7 @@ describe('BackendWebsocketTransport per-account connection cap', () => {
 	});
 
 	test('eviction drains the pending peer requests of the evicted connection', async () => {
-		const t = new BackendWebsocketTransport({ max_connections_per_account: 1 });
+		const t = new ConnectionRegistry({ max_connections_per_account: 1 });
 		const a = create_fake_ws();
 		const id_a = t.add_connection(
 			a.ws,
@@ -695,7 +695,7 @@ describe('BackendWebsocketTransport per-account connection cap', () => {
 		log.error = (...args: Array<unknown>) => {
 			errors.push(args);
 		};
-		const t = new BackendWebsocketTransport({ max_connections_per_account: 1, log });
+		const t = new ConnectionRegistry({ max_connections_per_account: 1, log });
 		const throwing = new WSContext({
 			send: () => {},
 			close: () => {
@@ -713,11 +713,11 @@ describe('BackendWebsocketTransport per-account connection cap', () => {
 			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
 		);
 		assert.strictEqual(typeof id, 'string');
-		// the failure goes to the transport's log
+		// the failure goes to the registry's log
 		assert.strictEqual(errors.length, 1);
 		assert.strictEqual(errors[0]![0], 'error closing superseded client:');
 		// the evicted entry is gone despite the failed close
-		assert.strictEqual(t.get_connection_count(), 1);
+		assert.strictEqual(t.connection_count(), 1);
 	});
 
 	test('an eviction logs the account, the closed count, and the cap', () => {
@@ -726,7 +726,7 @@ describe('BackendWebsocketTransport per-account connection cap', () => {
 		log.info = (...args: Array<unknown>) => {
 			infos.push(args);
 		};
-		const t = new BackendWebsocketTransport({ max_connections_per_account: 2, log });
+		const t = new ConnectionRegistry({ max_connections_per_account: 2, log });
 		t.add_connection(
 			create_fake_ws().ws,
 			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
@@ -759,7 +759,7 @@ describe('BackendWebsocketTransport per-account connection cap', () => {
 	test('rejects a cap that is not a positive integer or null', () => {
 		for (const max of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
 			assert.throws(
-				() => new BackendWebsocketTransport({ max_connections_per_account: max }),
+				() => new ConnectionRegistry({ max_connections_per_account: max }),
 				/max_connections_per_account must be a positive integer or null/,
 				String(max)
 			);
@@ -767,7 +767,7 @@ describe('BackendWebsocketTransport per-account connection cap', () => {
 	});
 });
 
-describe('BackendWebsocketTransport log', () => {
+describe('ConnectionRegistry log', () => {
 	afterEach(() => {
 		vi.restoreAllMocks();
 	});
@@ -798,7 +798,7 @@ describe('BackendWebsocketTransport log', () => {
 
 	test('unset falls back to a [ws] logger rather than staying silent', () => {
 		const calls = spy_logger_errors();
-		const t = new BackendWebsocketTransport({ max_connections_per_account: 1 });
+		const t = new ConnectionRegistry({ max_connections_per_account: 1 });
 		t.add_connection(
 			create_throwing_ws(),
 			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
@@ -816,7 +816,7 @@ describe('BackendWebsocketTransport log', () => {
 	test('null silences it', () => {
 		const calls = spy_logger_errors();
 		const infos = vi.spyOn(Logger.prototype, 'info').mockImplementation(() => {});
-		const t = new BackendWebsocketTransport({ max_connections_per_account: 1, log: null });
+		const t = new ConnectionRegistry({ max_connections_per_account: 1, log: null });
 		t.add_connection(
 			create_throwing_ws(),
 			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
@@ -837,7 +837,7 @@ describe('BackendWebsocketTransport log', () => {
 		log.error = (...args: Array<unknown>) => {
 			errors.push(args);
 		};
-		const t = new BackendWebsocketTransport({ log });
+		const t = new ConnectionRegistry({ log });
 		t.add_connection(
 			create_throwing_ws(),
 			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
@@ -869,9 +869,9 @@ describe('BackendWebsocketTransport log', () => {
 	});
 });
 
-describe('BackendWebsocketTransport revocation bookkeeping', () => {
+describe('ConnectionRegistry revocation bookkeeping', () => {
 	test('revoked connection stops matching any future close_connections call', () => {
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		const a = create_fake_ws();
 		t.add_connection(
 			a.ws,
@@ -889,7 +889,7 @@ describe('BackendWebsocketTransport revocation bookkeeping', () => {
 	});
 
 	test('daemon-token connection (null session_hash + null api_token_id) is only reachable via account', () => {
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		const daemon = create_fake_ws();
 		t.add_connection(daemon.ws, create_test_identity({ account_id: ACCOUNT_A }));
 
@@ -905,7 +905,7 @@ describe('BackendWebsocketTransport revocation bookkeeping', () => {
 		// Documents current behavior: add_connection trusts the caller to
 		// only call it once per socket. If misused, each id is its own
 		// connection and needs its own remove_connection.
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		const a = create_fake_ws();
 		const id1 = t.add_connection(
 			a.ws,
@@ -923,7 +923,7 @@ describe('BackendWebsocketTransport revocation bookkeeping', () => {
 	});
 });
 
-describe('BackendWebsocketTransport.broadcast_filtered', () => {
+describe('ConnectionRegistry.broadcast_filtered', () => {
 	const notification: JsonrpcNotification = {
 		jsonrpc: '2.0',
 		method: 'thing_changed',
@@ -931,7 +931,7 @@ describe('BackendWebsocketTransport.broadcast_filtered', () => {
 	};
 
 	test('returns 0 and sends nothing when the predicate matches no connections', () => {
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		const a = create_fake_ws();
 		const b = create_fake_ws();
 		t.add_connection(a.ws, create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }));
@@ -944,7 +944,7 @@ describe('BackendWebsocketTransport.broadcast_filtered', () => {
 	});
 
 	test('returns matching count and sends only to matching connections', () => {
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		const a = create_fake_ws();
 		const b = create_fake_ws();
 		const c = create_fake_ws();
@@ -963,7 +963,7 @@ describe('BackendWebsocketTransport.broadcast_filtered', () => {
 	});
 
 	test('returns total count and sends to every connection when the predicate matches all', () => {
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		const a = create_fake_ws();
 		const b = create_fake_ws();
 		t.add_connection(a.ws, create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }));
@@ -975,8 +975,8 @@ describe('BackendWebsocketTransport.broadcast_filtered', () => {
 		assert.strictEqual(b.sends.length, 1);
 	});
 
-	test('returns 0 on a transport with no connections', () => {
-		const t = new BackendWebsocketTransport();
+	test('returns 0 on a registry with no connections', () => {
+		const t = new ConnectionRegistry();
 		assert.strictEqual(
 			t.broadcast_filtered(notification, () => true),
 			0
@@ -984,7 +984,7 @@ describe('BackendWebsocketTransport.broadcast_filtered', () => {
 	});
 
 	test('predicate sees full ConnectionIdentity for session, bearer, and daemon connections', () => {
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		const session_ws = create_fake_ws();
 		const bearer_ws = create_fake_ws();
 		const daemon_ws = create_fake_ws();
@@ -1021,7 +1021,7 @@ describe('BackendWebsocketTransport.broadcast_filtered', () => {
 	});
 
 	test('excludes sockets after remove_connection', () => {
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		const a = create_fake_ws();
 		const b = create_fake_ws();
 		const id_a = t.add_connection(
@@ -1038,7 +1038,7 @@ describe('BackendWebsocketTransport.broadcast_filtered', () => {
 	});
 });
 
-describe('BackendWebsocketTransport.send_to_account', () => {
+describe('ConnectionRegistry.send_to_account', () => {
 	const notification: JsonrpcNotification = {
 		jsonrpc: '2.0',
 		method: 'thing_changed',
@@ -1046,7 +1046,7 @@ describe('BackendWebsocketTransport.send_to_account', () => {
 	};
 
 	test('delivers to the single matching connection and returns 1', () => {
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		const a = create_fake_ws();
 		const b = create_fake_ws();
 		t.add_connection(a.ws, create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }));
@@ -1059,7 +1059,7 @@ describe('BackendWebsocketTransport.send_to_account', () => {
 	});
 
 	test('delivers to every socket bound to the account (multi-tab) and returns N', () => {
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		const session_ws = create_fake_ws();
 		const bearer_ws = create_fake_ws();
 		const daemon_ws = create_fake_ws();
@@ -1087,7 +1087,7 @@ describe('BackendWebsocketTransport.send_to_account', () => {
 	});
 
 	test('returns 0 when the account has no connections', () => {
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		const { ws } = create_fake_ws();
 		t.add_connection(ws, create_test_identity({ session_hash: HASH_B, account_id: ACCOUNT_B }));
 
@@ -1095,8 +1095,8 @@ describe('BackendWebsocketTransport.send_to_account', () => {
 		assert.strictEqual(count, 0);
 	});
 
-	test('returns 0 on a transport with no connections', () => {
-		const t = new BackendWebsocketTransport();
+	test('returns 0 on a registry with no connections', () => {
+		const t = new ConnectionRegistry();
 		assert.strictEqual(t.send_to_account(ACCOUNT_A, notification), 0);
 	});
 
@@ -1105,7 +1105,7 @@ describe('BackendWebsocketTransport.send_to_account', () => {
 		// (rate limit window, dedup, queue handoff) sneaking in — today
 		// `send_to_account` is stateless pass-through and both calls should
 		// behave identically.
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		const a = create_fake_ws();
 		const b = create_fake_ws();
 		t.add_connection(a.ws, create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }));
@@ -1135,7 +1135,7 @@ describe('BackendWebsocketTransport.send_to_account', () => {
 		// (`#close_where` keyed on `session_hash`) than `send_to_account`'s
 		// `account_id` walk — so a shared bookkeeping bug in one path can't
 		// hide in the other.
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		const session_ws = create_fake_ws();
 		const bearer_ws = create_fake_ws();
 		const daemon_ws = create_fake_ws();
@@ -1165,7 +1165,7 @@ describe('BackendWebsocketTransport.send_to_account', () => {
 	});
 });
 
-describe('BackendWebsocketTransport two-phase registration', () => {
+describe('ConnectionRegistry two-phase registration', () => {
 	const REVOKED_CLOSE = { code: WS_CLOSE_SESSION_REVOKED, reason: WS_CLOSE_SESSION_REVOKED_REASON };
 	const CONNECTION_LIMIT_CLOSE = {
 		code: WS_CLOSE_CONNECTION_LIMIT,
@@ -1179,28 +1179,28 @@ describe('BackendWebsocketTransport two-phase registration', () => {
 	};
 
 	test('a pending connection is not a connection until admitted', () => {
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		const { ws } = create_fake_ws();
 		const id = t.register_pending(
 			ws,
 			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
 		);
 
-		assert.strictEqual(t.get_connection_count(), 0);
-		assert.strictEqual(t.get_pending_connection_count(), 1);
-		assert.strictEqual(t.get_connection_count() > 0, false);
+		assert.strictEqual(t.connection_count(), 0);
+		assert.strictEqual(t.pending_connection_count(), 1);
+		assert.strictEqual(t.connection_count() > 0, false);
 		assert.strictEqual(t.is_registered(id), false);
 
 		assert.strictEqual(t.admit(id), true);
 
-		assert.strictEqual(t.get_connection_count(), 1);
-		assert.strictEqual(t.get_pending_connection_count(), 0);
-		assert.strictEqual(t.get_connection_count() > 0, true);
+		assert.strictEqual(t.connection_count(), 1);
+		assert.strictEqual(t.pending_connection_count(), 0);
+		assert.strictEqual(t.connection_count() > 0, true);
 		assert.strictEqual(t.is_registered(id), true);
 	});
 
 	test('a pending connection receives nothing until admitted', async () => {
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		const fake = create_fake_ws();
 		const id = t.register_pending(
 			fake.ws,
@@ -1234,7 +1234,7 @@ describe('BackendWebsocketTransport two-phase registration', () => {
 	});
 
 	test('a broadcast predicate never sees a pending connection', () => {
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		t.register_pending(
 			create_fake_ws().ws,
 			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
@@ -1257,7 +1257,7 @@ describe('BackendWebsocketTransport two-phase registration', () => {
 	});
 
 	test('a session revoked while pending is refused and evicts nothing', () => {
-		const t = new BackendWebsocketTransport({ max_connections_per_account: 1 });
+		const t = new ConnectionRegistry({ max_connections_per_account: 1 });
 		const live = create_fake_ws();
 		t.add_connection(
 			live.ws,
@@ -1275,16 +1275,16 @@ describe('BackendWebsocketTransport two-phase registration', () => {
 			'the close finds the pending entry'
 		);
 		assert.deepStrictEqual(pending.closes, [REVOKED_CLOSE]);
-		assert.strictEqual(t.get_pending_connection_count(), 0);
+		assert.strictEqual(t.pending_connection_count(), 0);
 
 		assert.strictEqual(t.admit(id), false, 'a registration closed while pending is refused');
 		assert.deepStrictEqual(live.closes, [], 'a refused admission evicts nothing');
-		assert.strictEqual(t.get_connection_count(), 1);
+		assert.strictEqual(t.connection_count(), 1);
 		assert.strictEqual(t.is_registered(id), false);
 	});
 
 	test('a refused admission reads why its pending entry was closed, once', () => {
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		const by_role = t.register_pending(
 			create_fake_ws().ws,
 			create_test_identity({
@@ -1319,7 +1319,7 @@ describe('BackendWebsocketTransport two-phase registration', () => {
 		assert.strictEqual(t.take_pending_close_code(admitted), null);
 
 		// and the socket's own close drops an unread record
-		const fresh = new BackendWebsocketTransport();
+		const fresh = new ConnectionRegistry();
 		const left = fresh.register_pending(
 			create_fake_ws().ws,
 			create_test_identity({ account_id: ACCOUNT_A })
@@ -1330,7 +1330,7 @@ describe('BackendWebsocketTransport two-phase registration', () => {
 	});
 
 	test('an account close reaches a pending connection', () => {
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		const pending = create_fake_ws();
 		const id = t.register_pending(pending.ws, create_test_identity({ account_id: ACCOUNT_A }));
 		const other = create_fake_ws();
@@ -1345,7 +1345,7 @@ describe('BackendWebsocketTransport two-phase registration', () => {
 	});
 
 	test('a token close reaches a pending connection', () => {
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		const pending = create_fake_ws();
 		const id = t.register_pending(
 			pending.ws,
@@ -1366,7 +1366,7 @@ describe('BackendWebsocketTransport two-phase registration', () => {
 	});
 
 	test('the cap evicts at admission, not at registration', () => {
-		const t = new BackendWebsocketTransport({ max_connections_per_account: 1 });
+		const t = new ConnectionRegistry({ max_connections_per_account: 1 });
 		const live = create_fake_ws();
 		t.add_connection(
 			live.ws,
@@ -1383,11 +1383,11 @@ describe('BackendWebsocketTransport two-phase registration', () => {
 		assert.strictEqual(t.admit(id), true);
 		assert.deepStrictEqual(live.closes, [CONNECTION_LIMIT_CLOSE]);
 		assert.deepStrictEqual(pending.closes, []);
-		assert.strictEqual(t.get_connection_count(), 1);
+		assert.strictEqual(t.connection_count(), 1);
 	});
 
 	test('pending connections do not count toward the cap', () => {
-		const t = new BackendWebsocketTransport({ max_connections_per_account: 2 });
+		const t = new ConnectionRegistry({ max_connections_per_account: 2 });
 		const live = create_fake_ws();
 		t.add_connection(
 			live.ws,
@@ -1408,12 +1408,12 @@ describe('BackendWebsocketTransport two-phase registration', () => {
 		);
 
 		assert.deepStrictEqual(live.closes, [], 'two admitted connections fit under a cap of two');
-		assert.strictEqual(t.get_connection_count(), 2);
-		assert.strictEqual(t.get_pending_connection_count(), 5);
+		assert.strictEqual(t.connection_count(), 2);
+		assert.strictEqual(t.pending_connection_count(), 5);
 	});
 
 	test('the cap never evicts a pending connection', () => {
-		const t = new BackendWebsocketTransport({ max_connections_per_account: 1 });
+		const t = new ConnectionRegistry({ max_connections_per_account: 1 });
 		// registered first, so it is the account's oldest entry
 		const pending = create_fake_ws();
 		const pending_id = t.register_pending(
@@ -1433,7 +1433,7 @@ describe('BackendWebsocketTransport two-phase registration', () => {
 
 		assert.deepStrictEqual(pending.closes, []);
 		assert.deepStrictEqual(first.closes, [CONNECTION_LIMIT_CLOSE]);
-		assert.strictEqual(t.get_pending_connection_count(), 1);
+		assert.strictEqual(t.pending_connection_count(), 1);
 
 		// and admitting it later supersedes the admitted one in turn
 		assert.strictEqual(t.admit(pending_id), true);
@@ -1441,7 +1441,7 @@ describe('BackendWebsocketTransport two-phase registration', () => {
 	});
 
 	test('removing a pending connection removes its entry, and its admission is refused', () => {
-		const t = new BackendWebsocketTransport({ max_connections_per_account: 1 });
+		const t = new ConnectionRegistry({ max_connections_per_account: 1 });
 		const live = create_fake_ws();
 		t.add_connection(
 			live.ws,
@@ -1455,16 +1455,16 @@ describe('BackendWebsocketTransport two-phase registration', () => {
 
 		t.remove_connection(id);
 
-		assert.strictEqual(t.get_pending_connection_count(), 0);
+		assert.strictEqual(t.pending_connection_count(), 0);
 		assert.strictEqual(t.admit(id), false);
 		assert.deepStrictEqual(live.closes, []);
 		// removal alone sends no close frame — the caller that refused it does
 		assert.deepStrictEqual(pending.closes, []);
 	});
 
-	test('admit refuses an id the transport never registered', () => {
-		const t = new BackendWebsocketTransport();
-		const other = new BackendWebsocketTransport();
+	test('admit refuses an id the registry never registered', () => {
+		const t = new ConnectionRegistry();
+		const other = new ConnectionRegistry();
 		const id = other.register_pending(
 			create_fake_ws().ws,
 			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
@@ -1472,11 +1472,11 @@ describe('BackendWebsocketTransport two-phase registration', () => {
 
 		assert.strictEqual(t.admit(id), false);
 		assert.strictEqual(t.admit(create_uuid()), false);
-		assert.strictEqual(t.get_connection_count(), 0);
+		assert.strictEqual(t.connection_count(), 0);
 	});
 
 	test('admitting an admitted connection again evicts nothing', () => {
-		const t = new BackendWebsocketTransport({ max_connections_per_account: 2 });
+		const t = new ConnectionRegistry({ max_connections_per_account: 2 });
 		const first = create_fake_ws();
 		t.add_connection(
 			first.ws,
@@ -1492,13 +1492,13 @@ describe('BackendWebsocketTransport two-phase registration', () => {
 		assert.strictEqual(t.admit(id), true);
 
 		assert.deepStrictEqual(first.closes, []);
-		assert.strictEqual(t.get_connection_count(), 2);
+		assert.strictEqual(t.connection_count(), 2);
 	});
 });
 
-describe('BackendWebsocketTransport server-side close', () => {
+describe('ConnectionRegistry server-side close', () => {
 	test('a revocation aborts the registered controller of a pending and an admitted connection', () => {
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		const pending_abort = new AbortController();
 		const admitted_abort = new AbortController();
 		const other_abort = new AbortController();
@@ -1528,7 +1528,7 @@ describe('BackendWebsocketTransport server-side close', () => {
 	test('a socket whose close throws does not spare the sockets after it', () => {
 		// One dead socket ahead of the others in the map would otherwise abort
 		// the loop and leave the rest open on a revoked credential.
-		const t = new BackendWebsocketTransport({ log: null });
+		const t = new ConnectionRegistry({ log: null });
 		const boom = new Error('already closed');
 		const failing_abort = new AbortController();
 		const failing = new WSContext({
@@ -1574,13 +1574,13 @@ describe('BackendWebsocketTransport server-side close', () => {
 		// the failing socket's connection is gone and its handlers aborted
 		assert.strictEqual(t.is_registered(failing_id), false);
 		assert.strictEqual(failing_abort.signal.aborted, true);
-		assert.strictEqual(t.get_connection_count(), 1, 'only the bystander remains');
+		assert.strictEqual(t.connection_count(), 1, 'only the bystander remains');
 		// nothing is left to close, so a repeat neither throws nor counts
 		assert.strictEqual(t.close_connections({ kind: 'account', account_id: ACCOUNT_A }), 0);
 	});
 
 	test('a cap eviction aborts the evicted connection controller, and only it', () => {
-		const t = new BackendWebsocketTransport({ max_connections_per_account: 1 });
+		const t = new ConnectionRegistry({ max_connections_per_account: 1 });
 		const oldest_abort = new AbortController();
 		const newest_abort = new AbortController();
 		t.add_connection(
@@ -1600,7 +1600,7 @@ describe('BackendWebsocketTransport server-side close', () => {
 	});
 
 	test('remove_connection leaves the controller alone', () => {
-		const t = new BackendWebsocketTransport();
+		const t = new ConnectionRegistry();
 		const abort = new AbortController();
 		const id = t.add_connection(
 			create_fake_ws().ws,
@@ -1614,7 +1614,7 @@ describe('BackendWebsocketTransport server-side close', () => {
 	});
 
 	test('is_registered is false once the connection is revoked, evicted, or removed', () => {
-		const t = new BackendWebsocketTransport({ max_connections_per_account: 1 });
+		const t = new ConnectionRegistry({ max_connections_per_account: 1 });
 		const revoked = t.add_connection(
 			create_fake_ws().ws,
 			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })

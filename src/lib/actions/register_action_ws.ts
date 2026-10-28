@@ -59,10 +59,10 @@
  * past the cap.
  *
  * `onOpen` closes the gap in three steps: register the connection **pending**
- * (`BackendWebsocketTransport.register_pending` — closeable by every
+ * (`ConnectionRegistry.register_pending` — closeable by every
  * revocation, inert otherwise), re-read the credential, the acting actor, and
  * the role (`recheck_admission`, which the audit stream shares), then
- * `BackendWebsocketTransport.admit`. A
+ * `ConnectionRegistry.admit`. A
  * revocation whose close ran after the registration found the pending entry,
  * so `admit` refuses; one that committed before the re-read is seen by it. The
  * cap is enforced only by `admit`, so a refused upgrade evicts nothing, and
@@ -96,13 +96,13 @@
  * closed, never admitted unchecked. The handshake has already answered `101`,
  * so a refusal can only be a close frame.
  *
- * Once the server is shutting down (`AppServer.close` ran the transport's
+ * Once the server is shutting down (`AppServer.close` ran the registry's
  * `close_all_connections`) a refusal is `WS_CLOSE_GOING_AWAY` instead, so the
  * client reconnects rather than treating its credential as revoked: an upgrade
  * pending at the close-all is closed by it — and its abort makes the refusal
  * that follows the re-read send nothing more, even when the database closed
  * under that re-read — and one that registers after it is born closed and
- * skips the re-read (`BackendWebsocketTransport` module doc, "Shutdown").
+ * skips the re-read (`ConnectionRegistry` module doc, "Shutdown").
  *
  * Frames that arrive before admission are queued, not dispatched: nothing runs
  * on a credential that has not been re-read. They dispatch in arrival order
@@ -131,10 +131,10 @@
  * up to the `ws` close timeout when the client withholds its close frame).
  * So every server-side close — revocation, cap eviction, heartbeat timeout,
  * an oversized message, a refused admission — removes the connection from the
- * transport and aborts the socket's signal *at close time*, and `onMessage`
- * drops any frame on a socket that has ended. A connection the transport no
+ * registry and aborts the socket's signal *at close time*, and `onMessage`
+ * drops any frame on a socket that has ended. A connection the registry no
  * longer holds though nothing closed its socket (a bare `remove_connection`)
- * is ended on its next frame (`BackendWebsocketTransport.is_registered`), with
+ * is ended on its next frame (`ConnectionRegistry.is_registered`), with
  * `WS_CLOSE_INTERNAL_ERROR` — it must not linger as a socket that reads
  * everything and answers nothing.
  *
@@ -210,7 +210,7 @@ import {
 	utf8_length,
 	utf8_length_over
 } from './transports.ts';
-import { BackendWebsocketTransport, type ConnectionIdentity } from './transports_ws_backend.ts';
+import { ConnectionRegistry, type ConnectionIdentity } from './connection_registry.ts';
 import { audit_unmatched_peer_response, type RequestClient } from './peer_request.ts';
 import { perform_action, serialize_action_result } from './perform_action.ts';
 
@@ -306,15 +306,15 @@ export const ERROR_DUPLICATE_REQUEST_ID = 'duplicate_request_id';
 
 /**
  * Send one JSON-RPC error response frame to `connection_id` through the
- * transport's outbound queue.
+ * registry's outbound queue.
  */
 const send_error_response = (
-	transport: BackendWebsocketTransport,
+	registry: ConnectionRegistry,
 	connection_id: Uuid,
 	id: JsonrpcErrorResponse['id'],
 	error: JsonrpcErrorResponse['error']
 ): void => {
-	transport.send_to(connection_id, JSON.stringify(create_jsonrpc_error_response(id, error)));
+	registry.send_to(connection_id, JSON.stringify(create_jsonrpc_error_response(id, error)));
 };
 
 /**
@@ -347,7 +347,7 @@ const is_peer_response = (json: unknown): json is JsonrpcResponse | JsonrpcError
 /**
  * Context passed to the `on_socket_open` hook.
  *
- * Fires once the connection is **admitted** — registered in the transport and
+ * Fires once the connection is **admitted** — registered in the registry and
  * its credential re-checked (so `connection_id` is valid, and broadcasts reach
  * it) — and before any client message dispatches. A socket refused at
  * admission never reaches it. Consumers use this to bootstrap per-socket
@@ -361,10 +361,10 @@ export interface SocketOpenContext {
 	 * budget and its ordering with queued frames.
 	 */
 	ws: WSContext;
-	/** Connection id assigned by `BackendWebsocketTransport.register_pending`. */
+	/** Connection id assigned by `ConnectionRegistry.register_pending`. */
 	connection_id: Uuid;
 	/**
-	 * Auth identity registered for this connection. The transport holds its
+	 * Auth identity registered for this connection. The registry holds its
 	 * own copy, so this record is not what close targets match on.
 	 */
 	identity: Readonly<ConnectionIdentity>;
@@ -385,9 +385,9 @@ export interface SocketOpenContext {
 /**
  * Context passed to the `on_socket_close` hook.
  *
- * Fires after the transport has removed the connection — `connection_id` and
+ * Fires after the registry has removed the connection — `connection_id` and
  * `identity` are the values captured at open, so consumer cleanup reads them
- * from here, not from the transport. Fires for both client-initiated closes
+ * from here, not from the registry. Fires for both client-initiated closes
  * (Hono onClose) and server-initiated closes — a revocation, the per-account
  * connection cap's eviction, and a heartbeat timeout all call `ws.close()`,
  * which triggers Hono's onClose. Fires only for a socket that was admitted: one
@@ -403,7 +403,7 @@ export interface SocketCloseContext {
 	ws: WSContext;
 	/** Connection id captured at open time. */
 	connection_id: Uuid;
-	/** Auth identity captured at open time — the transport no longer holds it. */
+	/** Auth identity captured at open time — the registry no longer holds it. */
 	identity: Readonly<ConnectionIdentity>;
 }
 
@@ -458,33 +458,33 @@ export interface RegisterActionWsOptions {
 	 */
 	required_roles?: ReadonlyArray<RoleName>;
 	/**
-	 * Existing transport to register connections with. When omitted, a fresh
+	 * Existing registry to register connections with. When omitted, a fresh
 	 * one is created and returned in the result. Pass your own to keep a
 	 * handle for `send_to` / `broadcast` before the mount.
 	 */
-	transport?: BackendWebsocketTransport;
+	registry?: ConnectionRegistry;
 	/**
 	 * The backend's closer — `deps.connection_closer`. This endpoint's
-	 * transport is added to it, so every revocation handler's close reaches
+	 * registry is added to it, so every revocation handler's close reaches
 	 * the sockets opened here. Required so it can't be forgotten: left out of
-	 * the closer, no revocation closes a transport's sockets — neither the
+	 * the closer, no revocation closes a registry's sockets — neither the
 	 * handlers' closes nor the revocation guard, which closes through the same
-	 * closer. Pass `null` only when no revocation has to reach this transport
-	 * (a harness driving the dispatcher directly), or when the transport was
+	 * closer. Pass `null` only when no revocation has to reach this registry
+	 * (a harness driving the dispatcher directly), or when the registry was
 	 * added by hand.
 	 *
-	 * The transport is added once the mount succeeds, so a mount that throws
+	 * The registry is added once the mount succeeds, so a mount that throws
 	 * adds nothing. The addition is permanent — its remover is not returned.
 	 * A caller that must release the membership (as `create_app_server` does
-	 * on close) passes `null` and adds the transport itself, holding the
+	 * on close) passes `null` and adds the registry itself, holding the
 	 * remover `RealtimeCloser.add` returns.
 	 */
 	connection_closer: RealtimeCloser | null;
 	/**
-	 * Per-account connection cap for the transport this call creates — see
-	 * `BackendWebsocketTransportOptions.max_connections_per_account`
+	 * Per-account connection cap for the registry this call creates — see
+	 * `ConnectionRegistryOptions.max_connections_per_account`
 	 * (evict-oldest, closing with `WS_CLOSE_CONNECTION_LIMIT`; `null`
-	 * disables). Rejected alongside `transport`: a supplied transport carries
+	 * disables). Rejected alongside `registry`: a supplied registry carries
 	 * its own cap, set where it was constructed.
 	 *
 	 * @default DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT
@@ -492,11 +492,11 @@ export interface RegisterActionWsOptions {
 	max_connections_per_account?: number | null;
 	/**
 	 * Byte budget of the frames waiting to be written to one connection, for
-	 * the transport this call creates — see
-	 * `BackendWebsocketTransportOptions.outbound_queue_bytes` (a frame that does
+	 * the registry this call creates — see
+	 * `ConnectionRegistryOptions.outbound_queue_bytes` (a frame that does
 	 * not fit closes the socket with `WS_CLOSE_OUTBOUND_OVERFLOW`). Not derived
-	 * from `max_message_bytes`. Rejected alongside `transport`: a supplied
-	 * transport carries its own budget, set where it was constructed.
+	 * from `max_message_bytes`. Rejected alongside `registry`: a supplied
+	 * registry carries its own budget, set where it was constructed.
 	 *
 	 * @default DEFAULT_WS_OUTBOUND_QUEUE_BYTES
 	 */
@@ -539,7 +539,7 @@ export interface RegisterActionWsOptions {
 	 * "Admission"). Awaited before any inbound frame is dispatched — every
 	 * frame the client sends meanwhile waits in arrival order, replies to
 	 * server-initiated requests included: a hook that awaits
-	 * `transport.request_connection` on its own connection gets no reply until
+	 * `registry.request_connection` on its own connection gets no reply until
 	 * it returns, so start such a request without awaiting it. Throwing logs an
 	 * error and closes the socket with an `internal_error` frame and
 	 * `WS_CLOSE_INTERNAL_ERROR` — a failing bootstrap should not leave a
@@ -547,7 +547,7 @@ export interface RegisterActionWsOptions {
 	 */
 	on_socket_open?: (ctx: SocketOpenContext) => void | Promise<void>;
 	/**
-	 * Called once per admitted socket on close, *after* the transport has
+	 * Called once per admitted socket on close, *after* the registry has
 	 * removed the connection — a slow hook never holds a dead entry that
 	 * broadcasts still target and the per-account cap still counts. Receives
 	 * `connection_id` and `identity` captured at open time, the same whether the
@@ -584,8 +584,8 @@ export interface RegisterActionWsOptions {
 
 /** Result of `register_action_ws`. */
 export interface RegisterActionWsResult {
-	/** The transport bound to the endpoint — supplied or freshly created. */
-	transport: BackendWebsocketTransport;
+	/** The registry bound to the endpoint — supplied or freshly created. */
+	registry: ConnectionRegistry;
 }
 
 /**
@@ -624,35 +624,35 @@ export interface RegisterActionWsResult {
  * - A socket the server has closed dispatches nothing more, whether or not
  *   its client answers the close.
  * - Every frame sent — responses, error frames, notifications — goes through
- *   the transport's outbound queue. A connection with more waiting than its
+ *   the registry's outbound queue. A connection with more waiting than its
  *   `outbound_queue_bytes` budget closes with `WS_CLOSE_OUTBOUND_OVERFLOW`, and
  *   the response of the request whose handler overflowed it is not sent.
  *
- * @returns the transport (supplied or freshly created) — retain it to broadcast
+ * @returns the registry (supplied or freshly created) — retain it to broadcast
  * @mutates options.app - registers the `GET path` upgrade route, its guards
  *   ahead of `upgradeWebSocket`
- * @mutates options.transport - per socket, registers, admits, and removes a
+ * @mutates options.registry - per socket, registers, admits, and removes a
  *   connection via `register_pending` / `admit` / `remove_connection`
- * @mutates options.connection_closer - adds the endpoint's transport, once the
+ * @mutates options.connection_closer - adds the endpoint's registry, once the
  *   mount has succeeded
  * @throws Error when `max_connections_per_account` or `outbound_queue_bytes`
- *   is passed alongside `transport`, when the cap is neither `null` nor a
+ *   is passed alongside `registry`, when the cap is neither `null` nor a
  *   positive integer, when the budget is not a positive integer, or when
  *   `actions` fails to compile (`compile_action_registry`)
  */
 export const register_action_ws = (options: RegisterActionWsOptions): RegisterActionWsResult => {
-	if (options.transport && options.max_connections_per_account !== undefined) {
+	if (options.registry && options.max_connections_per_account !== undefined) {
 		// a cap that silently did nothing would read as enforced
 		throw new Error(
-			`register_action_ws: max_connections_per_account configures the transport created for ${options.path}, ` +
-				'but a transport was supplied — set the cap on that BackendWebsocketTransport instead'
+			`register_action_ws: max_connections_per_account configures the registry created for ${options.path}, ` +
+				'but a registry was supplied — set the cap on that ConnectionRegistry instead'
 		);
 	}
-	if (options.transport && options.outbound_queue_bytes !== undefined) {
+	if (options.registry && options.outbound_queue_bytes !== undefined) {
 		// a budget that silently did nothing would read as enforced
 		throw new Error(
-			`register_action_ws: outbound_queue_bytes configures the transport created for ${options.path}, ` +
-				'but a transport was supplied — set the budget on that BackendWebsocketTransport instead'
+			`register_action_ws: outbound_queue_bytes configures the registry created for ${options.path}, ` +
+				'but a registry was supplied — set the budget on that ConnectionRegistry instead'
 		);
 	}
 	const {
@@ -673,9 +673,9 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 		required_roles = []
 	} = options;
 
-	const transport =
-		options.transport ??
-		new BackendWebsocketTransport({
+	const registry =
+		options.registry ??
+		new ConnectionRegistry({
 			max_connections_per_account: options.max_connections_per_account,
 			outbound_queue_bytes: options.outbound_queue_bytes,
 			log
@@ -747,9 +747,9 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 			// authorization phase and nothing else. From admission on,
 			// revocation enforcement lives outside this dispatcher: the
 			// revocation handlers close through `deps.connection_closer`
-			// (which holds this endpoint's transport — see the
+			// (which holds this endpoint's registry — see the
 			// `connection_closer` option), and the revocation guard on that
-			// closer repeats the close on the audit row. With the transport out
+			// closer repeats the close on the audit row. With the registry out
 			// of the closer, `session_revoke` / `token_revoke` are no-ops for
 			// connections that are already open.
 			const upgrade_context = require_request_context(c);
@@ -805,7 +805,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 			// into every in-flight handler's per-request controller via
 			// `AbortSignal.any`. Keeping both signals lets the client
 			// cancel-one-request-by-id (via the `cancel` notification) without
-			// tearing down the whole socket. Registered with the transport, which
+			// tearing down the whole socket. Registered with the registry, which
 			// aborts it when it closes the connection (revocation, cap eviction),
 			// and aborted here on every other end (`end_socket`, `onClose`) — at
 			// close time, not when the close handshake lands.
@@ -822,7 +822,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 			const pending_controllers: Map<JsonrpcRequestId, AbortController> = new Map();
 
 			// Identity is assembled at upgrade time so `on_socket_close` can
-			// read it — by the time the hook runs the transport record is gone,
+			// read it — by the time the hook runs the registry record is gone,
 			// removed in `onClose` or earlier by a revocation, a connection-cap
 			// eviction, or another server-side close.
 			const identity: ConnectionIdentity = {
@@ -849,7 +849,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 			// Whether the connection was ever admitted — gates `on_socket_close`,
 			// the counterpart of an `on_socket_open` a refused socket never ran.
 			let was_admitted = false;
-			// The code the transport closed the pending registration with, taken
+			// The code the registry closed the pending registration with, taken
 			// before `onClose` removes it: the client's answer to that close can
 			// arrive before the re-read returns.
 			let pending_close_code: number | null = null;
@@ -894,7 +894,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 			};
 
 			// The one place a socket's end is recorded, whoever ended it — the
-			// transport (revocation, cap eviction), `end_socket`, or `onClose` all
+			// registry (revocation, cap eviction), `end_socket`, or `onClose` all
 			// abort this controller.
 			socket_abort_controller.signal.addEventListener(
 				'abort',
@@ -910,7 +910,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 			// End the socket from the server side: unregister it and abort its
 			// signal *now* — so nothing more dispatches and in-flight handlers
 			// see `signal.aborted` while the close handshake is still in flight —
-			// then send the close frame. The transport does all three for a
+			// then send the close frame. The registry does all three for a
 			// connection it still holds, sending the close behind the waiting
 			// frames the socket has room for and under the close deadline; a socket
 			// whose connection is already gone has nothing waiting and is closed
@@ -918,7 +918,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 			const end_socket = (ws: WSContext, code: number, reason: string): void => {
 				const closed =
 					captured_connection_id !== undefined &&
-					transport.close_connection(captured_connection_id, code, reason);
+					registry.close_connection(captured_connection_id, code, reason);
 				socket_abort_controller.abort();
 				if (closed) return;
 				try {
@@ -930,9 +930,9 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 
 			// Refuse an upgrade at admission. A socket that already ended needs no
 			// close frame: a revocation closed its pending registration (the
-			// transport sent the 4001), the shutdown did (the 1001 — so a refusal
+			// registry sent the 4001), the shutdown did (the 1001 — so a refusal
 			// during shutdown never sends a revocation's or a failure's code), or
-			// the client went away. Its registration is gone too — the transport
+			// the client went away. Its registration is gone too — the registry
 			// removed it with its close, `onClose` with the client's — and it is
 			// not removed again here: `remove_connection` is for a socket that has
 			// closed, and would drop the close deadline of one that has not.
@@ -942,7 +942,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 
 			// Socket-scoped notification helper — routes to this socket only,
 			// matches the `ctx.notify` semantics exposed to per-message handlers.
-			// Through the transport's outbound queue, like every other frame: a
+			// Through the registry's outbound queue, like every other frame: a
 			// handler that notifies past the connection's budget closes it.
 			const notify_socket =
 				(connection_id: Uuid) =>
@@ -952,7 +952,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 							notify_method,
 							to_jsonrpc_params(notify_params)
 						);
-						transport.send_to(connection_id, JSON.stringify(notification));
+						registry.send_to(connection_id, JSON.stringify(notification));
 					} catch (error) {
 						log.error('notify send failed:', notify_method, error);
 					}
@@ -964,17 +964,17 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 			// refusing — the socket is then already closed.
 			const admit_upgrade = async (ws: WSContext): Promise<Uuid | null> => {
 				// Pending first, synchronously: from here every revocation finds it.
-				const connection_id = transport.register_pending(ws, identity, socket_abort_controller);
+				const connection_id = registry.register_pending(ws, identity, socket_abort_controller);
 				captured_connection_id = connection_id;
 
-				// Born closed — the server is shutting down, and the transport has
+				// Born closed — the server is shutting down, and the registry has
 				// already closed the socket with `WS_CLOSE_GOING_AWAY` — or ended
 				// otherwise before the re-read: nothing to re-read for. The removal
 				// is a no-op for a born-closed registration, which was never inserted.
 				if (socket_abort_controller.signal.aborted) {
-					transport.remove_connection(connection_id);
+					registry.remove_connection(connection_id);
 					log.info(
-						transport.is_closing()
+						registry.is_closing()
 							? 'ws upgrade admission: refused, the server is shutting down'
 							: 'ws upgrade admission: socket ended before the re-check',
 						connection_id,
@@ -996,7 +996,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 						// fail closed — never admitted unchecked. During shutdown the
 						// database may close under the re-read; that is the shutdown's
 						// refusal, not a failure.
-						if (transport.is_closing()) {
+						if (registry.is_closing()) {
 							log.info('ws upgrade admission: re-check ended by the shutdown', error);
 						} else {
 							log.error('ws upgrade admission: credential, actor, or role re-check failed', error);
@@ -1038,15 +1038,15 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 
 				// The cap's eviction happens here, after every gate and the re-read,
 				// so a refused upgrade never closes someone else's socket.
-				if (!transport.admit(connection_id)) {
-					// why the entry closed, from the code the transport closed it with
-					const code = pending_close_code ?? transport.take_pending_close_code(connection_id);
+				if (!registry.admit(connection_id)) {
+					// why the entry closed, from the code the registry closed it with
+					const code = pending_close_code ?? registry.take_pending_close_code(connection_id);
 					log.info(
 						code === WS_CLOSE_PERMISSION_REVOKED
 							? 'ws upgrade admission: closed by a permission revocation while pending'
 							: code === WS_CLOSE_SESSION_REVOKED
 								? 'ws upgrade admission: closed by a credential revocation while pending'
-								: code === WS_CLOSE_GOING_AWAY || transport.is_closing()
+								: code === WS_CLOSE_GOING_AWAY || registry.is_closing()
 									? 'ws upgrade admission: closed by the shutdown while pending'
 									: 'ws upgrade admission: ended while pending',
 						connection_id,
@@ -1116,7 +1116,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 						// an ended socket has no one to tell
 						if (phase_is('ended')) return;
 						send_error_response(
-							transport,
+							registry,
 							connection_id,
 							null,
 							jsonrpc_error_messages.internal_error()
@@ -1132,7 +1132,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 				// to back, the way the adapter would have delivered it.
 				phase = 'open';
 				for (const frame of queued_frames.splice(0)) {
-					if (transport.is_registered(connection_id)) {
+					if (registry.is_registered(connection_id)) {
 						handle_frame(frame.data, connection_id).then(frame.resolve, frame.reject);
 					} else {
 						frame.resolve();
@@ -1146,7 +1146,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 				const send_error = (
 					id: JsonrpcErrorResponse['id'],
 					error: JsonrpcErrorResponse['error']
-				): void => send_error_response(transport, connection_id, id, error);
+				): void => send_error_response(registry, connection_id, id, error);
 				let json;
 				try {
 					json = JSON.parse(String(data));
@@ -1176,7 +1176,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 				// nothing and is dropped, so the read loop survives a junk
 				// frame.
 				if (is_peer_response(json)) {
-					const matched = transport.resolve_peer_response(connection_id, json);
+					const matched = registry.resolve_peer_response(connection_id, json);
 					if (!matched) audit_unmatched_peer_response(log, connection_id, json.id);
 					return;
 				}
@@ -1326,7 +1326,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 				// socket's connection_id so a handler can initiate a request to
 				// the originating client and await the reply.
 				const request_client: RequestClient = (request_method, request_params, request_options) =>
-					transport.request_connection(
+					registry.request_connection(
 						connection_id,
 						request_method,
 						request_params,
@@ -1363,7 +1363,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 					// Refused when the connection is gone — closed while the handler
 					// ran, or closed by the handler's own notifications overflowing
 					// its outbound budget — so nothing follows a close frame.
-					transport.send_to(connection_id, frame);
+					registry.send_to(connection_id, frame);
 				} finally {
 					pending_controllers.delete(id);
 					// deferred first — see the ordering invariant above
@@ -1422,14 +1422,14 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 							queued_frames.push({ data: event.data, resolve, reject });
 						});
 					}
-					// The transport is the authority on whether the connection is
+					// The registry is the authority on whether the connection is
 					// still live. A close it made (revocation, cap eviction) ended the
 					// socket above; a connection it no longer holds though nothing
 					// closed the socket — a bare `remove_connection` — is ended here,
 					// rather than left reading every frame and answering none, where
 					// a chatty client would also keep the heartbeat from reaping it.
 					const connection_id = captured_connection_id;
-					if (connection_id === undefined || !transport.is_registered(connection_id)) {
+					if (connection_id === undefined || !registry.is_registered(connection_id)) {
 						log.warn('closing socket: its connection is no longer registered', connection_id);
 						end_socket(ws, WS_CLOSE_INTERNAL_ERROR, WS_CLOSE_CONNECTION_UNREGISTERED_REASON);
 						return;
@@ -1452,9 +1452,9 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 					// per-account cap still counts.
 					if (captured_connection_id) {
 						if (!was_admitted) {
-							pending_close_code = transport.take_pending_close_code(captured_connection_id);
+							pending_close_code = registry.take_pending_close_code(captured_connection_id);
 						}
-						transport.remove_connection(captured_connection_id);
+						registry.remove_connection(captured_connection_id);
 					}
 					if (on_socket_close && captured_connection_id && was_admitted) {
 						try {
@@ -1477,8 +1477,8 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 	);
 
 	// last, after everything that can throw, so a failed mount leaves no member
-	options.connection_closer?.add(transport);
-	return { transport };
+	options.connection_closer?.add(registry);
+	return { registry };
 };
 
 /**

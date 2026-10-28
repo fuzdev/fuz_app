@@ -149,7 +149,7 @@ export interface AuthCleanupDeps extends QueryDeps {
 	/**
 	 * Closes the connections of each session the sweep deletes. Pass the
 	 * closer the app's revocation handlers hold — `AppDeps.connection_closer`,
-	 * the `RealtimeCloser` over every transport it serves. Required: a sweep
+	 * the `RealtimeCloser` over every registry it serves. Required: a sweep
 	 * with nothing to close through would strand the swept sessions'
 	 * connections. `noop_connection_closer` is for a database no other
 	 * process holds connections on — a sweep run beside a live server from
@@ -215,7 +215,7 @@ export const cleanup_expired_sessions = async (deps: AuthCleanupDeps): Promise<n
 				session_hash
 			});
 		} catch (error) {
-			// keep going — one transport's failure must not leave another
+			// keep going — one registry's failure must not leave another
 			// expired session's connections open
 			deps.log.error("auth cleanup failed to close an expired session's connections:", error);
 		}

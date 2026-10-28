@@ -162,7 +162,7 @@ import { create_app_server } from '@fuzdev/fuz_app/server/app_server.ts';
 import { validate_server_env } from '@fuzdev/fuz_app/server/env.ts';
 import { create_audit_emitter } from '@fuzdev/fuz_app/auth/audit_emitter.ts';
 import { create_deno_runtime } from '@fuzdev/fuz_app/runtime/deno.ts';
-import { BackendWebsocketTransport } from '@fuzdev/fuz_app/actions/transports_ws_backend.ts';
+import { ConnectionRegistry } from '@fuzdev/fuz_app/actions/connection_registry.ts';
 
 const runtime = create_deno_runtime([]);
 
@@ -206,11 +206,11 @@ const backend = await create_app_backend({
 
 // 3. Assemble Hono app
 //
-// One WebSocket transport, created up front so the RPC actions can send
+// One WebSocket connection registry, created up front so the RPC actions can send
 // role-grant-offer notifications through it; the WS endpoint registers its
-// connections on it via `WsEndpointSpec.transport` (see the WebSocket example
+// connections on it via `WsEndpointSpec.registry` (see the WebSocket example
 // below). Omit both when the app has no WebSocket endpoint.
-const ws_transport = new BackendWebsocketTransport();
+const connection_registry = new ConnectionRegistry();
 const { app, surface_spec, bootstrap_status, close } = await create_app_server({
 	backend,
 	session_options: create_session_config('my_session'),
@@ -253,7 +253,7 @@ const { app, surface_spec, bootstrap_status, close } = await create_app_server({
 			actions: [
 				...my_app_rpc_actions(ctx.deps),
 				// `notification_sender` is an optional dep, for role-grant-offer WS fan-out
-				...create_standard_rpc_actions({ ...ctx.deps, notification_sender: ws_transport })
+				...create_standard_rpc_actions({ ...ctx.deps, notification_sender: connection_registry })
 			]
 		}
 	],
@@ -271,7 +271,7 @@ construction.
 To expose the same surface over WebSocket as well — so reactive frontends
 can call `account_*` / `admin_*` over the live connection and pick up
 revocation events without a polling delay — spread `protocol_actions`
-plus `create_standard_rpc_actions({...ctx.deps, notification_sender: ws_transport})`
+plus `create_standard_rpc_actions({...ctx.deps, notification_sender: connection_registry})`
 into `create_app_server`'s
 `ws_endpoints` factory and supply `create_upgrade_websocket`, which returns
 the runtime adapter's `upgradeWebSocket` helper. On Deno and Bun the helper
@@ -287,17 +287,17 @@ const { app, ws_endpoints } = await create_app_server({
 	ws_endpoints: (ctx) => [
 		{
 			path: '/api/ws',
-			transport: ws_transport, // the one the RPC actions' notification_sender sends through
+			registry: connection_registry, // the one the RPC actions' notification_sender sends through
 			actions: [
 				...protocol_actions,
-				...create_standard_rpc_actions({ ...ctx.deps, notification_sender: ws_transport }),
+				...create_standard_rpc_actions({ ...ctx.deps, notification_sender: connection_registry }),
 				...my_app_ws_actions(ctx.deps)
 			]
 		}
 	]
 });
 
-// Retain the transport for broadcasts / fan-out:
+// Retain the registry for broadcasts / fan-out:
 ws_endpoints['/api/ws'].send_to_account(account_id, notification);
 ```
 
@@ -332,7 +332,7 @@ server's `allowed_origins` unless the spec sets a narrower list, and
 registers ahead of `post_route_middleware` and `static_serving`. Its path,
 like an RPC endpoint's, must sit inside `AUTH_MIDDLEWARE_PATH` (`/api/*`, which
 also matches `/api` itself — where the auth middleware runs) — assembly throws
-otherwise, and so does `create_test_app_surface_spec`. Every mounted transport is added to `deps.connection_closer`, so
+otherwise, and so does `create_test_app_surface_spec`. Every mounted connection registry is added to `deps.connection_closer`, so
 a revocation handler closes its sockets once the revocation commits — a
 session or token revoke, a password change, a logout, an account delete, a
 cap eviction — without consumer wiring, and the one revocation guard
@@ -341,7 +341,7 @@ repeats the close when the audit row is announced. Omit `actions` to serve the
 sole RPC endpoint's actions (`to_ws_actions`: the protocol actions first, then
 the RPC list) — one action set on both transports. Pass `required_roles:
 [ROLE_ADMIN]` for an admin-only WS gate at upgrade time. `AppServer.ws_endpoints`
-returns the path-keyed `BackendWebsocketTransport` map for broadcast.
+returns the path-keyed `ConnectionRegistry` map for broadcast.
 
 `create_app_server` handles: rate limiters -> audit SSE -> proxy middleware ->
 auth middleware -> bootstrap status -> consumer route specs -> factory-managed
@@ -431,19 +431,19 @@ await server.close();
 It stops the auth cleanup schedule when one runs (waiting for a pass in
 progress), closes every live connection on `deps.connection_closer` — each
 WebSocket with `WS_CLOSE_GOING_AWAY` (1001, so clients reconnect rather than
-treat their session as revoked), each audit stream, including transports passed
-through `WsEndpointSpec.transport` or added by hand (a close that throws is
+treat their session as revoked), each audit stream, including registries passed
+through `WsEndpointSpec.registry` or added by hand (a close that throws is
 logged and the shutdown goes on) — then releases what assembly acquired and
-closes the database. The close-all leaves each transport and the audit stream
+closes the database. The close-all leaves each connection registry and the audit stream
 registry closing: a WebSocket upgrade or stream still in flight when it runs —
 one the listener accepted before it stopped — is refused rather than outliving
 the server, a WebSocket closed with `WS_CLOSE_GOING_AWAY`, a stream ended after
 its connect comment; one that registers after it skips its credential re-read,
-so it never reads from a database that is closing. A closed transport hosts
-nothing more, so one passed through `WsEndpointSpec.transport` cannot be reused
+so it never reads from a database that is closing. A closed connection registry hosts
+nothing more, so one passed through `WsEndpointSpec.registry` cannot be reused
 by another server. The releases remove the audit listeners and closer members
 `create_app_server` added to the backend's `deps.audit` and
-`deps.connection_closer` (each its own addition — a transport you also added
+`deps.connection_closer` (each its own addition — a connection registry you also added
 stays a member) and dispose the rate limiters it built; a limiter you passed in
 is yours to dispose. The backend's emitter and closer end as they were before
 assembly, so a failed assembly can be retried on the same backend, and a backend
@@ -533,7 +533,7 @@ await temp_sweep.stop();
 
 ```typescript
 import { create_sse_response, type SseNotification } from '@fuzdev/fuz_app/realtime/sse.ts';
-import { SubscriberRegistry } from '@fuzdev/fuz_app/realtime/subscriber_registry.ts';
+import { SseRegistry } from '@fuzdev/fuz_app/realtime/sse_registry.ts';
 import {
 	get_resolved_auth,
 	revalidate_resolved_auth
@@ -543,7 +543,7 @@ import {
 	require_request_context
 } from '@fuzdev/fuz_app/auth/request_context.ts';
 
-const registry = new SubscriberRegistry<SseNotification>();
+const registry = new SseRegistry<SseNotification>();
 
 // SSE route — clients subscribe
 const subscribe_spec: RouteSpec = {
@@ -676,7 +676,7 @@ attacker-submitted identifiers).
 The audit log SSE route subscribes with `scope = session_hash` and
 `groups = [account_id]`, so `session_revoke` closes only the affected tab
 while the coarser events close every stream for the account. For lower-level
-control, adapt a `SubscriberRegistry` with `create_sse_connection_closer()` and
+control, adapt an `SseRegistry` with `create_sse_connection_closer()` and
 add it to the closer a `create_revocation_guard()` listens through.
 
 `on_audit_event` is the first-listener slot on `CreateAuditEmitterOptions`
@@ -928,7 +928,7 @@ import { register_action_ws } from '@fuzdev/fuz_app/actions/register_action_ws.t
 import { protocol_actions } from '@fuzdev/fuz_app/actions/protocol.ts';
 import { ROLE_ADMIN } from '@fuzdev/fuz_app/auth/role_schema.ts';
 
-const { transport } = register_action_ws({
+const { registry } = register_action_ws({
 	path: '/api/ws',
 	app,
 	upgradeWebSocket, // from the runtime adapter (`@hono/deno`, or `createNodeWebSocket({app})` on Node)
@@ -953,9 +953,9 @@ validated in DEV + production; output validated DEV-only, logging an error
 on mismatch without throwing. See ./architecture.md §DEV-only Output
 Validation.
 
-`connection_closer` is required: the endpoint adds its transport to it, and every revocation handler closes through it after its transaction commits (./security.md §Closing on Revocation), as does the revocation guard. Left out of the closer, a transport's sockets would outlive a revoked credential. The add is the mount's last step, so a mount that throws adds nothing, and it is permanent — its remover is not returned. Pass `null` for a transport no revocation has to reach, or to add the transport yourself and hold the remover `RealtimeCloser.add` returns.
+`connection_closer` is required: the endpoint adds its registry to it, and every revocation handler closes through it after its transaction commits (./security.md §Closing on Revocation), as does the revocation guard. Left out of the closer, a registry's sockets would outlive a revoked credential. The add is the mount's last step, so a mount that throws adds nothing, and it is permanent — its remover is not returned. Pass `null` for a registry no revocation has to reach, or to add the registry yourself and hold the remover `RealtimeCloser.add` returns.
 
-Mounting by hand outside `create_app_server`, register the revocation guard yourself, over the closer holding your transports, to repeat those closes from the audit chain:
+Mounting by hand outside `create_app_server`, register the revocation guard yourself, over the closer holding your registries, to repeat those closes from the audit chain:
 
 ```typescript
 import {
@@ -994,7 +994,7 @@ for the full rationale.
 
 A socket is admitted only after its credential is re-read once the handshake completes: frames sent meanwhile wait and dispatch in order, a credential revoked or an acting actor soft-deleted mid-upgrade closes with `WS_CLOSE_SESSION_REVOKED`, a role in `required_roles` revoked mid-upgrade with `WS_CLOSE_PERMISSION_REVOKED`, and nothing the server pushes reaches the socket until then (./security.md §Connection Admission). On the client, `FrontendWebsocketClient` stays closed after a `WS_CLOSE_PERMISSION_REVOKED` close until `connect()` is called — a reconnect would be refused at the role gate — without setting `revoked` or `superseded`, and rejects its pending and queued requests with `forbidden`; `last_close_code` says why.
 
-An account holds at most `DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT` (50) connections on a transport. One more is always admitted, and the account's oldest is closed with `WS_CLOSE_CONNECTION_LIMIT` to make room. Pass `max_connections_per_account` to change the cap (`null` disables it) — on `register_action_ws` / `WsEndpointSpec` for the transport the mount creates, or on your own `new BackendWebsocketTransport({max_connections_per_account})`; passing both the option and a `transport` throws. On the client, `FrontendWebsocketClient` treats that close as closed-until-the-user-acts: it doesn't reconnect (that would close a newer socket in turn), it isn't `revoked`, and `superseded` turns `true` until the next `connect()`:
+An account holds at most `DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT` (50) connections on a connection registry. One more is always admitted, and the account's oldest is closed with `WS_CLOSE_CONNECTION_LIMIT` to make room. Pass `max_connections_per_account` to change the cap (`null` disables it) — on `register_action_ws` / `WsEndpointSpec` for the registry the mount creates, or on your own `new ConnectionRegistry({max_connections_per_account})`; passing both the option and a `registry` throws. On the client, `FrontendWebsocketClient` treats that close as closed-until-the-user-acts: it doesn't reconnect (that would close a newer socket in turn), it isn't `revoked`, and `superseded` turns `true` until the next `connect()`:
 
 ```svelte
 {#if socket.superseded}
@@ -1013,15 +1013,15 @@ What the server has waiting to be written to one socket is held to a byte budget
 
 ### Backend-initiated fan-out
 
-`BackendWebsocketTransport` exposes two primitives for pushing notifications from handlers or audit-event callbacks. `broadcast_filtered(message, predicate)` fans out to every admitted connection whose `ConnectionIdentity` satisfies an arbitrary predicate — reach for it when the ACL is anything other than a single account (e.g. a subscription ACL hook that fans an event out to every account subscribed to the resource it concerns). `send_to_account(account_id, message)` is the targeted single-account wrapper: it delivers to every admitted socket bound to one account (session, bearer, and daemon-token alike, mirroring an `account` close target) and is the right primitive when the delivery target is a single known account. Both return the number of sockets the message was written to, but that's bookkeeping, not a delivery receipt — `0` means the recipient has no live sockets, and a non-zero count only says `ws.send` didn't throw. Flows that need durable delivery must persist the event and hydrate from storage on reconnection. A connection still pending admission receives nothing — see ./security.md §Connection Admission.
+`ConnectionRegistry` exposes two primitives for pushing notifications from handlers or audit-event callbacks. `broadcast_filtered(message, predicate)` fans out to every admitted connection whose `ConnectionIdentity` satisfies an arbitrary predicate — reach for it when the ACL is anything other than a single account (e.g. a subscription ACL hook that fans an event out to every account subscribed to the resource it concerns). `send_to_account(account_id, message)` is the targeted single-account wrapper: it delivers to every admitted socket bound to one account (session, bearer, and daemon-token alike, mirroring an `account` close target) and is the right primitive when the delivery target is a single known account. Both return the number of sockets the message was written to, but that's bookkeeping, not a delivery receipt — `0` means the recipient has no live sockets, and a non-zero count only says `ws.send` didn't throw. Flows that need durable delivery must persist the event and hydrate from storage on reconnection. A connection still pending admission receives nothing — see ./security.md §Connection Admission.
 
-Handlers consume `send_to_account` through the narrow `NotificationSender` interface (`@fuzdev/fuz_app/auth/role_grant_offer_notifications.ts`). `create_role_grant_offer_actions` accepts an optional `notification_sender` on its `deps` — pass the `BackendWebsocketTransport` instance directly (it satisfies the interface structurally). Because admin role_grant grant/revoke now run through the `role_grant_offer_create` and `role_grant_revoke` RPC actions, wiring the sender on the action factory covers the full offer lifecycle _and_ admin revoke in one place. When wired, offer lifecycle transitions (create/retract/accept/decline) and role_grant revoke fan out `role_grant_offer_received` / `_retracted` / `_accepted` / `_declined` / `_supersede` / `role_grant_revoke` via the shared `emit_after_commit(ctx, fn)` helper from `@fuzdev/fuz_app/http/pending_effects.ts` — sends fire strictly post-commit **and are discarded if the handler's transaction rolls back** (see ./architecture.md §Fire-and-Forget Pending Effects); exceptions are caught + logged so one failed send can't corrupt the already-committed response or starve sibling sends in the same batch. `role_grant_offer_notification_specs` is the matching `EventSpec[]` for surface generation; append it to `event_specs` on `create_app_server` so the attack surface reflects the notifications and DEV-mode broadcast validation catches payload drift on SSE broadcasts (WS fan-out via `send_to_account` is not runtime-validated — the Zod `input` schemas on the action specs are contracts, not enforced at send time).
+Handlers consume `send_to_account` through the narrow `NotificationSender` interface (`@fuzdev/fuz_app/auth/role_grant_offer_notifications.ts`). `create_role_grant_offer_actions` accepts an optional `notification_sender` on its `deps` — pass the `ConnectionRegistry` instance directly (it satisfies the interface structurally). Because admin role_grant grant/revoke now run through the `role_grant_offer_create` and `role_grant_revoke` RPC actions, wiring the sender on the action factory covers the full offer lifecycle _and_ admin revoke in one place. When wired, offer lifecycle transitions (create/retract/accept/decline) and role_grant revoke fan out `role_grant_offer_received` / `_retracted` / `_accepted` / `_declined` / `_supersede` / `role_grant_revoke` via the shared `emit_after_commit(ctx, fn)` helper from `@fuzdev/fuz_app/http/pending_effects.ts` — sends fire strictly post-commit **and are discarded if the handler's transaction rolls back** (see ./architecture.md §Fire-and-Forget Pending Effects); exceptions are caught + logged so one failed send can't corrupt the already-committed response or starve sibling sends in the same batch. `role_grant_offer_notification_specs` is the matching `EventSpec[]` for surface generation; append it to `event_specs` on `create_app_server` so the attack surface reflects the notifications and DEV-mode broadcast validation catches payload drift on SSE broadcasts (WS fan-out via `send_to_account` is not runtime-validated — the Zod `input` schemas on the action specs are contracts, not enforced at send time).
 
 Payload shapes are flat and size-bounded: offer-lifecycle notifications carry `{offer: RoleGrantOfferJson}` (decline reason rides on `offer.decline_reason`, capped at `ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX` = 500 chars; supersede adds `reason: 'sibling_accepted'|'role_grant_revoked'|'scope_destroyed'` + `cause_id`). `role_grant_revoke` carries `{role_grant_id, role, scope_id, reason?}` with `reason` capped at `ROLE_GRANT_REVOKED_REASON_LENGTH_MAX` = 500 chars. The revokee/grantor/recipient account id travels via the send target, never in the payload.
 
 ### Server→client requests
 
-Beyond fire-and-forget fan-out, a WebSocket handler can **initiate a request to the originating client and await its typed reply** via `ctx.request_client(method, params, {timeout_ms?})` — the server→client direction of ActionPeer. It's present only on WS handlers (`undefined` on HTTP RPC, where there's no return socket — a handler depending on it should refuse, as `peer/ping` does with `peer_no_transport`). It returns a `PeerRequestOutcome` (`{ok: true, value}` | `{ok: false, error}` where `error.kind` is `timeout` / `connection_gone` / `too_many_in_flight` / `client_error` — the last forwarding the client's JSON-RPC envelope verbatim) and never throws. Replies are correlated per-connection (a reply on the wrong socket resolves nothing), bounded by a per-connection in-flight cap, and time out after `DEFAULT_PEER_REQUEST_TIMEOUT` (10s) unless a shorter `timeout_ms` is given. The shipped `peer/ping` protocol action is the reference consumer; for the targeted single-socket primitive `BackendWebsocketTransport.request_connection(connection_id, ...)` and the `PendingPeerRequests` correlation registry see `actions/CLAUDE.md`. A connected client _answers_ an inbound server-initiated request through a responder: `FrontendWebsocketTransport` ships a built-in one for `peer/ping` (it echoes a `PingResponse` with zero consumer wiring) and routes any other inbound request through `peer.receive`, sending the response back over the socket. The cross-process test transport's `create_ws_transport({on_request})` is the test-side equivalent.
+Beyond fire-and-forget fan-out, a WebSocket handler can **initiate a request to the originating client and await its typed reply** via `ctx.request_client(method, params, {timeout_ms?})` — the server→client direction of ActionPeer. It's present only on WS handlers (`undefined` on HTTP RPC, where there's no return socket — a handler depending on it should refuse, as `peer/ping` does with `peer_no_transport`). It returns a `PeerRequestOutcome` (`{ok: true, value}` | `{ok: false, error}` where `error.kind` is `timeout` / `connection_gone` / `too_many_in_flight` / `client_error` — the last forwarding the client's JSON-RPC envelope verbatim) and never throws. Replies are correlated per-connection (a reply on the wrong socket resolves nothing), bounded by a per-connection in-flight cap, and time out after `DEFAULT_PEER_REQUEST_TIMEOUT` (10s) unless a shorter `timeout_ms` is given. The shipped `peer/ping` protocol action is the reference consumer; for the targeted single-socket primitive `ConnectionRegistry.request_connection(connection_id, ...)` and the `PendingPeerRequests` correlation registry see `actions/CLAUDE.md`. A connected client _answers_ an inbound server-initiated request through a responder: `FrontendWebsocketTransport` ships a built-in one for `peer/ping` (it echoes a `PingResponse` with zero consumer wiring) and routes any other inbound request through `peer.receive`, sending the response back over the socket. The cross-process test transport's `create_ws_transport({on_request})` is the test-side equivalent.
 
 ### Cooperating with `ctx.signal`
 
@@ -1264,7 +1264,7 @@ The typed Proxy method signature (generated by
 `generate_actions_api_method_signature`) threads `queue` alongside
 `signal` / `transport_name` in `RpcClientCallOptions`. The flag bottoms
 out in `FrontendWebsocketTransport`; `FrontendHttpTransport` and the
-backend transport ignore it because their underlying sends don't have
+backend connection registry ignore it because their underlying sends don't have
 a comparable queue semantic.
 
 `remote_notification` dispatch ignores `queue` and always fails fast

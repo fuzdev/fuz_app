@@ -1,12 +1,12 @@
 /**
  * Tests for the `outbound_queue_bytes` option of a `ws_endpoints` entry: the
- * auto-created transport gets the default budget, an override reaches it, and
+ * auto-created registry gets the default budget, an override reaches it, and
  * a budget that could never hold a frame fails assembly.
  *
  * Assembles over a stub backend — no database — and drives the mounted
- * transport directly. The budget's own rules are in
+ * registry directly. The budget's own rules are in
  * `actions/ws_outbound_writer.test.ts` and
- * `actions/transports_ws_backend.outbound.test.ts`.
+ * `actions/connection_registry.outbound.test.ts`.
  *
  * @module
  */
@@ -29,9 +29,9 @@ import { create_recording_audit_emitter } from '#lib/testing/audit_drift_guard.t
 import { create_fake_ws, create_stub_upgrade } from '#lib/testing/ws_round_trip.ts';
 import { protocol_actions } from '#lib/actions/protocol.ts';
 import {
-	BackendWebsocketTransport,
+	ConnectionRegistry,
 	DEFAULT_WS_OUTBOUND_QUEUE_BYTES
-} from '#lib/actions/transports_ws_backend.ts';
+} from '#lib/actions/connection_registry.ts';
 import { WS_CLOSE_OUTBOUND_OVERFLOW } from '#lib/actions/transports.ts';
 import type { WsEndpointSpec } from '#lib/actions/ws_endpoint_spec.ts';
 import { OUTBOUND_FRAME_OVERHEAD_BYTES } from '#lib/realtime/outbound_budget.ts';
@@ -65,32 +65,32 @@ const assemble = async (endpoint: Partial<WsEndpointSpec>): Promise<AppServer> =
 };
 
 /**
- * How many `bytes`-long frames a fresh connection on `transport` takes in one
+ * How many `bytes`-long frames a fresh connection on `registry` takes in one
  * synchronous run before one closes it for an overflow.
  */
-const frames_until_overflow = (transport: BackendWebsocketTransport, bytes: number): number => {
+const frames_until_overflow = (registry: ConnectionRegistry, bytes: number): number => {
 	const fake = create_fake_ws();
-	const id = transport.add_connection(fake.ws, create_test_identity({ account_id: create_uuid() }));
+	const id = registry.add_connection(fake.ws, create_test_identity({ account_id: create_uuid() }));
 	const frame = 'x'.repeat(bytes);
 	let accepted = 0;
-	while (transport.send_to(id, frame)) accepted++;
+	while (registry.send_to(id, frame)) accepted++;
 	assert.strictEqual(fake.closes[0]?.code, WS_CLOSE_OUTBOUND_OVERFLOW);
 	return accepted;
 };
 
 describe('WsEndpointSpec.outbound_queue_bytes', () => {
-	test('the auto-created transport applies the default budget', async () => {
+	test('the auto-created registry applies the default budget', async () => {
 		const server = await assemble({});
-		const transport = server.ws_endpoints['/api/ws']!;
+		const registry = server.ws_endpoints['/api/ws']!;
 		const frame_bytes = 1024 * 1024 - OUTBOUND_FRAME_OVERHEAD_BYTES;
 		// one frame straight through, then the default budget's worth waiting
 		assert.strictEqual(
-			frames_until_overflow(transport, frame_bytes),
+			frames_until_overflow(registry, frame_bytes),
 			1 + DEFAULT_WS_OUTBOUND_QUEUE_BYTES / (1024 * 1024)
 		);
 	});
 
-	test('an override reaches the transport the mount creates', async () => {
+	test('an override reaches the registry the mount creates', async () => {
 		const server = await assemble({
 			outbound_queue_bytes: 3 * (10 + OUTBOUND_FRAME_OVERHEAD_BYTES)
 		});
@@ -107,14 +107,14 @@ describe('WsEndpointSpec.outbound_queue_bytes', () => {
 		}
 	});
 
-	test('a budget beside a supplied transport fails assembly', async () => {
+	test('a budget beside a supplied registry fails assembly', async () => {
 		await assert_rejects(
 			() =>
 				assemble({
-					transport: new BackendWebsocketTransport({ log }),
+					registry: new ConnectionRegistry({ log }),
 					outbound_queue_bytes: 1024
 				}),
-			/outbound_queue_bytes configures the transport created for \/api\/ws/
+			/outbound_queue_bytes configures the registry created for \/api\/ws/
 		);
 	});
 });

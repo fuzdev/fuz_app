@@ -1,5 +1,5 @@
 /**
- * Backend WebSocket transport — manages server-side WebSocket connections
+ * Backend WebSocket connection registry — manages server-side WebSocket connections
  * with session tracking, revocation support, a per-account connection cap,
  * and two-phase registration.
  *
@@ -14,15 +14,15 @@
  *
  * Registration is split to close it:
  *
- * 1. `BackendWebsocketTransport.register_pending` inserts the entry
+ * 1. `ConnectionRegistry.register_pending` inserts the entry
  *    **un-admitted**. It is closeable from that instant — `close_connections`
  *    matches pending entries deliberately — and is otherwise inert: it evicts
  *    nothing, the cap does not count it, no broadcast / `send_to_account` /
  *    `request_connection` reaches it, and the count accessors and
- *    `is_registered` do not see it (`get_pending_connection_count` does).
+ *    `is_registered` do not see it (`pending_connection_count` does).
  * 2. The caller re-checks the credential against the database
  *    (`revalidate_resolved_auth` in `auth/resolved_auth.ts`).
- * 3. `BackendWebsocketTransport.admit` flips the entry to admitted — or
+ * 3. `ConnectionRegistry.admit` flips the entry to admitted — or
  *    refuses when a revocation closed it in the meantime, evicting nothing.
  *    The cap's eviction happens here, so a connection that is never admitted
  *    never closes a live one, and any number of pending registrations on one
@@ -75,7 +75,7 @@
  *
  * A socket that holds unwritten bytes past `WS_WRITE_STALL_TIMEOUT` is dropped
  * with no close frame, and removed the same way, with one `warn` line. Every
- * other close the transport makes (a revocation, the cap, the shutdown,
+ * other close the registry makes (a revocation, the cap, the shutdown,
  * `close_connection`) hands the frames still waiting to the socket ahead of
  * its close frame while the socket's buffer is below
  * `WS_WRITE_HIGH_WATER_BYTES`, discards the rest, and cuts the socket if the
@@ -83,14 +83,14 @@
  * to an otherwise idle connection just before such a close reaches the client;
  * one queued behind a backed-up socket does not.
  *
- * A connection the transport closed or dropped is out of its map, so the
+ * A connection the registry closed or dropped is out of its map, so the
  * per-account cap does not count it while its socket is still closing. What
  * the runtime holds for such a socket is bounded by the writer
  * (`actions/ws_outbound_writer.ts`, "Closing" and "Runtimes").
  *
  * The twin of the Rust `fuz_realtime` outbound queue — same budget, charge,
  * close code and deadlines. Where they differ: the Rust spine discards every
- * frame queued before any close, and queues every frame, where this transport
+ * frame queued before any close, and queues every frame, where this registry
  * writes the first frame of a run straight through and, at a close that is
  * not an overflow, the waiting frames its socket has room for.
  *
@@ -98,7 +98,7 @@
  *
  * `close_all_connections` — the close `AppServer.close` runs — closes every
  * connection, pending or admitted, with `WS_CLOSE_GOING_AWAY`, and leaves the
- * transport **closing**: from then on every registration is born closed. A
+ * registry **closing**: from then on every registration is born closed. A
  * `register_pending` or `add_connection` inserts nothing — it aborts the
  * caller's controller and closes the socket with `WS_CLOSE_GOING_AWAY` at once
  * — so an upgrade still in flight when the server shuts down is closed rather
@@ -107,7 +107,7 @@
  * in the same synchronous step that closes the live connections, so an `admit`
  * that finds its entry gone and reads `is_closing()` sees the shutdown — a
  * shutdown is never read as a revocation (a revocation the shutdown overtook
- * reads as the shutdown). Closing is permanent: a closed transport hosts no
+ * reads as the shutdown). Closing is permanent: a closed registry hosts no
  * further connections.
  *
  * @module
@@ -152,8 +152,6 @@ import {
 import type { OutboundOverflow } from '../realtime/outbound_budget.ts';
 import type { ConnectionCloseTarget } from './connection_closer.ts';
 
-// TODO support a SSE backend transport
-
 /**
  * Auth identity attached to a single WebSocket connection.
  *
@@ -163,7 +161,7 @@ import type { ConnectionCloseTarget } from './connection_closer.ts';
  * an `account` close target). `required_roles`
  * is what the connection's endpoint gated the upgrade on, kept per
  * registration because endpoints with different gates can share one
- * transport.
+ * registry.
  */
 export interface ConnectionIdentity {
 	/** Blake3 session token hash, or null for non-session credentials. */
@@ -181,7 +179,7 @@ export interface ConnectionIdentity {
 
 /**
  * Whether the connection `identity` belongs to is one `target` names — the
- * predicate `BackendWebsocketTransport.close_connections` runs per connection.
+ * predicate `ConnectionRegistry.close_connections` runs per connection.
  * Twin of the Rust spine's `ConnectionIdentity::matches`. The SSE closer
  * (`create_sse_connection_closer`) does not run it: it closes by the ids its
  * registry holds, with one gating role for the whole registry.
@@ -218,8 +216,8 @@ export const connection_identity_matches = (
 
 /**
  * Default per-account WebSocket connection cap, applied by
- * `BackendWebsocketTransport` unless overridden via
- * `BackendWebsocketTransportOptions.max_connections_per_account`.
+ * `ConnectionRegistry` unless overridden via
+ * `ConnectionRegistryOptions.max_connections_per_account`.
  *
  * Matches the account-wide ceiling the audit SSE cap implies (the default
  * session cap, `DEFAULT_MAX_SESSIONS`, times `AUDIT_LOG_SSE_MAX_PER_SCOPE`
@@ -231,8 +229,8 @@ export const DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT = 50;
 
 /**
  * Default byte budget of the frames waiting to be written to one connection,
- * applied by `BackendWebsocketTransport` unless overridden via
- * `BackendWebsocketTransportOptions.outbound_queue_bytes`.
+ * applied by `ConnectionRegistry` unless overridden via
+ * `ConnectionRegistryOptions.outbound_queue_bytes`.
  *
  * 4 MiB — four messages at `DEFAULT_WS_MAX_MESSAGE_BYTES` as it stands, and a
  * value of its own: it does not move with the inbound message cap. A consumer
@@ -242,8 +240,8 @@ export const DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT = 50;
  */
 export const DEFAULT_WS_OUTBOUND_QUEUE_BYTES = 4 * 1024 * 1024;
 
-/** Options for `BackendWebsocketTransport`. */
-export interface BackendWebsocketTransportOptions {
+/** Options for `ConnectionRegistry`. */
+export interface ConnectionRegistryOptions {
 	/**
 	 * Max concurrent connections per `account_id`, across every credential
 	 * type (session, API token, daemon token — none exempt). The policy is
@@ -254,7 +252,7 @@ export interface BackendWebsocketTransportOptions {
 	 * credential fill the slots ahead of the real user — revocation is the fix
 	 * for a stolen credential, and evict-oldest never stands in its way.
 	 *
-	 * The cap is per transport: endpoints sharing one transport share one
+	 * The cap is per registry: endpoints sharing one registry share one
 	 * count per account. `null` disables it.
 	 *
 	 * @default DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT
@@ -279,7 +277,7 @@ export interface BackendWebsocketTransportOptions {
 	 * at info — the account, how many connections were closed, and the cap —
 	 * so an operator can see a client that keeps meeting it. Unset falls back
 	 * to a `[ws]` logger; `null` silences it. `register_action_ws` passes its
-	 * own logger to the transport it creates.
+	 * own logger to the registry it creates.
 	 */
 	log?: Logger | null;
 }
@@ -296,7 +294,7 @@ interface ConnectionEntry {
 	admitted: boolean;
 	/**
 	 * The socket-scoped controller the caller registered, aborted when the
-	 * transport closes the connection (revocation or cap eviction) so in-flight
+	 * registry closes the connection (revocation or cap eviction) so in-flight
 	 * handlers see `signal.aborted` at once rather than when the close handshake
 	 * lands.
 	 */
@@ -305,7 +303,7 @@ interface ConnectionEntry {
 	writer: WsOutboundWriter;
 }
 
-export class BackendWebsocketTransport {
+export class ConnectionRegistry {
 	// Per-account connection cap; `null` = uncapped.
 	readonly #max_connections_per_account: number | null;
 
@@ -320,12 +318,12 @@ export class BackendWebsocketTransport {
 	// field to `ConnectionIdentity`, not a parallel map.
 	#connections: Map<Uuid, ConnectionEntry> = new Map();
 
-	// Writers of connections the transport has closed, until their socket's
+	// Writers of connections the registry has closed, until their socket's
 	// close arrives (`remove_connection`) or the close deadline passes — so the
 	// deadline timer is cleared when the socket goes.
 	#closing_writers: Map<Uuid, WsOutboundWriter> = new Map();
 
-	// The close code each registration the transport closed while it was still
+	// The close code each registration the registry closed while it was still
 	// pending got, until `take_pending_close_code` or `remove_connection` drops
 	// it — so a refused admission can say why it was refused.
 	#pending_close_codes: Map<Uuid, number> = new Map();
@@ -334,7 +332,7 @@ export class BackendWebsocketTransport {
 	// registration is born closed (module doc, "Shutdown")
 	#closing = false;
 
-	// Server→client request correlation (ActionPeer). The transport owns the
+	// Server→client request correlation (ActionPeer). The registry owns the
 	// sockets + the send; the registry owns the pending map, id allocation,
 	// deadlines, and the per-connection in-flight cap (see `peer_request.ts`).
 	#pending: PendingPeerRequests = new PendingPeerRequests();
@@ -343,14 +341,14 @@ export class BackendWebsocketTransport {
 	 * @throws Error when `max_connections_per_account` is neither `null` nor a
 	 *   positive integer, or `outbound_queue_bytes` is not a positive integer
 	 */
-	constructor(options?: BackendWebsocketTransportOptions) {
+	constructor(options?: ConnectionRegistryOptions) {
 		const max =
 			options?.max_connections_per_account === undefined
 				? DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT
 				: options.max_connections_per_account;
 		if (max !== null && (!Number.isInteger(max) || max < 1)) {
 			throw new Error(
-				`BackendWebsocketTransport: max_connections_per_account must be a positive integer or null, got ${max}`
+				`ConnectionRegistry: max_connections_per_account must be a positive integer or null, got ${max}`
 			);
 		}
 		this.#max_connections_per_account = max;
@@ -359,7 +357,7 @@ export class BackendWebsocketTransport {
 			// zero would close a connection for the first frame queued behind one
 			// still waiting
 			throw new Error(
-				`BackendWebsocketTransport: outbound_queue_bytes must be a positive integer, got ${outbound_queue_bytes}`
+				`ConnectionRegistry: outbound_queue_bytes must be a positive integer, got ${outbound_queue_bytes}`
 			);
 		}
 		this.#outbound_queue_bytes = outbound_queue_bytes;
@@ -381,7 +379,7 @@ export class BackendWebsocketTransport {
 	 * `close_connection`, and `remove_connection` drops it once its socket has
 	 * closed.
 	 *
-	 * Once the transport is closing (`close_all_connections`) the registration is
+	 * Once the registry is closing (`close_all_connections`) the registration is
 	 * born closed: nothing is inserted, `abort_controller` is aborted, and `ws`
 	 * is closed with `WS_CLOSE_GOING_AWAY` before this returns. The id names
 	 * nothing, so `admit` refuses it (module doc, "Shutdown").
@@ -391,12 +389,12 @@ export class BackendWebsocketTransport {
 	 *
 	 * @param ws - the socket to close on revocation
 	 * @param identity - who the connection is — what every close target and the
-	 *   per-account cap match on; the transport keeps a copy
+	 *   per-account cap match on; the registry keeps a copy
 	 * @param abort_controller - the socket-scoped controller to abort when the
-	 *   transport closes this connection (revocation or cap eviction)
+	 *   registry closes this connection (revocation or cap eviction)
 	 * @returns the freshly assigned `connection_id` (branded `Uuid`)
 	 * @mutates this - inserts an un-admitted entry into `#connections`, unless
-	 *   the transport is closing
+	 *   the registry is closing
 	 */
 	register_pending(
 		ws: WSContext,
@@ -408,11 +406,11 @@ export class BackendWebsocketTransport {
 	}
 
 	/**
-	 * The close code the transport closed a still-pending registration with —
+	 * The close code the registry closed a still-pending registration with —
 	 * `WS_CLOSE_SESSION_REVOKED` for a credential revocation,
 	 * `WS_CLOSE_PERMISSION_REVOKED` for a role close, `WS_CLOSE_GOING_AWAY`
 	 * for the shutdown — read once: the record is dropped by this call (and by
-	 * `remove_connection`). `null` when the transport did not close it while
+	 * `remove_connection`). `null` when the registry did not close it while
 	 * pending. For a caller whose `admit` was refused, to say why; the twin of
 	 * the reason the Rust `ConnectionRegistry::admit` refuses with.
 	 *
@@ -479,14 +477,14 @@ export class BackendWebsocketTransport {
 	 * inserted. A removed connection gets no further broadcast or peer request,
 	 * stops counting toward the cap at once, and has its `abort_controller`
 	 * aborted; its socket is closed when the close handshake completes. The new
-	 * connection is always admitted — unless the transport is closing: then it
+	 * connection is always admitted — unless the registry is closing: then it
 	 * is born closed, as in `register_pending`, and evicts nothing.
 	 *
 	 * @param ws - the socket to close on revocation
 	 * @param identity - who the connection is — what every close target and the
-	 *   per-account cap match on; the transport keeps a copy
+	 *   per-account cap match on; the registry keeps a copy
 	 * @param abort_controller - the socket-scoped controller to abort when the
-	 *   transport closes this connection (revocation or cap eviction)
+	 *   registry closes this connection (revocation or cap eviction)
 	 * @returns the freshly assigned `connection_id` (branded `Uuid`)
 	 * @mutates this - inserts an admitted entry into `#connections`; past the
 	 *   cap, first removes the account's oldest admitted connections and closes
@@ -544,7 +542,7 @@ export class BackendWebsocketTransport {
 	 * both. What was waiting to be written to it is dropped.
 	 *
 	 * For a socket that has closed (an adapter's close event): on a connection
-	 * the transport closed it also drops the close deadline, so calling it while
+	 * the registry closed it also drops the close deadline, so calling it while
 	 * that socket is still closing leaves a client that is not reading uncut.
 	 *
 	 * @mutates this - deletes the connection's entry from `#connections`, drops
@@ -554,7 +552,7 @@ export class BackendWebsocketTransport {
 	remove_connection(connection_id: Uuid): void {
 		this.#pending_close_codes.delete(connection_id);
 		this.#connections.get(connection_id)?.writer.dispose();
-		// a connection the transport closed: its socket is gone now
+		// a connection the registry closed: its socket is gone now
 		const closing = this.#closing_writers.get(connection_id);
 		if (closing) {
 			closing.dispose();
@@ -676,11 +674,11 @@ export class BackendWebsocketTransport {
 	 * revocation does, so its heartbeat timer stops and nothing more dispatches
 	 * on it. A socket whose `close` throws does not stop the loop.
 	 *
-	 * Leaves the transport closing, for good: every later registration is born
+	 * Leaves the registry closing, for good: every later registration is born
 	 * closed (module doc, "Shutdown"). A second call closes nothing.
 	 *
 	 * @returns the number of sockets closed
-	 * @mutates this - sets the transport closing, removes every connection,
+	 * @mutates this - sets the registry closing, removes every connection,
 	 *   aborts its registered controller, and closes its underlying `WSContext`
 	 *   with `WS_CLOSE_GOING_AWAY`
 	 * @throws the first error a socket's `close` threw, after every connection was attempted
@@ -694,7 +692,7 @@ export class BackendWebsocketTransport {
 	}
 
 	/**
-	 * Whether `close_all_connections` has run — the transport is shutting down and
+	 * Whether `close_all_connections` has run — the registry is shutting down and
 	 * every registration from now on is born closed (module doc, "Shutdown").
 	 * For telemetry and logs: `register_action_ws` reads it to say why an
 	 * upgrade was refused.
@@ -1008,7 +1006,7 @@ export class BackendWebsocketTransport {
 	/**
 	 * Whether a connection is still registered — and admitted: a registration
 	 * pending admission answers `false`, like every other reader of the
-	 * transport.
+	 * registry.
 	 *
 	 * `register_action_ws` checks it before dispatching each inbound message, so
 	 * a socket the server has closed — revoked, superseded by the cap, or
@@ -1024,11 +1022,11 @@ export class BackendWebsocketTransport {
 	 *
 	 * Read-only counter intended for telemetry, logging, and tests. A
 	 * registration still pending admission is not a connection yet and is
-	 * counted by `get_pending_connection_count` instead. Includes connections
+	 * counted by `pending_connection_count` instead. Includes connections
 	 * that have been closed by the peer but not yet removed by the WS adapter's
 	 * `onClose` callback.
 	 */
-	get_connection_count(): number {
+	connection_count(): number {
 		let count = 0;
 		for (const entry of this.#connections.values()) {
 			if (entry.admitted) count++;
@@ -1042,7 +1040,7 @@ export class BackendWebsocketTransport {
 	 * a count that stays high means upgrades are stalling there. For telemetry
 	 * and tests.
 	 */
-	get_pending_connection_count(): number {
+	pending_connection_count(): number {
 		let count = 0;
 		for (const entry of this.#connections.values()) {
 			if (!entry.admitted) count++;

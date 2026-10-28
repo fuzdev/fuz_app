@@ -6,7 +6,7 @@
  *   disposed, then the database closed — after the auth cleanup schedule
  *   stops (`create_app_server.auth_cleanup.db.test.ts` pins that step)
  * - `close` reaches every live connection on the backend's closer — the
- *   auto-created WS transport, one supplied through `WsEndpointSpec.transport`,
+ *   auto-created WS registry, one supplied through `WsEndpointSpec.registry`,
  *   the audit SSE registry — and a member that throws spares neither the rest
  *   nor the database
  * - `close` is idempotent, and concurrent calls share one shutdown
@@ -42,7 +42,7 @@ import { create_recording_audit_emitter } from '#lib/testing/audit_drift_guard.t
 import { create_fake_ws, create_stub_upgrade } from '#lib/testing/ws_round_trip.ts';
 import { create_recording_closer } from '#lib/testing/connection_closer_helpers.ts';
 import { protocol_actions } from '#lib/actions/protocol.ts';
-import { BackendWebsocketTransport } from '#lib/actions/transports_ws_backend.ts';
+import { ConnectionRegistry } from '#lib/actions/connection_registry.ts';
 import { WS_CLOSE_GOING_AWAY } from '#lib/actions/transports.ts';
 import type { ConnectionCloser } from '#lib/actions/connection_closer.ts';
 import type { SseStream } from '#lib/realtime/sse.ts';
@@ -152,15 +152,15 @@ describe('AppServer.close', () => {
 		]);
 	});
 
-	test('reaches every live connection: the auto-created transport, a supplied one, the audit streams', async () => {
+	test('reaches every live connection: the auto-created registry, a supplied one, the audit streams', async () => {
 		const stub = create_stub_upgrade();
-		const supplied = new BackendWebsocketTransport({ log });
+		const supplied = new ConnectionRegistry({ log });
 		const { server } = await assemble({
 			audit_log_sse: true,
 			create_upgrade_websocket: () => stub.upgradeWebSocket,
 			ws_endpoints: [
 				{ path: '/api/ws', actions: [...protocol_actions], receive_timeout: null },
-				{ path: '/api/ws_supplied', actions: [...protocol_actions], transport: supplied }
+				{ path: '/api/ws_supplied', actions: [...protocol_actions], registry: supplied }
 			]
 		});
 		const auto = server.ws_endpoints['/api/ws']!;
@@ -182,8 +182,8 @@ describe('AppServer.close', () => {
 		assert.strictEqual(auto_socket.closes[0]?.code, WS_CLOSE_GOING_AWAY);
 		assert.strictEqual(supplied_socket.closes[0]?.code, WS_CLOSE_GOING_AWAY);
 		assert.ok(stream.closed, 'the audit stream closed');
-		assert.strictEqual(auto.get_connection_count(), 0);
-		assert.strictEqual(supplied.get_connection_count(), 0);
+		assert.strictEqual(auto.connection_count(), 0);
+		assert.strictEqual(supplied.connection_count(), 0);
 		assert.strictEqual(server.audit_sse!.registry.count, 0);
 	});
 
@@ -193,7 +193,7 @@ describe('AppServer.close', () => {
 		harness.backend.deps.log.error = (...args: Array<unknown>) => {
 			errors.push(args);
 		};
-		const boom = new Error('transport close failed');
+		const boom = new Error('registry close failed');
 		const throwing: ConnectionCloser = {
 			...create_recording_closer().closer,
 			close_all_connections: () => {

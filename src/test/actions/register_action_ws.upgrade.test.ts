@@ -213,7 +213,7 @@ describe('composition', () => {
 			log
 		});
 
-		assert.ok(result.transport);
+		assert.ok(result.registry);
 	});
 });
 

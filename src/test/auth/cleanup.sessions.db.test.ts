@@ -24,7 +24,7 @@
  *   `cleanup.sessions.refused_commit.db.test.ts`.
  * - A sweep whose delete fails closes nothing.
  * - A closer that throws for one session does not spare the rest.
- * - The close reaches both transports: a real `BackendWebsocketTransport`
+ * - The close reaches both transports: a real `ConnectionRegistry`
  *   socket and a real audit-stream registry stream of the expired session end
  *   through the `RealtimeCloser`, while another session's — the same account's
  *   included — stay open.
@@ -45,7 +45,7 @@ import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
 import type { AuditLogEvent } from '#lib/auth/audit_log_schema.ts';
 import { cleanup_expired_sessions, type AuthCleanupDeps } from '#lib/auth/cleanup.ts';
 import { create_realtime_closer, type ConnectionCloser } from '#lib/actions/connection_closer.ts';
-import { BackendWebsocketTransport } from '#lib/actions/transports_ws_backend.ts';
+import { ConnectionRegistry } from '#lib/actions/connection_registry.ts';
 import {
 	WS_CLOSE_SESSION_REVOKED,
 	WS_CLOSE_SESSION_REVOKED_REASON
@@ -318,14 +318,14 @@ describe_db('cleanup_expired_sessions', (get_db) => {
 		const other_live = await seed_session(db, 'sweep-other-live', a.other_account_id, false);
 
 		// the closer a backend's revocation handlers hold: one `RealtimeCloser`
-		// over a real WebSocket transport and a real audit stream registry
+		// over a real WebSocket registry and a real audit stream registry
 		const connection_closer = create_realtime_closer();
-		const transport = new BackendWebsocketTransport({ log });
-		connection_closer.add(transport);
+		const registry = new ConnectionRegistry({ log });
+		connection_closer.add(registry);
 		const audit_sse = create_audit_log_sse({ log, connection_closer });
 		const connect = (session_hash: string, account_id: Uuid) => {
 			const ws = create_fake_ws();
-			transport.add_connection(ws.ws, create_test_identity({ session_hash, account_id }));
+			registry.add_connection(ws.ws, create_test_identity({ session_hash, account_id }));
 			const stream = create_mock_stream();
 			audit_sse.registry.subscribe(stream, { scope: session_hash, groups: [account_id] });
 			return { ws, stream };
@@ -345,6 +345,6 @@ describe_db('cleanup_expired_sessions', (get_db) => {
 			assert.deepEqual(bystander.ws.closes, []);
 			assert.strictEqual(bystander.stream.closed, false);
 		}
-		assert.strictEqual(transport.get_connection_count(), 2);
+		assert.strictEqual(registry.connection_count(), 2);
 	});
 });

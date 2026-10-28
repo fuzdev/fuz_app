@@ -35,7 +35,7 @@ import {
 import { resolve_ws_endpoints, type WsEndpointSpec } from '../actions/ws_endpoint_spec.ts';
 import type { EventSpec, SseNotification } from '../realtime/sse.ts';
 import { AUDIT_LOG_SSE_MAX_PER_SCOPE, type AuditLogSse } from '../realtime/audit_log_sse.ts';
-import { SubscriberRegistry } from '../realtime/subscriber_registry.ts';
+import { SseRegistry } from '../realtime/sse_registry.ts';
 import { ROLE_ADMIN } from '../auth/role_schema.ts';
 import { BaseServerEnv } from '../server/env.ts';
 import {
@@ -164,13 +164,13 @@ export const create_test_audit_emitter = (): AuditEmitter => ({
  * surface helper but don't assert on SSE fan-out or subscriber state.
  *
  * `on_audit_event` is a no-op, so nothing is broadcast; the
- * `registry` is a fresh `SubscriberRegistry` instance (call sites that
+ * `registry` is a fresh `SseRegistry` instance (call sites that
  * inspect `.size` or call `.close_*` see a real registry, so writes are
  * isolated per test). Tests that need real SSE plumbing build it via
  * `create_audit_log_sse` against `create_test_app`.
  */
 export const create_stub_audit_sse = (): AuditLogSse => {
-	const registry = new SubscriberRegistry<SseNotification>({
+	const registry = new SseRegistry<SseNotification>({
 		max_per_scope: AUDIT_LOG_SSE_MAX_PER_SCOPE
 	});
 	return {

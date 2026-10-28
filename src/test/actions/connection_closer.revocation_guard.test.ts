@@ -5,8 +5,8 @@
  * `audit_event_revocation_scopes`.
  *
  * Runs the guard over each kind of member `create_app_server` puts on the
- * backend's closer — a real `BackendWebsocketTransport` with fake `WSContext`
- * instances, and an SSE `SubscriberRegistry` through
+ * backend's closer — a real `ConnectionRegistry` with fake `WSContext`
+ * instances, and an SSE `SseRegistry` through
  * `create_sse_connection_closer` — and over a `RealtimeCloser` holding both,
  * the one guard the server registers.
  *
@@ -17,7 +17,7 @@ import { describe, assert, test } from 'vitest';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { WSContext, type WSContextInit } from 'hono/ws';
 
-import { BackendWebsocketTransport } from '#lib/actions/transports_ws_backend.ts';
+import { ConnectionRegistry } from '#lib/actions/connection_registry.ts';
 import {
 	WS_CLOSE_PERMISSION_REVOKED,
 	WS_CLOSE_PERMISSION_REVOKED_REASON
@@ -29,7 +29,7 @@ import {
 	type ConnectionCloser
 } from '#lib/actions/connection_closer.ts';
 import { create_sse_connection_closer } from '#lib/realtime/audit_log_sse.ts';
-import { SubscriberRegistry } from '#lib/realtime/subscriber_registry.ts';
+import { SseRegistry } from '#lib/realtime/sse_registry.ts';
 import type { SseStream } from '#lib/realtime/sse.ts';
 import { create_test_audit_event } from '#lib/testing/entities.ts';
 import {
@@ -272,21 +272,21 @@ describe('to_connection_close_target', () => {
 
 describe('create_revocation_guard: session_revoke', () => {
 	test('closes only the socket tied to the revoked session hash', () => {
-		const transport = new BackendWebsocketTransport();
-		const guard = create_revocation_guard(transport, silent_log);
+		const connection_registry = new ConnectionRegistry();
+		const guard = create_revocation_guard(connection_registry, silent_log);
 
 		const session_a = create_fake_ws();
 		const session_b = create_fake_ws();
 		const bearer = create_fake_ws();
-		transport.add_connection(
+		connection_registry.add_connection(
 			session_a.ws,
 			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
 		);
-		transport.add_connection(
+		connection_registry.add_connection(
 			session_b.ws,
 			create_test_identity({ session_hash: HASH_B, account_id: ACCOUNT_A })
 		);
-		transport.add_connection(
+		connection_registry.add_connection(
 			bearer.ws,
 			create_test_identity({ account_id: ACCOUNT_A, api_token_id: TOKEN_A })
 		);
@@ -305,10 +305,10 @@ describe('create_revocation_guard: session_revoke', () => {
 	});
 
 	test('no-op when metadata.session_id is missing', () => {
-		const transport = new BackendWebsocketTransport();
-		const guard = create_revocation_guard(transport, silent_log);
+		const connection_registry = new ConnectionRegistry();
+		const guard = create_revocation_guard(connection_registry, silent_log);
 		const { ws, closes } = create_fake_ws();
-		transport.add_connection(
+		connection_registry.add_connection(
 			ws,
 			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
 		);
@@ -318,10 +318,10 @@ describe('create_revocation_guard: session_revoke', () => {
 	});
 
 	test('no-op when metadata.session_id is an empty string', () => {
-		const transport = new BackendWebsocketTransport();
-		const guard = create_revocation_guard(transport, silent_log);
+		const connection_registry = new ConnectionRegistry();
+		const guard = create_revocation_guard(connection_registry, silent_log);
 		const { ws, closes } = create_fake_ws();
-		transport.add_connection(
+		connection_registry.add_connection(
 			ws,
 			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
 		);
@@ -333,21 +333,21 @@ describe('create_revocation_guard: session_revoke', () => {
 
 describe('create_revocation_guard: token_revoke', () => {
 	test('closes only the bearer socket tied to the revoked api_token.id', () => {
-		const transport = new BackendWebsocketTransport();
-		const guard = create_revocation_guard(transport, silent_log);
+		const connection_registry = new ConnectionRegistry();
+		const guard = create_revocation_guard(connection_registry, silent_log);
 
 		const bearer_a = create_fake_ws();
 		const bearer_b = create_fake_ws();
 		const session = create_fake_ws();
-		transport.add_connection(
+		connection_registry.add_connection(
 			bearer_a.ws,
 			create_test_identity({ account_id: ACCOUNT_A, api_token_id: TOKEN_A })
 		);
-		transport.add_connection(
+		connection_registry.add_connection(
 			bearer_b.ws,
 			create_test_identity({ account_id: ACCOUNT_A, api_token_id: TOKEN_B })
 		);
-		transport.add_connection(
+		connection_registry.add_connection(
 			session.ws,
 			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
 		);
@@ -366,10 +366,10 @@ describe('create_revocation_guard: token_revoke', () => {
 	});
 
 	test('no-op when metadata.token_id is missing', () => {
-		const transport = new BackendWebsocketTransport();
-		const guard = create_revocation_guard(transport, silent_log);
+		const connection_registry = new ConnectionRegistry();
+		const guard = create_revocation_guard(connection_registry, silent_log);
 		const { ws, closes } = create_fake_ws();
-		transport.add_connection(
+		connection_registry.add_connection(
 			ws,
 			create_test_identity({ account_id: ACCOUNT_A, api_token_id: TOKEN_A })
 		);
@@ -391,23 +391,26 @@ describe('create_revocation_guard: account-scoped events', () => {
 
 	for (const event_type of account_scoped_events) {
 		test(`${event_type} closes every socket on the target account`, () => {
-			const transport = new BackendWebsocketTransport();
-			const guard = create_revocation_guard(transport, silent_log);
+			const connection_registry = new ConnectionRegistry();
+			const guard = create_revocation_guard(connection_registry, silent_log);
 
 			const session = create_fake_ws();
 			const bearer = create_fake_ws();
 			const daemon = create_fake_ws();
 			const other_account = create_fake_ws();
-			transport.add_connection(
+			connection_registry.add_connection(
 				session.ws,
 				create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
 			);
-			transport.add_connection(
+			connection_registry.add_connection(
 				bearer.ws,
 				create_test_identity({ account_id: ACCOUNT_A, api_token_id: TOKEN_A })
 			);
-			transport.add_connection(daemon.ws, create_test_identity({ account_id: ACCOUNT_A }));
-			transport.add_connection(
+			connection_registry.add_connection(
+				daemon.ws,
+				create_test_identity({ account_id: ACCOUNT_A })
+			);
+			connection_registry.add_connection(
 				other_account.ws,
 				create_test_identity({ session_hash: HASH_B, account_id: ACCOUNT_B })
 			);
@@ -422,16 +425,16 @@ describe('create_revocation_guard: account-scoped events', () => {
 	}
 
 	test('admin-initiated events use target_account_id over account_id', () => {
-		const transport = new BackendWebsocketTransport();
-		const guard = create_revocation_guard(transport, silent_log);
+		const connection_registry = new ConnectionRegistry();
+		const guard = create_revocation_guard(connection_registry, silent_log);
 
 		const target = create_fake_ws();
 		const admin = create_fake_ws();
-		transport.add_connection(
+		connection_registry.add_connection(
 			target.ws,
 			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
 		);
-		transport.add_connection(
+		connection_registry.add_connection(
 			admin.ws,
 			create_test_identity({ session_hash: HASH_B, account_id: ACCOUNT_B })
 		);
@@ -449,10 +452,10 @@ describe('create_revocation_guard: account-scoped events', () => {
 	});
 
 	test('no-op when both account_id and target_account_id are null', () => {
-		const transport = new BackendWebsocketTransport();
-		const guard = create_revocation_guard(transport, silent_log);
+		const connection_registry = new ConnectionRegistry();
+		const guard = create_revocation_guard(connection_registry, silent_log);
 		const { ws, closes } = create_fake_ws();
-		transport.add_connection(
+		connection_registry.add_connection(
 			ws,
 			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
 		);
@@ -464,10 +467,10 @@ describe('create_revocation_guard: account-scoped events', () => {
 
 describe('create_revocation_guard: safety', () => {
 	test('ignores outcome=failure events (attacker-controlled metadata)', () => {
-		const transport = new BackendWebsocketTransport();
-		const guard = create_revocation_guard(transport, silent_log);
+		const connection_registry = new ConnectionRegistry();
+		const guard = create_revocation_guard(connection_registry, silent_log);
 		const { ws, closes } = create_fake_ws();
-		transport.add_connection(
+		connection_registry.add_connection(
 			ws,
 			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
 		);
@@ -484,10 +487,10 @@ describe('create_revocation_guard: safety', () => {
 	});
 
 	test('ignores outcome=failure for account-scoped events', () => {
-		const transport = new BackendWebsocketTransport();
-		const guard = create_revocation_guard(transport, silent_log);
+		const connection_registry = new ConnectionRegistry();
+		const guard = create_revocation_guard(connection_registry, silent_log);
 		const { ws, closes } = create_fake_ws();
-		transport.add_connection(
+		connection_registry.add_connection(
 			ws,
 			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
 		);
@@ -503,10 +506,10 @@ describe('create_revocation_guard: safety', () => {
 	});
 
 	test('ignores an outcome outside the enum — only a success revokes', () => {
-		const transport = new BackendWebsocketTransport();
-		const guard = create_revocation_guard(transport, silent_log);
+		const connection_registry = new ConnectionRegistry();
+		const guard = create_revocation_guard(connection_registry, silent_log);
 		const { ws, closes } = create_fake_ws();
-		transport.add_connection(
+		connection_registry.add_connection(
 			ws,
 			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
 		);
@@ -519,10 +522,10 @@ describe('create_revocation_guard: safety', () => {
 	});
 
 	test('ignores logout with outcome=failure', () => {
-		const transport = new BackendWebsocketTransport();
-		const guard = create_revocation_guard(transport, silent_log);
+		const connection_registry = new ConnectionRegistry();
+		const guard = create_revocation_guard(connection_registry, silent_log);
 		const { ws, closes } = create_fake_ws();
-		transport.add_connection(
+		connection_registry.add_connection(
 			ws,
 			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
 		);
@@ -532,10 +535,10 @@ describe('create_revocation_guard: safety', () => {
 	});
 
 	test('ignores events that revoke nothing (login, token_create, account_undelete, …)', () => {
-		const transport = new BackendWebsocketTransport();
-		const guard = create_revocation_guard(transport, silent_log);
+		const connection_registry = new ConnectionRegistry();
+		const guard = create_revocation_guard(connection_registry, silent_log);
 		const { ws, closes } = create_fake_ws();
-		transport.add_connection(
+		connection_registry.add_connection(
 			ws,
 			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
 		);
@@ -555,10 +558,10 @@ describe('create_revocation_guard: safety', () => {
 	});
 
 	test('ignores an event type fuz_app does not define, whatever its metadata', () => {
-		const transport = new BackendWebsocketTransport();
-		const guard = create_revocation_guard(transport, silent_log);
+		const connection_registry = new ConnectionRegistry();
+		const guard = create_revocation_guard(connection_registry, silent_log);
 		const { ws, closes } = create_fake_ws();
-		transport.add_connection(
+		connection_registry.add_connection(
 			ws,
 			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
 		);
@@ -591,14 +594,14 @@ describe('create_revocation_guard: role_grant_revoke', () => {
 		});
 
 	test('closes only the target account sockets gated on the revoked role, with 4006', () => {
-		const transport = new BackendWebsocketTransport();
-		const guard = create_revocation_guard(transport, silent_log);
+		const connection_registry = new ConnectionRegistry();
+		const guard = create_revocation_guard(connection_registry, silent_log);
 
 		const gated = create_fake_ws();
 		const ungated = create_fake_ws();
 		const other_role = create_fake_ws();
 		const other_account = create_fake_ws();
-		transport.add_connection(
+		connection_registry.add_connection(
 			gated.ws,
 			create_test_identity({
 				session_hash: HASH_A,
@@ -606,11 +609,11 @@ describe('create_revocation_guard: role_grant_revoke', () => {
 				required_roles: ['admin']
 			})
 		);
-		transport.add_connection(
+		connection_registry.add_connection(
 			ungated.ws,
 			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
 		);
-		transport.add_connection(
+		connection_registry.add_connection(
 			other_role.ws,
 			create_test_identity({
 				session_hash: HASH_A,
@@ -618,7 +621,7 @@ describe('create_revocation_guard: role_grant_revoke', () => {
 				required_roles: ['keeper']
 			})
 		);
-		transport.add_connection(
+		connection_registry.add_connection(
 			other_account.ws,
 			create_test_identity({
 				session_hash: HASH_B,
@@ -628,7 +631,7 @@ describe('create_revocation_guard: role_grant_revoke', () => {
 		);
 		// a registration still pending admission is reached too
 		const pending = create_fake_ws();
-		const pending_id = transport.register_pending(
+		const pending_id = connection_registry.register_pending(
 			pending.ws,
 			create_test_identity({
 				session_hash: HASH_A,
@@ -641,19 +644,19 @@ describe('create_revocation_guard: role_grant_revoke', () => {
 
 		assert.deepStrictEqual(gated.closes, [PERMISSION_REVOKED_CLOSE]);
 		assert.deepStrictEqual(pending.closes, [PERMISSION_REVOKED_CLOSE]);
-		assert.strictEqual(transport.admit(pending_id), false, 'the pending one is refused');
+		assert.strictEqual(connection_registry.admit(pending_id), false, 'the pending one is refused');
 		assert.deepStrictEqual(ungated.closes, [], "the account's ungated socket stays open");
 		assert.deepStrictEqual(other_role.closes, [], 'a socket gated on another role stays open');
 		assert.deepStrictEqual(other_account.closes, [], "another account's socket stays open");
-		assert.strictEqual(transport.get_connection_count(), 3);
+		assert.strictEqual(connection_registry.connection_count(), 3);
 	});
 
 	test('nothing is sent on a socket after its permission-revoked close', async () => {
-		const transport = new BackendWebsocketTransport();
-		const guard = create_revocation_guard(transport, silent_log);
+		const connection_registry = new ConnectionRegistry();
+		const guard = create_revocation_guard(connection_registry, silent_log);
 		const gated = create_fake_ws();
 		const ungated = create_fake_ws();
-		transport.add_connection(
+		connection_registry.add_connection(
 			gated.ws,
 			create_test_identity({
 				session_hash: HASH_A,
@@ -661,16 +664,20 @@ describe('create_revocation_guard: role_grant_revoke', () => {
 				required_roles: ['admin']
 			})
 		);
-		transport.add_connection(
+		connection_registry.add_connection(
 			ungated.ws,
 			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
 		);
 
 		guard(revoke_event('admin'));
 		const frame = { jsonrpc: '2.0' as const, method: 'thing_changed', params: {} };
-		assert.strictEqual(transport.send_to_account(ACCOUNT_A, frame), 1, 'the ungated one only');
 		assert.strictEqual(
-			transport.broadcast_filtered(frame, () => true),
+			connection_registry.send_to_account(ACCOUNT_A, frame),
+			1,
+			'the ungated one only'
+		);
+		assert.strictEqual(
+			connection_registry.broadcast_filtered(frame, () => true),
 			1
 		);
 
@@ -681,10 +688,10 @@ describe('create_revocation_guard: role_grant_revoke', () => {
 	});
 
 	test('a scoped revoke closes nothing — a role gate admits on global grants only', () => {
-		const transport = new BackendWebsocketTransport();
-		const guard = create_revocation_guard(transport, silent_log);
+		const connection_registry = new ConnectionRegistry();
+		const guard = create_revocation_guard(connection_registry, silent_log);
 		const gated = create_fake_ws();
-		transport.add_connection(
+		connection_registry.add_connection(
 			gated.ws,
 			create_test_identity({
 				session_hash: HASH_A,
@@ -695,14 +702,14 @@ describe('create_revocation_guard: role_grant_revoke', () => {
 
 		guard(revoke_event('admin', create_uuid()));
 		assert.deepStrictEqual(gated.closes, []);
-		assert.strictEqual(transport.get_connection_count(), 1);
+		assert.strictEqual(connection_registry.connection_count(), 1);
 	});
 
 	test('over-closes an any-of gate on the loss of any listed role', () => {
-		const transport = new BackendWebsocketTransport();
-		const guard = create_revocation_guard(transport, silent_log);
+		const connection_registry = new ConnectionRegistry();
+		const guard = create_revocation_guard(connection_registry, silent_log);
 		const gated = create_fake_ws();
-		transport.add_connection(
+		connection_registry.add_connection(
 			gated.ws,
 			create_test_identity({
 				session_hash: HASH_A,
@@ -716,10 +723,10 @@ describe('create_revocation_guard: role_grant_revoke', () => {
 	});
 
 	test('a self-service revoke, with no target account, closes the actor account', () => {
-		const transport = new BackendWebsocketTransport();
-		const guard = create_revocation_guard(transport, silent_log);
+		const connection_registry = new ConnectionRegistry();
+		const guard = create_revocation_guard(connection_registry, silent_log);
 		const gated = create_fake_ws();
-		transport.add_connection(
+		connection_registry.add_connection(
 			gated.ws,
 			create_test_identity({
 				session_hash: HASH_A,
@@ -739,10 +746,10 @@ describe('create_revocation_guard: role_grant_revoke', () => {
 	});
 
 	test('no-op without metadata.role, and on a failure row', () => {
-		const transport = new BackendWebsocketTransport();
-		const guard = create_revocation_guard(transport, silent_log);
+		const connection_registry = new ConnectionRegistry();
+		const guard = create_revocation_guard(connection_registry, silent_log);
 		const gated = create_fake_ws();
-		transport.add_connection(
+		connection_registry.add_connection(
 			gated.ws,
 			create_test_identity({
 				session_hash: HASH_A,
@@ -764,9 +771,9 @@ describe('create_revocation_guard: role_grant_revoke', () => {
 });
 
 describe('create_revocation_guard: over a RealtimeCloser', () => {
-	test('one guard closes on every member transport', () => {
-		const first = new BackendWebsocketTransport();
-		const second = new BackendWebsocketTransport();
+	test('one guard closes on every member registry', () => {
+		const first = new ConnectionRegistry();
+		const second = new ConnectionRegistry();
 		const closer = create_realtime_closer();
 		closer.add(first);
 		closer.add(second);
@@ -817,7 +824,7 @@ const create_mock_stream = <T>(): SseStream<T> & { sent: Array<T>; closed: boole
 
 /** The guard over one SSE registry, as `create_app_server` reaches it through the closer. */
 const create_sse_guard = <T>(
-	registry: SubscriberRegistry<T>,
+	registry: SseRegistry<T>,
 	required_role: string | null,
 	log: Logger
 ): ((event: AuditLogEvent) => void) =>
@@ -825,7 +832,7 @@ const create_sse_guard = <T>(
 
 describe('create_revocation_guard: over an SSE registry', () => {
 	test('closes stream when role_grant_revoke matches required role and target account', () => {
-		const registry = new SubscriberRegistry<string>();
+		const registry = new SseRegistry<string>();
 		const stream = create_mock_stream<string>();
 		registry.subscribe(stream, { channels: ['audit_log'], groups: ['target-account-1'] });
 
@@ -845,7 +852,7 @@ describe('create_revocation_guard: over an SSE registry', () => {
 
 	test('does not close stream on a scoped revoke of the required role', () => {
 		// the stream's role gate admits on global grants only
-		const registry = new SubscriberRegistry<string>();
+		const registry = new SseRegistry<string>();
 		const stream = create_mock_stream<string>();
 		registry.subscribe(stream, { channels: ['audit_log'], groups: ['target-account-1'] });
 
@@ -874,7 +881,7 @@ describe('create_revocation_guard: over an SSE registry', () => {
 	});
 
 	test('does not close stream when revoked role does not match required role', () => {
-		const registry = new SubscriberRegistry<string>();
+		const registry = new SseRegistry<string>();
 		const stream = create_mock_stream<string>();
 		registry.subscribe(stream, { channels: ['audit_log'], groups: ['target-account-1'] });
 
@@ -893,7 +900,7 @@ describe('create_revocation_guard: over an SSE registry', () => {
 	});
 
 	test('does not close stream when target_account_id does not match', () => {
-		const registry = new SubscriberRegistry<string>();
+		const registry = new SseRegistry<string>();
 		const stream = create_mock_stream<string>();
 		registry.subscribe(stream, { channels: ['audit_log'], groups: ['account-a'] });
 
@@ -912,7 +919,7 @@ describe('create_revocation_guard: over an SSE registry', () => {
 	});
 
 	test('ignores every event that revokes nothing', () => {
-		const registry = new SubscriberRegistry<string>();
+		const registry = new SseRegistry<string>();
 		const stream = create_mock_stream<string>();
 		registry.subscribe(stream, {
 			channels: ['audit_log'],
@@ -939,7 +946,7 @@ describe('create_revocation_guard: over an SSE registry', () => {
 	});
 
 	test('ignores an event type fuz_app does not define', () => {
-		const registry = new SubscriberRegistry<string>();
+		const registry = new SseRegistry<string>();
 		const stream = create_mock_stream<string>();
 		registry.subscribe(stream, { scope: 'session-hash-1', groups: ['target-account-1'] });
 
@@ -963,7 +970,7 @@ describe('create_revocation_guard: over an SSE registry', () => {
 		'token_revoke_all'
 	] as const) {
 		test(`${event_type} closes the target account's streams and no other's`, () => {
-			const registry = new SubscriberRegistry<string>();
+			const registry = new SseRegistry<string>();
 			const target = create_mock_stream<string>();
 			registry.subscribe(target, { scope: 'session-hash-1', groups: ['target-account-1'] });
 			const actor = create_mock_stream<string>();
@@ -984,7 +991,7 @@ describe('create_revocation_guard: over an SSE registry', () => {
 	}
 
 	test('token_revoke closes the stream registered under the revoked token id', () => {
-		const registry = new SubscriberRegistry<string>();
+		const registry = new SseRegistry<string>();
 		const bearer = create_mock_stream<string>();
 		registry.subscribe(bearer, { scope: 'tok_revoked', groups: ['account-1'] });
 		const session = create_mock_stream<string>();
@@ -1004,7 +1011,7 @@ describe('create_revocation_guard: over an SSE registry', () => {
 	});
 
 	test('skips token_revoke with outcome=failure', () => {
-		const registry = new SubscriberRegistry<string>();
+		const registry = new SseRegistry<string>();
 		const bearer = create_mock_stream<string>();
 		registry.subscribe(bearer, { scope: 'tok_guessed', groups: ['account-1'] });
 
@@ -1022,7 +1029,7 @@ describe('create_revocation_guard: over an SSE registry', () => {
 	});
 
 	test('skips an outcome outside the enum — only a success revokes', () => {
-		const registry = new SubscriberRegistry<string>();
+		const registry = new SseRegistry<string>();
 		const bearer = create_mock_stream<string>();
 		registry.subscribe(bearer, { scope: 'tok_revoked', groups: ['account-1'] });
 
@@ -1040,7 +1047,7 @@ describe('create_revocation_guard: over an SSE registry', () => {
 	});
 
 	test('ignores events with null target_account_id', () => {
-		const registry = new SubscriberRegistry<string>();
+		const registry = new SseRegistry<string>();
 		const stream = create_mock_stream<string>();
 		registry.subscribe(stream, { channels: ['audit_log'], groups: ['account-a'] });
 
@@ -1058,7 +1065,7 @@ describe('create_revocation_guard: over an SSE registry', () => {
 	});
 
 	test('ignores role_grant_revoke with null metadata', () => {
-		const registry = new SubscriberRegistry<string>();
+		const registry = new SseRegistry<string>();
 		const stream = create_mock_stream<string>();
 		registry.subscribe(stream, { channels: ['audit_log'], groups: ['account-a'] });
 
@@ -1076,7 +1083,7 @@ describe('create_revocation_guard: over an SSE registry', () => {
 	});
 
 	test('ignores role_grant_revoke with metadata missing role field', () => {
-		const registry = new SubscriberRegistry<string>();
+		const registry = new SseRegistry<string>();
 		const stream = create_mock_stream<string>();
 		registry.subscribe(stream, { channels: ['audit_log'], groups: ['account-a'] });
 
@@ -1094,7 +1101,7 @@ describe('create_revocation_guard: over an SSE registry', () => {
 	});
 
 	test('null required_role skips role_grant_revoke but still closes on session/password events', () => {
-		const registry = new SubscriberRegistry<string>();
+		const registry = new SseRegistry<string>();
 		const stream = create_mock_stream<string>();
 		registry.subscribe(stream, { channels: ['audit_log'], groups: ['account-a'] });
 
@@ -1121,7 +1128,7 @@ describe('create_revocation_guard: over an SSE registry', () => {
 	});
 
 	test('closes multiple streams for the same account', () => {
-		const registry = new SubscriberRegistry<string>();
+		const registry = new SseRegistry<string>();
 		const stream1 = create_mock_stream<string>();
 		const stream2 = create_mock_stream<string>();
 		registry.subscribe(stream1, { channels: ['audit_log'], groups: ['account-a'] });
@@ -1143,7 +1150,7 @@ describe('create_revocation_guard: over an SSE registry', () => {
 	});
 
 	test('does not close streams belonging to other accounts', () => {
-		const registry = new SubscriberRegistry<string>();
+		const registry = new SseRegistry<string>();
 		const stream_a = create_mock_stream<string>();
 		const stream_b = create_mock_stream<string>();
 		registry.subscribe(stream_a, { channels: ['audit_log'], groups: ['account-a'] });
@@ -1165,7 +1172,7 @@ describe('create_revocation_guard: over an SSE registry', () => {
 	});
 
 	test('handles login event without crashing', () => {
-		const registry = new SubscriberRegistry<string>();
+		const registry = new SseRegistry<string>();
 		const stream = create_mock_stream<string>();
 		registry.subscribe(stream, { channels: ['audit_log'], groups: ['account-a'] });
 
@@ -1183,7 +1190,7 @@ describe('create_revocation_guard: over an SSE registry', () => {
 	});
 
 	test('session_revoke_all closes streams via target_account_id (admin action)', () => {
-		const registry = new SubscriberRegistry<string>();
+		const registry = new SseRegistry<string>();
 		const stream = create_mock_stream<string>();
 		registry.subscribe(stream, { channels: ['audit_log'], groups: ['account-a'] });
 
@@ -1204,7 +1211,7 @@ describe('create_revocation_guard: over an SSE registry', () => {
 	});
 
 	test('session_revoke_all closes streams via account_id (self-service)', () => {
-		const registry = new SubscriberRegistry<string>();
+		const registry = new SseRegistry<string>();
 		const stream = create_mock_stream<string>();
 		registry.subscribe(stream, { channels: ['audit_log'], groups: ['account-a'] });
 
@@ -1225,7 +1232,7 @@ describe('create_revocation_guard: over an SSE registry', () => {
 	});
 
 	test('session_revoke_all does not close streams for other accounts', () => {
-		const registry = new SubscriberRegistry<string>();
+		const registry = new SseRegistry<string>();
 		const stream_a = create_mock_stream<string>();
 		const stream_b = create_mock_stream<string>();
 		registry.subscribe(stream_a, { channels: ['audit_log'], groups: ['account-a'] });
@@ -1250,7 +1257,7 @@ describe('create_revocation_guard: over an SSE registry', () => {
 		// /sessions/{hash_A}/revoke. The DB rejects the revoke (cross-account),
 		// but the audit event fires with outcome=failure and metadata.session_id
 		// set to hash_A. The guard must NOT close A's stream in this case.
-		const registry = new SubscriberRegistry<string>();
+		const registry = new SseRegistry<string>();
 		const stream = create_mock_stream<string>();
 		registry.subscribe(stream, {
 			channels: ['audit_log'],
@@ -1276,7 +1283,7 @@ describe('create_revocation_guard: over an SSE registry', () => {
 	test('skips password_change with outcome=failure', () => {
 		// Wrong current password — user is still authenticated, sessions are still
 		// valid. No reason to close their SSE stream.
-		const registry = new SubscriberRegistry<string>();
+		const registry = new SseRegistry<string>();
 		const stream = create_mock_stream<string>();
 		registry.subscribe(stream, { channels: ['audit_log'], groups: ['account-a'] });
 
@@ -1296,7 +1303,7 @@ describe('create_revocation_guard: over an SSE registry', () => {
 	});
 
 	test('session_revoke closes only the matching session stream', () => {
-		const registry = new SubscriberRegistry<string>();
+		const registry = new SseRegistry<string>();
 		const session_x_stream = create_mock_stream<string>();
 		const session_y_stream = create_mock_stream<string>();
 		// another subscriber for the same account but a different session hash
@@ -1328,7 +1335,7 @@ describe('create_revocation_guard: over an SSE registry', () => {
 	});
 
 	test('session_revoke ignores events with missing session_id metadata', () => {
-		const registry = new SubscriberRegistry<string>();
+		const registry = new SseRegistry<string>();
 		const stream = create_mock_stream<string>();
 		registry.subscribe(stream, {
 			channels: ['audit_log'],
@@ -1354,7 +1361,7 @@ describe('create_revocation_guard: over an SSE registry', () => {
 	});
 
 	test('session_revoke does NOT close account-keyed-only streams (coarser subscribers)', () => {
-		const registry = new SubscriberRegistry<string>();
+		const registry = new SseRegistry<string>();
 		const stream = create_mock_stream<string>();
 		// subscriber that only tracks account identity (no session hash) — e.g. a
 		// legacy or non-session-keyed subscription. session_revoke must not affect it.
@@ -1376,7 +1383,7 @@ describe('create_revocation_guard: over an SSE registry', () => {
 	});
 
 	test('password_change closes streams via account_id (self-service)', () => {
-		const registry = new SubscriberRegistry<string>();
+		const registry = new SseRegistry<string>();
 		const stream = create_mock_stream<string>();
 		registry.subscribe(stream, { channels: ['audit_log'], groups: ['account-a'] });
 
@@ -1399,32 +1406,37 @@ describe('create_revocation_guard: over an SSE registry', () => {
 
 /**
  * The shape `create_app_server` builds: one guard on the backend's closer, its
- * members a WebSocket transport and the audit stream registry. Every revoking
+ * members a WebSocket connection registry and the audit stream registry. Every revoking
  * scope closes on both, and a failure row closes on neither — one listener
- * where each transport used to register its own.
+ * where each registry used to register its own.
  */
-describe('create_revocation_guard: one guard over a WS transport and an SSE registry', () => {
+describe('create_revocation_guard: one guard over a WS connection registry and an SSE registry', () => {
 	const ROLE = 'admin';
 	const build = (): {
 		closer: ConnectionCloser;
-		transport: BackendWebsocketTransport;
-		registry: SubscriberRegistry<string>;
+		connection_registry: ConnectionRegistry;
+		registry: SseRegistry<string>;
 		guard: (event: AuditLogEvent) => void;
 	} => {
-		const transport = new BackendWebsocketTransport();
-		const registry = new SubscriberRegistry<string>();
+		const connection_registry = new ConnectionRegistry();
+		const registry = new SseRegistry<string>();
 		const closer = create_realtime_closer();
-		closer.add(transport);
+		closer.add(connection_registry);
 		closer.add(create_sse_connection_closer(registry, ROLE));
-		return { closer, transport, registry, guard: create_revocation_guard(closer, silent_log) };
+		return {
+			closer,
+			connection_registry,
+			registry,
+			guard: create_revocation_guard(closer, silent_log)
+		};
 	};
 	/** A socket and a stream of `ACCOUNT_A`, both opened on session `HASH_A` and token `TOKEN_A`. */
 	const open_both = (
-		transport: BackendWebsocketTransport,
-		registry: SubscriberRegistry<string>
+		connection_registry: ConnectionRegistry,
+		registry: SseRegistry<string>
 	): { socket: FakeWs; stream: ReturnType<typeof create_mock_stream<string>> } => {
 		const socket = create_fake_ws();
-		transport.add_connection(
+		connection_registry.add_connection(
 			socket.ws,
 			create_test_identity({
 				session_hash: HASH_A,
@@ -1464,16 +1476,16 @@ describe('create_revocation_guard: one guard over a WS transport and an SSE regi
 
 	for (const [scope, event] of revocations) {
 		test(`a ${scope} revocation closes the socket and the stream`, () => {
-			const { transport, registry, guard } = build();
-			const { socket, stream } = open_both(transport, registry);
+			const { connection_registry, registry, guard } = build();
+			const { socket, stream } = open_both(connection_registry, registry);
 			guard(create_test_audit_event(event));
 			assert.strictEqual(socket.closes.length, 1, 'the socket closed');
 			assert.ok(stream.closed, 'the stream closed');
 		});
 
 		test(`a ${scope} failure row closes neither`, () => {
-			const { transport, registry, guard } = build();
-			const { socket, stream } = open_both(transport, registry);
+			const { connection_registry, registry, guard } = build();
+			const { socket, stream } = open_both(connection_registry, registry);
 			guard(create_test_audit_event({ ...event, outcome: 'failure' }));
 			assert.deepStrictEqual(socket.closes, []);
 			assert.ok(!stream.closed);

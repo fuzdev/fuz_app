@@ -22,14 +22,14 @@ import { Logger, type Logger as LoggerType } from '@fuzdev/fuz_util/log.ts';
 
 import { create_jsonrpc_notification, to_jsonrpc_params } from '../http/jsonrpc_helpers.ts';
 import type { ActionSpecUnion } from './action_spec.ts';
-import type { BackendWebsocketTransport, ConnectionIdentity } from './transports_ws_backend.ts';
+import type { ConnectionRegistry, ConnectionIdentity } from './connection_registry.ts';
 
 /**
  * What a broadcast is sent through — the fan-out half of
- * `BackendWebsocketTransport`. A structural `Pick`, so a test or another
- * transport can stand in.
+ * `ConnectionRegistry`. A structural `Pick`, so a test or another
+ * registry can stand in.
  */
-export type BroadcastTarget = Pick<BackendWebsocketTransport, 'broadcast' | 'broadcast_filtered'>;
+export type BroadcastTarget = Pick<ConnectionRegistry, 'broadcast' | 'broadcast_filtered'>;
 
 /**
  * Per-connection delivery predicate for subscription ACLs.
@@ -49,11 +49,11 @@ export type ShouldDeliverFn = (
 /** Options for `create_broadcast_api`. */
 export interface CreateBroadcastApiOptions {
 	/**
-	 * The transport broadcasts go out on — typically the WS endpoint's
-	 * `BackendWebsocketTransport` (`AppServer.ws_endpoints[path]`, or the one a
-	 * `WsEndpointSpec.transport` supplies).
+	 * The connection registry broadcasts go out on — typically the WS endpoint's
+	 * `ConnectionRegistry` (`AppServer.ws_endpoints[path]`, or the one a
+	 * `WsEndpointSpec.registry` supplies).
 	 */
-	transport: BroadcastTarget;
+	registry: BroadcastTarget;
 	/**
 	 * Notification specs to expose as broadcast methods. Typically the
 	 * `remote_notification` specs whose initiator is `backend` (or `both`).
@@ -65,9 +65,9 @@ export interface CreateBroadcastApiOptions {
 	log?: LoggerType | null;
 	/**
 	 * Optional per-connection ACL predicate. When set, the broadcast fans out
-	 * via the transport's `broadcast_filtered` — each connection's identity is
-	 * checked before the message is sent. When unset, the transport broadcasts
-	 * unfiltered via `transport.broadcast`.
+	 * via the registry's `broadcast_filtered` — each connection's identity is
+	 * checked before the message is sent. When unset, the registry broadcasts
+	 * unfiltered via `registry.broadcast`.
 	 */
 	should_deliver?: ShouldDeliverFn;
 }
@@ -85,7 +85,7 @@ export type BroadcastApi = Record<string, (input: never) => Promise<void>>;
  * For each spec, adds a method keyed by `spec.method` that:
  * - Validates `input` against the spec's Zod schema (logs and returns on failure)
  * - Creates a JSON-RPC notification from the validated input
- * - Broadcasts on the transport (filtered by `should_deliver` when supplied)
+ * - Broadcasts on the registry (filtered by `should_deliver` when supplied)
  *
  * A broadcast with no connections reaches nobody and is not an error. Errors
  * during send are logged but never thrown — broadcasts are fire-and-forget from
@@ -102,7 +102,7 @@ export type BroadcastApi = Record<string, (input: never) => Promise<void>>;
  * }
  *
  * const api = create_broadcast_api<BackendActionsApi>({
- *   transport: app_server.ws_endpoints['/api/ws']!,
+ *   registry: app_server.ws_endpoints['/api/ws']!,
  *   specs: [filer_change_action_spec, workspace_changed_action_spec],
  * });
  * ```
@@ -114,7 +114,7 @@ export type BroadcastApi = Record<string, (input: never) => Promise<void>>;
 export const create_broadcast_api = <TApi extends object>(
 	options: CreateBroadcastApiOptions
 ): TApi => {
-	const { transport, specs, should_deliver } = options;
+	const { registry, specs, should_deliver } = options;
 	const log = options.log === undefined ? new Logger('[broadcast]') : options.log;
 
 	const api: Record<string, (input: unknown) => Promise<void>> = {};
@@ -132,11 +132,11 @@ export const create_broadcast_api = <TApi extends object>(
 
 			try {
 				if (should_deliver) {
-					transport.broadcast_filtered(notification, (identity) =>
+					registry.broadcast_filtered(notification, (identity) =>
 						should_deliver(identity, method, parsed.data)
 					);
 				} else {
-					transport.broadcast(notification);
+					registry.broadcast(notification);
 				}
 			} catch (error) {
 				log?.error(`[${method}] unexpected error:`, error);

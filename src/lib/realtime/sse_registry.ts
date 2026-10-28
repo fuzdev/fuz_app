@@ -1,5 +1,5 @@
 /**
- * Generic subscriber registry for broadcasting to SSE clients.
+ * Generic registry of SSE streams for broadcasting to SSE clients.
  *
  * Supports channel-based filtering — subscribers connect with optional
  * channel filters, and broadcasts reach only matching subscribers.
@@ -27,7 +27,7 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import type { SseStream } from './sse.ts';
 
-/** One admitted subscriber, as `SubscriberRegistry.broadcast` sees it. */
+/** One admitted subscriber, as `SseRegistry.broadcast` sees it. */
 export interface Subscriber<T> {
 	stream: SseStream<T>;
 	/** Channels this subscriber listens to. `null` means all channels. */
@@ -45,8 +45,8 @@ export interface Subscriber<T> {
  */
 type SubscriberEntry<T> = Omit<Subscriber<T>, 'stream'> & { stream: SseStream<T> | null };
 
-/** Options for `SubscriberRegistry`. */
-export interface SubscriberRegistryOptions {
+/** Options for `SseRegistry`. */
+export interface SseRegistryOptions {
 	/**
 	 * Max admitted subscribers sharing a single `scope`. When a subscriber is
 	 * admitted and the count of admitted subscribers with the same `scope` has
@@ -63,7 +63,7 @@ export interface SubscriberRegistryOptions {
 	log?: Logger | null;
 }
 
-/** Options for `SubscriberRegistry.subscribe` and `subscribe_pending`. */
+/** Options for `SseRegistry.subscribe` and `subscribe_pending`. */
 export interface SubscribeOptions {
 	/** Channels to subscribe to. Empty/absent = all channels. */
 	channels?: ReadonlyArray<string>;
@@ -81,8 +81,8 @@ export interface SubscribeOptions {
 
 /**
  * A registered subscription awaiting admission — what
- * `SubscriberRegistry.subscribe_pending` returns and
- * `SubscriberRegistry.admit` takes.
+ * `SseRegistry.subscribe_pending` returns and
+ * `SseRegistry.admit` takes.
  *
  * Its entry is already in the registry, so every `close_by_identity` can reach
  * it, but nothing is delivered to it and it does not count toward the
@@ -98,7 +98,7 @@ export interface PendingSubscription {
 }
 
 /**
- * Generic subscriber registry with channel-based filtering and identity-keyed disconnection.
+ * Generic registry of SSE streams with channel-based filtering and identity-keyed disconnection.
  *
  * Subscribers connect with optional channel filters, a capped `scope`, and
  * uncapped `groups`. Broadcasts go to a specific channel and reach only
@@ -139,7 +139,7 @@ export interface PendingSubscription {
  *
  * @example
  * ```ts
- * const registry = new SubscriberRegistry<SseNotification>();
+ * const registry = new SseRegistry<SseNotification>();
  *
  * // subscriber connects (from SSE endpoint)
  * const unsubscribe = registry.subscribe(stream, {channels: ['runs']});
@@ -192,7 +192,7 @@ export interface PendingSubscription {
  * return response;
  * ```
  */
-export class SubscriberRegistry<T> {
+export class SseRegistry<T> {
 	// insertion order is registration order — the cap's "oldest"
 	readonly #subscribers: Set<SubscriberEntry<T>> = new Set();
 	// each pending handle's entry; keyed per registry, so a handle from
@@ -204,7 +204,7 @@ export class SubscriberRegistry<T> {
 	// closed (class doc, "Shutdown")
 	#closing = false;
 
-	constructor(options?: SubscriberRegistryOptions) {
+	constructor(options?: SseRegistryOptions) {
 		this.#max_per_scope = options?.max_per_scope ?? null;
 		this.#log = options?.log === undefined ? new Logger('[sse]') : options.log;
 	}

@@ -30,7 +30,7 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { z } from 'zod';
 
 import { DEFAULT_WS_MAX_MESSAGE_BYTES } from '#lib/actions/transports.ts';
-import { BackendWebsocketTransport } from '#lib/actions/transports_ws_backend.ts';
+import { ConnectionRegistry } from '#lib/actions/connection_registry.ts';
 import type { AppSurface } from '#lib/http/surface.ts';
 import { start_daemon_token_rotation } from '#lib/testing/daemon_token_rotation.ts';
 import { load_env } from '#lib/env/load.ts';
@@ -273,13 +273,12 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 	);
 
 	// Created up front so the role-grant-offer `notification_sender` binds to the
-	// SAME transport the WS endpoint registers connections against (the
-	// transport is the connection registry — a separate instance would fan out
-	// to an empty registry and reach nobody). Threaded into
+	// SAME registry the WS endpoint registers connections against — a separate
+	// instance would fan out to an empty registry and reach nobody. Threaded into
 	// `build_full_spine_mount({notification_sender})` and the `ws_endpoints` spec
 	// below; `create_app_server` adds it to the backend's connection closer and
 	// wires its audit-revocation guard.
-	const ws_transport = new BackendWebsocketTransport();
+	const connection_registry = new ConnectionRegistry();
 
 	// Login rate limiting is OFF by default — the standard cross suites fire
 	// many login/signup round-trips per backend lifetime from one host (loopback),
@@ -332,11 +331,11 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 	// `build_full_spine_mount`). Single-sourced in `full_spine_mount.ts` so the
 	// binary, the in-process parity setup, and the `spine_method_coverage`
 	// reconciliation test all build the same list — a method can't be mounted
-	// here and forgotten elsewhere. The shared `ws_transport` is threaded as the
+	// here and forgotten elsewhere. The shared `connection_registry` is threaded as the
 	// role-grant-offer `notification_sender` so the spine emits the WS
 	// notification family — driving `describe_role_grant_offer_notification_ws_tests`.
 	const full_mount = build_full_spine_mount(app_backend.deps, {
-		notification_sender: ws_transport,
+		notification_sender: connection_registry,
 		daemon_token_state: daemon_token_rotation.state
 	});
 
@@ -396,22 +395,22 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 		// `required_roles` — the stub's WS state carries none either.
 		//
 		// A second endpoint serves the same actions behind a role gate
-		// (`SPINE_ROLE_GATED_WS_ROLES`), sharing the transport — as the Rust
+		// (`SPINE_ROLE_GATED_WS_ROLES`), sharing the registry — as the Rust
 		// stub's gated mount shares its connection registry — so a revoked role
-		// must close the gated registrations of one transport and leave the
+		// must close the gated registrations of one registry and leave the
 		// ungated ones open (`describe_ws_role_gated_cross_tests`).
 		create_upgrade_websocket: prepare_websocket({ max_message_bytes: WS_MAX_MESSAGE_BYTES }),
 		ws_endpoints: [
 			{
 				path: ws_path,
 				actions: full_mount.ws_actions,
-				transport: ws_transport,
+				registry: connection_registry,
 				max_message_bytes: WS_MAX_MESSAGE_BYTES
 			},
 			{
 				path: SPINE_ROLE_GATED_WS_PATH,
 				actions: full_mount.ws_actions,
-				transport: ws_transport,
+				registry: connection_registry,
 				max_message_bytes: WS_MAX_MESSAGE_BYTES,
 				required_roles: SPINE_ROLE_GATED_WS_ROLES
 			}

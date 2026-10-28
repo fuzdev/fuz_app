@@ -476,7 +476,7 @@ describe('create_app_server.ws_endpoints dispatch through the assembled app', ()
 			socket.closes.map((c) => c.code),
 			[WS_CLOSE_GOING_AWAY]
 		);
-		assert.strictEqual(t.server.ws_endpoints[WS_PATH]!.get_connection_count(), 0);
+		assert.strictEqual(t.server.ws_endpoints[WS_PATH]!.connection_count(), 0);
 		// the afterEach close is a no-op on a closed server
 		await t.server.close();
 		assert.strictEqual(socket.closes.length, 1);
@@ -506,8 +506,8 @@ describe('create_app_server.ws_endpoints dispatch through the assembled app', ()
 			'no credential re-read for a born-closed upgrade'
 		);
 		const transport = t.server.ws_endpoints[WS_PATH]!;
-		assert.strictEqual(transport.get_connection_count(), 0);
-		assert.strictEqual(transport.get_pending_connection_count(), 0);
+		assert.strictEqual(transport.connection_count(), 0);
+		assert.strictEqual(transport.pending_connection_count(), 0);
 	});
 
 	test('a shutdown during the admission re-read closes the upgrade going-away, never as revoked', async () => {
@@ -532,7 +532,7 @@ describe('create_app_server.ws_endpoints dispatch through the assembled app', ()
 			const opened = events.onOpen?.(new Event('open'), fake.ws) as unknown as Promise<void>;
 			await stalled.reached;
 			const transport = t.server.ws_endpoints[WS_PATH]!;
-			assert.strictEqual(transport.get_pending_connection_count(), 1);
+			assert.strictEqual(transport.pending_connection_count(), 1);
 
 			await t.server.close();
 			assert.deepStrictEqual(fake.closes, [GOING_AWAY_CLOSE], 'the close-all closed it pending');
@@ -545,8 +545,8 @@ describe('create_app_server.ws_endpoints dispatch through the assembled app', ()
 				[GOING_AWAY_CLOSE],
 				'the refusal after the failed re-read sent no 1011 or 4001'
 			);
-			assert.strictEqual(transport.get_connection_count(), 0);
-			assert.strictEqual(transport.get_pending_connection_count(), 0);
+			assert.strictEqual(transport.connection_count(), 0);
+			assert.strictEqual(transport.pending_connection_count(), 0);
 		} finally {
 			stalled.release();
 		}

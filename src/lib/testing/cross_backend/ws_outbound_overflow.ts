@@ -5,7 +5,7 @@ import '../assert_dev_env.ts';
  * real upgrade.
  *
  * Both spines hold what waits to be written to one WebSocket to a byte budget
- * (`BackendWebsocketTransport`'s `outbound_queue_bytes` on the TS side, the
+ * (`ConnectionRegistry`'s `outbound_queue_bytes` on the TS side, the
  * Rust `fuz_realtime` outbound queue on the other; both default to 4 MiB, each
  * waiting frame charged its UTF-8 length plus 64 bytes). A frame that does not
  * fit closes the socket with `WS_CLOSE_OUTBOUND_OVERFLOW` and

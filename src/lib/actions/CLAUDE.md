@@ -372,8 +372,8 @@ raw `request()` keeps its default-on queue.
 
 - `actions/transports_http.ts` — `frontend_http_rpc`; thin `fetch` adapter over `FrontendHttpTransportOptions` (`{url, headers?, lookup_action_spec, max_get_url_length?}`). The transport owns the request policy, derived from the spec `lookup_action_spec` returns, so a hand-built transport can't drop a rule: POST by default; a read (`side_effects: false`) is a GET with no `content-type`, unless its input carries a `'secret'` or `'personal'` value at any depth (`schema_has_sensitive_field`, walked once per spec — a GET puts the params in the URL, which proxies and logs record) or its path and query exceed `max_get_url_length` (`DEFAULT_MAX_GET_URL_LENGTH`, 4096), which go as POST. A method the lookup doesn't know is a POST. The endpoint answers every GET with `Cache-Control: no-store` (`RPC_GET_CACHE_CONTROL`).
 - `actions/transports_ws.ts` — `frontend_websocket_rpc`; thin adapter over `WebsocketRpcConnection` (default impl: `FrontendWebsocketClient`), `queues` while the connection `will_reconnect`. Also `to_same_origin_ws_url(path)`, the page-origin WebSocket URL a same-origin backend is reached at (`path` itself off the browser). Answers inbound server→client requests: a built-in `peer_ping_responder` for `peer/ping` (zero-wiring liveness), any other request routed through `peer.receive` with the response sent back over the socket (the frontend half of the ActionPeer receive loop).
-- `actions/transports_ws_backend.ts` — `BackendWebsocketTransport`, server-side WS with session tracking, two-phase registration (`register_pending` / `admit`), the per-account cap, and the per-connection outbound budget; the broadcast target of `create_broadcast_api` (`broadcast`, `broadcast_filtered`). Not a `Transport`: it sends nothing a client requested. Server→client requests via `request_connection` (correlation registry in `actions/peer_request.ts`).
-- `actions/ws_outbound_writer.ts` — `WsOutboundWriter`, the outbound queue and write pump of one connection, which every frame the transport sends goes through; `realtime/outbound_budget.ts` is the accounting it shares with SSE.
+- `actions/connection_registry.ts` — `ConnectionRegistry`, server-side WS with session tracking, two-phase registration (`register_pending` / `admit`), the per-account cap, and the per-connection outbound budget; the broadcast target of `create_broadcast_api` (`broadcast`, `broadcast_filtered`). Not a `Transport`: it sends nothing a client requested. Server→client requests via `request_connection` (correlation registry in `actions/peer_request.ts`).
+- `actions/ws_outbound_writer.ts` — `WsOutboundWriter`, the outbound queue and write pump of one connection, which every frame the registry sends goes through; `realtime/outbound_budget.ts` is the accounting it shares with SSE.
 
 `FrontendHttpTransport` on non-OK HTTP returns the body as-is when it's a
 JSON-RPC error response for the request (same `id` compared as strings since GET sends it as a query param, or `null`) — the
@@ -404,7 +404,7 @@ sends it — otherwise the close would fail every request in flight on the
 socket. A consumer that raises the server cap passes the same value to the
 client; `null` skips the client-side measurement.
 
-### `BackendWebsocketTransport` — server-side WS state
+### `ConnectionRegistry` — server-side WS state
 
 One map keyed by `connection_id` (branded `Uuid`), in registration order:
 `#connections: Map<Uuid, ConnectionEntry>`, each entry `{ws, identity,
@@ -412,7 +412,7 @@ admitted, abort_controller, writer}`. `identity` is the `ConnectionIdentity`
 `{session_hash, account_id, api_token_id, required_roles}` (session sets
 `session_hash`, bearer sets `api_token_id`, daemon-token sets both null;
 `required_roles` is what the endpoint gated the upgrade on, per registration,
-since endpoints with different gates can share one transport).
+since endpoints with different gates can share one registry).
 
 The id is the connection's only handle — `register_pending` / `add_connection`
 return it and `admit` / `remove_connection` / `is_registered` take it. There is
@@ -425,7 +425,7 @@ open and removes by it.
 socket exists, and a revocation closes only the connections *registered* under
 what it revoked — so a one-step registration leaves a window in which a
 revocation closes nothing and the socket is then admitted on a dead credential.
-The transport splits registration to close it (the twin of the Rust
+The registry splits registration to close it (the twin of the Rust
 `fuz_realtime` `ConnectionRegistry`, same method names):
 
 - `register_pending(ws, identity, abort_controller?)` (`identity: ConnectionIdentity`, as
@@ -433,12 +433,12 @@ The transport splits registration to close it (the twin of the Rust
   inserts the entry **un-admitted**. Every `close_connections` matches it
   from that instant. Otherwise it is inert: no `broadcast`,
   `broadcast_filtered` (the predicate never sees it), `send_to_account`, or
-  `request_connection` (`connection_gone`) reaches it; `get_connection_count`
+  `request_connection` (`connection_gone`) reaches it; `connection_count`
   and `is_registered` don't see it
-  (`get_pending_connection_count` does); the cap neither counts nor evicts it.
+  (`pending_connection_count` does); the cap neither counts nor evicts it.
 - the caller re-reads the credential (`revalidate_resolved_auth`).
 - `take_pending_close_code(connection_id)` — after a refused `admit`, the
-  close code the transport closed the pending entry with (4001, 4006, 1001),
+  close code the registry closed the pending entry with (4001, 4006, 1001),
   read once; what `register_action_ws` logs the refusal by.
 - `admit(connection_id)` returns `false` when the entry is gone — a revocation
   closed it while pending — and evicts nothing; otherwise it enforces the cap
@@ -452,12 +452,12 @@ harnesses that register a socket directly. An upgrade that authenticated a sessi
 uses the two-phase form.
 
 **Abort at close time.** The `abort_controller` passed at registration is the
-socket's per-connection controller. The transport aborts it when it closes the
+socket's per-connection controller. The registry aborts it when it closes the
 connection — a revocation or a cap eviction — so in-flight handlers see
 `signal.aborted` at once, not when the close handshake lands.
 `remove_connection` only removes: it neither closes nor aborts.
 
-**Per-account connection cap.** `new BackendWebsocketTransport({max_connections_per_account})`
+**Per-account connection cap.** `new ConnectionRegistry({max_connections_per_account})`
 — default `DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT` (50), `null` disables, anything
 but a positive integer throws. The policy is **evict-oldest**: admission always
 admits the new connection, first closing the account's oldest admitted ones
@@ -470,7 +470,7 @@ real user. The check runs at **admission** (`admit`, or `add_connection`),
 which `register_action_ws` reaches in `onOpen` — after every upgrade gate
 (origin, auth, token scope, acting actor, role) and the credential re-read — so a refused or
 just-revoked request never closes someone's socket. An evicted connection
-leaves the transport's map at once — no broadcast or peer request reaches it,
+leaves the registry's map at once — no broadcast or peer request reaches it,
 its pending peer requests drain as `connection_gone`, it stops counting toward
 the cap, its controller is aborted, and `register_action_ws` dispatches nothing
 more on it — while the socket itself is only closed once the close handshake
@@ -478,9 +478,9 @@ completes. Its `on_socket_close` fires when the close lands, and the
 `remove_connection` before it is a no-op. An eviction logs
 `ws: connection cap closed oldest` at
 info with `{account_id, closed, max}` (the Rust spine's line) through the
-transport's `log` (a `[ws]` logger when unset, `null` silences;
-`register_action_ws` passes its own to the transport it creates). The cap is per transport:
-endpoints sharing one transport share one count per account. The twin of the
+registry's `log` (a `[ws]` logger when unset, `null` silences;
+`register_action_ws` passes its own to the registry it creates). The cap is per registry:
+endpoints sharing one registry share one count per account. The twin of the
 Rust `fuz_realtime` `ConnectionRegistry`'s cap — same default, same policy,
 same close code and reason — pinned on both by the
 `describe_ws_connection_cap_cross_tests` suite.
@@ -502,7 +502,7 @@ which bypasses the budget. A send never waits and never throws.
   frames over in order, on the microtask after a send and as the buffer drains.
   So a second send in one synchronous run reaches the socket a microtask later.
 - **The budget.** What waits is held to `outbound_queue_bytes`
-  (`new BackendWebsocketTransport({outbound_queue_bytes})`, default
+  (`new ConnectionRegistry({outbound_queue_bytes})`, default
   `DEFAULT_WS_OUTBOUND_QUEUE_BYTES`, 4 MiB — its own constant, not derived from
   `max_message_bytes`; anything but a positive integer throws): each waiting
   frame is charged its UTF-8 length plus `OUTBOUND_FRAME_OVERHEAD_BYTES` (64),
@@ -566,7 +566,7 @@ of any listed role closes, whether or not the account still holds another).
 
 `close_all_connections()` closes every connection, pending and admitted, with
 `WS_CLOSE_GOING_AWAY` instead — the shutdown close, removing and aborting each
-the same way — and leaves the transport **closing** for good (`is_closing()`):
+the same way — and leaves the registry **closing** for good (`is_closing()`):
 every later registration is **born closed**. `register_pending` and
 `add_connection` then insert nothing, abort the caller's controller, and close
 the socket with `WS_CLOSE_GOING_AWAY` before returning an id that names
@@ -588,7 +588,7 @@ Server→client request/response (ActionPeer): `request_connection(connection_id
 method, params, {timeout_ms?})` sends a `{jsonrpc, method, params, id}` frame to
 exactly one socket and awaits the reply, returning a `PeerRequestOutcome`
 (`{ok: true, value}` | `{ok: false, error: PeerRequestError}` —
-`timeout`/`connection_gone`/`too_many_in_flight`/`client_error`). The transport
+`timeout`/`connection_gone`/`too_many_in_flight`/`client_error`). The registry
 owns the socket + the send; the correlation registry — id allocation, the pending
 map (nested `connection_id → s{n}` id, the nesting being the per-connection
 isolation guarantee), deadlines, and the in-flight cap — is `PendingPeerRequests`
@@ -627,18 +627,18 @@ type ConnectionCloseTarget =
 	| {kind: 'role'; account_id: Uuid; role: string}; // a revoked global grant
 ```
 
-`BackendWebsocketTransport` satisfies it structurally;
+`ConnectionRegistry` satisfies it structurally;
 `create_sse_connection_closer(registry, required_role)` (`realtime/audit_log_sse.ts`) adapts
-a `SubscriberRegistry` (`close_all_connections` is `SubscriberRegistry.close_all`;
+an `SseRegistry` (`close_all_connections` is `SseRegistry.close_all`;
 a `role` target closes the account's streams when `role` is the
 registry's gating role). No handler closes for a role: a role revocation's
 closes come from the revocation guard alone (below).
 Closing is idempotent and synchronous. `close_all_connections` is the one method no
 revocation calls: `AppServer.close` runs it on `deps.connection_closer` to end
 every live connection of the backend at shutdown, and it has no
-`ConnectionCloseTarget` variant. It also leaves each member closing — the WS
-transport and `SubscriberRegistry` refuse every later registration (born
-closed) — so a closed transport or registry hosts nothing more. Its Rust
+`ConnectionCloseTarget` variant. It also leaves each member closing — the WS connection
+registry and `SseRegistry` refuse every later registration (born
+closed) — so a closed connection registry or SSE registry hosts nothing more. Its Rust
 counterpart is `ShutdownCloser::close_all_connections`, a supertrait of
 `ConnectionCloser`.
 
@@ -671,15 +671,15 @@ carry caller-supplied ids.
 by reference: a closer added twice is one member, reached once. `add` returns a
 remover for that addition (idempotent); additions are counted, so the closer
 stays a member until every addition is removed — one owner releasing a shared
-transport leaves it reachable for the others.
+registry leaves it reachable for the others.
 `create_app_backend` puts one on `AppDeps.connection_closer`; `create_app_server`
-adds each mounted WS transport and the audit stream registry itself (passing
+adds each mounted WS connection registry and the audit stream registry itself (passing
 `connection_closer: null` to the mount functions so it holds the removers),
 registers the revocation guard on it, and removes them when its assembly fails
 or `AppServer.close` runs — after `close_all_connections` across them all. Twin of
 `RealtimeCloser`. A member that throws does not stop the fan-out — every
 member is called, then the first error is thrown for the caller to log;
-`BackendWebsocketTransport` and `SubscriberRegistry.close_by_identity` treat a
+`ConnectionRegistry` and `SseRegistry.close_by_identity` treat a
 throwing socket or stream the same way. `noop_connection_closer` is a `ConnectionCloser` that closes
 nothing, for hand-built action-factory deps on a backend with no
 live-connection surface.
@@ -692,8 +692,8 @@ It is required where it is read, so it can't be forgotten:
 the connections of each expired session it deletes — `auth/CLAUDE.md`
 §Cleanup), and the
 `connection_closer: RealtimeCloser | null` option of `register_action_ws` /
-`create_audit_log_sse`, which add their transport to it
-(`null` is the explicit opt-out, or for a caller that adds the transport itself
+`create_audit_log_sse`, which add their registry to it
+(`null` is the explicit opt-out, or for a caller that adds the registry itself
 to hold the remover, as `create_app_server` does).
 
 ### Revocation guard (`create_revocation_guard`)
@@ -710,7 +710,7 @@ closes reach a connection still pending admission.
 `deps.connection_closer` when it mounts a WS endpoint or the audit stream —
 after the audit stream's broadcast listener, so a revocation's row reaches the
 stream before the close — and the fan-out carries each close to every member:
-each WS transport and the audit stream registry (`create_sse_connection_closer`).
+each WS connection registry and the audit stream registry (`create_sse_connection_closer`).
 A consumer wiring outside `create_app_server` registers its own, over a closer
 holding its transports, inside its `audit_factory` body.
 
@@ -776,9 +776,9 @@ is inside) throws at assembly (`assert_endpoint_in_auth_scope`, which
 parsed and every caller would be unauthenticated.
 
 `WsEndpointSpec` fields: `path`, `allowed_origins?` (default: the server's),
-`actions?`, `required_roles?`, `transport?`, `max_connections_per_account?`,
+`actions?`, `required_roles?`, `registry?`, `max_connections_per_account?`,
 `outbound_queue_bytes?`, `receive_timeout?`, `max_message_bytes?`,
-`on_socket_open?`, `on_socket_close?`. Every mounted transport is added to
+`on_socket_open?`, `on_socket_close?`. Every mounted registry is added to
 `deps.connection_closer`.
 
 **One action set across transports.** A spec that omits `actions` serves the
@@ -790,16 +790,16 @@ of handler closures then runs on both transports. Assembly throws when a spec
 omits `actions` and no RPC endpoint, or more than one, resolves.
 
 `max_connections_per_account` sets the per-account connection cap on the
-transport the mount creates (`RegisterActionWsOptions` carries the same field).
-It throws alongside `transport` — a supplied transport carries its own cap, set
+registry the mount creates (`RegisterActionWsOptions` carries the same field).
+It throws alongside `registry` — a supplied registry carries its own cap, set
 where it was constructed, and an option that silently did nothing would read as
 enforced. `outbound_queue_bytes` sets the per-connection outbound budget on that
-transport the same way (default `DEFAULT_WS_OUTBOUND_QUEUE_BYTES`; zero or a
+registry the same way (default `DEFAULT_WS_OUTBOUND_QUEUE_BYTES`; zero or a
 non-positive value throws at assembly, as does passing it alongside
-`transport`).
+`registry`).
 
-Mounted transport reachable at `app_server.ws_endpoints[path]`
-(`Readonly<Record<string, BackendWebsocketTransport>>`). Duplicate paths
+Mounted registry reachable at `app_server.ws_endpoints[path]`
+(`Readonly<Record<string, ConnectionRegistry>>`). Duplicate paths
 across `WsEndpointSpec`s throw at assembly, before any endpoint mounts.
 Cross-surface collisions (same `GET <path>` on both `RouteSpec` and
 `WsEndpointSpec`) throw with exact-string match. Pattern overlap (e.g.
@@ -828,7 +828,7 @@ Only `GET` is mounted (Hono serves `HEAD` through it, guards included), so any
 other method on the path is a 404. Takes
 `allowed_origins` (required — `create_app_server` passes the server's), the
 required `connection_closer` and action limiters, and optional
-`required_roles`; returns `{transport}`. Most consumers reach for
+`required_roles`; returns `{registry}`. Most consumers reach for
 `ws_endpoints` above; call it directly only to mount a WS endpoint outside
 `create_app_server`'s assembly. Tests drive the dispatcher without the
 guards through `create_ws_test_harness`, which invokes the captured events
@@ -841,10 +841,10 @@ HTTP RPC also calls. `register_action_ws` owns only WS-specific concerns:
 - **Cancel-notification interception** — `{request_id → AbortController}` map; aborts the matching pending controller before the cancel bubbles past the dispatcher
 - **Duplicate live ids refused** — a request whose id names a request still running on the socket is answered `invalid_request` with `data.reason` `ERROR_DUPLICATE_REQUEST_ID` and not dispatched; the running request keeps its controller, its cancel entry, and its reply id. An id is free again once its request is answered. Same refusal on the Rust spine
 - **In-flight ceiling** — at most `MAX_INBOUND_DISPATCHES_PER_CONNECTION` (128) requests run at once per socket (`@hono/node-ws` does not await `onMessage`, so nothing else bounds them); one more is answered `queue_overflow` (`WS_INBOUND_DISPATCH_OVERFLOW_MESSAGE`) and not dispatched, and the socket stays open and keeps reading — a reply to a server-initiated request still gets through. The duplicate check runs first; neither refusal reaches `perform_action`, so neither charges the action rate limiters. Same cap, message, and order as the Rust spine's `MAX_INBOUND_DISPATCHES_PER_CONNECTION`
-- **Socket-scoped notify** — `(method, params) => transport.send_to(connection_id, notification)`, threaded into `perform_action` as `notify`
-- **Every send through the transport** — responses, error frames, and notifications all go through `transport.send_to`, so they are held to the connection's outbound budget; a handler that sends past it closes its own socket with `WS_CLOSE_OUTBOUND_OVERFLOW` and gets no response written
+- **Socket-scoped notify** — `(method, params) => registry.send_to(connection_id, notification)`, threaded into `perform_action` as `notify`
+- **Every send through the registry** — responses, error frames, and notifications all go through `registry.send_to`, so they are held to the connection's outbound budget; a handler that sends past it closes its own socket with `WS_CLOSE_OUTBOUND_OVERFLOW` and gets no response written
 - **Composed abort signal** — `AbortSignal.any([socket_close, per_request_cancel])`, threaded as `signal`
-- **Connection lifecycle** — admission (`transport.register_pending` → `recheck_admission` → `transport.admit`, which enforces the per-account connection cap) / `remove_connection`, `on_socket_open` / `_close` hooks, server heartbeat
+- **Connection lifecycle** — admission (`registry.register_pending` → `recheck_admission` → `registry.admit`, which enforces the per-account connection cap) / `remove_connection`, `on_socket_open` / `_close` hooks, server heartbeat
 - **The inbound gate** — frames queue until the socket is admitted and `on_socket_open` has completed; frames on a socket the server closed are dropped
 
 **Admission.** `onOpen` registers the connection pending (synchronously, with
@@ -853,7 +853,7 @@ the socket's `AbortController`), re-reads what the gates read
 `auth/resolved_auth.ts`, which the audit stream shares: the credential —
 session row / token row / account row, no touch — the acting actor, and the
 role; `resolved` is `get_resolved_auth(c)`, read off the keys the auth
-middleware set), then `transport.admit`s. A dead credential, or a pending entry a revocation closed
+middleware set), then `registry.admit`s. A dead credential, or a pending entry a revocation closed
 meanwhile, closes the socket with `WS_CLOSE_SESSION_REVOKED` and the reason a
 revoked socket gets; a re-check that throws closes it with
 `WS_CLOSE_INTERNAL_ERROR` (`internal error`) — fail closed, never admitted
@@ -876,13 +876,13 @@ revocation closes only after its commit — see
 ../../../docs/security.md §Connection Admission and §Closing on Revocation.
 
 `connection_closer: RealtimeCloser | null` is a required option: the endpoint's
-transport is added to it, so the revocation handlers' post-commit closes reach
+registry is added to it, so the revocation handlers' post-commit closes reach
 the sockets opened here. The add is the mount's last step, so a mount that
 throws (a registry that fails to compile) adds nothing; the addition is
-permanent, its remover not returned. `null` is for a transport no revocation
+permanent, its remover not returned. `null` is for a registry no revocation
 has to reach (a harness driving the dispatcher directly), or one the caller
 adds itself to hold the remover — `create_app_server` passes `null` and adds
-the transport after the mount returns, releasing it when assembly fails or
+the registry after the mount returns, releasing it when assembly fails or
 the server closes.
 
 Because `onOpen` awaits, an adapter can deliver `onMessage` before admission
@@ -903,22 +903,22 @@ returns a promise that settles when the frame was dispatched or dropped.
 
 The queue holds **every** inbound frame, replies to server-initiated requests
 included — so an `on_socket_open` hook that awaits
-`transport.request_connection` on its own connection gets no reply until it
+`registry.request_connection` on its own connection gets no reply until it
 returns (it times out); start such a request without awaiting it.
 
 **A server-closed socket dispatches nothing.** An adapter can keep delivering
 frames after the server calls `ws.close(…)`, until the close handshake
 completes — `@hono/node-ws` does, for up to the `ws` close timeout when the
 client withholds its close frame. So every server-side close removes the
-connection from the transport and aborts the socket's controller **at close
-time**: the transport does both for a revocation or a cap eviction, and
+connection from the registry and aborts the socket's controller **at close
+time**: the registry does both for a revocation or a cap eviction, and
 `register_action_ws`'s `end_socket` does both — through
-`transport.close_connection` — for a heartbeat timeout, a credential
+`registry.close_connection` — for a heartbeat timeout, a credential
 expiry, an oversized message, a failed `on_socket_open`, and a refused
 admission.
 `onMessage` then drops any frame whose socket has ended — no dispatch, no
-error reply. A connection the transport no longer holds though nothing closed
-its socket (a bare `transport.remove_connection`; `transport.is_registered` is
+error reply. A connection the registry no longer holds though nothing closed
+its socket (a bare `registry.remove_connection`; `registry.is_registered` is
 the twin of the Rust `is_registered`) is ended on its next frame with
 `WS_CLOSE_INTERNAL_ERROR` (`WS_CLOSE_CONNECTION_UNREGISTERED_REASON`), so it can't linger as a
 socket that reads everything, answers nothing, and — being chatty — is never
@@ -977,7 +977,7 @@ close with `WS_CLOSE_INTERNAL_ERROR` and `WS_CLOSE_SOCKET_OPEN_FAILED_REASON`, u
 the connection.
 `on_socket_close({ws, connection_id, identity})` fires — only for a socket that
 was admitted — after
-`transport.remove_connection(connection_id)` — a slow hook never holds a dead
+`registry.remove_connection(connection_id)` — a slow hook never holds a dead
 entry that broadcasts still target and the per-account cap still counts.
 `connection_id` and `identity` are the values captured at open, so the hook
 reads them the same way after a client close, a revocation, or a connection-cap
@@ -1009,7 +1009,7 @@ socket ends. Twin of the Rust loop's `WsLoopOptions::credential_deadline`.
 
 Two abort signals composed via `AbortSignal.any`:
 
-- `socket_abort_controller` — per-socket, fires when the socket ends: at the server's close (revocation, cap eviction, heartbeat timeout, …) or the client's. Registered with the transport, which aborts it on the closes it makes. Drives every handler's `ctx.signal`.
+- `socket_abort_controller` — per-socket, fires when the socket ends: at the server's close (revocation, cap eviction, heartbeat timeout, …) or the client's. Registered with the registry, which aborts it on the closes it makes. Drives every handler's `ctx.signal`.
 - `pending_controllers: Map<JsonrpcRequestId, AbortController>` — per-request. Registered before dispatch (one entry per running request — a duplicate live id is refused — so its size is the in-flight count the ceiling bounds), cleared in `finally` so late cancels for a completed id (or a reused id) can't null-abort the wrong handler. Unknown cancels no-op.
 
 ## Protocol actions (`actions/protocol.ts`)
@@ -1079,7 +1079,7 @@ all-optional object input accepts a call that omits them).
 "ActionPeer" — unbackticked throughout the peer/ping + `request_client` docs — is
 the _capability_ it participates in: the bidirectional peer request/response
 feature. It's a concept, not a symbol. The server→client half of that capability
-is `BackendWebsocketTransport.request_connection` + `PendingPeerRequests` (see
+is `ConnectionRegistry.request_connection` + `PendingPeerRequests` (see
 `actions/peer_request.ts`), not this class.
 
 ## Reactive frontend client
@@ -1217,22 +1217,22 @@ route per-call (e.g. return `'frontend_websocket_rpc'` for `account_*` /
 
 ## Broadcast API (`actions/broadcast_api.ts`)
 
-`create_broadcast_api({transport, specs, log?, should_deliver?})` — builds a
+`create_broadcast_api({registry, specs, log?, should_deliver?})` — builds a
 typed `{method: (input) => Promise<void>}` object from a list of action
 specs. Counterpart to `register_action_ws`: that handles frontend-initiated
 request-scoped dispatch, this handles backend-initiated broadcast.
 Request-scoped streaming stays on `ctx.notify` inside a handler.
 
 Per-method call: validates input against `spec.input` (logs + returns on
-failure), wraps in `JsonrpcNotification`, and sends it on `transport` — a
-`BroadcastTarget`, `Pick<BackendWebsocketTransport, 'broadcast' |
+failure), wraps in `JsonrpcNotification`, and sends it on `registry` — a
+`BroadcastTarget`, `Pick<ConnectionRegistry, 'broadcast' |
 'broadcast_filtered'>`, typically `app_server.ws_endpoints[path]` or the
-transport a `WsEndpointSpec` supplies. No transport registry and no fallback:
-broadcast is 1→N over one named transport. No connections reaches nobody.
+registry a `WsEndpointSpec` supplies. No `Transports` collection and no fallback:
+broadcast is 1→N over one named registry. No connections reaches nobody.
 
 `should_deliver: (identity, method, input) => boolean` — optional
 per-connection ACL predicate. When set, fans out via
-`transport.broadcast_filtered`; otherwise `transport.broadcast`. Errors logged
+`registry.broadcast_filtered`; otherwise `registry.broadcast`. Errors logged
 but never thrown — broadcasts are fire-and-forget.
 
 Typed surface: consumers declare an explicit `interface BackendActionsApi`

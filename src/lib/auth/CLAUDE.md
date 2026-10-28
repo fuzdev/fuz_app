@@ -183,7 +183,7 @@ counted, the request proceeds — so the count is how a lost row is seen.
 - `auth/account_routes.ts` — `POST /login` / `/logout` / `/password`, `GET /verify` (nginx `auth_request` shim), `GET /api/account/status`. Constants: `DEFAULT_MAX_SESSIONS = 5`, `DEFAULT_MAX_TOKENS = 10`, `DEFAULT_LOGIN_FAIL_FLOOR_MS = 250`, `DEFAULT_LOGIN_FAIL_JITTER_MS = 25`.
 - `auth/bootstrap_routes.ts` — `POST /bootstrap` + `check_bootstrap_status`; `BootstrapStatus` runtime ref.
 - `auth/signup_routes.ts` — `POST /signup` (open or invite-gated).
-- `auth/audit_log_routes.ts` — optional `GET /audit/stream` (SSE); list/history are on the RPC surface. Takes `stream: {registry, log}` (an `AuditLogSse` satisfies it). The handler admits the stream in two phases — register pending on the `SubscriberRegistry`, re-read the credential (`revalidate_resolved_auth`) and the acting actor's role grants, admit — so a revocation racing the request opens no stream: 401 / 403 from the re-reads, or a 200 whose body is the connect comment alone when the pending registration was closed.
+- `auth/audit_log_routes.ts` — optional `GET /audit/stream` (SSE); list/history are on the RPC surface. Takes `stream: {registry, log}` (an `AuditLogSse` satisfies it). The handler admits the stream in two phases — register pending on the `SseRegistry`, re-read the credential (`revalidate_resolved_auth`) and the acting actor's role grants, admit — so a revocation racing the request opens no stream: 401 / 403 from the re-reads, or a 200 whose body is the connect comment alone when the pending registration was closed.
 - `auth/auth_guard_resolver.ts` — `fuz_auth_guard_resolver` injected into `apply_route_specs` so the framework stays auth-agnostic. Maps each `RouteAuth` axis to a guard and is the single site every route spec traverses, so it also carries the two invariants the schema can't (a `required_scope` that isn't a well-formed capability, and one on an unrestricted route).
 
 **Hono-free route shapes.** Each cookie/SSE-coupled route module has a sibling
@@ -845,7 +845,7 @@ DEV-mode `create_validated_broadcaster` payload validation).
 
 Deps: `ActionFactoryDeps & {notification_sender?: NotificationSender | null}`.
 `NotificationSender` is the narrow structural capability
-(`send_to_account(account_id, message): number`); `BackendWebsocketTransport`
+(`send_to_account(account_id, message): number`); `ConnectionRegistry`
 satisfies it structurally. Target account travels via the send argument, not
 the payload — `revoked_by` is deliberately not in the `role_grant_revoke`
 payload (the revokee doesn't need to learn the admin's identity). When

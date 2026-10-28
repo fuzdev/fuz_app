@@ -54,10 +54,10 @@ export interface AppDeps {
 	/**
 	 * Closes live connections — WebSocket and SSE — when a credential is
 	 * revoked. Every revocation handler queues its close on this
-	 * (`queue_connection_close`), so it must reach every transport of the
+	 * (`queue_connection_close`), so it must reach every registry of the
 	 * backend: `create_app_backend` creates it empty, and `create_app_server`
-	 * adds each WebSocket transport it mounts and its audit stream registry. A
-	 * transport mounted by hand is added through the `connection_closer`
+	 * adds each WebSocket registry it mounts and its audit stream registry. A
+	 * registry mounted by hand is added through the `connection_closer`
 	 * option of `register_action_ws` / `create_audit_log_sse`.
 	 */
 	connection_closer: RealtimeCloser;

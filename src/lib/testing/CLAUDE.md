@@ -33,7 +33,7 @@ time (never runtime), where a throwing guard would break `vite build`.
 - `stub_mw` — pass-through middleware (`async (_c, next) => next()`).
 - `create_stub_app_deps()` — factory: fresh `AppDeps` with no-op keyring/password/`delete_file`, a `read_secure_file` that throws ENOENT (the no-token-file state), a `create_noop_stub` DB, silent `Logger`, no-op `audit`, an empty `connection_closer`.
 - `create_test_audit_emitter()` — no-op `AuditEmitter`; `emit` / `emit_role_grant_target` no-op, `emit_pool` resolves immediately, `notify` no-op, `add_listener` throws (use `create_recording_audit_emitter` for a listener-accepting emitter), `listener_count` returns 0, `drain_inflight` resolves immediately, `is_tracking_inflight` returns `false`.
-- `create_stub_audit_sse()` — no-op `AuditLogSse` for surface-test wiring without booting real SSE. `on_audit_event` no-op (nothing is broadcast); `required_role` is `admin`; `registry` is a fresh `SubscriberRegistry` (live `.count` / `.close_*` for registry-state tests, isolated per call). For real SSE plumbing build via `create_audit_log_sse` against `create_test_app`.
+- `create_stub_audit_sse()` — no-op `AuditLogSse` for surface-test wiring without booting real SSE. `on_audit_event` no-op (nothing is broadcast); `required_role` is `admin`; `registry` is a fresh `SseRegistry` (live `.count` / `.close_*` for registry-state tests, isolated per call). For real SSE plumbing build via `create_audit_log_sse` against `create_test_app`.
 - `create_stub_api_middleware({include_daemon_token?, origin_carve_outs?})` — stub `MiddlewareSpec[]` matching `create_auth_middleware_specs`'s output (origin/session/request_context/bearer_auth, optional daemon_token) for surface generation without booting real auth — the same names, paths, order, and declared `errors` (`origin` declares a 403; `bearer_auth` and `daemon_token` declare none, since both soft-fail through `next()`), pinned against the real factory by `auth/middleware.mounted.test.ts`. The surface merges middleware errors into every route under the path, so a stub declaring more would widen the test surface with statuses the live server never returns. Each spec gets its own pass-through handler (not the shared `stub_mw`), so `assert_middleware_stack_mounted` tells the layers apart. See `auth/CLAUDE.md` §Middleware for the real stack.
 - `create_stub_app_backend(options?)` — stub `AppBackend` with no database: `create_stub_app_deps()` (or `options.deps`), no migration results, a `close` that does nothing (or `options.close`). For assembling a server in tests that never reach the database.
 - `create_stub_app_server_context(session_options)` — stub `AppServerContext` over `create_stub_app_backend()`; rate limiters null, `bootstrap_status.available: false`.
@@ -708,16 +708,16 @@ streaming `fetch` body.
 ### `ws_round_trip.ts` — WebSocket harness (non-HTTP)
 
 In-process test driver for `register_action_ws`. Consumers pass specs +
-handlers, receive `{transport, connect()}` back. The full dispatch path is
+handlers, receive `{registry, connect()}` back. The full dispatch path is
 exercised (per-action auth, input validation, `ctx.notify`, broadcast via
-`BackendWebsocketTransport`, close-on-revoke), but Hono's wire upgrade is
+`ConnectionRegistry`, close-on-revoke), but Hono's wire upgrade is
 skipped — there is no server, so no runtime adapter; the cross-process suites
 cover real sockets.
 
 Three layers:
 
-1. **Primitives** — `create_fake_ws(options?)` (a real `WSContext` over capture arrays `sends` / `closes`, plus `socket` — the fake runtime socket behind `ws.raw`, shaped like Node's `ws`: a `bufferedAmount` the transport's outbound writer reads for backpressure, `stalled` (start it with `{stalled: true}`) to model a client that stopped reading, and `terminate` / `terminated` for the frameless cut; `readyState` reads open until closed or terminated), `create_fake_hono_context(opts)`, `create_stub_upgrade()`, `MinimalActionEnvironment`, `dispatch_ws_message(on_message, event, ws)`. The fake context sets the keys the production auth middleware sets — `AUTH_SESSION_TOKEN_HASH_KEY` included, as `hash_session_token(auth_session_id)` — because the dispatcher reads the credential through `get_resolved_auth(c)`; a hand-built upgrade context must do the same. `create_stub_upgrade()` stands in for a runtime adapter's `upgradeWebSocket`: it passes a request without `Upgrade: websocket` to `next()`, and records an upgrade request — its real `Context` and the endpoint's events factory — in `upgrades`, answering `200`. So a test can send `app.request('/api/ws', {headers: {upgrade: 'websocket', cookie | authorization, origin, 'x-forwarded-for'}})` through an assembled app's whole middleware chain and build the socket's events from the `Context` that chain produced (`src/test/server/create_app_server_ws_endpoints.dispatch.db.test.ts`); `get_create_events()` still returns the last mounted factory, for a hand-built context.
-2. **Harness** — `create_ws_test_harness({actions, transport?, receive_timeout?, log?, on_socket_open?, on_socket_close?})` → `WsTestHarness`. `connect(identity?)` is async and resolves after the connection is admitted and `on_socket_open` completes, so broadcasts sent immediately after `await harness.connect()` reach the client. The harness pre-bakes its `RequestContext` (`TEST_CONTEXT_PRESET_KEY`), which also skips the admission credential re-read — there are no session or token rows behind a harness identity — so tests of the re-read itself drive `register_action_ws` with a real database and no preset (`src/test/actions/register_action_ws.admission.db.test.ts`). The harness threads its own `create_stub_db()` into the dispatcher's `db` slot so handlers declaring `side_effects: true` execute under the same transaction wrap they would in production (the stub's `transaction(fn)` synchronously calls `fn(stub_db)`); domain deps reach handlers via factory closures, the same way HTTP RPC factories already wire them. Audit fan-out runs through whatever `audit` emitter the consumer supplied to its action factory closure (typically `create_test_audit_emitter()` for unit harnesses).
+1. **Primitives** — `create_fake_ws(options?)` (a real `WSContext` over capture arrays `sends` / `closes`, plus `socket` — the fake runtime socket behind `ws.raw`, shaped like Node's `ws`: a `bufferedAmount` the registry's outbound writer reads for backpressure, `stalled` (start it with `{stalled: true}`) to model a client that stopped reading, and `terminate` / `terminated` for the frameless cut; `readyState` reads open until closed or terminated), `create_fake_hono_context(opts)`, `create_stub_upgrade()`, `MinimalActionEnvironment`, `dispatch_ws_message(on_message, event, ws)`. The fake context sets the keys the production auth middleware sets — `AUTH_SESSION_TOKEN_HASH_KEY` included, as `hash_session_token(auth_session_id)` — because the dispatcher reads the credential through `get_resolved_auth(c)`; a hand-built upgrade context must do the same. `create_stub_upgrade()` stands in for a runtime adapter's `upgradeWebSocket`: it passes a request without `Upgrade: websocket` to `next()`, and records an upgrade request — its real `Context` and the endpoint's events factory — in `upgrades`, answering `200`. So a test can send `app.request('/api/ws', {headers: {upgrade: 'websocket', cookie | authorization, origin, 'x-forwarded-for'}})` through an assembled app's whole middleware chain and build the socket's events from the `Context` that chain produced (`src/test/server/create_app_server_ws_endpoints.dispatch.db.test.ts`); `get_create_events()` still returns the last mounted factory, for a hand-built context.
+2. **Harness** — `create_ws_test_harness({actions, registry?, receive_timeout?, log?, on_socket_open?, on_socket_close?})` → `WsTestHarness`. `connect(identity?)` is async and resolves after the connection is admitted and `on_socket_open` completes, so broadcasts sent immediately after `await harness.connect()` reach the client. The harness pre-bakes its `RequestContext` (`TEST_CONTEXT_PRESET_KEY`), which also skips the admission credential re-read — there are no session or token rows behind a harness identity — so tests of the re-read itself drive `register_action_ws` with a real database and no preset (`src/test/actions/register_action_ws.admission.db.test.ts`). The harness threads its own `create_stub_db()` into the dispatcher's `db` slot so handlers declaring `side_effects: true` execute under the same transaction wrap they would in production (the stub's `transaction(fn)` synchronously calls `fn(stub_db)`); domain deps reach handlers via factory closures, the same way HTTP RPC factories already wire them. Audit fan-out runs through whatever `audit` emitter the consumer supplied to its action factory closure (typically `create_test_audit_emitter()` for unit harnesses).
 3. **Round-trip helpers** — predicates + wire-frame types live in `transports/ws_client.ts` (shared with the cross-process `ws_transport.ts` impl): `is_notification(method)`, `is_notification_with<P>(method, match)` (type-guard combinator — narrows `wait_for` return type), `is_response_for(id)`, `JsonrpcNotificationFrame<P>` / `JsonrpcSuccessResponseFrame<R>` / `JsonrpcErrorResponseFrame<D>` (typed wire-frame shapes distinct from the runtime Zod schemas in `http/jsonrpc.ts` — generic over `params` / `result` / `data` so tests narrow without casts).
 
 `WsClient` (in `transports/ws_client.ts`):
@@ -1128,7 +1128,7 @@ file; the dual-spawn and limiter-enabled suites name their own files.
   reader (`ws_refusal_body` picks how the front-door table reads a WS
   refusal instead); `peer_request` (server-initiated requests — the ActionPeer
   `peer/ping` round-trip) is `true` on fuz_app's Rust and TS spine presets
-  (`BackendWebsocketTransport.request_connection`); a backend states it
+  (`ConnectionRegistry.request_connection`); a backend states it
   `true` once it wires the `peer/ping` HTTP + WS mount), `test_if(cond, name, fn)`
   for capability-gated cases, and `in_process_capabilities` preset. Only
   flags a suite reads are capabilities — a wiring fact that gates nothing is
@@ -1683,7 +1683,7 @@ completes in the drain's first poll. Unlike `describe_cross_process_ws_tests` (c
 built from spine primitives only (accounts / role-grants / offers / WS), zero
 consumer domain, so it lives here and runs against any backend that wires the
 standard RPC actions' `notification_sender` and registers a WS socket: fuz_app's
-own spine self-tests (`testing_spine_server`, whose `ws_transport` is threaded
+own spine self-tests (`testing_spine_server`, whose `connection_registry` is threaded
 as the sender via `spine_rpc_endpoints({notification_sender})`; the Rust
 `testing_spine_stub`, which wires it natively) and downstream twin-impl
 consumers (fuz_forge's Deno + Rust backends call it as a thin invocation).
@@ -1706,7 +1706,7 @@ spine binaries' role-gated endpoint with `ws_required_roles` declared.
 Real-upgrade parity for a **role-gated WebSocket losing its role**: a revoked
 global grant of a role an endpoint's `required_roles` lists closes the account's
 sockets on that endpoint with `WS_CLOSE_PERMISSION_REVOKED` (and its reason),
-while the account's ungated socket on the same transport stays open,
+while the account's ungated socket on the same connection registry stays open,
 dispatching, and receiving the account's pushes, and a re-upgrade is refused at
 the gate (403); a scoped revoke of a listed role closes nothing — the case
 first opens the gated socket on a global grant of `scoped_role` alone, which
@@ -1739,7 +1739,7 @@ unsolicited-response rejection, per-connection id isolation, never-reply
 `Timeout`, wrong-shape rejection, an undeclared reply key accepted and dropped
 (both spines read the reply forward-compatibly), client-error forwarding, and
 the HTTP no-transport path. Gated on `capabilities.peer_request` — `true` on
-both the Rust spine and the TS spine (the `BackendWebsocketTransport.request_connection`
+both the Rust spine and the TS spine (the `ConnectionRegistry.request_connection`
 path + `register_action_ws` response correlation); `peer/ping` is a protocol
 action (manifest-excluded), so parity is behavioral here, not via the manifest
 gate. Cross-process only.
@@ -1781,7 +1781,7 @@ ws_path})`. Cross-process only.
 
 Real-upgrade parity for the **per-connection outbound bound** — the byte
 budget both spines hold a WebSocket's waiting frames to
-(`BackendWebsocketTransport`'s `outbound_queue_bytes`, the Rust `fuz_realtime`
+(`ConnectionRegistry`'s `outbound_queue_bytes`, the Rust `fuz_realtime`
 outbound queue; same default, same per-frame charge). The close code and its
 reason are wire contract — a client reads `WS_CLOSE_OUTBOUND_OVERFLOW` as "you
 fell behind, reconnect" — so this is the pin that runs on both.
@@ -1809,7 +1809,7 @@ flood action on its WS endpoint.
 ### `cross_backend/ws_connection_cap.ts` — `describe_ws_connection_cap_cross_tests`
 
 Real-upgrade parity for the **per-account WebSocket connection cap** — the
-evict-oldest policy both spines apply (`BackendWebsocketTransport`'s
+evict-oldest policy both spines apply (`ConnectionRegistry`'s
 `max_connections_per_account`, the Rust `fuz_realtime` `ConnectionRegistry`).
 The close code, its reason, and which socket closes are wire contract — a
 client reads `WS_CLOSE_CONNECTION_LIMIT` as "superseded, don't reconnect" — so
@@ -2909,7 +2909,7 @@ re-roll the serve / daemon-info / WS-attach / drain boilerplate:
 - `testing/cross_backend/full_spine_mount.ts` — `build_full_spine_rpc_actions(deps, options)` — the **full** live RPC mount: the declared bundle **plus** the off-declared-surface families the binary live-mounts (`_testing_*` backdoors, the cell verb set, the opt-in `actor_lookup` / `actor_search` resolvers). `build_full_spine_mount(deps, options)` builds it once for both of the binary's endpoints, returning `FullSpineMount` (`{rpc_actions, ws_actions}`): the WS list is `protocol_actions` plus every RPC action not already among them, twinning the Rust `testing_spine_stub`, which serves one registry on RPC and WS (the one difference is `cancel` — a registered protocol action on TS, owned by the read loop on Rust). Single-sources the mount so the binary and the `spine_method_coverage` reconciliation test build the same list. `create_spine_live_rpc_endpoints()` wraps the list, built on stub deps, as one endpoint at `SPINE_RPC_PATH` — the `live_rpc_endpoints` value the conformance table, the differential and the auth-row generator resolve off-surface methods from (no handler built there runs).
 - `testing/cross_backend/ts_spine_backend_config.ts` — `ts_spine_node_backend_config()` / `ts_spine_deno_backend_config()` / `ts_spine_bun_backend_config()` presets (in-memory pglet, no external infra), the TS analog of `rust_spine_stub_backend_config()`.
 
-fuz_app's own binary wiring (`src/test/cross_backend/testing_spine_server{,_node,_deno,_bun}.ts`) is the worked example: ~one `build_app` over `create_app_backend` + `create_app_server` (`rate_limiters: 'disabled_for_testing'` plus whichever login / action limiters its env toggles built, `build_full_spine_mount`'s two lists on one `rpc_endpoints` entry and two `ws_endpoints` entries — `/api/ws` and the role-gated `SPINE_ROLE_GATED_WS_PATH` — sharing one `transport`, which is also the role-grant-offer `notification_sender`), reusing `default_spine_surface`. `src/test/cross_backend/testing_spine_server.db.test.ts` builds it with the Node adapter in-process and asserts its surface lists both WS endpoints (the gated one with its `required_roles`) and passes the surface invariants. The `_node`/`_deno`/`_bun` entries differ only in which adapter they wire — `build_spine_app` is runtime-agnostic. It leaves `create_app_server`'s `auth_cleanup` off, as the Rust `testing_spine_stub` leaves its twin unscheduled: a background pass would delete rows and write audit rows under a running suite. A consumer's cross-process test binary may schedule it when nothing its suites seed is already expired (the conformance table's `expired_session` principal seeds a backdated session row); an in-process harness leaves it off.
+fuz_app's own binary wiring (`src/test/cross_backend/testing_spine_server{,_node,_deno,_bun}.ts`) is the worked example: ~one `build_app` over `create_app_backend` + `create_app_server` (`rate_limiters: 'disabled_for_testing'` plus whichever login / action limiters its env toggles built, `build_full_spine_mount`'s two lists on one `rpc_endpoints` entry and two `ws_endpoints` entries — `/api/ws` and the role-gated `SPINE_ROLE_GATED_WS_PATH` — sharing one `registry`, which is also the role-grant-offer `notification_sender`), reusing `default_spine_surface`. `src/test/cross_backend/testing_spine_server.db.test.ts` builds it with the Node adapter in-process and asserts its surface lists both WS endpoints (the gated one with its `required_roles`) and passes the surface invariants. The `_node`/`_deno`/`_bun` entries differ only in which adapter they wire — `build_spine_app` is runtime-agnostic. It leaves `create_app_server`'s `auth_cleanup` off, as the Rust `testing_spine_stub` leaves its twin unscheduled: a background pass would delete rows and write audit rows under a running suite. A consumer's cross-process test binary may schedule it when nothing its suites seed is already expired (the conformance table's `expired_session` principal seeds a backdated session row); an in-process harness leaves it off.
 
 ### Live-method coverage reconciliation — `method_coverage.ts`
 

@@ -34,7 +34,7 @@ import {
 	type SocketOpenContext
 } from '#lib/actions/register_action_ws.ts';
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
-import { BackendWebsocketTransport } from '#lib/actions/transports_ws_backend.ts';
+import { ConnectionRegistry } from '#lib/actions/connection_registry.ts';
 import {
 	WS_CLOSE_CONNECTION_LIMIT,
 	WS_CLOSE_CONNECTION_LIMIT_REASON,
@@ -211,7 +211,7 @@ const create_upgrade_context = async (
 
 interface Endpoint {
 	gated: GatedDb;
-	transport: BackendWebsocketTransport;
+	registry: ConnectionRegistry;
 	/** Values the `echo` and `mark` handlers ran with, in the order they ran. */
 	handled: Array<string>;
 	opened: Array<SocketOpenContext>;
@@ -234,7 +234,7 @@ const create_endpoint = (
 	const handled: Array<string> = [];
 	const opened: Array<SocketOpenContext> = [];
 	const closed: Array<SocketCloseContext> = [];
-	const { transport } = register_action_ws({
+	const { registry } = register_action_ws({
 		action_ip_rate_limiter: null,
 		action_account_rate_limiter: null,
 		path: '/ws',
@@ -265,7 +265,7 @@ const create_endpoint = (
 	});
 	return {
 		gated,
-		transport,
+		registry,
 		handled,
 		opened,
 		closed,
@@ -314,7 +314,7 @@ const open_stalled = async (
 	const socket = await open_socket(endpoint, c);
 	await stalled.reached;
 	assert.strictEqual(
-		endpoint.transport.get_pending_connection_count(),
+		endpoint.registry.pending_connection_count(),
 		1,
 		'the connection is registered pending before the re-read'
 	);
@@ -369,15 +369,15 @@ describe_db('register_action_ws admission', (get_db) => {
 			const c = await create_upgrade_context(db, account_id, session);
 
 			const { socket, stalled } = await open_stalled(endpoint, c);
-			assert.strictEqual(endpoint.transport.get_connection_count(), 0, 'not admitted yet');
+			assert.strictEqual(endpoint.registry.connection_count(), 0, 'not admitted yet');
 			assert.deepStrictEqual(endpoint.opened, [], 'on_socket_open waits for admission');
 
 			stalled.release();
 			await socket.opening;
 
 			assert.deepStrictEqual(socket.fake.closes, []);
-			assert.strictEqual(endpoint.transport.get_connection_count(), 1);
-			assert.strictEqual(endpoint.transport.get_pending_connection_count(), 0);
+			assert.strictEqual(endpoint.registry.connection_count(), 1);
+			assert.strictEqual(endpoint.registry.pending_connection_count(), 0);
 			assert.strictEqual(endpoint.opened.length, 1);
 			assert.strictEqual(endpoint.opened[0]!.signal.aborted, false);
 
@@ -403,8 +403,8 @@ describe_db('register_action_ws admission', (get_db) => {
 
 			assert.deepStrictEqual(socket.fake.closes, [REVOKED_CLOSE]);
 			assert.deepStrictEqual(socket.fake.sends, [], 'nothing is written to a refused socket');
-			assert.strictEqual(endpoint.transport.get_connection_count(), 0);
-			assert.strictEqual(endpoint.transport.get_pending_connection_count(), 0);
+			assert.strictEqual(endpoint.registry.connection_count(), 0);
+			assert.strictEqual(endpoint.registry.pending_connection_count(), 0);
 			assert.deepStrictEqual(endpoint.opened, [], 'a refused socket runs no on_socket_open');
 
 			// a client that withholds its close frame gets nothing dispatched
@@ -430,8 +430,8 @@ describe_db('register_action_ws admission', (get_db) => {
 			await socket.opening;
 
 			assert.deepStrictEqual(socket.fake.closes, [REVOKED_CLOSE]);
-			assert.strictEqual(endpoint.transport.get_connection_count(), 0);
-			assert.strictEqual(endpoint.transport.get_pending_connection_count(), 0);
+			assert.strictEqual(endpoint.registry.connection_count(), 0);
+			assert.strictEqual(endpoint.registry.pending_connection_count(), 0);
 		});
 
 		test('a live api token is admitted', async () => {
@@ -447,7 +447,7 @@ describe_db('register_action_ws admission', (get_db) => {
 			await socket.opening;
 
 			assert.deepStrictEqual(socket.fake.closes, []);
-			assert.strictEqual(endpoint.transport.get_connection_count(), 1);
+			assert.strictEqual(endpoint.registry.connection_count(), 1);
 		});
 
 		test('a password change during the upgrade refuses sessions and tokens', async () => {
@@ -476,7 +476,7 @@ describe_db('register_action_ws admission', (get_db) => {
 			);
 			await by_token.opening;
 			assert.deepStrictEqual(by_token.fake.closes, [REVOKED_CLOSE]);
-			assert.strictEqual(endpoint.transport.get_connection_count(), 0);
+			assert.strictEqual(endpoint.registry.connection_count(), 0);
 		});
 
 		test('an account soft-deleted during the upgrade is closed with 4001', async () => {
@@ -493,7 +493,7 @@ describe_db('register_action_ws admission', (get_db) => {
 			await socket.opening;
 
 			assert.deepStrictEqual(socket.fake.closes, [REVOKED_CLOSE]);
-			assert.strictEqual(endpoint.transport.get_connection_count(), 0);
+			assert.strictEqual(endpoint.registry.connection_count(), 0);
 		});
 
 		test("another session's revocation still admits", async () => {
@@ -507,14 +507,14 @@ describe_db('register_action_ws admission', (get_db) => {
 			const { socket, stalled } = await open_stalled(endpoint, c);
 			assert.ok(await query_session_revoke_for_account({ db }, other.token_hash, account_id));
 			assert.strictEqual(
-				endpoint.transport.close_connections({ kind: 'session', session_hash: other.token_hash }),
+				endpoint.registry.close_connections({ kind: 'session', session_hash: other.token_hash }),
 				0
 			);
 			stalled.release();
 			await socket.opening;
 
 			assert.deepStrictEqual(socket.fake.closes, []);
-			assert.strictEqual(endpoint.transport.get_connection_count(), 1);
+			assert.strictEqual(endpoint.registry.connection_count(), 1);
 		});
 
 		test('a failing re-check closes the socket with 1011 — never admitted unchecked', async () => {
@@ -535,8 +535,8 @@ describe_db('register_action_ws admission', (get_db) => {
 			]);
 			assert.deepStrictEqual(socket.fake.sends, []);
 			assert.deepStrictEqual(endpoint.handled, []);
-			assert.strictEqual(endpoint.transport.get_connection_count(), 0);
-			assert.strictEqual(endpoint.transport.get_pending_connection_count(), 0);
+			assert.strictEqual(endpoint.registry.connection_count(), 0);
+			assert.strictEqual(endpoint.registry.pending_connection_count(), 0);
 			assert.deepStrictEqual(endpoint.opened, []);
 		});
 	});
@@ -556,14 +556,14 @@ describe_db('register_action_ws admission', (get_db) => {
 			await socket.opening;
 
 			assert.deepStrictEqual(socket.fake.closes, []);
-			assert.strictEqual(endpoint.transport.get_connection_count(), 1);
+			assert.strictEqual(endpoint.registry.connection_count(), 1);
 			assert.strictEqual(
 				endpoint.opened[0]!.identity.session_hash,
 				session.token_hash,
 				'registered under the hash the middleware resolved'
 			);
 			assert.strictEqual(
-				endpoint.transport.close_connections({ kind: 'session', session_hash: session.token_hash }),
+				endpoint.registry.close_connections({ kind: 'session', session_hash: session.token_hash }),
 				1
 			);
 			assert.deepStrictEqual(socket.fake.closes, [REVOKED_CLOSE]);
@@ -588,7 +588,7 @@ describe_db('register_action_ws admission', (get_db) => {
 			await socket.opening;
 
 			assert.deepStrictEqual(socket.fake.closes, [REVOKED_CLOSE]);
-			assert.strictEqual(endpoint.transport.get_connection_count(), 0);
+			assert.strictEqual(endpoint.registry.connection_count(), 0);
 			assert.deepStrictEqual(endpoint.opened, []);
 		});
 
@@ -601,7 +601,7 @@ describe_db('register_action_ws admission', (get_db) => {
 			});
 
 			await assert_rejects(() => endpoint.create_events(c), /no resolved credential/);
-			assert.strictEqual(endpoint.transport.get_pending_connection_count(), 0);
+			assert.strictEqual(endpoint.registry.pending_connection_count(), 0);
 		});
 
 		test('a credential on another account than the request context throws before the socket exists', async () => {
@@ -618,7 +618,7 @@ describe_db('register_action_ws admission', (get_db) => {
 			);
 
 			await assert_rejects(() => endpoint.create_events(c), /name different accounts/);
-			assert.strictEqual(endpoint.transport.get_pending_connection_count(), 0);
+			assert.strictEqual(endpoint.registry.pending_connection_count(), 0);
 		});
 	});
 
@@ -632,7 +632,7 @@ describe_db('register_action_ws admission', (get_db) => {
 			const c = await create_upgrade_context(db, account_id, session);
 
 			const { socket, stalled } = await open_stalled(endpoint, c);
-			endpoint.transport.close_connections({ kind: 'account', account_id });
+			endpoint.registry.close_connections({ kind: 'account', account_id });
 			stalled.release();
 			await socket.opening;
 
@@ -648,7 +648,7 @@ describe_db('register_action_ws admission', (get_db) => {
 			const c = await create_upgrade_context(db, account_id, session);
 
 			const { socket, stalled } = await open_stalled(endpoint, c);
-			endpoint.transport.close_connections({ kind: 'account', account_id });
+			endpoint.registry.close_connections({ kind: 'account', account_id });
 			// the client answers the close frame before the re-read returns, and
 			// its close event removes the registration
 			await socket.close();
@@ -667,7 +667,7 @@ describe_db('register_action_ws admission', (get_db) => {
 			const c = await create_upgrade_context(db, account_id, session);
 
 			const { socket, stalled } = await open_stalled(endpoint, c);
-			endpoint.transport.close_all_connections();
+			endpoint.registry.close_all_connections();
 			await socket.close();
 			stalled.release();
 			await socket.opening;
@@ -686,14 +686,14 @@ describe_db('register_action_ws admission', (get_db) => {
 			// the close finds the pending registration while the session row is
 			// still there — an account-wide close from another session's logout
 			// does exactly this. The re-read passes, so only admission can refuse.
-			assert.strictEqual(endpoint.transport.close_connections({ kind: 'account', account_id }), 1);
+			assert.strictEqual(endpoint.registry.close_connections({ kind: 'account', account_id }), 1);
 			assert.deepStrictEqual(socket.fake.closes, [REVOKED_CLOSE], 'closed at once');
 			stalled.release();
 			await socket.opening;
 
 			assert.deepStrictEqual(socket.fake.closes, [REVOKED_CLOSE], 'one close frame, not two');
-			assert.strictEqual(endpoint.transport.get_connection_count(), 0);
-			assert.strictEqual(endpoint.transport.get_pending_connection_count(), 0);
+			assert.strictEqual(endpoint.registry.connection_count(), 0);
+			assert.strictEqual(endpoint.registry.pending_connection_count(), 0);
 			assert.deepStrictEqual(endpoint.opened, []);
 
 			await socket.send(echo_request(1, 'after refusal'));
@@ -709,12 +709,12 @@ describe_db('register_action_ws admission', (get_db) => {
 
 			const { socket, stalled } = await open_stalled(endpoint, c);
 			await socket.close();
-			assert.strictEqual(endpoint.transport.get_pending_connection_count(), 0);
+			assert.strictEqual(endpoint.registry.pending_connection_count(), 0);
 			stalled.release();
 			await socket.opening;
 
 			assert.deepStrictEqual(socket.fake.closes, []);
-			assert.strictEqual(endpoint.transport.get_connection_count(), 0);
+			assert.strictEqual(endpoint.registry.connection_count(), 0);
 			assert.deepStrictEqual(endpoint.opened, []);
 			assert.deepStrictEqual(endpoint.closed, []);
 		});
@@ -733,7 +733,7 @@ describe_db('register_action_ws admission', (get_db) => {
 				await create_upgrade_context(db, account_id, live_session)
 			);
 			await live.opening;
-			assert.strictEqual(endpoint.transport.get_connection_count(), 1);
+			assert.strictEqual(endpoint.registry.connection_count(), 1);
 
 			const { socket, stalled } = await open_stalled(
 				endpoint,
@@ -748,7 +748,7 @@ describe_db('register_action_ws admission', (get_db) => {
 
 			assert.deepStrictEqual(socket.fake.closes, [REVOKED_CLOSE]);
 			assert.deepStrictEqual(live.fake.closes, [], 'the live socket keeps its slot');
-			assert.strictEqual(endpoint.transport.get_connection_count(), 1);
+			assert.strictEqual(endpoint.registry.connection_count(), 1);
 			await live.send(echo_request(1, 'still here'));
 			assert.deepStrictEqual(endpoint.handled, ['still here']);
 		});
@@ -778,7 +778,7 @@ describe_db('register_action_ws admission', (get_db) => {
 				{ code: WS_CLOSE_CONNECTION_LIMIT, reason: WS_CLOSE_CONNECTION_LIMIT_REASON }
 			]);
 			assert.deepStrictEqual(socket.fake.closes, []);
-			assert.strictEqual(endpoint.transport.get_connection_count(), 1);
+			assert.strictEqual(endpoint.registry.connection_count(), 1);
 		});
 	});
 
@@ -845,7 +845,7 @@ describe_db('register_action_ws admission', (get_db) => {
 			const { socket, stalled } = await open_stalled(endpoint, c);
 			const sent = socket.send(echo_request(1, 'first'));
 			assert.strictEqual(
-				endpoint.transport.close_connections({ kind: 'session', session_hash: session.token_hash }),
+				endpoint.registry.close_connections({ kind: 'session', session_hash: session.token_hash }),
 				1
 			);
 			// dropped at the close, without waiting for the re-read to return
@@ -866,7 +866,7 @@ describe_db('register_action_ws admission', (get_db) => {
 			const hook = Promise.withResolvers<void>();
 			const endpoint = create_endpoint(db, {
 				on_socket_open: async (ctx) => {
-					order.push(`hook:start admitted=${endpoint.transport.is_registered(ctx.connection_id)}`);
+					order.push(`hook:start admitted=${endpoint.registry.is_registered(ctx.connection_id)}`);
 					hook_started.resolve();
 					await hook.promise;
 					order.push('hook:end');
@@ -912,13 +912,13 @@ describe_db('register_action_ws admission', (get_db) => {
 			assert.deepStrictEqual(socket.fake.closes, [
 				{ code: WS_CLOSE_POLICY_VIOLATION, reason: WS_CLOSE_PRE_ADMISSION_OVERFLOW_REASON }
 			]);
-			assert.strictEqual(endpoint.transport.get_pending_connection_count(), 0);
+			assert.strictEqual(endpoint.registry.pending_connection_count(), 0);
 			stalled.release();
 			await socket.opening;
 			await Promise.all(sent);
 
 			assert.deepStrictEqual(endpoint.handled, [], 'the queued frames are dropped with the socket');
-			assert.strictEqual(endpoint.transport.get_connection_count(), 0);
+			assert.strictEqual(endpoint.registry.connection_count(), 0);
 		});
 
 		test('an oversized frame closes the pending socket with 1009', async () => {
@@ -934,11 +934,11 @@ describe_db('register_action_ws admission', (get_db) => {
 			assert.deepStrictEqual(socket.fake.closes, [
 				{ code: WS_CLOSE_MESSAGE_TOO_BIG, reason: WS_CLOSE_MESSAGE_TOO_BIG_REASON }
 			]);
-			assert.strictEqual(endpoint.transport.get_pending_connection_count(), 0);
+			assert.strictEqual(endpoint.registry.pending_connection_count(), 0);
 			stalled.release();
 			await socket.opening;
 
-			assert.strictEqual(endpoint.transport.get_connection_count(), 0);
+			assert.strictEqual(endpoint.registry.connection_count(), 0);
 			assert.deepStrictEqual(endpoint.handled, []);
 		});
 	});
@@ -982,11 +982,11 @@ describe_db('register_action_ws admission', (get_db) => {
 			await socket.opening;
 
 			assert.deepStrictEqual(socket.fake.closes, []);
-			assert.strictEqual(endpoint.transport.get_connection_count(), 1);
+			assert.strictEqual(endpoint.registry.connection_count(), 1);
 			assert.deepStrictEqual(endpoint.opened[0]!.identity.required_roles, [ROLE_ADMIN]);
 			// the role close reaches it: the role was recorded on the registration
 			assert.strictEqual(
-				endpoint.transport.close_connections({
+				endpoint.registry.close_connections({
 					kind: 'role',
 					account_id,
 					role: ROLE_ADMIN
@@ -1011,8 +1011,8 @@ describe_db('register_action_ws admission', (get_db) => {
 
 			assert.deepStrictEqual(socket.fake.closes, [PERMISSION_REVOKED_CLOSE]);
 			assert.deepStrictEqual(socket.fake.sends, [], 'nothing is written to a refused socket');
-			assert.strictEqual(endpoint.transport.get_connection_count(), 0);
-			assert.strictEqual(endpoint.transport.get_pending_connection_count(), 0);
+			assert.strictEqual(endpoint.registry.connection_count(), 0);
+			assert.strictEqual(endpoint.registry.pending_connection_count(), 0);
 			assert.deepStrictEqual(endpoint.opened, []);
 		});
 
@@ -1027,7 +1027,7 @@ describe_db('register_action_ws admission', (get_db) => {
 			await socket.opening;
 
 			assert.deepStrictEqual(socket.fake.closes, [PERMISSION_REVOKED_CLOSE]);
-			assert.strictEqual(endpoint.transport.get_connection_count(), 0);
+			assert.strictEqual(endpoint.registry.connection_count(), 0);
 		});
 
 		test('a role close while pending refuses with 4006, not a revocation', async () => {
@@ -1037,7 +1037,7 @@ describe_db('register_action_ws admission', (get_db) => {
 
 			const { socket, stalled } = await open_stalled(endpoint, c);
 			assert.strictEqual(
-				endpoint.transport.close_connections({
+				endpoint.registry.close_connections({
 					kind: 'role',
 					account_id,
 					role: ROLE_ADMIN
@@ -1048,8 +1048,8 @@ describe_db('register_action_ws admission', (get_db) => {
 			await socket.opening;
 
 			assert.deepStrictEqual(socket.fake.closes, [PERMISSION_REVOKED_CLOSE]);
-			assert.strictEqual(endpoint.transport.get_connection_count(), 0);
-			assert.strictEqual(endpoint.transport.get_pending_connection_count(), 0);
+			assert.strictEqual(endpoint.registry.connection_count(), 0);
+			assert.strictEqual(endpoint.registry.pending_connection_count(), 0);
 			assert.deepStrictEqual(endpoint.opened, []);
 		});
 
@@ -1063,7 +1063,7 @@ describe_db('register_action_ws admission', (get_db) => {
 			});
 
 			const { socket, stalled } = await open_stalled(endpoint, c);
-			endpoint.transport.close_connections({
+			endpoint.registry.close_connections({
 				kind: 'role',
 				account_id,
 				role: ROLE_ADMIN
@@ -1087,7 +1087,7 @@ describe_db('register_action_ws admission', (get_db) => {
 			assert.deepStrictEqual(socket.fake.closes, [
 				{ code: WS_CLOSE_INTERNAL_ERROR, reason: WS_CLOSE_INTERNAL_ERROR_REASON }
 			]);
-			assert.strictEqual(endpoint.transport.get_connection_count(), 0);
+			assert.strictEqual(endpoint.registry.connection_count(), 0);
 		});
 
 		test('an acting actor soft-deleted during the upgrade is closed with 4001', async () => {
@@ -1102,8 +1102,8 @@ describe_db('register_action_ws admission', (get_db) => {
 			await socket.opening;
 
 			assert.deepStrictEqual(socket.fake.closes, [REVOKED_CLOSE]);
-			assert.strictEqual(endpoint.transport.get_connection_count(), 0);
-			assert.strictEqual(endpoint.transport.get_pending_connection_count(), 0);
+			assert.strictEqual(endpoint.registry.connection_count(), 0);
+			assert.strictEqual(endpoint.registry.pending_connection_count(), 0);
 			assert.deepStrictEqual(endpoint.opened, []);
 		});
 
@@ -1119,7 +1119,7 @@ describe_db('register_action_ws admission', (get_db) => {
 
 			assert.deepStrictEqual(socket.fake.closes, [REVOKED_CLOSE]);
 			assert.deepStrictEqual(socket.fake.sends, [], 'nothing is written to a refused socket');
-			assert.strictEqual(endpoint.transport.get_connection_count(), 0);
+			assert.strictEqual(endpoint.registry.connection_count(), 0);
 			assert.deepStrictEqual(endpoint.opened, []);
 		});
 
@@ -1146,15 +1146,15 @@ describe_db('register_action_ws admission', (get_db) => {
 			const c = await create_upgrade_context(db, account_id, session);
 
 			const { socket, stalled } = await open_stalled(endpoint, c);
-			endpoint.transport.broadcast(notification);
-			assert.strictEqual(endpoint.transport.send_to_account(account_id, notification), 0);
+			endpoint.registry.broadcast(notification);
+			assert.strictEqual(endpoint.registry.send_to_account(account_id, notification), 0);
 			assert.deepStrictEqual(socket.fake.sends, []);
 
 			stalled.release();
 			await socket.opening;
 			assert.deepStrictEqual(socket.fake.sends, [], 'nothing was queued for it while pending');
 
-			assert.strictEqual(endpoint.transport.send_to_account(account_id, notification), 1);
+			assert.strictEqual(endpoint.registry.send_to_account(account_id, notification), 1);
 			assert.deepStrictEqual(socket.fake.sends, [JSON.stringify(notification)]);
 		});
 	});

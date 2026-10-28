@@ -52,7 +52,7 @@ import {
 	WS_CLOSE_SESSION_REVOKED_REASON
 } from '#lib/actions/transports.ts';
 import { create_revocation_guard } from '#lib/actions/connection_closer.ts';
-import type { BackendWebsocketTransport } from '#lib/actions/transports_ws_backend.ts';
+import type { ConnectionRegistry } from '#lib/actions/connection_registry.ts';
 import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import { create_audit_log_route_specs } from '#lib/auth/audit_log_routes.ts';
 import {
@@ -97,7 +97,7 @@ type Credential = { session_hash: string } | { api_token_id: string };
 
 /** One WebSocket endpoint over the harness's database, and how its sockets get closed. */
 interface WsEndpoint {
-	transport: BackendWebsocketTransport;
+	registry: ConnectionRegistry;
 	/** Run the upgrade's `onOpen` for `credential`; resolves once admitted or refused. */
 	open: (account_id: Uuid, credential: Credential) => Promise<FakeWs>;
 }
@@ -108,10 +108,10 @@ interface Harness {
 	db: Db;
 	gated: GatedDb;
 	audit_sse: AuditLogSse;
-	/** Its transport is in `deps.connection_closer`: the revocation handlers close it. */
+	/** Its registry is in `deps.connection_closer`: the revocation handlers close it. */
 	ws_closed_by_handlers: WsEndpoint;
 	/**
-	 * Its transport is *not* in the closer; only a `create_revocation_guard`
+	 * Its registry is *not* in the closer; only a `create_revocation_guard`
 	 * listener reaches it — the wiring of a consumer that relies on the audit
 	 * listeners alone.
 	 */
@@ -124,7 +124,7 @@ const create_ws_endpoint = (
 ): WsEndpoint => {
 	const { deps } = h.test_app.backend;
 	const stub = create_stub_upgrade();
-	const { transport } = register_action_ws({
+	const { registry } = register_action_ws({
 		action_ip_rate_limiter: null,
 		action_account_rate_limiter: null,
 		path: '/ws',
@@ -137,9 +137,9 @@ const create_ws_endpoint = (
 		receive_timeout: null,
 		log
 	});
-	if (closed_by === 'listener') deps.audit.add_listener(create_revocation_guard(transport, log));
+	if (closed_by === 'listener') deps.audit.add_listener(create_revocation_guard(registry, log));
 	return {
-		transport,
+		registry,
 		open: async (account_id, credential) => {
 			// what the auth middleware leaves on the context for the upgrade
 			const vars: Record<string, unknown> = { [ACCOUNT_ID_KEY]: account_id };
@@ -594,12 +594,12 @@ describe_pg('a connection admitted while its revocation is uncommitted', (get_db
 					socket = await endpoint.open(revocation.account.id, credential);
 					// the re-read saw the credential alive: the delete is uncommitted
 					assert.deepStrictEqual(socket.closes, [], 'admitted');
-					assert.strictEqual(endpoint.transport.get_connection_count(), 1);
+					assert.strictEqual(endpoint.registry.connection_count(), 1);
 				});
 
 				assert.ok(socket);
 				assert.deepStrictEqual(socket.closes, [REVOKED_CLOSE], 'closed once the commit landed');
-				assert.strictEqual(endpoint.transport.get_connection_count(), 0);
+				assert.strictEqual(endpoint.registry.connection_count(), 0);
 				await h.test_app.cleanup();
 			});
 
@@ -621,12 +621,12 @@ describe_pg('a connection admitted while its revocation is uncommitted', (get_db
 					await with_uncommitted(h, revocation, async () => {
 						socket = await endpoint.open(revocation.account.id, credential);
 						assert.deepStrictEqual(socket.closes, [], 'admitted');
-						assert.strictEqual(endpoint.transport.get_connection_count(), 1);
+						assert.strictEqual(endpoint.registry.connection_count(), 1);
 					});
 
 					assert.ok(socket);
 					assert.deepStrictEqual(socket.closes, [REVOKED_CLOSE], 'closed once the commit landed');
-					assert.strictEqual(endpoint.transport.get_connection_count(), 0);
+					assert.strictEqual(endpoint.registry.connection_count(), 0);
 					await h.test_app.cleanup();
 				}
 			);

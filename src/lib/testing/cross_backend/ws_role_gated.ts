@@ -12,7 +12,7 @@ import '../assert_dev_env.ts';
  * listed role is revoked — with `WS_CLOSE_PERMISSION_REVOKED`, not the
  * session-revoked code, since the credential is still good — and send nothing
  * after the close. The ungated sockets of the same account, on the same
- * transport, stay open: the gate is per endpoint, not per account. A scoped
+ * registry, stay open: the gate is per endpoint, not per account. A scoped
  * grant never admits at a role gate, so revoking one closes nothing.
  *
  * Runs against a backend that mounts, beside its ungated `ws_path`, a second

@@ -7,7 +7,7 @@
  * adapter then never reads the response body: it finds the connection already
  * destroyed and returns without cancelling the stream, so a stream that only
  * closed on cancellation would stay registered for good. The cases register
- * each stream in a `SubscriberRegistry`, as the audit route does, and assert
+ * each stream in an `SseRegistry`, as the audit route does, and assert
  * the registry empties whichever side of the response the client leaves on.
  * The control case keeps its client and asserts the stream stays registered.
  * The early-leave case also runs over cleartext HTTP/2, where the adapter's
@@ -28,7 +28,7 @@ import { serve, type ServerType } from '@hono/node-server';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { create_sse_response } from '#lib/realtime/sse.ts';
-import { SubscriberRegistry } from '#lib/realtime/subscriber_registry.ts';
+import { SseRegistry } from '#lib/realtime/sse_registry.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -46,7 +46,7 @@ const wait_until = async (predicate: () => boolean, timeout_ms = 2000): Promise<
 
 interface TestServer {
 	port: number;
-	registry: SubscriberRegistry<unknown>;
+	registry: SseRegistry<unknown>;
 	/** Resolves once the handler is waiting at its gate. */
 	reached_gate: () => Promise<void>;
 	/** Lets the handler past its gate to build and register its stream. */
@@ -64,7 +64,7 @@ type Transport = 'http1' | 'http2';
  * registers it — the shape of the audit-log route, minus the database.
  */
 const start_server = async (transport: Transport): Promise<TestServer> => {
-	const registry = new SubscriberRegistry<unknown>();
+	const registry = new SseRegistry<unknown>();
 	const gate_reached = Promise.withResolvers<void>();
 	const gate = Promise.withResolvers<void>();
 	const response_returned = Promise.withResolvers<void>();

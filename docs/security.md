@@ -368,7 +368,7 @@ back, and it has two arms:
   through the same closer. Which audit events close what is declared once, in
   `audit_event_revocation_scopes`, and the revocation guard reads it; the
   Rust twin does the same with the `RevocationScope` column on
-  `AUDIT_EVENT_SPECS`. A consumer route with its own `SubscriberRegistry`
+  `AUDIT_EVENT_SPECS`. A consumer route with its own `SseRegistry`
   registers the same identities to get the same closes.
 - `rpc:<method>` — one action method, refused unless the token lists it. What
   the dispatcher's per-method gate reports; a route spec may not declare it
@@ -530,7 +530,7 @@ for the audit log stream), and re-read once the stream is registered (see
 persists, permission changes during the connection lifetime require active
 enforcement:
 
-- **Identity slots**: a `SubscriberRegistry` subscription carries a `scope`
+- **Identity slots**: an `SseRegistry` subscription carries a `scope`
   (single, capped identity — typically the session hash) and `groups` (any
   number of uncapped identities — typically `[account_id]`).
   `close_by_identity()` matches either slot, so coarse close (account-wide)
@@ -601,13 +601,13 @@ for the account.
 
 ## WebSocket Connection Cap
 
-`BackendWebsocketTransport` bounds concurrent WebSocket connections per
+`ConnectionRegistry` bounds concurrent WebSocket connections per
 account: `max_connections_per_account`, default
-`DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT = 50` (set it on the transport, or on
-`WsEndpointSpec` for the transport `create_app_server` creates; `null`
+`DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT = 50` (set it on the connection registry, or on
+`WsEndpointSpec` for the registry `create_app_server` creates; `null`
 disables). It counts an account's connections across every credential type —
-session, API token, and daemon token, none exempt — and is per transport, so
-endpoints sharing one transport share one count.
+session, API token, and daemon token, none exempt — and is per connection registry, so
+endpoints sharing one registry share one count.
 
 - **Evict-oldest, never refuse**: a connection past the cap is always admitted
   and the account's oldest is closed. Refusing the newcomer would let half-open
@@ -680,15 +680,15 @@ connection, with one rule:
 
 **WebSocket.** The budget is `outbound_queue_bytes`, default
 `DEFAULT_WS_OUTBOUND_QUEUE_BYTES` (4 MiB) — a value of its own, not derived from
-the inbound message cap (set it on `BackendWebsocketTransport`, or on
-`WsEndpointSpec` for the transport `create_app_server` creates; zero or a
+the inbound message cap (set it on `ConnectionRegistry`, or on
+`WsEndpointSpec` for the registry `create_app_server` creates; zero or a
 non-positive value throws at assembly). Every frame fuz_app sends a
 connection goes through one path — responses, error frames, notifications,
 broadcasts, `send_to_account`, server-initiated requests.
 
 - **Overflow closes the connection**: a frame that does not fit is not
   delivered, and the socket closes with `WS_CLOSE_OUTBOUND_OVERFLOW` (4005,
-  reason `outbound queue overflow`). The connection leaves the transport in the
+  reason `outbound queue overflow`). The connection leaves the registry in the
   same synchronous step — later sends miss it and the counts and the
   per-account cap no longer see it — its in-flight handlers are cancelled, and
   no frame follows the close frame, the response of the request whose handler
@@ -719,9 +719,9 @@ What the WebSocket bound leaves:
   its frames are budgeted while they wait for the pump, and no stall is
   detected.
 - **A closed socket is not counted.** A connection the server closed or
-  dropped leaves the transport at once, so the per-account connection cap does
+  dropped leaves the registry at once, so the per-account connection cap does
   not count it while its socket is still closing. What the runtime holds for
-  such a socket is bounded instead: at a close the transport hands the socket
+  such a socket is bounded instead: at a close the registry hands the socket
   only the waiting frames its buffer has room for and discards the rest, so —
   where the runtime reports its buffer — the buffer holds less than
   `WS_WRITE_HIGH_WATER_BYTES` (64 KiB) plus one frame, and the close frame. On
@@ -764,7 +764,7 @@ each implementation decides for itself:
 - **Cutting a socket.** The cut needs the runtime to drop a socket without the
   closing handshake: Node's `ws` and Bun do. Deno's standard `WebSocket` cannot,
   so there a stalled connection is closed with `WS_CLOSE_OUTBOUND_OVERFLOW`
-  instead — removed from the transport and its handlers cancelled all the same —
+  instead — removed from the registry and its handlers cancelled all the same —
   and a stalled or closed socket whose client is not reading stays in the
   runtime until the runtime or the client ends it.
 - **A stalled SSE stream.** The budget bounds memory, not the connection: a
@@ -789,8 +789,8 @@ Both transports close that window the same way, the twin of the Rust spine's
 admission:
 
 1. **Register pending.** The connection is registered first, un-admitted
-   (`BackendWebsocketTransport.register_pending`,
-   `SubscriberRegistry.subscribe_pending`). A pending registration is closeable
+   (`ConnectionRegistry.register_pending`,
+   `SseRegistry.subscribe_pending`). A pending registration is closeable
    by every revocation from that instant, and is otherwise inert: no broadcast,
    targeted notification, or server-initiated request is delivered to it,
    nothing is queued for it, no count includes it, and the caps neither count
@@ -862,7 +862,7 @@ heartbeat timeout, oversized message, refused admission) removes the
 connection and aborts its handlers' signal at close time, and frames arriving
 afterward are dropped rather than dispatched: a revoked or evicted socket
 cannot keep running handlers by ignoring the close. A connection removed from
-the transport without a close is ended on its next frame
+the registry without a close is ended on its next frame
 (`WS_CLOSE_INTERNAL_ERROR`) rather than left open and unanswered.
 
 **What the guarantee rests on.** The two halves above leave one schedule
@@ -1013,16 +1013,16 @@ default); the bound it gives is under
 [Connection Admission](#connection-admission), "What remains".
 
 **One closer for every transport.** `deps.connection_closer` is a
-`RealtimeCloser`: each close fans out to every transport added to it. A
-transport, socket, or stream that throws while closing does not stop the
+`RealtimeCloser`: each close fans out to every member added to it. A
+registry, socket, or stream that throws while closing does not stop the
 others — every match is attempted, then the first error is thrown and logged.
 `create_app_backend` creates it, and `create_app_server` adds each WebSocket
-transport it mounts (`ws_endpoints`) and its audit stream registry
+connection registry it mounts (`ws_endpoints`) and its audit stream registry
 (`audit_log_sse`), so the standard assembly needs no wiring. Assembling by
 hand:
 
 - `register_action_ws` and `create_audit_log_sse`
-  take `connection_closer` as a **required** option and add their transport to
+  take `connection_closer` as a **required** option and add their registry to
   it. `null` is the explicit opt-out.
 - The action and route factories whose handlers revoke
   (`create_account_actions`, `create_admin_actions`,
@@ -1030,7 +1030,7 @@ hand:
   `connection_closer` off their `deps`, where it is required. A backend with
   no live-connection surface leaves its closer empty; hand-built deps for the
   action factories can pass `noop_connection_closer`.
-- A consumer's own `SubscriberRegistry` joins with
+- A consumer's own `SseRegistry` joins with
   `deps.connection_closer.add(create_sse_connection_closer(registry, role))`,
   `role` being the one its streams are gated on (or `null`).
 

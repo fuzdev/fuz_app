@@ -7,7 +7,7 @@
  * isolation guarantee), id allocation (`s{n}`-namespaced so a client's own
  * request ids can't collide), the per-request deadline, and the per-connection
  * in-flight cap. It deliberately does **not** touch the socket — the caller
- * (`BackendWebsocketTransport.request_connection`) does the send and threads the
+ * (`ConnectionRegistry.request_connection`) does the send and threads the
  * reply back via `resolve`. This mirrors the Rust `fuz_realtime::peer` split
  * (the `PendingPeerRequests` registry vs the transport that composes it), and
  * keeps the registry pure data so it unit-tests without a live socket.

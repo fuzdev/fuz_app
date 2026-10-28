@@ -17,7 +17,7 @@ import {
 	AUDIT_LOG_SSE_MAX_PER_SCOPE
 } from '#lib/realtime/audit_log_sse.ts';
 import { create_realtime_closer, create_revocation_guard } from '#lib/actions/connection_closer.ts';
-import { SubscriberRegistry } from '#lib/realtime/subscriber_registry.ts';
+import { SseRegistry } from '#lib/realtime/sse_registry.ts';
 import type { SseStream, SseNotification } from '#lib/realtime/sse.ts';
 import type { AuditLogEvent } from '#lib/auth/audit_log_schema.ts';
 import { create_test_audit_event } from '#lib/testing/entities.ts';
@@ -47,7 +47,7 @@ const create_audit_event = create_test_audit_event;
 
 describe('create_sse_connection_closer', () => {
 	test('each close reaches the streams registered under that identity, pending included', () => {
-		const registry = new SubscriberRegistry<string>();
+		const registry = new SseRegistry<string>();
 		const closer = create_sse_connection_closer(registry, 'admin');
 		const account_id = create_uuid();
 		const other_account_id = create_uuid();
@@ -82,7 +82,7 @@ describe('create_sse_connection_closer', () => {
 	});
 
 	test('a role target closes the account streams when the role is the gating one', () => {
-		const registry = new SubscriberRegistry<string>();
+		const registry = new SseRegistry<string>();
 		const closer = create_sse_connection_closer(registry, 'admin');
 		const account_id = create_uuid();
 		const stream = create_mock_stream<string>();
@@ -97,7 +97,7 @@ describe('create_sse_connection_closer', () => {
 		assert.ok(!other.closed);
 
 		// a registry whose streams are not role-gated has nothing to close by role
-		const ungated_registry = new SubscriberRegistry<string>();
+		const ungated_registry = new SseRegistry<string>();
 		const ungated = create_mock_stream<string>();
 		ungated_registry.subscribe(ungated, { scope: 'session-hash-3', groups: [account_id] });
 		const ungated_closer = create_sse_connection_closer(ungated_registry, null);
@@ -109,7 +109,7 @@ describe('create_sse_connection_closer', () => {
 	});
 
 	test('close_all_connections closes every stream of the registry', () => {
-		const registry = new SubscriberRegistry<string>();
+		const registry = new SseRegistry<string>();
 		const closer = create_sse_connection_closer(registry, 'admin');
 		const scoped = create_mock_stream<string>();
 		registry.subscribe(scoped, { scope: 'session-hash-1', groups: [create_uuid()] });

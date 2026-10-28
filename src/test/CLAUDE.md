@@ -266,7 +266,7 @@ retracted / flat revoke + supersede on both the accept and revoke cascades, each
 strict-parsed against its canonical params schema, each with a bystander
 account's socket that must receive nothing but its own responses behind a
 `heartbeat` barrier; the TS spine threads its
-`ws_transport` as the `notification_sender` via
+`connection_registry` as the `notification_sender` via
 `spine_rpc_endpoints({notification_sender})`), `peer_ping_ws` (the
 real-upgrade `describe_peer_ping_ws_tests` suite — the server→client `peer/ping`
 request/response sibling of the notification suite: a client invokes the
@@ -276,7 +276,7 @@ plus the security negatives (unsolicited-response rejection, per-connection id
 isolation, never-reply `Timeout`, wrong-shape rejection, client-error
 forwarding, HTTP no-transport); gated on `capabilities.peer_request`, now `true`
 on both the Rust `spine_stub` and the TS spines (the
-`BackendWebsocketTransport.request_connection` path)),
+`ConnectionRegistry.request_connection` path)),
 `ws_role_gated` (the real-upgrade
 `describe_ws_role_gated_cross_tests` suite — both spines mount a second,
 role-gated WS endpoint beside `/api/ws`; a revoked global grant of a gating role

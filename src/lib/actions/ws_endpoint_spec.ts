@@ -16,7 +16,7 @@
 
 import type { Action } from './action_types.ts';
 import type { RoleName } from '../auth/role_schema.ts';
-import type { BackendWebsocketTransport } from './transports_ws_backend.ts';
+import type { ConnectionRegistry } from './connection_registry.ts';
 import type { SocketCloseContext, SocketOpenContext } from './register_action_ws.ts';
 import type { RpcEndpointSpec } from '../http/surface.ts';
 import { to_ws_actions } from './protocol.ts';
@@ -65,24 +65,24 @@ export interface WsEndpointSpec {
 	 */
 	required_roles?: ReadonlyArray<RoleName>;
 	/**
-	 * Existing transport to register connections with. Auto-created when
-	 * omitted. Either way the mounted transport is reachable on
+	 * Existing registry to register connections with. Auto-created when
+	 * omitted. Either way the mounted registry is reachable on
 	 * `AppServer.ws_endpoints[path]` for broadcast / fan-out.
 	 */
-	transport?: BackendWebsocketTransport;
+	registry?: ConnectionRegistry;
 	/**
-	 * Per-account connection cap for the auto-created transport. See
+	 * Per-account connection cap for the auto-created registry. See
 	 * `RegisterActionWsOptions.max_connections_per_account` — rejected
-	 * alongside `transport`, which carries its own cap.
+	 * alongside `registry`, which carries its own cap.
 	 *
 	 * @default DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT
 	 */
 	max_connections_per_account?: number | null;
 	/**
 	 * Byte budget of the frames waiting to be written to one connection, for
-	 * the auto-created transport. See
+	 * the auto-created registry. See
 	 * `RegisterActionWsOptions.outbound_queue_bytes` — rejected alongside
-	 * `transport`, which carries its own budget.
+	 * `registry`, which carries its own budget.
 	 *
 	 * @default DEFAULT_WS_OUTBOUND_QUEUE_BYTES
 	 */
@@ -110,7 +110,7 @@ export interface WsEndpointSpec {
 	on_socket_open?: (ctx: SocketOpenContext) => void | Promise<void>;
 	/**
 	 * Called once per admitted socket on close, after
-	 * `transport.remove_connection`. See
+	 * `registry.remove_connection`. See
 	 * `RegisterActionWsOptions.on_socket_close`.
 	 */
 	on_socket_close?: (ctx: SocketCloseContext) => void | Promise<void>;

@@ -33,7 +33,7 @@ import { create_recording_audit_emitter } from '#lib/testing/audit_drift_guard.t
 import { create_stub_upgrade } from '#lib/testing/ws_round_trip.ts';
 import { create_recording_closer } from '#lib/testing/connection_closer_helpers.ts';
 import { protocol_actions } from '#lib/actions/protocol.ts';
-import { BackendWebsocketTransport } from '#lib/actions/transports_ws_backend.ts';
+import { ConnectionRegistry } from '#lib/actions/connection_registry.ts';
 import type { WsEndpointSpec } from '#lib/actions/ws_endpoint_spec.ts';
 import { RateLimiter } from '#lib/rate_limiter.ts';
 
@@ -209,7 +209,7 @@ describe('a failed assembly releases what it acquired', () => {
 	});
 
 	// the second endpoint's mount throws after the first endpoint has added its
-	// transport, and after the revocation guard was registered
+	// registry, and after the revocation guard was registered
 	for (const { name, endpoint, message } of [
 		{
 			name: 'its registry fails to compile',
@@ -221,7 +221,7 @@ describe('a failed assembly releases what it acquired', () => {
 		{
 			name: 'its options are rejected',
 			endpoint: ws_endpoint('/api/ws_second', {
-				transport: new BackendWebsocketTransport({ log }),
+				registry: new ConnectionRegistry({ log }),
 				max_connections_per_account: 1
 			}),
 			message: /max_connections_per_account/
@@ -311,7 +311,7 @@ describe('AppServer.close releases what assembly acquired', () => {
 		const harness = create_harness();
 		const dispose = vi.spyOn(RateLimiter.prototype, 'dispose');
 		const server = await create_app_server(acquiring_options(harness.backend));
-		// the SSE listener, the revocation guard; the registry, the transport
+		// the SSE listener, the revocation guard; the registry, the registry
 		assert.deepStrictEqual(current(harness), {
 			listeners: harness.baseline.listeners + 2,
 			members: harness.baseline.members + 2
@@ -368,14 +368,14 @@ describe('AppServer.close releases what assembly acquired', () => {
 		assert.deepStrictEqual(current(harness), harness.baseline);
 	});
 
-	test('a transport the consumer also added stays on the closer', async () => {
+	test('a registry the consumer also added stays on the closer', async () => {
 		// the server's release takes out its own addition, not the consumer's
 		const harness = create_harness();
-		const supplied = new BackendWebsocketTransport({ log });
+		const supplied = new ConnectionRegistry({ log });
 		harness.backend.deps.connection_closer.add(supplied);
 		const server = await create_app_server({
 			...acquiring_options(harness.backend),
-			ws_endpoints: [ws_endpoint('/api/ws', { transport: supplied })]
+			ws_endpoints: [ws_endpoint('/api/ws', { registry: supplied })]
 		});
 		await server.close();
 		assert.strictEqual(
