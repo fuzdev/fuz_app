@@ -27,6 +27,7 @@ import type { Uuid } from '../primitive_schemas.ts';
 import type { CellGrantLevel } from '../auth/cell_grant_action_specs.ts';
 import { assert_row } from './assert_row.ts';
 import { columns_sql, iso8601_timestamp_expr, qualify_columns } from './sql_columns.ts';
+import { cell_viewer_params, type CellViewer } from './cell_view_sql.ts';
 
 /** Row shape returned by `cell_grant` SELECTs. */
 export interface CellGrantRow {
@@ -218,22 +219,20 @@ export const query_cell_grant_list_for_cells = async (
  *
  * @param deps - query deps
  * @param cell_ids - cells to fetch grants for
- * @param caller_actor_id - actor id of the caller (null for unauth)
- * @param role_grant_roles - active role_grant roles (parallel array)
- * @param role_grant_scope_ids - active role_grant scope ids (parallel array, parallel to roles)
+ * @param viewer - the caller, as `cell_list` bound its visibility predicate; its admin flag is not consulted
  * @returns matching grants (may include grants the caller doesn't match; caller's
  * list handler must filter when returning to the API)
+ * @throws {Error} when the viewer's role-grant arrays aren't parallel
  */
 export const query_cell_grants_for_caller_in_cells = async (
 	deps: QueryDeps,
 	cell_ids: ReadonlyArray<Uuid>,
-	caller_actor_id: Uuid | null,
-	role_grant_roles: ReadonlyArray<string>,
-	role_grant_scope_ids: ReadonlyArray<Uuid | null>
+	viewer: CellViewer
 ): Promise<Array<CellGrantRow>> => {
 	if (cell_ids.length === 0) {
 		return [];
 	}
+	const [, actor_id, role_grant_roles, role_grant_scope_ids] = cell_viewer_params(viewer);
 	return deps.db.query<CellGrantRow>(
 		`SELECT ${qualify_columns(CELL_GRANT_COLUMNS, 'g', cell_grant_expr('g'))} FROM cell_grant g
 		 WHERE g.cell_id = ANY($1::uuid[])
@@ -247,6 +246,6 @@ export const query_cell_grants_for_caller_in_cells = async (
 		     )
 		   )
 		 ORDER BY g.cell_id, g.created_at ASC`,
-		[cell_ids, caller_actor_id, role_grant_roles, role_grant_scope_ids]
+		[cell_ids, actor_id, role_grant_roles, role_grant_scope_ids]
 	);
 };

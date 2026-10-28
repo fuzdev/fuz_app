@@ -15,6 +15,7 @@
  */
 
 import { assert, test } from 'vitest';
+import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
 import {
 	query_cell_create,
@@ -25,6 +26,7 @@ import {
 import {
 	query_cell_grant_create,
 	query_cell_grant_list_for_cells,
+	query_cell_grants_for_caller_in_cells,
 	type CellGrantPrincipalQueryInput,
 	type CellGrantRow
 } from '#lib/db/cell_grant_queries.ts';
@@ -38,7 +40,7 @@ import {
 	query_cell_item_list_for_child,
 	query_cell_item_list_for_parent
 } from '#lib/db/cell_item_queries.ts';
-import { CELL_VIEWER_ANONYMOUS } from '#lib/db/cell_view_sql.ts';
+import { CELL_VIEWER_ANONYMOUS, type CellViewer } from '#lib/db/cell_view_sql.ts';
 import { query_create_account_with_actor } from '#lib/auth/account_queries.ts';
 import { can_view_cell, cell_viewer_from_auth } from '#lib/auth/cell_authorize.ts';
 import { create_test_context } from '#lib/testing/entities.ts';
@@ -205,11 +207,7 @@ describe_db('can_view_cell_sql', (get_db) => {
 			// in the matrix its steward arm admits nothing more.
 			const listed = await query_cell_list(deps, {
 				ids: matrix,
-				viewer_actor_id: viewer.actor_id,
-				viewer_is_admin: viewer.is_admin,
-				caller_actor_id: viewer.actor_id,
-				caller_role_grant_roles: viewer.role_grant_roles,
-				caller_role_grant_scope_ids: viewer.role_grant_scope_ids,
+				viewer,
 				limit: 1000
 			});
 			assert.deepEqual(sorted(listed.map((c) => c.id)), expected, `${label}: query_cell_list`);
@@ -364,5 +362,26 @@ describe_db('can_view_cell_sql', (get_db) => {
 				assert.deepEqual(sorted(ids), expected, `${label}: ${list}`);
 			}
 		}
+	});
+
+	test('a viewer whose role-grant arrays are not parallel is refused', async () => {
+		// `unnest` null-pads the shorter array, and a NULL scope reads as a
+		// global grant — so the list read and the grant enrichment both refuse
+		// the viewer before any SQL runs.
+		const deps = { db: get_db() };
+		const holder = await seed_actor(deps, 'view_sql_unparallel');
+		const viewer: CellViewer = {
+			actor_id: holder,
+			is_admin: false,
+			role_grant_roles: [MEMBER_ROLE, 'other'],
+			role_grant_scope_ids: [null]
+		};
+		const cell = await query_cell_create(deps, { data: {}, created_by: holder });
+		const list_error = await assert_rejects(() => query_cell_list(deps, { viewer }));
+		assert.include(list_error.message, 'must be parallel arrays');
+		const grants_error = await assert_rejects(() =>
+			query_cell_grants_for_caller_in_cells(deps, [cell.id], viewer)
+		);
+		assert.include(grants_error.message, 'must be parallel arrays');
 	});
 });

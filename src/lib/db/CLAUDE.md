@@ -107,7 +107,8 @@ The wire schemas + RPC handlers + authz predicates for this layer live in
 - **`cell_queries.ts`** — `query_cell_create / get / get_by_path / update /
 delete / set_moderation`, `_list_by_kind / _list_by_creator`, the
   generic `query_cell_list` (filter + SQL-side visibility predicate mirroring
-  `can_view_cell`, moderation admission included; the `kind` filter narrows
+  `can_view_cell`, moderation admission included, bound through one
+  `viewer: CellViewer`; the `kind` filter narrows
   by the `cell.kind` column, the `ref` filter by `cell.refs`, plus `root_id` /
   `moderation` filters for the per-root feed + mod queue),
   `query_cell_load_many` (bulk id load of full rows, no visibility filter —
@@ -141,7 +142,7 @@ delete / set_moderation`, `_list_by_kind / _list_by_creator`, the
   `_get`, `_delete` (returns deleted row), `_list_for_cell`,
   `_list_for_cells` (bulk, for the relation-read filter), and
   `query_cell_grants_for_caller_in_cells` (caller-matched enrichment for
-  `shared_with: 'me'`).
+  `shared_with: 'me'`, taking the same `CellViewer` the list bound).
 - **`cell_field_queries.ts`** — named relations (`(source_id, name) →
 target_id`): `query_cell_field_set` (UPSERT), `_get`, `_delete`,
   `_list_for_source` (`{limit, name_after}`), `_list_for_target`. Reads JOIN

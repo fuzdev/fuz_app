@@ -1058,7 +1058,6 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		// `cell_grant` role-shaped EXISTS (NULL `scope_id`s pass through as
 		// global-scope role_grants).
 		const viewer = cell_viewer_from_auth(auth);
-		const caller_actor_id = viewer.actor_id;
 		const rows = await query_cell_list(ctx, {
 			ids: input.ids,
 			kind: input.kind,
@@ -1068,11 +1067,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 			path_prefix: input.path_prefix,
 			root_id: input.root_id,
 			moderation: input.moderation,
-			viewer_actor_id: caller_actor_id,
-			viewer_is_admin: viewer.is_admin,
-			caller_actor_id,
-			caller_role_grant_roles: viewer.role_grant_roles,
-			caller_role_grant_scope_ids: viewer.role_grant_scope_ids,
+			viewer,
 			shared_with_caller_only: input.shared_with === 'me',
 			order_by: input.order_by,
 			order_direction: input.order_direction,
@@ -1082,13 +1077,11 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 			offset: input.offset
 		});
 		let cell_grants: Record<string, Array<GrantJson>> | undefined;
-		if (input.shared_with === 'me' && rows.length > 0 && caller_actor_id !== null) {
+		if (input.shared_with === 'me' && rows.length > 0 && viewer.actor_id !== null) {
 			const grant_rows = await query_cell_grants_for_caller_in_cells(
 				ctx,
 				rows.map((r) => r.id),
-				caller_actor_id,
-				viewer.role_grant_roles,
-				viewer.role_grant_scope_ids
+				viewer
 			);
 			cell_grants = {};
 			for (const g of grant_rows) {

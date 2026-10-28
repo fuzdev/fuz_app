@@ -37,7 +37,9 @@ import {
 import {
 	can_view_cell_sql,
 	caller_role_grants_cte,
-	cell_grant_admits_caller_sql
+	cell_grant_admits_caller_sql,
+	cell_viewer_params,
+	type CellViewer
 } from './cell_view_sql.ts';
 
 import type { CellData } from '../auth/cell_data_schema.ts';
@@ -532,12 +534,12 @@ export const query_cell_list_by_kind = async (
  * form:
  *
  * ```
- * (viewer_is_admin
- *  OR (viewer_actor_id IS NOT NULL AND created_by = viewer_actor_id)
+ * (viewer.is_admin
+ *  OR (viewer.actor_id IS NOT NULL AND created_by = viewer.actor_id)
  *  OR (<moderation admits an audience> AND (
  *       cell.visibility = 'public'
- *       OR (viewer_actor_id IS NOT NULL AND <grant admits caller>)))
- *  OR (viewer_actor_id IS NOT NULL AND <pending or rejected contribution>
+ *       OR (viewer.actor_id IS NOT NULL AND <grant admits caller>)))
+ *  OR (viewer.actor_id IS NOT NULL AND <pending or rejected contribution>
  *      AND <viewer owns its live governing root>))
  * ```
  *
@@ -584,23 +586,6 @@ export const query_cell_list = async (
 	const order_column = params.order_by === 'updated_at' ? 'updated_at' : 'created_at';
 	const order_direction = params.order_direction === 'asc' ? 'ASC' : 'DESC';
 
-	// Caller's actor + role_grants feed the `cell_grant` predicate. Empty
-	// arrays (not NULL) keep the SQL uniform — the `caller_role_grants` CTE
-	// yields zero rows for an empty role_grant set, no special-casing needed.
-	const caller_actor_id = params.caller_actor_id ?? null;
-	const role_grant_roles = params.caller_role_grant_roles ?? [];
-	const role_grant_scope_ids = params.caller_role_grant_scope_ids ?? [];
-	// Parallel-array invariant. `unnest(text[], uuid[])` null-pads on
-	// length mismatch — a longer roles array would silently widen
-	// role-grant admits with NULL `scope_id`s (treated as any-scope by
-	// the predicate). Security-relevant; assert at the SQL boundary
-	// rather than trusting every caller.
-	if (role_grant_roles.length !== role_grant_scope_ids.length) {
-		throw new Error(
-			`query_cell_list: caller_role_grant_roles (len=${role_grant_roles.length}) and ` +
-				`caller_role_grant_scope_ids (len=${role_grant_scope_ids.length}) must be parallel arrays`
-		);
-	}
 	const shared_with_caller_only = params.shared_with_caller_only === true;
 
 	// Column references and `$N::type` placeholders are interpolated; user
@@ -610,7 +595,9 @@ export const query_cell_list = async (
 	// supplied wildcards (`%`, `_`, `\`) match literally — Postgres 11+ has
 	// the function and pglite/PG 16 supports it.
 	//
-	// Two SQL shapes share the same 16-param positional layout:
+	// Two SQL shapes share the same 15-param positional layout, the viewer at
+	// `$6`–`$9` (`cell_viewer_params`, which refuses non-parallel role-grant
+	// arrays — `unnest` would null-pad them into any-scope grants):
 	//
 	// - `shared_with_caller_only: false` — cell-driven scan with the
 	//   visibility predicate (admin / public / owner / grant-admits).
@@ -628,14 +615,10 @@ export const query_cell_list = async (
 		params.ref ?? null,
 		params.created_by ?? null,
 		params.path_prefix ?? null,
-		params.viewer_is_admin,
-		params.viewer_actor_id ?? null,
+		...cell_viewer_params(params.viewer),
 		params.limit ?? null,
 		params.offset ?? 0,
 		params.ids && params.ids.length > 0 ? params.ids : null,
-		caller_actor_id,
-		role_grant_roles,
-		role_grant_scope_ids,
 		params.visibility ?? null,
 		params.root_id ?? null,
 		params.moderation ?? null
@@ -647,7 +630,7 @@ export const query_cell_list = async (
  * query so the role-grant predicate doesn't re-scan `unnest()` per outer row.
  * Shared by both SQL shapes.
  */
-const CALLER_ROLE_GRANTS_CTE = `WITH ${caller_role_grants_cte('$12', '$13')}`;
+const CALLER_ROLE_GRANTS_CTE = `WITH ${caller_role_grants_cte('$8', '$9')}`;
 
 /**
  * General `cell_list` SQL: cell-driven scan, full visibility predicate — the
@@ -660,15 +643,15 @@ const build_general_sql = (order_column: string, order_direction: string): strin
 	 SELECT ${cell_row_projection('c')} FROM cell c
 	 WHERE ($1::bool OR c.deleted_at IS NULL)
 	   AND ($2::text IS NULL OR c.kind = $2::text)
-	   AND ($14::cell_visibility IS NULL OR c.visibility = $14::cell_visibility)
+	   AND ($13::cell_visibility IS NULL OR c.visibility = $13::cell_visibility)
 	   AND ($3::text IS NULL OR c.refs @> ARRAY[$3]::text[])
 	   AND ($4::uuid IS NULL OR c.created_by = $4)
 	   AND ($5::text IS NULL OR starts_with(c.path, $5))
-	   AND ($10::uuid[] IS NULL OR c.id = ANY($10))
-	   AND ($15::uuid IS NULL OR c.root_id = $15)
-	   AND ($16::text IS NULL OR c.moderation = $16::text)
+	   AND ($12::uuid[] IS NULL OR c.id = ANY($12))
+	   AND ($14::uuid IS NULL OR c.root_id = $14)
+	   AND ($15::text IS NULL OR c.moderation = $15::text)
 	   AND (
-	     ${can_view_cell_sql('c', { is_admin: '$6', actor_id: '$7', grant_actor_id: '$11' })}
+	     ${can_view_cell_sql('c', { is_admin: '$6', actor_id: '$7' })}
 	     OR ($7::uuid IS NOT NULL AND c.root_id IS NOT NULL AND ${cell_moderation_is_stewardable_sql('c')}
 	       AND EXISTS (
 	         SELECT 1 FROM cell r
@@ -676,7 +659,7 @@ const build_general_sql = (order_column: string, order_direction: string): strin
 	       ))
 	   )
 	 ORDER BY c.${order_column} ${order_direction} NULLS LAST
-	 LIMIT $8 OFFSET $9`;
+	 LIMIT $10 OFFSET $11`;
 
 /**
  * Shared-with-me `cell_list` SQL: grant-driven semi-join. The `IN
@@ -699,27 +682,27 @@ const build_shared_with_sql = (order_column: string, order_direction: string): s
 	 SELECT ${cell_row_projection('c')} FROM cell c
 	 WHERE ($1::bool OR c.deleted_at IS NULL)
 	   AND ($2::text IS NULL OR c.kind = $2::text)
-	   AND ($14::cell_visibility IS NULL OR c.visibility = $14::cell_visibility)
+	   AND ($13::cell_visibility IS NULL OR c.visibility = $13::cell_visibility)
 	   AND ($3::text IS NULL OR c.refs @> ARRAY[$3]::text[])
 	   AND ($4::uuid IS NULL OR c.created_by = $4)
 	   AND ($5::text IS NULL OR starts_with(c.path, $5))
-	   AND ($10::uuid[] IS NULL OR c.id = ANY($10))
-	   AND ($15::uuid IS NULL OR c.root_id = $15)
-	   AND ($16::text IS NULL OR c.moderation = $16::text)
+	   AND ($12::uuid[] IS NULL OR c.id = ANY($12))
+	   AND ($14::uuid IS NULL OR c.root_id = $14)
+	   AND ($15::text IS NULL OR c.moderation = $15::text)
 	   AND $7::uuid IS NOT NULL
 	   AND c.created_by IS DISTINCT FROM $7
 	   AND ${cell_moderation_admits_audience_sql('c')}
 	   AND c.id IN (
 	     SELECT g.cell_id FROM cell_grant g
-	     WHERE ${cell_grant_admits_caller_sql('g', '$11')}
+	     WHERE ${cell_grant_admits_caller_sql('g', '$7')}
 	   )
-	   -- $6 (viewer_is_admin) intentionally not consulted: an admin
+	   -- $6 (viewer.is_admin) intentionally not consulted: an admin
 	   -- asking "what's shared with me" wants their grant footprint, not
 	   -- every cell. Cast-only reference keeps the param's type known to
-	   -- the planner so the shared 16-param positional layout stays valid.
+	   -- the planner so the shared 15-param positional layout stays valid.
 	   AND $6::bool IS NOT NULL
 	 ORDER BY c.${order_column} ${order_direction} NULLS LAST
-	 LIMIT $8 OFFSET $9`;
+	 LIMIT $10 OFFSET $11`;
 
 /** Parameters for `query_cell_list`. All filter dimensions are optional. */
 export interface CellListParams {
@@ -763,44 +746,17 @@ export interface CellListParams {
 	 */
 	ids?: Array<Uuid>;
 	/**
-	 * Viewer actor for the visibility predicate. Pass `null` for
-	 * unauthenticated callers — only `cell.visibility === 'public'` rows
-	 * are admitted then.
+	 * The caller the visibility predicate binds — one value for the owner,
+	 * admin, grant and steward arms, so visibility and grant admission can't
+	 * be read for two different callers. `cell_viewer_from_auth` builds it
+	 * from a request context; `CELL_VIEWER_ANONYMOUS` admits public rows
+	 * alone, `CELL_VIEWER_UNRESTRICTED` every row.
 	 */
-	viewer_actor_id: Uuid | null;
-	/**
-	 * When `true`, the visibility predicate is dropped (admin sees all).
-	 * When `false`, rows pass when public, owned by the viewer, or
-	 * admitted by a `cell_grant` row.
-	 */
-	viewer_is_admin: boolean;
-	/**
-	 * Caller's `actor_id` for the actor-shaped grant branch. NULL =
-	 * anonymous (actor-grants can never admit). Kept distinct from
-	 * `viewer_actor_id` for the predicate's clarity (the visibility branch
-	 * and the grant branch are independent concerns even when they
-	 * currently agree).
-	 */
-	caller_actor_id?: Uuid | null;
-	/**
-	 * Caller's role_grant roles, parallel-array projection of `auth.role_grants`
-	 * (active-only — middleware filters). Pair-wise aligned with
-	 * `caller_role_grant_scope_ids`. Empty array (or omitted) admits no
-	 * role-shaped grants. The two arrays MUST have equal length —
-	 * `unnest(text[], uuid[])` null-pads on length mismatch and would
-	 * silently widen role-grant admits.
-	 */
-	caller_role_grant_roles?: ReadonlyArray<string>;
-	/**
-	 * Caller's role_grant scope ids, parallel-array projection. NULLs in the
-	 * array mark global (any-scope) role_grants — `IS NOT DISTINCT FROM`
-	 * handles them per design.
-	 */
-	caller_role_grant_scope_ids?: ReadonlyArray<Uuid | null>;
+	viewer: CellViewer;
 	/**
 	 * When `true`, narrow to cells admitting the caller via a
 	 * `cell_grant` row AND that the caller does not own. Authenticated
-	 * only (`viewer_actor_id` must be set). Combine with `kind` /
+	 * only (`viewer.actor_id` must be set). Combine with `kind` /
 	 * `path_prefix` etc. to scope further.
 	 */
 	shared_with_caller_only?: boolean;

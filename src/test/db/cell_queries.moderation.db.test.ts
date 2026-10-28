@@ -23,6 +23,7 @@ import {
 	type CellListParams
 } from '#lib/db/cell_queries.ts';
 import { query_cell_grant_create } from '#lib/db/cell_grant_queries.ts';
+import { CELL_VIEWER_UNRESTRICTED, type CellViewer } from '#lib/db/cell_view_sql.ts';
 import {
 	cell_moderation_admits_audience,
 	cell_moderation_is_stewardable
@@ -103,22 +104,20 @@ describe_db('query_cell_list moderation gating', (get_db) => {
 			all.push(await seed_cells(deps, owner, holder, moderation));
 		}
 
-		const viewer = (actor: Uuid | null): CellListParams => ({
-			viewer_actor_id: actor,
-			viewer_is_admin: false,
-			caller_actor_id: actor
+		const as_actor = (actor: Uuid | null, roles: Array<string> = []): CellViewer => ({
+			actor_id: actor,
+			is_admin: false,
+			role_grant_roles: roles,
+			role_grant_scope_ids: roles.map(() => null)
 		});
-		const as_role_holder: CellListParams = {
-			...viewer(role_holder),
-			caller_role_grant_roles: [ROLE],
-			caller_role_grant_scope_ids: [null]
-		};
+		const viewer = (actor: Uuid | null): CellListParams => ({ viewer: as_actor(actor) });
+		const as_role_holder: CellListParams = { viewer: as_actor(role_holder, [ROLE]) };
 		const anon = await list_ids(deps, viewer(null));
 		const strangers = await list_ids(deps, viewer(stranger));
 		const holders = await list_ids(deps, viewer(holder));
 		const role_holders = await list_ids(deps, as_role_holder);
 		const owners = await list_ids(deps, viewer(owner));
-		const admins = await list_ids(deps, { ...viewer(null), viewer_is_admin: true });
+		const admins = await list_ids(deps, { viewer: CELL_VIEWER_UNRESTRICTED });
 		const shared_with_holder = await list_ids(deps, {
 			...viewer(holder),
 			shared_with_caller_only: true
@@ -199,9 +198,7 @@ describe_db('query_cell_list moderation gating', (get_db) => {
 		);
 
 		const viewer = (actor: Uuid): CellListParams => ({
-			viewer_actor_id: actor,
-			viewer_is_admin: false,
-			caller_actor_id: actor,
+			viewer: { actor_id: actor, is_admin: false, role_grant_roles: [], role_grant_scope_ids: [] },
 			root_id: root
 		});
 		const root_owners = await list_ids(deps, viewer(root_owner));

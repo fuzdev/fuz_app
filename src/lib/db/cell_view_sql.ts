@@ -60,13 +60,8 @@ export const CELL_VIEWER_UNRESTRICTED: CellViewer = {
 export interface CellViewerSqlParams {
 	/** The global-admin flag (`bool`). */
 	readonly is_admin: string;
-	/** The acting actor (`uuid`, NULL when anonymous) — the owner arm and the grant arm's guard. */
+	/** The acting actor (`uuid`, NULL when anonymous) — the owner arm and the actor-shaped grant arm. */
 	readonly actor_id: string;
-	/**
-	 * The actor an actor-shaped grant matches, when a query binds it apart
-	 * from `actor_id` (`query_cell_list` does). Defaults to `actor_id`.
-	 */
-	readonly grant_actor_id?: string;
 }
 
 /**
@@ -143,7 +138,6 @@ export const cell_grant_admits_caller_sql = (g_alias: string, actor_id: string):
  */
 export const can_view_cell_sql = (c_alias: string, params: CellViewerSqlParams): string => {
 	const { is_admin, actor_id } = params;
-	const grant_actor_id = params.grant_actor_id ?? actor_id;
 	return `(
 	     ${is_admin}::bool
 	     OR (${actor_id}::uuid IS NOT NULL AND ${c_alias}.created_by = ${actor_id})
@@ -151,7 +145,7 @@ export const can_view_cell_sql = (c_alias: string, params: CellViewerSqlParams):
 	       ${c_alias}.visibility = 'public'
 	       OR (${actor_id}::uuid IS NOT NULL AND EXISTS (
 	         SELECT 1 FROM cell_grant g
-	         WHERE g.cell_id = ${c_alias}.id AND ${cell_grant_admits_caller_sql('g', grant_actor_id)}
+	         WHERE g.cell_id = ${c_alias}.id AND ${cell_grant_admits_caller_sql('g', actor_id)}
 	       ))
 	     ))
 	   )`;
