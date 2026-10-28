@@ -8,7 +8,7 @@ conventions (`.db.test.ts`, `assert` from vitest, `assert_rejects`,
 testing-patterns.
 
 Tests live in `src/test/`, mirroring `src/lib/` structure
-(e.g., `src/lib/cli/config.ts` → `src/test/cli/config.test.ts`).
+(e.g., `src/lib/auth/keyring.ts` → `src/test/auth/keyring.test.ts`).
 
 ## Test Layers
 

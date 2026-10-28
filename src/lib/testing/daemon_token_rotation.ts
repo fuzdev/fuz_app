@@ -22,7 +22,7 @@ import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import type { EnvDeps, FsWriteDeps, FsRemoveDeps } from '../runtime/deps.ts';
 import { write_file_atomic } from '../runtime/fs.ts';
-import { get_app_dir } from '../cli/config.ts';
+import { get_app_dir } from './daemon_info.ts';
 import type { QueryDeps } from '../db/query_deps.ts';
 import { generate_daemon_token, type DaemonTokenState } from '../auth/daemon_token.ts';
 import { resolve_keeper_account_id } from '../auth/daemon_token_middleware.ts';

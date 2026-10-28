@@ -6,7 +6,7 @@ fuz_app is a fullstack app library for
 TypeScript, [Svelte](https://svelte.dev/), SvelteKit,
 [Hono](https://hono.dev/), and [PostgreSQL](https://www.postgresql.org/)
 with [PGlite](https://pglite.dev/) for embedded targets.
-It provides auth, sessions, accounts, database integration, middleware, CLI utilities, and more,
+It provides auth, sessions, accounts, database integration, middleware, and more,
 the goal being an excellent and flexible whole-stack experience
 for developers, operators, and end-users.
 

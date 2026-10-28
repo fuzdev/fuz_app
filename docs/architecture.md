@@ -25,7 +25,7 @@ The remaining directories are:
 - `server/` — Application assembly (`create_app_backend`, `create_app_server`).
   Composes auth + http + db into a running server.
 - `runtime/` — Composable capability interfaces and runtime implementations.
-- `cli/`, `realtime/`, `actions/`, `ui/`, `testing/` — Self-contained subsystems.
+- `realtime/`, `actions/`, `ui/`, `testing/` — Self-contained subsystems.
 
 The key principle: if a file is primarily about auth/identity, it belongs in `auth/`
 regardless of whether it's a query, middleware, route, or schema. Generic

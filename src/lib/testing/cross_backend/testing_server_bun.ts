@@ -14,7 +14,7 @@ import '../assert_dev_env.ts';
  * `@hono/node-server` + `@hono/node-ws`); `Bun.serve` is built in.
  * `RuntimeDeps` reuse `create_node_runtime` — Bun
  * implements the `node:fs` / `node:process` surface `RuntimeDeps` +
- * `cli/daemon` touch.
+ * `testing/daemon_info.ts` touch.
  *
  * `Bun.serve` is declared locally (mirroring `testing/cross_backend/testing_server_deno.ts`'s
  * `Deno` declaration) so this module typechecks under fuz_app's Node-based

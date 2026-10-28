@@ -37,7 +37,7 @@ import type { Context, Hono } from 'hono';
 import type { UpgradeWebSocket } from 'hono/ws';
 import { Logger, type Logger as LoggerType } from '@fuzdev/fuz_util/log.ts';
 
-import { write_daemon_info, read_daemon_info, is_daemon_running } from '../../cli/daemon.ts';
+import { write_daemon_info, read_daemon_info, is_daemon_running } from '../daemon_info.ts';
 import type { RuntimeDeps } from '../../runtime/deps.ts';
 
 /**
@@ -148,7 +148,7 @@ export interface StartTestingServerOptions {
 	/** Runtime-boundary adapter (Node or Deno). */
 	adapter: TestingServerAdapter;
 	/**
-	 * Daemon-info namespace — the `cli/daemon` key the `daemon.json` is
+	 * Daemon-info namespace — the app name the `daemon.json` is
 	 * written under (e.g. `'fuz_app_spine'`). The cross-process harness
 	 * reads the daemon token from the rotation file, not this; `daemon.json`
 	 * is for stale-process detection + parity with production daemon

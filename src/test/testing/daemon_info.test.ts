@@ -8,9 +8,8 @@ import {
 	read_daemon_info,
 	write_daemon_info,
 	is_daemon_running,
-	check_daemon_health,
-	stop_daemon
-} from '#lib/cli/daemon.ts';
+	get_app_dir
+} from '#lib/testing/daemon_info.ts';
 
 const MOCK_INFO: DaemonInfo = {
 	version: 1,
@@ -19,6 +18,18 @@ const MOCK_INFO: DaemonInfo = {
 	started: '2026-01-01T00:00:00.000Z',
 	app_version: '0.1.0'
 };
+
+describe('get_app_dir', () => {
+	test('returns ~/.name when HOME is set', () => {
+		const runtime = { env_get: (name: string) => (name === 'HOME' ? '/home/user' : undefined) };
+		assert.strictEqual(get_app_dir(runtime, 'myapp'), '/home/user/.myapp');
+	});
+
+	test('returns null when HOME is not set', () => {
+		const runtime = { env_get: (_name: string) => undefined };
+		assert.strictEqual(get_app_dir(runtime, 'myapp'), null);
+	});
+});
 
 describe('DaemonInfo schema', () => {
 	test('validates correct data', () => {
@@ -184,121 +195,5 @@ describe('is_daemon_running', () => {
 				})
 		};
 		assert.strictEqual(await is_daemon_running(runtime, 99999), false);
-	});
-});
-
-describe('stop_daemon', () => {
-	test('stops a running daemon', async () => {
-		const removed: Array<string> = [];
-		const runtime = {
-			env_get: (name: string) => (name === 'HOME' ? '/home/user' : undefined),
-			env_set: () => undefined,
-			stat: (_path: string) => Promise.resolve({ is_file: true, is_directory: false }),
-			read_text_file: (_path: string) => Promise.resolve(JSON.stringify(MOCK_INFO)),
-			run_command: (_cmd: string, _args: Array<string>) =>
-				Promise.resolve({
-					success: true,
-					code: 0,
-					stdout: '',
-					stderr: ''
-				}),
-			remove: (path: string) => {
-				removed.push(path);
-				return Promise.resolve();
-			},
-			warn: () => {}
-		};
-
-		const result = await stop_daemon(runtime, 'zzz');
-		assert.strictEqual(result.stopped, true);
-		assert.strictEqual(result.pid, 12345);
-		assert.ok(result.message.includes('Stopped'));
-		assert.strictEqual(removed.length, 1);
-		assert.strictEqual(removed[0], '/home/user/.zzz/run/daemon.json');
-	});
-
-	test('cleans up when process not running', async () => {
-		const runtime = {
-			env_get: (name: string) => (name === 'HOME' ? '/home/user' : undefined),
-			env_set: () => undefined,
-			stat: (_path: string) => Promise.resolve({ is_file: true, is_directory: false }),
-			read_text_file: (_path: string) => Promise.resolve(JSON.stringify(MOCK_INFO)),
-			run_command: (_cmd: string, _args: Array<string>) =>
-				Promise.resolve({
-					success: false,
-					code: 1,
-					stdout: '',
-					stderr: ''
-				}),
-			remove: (_path: string) => Promise.resolve(),
-			warn: () => {}
-		};
-
-		const result = await stop_daemon(runtime, 'zzz');
-		assert.strictEqual(result.stopped, false);
-		assert.ok(result.message.includes('not running'));
-	});
-
-	test('returns message when no daemon.json', async () => {
-		const runtime = {
-			env_get: (name: string) => (name === 'HOME' ? '/home/user' : undefined),
-			env_set: () => undefined,
-			stat: (_path: string) => Promise.resolve(null),
-			read_text_file: (_path: string) => Promise.resolve(''),
-			run_command: () => Promise.resolve({ success: false, code: 1, stdout: '', stderr: '' }),
-			remove: (_path: string) => Promise.resolve(),
-			warn: () => {}
-		};
-
-		const result = await stop_daemon(runtime, 'zzz');
-		assert.strictEqual(result.stopped, false);
-		assert.ok(result.message.includes('No daemon'));
-	});
-
-	test('returns message when HOME not set', async () => {
-		const runtime = {
-			env_get: () => undefined,
-			env_set: () => undefined,
-			stat: () => Promise.resolve(null),
-			read_text_file: () => Promise.resolve(''),
-			run_command: () => Promise.resolve({ success: false, code: 1, stdout: '', stderr: '' }),
-			remove: () => Promise.resolve(),
-			warn: () => {}
-		};
-
-		const result = await stop_daemon(runtime, 'zzz');
-		assert.strictEqual(result.stopped, false);
-		assert.ok(result.message.includes('$HOME'));
-	});
-});
-
-describe('check_daemon_health', () => {
-	test('returns true when health endpoint responds 200', async () => {
-		const deps = { fetch: () => Promise.resolve(new Response('ok', { status: 200 })) };
-		assert.strictEqual(await check_daemon_health(deps, 4460), true);
-	});
-
-	test('returns false when health endpoint responds non-ok', async () => {
-		const deps = { fetch: () => Promise.resolve(new Response('error', { status: 503 })) };
-		assert.strictEqual(await check_daemon_health(deps, 4460), false);
-	});
-
-	test('returns false when fetch throws (connection refused)', async () => {
-		const deps = {
-			fetch: () => Promise.reject(new Error('ECONNREFUSED'))
-		};
-		assert.strictEqual(await check_daemon_health(deps, 4460), false);
-	});
-
-	test('passes correct URL with custom host', async () => {
-		let fetched_url = '';
-		const deps = {
-			fetch: (url: string | URL | Request) => {
-				fetched_url = typeof url === 'string' ? url : url instanceof URL ? url.href : url.url;
-				return Promise.resolve(new Response('ok', { status: 200 }));
-			}
-		};
-		await check_daemon_health(deps, 8080, '0.0.0.0');
-		assert.strictEqual(fetched_url, 'http://0.0.0.0:8080/health');
 	});
 });
