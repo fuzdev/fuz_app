@@ -2,7 +2,7 @@
  * Shared `format_scope` callback contract for role-grant-display components.
  *
  * Role grants and offers carry a `scope_id` that names a consumer-owned resource
- * (e.g. a classroom uuid). The default render is the raw uuid. Consumers wire
+ * (e.g. a classroom uuid). The default render is the truncated uuid. Consumers wire
  * a `FormatScope` via context to render a human label without per-page
  * lookup or forking the components.
  *

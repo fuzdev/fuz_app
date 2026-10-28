@@ -589,7 +589,7 @@ interface. See "Key patterns" above for the provisioner pattern.
   getters), so there's no separate `role_grant_offers_rpc_context`.
 - `format_scope_context` — `() => FormatScope` (getter shape, matching
   the RPC contexts above). `FormatScope = ({scope_id, role}) => string |
-null`; default returns `null` so callers fall back to the raw uuid.
+null`; default returns `null` so callers fall back to the truncated uuid.
   Provisioned by `provide_admin_rpc_contexts(adapters, {format_scope})`.
   Consumed by `AdminAccounts`, `AdminRoleGrantHistory`, `RoleGrantOfferInbox`,
   `RoleGrantOfferHistory` via the `resolve_scope_label(scope_id, role,

@@ -178,7 +178,7 @@ export const create_admin_rpc_adapters = (api: AdminRpcApi): AdminRpcAdapters =>
 export interface ProvideAdminRpcContextsOptions {
 	/**
 	 * Render `{scope_id, role}` as a human label across role-grant-display
-	 * components. Omit (or return `null`) to fall back to the raw uuid.
+	 * components. Omit (or return `null`) to fall back to the truncated uuid.
 	 */
 	format_scope?: FormatScope;
 }

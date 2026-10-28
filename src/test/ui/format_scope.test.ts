@@ -17,7 +17,7 @@ import {
 import { truncate_uuid } from '#lib/ui/ui_format.ts';
 
 describe('default_format_scope', () => {
-	test('returns null for any input — caller falls back to raw uuid', () => {
+	test('returns null for any input — caller falls back to the truncated uuid', () => {
 		assert.isNull(default_format_scope({ scope_id: null, role: 'admin' }));
 		assert.isNull(default_format_scope({ scope_id: 'abc', role: 'admin' }));
 	});

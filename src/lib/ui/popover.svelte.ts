@@ -102,11 +102,10 @@ export interface PopoverParameters {
 }
 
 /**
- * Parameters for the popover content action.
+ * Parameters for the popover content attachment.
  */
-
 export interface PopoverContentParameters extends PopoverParameters {
-	// Container reference is managed internally through the container action
+	// the container reference is managed internally through the `container` attachment
 }
 
 /**
