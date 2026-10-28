@@ -61,6 +61,7 @@ import {
 import { create_default_db_factory, type DbFactory } from './db.ts';
 import type { RpcEndpointsSuiteOption } from './rpc_helpers.ts';
 import { token_scope_full } from '../auth/token_scope.ts';
+import { format_allowed_origins_error, parse_allowed_origins } from '../http/origin.ts';
 
 /**
  * Fast password stub for tests that don't exercise login/password flows.
@@ -617,19 +618,35 @@ export interface TestApp {
 }
 
 /**
+ * The origins an in-process test server allows — the dev server's, which the
+ * test request headers send.
+ */
+const LOOPBACK_ALLOWED_ORIGINS = 'http://localhost:5173';
+
+/**
  * The loopback `create_app_server` options an in-process test server takes:
- * `localhost` origins allowed, the loopback proxy trusted (so
- * `X-Forwarded-For` sets the client IP), and an empty env schema. A fresh
- * object per call — spread it ahead of the options a test varies.
+ * the `http://localhost:5173` origin allowed (an exact list, parsed by
+ * `parse_allowed_origins` as `create_app_server` requires), the loopback
+ * proxy trusted (so `X-Forwarded-For` sets the client IP), and an empty env
+ * schema. A fresh object per call — spread it ahead of the options a test
+ * varies.
  */
 export const create_loopback_app_server_options = (): Pick<
 	AppServerOptions,
 	'allowed_origins' | 'proxy' | 'env_schema'
-> => ({
-	allowed_origins: [/^http:\/\/localhost/],
-	proxy: { trusted_proxies: ['127.0.0.1'], get_connection_ip: () => '127.0.0.1' },
-	env_schema: z.object({})
-});
+> => {
+	const parsed = parse_allowed_origins(LOOPBACK_ALLOWED_ORIGINS);
+	if (!parsed.ok) {
+		throw new Error(
+			`create_loopback_app_server_options: ${parsed.errors.map(format_allowed_origins_error).join('; ')}`
+		);
+	}
+	return {
+		allowed_origins: parsed.origins,
+		proxy: { trusted_proxies: ['127.0.0.1'], get_connection_ip: () => '127.0.0.1' },
+		env_schema: z.object({})
+	};
+};
 
 /**
  * The `create_app_server` options both test-app builders share — a fresh

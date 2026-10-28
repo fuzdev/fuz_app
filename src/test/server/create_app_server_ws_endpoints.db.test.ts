@@ -112,6 +112,8 @@ const factory = create_default_db_factory(async () => {});
 
 const base_config: Omit<AppServerOptions, 'backend'> = {
 	...create_loopback_app_server_options(),
+	// the endpoints' own lists name :3000; the server takes both dev ports
+	allowed_origins: parse_origins('http://localhost:3000, http://localhost:5173'),
 	session_options,
 	create_route_specs: () => [create_health_route_spec()]
 };
@@ -291,8 +293,8 @@ describe('create_app_server.ws_endpoints', () => {
 	test('allowed_origins defaults to the server list; a spec list narrows it', async () => {
 		const stub = create_stub_upgrade();
 		const { config } = await create_test_setup();
-		// the server admits any localhost port; `/api/ws_narrow` only :3000
-		const narrowed = [/^http:\/\/localhost:3000$/];
+		// the server admits :3000 and :5173; `/api/ws_narrow` only :3000
+		const narrowed = parse_origins('http://localhost:3000');
 		const result = await create_tracked_app_server({
 			...config,
 			create_upgrade_websocket: () => stub.upgradeWebSocket,

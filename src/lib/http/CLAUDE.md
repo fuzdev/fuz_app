@@ -364,6 +364,17 @@ whitespace and written as a browser writes an `Origin` — exact
 position — matches `api.fuz.dev`, NOT `fuz.dev` or `a.b.fuz.dev`); several
 `https://*.*.corp.fuz.dev`; port wildcard `http://localhost:*` (any port or
 none); IPv6 `http://[::1]:3000` (exact, no wildcard inside the brackets).
+A wildcard entry boots only with `FUZ_ALLOW_ORIGIN_WILDCARDS=true`:
+`origin_wildcard.ts` classifies each parsed entry (`origin_wildcard_kind` —
+port, host with some or no label fixed, or both — from the `OriginPattern`
+`parse_allowed_origins` returns beside each matcher and brands onto it under
+the realm-global `Symbol.for('@fuzdev/fuz_app/OriginPattern')`, so a second
+fuz_app copy reads it — `origin_pattern_of`), renders what it admits
+(`origin_wildcard_warning`, the Rust `fuz_http::origin_wildcard_warning` text
+word for word), and `admit_origin_wildcards` gives `validate_server_env` and
+`create_app_server` (the server list and each `ws_endpoints` spec's own) the
+refusal or the warnings (`allow_origin_wildcards`). A matcher with no brand —
+hand-built, or copied with `new RegExp` — is refused, flag or not.
 **Nothing is normalized** — the matcher is built from the entry as written, so
 an entry a browser would never send is refused rather than rewritten: non-ASCII
 (punycode an IDN host), a scheme other than http/https (`null`, `file://`,

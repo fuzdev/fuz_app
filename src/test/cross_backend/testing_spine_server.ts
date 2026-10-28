@@ -268,7 +268,7 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 			`testing_spine_server: invalid ${env_config.field}: ${env_config.errors.join('; ')}`
 		);
 	}
-	const { keyring, allowed_origins, bootstrap_token_path } = env_config;
+	const { keyring, allowed_origins, allow_origin_wildcards, bootstrap_token_path } = env_config;
 
 	const app_backend = await create_app_backend({
 		database_url: env.DATABASE_URL,
@@ -394,6 +394,7 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 		backend: app_backend,
 		session_options: spine_session_options,
 		allowed_origins,
+		allow_origin_wildcards,
 		proxy: { trusted_proxies: ['127.0.0.1', '::1'], get_connection_ip },
 		// Every limiter not passed below stays off. The explicit ones win over
 		// the mode: each is null unless its env toggle (above) built it.

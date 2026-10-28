@@ -33,6 +33,7 @@ import { create_app_server } from '@fuzdev/fuz_app/server/app_server.ts';
 import { create_session_config } from '@fuzdev/fuz_app/auth/session_cookie.ts';
 import { argon2_password_deps } from '@fuzdev/fuz_app/auth/password_argon2.ts';
 import { create_keyring } from '@fuzdev/fuz_app/auth/keyring.ts';
+import { parse_allowed_origins } from '@fuzdev/fuz_app/http/origin.ts';
 import { create_audit_emitter } from '@fuzdev/fuz_app/auth/audit_emitter.ts';
 import { BaseServerEnv } from '@fuzdev/fuz_app/server/env.ts';
 import { create_health_route_spec } from '@fuzdev/fuz_app/http/common_routes.ts';
@@ -56,10 +57,12 @@ const backend = await create_app_backend({
 });
 
 // 2. Assemble Hono app (auth middleware, routes, bootstrap — all handled)
+const origins = parse_allowed_origins('http://localhost:5173');
+if (!origins.ok) throw new Error('invalid allowed origins');
 const { app, close } = await create_app_server({
 	backend,
 	session_options: create_session_config('my_session'),
-	allowed_origins: ['http://localhost:*'],
+	allowed_origins: origins.origins,
 	proxy: {
 		trusted_proxies: ['127.0.0.1', '::1'],
 		get_connection_ip: (c) => getConnInfo(c).remote.address

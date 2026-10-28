@@ -181,7 +181,8 @@ Types:
 - `TestApp` — `{app, backend, server, surface_spec, surface, route_specs, create_session_headers, create_bearer_headers, create_daemon_token_headers, create_account, cleanup}`. `server` is the assembled `AppServer`, for what `create_app_server` built beyond the lifted fields — `require_audit_sse(test_app.server)` with `audit_log_sse` in `app_options`, `test_app.server.ws_endpoints[path]` — instead of capturing them from a `create_route_specs` closure.
 
 `create_test_app` hard-codes the test-friendly `AppServerOptions`:
-`allowed_origins: [/^http:\/\/localhost/]`, stub proxy pinned to `127.0.0.1`,
+`allowed_origins` exactly `http://localhost:5173` (built by
+`parse_allowed_origins`, as `create_app_server` requires), stub proxy pinned to `127.0.0.1`,
 `env_schema: z.object({})`, `rate_limiters: 'disabled_for_testing'` (every
 rate limiter `null` — a limiter passed through `app_options` wins over the
 mode, so a rate-limit test enables just the one it pins; the mode's stderr

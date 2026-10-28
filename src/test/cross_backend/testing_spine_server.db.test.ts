@@ -39,7 +39,8 @@ const SPINE_ENV: Record<string, string> = {
 	HOST: 'localhost',
 	DATABASE_URL: 'memory://',
 	SECRET_FUZ_COOKIE_KEYS: default_test_cookie_keys,
-	FUZ_ALLOWED_ORIGINS: 'http://localhost:*'
+	FUZ_ALLOWED_ORIGINS: 'http://localhost:*',
+	FUZ_ALLOW_ORIGIN_WILDCARDS: 'true'
 };
 
 test('the Node-built spine surface lists its WS endpoints and passes the surface invariants', async () => {

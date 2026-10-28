@@ -10,12 +10,14 @@ import { z } from 'zod';
 import { BaseServerEnv, validate_server_env } from '#lib/server/env.ts';
 import { env_schema_to_surface } from '#lib/http/surface.ts';
 import type { SchemaFieldMeta } from '#lib/schema_meta.ts';
+import { parse_allowed_origins } from '#lib/http/origin.ts';
+import { admit_origin_wildcards } from '#lib/http/origin_wildcard.ts';
 
 /** Minimal valid env for BaseServerEnv (only required fields, no defaults). */
 const VALID_ENV: Record<string, string> = {
 	NODE_ENV: 'development',
 	SECRET_FUZ_COOKIE_KEYS: 'a'.repeat(32),
-	FUZ_ALLOWED_ORIGINS: 'http://localhost:*',
+	FUZ_ALLOWED_ORIGINS: 'http://localhost:5173',
 	DATABASE_URL: 'memory://'
 };
 
@@ -33,6 +35,7 @@ describe('BaseServerEnv', () => {
 		assert.deepStrictEqual(Object.keys(BaseServerEnv.shape).sort(), [
 			'DATABASE_URL',
 			'FUZ_ALLOWED_ORIGINS',
+			'FUZ_ALLOW_ORIGIN_WILDCARDS',
 			'FUZ_BOOTSTRAP_TOKEN_PATH',
 			'HOST',
 			'NODE_ENV',
@@ -97,6 +100,18 @@ describe('BaseServerEnv', () => {
 			SECRET_FUZ_COOKIE_KEYS: 'short'
 		});
 		assert.isFalse(result.success);
+	});
+
+	test('FUZ_ALLOW_ORIGIN_WILDCARDS is exactly true or false', () => {
+		assert.strictEqual(BaseServerEnv.parse(VALID_ENV).FUZ_ALLOW_ORIGIN_WILDCARDS, undefined);
+		for (const value of ['true', 'false']) {
+			const result = BaseServerEnv.parse({ ...VALID_ENV, FUZ_ALLOW_ORIGIN_WILDCARDS: value });
+			assert.strictEqual(result.FUZ_ALLOW_ORIGIN_WILDCARDS, value);
+		}
+		for (const value of ['', ' ', 'TRUE', 'True', '1', 'yes', 'on', ' true', 'true ', '0']) {
+			const result = BaseServerEnv.safeParse({ ...VALID_ENV, FUZ_ALLOW_ORIGIN_WILDCARDS: value });
+			assert.isFalse(result.success, JSON.stringify(value));
+		}
 	});
 
 	test('rejects empty FUZ_ALLOWED_ORIGINS', () => {
@@ -227,6 +242,46 @@ describe('validate_server_env', () => {
 		assert.isArray(result.allowed_origins);
 		assert.isAbove(result.allowed_origins.length, 0);
 		assert.strictEqual(result.bootstrap_token_path, '/tmp/token');
+		assert.isFalse(result.allow_origin_wildcards);
+	});
+
+	test('the wildcard opt-in reads through to allow_origin_wildcards', () => {
+		for (const [value, expected] of [
+			[undefined, false],
+			['false', false],
+			['true', true]
+		] as const) {
+			const env = BaseServerEnv.parse({
+				...VALID_ENV,
+				...(value === undefined ? {} : { FUZ_ALLOW_ORIGIN_WILDCARDS: value })
+			});
+			const result = validate_server_env(env);
+			assert.ok(result.ok);
+			assert.strictEqual(result.allow_origin_wildcards, expected, String(value));
+		}
+	});
+
+	test('a wildcard entry without the opt-in is refused, as create_app_server would', () => {
+		for (const value of [undefined, 'false'] as const) {
+			const env = BaseServerEnv.parse({
+				...VALID_ENV,
+				FUZ_ALLOWED_ORIGINS: 'http://localhost:5173, http://localhost:*',
+				...(value === undefined ? {} : { FUZ_ALLOW_ORIGIN_WILDCARDS: value })
+			});
+			const result = validate_server_env(env);
+			assert.ok(!result.ok);
+			assert.strictEqual(result.field, 'FUZ_ALLOWED_ORIGINS');
+			const refusal = admit_origin_wildcards(
+				parse_origins('http://localhost:5173, http://localhost:*'),
+				false
+			);
+			assert.ok(!refusal.ok);
+			assert.deepStrictEqual(result.errors, [refusal.message]);
+			assert.ok(
+				refusal.message.startsWith('FUZ_ALLOWED_ORIGINS holds a wildcard entry'),
+				refusal.message
+			);
+		}
 	});
 
 	test('invalid cookie keys returns error with field', () => {
@@ -271,10 +326,18 @@ describe('validate_server_env', () => {
 	test('multiple origin patterns produce correct array length', () => {
 		const env = BaseServerEnv.parse({
 			...VALID_ENV,
-			FUZ_ALLOWED_ORIGINS: 'http://localhost:*,https://example.com,https://*.fuz.dev'
+			FUZ_ALLOWED_ORIGINS: 'http://localhost:*,https://example.com,https://*.fuz.dev',
+			FUZ_ALLOW_ORIGIN_WILDCARDS: 'true'
 		});
 		const result = validate_server_env(env);
 		assert.isTrue(result.ok);
 		assert.strictEqual(result.allowed_origins.length, 3);
 	});
 });
+
+/** The matchers `parse_allowed_origins` builds for `raw`. */
+const parse_origins = (raw: string): Array<RegExp> => {
+	const result = parse_allowed_origins(raw);
+	if (!result.ok) throw new Error(raw);
+	return result.origins;
+};

@@ -88,7 +88,7 @@ describe('auth flow integration', () => {
 
 		const base_config = {
 			session_options,
-			allowed_origins: [/^http:\/\/localhost/],
+			allowed_origins: create_loopback_app_server_options().allowed_origins,
 			proxy: {
 				trusted_proxies: ['127.0.0.1'],
 				get_connection_ip: () => '127.0.0.1'

@@ -282,6 +282,9 @@ export const make_default_ts_backend_config = (
 			DATABASE_URL: database_url,
 			SECRET_FUZ_COOKIE_KEYS: default_test_cookie_keys,
 			FUZ_ALLOWED_ORIGINS: 'http://localhost:*',
+			// any port, so a harness can spawn on whichever is free — a wildcard,
+			// which boots only with the opt-in
+			FUZ_ALLOW_ORIGIN_WILDCARDS: 'true',
 			FUZ_BOOTSTRAP_TOKEN_PATH: paths.bootstrap_token_path,
 			...daemon_token_dir_entry(daemon_token_dir_env, bootstrap),
 			...extra_env
@@ -386,6 +389,9 @@ export const make_default_rust_backend_config = (
 			DATABASE_URL: database_url,
 			SECRET_FUZ_COOKIE_KEYS: default_test_cookie_keys,
 			FUZ_ALLOWED_ORIGINS: 'http://localhost:*',
+			// any port, so a harness can spawn on whichever is free — a wildcard,
+			// which boots only with the opt-in
+			FUZ_ALLOW_ORIGIN_WILDCARDS: 'true',
 			FUZ_BOOTSTRAP_TOKEN_PATH: paths.bootstrap_token_path,
 			// Self-wipe the auth-namespace schema before migrations on every
 			// boot. Read by `fuz_testing::reset_db_on_startup_if_env_set`,

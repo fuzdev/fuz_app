@@ -180,26 +180,75 @@ const trim_ascii_whitespace = (value: string): string => value.replace(ASCII_WHI
  * entry is reported, not just the first.
  *
  * @param raw - the comma-separated allowlist value
- * @returns the matchers, or every refusal — `no_origins` when the value is blank
+ * @returns the matchers and the patterns they were parsed from, or every refusal —
+ *   `no_origins` when the value is blank
  */
 export const parse_allowed_origins = (
 	raw: string
-): Result<{ origins: Array<RegExp> }, { errors: Array<AllowedOriginsError> }> => {
+): Result<
+	{ origins: Array<RegExp>; patterns: Array<OriginPattern> },
+	{ errors: Array<AllowedOriginsError> }
+> => {
 	if (trim_ascii_whitespace(raw) === '') {
 		return { ok: false, errors: [{ kind: 'no_origins' }] };
 	}
-	const origins: Array<RegExp> = [];
+	const patterns: Array<OriginPattern> = [];
 	const errors: Array<AllowedOriginsError> = [];
 	raw.split(',').forEach((part, i) => {
 		const entry = trim_ascii_whitespace(part);
-		const parsed = origin_pattern_to_regexp(entry);
+		const parsed = parse_origin_pattern(entry);
 		if (typeof parsed === 'string') {
 			errors.push({ kind: parsed, index: i + 1, entry });
 		} else {
-			origins.push(parsed);
+			patterns.push(parsed);
 		}
 	});
-	return errors.length > 0 ? { ok: false, errors } : { ok: true, origins };
+	if (errors.length > 0) return { ok: false, errors };
+	for (const pattern of patterns) {
+		Object.defineProperty(pattern.regexp, ORIGIN_PATTERN_BRAND, { value: pattern });
+	}
+	return { ok: true, origins: patterns.map((p) => p.regexp), patterns };
+};
+
+/**
+ * One validated allowlist entry, as `parse_allowed_origins` parsed it — the
+ * twin of the Rust `fuz_http::OriginPattern`.
+ */
+export interface OriginPattern {
+	/** The entry as written (trimmed). */
+	readonly entry: string;
+	/** The matcher `should_allow_origin` tests. */
+	readonly regexp: RegExp;
+	/**
+	 * The host as parsed, lowercased: `.`-joined labels (a `*` label as `*`), or
+	 * a bracketed IPv6 literal.
+	 */
+	readonly host: string;
+	/** The host's labels, lowercased; `null` for a bracketed IPv6 host, which is exact. */
+	readonly host_labels: ReadonlyArray<string> | null;
+	/** No port, `:*` (any port, or none), or one exact port. */
+	readonly port: 'absent' | 'any' | 'exact';
+}
+
+/**
+ * Realm-global brand on each matcher `parse_allowed_origins` returns, holding
+ * the `OriginPattern` it was parsed from (a non-enumerable property).
+ * `Symbol.for` makes every copy of this module that one process resolves mint
+ * the same key, so `origin_pattern_of` reads a matcher parsed by any copy of
+ * fuz_app. A matcher built any other way has none.
+ */
+const ORIGIN_PATTERN_BRAND: unique symbol = Symbol.for('@fuzdev/fuz_app/OriginPattern');
+
+/**
+ * The pattern `regexp` was parsed from, when `parse_allowed_origins` (of any
+ * fuz_app copy) built it.
+ *
+ * @param regexp - a matcher from an allowlist
+ * @returns its `OriginPattern`, or `undefined` for a matcher built another way
+ */
+export const origin_pattern_of = (regexp: RegExp): OriginPattern | undefined => {
+	const pattern = (regexp as { [ORIGIN_PATTERN_BRAND]?: unknown })[ORIGIN_PATTERN_BRAND];
+	return typeof pattern === 'object' && pattern !== null ? (pattern as OriginPattern) : undefined;
 };
 
 /**
@@ -260,15 +309,15 @@ export const verify_request_source =
 	};
 
 /**
- * Validates one trimmed entry and compiles it to a matcher, or names its
- * refusal. The checks run in a fixed order and the first that fails names the
+ * Validates one trimmed entry and parses it — its matcher and its shape — or
+ * names its refusal. The checks run in a fixed order and the first that fails names the
  * kind — the Rust spine runs the same order, so both name the same kind.
  *
  * The compiled regex is `^scheme://host(:port)?$`, case-insensitive: an exact
  * label matches itself, a `*` label `[^./:]+` (one non-empty label), a `:*`
  * port `(:\d+)?`.
  */
-const origin_pattern_to_regexp = (entry: string): RegExp | OriginPatternErrorKind => {
+const parse_origin_pattern = (entry: string): OriginPattern | OriginPatternErrorKind => {
 	if (entry === '') return 'empty_entry';
 	if (!VISIBLE_ASCII.test(entry)) return 'not_printable_ascii';
 	const scheme_end = entry.indexOf('://');
@@ -280,6 +329,8 @@ const origin_pattern_to_regexp = (entry: string): RegExp | OriginPatternErrorKin
 	if (authority.includes('@')) return 'has_userinfo';
 
 	let host_source: string;
+	let host_text: string;
+	let host_labels: Array<string> | null;
 	let port: string | null;
 	if (authority.startsWith('[')) {
 		const end = authority.indexOf(']');
@@ -295,6 +346,8 @@ const origin_pattern_to_regexp = (entry: string): RegExp | OriginPatternErrorKin
 			return 'invalid_after_ipv6';
 		}
 		host_source = escape_regexp(authority.slice(0, end + 1));
+		host_text = authority.slice(0, end + 1).toLowerCase();
+		host_labels = null;
 	} else {
 		const colon = authority.lastIndexOf(':');
 		const host = colon === -1 ? authority : authority.slice(0, colon);
@@ -308,6 +361,8 @@ const origin_pattern_to_regexp = (entry: string): RegExp | OriginPatternErrorKin
 		host_source = labels
 			.map((label) => (label === '*' ? '[^./:]+' : escape_regexp(label)))
 			.join('\\.');
+		host_labels = labels.map((label) => label.toLowerCase());
+		host_text = host_labels.join('.');
 	}
 
 	let port_source = '';
@@ -319,7 +374,13 @@ const origin_pattern_to_regexp = (entry: string): RegExp | OriginPatternErrorKin
 		port_source = ':' + port;
 	}
 
-	return new RegExp('^' + escape_regexp(scheme + '://') + host_source + port_source + '$', 'i');
+	return {
+		entry,
+		regexp: new RegExp('^' + escape_regexp(scheme + '://') + host_source + port_source + '$', 'i'),
+		host: host_text,
+		host_labels,
+		port: port === null ? 'absent' : port === '*' ? 'any' : 'exact'
+	};
 };
 
 /**

@@ -77,6 +77,7 @@ import {
 import { fuz_auth_guard_resolver } from '../auth/auth_guard_resolver.ts';
 import { create_fuz_authorization_handler } from '../auth/request_context.ts';
 import { create_body_limit_middleware } from '../http/body_limit.ts';
+import { admit_origin_wildcards, ALLOWED_ORIGINS_VAR } from '../http/origin_wildcard.ts';
 import { create_rpc_endpoint } from '../actions/action_rpc.ts';
 import { register_action_ws } from '../actions/register_action_ws.ts';
 import {
@@ -145,10 +146,23 @@ export interface AppServerOptions {
 	/** Session options for cookie-based auth. */
 	session_options: SessionOptions<string>;
 	/**
-	 * Parsed allowed origin patterns. Must not be empty — an empty list would
-	 * refuse every browser request, so assembly throws.
+	 * Parsed allowed origin patterns, as `parse_allowed_origins` returns them
+	 * (`validate_server_env`'s `allowed_origins`); assembly throws on a matcher
+	 * built any other way, since its wildcards can't be checked. Must not be
+	 * empty — an empty list would refuse every browser request, so assembly
+	 * throws.
 	 */
 	allowed_origins: Array<RegExp>;
+	/**
+	 * Admit a wildcard `allowed_origins` entry (`:*`, a `*` label) — the
+	 * operator's `FUZ_ALLOW_ORIGIN_WILDCARDS=true`, as `validate_server_env`
+	 * reads it. Without it assembly throws on one, naming each entry and what it
+	 * admits; with it each is logged at `warn`, on every assembly. Covers each
+	 * `ws_endpoints` spec's own `allowed_origins` too. Classifies the matchers
+	 * `parse_allowed_origins` built (`http/origin_wildcard.ts`); assembly throws
+	 * on any other matcher, flag or not. Defaults to `false`.
+	 */
+	allow_origin_wildcards?: boolean;
 	/**
 	 * Paths the origin check skips, each with its reason. The check covers
 	 * every path by default (`ORIGIN_MIDDLEWARE_PATH`) — a request with no
@@ -424,7 +438,8 @@ export interface AppServerOptions {
 	 * Every mount gets what the HTTP surface gets: the auth middleware (a
 	 * path outside `AUTH_MIDDLEWARE_PATH` throws at assembly, like
 	 * `rpc_endpoints`), the server's `allowed_origins` unless the spec
-	 * narrows them, and the same `action_ip_rate_limiter` /
+	 * narrows them (a spec's own list gets the same wildcard check,
+	 * `allow_origin_wildcards`), and the same `action_ip_rate_limiter` /
 	 * `action_account_rate_limiter` instances the RPC endpoints charge — one
 	 * budget per action across both transports. The upgrade routes register
 	 * after the route specs and before `post_route_middleware` and
@@ -847,6 +862,14 @@ const assemble_app_server = async (
 				'(an empty list refuses every browser request)'
 		);
 	}
+	const wildcards = admit_origin_wildcards(
+		options.allowed_origins,
+		options.allow_origin_wildcards ?? false
+	);
+	if (!wildcards.ok) throw new Error(`create_app_server: ${wildcards.message}`);
+	for (const { entry, warning } of wildcards.wildcards) {
+		log.warn(`${ALLOWED_ORIGINS_VAR}: ${warning} (origin ${entry})`);
+	}
 	// body size limit — rejects oversized payloads before auth/validation; the
 	// middleware throws on a cap that is not a safe integer 0 or more
 	const body_limit_middleware: MiddlewareHandler | null =
@@ -1066,6 +1089,22 @@ const assemble_app_server = async (
 						'list at least one origin pattern, or omit it to take the server list ' +
 						'(an empty list refuses every browser upgrade)'
 				);
+			}
+			// an endpoint's own list gets the server list's wildcard check (one
+			// that took the server list was checked above)
+			if (endpoint.allowed_origins !== options.allowed_origins) {
+				const label = `ws_endpoints allowed_origins for ${endpoint.path}`;
+				const endpoint_wildcards = admit_origin_wildcards(
+					endpoint.allowed_origins,
+					options.allow_origin_wildcards ?? false,
+					label
+				);
+				if (!endpoint_wildcards.ok) {
+					throw new Error(`create_app_server: ${endpoint_wildcards.message}`);
+				}
+				for (const { entry, warning } of endpoint_wildcards.wildcards) {
+					log.warn(`${label}: ${warning} (origin ${entry})`);
+				}
 			}
 			seen_paths.add(endpoint.path);
 		}

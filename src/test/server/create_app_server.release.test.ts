@@ -36,6 +36,8 @@ import { protocol_actions } from '#lib/actions/protocol.ts';
 import { ConnectionRegistry } from '#lib/actions/connection_registry.ts';
 import type { WsEndpointSpec } from '#lib/actions/ws_endpoint_spec.ts';
 import { RateLimiter } from '#lib/rate_limiter.ts';
+import { parse_allowed_origins } from '#lib/http/origin.ts';
+import { origin_wildcard_warning } from '#lib/http/origin_wildcard.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -190,6 +192,54 @@ describe('a failed assembly releases what it acquired', () => {
 		assert.match(thrown.message, /duplicate ws_endpoints path: \/api\/ws/);
 		assert.strictEqual(upgrades.mock.calls.length, 0, 'the adapter was never built');
 		assert_released(harness, dispose);
+	});
+
+	test("a ws endpoint's own wildcard list without the opt-in fails before any endpoint mounts", async () => {
+		for (const allowed_origins of [
+			parse_origins('http://localhost:*'),
+			[/^http:\/\/localhost(:\d+)?$/]
+		]) {
+			const harness = create_harness();
+			const dispose = vi.spyOn(RateLimiter.prototype, 'dispose');
+			const upgrades = vi.fn(() => create_stub_upgrade().upgradeWebSocket);
+			const thrown = await assemble_rejects({
+				...acquiring_options(harness.backend),
+				create_upgrade_websocket: upgrades,
+				ws_endpoints: [ws_endpoint('/api/ws'), ws_endpoint('/api/ws_own', { allowed_origins })]
+			});
+			assert.instanceOf(thrown, Error);
+			assert.ok(
+				thrown.message.startsWith(
+					'create_app_server: ws_endpoints allowed_origins for /api/ws_own holds a '
+				),
+				thrown.message
+			);
+			assert.strictEqual(upgrades.mock.calls.length, 0, 'the adapter was never built');
+			assert_released(harness, dispose);
+			vi.restoreAllMocks();
+		}
+	});
+
+	test("a ws endpoint's own wildcard list with the opt-in mounts, warned of", async () => {
+		const harness = create_harness();
+		const warnings: Array<string> = [];
+		harness.backend.deps.log.warn = (...args: Array<unknown>) => {
+			warnings.push(args.join(' '));
+		};
+		servers.push(
+			await create_app_server({
+				...acquiring_options(harness.backend),
+				allow_origin_wildcards: true,
+				ws_endpoints: [
+					ws_endpoint('/api/ws'),
+					ws_endpoint('/api/ws_own', { allowed_origins: parse_origins('http://localhost:*') })
+				]
+			})
+		);
+		assert.deepStrictEqual(warnings, [
+			'ws_endpoints allowed_origins for /api/ws_own: ' +
+				`${wildcard_text('http://localhost:*')} (origin http://localhost:*)`
+		]);
 	});
 
 	test('a ws path colliding with a GET RouteSpec fails before any endpoint mounts', async () => {
@@ -413,4 +463,107 @@ describe('option checks fail before anything is acquired', () => {
 		assert.deepStrictEqual(current(harness), harness.baseline);
 		assert.strictEqual(dispose.mock.contexts.length, 0, 'no limiter was built');
 	});
+
+	test('a wildcard allowed_origins entry without the opt-in', async () => {
+		for (const allow_origin_wildcards of [undefined, false]) {
+			const harness = create_harness();
+			const dispose = vi.spyOn(RateLimiter.prototype, 'dispose');
+			const thrown = await assemble_rejects({
+				...acquiring_options(harness.backend),
+				allowed_origins: parse_origins('http://localhost:4460, http://localhost:*'),
+				allow_origin_wildcards
+			});
+			assert.instanceOf(thrown, Error);
+			assert.ok(
+				thrown.message.startsWith(
+					'create_app_server: FUZ_ALLOWED_ORIGINS holds a wildcard entry, refused unless ' +
+						'FUZ_ALLOW_ORIGIN_WILDCARDS=true. `http://localhost:*`: port wildcard: '
+				),
+				thrown.message
+			);
+			assert.deepStrictEqual(current(harness), harness.baseline);
+			assert.strictEqual(dispose.mock.contexts.length, 0, 'no limiter was built');
+			dispose.mockRestore();
+		}
+	});
+
+	test('a matcher parse_allowed_origins did not build, even with the opt-in', async () => {
+		for (const allow_origin_wildcards of [false, true]) {
+			const harness = create_harness();
+			const dispose = vi.spyOn(RateLimiter.prototype, 'dispose');
+			const thrown = await assemble_rejects({
+				...acquiring_options(harness.backend),
+				allowed_origins: [/^http:\/\/localhost/],
+				allow_origin_wildcards
+			});
+			assert.instanceOf(thrown, Error);
+			assert.strictEqual(
+				thrown.message,
+				'create_app_server: FUZ_ALLOWED_ORIGINS holds a matcher `parse_allowed_origins` did ' +
+					"not build, so its wildcards can't be checked: `/^http:\\/\\/localhost/`. Build the " +
+					'list with `parse_allowed_origins`.'
+			);
+			assert.deepStrictEqual(current(harness), harness.baseline);
+			assert.strictEqual(dispose.mock.contexts.length, 0, 'no limiter was built');
+			dispose.mockRestore();
+		}
+	});
 });
+
+describe('a wildcard allowed_origins entry with the opt-in', () => {
+	test('assembles, warning once per entry with what it admits', async () => {
+		const harness = create_harness();
+		const warnings: Array<string> = [];
+		harness.backend.deps.log.warn = (...args: Array<unknown>) => {
+			warnings.push(args.join(' '));
+		};
+		const allowed_origins = parse_origins(
+			'http://localhost:4460, http://localhost:*, https://*.example.com'
+		);
+		const server = await create_app_server({
+			...acquiring_options(harness.backend),
+			allowed_origins,
+			allow_origin_wildcards: true
+		});
+		servers.push(server);
+		const wildcard_warnings = warnings.filter((w) => w.startsWith('FUZ_ALLOWED_ORIGINS: '));
+		assert.deepStrictEqual(wildcard_warnings, [
+			`FUZ_ALLOWED_ORIGINS: ${wildcard_text('http://localhost:*')} (origin http://localhost:*)`,
+			`FUZ_ALLOWED_ORIGINS: ${wildcard_text('https://*.example.com')} (origin https://*.example.com)`
+		]);
+	});
+
+	test('an exact list warns of nothing', async () => {
+		const harness = create_harness();
+		const warnings: Array<string> = [];
+		harness.backend.deps.log.warn = (...args: Array<unknown>) => {
+			warnings.push(args.join(' '));
+		};
+		servers.push(
+			await create_app_server({
+				...acquiring_options(harness.backend),
+				allowed_origins: parse_origins('http://localhost:4460')
+			})
+		);
+		assert.deepStrictEqual(
+			warnings.filter((w) => w.startsWith('FUZ_ALLOWED_ORIGINS: ')),
+			[]
+		);
+	});
+});
+
+/** The matchers `parse_allowed_origins` builds for `raw`. */
+const parse_origins = (raw: string): Array<RegExp> => {
+	const result = parse_allowed_origins(raw);
+	if (!result.ok) throw new Error(raw);
+	return result.origins;
+};
+
+/** The wildcard text for `entry`, as `admit_origin_wildcards` renders it. */
+const wildcard_text = (entry: string): string => {
+	const result = parse_allowed_origins(entry);
+	if (!result.ok || !result.patterns[0]) throw new Error(entry);
+	const text = origin_wildcard_warning(result.patterns[0]);
+	if (text === null) throw new Error(entry);
+	return text;
+};

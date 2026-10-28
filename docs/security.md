@@ -2134,8 +2134,11 @@ granting cross-origin requests reopens this. Every fuz_app client sends
 from disallowed `Origin` headers before any handler runs. It is what guards
 the WebSocket upgrade, which is never preflighted, so list exact origins: a
 port wildcard (`http://localhost:*`) admits every same-site local page to the
-socket, cookie included. It also protects locally-running services from
-being called by untrusted websites as the user browses the web. It reads
+socket, cookie included — which is why a wildcard boots only with
+`FUZ_ALLOW_ORIGIN_WILDCARDS=true` (`create_app_server`'s
+`allow_origin_wildcards`), and is warned of on every boot that admits it. It
+also protects locally-running services from being called by untrusted
+websites as the user browses the web. It reads
 `Origin` only, never `Referer` — the Fetch spec mandates `Origin` on every
 unsafe method. The allowlist is parsed strictly, and the server fails at boot
 naming every bad entry; a request whose `Origin` is unreadable or duplicated

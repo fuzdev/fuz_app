@@ -14,14 +14,16 @@ import type { Result } from '@fuzdev/fuz_util/result.ts';
 
 import { create_keyring, type Keyring } from '../auth/keyring.ts';
 import { format_allowed_origins_error, parse_allowed_origins } from '../http/origin.ts';
+import { admit_origin_wildcards } from '../http/origin_wildcard.ts';
 
 /**
  * Base Zod schema for server environment variables.
  *
  * Declares only what the spine reads — server config, database, cookie keys,
- * allowed origins, and the bootstrap token path — matching the Rust spine's
- * `BaseServerEnv`. Anything else (fact storage, X-Accel delivery, public
- * URLs) is the app's own var: extend with app-specific fields via `.extend()`.
+ * allowed origins and the wildcard opt-in, and the bootstrap token path —
+ * matching the Rust spine's `BaseServerEnv`. Anything else (fact storage,
+ * X-Accel delivery, public URLs) is the app's own var: extend with
+ * app-specific fields via `.extend()`.
  */
 export const BaseServerEnv = z.strictObject({
 	NODE_ENV: z.enum(['development', 'production']).meta({ description: 'Runtime environment mode' }),
@@ -44,6 +46,10 @@ export const BaseServerEnv = z.strictObject({
 	FUZ_ALLOWED_ORIGINS: z.string().min(1, 'FUZ_ALLOWED_ORIGINS is required').meta({
 		description: 'Comma-separated origin patterns for API verification'
 	}),
+	FUZ_ALLOW_ORIGIN_WILDCARDS: z.enum(['true', 'false']).optional().meta({
+		description:
+			'Exactly `true` lets a wildcard FUZ_ALLOWED_ORIGINS entry (`:*`, a `*` label) boot, warned of on every boot; unset or `false` refuses one'
+	}),
 	FUZ_BOOTSTRAP_TOKEN_PATH: z
 		.string()
 		.optional()
@@ -57,6 +63,11 @@ export type BaseServerEnv = z.infer<typeof BaseServerEnv>;
 export interface ValidatedServerEnv {
 	keyring: Keyring;
 	allowed_origins: Array<RegExp>;
+	/**
+	 * `FUZ_ALLOW_ORIGIN_WILDCARDS=true` — pass to `create_app_server`'s
+	 * `allow_origin_wildcards`, which refuses a wildcard entry without it.
+	 */
+	allow_origin_wildcards: boolean;
 	bootstrap_token_path: string | null;
 }
 
@@ -72,11 +83,15 @@ export interface ServerEnvValidationError {
  * Validate a loaded `BaseServerEnv` and produce the artifacts needed for server init.
  *
  * Handles keyring validation, origin parsing (every refused allowlist entry is
- * reported, each on its own line), and bootstrap token path extraction.
+ * reported, each on its own line), the wildcard opt-in (a wildcard entry
+ * without `FUZ_ALLOW_ORIGIN_WILDCARDS=true` is refused with
+ * `admit_origin_wildcards`' text, as `create_app_server` would), and
+ * bootstrap token path extraction.
  * Returns a Result so callers handle errors their own way (exit, logging, etc).
  *
  * @param env - a loaded and Zod-validated `BaseServerEnv`
- * @returns `{ok: true, keyring, allowed_origins, bootstrap_token_path}` or `{ok: false, field, errors}`
+ * @returns `{ok: true, keyring, allowed_origins, allow_origin_wildcards, bootstrap_token_path}`
+ *   or `{ok: false, field, errors}`
  */
 export const validate_server_env = (
 	env: BaseServerEnv
@@ -93,10 +108,18 @@ export const validate_server_env = (
 			errors: origins_result.errors.map(format_allowed_origins_error)
 		};
 	}
+	// refused here too, so an env-driven server fails before its backend
+	// touches the DB (`create_app_server` repeats the check for direct callers)
+	const allow_origin_wildcards = env.FUZ_ALLOW_ORIGIN_WILDCARDS === 'true';
+	const wildcards = admit_origin_wildcards(origins_result.origins, allow_origin_wildcards);
+	if (!wildcards.ok) {
+		return { ok: false, field: 'FUZ_ALLOWED_ORIGINS', errors: [wildcards.message] };
+	}
 	return {
 		ok: true,
 		keyring: keyring_result.keyring,
 		allowed_origins: origins_result.origins,
+		allow_origin_wildcards,
 		bootstrap_token_path: env.FUZ_BOOTSTRAP_TOKEN_PATH ?? null
 	};
 };

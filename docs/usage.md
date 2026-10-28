@@ -1888,6 +1888,18 @@ http://localhost:*
 https://example.com,https://*.example.com,http://localhost:*
 ```
 
+A wildcard admits pages the server doesn't serve, and it trusts them all, so
+one boots only with `FUZ_ALLOW_ORIGIN_WILDCARDS=true` (exactly `true` or
+`false`, anything else fails the env schema). `validate_server_env` reads the
+flag into `allow_origin_wildcards`, which `create_app_server` takes: without
+it assembly throws, naming each wildcard entry and what it admits; with it
+each is logged at `warn` on every boot. `validate_server_env` refuses one
+without the flag too, so an env-driven server fails before its backend
+touches the database. A `ws_endpoints` spec's own `allowed_origins` gets the
+same check. `create_app_server` classifies only the matchers
+`parse_allowed_origins` built, and throws on any other matcher, flag or not.
+The Rust spine applies the same rule, in the same words.
+
 Nothing is normalized. An entry a browser would never send is refused at boot,
 and `validate_server_env` reports every refused entry, not just the first: a
 blank value or a stray comma, a non-ASCII host (write its punycode), a scheme
