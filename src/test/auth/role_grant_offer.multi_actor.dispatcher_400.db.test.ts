@@ -20,12 +20,8 @@ import { role_grant_offer_list_action_spec } from '#lib/auth/role_grant_offer_ac
 import { ERROR_ACTOR_REQUIRED } from '#lib/http/error_schemas.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 
-import {
-	RPC_PATH,
-	create_route_specs,
-	describe_db,
-	session_options
-} from './role_grant_offer_test_helpers.ts';
+import { describe_db } from '../auth_db_default.ts';
+import { RPC_PATH, create_route_specs, session_options } from './role_grant_offer_test_helpers.ts';
 import { create_multi_actor_helpers } from './role_grant_offer.multi_actor.fixtures.ts';
 
 describe_db('role_grant_offer.multi_actor — dispatcher_400', (get_db) => {

@@ -26,12 +26,8 @@ import {
 import { query_role_grant_offer_create } from '#lib/auth/role_grant_offer_queries.ts';
 import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
-import {
-	RPC_PATH,
-	create_route_specs,
-	describe_db,
-	session_options
-} from './role_grant_offer_test_helpers.ts';
+import { describe_db } from '../auth_db_default.ts';
+import { RPC_PATH, create_route_specs, session_options } from './role_grant_offer_test_helpers.ts';
 
 describe_db('role_grant_offer_actions.accept', (get_db) => {
 	describe('role_grant_offer_accept', () => {

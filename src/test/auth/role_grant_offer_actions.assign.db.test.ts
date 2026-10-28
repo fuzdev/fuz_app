@@ -36,12 +36,12 @@ import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
 import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
 import { install_audit_drift_guard } from '#lib/testing/audit_drift_guard.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
+import { describe_db } from '../auth_db_default.ts';
 import {
 	RPC_PATH,
 	TEST_APP_ROLE,
 	create_app_role_route_specs,
 	create_route_specs,
-	describe_db,
 	session_options
 } from './role_grant_offer_test_helpers.ts';
 

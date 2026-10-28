@@ -28,13 +28,6 @@ import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
 import { create_test_app } from '#lib/testing/app_server.ts';
 import { create_test_request_headers } from '#lib/testing/test_origin.ts';
 import { rpc_call_for_spec, type RpcCallResult } from '#lib/testing/rpc_helpers.ts';
-import {
-	create_default_db_factory,
-	create_describe_db,
-	auth_integration_truncate_tables
-} from '#lib/testing/db.ts';
-import { run_migrations } from '#lib/db/migrate.ts';
-import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
 import {
@@ -46,20 +39,15 @@ import {
 	ERROR_INVITE_ACCOUNT_EXISTS_EMAIL
 } from '#lib/http/error_schemas.ts';
 import { prefix_route_specs, type RouteSpec } from '#lib/http/route_spec.ts';
-import type { Db } from '#lib/db/db.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
+
+import { describe_db } from '../auth_db_default.ts';
 
 const session_options = create_session_config('test_session');
 const { cookie_name } = session_options;
 
 const RPC_PATH = '/api/rpc';
-
-const init_schema = async (db: Db): Promise<void> => {
-	await run_migrations(db, [AUTH_MIGRATION_NS]);
-};
-const factory = create_default_db_factory(init_schema);
-const describe_db = create_describe_db(factory, auth_integration_truncate_tables);
 
 const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
 	...prefix_route_specs('/api/account', [

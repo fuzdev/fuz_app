@@ -23,27 +23,17 @@ import {
 	ERROR_INSUFFICIENT_PERMISSIONS
 } from '#lib/http/error_schemas.ts';
 import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
-import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
 import { create_test_app } from '#lib/testing/app_server.ts';
-import {
-	create_default_db_factory,
-	create_describe_db,
-	auth_integration_truncate_tables
-} from '#lib/testing/db.ts';
-import { run_migrations } from '#lib/db/migrate.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 import { install_audit_drift_guard } from '#lib/testing/audit_drift_guard.ts';
 import { query_account_by_id } from '#lib/auth/account_queries.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
 import type { RouteSpec } from '#lib/http/route_spec.ts';
 
+import { describe_db } from '../auth_db_default.ts';
+
 const session_options = create_session_config('test_session');
 const RPC_PATH = '/api/rpc';
-
-const factory = create_default_db_factory(async (db) => {
-	await run_migrations(db, [AUTH_MIGRATION_NS]);
-});
-const describe_db = create_describe_db(factory, auth_integration_truncate_tables);
 
 const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> =>
 	create_rpc_endpoint({

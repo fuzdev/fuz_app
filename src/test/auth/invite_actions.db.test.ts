@@ -30,12 +30,8 @@ import { create_test_app } from '#lib/testing/app_server.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
-import {
-	RPC_PATH,
-	create_admin_route_specs,
-	describe_db,
-	session_options
-} from './admin_rpc_test_helpers.ts';
+import { describe_db } from '../auth_db_default.ts';
+import { RPC_PATH, create_admin_route_specs, session_options } from './admin_rpc_test_helpers.ts';
 
 // Valid v4 UUID that won't collide with any real invite row.
 const missing_invite_id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' as Uuid;

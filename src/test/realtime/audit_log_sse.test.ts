@@ -18,30 +18,13 @@ import {
 } from '#lib/realtime/audit_log_sse.ts';
 import { create_realtime_closer, create_revocation_guard } from '#lib/actions/connection_closer.ts';
 import { SseRegistry } from '#lib/realtime/sse_registry.ts';
-import type { SseStream, SseNotification } from '#lib/realtime/sse.ts';
+import type { SseNotification } from '#lib/realtime/sse.ts';
 import type { AuditLogEvent } from '#lib/auth/audit_log_schema.ts';
 import { create_test_audit_event } from '#lib/testing/entities.ts';
 
-const log = new Logger('test', { level: 'off' });
+import { create_mock_stream } from './sse_test_helpers.ts';
 
-/** Create a mock SseStream that tracks sent data and closed state. */
-const create_mock_stream = <T>(): SseStream<T> & { sent: Array<T>; closed: boolean } => {
-	const sent: Array<T> = [];
-	let closed = false;
-	return {
-		sent,
-		get closed() {
-			return closed;
-		},
-		send(data: T) {
-			sent.push(data);
-		},
-		close() {
-			closed = true;
-		},
-		on_close() {}
-	};
-};
+const log = new Logger('test', { level: 'off' });
 
 const create_audit_event = create_test_audit_event;
 

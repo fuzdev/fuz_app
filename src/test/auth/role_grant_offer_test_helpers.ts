@@ -1,8 +1,9 @@
 /**
  * Shared scaffolding for the `role_grant_offer_actions.*.db.test.ts` suites.
- * Each suite needs the same database factory + `describe_db` and the same
- * `/api/rpc` mount with `create_role_grant_offer_actions`; extracting them
- * keeps the per-suite files focused on the assertions that actually differ.
+ * Each suite runs on the single-driver `describe_db` (../auth_db_default.ts)
+ * and needs the same `/api/rpc` mount with `create_role_grant_offer_actions`;
+ * extracting it keeps the per-suite files focused on the assertions that
+ * actually differ.
  *
  * RPC calls go through `rpc_call_for_spec` from
  * `#lib/testing/rpc_helpers.ts` — `params` is typed against `spec.input`
@@ -19,13 +20,6 @@
  */
 
 import { create_session_config } from '#lib/auth/session_cookie.ts';
-import {
-	create_default_db_factory,
-	create_describe_db,
-	auth_integration_truncate_tables
-} from '#lib/testing/db.ts';
-import { run_migrations } from '#lib/db/migrate.ts';
-import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
 import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
 import {
 	create_role_grant_offer_actions,
@@ -33,7 +27,6 @@ import {
 } from '#lib/auth/role_grant_offer_actions.ts';
 import { create_role_schema, type RoleSchemaResult } from '#lib/auth/role_schema.ts';
 import { GRANT_PATH_ADMIN } from '#lib/auth/grant_path_schema.ts';
-import type { Db } from '#lib/db/db.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
 import type { RouteSpec } from '#lib/http/route_spec.ts';
 
@@ -42,18 +35,6 @@ export const session_options = create_session_config('test_session');
 
 /** The RPC mount path used across every role-grant-offer integration suite. */
 export const RPC_PATH = '/api/rpc';
-
-const init_schema = async (db: Db): Promise<void> => {
-	await run_migrations(db, [AUTH_MIGRATION_NS]);
-};
-
-const factory = create_default_db_factory(init_schema);
-
-/**
- * `describe_db` bound to the suite's default-driver factory + auth truncate list.
- * Use as the outer `describe_db(name, (get_db) => {...})` wrapper.
- */
-export const describe_db = create_describe_db(factory, auth_integration_truncate_tables);
 
 /**
  * Default `create_route_specs` — mounts the role-grant-offer RPC endpoint with

@@ -35,12 +35,8 @@ import type { AuditLogEvent } from '#lib/auth/audit_log_schema.ts';
 import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
 import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
-import {
-	RPC_PATH,
-	create_route_specs,
-	describe_db,
-	session_options
-} from './role_grant_offer_test_helpers.ts';
+import { describe_db } from '../auth_db_default.ts';
+import { RPC_PATH, create_route_specs, session_options } from './role_grant_offer_test_helpers.ts';
 
 describe_db('role_grant_offer_actions.revoke', (get_db) => {
 	describe('role_grant_revoke', () => {

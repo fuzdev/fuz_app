@@ -44,11 +44,11 @@ import { create_test_role_grant_direct } from '#lib/testing/db_entities.ts';
 import { query_audit_log_list } from '#lib/auth/audit_log_queries.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 import type { Db } from '#lib/db/db.ts';
+import { describe_db } from '../auth_db_default.ts';
 import {
 	RPC_PATH,
 	TEST_APP_ROLE,
 	create_app_role_route_specs,
-	describe_db,
 	session_options
 } from './role_grant_offer_test_helpers.ts';
 import { error_reason } from './rpc_test_helpers.ts';

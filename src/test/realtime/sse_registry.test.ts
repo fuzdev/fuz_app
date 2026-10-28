@@ -10,27 +10,7 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { SseRegistry } from '#lib/realtime/sse_registry.ts';
 import type { SseStream } from '#lib/realtime/sse.ts';
 
-/** Create a mock SseStream that records sent data. */
-const create_mock_stream = <T>(): SseStream<T> & {
-	sent: Array<T>;
-	closed: boolean;
-} => {
-	const sent: Array<T> = [];
-	let closed = false;
-	return {
-		sent,
-		get closed() {
-			return closed;
-		},
-		send(data: T) {
-			sent.push(data);
-		},
-		close() {
-			closed = true;
-		},
-		on_close() {}
-	};
-};
+import { create_mock_stream } from './sse_test_helpers.ts';
 
 describe('SseRegistry', () => {
 	test('starts with zero subscribers', () => {

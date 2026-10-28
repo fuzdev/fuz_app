@@ -20,13 +20,6 @@ import { create_test_app } from '#lib/testing/app_server.ts';
 import { query_create_actor } from '#lib/auth/account_queries.ts';
 import { create_account_status_route_spec } from '#lib/auth/account_routes.ts';
 import { REQUEST_CONTEXT_KEY } from '#lib/auth/request_context.ts';
-import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
-import { run_migrations } from '#lib/db/migrate.ts';
-import {
-	auth_integration_truncate_tables,
-	create_describe_db,
-	create_default_db_factory
-} from '#lib/testing/db.ts';
 import { register_action_ws } from '#lib/actions/register_action_ws.ts';
 import { heartbeat_action } from '#lib/actions/heartbeat.ts';
 import { parse_allowed_origins } from '#lib/http/origin.ts';
@@ -35,16 +28,12 @@ import { create_stub_upgrade } from '#lib/testing/ws_round_trip.ts';
 import { ERROR_ACTOR_REQUIRED } from '#lib/http/error_schemas.ts';
 import type { Db } from '#lib/db/db.ts';
 
+import { describe_db } from '../auth_db_default.ts';
+
 const session_options = create_session_config('test_session');
 const STATUS_PATH = '/api/account/status';
 const ALLOWED_ORIGIN = 'http://localhost:3000';
 const log = new Logger('test', { level: 'off' });
-
-const init_schema = async (db: Db): Promise<void> => {
-	await run_migrations(db, [AUTH_MIGRATION_NS]);
-};
-const factory = create_default_db_factory(init_schema);
-const describe_db = create_describe_db(factory, auth_integration_truncate_tables);
 
 const create_route_specs = () => [create_account_status_route_spec({ path: STATUS_PATH })];
 

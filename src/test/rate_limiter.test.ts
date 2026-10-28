@@ -22,18 +22,18 @@ import {
 import { ERROR_RATE_LIMIT_EXCEEDED } from '#lib/http/error_schemas.ts';
 import { get_client_ip } from '#lib/http/client_ip.ts';
 
-const WINDOW_MS = 60_000; // 1 minute
-const MAX_ATTEMPTS = 3;
-
-const create_test_limiter = (): RateLimiter =>
-	new RateLimiter({ max_attempts: MAX_ATTEMPTS, window_ms: WINDOW_MS, cleanup_interval_ms: 0 });
+import {
+	create_test_limiter,
+	TEST_LIMITER_MAX_ATTEMPTS,
+	TEST_LIMITER_WINDOW_MS
+} from './rate_limiter_test_helpers.ts';
 
 describe('RateLimiter', () => {
 	describe('construction', () => {
 		test('uses provided options', () => {
 			const limiter = create_test_limiter();
-			assert.strictEqual(limiter.options.max_attempts, MAX_ATTEMPTS);
-			assert.strictEqual(limiter.options.window_ms, WINDOW_MS);
+			assert.strictEqual(limiter.options.max_attempts, TEST_LIMITER_MAX_ATTEMPTS);
+			assert.strictEqual(limiter.options.window_ms, TEST_LIMITER_WINDOW_MS);
 			assert.strictEqual(limiter.options.cleanup_interval_ms, 0);
 			limiter.dispose();
 		});
@@ -59,7 +59,7 @@ describe('RateLimiter', () => {
 		});
 
 		test('refuses options that are not safe integers in range', () => {
-			const base = { max_attempts: 3, window_ms: WINDOW_MS, cleanup_interval_ms: 0 };
+			const base = { max_attempts: 3, window_ms: TEST_LIMITER_WINDOW_MS, cleanup_interval_ms: 0 };
 			for (const bad of [
 				{ max_attempts: -1 },
 				{ max_attempts: 1.5 },
@@ -96,16 +96,16 @@ describe('RateLimiter', () => {
 		test('max_attempts 0 refuses a fresh key and tracks nothing', () => {
 			const limiter = new RateLimiter({
 				max_attempts: 0,
-				window_ms: WINDOW_MS,
+				window_ms: TEST_LIMITER_WINDOW_MS,
 				cleanup_interval_ms: 0
 			});
 			const fresh = limiter.check('ip1');
 			assert.strictEqual(fresh.allowed, false);
 			assert.strictEqual(fresh.remaining, 0);
-			assert.strictEqual(fresh.retry_after, WINDOW_MS / 1000);
+			assert.strictEqual(fresh.retry_after, TEST_LIMITER_WINDOW_MS / 1000);
 			assert.deepStrictEqual(limiter.try_reserve('ip1'), {
 				ok: false,
-				retry_after: WINDOW_MS / 1000
+				retry_after: TEST_LIMITER_WINDOW_MS / 1000
 			});
 			assert.strictEqual(limiter.size, 0);
 			// a recorded attempt changes nothing
@@ -129,12 +129,12 @@ describe('RateLimiter', () => {
 		test('max_attempts 0 reserve refuses at once without parking', async () => {
 			const limiter = new RateLimiter({
 				max_attempts: 0,
-				window_ms: WINDOW_MS,
+				window_ms: TEST_LIMITER_WINDOW_MS,
 				cleanup_interval_ms: 0
 			});
 			const started = Date.now();
 			const result = await limiter.reserve('k', { max_wait_ms: 60_000 });
-			assert.deepStrictEqual(result, { ok: false, retry_after: WINDOW_MS / 1000 });
+			assert.deepStrictEqual(result, { ok: false, retry_after: TEST_LIMITER_WINDOW_MS / 1000 });
 			assert.ok(Date.now() - started < 1000, 'refused without waiting');
 			assert.strictEqual(limiter.waiter_keys, 0);
 			assert.strictEqual(limiter.size, 0);
@@ -145,7 +145,7 @@ describe('RateLimiter', () => {
 			// an in-flight-only entry made under a cap of one, read under zero
 			const limiter = new RateLimiter({
 				max_attempts: 1,
-				window_ms: WINDOW_MS,
+				window_ms: TEST_LIMITER_WINDOW_MS,
 				cleanup_interval_ms: 0
 			});
 			const held = limiter.try_reserve('k');
@@ -153,7 +153,7 @@ describe('RateLimiter', () => {
 			(limiter.options as { max_attempts: number }).max_attempts = 0;
 			const checked = limiter.check('k');
 			assert.strictEqual(checked.allowed, false);
-			assert.strictEqual(checked.retry_after, WINDOW_MS / 1000);
+			assert.strictEqual(checked.retry_after, TEST_LIMITER_WINDOW_MS / 1000);
 			held.reservation.release();
 			limiter.dispose();
 		});
@@ -161,7 +161,7 @@ describe('RateLimiter', () => {
 		test('max_attempts 1 still admits one', () => {
 			const limiter = new RateLimiter({
 				max_attempts: 1,
-				window_ms: WINDOW_MS,
+				window_ms: TEST_LIMITER_WINDOW_MS,
 				cleanup_interval_ms: 0
 			});
 			assert.ok(limiter.check('k').allowed);
@@ -224,7 +224,7 @@ describe('RateLimiter', () => {
 			const limiter = create_test_limiter();
 			const result = limiter.check('1.2.3.4');
 			assert.strictEqual(result.allowed, true);
-			assert.strictEqual(result.remaining, MAX_ATTEMPTS);
+			assert.strictEqual(result.remaining, TEST_LIMITER_MAX_ATTEMPTS);
 			assert.strictEqual(result.retry_after, 0);
 			limiter.dispose();
 		});
@@ -238,7 +238,7 @@ describe('RateLimiter', () => {
 			// Still allowed because check doesn't record
 			const result = limiter.check('1.2.3.4');
 			assert.strictEqual(result.allowed, true);
-			assert.strictEqual(result.remaining, MAX_ATTEMPTS);
+			assert.strictEqual(result.remaining, TEST_LIMITER_MAX_ATTEMPTS);
 			limiter.dispose();
 		});
 
@@ -342,7 +342,7 @@ describe('RateLimiter', () => {
 
 			// Check at exactly window_ms after the first attempt — t > cutoff uses strict >,
 			// so the attempt at `now` equals the cutoff and is pruned.
-			const result = limiter.check('ip1', now + WINDOW_MS);
+			const result = limiter.check('ip1', now + TEST_LIMITER_WINDOW_MS);
 			assert.strictEqual(result.allowed, true);
 			assert.strictEqual(result.remaining, 1);
 			limiter.dispose();
@@ -361,7 +361,7 @@ describe('RateLimiter', () => {
 			assert.strictEqual(blocked.allowed, false);
 
 			// After the window passes, the oldest timestamps expire
-			const after_window = limiter.check('ip1', now + WINDOW_MS + 1);
+			const after_window = limiter.check('ip1', now + TEST_LIMITER_WINDOW_MS + 1);
 			assert.strictEqual(after_window.allowed, true);
 			assert.strictEqual(after_window.remaining, 1); // 2 attempts still active
 			limiter.dispose();
@@ -375,7 +375,7 @@ describe('RateLimiter', () => {
 			limiter.record('ip1', now + 20_000);
 
 			// Move past first attempt's expiry but not second
-			const check_time = now + WINDOW_MS + 1;
+			const check_time = now + TEST_LIMITER_WINDOW_MS + 1;
 			const result = limiter.check('ip1', check_time);
 			assert.strictEqual(result.allowed, true);
 			assert.strictEqual(result.remaining, 1);
@@ -396,14 +396,14 @@ describe('RateLimiter', () => {
 			const blocked = limiter.record('ip1', now + 3000);
 			assert.strictEqual(blocked.allowed, false);
 
-			// At now + WINDOW_MS + 1, the first attempt (now) expires but the
+			// At now + TEST_LIMITER_WINDOW_MS + 1, the first attempt (now) expires but the
 			// blocked attempt (now+3000) is still active — so 3 active timestamps
 			// remain and the key is STILL blocked.
-			const still_blocked = limiter.check('ip1', now + WINDOW_MS + 1);
+			const still_blocked = limiter.check('ip1', now + TEST_LIMITER_WINDOW_MS + 1);
 			assert.strictEqual(still_blocked.allowed, false);
 
 			// Only after enough time passes for 2 of the 4 to expire does capacity open
-			const recovered = limiter.check('ip1', now + WINDOW_MS + 1001);
+			const recovered = limiter.check('ip1', now + TEST_LIMITER_WINDOW_MS + 1001);
 			assert.strictEqual(recovered.allowed, true);
 			assert.strictEqual(recovered.remaining, 1); // 2 active: now+2000 and now+3000
 			limiter.dispose();
@@ -434,7 +434,7 @@ describe('RateLimiter', () => {
 		test('max_attempts of 1 blocks on second attempt', () => {
 			const limiter = new RateLimiter({
 				max_attempts: 1,
-				window_ms: WINDOW_MS,
+				window_ms: TEST_LIMITER_WINDOW_MS,
 				cleanup_interval_ms: 0
 			});
 			const now = 100_000;
@@ -461,7 +461,7 @@ describe('RateLimiter', () => {
 			// ip2 should still be allowed
 			const result = limiter.check('ip2', now + 3000);
 			assert.strictEqual(result.allowed, true);
-			assert.strictEqual(result.remaining, MAX_ATTEMPTS);
+			assert.strictEqual(result.remaining, TEST_LIMITER_MAX_ATTEMPTS);
 			limiter.dispose();
 		});
 	});
@@ -483,7 +483,7 @@ describe('RateLimiter', () => {
 			// Now allowed
 			const result = limiter.check('ip1', now + 4000);
 			assert.strictEqual(result.allowed, true);
-			assert.strictEqual(result.remaining, MAX_ATTEMPTS);
+			assert.strictEqual(result.remaining, TEST_LIMITER_MAX_ATTEMPTS);
 			limiter.dispose();
 		});
 
@@ -509,14 +509,14 @@ describe('RateLimiter', () => {
 			const limiter = create_test_limiter();
 			const now = 100_000;
 			limiter.record('old', now);
-			limiter.record('new', now + WINDOW_MS);
+			limiter.record('new', now + TEST_LIMITER_WINDOW_MS);
 
 			// Cleanup at a time when "old" is expired but "new" is active
-			limiter.cleanup(now + WINDOW_MS + 1);
+			limiter.cleanup(now + TEST_LIMITER_WINDOW_MS + 1);
 			assert.strictEqual(limiter.size, 1);
 
 			// "new" should still be tracked
-			const result = limiter.check('new', now + WINDOW_MS + 1);
+			const result = limiter.check('new', now + TEST_LIMITER_WINDOW_MS + 1);
 			assert.strictEqual(result.remaining, 2);
 			limiter.dispose();
 		});
@@ -525,12 +525,12 @@ describe('RateLimiter', () => {
 			const limiter = create_test_limiter();
 			const now = 100_000;
 			limiter.record('ip1', now);
-			limiter.record('ip1', now + WINDOW_MS - 1000);
+			limiter.record('ip1', now + TEST_LIMITER_WINDOW_MS - 1000);
 
 			// Only the first one should be expired
-			limiter.cleanup(now + WINDOW_MS + 1);
+			limiter.cleanup(now + TEST_LIMITER_WINDOW_MS + 1);
 			assert.strictEqual(limiter.size, 1);
-			const result = limiter.check('ip1', now + WINDOW_MS + 1);
+			const result = limiter.check('ip1', now + TEST_LIMITER_WINDOW_MS + 1);
 			assert.strictEqual(result.remaining, 2); // only 1 active attempt
 			limiter.dispose();
 		});
@@ -542,7 +542,7 @@ describe('RateLimiter', () => {
 			limiter.record('b', now + 1000);
 			assert.strictEqual(limiter.size, 2);
 
-			limiter.cleanup(now + WINDOW_MS + 2000);
+			limiter.cleanup(now + TEST_LIMITER_WINDOW_MS + 2000);
 			assert.strictEqual(limiter.size, 0);
 			limiter.dispose();
 		});
@@ -764,12 +764,12 @@ describe('try_reserve', () => {
 		recorded.record();
 		recorded.release();
 		recorded.record();
-		assert.strictEqual(limiter.check('alice').remaining, MAX_ATTEMPTS - 1);
+		assert.strictEqual(limiter.check('alice').remaining, TEST_LIMITER_MAX_ATTEMPTS - 1);
 
 		const released = reserve(limiter, 'alice');
 		released.release();
 		released.record();
-		assert.strictEqual(limiter.check('alice').remaining, MAX_ATTEMPTS - 1);
+		assert.strictEqual(limiter.check('alice').remaining, TEST_LIMITER_MAX_ATTEMPTS - 1);
 		limiter.dispose();
 	});
 
@@ -860,7 +860,7 @@ describe('try_reserve', () => {
 		assert.strictEqual(limiter.size, 0, 'an inert reservation touches no limiter');
 		const reserved = try_reserve_optional(limiter, 'ip');
 		assert.ok(reserved.ok);
-		assert.strictEqual(limiter.check('ip').remaining, MAX_ATTEMPTS - 1);
+		assert.strictEqual(limiter.check('ip').remaining, TEST_LIMITER_MAX_ATTEMPTS - 1);
 		reserved.reservation.release();
 		limiter.dispose();
 	});
@@ -889,7 +889,7 @@ describe('reserve (waiting for an in-flight slot)', () => {
 
 	test('a reservation past the in-flight cap waits for a slot', async () => {
 		const limiter = create_test_limiter(); // max 3
-		const [first] = hold(limiter, 'k', MAX_ATTEMPTS);
+		const [first] = hold(limiter, 'k', TEST_LIMITER_MAX_ATTEMPTS);
 		const waiting = limiter.reserve('k', { max_wait_ms: 10_000 });
 		assert.strictEqual(await settled_within(waiting, 20), 'pending', 'it waits');
 		first!.release();
@@ -901,7 +901,7 @@ describe('reserve (waiting for an in-flight slot)', () => {
 
 	test('failures filling the cap refuse a waiter at once with the real retry_after', async () => {
 		const limiter = create_test_limiter();
-		const held = hold(limiter, 'k', MAX_ATTEMPTS);
+		const held = hold(limiter, 'k', TEST_LIMITER_MAX_ATTEMPTS);
 		const waiting = limiter.reserve('k', { max_wait_ms: 10_000 });
 		assert.strictEqual(await settled_within(waiting, 20), 'pending');
 		for (const reservation of held) reservation.record();
@@ -913,10 +913,10 @@ describe('reserve (waiting for an in-flight slot)', () => {
 
 	test('a plain record refuses a waiter at once', async () => {
 		const limiter = create_test_limiter();
-		const held = hold(limiter, 'k', MAX_ATTEMPTS);
+		const held = hold(limiter, 'k', TEST_LIMITER_MAX_ATTEMPTS);
 		const waiting = limiter.reserve('k', { max_wait_ms: 10_000 });
 		assert.strictEqual(await settled_within(waiting, 20), 'pending');
-		for (let i = 0; i < MAX_ATTEMPTS; i++) limiter.record('k');
+		for (let i = 0; i < TEST_LIMITER_MAX_ATTEMPTS; i++) limiter.record('k');
 		const refused = await settled_within(waiting, 20);
 		assert.ok(refused !== 'pending' && !refused.ok, 'refused as soon as the cap is recorded');
 		for (const reservation of held) reservation.release();
@@ -926,7 +926,7 @@ describe('reserve (waiting for an in-flight slot)', () => {
 	test('a reset wakes a waiter its forgiven attempts held out', async () => {
 		const limiter = create_test_limiter();
 		limiter.record('k');
-		const held = hold(limiter, 'k', MAX_ATTEMPTS - 1);
+		const held = hold(limiter, 'k', TEST_LIMITER_MAX_ATTEMPTS - 1);
 		const waiting = limiter.reserve('k', { max_wait_ms: 10_000 });
 		assert.strictEqual(await settled_within(waiting, 20), 'pending');
 		limiter.reset('k');
@@ -942,7 +942,7 @@ describe('reserve (waiting for an in-flight slot)', () => {
 		// would show as a `setTimeout` call.
 		const limiter = new RateLimiter({
 			max_attempts: 1,
-			window_ms: WINDOW_MS,
+			window_ms: TEST_LIMITER_WINDOW_MS,
 			cleanup_interval_ms: 0
 		});
 		const [held_b] = hold(limiter, 'b', 1);
@@ -980,7 +980,7 @@ describe('reserve (waiting for an in-flight slot)', () => {
 
 	test('a key at its recorded cap refuses without waiting', async () => {
 		const limiter = create_test_limiter();
-		for (let i = 0; i < MAX_ATTEMPTS; i++) limiter.record('k');
+		for (let i = 0; i < TEST_LIMITER_MAX_ATTEMPTS; i++) limiter.record('k');
 		const refused = await settled_within(limiter.reserve('k', { max_wait_ms: 10_000 }), 20);
 		assert.ok(refused !== 'pending' && !refused.ok);
 		limiter.dispose();
@@ -988,7 +988,7 @@ describe('reserve (waiting for an in-flight slot)', () => {
 
 	test('a wait that times out refuses with the in-flight retry_after and leaves no residue', async () => {
 		const limiter = create_test_limiter();
-		const held = hold(limiter, 'k', MAX_ATTEMPTS);
+		const held = hold(limiter, 'k', TEST_LIMITER_MAX_ATTEMPTS);
 		assert.deepStrictEqual(await limiter.reserve('k', { max_wait_ms: 30 }), {
 			ok: false,
 			retry_after: IN_FLIGHT_RETRY_AFTER_SECONDS
@@ -1001,8 +1001,8 @@ describe('reserve (waiting for an in-flight slot)', () => {
 
 	test('at most max_attempts reservations wait on a key', async () => {
 		const limiter = create_test_limiter();
-		const held = hold(limiter, 'k', MAX_ATTEMPTS);
-		const waiters = Array.from({ length: MAX_ATTEMPTS }, () =>
+		const held = hold(limiter, 'k', TEST_LIMITER_MAX_ATTEMPTS);
+		const waiters = Array.from({ length: TEST_LIMITER_MAX_ATTEMPTS }, () =>
 			limiter.reserve('k', { max_wait_ms: 10_000 })
 		);
 		// one more is refused without waiting
@@ -1021,7 +1021,7 @@ describe('reserve (waiting for an in-flight slot)', () => {
 	test('an aborted wait refuses and leaves no residue', async () => {
 		const limiter = new RateLimiter({
 			max_attempts: 1,
-			window_ms: WINDOW_MS,
+			window_ms: TEST_LIMITER_WINDOW_MS,
 			cleanup_interval_ms: 0
 		});
 		const [held] = hold(limiter, 'k', 1);

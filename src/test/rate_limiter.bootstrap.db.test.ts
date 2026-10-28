@@ -13,7 +13,6 @@ import { describe, test, assert, vi, afterEach, beforeAll } from 'vitest';
 import { Hono } from 'hono';
 
 import { RateLimiter } from '#lib/rate_limiter.ts';
-import { create_proxy_middleware } from '#lib/http/proxy.ts';
 import { create_bootstrap_route_specs } from '#lib/auth/bootstrap_routes.ts';
 import { BootstrapOutput } from '#lib/auth/bootstrap_route_schema.ts';
 import { apply_route_specs } from '#lib/http/route_spec.ts';
@@ -33,29 +32,17 @@ import {
 } from '#lib/http/error_schemas.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
+import {
+	create_test_limiter,
+	TEST_CONNECTION_IP,
+	TEST_LIMITER_MAX_ATTEMPTS,
+	test_proxy_middleware
+} from './rate_limiter_test_helpers.ts';
 import { create_test_keyring } from './auth/session_test_helpers.ts';
 
 const log = new Logger('test', { level: 'off' });
 
 // --- Shared fixtures ---
-
-/** Simulated connection IP for all test requests. */
-const TEST_CONNECTION_IP = '127.0.0.1';
-
-/**
- * Proxy middleware for tests: trusts the simulated connection IP
- * so that `X-Forwarded-For` headers are honored in test requests.
- */
-const test_proxy_middleware = create_proxy_middleware({
-	trusted_proxies: [TEST_CONNECTION_IP],
-	get_connection_ip: () => TEST_CONNECTION_IP
-});
-
-const WINDOW_MS = 60_000;
-const MAX_ATTEMPTS = 3;
-
-const create_test_limiter = (): RateLimiter =>
-	new RateLimiter({ max_attempts: MAX_ATTEMPTS, window_ms: WINDOW_MS, cleanup_interval_ms: 0 });
 
 const keyring = create_test_keyring('integration-test-key-at-least-32-chars');
 const session_options = create_session_config('test_session');
@@ -166,7 +153,7 @@ describe('bootstrap handler rate limiting', () => {
 		const { app } = await create_bootstrap_app(limiter);
 
 		// Exhaust the limit (token mismatch → 401)
-		for (let i = 0; i < MAX_ATTEMPTS; i++) {
+		for (let i = 0; i < TEST_LIMITER_MAX_ATTEMPTS; i++) {
 			const res = await bootstrap_request(app);
 			assert.strictEqual(res.status, 401);
 		}
@@ -185,7 +172,7 @@ describe('bootstrap handler rate limiting', () => {
 		const limiter = create_test_limiter();
 		const { app } = await create_bootstrap_app(limiter);
 
-		for (let i = 0; i < MAX_ATTEMPTS; i++) {
+		for (let i = 0; i < TEST_LIMITER_MAX_ATTEMPTS; i++) {
 			await bootstrap_request(app);
 		}
 
@@ -203,7 +190,7 @@ describe('bootstrap handler rate limiting', () => {
 		const limiter = create_test_limiter();
 		const { app, read_secure_file } = await create_bootstrap_app(limiter);
 
-		for (let i = 0; i < MAX_ATTEMPTS; i++) {
+		for (let i = 0; i < TEST_LIMITER_MAX_ATTEMPTS; i++) {
 			await bootstrap_request(app);
 		}
 
@@ -229,13 +216,13 @@ describe('bootstrap handler rate limiting', () => {
 		const { app } = await create_bootstrap_app(limiter);
 
 		const responses = await Promise.all(
-			Array.from({ length: MAX_ATTEMPTS * 2 }, async () => bootstrap_request(app))
+			Array.from({ length: TEST_LIMITER_MAX_ATTEMPTS * 2 }, async () => bootstrap_request(app))
 		);
 
 		const statuses = responses.map((r) => r.status).sort((a, b) => a - b);
 		assert.deepStrictEqual(statuses, [
-			...Array<number>(MAX_ATTEMPTS).fill(401),
-			...Array<number>(MAX_ATTEMPTS).fill(429)
+			...Array<number>(TEST_LIMITER_MAX_ATTEMPTS).fill(401),
+			...Array<number>(TEST_LIMITER_MAX_ATTEMPTS).fill(429)
 		]);
 		assert.strictEqual(limiter.check(TEST_CONNECTION_IP).remaining, 0);
 
@@ -247,7 +234,7 @@ describe('bootstrap handler rate limiting', () => {
 		const { app } = await create_bootstrap_app(limiter);
 
 		await bootstrap_request(app);
-		assert.strictEqual(limiter.check(TEST_CONNECTION_IP).remaining, MAX_ATTEMPTS - 1);
+		assert.strictEqual(limiter.check(TEST_CONNECTION_IP).remaining, TEST_LIMITER_MAX_ATTEMPTS - 1);
 
 		limiter.dispose();
 	});
@@ -305,8 +292,8 @@ describe('bootstrap handler rate limiting', () => {
 	test('rate_limiter null allows unlimited failed attempts', async () => {
 		const { app } = await create_bootstrap_app(null);
 
-		// Well beyond MAX_ATTEMPTS — should never see 429
-		for (let i = 0; i < MAX_ATTEMPTS + 5; i++) {
+		// Well beyond TEST_LIMITER_MAX_ATTEMPTS — should never see 429
+		for (let i = 0; i < TEST_LIMITER_MAX_ATTEMPTS + 5; i++) {
 			const res = await bootstrap_request(app);
 			assert.strictEqual(res.status, 401, `request ${i + 1} should be 401, not 429`);
 		}
@@ -317,7 +304,7 @@ describe('bootstrap handler rate limiting', () => {
 		const { app } = await create_bootstrap_app(limiter);
 
 		// Exhaust limit for 10.0.0.1
-		for (let i = 0; i < MAX_ATTEMPTS; i++) {
+		for (let i = 0; i < TEST_LIMITER_MAX_ATTEMPTS; i++) {
 			await bootstrap_request(app, { 'X-Forwarded-For': '10.0.0.1' });
 		}
 
@@ -340,7 +327,7 @@ describe('bootstrap handler rate limiting', () => {
 		const limiter = create_test_limiter();
 		const { app } = await create_bootstrap_app(limiter);
 
-		for (let i = 0; i < MAX_ATTEMPTS; i++) {
+		for (let i = 0; i < TEST_LIMITER_MAX_ATTEMPTS; i++) {
 			await bootstrap_request(app, { 'X-Forwarded-For': '2001:db8:1:2::1' });
 		}
 

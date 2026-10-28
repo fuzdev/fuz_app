@@ -27,12 +27,8 @@ import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 import { query_create_role_grant } from '#lib/auth/role_grant_queries.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
-import {
-	RPC_PATH,
-	create_admin_route_specs,
-	describe_db,
-	session_options
-} from './admin_rpc_test_helpers.ts';
+import { describe_db } from '../auth_db_default.ts';
+import { RPC_PATH, create_admin_route_specs, session_options } from './admin_rpc_test_helpers.ts';
 
 // Valid v4 UUID for the synthetic scope. Any non-bootstrap-account scope id
 // works — the gate only checks role + scope, not whether the scope row exists.

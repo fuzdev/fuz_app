@@ -18,11 +18,11 @@ import {
 } from '#lib/auth/role_grant_offer_action_specs.ts';
 import { create_uuid } from '#lib/primitive_schemas.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
+import { describe_db } from '../auth_db_default.ts';
 import {
 	RPC_PATH,
 	TEST_APP_ROLE,
 	create_app_role_route_specs,
-	describe_db,
 	session_options
 } from './role_grant_offer_test_helpers.ts';
 

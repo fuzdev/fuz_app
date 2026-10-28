@@ -30,7 +30,6 @@ import {
 } from '#lib/actions/connection_closer.ts';
 import { create_sse_connection_closer } from '#lib/realtime/audit_log_sse.ts';
 import { SseRegistry } from '#lib/realtime/sse_registry.ts';
-import type { SseStream } from '#lib/realtime/sse.ts';
 import { create_test_audit_event } from '#lib/testing/entities.ts';
 import {
 	AUDIT_EVENT_TYPES,
@@ -40,6 +39,7 @@ import {
 	type RevocationScope
 } from '#lib/auth/audit_log_schema.ts';
 import { create_uuid, type Uuid } from '#lib/primitive_schemas.ts';
+import { create_mock_stream } from '../realtime/sse_test_helpers.ts';
 import { create_test_identity } from './connection_identity_helpers.ts';
 
 interface FakeWs {
@@ -802,25 +802,6 @@ describe('create_revocation_guard: over a RealtimeCloser', () => {
 		assert.strictEqual(other.closes.length, 0);
 	});
 });
-
-/** Create a mock SseStream that tracks sent data and closed state. */
-const create_mock_stream = <T>(): SseStream<T> & { sent: Array<T>; closed: boolean } => {
-	const sent: Array<T> = [];
-	let closed = false;
-	return {
-		sent,
-		get closed() {
-			return closed;
-		},
-		send(data: T) {
-			sent.push(data);
-		},
-		close() {
-			closed = true;
-		},
-		on_close() {}
-	};
-};
 
 /** The guard over one SSE registry, as `create_app_server` reaches it through the closer. */
 const create_sse_guard = <T>(

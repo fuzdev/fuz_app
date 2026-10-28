@@ -27,12 +27,8 @@ import { ERROR_CREDENTIAL_TYPE_REQUIRED } from '#lib/http/error_schemas.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
 import type { RouteSpec } from '#lib/http/route_spec.ts';
-import {
-	RPC_PATH,
-	create_route_specs,
-	describe_db,
-	session_options
-} from './role_grant_offer_test_helpers.ts';
+import { describe_db } from '../auth_db_default.ts';
+import { RPC_PATH, create_route_specs, session_options } from './role_grant_offer_test_helpers.ts';
 
 describe_db('role_grant_offer_actions.create', (get_db) => {
 	describe('role_grant_offer_create', () => {

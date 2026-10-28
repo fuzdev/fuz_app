@@ -35,8 +35,9 @@ fuz_app's own suites reach a database two ways:
   the `PgFactStore` suites).
 - **The default factory.** Everything else runs on one driver through
   `create_default_db_factory`: a suite's own `const factory` (bespoke
-  `init_schema` — seeding, a single namespace under test), the two
-  `auth/*_test_helpers.ts` `describe_db`s, `create_db_fixture.ts`'s
+  `init_schema` — seeding, a single namespace under test), the auth-only
+  `describe_db` of `auth_db_default.ts` (what a suite needing one database
+  with `fuz_auth` migrated imports), `create_db_fixture.ts`'s
   `default_db_factory` (for suites that take one database directly),
   `#lib/testing/app_server.ts`'s no-`db` fallback, and the `db_factories`
   defaults in `#lib/testing/sse_round_trip.ts` and `#lib/testing/rate_limiting.ts`.

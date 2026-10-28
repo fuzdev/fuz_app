@@ -124,6 +124,7 @@ import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
 import type { AuditLogEvent } from '#lib/auth/audit_log_schema.ts';
 import type { SseNotification, SseStream } from '#lib/realtime/sse.ts';
 
+import { create_mock_stream } from '../realtime/sse_test_helpers.ts';
 import { describe_db } from '../db_fixture.ts';
 import { create_gated_db, is_audit_insert, type GatedDb } from '../gated_db.ts';
 import { create_test_identity } from '../actions/connection_identity_helpers.ts';
@@ -1102,20 +1103,6 @@ describe_db('connection_closer wiring', (get_db) => {
 			committed: { read: ((db: Db) => Promise<boolean>) | null };
 		}
 
-		const create_mock_stream = (): SseStream<SseNotification> & { closed: boolean } => {
-			let closed = false;
-			return {
-				get closed() {
-					return closed;
-				},
-				send() {},
-				close() {
-					closed = true;
-				},
-				on_close() {}
-			};
-		};
-
 		const create_site_harness = async (
 			db: Db,
 			options: { max_sessions?: number; max_tokens?: number } = {}
@@ -1192,7 +1179,7 @@ describe_db('connection_closer wiring', (get_db) => {
 							api_token_id: identity.api_token_id ?? null
 						})
 					);
-					const stream = create_mock_stream();
+					const stream = create_mock_stream<SseNotification>();
 					sse.registry.subscribe(stream, {
 						scope: identity.session_hash,
 						groups: identity.api_token_id

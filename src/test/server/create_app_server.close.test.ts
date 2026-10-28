@@ -45,8 +45,8 @@ import { protocol_actions } from '#lib/actions/protocol.ts';
 import { ConnectionRegistry } from '#lib/actions/connection_registry.ts';
 import { WS_CLOSE_GOING_AWAY } from '#lib/actions/transports.ts';
 import type { ConnectionCloser } from '#lib/actions/connection_closer.ts';
-import type { SseStream } from '#lib/realtime/sse.ts';
 import { RateLimiter, create_rate_limiter, type RateLimiterMode } from '#lib/rate_limiter.ts';
+import { create_mock_stream } from '../realtime/sse_test_helpers.ts';
 import { create_test_identity } from '../actions/connection_identity_helpers.ts';
 
 const log = new Logger('test', { level: 'off' });
@@ -107,20 +107,6 @@ const assemble = async (
 	});
 	servers.push(server);
 	return { server, ctx: ctx!, harness };
-};
-
-const create_mock_stream = (): SseStream & { closed: boolean } => {
-	let closed = false;
-	return {
-		get closed() {
-			return closed;
-		},
-		send() {},
-		close() {
-			closed = true;
-		},
-		on_close() {}
-	};
 };
 
 // every server a test assembles is closed, whatever the test asserted

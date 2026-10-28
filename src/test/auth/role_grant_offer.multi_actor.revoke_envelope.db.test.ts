@@ -17,7 +17,8 @@ import { query_create_role_grant } from '#lib/auth/role_grant_queries.ts';
 import type { AuditLogEvent } from '#lib/auth/audit_log_schema.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 
-import { RPC_PATH, describe_db } from './role_grant_offer_test_helpers.ts';
+import { describe_db } from '../auth_db_default.ts';
+import { RPC_PATH } from './role_grant_offer_test_helpers.ts';
 import { create_multi_actor_helpers } from './role_grant_offer.multi_actor.fixtures.ts';
 
 describe_db('role_grant_offer.multi_actor — revoke_envelope', (get_db) => {

@@ -17,7 +17,6 @@ import { apply_route_specs } from '#lib/http/route_spec.ts';
 import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { RateLimiter } from '#lib/rate_limiter.ts';
-import { create_proxy_middleware } from '#lib/http/proxy.ts';
 import type { AuditLogInput } from '#lib/auth/audit_log_schema.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
 import { create_stub_db, create_noop_stub } from '#lib/testing/stubs.ts';
@@ -27,6 +26,7 @@ import {
 } from '#lib/testing/audit_drift_guard.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
+import { TEST_CONNECTION_IP, test_proxy_middleware } from '../rate_limiter_test_helpers.ts';
 import { create_test_keyring } from './session_test_helpers.ts';
 
 const log = new Logger('test', { level: 'off' });
@@ -136,9 +136,6 @@ const ACT_TEST = '00000000-0000-4000-8000-000000000002' as Uuid;
 const keyring = create_test_keyring('audit-integration-test-key-at-least-32-chars');
 const session_options = create_session_config('test_session');
 
-/** Simulated connection IP for test requests. */
-const TEST_CONNECTION_IP = '127.0.0.1';
-
 const db = create_stub_db();
 const noop = create_noop_stub('deps');
 
@@ -172,15 +169,6 @@ const fake_ctx: RequestContext = {
 	actor: fake_actor,
 	role_grants: []
 };
-
-/**
- * Proxy middleware for tests: trusts the simulated connection IP
- * so that `get_client_ip(c)` returns a real value.
- */
-const test_proxy_middleware = create_proxy_middleware({
-	trusted_proxies: [TEST_CONNECTION_IP],
-	get_connection_ip: () => TEST_CONNECTION_IP
-});
 
 // --- Tests ---
 

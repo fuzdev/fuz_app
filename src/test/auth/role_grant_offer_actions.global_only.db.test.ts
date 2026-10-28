@@ -44,12 +44,12 @@ import { rpc_call, type RpcCallResult } from '#lib/testing/rpc_helpers.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
 import type { RouteSpec } from '#lib/http/route_spec.ts';
 import type { Db } from '#lib/db/db.ts';
+import { describe_db } from '../auth_db_default.ts';
 import {
 	RPC_PATH,
 	TEST_APP_ROLE,
 	admit_all_authorize,
 	app_roles,
-	describe_db,
 	session_options
 } from './role_grant_offer_test_helpers.ts';
 import { error_reason } from './rpc_test_helpers.ts';

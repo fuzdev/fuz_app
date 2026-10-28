@@ -12,7 +12,6 @@ import { describe, test, assert, vi, afterEach } from 'vitest';
 import { Hono } from 'hono';
 
 import { RateLimiter } from '#lib/rate_limiter.ts';
-import { create_proxy_middleware } from '#lib/http/proxy.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
 import { REQUEST_CONTEXT_KEY, type RequestContext } from '#lib/auth/request_context.ts';
 import { ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY, TEST_CONTEXT_PRESET_KEY } from '#lib/hono_context.ts';
@@ -30,6 +29,13 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { create_realtime_closer, type ConnectionCloser } from '#lib/actions/connection_closer.ts';
 import { flush_pending_effects, flush_post_commit_effects } from '#lib/http/pending_effects.ts';
 import { create_recording_closer } from '#lib/testing/connection_closer_helpers.ts';
+import {
+	create_test_limiter,
+	TEST_CONNECTION_IP,
+	TEST_LIMITER_MAX_ATTEMPTS,
+	TEST_LIMITER_WINDOW_MS,
+	test_proxy_middleware
+} from '../rate_limiter_test_helpers.ts';
 import { create_test_keyring } from './session_test_helpers.ts';
 
 const log = new Logger('test', { level: 'off' });
@@ -76,24 +82,6 @@ vi.mock('#lib/auth/role_grant_queries.ts', () => ({
 }));
 
 // --- Shared fixtures ---
-
-/** Simulated connection IP for all test requests. */
-const TEST_CONNECTION_IP = '127.0.0.1';
-
-/**
- * Proxy middleware for tests: trusts the simulated connection IP
- * so that `X-Forwarded-For` headers are honored in test requests.
- */
-const test_proxy_middleware = create_proxy_middleware({
-	trusted_proxies: [TEST_CONNECTION_IP],
-	get_connection_ip: () => TEST_CONNECTION_IP
-});
-
-const WINDOW_MS = 60_000;
-const MAX_ATTEMPTS = 3;
-
-const create_test_limiter = (): RateLimiter =>
-	new RateLimiter({ max_attempts: MAX_ATTEMPTS, window_ms: WINDOW_MS, cleanup_interval_ms: 0 });
 
 const keyring = create_test_keyring('integration-test-key-at-least-32-chars');
 const session_options = create_session_config('test_session');
@@ -450,7 +438,7 @@ describe('password change rate limiting', () => {
 		const { app, mock_verify_password } = create_password_change_app(limiter);
 
 		// exhaust the limit with wrong-password attempts
-		for (let i = 0; i < MAX_ATTEMPTS; i++) {
+		for (let i = 0; i < TEST_LIMITER_MAX_ATTEMPTS; i++) {
 			const res = await password_change_request(app);
 			assert.strictEqual(res.status, 401);
 		}
@@ -464,7 +452,7 @@ describe('password change rate limiting', () => {
 		assert.ok(body.retry_after > 0);
 
 		// verify no password work was done on the blocked request
-		assert.strictEqual(mock_verify_password.mock.calls.length, MAX_ATTEMPTS);
+		assert.strictEqual(mock_verify_password.mock.calls.length, TEST_LIMITER_MAX_ATTEMPTS);
 
 		limiter.dispose();
 	});
@@ -477,15 +465,17 @@ describe('password change rate limiting', () => {
 		const { app, mock_verify_password } = create_password_change_app(limiter);
 
 		const responses = await Promise.all(
-			Array.from({ length: MAX_ATTEMPTS * 2 }, async () => password_change_request(app))
+			Array.from({ length: TEST_LIMITER_MAX_ATTEMPTS * 2 }, async () =>
+				password_change_request(app)
+			)
 		);
 
 		const statuses = responses.map((r) => r.status).sort((a, b) => a - b);
 		assert.deepStrictEqual(statuses, [
-			...Array<number>(MAX_ATTEMPTS).fill(401),
-			...Array<number>(MAX_ATTEMPTS).fill(429)
+			...Array<number>(TEST_LIMITER_MAX_ATTEMPTS).fill(401),
+			...Array<number>(TEST_LIMITER_MAX_ATTEMPTS).fill(429)
 		]);
-		assert.strictEqual(mock_verify_password.mock.calls.length, MAX_ATTEMPTS);
+		assert.strictEqual(mock_verify_password.mock.calls.length, TEST_LIMITER_MAX_ATTEMPTS);
 
 		limiter.dispose();
 	});
@@ -497,13 +487,13 @@ describe('password change rate limiting', () => {
 		mock_verify_password.mockImplementation(
 			() => new Promise<boolean>((resolve) => verifies.push(resolve))
 		);
-		const requests = Array.from({ length: MAX_ATTEMPTS * 2 }, async () =>
+		const requests = Array.from({ length: TEST_LIMITER_MAX_ATTEMPTS * 2 }, async () =>
 			password_change_request(app)
 		);
-		while (verifies.length < MAX_ATTEMPTS) await new Promise((r) => setImmediate(r));
+		while (verifies.length < TEST_LIMITER_MAX_ATTEMPTS) await new Promise((r) => setImmediate(r));
 		await new Promise((r) => setImmediate(r));
 
-		assert.strictEqual(verifies.length, MAX_ATTEMPTS);
+		assert.strictEqual(verifies.length, TEST_LIMITER_MAX_ATTEMPTS);
 		assert.strictEqual(transactions.open, 0, 'a parked or verifying change holds no transaction');
 
 		mock_verify_password.mockImplementation(() => Promise.resolve(false));
@@ -517,7 +507,7 @@ describe('password change rate limiting', () => {
 		const { app, mock_verify_password } = create_password_change_app(limiter);
 
 		// exhaust the limit
-		for (let i = 0; i < MAX_ATTEMPTS; i++) {
+		for (let i = 0; i < TEST_LIMITER_MAX_ATTEMPTS; i++) {
 			await password_change_request(app);
 		}
 
@@ -542,7 +532,7 @@ describe('password change rate limiting', () => {
 		assert.strictEqual(res.status, 401);
 
 		// IP is the test connection IP (no X-Forwarded-For) — one attempt consumed
-		assert.strictEqual(limiter.check(TEST_CONNECTION_IP).remaining, MAX_ATTEMPTS - 1);
+		assert.strictEqual(limiter.check(TEST_CONNECTION_IP).remaining, TEST_LIMITER_MAX_ATTEMPTS - 1);
 
 		limiter.dispose();
 	});
@@ -576,8 +566,8 @@ describe('password change rate limiting', () => {
 	test('login_ip_rate_limiter null allows unlimited failed attempts', async () => {
 		const { app } = create_password_change_app(null);
 
-		// well beyond MAX_ATTEMPTS — should never see 429
-		for (let i = 0; i < MAX_ATTEMPTS + 5; i++) {
+		// well beyond TEST_LIMITER_MAX_ATTEMPTS — should never see 429
+		for (let i = 0; i < TEST_LIMITER_MAX_ATTEMPTS + 5; i++) {
 			const res = await password_change_request(app);
 			assert.strictEqual(res.status, 401, `request ${i + 1} should be 401, not 429`);
 		}
@@ -587,7 +577,7 @@ describe('password change rate limiting', () => {
 		const limiter = create_test_limiter();
 		const { app } = create_password_change_app(limiter);
 
-		for (let i = 0; i < MAX_ATTEMPTS; i++) {
+		for (let i = 0; i < TEST_LIMITER_MAX_ATTEMPTS; i++) {
 			await password_change_request(app);
 		}
 
@@ -604,7 +594,7 @@ describe('password change rate limiting', () => {
 		const { app } = create_password_change_app(limiter);
 
 		// exhaust limit for 10.0.0.1
-		for (let i = 0; i < MAX_ATTEMPTS; i++) {
+		for (let i = 0; i < TEST_LIMITER_MAX_ATTEMPTS; i++) {
 			await password_change_request(app, undefined, { 'X-Forwarded-For': '10.0.0.1' });
 		}
 
@@ -630,7 +620,7 @@ describe('password change per-account rate limiting', () => {
 		const { app } = create_password_change_app(null, account_limiter);
 
 		// exhaust the per-account limit with wrong-password attempts
-		for (let i = 0; i < MAX_ATTEMPTS; i++) {
+		for (let i = 0; i < TEST_LIMITER_MAX_ATTEMPTS; i++) {
 			const res = await password_change_request(app);
 			assert.strictEqual(res.status, 401);
 		}
@@ -651,13 +641,15 @@ describe('password change per-account rate limiting', () => {
 		const { app } = create_password_change_app(null, account_limiter);
 
 		const responses = await Promise.all(
-			Array.from({ length: MAX_ATTEMPTS * 2 }, async () => password_change_request(app))
+			Array.from({ length: TEST_LIMITER_MAX_ATTEMPTS * 2 }, async () =>
+				password_change_request(app)
+			)
 		);
 
 		const statuses = responses.map((r) => r.status).sort((a, b) => a - b);
 		assert.deepStrictEqual(statuses, [
-			...Array<number>(MAX_ATTEMPTS).fill(401),
-			...Array<number>(MAX_ATTEMPTS).fill(429)
+			...Array<number>(TEST_LIMITER_MAX_ATTEMPTS).fill(401),
+			...Array<number>(TEST_LIMITER_MAX_ATTEMPTS).fill(429)
 		]);
 
 		account_limiter.dispose();
@@ -671,7 +663,10 @@ describe('password change per-account rate limiting', () => {
 		assert.strictEqual(res.status, 401);
 
 		// account ID is the rate limit key — one attempt consumed
-		assert.strictEqual(account_limiter.check(fake_account.id).remaining, MAX_ATTEMPTS - 1);
+		assert.strictEqual(
+			account_limiter.check(fake_account.id).remaining,
+			TEST_LIMITER_MAX_ATTEMPTS - 1
+		);
 
 		account_limiter.dispose();
 	});
@@ -691,7 +686,7 @@ describe('password change per-account rate limiting', () => {
 		assert.strictEqual(res.status, 200);
 
 		// per-account counter fully reset
-		assert.strictEqual(account_limiter.check(fake_account.id).remaining, MAX_ATTEMPTS);
+		assert.strictEqual(account_limiter.check(fake_account.id).remaining, TEST_LIMITER_MAX_ATTEMPTS);
 
 		account_limiter.dispose();
 	});
@@ -699,14 +694,14 @@ describe('password change per-account rate limiting', () => {
 	test('IP and account limiters are independent', async () => {
 		const ip_limiter = create_test_limiter();
 		const account_limiter = new RateLimiter({
-			max_attempts: MAX_ATTEMPTS + 2,
-			window_ms: WINDOW_MS,
+			max_attempts: TEST_LIMITER_MAX_ATTEMPTS + 2,
+			window_ms: TEST_LIMITER_WINDOW_MS,
 			cleanup_interval_ms: 0
 		});
 		const { app } = create_password_change_app(ip_limiter, account_limiter);
 
 		// exhaust IP limiter (3 attempts), account limiter still has capacity (5)
-		for (let i = 0; i < MAX_ATTEMPTS; i++) {
+		for (let i = 0; i < TEST_LIMITER_MAX_ATTEMPTS; i++) {
 			await password_change_request(app);
 		}
 
@@ -726,7 +721,7 @@ describe('password change per-account rate limiting', () => {
 		const { app, mock_verify_password } = create_password_change_app(null, account_limiter);
 
 		// exhaust the limit
-		for (let i = 0; i < MAX_ATTEMPTS; i++) {
+		for (let i = 0; i < TEST_LIMITER_MAX_ATTEMPTS; i++) {
 			await password_change_request(app);
 		}
 
@@ -746,8 +741,8 @@ describe('password change per-account rate limiting', () => {
 	test('login_account_rate_limiter null allows unlimited failed attempts', async () => {
 		const { app } = create_password_change_app(null, null);
 
-		// well beyond MAX_ATTEMPTS — should never see 429
-		for (let i = 0; i < MAX_ATTEMPTS + 5; i++) {
+		// well beyond TEST_LIMITER_MAX_ATTEMPTS — should never see 429
+		for (let i = 0; i < TEST_LIMITER_MAX_ATTEMPTS + 5; i++) {
 			const res = await password_change_request(app);
 			assert.strictEqual(res.status, 401, `request ${i + 1} should be 401, not 429`);
 		}
@@ -848,7 +843,7 @@ describe('password change connection_closer wiring', () => {
 		// Exhaust the IP limit with wrong-password attempts. Each failure
 		// records against the limiter but must NOT queue the close
 		// (those are 401, not the success path).
-		for (let i = 0; i < MAX_ATTEMPTS; i++) {
+		for (let i = 0; i < TEST_LIMITER_MAX_ATTEMPTS; i++) {
 			const res = await password_change_request(app);
 			assert.strictEqual(res.status, 401);
 		}
@@ -874,7 +869,7 @@ describe('password change connection_closer wiring', () => {
 		const account_limiter = create_test_limiter();
 		const { app } = create_password_change_app(null, account_limiter, closer);
 
-		for (let i = 0; i < MAX_ATTEMPTS; i++) {
+		for (let i = 0; i < TEST_LIMITER_MAX_ATTEMPTS; i++) {
 			const res = await password_change_request(app);
 			assert.strictEqual(res.status, 401);
 		}

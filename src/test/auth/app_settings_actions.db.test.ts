@@ -22,10 +22,10 @@ import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
 import { prefix_route_specs } from '#lib/http/route_spec.ts';
+import { describe_db } from '../auth_db_default.ts';
 import {
 	RPC_PATH,
 	create_admin_route_specs_with,
-	describe_db,
 	session_options
 } from './admin_rpc_test_helpers.ts';
 

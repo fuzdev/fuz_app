@@ -51,11 +51,12 @@ import {
 	WS_CLOSE_SESSION_REVOKED_REASON
 } from '#lib/actions/transports.ts';
 import { create_audit_log_sse } from '#lib/realtime/audit_log_sse.ts';
-import type { SseNotification, SseStream } from '#lib/realtime/sse.ts';
+import type { SseNotification } from '#lib/realtime/sse.ts';
 import { Db, no_nested_transaction } from '#lib/db/db.ts';
 import { create_recording_closer } from '#lib/testing/connection_closer_helpers.ts';
 import { create_fake_ws } from '#lib/testing/ws_round_trip.ts';
 
+import { create_mock_stream } from '../realtime/sse_test_helpers.ts';
 import { describe_db } from '../db_fixture.ts';
 import { create_gated_db } from '../gated_db.ts';
 import {
@@ -68,20 +69,6 @@ import {
 import { create_test_identity } from '../actions/connection_identity_helpers.ts';
 
 const log = new Logger('cleanup-sessions-test', { level: 'off' });
-
-const create_mock_stream = (): SseStream<SseNotification> & { closed: boolean } => {
-	let closed = false;
-	return {
-		get closed() {
-			return closed;
-		},
-		send() {},
-		close() {
-			closed = true;
-		},
-		on_close() {}
-	};
-};
 
 describe_db('cleanup_expired_sessions', (get_db) => {
 	test('closes exactly the sessions it deletes, by session id, and writes no audit row', async () => {
@@ -326,7 +313,7 @@ describe_db('cleanup_expired_sessions', (get_db) => {
 		const connect = (session_hash: string, account_id: Uuid) => {
 			const ws = create_fake_ws();
 			registry.add_connection(ws.ws, create_test_identity({ session_hash, account_id }));
-			const stream = create_mock_stream();
+			const stream = create_mock_stream<SseNotification>();
 			audit_sse.registry.subscribe(stream, { scope: session_hash, groups: [account_id] });
 			return { ws, stream };
 		};
