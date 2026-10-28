@@ -266,9 +266,9 @@ Pass `db_factories` to `describe_rate_limiting_tests` (or to consumer-side
 
 The standard suites take a unified `{setup_test, surface_source}` shape plus
 the factory inputs (`session_options`, `create_route_specs`,
-`rpc_endpoints`); the bundlers
-(`describe_standard_tests` / `describe_standard_cross_process_tests`) and the
-suites that gate cases on a backend flag also take `capabilities`.
+`rpc_endpoints`); the cross-process bundler
+(`describe_standard_cross_process_tests`) and the suites that gate cases on a
+backend flag also take `capabilities`.
 `default_in_process_suite_options` from
 `@fuzdev/fuz_app/testing/cross_backend/in_process_setup.ts` emits the entire bag in
 one call — pass it directly when the suite has no extras, spread when
@@ -304,7 +304,7 @@ describe_standard_admin_integration_tests({
 - `session_options` (required) — Cookie config — same `SessionOptions<string>` fuz_app's production server takes.
 - `create_route_specs` (required) — Production route-spec factory.
 - `rpc_endpoints` (optional) — RPC endpoint specs — eager array or `(ctx) => specs` factory (the same `RpcEndpointsSuiteOption` union `create_app_server` takes).
-- `bootstrap` (optional) — Top-level `BootstrapServerOptions` (discriminated by `mode`). Pass `{mode: 'live', token_path, on_bootstrap?}` to mirror production live wiring (the helper flows this to BOTH the surface spec and the live app, and the bootstrap-success suite in the standard bundle uses it). Pass `{mode: 'surface_only'}` for tests asserting on the disabled-but-present 403 wire shape. Omit (or `{mode: 'disabled'}`) to skip the routes — symmetric with `create_app_server`'s production default. The default `create_test_app` keeper-pre-creation flips `bootstrap_lock.bootstrapped = true` to match production semantics, so denial-path tests fire 403 ALREADY_BOOTSTRAPPED in any mode. The success path runs via `describe_bootstrap_success_tests` against `create_test_app_for_bootstrap`.
+- `bootstrap` (optional) — Top-level `BootstrapServerOptions` (discriminated by `mode`). Pass `{mode: 'live', token_path, on_bootstrap?}` to mirror production live wiring (the helper flows this to BOTH the surface spec and the live app). Pass `{mode: 'surface_only'}` for tests asserting on the disabled-but-present 403 wire shape. Omit (or `{mode: 'disabled'}`) to skip the routes — symmetric with `create_app_server`'s production default. The default `create_test_app` keeper-pre-creation flips `bootstrap_lock.bootstrapped = true` to match production semantics, so denial-path tests fire 403 ALREADY_BOOTSTRAPPED in any mode. The cross-backend harness exercises the success response, bootstrapping every backend it spawns.
 - `app_options` (optional) — `SuiteAppOptions` overrides for `AppServerOptions`. Same shape you'd pass to `create_app_server` (minus the five fields the helper manages: `backend`, `session_options`, `create_route_specs`, `rpc_endpoints`, `bootstrap`).
 - `extra_keeper_roles` (optional) — Additional roles to grant the bootstrapped keeper alongside `ROLE_KEEPER` (which is always implied — daemon-token auth requires it). Admin-suite + audit-completeness consumers pass `[ROLE_ADMIN]` so the keeper hits admin-gated RPC methods.
 - `surface_source` (optional) — Pre-built `AppSurfaceSpec`. Pass when surface assembly needs `env_schema` / `event_specs` / `ws_endpoints` / `transform_middleware` outside the shared subset; otherwise the helper builds one via `create_test_app_surface_spec` against the same factory inputs (including the top-level `bootstrap` slot).
@@ -505,25 +505,14 @@ Wire bootstrap via the top-level `bootstrap` slot on
 
 - **`{mode: 'live', token_path, on_bootstrap?}`** — production-shaped
   wiring. Tier 1 suites exercise the route surface (presence,
-  adversarial denial paths via 403 ALREADY_BOOTSTRAPPED). The
-  bootstrap-success suite folded into `describe_standard_tests`
-  exercises the success path end-to-end against
-  `create_test_app_for_bootstrap` — empty DB, no pre-keeper, real
-  `bootstrap_account` flow. The success suite asserts on observable
-  state (account exists, lock flipped, audit row emitted, response
-  shape) rather than `on_bootstrap` callback invocation so it stays
-  cross-impl friendly when cross-process testing wires it against a
-  spawned non-TS backend.
+  adversarial denial paths via 403 ALREADY_BOOTSTRAPPED). The success
+  path runs end-to-end in the cross-backend harness, which bootstraps
+  every backend it spawns through the real `POST /bootstrap`.
 - **`{mode: 'surface_only'}`** — route present in the surface,
   permanent 403. For attack-surface tests asserting on the
   disabled-but-present wire shape without exercising the FS path.
 - **`{mode: 'disabled'}`** (or omission) — no route mounted, no
   surface entry. The "no bootstrap configured" deployment state.
-
-For tests that exercise the bootstrap flow directly (without going
-through the suite bundle), reach for `create_test_app_for_bootstrap`
-from `@fuzdev/fuz_app/testing/app_server.ts` — it builds the same
-pre-bootstrap test app the success suite uses.
 
 Coverage of `bootstrap_account` at the function level (with mocked FS
 deps) lives in fuz_app's own
@@ -587,6 +576,12 @@ const res = await test_app.app.request('/api/my-endpoint', {
 Test the middleware stack against header injection attacks (Host spoofing,
 X-Forwarded-For manipulation, Origin bypass attempts). Uses stub middleware
 that mirrors the production stack.
+
+Importing `testing/adversarial_headers.ts` mocks `api_token_queries`,
+`account_queries`, and `role_grant_queries` (a hoisted module-level `vi.mock`)
+for the whole test file, so keep the suite in its own file — elsewhere in the
+same file the bearer-path queries return `undefined` and any other export of
+those modules throws on access.
 
 ```typescript
 // src/test/server/auth_adversarial_headers.test.ts
@@ -904,7 +899,6 @@ assert_error_coverage(collector, route_specs, {
 - `describe_standard_attack_surface_tests` (`testing/attack_surface.ts`) — 5-group attack surface suite (snapshot, structure, adversarial)
 - `describe_standard_integration_tests` (`testing/integration.ts`) — 10-group auth integration suite
 - `describe_standard_admin_integration_tests` (`testing/admin_integration.ts`) — 7-group admin integration suite
-- `describe_standard_tests` (`testing/standard.ts`) — Combined integration + admin suite (convenience wrapper)
 - `describe_rate_limiting_tests` (`testing/rate_limiting.ts`) — 2-group rate limiting suite (IP, per-account)
 - `describe_round_trip_validation` (`testing/round_trip.ts`) — Schema-driven positive-path validation for all routes; a 401 to a non-public route fails unless its body names a handler's own reason (`{error: 'invalid_credentials'}`), and a non-`GET` route called as the authed account runs on a fresh account
 - `describe_sse_route_tests` (`testing/sse_round_trip.ts`) — SSE validation — connect, payload schema, close-on-revoke

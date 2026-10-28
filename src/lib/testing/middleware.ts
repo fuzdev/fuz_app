@@ -7,6 +7,11 @@ import './assert_dev_env.ts';
  * a generic test runner that iterates case tables, and a reusable
  * middleware stack factory for integration testing.
  *
+ * Importing this module — directly, or through `testing/adversarial_headers.ts`
+ * — mocks the query modules bearer auth reads (`api_token_queries`,
+ * `account_queries`, `role_grant_queries`) for the whole importing file:
+ * `vi.mock` is hoisted.
+ *
  * @module
  */
 
@@ -134,7 +139,7 @@ const STUB_DEPS: QueryDeps = { db: {} as any };
  * @returns mocks bundle with spy references
  * @mutates module-level `vi.mock` registrations for `api_token_queries`,
  *   `account_queries`, and `role_grant_queries` — each call resets and re-binds
- *   the four spies, so cases run in sequence without bleeding state.
+ *   every spy in the bundle, so cases run in sequence without bleeding state.
  */
 export const create_bearer_auth_mocks = (tc: BearerAuthTestOptions): BearerAuthMocks => {
 	const mock_validate = vi.mocked(query_validate_api_token);
@@ -393,7 +398,7 @@ export interface TestMiddlewareStackApp {
  * The echo route at `TEST_MIDDLEWARE_PATH` returns `{ok, client_ip, has_context}`.
  *
  * @returns the app and mock spies (reconfigure via `mockImplementation` for valid-token paths)
- * @mutates module-level `vi.mock` registrations for the four bearer-auth query
+ * @mutates module-level `vi.mock` registrations for the bearer-auth query
  *   modules — each call resets the spies before wiring the stack.
  * @throws Error when `allowed_origins` is not a valid allowlist
  */

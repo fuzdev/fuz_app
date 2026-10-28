@@ -792,7 +792,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 
 			/** Event types excluded with justification. */
 			const EXCLUDED_EVENT_TYPES: ReadonlySet<AuditEventType> = new Set([
-				'bootstrap', // requires filesystem token — tested in bootstrap_account.db.test.ts
+				'bootstrap', // requires filesystem token — tested in rate_limiter.bootstrap.db.test.ts
 				// The remaining `role_grant_offer_*` events fire only via terminal
 				// transitions (decline, retract) or downstream effects (supersede on
 				// accept of a sibling, or as a fan-out of `role_grant_revoke`). Direct

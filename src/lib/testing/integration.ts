@@ -184,9 +184,8 @@ export const describe_standard_integration_tests = (
 			// (when the consumer wires signup) + the shared RPC endpoint.
 			// Bootstrap (when the consumer wires it via the top-level `bootstrap`
 			// option in `mode: 'live'`) is intentionally excluded — this suite has
-			// no describe block that drives bootstrap; the dedicated
-			// `describe_bootstrap_success_tests` suite picks it up via
-			// `create_test_app_for_bootstrap`. Consumer-specific
+			// no describe block that drives bootstrap; the cross-backend harness
+			// drives the real `POST /bootstrap`. Consumer-specific
 			// routes would dilute the ratio; admin-role routes are scoped to
 			// the admin suite instead.
 			const auth_routes = route_specs.filter(is_suite_auth_route);

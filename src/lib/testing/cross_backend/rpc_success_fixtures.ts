@@ -14,8 +14,8 @@ import '../assert_dev_env.ts';
  * Spine-generic: the fixtures use only standard RPC actions and the builtin
  * `ROLE_ADMIN`, so any consumer mounting `create_standard_rpc_actions` can
  * pass the map to `describe_standard_cross_process_tests` (as
- * `rpc_success_fixtures`), `describe_standard_tests`, or
- * `describe_rpc_round_trip_tests` (as `success_fixtures`). Each fixture mints
+ * `rpc_success_fixtures`) or `describe_rpc_round_trip_tests` (as
+ * `success_fixtures`). Each fixture mints
  * its own accounts and calls as one of them, so none touches or calls as the
  * suite's shared identities.
  *

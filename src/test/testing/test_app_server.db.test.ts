@@ -15,7 +15,6 @@ import { create_health_route_spec } from '#lib/http/common_routes.ts';
 import { create_app_server } from '#lib/server/app_server.ts';
 import {
 	create_test_app,
-	create_test_app_for_bootstrap,
 	create_test_app_server,
 	create_loopback_app_server_options
 } from '#lib/testing/app_server.ts';
@@ -125,23 +124,6 @@ test('create_test_app forwards top-level rpc_endpoints to create_app_server', as
 		// the assembled server rides along, its lifted fields the same objects
 		assert.strictEqual(test_app.server.app, test_app.app);
 		assert.strictEqual(test_app.server.surface_spec, test_app.surface_spec);
-	} finally {
-		await test_app.cleanup();
-	}
-});
-
-test('create_test_app_for_bootstrap exposes the assembled server', async () => {
-	const test_app = await create_test_app_for_bootstrap({
-		session_options,
-		db,
-		create_route_specs: () => [],
-		bootstrap: { mode: 'live', token_path: '/nonexistent/bootstrap_token' },
-		bootstrap_token: 'bootstrap-token-bootstrap-token-0123'
-	});
-	try {
-		assert.strictEqual(test_app.server.app, test_app.app);
-		assert.strictEqual(test_app.server.surface_spec, test_app.surface_spec);
-		assert.isTrue(test_app.server.bootstrap_status.available);
 	} finally {
 		await test_app.cleanup();
 	}

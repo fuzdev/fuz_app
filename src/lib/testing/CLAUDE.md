@@ -159,7 +159,7 @@ fully assembled Hono app + the backend + helpers.
 Key module-scope values:
 
 - `stub_password_deps` — `PasswordHashDeps` hashing via `stub_hash_${password}` and verifying by equality. Deterministic, no Argon2 cost — use for every test not specifically exercising password hashing.
-- `create_loopback_app_server_options()` — the loopback `create_app_server` options an in-process test server takes (`localhost` origins, the loopback proxy trusted, an empty env schema), fresh per call; `create_test_app` and `create_test_app_for_bootstrap` spread it under their own defaults (`rate_limiters: 'disabled_for_testing'`, `await_pending_effects: true`).
+- `create_loopback_app_server_options()` — the loopback `create_app_server` options an in-process test server takes (`localhost` origins, the loopback proxy trusted, an empty env schema), fresh per call; `create_test_app` spreads it under its own defaults (`rate_limiters: 'disabled_for_testing'`, `await_pending_effects: true`).
 - `TEST_COOKIE_SECRET` — 64-hex-char deterministic cookie secret. Produces a valid `Keyring` via `create_keyring`. Never used in production — the stub guard plus fixed value is the contract.
 - `fallback_db_factory` — module-level auth-only default factory (`create_default_db_factory`) `create_test_app_server` uses when no `db` is passed, reusing its driver's WASM cache. When `migration_namespaces` is supplied, a memoized sibling factory (keyed by namespace set) migrating `[AUTH_MIGRATION_NS, ...migration_namespaces]` is used instead — same shared WASM, extra tables.
 
@@ -172,10 +172,6 @@ cookie" flow, split by intent:
 Both take `{db, keyring, session_options, password, username?, password_value?, roles?}`
 (shared `CreateTestAccountWithCredentialsOptions` / `BootstrapTestKeeperOptions`).
 
-For exercising the bootstrap success path end-to-end against an empty DB (no
-pre-keeper, lock unflipped), use `create_test_app_for_bootstrap` — pair with
-`describe_bootstrap_success_tests` for the consumer-runnable suite.
-
 Types:
 
 - `TestAppServer extends AppBackend` — adds `account`, `actor`, `api_token`, `session_cookie`, `keyring`, `cleanup()`.
@@ -183,8 +179,6 @@ Types:
 - `CreateTestAppOptions extends TestAppServerOptions` — adds `create_route_specs` (required), `rpc_endpoints?: RpcEndpointsSuiteOption` (top-level only — single source of truth, symmetric with the suite-level option), `bootstrap?: BootstrapServerOptions` (top-level only — same precedent as `rpc_endpoints`), and `app_options?: SuiteAppOptions` (`Partial<AppServerOptions>` excluding the five fields the helper manages: `backend`, `session_options`, `create_route_specs`, `rpc_endpoints`, `bootstrap`).
 - `TestAccount` — `{account, actor, session_cookie, api_token, create_session_headers, create_bearer_headers}`.
 - `TestApp` — `{app, backend, server, surface_spec, surface, route_specs, create_session_headers, create_bearer_headers, create_daemon_token_headers, create_account, cleanup}`. `server` is the assembled `AppServer`, for what `create_app_server` built beyond the lifted fields — `require_audit_sse(test_app.server)` with `audit_log_sse` in `app_options`, `test_app.server.ws_endpoints[path]` — instead of capturing them from a `create_route_specs` closure.
-- `CreateTestAppForBootstrapOptions` — `{session_options, create_route_specs, rpc_endpoints?, bootstrap: BootstrapLiveOptions, bootstrap_token, app_options?, db?, db_type?, password?, audit_factory?}`. `bootstrap` is required + narrowed to `live` mode (the helper exists for the success-path test).
-- `TestAppForBootstrap` — `{app, backend, server, surface_spec, surface, route_specs, create_request_headers, cleanup}`. No keeper credentials (test drives bootstrap itself).
 
 `create_test_app` hard-codes the test-friendly `AppServerOptions`:
 `allowed_origins: [/^http:\/\/localhost/]`, stub proxy pinned to `127.0.0.1`,
@@ -195,14 +189,12 @@ banner prints once per module instance — once per test file in an isolated
 vitest project, once per run under `isolate: false`, ../../../docs/usage.md §Rate limiters), static daemon token state (no rotation, keeper already set),
 **`await_pending_effects: true`** (fire-and-forget effects complete before
 the response returns so tests can assert on side effects inline), and silent
-logger. Override via `app_options`. `create_test_app_for_bootstrap` disables
-the limiters the same way. `cleanup()` is the assembled server's idempotent
+logger. Override via `app_options`. `cleanup()` is the assembled server's idempotent
 `close` — it also closes the server's live connections, disposes the
 limiters it built, and removes the audit listeners and closer members it
 added.
 
-`auth_cleanup` is left at its default, **off**, here and in
-`create_test_app_for_bootstrap`: a background pass would delete rows and
+`auth_cleanup` is left at its default, **off**, here: a background pass would delete rows and
 write audit rows mid-test. A suite that opts in through `app_options` has the
 schedule stopped by `cleanup()`, which is the assembled server's `close`.
 
@@ -557,8 +549,15 @@ schema. No DB needed.
 
 ### `adversarial_headers.ts` — header injection suite
 
+**Importing it mocks query modules for the whole test file.** It imports
+`middleware.ts`, whose hoisted `vi.mock` replaces `api_token_queries`,
+`account_queries`, and `role_grant_queries` with mocks in the importing
+file — the bearer-path queries become `vi.fn()` stubs returning `undefined`,
+and any other export of those modules throws on access. Keep the suite in its
+own test file.
+
 `describe_standard_adversarial_headers(suite_name, options, allowed_origin, extra_cases?)`
-— 7 standard cases:
+— the standard cases:
 
 1. bearer + rogue Origin → 403 `ERROR_FORBIDDEN_ORIGIN`
 2. bearer + allowed Origin → bearer silently discarded (browser context)
@@ -574,10 +573,11 @@ validation. Extra cases append to the standard list.
 
 ## Middleware stack — `middleware.ts`
 
-Module-level `vi.mock()` for the four query modules bearer auth touches:
+Module-level `vi.mock()` for the query modules bearer auth touches:
 `api_token_queries`, `account_queries`, `role_grant_queries`. Because
 `vi.mock()` is hoisted, these run before any imports resolve — so any test
-file that imports from `middleware.ts` gets these mocks globally. Pair with
+file that imports from `middleware.ts`, directly or through
+`adversarial_headers.ts`, gets these mocks globally. Pair with
 `vi.restoreAllMocks()` in `afterEach` when mixing into `.db.test.ts` files.
 
 - `BearerAuthTestOptions`, `BearerAuthTestCase` — test-case table shape for the bearer auth runner.
@@ -906,60 +906,6 @@ Bootstrap audit logging is excluded because `create_test_app` doesn't
 provide the filesystem token state; covered separately in
 `bootstrap_account.db.test.ts`.
 
-### `standard.ts` — `describe_standard_tests`
-
-Bundles every DB-backed suite carrying the standard option shape, each
-gated on its relevant config — silent-skip when the gate isn't met:
-
-- `integration` — always
-- `admin` — `roles` provided
-- `audit_completeness` — `roles` provided (proxy for consumer admin wiring; `rpc_endpoints` is bundle-required)
-- `bootstrap_success` — `bootstrap.mode === 'live'`
-- `round_trip` — always
-- `rpc_round_trip` — `rpc_endpoints` provided
-- `data_exposure` — always
-- `rate_limiting` — always (owns its own per-test setup, bypasses the fixture protocol — needs `create_route_specs` directly)
-
-Realization that lifted the bundle from 2 suites to 8: fold-in cost between
-suites is zero because each `describe_*` block owns its own setup via the
-`{setup_test, surface_source, capabilities}` protocol, so suites whose
-tests need opposite-shaped default DB state (e.g. the bootstrap-success
-suite needs an empty DB while the integration suite needs the
-pre-bootstrapped keeper) coexist in one bundle without cost. Each test
-invokes the right per-test fixture. Consumers wiring the standard surface
-call once instead of seven times; forgetting a suite no longer silently
-loses coverage.
-
-`rpc_success_fixtures`, `rpc_skip_methods` and `rpc_input_overrides`
-forward to the RPC round-trip's `success_fixtures`, `skip_methods` and
-`input_overrides` (same options on `describe_standard_cross_process_tests`;
-`describe_spine_cross_suites` also forwards `rpc_input_overrides` to
-`rpc_adversarial`) — `rpc_skip_methods` is the consumer escape hatch for a
-method the generic round-trip can't drive in its test wiring.
-
-`StandardTestOptions` requires `create_route_specs` (for rate_limiting) and
-`rpc_endpoints` (for admin/audit_completeness/rpc_round_trip); the admin
-suite's requirement is enforced at the type level so a missing
-`rpc_endpoints` is a compile error rather than a runtime throw. Optional
-`bootstrap` (top-level, same precedent as `rpc_endpoints`) feeds both the
-disabled/surface_only/live wire-shape gating and the bootstrap-success
-suite gate.
-
-Attack surface suites stay separate — their option shape is
-`{build, snapshot_path, expected_public_routes, ...}` rather than the
-shared `{setup_test, surface_source, capabilities}`. A peer
-`describe_standard_surface_tests` bundler lives for that side if/when
-needed.
-
-Cross-process counterpart: `cross_backend/standard.ts` —
-`describe_standard_cross_process_tests`. Different bundle because three of
-the eight in-process suites don't survive a process boundary
-(`rate_limiting` needs a fresh per-test `TestApp`, `audit_completeness`
-reads FK structure, `bootstrap_success` is one-shot per backend lifecycle);
-the cross-process bundle documents the omissions once upstream so
-per-consumer files don't repeat the bookkeeping. See the Cross-backend
-integration layer §`cross_backend/standard.ts` below.
-
 ## RPC helpers
 
 ### `rpc_helpers.ts` — envelope construction + response assertions
@@ -1207,8 +1153,7 @@ file; the dual-spawn and limiter-enabled suites name their own files.
 
 ### `cross_backend/standard.ts` — `describe_standard_cross_process_tests`
 
-Cross-process counterpart to `describe_standard_tests`. Wires the
-cross-process-safe subset in one call:
+Wires the standard suites that run against a spawned backend in one call:
 
 - `integration` — always
 - `admin` — `roles` provided
@@ -1216,22 +1161,25 @@ cross-process-safe subset in one call:
 - `rpc_round_trip` — always
 - `data_exposure` — always
 
-Three suites from the in-process bundle are omitted by design:
-`rate_limiting` (needs a fresh per-test `TestApp` for tight rate-limiter
-overrides; the spawned binary has no restart-per-test budget),
-`audit_completeness` (reads FK structure that only the in-process backend
-exposes; wire-level audit observability lives in the consumer's own audit
-`.cross.test.ts`), `bootstrap_success` (bootstrap is one-shot per backend
-lifecycle, already consumed by the consumer's `globalSetup`). The omission
-rationale lives in the module doc once instead of repeating in each
-consumer's `*.cross.test.ts`.
+Two in-process suites are omitted by design: `rate_limiting` (needs a fresh
+per-test `TestApp` for tight rate-limiter overrides; the spawned binary has no
+restart-per-test budget) and `audit_completeness` (reads FK structure that only
+the in-process backend exposes; wire-level audit observability lives in the
+consumer's own audit `.cross.test.ts`). The omission rationale lives in the
+module doc once instead of repeating in each consumer's `*.cross.test.ts`.
+
+`rpc_success_fixtures`, `rpc_skip_methods` and `rpc_input_overrides`
+forward to the RPC round-trip's `success_fixtures`, `skip_methods` and
+`input_overrides` (`describe_spine_cross_suites` also forwards
+`rpc_input_overrides` to `rpc_adversarial`) — `rpc_skip_methods` is the
+consumer escape hatch for a method the generic round-trip can't drive in its
+test wiring.
 
 Hard-codes the cross-process-safe set with no `skip` knob; if a future
 consumer needs partial opt-out, add the knob then.
-`StandardCrossProcessTestOptions` is shape-aligned with
-`StandardTestOptions` minus the in-process-only knobs (`create_route_specs`,
-`bootstrap`, `rate_limiting_app_options`, `bootstrap_token`) — those drive
-the omitted suites.
+`StandardCrossProcessTestOptions` is the in-process suites' shared options
+minus their in-process-only knobs (`create_route_specs`,
+`rate_limiting_app_options`).
 
 ### `cross_backend/spine_suites.ts` — `describe_spine_cross_suites`
 
@@ -1587,8 +1535,7 @@ Real-upgrade WebSocket coverage of a spawned backend — the cross-process
 counterpart to the in-process `ws_round_trip.ts` harness, kept a separate
 call (not folded into `describe_standard_cross_process_tests`) because it
 needs raw `base_url` / `ws_path` the standard bundle doesn't carry, mirroring
-how `describe_ws_round_trip_tests` sits beside `describe_standard_tests`
-in-process. `describe_cross_process_ws_tests({setup_test, capabilities,
+how `describe_ws_round_trip_tests` sits beside the in-process suites. `describe_cross_process_ws_tests({setup_test, capabilities,
 base_url, ws_path, origin?, rpc_path?, max_message_bytes?, logout_path?,
 password_path?, max_tokens?, ws_account_roles?})` opens a live
 `WebSocket` via `create_ws_transport` (the `ws` npm package) and asserts

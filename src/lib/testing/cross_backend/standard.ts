@@ -1,13 +1,11 @@
 import '../assert_dev_env.ts';
 
 /**
- * Cross-process counterpart to `describe_standard_tests`.
- *
- * Wires the cross-process-safe subset of the standard bundle — the five
- * suites whose option shape is `{setup_test, surface_source, capabilities, ...}`
+ * One call wiring the standard suites that run against a spawned backend —
+ * the ones whose option shape is `{setup_test, surface_source, capabilities, ...}`
  * and whose bodies fire requests through `fixture.transport` rather than
  * touching the in-process `Backend`. Consumers wire one call against a
- * spawned binary instead of repeating the five sibling calls per file.
+ * spawned binary instead of repeating the sibling calls per file.
  *
  * **Suites included** — always run:
  *
@@ -21,7 +19,7 @@ import '../assert_dev_env.ts';
  *
  * - `describe_standard_admin_integration_tests`
  *
- * **Suites omitted** — the three that don't survive a process boundary,
+ * **Suites omitted** — the ones that don't survive a process boundary,
  * documented here so per-consumer files don't have to repeat the
  * bookkeeping:
  *
@@ -33,9 +31,6 @@ import '../assert_dev_env.ts';
  *   introspection that only the in-process backend exposes. Wire-level
  *   audit observability lives in the consumer's own audit `.cross.test.ts`
  *   driving `audit_log_list` / `audit_log_role_grant_history`.
- * - `describe_bootstrap_success_tests` — bootstrap is one-shot per
- *   backend lifecycle, and the consumer's `globalSetup` already consumed
- *   it before the suite file loads. Re-running would 409.
  *
  * @module
  */
@@ -55,9 +50,8 @@ import type { SetupTest, TestFixture } from './setup.ts';
 /**
  * Configuration for `describe_standard_cross_process_tests`.
  *
- * Mirrors `StandardTestOptions` minus the in-process-only knobs
- * (`create_route_specs`, `bootstrap`, `rate_limiting_app_options`,
- * `bootstrap_token`) — those drive the three omitted suites.
+ * The in-process suites' shared options minus their in-process-only knobs
+ * (`create_route_specs`, `rate_limiting_app_options`).
  */
 export interface StandardCrossProcessTestOptions {
 	/** Per-test fixture-producing function. */

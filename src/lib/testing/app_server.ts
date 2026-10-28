@@ -48,8 +48,7 @@ import {
 	create_app_server,
 	type AppServer,
 	type AppServerOptions,
-	type BootstrapServerOptions,
-	type BootstrapLiveOptions
+	type BootstrapServerOptions
 } from '../server/app_server.ts';
 import type { AppServerContext } from '../server/app_server_context.ts';
 import type { AppSurface, AppSurfaceSpec } from '../http/surface.ts';
@@ -263,8 +262,8 @@ export const mint_test_session = async (
  * Bootstrap the test-DB keeper. Direct-query shortcut for the default
  * `create_test_app` path — bootstrap is not what most tests exercise, so
  * we skip the real `bootstrap_account` flow (no audit row, no
- * `on_bootstrap` callback). Tests that need the full success-path flow
- * use `create_test_app_for_bootstrap` instead.
+ * `on_bootstrap` callback); the cross-backend harness drives the real
+ * `POST /bootstrap` against every backend it spawns.
  *
  * Flips `bootstrap_lock.bootstrapped = true` so the post-insert DB state
  * matches a real bootstrap completion — production code can trust the
@@ -360,18 +359,17 @@ const test_log = new Logger('test', { level: 'off' });
 
 /**
  * Filesystem stubs for `AppDeps.{read_secure_file, delete_file}` in
- * test backends. The default secure read throws (no token file exists — the
- * Rust in-memory store's shape); `create_test_app_for_bootstrap` passes
- * token-aware stubs that resolve against the configured token_path. Stub
- * callbacks skip the real runtimes' permission checks by design — those are
- * pinned by `src/test/runtime/secure_file.test.ts` against real files.
+ * test backends. The secure read throws (no token file exists — the Rust
+ * in-memory store's shape). Stub callbacks skip the real runtimes'
+ * permission checks by design — those are pinned by
+ * `src/test/runtime/secure_file.test.ts` against real files.
  */
 interface TestFsStubs {
 	read_secure_file: (path: string) => Promise<Uint8Array>;
 	delete_file: (path: string) => Promise<void>;
 }
 
-const default_test_fs_stubs: TestFsStubs = {
+const test_fs_stubs: TestFsStubs = {
 	read_secure_file: async (path) => {
 		throw new Error(`ENOENT: no such file or directory: ${path}`);
 	},
@@ -385,21 +383,15 @@ interface BuildTestBackendOptions {
 	audit_factory?: AuditFactory;
 	/** Extra migration namespaces for the auto-created database; rejected when `db` is supplied. */
 	migration_namespaces?: ReadonlyArray<MigrationNamespace>;
-	/** Override the default no-op fs stubs (token-aware fs for bootstrap success tests). */
-	fs_stubs?: TestFsStubs;
 }
 
 /**
- * Shared backend-assembly path for `create_test_app_server` and
- * `create_test_app_for_bootstrap`. Returns the raw `AppBackend` + the
- * keyring used to sign session cookies; callers wrap with their own
- * concerns (keeper pre-creation vs. pre-bootstrap state).
+ * Backend-assembly path for `create_test_app_server`. Returns the raw
+ * `AppBackend` + the keyring used to sign session cookies.
  *
  * Resets `app_settings` singleton row for caller-supplied DBs so prior
  * tests don't leak `open_signup`. Does NOT reset `bootstrap_lock` —
- * callers own that policy (`create_test_app_server` lets
- * `bootstrap_test_keeper` flip it; `create_test_app_for_bootstrap`
- * resets it to false before this runs).
+ * `create_test_app_server` lets `bootstrap_test_keeper` flip it.
  */
 const _build_test_backend = async (
 	options: BuildTestBackendOptions
@@ -409,7 +401,6 @@ const _build_test_backend = async (
 		db_type = 'pglet-memory',
 		password = stub_password_deps,
 		audit_factory = default_audit_factory,
-		fs_stubs = default_test_fs_stubs,
 		migration_namespaces
 	} = options;
 
@@ -462,7 +453,7 @@ const _build_test_backend = async (
 			log: test_log,
 			audit: audit_factory({ db, log: test_log }),
 			connection_closer: create_realtime_closer(),
-			...fs_stubs
+			...test_fs_stubs
 		}
 	};
 	return { backend, keyring: keyring_result.keyring };
@@ -541,10 +532,6 @@ export interface CreateTestAppOptions extends TestAppServerOptions {
 	 * field under `app_options` is `Omit`'d. Discriminated union over
 	 * `{mode: 'disabled' | 'surface_only' | 'live'}`. Omit (or pass
 	 * `{mode: 'disabled'}`) for the default — no bootstrap route mounted.
-	 *
-	 * For tests that exercise the bootstrap success path against a real
-	 * token + empty DB, use `create_test_app_for_bootstrap` instead — it
-	 * skips the keeper pre-creation that blocks the success branch.
 	 */
 	bootstrap?: BootstrapServerOptions;
 	/**
@@ -776,146 +763,6 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 		create_account,
 		// the server's `close`, not the backend's: it also stops an auth cleanup
 		// schedule a suite opted into
-		cleanup: () => result.close()
-	};
-};
-
-/**
- * Configuration for `create_test_app_for_bootstrap`. Like
- * `CreateTestAppOptions` but the keeper-related fields drop (no
- * pre-bootstrap keeper) and `bootstrap` is required + narrowed to
- * `live` mode (the helper exists specifically to drive the success
- * path).
- */
-export interface CreateTestAppForBootstrapOptions {
-	session_options: SessionOptions<string>;
-	create_route_specs: (context: AppServerContext) => Array<RouteSpec>;
-	rpc_endpoints?: RpcEndpointsSuiteOption;
-	app_options?: SuiteAppOptions;
-	/** Live bootstrap config — the test drives `POST /bootstrap` against this. */
-	bootstrap: BootstrapLiveOptions;
-	/**
-	 * Token contents the stub fs returns when reading `bootstrap.token_path`.
-	 * The test posts a body containing this same value as `token` to satisfy
-	 * the timing-safe equality check inside `bootstrap_account`. At least
-	 * `BOOTSTRAP_TOKEN_MIN_BYTES` long, or the read refuses it as a missing
-	 * file.
-	 */
-	bootstrap_token: string;
-	db?: Db;
-	db_type?: DbType;
-	password?: PasswordHashDeps;
-	audit_factory?: AuditFactory;
-}
-
-/**
- * A fully assembled test app in the pre-bootstrap state — empty DB,
- * `bootstrap_lock.bootstrapped = false`, no keeper account. Test drives
- * `POST /bootstrap` itself.
- */
-export interface TestAppForBootstrap {
-	app: Hono;
-	backend: AppBackend;
-	/** The assembled `AppServer`, as on `TestApp` — `bootstrap_status`, `audit_sse`, the `ws_endpoints` transports. */
-	server: AppServer;
-	surface_spec: AppSurfaceSpec;
-	surface: AppSurface;
-	route_specs: Array<RouteSpec>;
-	/** Build host/origin request headers for the anonymous bootstrap POST. */
-	create_request_headers: (extra?: Record<string, string>) => Record<string, string>;
-	/** Cleanup resources — `AppServer.close`, as on `TestApp`; the backend's own `close` leaves the injected or factory-cached database open. Idempotent. */
-	cleanup: () => Promise<void>;
-}
-
-/**
- * Create a test app in the pre-bootstrap state for exercising the
- * bootstrap success path end-to-end.
- *
- * Skips the keeper pre-creation `create_test_app` does by default —
- * `bootstrap_lock.bootstrapped` stays at `false` and the DB has no
- * accounts. The fs stubs return `options.bootstrap_token` when the
- * bootstrap handler reads `bootstrap.token_path`, so a `POST /bootstrap`
- * with `{token: bootstrap_token, username, password}` reaches the
- * success branch. Rate limiters are disabled the way `create_test_app`
- * disables them — a limiter in `app_options` wins.
- *
- * Pair with `describe_bootstrap_success_tests` for the consumer-runnable
- * suite that drives the full happy path + adjacent assertions on
- * observable state (account exists, audit row emitted, on_bootstrap
- * callback fired).
- *
- * @param options - bootstrap config + factory inputs
- * @returns a `TestAppForBootstrap` ready for the test to drive bootstrap
- */
-export const create_test_app_for_bootstrap = async (
-	options: CreateTestAppForBootstrapOptions
-): Promise<TestAppForBootstrap> => {
-	const { session_options, bootstrap, bootstrap_token } = options;
-
-	// Caller-supplied DB may carry lock state from a prior test — reset to false
-	// before `_build_test_backend` runs (which doesn't touch the lock itself).
-	// A fresh database already starts at false (factory init).
-	if (options.db) {
-		await options.db.query(
-			'UPDATE bootstrap_lock SET bootstrapped = false WHERE bootstrapped = true'
-		);
-	}
-
-	// Token-aware fs stubs: the bootstrap route's secure read resolves against
-	// the configured token_path (both the boot-time availability probe and the
-	// request-time read go through it); a deleted or unknown path throws like
-	// the real runtimes' ENOENT.
-	let token_file_deleted = false;
-	const fs_stubs: TestFsStubs = {
-		read_secure_file: async (path: string) => {
-			if (path === bootstrap.token_path && !token_file_deleted) {
-				return new TextEncoder().encode(bootstrap_token);
-			}
-			throw new Error(`ENOENT: no such file or directory: ${path}`);
-		},
-		delete_file: async (path: string) => {
-			if (path === bootstrap.token_path) token_file_deleted = true;
-		}
-	};
-
-	const { backend } = await _build_test_backend({ ...options, fs_stubs });
-
-	// No keeper account exists pre-bootstrap, so no daemon token can authenticate
-	// — a placeholder, passed so the daemon-token middleware mounts as it does
-	// under `create_test_app` and the two surfaces match.
-	const daemon_token_state: DaemonTokenState = {
-		current_token: generate_daemon_token(),
-		previous_token: null,
-		rotated_at: new Date(),
-		keeper_account_id: null
-	};
-
-	const result = await create_app_server({
-		...test_app_options(),
-		backend,
-		session_options,
-		daemon_token_state,
-		rpc_endpoints: options.rpc_endpoints,
-		bootstrap,
-		...options.app_options,
-		create_route_specs: options.create_route_specs
-	});
-
-	const create_request_headers = (extra?: Record<string, string>): Record<string, string> => ({
-		host: 'localhost',
-		origin: 'http://localhost:5173',
-		...extra
-	});
-
-	return {
-		app: result.app,
-		backend,
-		server: result,
-		surface_spec: result.surface_spec,
-		surface: result.surface_spec.surface,
-		route_specs: result.surface_spec.route_specs,
-		create_request_headers,
-		// `AppServer.close`, so an opted-in auth cleanup schedule stops too
 		cleanup: () => result.close()
 	};
 };

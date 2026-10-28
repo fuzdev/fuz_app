@@ -6,6 +6,14 @@ import './assert_dev_env.ts';
  * Provides standard header injection test cases and a convenience wrapper
  * for exercising middleware stacks with adversarial headers.
  *
+ * **Importing this module mocks query modules for the whole test file.** It
+ * imports `testing/middleware.ts`, whose hoisted module-level `vi.mock` replaces
+ * `api_token_queries`, `account_queries`, and `role_grant_queries` with
+ * mocks in every file that imports it: the bearer-path queries become
+ * `vi.fn()` stubs returning `undefined`, and any other export of those
+ * modules throws on access — keep `describe_standard_adversarial_headers` in
+ * its own test file.
+ *
  * @module
  */
 

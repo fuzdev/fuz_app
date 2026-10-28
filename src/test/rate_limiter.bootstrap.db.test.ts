@@ -3,7 +3,8 @@
  *
  * Uses a real in-memory database so `bootstrap_account` runs fully.
  * Focuses on verifying that the bootstrap handler correctly integrates
- * with the RateLimiter.
+ * with the RateLimiter, plus the handler's validation, callback, and
+ * success-audit behaviour.
  *
  * @module
  */
@@ -23,6 +24,8 @@ import { run_migrations } from '#lib/db/migrate.ts';
 import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
 import { create_default_db_factory } from '#lib/testing/db.ts';
 import { create_test_audit_emitter } from '#lib/testing/stubs.ts';
+import { create_audit_emitter, type AuditEmitter } from '#lib/auth/audit_emitter.ts';
+import type { Db } from '#lib/db/db.ts';
 import {
 	ERROR_RATE_LIMIT_EXCEEDED,
 	ERROR_ALREADY_BOOTSTRAPPED,
@@ -61,6 +64,7 @@ const session_options = create_session_config('test_session');
 
 interface BootstrapTestApp {
 	app: Hono;
+	db: Db;
 	bootstrap_status: { available: boolean; token_path: string | null };
 	read_secure_file: ReturnType<typeof vi.fn>;
 }
@@ -88,6 +92,8 @@ const create_bootstrap_app = async (
 	extra?: {
 		on_bootstrap?: (result: any, c: any) => Promise<void>;
 		delete_file?: (path: string) => Promise<void>;
+		/** Build the audit emitter over the test db. Default a no-op emitter. */
+		create_audit?: (db: Db) => AuditEmitter;
 	}
 ): Promise<BootstrapTestApp> => {
 	const db = await bootstrap_factory.create();
@@ -105,7 +111,7 @@ const create_bootstrap_app = async (
 			},
 			read_secure_file,
 			delete_file: extra?.delete_file ?? vi.fn(() => Promise.resolve(undefined)),
-			audit: create_test_audit_emitter(),
+			audit: extra?.create_audit?.(db) ?? create_test_audit_emitter(),
 			connection_closer: create_realtime_closer()
 		},
 		{
@@ -125,7 +131,7 @@ const create_bootstrap_app = async (
 	app.use('*', test_proxy_middleware);
 	apply_route_specs(app, route_specs, fuz_auth_guard_resolver, log, db);
 
-	return { app, bootstrap_status, read_secure_file };
+	return { app, db, bootstrap_status, read_secure_file };
 };
 
 const bootstrap_request = (
@@ -452,6 +458,46 @@ describe('username validation', () => {
 			})
 		});
 		assert.strictEqual(res.status, 400);
+	});
+});
+
+describe('bootstrap success audit', () => {
+	test('a successful bootstrap writes one success audit row for the new account', async () => {
+		const read_secure_file = vi
+			.fn()
+			.mockResolvedValue(new TextEncoder().encode('test_token_test_token_test_token_32'));
+		let audit: AuditEmitter | undefined;
+		const { app, db } = await create_bootstrap_app(null, read_secure_file, {
+			create_audit: (audit_db) =>
+				(audit = create_audit_emitter({ db: audit_db, log, track_inflight: true }))
+		});
+
+		const res = await bootstrap_request(app);
+		assert.strictEqual(res.status, 200);
+		const body = BootstrapOutput.parse(await res.json());
+		assert.strictEqual(body.ok, true);
+		assert.strictEqual(body.account.username, 'admin');
+
+		assert.ok(audit);
+		await audit.drain_inflight();
+		const rows = await db.query<{
+			event_type: string;
+			outcome: string;
+			actor_id: string | null;
+			account_id: string | null;
+			ip: string | null;
+			metadata: unknown;
+		}>(
+			"SELECT event_type, outcome, actor_id, account_id, ip, metadata FROM audit_log WHERE event_type = 'bootstrap'"
+		);
+		assert.strictEqual(rows.length, 1);
+		const [row] = rows;
+		assert.ok(row);
+		assert.strictEqual(row.outcome, 'success');
+		assert.strictEqual(row.account_id, body.account.id);
+		assert.strictEqual(row.actor_id, body.actor.id);
+		assert.strictEqual(row.ip, TEST_CONNECTION_IP);
+		assert.strictEqual(row.metadata, null);
 	});
 });
 
