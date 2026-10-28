@@ -43,11 +43,7 @@ import '../assert_dev_env.ts';
 import { describe, assert, test } from 'vitest';
 
 import { ERROR_FORBIDDEN_ORIGIN, ERROR_PAYLOAD_TOO_LARGE } from '../../http/error_schemas.ts';
-import {
-	raw_http_exchange,
-	raw_http_parse_response,
-	RAW_HTTP_READ_TIMEOUT_MS
-} from '../transports/raw_http.ts';
+import { raw_http_send_head } from '../transports/raw_http.ts';
 import { test_if } from './capabilities.ts';
 import type { CapabilityGatedCrossSuiteOptions } from './setup.ts';
 import { SPINE_BODY_LIMIT_DEFAULT_BYTES } from './spine_surface_constants.ts';
@@ -153,20 +149,11 @@ export const describe_origin_scope_cross_tests = (options: OriginScopeCrossTestO
 				text = await res.text();
 			} else {
 				// the head alone, declaring the length: the 413 must not wait on a body byte
-				const url = new URL(base_url);
-				const request =
-					`POST ${UNROUTED_PATH} HTTP/1.1\r\n` +
-					`host: ${url.host}\r\n` +
-					`origin: ${FOREIGN_ORIGIN}\r\n` +
-					`content-type: application/json\r\n` +
-					`content-length: ${over}\r\n` +
-					`\r\n`;
-				const { received } = await raw_http_exchange(base_url, request, {
-					read_timeout_ms: RAW_HTTP_READ_TIMEOUT_MS,
-					until: 'response'
+				const response = await raw_http_send_head(base_url, {
+					path: UNROUTED_PATH,
+					headers: { origin: FOREIGN_ORIGIN, 'content-type': 'application/json' },
+					content_length: over
 				});
-				const response = raw_http_parse_response(received);
-				assert.ok(response, `no whole response; received: ${received.slice(0, 200)}`);
 				status = response.status;
 				text = response.body;
 			}

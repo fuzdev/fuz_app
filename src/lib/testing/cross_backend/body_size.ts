@@ -53,17 +53,18 @@ import '../assert_dev_env.ts';
  * uploading then has its write fail (`EPIPE`) and can lose the 413 the server
  * did send, so a whole over-cap body sent through `fetch` reads its answer
  * only some of the time. Given a `base_url`, the suite speaks to the socket
- * directly (`raw_http_exchange`) and holds back what the refusal doesn't need:
+ * directly and holds back what the refusal doesn't need:
  *
- * - a **declared** over-cap length is sent as the request head alone —
- *   `Content-Length` one over the cap and not one body byte. The 413 must
- *   arrive within `RAW_HTTP_READ_TIMEOUT_MS`, which also pins that the refusal is
- *   made on the header: a backend that reads the body before refusing, or has
- *   no cap, waits for bytes that never come and fails the case.
+ * - a **declared** over-cap length is sent as the request head alone
+ *   (`raw_http_send_head`) — `Content-Length` one over the cap and not one
+ *   body byte. The 413 must arrive within `RAW_HTTP_READ_TIMEOUT_MS`, which
+ *   also pins that the refusal is made on the header: a backend that reads
+ *   the body before refusing, or has no cap, waits for bytes that never come
+ *   and fails the case.
  * - the **chunked** body is sent up to one byte past the cap and never
- *   terminated. The server has read every byte sent by the time it has counted
- *   past the cap, so nothing is left unread, and the 413 must arrive without
- *   the body's end.
+ *   terminated (`raw_http_exchange`). The server has read every byte sent by
+ *   the time it has counted past the cap, so nothing is left unread, and the
+ *   413 must arrive without the body's end.
  *
  * With `base_url: null` there is no socket and no such race (the in-process
  * `app.request`), so the same cases send whole bodies through the fixture's
@@ -92,6 +93,7 @@ import {
 	raw_http_header_lines,
 	raw_http_parse_json,
 	raw_http_parse_response,
+	raw_http_send_head,
 	RAW_HTTP_READ_TIMEOUT_MS,
 	type RawHttpResponse
 } from '../transports/raw_http.ts';
@@ -251,20 +253,16 @@ export const describe_body_size_cross_tests = (options: BodySizeCrossTestOptions
 				})
 			);
 		}
-		const url = new URL(base_url);
-		return exchange_withholding(
-			base_url,
-			`POST ${rpc_path} HTTP/1.1\r\n` +
-				raw_http_header_lines({
-					host: url.host,
-					origin: url.origin,
-					...headers,
-					'content-type': 'application/json',
-					'content-length': String(content_length)
-				}) +
-				`\r\n`,
-			'the declared body'
-		);
+		const response = await raw_http_send_head(base_url, {
+			path: rpc_path,
+			headers: {
+				origin: new URL(base_url).origin,
+				...headers,
+				'content-type': 'application/json'
+			},
+			content_length
+		});
+		return { status: response.status, body: raw_http_parse_json(response.body) };
 	};
 
 	/**

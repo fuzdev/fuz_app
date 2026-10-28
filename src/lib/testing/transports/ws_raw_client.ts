@@ -26,6 +26,20 @@ export const RAW_WS_OPCODE_TEXT = 0x1;
 /** RFC 6455 opcode of a close frame. */
 export const RAW_WS_OPCODE_CLOSE = 0x8;
 
+/**
+ * The headers that make a request a WebSocket upgrade, for a probe of what a
+ * server answers an upgrade request with — a refusal at its origin, auth or
+ * role gate — sent through any HTTP client. The key is RFC 6455's sample
+ * nonce: any 16-byte base64 value has the shape the handshake requires, and a
+ * refused upgrade never reaches the key's check.
+ */
+export const RAW_WS_UPGRADE_HEADERS: Readonly<Record<string, string>> = {
+	connection: 'Upgrade',
+	upgrade: 'websocket',
+	'sec-websocket-version': '13',
+	'sec-websocket-key': 'dGhlIHNhbXBsZSBub25jZQ=='
+};
+
 /** One frame the server sent. */
 export interface RawWsFrame {
 	opcode: number;

@@ -115,6 +115,111 @@ export const raw_http_exchange = (
 		socket.on('close', () => finish(true));
 	});
 
+/** Lowercased names of the headers `raw_http_send_head` writes itself. */
+const SEND_HEAD_WRITTEN_HEADERS: ReadonlyArray<string> = ['host', 'content-length'];
+
+/** One head-only request for `raw_http_send_head`: where it goes and what it declares. */
+export interface RawHttpHeadRequest {
+	/**
+	 * The request method.
+	 *
+	 * @default 'POST'
+	 */
+	readonly method?: string;
+	/** Request path, e.g. `/api/rpc`. */
+	readonly path: string;
+	/**
+	 * Request headers beyond `Host` and `Content-Length`, which the helper
+	 * writes — naming either here, in any casing, throws. Nothing else is
+	 * defaulted — no `Origin`, no credential — so a request carries exactly
+	 * what the caller names.
+	 */
+	readonly headers: Readonly<Record<string, string>>;
+	/** The `Content-Length` to declare; no body byte is sent. */
+	readonly content_length: number;
+	/**
+	 * How long to wait for the response.
+	 *
+	 * @default RAW_HTTP_READ_TIMEOUT_MS
+	 */
+	readonly read_timeout_ms?: number;
+}
+
+/**
+ * Send a request head declaring `content_length` body bytes and none of them,
+ * then read the one response the server must answer with — the probe for a
+ * request the server refuses on its declared length (an over-cap body's `413`).
+ *
+ * Sending the body instead races the refusal: a server that answers from the
+ * head and closes with the upload unread can fail the client's write
+ * (`EPIPE`) and lose the response it did send, while one that keeps the
+ * connection until the declared body arrives never closes at all. So nothing
+ * the server will leave unread is sent, and the read stops at the first whole
+ * response rather than at the close.
+ *
+ * Withholding the body also pins *where* the refusal is made. A server that
+ * reads the body before refusing waits for bytes that never arrive and fails
+ * the probe on its read timeout; one that carries no cap on the route does the
+ * same, or answers whatever the head alone decides. That makes this the wrong
+ * tool for a request whose verdict needs body bytes — an under-cap body, an
+ * empty one, a chunked upload.
+ *
+ * @param base_url - the server's base URL; only its host and port are used
+ * @param request - the method, path, headers and declared length to send
+ * @returns the parsed response; its `body` is the raw text
+ * @throws Error when `request.headers` names `Host` or `Content-Length`, or
+ * when no whole response arrives — the server closed first, or waited for the
+ * body it should have refused without
+ */
+export const raw_http_send_head = async (
+	base_url: string,
+	request: RawHttpHeadRequest
+): Promise<RawHttpResponse> => {
+	const {
+		method = 'POST',
+		path,
+		headers,
+		content_length,
+		read_timeout_ms = RAW_HTTP_READ_TIMEOUT_MS
+	} = request;
+	// a caller-named `Host` or `Content-Length` would replace the helper's line,
+	// be dropped under it, or go out beside it as a second one, so the request
+	// would no longer be the one the caller describes
+	const collision = Object.keys(headers).find((name) =>
+		SEND_HEAD_WRITTEN_HEADERS.includes(name.toLowerCase())
+	);
+	if (collision !== undefined) {
+		throw new Error(
+			`raw_http_send_head writes Host and Content-Length itself; drop '${collision}' from ` +
+				'`headers` and declare the length through `content_length`'
+		);
+	}
+	const header_lines = raw_http_header_lines({
+		Host: new URL(base_url).host,
+		...headers,
+		'Content-Length': String(content_length)
+	});
+	const { received, closed_by_server } = await raw_http_exchange(
+		base_url,
+		`${method} ${path} HTTP/1.1\r\n${header_lines}\r\n`,
+		{ read_timeout_ms, until: 'response' }
+	);
+	const response = raw_http_parse_response(received);
+	if (!response) {
+		throw new Error(
+			`expected a whole response to ${method} ${path} with the declared body withheld; ` +
+				(closed_by_server
+					? received
+						? 'the server closed the connection first'
+						: 'connection refused or closed before any response'
+					: `none arrived within ${read_timeout_ms}ms — the server is waiting for a body ` +
+						'it should refuse without') +
+				`. Received: ${received ? received.slice(0, 120) : 'nothing'}`
+		);
+	}
+	return response;
+};
+
 /**
  * Render request headers as raw HTTP/1.1 header lines, each ending in CRLF.
  *
