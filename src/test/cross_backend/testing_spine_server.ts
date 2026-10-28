@@ -112,7 +112,7 @@ const HEALTH_PATH = '/health';
 
 /**
  * The WS endpoint's inbound message cap — passed to both the endpoint spec and
- * the adapter's preparation, so Node's `ws` frame cap matches it.
+ * the adapter's preparation, so Node's `ws` frame cap is set from it.
  */
 const WS_MAX_MESSAGE_BYTES = DEFAULT_WS_MAX_MESSAGE_BYTES;
 

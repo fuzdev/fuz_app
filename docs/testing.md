@@ -1461,10 +1461,11 @@ build_app: async ({prepare_websocket}) => {
 ```
 
 Pass the endpoint's `max_message_bytes` (omitted, both default to
-`DEFAULT_WS_MAX_MESSAGE_BYTES`) so Node's `ws` frame cap matches it and
-Bun's sits at twice it (Bun drops a socket past its cap without a close
-frame, so the headroom leaves a message just over the limit to the
-per-message check's 1009); Deno's upgrade takes no frame cap. On
+`DEFAULT_WS_MAX_MESSAGE_BYTES`) so Node's `ws` frame cap and Bun's sit
+at twice it (past its cap Node's `ws` closes 1009 with no reason and Bun
+drops the socket without a close frame, so the headroom leaves a message
+just over the limit to the per-message check's 1009 and its reason);
+Deno's upgrade takes no frame cap. On
 shutdown the core stops accepting connections, runs `close` (which must end
 live WebSockets, as `AppServer.close` does), then awaits the drain. The Bun teardown handles
 Bun's never-resolving `server.stop()` by fire-and-forgetting it; the shared

@@ -30,7 +30,6 @@ import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 import {
 	MAX_PRE_ADMISSION_FRAMES,
 	register_action_ws,
-	WS_CLOSE_PRE_ADMISSION_OVERFLOW_REASON,
 	type SocketCloseContext,
 	type SocketOpenContext
 } from '#lib/actions/register_action_ws.ts';
@@ -38,11 +37,15 @@ import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import { BackendWebsocketTransport } from '#lib/actions/transports_ws_backend.ts';
 import {
 	WS_CLOSE_CONNECTION_LIMIT,
+	WS_CLOSE_CONNECTION_LIMIT_REASON,
 	WS_CLOSE_INTERNAL_ERROR,
+	WS_CLOSE_INTERNAL_ERROR_REASON,
 	WS_CLOSE_MESSAGE_TOO_BIG,
+	WS_CLOSE_MESSAGE_TOO_BIG_REASON,
 	WS_CLOSE_PERMISSION_REVOKED,
 	WS_CLOSE_PERMISSION_REVOKED_REASON,
 	WS_CLOSE_POLICY_VIOLATION,
+	WS_CLOSE_PRE_ADMISSION_OVERFLOW_REASON,
 	WS_CLOSE_SESSION_REVOKED,
 	WS_CLOSE_SESSION_REVOKED_REASON
 } from '#lib/actions/transports.ts';
@@ -525,7 +528,7 @@ describe_db('register_action_ws admission', (get_db) => {
 			await queued;
 
 			assert.deepStrictEqual(socket.fake.closes, [
-				{ code: WS_CLOSE_INTERNAL_ERROR, reason: 'internal error' }
+				{ code: WS_CLOSE_INTERNAL_ERROR, reason: WS_CLOSE_INTERNAL_ERROR_REASON }
 			]);
 			assert.deepStrictEqual(socket.fake.sends, []);
 			assert.deepStrictEqual(endpoint.handled, []);
@@ -766,7 +769,7 @@ describe_db('register_action_ws admission', (get_db) => {
 			await socket.opening;
 
 			assert.deepStrictEqual(first.fake.closes, [
-				{ code: WS_CLOSE_CONNECTION_LIMIT, reason: 'connection limit' }
+				{ code: WS_CLOSE_CONNECTION_LIMIT, reason: WS_CLOSE_CONNECTION_LIMIT_REASON }
 			]);
 			assert.deepStrictEqual(socket.fake.closes, []);
 			assert.strictEqual(endpoint.transport.get_connection_count(), 1);
@@ -920,7 +923,7 @@ describe_db('register_action_ws admission', (get_db) => {
 			await socket.send(echo_request(1, 'x'.repeat(100)));
 
 			assert.deepStrictEqual(socket.fake.closes, [
-				{ code: WS_CLOSE_MESSAGE_TOO_BIG, reason: 'message too big' }
+				{ code: WS_CLOSE_MESSAGE_TOO_BIG, reason: WS_CLOSE_MESSAGE_TOO_BIG_REASON }
 			]);
 			assert.strictEqual(endpoint.transport.get_pending_connection_count(), 0);
 			stalled.release();
@@ -1055,7 +1058,7 @@ describe_db('register_action_ws admission', (get_db) => {
 			await socket.opening;
 
 			assert.deepStrictEqual(socket.fake.closes, [
-				{ code: WS_CLOSE_INTERNAL_ERROR, reason: 'internal error' }
+				{ code: WS_CLOSE_INTERNAL_ERROR, reason: WS_CLOSE_INTERNAL_ERROR_REASON }
 			]);
 			assert.strictEqual(endpoint.transport.get_connection_count(), 0);
 		});

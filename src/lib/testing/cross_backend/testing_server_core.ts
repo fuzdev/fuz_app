@@ -60,11 +60,10 @@ export interface PrepareWebsocketOptions {
 	/**
 	 * Largest inbound WebSocket message, in bytes — pass the largest
 	 * `WsEndpointSpec.max_message_bytes` of the mounted endpoints; a smaller
-	 * value refuses messages the endpoint would accept. Node's `ws` server takes
-	 * it as its frame cap (`maxPayload`), so an oversized message is refused
-	 * before it is buffered whole. Bun takes twice it as its frame cap
-	 * (`maxPayloadLength`): past its cap Bun drops the socket without a close
-	 * frame, so the headroom leaves a message just over the limit to the
+	 * value refuses messages the endpoint would accept. Node and Bun take twice
+	 * it as their frame cap (`ws`'s `maxPayload`, Bun's `maxPayloadLength`):
+	 * past its cap `ws` closes with no reason and Bun drops the socket without a
+	 * close frame, so the headroom leaves a message just over the limit to the
 	 * per-message check `register_action_ws` makes, while a grossly oversized
 	 * one is still refused before it is buffered whole. Deno ignores it — its
 	 * upgrade takes no frame cap — leaving that per-message check alone. Every

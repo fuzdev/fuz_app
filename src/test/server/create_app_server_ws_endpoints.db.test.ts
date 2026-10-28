@@ -72,7 +72,11 @@ import {
 	BackendWebsocketTransport,
 	DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT
 } from '#lib/actions/transports_ws_backend.ts';
-import { WS_CLOSE_CONNECTION_LIMIT, WS_CLOSE_SESSION_REVOKED } from '#lib/actions/transports.ts';
+import {
+	WS_CLOSE_CONNECTION_LIMIT,
+	WS_CLOSE_CONNECTION_LIMIT_REASON,
+	WS_CLOSE_SESSION_REVOKED
+} from '#lib/actions/transports.ts';
 import type { AuditLogEvent } from '#lib/auth/audit_log_schema.ts';
 import type { WsEndpointSpec } from '#lib/actions/ws_endpoint_spec.ts';
 import type { Action, RpcAction } from '#lib/actions/action_types.ts';
@@ -446,7 +450,7 @@ describe('create_app_server.ws_endpoints', () => {
 		capped.add_connection(first.ws, 'session_hash_a', account_id);
 		capped.add_connection(second.ws, 'session_hash_a', account_id);
 		assert.deepStrictEqual(first.closes, [
-			{ code: WS_CLOSE_CONNECTION_LIMIT, reason: 'connection limit' }
+			{ code: WS_CLOSE_CONNECTION_LIMIT, reason: WS_CLOSE_CONNECTION_LIMIT_REASON }
 		]);
 		assert.deepStrictEqual(second.closes, []);
 

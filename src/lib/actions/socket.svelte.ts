@@ -37,6 +37,7 @@ import { JSONRPC_VERSION, type JsonrpcErrorCode, type JsonrpcRequestId } from '.
 import { JSONRPC_ERROR_CODES, ThrownJsonrpcError, jsonrpc_errors } from '../http/jsonrpc_errors.ts';
 import {
 	WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT,
+	WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT_REASON,
 	WS_CLOSE_CONNECTION_LIMIT,
 	WS_CLOSE_PERMISSION_REVOKED,
 	WS_CLOSE_SESSION_REVOKED
@@ -815,7 +816,7 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 				}`
 			);
 			try {
-				this.ws.close(WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT, 'client heartbeat timeout');
+				this.ws.close(WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT, WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT_REASON);
 			} catch (error) {
 				this.#log?.error('[socket] heartbeat timeout close failed:', error);
 			}

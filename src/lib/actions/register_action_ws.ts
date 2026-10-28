@@ -191,15 +191,21 @@ import type { RealtimeCloser } from './connection_closer.ts';
 import { cancel_action_spec, CancelNotificationParams } from './cancel.ts';
 import {
 	DEFAULT_WS_MAX_MESSAGE_BYTES,
+	WS_CLOSE_CONNECTION_UNREGISTERED_REASON,
 	WS_CLOSE_GOING_AWAY,
 	WS_CLOSE_INTERNAL_ERROR,
+	WS_CLOSE_INTERNAL_ERROR_REASON,
 	WS_CLOSE_MESSAGE_TOO_BIG,
+	WS_CLOSE_MESSAGE_TOO_BIG_REASON,
 	WS_CLOSE_PERMISSION_REVOKED,
 	WS_CLOSE_PERMISSION_REVOKED_REASON,
 	WS_CLOSE_POLICY_VIOLATION,
+	WS_CLOSE_PRE_ADMISSION_OVERFLOW_REASON,
 	WS_CLOSE_CREDENTIAL_EXPIRED_REASON,
 	WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT,
+	WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT_REASON,
 	WS_CLOSE_SESSION_REVOKED,
+	WS_CLOSE_SOCKET_OPEN_FAILED_REASON,
 	WS_CLOSE_SESSION_REVOKED_REASON,
 	utf8_length,
 	utf8_length_over
@@ -247,12 +253,6 @@ export const MAX_PRE_ADMISSION_FRAMES = 256;
  * fail, and the client reconnects.
  */
 export const PRE_ADMISSION_QUEUE_BYTES_FACTOR = 4;
-
-/**
- * The close reason sent with `WS_CLOSE_POLICY_VIOLATION` when a socket
- * overflows its pre-admission queue, by count or by bytes.
- */
-export const WS_CLOSE_PRE_ADMISSION_OVERFLOW_REASON = 'too much sent before the socket opened';
 
 /**
  * Max requests one socket may have dispatching at once. A request that
@@ -507,8 +507,13 @@ export interface RegisterActionWsOptions {
 	 * parsed — there's no per-message error reply, matching the Rust spine.
 	 * The cap is checked after the runtime adapter has buffered the message,
 	 * so it bounds dispatch work, not memory; bound the adapter's own frame
-	 * limit too (e.g. `ws`'s `maxPayload`) where memory matters. A consumer
-	 * that raises it passes the same value to the client's
+	 * limit too (e.g. `ws`'s `maxPayload`) where memory matters, set above this
+	 * cap — twice it, as the cross-backend test adapters do. A message past the
+	 * frame limit is refused by the adapter without
+	 * `WS_CLOSE_MESSAGE_TOO_BIG_REASON` (`ws` closes with the code and an empty
+	 * reason, Bun drops the socket), so a frame limit equal to this cap loses
+	 * the reason a message just over it gets. A consumer that raises it passes
+	 * the same value to the client's
 	 * `FrontendWebsocketTransportOptions.max_message_bytes`.
 	 *
 	 * @default DEFAULT_WS_MAX_MESSAGE_BYTES
@@ -982,7 +987,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 						} else {
 							log.error('ws upgrade admission: credential, actor, or role re-check failed', error);
 						}
-						refuse_upgrade(ws, WS_CLOSE_INTERNAL_ERROR, 'internal error');
+						refuse_upgrade(ws, WS_CLOSE_INTERNAL_ERROR, WS_CLOSE_INTERNAL_ERROR_REASON);
 						return null;
 					}
 					switch (recheck) {
@@ -1075,7 +1080,11 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 								identity.account_id
 							);
 							stop_heartbeat_timer();
-							end_socket(ws, WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT, 'server heartbeat timeout');
+							end_socket(
+								ws,
+								WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT,
+								WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT_REASON
+							);
 						}
 					}, heartbeat_tick_interval);
 				}
@@ -1098,7 +1107,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 							null,
 							jsonrpc_error_messages.internal_error()
 						);
-						end_socket(ws, WS_CLOSE_INTERNAL_ERROR, 'socket bootstrap failed');
+						end_socket(ws, WS_CLOSE_INTERNAL_ERROR, WS_CLOSE_SOCKET_OPEN_FAILED_REASON);
 						return;
 					}
 				}
@@ -1363,7 +1372,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 						await open_socket(ws);
 					} catch (error) {
 						log.error('ws open failed — closing socket:', error);
-						refuse_upgrade(ws, WS_CLOSE_INTERNAL_ERROR, 'internal error');
+						refuse_upgrade(ws, WS_CLOSE_INTERNAL_ERROR, WS_CLOSE_INTERNAL_ERROR_REASON);
 					}
 				},
 				onMessage: (event, ws): void | Promise<void> => {
@@ -1375,7 +1384,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 						log.warn(
 							`closing socket: ${size}-byte message exceeds the ${max_message_bytes}-byte cap`
 						);
-						end_socket(ws, WS_CLOSE_MESSAGE_TOO_BIG, 'message too big');
+						end_socket(ws, WS_CLOSE_MESSAGE_TOO_BIG, WS_CLOSE_MESSAGE_TOO_BIG_REASON);
 						return;
 					}
 					if (phase_is('opening')) {
@@ -1408,7 +1417,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 					const connection_id = captured_connection_id;
 					if (connection_id === undefined || !transport.is_registered(connection_id)) {
 						log.warn('closing socket: its connection is no longer registered', connection_id);
-						end_socket(ws, WS_CLOSE_INTERNAL_ERROR, 'connection unregistered');
+						end_socket(ws, WS_CLOSE_INTERNAL_ERROR, WS_CLOSE_CONNECTION_UNREGISTERED_REASON);
 						return;
 					}
 					// only a frame that is accepted counts as activity

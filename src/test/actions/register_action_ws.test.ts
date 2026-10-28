@@ -29,7 +29,6 @@ import {
 	PRE_ADMISSION_QUEUE_BYTES_FACTOR,
 	register_action_ws,
 	WS_INBOUND_DISPATCH_OVERFLOW_MESSAGE,
-	WS_CLOSE_PRE_ADMISSION_OVERFLOW_REASON,
 	type SocketCloseContext,
 	type SocketOpenContext
 } from '#lib/actions/register_action_ws.ts';
@@ -42,10 +41,14 @@ import {
 import {
 	DEFAULT_WS_MAX_MESSAGE_BYTES,
 	WS_CLOSE_CONNECTION_LIMIT,
+	WS_CLOSE_CONNECTION_LIMIT_REASON,
+	WS_CLOSE_CONNECTION_UNREGISTERED_REASON,
 	WS_CLOSE_INTERNAL_ERROR,
 	WS_CLOSE_MESSAGE_TOO_BIG,
 	WS_CLOSE_POLICY_VIOLATION,
+	WS_CLOSE_PRE_ADMISSION_OVERFLOW_REASON,
 	WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT,
+	WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT_REASON,
 	WS_CLOSE_SESSION_REVOKED
 } from '#lib/actions/transports.ts';
 import { type CredentialType } from '#lib/hono_context.ts';
@@ -936,7 +939,7 @@ describe('register_action_ws max_connections_per_account', () => {
 		assert.deepStrictEqual(first.fake.closes, []);
 		const second = await open_socket(stub);
 		assert.deepStrictEqual(first.fake.closes, [
-			{ code: WS_CLOSE_CONNECTION_LIMIT, reason: 'connection limit' }
+			{ code: WS_CLOSE_CONNECTION_LIMIT, reason: WS_CLOSE_CONNECTION_LIMIT_REASON }
 		]);
 		assert.deepStrictEqual(second.fake.closes, []);
 		assert.strictEqual(transport.get_connection_count(), 1);
@@ -1006,7 +1009,7 @@ describe('register_action_ws max_connections_per_account', () => {
 		const third = await harness.connect({ account_id });
 		assert.ok(await first.wait_for_close());
 		assert.strictEqual(first.close_code, WS_CLOSE_CONNECTION_LIMIT);
-		assert.strictEqual(first.close_reason, 'connection limit');
+		assert.strictEqual(first.close_reason, WS_CLOSE_CONNECTION_LIMIT_REASON);
 		await assert_rejects(() => first.send({ jsonrpc: '2.0', id: 1, method: 'echo' }));
 
 		for (const client of [second, third, other]) {
@@ -1062,7 +1065,7 @@ describe('register_action_ws max_connections_per_account', () => {
 			sockets.push(await open_socket(stub));
 		}
 		assert.deepStrictEqual(sockets[0]!.fake.closes, [
-			{ code: WS_CLOSE_CONNECTION_LIMIT, reason: 'connection limit' }
+			{ code: WS_CLOSE_CONNECTION_LIMIT, reason: WS_CLOSE_CONNECTION_LIMIT_REASON }
 		]);
 		assert.ok(sockets.slice(1).every((s) => s.fake.closes.length === 0));
 		assert.strictEqual(transport.get_connection_count(), DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT);
@@ -1688,7 +1691,7 @@ describe('register_action_ws a server-closed socket dispatches nothing', () => {
 		assert.strictEqual(runs(), 0);
 		assert.deepStrictEqual(h.fake.sends, []);
 		assert.deepStrictEqual(h.fake.closes, [
-			{ code: WS_CLOSE_INTERNAL_ERROR, reason: 'connection unregistered' }
+			{ code: WS_CLOSE_INTERNAL_ERROR, reason: WS_CLOSE_CONNECTION_UNREGISTERED_REASON }
 		]);
 		assert.strictEqual(captured.open.signal.aborted, true);
 
@@ -1955,7 +1958,7 @@ describe('register_action_ws server heartbeat', () => {
 
 		assert.strictEqual(h.fake.closes.length, 1);
 		assert.strictEqual(h.fake.closes[0]!.code, WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT);
-		assert.strictEqual(h.fake.closes[0]!.reason, 'server heartbeat timeout');
+		assert.strictEqual(h.fake.closes[0]!.reason, WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT_REASON);
 	});
 
 	test('incoming message resets the receive-silence window', async () => {

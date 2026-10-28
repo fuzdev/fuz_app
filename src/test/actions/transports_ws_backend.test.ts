@@ -20,6 +20,7 @@ import {
 } from '#lib/actions/transports_ws_backend.ts';
 import {
 	WS_CLOSE_CONNECTION_LIMIT,
+	WS_CLOSE_CONNECTION_LIMIT_REASON,
 	WS_CLOSE_GOING_AWAY,
 	WS_CLOSE_GOING_AWAY_REASON,
 	WS_CLOSE_PERMISSION_REVOKED,
@@ -335,7 +336,10 @@ describe('BackendWebsocketTransport.remove_connection', () => {
 });
 
 describe('BackendWebsocketTransport per-account connection cap', () => {
-	const CONNECTION_LIMIT_CLOSE = { code: WS_CLOSE_CONNECTION_LIMIT, reason: 'connection limit' };
+	const CONNECTION_LIMIT_CLOSE = {
+		code: WS_CLOSE_CONNECTION_LIMIT,
+		reason: WS_CLOSE_CONNECTION_LIMIT_REASON
+	};
 
 	test('past the default cap the oldest connection closes with 4004', () => {
 		assert.strictEqual(DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT, 50);
@@ -893,7 +897,10 @@ describe('BackendWebsocketTransport.send_to_account', () => {
 
 describe('BackendWebsocketTransport two-phase registration', () => {
 	const REVOKED_CLOSE = { code: WS_CLOSE_SESSION_REVOKED, reason: WS_CLOSE_SESSION_REVOKED_REASON };
-	const CONNECTION_LIMIT_CLOSE = { code: WS_CLOSE_CONNECTION_LIMIT, reason: 'connection limit' };
+	const CONNECTION_LIMIT_CLOSE = {
+		code: WS_CLOSE_CONNECTION_LIMIT,
+		reason: WS_CLOSE_CONNECTION_LIMIT_REASON
+	};
 
 	const notification: JsonrpcNotification = {
 		jsonrpc: '2.0',

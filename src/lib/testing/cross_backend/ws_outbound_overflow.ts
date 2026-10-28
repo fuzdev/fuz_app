@@ -8,8 +8,8 @@ import '../assert_dev_env.ts';
  * (`BackendWebsocketTransport`'s `outbound_queue_bytes` on the TS side, the
  * Rust `fuz_realtime` outbound queue on the other; both default to 4 MiB, each
  * waiting frame charged its UTF-8 length plus 64 bytes). A frame that does not
- * fit closes the socket with `WS_CLOSE_OUTBOUND_OVERFLOW` and the reason
- * `outbound queue overflow`; the credential stays good, so a client reconnects
+ * fit closes the socket with `WS_CLOSE_OUTBOUND_OVERFLOW` and
+ * `WS_CLOSE_OUTBOUND_OVERFLOW_REASON`; the credential stays good, so a client reconnects
  * under its ordinary backoff. The code and the reason are therefore wire
  * contract, and this suite is the pin that runs on both.
  *
@@ -62,6 +62,10 @@ import '../assert_dev_env.ts';
 import { assert, describe } from 'vitest';
 
 import { create_jsonrpc_request } from '../../http/jsonrpc_helpers.ts';
+import {
+	WS_CLOSE_OUTBOUND_OVERFLOW,
+	WS_CLOSE_OUTBOUND_OVERFLOW_REASON
+} from '../../actions/transports.ts';
 import { create_admitted_ws_transport } from '../transports/ws_transport.ts';
 import {
 	is_notification,
@@ -74,11 +78,6 @@ import { type BackendCapabilities, test_if } from './capabilities.ts';
 import { cross_rpc_call } from './cross_rpc.ts';
 import type { SetupTest, TestFixture } from './setup.ts';
 import { open_session_ws, type WsEndpointTarget } from './ws_endpoint.ts';
-
-/** The close code both spines send on an outbound overflow. */
-const WS_CLOSE_OUTBOUND_OVERFLOW = 4005;
-/** The close reason both spines send with it. */
-const OUTBOUND_OVERFLOW_REASON = 'outbound queue overflow';
 
 const FLOOD_METHOD = '_testing_flood_notifications';
 const FLOOD_NOTIFICATION_METHOD = '_testing_flood';
@@ -283,7 +282,7 @@ export const describe_ws_outbound_overflow_cross_tests = (
 					const closed = await client.wait_for_close(CLOSE_TIMEOUT_MS);
 					assert.ok(closed, 'the flooded socket did not close');
 					assert.strictEqual(client.close_code, WS_CLOSE_OUTBOUND_OVERFLOW);
-					assert.strictEqual(client.close_reason, OUTBOUND_OVERFLOW_REASON);
+					assert.strictEqual(client.close_reason, WS_CLOSE_OUTBOUND_OVERFLOW_REASON);
 
 					// the response of the request whose handler overflowed is not sent
 					assert.strictEqual(

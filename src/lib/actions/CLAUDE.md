@@ -358,15 +358,15 @@ raw `request()` keeps its default-on queue.
 ### WS close codes (`actions/transports.ts`)
 
 - `WS_CLOSE_SESSION_REVOKED = 4001` — server revoked auth (reason `WS_CLOSE_SESSION_REVOKED_REASON`, `Session revoked`); client enters permanent `revoked` state, no reconnect. Also the close for an upgrade refused at admission because its credential was revoked, or its acting actor soft-deleted, mid-upgrade — indistinguishable on the wire by design — and for a socket whose credential expired while open, with reason `WS_CLOSE_CREDENTIAL_EXPIRED_REASON` (`Credential expired`), which the client treats as the same `revoked` state.
-- `WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT = 4002` — client observed receive-silence past its receive timeout (`resolve_heartbeat_receive_timeout`).
-- `WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT = 4003` — server observed receive-silence past `DEFAULT_SERVER_HEARTBEAT_TIMEOUT` (60s).
-- `WS_CLOSE_CONNECTION_LIMIT = 4004` — server closed this socket to admit a newer one on the same account, past the per-account connection cap (reason `connection limit`). Not a revocation: the client stays `closed` with `superseded` set and no reconnect, until `connect()` is called. Twin of the Rust spine's constant.
+- `WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT = 4002` — client observed receive-silence past its receive timeout (`resolve_heartbeat_receive_timeout`), with reason `WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT_REASON` (`client heartbeat timeout`). TS-only reason: the client is the same against either spine.
+- `WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT = 4003` — server observed receive-silence past `DEFAULT_SERVER_HEARTBEAT_TIMEOUT` (60s), with reason `WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT_REASON` (`server heartbeat timeout`). Twin of the Rust spine's constants.
+- `WS_CLOSE_CONNECTION_LIMIT = 4004` — server closed this socket to admit a newer one on the same account, past the per-account connection cap (reason `WS_CLOSE_CONNECTION_LIMIT_REASON`, `connection limit`). Not a revocation: the client stays `closed` with `superseded` set and no reconnect, until `connect()` is called. Twin of the Rust spine's constant.
 - `WS_CLOSE_OUTBOUND_OVERFLOW = 4005` — the server had more waiting to be written to this socket than its outbound budget holds (reason `WS_CLOSE_OUTBOUND_OVERFLOW_REASON`, `outbound queue overflow`); what was waiting is dropped. Not a revocation, and nothing took the connection's place: the client reconnects under its ordinary backoff. Twin of the Rust spine's constant.
 - `WS_CLOSE_PERMISSION_REVOKED = 4006` — the socket's account lost a role its endpoint's `required_roles` lists: a revoked global grant (reason `WS_CLOSE_PERMISSION_REVOKED_REASON`, `Permission revoked`), mid-life or at admission. Nothing is sent after it. Not a revocation of the credential: the client stays `closed` until `connect()` is called, without setting `revoked` or `superseded`, and rejects pending and queued requests `forbidden`. Twin of the Rust spine's constant.
 - `WS_CLOSE_GOING_AWAY = 1001` — the server is shutting down (reason `WS_CLOSE_GOING_AWAY_REASON`, `Server shutting down`): `close_all_sockets`, which `AppServer.close` runs. Also the close for an upgrade the shutdown refuses — pending at the close-all, or born closed after it. Not a revocation: the client reconnects under its ordinary backoff.
-- `WS_CLOSE_MESSAGE_TOO_BIG = 1009` — server received a message over its `max_message_bytes` cap (RFC 6455 "Message Too Big").
-- `WS_CLOSE_POLICY_VIOLATION = 1008` — a socket sent too much while it was still opening (before admission and `on_socket_open` completed): past `MAX_PRE_ADMISSION_FRAMES` frames or the `PRE_ADMISSION_QUEUE_BYTES_FACTOR` byte budget. TS-only: the Rust spine reads no frame before admission (they wait in the socket for its loop), so it has no pre-admission queue to overflow and never sends 1008.
-- `WS_CLOSE_INTERNAL_ERROR = 1011` — the admission credential re-check itself failed (reason `internal error`), `on_socket_open` threw (reason `socket bootstrap failed`), or the socket's connection was removed from the transport without a close (reason `connection unregistered`). Not a revocation: the client reconnects under its ordinary backoff. Twin of the Rust spine's constant.
+- `WS_CLOSE_MESSAGE_TOO_BIG = 1009` — server received a message over its `max_message_bytes` cap (RFC 6455 "Message Too Big"), with reason `WS_CLOSE_MESSAGE_TOO_BIG_REASON` (`message too big`). Twin of the Rust spine's constants.
+- `WS_CLOSE_POLICY_VIOLATION = 1008` — a socket sent too much while it was still opening (before admission and `on_socket_open` completed): past `MAX_PRE_ADMISSION_FRAMES` frames or the `PRE_ADMISSION_QUEUE_BYTES_FACTOR` byte budget (reason `WS_CLOSE_PRE_ADMISSION_OVERFLOW_REASON`). TS-only: the Rust spine reads no frame before admission (they wait in the socket for its loop), so it has no pre-admission queue to overflow and never sends 1008.
+- `WS_CLOSE_INTERNAL_ERROR = 1011` — the admission credential re-check itself failed or opening the socket threw (reason `WS_CLOSE_INTERNAL_ERROR_REASON`, `internal error` — shared with the Rust spine), `on_socket_open` threw (`WS_CLOSE_SOCKET_OPEN_FAILED_REASON`, `socket bootstrap failed`), or the socket's connection was removed from the transport without a close (`WS_CLOSE_CONNECTION_UNREGISTERED_REASON`, `connection unregistered`) — the last two TS-only. Not a revocation: the client reconnects under its ordinary backoff. Twin of the Rust spine's constant.
 
 ### Transport modules
 
@@ -917,7 +917,7 @@ admission.
 error reply. A connection the transport no longer holds though nothing closed
 its socket (a bare `transport.remove_connection`; `transport.is_registered` is
 the twin of the Rust `is_registered`) is ended on its next frame with
-`WS_CLOSE_INTERNAL_ERROR` (`connection unregistered`), so it can't linger as a
+`WS_CLOSE_INTERNAL_ERROR` (`WS_CLOSE_CONNECTION_UNREGISTERED_REASON`), so it can't linger as a
 socket that reads everything, answers nothing, and — being chatty — is never
 reaped by the heartbeat. Only a frame that is queued or dispatched counts as
 heartbeat activity.
@@ -970,7 +970,7 @@ held by the cross-backend WS suite.)
 **Lifecycle hooks.** `on_socket_open({ws, connection_id, identity, notify, signal})`
 fires once the connection is admitted and before the first message dispatches
 (frames sent meanwhile wait); awaited; throws log + an `internal_error` frame +
-close with `WS_CLOSE_INTERNAL_ERROR` `'socket bootstrap failed'`, unregistering
+close with `WS_CLOSE_INTERNAL_ERROR` and `WS_CLOSE_SOCKET_OPEN_FAILED_REASON`, unregistering
 the connection.
 `on_socket_close({ws, connection_id, identity})` fires — only for a socket that
 was admitted — after

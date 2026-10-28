@@ -35,13 +35,25 @@ const node_serve_handle = (server: ServerType): ServeHandle => ({
 	native: server
 });
 
+/**
+ * How far above the endpoint's message limit the `ws` frame cap sits. Past
+ * `maxPayload`, `ws` closes with `WS_CLOSE_MESSAGE_TOO_BIG` but no reason, so
+ * the cap leaves headroom for the per-message check in `register_action_ws` to
+ * answer a message just over the limit with the code and
+ * `WS_CLOSE_MESSAGE_TOO_BIG_REASON`, as the other backends do, and still
+ * refuses a grossly oversized one before buffering it toward `ws`'s 100 MiB
+ * default.
+ */
+const NODE_WS_MAX_PAYLOAD_MULTIPLIER = 2;
+
 /** Build the Node `TestingServerAdapter`. */
 export const create_node_testing_adapter = (): TestingServerAdapter => ({
 	runtime_label: 'Node',
 	runtime: create_node_runtime(),
 	get_connection_ip: (c) => getConnInfo(c).remote.address,
 	prepare_websocket: (options) => {
-		const max_payload = options?.max_message_bytes ?? DEFAULT_WS_MAX_MESSAGE_BYTES;
+		const max_payload =
+			NODE_WS_MAX_PAYLOAD_MULTIPLIER * (options?.max_message_bytes ?? DEFAULT_WS_MAX_MESSAGE_BYTES);
 		let node_ws: NodeWebSocket | undefined;
 		return {
 			create_upgrade_websocket: (app) => {
@@ -49,7 +61,8 @@ export const create_node_testing_adapter = (): TestingServerAdapter => ({
 				// `@hono/node-ws` builds its `ws` server with no options and takes
 				// none, so its frame cap would stay `ws`'s 100 MiB default. `ws` reads
 				// `options.maxPayload` per upgrade, so setting it here — before any
-				// connection — caps every socket at the endpoint's message limit.
+				// connection — caps every socket at the multiple of the endpoint's
+				// message limit.
 				node_ws.wss.options.maxPayload = max_payload;
 				return node_ws.upgradeWebSocket;
 			},

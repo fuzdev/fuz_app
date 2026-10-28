@@ -44,8 +44,19 @@ export const WS_CLOSE_SESSION_REVOKED_REASON = 'Session revoked';
 export const WS_CLOSE_CREDENTIAL_EXPIRED_REASON = 'Credential expired';
 /** WebSocket close code — client timed out waiting for a response. */
 export const WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT = 4002;
+/**
+ * The close reason `FrontendWebsocketClient` sends with
+ * `WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT`. TS-only: the client is the same
+ * against either spine.
+ */
+export const WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT_REASON = 'client heartbeat timeout';
 /** WebSocket close code — server timed out with no incoming activity. */
 export const WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT = 4003;
+/**
+ * The close reason sent with `WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT`. The Rust
+ * spine sends the same text.
+ */
+export const WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT_REASON = 'server heartbeat timeout';
 /**
  * WebSocket close code — the server closed this socket to admit a newer
  * connection on the same account, past the per-account connection cap
@@ -59,6 +70,11 @@ export const WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT = 4003;
  * spine's `WS_CLOSE_CONNECTION_LIMIT`.
  */
 export const WS_CLOSE_CONNECTION_LIMIT = 4004;
+/**
+ * The close reason sent with `WS_CLOSE_CONNECTION_LIMIT`. The Rust spine
+ * sends the same text.
+ */
+export const WS_CLOSE_CONNECTION_LIMIT_REASON = 'connection limit';
 /**
  * WebSocket close code — the server had more waiting to be written to this
  * socket than the connection's outbound budget holds
@@ -117,6 +133,11 @@ export const WS_CLOSE_GOING_AWAY_REASON = 'Server shutting down';
  */
 export const WS_CLOSE_MESSAGE_TOO_BIG = 1009;
 /**
+ * The close reason sent with `WS_CLOSE_MESSAGE_TOO_BIG`. The Rust spine sends
+ * the same text.
+ */
+export const WS_CLOSE_MESSAGE_TOO_BIG_REASON = 'message too big';
+/**
  * WebSocket close code — the server closed a socket that sent too much while
  * it was still opening: past `MAX_PRE_ADMISSION_FRAMES` frames or the
  * `PRE_ADMISSION_QUEUE_BYTES_FACTOR` byte budget, before its admission and
@@ -124,6 +145,12 @@ export const WS_CLOSE_MESSAGE_TOO_BIG = 1009;
  * revocation: the client reconnects under its ordinary backoff.
  */
 export const WS_CLOSE_POLICY_VIOLATION = 1008;
+/**
+ * The close reason sent with `WS_CLOSE_POLICY_VIOLATION` when a socket
+ * overflows its pre-admission queue, by count or by bytes. TS-only: the Rust
+ * spine sends no such close.
+ */
+export const WS_CLOSE_PRE_ADMISSION_OVERFLOW_REASON = 'too much sent before the socket opened';
 /**
  * WebSocket close code — the server hit an unexpected condition (RFC 6455
  * §7.4.1 "Internal Error").
@@ -138,6 +165,24 @@ export const WS_CLOSE_POLICY_VIOLATION = 1008;
  * state. The twin of the Rust spine's `WS_CLOSE_INTERNAL_ERROR`.
  */
 export const WS_CLOSE_INTERNAL_ERROR = 1011;
+/**
+ * The close reason sent with `WS_CLOSE_INTERNAL_ERROR` when an upgraded
+ * socket can't be admitted — its credential re-check failed, or opening it
+ * threw. The Rust spine sends the same text.
+ */
+export const WS_CLOSE_INTERNAL_ERROR_REASON = 'internal error';
+/**
+ * The close reason sent with `WS_CLOSE_INTERNAL_ERROR` when an
+ * `on_socket_open` hook throws. TS-only: the Rust spine sends no such close.
+ */
+export const WS_CLOSE_SOCKET_OPEN_FAILED_REASON = 'socket bootstrap failed';
+/**
+ * The close reason sent with `WS_CLOSE_INTERNAL_ERROR` when a frame arrives
+ * on a socket whose connection was removed from the transport without a
+ * close (a bare `remove_connection`). TS-only: the Rust spine sends no such
+ * close.
+ */
+export const WS_CLOSE_CONNECTION_UNREGISTERED_REASON = 'connection unregistered';
 
 /**
  * Default cap on one WebSocket message, in UTF-8 bytes — equal to the default

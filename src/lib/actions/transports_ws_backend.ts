@@ -127,6 +127,7 @@ import type {
 import { create_jsonrpc_request } from '../http/jsonrpc_helpers.ts';
 import {
 	WS_CLOSE_CONNECTION_LIMIT,
+	WS_CLOSE_CONNECTION_LIMIT_REASON,
 	WS_CLOSE_GOING_AWAY,
 	WS_CLOSE_GOING_AWAY_REASON,
 	WS_CLOSE_OUTBOUND_OVERFLOW,
@@ -832,7 +833,12 @@ export class BackendWebsocketTransport {
 
 	#supersede_connection(connection_id: Uuid, entry: ConnectionEntry): void {
 		try {
-			this.#end_connection(connection_id, entry, WS_CLOSE_CONNECTION_LIMIT, 'connection limit');
+			this.#end_connection(
+				connection_id,
+				entry,
+				WS_CLOSE_CONNECTION_LIMIT,
+				WS_CLOSE_CONNECTION_LIMIT_REASON
+			);
 		} catch (error) {
 			// the evicted socket is another connection's — a failure closing it
 			// must not fail the connection being admitted

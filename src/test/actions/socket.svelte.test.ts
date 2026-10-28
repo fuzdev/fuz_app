@@ -33,6 +33,7 @@ import {
 import {
 	WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT,
 	WS_CLOSE_CONNECTION_LIMIT,
+	WS_CLOSE_CONNECTION_LIMIT_REASON,
 	WS_CLOSE_GOING_AWAY,
 	WS_CLOSE_GOING_AWAY_REASON,
 	WS_CLOSE_OUTBOUND_OVERFLOW,
@@ -859,13 +860,13 @@ describe('connection limit', () => {
 		client.connect();
 		last_ws().fire_open();
 
-		last_ws().fire_close(WS_CLOSE_CONNECTION_LIMIT, 'connection limit');
+		last_ws().fire_close(WS_CLOSE_CONNECTION_LIMIT, WS_CLOSE_CONNECTION_LIMIT_REASON);
 		assert.strictEqual(client.status, 'closed');
 		assert.strictEqual(client.superseded, true);
 		assert.strictEqual(client.revoked, false);
 		assert.strictEqual(client.ws, null);
 		assert.strictEqual(client.last_close_code, WS_CLOSE_CONNECTION_LIMIT);
-		assert.strictEqual(client.last_close_reason, 'connection limit');
+		assert.strictEqual(client.last_close_reason, WS_CLOSE_CONNECTION_LIMIT_REASON);
 		// closed and not trying — the same projection as a clean close
 		assert.strictEqual(socket_status_to_async_status(client.status, client.revoked), 'initial');
 

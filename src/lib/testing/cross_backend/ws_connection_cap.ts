@@ -9,7 +9,7 @@ import '../assert_dev_env.ts';
  * the Rust `fuz_realtime` `ConnectionRegistry` on the other; both default to
  * `DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT`) with the same policy: **evict-oldest**
  * — a connection past the cap is always admitted, and the account's oldest is
- * closed with `WS_CLOSE_CONNECTION_LIMIT` and the reason `connection limit`.
+ * closed with `WS_CLOSE_CONNECTION_LIMIT` and `WS_CLOSE_CONNECTION_LIMIT_REASON`.
  * A client reads that close as "superseded": closed until the user acts, not
  * revoked and not reconnecting (`FrontendWebsocketClient.superseded`). The
  * code, the reason, and which socket closes are therefore wire contract, and
@@ -45,15 +45,15 @@ import '../assert_dev_env.ts';
 import { assert, describe } from 'vitest';
 
 import { heartbeat_action_spec } from '../../actions/heartbeat.ts';
-import { WS_CLOSE_CONNECTION_LIMIT } from '../../actions/transports.ts';
+import {
+	WS_CLOSE_CONNECTION_LIMIT,
+	WS_CLOSE_CONNECTION_LIMIT_REASON
+} from '../../actions/transports.ts';
 import { DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT } from '../../actions/transports_ws_backend.ts';
 import type { WsClient } from '../transports/ws_client.ts';
 import { type BackendCapabilities, test_if } from './capabilities.ts';
 import type { SetupTest, TestFixture } from './setup.ts';
 import { open_session_ws, type WsEndpointTarget } from './ws_endpoint.ts';
-
-/** The close reason both spines send with `WS_CLOSE_CONNECTION_LIMIT`. */
-const CONNECTION_LIMIT_REASON = 'connection limit';
 
 /** Options for the WebSocket connection-cap parity suite. */
 export interface WsConnectionCapCrossTestOptions extends WsEndpointTarget {
@@ -101,7 +101,11 @@ export const describe_ws_connection_cap_cross_tests = (
 		const closed = await client.wait_for_close(2000);
 		assert.ok(closed, `${label} did not close within 2s of the cap overflow`);
 		assert.strictEqual(client.close_code, WS_CLOSE_CONNECTION_LIMIT, `${label} close code`);
-		assert.strictEqual(client.close_reason, CONNECTION_LIMIT_REASON, `${label} close reason`);
+		assert.strictEqual(
+			client.close_reason,
+			WS_CLOSE_CONNECTION_LIMIT_REASON,
+			`${label} close reason`
+		);
 	};
 
 	/** Every client still open and answering — a fresh request id per call via `id`. */

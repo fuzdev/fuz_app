@@ -9,9 +9,22 @@ import { describe, assert, test } from 'vitest';
 import {
 	DEFAULT_WS_MAX_MESSAGE_BYTES,
 	Transports,
+	WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT_REASON,
 	WS_CLOSE_CONNECTION_LIMIT,
+	WS_CLOSE_CONNECTION_LIMIT_REASON,
+	WS_CLOSE_CONNECTION_UNREGISTERED_REASON,
+	WS_CLOSE_CREDENTIAL_EXPIRED_REASON,
 	WS_CLOSE_GOING_AWAY,
+	WS_CLOSE_GOING_AWAY_REASON,
+	WS_CLOSE_INTERNAL_ERROR_REASON,
+	WS_CLOSE_MESSAGE_TOO_BIG_REASON,
+	WS_CLOSE_OUTBOUND_OVERFLOW_REASON,
+	WS_CLOSE_PERMISSION_REVOKED_REASON,
+	WS_CLOSE_PRE_ADMISSION_OVERFLOW_REASON,
+	WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT_REASON,
 	WS_CLOSE_SESSION_REVOKED,
+	WS_CLOSE_SESSION_REVOKED_REASON,
+	WS_CLOSE_SOCKET_OPEN_FAILED_REASON,
 	utf8_length_over,
 	type Transport
 } from '#lib/actions/transports.ts';
@@ -41,6 +54,63 @@ describe('WS_CLOSE_GOING_AWAY', () => {
 	test('is 1001', () => {
 		assert.strictEqual(WS_CLOSE_GOING_AWAY, 1001);
 	});
+});
+
+describe('close reasons', () => {
+	// wire-observable (`CloseEvent.reason`); the shared ones are byte-identical
+	// to the Rust spine's, so a text change here is a wire change on one spine
+	const cases: Array<[name: string, value: string, expected: string]> = [
+		['WS_CLOSE_SESSION_REVOKED_REASON', WS_CLOSE_SESSION_REVOKED_REASON, 'Session revoked'],
+		[
+			'WS_CLOSE_CREDENTIAL_EXPIRED_REASON',
+			WS_CLOSE_CREDENTIAL_EXPIRED_REASON,
+			'Credential expired'
+		],
+		[
+			'WS_CLOSE_PERMISSION_REVOKED_REASON',
+			WS_CLOSE_PERMISSION_REVOKED_REASON,
+			'Permission revoked'
+		],
+		['WS_CLOSE_GOING_AWAY_REASON', WS_CLOSE_GOING_AWAY_REASON, 'Server shutting down'],
+		[
+			'WS_CLOSE_OUTBOUND_OVERFLOW_REASON',
+			WS_CLOSE_OUTBOUND_OVERFLOW_REASON,
+			'outbound queue overflow'
+		],
+		[
+			'WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT_REASON',
+			WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT_REASON,
+			'client heartbeat timeout'
+		],
+		[
+			'WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT_REASON',
+			WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT_REASON,
+			'server heartbeat timeout'
+		],
+		['WS_CLOSE_CONNECTION_LIMIT_REASON', WS_CLOSE_CONNECTION_LIMIT_REASON, 'connection limit'],
+		['WS_CLOSE_MESSAGE_TOO_BIG_REASON', WS_CLOSE_MESSAGE_TOO_BIG_REASON, 'message too big'],
+		[
+			'WS_CLOSE_PRE_ADMISSION_OVERFLOW_REASON',
+			WS_CLOSE_PRE_ADMISSION_OVERFLOW_REASON,
+			'too much sent before the socket opened'
+		],
+		['WS_CLOSE_INTERNAL_ERROR_REASON', WS_CLOSE_INTERNAL_ERROR_REASON, 'internal error'],
+		[
+			'WS_CLOSE_SOCKET_OPEN_FAILED_REASON',
+			WS_CLOSE_SOCKET_OPEN_FAILED_REASON,
+			'socket bootstrap failed'
+		],
+		[
+			'WS_CLOSE_CONNECTION_UNREGISTERED_REASON',
+			WS_CLOSE_CONNECTION_UNREGISTERED_REASON,
+			'connection unregistered'
+		]
+	];
+	for (const [name, value, expected] of cases) {
+		test(`${name} is '${expected}'`, () => {
+			assert.strictEqual(value, expected);
+		});
+	}
 });
 
 describe('Transports', () => {

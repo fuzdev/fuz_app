@@ -38,7 +38,7 @@ import '../assert_dev_env.ts';
  * shapes (absent, `{}`) and refuses a declared param with `invalid_params`, and a
  * message over the backend's cap (`max_message_bytes`, default
  * `DEFAULT_WS_MAX_MESSAGE_BYTES`) closes the socket with
- * `WS_CLOSE_MESSAGE_TOO_BIG`.
+ * `WS_CLOSE_MESSAGE_TOO_BIG` and `WS_CLOSE_MESSAGE_TOO_BIG_REASON`.
  *
  * The cases after the refused upgrades (gated on `rpc_path`) cover
  * server-initiated close.
@@ -88,6 +88,7 @@ import { heartbeat_action_spec } from '../../actions/heartbeat.ts';
 import {
 	DEFAULT_WS_MAX_MESSAGE_BYTES,
 	WS_CLOSE_MESSAGE_TOO_BIG,
+	WS_CLOSE_MESSAGE_TOO_BIG_REASON,
 	WS_CLOSE_SESSION_REVOKED,
 	WS_CLOSE_SESSION_REVOKED_REASON
 } from '../../actions/transports.ts';
@@ -330,7 +331,8 @@ export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptio
 		});
 
 		// Both spines cap an inbound message (`DEFAULT_WS_MAX_MESSAGE_BYTES` by
-		// default) and close the socket on a larger one rather than replying.
+		// default) and close the socket on a larger one rather than replying,
+		// lingering so the close frame and its reason arrive.
 		test_if(
 			capabilities.ws,
 			'an oversized message closes the socket with WS_CLOSE_MESSAGE_TOO_BIG',
@@ -346,6 +348,7 @@ export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptio
 					const closed = await client.wait_for_close(5000);
 					assert.ok(closed, 'socket did not close within 5s of an oversized message');
 					assert.strictEqual(client.close_code, WS_CLOSE_MESSAGE_TOO_BIG);
+					assert.strictEqual(client.close_reason, WS_CLOSE_MESSAGE_TOO_BIG_REASON);
 				} finally {
 					// the server may reset the connection under the unread tail
 					await client.close().catch(() => {});

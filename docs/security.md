@@ -1411,7 +1411,12 @@ with 1009 on a larger one — no per-message error reply, and the Rust spine
 likewise ends the connection. The check runs after the
 runtime adapter has assembled the message, so it bounds dispatch work, not
 what the adapter buffers — where memory matters, also set the adapter's own
-frame limit (e.g. the `ws` library's `maxPayload`, which defaults to 100 MiB).
+frame limit (e.g. the `ws` library's `maxPayload`, which defaults to 100 MiB),
+above `max_message_bytes`: twice it, as the cross-backend test adapters do. A
+message past the frame limit is refused by the adapter without the
+`message too big` reason (`ws` closes with 1009 and an empty reason, Bun drops
+the socket), so a frame limit equal to `max_message_bytes` loses the reason a
+message just over it gets.
 What the server sends a socket is bounded separately — see
 [Outbound Bounds](#outbound-bounds).
 
