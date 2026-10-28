@@ -58,9 +58,9 @@ import {
 	CREDENTIAL_TYPE_KEY,
 	SESSION_COOKIE_EXPIRES_AT_KEY,
 	TOKEN_SCOPE_KEY,
-	TEST_CONTEXT_PRESET_KEY,
-	type CredentialType
+	TEST_CONTEXT_PRESET_KEY
 } from '../hono_context.ts';
+import type { BuiltinCredentialType } from './credential_type_schema.ts';
 import { credential_deadline_after } from './credential_deadline.ts';
 import {
 	is_route_scope_capability,
@@ -557,7 +557,7 @@ export const require_credential_types = (
 		if (c.get(ACCOUNT_ID_KEY) == null) {
 			return c.json({ error: ERROR_AUTHENTICATION_REQUIRED }, 401);
 		}
-		const credential_type: CredentialType | null = c.get(CREDENTIAL_TYPE_KEY) ?? null;
+		const credential_type: BuiltinCredentialType | null = c.get(CREDENTIAL_TYPE_KEY) ?? null;
 		if (!credential_type || !credential_types.includes(credential_type)) {
 			return c.json(
 				{

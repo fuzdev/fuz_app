@@ -53,7 +53,7 @@ import {
 	WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT_REASON,
 	WS_CLOSE_SESSION_REVOKED
 } from '#lib/actions/transports.ts';
-import { type CredentialType } from '#lib/hono_context.ts';
+import type { BuiltinCredentialType } from '#lib/auth/credential_type_schema.ts';
 import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
 import { ERROR_INSUFFICIENT_PERMISSIONS } from '#lib/http/error_schemas.ts';
 import { RateLimiter } from '#lib/rate_limiter.ts';
@@ -151,7 +151,7 @@ interface Harness {
 
 const build_harness = async (opts: {
 	handlers: Record<string, (input: unknown, ctx: ActionContext) => unknown>;
-	credential_type?: CredentialType;
+	credential_type?: BuiltinCredentialType;
 	role?: string;
 	on_socket_open?: (ctx: SocketOpenContext) => void | Promise<void>;
 	on_socket_close?: (ctx: SocketCloseContext) => void | Promise<void>;

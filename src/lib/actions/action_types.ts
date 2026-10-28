@@ -25,7 +25,7 @@ import type { Logger } from '@fuzdev/fuz_util/log.ts';
 import type { ActionSpecUnion, RequestResponseActionSpec } from './action_spec.ts';
 import type { Uuid } from '../primitive_schemas.ts';
 import type { RequestActorContext, RequestContext } from '../auth/request_context.ts';
-import type { CredentialType } from '../hono_context.ts';
+import type { BuiltinCredentialType } from '../auth/credential_type_schema.ts';
 import type { Db } from '../db/db.ts';
 import type { JsonrpcRequestId } from '../http/jsonrpc.ts';
 import type { RequestClient } from './peer_request.ts';
@@ -118,7 +118,7 @@ export interface ActionContext {
 	 * gate may be loosened or bypassed in a future refactor, but the audit
 	 * row preserves what actually authenticated the request).
 	 */
-	credential_type: CredentialType | null;
+	credential_type: BuiltinCredentialType | null;
 	/** Logger instance. */
 	log: Logger;
 	/**

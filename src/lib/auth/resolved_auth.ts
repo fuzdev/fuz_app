@@ -20,9 +20,9 @@ import {
 	ACCOUNT_ID_KEY,
 	AUTH_API_TOKEN_ID_KEY,
 	CREDENTIAL_DEADLINE_KEY,
-	CREDENTIAL_TYPE_KEY,
-	type CredentialType
+	CREDENTIAL_TYPE_KEY
 } from '../hono_context.ts';
+import type { BuiltinCredentialType } from './credential_type_schema.ts';
 import { query_account_by_id, query_active_actors_by_account } from './account_queries.ts';
 import { query_api_token_live_account } from './api_token_queries.ts';
 import {
@@ -45,7 +45,7 @@ export interface ResolvedAuth {
 	/** The authenticated account. */
 	account_id: string;
 	/** How the request was authenticated. */
-	credential_type: CredentialType;
+	credential_type: BuiltinCredentialType;
 	/** Blake3 hash of the session token, or `null` for non-session credentials. */
 	token_hash: string | null;
 	/** `api_token.id` for a bearer credential, else `null`. */

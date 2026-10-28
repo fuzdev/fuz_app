@@ -18,7 +18,7 @@
  * `create_scope_kind_schema(consumer_kinds)` and pass the result to
  * `create_role_schema` so `RoleSpec.applicable_scope_kinds` can be
  * validated at construction time. Mirrors the open-string registry
- * pattern used for `RoleName`, `AuditEventTypeName`, and `CredentialType`.
+ * pattern used for `RoleName`, `AuditEventTypeName`, and `CredentialTypeName`.
  *
  * The literal `'GLOBAL'` (uppercase) appears as an index expression
  * inside the partial unique indexes on `role_grant` and `role_grant_offer`

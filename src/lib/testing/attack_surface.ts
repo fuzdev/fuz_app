@@ -49,8 +49,10 @@ import {
 	filter_role_routes,
 	filter_credential_gated_routes
 } from '../http/surface_query.ts';
-import { CREDENTIAL_TYPES } from '../hono_context.ts';
-import { CREDENTIAL_TYPE_SESSION } from '../auth/credential_type_schema.ts';
+import {
+	BUILTIN_CREDENTIAL_TYPES,
+	CREDENTIAL_TYPE_SESSION
+} from '../auth/credential_type_schema.ts';
 import {
 	type RouteErrorSchemas,
 	ERROR_AUTHENTICATION_REQUIRED,
@@ -224,7 +226,7 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
 		if (credential_gated_routes.length > 0) {
 			describe('credential-gated routes reject a disallowed credential → 403', () => {
 				// Each route is probed on the first channel its own allowlist
-				// omits, in `CREDENTIAL_TYPES` order: a session for keeper's
+				// omits, in `BUILTIN_CREDENTIAL_TYPES` order: a session for keeper's
 				// `daemon_token` gate, an api token for the session-only routes —
 				// which is the bearer channel those gates exist to refuse. The
 				// channel apps hold the keeper role, so no route's role gate can
@@ -232,7 +234,7 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
 				// being pre-authorization.
 				for (const route of credential_gated_routes) {
 					const admitted = route.auth.credential_types ?? [];
-					const refused = CREDENTIAL_TYPES.find((t) => !admitted.includes(t));
+					const refused = BUILTIN_CREDENTIAL_TYPES.find((t) => !admitted.includes(t));
 					if (!refused) {
 						// A gate listing every builtin channel refuses none of them, so
 						// there is no probe to make. Reported as a skip rather than

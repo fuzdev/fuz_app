@@ -11,34 +11,10 @@
  * @module
  */
 
-import { z } from 'zod';
-
 import type { TokenScope } from './auth/token_scope.ts';
 
 import type { RequestContext } from './auth/request_context.ts';
-import {
-	CREDENTIAL_TYPE_API_TOKEN,
-	CREDENTIAL_TYPE_DAEMON_TOKEN,
-	CREDENTIAL_TYPE_SESSION
-} from './auth/credential_type_schema.ts';
-
-/**
- * The credential types that can authenticate a request — the closed set
- * of fuz_app builtins. The open registry on top
- * (`create_credential_type_schema(consumer_types)`) is consulted at
- * registry time by `create_role_schema` for `RoleSpec.required_credential_types`
- * validation; the wire-validated `CredentialType` enum here stays
- * narrow because middleware only ever sets one of the three builtins.
- */
-export const CREDENTIAL_TYPES = [
-	CREDENTIAL_TYPE_SESSION,
-	CREDENTIAL_TYPE_API_TOKEN,
-	CREDENTIAL_TYPE_DAEMON_TOKEN
-] as const;
-
-/** Credential type — how a request was authenticated. */
-export const CredentialType = z.enum(CREDENTIAL_TYPES);
-export type CredentialType = z.infer<typeof CredentialType>;
+import type { BuiltinCredentialType } from './auth/credential_type_schema.ts';
 
 /** Hono context variable name for the credential type. */
 export const CREDENTIAL_TYPE_KEY = 'credential_type';
@@ -118,7 +94,7 @@ declare module 'hono' {
 		validated_params: unknown;
 		validated_query: unknown;
 		/** How the request was authenticated (`'session'`, `'api_token'`, or `'daemon_token'`). */
-		credential_type: CredentialType | null;
+		credential_type: BuiltinCredentialType | null;
 		/**
 		 * The credential's authority narrowing. Set by every auth middleware that
 		 * resolves a credential — bearer reads it off the token row; session and

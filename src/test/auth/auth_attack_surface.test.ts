@@ -29,12 +29,8 @@ import {
 	require_role,
 	type RequestContext
 } from '#lib/auth/request_context.ts';
-import {
-	ACCOUNT_ID_KEY,
-	CREDENTIAL_TYPE_KEY,
-	TEST_CONTEXT_PRESET_KEY,
-	type CredentialType
-} from '#lib/hono_context.ts';
+import { ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY, TEST_CONTEXT_PRESET_KEY } from '#lib/hono_context.ts';
+import type { BuiltinCredentialType } from '#lib/auth/credential_type_schema.ts';
 import { session_cookie_options } from '#lib/auth/session_cookie.ts';
 import { API_TOKEN_PREFIX } from '#lib/auth/api_token.ts';
 import { PASSWORD_LENGTH_MIN } from '#lib/auth/password.ts';
@@ -101,7 +97,7 @@ const create_test_ctx = (role?: string): RequestContext =>
 const create_test_app = (
 	specs: Array<RouteSpec>,
 	auth_ctx?: RequestContext,
-	credential_type?: CredentialType
+	credential_type?: BuiltinCredentialType
 ): Hono => {
 	const app = new Hono();
 	// Simulate request context middleware — sets context if provided
@@ -190,7 +186,7 @@ const test_route_specs: Array<RouteSpec> = [
  * authorization phase.
  */
 interface CredentialDescriptor {
-	credential_type: CredentialType | null;
+	credential_type: BuiltinCredentialType | null;
 	role_grants: ReadonlyArray<string>;
 }
 

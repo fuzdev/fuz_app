@@ -234,7 +234,7 @@ interface ActionContext {
 	pending_effects: Array<Promise<void>>; // eager — see http/CLAUDE.md §Pending Effects
 	post_commit_effects: Array<() => void | Promise<void>>; // deferred — push via `emit_after_commit`
 	client_ip: string;
-	credential_type: CredentialType | null; // same value the credential_types gate consumed
+	credential_type: BuiltinCredentialType | null; // same value the credential_types gate consumed
 	log: Logger;
 	notify: (method, params) => void; // HTTP: DEV-mode warn + drop; WS: socket-scoped
 	signal: AbortSignal; // HTTP: client-disconnect; WS: AbortSignal.any([socket_close, request_cancel])

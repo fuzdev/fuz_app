@@ -12,11 +12,11 @@
  * open-registry pattern used for `RoleName`, `ScopeKindName`,
  * `GrantPathName`, and `AuditEventTypeName`.
  *
- * The Hono-side wire-validated `CredentialType` Zod enum (in
- * `hono_context.ts`) is the closed-set narrow type middleware sets on
- * the context; the constants below are the source of truth for those
- * three string values. Future builtin credential types added here
- * propagate to the wire enum by editing the import list.
+ * `BuiltinCredentialType` is the closed set middleware sets on the Hono
+ * context (`hono_context.ts`) and the audit log records — middleware only
+ * ever authenticates through a builtin. Consumer-declared types live in
+ * the registry `create_credential_type_schema` builds, consulted when
+ * validating `RoleSpec.required_credential_types`.
  *
  * @module
  */

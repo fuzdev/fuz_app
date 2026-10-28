@@ -67,7 +67,7 @@ import {
 	has_any_scoped_role,
 	type RequestContext
 } from '../auth/request_context.ts';
-import { type CredentialType } from '../hono_context.ts';
+import type { BuiltinCredentialType } from '../auth/credential_type_schema.ts';
 import type { Db } from '../db/db.ts';
 import { resolve_issues_invalid_reason } from '../schema_meta.ts';
 import { to_input_params } from '../http/schema_helpers.ts';
@@ -118,7 +118,7 @@ export interface PerformActionInput {
 	/** Authenticated account id, or `null` for anonymous. */
 	account_id: string | null;
 	/** Credential type the request arrived on, or `null` for anonymous. */
-	credential_type: CredentialType | null;
+	credential_type: BuiltinCredentialType | null;
 	/**
 	 * The credential's authority narrowing — `null` only for the anonymous
 	 * caller, who holds no credential to narrow. Every resolved credential
@@ -508,7 +508,7 @@ export const credential_type_required_error = (
 const check_action_auth_post_authorization = (
 	auth: RouteAuth,
 	request_context: RequestContext | null,
-	credential_type: CredentialType | null,
+	credential_type: BuiltinCredentialType | null,
 	method: string,
 	token_scope: TokenScope | null
 ): JsonrpcErrorObject | null => {

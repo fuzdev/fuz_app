@@ -65,9 +65,9 @@ import {
 	ACCOUNT_ID_KEY,
 	AUTH_API_TOKEN_ID_KEY,
 	CREDENTIAL_TYPE_KEY,
-	TEST_CONTEXT_PRESET_KEY,
-	type CredentialType
+	TEST_CONTEXT_PRESET_KEY
 } from '../hono_context.ts';
+import type { BuiltinCredentialType } from '../auth/credential_type_schema.ts';
 import { create_jsonrpc_request } from '../http/jsonrpc_helpers.ts';
 import { create_test_account, create_test_actor, create_test_role_grant } from './entities.ts';
 import {
@@ -167,7 +167,7 @@ export const create_fake_ws = (options?: CreateFakeWsOptions): FakeWs => {
 
 /** Options for `create_fake_hono_context`. */
 export interface FakeHonoContextOptions {
-	credential_type: CredentialType;
+	credential_type: BuiltinCredentialType;
 	/** A single role to grant via `create_test_request_context`. */
 	role?: string;
 	auth_session_id?: string | null;
@@ -315,7 +315,7 @@ export interface WsConnectIdentity {
 	/** Account id for the connection. Defaults to a fresh uuid per call. */
 	account_id?: Uuid;
 	/** Credential type. Defaults to `'session'`. Keeper actions require `'daemon_token'`. */
-	credential_type?: CredentialType;
+	credential_type?: BuiltinCredentialType;
 	/**
 	 * Session id (any string). Defaults to a fresh uuid. The connection is
 	 * registered under `hash_session_token(session_id)`, the hash the request

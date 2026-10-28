@@ -21,9 +21,9 @@ import {
 	ACCOUNT_ID_KEY,
 	CREDENTIAL_TYPE_KEY,
 	TEST_CONTEXT_PRESET_KEY,
-	TOKEN_SCOPE_KEY,
-	type CredentialType
+	TOKEN_SCOPE_KEY
 } from '#lib/hono_context.ts';
+import type { BuiltinCredentialType } from '#lib/auth/credential_type_schema.ts';
 import { create_test_request_context } from '#lib/testing/auth_apps.ts';
 import { create_test_actor } from '#lib/testing/entities.ts';
 import { jsonrpc_errors, JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
@@ -106,7 +106,7 @@ const create_test_app = (
 		action_account_rate_limiter
 	}: {
 		auth_context?: ReturnType<typeof create_test_request_context>;
-		credential_type?: CredentialType;
+		credential_type?: BuiltinCredentialType;
 		token_scope?: TokenScope;
 		action_ip_rate_limiter?: RateLimiter;
 		action_account_rate_limiter?: RateLimiter;
