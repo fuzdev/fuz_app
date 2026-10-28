@@ -89,8 +89,8 @@ export interface AuditLogRouteOptions {
  * is born closed, the re-reads are skipped, and the answer is that same
  * connect comment alone — as it is when the shutdown closes a registration
  * whose re-read is in flight, even if the re-read then fails. The twin of the
- * Rust spine's `audit_stream_router`, which registers before its role read
- * rather than repeating it (its acting-actor re-read is still to come).
+ * Rust spine's `audit_stream_router`, which runs the same order through its
+ * `recheck_admission`.
  *
  * ## Credential deadline
  *
