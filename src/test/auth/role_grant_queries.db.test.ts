@@ -11,6 +11,7 @@ import { query_purge_account } from '#lib/auth/account_queries.ts';
 import {
 	query_create_role_grant,
 	query_revoke_role_grant,
+	query_role_grant_by_id,
 	query_role_grant_find_active_for_actor,
 	query_role_grant_has_role,
 	query_role_grant_list_for_actor,
@@ -228,6 +229,111 @@ describe_db('RoleGrantQueries', (get_db) => {
 		});
 		assert.notStrictEqual(first.id, second.id);
 		assert.strictEqual(await query_role_grant_has_role(deps, actor_id, ROLE_ADMIN), true);
+	});
+
+	test('grant over an expired unrevoked row revokes it and inserts a fresh grant', async () => {
+		const db = get_db();
+		const deps = { db };
+		const { actor_id } = await create_test_actor(db, 'expired_regrant');
+		const expired = await query_create_role_grant(deps, {
+			actor_id,
+			role: ROLE_ADMIN,
+			expires_at: new Date(Date.now() - 60_000),
+			granted_by: null
+		});
+		assert.strictEqual(await query_role_grant_has_role(deps, actor_id, ROLE_ADMIN), false);
+		const fresh = await query_create_role_grant(deps, {
+			actor_id,
+			role: ROLE_ADMIN,
+			granted_by: null
+		});
+		assert.notStrictEqual(fresh.id, expired.id);
+		assert.strictEqual(fresh.revoked_at, null);
+		assert.strictEqual(fresh.expires_at, null);
+		assert.strictEqual(await query_role_grant_has_role(deps, actor_id, ROLE_ADMIN), true);
+		const old = await query_role_grant_by_id(deps, expired.id);
+		assert.ok(old);
+		assert.ok(old.revoked_at);
+		assert.strictEqual(old.revoked_by, null);
+		assert.strictEqual(old.revoked_reason, 'expired');
+	});
+
+	test('grant over an unexpired row with an expiry returns the same row', async () => {
+		const db = get_db();
+		const deps = { db };
+		const { actor_id } = await create_test_actor(db, 'unexpired_regrant');
+		const first = await query_create_role_grant(deps, {
+			actor_id,
+			role: ROLE_ADMIN,
+			expires_at: new Date(Date.now() + 60 * 60 * 1000),
+			granted_by: null
+		});
+		const second = await query_create_role_grant(deps, {
+			actor_id,
+			role: ROLE_ADMIN,
+			granted_by: null
+		});
+		assert.strictEqual(second.id, first.id);
+		assert.strictEqual(second.revoked_at, null);
+	});
+
+	test('the expired-row revoke touches only its own (role, scope) slot', async () => {
+		const db = get_db();
+		const deps = { db };
+		const { actor_id } = await create_test_actor(db, 'expired_scoped_regrant');
+		const scope_a = create_uuid();
+		const scope_b = create_uuid();
+		const past = new Date(Date.now() - 60_000);
+		// every row is expired, so only the scope clauses can spare a neighbor
+		const global = await query_create_role_grant(deps, {
+			actor_id,
+			role: 'teacher',
+			expires_at: past,
+			granted_by: null
+		});
+		const expired_a = await query_create_role_grant(deps, {
+			actor_id,
+			role: 'teacher',
+			scope_kind: 'class',
+			scope_id: scope_a,
+			expires_at: past,
+			granted_by: null
+		});
+		const expired_b = await query_create_role_grant(deps, {
+			actor_id,
+			role: 'teacher',
+			scope_kind: 'class',
+			scope_id: scope_b,
+			expires_at: past,
+			granted_by: null
+		});
+		const is_unrevoked = async (id: Uuid): Promise<boolean> => {
+			const row = await query_role_grant_by_id(deps, id);
+			assert.ok(row);
+			return row.revoked_at === null;
+		};
+
+		const fresh_a = await query_create_role_grant(deps, {
+			actor_id,
+			role: 'teacher',
+			scope_kind: 'class',
+			scope_id: scope_a,
+			granted_by: null
+		});
+		assert.notStrictEqual(fresh_a.id, expired_a.id);
+		assert.strictEqual(await is_unrevoked(expired_a.id), false);
+		assert.strictEqual(await is_unrevoked(global.id), true, 'a scoped re-grant spares the global');
+		assert.strictEqual(await is_unrevoked(expired_b.id), true, 'and the other scope');
+
+		// the reverse: a global re-grant spares the expired scoped row
+		const fresh_global = await query_create_role_grant(deps, {
+			actor_id,
+			role: 'teacher',
+			granted_by: null
+		});
+		assert.notStrictEqual(fresh_global.id, global.id);
+		assert.strictEqual(await is_unrevoked(global.id), false);
+		assert.strictEqual(await is_unrevoked(expired_b.id), true, 'a global re-grant spares a scope');
 	});
 
 	test('grant allows different roles for same actor', async () => {

@@ -58,8 +58,14 @@ const role_grant_expr = iso8601_timestamp_expr(ROLE_GRANT_COLUMNS, [
 
 /**
  * Grant a role_grant to an actor.
- * Idempotent — if an active role_grant already exists for this actor, role, and
- * scope, returns the existing role_grant instead of creating a duplicate.
+ * Idempotent — if an active (unrevoked and unexpired) role_grant already
+ * exists for this actor, role, and scope, returns it instead of creating a
+ * duplicate. An expired but unrevoked row in the slot is first revoked
+ * (`revoked_reason = 'expired'`, `revoked_by` null — nobody chose to revoke
+ * it) so the fresh grant can take its place; returning the expired row would
+ * report a grant that confers nothing. The revoke and the insert are two
+ * statements, atomic when the caller runs them in a transaction (the action
+ * and offer-accept paths do).
  *
  * The `ON CONFLICT` target and the fallback `SELECT` both collapse `NULL`
  * scopes via the same sentinel + index-side `'GLOBAL'` token used by the
@@ -74,12 +80,23 @@ const role_grant_expr = iso8601_timestamp_expr(ROLE_GRANT_COLUMNS, [
  * @param deps - query dependencies
  * @param input - the role_grant fields
  * @returns the created or existing active role_grant
- * @mutates `role_grant` table - inserts a row when no active role_grant matches `(actor_id, role, scope_kind, scope_id)`
+ * @mutates `role_grant` table - revokes an expired unrevoked row at `(actor_id, role, scope_kind, scope_id)`, then inserts a row when no active role_grant matches
  */
 export const query_create_role_grant = async (
 	deps: QueryDeps,
 	input: CreateRoleGrantInput
 ): Promise<RoleGrant> => {
+	// an expired row still holds the partial unique slot (`revoked_at IS NULL`)
+	await deps.db.query(
+		`UPDATE role_grant SET revoked_at = NOW(), revoked_by = NULL, revoked_reason = 'expired'
+		 WHERE actor_id = $1
+		   AND role = $2
+		   AND scope_kind IS NOT DISTINCT FROM $3
+		   AND scope_id IS NOT DISTINCT FROM $4
+		   AND revoked_at IS NULL
+		   AND expires_at <= NOW()`,
+		[input.actor_id, input.role, input.scope_kind ?? null, input.scope_id ?? null]
+	);
 	const inserted = await deps.db.query_one<RoleGrant>(
 		`INSERT INTO role_grant (actor_id, role, scope_kind, scope_id, expires_at, granted_by, source_offer_id)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7)

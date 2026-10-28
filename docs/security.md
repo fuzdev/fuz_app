@@ -1619,7 +1619,9 @@ state (control-plane and timing-oracle avoidance).
 **Duplicate prevention**: A partial unique index on
 `(actor_id, role, COALESCE(scope_id, sentinel))` prevents duplicate active
 role_grants per resource scope (global role_grants collapse via the sentinel uuid).
-`query_create_role_grant()` is idempotent (`ON CONFLICT DO NOTHING`).
+`query_create_role_grant()` is idempotent over the active grant (`ON CONFLICT
+DO NOTHING`); an expired but unrevoked row in the slot is first revoked
+(`revoked_reason = 'expired'`) and replaced by the fresh grant.
 
 **Consent as an authorization property**: fuz_app treats explicit recipient
 consent as a security property of web-path role grants, not a UX nicety.
