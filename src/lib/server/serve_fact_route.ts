@@ -128,7 +128,7 @@
  * @module
  */
 
-import { createReadStream } from 'node:fs';
+import { open, type FileHandle } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import { join } from 'node:path';
 import type { Context } from 'hono';
@@ -230,9 +230,12 @@ interface ServeFactConfig {
  * bare-hash route, viewable referencing cell on the cell-scoped route).
  * Reuses the embedded-stream / `X-Accel-Redirect` / disk-stream logic.
  *
- * Returns 404 when the fact's metadata is missing or its embedded bytes
- * have vanished (a race), so the response shape is identical whether the
- * fact is genuinely absent or merely unviewable.
+ * Returns 404 when the fact's metadata is missing, its embedded bytes have
+ * vanished (a race), or its disk file is missing, so the response shape is
+ * identical whether the fact is genuinely absent or merely unviewable; any
+ * other failure to open the disk file answers a logged 500. HEAD on a disk
+ * fact opens the file (so it answers the same statuses) and closes it again,
+ * sending headers only.
  */
 const serve_fact_bytes = async (
 	c: Context,
@@ -299,17 +302,35 @@ const serve_fact_bytes = async (
 		});
 	}
 
-	// Dev / tests: stream from disk. `createReadStream` errors land on the
-	// returned ReadableStream, which Hono surfaces as a 500 to the client.
+	// Dev / tests: stream from disk. Open before committing the 200 so a
+	// missing file answers 404 and any other open failure a logged 500, as the
+	// Rust twin does — a lazy stream would send the headers, then truncate.
 	const file_path = join(facts_dir, shard, rest);
-	const node_stream = createReadStream(file_path);
-	const web_stream = Readable.toWeb(node_stream) as ReadableStream<Uint8Array>;
-	return c.body(web_stream, 200, {
+	let handle: FileHandle;
+	try {
+		handle = await open(file_path, 'r');
+	} catch (err) {
+		if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+			log.warn(`serve_fact: disk file for ${hash} is missing; answering 404`);
+			return c.body(null, 404);
+		}
+		log.error(`serve_fact: disk open for ${hash} failed`, err);
+		return c.json({ error: 'internal_error' }, 500);
+	}
+	const headers = {
 		'Content-Type': content_type,
 		'Content-Length': size,
 		'Cache-Control': FACT_CACHE_CONTROL,
 		...FACT_SECURITY_HEADERS
-	});
+	};
+	// Hono answers HEAD by running this GET handler and discarding the body
+	// unread, so a stream built here would hold the handle open until GC
+	if (c.req.method === 'HEAD') {
+		await handle.close();
+		return c.body(null, 200, headers);
+	}
+	const web_stream = Readable.toWeb(handle.createReadStream()) as ReadableStream<Uint8Array>;
+	return c.body(web_stream, 200, headers);
 };
 
 /**

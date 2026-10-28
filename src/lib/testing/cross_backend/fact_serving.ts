@@ -26,6 +26,9 @@ import '../assert_dev_env.ts';
  *   `file:` URL naming another hash's file is a masked 404 on both routes,
  *   refused before any disk read (each spine's unit suite proves the bytes
  *   behind such a URL never serve);
+ * - **missing disk file** — a row whose `file:` URL addresses its own hash but
+ *   whose file isn't on disk is a masked 404 (opened before any 200 commits;
+ *   needs a backend serving external facts from disk, not by X-Accel);
  * - **multi-actor fallthrough** — a multi-actor caller resolves to a null
  *   (anonymous) context on the (`acting`-less) cell-scoped route, so it can't
  *   read its own *private* fact there (admitted only by public cells). Opt-in
@@ -54,6 +57,7 @@ import '../assert_dev_env.ts';
 
 import { describe, assert } from 'vitest';
 import { z } from 'zod';
+import { fact_hash_bytes } from '@fuzdev/fuz_util/fact_hash.ts';
 import { FactHashSchema } from '../../primitive_schemas.ts';
 
 import { CellCreateOutput } from '../../auth/cell_action_specs.ts';
@@ -371,6 +375,36 @@ export const describe_fact_serving_cross_tests = (options: FactServingCrossTestO
 				assert_masked_404(
 					await fact_get(anon, cell_fact_path(cell_id, hash), {}),
 					'foreign-url fact via a public cell'
+				);
+			}
+		);
+
+		test_if(
+			capabilities.fact_serving,
+			'an external fact whose disk file is missing is a masked 404',
+			async () => {
+				const fixture = await setup_test();
+				const owner = await fixture.create_account({ username: 'fact_missing_file_owner' });
+				const content = 'external-row-whose-file-is-missing';
+				const hex = fact_hash_bytes(new TextEncoder().encode(content)).slice('blake3:'.length);
+				const hash = await cross_put_fact(fixture, rpc_path, {
+					content,
+					content_type: 'text/plain',
+					holder: owner.actor.id,
+					external_url: `file:${hex.slice(0, 2)}/${hex.slice(2)}`
+				});
+				assert.strictEqual(hash, `blake3:${hex}`);
+				const cell_id = await create_cell_with_ref(
+					fixture.fresh_transport(),
+					owner.create_session_headers(),
+					hash,
+					'public'
+				);
+
+				const anon = fixture.fresh_transport({ origin: null });
+				assert_masked_404(
+					await fact_get(anon, cell_fact_path(cell_id, hash), {}),
+					'external fact with no file on disk'
 				);
 			}
 		);

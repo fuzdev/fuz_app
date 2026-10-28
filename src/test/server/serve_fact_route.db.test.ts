@@ -29,6 +29,10 @@
  * - a disk-backed fact streams from the facts dir; a row whose `external_url`
  *   names **another fact's file** is a 404 (the URL must address its own hash),
  *   so a private fact's bytes never serve under a public cell's hash
+ * - a disk fact whose file is gone → 404 with an empty body; one whose file
+ *   can't be opened → 500 `internal_error` (both before any 200 is committed,
+ *   twin of the Rust `fuz_fact_serving` disk branch); HEAD answers the same
+ *   statuses and leaves no handle on the file
  * - **soft-deleted (tombstoned) actor in the public-read resolution**: a
  *   1-active-+-1-tombstone reader resolves as the owner (the tombstone is
  *   excluded from the active-actor count), and a tombstoned-only reader
@@ -39,7 +43,7 @@
  */
 
 import { test, assert } from 'vitest';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { chmod, mkdtemp, readdir, readlink, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -73,6 +77,37 @@ const get_cell_fact = (
 		method: 'GET',
 		headers: { ...PUBLIC_HEADERS, ...headers }
 	});
+
+/** HEAD `/api/cells/:cell_id/facts/:hash` — Hono runs the GET handler and drops the body. */
+const head_cell_fact = (app: TestApp, cell_id: string, hash: string) =>
+	app.app.request(`/api/cells/${cell_id}/facts/${hash}`, {
+		method: 'HEAD',
+		headers: PUBLIC_HEADERS
+	});
+
+/**
+ * Count this process's open file descriptors on `path`, read from
+ * `/proc/self/fd` — `null` where that isn't available (non-Linux).
+ */
+const count_open_fds = async (path: string): Promise<number | null> => {
+	let fds: Array<string>;
+	try {
+		fds = await readdir('/proc/self/fd');
+	} catch {
+		return null;
+	}
+	// fd links name the resolved path, so a symlinked tmpdir still matches
+	const target = await realpath(path);
+	let count = 0;
+	for (const fd of fds) {
+		try {
+			if ((await readlink(join('/proc/self/fd', fd))) === target) count++;
+		} catch {
+			// the fd closed while listing
+		}
+	}
+	return count;
+};
 
 /** GET `/api/facts/:hash` — the bare-hash (admin-only) read. */
 const get_bare_fact = (app: TestApp, hash: string, headers?: Record<string, string>) =>
@@ -423,6 +458,82 @@ describe_db('serve_fact_route', (get_db) => {
 			assert.strictEqual(await hijack.text(), '');
 			// and the store's own read refuses it
 			assert.strictEqual(await disk_store.get(hijack_hash), null);
+		} finally {
+			await rm(facts_dir, { recursive: true, force: true });
+		}
+	});
+
+	test('a disk fact whose file is missing → 404; unopenable → 500; HEAD closes the file', async () => {
+		const facts_dir = await mkdtemp(join(tmpdir(), 'fuz_serve_fact_disk_missing_'));
+		try {
+			const app = await create_cell_test_app(get_db, [], { facts_dir });
+			const owner = await app.create_account({ username: 'disk_missing_owner' });
+			const disk_store = new PgFactStore({
+				deps: { db: get_db() },
+				embedded_threshold: 0,
+				disk_root: facts_dir,
+				fs: create_node_runtime()
+			});
+			const put_public = async (
+				text: string
+			): Promise<{ cell_id: Uuid; hash: FactHash; path: string }> => {
+				const hash = await disk_store.put(encode(text), {
+					content_type: 'text/plain',
+					holder: owner.actor.id
+				});
+				const row = await get_db().query_one<{ external_url: string }>(
+					'SELECT external_url FROM fact WHERE hash = $1',
+					[hash]
+				);
+				assert.ok(row?.external_url.startsWith('file:'));
+				const cell = await create_cell(app, {
+					kind: 'image',
+					data: { cover: hash },
+					visibility: 'public',
+					headers: owner.create_session_headers()
+				});
+				return {
+					cell_id: cell.id,
+					hash,
+					path: join(facts_dir, row!.external_url.slice('file:'.length))
+				};
+			};
+
+			// large enough that a stream built for the dropped body stalls on
+			// backpressure instead of reading to EOF and closing on its own
+			const present_text = 'bytes a HEAD reads the headers of '.repeat(64 * 1024);
+			const present = await put_public(present_text);
+			const head_res = await head_cell_fact(app, present.cell_id, present.hash);
+			assert.strictEqual(head_res.status, 200);
+			assert.strictEqual(
+				head_res.headers.get('Content-Length'),
+				String(encode(present_text).byteLength)
+			);
+			assert.strictEqual(await head_res.text(), '');
+			const open_fds = await count_open_fds(present.path);
+			if (open_fds !== null) {
+				assert.strictEqual(open_fds, 0, 'HEAD must not leave the fact file open');
+			}
+
+			const missing = await put_public('bytes whose file goes missing');
+			await rm(missing.path);
+			const missing_res = await get_cell_fact(app, missing.cell_id, missing.hash);
+			assert.strictEqual(missing_res.status, 404);
+			assert.strictEqual(await missing_res.text(), '');
+			assert.strictEqual((await head_cell_fact(app, missing.cell_id, missing.hash)).status, 404);
+
+			// root opens a mode-0 file anyway, so the 500 half can't be forced there
+			if (process.getuid?.() !== 0) {
+				const unopenable = await put_public('bytes whose file is unreadable');
+				await chmod(unopenable.path, 0o000);
+				const unopenable_res = await get_cell_fact(app, unopenable.cell_id, unopenable.hash);
+				assert.strictEqual(unopenable_res.status, 500);
+				assert.deepEqual(await unopenable_res.json(), { error: 'internal_error' });
+				assert.strictEqual(
+					(await head_cell_fact(app, unopenable.cell_id, unopenable.hash)).status,
+					500
+				);
+			}
 		} finally {
 			await rm(facts_dir, { recursive: true, force: true });
 		}

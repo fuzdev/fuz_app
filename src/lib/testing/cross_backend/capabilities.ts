@@ -122,7 +122,9 @@ export interface BackendCapabilities {
 	 * cases with `cell_relations`), and the fact cases of the
 	 * moderation suite. Like cells, the serve route stays off the standard
 	 * declared surface. The admin bare-hash route is its own flag,
-	 * `fact_serving_admin_hash`.
+	 * `fact_serving_admin_hash`. The suite's missing-disk-file case assumes the
+	 * backend serves external facts from disk: one with X-Accel delivery on
+	 * hands off with a `200` (nginx would answer the missing file) and fails it.
 	 */
 	readonly fact_serving: boolean;
 	/**
