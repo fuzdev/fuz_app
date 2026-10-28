@@ -41,7 +41,7 @@ import {
 	type RpcEndpointsSuiteOption
 } from './rpc_helpers.ts';
 import { run_migrations } from '../db/migrate.ts';
-import { auth_migration_ns } from '../auth/migrations.ts';
+import { AUTH_MIGRATION_NS } from '../auth/migrations.ts';
 import type { Db } from '../db/db.ts';
 import { account_session_revoke_all_action_spec } from '../auth/account_action_specs.ts';
 import { create_sse_frame_reader } from './transports/sse_frame_reader.ts';
@@ -179,7 +179,7 @@ export const describe_sse_route_tests = (options: SseRouteTestOptions): void => 
 	const rpc_path = require_rpc_endpoint_path(rpc_endpoints_for_setup);
 
 	const init_schema = async (db: Db): Promise<void> => {
-		await run_migrations(db, [auth_migration_ns]);
+		await run_migrations(db, [AUTH_MIGRATION_NS]);
 	};
 	const factories = options.db_factories ?? [create_default_db_factory(init_schema)];
 

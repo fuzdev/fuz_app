@@ -91,7 +91,7 @@ export const resolve_keeper_account_id = async (deps: QueryDeps): Promise<string
  * @param state - the daemon token runtime state
  * @param deps - query dependencies (pool-level db for keeper-account resolution)
  * @param log - the logger instance
- * @mutates Hono context - sets `ACCOUNT_ID_KEY`, `CREDENTIAL_TYPE_KEY`, and `AUTH_API_TOKEN_ID_KEY` on a valid token
+ * @mutates Hono context - sets `ACCOUNT_ID_KEY`, `CREDENTIAL_TYPE_KEY`, `TOKEN_SCOPE_KEY`, `AUTH_API_TOKEN_ID_KEY`, and `CREDENTIAL_DEADLINE_KEY` on a valid token
  */
 export const create_daemon_token_middleware = (
 	state: DaemonTokenState,

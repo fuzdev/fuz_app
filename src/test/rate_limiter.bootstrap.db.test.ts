@@ -20,7 +20,7 @@ import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { PASSWORD_LENGTH_MAX } from '#lib/auth/password.ts';
 import { run_migrations } from '#lib/db/migrate.ts';
-import { auth_migration_ns } from '#lib/auth/migrations.ts';
+import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
 import { create_default_db_factory } from '#lib/testing/db.ts';
 import { create_test_audit_emitter } from '#lib/testing/stubs.ts';
 import {
@@ -67,7 +67,7 @@ interface BootstrapTestApp {
 
 // Cached default-driver factory for bootstrap tests — single WASM init, reset between calls.
 const bootstrap_factory = create_default_db_factory(async (db) => {
-	await run_migrations(db, [auth_migration_ns]);
+	await run_migrations(db, [AUTH_MIGRATION_NS]);
 });
 
 /**

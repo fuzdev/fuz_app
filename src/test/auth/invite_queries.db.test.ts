@@ -9,11 +9,9 @@ import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
 import {
 	query_create_invite,
-	query_invite_find_unclaimed_by_email,
-	query_invite_find_unclaimed_by_username,
 	query_invite_find_unclaimed_match_for_update,
 	query_invite_claim_unscoped,
-	query_invite_list_all,
+	query_invite_list_all_with_usernames,
 	query_invite_delete_unclaimed
 } from '#lib/auth/invite_queries.ts';
 import { query_create_account_with_actor } from '#lib/auth/account_queries.ts';
@@ -94,67 +92,6 @@ describe_db('InviteQueries', (get_db) => {
 				created_by: actor.id
 			});
 			assert.strictEqual(invite.created_by, actor.id);
-		});
-	});
-
-	describe('find_unclaimed_by_email', () => {
-		test('finds by email case-insensitively', async () => {
-			const deps = { db: get_db() };
-			await query_create_invite(deps, { email: 'Alice@Example.COM', created_by: null });
-			const found = await query_invite_find_unclaimed_by_email(deps, 'alice@example.com');
-			assert.ok(found);
-			assert.strictEqual(found.email, 'Alice@Example.COM');
-		});
-
-		test('returns undefined when no match', async () => {
-			const deps = { db: get_db() };
-			const found = await query_invite_find_unclaimed_by_email(deps, 'nobody@example.com');
-			assert.strictEqual(found, undefined);
-		});
-
-		test('returns undefined for claimed invites', async () => {
-			const db = get_db();
-			const deps = { db };
-			const invite = await query_create_invite(deps, {
-				email: 'claimed@example.com',
-				created_by: null
-			});
-			const { account } = await query_create_account_with_actor(deps, {
-				username: 'claimer',
-				password_hash: 'hash'
-			});
-			await query_invite_claim_unscoped(deps, invite.id, account.id);
-			const found = await query_invite_find_unclaimed_by_email(deps, 'claimed@example.com');
-			assert.strictEqual(found, undefined);
-		});
-	});
-
-	describe('find_unclaimed_by_username', () => {
-		test('finds by username case-insensitively', async () => {
-			const deps = { db: get_db() };
-			await query_create_invite(deps, { username: 'Alice', created_by: null });
-			const found = await query_invite_find_unclaimed_by_username(deps, 'alice');
-			assert.ok(found);
-			assert.strictEqual(found.username, 'Alice');
-		});
-
-		test('returns undefined when no match', async () => {
-			const deps = { db: get_db() };
-			const found = await query_invite_find_unclaimed_by_username(deps, 'nobody');
-			assert.strictEqual(found, undefined);
-		});
-
-		test('returns undefined for claimed invites', async () => {
-			const db = get_db();
-			const deps = { db };
-			const invite = await query_create_invite(deps, { username: 'taken', created_by: null });
-			const { account } = await query_create_account_with_actor(deps, {
-				username: 'claimer',
-				password_hash: 'hash'
-			});
-			await query_invite_claim_unscoped(deps, invite.id, account.id);
-			const found = await query_invite_find_unclaimed_by_username(deps, 'taken');
-			assert.strictEqual(found, undefined);
 		});
 	});
 
@@ -318,7 +255,7 @@ describe_db('InviteQueries', (get_db) => {
 			const result = await query_invite_claim_unscoped(deps, invite.id, account.id);
 			assert.strictEqual(result, true);
 
-			const all = await query_invite_list_all(deps);
+			const all = await query_invite_list_all_with_usernames(deps);
 			const claimed = all.find((i) => i.id === invite.id);
 			assert.ok(claimed);
 			assert.strictEqual(claimed.claimed_by, account.id);
@@ -343,7 +280,7 @@ describe_db('InviteQueries', (get_db) => {
 			assert.strictEqual(await query_invite_claim_unscoped(deps, invite.id, first.id), true);
 			assert.strictEqual(await query_invite_claim_unscoped(deps, invite.id, second.id), false);
 			// verify original claimer is preserved
-			const all = await query_invite_list_all(deps);
+			const all = await query_invite_list_all_with_usernames(deps);
 			const claimed = all.find((i) => i.id === invite.id);
 			assert.ok(claimed);
 			assert.strictEqual(claimed.claimed_by, first.id, 'original claimer should be preserved');
@@ -396,13 +333,13 @@ describe_db('InviteQueries', (get_db) => {
 				'query layer claims unconditionally — scope is the caller’s responsibility'
 			);
 
-			const all = await query_invite_list_all(deps);
+			const all = await query_invite_list_all_with_usernames(deps);
 			const row = all.find((i) => i.id === invite.id);
 			assert.ok(row);
 			assert.strictEqual(row.claimed_by, bob.id, 'Bob ended up bound to alice@example.com invite');
 		});
 
-		test('claimed invite is no longer found by find_unclaimed_by_email', async () => {
+		test('claimed invite is no longer matched by find_unclaimed_match_for_update', async () => {
 			const db = get_db();
 			const deps = { db };
 			const invite = await query_create_invite(deps, {
@@ -414,17 +351,14 @@ describe_db('InviteQueries', (get_db) => {
 				password_hash: 'hash'
 			});
 			await query_invite_claim_unscoped(deps, invite.id, account.id);
-			assert.strictEqual(
-				await query_invite_find_unclaimed_by_email(deps, 'gone@example.com'),
-				undefined
-			);
+			assert.strictEqual(await find_for_update(deps, 'gone@example.com', 'claimer'), undefined);
 		});
 	});
 
-	describe('list_all', () => {
+	describe('list_all_with_usernames', () => {
 		test('returns empty array when no invites', async () => {
 			const deps = { db: get_db() };
-			const all = await query_invite_list_all(deps);
+			const all = await query_invite_list_all_with_usernames(deps);
 			assert.strictEqual(all.length, 0);
 		});
 
@@ -432,7 +366,7 @@ describe_db('InviteQueries', (get_db) => {
 			const deps = { db: get_db() };
 			await query_create_invite(deps, { email: 'first@example.com', created_by: null });
 			await query_create_invite(deps, { email: 'second@example.com', created_by: null });
-			const all = await query_invite_list_all(deps);
+			const all = await query_invite_list_all_with_usernames(deps);
 			assert.strictEqual(all.length, 2);
 			const emails = new Set(all.map((i) => i.email));
 			assert.ok(emails.has('first@example.com'));
@@ -449,7 +383,7 @@ describe_db('InviteQueries', (get_db) => {
 			});
 			const deleted = await query_invite_delete_unclaimed(deps, invite.id);
 			assert.strictEqual(deleted, true);
-			const all = await query_invite_list_all(deps);
+			const all = await query_invite_list_all_with_usernames(deps);
 			assert.strictEqual(all.length, 0);
 		});
 
@@ -477,7 +411,7 @@ describe_db('InviteQueries', (get_db) => {
 			const deleted = await query_invite_delete_unclaimed(deps, invite.id);
 			assert.strictEqual(deleted, false);
 			// invite still exists
-			const all = await query_invite_list_all(deps);
+			const all = await query_invite_list_all_with_usernames(deps);
 			assert.strictEqual(all.length, 1);
 		});
 	});

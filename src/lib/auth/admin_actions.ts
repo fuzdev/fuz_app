@@ -47,6 +47,7 @@ import {
 	query_count_active_accounts_with_global_role_for_update
 } from './role_grant_queries.ts';
 import type { Uuid } from '../primitive_schemas.ts';
+import type { QueryDeps } from '../db/query_deps.ts';
 import { GRANT_PATH_ADMIN } from './grant_path_schema.ts';
 import { query_role_grant_offer_supersede_outgoing } from './role_grant_offer_queries.ts';
 import {
@@ -190,15 +191,22 @@ export const create_admin_actions = (
 		return { sessions };
 	};
 
-	const session_revoke_all_handler = async (
-		input: AdminSessionRevokeAllInput,
+	/**
+	 * Revoke every credential of one kind on an account — the body
+	 * `session_revoke_all_handler` and `token_revoke_all_handler` share,
+	 * differing only in the audit event and the revoke query.
+	 */
+	const revoke_all_for_account = async (
+		event_type: 'session_revoke_all' | 'token_revoke_all',
+		revoke: (deps: QueryDeps, account_id: string) => Promise<number>,
+		input: { account_id: Uuid },
 		ctx: ActionActorContext
-	): Promise<AdminSessionRevokeAllOutput> => {
+	): Promise<{ ok: true; count: number }> => {
 		const auth = ctx.auth;
 		const account = await query_account_by_id(ctx, input.account_id);
 		if (!account) {
 			deps.audit.emit(ctx, {
-				event_type: 'session_revoke_all',
+				event_type,
 				outcome: 'failure',
 				account_id: auth.account.id,
 				// `target_account_id` is null: the FK to `account` would reject
@@ -213,7 +221,7 @@ export const create_admin_actions = (
 			});
 			throw jsonrpc_errors.not_found('account', { reason: ERROR_ACCOUNT_NOT_FOUND });
 		}
-		const count = await query_session_revoke_all_for_account(ctx, input.account_id);
+		const count = await revoke(ctx, input.account_id);
 		// Close the target account's live connections once the revoke has
 		// committed — queued, so it never runs before the commit or on
 		// rollback, and it does not depend on the audit write below. Queued at
@@ -233,7 +241,7 @@ export const create_admin_actions = (
 		// `audit_log_list_with_usernames`; losing it on every success row
 		// to harden a corner case isn't worth the query-shape change.
 		deps.audit.emit(ctx, {
-			event_type: 'session_revoke_all',
+			event_type,
 			account_id: auth.account.id,
 			target_account_id: input.account_id,
 			ip: ctx.client_ip,
@@ -242,46 +250,17 @@ export const create_admin_actions = (
 		return { ok: true, count };
 	};
 
-	const token_revoke_all_handler = async (
+	const session_revoke_all_handler = (
+		input: AdminSessionRevokeAllInput,
+		ctx: ActionActorContext
+	): Promise<AdminSessionRevokeAllOutput> =>
+		revoke_all_for_account('session_revoke_all', query_session_revoke_all_for_account, input, ctx);
+
+	const token_revoke_all_handler = (
 		input: AdminTokenRevokeAllInput,
 		ctx: ActionActorContext
-	): Promise<AdminTokenRevokeAllOutput> => {
-		const auth = ctx.auth;
-		const account = await query_account_by_id(ctx, input.account_id);
-		if (!account) {
-			deps.audit.emit(ctx, {
-				event_type: 'token_revoke_all',
-				outcome: 'failure',
-				account_id: auth.account.id,
-				// See `session_revoke_all_handler` — FK forces null here; the
-				// probed id lives under `metadata.attempted_account_id`.
-				target_account_id: null,
-				ip: ctx.client_ip,
-				metadata: {
-					reason: ERROR_ACCOUNT_NOT_FOUND,
-					attempted_account_id: input.account_id
-				}
-			});
-			throw jsonrpc_errors.not_found('account', { reason: ERROR_ACCOUNT_NOT_FOUND });
-		}
-		const count = await query_revoke_all_api_tokens_for_account(ctx, input.account_id);
-		// Post-commit close — see `session_revoke_all_handler`.
-		queue_connection_close(ctx, connection_closer, {
-			kind: 'account',
-			account_id: input.account_id
-		});
-		// TOCTOU window — see `session_revoke_all_handler` for the rationale on
-		// keeping `target_account_id` populated rather than switching to the
-		// failure-shape.
-		deps.audit.emit(ctx, {
-			event_type: 'token_revoke_all',
-			account_id: auth.account.id,
-			target_account_id: input.account_id,
-			ip: ctx.client_ip,
-			metadata: { count }
-		});
-		return { ok: true, count };
-	};
+	): Promise<AdminTokenRevokeAllOutput> =>
+		revoke_all_for_account('token_revoke_all', query_revoke_all_api_tokens_for_account, input, ctx);
 
 	const audit_log_list_handler = async (
 		input: AuditLogListInput,

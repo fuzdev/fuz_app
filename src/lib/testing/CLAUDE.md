@@ -123,7 +123,7 @@ mismatch.
 ## Database — `db.ts`
 
 Factory builders for parameterized DB tests. Consumer projects pass their
-`init_schema` callback (which calls `run_migrations(db, [auth_migration_ns, ...app_migrations])`);
+`init_schema` callback (which calls `run_migrations(db, [AUTH_MIGRATION_NS, ...app_migrations])`);
 factories accept any migration namespace set.
 
 - `DbFactory` — `{name, create, close, skip, skip_reason?}`.
@@ -161,7 +161,7 @@ Key module-scope values:
 - `stub_password_deps` — `PasswordHashDeps` hashing via `stub_hash_${password}` and verifying by equality. Deterministic, no Argon2 cost — use for every test not specifically exercising password hashing.
 - `create_loopback_app_server_options()` — the loopback `create_app_server` options an in-process test server takes (`localhost` origins, the loopback proxy trusted, an empty env schema), fresh per call; `create_test_app` and `create_test_app_for_bootstrap` spread it under their own defaults (`rate_limiters: 'disabled_for_testing'`, `await_pending_effects: true`).
 - `TEST_COOKIE_SECRET` — 64-hex-char deterministic cookie secret. Produces a valid `Keyring` via `create_keyring`. Never used in production — the stub guard plus fixed value is the contract.
-- `fallback_db_factory` — module-level auth-only default factory (`create_default_db_factory`) `create_test_app_server` uses when no `db` is passed, reusing its driver's WASM cache. When `migration_namespaces` is supplied, a memoized sibling factory (keyed by namespace set) migrating `[auth_migration_ns, ...migration_namespaces]` is used instead — same shared WASM, extra tables.
+- `fallback_db_factory` — module-level auth-only default factory (`create_default_db_factory`) `create_test_app_server` uses when no `db` is passed, reusing its driver's WASM cache. When `migration_namespaces` is supplied, a memoized sibling factory (keyed by namespace set) migrating `[AUTH_MIGRATION_NS, ...migration_namespaces]` is used instead — same shared WASM, extra tables.
 
 Two helpers share the "insert account + actor + roles + API token + session +
 cookie" flow, split by intent:
@@ -1064,7 +1064,7 @@ file; the dual-spawn and limiter-enabled suites name their own files.
   `migration_namespaces` for suites needing tables beyond the auth-only
   default — the cell parity suite passes `[CELL_MIGRATION_NS]`, and
   `create_test_app` provisions a per-test fresh db migrating
-  `[auth_migration_ns, ...migration_namespaces]`), and
+  `[AUTH_MIGRATION_NS, ...migration_namespaces]`), and
   `default_in_process_suite_options(options)` (emits the full Tier 1 suite
   options bag: the `{setup_test, surface_source, capabilities}` triple plus
   `session_options` / `create_route_specs` / `rpc_endpoints` pass-through;

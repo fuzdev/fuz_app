@@ -33,7 +33,7 @@ import {
 	auth_integration_truncate_tables
 } from '#lib/testing/db.ts';
 import { run_migrations } from '#lib/db/migrate.ts';
-import { auth_migration_ns } from '#lib/auth/migrations.ts';
+import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
 import {
@@ -55,7 +55,7 @@ const { cookie_name } = session_options;
 const RPC_PATH = '/api/rpc';
 
 const init_schema = async (db: Db): Promise<void> => {
-	await run_migrations(db, [auth_migration_ns]);
+	await run_migrations(db, [AUTH_MIGRATION_NS]);
 };
 const factory = create_default_db_factory(init_schema);
 const describe_db = create_describe_db(factory, auth_integration_truncate_tables);
@@ -1380,6 +1380,61 @@ describe_db('invite + signup integration', (get_db) => {
 			// (we mocked `transaction` to throw before invoking the callback),
 			// so no invite_id is recorded.
 			assert.strictEqual(metadata.invite_id, undefined);
+		});
+
+		test('an invite claim that misses rolls the signup back as internal_error', async () => {
+			const test_app = await create_test_app({
+				session_options,
+				create_route_specs,
+				db: get_db(),
+				roles: [ROLE_ADMIN]
+			});
+			const invite = await query_create_invite(
+				{ db: get_db() },
+				{ username: 'claimmiss', created_by: null }
+			);
+
+			// The claim UPDATE matches no row inside the signup tx — the state a
+			// broken FOR UPDATE invariant would leave.
+			const db = get_db();
+			const transaction = db.transaction.bind(db);
+			vi.spyOn(db, 'transaction').mockImplementation((fn) =>
+				transaction(async (tx) => {
+					const query = tx.query.bind(tx);
+					vi.spyOn(tx, 'query').mockImplementation((sql: string, params?: Array<unknown>) =>
+						sql.startsWith('UPDATE invite SET claimed_by')
+							? Promise.resolve([])
+							: query(sql, params)
+					);
+					return fn(tx);
+				})
+			);
+			vi.spyOn(console, 'error').mockImplementation(() => {});
+
+			const res = await json_request(
+				test_app.app,
+				'/api/account/signup',
+				{ username: 'claimmiss', password: 'securepassword123' },
+				{ host: 'localhost', origin: 'http://localhost:5173' }
+			);
+			vi.restoreAllMocks();
+
+			assert.strictEqual(res.status, 500);
+			const body = await res.json();
+			assert.strictEqual(body.error, 'internal_error');
+			const accounts = await db.query(`SELECT id FROM account WHERE username = 'claimmiss'`);
+			assert.strictEqual(accounts.length, 0, 'the account rolled back');
+			const invites = await db.query<{ claimed_at: string | null }>(
+				`SELECT claimed_at FROM invite WHERE id = $1`,
+				[invite.id]
+			);
+			assert.strictEqual(invites[0]!.claimed_at, null);
+			const rows = await db.query<{ outcome: string; metadata: any }>(
+				`SELECT outcome, metadata FROM audit_log WHERE event_type = 'signup' ORDER BY seq DESC LIMIT 1`
+			);
+			assert.strictEqual(rows[0]!.outcome, 'failure');
+			assert.strictEqual(rows[0]!.metadata.reason, 'internal_error');
+			assert.strictEqual(rows[0]!.metadata.invite_id, invite.id);
 		});
 	});
 });

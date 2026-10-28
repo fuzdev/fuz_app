@@ -17,13 +17,13 @@ import { afterAll, assert, beforeAll, describe, test } from 'vitest';
 import type { Db } from '#lib/db/db.ts';
 import { run_migrations } from '#lib/db/migrate.ts';
 import { query_public_columns } from '#lib/db/schema_ready.ts';
-import { auth_migration_ns } from '#lib/auth/migrations.ts';
+import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
 import { CELL_DROP_TABLES, CELL_MIGRATION_NS } from '#lib/db/cell_ddl.ts';
 import { FACT_DROP_TABLES, FACT_MIGRATION_NS } from '#lib/db/fact_ddl.ts';
 import { create_default_db_factory } from '#lib/testing/db.ts';
 
 const factory = create_default_db_factory(async (db) => {
-	await run_migrations(db, [auth_migration_ns]);
+	await run_migrations(db, [AUTH_MIGRATION_NS]);
 });
 
 const query_table_names = async (db: Db): Promise<Set<string>> =>
@@ -84,10 +84,10 @@ describe.skipIf(factory.skip)('namespace drop lists', () => {
 		db = await factory.create();
 		// the order the full spine migrates in (`cell_db_fixture.ts`)
 		cell_tables = await added_tables(db, () =>
-			run_migrations(db, [auth_migration_ns, CELL_MIGRATION_NS])
+			run_migrations(db, [AUTH_MIGRATION_NS, CELL_MIGRATION_NS])
 		);
 		fact_tables = await added_tables(db, () =>
-			run_migrations(db, [auth_migration_ns, CELL_MIGRATION_NS, FACT_MIGRATION_NS])
+			run_migrations(db, [AUTH_MIGRATION_NS, CELL_MIGRATION_NS, FACT_MIGRATION_NS])
 		);
 	});
 

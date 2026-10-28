@@ -136,7 +136,7 @@ databases that recorded the released entries as applied, so editing one is a
 silent no-op there — the DDL never re-runs, the runner sees nothing new, and
 the shape the code expects never lands. Every auth schema change ships as a
 new appended entry with idempotent DDL, so a fresh bootstrap and an old
-deployed DB converge. The `auth_migrations` module doc in
+deployed DB converge. The module doc of
 `auth/migrations.ts` carries the incident that set the rule;
 `db/schema_ready.ts` is the runtime net when discipline lapses.
 

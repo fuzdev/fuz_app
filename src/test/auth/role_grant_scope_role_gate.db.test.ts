@@ -1,23 +1,20 @@
 /**
- * Finding 6 — scoped role_grant must not unlock unscoped role gate.
+ * A scoped role_grant must not unlock an unscoped role gate.
  *
- * `has_role(ctx, role)` walks `ctx.role_grants` matching only `p.role`, not
- * `p.scope_id`. The framework gates (route-spec `require_role`, the RPC
- * dispatcher's per-action role check, the WS dispatcher's per-action role
- * check) and the application-level admin bypasses inside
- * `role_grant_offer_actions.ts` all use this scope-agnostic helper, so a role_grant
- * like `{role: 'admin', scope_id: <some uuid>}` admits the holder to every
- * `auth: {account: 'required', actor: 'required', roles: ['admin']}` route in fuz_app — including the global admin RPC
- * surface (`account_list`, `audit_log_list`, `app_settings_update`, etc.).
+ * A gate that matched only `p.role`, ignoring `p.scope_id`, would let a
+ * role_grant like `{role: 'admin', scope_id: <some uuid>}` admit the holder to
+ * every `auth: {account: 'required', actor: 'required', roles: ['admin']}`
+ * route in fuz_app — including the global admin RPC surface
+ * (`account_list`, `audit_log_list`, `app_settings_update`, etc.).
  *
  * Threat path: a global admin offers `{role: 'admin', scope_id: scope_X}`
  * intending to delegate scoped admin authority over scope_X. The recipient
- * accepts; the resulting role_grant unlocks the entire global admin surface.
+ * accepts; the resulting role_grant must not unlock the global admin surface.
  *
- * The fix tightens each gate site to `has_scoped_role(ctx, role, null)`
- * (matches global / unscoped role_grants only). This file is the regression
- * harness: it should FAIL on main pre-fix (proves the bug exists), then
- * PASS after the gate sites are updated.
+ * Every gate site (route-spec `require_role`, the RPC and WS dispatchers'
+ * per-action role checks, the admin bypasses inside
+ * `role_grant_offer_actions.ts`) reads `has_scoped_role(ctx, role, null)`,
+ * which matches global role_grants only. This file pins that.
  *
  * @module
  */

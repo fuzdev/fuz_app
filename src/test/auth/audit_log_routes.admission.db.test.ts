@@ -27,7 +27,10 @@ import { Logger, type LogConsole } from '@fuzdev/fuz_util/log.ts';
 
 import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import { create_audit_log_route_specs } from '#lib/auth/audit_log_routes.ts';
-import { query_role_grant_revoke_role } from '#lib/auth/role_grant_queries.ts';
+import {
+	query_revoke_role_grant,
+	query_role_grant_find_active_for_actor
+} from '#lib/auth/role_grant_queries.ts';
 import { query_actor_soft_delete } from '#lib/auth/account_queries.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
@@ -190,7 +193,9 @@ describe_db('audit log stream admission', (get_db) => {
 
 		const { response, stalled } = await open_stalled(h);
 		// the grant goes and no close is delivered; the credential is still live
-		await query_role_grant_revoke_role({ db }, h.admin.actor.id, ROLE_ADMIN, null);
+		const grants = await query_role_grant_find_active_for_actor({ db }, h.admin.actor.id);
+		const admin_grant = grants.find((g) => g.role === ROLE_ADMIN)!;
+		await query_revoke_role_grant({ db }, admin_grant.id, h.admin.actor.id, null);
 		stalled.release();
 		const res = await response;
 

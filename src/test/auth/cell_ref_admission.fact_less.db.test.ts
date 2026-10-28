@@ -11,7 +11,7 @@
 import { test, assert } from 'vitest';
 
 import { cell_create_action_spec, ERROR_CELL_REF_NOT_HELD } from '#lib/auth/cell_action_specs.ts';
-import { auth_migration_ns } from '#lib/auth/migrations.ts';
+import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
 import { CELL_MIGRATION_NS, CELL_DROP_TABLES } from '#lib/db/cell_ddl.ts';
 import { run_migrations } from '#lib/db/migrate.ts';
 import {
@@ -23,7 +23,7 @@ import { call, create_cell_test_app } from './cell_test_helpers.ts';
 import { error_reason } from './rpc_test_helpers.ts';
 
 const factory = create_default_db_factory(async (db) => {
-	await run_migrations(db, [auth_migration_ns, CELL_MIGRATION_NS]);
+	await run_migrations(db, [AUTH_MIGRATION_NS, CELL_MIGRATION_NS]);
 });
 const describe_db = create_describe_db(
 	[factory],

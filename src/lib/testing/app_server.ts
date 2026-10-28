@@ -37,7 +37,7 @@ import {
 import { query_create_api_token } from '../auth/api_token_queries.ts';
 import { create_session_cookie_value, type SessionOptions } from '../auth/session_cookie.ts';
 import { run_migrations, type MigrationNamespace } from '../db/migrate.ts';
-import { auth_migration_ns } from '../auth/migrations.ts';
+import { AUTH_MIGRATION_NS } from '../auth/migrations.ts';
 import { create_realtime_closer } from '../actions/connection_closer.ts';
 import {
 	default_audit_factory,
@@ -83,7 +83,7 @@ export const TEST_COOKIE_SECRET = 'a'.repeat(64);
 // cache from `testing/db.ts`, avoiding redundant cold starts within one loaded copy of
 // that module. Schema is reset on each create() call.
 const fallback_db_factory = create_default_db_factory(async (db) => {
-	await run_migrations(db, [auth_migration_ns]);
+	await run_migrations(db, [AUTH_MIGRATION_NS]);
 });
 
 // Auto-created default factories keyed by extra-namespace identity. Suites
@@ -97,7 +97,7 @@ const fallback_factories_by_namespaces = new Map<string, DbFactory>();
  * Resolve the no-`db` default factory for the requested extra migration
  * namespaces. Empty / omitted → the shared auth-only `fallback_db_factory`;
  * otherwise a memoized factory whose `init` runs
- * `[auth_migration_ns, ...migration_namespaces]` on each reset. The
+ * `[AUTH_MIGRATION_NS, ...migration_namespaces]` on each reset. The
  * reset-on-`create` gives the same fresh-db-per-test isolation as the
  * auth-only default. Mirrors `create_app_backend`'s `migration_namespaces`
  * seam at the test layer.
@@ -112,7 +112,7 @@ const resolve_fallback_factory = (
 	let factory = fallback_factories_by_namespaces.get(key);
 	if (!factory) {
 		factory = create_default_db_factory(async (db) => {
-			await run_migrations(db, [auth_migration_ns, ...migration_namespaces]);
+			await run_migrations(db, [AUTH_MIGRATION_NS, ...migration_namespaces]);
 		});
 		fallback_factories_by_namespaces.set(key, factory);
 	}
@@ -325,7 +325,7 @@ export interface TestAppServerOptions {
 	 * `migration_namespaces`. For suites whose backend needs tables beyond
 	 * auth — the cell parity suite passes `[CELL_MIGRATION_NS]`. The harness
 	 * builds + caches a fresh-per-test factory migrating
-	 * `[auth_migration_ns, ...migration_namespaces]`; the reset-on-`create`
+	 * `[AUTH_MIGRATION_NS, ...migration_namespaces]`; the reset-on-`create`
 	 * gives the same fresh-db isolation as the auth-only default. Mutually
 	 * exclusive with `db` (which assumes the caller already migrated).
 	 */

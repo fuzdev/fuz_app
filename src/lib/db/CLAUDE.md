@@ -241,7 +241,7 @@ otherwise immaterial to the `schema_version` rows — `sequence` is assigned
 per-namespace):
 
 ```
-auth_migration_ns (built-in, fuz_auth)
+AUTH_MIGRATION_NS (built-in, fuz_auth)
   → CELL_MIGRATION_NS (fuz_cell — FKs actor.id)
   → FACT_MIGRATION_NS (fuz_facts — fact_holder FKs actor.id)
 ```

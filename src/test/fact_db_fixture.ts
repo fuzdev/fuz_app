@@ -10,11 +10,11 @@
  */
 
 import { auth_integration_truncate_tables } from '#lib/testing/db.ts';
-import { auth_migration_ns } from '#lib/auth/migrations.ts';
+import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
 import { FACT_MIGRATION_NS, FACT_DROP_TABLES } from '#lib/db/fact_ddl.ts';
 import { create_db_fixture } from './create_db_fixture.ts';
 
 export const { describe_db } = create_db_fixture(
-	[auth_migration_ns, FACT_MIGRATION_NS],
+	[AUTH_MIGRATION_NS, FACT_MIGRATION_NS],
 	[...FACT_DROP_TABLES, ...auth_integration_truncate_tables]
 );

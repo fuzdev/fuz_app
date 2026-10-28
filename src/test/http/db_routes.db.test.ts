@@ -26,7 +26,7 @@ import { ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY, TEST_CONTEXT_PRESET_KEY } from '#l
 import type { Db } from '#lib/db/db.ts';
 import { pg_error_code } from '#lib/db/pg_error.ts';
 import { run_migrations } from '#lib/db/migrate.ts';
-import { auth_migration_ns } from '#lib/auth/migrations.ts';
+import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
 import { create_pglite_db } from '#lib/db/db_pglite.ts';
 import { create_default_db_factory } from '#lib/testing/db.ts';
 
@@ -34,7 +34,7 @@ const log = new Logger('test', { level: 'off' });
 
 // Shared WASM database instance via factory cache — avoids cold start overhead.
 const factory = create_default_db_factory(async (db) => {
-	await run_migrations(db, [auth_migration_ns]);
+	await run_migrations(db, [AUTH_MIGRATION_NS]);
 });
 
 let db: Db;
@@ -331,7 +331,7 @@ describe('GET /tables/:name handler', () => {
 		const { PGlite } = await import('@electric-sql/pglite');
 		const { db: pglite_db, close } = create_pglite_db(new PGlite());
 		try {
-			await run_migrations(pglite_db, [auth_migration_ns]);
+			await run_migrations(pglite_db, [AUTH_MIGRATION_NS]);
 			await pglite_db.query(`CREATE DOMAIN blob_dom AS BYTEA`);
 			await pglite_db.query(`CREATE TABLE bytea_test (id TEXT PRIMARY KEY, data_dom BLOB_DOM)`);
 			await pglite_db.query(

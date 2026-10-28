@@ -30,7 +30,6 @@ import { generate_api_token } from '#lib/auth/api_token.ts';
 import {
 	query_create_role_grant,
 	query_revoke_role_grant,
-	query_role_grant_list_for_actor,
 	query_role_grant_find_active_for_actor
 } from '#lib/auth/role_grant_queries.ts';
 import { query_audit_log, query_audit_log_list } from '#lib/auth/audit_log_queries.ts';
@@ -266,12 +265,6 @@ describe_db('CrossAccountIsolation', (get_db) => {
 		assert.strictEqual(alice_active[0]!.role, ROLE_ADMIN);
 		assert.strictEqual(bob_active.length, 1);
 		assert.strictEqual(bob_active[0]!.role, ROLE_KEEPER);
-
-		// list includes revoked too
-		const alice_all = await query_role_grant_list_for_actor(deps, alice.actor_id);
-		for (const p of alice_all) {
-			assert.strictEqual(p.actor_id, alice.actor_id);
-		}
 	});
 
 	// -- Audit log isolation --

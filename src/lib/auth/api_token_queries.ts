@@ -89,6 +89,7 @@ const API_TOKEN_IS_LIVE = '(expires_at IS NULL OR expires_at > NOW())';
  * @param account_id - the owning account
  * @param name - human-readable name
  * @param token_hash - blake3 hash of the raw token
+ * @param scope - the token's authority narrowing, stored as `jsonb`
  * @param expires_at - optional expiration
  * @returns the stored token record
  * @mutates `api_token` table - inserts the new row keyed by `id`

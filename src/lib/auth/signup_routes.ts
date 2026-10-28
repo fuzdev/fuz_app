@@ -229,11 +229,18 @@ export const create_signup_route_specs = (
 							});
 
 							if (invite) {
-								// Guaranteed to succeed: FOR UPDATE held the row
-								// for the duration of the tx, so no concurrent
-								// claim could flip `claimed_at` between the find
-								// and this UPDATE.
-								await query_invite_claim_unscoped(tx_deps, invite.id, account.id);
+								// FOR UPDATE held the row for the duration of the
+								// tx, so no concurrent claim could flip `claimed_at`
+								// between the find and this UPDATE. A miss means
+								// that invariant broke — refuse loudly (the throw
+								// rolls the account back) rather than mint an
+								// account no invite admitted.
+								const claimed = await query_invite_claim_unscoped(tx_deps, invite.id, account.id);
+								if (!claimed) {
+									throw new Error(
+										`invite ${invite.id} was already claimed despite the FOR UPDATE lock`
+									);
+								}
 							}
 
 							await create_session_and_set_cookie({

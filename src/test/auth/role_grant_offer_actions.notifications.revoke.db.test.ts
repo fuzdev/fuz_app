@@ -25,7 +25,7 @@ import {
 	auth_integration_truncate_tables
 } from '#lib/testing/db.ts';
 import { run_migrations } from '#lib/db/migrate.ts';
-import { auth_migration_ns } from '#lib/auth/migrations.ts';
+import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
 import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
 import { role_grant_revoke_action_spec } from '#lib/auth/role_grant_offer_action_specs.ts';
 import { query_create_role_grant } from '#lib/auth/role_grant_queries.ts';
@@ -47,7 +47,7 @@ import {
 const session_options = create_session_config('test_session');
 
 const init_schema = async (db: Db): Promise<void> => {
-	await run_migrations(db, [auth_migration_ns]);
+	await run_migrations(db, [AUTH_MIGRATION_NS]);
 };
 const factory = create_default_db_factory(init_schema);
 const describe_db = create_describe_db(factory, auth_integration_truncate_tables);

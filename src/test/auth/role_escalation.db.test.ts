@@ -16,7 +16,6 @@ import { ROLE_KEEPER, ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import {
 	query_create_role_grant,
 	query_revoke_role_grant,
-	query_role_grant_has_role,
 	query_role_grant_find_active_for_actor
 } from '#lib/auth/role_grant_queries.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
@@ -24,6 +23,7 @@ import type { Db } from '#lib/db/db.ts';
 import { create_test_account_with_actor } from '#lib/testing/db_entities.ts';
 
 import { describe_db } from '../db_fixture.ts';
+import { query_role_grant_has_role } from './auth_test_queries.ts';
 
 /** Per-test convenience: returns just the ids the assertions care about. */
 const create_test_actor = async (

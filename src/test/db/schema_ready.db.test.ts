@@ -20,7 +20,7 @@ import { PGlite } from '@electric-sql/pglite';
 import type { Db } from '#lib/db/db.ts';
 import { create_pglite_db } from '#lib/db/db_pglite.ts';
 import { run_migrations } from '#lib/db/migrate.ts';
-import { auth_migration_ns } from '#lib/auth/migrations.ts';
+import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
 import { check_schema_drift, query_public_columns } from '#lib/db/schema_ready.ts';
 import { create_ready_route_spec } from '#lib/http/common_routes.ts';
 import { sync_expected_schema_fixture } from '#lib/testing/schema_ready_fixture.ts';
@@ -34,7 +34,7 @@ beforeAll(async () => {
 	const driver = create_pglite_db(new PGlite());
 	db = driver.db;
 	close_db = driver.close;
-	await run_migrations(db, [auth_migration_ns]);
+	await run_migrations(db, [AUTH_MIGRATION_NS]);
 });
 
 afterAll(async () => {

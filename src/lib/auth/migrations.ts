@@ -12,7 +12,7 @@
  * and the new column never lands — a silent, total auth outage. (The
  * `deleted_at` / `deleted_by` soft-delete columns were added to v0's base DDL
  * this way; an older deployed DB never got them and every login broke.) So:
- * never edit, rename, reorder, or re-purpose an entry in `auth_migrations`
+ * never edit, rename, reorder, or re-purpose an entry in `AUTH_MIGRATIONS`
  * below. Add every additive change as a NEW appended entry using idempotent
  * `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` — a fresh bootstrap and an old
  * deployed DB then converge on the same shape:
@@ -83,7 +83,7 @@ import {
 } from '../db/migrate.ts';
 
 /** Namespace identifier for fuz_app auth migrations. */
-export const AUTH_MIGRATION_NAMESPACE = 'fuz_auth';
+const AUTH_MIGRATION_NAMESPACE = 'fuz_auth';
 
 /**
  * Auth schema migrations in order.
@@ -105,7 +105,7 @@ export const AUTH_MIGRATION_NAMESPACE = 'fuz_auth';
  *   (registry-membership validation against `create_scope_kind_schema`);
  *   v2 may add INSERT-time `(role, scope_kind)` enforcement.
  */
-export const auth_migrations: Array<Migration> = [
+const AUTH_MIGRATIONS: Array<Migration> = [
 	// v0: full auth schema (frozen — never edit this body; see module doc)
 	{
 		name: 'full_auth_schema',
@@ -313,7 +313,7 @@ export const auth_migrations: Array<Migration> = [
  * Pre-composed migration namespace for auth tables — the spine's own (see
  * `create_spine_migration_namespace`).
  */
-export const auth_migration_ns: MigrationNamespace = create_spine_migration_namespace(
+export const AUTH_MIGRATION_NS: MigrationNamespace = create_spine_migration_namespace(
 	AUTH_MIGRATION_NAMESPACE,
-	auth_migrations
+	AUTH_MIGRATIONS
 );

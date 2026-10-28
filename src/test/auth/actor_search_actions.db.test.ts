@@ -33,7 +33,7 @@ import {
 	auth_integration_truncate_tables
 } from '#lib/testing/db.ts';
 import { run_migrations } from '#lib/db/migrate.ts';
-import { auth_migration_ns } from '#lib/auth/migrations.ts';
+import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
 import type { Db } from '#lib/db/db.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
 import type { RouteSpec } from '#lib/http/route_spec.ts';
@@ -42,7 +42,7 @@ const session_options = create_session_config('test_actor_search');
 const RPC_PATH = '/api/rpc';
 
 const init_schema = async (db: Db): Promise<void> => {
-	await run_migrations(db, [auth_migration_ns]);
+	await run_migrations(db, [AUTH_MIGRATION_NS]);
 };
 const factory = create_default_db_factory(init_schema);
 const describe_db = create_describe_db(factory, auth_integration_truncate_tables);

@@ -17,8 +17,8 @@ import {
 import { to_session_account } from '#lib/auth/account_schema.ts';
 import {
 	query_create_role_grant,
-	query_role_grant_find_active_for_actor,
-	query_role_grant_revoke_role
+	query_revoke_role_grant,
+	query_role_grant_find_active_for_actor
 } from '#lib/auth/role_grant_queries.ts';
 import { refresh_role_grants, build_request_context } from '#lib/auth/request_context.ts';
 
@@ -84,7 +84,8 @@ describe_db('refresh_role_grants', (get_db) => {
 		assert.strictEqual(ctx.role_grants.length, 2);
 
 		// revoke admin
-		await query_role_grant_revoke_role(deps, actor.id, ROLE_ADMIN, null);
+		const admin_grant = ctx.role_grants.find((g) => g.role === ROLE_ADMIN)!;
+		await query_revoke_role_grant(deps, admin_grant.id, actor.id, null);
 
 		const refreshed = await refresh_role_grants(ctx, deps);
 		assert.strictEqual(refreshed.role_grants.length, 1);
@@ -109,7 +110,8 @@ describe_db('refresh_role_grants', (get_db) => {
 		};
 		assert.strictEqual(ctx.role_grants.length, 1);
 
-		await query_role_grant_revoke_role(deps, actor.id, ROLE_ADMIN, null);
+		const admin_grant = ctx.role_grants.find((g) => g.role === ROLE_ADMIN)!;
+		await query_revoke_role_grant(deps, admin_grant.id, actor.id, null);
 
 		const refreshed = await refresh_role_grants(ctx, deps);
 		assert.strictEqual(refreshed.role_grants.length, 0);

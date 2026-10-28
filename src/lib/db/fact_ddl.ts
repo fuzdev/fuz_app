@@ -37,7 +37,7 @@ import {
 } from './migrate.ts';
 
 /** `fact` table — content-addressed byte store. */
-export const FACTS_SCHEMA = `
+const FACTS_SCHEMA = `
 CREATE TABLE IF NOT EXISTS fact (
 	hash TEXT PRIMARY KEY,
 	bytes BYTEA,
@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS fact (
  *
  * `target_hash` is not a foreign key (federation: target may live remotely).
  */
-export const FACT_REFS_SCHEMA = `
+const FACT_REFS_SCHEMA = `
 CREATE TABLE IF NOT EXISTS fact_ref (
 	source_hash TEXT NOT NULL REFERENCES fact(hash) ON DELETE CASCADE,
 	target_hash TEXT NOT NULL,
@@ -61,11 +61,11 @@ CREATE TABLE IF NOT EXISTS fact_ref (
 )`;
 
 /** Reverse lookup: which facts reference a given target? */
-export const FACT_REFS_TARGET_INDEX = `
+const FACT_REFS_TARGET_INDEX = `
 CREATE INDEX IF NOT EXISTS idx_fact_ref_target ON fact_ref(target_hash)`;
 
 /** `memo` table — `(fn_id, input_hash) → output_hash` for memoized computations. */
-export const MEMOS_SCHEMA = `
+const MEMOS_SCHEMA = `
 CREATE TABLE IF NOT EXISTS memo (
 	fn_id TEXT NOT NULL,
 	input_hash TEXT NOT NULL,
@@ -83,7 +83,7 @@ CREATE TABLE IF NOT EXISTS memo (
  * `actor_id`, serving the admission lookup and the actor-side cascade.
  * `created_at` is the holder's most recent put, not the first.
  */
-export const FACT_HOLDER_SCHEMA = `
+const FACT_HOLDER_SCHEMA = `
 CREATE TABLE IF NOT EXISTS fact_holder (
 	actor_id UUID NOT NULL REFERENCES actor(id) ON DELETE CASCADE,
 	hash TEXT NOT NULL REFERENCES fact(hash) ON DELETE CASCADE,
@@ -92,14 +92,14 @@ CREATE TABLE IF NOT EXISTS fact_holder (
 )`;
 
 /** Serves the fact-side cascade of `fact_holder`. */
-export const FACT_HOLDER_HASH_INDEX = `
+const FACT_HOLDER_HASH_INDEX = `
 CREATE INDEX IF NOT EXISTS idx_fact_holder_hash ON fact_holder(hash)`;
 
 /** Tables created by `FACT_MIGRATION_NS`, in drop order (children first). */
 export const FACT_DROP_TABLES = ['fact_holder', 'memo', 'fact_ref', 'fact'] as const;
 
 /** Fact + memo + possession migrations. Frozen + append-only — see the module doc. */
-export const FACT_MIGRATIONS: Array<Migration> = [
+const FACT_MIGRATIONS: Array<Migration> = [
 	{
 		name: 'full_fact_schema',
 		up: async (db: Db): Promise<void> => {
@@ -119,7 +119,7 @@ export const FACT_MIGRATIONS: Array<Migration> = [
 ];
 
 /** Namespace identifier for fact + memo migrations. */
-export const FACT_MIGRATION_NAMESPACE = 'fuz_facts';
+const FACT_MIGRATION_NAMESPACE = 'fuz_facts';
 
 /**
  * Migration namespace consumed by `run_migrations` — the spine's own, so splice

@@ -1,24 +1,22 @@
 /**
- * Tests for `role_grant_queries.ts` — `query_create_role_grant` + `query_role_grant_has_role`
- * scope semantics.
+ * Tests for `role_grant_queries.ts` — `query_create_role_grant` scope semantics.
  *
  * Covers global-role_grant idempotence on the NULL-scope sentinel, scope-keyed
- * distinct rows, same-scope idempotence, and `has_role` matching rules
- * (scoped vs global, no cross-match either direction).
+ * distinct rows, same-scope idempotence, and exact-scope matching on read-back
+ * through the test-side `query_role_grant_has_role` (`auth_test_queries.ts`):
+ * scoped vs global, no cross-match either direction.
  *
  * @module
  */
 
 import { assert, test } from 'vitest';
 
-import {
-	query_create_role_grant,
-	query_role_grant_has_role
-} from '#lib/auth/role_grant_queries.ts';
+import { query_create_role_grant } from '#lib/auth/role_grant_queries.ts';
 import { create_uuid } from '#lib/primitive_schemas.ts';
 
 import { describe_db } from '../db_fixture.ts';
 import { make_account } from './role_grant_offer_queries.fixtures.ts';
+import { query_role_grant_has_role } from './auth_test_queries.ts';
 
 describe_db('role_grant_queries.scope', (get_db) => {
 	test('query_create_role_grant: global role_grant (scope_id NULL) idempotent on sentinel', async () => {

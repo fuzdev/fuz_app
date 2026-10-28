@@ -34,7 +34,7 @@ import {
 	account_token_revoke_action_spec
 } from '#lib/auth/account_action_specs.ts';
 import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
-import { auth_migration_ns } from '#lib/auth/migrations.ts';
+import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
 import { create_test_app } from '#lib/testing/app_server.ts';
 import { DEFAULT_TEST_PASSWORD } from '#lib/testing/test_credentials.ts';
 import {
@@ -54,7 +54,7 @@ const session_options = create_session_config('test_session');
 const RPC_PATH = '/api/rpc';
 
 const init_schema = async (db: Db): Promise<void> => {
-	await run_migrations(db, [auth_migration_ns]);
+	await run_migrations(db, [AUTH_MIGRATION_NS]);
 };
 const factory = create_default_db_factory(init_schema);
 const describe_db = create_describe_db(factory, auth_integration_truncate_tables);

@@ -349,7 +349,7 @@ routes (bootstrap, RPC endpoints, surface) -> surface generation -> Hono app
 assembly (routes, then WS endpoints) -> `post_route_middleware` -> static
 serving -> the auth cleanup schedule when `auth_cleanup` is set (§Auth cleanup
 below). Migrations run earlier, in `create_app_backend`.
-A consumer migration namespace must not bear a `reserved_migration_namespaces` name (`fuz_auth`, `fuz_cell`, `fuz_facts`) — `run_migrations` (so `create_app_backend` and every direct caller) throws a `namespace-reserved` `MigrationError` naming it, before touching the database. The spine's own `CELL_MIGRATION_NS` / `FACT_MIGRATION_NS` are admitted by identity (splice the imported objects, not copies); auth always runs first, so passing `auth_migration_ns` again is a no-op.
+A consumer migration namespace must not bear a `reserved_migration_namespaces` name (`fuz_auth`, `fuz_cell`, `fuz_facts`) — `run_migrations` (so `create_app_backend` and every direct caller) throws a `namespace-reserved` `MigrationError` naming it, before touching the database. The spine's own `CELL_MIGRATION_NS` / `FACT_MIGRATION_NS` are admitted by identity (splice the imported objects, not copies); auth always runs first, so passing `AUTH_MIGRATION_NS` again is a no-op.
 
 Consumer-specific code (env loading, error formatting/exit, custom
 middleware) stays in the consumer. Body size limiting defaults to 1 MiB
@@ -1839,10 +1839,10 @@ import {
 	type DbFactory
 } from '@fuzdev/fuz_app/testing/db.ts';
 import { run_migrations } from '@fuzdev/fuz_app/db/migrate.ts';
-import { auth_migration_ns } from '@fuzdev/fuz_app/auth/migrations.ts';
+import { AUTH_MIGRATION_NS } from '@fuzdev/fuz_app/auth/migrations.ts';
 
 const init_schema = async (db: Db) => {
-	await run_migrations(db, [auth_migration_ns]);
+	await run_migrations(db, [AUTH_MIGRATION_NS]);
 };
 const factories: Array<DbFactory> = [
 	create_default_db_factory(init_schema),

@@ -137,7 +137,7 @@ a `describe_db` function:
 ```typescript
 import type { Db } from '@fuzdev/fuz_app/db/db.ts';
 import { run_migrations } from '@fuzdev/fuz_app/db/migrate.ts';
-import { auth_migration_ns } from '@fuzdev/fuz_app/auth/migrations.ts';
+import { AUTH_MIGRATION_NS } from '@fuzdev/fuz_app/auth/migrations.ts';
 import {
 	create_default_db_factory,
 	create_pg_factory,
@@ -146,7 +146,7 @@ import {
 } from '@fuzdev/fuz_app/testing/db.ts';
 
 const init_schema = async (db: Db): Promise<void> => {
-	await run_migrations(db, [auth_migration_ns, MY_APP_MIGRATION_NS]);
+	await run_migrations(db, [AUTH_MIGRATION_NS, MY_APP_MIGRATION_NS]);
 };
 
 // Tables to truncate between tests (order matters for FK constraints)

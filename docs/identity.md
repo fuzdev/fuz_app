@@ -153,11 +153,11 @@ Distilled from design exploration — the choices that most affect consumers:
    their kinds via `create_scope_kind_schema(...)` (open string
    registry). Authorization reads stay uniform regardless of path —
    request-actor checks go through the in-memory
-   `has_role` / `has_scoped_role` / `has_any_scoped_role` helpers on the
+   `has_scoped_role` / `has_any_scoped_role` helpers on the
    `RequestContext` snapshot (scope-only — `(role, scope_kind)`
    compatibility is informative metadata in v1, INSERT-time enforcement
-   reserved for v2); arbitrary-actor checks use
-   `query_role_grant_has_role(actor, role, scope_id?)`
+   reserved for v2); arbitrary-actor checks read
+   `query_role_grant_find_active_for_actor(actor)`
 5. **Username immutable, case-insensitive unique** — username is identity (logs, URLs,
    mental models). A `LOWER()` unique index prevents case-variant duplicates.
    Display name can change freely
@@ -234,8 +234,8 @@ features) start on the offer flow from day one.
 `role_grant.source_offer_id` preserves provenance: direct-grant rows have
 `source_offer_id IS NULL`, offer-accepted rows point back at the offer
 that produced them. Authorization reads (the in-memory `has_*` helpers
-on `RequestContext`, and the SQL `query_role_grant_has_role` /
-`query_role_grant_find_active_for_actor` for arbitrary-actor checks) do not
+on `RequestContext`, and the SQL `query_role_grant_find_active_for_actor`
+for arbitrary-actor checks) do not
 discriminate between the two paths — a role_grant is a role_grant. The offer
 table stores the "how we got here" story; the role_grant table stores the
 live capability.

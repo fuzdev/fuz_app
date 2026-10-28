@@ -14,7 +14,7 @@
 
 import { describe, test, assert, beforeAll, afterAll, afterEach } from 'vitest';
 
-import { auth_migration_ns } from '#lib/auth/migrations.ts';
+import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
 import type { Db } from '#lib/db/db.ts';
 import { run_migrations } from '#lib/db/migrate.ts';
 import { create_pglite_factory } from '#lib/testing/db.ts';
@@ -22,7 +22,7 @@ import { query_schema_snapshot, type SchemaSnapshot } from '#lib/testing/schema_
 import { diff_schema_snapshots } from '#lib/testing/schema_parity.ts';
 
 const factory = create_pglite_factory(async (db) => {
-	await run_migrations(db, [auth_migration_ns]);
+	await run_migrations(db, [AUTH_MIGRATION_NS]);
 });
 
 let db: Db;

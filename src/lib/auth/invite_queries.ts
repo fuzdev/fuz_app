@@ -56,32 +56,6 @@ export const query_create_invite = async (
 };
 
 /**
- * Find an unclaimed invite by email (case-insensitive).
- */
-export const query_invite_find_unclaimed_by_email = async (
-	deps: QueryDeps,
-	email: string
-): Promise<Invite | undefined> => {
-	return deps.db.query_one<Invite>(
-		`SELECT ${columns_sql(INVITE_COLUMNS, invite_expr(''))} FROM invite WHERE LOWER(email) = LOWER($1) AND claimed_at IS NULL`,
-		[email]
-	);
-};
-
-/**
- * Find an unclaimed invite by username (case-insensitive).
- */
-export const query_invite_find_unclaimed_by_username = async (
-	deps: QueryDeps,
-	username: string
-): Promise<Invite | undefined> => {
-	return deps.db.query_one<Invite>(
-		`SELECT ${columns_sql(INVITE_COLUMNS, invite_expr(''))} FROM invite WHERE LOWER(username) = LOWER($1) AND claimed_at IS NULL`,
-		[username]
-	);
-};
-
-/**
  * Find an unclaimed invite matching email and/or username, taking a
  * row-level write lock on the matched row.
  *
@@ -131,9 +105,9 @@ export const query_invite_find_unclaimed_match_for_update = async (
  * The `_unscoped` suffix is the safety signal — the SQL only checks the
  * row state (`claimed_at IS NULL`), not whether the claiming account's
  * email or username matches the invite. Callers must scope the lookup
- * upstream via one of the `_find_unclaimed_match*` siblings (production
- * uses `_for_update` to make find + claim atomic). Skipping the find
- * step lets a caller claim any unclaimed invite by id.
+ * upstream through `query_invite_find_unclaimed_match_for_update`, which
+ * also makes find + claim atomic. Skipping the find step lets a caller
+ * claim any unclaimed invite by id.
  *
  * Mirrors the `query_session_revoke_by_hash_unscoped` precedent — there
  * is no scoped sibling because the scoping is provided by a separate
@@ -157,15 +131,6 @@ export const query_invite_claim_unscoped = async (
 		[account_id, invite_id]
 	);
 	return rows.length > 0;
-};
-
-/**
- * List all invites, newest first.
- */
-export const query_invite_list_all = async (deps: QueryDeps): Promise<Array<Invite>> => {
-	return deps.db.query<Invite>(
-		`SELECT ${columns_sql(INVITE_COLUMNS, invite_expr(''))} FROM invite ORDER BY invite.created_at DESC`
-	);
 };
 
 /**

@@ -56,7 +56,7 @@ import { create_audit_emitter, type AuditEmitter } from '#lib/auth/audit_emitter
 import { create_loopback_app_server_options, stub_password_deps } from '#lib/testing/app_server.ts';
 import { create_default_db_factory } from '#lib/testing/db.ts';
 import { run_migrations } from '#lib/db/migrate.ts';
-import { auth_migration_ns } from '#lib/auth/migrations.ts';
+import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
 import {
 	create_stub_upgrade,
 	create_fake_hono_context,
@@ -125,7 +125,7 @@ const create_test_setup = async (): Promise<{
 	audit: AuditEmitter;
 }> => {
 	const db = await factory.create();
-	const migration_results = await run_migrations(db, [auth_migration_ns]);
+	const migration_results = await run_migrations(db, [AUTH_MIGRATION_NS]);
 	const audit = create_audit_emitter({ db, log });
 	const backend: AppBackend = {
 		db_type: 'pglet-memory',

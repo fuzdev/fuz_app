@@ -374,7 +374,7 @@ export const create_role_grant_offer_actions = (
 
 		// Offering a builtin role is global-admin authority, decided here rather
 		// than by the injected callback: a consumer callback answering by holding
-		// the role (a scope-blind `has_role`) would otherwise let a scoped `admin`
+		// the role (a scope-blind check) would otherwise let a scoped `admin`
 		// row offer a global `admin` to a second account it controls. Same denial
 		// the default callback gives.
 		if (is_builtin_role(input.role) && !has_scoped_role(auth, ROLE_ADMIN, null)) {

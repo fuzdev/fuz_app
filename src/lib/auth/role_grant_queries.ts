@@ -301,41 +301,10 @@ export const query_role_grant_find_active_for_actor = async (
 };
 
 /**
- * Check if an actor has an active role_grant for a given role.
- *
- * The `scope_id` parameter selects between global and scoped checks:
- * - Omitted or `null` — matches a global role_grant (`scope_id IS NULL`).
- *   Pre-scope callers keep their existing semantics.
- * - A scope uuid — matches a role_grant bound to that exact scope.
- *
- * The `IS NOT DISTINCT FROM` comparison handles the NULL case uniformly.
- */
-export const query_role_grant_has_role = async (
-	deps: QueryDeps,
-	actor_id: string,
-	role: string,
-	scope_id?: string | null
-): Promise<boolean> => {
-	const row = await deps.db.query_one<{ exists: boolean }>(
-		`SELECT EXISTS(
-			SELECT 1 FROM role_grant
-			WHERE actor_id = $1
-			  AND role = $2
-			  AND scope_id IS NOT DISTINCT FROM $3
-			  AND revoked_at IS NULL
-			  AND (expires_at IS NULL OR expires_at > NOW())
-		 ) AS exists`,
-		[actor_id, role, scope_id ?? null]
-	);
-	return row?.exists ?? false;
-};
-
-/**
  * Account-grain check: does any actor on `account_id` hold an active
  * global role_grant for `role`?
  *
- * Symmetric with `query_role_grant_has_role` but keyed on the account
- * instead of a single actor — for surfaces with `auth: actor: 'none'`
+ * Keyed on the account rather than a single actor — for surfaces with `auth: actor: 'none'`
  * that don't load `auth.role_grants` and can't use the in-memory
  * `has_scoped_role` predicate. Joins `role_grant` → `actor`; matches
  * only global role_grants (`scope_id IS NULL`) since the use case is
@@ -480,19 +449,6 @@ export const query_count_active_accounts_with_global_role_for_update = async (
 };
 
 /**
- * List all role_grants for an actor (including revoked/expired).
- */
-export const query_role_grant_list_for_actor = async (
-	deps: QueryDeps,
-	actor_id: string
-): Promise<Array<RoleGrant>> => {
-	return deps.db.query<RoleGrant>(
-		`SELECT ${columns_sql(ROLE_GRANT_COLUMNS, role_grant_expr)} FROM role_grant WHERE actor_id = $1 ORDER BY role_grant.created_at DESC`,
-		[actor_id]
-	);
-};
-
-/**
  * Find the account ID of an account that holds an active **global** role_grant
  * for a given role.
  *
@@ -576,8 +532,8 @@ export interface RevokeForScopeResult {
  * orphan role_grants and offers. The cascade is **role-agnostic**: anything
  * attached to the destroyed scope is cleaned up.
  *
- * Both updates run as separate statements inside the caller's transaction
- * (mirrors `query_role_grant_revoke_role`'s shape). The two halves are
+ * Both updates run as separate statements inside the caller's transaction,
+ * the `role_grant` revoke first. The two halves are
  * independent — orphan pending offers can exist at a scope with no active
  * role_grants, so the supersede half always runs even when no role_grant was
  * revoked.
@@ -638,101 +594,6 @@ export const query_role_grant_revoke_for_scope = async (
 		)
 		${ROLE_GRANT_OFFER_WITH_GRANTOR_SELECT}`,
 		[scope_id]
-	);
-	return { revoked, superseded_offers };
-};
-
-/** Result of `query_role_grant_revoke_role` — every role_grant revoked plus the pending offers superseded by the bulk revoke. */
-export interface RevokeRoleResult {
-	/**
-	 * One entry per role_grant revoked by this call. Carries the revokee's
-	 * `account_id` so callers can fan out a `role_grant_revoke` notification per
-	 * scope-instance. Empty array means nothing was active for `(actor, role)`.
-	 */
-	revoked: Array<{
-		role_grant_id: string;
-		role: string;
-		scope_kind: string | null;
-		scope_id: string | null;
-		account_id: string;
-	}>;
-	/**
-	 * Pending offers for the actor's account+role (all scopes) superseded by
-	 * the bulk revoke. Each entry carries its grantor's `from_account_id` so
-	 * callers can fan out `role_grant_offer_supersede` notifications without a
-	 * second round-trip.
-	 */
-	superseded_offers: Array<SupersededOffer>;
-}
-
-/**
- * Revoke every active role_grant an actor holds for a given role.
- *
- * With scoped role_grants a single actor+role tuple can hold several active
- * role_grants (one per scope), so this revokes all of them. Pass
- * `query_revoke_role_grant(role_grant_id, ...)` when a single scoped role_grant
- * is the target.
- *
- * Also supersedes pending offers for the actor's account across every
- * scope of this role (the actor can no longer hold the role, so any
- * pending offer of the same role is a bypass vector).
- *
- * @param deps - query dependencies
- * @param actor_id - the actor whose role_grants to revoke
- * @param role - the role to revoke
- * @param revoked_by - the actor who revoked it (for audit trail)
- * @param reason - optional free-form reason, stamped on `role_grant.revoked_reason`.
- * @returns the list of revoked role_grants (empty if none were active) and superseded pending offers
- * @mutates `role_grant` table - sets `revoked_at`/`revoked_by`/`revoked_reason` on every active row for `(actor, role)`
- * @mutates `role_grant_offer` table - stamps `superseded_at` on every matching pending offer
- */
-export const query_role_grant_revoke_role = async (
-	deps: QueryDeps,
-	actor_id: string,
-	role: string,
-	revoked_by: string | null,
-	reason?: string | null
-): Promise<RevokeRoleResult> => {
-	// CTE pulls the revokee's `account_id` via a join on `actor` so callers
-	// can address the revokee without an extra round-trip.
-	const revoked = await deps.db.query<{
-		role_grant_id: string;
-		role: string;
-		scope_kind: string | null;
-		scope_id: string | null;
-		account_id: string;
-	}>(
-		`WITH updated AS (
-			UPDATE role_grant
-			SET revoked_at = NOW(), revoked_by = $3, revoked_reason = $4
-			WHERE actor_id = $1 AND role = $2 AND revoked_at IS NULL
-			RETURNING id, role, scope_kind, scope_id, actor_id
-		)
-		SELECT u.id AS role_grant_id, u.role, u.scope_kind, u.scope_id, a.account_id
-		FROM updated u
-		JOIN actor a ON a.id = u.actor_id`,
-		[actor_id, role, revoked_by ?? null, reason ?? null]
-	);
-	if (revoked.length === 0) {
-		return { revoked: [], superseded_offers: [] };
-	}
-	const superseded_offers = await deps.db.query<SupersededOffer>(
-		`WITH updated AS (
-			UPDATE role_grant_offer o
-			SET superseded_at = NOW()
-			FROM actor a
-			WHERE a.id = $1
-			  AND o.to_account_id = a.account_id
-			  AND o.role = $2
-			  AND o.accepted_at IS NULL
-			  AND o.declined_at IS NULL
-			  AND o.retracted_at IS NULL
-			  AND o.superseded_at IS NULL
-			-- raw columns; the outer grantor select formats them
-			RETURNING ${qualify_columns(ROLE_GRANT_OFFER_COLUMNS, 'o')}
-		)
-		${ROLE_GRANT_OFFER_WITH_GRANTOR_SELECT}`,
-		[actor_id, role]
 	);
 	return { revoked, superseded_offers };
 };

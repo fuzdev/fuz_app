@@ -66,7 +66,7 @@ import { is_browser_context } from '../http/origin.ts';
  *
  * @param deps - query dependencies (pool-level db for middleware)
  * @param log - the logger instance
- * @mutates Hono context - sets `ACCOUNT_ID_KEY`, `CREDENTIAL_TYPE_KEY`, `AUTH_API_TOKEN_ID_KEY`, and `CREDENTIAL_DEADLINE_KEY` on success
+ * @mutates Hono context - sets `ACCOUNT_ID_KEY`, `CREDENTIAL_TYPE_KEY`, `AUTH_API_TOKEN_ID_KEY`, `TOKEN_SCOPE_KEY`, and `CREDENTIAL_DEADLINE_KEY` on success
  */
 export const create_bearer_auth_middleware = (deps: QueryDeps, log: Logger): MiddlewareHandler => {
 	return async (c, next): Promise<Response | void> => {

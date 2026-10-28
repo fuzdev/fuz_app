@@ -12,10 +12,10 @@ import './assert_dev_env.ts';
  * ```ts
  * import {create_default_db_factory, create_pg_factory} from '@fuzdev/fuz_app/testing/db.ts';
  * import {run_migrations} from '@fuzdev/fuz_app/db/migrate.ts';
- * import {auth_migration_ns} from '@fuzdev/fuz_app/auth/migrations.ts';
+ * import {AUTH_MIGRATION_NS} from '@fuzdev/fuz_app/auth/migrations.ts';
  *
  * const init_schema = async (db) => {
- *   await run_migrations(db, [auth_migration_ns]);
+ *   await run_migrations(db, [AUTH_MIGRATION_NS]);
  * };
  * const default_factory = create_default_db_factory(init_schema);
  * const pg_factory = create_pg_factory(init_schema, process.env.TEST_DATABASE_URL);

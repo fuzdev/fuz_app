@@ -20,7 +20,7 @@ import type { DbType, Db } from '../db/db.ts';
 import type { Keyring } from '../auth/keyring.ts';
 import type { PasswordHashDeps } from '../auth/password.ts';
 import { run_migrations, type MigrationNamespace, type MigrationResult } from '../db/migrate.ts';
-import { auth_migration_ns } from '../auth/migrations.ts';
+import { AUTH_MIGRATION_NS } from '../auth/migrations.ts';
 import { create_db } from '../db/create_db.ts';
 
 /**
@@ -175,7 +175,7 @@ export const create_app_backend = async (options: CreateAppBackendOptions): Prom
 	// caller sees the original failure, not a teardown-shaped one.
 	try {
 		const migration_results = await run_migrations(db, [
-			auth_migration_ns,
+			AUTH_MIGRATION_NS,
 			...(options.migration_namespaces ?? [])
 		]);
 		const audit = audit_factory({ db, log });

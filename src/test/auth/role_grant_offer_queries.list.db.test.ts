@@ -1,8 +1,7 @@
 /**
- * Tests for `role_grant_offer_queries.ts` — list / find_pending / sweep readers.
+ * Tests for `role_grant_offer_queries.ts` — list / sweep readers.
  *
- * Covers the active-offer filter on `query_role_grant_offer_list`, the
- * `find_pending` lookup short-circuit on terminal/expired offers, and the
+ * Covers the active-offer filter on `query_role_grant_offer_list` and the
  * expired-only `sweep_expired` reader. The supersede × sweep interaction
  * lives in `role_grant_offer_queries.supersede.db.test.ts`.
  *
@@ -16,7 +15,6 @@ import {
 	query_role_grant_offer_decline,
 	query_role_grant_offer_retract,
 	query_role_grant_offer_list,
-	query_role_grant_offer_find_pending,
 	query_role_grant_offer_sweep_expired
 } from '#lib/auth/role_grant_offer_queries.ts';
 import { create_uuid } from '#lib/primitive_schemas.ts';
@@ -90,71 +88,6 @@ describe_db('role_grant_offer_queries.list', (get_db) => {
 		const list = await query_role_grant_offer_list(deps, recipient.account_id);
 		assert.strictEqual(list.length, 1);
 		assert.strictEqual(list[0]!.id, pending.id);
-	});
-
-	test('find_pending returns null for every terminal state plus expired-pending', async () => {
-		// Same exhaustive coverage as the list test. find_pending shares the
-		// same predicate structure — a missing IS NULL would silently break
-		// the supersede revoke-bypass forecloser.
-		const db = get_db();
-		const deps = { db };
-		const grantor = await make_account(db, 'grantor_find');
-		const recipient = await make_account(db, 'recipient_find');
-
-		// pending baseline
-		const pending = await create_pending_offer(db, grantor, recipient);
-		assert.ok(await query_role_grant_offer_find_pending(deps, pending.id));
-
-		// accepted
-		// An app role — accept refuses a scoped builtin (`admin` / `keeper`).
-		const acceptable = await create_pending_offer(db, grantor, recipient, {
-			role: 'classroom_student',
-			scope_id: create_uuid()
-		});
-		await db.transaction((tx) =>
-			query_accept_offer(
-				{ db: tx },
-				{
-					offer_id: acceptable.id,
-					to_account_id: recipient.account_id,
-					actor_id: recipient.actor_id
-				}
-			)
-		);
-		assert.strictEqual(await query_role_grant_offer_find_pending(deps, acceptable.id), null);
-
-		// declined
-		const declinable = await create_pending_offer(db, grantor, recipient, {
-			role: 'classroom_student',
-			scope_id: create_uuid()
-		});
-		await query_role_grant_offer_decline(deps, declinable.id, recipient.account_id, null);
-		assert.strictEqual(await query_role_grant_offer_find_pending(deps, declinable.id), null);
-
-		// retracted
-		const retractable = await create_pending_offer(db, grantor, recipient, {
-			role: 'classroom_student',
-			scope_id: create_uuid()
-		});
-		await query_role_grant_offer_retract(deps, retractable.id, grantor.actor_id);
-		assert.strictEqual(await query_role_grant_offer_find_pending(deps, retractable.id), null);
-
-		// superseded
-		const superseded_id = await insert_superseded_offer(db, grantor, recipient, {
-			scope_id: create_uuid()
-		});
-		assert.strictEqual(await query_role_grant_offer_find_pending(deps, superseded_id), null);
-
-		// expired-pending
-		const expired = await create_pending_offer(db, grantor, recipient, {
-			role: 'classroom_student',
-			scope_id: create_uuid(),
-			expires_at: future(-hour)
-		});
-		assert.strictEqual(await query_role_grant_offer_find_pending(deps, expired.id), null);
-
-		// missing
-		assert.strictEqual(await query_role_grant_offer_find_pending(deps, create_uuid()), null);
 	});
 
 	test('sweep returns only expired pending offers', async () => {

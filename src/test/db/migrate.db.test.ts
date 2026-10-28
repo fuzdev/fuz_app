@@ -21,7 +21,7 @@ import {
 	type MigrationNamespace
 } from '#lib/db/migrate.ts';
 import { create_default_db_factory, reset_public_schema } from '#lib/testing/db.ts';
-import { auth_migration_ns } from '#lib/auth/migrations.ts';
+import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
 import { CELL_MIGRATION_NS } from '#lib/db/cell_ddl.ts';
 import { FACT_MIGRATION_NS } from '#lib/db/fact_ddl.ts';
 
@@ -701,16 +701,16 @@ describe('reserved spine namespaces', () => {
 	});
 
 	test('a copy of a spine namespace is refused; the spine object itself is admitted', async () => {
-		for (const ns of [auth_migration_ns, CELL_MIGRATION_NS, FACT_MIGRATION_NS]) {
+		for (const ns of [AUTH_MIGRATION_NS, CELL_MIGRATION_NS, FACT_MIGRATION_NS]) {
 			const err = assert_migration_error(
-				await assert_rejects(() => run_migrations(db, [auth_migration_ns, { ...ns }]))
+				await assert_rejects(() => run_migrations(db, [AUTH_MIGRATION_NS, { ...ns }]))
 			);
 			assert.strictEqual(err.kind, 'namespace-reserved');
 		}
 		// the refusal covers the whole list, so even the leading auth chain didn't run
 		assert.strictEqual(await schema_version_exists(), false);
 		assert.doesNotThrow(() =>
-			assert_migration_namespaces([auth_migration_ns, CELL_MIGRATION_NS, FACT_MIGRATION_NS])
+			assert_migration_namespaces([AUTH_MIGRATION_NS, CELL_MIGRATION_NS, FACT_MIGRATION_NS])
 		);
 	});
 

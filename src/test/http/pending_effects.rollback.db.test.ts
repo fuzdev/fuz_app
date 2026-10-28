@@ -32,7 +32,7 @@ import {
 	auth_integration_truncate_tables
 } from '#lib/testing/db.ts';
 import { run_migrations } from '#lib/db/migrate.ts';
-import { auth_migration_ns } from '#lib/auth/migrations.ts';
+import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 import { emit_after_commit } from '#lib/http/pending_effects.ts';
 import { get_route_input, type RouteSpec } from '#lib/http/route_spec.ts';
@@ -46,7 +46,7 @@ const RPC_PATH = '/api/rpc';
 const REST_PATH = '/test/rollback_probe';
 
 const factory = create_default_db_factory(async (db) => {
-	await run_migrations(db, [auth_migration_ns]);
+	await run_migrations(db, [AUTH_MIGRATION_NS]);
 	await db.query('CREATE TABLE IF NOT EXISTS rollback_probe (token text primary key)');
 });
 const describe_db = create_describe_db(factory, auth_integration_truncate_tables);

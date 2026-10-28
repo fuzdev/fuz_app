@@ -87,7 +87,7 @@ import {
  * `actor` is null on account-grain routes (no `acting` field on input,
  * no `role` / `keeper` auth) — those handlers don't trigger actor
  * resolution. `role_grants` is empty in that case. Role grant checks
- * (`has_role`, `has_scoped_role`, `has_any_scoped_role`) are
+ * (`has_scoped_role`, `has_any_scoped_role`) are
  * null-tolerant on `RequestContext | null`; they additionally treat
  * `actor: null` as "no role_grants" so callers don't have to narrow.
  *
@@ -162,33 +162,6 @@ export interface RequestActorContext extends RequestContext {
 }
 
 /**
- * Check if a request context has an active role_grant for a given role at
- * **any** scope.
- *
- * Checks the role_grants already loaded in the context (no DB query).
- * Null-tolerant — `null` ctx (unauthenticated) returns `false`. Symmetric
- * with `has_scoped_role` / `has_any_scoped_role` so the three helpers
- * compose freely in the same predicate.
- *
- * Scope-blind, so never the gate for a builtin role (`admin` / `keeper`) or
- * for any capability that isn't itself scoped: a grant bound to one resource
- * would pass it. Those gates read the global grant through
- * `has_scoped_role(ctx, role, null)` (e.g.
- * `has_scoped_role(auth, ROLE_ADMIN, null) || has_scoped_role(auth, role, scope)`).
- *
- * @param ctx - the request context, or `null` for unauthenticated callers
- * @param role - the role to check
- * @param now - current time (defaults to `new Date()`, pass for testability and hot-path efficiency)
- * @returns `true` if the actor has an active role_grant for the role
- */
-export const has_role = (
-	ctx: RequestContext | null,
-	role: string,
-	now: Date = new Date()
-): boolean =>
-	ctx?.role_grants.some((p) => p.role === role && is_role_grant_active(p, now)) ?? false;
-
-/**
  * Whether the request context holds an active role_grant for `role` at `scope_id`.
  *
  * Walks the in-memory `ctx.role_grants` snapshot loaded once per request by
@@ -201,8 +174,8 @@ export const has_role = (
  * provides.
  *
  * Null-tolerant — `null` ctx (unauthenticated) and account-grain
- * contexts (`actor: null`, empty `role_grants`) both return `false`. Same
- * convention as `has_role`; lets the helper drop into public
+ * contexts (`actor: null`, empty `role_grants`) both return `false`, which
+ * lets the helper drop into public
  * (`{account: 'none', actor: 'none'}`) and account-grain
  * (`{account: 'required', actor: 'none'}`) handlers without a manual
  * narrow. See `cell_authorize` for the resource-side analog.
@@ -321,7 +294,8 @@ export const resolve_acting_actor = async (
  *
  * Reads the session identity (set by session middleware), looks up the
  * `auth_session`, and on a valid session sets `c.var.auth_account_id`,
- * `CREDENTIAL_TYPE_KEY = 'session'`, `AUTH_SESSION_TOKEN_HASH_KEY`, and
+ * `CREDENTIAL_TYPE_KEY = 'session'`, `AUTH_SESSION_TOKEN_HASH_KEY`,
+ * `TOKEN_SCOPE_KEY` (the full scope — a session is not narrowed), and
  * `CREDENTIAL_DEADLINE_KEY` — the earlier of the cookie's signed expiry
  * (`SESSION_COOKIE_EXPIRES_AT_KEY`) and the row's.
  * Touches the session (fire-and-forget). Does not load actor or role_grants;
@@ -329,12 +303,13 @@ export const resolve_acting_actor = async (
  * authorization phase resolves the acting actor and builds the full
  * `RequestContext` when the route needs one.
  *
- * Invalid / missing session leaves all keys null and calls `next()` —
+ * Invalid / missing session leaves every key unset (`null`, or `undefined`
+ * for `TOKEN_SCOPE_KEY`) and calls `next()` —
  * `require_auth` / `require_role` enforce.
  *
  * @param deps - query dependencies (pool-level db for middleware)
  * @param session_context_key - the Hono context key where session middleware stored the session token
- * @mutates Hono context - sets `ACCOUNT_ID_KEY`, `CREDENTIAL_TYPE_KEY`, `AUTH_SESSION_TOKEN_HASH_KEY`, `AUTH_API_TOKEN_ID_KEY`, and `CREDENTIAL_DEADLINE_KEY`
+ * @mutates Hono context - resets `REQUEST_CONTEXT_KEY`, `ACCOUNT_ID_KEY`, `CREDENTIAL_TYPE_KEY`, `AUTH_SESSION_TOKEN_HASH_KEY`, `AUTH_API_TOKEN_ID_KEY`, `CREDENTIAL_DEADLINE_KEY`, and `TOKEN_SCOPE_KEY`, then on a valid session sets all but `REQUEST_CONTEXT_KEY` and `AUTH_API_TOKEN_ID_KEY`
  */
 export const create_request_context_middleware = (
 	deps: QueryDeps,
@@ -347,6 +322,7 @@ export const create_request_context_middleware = (
 		c.set(AUTH_SESSION_TOKEN_HASH_KEY, null);
 		c.set(AUTH_API_TOKEN_ID_KEY, null);
 		c.set(CREDENTIAL_DEADLINE_KEY, null);
+		c.set(TOKEN_SCOPE_KEY, undefined);
 
 		const session_token: string | null = c.get(session_context_key) ?? null;
 		if (!session_token) {

@@ -24,7 +24,7 @@ import { PGlite } from '@electric-sql/pglite';
 import type { Db } from '#lib/db/db.ts';
 import { create_pglite_db } from '#lib/db/db_pglite.ts';
 import { run_migrations } from '#lib/db/migrate.ts';
-import { auth_migration_ns } from '#lib/auth/migrations.ts';
+import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
 import { CELL_MIGRATION_NS } from '#lib/db/cell_ddl.ts';
 import { FACT_MIGRATION_NS } from '#lib/db/fact_ddl.ts';
 import { sync_expected_schema_fixture } from '#lib/testing/schema_ready_fixture.ts';
@@ -45,7 +45,7 @@ beforeAll(async () => {
 	close_db = driver.close;
 	// Same namespace set + order the TS spine binary (`build_spine_app`) and the
 	// Rust stub (`run_app`) bootstrap, so the introspected columns match both.
-	await run_migrations(db, [auth_migration_ns, CELL_MIGRATION_NS, FACT_MIGRATION_NS]);
+	await run_migrations(db, [AUTH_MIGRATION_NS, CELL_MIGRATION_NS, FACT_MIGRATION_NS]);
 });
 
 afterAll(async () => {

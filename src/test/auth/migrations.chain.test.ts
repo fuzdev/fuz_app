@@ -18,11 +18,7 @@
 
 import { describe, assert, test } from 'vitest';
 
-import {
-	auth_migrations,
-	auth_migration_ns,
-	AUTH_MIGRATION_NAMESPACE
-} from '#lib/auth/migrations.ts';
+import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
 
 /** The released chain, in order. Append only — never edit or reorder. */
 const EXPECTED_MIGRATION_NAMES = [
@@ -35,21 +31,20 @@ const EXPECTED_MIGRATION_NAMES = [
 	'role_grant_offer_expire_audited_at'
 ];
 
-describe('auth_migrations', () => {
+describe('AUTH_MIGRATION_NS', () => {
 	test('names and order match the released chain', () => {
 		assert.deepStrictEqual(
-			auth_migrations.map((m) => m.name),
+			AUTH_MIGRATION_NS.migrations.map((m) => m.name),
 			EXPECTED_MIGRATION_NAMES
 		);
 	});
 
 	test('names are unique', () => {
-		const names = auth_migrations.map((m) => m.name);
+		const names = AUTH_MIGRATION_NS.migrations.map((m) => m.name);
 		assert.strictEqual(new Set(names).size, names.length);
 	});
 
-	test('the namespace bundles the same chain under the reserved name', () => {
-		assert.strictEqual(auth_migration_ns.namespace, AUTH_MIGRATION_NAMESPACE);
-		assert.strictEqual(auth_migration_ns.migrations, auth_migrations);
+	test('the namespace is the reserved name', () => {
+		assert.strictEqual(AUTH_MIGRATION_NS.namespace, 'fuz_auth');
 	});
 });

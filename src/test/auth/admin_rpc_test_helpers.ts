@@ -28,7 +28,7 @@ import {
 	auth_integration_truncate_tables
 } from '#lib/testing/db.ts';
 import { run_migrations } from '#lib/db/migrate.ts';
-import { auth_migration_ns } from '#lib/auth/migrations.ts';
+import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
 import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
 import { create_admin_actions } from '#lib/auth/admin_actions.ts';
 import type { Db } from '#lib/db/db.ts';
@@ -42,7 +42,7 @@ export const session_options = create_session_config('test_session');
 export const RPC_PATH = '/api/rpc';
 
 const init_schema = async (db: Db): Promise<void> => {
-	await run_migrations(db, [auth_migration_ns]);
+	await run_migrations(db, [AUTH_MIGRATION_NS]);
 };
 
 const factory = create_default_db_factory(init_schema);

@@ -1,7 +1,7 @@
 /**
  * Tests for `role_grant_offer_queries.ts` — `query_accept_offer` core paths.
  *
- * Covers the happy-path accept (role_grant insert + audit fan-out + has_role),
+ * Covers the happy-path accept (role_grant insert + audit fan-out + an active grant),
  * idempotent re-accept on race, the `already_terminal` rejection on
  * declined / retracted offers and on a replay after the grant was revoked, and the recipient-mismatch IDOR guard
  * (404-over-403 with zero column mutation). Supersede semantics on accept
@@ -15,15 +15,14 @@ import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
 import {
 	query_role_grant_offer_decline,
-	query_role_grant_offer_find_pending,
 	query_accept_offer,
 	RoleGrantOfferAlreadyTerminalError,
 	RoleGrantOfferNotFoundError
 } from '#lib/auth/role_grant_offer_queries.ts';
-import { query_role_grant_has_role } from '#lib/auth/role_grant_queries.ts';
 
 import { describe_db } from '../db_fixture.ts';
 import { make_account, create_pending_offer } from './role_grant_offer_queries.fixtures.ts';
+import { query_role_grant_has_role, select_role_grant_offer } from './auth_test_queries.ts';
 
 describe_db('role_grant_offer_queries.accept', (get_db) => {
 	test('accept inserts role_grant + stamps resulting_role_grant_id + emits audit events', async () => {
@@ -70,7 +69,7 @@ describe_db('role_grant_offer_queries.accept', (get_db) => {
 		assert.strictEqual(grant_metadata.role_grant_id, result.role_grant.id);
 		assert.strictEqual(grant_metadata.role, 'teacher');
 
-		// role_grant is active via has_role check.
+		// the role_grant reads back active
 		assert.strictEqual(await query_role_grant_has_role(deps, recipient.actor_id, 'teacher'), true);
 	});
 
@@ -166,8 +165,9 @@ describe_db('role_grant_offer_queries.accept', (get_db) => {
 		);
 		assert.ok(err instanceof RoleGrantOfferNotFoundError);
 		// offer is still pending — the wrong-recipient call must not accept it.
-		const still_pending = await query_role_grant_offer_find_pending(deps, offer.id);
+		const still_pending = await select_role_grant_offer(deps, offer.id);
 		assert.ok(still_pending);
+		assert.strictEqual(still_pending.accepted_at, null);
 
 		// Defense-in-depth for the 404-over-403 contract: zero columns mutated.
 		const rows = await db.query<{
@@ -222,7 +222,7 @@ describe_db('role_grant_offer_queries.accept', (get_db) => {
 		assert.ok(err.message.includes(offer.id));
 
 		// Offer must remain pending and untouched.
-		const still_pending = await query_role_grant_offer_find_pending(deps, offer.id);
+		const still_pending = await select_role_grant_offer(deps, offer.id);
 		assert.ok(still_pending);
 		assert.strictEqual(still_pending.accepted_at, null);
 		assert.strictEqual(still_pending.resulting_role_grant_id, null);

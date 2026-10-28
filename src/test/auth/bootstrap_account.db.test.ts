@@ -7,7 +7,6 @@
 import { assert, test, beforeEach } from 'vitest';
 
 import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
-import { query_role_grant_has_role } from '#lib/auth/role_grant_queries.ts';
 import { bootstrap_account, type BootstrapAccountDeps } from '#lib/auth/bootstrap_account.ts';
 import { stub_password_deps } from '#lib/testing/app_server.ts';
 import { argon2_password_deps } from '#lib/auth/password_argon2.ts';
@@ -20,6 +19,7 @@ import {
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { describe_db } from '../db_fixture.ts';
+import { query_role_grant_has_role } from './auth_test_queries.ts';
 
 const log = new Logger('test', { level: 'off' });
 const TEST_TOKEN = 'bootstrap_secret_token_abc123_xyz789';

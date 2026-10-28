@@ -29,7 +29,7 @@ import type { AppServerContext } from '../server/app_server_context.ts';
 import type { RouteSpec } from '../http/route_spec.ts';
 import { RateLimiter } from '../rate_limiter.ts';
 import { RateLimitError } from '../http/error_schemas.ts';
-import { auth_migration_ns } from '../auth/migrations.ts';
+import { AUTH_MIGRATION_NS } from '../auth/migrations.ts';
 import { create_test_app, type SuiteAppOptions } from './app_server.ts';
 import {
 	create_default_db_factory,
@@ -93,7 +93,7 @@ export interface RateLimitingTestOptions {
 export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): void => {
 	const max_attempts = options.max_attempts ?? 2;
 	const init_schema = async (db: Db): Promise<void> => {
-		await run_migrations(db, [auth_migration_ns]);
+		await run_migrations(db, [AUTH_MIGRATION_NS]);
 	};
 	const factories = options.db_factories ?? [create_default_db_factory(init_schema)];
 	const describe_db = create_describe_db(factories, auth_integration_truncate_tables);

@@ -13,9 +13,9 @@ import { create_health_route_spec } from '#lib/http/common_routes.ts';
 import { create_app_server, type AppServerOptions } from '#lib/server/app_server.ts';
 import { create_app_backend, type AppBackend, type AuditFactory } from '#lib/server/app_backend.ts';
 import { create_loopback_app_server_options, stub_password_deps } from '#lib/testing/app_server.ts';
-import { AUTH_MIGRATION_NAMESPACE } from '#lib/auth/migrations.ts';
-import { CELL_MIGRATION_NAMESPACE, CELL_MIGRATION_NS } from '#lib/db/cell_ddl.ts';
-import { FACT_MIGRATION_NAMESPACE, FACT_MIGRATION_NS } from '#lib/db/fact_ddl.ts';
+import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
+import { CELL_MIGRATION_NS } from '#lib/db/cell_ddl.ts';
+import { FACT_MIGRATION_NS } from '#lib/db/fact_ddl.ts';
 import type { MigrationNamespace } from '#lib/db/migrate.ts';
 import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
 import { create_test_keyring } from '../auth/session_test_helpers.ts';
@@ -88,7 +88,7 @@ describe('create_app_backend', () => {
 			});
 
 			const namespaces = backend.migration_results.map((r) => r.namespace);
-			assert.deepStrictEqual(namespaces, [AUTH_MIGRATION_NAMESPACE]);
+			assert.deepStrictEqual(namespaces, [AUTH_MIGRATION_NS.namespace]);
 
 			await backend.close();
 		}
@@ -124,7 +124,7 @@ describe('create_app_backend', () => {
 			assert.deepStrictEqual(ran, ['a_v0']);
 
 			const namespaces = backend.migration_results.map((r) => r.namespace);
-			assert.deepStrictEqual(namespaces, [AUTH_MIGRATION_NAMESPACE, 'test_ns_a']);
+			assert.deepStrictEqual(namespaces, [AUTH_MIGRATION_NS.namespace, 'test_ns_a']);
 
 			// schema_version row should reflect the consumer namespace
 			const rows = await backend.deps.db.query<{ namespace: string; name: string }>(
@@ -176,7 +176,7 @@ describe('create_app_backend', () => {
 
 			assert.deepStrictEqual(ran, ['a', 'b']);
 			const namespaces = backend.migration_results.map((r) => r.namespace);
-			assert.deepStrictEqual(namespaces, [AUTH_MIGRATION_NAMESPACE, 'order_a', 'order_b']);
+			assert.deepStrictEqual(namespaces, [AUTH_MIGRATION_NS.namespace, 'order_a', 'order_b']);
 
 			await backend.close();
 		}
@@ -194,7 +194,7 @@ describe('create_app_backend', () => {
 						password: stub_password_deps,
 						...fs_stubs,
 						audit_factory: test_audit_factory,
-						migration_namespaces: [{ namespace: AUTH_MIGRATION_NAMESPACE, migrations: [] }]
+						migration_namespaces: [{ namespace: AUTH_MIGRATION_NS.namespace, migrations: [] }]
 					}),
 				/reserved for the spine/
 			);
@@ -250,9 +250,9 @@ describe('create_app_backend', () => {
 			try {
 				const namespaces = backend.migration_results.map((r) => r.namespace);
 				assert.deepStrictEqual(namespaces, [
-					AUTH_MIGRATION_NAMESPACE,
-					CELL_MIGRATION_NAMESPACE,
-					FACT_MIGRATION_NAMESPACE
+					AUTH_MIGRATION_NS.namespace,
+					CELL_MIGRATION_NS.namespace,
+					FACT_MIGRATION_NS.namespace
 				]);
 			} finally {
 				await backend.close();
@@ -364,7 +364,7 @@ describe('create_app_backend', () => {
 							called = true;
 							return create_audit_emitter({ db, log });
 						},
-						migration_namespaces: [{ namespace: AUTH_MIGRATION_NAMESPACE, migrations: [] }]
+						migration_namespaces: [{ namespace: AUTH_MIGRATION_NS.namespace, migrations: [] }]
 					}),
 				/reserved for the spine/
 			);

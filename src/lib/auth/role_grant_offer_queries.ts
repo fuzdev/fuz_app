@@ -403,27 +403,6 @@ export const query_role_grant_offer_history_for_account = async (
 };
 
 /**
- * Look up a pending offer by id. Returns `null` if the offer is terminal,
- * expired (server-side filter), or missing.
- */
-export const query_role_grant_offer_find_pending = async (
-	deps: QueryDeps,
-	offer_id: string
-): Promise<RoleGrantOffer | null> => {
-	const row = await deps.db.query_one<RoleGrantOffer>(
-		`SELECT ${columns_sql(ROLE_GRANT_OFFER_COLUMNS, role_grant_offer_expr(''))} FROM role_grant_offer
-		 WHERE id = $1
-		   AND accepted_at IS NULL
-		   AND declined_at IS NULL
-		   AND retracted_at IS NULL
-		   AND superseded_at IS NULL
-		   AND expires_at > NOW()`,
-		[offer_id]
-	);
-	return row ?? null;
-};
-
-/**
  * Claim the pending offers whose `expires_at` has passed and whose expiry has
  * not been audited yet, stamping `expire_audited_at` on each, and return them
  * soonest-expiry first.

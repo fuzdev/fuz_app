@@ -59,7 +59,7 @@ import {
 } from '#lib/testing/app_server.ts';
 import { create_default_db_factory } from '#lib/testing/db.ts';
 import { run_migrations } from '#lib/db/migrate.ts';
-import { auth_migration_ns } from '#lib/auth/migrations.ts';
+import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
 import {
 	create_fake_ws,
 	create_stub_upgrade,
@@ -138,7 +138,7 @@ const create_test_server = async (
 	wrap_db: (db: Db) => Db = (db) => db
 ): Promise<TestServer> => {
 	const db = wrap_db(await factory.create());
-	const migration_results = await run_migrations(db, [auth_migration_ns]);
+	const migration_results = await run_migrations(db, [AUTH_MIGRATION_NS]);
 	const audit = audit_factory({ db, log });
 	const backend: AppBackend = {
 		db_type: 'pglet-memory',

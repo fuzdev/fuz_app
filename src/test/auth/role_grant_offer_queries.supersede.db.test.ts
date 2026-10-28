@@ -20,7 +20,6 @@ import {
 	query_role_grant_offer_decline,
 	query_role_grant_offer_retract,
 	query_role_grant_offer_list,
-	query_role_grant_offer_find_pending,
 	query_role_grant_offer_history_for_account,
 	query_role_grant_offer_sweep_expired,
 	query_accept_offer,
@@ -39,6 +38,7 @@ import {
 	create_pending_offer,
 	insert_superseded_offer
 } from './role_grant_offer_queries.fixtures.ts';
+import { select_role_grant_offer } from './auth_test_queries.ts';
 
 describe_db('role_grant_offer_queries.supersede', (get_db) => {
 	test('two grantors produce distinct pending offers for same (to_account, role, scope)', async () => {
@@ -295,7 +295,7 @@ describe_db('role_grant_offer_queries.supersede', (get_db) => {
 		assert.ok(declined?.declined_at);
 
 		// B is still pending.
-		const still = await query_role_grant_offer_find_pending(deps, offer_b.id);
+		const still = await select_role_grant_offer(deps, offer_b.id);
 		assert.ok(still);
 		assert.strictEqual(still.accepted_at, null);
 		assert.strictEqual(still.declined_at, null);
@@ -323,9 +323,13 @@ describe_db('role_grant_offer_queries.supersede', (get_db) => {
 		const retracted = await query_role_grant_offer_retract(deps, offer_a.id, grantor_a.actor_id);
 		assert.ok(retracted?.retracted_at);
 
-		const still = await query_role_grant_offer_find_pending(deps, offer_b.id);
+		// B is still pending.
+		const still = await select_role_grant_offer(deps, offer_b.id);
 		assert.ok(still);
+		assert.strictEqual(still.accepted_at, null);
+		assert.strictEqual(still.declined_at, null);
 		assert.strictEqual(still.retracted_at, null);
+		assert.strictEqual(still.superseded_at, null);
 	});
 
 	test('decline and retract on a superseded offer both throw already_terminal', async () => {

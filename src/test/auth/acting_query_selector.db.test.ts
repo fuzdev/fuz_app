@@ -20,7 +20,7 @@ import { create_test_app } from '#lib/testing/app_server.ts';
 import { query_create_actor } from '#lib/auth/account_queries.ts';
 import { create_account_status_route_spec } from '#lib/auth/account_routes.ts';
 import { REQUEST_CONTEXT_KEY } from '#lib/auth/request_context.ts';
-import { auth_migration_ns } from '#lib/auth/migrations.ts';
+import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
 import { run_migrations } from '#lib/db/migrate.ts';
 import {
 	auth_integration_truncate_tables,
@@ -41,7 +41,7 @@ const ALLOWED_ORIGIN = 'http://localhost:3000';
 const log = new Logger('test', { level: 'off' });
 
 const init_schema = async (db: Db): Promise<void> => {
-	await run_migrations(db, [auth_migration_ns]);
+	await run_migrations(db, [AUTH_MIGRATION_NS]);
 };
 const factory = create_default_db_factory(init_schema);
 const describe_db = create_describe_db(factory, auth_integration_truncate_tables);
