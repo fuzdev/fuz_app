@@ -394,9 +394,9 @@ export const make_default_rust_backend_config = (
 			FUZ_ALLOW_ORIGIN_WILDCARDS: 'true',
 			FUZ_BOOTSTRAP_TOKEN_PATH: paths.bootstrap_token_path,
 			// Self-wipe the auth-namespace schema before migrations on every
-			// boot. Read by `fuz_testing::reset_db_on_startup_if_env_set`,
-			// which the consumer's test binary invokes from its
-			// `pre_migration_hook` between pool creation and
+			// boot. Read by the hook `fuz_testing::startup_reset_hook` builds,
+			// which the consumer's test binary passes as its
+			// `pre_migration_hook`, run between pool creation and
 			// `fuz_db::run_migrations`. The `_testing_reset` RPC action
 			// (per-test reset) is orthogonal.
 			FUZ_TESTING_RESET_DB_ON_STARTUP: 'true',
