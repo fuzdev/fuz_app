@@ -19,12 +19,14 @@
  *   `fuz_app_test_rust_spine_stub_security`
  * - `cross_backend_ts_differential` — `ts_spine_node_differential` on 1185,
  *   `ts_spine_bun_differential` on 1186, each on `memory://`
+ * - `cross_backend_timing` — `ts_spine_node_timing` on 1187 on `memory://`,
+ *   `spine_stub_timing` on 1188 over `fuz_app_test_rust_spine_stub_timing`
  *
  * A backend's name is also its directory under `os.tmpdir()`.
  *
- * The parity and security databases sit on the server the stub's URL names
- * (`FUZ_TESTING_RUST_SPINE_STUB_DATABASE_URL`, else the local default); each
- * project's `globalSetup` creates the ones it uses.
+ * The parity, security and timing databases sit on the server the stub's URL
+ * names (`FUZ_TESTING_RUST_SPINE_STUB_DATABASE_URL`, else the local default);
+ * each project's `globalSetup` creates the ones it uses.
  *
  * Config-time module: dependency-free, like `make_cross_backend_project`.
  *
@@ -70,6 +72,18 @@ const DUAL_SPAWN_PROJECTS: ReadonlyArray<CrossBackendProjectOptions> = [
 		include: [
 			'src/test/cross_backend/login_security.cross.test.ts',
 			'src/test/cross_backend/ws_action_rate_limit.cross.test.ts'
+		]
+	},
+	// The timing gates spawn both backends with the audit stream's keep-alive
+	// interval and the WS receive timeout shortened — a config nothing else can
+	// share (a short receive timeout would close the standard suites' idle
+	// sockets mid-case).
+	{
+		name: 'cross_backend_timing',
+		global_setup: './src/test/cross_backend/global_setup_timing.ts',
+		include: [
+			'src/test/cross_backend/sse_keep_alive.cross.test.ts',
+			'src/test/cross_backend/ws_receive_timeout.cross.test.ts'
 		]
 	},
 	// The differential again, between two JS runtimes: the TS spine on Node and

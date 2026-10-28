@@ -208,6 +208,24 @@ export const ACTION_RATE_LIMIT_ENABLED_ENV = 'FUZ_ACTION_RATE_LIMIT_ENABLED';
 export const ACTION_RATE_LIMIT_MAX_ATTEMPTS_ENV = 'FUZ_ACTION_RATE_LIMIT_MAX_ATTEMPTS';
 
 /**
+ * Env var replacing the audit stream's keep-alive interval on both spine
+ * binaries (a positive integer of ms up to 2³¹ − 1; unset keeps
+ * `SSE_KEEP_ALIVE_INTERVAL_MS`). Both refuse to boot on anything else. The
+ * cross-language contract for the timing cross project, which shortens it so
+ * a suite sees keep-alives within a second.
+ */
+export const AUDIT_SSE_KEEP_ALIVE_MS_ENV = 'FUZ_AUDIT_SSE_KEEP_ALIVE_MS';
+
+/**
+ * Env var replacing the WS endpoints' receive timeout on both spine binaries
+ * (a positive integer of ms up to 2³¹ − 1; unset keeps
+ * `DEFAULT_WS_RECEIVE_TIMEOUT`). Both refuse to boot on anything else. The
+ * cross-language contract for the timing cross project, which shortens it so
+ * a silent socket's close lands within seconds.
+ */
+export const WS_RECEIVE_TIMEOUT_MS_ENV = 'FUZ_WS_RECEIVE_TIMEOUT_MS';
+
+/**
  * Env var naming the TS spine backend's root dir, set by
  * `ts_spine_backend_config`; the spawned binary writes its daemon token to
  * `{dir}/run/daemon_token`, which must match `bootstrap.daemon_token_path`.

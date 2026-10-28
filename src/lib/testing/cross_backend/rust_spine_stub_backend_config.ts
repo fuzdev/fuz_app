@@ -49,7 +49,8 @@ import {
 import {
 	action_rate_limit_env,
 	make_default_rust_backend_config,
-	rust_default_capabilities
+	rust_default_capabilities,
+	timing_env
 } from './default_backend_configs.ts';
 
 /** Env var naming the prebuilt `testing_spine_stub` binary. Required when `binary_path` is omitted. */
@@ -168,6 +169,17 @@ export interface SpineStubBackendConfigOptions {
 	 * otherwise. Mirrors `TsSpineBackendConfigOptions.action_rate_limit_max_attempts`.
 	 */
 	readonly action_rate_limit_max_attempts?: number;
+	/**
+	 * Replace the audit stream's keep-alive interval
+	 * (`FUZ_AUDIT_SSE_KEEP_ALIVE_MS`). Mirrors
+	 * `TsSpineBackendConfigOptions.audit_sse_keep_alive_ms`.
+	 */
+	readonly audit_sse_keep_alive_ms?: number;
+	/**
+	 * Replace the WS endpoints' receive timeout (`FUZ_WS_RECEIVE_TIMEOUT_MS`).
+	 * Mirrors `TsSpineBackendConfigOptions.ws_receive_timeout_ms`.
+	 */
+	readonly ws_receive_timeout_ms?: number;
 }
 
 /**
@@ -231,7 +243,8 @@ export const rust_spine_stub_backend_config = (
 			// resolved `X-Forwarded-For` IP. The stub reads both directly.
 			...(enable_login_rate_limit ? { [LOGIN_RATE_LIMIT_ENABLED_ENV]: 'true' } : {}),
 			...(trusted_proxies !== undefined ? { FUZ_TRUSTED_PROXIES: trusted_proxies } : {}),
-			...action_rate_limit_env(options)
+			...action_rate_limit_env(options),
+			...timing_env(options)
 		}
 	});
 };

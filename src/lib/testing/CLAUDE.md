@@ -2811,6 +2811,24 @@ would fail.
 Cross-process only; fuz_app's own wiring is
 `src/test/cross_backend/ws_action_rate_limit.cross.test.ts`.
 
+### Timing overrides — `timing_env`
+
+`audit_sse_keep_alive_ms` and `ws_receive_timeout_ms` on both spine backend
+configs (`ts_spine_*_backend_config`, `rust_spine_stub_backend_config`) replace
+the audit stream's keep-alive interval and the WS endpoints' receive timeout,
+through `timing_env` (`default_backend_configs.ts`), which sets
+`AUDIT_SSE_KEEP_ALIVE_MS_ENV` (`FUZ_AUDIT_SSE_KEEP_ALIVE_MS`) and
+`WS_RECEIVE_TIMEOUT_MS_ENV` (`FUZ_WS_RECEIVE_TIMEOUT_MS`) from
+`spine_surface_constants.ts`. Both spine binaries read them as a positive
+integer of ms up to 2³¹ − 1 and refuse to boot on anything else; unset keeps
+the defaults (`SSE_KEEP_ALIVE_INTERVAL_MS`, `DEFAULT_WS_RECEIVE_TIMEOUT`).
+fuz_app's `cross_backend_timing` project shortens both, so its suites watch
+each spine's timers fire within seconds.
+Cross-process only; fuz_app's own wiring is
+`src/test/cross_backend/sse_keep_alive.cross.test.ts` and
+`src/test/cross_backend/ws_receive_timeout.cross.test.ts`, under the
+`cross_backend_timing` project.
+
 ### Role-gated participation parity — `cross_backend/role_grant_participation.ts`
 
 The role-gated-participation capstone — TS↔Rust agreement that an **app-defined

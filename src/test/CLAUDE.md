@@ -655,6 +655,22 @@ cross-process only (the in-process limiter + proxy paths already have
 `describe_rate_limiting_tests`, the `http/proxy` middleware tests, and the
 assembled-app WS dispatch tests in `server/create_app_server_ws_endpoints.dispatch.db.test.ts`).
 
+`sse_keep_alive.cross.test.ts` and `ws_receive_timeout.cross.test.ts` run
+under the dual-spawn `cross_backend_timing` project
+(`global_setup_timing.ts` brings up the TS spine + `testing_spine_stub` with
+the audit stream's keep-alive interval and the WS receive timeout shortened,
+through `FUZ_AUDIT_SSE_KEEP_ALIVE_MS` + `FUZ_WS_RECEIVE_TIMEOUT_MS`, providing
+`timing_handle_a`/`_b` and both intervals). The first reads an idle audit
+stream's raw bytes — the connect comment then two keep-alives, exactly, on
+both; the second pins a silent admitted socket closed with
+`WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT` + its reason no sooner than the timeout,
+and a socket sending heartbeats kept open past twice it. Deadlines are
+generous and far under the defaults, so a spine ignoring the override fails.
+A dedicated project because a short receive timeout would close the standard
+suites' idle sockets. The stub runs over its own
+`fuz_app_test_rust_spine_stub_timing`, the TS leg on `memory://`.
+`npm run test:cross:timing`.
+
 Every fuz_app spine preset advertises `capabilities.sse` and serves
 `/api/admin/audit/stream`: the TS spines wire `audit_log_sse`, and the Rust
 `spine_stub` serves it from the spine `fuz_realtime::SseRegistry` +
@@ -692,7 +708,7 @@ backends:
 behind `FUZ_TEST_CROSS_BACKEND=1` and excluded from a bare `gro test` (they
 spawn external backends). They are listed in
 `cross_backend/cross_backend_projects.ts`, whose module doc tables each one's
-ports (`1177`–`1186`), Postgres databases and backend names: no two projects
+ports (`1177`–`1188`), Postgres databases and backend names: no two projects
 share any, so any set of them can run at once. `npm run test:cross` does
 that — `cross_backend/run_cross.ts` rebuilds the Rust stub once, runs each
 project in its own `vitest` invocation concurrently (with
@@ -720,6 +736,8 @@ FUZ_TESTING_NO_REBUILD=1 npm run test:cross:rust-spine-stub
 npm run test:cross:parity
 # the dual-spawn login + action rate-limit gates (limiters enabled on both spines):
 npm run test:cross:security
+# the dual-spawn SSE keep-alive + WS receive-timeout gates (timers shortened on both spines):
+npm run test:cross:timing
 # the dual-spawn differential between the TS spine on Node and on Bun:
 npm run test:cross:ts-differential
 ```
@@ -731,7 +749,8 @@ Deno and Bun pinned in the job's `env` to the versions the suites are green
 on; a bump there is a deliberate re-measure. `.github/workflows/cross-canary.yml`
 runs the Deno and Bun legs and the Node-vs-Bun differential weekly (and by
 hand) on the latest release of each and gates nothing. The Rust-backed projects (`cross_backend_rust_spine_stub`,
-`cross_backend_parity`, `cross_backend_security`) run locally only.
+`cross_backend_parity`, `cross_backend_security`, `cross_backend_timing`) run
+locally only.
 
 The TS binary + the reusable test-server core/adapters it's built on live in
 `src/lib/testing/cross_backend/` — see `src/lib/testing/CLAUDE.md`

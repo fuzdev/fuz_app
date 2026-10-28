@@ -35,5 +35,15 @@ declare module 'vitest' {
 		// `differential_ts.cross.test.ts`.
 		ts_differential_handle_a: SerializableBootstrappedBackendHandle;
 		ts_differential_handle_b: SerializableBootstrappedBackendHandle;
+		// The dual-spawn timing project (`global_setup_timing.ts`) provides
+		// both backends' handles — `a` = TS spine (node), `b` = Rust
+		// `testing_spine_stub`, both with the audit stream's keep-alive interval
+		// and the WS receive timeout shortened — plus the two intervals, so
+		// `sse_keep_alive.cross.test.ts` and `ws_receive_timeout.cross.test.ts`
+		// assert against the values the backends were started with.
+		timing_handle_a: SerializableBootstrappedBackendHandle;
+		timing_handle_b: SerializableBootstrappedBackendHandle;
+		timing_audit_sse_keep_alive_ms: number;
+		timing_ws_receive_timeout_ms: number;
 	}
 }

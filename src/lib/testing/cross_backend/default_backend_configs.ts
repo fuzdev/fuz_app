@@ -47,9 +47,11 @@ import {
 import {
 	ACTION_RATE_LIMIT_ENABLED_ENV,
 	ACTION_RATE_LIMIT_MAX_ATTEMPTS_ENV,
+	AUDIT_SSE_KEEP_ALIVE_MS_ENV,
 	SPINE_ACCOUNT_BOOTSTRAP_PATH,
 	SPINE_RPC_PATH,
-	SPINE_WS_PATH
+	SPINE_WS_PATH,
+	WS_RECEIVE_TIMEOUT_MS_ENV
 } from './spine_surface_constants.ts';
 
 /**
@@ -110,6 +112,29 @@ export const action_rate_limit_env = (
 	...(options.enable_action_rate_limit ? { [ACTION_RATE_LIMIT_ENABLED_ENV]: 'true' } : {}),
 	...(options.action_rate_limit_max_attempts !== undefined
 		? { [ACTION_RATE_LIMIT_MAX_ATTEMPTS_ENV]: String(options.action_rate_limit_max_attempts) }
+		: {})
+});
+
+/** Options for `timing_env`. */
+export interface TimingEnvOptions {
+	/** The audit stream's keep-alive interval in ms (`AUDIT_SSE_KEEP_ALIVE_MS_ENV`). */
+	readonly audit_sse_keep_alive_ms?: number;
+	/** The WS endpoints' receive timeout in ms (`WS_RECEIVE_TIMEOUT_MS_ENV`). */
+	readonly ws_receive_timeout_ms?: number;
+}
+
+/**
+ * The `extra_env` entries carrying the timing overrides, shared by the TS and
+ * Rust backend configs so one option drives both impls. Each value is passed
+ * through as given, so the binary refuses a bad one instead of the harness
+ * hiding it.
+ */
+export const timing_env = (options: TimingEnvOptions): Record<string, string> => ({
+	...(options.audit_sse_keep_alive_ms !== undefined
+		? { [AUDIT_SSE_KEEP_ALIVE_MS_ENV]: String(options.audit_sse_keep_alive_ms) }
+		: {}),
+	...(options.ws_receive_timeout_ms !== undefined
+		? { [WS_RECEIVE_TIMEOUT_MS_ENV]: String(options.ws_receive_timeout_ms) }
 		: {})
 });
 

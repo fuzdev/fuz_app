@@ -24,6 +24,7 @@ import { build_test_backend_paths } from './build_test_backend_paths.ts';
 import {
 	action_rate_limit_env,
 	make_default_ts_backend_config,
+	timing_env,
 	ts_default_capabilities
 } from './default_backend_configs.ts';
 import {
@@ -155,6 +156,19 @@ export interface TsSpineBackendConfigOptions {
 	 * otherwise. Mirrors `SpineStubBackendConfigOptions.action_rate_limit_max_attempts`.
 	 */
 	readonly action_rate_limit_max_attempts?: number;
+	/**
+	 * Replace the audit stream's keep-alive interval
+	 * (`FUZ_AUDIT_SSE_KEEP_ALIVE_MS`), so a suite sees keep-alives without
+	 * waiting out the 15 s default. Mirrors
+	 * `SpineStubBackendConfigOptions.audit_sse_keep_alive_ms`.
+	 */
+	readonly audit_sse_keep_alive_ms?: number;
+	/**
+	 * Replace the WS endpoints' receive timeout (`FUZ_WS_RECEIVE_TIMEOUT_MS`),
+	 * so a suite sees a silent socket closed without waiting out the 60 s
+	 * default. Mirrors `SpineStubBackendConfigOptions.ws_receive_timeout_ms`.
+	 */
+	readonly ws_receive_timeout_ms?: number;
 }
 
 /**
@@ -190,7 +204,8 @@ export const ts_spine_node_backend_config = (
 			daemon_token_dir_env: TS_SPINE_DIR_ENV,
 			extra_env: {
 				...login_rate_limit_env(enable_login_rate_limit),
-				...action_rate_limit_env(options)
+				...action_rate_limit_env(options),
+				...timing_env(options)
 			},
 			capabilities: ts_spine_capabilities
 		}),
@@ -225,7 +240,8 @@ export const ts_spine_bun_backend_config = (
 			daemon_token_dir_env: TS_SPINE_DIR_ENV,
 			extra_env: {
 				...login_rate_limit_env(enable_login_rate_limit),
-				...action_rate_limit_env(options)
+				...action_rate_limit_env(options),
+				...timing_env(options)
 			},
 			capabilities: ts_spine_bun_capabilities
 		}),
@@ -277,7 +293,8 @@ export const ts_spine_deno_backend_config = (
 			daemon_token_dir_env: TS_SPINE_DIR_ENV,
 			extra_env: {
 				...login_rate_limit_env(enable_login_rate_limit),
-				...action_rate_limit_env(options)
+				...action_rate_limit_env(options),
+				...timing_env(options)
 			},
 			capabilities: ts_spine_deno_capabilities
 		}),

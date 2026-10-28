@@ -30,6 +30,7 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { z } from 'zod';
 
 import { DEFAULT_WS_MAX_MESSAGE_BYTES } from '#lib/actions/transports.ts';
+import { WS_RECEIVE_TIMEOUT_MAX } from '#lib/actions/register_action_ws.ts';
 import { ConnectionRegistry } from '#lib/actions/connection_registry.ts';
 import type { AppSurface } from '#lib/http/surface.ts';
 import { start_daemon_token_rotation } from '#lib/testing/daemon_token_rotation.ts';
@@ -39,6 +40,7 @@ import { cell_audit_events } from '#lib/auth/cell_audit_events.ts';
 import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
 import { create_audit_log_config } from '#lib/auth/audit_log_schema.ts';
 import { CELL_MIGRATION_NS } from '#lib/db/cell_ddl.ts';
+import { SSE_KEEP_ALIVE_INTERVAL_MS_MAX } from '#lib/realtime/sse_constants.ts';
 import { FACT_MIGRATION_NS } from '#lib/db/fact_ddl.ts';
 import {
 	create_serve_cell_fact_route_spec,
@@ -65,11 +67,13 @@ import { build_full_spine_mount } from '#lib/testing/cross_backend/full_spine_mo
 import {
 	ACTION_RATE_LIMIT_ENABLED_ENV,
 	ACTION_RATE_LIMIT_MAX_ATTEMPTS_ENV,
+	AUDIT_SSE_KEEP_ALIVE_MS_ENV,
 	LOGIN_RATE_LIMIT_ENABLED_ENV,
 	SPINE_ROLE_GATED_WS_PATH,
 	SPINE_ROLE_GATED_WS_ROLES,
 	SPINE_RPC_PATH,
-	SPINE_WS_PATH
+	SPINE_WS_PATH,
+	WS_RECEIVE_TIMEOUT_MS_ENV
 } from '#lib/testing/cross_backend/spine_surface_constants.ts';
 import type {
 	BuildTestingAppContext,
@@ -176,6 +180,38 @@ export const parse_action_rate_limit_max_attempts = (
 		);
 	}
 	return max_attempts;
+};
+
+/**
+ * Parse a timing env var (`FUZ_AUDIT_SSE_KEEP_ALIVE_MS`,
+ * `FUZ_WS_RECEIVE_TIMEOUT_MS`) — a positive integer of ms up to the knob's
+ * cap, 2³¹ − 1 for both, the longest interval a JS timer honors.
+ * Mirrors the Rust stub's `parse_timing_ms` (`raw.trim_ascii()`, then a
+ * `u32` parse in range): surrounding ASCII whitespace (space, tab, line feed,
+ * form feed, carriage return) is trimmed — not `String.prototype.trim`'s set,
+ * which differs from Rust's `trim` — and one leading `+` and leading zeros are
+ * accepted.
+ *
+ * @param name - the env var, for the error
+ * @param raw - the env value, `undefined` when unset
+ * @param max - the knob's cap (`SSE_KEEP_ALIVE_INTERVAL_MS_MAX`, `WS_RECEIVE_TIMEOUT_MAX`)
+ * @returns the interval in ms, or `undefined` when unset
+ * @throws Error on a malformed or out-of-range value
+ */
+export const parse_timing_ms_env = (
+	name: string,
+	raw: string | undefined,
+	max: number
+): number | undefined => {
+	if (raw === undefined) return undefined;
+	const digits = /^[\t\n\f\r ]*(\+?[0-9]+)[\t\n\f\r ]*$/.exec(raw)?.[1];
+	const ms = digits === undefined ? NaN : Number(digits);
+	if (!(ms > 0 && ms <= max)) {
+		throw new Error(
+			`testing_spine_server: ${name}: expected a positive integer of ms up to ${max}, got ${JSON.stringify(raw)}`
+		);
+	}
+	return ms;
 };
 
 /**
@@ -326,6 +362,21 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 		? new RateLimiter(with_action_cap(default_action_account_rate_limit))
 		: null;
 
+	// The timing overrides, unset outside the timing cross project: the audit
+	// stream's keep-alive interval and the WS endpoints' receive timeout, so
+	// `sse_keep_alive.cross.test.ts` and `ws_receive_timeout.cross.test.ts`
+	// see both within seconds. The Rust stub reads the same two env vars.
+	const audit_sse_keep_alive_ms = parse_timing_ms_env(
+		AUDIT_SSE_KEEP_ALIVE_MS_ENV,
+		runtime.env_get(AUDIT_SSE_KEEP_ALIVE_MS_ENV),
+		SSE_KEEP_ALIVE_INTERVAL_MS_MAX
+	);
+	const ws_receive_timeout_ms = parse_timing_ms_env(
+		WS_RECEIVE_TIMEOUT_MS_ENV,
+		runtime.env_get(WS_RECEIVE_TIMEOUT_MS_ENV),
+		WS_RECEIVE_TIMEOUT_MAX
+	);
+
 	// The full live mount, built once for both endpoints: the RPC list and the
 	// WS list serving the same actions behind the protocol actions (see
 	// `build_full_spine_mount`). Single-sourced in `full_spine_mount.ts` so the
@@ -362,7 +413,8 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 		// `ctx.audit_sse`, which `create_spine_route_specs` reads to mount
 		// `GET /api/admin/audit/stream` (`audit_log_event_specs` join the
 		// surface automatically). Drives the cross-process SSE self-test.
-		audit_log_sse: true,
+		audit_log_sse:
+			audit_sse_keep_alive_ms === undefined ? true : { keep_alive_ms: audit_sse_keep_alive_ms },
 		// Standard spine REST routes + the cell-gated fact-serving routes
 		// (cell-scoped per-reference + admin-only bare-hash), twinning the Rust
 		// `testing_spine_stub`'s `fact_routers`. The serve routes carry full
@@ -405,13 +457,15 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 				path: ws_path,
 				actions: full_mount.ws_actions,
 				registry: connection_registry,
-				max_message_bytes: WS_MAX_MESSAGE_BYTES
+				max_message_bytes: WS_MAX_MESSAGE_BYTES,
+				receive_timeout: ws_receive_timeout_ms
 			},
 			{
 				path: SPINE_ROLE_GATED_WS_PATH,
 				actions: full_mount.ws_actions,
 				registry: connection_registry,
 				max_message_bytes: WS_MAX_MESSAGE_BYTES,
+				receive_timeout: ws_receive_timeout_ms,
 				required_roles: SPINE_ROLE_GATED_WS_ROLES
 			}
 		],
