@@ -71,7 +71,12 @@
 	{:else if admin_accounts.list.error}
 		<p class="color_c_50">{admin_accounts.list.error}</p>
 	{:else}
-		<Datatable {columns} rows={admin_accounts.accounts} height="400px">
+		<Datatable
+			{columns}
+			rows={admin_accounts.accounts}
+			row_key={(row) => row.account.id}
+			height="400px"
+		>
 			{#snippet cell(column, row)}
 				{#if column.key === 'account'}
 					<strong>{row.account.username}</strong>

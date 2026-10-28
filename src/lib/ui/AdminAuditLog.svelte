@@ -142,7 +142,7 @@
 	{:else if audit_log.list.error}
 		<p class="color_c_50">{audit_log.list.error}</p>
 	{:else}
-		<Datatable {columns} rows={audit_log.events} height="500px">
+		<Datatable {columns} rows={audit_log.events} row_key={(row) => row.id} height="500px">
 			{#snippet cell(column, row)}
 				{#if column.key === 'created_at'}
 					<span title={format_datetime_local(row.created_at)}>

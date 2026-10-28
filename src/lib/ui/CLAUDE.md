@@ -617,7 +617,9 @@ format_scope, global_label)` helper — `global_label = null` renders no
 ## Data
 
 - `Datatable.svelte` — generic grid (`<script generics="T">`).
-  Props: `columns`, `rows`, `row_key = 'id'`, `height?`, optional
+  Props: `columns`, `rows`, `row_key: (row: T) => PropertyKey` (required —
+  the keyed-each key, so per-row state follows its row; a `null`/`undefined`
+  key throws in DEV, no index fallback), `height?`, optional
   `header` / `cell` / `empty` snippets. Sticky header, CSS-subgrid
   layout, pointer-based column resize (writes deltas to a keyed
   record). Default cell renders `column.format(value, row)` or

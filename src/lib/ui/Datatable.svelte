@@ -6,9 +6,14 @@
 	 * present, else `format_value`. Resize deltas are kept in component-local
 	 * state, keyed by `column.key` — they don't outlive the component.
 	 *
+	 * Rows are keyed by the required `row_key` accessor, so per-row state
+	 * (popovers, pending buttons) follows its row across deletes and refetches.
+	 * A row whose key is `null` or `undefined` throws in DEV.
+	 *
 	 * @module
 	 */
 
+	import { DEV } from 'esm-env';
 	import type { Snippet } from 'svelte';
 	import type { SvelteHTMLElements } from 'svelte/elements';
 
@@ -22,7 +27,7 @@
 	const {
 		columns,
 		rows,
-		row_key = 'id',
+		row_key,
 		height,
 		header,
 		cell,
@@ -31,11 +36,8 @@
 	}: SvelteHTMLElements['div'] & {
 		columns: Array<DatatableColumn<T>>;
 		rows: Array<T>;
-		/**
-		 * Row property used as the keyed-each key.
-		 * @default 'id'
-		 */
-		row_key?: string & keyof T; // eslint-disable-line @typescript-eslint/no-duplicate-type-constituents
+		/** The row's stable identity, used as the keyed-each key — e.g. `(row) => row.id`. */
+		row_key: (row: T) => PropertyKey;
 		/** CSS height for the scrollable region (e.g. `'400px'`). Omit to size to content. */
 		height?: string;
 		/** Override default header-cell rendering. Receives the column. */
@@ -45,6 +47,14 @@
 		/** Rendered when `rows` is empty. Defaults to a `no data` text. */
 		empty?: Snippet;
 	} = $props();
+
+	const key_of = (row: T): PropertyKey => {
+		const key = row_key(row);
+		if (DEV && key == null) {
+			throw Error(`Datatable row_key returned ${String(key)} — every row needs a stable key`);
+		}
+		return key;
+	};
 
 	// column widths — base from column defs, resize deltas layered on top
 	const resize_deltas: Record<string, number> = $state({});
@@ -124,7 +134,7 @@
 			{/if}
 		</div>
 	{:else}
-		{#each rows as row, i (row[row_key] ?? i)}
+		{#each rows as row, i (key_of(row))}
 			<div class="datatable-row" role="row" aria-rowindex={i + 2}>
 				{#each columns as column (column.key)}
 					<div class="datatable-cell" role="gridcell">

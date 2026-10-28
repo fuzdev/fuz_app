@@ -89,7 +89,7 @@
 	{:else if role_grant_offers.list_history.error}
 		<p class="color_c_50">{role_grant_offers.list_history.error}</p>
 	{:else}
-		<Datatable {columns} rows={role_grant_offers.history} height="400px" row_key="id">
+		<Datatable {columns} rows={role_grant_offers.history} row_key={(row) => row.id} height="400px">
 			{#snippet cell(column, row)}
 				{#if column.key === 'from_actor_id'}
 					{#if current_actor_id && row.from_actor_id === current_actor_id}

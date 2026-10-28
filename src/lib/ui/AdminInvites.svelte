@@ -110,7 +110,7 @@
 	{#if admin_invites.list.loading}
 		<p class="text_50">loading invites...</p>
 	{:else}
-		<Datatable {columns} rows={admin_invites.invites} height="400px">
+		<Datatable {columns} rows={admin_invites.invites} row_key={(row) => row.id} height="400px">
 			{#snippet cell(column, row)}
 				{#if column.key === 'claimed_at'}
 					{#if row.claimed_at}

@@ -44,7 +44,7 @@
 	{:else if admin_sessions.list.error}
 		<p class="color_c_50">{admin_sessions.list.error}</p>
 	{:else}
-		<Datatable {columns} rows={admin_sessions.sessions} height="400px">
+		<Datatable {columns} rows={admin_sessions.sessions} row_key={(row) => row.id} height="400px">
 			{#snippet cell(column, row)}
 				{#if column.key === 'id'}
 					<code class="font_size_sm text_50">{truncate_uuid(row.id)}</code>

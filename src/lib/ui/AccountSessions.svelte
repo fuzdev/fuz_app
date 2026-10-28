@@ -61,7 +61,7 @@
 				<button type="button" onclick={() => handle_revoke_all()}>revoke all</button>
 			</div>
 		{/if}
-		<Datatable {columns} rows={account_sessions.sessions} height="300px">
+		<Datatable {columns} rows={account_sessions.sessions} row_key={(row) => row.id} height="300px">
 			{#snippet cell(column, row)}
 				{#if column.key === 'id'}
 					<span class="chip palette_b">active</span>

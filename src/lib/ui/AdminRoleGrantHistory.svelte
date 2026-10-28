@@ -45,7 +45,12 @@
 	{:else if audit_log.role_grant_history.error}
 		<p class="color_c_50">{audit_log.role_grant_history.error}</p>
 	{:else}
-		<Datatable {columns} rows={audit_log.role_grant_history_events} height="400px" row_key="id">
+		<Datatable
+			{columns}
+			rows={audit_log.role_grant_history_events}
+			row_key={(row) => row.id}
+			height="400px"
+		>
 			{#snippet cell(column, row)}
 				{#if column.key === 'event_type'}
 					<span
