@@ -38,6 +38,7 @@ import {
 import { OUTBOUND_FRAME_OVERHEAD_BYTES } from '#lib/realtime/outbound_budget.ts';
 import type { JsonrpcNotification } from '#lib/http/jsonrpc.ts';
 import { create_fake_ws } from '#lib/testing/ws_round_trip.ts';
+import { create_test_identity } from './connection_identity_helpers.ts';
 
 const ACCOUNT_A = create_uuid();
 const ACCOUNT_B = create_uuid();
@@ -75,7 +76,10 @@ describe('BackendWebsocketTransport outbound_queue_bytes', () => {
 	test('the default budget holds a burst the override refuses', () => {
 		const frame = 'x'.repeat(1000);
 		const burst = (t: BackendWebsocketTransport): boolean => {
-			const id = t.add_connection(create_fake_ws().ws, null, ACCOUNT_A);
+			const id = t.add_connection(
+				create_fake_ws().ws,
+				create_test_identity({ account_id: ACCOUNT_A })
+			);
 			let accepted = true;
 			for (let i = 0; i < 100; i++) accepted = t.send_to(id, frame) && accepted;
 			return accepted;
@@ -108,7 +112,11 @@ describe('BackendWebsocketTransport outbound overflow', () => {
 		});
 		const fake = create_fake_ws();
 		const controller = new AbortController();
-		const id = t.add_connection(fake.ws, 'hash', ACCOUNT_A, null, controller);
+		const id = t.add_connection(
+			fake.ws,
+			create_test_identity({ session_hash: 'hash', account_id: ACCOUNT_A }),
+			controller
+		);
 
 		assert.strictEqual(t.send_to(id, 'first'), true, 'straight to the idle socket');
 		assert.strictEqual(t.send_to(id, 'x'.repeat(10)), true, 'waits, exactly the budget');
@@ -164,8 +172,8 @@ describe('BackendWebsocketTransport outbound overflow', () => {
 		});
 		const full = create_fake_ws();
 		const roomy = create_fake_ws();
-		const full_id = t.add_connection(full.ws, null, ACCOUNT_A);
-		t.add_connection(roomy.ws, null, ACCOUNT_A);
+		const full_id = t.add_connection(full.ws, create_test_identity({ account_id: ACCOUNT_A }));
+		t.add_connection(roomy.ws, create_test_identity({ account_id: ACCOUNT_A }));
 		// `full` now has a frame gone through and an empty one waiting: at its budget
 		t.send_to(full_id, 'first');
 		t.send_to(full_id, '');
@@ -183,8 +191,15 @@ describe('BackendWebsocketTransport outbound overflow', () => {
 		const stalled = create_fake_ws({ stalled: true });
 		const healthy = create_fake_ws();
 		const stalled_controller = new AbortController();
-		const stalled_id = t.add_connection(stalled.ws, null, ACCOUNT_A, null, stalled_controller);
-		const healthy_id = t.add_connection(healthy.ws, null, ACCOUNT_B);
+		const stalled_id = t.add_connection(
+			stalled.ws,
+			create_test_identity({ account_id: ACCOUNT_A }),
+			stalled_controller
+		);
+		const healthy_id = t.add_connection(
+			healthy.ws,
+			create_test_identity({ account_id: ACCOUNT_B })
+		);
 
 		const rounds = 40;
 		const sent: Array<string> = [];
@@ -241,7 +256,10 @@ describe('BackendWebsocketTransport outbound overflow', () => {
 				log: null
 			});
 			const fits_ws = create_fake_ws();
-			const fits_id = fits.add_connection(fits_ws.ws, null, ACCOUNT_A);
+			const fits_id = fits.add_connection(
+				fits_ws.ws,
+				create_test_identity({ account_id: ACCOUNT_A })
+			);
 			fits.send_to(fits_id, 'first');
 			fan_out(fits);
 			assert.strictEqual(fits.is_registered(fits_id), true);
@@ -252,7 +270,10 @@ describe('BackendWebsocketTransport outbound overflow', () => {
 				log: null
 			});
 			const tight_ws = create_fake_ws();
-			const tight_id = tight.add_connection(tight_ws.ws, null, ACCOUNT_A);
+			const tight_id = tight.add_connection(
+				tight_ws.ws,
+				create_test_identity({ account_id: ACCOUNT_A })
+			);
 			tight.send_to(tight_id, 'first');
 			tight.send_to(tight_id, '');
 			fan_out(tight);
@@ -268,7 +289,7 @@ describe('BackendWebsocketTransport outbound overflow', () => {
 			log: null
 		});
 		const fake = create_fake_ws();
-		const id = t.add_connection(fake.ws, null, ACCOUNT_A);
+		const id = t.add_connection(fake.ws, create_test_identity({ account_id: ACCOUNT_A }));
 		// in flight when the overflow lands
 		const in_flight = t.request_connection(id, 'peer/ping', {});
 		t.send_to(id, '');
@@ -288,7 +309,7 @@ describe('BackendWebsocketTransport outbound overflow', () => {
 			close: () => {},
 			readyState: 1
 		});
-		const id = t.add_connection(ws, null, ACCOUNT_A);
+		const id = t.add_connection(ws, create_test_identity({ account_id: ACCOUNT_A }));
 		// settled by the failed send, not left to the request's deadline
 		const outcome = await Promise.race([
 			t.request_connection(id, 'peer/ping', {}, { timeout_ms: 60_000 }),
@@ -315,7 +336,7 @@ describe('BackendWebsocketTransport outbound overflow', () => {
 			},
 			readyState: 1
 		});
-		const id = t.add_connection(ws, null, ACCOUNT_A);
+		const id = t.add_connection(ws, create_test_identity({ account_id: ACCOUNT_A }));
 		t.send_to(id, 'first');
 		t.send_to(id, '');
 		assert.strictEqual(t.send_to(id, ''), false);
@@ -332,7 +353,11 @@ describe('BackendWebsocketTransport write deadline', () => {
 		const t = new BackendWebsocketTransport({ log });
 		const fake = create_fake_ws({ stalled: true });
 		const controller = new AbortController();
-		const id = t.add_connection(fake.ws, null, ACCOUNT_A, null, controller);
+		const id = t.add_connection(
+			fake.ws,
+			create_test_identity({ account_id: ACCOUNT_A }),
+			controller
+		);
 		const in_flight = t.request_connection(id, 'peer/ping', {}, { timeout_ms: 60_000 });
 		t.send_to(id, 'waiting');
 		await flush_pump();
@@ -365,7 +390,7 @@ describe('BackendWebsocketTransport write deadline', () => {
 		vi.useFakeTimers();
 		const t = new BackendWebsocketTransport({ log: null });
 		const fake = create_fake_ws({ stalled: true });
-		const id = t.add_connection(fake.ws, null, ACCOUNT_A);
+		const id = t.add_connection(fake.ws, create_test_identity({ account_id: ACCOUNT_A }));
 		t.send_to(id, 'x'.repeat(WS_WRITE_HIGH_WATER_BYTES));
 		t.send_to(id, 'waiting');
 		await flush_pump();
@@ -381,7 +406,10 @@ describe('BackendWebsocketTransport.send_to', () => {
 	test('a connection pending admission is sent nothing until it is admitted', async () => {
 		const t = new BackendWebsocketTransport({ log: null });
 		const fake = create_fake_ws();
-		const id = t.register_pending(fake.ws, 'hash', ACCOUNT_A);
+		const id = t.register_pending(
+			fake.ws,
+			create_test_identity({ session_hash: 'hash', account_id: ACCOUNT_A })
+		);
 		assert.strictEqual(t.send_to(id, 'early'), false);
 		await flush_pump();
 		assert.deepStrictEqual(fake.sends, [], 'not written, and not queued for later');
@@ -401,7 +429,10 @@ describe('BackendWebsocketTransport closes on a backlogged connection', () => {
 	test('a revocation hands the backlog over ahead of the 4001, then nothing more', async () => {
 		const t = new BackendWebsocketTransport({ log: null });
 		const fake = create_fake_ws();
-		const id = t.add_connection(fake.ws, 'hash', ACCOUNT_A);
+		const id = t.add_connection(
+			fake.ws,
+			create_test_identity({ session_hash: 'hash', account_id: ACCOUNT_A })
+		);
 		// a reply queued in the same synchronous run as the revocation's close
 		t.send_to(id, 'first');
 		t.send_to(id, 'reply');
@@ -422,7 +453,11 @@ describe('BackendWebsocketTransport closes on a backlogged connection', () => {
 		const t = new BackendWebsocketTransport({ log: null });
 		const fake = create_fake_ws({ stalled: true });
 		const controller = new AbortController();
-		const id = t.add_connection(fake.ws, null, ACCOUNT_A, null, controller);
+		const id = t.add_connection(
+			fake.ws,
+			create_test_identity({ account_id: ACCOUNT_A }),
+			controller
+		);
 		t.send_to(id, 'x'.repeat(WS_WRITE_HIGH_WATER_BYTES));
 		t.send_to(id, 'waiting');
 		await flush_pump();
@@ -452,7 +487,8 @@ describe('BackendWebsocketTransport closes on a backlogged connection', () => {
 			],
 			[
 				'connection cap',
-				(t) => t.add_connection(create_fake_ws().ws, null, ACCOUNT_A),
+				(t) =>
+					t.add_connection(create_fake_ws().ws, create_test_identity({ account_id: ACCOUNT_A })),
 				WS_CLOSE_CONNECTION_LIMIT
 			],
 			['shutdown', (t) => t.close_all_connections(), WS_CLOSE_GOING_AWAY],
@@ -465,7 +501,7 @@ describe('BackendWebsocketTransport closes on a backlogged connection', () => {
 		for (const [name, close, code] of closes) {
 			const t = new BackendWebsocketTransport({ max_connections_per_account: 1, log: null });
 			const fake = create_fake_ws({ stalled: true });
-			const id = t.add_connection(fake.ws, null, ACCOUNT_A);
+			const id = t.add_connection(fake.ws, create_test_identity({ account_id: ACCOUNT_A }));
 			// one frame straight through, then three waiting in the same run
 			t.send_to(id, 'first');
 			t.send_to(id, big);
@@ -487,7 +523,7 @@ describe('BackendWebsocketTransport closes on a backlogged connection', () => {
 		vi.useFakeTimers();
 		const t = new BackendWebsocketTransport({ log: null });
 		const fake = create_fake_ws({ stalled: true });
-		const id = t.add_connection(fake.ws, null, ACCOUNT_A);
+		const id = t.add_connection(fake.ws, create_test_identity({ account_id: ACCOUNT_A }));
 		t.send_to(id, 'frame');
 		t.close_connections({ kind: 'account', account_id: ACCOUNT_A });
 		assert.strictEqual(vi.getTimerCount(), 1);
@@ -505,8 +541,15 @@ describe('BackendWebsocketTransport.close_connection', () => {
 		const admitted = create_fake_ws();
 		const pending = create_fake_ws();
 		const controller = new AbortController();
-		const admitted_id = t.add_connection(admitted.ws, null, ACCOUNT_A, null, controller);
-		const pending_id = t.register_pending(pending.ws, null, ACCOUNT_A);
+		const admitted_id = t.add_connection(
+			admitted.ws,
+			create_test_identity({ account_id: ACCOUNT_A }),
+			controller
+		);
+		const pending_id = t.register_pending(
+			pending.ws,
+			create_test_identity({ account_id: ACCOUNT_A })
+		);
 
 		assert.strictEqual(t.close_connection(admitted_id, WS_CLOSE_INTERNAL_ERROR, 'why'), true);
 		assert.deepStrictEqual(admitted.closes, [{ code: WS_CLOSE_INTERNAL_ERROR, reason: 'why' }]);
@@ -541,7 +584,11 @@ describe('BackendWebsocketTransport.close_connection', () => {
 			readyState: 1
 		});
 		const controller = new AbortController();
-		const connection_id = t.add_connection(ws, null, ACCOUNT_A, null, controller);
+		const connection_id = t.add_connection(
+			ws,
+			create_test_identity({ account_id: ACCOUNT_A }),
+			controller
+		);
 
 		// called from a heartbeat timer, where a throw would be uncaught
 		assert.strictEqual(t.close_connection(connection_id, WS_CLOSE_INTERNAL_ERROR, 'why'), true);

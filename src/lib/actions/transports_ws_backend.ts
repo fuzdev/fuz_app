@@ -386,33 +386,25 @@ export class BackendWebsocketTransport {
 	 * is closed with `WS_CLOSE_GOING_AWAY` before this returns. The id names
 	 * nothing, so `admit` refuses it (module doc, "Shutdown").
 	 *
+	 * Twin of the Rust `ConnectionRegistry::register_pending`, which takes the
+	 * same `ConnectionIdentity`.
+	 *
 	 * @param ws - the socket to close on revocation
-	 * @param session_hash - blake3 session token hash, or `null` for non-session credentials
-	 * @param account_id - the authenticated account
-	 * @param api_token_id - `api_token.id` for bearer connections, else `null`
+	 * @param identity - who the connection is — what every close target and the
+	 *   per-account cap match on; the transport keeps a copy
 	 * @param abort_controller - the socket-scoped controller to abort when the
 	 *   transport closes this connection (revocation or cap eviction)
-	 * @param required_roles - the roles the endpoint gated the upgrade on, for
-	 *   a `role` close target; empty for an ungated endpoint
 	 * @returns the freshly assigned `connection_id` (branded `Uuid`)
 	 * @mutates this - inserts an un-admitted entry into `#connections`, unless
 	 *   the transport is closing
 	 */
 	register_pending(
 		ws: WSContext,
-		session_hash: string | null,
-		account_id: Uuid,
-		api_token_id: string | null = null,
-		abort_controller: AbortController | null = null,
-		required_roles: ReadonlyArray<string> = []
+		identity: ConnectionIdentity,
+		abort_controller: AbortController | null = null
 	): Uuid {
 		if (this.#closing) return this.#close_born_closed(ws, abort_controller);
-		return this.#insert(
-			ws,
-			{ session_hash, account_id, api_token_id, required_roles },
-			abort_controller,
-			false
-		);
+		return this.#insert(ws, identity, abort_controller, false);
 	}
 
 	/**
@@ -474,12 +466,12 @@ export class BackendWebsocketTransport {
 	 * (module doc, "Two-phase registration"). This is for a connection with
 	 * nothing to revoke behind it.
 	 *
-	 * Session connections pass a token hash for targeted revocation.
-	 * Bearer token connections (`api_token`) pass the `api_token.id` so the
-	 * socket can be closed when that specific token is revoked without
-	 * tearing down the account's other sockets. Daemon-token connections
-	 * pass `null` for both — they're only reachable via
-	 * an `account` close target.
+	 * A session connection's `identity` carries its session hash for targeted
+	 * revocation. A bearer token connection (`api_token`) carries the
+	 * `api_token.id` so the socket can be closed when that specific token is
+	 * revoked without tearing down the account's other sockets. A daemon-token
+	 * connection carries `null` for both — it's only reachable via an
+	 * `account` close target.
 	 *
 	 * Enforces the per-account cap (`max_connections_per_account`): when
 	 * `account_id` already holds the maximum, its oldest admitted connections are
@@ -490,8 +482,11 @@ export class BackendWebsocketTransport {
 	 * connection is always admitted — unless the transport is closing: then it
 	 * is born closed, as in `register_pending`, and evicts nothing.
 	 *
-	 * @param required_roles - the roles the endpoint gated the connection on,
-	 *   for a `role` close target; empty for an ungated one
+	 * @param ws - the socket to close on revocation
+	 * @param identity - who the connection is — what every close target and the
+	 *   per-account cap match on; the transport keeps a copy
+	 * @param abort_controller - the socket-scoped controller to abort when the
+	 *   transport closes this connection (revocation or cap eviction)
 	 * @returns the freshly assigned `connection_id` (branded `Uuid`)
 	 * @mutates this - inserts an admitted entry into `#connections`; past the
 	 *   cap, first removes the account's oldest admitted connections and closes
@@ -499,22 +494,14 @@ export class BackendWebsocketTransport {
 	 */
 	add_connection(
 		ws: WSContext,
-		session_hash: string | null,
-		account_id: Uuid,
-		api_token_id: string | null = null,
-		abort_controller: AbortController | null = null,
-		required_roles: ReadonlyArray<string> = []
+		identity: ConnectionIdentity,
+		abort_controller: AbortController | null = null
 	): Uuid {
 		if (this.#closing) return this.#close_born_closed(ws, abort_controller);
 		if (this.#max_connections_per_account !== null) {
-			this.#evict_oldest_for_account(account_id, this.#max_connections_per_account);
+			this.#evict_oldest_for_account(identity.account_id, this.#max_connections_per_account);
 		}
-		return this.#insert(
-			ws,
-			{ session_hash, account_id, api_token_id, required_roles },
-			abort_controller,
-			true
-		);
+		return this.#insert(ws, identity, abort_controller, true);
 	}
 
 	#insert(
@@ -526,7 +513,10 @@ export class BackendWebsocketTransport {
 		const connection_id = create_uuid();
 		this.#connections.set(connection_id, {
 			ws,
-			identity,
+			// a copy, as the Rust registry takes it by value: a caller (or a socket
+			// hook handed the same record) changing its own later moves nothing
+			// the close targets match on
+			identity: { ...identity, required_roles: [...identity.required_roles] },
 			admitted,
 			abort_controller,
 			writer: new WsOutboundWriter({
@@ -621,7 +611,7 @@ export class BackendWebsocketTransport {
 	 * @throws the first error a socket's `close` threw, after every match was attempted
 	 */
 	#close_where(
-		predicate: (identity: ConnectionIdentity) => boolean,
+		predicate: (identity: Readonly<ConnectionIdentity>) => boolean,
 		code: number = WS_CLOSE_SESSION_REVOKED,
 		reason: string = WS_CLOSE_SESSION_REVOKED_REASON
 	): number {
@@ -889,7 +879,7 @@ export class BackendWebsocketTransport {
 	 */
 	broadcast_filtered(
 		message: JsonrpcMessageFromServerToClient,
-		predicate: (identity: ConnectionIdentity) => boolean
+		predicate: (identity: Readonly<ConnectionIdentity>) => boolean
 	): number {
 		const serialized = JSON.stringify(message);
 		// measured once, not once per recipient that has to queue it

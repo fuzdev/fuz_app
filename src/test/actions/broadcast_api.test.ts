@@ -22,6 +22,7 @@ import type { JsonrpcNotification } from '#lib/http/jsonrpc.ts';
 import type { ActionSpecUnion } from '#lib/actions/action_spec.ts';
 import { create_fake_ws } from '#lib/testing/ws_round_trip.ts';
 import { create_uuid } from '#lib/primitive_schemas.ts';
+import { create_test_identity } from './connection_identity_helpers.ts';
 
 const thing_changed_spec = {
 	method: 'thing_changed',
@@ -56,8 +57,14 @@ describe('create_broadcast_api', () => {
 		const account_b = create_uuid();
 		const a = create_fake_ws();
 		const b = create_fake_ws();
-		transport.add_connection(a.ws, 'hash_a', account_a);
-		transport.add_connection(b.ws, 'hash_b', account_b);
+		transport.add_connection(
+			a.ws,
+			create_test_identity({ session_hash: 'hash_a', account_id: account_a })
+		);
+		transport.add_connection(
+			b.ws,
+			create_test_identity({ session_hash: 'hash_b', account_id: account_b })
+		);
 
 		const api = create_broadcast_api<TestApi>({
 			transport,
@@ -77,7 +84,10 @@ describe('create_broadcast_api', () => {
 	test('validates input and skips send on failure', async () => {
 		const transport = new BackendWebsocketTransport();
 		const { ws } = create_fake_ws();
-		transport.add_connection(ws, 'hash_a', create_uuid());
+		transport.add_connection(
+			ws,
+			create_test_identity({ session_hash: 'hash_a', account_id: create_uuid() })
+		);
 
 		const log_errors: Array<Array<unknown>> = [];
 		const api = create_broadcast_api<TestApi>({
@@ -118,8 +128,14 @@ describe('create_broadcast_api', () => {
 		const account_b = create_uuid();
 		const a = create_fake_ws();
 		const b = create_fake_ws();
-		transport.add_connection(a.ws, 'hash_a', account_a);
-		transport.add_connection(b.ws, 'hash_b', account_b);
+		transport.add_connection(
+			a.ws,
+			create_test_identity({ session_hash: 'hash_a', account_id: account_a })
+		);
+		transport.add_connection(
+			b.ws,
+			create_test_identity({ session_hash: 'hash_b', account_id: account_b })
+		);
 
 		const should_deliver: ShouldDeliverFn = (identity, _method, input) => {
 			const payload = input as { owner_account_id?: string };
@@ -191,7 +207,10 @@ describe('create_broadcast_api', () => {
 	test('should_deliver sees validated payload, not raw input', async () => {
 		const transport = new BackendWebsocketTransport();
 		const { ws } = create_fake_ws();
-		transport.add_connection(ws, 'hash_a', create_uuid());
+		transport.add_connection(
+			ws,
+			create_test_identity({ session_hash: 'hash_a', account_id: create_uuid() })
+		);
 
 		let seen_input: unknown = null;
 		let seen_method: string | null = null;

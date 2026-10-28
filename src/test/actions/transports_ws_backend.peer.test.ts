@@ -9,6 +9,7 @@ import {
 import { jsonrpc_error_messages } from '#lib/http/jsonrpc_errors.ts';
 import { peer_ping_action_spec } from '#lib/actions/peer_ping.ts';
 import { create_fake_ws } from '#lib/testing/ws_round_trip.ts';
+import { create_test_identity } from './connection_identity_helpers.ts';
 
 // In-process coverage of the transport's server→client request path
 // (`request_connection` / `resolve_peer_response`) over a fake `WSContext` —
@@ -21,7 +22,7 @@ describe('BackendWebsocketTransport server→client requests', () => {
 	test('request_connection frames the request to the one socket and resolve_peer_response settles it', async () => {
 		const t = new BackendWebsocketTransport();
 		const { ws, sends } = create_fake_ws();
-		const conn = t.add_connection(ws, null, create_uuid());
+		const conn = t.add_connection(ws, create_test_identity({ account_id: create_uuid() }));
 
 		const outcome_promise = t.request_connection(conn, 'peer/ping', { nonce: 7 });
 		assert.strictEqual(sends.length, 1, 'the request frame was sent to the socket');
@@ -46,7 +47,7 @@ describe('BackendWebsocketTransport server→client requests', () => {
 	test('a client error reply surfaces as client_error (envelope forwarded)', async () => {
 		const t = new BackendWebsocketTransport();
 		const { ws, sends } = create_fake_ws();
-		const conn = t.add_connection(ws, null, create_uuid());
+		const conn = t.add_connection(ws, create_test_identity({ account_id: create_uuid() }));
 
 		const outcome_promise = t.request_connection(conn, 'peer/ping', { nonce: 1 });
 		const frame = JSON.parse(sends[0]!);
@@ -71,7 +72,7 @@ describe('BackendWebsocketTransport server→client requests', () => {
 	test('params that cannot be serialized settle connection_gone, never throw, and send nothing', async () => {
 		const t = new BackendWebsocketTransport();
 		const { ws, sends } = create_fake_ws();
-		const conn = t.add_connection(ws, null, create_uuid());
+		const conn = t.add_connection(ws, create_test_identity({ account_id: create_uuid() }));
 
 		// a BigInt has no JSON form; a handler passing one must get an outcome
 		const outcome = await t.request_connection(conn, 'peer/ping', { count: 1n });
@@ -90,7 +91,7 @@ describe('BackendWebsocketTransport server→client requests', () => {
 	test('removing the connection drains its pending requests as connection_gone', async () => {
 		const t = new BackendWebsocketTransport();
 		const { ws } = create_fake_ws();
-		const conn = t.add_connection(ws, null, create_uuid());
+		const conn = t.add_connection(ws, create_test_identity({ account_id: create_uuid() }));
 
 		const outcome_promise = t.request_connection(conn, 'peer/ping', {});
 		t.remove_connection(conn);
@@ -105,7 +106,7 @@ describe('BackendWebsocketTransport server→client requests', () => {
 	test('an unsolicited reply (unknown id) resolves nothing', () => {
 		const t = new BackendWebsocketTransport();
 		const { ws } = create_fake_ws();
-		const conn = t.add_connection(ws, null, create_uuid());
+		const conn = t.add_connection(ws, create_test_identity({ account_id: create_uuid() }));
 		assert.isFalse(t.resolve_peer_response(conn, create_jsonrpc_response('s999', { result: 1 })));
 	});
 });

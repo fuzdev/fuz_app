@@ -31,6 +31,7 @@ import {
 import type { JsonrpcNotification } from '#lib/http/jsonrpc.ts';
 import { create_fake_ws } from '#lib/testing/ws_round_trip.ts';
 import { create_uuid } from '#lib/primitive_schemas.ts';
+import { create_test_identity } from './connection_identity_helpers.ts';
 
 const ACCOUNT_A = create_uuid();
 const ACCOUNT_B = create_uuid();
@@ -103,15 +104,21 @@ describe('BackendWebsocketTransport.add_connection', () => {
 		const t = new BackendWebsocketTransport();
 		const a = create_fake_ws();
 		const b = create_fake_ws();
-		const id_a = t.add_connection(a.ws, HASH_A, ACCOUNT_A);
-		const id_b = t.add_connection(b.ws, HASH_B, ACCOUNT_B);
+		const id_a = t.add_connection(
+			a.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
+		const id_b = t.add_connection(
+			b.ws,
+			create_test_identity({ session_hash: HASH_B, account_id: ACCOUNT_B })
+		);
 		assert.notStrictEqual(id_a, id_b);
 	});
 
 	test('api_token_id defaults to null (backward-compatible 3-arg call)', () => {
 		const t = new BackendWebsocketTransport();
 		const { ws } = create_fake_ws();
-		t.add_connection(ws, HASH_A, ACCOUNT_A);
+		t.add_connection(ws, create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }));
 		// revoking by a made-up token id closes nothing
 		assert.strictEqual(t.close_connections({ kind: 'token', api_token_id: 'nonexistent' }), 0);
 	});
@@ -120,7 +127,7 @@ describe('BackendWebsocketTransport.add_connection', () => {
 		const t = new BackendWebsocketTransport();
 		assert.strictEqual(t.get_connection_count() > 0, false);
 		const { ws } = create_fake_ws();
-		t.add_connection(ws, HASH_A, ACCOUNT_A);
+		t.add_connection(ws, create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }));
 		assert.strictEqual(t.get_connection_count() > 0, true);
 	});
 
@@ -129,14 +136,46 @@ describe('BackendWebsocketTransport.add_connection', () => {
 		assert.strictEqual(t.get_connection_count(), 0);
 		const a = create_fake_ws();
 		const b = create_fake_ws();
-		const id_a = t.add_connection(a.ws, HASH_A, ACCOUNT_A);
+		const id_a = t.add_connection(
+			a.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
 		assert.strictEqual(t.get_connection_count(), 1);
-		t.add_connection(b.ws, HASH_B, ACCOUNT_B);
+		t.add_connection(b.ws, create_test_identity({ session_hash: HASH_B, account_id: ACCOUNT_B }));
 		assert.strictEqual(t.get_connection_count(), 2);
 		t.remove_connection(id_a);
 		assert.strictEqual(t.get_connection_count(), 1);
 		t.close_connections({ kind: 'account', account_id: ACCOUNT_B });
 		assert.strictEqual(t.get_connection_count(), 0);
+	});
+
+	test('keeps a copy of the identity — the caller changing its record moves nothing', () => {
+		for (const register of ['add_connection', 'register_pending'] as const) {
+			const t = new BackendWebsocketTransport();
+			const { ws } = create_fake_ws();
+			const required_roles = ['admin'];
+			const identity = create_test_identity({
+				session_hash: HASH_A,
+				account_id: ACCOUNT_A,
+				required_roles
+			});
+			t[register](ws, identity);
+			identity.session_hash = HASH_B;
+			identity.account_id = ACCOUNT_B;
+			required_roles.push('keeper');
+
+			assert.strictEqual(t.close_connections({ kind: 'session', session_hash: HASH_B }), 0);
+			assert.strictEqual(t.close_connections({ kind: 'account', account_id: ACCOUNT_B }), 0);
+			assert.strictEqual(
+				t.close_connections({ kind: 'role', account_id: ACCOUNT_A, role: 'keeper' }),
+				0
+			);
+			assert.strictEqual(
+				t.close_connections({ kind: 'session', session_hash: HASH_A }),
+				1,
+				register
+			);
+		}
 	});
 });
 
@@ -145,8 +184,8 @@ describe('BackendWebsocketTransport.close_connections session', () => {
 		const t = new BackendWebsocketTransport();
 		const a = create_fake_ws();
 		const b = create_fake_ws();
-		t.add_connection(a.ws, HASH_A, ACCOUNT_A);
-		t.add_connection(b.ws, HASH_B, ACCOUNT_A);
+		t.add_connection(a.ws, create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }));
+		t.add_connection(b.ws, create_test_identity({ session_hash: HASH_B, account_id: ACCOUNT_A }));
 
 		const count = t.close_connections({ kind: 'session', session_hash: HASH_A });
 		assert.strictEqual(count, 1);
@@ -160,8 +199,8 @@ describe('BackendWebsocketTransport.close_connections session', () => {
 		const t = new BackendWebsocketTransport();
 		const a = create_fake_ws();
 		const b = create_fake_ws();
-		t.add_connection(a.ws, HASH_A, ACCOUNT_A);
-		t.add_connection(b.ws, HASH_A, ACCOUNT_A);
+		t.add_connection(a.ws, create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }));
+		t.add_connection(b.ws, create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }));
 
 		assert.strictEqual(t.close_connections({ kind: 'session', session_hash: HASH_A }), 2);
 	});
@@ -169,7 +208,7 @@ describe('BackendWebsocketTransport.close_connections session', () => {
 	test('returns 0 when no sockets match', () => {
 		const t = new BackendWebsocketTransport();
 		const { ws } = create_fake_ws();
-		t.add_connection(ws, HASH_A, ACCOUNT_A);
+		t.add_connection(ws, create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }));
 		assert.strictEqual(t.close_connections({ kind: 'session', session_hash: 'nope' }), 0);
 	});
 });
@@ -181,10 +220,19 @@ describe('BackendWebsocketTransport.close_connections account', () => {
 		const bearer_ws = create_fake_ws();
 		const daemon_ws = create_fake_ws();
 		const other_ws = create_fake_ws();
-		t.add_connection(session_ws.ws, HASH_A, ACCOUNT_A);
-		t.add_connection(bearer_ws.ws, null, ACCOUNT_A, TOKEN_A);
-		t.add_connection(daemon_ws.ws, null, ACCOUNT_A);
-		t.add_connection(other_ws.ws, HASH_B, ACCOUNT_B);
+		t.add_connection(
+			session_ws.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
+		t.add_connection(
+			bearer_ws.ws,
+			create_test_identity({ account_id: ACCOUNT_A, api_token_id: TOKEN_A })
+		);
+		t.add_connection(daemon_ws.ws, create_test_identity({ account_id: ACCOUNT_A }));
+		t.add_connection(
+			other_ws.ws,
+			create_test_identity({ session_hash: HASH_B, account_id: ACCOUNT_B })
+		);
 
 		assert.strictEqual(t.close_connections({ kind: 'account', account_id: ACCOUNT_A }), 3);
 		assert.strictEqual(session_ws.closes.length, 1);
@@ -200,9 +248,18 @@ describe('BackendWebsocketTransport.close_connections token', () => {
 		const bearer_a = create_fake_ws();
 		const bearer_b = create_fake_ws();
 		const session_ws = create_fake_ws();
-		t.add_connection(bearer_a.ws, null, ACCOUNT_A, TOKEN_A);
-		t.add_connection(bearer_b.ws, null, ACCOUNT_A, TOKEN_B);
-		t.add_connection(session_ws.ws, HASH_A, ACCOUNT_A);
+		t.add_connection(
+			bearer_a.ws,
+			create_test_identity({ account_id: ACCOUNT_A, api_token_id: TOKEN_A })
+		);
+		t.add_connection(
+			bearer_b.ws,
+			create_test_identity({ account_id: ACCOUNT_A, api_token_id: TOKEN_B })
+		);
+		t.add_connection(
+			session_ws.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
 
 		assert.strictEqual(t.close_connections({ kind: 'token', api_token_id: TOKEN_A }), 1);
 		assert.strictEqual(bearer_a.closes.length, 1);
@@ -214,8 +271,14 @@ describe('BackendWebsocketTransport.close_connections token', () => {
 		const t = new BackendWebsocketTransport();
 		const session_ws = create_fake_ws();
 		const bearer_ws = create_fake_ws();
-		t.add_connection(session_ws.ws, HASH_A, ACCOUNT_A);
-		t.add_connection(bearer_ws.ws, null, ACCOUNT_A, TOKEN_A);
+		t.add_connection(
+			session_ws.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
+		t.add_connection(
+			bearer_ws.ws,
+			create_test_identity({ account_id: ACCOUNT_A, api_token_id: TOKEN_A })
+		);
 
 		assert.strictEqual(t.close_connections({ kind: 'token', api_token_id: TOKEN_A }), 1);
 		assert.strictEqual(session_ws.closes.length, 0);
@@ -224,7 +287,7 @@ describe('BackendWebsocketTransport.close_connections token', () => {
 	test('returns 0 when no bearer connections match', () => {
 		const t = new BackendWebsocketTransport();
 		const { ws } = create_fake_ws();
-		t.add_connection(ws, HASH_A, ACCOUNT_A);
+		t.add_connection(ws, create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }));
 		assert.strictEqual(t.close_connections({ kind: 'token', api_token_id: TOKEN_A }), 0);
 	});
 });
@@ -236,10 +299,19 @@ describe('BackendWebsocketTransport.close_all_connections', () => {
 		const bearer = create_fake_ws();
 		const daemon = create_fake_ws();
 		const pending = create_fake_ws();
-		t.add_connection(session.ws, HASH_A, ACCOUNT_A);
-		t.add_connection(bearer.ws, null, ACCOUNT_A, TOKEN_A);
-		t.add_connection(daemon.ws, null, ACCOUNT_B);
-		const pending_id = t.register_pending(pending.ws, HASH_B, ACCOUNT_B);
+		t.add_connection(
+			session.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
+		t.add_connection(
+			bearer.ws,
+			create_test_identity({ account_id: ACCOUNT_A, api_token_id: TOKEN_A })
+		);
+		t.add_connection(daemon.ws, create_test_identity({ account_id: ACCOUNT_B }));
+		const pending_id = t.register_pending(
+			pending.ws,
+			create_test_identity({ session_hash: HASH_B, account_id: ACCOUNT_B })
+		);
 
 		assert.strictEqual(t.close_all_connections(), 4);
 		for (const fake of [session, bearer, daemon, pending]) {
@@ -258,7 +330,11 @@ describe('BackendWebsocketTransport.close_all_connections', () => {
 	test("aborts each closed connection's controller", () => {
 		const t = new BackendWebsocketTransport();
 		const controller = new AbortController();
-		t.add_connection(create_fake_ws().ws, HASH_A, ACCOUNT_A, null, controller);
+		t.add_connection(
+			create_fake_ws().ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }),
+			controller
+		);
 		t.close_all_connections();
 		assert.strictEqual(controller.signal.aborted, true);
 	});
@@ -268,7 +344,10 @@ describe('BackendWebsocketTransport.close_all_connections', () => {
 		const before = create_fake_ws();
 		const after = create_fake_ws();
 		const boom = new Error('already closed');
-		t.add_connection(before.ws, HASH_A, ACCOUNT_A);
+		t.add_connection(
+			before.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
 		t.add_connection(
 			new WSContext({
 				send: () => {},
@@ -277,10 +356,9 @@ describe('BackendWebsocketTransport.close_all_connections', () => {
 				},
 				readyState: 1
 			}),
-			HASH_B,
-			ACCOUNT_B
+			create_test_identity({ session_hash: HASH_B, account_id: ACCOUNT_B })
 		);
-		t.add_connection(after.ws, null, ACCOUNT_B);
+		t.add_connection(after.ws, create_test_identity({ account_id: ACCOUNT_B }));
 
 		assert.throws(() => t.close_all_connections(), boom);
 		assert.strictEqual(before.closes.length, 1);
@@ -303,7 +381,11 @@ describe('BackendWebsocketTransport born-closed registrations', () => {
 
 		const late = create_fake_ws();
 		const controller = new AbortController();
-		const id = t.register_pending(late.ws, HASH_A, ACCOUNT_A, null, controller);
+		const id = t.register_pending(
+			late.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }),
+			controller
+		);
 		assert.deepStrictEqual(late.closes, [GOING_AWAY], 'closed before register_pending returns');
 		assert.strictEqual(controller.signal.aborted, true);
 		assert.strictEqual(t.get_pending_connection_count(), 0, 'never inserted');
@@ -320,7 +402,11 @@ describe('BackendWebsocketTransport born-closed registrations', () => {
 
 		const late = create_fake_ws();
 		const controller = new AbortController();
-		const id = t.add_connection(late.ws, null, ACCOUNT_A, TOKEN_A, controller);
+		const id = t.add_connection(
+			late.ws,
+			create_test_identity({ account_id: ACCOUNT_A, api_token_id: TOKEN_A }),
+			controller
+		);
 		assert.deepStrictEqual(late.closes, [GOING_AWAY]);
 		assert.strictEqual(controller.signal.aborted, true);
 		assert.strictEqual(t.is_registered(id), false);
@@ -344,7 +430,11 @@ describe('BackendWebsocketTransport born-closed registrations', () => {
 			},
 			readyState: 1
 		});
-		const id = t.register_pending(throwing, HASH_A, ACCOUNT_A, null, controller);
+		const id = t.register_pending(
+			throwing,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }),
+			controller
+		);
 		assert.strictEqual(controller.signal.aborted, true);
 		assert.strictEqual(t.admit(id), false);
 		assert.strictEqual(errors.length, 1);
@@ -355,7 +445,10 @@ describe('BackendWebsocketTransport.remove_connection', () => {
 	test('clears all per-connection bookkeeping (cannot be revoked twice)', () => {
 		const t = new BackendWebsocketTransport();
 		const a = create_fake_ws();
-		const id_a = t.add_connection(a.ws, HASH_A, ACCOUNT_A, TOKEN_A);
+		const id_a = t.add_connection(
+			a.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A, api_token_id: TOKEN_A })
+		);
 		t.remove_connection(id_a);
 
 		// both maps now empty — no close code from any revocation path
@@ -368,7 +461,10 @@ describe('BackendWebsocketTransport.remove_connection', () => {
 	test('is idempotent — safe after revocation has already cleaned up', () => {
 		const t = new BackendWebsocketTransport();
 		const a = create_fake_ws();
-		const id_a = t.add_connection(a.ws, HASH_A, ACCOUNT_A);
+		const id_a = t.add_connection(
+			a.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
 		t.close_connections({ kind: 'session', session_hash: HASH_A });
 		// already cleaned up; this must not throw or double-close
 		t.remove_connection(id_a);
@@ -380,8 +476,11 @@ describe('BackendWebsocketTransport.remove_connection', () => {
 		const t = new BackendWebsocketTransport();
 		const a = create_fake_ws();
 		const b = create_fake_ws();
-		const id_a = t.add_connection(a.ws, HASH_A, ACCOUNT_A);
-		t.add_connection(b.ws, HASH_A, ACCOUNT_A);
+		const id_a = t.add_connection(
+			a.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
+		t.add_connection(b.ws, create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }));
 
 		// an id the transport never issued removes nothing
 		t.remove_connection(create_uuid());
@@ -406,7 +505,10 @@ describe('BackendWebsocketTransport per-account connection cap', () => {
 		const t = new BackendWebsocketTransport();
 		const sockets = Array.from({ length: DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT }, () => {
 			const fake = create_fake_ws();
-			t.add_connection(fake.ws, HASH_A, ACCOUNT_A);
+			t.add_connection(
+				fake.ws,
+				create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+			);
 			return fake;
 		});
 		// at the cap, nothing has closed
@@ -414,7 +516,10 @@ describe('BackendWebsocketTransport per-account connection cap', () => {
 		assert.strictEqual(t.get_connection_count(), DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT);
 
 		const newest = create_fake_ws();
-		t.add_connection(newest.ws, HASH_A, ACCOUNT_A);
+		t.add_connection(
+			newest.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
 
 		assert.deepStrictEqual(sockets[0]!.closes, [CONNECTION_LIMIT_CLOSE]);
 		assert.ok(sockets.slice(1).every((s) => s.closes.length === 0));
@@ -428,14 +533,14 @@ describe('BackendWebsocketTransport per-account connection cap', () => {
 		const b = create_fake_ws();
 		const c = create_fake_ws();
 		const d = create_fake_ws();
-		t.add_connection(a.ws, HASH_A, ACCOUNT_A);
-		t.add_connection(b.ws, HASH_A, ACCOUNT_A);
+		t.add_connection(a.ws, create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }));
+		t.add_connection(b.ws, create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }));
 
-		t.add_connection(c.ws, HASH_A, ACCOUNT_A);
+		t.add_connection(c.ws, create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }));
 		assert.deepStrictEqual(a.closes, [CONNECTION_LIMIT_CLOSE]);
 		assert.deepStrictEqual(b.closes, []);
 
-		t.add_connection(d.ws, HASH_A, ACCOUNT_A);
+		t.add_connection(d.ws, create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }));
 		assert.deepStrictEqual(a.closes, [CONNECTION_LIMIT_CLOSE]);
 		assert.deepStrictEqual(b.closes, [CONNECTION_LIMIT_CLOSE]);
 		assert.deepStrictEqual(c.closes, []);
@@ -447,9 +552,9 @@ describe('BackendWebsocketTransport per-account connection cap', () => {
 		const t = new BackendWebsocketTransport({ max_connections_per_account: 1 });
 		const a = create_fake_ws();
 		const b = create_fake_ws();
-		t.add_connection(a.ws, HASH_A, ACCOUNT_A);
+		t.add_connection(a.ws, create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }));
 		assert.deepStrictEqual(a.closes, []);
-		t.add_connection(b.ws, HASH_A, ACCOUNT_A);
+		t.add_connection(b.ws, create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }));
 		assert.deepStrictEqual(a.closes, [CONNECTION_LIMIT_CLOSE]);
 		assert.deepStrictEqual(b.closes, []);
 	});
@@ -457,28 +562,46 @@ describe('BackendWebsocketTransport per-account connection cap', () => {
 	test('counts per account, across every credential type', () => {
 		const t = new BackendWebsocketTransport({ max_connections_per_account: 3 });
 		const other = create_fake_ws();
-		t.add_connection(other.ws, HASH_B, ACCOUNT_B);
+		t.add_connection(
+			other.ws,
+			create_test_identity({ session_hash: HASH_B, account_id: ACCOUNT_B })
+		);
 
 		const session = create_fake_ws();
 		const bearer = create_fake_ws();
 		const daemon = create_fake_ws();
-		t.add_connection(session.ws, HASH_A, ACCOUNT_A);
-		t.add_connection(bearer.ws, null, ACCOUNT_A, TOKEN_A);
-		t.add_connection(daemon.ws, null, ACCOUNT_A);
+		t.add_connection(
+			session.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
+		t.add_connection(
+			bearer.ws,
+			create_test_identity({ account_id: ACCOUNT_A, api_token_id: TOKEN_A })
+		);
+		t.add_connection(daemon.ws, create_test_identity({ account_id: ACCOUNT_A }));
 		// another account's connection neither counts nor is evicted
 		assert.deepStrictEqual(session.closes, []);
 
 		// a second session of the same account is past the account's cap
 		const second_session = create_fake_ws();
-		t.add_connection(second_session.ws, 'hash_session_a2', ACCOUNT_A);
+		t.add_connection(
+			second_session.ws,
+			create_test_identity({ session_hash: 'hash_session_a2', account_id: ACCOUNT_A })
+		);
 		assert.deepStrictEqual(session.closes, [CONNECTION_LIMIT_CLOSE]);
 
 		// the bearer and daemon connections are next in line — none is exempt
 		const fifth = create_fake_ws();
-		t.add_connection(fifth.ws, HASH_A, ACCOUNT_A);
+		t.add_connection(
+			fifth.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
 		assert.deepStrictEqual(bearer.closes, [CONNECTION_LIMIT_CLOSE]);
 		const sixth = create_fake_ws();
-		t.add_connection(sixth.ws, HASH_A, ACCOUNT_A);
+		t.add_connection(
+			sixth.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
 		assert.deepStrictEqual(daemon.closes, [CONNECTION_LIMIT_CLOSE]);
 
 		assert.deepStrictEqual(other.closes, []);
@@ -489,17 +612,20 @@ describe('BackendWebsocketTransport per-account connection cap', () => {
 		const t = new BackendWebsocketTransport({ max_connections_per_account: 2 });
 		const a = create_fake_ws();
 		const b = create_fake_ws();
-		const id_a = t.add_connection(a.ws, HASH_A, ACCOUNT_A);
-		t.add_connection(b.ws, HASH_B, ACCOUNT_A);
+		const id_a = t.add_connection(
+			a.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
+		t.add_connection(b.ws, create_test_identity({ session_hash: HASH_B, account_id: ACCOUNT_A }));
 
 		t.remove_connection(id_a);
 		const c = create_fake_ws();
-		t.add_connection(c.ws, HASH_A, ACCOUNT_A);
+		t.add_connection(c.ws, create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }));
 		assert.deepStrictEqual(b.closes, []);
 
 		assert.strictEqual(t.close_connections({ kind: 'session', session_hash: HASH_B }), 1);
 		const d = create_fake_ws();
-		t.add_connection(d.ws, HASH_A, ACCOUNT_A);
+		t.add_connection(d.ws, create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }));
 		assert.deepStrictEqual(c.closes, []);
 		assert.deepStrictEqual(d.closes, []);
 	});
@@ -508,7 +634,10 @@ describe('BackendWebsocketTransport per-account connection cap', () => {
 		const t = new BackendWebsocketTransport({ max_connections_per_account: null });
 		const sockets = Array.from({ length: DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT + 5 }, () => {
 			const fake = create_fake_ws();
-			t.add_connection(fake.ws, HASH_A, ACCOUNT_A);
+			t.add_connection(
+				fake.ws,
+				create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+			);
 			return fake;
 		});
 		assert.ok(sockets.every((s) => s.closes.length === 0));
@@ -519,8 +648,14 @@ describe('BackendWebsocketTransport per-account connection cap', () => {
 		const t = new BackendWebsocketTransport({ max_connections_per_account: 1 });
 		const a = create_fake_ws();
 		const b = create_fake_ws();
-		const id_a = t.add_connection(a.ws, HASH_A, ACCOUNT_A, TOKEN_A);
-		t.add_connection(b.ws, HASH_B, ACCOUNT_A, TOKEN_B);
+		const id_a = t.add_connection(
+			a.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A, api_token_id: TOKEN_A })
+		);
+		t.add_connection(
+			b.ws,
+			create_test_identity({ session_hash: HASH_B, account_id: ACCOUNT_A, api_token_id: TOKEN_B })
+		);
 		assert.deepStrictEqual(a.closes, [CONNECTION_LIMIT_CLOSE]);
 
 		// the runtime adapter fires onClose for the evicted socket afterwards
@@ -541,10 +676,16 @@ describe('BackendWebsocketTransport per-account connection cap', () => {
 	test('eviction drains the pending peer requests of the evicted connection', async () => {
 		const t = new BackendWebsocketTransport({ max_connections_per_account: 1 });
 		const a = create_fake_ws();
-		const id_a = t.add_connection(a.ws, HASH_A, ACCOUNT_A);
+		const id_a = t.add_connection(
+			a.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
 		const outcome = t.request_connection(id_a, 'peer/ping', {}, { timeout_ms: 60_000 });
 
-		t.add_connection(create_fake_ws().ws, HASH_A, ACCOUNT_A);
+		t.add_connection(
+			create_fake_ws().ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
 		assert.deepStrictEqual(await outcome, { ok: false, error: { kind: 'connection_gone' } });
 	});
 
@@ -562,9 +703,15 @@ describe('BackendWebsocketTransport per-account connection cap', () => {
 			},
 			readyState: 1
 		});
-		t.add_connection(throwing, HASH_A, ACCOUNT_A);
+		t.add_connection(
+			throwing,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
 
-		const id = t.add_connection(create_fake_ws().ws, HASH_A, ACCOUNT_A);
+		const id = t.add_connection(
+			create_fake_ws().ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
 		assert.strictEqual(typeof id, 'string');
 		// the failure goes to the transport's log
 		assert.strictEqual(errors.length, 1);
@@ -580,13 +727,25 @@ describe('BackendWebsocketTransport per-account connection cap', () => {
 			infos.push(args);
 		};
 		const t = new BackendWebsocketTransport({ max_connections_per_account: 2, log });
-		t.add_connection(create_fake_ws().ws, HASH_A, ACCOUNT_A);
-		t.add_connection(create_fake_ws().ws, HASH_A, ACCOUNT_A);
+		t.add_connection(
+			create_fake_ws().ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
+		t.add_connection(
+			create_fake_ws().ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
 		// another account's connection, and reaching the cap, log nothing
-		t.add_connection(create_fake_ws().ws, HASH_B, ACCOUNT_B);
+		t.add_connection(
+			create_fake_ws().ws,
+			create_test_identity({ session_hash: HASH_B, account_id: ACCOUNT_B })
+		);
 		assert.deepStrictEqual(infos, []);
 
-		t.add_connection(create_fake_ws().ws, HASH_A, ACCOUNT_A);
+		t.add_connection(
+			create_fake_ws().ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
 		// the Rust spine's registry logs the same line
 		assert.deepStrictEqual(infos, [
 			['ws: connection cap closed oldest', { account_id: ACCOUNT_A, closed: 1, max: 2 }]
@@ -640,8 +799,14 @@ describe('BackendWebsocketTransport log', () => {
 	test('unset falls back to a [ws] logger rather than staying silent', () => {
 		const calls = spy_logger_errors();
 		const t = new BackendWebsocketTransport({ max_connections_per_account: 1 });
-		t.add_connection(create_throwing_ws(), HASH_A, ACCOUNT_A);
-		t.add_connection(create_fake_ws().ws, HASH_A, ACCOUNT_A);
+		t.add_connection(
+			create_throwing_ws(),
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
+		t.add_connection(
+			create_fake_ws().ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
 
 		assert.strictEqual(calls.length, 1);
 		assert.strictEqual(calls[0]![0], '[ws]');
@@ -652,9 +817,15 @@ describe('BackendWebsocketTransport log', () => {
 		const calls = spy_logger_errors();
 		const infos = vi.spyOn(Logger.prototype, 'info').mockImplementation(() => {});
 		const t = new BackendWebsocketTransport({ max_connections_per_account: 1, log: null });
-		t.add_connection(create_throwing_ws(), HASH_A, ACCOUNT_A);
+		t.add_connection(
+			create_throwing_ws(),
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
 		// evicts the throwing socket — neither the eviction nor the failed close logs
-		t.add_connection(create_fake_ws().ws, HASH_A, ACCOUNT_A);
+		t.add_connection(
+			create_fake_ws().ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
 
 		assert.deepStrictEqual(calls, []);
 		assert.strictEqual(infos.mock.calls.length, 0);
@@ -667,9 +838,12 @@ describe('BackendWebsocketTransport log', () => {
 			errors.push(args);
 		};
 		const t = new BackendWebsocketTransport({ log });
-		t.add_connection(create_throwing_ws(), HASH_A, ACCOUNT_A);
+		t.add_connection(
+			create_throwing_ws(),
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
 		const ok = create_fake_ws();
-		t.add_connection(ok.ws, HASH_B, ACCOUNT_B);
+		t.add_connection(ok.ws, create_test_identity({ session_hash: HASH_B, account_id: ACCOUNT_B }));
 		const notification: JsonrpcNotification = { jsonrpc: '2.0', method: 'ping' };
 
 		t.broadcast(notification);
@@ -699,7 +873,10 @@ describe('BackendWebsocketTransport revocation bookkeeping', () => {
 	test('revoked connection stops matching any future close_connections call', () => {
 		const t = new BackendWebsocketTransport();
 		const a = create_fake_ws();
-		t.add_connection(a.ws, HASH_A, ACCOUNT_A, TOKEN_A);
+		t.add_connection(
+			a.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A, api_token_id: TOKEN_A })
+		);
 
 		// first revocation path closes the socket once
 		assert.strictEqual(t.close_connections({ kind: 'session', session_hash: HASH_A }), 1);
@@ -714,7 +891,7 @@ describe('BackendWebsocketTransport revocation bookkeeping', () => {
 	test('daemon-token connection (null session_hash + null api_token_id) is only reachable via account', () => {
 		const t = new BackendWebsocketTransport();
 		const daemon = create_fake_ws();
-		t.add_connection(daemon.ws, null, ACCOUNT_A);
+		t.add_connection(daemon.ws, create_test_identity({ account_id: ACCOUNT_A }));
 
 		assert.strictEqual(t.close_connections({ kind: 'session', session_hash: HASH_A }), 0);
 		assert.strictEqual(t.close_connections({ kind: 'token', api_token_id: TOKEN_A }), 0);
@@ -730,8 +907,14 @@ describe('BackendWebsocketTransport revocation bookkeeping', () => {
 		// connection and needs its own remove_connection.
 		const t = new BackendWebsocketTransport();
 		const a = create_fake_ws();
-		const id1 = t.add_connection(a.ws, HASH_A, ACCOUNT_A);
-		const id2 = t.add_connection(a.ws, HASH_B, ACCOUNT_B);
+		const id1 = t.add_connection(
+			a.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
+		const id2 = t.add_connection(
+			a.ws,
+			create_test_identity({ session_hash: HASH_B, account_id: ACCOUNT_B })
+		);
 		assert.notStrictEqual(id1, id2);
 		// revocation still closes the socket, possibly more than once
 		t.close_connections({ kind: 'account', account_id: ACCOUNT_A });
@@ -751,8 +934,8 @@ describe('BackendWebsocketTransport.broadcast_filtered', () => {
 		const t = new BackendWebsocketTransport();
 		const a = create_fake_ws();
 		const b = create_fake_ws();
-		t.add_connection(a.ws, HASH_A, ACCOUNT_A);
-		t.add_connection(b.ws, HASH_B, ACCOUNT_B);
+		t.add_connection(a.ws, create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }));
+		t.add_connection(b.ws, create_test_identity({ session_hash: HASH_B, account_id: ACCOUNT_B }));
 
 		const count = t.broadcast_filtered(notification, () => false);
 		assert.strictEqual(count, 0);
@@ -765,9 +948,9 @@ describe('BackendWebsocketTransport.broadcast_filtered', () => {
 		const a = create_fake_ws();
 		const b = create_fake_ws();
 		const c = create_fake_ws();
-		t.add_connection(a.ws, HASH_A, ACCOUNT_A);
-		t.add_connection(b.ws, HASH_B, ACCOUNT_B);
-		t.add_connection(c.ws, HASH_A, ACCOUNT_A);
+		t.add_connection(a.ws, create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }));
+		t.add_connection(b.ws, create_test_identity({ session_hash: HASH_B, account_id: ACCOUNT_B }));
+		t.add_connection(c.ws, create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }));
 
 		const count = t.broadcast_filtered(
 			notification,
@@ -783,8 +966,8 @@ describe('BackendWebsocketTransport.broadcast_filtered', () => {
 		const t = new BackendWebsocketTransport();
 		const a = create_fake_ws();
 		const b = create_fake_ws();
-		t.add_connection(a.ws, HASH_A, ACCOUNT_A);
-		t.add_connection(b.ws, HASH_B, ACCOUNT_B);
+		t.add_connection(a.ws, create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }));
+		t.add_connection(b.ws, create_test_identity({ session_hash: HASH_B, account_id: ACCOUNT_B }));
 
 		const count = t.broadcast_filtered(notification, () => true);
 		assert.strictEqual(count, 2);
@@ -805,9 +988,15 @@ describe('BackendWebsocketTransport.broadcast_filtered', () => {
 		const session_ws = create_fake_ws();
 		const bearer_ws = create_fake_ws();
 		const daemon_ws = create_fake_ws();
-		t.add_connection(session_ws.ws, HASH_A, ACCOUNT_A);
-		t.add_connection(bearer_ws.ws, null, ACCOUNT_A, TOKEN_A);
-		t.add_connection(daemon_ws.ws, null, ACCOUNT_A);
+		t.add_connection(
+			session_ws.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
+		t.add_connection(
+			bearer_ws.ws,
+			create_test_identity({ account_id: ACCOUNT_A, api_token_id: TOKEN_A })
+		);
+		t.add_connection(daemon_ws.ws, create_test_identity({ account_id: ACCOUNT_A }));
 
 		const seen: Array<ConnectionIdentity> = [];
 		const count = t.broadcast_filtered(notification, (identity) => {
@@ -835,8 +1024,11 @@ describe('BackendWebsocketTransport.broadcast_filtered', () => {
 		const t = new BackendWebsocketTransport();
 		const a = create_fake_ws();
 		const b = create_fake_ws();
-		const id_a = t.add_connection(a.ws, HASH_A, ACCOUNT_A);
-		t.add_connection(b.ws, HASH_B, ACCOUNT_B);
+		const id_a = t.add_connection(
+			a.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
+		t.add_connection(b.ws, create_test_identity({ session_hash: HASH_B, account_id: ACCOUNT_B }));
 		t.remove_connection(id_a);
 
 		const count = t.broadcast_filtered(notification, () => true);
@@ -857,8 +1049,8 @@ describe('BackendWebsocketTransport.send_to_account', () => {
 		const t = new BackendWebsocketTransport();
 		const a = create_fake_ws();
 		const b = create_fake_ws();
-		t.add_connection(a.ws, HASH_A, ACCOUNT_A);
-		t.add_connection(b.ws, HASH_B, ACCOUNT_B);
+		t.add_connection(a.ws, create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }));
+		t.add_connection(b.ws, create_test_identity({ session_hash: HASH_B, account_id: ACCOUNT_B }));
 
 		const count = t.send_to_account(ACCOUNT_A, notification);
 		assert.strictEqual(count, 1);
@@ -872,10 +1064,19 @@ describe('BackendWebsocketTransport.send_to_account', () => {
 		const bearer_ws = create_fake_ws();
 		const daemon_ws = create_fake_ws();
 		const other_ws = create_fake_ws();
-		t.add_connection(session_ws.ws, HASH_A, ACCOUNT_A);
-		t.add_connection(bearer_ws.ws, null, ACCOUNT_A, TOKEN_A);
-		t.add_connection(daemon_ws.ws, null, ACCOUNT_A);
-		t.add_connection(other_ws.ws, HASH_B, ACCOUNT_B);
+		t.add_connection(
+			session_ws.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
+		t.add_connection(
+			bearer_ws.ws,
+			create_test_identity({ account_id: ACCOUNT_A, api_token_id: TOKEN_A })
+		);
+		t.add_connection(daemon_ws.ws, create_test_identity({ account_id: ACCOUNT_A }));
+		t.add_connection(
+			other_ws.ws,
+			create_test_identity({ session_hash: HASH_B, account_id: ACCOUNT_B })
+		);
 
 		const count = t.send_to_account(ACCOUNT_A, notification);
 		assert.strictEqual(count, 3);
@@ -888,7 +1089,7 @@ describe('BackendWebsocketTransport.send_to_account', () => {
 	test('returns 0 when the account has no connections', () => {
 		const t = new BackendWebsocketTransport();
 		const { ws } = create_fake_ws();
-		t.add_connection(ws, HASH_B, ACCOUNT_B);
+		t.add_connection(ws, create_test_identity({ session_hash: HASH_B, account_id: ACCOUNT_B }));
 
 		const count = t.send_to_account(ACCOUNT_A, notification);
 		assert.strictEqual(count, 0);
@@ -907,8 +1108,8 @@ describe('BackendWebsocketTransport.send_to_account', () => {
 		const t = new BackendWebsocketTransport();
 		const a = create_fake_ws();
 		const b = create_fake_ws();
-		t.add_connection(a.ws, HASH_A, ACCOUNT_A);
-		t.add_connection(b.ws, null, ACCOUNT_A, TOKEN_A);
+		t.add_connection(a.ws, create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }));
+		t.add_connection(b.ws, create_test_identity({ account_id: ACCOUNT_A, api_token_id: TOKEN_A }));
 
 		const first: JsonrpcNotification = {
 			jsonrpc: '2.0',
@@ -939,10 +1140,19 @@ describe('BackendWebsocketTransport.send_to_account', () => {
 		const bearer_ws = create_fake_ws();
 		const daemon_ws = create_fake_ws();
 		const other_account_ws = create_fake_ws();
-		t.add_connection(session_ws.ws, HASH_A, ACCOUNT_A);
-		t.add_connection(bearer_ws.ws, null, ACCOUNT_A, TOKEN_A);
-		t.add_connection(daemon_ws.ws, null, ACCOUNT_A);
-		t.add_connection(other_account_ws.ws, HASH_B, ACCOUNT_B);
+		t.add_connection(
+			session_ws.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
+		t.add_connection(
+			bearer_ws.ws,
+			create_test_identity({ account_id: ACCOUNT_A, api_token_id: TOKEN_A })
+		);
+		t.add_connection(daemon_ws.ws, create_test_identity({ account_id: ACCOUNT_A }));
+		t.add_connection(
+			other_account_ws.ws,
+			create_test_identity({ session_hash: HASH_B, account_id: ACCOUNT_B })
+		);
 
 		assert.strictEqual(t.close_connections({ kind: 'session', session_hash: HASH_A }), 1);
 
@@ -971,7 +1181,10 @@ describe('BackendWebsocketTransport two-phase registration', () => {
 	test('a pending connection is not a connection until admitted', () => {
 		const t = new BackendWebsocketTransport();
 		const { ws } = create_fake_ws();
-		const id = t.register_pending(ws, HASH_A, ACCOUNT_A);
+		const id = t.register_pending(
+			ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
 
 		assert.strictEqual(t.get_connection_count(), 0);
 		assert.strictEqual(t.get_pending_connection_count(), 1);
@@ -989,7 +1202,10 @@ describe('BackendWebsocketTransport two-phase registration', () => {
 	test('a pending connection receives nothing until admitted', async () => {
 		const t = new BackendWebsocketTransport();
 		const fake = create_fake_ws();
-		const id = t.register_pending(fake.ws, HASH_A, ACCOUNT_A);
+		const id = t.register_pending(
+			fake.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
 
 		// every delivery path skips it
 		assert.strictEqual(t.broadcast(notification), 0);
@@ -1019,8 +1235,14 @@ describe('BackendWebsocketTransport two-phase registration', () => {
 
 	test('a broadcast predicate never sees a pending connection', () => {
 		const t = new BackendWebsocketTransport();
-		t.register_pending(create_fake_ws().ws, HASH_A, ACCOUNT_A);
-		t.add_connection(create_fake_ws().ws, HASH_B, ACCOUNT_B);
+		t.register_pending(
+			create_fake_ws().ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
+		t.add_connection(
+			create_fake_ws().ws,
+			create_test_identity({ session_hash: HASH_B, account_id: ACCOUNT_B })
+		);
 
 		const seen: Array<ConnectionIdentity> = [];
 		t.broadcast_filtered(notification, (identity) => {
@@ -1037,9 +1259,15 @@ describe('BackendWebsocketTransport two-phase registration', () => {
 	test('a session revoked while pending is refused and evicts nothing', () => {
 		const t = new BackendWebsocketTransport({ max_connections_per_account: 1 });
 		const live = create_fake_ws();
-		t.add_connection(live.ws, HASH_A, ACCOUNT_A);
+		t.add_connection(
+			live.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
 		const pending = create_fake_ws();
-		const id = t.register_pending(pending.ws, HASH_B, ACCOUNT_A);
+		const id = t.register_pending(
+			pending.ws,
+			create_test_identity({ session_hash: HASH_B, account_id: ACCOUNT_A })
+		);
 
 		assert.strictEqual(
 			t.close_connections({ kind: 'session', session_hash: HASH_B }),
@@ -1057,12 +1285,26 @@ describe('BackendWebsocketTransport two-phase registration', () => {
 
 	test('a refused admission reads why its pending entry was closed, once', () => {
 		const t = new BackendWebsocketTransport();
-		const by_role = t.register_pending(create_fake_ws().ws, HASH_A, ACCOUNT_A, null, null, [
-			'admin'
-		]);
-		const by_session = t.register_pending(create_fake_ws().ws, HASH_B, ACCOUNT_B);
-		const by_shutdown = t.register_pending(create_fake_ws().ws, null, ACCOUNT_B, TOKEN_A);
-		const admitted = t.add_connection(create_fake_ws().ws, null, ACCOUNT_B, TOKEN_A);
+		const by_role = t.register_pending(
+			create_fake_ws().ws,
+			create_test_identity({
+				session_hash: HASH_A,
+				account_id: ACCOUNT_A,
+				required_roles: ['admin']
+			})
+		);
+		const by_session = t.register_pending(
+			create_fake_ws().ws,
+			create_test_identity({ session_hash: HASH_B, account_id: ACCOUNT_B })
+		);
+		const by_shutdown = t.register_pending(
+			create_fake_ws().ws,
+			create_test_identity({ account_id: ACCOUNT_B, api_token_id: TOKEN_A })
+		);
+		const admitted = t.add_connection(
+			create_fake_ws().ws,
+			create_test_identity({ account_id: ACCOUNT_B, api_token_id: TOKEN_A })
+		);
 
 		t.close_connections({ kind: 'role', account_id: ACCOUNT_A, role: 'admin' });
 		t.close_connections({ kind: 'session', session_hash: HASH_B });
@@ -1078,7 +1320,10 @@ describe('BackendWebsocketTransport two-phase registration', () => {
 
 		// and the socket's own close drops an unread record
 		const fresh = new BackendWebsocketTransport();
-		const left = fresh.register_pending(create_fake_ws().ws, null, ACCOUNT_A);
+		const left = fresh.register_pending(
+			create_fake_ws().ws,
+			create_test_identity({ account_id: ACCOUNT_A })
+		);
 		fresh.close_connections({ kind: 'account', account_id: ACCOUNT_A });
 		fresh.remove_connection(left);
 		assert.strictEqual(fresh.take_pending_close_code(left), null);
@@ -1087,9 +1332,9 @@ describe('BackendWebsocketTransport two-phase registration', () => {
 	test('an account close reaches a pending connection', () => {
 		const t = new BackendWebsocketTransport();
 		const pending = create_fake_ws();
-		const id = t.register_pending(pending.ws, null, ACCOUNT_A);
+		const id = t.register_pending(pending.ws, create_test_identity({ account_id: ACCOUNT_A }));
 		const other = create_fake_ws();
-		const other_id = t.register_pending(other.ws, null, ACCOUNT_B);
+		const other_id = t.register_pending(other.ws, create_test_identity({ account_id: ACCOUNT_B }));
 
 		assert.strictEqual(t.close_connections({ kind: 'account', account_id: ACCOUNT_A }), 1);
 
@@ -1102,9 +1347,15 @@ describe('BackendWebsocketTransport two-phase registration', () => {
 	test('a token close reaches a pending connection', () => {
 		const t = new BackendWebsocketTransport();
 		const pending = create_fake_ws();
-		const id = t.register_pending(pending.ws, null, ACCOUNT_A, TOKEN_A);
+		const id = t.register_pending(
+			pending.ws,
+			create_test_identity({ account_id: ACCOUNT_A, api_token_id: TOKEN_A })
+		);
 		const other = create_fake_ws();
-		const other_id = t.register_pending(other.ws, null, ACCOUNT_A, TOKEN_B);
+		const other_id = t.register_pending(
+			other.ws,
+			create_test_identity({ account_id: ACCOUNT_A, api_token_id: TOKEN_B })
+		);
 
 		assert.strictEqual(t.close_connections({ kind: 'token', api_token_id: TOKEN_A }), 1);
 
@@ -1117,10 +1368,16 @@ describe('BackendWebsocketTransport two-phase registration', () => {
 	test('the cap evicts at admission, not at registration', () => {
 		const t = new BackendWebsocketTransport({ max_connections_per_account: 1 });
 		const live = create_fake_ws();
-		t.add_connection(live.ws, HASH_A, ACCOUNT_A);
+		t.add_connection(
+			live.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
 		const pending = create_fake_ws();
 
-		const id = t.register_pending(pending.ws, HASH_B, ACCOUNT_A);
+		const id = t.register_pending(
+			pending.ws,
+			create_test_identity({ session_hash: HASH_B, account_id: ACCOUNT_A })
+		);
 		assert.deepStrictEqual(live.closes, [], 'registering pending closes nothing');
 
 		assert.strictEqual(t.admit(id), true);
@@ -1132,13 +1389,23 @@ describe('BackendWebsocketTransport two-phase registration', () => {
 	test('pending connections do not count toward the cap', () => {
 		const t = new BackendWebsocketTransport({ max_connections_per_account: 2 });
 		const live = create_fake_ws();
-		t.add_connection(live.ws, HASH_A, ACCOUNT_A);
+		t.add_connection(
+			live.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
 		// any number of pending registrations leave the account's one admitted
 		// connection alone
-		for (let i = 0; i < 5; i++) t.register_pending(create_fake_ws().ws, HASH_B, ACCOUNT_A);
+		for (let i = 0; i < 5; i++)
+			t.register_pending(
+				create_fake_ws().ws,
+				create_test_identity({ session_hash: HASH_B, account_id: ACCOUNT_A })
+			);
 
 		const admitted = create_fake_ws();
-		t.add_connection(admitted.ws, HASH_A, ACCOUNT_A);
+		t.add_connection(
+			admitted.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
 
 		assert.deepStrictEqual(live.closes, [], 'two admitted connections fit under a cap of two');
 		assert.strictEqual(t.get_connection_count(), 2);
@@ -1149,11 +1416,20 @@ describe('BackendWebsocketTransport two-phase registration', () => {
 		const t = new BackendWebsocketTransport({ max_connections_per_account: 1 });
 		// registered first, so it is the account's oldest entry
 		const pending = create_fake_ws();
-		const pending_id = t.register_pending(pending.ws, HASH_A, ACCOUNT_A);
+		const pending_id = t.register_pending(
+			pending.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
 		const first = create_fake_ws();
-		t.add_connection(first.ws, HASH_A, ACCOUNT_A);
+		t.add_connection(
+			first.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
 		const second = create_fake_ws();
-		t.add_connection(second.ws, HASH_A, ACCOUNT_A);
+		t.add_connection(
+			second.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
 
 		assert.deepStrictEqual(pending.closes, []);
 		assert.deepStrictEqual(first.closes, [CONNECTION_LIMIT_CLOSE]);
@@ -1167,9 +1443,15 @@ describe('BackendWebsocketTransport two-phase registration', () => {
 	test('removing a pending connection removes its entry, and its admission is refused', () => {
 		const t = new BackendWebsocketTransport({ max_connections_per_account: 1 });
 		const live = create_fake_ws();
-		t.add_connection(live.ws, HASH_A, ACCOUNT_A);
+		t.add_connection(
+			live.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
 		const pending = create_fake_ws();
-		const id = t.register_pending(pending.ws, HASH_B, ACCOUNT_A);
+		const id = t.register_pending(
+			pending.ws,
+			create_test_identity({ session_hash: HASH_B, account_id: ACCOUNT_A })
+		);
 
 		t.remove_connection(id);
 
@@ -1183,7 +1465,10 @@ describe('BackendWebsocketTransport two-phase registration', () => {
 	test('admit refuses an id the transport never registered', () => {
 		const t = new BackendWebsocketTransport();
 		const other = new BackendWebsocketTransport();
-		const id = other.register_pending(create_fake_ws().ws, HASH_A, ACCOUNT_A);
+		const id = other.register_pending(
+			create_fake_ws().ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
 
 		assert.strictEqual(t.admit(id), false);
 		assert.strictEqual(t.admit(create_uuid()), false);
@@ -1193,9 +1478,15 @@ describe('BackendWebsocketTransport two-phase registration', () => {
 	test('admitting an admitted connection again evicts nothing', () => {
 		const t = new BackendWebsocketTransport({ max_connections_per_account: 2 });
 		const first = create_fake_ws();
-		t.add_connection(first.ws, HASH_A, ACCOUNT_A);
+		t.add_connection(
+			first.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
 		const second = create_fake_ws();
-		const id = t.register_pending(second.ws, HASH_A, ACCOUNT_A);
+		const id = t.register_pending(
+			second.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
 
 		assert.strictEqual(t.admit(id), true);
 		assert.strictEqual(t.admit(id), true);
@@ -1211,9 +1502,21 @@ describe('BackendWebsocketTransport server-side close', () => {
 		const pending_abort = new AbortController();
 		const admitted_abort = new AbortController();
 		const other_abort = new AbortController();
-		t.register_pending(create_fake_ws().ws, HASH_A, ACCOUNT_A, null, pending_abort);
-		t.add_connection(create_fake_ws().ws, HASH_A, ACCOUNT_A, null, admitted_abort);
-		t.add_connection(create_fake_ws().ws, HASH_B, ACCOUNT_B, null, other_abort);
+		t.register_pending(
+			create_fake_ws().ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }),
+			pending_abort
+		);
+		t.add_connection(
+			create_fake_ws().ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }),
+			admitted_abort
+		);
+		t.add_connection(
+			create_fake_ws().ws,
+			create_test_identity({ session_hash: HASH_B, account_id: ACCOUNT_B }),
+			other_abort
+		);
 
 		assert.strictEqual(t.close_connections({ kind: 'account', account_id: ACCOUNT_A }), 2);
 
@@ -1239,11 +1542,27 @@ describe('BackendWebsocketTransport server-side close', () => {
 		const after = create_fake_ws();
 		const pending = create_fake_ws();
 		const bystander = create_fake_ws();
-		t.add_connection(before.ws, HASH_A, ACCOUNT_A);
-		const failing_id = t.add_connection(failing, HASH_A, ACCOUNT_A, null, failing_abort);
-		t.add_connection(after.ws, HASH_A, ACCOUNT_A);
-		t.register_pending(pending.ws, HASH_A, ACCOUNT_A);
-		t.add_connection(bystander.ws, HASH_B, ACCOUNT_B);
+		t.add_connection(
+			before.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
+		const failing_id = t.add_connection(
+			failing,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }),
+			failing_abort
+		);
+		t.add_connection(
+			after.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
+		t.register_pending(
+			pending.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
+		t.add_connection(
+			bystander.ws,
+			create_test_identity({ session_hash: HASH_B, account_id: ACCOUNT_B })
+		);
 
 		assert.throws(() => t.close_connections({ kind: 'account', account_id: ACCOUNT_A }), boom);
 
@@ -1264,9 +1583,17 @@ describe('BackendWebsocketTransport server-side close', () => {
 		const t = new BackendWebsocketTransport({ max_connections_per_account: 1 });
 		const oldest_abort = new AbortController();
 		const newest_abort = new AbortController();
-		t.add_connection(create_fake_ws().ws, HASH_A, ACCOUNT_A, null, oldest_abort);
+		t.add_connection(
+			create_fake_ws().ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }),
+			oldest_abort
+		);
 
-		t.add_connection(create_fake_ws().ws, HASH_A, ACCOUNT_A, null, newest_abort);
+		t.add_connection(
+			create_fake_ws().ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }),
+			newest_abort
+		);
 
 		assert.strictEqual(oldest_abort.signal.aborted, true);
 		assert.strictEqual(newest_abort.signal.aborted, false);
@@ -1275,7 +1602,11 @@ describe('BackendWebsocketTransport server-side close', () => {
 	test('remove_connection leaves the controller alone', () => {
 		const t = new BackendWebsocketTransport();
 		const abort = new AbortController();
-		const id = t.add_connection(create_fake_ws().ws, HASH_A, ACCOUNT_A, null, abort);
+		const id = t.add_connection(
+			create_fake_ws().ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A }),
+			abort
+		);
 
 		t.remove_connection(id);
 
@@ -1284,13 +1615,22 @@ describe('BackendWebsocketTransport server-side close', () => {
 
 	test('is_registered is false once the connection is revoked, evicted, or removed', () => {
 		const t = new BackendWebsocketTransport({ max_connections_per_account: 1 });
-		const revoked = t.add_connection(create_fake_ws().ws, HASH_A, ACCOUNT_A);
+		const revoked = t.add_connection(
+			create_fake_ws().ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
 		assert.strictEqual(t.is_registered(revoked), true);
 		t.close_connections({ kind: 'session', session_hash: HASH_A });
 		assert.strictEqual(t.is_registered(revoked), false);
 
-		const evicted = t.add_connection(create_fake_ws().ws, HASH_B, ACCOUNT_B);
-		const newest = t.add_connection(create_fake_ws().ws, HASH_B, ACCOUNT_B);
+		const evicted = t.add_connection(
+			create_fake_ws().ws,
+			create_test_identity({ session_hash: HASH_B, account_id: ACCOUNT_B })
+		);
+		const newest = t.add_connection(
+			create_fake_ws().ws,
+			create_test_identity({ session_hash: HASH_B, account_id: ACCOUNT_B })
+		);
 		assert.strictEqual(t.is_registered(evicted), false);
 		assert.strictEqual(t.is_registered(newest), true);
 

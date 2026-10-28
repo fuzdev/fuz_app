@@ -125,6 +125,7 @@ import type { SseNotification, SseStream } from '#lib/realtime/sse.ts';
 
 import { describe_db } from '../db_fixture.ts';
 import { create_gated_db, is_audit_insert, type GatedDb } from '../gated_db.ts';
+import { create_test_identity } from '../actions/connection_identity_helpers.ts';
 
 const session_options = create_session_config('test_session');
 const RPC_PATH = '/api/rpc';
@@ -1184,9 +1185,11 @@ describe_db('connection_closer wiring', (get_db) => {
 					const ws = create_fake_ws();
 					transport.add_connection(
 						ws.ws,
-						identity.session_hash ?? null,
-						identity.account_id,
-						identity.api_token_id ?? null
+						create_test_identity({
+							session_hash: identity.session_hash ?? null,
+							account_id: identity.account_id,
+							api_token_id: identity.api_token_id ?? null
+						})
 					);
 					const stream = create_mock_stream();
 					sse.registry.subscribe(stream, {

@@ -47,6 +47,7 @@ import { WS_CLOSE_GOING_AWAY } from '#lib/actions/transports.ts';
 import type { ConnectionCloser } from '#lib/actions/connection_closer.ts';
 import type { SseStream } from '#lib/realtime/sse.ts';
 import { RateLimiter, create_rate_limiter, type RateLimiterMode } from '#lib/rate_limiter.ts';
+import { create_test_identity } from '../actions/connection_identity_helpers.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -166,8 +167,14 @@ describe('AppServer.close', () => {
 		assert.notStrictEqual(auto, supplied);
 		const auto_socket = create_fake_ws();
 		const supplied_socket = create_fake_ws();
-		auto.add_connection(auto_socket.ws, 'session_hash', create_uuid());
-		supplied.add_connection(supplied_socket.ws, null, create_uuid(), 'token_id');
+		auto.add_connection(
+			auto_socket.ws,
+			create_test_identity({ session_hash: 'session_hash', account_id: create_uuid() })
+		);
+		supplied.add_connection(
+			supplied_socket.ws,
+			create_test_identity({ account_id: create_uuid(), api_token_id: 'token_id' })
+		);
 		const stream = create_mock_stream();
 		server.audit_sse!.registry.subscribe(stream, { scope: 'session_hash' });
 

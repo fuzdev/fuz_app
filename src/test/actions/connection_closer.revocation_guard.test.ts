@@ -40,6 +40,7 @@ import {
 	type RevocationScope
 } from '#lib/auth/audit_log_schema.ts';
 import { create_uuid, type Uuid } from '#lib/primitive_schemas.ts';
+import { create_test_identity } from './connection_identity_helpers.ts';
 
 interface FakeWs {
 	ws: WSContext;
@@ -277,9 +278,18 @@ describe('create_revocation_guard: session_revoke', () => {
 		const session_a = create_fake_ws();
 		const session_b = create_fake_ws();
 		const bearer = create_fake_ws();
-		transport.add_connection(session_a.ws, HASH_A, ACCOUNT_A);
-		transport.add_connection(session_b.ws, HASH_B, ACCOUNT_A);
-		transport.add_connection(bearer.ws, null, ACCOUNT_A, TOKEN_A);
+		transport.add_connection(
+			session_a.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
+		transport.add_connection(
+			session_b.ws,
+			create_test_identity({ session_hash: HASH_B, account_id: ACCOUNT_A })
+		);
+		transport.add_connection(
+			bearer.ws,
+			create_test_identity({ account_id: ACCOUNT_A, api_token_id: TOKEN_A })
+		);
 
 		guard(
 			create_audit_event({
@@ -298,7 +308,10 @@ describe('create_revocation_guard: session_revoke', () => {
 		const transport = new BackendWebsocketTransport();
 		const guard = create_revocation_guard(transport, silent_log);
 		const { ws, closes } = create_fake_ws();
-		transport.add_connection(ws, HASH_A, ACCOUNT_A);
+		transport.add_connection(
+			ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
 
 		guard(create_audit_event({ event_type: 'session_revoke', metadata: null }));
 		assert.strictEqual(closes.length, 0);
@@ -308,7 +321,10 @@ describe('create_revocation_guard: session_revoke', () => {
 		const transport = new BackendWebsocketTransport();
 		const guard = create_revocation_guard(transport, silent_log);
 		const { ws, closes } = create_fake_ws();
-		transport.add_connection(ws, HASH_A, ACCOUNT_A);
+		transport.add_connection(
+			ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
 
 		guard(create_audit_event({ event_type: 'session_revoke', metadata: { session_id: '' } }));
 		assert.strictEqual(closes.length, 0);
@@ -323,9 +339,18 @@ describe('create_revocation_guard: token_revoke', () => {
 		const bearer_a = create_fake_ws();
 		const bearer_b = create_fake_ws();
 		const session = create_fake_ws();
-		transport.add_connection(bearer_a.ws, null, ACCOUNT_A, TOKEN_A);
-		transport.add_connection(bearer_b.ws, null, ACCOUNT_A, TOKEN_B);
-		transport.add_connection(session.ws, HASH_A, ACCOUNT_A);
+		transport.add_connection(
+			bearer_a.ws,
+			create_test_identity({ account_id: ACCOUNT_A, api_token_id: TOKEN_A })
+		);
+		transport.add_connection(
+			bearer_b.ws,
+			create_test_identity({ account_id: ACCOUNT_A, api_token_id: TOKEN_B })
+		);
+		transport.add_connection(
+			session.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
 
 		guard(
 			create_audit_event({
@@ -344,7 +369,10 @@ describe('create_revocation_guard: token_revoke', () => {
 		const transport = new BackendWebsocketTransport();
 		const guard = create_revocation_guard(transport, silent_log);
 		const { ws, closes } = create_fake_ws();
-		transport.add_connection(ws, null, ACCOUNT_A, TOKEN_A);
+		transport.add_connection(
+			ws,
+			create_test_identity({ account_id: ACCOUNT_A, api_token_id: TOKEN_A })
+		);
 
 		guard(create_audit_event({ event_type: 'token_revoke', metadata: null }));
 		assert.strictEqual(closes.length, 0);
@@ -370,10 +398,19 @@ describe('create_revocation_guard: account-scoped events', () => {
 			const bearer = create_fake_ws();
 			const daemon = create_fake_ws();
 			const other_account = create_fake_ws();
-			transport.add_connection(session.ws, HASH_A, ACCOUNT_A);
-			transport.add_connection(bearer.ws, null, ACCOUNT_A, TOKEN_A);
-			transport.add_connection(daemon.ws, null, ACCOUNT_A);
-			transport.add_connection(other_account.ws, HASH_B, ACCOUNT_B);
+			transport.add_connection(
+				session.ws,
+				create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+			);
+			transport.add_connection(
+				bearer.ws,
+				create_test_identity({ account_id: ACCOUNT_A, api_token_id: TOKEN_A })
+			);
+			transport.add_connection(daemon.ws, create_test_identity({ account_id: ACCOUNT_A }));
+			transport.add_connection(
+				other_account.ws,
+				create_test_identity({ session_hash: HASH_B, account_id: ACCOUNT_B })
+			);
 
 			guard(create_audit_event({ event_type, account_id: ACCOUNT_A }));
 
@@ -390,8 +427,14 @@ describe('create_revocation_guard: account-scoped events', () => {
 
 		const target = create_fake_ws();
 		const admin = create_fake_ws();
-		transport.add_connection(target.ws, HASH_A, ACCOUNT_A);
-		transport.add_connection(admin.ws, HASH_B, ACCOUNT_B);
+		transport.add_connection(
+			target.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
+		transport.add_connection(
+			admin.ws,
+			create_test_identity({ session_hash: HASH_B, account_id: ACCOUNT_B })
+		);
 
 		guard(
 			create_audit_event({
@@ -409,7 +452,10 @@ describe('create_revocation_guard: account-scoped events', () => {
 		const transport = new BackendWebsocketTransport();
 		const guard = create_revocation_guard(transport, silent_log);
 		const { ws, closes } = create_fake_ws();
-		transport.add_connection(ws, HASH_A, ACCOUNT_A);
+		transport.add_connection(
+			ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
 
 		guard(create_audit_event({ event_type: 'password_change' }));
 		assert.strictEqual(closes.length, 0);
@@ -421,7 +467,10 @@ describe('create_revocation_guard: safety', () => {
 		const transport = new BackendWebsocketTransport();
 		const guard = create_revocation_guard(transport, silent_log);
 		const { ws, closes } = create_fake_ws();
-		transport.add_connection(ws, HASH_A, ACCOUNT_A);
+		transport.add_connection(
+			ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
 
 		// attacker submits a valid session hash on a failed revoke; guard must not act
 		guard(
@@ -438,7 +487,10 @@ describe('create_revocation_guard: safety', () => {
 		const transport = new BackendWebsocketTransport();
 		const guard = create_revocation_guard(transport, silent_log);
 		const { ws, closes } = create_fake_ws();
-		transport.add_connection(ws, HASH_A, ACCOUNT_A);
+		transport.add_connection(
+			ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
 
 		guard(
 			create_audit_event({
@@ -454,7 +506,10 @@ describe('create_revocation_guard: safety', () => {
 		const transport = new BackendWebsocketTransport();
 		const guard = create_revocation_guard(transport, silent_log);
 		const { ws, closes } = create_fake_ws();
-		transport.add_connection(ws, HASH_A, ACCOUNT_A);
+		transport.add_connection(
+			ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
 
 		guard({
 			...create_audit_event({ event_type: 'session_revoke', metadata: { session_id: HASH_A } }),
@@ -467,7 +522,10 @@ describe('create_revocation_guard: safety', () => {
 		const transport = new BackendWebsocketTransport();
 		const guard = create_revocation_guard(transport, silent_log);
 		const { ws, closes } = create_fake_ws();
-		transport.add_connection(ws, HASH_A, ACCOUNT_A);
+		transport.add_connection(
+			ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
 
 		guard(create_audit_event({ event_type: 'logout', outcome: 'failure', account_id: ACCOUNT_A }));
 		assert.strictEqual(closes.length, 0);
@@ -477,7 +535,10 @@ describe('create_revocation_guard: safety', () => {
 		const transport = new BackendWebsocketTransport();
 		const guard = create_revocation_guard(transport, silent_log);
 		const { ws, closes } = create_fake_ws();
-		transport.add_connection(ws, HASH_A, ACCOUNT_A);
+		transport.add_connection(
+			ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
 
 		for (const event_type of AUDIT_EVENT_TYPES) {
 			if (audit_event_revocation_scopes[event_type] !== 'none') continue;
@@ -497,7 +558,10 @@ describe('create_revocation_guard: safety', () => {
 		const transport = new BackendWebsocketTransport();
 		const guard = create_revocation_guard(transport, silent_log);
 		const { ws, closes } = create_fake_ws();
-		transport.add_connection(ws, HASH_A, ACCOUNT_A);
+		transport.add_connection(
+			ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
 
 		guard(
 			create_audit_event({
@@ -534,15 +598,44 @@ describe('create_revocation_guard: role_grant_revoke', () => {
 		const ungated = create_fake_ws();
 		const other_role = create_fake_ws();
 		const other_account = create_fake_ws();
-		transport.add_connection(gated.ws, HASH_A, ACCOUNT_A, null, null, ['admin']);
-		transport.add_connection(ungated.ws, HASH_A, ACCOUNT_A);
-		transport.add_connection(other_role.ws, HASH_A, ACCOUNT_A, null, null, ['keeper']);
-		transport.add_connection(other_account.ws, HASH_B, ACCOUNT_B, null, null, ['admin']);
+		transport.add_connection(
+			gated.ws,
+			create_test_identity({
+				session_hash: HASH_A,
+				account_id: ACCOUNT_A,
+				required_roles: ['admin']
+			})
+		);
+		transport.add_connection(
+			ungated.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
+		transport.add_connection(
+			other_role.ws,
+			create_test_identity({
+				session_hash: HASH_A,
+				account_id: ACCOUNT_A,
+				required_roles: ['keeper']
+			})
+		);
+		transport.add_connection(
+			other_account.ws,
+			create_test_identity({
+				session_hash: HASH_B,
+				account_id: ACCOUNT_B,
+				required_roles: ['admin']
+			})
+		);
 		// a registration still pending admission is reached too
 		const pending = create_fake_ws();
-		const pending_id = transport.register_pending(pending.ws, HASH_A, ACCOUNT_A, null, null, [
-			'admin'
-		]);
+		const pending_id = transport.register_pending(
+			pending.ws,
+			create_test_identity({
+				session_hash: HASH_A,
+				account_id: ACCOUNT_A,
+				required_roles: ['admin']
+			})
+		);
 
 		guard(revoke_event('admin'));
 
@@ -560,8 +653,18 @@ describe('create_revocation_guard: role_grant_revoke', () => {
 		const guard = create_revocation_guard(transport, silent_log);
 		const gated = create_fake_ws();
 		const ungated = create_fake_ws();
-		transport.add_connection(gated.ws, HASH_A, ACCOUNT_A, null, null, ['admin']);
-		transport.add_connection(ungated.ws, HASH_A, ACCOUNT_A);
+		transport.add_connection(
+			gated.ws,
+			create_test_identity({
+				session_hash: HASH_A,
+				account_id: ACCOUNT_A,
+				required_roles: ['admin']
+			})
+		);
+		transport.add_connection(
+			ungated.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
 
 		guard(revoke_event('admin'));
 		const frame = { jsonrpc: '2.0' as const, method: 'thing_changed', params: {} };
@@ -581,7 +684,14 @@ describe('create_revocation_guard: role_grant_revoke', () => {
 		const transport = new BackendWebsocketTransport();
 		const guard = create_revocation_guard(transport, silent_log);
 		const gated = create_fake_ws();
-		transport.add_connection(gated.ws, HASH_A, ACCOUNT_A, null, null, ['admin']);
+		transport.add_connection(
+			gated.ws,
+			create_test_identity({
+				session_hash: HASH_A,
+				account_id: ACCOUNT_A,
+				required_roles: ['admin']
+			})
+		);
 
 		guard(revoke_event('admin', create_uuid()));
 		assert.deepStrictEqual(gated.closes, []);
@@ -592,7 +702,14 @@ describe('create_revocation_guard: role_grant_revoke', () => {
 		const transport = new BackendWebsocketTransport();
 		const guard = create_revocation_guard(transport, silent_log);
 		const gated = create_fake_ws();
-		transport.add_connection(gated.ws, HASH_A, ACCOUNT_A, null, null, ['admin', 'keeper']);
+		transport.add_connection(
+			gated.ws,
+			create_test_identity({
+				session_hash: HASH_A,
+				account_id: ACCOUNT_A,
+				required_roles: ['admin', 'keeper']
+			})
+		);
 
 		guard(revoke_event('keeper'));
 		assert.deepStrictEqual(gated.closes, [PERMISSION_REVOKED_CLOSE]);
@@ -602,7 +719,14 @@ describe('create_revocation_guard: role_grant_revoke', () => {
 		const transport = new BackendWebsocketTransport();
 		const guard = create_revocation_guard(transport, silent_log);
 		const gated = create_fake_ws();
-		transport.add_connection(gated.ws, HASH_A, ACCOUNT_A, null, null, ['admin']);
+		transport.add_connection(
+			gated.ws,
+			create_test_identity({
+				session_hash: HASH_A,
+				account_id: ACCOUNT_A,
+				required_roles: ['admin']
+			})
+		);
 
 		guard(
 			create_audit_event({
@@ -618,7 +742,14 @@ describe('create_revocation_guard: role_grant_revoke', () => {
 		const transport = new BackendWebsocketTransport();
 		const guard = create_revocation_guard(transport, silent_log);
 		const gated = create_fake_ws();
-		transport.add_connection(gated.ws, HASH_A, ACCOUNT_A, null, null, ['admin']);
+		transport.add_connection(
+			gated.ws,
+			create_test_identity({
+				session_hash: HASH_A,
+				account_id: ACCOUNT_A,
+				required_roles: ['admin']
+			})
+		);
 
 		guard(
 			create_audit_event({
@@ -644,9 +775,18 @@ describe('create_revocation_guard: over a RealtimeCloser', () => {
 		const on_first = create_fake_ws();
 		const on_second = create_fake_ws();
 		const other = create_fake_ws();
-		first.add_connection(on_first.ws, HASH_A, ACCOUNT_A);
-		second.add_connection(on_second.ws, 'session_hash_a2', ACCOUNT_A);
-		second.add_connection(other.ws, HASH_B, ACCOUNT_B);
+		first.add_connection(
+			on_first.ws,
+			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+		);
+		second.add_connection(
+			on_second.ws,
+			create_test_identity({ session_hash: 'session_hash_a2', account_id: ACCOUNT_A })
+		);
+		second.add_connection(
+			other.ws,
+			create_test_identity({ session_hash: HASH_B, account_id: ACCOUNT_B })
+		);
 
 		guard(create_audit_event({ event_type: 'logout', account_id: ACCOUNT_A }));
 
@@ -1284,7 +1424,15 @@ describe('create_revocation_guard: one guard over a WS transport and an SSE regi
 		registry: SubscriberRegistry<string>
 	): { socket: FakeWs; stream: ReturnType<typeof create_mock_stream<string>> } => {
 		const socket = create_fake_ws();
-		transport.add_connection(socket.ws, HASH_A, ACCOUNT_A, TOKEN_A, null, [ROLE]);
+		transport.add_connection(
+			socket.ws,
+			create_test_identity({
+				session_hash: HASH_A,
+				account_id: ACCOUNT_A,
+				api_token_id: TOKEN_A,
+				required_roles: [ROLE]
+			})
+		);
 		const stream = create_mock_stream<string>();
 		registry.subscribe(stream, {
 			channels: ['audit_log'],

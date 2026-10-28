@@ -428,7 +428,8 @@ revocation closes nothing and the socket is then admitted on a dead credential.
 The transport splits registration to close it (the twin of the Rust
 `fuz_realtime` `ConnectionRegistry`, same method names):
 
-- `register_pending(ws, session_hash, account_id, api_token_id?, abort_controller?, required_roles?)`
+- `register_pending(ws, identity, abort_controller?)` (`identity: ConnectionIdentity`, as
+  the Rust `register_pending(sender, identity, signal)`; `add_connection` takes the same)
   inserts the entry **un-admitted**. Every `close_connections` matches it
   from that instant. Otherwise it is inert: no `broadcast`,
   `broadcast_filtered` (the predicate never sees it), `send_to_account`, or

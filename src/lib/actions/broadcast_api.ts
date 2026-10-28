@@ -41,7 +41,7 @@ export type BroadcastTarget = Pick<BackendWebsocketTransport, 'broadcast' | 'bro
  * `method` is the action method name.
  */
 export type ShouldDeliverFn = (
-	connection: ConnectionIdentity,
+	connection: Readonly<ConnectionIdentity>,
 	method: string,
 	input: unknown
 ) => boolean;

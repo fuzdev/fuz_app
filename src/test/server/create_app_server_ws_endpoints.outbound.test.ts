@@ -35,6 +35,7 @@ import {
 import { WS_CLOSE_OUTBOUND_OVERFLOW } from '#lib/actions/transports.ts';
 import type { WsEndpointSpec } from '#lib/actions/ws_endpoint_spec.ts';
 import { OUTBOUND_FRAME_OVERHEAD_BYTES } from '#lib/realtime/outbound_budget.ts';
+import { create_test_identity } from '../actions/connection_identity_helpers.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -69,7 +70,7 @@ const assemble = async (endpoint: Partial<WsEndpointSpec>): Promise<AppServer> =
  */
 const frames_until_overflow = (transport: BackendWebsocketTransport, bytes: number): number => {
 	const fake = create_fake_ws();
-	const id = transport.add_connection(fake.ws, null, create_uuid());
+	const id = transport.add_connection(fake.ws, create_test_identity({ account_id: create_uuid() }));
 	const frame = 'x'.repeat(bytes);
 	let accepted = 0;
 	while (transport.send_to(id, frame)) accepted++;

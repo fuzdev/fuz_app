@@ -87,6 +87,7 @@ import { create_standard_rpc_actions } from '#lib/auth/standard_rpc_actions.ts';
 import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
 import { AUTH_MIDDLEWARE_PATH } from '#lib/auth/middleware.ts';
 import { create_test_keyring } from '../auth/session_test_helpers.ts';
+import { create_test_identity } from '../actions/connection_identity_helpers.ts';
 
 /** Parse an allowlist the test knows is valid. */
 const parse_origins = (raw: string): Array<RegExp> => {
@@ -447,8 +448,14 @@ describe('create_app_server.ws_endpoints', () => {
 		const capped = result.ws_endpoints['/api/ws_capped']!;
 		const first = create_fake_ws();
 		const second = create_fake_ws();
-		capped.add_connection(first.ws, 'session_hash_a', account_id);
-		capped.add_connection(second.ws, 'session_hash_a', account_id);
+		capped.add_connection(
+			first.ws,
+			create_test_identity({ session_hash: 'session_hash_a', account_id })
+		);
+		capped.add_connection(
+			second.ws,
+			create_test_identity({ session_hash: 'session_hash_a', account_id })
+		);
 		assert.deepStrictEqual(first.closes, [
 			{ code: WS_CLOSE_CONNECTION_LIMIT, reason: WS_CLOSE_CONNECTION_LIMIT_REASON }
 		]);
@@ -457,7 +464,10 @@ describe('create_app_server.ws_endpoints', () => {
 		const uncapped = result.ws_endpoints['/api/ws_uncapped']!;
 		const sockets = Array.from({ length: DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT + 1 }, () => {
 			const fake = create_fake_ws();
-			uncapped.add_connection(fake.ws, 'session_hash_a', account_id);
+			uncapped.add_connection(
+				fake.ws,
+				create_test_identity({ session_hash: 'session_hash_a', account_id })
+			);
 			return fake;
 		});
 		assert.ok(sockets.every((s) => s.closes.length === 0));
@@ -495,7 +505,7 @@ describe('create_app_server.ws_endpoints', () => {
 		const session_hash = 'session_hash_a';
 		const account_id: Uuid = create_uuid();
 		const fake_ws = create_fake_ws();
-		transport.add_connection(fake_ws.ws, session_hash, account_id);
+		transport.add_connection(fake_ws.ws, create_test_identity({ session_hash, account_id }));
 
 		// `notify` walks the registered listeners synchronously — assembly
 		// registered the revocation guard on this same emitter.
@@ -633,7 +643,7 @@ describe('create_app_server.ws_endpoints', () => {
 		const session_hash = 'session_hash_logout';
 		const account_id: Uuid = create_uuid();
 		const fake_ws = create_fake_ws();
-		transport.add_connection(fake_ws.ws, session_hash, account_id);
+		transport.add_connection(fake_ws.ws, create_test_identity({ session_hash, account_id }));
 
 		const event: AuditLogEvent = create_test_audit_event({
 			event_type: 'logout',
@@ -665,7 +675,7 @@ describe('create_app_server.ws_endpoints', () => {
 		const session_hash = 'session_hash_co_mount';
 		const account_id: Uuid = create_uuid();
 		const fake_ws = create_fake_ws();
-		transport.add_connection(fake_ws.ws, session_hash, account_id);
+		transport.add_connection(fake_ws.ws, create_test_identity({ session_hash, account_id }));
 
 		// Chain length: 1 (audit_sse listener) + 1 (revocation guard).
 		assert.strictEqual(audit.listener_count(), 2);
@@ -878,8 +888,14 @@ describe('create_app_server.ws_endpoints', () => {
 		const account_id: Uuid = create_uuid();
 		const on_a = create_fake_ws();
 		const on_b = create_fake_ws();
-		transport_a.add_connection(on_a.ws, 'session_hash_a', account_id);
-		transport_b.add_connection(on_b.ws, 'session_hash_b', account_id);
+		transport_a.add_connection(
+			on_a.ws,
+			create_test_identity({ session_hash: 'session_hash_a', account_id })
+		);
+		transport_b.add_connection(
+			on_b.ws,
+			create_test_identity({ session_hash: 'session_hash_b', account_id })
+		);
 		audit.notify(create_test_audit_event({ event_type: 'logout', account_id }));
 		assert.strictEqual(on_a.closes[0]?.code, WS_CLOSE_SESSION_REVOKED);
 		assert.strictEqual(on_b.closes[0]?.code, WS_CLOSE_SESSION_REVOKED);
@@ -954,9 +970,18 @@ describe('create_app_server.ws_endpoints', () => {
 		const on_supplied = create_fake_ws();
 		const on_created = create_fake_ws();
 		const bystander = create_fake_ws();
-		supplied.add_connection(on_supplied.ws, 'session_hash_supplied', account_id);
-		created.add_connection(on_created.ws, 'session_hash_created', account_id);
-		created.add_connection(bystander.ws, 'session_hash_bystander', other_account_id);
+		supplied.add_connection(
+			on_supplied.ws,
+			create_test_identity({ session_hash: 'session_hash_supplied', account_id })
+		);
+		created.add_connection(
+			on_created.ws,
+			create_test_identity({ session_hash: 'session_hash_created', account_id })
+		);
+		created.add_connection(
+			bystander.ws,
+			create_test_identity({ session_hash: 'session_hash_bystander', account_id: other_account_id })
+		);
 
 		const { connection_closer } = config.backend.deps;
 		assert.strictEqual(connection_closer.close_connections({ kind: 'account', account_id }), 2);
@@ -980,7 +1005,7 @@ describe('create_app_server.ws_endpoints', () => {
 		const account_id: Uuid = create_uuid();
 		const session_hash = 'session_hash_both_transports';
 		const fake_ws = create_fake_ws();
-		transport.add_connection(fake_ws.ws, session_hash, account_id);
+		transport.add_connection(fake_ws.ws, create_test_identity({ session_hash, account_id }));
 		let stream_closed = false;
 		result.audit_sse.registry.subscribe(
 			{

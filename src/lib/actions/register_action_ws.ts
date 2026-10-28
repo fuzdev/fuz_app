@@ -363,8 +363,11 @@ export interface SocketOpenContext {
 	ws: WSContext;
 	/** Connection id assigned by `BackendWebsocketTransport.register_pending`. */
 	connection_id: Uuid;
-	/** Auth identity registered for this connection. */
-	identity: ConnectionIdentity;
+	/**
+	 * Auth identity registered for this connection. The transport holds its
+	 * own copy, so this record is not what close targets match on.
+	 */
+	identity: Readonly<ConnectionIdentity>;
 	/**
 	 * Send a JSON-RPC notification to just this socket. Mirrors `ctx.notify`
 	 * on per-message handler contexts — same socket-scoped semantics.
@@ -401,7 +404,7 @@ export interface SocketCloseContext {
 	/** Connection id captured at open time. */
 	connection_id: Uuid;
 	/** Auth identity captured at open time — the transport no longer holds it. */
-	identity: ConnectionIdentity;
+	identity: Readonly<ConnectionIdentity>;
 }
 
 /** Options for `register_action_ws`. */
@@ -961,14 +964,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 			// refusing — the socket is then already closed.
 			const admit_upgrade = async (ws: WSContext): Promise<Uuid | null> => {
 				// Pending first, synchronously: from here every revocation finds it.
-				const connection_id = transport.register_pending(
-					ws,
-					session_hash,
-					account_id,
-					api_token_id,
-					socket_abort_controller,
-					required_roles
-				);
+				const connection_id = transport.register_pending(ws, identity, socket_abort_controller);
 				captured_connection_id = connection_id;
 
 				// Born closed — the server is shutting down, and the transport has

@@ -65,6 +65,7 @@ import {
 	seed_accounts,
 	seed_session
 } from './cleanup.sessions.fixtures.ts';
+import { create_test_identity } from '../actions/connection_identity_helpers.ts';
 
 const log = new Logger('cleanup-sessions-test', { level: 'off' });
 
@@ -324,7 +325,7 @@ describe_db('cleanup_expired_sessions', (get_db) => {
 		const audit_sse = create_audit_log_sse({ log, connection_closer });
 		const connect = (session_hash: string, account_id: Uuid) => {
 			const ws = create_fake_ws();
-			transport.add_connection(ws.ws, session_hash, account_id);
+			transport.add_connection(ws.ws, create_test_identity({ session_hash, account_id }));
 			const stream = create_mock_stream();
 			audit_sse.registry.subscribe(stream, { scope: session_hash, groups: [account_id] });
 			return { ws, stream };
