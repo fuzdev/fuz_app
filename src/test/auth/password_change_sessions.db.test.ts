@@ -11,6 +11,7 @@
 import { describe, test, assert, beforeAll, afterAll } from 'vitest';
 
 import { create_test_app, type TestApp } from '#lib/testing/app_server.ts';
+import { TEST_ORIGIN } from '#lib/testing/test_origin.ts';
 import { DEFAULT_TEST_PASSWORD } from '#lib/testing/test_credentials.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_account_route_specs } from '#lib/auth/account_routes.ts';
@@ -63,7 +64,7 @@ describe('password change multi-session invalidation', () => {
 		const login_headers = {
 			'Content-Type': 'application/json',
 			host: 'localhost',
-			origin: 'http://localhost:5173'
+			origin: TEST_ORIGIN
 		};
 
 		// Log in 3 times to create 3 sessions (capturing each Set-Cookie)

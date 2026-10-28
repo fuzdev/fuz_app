@@ -22,6 +22,7 @@ import { describe, test, beforeAll, assert } from 'vitest';
 import type { AppSurface, AppSurfaceSpec } from '../http/surface.ts';
 import { ROLE_ADMIN } from '../auth/role_schema.ts';
 import type { TestAccount } from './app_server.ts';
+import { create_test_request_headers } from './test_origin.ts';
 import {
 	resolve_valid_path,
 	generate_valid_body,
@@ -207,11 +208,9 @@ export const describe_data_exposure_tests = (options: DataExposureTestOptions): 
 
 				const res = await fixture.transport(url, {
 					method: spec.method,
-					headers: {
-						host: 'localhost',
-						origin: 'http://localhost:5173',
+					headers: create_test_request_headers({
 						'content-type': to_route_content_type(spec)
-					}
+					})
 				});
 
 				if (res.headers.get('Content-Type')?.includes('text/event-stream')) {

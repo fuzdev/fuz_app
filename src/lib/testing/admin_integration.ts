@@ -34,6 +34,7 @@ import type { SessionOptions } from '../auth/session_cookie.ts';
 import { ROLE_ADMIN, type RoleSchemaResult } from '../auth/role_schema.ts';
 import { GRANT_PATH_ADMIN } from '../auth/grant_path_schema.ts';
 import type { TestAccount, TestApp } from './app_server.ts';
+import { create_test_request_headers } from './test_origin.ts';
 import { DEFAULT_TEST_PASSWORD } from './test_credentials.ts';
 import { role_grant_offer_and_accept } from './role_grant_helpers.ts';
 import { find_auth_route } from './integration_helpers.ts';
@@ -203,12 +204,11 @@ export const describe_standard_admin_integration_tests = (
 		});
 
 		/** Make request headers for a given session cookie. */
-		const create_headers = (session_cookie: string, extra?: Record<string, string>) => ({
-			host: 'localhost',
-			origin: 'http://localhost:5173',
-			cookie: `${cookie_name}=${session_cookie}`,
-			...extra
-		});
+		const create_headers = (session_cookie: string, extra?: Record<string, string>) =>
+			create_test_request_headers({
+				cookie: `${cookie_name}=${session_cookie}`,
+				...extra
+			});
 
 		/**
 		 * Suite-local wrapper around `role_grant_offer_and_accept` that closes
@@ -778,11 +778,9 @@ export const describe_standard_admin_integration_tests = (
 				// robust against any future username-mangling at the mint layer.
 				const login_res = await fixture.fresh_transport()(login_route.path, {
 					method: 'POST',
-					headers: {
-						host: 'localhost',
-						origin: 'http://localhost:5173',
+					headers: create_test_request_headers({
 						'content-type': 'application/json'
-					},
+					}),
 					body: JSON.stringify({
 						username: user_two.account.username,
 						password: DEFAULT_TEST_PASSWORD
@@ -801,12 +799,10 @@ export const describe_standard_admin_integration_tests = (
 				if (user_two_cookie) {
 					await fixture.fresh_transport()(logout_route.path, {
 						method: 'POST',
-						headers: {
-							host: 'localhost',
-							origin: 'http://localhost:5173',
+						headers: create_test_request_headers({
 							cookie: `${cookie_name}=${user_two_cookie}`,
 							'content-type': 'application/json'
-						}
+						})
 					});
 				}
 
@@ -936,11 +932,9 @@ export const describe_standard_admin_integration_tests = (
 				// re-login as admin since password change revoked sessions
 				const relogin_res = await fixture.transport(login_route.path, {
 					method: 'POST',
-					headers: {
-						host: 'localhost',
-						origin: 'http://localhost:5173',
+					headers: create_test_request_headers({
 						'content-type': 'application/json'
-					},
+					}),
 					body: JSON.stringify({
 						username: fixture.account.username,
 						password: 'new-audit-password-789'
@@ -952,11 +946,9 @@ export const describe_standard_admin_integration_tests = (
 					relogin_cookie_header ?? ''
 				);
 				assert.ok(relogin_match?.[1], 'Expected session cookie from re-login');
-				const relogin_headers = {
-					host: 'localhost',
-					origin: 'http://localhost:5173',
+				const relogin_headers = create_test_request_headers({
 					cookie: `${cookie_name}=${relogin_match[1]}`
-				};
+				});
 
 				const audit_res = await rpc_call_for_spec({
 					app: { request: fixture.transport },

@@ -17,6 +17,7 @@ import { describe, test, assert } from 'vitest';
 
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_test_app } from '#lib/testing/app_server.ts';
+import { TEST_ORIGIN } from '#lib/testing/test_origin.ts';
 import {
 	create_default_db_factory,
 	create_describe_db,
@@ -70,7 +71,7 @@ const send_rpc = async (
 		headers: {
 			'Content-Type': 'application/json',
 			host: 'localhost',
-			origin: 'http://localhost:5173',
+			origin: TEST_ORIGIN,
 			...headers
 		}
 	});

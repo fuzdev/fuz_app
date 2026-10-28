@@ -57,6 +57,7 @@ import {
 	create_loopback_app_server_options,
 	stub_password_deps
 } from '#lib/testing/app_server.ts';
+import { TEST_ORIGIN } from '#lib/testing/test_origin.ts';
 import { create_default_db_factory } from '#lib/testing/db.ts';
 import { run_migrations } from '#lib/db/migrate.ts';
 import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
@@ -86,7 +87,7 @@ const log = new Logger('test', { level: 'off' });
 const WS_PATH = '/api/ws';
 const GOING_AWAY_CLOSE = { code: WS_CLOSE_GOING_AWAY, reason: WS_CLOSE_GOING_AWAY_REASON };
 const RPC_PATH = '/api/rpc';
-const ORIGIN = 'http://localhost:5173';
+const ORIGIN = TEST_ORIGIN;
 
 const factory = create_default_db_factory(async () => {});
 

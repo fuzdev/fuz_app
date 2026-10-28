@@ -159,7 +159,8 @@ fully assembled Hono app + the backend + helpers.
 Key module-scope values:
 
 - `stub_password_deps` — `PasswordHashDeps` hashing via `stub_hash_${password}` and verifying by equality. Deterministic, no Argon2 cost — use for every test not specifically exercising password hashing.
-- `create_loopback_app_server_options()` — the loopback `create_app_server` options an in-process test server takes (`localhost` origins, the loopback proxy trusted, an empty env schema), fresh per call; `create_test_app` spreads it under its own defaults (`rate_limiters: 'disabled_for_testing'`, `await_pending_effects: true`).
+- `TEST_ORIGIN` / `create_test_request_headers(extra?)` (from the dependency-free `testing/test_origin.ts`, so a cross-process suite reads them without the server assembly) — `'http://localhost:5173'`, the origin an in-process test request comes from (and `rpc_call`'s default `Origin`, cross-process too) and the one origin the loopback options allow, and the `{host: 'localhost', origin: TEST_ORIGIN}` pair every in-process request starts from, `extra` added after (the session headers builders are built on it).
+- `create_loopback_app_server_options()` — the loopback `create_app_server` options an in-process test server takes (`TEST_ORIGIN` allowed, the loopback proxy trusted, an empty env schema), fresh per call; `create_test_app` spreads it under its own defaults (`rate_limiters: 'disabled_for_testing'`, `await_pending_effects: true`).
 - `TEST_COOKIE_SECRET` — 64-hex-char deterministic cookie secret. Produces a valid `Keyring` via `create_keyring`. Never used in production — the stub guard plus fixed value is the contract.
 - `fallback_db_factory` — module-level auth-only default factory (`create_default_db_factory`) `create_test_app_server` uses when no `db` is passed, reusing its driver's WASM cache. When `migration_namespaces` is supplied, a memoized sibling factory (keyed by namespace set) migrating `[AUTH_MIGRATION_NS, ...migration_namespaces]` is used instead — same shared WASM, extra tables.
 
@@ -181,7 +182,7 @@ Types:
 - `TestApp` — `{app, backend, server, surface_spec, surface, route_specs, create_session_headers, create_bearer_headers, create_daemon_token_headers, create_account, cleanup}`. `server` is the assembled `AppServer`, for what `create_app_server` built beyond the lifted fields — `require_audit_sse(test_app.server)` with `audit_log_sse` in `app_options`, `test_app.server.ws_endpoints[path]` — instead of capturing them from a `create_route_specs` closure.
 
 `create_test_app` hard-codes the test-friendly `AppServerOptions`:
-`allowed_origins` exactly `http://localhost:5173` (built by
+`allowed_origins` exactly `TEST_ORIGIN` (built by
 `parse_allowed_origins`, as `create_app_server` requires), stub proxy pinned to `127.0.0.1`,
 `env_schema: z.object({})`, `rate_limiters: 'disabled_for_testing'` (every
 rate limiter `null` — a limiter passed through `app_options` wins over the
@@ -932,7 +933,7 @@ One-shot transport:
 - `headers_to_record(headers)` — snapshot a `Headers` into a lowercased-key `Record<string, string>` (multi-value collapses to the comma-joined form; `Set-Cookie` excluded). Used by `rpc_call` and the conformance table's REST branch to thread response headers through for assertions.
 - `RpcCallArgs` — `{app, path, method, params?, headers?, id?, verb?}`. `verb` defaults to `'POST'`; use `'GET'` for `side_effects: false` methods.
 - `rpc_call_raw(args)` — the same request as `rpc_call`, the response unparsed: `RpcCallRawResult` `{status, headers, body}` with the whole envelope. `parse_rpc_call_result(raw, method)` turns it into an `RpcCallResult`; `rpc_call` is the two composed.
-- `rpc_call(args)` — merges `RPC_CALL_DEFAULT_HEADERS` (`host: 'localhost'`, `origin: 'http://localhost:5173'`, `Content-Type: 'application/json'`) under caller headers. Envelope-shape violations throw; JSON-RPC errors return `{ok: false, error}` so callers assert on `error.code` / `error.data.reason`.
+- `rpc_call(args)` — merges `RPC_CALL_DEFAULT_HEADERS` (`host: 'localhost'`, `origin: TEST_ORIGIN`, `Content-Type: 'application/json'`) under caller headers. Envelope-shape violations throw; JSON-RPC errors return `{ok: false, error}` so callers assert on `error.code` / `error.data.reason`.
 - `rpc_call_typed<T>(args, output_schema)` — parses the success `result` through the schema; throws on envelope failure, error response, or schema mismatch. Use `rpc_call` when the test needs to assert on error shapes.
 - `rpc_call_for_spec<TSpec>(args)` — spec-bound variant: takes `{..., spec, params}` in place of `{..., method, params}`. `params` is typed from `spec.input` and the success `result` is typed from `spec.output` (runtime-validated, same contract as `rpc_call_typed`). Error branch stays untyped (JSON-RPC `error.data` shapes vary per call site). Use at happy-path + denial-path call sites; fall back to `rpc_call` for adversarial tests that send deliberately-malformed params.
 

@@ -92,6 +92,7 @@ import {
 	ERROR_PAYLOAD_TOO_LARGE,
 	ERROR_TOKEN_SCOPE_REQUIRED
 } from '../../http/error_schemas.ts';
+import { TEST_ORIGIN } from '../test_origin.ts';
 import { create_rpc_get_url } from '../rpc_helpers.ts';
 import {
 	raw_http_exchange,
@@ -261,7 +262,7 @@ export interface TransportCompositionCrossTestOptions extends RpcPathCapabilityG
 	readonly base_url: string | null;
 	/**
 	 * An `Origin` the backend allows. Default: the origin of `base_url`, or
-	 * `http://localhost:5173` in-process (which `create_test_app`'s allow list
+	 * `TEST_ORIGIN` in-process (the one origin `create_test_app`'s allow list
 	 * admits).
 	 */
 	readonly origin?: string;
@@ -370,7 +371,7 @@ export const describe_transport_composition_cross_tests = (
 	const ws_path = options.ws_path ?? SPINE_WS_PATH;
 	const sse_path = options.sse_path ?? SPINE_SSE_PATH;
 	const allowed_origin =
-		options.origin ?? (base_url === null ? 'http://localhost:5173' : new URL(base_url).origin);
+		options.origin ?? (base_url === null ? TEST_ORIGIN : new URL(base_url).origin);
 
 	/** The request line, headers and body a case's probe sends. */
 	const build_probe = async (

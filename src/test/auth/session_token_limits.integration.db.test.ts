@@ -21,6 +21,7 @@ import {
 import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
 import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
 import { create_test_app } from '#lib/testing/app_server.ts';
+import { create_test_request_headers } from '#lib/testing/test_origin.ts';
 import { DEFAULT_TEST_PASSWORD } from '#lib/testing/test_credentials.ts';
 import {
 	create_default_db_factory,
@@ -87,11 +88,9 @@ describe_db('session_token_limits', (get_db) => {
 			const login = async (): Promise<string> => {
 				const res = await test_app.app.request(login_route.path, {
 					method: 'POST',
-					headers: {
-						host: 'localhost',
-						origin: 'http://localhost:5173',
+					headers: create_test_request_headers({
 						'content-type': 'application/json'
-					},
+					}),
 					body: JSON.stringify({
 						username: test_app.backend.account.username,
 						password: DEFAULT_TEST_PASSWORD
@@ -154,11 +153,9 @@ describe_db('session_token_limits', (get_db) => {
 
 			const res = await test_app.app.request(login_route.path, {
 				method: 'POST',
-				headers: {
-					host: 'localhost',
-					origin: 'http://localhost:5173',
+				headers: create_test_request_headers({
 					'content-type': 'application/json'
-				},
+				}),
 				body: JSON.stringify({
 					username: test_app.backend.account.username,
 					password: DEFAULT_TEST_PASSWORD
@@ -206,11 +203,9 @@ describe_db('session_token_limits', (get_db) => {
 
 			const res = await test_app.app.request(login_route.path, {
 				method: 'POST',
-				headers: {
-					host: 'localhost',
-					origin: 'http://localhost:5173',
+				headers: create_test_request_headers({
 					'content-type': 'application/json'
-				},
+				}),
 				body: JSON.stringify({
 					username: test_app.backend.account.username,
 					password: DEFAULT_TEST_PASSWORD
@@ -259,11 +254,9 @@ describe_db('session_token_limits', (get_db) => {
 			for (let i = 0; i < 5; i++) {
 				const res = await test_app.app.request(login_route.path, {
 					method: 'POST',
-					headers: {
-						host: 'localhost',
-						origin: 'http://localhost:5173',
+					headers: create_test_request_headers({
 						'content-type': 'application/json'
-					},
+					}),
 					body: JSON.stringify({
 						username: test_app.backend.account.username,
 						password: DEFAULT_TEST_PASSWORD

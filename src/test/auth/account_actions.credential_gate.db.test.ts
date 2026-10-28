@@ -36,6 +36,7 @@ import {
 import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
 import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
 import { create_test_app } from '#lib/testing/app_server.ts';
+import { TEST_ORIGIN } from '#lib/testing/test_origin.ts';
 import { DEFAULT_TEST_PASSWORD } from '#lib/testing/test_credentials.ts';
 import {
 	auth_integration_truncate_tables,
@@ -303,7 +304,7 @@ describe_db('credential_channel_gate', (get_db) => {
 				headers: {
 					'content-type': 'application/json',
 					host: 'localhost',
-					origin: 'http://localhost:5173'
+					origin: TEST_ORIGIN
 				},
 				body: JSON.stringify({
 					current_password: DEFAULT_TEST_PASSWORD,

@@ -34,6 +34,7 @@ import {
 	type AuditLogEventWithUsernamesJson
 } from '../auth/audit_log_schema.ts';
 import type { TestAccount } from './app_server.ts';
+import { create_test_request_headers } from './test_origin.ts';
 import { DEFAULT_TEST_PASSWORD } from './test_credentials.ts';
 import { find_auth_route } from './integration_helpers.ts';
 import {
@@ -182,11 +183,9 @@ const assert_event_credential_type = (
 };
 
 /** Headers for unauthenticated JSON requests (login, signup). */
-const UNAUTHENTICATED_JSON_HEADERS: Record<string, string> = {
-	host: 'localhost',
-	origin: 'http://localhost:5173',
+const UNAUTHENTICATED_JSON_HEADERS: Record<string, string> = create_test_request_headers({
 	'content-type': 'application/json'
-};
+});
 
 /** Standard request headers for session-authenticated JSON requests. */
 const json_session_headers = (

@@ -15,6 +15,7 @@ import { query_create_api_token } from '#lib/auth/api_token_queries.ts';
 import { token_scope_methods } from '#lib/auth/token_scope.ts';
 import { create_health_route_spec } from '#lib/http/common_routes.ts';
 import { create_test_app, type TestApp } from '#lib/testing/app_server.ts';
+import { create_test_request_headers } from '#lib/testing/test_origin.ts';
 import { auth_truncate_tables } from '#lib/testing/db.ts';
 
 import { default_db_factory } from '../db_fixture.ts';
@@ -90,7 +91,7 @@ describe('surface_route: true', () => {
 		const test_app = await build(true);
 		try {
 			const res = await test_app.app.request('/api/surface', {
-				headers: { host: 'localhost', origin: 'http://localhost:5173' }
+				headers: create_test_request_headers()
 			});
 			assert.strictEqual(res.status, 401);
 		} finally {

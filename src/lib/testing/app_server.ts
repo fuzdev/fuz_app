@@ -62,6 +62,7 @@ import { create_default_db_factory, type DbFactory } from './db.ts';
 import type { RpcEndpointsSuiteOption } from './rpc_helpers.ts';
 import { token_scope_full } from '../auth/token_scope.ts';
 import { format_allowed_origins_error, parse_allowed_origins } from '../http/origin.ts';
+import { create_test_request_headers, TEST_ORIGIN } from './test_origin.ts';
 
 /**
  * Fast password stub for tests that don't exercise login/password flows.
@@ -618,14 +619,8 @@ export interface TestApp {
 }
 
 /**
- * The origins an in-process test server allows — the dev server's, which the
- * test request headers send.
- */
-const LOOPBACK_ALLOWED_ORIGINS = 'http://localhost:5173';
-
-/**
  * The loopback `create_app_server` options an in-process test server takes:
- * the `http://localhost:5173` origin allowed (an exact list, parsed by
+ * the `TEST_ORIGIN` origin allowed (an exact list, parsed by
  * `parse_allowed_origins` as `create_app_server` requires), the loopback
  * proxy trusted (so `X-Forwarded-For` sets the client IP), and an empty env
  * schema. A fresh object per call — spread it ahead of the options a test
@@ -635,7 +630,7 @@ export const create_loopback_app_server_options = (): Pick<
 	AppServerOptions,
 	'allowed_origins' | 'proxy' | 'env_schema'
 > => {
-	const parsed = parse_allowed_origins(LOOPBACK_ALLOWED_ORIGINS);
+	const parsed = parse_allowed_origins(TEST_ORIGIN);
 	if (!parsed.ok) {
 		throw new Error(
 			`create_loopback_app_server_options: ${parsed.errors.map(format_allowed_origins_error).join('; ')}`
@@ -666,12 +661,8 @@ const test_app_options = (): Pick<
 /** Build request headers carrying `session_cookie` in the `cookie_name` cookie. */
 const create_session_headers_builder =
 	(cookie_name: string, session_cookie: string) =>
-	(extra?: Record<string, string>): Record<string, string> => ({
-		host: 'localhost',
-		origin: 'http://localhost:5173',
-		cookie: `${cookie_name}=${session_cookie}`,
-		...extra
-	});
+	(extra?: Record<string, string>): Record<string, string> =>
+		create_test_request_headers({ cookie: `${cookie_name}=${session_cookie}`, ...extra });
 
 /** Build request headers carrying `api_token` as a Bearer token. */
 const create_bearer_headers_builder =

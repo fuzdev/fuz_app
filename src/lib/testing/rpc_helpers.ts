@@ -29,6 +29,7 @@ import type {
 import type { AppServerContext } from '../server/app_server_context.ts';
 import type { SessionOptions } from '../auth/session_cookie.ts';
 import { create_stub_app_server_context } from './stubs.ts';
+import { TEST_ORIGIN } from './test_origin.ts';
 
 /**
  * Union accepted by the suite-level `rpc_endpoints` option — eager array or
@@ -299,7 +300,7 @@ const merge_header_records = (
 /** Default headers merged into every `rpc_call` request. Includes `origin`. */
 const RPC_CALL_DEFAULT_HEADERS: Readonly<Record<string, string>> = {
 	...RPC_CALL_DEFAULT_HEADERS_BASE,
-	origin: 'http://localhost:5173'
+	origin: TEST_ORIGIN
 };
 
 /**

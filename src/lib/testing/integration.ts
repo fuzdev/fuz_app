@@ -59,6 +59,7 @@ import {
 } from './cross_backend/wire_shapes.ts';
 import type { SetupTest } from './cross_backend/setup.ts';
 import { DEFAULT_TEST_PASSWORD } from './test_credentials.ts';
+import { create_test_request_headers, TEST_ORIGIN } from './test_origin.ts';
 import { create_test_raw_api_token } from './entities.ts';
 
 /**
@@ -215,11 +216,9 @@ export const describe_standard_integration_tests = (
 
 				const res = await fixture.transport(login_route.path, {
 					method: 'POST',
-					headers: {
-						host: 'localhost',
-						origin: 'http://localhost:5173',
+					headers: create_test_request_headers({
 						'content-type': 'application/json'
-					},
+					}),
 					body: JSON.stringify({
 						username: fixture.account.username,
 						password: DEFAULT_TEST_PASSWORD
@@ -245,11 +244,9 @@ export const describe_standard_integration_tests = (
 
 				const res = await fixture.transport(login_route.path, {
 					method: 'POST',
-					headers: {
-						host: 'localhost',
-						origin: 'http://localhost:5173',
+					headers: create_test_request_headers({
 						'content-type': 'application/json'
-					},
+					}),
 					body: JSON.stringify({
 						username: fixture.account.username,
 						password: 'wrong-password'
@@ -272,11 +269,9 @@ export const describe_standard_integration_tests = (
 
 				const res = await fixture.transport(login_route.path, {
 					method: 'POST',
-					headers: {
-						host: 'localhost',
-						origin: 'http://localhost:5173',
+					headers: create_test_request_headers({
 						'content-type': 'application/json'
-					},
+					}),
 					body: JSON.stringify({
 						username: 'nonexistent_user',
 						password: DEFAULT_TEST_PASSWORD
@@ -299,11 +294,9 @@ export const describe_standard_integration_tests = (
 
 				const res = await fixture.transport(login_route.path, {
 					method: 'POST',
-					headers: {
-						host: 'localhost',
-						origin: 'http://localhost:5173',
+					headers: create_test_request_headers({
 						'content-type': 'application/json'
-					},
+					}),
 					body: JSON.stringify({
 						username: `  ${fixture.account.username}  `,
 						password: DEFAULT_TEST_PASSWORD
@@ -331,11 +324,9 @@ export const describe_standard_integration_tests = (
 				// Login
 				const login_res = await fixture.transport(login_route.path, {
 					method: 'POST',
-					headers: {
-						host: 'localhost',
-						origin: 'http://localhost:5173',
+					headers: create_test_request_headers({
 						'content-type': 'application/json'
-					},
+					}),
 					body: JSON.stringify({
 						username: fixture.account.username,
 						password: DEFAULT_TEST_PASSWORD
@@ -350,11 +341,10 @@ export const describe_standard_integration_tests = (
 				assert.ok(cookie_match?.[1]);
 				const login_cookie = cookie_match[1];
 
-				const create_headers = () => ({
-					host: 'localhost',
-					origin: 'http://localhost:5173',
-					cookie: `${cookie_name}=${login_cookie}`
-				});
+				const create_headers = () =>
+					create_test_request_headers({
+						cookie: `${cookie_name}=${login_cookie}`
+					});
 
 				// Verify works
 				const verify_res = await rpc_call_for_spec({
@@ -406,11 +396,9 @@ export const describe_standard_integration_tests = (
 				const make_login = (username: string, password: string) =>
 					fixture.transport(login_route.path, {
 						method: 'POST',
-						headers: {
-							host: 'localhost',
-							origin: 'http://localhost:5173',
+						headers: create_test_request_headers({
 							'content-type': 'application/json'
-						},
+						}),
 						body: JSON.stringify({ username, password })
 					});
 
@@ -453,11 +441,9 @@ export const describe_standard_integration_tests = (
 
 				const res = await fixture.transport(login_route.path, {
 					method: 'POST',
-					headers: {
-						host: 'localhost',
-						origin: 'http://localhost:5173',
+					headers: create_test_request_headers({
 						'content-type': 'application/json'
-					},
+					}),
 					body: JSON.stringify({
 						username: fixture.account.username,
 						password: DEFAULT_TEST_PASSWORD
@@ -548,11 +534,9 @@ export const describe_standard_integration_tests = (
 
 				const res = await fixture.transport(login_route.path, {
 					method: 'POST',
-					headers: {
-						host: 'localhost',
-						origin: 'http://localhost:5173',
+					headers: create_test_request_headers({
 						'content-type': 'application/json'
-					},
+					}),
 					body: JSON.stringify({
 						username: fixture.account.username,
 						password: DEFAULT_TEST_PASSWORD
@@ -740,11 +724,9 @@ export const describe_standard_integration_tests = (
 				// Login with new password works
 				const login_res = await fixture.transport(login_route.path, {
 					method: 'POST',
-					headers: {
-						host: 'localhost',
-						origin: 'http://localhost:5173',
+					headers: create_test_request_headers({
 						'content-type': 'application/json'
-					},
+					}),
 					body: JSON.stringify({
 						username: fixture.account.username,
 						password: 'new-password-456'
@@ -867,7 +849,7 @@ export const describe_standard_integration_tests = (
 					params: undefined,
 					headers: {
 						...bearer_headers,
-						origin: 'http://localhost:5173',
+						origin: TEST_ORIGIN,
 						'content-type': 'application/json'
 					}
 				});
@@ -1161,11 +1143,9 @@ export const describe_standard_integration_tests = (
 
 				const res = await fixture.transport(login_route.path, {
 					method: 'POST',
-					headers: {
-						host: 'localhost',
-						origin: 'http://localhost:5173',
+					headers: create_test_request_headers({
 						'content-type': 'application/json'
-					},
+					}),
 					body: JSON.stringify({
 						username: 'nonexistent_user_xyz',
 						password: 'any-password'
@@ -1202,11 +1182,9 @@ export const describe_standard_integration_tests = (
 
 				const res = await fixture.fresh_transport()(logout_route.path, {
 					method: 'POST',
-					headers: {
-						host: 'localhost',
-						origin: 'http://localhost:5173',
+					headers: create_test_request_headers({
 						'content-type': 'application/json'
-					},
+					}),
 					body: JSON.stringify({})
 				});
 				assert.strictEqual(res.status, 401);
@@ -1354,7 +1332,7 @@ export const describe_standard_integration_tests = (
 					method: 'POST',
 					headers: {
 						...bearer_headers,
-						origin: 'http://localhost:5173',
+						origin: TEST_ORIGIN,
 						'content-type': 'application/json'
 					}
 				});
@@ -1379,7 +1357,7 @@ export const describe_standard_integration_tests = (
 				});
 				const res = await fixture.fresh_transport()(password_route.path, {
 					method: 'POST',
-					headers: { ...bearer_headers, referer: 'http://localhost:5173/admin' }
+					headers: { ...bearer_headers, referer: `${TEST_ORIGIN}/admin` }
 				});
 				assert.strictEqual(
 					res.status,
@@ -1526,11 +1504,9 @@ export const describe_standard_integration_tests = (
 				// Try to sign up with a different email — should fail (no matching invite)
 				const signup_res = await fixture.transport(signup_route.path, {
 					method: 'POST',
-					headers: {
-						host: 'localhost',
-						origin: 'http://localhost:5173',
+					headers: create_test_request_headers({
 						'content-type': 'application/json'
-					},
+					}),
 					body: JSON.stringify({
 						username: 'eve_attacker',
 						password: 'test-password-123456',
@@ -1593,11 +1569,9 @@ export const describe_standard_integration_tests = (
 				// Attempt 1: signup with a non-matching email (no invite match) → 403
 				const no_match_res = await fixture.transport(signup_route.path, {
 					method: 'POST',
-					headers: {
-						host: 'localhost',
-						origin: 'http://localhost:5173',
+					headers: create_test_request_headers({
 						'content-type': 'application/json'
-					},
+					}),
 					body: JSON.stringify({
 						username: 'nomatch_user',
 						password: 'test-password-123456',
@@ -1624,11 +1598,9 @@ export const describe_standard_integration_tests = (
 				// Attempt 2: signup with the invited email but a colliding username → 409
 				const conflict_res = await fixture.transport(signup_route.path, {
 					method: 'POST',
-					headers: {
-						host: 'localhost',
-						origin: 'http://localhost:5173',
+					headers: create_test_request_headers({
 						'content-type': 'application/json'
-					},
+					}),
 					body: JSON.stringify({
 						username: existing_user.account.username,
 						password: 'test-password-123456',

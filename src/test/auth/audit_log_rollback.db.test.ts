@@ -13,6 +13,7 @@ import { describe, test, assert, beforeAll, afterAll } from 'vitest';
 import { z } from 'zod';
 
 import { create_test_app, type TestApp } from '#lib/testing/app_server.ts';
+import { create_test_request_headers } from '#lib/testing/test_origin.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { query_audit_log_list } from '#lib/auth/audit_log_queries.ts';
 
@@ -53,11 +54,9 @@ describe('audit log rollback resilience', () => {
 	test('audit entry persists despite transaction rollback', async () => {
 		const res = await test_app.app.request('/api/poison', {
 			method: 'POST',
-			headers: {
-				host: 'localhost',
-				origin: 'http://localhost:5173',
+			headers: create_test_request_headers({
 				'content-type': 'application/json'
-			}
+			})
 		});
 		assert.strictEqual(res.status, 500);
 

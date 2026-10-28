@@ -88,6 +88,7 @@ import {
 } from '#lib/actions/transports.ts';
 import { require_audit_sse } from '#lib/server/app_server.ts';
 import { create_test_app, type TestApp } from '#lib/testing/app_server.ts';
+import { create_test_request_headers } from '#lib/testing/test_origin.ts';
 import { DEFAULT_TEST_PASSWORD } from '#lib/testing/test_credentials.ts';
 import { create_test_account_with_actor } from '#lib/testing/db_entities.ts';
 import { rpc_call_for_spec, rpc_call } from '#lib/testing/rpc_helpers.ts';
@@ -1477,11 +1478,9 @@ describe_db('connection_closer wiring', (get_db) => {
 							(
 								await h.test_app.app.request('/api/account/login', {
 									method: 'POST',
-									headers: {
-										host: 'localhost',
-										origin: 'http://localhost:5173',
+									headers: create_test_request_headers({
 										'Content-Type': 'application/json'
-									},
+									}),
 									body: JSON.stringify({ username: 'keeper', password: DEFAULT_TEST_PASSWORD })
 								})
 							).ok
@@ -1860,11 +1859,9 @@ describe_db('connection_closer wiring', (get_db) => {
 			});
 			const res = await test_app.app.request('/api/account/login', {
 				method: 'POST',
-				headers: {
-					host: 'localhost',
-					origin: 'http://localhost:5173',
+				headers: create_test_request_headers({
 					'Content-Type': 'application/json'
-				},
+				}),
 				body: JSON.stringify({ username: 'keeper', password: DEFAULT_TEST_PASSWORD })
 			});
 			assert.strictEqual(res.status, 200);

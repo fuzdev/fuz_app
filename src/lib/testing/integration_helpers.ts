@@ -14,6 +14,7 @@ import { is_public_auth, type RouteAuth } from '../http/auth_shape.ts';
 import { ERROR_AUTHENTICATION_REQUIRED } from '../http/error_schemas.ts';
 import { ROLE_ADMIN } from '../auth/role_schema.ts';
 import type { TestAccount } from './app_server.ts';
+import { create_test_request_headers } from './test_origin.ts';
 
 /**
  * Find a route spec matching the given method and path.
@@ -322,7 +323,7 @@ export const to_principal_headers = (
 ): Record<string, string> => {
 	switch (principal) {
 		case 'public':
-			return { host: 'localhost', origin: 'http://localhost:5173' };
+			return create_test_request_headers();
 		case 'daemon_token':
 			return keeper.create_daemon_token_headers();
 		case 'admin':

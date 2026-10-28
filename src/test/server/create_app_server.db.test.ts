@@ -30,6 +30,7 @@ import {
 import type { AppBackend } from '#lib/server/app_backend.ts';
 import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
 import { create_loopback_app_server_options, stub_password_deps } from '#lib/testing/app_server.ts';
+import { TEST_ORIGIN } from '#lib/testing/test_origin.ts';
 import { create_default_db_factory } from '#lib/testing/db.ts';
 import { run_migrations } from '#lib/db/migrate.ts';
 import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
@@ -642,7 +643,7 @@ describe('create_app_server', () => {
 			method: 'POST',
 			headers: {
 				'content-type': 'application/json',
-				origin: 'http://localhost:5173'
+				origin: TEST_ORIGIN
 			},
 			body: JSON.stringify({ jsonrpc: '2.0', method: 'test_noop', id: 1 })
 		});
@@ -694,7 +695,7 @@ describe('create_app_server', () => {
 			method: 'POST',
 			headers: {
 				'content-type': 'application/json',
-				origin: 'http://localhost:5173'
+				origin: TEST_ORIGIN
 			},
 			body: JSON.stringify({ jsonrpc: '2.0', method: 'test_factory', id: 1 })
 		});
@@ -740,7 +741,7 @@ describe('create_app_server', () => {
 			method: 'POST',
 			headers: {
 				'content-type': 'application/json',
-				origin: 'http://localhost:5173'
+				origin: TEST_ORIGIN
 			},
 			body: JSON.stringify({
 				jsonrpc: '2.0',

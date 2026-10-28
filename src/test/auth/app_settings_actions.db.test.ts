@@ -17,6 +17,7 @@ import {
 	app_settings_update_action_spec
 } from '#lib/auth/admin_action_specs.ts';
 import { create_test_app } from '#lib/testing/app_server.ts';
+import { create_test_request_headers } from '#lib/testing/test_origin.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
@@ -88,10 +89,7 @@ describe_db('app settings RPC actions', (get_db) => {
 				path: RPC_PATH,
 				spec: app_settings_get_action_spec,
 				params: {},
-				headers: {
-					host: 'localhost',
-					origin: 'http://localhost:5173'
-				}
+				headers: create_test_request_headers()
 			});
 			assert.ok(!r.ok);
 			assert.strictEqual(r.error.code, JSONRPC_ERROR_CODES.unauthenticated);

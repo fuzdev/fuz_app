@@ -52,6 +52,7 @@ import type { FactHash } from '@fuzdev/fuz_util/hash_schemas.ts';
 import { ERROR_INVALID_QUERY_PARAMS, ERROR_INVALID_ROUTE_PARAMS } from '#lib/http/error_schemas.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import type { TestApp } from '#lib/testing/app_server.ts';
+import { TEST_ORIGIN } from '#lib/testing/test_origin.ts';
 import { create_test_extra_actor, soft_delete_test_actor } from '#lib/testing/db_entities.ts';
 import { create_cell_test_app, create_cell } from '../auth/cell_test_helpers.ts';
 import { query_cell_create } from '#lib/db/cell_queries.ts';
@@ -62,7 +63,7 @@ import { create_node_runtime } from '#lib/runtime/node.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
 import { describe_db } from '../cell_db_fixture.ts';
 
-const PUBLIC_HEADERS = { host: 'localhost:5173', origin: 'http://localhost:5173' };
+const PUBLIC_HEADERS = { host: 'localhost:5173', origin: TEST_ORIGIN };
 
 const encode = (s: string): Uint8Array => new TextEncoder().encode(s);
 

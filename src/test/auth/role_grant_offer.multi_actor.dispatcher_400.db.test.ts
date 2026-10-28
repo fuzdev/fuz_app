@@ -14,6 +14,7 @@
 import { assert, describe, test } from 'vitest';
 
 import { create_test_app } from '#lib/testing/app_server.ts';
+import { TEST_ORIGIN } from '#lib/testing/test_origin.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { role_grant_offer_list_action_spec } from '#lib/auth/role_grant_offer_action_specs.ts';
 import { ERROR_ACTOR_REQUIRED } from '#lib/http/error_schemas.ts';
@@ -122,7 +123,7 @@ describe_db('role_grant_offer.multi_actor — dispatcher_400', (get_db) => {
 				headers: {
 					...recipient.create_session_headers(),
 					host: 'localhost',
-					origin: 'http://localhost:5173',
+					origin: TEST_ORIGIN,
 					'Content-Type': 'application/json'
 				},
 				body: JSON.stringify({

@@ -20,6 +20,7 @@ import { prefix_route_specs, type RouteSpec } from '#lib/http/route_spec.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
 import type { RpcEndpointSpec } from '#lib/http/surface.ts';
 import { create_test_app } from '#lib/testing/app_server.ts';
+import { create_test_request_headers } from '#lib/testing/test_origin.ts';
 import { create_rate_limiter } from '#lib/rate_limiter.ts';
 import {
 	find_route_spec,
@@ -237,7 +238,7 @@ describe('create_test_app', () => {
 
 		const res = await test_app.app.request('/api/account/verify', {
 			method: 'GET',
-			headers: { host: 'localhost', origin: 'http://localhost:5173' }
+			headers: create_test_request_headers()
 		});
 		assert.strictEqual(res.status, 401);
 	});
@@ -397,11 +398,9 @@ describe('assert_response_matches_spec', () => {
 
 		const res = await test_app.app.request('/api/account/logout', {
 			method: 'POST',
-			headers: {
-				host: 'localhost',
-				origin: 'http://localhost:5173',
+			headers: create_test_request_headers({
 				'content-type': 'application/json'
-			},
+			}),
 			body: JSON.stringify({})
 		});
 		assert.strictEqual(res.status, 401);

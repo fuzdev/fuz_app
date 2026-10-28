@@ -20,6 +20,7 @@
 import { describe, test, assert, beforeAll, afterAll, beforeEach } from 'vitest';
 
 import { create_test_app, stub_password_deps, type TestApp } from '#lib/testing/app_server.ts';
+import { TEST_ORIGIN } from '#lib/testing/test_origin.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import { prefix_route_specs, type RouteSpec } from '#lib/http/route_spec.ts';
@@ -31,7 +32,7 @@ const session_options = create_session_config('test_session');
 const login_headers = {
 	'Content-Type': 'application/json',
 	host: 'localhost',
-	origin: 'http://localhost:5173'
+	origin: TEST_ORIGIN
 };
 
 interface TrackingPasswordDeps {

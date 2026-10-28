@@ -75,6 +75,7 @@ import { prefix_route_specs } from '#lib/http/route_spec.ts';
 import type { AuditLogSse } from '#lib/realtime/audit_log_sse.ts';
 import { require_audit_sse } from '#lib/server/app_server.ts';
 import { create_test_app, type TestAccount, type TestApp } from '#lib/testing/app_server.ts';
+import { create_test_request_headers } from '#lib/testing/test_origin.ts';
 import { install_audit_drift_guard } from '#lib/testing/audit_drift_guard.ts';
 import { auth_integration_truncate_tables, create_describe_db } from '#lib/testing/db.ts';
 import { rpc_call } from '#lib/testing/rpc_helpers.ts';
@@ -249,11 +250,9 @@ const token_id_of = async (h: Harness, account_id: Uuid): Promise<string> => {
 
 const keeper_headers = (h: Harness): Record<string, string> => h.test_app.create_session_headers();
 
-const login_headers = {
-	host: 'localhost',
-	origin: 'http://localhost:5173',
+const login_headers = create_test_request_headers({
 	'Content-Type': 'application/json'
-};
+});
 
 /**
  * When the revoking request writes its success audit row, relative to the
