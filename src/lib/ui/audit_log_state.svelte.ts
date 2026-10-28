@@ -6,9 +6,11 @@
  * stream continues to use `EventSource` directly — streams aren't an RPC
  * concern.
  *
- * Holds two `AsyncSlot`s — `list` (the main event stream) and
- * `role_grant_history` (the dedicated role-grant history endpoint). Data
- * lives on the class so SSE pushes and gap-fill calls update it directly.
+ * Holds `AsyncSlot`s for `list` (the main event list),
+ * `role_grant_history` (the dedicated role-grant history endpoint), and
+ * `gap_fill` (the catch-up fetch run each time the stream opens). Data lives
+ * on the class so SSE pushes and gap-fill calls update it directly; both merge
+ * by `seq`, so `events` stays newest-first however they interleave.
  *
  * @module
  */
@@ -22,11 +24,12 @@ import type {
 	AuditLogEventWithUsernamesJson,
 	RoleGrantHistoryEventJson
 } from '../auth/audit_log_schema.ts';
-import type {
-	AuditLogListInput,
-	AuditLogListOutput,
-	AuditLogRoleGrantHistoryInput,
-	AuditLogRoleGrantHistoryOutput
+import {
+	AUDIT_LOG_LIST_LIMIT_MAX,
+	type AuditLogListInput,
+	type AuditLogListOutput,
+	type AuditLogRoleGrantHistoryInput,
+	type AuditLogRoleGrantHistoryOutput
 } from '../auth/admin_action_specs.ts';
 import type { SseNotification } from '../realtime/sse.ts';
 
@@ -50,6 +53,50 @@ export interface AuditLogRpc {
  */
 export const audit_log_rpc_context = create_context<() => AuditLogRpc>();
 
+/**
+ * The filter fields of `AuditLogListInput` — what `AuditLogState.subscribe`
+ * applies to live events and to its gap fill, matching what a `fetch` with the
+ * same fields returns. `account_id` matches either side of an event
+ * (`account_id` or `target_account_id`), as the list query does.
+ */
+export type AuditLogFilter = Pick<AuditLogListInput, 'event_type' | 'outcome' | 'account_id'>;
+
+/**
+ * Whether an event passes an `AuditLogFilter` — the client-side twin of the
+ * list query's filter conditions, applied to live stream events.
+ *
+ * @param event - the event to test
+ * @param filter - the filter; absent or empty fields match everything
+ */
+export const audit_log_filter_matches = (
+	event: AuditLogEventJson,
+	filter: AuditLogFilter | undefined
+): boolean => {
+	if (!filter) return true;
+	if (filter.event_type && event.event_type !== filter.event_type) return false;
+	if (filter.outcome && event.outcome !== filter.outcome) return false;
+	if (
+		filter.account_id &&
+		event.account_id !== filter.account_id &&
+		event.target_account_id !== filter.account_id
+	) {
+		return false;
+	}
+	return true;
+};
+
+/**
+ * Lifecycle of the audit SSE stream.
+ *
+ * - `'off'` — not subscribed (initial, or after `disconnect`)
+ * - `'connecting'` — opening, or `EventSource` is retrying after a transient error
+ * - `'open'` — connected and receiving events
+ * - `'closed'` — the stream gave up: the server refused the reconnect (a revoked
+ *   credential or a lost role answers it with 401/403), so `EventSource` stopped
+ *   retrying; call `subscribe` again to retry
+ */
+export type AuditLogStreamStatus = 'off' | 'connecting' | 'open' | 'closed';
+
 export interface AuditLogStateOptions {
 	/**
 	 * Reactive accessor for the RPC adapter. Matches the `get_rpc` pattern on
@@ -66,17 +113,44 @@ export class AuditLogState {
 
 	readonly list = new AsyncSlot<void>();
 	readonly role_grant_history = new AsyncSlot<void>();
+	/** The catch-up fetch run each time the stream opens; its `error` surfaces a failed fill. */
+	readonly gap_fill = new AsyncSlot<void>();
 
 	events: Array<AuditLogEventWithUsernamesJson> = $state.raw([]);
 	role_grant_history_events: Array<RoleGrantHistoryEventJson> = $state.raw([]);
 
 	readonly count: number = $derived(this.events.length);
 
-	/** Whether the SSE stream is currently connected. */
-	connected = $state.raw(false);
+	/** Lifecycle of the SSE stream — see `AuditLogStreamStatus`. */
+	stream_status: AuditLogStreamStatus = $state.raw('off');
 
-	/** The highest `seq` seen — used for gap fill on reconnection. */
+	/**
+	 * Whether a gap fill hit its row limit, so events between the last one seen
+	 * and the stream's reopening may be missing. Cleared by `fetch`, which
+	 * replaces the list (as is a failed `gap_fill`).
+	 */
+	gap_truncated = $state.raw(false);
+
+	/**
+	 * The highest `seq` the list covers — the gap-fill anchor. `fetch` sets it
+	 * from its result (`0` for an empty first page, which covers everything up
+	 * to then), and gap-filled events and live events under the list's filter
+	 * advance it.
+	 */
 	#last_seq: number | null = null;
+
+	/**
+	 * Whether the stream's last open skipped its gap fill (the list had no anchor
+	 * or another filter), so the `fetch` that anchors the list under the stream's
+	 * filter runs it.
+	 */
+	#fill_deferred = false;
+
+	/** The filter of the `fetch` that loaded `events`. */
+	#list_filter: AuditLogFilter | undefined;
+
+	/** The filter the stream applies, set by `subscribe`. */
+	#stream_filter: AuditLogFilter | undefined;
 
 	/** Active EventSource instance. */
 	#event_source: EventSource | null = null;
@@ -89,11 +163,57 @@ export class AuditLogState {
 		this.#stream_url = options.stream_url ?? '/api/admin/audit/stream';
 	}
 
+	/**
+	 * Load a page of events, replacing `events`.
+	 *
+	 * While the stream is live, events it delivered after the page's newest one
+	 * that match the fetch's filter are kept, so a fetch answering mid-stream
+	 * doesn't drop them. A newest-page fetch aborts an in-flight gap fill, which
+	 * its own query covers, and when the stream opened before the list matched
+	 * its filter, runs that open's gap fill from the fetched page.
+	 *
+	 * @param options - the list input; its filter fields become the list's filter
+	 * @mutates `this`
+	 */
 	async fetch(options?: AuditLogListInput): Promise<void> {
-		await this.list.run(async () => {
+		// a later page (`offset > 0`) doesn't cover the newest events
+		const newest_page = !options?.offset;
+		// the fill covers up to the stream's open, which this newer query covers too
+		if (newest_page) this.gap_fill.abort();
+		await this.list.run(async (signal) => {
 			const { events } = await this.#get_rpc().list(options);
-			this.events = events;
-			this.#update_last_seq(events);
+			// a superseded fetch must not overwrite a newer one's list
+			if (signal.aborted) return;
+			const filter = to_audit_log_filter(options);
+			const fetched_seq = events.length > 0 ? max_seq(events) : 0;
+			const live =
+				newest_page && this.#event_source
+					? this.events.filter((e) => e.seq > fetched_seq && audit_log_filter_matches(e, filter))
+					: [];
+			this.events = live.length > 0 ? [...live, ...events] : events;
+			this.#list_filter = filter;
+			// a fresh list supersedes what an earlier gap fill missed
+			this.gap_truncated = false;
+			if (this.gap_fill.failed) this.gap_fill.reset();
+			const stream_matches =
+				this.#event_source !== null && filters_equal(filter, this.#stream_filter);
+			// the stream opened before this list matched it, so events between this
+			// query and that open may be missing — fill from the fetched page
+			const fill_deferred = newest_page && stream_matches && this.#fill_deferred;
+			// live rows anchor the list only when the stream covers its filter since
+			// before the query
+			this.#last_seq = newest_page
+				? stream_matches && !fill_deferred
+					? Math.max(fetched_seq, live.length > 0 ? max_seq(live) : 0)
+					: fetched_seq
+				: events.length > 0
+					? fetched_seq
+					: null;
+			if (fill_deferred) {
+				this.#fill_deferred = false;
+				// while reconnecting, the next open fills from the anchor
+				if (this.stream_status === 'open') void this.#fill_gap(fetched_seq);
+			}
 		});
 	}
 
@@ -107,88 +227,149 @@ export class AuditLogState {
 	/**
 	 * Connect to the SSE stream for realtime audit events.
 	 *
-	 * New events are prepended to `events`. EventSource auto-reconnects on
-	 * transient errors; `since_seq` fills gaps on reconnection.
+	 * Live events matching `filter` merge into `events` by `seq`. `EventSource`
+	 * reconnects on transient errors (`stream_status` reads `'connecting'`);
+	 * each open runs a gap fill from the last `seq` seen, with the same filter.
+	 * A refused reconnect ends the stream (`'closed'`) — call `subscribe` again
+	 * to retry. Gap fills run only while `events` was fetched with the same
+	 * filter: an open the list doesn't match yet defers its fill to the `fetch`
+	 * with the stream's filter, and live events under another filter than the
+	 * list's merge only when they match the list's filter too, without advancing
+	 * the anchor.
 	 *
+	 * @param filter - which events to keep; omit for all
 	 * @returns cleanup function that closes the connection
 	 * @mutates `this`
 	 */
-	subscribe(): () => void {
+	subscribe(filter?: AuditLogFilter): () => void {
 		this.disconnect();
 
+		this.#stream_filter = filter;
 		const source = new EventSource(this.#stream_url);
 		this.#event_source = source;
+		this.stream_status = 'connecting';
 
 		source.onopen = () => {
 			if (DEV) console.log('[audit_log_sse] connected');
-			this.connected = true;
-			// fill any gap from reconnection
-			if (this.#last_seq != null) {
-				void this.#fill_gap(this.#last_seq);
-			}
+			this.stream_status = 'open';
+			// fill any gap from before this open, or leave it to the fetch that
+			// anchors the list under the stream's filter
+			const fill = this.#last_seq != null && filters_equal(this.#list_filter, this.#stream_filter);
+			this.#fill_deferred = !fill;
+			if (fill) void this.#fill_gap(this.#last_seq!);
 		};
 
 		source.onmessage = (e) => {
+			let raw: AuditLogEventJson;
 			try {
 				const notification: SseNotification = JSON.parse(e.data as string);
-				const raw = notification.params as AuditLogEventJson;
+				raw = notification.params as AuditLogEventJson;
 				if (DEV) console.log('[audit_log_sse]', notification.method, raw);
-				// normalize SSE events to include username fields
-				const event: AuditLogEventWithUsernamesJson = {
-					...raw,
-					username: null,
-					target_username: null
-				};
-				// prepend — newest first, matching the fetch sort order
-				this.events = [event, ...this.events];
-				this.#last_seq = Math.max(this.#last_seq ?? 0, event.seq);
 			} catch {
 				// ignore malformed messages
+				return;
 			}
+			if (!audit_log_filter_matches(raw, this.#stream_filter)) return;
+			// a stream filter other than the list's lets through events the list
+			// excludes, and what it streams doesn't cover the list's filter
+			if (!audit_log_filter_matches(raw, this.#list_filter)) return;
+			const anchors = filters_equal(this.#list_filter, this.#stream_filter);
+			// normalize SSE events to include username fields
+			this.#merge([{ ...raw, username: null, target_username: null }], false, anchors);
 		};
 
 		source.onerror = () => {
 			if (DEV) console.log('[audit_log_sse] error, readyState:', source.readyState);
-			this.connected = source.readyState === EventSource.OPEN;
+			if (source !== this.#event_source) return;
+			if (source.readyState === EventSource.CLOSED) {
+				// `EventSource` gave up (a refused reconnect) and won't retry
+				source.close();
+				this.#event_source = null;
+				this.stream_status = 'closed';
+			} else {
+				this.stream_status = 'connecting';
+			}
 		};
 
 		return () => this.disconnect();
 	}
 
 	/**
-	 * Close the SSE connection.
+	 * Close the SSE connection and abort an in-flight gap fill.
 	 *
 	 * @mutates `this`
 	 */
 	disconnect(): void {
+		this.gap_fill.abort();
 		if (this.#event_source) {
 			this.#event_source.close();
 			this.#event_source = null;
 		}
-		this.connected = false;
+		this.stream_status = 'off';
 	}
 
-	/** Fetch events missed during disconnection, keyed by `since_seq`. */
+	/**
+	 * Fetch the events missed before the stream (re)opened, with the stream's
+	 * filter. A full page means the gap may hold more than the limit returns.
+	 */
 	async #fill_gap(since_seq: number): Promise<void> {
-		try {
-			const { events: gap_events } = await this.#get_rpc().list({ since_seq, limit: 200 });
-			if (gap_events.length === 0) return;
-			// merge — deduplicate by id, keep newest-first order
-			const existing_ids = new Set(this.events.map((e) => e.id));
-			const new_events = gap_events.filter((e) => !existing_ids.has(e.id));
-			if (new_events.length > 0) {
-				this.events = [...new_events, ...this.events];
-				this.#update_last_seq(new_events);
-			}
-		} catch {
-			// gap fill is best-effort
-		}
+		const filter = this.#stream_filter;
+		await this.gap_fill.run(async (signal) => {
+			const limit = AUDIT_LOG_LIST_LIMIT_MAX;
+			const { events } = await this.#get_rpc().list({ ...filter, since_seq, limit });
+			// a disconnect or a newer fill aborted this one, maybe under another filter
+			if (signal.aborted) return;
+			if (events.length >= limit) this.gap_truncated = true;
+			this.#merge(events, true, true);
+		});
 	}
 
-	/** Update `#last_seq` from an array of events. */
-	#update_last_seq(events: Array<AuditLogEventWithUsernamesJson>): void {
-		for (const event of events) {
-			this.#last_seq = Math.max(this.#last_seq ?? 0, event.seq);
+	/**
+	 * Merge events into the newest-first list by `seq`, deduplicating by `id`.
+	 *
+	 * @param incoming - events to merge, any order
+	 * @param replace - whether an incoming event replaces a listed one with the
+	 *   same `id` (gap-fill rows carry resolved usernames; live rows don't)
+	 * @param anchors - whether the events advance the gap-fill anchor (live rows
+	 *   under another filter than the list's don't)
+	 */
+	#merge(
+		incoming: Array<AuditLogEventWithUsernamesJson>,
+		replace: boolean,
+		anchors: boolean
+	): void {
+		if (incoming.length === 0) return;
+		if (anchors) this.#last_seq = Math.max(this.#last_seq ?? 0, max_seq(incoming));
+		const head = this.events[0];
+		// fast path: one live event newer than everything listed
+		if (incoming.length === 1 && (!head || incoming[0]!.seq > head.seq)) {
+			this.events = [incoming[0]!, ...this.events];
+			return;
 		}
+		const by_id: Map<string, AuditLogEventWithUsernamesJson> = new Map();
+		for (const event of this.events) by_id.set(event.id, event);
+		for (const event of incoming) {
+			if (replace || !by_id.has(event.id)) by_id.set(event.id, event);
+		}
+		this.events = Array.from(by_id.values()).sort((a, b) => b.seq - a.seq);
 	}
 }
+
+/** The filter fields of a list input. */
+const to_audit_log_filter = (input: AuditLogListInput | undefined): AuditLogFilter | undefined => {
+	if (!input) return undefined;
+	const { event_type, outcome, account_id } = input;
+	return { event_type, outcome, account_id };
+};
+
+/** Whether two filters select the same events — absent and empty fields are equal. */
+const filters_equal = (a: AuditLogFilter | undefined, b: AuditLogFilter | undefined): boolean =>
+	(a?.event_type || undefined) === (b?.event_type || undefined) &&
+	(a?.outcome || undefined) === (b?.outcome || undefined) &&
+	(a?.account_id || undefined) === (b?.account_id || undefined);
+
+const max_seq = (events: Array<AuditLogEventJson>): number => {
+	let max = 0;
+	for (const event of events) if (event.seq > max) max = event.seq;
+	return max;
+};

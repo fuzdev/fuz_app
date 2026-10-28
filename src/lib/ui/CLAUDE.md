@@ -304,8 +304,11 @@ destructive actions.
   per-row error displays inline next to the failing button (no
   top-level rollup).
 - `AdminAuditLog.svelte` — audit event stream. Consumes
-  `audit_log_rpc_context`. Filter by `event_type`, manual refresh,
-  toggle SSE streaming (via `EventSource` — not RPC).
+  `audit_log_rpc_context`. Filter by `event_type` (the stream reopens with
+  it), manual refresh, toggle SSE streaming (via `EventSource` — not RPC);
+  a closed stream shows a retry in place of the stream toggle (a filter
+  change leaves it closed), and a
+  failed or truncated gap fill says events may be missing.
 - `AdminInvites.svelte` — invite CRUD + embeds `OpenSignupToggle`.
   Consumes `admin_invites_rpc_context`. Per-row delete reads
   `state.remove.loading(invite_id)` / `state.remove.error(invite_id)`
@@ -476,14 +479,30 @@ the `submit_*` prefix where the verb collides with a slot name.
   `submit_revoke(id)`, `submit_revoke_all`. Derived `active_count`.
 - `audit_log_state.svelte.ts` — `AuditLogState` +
   `audit_log_rpc_context` + narrow `AuditLogRpc` (`list` +
-  `role_grant_history`). Slots: `list`, `role_grant_history`. Fields:
-  `events`, `role_grant_history_events`, `connected`. Internal
-  `#last_seq` for SSE gap fill on reconnect. Methods:
-  `fetch(options?)` (RPC), `fetch_role_grant_history`, `subscribe()`
-  (opens `EventSource` at `#stream_url`, default
-  `/api/admin/audit/stream`; prepends new events to `events`; refills
-  gap via `since_seq`), `disconnect()`. SSE stays on `EventSource` —
-  streaming is not an RPC concern.
+  `role_grant_history`). Slots: `list`, `role_grant_history`, `gap_fill`
+  (the catch-up fetch each stream open runs; its `error` surfaces a failed
+  fill). Fields: `events`, `role_grant_history_events`, `stream_status`
+  (`AuditLogStreamStatus`: `'off' | 'connecting' | 'open' | 'closed'` —
+  `'closed'` once `EventSource` stops retrying, e.g. after a revocation's
+  reconnect is refused; `subscribe` again to retry), `gap_truncated` (a gap
+  fill returned a full `AUDIT_LOG_LIST_LIMIT_MAX` page, so events may be
+  missing). Internal `#last_seq` anchors the gap fill (`fetch` sets it from
+  its result, `0` for an empty first page). Methods: `fetch(options?)` (RPC;
+  clears `gap_truncated` and a failed `gap_fill`, and a newest-page fetch
+  aborts an in-flight fill; mid-stream it keeps live events newer than the
+  page that match its filter), `fetch_role_grant_history`,
+  `subscribe(filter?: AuditLogFilter)` (opens `EventSource` at
+  `#stream_url`, default `/api/admin/audit/stream`; keeps live events that
+  pass the filter and gap-fills via `since_seq` with the same filter — only
+  while `events` was fetched with that filter: an open the list doesn't
+  match defers its fill to the `fetch` with the stream's filter, which fills
+  from its page, and live events under another filter merge only when they
+  match the list's, without advancing the anchor), `disconnect()` (also
+  aborts an in-flight gap fill). Live and
+  gap rows merge by `seq`, deduplicated by `id`, so `events` stays
+  newest-first. `audit_log_filter_matches(event, filter)` is the client-side
+  twin of the list query's filter. SSE stays on `EventSource` — streaming is
+  not an RPC concern.
 - `admin_accounts_state.svelte.ts` — `AdminAccountsState` +
   `admin_accounts_rpc_context` + narrow `AdminAccountsRpc` (nine
   methods: `list_accounts` (`include_deleted?`), `delete_account`,
