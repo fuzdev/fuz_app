@@ -18,6 +18,7 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { z } from 'zod';
 import { DEV } from 'esm-env';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
+import { UnreachableError } from '@fuzdev/fuz_util/error.ts';
 
 import type { RpcAction } from './action_types.ts';
 import { type RouteContext, type RouteSpec } from '../http/route_spec.ts';
@@ -30,14 +31,16 @@ import {
 	TEST_CONTEXT_PRESET_KEY
 } from '../hono_context.ts';
 import { compile_action_registry } from './compile_action_registry.ts';
-import { JsonrpcRequest, type JsonrpcRequestId } from '../http/jsonrpc.ts';
+import type { JsonrpcRequestId } from '../http/jsonrpc.ts';
 import {
 	jsonrpc_error_messages,
 	jsonrpc_error_code_to_http_status,
-	JSONRPC_ERROR_CODES,
-	dev_only
+	JSONRPC_ERROR_CODES
 } from '../http/jsonrpc_errors.ts';
-import { create_jsonrpc_error_response, to_jsonrpc_envelope_id } from '../http/jsonrpc_helpers.ts';
+import {
+	classify_jsonrpc_message,
+	create_jsonrpc_error_response
+} from '../http/jsonrpc_helpers.ts';
 import type { RateLimiter } from '../rate_limiter.ts';
 import { perform_action, serialize_action_result } from './perform_action.ts';
 
@@ -82,7 +85,7 @@ export interface CreateRpcEndpointOptions {
  * Returns two `RouteSpec` entries (GET + POST on the same path) for
  * `apply_route_specs`. The internal dispatcher handles:
  *
- * 1. **Parse envelope** — POST: JSON body as `JsonrpcRequest`. GET: `method`
+ * 1. **Parse envelope** — POST: JSON body through `classify_jsonrpc_message`. GET: `method`
  *    and `params` from query string.
  * 2. **Lookup method** — find the `RpcAction` by method name.
  * 3. **Pre-authorization auth** — short-circuit `unauthenticated` when no
@@ -237,18 +240,26 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 			return c.json(error, 400);
 		}
 
-		const envelope = JsonrpcRequest.safeParse(body);
-		if (!envelope.success) {
-			// echo the id when the body is an object carrying one — the same
-			// extraction the WS path runs; a scalar body answers `id: null`
-			const error = create_jsonrpc_error_response(
-				to_jsonrpc_envelope_id(body),
-				jsonrpc_error_messages.invalid_request(dev_only({ issues: envelope.error.issues }))
-			);
-			return c.json(error, 400);
+		// the classifier the WS path runs; HTTP issues no server-initiated
+		// requests and has no notification semantics, so a response or a
+		// notification answers `invalid_request` on `id: null`, as on the Rust spine
+		const classified = classify_jsonrpc_message(body);
+		switch (classified.kind) {
+			case 'request': {
+				const { method, params, id } = classified.request;
+				return dispatch(c, route, method, params, id, false);
+			}
+			case 'invalid':
+				return c.json(create_jsonrpc_error_response(classified.id, classified.error), 400);
+			case 'notification':
+			case 'response':
+				return c.json(
+					create_jsonrpc_error_response(null, jsonrpc_error_messages.invalid_request()),
+					400
+				);
+			default:
+				throw new UnreachableError(classified);
 		}
-
-		return dispatch(c, route, envelope.data.method, envelope.data.params, envelope.data.id, false);
 	};
 
 	// GET handler — extract method and params from query string

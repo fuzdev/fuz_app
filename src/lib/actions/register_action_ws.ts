@@ -166,22 +166,13 @@ import { parse_acting, type RouteAuth } from '../http/auth_shape.ts';
 import { get_client_ip } from '../http/client_ip.ts';
 import { flush_request_effects, type EffectErrorContext } from '../http/pending_effects.ts';
 import type { RateLimiter } from '../rate_limiter.ts';
+import type { JsonrpcErrorResponse, JsonrpcRequestId } from '../http/jsonrpc.ts';
+import { jsonrpc_error_messages } from '../http/jsonrpc_errors.ts';
 import {
-	JsonrpcRequest,
-	type JsonrpcErrorResponse,
-	type JsonrpcRequestId,
-	type JsonrpcResponse
-} from '../http/jsonrpc.ts';
-import { dev_only, jsonrpc_error_messages } from '../http/jsonrpc_errors.ts';
-import {
+	classify_jsonrpc_message,
 	create_jsonrpc_error_response,
 	create_jsonrpc_notification,
-	to_jsonrpc_envelope_id,
-	to_jsonrpc_message_id,
-	to_jsonrpc_params,
-	is_jsonrpc_object,
-	is_jsonrpc_request,
-	is_jsonrpc_request_id
+	to_jsonrpc_params
 } from '../http/jsonrpc_helpers.ts';
 import { TOKEN_SCOPE_KEY, TEST_CONTEXT_PRESET_KEY } from '../hono_context.ts';
 import type { Db } from '../db/db.ts';
@@ -315,33 +306,6 @@ const send_error_response = (
 	error: JsonrpcErrorResponse['error']
 ): void => {
 	registry.send_to(connection_id, JSON.stringify(create_jsonrpc_error_response(id, error)));
-};
-
-/**
- * Whether a frame is a reply to a server-initiated request, in the shape the
- * Rust twin's `classify` accepts: `jsonrpc: '2.0'`, **no** string `method`, a
- * string/number `id`, and exactly one of `result` / `error`.
- *
- * The method axis is string-typed like the twin, whose
- * `obj.get("method").and_then(Value::as_str)` reads a present-but-non-string
- * `method` as absent — so `{id, method: 123, result}` is a response on both
- * sides, not a request. The `result` / `error` XOR likewise refuses a frame
- * carrying both, so neither side has to pick a winner between them.
- *
- * Deliberately narrower than the `is_jsonrpc_response` /
- * `is_jsonrpc_error_response` guards, which only ask for a version, an `id`,
- * and a `result` or `error` — those stay loose because a client matching a
- * reply must still recognize an error response carrying `id: null`. Here a
- * loose match would swallow hybrids the twin answers: `{method, id, result}`
- * is a request the dispatcher should run, and `{id, result, error}` or a
- * boolean `id` is `invalid_request`. Everything this rejects falls through to
- * the version guard / notification / envelope steps below.
- */
-const is_peer_response = (json: unknown): json is JsonrpcResponse | JsonrpcErrorResponse => {
-	if (!is_jsonrpc_object(json)) return false;
-	if (typeof (json as { method?: unknown }).method === 'string') return false;
-	if (!is_jsonrpc_request_id((json as { id?: unknown }).id)) return false;
-	return 'result' in json !== 'error' in json;
 };
 
 /**
@@ -1167,50 +1131,32 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 					return;
 				}
 
-				// Inbound responses to server-initiated requests (`peer/ping`,
-				// etc.) — route to the pending-request registry scoped to THIS
-				// socket. A response carries a string/number `id`, exactly one
-				// of `result` / `error`, and no string `method`, so it precedes the
-				// request/notification split below. An unmatched id
-				// (unsolicited, cross-connection, or already settled) resolves
-				// nothing and is dropped, so the read loop survives a junk
-				// frame.
-				if (is_peer_response(json)) {
-					const matched = registry.resolve_peer_response(connection_id, json);
-					if (!matched) audit_unmatched_peer_response(log, connection_id, json.id);
-					return;
-				}
-
-				// Envelope version — the first thing the Rust twin's `classify`
-				// checks (version → id → method → params). A frame without
-				// `jsonrpc: '2.0'` is `invalid_request` on both transports
-				// rather than falling through to the notification branch,
-				// which would silently drop `{method: 'x'}` and
-				// `{jsonrpc: '1.0', method: 'x'}`. It also covers a
-				// non-object frame (a scalar has no id to echo — `id: null`).
-				// A genuine peer response carries the version and is matched
-				// above; a response-shaped frame that misses that shape check
-				// falls through here on purpose, so it is answered rather
-				// than swallowed.
-				if (!is_jsonrpc_object(json)) {
-					send_error(to_jsonrpc_envelope_id(json), jsonrpc_error_messages.invalid_request());
-					return;
-				}
-
-				// Notifications (string method + no id) — `cancel` is
-				// intercepted for request-scoped cancellation; other
-				// notifications are silenced per JSON-RPC spec (consumer
-				// notification handlers are not a feature yet). The method
-				// axis is string-typed like the twin's `classify`, so a
-				// non-string `method` is answered `invalid_request` below
-				// rather than silently dropped as a notification.
-				if (!is_jsonrpc_request(json)) {
-					const notification_method = (json as { method?: unknown }).method;
-					if (typeof notification_method === 'string' && !('id' in json)) {
-						if (notification_method === cancel_action_spec.method) {
-							const parsed = CancelNotificationParams.safeParse(
-								(json as { params?: unknown }).params
-							);
+				// One classifier for both transports (`classify_jsonrpc_message`,
+				// the Rust twin's order: version → method → id → params); this
+				// path applies the WebSocket semantics to its arms.
+				const classified = classify_jsonrpc_message(json);
+				switch (classified.kind) {
+					case 'invalid':
+						send_error(classified.id, classified.error);
+						return;
+					case 'response': {
+						// A reply to a server-initiated request (`peer/ping`, etc.) —
+						// routed to the pending-request registry scoped to THIS
+						// socket. An unmatched id (unsolicited, cross-connection, or
+						// already settled) resolves nothing and is dropped, so the
+						// read loop survives a junk frame.
+						const { response } = classified;
+						const matched = registry.resolve_peer_response(connection_id, response);
+						if (!matched) audit_unmatched_peer_response(log, connection_id, response.id);
+						return;
+					}
+					case 'notification': {
+						// `cancel` is intercepted for request-scoped cancellation;
+						// other notifications are silenced per JSON-RPC spec (consumer
+						// notification handlers are not a feature yet). Notifications
+						// stay unvalidated — they carry no id to answer an error on.
+						if (classified.method === cancel_action_spec.method) {
+							const parsed = CancelNotificationParams.safeParse(classified.params);
 							if (!parsed.success) {
 								log.debug('cancel: invalid params, ignoring', parsed.error.issues);
 								return;
@@ -1224,28 +1170,13 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 						}
 						return;
 					}
-					send_error(to_jsonrpc_message_id(json), jsonrpc_error_messages.invalid_request());
-					return;
+					case 'request':
+						break;
+					default:
+						throw new UnreachableError(classified);
 				}
 
-				// Envelope validation — the same `JsonrpcRequest.safeParse` the
-				// HTTP POST path runs, so a malformed envelope (`params: null`,
-				// an array `params`, a boolean `id`) answers `invalid_request`
-				// on both transports instead of reaching the dispatcher and
-				// surfacing as `invalid_params`. It sits after the
-				// notification / cancel block so notifications stay
-				// unvalidated (they carry no id to echo) and `cancel` routing
-				// precedes it.
-				const envelope = JsonrpcRequest.safeParse(json);
-				if (!envelope.success) {
-					send_error(
-						to_jsonrpc_message_id(json),
-						jsonrpc_error_messages.invalid_request(dev_only({ issues: envelope.error.issues }))
-					);
-					return;
-				}
-
-				const { method, id, params } = envelope.data;
+				const { method, id, params } = classified.request;
 
 				// A request is live from here until its reply is sent. One reusing
 				// a live id is refused rather than dispatched: two requests under

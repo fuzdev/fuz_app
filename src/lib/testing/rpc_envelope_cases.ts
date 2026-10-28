@@ -157,6 +157,13 @@ export const create_rpc_envelope_cases = (
 			id: null,
 			reason: null
 		});
+		// HTTP issues no server-initiated requests, so a reply is refused like a
+		// notification, its id unechoed
+		post(
+			'response-shaped body → invalid_request',
+			JSON.stringify({ jsonrpc: '2.0', id, result: {} }),
+			{ ...invalid_request, id: null, reason: null }
+		);
 		post(
 			'batch (array) body → invalid_request',
 			JSON.stringify([{ jsonrpc: '2.0', id, method: m }]),

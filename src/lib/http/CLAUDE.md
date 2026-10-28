@@ -28,7 +28,7 @@ effects, see ../../../docs/architecture.md.
 - `http/origin.ts` — origin allowlist: the strict pattern grammar shared with the Rust spine, typed refusals, and the Origin-only middleware.
 - `http/jsonrpc.ts` — JSON-RPC 2.0 envelope schemas (MCP superset), `JsonrpcErrorCode`, `_meta`.
 - `http/jsonrpc_errors.ts` — `ThrownJsonrpcError`, `jsonrpc_errors` throwers, HTTP-status mappings.
-- `http/jsonrpc_helpers.ts` — message builders, type guards, input/result normalizers.
+- `http/jsonrpc_helpers.ts` — message builders, type guards, input/result normalizers, and `classify_jsonrpc_message`, the one envelope classifier both transports run.
 - `http/common_routes.ts` — health check + readiness probe (`/ready` schema-drift deploy gate) + authenticated server-status route specs (the surface explorer route lives in `server/surface_route.ts`).
 - `http/db_routes.ts` — allowlist-gated keeper-only table browser route specs (`public` schema, minus the `NON_BROWSABLE_TABLES` credential floor).
 - `http/pending_effects.ts` — `emit_after_commit` + `dispatch_with_post_commit_rollback` (the shared rollback-discard wrapper both dispatch sites use) + `flush_request_effects` (the one two-queue flush HTTP and WS share, over `flush_pending_effects` + `flush_post_commit_effects`) + `EffectErrorContext` + `EmitAfterCommitContext`.
@@ -446,6 +446,7 @@ which holds a declaration to the same rules.
 - Builders in `http/jsonrpc_helpers.ts`: `create_jsonrpc_request`, `create_jsonrpc_notification`, `create_jsonrpc_response`, `create_jsonrpc_error_response`, `create_jsonrpc_error_response_from_thrown` (preserves code/message/data on `ThrownJsonrpcError`; plain `Error` → `internal_error` with `{stack}` in DEV)
 - Type guards: `is_jsonrpc_request_id` (rejects NaN/Infinity), `is_jsonrpc_object`, `is_jsonrpc_request` / `_notification` / `_response` / `_error_response`
 - Converters: `to_jsonrpc_message_id`, `to_jsonrpc_params` (normalizes primitives to `{value}`)
+- Classifier: `classify_jsonrpc_message(json)` → `ClassifiedJsonrpcMessage` (`request` / `notification` / `response` / `invalid`, the last carrying the error and the id to answer it on), twin of the Rust `fuz_http::classify` in order and answers. The WS frame handler and the HTTP POST handler switch on it, each keeping its transport's arms: WS refuses batches before it, routes `cancel` and peer responses, and checks duplicate ids and the in-flight ceiling after; POST answers a notification or a response `invalid_request` on `id: null`. Only a refused request envelope carries data — the schema's issues, DEV-only.
 
 Handlers can `throw jsonrpc_errors.*` — `apply_route_specs`' error-catch
 layer converts to the flat REST body (`{error: <reason>, message?, ...rest_data}`)

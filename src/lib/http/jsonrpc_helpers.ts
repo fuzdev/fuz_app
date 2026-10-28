@@ -11,11 +11,12 @@
 import { DEV } from 'esm-env';
 
 import {
+	JsonrpcRequest,
+	type JsonrpcErrorObject,
 	type JsonrpcErrorResponse,
 	type JsonrpcMethod,
 	type JsonrpcNotification,
 	type JsonrpcNotificationParams,
-	type JsonrpcRequest,
 	type JsonrpcRequestId,
 	type JsonrpcRequestParams,
 	type JsonrpcResponse,
@@ -23,7 +24,12 @@ import {
 	type JsonrpcErrorCode,
 	JSONRPC_VERSION
 } from './jsonrpc.ts';
-import { ThrownJsonrpcError, JSONRPC_ERROR_CODES } from './jsonrpc_errors.ts';
+import {
+	ThrownJsonrpcError,
+	JSONRPC_ERROR_CODES,
+	dev_only,
+	jsonrpc_error_messages
+} from './jsonrpc_errors.ts';
 
 // --- Message builders ---
 
@@ -163,21 +169,6 @@ export const to_jsonrpc_message_id = (message_or_id: unknown): JsonrpcRequestId 
 };
 
 /**
- * The id an error response to a rejected envelope can echo: the frame's
- * `id` when the frame is an object carrying a valid one, else `null`.
- *
- * Unlike `to_jsonrpc_message_id`, a scalar frame (`5`, `"x"`) is never read
- * as its own id — a non-object body has no id to echo, which is the Rust
- * twin's `classify` answer too. Both transports use this for the
- * `invalid_request` reply.
- *
- * @param frame - the parsed body, of any shape
- * @returns the echoable id, or `null`
- */
-export const to_jsonrpc_envelope_id = (frame: unknown): JsonrpcRequestId | null =>
-	typeof frame === 'object' ? to_jsonrpc_message_id(frame) : null;
-
-/**
  * Normalizes input to JSON-RPC params format.
  * Returns `undefined` for null/undefined, wraps primitives in `{value}`.
  */
@@ -189,4 +180,85 @@ export const to_jsonrpc_params = (input: unknown): Record<string, any> | undefin
 		return input as Record<string, any>;
 	}
 	return { value: input };
+};
+
+// --- Classification ---
+
+/**
+ * A parsed JSON value classified as a JSON-RPC message by
+ * `classify_jsonrpc_message` — transport-agnostic, each transport applying
+ * its own semantics to the arms:
+ *
+ * - `request` — a valid request envelope, ready for dispatch.
+ * - `notification` — a string `method` and no `id` key. `params` is handed
+ *   back unvalidated (a notification has no id to answer an error on).
+ *   The WebSocket path routes `cancel` and drops every other one; HTTP
+ *   answers `invalid_request` with `id: null`.
+ * - `response` — no string `method`, a string or number `id`, and exactly
+ *   one of `result` / `error`: a reply to a server-initiated request. The
+ *   WebSocket path routes it to the pending peer request; HTTP issues no
+ *   server-initiated requests, so it answers `invalid_request` with `id: null`.
+ * - `invalid` — the error to answer and the id to answer it on.
+ *
+ * Twin of the Rust spine's `fuz_http::Classified`.
+ */
+export type ClassifiedJsonrpcMessage =
+	| { kind: 'request'; request: JsonrpcRequest }
+	| { kind: 'notification'; method: JsonrpcMethod; params: unknown }
+	| { kind: 'response'; response: JsonrpcResponse | JsonrpcErrorResponse }
+	| { kind: 'invalid'; id: JsonrpcRequestId | null; error: JsonrpcErrorObject };
+
+/**
+ * Classify a parsed JSON value as a JSON-RPC message, in the Rust twin's
+ * order: version, then the `method` axis (none, or a non-string one: a
+ * response or invalid), then `id` (none: a notification), then the request
+ * envelope (`JsonrpcRequest` — string or number `id`, `params` absent or an
+ * object).
+ *
+ * The `method` axis is string-typed like the twin, whose
+ * `obj.get("method").and_then(Value::as_str)` reads a present non-string
+ * `method` as absent — so `{id, method: 123, result}` is a response on both
+ * sides. The `result` / `error` exclusive-or refuses a frame carrying both.
+ *
+ * Every `invalid` is `invalid_request`. Its `id` is the frame's own when the
+ * frame is an object carrying a string or number one, else `null` — a
+ * non-object frame (an array included) has none. A refused request envelope
+ * carries the schema's issues in DEV, as `data.issues`; nothing else carries
+ * data.
+ *
+ * @param json - the parsed frame or body, of any shape
+ * @returns the classification
+ */
+export const classify_jsonrpc_message = (json: unknown): ClassifiedJsonrpcMessage => {
+	// an array falls through to the version check, with no `id` to echo
+	if (typeof json !== 'object' || json === null) {
+		return { kind: 'invalid', id: null, error: jsonrpc_error_messages.invalid_request() };
+	}
+	const frame = json as Record<string, unknown>;
+	const id = to_jsonrpc_message_id(frame);
+	if (frame.jsonrpc !== JSONRPC_VERSION) {
+		return { kind: 'invalid', id, error: jsonrpc_error_messages.invalid_request() };
+	}
+	const { method } = frame;
+	if (typeof method !== 'string') {
+		if (id !== null && 'result' in frame !== 'error' in frame) {
+			return { kind: 'response', response: frame as JsonrpcResponse | JsonrpcErrorResponse };
+		}
+		// a non-string `method` beside an `id` is a malformed request — the
+		// envelope schema below refuses it with its issues
+		if (!('method' in frame && 'id' in frame)) {
+			return { kind: 'invalid', id, error: jsonrpc_error_messages.invalid_request() };
+		}
+	} else if (!('id' in frame)) {
+		return { kind: 'notification', method, params: frame.params };
+	}
+	const parsed = JsonrpcRequest.safeParse(frame);
+	if (!parsed.success) {
+		return {
+			kind: 'invalid',
+			id,
+			error: jsonrpc_error_messages.invalid_request(dev_only({ issues: parsed.error.issues }))
+		};
+	}
+	return { kind: 'request', request: parsed.data };
 };
