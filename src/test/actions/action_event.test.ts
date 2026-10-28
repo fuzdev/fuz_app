@@ -20,6 +20,11 @@ import type { ActionEventEnvironment } from '#lib/actions/action_event_types.ts'
 import type { ActionSpecUnion } from '#lib/actions/action_spec.ts';
 import type { ActionEventDataUnion } from '#lib/actions/action_event_data.ts';
 
+import {
+	ForeignRpcError,
+	SecondCopyThrownJsonrpcError
+} from '../http/thrown_jsonrpc_error_helpers.ts';
+
 // Inline test specs
 const ping_spec = {
 	method: 'ping',
@@ -363,6 +368,36 @@ describe('ActionEvent handler errors', () => {
 		assert.strictEqual(event.data.phase, 'receive_error');
 		assert.strictEqual(event.data.error?.code, JSONRPC_ERROR_CODES.internal_error);
 		assert.strictEqual(event.data.error?.message, 'bad session payload');
+	});
+
+	test('a ThrownJsonrpcError from a second fuz_app copy keeps its code, message, and data', async () => {
+		const env = new TestEnvironment([ping_spec]);
+		env.add_handler('ping', 'receive_response', () => {
+			throw new SecondCopyThrownJsonrpcError(JSONRPC_ERROR_CODES.forbidden, 'nope', {
+				reason: 'test'
+			});
+		});
+		const event = await receive_ping_result(env, { pong: true });
+		await event.handle_async();
+		assert.strictEqual(event.data.phase, 'receive_error');
+		assert.deepStrictEqual(event.data.error, {
+			code: JSONRPC_ERROR_CODES.forbidden,
+			message: 'nope',
+			data: { reason: 'test' }
+		});
+	});
+
+	test('a foreign error class carrying a JSON-RPC code is an internal_error', async () => {
+		const env = new TestEnvironment([ping_spec]);
+		env.add_handler('ping', 'receive_response', () => {
+			throw new ForeignRpcError(JSONRPC_ERROR_CODES.invalid_params, 'bad', { secret: 'x' });
+		});
+		const event = await receive_ping_result(env, { pong: true });
+		await event.handle_async();
+		assert.strictEqual(event.data.phase, 'receive_error');
+		assert.strictEqual(event.data.error?.code, JSONRPC_ERROR_CODES.internal_error);
+		assert.strictEqual(event.data.error?.message, 'bad');
+		assert.isUndefined(event.data.error?.data);
 	});
 
 	test('a non-Error throw is stringified', async () => {

@@ -412,7 +412,11 @@ context fields (`required_role`, `retry_after`, `detail`) are diagnostic.
 
 **Thrown errors serialize per-transport.** Handlers that throw a
 `ThrownJsonrpcError` (e.g. `jsonrpc_errors.forbidden(...)`) hit the
-transport's catch wrapper:
+transport's catch wrapper, which reads it through one recognizer,
+`to_thrown_jsonrpc_error` (`http/jsonrpc_errors.ts`) — by a realm-global
+brand, so one thrown from a second copy of fuz_app maps the same on every
+transport, while a foreign error class carrying a JSON-RPC `code` is masked
+as `internal_error`:
 
 - **REST** — `wrap_error_catch` in `http/route_spec.ts` flattens to the
   `ApiError` shape `{error: <reason>, message?, ...rest}`. `reason` comes

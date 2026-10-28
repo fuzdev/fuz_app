@@ -8,7 +8,7 @@
 import { DEV } from 'esm-env';
 
 import {
-	ThrownJsonrpcError,
+	to_thrown_jsonrpc_error,
 	jsonrpc_error_messages,
 	http_status_to_jsonrpc_error_code,
 	jsonrpc_error_code_to_http_status,
@@ -227,13 +227,8 @@ export class FrontendHttpTransport implements Transport {
 				)
 			);
 		} catch (error) {
-			if (error instanceof ThrownJsonrpcError) {
-				return create_jsonrpc_error_response(to_jsonrpc_message_id(message), {
-					code: error.code,
-					message: error.message,
-					data: error.data
-				});
-			}
+			const thrown = to_thrown_jsonrpc_error(error);
+			if (thrown) return create_jsonrpc_error_response(to_jsonrpc_message_id(message), thrown);
 			return create_jsonrpc_error_response(
 				to_jsonrpc_message_id(message),
 				jsonrpc_error_messages.internal_error('error sending request', {

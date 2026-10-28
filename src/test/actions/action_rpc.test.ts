@@ -37,6 +37,11 @@ import { RateLimiter } from '#lib/rate_limiter.ts';
 import { ActingActor } from '#lib/http/auth_shape.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
 
+import {
+	ForeignRpcError,
+	SecondCopyThrownJsonrpcError
+} from '../http/thrown_jsonrpc_error_helpers.ts';
+
 const log = new Logger('test', { level: 'off' });
 const db = create_stub_db();
 
@@ -745,6 +750,57 @@ describe('POST dispatcher', () => {
 			assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.internal_error);
 		});
 	}
+
+	test('a foreign error class carrying a JSON-RPC code is an internal error, its data dropped', async () => {
+		const app = create_test_app([
+			{
+				spec: create_get_spec(),
+				handler: () => {
+					throw new ForeignRpcError(JSONRPC_ERROR_CODES.invalid_params, 'bad', {
+						secret: 'hunter2'
+					});
+				}
+			}
+		]);
+
+		const res = await app.request('/api/rpc', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: rpc_request('thing_list')
+		});
+		assert.strictEqual(res.status, 500);
+		const text = await res.text();
+		assert.notInclude(text, 'hunter2');
+		const body = JSON.parse(text);
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.internal_error);
+		assert.isUndefined(body.error.data);
+	});
+
+	test('a ThrownJsonrpcError from a second fuz_app copy keeps its code and data', async () => {
+		const app = create_test_app([
+			{
+				spec: create_get_spec(),
+				handler: () => {
+					throw new SecondCopyThrownJsonrpcError(JSONRPC_ERROR_CODES.conflict, 'taken', {
+						reason: 'name_taken'
+					});
+				}
+			}
+		]);
+
+		const res = await app.request('/api/rpc', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: rpc_request('thing_list')
+		});
+		assert.strictEqual(res.status, 409);
+		const body = await res.json();
+		assert.deepStrictEqual(body.error, {
+			code: JSONRPC_ERROR_CODES.conflict,
+			message: 'taken',
+			data: { reason: 'name_taken' }
+		});
+	});
 
 	test('dispatches side_effects:false action via POST', async () => {
 		const app = create_test_app([

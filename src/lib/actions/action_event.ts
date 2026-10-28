@@ -23,7 +23,7 @@ import {
 import {
 	dev_only,
 	jsonrpc_error_messages,
-	ThrownJsonrpcError,
+	to_thrown_jsonrpc_error,
 	UNKNOWN_ERROR_MESSAGE
 } from '../http/jsonrpc_errors.ts';
 import { safe_parse_dropping_unknown_keys } from '../http/schema_helpers.ts';
@@ -396,17 +396,17 @@ export class ActionEvent<
 	}
 
 	/**
-	 * Normalize a handler throw. `ThrownJsonrpcError` keeps its code, message,
-	 * and data; anything else becomes `internal_error` with the thrown message.
+	 * Normalize a handler throw. A `ThrownJsonrpcError` (from any fuz_app copy,
+	 * via `to_thrown_jsonrpc_error`) keeps its code, message, and data;
+	 * anything else becomes `internal_error` with the thrown message.
 	 * When the error answers a remote caller (`receive_request` /
 	 * `send_response`) the raw message is kept only in development — the same
 	 * `dev_only` gate the server dispatch uses, so paths or secrets in an
 	 * exception message never cross the wire in production.
 	 */
 	#to_handler_error(error: unknown): JsonrpcErrorObject {
-		if (error instanceof ThrownJsonrpcError) {
-			return { code: error.code, message: error.message, data: error.data };
-		}
+		const thrown = to_thrown_jsonrpc_error(error);
+		if (thrown) return thrown;
 		const message = to_error_message(error) || UNKNOWN_ERROR_MESSAGE;
 		const answers_remote =
 			this.#data.kind === 'request_response' &&

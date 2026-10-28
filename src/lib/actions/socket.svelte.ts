@@ -33,7 +33,12 @@ import { BROWSER } from 'esm-env';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 import type { AsyncStatus } from '@fuzdev/fuz_util/async.ts';
 
-import { JSONRPC_VERSION, type JsonrpcErrorCode, type JsonrpcRequestId } from '../http/jsonrpc.ts';
+import {
+	JSONRPC_VERSION,
+	is_jsonrpc_error_code,
+	type JsonrpcErrorCode,
+	type JsonrpcRequestId
+} from '../http/jsonrpc.ts';
 import { JSONRPC_ERROR_CODES, ThrownJsonrpcError, jsonrpc_errors } from '../http/jsonrpc_errors.ts';
 import {
 	WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT,
@@ -1030,11 +1035,12 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 							.error;
 						// Preserve the server's wire code verbatim so the transport's
 						// catch block re-emits the same code in its envelope. Fall
-						// back to `internal_error` only when the frame is malformed.
-						const wire_code =
-							typeof err.code === 'number'
-								? (err.code as JsonrpcErrorCode)
-								: JSONRPC_ERROR_CODES.internal_error;
+						// back to `internal_error` only when the frame is malformed —
+						// a code missing or outside the JSON-RPC set, which no
+						// `ThrownJsonrpcError` may carry.
+						const wire_code: JsonrpcErrorCode = is_jsonrpc_error_code(err.code)
+							? err.code
+							: JSONRPC_ERROR_CODES.internal_error;
 						const wire_message =
 							typeof err.message === 'string' && err.message.length > 0
 								? err.message

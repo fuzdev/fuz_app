@@ -25,10 +25,10 @@ import {
 	JSONRPC_VERSION
 } from './jsonrpc.ts';
 import {
-	ThrownJsonrpcError,
 	JSONRPC_ERROR_CODES,
 	dev_only,
-	jsonrpc_error_messages
+	jsonrpc_error_messages,
+	to_thrown_jsonrpc_error
 } from './jsonrpc_errors.ts';
 
 // --- Message builders ---
@@ -87,8 +87,11 @@ export const create_jsonrpc_error_response = (
 
 /**
  * Creates a JSON-RPC error response from any error.
- * Handles `ThrownJsonrpcError` (preserves code/message/data) and
- * regular `Error` objects (maps to internal_error, includes stack in DEV).
+ * Handles a thrown JSON-RPC error — a `ThrownJsonrpcError` from any copy of
+ * fuz_app, recognized by its brand (`to_thrown_jsonrpc_error`) — by
+ * preserving its code/message/data, and maps any other `Error`, a foreign
+ * class carrying a JSON-RPC `code` included, to internal_error, with its
+ * message and stack in DEV.
  */
 export const create_jsonrpc_error_response_from_thrown = (
 	id: JsonrpcRequestId | null,
@@ -98,10 +101,11 @@ export const create_jsonrpc_error_response_from_thrown = (
 	let message = 'internal server error';
 	let data: unknown = undefined;
 
-	if (error instanceof ThrownJsonrpcError) {
-		code = error.code;
-		message = error.message;
-		data = error.data;
+	const thrown = to_thrown_jsonrpc_error(error);
+	if (thrown) {
+		code = thrown.code;
+		message = thrown.message;
+		data = thrown.data;
 	} else if (error instanceof Error) {
 		if (DEV) {
 			message = error.message;

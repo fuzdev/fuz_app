@@ -24,6 +24,7 @@ import {
 	to_jsonrpc_message_id,
 	to_jsonrpc_params
 } from '#lib/http/jsonrpc_helpers.ts';
+import { ForeignRpcError, SecondCopyThrownJsonrpcError } from './thrown_jsonrpc_error_helpers.ts';
 
 describe('create_jsonrpc_request', () => {
 	test('creates request with params', () => {
@@ -96,6 +97,38 @@ describe('create_jsonrpc_error_response_from_thrown', () => {
 		assert.strictEqual(err.error.code, JSONRPC_ERROR_CODES.forbidden);
 		assert.strictEqual(err.error.message, 'nope');
 		assert.deepStrictEqual(err.error.data, { reason: 'test' });
+	});
+
+	test('handles a ThrownJsonrpcError from a second module copy', () => {
+		const err = create_jsonrpc_error_response_from_thrown(
+			1,
+			new SecondCopyThrownJsonrpcError(JSONRPC_ERROR_CODES.forbidden, 'nope', { reason: 'test' })
+		);
+		assert.strictEqual(err.error.code, JSONRPC_ERROR_CODES.forbidden);
+		assert.strictEqual(err.error.message, 'nope');
+		assert.deepStrictEqual(err.error.data, { reason: 'test' });
+	});
+
+	test('masks a foreign error class carrying a JSON-RPC code', () => {
+		const err = create_jsonrpc_error_response_from_thrown(
+			1,
+			new ForeignRpcError(JSONRPC_ERROR_CODES.invalid_params, 'bad', { secret: 'x' })
+		);
+		assert.strictEqual(err.error.code, JSONRPC_ERROR_CODES.internal_error);
+		// DEV is true in vitest — the message and stack ride along, the foreign data never
+		assert.strictEqual(err.error.message, 'bad');
+		assert.deepStrictEqual(Object.keys(err.error.data as object), ['stack']);
+	});
+
+	test('masks an Error whose numeric code is not a JSON-RPC one', () => {
+		const err = create_jsonrpc_error_response_from_thrown(
+			1,
+			new DOMException('The operation was aborted.', 'AbortError')
+		);
+		assert.strictEqual(err.error.code, JSONRPC_ERROR_CODES.internal_error);
+		// DEV is true in vitest — the message and stack ride along
+		assert.strictEqual(err.error.message, 'The operation was aborted.');
+		assert.ok((err.error.data as { stack?: string }).stack !== undefined);
 	});
 
 	test('handles regular Error', () => {

@@ -21,7 +21,7 @@ import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 
 import {
 	JSONRPC_ERROR_CODES,
-	ThrownJsonrpcError,
+	to_thrown_jsonrpc_error,
 	jsonrpc_error_messages
 } from '../http/jsonrpc_errors.ts';
 import { ERROR_PAYLOAD_TOO_LARGE } from '../http/error_schemas.ts';
@@ -281,13 +281,8 @@ export class FrontendWebsocketTransport implements Transport {
 				// any JSON value is a valid result — `null`, primitives, and arrays pass through
 				return create_jsonrpc_response(message.id, result as JsonrpcResult);
 			} catch (error) {
-				if (error instanceof ThrownJsonrpcError) {
-					return create_jsonrpc_error_response(message.id, {
-						code: error.code,
-						message: error.message,
-						data: error.data
-					});
-				}
+				const thrown = to_thrown_jsonrpc_error(error);
+				if (thrown) return create_jsonrpc_error_response(message.id, thrown);
 				return create_jsonrpc_error_response(
 					message.id,
 					jsonrpc_error_messages.internal_error(to_error_message(error))

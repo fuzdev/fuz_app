@@ -201,12 +201,16 @@ Shim responsibilities (per-request):
 5. Call `perform_action` (shared core).
 6. Bind result via `serialize_action_result(id, result, method, log)` (`actions/perform_action.ts`, shared with WS) → `{body, status}`, written with `c.json`'s content type.
 
-Error paths: `ThrownJsonrpcError` (duck-typed via `err instanceof Error &&
-is_jsonrpc_error_code(err.code)` to handle cross-copy `instanceof` misses,
-e.g. when consumers like zzz throw their own `ThrownJsonrpcError`)
-preserves code + data verbatim; an error whose numeric `code` is not a
-JSON-RPC one (a `DOMException`) takes the generic path. Generic throws become `internal_error` 500;
-message is the raw error under `DEV`, "internal server error" otherwise.
+Error paths: `ThrownJsonrpcError` (recognized through
+`to_thrown_jsonrpc_error` in `http/jsonrpc_errors.ts` by its realm-global
+brand, so one from a second fuz_app copy — e.g. a consumer like zzz resolving
+its own — matches where `instanceof` misses; the REST catch layer, the frontend
+transports, and `ActionEvent` read thrown errors the same way) preserves code +
+data verbatim. Anything else takes the generic path: a foreign error class
+carrying a JSON-RPC `code`, a `ThrownJsonrpcError` whose `code` was cast
+outside the JSON-RPC set, a `DOMException`. Generic throws become
+`internal_error` 500; message is the raw error under `DEV`, "internal server
+error" otherwise.
 
 A result that cannot be serialized (a `bigint`, a cycle) answers the same
 `internal_error` 500 rather than throwing (`serialize_action_result`, which the

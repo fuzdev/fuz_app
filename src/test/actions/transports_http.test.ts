@@ -15,6 +15,11 @@ import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
 import { is_jsonrpc_error_response } from '#lib/http/jsonrpc_helpers.ts';
 import type { JsonrpcRequest } from '#lib/http/jsonrpc.ts';
 
+import {
+	ForeignRpcError,
+	SecondCopyThrownJsonrpcError
+} from '../http/thrown_jsonrpc_error_helpers.ts';
+
 afterEach(() => {
 	vi.restoreAllMocks();
 });
@@ -63,6 +68,31 @@ const create_transport = (): FrontendHttpTransport =>
 
 const error_body = (id: unknown, code: number, message: string, data?: unknown): string =>
 	JSON.stringify({ jsonrpc: '2.0', id, error: { code, message, data } });
+
+describe('FrontendHttpTransport thrown errors', () => {
+	test('a ThrownJsonrpcError from a second fuz_app copy keeps its code, message, and data', async () => {
+		vi.spyOn(globalThis, 'fetch').mockRejectedValue(
+			new SecondCopyThrownJsonrpcError(JSONRPC_ERROR_CODES.forbidden, 'nope', { reason: 'test' })
+		);
+		const response = await create_transport().send(request);
+		assert.ok(is_jsonrpc_error_response(response));
+		assert.deepStrictEqual(response.error, {
+			code: JSONRPC_ERROR_CODES.forbidden,
+			message: 'nope',
+			data: { reason: 'test' }
+		});
+	});
+
+	test('a foreign error class carrying a JSON-RPC code is an internal_error', async () => {
+		vi.spyOn(globalThis, 'fetch').mockRejectedValue(
+			new ForeignRpcError(JSONRPC_ERROR_CODES.forbidden, 'nope', { reason: 'test' })
+		);
+		const response = await create_transport().send(request);
+		assert.ok(is_jsonrpc_error_response(response));
+		assert.strictEqual(response.error.code, JSONRPC_ERROR_CODES.internal_error);
+		assert.deepStrictEqual(response.error.data, { error: 'nope' });
+	});
+});
 
 describe('FrontendHttpTransport non-2xx responses', () => {
 	test('returns the server error body as-is, keeping code, message, and data', async () => {

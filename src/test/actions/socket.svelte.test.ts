@@ -1416,6 +1416,21 @@ describe('request()', () => {
 		assert.strictEqual(err.code, JSONRPC_ERROR_CODES.internal_error);
 	});
 
+	test('an error frame whose code is outside the JSON-RPC set falls back to internal_error', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+
+		const promise = client.request('echo', {});
+		last_ws().fire_message(make_error_response(1, 42, 'odd code', { field: 'x' }));
+
+		const err = await assert_rejects(() => promise, /odd code/);
+		assert.instanceOf(err, ThrownJsonrpcError);
+		assert.strictEqual(err.code, JSONRPC_ERROR_CODES.internal_error);
+		assert.strictEqual(err.message, 'odd code');
+		assert.deepStrictEqual(err.data, { field: 'x' });
+	});
+
 	test('monotonic ids across concurrent requests', () => {
 		const client = new FrontendWebsocketClient(TEST_URL);
 		client.connect();

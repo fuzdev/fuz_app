@@ -29,6 +29,7 @@ import {
 	JSONRPC_INTERNAL_ERROR,
 	JSONRPC_SERVER_ERROR_START,
 	JSONRPC_SERVER_ERROR_END,
+	is_jsonrpc_error_code,
 	type JsonrpcErrorCode,
 	type JsonrpcErrorObject
 } from './jsonrpc.ts';
@@ -245,8 +246,16 @@ export const jsonrpc_error_messages = Object.freeze({
 }) as Readonly<Record<JsonrpcErrorName, (...args: Array<any>) => JsonrpcErrorObject>>;
 
 /**
- * Error class carrying a JSON-RPC error code — thrown by handlers,
- * caught by `apply_route_specs` and mapped to HTTP status + JSON-RPC error response.
+ * Realm-global brand on `ThrownJsonrpcError.prototype`. `Symbol.for` makes
+ * every copy of this module that one process resolves mint the same key, so
+ * `to_thrown_jsonrpc_error` recognizes a `ThrownJsonrpcError` from any copy
+ * of fuz_app, where `instanceof` sees only its own class.
+ */
+const THROWN_JSONRPC_ERROR_BRAND: unique symbol = Symbol.for('@fuzdev/fuz_app/ThrownJsonrpcError');
+
+/**
+ * Error class carrying a JSON-RPC error code — thrown by handlers, read by
+ * `to_thrown_jsonrpc_error`, and mapped to HTTP status + JSON-RPC error response.
  *
  * Named for what it is: an error with a JSON-RPC error code that gets thrown.
  */
@@ -260,6 +269,44 @@ export class ThrownJsonrpcError extends Error {
 		this.data = data;
 	}
 }
+
+Object.defineProperty(ThrownJsonrpcError.prototype, THROWN_JSONRPC_ERROR_BRAND, { value: true });
+
+/**
+ * The JSON-RPC error a thrown value carries: a `ThrownJsonrpcError` from any
+ * copy of fuz_app, recognized by its realm-global brand rather than
+ * `instanceof` (two resolved copies of fuz_app in one process have two
+ * classes), whose `code` is a JSON-RPC error code. Anything else is no
+ * JSON-RPC error — a foreign error class carrying a JSON-RPC-shaped `code`
+ * (another library's RPC error), or a `ThrownJsonrpcError` whose `code` was
+ * cast outside the JSON-RPC set — so each caller masks it.
+ *
+ * The one thrown → wire conversion: the REST catch layer
+ * (`apply_route_specs`), the RPC dispatch core (`perform_action`),
+ * `create_jsonrpc_error_response_from_thrown`, the frontend HTTP and
+ * WebSocket transports, and `ActionEvent`'s handler-throw normalization all
+ * read a thrown error through it, each keeping its own masking of everything
+ * else.
+ *
+ * @param err - the thrown value
+ * @returns the error object (`data` present only when the error carries one), or `null` when `err` is no JSON-RPC error
+ */
+export const to_thrown_jsonrpc_error = (err: unknown): JsonrpcErrorObject | null => {
+	if (!(err instanceof Error)) return null;
+	const {
+		code,
+		data,
+		[THROWN_JSONRPC_ERROR_BRAND]: brand
+	} = err as {
+		code?: unknown;
+		data?: unknown;
+		[THROWN_JSONRPC_ERROR_BRAND]?: unknown;
+	};
+	if (brand !== true || !is_jsonrpc_error_code(code)) return null;
+	const error: JsonrpcErrorObject = { code, message: err.message };
+	if (data !== undefined) error.data = data;
+	return error;
+};
 
 const create_error_thrower =
 	<TFn extends (...args: Array<any>) => JsonrpcErrorObject>(

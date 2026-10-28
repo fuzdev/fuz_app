@@ -17,11 +17,21 @@ import {
 	type WebsocketRpcConnection
 } from '#lib/actions/transports_ws.ts';
 import { JSONRPC_ERROR_CODES, ThrownJsonrpcError } from '#lib/http/jsonrpc_errors.ts';
-import type { JsonrpcRequest, JsonrpcNotification, JsonrpcRequestId } from '#lib/http/jsonrpc.ts';
+import type {
+	JsonrpcErrorResponse,
+	JsonrpcRequest,
+	JsonrpcNotification,
+	JsonrpcRequestId
+} from '#lib/http/jsonrpc.ts';
 import { PEER_PING_METHOD, PEER_PROTOCOL_VERSION } from '#lib/actions/peer_ping.ts';
 import { DEFAULT_WS_MAX_MESSAGE_BYTES } from '#lib/actions/transports.ts';
 import { create_frontend_rpc_client } from '#lib/actions/frontend_rpc_client.ts';
 import type { ActionSpecUnion } from '#lib/actions/action_spec.ts';
+
+import {
+	ForeignRpcError,
+	SecondCopyThrownJsonrpcError
+} from '../http/thrown_jsonrpc_error_helpers.ts';
 
 interface RequestCall {
 	method: string;
@@ -280,6 +290,41 @@ describe('FrontendWebsocketTransport', () => {
 			id: 1,
 			error: { code: -32602, message: 'invalid params', data: { field: 'x' } }
 		});
+	});
+
+	test('request wraps a ThrownJsonrpcError from a second fuz_app copy verbatim', async () => {
+		const fake = create_fake_connection({
+			request_impl: async () => {
+				throw new SecondCopyThrownJsonrpcError(-32602, 'invalid params', { field: 'x' });
+			}
+		});
+		const transport = new FrontendWebsocketTransport(fake.connection, async () => null);
+
+		const message: JsonrpcRequest = { jsonrpc: '2.0', id: 1, method: 'echo', params: {} };
+		const response = await transport.send(message);
+
+		assert.deepStrictEqual(response, {
+			jsonrpc: '2.0',
+			id: 1,
+			error: { code: -32602, message: 'invalid params', data: { field: 'x' } }
+		});
+	});
+
+	test('request wraps a foreign error class carrying a JSON-RPC code as internal_error', async () => {
+		const fake = create_fake_connection({
+			request_impl: async () => {
+				throw new ForeignRpcError(-32602, 'invalid params', { secret: 'x' });
+			}
+		});
+		const transport = new FrontendWebsocketTransport(fake.connection, async () => null);
+
+		const message: JsonrpcRequest = { jsonrpc: '2.0', id: 1, method: 'echo', params: {} };
+		const response = await transport.send(message);
+
+		assert.ok('error' in response, 'expected error envelope');
+		const { error } = response as JsonrpcErrorResponse;
+		assert.strictEqual(error.code, JSONRPC_ERROR_CODES.internal_error);
+		assert.isUndefined(error.data);
 	});
 
 	test('request wraps unknown errors into internal_error envelope', async () => {

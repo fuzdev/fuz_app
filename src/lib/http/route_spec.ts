@@ -30,11 +30,12 @@ import {
 } from './error_schemas.ts';
 import { is_post_content_type_refused } from './simple_request.ts';
 import {
-	ThrownJsonrpcError,
 	jsonrpc_error_code_to_http_status,
 	jsonrpc_error_code_to_name,
-	dev_only
+	dev_only,
+	to_thrown_jsonrpc_error
 } from './jsonrpc_errors.ts';
+import type { JsonrpcErrorObject } from './jsonrpc.ts';
 import { is_null_schema, merge_error_schemas } from './schema_helpers.ts';
 import { dispatch_with_post_commit_rollback } from './pending_effects.ts';
 import type { MiddlewareSpec } from './middleware_spec.ts';
@@ -475,9 +476,12 @@ export const apply_middleware_specs = (app: Hono, specs: Array<MiddlewareSpec>):
 /**
  * Wrap a handler with error catch logic.
  *
- * Catches `ThrownJsonrpcError` and maps it to a flat REST `ApiError` body
- * (`{error: <reason>, message?, ...rest_data}`) at the matching HTTP status.
- * Catches generic `Error` and maps to `{error: 'internal_error', message?}`
+ * Catches a thrown JSON-RPC error — a `ThrownJsonrpcError` from any copy of
+ * fuz_app, recognized by its brand (`to_thrown_jsonrpc_error`) — and maps it
+ * to a flat REST `ApiError` body (`{error: <reason>, message?, ...rest_data}`)
+ * at the matching HTTP status.
+ * Catches anything else, a foreign error class carrying a JSON-RPC `code`
+ * included, and maps to `{error: 'internal_error', message?}`
  * at 500 (`message` populated only in DEV). Existing handlers that return
  * `c.json()` directly are unaffected — the catch layer only activates when
  * something is thrown.
@@ -504,9 +508,11 @@ const wrap_error_catch = (handler: Handler, log: Logger): Handler => {
 		try {
 			return await handler(c, next);
 		} catch (err) {
-			if (err instanceof ThrownJsonrpcError) {
-				const status = jsonrpc_error_code_to_http_status(err.code);
-				return c.json(build_rest_error_body(err), status);
+			// recognized by brand, so a second fuz_app copy's error maps too
+			const thrown = to_thrown_jsonrpc_error(err);
+			if (thrown) {
+				const status = jsonrpc_error_code_to_http_status(thrown.code);
+				return c.json(build_rest_error_body(thrown), status);
 			}
 			// generic error — internal_error. Raw exception messages can leak
 			// internals; surface them only in development (same gate as the
@@ -522,7 +528,7 @@ const wrap_error_catch = (handler: Handler, log: Logger): Handler => {
 };
 
 /**
- * Build the REST body for a thrown `ThrownJsonrpcError`. Splits out
+ * Build the REST body for a thrown JSON-RPC error. Splits out
  * for unit-test directness and keeps the catch handler readable.
  *
  * Reason resolution order:
@@ -533,7 +539,7 @@ const wrap_error_catch = (handler: Handler, log: Logger): Handler => {
  * the body. Non-object `data` is dropped — we don't want a primitive
  * `data` to overwrite the structured shape.
  */
-const build_rest_error_body = (err: ThrownJsonrpcError): Record<string, unknown> => {
+const build_rest_error_body = (err: JsonrpcErrorObject): Record<string, unknown> => {
 	let reason: string;
 	const rest: Record<string, unknown> = {};
 	if (
@@ -565,8 +571,9 @@ const build_rest_error_body = (err: ThrownJsonrpcError): Record<string, unknown>
  * adds input validation middleware (for routes with non-null input schemas),
  * runs the optional authorization phase to resolve the acting actor + build
  * the request context, wraps handler with DEV-only output and error
- * validation, wraps with error catch layer (catches `ThrownJsonrpcError`
- * and generic errors), and registers the route.
+ * validation, wraps with error catch layer (a thrown JSON-RPC error,
+ * recognized via `to_thrown_jsonrpc_error`, maps to its status; any other
+ * throw to a 500), and registers the route.
  *
  * Per-route middleware order: content type (415, `POST` only) → params →
  * query → pre-authorization auth guards (401 + rule-3 scope) →

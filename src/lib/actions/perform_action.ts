@@ -75,7 +75,6 @@ import { rate_limit_ip_key } from '../http/ip_canonical.ts';
 import { dispatch_with_post_commit_rollback } from '../http/pending_effects.ts';
 import {
 	type JsonrpcRequestId,
-	is_jsonrpc_error_code,
 	type JsonrpcErrorObject,
 	type JsonrpcErrorResponse,
 	type JsonrpcResponse
@@ -86,7 +85,8 @@ import {
 	jsonrpc_error_code_to_http_status,
 	http_status_to_jsonrpc_error_code,
 	JSONRPC_ERROR_CODES,
-	dev_only
+	dev_only,
+	to_thrown_jsonrpc_error
 } from '../http/jsonrpc_errors.ts';
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
@@ -356,19 +356,15 @@ export const perform_action = async (
 			use_transaction ? db.transaction((tx) => execute(tx)) : execute(db)
 		);
 	} catch (err) {
-		// Duck-type check: an Error whose `code` is a JSON-RPC error code signals
-		// a JSON-RPC error. Avoids cross-realm `instanceof` misses when consumers
-		// throw their own `ThrownJsonrpcError` (structurally identical, different
-		// class identity). The code must be a valid JSON-RPC one, not just a
-		// number — a `DOMException` (`code` 20, 23, ...) is an internal error,
-		// logged and masked like any other.
-		const error_like = err as { code?: unknown; data?: unknown };
-		if (err instanceof Error && is_jsonrpc_error_code(error_like.code)) {
-			const code = error_like.code;
-			const status = jsonrpc_error_code_to_http_status(code);
-			const error: JsonrpcErrorObject = { code, message: err.message };
-			if (error_like.data !== undefined) error.data = error_like.data;
-			return { kind: 'error', status, error };
+		// a JSON-RPC error recognized by brand, a second fuz_app copy's included;
+		// anything else is an internal error, logged and masked
+		const thrown = to_thrown_jsonrpc_error(err);
+		if (thrown) {
+			return {
+				kind: 'error',
+				status: jsonrpc_error_code_to_http_status(thrown.code),
+				error: thrown
+			};
 		}
 		log.error(`unhandled action handler error: ${spec.method}`, err);
 		// Raw exception messages can leak internals (paths, SQL, secrets in a

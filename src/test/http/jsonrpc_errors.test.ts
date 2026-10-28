@@ -19,10 +19,12 @@ import {
 	jsonrpc_error_code_to_http_status,
 	jsonrpc_error_code_to_name,
 	register_jsonrpc_error_code,
+	to_thrown_jsonrpc_error,
 	HTTP_STATUS_TO_JSONRPC_ERROR_CODE,
 	http_status_to_jsonrpc_error_code,
 	type JsonrpcErrorName
 } from '#lib/http/jsonrpc_errors.ts';
+import { ForeignRpcError, SecondCopyThrownJsonrpcError } from './thrown_jsonrpc_error_helpers.ts';
 
 describe('JSONRPC_ERROR_CODES', () => {
 	test('standard codes have correct values', () => {
@@ -442,5 +444,58 @@ describe('is_jsonrpc_error_code', () => {
 
 	test('refuses a fractional code in the server range, which JSON-RPC forbids', () => {
 		assert.isFalse(is_jsonrpc_error_code(-32000.5));
+	});
+});
+
+describe('to_thrown_jsonrpc_error', () => {
+	test('reads a ThrownJsonrpcError', () => {
+		assert.deepStrictEqual(
+			to_thrown_jsonrpc_error(
+				new ThrownJsonrpcError(JSONRPC_ERROR_CODES.conflict, 'taken', { reason: 'x' })
+			),
+			{ code: JSONRPC_ERROR_CODES.conflict, message: 'taken', data: { reason: 'x' } }
+		);
+	});
+
+	test('reads one from a second fuz_app copy by its brand', () => {
+		assert.deepStrictEqual(
+			to_thrown_jsonrpc_error(
+				new SecondCopyThrownJsonrpcError(JSONRPC_ERROR_CODES.not_found, 'gone', { reason: 'y' })
+			),
+			{ code: JSONRPC_ERROR_CODES.not_found, message: 'gone', data: { reason: 'y' } }
+		);
+	});
+
+	test('is null for a foreign error class carrying a JSON-RPC code', () => {
+		assert.isNull(
+			to_thrown_jsonrpc_error(
+				new ForeignRpcError(JSONRPC_ERROR_CODES.invalid_params, 'bad', { secret: 'x' })
+			)
+		);
+	});
+
+	test('is null for a ThrownJsonrpcError whose code was cast outside the JSON-RPC set', () => {
+		assert.isNull(to_thrown_jsonrpc_error(new ThrownJsonrpcError(42 as JsonrpcErrorCode, 'x')));
+	});
+
+	test('leaves data off when the error carries none', () => {
+		const error = to_thrown_jsonrpc_error(jsonrpc_errors.forbidden());
+		assert.ok(error);
+		assert.isFalse('data' in error);
+	});
+
+	test('is null for anything but an Error with a JSON-RPC code', () => {
+		for (const thrown of [
+			new Error('plain'),
+			new DOMException('The operation was aborted.', 'AbortError'),
+			Object.assign(new Error('x'), { code: 42 }),
+			Object.assign(new Error('x'), { code: -32000.5 }),
+			Object.assign(new Error('x'), { code: String(JSONRPC_ERROR_CODES.conflict) }),
+			{ code: JSONRPC_ERROR_CODES.conflict, message: 'not an Error' },
+			'string',
+			null
+		]) {
+			assert.isNull(to_thrown_jsonrpc_error(thrown), JSON.stringify(thrown));
+		}
 	});
 });

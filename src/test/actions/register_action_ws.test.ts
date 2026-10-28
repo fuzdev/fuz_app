@@ -78,6 +78,11 @@ import {
 	type FakeWs
 } from '#lib/testing/ws_round_trip.ts';
 
+import {
+	ForeignRpcError,
+	SecondCopyThrownJsonrpcError
+} from '../http/thrown_jsonrpc_error_helpers.ts';
+
 const log = new Logger('test', { level: 'off' });
 
 // --- spec fixtures -------------------------------------------------------
@@ -721,6 +726,47 @@ describe('register_action_ws', () => {
 		const res = parse_json(h.fake.sends[0]!);
 		assert.strictEqual(res.id, 77);
 		assert.ok(res.error);
+	});
+
+	test('a foreign error class carrying a JSON-RPC code answers internal_error, its data dropped', async () => {
+		const h = await build_harness({
+			handlers: {
+				echo: () => {
+					throw new ForeignRpcError(JSONRPC_ERROR_CODES.invalid_params, 'bad', {
+						secret: 'hunter2'
+					});
+				}
+			}
+		});
+		await h.on_open();
+		await h.on_message({ jsonrpc: '2.0', id: 78, method: 'echo', params: { value: 'x' } });
+
+		assert.notInclude(String(h.fake.sends[0]), 'hunter2');
+		const res = parse_json(h.fake.sends[0]!);
+		assert.strictEqual(res.id, 78);
+		assert.strictEqual(res.error.code, JSONRPC_ERROR_CODES.internal_error);
+		assert.isUndefined(res.error.data);
+	});
+
+	test('a ThrownJsonrpcError from a second fuz_app copy keeps its code and data', async () => {
+		const h = await build_harness({
+			handlers: {
+				echo: () => {
+					throw new SecondCopyThrownJsonrpcError(JSONRPC_ERROR_CODES.conflict, 'taken', {
+						reason: 'name_taken'
+					});
+				}
+			}
+		});
+		await h.on_open();
+		await h.on_message({ jsonrpc: '2.0', id: 79, method: 'echo', params: { value: 'x' } });
+
+		const res = parse_json(h.fake.sends[0]!);
+		assert.deepStrictEqual(res.error, {
+			code: JSONRPC_ERROR_CODES.conflict,
+			message: 'taken',
+			data: { reason: 'name_taken' }
+		});
 	});
 
 	test('handler receives unified ActionContext (auth + db + connection_id + signal)', async () => {

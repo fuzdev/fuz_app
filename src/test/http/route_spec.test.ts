@@ -42,6 +42,7 @@ import {
 	JSONRPC_ERROR_CODES,
 	jsonrpc_errors
 } from '#lib/http/jsonrpc_errors.ts';
+import { ForeignRpcError, SecondCopyThrownJsonrpcError } from './thrown_jsonrpc_error_helpers.ts';
 
 const log = new Logger('test', { level: 'off' });
 const db = create_stub_db();
@@ -1414,6 +1415,85 @@ describe('error catch layer', () => {
 		assert.strictEqual(body.offer_id, 'offer-1');
 		// `reason` is consumed into `error` and not duplicated.
 		assert.strictEqual(body.reason, undefined);
+	});
+
+	test('a ThrownJsonrpcError from a second fuz_app copy maps by its brand', async () => {
+		// two resolved copies of fuz_app in one process: the handler's error is
+		// another class, so `instanceof` would miss it and answer 500
+		const app = new Hono();
+		const specs: Array<RouteSpec> = [
+			{
+				method: 'POST',
+				path: '/test',
+				auth: { account: 'none', actor: 'none' },
+				handler: () => {
+					throw new SecondCopyThrownJsonrpcError(JSONRPC_ERROR_CODES.conflict, 'taken', {
+						reason: 'name_taken',
+						name: 'x'
+					});
+				},
+				description: 'Test',
+				input: z.null(),
+				output: z.null()
+			}
+		];
+		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
+
+		const res = await app.request('/test', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' }
+		});
+		assert.strictEqual(res.status, 409);
+		assert.deepStrictEqual(await res.json(), { error: 'name_taken', name: 'x', message: 'taken' });
+	});
+
+	test('a foreign error class carrying a JSON-RPC code is an internal error', async () => {
+		// another library's RPC error (MCP, viem): its code, message, and data
+		// are no part of fuz_app's wire contract
+		const app = new Hono();
+		const specs: Array<RouteSpec> = [
+			{
+				method: 'GET',
+				path: '/test',
+				auth: { account: 'none', actor: 'none' },
+				handler: () => {
+					throw new ForeignRpcError(JSONRPC_ERROR_CODES.invalid_params, 'bad', {
+						reason: 'leaked_reason'
+					});
+				},
+				description: 'Test',
+				input: z.null(),
+				output: z.null()
+			}
+		];
+		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
+
+		const res = await app.request('/test');
+		assert.strictEqual(res.status, 500);
+		// DEV is true in vitest — the message rides along, the foreign data never
+		assert.deepStrictEqual(await res.json(), { error: 'internal_error', message: 'bad' });
+	});
+
+	test('an Error whose numeric code is not a JSON-RPC one is an internal error', async () => {
+		const app = new Hono();
+		const specs: Array<RouteSpec> = [
+			{
+				method: 'GET',
+				path: '/test',
+				auth: { account: 'none', actor: 'none' },
+				handler: () => {
+					throw new DOMException('The operation was aborted.', 'AbortError');
+				},
+				description: 'Test',
+				input: z.null(),
+				output: z.null()
+			}
+		];
+		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
+
+		const res = await app.request('/test');
+		assert.strictEqual(res.status, 500);
+		assert.strictEqual((await res.json()).error, 'internal_error');
 	});
 
 	test('generic Error maps to internal_error 500 with message in DEV', async () => {
