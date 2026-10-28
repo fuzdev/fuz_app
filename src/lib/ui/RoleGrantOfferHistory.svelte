@@ -4,7 +4,7 @@
 	 *
 	 * Shows every offer involving the current account — recipient or grantor
 	 * — including terminal rows (accepted, declined, retracted, superseded,
-	 * expired). Backed by `role_grant_offer_history` (new RPC action); seeded
+	 * expired). Backed by the `role_grant_offer_history` RPC action; seeded
 	 * via `RoleGrantOffersState.fetch_history()`.
 	 *
 	 * Consumers plug in optional `format_actor` / `format_scope` callbacks
@@ -41,7 +41,7 @@
 	const get_format_scope = format_scope_context.get();
 	const format_scope_from_context = $derived(get_format_scope());
 
-	const now = $state.raw(Date.now());
+	const now = Date.now();
 
 	const status_of = (offer: RoleGrantOfferJson): string => {
 		if (offer.accepted_at) return 'accepted';

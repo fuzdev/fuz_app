@@ -46,6 +46,7 @@
 	import type { SvelteHTMLElements } from 'svelte/elements';
 	import type { Snippet } from 'svelte';
 	import { scale } from 'svelte/transition';
+	import { DEV } from 'esm-env';
 	import type { OmitStrict } from '@fuzdev/fuz_util/types.ts';
 
 	import { Popover } from './popover.svelte.ts';
@@ -75,14 +76,18 @@
 	} = $props();
 
 	// TODO @many type union instead of this pattern?
-	$effect(() => {
-		if (children && button) {
-			console.error('PopoverButton has both children and button defined - button takes precedence');
-		}
-		if (!children && !button) {
-			console.error('PopoverButton requires either children or a button snippet prop');
-		}
-	});
+	if (DEV) {
+		$effect(() => {
+			if (children && button) {
+				console.error(
+					'PopoverButton has both children and button defined - button takes precedence'
+				);
+			}
+			if (!children && !button) {
+				console.error('PopoverButton requires either children or a button snippet prop');
+			}
+		});
+	}
 
 	// Create a popover instance
 	const popover = new Popover();

@@ -58,8 +58,8 @@
 		load();
 	};
 
-	// Primary identity is actor-grain (`actor_id` / `target_actor_id`,
-	// Stage 4 columns); falls back to the account-grain pair for events
+	// Primary identity is actor-grain (`actor_id` / `target_actor_id`);
+	// falls back to the account-grain pair for events
 	// whose principal has no actor binding (admin verbs). The username
 	// resolver in the query chains the same fallback, so the displayed
 	// label is identical under v1 1:1.

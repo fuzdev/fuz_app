@@ -48,10 +48,8 @@
  */
 
 import type { Attachment } from 'svelte/attachments';
-import type { Snippet } from 'svelte';
 import { on } from 'svelte/events';
 import { swallow } from '@fuzdev/fuz_util/dom.ts';
-import type { TransitionConfig } from 'svelte/transition';
 
 import { type Position, type Alignment, generate_position_styles } from './position_helpers.ts';
 
@@ -81,19 +79,6 @@ export interface PopoverParameters {
 	/** Optional callback when popover is hidden. */
 	onhide?: () => void;
 }
-
-/**
- * Parameters for the popover trigger action.
- */
-export interface PopoverTriggerParameters extends PopoverParameters {
-	/** Content to render in the popover (as a snippet). */
-	content?: Snippet;
-}
-
-/**
- * Support both Svelte transitions and custom transitions.
- */
-export type TransitionFunction = (node: HTMLElement) => TransitionConfig | { destroy?: () => void };
 
 /**
  * Parameters for the popover content action.
@@ -311,7 +296,7 @@ export class Popover {
 	/**
 	 * Attachment factory for the trigger element that shows/hides the popover.
 	 */
-	trigger = (params?: PopoverTriggerParameters): Attachment<HTMLElement> => {
+	trigger = (params?: PopoverParameters): Attachment<HTMLElement> => {
 		return (node) => {
 			this.#trigger_element = node;
 

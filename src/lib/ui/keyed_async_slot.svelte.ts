@@ -27,8 +27,8 @@
  *   readonly remove = new KeyedAsyncSlot<Uuid>();
  *
  *   async submit_delete(id: Uuid): Promise<void> {
- *     const ok = await this.remove.run(id, () => this.#rpc().delete({invite_id: id}));
- *     if (ok !== undefined) await this.fetch();
+ *     await this.remove.run(id, () => this.#rpc().delete({invite_id: id}));
+ *     if (this.remove.succeeded(id)) await this.fetch();
  *   }
  * }
  *
