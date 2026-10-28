@@ -4,6 +4,10 @@
 	 * `app_settings_rpc_context`; the toggle calls `app_settings_update` RPC
 	 * via `AppSettingsState.update_open_signup`.
 	 *
+	 * The browser flips the box before the write lands, so once the write
+	 * settles the box is re-synced to `settings` — after a failure it shows the
+	 * server's state again, not the refused one.
+	 *
 	 * @module
 	 */
 
@@ -13,6 +17,11 @@
 	const app_settings = new AppSettingsState({ get_rpc });
 
 	void app_settings.fetch();
+
+	const toggle = async (input: HTMLInputElement): Promise<void> => {
+		await app_settings.update_open_signup(input.checked);
+		if (app_settings.settings) input.checked = app_settings.settings.open_signup;
+	};
 </script>
 
 <div class="open-signup-toggle">
@@ -25,7 +34,7 @@
 				class="mr_lg"
 				checked={app_settings.settings.open_signup}
 				disabled={app_settings.update.loading}
-				onchange={() => app_settings.update_open_signup(!app_settings.settings!.open_signup)}
+				onchange={(e) => toggle(e.currentTarget)}
 			/>
 			<div>
 				<div>open signup</div>
