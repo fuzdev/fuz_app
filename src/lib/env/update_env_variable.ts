@@ -1,6 +1,11 @@
 /**
  * Write updates to `.env` files while preserving formatting.
  *
+ * `update_env_content` is the one env-file writer: a pure line rebuild that
+ * `update_env_variable` (read, update, write) and `dev/setup.ts`'s
+ * `setup_env_file` both build on, so every value lands quoted and escaped the
+ * same way and round-trips through `parse_dotenv`.
+ *
  * @module
  */
 
@@ -20,14 +25,66 @@ export interface UpdateEnvVariableOptions {
 }
 
 /**
- * Updates or adds an environment variable in the .env file.
+ * Set `key` to `value` in dotenv `content`, returning the new content.
  * Preserves existing formatting, comments, and other variables.
  *
  * Behavior:
  * - **Duplicate keys**: updates the LAST occurrence (matches dotenv behavior)
  * - **Inline comments**: preserved after the value (e.g., `KEY=value # comment`)
- * - **Quote style**: preserved from original (quoted/unquoted)
+ * - **Quote style**: a quoted value stays quoted; an unquoted one stays bare
+ *   unless the new value would not read back bare (surrounding whitespace, a
+ *   `#` comment marker, a leading quote, a line break), which is quoted
  * - **`export ` prefix**: preserved when updating an `export KEY=…` line
+ * - **Absent key**: appended as a quoted assignment
+ *
+ * The line is rebuilt from its parts, so no character of `value` (`$&`, `` $` ``,
+ * `$'`, `\`) is interpreted.
+ *
+ * @param content - dotenv file content (`''` for a new file)
+ * @param key - the environment variable name
+ * @param value - the new value
+ * @returns the updated content
+ */
+export const update_env_content = (content: string, key: string, value: string): string => {
+	// TODO CRLF: split on `/\r?\n/` + remember per-line delimiter (pinned by edge_cases.test.ts)
+	// Preserve trailing-newline state: `split('\n')` on `'a\n'` yields `['a', '']`
+	// — drop that trailing empty so appends don't insert a blank line. Re-add
+	// the trailing `\n` at the end if the original had one.
+	if (content === '') return `${key}=${quote_value(value)}\n`;
+	const has_trailing_newline = content.endsWith('\n');
+	const lines = content.split('\n');
+	if (has_trailing_newline) lines.pop();
+
+	// Find the LAST occurrence of the key (matches dotenv "last wins" behavior)
+	const last_match_idx = find_last_key_line_index(lines, key);
+
+	const updated_lines = lines.map((line, idx) => {
+		if (idx === last_match_idx) {
+			// preserve a leading `export ` (the rest of the line's leading
+			// whitespace is normalized away, same as for a plain assignment)
+			const export_prefix = line.trimStart().startsWith('export ') ? 'export ' : '';
+			const equals_pos = line.indexOf('=');
+			const value_part = line.substring(equals_pos + 1);
+
+			const inline_comment = extract_inline_comment(value_part);
+			const trimmed_value = value_part.trim();
+			const written =
+				is_quoted_value(trimmed_value) || !reads_back_bare(value) ? quote_value(value) : value;
+			return `${export_prefix}${key}=${written}${inline_comment}`;
+		}
+		return line;
+	});
+
+	if (last_match_idx === -1) {
+		updated_lines.push(`${key}=${quote_value(value)}`);
+	}
+
+	return updated_lines.join('\n') + (has_trailing_newline ? '\n' : '');
+};
+
+/**
+ * Updates or adds an environment variable in the .env file — read,
+ * `update_env_content`, write.
  *
  * @warning Not atomic; not safe for concurrent writers. Reads the file, mutates
  * in memory, then writes it back — a crash or concurrent write can corrupt
@@ -58,46 +115,7 @@ export const update_env_variable = async (
 		}
 	}
 
-	// TODO CRLF: split on `/\r?\n/` + remember per-line delimiter (pinned by edge_cases.test.ts)
-	// Preserve trailing-newline state: `split('\n')` on `'a\n'` yields `['a', '']`
-	// — drop that trailing empty so appends don't insert a blank line. Re-add
-	// the trailing `\n` at the end if the original had one.
-	const has_trailing_newline = content.endsWith('\n');
-	const lines = content.split('\n');
-	if (has_trailing_newline) lines.pop();
-
-	// Find the LAST occurrence of the key (matches dotenv "last wins" behavior)
-	const last_match_idx = find_last_key_line_index(lines, key);
-
-	const updated_lines = lines.map((line, idx) => {
-		if (idx === last_match_idx) {
-			// preserve a leading `export ` (the rest of the line's leading
-			// whitespace is normalized away, same as for a plain assignment)
-			const export_prefix = line.trimStart().startsWith('export ') ? 'export ' : '';
-			const equals_pos = line.indexOf('=');
-			const value_part = line.substring(equals_pos + 1);
-
-			const inline_comment = extract_inline_comment(value_part);
-			const trimmed_value = value_part.trim();
-			const has_quotes = is_quoted_value(trimmed_value);
-
-			return has_quotes
-				? `${export_prefix}${key}=${quote_value(value)}${inline_comment}`
-				: `${export_prefix}${key}=${value}${inline_comment}`;
-		}
-		return line;
-	});
-
-	if (last_match_idx === -1) {
-		if (content === '') {
-			await write_file(file_path, `${key}=${quote_value(value)}\n`, 'utf-8');
-			return;
-		}
-		updated_lines.push(`${key}=${quote_value(value)}`);
-	}
-
-	const updated_content = updated_lines.join('\n') + (has_trailing_newline ? '\n' : '');
-	await write_file(file_path, updated_content, 'utf-8');
+	await write_file(file_path, update_env_content(content, key, value), 'utf-8');
 };
 
 // Keep this tokenization aligned with `parse_dotenv` in `env/dotenv.ts`:
@@ -194,6 +212,18 @@ const quote_value = (value: string): string => {
 };
 
 const has_newline_chars = (value: string): boolean => value.includes('\n') || value.includes('\r');
+
+/**
+ * Whether `value`, written unquoted, reads back unchanged through
+ * `parse_dotenv` — no surrounding whitespace, no leading quote or `#`, no
+ * whitespace-then-`#` comment marker, no line break.
+ */
+const reads_back_bare = (value: string): boolean =>
+	value === value.trim() &&
+	!has_newline_chars(value) &&
+	!is_quoted_value(value) &&
+	!value.startsWith('#') &&
+	!/\s#/.test(value);
 
 /**
  * Order matters: backslashes must be escaped first so the introduced

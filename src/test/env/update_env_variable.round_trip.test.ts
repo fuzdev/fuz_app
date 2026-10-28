@@ -9,7 +9,7 @@
 
 import { test, describe, assert } from 'vitest';
 
-import { update_env_variable } from '#lib/env/update_env_variable.ts';
+import { update_env_content, update_env_variable } from '#lib/env/update_env_variable.ts';
 import { parse_dotenv } from '#lib/env/dotenv.ts';
 import { create_mock_fs } from '#lib/testing/mock_fs.ts';
 
@@ -185,5 +185,40 @@ describe('update_env_variable + parse_dotenv round-trip', () => {
 		assert.strictEqual(parsed.OTHER, 'keep me');
 		assert.strictEqual(parsed.KEY, 'has "q"');
 		assert.strictEqual(parsed.LAST, 'unquoted_value');
+	});
+});
+
+/** Values a naive `String.replace` or an unquoted write would corrupt. */
+const unquoted_line_cases: Array<[label: string, value: string]> = [
+	["replacement pattern $'", "pa$'ss"],
+	['replacement pattern $&', 'pa$&ss'],
+	['replacement pattern $`', 'pa$`ss'],
+	['replacement pattern $$', 'pa$$ss'],
+	['space-then-hash comment marker', 'secret #notacomment'],
+	['leading hash', '#leading'],
+	['surrounding spaces', '  padded  '],
+	['leading double quote', '"starts quoted'],
+	['leading single quote', "'starts quoted"],
+	['postgres URL with a $ password', "postgres://user:p$'w d#x@localhost:5432/db"],
+	['newline', 'a\nb']
+];
+
+describe('update_env_content on an existing unquoted line', () => {
+	test.each(unquoted_line_cases)('%s round-trips, other lines untouched', (_label, value) => {
+		const before = '# header\nA=1\nKEY=\nB=two # note\n';
+		const after = update_env_content(before, 'KEY', value);
+		assert.deepStrictEqual(parse_dotenv(after), { A: '1', KEY: value, B: 'two' });
+		const lines = after.split('\n');
+		assert.deepStrictEqual(
+			[lines[0], lines[1], lines[3], lines[4]],
+			['# header', 'A=1', 'B=two # note', '']
+		);
+	});
+
+	test('a value that reads back bare stays unquoted', () => {
+		assert.strictEqual(
+			update_env_content('KEY=\n', 'KEY', 'postgres://u:p@h/db?x=1#frag'),
+			'KEY=postgres://u:p@h/db?x=1#frag\n'
+		);
 	});
 });

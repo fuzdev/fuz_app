@@ -13,8 +13,8 @@ import type { FsReadDeps } from '../runtime/deps.ts';
  * Parse a dotenv-format string into a record.
  *
  * Values wrapped in `"..."` have `\\` → `\`, `\"` → `"`, `\n` → newline,
- * and `\r` → carriage-return decoded (symmetric with the writer in
- * `update_env_variable`). Values wrapped in `'...'` are taken literally —
+ * and `\r` → carriage-return decoded (symmetric with the writer,
+ * `update_env_content`). Values wrapped in `'...'` are taken literally —
  * no escape processing. Unquoted values are unchanged.
  *
  * Inline comments are stripped after a closing quote (e.g. `KEY="v" # c` → `v`)

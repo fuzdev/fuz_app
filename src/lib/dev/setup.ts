@@ -9,6 +9,8 @@
  * @module
  */
 
+import { to_hex } from '@fuzdev/fuz_util/hex.ts';
+
 import type {
 	CommandDeps,
 	CommandResult,
@@ -18,7 +20,9 @@ import type {
 	FsWriteDeps
 } from '../runtime/deps.ts';
 import type { QueryDeps } from '../db/query_deps.ts';
-import { load_env_file } from '../env/dotenv.ts';
+import { load_env_file, parse_dotenv } from '../env/dotenv.ts';
+import { update_env_content } from '../env/update_env_variable.ts';
+import { generate_random_base64url } from '../crypto.ts';
 import { write_file_atomic } from '../runtime/fs.ts';
 import {
 	query_account_by_username,
@@ -79,8 +83,10 @@ export interface SetupEnvOptions {
 	/**
 	 * Extra env var replacements beyond the default `SECRET_FUZ_COOKIE_KEYS`.
 	 *
-	 * Keys are env var names, values are async generators.
-	 * Replaces `^KEY=$` (empty value) patterns in the env file.
+	 * Keys are env var names, values are async generators. Each fills a key
+	 * the env file assigns an empty value (`KEY=`, `KEY=""`), written through
+	 * `update_env_content` (quoted when the value needs it, never interpreted);
+	 * a key the file doesn't assign is left out.
 	 */
 	replacements?: Record<string, () => Promise<string>>;
 	log?: SetupLogger;
@@ -123,17 +129,14 @@ export const parse_db_name = (url: string): string | null => {
 };
 
 /**
- * Generate a random base64 key using openssl.
+ * Generate a cookie signing key in-process: 32 random bytes, hex-encoded.
  *
- * @param deps - command execution capability
- * @returns a random 32-byte base64-encoded key
- * @throws Error if `openssl rand` fails or is unavailable
+ * Hex, not base64url: `SECRET_FUZ_COOKIE_KEYS` separates rotated keys with
+ * `__`, which base64url's alphabet can produce inside one key.
+ *
+ * @returns a 64-character lowercase hex key
  */
-export const generate_random_key = async (deps: CommandDeps): Promise<string> => {
-	const result = await deps.run_command('openssl', ['rand', '-base64', '32']);
-	if (!result.success) throw new Error('Failed to generate key with openssl');
-	return result.stdout.trim();
-};
+export const generate_cookie_key = (): string => to_hex(crypto.getRandomValues(new Uint8Array(32)));
 
 // === File helpers ===
 
@@ -165,12 +168,33 @@ export const read_env_var = async (
 // === Setup helpers ===
 
 /**
+ * Fill each key in `replacements` that `content` assigns an empty value.
+ *
+ * @returns the updated content and the keys it generated
+ */
+const fill_empty_env_values = async (
+	content: string,
+	replacements: Record<string, () => Promise<string>>
+): Promise<{ content: string; generated: Array<string> }> => {
+	const current = parse_dotenv(content);
+	const generated: Array<string> = [];
+	let next = content;
+	for (const [key, generate] of Object.entries(replacements)) {
+		if (current[key] !== '') continue;
+		next = update_env_content(next, key, await generate());
+		generated.push(key);
+	}
+	return { content: next, generated };
+};
+
+/**
  * Create an env file from its example template, auto-generating `SECRET_FUZ_COOKIE_KEYS`.
  *
  * If the file already exists, backfills any empty values that have generators.
- * Idempotent — safe to re-run.
+ * Idempotent — safe to re-run. Values are written through `update_env_content`,
+ * the one env-file writer.
  *
- * @param deps - file read, write, and command capabilities
+ * @param deps - file read and write capabilities
  * @param env_path - path for the env file (e.g. `.env.development`)
  * @param example_path - path to the example template
  * @param options - extra replacements, logger
@@ -178,7 +202,7 @@ export const read_env_var = async (
  * @mutates filesystem - writes `env_path` atomically at mode `0o600` (creating from `example_path` if missing)
  */
 export const setup_env_file = async (
-	deps: FsReadDeps & FsWriteDeps & CommandDeps,
+	deps: FsReadDeps & FsWriteDeps,
 	env_path: string,
 	example_path: string,
 	options?: SetupEnvOptions
@@ -187,31 +211,22 @@ export const setup_env_file = async (
 
 	// build the full replacement map (SECRET_FUZ_COOKIE_KEYS + extras)
 	const replacements: Record<string, () => Promise<string>> = {
-		SECRET_FUZ_COOKIE_KEYS: () => generate_random_key(deps),
+		SECRET_FUZ_COOKIE_KEYS: () => Promise.resolve(generate_cookie_key()),
 		...options?.replacements
 	};
 
 	const stat = await deps.stat(env_path);
 	if (stat?.is_file) {
 		// file exists — backfill any empty values
-		let content = await deps.read_text_file(env_path);
-		let changed = false;
-
-		for (const [key, generate] of Object.entries(replacements)) {
-			const pattern = new RegExp(`^${key}=$`, 'm');
-			if (pattern.test(content)) {
-				const value = await generate();
-				content = content.replace(pattern, `${key}=${value}`);
-				changed = true;
-				log.ok(`Generated ${key} in existing ${env_path}`);
-			}
-		}
+		const filled = await fill_empty_env_values(await deps.read_text_file(env_path), replacements);
+		for (const key of filled.generated) log.ok(`Generated ${key} in existing ${env_path}`);
+		const changed = filled.generated.length > 0;
 
 		if (changed) {
 			// Atomic replace at 0600 — the backfill just wrote secrets into the
 			// file, so publishing a fresh owner-only inode also repairs a
 			// hand-made permissive .env in the same step the old chmod covered.
-			await write_file_atomic(deps, env_path, content, { mode: 0o600 });
+			await write_file_atomic(deps, env_path, filled.content, { mode: 0o600 });
 		} else {
 			log.skip(`${env_path} already configured`);
 		}
@@ -220,15 +235,8 @@ export const setup_env_file = async (
 	}
 
 	// create from example
-	let content = await deps.read_text_file(example_path);
-	for (const [key, generate] of Object.entries(replacements)) {
-		const pattern = new RegExp(`^${key}=$`, 'm');
-		if (pattern.test(content)) {
-			const value = await generate();
-			content = content.replace(pattern, `${key}=${value}`);
-		}
-	}
-	await write_file_atomic(deps, env_path, content, { mode: 0o600 });
+	const filled = await fill_empty_env_values(await deps.read_text_file(example_path), replacements);
+	await write_file_atomic(deps, env_path, filled.content, { mode: 0o600 });
 	log.ok(`Created ${env_path} with generated secrets`);
 	return { created: true, updated: true, path: env_path };
 };
@@ -239,14 +247,14 @@ export const setup_env_file = async (
  * The token is a one-shot secret used to create the first admin account.
  * Stored at `~/.{app_name}/secret_bootstrap_token` by default.
  *
- * @param deps - file, command, and env capabilities
+ * @param deps - file and env capabilities
  * @param app_name - application name (used for default state directory)
  * @param options - state_dir override, logger
  * @returns result indicating whether a token was created
  * @mutates filesystem - creates the state directory (`0o700`) and writes the token file atomically at `0o600`
  */
 export const setup_bootstrap_token = async (
-	deps: FsReadDeps & FsWriteDeps & CommandDeps & EnvDeps,
+	deps: FsReadDeps & FsWriteDeps & EnvDeps,
 	app_name: string,
 	options?: SetupBootstrapTokenOptions
 ): Promise<SetupTokenResult> => {
@@ -272,8 +280,8 @@ export const setup_bootstrap_token = async (
 	// existing files), so its 0600 holds unconditionally; the server-side
 	// `read_secure_file` refuses anything laxer at read time.
 	await deps.mkdir(state_dir, { recursive: true, mode: 0o700 });
-	const key = await generate_random_key(deps);
-	await write_file_atomic(deps, token_path, key + '\n', { mode: 0o600 });
+	const token = generate_random_base64url();
+	await write_file_atomic(deps, token_path, token + '\n', { mode: 0o600 });
 	log.ok(`Created ~/.${app_name}/secret_bootstrap_token (one-shot, deleted after first use)`);
 	return { created: true, token_path };
 };
@@ -281,14 +289,14 @@ export const setup_bootstrap_token = async (
 /**
  * Remove an existing bootstrap token and create a new one.
  *
- * @param deps - file, command, env, and remove capabilities
+ * @param deps - file, env, and remove capabilities
  * @param app_name - application name
  * @param options - state_dir override, logger
  * @returns result from creating the new token
  * @mutates filesystem - removes the existing token file (if any) then writes a fresh one
  */
 export const reset_bootstrap_token = async (
-	deps: FsReadDeps & FsWriteDeps & FsRemoveDeps & CommandDeps & EnvDeps,
+	deps: FsReadDeps & FsWriteDeps & FsRemoveDeps & EnvDeps,
 	app_name: string,
 	options?: SetupBootstrapTokenOptions
 ): Promise<SetupTokenResult> => {

@@ -1,12 +1,107 @@
 /**
- * Tests for dev/setup.ts read helpers.
+ * Tests for dev/setup.ts — the read helpers and `setup_env_file`.
  *
  * @module
  */
 
 import { test, describe, assert } from 'vitest';
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
-import { read_env_var } from '#lib/dev/setup.ts';
+import {
+	generate_cookie_key,
+	read_env_var,
+	setup_env_file,
+	type SetupLogger
+} from '#lib/dev/setup.ts';
+import { create_keyring } from '#lib/auth/keyring.ts';
+import { parse_dotenv } from '#lib/env/dotenv.ts';
+import { create_node_runtime } from '#lib/runtime/node.ts';
+
+const silent_log: SetupLogger = { ok: () => {}, skip: () => {}, error: () => {} };
+
+/** Run `fn` against a fresh temp dir, removed afterwards. */
+const with_temp_dir = async (fn: (dir: string) => Promise<void>): Promise<void> => {
+	const dir = await mkdtemp(join(tmpdir(), 'fuz_setup_env_'));
+	try {
+		await fn(dir);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+};
+
+/** A value `String.replace` would splice and an unquoted write would truncate. */
+const TRICKY_DATABASE_URL = `postgres://app:p$'a$&s$\`s "q" #x@localhost:5432/app db`;
+
+describe('setup_env_file', () => {
+	test('creates from the example: generates the cookie key, writes replacements verbatim', async () => {
+		await with_temp_dir(async (dir) => {
+			const example = join(dir, '.env.example');
+			const env_path = join(dir, '.env');
+			await writeFile(
+				example,
+				'# app env\nNODE_ENV=development\nSECRET_FUZ_COOKIE_KEYS=\nDATABASE_URL=\nUNSET_KEY=\n'
+			);
+			const result = await setup_env_file(create_node_runtime(), env_path, example, {
+				replacements: { DATABASE_URL: async () => TRICKY_DATABASE_URL },
+				log: silent_log
+			});
+			assert.deepStrictEqual(result, { created: true, updated: true, path: env_path });
+
+			const content = await readFile(env_path, 'utf-8');
+			const env = parse_dotenv(content);
+			assert.strictEqual(env.DATABASE_URL, TRICKY_DATABASE_URL);
+			assert.strictEqual(env.NODE_ENV, 'development');
+			assert.strictEqual(env.UNSET_KEY, '', 'a key with no generator is left empty');
+			assert.match(env.SECRET_FUZ_COOKIE_KEYS!, /^[0-9a-f]{64}$/);
+			assert.ok(
+				create_keyring(env.SECRET_FUZ_COOKIE_KEYS).ok,
+				'the generated key is a valid keyring'
+			);
+			assert.ok(content.startsWith('# app env\nNODE_ENV=development\n'));
+			assert.strictEqual((await stat(env_path)).mode & 0o777, 0o600);
+		});
+	});
+
+	test('backfills only empty values in an existing file, then is a no-op', async () => {
+		await with_temp_dir(async (dir) => {
+			const env_path = join(dir, '.env');
+			await writeFile(
+				env_path,
+				'SECRET_FUZ_COOKIE_KEYS=existing_key_that_is_at_least_32_chars\nDATABASE_URL= # fill me\n'
+			);
+			const runtime = create_node_runtime();
+			const options = {
+				replacements: {
+					DATABASE_URL: async () => TRICKY_DATABASE_URL,
+					NOT_IN_FILE: async () => 'never written'
+				},
+				log: silent_log
+			};
+			const first = await setup_env_file(runtime, env_path, join(dir, 'unused'), options);
+			assert.deepStrictEqual(first, { created: false, updated: true, path: env_path });
+			const content = await readFile(env_path, 'utf-8');
+			assert.deepStrictEqual(parse_dotenv(content), {
+				SECRET_FUZ_COOKIE_KEYS: 'existing_key_that_is_at_least_32_chars',
+				DATABASE_URL: TRICKY_DATABASE_URL
+			});
+			assert.ok(content.includes(' # fill me'), 'the inline comment is kept');
+
+			const second = await setup_env_file(runtime, env_path, join(dir, 'unused'), options);
+			assert.deepStrictEqual(second, { created: false, updated: false, path: env_path });
+			assert.strictEqual(await readFile(env_path, 'utf-8'), content);
+		});
+	});
+});
+
+describe('generate_cookie_key', () => {
+	test('is 32 random bytes in hex, never containing the `__` key separator', () => {
+		const key = generate_cookie_key();
+		assert.match(key, /^[0-9a-f]{64}$/);
+		assert.notStrictEqual(generate_cookie_key(), key);
+	});
+});
 
 describe('read_env_var', () => {
 	test('reads a present variable', async () => {
