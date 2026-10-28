@@ -62,6 +62,7 @@ import {
 	type RateLimitReservation
 } from '../rate_limiter.ts';
 import type { RouteFactoryDeps } from './deps.ts';
+import { start_fail_floor, warn_if_fail_floor_disabled } from './fail_floor.ts';
 import {
 	close_connections_after_commit,
 	queue_connection_close
@@ -203,12 +204,6 @@ export const DEFAULT_LOGIN_FAIL_FLOOR_MS = 250;
  */
 export const DEFAULT_LOGIN_FAIL_JITTER_MS = 25;
 
-const login_fail_delay = (floor_ms: number, jitter_ms: number): Promise<void> => {
-	if (floor_ms <= 0) return Promise.resolve();
-	const jitter = jitter_ms > 0 ? Math.floor(Math.random() * (jitter_ms * 2 + 1)) - jitter_ms : 0;
-	return new Promise((resolve) => setTimeout(resolve, floor_ms + jitter));
-};
-
 /**
  * Shared options for route factories that create sessions.
  *
@@ -245,7 +240,8 @@ export interface AccountRouteOptions extends AuthSessionRouteOptions {
 	max_sessions?: number | null;
 	/**
 	 * Minimum wall-clock time (ms) for login 401 responses. Set to `0` or a
-	 * negative number to disable (e.g., in tests). Default
+	 * negative number to disable (e.g., in tests) — announced once on stderr
+	 * (`LOGIN_FAIL_FLOOR_DISABLED_BANNER`). Default
 	 * `DEFAULT_LOGIN_FAIL_FLOOR_MS`.
 	 */
 	login_fail_floor_ms?: number;
@@ -304,6 +300,7 @@ export const create_account_route_specs = (
 		login_fail_jitter_ms = DEFAULT_LOGIN_FAIL_JITTER_MS,
 		bootstrap_status
 	} = options;
+	warn_if_fail_floor_disabled('login', login_fail_floor_ms, deps.log);
 
 	const [verify_shape, login_shape, logout_shape, password_shape] = create_account_route_shapes({
 		login_account_rate_limited: login_account_rate_limiter !== null
@@ -373,11 +370,11 @@ export const create_account_route_specs = (
 					// Start the minimum-delay timer concurrently with failure work.
 					// Observed response time is max(work, delay) so all 401 paths
 					// (found-wrong-pw, not-found) return in similar time.
-					const delay = login_fail_delay(login_fail_floor_ms, login_fail_jitter_ms);
+					const delay = start_fail_floor(login_fail_floor_ms, login_fail_jitter_ms);
 
 					if (!account) {
 						// enumeration prevention: verify_dummy equalizes Argon2id timing;
-						// login_fail_delay equalizes every other path difference.
+						// the fail floor equalizes every other path difference.
 						await password.verify_dummy(pw);
 						ip_reserved.reservation.record();
 						account_reservation?.record();

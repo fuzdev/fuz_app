@@ -32,6 +32,7 @@ import type { RouteFactoryDeps } from './deps.ts';
 import { ERROR_NO_MATCHING_INVITE, ERROR_SIGNUP_CONFLICT } from '../http/error_schemas.ts';
 import { is_pg_unique_violation } from '../db/pg_error.ts';
 import type { AuthSessionRouteOptions } from './account_routes.ts';
+import { start_fail_floor, warn_if_fail_floor_disabled } from './fail_floor.ts';
 
 /**
  * Default minimum wall-clock time (ms) for a signup denial (403 / 409) response.
@@ -56,12 +57,6 @@ export const DEFAULT_SIGNUP_FAIL_FLOOR_MS = 250;
  */
 export const DEFAULT_SIGNUP_FAIL_JITTER_MS = 25;
 
-const signup_fail_delay = (floor_ms: number, jitter_ms: number): Promise<void> => {
-	if (floor_ms <= 0) return Promise.resolve();
-	const jitter = jitter_ms > 0 ? Math.floor(Math.random() * (jitter_ms * 2 + 1)) - jitter_ms : 0;
-	return new Promise((resolve) => setTimeout(resolve, floor_ms + jitter));
-};
-
 /**
  * Per-factory configuration for signup route specs.
  */
@@ -81,7 +76,8 @@ export interface SignupRouteOptions extends AuthSessionRouteOptions {
 	signup_account_rate_limiter: RateLimiter | null;
 	/**
 	 * Minimum wall-clock time (ms) for signup denial responses (403 / 409).
-	 * Set to `0` or a negative number to disable (e.g., in tests). Default
+	 * Set to `0` or a negative number to disable (e.g., in tests) — announced
+	 * once on stderr (`SIGNUP_FAIL_FLOOR_DISABLED_BANNER`). Default
 	 * `DEFAULT_SIGNUP_FAIL_FLOOR_MS`. 429 responses are not floored.
 	 */
 	signup_fail_floor_ms?: number;
@@ -114,6 +110,7 @@ export const create_signup_route_specs = (
 		signup_fail_floor_ms = DEFAULT_SIGNUP_FAIL_FLOOR_MS,
 		signup_fail_jitter_ms = DEFAULT_SIGNUP_FAIL_JITTER_MS
 	} = options;
+	warn_if_fail_floor_disabled('signup', signup_fail_floor_ms, deps.log);
 
 	return [
 		{
@@ -167,9 +164,9 @@ export const create_signup_route_specs = (
 					// so the cheap `no_match` path (no Argon2, find returns
 					// nothing) and the expensive `signup_conflict` path (Argon2
 					// + tx + rollback) converge — closes the username-enumeration
-					// timing oracle. Mirrors login's `login_fail_delay`. Started
+					// timing oracle. The same `start_fail_floor` as login. Started
 					// after rate-limit checks so 429 stays fast.
-					const delay = signup_fail_delay(signup_fail_floor_ms, signup_fail_jitter_ms);
+					const delay = start_fail_floor(signup_fail_floor_ms, signup_fail_jitter_ms);
 
 					// Hash before the transaction so the connection isn't held
 					// across the ~100ms Argon2id. Paid on every attempt that gets

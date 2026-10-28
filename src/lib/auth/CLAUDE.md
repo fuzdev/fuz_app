@@ -204,9 +204,13 @@ same reason (the RPC `account_actions` reads `DEFAULT_MAX_TOKENS`).
 
 **`POST /login` timing floor.** Login 401s are floored to
 `DEFAULT_LOGIN_FAIL_FLOOR_MS` (250ms) + uniform jitter (±25ms) via
-`Promise.all(work, setTimeout)` so observed time is `max(work, delay)` and
+`start_fail_floor` (`auth/fail_floor.ts`, shared with signup's 403 / 409
+floor; twin of the Rust `fuz_auth::timing`), started before the work and
+awaited after, so observed time is `max(work, delay)` and
 found-wrong-password and not-found paths converge. 429 stays fast by design;
-`verify_dummy` equalizes Argon2id timing on not-found.
+`verify_dummy` equalizes Argon2id timing on not-found. A floor of `0` or less
+is announced once per process on stderr by `warn_if_fail_floor_disabled`
+(`LOGIN_` / `SIGNUP_FAIL_FLOOR_DISABLED_BANNER`, the Rust spine's text).
 
 **`POST /password` revokes everything.** Revokes all sessions + all API
 tokens (force re-auth everywhere), then clears the session cookie. Declares

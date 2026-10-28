@@ -157,7 +157,12 @@ rate-limit-skipped-vs-not paths all converge. 429 responses are intentionally
 not padded: they carry no oracle (the attacker just chose to overflow the
 bucket) and padding would let blocked attackers hold server resources open.
 Both floor and jitter are configurable via `login_fail_floor_ms` /
-`login_fail_jitter_ms` on `AccountRouteOptions` — tests set them to `0`.
+`login_fail_jitter_ms` on `AccountRouteOptions` — tests set them to `0`. A
+floor of `0` or less turns the defense off, so the route factory announces it
+on stderr once per fuz_app module instance — per resolved copy
+(`LOGIN_FAIL_FLOOR_DISABLED_BANNER`, and `SIGNUP_FAIL_FLOOR_DISABLED_BANNER`
+for signup's floor — the Rust spine's text, `auth/fail_floor.ts`): a
+production server must never print it.
 
 ### Bootstrap
 
