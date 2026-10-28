@@ -4,30 +4,18 @@
  * (`npm run test:cross`, which runs each in a `vitest` invocation of its own).
  *
  * Every project spawns its backends on ports, Postgres databases and temp
- * directories no other project uses, so any set of them can run at once:
+ * directories no other project uses, so any set of them can run at once. The
+ * claims live in one table, `CROSS_PROJECT_RESOURCES`: each project's global
+ * setup reads its backends' names, ports and databases from it, and
+ * `cross_backend_projects.test.ts` holds every port, database and temp
+ * directory unique across the table. A backend's name (prefixed with the repo
+ * directory) is also its directory under `os.tmpdir()`.
  *
- * - `cross_backend_rust_spine_stub` — `spine_stub` on 1177, over
- *   `fuz_app_test_rust_spine_stub` (or whatever database
- *   `FUZ_TESTING_RUST_SPINE_STUB_DATABASE_URL` names)
- * - `cross_backend_ts_node` / `_ts_deno` / `_ts_bun` — `ts_spine_node` on
- *   1178, `ts_spine_deno` on 1179, `ts_spine_bun` on 1180, each on `memory://`
- * - `cross_backend_parity` — `ts_spine_node_parity` on 1181 over
- *   `fuz_app_test_ts_spine_parity`, `spine_stub_parity` on 1182 over
- *   `fuz_app_test_rust_spine_stub_parity`
- * - `cross_backend_security` — `ts_spine_node_security` on 1183 on
- *   `memory://`, `spine_stub_security` on 1184 over
- *   `fuz_app_test_rust_spine_stub_security`
- * - `cross_backend_ts_differential` — `ts_spine_node_differential` on 1185,
- *   `ts_spine_bun_differential` on 1186, each on `memory://`
- * - `cross_backend_timing` — `ts_spine_node_timing` on 1187 on `memory://`,
- *   `spine_stub_timing` on 1188 over `fuz_app_test_rust_spine_stub_timing`
- *
- * A backend's name (prefixed with the repo directory) is also its directory
- * under `os.tmpdir()`.
- *
- * The parity, security and timing databases sit on the server the stub's URL
- * names (`FUZ_TESTING_RUST_SPINE_STUB_DATABASE_URL`, else the local default);
- * each project's `globalSetup` creates the ones it uses.
+ * The single-backend Rust stub's database is the one
+ * `FUZ_TESTING_RUST_SPINE_STUB_DATABASE_URL` names when it is set. The other
+ * stub databases, and the parity project's TS one, sit on the server that URL
+ * names (else the local default); each project's `globalSetup` creates the
+ * ones it uses.
  *
  * Config-time module: dependency-free, like `make_cross_backend_project`.
  *
@@ -35,6 +23,64 @@
  */
 
 import type { CrossBackendProjectOptions } from '#lib/testing/cross_backend/make_cross_backend_project.ts';
+
+/** What one spawned backend of a cross project claims. */
+export interface CrossBackendResources {
+	/**
+	 * Backend name — its spawn label, and (prefixed with the repo directory)
+	 * its directory under `os.tmpdir()`.
+	 */
+	readonly name: string;
+	/** Listening port. */
+	readonly port: number;
+	/** The Postgres database it runs over, `null` on `memory://`. */
+	readonly database: string | null;
+}
+
+/**
+ * Every cross project's backends, keyed by project name and then by the
+ * backend's role in it — the one place a port, database or backend name is
+ * chosen. A project added to `CROSS_BACKEND_PROJECTS` takes its row here.
+ */
+export const CROSS_PROJECT_RESOURCES = {
+	cross_backend_rust_spine_stub: {
+		stub: { name: 'spine_stub', port: 1177, database: 'fuz_app_test_rust_spine_stub' }
+	},
+	cross_backend_ts_node: { node: { name: 'ts_spine_node', port: 1178, database: null } },
+	cross_backend_ts_deno: { deno: { name: 'ts_spine_deno', port: 1179, database: null } },
+	cross_backend_ts_bun: { bun: { name: 'ts_spine_bun', port: 1180, database: null } },
+	cross_backend_parity: {
+		ts: { name: 'ts_spine_node_parity', port: 1181, database: 'fuz_app_test_ts_spine_parity' },
+		stub: {
+			name: 'spine_stub_parity',
+			port: 1182,
+			database: 'fuz_app_test_rust_spine_stub_parity'
+		}
+	},
+	cross_backend_security: {
+		ts: { name: 'ts_spine_node_security', port: 1183, database: null },
+		stub: {
+			name: 'spine_stub_security',
+			port: 1184,
+			database: 'fuz_app_test_rust_spine_stub_security'
+		}
+	},
+	cross_backend_ts_differential: {
+		node: { name: 'ts_spine_node_differential', port: 1185, database: null },
+		bun: { name: 'ts_spine_bun_differential', port: 1186, database: null }
+	},
+	cross_backend_timing: {
+		ts: { name: 'ts_spine_node_timing', port: 1187, database: null },
+		stub: {
+			name: 'spine_stub_timing',
+			port: 1188,
+			database: 'fuz_app_test_rust_spine_stub_timing'
+		}
+	}
+} as const satisfies Record<string, Record<string, CrossBackendResources>>;
+
+/** A cross project's name — a key of `CROSS_PROJECT_RESOURCES`. */
+export type CrossProjectName = keyof typeof CROSS_PROJECT_RESOURCES;
 
 /**
  * The env var that turns the cross projects on: `vite.config.ts` defines them
@@ -45,13 +91,16 @@ export const CROSS_BACKEND_ENV = 'FUZ_TEST_CROSS_BACKEND';
 /** The single-backend projects' test files. */
 const CROSS_BACKEND_TESTS = ['src/test/cross_backend/*.cross.test.ts'];
 
+/** A dual-spawn project's options, named by its `CROSS_PROJECT_RESOURCES` row. */
+type DualSpawnProject = CrossBackendProjectOptions & { name: CrossProjectName };
+
 /**
  * The dual-spawn projects — each spawns BOTH backends in its own `globalSetup`
  * and provides two handles instead of `backend_handle`, so its files are
  * excluded from the single-backend projects (`DUAL_SPAWN_TESTS`, derived
  * here).
  */
-const DUAL_SPAWN_PROJECTS: ReadonlyArray<CrossBackendProjectOptions> = [
+const DUAL_SPAWN_PROJECTS: ReadonlyArray<DualSpawnProject> = [
 	// One dual-spawn serves the parity gates: schema parity (live DDL),
 	// action-manifest parity (live RPC method set + auth), and the differential
 	// (every conformance case sent to both, the answers compared).
@@ -106,7 +155,7 @@ const DUAL_SPAWN_TESTS = DUAL_SPAWN_PROJECTS.flatMap((project) => project.includ
 const NODE_ONLY_CROSS_TESTS = ['src/test/cross_backend/builtin_roles.cross.test.ts'];
 
 const single_backend_project = (
-	name: string,
+	name: CrossProjectName,
 	global_setup: string,
 	{ with_node_only = false }: { with_node_only?: boolean } = {}
 ): CrossBackendProjectOptions => ({

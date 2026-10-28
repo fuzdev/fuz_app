@@ -9,6 +9,9 @@
 
 import { ts_spine_bun_backend_config } from '#lib/testing/cross_backend/ts_spine_backend_config.ts';
 
+import { CROSS_PROJECT_RESOURCES } from './cross_backend_projects.ts';
 import { make_spine_global_setup } from './global_setup_helpers.ts';
 
-export default make_spine_global_setup(ts_spine_bun_backend_config);
+const { name, port } = CROSS_PROJECT_RESOURCES.cross_backend_ts_bun.bun;
+
+export default make_spine_global_setup(() => ts_spine_bun_backend_config({ name, port }));

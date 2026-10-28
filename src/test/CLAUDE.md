@@ -582,9 +582,8 @@ over its own database on one server: the snapshot compares index definitions
 as the engine renders them, and pglet — the TS spine's `memory://` default
 everywhere else — leaves sort direction, `NULLS` placement, operator classes
 and `NULLS NOT DISTINCT` out of `indexdef`, so a pglet leg would report every
-such index as drift. The setup gives the TS spine
-`fuz_app_test_ts_spine_parity` and the stub `fuz_app_test_rust_spine_stub_parity`
-on the server the stub's URL names
+such index as drift. The setup gives each spine its own database
+(`CROSS_PROJECT_RESOURCES`) on the server the stub's URL names
 (`FUZ_TESTING_RUST_SPINE_STUB_DATABASE_URL` moves both), creates them when
 missing, and drops and recreates the TS spine's `public` schema before every spawn (the
 TS binary does not wipe at startup, and bootstrap refuses a database that
@@ -647,7 +646,7 @@ stringbool and the cap as a `u32`, refusing garbage at boot). They need a dedica
 limiters can only be enabled on a backend nothing else shares — the standard
 suites fire many loopback logins and actions a live limiter would throttle — so
 the standard backends keep every limiter null. The stub runs over its own
-`fuz_app_test_rust_spine_stub_security`, the TS leg on `memory://`.
+database (`CROSS_PROJECT_RESOURCES`), the TS leg on `memory://`.
 `npm run test:cross:security`;
 cross-process only (the in-process limiter + proxy paths already have
 `describe_rate_limiting_tests`, the `http/proxy` middleware tests, and the
@@ -666,7 +665,7 @@ and a socket sending heartbeats kept open past twice it. Deadlines are
 generous and far under the defaults, so a spine ignoring the override fails.
 A dedicated project because a short receive timeout would close the standard
 suites' idle sockets. The stub runs over its own
-`fuz_app_test_rust_spine_stub_timing`, the TS leg on `memory://`.
+database (`CROSS_PROJECT_RESOURCES`), the TS leg on `memory://`.
 `npm run test:cross:timing`.
 
 Every fuz_app spine preset advertises `capabilities.sse` and serves
@@ -705,9 +704,11 @@ backends:
 **Opt-in.** The `cross_backend_*` projects are gated in `vite.config.ts`
 behind `FUZ_TEST_CROSS_BACKEND=1` and excluded from a bare `gro test` (they
 spawn external backends). They are listed in
-`cross_backend/cross_backend_projects.ts`, whose module doc tables each one's
-ports (`1177`–`1188`), Postgres databases and backend names: no two projects
-share any, so any set of them can run at once. `npm run test:cross` does
+`cross_backend/cross_backend_projects.ts`, whose `CROSS_PROJECT_RESOURCES`
+table holds each one's ports, Postgres databases and backend names — every
+global setup reads its backends from it, and
+`cross_backend/cross_backend_projects.test.ts` holds each port, database and
+temp directory unique, so any set of them can run at once. `npm run test:cross` does
 that — `cross_backend/run_cross.ts` rebuilds the Rust stub once, runs each
 project in its own `vitest` invocation concurrently (with
 `FUZ_TESTING_NO_REBUILD=1`), prints each invocation's output as it finishes,

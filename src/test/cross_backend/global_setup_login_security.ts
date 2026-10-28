@@ -16,10 +16,10 @@
  * buckets: the login limiters and the action limiters are separate instances,
  * and each case reads its own forwarded IP or fresh keeper account.
  * Both backends run on ports, a stub database and backend names of their own
- * (`SECURITY_*` below), so this project runs beside every other cross project.
- * The Rust side is made current first (rebuild + `createdb` of
- * `SECURITY_STUB_DATABASE`) via `prepare_rust_spine_backend`; the stub
- * self-wipes it on startup.
+ * (`CROSS_PROJECT_RESOURCES`), so this project runs beside every other cross
+ * project. The Rust side is made current first (rebuild + `createdb` of its
+ * database) via `prepare_rust_spine_backend`; the stub self-wipes it on
+ * startup.
  *
  * @module
  */
@@ -30,6 +30,7 @@ import { rust_spine_stub_backend_config } from '#lib/testing/cross_backend/rust_
 import { with_database_name } from '#lib/testing/cross_backend/postgres_database.ts';
 import type { TestProject } from 'vitest/node';
 
+import { CROSS_PROJECT_RESOURCES } from './cross_backend_projects.ts';
 import './cross_test_types.ts';
 import {
 	prepare_rust_spine_backend,
@@ -38,16 +39,10 @@ import {
 } from './global_setup_helpers.ts';
 
 /**
- * The security stub's Postgres database, on the server the stub's URL names —
- * its own, since every stub wipes its database at startup.
+ * The project's two backends — the stub over a database of its own, on the
+ * server the stub's URL names, since every stub wipes its database at startup.
  */
-const SECURITY_STUB_DATABASE = 'fuz_app_test_rust_spine_stub_security';
-
-/** The TS leg's port — past the parity project's `1181` / `1182`. */
-const SECURITY_TS_PORT = 1183;
-
-/** The security stub's port. */
-const SECURITY_STUB_PORT = 1184;
+const { ts: SECURITY_TS, stub: SECURITY_STUB } = CROSS_PROJECT_RESOURCES.cross_backend_security;
 
 /**
  * The action limiters' `max_attempts` on both backends — small, so a case
@@ -66,16 +61,16 @@ const create_dual_spawn = (stub_database_url: string) =>
 		configs: {
 			a: () =>
 				ts_spine_node_backend_config({
-					name: 'ts_spine_node_security',
-					port: SECURITY_TS_PORT,
+					name: SECURITY_TS.name,
+					port: SECURITY_TS.port,
 					enable_login_rate_limit: true,
 					enable_action_rate_limit: true,
 					action_rate_limit_max_attempts: ACTION_RATE_LIMIT_MAX_ATTEMPTS
 				}),
 			b: () =>
 				rust_spine_stub_backend_config({
-					name: 'spine_stub_security',
-					port: SECURITY_STUB_PORT,
+					name: SECURITY_STUB.name,
+					port: SECURITY_STUB.port,
 					database_url: stub_database_url,
 					enable_login_rate_limit: true,
 					enable_action_rate_limit: true,
@@ -89,7 +84,7 @@ const create_dual_spawn = (stub_database_url: string) =>
 const setup = (project: TestProject): Promise<() => Promise<void>> => {
 	const stub_database_url = with_database_name(
 		resolve_rust_spine_stub_database_url(),
-		SECURITY_STUB_DATABASE
+		SECURITY_STUB.database
 	);
 	// Make the Rust stub binary current + ensure its DB before the dual spawn.
 	prepare_rust_spine_backend({ crate: RUST_SPINE_STUB_CRATE, database_url: stub_database_url });

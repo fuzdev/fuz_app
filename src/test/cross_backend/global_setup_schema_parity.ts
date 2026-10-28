@@ -13,16 +13,16 @@
  * the TS spine's `memory://` default — renders an index without its per-key
  * sort direction, `NULLS` placement, operator classes or `NULLS NOT DISTINCT`.
  * On one engine, a diff can only be DDL drift. So this project alone gives the
- * TS spine a `postgres://` URL: `TS_SPINE_PARITY_DATABASE` on the server the
+ * TS spine a `postgres://` URL: a database of its own on the server the
  * stub's URL names (`FUZ_TESTING_RUST_SPINE_STUB_DATABASE_URL`, else the
  * local default), which keeps the two legs on one server version.
  *
  * The single-backend `global_setup_*.ts` makers derive one backend per
  * project; these gates need both alive at once. Both run on ports, databases
- * and backend names of their own (`PARITY_*` below), so this project runs
- * beside every other cross project. Each side is prepared before the dual
- * spawn. The Rust side is made current (rebuild + `createdb` of
- * `PARITY_STUB_DATABASE`) via `prepare_rust_spine_backend`, the same
+ * and backend names of their own (`CROSS_PROJECT_RESOURCES`), so this project
+ * runs beside every other cross project. Each side is prepared before the
+ * dual spawn. The Rust side is made current (rebuild + `createdb` of its
+ * database) via `prepare_rust_spine_backend`, the same
  * prerequisite the single-backend `cross_backend_rust_spine_stub` project
  * runs; the stub wipes its own database at startup. The TS spine binary does not, and bootstrap refuses a
  * database that already holds an account, so its database is created when
@@ -48,6 +48,7 @@ import {
 } from '#lib/testing/cross_backend/postgres_database.ts';
 import type { TestProject } from 'vitest/node';
 
+import { CROSS_PROJECT_RESOURCES } from './cross_backend_projects.ts';
 import './cross_test_types.ts';
 import {
 	prepare_rust_spine_backend,
@@ -56,22 +57,12 @@ import {
 } from './global_setup_helpers.ts';
 
 /**
- * The Postgres database the TS spine leg migrates — beside the stub's, and
- * used by nothing else: every run empties it.
+ * The project's two backends: the TS spine leg over a database used by
+ * nothing else (every run empties it), and the parity stub over its own, not
+ * the single-backend stub's, since the two run at once and each stub wipes
+ * its database at startup.
  */
-const TS_SPINE_PARITY_DATABASE = 'fuz_app_test_ts_spine_parity';
-
-/**
- * The parity stub's Postgres database — its own, not the single-backend
- * stub's, since the two run at once and each wipes its database at startup.
- */
-const PARITY_STUB_DATABASE = 'fuz_app_test_rust_spine_stub_parity';
-
-/** The TS leg's port — past the single-backend projects' `1177`–`1180`. */
-const PARITY_TS_PORT = 1181;
-
-/** The parity stub's port. */
-const PARITY_STUB_PORT = 1182;
+const { ts: PARITY_TS, stub: PARITY_STUB } = CROSS_PROJECT_RESOURCES.cross_backend_parity;
 
 /**
  * Both legs' database URLs: the stub's URL with the database name replaced,
@@ -81,8 +72,8 @@ const PARITY_STUB_PORT = 1182;
 const resolve_parity_database_urls = (): { ts: string; stub: string } => {
 	const base = resolve_rust_spine_stub_database_url();
 	return {
-		ts: with_database_name(base, TS_SPINE_PARITY_DATABASE),
-		stub: with_database_name(base, PARITY_STUB_DATABASE)
+		ts: with_database_name(base, PARITY_TS.database),
+		stub: with_database_name(base, PARITY_STUB.database)
 	};
 };
 
@@ -91,9 +82,9 @@ const setup = async (project: TestProject): Promise<() => Promise<void>> => {
 	// Make the Rust stub binary current + ensure its DB before the dual spawn.
 	prepare_rust_spine_backend({ crate: RUST_SPINE_STUB_CRATE, database_url: database_urls.stub });
 	// on the server the URL names — the wipe below connects through the URL
-	ensure_database(TS_SPINE_PARITY_DATABASE, database_urls.ts);
+	ensure_database(PARITY_TS.database, database_urls.ts);
 	await empty_owned_database(database_urls.ts, {
-		owned_name: TS_SPINE_PARITY_DATABASE,
+		owned_name: PARITY_TS.database,
 		label: 'schema parity setup',
 		hint: `or set ${RUST_SPINE_STUB_DATABASE_URL_ENV} to a server both legs can use`
 	});
@@ -101,14 +92,14 @@ const setup = async (project: TestProject): Promise<() => Promise<void>> => {
 		configs: {
 			a: () =>
 				ts_spine_node_backend_config({
-					name: 'ts_spine_node_parity',
-					port: PARITY_TS_PORT,
+					name: PARITY_TS.name,
+					port: PARITY_TS.port,
 					database_url: database_urls.ts
 				}),
 			b: () =>
 				rust_spine_stub_backend_config({
-					name: 'spine_stub_parity',
-					port: PARITY_STUB_PORT,
+					name: PARITY_STUB.name,
+					port: PARITY_STUB.port,
 					database_url: database_urls.stub
 				})
 		}

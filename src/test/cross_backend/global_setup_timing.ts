@@ -12,9 +12,9 @@
  * shortened receive timeout would close the standard suites' idle sockets
  * mid-case, so the intervals can only be shortened on backends nothing else
  * shares. Both backends run on ports, a stub database and backend names of
- * their own (`TIMING_*` below), so this project runs beside every other cross
- * project. The Rust side is made current first (rebuild + `createdb` of
- * `TIMING_STUB_DATABASE`) via `prepare_rust_spine_backend`; the stub
+ * their own (`CROSS_PROJECT_RESOURCES`), so this project runs beside every
+ * other cross project. The Rust side is made current first (rebuild +
+ * `createdb` of its database) via `prepare_rust_spine_backend`; the stub
  * self-wipes it on startup.
  *
  * @module
@@ -26,6 +26,7 @@ import { rust_spine_stub_backend_config } from '#lib/testing/cross_backend/rust_
 import { with_database_name } from '#lib/testing/cross_backend/postgres_database.ts';
 import type { TestProject } from 'vitest/node';
 
+import { CROSS_PROJECT_RESOURCES } from './cross_backend_projects.ts';
 import './cross_test_types.ts';
 import {
 	prepare_rust_spine_backend,
@@ -34,16 +35,10 @@ import {
 } from './global_setup_helpers.ts';
 
 /**
- * The timing stub's Postgres database, on the server the stub's URL names —
- * its own, since every stub wipes its database at startup.
+ * The project's two backends — the stub over a database of its own, on the
+ * server the stub's URL names, since every stub wipes its database at startup.
  */
-const TIMING_STUB_DATABASE = 'fuz_app_test_rust_spine_stub_timing';
-
-/** The TS leg's port — past the TS-runtime differential's `1185` / `1186`. */
-const TIMING_TS_PORT = 1187;
-
-/** The timing stub's port. */
-const TIMING_STUB_PORT = 1188;
+const { ts: TIMING_TS, stub: TIMING_STUB } = CROSS_PROJECT_RESOURCES.cross_backend_timing;
 
 /**
  * The audit stream's keep-alive interval on both backends — short, so a
@@ -65,15 +60,15 @@ const create_dual_spawn = (stub_database_url: string) =>
 		configs: {
 			a: () =>
 				ts_spine_node_backend_config({
-					name: 'ts_spine_node_timing',
-					port: TIMING_TS_PORT,
+					name: TIMING_TS.name,
+					port: TIMING_TS.port,
 					audit_sse_keep_alive_ms: AUDIT_SSE_KEEP_ALIVE_MS,
 					ws_receive_timeout_ms: WS_RECEIVE_TIMEOUT_MS
 				}),
 			b: () =>
 				rust_spine_stub_backend_config({
-					name: 'spine_stub_timing',
-					port: TIMING_STUB_PORT,
+					name: TIMING_STUB.name,
+					port: TIMING_STUB.port,
 					database_url: stub_database_url,
 					audit_sse_keep_alive_ms: AUDIT_SSE_KEEP_ALIVE_MS,
 					ws_receive_timeout_ms: WS_RECEIVE_TIMEOUT_MS
@@ -85,7 +80,7 @@ const create_dual_spawn = (stub_database_url: string) =>
 const setup = (project: TestProject): Promise<() => Promise<void>> => {
 	const stub_database_url = with_database_name(
 		resolve_rust_spine_stub_database_url(),
-		TIMING_STUB_DATABASE
+		TIMING_STUB.database
 	);
 	// Make the Rust stub binary current + ensure its DB before the dual spawn.
 	prepare_rust_spine_backend({ crate: RUST_SPINE_STUB_CRATE, database_url: stub_database_url });
