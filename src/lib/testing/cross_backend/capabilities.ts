@@ -59,10 +59,12 @@ import type { TestingBackdoorMethod } from './spine_surface_constants.ts';
 export interface BackendCapabilities {
 	/**
 	 * WebSocket transport is reachable end-to-end. Gates the cross-process
-	 * WS round-trip suite and the per-account connection-cap suite
-	 * (`describe_ws_connection_cap_cross_tests`); the in-process
-	 * `describe_ws_round_trip_tests` runs against `register_action_ws`
-	 * directly and ignores this flag.
+	 * WS round-trip suite, the per-account connection-cap suite
+	 * (`describe_ws_connection_cap_cross_tests`), and the front door's
+	 * WS-path cases (`describe_transport_composition_cross_tests`) — the
+	 * upgrade rows, and the rows that ask for no upgrade, which run in-process
+	 * too; the in-process `describe_ws_round_trip_tests` runs against
+	 * `register_action_ws` directly and ignores this flag.
 	 */
 	readonly ws: boolean;
 	/**

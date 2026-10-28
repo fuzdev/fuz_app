@@ -2427,8 +2427,9 @@ resolution on both spines. `xfail` is for a backend known to admit the
 socket; fuz_app passes none. Given `base_url`, every
 probe is written to the socket (`raw_http_exchange`) and an over-cap request
 sends its head alone; with `base_url: null` the probes go through the
-fixture's transport and the WS rows skip. Not in the standard bundle. fuz_app's
-in-process leg is `src/test/auth/transport_composition_parity.db.test.ts`.
+fixture's transport and only the WS upgrade rows skip — the WS-path rows
+that ask for no upgrade gate on `capabilities.ws` alone. Not in the standard
+bundle. fuz_app's in-process leg is `src/test/auth/transport_composition_parity.db.test.ts`.
 
 `cross_backend/narrowed_api_token.ts` — `mint_narrowed_api_token({app,
 rpc_path, session_headers, methods, name?})` mints a method-scoped api token

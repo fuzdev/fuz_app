@@ -19,6 +19,7 @@ import '../assert_dev_env.ts';
  * | RPC `POST` | 403 `forbidden_origin` | 403 `forbidden_origin` | 403 `forbidden_origin` | 413 `payload_too_large` | 401 `authentication_required` | 403 `token_scope_required` (`rpc:<method>`) |
  * | RPC `GET` | 403 `forbidden_origin` | 403 `forbidden_origin` | 403 `forbidden_origin` | — | 401 `authentication_required` | 403 `token_scope_required` (`rpc:<method>`) |
  * | WS upgrade | 403 `forbidden_origin` | 403 `forbidden_origin` | 403 `forbidden_origin` | — | 401 `authentication_required` | 403 `token_scope_required` (`surface:ws_upgrade`) |
+ * | WS path, no upgrade | 403 `forbidden_origin` | — | — | — | 401 `authentication_required` | — |
  * | SSE (audit stream) | 403 `forbidden_origin` | 403 `forbidden_origin` | 403 `forbidden_origin` | — | 401 `authentication_required` | 403 `credential_type_required` |
  *
  * - **foreign `Origin`** carries the keeper's session cookie, so only the
@@ -37,6 +38,10 @@ import '../assert_dev_env.ts';
  *   of both the origin check and auth. Only the surfaces that take a body have
  *   the column.
  * - **no credential** sends an allowed `Origin` and nothing else.
+ * - **WS path, no upgrade** is a `GET` on the WebSocket path with no
+ *   `Upgrade` header: the gates answer it as they answer an upgrade, and one
+ *   they admit is a 404, as is any method but `GET` (its own cases below the
+ *   table).
  * - **narrowed token** sends a bearer minted with a method-scoped scope, and no
  *   `Origin` (a bearer in a browser context is discarded, not refused). The RPC
  *   probe calls a method the scope doesn't name. A narrowed token reaches no
@@ -55,8 +60,9 @@ import '../assert_dev_env.ts';
  * (`raw_http_exchange`): an upgrade has to be, and an over-cap request sends
  * its head alone, as `body_size.ts` explains — the 413 must arrive without a
  * body byte. With `base_url: null` the probes go through the fixture's
- * in-process transport, whole bodies included, and the WebSocket rows skip
- * (there is no socket to upgrade).
+ * in-process transport, whole bodies included, and only the WebSocket
+ * upgrade rows skip (there is no socket to upgrade): the WebSocket-path rows
+ * that ask for no upgrade gate on `capabilities.ws` alone.
  *
  * **Multi-actor upgrade.** One more WS row needs a keeper seeded with a
  * second actor (`extra_actors`), so it runs only given `multi_actor`: a
@@ -530,10 +536,61 @@ export const describe_transport_composition_cross_tests = (
 		// an upgrade needs a socket; in-process there is none
 		(c.surface !== 'ws_upgrade' || base_url !== null);
 
+	/** A request on the WebSocket path that asks for no upgrade. */
+	const ws_path_probe = (
+		method: 'GET' | 'POST',
+		credential: Record<string, string>
+	): ProbeRequest => ({
+		method,
+		path: ws_path,
+		headers: method === 'POST' ? { ...credential, 'content-type': 'application/json' } : credential,
+		body: method === 'POST' ? '{}' : null,
+		over_cap_length: null
+	});
+
 	describe('transport composition (front door)', () => {
 		for (const c of transport_composition_cases) {
 			test_if(is_runnable(c), case_name(c), () => run_case(c, setup_test));
 		}
+		// The WebSocket path serves `GET` alone, and its gates run before the
+		// upgrade is looked at: any other method is a 404, a `GET` asking for no
+		// upgrade is refused by the gates like an upgrade is, and one the gates
+		// admit is a 404 — never an upgrade refusal answered ahead of auth. None
+		// of them upgrades, so they run in-process too.
+		const ws_runnable = capabilities.ws;
+		test_if(ws_runnable, 'ws path × POST with a session → 404', async () => {
+			const fixture = await setup_test();
+			const res = await send_probe(
+				fixture,
+				ws_path_probe('POST', { ...fixture.create_session_headers(), origin: allowed_origin })
+			);
+			assert.strictEqual(res.status, 404, `body: ${res.text.slice(0, 200)}`);
+		});
+		test_if(ws_runnable, 'ws path × GET without upgrade, no credential → 401', async () => {
+			const fixture = await setup_test();
+			const res = await send_probe(fixture, ws_path_probe('GET', { origin: allowed_origin }));
+			assert.strictEqual(res.status, 401, `body: ${res.text.slice(0, 200)}`);
+			assert.strictEqual(
+				(raw_http_parse_json(res.text) as { error?: unknown } | null)?.error,
+				'authentication_required'
+			);
+		});
+		test_if(ws_runnable, 'ws path × GET without upgrade, foreign origin → 403', async () => {
+			const fixture = await setup_test();
+			const res = await send_probe(
+				fixture,
+				ws_path_probe('GET', { ...fixture.create_session_headers(), origin: DISALLOWED_ORIGIN })
+			);
+			assert.strictEqual(res.status, 403, `body: ${res.text.slice(0, 200)}`);
+		});
+		test_if(ws_runnable, 'ws path × GET without upgrade, admitted by the gates → 404', async () => {
+			const fixture = await setup_test();
+			const res = await send_probe(
+				fixture,
+				ws_path_probe('GET', { ...fixture.create_session_headers(), origin: allowed_origin })
+			);
+			assert.strictEqual(res.status, 404, `body: ${res.text.slice(0, 200)}`);
+		});
 		const { multi_actor } = options;
 		if (!multi_actor) return;
 		for (const c of transport_composition_multi_actor_cases) {
