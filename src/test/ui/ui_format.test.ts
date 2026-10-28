@@ -12,6 +12,7 @@ import {
 	format_value,
 	format_datetime_local,
 	format_audit_metadata,
+	count_in_window,
 	truncate_middle,
 	truncate_uuid
 } from '#lib/ui/ui_format.ts';
@@ -478,5 +479,39 @@ describe('format_value', () => {
 
 	test('NaN returns "NaN"', () => {
 		assert.strictEqual(format_value(NaN), 'NaN');
+	});
+});
+
+describe('count_in_window', () => {
+	const start = t('2026-03-20T12:00:00Z');
+	const rows = (...isos: Array<string>): Array<{ created_at: string }> =>
+		isos.map((created_at) => ({ created_at }));
+
+	test('counts only the rows inside the window', () => {
+		const result = count_in_window(
+			rows('2026-03-21T00:00:00Z', '2026-03-20T12:00:00Z', '2026-03-19T00:00:00Z'),
+			start,
+			200
+		);
+		assert.deepStrictEqual(result, { count: 2, label: '2' });
+	});
+
+	test('an empty list counts zero', () => {
+		assert.deepStrictEqual(count_in_window([], start, 200), { count: 0, label: '0' });
+	});
+
+	test('a full list whose oldest row is inside the window reads N+', () => {
+		const result = count_in_window(rows('2026-03-21T00:00:00Z', '2026-03-20T13:00:00Z'), start, 2);
+		assert.deepStrictEqual(result, { count: 2, label: '2+' });
+	});
+
+	test('a full list that reaches past the window is exact', () => {
+		const result = count_in_window(rows('2026-03-21T00:00:00Z', '2026-03-19T00:00:00Z'), start, 2);
+		assert.deepStrictEqual(result, { count: 1, label: '1' });
+	});
+
+	test('a short list is exact even when every row is inside the window', () => {
+		const result = count_in_window(rows('2026-03-21T00:00:00Z'), start, 2);
+		assert.deepStrictEqual(result, { count: 1, label: '1' });
 	});
 });

@@ -314,11 +314,17 @@ destructive actions.
   `state.remove.loading(invite_id)` / `state.remove.error(invite_id)`
   with inline per-row error display.
 - `AdminOverview.svelte` — dashboard panels (accounts / sessions /
-  invites / recent activity / security / system). Consumes all four
+  invites / recent activity / security / system). Consumes the admin
   RPC contexts plus `auth_state_context`; fetches in parallel on mount.
-  Derives `role_counts`, `failed_logins`, `role_grant_changes` from
-  the audit log. `role_counts` is display-only and scope-blind — an account
-  counts under each role it holds at any scope.
+  Recent activity is the newest audit slice; the security counts come from
+  their own queries — failed logins from `audit_log_list` filtered to
+  `login` + `failure`, role grant changes from `audit_log_role_grant_history`
+  — each fetched up to `AUDIT_LOG_LIST_LIMIT_MAX` rows and counted over the
+  last 24 hours (`count_in_window`), `N+` when the cap may cut the window off.
+  The public-signup chip renders only once settings load, labeled
+  `open` / `invite-only` in both the Invites and System panels.
+  `role_counts` is display-only and scope-blind — an account counts under
+  each role it holds at any scope.
 - `AdminRoleGrantHistory.svelte` — role-grant-create/revoke history table.
   Consumes `audit_log_rpc_context`, calls
   `audit_log.fetch_role_grant_history()` once on mount.
@@ -643,6 +649,9 @@ format_scope, global_label)` helper — `global_label = null` renders no
   - `truncate_uuid(uuid)` — 12-char middle-truncation.
   - `format_datetime_local(timestamp)` — absolute UTC string for
     `title` attributes.
+  - `count_in_window(rows, window_start, cap)` — count of newest-first
+    rows created since `window_start`, labeled `N+` when a full capped
+    list's oldest row is still inside the window.
   - `format_value(value)` — table-cell stringifier (NULL / undefined /
     JSON / primitive).
   - `format_audit_metadata(event_type, metadata)` — event-type-
