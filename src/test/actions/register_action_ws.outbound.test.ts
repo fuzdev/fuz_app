@@ -222,7 +222,7 @@ describe('register_action_ws outbound overflow', () => {
 						// a notification, then the reply, then the close — one run
 						ctx.notify('before_reply', {});
 						ctx.post_commit_effects.push(() => {
-							transport.close_sockets_for_account(ctx.auth!.account.id);
+							transport.close_connections({ kind: 'account', account_id: ctx.auth!.account.id });
 						});
 						return input;
 					}
@@ -270,7 +270,7 @@ describe('register_action_ws closes', () => {
 						ctx.notify('bulk', { big });
 						ctx.notify('bulk', { big });
 						ctx.post_commit_effects.push(() => {
-							transport.close_sockets_for_account(ctx.auth!.account.id);
+							transport.close_connections({ kind: 'account', account_id: ctx.auth!.account.id });
 						});
 						return input;
 					}
@@ -351,7 +351,7 @@ describe('register_action_ws closes', () => {
 		assert.strictEqual(transport.get_pending_connection_count(), 1);
 
 		// the revocation lands while the re-read is in flight
-		assert.strictEqual(transport.close_sockets_for_account(account_id), 1);
+		assert.strictEqual(transport.close_connections({ kind: 'account', account_id }), 1);
 		assert.strictEqual(fake.closes[0]?.code, WS_CLOSE_SESSION_REVOKED);
 		// the re-read answers: the upgrade is refused, on a socket already closed
 		re_read.resolve({ rows: [] });

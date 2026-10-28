@@ -1149,7 +1149,7 @@ describe('register_action_ws socket lifecycle hooks', () => {
 		assert.strictEqual(typeof ctx.connection_id, 'string');
 		assert.ok(ctx.connection_id.length > 0);
 		assert.strictEqual(ctx.identity.account_id, 'acc_1'); // from create_fake_hono_context
-		assert.strictEqual(typeof ctx.identity.token_hash, 'string'); // session credential
+		assert.strictEqual(typeof ctx.identity.session_hash, 'string'); // session credential
 		assert.strictEqual(ctx.identity.api_token_id, null);
 		assert.strictEqual(typeof ctx.notify, 'function');
 		assert.ok(ctx.signal instanceof AbortSignal);
@@ -1319,7 +1319,7 @@ describe('register_action_ws socket lifecycle hooks', () => {
 	});
 
 	test('on_socket_close identity stays readable after audit-revocation wipes transport state', async () => {
-		// Models the audit-guard path: `transport.close_sockets_for_account`
+		// Models the audit-guard path: `transport.close_connections` with an `account` target
 		// clears the transport's internal identity map and calls `ws.close()`.
 		// Hono then fires onClose. The hook must still see the identity because
 		// it was captured at open time, independently of the transport.
@@ -1333,7 +1333,7 @@ describe('register_action_ws socket lifecycle hooks', () => {
 
 		await h.on_open();
 		// audit guard path — clears identity map and calls ws.close()
-		const closed = h.transport.close_sockets_for_account('acc_1' as never);
+		const closed = h.transport.close_connections({ kind: 'account', account_id: 'acc_1' as never });
 		assert.strictEqual(closed, 1);
 		assert.strictEqual(h.transport.get_connection_count() > 0, false); // identity map already cleared
 		// Hono would fire onClose in response to ws.close(); simulate that.
@@ -1451,7 +1451,7 @@ describe('register_action_ws self-revocation', () => {
 		const { timeline, request } = await open_self_revoking_socket((ctx, transport) => {
 			queue_connection_close(ctx, transport, {
 				kind: 'session',
-				session_token_hash: hash_session_token(SESSION_ID)
+				session_hash: hash_session_token(SESSION_ID)
 			});
 		});
 
@@ -1530,7 +1530,10 @@ describe('register_action_ws a server-closed socket dispatches nothing', () => {
 		assert.strictEqual(runs(), 1);
 		assert.strictEqual(h.fake.sends.length, 1);
 
-		assert.strictEqual(h.transport.close_sockets_for_account('acc_1' as never), 1);
+		assert.strictEqual(
+			h.transport.close_connections({ kind: 'account', account_id: 'acc_1' as never }),
+			1
+		);
 		assert.strictEqual(h.fake.closes[0]!.code, WS_CLOSE_SESSION_REVOKED);
 
 		// the client withholds its close frame and keeps sending
@@ -1545,7 +1548,7 @@ describe('register_action_ws a server-closed socket dispatches nothing', () => {
 	test('an oversized frame on a revoked socket sends no second close', async () => {
 		const { h, runs } = await build_counting_harness({ max_message_bytes: 256 });
 		await h.on_open();
-		h.transport.close_sockets_for_account('acc_1' as never);
+		h.transport.close_connections({ kind: 'account', account_id: 'acc_1' as never });
 		assert.strictEqual(h.fake.closes.length, 1);
 
 		await h.on_message({
@@ -1746,7 +1749,7 @@ describe('register_action_ws a server-closed socket dispatches nothing', () => {
 		const signal = await started.promise;
 		assert.strictEqual(signal.aborted, false);
 
-		h.transport.close_sockets_for_account('acc_1' as never);
+		h.transport.close_connections({ kind: 'account', account_id: 'acc_1' as never });
 		// no `on_close` yet — the close handshake has not landed
 		assert.strictEqual(signal.aborted, true);
 
@@ -2025,7 +2028,10 @@ describe('register_action_ws server heartbeat', () => {
 		// `onOpen` admits synchronously here and resumes a microtask later; a
 		// revocation lands in between
 		const opening = h.on_open();
-		assert.strictEqual(h.transport.close_sockets_for_account('acc_1' as never), 1);
+		assert.strictEqual(
+			h.transport.close_connections({ kind: 'account', account_id: 'acc_1' as never }),
+			1
+		);
 		await opening;
 
 		vi.advanceTimersByTime(2000);
@@ -2045,7 +2051,7 @@ describe('register_action_ws server heartbeat', () => {
 			heartbeat: { timeout: 200 }
 		});
 		const opening = h.on_open();
-		h.transport.close_sockets_for_account('acc_1' as never);
+		h.transport.close_connections({ kind: 'account', account_id: 'acc_1' as never });
 		await opening;
 
 		await h.on_close();

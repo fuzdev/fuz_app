@@ -439,10 +439,10 @@ export const create_account_route_specs = (
 					// would drop a queued close while the eviction stands. No audit
 					// row: there is no eviction event, and the `login` row records
 					// the cause.
-					for (const session_token_hash of evicted) {
+					for (const session_hash of evicted) {
 						close_connections_after_commit(
 							connection_closer,
-							{ kind: 'session', session_token_hash },
+							{ kind: 'session', session_hash },
 							deps.log
 						);
 					}

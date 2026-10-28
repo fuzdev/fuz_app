@@ -194,7 +194,10 @@ describe('register_action_ws on Node — a client that withholds its close frame
 		client.send_text(record_request(1, 'before revocation'));
 		await client.wait_for(is_response_to(1));
 
-		assert.strictEqual(server.transport.close_sockets_for_account(ACCOUNT_ID as never), 1);
+		assert.strictEqual(
+			server.transport.close_connections({ kind: 'account', account_id: ACCOUNT_ID as never }),
+			1
+		);
 		const close = await client.wait_for(is_raw_ws_close);
 		assert.strictEqual(raw_ws_close_code(close), WS_CLOSE_SESSION_REVOKED);
 

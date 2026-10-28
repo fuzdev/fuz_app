@@ -161,7 +161,9 @@ describe_db('cleanup_expired_sessions', (get_db) => {
 		}
 		const closes: Array<ProbedClose> = [];
 		const probe: ConnectionCloser = {
-			close_sockets_for_session: (id) => {
+			close_connections: (target) => {
+				if (target.kind !== 'session') throw new Error('the sweep closes sessions only');
+				const id = target.session_hash;
 				closes.push({
 					id,
 					open_transactions: gated.open_transactions(),
@@ -171,16 +173,7 @@ describe_db('cleanup_expired_sessions', (get_db) => {
 				});
 				return 0;
 			},
-			close_sockets_for_token: () => {
-				throw new Error('the sweep closes sessions only');
-			},
-			close_sockets_for_account: () => {
-				throw new Error('the sweep closes sessions only');
-			},
-			close_sockets_for_role: () => {
-				throw new Error('the sweep closes sessions only');
-			},
-			close_all_sockets: () => {
+			close_all_connections: () => {
 				throw new Error('the sweep closes sessions only');
 			}
 		};
@@ -292,16 +285,14 @@ describe_db('cleanup_expired_sessions', (get_db) => {
 		const attempted: Array<string> = [];
 		const boom = new Error('synthetic close failure');
 		const throwing: ConnectionCloser = {
-			close_sockets_for_session: (id) => {
-				attempted.push(id);
+			close_connections: (target) => {
+				if (target.kind !== 'session') return 0;
+				attempted.push(target.session_hash);
 				// the first one asked for, whichever the delete returned first
 				if (attempted.length === 1) throw boom;
 				return 0;
 			},
-			close_sockets_for_token: () => 0,
-			close_sockets_for_account: () => 0,
-			close_sockets_for_role: () => 0,
-			close_all_sockets: () => 0
+			close_all_connections: () => 0
 		};
 
 		const swept = await cleanup_expired_sessions({
@@ -331,11 +322,11 @@ describe_db('cleanup_expired_sessions', (get_db) => {
 		const transport = new BackendWebsocketTransport({ log });
 		connection_closer.add(transport);
 		const audit_sse = create_audit_log_sse({ log, connection_closer });
-		const connect = (session_token_hash: string, account_id: Uuid) => {
+		const connect = (session_hash: string, account_id: Uuid) => {
 			const ws = create_fake_ws();
-			transport.add_connection(ws.ws, session_token_hash, account_id);
+			transport.add_connection(ws.ws, session_hash, account_id);
 			const stream = create_mock_stream();
-			audit_sse.registry.subscribe(stream, { scope: session_token_hash, groups: [account_id] });
+			audit_sse.registry.subscribe(stream, { scope: session_hash, groups: [account_id] });
 			return { ws, stream };
 		};
 		const on_expired = connect(expired, a.account_id);

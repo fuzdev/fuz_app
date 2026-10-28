@@ -104,14 +104,12 @@ const create_harness = (): Harness => {
 			}),
 			audit: create_test_audit_emitter(),
 			connection_closer: {
-				close_sockets_for_session: (id) => {
-					closed.push(id);
+				close_connections: (target) => {
+					if (target.kind !== 'session') return sessions_only();
+					closed.push(target.session_hash);
 					return 1;
 				},
-				close_sockets_for_token: sessions_only,
-				close_sockets_for_account: sessions_only,
-				close_sockets_for_role: sessions_only,
-				close_all_sockets: sessions_only
+				close_all_connections: sessions_only
 			}
 		},
 		starts,

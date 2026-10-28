@@ -5,8 +5,8 @@
  *
  * Asserts that:
  * 1. Every revoking handler closes the right connections through
- *    `deps.connection_closer` — `assert_close_call(calls[n], method, id)`
- *    pins `{method, id}`.
+ *    `deps.connection_closer` — `assert_close_call(calls[n], target)` pins
+ *    the `ConnectionCloseTarget` each close was given.
  * 2. The close runs **after the handler's transaction commits**. The
  *    `every revocation site` block drives each site over a `create_gated_db`
  *    and has its closer probe record two things at the moment it is called:
@@ -75,7 +75,11 @@ import {
 import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
 import { rpc_action } from '#lib/actions/action_types.ts';
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
-import { queue_connection_close, type ConnectionCloser } from '#lib/actions/connection_closer.ts';
+import {
+	queue_connection_close,
+	type ConnectionCloser,
+	type ConnectionCloseTarget
+} from '#lib/actions/connection_closer.ts';
 import { register_action_ws } from '#lib/actions/register_action_ws.ts';
 import { BackendWebsocketTransport } from '#lib/actions/transports_ws_backend.ts';
 import {
@@ -219,7 +223,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			});
 			assert.strictEqual(res.ok, true);
 			assert.strictEqual(calls.length, 1, 'connection_closer called exactly once');
-			assert_close_call(calls[0], 'session', session_id);
+			assert_close_call(calls[0], { kind: 'session', session_hash: session_id });
 
 			// Audit emit fires fire-and-forget; with `await_pending_effects: true`,
 			// it lands by response time.
@@ -390,7 +394,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			if (res.ok)
 				assert.strictEqual(res.result.count, 1, 'bootstrap session was the only active session');
 			assert.strictEqual(calls.length, 1);
-			assert_close_call(calls[0], 'account', test_app.backend.account.id);
+			assert_close_call(calls[0], { kind: 'account', account_id: test_app.backend.account.id });
 			await test_app.cleanup();
 		});
 
@@ -436,7 +440,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			// still fired the close would pass (`calls.length === 1`) silently.
 			if (res.ok) assert.strictEqual(res.result.revoked, true);
 			assert.strictEqual(calls.length, 1);
-			assert_close_call(calls[0], 'token', token_id);
+			assert_close_call(calls[0], { kind: 'token', api_token_id: token_id });
 			await test_app.cleanup();
 		});
 
@@ -573,7 +577,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			// The audit success-shape assertions below pin the row's
 			// `target_account_id` + `metadata.count` so a refactor that dropped
 			// either would surface.
-			assert_close_call(calls[0], 'account', target.account.id);
+			assert_close_call(calls[0], { kind: 'account', account_id: target.account.id });
 			const success_audits = audit_events.filter(
 				(e) => e.event_type === 'session_revoke_all' && e.outcome === 'success'
 			);
@@ -605,7 +609,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			});
 			assert.strictEqual(res.ok, true);
 			assert.strictEqual(calls.length, 1);
-			assert_close_call(calls[0], 'account', target.account.id);
+			assert_close_call(calls[0], { kind: 'account', account_id: target.account.id });
 			// Mirror the session-revoke-all success-shape assertions above —
 			// pin `target_account_id` populated and `metadata.count` set.
 			const success_audits = audit_events.filter(
@@ -748,7 +752,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			assert.strictEqual(res.ok, true);
 			if (res.ok) assert.strictEqual(res.result.count, 0);
 			assert.strictEqual(calls.length, 1, 'close fires unconditionally on the success path');
-			assert_close_call(calls[0], 'account', target.account.id);
+			assert_close_call(calls[0], { kind: 'account', account_id: target.account.id });
 			await test_app.cleanup();
 		});
 
@@ -774,7 +778,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			assert.strictEqual(res.ok, true);
 			if (res.ok) assert.strictEqual(res.result.count, 0);
 			assert.strictEqual(calls.length, 1);
-			assert_close_call(calls[0], 'account', target.account.id);
+			assert_close_call(calls[0], { kind: 'account', account_id: target.account.id });
 			await test_app.cleanup();
 		});
 	});
@@ -805,7 +809,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			// account-grain — the scope `logout` declares in
 			// `audit_event_revocation_scopes`, so the handler's close and the
 			// audit listeners' converge.
-			assert_close_call(calls[0], 'account', test_app.backend.account.id);
+			assert_close_call(calls[0], { kind: 'account', account_id: test_app.backend.account.id });
 			// Pin `event_type: 'logout'` (NOT `session_revoke`) on the audit row.
 			// The listeners close by the scope the event type declares: a refactor
 			// that emitted `session_revoke` here would narrow the listener close
@@ -846,7 +850,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			});
 			assert.strictEqual(res.status, 200);
 			assert.strictEqual(calls.length, 1, 'closer fired once for the account-wide revoke');
-			assert_close_call(calls[0], 'account', test_app.backend.account.id);
+			assert_close_call(calls[0], { kind: 'account', account_id: test_app.backend.account.id });
 			// Pin the defense-in-depth `credential_type` field on the
 			// success-path audit metadata (see `docs/security.md`
 			// §Credential-channel gating). A refactor that drops the field
@@ -1011,7 +1015,7 @@ describe_db('connection_closer wiring', (get_db) => {
 				1,
 				'standard bundle wired closer into admin_session_revoke_all'
 			);
-			assert_close_call(calls[0], 'account', target.account.id);
+			assert_close_call(calls[0], { kind: 'account', account_id: target.account.id });
 
 			// account-side: discover the bootstrap session id, then revoke
 			// it. Sits after the admin call because revoking the bootstrap
@@ -1043,7 +1047,7 @@ describe_db('connection_closer wiring', (get_db) => {
 				1,
 				'standard bundle wired closer into account_session_revoke'
 			);
-			assert_close_call(calls[0], 'session', session_id);
+			assert_close_call(calls[0], { kind: 'session', session_hash: session_id });
 
 			await test_app.cleanup();
 		});
@@ -1057,8 +1061,7 @@ describe_db('connection_closer wiring', (get_db) => {
 
 		/** One close, as its `ConnectionCloser` call saw the world. */
 		interface ProbedClose {
-			method: 'session' | 'token' | 'account';
-			id: string;
+			target: ConnectionCloseTarget;
 			/** Transactions open on the request's `Db` when the close was called. */
 			open_transactions: number;
 			/** Whether a pool read, issued when the close was called, saw the revocation. */
@@ -1081,7 +1084,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			/** Open a connection of `identity` on the real transport and the real audit stream registry. */
 			connect: (identity: {
 				account_id: Uuid;
-				session_token_hash?: string;
+				session_hash?: string;
 				api_token_id?: string;
 			}) => LiveConnection;
 			/** Failure injection, off until a test flips it. */
@@ -1119,24 +1122,18 @@ describe_db('connection_closer wiring', (get_db) => {
 			const closes: Array<ProbedClose> = [];
 			const failing = { emit: false, audit_write: false, close: false };
 			const committed: SiteHarness['committed'] = { read: null };
-			const record = (method: ProbedClose['method'], id: string): number => {
-				closes.push({
-					method,
-					id,
-					open_transactions: gated.open_transactions(),
-					committed: committed.read ? committed.read(db) : Promise.resolve(false)
-				});
-				if (failing.close) throw new Error('injected close failure');
-				return 0;
-			};
 			const probe: ConnectionCloser = {
-				close_sockets_for_session: (id) => record('session', id),
-				close_sockets_for_token: (id) => record('token', id),
-				close_sockets_for_account: (id) => record('account', id),
-				close_sockets_for_role: () => {
-					throw new Error('no revocation here closes by role');
+				close_connections: (target) => {
+					if (target.kind === 'role') throw new Error('no revocation here closes by role');
+					closes.push({
+						target,
+						open_transactions: gated.open_transactions(),
+						committed: committed.read ? committed.read(db) : Promise.resolve(false)
+					});
+					if (failing.close) throw new Error('injected close failure');
+					return 0;
 				},
-				close_all_sockets: () => {
+				close_all_connections: () => {
 					throw new Error('a revocation never closes every connection');
 				}
 			};
@@ -1187,13 +1184,13 @@ describe_db('connection_closer wiring', (get_db) => {
 					const ws = create_fake_ws();
 					transport.add_connection(
 						ws.ws,
-						identity.session_token_hash ?? null,
+						identity.session_hash ?? null,
 						identity.account_id,
 						identity.api_token_id ?? null
 					);
 					const stream = create_mock_stream();
 					sse.registry.subscribe(stream, {
-						scope: identity.session_token_hash,
+						scope: identity.session_hash,
 						groups: identity.api_token_id
 							? [identity.account_id, identity.api_token_id]
 							: [identity.account_id]
@@ -1246,8 +1243,8 @@ describe_db('connection_closer wiring', (get_db) => {
 		/** What one site revokes and how to drive it. */
 		interface Arranged {
 			/** The connection identity the revocation must close. */
-			victim: { account_id: Uuid; session_token_hash?: string; api_token_id?: string };
-			expected: { method: ProbedClose['method']; id: string };
+			victim: { account_id: Uuid; session_hash?: string; api_token_id?: string };
+			expected: ConnectionCloseTarget;
 			/** True once the revocation is visible to a read through the pool. */
 			committed: (db: Db) => Promise<boolean>;
 			/** Make the revoking request; resolves whether it succeeded. */
@@ -1287,8 +1284,8 @@ describe_db('connection_closer wiring', (get_db) => {
 					const [session_id] = await session_ids(h);
 					assert.ok(session_id);
 					return {
-						victim: { account_id: keeper_id(h), session_token_hash: session_id },
-						expected: { method: 'session', id: session_id },
+						victim: { account_id: keeper_id(h), session_hash: session_id },
+						expected: { kind: 'session', session_hash: session_id },
 						committed: async (db) =>
 							!(await exists(db, 'SELECT 1 FROM auth_session WHERE id = $1', [session_id])),
 						act: () => rpc(h, 'account_session_revoke', { session_id })
@@ -1300,8 +1297,8 @@ describe_db('connection_closer wiring', (get_db) => {
 				arrange: async (h) => {
 					const [session_id] = await session_ids(h);
 					return {
-						victim: { account_id: keeper_id(h), session_token_hash: session_id },
-						expected: { method: 'account', id: keeper_id(h) },
+						victim: { account_id: keeper_id(h), session_hash: session_id },
+						expected: { kind: 'account', account_id: keeper_id(h) },
 						committed: (db) => no_sessions(db, keeper_id(h)),
 						act: () => rpc(h, 'account_session_revoke_all')
 					};
@@ -1314,7 +1311,7 @@ describe_db('connection_closer wiring', (get_db) => {
 					assert.ok(token_id);
 					return {
 						victim: { account_id: keeper_id(h), api_token_id: token_id },
-						expected: { method: 'token', id: token_id },
+						expected: { kind: 'token', api_token_id: token_id },
 						committed: async (db) =>
 							!(await exists(db, 'SELECT 1 FROM api_token WHERE id = $1', [token_id])),
 						act: () => rpc(h, 'account_token_revoke', { token_id })
@@ -1332,7 +1329,7 @@ describe_db('connection_closer wiring', (get_db) => {
 					assert.ok(evicted_id);
 					return {
 						victim: { account_id: keeper_id(h), api_token_id: evicted_id },
-						expected: { method: 'token', id: evicted_id },
+						expected: { kind: 'token', api_token_id: evicted_id },
 						committed: async (db) =>
 							!(await exists(db, 'SELECT 1 FROM api_token WHERE id = $1', [evicted_id])),
 						act: () =>
@@ -1349,8 +1346,8 @@ describe_db('connection_closer wiring', (get_db) => {
 				arrange: async (h) => {
 					const target = await h.test_app.create_account({ username: 'site_target' });
 					return {
-						victim: { account_id: target.account.id, session_token_hash: 'target-session-hash' },
-						expected: { method: 'account', id: target.account.id },
+						victim: { account_id: target.account.id, session_hash: 'target-session-hash' },
+						expected: { kind: 'account', account_id: target.account.id },
 						committed: (db) => no_sessions(db, target.account.id),
 						act: () => rpc(h, 'admin_session_revoke_all', { account_id: target.account.id })
 					};
@@ -1362,7 +1359,7 @@ describe_db('connection_closer wiring', (get_db) => {
 					const target = await h.test_app.create_account({ username: 'site_target' });
 					return {
 						victim: { account_id: target.account.id, api_token_id: 'tok_targettarget' },
-						expected: { method: 'account', id: target.account.id },
+						expected: { kind: 'account', account_id: target.account.id },
 						committed: (db) => no_tokens(db, target.account.id),
 						act: () => rpc(h, 'admin_token_revoke_all', { account_id: target.account.id })
 					};
@@ -1373,8 +1370,8 @@ describe_db('connection_closer wiring', (get_db) => {
 				arrange: async (h) => {
 					const target = await h.test_app.create_account({ username: 'site_target' });
 					return {
-						victim: { account_id: target.account.id, session_token_hash: 'target-session-hash' },
-						expected: { method: 'account', id: target.account.id },
+						victim: { account_id: target.account.id, session_hash: 'target-session-hash' },
+						expected: { kind: 'account', account_id: target.account.id },
 						committed: (db) =>
 							exists(db, 'SELECT 1 FROM account WHERE id = $1 AND deleted_at IS NOT NULL', [
 								target.account.id
@@ -1388,8 +1385,8 @@ describe_db('connection_closer wiring', (get_db) => {
 				arrange: async (h) => {
 					const target = await h.test_app.create_account({ username: 'site_target' });
 					return {
-						victim: { account_id: target.account.id, session_token_hash: 'target-session-hash' },
-						expected: { method: 'account', id: target.account.id },
+						victim: { account_id: target.account.id, session_hash: 'target-session-hash' },
+						expected: { kind: 'account', account_id: target.account.id },
 						committed: async (db) =>
 							!(await exists(db, 'SELECT 1 FROM account WHERE id = $1', [target.account.id])),
 						// purge is gated to the daemon-token credential, which the
@@ -1414,8 +1411,8 @@ describe_db('connection_closer wiring', (get_db) => {
 					const [session_id] = await session_ids(h);
 					assert.ok(session_id);
 					return {
-						victim: { account_id: keeper_id(h), session_token_hash: session_id },
-						expected: { method: 'account', id: keeper_id(h) },
+						victim: { account_id: keeper_id(h), session_hash: session_id },
+						expected: { kind: 'account', account_id: keeper_id(h) },
 						committed: async (db) =>
 							!(await exists(db, 'SELECT 1 FROM auth_session WHERE id = $1', [session_id])),
 						act: async () =>
@@ -1437,8 +1434,8 @@ describe_db('connection_closer wiring', (get_db) => {
 				arrange: async (h) => {
 					const [session_id] = await session_ids(h);
 					return {
-						victim: { account_id: keeper_id(h), session_token_hash: session_id },
-						expected: { method: 'account', id: keeper_id(h) },
+						victim: { account_id: keeper_id(h), session_hash: session_id },
+						expected: { kind: 'account', account_id: keeper_id(h) },
 						committed: async (db) =>
 							(await no_sessions(db, keeper_id(h))) && (await no_tokens(db, keeper_id(h))),
 						act: async () =>
@@ -1469,8 +1466,8 @@ describe_db('connection_closer wiring', (get_db) => {
 					const [evicted_hash] = await session_ids(h);
 					assert.ok(evicted_hash);
 					return {
-						victim: { account_id: keeper_id(h), session_token_hash: evicted_hash },
-						expected: { method: 'session', id: evicted_hash },
+						victim: { account_id: keeper_id(h), session_hash: evicted_hash },
+						expected: { kind: 'session', session_hash: evicted_hash },
 						committed: async (db) =>
 							!(await exists(db, 'SELECT 1 FROM auth_session WHERE id = $1', [evicted_hash])),
 						act: async () =>
@@ -1512,11 +1509,11 @@ describe_db('connection_closer wiring', (get_db) => {
 				// same account, a credential the site does not name
 				sibling: h.connect({
 					account_id: arranged.victim.account_id,
-					session_token_hash: 'sibling-session-hash'
+					session_hash: 'sibling-session-hash'
 				}),
 				bystander: h.connect({
 					account_id: bystander_account.account.id,
-					session_token_hash: 'bystander-session-hash'
+					session_hash: 'bystander-session-hash'
 				})
 			};
 		};
@@ -1552,12 +1549,12 @@ describe_db('connection_closer wiring', (get_db) => {
 			if (only_handler) assert.strictEqual(closes.length, 1, 'the handler closed, alone');
 			else assert.strictEqual(closes.length, 2, "the handler's close and the guard's repeat");
 			for (const close of closes) {
-				assert_close_call(close, arranged.expected.method, arranged.expected.id);
+				assert_close_call(close.target, arranged.expected);
 			}
 			assert_closed(connections.victim, 'victim');
 			// an account-wide close takes the sibling with it; a session- or
 			// token-scoped one must not
-			if (arranged.expected.method === 'account') assert_closed(connections.sibling, 'sibling');
+			if (arranged.expected.kind === 'account') assert_closed(connections.sibling, 'sibling');
 			else assert_open(connections.sibling, 'sibling');
 			assert_open(connections.bystander, 'bystander');
 		};
@@ -1680,7 +1677,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			test('over HTTP, the close has run while the audit INSERT is held', async () => {
 				const h = await create_site_harness(get_db());
 				const account_id = keeper_id(h);
-				const victim = h.connect({ account_id, session_token_hash: 'held-write-victim' });
+				const victim = h.connect({ account_id, session_hash: 'held-write-victim' });
 
 				const stalled = h.gated.stall(is_audit_insert);
 				const request = rpc(h, 'account_session_revoke_all');
@@ -1688,7 +1685,7 @@ describe_db('connection_closer wiring', (get_db) => {
 				try {
 					await until(() => h.closes.length > 0, 'no close while the audit write was held');
 					assert.strictEqual(h.closes.length, 1);
-					assert_close_call(h.closes[0], 'account', account_id);
+					assert_close_call(h.closes[0]?.target, { kind: 'account', account_id });
 					assert.strictEqual(h.closes[0]!.open_transactions, 0, 'after the commit');
 					assert.strictEqual(await no_sessions(h.db, account_id), true, 'the revoke committed');
 					assert_closed(victim, 'victim');
@@ -1703,8 +1700,8 @@ describe_db('connection_closer wiring', (get_db) => {
 				const h = await create_site_harness(get_db());
 				const { deps } = h.test_app.backend;
 				const account_id = keeper_id(h);
-				const [session_token_hash] = await session_ids(h);
-				assert.ok(session_token_hash);
+				const [session_hash] = await session_ids(h);
+				assert.ok(session_hash);
 
 				// the account actions over a real dispatcher, on the keeper's session
 				const stub = create_stub_upgrade();
@@ -1727,7 +1724,7 @@ describe_db('connection_closer wiring', (get_db) => {
 				const vars: Record<string, unknown> = {
 					[ACCOUNT_ID_KEY]: account_id,
 					[CREDENTIAL_TYPE_KEY]: 'session',
-					[AUTH_SESSION_TOKEN_HASH_KEY]: session_token_hash,
+					[AUTH_SESSION_TOKEN_HASH_KEY]: session_hash,
 					[REQUEST_CONTEXT_KEY]: request_context
 				};
 				const events = await stub.get_create_events()({
@@ -1839,7 +1836,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			assert.deepStrictEqual(sessions, [], 'the sessions are gone');
 			// … so its close must have run
 			assert.strictEqual(calls.length, 1, 'the committed revocation closed');
-			assert_close_call(calls[0], 'account', account_id);
+			assert_close_call(calls[0], { kind: 'account', account_id });
 			// and the caller is answered a JSON-RPC error, not a bare 500
 			assert.strictEqual(res.status, 500);
 			const body = (await res.json()) as { jsonrpc: string; id: string; error: { code: number } };

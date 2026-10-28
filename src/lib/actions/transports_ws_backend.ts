@@ -15,8 +15,8 @@
  * Registration is split to close it:
  *
  * 1. `BackendWebsocketTransport.register_pending` inserts the entry
- *    **un-admitted**. It is closeable from that instant — `close_sockets_for_*`
- *    match pending entries deliberately — and is otherwise inert: it evicts
+ *    **un-admitted**. It is closeable from that instant — `close_connections`
+ *    matches pending entries deliberately — and is otherwise inert: it evicts
  *    nothing, the cap does not count it, no broadcast / `send_to_account` /
  *    `request_connection` reaches it, and the count accessors and
  *    `is_registered` do not see it (`get_pending_connection_count` does).
@@ -96,7 +96,7 @@
  *
  * ## Shutdown
  *
- * `close_all_sockets` — the close `AppServer.close` runs — closes every
+ * `close_all_connections` — the close `AppServer.close` runs — closes every
  * connection, pending or admitted, with `WS_CLOSE_GOING_AWAY`, and leaves the
  * transport **closing**: from then on every registration is born closed. A
  * `register_pending` or `add_connection` inserts nothing — it aborts the
@@ -115,6 +115,7 @@
 
 import type { WSContext } from 'hono/ws';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
+import { UnreachableError } from '@fuzdev/fuz_util/error.ts';
 import { create_uuid, type Uuid } from '../primitive_schemas.ts';
 
 import type {
@@ -149,33 +150,71 @@ import {
 	type WsOutboundStall
 } from './ws_outbound_writer.ts';
 import type { OutboundOverflow } from '../realtime/outbound_budget.ts';
+import type { ConnectionCloseTarget } from './connection_closer.ts';
 
 // TODO support a SSE backend transport
 
 /**
  * Auth identity attached to a single WebSocket connection.
  *
- * One record per connection. `token_hash` is set for cookie-session
+ * One record per connection. `session_hash` is set for cookie-session
  * connections, `api_token_id` for bearer (`api_token`) connections, and
  * both are null for daemon-token connections (reachable only via
- * `BackendWebsocketTransport.close_sockets_for_account`). `required_roles`
+ * an `account` close target). `required_roles`
  * is what the connection's endpoint gated the upgrade on, kept per
  * registration because endpoints with different gates can share one
  * transport.
  */
 export interface ConnectionIdentity {
 	/** Blake3 session token hash, or null for non-session credentials. */
-	token_hash: string | null;
+	session_hash: string | null;
 	/** Authenticated account id. Always set. */
 	account_id: Uuid;
 	/** `api_token.id` for bearer-authenticated connections, else null. */
 	api_token_id: string | null;
 	/**
 	 * The roles the endpoint required at upgrade (any-of), or empty for an
-	 * ungated endpoint — what `close_sockets_for_role` matches on.
+	 * ungated endpoint — what a `role` close target matches on.
 	 */
 	required_roles: ReadonlyArray<string>;
 }
+
+/**
+ * Whether the connection `identity` belongs to is one `target` names — the
+ * predicate `BackendWebsocketTransport.close_connections` runs per connection.
+ * Twin of the Rust spine's `ConnectionIdentity::matches`. The SSE closer
+ * (`create_sse_connection_closer`) does not run it: it closes by the ids its
+ * registry holds, with one gating role for the whole registry.
+ *
+ * - `session` — `identity.session_hash` equals `target.session_hash`
+ * - `token` — `identity.api_token_id` equals `target.api_token_id`
+ * - `account` — `identity.account_id` equals `target.account_id`
+ * - `role` — the account matches and `role` is one of the endpoint's
+ *   `required_roles` (an ungated connection never matches)
+ *
+ * @param identity - the connection's identity
+ * @param target - the connections to close
+ * @returns whether `target` names this connection
+ */
+export const connection_identity_matches = (
+	identity: ConnectionIdentity,
+	target: ConnectionCloseTarget
+): boolean => {
+	switch (target.kind) {
+		case 'session':
+			return identity.session_hash === target.session_hash;
+		case 'token':
+			return identity.api_token_id === target.api_token_id;
+		case 'account':
+			return identity.account_id === target.account_id;
+		case 'role':
+			return (
+				identity.account_id === target.account_id && identity.required_roles.includes(target.role)
+			);
+		default:
+			throw new UnreachableError(target);
+	}
+};
 
 /**
  * Default per-account WebSocket connection cap, applied by
@@ -291,7 +330,7 @@ export class BackendWebsocketTransport {
 	// it — so a refused admission can say why it was refused.
 	#pending_close_codes: Map<Uuid, number> = new Map();
 
-	// set once by `close_all_sockets`, never cleared — every later
+	// set once by `close_all_connections`, never cleared — every later
 	// registration is born closed (module doc, "Shutdown")
 	#closing = false;
 
@@ -331,10 +370,10 @@ export class BackendWebsocketTransport {
 	 * Register a connection **un-admitted** — phase one of the two-phase
 	 * registration an upgrade runs (module doc).
 	 *
-	 * The entry is closeable at once: a `close_sockets_for_*` matching
-	 * `token_hash` / `account_id` / `api_token_id` removes it, aborts
+	 * The entry is closeable at once: a `close_connections` whose target
+	 * matches `session_hash` / `account_id` / `api_token_id` removes it, aborts
 	 * `abort_controller`, and closes `ws` with `WS_CLOSE_SESSION_REVOKED`
-	 * (`close_sockets_for_role`, matching `required_roles`, with
+	 * (a `role` target, matching `required_roles`, with
 	 * `WS_CLOSE_PERMISSION_REVOKED`); the later `admit` then refuses. Until admitted it evicts nothing, is not
 	 * counted toward the per-account cap, and receives no message.
 	 *
@@ -342,26 +381,26 @@ export class BackendWebsocketTransport {
 	 * `close_connection`, and `remove_connection` drops it once its socket has
 	 * closed.
 	 *
-	 * Once the transport is closing (`close_all_sockets`) the registration is
+	 * Once the transport is closing (`close_all_connections`) the registration is
 	 * born closed: nothing is inserted, `abort_controller` is aborted, and `ws`
 	 * is closed with `WS_CLOSE_GOING_AWAY` before this returns. The id names
 	 * nothing, so `admit` refuses it (module doc, "Shutdown").
 	 *
 	 * @param ws - the socket to close on revocation
-	 * @param token_hash - blake3 session token hash, or `null` for non-session credentials
+	 * @param session_hash - blake3 session token hash, or `null` for non-session credentials
 	 * @param account_id - the authenticated account
 	 * @param api_token_id - `api_token.id` for bearer connections, else `null`
 	 * @param abort_controller - the socket-scoped controller to abort when the
 	 *   transport closes this connection (revocation or cap eviction)
 	 * @param required_roles - the roles the endpoint gated the upgrade on, for
-	 *   `close_sockets_for_role`; empty for an ungated endpoint
+	 *   a `role` close target; empty for an ungated endpoint
 	 * @returns the freshly assigned `connection_id` (branded `Uuid`)
 	 * @mutates this - inserts an un-admitted entry into `#connections`, unless
 	 *   the transport is closing
 	 */
 	register_pending(
 		ws: WSContext,
-		token_hash: string | null,
+		session_hash: string | null,
 		account_id: Uuid,
 		api_token_id: string | null = null,
 		abort_controller: AbortController | null = null,
@@ -370,7 +409,7 @@ export class BackendWebsocketTransport {
 		if (this.#closing) return this.#close_born_closed(ws, abort_controller);
 		return this.#insert(
 			ws,
-			{ token_hash, account_id, api_token_id, required_roles },
+			{ session_hash, account_id, api_token_id, required_roles },
 			abort_controller,
 			false
 		);
@@ -440,7 +479,7 @@ export class BackendWebsocketTransport {
 	 * socket can be closed when that specific token is revoked without
 	 * tearing down the account's other sockets. Daemon-token connections
 	 * pass `null` for both — they're only reachable via
-	 * `close_sockets_for_account`.
+	 * an `account` close target.
 	 *
 	 * Enforces the per-account cap (`max_connections_per_account`): when
 	 * `account_id` already holds the maximum, its oldest admitted connections are
@@ -452,7 +491,7 @@ export class BackendWebsocketTransport {
 	 * is born closed, as in `register_pending`, and evicts nothing.
 	 *
 	 * @param required_roles - the roles the endpoint gated the connection on,
-	 *   for `close_sockets_for_role`; empty for an ungated one
+	 *   for a `role` close target; empty for an ungated one
 	 * @returns the freshly assigned `connection_id` (branded `Uuid`)
 	 * @mutates this - inserts an admitted entry into `#connections`; past the
 	 *   cap, first removes the account's oldest admitted connections and closes
@@ -460,7 +499,7 @@ export class BackendWebsocketTransport {
 	 */
 	add_connection(
 		ws: WSContext,
-		token_hash: string | null,
+		session_hash: string | null,
 		account_id: Uuid,
 		api_token_id: string | null = null,
 		abort_controller: AbortController | null = null,
@@ -472,7 +511,7 @@ export class BackendWebsocketTransport {
 		}
 		return this.#insert(
 			ws,
-			{ token_hash, account_id, api_token_id, required_roles },
+			{ session_hash, account_id, api_token_id, required_roles },
 			abort_controller,
 			true
 		);
@@ -537,7 +576,9 @@ export class BackendWebsocketTransport {
 	/**
 	 * Close one connection, pending or admitted, with `code` and `reason` — the
 	 * close `register_action_ws` makes for a heartbeat timeout, an oversized
-	 * message, a failed `on_socket_open`, and a refused admission.
+	 * message, a failed `on_socket_open`, and a refused admission. Not to be
+	 * confused with `close_connections`, which closes every connection a
+	 * `ConnectionCloseTarget` names.
 	 *
 	 * The connection is removed and its controller aborted at once; frames still
 	 * waiting for the socket are handed to it ahead of the close frame while its
@@ -606,72 +647,34 @@ export class BackendWebsocketTransport {
 	}
 
 	/**
-	 * Close all sockets associated with a specific session token hash,
-	 * including a registration still pending admission.
+	 * Close every connection `target` names, including a registration still
+	 * pending admission (`connection_identity_matches`). Not to be confused
+	 * with `close_connection`, which closes one connection by id.
+	 *
+	 * A credential target — `session`, `token`, `account` — closes with
+	 * `WS_CLOSE_SESSION_REVOKED`. A `token` close takes just that token's
+	 * sockets, so revoking one token — or evicting one past the token cap —
+	 * leaves the account's session sockets and other tokens' sockets open.
+	 *
+	 * A `role` target — a revoked global grant of a role the upgrade gate
+	 * admitted on — closes with `WS_CLOSE_PERMISSION_REVOKED`, not a
+	 * revocation's code: the credential is still good. It **over-closes an
+	 * any-of gate**: an endpoint gated on several roles admits an account
+	 * holding any one of them, but this closes on the loss of any listed role,
+	 * without checking whether the account still holds another. The client can
+	 * reconnect when it still qualifies. The account's sockets on endpoints
+	 * that did not list `role`, and on ungated ones, stay open.
 	 *
 	 * @returns the number of sockets closed
 	 * @mutates this - removes matching connections, aborts their registered
-	 *   controllers, and closes their underlying `WSContext` with
-	 *   `WS_CLOSE_SESSION_REVOKED`
+	 *   controllers, and closes their underlying `WSContext`
+	 * @throws the first error a socket's `close` threw, after every match was attempted
 	 */
-	close_sockets_for_session(token_hash: string): number {
-		return this.#close_where((id) => id.token_hash === token_hash);
-	}
-
-	/**
-	 * Close all sockets associated with a specific account, including a
-	 * registration still pending admission.
-	 *
-	 * @returns the number of sockets closed
-	 * @mutates this - removes matching connections, aborts their registered
-	 *   controllers, and closes their underlying `WSContext` with
-	 *   `WS_CLOSE_SESSION_REVOKED`
-	 */
-	close_sockets_for_account(account_id: Uuid): number {
-		return this.#close_where((id) => id.account_id === account_id);
-	}
-
-	/**
-	 * Close all sockets associated with a specific API token, including a
-	 * registration still pending admission.
-	 *
-	 * Closes just this token's sockets, so revoking one token — or evicting
-	 * one past the token cap — doesn't tear down the account's
-	 * session-authenticated sockets or other tokens' sockets.
-	 *
-	 * @returns the number of sockets closed
-	 * @mutates this - removes matching connections, aborts their registered
-	 *   controllers, and closes their underlying `WSContext` with
-	 *   `WS_CLOSE_SESSION_REVOKED`
-	 */
-	close_sockets_for_token(api_token_id: string): number {
-		return this.#close_where((id) => id.api_token_id === api_token_id);
-	}
-
-	/**
-	 * Close the sockets of `account_id` whose endpoint required `role`,
-	 * including a registration still pending admission — the close for a
-	 * revoked global grant of a role the upgrade gate admitted on. Each closes
-	 * with `WS_CLOSE_PERMISSION_REVOKED`, not a revocation's code: the
-	 * credential is still good.
-	 *
-	 * **Over-closes an any-of gate.** An endpoint gated on several roles admits
-	 * an account holding any one of them, but this closes on the loss of any
-	 * listed role, without checking whether the account still holds another.
-	 * The client can reconnect when it still qualifies. The account's sockets
-	 * on endpoints that did not list `role`, and on ungated ones, stay open.
-	 *
-	 * @returns the number of sockets closed
-	 * @mutates this - removes matching connections, aborts their registered
-	 *   controllers, and closes their underlying `WSContext` with
-	 *   `WS_CLOSE_PERMISSION_REVOKED`
-	 */
-	close_sockets_for_role(account_id: Uuid, role: string): number {
-		return this.#close_where(
-			(id) => id.account_id === account_id && id.required_roles.includes(role),
-			WS_CLOSE_PERMISSION_REVOKED,
-			WS_CLOSE_PERMISSION_REVOKED_REASON
-		);
+	close_connections(target: ConnectionCloseTarget): number {
+		const matches = (identity: ConnectionIdentity) => connection_identity_matches(identity, target);
+		return target.kind === 'role'
+			? this.#close_where(matches, WS_CLOSE_PERMISSION_REVOKED, WS_CLOSE_PERMISSION_REVOKED_REASON)
+			: this.#close_where(matches);
 	}
 
 	/**
@@ -692,7 +695,7 @@ export class BackendWebsocketTransport {
 	 *   with `WS_CLOSE_GOING_AWAY`
 	 * @throws the first error a socket's `close` threw, after every connection was attempted
 	 */
-	close_all_sockets(): number {
+	close_all_connections(): number {
 		// before any close, in the same synchronous step: an `admit` that finds
 		// its entry gone reads the shutdown, never a revocation — and set even
 		// when a socket's close throws
@@ -701,7 +704,7 @@ export class BackendWebsocketTransport {
 	}
 
 	/**
-	 * Whether `close_all_sockets` has run — the transport is shutting down and
+	 * Whether `close_all_connections` has run — the transport is shutting down and
 	 * every registration from now on is born closed (module doc, "Shutdown").
 	 * For telemetry and logs: `register_action_ws` reads it to say why an
 	 * upgrade was refused.
@@ -711,7 +714,7 @@ export class BackendWebsocketTransport {
 	}
 
 	/**
-	 * Close a registration that arrived after `close_all_sockets`, without
+	 * Close a registration that arrived after `close_all_connections`, without
 	 * inserting it. A socket whose `close` throws is logged, not thrown: the
 	 * registration is refused either way, and its caller sees the aborted
 	 * controller.
@@ -907,7 +910,7 @@ export class BackendWebsocketTransport {
 	 * the filter is exactly "this account_id"; reach for `broadcast_filtered`
 	 * when the ACL is an arbitrary predicate over `ConnectionIdentity`.
 	 *
-	 * Mirrors `close_sockets_for_account` on the send side: every connection
+	 * Mirrors an `account` close target on the send side: every connection
 	 * for the account (session, bearer, and daemon-token) receives the
 	 * message.
 	 *

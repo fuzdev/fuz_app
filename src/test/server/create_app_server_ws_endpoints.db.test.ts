@@ -959,7 +959,7 @@ describe('create_app_server.ws_endpoints', () => {
 		created.add_connection(bystander.ws, 'session_hash_bystander', other_account_id);
 
 		const { connection_closer } = config.backend.deps;
-		assert.strictEqual(connection_closer.close_sockets_for_account(account_id), 2);
+		assert.strictEqual(connection_closer.close_connections({ kind: 'account', account_id }), 2);
 		assert.strictEqual(on_supplied.closes[0]?.code, WS_CLOSE_SESSION_REVOKED);
 		assert.strictEqual(on_created.closes[0]?.code, WS_CLOSE_SESSION_REVOKED);
 		assert.strictEqual(bystander.closes.length, 0);
@@ -995,7 +995,7 @@ describe('create_app_server.ws_endpoints', () => {
 
 		// one close, both transports — the socket and the stream
 		const { connection_closer } = config.backend.deps;
-		assert.strictEqual(connection_closer.close_sockets_for_session(session_hash), 2);
+		assert.strictEqual(connection_closer.close_connections({ kind: 'session', session_hash }), 2);
 		assert.strictEqual(fake_ws.closes[0]?.code, WS_CLOSE_SESSION_REVOKED);
 		assert.ok(stream_closed);
 		assert.strictEqual(result.audit_sse.registry.count, 0);

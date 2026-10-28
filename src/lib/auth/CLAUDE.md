@@ -1002,7 +1002,7 @@ own pass would have closed for.
 session, and once the sweep deletes an expired row `account_session_revoke`
 has nothing left to close for — so `cleanup_expired_sessions` closes each
 swept session's connections itself, by session id
-(`connection_closer.close_sockets_for_session`), which is why
+(`connection_closer.close_connections` with a `session` target), which is why
 `query_session_cleanup_expired` returns the deleted ids. The close repeats
 one already made: every connection closes at its credential's deadline
 (`auth/credential_deadline.ts`) in the process holding it, sweep or no sweep.

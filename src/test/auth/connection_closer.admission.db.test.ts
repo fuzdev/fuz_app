@@ -93,7 +93,7 @@ const REVOKED_CLOSE = { code: WS_CLOSE_SESSION_REVOKED, reason: WS_CLOSE_SESSION
 const describe_pg = create_describe_db(pg_factory, auth_integration_truncate_tables);
 
 /** The credential a victim connection opens on. */
-type Credential = { session_token_hash: string } | { api_token_id: string };
+type Credential = { session_hash: string } | { api_token_id: string };
 
 /** One WebSocket endpoint over the harness's database, and how its sockets get closed. */
 interface WsEndpoint {
@@ -143,9 +143,9 @@ const create_ws_endpoint = (
 		open: async (account_id, credential) => {
 			// what the auth middleware leaves on the context for the upgrade
 			const vars: Record<string, unknown> = { [ACCOUNT_ID_KEY]: account_id };
-			if ('session_token_hash' in credential) {
+			if ('session_hash' in credential) {
 				vars[CREDENTIAL_TYPE_KEY] = 'session';
-				vars[AUTH_SESSION_TOKEN_HASH_KEY] = credential.session_token_hash;
+				vars[AUTH_SESSION_TOKEN_HASH_KEY] = credential.session_hash;
 			} else {
 				vars[CREDENTIAL_TYPE_KEY] = 'api_token';
 				vars[TOKEN_SCOPE_KEY] = token_scope_full();
@@ -576,7 +576,7 @@ describe_pg('a connection admitted while its revocation is uncommitted', (get_db
 				revocation: Pick<Revocation, 'account' | 'session_headers'>
 			): Promise<Credential> =>
 				site.revokes === 'session'
-					? { session_token_hash: await session_hash_of(h, revocation.session_headers) }
+					? { session_hash: await session_hash_of(h, revocation.session_headers) }
 					: { api_token_id: await token_id_of(h, revocation.account.id) };
 
 			test('a WebSocket is closed at the commit, by the handler', async () => {

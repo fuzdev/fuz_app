@@ -80,33 +80,18 @@ import {
  * error it met.
  *
  * `BackendWebsocketTransport` satisfies this structurally, and
- * `create_sse_connection_closer` adapts a `SubscriberRegistry`.
+ * `create_sse_connection_closer` adapts a `SubscriberRegistry`. Twin of the
+ * Rust spine's `ConnectionCloser` (with its `ShutdownCloser` supertrait's
+ * `close_all_connections`).
  */
 export interface ConnectionCloser {
-	/** Close every connection authenticated by the session whose blake3 hash is `session_token_hash`. */
-	close_sockets_for_session: (session_token_hash: string) => number;
-	/** Close every connection authenticated by the API token `api_token_id`. */
-	close_sockets_for_token: (api_token_id: string) => number;
 	/**
-	 * Close every connection of `account_id`, whatever credential opened it —
-	 * the close for a revocation that invalidates all of an account's
-	 * credentials.
-	 */
-	close_sockets_for_account: (account_id: Uuid) => number;
-	/**
-	 * Close the connections of `account_id` whose endpoint gated them on
-	 * `role` — the close for a revoked **global** grant of that role (a scoped
-	 * grant never admits at a role gate, so revoking one closes nothing; the
-	 * caller filters, `to_global_role_revocation`). A WebSocket gets
-	 * `WS_CLOSE_PERMISSION_REVOKED`, not a revocation's code: the credential is
-	 * still good.
+	 * Close every connection `target` names — pending admission or admitted.
 	 *
-	 * **Over-closes an any-of gate**: a connection whose endpoint listed
-	 * several roles closes on the loss of any of them, whether or not the
-	 * account still holds another. The client reconnects into the gate if it
-	 * still qualifies.
+	 * A revocation handler calls `queue_connection_close` instead, which runs
+	 * this after the commit.
 	 */
-	close_sockets_for_role: (account_id: Uuid, role: string) => number;
+	close_connections: (target: ConnectionCloseTarget) => number;
 	/**
 	 * Close every connection, whoever opened it — the shutdown close
 	 * `AppServer.close` runs. Not a revocation: a WebSocket gets
@@ -115,43 +100,113 @@ export interface ConnectionCloser {
 	 * registration that arrives afterward is born closed, refused at once
 	 * (`BackendWebsocketTransport` and `SubscriberRegistry` both do).
 	 */
-	close_all_sockets: () => number;
+	close_all_connections: () => number;
 }
 
 /**
  * Which connections a revocation closes — the argument of
- * `queue_connection_close`, one variant per revocation close of
- * `ConnectionCloser` (`close_all_sockets` is shutdown, never a revocation).
- * No handler queues `role` today: the audit listener is a role's only
- * closer.
+ * `ConnectionCloser.close_connections` and `queue_connection_close`.
+ * Twin of the Rust spine's `ConnectionCloseTarget`, the same four variants.
+ *
+ * - `session` — every connection authenticated by the session whose blake3
+ *   hash is `session_hash` (`ConnectionIdentity.session_hash`)
+ * - `token` — every connection authenticated by the API token `api_token_id`
+ * - `account` — every connection of `account_id`, whatever credential opened
+ *   it: the close for a revocation that invalidates all of an account's
+ *   credentials
+ * - `role` — the connections of `account_id` whose endpoint gated them on
+ *   `role`: the close for a revoked **global** grant of that role (a scoped
+ *   grant never admits at a role gate, so revoking one closes nothing;
+ *   `to_connection_close_target` filters). A WebSocket gets
+ *   `WS_CLOSE_PERMISSION_REVOKED`, not a revocation's code: the credential is
+ *   still good. It **over-closes an any-of gate**: a connection whose
+ *   endpoint listed several roles closes on the loss of any of them, whether
+ *   or not the account still holds another; the client reconnects into the
+ *   gate if it still qualifies. No handler queues `role`: the audit listener
+ *   is a role's only closer.
  */
 export type ConnectionCloseTarget =
-	| { kind: 'session'; session_token_hash: string }
+	| { kind: 'session'; session_hash: string }
 	| { kind: 'token'; api_token_id: string }
 	| { kind: 'account'; account_id: Uuid }
 	| { kind: 'role'; account_id: Uuid; role: string };
 
 /**
- * Close the connections `target` names, now.
+ * The connections a revocation's audit row closes, dispatched on the
+ * `RevocationScope` its event declares in `audit_event_revocation_scopes`
+ * (`auth/audit_log_schema.ts`) — `null` when it closes nothing:
  *
- * A revocation handler calls `queue_connection_close` instead, which runs this
- * after the commit.
+ * - a row whose outcome is not `success` — a failure carries
+ *   attacker-controlled identifiers (a `session_revoke` the DB rejected still
+ *   records the submitted session id), so reacting to it would let any
+ *   authenticated caller close another user's connection by guessing a session
+ *   hash or token id; matching the success rather than skipping the failure
+ *   keeps an outcome outside the enum inert
+ * - scope `none` — every event that revokes nothing, and any event type
+ *   fuz_app does not define
+ * - a row missing the key its scope closes by (an empty string included)
+ * - a `role` row whose revoked grant was scoped (`to_global_role_revocation`)
  *
- * @returns how many connections closed
+ * Otherwise:
+ *
+ * - `session` → `{kind: 'session', session_hash: metadata.session_id}`
+ * - `token` → `{kind: 'token', api_token_id: metadata.token_id}`
+ * - `account` → `{kind: 'account', account_id: target_account_id ?? account_id}`
+ *   — admin actions set `target_account_id`, self-service ones only
+ *   `account_id`
+ * - `role` → `{kind: 'role', account_id, role}` of the revoked global grant
+ *
+ * Twin of the Rust spine's `ConnectionCloseTarget::from_audit_event`.
+ *
+ * @param event - the audit row announced after its commit
+ * @returns the connections to close, or `null`
  */
-export const close_connections = (
-	closer: ConnectionCloser,
-	target: ConnectionCloseTarget
-): number => {
+export const to_connection_close_target = (event: AuditLogEvent): ConnectionCloseTarget | null => {
+	if (event.outcome !== 'success') return null;
+	const scope = to_revocation_scope(event.event_type);
+	switch (scope) {
+		case 'none':
+			return null;
+		case 'session': {
+			const session_id = event.metadata?.session_id;
+			if (typeof session_id !== 'string' || session_id.length === 0) return null;
+			return { kind: 'session', session_hash: session_id };
+		}
+		case 'token': {
+			const token_id = event.metadata?.token_id;
+			if (typeof token_id !== 'string' || token_id.length === 0) return null;
+			return { kind: 'token', api_token_id: token_id };
+		}
+		case 'account': {
+			const account_id = event.target_account_id ?? event.account_id;
+			if (!account_id) return null;
+			return { kind: 'account', account_id };
+		}
+		case 'role': {
+			// global grants only — a role gate never admitted on a scoped one
+			const revoked = to_global_role_revocation(event);
+			if (!revoked) return null;
+			return { kind: 'role', account_id: revoked.account_id, role: revoked.role };
+		}
+		default:
+			throw new UnreachableError(scope);
+	}
+};
+
+/**
+ * The log text for a close target — `session <hash>`, `token <id>`,
+ * `account <id>`, `role <role> of account <id>`.
+ */
+const format_connection_close_target = (target: ConnectionCloseTarget): string => {
 	switch (target.kind) {
 		case 'session':
-			return closer.close_sockets_for_session(target.session_token_hash);
+			return `session ${target.session_hash}`;
 		case 'token':
-			return closer.close_sockets_for_token(target.api_token_id);
+			return `token ${target.api_token_id}`;
 		case 'account':
-			return closer.close_sockets_for_account(target.account_id);
+			return `account ${target.account_id}`;
 		case 'role':
-			return closer.close_sockets_for_role(target.account_id, target.role);
+			return `role ${target.role} of account ${target.account_id}`;
 		default:
 			throw new UnreachableError(target);
 	}
@@ -177,7 +232,7 @@ export const close_connections_after_commit = (
 	log: Logger
 ): void => {
 	try {
-		close_connections(closer, target);
+		closer.close_connections(target);
 	} catch (err) {
 		log.error('connection close after commit failed:', err);
 	}
@@ -206,7 +261,7 @@ export const queue_connection_close = (
 	target: ConnectionCloseTarget
 ): void => {
 	emit_after_commit(ctx, () => {
-		close_connections(closer, target);
+		closer.close_connections(target);
 	});
 };
 
@@ -215,11 +270,8 @@ export const queue_connection_close = (
  * live-connection surface, where a revocation has nothing to close.
  */
 export const noop_connection_closer: ConnectionCloser = Object.freeze({
-	close_sockets_for_session: () => 0,
-	close_sockets_for_token: () => 0,
-	close_sockets_for_account: () => 0,
-	close_sockets_for_role: () => 0,
-	close_all_sockets: () => 0
+	close_connections: () => 0,
+	close_all_connections: () => 0
 });
 
 /**
@@ -228,7 +280,7 @@ export const noop_connection_closer: ConnectionCloser = Object.freeze({
  * Each close fans out to every member and returns the sum of what each
  * closed. A revocation handler holds this rather than one transport, so its
  * close reaches the WebSocket transports and the SSE registries alike, and
- * `AppServer.close` runs its `close_all_sockets` to end every live connection
+ * `AppServer.close` runs its `close_all_connections` to end every live connection
  * of the backend at shutdown.
  *
  * A member that throws does not stop the fan-out: every member is still
@@ -303,15 +355,9 @@ export const create_realtime_closer = (): RealtimeCloser => {
 			};
 		},
 		member_count: (): number => members.size,
-		close_sockets_for_session: (session_token_hash: string): number =>
-			fan_out((member) => member.close_sockets_for_session(session_token_hash)),
-		close_sockets_for_token: (api_token_id: string): number =>
-			fan_out((member) => member.close_sockets_for_token(api_token_id)),
-		close_sockets_for_account: (account_id: Uuid): number =>
-			fan_out((member) => member.close_sockets_for_account(account_id)),
-		close_sockets_for_role: (account_id: Uuid, role: string): number =>
-			fan_out((member) => member.close_sockets_for_role(account_id, role)),
-		close_all_sockets: (): number => fan_out((member) => member.close_all_sockets())
+		close_connections: (target: ConnectionCloseTarget): number =>
+			fan_out((member) => member.close_connections(target)),
+		close_all_connections: (): number => fan_out((member) => member.close_all_connections())
 	});
 };
 
@@ -324,20 +370,9 @@ export type AuditEventHandler = (event: AuditLogEvent) => void;
 
 /**
  * Create the audit listener that closes live connections on a successful
- * revocation row, dispatching on the `RevocationScope` the event declares in
- * `audit_event_revocation_scopes` (`auth/audit_log_schema.ts`):
- *
- * - `session` → `close_sockets_for_session(metadata.session_id)`
- * - `token` → `close_sockets_for_token(metadata.token_id)`
- * - `account` → `close_sockets_for_account(target_account_id ?? account_id)`
- *   — `logout`, `password_change`, `session_revoke_all`, `token_revoke_all`,
- *   `account_delete`, `account_purge`
- * - `role` → `close_sockets_for_role(target_account_id ?? account_id,
- *   metadata.role)` when the revoked grant was global
- *   (`to_global_role_revocation` — a role gate admits on global grants only);
- *   a scoped revoke closes nothing
- * - `none` → nothing — every other event, and any event type fuz_app does not
- *   define
+ * revocation row: `to_connection_close_target` maps the row to the
+ * connections it names, and the listener closes them with
+ * `closer.close_connections`.
  *
  * **Why it exists beside the handlers' own closes.** The revocation handlers
  * close after their commit (`queue_connection_close`), whatever happens to the
@@ -355,13 +390,6 @@ export type AuditEventHandler = (event: AuditLogEvent) => void;
  * handler closes for a role, so this listener is its one closer: a WebSocket
  * closes with `WS_CLOSE_PERMISSION_REVOKED`, a stream gated on the role ends.
  *
- * Acts only on `outcome === 'success'` events — a failure carries
- * attacker-controlled identifiers (a `session_revoke` the DB rejected still
- * records the submitted session id), so reacting to it would let any
- * authenticated caller close another user's connection by guessing a session
- * hash or token id. Matching the success rather than skipping the failure keeps
- * an outcome outside the enum inert, as on the Rust spine.
- *
  * Twin of the Rust spine's `register_revocation_guard`.
  *
  * @param closer - what to close on — `deps.connection_closer`, the fan-out over
@@ -374,55 +402,14 @@ export const create_revocation_guard = (
 	closer: ConnectionCloser,
 	log: Logger
 ): AuditEventHandler => {
-	const report = (closed: number, what: string, event: AuditLogEvent): void => {
+	return (event: AuditLogEvent): void => {
+		const target = to_connection_close_target(event);
+		if (!target) return;
+		const closed = closer.close_connections(target);
 		if (closed > 0) {
 			log.info(
-				`revocation guard: closed ${closed} connection(s) for ${what} (${event.event_type})`
+				`revocation guard: closed ${closed} connection(s) for ${format_connection_close_target(target)} (${event.event_type})`
 			);
-		}
-	};
-	return (event: AuditLogEvent): void => {
-		// only a committed revocation closes — failed mutations carry
-		// attacker-controlled metadata, and anything else is not a revocation
-		if (event.outcome !== 'success') return;
-
-		const scope = to_revocation_scope(event.event_type);
-		switch (scope) {
-			case 'none':
-				return;
-			case 'role': {
-				// global grants only — a role gate never admitted on a scoped one
-				const revoked = to_global_role_revocation(event);
-				if (!revoked) return;
-				report(
-					closer.close_sockets_for_role(revoked.account_id, revoked.role),
-					`role ${revoked.role} of account ${revoked.account_id}`,
-					event
-				);
-				return;
-			}
-			case 'session': {
-				const session_id = event.metadata?.session_id;
-				if (typeof session_id !== 'string' || session_id.length === 0) return;
-				report(closer.close_sockets_for_session(session_id), `session ${session_id}`, event);
-				return;
-			}
-			case 'token': {
-				const token_id = event.metadata?.token_id;
-				if (typeof token_id !== 'string' || token_id.length === 0) return;
-				report(closer.close_sockets_for_token(token_id), `token ${token_id}`, event);
-				return;
-			}
-			case 'account': {
-				// admin actions set `target_account_id`; self-service actions only
-				// set `account_id`
-				const target = event.target_account_id ?? event.account_id;
-				if (!target) return;
-				report(closer.close_sockets_for_account(target), `account ${target}`, event);
-				return;
-			}
-			default:
-				throw new UnreachableError(scope);
 		}
 	};
 };

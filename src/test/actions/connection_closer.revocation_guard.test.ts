@@ -1,7 +1,7 @@
 /**
  * Tests for `create_revocation_guard` — audit event dispatch onto a
- * `ConnectionCloser`'s `close_sockets_for_*` methods, by the `RevocationScope`
- * each event declares — and for that declaration,
+ * `ConnectionCloser`'s `close_connections`, by the `RevocationScope` each
+ * event declares (`to_connection_close_target`) — and for that declaration,
  * `audit_event_revocation_scopes`.
  *
  * Runs the guard over each kind of member `create_app_server` puts on the
@@ -25,6 +25,7 @@ import {
 import {
 	create_realtime_closer,
 	create_revocation_guard,
+	to_connection_close_target,
 	type ConnectionCloser
 } from '#lib/actions/connection_closer.ts';
 import { create_sse_connection_closer } from '#lib/realtime/audit_log_sse.ts';
@@ -125,6 +126,146 @@ describe('audit_event_revocation_scopes', () => {
 		// nor may an inherited object key resolve to anything
 		assert.strictEqual(to_revocation_scope('constructor'), 'none');
 		assert.strictEqual(to_revocation_scope('toString'), 'none');
+	});
+});
+
+describe('to_connection_close_target', () => {
+	// the twin of the Rust spine's `ConnectionCloseTarget::from_audit_event`
+	test('maps each revoking scope to its target', () => {
+		assert.deepStrictEqual(
+			to_connection_close_target(
+				create_audit_event({ event_type: 'session_revoke', metadata: { session_id: HASH_A } })
+			),
+			{ kind: 'session', session_hash: HASH_A }
+		);
+		assert.deepStrictEqual(
+			to_connection_close_target(
+				create_audit_event({ event_type: 'token_revoke', metadata: { token_id: TOKEN_A } })
+			),
+			{ kind: 'token', api_token_id: TOKEN_A }
+		);
+		assert.deepStrictEqual(
+			to_connection_close_target(
+				create_audit_event({ event_type: 'password_change', account_id: ACCOUNT_A })
+			),
+			{ kind: 'account', account_id: ACCOUNT_A }
+		);
+		assert.deepStrictEqual(
+			to_connection_close_target(
+				create_audit_event({
+					event_type: 'role_grant_revoke',
+					account_id: ACCOUNT_B,
+					target_account_id: ACCOUNT_A,
+					metadata: { role: 'admin', role_grant_id: create_uuid(), scope_id: null }
+				})
+			),
+			{ kind: 'role', account_id: ACCOUNT_A, role: 'admin' }
+		);
+	});
+
+	test('an admin action targets target_account_id, a self-service one account_id', () => {
+		assert.deepStrictEqual(
+			to_connection_close_target(
+				create_audit_event({
+					event_type: 'session_revoke_all',
+					account_id: ACCOUNT_B,
+					target_account_id: ACCOUNT_A
+				})
+			),
+			{ kind: 'account', account_id: ACCOUNT_A }
+		);
+		assert.deepStrictEqual(
+			to_connection_close_target(
+				create_audit_event({ event_type: 'session_revoke_all', account_id: ACCOUNT_B })
+			),
+			{ kind: 'account', account_id: ACCOUNT_B }
+		);
+		assert.deepStrictEqual(
+			to_connection_close_target(
+				create_audit_event({
+					event_type: 'role_grant_revoke',
+					account_id: ACCOUNT_B,
+					metadata: { role: 'admin', role_grant_id: create_uuid(), self_service: true }
+				})
+			),
+			{ kind: 'role', account_id: ACCOUNT_B, role: 'admin' }
+		);
+	});
+
+	test('a row whose outcome is not success maps to nothing', () => {
+		for (const outcome of ['failure', 'unknown'] as const) {
+			assert.strictEqual(
+				to_connection_close_target(
+					create_audit_event({
+						event_type: 'session_revoke',
+						outcome: outcome as AuditLogEvent['outcome'],
+						metadata: { session_id: HASH_A }
+					})
+				),
+				null,
+				outcome
+			);
+		}
+		assert.strictEqual(
+			to_connection_close_target(
+				create_audit_event({ event_type: 'logout', outcome: 'failure', account_id: ACCOUNT_A })
+			),
+			null
+		);
+	});
+
+	test('an event that revokes nothing maps to nothing, whatever it carries', () => {
+		for (const event_type of ['login', 'token_create', 'not_a_fuz_app_event']) {
+			assert.strictEqual(
+				to_connection_close_target(
+					create_audit_event({
+						event_type,
+						account_id: ACCOUNT_A,
+						metadata: { session_id: HASH_A, token_id: TOKEN_A, role: 'admin' }
+					})
+				),
+				null,
+				event_type
+			);
+		}
+	});
+
+	test('a row missing the key its scope closes by maps to nothing', () => {
+		const missing: Array<AuditLogEvent> = [
+			create_audit_event({ event_type: 'session_revoke', metadata: null }),
+			create_audit_event({ event_type: 'session_revoke', metadata: { session_id: '' } }),
+			create_audit_event({ event_type: 'session_revoke', metadata: { session_id: 7 } }),
+			create_audit_event({ event_type: 'token_revoke', metadata: {} }),
+			create_audit_event({ event_type: 'token_revoke', metadata: { token_id: '' } }),
+			create_audit_event({ event_type: 'account_delete' }),
+			create_audit_event({
+				event_type: 'role_grant_revoke',
+				target_account_id: ACCOUNT_A,
+				metadata: { role_grant_id: create_uuid() }
+			}),
+			create_audit_event({
+				event_type: 'role_grant_revoke',
+				target_account_id: ACCOUNT_A,
+				metadata: { role: '' }
+			}),
+			create_audit_event({ event_type: 'role_grant_revoke', metadata: { role: 'admin' } })
+		];
+		for (const event of missing) {
+			assert.strictEqual(to_connection_close_target(event), null, JSON.stringify(event.metadata));
+		}
+	});
+
+	test('a scoped role revoke maps to nothing — a role gate admits on global grants only', () => {
+		assert.strictEqual(
+			to_connection_close_target(
+				create_audit_event({
+					event_type: 'role_grant_revoke',
+					target_account_id: ACCOUNT_A,
+					metadata: { role: 'admin', role_grant_id: create_uuid(), scope_id: create_uuid() }
+				})
+			),
+			null
+		);
 	});
 });
 

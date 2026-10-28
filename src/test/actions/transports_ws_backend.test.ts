@@ -16,7 +16,8 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 import {
 	BackendWebsocketTransport,
 	DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT,
-	type ConnectionIdentity
+	type ConnectionIdentity,
+	connection_identity_matches
 } from '#lib/actions/transports_ws_backend.ts';
 import {
 	WS_CLOSE_CONNECTION_LIMIT,
@@ -38,6 +39,65 @@ const HASH_B = 'hash_session_b';
 const TOKEN_A = 'token_id_a';
 const TOKEN_B = 'token_id_b';
 
+describe('connection_identity_matches', () => {
+	// the twin of the Rust spine's `ConnectionIdentity::matches`
+	const session: ConnectionIdentity = {
+		session_hash: HASH_A,
+		account_id: ACCOUNT_A,
+		api_token_id: null,
+		required_roles: ['admin', 'keeper']
+	};
+	const bearer: ConnectionIdentity = {
+		session_hash: null,
+		account_id: ACCOUNT_A,
+		api_token_id: TOKEN_A,
+		required_roles: []
+	};
+	const daemon: ConnectionIdentity = {
+		session_hash: null,
+		account_id: ACCOUNT_A,
+		api_token_id: null,
+		required_roles: []
+	};
+
+	test('a session target matches the session hash alone', () => {
+		assert.ok(connection_identity_matches(session, { kind: 'session', session_hash: HASH_A }));
+		assert.ok(!connection_identity_matches(session, { kind: 'session', session_hash: HASH_B }));
+		assert.ok(!connection_identity_matches(bearer, { kind: 'session', session_hash: HASH_A }));
+	});
+
+	test('a token target matches the API token id alone', () => {
+		assert.ok(connection_identity_matches(bearer, { kind: 'token', api_token_id: TOKEN_A }));
+		assert.ok(!connection_identity_matches(bearer, { kind: 'token', api_token_id: TOKEN_B }));
+		assert.ok(!connection_identity_matches(session, { kind: 'token', api_token_id: TOKEN_A }));
+	});
+
+	test('an account target matches every credential of the account', () => {
+		for (const identity of [session, bearer, daemon]) {
+			assert.ok(connection_identity_matches(identity, { kind: 'account', account_id: ACCOUNT_A }));
+			assert.ok(!connection_identity_matches(identity, { kind: 'account', account_id: ACCOUNT_B }));
+		}
+	});
+
+	test('a role target matches the account when the role is one its endpoint gated on', () => {
+		assert.ok(
+			connection_identity_matches(session, { kind: 'role', account_id: ACCOUNT_A, role: 'keeper' })
+		);
+		assert.ok(
+			!connection_identity_matches(session, { kind: 'role', account_id: ACCOUNT_B, role: 'admin' }),
+			'another account'
+		);
+		assert.ok(
+			!connection_identity_matches(session, { kind: 'role', account_id: ACCOUNT_A, role: 'other' }),
+			'a role the endpoint did not list'
+		);
+		assert.ok(
+			!connection_identity_matches(bearer, { kind: 'role', account_id: ACCOUNT_A, role: 'admin' }),
+			'an ungated connection'
+		);
+	});
+});
+
 describe('BackendWebsocketTransport.add_connection', () => {
 	test('returns a unique id per connection', () => {
 		const t = new BackendWebsocketTransport();
@@ -53,7 +113,7 @@ describe('BackendWebsocketTransport.add_connection', () => {
 		const { ws } = create_fake_ws();
 		t.add_connection(ws, HASH_A, ACCOUNT_A);
 		// revoking by a made-up token id closes nothing
-		assert.strictEqual(t.close_sockets_for_token('nonexistent'), 0);
+		assert.strictEqual(t.close_connections({ kind: 'token', api_token_id: 'nonexistent' }), 0);
 	});
 
 	test('is_ready reflects connection count', () => {
@@ -75,12 +135,12 @@ describe('BackendWebsocketTransport.add_connection', () => {
 		assert.strictEqual(t.get_connection_count(), 2);
 		t.remove_connection(id_a);
 		assert.strictEqual(t.get_connection_count(), 1);
-		t.close_sockets_for_account(ACCOUNT_B);
+		t.close_connections({ kind: 'account', account_id: ACCOUNT_B });
 		assert.strictEqual(t.get_connection_count(), 0);
 	});
 });
 
-describe('BackendWebsocketTransport.close_sockets_for_session', () => {
+describe('BackendWebsocketTransport.close_connections session', () => {
 	test('closes only the matching session, returns count', () => {
 		const t = new BackendWebsocketTransport();
 		const a = create_fake_ws();
@@ -88,7 +148,7 @@ describe('BackendWebsocketTransport.close_sockets_for_session', () => {
 		t.add_connection(a.ws, HASH_A, ACCOUNT_A);
 		t.add_connection(b.ws, HASH_B, ACCOUNT_A);
 
-		const count = t.close_sockets_for_session(HASH_A);
+		const count = t.close_connections({ kind: 'session', session_hash: HASH_A });
 		assert.strictEqual(count, 1);
 		assert.deepStrictEqual(a.closes, [
 			{ code: WS_CLOSE_SESSION_REVOKED, reason: 'Session revoked' }
@@ -103,18 +163,18 @@ describe('BackendWebsocketTransport.close_sockets_for_session', () => {
 		t.add_connection(a.ws, HASH_A, ACCOUNT_A);
 		t.add_connection(b.ws, HASH_A, ACCOUNT_A);
 
-		assert.strictEqual(t.close_sockets_for_session(HASH_A), 2);
+		assert.strictEqual(t.close_connections({ kind: 'session', session_hash: HASH_A }), 2);
 	});
 
 	test('returns 0 when no sockets match', () => {
 		const t = new BackendWebsocketTransport();
 		const { ws } = create_fake_ws();
 		t.add_connection(ws, HASH_A, ACCOUNT_A);
-		assert.strictEqual(t.close_sockets_for_session('nope'), 0);
+		assert.strictEqual(t.close_connections({ kind: 'session', session_hash: 'nope' }), 0);
 	});
 });
 
-describe('BackendWebsocketTransport.close_sockets_for_account', () => {
+describe('BackendWebsocketTransport.close_connections account', () => {
 	test('closes all sockets for the account across session and bearer', () => {
 		const t = new BackendWebsocketTransport();
 		const session_ws = create_fake_ws();
@@ -126,7 +186,7 @@ describe('BackendWebsocketTransport.close_sockets_for_account', () => {
 		t.add_connection(daemon_ws.ws, null, ACCOUNT_A);
 		t.add_connection(other_ws.ws, HASH_B, ACCOUNT_B);
 
-		assert.strictEqual(t.close_sockets_for_account(ACCOUNT_A), 3);
+		assert.strictEqual(t.close_connections({ kind: 'account', account_id: ACCOUNT_A }), 3);
 		assert.strictEqual(session_ws.closes.length, 1);
 		assert.strictEqual(bearer_ws.closes.length, 1);
 		assert.strictEqual(daemon_ws.closes.length, 1);
@@ -134,7 +194,7 @@ describe('BackendWebsocketTransport.close_sockets_for_account', () => {
 	});
 });
 
-describe('BackendWebsocketTransport.close_sockets_for_token', () => {
+describe('BackendWebsocketTransport.close_connections token', () => {
 	test('closes only the socket bound to that api_token.id', () => {
 		const t = new BackendWebsocketTransport();
 		const bearer_a = create_fake_ws();
@@ -144,7 +204,7 @@ describe('BackendWebsocketTransport.close_sockets_for_token', () => {
 		t.add_connection(bearer_b.ws, null, ACCOUNT_A, TOKEN_B);
 		t.add_connection(session_ws.ws, HASH_A, ACCOUNT_A);
 
-		assert.strictEqual(t.close_sockets_for_token(TOKEN_A), 1);
+		assert.strictEqual(t.close_connections({ kind: 'token', api_token_id: TOKEN_A }), 1);
 		assert.strictEqual(bearer_a.closes.length, 1);
 		assert.strictEqual(bearer_b.closes.length, 0);
 		assert.strictEqual(session_ws.closes.length, 0);
@@ -157,7 +217,7 @@ describe('BackendWebsocketTransport.close_sockets_for_token', () => {
 		t.add_connection(session_ws.ws, HASH_A, ACCOUNT_A);
 		t.add_connection(bearer_ws.ws, null, ACCOUNT_A, TOKEN_A);
 
-		assert.strictEqual(t.close_sockets_for_token(TOKEN_A), 1);
+		assert.strictEqual(t.close_connections({ kind: 'token', api_token_id: TOKEN_A }), 1);
 		assert.strictEqual(session_ws.closes.length, 0);
 	});
 
@@ -165,11 +225,11 @@ describe('BackendWebsocketTransport.close_sockets_for_token', () => {
 		const t = new BackendWebsocketTransport();
 		const { ws } = create_fake_ws();
 		t.add_connection(ws, HASH_A, ACCOUNT_A);
-		assert.strictEqual(t.close_sockets_for_token(TOKEN_A), 0);
+		assert.strictEqual(t.close_connections({ kind: 'token', api_token_id: TOKEN_A }), 0);
 	});
 });
 
-describe('BackendWebsocketTransport.close_all_sockets', () => {
+describe('BackendWebsocketTransport.close_all_connections', () => {
 	test('closes every connection, pending and admitted, with the going-away close', () => {
 		const t = new BackendWebsocketTransport();
 		const session = create_fake_ws();
@@ -181,7 +241,7 @@ describe('BackendWebsocketTransport.close_all_sockets', () => {
 		t.add_connection(daemon.ws, null, ACCOUNT_B);
 		const pending_id = t.register_pending(pending.ws, HASH_B, ACCOUNT_B);
 
-		assert.strictEqual(t.close_all_sockets(), 4);
+		assert.strictEqual(t.close_all_connections(), 4);
 		for (const fake of [session, bearer, daemon, pending]) {
 			assert.deepStrictEqual(fake.closes, [
 				{ code: WS_CLOSE_GOING_AWAY, reason: WS_CLOSE_GOING_AWAY_REASON }
@@ -192,14 +252,14 @@ describe('BackendWebsocketTransport.close_all_sockets', () => {
 		// a pending registration closed at shutdown is refused at admission
 		assert.strictEqual(t.admit(pending_id), false);
 		// closing again closes nothing
-		assert.strictEqual(t.close_all_sockets(), 0);
+		assert.strictEqual(t.close_all_connections(), 0);
 	});
 
 	test("aborts each closed connection's controller", () => {
 		const t = new BackendWebsocketTransport();
 		const controller = new AbortController();
 		t.add_connection(create_fake_ws().ws, HASH_A, ACCOUNT_A, null, controller);
-		t.close_all_sockets();
+		t.close_all_connections();
 		assert.strictEqual(controller.signal.aborted, true);
 	});
 
@@ -222,7 +282,7 @@ describe('BackendWebsocketTransport.close_all_sockets', () => {
 		);
 		t.add_connection(after.ws, null, ACCOUNT_B);
 
-		assert.throws(() => t.close_all_sockets(), boom);
+		assert.throws(() => t.close_all_connections(), boom);
 		assert.strictEqual(before.closes.length, 1);
 		assert.strictEqual(after.closes.length, 1, 'the socket after the throw was closed');
 		// the throwing socket's connection is removed too
@@ -238,7 +298,7 @@ describe('BackendWebsocketTransport born-closed registrations', () => {
 	test('a pending registration after close_all is closed going-away and refused at admission', () => {
 		const t = new BackendWebsocketTransport();
 		assert.strictEqual(t.is_closing(), false);
-		t.close_all_sockets();
+		t.close_all_connections();
 		assert.strictEqual(t.is_closing(), true);
 
 		const late = create_fake_ws();
@@ -250,13 +310,13 @@ describe('BackendWebsocketTransport born-closed registrations', () => {
 		assert.strictEqual(t.admit(id), false);
 		assert.strictEqual(t.get_connection_count(), 0);
 		// a revocation finds nothing to close
-		assert.strictEqual(t.close_sockets_for_session(HASH_A), 0);
+		assert.strictEqual(t.close_connections({ kind: 'session', session_hash: HASH_A }), 0);
 		assert.strictEqual(late.closes.length, 1);
 	});
 
 	test('a one-step add_connection after close_all is closed going-away, never admitted', () => {
 		const t = new BackendWebsocketTransport();
-		t.close_all_sockets();
+		t.close_all_connections();
 
 		const late = create_fake_ws();
 		const controller = new AbortController();
@@ -275,7 +335,7 @@ describe('BackendWebsocketTransport born-closed registrations', () => {
 			errors.push(args);
 		};
 		const t = new BackendWebsocketTransport({ log });
-		t.close_all_sockets();
+		t.close_all_connections();
 		const controller = new AbortController();
 		const throwing = new WSContext({
 			send: () => {},
@@ -299,9 +359,9 @@ describe('BackendWebsocketTransport.remove_connection', () => {
 		t.remove_connection(id_a);
 
 		// both maps now empty — no close code from any revocation path
-		assert.strictEqual(t.close_sockets_for_session(HASH_A), 0);
-		assert.strictEqual(t.close_sockets_for_account(ACCOUNT_A), 0);
-		assert.strictEqual(t.close_sockets_for_token(TOKEN_A), 0);
+		assert.strictEqual(t.close_connections({ kind: 'session', session_hash: HASH_A }), 0);
+		assert.strictEqual(t.close_connections({ kind: 'account', account_id: ACCOUNT_A }), 0);
+		assert.strictEqual(t.close_connections({ kind: 'token', api_token_id: TOKEN_A }), 0);
 		assert.strictEqual(a.closes.length, 0);
 	});
 
@@ -309,7 +369,7 @@ describe('BackendWebsocketTransport.remove_connection', () => {
 		const t = new BackendWebsocketTransport();
 		const a = create_fake_ws();
 		const id_a = t.add_connection(a.ws, HASH_A, ACCOUNT_A);
-		t.close_sockets_for_session(HASH_A);
+		t.close_connections({ kind: 'session', session_hash: HASH_A });
 		// already cleaned up; this must not throw or double-close
 		t.remove_connection(id_a);
 		t.remove_connection(id_a);
@@ -329,7 +389,7 @@ describe('BackendWebsocketTransport.remove_connection', () => {
 
 		t.remove_connection(id_a);
 		assert.strictEqual(t.get_connection_count(), 1);
-		assert.strictEqual(t.close_sockets_for_session(HASH_A), 1);
+		assert.strictEqual(t.close_connections({ kind: 'session', session_hash: HASH_A }), 1);
 		assert.deepStrictEqual(a.closes, []);
 		assert.strictEqual(b.closes.length, 1);
 	});
@@ -437,7 +497,7 @@ describe('BackendWebsocketTransport per-account connection cap', () => {
 		t.add_connection(c.ws, HASH_A, ACCOUNT_A);
 		assert.deepStrictEqual(b.closes, []);
 
-		assert.strictEqual(t.close_sockets_for_session(HASH_B), 1);
+		assert.strictEqual(t.close_connections({ kind: 'session', session_hash: HASH_B }), 1);
 		const d = create_fake_ws();
 		t.add_connection(d.ws, HASH_A, ACCOUNT_A);
 		assert.deepStrictEqual(c.closes, []);
@@ -472,9 +532,9 @@ describe('BackendWebsocketTransport per-account connection cap', () => {
 		assert.strictEqual(t.send_to_account(ACCOUNT_A, notification), 1);
 		assert.strictEqual(a.sends.length, 0);
 		assert.strictEqual(b.sends.length, 1);
-		assert.strictEqual(t.close_sockets_for_session(HASH_A), 0);
-		assert.strictEqual(t.close_sockets_for_token(TOKEN_A), 0);
-		assert.strictEqual(t.close_sockets_for_account(ACCOUNT_A), 1);
+		assert.strictEqual(t.close_connections({ kind: 'session', session_hash: HASH_A }), 0);
+		assert.strictEqual(t.close_connections({ kind: 'token', api_token_id: TOKEN_A }), 0);
+		assert.strictEqual(t.close_connections({ kind: 'account', account_id: ACCOUNT_A }), 1);
 		assert.deepStrictEqual(a.closes, [CONNECTION_LIMIT_CLOSE]);
 	});
 
@@ -533,7 +593,7 @@ describe('BackendWebsocketTransport per-account connection cap', () => {
 		]);
 
 		// a revocation and a plain remove are not cap evictions
-		t.close_sockets_for_account(ACCOUNT_A);
+		t.close_connections({ kind: 'account', account_id: ACCOUNT_A });
 		assert.strictEqual(infos.length, 1);
 	});
 
@@ -636,31 +696,31 @@ describe('BackendWebsocketTransport log', () => {
 });
 
 describe('BackendWebsocketTransport revocation bookkeeping', () => {
-	test('revoked connection stops matching any future close_sockets_for_* call', () => {
+	test('revoked connection stops matching any future close_connections call', () => {
 		const t = new BackendWebsocketTransport();
 		const a = create_fake_ws();
 		t.add_connection(a.ws, HASH_A, ACCOUNT_A, TOKEN_A);
 
 		// first revocation path closes the socket once
-		assert.strictEqual(t.close_sockets_for_session(HASH_A), 1);
+		assert.strictEqual(t.close_connections({ kind: 'session', session_hash: HASH_A }), 1);
 		assert.strictEqual(a.closes.length, 1);
 
 		// subsequent revocations via any other key find nothing to close
-		assert.strictEqual(t.close_sockets_for_account(ACCOUNT_A), 0);
-		assert.strictEqual(t.close_sockets_for_token(TOKEN_A), 0);
+		assert.strictEqual(t.close_connections({ kind: 'account', account_id: ACCOUNT_A }), 0);
+		assert.strictEqual(t.close_connections({ kind: 'token', api_token_id: TOKEN_A }), 0);
 		assert.strictEqual(a.closes.length, 1);
 	});
 
-	test('daemon-token connection (null token_hash + null api_token_id) is only reachable via account', () => {
+	test('daemon-token connection (null session_hash + null api_token_id) is only reachable via account', () => {
 		const t = new BackendWebsocketTransport();
 		const daemon = create_fake_ws();
 		t.add_connection(daemon.ws, null, ACCOUNT_A);
 
-		assert.strictEqual(t.close_sockets_for_session(HASH_A), 0);
-		assert.strictEqual(t.close_sockets_for_token(TOKEN_A), 0);
+		assert.strictEqual(t.close_connections({ kind: 'session', session_hash: HASH_A }), 0);
+		assert.strictEqual(t.close_connections({ kind: 'token', api_token_id: TOKEN_A }), 0);
 		assert.strictEqual(daemon.closes.length, 0);
 
-		assert.strictEqual(t.close_sockets_for_account(ACCOUNT_A), 1);
+		assert.strictEqual(t.close_connections({ kind: 'account', account_id: ACCOUNT_A }), 1);
 		assert.strictEqual(daemon.closes.length, 1);
 	});
 
@@ -674,8 +734,8 @@ describe('BackendWebsocketTransport revocation bookkeeping', () => {
 		const id2 = t.add_connection(a.ws, HASH_B, ACCOUNT_B);
 		assert.notStrictEqual(id1, id2);
 		// revocation still closes the socket, possibly more than once
-		t.close_sockets_for_account(ACCOUNT_A);
-		t.close_sockets_for_account(ACCOUNT_B);
+		t.close_connections({ kind: 'account', account_id: ACCOUNT_A });
+		t.close_connections({ kind: 'account', account_id: ACCOUNT_B });
 		assert.ok(a.closes.length >= 1);
 	});
 });
@@ -758,15 +818,15 @@ describe('BackendWebsocketTransport.broadcast_filtered', () => {
 		assert.strictEqual(count, 0);
 		assert.strictEqual(seen.length, 3);
 		assert.ok(
-			seen.some((i) => i.token_hash === HASH_A && i.api_token_id === null),
+			seen.some((i) => i.session_hash === HASH_A && i.api_token_id === null),
 			'session connection exposed'
 		);
 		assert.ok(
-			seen.some((i) => i.token_hash === null && i.api_token_id === TOKEN_A),
+			seen.some((i) => i.session_hash === null && i.api_token_id === TOKEN_A),
 			'bearer connection exposed'
 		);
 		assert.ok(
-			seen.some((i) => i.token_hash === null && i.api_token_id === null),
+			seen.some((i) => i.session_hash === null && i.api_token_id === null),
 			'daemon connection exposed'
 		);
 	});
@@ -871,7 +931,7 @@ describe('BackendWebsocketTransport.send_to_account', () => {
 
 	test('excludes a socket revoked via a different identity axis, returns N-1', () => {
 		// Revoking via session hash exercises a different code path
-		// (`#close_where` keyed on `token_hash`) than `send_to_account`'s
+		// (`#close_where` keyed on `session_hash`) than `send_to_account`'s
 		// `account_id` walk — so a shared bookkeeping bug in one path can't
 		// hide in the other.
 		const t = new BackendWebsocketTransport();
@@ -884,7 +944,7 @@ describe('BackendWebsocketTransport.send_to_account', () => {
 		t.add_connection(daemon_ws.ws, null, ACCOUNT_A);
 		t.add_connection(other_account_ws.ws, HASH_B, ACCOUNT_B);
 
-		assert.strictEqual(t.close_sockets_for_session(HASH_A), 1);
+		assert.strictEqual(t.close_connections({ kind: 'session', session_hash: HASH_A }), 1);
 
 		const count = t.send_to_account(ACCOUNT_A, notification);
 		assert.strictEqual(count, 2);
@@ -981,7 +1041,11 @@ describe('BackendWebsocketTransport two-phase registration', () => {
 		const pending = create_fake_ws();
 		const id = t.register_pending(pending.ws, HASH_B, ACCOUNT_A);
 
-		assert.strictEqual(t.close_sockets_for_session(HASH_B), 1, 'the close finds the pending entry');
+		assert.strictEqual(
+			t.close_connections({ kind: 'session', session_hash: HASH_B }),
+			1,
+			'the close finds the pending entry'
+		);
 		assert.deepStrictEqual(pending.closes, [REVOKED_CLOSE]);
 		assert.strictEqual(t.get_pending_connection_count(), 0);
 
@@ -1000,9 +1064,9 @@ describe('BackendWebsocketTransport two-phase registration', () => {
 		const by_shutdown = t.register_pending(create_fake_ws().ws, null, ACCOUNT_B, TOKEN_A);
 		const admitted = t.add_connection(create_fake_ws().ws, null, ACCOUNT_B, TOKEN_A);
 
-		t.close_sockets_for_role(ACCOUNT_A, 'admin');
-		t.close_sockets_for_session(HASH_B);
-		t.close_all_sockets();
+		t.close_connections({ kind: 'role', account_id: ACCOUNT_A, role: 'admin' });
+		t.close_connections({ kind: 'session', session_hash: HASH_B });
+		t.close_all_connections();
 
 		assert.strictEqual(t.admit(by_role), false);
 		assert.strictEqual(t.take_pending_close_code(by_role), WS_CLOSE_PERMISSION_REVOKED);
@@ -1015,7 +1079,7 @@ describe('BackendWebsocketTransport two-phase registration', () => {
 		// and the socket's own close drops an unread record
 		const fresh = new BackendWebsocketTransport();
 		const left = fresh.register_pending(create_fake_ws().ws, null, ACCOUNT_A);
-		fresh.close_sockets_for_account(ACCOUNT_A);
+		fresh.close_connections({ kind: 'account', account_id: ACCOUNT_A });
 		fresh.remove_connection(left);
 		assert.strictEqual(fresh.take_pending_close_code(left), null);
 	});
@@ -1027,7 +1091,7 @@ describe('BackendWebsocketTransport two-phase registration', () => {
 		const other = create_fake_ws();
 		const other_id = t.register_pending(other.ws, null, ACCOUNT_B);
 
-		assert.strictEqual(t.close_sockets_for_account(ACCOUNT_A), 1);
+		assert.strictEqual(t.close_connections({ kind: 'account', account_id: ACCOUNT_A }), 1);
 
 		assert.deepStrictEqual(pending.closes, [REVOKED_CLOSE]);
 		assert.strictEqual(t.admit(id), false);
@@ -1042,7 +1106,7 @@ describe('BackendWebsocketTransport two-phase registration', () => {
 		const other = create_fake_ws();
 		const other_id = t.register_pending(other.ws, null, ACCOUNT_A, TOKEN_B);
 
-		assert.strictEqual(t.close_sockets_for_token(TOKEN_A), 1);
+		assert.strictEqual(t.close_connections({ kind: 'token', api_token_id: TOKEN_A }), 1);
 
 		assert.deepStrictEqual(pending.closes, [REVOKED_CLOSE]);
 		assert.strictEqual(t.admit(id), false);
@@ -1151,7 +1215,7 @@ describe('BackendWebsocketTransport server-side close', () => {
 		t.add_connection(create_fake_ws().ws, HASH_A, ACCOUNT_A, null, admitted_abort);
 		t.add_connection(create_fake_ws().ws, HASH_B, ACCOUNT_B, null, other_abort);
 
-		assert.strictEqual(t.close_sockets_for_account(ACCOUNT_A), 2);
+		assert.strictEqual(t.close_connections({ kind: 'account', account_id: ACCOUNT_A }), 2);
 
 		assert.strictEqual(pending_abort.signal.aborted, true);
 		assert.strictEqual(admitted_abort.signal.aborted, true);
@@ -1181,7 +1245,7 @@ describe('BackendWebsocketTransport server-side close', () => {
 		t.register_pending(pending.ws, HASH_A, ACCOUNT_A);
 		t.add_connection(bystander.ws, HASH_B, ACCOUNT_B);
 
-		assert.throws(() => t.close_sockets_for_account(ACCOUNT_A), boom);
+		assert.throws(() => t.close_connections({ kind: 'account', account_id: ACCOUNT_A }), boom);
 
 		const revoked = [{ code: WS_CLOSE_SESSION_REVOKED, reason: WS_CLOSE_SESSION_REVOKED_REASON }];
 		assert.deepStrictEqual(before.closes, revoked);
@@ -1193,7 +1257,7 @@ describe('BackendWebsocketTransport server-side close', () => {
 		assert.strictEqual(failing_abort.signal.aborted, true);
 		assert.strictEqual(t.get_connection_count(), 1, 'only the bystander remains');
 		// nothing is left to close, so a repeat neither throws nor counts
-		assert.strictEqual(t.close_sockets_for_account(ACCOUNT_A), 0);
+		assert.strictEqual(t.close_connections({ kind: 'account', account_id: ACCOUNT_A }), 0);
 	});
 
 	test('a cap eviction aborts the evicted connection controller, and only it', () => {
@@ -1222,7 +1286,7 @@ describe('BackendWebsocketTransport server-side close', () => {
 		const t = new BackendWebsocketTransport({ max_connections_per_account: 1 });
 		const revoked = t.add_connection(create_fake_ws().ws, HASH_A, ACCOUNT_A);
 		assert.strictEqual(t.is_registered(revoked), true);
-		t.close_sockets_for_session(HASH_A);
+		t.close_connections({ kind: 'session', session_hash: HASH_A });
 		assert.strictEqual(t.is_registered(revoked), false);
 
 		const evicted = t.add_connection(create_fake_ws().ws, HASH_B, ACCOUNT_B);

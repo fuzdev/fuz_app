@@ -208,9 +208,12 @@ export const cleanup_expired_sessions = async (deps: AuthCleanupDeps): Promise<n
 	// the transaction has settled. The closes are synchronous, so nothing can
 	// interleave between the first and the last
 	let closed_connections = 0;
-	for (const session_token_hash of swept) {
+	for (const session_hash of swept) {
 		try {
-			closed_connections += deps.connection_closer.close_sockets_for_session(session_token_hash);
+			closed_connections += deps.connection_closer.close_connections({
+				kind: 'session',
+				session_hash
+			});
 		} catch (error) {
 			// keep going — one transport's failure must not leave another
 			// expired session's connections open

@@ -84,7 +84,7 @@
  *
  * An endpoint gated on `required_roles` re-reads them beside the credential:
  * its upgrade passed the role gate before the socket registered, so a role
- * revocation landing in between would close nothing (`close_sockets_for_role`
+ * revocation landing in between would close nothing (a `role` close target
  * matches registrations), and the socket would be admitted without the role
  * for its lifetime. The re-read reads the acting actor's grants afresh and
  * admits on a global grant of any listed role, as the gate did.
@@ -97,7 +97,7 @@
  * so a refusal can only be a close frame.
  *
  * Once the server is shutting down (`AppServer.close` ran the transport's
- * `close_all_sockets`) a refusal is `WS_CLOSE_GOING_AWAY` instead, so the
+ * `close_all_connections`) a refusal is `WS_CLOSE_GOING_AWAY` instead, so the
  * client reconnects rather than treating its credential as revoked: an upgrade
  * pending at the close-all is closed by it — and its abort makes the refusal
  * that follows the re-read send nothing more, even when the database closed
@@ -444,7 +444,7 @@ export interface RegisterActionWsOptions {
 	 *
 	 * It holds for the socket's life: recorded on every registration
 	 * (`ConnectionIdentity.required_roles`), so a revoked global grant of a
-	 * listed role closes the socket (`close_sockets_for_role`, any listed role
+	 * listed role closes the socket (a `role` close target, any listed role
 	 * — see its over-close), and re-read at admission against the acting
 	 * actor's grants, so a revocation that landed between the gate and the
 	 * registration refuses the upgrade with `WS_CLOSE_PERMISSION_REVOKED`.
@@ -758,14 +758,14 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 			// `full` on a live socket — but the per-message gate runs regardless,
 			// so the invariant is enforced rather than assumed.
 			const token_scope = c.get(TOKEN_SCOPE_KEY) ?? null;
-			// Session-based connections have a token hash for targeted revocation.
-			// Bearer/daemon connections pass null — still reachable via
-			// `close_sockets_for_account` / `close_sockets_for_token`. A session
-			// credential with no hash on the context is a shape the middleware
-			// never builds; the admission re-read refuses it.
-			const { token_hash } = resolved;
-			// `api_token.id` — set only for bearer connections; enables
-			// `close_sockets_for_token` to tear down just this socket on
+			// Session-based connections have a session hash for targeted
+			// revocation. Bearer/daemon connections pass null — still reachable
+			// by an `account` or `token` close target. A session credential with
+			// no hash on the context is a shape the middleware never builds; the
+			// admission re-read refuses it.
+			const session_hash = resolved.token_hash;
+			// `api_token.id` — set only for bearer connections; enables a
+			// `token` close target to tear down just this socket on
 			// `token_revoke` without affecting the account's other sockets.
 			const { api_token_id } = resolved;
 
@@ -805,7 +805,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 			// removed in `onClose` or earlier by a revocation, a connection-cap
 			// eviction, or another server-side close.
 			const identity: ConnectionIdentity = {
-				token_hash,
+				session_hash,
 				account_id,
 				api_token_id,
 				required_roles
@@ -945,7 +945,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 				// Pending first, synchronously: from here every revocation finds it.
 				const connection_id = transport.register_pending(
 					ws,
-					token_hash,
+					session_hash,
 					account_id,
 					api_token_id,
 					socket_abort_controller,

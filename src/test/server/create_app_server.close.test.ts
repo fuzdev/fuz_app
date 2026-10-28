@@ -134,7 +134,7 @@ describe('AppServer.close', () => {
 		const { server, harness } = await assemble();
 		harness.backend.deps.connection_closer.add({
 			...create_recording_closer().closer,
-			close_all_sockets: () => {
+			close_all_connections: () => {
 				harness.events.push('connections');
 				return 0;
 			}
@@ -189,7 +189,7 @@ describe('AppServer.close', () => {
 		const boom = new Error('transport close failed');
 		const throwing: ConnectionCloser = {
 			...create_recording_closer().closer,
-			close_all_sockets: () => {
+			close_all_connections: () => {
 				throw boom;
 			}
 		};
@@ -198,7 +198,7 @@ describe('AppServer.close', () => {
 		harness.backend.deps.connection_closer.add(after.closer);
 
 		await server.close();
-		assert.deepStrictEqual(after.calls, [{ method: 'all', id: null }]);
+		assert.deepStrictEqual(after.calls, [{ kind: 'all' }]);
 		assert.strictEqual(harness.backend_closes(), 1, 'the database still closed');
 		assert.strictEqual(errors.length, 1, 'the failure was logged');
 		assert.strictEqual(errors[0]![1], boom);

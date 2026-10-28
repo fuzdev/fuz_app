@@ -520,7 +520,7 @@ export interface AppServer {
 	 *    one, waiting for a pass in progress — that wait has no bound of its
 	 *    own, so a shutdown with a deadline races it
 	 * 2. close every live connection on `deps.connection_closer`
-	 *    (`close_all_sockets`) — each WebSocket with `WS_CLOSE_GOING_AWAY`, each
+	 *    (`close_all_connections`) — each WebSocket with `WS_CLOSE_GOING_AWAY`, each
 	 *    audit stream — including transports supplied through
 	 *    `WsEndpointSpec.transport` or added by hand, since they are registered
 	 *    on the backend's closer and the backend is going away; a close that
@@ -1225,7 +1225,7 @@ const assemble_app_server = async (
 		// then the connections, so none outlives the server — a failure here
 		// must not keep the database open
 		try {
-			deps.connection_closer.close_all_sockets();
+			deps.connection_closer.close_all_connections();
 		} catch (error) {
 			log.error('create_app_server: closing live connections on shutdown failed:', error);
 		}

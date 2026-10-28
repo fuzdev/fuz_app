@@ -83,9 +83,8 @@ export const create_deps = (db: Db, connection_closer: ConnectionCloser): AuthCl
 export const closed_sessions = (calls: Array<RecordedClose>): Array<string> => {
 	const ids: Array<string> = [];
 	for (const call of calls) {
-		if (call.method !== 'session')
-			assert.fail(`the sweep closes sessions only, got ${call.method}`);
-		ids.push(call.id);
+		if (call.kind !== 'session') assert.fail(`the sweep closes sessions only, got ${call.kind}`);
+		ids.push(call.session_hash);
 	}
 	return ids.sort();
 };

@@ -119,9 +119,9 @@ mismatch.
 
 ### `connection_closer_helpers.ts` — `ConnectionCloser` test doubles
 
-- `create_recording_closer()` — `{closer, calls}`; every method on `closer` records `{method, id}` into `calls` and closes nothing (`close_sockets_for_role` records `{method: 'role', id, role}`, `close_all_sockets` `{method: 'all', id: null}`). To see a handler's closes, add it to the backend's closer (`ctx.deps.connection_closer.add(closer)`) or build the factory's deps with it. The closes are queued post-commit, so they have run by the time a `create_test_app` response is in hand (`await_pending_effects: true` flushes both queues).
-- `assert_close_call(call, method, id)` — pins `{method, id}` on a recorded close call; handles the missing-element case.
-- `RecordedClose` — `{method: 'session' | 'token' | 'account', id: string} | {method: 'role', id: string, role: string} | {method: 'all', id: null}`.
+- `create_recording_closer()` — `{closer, calls}`; `closer.close_connections(target)` records the `target` and `close_all_connections()` records `{kind: 'all'}` into `calls`, closing nothing. To see a handler's closes, add it to the backend's closer (`ctx.deps.connection_closer.add(closer)`) or build the factory's deps with it. The closes are queued post-commit, so they have run by the time a `create_test_app` response is in hand (`await_pending_effects: true` flushes both queues).
+- `assert_close_call(call, expected)` — pins a recorded close call to `expected` (`assert.deepEqual`); handles the missing-element case.
+- `RecordedClose` — `ConnectionCloseTarget | {kind: 'all'}`.
 - `RecordingCloser` — `{closer, calls}`.
 
 ## Database — `db.ts`

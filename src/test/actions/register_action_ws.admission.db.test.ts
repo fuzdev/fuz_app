@@ -506,7 +506,10 @@ describe_db('register_action_ws admission', (get_db) => {
 
 			const { socket, stalled } = await open_stalled(endpoint, c);
 			assert.ok(await query_session_revoke_for_account({ db }, other.token_hash, account_id));
-			assert.strictEqual(endpoint.transport.close_sockets_for_session(other.token_hash), 0);
+			assert.strictEqual(
+				endpoint.transport.close_connections({ kind: 'session', session_hash: other.token_hash }),
+				0
+			);
 			stalled.release();
 			await socket.opening;
 
@@ -555,11 +558,14 @@ describe_db('register_action_ws admission', (get_db) => {
 			assert.deepStrictEqual(socket.fake.closes, []);
 			assert.strictEqual(endpoint.transport.get_connection_count(), 1);
 			assert.strictEqual(
-				endpoint.opened[0]!.identity.token_hash,
+				endpoint.opened[0]!.identity.session_hash,
 				session.token_hash,
 				'registered under the hash the middleware resolved'
 			);
-			assert.strictEqual(endpoint.transport.close_sockets_for_session(session.token_hash), 1);
+			assert.strictEqual(
+				endpoint.transport.close_connections({ kind: 'session', session_hash: session.token_hash }),
+				1
+			);
 			assert.deepStrictEqual(socket.fake.closes, [REVOKED_CLOSE]);
 		});
 
@@ -626,7 +632,7 @@ describe_db('register_action_ws admission', (get_db) => {
 			const c = await create_upgrade_context(db, account_id, session);
 
 			const { socket, stalled } = await open_stalled(endpoint, c);
-			endpoint.transport.close_sockets_for_account(account_id);
+			endpoint.transport.close_connections({ kind: 'account', account_id });
 			stalled.release();
 			await socket.opening;
 
@@ -642,7 +648,7 @@ describe_db('register_action_ws admission', (get_db) => {
 			const c = await create_upgrade_context(db, account_id, session);
 
 			const { socket, stalled } = await open_stalled(endpoint, c);
-			endpoint.transport.close_sockets_for_account(account_id);
+			endpoint.transport.close_connections({ kind: 'account', account_id });
 			// the client answers the close frame before the re-read returns, and
 			// its close event removes the registration
 			await socket.close();
@@ -661,7 +667,7 @@ describe_db('register_action_ws admission', (get_db) => {
 			const c = await create_upgrade_context(db, account_id, session);
 
 			const { socket, stalled } = await open_stalled(endpoint, c);
-			endpoint.transport.close_all_sockets();
+			endpoint.transport.close_all_connections();
 			await socket.close();
 			stalled.release();
 			await socket.opening;
@@ -680,7 +686,7 @@ describe_db('register_action_ws admission', (get_db) => {
 			// the close finds the pending registration while the session row is
 			// still there — an account-wide close from another session's logout
 			// does exactly this. The re-read passes, so only admission can refuse.
-			assert.strictEqual(endpoint.transport.close_sockets_for_account(account_id), 1);
+			assert.strictEqual(endpoint.transport.close_connections({ kind: 'account', account_id }), 1);
 			assert.deepStrictEqual(socket.fake.closes, [REVOKED_CLOSE], 'closed at once');
 			stalled.release();
 			await socket.opening;
@@ -838,7 +844,10 @@ describe_db('register_action_ws admission', (get_db) => {
 
 			const { socket, stalled } = await open_stalled(endpoint, c);
 			const sent = socket.send(echo_request(1, 'first'));
-			assert.strictEqual(endpoint.transport.close_sockets_for_session(session.token_hash), 1);
+			assert.strictEqual(
+				endpoint.transport.close_connections({ kind: 'session', session_hash: session.token_hash }),
+				1
+			);
 			// dropped at the close, without waiting for the re-read to return
 			await sent;
 			stalled.release();
@@ -976,7 +985,14 @@ describe_db('register_action_ws admission', (get_db) => {
 			assert.strictEqual(endpoint.transport.get_connection_count(), 1);
 			assert.deepStrictEqual(endpoint.opened[0]!.identity.required_roles, [ROLE_ADMIN]);
 			// the role close reaches it: the role was recorded on the registration
-			assert.strictEqual(endpoint.transport.close_sockets_for_role(account_id, ROLE_ADMIN), 1);
+			assert.strictEqual(
+				endpoint.transport.close_connections({
+					kind: 'role',
+					account_id,
+					role: ROLE_ADMIN
+				}),
+				1
+			);
 			assert.deepStrictEqual(socket.fake.closes, [PERMISSION_REVOKED_CLOSE]);
 		});
 
@@ -1020,7 +1036,14 @@ describe_db('register_action_ws admission', (get_db) => {
 			const endpoint = create_endpoint(db, { required_roles: [ROLE_ADMIN] });
 
 			const { socket, stalled } = await open_stalled(endpoint, c);
-			assert.strictEqual(endpoint.transport.close_sockets_for_role(account_id, ROLE_ADMIN), 1);
+			assert.strictEqual(
+				endpoint.transport.close_connections({
+					kind: 'role',
+					account_id,
+					role: ROLE_ADMIN
+				}),
+				1
+			);
 			stalled.release();
 			await socket.opening;
 
@@ -1040,7 +1063,11 @@ describe_db('register_action_ws admission', (get_db) => {
 			});
 
 			const { socket, stalled } = await open_stalled(endpoint, c);
-			endpoint.transport.close_sockets_for_role(account_id, ROLE_ADMIN);
+			endpoint.transport.close_connections({
+				kind: 'role',
+				account_id,
+				role: ROLE_ADMIN
+			});
 			stalled.release();
 			await socket.opening;
 

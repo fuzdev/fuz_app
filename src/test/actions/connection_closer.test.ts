@@ -13,38 +13,22 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { create_uuid } from '#lib/primitive_schemas.ts';
 
 import {
-	close_connections,
 	create_realtime_closer,
 	queue_connection_close,
 	type ConnectionCloser,
 	type ConnectionCloseTarget
 } from '#lib/actions/connection_closer.ts';
 import { flush_post_commit_effects } from '#lib/http/pending_effects.ts';
-import {
-	create_recording_closer,
-	type RecordedClose
-} from '#lib/testing/connection_closer_helpers.ts';
+import { create_recording_closer } from '#lib/testing/connection_closer_helpers.ts';
 
 const ACCOUNT = create_uuid();
 
-/** One target per `ConnectionCloser` revocation method, and the call each one records. */
-const targets: Array<{ target: ConnectionCloseTarget; call: RecordedClose }> = [
-	{
-		target: { kind: 'session', session_token_hash: 'session_hash' },
-		call: { method: 'session', id: 'session_hash' }
-	},
-	{
-		target: { kind: 'token', api_token_id: 'token_id' },
-		call: { method: 'token', id: 'token_id' }
-	},
-	{
-		target: { kind: 'account', account_id: ACCOUNT },
-		call: { method: 'account', id: ACCOUNT }
-	},
-	{
-		target: { kind: 'role', account_id: ACCOUNT, role: 'admin' },
-		call: { method: 'role', id: ACCOUNT, role: 'admin' }
-	}
+/** One target per `ConnectionCloseTarget` kind — each recorded as given. */
+const targets: Array<ConnectionCloseTarget> = [
+	{ kind: 'session', session_hash: 'session_hash' },
+	{ kind: 'token', api_token_id: 'token_id' },
+	{ kind: 'account', account_id: ACCOUNT },
+	{ kind: 'role', account_id: ACCOUNT, role: 'admin' }
 ];
 
 /** A closer whose every method throws `error`. */
@@ -52,13 +36,7 @@ const create_throwing_closer = (error: unknown): ConnectionCloser => {
 	const fail = (): number => {
 		throw error;
 	};
-	return {
-		close_sockets_for_session: fail,
-		close_sockets_for_token: fail,
-		close_sockets_for_account: fail,
-		close_sockets_for_role: fail,
-		close_all_sockets: fail
-	};
+	return { close_connections: fail, close_all_connections: fail };
 };
 
 describe('create_realtime_closer', () => {
@@ -71,17 +49,17 @@ describe('create_realtime_closer', () => {
 		// one member per reference, however many additions
 		closer.add(a.closer);
 
-		for (const { target, call } of targets) {
-			assert.strictEqual(close_connections(closer, target), 2);
-			assert.deepStrictEqual(a.calls.at(-1), call);
-			assert.deepStrictEqual(b.calls.at(-1), call);
+		for (const target of targets) {
+			assert.strictEqual(closer.close_connections(target), 2);
+			assert.deepStrictEqual(a.calls.at(-1), target);
+			assert.deepStrictEqual(b.calls.at(-1), target);
 		}
 		assert.strictEqual(a.calls.length, targets.length);
 		assert.strictEqual(b.calls.length, targets.length);
 	});
 
-	for (const { target, call } of targets) {
-		test(`a member that throws does not stop the ${call.method} fan-out`, () => {
+	for (const target of targets) {
+		test(`a member that throws does not stop the ${target.kind} fan-out`, () => {
 			// A throwing member ahead of the others would otherwise leave their
 			// connections open on a revoked credential, silently.
 			const closer = create_realtime_closer();
@@ -92,9 +70,9 @@ describe('create_realtime_closer', () => {
 			closer.add(create_throwing_closer(boom));
 			closer.add(after.closer);
 
-			assert.throws(() => close_connections(closer, target), boom);
-			assert.deepStrictEqual(before.calls, [call]);
-			assert.deepStrictEqual(after.calls, [call], 'the member after the throw ran');
+			assert.throws(() => closer.close_connections(target), boom);
+			assert.deepStrictEqual(before.calls, [target]);
+			assert.deepStrictEqual(after.calls, [target], 'the member after the throw ran');
 		});
 	}
 
@@ -108,9 +86,9 @@ describe('create_realtime_closer', () => {
 
 		remove_a();
 		assert.strictEqual(closer.member_count(), 1);
-		assert.strictEqual(closer.close_all_sockets(), 1);
+		assert.strictEqual(closer.close_all_connections(), 1);
 		assert.deepStrictEqual(a.calls, [], 'a removed member is not reached');
-		assert.deepStrictEqual(b.calls, [{ method: 'all', id: null }]);
+		assert.deepStrictEqual(b.calls, [{ kind: 'all' }]);
 
 		// a second call is a no-op — it does not release anyone else's addition
 		remove_a();
@@ -129,27 +107,27 @@ describe('create_realtime_closer', () => {
 		remove_first();
 		remove_first();
 		assert.strictEqual(closer.member_count(), 1, 'the second addition still holds it');
-		assert.strictEqual(closer.close_all_sockets(), 1);
+		assert.strictEqual(closer.close_all_connections(), 1);
 		assert.strictEqual(shared.calls.length, 1, 'reached once, not once per addition');
 
 		remove_second();
 		assert.strictEqual(closer.member_count(), 0);
-		assert.strictEqual(closer.close_all_sockets(), 0);
+		assert.strictEqual(closer.close_all_connections(), 0);
 	});
 
-	test('close_all_sockets fans out to every member and returns the sum', () => {
+	test('close_all_connections fans out to every member and returns the sum', () => {
 		const closer = create_realtime_closer();
 		const a = create_recording_closer();
 		const b = create_recording_closer();
 		closer.add(a.closer);
 		closer.add(b.closer);
 
-		assert.strictEqual(closer.close_all_sockets(), 2);
-		assert.deepStrictEqual(a.calls, [{ method: 'all', id: null }]);
-		assert.deepStrictEqual(b.calls, [{ method: 'all', id: null }]);
+		assert.strictEqual(closer.close_all_connections(), 2);
+		assert.deepStrictEqual(a.calls, [{ kind: 'all' }]);
+		assert.deepStrictEqual(b.calls, [{ kind: 'all' }]);
 	});
 
-	test('a member that throws does not stop the close_all_sockets fan-out', () => {
+	test('a member that throws does not stop the close_all_connections fan-out', () => {
 		// at shutdown, a broken transport must not leave another's connections open
 		const closer = create_realtime_closer();
 		const before = create_recording_closer();
@@ -159,9 +137,9 @@ describe('create_realtime_closer', () => {
 		closer.add(create_throwing_closer(boom));
 		closer.add(after.closer);
 
-		assert.throws(() => closer.close_all_sockets(), boom);
-		assert.deepStrictEqual(before.calls, [{ method: 'all', id: null }]);
-		assert.deepStrictEqual(after.calls, [{ method: 'all', id: null }]);
+		assert.throws(() => closer.close_all_connections(), boom);
+		assert.deepStrictEqual(before.calls, [{ kind: 'all' }]);
+		assert.deepStrictEqual(after.calls, [{ kind: 'all' }]);
 	});
 
 	test('the first error is the one thrown when several members fail', () => {
@@ -172,8 +150,8 @@ describe('create_realtime_closer', () => {
 		closer.add(create_throwing_closer(new Error('second')));
 		closer.add(recording.closer);
 
-		assert.throws(() => closer.close_sockets_for_account(ACCOUNT), first);
-		assert.deepStrictEqual(recording.calls, [{ method: 'account', id: ACCOUNT }]);
+		assert.throws(() => closer.close_connections({ kind: 'account', account_id: ACCOUNT }), first);
+		assert.deepStrictEqual(recording.calls, [{ kind: 'account', account_id: ACCOUNT }]);
 	});
 
 	test('a member that throws a falsy value still fails the close', () => {
@@ -184,7 +162,7 @@ describe('create_realtime_closer', () => {
 
 		let threw = false;
 		try {
-			closer.close_sockets_for_account(ACCOUNT);
+			closer.close_connections({ kind: 'account', account_id: ACCOUNT });
 		} catch (error) {
 			threw = true;
 			assert.strictEqual(error, undefined);
@@ -203,7 +181,7 @@ describe('queue_connection_close', () => {
 		assert.deepStrictEqual(calls, []);
 
 		await flush_post_commit_effects(ctx.post_commit_effects, new Logger('test', { level: 'off' }));
-		assert.deepStrictEqual(calls, [{ method: 'account', id: ACCOUNT }]);
+		assert.deepStrictEqual(calls, [{ kind: 'account', account_id: ACCOUNT }]);
 	});
 
 	test('a failing member is logged by the flush, and the rest still close', async () => {
@@ -222,7 +200,7 @@ describe('queue_connection_close', () => {
 		queue_connection_close(ctx, closer, { kind: 'account', account_id: ACCOUNT });
 		await flush_post_commit_effects(ctx.post_commit_effects, log);
 
-		assert.deepStrictEqual(recording.calls, [{ method: 'account', id: ACCOUNT }]);
+		assert.deepStrictEqual(recording.calls, [{ kind: 'account', account_id: ACCOUNT }]);
 		assert.deepStrictEqual(errors, [['post-commit side effect failed:', boom]]);
 	});
 });

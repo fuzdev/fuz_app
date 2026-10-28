@@ -220,7 +220,7 @@ describe('BackendWebsocketTransport outbound overflow', () => {
 			counts.map((_, i) => (i < overflowed_at ? 2 : 1))
 		);
 		assert.strictEqual(warns.length, 1, 'one warning for the one overflow');
-		t.close_all_sockets();
+		t.close_all_connections();
 		t.remove_connection(stalled_id);
 		t.remove_connection(healthy_id);
 	});
@@ -405,7 +405,7 @@ describe('BackendWebsocketTransport closes on a backlogged connection', () => {
 		// a reply queued in the same synchronous run as the revocation's close
 		t.send_to(id, 'first');
 		t.send_to(id, 'reply');
-		assert.strictEqual(t.close_sockets_for_session('hash'), 1);
+		assert.strictEqual(t.close_connections({ kind: 'session', session_hash: 'hash' }), 1);
 		assert.deepStrictEqual(fake.sends, ['first', 'reply']);
 		assert.deepStrictEqual(fake.closes, [
 			{ code: WS_CLOSE_SESSION_REVOKED, reason: WS_CLOSE_SESSION_REVOKED_REASON }
@@ -427,7 +427,7 @@ describe('BackendWebsocketTransport closes on a backlogged connection', () => {
 		t.send_to(id, 'waiting');
 		await flush_pump();
 
-		assert.strictEqual(t.close_sockets_for_account(ACCOUNT_A), 1);
+		assert.strictEqual(t.close_connections({ kind: 'account', account_id: ACCOUNT_A }), 1);
 		// removed and aborted at the close, not at the deadline
 		assert.strictEqual(t.is_registered(id), false);
 		assert.strictEqual(controller.signal.aborted, true);
@@ -445,13 +445,17 @@ describe('BackendWebsocketTransport closes on a backlogged connection', () => {
 	test('every close that is not an overflow hands over what the socket has room for, no more', async () => {
 		const big = 'x'.repeat(WS_WRITE_HIGH_WATER_BYTES);
 		const closes: Array<[string, (t: BackendWebsocketTransport, id: Uuid) => void, number]> = [
-			['revocation', (t) => t.close_sockets_for_account(ACCOUNT_A), WS_CLOSE_SESSION_REVOKED],
+			[
+				'revocation',
+				(t) => t.close_connections({ kind: 'account', account_id: ACCOUNT_A }),
+				WS_CLOSE_SESSION_REVOKED
+			],
 			[
 				'connection cap',
 				(t) => t.add_connection(create_fake_ws().ws, null, ACCOUNT_A),
 				WS_CLOSE_CONNECTION_LIMIT
 			],
-			['shutdown', (t) => t.close_all_sockets(), WS_CLOSE_GOING_AWAY],
+			['shutdown', (t) => t.close_all_connections(), WS_CLOSE_GOING_AWAY],
 			[
 				'close_connection',
 				(t, id) => t.close_connection(id, WS_CLOSE_INTERNAL_ERROR, 'why'),
@@ -474,7 +478,7 @@ describe('BackendWebsocketTransport closes on a backlogged connection', () => {
 			fake.socket.bufferedAmount = 0;
 			await flush_pump();
 			assert.deepStrictEqual(fake.sends, ['first', big], `${name}: nothing follows the close`);
-			t.close_all_sockets();
+			t.close_all_connections();
 			t.remove_connection(id);
 		}
 	});
@@ -485,7 +489,7 @@ describe('BackendWebsocketTransport closes on a backlogged connection', () => {
 		const fake = create_fake_ws({ stalled: true });
 		const id = t.add_connection(fake.ws, null, ACCOUNT_A);
 		t.send_to(id, 'frame');
-		t.close_sockets_for_account(ACCOUNT_A);
+		t.close_connections({ kind: 'account', account_id: ACCOUNT_A });
 		assert.strictEqual(vi.getTimerCount(), 1);
 		// what `register_action_ws` calls from the adapter's `onClose`
 		t.remove_connection(id);

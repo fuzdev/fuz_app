@@ -292,7 +292,8 @@ export const query_session_list_all_active = async (
  * Delete every expired session, returning the ids (token hashes) of the rows
  * it deleted.
  *
- * The ids are the keys `ConnectionCloser.close_sockets_for_session` closes by.
+ * The ids are the `session_hash` of the `session` close target
+ * (`ConnectionCloser.close_connections`).
  * A row past `expires_at` already fails `query_session_get_valid`, but
  * deleting it does not end the connections it opened: a WebSocket keeps the
  * authority it resolved at upgrade and an SSE stream never rechecks. The row

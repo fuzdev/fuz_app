@@ -60,25 +60,28 @@ describe('create_sse_connection_closer', () => {
 		registry.subscribe(token_stream, { scope: 'tok_abc', groups: [other_account_id] });
 		const pending = registry.subscribe_pending({ scope: 'session-hash-3', groups: [account_id] });
 
-		assert.strictEqual(closer.close_sockets_for_session('session-hash-1'), 1);
+		assert.strictEqual(
+			closer.close_connections({ kind: 'session', session_hash: 'session-hash-1' }),
+			1
+		);
 		assert.ok(session_stream.closed);
 		assert.ok(!sibling_stream.closed);
 
-		assert.strictEqual(closer.close_sockets_for_token('tok_abc'), 1);
+		assert.strictEqual(closer.close_connections({ kind: 'token', api_token_id: 'tok_abc' }), 1);
 		assert.ok(token_stream.closed);
 
 		// account-wide: the remaining open stream and the pending registration
-		assert.strictEqual(closer.close_sockets_for_account(account_id), 2);
+		assert.strictEqual(closer.close_connections({ kind: 'account', account_id }), 2);
 		assert.ok(sibling_stream.closed);
 		assert.strictEqual(registry.admit(pending, create_mock_stream<string>()), false);
 
 		// idempotent — nothing left to close
-		assert.strictEqual(closer.close_sockets_for_account(account_id), 0);
+		assert.strictEqual(closer.close_connections({ kind: 'account', account_id }), 0);
 		assert.strictEqual(registry.count, 0);
 		assert.strictEqual(registry.pending_count, 0);
 	});
 
-	test('close_sockets_for_role closes the account streams when the role is the gating one', () => {
+	test('a role target closes the account streams when the role is the gating one', () => {
 		const registry = new SubscriberRegistry<string>();
 		const closer = create_sse_connection_closer(registry, 'admin');
 		const account_id = create_uuid();
@@ -87,9 +90,9 @@ describe('create_sse_connection_closer', () => {
 		const other = create_mock_stream<string>();
 		registry.subscribe(other, { scope: 'session-hash-2', groups: [create_uuid()] });
 
-		assert.strictEqual(closer.close_sockets_for_role(account_id, 'keeper'), 0);
+		assert.strictEqual(closer.close_connections({ kind: 'role', account_id, role: 'keeper' }), 0);
 		assert.ok(!stream.closed, 'a role the streams are not gated on closes nothing');
-		assert.strictEqual(closer.close_sockets_for_role(account_id, 'admin'), 1);
+		assert.strictEqual(closer.close_connections({ kind: 'role', account_id, role: 'admin' }), 1);
 		assert.ok(stream.closed);
 		assert.ok(!other.closed);
 
@@ -98,11 +101,14 @@ describe('create_sse_connection_closer', () => {
 		const ungated = create_mock_stream<string>();
 		ungated_registry.subscribe(ungated, { scope: 'session-hash-3', groups: [account_id] });
 		const ungated_closer = create_sse_connection_closer(ungated_registry, null);
-		assert.strictEqual(ungated_closer.close_sockets_for_role(account_id, 'admin'), 0);
+		assert.strictEqual(
+			ungated_closer.close_connections({ kind: 'role', account_id, role: 'admin' }),
+			0
+		);
 		assert.ok(!ungated.closed);
 	});
 
-	test('close_all_sockets closes every stream of the registry', () => {
+	test('close_all_connections closes every stream of the registry', () => {
 		const registry = new SubscriberRegistry<string>();
 		const closer = create_sse_connection_closer(registry, 'admin');
 		const scoped = create_mock_stream<string>();
@@ -111,7 +117,7 @@ describe('create_sse_connection_closer', () => {
 		registry.subscribe(anonymous);
 		registry.subscribe_pending({ scope: 'session-hash-2' });
 
-		assert.strictEqual(closer.close_all_sockets(), 3);
+		assert.strictEqual(closer.close_all_connections(), 3);
 		assert.ok(scoped.closed && anonymous.closed);
 		assert.strictEqual(registry.count, 0);
 		assert.strictEqual(registry.pending_count, 0);
@@ -130,7 +136,7 @@ describe('create_audit_log_sse', () => {
 			groups: [account_id]
 		});
 
-		assert.strictEqual(connection_closer.close_sockets_for_account(account_id), 1);
+		assert.strictEqual(connection_closer.close_connections({ kind: 'account', account_id }), 1);
 		assert.ok(stream.closed);
 		assert.strictEqual(audit_sse.registry.count, 0);
 	});
@@ -214,9 +220,23 @@ describe('create_audit_log_sse', () => {
 		const stream = create_mock_stream<SseNotification>();
 		audit_sse.registry.subscribe(stream, { channels: ['audit_log'], groups: ['account-a'] });
 
-		assert.strictEqual(connection_closer.close_sockets_for_role('account-a' as any, 'admin'), 0);
+		assert.strictEqual(
+			connection_closer.close_connections({
+				kind: 'role',
+				account_id: 'account-a' as any,
+				role: 'admin'
+			}),
+			0
+		);
 		assert.ok(!stream.closed);
-		assert.strictEqual(connection_closer.close_sockets_for_role('account-a' as any, 'steward'), 1);
+		assert.strictEqual(
+			connection_closer.close_connections({
+				kind: 'role',
+				account_id: 'account-a' as any,
+				role: 'steward'
+			}),
+			1
+		);
 		assert.ok(stream.closed);
 		assert.strictEqual(audit_sse.required_role, 'steward');
 	});

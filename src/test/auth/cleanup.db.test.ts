@@ -468,7 +468,7 @@ describe_db('auth_cleanup', (get_db) => {
 			[live_session]
 		);
 		assert.strictEqual(calls.length, 1, 'the pass closes for the session it swept, once');
-		assert_close_call(calls[0], 'session', expired_session);
+		assert_close_call(calls[0], { kind: 'session', session_hash: expired_session });
 
 		// nothing left to sweep on a second pass, and nothing more to close
 		assert.deepEqual(await run_auth_cleanup(deps), { expired_sessions: 0, expired_offers: 0 });

@@ -2,17 +2,14 @@ import './assert_dev_env.ts';
 
 import { assert } from 'vitest';
 
-import type { ConnectionCloser } from '../actions/connection_closer.ts';
+import type { ConnectionCloser, ConnectionCloseTarget } from '../actions/connection_closer.ts';
 
 /**
- * Record of a single `ConnectionCloser` method invocation — a credential
- * close carries the id it was given, a role close (`'role'`) the account id
- * and the role, `close_all_sockets` (`'all'`) none.
+ * Record of a single `ConnectionCloser` call — the `ConnectionCloseTarget` a
+ * `close_connections` was given, or `{kind: 'all'}` for
+ * `close_all_connections`.
  */
-export type RecordedClose =
-	| { method: 'session' | 'token' | 'account'; id: string }
-	| { method: 'role'; id: string; role: string }
-	| { method: 'all'; id: null };
+export type RecordedClose = ConnectionCloseTarget | { kind: 'all' };
 
 export interface RecordingCloser {
 	closer: ConnectionCloser;
@@ -32,24 +29,12 @@ export interface RecordingCloser {
 export const create_recording_closer = (): RecordingCloser => {
 	const calls: Array<RecordedClose> = [];
 	const closer: ConnectionCloser = {
-		close_sockets_for_session: (id) => {
-			calls.push({ method: 'session', id });
+		close_connections: (target) => {
+			calls.push(target);
 			return 1;
 		},
-		close_sockets_for_token: (id) => {
-			calls.push({ method: 'token', id });
-			return 1;
-		},
-		close_sockets_for_account: (id) => {
-			calls.push({ method: 'account', id });
-			return 1;
-		},
-		close_sockets_for_role: (id, role) => {
-			calls.push({ method: 'role', id, role });
-			return 1;
-		},
-		close_all_sockets: () => {
-			calls.push({ method: 'all', id: null });
+		close_all_connections: () => {
+			calls.push({ kind: 'all' });
 			return 1;
 		}
 	};
@@ -57,7 +42,7 @@ export const create_recording_closer = (): RecordingCloser => {
 };
 
 /**
- * Pin `{method, id}` on a single recorded close call.
+ * Pin a single recorded close call to `expected` (deep equality).
  *
  * Throws via `assert.ok` if `call` is `undefined` — index a recorded
  * `calls` array directly (`calls[0]`) and let this helper handle the
@@ -65,10 +50,8 @@ export const create_recording_closer = (): RecordingCloser => {
  */
 export const assert_close_call = (
 	call: RecordedClose | undefined,
-	method: RecordedClose['method'],
-	id: string | null
+	expected: RecordedClose
 ): void => {
 	assert.ok(call, 'expected a recorded close call');
-	assert.strictEqual(call.method, method);
-	assert.strictEqual(call.id, id);
+	assert.deepEqual(call, expected);
 };

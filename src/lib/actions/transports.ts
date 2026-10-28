@@ -119,7 +119,7 @@ export const WS_CLOSE_PERMISSION_REVOKED = 4006;
 export const WS_CLOSE_PERMISSION_REVOKED_REASON = 'Permission revoked';
 /**
  * WebSocket close code — the server is shutting down (RFC 6455 §7.4.1 "Going
- * Away"). Sent to every live socket by `close_all_sockets`, which
+ * Away"). Sent to every live socket by `close_all_connections`, which
  * `AppServer.close` runs, and to an upgrade the shutdown refuses — one
  * pending at the close-all, or born closed after it. Not a revocation: the credential is still good, so a
  * client reconnects under its ordinary backoff once a server is back.

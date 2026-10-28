@@ -140,7 +140,7 @@ export const create_account_actions = (
 		if (revoked) {
 			queue_connection_close(ctx, connection_closer, {
 				kind: 'session',
-				session_token_hash: input.session_id
+				session_hash: input.session_id
 			});
 		}
 		deps.audit.emit(ctx, {

@@ -17,6 +17,7 @@
  */
 
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
+import { UnreachableError } from '@fuzdev/fuz_util/error.ts';
 
 import {
 	AUDIT_EVENT_TYPES,
@@ -35,34 +36,45 @@ export const AUDIT_LOG_CHANNEL = 'audit_log';
  * Adapt a `SubscriberRegistry` to `ConnectionCloser`, so a revocation handler's
  * close reaches its streams.
  *
- * Each method is `SubscriberRegistry.close_by_identity` on the id it is given,
- * so it closes the streams registered under that id as their `scope` or in
- * their `groups` — pending registrations included. The audit stream route
- * registers `scope = session hash` and `groups = [account id]`; a route that
- * admits bearer tokens registers the API token id too, and
- * `close_sockets_for_token` then reaches it. `close_sockets_for_role` closes
- * the account's streams when `role` is the one the registry's streams are
- * gated on — the registry keeps one gating role for all its streams, not one
- * per stream. `close_all_sockets` is `SubscriberRegistry.close_all` — every
- * stream, for shutdown.
+ * `close_connections` is `SubscriberRegistry.close_by_identity` on the id its
+ * target carries, so it closes the streams registered under that id as their
+ * `scope` or in their `groups` — pending registrations included. The audit
+ * stream route registers `scope = session hash` and `groups = [account id]`; a
+ * route that admits bearer tokens registers the API token id too, and a
+ * `token` target then reaches it. A `role` target closes the account's
+ * streams when its `role` is the one the registry's streams are gated on — the
+ * registry keeps one gating role for all its streams, not one per stream.
+ * `close_all_connections` is `SubscriberRegistry.close_all` — every stream,
+ * for shutdown.
  *
  * Twin of the Rust spine's `ConnectionCloser` impl on `SseRegistry`.
  *
  * @param registry - the registry to close streams on
  * @param required_role - the role every stream of `registry` was gated on,
- *   or `null` when they are not role-gated (`close_sockets_for_role` then
- *   closes nothing)
+ *   or `null` when they are not role-gated (a `role` target then closes
+ *   nothing)
  */
 export const create_sse_connection_closer = <T>(
 	registry: SubscriberRegistry<T>,
 	required_role: string | null
 ): ConnectionCloser => ({
-	close_sockets_for_session: (session_token_hash) => registry.close_by_identity(session_token_hash),
-	close_sockets_for_token: (api_token_id) => registry.close_by_identity(api_token_id),
-	close_sockets_for_account: (account_id) => registry.close_by_identity(account_id),
-	close_sockets_for_role: (account_id, role) =>
-		required_role !== null && role === required_role ? registry.close_by_identity(account_id) : 0,
-	close_all_sockets: () => registry.close_all()
+	close_connections: (target) => {
+		switch (target.kind) {
+			case 'session':
+				return registry.close_by_identity(target.session_hash);
+			case 'token':
+				return registry.close_by_identity(target.api_token_id);
+			case 'account':
+				return registry.close_by_identity(target.account_id);
+			case 'role':
+				return required_role !== null && target.role === required_role
+					? registry.close_by_identity(target.account_id)
+					: 0;
+			default:
+				throw new UnreachableError(target);
+		}
+	},
+	close_all_connections: () => registry.close_all()
 });
 
 /**

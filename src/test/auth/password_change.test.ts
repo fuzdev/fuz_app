@@ -816,7 +816,7 @@ describe('password change connection_closer wiring', () => {
 		assert.strictEqual(meta.credential_type, 'session');
 	});
 
-	test('fires close_sockets_for_account on the success path', async () => {
+	test("closes the account's connections on the success path", async () => {
 		// Mirror assertion to the negative test above — the same closer
 		// stub on a happy-path call DOES record an account-wide close,
 		// closing the "is the closer wired at all?" alternative explanation
@@ -832,7 +832,7 @@ describe('password change connection_closer wiring', () => {
 		assert.strictEqual(res.status, 200);
 
 		assert.strictEqual(calls.length, 1);
-		assert.deepStrictEqual(calls[0], { method: 'account', id: fake_account.id });
+		assert.deepStrictEqual(calls[0], { kind: 'account', account_id: fake_account.id });
 	});
 
 	test('does NOT close on per-IP rate-limit 429', async () => {
