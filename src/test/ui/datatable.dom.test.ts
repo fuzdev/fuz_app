@@ -2,8 +2,8 @@
 
 /**
  * Client-mount tests for `Datatable` — rows keep their DOM (and so any
- * per-row state) across a removal above them, and a row without a key fails
- * loudly in DEV.
+ * per-row state) across a removal above them, a row without a key fails
+ * loudly in DEV, and the table exposes ARIA table semantics.
  *
  * @module
  */
@@ -74,6 +74,34 @@ describe('Datatable row_key', () => {
 		assert.throws(
 			() => mount_table([{ label: 'keyless' }], (row) => row.id!),
 			/row_key returned undefined/
+		);
+	});
+});
+
+describe('Datatable roles', () => {
+	test('a table of rows, column headers, and cells', () => {
+		const { target } = mount_table([{ id: 'a', label: 'alpha' }], (row) => row.id!);
+		const table = target.querySelector('.datatable');
+		assert.strictEqual(table?.getAttribute('role'), 'table');
+		assert.strictEqual(target.querySelectorAll('[role="row"]').length, 2, 'header + one row');
+		assert.strictEqual(target.querySelectorAll('[role="columnheader"]').length, 1);
+		const cells = target.querySelectorAll('[role="cell"]');
+		assert.strictEqual(cells.length, 1);
+		assert.strictEqual(cells[0]!.parentElement?.getAttribute('role'), 'row');
+		assert.isNull(target.querySelector('[role="grid"], [role="gridcell"]'));
+	});
+
+	test('the empty state is a row with a cell', () => {
+		const { target } = mount_table([], (row) => row.id!);
+		const empty = target.querySelector('.datatable-empty');
+		assert.strictEqual(empty?.getAttribute('role'), 'row');
+		const cell = empty?.querySelector('[role="cell"]');
+		assert.ok(cell);
+		assert.include(cell.textContent, 'no data');
+		assert.strictEqual(
+			cell.getAttribute('aria-colspan'),
+			String(target.querySelectorAll('[role="columnheader"]').length),
+			'the cell spans every column'
 		);
 	});
 });

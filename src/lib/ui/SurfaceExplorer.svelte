@@ -3,7 +3,9 @@
 	 * Read-only `AppSurface` renderer. Tables routes, middleware, environment
 	 * variables, events, and diagnostics. Routes can be filtered by auth type
 	 * and expanded to dump `params` / `query` / `input` / `output` / `errors`
-	 * schemas as JSON. Pure presentational — `AdminSurface` handles the fetch.
+	 * schemas as JSON — each expandable row's first cell is a disclosure
+	 * `<button aria-expanded>`, so expanding works from the keyboard. Pure
+	 * presentational — `AdminSurface` handles the fetch.
 	 *
 	 * @module
 	 */
@@ -81,21 +83,21 @@
 		expanded_ws_method = expanded_ws_method === key ? null : key;
 	};
 
-	const format_auth = (auth: RouteAuth): string => {
-		if (is_public_auth(auth)) return 'none';
-		if (is_keeper_auth(auth)) return 'keeper';
-		if (is_role_auth(auth)) return `role:${auth.roles!.join('|')}`;
-		if (is_plain_authenticated_auth(auth)) return 'authenticated';
-		return 'other';
-	};
-
-	const auth_chip_class = (auth: RouteAuth): string => {
-		if (is_public_auth(auth)) return 'chip palette_b';
-		if (is_keeper_auth(auth)) return 'chip palette_c';
-		if (is_role_auth(auth)) return 'chip palette_d';
-		if (is_credential_gated_auth(auth)) return 'chip palette_e';
-		if (is_plain_authenticated_auth(auth)) return 'chip palette_a';
-		return 'chip';
+	// one classification gives an auth chip both its label and its color
+	const to_auth_chip = (auth: RouteAuth): { label: string; class: string } => {
+		if (is_public_auth(auth)) return { label: 'none', class: 'chip palette_b' };
+		if (is_keeper_auth(auth)) return { label: 'keeper', class: 'chip palette_c' };
+		if (is_role_auth(auth))
+			return { label: `role:${auth.roles!.join('|')}`, class: 'chip palette_d' };
+		if (is_credential_gated_auth(auth)) {
+			return {
+				label: `credential:${auth.credential_types!.join('|')}`,
+				class: 'chip palette_e'
+			};
+		}
+		if (is_plain_authenticated_auth(auth))
+			return { label: 'authenticated', class: 'chip palette_a' };
+		return { label: 'other', class: 'chip' };
 	};
 
 	const role_count = $derived(Array.from(summary.role.values()).reduce((sum, n) => sum + n, 0));
@@ -103,6 +105,23 @@
 		Array.from(summary.credential.values()).reduce((sum, n) => sum + n, 0)
 	);
 </script>
+
+{#snippet auth_chip(auth: RouteAuth)}
+	{@const chip = to_auth_chip(auth)}
+	<span class={chip.class}>{chip.label}</span>
+{/snippet}
+
+{#snippet expander(expanded: boolean, label: string, toggle: () => void)}
+	<button
+		type="button"
+		class="icon_button plain"
+		aria-expanded={expanded}
+		aria-label={label}
+		onclick={toggle}
+	>
+		{expanded ? '▾' : '▸'}
+	</button>
+{/snippet}
 
 <section>
 	<div class="row" style:gap="var(--space_md)" style:flex-wrap="wrap" style:align-items="center">
@@ -161,10 +180,15 @@
 				<tbody>
 					{#each filtered_routes as route (format_route_key(route))}
 						{@const key = format_route_key(route)}
-						<tr onclick={() => toggle_route(key)} style:cursor="pointer">
-							<td><code>{route.method}</code></td>
+						<tr>
+							<td>
+								{@render expander(expanded_route === key, `${key} details`, () =>
+									toggle_route(key)
+								)}
+								<code>{route.method}</code>
+							</td>
 							<td><code>{route.path}</code></td>
-							<td><span class={auth_chip_class(route.auth)}>{format_auth(route.auth)}</span></td>
+							<td>{@render auth_chip(route.auth)}</td>
 							<td class="text_50">{route.applicable_middleware.length}</td>
 							<td class="text_50">{route.description}</td>
 						</tr>
@@ -288,8 +312,13 @@
 				</thead>
 				<tbody>
 					{#each surface.events as event (event.method)}
-						<tr onclick={() => toggle_event(event.method)} style:cursor="pointer">
-							<td><code>{event.method}</code></td>
+						<tr>
+							<td>
+								{@render expander(expanded_event === event.method, `${event.method} params`, () =>
+									toggle_event(event.method)
+								)}
+								<code>{event.method}</code>
+							</td>
 							<td class="text_50">{event.description}</td>
 							<td>{event.channel ?? '-'}</td>
 							<td>
@@ -342,10 +371,15 @@
 						<tbody>
 							{#each endpoint.methods as method (method.name)}
 								{@const key = `${endpoint.path}|${method.name}`}
-								<tr onclick={() => toggle_rpc_method(key)} style:cursor="pointer">
-									<td><code>{method.name}</code></td>
+								<tr>
 									<td>
-										<span class={auth_chip_class(method.auth)}>{format_auth(method.auth)}</span>
+										{@render expander(expanded_rpc_method === key, `${method.name} schemas`, () =>
+											toggle_rpc_method(key)
+										)}
+										<code>{method.name}</code>
+									</td>
+									<td>
+										{@render auth_chip(method.auth)}
 									</td>
 									<td>{method.side_effects ? 'yes' : 'no'}</td>
 									<td class="text_50">{method.rate_limit_key ?? '-'}</td>
@@ -415,12 +449,17 @@
 						<tbody>
 							{#each endpoint.methods as method (method.name)}
 								{@const key = `${endpoint.path}|${method.name}`}
-								<tr onclick={() => toggle_ws_method(key)} style:cursor="pointer">
-									<td><code>{method.name}</code></td>
+								<tr>
+									<td>
+										{@render expander(expanded_ws_method === key, `${method.name} schemas`, () =>
+											toggle_ws_method(key)
+										)}
+										<code>{method.name}</code>
+									</td>
 									<td><span class="chip">{method.kind}</span></td>
 									<td>
 										{#if method.auth}
-											<span class={auth_chip_class(method.auth)}>{format_auth(method.auth)}</span>
+											{@render auth_chip(method.auth)}
 										{:else}
 											<span class="text_50">—</span>
 										{/if}

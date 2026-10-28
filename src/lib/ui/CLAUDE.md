@@ -140,7 +140,10 @@ pattern rather than reintroducing prop-drilling.
     (dialog `cancel`, `popover="auto"`) stay intact, and it bails while a
     modal is open (`document.querySelector(':modal')` matches). An open
     `popover="auto"` isn't `:modal`, so one Escape closes it and the overlay
-    together. Closing is `flushSync`ed so the content leaves `inert` before
+    together. A visible `Popover` (`popover.svelte.ts`) is different: its
+    Escape listener sits on `document`, ahead of `window`, and prevents the
+    default, which the overlay's listener skips — so the first Escape closes
+    only the popover. Closing is `flushSync`ed so the content leaves `inert` before
     focus returns. When focus was inside the sidebar or had fallen to `body`
     (opening from the content makes it `inert`, which drops focus there), it
     goes back to the opener if still connected and focusable, else to the
@@ -342,8 +345,11 @@ destructive actions.
   `AppSettingsState.settings.open_signup`. Consumes
   `app_settings_rpc_context`.
 - `SurfaceExplorer.svelte` — reads-only `AppSurface` renderer. Props:
-  `surface: AppSurface`. Filter routes by auth type; expand a row to
-  dump `params`/`query`/`input`/`output`/`errors` schemas as JSON.
+  `surface: AppSurface`. Filter routes by auth type; expand a row with the
+  disclosure `<button aria-expanded>` in its first cell to dump
+  `params`/`query`/`input`/`output`/`errors` schemas as JSON. One
+  classification gives each auth chip its label and color (`none`,
+  `keeper`, `role:…`, `credential:…`, `authenticated`).
   Also tables middleware, env, events, and diagnostics.
 
 ## Role grant offers
@@ -602,8 +608,17 @@ format_scope, global_label)` helper — `global_label = null` renders no
   `align`, `offset`, `popover_class`, `disable_outside_click` as
   `$state.raw`. Three `Attachment` factories: `container`,
   `trigger(params?)`, `content(params?)`. `show()` / `hide()` /
-  `toggle()`, plus `update(params)` to swap config. ARIA roles +
-  `aria-expanded` / `aria-controls` wired automatically.
+  `toggle()`, plus `update(params)` to swap config. ARIA wired
+  automatically: the content gets `role="dialog"` (unless it sets a role)
+  and `aria-labelledby` the trigger (unless it carries its own name); the
+  trigger gets `aria-expanded`, and `aria-controls` only while visible with
+  content mounted (cleared on hide). While visible, a `document` `keydown`
+  listener hides on Escape — preventing the default so enclosing layers
+  (`AppShell`'s overlay) leave it alone, skipping an Escape already
+  prevented, and returning focus to the trigger when it was in the content.
+  Only the newest visible popover handles Escape (a module-level stack), so
+  nested ones close innermost first, and while a `:modal` is open a popover
+  outside it leaves Escape to the modal's close request.
 - `position_helpers.ts` — `Position` / `Alignment` / `CardinalPosition`
   types; `generate_position_styles(position, align, offset)` returns
   CSS styles record for absolute positioning (left/right/top/bottom/
@@ -622,7 +637,9 @@ format_scope, global_label)` helper — `global_label = null` renders no
 
 ## Data
 
-- `Datatable.svelte` — generic grid (`<script generics="T">`).
+- `Datatable.svelte` — generic table (`<script generics="T">`), exposed
+  as ARIA `table` / `row` / `columnheader` / `cell` (no `grid` — it has no
+  grid keyboard model); the empty state is a full-width row.
   Props: `columns`, `rows`, `row_key: (row: T) => PropertyKey` (required —
   the keyed-each key, so per-row state follows its row; a `null`/`undefined`
   key throws in DEV, no index fallback), `height?`, optional

@@ -10,6 +10,10 @@
 	 * (popovers, pending buttons) follows its row across deletes and refetches.
 	 * A row whose key is `null` or `undefined` throws in DEV.
 	 *
+	 * Exposed as an ARIA `table` (not `grid` — there's no grid keyboard model):
+	 * `row` / `columnheader` / `cell` roles, with the empty state a full-width
+	 * row of its own.
+	 *
 	 * @module
 	 */
 
@@ -102,11 +106,10 @@
 	class="datatable {rest.class}"
 	style:height
 	style:grid-template-columns={grid_template_columns}
-	role="grid"
-	aria-rowcount={rows.length + 1}
+	role="table"
 >
 	<!-- sticky header -->
-	<div class="datatable-header" role="row" aria-rowindex={1}>
+	<div class="datatable-header" role="row">
 		{#each columns as column, i (column.key)}
 			<div class="datatable-header-cell" role="columnheader">
 				{#if header}
@@ -126,18 +129,20 @@
 	</div>
 
 	{#if rows.length === 0}
-		<div class="datatable-empty">
-			{#if empty}
-				{@render empty()}
-			{:else}
-				<span class="text_50">no data</span>
-			{/if}
+		<div class="datatable-empty" role="row">
+			<div role="cell" aria-colspan={columns.length}>
+				{#if empty}
+					{@render empty()}
+				{:else}
+					<span class="text_50">no data</span>
+				{/if}
+			</div>
 		</div>
 	{:else}
-		{#each rows as row, i (key_of(row))}
-			<div class="datatable-row" role="row" aria-rowindex={i + 2}>
+		{#each rows as row (key_of(row))}
+			<div class="datatable-row" role="row">
 				{#each columns as column (column.key)}
-					<div class="datatable-cell" role="gridcell">
+					<div class="datatable-cell" role="cell">
 						{#if cell}
 							{@render cell(column, row, row[column.key])}
 						{:else if column.format}

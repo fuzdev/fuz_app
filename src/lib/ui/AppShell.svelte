@@ -14,8 +14,9 @@
 	 * `inert` while it's open, and navigation, Escape, a scrim click, or
 	 * widening out of narrow mode closes it. Escape never prevents the
 	 * default, so the browser's close requests stay intact; it does nothing
-	 * while a modal (`:modal`) is open, or when a window `keydown` listener
-	 * registered before the overlay opened swallows it (a contextmenu, say).
+	 * while a modal (`:modal`) is open, when a window `keydown` listener
+	 * registered before the overlay opened swallows it (a contextmenu, say),
+	 * or when a visible `Popover`'s `document` listener already handled it.
 	 *
 	 * The open overlay is a modal dialog: the sidebar takes `role="dialog"`,
 	 * `aria-modal`, `tabindex="-1"`, and `sidebar_label` as its name, and

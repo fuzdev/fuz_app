@@ -19,6 +19,7 @@ import { afterNavigate } from '$app/navigation';
 
 import AppShell from '#lib/ui/AppShell.svelte';
 import { SidebarState } from '#lib/ui/sidebar_state.svelte.ts';
+import { Popover } from '#lib/ui/popover.svelte.ts';
 import { stub_match_media, type MatchMediaStub } from './svelte_client_test_helpers.ts';
 
 // vitest resolves the server builds, which can't mount — load the client builds
@@ -143,6 +144,31 @@ describe('AppShell Escape', () => {
 		press('Escape');
 		assert.isTrue(shell.sidebar_state.show_sidebar_narrow);
 		window.removeEventListener('keydown', swallow_escape);
+		press('Escape');
+		assert.isFalse(shell.sidebar_state.show_sidebar_narrow);
+	});
+
+	test('closes a popover open in the sidebar first, then the overlay', () => {
+		const shell = mount_shell();
+		open_overlay(shell, shell.opener);
+		// a popover opened from the sidebar after the overlay, its content beside the link
+		const popover = new Popover();
+		const content = document.createElement('div');
+		shell.link.after(content);
+		const detach_trigger = popover.trigger()(shell.link);
+		const detach_content = popover.content()(content);
+		cleanups.push(() => {
+			detach_content?.();
+			detach_trigger?.();
+			popover.hide();
+			content.remove();
+		});
+		popover.show();
+
+		press('Escape');
+		assert.isFalse(popover.visible, 'the popover closes');
+		assert.isTrue(shell.sidebar_state.show_sidebar_narrow, 'the overlay stays open');
+
 		press('Escape');
 		assert.isFalse(shell.sidebar_state.show_sidebar_narrow);
 	});

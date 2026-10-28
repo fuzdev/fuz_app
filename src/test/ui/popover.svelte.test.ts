@@ -75,6 +75,8 @@ describe('Popover', () => {
 
 	afterEach(() => {
 		for (const fn of cleanups) fn();
+		// a visible popover keeps its document listeners — hide so none outlive the test
+		popover.hide();
 		els.container.remove();
 	});
 
@@ -692,14 +694,34 @@ describe('Popover', () => {
 			assert.strictEqual(els.trigger.getAttribute('aria-expanded'), 'false');
 		});
 
-		test('aria-controls persists after hide', () => {
+		test('aria-controls clears on hide', () => {
 			attach(popover.trigger()(els.trigger));
 			attach(popover.content()(els.content));
 
 			popover.show();
-			const content_id = els.content.id;
 			popover.hide();
-			assert.strictEqual(els.trigger.getAttribute('aria-controls'), content_id);
+			assert.isFalse(els.trigger.hasAttribute('aria-controls'));
+		});
+
+		test('aria-controls is set when content mounts after show', () => {
+			// the usual `{#if popover.visible}` shape: content renders after `show()`
+			attach(popover.trigger()(els.trigger));
+			popover.show();
+			assert.isFalse(els.trigger.hasAttribute('aria-controls'));
+
+			attach(popover.content()(els.content));
+			assert.ok(els.content.id, 'content should have an id');
+			assert.strictEqual(els.trigger.getAttribute('aria-controls'), els.content.id);
+		});
+
+		test('aria-controls clears when the content unmounts', () => {
+			attach(popover.trigger()(els.trigger));
+			popover.show();
+			const content_cleanup = popover.content()(els.content);
+			assert.ok(els.trigger.hasAttribute('aria-controls'));
+
+			content_cleanup?.();
+			assert.isFalse(els.trigger.hasAttribute('aria-controls'));
 		});
 
 		test('content-before-trigger attachment order still establishes ARIA', () => {
@@ -707,10 +729,227 @@ describe('Popover', () => {
 			attach(popover.content()(els.content));
 			attach(popover.trigger()(els.trigger));
 
-			// trigger attachment calls #update_trigger_aria_attributes, sees content element
+			assert.strictEqual(els.trigger.getAttribute('aria-expanded'), 'false');
+			assert.strictEqual(els.content.getAttribute('aria-labelledby'), els.trigger.id);
+			popover.show();
 			assert.ok(els.content.id, 'content should have an id');
 			assert.strictEqual(els.trigger.getAttribute('aria-controls'), els.content.id);
-			assert.strictEqual(els.trigger.getAttribute('aria-expanded'), 'false');
+		});
+
+		test('the content is labelled by the trigger', () => {
+			attach(popover.trigger()(els.trigger));
+			attach(popover.content()(els.content));
+
+			assert.ok(els.trigger.id, 'trigger should have an id');
+			assert.strictEqual(els.content.getAttribute('aria-labelledby'), els.trigger.id);
+		});
+
+		test('content with its own name keeps it', () => {
+			els.content.setAttribute('aria-label', 'own name');
+			attach(popover.trigger()(els.trigger));
+			attach(popover.content()(els.content));
+
+			assert.isFalse(els.content.hasAttribute('aria-labelledby'));
+		});
+	});
+
+	// --- Escape ---
+
+	describe('Escape', () => {
+		/** Dispatches a bubbling, cancelable `keydown` from `target` and returns it. */
+		const press = (key: string, target: Element = document.body): KeyboardEvent => {
+			const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+			target.dispatchEvent(event);
+			return event;
+		};
+
+		test('hides a visible popover and prevents the default', () => {
+			attach(popover.trigger()(els.trigger));
+			attach(popover.content()(els.content));
+			popover.show();
+
+			const event = press('Escape');
+			assert.isFalse(popover.visible);
+			assert.isTrue(event.defaultPrevented, 'enclosing layers skip a handled Escape');
+		});
+
+		test('ignores other keys', () => {
+			attach(popover.trigger()(els.trigger));
+			popover.show();
+
+			press('Enter');
+			assert.isTrue(popover.visible);
+		});
+
+		test('leaves an Escape another listener already handled', () => {
+			attach(popover.trigger()(els.trigger));
+			popover.show();
+			const handled = (e: KeyboardEvent): void => e.preventDefault();
+			els.container.addEventListener('keydown', handled);
+			cleanups.push(() => els.container.removeEventListener('keydown', handled));
+
+			press('Escape', els.container);
+			assert.isTrue(popover.visible);
+		});
+
+		test('listens only while visible', () => {
+			attach(popover.trigger()(els.trigger));
+			popover.show();
+			popover.hide();
+			const event = press('Escape');
+			assert.isFalse(event.defaultPrevented, 'no listener once hidden');
+
+			const add_spy = vi.spyOn(document, 'addEventListener');
+			popover.show();
+			assert.isTrue(add_spy.mock.calls.some(([type]) => type === 'keydown'));
+			add_spy.mockRestore();
+		});
+
+		test('returns focus to the trigger when focus was in the content', () => {
+			const inner = document.createElement('button');
+			els.content.append(inner);
+			attach(popover.trigger()(els.trigger));
+			attach(popover.content()(els.content));
+			popover.show();
+			inner.focus();
+
+			press('Escape', inner);
+			assert.strictEqual(document.activeElement, els.trigger);
+		});
+
+		test('leaves focus alone when it was outside the content', () => {
+			const outside = document.createElement('button');
+			document.body.append(outside);
+			cleanups.push(() => outside.remove());
+			attach(popover.trigger()(els.trigger));
+			attach(popover.content()(els.content));
+			popover.show();
+			outside.focus();
+
+			press('Escape', outside);
+			assert.strictEqual(document.activeElement, outside);
+		});
+
+		test('the content unmounting removes the listener', () => {
+			attach(popover.trigger()(els.trigger));
+			popover.show();
+			const content_cleanup = popover.content()(els.content);
+			content_cleanup?.();
+
+			const event = press('Escape');
+			assert.isFalse(event.defaultPrevented);
+		});
+		test('a stale content teardown keeps the current listener', () => {
+			const replacement = document.createElement('div');
+			els.container.append(replacement);
+			attach(popover.trigger()(els.trigger));
+			const stale_cleanup = popover.content()(els.content);
+			popover.show();
+			attach(popover.content()(replacement));
+
+			stale_cleanup?.();
+			const event = press('Escape');
+			assert.isFalse(popover.visible);
+			assert.isTrue(event.defaultPrevented);
+		});
+
+		describe('several visible', () => {
+			let others: Array<{ popover: Popover; els: TestElements }>;
+
+			beforeEach(() => {
+				others = [];
+			});
+
+			afterEach(() => {
+				for (const other of others) {
+					other.popover.hide();
+					other.els.container.remove();
+				}
+			});
+
+			/** A second popover, its elements placed in `parent` when given. */
+			const add_popover = (parent?: HTMLElement): { popover: Popover; els: TestElements } => {
+				const other = { popover: new Popover(), els: create_test_elements() };
+				if (parent) parent.append(other.els.container);
+				attach(other.popover.trigger()(other.els.trigger));
+				attach(other.popover.content()(other.els.content));
+				others.push(other);
+				return other;
+			};
+
+			test('only the newest closes, innermost first when nested', () => {
+				attach(popover.trigger()(els.trigger));
+				attach(popover.content()(els.content));
+				popover.show();
+				const inner = add_popover(els.content);
+				inner.popover.show();
+				const focused = document.createElement('button');
+				inner.els.content.append(focused);
+				focused.focus();
+
+				press('Escape', focused);
+				assert.isFalse(inner.popover.visible);
+				assert.isTrue(popover.visible);
+				assert.strictEqual(document.activeElement, inner.els.trigger);
+
+				press('Escape', inner.els.trigger);
+				assert.isFalse(popover.visible);
+				assert.strictEqual(document.activeElement, els.trigger);
+			});
+
+			test('a popover whose content tore down leaves Escape to the older one', () => {
+				attach(popover.trigger()(els.trigger));
+				attach(popover.content()(els.content));
+				popover.show();
+				const other = { popover: new Popover(), els: create_test_elements() };
+				others.push(other);
+				attach(other.popover.trigger()(other.els.trigger));
+				const other_content_cleanup = other.popover.content()(other.els.content);
+				other.popover.show();
+
+				other_content_cleanup?.();
+				press('Escape');
+				assert.isFalse(popover.visible);
+			});
+		});
+
+		describe('with a modal open', () => {
+			let dialog: HTMLDialogElement;
+
+			beforeEach(() => {
+				dialog = document.createElement('dialog');
+				document.body.append(dialog);
+				// jsdom never matches `:modal`; other selectors resolve as usual
+				vi.spyOn(document, 'querySelector').mockImplementation((selector: string) =>
+					selector === ':modal' ? dialog : (document.querySelectorAll(selector)[0] ?? null)
+				);
+			});
+
+			afterEach(() => {
+				vi.restoreAllMocks();
+				dialog.remove();
+			});
+
+			test('a popover outside the modal leaves Escape to it', () => {
+				attach(popover.trigger()(els.trigger));
+				attach(popover.content()(els.content));
+				popover.show();
+
+				const event = press('Escape', dialog);
+				assert.isTrue(popover.visible);
+				assert.isFalse(event.defaultPrevented, "the modal's close request stays intact");
+			});
+
+			test('a popover inside the modal still closes first', () => {
+				dialog.append(els.container);
+				attach(popover.trigger()(els.trigger));
+				attach(popover.content()(els.content));
+				popover.show();
+
+				const event = press('Escape', els.content);
+				assert.isFalse(popover.visible);
+				assert.isTrue(event.defaultPrevented);
+			});
 		});
 	});
 
@@ -843,6 +1082,7 @@ describe('Popover', () => {
 			assert.strictEqual(popover.visible, false);
 			assert.strictEqual(popover2.visible, true);
 
+			popover2.hide();
 			els2.container.remove();
 		});
 	});

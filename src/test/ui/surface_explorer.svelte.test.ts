@@ -260,6 +260,26 @@ test('hides diagnostics warning chip when only info-level', () => {
 	assert.ok(body.includes('Diagnostics'), 'should still show diagnostics section');
 });
 
+test('auth chips label every auth class, credential gates included', () => {
+	const surface_with_credential: AppSurface = {
+		...test_surface,
+		routes: [
+			...test_surface.routes,
+			{
+				...test_surface.routes[1]!,
+				path: '/api/logout',
+				auth: { account: 'required', actor: 'none', credential_types: ['session'] }
+			}
+		]
+	};
+	const { body } = render(SurfaceExplorer, { props: { surface: surface_with_credential } });
+	assert.ok(body.includes('>none</span>'), 'public label');
+	assert.ok(body.includes('>authenticated</span>'), 'authenticated label');
+	assert.ok(body.includes('>role:admin</span>'), 'role label');
+	assert.ok(body.includes('>credential:session</span>'), 'credential label');
+	assert.ok(!body.includes('>other</span>'), 'no route falls through to other');
+});
+
 test('handles empty surface', () => {
 	const empty_surface: AppSurface = {
 		middleware: [],

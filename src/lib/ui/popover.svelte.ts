@@ -1,9 +1,23 @@
 /**
  * Popover state class with trigger, content, and container attachments.
  *
- * `Popover` manages visibility, positioning, outside-click dismissal,
- * and ARIA attributes. The `trigger`, `content`, and `container`
+ * `Popover` manages visibility, positioning, outside-click and Escape
+ * dismissal, and ARIA attributes. The `trigger`, `content`, and `container`
  * attachments wire up the DOM via Svelte's `{@attach}` directive.
+ *
+ * While visible, the trigger carries `aria-expanded="true"` and
+ * `aria-controls` naming the content (cleared on hide, when the content
+ * usually leaves the DOM), and the content — `role="dialog"` unless it sets
+ * its own role — is `aria-labelledby` the trigger unless it carries its own
+ * name. Escape hides the popover while it's visible, returning focus to the
+ * trigger when focus was inside the content. The listener is on `document`,
+ * so it runs before `window` listeners, and it prevents the default — so an
+ * enclosing layer that skips handled Escapes, like `AppShell`'s narrow
+ * overlay, stays open, and only the popover closes. An Escape another
+ * listener already prevented is left alone. With several popovers visible,
+ * only the newest handles Escape, so nested ones close innermost first. While
+ * a modal (`:modal`) is open, a popover outside it leaves Escape to the modal;
+ * a popover inside the modal still closes first.
  *
  * For the common button + popover pattern, see `PopoverButton`.
  *
@@ -54,6 +68,13 @@ import { swallow } from '@fuzdev/fuz_util/dom.ts';
 import { type Position, type Alignment, generate_position_styles } from './position_helpers.ts';
 
 const create_client_id = (): string => Math.random().toString(36).substring(2);
+
+/**
+ * The popovers listening for Escape, oldest first — only the last one handles
+ * it. Each enters on show (or on content attach while visible) and leaves on
+ * hide or content teardown.
+ */
+const escape_stack: Array<Popover> = [];
 
 // TODO refactor to use the builtin Popover API, but needs to use absolute positioning still because the anchor API isn't supported enough yet
 // https://developer.mozilla.org/en-US/docs/Web/HTML/Global_attributes/popover
@@ -128,6 +149,9 @@ export class Popover {
 	/** Cleanup function for document click handler. */
 	#document_click_cleanup: (() => void) | undefined = undefined;
 
+	/** Cleanup function for the document Escape handler. */
+	#escape_cleanup: (() => void) | undefined = undefined;
+
 	constructor(params?: PopoverParameters) {
 		if (params) {
 			this.update(params);
@@ -158,6 +182,36 @@ export class Popover {
 		else if ((!this.visible || this.disable_outside_click) && this.#document_click_cleanup) {
 			this.#document_click_cleanup();
 			this.#document_click_cleanup = undefined;
+		}
+	}
+
+	/**
+	 * Registers the document Escape handler while visible, removes it otherwise.
+	 */
+	#manage_escape(): void {
+		if (this.visible && !this.#escape_cleanup) {
+			const off = on(document, 'keydown', (event) => {
+				if (event.key !== 'Escape' || event.defaultPrevented) return;
+				// a newer visible popover handles it
+				if (escape_stack.at(-1) !== this) return;
+				// a modal this popover isn't inside owns Escape (its close request)
+				const modal = document.querySelector(':modal');
+				if (modal && !(this.#content_element && modal.contains(this.#content_element))) return;
+				event.preventDefault();
+				const active = document.activeElement;
+				const return_focus = !!active && !!this.#content_element?.contains(active);
+				this.hide();
+				if (return_focus) this.#trigger_element?.focus();
+			});
+			escape_stack.push(this);
+			this.#escape_cleanup = () => {
+				off();
+				const index = escape_stack.indexOf(this);
+				if (index !== -1) escape_stack.splice(index, 1);
+			};
+		} else if (!this.visible && this.#escape_cleanup) {
+			this.#escape_cleanup();
+			this.#escape_cleanup = undefined;
 		}
 	}
 
@@ -217,19 +271,33 @@ export class Popover {
 	}
 
 	/**
-	 * Updates ARIA attributes and state for accessibility.
+	 * Updates ARIA attributes and state for accessibility: `aria-expanded`
+	 * always, and `aria-controls` only while visible with content attached.
 	 */
 	#update_trigger_aria_attributes(): void {
-		if (this.#trigger_element) {
-			this.#trigger_element.setAttribute('aria-expanded', this.visible ? 'true' : 'false');
-
-			// If we have a content element, establish the relationship
-			if (this.#content_element) {
-				const content_id = this.#content_element.id || `popover-content-${create_client_id()}`;
-				this.#content_element.id = content_id;
-				this.#trigger_element.setAttribute('aria-controls', content_id);
-			}
+		if (!this.#trigger_element) return;
+		this.#trigger_element.setAttribute('aria-expanded', this.visible ? 'true' : 'false');
+		if (this.visible && this.#content_element) {
+			const content_id = this.#content_element.id || `popover-content-${create_client_id()}`;
+			this.#content_element.id = content_id;
+			this.#trigger_element.setAttribute('aria-controls', content_id);
+		} else {
+			this.#trigger_element.removeAttribute('aria-controls');
 		}
+	}
+
+	/**
+	 * Names the content by the trigger (`aria-labelledby`) unless the content
+	 * already carries a name of its own.
+	 */
+	#label_content(): void {
+		const content = this.#content_element;
+		const trigger = this.#trigger_element;
+		if (!content || !trigger) return;
+		if (content.hasAttribute('aria-label') || content.hasAttribute('aria-labelledby')) return;
+		const trigger_id = trigger.id || `popover-trigger-${create_client_id()}`;
+		trigger.id = trigger_id;
+		content.setAttribute('aria-labelledby', trigger_id);
 	}
 
 	/**
@@ -244,6 +312,7 @@ export class Popover {
 		this.visible = true;
 
 		this.#manage_outside_click();
+		this.#manage_escape();
 		this.#update_trigger_aria_attributes();
 
 		if (this.#onshow) this.#onshow();
@@ -261,6 +330,7 @@ export class Popover {
 		this.visible = false;
 
 		this.#manage_outside_click();
+		this.#manage_escape();
 		this.#update_trigger_aria_attributes();
 
 		if (this.#onhide) this.#onhide();
@@ -305,6 +375,7 @@ export class Popover {
 			}
 
 			this.#update_trigger_aria_attributes();
+			this.#label_content();
 
 			const click_handler = on(node, 'click', (e) => {
 				swallow(e);
@@ -362,24 +433,33 @@ export class Popover {
 
 			update_node_position();
 			this.#manage_outside_click();
+			this.#manage_escape();
 
 			if (!node.hasAttribute('role')) {
 				node.setAttribute('role', 'dialog');
 			}
+			this.#label_content();
+			this.#update_trigger_aria_attributes();
 
 			return () => {
-				if (this.#document_click_cleanup) {
-					this.#document_click_cleanup();
-					this.#document_click_cleanup = undefined;
-				}
-
 				if (this.popover_class) {
 					node.classList.remove(this.popover_class);
 				}
 
-				if (this.#content_element === node) {
-					this.#content_element = null;
+				// a newer content node owns the listeners now
+				if (this.#content_element !== node) return;
+
+				if (this.#document_click_cleanup) {
+					this.#document_click_cleanup();
+					this.#document_click_cleanup = undefined;
 				}
+				if (this.#escape_cleanup) {
+					this.#escape_cleanup();
+					this.#escape_cleanup = undefined;
+				}
+
+				this.#content_element = null;
+				this.#update_trigger_aria_attributes();
 			};
 		};
 	};
