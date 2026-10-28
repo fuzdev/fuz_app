@@ -260,7 +260,7 @@ const create_endpoint = (
 		on_socket_close: (ctx) => {
 			closed.push(ctx);
 		},
-		heartbeat: false,
+		receive_timeout: null,
 		log: options.log ?? log
 	});
 	return {

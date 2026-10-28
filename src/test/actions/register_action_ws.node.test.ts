@@ -126,7 +126,7 @@ const start_server = async (max_connections_per_account?: number): Promise<TestS
 		],
 		db: create_stub_db(),
 		max_connections_per_account,
-		heartbeat: false,
+		receive_timeout: null,
 		log
 	});
 	const server: ServerType = await new Promise((resolve) => {

@@ -39,7 +39,7 @@ export const DEFAULT_PEER_REQUEST_TIMEOUT = 10_000;
  * past it gets `too_many_in_flight` instead of growing the pending map
  * unbounded. Twin of the Rust spine's `DEFAULT_MAX_OUTBOUND_PEER_REQUESTS_PER_CONN`.
  */
-export const MAX_IN_FLIGHT_PEER_REQUESTS_PER_CONNECTION = 256;
+export const DEFAULT_MAX_IN_FLIGHT_PEER_REQUESTS_PER_CONNECTION = 256;
 
 /**
  * Why a server→client peer request did not yield a client success reply.
@@ -94,7 +94,7 @@ interface PendingPeerRequest {
 
 /** Options for `PendingPeerRequests`. */
 export interface PendingPeerRequestsOptions {
-	/** Per-connection in-flight cap. Defaults to `MAX_IN_FLIGHT_PEER_REQUESTS_PER_CONNECTION`. */
+	/** Per-connection in-flight cap. Defaults to `DEFAULT_MAX_IN_FLIGHT_PEER_REQUESTS_PER_CONNECTION`. */
 	max_in_flight_per_connection?: number;
 	/** Default per-request deadline (ms). Defaults to `DEFAULT_PEER_REQUEST_TIMEOUT`. */
 	default_timeout_ms?: number;
@@ -124,7 +124,7 @@ export class PendingPeerRequests {
 
 	constructor(options?: PendingPeerRequestsOptions) {
 		this.#max_in_flight =
-			options?.max_in_flight_per_connection ?? MAX_IN_FLIGHT_PEER_REQUESTS_PER_CONNECTION;
+			options?.max_in_flight_per_connection ?? DEFAULT_MAX_IN_FLIGHT_PEER_REQUESTS_PER_CONNECTION;
 		this.#default_timeout_ms = options?.default_timeout_ms ?? DEFAULT_PEER_REQUEST_TIMEOUT;
 	}
 

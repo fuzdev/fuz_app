@@ -55,7 +55,7 @@ const assemble = async (endpoint: Partial<WsEndpointSpec>): Promise<AppServer> =
 		create_route_specs: () => [create_health_route_spec()],
 		create_upgrade_websocket: () => create_stub_upgrade().upgradeWebSocket,
 		ws_endpoints: [
-			{ path: '/api/ws', actions: [...protocol_actions], heartbeat: false, ...endpoint }
+			{ path: '/api/ws', actions: [...protocol_actions], receive_timeout: null, ...endpoint }
 		]
 	};
 	const server = await create_app_server(options);

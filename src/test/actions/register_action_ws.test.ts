@@ -24,11 +24,13 @@ import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 import { ActingActor } from '#lib/http/auth_shape.ts';
 
 import {
+	DEFAULT_WS_RECEIVE_TIMEOUT,
 	ERROR_DUPLICATE_REQUEST_ID,
 	MAX_INBOUND_DISPATCHES_PER_CONNECTION,
 	PRE_ADMISSION_QUEUE_BYTES_FACTOR,
 	register_action_ws,
 	WS_INBOUND_DISPATCH_OVERFLOW_MESSAGE,
+	WS_RECEIVE_TIMEOUT_MAX,
 	type SocketCloseContext,
 	type SocketOpenContext
 } from '#lib/actions/register_action_ws.ts';
@@ -153,7 +155,7 @@ const build_harness = async (opts: {
 	role?: string;
 	on_socket_open?: (ctx: SocketOpenContext) => void | Promise<void>;
 	on_socket_close?: (ctx: SocketCloseContext) => void | Promise<void>;
-	heartbeat?: boolean | { timeout?: number };
+	receive_timeout?: number | null;
 	actions?: Array<{
 		spec: ActionSpecUnion;
 		handler?: (input: unknown, ctx: ActionContext) => unknown;
@@ -177,7 +179,7 @@ const build_harness = async (opts: {
 		db: stub_db,
 		on_socket_open: opts.on_socket_open,
 		on_socket_close: opts.on_socket_close,
-		heartbeat: opts.heartbeat ?? false,
+		receive_timeout: opts.receive_timeout ?? null,
 		action_ip_rate_limiter: opts.action_ip_rate_limiter ?? null,
 		action_account_rate_limiter: opts.action_account_rate_limiter ?? null,
 		max_message_bytes: opts.max_message_bytes,
@@ -346,7 +348,7 @@ describe('register_action_ws', () => {
 			allowed_origins: [],
 			actions: [{ spec: echo_spec, handler: () => ({ value: 'x' }) }],
 			db: stub_db,
-			heartbeat: false,
+			receive_timeout: null,
 			log
 		});
 		const events = await stub.get_create_events()(
@@ -774,7 +776,7 @@ describe('register_action_ws', () => {
 			allowed_origins: [],
 			actions: [{ spec: echo_spec, handler: () => ({ value: 'x' }) }],
 			db: create_stub_db(),
-			heartbeat: false,
+			receive_timeout: null,
 			log
 		});
 		const events = await stub.get_create_events()(
@@ -802,7 +804,7 @@ describe('register_action_ws', () => {
 			actions: [{ spec: echo_spec, handler: () => ({ value: 'x' }) }],
 			db: stub_db,
 			transport: supplied,
-			heartbeat: false,
+			receive_timeout: null,
 			log
 		});
 		assert.strictEqual(result.transport, supplied);
@@ -931,7 +933,7 @@ describe('register_action_ws max_connections_per_account', () => {
 			on_socket_close: (ctx) => {
 				closed.push(ctx);
 			},
-			heartbeat: false,
+			receive_timeout: null,
 			log
 		});
 
@@ -981,7 +983,7 @@ describe('register_action_ws max_connections_per_account', () => {
 			actions: [{ spec: echo_spec, handler: () => ({ value: 'x' }) }],
 			db: create_stub_db(),
 			max_connections_per_account: 1,
-			heartbeat: false,
+			receive_timeout: null,
 			log: spy_log
 		});
 
@@ -1032,7 +1034,7 @@ describe('register_action_ws max_connections_per_account', () => {
 			actions: [{ spec: echo_spec, handler: () => ({ value: 'x' }) }],
 			db: create_stub_db(),
 			max_connections_per_account: null,
-			heartbeat: false,
+			receive_timeout: null,
 			log
 		});
 
@@ -1056,7 +1058,7 @@ describe('register_action_ws max_connections_per_account', () => {
 			allowed_origins: [],
 			actions: [{ spec: echo_spec, handler: () => ({ value: 'x' }) }],
 			db: create_stub_db(),
-			heartbeat: false,
+			receive_timeout: null,
 			log
 		});
 
@@ -1088,7 +1090,7 @@ describe('register_action_ws max_connections_per_account', () => {
 						db: create_stub_db(),
 						transport: new BackendWebsocketTransport(),
 						max_connections_per_account,
-						heartbeat: false,
+						receive_timeout: null,
 						log
 					}),
 				/max_connections_per_account configures the transport created for \/ws/
@@ -1112,7 +1114,7 @@ describe('register_action_ws connection_closer', () => {
 			allowed_origins: [],
 			actions,
 			db: create_stub_db(),
-			heartbeat: false,
+			receive_timeout: null,
 			log
 		});
 
@@ -1418,7 +1420,7 @@ describe('register_action_ws self-revocation', () => {
 				}
 			],
 			db: create_stub_db(),
-			heartbeat: false,
+			receive_timeout: null,
 			log
 		});
 		const events = await stub.get_create_events()(
@@ -1588,7 +1590,7 @@ describe('register_action_ws a server-closed socket dispatches nothing', () => {
 			],
 			db: create_stub_db(),
 			max_connections_per_account: 1,
-			heartbeat: false,
+			receive_timeout: null,
 			log
 		});
 		const open = async (): Promise<{ fake: FakeWs; send: (value: string) => Promise<void> }> => {
@@ -1622,7 +1624,7 @@ describe('register_action_ws a server-closed socket dispatches nothing', () => {
 	test('after a heartbeat timeout, which also unregisters the connection', async () => {
 		vi.useFakeTimers();
 		try {
-			const { h, runs } = await build_counting_harness({ heartbeat: { timeout: 200 } });
+			const { h, runs } = await build_counting_harness({ receive_timeout: 200 });
 			await h.on_open();
 			assert.strictEqual(h.transport.get_connection_count(), 1);
 
@@ -1703,12 +1705,12 @@ describe('register_action_ws a server-closed socket dispatches nothing', () => {
 		assert.strictEqual(h.fake.closes.length, 1);
 	});
 
-	test('an unregistered socket is ended even with the heartbeat off, however chatty', async () => {
+	test('an unregistered socket is ended even with the receive timeout off, however chatty', async () => {
 		vi.useFakeTimers();
 		try {
 			const captured: { open: SocketOpenContext | null } = { open: null };
 			const { h, runs } = await build_counting_harness({
-				heartbeat: false,
+				receive_timeout: null,
 				on_socket_open: (ctx) => {
 					captured.open = ctx;
 				}
@@ -1763,7 +1765,7 @@ describe('register_action_ws a server-closed socket dispatches nothing', () => {
 			const captured: { signal: AbortSignal | null } = { signal: null };
 			const h = await build_harness({
 				handlers: { echo: () => ({ value: 'x' }) },
-				heartbeat: { timeout: 200 },
+				receive_timeout: 200,
 				on_socket_open: (ctx) => {
 					captured.signal = ctx.signal;
 				}
@@ -1941,9 +1943,14 @@ describe('register_action_ws frames during on_socket_open', () => {
 	});
 });
 
-describe('register_action_ws server heartbeat', () => {
+describe('register_action_ws receive timeout', () => {
 	afterEach(() => {
 		vi.useRealTimers();
+	});
+
+	test('DEFAULT_WS_RECEIVE_TIMEOUT is 60 s', () => {
+		// the Rust spine's `DEFAULT_WS_RECEIVE_TIMEOUT` — a client tunes its heartbeat to either
+		assert.strictEqual(DEFAULT_WS_RECEIVE_TIMEOUT, 60_000);
 	});
 
 	test('silent socket past timeout closes with 4003 (server heartbeat timeout)', async () => {
@@ -1952,7 +1959,7 @@ describe('register_action_ws server heartbeat', () => {
 		// open evaluates silence and closes.
 		const h = await build_harness({
 			handlers: { echo: () => ({ value: 'x' }) },
-			heartbeat: { timeout: 200 }
+			receive_timeout: 200
 		});
 		await h.on_open();
 		assert.strictEqual(h.fake.closes.length, 0);
@@ -1968,7 +1975,7 @@ describe('register_action_ws server heartbeat', () => {
 		vi.useFakeTimers();
 		const h = await build_harness({
 			handlers: { echo: (input) => ({ value: (input as { value: string }).value }) },
-			heartbeat: { timeout: 400 }
+			receive_timeout: 400
 		});
 		await h.on_open();
 
@@ -1992,7 +1999,7 @@ describe('register_action_ws server heartbeat', () => {
 		vi.useFakeTimers();
 		const h = await build_harness({
 			handlers: { echo: () => ({ value: 'x' }) },
-			heartbeat: { timeout: 400 }
+			receive_timeout: 400
 		});
 		await h.on_open();
 
@@ -2006,11 +2013,32 @@ describe('register_action_ws server heartbeat', () => {
 		assert.strictEqual(h.fake.closes[0]!.code, WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT);
 	});
 
-	test('heartbeat: false disables the timer (silent socket stays open)', async () => {
+	test('a receive_timeout that is not positive or past the timer max throws at registration', async () => {
+		for (const receive_timeout of [
+			0,
+			-1,
+			Number.NaN,
+			Number.POSITIVE_INFINITY,
+			WS_RECEIVE_TIMEOUT_MAX + 1
+		]) {
+			await assert_rejects(
+				() => build_harness({ handlers: {}, receive_timeout }),
+				/receive_timeout must be a positive number of ms up to 2147483647/
+			);
+		}
+	});
+
+	test('WS_RECEIVE_TIMEOUT_MAX itself registers', async () => {
+		// the longest delay a timer honors — 2³¹ − 1 ms
+		assert.strictEqual(WS_RECEIVE_TIMEOUT_MAX, 2 ** 31 - 1);
+		await build_harness({ handlers: {}, receive_timeout: WS_RECEIVE_TIMEOUT_MAX });
+	});
+
+	test('receive_timeout: null disables the timer (silent socket stays open)', async () => {
 		vi.useFakeTimers();
 		const h = await build_harness({
 			handlers: { echo: () => ({ value: 'x' }) },
-			heartbeat: false
+			receive_timeout: null
 		});
 		await h.on_open();
 
@@ -2019,11 +2047,11 @@ describe('register_action_ws server heartbeat', () => {
 		assert.strictEqual(h.fake.closes.length, 0);
 	});
 
-	test('a socket revoked in the tick after admission starts no heartbeat timer', async () => {
+	test('a socket revoked in the tick after admission starts no receive timer', async () => {
 		vi.useFakeTimers();
 		const h = await build_harness({
 			handlers: { echo: () => ({ value: 'x' }) },
-			heartbeat: { timeout: 200 }
+			receive_timeout: 200
 		});
 		// `onOpen` admits synchronously here and resumes a microtask later; a
 		// revocation lands in between
@@ -2039,16 +2067,16 @@ describe('register_action_ws server heartbeat', () => {
 		assert.deepStrictEqual(
 			h.fake.closes.map((close) => close.code),
 			[WS_CLOSE_SESSION_REVOKED],
-			'no heartbeat timeout fires on a socket that already ended'
+			'no receive timeout fires on a socket that already ended'
 		);
 		assert.strictEqual(vi.getTimerCount(), 0, 'and no interval is left running');
 	});
 
-	test('onClose leaves no heartbeat timer behind on a socket that ended before it', async () => {
+	test('onClose leaves no receive timer behind on a socket that ended before it', async () => {
 		vi.useFakeTimers();
 		const h = await build_harness({
 			handlers: { echo: () => ({ value: 'x' }) },
-			heartbeat: { timeout: 200 }
+			receive_timeout: 200
 		});
 		const opening = h.on_open();
 		h.transport.close_connections({ kind: 'account', account_id: 'acc_1' as never });
@@ -2066,7 +2094,7 @@ describe('register_action_ws server heartbeat', () => {
 		vi.useFakeTimers();
 		const h = await build_harness({
 			handlers: { echo: () => ({ value: 'x' }) },
-			heartbeat: { timeout: 400 }
+			receive_timeout: 400
 		});
 		await h.on_open();
 		await h.on_close();
@@ -2119,7 +2147,7 @@ describe('register_action_ws rate limit', () => {
 					allowed_origins: [],
 					actions: [{ spec: bad_spec, handler: () => ({ value: 'x' }) }],
 					db: stub_db,
-					heartbeat: false,
+					receive_timeout: null,
 					log
 				}),
 			/auth\.account !== 'required'.*account-keyed/

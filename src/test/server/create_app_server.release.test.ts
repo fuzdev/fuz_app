@@ -90,7 +90,7 @@ const acquiring_options = (backend: AppBackend): AppServerOptions => ({
 const ws_endpoint = (path: string, overrides?: Partial<WsEndpointSpec>): WsEndpointSpec => ({
 	path,
 	actions: [...protocol_actions],
-	heartbeat: false,
+	receive_timeout: null,
 	...overrides
 });
 

@@ -158,7 +158,7 @@ describe('AppServer.close', () => {
 			audit_log_sse: true,
 			create_upgrade_websocket: () => stub.upgradeWebSocket,
 			ws_endpoints: [
-				{ path: '/api/ws', actions: [...protocol_actions], heartbeat: false },
+				{ path: '/api/ws', actions: [...protocol_actions], receive_timeout: null },
 				{ path: '/api/ws_supplied', actions: [...protocol_actions], transport: supplied }
 			]
 		});

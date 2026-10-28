@@ -1715,7 +1715,7 @@ describe_db('connection_closer wiring', (get_db) => {
 					actions: create_account_actions(deps),
 					db: deps.db,
 					connection_closer: deps.connection_closer,
-					heartbeat: false,
+					receive_timeout: null,
 					log
 				});
 				const request_context = await build_account_context({ db: h.db }, account_id);

@@ -340,11 +340,11 @@ export interface CreateWsTestHarnessOptions {
 	/** Pass a pre-created transport to share with a broadcast API. */
 	transport?: BackendWebsocketTransport;
 	/**
-	 * Threaded through to `register_action_ws`. Defaults to `false` in tests —
-	 * fake timers + receive-silence detection need explicit opt-in and per-
-	 * test tuning to avoid spurious closes.
+	 * Threaded through to `register_action_ws`. Defaults to `null` (off) in
+	 * tests — fake timers + receive-silence detection need explicit opt-in and
+	 * per-test tuning to avoid spurious closes.
 	 */
-	heartbeat?: RegisterActionWsOptions['heartbeat'];
+	receive_timeout?: RegisterActionWsOptions['receive_timeout'];
 	/** Optional logger. Defaults to a silent `[ws-test]` logger. */
 	log?: Logger;
 	/** Threaded straight through to `register_action_ws`. */
@@ -454,7 +454,7 @@ export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsT
 	const {
 		actions,
 		transport = new BackendWebsocketTransport(),
-		heartbeat = false,
+		receive_timeout = null,
 		log = new Logger('[ws-test]', { level: 'off' }),
 		on_socket_open,
 		on_socket_close,
@@ -486,7 +486,7 @@ export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsT
 		// the harness drives the dispatcher against a stub db — no revocation
 		// handler runs here, so there is no closer to reach this transport
 		connection_closer: null,
-		heartbeat,
+		receive_timeout,
 		log,
 		on_socket_open,
 		on_socket_close,

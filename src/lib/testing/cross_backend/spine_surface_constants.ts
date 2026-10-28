@@ -111,7 +111,7 @@ export const SPINE_SSE_PATH = '/api/admin/audit/stream';
 
 /**
  * The request-body cap both spines ship by default, 1 MiB
- * (`DEFAULT_MAX_BODY_SIZE` in TS, `DEFAULT_BODY_LIMIT_BYTES` in `fuz_http`).
+ * (`DEFAULT_BODY_LIMIT_BYTES`, the same name in TS and in `fuz_http`).
  * Kept here as the cross-impl contract value rather than imported from either
  * impl — the boundary the body-size suites pin is the shared default, and a
  * change to either is a deliberate cross-impl decision that would revisit them

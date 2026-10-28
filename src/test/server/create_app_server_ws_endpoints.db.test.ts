@@ -746,7 +746,7 @@ describe('create_app_server.ws_endpoints', () => {
 					},
 					// Disable server heartbeat — the test runs in fake time-zero
 					// and the round-trip doesn't need timeout watchdogs.
-					heartbeat: false
+					receive_timeout: null
 				})
 			]
 		});

@@ -2,12 +2,23 @@ import { describe, test, assert, vi } from 'vitest';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 import { create_uuid } from '#lib/primitive_schemas.ts';
 
-import { PendingPeerRequests, audit_unmatched_peer_response } from '#lib/actions/peer_request.ts';
+import {
+	DEFAULT_MAX_IN_FLIGHT_PEER_REQUESTS_PER_CONNECTION,
+	PendingPeerRequests,
+	audit_unmatched_peer_response
+} from '#lib/actions/peer_request.ts';
 import {
 	create_jsonrpc_response,
 	create_jsonrpc_error_response
 } from '#lib/http/jsonrpc_helpers.ts';
 import { jsonrpc_error_messages } from '#lib/http/jsonrpc_errors.ts';
+
+describe('DEFAULT_MAX_IN_FLIGHT_PEER_REQUESTS_PER_CONNECTION', () => {
+	// the Rust spine's `DEFAULT_MAX_IN_FLIGHT_PEER_REQUESTS_PER_CONNECTION`
+	test('is 256', () => {
+		assert.strictEqual(DEFAULT_MAX_IN_FLIGHT_PEER_REQUESTS_PER_CONNECTION, 256);
+	});
+});
 
 describe('PendingPeerRequests', () => {
 	test('register allocates namespaced ids and resolve delivers the success value', async () => {

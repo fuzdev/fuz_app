@@ -167,7 +167,7 @@ const create_test_server = async (
 		create_route_specs: () => [create_health_route_spec()],
 		create_upgrade_websocket: () => stub.upgradeWebSocket,
 		ws_endpoints: [
-			{ path: WS_PATH, actions: [...protocol_actions, counted_action], heartbeat: false }
+			{ path: WS_PATH, actions: [...protocol_actions, counted_action], receive_timeout: null }
 		],
 		...options
 	});
@@ -381,7 +381,7 @@ describe('create_app_server.ws_endpoints dispatch through the assembled app', ()
 			ws_endpoints: (context) => {
 				ctx = context;
 				return [
-					{ path: WS_PATH, actions: [...protocol_actions, counted_action], heartbeat: false }
+					{ path: WS_PATH, actions: [...protocol_actions, counted_action], receive_timeout: null }
 				];
 			}
 		});
@@ -563,7 +563,7 @@ describe('create_app_server.ws_endpoints dispatch through the assembled app', ()
 					{
 						path: WS_PATH,
 						actions: [...protocol_actions, create_audited_action(ctx.deps.audit)],
-						heartbeat: false
+						receive_timeout: null
 					}
 				]
 			},
@@ -623,7 +623,7 @@ describe('create_app_server.ws_endpoints dispatch through the assembled app', ()
 		};
 		const t = await create_test_server({
 			ws_endpoints: [
-				{ path: WS_PATH, actions: [...protocol_actions, failing_action], heartbeat: false }
+				{ path: WS_PATH, actions: [...protocol_actions, failing_action], receive_timeout: null }
 			],
 			on_effect_error: (error, context) => {
 				errors.push({ error, context });

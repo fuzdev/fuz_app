@@ -134,7 +134,7 @@ const create_ws_endpoint = (
 		actions: [heartbeat_action],
 		db: h.gated.db,
 		connection_closer: closed_by === 'handlers' ? deps.connection_closer : null,
-		heartbeat: false,
+		receive_timeout: null,
 		log
 	});
 	if (closed_by === 'listener') deps.audit.add_listener(create_revocation_guard(transport, log));

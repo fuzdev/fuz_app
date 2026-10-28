@@ -576,8 +576,11 @@ export const require_audit_sse = (source: { audit_sse: AuditLogSse | null }): Au
 	return source.audit_sse;
 };
 
-/** Default maximum request body size: 1 MiB. */
-export const DEFAULT_MAX_BODY_SIZE = 1024 * 1024;
+/**
+ * Default maximum request body size: 1 MiB. Twin of the Rust spine's
+ * `fuz_http` `DEFAULT_BODY_LIMIT_BYTES`.
+ */
+export const DEFAULT_BODY_LIMIT_BYTES = 1024 * 1024;
 
 /**
  * Each `AppServerOptions` rate-limiter field, with the defaults an omitted one
@@ -849,7 +852,7 @@ const assemble_app_server = async (
 	const body_limit_middleware: MiddlewareHandler | null =
 		options.max_body_size === null
 			? null
-			: create_body_limit_middleware(options.max_body_size ?? DEFAULT_MAX_BODY_SIZE);
+			: create_body_limit_middleware(options.max_body_size ?? DEFAULT_BODY_LIMIT_BYTES);
 
 	// Rate limiters — the ones built here are the server's to dispose, on
 	// close or when assembly fails.
@@ -1178,7 +1181,7 @@ const assemble_app_server = async (
 				connection_closer: null,
 				max_connections_per_account: endpoint.max_connections_per_account,
 				outbound_queue_bytes: endpoint.outbound_queue_bytes,
-				heartbeat: endpoint.heartbeat,
+				receive_timeout: endpoint.receive_timeout,
 				max_message_bytes: endpoint.max_message_bytes,
 				on_socket_open: endpoint.on_socket_open,
 				on_socket_close: endpoint.on_socket_close,

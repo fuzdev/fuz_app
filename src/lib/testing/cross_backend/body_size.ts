@@ -4,8 +4,8 @@ import '../assert_dev_env.ts';
  * Cross-backend parity suite for the request body-size limit.
  *
  * `create_app_server` (TS) and the Rust spine both cap the request body at a
- * 1 MiB default (`DEFAULT_MAX_BODY_SIZE` / `fuz_http`'s
- * `DEFAULT_BODY_LIMIT_BYTES`; a backend capping its RPC path elsewhere passes
+ * 1 MiB default (`DEFAULT_BODY_LIMIT_BYTES`, the same name in TS and in
+ * `fuz_http`; a backend capping its RPC path elsewhere passes
  * `rpc_max_body_bytes`) and reject oversized payloads with `413` and the
  * canonical flat REST body `{error: 'payload_too_large'}`. A declared
  * `Content-Length` over the cap is refused on the header, *before* auth,

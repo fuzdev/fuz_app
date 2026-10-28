@@ -28,7 +28,7 @@ import {
 	utf8_length_over,
 	type Transport
 } from '#lib/actions/transports.ts';
-import { DEFAULT_MAX_BODY_SIZE } from '#lib/server/app_server.ts';
+import { DEFAULT_BODY_LIMIT_BYTES } from '#lib/server/app_server.ts';
 
 const create_mock_transport = (name: string, ready = true): Transport => ({
 	transport_name: name,
@@ -190,7 +190,7 @@ describe('Transports', () => {
 
 describe('DEFAULT_WS_MAX_MESSAGE_BYTES', () => {
 	test('equals the default HTTP body cap', () => {
-		assert.strictEqual(DEFAULT_WS_MAX_MESSAGE_BYTES, DEFAULT_MAX_BODY_SIZE);
+		assert.strictEqual(DEFAULT_WS_MAX_MESSAGE_BYTES, DEFAULT_BODY_LIMIT_BYTES);
 	});
 });
 

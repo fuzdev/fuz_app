@@ -17,11 +17,7 @@
 import type { Action } from './action_types.ts';
 import type { RoleName } from '../auth/role_schema.ts';
 import type { BackendWebsocketTransport } from './transports_ws_backend.ts';
-import type {
-	ServerHeartbeatOptions,
-	SocketCloseContext,
-	SocketOpenContext
-} from './register_action_ws.ts';
+import type { SocketCloseContext, SocketOpenContext } from './register_action_ws.ts';
 import type { RpcEndpointSpec } from '../http/surface.ts';
 import { to_ws_actions } from './protocol.ts';
 
@@ -92,11 +88,13 @@ export interface WsEndpointSpec {
 	 */
 	outbound_queue_bytes?: number;
 	/**
-	 * Server-side heartbeat policy. Default-on (60s receive-silence
-	 * timeout). Set `false` only when an upstream stack (TCP keepalive,
-	 * Cloudflare idle timeout) already owns disconnect detection.
+	 * Receive silence (ms) past which the server closes a socket with
+	 * `WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT`; `null` keeps silent sockets open.
+	 * See `RegisterActionWsOptions.receive_timeout`.
+	 *
+	 * @default DEFAULT_WS_RECEIVE_TIMEOUT
 	 */
-	heartbeat?: boolean | ServerHeartbeatOptions;
+	receive_timeout?: number | null;
 	/**
 	 * Cap on one inbound message, in bytes. See
 	 * `RegisterActionWsOptions.max_message_bytes`.

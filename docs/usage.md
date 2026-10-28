@@ -353,7 +353,7 @@ Consumer migration namespaces must not appear in `reserved_migration_namespaces`
 
 Consumer-specific code (env loading, error formatting/exit, custom
 middleware) stays in the consumer. Body size limiting defaults to 1 MiB
-(`DEFAULT_MAX_BODY_SIZE`); pass `max_body_size` to override (a safe integer
+(`DEFAULT_BODY_LIMIT_BYTES`); pass `max_body_size` to override (a safe integer
 `0` or more — anything else throws at assembly) or `null` to disable, which
 adds a security warning to the startup diagnostics. An empty
 `allowed_origins` throws at assembly, on the server or on a WS endpoint.

@@ -214,8 +214,22 @@ import { BackendWebsocketTransport, type ConnectionIdentity } from './transports
 import { audit_unmatched_peer_response, type RequestClient } from './peer_request.ts';
 import { perform_action, serialize_action_result } from './perform_action.ts';
 
-/** Default inactivity window before the server closes a silent socket. */
-export const DEFAULT_SERVER_HEARTBEAT_TIMEOUT = 60_000;
+/**
+ * Default receive silence (ms) past which the server closes a socket with
+ * `WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT` — the `receive_timeout` of
+ * `register_action_ws`. Twin of the Rust spine's `DEFAULT_WS_RECEIVE_TIMEOUT`.
+ */
+export const DEFAULT_WS_RECEIVE_TIMEOUT = 60_000;
+
+/**
+ * The longest `receive_timeout` `register_action_ws` accepts — 2³¹ − 1 ms,
+ * about 24.8 days, the longest delay a timer honors (the same bound as the
+ * SSE keep-alive). It keeps the receive check's half-timeout tick well inside
+ * that delay; `Infinity`, or a timeout of about 2³² ms and up, would make the
+ * tick fire every millisecond on every socket. TS-only: the Rust spine's
+ * `Duration` takes any length.
+ */
+export const WS_RECEIVE_TIMEOUT_MAX = 2_147_483_647;
 
 /**
  * Max inbound frames one socket may have queued while it is still opening —
@@ -390,16 +404,6 @@ export interface SocketCloseContext {
 	identity: ConnectionIdentity;
 }
 
-export interface ServerHeartbeatOptions {
-	/**
-	 * Receive-silence (ms) past which the server closes the socket with
-	 * `WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT`. Any incoming message resets
-	 * the counter — chatty clients never trip it. First `timeout`
-	 * window after socket open is exempt (cold-start grace).
-	 */
-	timeout?: number;
-}
-
 /** Options for `register_action_ws`. */
 export interface RegisterActionWsOptions {
 	/** Mount path (e.g., `/api/ws`). */
@@ -495,12 +499,18 @@ export interface RegisterActionWsOptions {
 	 */
 	outbound_queue_bytes?: number;
 	/**
-	 * Server-side heartbeat policy. Default-on (receive-silence detection,
-	 * 60s timeout). `false` disables the timer entirely — only do this if
-	 * the upstream stack (TCP keepalive, Cloudflare idle timeout, etc.)
-	 * already owns disconnect detection. Pass an object to tune the timeout.
+	 * Receive silence (ms) past which the server closes a socket with
+	 * `WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT`. Any incoming message resets the
+	 * count — chatty clients never trip it — and the first window after
+	 * admission is exempt (cold-start grace). `null` keeps silent sockets open:
+	 * only do this if the upstream stack (TCP keepalive, a proxy's idle
+	 * timeout) already owns disconnect detection. Must be positive and at most
+	 * `WS_RECEIVE_TIMEOUT_MAX` — registration throws otherwise. Twin of the
+	 * Rust spine's `ActionWsOptions.receive_timeout`.
+	 *
+	 * @default DEFAULT_WS_RECEIVE_TIMEOUT
 	 */
-	heartbeat?: boolean | ServerHeartbeatOptions;
+	receive_timeout?: number | null;
 	/**
 	 * Cap on one inbound message, in bytes (UTF-8 for text frames). A larger
 	 * message closes the socket with `WS_CLOSE_MESSAGE_TOO_BIG` before it's
@@ -648,7 +658,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 		upgradeWebSocket,
 		actions,
 		db,
-		heartbeat = true,
+		receive_timeout = DEFAULT_WS_RECEIVE_TIMEOUT,
 		allowed_origins,
 		max_message_bytes = DEFAULT_WS_MAX_MESSAGE_BYTES,
 		log = new Logger('[ws]'),
@@ -678,13 +688,21 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 
 	const pre_admission_queue_max_bytes = PRE_ADMISSION_QUEUE_BYTES_FACTOR * max_message_bytes;
 
-	const heartbeat_enabled = heartbeat !== false;
-	const heartbeat_config = typeof heartbeat === 'object' ? heartbeat : {};
-	const heartbeat_timeout = heartbeat_config.timeout ?? DEFAULT_SERVER_HEARTBEAT_TIMEOUT;
+	if (
+		receive_timeout !== null &&
+		!(receive_timeout > 0 && receive_timeout <= WS_RECEIVE_TIMEOUT_MAX)
+	) {
+		// a zero (or NaN) timeout would close every socket at its first tick, and
+		// `Infinity` would make the half-timeout tick fire every millisecond
+		throw new Error(
+			`register_action_ws: receive_timeout must be a positive number of ms up to ${WS_RECEIVE_TIMEOUT_MAX} for ${options.path}, got ${receive_timeout} — pass null to keep silent sockets open`
+		);
+	}
 	// Run the checker on timeout/2 so event-loop blockage pauses the timer
 	// itself — a dead-because-blocked socket is close enough to
 	// dead-because-unresponsive that closing is arguably correct.
-	const heartbeat_tick_interval = Math.max(100, Math.floor(heartbeat_timeout / 2));
+	const receive_tick_interval =
+		receive_timeout === null ? null : Math.max(100, Math.floor(receive_timeout / 2));
 
 	// The upgrade's auth shape: account and actor required, the endpoint's roles,
 	// and rule 3's surface — the guards the route-spec pipeline would mount for it
@@ -855,11 +873,11 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 			// Bumped by onMessage. Any incoming activity counts, not just
 			// heartbeats — chatty clients don't need to send extras.
 			let last_receive_time: number = 0;
-			let heartbeat_timer: ReturnType<typeof setInterval> | null = null;
-			const stop_heartbeat_timer = () => {
-				if (heartbeat_timer !== null) {
-					clearInterval(heartbeat_timer);
-					heartbeat_timer = null;
+			let receive_timer: ReturnType<typeof setInterval> | null = null;
+			const stop_receive_timer = () => {
+				if (receive_timer !== null) {
+					clearInterval(receive_timer);
+					receive_timer = null;
 				}
 			};
 			// The credential deadline: the socket closes when the credential it
@@ -879,7 +897,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 				'abort',
 				() => {
 					phase = 'ended';
-					stop_heartbeat_timer();
+					stop_receive_timer();
 					stop_credential_deadline();
 					drop_queued_frames();
 				},
@@ -1068,25 +1086,25 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 				// Not on a socket that ended in the tick since `admit` (a revocation
 				// can land there): its abort listener has already run, so nothing
 				// would ever stop the timer.
-				if (heartbeat_enabled && !phase_is('ended')) {
+				if (receive_timeout !== null && receive_tick_interval !== null && !phase_is('ended')) {
 					last_receive_time = Date.now();
-					heartbeat_timer = setInterval(() => {
+					receive_timer = setInterval(() => {
 						const now = Date.now();
 						const silence = now - last_receive_time;
-						if (silence >= heartbeat_timeout) {
+						if (silence >= receive_timeout) {
 							log.info(
-								`heartbeat timeout (${silence}ms) — closing ${WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT}`,
+								`receive timeout (${silence}ms) — closing ${WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT}`,
 								connection_id,
 								identity.account_id
 							);
-							stop_heartbeat_timer();
+							stop_receive_timer();
 							end_socket(
 								ws,
 								WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT,
 								WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT_REASON
 							);
 						}
-					}, heartbeat_tick_interval);
+					}, receive_tick_interval);
 				}
 				if (on_socket_open) {
 					try {
@@ -1428,7 +1446,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 					// belt and braces: the abort listener stops the timer and the
 					// start is skipped on an ended socket, so this matters only if
 					// one of those is ever broken
-					stop_heartbeat_timer();
+					stop_receive_timer();
 					socket_abort_controller.abort();
 					// Removed by the id captured on open — an adapter may hand each
 					// event its own `WSContext` (`@hono/bun` does), so the one this

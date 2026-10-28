@@ -200,7 +200,7 @@ Individual factories take narrower deps: `create_account_route_specs(deps: Route
 1. **Hono context augmentation** — side-effect import of `hono_context.ts`
 2. **Pending effects** (`*`) — per-request array; flushed via `try/finally` + `Promise.allSettled`
 3. **Logging** — controlled by `deps.log` level
-4. **Body size limit** — default 1 MiB (`DEFAULT_MAX_BODY_SIZE`); `max_body_size` to override, `null` to disable
+4. **Body size limit** — default 1 MiB (`DEFAULT_BODY_LIMIT_BYTES`); `max_body_size` to override, `null` to disable
 5. **Trusted proxy** (`*`) — resolves client IP from XFF; must run before auth/rate-limiting
 6. **Origin verification** (`*`, `ORIGIN_MIDDLEWARE_PATH`) — every path, the static fallback included; a request with no `Origin` passes, and a path leaves the check only through a named `origin_carve_outs` entry with its reason (never one overlapping `/api/*`, the auth middleware's scope, where assembly holds every route that reads or mints a credential — it throws on either)
 7. **Session parsing** (`/api/*`) — parses cookie, sets identity on context

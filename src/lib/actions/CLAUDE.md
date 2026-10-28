@@ -359,7 +359,7 @@ raw `request()` keeps its default-on queue.
 
 - `WS_CLOSE_SESSION_REVOKED = 4001` — server revoked auth (reason `WS_CLOSE_SESSION_REVOKED_REASON`, `Session revoked`); client enters permanent `revoked` state, no reconnect. Also the close for an upgrade refused at admission because its credential was revoked, or its acting actor soft-deleted, mid-upgrade — indistinguishable on the wire by design — and for a socket whose credential expired while open, with reason `WS_CLOSE_CREDENTIAL_EXPIRED_REASON` (`Credential expired`), which the client treats as the same `revoked` state.
 - `WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT = 4002` — client observed receive-silence past its receive timeout (`resolve_heartbeat_receive_timeout`), with reason `WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT_REASON` (`client heartbeat timeout`). TS-only reason: the client is the same against either spine.
-- `WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT = 4003` — server observed receive-silence past `DEFAULT_SERVER_HEARTBEAT_TIMEOUT` (60s), with reason `WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT_REASON` (`server heartbeat timeout`). Twin of the Rust spine's constants.
+- `WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT = 4003` — server observed receive-silence past `DEFAULT_WS_RECEIVE_TIMEOUT` (60s), with reason `WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT_REASON` (`server heartbeat timeout`). Twin of the Rust spine's constants.
 - `WS_CLOSE_CONNECTION_LIMIT = 4004` — server closed this socket to admit a newer one on the same account, past the per-account connection cap (reason `WS_CLOSE_CONNECTION_LIMIT_REASON`, `connection limit`). Not a revocation: the client stays `closed` with `superseded` set and no reconnect, until `connect()` is called. Twin of the Rust spine's constant.
 - `WS_CLOSE_OUTBOUND_OVERFLOW = 4005` — the server had more waiting to be written to this socket than its outbound budget holds (reason `WS_CLOSE_OUTBOUND_OVERFLOW_REASON`, `outbound queue overflow`); what was waiting is dropped. Not a revocation, and nothing took the connection's place: the client reconnects under its ordinary backoff. Twin of the Rust spine's constant.
 - `WS_CLOSE_PERMISSION_REVOKED = 4006` — the socket's account lost a role its endpoint's `required_roles` lists: a revoked global grant (reason `WS_CLOSE_PERMISSION_REVOKED_REASON`, `Permission revoked`), mid-life or at admission. Nothing is sent after it. Not a revocation of the credential: the client stays `closed` until `connect()` is called, without setting `revoked` or `superseded`, and rejects pending and queued requests `forbidden`. Twin of the Rust spine's constant.
@@ -389,7 +389,7 @@ buffering would masquerade as success at the rpc_client layer. Requests
 route via `queue`.
 
 **WS message cap.** `DEFAULT_WS_MAX_MESSAGE_BYTES` (1 MiB, in
-`actions/transports.ts`, equal to `DEFAULT_MAX_BODY_SIZE` and the twin of the
+`actions/transports.ts`, equal to `DEFAULT_BODY_LIMIT_BYTES` and the twin of the
 Rust spine's constant) bounds one message both ways. `register_action_ws`
 (`max_message_bytes`, also on `WsEndpointSpec`) closes the socket with
 `WS_CLOSE_MESSAGE_TOO_BIG` on a larger inbound message, before parsing — no
@@ -596,7 +596,7 @@ in **`actions/peer_request.ts`** (also home to the peer types/constants +
 socket. `register_action_ws` routes inbound responses back via
 `resolve_peer_response` (→ `#pending.resolve`); connection close drains pending as
 `connection_gone`. Defaults: `DEFAULT_PEER_REQUEST_TIMEOUT` (10s),
-`MAX_IN_FLIGHT_PEER_REQUESTS_PER_CONNECTION` (256). Threaded to handlers as
+`DEFAULT_MAX_IN_FLIGHT_PEER_REQUESTS_PER_CONNECTION` (256). Threaded to handlers as
 `ActionContext.request_client` (WS only; `undefined` on HTTP RPC). The `peer/ping`
 protocol action drives it; see `actions/peer_ping.ts`. An inbound reply matching
 no pending entry (unsolicited / cross-connection / late) is dropped + audited via
@@ -776,7 +776,7 @@ parsed and every caller would be unauthenticated.
 
 `WsEndpointSpec` fields: `path`, `allowed_origins?` (default: the server's),
 `actions?`, `required_roles?`, `transport?`, `max_connections_per_account?`,
-`outbound_queue_bytes?`, `heartbeat?`, `max_message_bytes?`,
+`outbound_queue_bytes?`, `receive_timeout?`, `max_message_bytes?`,
 `on_socket_open?`, `on_socket_close?`. Every mounted transport is added to
 `deps.connection_closer`.
 
@@ -983,10 +983,14 @@ reads them the same way after a client close, a revocation, or a connection-cap
 eviction; its `ws` is the close event's context, which on some adapters is not
 the object `on_socket_open` received. Errors logged and swallowed.
 
-**Server-side heartbeat** (`heartbeat?: boolean | ServerHeartbeatOptions`):
-default-on, 60s silence timeout. Any inbound message resets
-`last_receive_time` — chatty clients never trip it. The timer starts at
-admission, and the first timeout window after it is exempt (cold-start grace).
+**Receive timeout** (`receive_timeout?: number | null`, ms): default-on at
+`DEFAULT_WS_RECEIVE_TIMEOUT` (60s) — the twin of the Rust spine's
+`ActionWsOptions.receive_timeout` — `null` keeps silent sockets open, and a
+value that is not positive, or is past `WS_RECEIVE_TIMEOUT_MAX` (2³¹ − 1 ms,
+the longest delay a timer honors; TS-only), throws at registration. Any
+inbound message resets `last_receive_time` — chatty clients never trip it. The
+timer starts at admission, and the first timeout window after it is exempt
+(cold-start grace).
 Tick interval is `timeout / 2`, so event-loop blockage pauses the timer itself.
 A timeout unregisters the connection and aborts its signal along with the
 `WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT` close.

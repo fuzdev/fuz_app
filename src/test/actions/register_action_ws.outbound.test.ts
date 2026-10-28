@@ -158,7 +158,7 @@ describe('register_action_ws outbound overflow', () => {
 			actions: [create_testing_flood_notifications_action()],
 			db: create_stub_db(),
 			outbound_queue_bytes: 5 * size,
-			heartbeat: false,
+			receive_timeout: null,
 			log
 		});
 		const events = await stub.get_create_events()(
@@ -278,7 +278,7 @@ describe('register_action_ws closes', () => {
 			],
 			db: create_stub_db(),
 			transport,
-			heartbeat: false,
+			receive_timeout: null,
 			log
 		});
 		const events = await stub.get_create_events()(
@@ -334,7 +334,7 @@ describe('register_action_ws closes', () => {
 			actions: [],
 			db,
 			transport,
-			heartbeat: false,
+			receive_timeout: null,
 			log
 		});
 		// a real upgrade context: no test preset, so admission re-reads the credential
@@ -381,7 +381,7 @@ describe('register_action_ws outbound_queue_bytes', () => {
 			allowed_origins: [],
 			actions: [{ spec: echo_spec, handler: () => ({ value: 'x' }) }],
 			db: create_stub_db(),
-			heartbeat: false,
+			receive_timeout: null,
 			log,
 			...options
 		});

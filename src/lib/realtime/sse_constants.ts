@@ -59,7 +59,7 @@ export const validate_sse_keep_alive_ms = (keep_alive_ms: number | null | undefi
  * (`realtime/sse.ts` module doc, "Outbound bound").
  *
  * 1 MiB — equal to the default cap on one request body
- * (`DEFAULT_MAX_BODY_SIZE`). An audit row is bounded by the request that
+ * (`DEFAULT_BODY_LIMIT_BYTES`). An audit row is bounded by the request that
  * produced it, so on a server that keeps that default the budget holds a burst
  * of ordinary rows or one at the largest. The value is fixed and does not
  * follow the server's body limit. Same value as the Rust spine's

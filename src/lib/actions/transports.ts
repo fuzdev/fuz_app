@@ -186,7 +186,7 @@ export const WS_CLOSE_CONNECTION_UNREGISTERED_REASON = 'connection unregistered'
 
 /**
  * Default cap on one WebSocket message, in UTF-8 bytes — equal to the default
- * HTTP body cap (`DEFAULT_MAX_BODY_SIZE`), so one JSON-RPC request is bounded
+ * HTTP body cap (`DEFAULT_BODY_LIMIT_BYTES`), so one JSON-RPC request is bounded
  * the same on both transports. The server closes the socket on a larger
  * inbound message with `WS_CLOSE_MESSAGE_TOO_BIG` (there's no per-message
  * error reply), and `FrontendWebsocketTransport` refuses to send one. The

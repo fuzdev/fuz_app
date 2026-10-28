@@ -18,7 +18,7 @@ import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_health_route_spec } from '#lib/http/common_routes.ts';
 import {
 	create_app_server,
-	DEFAULT_MAX_BODY_SIZE,
+	DEFAULT_BODY_LIMIT_BYTES,
 	type AppServerOptions,
 	type AppServer
 } from '#lib/server/app_server.ts';
@@ -483,8 +483,8 @@ describe('create_app_server', () => {
 		PayloadTooLargeError.parse(body);
 	});
 
-	test('body size limit defaults to DEFAULT_MAX_BODY_SIZE', () => {
-		assert.strictEqual(DEFAULT_MAX_BODY_SIZE, 1024 * 1024);
+	test('body size limit defaults to DEFAULT_BODY_LIMIT_BYTES', () => {
+		assert.strictEqual(DEFAULT_BODY_LIMIT_BYTES, 1024 * 1024);
 	});
 
 	test('a malformed Content-Length is refused with 400 before auth and validation', async () => {
