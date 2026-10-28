@@ -86,7 +86,10 @@ sort `created_at, id`, so a shared `created_at` would order them by random id;
 seeded through it, the account's first actor sorts first and the extras in
 insert order. `_testing_reset` and the in-process setup seed `extra_actors`
 with it, as the Rust reset does with `query_create_actor_with_clock_timestamp`,
-so both spines list a multi-actor keeper's actors in one order.
+so both spines list a multi-actor keeper's actors in one order. The exception
+is `query_admin_account_list`, whose actors sort `created_at, name, id`: it
+keeps one actor per account, and a data key ahead of the random id picks the
+same one on two backends holding the same rows (under the same text collation).
 
 `create_test_role_grant_direct(db, input)` wraps `query_create_role_grant`
 for tests needing an active role_grant seeded directly, bypassing the

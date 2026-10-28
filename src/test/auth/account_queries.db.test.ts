@@ -22,7 +22,8 @@ import {
 	query_account_has_any,
 	query_create_actor,
 	query_actor_by_id,
-	query_create_account_with_actor
+	query_create_account_with_actor,
+	query_admin_account_list
 } from '#lib/auth/account_queries.ts';
 
 import { describe_db } from '../db_fixture.ts';
@@ -425,6 +426,73 @@ describe_db('account queries', (get_db) => {
 			assert.ok(actor.id);
 			assert.strictEqual(actor.account_id, account.id);
 			assert.strictEqual(actor.name, 'alice');
+		});
+	});
+
+	// Rows written in one transaction share `created_at` (`NOW()` is the
+	// transaction's start), so the listing's order rests on its tiebreak keys —
+	// data keys (`username`, `name`, `role`), never the random `id` alone,
+	// which differs between two backends holding the same rows. Each row's key
+	// order is the reverse of its id and insertion order, so a tiebreak on
+	// either shows. The keys are plain lowercase, so a bytewise and a locale
+	// collation order them alike. The Rust spine's
+	// `fuz_auth` `admin_lists` suite seeds the same rows and asserts the same
+	// order.
+	describe('query_admin_account_list ordering', () => {
+		const ACCOUNT_1 = '00000000-0000-4000-8000-000000000001';
+		const ACCOUNT_2 = '00000000-0000-4000-8000-000000000002';
+		const ACTOR_1 = '00000000-0000-4000-8000-000000000011';
+		const ACTOR_2 = '00000000-0000-4000-8000-000000000012';
+		const GRANT_1 = '00000000-0000-4000-8000-000000000021';
+		const GRANT_2 = '00000000-0000-4000-8000-000000000022';
+		const GRANT_3 = '00000000-0000-4000-8000-000000000023';
+		const OFFER_1 = '00000000-0000-4000-8000-000000000031';
+		const OFFER_2 = '00000000-0000-4000-8000-000000000032';
+		const OFFER_3 = '00000000-0000-4000-8000-000000000033';
+		const SCOPE_1 = '00000000-0000-4000-8000-000000000041';
+		const SCOPE_2 = '00000000-0000-4000-8000-000000000042';
+
+		test('rows sharing created_at list by username, name and role', async () => {
+			const db = get_db();
+			await db.transaction(async (tx) => {
+				await tx.query(
+					`INSERT INTO account (id, username, password_hash) VALUES ($1, 'tie_b', 'x'), ($2, 'tie_a', 'x')`,
+					[ACCOUNT_1, ACCOUNT_2]
+				);
+				await tx.query(
+					`INSERT INTO actor (id, account_id, name) VALUES ($1, $3, 'second'), ($2, $3, 'first')`,
+					[ACTOR_1, ACTOR_2, ACCOUNT_2]
+				);
+				await tx.query(
+					`INSERT INTO role_grant (id, actor_id, role)
+					 VALUES ($1, $4, 'role_c'), ($2, $4, 'role_b'), ($3, $4, 'role_a')`,
+					[GRANT_1, GRANT_2, GRANT_3, ACTOR_2]
+				);
+				// one `expires_at`, so the offers order on `role`, then `scope_id`
+				await tx.query(
+					`INSERT INTO role_grant_offer (id, from_actor_id, to_account_id, role, scope_kind, scope_id, expires_at)
+					 VALUES ($1, $4, $5, 'role_b', 'space', $7, $6),
+					        ($2, $4, $5, 'role_b', 'space', $8, $6),
+					        ($3, $4, $5, 'role_a', NULL, NULL, $6)`,
+					[OFFER_1, OFFER_2, OFFER_3, ACTOR_1, ACCOUNT_2, '2999-01-01T00:00:00Z', SCOPE_2, SCOPE_1]
+				);
+			});
+			const entries = await query_admin_account_list({ db });
+			assert.deepStrictEqual(
+				entries.map((e) => e.account.username),
+				['tie_a', 'tie_b']
+			);
+			const [entry] = entries;
+			assert.strictEqual(entry!.actor?.name, 'first', 'the oldest actor, by name on a tie');
+			assert.deepStrictEqual(
+				entry!.role_grants.map((g) => g.role),
+				['role_a', 'role_b', 'role_c']
+			);
+			assert.deepStrictEqual(
+				entry!.pending_offers.map((o) => o.id),
+				[OFFER_3, OFFER_2, OFFER_1],
+				'pending offers by role, then scope_id'
+			);
 		});
 	});
 });

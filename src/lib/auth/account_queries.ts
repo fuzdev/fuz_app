@@ -527,6 +527,16 @@ export interface AdminAccountListOptions {
  * visibility of grantor notes would expand beyond what the audit log
  * discloses).
  *
+ * Every list is ordered as the Rust spine orders it, on data keys rather than
+ * the random `id` alone: accounts by `created_at, username`, each entry's
+ * role_grants by `created_at, role, scope_id`, its pending offers by
+ * `expires_at, role, scope_id` (`id` last, for a tie no data key breaks). The
+ * order is deterministic on each engine, so rows written in one transaction
+ * (one `created_at`) list stably. Two backends holding the same rows list
+ * them alike only under the same text collation: a bytewise compare (pglet)
+ * and a locale one (Postgres `en_US.UTF-8`, which passes over `_` and `-` at
+ * first) can order the text keys differently.
+ *
  * @param deps - query dependencies
  * @param options - optional `{limit, offset}`. Default limit is
  *   `ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT`; pass `limit: null` to disable.
@@ -545,11 +555,11 @@ export const query_admin_account_list = async (
 	const account_query =
 		limit == null
 			? deps.db.query<Account>(
-					`SELECT ${columns_sql(ACCOUNT_COLUMNS, account_actor_expr)} FROM account ${where} ORDER BY account.created_at OFFSET $1`,
+					`SELECT ${columns_sql(ACCOUNT_COLUMNS, account_actor_expr)} FROM account ${where} ORDER BY account.created_at, account.username OFFSET $1`,
 					[offset]
 				)
 			: deps.db.query<Account>(
-					`SELECT ${columns_sql(ACCOUNT_COLUMNS, account_actor_expr)} FROM account ${where} ORDER BY account.created_at LIMIT $1 OFFSET $2`,
+					`SELECT ${columns_sql(ACCOUNT_COLUMNS, account_actor_expr)} FROM account ${where} ORDER BY account.created_at, account.username LIMIT $1 OFFSET $2`,
 					[limit, offset]
 				);
 	const accounts = await account_query;
@@ -559,7 +569,7 @@ export const query_admin_account_list = async (
 
 	const [actors, role_grants, pending_offers] = await Promise.all([
 		deps.db.query<Actor>(
-			`SELECT ${columns_sql(ACTOR_COLUMNS, account_actor_expr)} FROM actor WHERE account_id = ANY($1::uuid[])`,
+			`SELECT ${columns_sql(ACTOR_COLUMNS, account_actor_expr)} FROM actor WHERE account_id = ANY($1::uuid[]) ORDER BY actor.created_at, actor.name, actor.id`,
 			[account_ids]
 		),
 		deps.db.query<RoleGrantWithActorId>(
@@ -567,7 +577,8 @@ export const query_admin_account_list = async (
 			 FROM role_grant
 			 WHERE actor_id IN (SELECT id FROM actor WHERE account_id = ANY($1::uuid[]))
 			   AND revoked_at IS NULL
-			   AND (expires_at IS NULL OR expires_at > NOW())`,
+			   AND (expires_at IS NULL OR expires_at > NOW())
+			 ORDER BY role_grant.created_at, role_grant.role, role_grant.scope_id, role_grant.id`,
 			[account_ids]
 		),
 		deps.db.query<PendingOfferRow>(
@@ -584,21 +595,22 @@ export const query_admin_account_list = async (
 			   AND po.retracted_at IS NULL
 			   AND po.superseded_at IS NULL
 			   AND po.expires_at > NOW()
-			 ORDER BY po.expires_at ASC`,
+			 ORDER BY po.expires_at ASC, po.role ASC, po.scope_id ASC, po.id ASC`,
 			[account_ids]
 		)
 	]);
 
-	// Index actors by account_id. Multi-actor TODO: this Map keyed by
-	// account_id silently overwrites earlier actors when an account
-	// hosts more than one — when multi-actor lands, the admin row shape
-	// must change from "account → one actor" to "account → Array<Actor>"
-	// (or split into a separate per-actor row). The JSON shape change
-	// will ripple into the admin UI; bundle that with the multi-actor
+	// Index actors by account_id, the first one winning: actors arrive in
+	// `created_at, name, id` order, so an account's row carries its oldest actor
+	// (and that actor's grants). Multi-actor TODO: an account hosting more
+	// than one actor shows only that one — when multi-actor lands, the admin
+	// row shape must change from "account → one actor" to "account →
+	// Array<Actor>" (or split into a separate per-actor row). The JSON shape
+	// change will ripple into the admin UI; bundle that with the multi-actor
 	// session-actor-selector work.
 	const actor_by_account = new Map<Uuid, Actor>();
 	for (const actor of actors) {
-		actor_by_account.set(actor.account_id, actor);
+		if (!actor_by_account.has(actor.account_id)) actor_by_account.set(actor.account_id, actor);
 	}
 
 	// Group role_grants by actor_id
