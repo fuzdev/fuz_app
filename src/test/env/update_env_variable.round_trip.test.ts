@@ -11,7 +11,7 @@ import { test, describe, assert } from 'vitest';
 
 import { update_env_content, update_env_variable } from '#lib/env/update_env_variable.ts';
 import { parse_dotenv } from '#lib/env/dotenv.ts';
-import { create_mock_fs } from '#lib/testing/mock_fs.ts';
+import { create_env_file_runtime } from './env_file_runtime.ts';
 
 const round_trip_cases: Array<[label: string, key: string, value: string]> = [
 	['plain value', 'KEY', 'plain'],
@@ -34,15 +34,11 @@ const round_trip_cases: Array<[label: string, key: string, value: string]> = [
 
 describe('update_env_variable + parse_dotenv round-trip', () => {
 	test.each(round_trip_cases)('%s', async (_label, key, value) => {
-		const fs = create_mock_fs({});
+		const fs = create_env_file_runtime({});
 
-		await update_env_variable(key, value, {
-			env_file_path: '/test/.env',
-			read_file: fs.read_file,
-			write_file: fs.write_file
-		});
+		await update_env_variable(fs, '/test/.env', key, value);
 
-		const written = fs.get_file('/test/.env');
+		const written = fs.mock_fs.get('/test/.env');
 		assert.ok(written !== undefined, 'file was written');
 
 		const parsed = parse_dotenv(written);
@@ -50,29 +46,21 @@ describe('update_env_variable + parse_dotenv round-trip', () => {
 	});
 
 	test('preserves a leading `export ` prefix when updating in place', async () => {
-		const fs = create_mock_fs({ '/test/.env': 'export KEY=old\n' });
+		const fs = create_env_file_runtime({ '/test/.env': 'export KEY=old\n' });
 
-		await update_env_variable('KEY', 'new', {
-			env_file_path: '/test/.env',
-			read_file: fs.read_file,
-			write_file: fs.write_file
-		});
+		await update_env_variable(fs, '/test/.env', 'KEY', 'new');
 
-		const written = fs.get_file('/test/.env')!;
+		const written = fs.mock_fs.get('/test/.env')!;
 		assert.strictEqual(written, 'export KEY=new\n');
 		assert.deepStrictEqual(parse_dotenv(written), { KEY: 'new' });
 	});
 
 	test('preserves `export ` when the new value needs quoting', async () => {
-		const fs = create_mock_fs({ '/test/.env': 'export KEY=old\n' });
+		const fs = create_env_file_runtime({ '/test/.env': 'export KEY=old\n' });
 
-		await update_env_variable('KEY', 'has "quote" and spaces', {
-			env_file_path: '/test/.env',
-			read_file: fs.read_file,
-			write_file: fs.write_file
-		});
+		await update_env_variable(fs, '/test/.env', 'KEY', 'has "quote" and spaces');
 
-		const written = fs.get_file('/test/.env')!;
+		const written = fs.mock_fs.get('/test/.env')!;
 		assert.ok(
 			written.startsWith('export KEY='),
 			'export prefix preserved through the quote branch'
@@ -81,41 +69,29 @@ describe('update_env_variable + parse_dotenv round-trip', () => {
 	});
 
 	test('preserves `export ` and the inline comment when updating', async () => {
-		const fs = create_mock_fs({ '/test/.env': 'export KEY=old # the key\n' });
+		const fs = create_env_file_runtime({ '/test/.env': 'export KEY=old # the key\n' });
 
-		await update_env_variable('KEY', 'new', {
-			env_file_path: '/test/.env',
-			read_file: fs.read_file,
-			write_file: fs.write_file
-		});
+		await update_env_variable(fs, '/test/.env', 'KEY', 'new');
 
-		assert.strictEqual(fs.get_file('/test/.env'), 'export KEY=new # the key\n');
+		assert.strictEqual(fs.mock_fs.get('/test/.env'), 'export KEY=new # the key\n');
 	});
 
 	test('round-trip when key already exists with quoted value', async () => {
-		const fs = create_mock_fs({ '/test/.env': 'KEY="initial"' });
+		const fs = create_env_file_runtime({ '/test/.env': 'KEY="initial"' });
 
 		const value = `mix of "quotes" and 'apostrophes' with \\backslash`;
-		await update_env_variable('KEY', value, {
-			env_file_path: '/test/.env',
-			read_file: fs.read_file,
-			write_file: fs.write_file
-		});
+		await update_env_variable(fs, '/test/.env', 'KEY', value);
 
-		const parsed = parse_dotenv(fs.get_file('/test/.env')!);
+		const parsed = parse_dotenv(fs.mock_fs.get('/test/.env')!);
 		assert.strictEqual(parsed.KEY, value);
 	});
 
 	test('round-trip survives an inline comment in the original line', async () => {
-		const fs = create_mock_fs({ '/test/.env': 'KEY="initial" # the api key' });
+		const fs = create_env_file_runtime({ '/test/.env': 'KEY="initial" # the api key' });
 
-		await update_env_variable('KEY', 'new-value', {
-			env_file_path: '/test/.env',
-			read_file: fs.read_file,
-			write_file: fs.write_file
-		});
+		await update_env_variable(fs, '/test/.env', 'KEY', 'new-value');
 
-		const written = fs.get_file('/test/.env');
+		const written = fs.mock_fs.get('/test/.env');
 		assert.strictEqual(written, 'KEY="new-value" # the api key');
 		assert.strictEqual(parse_dotenv(written!).KEY, 'new-value');
 	});
@@ -125,29 +101,21 @@ describe('update_env_variable + parse_dotenv round-trip', () => {
 		// should preserve the comment by emitting it with a leading space so
 		// it doesn't merge with the new value, and the parser must round-trip
 		// back to the new value.
-		const fs = create_mock_fs({ '/test/.env': 'KEY=#original' });
+		const fs = create_env_file_runtime({ '/test/.env': 'KEY=#original' });
 
-		await update_env_variable('KEY', 'new', {
-			env_file_path: '/test/.env',
-			read_file: fs.read_file,
-			write_file: fs.write_file
-		});
+		await update_env_variable(fs, '/test/.env', 'KEY', 'new');
 
-		const written = fs.get_file('/test/.env')!;
+		const written = fs.mock_fs.get('/test/.env')!;
 		assert.strictEqual(written, 'KEY=new #original');
 		assert.strictEqual(parse_dotenv(written).KEY, 'new');
 	});
 
 	test('round-trip: updating KEY= # spaced comment preserves spacing through the comment', async () => {
-		const fs = create_mock_fs({ '/test/.env': 'KEY= # a note' });
+		const fs = create_env_file_runtime({ '/test/.env': 'KEY= # a note' });
 
-		await update_env_variable('KEY', 'new', {
-			env_file_path: '/test/.env',
-			read_file: fs.read_file,
-			write_file: fs.write_file
-		});
+		await update_env_variable(fs, '/test/.env', 'KEY', 'new');
 
-		const written = fs.get_file('/test/.env')!;
+		const written = fs.mock_fs.get('/test/.env')!;
 		assert.strictEqual(parse_dotenv(written).KEY, 'new');
 		// the comment is preserved (the writer already handled `\s+#` correctly;
 		// this just pins it against regressions)
@@ -157,31 +125,23 @@ describe('update_env_variable + parse_dotenv round-trip', () => {
 	test('round-trip preserves URL fragment when updating unquoted value', async () => {
 		// hand-edited unquoted URL with a fragment — writer must not mistake `#frag`
 		// as an inline comment to carry over onto the new value
-		const fs = create_mock_fs({ '/test/.env': 'URL=https://x.com#frag' });
+		const fs = create_env_file_runtime({ '/test/.env': 'URL=https://x.com#frag' });
 
-		await update_env_variable('URL', 'https://y.com', {
-			env_file_path: '/test/.env',
-			read_file: fs.read_file,
-			write_file: fs.write_file
-		});
+		await update_env_variable(fs, '/test/.env', 'URL', 'https://y.com');
 
-		const written = fs.get_file('/test/.env')!;
+		const written = fs.mock_fs.get('/test/.env')!;
 		assert.strictEqual(written, 'URL=https://y.com');
 		assert.strictEqual(parse_dotenv(written).URL, 'https://y.com');
 	});
 
 	test('round-trip preserves other keys', async () => {
-		const fs = create_mock_fs({
+		const fs = create_env_file_runtime({
 			'/test/.env': 'OTHER="keep me"\nKEY="initial"\nLAST=unquoted_value'
 		});
 
-		await update_env_variable('KEY', 'has "q"', {
-			env_file_path: '/test/.env',
-			read_file: fs.read_file,
-			write_file: fs.write_file
-		});
+		await update_env_variable(fs, '/test/.env', 'KEY', 'has "q"');
 
-		const parsed = parse_dotenv(fs.get_file('/test/.env')!);
+		const parsed = parse_dotenv(fs.mock_fs.get('/test/.env')!);
 		assert.strictEqual(parsed.OTHER, 'keep me');
 		assert.strictEqual(parsed.KEY, 'has "q"');
 		assert.strictEqual(parsed.LAST, 'unquoted_value');

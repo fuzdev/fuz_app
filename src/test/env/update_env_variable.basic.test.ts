@@ -2,7 +2,7 @@ import { test, describe, assert } from 'vitest';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
 import { update_env_variable } from '#lib/env/update_env_variable.ts';
-import { create_mock_fs } from '#lib/testing/mock_fs.ts';
+import { create_env_file_runtime } from './env_file_runtime.ts';
 
 // null initial means no file exists (triggers ENOENT → create)
 const basic_cases: Array<
@@ -91,62 +91,50 @@ const formatting_cases: Array<
 
 describe('update_env_variable - basic functionality', () => {
 	test.each(basic_cases)('%s', async (_label, initial, key, value, expected) => {
-		const fs = create_mock_fs(initial !== null ? { '/test/.env': initial } : {});
+		const fs = create_env_file_runtime(initial !== null ? { '/test/.env': initial } : {});
 
-		await update_env_variable(key, value, {
-			env_file_path: '/test/.env',
-			read_file: fs.read_file,
-			write_file: fs.write_file
-		});
+		await update_env_variable(fs, '/test/.env', key, value);
 
-		assert.strictEqual(fs.get_file('/test/.env'), expected);
+		assert.strictEqual(fs.mock_fs.get('/test/.env'), expected);
 	});
 });
 
 describe('update_env_variable - formatting preservation', () => {
 	test.each(formatting_cases)('%s', async (_label, initial, key, value, expected) => {
-		const fs = create_mock_fs({ '/test/.env': initial });
+		const fs = create_env_file_runtime({ '/test/.env': initial });
 
-		await update_env_variable(key, value, {
-			env_file_path: '/test/.env',
-			read_file: fs.read_file,
-			write_file: fs.write_file
-		});
+		await update_env_variable(fs, '/test/.env', key, value);
 
-		assert.strictEqual(fs.get_file('/test/.env'), expected);
+		assert.strictEqual(fs.mock_fs.get('/test/.env'), expected);
 	});
 });
 
 describe('update_env_variable - error handling', () => {
 	test('propagates read file error', async () => {
 		const error_message = 'Permission denied';
-		const custom_read = async (): Promise<string> => {
+		const fs = create_env_file_runtime({ '/test/.env': 'API_KEY=old\n' });
+		fs.read_text_file = async (): Promise<string> => {
 			throw new Error(error_message);
 		};
 
 		const error = await assert_rejects(() =>
-			update_env_variable('API_KEY', 'new_value', {
-				env_file_path: '/test/.env',
-				read_file: custom_read,
-				write_file: async () => {}
-			})
+			update_env_variable(fs, '/test/.env', 'API_KEY', 'new_value')
 		);
 		assert.include(error.message, error_message);
+		assert.strictEqual(fs.mock_fs.get('/test/.env'), 'API_KEY=old\n');
 	});
 
-	test('propagates write file error', async () => {
+	test('propagates write file error and leaves the file as it was', async () => {
 		const error_message = 'Disk full';
-		const custom_write = async (): Promise<void> => {
+		const fs = create_env_file_runtime({ '/test/.env': 'API_KEY=old\n' });
+		fs.write_text_file = async (): Promise<void> => {
 			throw new Error(error_message);
 		};
 
 		const error = await assert_rejects(() =>
-			update_env_variable('API_KEY', 'new_value', {
-				env_file_path: '/test/.env',
-				read_file: async () => '',
-				write_file: custom_write
-			})
+			update_env_variable(fs, '/test/.env', 'API_KEY', 'new_value')
 		);
 		assert.include(error.message, error_message);
+		assert.strictEqual(fs.mock_fs.get('/test/.env'), 'API_KEY=old\n');
 	});
 });

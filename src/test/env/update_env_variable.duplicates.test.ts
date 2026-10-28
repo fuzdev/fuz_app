@@ -1,7 +1,7 @@
 import { test, describe, assert } from 'vitest';
 
 import { update_env_variable } from '#lib/env/update_env_variable.ts';
-import { create_mock_fs } from '#lib/testing/mock_fs.ts';
+import { create_env_file_runtime } from './env_file_runtime.ts';
 
 const duplicate_cases: Array<
 	[label: string, initial: string, key: string, value: string, expected: string]
@@ -87,14 +87,10 @@ const duplicate_cases: Array<
 
 describe('update_env_variable - duplicate keys (LAST wins behavior)', () => {
 	test.each(duplicate_cases)('%s', async (_label, initial, key, value, expected) => {
-		const fs = create_mock_fs({ '/test/.env': initial });
+		const fs = create_env_file_runtime({ '/test/.env': initial });
 
-		await update_env_variable(key, value, {
-			env_file_path: '/test/.env',
-			read_file: fs.read_file,
-			write_file: fs.write_file
-		});
+		await update_env_variable(fs, '/test/.env', key, value);
 
-		assert.strictEqual(fs.get_file('/test/.env'), expected);
+		assert.strictEqual(fs.mock_fs.get('/test/.env'), expected);
 	});
 });

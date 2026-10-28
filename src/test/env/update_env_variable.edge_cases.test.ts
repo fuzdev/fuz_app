@@ -1,7 +1,7 @@
 import { test, describe, assert } from 'vitest';
 
 import { update_env_variable } from '#lib/env/update_env_variable.ts';
-import { create_mock_fs } from '#lib/testing/mock_fs.ts';
+import { create_env_file_runtime } from './env_file_runtime.ts';
 
 const quote_detection_cases: Array<
 	[label: string, initial: string, key: string, value: string, expected: string]
@@ -59,145 +59,104 @@ const quote_detection_cases: Array<
 
 describe('update_env_variable - quote detection edge cases', () => {
 	test.each(quote_detection_cases)('%s', async (_label, initial, key, value, expected) => {
-		const fs = create_mock_fs({ '/test/.env': initial });
+		const fs = create_env_file_runtime({ '/test/.env': initial });
 
-		await update_env_variable(key, value, {
-			env_file_path: '/test/.env',
-			read_file: fs.read_file,
-			write_file: fs.write_file
-		});
+		await update_env_variable(fs, '/test/.env', key, value);
 
-		assert.strictEqual(fs.get_file('/test/.env'), expected);
+		assert.strictEqual(fs.mock_fs.get('/test/.env'), expected);
 	});
 });
 
 describe('update_env_variable - special values', () => {
 	test('handles empty value', async () => {
-		const fs = create_mock_fs({ '/test/.env': 'API_KEY="old_value"' });
+		const fs = create_env_file_runtime({ '/test/.env': 'API_KEY="old_value"' });
 
-		await update_env_variable('API_KEY', '', {
-			env_file_path: '/test/.env',
-			read_file: fs.read_file,
-			write_file: fs.write_file
-		});
+		await update_env_variable(fs, '/test/.env', 'API_KEY', '');
 
-		assert.strictEqual(fs.get_file('/test/.env'), 'API_KEY=""');
+		assert.strictEqual(fs.mock_fs.get('/test/.env'), 'API_KEY=""');
 	});
 
 	test('handles value with equals sign', async () => {
-		const fs = create_mock_fs({ '/test/.env': 'API_KEY="old_value"' });
+		const fs = create_env_file_runtime({ '/test/.env': 'API_KEY="old_value"' });
 
-		await update_env_variable('API_KEY', 'value=with=equals', {
-			env_file_path: '/test/.env',
-			read_file: fs.read_file,
-			write_file: fs.write_file
-		});
+		await update_env_variable(fs, '/test/.env', 'API_KEY', 'value=with=equals');
 
-		assert.strictEqual(fs.get_file('/test/.env'), 'API_KEY="value=with=equals"');
+		assert.strictEqual(fs.mock_fs.get('/test/.env'), 'API_KEY="value=with=equals"');
 	});
 
 	test('handles value with newlines', async () => {
-		const fs = create_mock_fs({ '/test/.env': 'API_KEY="old_value"' });
+		const fs = create_env_file_runtime({ '/test/.env': 'API_KEY="old_value"' });
 
-		await update_env_variable('API_KEY', 'value\nwith\nnewlines', {
-			env_file_path: '/test/.env',
-			read_file: fs.read_file,
-			write_file: fs.write_file
-		});
+		await update_env_variable(fs, '/test/.env', 'API_KEY', 'value\nwith\nnewlines');
 
 		// newlines are escaped as `\n` literal so the line stays a single assignment
-		assert.strictEqual(fs.get_file('/test/.env'), 'API_KEY="value\\nwith\\nnewlines"');
+		assert.strictEqual(fs.mock_fs.get('/test/.env'), 'API_KEY="value\\nwith\\nnewlines"');
 	});
 
 	test('escapes carriage returns', async () => {
-		const fs = create_mock_fs({ '/test/.env': 'KEY="old"' });
+		const fs = create_env_file_runtime({ '/test/.env': 'KEY="old"' });
 
-		await update_env_variable('KEY', 'a\rb\r\nc', {
-			env_file_path: '/test/.env',
-			read_file: fs.read_file,
-			write_file: fs.write_file
-		});
+		await update_env_variable(fs, '/test/.env', 'KEY', 'a\rb\r\nc');
 
-		assert.strictEqual(fs.get_file('/test/.env'), 'KEY="a\\rb\\r\\nc"');
+		assert.strictEqual(fs.mock_fs.get('/test/.env'), 'KEY="a\\rb\\r\\nc"');
 	});
 
 	test('forces double-quoted (with escapes) when value has both " and a newline', async () => {
-		const fs = create_mock_fs({ '/test/.env': 'KEY="old"' });
+		const fs = create_env_file_runtime({ '/test/.env': 'KEY="old"' });
 
 		// has `"` but also has a newline — single-quoted would split the line in two
-		await update_env_variable('KEY', 'has "q"\nand newline', {
-			env_file_path: '/test/.env',
-			read_file: fs.read_file,
-			write_file: fs.write_file
-		});
+		await update_env_variable(fs, '/test/.env', 'KEY', 'has "q"\nand newline');
 
-		assert.strictEqual(fs.get_file('/test/.env'), 'KEY="has \\"q\\"\\nand newline"');
+		assert.strictEqual(fs.mock_fs.get('/test/.env'), 'KEY="has \\"q\\"\\nand newline"');
 	});
 
 	test('handles value with backslashes (Windows paths)', async () => {
-		const fs = create_mock_fs({ '/test/.env': 'PATH_KEY="old_path"' });
+		const fs = create_env_file_runtime({ '/test/.env': 'PATH_KEY="old_path"' });
 
-		await update_env_variable('PATH_KEY', 'C:\\Users\\Admin\\Documents', {
-			env_file_path: '/test/.env',
-			read_file: fs.read_file,
-			write_file: fs.write_file
-		});
+		await update_env_variable(fs, '/test/.env', 'PATH_KEY', 'C:\\Users\\Admin\\Documents');
 
 		// backslashes are escaped inside `"..."` so parse_dotenv round-trips
-		assert.strictEqual(fs.get_file('/test/.env'), 'PATH_KEY="C:\\\\Users\\\\Admin\\\\Documents"');
+		assert.strictEqual(
+			fs.mock_fs.get('/test/.env'),
+			'PATH_KEY="C:\\\\Users\\\\Admin\\\\Documents"'
+		);
 	});
 
 	test('handles value with unicode characters', async () => {
-		const fs = create_mock_fs({ '/test/.env': 'UNICODE_KEY="old"' });
+		const fs = create_env_file_runtime({ '/test/.env': 'UNICODE_KEY="old"' });
 
 		const unicode_value = '你好世界 🌍 Привет мир';
-		await update_env_variable('UNICODE_KEY', unicode_value, {
-			env_file_path: '/test/.env',
-			read_file: fs.read_file,
-			write_file: fs.write_file
-		});
+		await update_env_variable(fs, '/test/.env', 'UNICODE_KEY', unicode_value);
 
-		assert.strictEqual(fs.get_file('/test/.env'), `UNICODE_KEY="${unicode_value}"`);
+		assert.strictEqual(fs.mock_fs.get('/test/.env'), `UNICODE_KEY="${unicode_value}"`);
 	});
 
 	test('handles very long values', async () => {
-		const fs = create_mock_fs({ '/test/.env': 'LONG_KEY="short"' });
+		const fs = create_env_file_runtime({ '/test/.env': 'LONG_KEY="short"' });
 
 		const long_value = 'x'.repeat(10000);
-		await update_env_variable('LONG_KEY', long_value, {
-			env_file_path: '/test/.env',
-			read_file: fs.read_file,
-			write_file: fs.write_file
-		});
+		await update_env_variable(fs, '/test/.env', 'LONG_KEY', long_value);
 
-		assert.strictEqual(fs.get_file('/test/.env'), `LONG_KEY="${long_value}"`);
+		assert.strictEqual(fs.mock_fs.get('/test/.env'), `LONG_KEY="${long_value}"`);
 	});
 
 	test('handles value with JSON content', async () => {
-		const fs = create_mock_fs({ '/test/.env': 'JSON_KEY="old"' });
+		const fs = create_env_file_runtime({ '/test/.env': 'JSON_KEY="old"' });
 
 		const json_value = '{"name":"test","nested":{"key":"value"},"array":[1,2,3]}';
-		await update_env_variable('JSON_KEY', json_value, {
-			env_file_path: '/test/.env',
-			read_file: fs.read_file,
-			write_file: fs.write_file
-		});
+		await update_env_variable(fs, '/test/.env', 'JSON_KEY', json_value);
 
 		// JSON contains `"` so the value is written with single-quote wrapping
 		// to keep the line a parseable single-key assignment.
-		assert.strictEqual(fs.get_file('/test/.env'), `JSON_KEY='${json_value}'`);
+		assert.strictEqual(fs.mock_fs.get('/test/.env'), `JSON_KEY='${json_value}'`);
 	});
 
 	test('handles value with special characters', async () => {
-		const fs = create_mock_fs({ '/test/.env': 'API_KEY="old_value"' });
+		const fs = create_env_file_runtime({ '/test/.env': 'API_KEY="old_value"' });
 
-		await update_env_variable('API_KEY', 'value!@#$%^&*()_+-=[]{}|;:,.<>?', {
-			env_file_path: '/test/.env',
-			read_file: fs.read_file,
-			write_file: fs.write_file
-		});
+		await update_env_variable(fs, '/test/.env', 'API_KEY', 'value!@#$%^&*()_+-=[]{}|;:,.<>?');
 
-		assert.strictEqual(fs.get_file('/test/.env'), 'API_KEY="value!@#$%^&*()_+-=[]{}|;:,.<>?"');
+		assert.strictEqual(fs.mock_fs.get('/test/.env'), 'API_KEY="value!@#$%^&*()_+-=[]{}|;:,.<>?"');
 	});
 });
 
@@ -229,29 +188,21 @@ const whitespace_cases: Array<
 
 describe('update_env_variable - whitespace handling', () => {
 	test.each(whitespace_cases)('%s', async (_label, initial, key, value, expected) => {
-		const fs = create_mock_fs({ '/test/.env': initial });
+		const fs = create_env_file_runtime({ '/test/.env': initial });
 
-		await update_env_variable(key, value, {
-			env_file_path: '/test/.env',
-			read_file: fs.read_file,
-			write_file: fs.write_file
-		});
+		await update_env_variable(fs, '/test/.env', key, value);
 
-		assert.strictEqual(fs.get_file('/test/.env'), expected);
+		assert.strictEqual(fs.mock_fs.get('/test/.env'), expected);
 	});
 
 	test('preserves exact original formatting for non-matching lines', async () => {
-		const fs = create_mock_fs({
+		const fs = create_env_file_runtime({
 			'/test/.env': '  INDENT_KEY  =  "spaced"  \nTARGET_KEY="old"\n\t\tTAB_KEY\t=\t"tabbed"\t'
 		});
 
-		await update_env_variable('TARGET_KEY', 'new', {
-			env_file_path: '/test/.env',
-			read_file: fs.read_file,
-			write_file: fs.write_file
-		});
+		await update_env_variable(fs, '/test/.env', 'TARGET_KEY', 'new');
 
-		const result = fs.get_file('/test/.env');
+		const result = fs.mock_fs.get('/test/.env');
 		assert.strictEqual(
 			result,
 			'  INDENT_KEY  =  "spaced"  \nTARGET_KEY="new"\n\t\tTAB_KEY\t=\t"tabbed"\t'
@@ -291,15 +242,11 @@ const special_key_cases: Array<
 
 describe('update_env_variable - special keys', () => {
 	test.each(special_key_cases)('%s', async (_label, initial, key, value, expected) => {
-		const fs = create_mock_fs({ '/test/.env': initial });
+		const fs = create_env_file_runtime({ '/test/.env': initial });
 
-		await update_env_variable(key, value, {
-			env_file_path: '/test/.env',
-			read_file: fs.read_file,
-			write_file: fs.write_file
-		});
+		await update_env_variable(fs, '/test/.env', key, value);
 
-		assert.strictEqual(fs.get_file('/test/.env'), expected);
+		assert.strictEqual(fs.mock_fs.get('/test/.env'), expected);
 	});
 });
 
@@ -409,52 +356,36 @@ const update_trailing_newline_cases: Array<
 
 describe('update_env_variable - quoting of values with embedded quotes', () => {
 	test('uses single quotes when value contains a double quote', async () => {
-		const fs = create_mock_fs({ '/test/.env': 'KEY="old"' });
+		const fs = create_env_file_runtime({ '/test/.env': 'KEY="old"' });
 
-		await update_env_variable('KEY', 'has "q" inside', {
-			env_file_path: '/test/.env',
-			read_file: fs.read_file,
-			write_file: fs.write_file
-		});
+		await update_env_variable(fs, '/test/.env', 'KEY', 'has "q" inside');
 
-		assert.strictEqual(fs.get_file('/test/.env'), `KEY='has "q" inside'`);
+		assert.strictEqual(fs.mock_fs.get('/test/.env'), `KEY='has "q" inside'`);
 	});
 
 	test('keeps double quotes when value contains a single quote only', async () => {
-		const fs = create_mock_fs({ '/test/.env': 'KEY="old"' });
+		const fs = create_env_file_runtime({ '/test/.env': 'KEY="old"' });
 
-		await update_env_variable('KEY', "O'Brien", {
-			env_file_path: '/test/.env',
-			read_file: fs.read_file,
-			write_file: fs.write_file
-		});
+		await update_env_variable(fs, '/test/.env', 'KEY', "O'Brien");
 
-		assert.strictEqual(fs.get_file('/test/.env'), `KEY="O'Brien"`);
+		assert.strictEqual(fs.mock_fs.get('/test/.env'), `KEY="O'Brien"`);
 	});
 
 	test('escapes " and \\ when value contains both quote characters', async () => {
-		const fs = create_mock_fs({ '/test/.env': 'KEY="old"' });
+		const fs = create_env_file_runtime({ '/test/.env': 'KEY="old"' });
 
-		await update_env_variable('KEY', `it's "quoted"`, {
-			env_file_path: '/test/.env',
-			read_file: fs.read_file,
-			write_file: fs.write_file
-		});
+		await update_env_variable(fs, '/test/.env', 'KEY', `it's "quoted"`);
 
-		assert.strictEqual(fs.get_file('/test/.env'), `KEY="it's \\"quoted\\""`);
+		assert.strictEqual(fs.mock_fs.get('/test/.env'), `KEY="it's \\"quoted\\""`);
 	});
 
 	test('uses single quotes for a new key when value contains a double quote', async () => {
-		const fs = create_mock_fs({});
+		const fs = create_env_file_runtime({});
 
-		await update_env_variable('NEW_KEY', 'with "quote"', {
-			env_file_path: '/test/.env',
-			read_file: fs.read_file,
-			write_file: fs.write_file
-		});
+		await update_env_variable(fs, '/test/.env', 'NEW_KEY', 'with "quote"');
 
 		// new files end with `\n`
-		assert.strictEqual(fs.get_file('/test/.env'), `NEW_KEY='with "quote"'\n`);
+		assert.strictEqual(fs.mock_fs.get('/test/.env'), `NEW_KEY='with "quote"'\n`);
 	});
 });
 
@@ -464,68 +395,55 @@ describe('update_env_variable - quoting of values with embedded quotes', () => {
 // future change is intentional.
 describe('update_env_variable - CRLF line endings (current behavior)', () => {
 	test('drops the \\r from the modified line and preserves it on others', async () => {
-		const fs = create_mock_fs({ '/test/.env': 'KEY="old"\r\nOTHER="keep"\r\n' });
+		const fs = create_env_file_runtime({ '/test/.env': 'KEY="old"\r\nOTHER="keep"\r\n' });
 
-		await update_env_variable('KEY', 'new', {
-			env_file_path: '/test/.env',
-			read_file: fs.read_file,
-			write_file: fs.write_file
-		});
+		await update_env_variable(fs, '/test/.env', 'KEY', 'new');
 
-		assert.strictEqual(fs.get_file('/test/.env'), 'KEY="new"\nOTHER="keep"\r\n');
+		assert.strictEqual(fs.mock_fs.get('/test/.env'), 'KEY="new"\nOTHER="keep"\r\n');
 	});
 });
 
 describe('update_env_variable - file variations', () => {
 	test.each(file_variation_cases)('%s', async (_label, initial, key, value, expected) => {
-		const fs = create_mock_fs({ '/test/.env': initial });
+		const fs = create_env_file_runtime({ '/test/.env': initial });
 
-		await update_env_variable(key, value, {
-			env_file_path: '/test/.env',
-			read_file: fs.read_file,
-			write_file: fs.write_file
-		});
+		await update_env_variable(fs, '/test/.env', key, value);
 
-		assert.strictEqual(fs.get_file('/test/.env'), expected);
+		assert.strictEqual(fs.mock_fs.get('/test/.env'), expected);
 	});
 
 	test.each(append_trailing_newline_cases)('%s', async (_label, initial, key, value, expected) => {
-		const fs = create_mock_fs({ '/test/.env': initial });
+		const fs = create_env_file_runtime({ '/test/.env': initial });
 
-		await update_env_variable(key, value, {
-			env_file_path: '/test/.env',
-			read_file: fs.read_file,
-			write_file: fs.write_file
-		});
+		await update_env_variable(fs, '/test/.env', key, value);
 
-		assert.strictEqual(fs.get_file('/test/.env'), expected);
+		assert.strictEqual(fs.mock_fs.get('/test/.env'), expected);
 	});
 
 	test.each(update_trailing_newline_cases)('%s', async (_label, initial, key, value, expected) => {
-		const fs = create_mock_fs({ '/test/.env': initial });
+		const fs = create_env_file_runtime({ '/test/.env': initial });
 
-		await update_env_variable(key, value, {
-			env_file_path: '/test/.env',
-			read_file: fs.read_file,
-			write_file: fs.write_file
-		});
+		await update_env_variable(fs, '/test/.env', key, value);
 
-		assert.strictEqual(fs.get_file('/test/.env'), expected);
+		assert.strictEqual(fs.mock_fs.get('/test/.env'), expected);
 	});
 
-	test('verifies path is resolved to absolute', async () => {
-		let resolved_path: string | undefined;
+	test('replaces the file atomically at mode 0o600 through a temp', async () => {
+		const fs = create_env_file_runtime({ '/test/.env': 'KEY=old\n' });
+		fs.mock_fs_modes.set('/test/.env', 0o644);
+		const written_paths: Array<string> = [];
+		const write_text_file = fs.write_text_file;
+		fs.write_text_file = (path, content, options) => {
+			written_paths.push(path);
+			return write_text_file(path, content, options);
+		};
 
-		await update_env_variable('KEY', 'value', {
-			env_file_path: './relative/.env',
-			read_file: async () => '',
-			write_file: async (path, _content, _encoding) => {
-				resolved_path = path;
-			}
-		});
+		await update_env_variable(fs, '/test/.env', 'KEY', 'new');
 
-		assert.ok(resolved_path);
-		assert.ok(resolved_path.startsWith('/'));
-		assert.ok(resolved_path.endsWith('relative/.env'));
+		assert.strictEqual(fs.mock_fs.get('/test/.env'), 'KEY=new\n');
+		assert.strictEqual(fs.mock_fs_modes.get('/test/.env'), 0o600);
+		assert.strictEqual(written_paths.length, 1);
+		assert.match(written_paths[0]!, /^\/test\/\.\.env\.tmp\.\d+\.\d+$/);
+		assert.deepStrictEqual([...fs.mock_fs.keys()], ['/test/.env']);
 	});
 });

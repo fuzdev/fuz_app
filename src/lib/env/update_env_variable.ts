@@ -9,20 +9,8 @@
  * @module
  */
 
-import { readFile, writeFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
-
-/**
- * Options for updating environment variables in a .env file.
- */
-export interface UpdateEnvVariableOptions {
-	/** Path to the .env file. */
-	env_file_path: string;
-	/** Function to read file contents (defaults to `node:fs/promises` `readFile`). */
-	read_file?: (path: string, encoding: string) => Promise<string>;
-	/** Function to write file contents (defaults to `node:fs/promises` `writeFile`). */
-	write_file?: (path: string, content: string, encoding: string) => Promise<void>;
-}
+import type { FsReadDeps, FsRemoveDeps, FsWriteDeps } from '../runtime/deps.ts';
+import { write_file_atomic } from '../runtime/fs.ts';
 
 /**
  * Set `key` to `value` in dotenv `content`, returning the new content.
@@ -83,39 +71,30 @@ export const update_env_content = (content: string, key: string, value: string):
 };
 
 /**
- * Updates or adds an environment variable in the .env file — read,
- * `update_env_content`, write.
+ * Updates or adds an environment variable in an env file — read,
+ * `update_env_content`, then an atomic replace at mode `0o600` (an env file
+ * holds secrets, so the fresh owner-only inode also tightens a permissive
+ * hand-made one). A missing file is created.
  *
- * @warning Not atomic; not safe for concurrent writers. Reads the file, mutates
- * in memory, then writes it back — a crash or concurrent write can corrupt
- * the file. Acceptable for single-user, infrequent edits; revisit if a
- * concurrent-writer consumer emerges.
+ * A read-modify-write: a concurrent writer's update can be lost (the last
+ * replace wins), though the file is never left half-written.
  *
+ * @param deps - file read and write capabilities; pass `remove` too for best-effort temp cleanup on a failed write
+ * @param env_path - path to the env file
  * @param key - the environment variable name (e.g., `'SOME_CONFIGURATION_KEY'`)
  * @param value - the new value for the environment variable
- * @param options - file path and optional read/write overrides
- * @mutates filesystem - writes the updated content back to `options.env_file_path`
- * @throws Error if the file read fails for any reason other than `ENOENT`, or if the write fails
+ * @mutates filesystem - atomically replaces `env_path` at mode `0o600`
+ * @throws Error if the read or the write fails
  */
 export const update_env_variable = async (
+	deps: FsReadDeps & FsWriteDeps & Partial<FsRemoveDeps>,
+	env_path: string,
 	key: string,
-	value: string,
-	options: UpdateEnvVariableOptions
+	value: string
 ): Promise<void> => {
-	const { env_file_path, read_file = readFile, write_file = writeFile } = options;
-
-	const file_path = resolve(env_file_path);
-	let content = '';
-
-	try {
-		content = await read_file(file_path, 'utf-8');
-	} catch (error: any) {
-		if (error?.code !== 'ENOENT') {
-			throw error;
-		}
-	}
-
-	await write_file(file_path, update_env_content(content, key, value), 'utf-8');
+	const stat = await deps.stat(env_path);
+	const content = stat ? await deps.read_text_file(env_path) : '';
+	await write_file_atomic(deps, env_path, update_env_content(content, key, value), { mode: 0o600 });
 };
 
 // Keep this tokenization aligned with `parse_dotenv` in `env/dotenv.ts`:

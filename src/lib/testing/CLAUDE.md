@@ -62,13 +62,6 @@ casts — the factory brands internally. Exported as `TestAccountOverrides` /
 - `create_test_validated_api_token(overrides?)` — a `ValidatedApiToken` (what `query_validate_api_token` returns) with a `full` scope; override `scope` to test a narrowed one.
 - `create_test_audit_event(overrides?)` — `{id: 'evt-test', event_type: 'login', outcome: 'success', …}`, for revocation-guard / audit tests.
 
-### `mock_fs.ts` — in-memory filesystem
-
-`create_mock_fs(initial_files?) => {read_file, write_file, get_file}`.
-Missing-path reads throw an `Error` with `.code = 'ENOENT'` so callers
-exercise the same branches as `node:fs`. DI-based filesystem tests only;
-never replaces `node:fs` globally.
-
 ### `db_entities.ts` — DB-backed entity factories
 
 `create_test_account_with_actor(db, {username, password_hash?})` wraps
