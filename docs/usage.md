@@ -1812,7 +1812,10 @@ cell-visibility check — and a server-level `location ^~` carrying the fact
 hardening headers, since the location's own `add_header` set replaces the
 server-level one. Render them into the location with
 `fact_security_header_directives` (`server/fact_security_headers.ts`);
-security.md §Fact Access Control has the rules and an example block. Env: `FUZ_FACTS_DIR`, `FUZ_FACTS_X_ACCEL_REDIRECT_PREFIX`.
+security.md §Fact Access Control has the rules and an example block. The fact
+directory and the redirect prefix are the app's own env vars (extend
+`BaseServerEnv`); the spine reads neither, so an app that sets a prefix builds
+the `XAccelConfig` from it at boot.
 
 ### Status
 

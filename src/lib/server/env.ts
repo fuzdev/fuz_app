@@ -17,10 +17,10 @@ import { format_allowed_origins_error, parse_allowed_origins } from '../http/ori
 /**
  * Base Zod schema for server environment variables.
  *
- * Provides the common fields used by fuz apps:
- * server config, database, auth, security, public URLs, and SMTP.
- *
- * Apps can use directly or extend with app-specific fields via `.extend()`.
+ * Declares only what the spine reads — server config, database, cookie keys,
+ * allowed origins, and the bootstrap token path — matching the Rust spine's
+ * `BaseServerEnv`. Anything else (fact storage, X-Accel delivery, public
+ * URLs) is the app's own var: extend with app-specific fields via `.extend()`.
  */
 export const BaseServerEnv = z.strictObject({
 	NODE_ENV: z.enum(['development', 'production']).meta({ description: 'Runtime environment mode' }),
@@ -43,38 +43,10 @@ export const BaseServerEnv = z.strictObject({
 	FUZ_ALLOWED_ORIGINS: z.string().min(1, 'FUZ_ALLOWED_ORIGINS is required').meta({
 		description: 'Comma-separated origin patterns for API verification'
 	}),
-	PUBLIC_FUZ_API_URL: z.string().default('/api').meta({ description: 'Public API base URL' }),
-	PUBLIC_FUZ_WEBSOCKET_URL: z.string().optional().meta({ description: 'Public WebSocket URL' }),
-	PUBLIC_FUZ_CONTACT_EMAIL: z
-		.union([z.email(), z.literal('')])
-		.optional()
-		.meta({ description: 'Public contact email address' }),
 	FUZ_BOOTSTRAP_TOKEN_PATH: z
 		.string()
 		.optional()
-		.meta({ description: 'Path to one-shot admin bootstrap token', sensitivity: 'secret' }),
-	SMTP_HOST: z.string().optional().meta({ description: 'SMTP server hostname' }),
-	// SMTP usernames are frequently not emails (SendGrid uses "apikey",
-	// AWS SES / Postmark use token-style credentials), so validate as a plain
-	// string — `z.email()` here would reject valid provider configs. Marked
-	// `secret`: those token-style usernames are credentials (Postmark reuses
-	// the server token as both user and password), so the value is masked in
-	// the startup summary / logs like `SMTP_PASSWORD`.
-	SMTP_USER: z
-		.string()
-		.optional()
-		.meta({ description: 'SMTP authentication username', sensitivity: 'secret' }),
-	SMTP_PASSWORD: z
-		.string()
-		.optional()
-		.meta({ description: 'SMTP authentication password', sensitivity: 'secret' }),
-	FUZ_FACTS_DIR: z.string().min(1).default('./.facts').meta({
-		description: 'Directory for referenced (large) fact bytes, sharded <shard>/<rest>'
-	}),
-	FUZ_FACTS_X_ACCEL_REDIRECT_PREFIX: z.string().optional().meta({
-		description:
-			'Internal nginx prefix for X-Accel-Redirect fact delivery, ending in `/` (production only)'
-	})
+		.meta({ description: 'Path to one-shot admin bootstrap token', sensitivity: 'secret' })
 });
 export type BaseServerEnv = z.infer<typeof BaseServerEnv>;
 

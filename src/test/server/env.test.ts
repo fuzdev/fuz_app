@@ -25,10 +25,32 @@ describe('BaseServerEnv', () => {
 		assert.strictEqual(result.NODE_ENV, 'development');
 		assert.strictEqual(result.PORT, 4040);
 		assert.strictEqual(result.HOST, 'localhost');
-		assert.strictEqual(result.PUBLIC_FUZ_API_URL, '/api');
 		assert.strictEqual(result.DATABASE_URL, 'memory://');
-		assert.strictEqual(result.PUBLIC_FUZ_WEBSOCKET_URL, undefined);
-		assert.strictEqual(result.SMTP_HOST, undefined);
+		assert.strictEqual(result.FUZ_BOOTSTRAP_TOKEN_PATH, undefined);
+	});
+
+	test('declares only the vars the spine reads (the Rust BaseServerEnv set)', () => {
+		assert.deepStrictEqual(Object.keys(BaseServerEnv.shape).sort(), [
+			'DATABASE_URL',
+			'FUZ_ALLOWED_ORIGINS',
+			'FUZ_BOOTSTRAP_TOKEN_PATH',
+			'HOST',
+			'NODE_ENV',
+			'PORT',
+			'SECRET_FUZ_COOKIE_KEYS'
+		]);
+	});
+
+	test('rejects app-owned vars the spine does not read (strict)', () => {
+		for (const name of [
+			'FUZ_FACTS_DIR',
+			'FUZ_FACTS_X_ACCEL_REDIRECT_PREFIX',
+			'PUBLIC_FUZ_API_URL',
+			'SMTP_HOST'
+		]) {
+			const result = BaseServerEnv.safeParse({ ...VALID_ENV, [name]: '/x/' });
+			assert.isFalse(result.success, name);
+		}
 	});
 
 	test('parses full env', () => {
@@ -37,19 +59,12 @@ describe('BaseServerEnv', () => {
 			PORT: '8080',
 			HOST: '0.0.0.0',
 			DATABASE_URL: 'https://example.com/db',
-			PUBLIC_FUZ_API_URL: '/api/v2',
-			PUBLIC_FUZ_WEBSOCKET_URL: 'wss://example.com',
-			PUBLIC_FUZ_CONTACT_EMAIL: 'test@example.com',
-			SMTP_HOST: 'smtp.example.com',
-			SMTP_USER: 'noreply@example.com',
-			SMTP_PASSWORD: 'secret'
+			FUZ_BOOTSTRAP_TOKEN_PATH: '/tmp/token'
 		});
 		assert.strictEqual(result.PORT, 8080);
 		assert.strictEqual(result.HOST, '0.0.0.0');
 		assert.strictEqual(result.DATABASE_URL, 'https://example.com/db');
-		assert.strictEqual(result.PUBLIC_FUZ_API_URL, '/api/v2');
-		assert.strictEqual(result.SMTP_HOST, 'smtp.example.com');
-		assert.strictEqual(result.SMTP_USER, 'noreply@example.com');
+		assert.strictEqual(result.FUZ_BOOTSTRAP_TOKEN_PATH, '/tmp/token');
 	});
 
 	test('coerces PORT from string to number', () => {
@@ -103,16 +118,6 @@ describe('BaseServerEnv', () => {
 		assert.isFalse(result.success);
 	});
 
-	test('allows empty string for PUBLIC_FUZ_CONTACT_EMAIL', () => {
-		const result = BaseServerEnv.parse({ ...VALID_ENV, PUBLIC_FUZ_CONTACT_EMAIL: '' });
-		assert.strictEqual(result.PUBLIC_FUZ_CONTACT_EMAIL, '');
-	});
-
-	test('allows empty string for SMTP_USER', () => {
-		const result = BaseServerEnv.parse({ ...VALID_ENV, SMTP_USER: '' });
-		assert.strictEqual(result.SMTP_USER, '');
-	});
-
 	test('is extensible via .extend()', () => {
 		const extended = BaseServerEnv.extend({
 			ADMIN_TOKEN: z.string().min(10)
@@ -124,7 +129,7 @@ describe('BaseServerEnv', () => {
 		assert.isTrue(result.success);
 	});
 
-	test('all 15 fields have .meta() with description', () => {
+	test('every field has .meta() with a description', () => {
 		for (const [name, field_schema] of Object.entries(BaseServerEnv.shape)) {
 			const meta = (field_schema as z.ZodType).meta() as { description?: string } | undefined;
 			assert.ok(meta, `${name} should have .meta()`);
@@ -132,7 +137,7 @@ describe('BaseServerEnv', () => {
 		}
 	});
 
-	test('5 fields have sensitivity: secret', () => {
+	test('the secret fields carry sensitivity: secret', () => {
 		const secret_fields: Array<string> = [];
 		for (const [name, field_schema] of Object.entries(BaseServerEnv.shape)) {
 			const meta = (field_schema as z.ZodType).meta() as SchemaFieldMeta | undefined;
@@ -143,9 +148,7 @@ describe('BaseServerEnv', () => {
 		assert.deepStrictEqual(secret_fields.sort(), [
 			'DATABASE_URL',
 			'FUZ_BOOTSTRAP_TOKEN_PATH',
-			'SECRET_FUZ_COOKIE_KEYS',
-			'SMTP_PASSWORD',
-			'SMTP_USER'
+			'SECRET_FUZ_COOKIE_KEYS'
 		]);
 	});
 
@@ -161,17 +164,18 @@ describe('BaseServerEnv', () => {
 });
 
 describe('env_schema_to_surface', () => {
-	test('returns 15 entries for BaseServerEnv', () => {
+	test('returns one entry per BaseServerEnv field', () => {
 		const entries = env_schema_to_surface(BaseServerEnv);
-		assert.strictEqual(entries.length, 15);
+		assert.deepStrictEqual(
+			entries.map((e) => e.name),
+			Object.keys(BaseServerEnv.shape)
+		);
 	});
 
 	test('optional fields detected correctly', () => {
 		const entries = env_schema_to_surface(BaseServerEnv);
 		const optional_names = entries.filter((e) => e.optional).map((e) => e.name);
 		assert.notInclude(optional_names, 'DATABASE_URL');
-		assert.include(optional_names, 'SMTP_HOST');
-		assert.include(optional_names, 'PUBLIC_FUZ_WEBSOCKET_URL');
 		assert.include(optional_names, 'FUZ_BOOTSTRAP_TOKEN_PATH');
 	});
 
@@ -180,7 +184,6 @@ describe('env_schema_to_surface', () => {
 		const default_names = entries.filter((e) => e.has_default).map((e) => e.name);
 		assert.include(default_names, 'PORT');
 		assert.include(default_names, 'HOST');
-		assert.include(default_names, 'PUBLIC_FUZ_API_URL');
 	});
 
 	test('required non-default fields detected correctly', () => {
@@ -204,7 +207,7 @@ describe('env_schema_to_surface', () => {
 		const entries = env_schema_to_surface(BaseServerEnv);
 		const secret_names = entries.filter((e) => e.sensitivity === 'secret').map((e) => e.name);
 		assert.include(secret_names, 'SECRET_FUZ_COOKIE_KEYS');
-		assert.include(secret_names, 'SMTP_PASSWORD');
+		assert.include(secret_names, 'DATABASE_URL');
 		const port_entry = entries.find((e) => e.name === 'PORT')!;
 		assert.strictEqual(port_entry.sensitivity, null);
 	});
