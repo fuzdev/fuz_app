@@ -614,7 +614,7 @@ persistence + rehydration by the consumer.
 A WebSocket and an SSE stream are authorized once, at open, so a revocation
 takes effect on an open connection only when something closes it.
 `ConnectionCloser` is that capability — the twin of the Rust spine's
-`SocketRevoker`:
+`ConnectionCloser`:
 
 ```ts
 interface ConnectionCloser {
@@ -638,8 +638,8 @@ every live connection of the backend at shutdown, and it has no
 `ConnectionCloseTarget` variant. It also leaves each member closing — the WS
 transport and `SubscriberRegistry` refuse every later registration (born
 closed) — so a closed transport or registry hosts nothing more. Its Rust
-counterpart is `ShutdownCloser::close_all_sockets`, a supertrait of
-`SocketRevoker`.
+counterpart is `ShutdownCloser::close_all_connections`, a supertrait of
+`ConnectionCloser`.
 
 **Every revocation closes after its commit.** A handler inside a route or
 action transaction never calls a closer inline: it calls
@@ -654,8 +654,8 @@ a `ConnectionCloseTarget` (`{kind: 'session', session_token_hash}` /
 handler with no wrapping transaction (`/login`, `/password`) opens its own
 around its writes and closes straight after that commit with
 `close_connections_after_commit(closer, target, log)`, which logs a failing
-close as the post-commit flush does. Twin of `queue_socket_close` /
-`SocketCloseTarget`.
+close as the post-commit flush does. Twin of `queue_connection_close` /
+`ConnectionCloseTarget`.
 
 The order is load-bearing for admission: a connection registers, then re-reads
 its credential, so a close that missed the registration must belong to a
@@ -678,7 +678,7 @@ adds each mounted WS transport and the audit stream registry itself (passing
 `connection_closer: null` to the mount functions so it holds the removers),
 registers the revocation guard on it, and removes them when its assembly fails
 or `AppServer.close` runs — after `close_all_sockets` across them all. Twin of
-`RealtimeRevoker`. A member that throws does not stop the fan-out — every
+`RealtimeCloser`. A member that throws does not stop the fan-out — every
 member is called, then the first error is thrown for the caller to log;
 `BackendWebsocketTransport` and `SubscriberRegistry.close_by_identity` treat a
 throwing socket or stream the same way. `noop_connection_closer` is a `ConnectionCloser` that closes
@@ -737,7 +737,7 @@ It dispatches on the `RevocationScope` each event declares in
 Only `outcome === 'success'` events act — a failure carries attacker-controlled
 identifiers, and an outcome outside the enum is no revocation. Reacting to them would let an authenticated caller close
 another user's connection by guessing a session hash or token id. Twin of the
-Rust spine's `register_socket_revocation_listeners`.
+Rust spine's `register_revocation_guard`.
 
 ## WebSocket endpoints
 

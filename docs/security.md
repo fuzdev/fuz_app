@@ -1044,8 +1044,8 @@ reply waiting behind it is discarded with the close, and the caller's request
 rejects on the `WS_CLOSE_SESSION_REVOKED` close as it does on the Rust spine
 ([Outbound Bounds](#outbound-bounds)).
 
-The Rust spine closes after commit at every site as well (`SocketRevoker`,
-`queue_socket_close`, `RealtimeRevoker`), and answers the self-revoking socket
+The Rust spine closes after commit at every site as well (`ConnectionCloser`,
+`queue_connection_close`, `RealtimeCloser`), and answers the self-revoking socket
 the same way: the dispatcher marks the request's reply owed before its
 post-commit drain closes the connection, and the socket loop writes that reply
 ahead of the close, within a short bounded wait (everything else queued is
@@ -2390,7 +2390,7 @@ is required and each intermediate proxy must be in `trusted_proxies`.
 All auth mutations _attempt_ a fire-and-forget audit write (never blocks or breaks
 auth flows). Delivery is **best-effort, not durable**: a failed insert is caught
 and logged, not retried — the mutation still succeeds and no audit row exists for
-that event. Listeners (the audit SSE stream, the socket-revocation listeners) are
+that event. Listeners (the audit SSE stream, the revocation guard) are
 notified only _after_ a successful insert — a failure row as soon as it is
 written, a success row once the request's transaction has committed — so an audit
 outage also suppresses the security reactions chained off it. Enforcement that

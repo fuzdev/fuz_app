@@ -49,9 +49,9 @@
  * stream, so it reaches every member — each WebSocket transport and the audit
  * stream registry — through the one fan-out.
  *
- * Twin of the Rust spine's `SocketRevoker`, `SocketCloseTarget`,
- * `queue_socket_close`, `RealtimeRevoker`, and
- * `register_socket_revocation_listeners`.
+ * Twin of the Rust spine's `ConnectionCloser`, `ConnectionCloseTarget`,
+ * `queue_connection_close`, `RealtimeCloser`, and
+ * `register_revocation_guard`.
  *
  * @module
  */
@@ -362,7 +362,7 @@ export type AuditEventHandler = (event: AuditLogEvent) => void;
  * hash or token id. Matching the success rather than skipping the failure keeps
  * an outcome outside the enum inert, as on the Rust spine.
  *
- * Twin of the Rust spine's `register_socket_revocation_listeners`.
+ * Twin of the Rust spine's `register_revocation_guard`.
  *
  * @param closer - what to close on — `deps.connection_closer`, the fan-out over
  *   every transport, which is what `create_app_server` registers it on

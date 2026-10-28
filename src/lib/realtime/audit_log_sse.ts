@@ -46,7 +46,7 @@ export const AUDIT_LOG_CHANNEL = 'audit_log';
  * per stream. `close_all_sockets` is `SubscriberRegistry.close_all` — every
  * stream, for shutdown.
  *
- * Twin of the Rust spine's `SocketRevoker` impl on `SseRegistry`.
+ * Twin of the Rust spine's `ConnectionCloser` impl on `SseRegistry`.
  *
  * @param registry - the registry to close streams on
  * @param required_role - the role every stream of `registry` was gated on,
