@@ -1680,7 +1680,10 @@ drives the whole round-trip and every outcome (success / `Timeout` / wrong-shape
 the inbound server-initiated request is answered as soon as it arrives; the
 security negatives use the raw `WsClient.send` to inject unsolicited /
 cross-connection frames. Cases: the positive round-trip plus
-unsolicited-response rejection, per-connection id isolation, never-reply
+unsolicited-response rejection, per-connection id isolation (a second
+socket's forged reply for the first's id, then a round-trip on the second
+socket as a barrier, so the first's timeout is asserted to come after the
+forged reply was read — never a deadline that ran out first), never-reply
 `Timeout`, wrong-shape rejection, an undeclared reply key accepted and dropped
 (both spines read the reply forward-compatibly), client-error forwarding, and
 the HTTP no-transport path. Gated on `capabilities.peer_request` — `true` on

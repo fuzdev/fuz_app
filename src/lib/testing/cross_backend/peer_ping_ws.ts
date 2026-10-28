@@ -67,6 +67,12 @@ const REASON_PEER_TIMEOUT = 'peer_timeout';
 const REASON_PEER_PING_INVALID_REPLY = 'peer_ping_invalid_reply';
 const REASON_PEER_NO_TRANSPORT = 'peer_no_transport';
 
+/**
+ * The server-side deadline of the per-connection isolation case — generous,
+ * so the forged reply and the barrier behind it land inside it under load.
+ */
+const ISOLATION_DEADLINE_MS = 5000;
+
 /** A reply payload that satisfies the Rust `PingResponse` shape. */
 const valid_reply = (nonce: number) => ({ nonce, protocol_version: 1 });
 
@@ -261,9 +267,23 @@ export const describe_peer_ping_ws_tests = (options: PeerPingWsTestOptions): voi
 				const ws_a = await open_ws(fixture);
 				const ws_b = await open_ws(fixture, echo_responder);
 				try {
-					// A invokes peer/ping with a short server-side deadline; don't
-					// await yet — observe the server→client request first.
-					const ping_promise = ping_raw(ws_a, 6, { nonce: 1, timeout_ms: 1200 });
+					// A invokes peer/ping; don't await yet — observe the
+					// server→client request first. The deadline is long enough
+					// that B's forged reply below is processed well inside it,
+					// so A's timeout can only come from isolation.
+					const ping_promise = ping_raw(ws_a, 6, {
+						nonce: 1,
+						timeout_ms: ISOLATION_DEADLINE_MS
+					});
+					let a_answered = false;
+					void ping_promise.then(
+						() => {
+							a_answered = true;
+						},
+						// a failure elsewhere closes the socket under this wait; that case's
+						// own error is the one to report
+						() => {}
+					);
 
 					// The server-initiated request A received (id "sN", nonce 1).
 					const inbound = await ws_a.wait_for(
@@ -279,10 +299,26 @@ export const describe_peer_ping_ws_tests = (options: PeerPingWsTestOptions): voi
 						id: inbound.id,
 						result: valid_reply(inbound.params.nonce)
 					});
+					// The barrier: a round-trip on B the server answers only after
+					// reading the forged reply ahead of it on the same socket, so
+					// once it lands the forged reply has been processed.
+					const barrier = await ws_b.request<{ nonce: number }>(
+						7,
+						PEER_PING_METHOD,
+						{ nonce: 7 },
+						8000
+					);
+					assert.strictEqual(barrier.nonce, 7);
+					const answered_before_barrier = a_answered;
 
 					const frame = await ping_promise;
 					assert.ok('error' in frame, "B's cross-connection reply must not resolve A's request");
 					assert.strictEqual(error_reason(frame), REASON_PEER_TIMEOUT);
+					assert.ok(
+						!answered_before_barrier,
+						`A's ${ISOLATION_DEADLINE_MS}ms deadline ran out before B's forged reply was ` +
+							'processed, so the timeout proves nothing about isolation'
+					);
 				} finally {
 					await ws_a.close();
 					await ws_b.close();
