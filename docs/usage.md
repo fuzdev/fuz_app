@@ -349,7 +349,7 @@ routes (bootstrap, RPC endpoints, surface) -> surface generation -> Hono app
 assembly (routes, then WS endpoints) -> `post_route_middleware` -> static
 serving -> the auth cleanup schedule when `auth_cleanup` is set (§Auth cleanup
 below). Migrations run earlier, in `create_app_backend`.
-Consumer migration namespaces must not appear in `reserved_migration_namespaces` (currently `['fuz_auth']`) — `create_app_backend` throws at startup if a consumer namespace collides.
+A consumer migration namespace must not bear a `reserved_migration_namespaces` name (`fuz_auth`, `fuz_cell`, `fuz_facts`) — `run_migrations` (so `create_app_backend` and every direct caller) throws a `namespace-reserved` `MigrationError` naming it, before touching the database. The spine's own `CELL_MIGRATION_NS` / `FACT_MIGRATION_NS` are admitted by identity (splice the imported objects, not copies); auth always runs first, so passing `auth_migration_ns` again is a no-op.
 
 Consumer-specific code (env loading, error formatting/exit, custom
 middleware) stays in the consumer. Body size limiting defaults to 1 MiB

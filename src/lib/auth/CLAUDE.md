@@ -577,8 +577,11 @@ in the HTTP RPC dispatcher (`actions/action_rpc.ts`), the WS dispatcher
 Schema migrations live in `auth/migrations.ts` — a frozen, append-only chain
 (`full_auth_schema` first, every later change its own appended entry) under
 the single reserved namespace `AUTH_MIGRATION_NAMESPACE = 'fuz_auth'`, each
-entry twinned byte-for-byte by name on the Rust spine. Consumer namespaces must avoid
-`reserved_migration_namespaces`. Runner contract, error vocabulary, and
+entry twinned byte-for-byte by name on the Rust spine. `db/migrate.ts`'s
+`reserved_migration_namespaces` lists the spine's names (`fuz_auth`, `fuz_cell`,
+`fuz_facts`); `run_migrations` and `baseline` refuse a namespace bearing one
+unless it is the spine's own object (`auth_migration_ns`, `CELL_MIGRATION_NS`,
+`FACT_MIGRATION_NS`, each built by `create_spine_migration_namespace`). Runner contract, error vocabulary, and
 operator recipes (rename, mark applied, reset, baseline) are in
 ../../../docs/migrations.md.
 

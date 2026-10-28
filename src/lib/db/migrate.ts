@@ -72,7 +72,9 @@ export interface Migration {
 /**
  * A named group of ordered migrations.
  *
- * Array index = position in the chain. Pre-stable: bodies, names, and
+ * A consumer builds one as a plain literal under a name of its own; the spine's
+ * namespaces (`reserved_migration_namespaces`) come from
+ * `create_spine_migration_namespace`. Array index = position in the chain. Pre-stable: bodies, names, and
  * positions can change between versions (consumers re-bootstrap on upgrade).
  */
 export interface MigrationNamespace {
@@ -94,6 +96,7 @@ export interface MigrationResult {
  * text is for operators, not control flow.
  */
 export type MigrationErrorKind =
+	| 'namespace-reserved'
 	| 'binary-older-than-db'
 	| 'name-divergence-at-N'
 	| 'migration-failed'
@@ -129,6 +132,78 @@ export class MigrationError extends Error {
 		this.unknown_names = context?.unknown_names;
 	}
 }
+
+/**
+ * Migration namespace names reserved by the spine: auth (`fuz_auth`), cells
+ * (`fuz_cell`), and facts (`fuz_facts`) — the Rust spine's
+ * `RESERVED_NAMESPACES`. Only a namespace built by
+ * `create_spine_migration_namespace` runs under one: `run_migrations` and
+ * `baseline` refuse any other `MigrationNamespace` bearing one of these names,
+ * so a consumer can't mint tracker rows that collide with a spine chain's.
+ * Typed as `ReadonlyArray<string>` (not a literal tuple) so `.includes()`
+ * accepts any namespace string without a cast.
+ */
+export const reserved_migration_namespaces: ReadonlyArray<string> = [
+	'fuz_auth',
+	'fuz_cell',
+	'fuz_facts'
+];
+
+/** The namespace objects the spine built, the only ones admitted under a reserved name. */
+const spine_migration_namespaces: WeakSet<MigrationNamespace> = new WeakSet();
+
+/**
+ * Build a spine module's own migration namespace (auth, cells, facts) — the
+ * one form `run_migrations` and `baseline` admit under a
+ * `reserved_migration_namespaces` name. Admission is by object identity, so
+ * consumers splice the exported object itself (`CELL_MIGRATION_NS`), never a
+ * copy; consumer code builds a plain `MigrationNamespace` literal instead.
+ *
+ * @param namespace - one of `reserved_migration_namespaces`
+ * @param migrations - the chain, in execution order
+ * @returns the namespace, registered as the spine's
+ * @throws Error when `namespace` is not a reserved name
+ */
+export const create_spine_migration_namespace = (
+	namespace: string,
+	migrations: Array<Migration>
+): MigrationNamespace => {
+	if (!reserved_migration_namespaces.includes(namespace)) {
+		throw new Error(
+			`migration namespace "${namespace}" is built as a spine namespace but is not a reserved spine name; build a plain MigrationNamespace instead`
+		);
+	}
+	const ns: MigrationNamespace = { namespace, migrations };
+	spine_migration_namespaces.add(ns);
+	return ns;
+};
+
+/**
+ * Refuse a namespace bearing a `reserved_migration_namespaces` name unless the
+ * spine built it (`create_spine_migration_namespace`). `run_migrations` and
+ * `baseline` run this before touching the database; a server assembly can
+ * call it to refuse a bad chain earlier.
+ *
+ * @param namespaces - the chain to check
+ * @throws MigrationError with `kind` `namespace-reserved`, naming the first offending namespace
+ */
+export const assert_migration_namespaces = (
+	namespaces: ReadonlyArray<MigrationNamespace>
+): void => {
+	for (const ns of namespaces) {
+		if (
+			reserved_migration_namespaces.includes(ns.namespace) &&
+			!spine_migration_namespaces.has(ns)
+		) {
+			throw new MigrationError(
+				'namespace-reserved',
+				`migration namespace "${ns.namespace}" is reserved for the spine; a consumer namespace must choose a different name. ` +
+					`Hint: to run the spine's own chain, pass its exported namespace object, not a copy.`,
+				{ namespace: ns.namespace }
+			);
+		}
+	}
+};
 
 const SCHEMA_VERSION_DDL = `
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -212,13 +287,15 @@ const with_namespace_lock = async <T>(
  * @returns one result per namespace where work happened (already-up-to-date
  *   namespaces are omitted)
  * @mutates schema_version - inserts one row per applied migration
- * @throws MigrationError with `kind` of `binary-older-than-db`,
- *   `name-divergence-at-N`, or `migration-failed`
+ * @throws MigrationError with `kind` of `namespace-reserved` (before touching
+ *   the database), `binary-older-than-db`, `name-divergence-at-N`, or
+ *   `migration-failed`
  */
 export const run_migrations = async (
 	db: Db,
 	namespaces: Array<MigrationNamespace>
 ): Promise<Array<MigrationResult>> => {
+	assert_migration_namespaces(namespaces);
 	await db.query(SCHEMA_VERSION_DDL);
 
 	const results: Array<MigrationResult> = [];
@@ -331,14 +408,16 @@ export const run_migrations = async (
  * @param names - prefix of `ns.migrations[].name` to record as already-applied
  * @mutates schema_version - inserts tracker rows for `names` without running
  *   the corresponding migration bodies
- * @throws MigrationError with `kind` of `baseline-name-not-in-code`,
- *   `baseline-name-out-of-order`, or `baseline-namespace-already-populated`
+ * @throws MigrationError with `kind` of `namespace-reserved` (before touching
+ *   the database), `baseline-name-not-in-code`, `baseline-name-out-of-order`,
+ *   or `baseline-namespace-already-populated`
  */
 export const baseline = async (
 	db: Db,
 	ns: MigrationNamespace,
 	names: ReadonlyArray<string>
 ): Promise<void> => {
+	assert_migration_namespaces([ns]);
 	await db.query(SCHEMA_VERSION_DDL);
 
 	const code_names = ns.migrations.map((m) => m.name);

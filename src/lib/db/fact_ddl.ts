@@ -30,7 +30,11 @@
  */
 
 import type { Db } from './db.ts';
-import type { Migration, MigrationNamespace } from './migrate.ts';
+import {
+	create_spine_migration_namespace,
+	type Migration,
+	type MigrationNamespace
+} from './migrate.ts';
 
 /** `fact` table — content-addressed byte store. */
 export const FACTS_SCHEMA = `
@@ -117,8 +121,11 @@ export const FACT_MIGRATIONS: Array<Migration> = [
 /** Namespace identifier for fact + memo migrations. */
 export const FACT_MIGRATION_NAMESPACE = 'fuz_facts';
 
-/** Migration namespace consumed by `run_migrations`. */
-export const FACT_MIGRATION_NS: MigrationNamespace = {
-	namespace: FACT_MIGRATION_NAMESPACE,
-	migrations: FACT_MIGRATIONS
-};
+/**
+ * Migration namespace consumed by `run_migrations` — the spine's own, so splice
+ * this object itself (a copy is refused under the reserved name).
+ */
+export const FACT_MIGRATION_NS: MigrationNamespace = create_spine_migration_namespace(
+	FACT_MIGRATION_NAMESPACE,
+	FACT_MIGRATIONS
+);

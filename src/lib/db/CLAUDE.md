@@ -25,7 +25,11 @@ the code.
   `PGLET_COERCION` is pglet's half of the same convention, which every pglet
   instance fuz_app creates is given.
 - `migrate.ts` — advisory-lock migration runner (`run_migrations`,
-  `baseline`), `Migration` / `MigrationNamespace` / `MigrationError`.
+  `baseline`), `Migration` / `MigrationNamespace` / `MigrationError`, and the
+  reserved spine names (`reserved_migration_namespaces`): both runners refuse
+  a namespace under one unless `create_spine_migration_namespace` built it —
+  admission by object identity, so this module owns the names without
+  importing the auth, cell, or fact chains.
 - `query_deps.ts` — `QueryDeps = {db}`, the first param to every `query_*`.
 - `assert_row.ts` — `assert_row(row, context)` for INSERT … RETURNING.
 - `pg_error.ts` — `pg_error_code` (SQLSTATE extractor for `pg`/PGlite/pglet errors), `is_pg_unique_violation` (Postgres `23505`).

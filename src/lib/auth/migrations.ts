@@ -76,19 +76,14 @@ import {
 	ROLE_GRANT_OFFER_SCOPE_KIND_GLOBAL_TOKEN
 } from './role_grant_offer_ddl.ts';
 import type { Db } from '../db/db.ts';
-import type { Migration, MigrationNamespace } from '../db/migrate.ts';
+import {
+	create_spine_migration_namespace,
+	type Migration,
+	type MigrationNamespace
+} from '../db/migrate.ts';
 
 /** Namespace identifier for fuz_app auth migrations. */
 export const AUTH_MIGRATION_NAMESPACE = 'fuz_auth';
-
-/**
- * Migration namespaces reserved by fuz_app. Consumers passing
- * `migration_namespaces` to `create_app_backend` must choose a name not in
- * this list — the runtime check rejects matches with a thrown error. Typed
- * as `ReadonlyArray<string>` (not a literal tuple) so `.includes()` accepts
- * any consumer-supplied namespace string without a cast.
- */
-export const reserved_migration_namespaces: ReadonlyArray<string> = [AUTH_MIGRATION_NAMESPACE];
 
 /**
  * Auth schema migrations in order.
@@ -314,8 +309,11 @@ export const auth_migrations: Array<Migration> = [
 	}
 ];
 
-/** Pre-composed migration namespace for auth tables. */
-export const auth_migration_ns: MigrationNamespace = {
-	namespace: AUTH_MIGRATION_NAMESPACE,
-	migrations: auth_migrations
-};
+/**
+ * Pre-composed migration namespace for auth tables — the spine's own (see
+ * `create_spine_migration_namespace`).
+ */
+export const auth_migration_ns: MigrationNamespace = create_spine_migration_namespace(
+	AUTH_MIGRATION_NAMESPACE,
+	auth_migrations
+);

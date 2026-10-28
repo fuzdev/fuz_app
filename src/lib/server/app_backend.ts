@@ -20,7 +20,7 @@ import type { DbType, Db } from '../db/db.ts';
 import type { Keyring } from '../auth/keyring.ts';
 import type { PasswordHashDeps } from '../auth/password.ts';
 import { run_migrations, type MigrationNamespace, type MigrationResult } from '../db/migrate.ts';
-import { auth_migration_ns, reserved_migration_namespaces } from '../auth/migrations.ts';
+import { auth_migration_ns } from '../auth/migrations.ts';
 import { create_db } from '../db/create_db.ts';
 
 /**
@@ -140,8 +140,11 @@ export interface CreateAppBackendOptions {
 	 * (`namespace`, `name`, `sequence`); order is append-only so forward-only
 	 * guarantees hold per-namespace.
 	 *
-	 * Names in `reserved_migration_namespaces` (currently `['fuz_auth']`) are
-	 * rejected at startup. Omit for no extra namespaces. This is the only
+	 * A name in `reserved_migration_namespaces` is rejected at startup
+	 * (`run_migrations` refuses it before touching the database) unless the
+	 * entry is the spine's own `CELL_MIGRATION_NS` / `FACT_MIGRATION_NS`
+	 * object; auth always runs first, so it is never passed here.
+	 * Omit for no extra namespaces. This is the only
 	 * place to splice consumer migrations — DB init belongs to the backend
 	 * lifecycle, not server assembly.
 	 */
@@ -158,29 +161,19 @@ export interface CreateAppBackendOptions {
  *
  * @param options - keyring, password deps, `audit_factory`, optional database URL, and optional `migration_namespaces`
  * @returns app backend with deps, database metadata, and combined migration results
- * @throws Error if `migration_namespaces` contains a namespace in `reserved_migration_namespaces`
+ * @throws MigrationError `namespace-reserved` if a `migration_namespaces` entry bears a `reserved_migration_namespaces` name and is not the spine's own namespace
  */
 export const create_app_backend = async (options: CreateAppBackendOptions): Promise<AppBackend> => {
 	const { database_url, keyring, password, read_secure_file, delete_file, audit_factory } = options;
 	const log = options.log ?? new Logger('server');
 	const { db, close, db_type, db_name } = await create_db(database_url);
-	// Everything after `create_db` can throw — reserved-namespace check,
-	// `run_migrations` (seven MigrationError kinds), `audit_factory`.
+	// Everything after `create_db` can throw — `run_migrations` (its
+	// `MigrationError` kinds include the reserved-namespace refusal),
+	// `audit_factory`.
 	// Without this guard the pool leaks because `close` is only returned
 	// on the success path. Cleanup errors are logged and swallowed so the
 	// caller sees the original failure, not a teardown-shaped one.
 	try {
-		if (options.migration_namespaces?.length) {
-			for (const ns of options.migration_namespaces) {
-				if (reserved_migration_namespaces.includes(ns.namespace)) {
-					throw new Error(
-						`Migration namespace "${
-							ns.namespace
-						}" is reserved by fuz_app — choose a different namespace`
-					);
-				}
-			}
-		}
 		const migration_results = await run_migrations(db, [
 			auth_migration_ns,
 			...(options.migration_namespaces ?? [])

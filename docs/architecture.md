@@ -169,8 +169,9 @@ the result array.
 
 **`MigrationError`** is the only error class thrown from
 `run_migrations` and `baseline`. Branch on `.kind`, never on message
-text. Kinds: `binary-older-than-db`, `name-divergence-at-N`,
-`migration-failed`, `baseline-name-not-in-code`,
+text. Kinds: `namespace-reserved` (a consumer namespace under a reserved
+spine name, refused before touching the database), `binary-older-than-db`,
+`name-divergence-at-N`, `migration-failed`, `baseline-name-not-in-code`,
 `baseline-name-out-of-order`, `baseline-namespace-already-populated`.
 Structured context fields (`namespace`, `at_index`, `unknown_names`)
 accompany each kind.

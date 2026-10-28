@@ -36,7 +36,11 @@
  */
 
 import type { Db } from './db.ts';
-import type { Migration, MigrationNamespace } from './migrate.ts';
+import {
+	create_spine_migration_namespace,
+	type Migration,
+	type MigrationNamespace
+} from './migrate.ts';
 
 /**
  * `cell_visibility` enum — access-control axis for a cell. Lives as a
@@ -299,8 +303,11 @@ export const CELL_MIGRATIONS: Array<Migration> = [
 /** Namespace identifier for cell migrations. */
 export const CELL_MIGRATION_NAMESPACE = 'fuz_cell';
 
-/** Migration namespace consumed by `run_migrations`. */
-export const CELL_MIGRATION_NS: MigrationNamespace = {
-	namespace: CELL_MIGRATION_NAMESPACE,
-	migrations: CELL_MIGRATIONS
-};
+/**
+ * Migration namespace consumed by `run_migrations` — the spine's own, so splice
+ * this object itself (a copy is refused under the reserved name).
+ */
+export const CELL_MIGRATION_NS: MigrationNamespace = create_spine_migration_namespace(
+	CELL_MIGRATION_NAMESPACE,
+	CELL_MIGRATIONS
+);

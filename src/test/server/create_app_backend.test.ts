@@ -14,6 +14,8 @@ import { create_app_server, type AppServerOptions } from '#lib/server/app_server
 import { create_app_backend, type AppBackend, type AuditFactory } from '#lib/server/app_backend.ts';
 import { create_loopback_app_server_options, stub_password_deps } from '#lib/testing/app_server.ts';
 import { AUTH_MIGRATION_NAMESPACE } from '#lib/auth/migrations.ts';
+import { CELL_MIGRATION_NAMESPACE, CELL_MIGRATION_NS } from '#lib/db/cell_ddl.ts';
+import { FACT_MIGRATION_NAMESPACE, FACT_MIGRATION_NS } from '#lib/db/fact_ddl.ts';
 import type { MigrationNamespace } from '#lib/db/migrate.ts';
 import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
 import { create_test_keyring } from '../auth/session_test_helpers.ts';
@@ -194,8 +196,67 @@ describe('create_app_backend', () => {
 						audit_factory: test_audit_factory,
 						migration_namespaces: [{ namespace: AUTH_MIGRATION_NAMESPACE, migrations: [] }]
 					}),
-				/reserved by fuz_app/
+				/reserved for the spine/
 			);
+		}
+	);
+
+	for (const ns of [CELL_MIGRATION_NS, FACT_MIGRATION_NS]) {
+		test(
+			`migration_namespaces rejects a copy of the reserved '${ns.namespace}' namespace`,
+			{ timeout: 15_000 },
+			async () => {
+				await assert_rejects(
+					() =>
+						create_app_backend({
+							database_url: 'memory://',
+							keyring,
+							password: stub_password_deps,
+							...fs_stubs,
+							audit_factory: test_audit_factory,
+							migration_namespaces: [{ namespace: ns.namespace, migrations: [] }]
+						}),
+					new RegExp(`"${ns.namespace}" is reserved for the spine`)
+				);
+				// a spread copy of the spine's own namespace is still a different object
+				await assert_rejects(
+					() =>
+						create_app_backend({
+							database_url: 'memory://',
+							keyring,
+							password: stub_password_deps,
+							...fs_stubs,
+							audit_factory: test_audit_factory,
+							migration_namespaces: [{ ...ns }]
+						}),
+					/reserved for the spine/
+				);
+			}
+		);
+	}
+
+	test(
+		'migration_namespaces admits the spine cell and fact namespaces by identity',
+		{ timeout: 15_000 },
+		async () => {
+			const backend = await create_app_backend({
+				database_url: 'memory://',
+				keyring,
+				password: stub_password_deps,
+				...fs_stubs,
+				audit_factory: test_audit_factory,
+				migration_namespaces: [CELL_MIGRATION_NS, FACT_MIGRATION_NS]
+			});
+			try {
+				const namespaces = backend.migration_results.map((r) => r.namespace);
+				assert.deepStrictEqual(namespaces, [
+					AUTH_MIGRATION_NAMESPACE,
+					CELL_MIGRATION_NAMESPACE,
+					FACT_MIGRATION_NAMESPACE
+				]);
+			} finally {
+				await backend.close();
+			}
 		}
 	);
 
@@ -305,7 +366,7 @@ describe('create_app_backend', () => {
 						},
 						migration_namespaces: [{ namespace: AUTH_MIGRATION_NAMESPACE, migrations: [] }]
 					}),
-				/reserved by fuz_app/
+				/reserved for the spine/
 			);
 			assert.strictEqual(called, false, 'audit_factory must not run when validation rejects');
 		}
