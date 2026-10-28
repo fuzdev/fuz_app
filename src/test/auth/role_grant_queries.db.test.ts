@@ -1187,4 +1187,30 @@ describe_db('RoleGrantQueries', (get_db) => {
 			k.account_id
 		);
 	});
+
+	test('a scoped keeper grant does not resolve the keeper account', async () => {
+		const db = get_db();
+		const deps = { db };
+		const scoped = await create_test_actor(db, 'scoped_keeper');
+		await query_create_role_grant(deps, {
+			actor_id: scoped.actor_id,
+			role: ROLE_KEEPER,
+			scope_kind: 'class',
+			scope_id: create_uuid(),
+			granted_by: null
+		});
+		assert.strictEqual(await query_role_grant_find_account_id_for_role(deps, ROLE_KEEPER), null);
+
+		// Control: the global keeper resolves even with the scoped row present.
+		const keeper = await create_test_actor(db, 'global_keeper');
+		await query_create_role_grant(deps, {
+			actor_id: keeper.actor_id,
+			role: ROLE_KEEPER,
+			granted_by: null
+		});
+		assert.strictEqual(
+			await query_role_grant_find_account_id_for_role(deps, ROLE_KEEPER),
+			keeper.account_id
+		);
+	});
 });

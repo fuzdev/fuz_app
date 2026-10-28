@@ -493,7 +493,11 @@ export const query_role_grant_list_for_actor = async (
 };
 
 /**
- * Find the account ID of an account that holds an active role_grant for a given role.
+ * Find the account ID of an account that holds an active **global** role_grant
+ * for a given role.
+ *
+ * Global-only (`scope_id IS NULL`), like every builtin read: a scoped row of
+ * the role confers nothing, so it must not resolve the keeper identity.
  *
  * Joins role_grant → actor → account, counting only an **active account + active
  * actor** (`deleted_at IS NULL` on both). This *resolves* an identity (the
@@ -517,6 +521,7 @@ export const query_role_grant_find_account_id_for_role = async (
 		 JOIN actor act ON act.id = p.actor_id
 		 JOIN account a ON a.id = act.account_id
 		 WHERE p.role = $1
+		   AND p.scope_id IS NULL
 		   AND a.deleted_at IS NULL
 		   AND act.deleted_at IS NULL
 		   AND p.revoked_at IS NULL
