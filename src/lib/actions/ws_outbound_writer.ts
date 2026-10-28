@@ -97,8 +97,8 @@ export const WS_WRITE_STALL_TIMEOUT = 10_000;
 
 /**
  * How long a close frame may stay unwritten before the socket is cut without
- * it (module doc, "Deadlines"). Same value as the Rust spine's bound on the
- * same write.
+ * it (module doc, "Deadlines"). Twin of the Rust spine's
+ * `WS_CLOSE_WRITE_TIMEOUT`, the same value.
  */
 export const WS_CLOSE_WRITE_TIMEOUT = 1_000;
 

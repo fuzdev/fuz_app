@@ -30,14 +30,15 @@ import { is_jsonrpc_error_response } from '../http/jsonrpc_helpers.ts';
 
 /**
  * Default deadline (ms) for a server→client peer request before it resolves
- * `timeout`. Twin of the Rust spine's `DEFAULT_PEER_TIMEOUT`.
+ * `timeout`. Twin of the Rust spine's `DEFAULT_PEER_REQUEST_TIMEOUT`.
  */
 export const DEFAULT_PEER_REQUEST_TIMEOUT = 10_000;
 
 /**
  * Per-connection cap on concurrent in-flight server→client requests. A caller
  * past it gets `too_many_in_flight` instead of growing the pending map
- * unbounded. Twin of the Rust spine's `DEFAULT_MAX_OUTBOUND_PEER_REQUESTS_PER_CONN`.
+ * unbounded. Twin of the Rust spine's
+ * `DEFAULT_MAX_IN_FLIGHT_PEER_REQUESTS_PER_CONNECTION`.
  */
 export const DEFAULT_MAX_IN_FLIGHT_PEER_REQUESTS_PER_CONNECTION = 256;
 

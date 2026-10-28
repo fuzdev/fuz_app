@@ -280,7 +280,7 @@ export const PRE_ADMISSION_QUEUE_BYTES_FACTOR = 4;
  * work — at once. Shedding rather than queueing keeps the socket reading, so a
  * reply to a server-initiated request still reaches the handler awaiting it.
  * Generous, so ordinary pipelining never meets it. Same value as the Rust
- * spine's `MAX_INBOUND_DISPATCHES_PER_CONN`.
+ * spine's `MAX_INBOUND_DISPATCHES_PER_CONNECTION`.
  *
  * Counted are the requests that passed envelope validation and are not yet
  * answered — the entries of the socket's cancellation map. Notifications,
