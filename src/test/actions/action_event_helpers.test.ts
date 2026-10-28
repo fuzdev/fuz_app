@@ -11,16 +11,9 @@ import { JSONRPC_INTERNAL_ERROR } from '#lib/http/jsonrpc.ts';
 import type { ActionEventData, ActionEventDataUnion } from '#lib/actions/action_event_data.ts';
 import {
 	is_request_response,
-	is_remote_notification,
-	is_local_call,
 	is_send_request,
 	is_notification_send,
-	is_initial,
-	is_parsed,
-	is_handled,
-	is_failed,
 	validate_step_transition,
-	validate_phase_for_kind,
 	validate_phase_transition,
 	get_initial_phase,
 	should_validate_output,
@@ -36,19 +29,11 @@ describe('kind type guards', () => {
 	test('is_request_response', () => {
 		const data = create_initial_data('request_response', 'send_request', 'test', 'frontend', null);
 		assert.ok(is_request_response(data));
-		assert.ok(!is_remote_notification(data));
-		assert.ok(!is_local_call(data));
-	});
-
-	test('is_remote_notification', () => {
-		const data = create_initial_data('remote_notification', 'send', 'test', 'backend', null);
-		assert.ok(is_remote_notification(data));
-		assert.ok(!is_request_response(data));
-	});
-
-	test('is_local_call', () => {
-		const data = create_initial_data('local_call', 'execute', 'test', 'frontend', null);
-		assert.ok(is_local_call(data));
+		assert.ok(
+			!is_request_response(
+				create_initial_data('remote_notification', 'send', 'test', 'backend', null)
+			)
+		);
 	});
 });
 
@@ -61,16 +46,6 @@ describe('phase type guards', () => {
 	test('is_notification_send', () => {
 		const data = create_initial_data('remote_notification', 'send', 'test', 'backend', null);
 		assert.ok(is_notification_send(data));
-	});
-});
-
-describe('step type guards', () => {
-	test('is_initial for initial data', () => {
-		const data = create_initial_data('request_response', 'send_request', 'test', 'frontend', null);
-		assert.ok(is_initial(data));
-		assert.ok(!is_parsed(data));
-		assert.ok(!is_handled(data));
-		assert.ok(!is_failed(data));
 	});
 });
 
@@ -89,16 +64,6 @@ describe('validate_step_transition', () => {
 
 	test('rejects handled → anything', () => {
 		assert.throws(() => validate_step_transition('handled', 'failed'), /Invalid step transition/);
-	});
-});
-
-describe('validate_phase_for_kind', () => {
-	test('allows send_request for request_response', () => {
-		assert.doesNotThrow(() => validate_phase_for_kind('request_response', 'send_request'));
-	});
-
-	test('rejects execute for request_response', () => {
-		assert.throws(() => validate_phase_for_kind('request_response', 'execute'), /Invalid phase/);
 	});
 });
 

@@ -1507,7 +1507,7 @@ capabilities}` protocol every Tier 1 suite uses, so **one case array runs
   (400 `actor_required`), and per-frame dispatch resolves each frame's
   `acting` on both. The leg always sends `?acting=`, so it does not cover that
   upgrade refusal; the front-door table's multi-actor row does. The frame is the envelope the HTTP
-  body is (`perform_action_result_to_envelope` on TS), so the response reads
+  body is (`serialize_action_result` on TS), so the response reads
   `{status, headers: {}, body: frame}` with `status` the code's
   `jsonrpc_error_code_to_http_status` (200 for a result) and every row holds
   unchanged. What WS loses is headers — the TS DEV-only `X-Fuz-Auth-Debug`

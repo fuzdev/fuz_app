@@ -126,25 +126,20 @@ and options on each function's TSDoc.
 - `get_executor_phases(spec, executor)` — phases an executor participates in for the spec.
 - `get_handler_return_type` — TS type a phase handler must return; side-effect imports `ActionOutputs`.
 - `generate_phase_handlers` — per-action typed handler-map fragment.
-- `generate_actions_api_method_signature` — single source of truth for the typed `FrontendActionsApi` method shape. Its `input?:` follows `action_input_is_optional` — the schema accepts `undefined`, or accepts `{}` and is not marked `.meta({empty_input_handler_guarded: true})` (`SchemaFieldMeta`, read by `is_empty_input_handler_guarded` in `schema_meta.ts` — set on `cell_get`, `cell_field_list` and `cell_item_list`, whose `{}` reaches a handler guard that refuses it with a declared reason, so their input stays required; a consumer marks its own the same way); an input-shape invariant test reads the same rule.
+- `generate_frontend_actions_api` — typed `FrontendActionsApi` interface. Each method's `input?:` follows `action_input_is_optional` — the schema accepts `undefined`, or accepts `{}` and is not marked `.meta({empty_input_handler_guarded: true})` (`SchemaFieldMeta`, read by `is_empty_input_handler_guarded` in `schema_meta.ts` — set on `cell_get`, `cell_field_list` and `cell_item_list`, whose `{}` reaches a handler guard that refuses it with a declared reason, so their input stays required; a consumer marks its own the same way); an input-shape invariant test reads the same rule.
 - `generate_action_method_enums` — up to nine `z.enum` + `z.infer` pairs.
-- `generate_action_method_enum_block` — lower-level escape hatch for cross-product enums.
 - `generate_typed_action_event_alias` — fixed-shape `TypedActionEvent<TMethod, TPhase, TStep>` alias.
 - `generate_action_specs_record` — `ActionSpecs` runtime const + interface + `action_specs` array.
 - `generate_action_inputs_outputs` — `ActionInputs` + `ActionOutputs` runtime consts + interfaces.
 - `generate_action_event_datas` — `ActionEventDatas` interface; per-spec variants.
-- `generate_frontend_actions_api` — typed `FrontendActionsApi` interface.
 - `generate_frontend_action_handlers` — `FrontendActionHandlers` interface (Tier 2 only).
 - `generate_backend_actions_api` — `BackendActionsApi` interface + `broadcast_action_specs` array.
-- `generate_backend_action_handlers_map` — `BackendActionHandlers` mapped type.
 - `compose_gen_file` — wrapper: banner + `imports.build()` + blocks join.
 - `create_namespace_qualifier(sources, imports)` — multi-source consumer helper; registers `import * as ns` per source.
 
-Shared defaults: `DEFAULT_COLLECTIONS_PATH = './action_collections.ts'`,
-`DEFAULT_SPECS_MODULE = './action_specs.ts'`,
-`DEFAULT_METATYPES_PATH = './action_metatypes.ts'`,
-`resolve_spec_qualifier` (the default-vs-callback resolver every
-multi-source-aware helper uses).
+Shared defaults: `collections_path` is `'./action_collections.ts'`,
+`specs_module` is `'./action_specs.ts'`, and `metatypes_path` is
+`'./action_metatypes.ts'`.
 
 ### Codegen invariants
 
@@ -1056,7 +1051,7 @@ high-level shapes that span modules:
 
 - **39-variant discriminated union** — `ActionEventDataUnion<TMethod, TInput, TOutput>` across `kind` + `phase` + `step` (28 for `request_response`, 6 for `remote_notification`, 5 for `local_call`). Narrows `input` / `output` / `error` / `request` / `response` / `notification` / `progress` at each lifecycle point.
 - **Step transitions** — `initial → parsed | failed`, `parsed → handling | failed`, `handling → handled | failed`, `handled`/`failed` terminal. `validate_step_transition(from, to)` throws on illegal moves.
-- **Phase transitions** — chained: `send_request → receive_response`, `receive_request → send_response`; everything else terminal. `validate_phase_for_kind` + `validate_phase_transition` enforce.
+- **Phase transitions** — chained: `send_request → receive_response`, `receive_request → send_response`; everything else terminal. `validate_phase_transition` enforces.
 - **`ActionEvent.parse()`** — `initial → parsed` via `spec.input.safeParse`. Input validation failures **fail immediately** without routing through an error phase (client-side programming errors, not runtime conditions with handlers); their `invalid_params` `data` is `{validation_errors, reason?}`, `reason` the declared `invalid_reason` the server would answer. Handler errors DO route through `send_error` / `receive_error`. On `receive_response` with error response, transitions to `receive_error` instead of failing; a success response's `result` is validated against `spec.output` (always, not DEV-only — it's inbound data; undeclared keys are dropped rather than refused, so an older client survives an added response field) and `output` becomes the parsed value, or the event moves to `receive_error` with an `internal_error` carrying `data: {reason: ERROR_RESPONSE_OUTPUT_INVALID, validation_errors}` — a remote contract break, deliberately distinct from the `invalid_params` / `validation_error` of bad caller input.
 - **Handler throws** — `ThrownJsonrpcError` keeps code/message/data; any other throw becomes `internal_error` carrying the thrown message. When the error answers a remote caller (`receive_request` / `send_response`), the raw message goes through `dev_only` like the server dispatch core.
 - **Protocol message creation is automatic** — transitioning `parsed → handling` on `send_request` materializes the outgoing `JsonrpcRequest` with a fresh `create_uuid()` id; on `send` (notification) it materializes the `JsonrpcNotification`.

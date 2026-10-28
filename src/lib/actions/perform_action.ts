@@ -540,7 +540,7 @@ const check_action_auth_post_authorization = (
  * Build a JSON-RPC response envelope from a `PerformActionResult` for
  * transports that wire over the JSON-RPC 2.0 message shape (HTTP RPC + WS).
  */
-export const perform_action_result_to_envelope = (
+const perform_action_result_to_envelope = (
 	id: JsonrpcRequestId,
 	result: PerformActionResult
 ): JsonrpcResponse | JsonrpcErrorResponse =>

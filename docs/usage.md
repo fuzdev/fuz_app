@@ -716,7 +716,7 @@ Action specs are declared at module scope with `satisfies` and
 `{method}_action_spec` naming. This preserves the literal `method` type,
 makes the spec importable without running any factory, drops the
 need for separate `*_METHOD` constants, and lines up with the
-`to_action_spec_identifier()` convention used by codegen.
+identifier codegen derives from each method (`specs.{method}_action_spec`).
 
 ```typescript
 import type { RequestResponseActionSpec } from '@fuzdev/fuz_app/actions/action_spec.ts';
@@ -1067,69 +1067,74 @@ pattern applies to both HTTP RPC and WebSocket handlers.
 ## Typed Client Codegen
 
 Consumers that hand-write `src/lib/action_specs.ts` (a Zod-backed spec
-array) generate a companion `frontend_action_types.gen.ts` that produces
-the typed surface `create_rpc_client` consumes. Under `gro gen`, the
-`.gen.ts` generator emits a sibling `frontend_action_types.ts` — the
-committed artifact consumers import from. Canonical output:
+array) generate the typed surface `create_rpc_client` consumes from it. Under
+`gro gen`, each `.gen.ts` generator emits a sibling `.ts` — the committed
+artifact consumers import from. Canonical output:
 
-- **`ActionInputs`** / **`ActionOutputs`** — method→`z.infer<typeof spec.input|output>` maps
-- **`FrontendActionsApi`** — typed interface with `(input, options?) => Promise<Result<...>>` signatures
+- **`ActionInputs`** / **`ActionOutputs`** — method→`z.infer<typeof spec.input|output>` maps (`action_collections.ts`)
+- **`FrontendActionsApi`** — typed interface with `(input, options?) => Promise<Result<...>>` signatures (`action_metatypes.ts`)
 
 ```typescript
-// frontend_action_types.gen.ts
+// action_collections.gen.ts
 import type { Gen } from '@fuzdev/gro/gen.ts';
-import { ActionRegistry } from '@fuzdev/fuz_app/actions/action_registry.ts';
 import {
 	ImportBuilder,
-	create_banner,
-	generate_actions_api_method_signature,
-	to_action_spec_input_identifier,
-	to_action_spec_output_identifier
+	compose_gen_file,
+	generate_action_inputs_outputs,
+	generate_action_specs_record
 } from '@fuzdev/fuz_app/actions/action_codegen.ts';
 import { all_my_action_specs } from './action_specs.ts';
 
 export const gen: Gen = ({ origin_path }) => {
-	const registry = new ActionRegistry(all_my_action_specs);
 	const imports = new ImportBuilder();
-	imports.add('zod', 'z');
-	imports.add_type('@fuzdev/fuz_util/result.ts', 'Result');
-	imports.add_type('@fuzdev/fuz_app/http/jsonrpc.ts', 'JsonrpcErrorObject');
-	imports.add_type('@fuzdev/fuz_app/actions/rpc_client.ts', 'RpcClientCallOptions');
-	imports.add('./action_specs.js', '* as specs');
-
-	const inputs = registry.specs
-		.map((s) => `${s.method}: z.infer<typeof specs.${to_action_spec_input_identifier(s.method)}>`)
-		.join(';\n\t');
-	const outputs = registry.specs
-		.map((s) => `${s.method}: z.infer<typeof specs.${to_action_spec_output_identifier(s.method)}>`)
-		.join(';\n\t');
-	const api = registry.specs.map(generate_actions_api_method_signature).join('\n\t');
-
-	return `// ${create_banner(origin_path)}
-${imports.build()}
-export interface ActionInputs { ${inputs}; }
-export interface ActionOutputs { ${outputs}; }
-export interface FrontendActionsApi { ${api} }
-`;
+	return compose_gen_file({
+		origin_path,
+		imports,
+		blocks: [
+			generate_action_specs_record(all_my_action_specs, imports),
+			generate_action_inputs_outputs(all_my_action_specs, imports)
+		]
+	});
 };
 ```
 
-`generate_actions_api_method_signature` is the single source of truth
-for the per-method signature shape. It threads `options?:
+```typescript
+// action_metatypes.gen.ts
+import type { Gen } from '@fuzdev/gro/gen.ts';
+import {
+	ImportBuilder,
+	compose_gen_file,
+	generate_action_method_enums,
+	generate_frontend_actions_api
+} from '@fuzdev/fuz_app/actions/action_codegen.ts';
+import { all_my_action_specs } from './action_specs.ts';
+
+export const gen: Gen = ({ origin_path }) => {
+	const imports = new ImportBuilder();
+	return compose_gen_file({
+		origin_path,
+		imports,
+		blocks: [
+			generate_action_method_enums(all_my_action_specs, imports),
+			generate_frontend_actions_api(all_my_action_specs, imports)
+		]
+	});
+};
+```
+
+`generate_frontend_actions_api` is the single source of truth for the
+per-method signature shape. It threads `options?:
 RpcClientCallOptions` (`{signal?, transport_name?, queue?}`) onto every
 async method — that's how `{signal}` reaches
 `FrontendWebsocketClient.request` via the typed Proxy, and how per-call
-transport selection and durable-queue opt-outs flow through. Older
-inline templates calling `get_innermost_type_name` directly pre-date
-this helper and drop the options arg; regenerate onto the helper to
-close the gap.
+transport selection and durable-queue opt-outs flow through.
 
 Wire the generated surface into `create_rpc_client`:
 
 ```typescript
 import { create_rpc_client } from '@fuzdev/fuz_app/actions/rpc_client.ts';
 import { ActionDispatcher } from '@fuzdev/fuz_app/actions/action_dispatcher.ts';
-import type { FrontendActionsApi } from './frontend_action_types.ts';
+import type { FrontendActionsApi } from './action_metatypes.ts';
 
 const peer = new ActionDispatcher({ environment, transports });
 const api_result = create_rpc_client<FrontendActionsApi>({ peer, environment });
@@ -1153,7 +1158,7 @@ transport so call sites pick per-site at zero construction cost:
 ```typescript
 import { create_frontend_rpc_client } from '@fuzdev/fuz_app/actions/frontend_rpc_client.ts';
 import { all_standard_action_specs } from '@fuzdev/fuz_app/auth/standard_action_specs.ts';
-import type { FrontendActionsApi } from './frontend_action_types.ts';
+import type { FrontendActionsApi } from './action_metatypes.ts';
 
 const { api, api_result } = create_frontend_rpc_client<FrontendActionsApi>({
 	specs: all_standard_action_specs
@@ -1214,13 +1219,14 @@ or attach a notification handler registry.
 
 **Extending the baseline with phase-typed handlers.** Consumers building
 event-phase-aware UIs (observable `ActionEvent` transitions, phase-typed
-handler slots) add two more generators alongside the baseline: an
-`action_collections.gen.ts` that emits an `ActionEventDatas` map
-(method→typed-data union), and a `frontend_action_types.gen.ts` that
-wraps `generate_phase_handlers` from the same helper module and narrows
-`ActionEvent` via that map. zzz is the reference. Skip this tier unless
-the UI consumes the `ActionEvent` state machine directly — the baseline
-generator above is enough for typed `app.api.X(input, options?)` calls.
+handler slots) add `generate_action_event_datas` to
+`action_collections.gen.ts`, which emits an `ActionEventDatas` map
+(method→typed-data union), and a `frontend_action_types.gen.ts` that calls
+`generate_typed_action_event_alias` and `generate_frontend_action_handlers`
+(which wraps `generate_phase_handlers`) to narrow `ActionEvent` via that map.
+zzz is the reference. Skip this tier unless the UI consumes the
+`ActionEvent` state machine directly — the baseline generators above are
+enough for typed `app.api.X(input, options?)` calls.
 
 ## Client-authoritative vs server-authoritative dispatch
 
@@ -1261,7 +1267,7 @@ await app.api.move(input, { queue: false });
 ```
 
 The typed Proxy method signature (generated by
-`generate_actions_api_method_signature`) threads `queue` alongside
+`generate_frontend_actions_api`) threads `queue` alongside
 `signal` / `transport_name` in `RpcClientCallOptions`. The flag bottoms
 out in `FrontendWebsocketTransport`; `FrontendHttpTransport` and the
 backend connection registry ignore it because their underlying sends don't have
