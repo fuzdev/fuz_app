@@ -114,7 +114,7 @@ export interface RoleGrant {
  *
  * Server-side this is belt-and-suspenders: every `role_grant` a request
  * context holds came through `query_role_grant_find_active_for_actor`, whose
- * `revoked_at IS NULL AND (expires_at IS NULL OR expires_at > NOW())` is the
+ * `role_grant_active_sql` predicate (`auth/role_grant_sql.ts`) is the
  * authoritative gate on both spines (the Rust twin's in-memory
  * `RoleGrantRow` carries no timestamps at all and re-checks nothing).
  *

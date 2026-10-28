@@ -16,11 +16,11 @@
  * ## Auth filtering — `scope_ids`
  *
  * When `scope_ids` is non-empty, the result is filtered to actors
- * holding an **active** role_grant on one of the supplied scopes. Active
- * means `revoked_at IS NULL AND (expires_at IS NULL OR expires_at > NOW())`.
- * Stale (revoked / expired) role_grants do **not** confer membership for
- * search-visibility purposes — otherwise a removed student would
- * remain visible to teachers indefinitely.
+ * holding an **active** role_grant on one of the supplied scopes — active
+ * as `role_grant_active_sql` (`auth/role_grant_sql.ts`) defines it. Stale
+ * (revoked / expired) role_grants do **not** confer membership for
+ * search-visibility purposes — otherwise a removed student would remain
+ * visible to teachers indefinitely.
  *
  * The `DISTINCT` on `actor.id` collapses the case where an actor holds
  * multiple matching role_grants in the supplied scope set into one row.
@@ -59,6 +59,7 @@ import type { Uuid } from '../primitive_schemas.ts';
 
 import type { QueryDeps } from '../db/query_deps.ts';
 import type { ActorLookupRow } from './actor_lookup_queries.ts';
+import { role_grant_active_sql } from './role_grant_sql.ts';
 
 /** Inputs for `query_actor_search`. */
 export interface ActorSearchQueryInput {
@@ -118,8 +119,7 @@ export const query_actor_search = async (
 		 JOIN account a ON a.id = act.account_id
 		 JOIN role_grant rg ON rg.actor_id = act.id
 		   AND rg.scope_id = ANY($2)
-		   AND rg.revoked_at IS NULL
-		   AND (rg.expires_at IS NULL OR rg.expires_at > NOW())
+		   AND ${role_grant_active_sql('rg')}
 		 WHERE act.deleted_at IS NULL
 		   AND a.deleted_at IS NULL
 		   AND LOWER(act.name) LIKE $1 || '%' ESCAPE '\\'

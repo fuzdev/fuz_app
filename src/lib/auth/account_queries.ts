@@ -26,6 +26,7 @@ import {
 } from './account_schema.ts';
 import { ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT } from './admin_action_specs.ts';
 import { ROLE_GRANT_COLUMNS } from './role_grant_queries.ts';
+import { offer_pending_predicate, role_grant_active_sql } from './role_grant_sql.ts';
 
 /**
  * The full `account` column set, named explicitly so a row read fails loud
@@ -576,8 +577,7 @@ export const query_admin_account_list = async (
 			`SELECT ${columns_sql(ADMIN_ROLE_GRANT_COLUMNS, admin_role_grant_expr)}
 			 FROM role_grant
 			 WHERE actor_id IN (SELECT id FROM actor WHERE account_id = ANY($1::uuid[]))
-			   AND revoked_at IS NULL
-			   AND (expires_at IS NULL OR expires_at > NOW())
+			   AND ${role_grant_active_sql('')}
 			 ORDER BY role_grant.created_at, role_grant.role, role_grant.scope_id, role_grant.id`,
 			[account_ids]
 		),
@@ -590,10 +590,7 @@ export const query_admin_account_list = async (
 			 JOIN actor act ON act.id = po.from_actor_id
 			 JOIN account a ON a.id = act.account_id
 			 WHERE po.to_account_id = ANY($1::uuid[])
-			   AND po.accepted_at IS NULL
-			   AND po.declined_at IS NULL
-			   AND po.retracted_at IS NULL
-			   AND po.superseded_at IS NULL
+			   AND ${offer_pending_predicate('po')}
 			   AND po.expires_at > NOW()
 			 ORDER BY po.expires_at ASC, po.role ASC, po.scope_id ASC, po.id ASC`,
 			[account_ids]

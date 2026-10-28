@@ -20,6 +20,7 @@ import {
 	ROLE_GRANT_OFFER_WITH_GRANTOR_SELECT
 } from './role_grant_offer_ddl.ts';
 import type { SupersededOffer } from './role_grant_offer_schema.ts';
+import { offer_pending_predicate, role_grant_active_sql } from './role_grant_sql.ts';
 
 /**
  * The full `role_grant` column set, named explicitly so a row read fails loud
@@ -264,10 +265,7 @@ export const query_revoke_role_grant = async (
 			  AND o.to_account_id = a.account_id
 			  AND o.role = $2
 			  AND o.scope_id IS NOT DISTINCT FROM $3
-			  AND o.accepted_at IS NULL
-			  AND o.declined_at IS NULL
-			  AND o.retracted_at IS NULL
-			  AND o.superseded_at IS NULL
+			  AND ${offer_pending_predicate('o')}
 			-- raw columns; the outer grantor select formats them
 			RETURNING ${qualify_columns(ROLE_GRANT_OFFER_COLUMNS, 'o')}
 		)
@@ -293,8 +291,7 @@ export const query_role_grant_find_active_for_actor = async (
 	return deps.db.query<RoleGrant>(
 		`SELECT ${columns_sql(ROLE_GRANT_COLUMNS, role_grant_expr)} FROM role_grant
 		 WHERE actor_id = $1
-		   AND revoked_at IS NULL
-		   AND (expires_at IS NULL OR expires_at > NOW())
+		   AND ${role_grant_active_sql('')}
 		 ORDER BY role_grant.created_at`,
 		[actor_id]
 	);
@@ -337,8 +334,7 @@ export const query_account_has_global_role = async (
 			WHERE actor_id IN (SELECT id FROM actor WHERE account_id = $1)
 			  AND role = $2
 			  AND scope_id IS NULL
-			  AND revoked_at IS NULL
-			  AND (expires_at IS NULL OR expires_at > NOW())
+			  AND ${role_grant_active_sql('')}
 		 ) AS exists`,
 		[account_id, role]
 	);
@@ -380,8 +376,7 @@ export const query_account_has_active_global_role = async (
 			  AND act.deleted_at IS NULL
 			  AND rg.role = $2
 			  AND rg.scope_id IS NULL
-			  AND rg.revoked_at IS NULL
-			  AND (rg.expires_at IS NULL OR rg.expires_at > NOW())
+			  AND ${role_grant_active_sql('rg')}
 		 ) AS exists`,
 		[account_id, role]
 	);
@@ -436,8 +431,7 @@ export const query_count_active_accounts_with_global_role_for_update = async (
 		   AND act.deleted_at IS NULL
 		   AND rg.role = $1
 		   AND rg.scope_id IS NULL
-		   AND rg.revoked_at IS NULL
-		   AND (rg.expires_at IS NULL OR rg.expires_at > NOW())
+		   AND ${role_grant_active_sql('rg')}
 		 FOR UPDATE`,
 		[role]
 	);
@@ -480,8 +474,7 @@ export const query_role_grant_find_account_id_for_role = async (
 		   AND p.scope_id IS NULL
 		   AND a.deleted_at IS NULL
 		   AND act.deleted_at IS NULL
-		   AND p.revoked_at IS NULL
-		   AND (p.expires_at IS NULL OR p.expires_at > NOW())
+		   AND ${role_grant_active_sql('p')}
 		 ORDER BY a.id ASC
 		 LIMIT 1`,
 		[role]
@@ -585,10 +578,7 @@ export const query_role_grant_revoke_for_scope = async (
 			UPDATE role_grant_offer o
 			SET superseded_at = NOW()
 			WHERE o.scope_id = $1
-			  AND o.accepted_at IS NULL
-			  AND o.declined_at IS NULL
-			  AND o.retracted_at IS NULL
-			  AND o.superseded_at IS NULL
+			  AND ${offer_pending_predicate('o')}
 			-- raw columns; the outer grantor select formats them
 			RETURNING ${qualify_columns(ROLE_GRANT_OFFER_COLUMNS, 'o')}
 		)
