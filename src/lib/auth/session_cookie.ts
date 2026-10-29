@@ -72,12 +72,15 @@ export const session_cookie_options: SessionCookieOptions = {
  *   requiring no server-side session state. Simpler, but individual sessions
  *   can only be invalidated by rotating the signing key (which invalidates all sessions).
  *
+ * The cookie helpers here take either. The spine's session middleware and
+ * auth chain take `SessionOptions<string>` — the identity is the session token
+ * the session leg hashes to find its `auth_session` row (`create_session_config`).
+ *
  * @example
  * ```ts
  * // zap: 3-part format (admin:session_id)
  * const zap_config: SessionOptions<string> = {
  *   cookie_name: 'zap_session',
- *   context_key: 'auth_session_id',
  *   encode_identity: (session_id) => `admin:${session_id}`,
  *   decode_identity: (payload) => {
  *     const parts = payload.split(':');
@@ -89,7 +92,6 @@ export const session_cookie_options: SessionCookieOptions = {
  * // visiones: 1-part format (account_id)
  * const visiones_config: SessionOptions<number> = {
  *   cookie_name: 'session_id',
- *   context_key: 'auth_session_id',
  *   encode_identity: (id) => String(id),
  *   decode_identity: (payload) => {
  *     const n = parseInt(payload, 10);
@@ -100,8 +102,6 @@ export const session_cookie_options: SessionCookieOptions = {
  */
 export interface SessionOptions<TIdentity> {
 	cookie_name: string;
-	/** Hono context variable name for the identity. */
-	context_key: string;
 	/**
 	 * Cookie lifetime in seconds. Single source of truth for both the embedded
 	 * `expires_at` (via `create_session_cookie_value`) and the cookie's HTTP
@@ -232,7 +232,6 @@ export interface ProcessSessionResult<TIdentity> {
  */
 export const create_session_config = (cookie_name: string): SessionOptions<string> => ({
 	cookie_name,
-	context_key: 'auth_session_id',
 	encode_identity: (session_id) => session_id,
 	decode_identity: (payload) => payload || null
 });

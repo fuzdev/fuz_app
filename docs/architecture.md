@@ -34,15 +34,16 @@ infrastructure that any domain could use stays in `http/` or `db/`.
 ## Session System
 
 Sessions are parameterized on identity type via `SessionOptions<TIdentity>`. Apps
-provide `encode_identity`, `decode_identity`, and `context_key` — the library
-handles signing, expiration, key rotation, and setting the identity on the Hono context.
+provide `encode_identity` and `decode_identity` — the library handles signing,
+expiration, and key rotation.
 
 Cookie value format: `${encode(identity)}:${expires_at}` signed with HMAC-SHA256.
 
-`context_key` is required on `SessionOptions` — it controls the Hono context variable
-name where the identity is stored. `create_session_config()` sets it to
-`'auth_session_id'`. The middleware always sets the identity (null when invalid/missing)
-for type-safe reads.
+The session middleware (`create_session_middleware`, a `SessionOptions<string>`)
+sets the session token on the Hono context under `SESSION_TOKEN_KEY`
+(`'auth_session_id'`, null when invalid/missing), the key the auth chain's session
+leg reads. The key is fixed: the middleware and the leg must agree on it, and no
+other context variable may share it.
 
 ### String Identity (Standard)
 
@@ -57,13 +58,14 @@ const my_session_config = create_session_config('my_session');
 
 ### Custom Identity Types
 
-For apps that need a different identity format, construct `SessionOptions<T>` directly:
+For a different identity format, construct `SessionOptions<T>` directly and use the
+cookie helpers (`create_session_cookie_value`, `process_session_cookie`). The spine's
+session middleware and auth chain take a string identity only — the session token:
 
 ```typescript
 // Number identity — cookie encodes account_id directly (no server-side session state)
 const my_config: SessionOptions<number> = {
 	cookie_name: 'my_session',
-	context_key: 'auth_session_id',
 	encode_identity: (id) => String(id),
 	decode_identity: (payload) => {
 		const n = parseInt(payload, 10);

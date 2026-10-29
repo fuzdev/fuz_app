@@ -74,7 +74,7 @@ import { parse_acting, type RouteAuth } from '../http/auth_shape.ts';
 import { get_client_ip } from '../http/client_ip.ts';
 import type { EffectErrorContext } from '../http/pending_effects.ts';
 import type { RateLimiter } from '../rate_limiter.ts';
-import { TEST_CONTEXT_PRESET_KEY } from '../hono_context.ts';
+import { has_test_context_preset } from '../hono_context.ts';
 import type { Db } from '../db/db.ts';
 import { type Action } from './action_types.ts';
 import { compile_action_registry } from './compile_action_registry.ts';
@@ -498,11 +498,8 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 			// `RequestContext` skip the live authorization phase. It skips the
 			// admission re-read for the same reason: a pre-baked credential has
 			// no session, token, or account row to re-read.
-			const upgrade_preset: { request_context: RequestContext | null } | undefined = c.get(
-				TEST_CONTEXT_PRESET_KEY
-			)
-				? { request_context: get_request_context(c) }
-				: undefined;
+			const upgrade_preset: { request_context: RequestContext | null } | undefined =
+				has_test_context_preset(c) ? { request_context: get_request_context(c) } : undefined;
 
 			// Captured at upgrade and passed per message, its scope consulted
 			// there. Rule 3 rejects a narrowed token at the upgrade's guards

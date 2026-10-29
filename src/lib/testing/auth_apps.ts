@@ -27,7 +27,11 @@ import {
 	create_fuz_authorization_handler,
 	type RequestContext
 } from '../auth/request_context.ts';
-import { RESOLVED_AUTH_KEY, TEST_CONTEXT_PRESET_KEY } from '../hono_context.ts';
+import {
+	RESOLVED_AUTH_KEY,
+	TEST_CONTEXT_PRESET,
+	TEST_CONTEXT_PRESET_KEY
+} from '../hono_context.ts';
 import { create_test_resolved_auth } from './resolved_auth.ts';
 import { create_stub_db } from './stubs.ts';
 import { create_test_account, create_test_actor, create_test_role_grant } from './entities.ts';
@@ -67,7 +71,7 @@ export const create_test_app_from_specs = (
 				})
 			);
 			c.set(REQUEST_CONTEXT_KEY, auth_ctx);
-			c.set(TEST_CONTEXT_PRESET_KEY, true);
+			c.set(TEST_CONTEXT_PRESET_KEY, TEST_CONTEXT_PRESET);
 		}
 		await next();
 	});

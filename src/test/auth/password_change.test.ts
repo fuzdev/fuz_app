@@ -14,7 +14,11 @@ import { Hono } from 'hono';
 import { RateLimiter } from '#lib/rate_limiter.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
 import { REQUEST_CONTEXT_KEY, type RequestContext } from '#lib/auth/request_context.ts';
-import { RESOLVED_AUTH_KEY, TEST_CONTEXT_PRESET_KEY } from '#lib/hono_context.ts';
+import {
+	RESOLVED_AUTH_KEY,
+	TEST_CONTEXT_PRESET,
+	TEST_CONTEXT_PRESET_KEY
+} from '#lib/hono_context.ts';
 import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
 import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import { apply_route_specs } from '#lib/http/route_spec.ts';
@@ -216,7 +220,7 @@ const create_password_change_app = (
 			create_test_resolved_auth({ credential_type: 'session', account_id: fake_ctx.account.id })
 		);
 		c.set(REQUEST_CONTEXT_KEY, fake_ctx);
-		c.set(TEST_CONTEXT_PRESET_KEY, true);
+		c.set(TEST_CONTEXT_PRESET_KEY, TEST_CONTEXT_PRESET);
 		await next();
 	});
 

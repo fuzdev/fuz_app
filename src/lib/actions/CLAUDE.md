@@ -197,7 +197,7 @@ Shim responsibilities (per-request):
 1. Parse envelope (POST body / GET query string); parse errors → `parse_error` 400. GET reads `method` / `id` / `params` via Hono's `c.req.query()` — first occurrence wins on a duplicated key, unknown keys are ignored, and an empty value counts as missing. This is the cross-impl contract (the Rust GET dispatch mirrors it via `fuz_http`'s `query_first`, including the id numeric-vs-string normalization), pinned by the `query_shape` cross suite.
 2. Lookup method in the `compile_action_registry`-built map; unknown → `method_not_found`.
 3. GET read restriction — GET rejected for `side_effects: true` actions. Every response the GET handler writes, its refusals included, carries `Cache-Control: no-store` (`RPC_GET_CACHE_CONTROL`; a pre-handler middleware refusal, like the origin 403, does not): a read answers one caller at one moment.
-4. Build `PerformActionInput` from `get_resolved_auth(c)` + `get_client_ip` + `c.req.raw.signal`. Test-preset escape hatch reads `TEST_CONTEXT_PRESET_KEY` + `REQUEST_CONTEXT_KEY`.
+4. Build `PerformActionInput` from `get_resolved_auth(c)` + `get_client_ip` + `c.req.raw.signal`. Test-preset escape hatch reads `has_test_context_preset(c)` + `REQUEST_CONTEXT_KEY`.
 5. Call `perform_action` (shared core).
 6. Bind result via `serialize_action_result(id, result, method, log)` (`actions/perform_action.ts`, shared with WS) → `{body, status}`, written with `c.json`'s content type.
 

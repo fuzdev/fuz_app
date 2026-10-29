@@ -38,7 +38,11 @@ import {
 	format_allowed_origins_error
 } from '../http/origin.ts';
 import { REQUEST_CONTEXT_KEY, type RequestContext } from '../auth/request_context.ts';
-import { RESOLVED_AUTH_KEY, TEST_CONTEXT_PRESET_KEY } from '../hono_context.ts';
+import {
+	RESOLVED_AUTH_KEY,
+	TEST_CONTEXT_PRESET,
+	TEST_CONTEXT_PRESET_KEY
+} from '../hono_context.ts';
 import { get_resolved_auth } from '../auth/resolved_auth.ts';
 import type { TokenScope } from '../auth/token_scope.ts';
 import { create_test_resolved_auth } from './resolved_auth.ts';
@@ -216,7 +220,7 @@ export const create_bearer_auth_test_app = (
 				})
 			);
 			c.set(REQUEST_CONTEXT_KEY, pre_context);
-			c.set(TEST_CONTEXT_PRESET_KEY, true);
+			c.set(TEST_CONTEXT_PRESET_KEY, TEST_CONTEXT_PRESET);
 			await next();
 		});
 	}

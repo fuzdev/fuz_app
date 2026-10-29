@@ -25,7 +25,7 @@ import { type RouteContext, type RouteSpec } from '../http/route_spec.ts';
 import { get_client_ip } from '../http/client_ip.ts';
 import { get_request_context } from '../auth/request_context.ts';
 import { get_resolved_auth } from '../auth/resolved_auth.ts';
-import { TEST_CONTEXT_PRESET_KEY } from '../hono_context.ts';
+import { has_test_context_preset } from '../hono_context.ts';
 import { compile_action_registry } from './compile_action_registry.ts';
 import type { JsonrpcRequestId } from '../http/jsonrpc.ts';
 import {
@@ -185,10 +185,10 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 		};
 
 		// Test escape hatch: harnesses pre-populate `REQUEST_CONTEXT_KEY` and
-		// flag `TEST_CONTEXT_PRESET_KEY = true`. Production middleware never
+		// set `TEST_CONTEXT_PRESET_KEY` to `TEST_CONTEXT_PRESET`. Production middleware never
 		// sets the flag; the shim honors it and `perform_action` trusts the
 		// pre-baked context instead of running the live authorization phase.
-		const preset = c.get(TEST_CONTEXT_PRESET_KEY)
+		const preset = has_test_context_preset(c)
 			? { request_context: get_request_context(c) }
 			: undefined;
 

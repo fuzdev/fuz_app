@@ -22,7 +22,11 @@ import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
 import { REQUEST_CONTEXT_KEY, type RequestContext } from '#lib/auth/request_context.ts';
 import { audit_metadata_schemas } from '#lib/auth/audit_log_schema.ts';
 import { create_test_context } from '#lib/testing/entities.ts';
-import { RESOLVED_AUTH_KEY, TEST_CONTEXT_PRESET_KEY } from '#lib/hono_context.ts';
+import {
+	RESOLVED_AUTH_KEY,
+	TEST_CONTEXT_PRESET,
+	TEST_CONTEXT_PRESET_KEY
+} from '#lib/hono_context.ts';
 import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
 import type { Db } from '#lib/db/db.ts';
 import { pg_error_code } from '#lib/db/pg_error.ts';
@@ -91,7 +95,7 @@ const create_test_app = (specs: Array<RouteSpec>, app_db: Db = db) => {
 			})
 		);
 		c.set(REQUEST_CONTEXT_KEY, keeper_ctx);
-		c.set(TEST_CONTEXT_PRESET_KEY, true);
+		c.set(TEST_CONTEXT_PRESET_KEY, TEST_CONTEXT_PRESET);
 		// the queues + post-commit flush the app server provides — the DELETE
 		// route defers its audit emission via `emit_after_commit`, so the
 		// recording emitter observes it only when the flush runs (i.e. only

@@ -54,9 +54,10 @@ import {
 import { query_role_grant_find_active_for_actor } from './role_grant_queries.ts';
 import type { QueryDeps } from '../db/query_deps.ts';
 import {
+	has_test_context_preset,
 	RESOLVED_AUTH_KEY,
 	SESSION_COOKIE_EXPIRES_AT_KEY,
-	TEST_CONTEXT_PRESET_KEY
+	SESSION_TOKEN_KEY
 } from '../hono_context.ts';
 import { credential_deadline_after } from './credential_deadline.ts';
 import { get_resolved_auth, resolved_auth_scope } from './resolved_auth.ts';
@@ -278,12 +279,6 @@ export const resolve_acting_actor = async (
 /** Options for `create_request_context_middleware`. */
 export interface RequestContextMiddlewareOptions {
 	/**
-	 * The Hono context key where session middleware stored the session token.
-	 *
-	 * @default 'auth_session_id'
-	 */
-	session_context_key?: string;
-	/**
 	 * Whether this leg starts the credential chain, clearing `RESOLVED_AUTH_KEY`
 	 * on entry so a layer mounted before the legs cannot pre-set an identity
 	 * that every leg would skip past. `false` only when an earlier credential
@@ -307,7 +302,8 @@ export interface RequestContextMiddlewareOptions {
  *
  * When it starts the chain (`starts_chain`, the default) it first clears
  * `RESOLVED_AUTH_KEY`. It then skips when an earlier leg (the daemon token)
- * already resolved the request. Otherwise reads the session identity (set by session middleware), looks up
+ * already resolved the request. Otherwise reads the session token the session middleware set
+ * (`SESSION_TOKEN_KEY`), looks up
  * the `auth_session`, and on a valid session sets the `session` arm of
  * `ResolvedAuth` (`RESOLVED_AUTH_KEY`): the account, the session hash, and the
  * credential deadline — the earlier of the cookie's signed expiry
@@ -321,14 +317,14 @@ export interface RequestContextMiddlewareOptions {
  * `require_role` enforce.
  *
  * @param deps - query dependencies (pool-level db for middleware)
- * @param options - the session token's context key, whether this leg starts the chain, and the logger for a start that clears a credential
+ * @param options - whether this leg starts the chain, and the logger for a start that clears a credential
  * @mutates Hono context - resets `REQUEST_CONTEXT_KEY` (and `RESOLVED_AUTH_KEY` when it starts the chain), then on a valid session (and no credential already resolved) sets `RESOLVED_AUTH_KEY`
  */
 export const create_request_context_middleware = (
 	deps: QueryDeps,
 	options: RequestContextMiddlewareOptions = {}
 ): MiddlewareHandler => {
-	const { session_context_key = 'auth_session_id', starts_chain = true, log } = options;
+	const { starts_chain = true, log } = options;
 	return async (c, next): Promise<Response | void> => {
 		c.set(REQUEST_CONTEXT_KEY, null);
 		if (starts_chain) {
@@ -346,7 +342,7 @@ export const create_request_context_middleware = (
 			return;
 		}
 
-		const session_token: string | null = c.get(session_context_key) ?? null;
+		const session_token = c.get(SESSION_TOKEN_KEY) ?? null;
 		if (!session_token) {
 			await next();
 			return;
@@ -786,8 +782,8 @@ export const apply_authorization_phase = async (
  * directly instead.
  *
  * Skipped for a public `auth` shape, and under the test-preset escape hatch:
- * harnesses that pre-populate `REQUEST_CONTEXT_KEY` flag
- * `TEST_CONTEXT_PRESET_KEY = true` so the phase trusts the supplied context
+ * harnesses that pre-populate `REQUEST_CONTEXT_KEY` set
+ * `TEST_CONTEXT_PRESET_KEY` to `TEST_CONTEXT_PRESET` so the phase trusts the supplied context
  * instead of running DB-backed resolution. Production middleware never sets
  * that flag.
  *
@@ -804,7 +800,7 @@ export const run_authorization_phase = async (
 	auth: RouteAuth,
 	acting: string | undefined
 ): Promise<Response | void> => {
-	if (c.get(TEST_CONTEXT_PRESET_KEY)) return;
+	if (has_test_context_preset(c)) return;
 	if (is_public_auth(auth)) return;
 	const account_id = get_resolved_auth(c)?.account_id ?? null;
 	const result = await apply_authorization_phase(deps, account_id, auth, acting);
@@ -841,7 +837,7 @@ export const create_fuz_authorization_handler = (
 ): ((c: Context, spec: RouteSpec) => Promise<Response | void>) => {
 	return async (c, spec) => {
 		// the same skips `run_authorization_phase` makes, ahead of reading a body
-		if (c.get(TEST_CONTEXT_PRESET_KEY) || is_public_auth(spec.auth)) return;
+		if (has_test_context_preset(c) || is_public_auth(spec.auth)) return;
 		const acting_value = needs_actor(spec.auth) ? await read_route_acting(c, spec) : undefined;
 		return run_authorization_phase(c, deps, spec.auth, acting_value);
 	};

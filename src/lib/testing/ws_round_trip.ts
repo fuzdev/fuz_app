@@ -56,7 +56,11 @@ import { register_action_ws, type RegisterActionWsOptions } from '../actions/reg
 import { create_stub_db } from './stubs.ts';
 import { ConnectionRegistry } from '../actions/connection_registry.ts';
 import { REQUEST_CONTEXT_KEY, type RequestContext } from '../auth/request_context.ts';
-import { RESOLVED_AUTH_KEY, TEST_CONTEXT_PRESET_KEY } from '../hono_context.ts';
+import {
+	RESOLVED_AUTH_KEY,
+	TEST_CONTEXT_PRESET,
+	TEST_CONTEXT_PRESET_KEY
+} from '../hono_context.ts';
 import { create_test_resolved_auth } from './resolved_auth.ts';
 import type { BuiltinCredentialType } from '../auth/credential_type_schema.ts';
 import { create_jsonrpc_request } from '../http/jsonrpc_helpers.ts';
@@ -192,7 +196,7 @@ export const create_fake_hono_context = (opts: FakeHonoContextOptions): Context 
 			api_token_id: opts.api_token_id
 		}),
 		auth_session_id,
-		[TEST_CONTEXT_PRESET_KEY]: true
+		[TEST_CONTEXT_PRESET_KEY]: TEST_CONTEXT_PRESET
 	};
 	return {
 		get: (key: string) => vars[key]
@@ -508,7 +512,7 @@ export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsT
 				})
 			],
 			['auth_session_id', session_id],
-			[TEST_CONTEXT_PRESET_KEY, true]
+			[TEST_CONTEXT_PRESET_KEY, TEST_CONTEXT_PRESET]
 		]);
 		const fake_c = {
 			get: (key: string) => ctx_store.get(key)

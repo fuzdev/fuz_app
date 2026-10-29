@@ -33,7 +33,11 @@ import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import type { ConnectionRegistry } from '#lib/actions/connection_registry.ts';
 import { WS_CLOSE_CONNECTION_LIMIT, WS_CLOSE_SESSION_REVOKED } from '#lib/actions/transports.ts';
 import { REQUEST_CONTEXT_KEY } from '#lib/auth/request_context.ts';
-import { RESOLVED_AUTH_KEY, TEST_CONTEXT_PRESET_KEY } from '#lib/hono_context.ts';
+import {
+	RESOLVED_AUTH_KEY,
+	TEST_CONTEXT_PRESET,
+	TEST_CONTEXT_PRESET_KEY
+} from '#lib/hono_context.ts';
 import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
 import { create_test_account } from '#lib/testing/entities.ts';
 import { create_stub_db } from '#lib/testing/stubs.ts';
@@ -101,7 +105,7 @@ const start_server = async (max_connections_per_account?: number): Promise<TestS
 			role_grants: []
 		});
 		c.set('auth_session_id', 'raw_session');
-		c.set(TEST_CONTEXT_PRESET_KEY, true);
+		c.set(TEST_CONTEXT_PRESET_KEY, TEST_CONTEXT_PRESET);
 		await next();
 	});
 	const { upgradeWebSocket, injectWebSocket } = createNodeWebSocket({ app });

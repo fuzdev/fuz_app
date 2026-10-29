@@ -159,7 +159,6 @@ describe('parse_session', () => {
 		const keyring = create_test_keyring();
 		const rejecting_config: SessionOptions<string> = {
 			cookie_name: 'test_session',
-			context_key: 'auth_session_id',
 			encode_identity: (id) => id,
 			decode_identity: () => null // always rejects
 		};
@@ -187,7 +186,6 @@ describe('parse_session', () => {
 		const keyring = create_test_keyring();
 		const colon_config: SessionOptions<string> = {
 			cookie_name: 'test_session',
-			context_key: 'auth_session_id',
 			encode_identity: (id) => `prefix:${id}`,
 			decode_identity: (payload) => {
 				const idx = payload.indexOf(':');
@@ -315,7 +313,6 @@ describe('parse_session — generic identity', () => {
 		// surface for non-string identities.
 		const number_options: SessionOptions<number> = {
 			cookie_name: 'test_session',
-			context_key: 'auth_session_id',
 			encode_identity: (id) => String(id),
 			decode_identity: (payload) => {
 				const n = parseInt(payload, 10);

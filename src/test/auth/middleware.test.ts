@@ -33,7 +33,6 @@ const create_options = (overrides?: Partial<AuthMiddlewareOptions>): AuthMiddlew
 	allowed_origins: [],
 	session_options: {
 		cookie_name: 'test_session',
-		context_key: 'session_identity',
 		encode_identity: (id: string) => id,
 		decode_identity: (payload: string) => payload
 	},

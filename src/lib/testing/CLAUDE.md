@@ -220,12 +220,12 @@ the WASM caching in `db.ts` is where the real savings are.
 Pre-built Hono apps at each auth level (public / authed / keeper / per-role)
 for attack-surface testing. No middleware stack — a single `/*` middleware
 injects the `ResolvedAuth` (`RESOLVED_AUTH_KEY`, credential type default
-`'session'`) + `REQUEST_CONTEXT_KEY` plus the `TEST_CONTEXT_PRESET_KEY` flag (so the
+`'session'`) + `REQUEST_CONTEXT_KEY` plus the `TEST_CONTEXT_PRESET_KEY` flag, set to the `TEST_CONTEXT_PRESET` symbol (so the
 dispatcher's authorization phase trusts the pre-baked context and skips its
 DB-backed actor resolution), then hands off to `apply_route_specs` with
 `fuz_auth_guard_resolver` + `create_fuz_authorization_handler`. Production
-middleware never sets `TEST_CONTEXT_PRESET_KEY`, so the escape hatch is
-test-only by construction.
+middleware never sets `TEST_CONTEXT_PRESET_KEY`, and only the symbol counts
+(`has_test_context_preset`), so the escape hatch is test-only by construction.
 
 - `create_test_request_context(role?)` — minimal `RequestContext`: one account, one actor, one role_grant for `role` (or none).
 - `create_test_app_from_specs(specs, auth_ctx?, credential_type?)` — Hono app with pre-set context + `apply_route_specs`. `credential_type` defaults to `'session'` when an auth context is supplied — override for `'daemon_token'` / `'api_token'` tests.

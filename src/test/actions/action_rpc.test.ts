@@ -17,7 +17,11 @@ import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
 import { generate_app_surface } from '#lib/http/surface.ts';
 import { create_stub_db } from '#lib/testing/stubs.ts';
 import { REQUEST_CONTEXT_KEY } from '#lib/auth/request_context.ts';
-import { RESOLVED_AUTH_KEY, TEST_CONTEXT_PRESET_KEY } from '#lib/hono_context.ts';
+import {
+	RESOLVED_AUTH_KEY,
+	TEST_CONTEXT_PRESET,
+	TEST_CONTEXT_PRESET_KEY
+} from '#lib/hono_context.ts';
 import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
 import type { BuiltinCredentialType } from '#lib/auth/credential_type_schema.ts';
 import { create_test_request_context } from '#lib/testing/auth_apps.ts';
@@ -126,7 +130,7 @@ const create_test_app = (
 				})
 			);
 			(c as any).set(REQUEST_CONTEXT_KEY, auth_context);
-			(c as any).set(TEST_CONTEXT_PRESET_KEY, true);
+			(c as any).set(TEST_CONTEXT_PRESET_KEY, TEST_CONTEXT_PRESET);
 			await next();
 		});
 	}

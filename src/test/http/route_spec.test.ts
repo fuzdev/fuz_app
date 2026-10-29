@@ -33,7 +33,11 @@ import {
 	token_scope_denied_body,
 	type TokenScope
 } from '#lib/auth/token_scope.ts';
-import { RESOLVED_AUTH_KEY, TEST_CONTEXT_PRESET_KEY } from '#lib/hono_context.ts';
+import {
+	RESOLVED_AUTH_KEY,
+	TEST_CONTEXT_PRESET,
+	TEST_CONTEXT_PRESET_KEY
+} from '#lib/hono_context.ts';
 import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
 import { create_test_request_context } from '#lib/testing/auth_apps.ts';
 import { ApiError, RateLimitError } from '#lib/http/error_schemas.ts';
@@ -140,7 +144,7 @@ describe('apply_route_specs', () => {
 				create_test_resolved_auth({ credential_type: 'session', account_id: ctx.account.id })
 			);
 			(c as any).set(REQUEST_CONTEXT_KEY, ctx);
-			(c as any).set(TEST_CONTEXT_PRESET_KEY, true);
+			(c as any).set(TEST_CONTEXT_PRESET_KEY, TEST_CONTEXT_PRESET);
 			await next();
 		});
 		const specs: Array<RouteSpec> = [
@@ -192,7 +196,7 @@ describe('apply_route_specs', () => {
 				create_test_resolved_auth({ credential_type: 'session', account_id: ctx.account.id })
 			);
 			(c as any).set(REQUEST_CONTEXT_KEY, ctx);
-			(c as any).set(TEST_CONTEXT_PRESET_KEY, true);
+			(c as any).set(TEST_CONTEXT_PRESET_KEY, TEST_CONTEXT_PRESET);
 			await next();
 		});
 		const specs: Array<RouteSpec> = [
@@ -225,7 +229,7 @@ describe('apply_route_specs', () => {
 				create_test_resolved_auth({ credential_type: 'session', account_id: ctx.account.id })
 			);
 			(c as any).set(REQUEST_CONTEXT_KEY, ctx);
-			(c as any).set(TEST_CONTEXT_PRESET_KEY, true);
+			(c as any).set(TEST_CONTEXT_PRESET_KEY, TEST_CONTEXT_PRESET);
 			await next();
 		});
 		const specs: Array<RouteSpec> = [
@@ -272,7 +276,7 @@ describe('auth.required_scope', () => {
 				})
 			);
 			(c as any).set(REQUEST_CONTEXT_KEY, ctx);
-			(c as any).set(TEST_CONTEXT_PRESET_KEY, true);
+			(c as any).set(TEST_CONTEXT_PRESET_KEY, TEST_CONTEXT_PRESET);
 			await next();
 		});
 		const specs: Array<RouteSpec> = [

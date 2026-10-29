@@ -20,7 +20,7 @@ import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS
 } from '../http/error_schemas.ts';
-import { TEST_CONTEXT_PRESET_KEY } from '../hono_context.ts';
+import { has_test_context_preset } from '../hono_context.ts';
 import {
 	create_audit_log_route_shape,
 	DEFAULT_AUDIT_STREAM_ROLE
@@ -156,7 +156,7 @@ export const create_audit_log_route_specs = (options?: AuditLogRouteOptions): Ar
 					// pre-baked context has no rows behind it to re-read, and for a
 					// registration born closed by the shutdown, which admission
 					// refuses whatever they answer.
-					if (!c.get(TEST_CONTEXT_PRESET_KEY) && !registry.closing) {
+					if (!has_test_context_preset(c) && !registry.closing) {
 						const reread = async (): Promise<Response | null> => {
 							// Global grants only, like the `require_role` gate that ran in
 							// the pipeline — a scoped grant must not open the instance-wide

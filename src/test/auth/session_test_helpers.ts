@@ -24,7 +24,6 @@ export const create_test_keyring = (key: string = TEST_KEY): Keyring => {
 
 export const test_session_options: SessionOptions<string> = {
 	cookie_name: 'test_session',
-	context_key: 'auth_session_id',
 	encode_identity: (id) => id,
 	decode_identity: (payload) => payload || null
 };

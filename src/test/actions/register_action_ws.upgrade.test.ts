@@ -20,7 +20,11 @@ import { heartbeat_action } from '#lib/actions/heartbeat.ts';
 import { parse_allowed_origins } from '#lib/http/origin.ts';
 import { REQUEST_CONTEXT_KEY } from '#lib/auth/request_context.ts';
 import { ROLE_ADMIN, type RoleName } from '#lib/auth/role_schema.ts';
-import { RESOLVED_AUTH_KEY, TEST_CONTEXT_PRESET_KEY } from '#lib/hono_context.ts';
+import {
+	RESOLVED_AUTH_KEY,
+	TEST_CONTEXT_PRESET,
+	TEST_CONTEXT_PRESET_KEY
+} from '#lib/hono_context.ts';
 import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
 import { token_scope_denied_body, token_scope_methods } from '#lib/auth/token_scope.ts';
 import { create_stub_upgrade } from '#lib/testing/ws_round_trip.ts';
@@ -70,7 +74,7 @@ const build_app = (opts: BuildOptions = {}) => {
 						})
 					: create_test_resolved_auth({ credential_type: 'session', account_id: ctx.account.id })
 			);
-			c.set(TEST_CONTEXT_PRESET_KEY, true);
+			c.set(TEST_CONTEXT_PRESET_KEY, TEST_CONTEXT_PRESET);
 		}
 		await next();
 	});

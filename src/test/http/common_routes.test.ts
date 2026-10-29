@@ -18,7 +18,11 @@ import {
 import { apply_route_specs } from '#lib/http/route_spec.ts';
 import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
 import { REQUEST_CONTEXT_KEY, type RequestContext } from '#lib/auth/request_context.ts';
-import { RESOLVED_AUTH_KEY, TEST_CONTEXT_PRESET_KEY } from '#lib/hono_context.ts';
+import {
+	RESOLVED_AUTH_KEY,
+	TEST_CONTEXT_PRESET,
+	TEST_CONTEXT_PRESET_KEY
+} from '#lib/hono_context.ts';
 import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
 import { create_stub_db } from '#lib/testing/stubs.ts';
 import { create_test_context } from '#lib/testing/entities.ts';
@@ -42,7 +46,7 @@ const create_test_app = (
 				create_test_resolved_auth({ credential_type: 'session', account_id: auth_ctx.account.id })
 			);
 			(c as any).set(REQUEST_CONTEXT_KEY, auth_ctx);
-			(c as any).set(TEST_CONTEXT_PRESET_KEY, true);
+			(c as any).set(TEST_CONTEXT_PRESET_KEY, TEST_CONTEXT_PRESET);
 			await next();
 		});
 	}

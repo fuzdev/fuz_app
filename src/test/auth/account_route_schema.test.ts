@@ -16,7 +16,11 @@ import { create_account_route_shapes } from '#lib/auth/account_route_schema.ts';
 import { apply_route_specs, type RouteSpec } from '#lib/http/route_spec.ts';
 import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
 import { REQUEST_CONTEXT_KEY, type RequestContext } from '#lib/auth/request_context.ts';
-import { RESOLVED_AUTH_KEY, TEST_CONTEXT_PRESET_KEY } from '#lib/hono_context.ts';
+import {
+	RESOLVED_AUTH_KEY,
+	TEST_CONTEXT_PRESET,
+	TEST_CONTEXT_PRESET_KEY
+} from '#lib/hono_context.ts';
 import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
 import { token_scope_full, token_scope_methods, type TokenScope } from '#lib/auth/token_scope.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
@@ -54,7 +58,7 @@ const create_verify_app = (scope: TokenScope): Hono => {
 			create_test_resolved_auth({ credential_type: 'api_token', account_id: ctx.account.id, scope })
 		);
 		(c as any).set(REQUEST_CONTEXT_KEY, ctx);
-		(c as any).set(TEST_CONTEXT_PRESET_KEY, true);
+		(c as any).set(TEST_CONTEXT_PRESET_KEY, TEST_CONTEXT_PRESET);
 		await next();
 	});
 	apply_route_specs(app, [spec], fuz_auth_guard_resolver, log, db);

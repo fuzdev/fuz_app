@@ -437,9 +437,16 @@ stay distinct: `no_actors_on_account` (signup invariant violation),
 
 **Production-middleware invariant.** No production middleware on the auth
 path populates `REQUEST_CONTEXT_KEY`; it sets only `RESOLVED_AUTH_KEY`. Test
-harnesses pre-populate `REQUEST_CONTEXT_KEY` +
-`TEST_CONTEXT_PRESET_KEY` to bypass DB-backed actor resolution; production
-code that reads `REQUEST_CONTEXT_KEY` is reading test escape-hatch state.
+harnesses pre-populate `REQUEST_CONTEXT_KEY` and set `TEST_CONTEXT_PRESET_KEY`
+to the `TEST_CONTEXT_PRESET` symbol to bypass DB-backed actor resolution
+(`has_test_context_preset` reads it; any other value, `true` or a string
+included, is unset); production code that reads `REQUEST_CONTEXT_KEY` is
+reading test escape-hatch state.
+
+**The session token key is fixed.** The session middleware writes the token
+under `SESSION_TOKEN_KEY` (`hono_context.ts`, `'auth_session_id'`) and the
+session leg reads it there; `SessionOptions` carries no context key, so the two
+cannot disagree and the token cannot land on another spine key.
 
 ### Wire timestamp shape
 

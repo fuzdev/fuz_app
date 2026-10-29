@@ -29,7 +29,11 @@ import {
 	require_role,
 	type RequestContext
 } from '#lib/auth/request_context.ts';
-import { RESOLVED_AUTH_KEY, TEST_CONTEXT_PRESET_KEY } from '#lib/hono_context.ts';
+import {
+	RESOLVED_AUTH_KEY,
+	TEST_CONTEXT_PRESET,
+	TEST_CONTEXT_PRESET_KEY
+} from '#lib/hono_context.ts';
 import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
 import type { BuiltinCredentialType } from '#lib/auth/credential_type_schema.ts';
 import { session_cookie_options } from '#lib/auth/session_cookie.ts';
@@ -112,7 +116,7 @@ const create_test_app = (
 				})
 			);
 			(c as any).set(REQUEST_CONTEXT_KEY, auth_ctx);
-			(c as any).set(TEST_CONTEXT_PRESET_KEY, true);
+			(c as any).set(TEST_CONTEXT_PRESET_KEY, TEST_CONTEXT_PRESET);
 			await next();
 		});
 	}
@@ -428,7 +432,7 @@ describe('targeted adversarial tests', () => {
 				create_test_resolved_auth({ credential_type: 'session', account_id: ctx.account.id })
 			);
 			(c as any).set(REQUEST_CONTEXT_KEY, ctx);
-			(c as any).set(TEST_CONTEXT_PRESET_KEY, true);
+			(c as any).set(TEST_CONTEXT_PRESET_KEY, TEST_CONTEXT_PRESET);
 			await next();
 		});
 		app.get('/test', require_role(['admin']), (c) => c.json({ ok: true }));

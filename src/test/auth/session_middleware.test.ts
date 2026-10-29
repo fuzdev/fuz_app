@@ -18,6 +18,7 @@ import {
 	type SessionOptions
 } from '#lib/auth/session_cookie.ts';
 import { create_session_middleware } from '#lib/auth/session_middleware.ts';
+import { SESSION_TOKEN_KEY } from '#lib/hono_context.ts';
 
 import { OLD_KEY, TEST_KEY, create_test_keyring } from './session_test_helpers.ts';
 
@@ -28,7 +29,7 @@ const create_test_app = (keyring: Keyring, options: SessionOptions<string>): Hon
 	const app = new Hono();
 	app.use('/*', create_session_middleware(keyring, options));
 	app.get('/test', (c) => {
-		const identity = (c as any).get(options.context_key);
+		const identity = c.get(SESSION_TOKEN_KEY);
 		return c.json({ identity });
 	});
 	return app;
@@ -139,30 +140,6 @@ describe('create_session_middleware', () => {
 
 		const set_cookie = res.headers.get('set-cookie');
 		assert.ok(set_cookie, 'should clear cookie with invalid signature');
-	});
-
-	test('custom context_key works', async () => {
-		const keyring = create_test_keyring();
-		const options: SessionOptions<string> = {
-			...create_config(),
-			context_key: 'custom_identity'
-		};
-
-		const app = new Hono();
-		app.use('/*', create_session_middleware(keyring, options));
-		app.get('/test', (c) => {
-			const identity = (c as any).get('custom_identity');
-			return c.json({ identity });
-		});
-
-		const cookie_value = await create_session_cookie_value(keyring, 'user-99', options);
-		const res = await app.request('/test', {
-			headers: { Cookie: `${options.cookie_name}=${cookie_value}` }
-		});
-
-		assert.strictEqual(res.status, 200);
-		const body = await res.json();
-		assert.strictEqual(body.identity, 'user-99');
 	});
 
 	test('calls next() for downstream handlers', async () => {

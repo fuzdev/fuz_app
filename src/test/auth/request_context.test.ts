@@ -16,7 +16,11 @@ import {
 	create_request_context_middleware,
 	REQUEST_CONTEXT_KEY
 } from '#lib/auth/request_context.ts';
-import { RESOLVED_AUTH_KEY, TEST_CONTEXT_PRESET_KEY } from '#lib/hono_context.ts';
+import {
+	RESOLVED_AUTH_KEY,
+	TEST_CONTEXT_PRESET,
+	TEST_CONTEXT_PRESET_KEY
+} from '#lib/hono_context.ts';
 import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
 import { get_resolved_auth } from '#lib/auth/resolved_auth.ts';
 import type { Account, Actor, RoleGrant } from '#lib/auth/account_schema.ts';
@@ -313,7 +317,7 @@ describe('require_auth', () => {
 				create_test_resolved_auth({ credential_type: 'session', account_id: ctx.account.id })
 			);
 			c.set(REQUEST_CONTEXT_KEY, ctx);
-			c.set(TEST_CONTEXT_PRESET_KEY, true);
+			c.set(TEST_CONTEXT_PRESET_KEY, TEST_CONTEXT_PRESET);
 			await next();
 		});
 		app.use('/*', require_auth);
@@ -347,7 +351,7 @@ describe('require_role', () => {
 				create_test_resolved_auth({ credential_type: 'session', account_id: ctx.account.id })
 			);
 			c.set(REQUEST_CONTEXT_KEY, ctx);
-			c.set(TEST_CONTEXT_PRESET_KEY, true);
+			c.set(TEST_CONTEXT_PRESET_KEY, TEST_CONTEXT_PRESET);
 			await next();
 		});
 		app.use('/*', require_role(['admin']));
@@ -369,7 +373,7 @@ describe('require_role', () => {
 				create_test_resolved_auth({ credential_type: 'session', account_id: ctx.account.id })
 			);
 			c.set(REQUEST_CONTEXT_KEY, ctx);
-			c.set(TEST_CONTEXT_PRESET_KEY, true);
+			c.set(TEST_CONTEXT_PRESET_KEY, TEST_CONTEXT_PRESET);
 			await next();
 		});
 		app.use('/*', require_role(['admin']));
@@ -390,7 +394,7 @@ describe('require_role', () => {
 				create_test_resolved_auth({ credential_type: 'session', account_id: ctx.account.id })
 			);
 			c.set(REQUEST_CONTEXT_KEY, ctx);
-			c.set(TEST_CONTEXT_PRESET_KEY, true);
+			c.set(TEST_CONTEXT_PRESET_KEY, TEST_CONTEXT_PRESET);
 			await next();
 		});
 		app.use('/*', require_role(['keeper']));
@@ -413,7 +417,7 @@ describe('require_role', () => {
 				create_test_resolved_auth({ credential_type: 'session', account_id: ctx.account.id })
 			);
 			c.set(REQUEST_CONTEXT_KEY, ctx);
-			c.set(TEST_CONTEXT_PRESET_KEY, true);
+			c.set(TEST_CONTEXT_PRESET_KEY, TEST_CONTEXT_PRESET);
 			await next();
 		});
 		app.use('/*', require_role(['admin']));
@@ -435,7 +439,7 @@ describe('require_role', () => {
 				create_test_resolved_auth({ credential_type: 'session', account_id: ctx.account.id })
 			);
 			c.set(REQUEST_CONTEXT_KEY, ctx);
-			c.set(TEST_CONTEXT_PRESET_KEY, true);
+			c.set(TEST_CONTEXT_PRESET_KEY, TEST_CONTEXT_PRESET);
 			await next();
 		});
 		app.use('/*', require_role(['admin']));

@@ -15,7 +15,11 @@ import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 import { create_audit_log_route_specs } from '#lib/auth/audit_log_routes.ts';
 import { REQUEST_CONTEXT_KEY } from '#lib/auth/request_context.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
-import { RESOLVED_AUTH_KEY, TEST_CONTEXT_PRESET_KEY } from '#lib/hono_context.ts';
+import {
+	RESOLVED_AUTH_KEY,
+	TEST_CONTEXT_PRESET,
+	TEST_CONTEXT_PRESET_KEY
+} from '#lib/hono_context.ts';
 import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
 import type { RouteContext } from '#lib/http/route_spec.ts';
 import { create_audit_log_sse } from '#lib/realtime/audit_log_sse.ts';
@@ -38,7 +42,7 @@ describe('audit log stream handler', () => {
 				credential_type: 'session',
 				account_id: request_context.account.id
 			}),
-			[TEST_CONTEXT_PRESET_KEY]: true
+			[TEST_CONTEXT_PRESET_KEY]: TEST_CONTEXT_PRESET
 		};
 		const c = { get: (key: string) => vars[key] } as unknown as Context;
 		const route = {

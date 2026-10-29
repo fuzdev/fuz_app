@@ -1,0 +1,5 @@
+---
+'@fuzdev/fuz_app': minor
+---
+
+break: `SessionOptions` drops `context_key` and `create_request_context_middleware` drops its `session_context_key` option — the session token lives under the fixed `SESSION_TOKEN_KEY` (`'auth_session_id'`, new export of `hono_context.ts`), which `create_session_middleware` writes and the session leg reads, so a session config can no longer disable session auth or write the token onto another spine key (`create_auth_middleware_specs` always read the default). `create_session_middleware` takes a `SessionOptions<string>`. The test-harness preset counts only when `TEST_CONTEXT_PRESET_KEY` holds the new `TEST_CONTEXT_PRESET` symbol, read with the new `has_test_context_preset(c)`; `true`, a string, or any other value is unset. To migrate: delete `context_key` from hand-built session configs (`create_session_config` needs no change) and `session_context_key` from `create_request_context_middleware` calls; a harness that sets the preset sets `c.set(TEST_CONTEXT_PRESET_KEY, TEST_CONTEXT_PRESET)` (or `[TEST_CONTEXT_PRESET_KEY]: TEST_CONTEXT_PRESET` in a fake context's variables) instead of `true`
