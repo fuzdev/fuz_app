@@ -298,6 +298,17 @@ describe('to_jsonrpc_params', () => {
 });
 
 describe('classify_jsonrpc_message', () => {
+	test('a request carries the frame as parsed — an own __proto__ params key survives', () => {
+		const frame = JSON.parse(
+			'{"jsonrpc":"2.0","id":1,"method":"m","params":{"__proto__":{"x":1}}}'
+		);
+		const classified = classify_jsonrpc_message(frame);
+		assert.strictEqual(classified.kind, 'request');
+		if (classified.kind !== 'request') return;
+		assert.strictEqual(classified.request, frame, 'not a rebuilt copy');
+		assert.ok(Object.hasOwn(classified.request.params!, '__proto__'));
+	});
+
 	// The Rust twin's `classify` cases, plus the TS-side edges the WS and POST
 	// paths read. `issues` is whether an `invalid` carries the envelope schema's
 	// DEV-only `data.issues` — only a refused request envelope does.

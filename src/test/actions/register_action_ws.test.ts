@@ -617,6 +617,42 @@ describe('register_action_ws', () => {
 		assert.deepStrictEqual(received, [undefined, undefined]);
 	});
 
+	test('an own __proto__ params key is refused on a void and a strict input', async () => {
+		// the frame is handed on as parsed, so the key reaches the input schema
+		// as the Rust twin sees it — a rebuilt copy dropped it, reading
+		// `{"__proto__": …}` as `{}`
+		const void_spec: RequestResponseActionSpec = {
+			...no_input_spec,
+			method: 'void_ping',
+			input: z.void(),
+			output: z.strictObject({ ok: z.literal(true) })
+		};
+		const received: Array<unknown> = [];
+		const record = (input: unknown) => {
+			received.push(input);
+			return { ok: true, value: 'x' };
+		};
+		const h = await build_harness({
+			handlers: {},
+			actions: [
+				{ spec: void_spec, handler: record },
+				{ spec: echo_spec, handler: record }
+			]
+		});
+		await h.on_open();
+		await h.on_message(
+			'{"jsonrpc":"2.0","id":1,"method":"void_ping","params":{"__proto__":{"x":1}}}'
+		);
+		await h.on_message(
+			'{"jsonrpc":"2.0","id":2,"method":"echo","params":{"value":"x","__proto__":{"x":1}}}'
+		);
+
+		const [void_res, strict_res] = h.fake.sends.map(parse_json);
+		assert.strictEqual(void_res.error?.code, JSONRPC_ERROR_CODES.invalid_params);
+		assert.strictEqual(strict_res.error?.code, JSONRPC_ERROR_CODES.invalid_params);
+		assert.deepStrictEqual(received, []);
+	});
+
 	test('a cancel notification with junk params silently no-ops', async () => {
 		const h = await build_harness({ handlers: { echo: () => ({ value: 'x' }) } });
 		await h.on_open();

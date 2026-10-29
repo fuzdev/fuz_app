@@ -523,6 +523,55 @@ describe('POST dispatcher', () => {
 		assert.strictEqual(received_auth, null);
 	});
 
+	test('an own __proto__ params key is refused on a void and a strict input, POST and GET alike', async () => {
+		// the classifier hands on the body as parsed, so the key reaches the
+		// input schema — a rebuilt copy dropped it, reading `{"__proto__": …}`
+		// as `{}` on POST while GET, which parses `params` itself, refused it
+		let called = 0;
+		const app = create_test_app([
+			{
+				spec: create_get_spec(),
+				handler: () => {
+					called++;
+					return { items: [] };
+				}
+			},
+			{
+				spec: create_get_with_input_spec(),
+				handler: () => {
+					called++;
+					return { results: [] };
+				}
+			}
+		]);
+		const proto = '{"__proto__":{"x":1}}';
+		const strict = '{"query":"q","limit":1,"__proto__":{"x":1}}';
+		const responses = [
+			await app.request('/api/rpc', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: `{"jsonrpc":"2.0","id":"1","method":"thing_list","params":${proto}}`
+			}),
+			await app.request('/api/rpc', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: `{"jsonrpc":"2.0","id":"1","method":"thing_search","params":${strict}}`
+			}),
+			await app.request(`/api/rpc?method=thing_list&id=1&params=${encodeURIComponent(proto)}`),
+			await app.request(`/api/rpc?method=thing_search&id=1&params=${encodeURIComponent(strict)}`)
+		];
+		for (const [i, res] of responses.entries()) {
+			const body = await res.json();
+			assert.strictEqual(res.status, 400, `${i}: ${JSON.stringify(body)}`);
+			assert.strictEqual(
+				body.error.code,
+				JSONRPC_ERROR_CODES.invalid_params,
+				`${i}: ${JSON.stringify(body)}`
+			);
+		}
+		assert.strictEqual(called, 0);
+	});
+
 	test('void input schemas accept missing params', async () => {
 		let received_input: unknown = 'sentinel';
 		const app = create_test_app([
@@ -1780,5 +1829,97 @@ describe('rate limit', () => {
 			rpc_endpoints: [{ path: '/api/rpc', actions }]
 		});
 		assert.strictEqual(surface.rpc_endpoints[0]!.methods[0]!.rate_limit_key, 'account');
+	});
+});
+
+describe('review probe: prototype-shaped params keys, POST and GET', () => {
+	const read_spec = (method: string, input: z.ZodType): RequestResponseActionSpec => ({
+		method,
+		kind: 'request_response',
+		initiator: 'frontend',
+		auth: { account: 'none', actor: 'none' },
+		side_effects: false,
+		input,
+		output: z.looseObject({}),
+		async: true,
+		description: method
+	});
+	const received: Array<{ method: string; input: unknown }> = [];
+	const app = create_test_app(
+		(
+			[
+				['p_void', z.void()],
+				['p_strict', z.strictObject({ a: z.string() })],
+				['p_loose', z.looseObject({ a: z.string() })],
+				['p_nested', z.strictObject({ f: z.strictObject({ a: z.string() }) })]
+			] as const
+		).map(([method, input]) => ({
+			spec: read_spec(method, input),
+			handler: (input: unknown) => {
+				received.push({ method, input });
+				const proto_x = (input as any)?.x;
+				return { proto_x: proto_x ?? null };
+			}
+		}))
+	);
+	const call = async (verb: 'POST' | 'GET', method: string, params_json: string) => {
+		const res =
+			verb === 'POST'
+				? await app.request('/api/rpc', {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: `{"jsonrpc":"2.0","id":"1","method":"${method}","params":${params_json}}`
+					})
+				: await app.request(
+						`/api/rpc?method=${method}&id=1&params=${encodeURIComponent(params_json)}`
+					);
+		const body = await res.json();
+		return { status: res.status, code: body.error?.code ?? null, result: body.result };
+	};
+	// [method, params, expected status] — POST and GET must agree
+	const cases: Array<[string, string, number]> = [
+		['p_void', '{"constructor":{"x":1}}', 400],
+		['p_void', '{"__proto__":null}', 400],
+		['p_strict', '{"a":"x","constructor":{"x":1}}', 400],
+		['p_strict', '{"a":"x","__proto__":null}', 400],
+		['p_strict', '{"a":"x","__proto__":{"x":1}}', 400],
+		['p_loose', '{"a":"x","__proto__":{"x":1}}', 200],
+		['p_loose', '{"a":"x","constructor":{"x":1}}', 200],
+		['p_nested', '{"f":{"a":"x","__proto__":{"x":1}}}', 400],
+		['p_nested', '{"f":{"a":"x"},"__proto__":{"x":1}}', 400]
+	];
+	for (const [method, params, expected] of cases) {
+		test(`${method} ${params} → ${expected} on POST and GET`, async () => {
+			received.length = 0;
+			const post = await call('POST', method, params);
+			const get = await call('GET', method, params);
+			assert.strictEqual(post.status, expected, `POST ${JSON.stringify(post)}`);
+			assert.deepStrictEqual(get, post, 'GET answers as POST');
+			if (expected === 400) assert.strictEqual(post.code, JSONRPC_ERROR_CODES.invalid_params);
+			for (const r of received) {
+				// nothing a handler sees inherits from a client-sent prototype
+				assert.strictEqual((r.input as any)?.x, undefined, 'no inherited x');
+			}
+		});
+	}
+
+	test('a frame-level own __proto__ cannot supply params, id, or method', async () => {
+		received.length = 0;
+		const res = await app.request('/api/rpc', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: '{"jsonrpc":"2.0","id":"1","method":"p_strict","__proto__":{"params":{"a":"x"}}}'
+		});
+		const body = await res.json();
+		assert.strictEqual(res.status, 400);
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_params);
+		assert.deepStrictEqual(received, []);
+		const res2 = await app.request('/api/rpc', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: '{"jsonrpc":"2.0","__proto__":{"id":"1","method":"p_void"}}'
+		});
+		assert.strictEqual(res2.status, 400);
+		assert.strictEqual((await res2.json()).error.code, JSONRPC_ERROR_CODES.invalid_request);
 	});
 });

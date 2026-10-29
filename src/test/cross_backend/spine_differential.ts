@@ -38,6 +38,7 @@ import { conformance_security_cases } from './conformance_security_cases.ts';
 import { conformance_expiry_cases } from './conformance_expiry_cases.ts';
 import { conformance_app_settings_cases } from './conformance_app_settings_cases.ts';
 import { conformance_void_params_cases } from './conformance_void_params_cases.ts';
+import { conformance_proto_params_cases } from './conformance_proto_params_cases.ts';
 import { conformance_admin_cases } from './conformance_admin_cases.ts';
 import { conformance_actor_cases } from './conformance_actor_cases.ts';
 import { conformance_cell_cases } from './conformance_cell_cases.ts';
@@ -91,6 +92,7 @@ export const describe_spine_differential_suites = (
 		...conformance_expiry_cases,
 		...conformance_app_settings_cases,
 		...conformance_void_params_cases,
+		...conformance_proto_params_cases,
 		...conformance_admin_cases,
 		...conformance_actor_cases,
 		...conformance_cell_cases,

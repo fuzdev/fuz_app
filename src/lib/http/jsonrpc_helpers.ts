@@ -224,6 +224,10 @@ export type ClassifiedJsonrpcMessage =
  * `method` as absent — so `{id, method: 123, result}` is a response on both
  * sides. The `result` / `error` exclusive-or refuses a frame carrying both.
  *
+ * A `request` carries the frame as given — validated, never re-built — so
+ * `params` reaches the action's input schema with every own key the client
+ * sent, `__proto__` included, as on the GET path and the Rust twin.
+ *
  * Every `invalid` is `invalid_request`. Its `id` is the frame's own when the
  * frame is an object carrying a string or number one, else `null` — a
  * non-object frame (an array included) has none. A refused request envelope
@@ -264,5 +268,8 @@ export const classify_jsonrpc_message = (json: unknown): ClassifiedJsonrpcMessag
 			error: jsonrpc_error_messages.invalid_request(dev_only({ issues: parsed.error.issues }))
 		};
 	}
-	return { kind: 'request', request: parsed.data };
+	// the frame itself, validated — not Zod's rebuilt copy, which drops an own
+	// `__proto__` key from `params`, so `{"__proto__": …}` would reach the
+	// action as `{}` and pass a void or strict input the Rust twin refuses
+	return { kind: 'request', request: frame as JsonrpcRequest };
 };
