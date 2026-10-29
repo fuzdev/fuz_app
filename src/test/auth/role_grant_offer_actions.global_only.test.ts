@@ -37,12 +37,17 @@ import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { ERROR_INSUFFICIENT_PERMISSIONS } from '#lib/http/error_schemas.ts';
 import { JSONRPC_ERROR_CODES, ThrownJsonrpcError } from '#lib/http/jsonrpc_errors.ts';
 import { create_test_audit_emitter } from '#lib/testing/stubs.ts';
+import { noop_connection_closer } from '#lib/actions/connection_closer.ts';
 import { create_test_context } from '#lib/testing/entities.ts';
 import type { RpcAction } from '#lib/actions/action_types.ts';
 
 import { create_test_action_context } from './rpc_test_helpers.ts';
 
-const deps = { log: new Logger('test', { level: 'off' }), audit: create_test_audit_emitter() };
+const deps = {
+	log: new Logger('test', { level: 'off' }),
+	audit: create_test_audit_emitter(),
+	connection_closer: noop_connection_closer
+};
 
 const SCOPE = '7c9e6679-7425-40de-944b-e07fc1f90ae7' as Uuid;
 const TO_ACCOUNT = '11111111-1111-4111-8111-111111111111' as Uuid;

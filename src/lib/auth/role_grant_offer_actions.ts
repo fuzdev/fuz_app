@@ -38,15 +38,17 @@
  *   no power to assign it.
  *
  * Audit events are emitted in-transaction by the query layer (atomic with
- * the role_grant write on accept/revoke) or by the handler via the bound
- * `deps.audit.emit_role_grant_target` helper for single-event lifecycle
- * transitions. `audit.notify` (SSE/WS broadcast) fires post-commit in both
- * paths.
+ * the role_grant write on accept) or by the handler via the bound
+ * `deps.audit.emit_role_grant_target` helper (pool-routed — revoke, assign,
+ * and the single-event lifecycle transitions). `audit.notify` (SSE/WS
+ * broadcast) fires post-commit in both paths.
  *
  * WS notifications fan out post-commit via `emit_after_commit` when a
  * `notification_sender` is wired: offer lifecycle transitions notify the
  * counterparty, `role_grant_revoke` notifies the revokee plus each superseded
- * pending offer's grantor.
+ * pending offer's grantor. `role_grant_revoke` of a global grant also closes
+ * the revokee's connections gated on the role through
+ * `deps.connection_closer`, after the commit.
  *
  * @module
  */
@@ -62,6 +64,7 @@ import {
 } from '../actions/action_types.ts';
 import { jsonrpc_errors, type ThrownJsonrpcError } from '../http/jsonrpc_errors.ts';
 import { emit_after_commit } from '../http/pending_effects.ts';
+import { queue_connection_close } from '../actions/connection_closer.ts';
 import {
 	builtin_role_specs_by_name,
 	is_builtin_role,
@@ -106,7 +109,7 @@ import {
 	type RequestActorContext,
 	type RequestContext
 } from './request_context.ts';
-import type { ActionFactoryDeps } from './deps.ts';
+import type { RevokingActionFactoryDeps } from './deps.ts';
 import type { AuditEmitter } from './audit_emitter.ts';
 import {
 	build_role_grant_offer_accepted_notification,
@@ -261,17 +264,17 @@ const default_authorize: RoleGrantOfferCreateAuthorize = async (auth, _input, _d
  * Create the role-grant-offer RPC actions: the offer-lifecycle methods plus
  * `role_grant_revoke` and the immediate `role_grant_assign`.
  *
- * @param deps - `ActionFactoryDeps` (`log`, `audit`) plus optional `notification_sender` for WS fan-out — when absent, WS fan-out is silently skipped (DB-only side effects still happen). Consumers wiring `ConnectionRegistry` assign its instance directly (the registry's `send_to_account` signature accepts the broader `JsonrpcMessageFromServerToClient`, which is contravariantly compatible)
+ * @param deps - `RevokingActionFactoryDeps` (`log`, `audit`, and the `connection_closer` a revoked global grant closes the revokee's role-gated connections through) plus optional `notification_sender` for WS fan-out — when absent, WS fan-out is silently skipped (DB-only side effects still happen). Consumers wiring `ConnectionRegistry` assign its instance directly (the registry's `send_to_account` signature accepts the broader `JsonrpcMessageFromServerToClient`, which is contravariantly compatible)
  * @param options - role schema, default TTL, authorization override
  * @returns the `RpcAction` array to spread into a `create_rpc_endpoint` call
  */
 export const create_role_grant_offer_actions = (
-	deps: ActionFactoryDeps & {
+	deps: RevokingActionFactoryDeps & {
 		notification_sender?: NotificationSender | null;
 	},
 	options: RoleGrantOfferActionOptions = {}
 ): Array<RpcAction> => {
-	const { log, audit, notification_sender = null } = deps;
+	const { log, audit, connection_closer, notification_sender = null } = deps;
 	const role_specs = options.roles?.role_specs ?? builtin_role_specs_by_name;
 	const default_ttl_ms = options.default_ttl_ms ?? ROLE_GRANT_OFFER_DEFAULT_TTL_MS;
 	const authorize = options.authorize ?? default_authorize;
@@ -782,6 +785,19 @@ export const create_role_grant_offer_actions = (
 		result.superseded_offers.push(
 			...(await query_role_grant_offer_supersede_outgoing(ctx, [input.actor_id]))
 		);
+		// Close the revokee's connections gated on the role once the revoke has
+		// committed — queued, so never before the commit or on rollback, and not
+		// riding on the pool-routed audit write below, whose loss would otherwise
+		// leave them open (the revocation guard repeats it when the row is
+		// announced). Global grants only: a role gate admits on global grants
+		// alone, so a scoped revoke has nothing to close.
+		if (result.scope_id === null) {
+			queue_connection_close(ctx, connection_closer, {
+				kind: 'role',
+				account_id: target_account_id,
+				role: result.role
+			});
+		}
 
 		audit.emit_role_grant_target(ctx, auth, {
 			event_type: 'role_grant_revoke',

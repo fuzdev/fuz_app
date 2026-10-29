@@ -8,11 +8,10 @@
  * nothing. So a revocation takes effect on an open connection only when
  * something closes it. `ConnectionCloser` is that capability, and every
  * revocation handler holds one: the session and token revokes, the revoke-alls,
- * account delete and purge, `/logout`, `/password`, and the session and token
- * caps for what they evict. A role revocation is the exception: it closes
- * only the connections an endpoint gated on that role, and only through the
- * audit listener (`create_revocation_guard`) — no handler holds a closer for
- * it. The auth cleanup holds one too
+ * account delete and purge, `/logout`, `/password`, the session and token
+ * caps for what they evict, and the role revokes (`role_grant_revoke` and a
+ * self-service disable), which close only the connections an endpoint gated
+ * on the revoked role. The auth cleanup holds one too
  * (`AuthCleanupDeps.connection_closer`): its session sweep closes the
  * connections of each expired session it deletes, after that delete commits.
  *
@@ -43,8 +42,8 @@
  * ## The audit listener
  *
  * `create_revocation_guard` repeats a revocation's close when its audit row is
- * announced, which covers a revocation emitted by code that holds no closer,
- * and is the one closer of a role revocation. `create_app_server` registers one
+ * announced, which covers a revocation emitted by code that holds no closer.
+ * `create_app_server` registers one
  * on `deps.connection_closer` when it mounts a WebSocket endpoint or the audit
  * stream, so it reaches every member — each WebSocket connection registry and the audit
  * stream registry — through the one fan-out.
@@ -122,8 +121,7 @@ export interface ConnectionCloser {
  *   still good. It **over-closes an any-of gate**: a connection whose
  *   endpoint listed several roles closes on the loss of any of them, whether
  *   or not the account still holds another; the client reconnects into the
- *   gate if it still qualifies. No handler queues `role`: the audit listener
- *   is a role's only closer.
+ *   gate if it still qualifies.
  */
 export type ConnectionCloseTarget =
 	| { kind: 'session'; session_hash: string }
@@ -386,9 +384,10 @@ export type AuditEventHandler = (event: AuditLogEvent) => void;
  * own action, but an endpoint's role gate is the only check on what its
  * connections *receive* — WebSocket broadcasts and notifications, the audit
  * stream's rows — with no per-recipient filter, so a connection left open past
- * the revocation would keep receiving what the gate exists to withhold. No
- * handler closes for a role, so this listener is its one closer: a WebSocket
- * closes with `WS_CLOSE_PERMISSION_REVOKED`, a stream gated on the role ends.
+ * the revocation would keep receiving what the gate exists to withhold. The
+ * role revokes close for it directly, and this listener repeats the close: a
+ * WebSocket closes with `WS_CLOSE_PERMISSION_REVOKED`, a stream gated on the
+ * role ends.
  *
  * Twin of the Rust spine's `register_revocation_guard`.
  *

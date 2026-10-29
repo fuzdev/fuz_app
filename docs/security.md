@@ -573,9 +573,8 @@ enforcement:
   - `role` (`role_grant_revoke`) — closes the target account's streams when
     the revoked role is the one the stream requires and the revoked grant was
     global (the stream's role gate admits on global grants only, so a scoped
-    revoke closes nothing). The guard is the only
-    closer for this one: no handler closes for a role. The same guard closes
-    the account's sockets gated on the role on the same rows
+    revoke closes nothing). The same guard closes the account's sockets gated
+    on the role on the same rows
 - **Success guard**: Only `outcome='success'` events act — an outcome outside
   the enum is inert. Failed revoke attempts carry attacker-submitted identifiers (e.g. guessed session
   hashes) in metadata — acting on them would let any authenticated user close
@@ -902,13 +901,6 @@ revocation the re-read sees.
   disconnect. The expired-session sweep is the exception: it closes for the
   sessions its delete returned whatever became of its commit, since they are
   expired either way, and the next pass deletes any row the commit left.
-- A role revocation closes a role-gated WebSocket or audit stream through the
-  revocation guard alone, and a listener hears of a row only once its fail-open
-  audit write lands. If that write fails, the role is revoked, the request
-  succeeds, and a socket or stream already open on that role stays open until
-  it is closed some other way. The
-  Rust spine writes that row inside the revocation's transaction, so there the
-  two succeed or fail together.
 - A role that ends any other way closes nothing: a grant reaching its
   `expires_at`, or a `role_grant` or `actor` row deleted through the db-admin
   browser, whose `db_admin_row_delete` event declares no revocation scope. The
@@ -996,7 +988,7 @@ expiry, a raw row delete — is under
 | `POST /logout`, `POST /password` | the account's connections |
 | `POST /login`, when the session cap evicts | each evicted session's connections |
 | `account_token_create`, when the token cap evicts | each evicted token's connections |
-| `role_grant_revoke` of a global grant | the account's WebSockets and audit streams gated on that role (listener only) |
+| `role_grant_revoke` of a global grant, `self_service_role_set` disabling a role | the account's WebSockets and audit streams gated on that role |
 
 A cap eviction writes no audit row, so the handler's close is the only one it
 has. A role revocation closes a WebSocket with `WS_CLOSE_PERMISSION_REVOKED`
@@ -1030,9 +1022,13 @@ hand:
 
 - `register_action_ws` and `create_audit_log_sse`
   take `connection_closer` as a **required** option and add their registry to
-  it. `null` is the explicit opt-out.
+  it. `null` is the explicit opt-out. A registry joined this way gets every
+  handler's close, a role revoke's included, whether or not a revocation guard
+  is registered — `create_app_server` registers one only when it mounts a
+  WebSocket endpoint or the audit stream.
 - The action and route factories whose handlers revoke
   (`create_account_actions`, `create_admin_actions`,
+  `create_role_grant_offer_actions`, `create_self_service_role_actions`,
   `create_standard_rpc_actions`, `create_account_route_specs`) read
   `connection_closer` off their `deps`, where it is required. A backend with
   no live-connection surface leaves its closer empty; hand-built deps for the

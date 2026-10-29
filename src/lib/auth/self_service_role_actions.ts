@@ -38,6 +38,7 @@
  */
 
 import { rpc_action, type ActionActorContext, type RpcAction } from '../actions/action_types.ts';
+import { queue_connection_close } from '../actions/connection_closer.ts';
 import { jsonrpc_errors } from '../http/jsonrpc_errors.ts';
 import {
 	builtin_role_specs_by_name,
@@ -47,7 +48,7 @@ import {
 	type RoleSchemaResult
 } from './role_schema.ts';
 import { GRANT_PATH_SELF_SERVICE } from './grant_path_schema.ts';
-import type { ActionFactoryDeps } from './deps.ts';
+import type { RevokingActionFactoryDeps } from './deps.ts';
 import { query_create_role_grant, query_revoke_role_grant } from './role_grant_queries.ts';
 import { is_role_grant_active } from './account_schema.ts';
 import { has_scoped_role } from './request_context.ts';
@@ -109,16 +110,17 @@ export interface SelfServiceRoleActionsOptions {
 /**
  * Build the unified self-service role toggle RPC action.
  *
- * @param deps - `ActionFactoryDeps` (`log`, `audit`); `audit.emit` writes
- *   audit rows via the captured pool. The bound emitter encapsulates
- *   `on_audit_event` fan-out and the optional `AuditLogConfig`.
+ * @param deps - `RevokingActionFactoryDeps` (`log`, `audit`,
+ *   `connection_closer`); `audit.emit` writes audit rows via the captured
+ *   pool, and a disable closes the caller's connections gated on the role
+ *   through `connection_closer`.
  * @param options - optional eligible-role override plus optional role schema for default-eligibility derivation
  * @returns the `RpcAction` array to spread into a `create_rpc_endpoint` call
  * @throws Error at factory time if any `eligible_roles` entry is missing from `options.roles.role_specs`
  * @throws Error at factory time if the eligible set names a builtin role or an invalid role name
  */
 export const create_self_service_role_actions = (
-	deps: ActionFactoryDeps,
+	deps: RevokingActionFactoryDeps,
 	options: SelfServiceRoleActionsOptions = {}
 ): Array<RpcAction> => {
 	const role_specs = options.roles?.role_specs ?? builtin_role_specs_by_name;
@@ -221,6 +223,15 @@ export const create_self_service_role_actions = (
 			// Raced with another revoker — treat as already revoked.
 			return { ok: true, enabled: false, changed: false };
 		}
+		// Close the caller's connections gated on the role once the revoke has
+		// committed, not through the pool-routed audit write below — the
+		// admin revoke's rule (`role_grant_offer_actions.ts`). The grant is
+		// global, the only kind this surface toggles.
+		queue_connection_close(ctx, deps.connection_closer, {
+			kind: 'role',
+			account_id: auth.account.id,
+			role: result.role
+		});
 
 		// Same actor-bound rule as the grant branch — `role_grant_revoke`
 		// always populates both target columns even on self-service so

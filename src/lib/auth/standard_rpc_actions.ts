@@ -11,8 +11,9 @@
  * `default_ttl_ms` and `authorize` go to role-grant-offer only; `max_tokens`
  * goes to account only;
  * `notification_sender` reaches role-grant-offer transparently (admin + account
- * ignore it). `deps.connection_closer` is read by admin + account, whose
- * revocation handlers close live connections through it.
+ * ignore it). `deps.connection_closer` is read by admin, account, and
+ * role-grant-offer, whose revocation handlers close live connections through
+ * it.
  *
  * Paired with `create_admin_rpc_adapters` on the UI side.
  *

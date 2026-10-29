@@ -7,8 +7,8 @@
  * `SseRegistry` to `ConnectionCloser`, and a registry added to the
  * backend's `deps.connection_closer` is closed by every revocation: the
  * handlers' own post-commit closes (`queue_connection_close`), and the one
- * audit listener on that closer (`create_revocation_guard`), which is also the
- * only closer for a role revocation.
+ * audit listener on that closer (`create_revocation_guard`), which repeats
+ * them.
  *
  * `create_audit_log_sse` builds the registry and its broadcaster and adds the
  * registry to the closer — making the secure path the easy path for consumers.

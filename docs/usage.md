@@ -665,8 +665,8 @@ event_specs: audit_log_event_specs,
 Streams close two ways. The revocation handlers close them directly, once
 their transaction commits, through the `connection_closer` the registry joined
 — that close does not depend on the audit write. The revocation guard on that
-closer repeats it when the audit row is announced: `role_grant_revoke` of a global grant (role match —
-the guard is the only closer for this one), `session_revoke` (session-scoped), `token_revoke`
+closer repeats it when the audit row is announced: `role_grant_revoke` of a global grant (role match),
+`session_revoke` (session-scoped), `token_revoke`
 (token-scoped), and the account-wide events (`session_revoke_all`,
 `token_revoke_all`, `password_change`, `logout`, `account_delete`,
 `account_purge`). Only `outcome='success'` events act (a failure may carry

@@ -793,7 +793,7 @@ export const collect_config_diagnostics = (
  * to `backend.deps.connection_closer`, so the revocation handlers built from
  * `ctx.deps` close their connections with no further wiring, and — when the
  * server mounts either — one `create_revocation_guard` listener on that closer
- * repeats each close on the audit row (the only closer of a role revocation).
+ * repeats each close on the audit row.
  * The
  * `audit_sse` field on the returned `AppServer` (and the
  * `AppServerContext` passed to `create_route_specs`) is non-null in that

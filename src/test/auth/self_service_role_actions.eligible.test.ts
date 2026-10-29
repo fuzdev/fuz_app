@@ -16,8 +16,13 @@ import {
 } from '#lib/auth/self_service_role_actions.ts';
 import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
 import { create_test_audit_emitter } from '#lib/testing/stubs.ts';
+import { noop_connection_closer } from '#lib/actions/connection_closer.ts';
 
-const deps = { log: new Logger('test', { level: 'off' }), audit: create_test_audit_emitter() };
+const deps = {
+	log: new Logger('test', { level: 'off' }),
+	audit: create_test_audit_emitter(),
+	connection_closer: noop_connection_closer
+};
 
 describe('validate_self_service_eligible_roles', () => {
 	test('admits app roles and the empty set', () => {

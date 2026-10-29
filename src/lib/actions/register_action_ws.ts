@@ -319,8 +319,9 @@ export interface RegisterActionWsResult {
  *   with `WS_CLOSE_PERMISSION_REVOKED`, and one whose re-check failed with
  *   `WS_CLOSE_INTERNAL_ERROR`. Frames sent before admission wait for it.
  * - A revoked global grant of a role `required_roles` lists closes the
- *   account's sockets on this endpoint with `WS_CLOSE_PERMISSION_REVOKED`,
- *   through the revocation guard; nothing more is sent on them.
+ *   account's sockets on this endpoint with `WS_CLOSE_PERMISSION_REVOKED` —
+ *   the revoking handler through `connection_closer`, the revocation guard
+ *   again on the audit row; nothing more is sent on them.
  * - A socket the server has closed dispatches nothing more, whether or not
  *   its client answers the close.
  * - Every frame sent — responses, error frames, notifications — goes through

@@ -99,11 +99,12 @@ export interface ActionFactoryDeps {
 }
 
 /**
- * Capabilities for the action factories whose handlers end credentials —
- * `create_account_actions`, `create_admin_actions`, and the
- * `create_standard_rpc_actions` bundle over them. `ActionFactoryDeps` plus
- * the closer their revocations close live connections through. `AppDeps`
- * and `RouteFactoryDeps` satisfy it structurally.
+ * Capabilities for the action factories whose handlers end credentials or
+ * revoke roles — `create_account_actions`, `create_admin_actions`,
+ * `create_role_grant_offer_actions`, `create_self_service_role_actions`, and
+ * the `create_standard_rpc_actions` bundle. `ActionFactoryDeps` plus the
+ * closer their revocations close live connections through. `AppDeps` and
+ * `RouteFactoryDeps` satisfy it structurally.
  */
 export interface RevokingActionFactoryDeps extends ActionFactoryDeps {
 	/**

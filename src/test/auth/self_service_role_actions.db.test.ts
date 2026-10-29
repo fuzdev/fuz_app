@@ -26,6 +26,7 @@ import { query_role_grant_offer_create } from '#lib/auth/role_grant_offer_querie
 import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
 import { rpc_call, rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 import { create_test_audit_emitter } from '#lib/testing/stubs.ts';
+import { noop_connection_closer } from '#lib/actions/connection_closer.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
 import type { RouteSpec } from '#lib/http/route_spec.ts';
 
@@ -55,7 +56,11 @@ describe_db('self_service_role_actions', (get_db) => {
 			assert.throws(
 				() =>
 					create_self_service_role_actions(
-						{ log: console as never, audit: create_test_audit_emitter() },
+						{
+							log: console as never,
+							audit: create_test_audit_emitter(),
+							connection_closer: noop_connection_closer
+						},
 						{ eligible_roles: ['nonexistent'], roles: test_roles }
 					),
 				/eligible_roles entry "nonexistent" is not registered/
@@ -68,7 +73,11 @@ describe_db('self_service_role_actions', (get_db) => {
 			// full role schema.
 			assert.doesNotThrow(() =>
 				create_self_service_role_actions(
-					{ log: console as never, audit: create_test_audit_emitter() },
+					{
+						log: console as never,
+						audit: create_test_audit_emitter(),
+						connection_closer: noop_connection_closer
+					},
 					{ eligible_roles: ['anything'] }
 				)
 			);

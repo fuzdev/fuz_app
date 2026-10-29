@@ -18,7 +18,7 @@ documents the cross-cutting invariants that don't fit on any single symbol.
 
 - **Capabilities** — `AppDeps` — stateless, injectable per env: `read_secure_file` (hardened bootstrap-token read), `delete_file`, `keyring`, `password`, `db`, `log`, `audit`, `connection_closer` (the `RealtimeCloser` every revocation handler closes live connections through — `actions/CLAUDE.md` §Connection closer).
 - **Route caps** — `RouteFactoryDeps` — `Omit<AppDeps, 'db'>`; handlers get `db` via `RouteContext`.
-- **Action caps** — `ActionFactoryDeps` (`auth/deps.ts`) — the `{log, audit}` shape action factories take; `RouteFactoryDeps`/`AppDeps` satisfy it structurally (role-grant-offer adds `notification_sender?`). The factories whose handlers end credentials (`create_account_actions`, `create_admin_actions`, and the standard bundle) take `RevokingActionFactoryDeps` — `ActionFactoryDeps` plus a required `connection_closer`. The two pure-read actor factories (`actor_lookup`/`actor_search`) take only `{log: Logger}`.
+- **Action caps** — `ActionFactoryDeps` (`auth/deps.ts`) — the `{log, audit}` shape action factories take; `RouteFactoryDeps`/`AppDeps` satisfy it structurally (role-grant-offer adds `notification_sender?`). The factories whose handlers end credentials or revoke roles (`create_account_actions`, `create_admin_actions`, `create_role_grant_offer_actions`, `create_self_service_role_actions`, and the standard bundle) take `RevokingActionFactoryDeps` — `ActionFactoryDeps` plus a required `connection_closer`. The two pure-read actor factories (`actor_lookup`/`actor_search`) take only `{log: Logger}`.
 - **Parameters** — `*Options` — static startup values, per-factory.
 - **Runtime state** — inline ref — mutable values: `bootstrap_status`, `DaemonTokenState`. NOT in deps or options.
 
@@ -850,7 +850,12 @@ builders, plus `role_grant_offer_notification_specs: Array<EventSpec>` for
 `create_app_server`'s `event_specs` (drives surface generation and
 DEV-mode `create_validated_broadcaster` payload validation).
 
-Deps: `ActionFactoryDeps & {notification_sender?: NotificationSender | null}`.
+Deps: `RevokingActionFactoryDeps & {notification_sender?: NotificationSender | null}`.
+`role_grant_revoke` of a global grant queues a close of the revokee account's
+connections gated on the role (`queue_connection_close`, `{kind: 'role'}`),
+run after the transaction commits and independent of the pool-routed audit
+write; the revocation guard repeats it on the announced row. A scoped revoke
+closes nothing — a role gate admits on global grants alone.
 `NotificationSender` is the narrow structural capability
 (`send_to_account(account_id, message): number`); `ConnectionRegistry`
 satisfies it structurally. Target account travels via the send argument, not
@@ -911,7 +916,8 @@ app-settings methods are always wired). Frontend mirror is
 Option routing — `roles` is shared between admin + role-grant-offer;
 `default_ttl_ms` + `authorize` → role-grant-offer
 only; `max_tokens` → account only. On `deps`: `notification_sender` →
-role-grant-offer only; `connection_closer` (required) → admin + account.
+role-grant-offer only; `connection_closer` (required) → admin, account, and
+role-grant-offer (the role revoke's close).
 
 Pair with `create_app_server`'s `rpc_endpoints` factory form
 `(ctx) => Array<RpcEndpointSpec>` so the combined action list gets
@@ -942,6 +948,10 @@ with `ERROR_ROLE_NOT_SELF_SERVICE_ELIGIBLE`. The eligible set is validated at
 construction (`validate_self_service_eligible_roles`): a builtin role or a name
 outside the `RoleName` grammar throws — self-toggling a builtin would hand any
 account instance-wide authority.
+
+Deps are `RevokingActionFactoryDeps`: a disable that revokes queues a close of
+the caller's connections gated on the role (`queue_connection_close`,
+`{kind: 'role'}`), after the commit and independent of the audit write.
 
 Method name is static (`role` lives in input, not method) — per-role
 parameterized methods would break the `satisfies RequestResponseActionSpec`

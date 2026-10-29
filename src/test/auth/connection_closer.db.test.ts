@@ -1,7 +1,10 @@
 /**
  * Coverage for the connection closes every revocation makes — the self-service
  * account actions, the admin revoke-all / delete / purge actions, the REST
- * login / logout / password routes, and the session and token caps.
+ * login / logout / password routes, the session and token caps, and the role
+ * revokes (`role_grant_revoke`, a `self_service_role_set` disable), which close
+ * only the connections gated on the revoked role, with
+ * `WS_CLOSE_PERMISSION_REVOKED`, and nothing for a scoped grant.
  *
  * Asserts that:
  * 1. Every revoking handler closes the right connections through
@@ -17,7 +20,8 @@
  * 3. A handler that throws closes nothing — its transaction rolled back, so
  *    the revocation never happened.
  * 4. A failed audit INSERT still closes — the close does not ride on the
- *    fail-open audit write.
+ *    fail-open audit write. A role-gated socket on a hand-mounted endpoint,
+ *    with no revocation guard registered, closes on the handler's close alone.
  * 5. The close reaches both transports: a real `ConnectionRegistry`
  *    socket and a real audit-stream `SseRegistry` stream registered
  *    under the revoked identity both end, and a bystander's do not.
@@ -50,7 +54,7 @@ import { describe, test, assert } from 'vitest';
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
-import type { Uuid } from '#lib/primitive_schemas.ts';
+import { create_uuid, type Uuid } from '#lib/primitive_schemas.ts';
 import { wait } from '@fuzdev/fuz_util/async.ts';
 
 import { SessionId } from '#lib/auth/account_schema.ts';
@@ -59,6 +63,8 @@ import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import { create_account_actions } from '#lib/auth/account_actions.ts';
 import { create_admin_actions } from '#lib/auth/admin_actions.ts';
 import { create_standard_rpc_actions } from '#lib/auth/standard_rpc_actions.ts';
+import { create_role_grant_offer_actions } from '#lib/auth/role_grant_offer_actions.ts';
+import { create_self_service_role_actions } from '#lib/auth/self_service_role_actions.ts';
 import {
 	account_session_revoke_action_spec,
 	account_session_revoke_all_action_spec,
@@ -83,6 +89,8 @@ import {
 import { register_action_ws } from '#lib/actions/register_action_ws.ts';
 import { ConnectionRegistry } from '#lib/actions/connection_registry.ts';
 import {
+	WS_CLOSE_PERMISSION_REVOKED,
+	WS_CLOSE_PERMISSION_REVOKED_REASON,
 	WS_CLOSE_SESSION_REVOKED,
 	WS_CLOSE_SESSION_REVOKED_REASON
 } from '#lib/actions/transports.ts';
@@ -109,14 +117,20 @@ import {
 	dispatch_ws_message,
 	type FakeWs
 } from '#lib/testing/ws_round_trip.ts';
-import { build_account_context, REQUEST_CONTEXT_KEY } from '#lib/auth/request_context.ts';
+import {
+	build_account_context,
+	build_request_context,
+	REQUEST_CONTEXT_KEY
+} from '#lib/auth/request_context.ts';
 import { query_session_revoke_all_for_account } from '#lib/auth/session_queries.ts';
 import { RESOLVED_AUTH_KEY } from '#lib/hono_context.ts';
 import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
 import { Db } from '#lib/db/db.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
 import { prefix_route_specs, type RouteSpec } from '#lib/http/route_spec.ts';
-import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
+import { create_role_schema, ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
+import { GRANT_PATH_ADMIN, GRANT_PATH_SELF_SERVICE } from '#lib/auth/grant_path_schema.ts';
+import { query_create_role_grant } from '#lib/auth/role_grant_queries.ts';
 import type { AuditLogEvent } from '#lib/auth/audit_log_schema.ts';
 import type { SseNotification, SseStream } from '#lib/realtime/sse.ts';
 
@@ -127,6 +141,14 @@ import { create_test_identity } from '../actions/connection_identity_helpers.ts'
 
 const session_options = create_session_config('test_session');
 const RPC_PATH = '/api/rpc';
+/** The role the mounted `self_service_role_set` toggles. */
+const SELF_SERVICE_ROLE = 'helper';
+/** An admin-grantable app role, grantable at a scope (builtin roles are global-only). */
+const APP_ROLE = 'teacher';
+const test_roles = create_role_schema([
+	{ name: SELF_SERVICE_ROLE, grant_paths: [GRANT_PATH_SELF_SERVICE] },
+	{ name: APP_ROLE, grant_paths: [GRANT_PATH_ADMIN] }
+]);
 const log = new Logger('test', { level: 'off' });
 
 /** Poll until `predicate` holds, failing with `message` after two seconds. */
@@ -139,9 +161,10 @@ const until = async (predicate: () => boolean, message: string): Promise<void> =
 };
 
 /**
- * The account routes and the account + admin actions, built from `ctx.deps`
- * the way a consumer builds them, with `closer` added to the backend's
- * `connection_closer` so the test sees every close the handlers make.
+ * The account routes and the account, admin, role-grant-offer, and
+ * self-service role actions, built from `ctx.deps` the way a consumer builds
+ * them, with `closer` added to the backend's `connection_closer` so the test
+ * sees every close the handlers make.
  */
 const make_create_route_specs =
 	(closer: ConnectionCloser, options: { max_sessions?: number; max_tokens?: number } = {}) =>
@@ -164,7 +187,9 @@ const make_create_route_specs =
 				path: RPC_PATH,
 				actions: [
 					...create_account_actions(ctx.deps, { max_tokens: options.max_tokens }),
-					...create_admin_actions(ctx.deps)
+					...create_admin_actions(ctx.deps),
+					...create_role_grant_offer_actions(ctx.deps, { roles: test_roles }),
+					...create_self_service_role_actions(ctx.deps, { roles: test_roles })
 				],
 				log: ctx.deps.log
 			})
@@ -1067,6 +1092,14 @@ describe_db('connection_closer wiring', (get_db) => {
 			committed: Promise<boolean>;
 		}
 
+		/** The identity a site's connection opens under. */
+		interface VictimIdentity {
+			account_id: Uuid;
+			session_hash?: string;
+			api_token_id?: string;
+			required_roles?: Array<string>;
+		}
+
 		/** A live connection of one identity, on both transports. */
 		interface LiveConnection {
 			ws: FakeWs;
@@ -1080,12 +1113,14 @@ describe_db('connection_closer wiring', (get_db) => {
 			/** The gate the backend's `Db` runs through — its stall holds a pool write. */
 			gated: GatedDb;
 			closes: Array<ProbedClose>;
-			/** Open a connection of `identity` on the real registry and the real audit stream registry. */
-			connect: (identity: {
-				account_id: Uuid;
-				session_hash?: string;
-				api_token_id?: string;
-			}) => LiveConnection;
+			/**
+			 * Open a connection of `identity` on the real registry and the real
+			 * audit stream registry. `required_roles` gates the socket's endpoint;
+			 * the stream is gated on the audit stream's role (`audit_role`).
+			 */
+			connect: (identity: VictimIdentity) => LiveConnection;
+			/** The role the audit stream registry is gated on. */
+			audit_role: string;
 			/** Failure injection, off until a test flips it. */
 			failing: {
 				/** The handler's next success `audit.emit` throws — the handler fails after its revoke. */
@@ -1109,7 +1144,6 @@ describe_db('connection_closer wiring', (get_db) => {
 			const committed: SiteHarness['committed'] = { read: null };
 			const probe: ConnectionCloser = {
 				close_connections: (target) => {
-					if (target.kind === 'role') throw new Error('no revocation here closes by role');
 					closes.push({
 						target,
 						open_transactions: gated.open_transactions(),
@@ -1165,6 +1199,7 @@ describe_db('connection_closer wiring', (get_db) => {
 				closes,
 				failing,
 				committed,
+				audit_role: sse.required_role,
 				connect: (identity) => {
 					const ws = create_fake_ws();
 					registry.add_connection(
@@ -1172,7 +1207,8 @@ describe_db('connection_closer wiring', (get_db) => {
 						create_test_identity({
 							session_hash: identity.session_hash ?? null,
 							account_id: identity.account_id,
-							api_token_id: identity.api_token_id ?? null
+							api_token_id: identity.api_token_id ?? null,
+							required_roles: identity.required_roles ?? []
 						})
 					);
 					const stream = create_mock_stream<SseNotification>();
@@ -1230,7 +1266,7 @@ describe_db('connection_closer wiring', (get_db) => {
 		/** What one site revokes and how to drive it. */
 		interface Arranged {
 			/** The connection identity the revocation must close. */
-			victim: { account_id: Uuid; session_hash?: string; api_token_id?: string };
+			victim: VictimIdentity;
 			expected: ConnectionCloseTarget;
 			/** True once the revocation is visible to a read through the pool. */
 			committed: (db: Db) => Promise<boolean>;
@@ -1263,6 +1299,26 @@ describe_db('connection_closer wiring', (get_db) => {
 
 		const no_tokens = (db: Db, account_id: Uuid): Promise<boolean> =>
 			exists(db, 'SELECT 1 FROM api_token WHERE account_id = $1', [account_id]).then((v) => !v);
+
+		/** The account's active global grant of `role`. */
+		const global_grant = async (
+			db: Db,
+			account_id: Uuid,
+			role: string
+		): Promise<{ id: Uuid; actor_id: Uuid }> => {
+			const [grant] = await db.query<{ id: Uuid; actor_id: Uuid }>(
+				`SELECT rg.id, rg.actor_id FROM role_grant rg JOIN actor a ON a.id = rg.actor_id
+				 WHERE a.account_id = $1 AND rg.role = $2 AND rg.scope_id IS NULL AND rg.revoked_at IS NULL`,
+				[account_id, role]
+			);
+			assert.ok(grant, `the account holds a global ${role} grant`);
+			return grant;
+		};
+
+		const grant_revoked = (db: Db, role_grant_id: Uuid): Promise<boolean> =>
+			exists(db, 'SELECT 1 FROM role_grant WHERE id = $1 AND revoked_at IS NOT NULL', [
+				role_grant_id
+			]);
 
 		const sites: Array<Site> = [
 			{
@@ -1469,6 +1525,76 @@ describe_db('connection_closer wiring', (get_db) => {
 							).ok
 					};
 				}
+			},
+			{
+				// an admin revoking another account's global `admin`: the role the
+				// audit stream is gated on, so the account's streams end with its
+				// role-gated sockets
+				name: 'role_grant_revoke',
+				arrange: async (h) => {
+					const target = await h.test_app.create_account({
+						username: 'site_target',
+						roles: [ROLE_ADMIN]
+					});
+					const grant = await global_grant(h.db, target.account.id, ROLE_ADMIN);
+					return {
+						victim: {
+							account_id: target.account.id,
+							session_hash: 'target-session-hash',
+							required_roles: [ROLE_ADMIN]
+						},
+						expected: { kind: 'role', account_id: target.account.id, role: ROLE_ADMIN },
+						committed: (db) => grant_revoked(db, grant.id),
+						act: () =>
+							rpc(h, 'role_grant_revoke', { role_grant_id: grant.id, actor_id: grant.actor_id })
+					};
+				}
+			},
+			{
+				// an admin revoking another account's global app role: a role the
+				// audit stream is not gated on, so only the role-gated socket ends —
+				// and the close names the revoked grant's role, not a fixed one
+				name: 'role_grant_revoke (app role)',
+				arrange: async (h) => {
+					const target = await h.test_app.create_account({ username: 'site_target' });
+					const grant = await query_create_role_grant(
+						{ db: h.db },
+						{ actor_id: target.actor.id, role: APP_ROLE, expires_at: null, granted_by: null }
+					);
+					return {
+						victim: {
+							account_id: target.account.id,
+							session_hash: 'target-session-hash',
+							required_roles: [APP_ROLE]
+						},
+						expected: { kind: 'role', account_id: target.account.id, role: APP_ROLE },
+						committed: (db) => grant_revoked(db, grant.id),
+						act: () =>
+							rpc(h, 'role_grant_revoke', { role_grant_id: grant.id, actor_id: target.actor.id })
+					};
+				}
+			},
+			{
+				// the caller disabling its own self-service role: a role the audit
+				// stream is not gated on, so only the role-gated socket ends
+				name: 'self_service_role_set (disable)',
+				arrange: async (h) => {
+					assert.strictEqual(
+						await rpc(h, 'self_service_role_set', { role: SELF_SERVICE_ROLE, enabled: true }),
+						true
+					);
+					const grant = await global_grant(h.db, keeper_id(h), SELF_SERVICE_ROLE);
+					return {
+						victim: {
+							account_id: keeper_id(h),
+							session_hash: 'keeper-session-hash',
+							required_roles: [SELF_SERVICE_ROLE]
+						},
+						expected: { kind: 'role', account_id: keeper_id(h), role: SELF_SERVICE_ROLE },
+						committed: (db) => grant_revoked(db, grant.id),
+						act: () => rpc(h, 'self_service_role_set', { role: SELF_SERVICE_ROLE, enabled: false })
+					};
+				}
 			}
 		];
 
@@ -1526,21 +1652,47 @@ describe_db('connection_closer wiring', (get_db) => {
 		 * alone when no row was announced (`only_handler`).
 		 */
 		const assert_site_closed = (
+			h: SiteHarness,
 			arranged: Arranged,
-			closes: Array<ProbedClose>,
 			connections: { victim: LiveConnection; sibling: LiveConnection; bystander: LiveConnection },
 			only_handler = false
 		): void => {
+			const { closes } = h;
 			if (only_handler) assert.strictEqual(closes.length, 1, 'the handler closed, alone');
 			else assert.strictEqual(closes.length, 2, "the handler's close and the guard's repeat");
 			for (const close of closes) {
 				assert_close_call(close.target, arranged.expected);
 			}
-			assert_closed(connections.victim, 'victim');
-			// an account-wide close takes the sibling with it; a session- or
-			// token-scoped one must not
-			if (arranged.expected.kind === 'account') assert_closed(connections.sibling, 'sibling');
-			else assert_open(connections.sibling, 'sibling');
+			const { expected } = arranged;
+			if (expected.kind === 'role') {
+				// the role-gated socket closes with the permission code, the
+				// credential still good; the account's streams end only when the
+				// stream's gate is the revoked role, the sibling's included, and
+				// the sibling's ungated socket stays
+				assert.deepStrictEqual(
+					connections.victim.ws.closes,
+					[{ code: WS_CLOSE_PERMISSION_REVOKED, reason: WS_CLOSE_PERMISSION_REVOKED_REASON }],
+					'victim: the role-gated socket closed with the permission code'
+				);
+				const stream_gated = expected.role === h.audit_role;
+				for (const [label, connection] of [
+					['victim', connections.victim],
+					['sibling', connections.sibling]
+				] as const) {
+					assert.strictEqual(
+						connection.stream.closed,
+						stream_gated,
+						`${label}: the stream ${stream_gated ? 'closed' : 'stays open'}`
+					);
+				}
+				assert.deepStrictEqual(connections.sibling.ws.closes, [], 'sibling: the socket stays open');
+			} else {
+				assert_closed(connections.victim, 'victim');
+				// an account-wide close takes the sibling with it; a session- or
+				// token-scoped one must not
+				if (expected.kind === 'account') assert_closed(connections.sibling, 'sibling');
+				else assert_open(connections.sibling, 'sibling');
+			}
 			assert_open(connections.bystander, 'bystander');
 		};
 
@@ -1551,7 +1703,7 @@ describe_db('connection_closer wiring', (get_db) => {
 
 					assert.strictEqual(await arranged.act(), true);
 
-					assert_site_closed(arranged, h.closes, connections, site.no_revocation_row);
+					assert_site_closed(h, arranged, connections, site.no_revocation_row);
 					for (const close of h.closes) {
 						assert.strictEqual(
 							close.open_transactions,
@@ -1582,7 +1734,7 @@ describe_db('connection_closer wiring', (get_db) => {
 					await h.test_app.cleanup();
 				});
 
-				test.runIf(site.own_transaction)('a failed commit closes nothing', async () => {
+				test('a failed commit closes nothing', async () => {
 					const { h, arranged, ...connections } = await arrange_site(site, get_db());
 
 					const held = h.gated.hold_commit();
@@ -1612,7 +1764,7 @@ describe_db('connection_closer wiring', (get_db) => {
 						// has run — a queued one would have been dropped with the throw
 						assert.strictEqual(await arranged.committed(h.db), true, 'the revocation stands');
 						// the throw was the success row's emit, so no row was announced
-						assert_site_closed(arranged, h.closes, connections, true);
+						assert_site_closed(h, arranged, connections, true);
 						await h.test_app.cleanup();
 					}
 				);
@@ -1628,7 +1780,7 @@ describe_db('connection_closer wiring', (get_db) => {
 					h.failing.close = false;
 
 					assert.strictEqual(await arranged.committed(h.db), true, 'the revocation stands');
-					assert_site_closed(arranged, h.closes, connections, site.no_revocation_row);
+					assert_site_closed(h, arranged, connections, site.no_revocation_row);
 					await h.test_app.cleanup();
 				});
 
@@ -1646,11 +1798,49 @@ describe_db('connection_closer wiring', (get_db) => {
 					assert.strictEqual(await arranged.committed(h.db), true);
 					// no audit row was written, so no listener ran: the handler's own
 					// close is what ended the connections
-					assert_site_closed(arranged, h.closes, connections, true);
+					assert_site_closed(h, arranged, connections, true);
 					await h.test_app.cleanup();
 				});
 			});
 		}
+
+		test('a scoped role_grant_revoke closes nothing', async () => {
+			// a role gate admits on global grants alone, so revoking a scoped grant
+			// leaves a socket gated on the role open — here the account still
+			// holds the role globally, so a close would take a connection the
+			// gate still admits
+			const h = await create_site_harness(get_db());
+			const target = await h.test_app.create_account({ username: 'site_target' });
+			const grant = (scope_id: Uuid | null) =>
+				query_create_role_grant(
+					{ db: h.db },
+					{
+						actor_id: target.actor.id,
+						role: APP_ROLE,
+						scope_kind: scope_id ? 'classroom' : null,
+						scope_id,
+						expires_at: null,
+						granted_by: null
+					}
+				);
+			await grant(null);
+			const scoped = await grant(create_uuid());
+			const victim = h.connect({
+				account_id: target.account.id,
+				session_hash: 'target-session-hash',
+				required_roles: [APP_ROLE]
+			});
+
+			assert.strictEqual(
+				await rpc(h, 'role_grant_revoke', { role_grant_id: scoped.id, actor_id: target.actor.id }),
+				true
+			);
+
+			assert.strictEqual(await grant_revoked(h.db, scoped.id), true, 'the scoped grant is revoked');
+			assert.deepStrictEqual(h.closes, [], 'no close for a scoped grant');
+			assert_open(victim, 'victim');
+			await h.test_app.cleanup();
+		});
 
 		describe('the close does not wait for the audit write', () => {
 			// The audit INSERT is eager and pool-routed, so it can still be in
@@ -1758,6 +1948,100 @@ describe_db('connection_closer wiring', (get_db) => {
 				await revoking;
 				await h.test_app.cleanup();
 			});
+		});
+	});
+
+	describe('a hand-mounted role-gated endpoint with no revocation guard', () => {
+		// `create_app_server` registers the revocation guard only when it mounts
+		// a WS endpoint or the audit stream, so an endpoint mounted with
+		// `register_action_ws` beside it has no guard to close on a role row. The
+		// registry joins `deps.connection_closer`, which is what the role revokes
+		// close through themselves.
+		test('a self-service disable closes the role-gated socket', async () => {
+			const { closer, calls } = create_recording_closer();
+			const test_app = await create_test_app({
+				session_options,
+				db: get_db(),
+				roles: [ROLE_KEEPER, ROLE_ADMIN],
+				create_route_specs: make_create_route_specs(closer)
+			});
+			const { deps } = test_app.backend;
+			const account_id = test_app.backend.account.id;
+			const call = async (method: string, params?: unknown): Promise<boolean> =>
+				(
+					await rpc_call({
+						app: test_app.app,
+						path: RPC_PATH,
+						method,
+						params,
+						headers: test_app.create_session_headers()
+					})
+				).ok;
+			assert.strictEqual(
+				await call('self_service_role_set', { role: SELF_SERVICE_ROLE, enabled: true }),
+				true
+			);
+			const sessions = await rpc_call({
+				app: test_app.app,
+				path: RPC_PATH,
+				method: 'account_session_list',
+				headers: test_app.create_session_headers()
+			});
+			assert.ok(sessions.ok);
+			const session_hash = (sessions.result as { sessions: Array<{ id: string }> }).sessions[0]?.id;
+			assert.ok(session_hash);
+
+			const stub = create_stub_upgrade();
+			register_action_ws({
+				action_ip_rate_limiter: null,
+				action_account_rate_limiter: null,
+				path: '/ws',
+				app: new Hono(),
+				upgradeWebSocket: stub.upgradeWebSocket,
+				allowed_origins: [],
+				actions: create_account_actions(deps),
+				db: deps.db,
+				connection_closer: deps.connection_closer,
+				required_roles: [SELF_SERVICE_ROLE],
+				receive_timeout: null,
+				log
+			});
+			// what the auth middleware leaves on the context for a role-gated upgrade
+			const request_context = await build_request_context(
+				{ db: deps.db },
+				account_id,
+				test_app.backend.actor.id
+			);
+			assert.ok(request_context);
+			const vars: Record<string, unknown> = {
+				[RESOLVED_AUTH_KEY]: {
+					credential_type: 'session',
+					account_id,
+					session_hash,
+					credential_deadline: null
+				},
+				[REQUEST_CONTEXT_KEY]: request_context
+			};
+			const events = await stub.get_create_events()({
+				get: (key: string) => vars[key]
+			} as unknown as Context);
+			const socket = create_fake_ws();
+			// typed `void` by Hono, but `register_action_ws` returns the admission's promise
+			await (events.onOpen?.(new Event('open'), socket.ws) as Promise<void> | void);
+			assert.deepStrictEqual(socket.closes, [], 'admitted');
+
+			assert.strictEqual(
+				await call('self_service_role_set', { role: SELF_SERVICE_ROLE, enabled: false }),
+				true
+			);
+
+			assert.deepStrictEqual(socket.closes, [
+				{ code: WS_CLOSE_PERMISSION_REVOKED, reason: WS_CLOSE_PERMISSION_REVOKED_REASON }
+			]);
+			// the handler's close alone — no guard repeated it
+			assert.strictEqual(calls.length, 1);
+			assert_close_call(calls[0], { kind: 'role', account_id, role: SELF_SERVICE_ROLE });
+			await test_app.cleanup();
 		});
 	});
 

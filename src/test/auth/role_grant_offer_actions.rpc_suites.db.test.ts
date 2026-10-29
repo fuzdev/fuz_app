@@ -14,6 +14,7 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_test_app_surface_spec, create_test_audit_emitter } from '#lib/testing/stubs.ts';
+import { noop_connection_closer } from '#lib/actions/connection_closer.ts';
 import { describe_rpc_attack_surface_tests } from '#lib/testing/rpc_attack_surface.ts';
 import { describe_rpc_round_trip_tests } from '#lib/testing/rpc_round_trip.ts';
 import { default_in_process_suite_options } from '#lib/testing/cross_backend/in_process_setup.ts';
@@ -34,7 +35,8 @@ const rpc_endpoint_spec = {
 	path: RPC_PATH,
 	actions: create_role_grant_offer_actions({
 		log,
-		audit: create_test_audit_emitter()
+		audit: create_test_audit_emitter(),
+		connection_closer: noop_connection_closer
 	})
 };
 

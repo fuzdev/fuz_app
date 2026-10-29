@@ -632,8 +632,9 @@ type ConnectionCloseTarget =
 `create_sse_connection_closer(registry, required_role)` (`realtime/audit_log_sse.ts`) adapts
 an `SseRegistry` (`close_all_connections` is `SseRegistry.close_all`;
 a `role` target closes the account's streams when `role` is the
-registry's gating role). No handler closes for a role: a role revocation's
-closes come from the revocation guard alone (below).
+registry's gating role). The role revokes (`role_grant_revoke` of a global
+grant, a self-service disable) queue that close themselves, and the revocation
+guard (below) repeats it.
 Closing is idempotent and synchronous. `close_all_connections` is the one method no
 revocation calls: `AppServer.close` runs it on `deps.connection_closer` to end
 every live connection of the backend at shutdown, and it has no
@@ -687,7 +688,8 @@ live-connection surface.
 
 It is required where it is read, so it can't be forgotten:
 `RevokingActionFactoryDeps.connection_closer` (`create_account_actions`,
-`create_admin_actions`, `create_standard_rpc_actions`), `AppDeps` /
+`create_admin_actions`, `create_role_grant_offer_actions`,
+`create_self_service_role_actions`, `create_standard_rpc_actions`), `AppDeps` /
 `RouteFactoryDeps` (`create_account_route_specs`),
 `AuthCleanupDeps.connection_closer` (the auth cleanup's session sweep closes
 the connections of each expired session it deletes — `auth/CLAUDE.md`
@@ -733,8 +735,8 @@ included) maps to nothing:
   dispatch re-authorizes each request against its own action, but nothing
   re-checks what a connection admitted by a role gate receives — every push its
   endpoint sends, every row the stream sends — so a socket closes with
-  `WS_CLOSE_PERMISSION_REVOKED` and a stream gated on the role ends. No handler
-  closes for a role, so this guard is the one closer.
+  `WS_CLOSE_PERMISSION_REVOKED` and a stream gated on the role ends. The role
+  revokes queue the same close themselves; this is its repeat.
 - `none` → nothing — every other event, and any event type fuz_app doesn't
   define
 
@@ -941,8 +943,9 @@ heartbeat activity.
 `apply_authorization_phase` per-message (HTTP and WS uniformly). Role grant
 changes during a connection lifetime are picked up on the next message —
 no in-place refresh. A revoked global grant of a role the endpoint's
-`required_roles` lists closes the socket (`WS_CLOSE_PERMISSION_REVOKED`,
-through the revocation guard), since nothing else re-checks what it
+`required_roles` lists closes the socket (`WS_CLOSE_PERMISSION_REVOKED` —
+the revoking handler through `connection_closer`, the revocation guard
+repeating it), since nothing else re-checks what it
 receives. Authentication
 invalidation (a session or token revoke, `password_change`, a logout, an
 account delete, a cap eviction) still closes the socket — the revoking
