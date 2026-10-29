@@ -17,11 +17,19 @@ import { create_context } from '@fuzdev/fuz_ui/context_helpers.ts';
 import { AsyncSlot } from './async_slot.svelte.ts';
 import { KeyedAsyncSlot } from './keyed_async_slot.svelte.ts';
 import type { AuthSessionJson, SessionId } from '../auth/account_schema.ts';
+import type {
+	SessionListOutput,
+	SessionRevokeAllOutput,
+	SessionRevokeInput,
+	SessionRevokeOutput
+} from '../auth/account_action_specs.ts';
 
 /**
  * Narrow RPC surface consumed by `AccountSessionsState`. Consumers adapt their
  * typed RPC client to this shape. Mirrors the other per-domain `*Rpc`
- * interfaces (`AdminAccountsRpc`, `AuditLogRpc`, `AdminInvitesRpc`).
+ * interfaces (`AdminAccountsRpc`, `AuditLogRpc`, `AdminInvitesRpc`): each
+ * method takes its action's input as one params object typed from the action
+ * spec, or nothing for an input-less one.
  *
  * The three methods wrap the corresponding action specs on
  * `auth/account_actions.ts`:
@@ -31,9 +39,9 @@ import type { AuthSessionJson, SessionId } from '../auth/account_schema.ts';
  * - `revoke_all` → `account_session_revoke_all`
  */
 export interface AccountSessionsRpc {
-	list: () => Promise<{ sessions: Array<AuthSessionJson> }>;
-	revoke: (params: { session_id: SessionId }) => Promise<{ ok: true; revoked: boolean }>;
-	revoke_all: () => Promise<{ ok: true; count: number }>;
+	list: () => Promise<SessionListOutput>;
+	revoke: (params: SessionRevokeInput) => Promise<SessionRevokeOutput>;
+	revoke_all: () => Promise<SessionRevokeAllOutput>;
 }
 
 /**

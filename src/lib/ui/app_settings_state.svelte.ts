@@ -17,6 +17,7 @@ import { create_context } from '@fuzdev/fuz_ui/context_helpers.ts';
 import { AsyncSlot } from './async_slot.svelte.ts';
 import type { AppSettingsWithUsernameJson } from '../auth/app_settings_schema.ts';
 import type {
+	AppSettingsGetInput,
 	AppSettingsGetOutput,
 	AppSettingsUpdateInput,
 	AppSettingsUpdateOutput
@@ -28,7 +29,7 @@ import type {
  * inputs/outputs directly so the adapter needs no casts.
  */
 export interface AppSettingsRpc {
-	get: () => Promise<AppSettingsGetOutput>;
+	get: (params?: AppSettingsGetInput) => Promise<AppSettingsGetOutput>;
 	update: (params: AppSettingsUpdateInput) => Promise<AppSettingsUpdateOutput>;
 }
 

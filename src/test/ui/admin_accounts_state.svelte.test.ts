@@ -280,10 +280,9 @@ describe('AdminAccountsState.submit_retract', () => {
 
 		await state.submit_retract(offer_abc);
 
-		assert.strictEqual(
-			(rpc.retract_offer as ReturnType<typeof vi.fn>).mock.calls[0]![0],
-			offer_abc
-		);
+		assert.deepStrictEqual((rpc.retract_offer as ReturnType<typeof vi.fn>).mock.calls[0]![0], {
+			offer_id: offer_abc
+		});
 		assert.strictEqual((rpc.list_accounts as ReturnType<typeof vi.fn>).mock.calls.length, 1);
 		assert.strictEqual(state.retract.error(offer_abc), null);
 	});
@@ -326,7 +325,7 @@ describe('AdminAccountsState account lifecycle', () => {
 
 		await state.submit_delete(acct_1);
 
-		assert.deepStrictEqual(delete_account.mock.calls[0], [acct_1]);
+		assert.deepStrictEqual(delete_account.mock.calls[0], [{ account_id: acct_1 }]);
 		assert.ok(state.soft_delete.succeeded(acct_1));
 		// Refetched after success.
 		assert.strictEqual(list.mock.calls.length, 1);
@@ -340,7 +339,7 @@ describe('AdminAccountsState account lifecycle', () => {
 
 		await state.submit_undelete(acct_1);
 
-		assert.deepStrictEqual(undelete_account.mock.calls[0], [acct_1]);
+		assert.deepStrictEqual(undelete_account.mock.calls[0], [{ account_id: acct_1 }]);
 		assert.ok(state.undelete.succeeded(acct_1));
 		assert.strictEqual(list.mock.calls.length, 1);
 	});
@@ -353,7 +352,7 @@ describe('AdminAccountsState account lifecycle', () => {
 		await state.set_show_deleted(true);
 
 		assert.ok(state.show_deleted);
-		assert.deepStrictEqual(list.mock.calls[0], [true]);
+		assert.deepStrictEqual(list.mock.calls[0], [{ include_deleted: true }]);
 		// Idempotent: same value doesn't refetch.
 		await state.set_show_deleted(true);
 		assert.strictEqual(list.mock.calls.length, 1);

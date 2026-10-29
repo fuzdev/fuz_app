@@ -40,9 +40,9 @@ import type { SseNotification } from '../realtime/sse.ts';
  * adapter needs no casts.
  */
 export interface AuditLogRpc {
-	list: (input?: AuditLogListInput) => Promise<AuditLogListOutput>;
+	list: (params?: AuditLogListInput) => Promise<AuditLogListOutput>;
 	role_grant_history: (
-		input?: AuditLogRoleGrantHistoryInput
+		params?: AuditLogRoleGrantHistoryInput
 	) => Promise<AuditLogRoleGrantHistoryOutput>;
 }
 

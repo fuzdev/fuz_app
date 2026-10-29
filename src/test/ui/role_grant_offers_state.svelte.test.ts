@@ -16,6 +16,7 @@ import {
 } from '#lib/ui/role_grant_offers_state.svelte.ts';
 import { GRANT_SCOPE_PAIRED_MESSAGE } from '#lib/auth/role_grant_offer_action_specs.ts';
 import type { RoleGrantOfferJson } from '#lib/auth/role_grant_offer_schema.ts';
+import type { Uuid } from '#lib/primitive_schemas.ts';
 import {
 	ROLE_GRANT_OFFER_ACCEPTED_NOTIFICATION_METHOD,
 	ROLE_GRANT_OFFER_DECLINED_NOTIFICATION_METHOD,
@@ -25,24 +26,24 @@ import {
 	ROLE_GRANT_REVOKE_NOTIFICATION_METHOD
 } from '#lib/auth/role_grant_offer_notifications.ts';
 
-const RECIPIENT_ID = '11111111-1111-1111-1111-111111111111';
-const OTHER_RECIPIENT_ID = '22222222-2222-2222-2222-222222222222';
-const GRANTOR_ACTOR_ID = '33333333-3333-3333-3333-333333333333';
-const OTHER_ACTOR_ID = '44444444-4444-4444-4444-444444444444';
-const SCOPE_ID = '55555555-5555-4555-8555-555555555555';
+const RECIPIENT_ID = '11111111-1111-1111-1111-111111111111' as Uuid;
+const OTHER_RECIPIENT_ID = '22222222-2222-2222-2222-222222222222' as Uuid;
+const GRANTOR_ACTOR_ID = '33333333-3333-3333-3333-333333333333' as Uuid;
+const OTHER_ACTOR_ID = '44444444-4444-4444-4444-444444444444' as Uuid;
+const SCOPE_ID = '55555555-5555-4555-8555-555555555555' as Uuid;
 
 let counter = 0;
-const next_uuid = (): string => {
+const next_uuid = (): Uuid => {
 	counter += 1;
-	return `00000000-0000-0000-0000-${counter.toString().padStart(12, '0')}`;
+	return `00000000-0000-0000-0000-${counter.toString().padStart(12, '0')}` as Uuid;
 };
 
 const pending_offer = (overrides: Partial<RoleGrantOfferJson> = {}): RoleGrantOfferJson => {
 	const now = new Date();
 	const base: RoleGrantOfferJson = {
-		id: next_uuid() as RoleGrantOfferJson['id'],
-		from_actor_id: GRANTOR_ACTOR_ID as RoleGrantOfferJson['from_actor_id'],
-		to_account_id: RECIPIENT_ID as RoleGrantOfferJson['to_account_id'],
+		id: next_uuid(),
+		from_actor_id: GRANTOR_ACTOR_ID,
+		to_account_id: RECIPIENT_ID,
 		to_actor_id: null,
 		role: 'admin',
 		scope_kind: null,
@@ -99,11 +100,11 @@ describe('RoleGrantOffersState — seed', () => {
 
 	test('fetch_history merges both directions into the cache', async () => {
 		const incoming = pending_offer({
-			from_actor_id: OTHER_ACTOR_ID as RoleGrantOfferJson['from_actor_id']
+			from_actor_id: OTHER_ACTOR_ID
 		});
 		const outgoing = pending_offer({
-			from_actor_id: GRANTOR_ACTOR_ID as RoleGrantOfferJson['from_actor_id'],
-			to_account_id: OTHER_RECIPIENT_ID as RoleGrantOfferJson['to_account_id']
+			from_actor_id: GRANTOR_ACTOR_ID,
+			to_account_id: OTHER_RECIPIENT_ID
 		});
 		const state = create_state({ history: async () => ({ offers: [incoming, outgoing] }) });
 
@@ -139,7 +140,7 @@ describe('RoleGrantOffersState — seed', () => {
 
 	test('incoming filters out offers addressed elsewhere', async () => {
 		const theirs = pending_offer({
-			to_account_id: OTHER_RECIPIENT_ID as RoleGrantOfferJson['to_account_id']
+			to_account_id: OTHER_RECIPIENT_ID
 		});
 		const state = create_state({ list: async () => ({ offers: [theirs] }) });
 
@@ -198,7 +199,7 @@ describe('RoleGrantOffersState — reducer', () => {
 	test('role_grant_offer_accepted terminates the outgoing offer', () => {
 		const state = create_state();
 		const outgoing = pending_offer({
-			to_account_id: OTHER_RECIPIENT_ID as RoleGrantOfferJson['to_account_id']
+			to_account_id: OTHER_RECIPIENT_ID
 		});
 		// seed as outgoing via history stub style — drop directly via notification:
 		state.apply_notification({
@@ -210,7 +211,7 @@ describe('RoleGrantOffersState — reducer', () => {
 		const accepted: RoleGrantOfferJson = {
 			...outgoing,
 			accepted_at: new Date().toISOString(),
-			resulting_role_grant_id: next_uuid() as RoleGrantOfferJson['resulting_role_grant_id']
+			resulting_role_grant_id: next_uuid()
 		};
 		state.apply_notification({
 			method: ROLE_GRANT_OFFER_ACCEPTED_NOTIFICATION_METHOD,
@@ -223,7 +224,7 @@ describe('RoleGrantOffersState — reducer', () => {
 	test('role_grant_offer_declined terminates the outgoing offer and preserves decline_reason', () => {
 		const state = create_state();
 		const outgoing = pending_offer({
-			to_account_id: OTHER_RECIPIENT_ID as RoleGrantOfferJson['to_account_id']
+			to_account_id: OTHER_RECIPIENT_ID
 		});
 		state.apply_notification({
 			method: ROLE_GRANT_OFFER_RECEIVED_NOTIFICATION_METHOD,
@@ -247,7 +248,7 @@ describe('RoleGrantOffersState — reducer', () => {
 	test('role_grant_offer_supersede stamps an outgoing offer terminal', () => {
 		const state = create_state();
 		const outgoing = pending_offer({
-			to_account_id: OTHER_RECIPIENT_ID as RoleGrantOfferJson['to_account_id']
+			to_account_id: OTHER_RECIPIENT_ID
 		});
 		state.apply_notification({
 			method: ROLE_GRANT_OFFER_RECEIVED_NOTIFICATION_METHOD,
@@ -326,7 +327,7 @@ describe('RoleGrantOffersState — subscribe', () => {
 describe('RoleGrantOffersState — mutations', () => {
 	test('create merges the returned offer into the cache', async () => {
 		const offer = pending_offer({
-			to_account_id: OTHER_RECIPIENT_ID as RoleGrantOfferJson['to_account_id']
+			to_account_id: OTHER_RECIPIENT_ID
 		});
 		const state = create_state({ create: async () => ({ offer }) });
 
@@ -338,7 +339,7 @@ describe('RoleGrantOffersState — mutations', () => {
 
 	test('submit_create returns the offer on success and undefined on failure', async () => {
 		const offer = pending_offer({
-			to_account_id: OTHER_RECIPIENT_ID as RoleGrantOfferJson['to_account_id']
+			to_account_id: OTHER_RECIPIENT_ID
 		});
 		const ok_state = create_state({ create: async () => ({ offer }) });
 		const ok_result = await ok_state.submit_create({
@@ -366,8 +367,8 @@ describe('RoleGrantOffersState — mutations', () => {
 			params: null
 		};
 		const offer = pending_offer({
-			to_account_id: OTHER_RECIPIENT_ID as RoleGrantOfferJson['to_account_id'],
-			to_actor_id: target_actor_id as RoleGrantOfferJson['to_actor_id']
+			to_account_id: OTHER_RECIPIENT_ID,
+			to_actor_id: target_actor_id
 		});
 		const state = create_state({
 			create: async (params) => {
@@ -397,7 +398,7 @@ describe('RoleGrantOffersState — mutations', () => {
 		};
 		const offer = pending_offer({
 			scope_kind: 'classroom',
-			scope_id: SCOPE_ID as RoleGrantOfferJson['scope_id']
+			scope_id: SCOPE_ID
 		});
 		const state = create_state({
 			create: async (params) => {
@@ -447,7 +448,7 @@ describe('RoleGrantOffersState — mutations', () => {
 				offer: {
 					...target,
 					accepted_at: new Date().toISOString(),
-					resulting_role_grant_id: next_uuid() as RoleGrantOfferJson['resulting_role_grant_id']
+					resulting_role_grant_id: next_uuid()
 				},
 				superseded_offer_ids: [sibling.id]
 			})
@@ -470,11 +471,11 @@ describe('RoleGrantOffersState — mutations', () => {
 			declined_at: new Date().toISOString(),
 			decline_reason: 'no thanks'
 		};
-		const calls: Array<[string, string | null | undefined]> = [];
+		const calls: Array<Parameters<RoleGrantOffersRpc['decline']>[0]> = [];
 		const state = create_state({
 			list: async () => ({ offers: [offer] }),
-			decline: async (offer_id, reason) => {
-				calls.push([offer_id, reason]);
+			decline: async (params) => {
+				calls.push(params);
 				return { offer: declined };
 			}
 		});
@@ -482,7 +483,7 @@ describe('RoleGrantOffersState — mutations', () => {
 
 		await state.submit_decline(offer.id, 'no thanks');
 
-		assert.deepStrictEqual(calls, [[offer.id, 'no thanks']]);
+		assert.deepStrictEqual(calls, [{ offer_id: offer.id, reason: 'no thanks' }]);
 		assert.strictEqual(state.incoming.length, 0);
 		assert.deepStrictEqual(state.history, [declined]);
 		assert.isTrue(state.decline.succeeded(offer.id));
@@ -490,7 +491,7 @@ describe('RoleGrantOffersState — mutations', () => {
 
 	test('retract stamps the retracted offer the server returns', async () => {
 		const outgoing = pending_offer({
-			to_account_id: OTHER_RECIPIENT_ID as RoleGrantOfferJson['to_account_id']
+			to_account_id: OTHER_RECIPIENT_ID
 		});
 		const retracted: RoleGrantOfferJson = { ...outgoing, retracted_at: new Date().toISOString() };
 		const state = create_state({
@@ -546,13 +547,50 @@ describe('RoleGrantOffersState — mutations', () => {
 	});
 });
 
+describe('RoleGrantOffersState — rpc params', () => {
+	test('each verb passes its action input as one params object', async () => {
+		const offer = pending_offer();
+		const calls: Array<[string, unknown]> = [];
+		const state = create_state({
+			list: async (params) => {
+				calls.push(['list', params]);
+				return { offers: [offer] };
+			},
+			history: async (params) => {
+				calls.push(['history', params]);
+				return { offers: [] };
+			},
+			accept: async (params) => {
+				calls.push(['accept', params]);
+				return { role_grant_id: next_uuid(), offer, superseded_offer_ids: [] };
+			},
+			retract: async (params) => {
+				calls.push(['retract', params]);
+				return { offer: { ...offer, retracted_at: new Date().toISOString() } };
+			}
+		});
+
+		await state.fetch();
+		await state.fetch_history({ limit: 10, offset: 20 });
+		await state.submit_accept(offer.id);
+		await state.submit_retract(offer.id);
+
+		assert.deepStrictEqual(calls, [
+			['list', undefined],
+			['history', { limit: 10, offset: 20 }],
+			['accept', { offer_id: offer.id }],
+			['retract', { offer_id: offer.id }]
+		]);
+	});
+});
+
 describe('RoleGrantOffersState — per-row verbs', () => {
 	test('two declines run independently, each keeping its own error', async () => {
 		const first = pending_offer();
 		const second = pending_offer();
 		const state = create_state({
 			list: async () => ({ offers: [first, second] }),
-			decline: async (offer_id) => {
+			decline: async ({ offer_id }) => {
 				if (offer_id === first.id) throw new Error('first failed');
 				return { offer: { ...second, declined_at: new Date().toISOString() } };
 			}
@@ -575,12 +613,12 @@ describe('RoleGrantOffersState — per-row verbs', () => {
 		let resolve_accept: (() => void) | undefined;
 		const state = create_state({
 			list: async () => ({ offers: [first, second] }),
-			accept: (offer_id) =>
+			accept: ({ offer_id }) =>
 				new Promise((resolve) => {
 					resolve_accept = () =>
 						resolve({
 							role_grant_id: next_uuid(),
-							offer: { ...first, id: offer_id as RoleGrantOfferJson['id'] },
+							offer: { ...first, id: offer_id },
 							superseded_offer_ids: []
 						});
 				})

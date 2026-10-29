@@ -40,6 +40,7 @@ import type {
 	AccountDeleteOutput,
 	AccountUndeleteInput,
 	AccountUndeleteOutput,
+	AdminSessionListInput,
 	AdminSessionListOutput,
 	AdminSessionRevokeAllInput,
 	AdminSessionRevokeAllOutput,
@@ -53,7 +54,9 @@ import type {
 	InviteCreateOutput,
 	InviteDeleteInput,
 	InviteDeleteOutput,
+	InviteListInput,
 	InviteListOutput,
+	AppSettingsGetInput,
 	AppSettingsGetOutput,
 	AppSettingsUpdateInput,
 	AppSettingsUpdateOutput
@@ -90,19 +93,19 @@ export interface AdminRpcApi {
 	admin_account_list: (input?: AdminAccountListInput) => Promise<AdminAccountListOutput>;
 	account_delete: (input: AccountDeleteInput) => Promise<AccountDeleteOutput>;
 	account_undelete: (input: AccountUndeleteInput) => Promise<AccountUndeleteOutput>;
-	admin_session_list: () => Promise<AdminSessionListOutput>;
+	admin_session_list: (input?: AdminSessionListInput) => Promise<AdminSessionListOutput>;
 	admin_session_revoke_all: (
 		input: AdminSessionRevokeAllInput
 	) => Promise<AdminSessionRevokeAllOutput>;
 	admin_token_revoke_all: (input: AdminTokenRevokeAllInput) => Promise<AdminTokenRevokeAllOutput>;
-	audit_log_list: (input: AuditLogListInput) => Promise<AuditLogListOutput>;
+	audit_log_list: (input?: AuditLogListInput) => Promise<AuditLogListOutput>;
 	audit_log_role_grant_history: (
-		input: AuditLogRoleGrantHistoryInput
+		input?: AuditLogRoleGrantHistoryInput
 	) => Promise<AuditLogRoleGrantHistoryOutput>;
-	invite_list: () => Promise<InviteListOutput>;
+	invite_list: (input?: InviteListInput) => Promise<InviteListOutput>;
 	invite_create: (input: InviteCreateInput) => Promise<InviteCreateOutput>;
 	invite_delete: (input: InviteDeleteInput) => Promise<InviteDeleteOutput>;
-	app_settings_get: () => Promise<AppSettingsGetOutput>;
+	app_settings_get: (input?: AppSettingsGetInput) => Promise<AppSettingsGetOutput>;
 	app_settings_update: (input: AppSettingsUpdateInput) => Promise<AppSettingsUpdateOutput>;
 	role_grant_offer_create: (
 		input: RoleGrantOfferCreateInput
@@ -151,27 +154,27 @@ export interface AdminRpcAdapters {
  */
 export const create_admin_rpc_adapters = (api: AdminRpcApi): AdminRpcAdapters => ({
 	admin_accounts: {
-		list_accounts: (include_deleted) => api.admin_account_list({ include_deleted }),
-		delete_account: (account_id) => api.account_delete({ account_id }),
-		undelete_account: (account_id) => api.account_undelete({ account_id }),
-		list_sessions: () => api.admin_session_list(),
+		list_accounts: (params) => api.admin_account_list(params),
+		delete_account: (params) => api.account_delete(params),
+		undelete_account: (params) => api.account_undelete(params),
+		list_sessions: (params) => api.admin_session_list(params),
 		create_role_grant: (params) => api.role_grant_offer_create(params),
 		revoke_role_grant: (params) => api.role_grant_revoke(params),
-		retract_offer: (offer_id) => api.role_grant_offer_retract({ offer_id }),
+		retract_offer: (params) => api.role_grant_offer_retract(params),
 		session_revoke_all: (params) => api.admin_session_revoke_all(params),
 		token_revoke_all: (params) => api.admin_token_revoke_all(params)
 	},
 	admin_invites: {
-		list: () => api.invite_list(),
+		list: (params) => api.invite_list(params),
 		create: (params) => api.invite_create(params),
 		delete: (params) => api.invite_delete(params)
 	},
 	audit_log: {
-		list: (options) => api.audit_log_list(options ?? {}),
-		role_grant_history: (params) => api.audit_log_role_grant_history(params ?? {})
+		list: (params) => api.audit_log_list(params),
+		role_grant_history: (params) => api.audit_log_role_grant_history(params)
 	},
 	app_settings: {
-		get: () => api.app_settings_get(),
+		get: (params) => api.app_settings_get(params),
 		update: (params) => api.app_settings_update(params)
 	}
 });

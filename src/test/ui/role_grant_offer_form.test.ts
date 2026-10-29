@@ -13,17 +13,19 @@ import { test, assert } from 'vitest';
 import type { ComponentProps } from 'svelte';
 
 import type RoleGrantOfferForm from '#lib/ui/RoleGrantOfferForm.svelte';
+import type { Uuid } from '#lib/primitive_schemas.ts';
 
 type FormProps = ComponentProps<typeof RoleGrantOfferForm>;
 
-const base = { to_account_id: 'acct', roles: ['teacher'] };
+const base = { to_account_id: 'acct' as Uuid, roles: ['teacher'] };
+const scope_id = 'scope' as Uuid;
 
 test('the scope prop is a pair', () => {
 	const global: FormProps = { ...base };
 	const global_nulls: FormProps = { ...base, scope_kind: null, scope_id: null };
-	const scoped: FormProps = { ...base, scope_kind: 'classroom', scope_id: 'scope' };
+	const scoped: FormProps = { ...base, scope_kind: 'classroom', scope_id };
 	// @ts-expect-error — `scope_id` without `scope_kind`
-	const lone_id: FormProps = { ...base, scope_id: 'scope' };
+	const lone_id: FormProps = { ...base, scope_id };
 	// @ts-expect-error — `scope_kind` without `scope_id`
 	const lone_kind: FormProps = { ...base, scope_kind: 'classroom' };
 	assert.strictEqual([global, global_nulls, scoped, lone_id, lone_kind].length, 5);

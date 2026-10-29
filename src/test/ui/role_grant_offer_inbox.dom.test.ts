@@ -88,7 +88,7 @@ describe('RoleGrantOfferInbox', () => {
 		const pending = make_deferred<RoleGrantOfferAcceptOutput>();
 		const target = await mount_inbox({
 			list: async () => ({ offers: [first, second] }),
-			accept: (offer_id) =>
+			accept: ({ offer_id }) =>
 				offer_id === first.id ? Promise.reject(new Error('first failed')) : pending.promise
 		});
 		const rows = Array.from(target.querySelectorAll<HTMLElement>('li'));

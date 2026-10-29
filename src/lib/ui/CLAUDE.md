@@ -488,7 +488,13 @@ All state classes hold per-op `AsyncSlot`s for the fetch + singular
 write verbs, and `KeyedAsyncSlot`s for per-row write verbs (the
 `SvelteSet<id>` pattern is retired — per-row tracking lives on the
 keyed slot's `loading(key)` / `error(key)` accessors). Method names use
-the `submit_*` prefix where the verb collides with a slot name.
+the `submit_*` prefix where the verb collides with a slot name. Every
+narrow `*Rpc` adapter method takes its action's input as one params object
+and returns its output, both typed from the action specs — `params?` where
+the input defaults to `{}`, nothing where the action takes no input — so an
+adapter over the typed throwing client is a one-line pass-through per
+method. `AdminAccountsRpc.delete_account` keeps its params required: its
+input defaults too, but the empty input deletes the caller.
 
 - `account_sessions_state.svelte.ts` — `AccountSessionsState` +
   `account_sessions_rpc_context` + narrow `AccountSessionsRpc`
@@ -529,7 +535,7 @@ the `submit_*` prefix where the verb collides with a slot name.
   not an RPC concern.
 - `admin_accounts_state.svelte.ts` — `AdminAccountsState` +
   `admin_accounts_rpc_context` + narrow `AdminAccountsRpc` (nine
-  methods: `list_accounts` (`include_deleted?`), `delete_account`,
+  methods: `list_accounts` (`{include_deleted?, …}`), `delete_account`,
   `undelete_account`, `list_sessions`, `create_role_grant`,
   `revoke_role_grant`, `retract_offer`, `session_revoke_all`,
   `token_revoke_all` — `delete_account`/`undelete_account` back

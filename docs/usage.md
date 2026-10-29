@@ -1307,12 +1307,13 @@ const api = /* typed client via create_rpc_client */;
 
 const role_grant_offers = new RoleGrantOffersState({
 	rpc: {
-		list: () => api.role_grant_offer_list({}),
-		history: (options) => api.role_grant_offer_history(options ?? {}),
+		// each method takes its action's input and returns its output
+		list: (params) => api.role_grant_offer_list(params),
+		history: (params) => api.role_grant_offer_history(params),
 		create: (params) => api.role_grant_offer_create(params),
-		accept: (offer_id) => api.role_grant_offer_accept({offer_id}),
-		decline: (offer_id, reason) => api.role_grant_offer_decline({offer_id, reason}),
-		retract: (offer_id) => api.role_grant_offer_retract({offer_id}),
+		accept: (params) => api.role_grant_offer_accept(params),
+		decline: (params) => api.role_grant_offer_decline(params),
+		retract: (params) => api.role_grant_offer_retract(params),
 	},
 	account_id: () => auth.account?.id ?? null,
 	// Actor id is needed to classify outgoing offers. Surfaced directly on

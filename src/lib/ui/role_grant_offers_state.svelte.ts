@@ -34,10 +34,23 @@ import { create_context } from '@fuzdev/fuz_ui/context_helpers.ts';
 import { AsyncSlot } from './async_slot.svelte.ts';
 import { KeyedAsyncSlot } from './keyed_async_slot.svelte.ts';
 import { is_iso8601_seconds_live } from '../timestamp.ts';
+import type { Uuid } from '../primitive_schemas.ts';
 import type { RoleGrantOfferJson } from '../auth/role_grant_offer_schema.ts';
 import {
 	GRANT_SCOPE_PAIRED_MESSAGE,
-	is_grant_scope_paired
+	is_grant_scope_paired,
+	type RoleGrantOfferAcceptInput,
+	type RoleGrantOfferAcceptOutput,
+	type RoleGrantOfferCreateInput,
+	type RoleGrantOfferCreateOutput,
+	type RoleGrantOfferDeclineInput,
+	type RoleGrantOfferDeclineOutput,
+	type RoleGrantOfferHistoryInput,
+	type RoleGrantOfferHistoryOutput,
+	type RoleGrantOfferListInput,
+	type RoleGrantOfferListOutput,
+	type RoleGrantOfferRetractInput,
+	type RoleGrantOfferRetractOutput
 } from '../auth/role_grant_offer_action_specs.ts';
 import {
 	ROLE_GRANT_OFFER_ACCEPTED_NOTIFICATION_METHOD,
@@ -55,15 +68,17 @@ import {
  * fields.
  */
 export type RoleGrantOfferScope =
-	{ scope_kind?: null; scope_id?: null } | { scope_kind: string; scope_id: string };
+	{ scope_kind?: null; scope_id?: null } | { scope_kind: string; scope_id: Uuid };
 
-/** Params for creating an offer — `RoleGrantOffersRpc.create` and `submit_create`. */
-export type RoleGrantOfferCreateParams = {
-	to_account_id: string;
-	to_actor_id?: string | null;
-	role: string;
-	message?: string | null;
-} & RoleGrantOfferScope;
+/**
+ * Params for `submit_create` — `RoleGrantOfferCreateInput` with its scope as
+ * the paired `RoleGrantOfferScope`, so a lone `scope_id` is a type error.
+ */
+export type RoleGrantOfferCreateParams = Omit<
+	RoleGrantOfferCreateInput,
+	'scope_kind' | 'scope_id'
+> &
+	RoleGrantOfferScope;
 
 /**
  * Svelte context for `RoleGrantOffersState`.
@@ -76,22 +91,17 @@ export const role_grant_offers_state_context = create_context<RoleGrantOffersSta
  * Narrow RPC surface consumed by `RoleGrantOffersState`. Consumers adapt their
  * typed client (e.g. a `create_rpc_client` Proxy) to this shape — the state
  * class stays decoupled from the client's `Result` return type so tests can
- * inject plain-function stubs.
+ * inject plain-function stubs. Each method takes its action's input as one
+ * params object and returns its output, both typed from the action specs, so
+ * the typed throwing client's methods bridge with no casts.
  */
 export interface RoleGrantOffersRpc {
-	list: () => Promise<{ offers: Array<RoleGrantOfferJson> }>;
-	history: (options?: {
-		limit?: number;
-		offset?: number;
-	}) => Promise<{ offers: Array<RoleGrantOfferJson> }>;
-	create: (params: RoleGrantOfferCreateParams) => Promise<{ offer: RoleGrantOfferJson }>;
-	accept: (offer_id: string) => Promise<{
-		role_grant_id: string;
-		offer: RoleGrantOfferJson;
-		superseded_offer_ids: Array<string>;
-	}>;
-	decline: (offer_id: string, reason?: string | null) => Promise<{ offer: RoleGrantOfferJson }>;
-	retract: (offer_id: string) => Promise<{ offer: RoleGrantOfferJson }>;
+	list: (params?: RoleGrantOfferListInput) => Promise<RoleGrantOfferListOutput>;
+	history: (params?: RoleGrantOfferHistoryInput) => Promise<RoleGrantOfferHistoryOutput>;
+	create: (params: RoleGrantOfferCreateInput) => Promise<RoleGrantOfferCreateOutput>;
+	accept: (params: RoleGrantOfferAcceptInput) => Promise<RoleGrantOfferAcceptOutput>;
+	decline: (params: RoleGrantOfferDeclineInput) => Promise<RoleGrantOfferDeclineOutput>;
+	retract: (params: RoleGrantOfferRetractInput) => Promise<RoleGrantOfferRetractOutput>;
 }
 
 /** Narrow WS notification envelope — method + params, matching `JsonrpcNotification`. */
@@ -226,9 +236,9 @@ export class RoleGrantOffersState {
 	}
 
 	/** Accept an offer; stamps it terminal in the cache and drops any siblings the server superseded. */
-	async submit_accept(offer_id: string): Promise<void> {
+	async submit_accept(offer_id: Uuid): Promise<void> {
 		await this.accept.run(offer_id, async () => {
-			const result = await this.#rpc.accept(offer_id);
+			const result = await this.#rpc.accept({ offer_id });
 			this.#merge_offers([result.offer]);
 			// siblings are authoritatively superseded server-side; the
 			// corresponding WS notifications will also arrive, but dropping
@@ -240,17 +250,17 @@ export class RoleGrantOffersState {
 	}
 
 	/** Decline an offer; stamps the declined offer the server returns into the cache. */
-	async submit_decline(offer_id: string, reason?: string | null): Promise<void> {
+	async submit_decline(offer_id: Uuid, reason?: string | null): Promise<void> {
 		await this.decline.run(offer_id, async () => {
-			const { offer } = await this.#rpc.decline(offer_id, reason);
+			const { offer } = await this.#rpc.decline({ offer_id, reason });
 			this.#merge_offers([offer]);
 		});
 	}
 
 	/** Retract an offer; stamps the retracted offer the server returns into the cache. */
-	async submit_retract(offer_id: string): Promise<void> {
+	async submit_retract(offer_id: Uuid): Promise<void> {
 		await this.retract.run(offer_id, async () => {
-			const { offer } = await this.#rpc.retract(offer_id);
+			const { offer } = await this.#rpc.retract({ offer_id });
 			this.#merge_offers([offer]);
 		});
 	}

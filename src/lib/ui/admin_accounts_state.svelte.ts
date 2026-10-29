@@ -22,9 +22,13 @@ import { type AdminAccountEntryJson, has_global_role } from '../auth/account_sch
 import type { RoleName } from '../auth/role_schema.ts';
 import type { RoleGrantOfferJson } from '../auth/role_grant_offer_schema.ts';
 import type {
+	AdminAccountListInput,
 	AdminAccountListOutput,
+	AccountDeleteInput,
 	AccountDeleteOutput,
+	AccountUndeleteInput,
 	AccountUndeleteOutput,
+	AdminSessionListInput,
 	AdminSessionListOutput,
 	AdminSessionRevokeAllInput,
 	AdminSessionRevokeAllOutput,
@@ -34,6 +38,7 @@ import type {
 import type {
 	RoleGrantOfferCreateInput,
 	RoleGrantOfferCreateOutput,
+	RoleGrantOfferRetractInput,
 	RoleGrantOfferRetractOutput,
 	RoleGrantRevokeInput,
 	RoleGrantRevokeOutput
@@ -51,19 +56,20 @@ import type {
  * actions, and the session / token revoke-all mutations reuse
  * `admin_session_revoke_all` and `admin_token_revoke_all`.
  *
- * Method signatures track the underlying action specs — `Uuid`-branded ids
+ * Every method takes its action's input as one params object, typed from the
+ * action specs (or nothing, for an input-less listing) — `Uuid`-branded ids
  * propagate from the wire through the state class to the components. The
  * adapter built by `create_admin_rpc_adapters` therefore needs zero casts
  * to bridge to the typed throwing Proxy.
  */
 export interface AdminAccountsRpc {
-	list_accounts: (include_deleted?: boolean) => Promise<AdminAccountListOutput>;
-	delete_account: (account_id: Uuid) => Promise<AccountDeleteOutput>;
-	undelete_account: (account_id: Uuid) => Promise<AccountUndeleteOutput>;
-	list_sessions: () => Promise<AdminSessionListOutput>;
+	list_accounts: (params?: AdminAccountListInput) => Promise<AdminAccountListOutput>;
+	delete_account: (params: AccountDeleteInput) => Promise<AccountDeleteOutput>;
+	undelete_account: (params: AccountUndeleteInput) => Promise<AccountUndeleteOutput>;
+	list_sessions: (params?: AdminSessionListInput) => Promise<AdminSessionListOutput>;
 	create_role_grant: (params: RoleGrantOfferCreateInput) => Promise<RoleGrantOfferCreateOutput>;
 	revoke_role_grant: (params: RoleGrantRevokeInput) => Promise<RoleGrantRevokeOutput>;
-	retract_offer: (offer_id: Uuid) => Promise<RoleGrantOfferRetractOutput>;
+	retract_offer: (params: RoleGrantOfferRetractInput) => Promise<RoleGrantOfferRetractOutput>;
 	session_revoke_all: (params: AdminSessionRevokeAllInput) => Promise<AdminSessionRevokeAllOutput>;
 	token_revoke_all: (params: AdminTokenRevokeAllInput) => Promise<AdminTokenRevokeAllOutput>;
 }
@@ -146,7 +152,9 @@ export class AdminAccountsState {
 
 	async fetch(): Promise<void> {
 		await this.list.run(async () => {
-			const { accounts, grantable_roles } = await this.#get_rpc().list_accounts(this.show_deleted);
+			const { accounts, grantable_roles } = await this.#get_rpc().list_accounts({
+				include_deleted: this.show_deleted
+			});
 			this.accounts = accounts;
 			this.grantable_roles = grantable_roles;
 		});
@@ -171,7 +179,7 @@ export class AdminAccountsState {
 	 */
 	async submit_delete(account_id: Uuid): Promise<void> {
 		await this.soft_delete.run(account_id, async () => {
-			await this.#get_rpc().delete_account(account_id);
+			await this.#get_rpc().delete_account({ account_id });
 		});
 		if (this.soft_delete.succeeded(account_id)) await this.fetch();
 	}
@@ -183,7 +191,7 @@ export class AdminAccountsState {
 	 */
 	async submit_undelete(account_id: Uuid): Promise<void> {
 		await this.undelete.run(account_id, async () => {
-			await this.#get_rpc().undelete_account(account_id);
+			await this.#get_rpc().undelete_account({ account_id });
 		});
 		if (this.undelete.succeeded(account_id)) await this.fetch();
 	}
@@ -253,7 +261,7 @@ export class AdminAccountsState {
 	 */
 	async submit_retract(offer_id: Uuid): Promise<void> {
 		await this.retract.run(offer_id, async () => {
-			await this.#get_rpc().retract_offer(offer_id);
+			await this.#get_rpc().retract_offer({ offer_id });
 		});
 		if (this.retract.succeeded(offer_id)) await this.fetch();
 	}

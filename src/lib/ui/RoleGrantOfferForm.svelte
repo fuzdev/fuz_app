@@ -16,6 +16,7 @@
 
 	import PendingButton from '@fuzdev/fuz_ui/PendingButton.svelte';
 
+	import type { Uuid } from '../primitive_schemas.ts';
 	import {
 		role_grant_offers_state_context,
 		type RoleGrantOfferScope
@@ -44,13 +45,13 @@
 		format_role = (role: string) => role,
 		...scope
 	}: {
-		to_account_id: string;
+		to_account_id: Uuid;
 		/**
 		 * Narrow the offer to a specific actor on `to_account_id`. Omit
 		 * (or `null`, the default) for the account-grain default — any
 		 * actor on the recipient account may accept.
 		 */
-		to_actor_id?: string | null;
+		to_actor_id?: Uuid | null;
 		/** Roles the caller may offer — caller filters upstream (default: admin-grant-path). */
 		roles: Array<string>;
 		on_created?: (offer: RoleGrantOfferJson) => void;
