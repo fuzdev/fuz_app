@@ -80,7 +80,13 @@ The full auth middleware stack (origin, optional daemon_token, session,
 request_context, bearer_auth) can be created via `create_auth_middleware_specs()`
 from `auth/middleware.ts`. The credential legs run daemon token → session cookie
 → bearer, the first that authenticates setting the request's one `ResolvedAuth`
-(`get_resolved_auth`) and the later legs skipping.
+(`get_resolved_auth`) and the later legs skipping. The chain starts from a clean
+slate: the first leg composed clears `ResolvedAuth` on entry, so a layer mounted
+before the stack can't pre-set an identity every leg would skip past. A
+hand-built chain that puts a session leg behind its own earlier credential leg
+passes `starts_chain: false` there (`create_request_context_middleware`), or the
+session leg clears the earlier leg's credential; either leg's `log` debug-logs a
+start that clears one.
 
 ## Keyring
 

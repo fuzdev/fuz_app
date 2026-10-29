@@ -6,6 +6,7 @@
 
 import { describe, assert, test, vi, afterEach } from 'vitest';
 import { Hono } from 'hono';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import {
 	has_scoped_role,
@@ -600,12 +601,16 @@ describe('create_request_context_middleware', () => {
 			await next();
 		});
 		// behind the daemon leg, which starts the chain in its place
-		app.use('/*', create_request_context_middleware(mock_deps, { starts_chain: false }));
+		const log = new Logger('test', { level: 'off' });
+		const debug = vi.spyOn(log, 'debug');
+		app.use('/*', create_request_context_middleware(mock_deps, { starts_chain: false, log }));
 		app.get('/test', (c) => c.json({ resolved: get_resolved_auth(c) }));
 
 		const res = await app.request('/test');
 		assert.deepStrictEqual((await res.json()).resolved, daemon);
 		assert.strictEqual(vi.mocked(query_session_get_valid).mock.calls.length, 0);
+		// a leg behind the chain's start clears nothing, so it has nothing to log
+		assert.strictEqual(debug.mock.calls.length, 0);
 	});
 
 	test('starting the chain, it clears a credential set before it', async () => {
@@ -621,13 +626,19 @@ describe('create_request_context_middleware', () => {
 			c.set('auth_session_id', 'test-token');
 			await next();
 		});
-		app.use('/*', create_request_context_middleware(mock_deps));
+		const log = new Logger('test', { level: 'off' });
+		const debug = vi.spyOn(log, 'debug');
+		app.use('/*', create_request_context_middleware(mock_deps, { log }));
 		app.get('/test', (c) => c.json({ resolved: get_resolved_auth(c) }));
 
 		const res = await app.request('/test');
 		assert.strictEqual((await res.json()).resolved, null);
 		// cleared, not skipped past: the session leg still ran its lookup
 		assert.strictEqual(vi.mocked(query_session_get_valid).mock.calls.length, 1);
+		// the clear is logged, naming the credential type and nothing secret
+		assert.strictEqual(debug.mock.calls.length, 1);
+		const [message] = debug.mock.calls[0]!;
+		assert.include(String(message), 'cleared a credential (api_token)');
 	});
 
 	test('always calls next() regardless of auth state', async () => {

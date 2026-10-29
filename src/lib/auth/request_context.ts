@@ -37,6 +37,7 @@
  */
 
 import type { Context, MiddlewareHandler } from 'hono';
+import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import {
 	type Account,
@@ -292,6 +293,12 @@ export interface RequestContextMiddlewareOptions {
 	 * @default true
 	 */
 	starts_chain?: boolean;
+	/**
+	 * Debug-logs a start that clears a credential set before it — a hand-built
+	 * chain that puts this leg behind an earlier credential leg but leaves
+	 * `starts_chain` at its default.
+	 */
+	log?: Logger;
 }
 
 /**
@@ -314,17 +321,26 @@ export interface RequestContextMiddlewareOptions {
  * `require_role` enforce.
  *
  * @param deps - query dependencies (pool-level db for middleware)
- * @param options - the session token's context key, and whether this leg starts the chain
+ * @param options - the session token's context key, whether this leg starts the chain, and the logger for a start that clears a credential
  * @mutates Hono context - resets `REQUEST_CONTEXT_KEY` (and `RESOLVED_AUTH_KEY` when it starts the chain), then on a valid session (and no credential already resolved) sets `RESOLVED_AUTH_KEY`
  */
 export const create_request_context_middleware = (
 	deps: QueryDeps,
 	options: RequestContextMiddlewareOptions = {}
 ): MiddlewareHandler => {
-	const { session_context_key = 'auth_session_id', starts_chain = true } = options;
+	const { session_context_key = 'auth_session_id', starts_chain = true, log } = options;
 	return async (c, next): Promise<Response | void> => {
 		c.set(REQUEST_CONTEXT_KEY, null);
-		if (starts_chain) c.set(RESOLVED_AUTH_KEY, null);
+		if (starts_chain) {
+			const cleared = get_resolved_auth(c);
+			if (cleared !== null) {
+				log?.debug(
+					`session leg cleared a credential (${cleared.credential_type}) set before it ` +
+						'(an earlier credential leg needs `starts_chain: false` behind it)'
+				);
+			}
+			c.set(RESOLVED_AUTH_KEY, null);
+		}
 		if (get_resolved_auth(c) !== null) {
 			await next();
 			return;

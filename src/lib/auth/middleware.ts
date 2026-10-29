@@ -316,7 +316,8 @@ export const create_auth_middleware_specs = async (
 	// the first credential leg clears the resolved credential: the daemon
 	// token's when it is composed, else this one
 	const request_context_middleware = create_request_context_middleware(query_deps, {
-		starts_chain: !daemon_token_state
+		starts_chain: !daemon_token_state,
+		log: deps.log
 	});
 	const bearer_auth_middleware = create_bearer_auth_middleware(query_deps, deps.log);
 

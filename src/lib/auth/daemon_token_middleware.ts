@@ -19,6 +19,7 @@ import type { MiddlewareHandler } from 'hono';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { RESOLVED_AUTH_KEY } from '../hono_context.ts';
+import { get_resolved_auth } from './resolved_auth.ts';
 import { is_browser_context } from '../http/origin.ts';
 import { query_role_grant_find_account_id_for_role } from './role_grant_queries.ts';
 import type { QueryDeps } from '../db/query_deps.ts';
@@ -99,6 +100,10 @@ export const create_daemon_token_middleware = (
 ): MiddlewareHandler => {
 	return async (c, next): Promise<Response | void> => {
 		// the chain's clean slate — nothing before the credential legs resolves
+		const cleared = get_resolved_auth(c);
+		if (cleared !== null) {
+			log.debug(`daemon token leg cleared a credential (${cleared.credential_type}) set before it`);
+		}
 		c.set(RESOLVED_AUTH_KEY, null);
 		const token_header = c.req.header(DAEMON_TOKEN_HEADER);
 

@@ -24,6 +24,8 @@ import { get_resolved_auth, resolved_auth_api_token_id } from '#lib/auth/resolve
 import { ROLE_KEEPER } from '#lib/auth/role_schema.ts';
 import type { QueryDeps } from '#lib/db/query_deps.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
+import { RESOLVED_AUTH_KEY } from '#lib/hono_context.ts';
+import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
 import {
 	create_test_account,
 	create_test_actor,
@@ -231,6 +233,39 @@ describe('create_daemon_token_middleware', () => {
 		const body = await res.json();
 		assert.strictEqual(body.context, null);
 		assert.strictEqual(body.credential_type, null);
+	});
+
+	test('starting the chain, it clears and logs a credential set before it', async () => {
+		const state = create_state();
+		const log = new Logger('test', { level: 'off' });
+		const debug = vi.spyOn(log, 'debug');
+		const app = new Hono();
+		app.use('/*', async (c, next) => {
+			// a layer mounted before the credential legs
+			c.set(
+				RESOLVED_AUTH_KEY,
+				create_test_resolved_auth({ credential_type: 'session', account_id: 'acct-preset' })
+			);
+			await next();
+		});
+		app.use('/*', create_daemon_token_middleware(state, mock_deps, log));
+		app.get('/test', (c) => c.json({ resolved: get_resolved_auth(c) }));
+
+		const res = await app.request('/test');
+		assert.strictEqual((await res.json()).resolved, null);
+		assert.strictEqual(debug.mock.calls.length, 1);
+		assert.include(String(debug.mock.calls[0]![0]), 'cleared a credential (session)');
+	});
+
+	test('a clean start logs nothing', async () => {
+		const log = new Logger('test', { level: 'off' });
+		const debug = vi.spyOn(log, 'debug');
+		const app = new Hono();
+		app.use('/*', create_daemon_token_middleware(create_state(), mock_deps, log));
+		app.get('/test', (c) => c.json({ resolved: get_resolved_auth(c) }));
+
+		await app.request('/test');
+		assert.strictEqual(debug.mock.calls.length, 0);
 	});
 
 	test('valid current token sets account_id and credential_type', async () => {
