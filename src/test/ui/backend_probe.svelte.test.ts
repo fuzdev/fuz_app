@@ -27,6 +27,17 @@ const json =
 			headers: { 'content-type': 'application/json' }
 		});
 
+// swap `globalThis.fetch` for the default fetch's tests, restoring it after
+const with_fetch = async <T>(mock: typeof fetch, fn: () => Promise<T>): Promise<T> => {
+	const original = globalThis.fetch;
+	globalThis.fetch = mock;
+	try {
+		return await fn();
+	} finally {
+		globalThis.fetch = original;
+	}
+};
+
 describe('probe_backend', () => {
 	test('the health reply is a live backend', async () => {
 		assert.deepEqual(await probe_backend({ fetch_health: json({ status: 'ok' }) }), { ok: true });
@@ -91,18 +102,19 @@ describe('probe_backend', () => {
 	});
 
 	test('the default fetches the health path', async () => {
-		const original = globalThis.fetch;
+		const before = globalThis.fetch;
 		const requested: Array<unknown> = [];
-		globalThis.fetch = async (input) => {
-			requested.push(input);
-			return json({ status: 'ok' })();
-		};
-		try {
-			assert.deepEqual(await probe_backend(), { ok: true });
-		} finally {
-			globalThis.fetch = original;
-		}
+		const result = await with_fetch(
+			async (input) => {
+				requested.push(input);
+				return json({ status: 'ok' })();
+			},
+			() => probe_backend()
+		);
+		assert.deepEqual(result, { ok: true });
 		assert.deepEqual(requested, [HEALTH_PATH]);
+		// the swap never outlives its test
+		assert.strictEqual(globalThis.fetch, before);
 	});
 });
 
@@ -116,45 +128,39 @@ describe('probe_backend timeout', () => {
 		});
 
 	test('the default fetch gives up, reading as down with a clear error', async () => {
-		const original = globalThis.fetch;
-		globalThis.fetch = async (_input, init) => hanging_fetch(init);
-		try {
-			assert.deepEqual(await probe_backend({ timeout_ms: 20 }), {
-				ok: false,
-				error: 'no reply within 20ms'
-			});
-			const probe = new BackendProbe({ timeout_ms: 20 });
-			assert.isFalse(await probe.probe());
-			assert.isFalse(probe.reachable);
-			assert.strictEqual(probe.error, 'no reply within 20ms');
-			assert.isFalse(probe.probing);
-		} finally {
-			globalThis.fetch = original;
-		}
+		await with_fetch(
+			async (_input, init) => hanging_fetch(init),
+			async () => {
+				assert.deepEqual(await probe_backend({ timeout_ms: 20 }), {
+					ok: false,
+					error: 'no reply within 20ms'
+				});
+				const probe = new BackendProbe({ timeout_ms: 20 });
+				assert.isFalse(await probe.probe());
+				assert.isFalse(probe.reachable);
+				assert.strictEqual(probe.error, 'no reply within 20ms');
+				assert.isFalse(probe.probing);
+			}
+		);
 	});
 
 	test('a timeout while the default fetch reads the body reports the timeout', async () => {
-		const original = globalThis.fetch;
 		// headers arrive, then the body stalls until the signal aborts
-		globalThis.fetch = async (_input, init) =>
-			new Response(
-				new ReadableStream({
-					start(controller) {
-						init?.signal?.addEventListener('abort', () =>
-							controller.error(new DOMException('timed out', 'TimeoutError'))
-						);
-					}
-				}),
-				{ status: 200, headers: { 'content-type': 'application/json' } }
-			);
-		try {
-			assert.deepEqual(await probe_backend({ timeout_ms: 20 }), {
-				ok: false,
-				error: 'no reply within 20ms'
-			});
-		} finally {
-			globalThis.fetch = original;
-		}
+		const result = await with_fetch(
+			async (_input, init) =>
+				new Response(
+					new ReadableStream({
+						start(controller) {
+							init?.signal?.addEventListener('abort', () =>
+								controller.error(new DOMException('timed out', 'TimeoutError'))
+							);
+						}
+					}),
+					{ status: 200, headers: { 'content-type': 'application/json' } }
+				),
+			() => probe_backend({ timeout_ms: 20 })
+		);
+		assert.deepEqual(result, { ok: false, error: 'no reply within 20ms' });
 	});
 
 	test("an injected fetch's timeout does not claim the default timeout", async () => {
@@ -175,16 +181,6 @@ describe('probe_backend signal', () => {
 			// eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
 			signal?.addEventListener('abort', () => reject(signal.reason));
 		});
-
-	const with_fetch = async <T>(mock: typeof fetch, fn: () => Promise<T>): Promise<T> => {
-		const original = globalThis.fetch;
-		globalThis.fetch = mock;
-		try {
-			return await fn();
-		} finally {
-			globalThis.fetch = original;
-		}
-	};
 
 	test("the caller's abort cancels the default fetch and reports an abort", async () => {
 		const controller = new AbortController();
@@ -298,17 +294,15 @@ describe('BackendProbe', () => {
 			new BackendProbe({ fetch_health: json({ status: 'ok' }), signal: controller.signal })
 		);
 		const wide: BackendProbeOptions = { signal: controller.signal };
-		const original = globalThis.fetch;
+		const probe = new BackendProbe(wide);
 		// the default fetch's signal is aborted only if the caller's was forwarded
-		globalThis.fetch = async (_input, init) =>
-			init?.signal?.aborted ? Promise.reject(new Error('forwarded')) : json({ status: 'ok' })();
-		try {
-			const probe = new BackendProbe(wide);
-			assert.isTrue(await probe.probe());
-			assert.isNull(probe.error);
-		} finally {
-			globalThis.fetch = original;
-		}
+		const reachable = await with_fetch(
+			async (_input, init) =>
+				init?.signal?.aborted ? Promise.reject(new Error('forwarded')) : json({ status: 'ok' })(),
+			() => probe.probe()
+		);
+		assert.isTrue(reachable);
+		assert.isNull(probe.error);
 	});
 
 	test('reachable is null until a probe settles, then true for the health reply', async () => {
