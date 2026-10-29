@@ -15,6 +15,7 @@
 import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 import { z } from 'zod';
 import type { Result } from '@fuzdev/fuz_util/result.ts';
+import type { OmitStrict } from '@fuzdev/fuz_util/types.ts';
 
 import { HEALTH_PATH, HealthResponse } from '../http/health_schema.ts';
 
@@ -23,6 +24,9 @@ export type BackendProbeResult = Result<object, { error: string }>;
 
 /** The refusal for a `2xx` whose body isn't the health reply. */
 export const BACKEND_PROBE_NOT_HEALTH = 'not a health response';
+
+/** The refusal for a probe its caller's `signal` aborted — a cancel, not a timeout. */
+export const BACKEND_PROBE_ABORTED = 'aborted';
 
 /** How long the default fetch waits for the health reply before the probe reads as down. */
 export const BACKEND_PROBE_TIMEOUT_MS = 10_000;
@@ -33,48 +37,84 @@ export const BACKEND_PROBE_TIMEOUT_MS = 10_000;
  */
 const HealthReply = z.looseObject(HealthResponse.shape);
 
+/** Options for `probe_backend`; `BackendProbe` takes all but `signal`. */
+export interface BackendProbeOptions {
+	/**
+	 * Fetches the health route — defaults to `fetch(HEALTH_PATH)` with a
+	 * `timeout_ms` signal, combined with `signal` when given. An injected
+	 * fetch owns its own signal.
+	 */
+	fetch_health?: () => Promise<Response>;
+	/**
+	 * How long the default fetch waits for the reply and its body — defaults
+	 * to `BACKEND_PROBE_TIMEOUT_MS`; unused when `fetch_health` is injected.
+	 */
+	timeout_ms?: number;
+	/**
+	 * Cancels the default fetch, alongside its timeout; unused when
+	 * `fetch_health` is injected. A probe that fails once it is aborted reports
+	 * `BACKEND_PROBE_ABORTED` — whatever the signal's reason, so a deadline
+	 * belongs in `timeout_ms`.
+	 */
+	signal?: AbortSignal;
+}
+
+const is_timeout_error = (err: unknown): boolean =>
+	(err as { name?: unknown } | null)?.name === 'TimeoutError';
+
 /**
  * Probe whether the backend is serving: its health route must answer `2xx`
- * with a body that parses as `HealthResponse`.
+ * with a body that parses as `HealthResponse`. A timeout while the reply or its
+ * body is read reads as down — naming `timeout_ms` only when the default fetch
+ * timed out, since an injected `fetch_health` owns its own signal. A failure
+ * once the caller's `signal` aborted reports `BACKEND_PROBE_ABORTED`, not a
+ * timeout or a down backend. A body that isn't JSON is
+ * `BACKEND_PROBE_NOT_HEALTH`; any other failure reading it reports the error.
  *
- * @param fetch_health - fetches the health route (injectable for tests and signals); the default times out after `timeout_ms`, an injected one owns its own signal
- * @param timeout_ms - how long the default fetch waits before the probe reads as down
+ * @param options - the health fetch, the default fetch's timeout, and a signal to cancel it
  * @returns `{ok: true}` when the backend answered, else the reason it didn't
  */
-export const probe_backend = async (
-	fetch_health: () => Promise<Response> = () =>
-		fetch(HEALTH_PATH, { signal: AbortSignal.timeout(timeout_ms) }),
-	timeout_ms: number = BACKEND_PROBE_TIMEOUT_MS
-): Promise<BackendProbeResult> => {
+export const probe_backend = async (options?: BackendProbeOptions): Promise<BackendProbeResult> => {
+	const timeout_ms = options?.timeout_ms ?? BACKEND_PROBE_TIMEOUT_MS;
+	// an injected fetch owns its own signal, so ours cancels and classifies only the default
+	const signal = options?.fetch_health ? undefined : options?.signal;
+	const fetch_health =
+		options?.fetch_health ??
+		(() => {
+			const timeout = AbortSignal.timeout(timeout_ms);
+			return fetch(HEALTH_PATH, { signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
+		});
+	const timed_out: BackendProbeResult = {
+		ok: false,
+		error: options?.fetch_health ? 'timed out' : `no reply within ${timeout_ms}ms`
+	};
 	let response: Response;
 	try {
 		response = await fetch_health();
 	} catch (err) {
-		if ((err as { name?: unknown } | null)?.name === 'TimeoutError') {
-			return { ok: false, error: `no reply within ${timeout_ms}ms` };
-		}
+		if (signal?.aborted) return { ok: false, error: BACKEND_PROBE_ABORTED };
+		if (is_timeout_error(err)) return timed_out;
 		return { ok: false, error: to_error_message(err, 'network error') };
 	}
 	if (!response.ok) return { ok: false, error: `HTTP ${response.status}` };
 	let body: unknown;
 	try {
 		body = await response.json();
-	} catch {
-		return { ok: false, error: BACKEND_PROBE_NOT_HEALTH };
+	} catch (err) {
+		// the fetch's signal governs the body stream too
+		if (signal?.aborted) return { ok: false, error: BACKEND_PROBE_ABORTED };
+		if (is_timeout_error(err)) return timed_out;
+		if ((err as { name?: unknown } | null)?.name === 'SyntaxError') {
+			return { ok: false, error: BACKEND_PROBE_NOT_HEALTH };
+		}
+		// a dropped connection mid-body, not a wrong body
+		return { ok: false, error: to_error_message(err, 'network error') };
 	}
 	if (!HealthReply.safeParse(body).success) {
 		return { ok: false, error: BACKEND_PROBE_NOT_HEALTH };
 	}
 	return { ok: true };
 };
-
-/** Options for `BackendProbe`. */
-export interface BackendProbeOptions {
-	/** Fetches the health route — defaults to `fetch(HEALTH_PATH)` with a timeout. */
-	fetch_health?: () => Promise<Response>;
-	/** How long the default fetch waits for the reply — defaults to `BACKEND_PROBE_TIMEOUT_MS`. */
-	timeout_ms?: number;
-}
 
 /**
  * Reactive `probe_backend` state for a login gate. `reachable` stays `null`
@@ -98,13 +138,19 @@ export class BackendProbe {
 	/** Why the last settled probe failed — `null` when it succeeded or none has settled. */
 	error: string | null = $state.raw(null);
 
-	readonly #fetch_health: (() => Promise<Response>) | undefined;
-	readonly #timeout_ms: number | undefined;
+	readonly #options: OmitStrict<BackendProbeOptions, 'signal'> | undefined;
 	#latest = 0;
 
-	constructor(options?: BackendProbeOptions) {
-		this.#fetch_health = options?.fetch_health;
-		this.#timeout_ms = options?.timeout_ms;
+	/**
+	 * @param options - the health fetch and the default fetch's timeout; no `signal`, since one
+	 *   that aborted would fail every later probe as `BACKEND_PROBE_ABORTED`
+	 */
+	constructor(options?: OmitStrict<BackendProbeOptions, 'signal'>) {
+		// copy the two fields, so a wider options object never forwards a `signal`
+		this.#options = options && {
+			fetch_health: options.fetch_health,
+			timeout_ms: options.timeout_ms
+		};
 	}
 
 	/**
@@ -116,7 +162,7 @@ export class BackendProbe {
 	async probe(): Promise<boolean> {
 		const id = ++this.#latest;
 		this.probing = true;
-		const result = await probe_backend(this.#fetch_health, this.#timeout_ms);
+		const result = await probe_backend(this.#options);
 		if (id === this.#latest) {
 			this.reachable = result.ok;
 			this.error = result.ok ? null : result.error;
