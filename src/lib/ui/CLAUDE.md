@@ -493,8 +493,9 @@ narrow `*Rpc` adapter method takes its action's input as one params object
 and returns its output, both typed from the action specs — `params?` where
 the input defaults to `{}`, nothing where the action takes no input — so an
 adapter over the typed throwing client is a one-line pass-through per
-method. `AdminAccountsRpc.delete_account` keeps its params required: its
-input defaults too, but the empty input deletes the caller.
+method. `AdminAccountsRpc.delete_account` narrows its params: its input
+defaults too, but the empty input deletes the caller, so the adapter type
+requires `account_id` as a `Uuid` (`{}` and a `null` id don't typecheck).
 
 - `account_sessions_state.svelte.ts` — `AccountSessionsState` +
   `account_sessions_rpc_context` + narrow `AccountSessionsRpc`

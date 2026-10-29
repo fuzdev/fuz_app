@@ -331,6 +331,21 @@ describe('AdminAccountsState account lifecycle', () => {
 		assert.strictEqual(list.mock.calls.length, 1);
 	});
 
+	test('delete_account requires a Uuid account_id, since the empty input deletes the caller', () => {
+		const rpc = make_rpc();
+		// never called — the expected errors are the assertions
+		const unused = (): unknown => [
+			// @ts-expect-error the empty input deletes the caller
+			rpc.delete_account({}),
+			// @ts-expect-error so does a null `account_id`
+			rpc.delete_account({ account_id: null }),
+			// @ts-expect-error and an omitted one
+			rpc.delete_account({ account_id: undefined }),
+			rpc.delete_account({ account_id: acct_1 })
+		];
+		assert.typeOf(unused, 'function');
+	});
+
 	test('submit_undelete calls account_undelete and refetches', async () => {
 		const list = vi.fn().mockResolvedValue(empty_listing);
 		const undelete_account = vi.fn().mockResolvedValue({ ok: true, undeleted: true });

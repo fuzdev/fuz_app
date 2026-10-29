@@ -60,11 +60,15 @@ import type {
  * action specs (or nothing, for an input-less listing) — `Uuid`-branded ids
  * propagate from the wire through the state class to the components. The
  * adapter built by `create_admin_rpc_adapters` therefore needs zero casts
- * to bridge to the typed throwing Proxy.
+ * to bridge to the typed throwing Proxy. `delete_account` is the one narrowing:
+ * `account_delete`'s input defaults to `{}`, which deletes the caller, so the
+ * adapter requires `account_id` as a `Uuid` — never omitted, never `null`.
  */
 export interface AdminAccountsRpc {
 	list_accounts: (params?: AdminAccountListInput) => Promise<AdminAccountListOutput>;
-	delete_account: (params: AccountDeleteInput) => Promise<AccountDeleteOutput>;
+	delete_account: (
+		params: AccountDeleteInput & { account_id: Uuid }
+	) => Promise<AccountDeleteOutput>;
 	undelete_account: (params: AccountUndeleteInput) => Promise<AccountUndeleteOutput>;
 	list_sessions: (params?: AdminSessionListInput) => Promise<AdminSessionListOutput>;
 	create_role_grant: (params: RoleGrantOfferCreateInput) => Promise<RoleGrantOfferCreateOutput>;
