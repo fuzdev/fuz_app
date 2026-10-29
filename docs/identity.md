@@ -128,7 +128,7 @@ endpoints carry the same gate for non-threat reasons — `POST /logout` and
 `GET /audit/stream`. See ./security.md §Credential-channel gating.
 
 Sessions reference accounts, not actors. Authentication middleware sets only
-account-grain identity (`ACCOUNT_ID_KEY` + `CREDENTIAL_TYPE_KEY`); the acting
+account-grain identity (one `ResolvedAuth`, `get_resolved_auth`); the acting
 actor is resolved by the route-spec wrapper / RPC dispatcher's authorization
 phase against the validated `acting` value (or transparently when the account
 has a single actor). Account-grain operations (logout, password change,

@@ -536,12 +536,10 @@ import { create_sse_response, type SseNotification } from '@fuzdev/fuz_app/realt
 import { SseRegistry } from '@fuzdev/fuz_app/realtime/sse_registry.ts';
 import {
 	get_resolved_auth,
+	resolved_auth_session_hash,
 	revalidate_resolved_auth
 } from '@fuzdev/fuz_app/auth/resolved_auth.ts';
-import {
-	AUTH_SESSION_TOKEN_HASH_KEY,
-	require_request_context
-} from '@fuzdev/fuz_app/auth/request_context.ts';
+import { require_request_context } from '@fuzdev/fuz_app/auth/request_context.ts';
 
 const registry = new SseRegistry<SseNotification>();
 
@@ -554,16 +552,16 @@ const subscribe_spec: RouteSpec = {
 	input: z.null(),
 	output: z.null(),
 	handler: async (c, route) => {
+		const resolved = get_resolved_auth(c);
 		// register first, so a revocation from here on finds the stream…
 		const pending = registry.subscribe_pending({
 			channels: ['things'],
-			scope: c.get(AUTH_SESSION_TOKEN_HASH_KEY) ?? undefined,
+			scope: resolved_auth_session_hash(resolved) ?? undefined,
 			groups: [require_request_context(c).account.id]
 		});
 		// …then re-read the credential: one revoked while the request ran is refused
 		let live: boolean;
 		try {
-			const resolved = get_resolved_auth(c);
 			live = resolved !== null && (await revalidate_resolved_auth(route, resolved));
 		} catch (error) {
 			pending.unsubscribe();

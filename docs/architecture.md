@@ -76,8 +76,11 @@ const my_config: SessionOptions<number> = {
 and admin controls. Number/direct identity is simpler but individual sessions can only
 be invalidated by rotating the signing key (which invalidates all sessions).
 
-The full auth middleware stack (origin, session, request_context, bearer_auth) can be
-created via `create_auth_middleware_specs()` from `auth/middleware.ts`.
+The full auth middleware stack (origin, optional daemon_token, session,
+request_context, bearer_auth) can be created via `create_auth_middleware_specs()`
+from `auth/middleware.ts`. The credential legs run daemon token → session cookie
+→ bearer, the first that authenticates setting the request's one `ResolvedAuth`
+(`get_resolved_auth`) and the later legs skipping.
 
 ## Keyring
 

@@ -494,8 +494,9 @@ pin on the CTE copy of the grant predicate, which the storage-half EXISTS in
 `cell_*`), and `token_lifetime` (the api-token
 `lifetime` round-trip via `describe_token_lifetime_cross_tests` — ttl mint →
 non-null `expires_at` on create output + `account_token_list` read-back,
-eternal → NULL control, omitted/out-of-range → 400 on both spines; the
-manifest parity gate is blind to param schemas, so this round-trip is what
+eternal → NULL control, omitted/out-of-range → 400 on both spines, and a
+bearer sent beside a winning daemon token never touched; the manifest parity
+gate is blind to param schemas, so this round-trip is what
 keeps a spine from silently dropping the field; in-process leg
 `token_lifetime_parity.db.test.ts`), and
 `role_grant_role_grammar` (the `RoleName` grammar on the grant

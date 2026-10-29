@@ -197,7 +197,7 @@ Shim responsibilities (per-request):
 1. Parse envelope (POST body / GET query string); parse errors → `parse_error` 400. GET reads `method` / `id` / `params` via Hono's `c.req.query()` — first occurrence wins on a duplicated key, unknown keys are ignored, and an empty value counts as missing. This is the cross-impl contract (the Rust GET dispatch mirrors it via `fuz_http`'s `query_first`, including the id numeric-vs-string normalization), pinned by the `query_shape` cross suite.
 2. Lookup method in the `compile_action_registry`-built map; unknown → `method_not_found`.
 3. GET read restriction — GET rejected for `side_effects: true` actions. Every response the GET handler writes, its refusals included, carries `Cache-Control: no-store` (`RPC_GET_CACHE_CONTROL`; a pre-handler middleware refusal, like the origin 403, does not): a read answers one caller at one moment.
-4. Build `PerformActionInput` from `c.var` + `get_client_ip` + `c.req.raw.signal`. Test-preset escape hatch reads `TEST_CONTEXT_PRESET_KEY` + `REQUEST_CONTEXT_KEY`.
+4. Build `PerformActionInput` from `get_resolved_auth(c)` + `get_client_ip` + `c.req.raw.signal`. Test-preset escape hatch reads `TEST_CONTEXT_PRESET_KEY` + `REQUEST_CONTEXT_KEY`.
 5. Call `perform_action` (shared core).
 6. Bind result via `serialize_action_result(id, result, method, log)` (`actions/perform_action.ts`, shared with WS) → `{body, status}`, written with `c.json`'s content type.
 
@@ -284,8 +284,10 @@ Pipeline (401 → authz → 403 → 429 → 400 → handler):
 5. Validate params (400) — `spec.input.safeParse` with `z.void()` / `?? {}` rules; a `z.void()` input reads absent, `null` (GET `?params=null`), and `{}` alike as the no-arg call (`to_input_params` in `http/schema_helpers.ts`, via `to_void_params`, the twin of the Rust `require_void_params`; the peer receive path in `ActionDispatcher` runs the same normalizer) and refuses any other shape. A refusal is `to_invalid_params_error`: the generic `invalid params`, `data.reason` when the first issue's field declares an `invalid_reason` in its `.meta()` and no issue sits on the input itself, such as an unknown key (`resolve_issues_invalid_reason`, `schema_meta.ts` — see ../../../docs/architecture.md §Error Schema System), and the Zod issues DEV-only
 6. Dispatch + DEV output validation + error normalization — `spec.side_effects` picks transaction vs pool. `ThrownJsonrpcError` preserves code + data; generic throws become `internal_error`
 
-`PerformActionInput` carries `account_id`, `credential_type`, `client_ip`,
-`signal`, `notify`, optional `connection_id`, optional `preset`.
+`PerformActionInput` carries `auth` (the request's `ResolvedAuth`, `null` for
+anonymous — the authorization phase reads its account, the post-authorization
+gates its type and scope, `ActionContext` its type and session hash),
+`client_ip`, `signal`, `notify`, optional `connection_id`, optional `preset`.
 `PerformActionDeps` carries `db` (pool-level), `pending_effects`, `log`,
 the two rate limiters. Audit writes are out-of-band: factories close over
 `AppDeps.audit` independently.
@@ -862,8 +864,8 @@ the socket's `AbortController`), re-reads what the gates read
 (`recheck_admission({db}, {resolved, request_context, required_roles})`,
 `auth/resolved_auth.ts`, which the audit stream shares: the credential —
 session row / token row / account row, no touch — the acting actor, and the
-role; `resolved` is `get_resolved_auth(c)`, read off the keys the auth
-middleware set), then `registry.admit`s. A dead credential, or a pending entry a revocation closed
+role; `resolved` is `get_resolved_auth(c)`, the value the auth middleware
+set), then `registry.admit`s. A dead credential, or a pending entry a revocation closed
 meanwhile, closes the socket with `WS_CLOSE_SESSION_REVOKED` and the reason a
 revoked socket gets; a re-check that throws closes it with
 `WS_CLOSE_INTERNAL_ERROR` (`internal error`) — fail closed, never admitted
