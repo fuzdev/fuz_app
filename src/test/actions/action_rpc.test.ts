@@ -17,12 +17,8 @@ import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
 import { generate_app_surface } from '#lib/http/surface.ts';
 import { create_stub_db } from '#lib/testing/stubs.ts';
 import { REQUEST_CONTEXT_KEY } from '#lib/auth/request_context.ts';
-import {
-	ACCOUNT_ID_KEY,
-	CREDENTIAL_TYPE_KEY,
-	TEST_CONTEXT_PRESET_KEY,
-	TOKEN_SCOPE_KEY
-} from '#lib/hono_context.ts';
+import { RESOLVED_AUTH_KEY, TEST_CONTEXT_PRESET_KEY } from '#lib/hono_context.ts';
+import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
 import type { BuiltinCredentialType } from '#lib/auth/credential_type_schema.ts';
 import { create_test_request_context } from '#lib/testing/auth_apps.ts';
 import { create_test_actor } from '#lib/testing/entities.ts';
@@ -120,15 +116,17 @@ const create_test_app = (
 	const app = new Hono();
 	if (auth_context) {
 		app.use('/*', async (c, next) => {
-			(c as any).set(ACCOUNT_ID_KEY, auth_context.account.id);
+			// a scope belongs to an API token alone
+			(c as any).set(
+				RESOLVED_AUTH_KEY,
+				create_test_resolved_auth({
+					credential_type: token_scope ? 'api_token' : (credential_type ?? 'session'),
+					account_id: auth_context.account.id,
+					scope: token_scope
+				})
+			);
 			(c as any).set(REQUEST_CONTEXT_KEY, auth_context);
 			(c as any).set(TEST_CONTEXT_PRESET_KEY, true);
-			if (credential_type) {
-				(c as any).set(CREDENTIAL_TYPE_KEY, credential_type);
-			}
-			if (token_scope) {
-				(c as any).set(TOKEN_SCOPE_KEY, token_scope);
-			}
 			await next();
 		});
 	}

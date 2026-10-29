@@ -241,7 +241,7 @@ describe('bearer token refused by the query', () => {
 	// `api_token_queries.db.test.ts`) the same way as an unknown one — by
 	// returning nothing — so the middleware has no scope to fall back to and
 	// sets no identity at all.
-	test('sets no identity, credential type, token id, or scope', async () => {
+	test('resolves no credential', async () => {
 		const { app, mocks } = create_bearer_auth_test_app({
 			name: 'refused token',
 			mock_validate_result: undefined,
@@ -254,10 +254,7 @@ describe('bearer token refused by the query', () => {
 		const body = await res.json();
 
 		assert.strictEqual(mocks.mock_validate.mock.calls.length, 1, 'the lookup ran');
-		assert.strictEqual(body.account_id, null);
-		assert.strictEqual(body.credential_type, null);
-		assert.strictEqual(body.api_token_id, null);
-		assert.strictEqual(body.token_scope, null);
+		assert.strictEqual(body.resolved_auth, null);
 	});
 });
 

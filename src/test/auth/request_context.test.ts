@@ -15,14 +15,9 @@ import {
 	create_request_context_middleware,
 	REQUEST_CONTEXT_KEY
 } from '#lib/auth/request_context.ts';
-import {
-	ACCOUNT_ID_KEY,
-	AUTH_API_TOKEN_ID_KEY,
-	CREDENTIAL_TYPE_KEY,
-	TEST_CONTEXT_PRESET_KEY,
-	TOKEN_SCOPE_KEY
-} from '#lib/hono_context.ts';
-import { token_scope_full } from '#lib/auth/token_scope.ts';
+import { RESOLVED_AUTH_KEY, TEST_CONTEXT_PRESET_KEY } from '#lib/hono_context.ts';
+import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
+import { get_resolved_auth } from '#lib/auth/resolved_auth.ts';
 import type { Account, Actor, RoleGrant } from '#lib/auth/account_schema.ts';
 import { to_iso8601_seconds } from '#lib/timestamp.ts';
 import {
@@ -36,7 +31,7 @@ import {
 	create_test_context
 } from '#lib/testing/entities.ts';
 import type { QueryDeps } from '#lib/db/query_deps.ts';
-import { query_session_get_valid } from '#lib/auth/session_queries.ts';
+import { hash_session_token, query_session_get_valid } from '#lib/auth/session_queries.ts';
 import {
 	query_account_by_id,
 	query_actor_by_id,
@@ -312,7 +307,10 @@ describe('require_auth', () => {
 		const app = new Hono();
 		// set context before require_auth
 		app.use('/*', async (c, next) => {
-			c.set(ACCOUNT_ID_KEY, ctx.account.id);
+			c.set(
+				RESOLVED_AUTH_KEY,
+				create_test_resolved_auth({ credential_type: 'session', account_id: ctx.account.id })
+			);
 			c.set(REQUEST_CONTEXT_KEY, ctx);
 			c.set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();
@@ -343,7 +341,10 @@ describe('require_role', () => {
 		const ctx = create_test_context([{ role: 'user' }]);
 		const app = new Hono();
 		app.use('/*', async (c, next) => {
-			c.set(ACCOUNT_ID_KEY, ctx.account.id);
+			c.set(
+				RESOLVED_AUTH_KEY,
+				create_test_resolved_auth({ credential_type: 'session', account_id: ctx.account.id })
+			);
 			c.set(REQUEST_CONTEXT_KEY, ctx);
 			c.set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();
@@ -362,7 +363,10 @@ describe('require_role', () => {
 		const ctx = create_test_context([{ role: 'admin' }]);
 		const app = new Hono();
 		app.use('/*', async (c, next) => {
-			c.set(ACCOUNT_ID_KEY, ctx.account.id);
+			c.set(
+				RESOLVED_AUTH_KEY,
+				create_test_resolved_auth({ credential_type: 'session', account_id: ctx.account.id })
+			);
 			c.set(REQUEST_CONTEXT_KEY, ctx);
 			c.set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();
@@ -380,7 +384,10 @@ describe('require_role', () => {
 		const ctx = create_test_context([{ role: 'user' }]);
 		const app = new Hono();
 		app.use('/*', async (c, next) => {
-			c.set(ACCOUNT_ID_KEY, ctx.account.id);
+			c.set(
+				RESOLVED_AUTH_KEY,
+				create_test_resolved_auth({ credential_type: 'session', account_id: ctx.account.id })
+			);
 			c.set(REQUEST_CONTEXT_KEY, ctx);
 			c.set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();
@@ -400,7 +407,10 @@ describe('require_role', () => {
 		const ctx = create_test_context([{ role: 'admin', expires_at: past }]);
 		const app = new Hono();
 		app.use('/*', async (c, next) => {
-			c.set(ACCOUNT_ID_KEY, ctx.account.id);
+			c.set(
+				RESOLVED_AUTH_KEY,
+				create_test_resolved_auth({ credential_type: 'session', account_id: ctx.account.id })
+			);
 			c.set(REQUEST_CONTEXT_KEY, ctx);
 			c.set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();
@@ -419,7 +429,10 @@ describe('require_role', () => {
 		const ctx = create_test_context([{ role: 'admin', revoked_at: '2024-01-01T00:00:00Z' }]);
 		const app = new Hono();
 		app.use('/*', async (c, next) => {
-			c.set(ACCOUNT_ID_KEY, ctx.account.id);
+			c.set(
+				RESOLVED_AUTH_KEY,
+				create_test_resolved_auth({ credential_type: 'session', account_id: ctx.account.id })
+			);
 			c.set(REQUEST_CONTEXT_KEY, ctx);
 			c.set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();
@@ -521,14 +534,12 @@ describe('create_request_context_middleware', () => {
 		});
 		app.use('/*', create_request_context_middleware(mock_deps));
 		app.get('/test', (c) => {
-			const account_id = c.get(ACCOUNT_ID_KEY);
-			const credential_type = c.get(CREDENTIAL_TYPE_KEY);
-			const api_token_id = c.get(AUTH_API_TOKEN_ID_KEY);
+			const auth = get_resolved_auth(c);
 			const context = c.get(REQUEST_CONTEXT_KEY);
 			return c.json({
-				account_id: account_id ?? null,
-				credential_type: credential_type ?? null,
-				api_token_id: api_token_id ?? null,
+				resolved: auth,
+				account_id: auth?.account_id ?? null,
+				credential_type: auth?.credential_type ?? null,
 				context: context ?? null
 			});
 		});
@@ -541,9 +552,7 @@ describe('create_request_context_middleware', () => {
 
 		const res = await app.request('/test');
 		const body = await res.json();
-		assert.strictEqual(body.account_id, null);
-		assert.strictEqual(body.credential_type, null);
-		assert.strictEqual(body.api_token_id, null);
+		assert.strictEqual(body.resolved, null);
 		assert.strictEqual(body.context, null);
 	});
 
@@ -553,9 +562,7 @@ describe('create_request_context_middleware', () => {
 
 		const res = await app.request('/test');
 		const body = await res.json();
-		assert.strictEqual(body.account_id, null);
-		assert.strictEqual(body.credential_type, null);
-		assert.strictEqual(body.api_token_id, null);
+		assert.strictEqual(body.resolved, null);
 		assert.strictEqual(body.context, null);
 	});
 
@@ -565,28 +572,62 @@ describe('create_request_context_middleware', () => {
 
 		const res = await app.request('/test');
 		const body = await res.json();
-		assert.strictEqual(body.account_id, 'acct-1');
-		assert.strictEqual(body.credential_type, 'session');
-		assert.strictEqual(body.api_token_id, null);
+		// the session arm, with nothing of another credential's
+		assert.deepStrictEqual(body.resolved, {
+			credential_type: 'session',
+			account_id: 'acct-1',
+			session_hash: hash_session_token('test-token'),
+			credential_deadline: null
+		});
 		// Middleware does not build the request context — that is the
 		// dispatcher's authorization phase. `REQUEST_CONTEXT_KEY` stays null
 		// after authentication.
 		assert.strictEqual(body.context, null);
 	});
 
-	test('resets a token scope set upstream when no session authenticates', async () => {
-		configure_mocks({ session: undefined });
+	test('skips when an earlier leg resolved the request, never reading the session', async () => {
+		configure_mocks();
+		vi.mocked(query_session_get_valid).mockClear();
+		const daemon = create_test_resolved_auth({
+			credential_type: 'daemon_token',
+			account_id: 'acct-keeper'
+		});
 		const app = new Hono();
 		app.use('/*', async (c, next) => {
+			// what the daemon-token leg sets, ahead of a cookie sent beside it
+			c.set(RESOLVED_AUTH_KEY, daemon);
 			c.set('auth_session_id', 'test-token');
-			c.set(TOKEN_SCOPE_KEY, token_scope_full());
+			await next();
+		});
+		// behind the daemon leg, which starts the chain in its place
+		app.use('/*', create_request_context_middleware(mock_deps, { starts_chain: false }));
+		app.get('/test', (c) => c.json({ resolved: get_resolved_auth(c) }));
+
+		const res = await app.request('/test');
+		assert.deepStrictEqual((await res.json()).resolved, daemon);
+		assert.strictEqual(vi.mocked(query_session_get_valid).mock.calls.length, 0);
+	});
+
+	test('starting the chain, it clears a credential set before it', async () => {
+		configure_mocks({ session: undefined });
+		vi.mocked(query_session_get_valid).mockClear();
+		const app = new Hono();
+		app.use('/*', async (c, next) => {
+			// a layer mounted before the credential legs, with a cookie that fails
+			c.set(
+				RESOLVED_AUTH_KEY,
+				create_test_resolved_auth({ credential_type: 'api_token', account_id: 'acct-preset' })
+			);
+			c.set('auth_session_id', 'test-token');
 			await next();
 		});
 		app.use('/*', create_request_context_middleware(mock_deps));
-		app.get('/test', (c) => c.json({ token_scope: c.get(TOKEN_SCOPE_KEY) ?? null }));
+		app.get('/test', (c) => c.json({ resolved: get_resolved_auth(c) }));
 
 		const res = await app.request('/test');
-		assert.strictEqual((await res.json()).token_scope, null);
+		assert.strictEqual((await res.json()).resolved, null);
+		// cleared, not skipped past: the session leg still ran its lookup
+		assert.strictEqual(vi.mocked(query_session_get_valid).mock.calls.length, 1);
 	});
 
 	test('always calls next() regardless of auth state', async () => {

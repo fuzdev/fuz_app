@@ -162,8 +162,12 @@ describe('assert_middleware_stack_mounted — refused', () => {
 
 	test('daemon_token dropped when present', async () => {
 		const stack = await create_stack(true);
-		assert.strictEqual(stack.at(-1)!.name, 'daemon_token');
-		assert_refused(stack, stack.slice(0, -1), /'daemon_token' .*\(missing\)/);
+		assert.strictEqual(stack[2]!.name, 'daemon_token');
+		assert_refused(
+			stack,
+			stack.filter((s) => s.name !== 'daemon_token'),
+			/'daemon_token' .*\(missing\)/
+		);
 	});
 
 	test('session and request_context swapped', async () => {
@@ -492,7 +496,7 @@ describe('create_app_server — transform_middleware', () => {
 		assert.isNull(thrown);
 		assert.deepStrictEqual(
 			received[0]!.map((s) => s.name),
-			['trusted_proxy', 'origin', 'session', 'request_context', 'bearer_auth', 'daemon_token']
+			['trusted_proxy', 'origin', 'daemon_token', 'session', 'request_context', 'bearer_auth']
 		);
 	});
 

@@ -5,9 +5,9 @@
  * A WebSocket or an SSE stream is authorized once, at open, and closed on
  * revocation by identity. Expiry has no revocation event: nothing is written
  * when a session or token passes its `expires_at`. So the auth middleware
- * computes the deadline once (`CREDENTIAL_DEADLINE_KEY`, gathered onto
- * `ResolvedAuth.credential_deadline`) and the transport closes the connection
- * when it arrives (`schedule_credential_deadline`).
+ * computes the deadline once (`ResolvedAuth.credential_deadline`) and the
+ * transport closes the connection when it arrives
+ * (`schedule_credential_deadline`).
  *
  * The deadline is the earliest of what the credential carries:
  *

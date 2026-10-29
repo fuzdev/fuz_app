@@ -109,13 +109,9 @@ import {
 	dispatch_ws_message,
 	type FakeWs
 } from '#lib/testing/ws_round_trip.ts';
-import {
-	AUTH_SESSION_TOKEN_HASH_KEY,
-	build_account_context,
-	REQUEST_CONTEXT_KEY
-} from '#lib/auth/request_context.ts';
+import { build_account_context, REQUEST_CONTEXT_KEY } from '#lib/auth/request_context.ts';
 import { query_session_revoke_all_for_account } from '#lib/auth/session_queries.ts';
-import { ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY } from '#lib/hono_context.ts';
+import { RESOLVED_AUTH_KEY } from '#lib/hono_context.ts';
 import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
 import { Db } from '#lib/db/db.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
@@ -1711,9 +1707,12 @@ describe_db('connection_closer wiring', (get_db) => {
 				assert.ok(request_context);
 				// what the auth middleware leaves on the context for the upgrade
 				const vars: Record<string, unknown> = {
-					[ACCOUNT_ID_KEY]: account_id,
-					[CREDENTIAL_TYPE_KEY]: 'session',
-					[AUTH_SESSION_TOKEN_HASH_KEY]: session_hash,
+					[RESOLVED_AUTH_KEY]: {
+						credential_type: 'session',
+						account_id,
+						session_hash,
+						credential_deadline: null
+					},
 					[REQUEST_CONTEXT_KEY]: request_context
 				};
 				const events = await stub.get_create_events()({

@@ -22,7 +22,8 @@ import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
 import { REQUEST_CONTEXT_KEY, type RequestContext } from '#lib/auth/request_context.ts';
 import { audit_metadata_schemas } from '#lib/auth/audit_log_schema.ts';
 import { create_test_context } from '#lib/testing/entities.ts';
-import { ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY, TEST_CONTEXT_PRESET_KEY } from '#lib/hono_context.ts';
+import { RESOLVED_AUTH_KEY, TEST_CONTEXT_PRESET_KEY } from '#lib/hono_context.ts';
+import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
 import type { Db } from '#lib/db/db.ts';
 import { pg_error_code } from '#lib/db/pg_error.ts';
 import { run_migrations } from '#lib/db/migrate.ts';
@@ -82,10 +83,15 @@ const create_specs = (overrides?: Partial<DbRouteOptions>): Array<RouteSpec> =>
 const create_test_app = (specs: Array<RouteSpec>, app_db: Db = db) => {
 	const app = new Hono();
 	app.use('/*', async (c, next) => {
-		c.set(ACCOUNT_ID_KEY, keeper_ctx.account.id);
+		c.set(
+			RESOLVED_AUTH_KEY,
+			create_test_resolved_auth({
+				credential_type: 'daemon_token',
+				account_id: keeper_ctx.account.id
+			})
+		);
 		c.set(REQUEST_CONTEXT_KEY, keeper_ctx);
 		c.set(TEST_CONTEXT_PRESET_KEY, true);
-		c.set(CREDENTIAL_TYPE_KEY, 'daemon_token');
 		// the queues + post-commit flush the app server provides — the DELETE
 		// route defers its audit emission via `emit_after_commit`, so the
 		// recording emitter observes it only when the flush runs (i.e. only

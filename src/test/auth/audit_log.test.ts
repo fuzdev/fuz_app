@@ -11,7 +11,8 @@ import { describe, test, assert, vi, afterEach, beforeEach } from 'vitest';
 import { Hono } from 'hono';
 
 import { REQUEST_CONTEXT_KEY, type RequestContext } from '#lib/auth/request_context.ts';
-import { ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY, TEST_CONTEXT_PRESET_KEY } from '#lib/hono_context.ts';
+import { RESOLVED_AUTH_KEY, TEST_CONTEXT_PRESET_KEY } from '#lib/hono_context.ts';
+import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
 import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import { apply_route_specs } from '#lib/http/route_spec.ts';
 import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
@@ -235,10 +236,15 @@ describe('account route audit logging', () => {
 		app.use('*', test_proxy_middleware);
 		if (options?.inject_ctx) {
 			app.use('/*', async (c, next) => {
-				c.set(ACCOUNT_ID_KEY, options.inject_ctx!.account.id);
+				c.set(
+					RESOLVED_AUTH_KEY,
+					create_test_resolved_auth({
+						credential_type: 'session',
+						account_id: options.inject_ctx!.account.id
+					})
+				);
 				c.set(REQUEST_CONTEXT_KEY, options.inject_ctx!);
 				c.set(TEST_CONTEXT_PRESET_KEY, true);
-				c.set(CREDENTIAL_TYPE_KEY, 'session');
 				await next();
 			});
 		}

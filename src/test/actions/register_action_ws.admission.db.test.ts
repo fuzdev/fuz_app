@@ -63,7 +63,6 @@ import {
 	query_revoke_api_token_for_account
 } from '#lib/auth/api_token_queries.ts';
 import {
-	AUTH_SESSION_TOKEN_HASH_KEY,
 	build_account_context,
 	build_request_context,
 	create_request_context_middleware,
@@ -78,12 +77,8 @@ import {
 } from '#lib/auth/session_queries.ts';
 import { token_scope_full } from '#lib/auth/token_scope.ts';
 import type { Db } from '#lib/db/db.ts';
-import {
-	ACCOUNT_ID_KEY,
-	AUTH_API_TOKEN_ID_KEY,
-	CREDENTIAL_TYPE_KEY,
-	TOKEN_SCOPE_KEY
-} from '#lib/hono_context.ts';
+import { RESOLVED_AUTH_KEY } from '#lib/hono_context.ts';
+import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
 import type { JsonrpcNotification } from '#lib/http/jsonrpc.ts';
 import { create_fake_ws, create_stub_upgrade, type FakeWs } from '#lib/testing/ws_round_trip.ts';
 
@@ -179,9 +174,9 @@ const create_context = (vars: Record<string, unknown> = {}): Context =>
  *
  * A session credential is resolved by the real
  * `create_request_context_middleware`, from the raw token under
- * `session_context_key` — so the keys the upgrade reads are the ones
- * production sets. A bearer credential's keys are set the way the bearer
- * middleware sets them.
+ * `session_context_key` — so the value the upgrade reads is the one
+ * production sets. A bearer credential is set the way the bearer middleware
+ * sets it.
  */
 const create_upgrade_context = async (
 	db: Db,
@@ -194,14 +189,18 @@ const create_upgrade_context = async (
 	if ('session_token' in credential) {
 		// what the session middleware leaves for the request-context middleware
 		vars[session_context_key] = credential.session_token;
-		await create_request_context_middleware({ db }, session_context_key)(c, async () => {});
-		assert.strictEqual(vars[ACCOUNT_ID_KEY], account_id, 'the session resolved');
+		await create_request_context_middleware({ db }, { session_context_key })(c, async () => {});
+		assert.strictEqual(
+			(vars[RESOLVED_AUTH_KEY] as { account_id?: string } | undefined)?.account_id,
+			account_id,
+			'the session resolved'
+		);
 	} else {
-		vars[ACCOUNT_ID_KEY] = account_id;
-		vars[CREDENTIAL_TYPE_KEY] = 'api_token';
-		vars[TOKEN_SCOPE_KEY] = token_scope_full();
-		vars[AUTH_SESSION_TOKEN_HASH_KEY] = null;
-		vars[AUTH_API_TOKEN_ID_KEY] = credential.api_token_id;
+		vars[RESOLVED_AUTH_KEY] = create_test_resolved_auth({
+			credential_type: 'api_token',
+			account_id,
+			api_token_id: credential.api_token_id
+		});
 	}
 	const request_context = await build_account_context({ db }, account_id);
 	assert.ok(request_context);
@@ -567,29 +566,6 @@ describe_db('register_action_ws admission', (get_db) => {
 				1
 			);
 			assert.deepStrictEqual(socket.fake.closes, [REVOKED_CLOSE]);
-		});
-
-		test('a session credential with no token hash on the context is refused', async () => {
-			const db = get_db();
-			const account_id = await create_account(db);
-			const session = await create_session(db, account_id);
-			const endpoint = create_endpoint(db);
-			// a live session, but a context that carries only the raw token — a
-			// shape the middleware never builds, so nothing is derived from it
-			const c = create_context({
-				[ACCOUNT_ID_KEY]: account_id,
-				[CREDENTIAL_TYPE_KEY]: 'session',
-				[TOKEN_SCOPE_KEY]: token_scope_full(),
-				auth_session_id: session.session_token,
-				[REQUEST_CONTEXT_KEY]: await build_account_context({ db }, account_id)
-			});
-
-			const socket = await open_socket(endpoint, c);
-			await socket.opening;
-
-			assert.deepStrictEqual(socket.fake.closes, [REVOKED_CLOSE]);
-			assert.strictEqual(endpoint.registry.connection_count(), 0);
-			assert.deepStrictEqual(endpoint.opened, []);
 		});
 
 		test('an upgrade with no resolved credential throws before the socket exists', async () => {

@@ -33,7 +33,8 @@ import {
 	token_scope_denied_body,
 	type TokenScope
 } from '#lib/auth/token_scope.ts';
-import { ACCOUNT_ID_KEY, TEST_CONTEXT_PRESET_KEY, TOKEN_SCOPE_KEY } from '#lib/hono_context.ts';
+import { RESOLVED_AUTH_KEY, TEST_CONTEXT_PRESET_KEY } from '#lib/hono_context.ts';
+import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
 import { create_test_request_context } from '#lib/testing/auth_apps.ts';
 import { ApiError, RateLimitError } from '#lib/http/error_schemas.ts';
 import { create_stub_db } from '#lib/testing/stubs.ts';
@@ -134,7 +135,10 @@ describe('apply_route_specs', () => {
 		// Set request context before the route
 		app.use('/*', async (c, next) => {
 			const ctx = create_test_request_context();
-			(c as any).set(ACCOUNT_ID_KEY, ctx.account.id);
+			(c as any).set(
+				RESOLVED_AUTH_KEY,
+				create_test_resolved_auth({ credential_type: 'session', account_id: ctx.account.id })
+			);
 			(c as any).set(REQUEST_CONTEXT_KEY, ctx);
 			(c as any).set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();
@@ -183,7 +187,10 @@ describe('apply_route_specs', () => {
 		const app = new Hono();
 		app.use('/*', async (c, next) => {
 			const ctx = create_test_request_context('viewer');
-			(c as any).set(ACCOUNT_ID_KEY, ctx.account.id);
+			(c as any).set(
+				RESOLVED_AUTH_KEY,
+				create_test_resolved_auth({ credential_type: 'session', account_id: ctx.account.id })
+			);
 			(c as any).set(REQUEST_CONTEXT_KEY, ctx);
 			(c as any).set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();
@@ -213,7 +220,10 @@ describe('apply_route_specs', () => {
 		const app = new Hono();
 		app.use('/*', async (c, next) => {
 			const ctx = create_test_request_context('admin');
-			(c as any).set(ACCOUNT_ID_KEY, ctx.account.id);
+			(c as any).set(
+				RESOLVED_AUTH_KEY,
+				create_test_resolved_auth({ credential_type: 'session', account_id: ctx.account.id })
+			);
 			(c as any).set(REQUEST_CONTEXT_KEY, ctx);
 			(c as any).set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();
@@ -253,9 +263,15 @@ describe('auth.required_scope', () => {
 		const app = new Hono();
 		app.use('/*', async (c, next) => {
 			const ctx = create_test_request_context(role);
-			(c as any).set(ACCOUNT_ID_KEY, ctx.account.id);
+			(c as any).set(
+				RESOLVED_AUTH_KEY,
+				create_test_resolved_auth({
+					credential_type: 'api_token',
+					account_id: ctx.account.id,
+					scope
+				})
+			);
 			(c as any).set(REQUEST_CONTEXT_KEY, ctx);
-			(c as any).set(TOKEN_SCOPE_KEY, scope);
 			(c as any).set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();
 		});

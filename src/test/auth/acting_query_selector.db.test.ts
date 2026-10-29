@@ -23,7 +23,8 @@ import { REQUEST_CONTEXT_KEY } from '#lib/auth/request_context.ts';
 import { register_action_ws } from '#lib/actions/register_action_ws.ts';
 import { heartbeat_action } from '#lib/actions/heartbeat.ts';
 import { parse_allowed_origins } from '#lib/http/origin.ts';
-import { ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY } from '#lib/hono_context.ts';
+import { RESOLVED_AUTH_KEY } from '#lib/hono_context.ts';
+import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
 import { create_stub_upgrade } from '#lib/testing/ws_round_trip.ts';
 import { ERROR_ACTOR_REQUIRED } from '#lib/http/error_schemas.ts';
 import type { Db } from '#lib/db/db.ts';
@@ -45,8 +46,7 @@ const create_route_specs = () => [create_account_status_route_spec({ path: STATU
 const build_ws_app = (db: Db, account_id: string) => {
 	const app = new Hono();
 	app.use('*', async (c, next) => {
-		c.set(ACCOUNT_ID_KEY, account_id);
-		c.set(CREDENTIAL_TYPE_KEY, 'session');
+		c.set(RESOLVED_AUTH_KEY, create_test_resolved_auth({ credential_type: 'session', account_id }));
 		await next();
 	});
 	const stub = create_stub_upgrade();

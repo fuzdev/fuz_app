@@ -30,16 +30,12 @@
  * scan, deliberately: the property ("no *unreviewed* site exists") is about
  * code not yet written, which no type can express.
  *
- * The TS spine also needs one assertion the Rust census does not. Rust resolves
- * every credential through a single `resolve_auth_from_headers`, so a resolved
- * credential always carries a scope — `ResolvedAuth.scope` is not optional.
- * Here resolution is three separate middlewares writing `TOKEN_SCOPE_KEY` into
- * the Hono context, and the shared guard `token_scope_surface_denial` must read
- * that key defensively (`scope && !admits(scope)`) because the anonymous caller
- * has none. A fourth middleware that authenticated someone and forgot the key
- * would therefore sail through every rule-3 surface at once — the permissive
- * default, re-entered by omission. The `resolvers set the token scope` case
- * below pins it.
+ * That a resolved credential carries a scope is held by the type, on both
+ * spines: every resolver writes one `ResolvedAuth` value (`RESOLVED_AUTH_KEY`),
+ * whose `api_token` arm requires its `scope` and whose other arms answer `full`
+ * through `resolved_auth_scope` — so no middleware can authenticate a caller and
+ * leave it un-narrowable. The `resolvers write the one resolved value` case
+ * below pins that each resolver writes it, and that the type keeps the shape.
  *
  * **This is the proportionate control, not the strongest one.** The strongest
  * is making the scope-consulting read the only way to obtain a usable identity,
@@ -57,7 +53,27 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, assert, test } from 'vitest';
 
-import { is_token_surface, TOKEN_SURFACES, type TokenSurface } from '#lib/auth/token_scope.ts';
+import {
+	get_resolved_auth,
+	resolved_auth_scope,
+	type ResolvedApiTokenAuth,
+	type ResolvedDaemonTokenAuth,
+	type ResolvedSessionAuth
+} from '#lib/auth/resolved_auth.ts';
+import {
+	is_token_surface,
+	TOKEN_SURFACES,
+	type TokenScope,
+	type TokenSurface
+} from '#lib/auth/token_scope.ts';
+import { RESOLVED_AUTH_KEY } from '#lib/hono_context.ts';
+
+/**
+ * The context key's constant name, as source spells it. A rename of the
+ * constant fails the positive controls below rather than leaving the markers
+ * matching nothing.
+ */
+const RESOLVED_AUTH_KEY_NAME = 'RESOLVED_AUTH_KEY';
 
 /** How a reviewed site relates to the credential's `TokenScope`. */
 type CensusRole =
@@ -93,19 +109,19 @@ const CENSUS: ReadonlyArray<CensusEntry> = [
 		file: 'auth/bearer_auth.ts',
 		role: 'resolves',
 		reason:
-			'the only credential that can carry a narrowing — reads `api_token.scope` off the validated row, fail-closed to full only when the row parses (an unreadable document refuses the credential outright)'
+			'the only credential that can carry a narrowing — writes the `api_token` arm, whose `scope` the type requires, read off the validated row (an unreadable document refuses the credential outright)'
 	},
 	{
 		file: 'auth/request_context.ts',
 		role: 'resolves',
 		reason:
-			'session cookies resolve to full by construction — a browser session *is* full account authority, and narrowing it is what role grants are for'
+			'session cookies resolve to full by construction (the `session` arm carries no scope; `resolved_auth_scope` answers full) — a browser session *is* full account authority, and narrowing it is what role grants are for'
 	},
 	{
 		file: 'auth/daemon_token_middleware.ts',
 		role: 'resolves',
 		reason:
-			'the daemon token resolves to full — singular, filesystem-proved, and keeper-bound, with no minting surface to attach a narrowing to'
+			'the daemon token resolves to full (the `daemon_token` arm carries no scope) — singular, filesystem-proved, and keeper-bound, with no minting surface to attach a narrowing to'
 	},
 	// --- Consults scope ---
 	{
@@ -183,9 +199,11 @@ const CENSUS: ReadonlyArray<CensusEntry> = [
  * missed it.
  */
 const CREDENTIAL_MARKERS: ReadonlyArray<string | RegExp> = [
-	'ACCOUNT_ID_KEY',
-	'CREDENTIAL_TYPE_KEY',
-	'TOKEN_SCOPE_KEY',
+	RESOLVED_AUTH_KEY_NAME,
+	get_resolved_auth.name,
+	// The scope read itself, so a site gating on a `ResolvedAuth` handed to it
+	// as a parameter is found though it never touches the context.
+	resolved_auth_scope.name,
 	'REQUEST_CONTEXT_KEY',
 	'require_request_context',
 	'get_request_context',
@@ -301,30 +319,66 @@ const RULE_3_SURFACE_SITES: Record<TokenSurface, { file: string; source: string 
  * anonymous answer anyway), so it applies rule 3 itself by reading the
  * credential through `get_public_account_id`, which answers a narrowed token
  * as anonymous. Pinned by exact source for the same reason as
- * `RULE_3_SURFACE_SITES`: a handler that reverts to reading `ACCOUNT_ID_KEY`
+ * `RULE_3_SURFACE_SITES`: a handler that reverts to reading `get_resolved_auth`
  * directly would hand a narrowed token the account's view with nothing else
  * failing.
  */
-const RULE_3_DOWNGRADE_SITES: ReadonlyArray<{ file: string; source: string }> = [
-	{ file: 'auth/account_routes.ts', source: 'const account_id = get_public_account_id(c);' },
+const RULE_3_DOWNGRADE_SITES: ReadonlyArray<{
+	file: string;
+	source: string;
+	/**
+	 * The exact lines that read the resolved credential for something other
+	 * than the account — each a handler on another route of the same module,
+	 * exempted by name.
+	 */
+	other_reads?: ReadonlyArray<{ source: string; reason: string }>;
+}> = [
+	{
+		file: 'auth/account_routes.ts',
+		source: 'const account_id = get_public_account_id(c);',
+		other_reads: [
+			{
+				source: 'const session_hash = resolved_auth_session_hash(get_resolved_auth(c));',
+				reason:
+					'`/logout` revokes the session it was called on; its shape admits only a session credential, so no bearer reaches it'
+			},
+			{
+				source: 'const credential_type = get_resolved_auth(c)?.credential_type;',
+				reason:
+					'`/password` records the credential type in its audit metadata; credential-gated to the session channel'
+			}
+		]
+	},
 	{ file: 'server/serve_fact_route.ts', source: 'const account_id = get_public_account_id(c);' }
 ];
 
 /**
- * The raw reads of the resolved account id — the context key by constant
- * (`ACCOUNT_ID_KEY`), by literal (`'auth_account_id'`, which `c.get(...)` and
- * `c.var.auth_account_id` both spell), and the whole resolved credential
- * (`get_resolved_auth`).
+ * The raw reads of the resolved credential — the context key by constant
+ * (`RESOLVED_AUTH_KEY`), by literal (`'resolved_auth'` for `c.get(...)`,
+ * `c.var.resolved_auth`), by bare identifier (`const { resolved_auth } =
+ * c.var`), and the getter (`get_resolved_auth`). The bare identifier skips a
+ * module path (`./resolved_auth.ts`), which names the module, not the value. Built from
+ * the live key value and the getter's name, so a rename moves the pattern
+ * with it; the positive control below holds it to matching each spelling.
  *
  * A `RULE_3_DOWNGRADE_SITES` file holds none of them: the downgrade call pins
  * that the site *makes* the downgrade, not that it acts on its answer, so a
  * raw read beside the call would hand a narrowed token the account's view
  * with the call still present. Whole-file, so a later handler in the same
  * module that needs the full credential has to move or be exempted here by
- * name. Only whole comment lines are stripped, so a trailing comment or a
- * string spelling one of these names counts too — reword it.
+ * name (`other_reads`). Only whole comment lines are stripped, so a trailing
+ * comment or a string spelling one of these names counts too — reword it.
  */
-const RAW_ACCOUNT_ID_READ = /\bACCOUNT_ID_KEY\b|\bauth_account_id\b|\bget_resolved_auth\s*\(/u;
+const RAW_CREDENTIAL_READ = new RegExp(
+	[
+		`\\b${RESOLVED_AUTH_KEY_NAME}\\b`,
+		`'${RESOLVED_AUTH_KEY}'`,
+		`\\bc\\.var\\.${RESOLVED_AUTH_KEY}\\b`,
+		`\\b${RESOLVED_AUTH_KEY}\\b(?!\\.ts)`,
+		`\\b${get_resolved_auth.name}\\s*\\(`
+	].join('|'),
+	'u'
+);
 
 /**
  * Matches any `'surface:<name>'` literal — a route spec's `required_scope`
@@ -397,10 +451,12 @@ const strip_comment_lines = (source: string): string =>
 		.join('\n');
 
 /** Walk `src/lib` for files that reach a resolved credential. */
-const discover_credential_sites = (): Set<string> =>
+const discover_credential_sites = (
+	markers: ReadonlyArray<string | RegExp> = CREDENTIAL_MARKERS
+): Set<string> =>
 	discover_lib_files((raw) => {
 		const source = strip_comment_lines(raw);
-		return CREDENTIAL_MARKERS.some((marker) =>
+		return markers.some((marker) =>
 			typeof marker === 'string' ? source.includes(marker) : marker.test(source)
 		);
 	});
@@ -472,22 +528,93 @@ describe('token scope surface census', () => {
 	});
 
 	/**
-	 * Every resolver writes `TOKEN_SCOPE_KEY`.
+	 * Every resolver writes the one resolved value, and the type holds the
+	 * scope.
 	 *
-	 * The TS-specific half of the census, and the one with no Rust twin. Every
-	 * gate reads the key as `scope && !admits(scope)` — necessarily, since the
-	 * anonymous caller holds no credential to narrow — so a middleware that
-	 * authenticates a caller and leaves the key unset makes that caller
-	 * *un-narrowable* at every surface at once. That is the permissive default
-	 * this design removed, re-entered by omission rather than by decision.
+	 * The scope half is a shape rule: the `api_token` arm requires `scope`, the
+	 * `session` and `daemon_token` arms carry none (`resolved_auth_scope`
+	 * answers `full` for them), so a resolver cannot authenticate a caller and
+	 * leave it un-narrowable without failing typecheck here. The source half
+	 * pins that each resolver writes the value, under the key constant the
+	 * markers and the raw-read pattern are built from.
 	 */
-	test('resolvers set the token scope', () => {
-		for (const entry of CENSUS) {
-			if (entry.role !== 'resolves') continue;
-			const source = read_lib_source(entry.file);
+	test('resolvers write the one resolved value', () => {
+		type HasKey<T, K extends PropertyKey> = K extends keyof T ? true : false;
+		const shape: [
+			HasKey<ResolvedApiTokenAuth, 'scope'>,
+			HasKey<ResolvedSessionAuth, 'scope'>,
+			HasKey<ResolvedDaemonTokenAuth, 'scope'>,
+			ResolvedApiTokenAuth['scope'] extends TokenScope ? true : false
+		] = [true, false, false, true];
+		assert.deepStrictEqual(shape, [true, false, false, true]);
+		assert.strictEqual(resolved_auth_scope(null), null, 'only the anonymous caller lacks a scope');
+
+		const resolvers = CENSUS.filter((e) => e.role === 'resolves');
+		assert.strictEqual(resolvers.length, 3, 'the daemon-token, session, and bearer legs');
+		for (const entry of resolvers) {
+			const source = strip_comment_lines(read_lib_source(entry.file));
 			assert.ok(
-				source.includes(`c.set(TOKEN_SCOPE_KEY`),
-				`${entry.file} resolves a credential but never sets TOKEN_SCOPE_KEY — the caller would be un-narrowable at every surface`
+				source.includes(`c.set(${RESOLVED_AUTH_KEY_NAME}, {`),
+				`${entry.file} resolves a credential but never sets ${RESOLVED_AUTH_KEY_NAME}`
+			);
+		}
+	});
+
+	/**
+	 * The markers and the raw-read pattern still match what they scan for.
+	 *
+	 * Without this a rename of the key or the getter would leave every marker
+	 * matching nothing — the census discovering fewer sites, the downgrade
+	 * check passing vacuously — and nothing would fail.
+	 */
+	test('the markers match real credential reads (positive control)', () => {
+		assert.strictEqual(
+			read_lib_source('hono_context.ts').includes(
+				`export const ${RESOLVED_AUTH_KEY_NAME} = '${RESOLVED_AUTH_KEY}';`
+			),
+			true,
+			`${RESOLVED_AUTH_KEY_NAME} is not declared under that name — update the census markers`
+		);
+		for (const spelling of [
+			`c.get(${RESOLVED_AUTH_KEY_NAME})`,
+			`c.get('${RESOLVED_AUTH_KEY}')`,
+			`c.var.${RESOLVED_AUTH_KEY}`,
+			`const { ${RESOLVED_AUTH_KEY} } = c.var;`,
+			`${get_resolved_auth.name}(c)`
+		]) {
+			assert.ok(RAW_CREDENTIAL_READ.test(spelling), `the raw-read pattern misses \`${spelling}\``);
+		}
+		for (const near_miss of [
+			`import { x } from './${RESOLVED_AUTH_KEY}.ts';`,
+			`import { x } from '#lib/auth/${RESOLVED_AUTH_KEY}.ts';`,
+			`${RESOLVED_AUTH_KEY}_scope(auth)`
+		]) {
+			assert.ok(
+				!RAW_CREDENTIAL_READ.test(near_miss),
+				`the raw-read pattern matches \`${near_miss}\`, which reads no credential`
+			);
+		}
+		// the getter and the key are each reached by real lib code
+		const discovered = discover_credential_sites();
+		for (const file of [
+			'auth/request_context.ts',
+			'auth/bearer_auth.ts',
+			'auth/daemon_token_middleware.ts',
+			'actions/action_rpc.ts'
+		]) {
+			assert.ok(discovered.has(file), `${file} reads the credential but the markers miss it`);
+		}
+		// each way to read the credential is a marker, and each reaches real code
+		for (const [marker, file] of [
+			[RESOLVED_AUTH_KEY_NAME, 'auth/bearer_auth.ts'],
+			[get_resolved_auth.name, 'actions/action_rpc.ts'],
+			// a site handed the credential as a parameter, reached by the scope read alone
+			[resolved_auth_scope.name, 'actions/perform_action.ts']
+		] as const) {
+			assert.ok(CREDENTIAL_MARKERS.includes(marker), `\`${marker}\` is not a credential marker`);
+			assert.ok(
+				discover_credential_sites([marker]).has(file),
+				`the \`${marker}\` marker misses ${file}`
 			);
 		}
 	});
@@ -535,7 +662,22 @@ describe('token scope surface census', () => {
 				strip_comment_lines(read_lib_source(site.file)).includes(site.source),
 				`${site.file} answers anonymous callers but does not contain \`${site.source}\` — a narrowed token would read the account's view`
 			);
-			const raw_read = RAW_ACCOUNT_ID_READ.exec(strip_comment_lines(read_lib_source(site.file)));
+			let source = strip_comment_lines(read_lib_source(site.file));
+			for (const other of site.other_reads ?? []) {
+				assert.ok(
+					source.includes(other.source),
+					`${site.file} names an exempt read it no longer makes: \`${other.source}\``
+				);
+				assert.ok(other.reason.length > 20, `${site.file} needs a reason for \`${other.source}\``);
+				// exactly once, so a copy of an exempt line in another handler is still a raw read
+				assert.strictEqual(
+					source.split(other.source).length - 1,
+					1,
+					`${site.file} makes the exempt read \`${other.source}\` more than once — exempt each by its own handler`
+				);
+				source = source.replace(other.source, '');
+			}
+			const raw_read = RAW_CREDENTIAL_READ.exec(source);
 			assert.ok(
 				raw_read === null,
 				`${site.file} answers anonymous callers but reads the account id raw (\`${raw_read?.[0]}\`) beside the downgrade — a narrowed token would read the account's view`

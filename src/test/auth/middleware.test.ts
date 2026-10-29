@@ -25,6 +25,9 @@ import { create_stub_app_deps } from '#lib/testing/stubs.ts';
 import { create_serve_cell_fact_route_spec } from '#lib/server/serve_fact_route.ts';
 import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
+import { RESOLVED_AUTH_KEY } from '#lib/hono_context.ts';
+import { get_resolved_auth } from '#lib/auth/resolved_auth.ts';
+import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
 
 const create_options = (overrides?: Partial<AuthMiddlewareOptions>): AuthMiddlewareOptions => ({
 	allowed_origins: [],
@@ -136,7 +139,7 @@ describe('create_auth_middleware_specs', () => {
 		}
 	});
 
-	test('appends daemon_token middleware when daemon_token_state is provided', async () => {
+	test('mounts daemon_token first among the credential legs when daemon_token_state is provided', async () => {
 		const deps = create_stub_app_deps();
 		const specs = await create_auth_middleware_specs(
 			deps,
@@ -149,8 +152,12 @@ describe('create_auth_middleware_specs', () => {
 				}
 			})
 		);
-		assert.strictEqual(specs.length, 5);
-		assert.strictEqual(specs[4]!.name, 'daemon_token');
+		// the credential legs in the Rust spine's order: daemon token, then
+		// session cookie, then bearer — the first that authenticates wins
+		assert.deepStrictEqual(
+			specs.map((s) => s.name),
+			['origin', 'daemon_token', 'session', 'request_context', 'bearer_auth']
+		);
 	});
 
 	test('daemon_token middleware uses the configured custom path', async () => {
@@ -229,6 +236,44 @@ describe('create_auth_middleware_specs', () => {
 			assert.strictEqual(typeof spec.handler, 'function');
 		}
 	});
+});
+
+describe('create_auth_middleware_specs — the chain starts from a clean slate', () => {
+	for (const with_daemon_token of [true, false]) {
+		test(`a credential set before the stack is cleared (daemon_token: ${with_daemon_token})`, async () => {
+			const specs = await create_auth_middleware_specs(
+				create_stub_app_deps(),
+				create_options(
+					with_daemon_token
+						? {
+								daemon_token_state: {
+									current_token: 'tok123',
+									previous_token: null,
+									rotated_at: new Date(),
+									keeper_account_id: null
+								}
+							}
+						: undefined
+				)
+			);
+			const app = new Hono();
+			// a layer mounted before the credential legs pre-setting an identity,
+			// which every leg would otherwise see as resolved and skip past
+			app.use('/*', async (c, next) => {
+				c.set(
+					RESOLVED_AUTH_KEY,
+					create_test_resolved_auth({ credential_type: 'daemon_token', account_id: 'acct-preset' })
+				);
+				await next();
+			});
+			for (const spec of specs) app.use(spec.path, spec.handler);
+			app.get('/api/test', (c) => c.json({ resolved: get_resolved_auth(c) }));
+
+			const res = await app.request('/api/test');
+			assert.strictEqual(res.status, 200);
+			assert.strictEqual((await res.json()).resolved, null);
+		});
+	}
 });
 
 describe('assert_credential_routes_in_auth_scope', () => {

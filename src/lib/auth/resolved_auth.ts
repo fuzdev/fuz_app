@@ -2,11 +2,12 @@
  * The account-grain credential a request resolved to, and the re-check a
  * long-lived connection runs on it once it is registered.
  *
- * The auth middleware chain (daemon token → session cookie → bearer) resolves a
- * credential and leaves it on the Hono context as separate keys.
- * `ResolvedAuth` is that credential gathered into one value
- * (`get_resolved_auth`), so the connections that outlive their request — a
- * WebSocket, an SSE stream — can carry it past the handshake, re-read it with
+ * The auth middleware chain resolves at most one credential per request —
+ * daemon token, then session cookie, then bearer, the first that
+ * authenticates winning — and leaves it on the Hono context as one value,
+ * `ResolvedAuth` (`RESOLVED_AUTH_KEY`, read with `get_resolved_auth`). Every
+ * reader takes that value, so the connections that outlive their request — a
+ * WebSocket, an SSE stream — carry it past the handshake, re-read it with
  * `revalidate_resolved_auth` (or the whole admission re-check,
  * `recheck_admission`), and close at its `credential_deadline`.
  *
@@ -16,40 +17,26 @@
 import type { Context } from 'hono';
 
 import type { QueryDeps } from '../db/query_deps.ts';
-import {
-	ACCOUNT_ID_KEY,
-	AUTH_API_TOKEN_ID_KEY,
-	CREDENTIAL_DEADLINE_KEY,
-	CREDENTIAL_TYPE_KEY
-} from '../hono_context.ts';
-import type { BuiltinCredentialType } from './credential_type_schema.ts';
+import { RESOLVED_AUTH_KEY } from '../hono_context.ts';
 import { query_account_by_id, query_active_actors_by_account } from './account_queries.ts';
 import { query_api_token_live_account } from './api_token_queries.ts';
 import {
-	AUTH_SESSION_TOKEN_HASH_KEY,
 	has_any_scoped_role,
 	refresh_role_grants,
 	type RequestContext
 } from './request_context.ts';
 import { query_session_get_valid } from './session_queries.ts';
+import { token_scope_full, type TokenScope } from './token_scope.ts';
 
-/**
- * An authenticated request's credential, account-grain — no actor.
- *
- * `token_hash` is set for a session, `api_token_id` for an API token, and both
- * are `null` for a daemon token. The twin of the Rust spine's `ResolvedAuth`,
- * which carries the account row and token scope as well; here those stay on
- * the Hono context.
- */
-export interface ResolvedAuth {
-	/** The authenticated account. */
-	account_id: string;
-	/** How the request was authenticated. */
-	credential_type: BuiltinCredentialType;
-	/** Blake3 hash of the session token, or `null` for non-session credentials. */
-	token_hash: string | null;
-	/** `api_token.id` for a bearer credential, else `null`. */
-	api_token_id: string | null;
+/** The fields every resolved credential carries. */
+interface ResolvedAuthBase {
+	/**
+	 * The authenticated account. Its id, not its row — the twin of the Rust
+	 * spine's `ResolvedAuth::account`, which loads the row as it resolves. Here
+	 * the middleware stays one query per credential and the authorization phase
+	 * loads the account when a route needs it.
+	 */
+	readonly account_id: string;
 	/**
 	 * When the credential stops authenticating, as a monotonic
 	 * `performance.now()` timestamp — the moment a long-lived connection opened
@@ -60,34 +47,84 @@ export interface ResolvedAuth {
 	 * expiry is read as time remaining on the database clock
 	 * (`auth/credential_deadline.ts`). The Rust twin's `credential_deadline`.
 	 */
-	credential_deadline: number | null;
+	readonly credential_deadline: number | null;
+}
+
+/** A session cookie — full account authority by construction. */
+export interface ResolvedSessionAuth extends ResolvedAuthBase {
+	readonly credential_type: 'session';
+	/** Blake3 hash of the session token — the `auth_session.id`. */
+	readonly session_hash: string;
+}
+
+/** An `Authorization: Bearer` API token — the only credential a scope narrows. */
+export interface ResolvedApiTokenAuth extends ResolvedAuthBase {
+	readonly credential_type: 'api_token';
+	/** The `api_token.id`. */
+	readonly api_token_id: string;
+	/** The authority the token was minted with, read off its row. */
+	readonly scope: TokenScope;
+}
+
+/** The keeper-bound daemon token — full authority, no row, no expiry. */
+export interface ResolvedDaemonTokenAuth extends ResolvedAuthBase {
+	readonly credential_type: 'daemon_token';
+	readonly credential_deadline: null;
 }
 
 /**
- * Gather the credential the auth middleware resolved for this request.
+ * An authenticated request's credential, account-grain — no actor.
  *
- * Reads the keys the session, bearer, and daemon-token middleware set and
- * keeps only the one that belongs to the winning credential type: the session
- * hash for a session alone, the token id for an API token alone. The daemon
- * token middleware clears both when it overrides a session cookie sent beside
- * it; the filter keeps a key some other layer left behind from riding along.
+ * One arm per credential type, each carrying only what belongs to it: the
+ * session hash on a session, the token id and scope on an API token, so a
+ * session with a narrowed scope or a bearer with a session hash cannot be
+ * built. The twin of the Rust spine's `ResolvedAuth`, whose
+ * `ResolvedCredential` enum holds the same correlation.
+ */
+export type ResolvedAuth = ResolvedSessionAuth | ResolvedApiTokenAuth | ResolvedDaemonTokenAuth;
+
+/**
+ * The credential's authority narrowing: an API token's own scope, `full` for a
+ * session or the daemon token (a browser session *is* full account authority —
+ * narrowing it is what role grants are for — and the daemon token is singular,
+ * filesystem-proved, and keeper-bound). `null` only for the anonymous caller,
+ * who holds no credential to narrow. Every token-scope gate reads this. The twin
+ * of the Rust spine's `ResolvedAuth::scope`.
+ *
+ * @param auth - the resolved credential, or `null` for an anonymous caller
+ * @returns the scope, or `null` for an anonymous caller
+ */
+export const resolved_auth_scope = (auth: ResolvedAuth | null): TokenScope | null => {
+	if (auth === null) return null;
+	return auth.credential_type === 'api_token' ? auth.scope : token_scope_full();
+};
+
+/**
+ * The session hash of a session credential, `null` for any other (or none).
+ *
+ * @param auth - the resolved credential, or `null` for an anonymous caller
+ * @returns the `auth_session.id`, or `null`
+ */
+export const resolved_auth_session_hash = (auth: ResolvedAuth | null): string | null =>
+	auth?.credential_type === 'session' ? auth.session_hash : null;
+
+/**
+ * The token id of an API token credential, `null` for any other (or none).
+ *
+ * @param auth - the resolved credential, or `null` for an anonymous caller
+ * @returns the `api_token.id`, or `null`
+ */
+export const resolved_auth_api_token_id = (auth: ResolvedAuth | null): string | null =>
+	auth?.credential_type === 'api_token' ? auth.api_token_id : null;
+
+/**
+ * The credential the auth middleware resolved for this request.
  *
  * @param c - the request context, after the auth middleware chain
  * @returns the resolved credential, or `null` for an unauthenticated request
  */
-export const get_resolved_auth = (c: Context): ResolvedAuth | null => {
-	const account_id = c.get(ACCOUNT_ID_KEY) ?? null;
-	const credential_type = c.get(CREDENTIAL_TYPE_KEY) ?? null;
-	if (account_id === null || credential_type === null) return null;
-	return {
-		account_id,
-		credential_type,
-		token_hash: credential_type === 'session' ? (c.get(AUTH_SESSION_TOKEN_HASH_KEY) ?? null) : null,
-		api_token_id: credential_type === 'api_token' ? (c.get(AUTH_API_TOKEN_ID_KEY) ?? null) : null,
-		credential_deadline:
-			credential_type === 'daemon_token' ? null : (c.get(CREDENTIAL_DEADLINE_KEY) ?? null)
-	};
-};
+export const get_resolved_auth = (c: Context): ResolvedAuth | null =>
+	c.get(RESOLVED_AUTH_KEY) ?? null;
 
 /**
  * Re-check that a resolved credential still authenticates: `true` when it
@@ -134,10 +171,6 @@ export const get_resolved_auth = (c: Context): ResolvedAuth | null => {
  * `api_token.last_used_at` / `last_used_ip` — re-checking a credential is not
  * using it — and it writes nothing else.
  *
- * A `ResolvedAuth` whose credential type lacks its own key (a session with no
- * `token_hash`, a bearer with no `api_token_id`) is a shape the middleware
- * never builds; it is answered `false`.
- *
  * The twin of the Rust spine's `revalidate_resolved_auth`.
  *
  * @param deps - query dependencies; the pool-level `Db`, not a snapshot transaction
@@ -154,13 +187,11 @@ export const revalidate_resolved_auth = async (
 	let credential_is_live: boolean;
 	switch (resolved.credential_type) {
 		case 'session': {
-			if (resolved.token_hash === null) return false;
-			const session = await query_session_get_valid(deps, resolved.token_hash);
+			const session = await query_session_get_valid(deps, resolved.session_hash);
 			credential_is_live = session?.account_id === account_id;
 			break;
 		}
 		case 'api_token': {
-			if (resolved.api_token_id === null) return false;
 			const owner = await query_api_token_live_account(deps, resolved.api_token_id);
 			credential_is_live = owner === account_id;
 			break;

@@ -1,8 +1,8 @@
 /**
  * Bearer auth + dispatcher authorization phase: empty actor list.
  *
- * The bearer middleware validates the token and sets `ACCOUNT_ID_KEY` /
- * `CREDENTIAL_TYPE_KEY` only — actor + role_grant resolution lives in the
+ * The bearer middleware validates the token and sets the account-grain
+ * `ResolvedAuth` only — actor + role_grant resolution lives in the
  * dispatcher's authorization phase. When the actor list is empty the
  * authorization phase surfaces `ERROR_NO_ACTORS_ON_ACCOUNT` (500).
  *

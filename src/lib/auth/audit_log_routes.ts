@@ -29,7 +29,12 @@ import { create_sse_response, type SseNotification } from '../realtime/sse.ts';
 import { validate_sse_keep_alive_ms } from '../realtime/sse_constants.ts';
 import type { SseRegistry } from '../realtime/sse_registry.ts';
 import { require_request_context } from './request_context.ts';
-import { get_resolved_auth, recheck_admission } from './resolved_auth.ts';
+import {
+	get_resolved_auth,
+	recheck_admission,
+	resolved_auth_api_token_id,
+	resolved_auth_session_hash
+} from './resolved_auth.ts';
 import { schedule_credential_deadline } from './credential_deadline.ts';
 import { AUDIT_LOG_CHANNEL } from '../realtime/audit_log_sse.ts';
 
@@ -129,14 +134,14 @@ export const create_audit_log_route_specs = (options?: AuditLogRouteOptions): Ar
 				// Both come off the resolved credential, which carries each only
 				// for its own credential type.
 				const resolved = get_resolved_auth(c);
-				const token_hash = resolved?.token_hash ?? null;
-				const api_token_id = resolved?.api_token_id ?? null;
+				const session_hash = resolved_auth_session_hash(resolved);
+				const api_token_id = resolved_auth_api_token_id(resolved);
 
 				// Register pending first: from here every revocation finds the
 				// stream (TSDoc, "Admission").
 				const pending = registry.subscribe_pending({
 					channels: [AUDIT_LOG_CHANNEL],
-					scope: token_hash ?? undefined,
+					scope: session_hash ?? undefined,
 					groups: api_token_id === null ? [ctx.account.id] : [ctx.account.id, api_token_id]
 				});
 				// The pending registration is released on every path that does not

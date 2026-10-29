@@ -1,7 +1,7 @@
 /**
  * The credential deadline against a real database — the remaining lifetime
  * the validation queries read on the database clock, and the deadline the
- * auth middleware sets from it (`CREDENTIAL_DEADLINE_KEY`).
+ * auth middleware sets from it (`ResolvedAuth.credential_deadline`).
  *
  * - **Session** — the earlier of the signed cookie's expiry and the row's.
  * - **API token** — the row's; none for an eternal token.

@@ -13,9 +13,10 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
 import { create_audit_log_route_specs } from '#lib/auth/audit_log_routes.ts';
-import { AUTH_SESSION_TOKEN_HASH_KEY, REQUEST_CONTEXT_KEY } from '#lib/auth/request_context.ts';
+import { REQUEST_CONTEXT_KEY } from '#lib/auth/request_context.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
-import { TEST_CONTEXT_PRESET_KEY } from '#lib/hono_context.ts';
+import { RESOLVED_AUTH_KEY, TEST_CONTEXT_PRESET_KEY } from '#lib/hono_context.ts';
+import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
 import type { RouteContext } from '#lib/http/route_spec.ts';
 import { create_audit_log_sse } from '#lib/realtime/audit_log_sse.ts';
 import { create_test_request_context } from '#lib/testing/auth_apps.ts';
@@ -30,9 +31,13 @@ describe('audit log stream handler', () => {
 		assert.ok(spec);
 		// A pre-baked context (so the re-reads are skipped) with nothing but
 		// `get` — `create_sse_response` reaches for the request and throws.
+		const request_context = create_test_request_context(ROLE_ADMIN);
 		const vars: Record<string, unknown> = {
-			[REQUEST_CONTEXT_KEY]: create_test_request_context(ROLE_ADMIN),
-			[AUTH_SESSION_TOKEN_HASH_KEY]: 'session_hash',
+			[REQUEST_CONTEXT_KEY]: request_context,
+			[RESOLVED_AUTH_KEY]: create_test_resolved_auth({
+				credential_type: 'session',
+				account_id: request_context.account.id
+			}),
 			[TEST_CONTEXT_PRESET_KEY]: true
 		};
 		const c = { get: (key: string) => vars[key] } as unknown as Context;

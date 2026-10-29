@@ -248,6 +248,16 @@ export const create_stub_api_middleware = (options?: {
 			errors: { 403: ApiError },
 			...(origin_carve_outs.length > 0 && { carve_outs: origin_carve_outs })
 		},
+		...(options?.include_daemon_token
+			? [
+					{
+						name: 'daemon_token',
+						path: AUTH_MIDDLEWARE_PATH,
+						handler: create_stub_mw(),
+						errors: {}
+					}
+				]
+			: []),
 		{ name: 'session', path: AUTH_MIDDLEWARE_PATH, handler: create_stub_mw() },
 		{ name: 'request_context', path: AUTH_MIDDLEWARE_PATH, handler: create_stub_mw() },
 		{
@@ -257,14 +267,6 @@ export const create_stub_api_middleware = (options?: {
 			errors: {}
 		}
 	];
-	if (options?.include_daemon_token) {
-		specs.push({
-			name: 'daemon_token',
-			path: AUTH_MIDDLEWARE_PATH,
-			handler: create_stub_mw(),
-			errors: {}
-		});
-	}
 	return specs;
 };
 

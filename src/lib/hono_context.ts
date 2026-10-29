@@ -5,67 +5,31 @@
  * variables used by auth, http, server, and testing modules.
  *
  * Auto-loaded by `server/app_server.ts` (side-effect import) and
- * transitively by auth middleware modules that import `CREDENTIAL_TYPE_KEY`.
+ * transitively by auth middleware modules that import `RESOLVED_AUTH_KEY`.
  * Consumers don't need a manual import unless bypassing the standard server assembly.
  *
  * @module
  */
 
-import type { TokenScope } from './auth/token_scope.ts';
-
 import type { RequestContext } from './auth/request_context.ts';
-import type { BuiltinCredentialType } from './auth/credential_type_schema.ts';
-
-/** Hono context variable name for the credential type. */
-export const CREDENTIAL_TYPE_KEY = 'credential_type';
-
-/** Hono context variable name for the authenticated API token id. */
-export const AUTH_API_TOKEN_ID_KEY = 'auth_api_token_id';
+import type { ResolvedAuth } from './auth/resolved_auth.ts';
 
 /**
- * Hono context variable name for the credential's `TokenScope`.
+ * Hono context variable name for the request's resolved credential
+ * (`ResolvedAuth`) — the one value every auth middleware leg writes, read
+ * through `get_resolved_auth`.
  *
- * Set by every auth middleware that resolves a credential — bearer reads it
- * from the token row; session and daemon-token set `full`, because a browser
- * session *is* full account authority (narrowing it is what role grants are
- * for) and the daemon token is singular, filesystem-proved, and keeper-bound.
- *
- * Unset only for the anonymous caller, who holds no credential to narrow.
- * Downstream must not read an unset value as permissive for an *authenticated*
- * caller — that absent case is exactly the permissive default this design
- * removes.
+ * The daemon-token, session, and bearer legs run in that order, and the first
+ * that authenticates sets it; the legs after it see it set and skip. Unset
+ * (read as `null`) for an unauthenticated request.
  */
-export const TOKEN_SCOPE_KEY = 'token_scope';
-
-/**
- * Hono context variable name for the authenticated account id.
- *
- * Set by the auth middleware (session, bearer, or daemon token) on a valid
- * credential. `null` for unauthenticated requests. The route-spec wrapper /
- * RPC dispatcher's authorization phase reads this when resolving the acting
- * actor; account-grain auth guards (`require_auth`) and account-grain handlers
- * read it directly.
- */
-export const ACCOUNT_ID_KEY = 'auth_account_id';
-
-/**
- * Hono context variable name for the credential's deadline — when it stops
- * authenticating, as a monotonic `performance.now()` timestamp
- * (`auth/credential_deadline.ts`), or `null` for one with no expiry (a daemon
- * token, an eternal API token) and for an unauthenticated request.
- *
- * Set by every auth middleware that resolves a credential: session (the
- * earlier of the signed cookie's expiry and the row's), bearer (the row's),
- * daemon token (`null`). A long-lived connection opened on the credential
- * closes at it (`ResolvedAuth.credential_deadline`).
- */
-export const CREDENTIAL_DEADLINE_KEY = 'credential_deadline';
+export const RESOLVED_AUTH_KEY = 'resolved_auth';
 
 /**
  * Hono context variable name for the session cookie's signed expiry, in
  * seconds since the Unix epoch — set by the session middleware on a cookie
  * that verified and has not expired, `null` otherwise. The request-context
- * middleware folds it into `CREDENTIAL_DEADLINE_KEY`.
+ * middleware folds it into the session's `ResolvedAuth.credential_deadline`.
  */
 export const SESSION_COOKIE_EXPIRES_AT_KEY = 'auth_session_cookie_expires_at';
 
@@ -93,45 +57,17 @@ declare module 'hono' {
 		validated_input: unknown;
 		validated_params: unknown;
 		validated_query: unknown;
-		/** How the request was authenticated (`'session'`, `'api_token'`, or `'daemon_token'`). */
-		credential_type: BuiltinCredentialType | null;
 		/**
-		 * The credential's authority narrowing. Set by every auth middleware that
-		 * resolves a credential — bearer reads it off the token row; session and
-		 * daemon-token set `full`. Absent only for the anonymous caller, who holds
-		 * no credential to narrow; downstream must not read absent as permissive
-		 * for an authenticated one.
+		 * The credential the auth middleware resolved (`RESOLVED_AUTH_KEY`);
+		 * `null` or unset for an unauthenticated request. Read it with
+		 * `get_resolved_auth`.
 		 */
-		token_scope: TokenScope | undefined;
-		/**
-		 * Authenticated account id. Set by the session / bearer / daemon-token
-		 * middleware on a valid credential; `null` for unauthenticated requests.
-		 * The dispatcher's authorization phase resolves the acting actor against
-		 * this id; `require_auth` 401s when it is `null`.
-		 */
-		auth_account_id: string | null;
-		/**
-		 * blake3 hash of the authenticated session token, or `null` for non-session
-		 * credentials. Set by `create_request_context_middleware`. Used to scope
-		 * per-session resources (e.g., SSE stream identity for `session_revoke`
-		 * disconnection) without re-hashing the cookie in every handler.
-		 */
-		auth_session_token_hash: string | null;
-		/**
-		 * `api_token.id` when the request authenticated via `Authorization: Bearer`,
-		 * or `null` for session/daemon-token/unauthenticated requests. Set by
-		 * `create_bearer_auth_middleware`. Used to scope per-token resources
-		 * (e.g., WS connection revocation on `token_revoke`) without re-looking
-		 * up the token.
-		 */
-		auth_api_token_id: string | null;
-		/** The credential's deadline (`CREDENTIAL_DEADLINE_KEY`). */
-		credential_deadline: number | null;
+		resolved_auth: ResolvedAuth | null;
 		/** The session cookie's signed expiry, epoch seconds (`SESSION_COOKIE_EXPIRES_AT_KEY`). */
 		auth_session_cookie_expires_at: number | null;
 		/**
 		 * Eager fire-and-forget pool writes for this request — audit emits,
-		 * session-touch UPDATE, api-token usage tracking. Producers push the
+		 * api-token usage tracking. Producers push the
 		 * in-flight `Promise<void>` directly. The flush middleware drains via
 		 * `flush_pending_effects` after the handler returns. Initialized by
 		 * `create_app_server`. In test mode (`await_pending_effects: true`),

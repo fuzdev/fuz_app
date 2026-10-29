@@ -118,6 +118,8 @@ import type { TokenScope } from '../auth/token_scope.ts';
 import type { RoleName } from '../auth/role_schema.ts';
 import {
 	recheck_admission,
+	resolved_auth_api_token_id,
+	resolved_auth_session_hash,
 	type AdmissionRecheck,
 	type ResolvedAuth
 } from '../auth/resolved_auth.ts';
@@ -404,14 +406,12 @@ export const create_ws_socket_events = (
 	const { credential_type } = resolved;
 	// Session-based connections have a session hash for targeted
 	// revocation. Bearer/daemon connections pass null — still reachable
-	// by an `account` or `token` close target. A session credential with
-	// no hash on the context is a shape the middleware never builds; the
-	// admission re-read refuses it.
-	const session_hash = resolved.token_hash;
+	// by an `account` or `token` close target.
+	const session_hash = resolved_auth_session_hash(resolved);
 	// `api_token.id` — set only for bearer connections; enables a
 	// `token` close target to tear down just this socket on
 	// `token_revoke` without affecting the account's other sockets.
-	const { api_token_id } = resolved;
+	const api_token_id = resolved_auth_api_token_id(resolved);
 
 	// Per-socket abort controller — fires when the socket ends, chained
 	// into every in-flight handler's per-request controller via

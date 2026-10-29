@@ -34,7 +34,8 @@ import {
 	WS_WRITE_HIGH_WATER_BYTES
 } from '#lib/actions/ws_outbound_writer.ts';
 import { Db } from '#lib/db/db.ts';
-import { ACCOUNT_ID_KEY, TEST_CONTEXT_PRESET_KEY } from '#lib/hono_context.ts';
+import { RESOLVED_AUTH_KEY, TEST_CONTEXT_PRESET_KEY } from '#lib/hono_context.ts';
+import type { ResolvedAuth } from '#lib/auth/resolved_auth.ts';
 import { JSONRPC_ERROR_CODES, ThrownJsonrpcError } from '#lib/http/jsonrpc_errors.ts';
 import { OUTBOUND_FRAME_OVERHEAD_BYTES } from '#lib/realtime/outbound_budget.ts';
 import { create_stub_db } from '#lib/testing/stubs.ts';
@@ -340,7 +341,7 @@ describe('register_action_ws closes', () => {
 		// a real upgrade context: no test preset, so admission re-reads the credential
 		const preset = create_fake_hono_context({ credential_type: 'daemon_token' });
 		const read = preset.get as (key: string) => unknown;
-		const account_id = read(ACCOUNT_ID_KEY) as Uuid;
+		const account_id = (read(RESOLVED_AUTH_KEY) as ResolvedAuth).account_id as Uuid;
 		const c = {
 			get: (key: string) => (key === TEST_CONTEXT_PRESET_KEY ? undefined : read(key))
 		} as unknown as Context;

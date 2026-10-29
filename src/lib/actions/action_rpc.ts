@@ -24,13 +24,12 @@ import type { RpcAction } from './action_types.ts';
 import { type RouteContext, type RouteSpec } from '../http/route_spec.ts';
 import { get_client_ip } from '../http/client_ip.ts';
 import { get_request_context } from '../auth/request_context.ts';
-import { get_resolved_auth } from '../auth/resolved_auth.ts';
 import {
-	ACCOUNT_ID_KEY,
-	CREDENTIAL_TYPE_KEY,
-	TOKEN_SCOPE_KEY,
-	TEST_CONTEXT_PRESET_KEY
-} from '../hono_context.ts';
+	get_resolved_auth,
+	resolved_auth_scope,
+	resolved_auth_session_hash
+} from '../auth/resolved_auth.ts';
+import { TEST_CONTEXT_PRESET_KEY } from '../hono_context.ts';
 import { compile_action_registry } from './compile_action_registry.ts';
 import type { JsonrpcRequestId } from '../http/jsonrpc.ts';
 import {
@@ -197,15 +196,16 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 			? { request_context: get_request_context(c) }
 			: undefined;
 
+		const auth = get_resolved_auth(c);
 		const result = await perform_action(
 			{
 				action,
 				raw_params,
 				request_id: id,
-				account_id: c.get(ACCOUNT_ID_KEY) ?? null,
-				credential_type: c.get(CREDENTIAL_TYPE_KEY) ?? null,
-				session_hash: get_resolved_auth(c)?.token_hash ?? null,
-				token_scope: c.get(TOKEN_SCOPE_KEY) ?? null,
+				account_id: auth?.account_id ?? null,
+				credential_type: auth?.credential_type ?? null,
+				session_hash: resolved_auth_session_hash(auth),
+				token_scope: resolved_auth_scope(auth),
 				client_ip: get_client_ip(c),
 				signal: c.req.raw.signal,
 				notify,

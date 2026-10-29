@@ -20,12 +20,8 @@ import { heartbeat_action } from '#lib/actions/heartbeat.ts';
 import { parse_allowed_origins } from '#lib/http/origin.ts';
 import { REQUEST_CONTEXT_KEY } from '#lib/auth/request_context.ts';
 import { ROLE_ADMIN, type RoleName } from '#lib/auth/role_schema.ts';
-import {
-	ACCOUNT_ID_KEY,
-	CREDENTIAL_TYPE_KEY,
-	TEST_CONTEXT_PRESET_KEY,
-	TOKEN_SCOPE_KEY
-} from '#lib/hono_context.ts';
+import { RESOLVED_AUTH_KEY, TEST_CONTEXT_PRESET_KEY } from '#lib/hono_context.ts';
+import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
 import { token_scope_denied_body, token_scope_methods } from '#lib/auth/token_scope.ts';
 import { create_stub_upgrade } from '#lib/testing/ws_round_trip.ts';
 import { create_stub_db } from '#lib/testing/stubs.ts';
@@ -63,10 +59,18 @@ const build_app = (opts: BuildOptions = {}) => {
 		if (authenticated) {
 			const ctx = create_test_request_context(role);
 			c.set(REQUEST_CONTEXT_KEY, ctx);
-			c.set(ACCOUNT_ID_KEY, ctx.account.id);
-			c.set(CREDENTIAL_TYPE_KEY, 'session');
+			// a scope belongs to an API token alone
+			c.set(
+				RESOLVED_AUTH_KEY,
+				scoped_methods
+					? create_test_resolved_auth({
+							credential_type: 'api_token',
+							account_id: ctx.account.id,
+							scope: token_scope_methods(scoped_methods)
+						})
+					: create_test_resolved_auth({ credential_type: 'session', account_id: ctx.account.id })
+			);
 			c.set(TEST_CONTEXT_PRESET_KEY, true);
-			if (scoped_methods) c.set(TOKEN_SCOPE_KEY, token_scope_methods(scoped_methods));
 		}
 		await next();
 	});

@@ -2,7 +2,7 @@
  * REST guard ordering: credential type before the authorization phase.
  *
  * `require_credential_types` reads only what the auth middleware already set
- * (`ACCOUNT_ID_KEY` + `CREDENTIAL_TYPE_KEY`), never the resolved
+ * (`get_resolved_auth`), never the resolved
  * `RequestContext` — so `fuz_auth_guard_resolver` mounts it in
  * `pre_authorization`, ahead of the rule-3 scope guard and ahead of actor
  * resolution. That makes the REST order **presence → channel → scope → role**,

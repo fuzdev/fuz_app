@@ -1,8 +1,8 @@
 /**
  * Auth middleware stack factory.
  *
- * Creates the standard middleware layers (origin, session, request_context,
- * bearer_auth, optional daemon_token) from configuration.
+ * Creates the standard middleware layers (origin, optional daemon_token,
+ * session, request_context, bearer_auth) from configuration.
  *
  * @module
  */
@@ -262,11 +262,16 @@ export interface AuthMiddlewareOptions {
 /**
  * Create the auth middleware stack.
  *
- * Returns `[origin, session, request_context, bearer_auth]` middleware specs:
- * the origin check on every path less its carve-outs, the rest for the given
- * path pattern. When `daemon_token_state` is provided, appends
- * a `daemon_token` layer. Apps can append extra entries for non-standard
- * paths (e.g., tx's `/tx` binary endpoint).
+ * Returns `[origin, daemon_token?, session, request_context, bearer_auth]`
+ * middleware specs: the origin check on every path less its carve-outs, the
+ * rest for the given path pattern, with the `daemon_token` layer only when
+ * `daemon_token_state` is provided. The credential legs run daemon token →
+ * session cookie → bearer, the order of the Rust spine's
+ * `resolve_auth_from_headers`: the first that authenticates sets
+ * `ResolvedAuth`, and the later ones skip. The first leg composed (the daemon
+ * token's, else the session's) clears `ResolvedAuth` on entry, so the chain
+ * starts from a clean slate whatever a layer before it set. Apps can append extra entries for
+ * non-standard paths (e.g., tx's `/tx` binary endpoint).
  *
  * @param deps - stateless capabilities (keyring, db)
  * @param options - middleware configuration (allowed_origins, session_options, path, daemon_token_state, origin_carve_outs)
@@ -308,17 +313,40 @@ export const create_auth_middleware_specs = async (
 	]);
 
 	const session_middleware = create_session_middleware(keyring, session_options);
-	const request_context_middleware = create_request_context_middleware(query_deps);
+	// the first credential leg clears the resolved credential: the daemon
+	// token's when it is composed, else this one
+	const request_context_middleware = create_request_context_middleware(query_deps, {
+		starts_chain: !daemon_token_state
+	});
 	const bearer_auth_middleware = create_bearer_auth_middleware(query_deps, deps.log);
 
+	const origin_spec: MiddlewareSpec = {
+		name: 'origin',
+		path: ORIGIN_MIDDLEWARE_PATH,
+		handler: verify_request_source(allowed_origins, origin_carve_outs),
+		errors: { 403: ApiError },
+		...(origin_carve_outs.length > 0 && { carve_outs: origin_carve_outs })
+	};
+
+	let daemon_token_spec: MiddlewareSpec | null = null;
+	if (daemon_token_state) {
+		const { create_daemon_token_middleware } = await import('./daemon_token_middleware.ts');
+		daemon_token_spec = {
+			name: 'daemon_token',
+			path,
+			handler: create_daemon_token_middleware(daemon_token_state, query_deps, deps.log),
+			// Soft-fails (discards) on every non-success path — browser context,
+			// malformed/invalid token, and no-keeper all `next()` through to the
+			// session and bearer legs, then the dispatcher's credential gate
+			// (matching the Rust spine's `None`). The layer returns no error
+			// response of its own.
+			errors: {}
+		};
+	}
+
 	const specs: Array<MiddlewareSpec> = [
-		{
-			name: 'origin',
-			path: ORIGIN_MIDDLEWARE_PATH,
-			handler: verify_request_source(allowed_origins, origin_carve_outs),
-			errors: { 403: ApiError },
-			...(origin_carve_outs.length > 0 && { carve_outs: origin_carve_outs })
-		},
+		origin_spec,
+		...(daemon_token_spec ? [daemon_token_spec] : []),
 		{ name: 'session', path, handler: session_middleware },
 		{ name: 'request_context', path, handler: request_context_middleware },
 		{
@@ -335,25 +363,6 @@ export const create_auth_middleware_specs = async (
 			errors: {}
 		}
 	];
-
-	if (daemon_token_state) {
-		const { create_daemon_token_middleware } = await import('./daemon_token_middleware.ts');
-		const daemon_token_middleware = create_daemon_token_middleware(
-			daemon_token_state,
-			query_deps,
-			deps.log
-		);
-		specs.push({
-			name: 'daemon_token',
-			path,
-			handler: daemon_token_middleware,
-			// Soft-fails (discards) on every non-success path — browser context,
-			// malformed/invalid token, and no-keeper all `next()` through to the
-			// dispatcher's credential gate (matching the Rust spine's `None`). The
-			// layer returns no error response of its own.
-			errors: {}
-		});
-	}
 
 	return specs;
 };

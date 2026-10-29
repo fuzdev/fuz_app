@@ -29,7 +29,8 @@ import {
 	require_role,
 	type RequestContext
 } from '#lib/auth/request_context.ts';
-import { ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY, TEST_CONTEXT_PRESET_KEY } from '#lib/hono_context.ts';
+import { RESOLVED_AUTH_KEY, TEST_CONTEXT_PRESET_KEY } from '#lib/hono_context.ts';
+import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
 import type { BuiltinCredentialType } from '#lib/auth/credential_type_schema.ts';
 import { session_cookie_options } from '#lib/auth/session_cookie.ts';
 import { API_TOKEN_PREFIX } from '#lib/auth/api_token.ts';
@@ -103,10 +104,15 @@ const create_test_app = (
 	// Simulate request context middleware — sets context if provided
 	if (auth_ctx) {
 		app.use('/*', async (c, next) => {
-			(c as any).set(ACCOUNT_ID_KEY, auth_ctx.account.id);
+			(c as any).set(
+				RESOLVED_AUTH_KEY,
+				create_test_resolved_auth({
+					credential_type: credential_type ?? 'session',
+					account_id: auth_ctx.account.id
+				})
+			);
 			(c as any).set(REQUEST_CONTEXT_KEY, auth_ctx);
 			(c as any).set(TEST_CONTEXT_PRESET_KEY, true);
-			if (credential_type) (c as any).set(CREDENTIAL_TYPE_KEY, credential_type);
 			await next();
 		});
 	}
@@ -180,8 +186,8 @@ const test_route_specs: Array<RouteSpec> = [
  * Named credential variants for the auth matrix.
  *
  * `none` = no auth context at all (the fixture omits every auth key).
- * Other entries set `ACCOUNT_ID_KEY`, `REQUEST_CONTEXT_KEY` (with the named
- * role_grants), and `CREDENTIAL_TYPE_KEY`, simulating what each upstream
+ * Other entries set `RESOLVED_AUTH_KEY` (the named credential type) and
+ * `REQUEST_CONTEXT_KEY` (with the named role_grants), simulating what each upstream
  * authentication middleware would deposit before the dispatcher's
  * authorization phase.
  */
@@ -417,7 +423,10 @@ describe('targeted adversarial tests', () => {
 		const app = new Hono();
 		app.use('/*', async (c, next) => {
 			const ctx = create_test_ctx('viewer');
-			(c as any).set(ACCOUNT_ID_KEY, ctx.account.id);
+			(c as any).set(
+				RESOLVED_AUTH_KEY,
+				create_test_resolved_auth({ credential_type: 'session', account_id: ctx.account.id })
+			);
 			(c as any).set(REQUEST_CONTEXT_KEY, ctx);
 			(c as any).set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();

@@ -69,13 +69,13 @@ import {
 } from '../auth/request_context.ts';
 import { fuz_auth_guard_resolver } from '../auth/auth_guard_resolver.ts';
 import type { RoleName } from '../auth/role_schema.ts';
-import { get_resolved_auth } from '../auth/resolved_auth.ts';
+import { get_resolved_auth, resolved_auth_scope } from '../auth/resolved_auth.ts';
 import { verify_request_source } from '../http/origin.ts';
 import { parse_acting, type RouteAuth } from '../http/auth_shape.ts';
 import { get_client_ip } from '../http/client_ip.ts';
 import type { EffectErrorContext } from '../http/pending_effects.ts';
 import type { RateLimiter } from '../rate_limiter.ts';
-import { TOKEN_SCOPE_KEY, TEST_CONTEXT_PRESET_KEY } from '../hono_context.ts';
+import { TEST_CONTEXT_PRESET_KEY } from '../hono_context.ts';
 import type { Db } from '../db/db.ts';
 import { type Action } from './action_types.ts';
 import { compile_action_registry } from './compile_action_registry.ts';
@@ -477,10 +477,10 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 			const account_id: Uuid = upgrade_context.account.id;
 			const client_ip = get_client_ip(c);
 			// The credential the auth middleware resolved — the one derivation
-			// both long-lived transports share (`get_resolved_auth`), read off
-			// the keys the middleware set rather than re-derived here, so a
-			// custom session context key or a daemon token riding beside a
-			// session cookie can't make this path disagree with the middleware.
+			// both long-lived transports share (`get_resolved_auth`), the value
+			// the middleware set rather than re-derived here, so a custom
+			// session context key or a daemon token riding beside a session
+			// cookie can't make this path disagree with the middleware.
 			// Fail closed: no credential, or one on another account than the
 			// request context's, never reaches the upgrade.
 			const resolved = get_resolved_auth(c);
@@ -498,7 +498,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 			// narrowed token at the upgrade's guards above, so in practice this is always
 			// `full` on a live socket — but the per-message gate runs regardless,
 			// so the invariant is enforced rather than assumed.
-			const token_scope = c.get(TOKEN_SCOPE_KEY) ?? null;
+			const token_scope = resolved_auth_scope(resolved);
 			// Test escape hatch — captured once at upgrade. perform_action
 			// honors it per-message so harnesses with pre-baked
 			// `RequestContext` skip the live authorization phase. It skips the

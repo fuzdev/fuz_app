@@ -5,8 +5,9 @@
  *
  * 1. **Authentication (middleware)** — `create_request_context_middleware`,
  *    `bearer_auth`, and `daemon_token_middleware` validate the credential
- *    (session cookie, bearer token, daemon token) and set `c.var.account_id`
- *    + `c.var.credential_type` on the Hono context. They do not resolve
+ *    (daemon token, session cookie, bearer token — the first that
+ *    authenticates wins) and set one `ResolvedAuth` on the Hono context
+ *    (`get_resolved_auth`). They do not resolve
  *    an acting actor or load role_grants; `REQUEST_CONTEXT_KEY` stays null at
  *    this stage, so account-grain identity is the only thing known.
  * 2. **Authorization (route-spec wrapper / RPC dispatcher)** — after input
@@ -14,7 +15,7 @@
  *    schema declared `acting?: ActingActor` (reference equality with the
  *    canonical `ActingActor` schema) or the auth requires role_grants
  *    (`role` / `keeper`), `apply_authorization_phase` resolves the actor
- *    against `c.var.account_id` plus the validated `acting` value via
+ *    against the resolved account id plus the validated `acting` value via
  *    `resolve_acting_actor`, builds the `{account, actor, role_grants}`
  *    context via `build_request_context`, and sets it on
  *    `REQUEST_CONTEXT_KEY` before auth guards fire. Authenticated routes
@@ -52,21 +53,16 @@ import {
 import { query_role_grant_find_active_for_actor } from './role_grant_queries.ts';
 import type { QueryDeps } from '../db/query_deps.ts';
 import {
-	ACCOUNT_ID_KEY,
-	AUTH_API_TOKEN_ID_KEY,
-	CREDENTIAL_DEADLINE_KEY,
-	CREDENTIAL_TYPE_KEY,
+	RESOLVED_AUTH_KEY,
 	SESSION_COOKIE_EXPIRES_AT_KEY,
-	TOKEN_SCOPE_KEY,
 	TEST_CONTEXT_PRESET_KEY
 } from '../hono_context.ts';
-import type { BuiltinCredentialType } from './credential_type_schema.ts';
 import { credential_deadline_after } from './credential_deadline.ts';
+import { get_resolved_auth, resolved_auth_scope } from './resolved_auth.ts';
 import {
 	is_route_scope_capability,
 	token_scope_admits_non_rpc,
-	token_scope_denied_body,
-	token_scope_full
+	token_scope_denied_body
 } from './token_scope.ts';
 import type { RouteSpec } from '../http/route_spec.ts';
 import { is_public_auth, needs_actor, parse_acting, type RouteAuth } from '../http/auth_shape.ts';
@@ -103,17 +99,6 @@ export interface RequestContext {
 
 /** Hono context variable name for the request context. */
 export const REQUEST_CONTEXT_KEY = 'request_context';
-
-/**
- * Hono context variable name for the authenticated session token hash.
- *
- * Set by `create_request_context_middleware` after a successful session lookup.
- * `null` when the request is unauthenticated or authenticated via a non-session
- * credential (bearer token, daemon token). Exposed so handlers can scope
- * per-session resources (e.g., SSE stream identity for targeted disconnection
- * on `session_revoke`) without re-hashing the token.
- */
-export const AUTH_SESSION_TOKEN_HASH_KEY = 'auth_session_token_hash';
 
 /**
  * Get the request context from a Hono context, or `null` if unauthenticated.
@@ -289,40 +274,61 @@ export const resolve_acting_actor = async (
 	return { ok: true, actor_id: match.id };
 };
 
+/** Options for `create_request_context_middleware`. */
+export interface RequestContextMiddlewareOptions {
+	/**
+	 * The Hono context key where session middleware stored the session token.
+	 *
+	 * @default 'auth_session_id'
+	 */
+	session_context_key?: string;
+	/**
+	 * Whether this leg starts the credential chain, clearing `RESOLVED_AUTH_KEY`
+	 * on entry so a layer mounted before the legs cannot pre-set an identity
+	 * that every leg would skip past. `false` only when an earlier credential
+	 * leg runs first and clears it itself — `create_auth_middleware_specs`
+	 * passes `false` when it composes the daemon-token leg.
+	 *
+	 * @default true
+	 */
+	starts_chain?: boolean;
+}
+
 /**
- * Create middleware that authenticates the account from a session cookie.
+ * Create middleware that authenticates the account from a session cookie —
+ * the session leg of the auth middleware chain.
  *
- * Reads the session identity (set by session middleware), looks up the
- * `auth_session`, and on a valid session sets `c.var.auth_account_id`,
- * `CREDENTIAL_TYPE_KEY = 'session'`, `AUTH_SESSION_TOKEN_HASH_KEY`,
- * `TOKEN_SCOPE_KEY` (the full scope — a session is not narrowed), and
- * `CREDENTIAL_DEADLINE_KEY` — the earlier of the cookie's signed expiry
- * (`SESSION_COOKIE_EXPIRES_AT_KEY`) and the row's.
- * Touches the session (fire-and-forget). Does not load actor or role_grants;
- * `REQUEST_CONTEXT_KEY` is left null — the route-spec / RPC dispatcher
- * authorization phase resolves the acting actor and builds the full
- * `RequestContext` when the route needs one.
+ * When it starts the chain (`starts_chain`, the default) it first clears
+ * `RESOLVED_AUTH_KEY`. It then skips when an earlier leg (the daemon token)
+ * already resolved the request. Otherwise reads the session identity (set by session middleware), looks up
+ * the `auth_session`, and on a valid session sets the `session` arm of
+ * `ResolvedAuth` (`RESOLVED_AUTH_KEY`): the account, the session hash, and the
+ * credential deadline — the earlier of the cookie's signed expiry
+ * (`SESSION_COOKIE_EXPIRES_AT_KEY`) and the row's. Writes nothing to the
+ * session row. Does not load actor or role_grants; `REQUEST_CONTEXT_KEY` is
+ * left null — the route-spec / RPC dispatcher authorization phase resolves the
+ * acting actor and builds the full `RequestContext` when the route needs one.
  *
- * Invalid / missing session leaves every key unset (`null`, or `undefined`
- * for `TOKEN_SCOPE_KEY`) and calls `next()` —
- * `require_auth` / `require_role` enforce.
+ * An invalid or missing session leaves the request unresolved and calls
+ * `next()` — the bearer leg may still resolve it, and `require_auth` /
+ * `require_role` enforce.
  *
  * @param deps - query dependencies (pool-level db for middleware)
- * @param session_context_key - the Hono context key where session middleware stored the session token
- * @mutates Hono context - resets `REQUEST_CONTEXT_KEY`, `ACCOUNT_ID_KEY`, `CREDENTIAL_TYPE_KEY`, `AUTH_SESSION_TOKEN_HASH_KEY`, `AUTH_API_TOKEN_ID_KEY`, `CREDENTIAL_DEADLINE_KEY`, and `TOKEN_SCOPE_KEY`, then on a valid session sets all but `REQUEST_CONTEXT_KEY` and `AUTH_API_TOKEN_ID_KEY`
+ * @param options - the session token's context key, and whether this leg starts the chain
+ * @mutates Hono context - resets `REQUEST_CONTEXT_KEY` (and `RESOLVED_AUTH_KEY` when it starts the chain), then on a valid session (and no credential already resolved) sets `RESOLVED_AUTH_KEY`
  */
 export const create_request_context_middleware = (
 	deps: QueryDeps,
-	session_context_key = 'auth_session_id'
+	options: RequestContextMiddlewareOptions = {}
 ): MiddlewareHandler => {
+	const { session_context_key = 'auth_session_id', starts_chain = true } = options;
 	return async (c, next): Promise<Response | void> => {
 		c.set(REQUEST_CONTEXT_KEY, null);
-		c.set(ACCOUNT_ID_KEY, null);
-		c.set(CREDENTIAL_TYPE_KEY, null);
-		c.set(AUTH_SESSION_TOKEN_HASH_KEY, null);
-		c.set(AUTH_API_TOKEN_ID_KEY, null);
-		c.set(CREDENTIAL_DEADLINE_KEY, null);
-		c.set(TOKEN_SCOPE_KEY, undefined);
+		if (starts_chain) c.set(RESOLVED_AUTH_KEY, null);
+		if (get_resolved_auth(c) !== null) {
+			await next();
+			return;
+		}
 
 		const session_token: string | null = c.get(session_context_key) ?? null;
 		if (!session_token) {
@@ -330,28 +336,25 @@ export const create_request_context_middleware = (
 			return;
 		}
 
-		const token_hash = hash_session_token(session_token);
-		const session = await query_session_get_valid(deps, token_hash);
+		const session_hash = hash_session_token(session_token);
+		const session = await query_session_get_valid(deps, session_hash);
 		if (!session) {
 			await next();
 			return;
 		}
 
-		c.set(ACCOUNT_ID_KEY, session.account_id);
-		c.set(CREDENTIAL_TYPE_KEY, 'session');
-		// A session is full account authority by construction.
-		c.set(TOKEN_SCOPE_KEY, token_scope_full());
-		c.set(AUTH_SESSION_TOKEN_HASH_KEY, token_hash);
 		// The earlier of the signed cookie's expiry (this server's wall clock,
 		// which signed it) and the row's (read on the database clock).
 		const cookie_expires_at = c.get(SESSION_COOKIE_EXPIRES_AT_KEY) ?? null;
-		c.set(
-			CREDENTIAL_DEADLINE_KEY,
-			credential_deadline_after([
+		c.set(RESOLVED_AUTH_KEY, {
+			credential_type: 'session',
+			account_id: session.account_id,
+			session_hash,
+			credential_deadline: credential_deadline_after([
 				cookie_expires_at === null ? null : cookie_expires_at * 1000 - Date.now(),
 				session.expires_in_ms
 			])
-		);
+		});
 
 		await next();
 	};
@@ -366,10 +369,9 @@ export const create_request_context_middleware = (
  * which calls this; a consumer gating something that is not a route spec calls
  * it directly.
  *
- * An unset `TOKEN_SCOPE_KEY` is the anonymous caller, who holds no credential to
- * narrow, so it passes. Sharing that branch is the point — hand-rolled per
- * surface it is one `&&` from either refusing every anonymous read or admitting
- * an authenticated caller whose middleware forgot to set the key.
+ * The anonymous caller holds no credential to narrow, so it passes
+ * (`resolved_auth_scope` answers `null`). Sharing that branch is the point —
+ * hand-rolled per surface it is one `&&` from refusing every anonymous read.
  *
  * Takes the whole capability string, not a bare surface name — one spelling
  * across route-spec declarations and direct calls alike, and the twin of the
@@ -386,8 +388,8 @@ export const create_request_context_middleware = (
  * @returns the 403 to return, or `null` when the caller may proceed
  */
 export const token_scope_surface_denial = (c: Context, capability: string): Response | null => {
-	const scope = c.get(TOKEN_SCOPE_KEY);
-	if (scope && !token_scope_admits_non_rpc(scope)) {
+	const scope = resolved_auth_scope(get_resolved_auth(c));
+	if (scope !== null && !token_scope_admits_non_rpc(scope)) {
 		return c.json(token_scope_denied_body(capability), 403);
 	}
 	return null;
@@ -406,7 +408,7 @@ export const token_scope_surface_denial = (c: Context, capability: string): Resp
  * would enforce nothing — the holder drops the `Authorization` header and
  * reads the anonymous answer anyway — so the narrowed token *is* the
  * anonymous caller there. Read the credential through this on any
- * `reads_credential` route instead of `ACCOUNT_ID_KEY` directly, so the
+ * `reads_credential` route instead of `get_resolved_auth` directly, so the
  * downgrade is one decision rather than an `&&` hand-rolled per handler.
  *
  * The RPC endpoint is the exception: its dispatcher gates each method against
@@ -416,11 +418,10 @@ export const token_scope_surface_denial = (c: Context, capability: string): Resp
  * @returns the account id, or `null` for an anonymous caller or a narrowed token
  */
 export const get_public_account_id = (c: Context): string | null => {
-	const account_id: string | null = c.get(ACCOUNT_ID_KEY) ?? null;
-	if (!account_id) return null;
-	const scope = c.get(TOKEN_SCOPE_KEY);
-	if (scope && !token_scope_admits_non_rpc(scope)) return null;
-	return account_id;
+	const auth = get_resolved_auth(c);
+	if (auth === null) return null;
+	if (!token_scope_admits_non_rpc(resolved_auth_scope(auth)!)) return null;
+	return auth.account_id;
 };
 
 /**
@@ -459,10 +460,10 @@ export const require_token_scope = (capability: string): MiddlewareHandler => {
 /**
  * Middleware that requires authentication.
  *
- * Returns 401 if the auth middleware did not set `c.var.auth_account_id`.
+ * Returns 401 if the auth middleware resolved no credential.
  */
 export const require_auth: MiddlewareHandler = async (c, next): Promise<Response | void> => {
-	if (c.get(ACCOUNT_ID_KEY) == null) {
+	if (get_resolved_auth(c) === null) {
 		return c.json({ error: ERROR_AUTHENTICATION_REQUIRED }, 401);
 	}
 	await next();
@@ -492,7 +493,7 @@ export const require_auth: MiddlewareHandler = async (c, next): Promise<Response
  */
 export const require_role = (roles: ReadonlyArray<string>): MiddlewareHandler => {
 	return async (c, next): Promise<Response | void> => {
-		if (c.get(ACCOUNT_ID_KEY) == null) {
+		if (get_resolved_auth(c) === null) {
 			return c.json({ error: ERROR_AUTHENTICATION_REQUIRED }, 401);
 		}
 		const ctx = get_request_context(c);
@@ -511,8 +512,8 @@ export const require_role = (roles: ReadonlyArray<string>): MiddlewareHandler =>
  * `ERROR_CREDENTIAL_TYPE_REQUIRED` + `required_credential_types` echoing
  * the spec's allowlist when the wire-side credential isn't in it.
  *
- * Reads only `ACCOUNT_ID_KEY` + `CREDENTIAL_TYPE_KEY`, both set by the auth
- * middleware — never the resolved `RequestContext`. That is why
+ * Reads only the credential the auth middleware resolved (`get_resolved_auth`)
+ * — never the resolved `RequestContext`. That is why
  * `fuz_auth_guard_resolver` mounts it in the `pre_authorization` phase: a
  * wrong channel is refused before the route resolves an actor for it, so the
  * denial costs no DB work and discloses no account state.
@@ -529,11 +530,11 @@ export const require_credential_types = (
 	credential_types: ReadonlyArray<string>
 ): MiddlewareHandler => {
 	return async (c, next): Promise<Response | void> => {
-		if (c.get(ACCOUNT_ID_KEY) == null) {
+		const auth = get_resolved_auth(c);
+		if (auth === null) {
 			return c.json({ error: ERROR_AUTHENTICATION_REQUIRED }, 401);
 		}
-		const credential_type: BuiltinCredentialType | null = c.get(CREDENTIAL_TYPE_KEY) ?? null;
-		if (!credential_type || !credential_types.includes(credential_type)) {
+		if (!credential_types.includes(auth.credential_type)) {
 			return c.json(
 				{
 					error: ERROR_CREDENTIAL_TYPE_REQUIRED,
@@ -789,7 +790,7 @@ export const run_authorization_phase = async (
 ): Promise<Response | void> => {
 	if (c.get(TEST_CONTEXT_PRESET_KEY)) return;
 	if (is_public_auth(auth)) return;
-	const account_id: string | null = c.get(ACCOUNT_ID_KEY) ?? null;
+	const account_id = get_resolved_auth(c)?.account_id ?? null;
 	const result = await apply_authorization_phase(deps, account_id, auth, acting);
 	if (!result.ok) return c.json(result.body, result.status);
 	if (result.request_context !== null) {

@@ -25,7 +25,12 @@ import {
 	query_revoke_all_api_tokens_for_account,
 	query_revoke_api_token_for_account
 } from '#lib/auth/api_token_queries.ts';
-import { revalidate_resolved_auth, type ResolvedAuth } from '#lib/auth/resolved_auth.ts';
+import {
+	revalidate_resolved_auth,
+	type ResolvedApiTokenAuth,
+	type ResolvedAuth,
+	type ResolvedSessionAuth
+} from '#lib/auth/resolved_auth.ts';
 import {
 	generate_session_token,
 	hash_session_token,
@@ -55,14 +60,13 @@ const resolve_session = async (
 	db: Db,
 	account_id: string,
 	expires_at = new Date(Date.now() + HOUR_MS)
-): Promise<ResolvedAuth & { token_hash: string }> => {
-	const token_hash = hash_session_token(generate_session_token());
-	await query_create_session({ db }, token_hash, account_id, expires_at);
+): Promise<ResolvedSessionAuth> => {
+	const session_hash = hash_session_token(generate_session_token());
+	await query_create_session({ db }, session_hash, account_id, expires_at);
 	return {
 		account_id,
 		credential_type: 'session',
-		token_hash,
-		api_token_id: null,
+		session_hash,
 		credential_deadline: null
 	};
 };
@@ -72,7 +76,7 @@ const resolve_api_token = async (
 	db: Db,
 	account_id: string,
 	expires_at: Date | null = null
-): Promise<ResolvedAuth & { api_token_id: string }> => {
+): Promise<ResolvedApiTokenAuth> => {
 	const { id, token_hash } = generate_api_token();
 	await query_create_api_token(
 		{ db },
@@ -86,8 +90,8 @@ const resolve_api_token = async (
 	return {
 		account_id,
 		credential_type: 'api_token',
-		token_hash: null,
 		api_token_id: id,
+		scope: token_scope_full(),
 		credential_deadline: null
 	};
 };
@@ -95,8 +99,6 @@ const resolve_api_token = async (
 const resolve_daemon_token = (account_id: string): ResolvedAuth => ({
 	account_id,
 	credential_type: 'daemon_token',
-	token_hash: null,
-	api_token_id: null,
 	credential_deadline: null
 });
 
@@ -114,7 +116,7 @@ describe_db('revalidate_resolved_auth', (get_db) => {
 			const account_id = await create_account(db);
 			const resolved = await resolve_session(db, account_id);
 
-			assert.ok(await query_session_revoke_for_account({ db }, resolved.token_hash, account_id));
+			assert.ok(await query_session_revoke_for_account({ db }, resolved.session_hash, account_id));
 
 			assert.strictEqual(await revalidate_resolved_auth({ db }, resolved), false);
 		});
@@ -135,7 +137,7 @@ describe_db('revalidate_resolved_auth', (get_db) => {
 
 			await db.query(`UPDATE auth_session SET account_id = $1 WHERE id = $2`, [
 				other_account_id,
-				resolved.token_hash
+				resolved.session_hash
 			]);
 
 			assert.strictEqual(await revalidate_resolved_auth({ db }, resolved), false);
@@ -147,30 +149,10 @@ describe_db('revalidate_resolved_auth', (get_db) => {
 			const resolved = await resolve_session(db, account_id);
 			const other = await resolve_session(db, account_id);
 
-			assert.ok(await query_session_revoke_for_account({ db }, other.token_hash, account_id));
+			assert.ok(await query_session_revoke_for_account({ db }, other.session_hash, account_id));
 
 			assert.strictEqual(await revalidate_resolved_auth({ db }, resolved), true);
 			assert.strictEqual(await revalidate_resolved_auth({ db }, other), false);
-		});
-
-		test('a session with no token hash is a shape that never revalidates', async () => {
-			const db = get_db();
-			const account_id = await create_account(db);
-			await resolve_session(db, account_id);
-
-			assert.strictEqual(
-				await revalidate_resolved_auth(
-					{ db },
-					{
-						account_id,
-						credential_type: 'session',
-						token_hash: null,
-						api_token_id: null,
-						credential_deadline: null
-					}
-				),
-				false
-			);
 		});
 	});
 
@@ -239,26 +221,6 @@ describe_db('revalidate_resolved_auth', (get_db) => {
 			assert.strictEqual(
 				await query_api_token_live_account({ db }, resolved.api_token_id),
 				other_account_id
-			);
-		});
-
-		test('an api token with no id is a shape that never revalidates', async () => {
-			const db = get_db();
-			const account_id = await create_account(db);
-			await resolve_api_token(db, account_id);
-
-			assert.strictEqual(
-				await revalidate_resolved_auth(
-					{ db },
-					{
-						account_id,
-						credential_type: 'api_token',
-						token_hash: null,
-						api_token_id: null,
-						credential_deadline: null
-					}
-				),
-				false
 			);
 		});
 	});
@@ -345,7 +307,7 @@ describe_db('revalidate_resolved_auth', (get_db) => {
 			const read_row = (): Promise<unknown> =>
 				db.query_one(
 					`SELECT id, account_id, expires_at::text, created_at::text FROM auth_session WHERE id = $1`,
-					[resolved.token_hash]
+					[resolved.session_hash]
 				);
 			const before = await read_row();
 

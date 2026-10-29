@@ -202,7 +202,7 @@ export interface RouteSpec {
 	 * scope-narrowed API token reaches no non-RPC surface that reads account
 	 * data, and `auth.required_scope` is refused on a route that admits
 	 * anonymous callers. Read the credential through `get_public_account_id`
-	 * (`auth/request_context.ts`), not `ACCOUNT_ID_KEY`, so a narrowed token is
+	 * (`auth/request_context.ts`), not `get_resolved_auth`, so a narrowed token is
 	 * answered as the anonymous caller. The RPC endpoint is the exception — its
 	 * dispatcher gates each method against the scope.
 	 */

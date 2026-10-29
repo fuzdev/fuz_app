@@ -38,15 +38,10 @@ import {
 	format_allowed_origins_error
 } from '../http/origin.ts';
 import { REQUEST_CONTEXT_KEY, type RequestContext } from '../auth/request_context.ts';
-import {
-	ACCOUNT_ID_KEY,
-	AUTH_API_TOKEN_ID_KEY,
-	CREDENTIAL_DEADLINE_KEY,
-	CREDENTIAL_TYPE_KEY,
-	TEST_CONTEXT_PRESET_KEY,
-	TOKEN_SCOPE_KEY
-} from '../hono_context.ts';
+import { RESOLVED_AUTH_KEY, TEST_CONTEXT_PRESET_KEY } from '../hono_context.ts';
+import { get_resolved_auth } from '../auth/resolved_auth.ts';
 import type { TokenScope } from '../auth/token_scope.ts';
+import { create_test_resolved_auth } from './resolved_auth.ts';
 import { ApiError } from '../http/error_schemas.ts';
 
 // Mock the query modules so test cases can control return values.
@@ -95,21 +90,24 @@ export interface BearerAuthTestOptions {
 export interface BearerAuthTestCase extends BearerAuthTestOptions {
 	/** Whether the request should reach token validation or be short-circuited. */
 	validate_expectation: 'called' | 'not_called';
-	/** If true, assert `ACCOUNT_ID_KEY` was set and `CREDENTIAL_TYPE_KEY` is `'api_token'`. */
+	/**
+	 * If true, assert the request resolved to exactly the `api_token` arm of
+	 * `ResolvedAuth` — its fields and no others.
+	 */
 	assert_account_set?: boolean;
-	/** Expected `ACCOUNT_ID_KEY` value when `assert_account_set` is true. */
+	/** Expected `ResolvedAuth.account_id` when `assert_account_set` is true. */
 	expected_account_id?: string;
-	/** If set, assert `AUTH_API_TOKEN_ID_KEY` was set to this value after a successful bearer auth. */
+	/** If set, assert the resolved `api_token_id` after a successful bearer auth. */
 	expected_api_token_id?: string;
-	/** If set, assert `TOKEN_SCOPE_KEY` was set to this scope after a successful bearer auth. */
+	/** If set, assert the resolved `scope` after a successful bearer auth. */
 	expected_token_scope?: TokenScope;
 	/**
-	 * If set, assert `CREDENTIAL_DEADLINE_KEY` after a successful bearer auth:
-	 * `null` for none (an eternal token), or the milliseconds it should lie
-	 * ahead, within a second.
+	 * If set, assert the resolved `credential_deadline` after a successful
+	 * bearer auth: `null` for none (an eternal token), or the milliseconds it
+	 * should lie ahead, within a second.
 	 */
 	expected_credential_deadline_ms?: number | null;
-	/** If true, assert the pre-existing session `ACCOUNT_ID_KEY` and credential type are preserved. */
+	/** If true, assert the pre-existing session credential is preserved. */
 	assert_context_preserved?: boolean;
 	/** Optional callback for custom spy assertions on the mocks bundle. */
 	assert_mocks?: (mocks: BearerAuthMocks) => void;
@@ -185,8 +183,8 @@ export const TEST_CLIENT_IP = '127.0.0.1';
 /**
  * Create a Hono app wired with `create_bearer_auth_middleware` using mocked deps.
  *
- * The route handler at `/api/test` returns the resolved context in the response body,
- * enabling assertions on `REQUEST_CONTEXT_KEY` and `CREDENTIAL_TYPE_KEY`.
+ * The route handler at `/api/test` returns the resolved credential in the
+ * response body, enabling assertions on `ResolvedAuth` and `REQUEST_CONTEXT_KEY`.
  */
 export const create_bearer_auth_test_app = (
 	tc: BearerAuthTestOptions
@@ -201,18 +199,23 @@ export const create_bearer_auth_test_app = (
 	const app = new Hono();
 
 	// inject pre-existing session identity if the test case specifies one.
-	// `pre_context` simulates the session middleware having authenticated
-	// the caller — sets `ACCOUNT_ID_KEY` (the account-grain identity bearer
-	// auth checks) and pre-populates `REQUEST_CONTEXT_KEY` as a test
+	// `pre_context` simulates the session leg having authenticated the caller
+	// — sets the session `ResolvedAuth` (what bearer auth checks to skip) and
+	// pre-populates `REQUEST_CONTEXT_KEY` as a test
 	// escape-hatch (production bearer middleware is account-only and never
 	// sets this key — see `auth/CLAUDE.md` Production-middleware invariant)
 	// so consumer expectations on the full context shape stay testable.
 	if (tc.pre_context) {
 		const pre_context = tc.pre_context;
 		app.use('*', async (c, next) => {
-			c.set(ACCOUNT_ID_KEY, pre_context.account.id);
+			c.set(
+				RESOLVED_AUTH_KEY,
+				create_test_resolved_auth({
+					credential_type: 'session',
+					account_id: pre_context.account.id
+				})
+			);
 			c.set(REQUEST_CONTEXT_KEY, pre_context);
-			c.set(CREDENTIAL_TYPE_KEY, 'session');
 			c.set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();
 		});
@@ -226,28 +229,28 @@ export const create_bearer_auth_test_app = (
 
 	app.use(AUTH_MIDDLEWARE_PATH, bearer_middleware);
 
-	// route handler echoes the account-grain identity the middleware writes
-	// (bearer auth sets `ACCOUNT_ID_KEY` + `CREDENTIAL_TYPE_KEY` +
-	// `AUTH_API_TOKEN_ID_KEY` + `TOKEN_SCOPE_KEY`; it never builds the full request context —
-	// that is the dispatcher's authorization phase). `request_context_set`
-	// is only true when a test pre-populates it via `pre_context`.
+	// route handler echoes the account-grain credential the middleware writes
+	// (bearer auth sets the `api_token` arm of `ResolvedAuth`; it never builds
+	// the full request context — that is the dispatcher's authorization
+	// phase). `request_context_set` is only true when a test pre-populates it
+	// via `pre_context`.
 	app.get('/api/test', (c) => {
-		const account_id = c.get(ACCOUNT_ID_KEY);
-		const cred = c.get(CREDENTIAL_TYPE_KEY);
-		const api_token_id = c.get(AUTH_API_TOKEN_ID_KEY);
-		const token_scope = c.get(TOKEN_SCOPE_KEY);
-		const credential_deadline = c.get(CREDENTIAL_DEADLINE_KEY) ?? null;
+		const auth = get_resolved_auth(c);
 		const ctx = c.get(REQUEST_CONTEXT_KEY);
 		return c.json({
 			ok: true,
-			account_id: account_id ?? null,
-			credential_type: cred ?? null,
-			api_token_id: api_token_id ?? null,
-			token_scope: token_scope ?? null,
-			// how far ahead the deadline lies, since the monotonic value itself
-			// means nothing outside this process
-			credential_deadline_in_ms:
-				credential_deadline === null ? null : credential_deadline - performance.now(),
+			// the deadline as how far ahead it lies, since the monotonic value
+			// itself means nothing outside this process
+			resolved_auth:
+				auth === null
+					? null
+					: {
+							...auth,
+							credential_deadline:
+								auth.credential_deadline === null
+									? null
+									: auth.credential_deadline - performance.now()
+						},
 			request_context_set: ctx != null
 		});
 	});
@@ -299,60 +302,63 @@ export const describe_bearer_auth_cases = (
 					assert.ok(mocks.mock_validate.mock.calls.length > 0, 'validate should have been called');
 				}
 
+				const resolved: Record<string, unknown> | null = body.resolved_auth;
+
 				if (tc.assert_account_set) {
-					assert.ok(body.account_id, 'ACCOUNT_ID_KEY should be set');
+					assert.ok(resolved, 'the request should resolve to a credential');
+					assert.deepStrictEqual(
+						Object.keys(resolved).sort(),
+						['account_id', 'api_token_id', 'credential_deadline', 'credential_type', 'scope'],
+						'the resolved credential should be the api_token arm, with no other fields'
+					);
+					assert.strictEqual(resolved.credential_type, 'api_token');
 					if (tc.expected_account_id !== undefined) {
 						assert.strictEqual(
-							body.account_id,
+							resolved.account_id,
 							tc.expected_account_id,
-							'ACCOUNT_ID_KEY should match the validated api_token.account_id'
+							'account_id should match the validated api_token.account_id'
 						);
 					}
-					assert.strictEqual(
-						body.credential_type,
-						'api_token',
-						'CREDENTIAL_TYPE_KEY should be api_token'
-					);
 				}
 
 				if (tc.expected_api_token_id !== undefined) {
 					assert.strictEqual(
-						body.api_token_id,
+						resolved?.api_token_id,
 						tc.expected_api_token_id,
-						'AUTH_API_TOKEN_ID_KEY should match the validated api_token.id'
+						'api_token_id should match the validated api_token.id'
 					);
 				}
 
 				if (tc.expected_token_scope !== undefined) {
 					assert.deepStrictEqual(
-						body.token_scope,
+						resolved?.scope,
 						tc.expected_token_scope,
-						'TOKEN_SCOPE_KEY should be the scope the validated api_token carries'
+						'scope should be the scope the validated api_token carries'
 					);
 				}
 
 				if (tc.expected_credential_deadline_ms !== undefined) {
+					const ahead: unknown = resolved?.credential_deadline;
 					if (tc.expected_credential_deadline_ms === null) {
 						assert.strictEqual(
-							body.credential_deadline_in_ms,
+							ahead,
 							null,
-							'CREDENTIAL_DEADLINE_KEY should be null for a token with no expiry'
+							'credential_deadline should be null for a token with no expiry'
 						);
 					} else {
-						const ahead: unknown = body.credential_deadline_in_ms;
 						assert.ok(
 							typeof ahead === 'number' &&
 								ahead <= tc.expected_credential_deadline_ms &&
 								ahead > tc.expected_credential_deadline_ms - 1000,
-							`CREDENTIAL_DEADLINE_KEY should lie ${tc.expected_credential_deadline_ms}ms ahead, got ${String(ahead)}`
+							`credential_deadline should lie ${tc.expected_credential_deadline_ms}ms ahead, got ${String(ahead)}`
 						);
 					}
 				}
 
 				if (tc.assert_context_preserved) {
-					assert.ok(body.account_id, 'pre-existing account_id should be preserved');
+					assert.ok(resolved, 'the pre-existing credential should be preserved');
 					assert.strictEqual(
-						body.credential_type,
+						resolved.credential_type,
 						'session',
 						'credential type should remain session'
 					);
@@ -446,14 +452,13 @@ export const create_test_middleware_stack_app = (
 	app.use(AUTH_MIDDLEWARE_PATH, bearer_mw);
 
 	// echo route for assertions — exposes the account-grain identity bearer
-	// auth writes (`ACCOUNT_ID_KEY`); the full request context is the
+	// auth writes (`ResolvedAuth.account_id`); the full request context is the
 	// dispatcher's authorization phase concern, not middleware.
 	app.get(TEST_MIDDLEWARE_PATH, (c) => {
-		const account_id = c.get(ACCOUNT_ID_KEY);
 		return c.json({
 			ok: true,
 			client_ip: get_client_ip(c),
-			account_id: account_id ?? null
+			account_id: get_resolved_auth(c)?.account_id ?? null
 		});
 	});
 

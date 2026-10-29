@@ -32,14 +32,9 @@ import { register_action_ws } from '#lib/actions/register_action_ws.ts';
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import type { ConnectionRegistry } from '#lib/actions/connection_registry.ts';
 import { WS_CLOSE_CONNECTION_LIMIT, WS_CLOSE_SESSION_REVOKED } from '#lib/actions/transports.ts';
-import { AUTH_SESSION_TOKEN_HASH_KEY, REQUEST_CONTEXT_KEY } from '#lib/auth/request_context.ts';
-import { hash_session_token } from '#lib/auth/session_queries.ts';
-import {
-	ACCOUNT_ID_KEY,
-	AUTH_API_TOKEN_ID_KEY,
-	CREDENTIAL_TYPE_KEY,
-	TEST_CONTEXT_PRESET_KEY
-} from '#lib/hono_context.ts';
+import { REQUEST_CONTEXT_KEY } from '#lib/auth/request_context.ts';
+import { RESOLVED_AUTH_KEY, TEST_CONTEXT_PRESET_KEY } from '#lib/hono_context.ts';
+import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
 import { create_test_account } from '#lib/testing/entities.ts';
 import { create_stub_db } from '#lib/testing/stubs.ts';
 import {
@@ -92,16 +87,20 @@ const start_server = async (max_connections_per_account?: number): Promise<TestS
 	// Stand in for the auth middleware chain: a session credential on one
 	// account, pre-baked (no database behind this test).
 	app.use('/ws', async (c, next) => {
-		c.set(ACCOUNT_ID_KEY, ACCOUNT_ID);
+		c.set(
+			RESOLVED_AUTH_KEY,
+			create_test_resolved_auth({
+				credential_type: 'session',
+				account_id: ACCOUNT_ID,
+				session_id: 'raw_session'
+			})
+		);
 		c.set(REQUEST_CONTEXT_KEY, {
 			account: create_test_account({ id: ACCOUNT_ID }),
 			actor: null,
 			role_grants: []
 		});
-		c.set(CREDENTIAL_TYPE_KEY, 'session');
 		c.set('auth_session_id', 'raw_session');
-		c.set(AUTH_SESSION_TOKEN_HASH_KEY, hash_session_token('raw_session'));
-		c.set(AUTH_API_TOKEN_ID_KEY, null);
 		c.set(TEST_CONTEXT_PRESET_KEY, true);
 		await next();
 	});

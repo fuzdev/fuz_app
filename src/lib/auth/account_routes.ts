@@ -33,7 +33,6 @@ import {
 	type PasswordChangeInput
 } from './account_route_schema.ts';
 import {
-	hash_session_token,
 	query_session_revoke_all_for_account,
 	query_session_revoke_by_hash_unscoped
 } from './session_queries.ts';
@@ -50,7 +49,7 @@ import {
 	require_request_context,
 	resolve_acting_actor
 } from './request_context.ts';
-import { CREDENTIAL_TYPE_KEY } from '../hono_context.ts';
+import { get_resolved_auth, resolved_auth_session_hash } from './resolved_auth.ts';
 import { get_route_input, type RouteSpec } from '../http/route_spec.ts';
 import { get_client_ip } from '../http/client_ip.ts';
 import { rate_limit_ip_key } from '../http/ip_canonical.ts';
@@ -459,10 +458,11 @@ export const create_account_route_specs = (
 			...logout_shape,
 			handler: async (c, route) => {
 				const ctx = require_request_context(c);
-				const session_token: string | null = c.get(session_options.context_key) ?? null;
-				if (session_token) {
-					const token_hash = hash_session_token(session_token);
-					await query_session_revoke_by_hash_unscoped(route, token_hash);
+				// the shape admits only a session credential, so this is its hash
+				// (the Rust `account_logout` reads the same value)
+				const session_hash = resolved_auth_session_hash(get_resolved_auth(c));
+				if (session_hash !== null) {
+					await query_session_revoke_by_hash_unscoped(route, session_hash);
 					// Close this account's live connections once the revoke has
 					// committed — queued, so it never runs before the commit or on
 					// rollback, and it does not depend on the fail-open audit write
@@ -509,7 +509,7 @@ export const create_account_route_specs = (
 					const ctx = require_request_context(c);
 					const { current_password, new_password } = get_route_input<PasswordChangeInput>(c);
 					// Defense in depth — see `docs/security.md` §Credential-channel gating.
-					const credential_type = c.get(CREDENTIAL_TYPE_KEY) ?? undefined;
+					const credential_type = get_resolved_auth(c)?.credential_type;
 
 					// per-account rate limit (after context resolution, before argon2 work)
 					const account_reserved = await reserve_optional(

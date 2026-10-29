@@ -17,7 +17,8 @@ import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
 import type { AppSurface } from '#lib/http/surface.ts';
 import { REQUEST_CONTEXT_KEY, type RequestContext } from '#lib/auth/request_context.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
-import { ACCOUNT_ID_KEY, TEST_CONTEXT_PRESET_KEY } from '#lib/hono_context.ts';
+import { RESOLVED_AUTH_KEY, TEST_CONTEXT_PRESET_KEY } from '#lib/hono_context.ts';
+import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
 import { create_stub_db } from '#lib/testing/stubs.ts';
 import { create_test_context } from '#lib/testing/entities.ts';
 
@@ -34,7 +35,10 @@ const create_test_app = (
 ): Hono => {
 	const app = new Hono();
 	app.use('/*', async (c, next) => {
-		(c as any).set(ACCOUNT_ID_KEY, auth_ctx.account.id);
+		(c as any).set(
+			RESOLVED_AUTH_KEY,
+			create_test_resolved_auth({ credential_type: 'session', account_id: auth_ctx.account.id })
+		);
 		(c as any).set(REQUEST_CONTEXT_KEY, auth_ctx);
 		(c as any).set(TEST_CONTEXT_PRESET_KEY, true);
 		await next();

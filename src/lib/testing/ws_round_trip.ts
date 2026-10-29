@@ -55,18 +55,9 @@ import type { ActionEventEnvironment } from '../actions/action_event_types.ts';
 import { register_action_ws, type RegisterActionWsOptions } from '../actions/register_action_ws.ts';
 import { create_stub_db } from './stubs.ts';
 import { ConnectionRegistry } from '../actions/connection_registry.ts';
-import {
-	AUTH_SESSION_TOKEN_HASH_KEY,
-	REQUEST_CONTEXT_KEY,
-	type RequestContext
-} from '../auth/request_context.ts';
-import { hash_session_token } from '../auth/session_queries.ts';
-import {
-	ACCOUNT_ID_KEY,
-	AUTH_API_TOKEN_ID_KEY,
-	CREDENTIAL_TYPE_KEY,
-	TEST_CONTEXT_PRESET_KEY
-} from '../hono_context.ts';
+import { REQUEST_CONTEXT_KEY, type RequestContext } from '../auth/request_context.ts';
+import { RESOLVED_AUTH_KEY, TEST_CONTEXT_PRESET_KEY } from '../hono_context.ts';
+import { create_test_resolved_auth } from './resolved_auth.ts';
 import type { BuiltinCredentialType } from '../auth/credential_type_schema.ts';
 import { create_jsonrpc_request } from '../http/jsonrpc_helpers.ts';
 import { create_test_account, create_test_actor, create_test_role_grant } from './entities.ts';
@@ -170,8 +161,10 @@ export interface FakeHonoContextOptions {
 	credential_type: BuiltinCredentialType;
 	/** A single role to grant via `create_test_request_context`. */
 	role?: string;
-	auth_session_id?: string | null;
-	api_token_id?: string | null;
+	/** The raw session token a `session` credential carries. Default `'s1'`. */
+	auth_session_id?: string;
+	/** The `api_token` credential's token id. Default a fresh uuid. */
+	api_token_id?: string;
 	/**
 	 * Override the `RequestContext` outright (for multi-role or custom
 	 * account/actor fixtures). Takes precedence over `role`.
@@ -180,25 +173,25 @@ export interface FakeHonoContextOptions {
 }
 
 /**
- * Build a fake Hono `Context` exposing the auth keys the dispatcher
- * reads via `c.get(...)` — the ones the production auth middleware sets,
- * including the session token hash a session connection is registered under.
- * Only `.get()` is populated — no other Hono context surface is simulated.
+ * Build a fake Hono `Context` exposing the auth values the dispatcher
+ * reads via `c.get(...)` — the `ResolvedAuth` the production auth middleware
+ * sets (its session hash the key a session connection is registered under)
+ * and a preset `RequestContext`. Only `.get()` is populated — no other Hono
+ * context surface is simulated.
  */
 export const create_fake_hono_context = (opts: FakeHonoContextOptions): Context => {
 	const request_context = opts.request_context ?? build_simple_request_context(opts.role);
 	const auth_session_id =
-		opts.auth_session_id ?? (opts.credential_type === 'session' ? 's1' : null);
+		opts.credential_type === 'session' ? (opts.auth_session_id ?? 's1') : null;
 	const vars: Record<string, unknown> = {
-		[ACCOUNT_ID_KEY]: request_context.account.id,
 		[REQUEST_CONTEXT_KEY]: request_context,
-		[CREDENTIAL_TYPE_KEY]: opts.credential_type,
+		[RESOLVED_AUTH_KEY]: create_test_resolved_auth({
+			credential_type: opts.credential_type,
+			account_id: request_context.account.id,
+			session_id: auth_session_id ?? undefined,
+			api_token_id: opts.api_token_id
+		}),
 		auth_session_id,
-		// what `create_request_context_middleware` sets beside the account id —
-		// the key the dispatcher registers a session connection under
-		[AUTH_SESSION_TOKEN_HASH_KEY]:
-			auth_session_id === null ? null : hash_session_token(auth_session_id),
-		[AUTH_API_TOKEN_ID_KEY]: opts.api_token_id ?? null,
 		[TEST_CONTEXT_PRESET_KEY]: true
 	};
 	return {
@@ -322,8 +315,8 @@ export interface WsConnectIdentity {
 	 * context middleware would have resolved.
 	 */
 	session_id?: string;
-	/** Api token id; set for bearer connections, null otherwise. */
-	api_token_id?: string | null;
+	/** Api token id of an `api_token` connection. Defaults to a fresh uuid; ignored for other credentials. */
+	api_token_id?: string;
 	/** Roles to grant via active role_grants. Pass `[ROLE_KEEPER]` for keeper actions. */
 	roles?: Array<string>;
 }
@@ -501,16 +494,20 @@ export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsT
 		const account_id = identity.account_id ?? create_uuid();
 		const credential_type = identity.credential_type ?? 'session';
 		const session_id = identity.session_id ?? create_uuid();
-		const api_token_id = identity.api_token_id ?? null;
 		const roles = identity.roles ?? [];
 
 		const ctx_store = new Map<string, unknown>([
-			[ACCOUNT_ID_KEY, account_id],
 			[REQUEST_CONTEXT_KEY, build_multi_role_request_context(account_id, roles)],
-			[CREDENTIAL_TYPE_KEY, credential_type],
+			[
+				RESOLVED_AUTH_KEY,
+				create_test_resolved_auth({
+					credential_type,
+					account_id,
+					session_id,
+					api_token_id: identity.api_token_id
+				})
+			],
 			['auth_session_id', session_id],
-			[AUTH_SESSION_TOKEN_HASH_KEY, hash_session_token(session_id)],
-			[AUTH_API_TOKEN_ID_KEY, api_token_id],
 			[TEST_CONTEXT_PRESET_KEY, true]
 		]);
 		const fake_c = {
