@@ -168,8 +168,9 @@ export interface RawHttpHeadRequest {
  * @param request - the method, path, headers and declared length to send
  * @returns the parsed response; its `body` is the raw text
  * @throws Error when `request.headers` names `Host` or `Content-Length`, or
- * when no whole response arrives — the server closed first, or waited for the
- * body it should have refused without
+ * when no whole response arrives — the connection was refused, the server
+ * closed it before any byte or partway through a response, or it waited for
+ * the body it should have refused without
  */
 export const raw_http_send_head = async (
 	base_url: string,

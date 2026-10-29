@@ -206,7 +206,9 @@ const exchange_withholding = async (
 		response,
 		`expected a whole response with ${withheld} withheld; ` +
 			(closed_by_server
-				? `the server closed the connection first`
+				? received
+					? 'the server closed the connection first'
+					: 'connection refused or closed before any response'
 				: `none arrived within ${RAW_HTTP_READ_TIMEOUT_MS}ms — the backend is waiting for bytes ` +
 					`it should refuse without`) +
 			`. Received: ${received ? received.slice(0, 120) : 'nothing'}`

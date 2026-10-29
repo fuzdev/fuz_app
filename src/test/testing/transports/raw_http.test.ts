@@ -222,6 +222,14 @@ describe('raw_http_send_head', () => {
 		);
 	});
 
+	test('throws, quoting what arrived, when the server closes partway through a response', async () => {
+		const base_url = await listen((socket) => socket.end('HTTP/1.1 413 Payload Too Large\r\n'));
+		await assert_rejects(
+			() => raw_http_send_head(base_url, { path: '/x', headers: {}, content_length: 1 }),
+			/the server closed the connection first\. Received: HTTP\/1\.1 413/
+		);
+	});
+
 	test('throws a refused-or-closed error when nothing is listening', async () => {
 		await assert_rejects(
 			() =>
