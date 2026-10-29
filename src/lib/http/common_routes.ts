@@ -13,6 +13,7 @@ import { z } from 'zod';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import type { RouteSpec } from './route_spec.ts';
+import { HEALTH_PATH, HealthResponse } from './health_schema.ts';
 import {
 	check_schema_drift,
 	format_schema_drift,
@@ -28,12 +29,12 @@ import {
  */
 export const create_health_route_spec = (): RouteSpec => ({
 	method: 'GET',
-	path: '/health',
+	path: HEALTH_PATH,
 	auth: { account: 'none', actor: 'none' },
-	handler: (c) => c.json({ status: 'ok' }),
+	handler: (c) => c.json({ status: 'ok' } satisfies HealthResponse),
 	description: 'Health check',
 	input: z.null(),
-	output: z.strictObject({ status: z.literal('ok') })
+	output: HealthResponse
 });
 
 /** Module-level cache of loaded expected-schema fixtures, keyed by URL. */

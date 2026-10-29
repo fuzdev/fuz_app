@@ -671,6 +671,19 @@ format_scope, global_label)` helper — `global_label = null` renders no
 
 ## Fetch + format
 
+- `backend_probe.svelte.ts` — `probe_backend(fetch_health?, timeout_ms?)` →
+  `BackendProbeResult` (`{ok: true}` or `{ok: false, error}`): live only when
+  `HEALTH_PATH` answers `2xx` with a body whose `status` is `'ok'` (read
+  loosely, so an added field never reads as down; the route spec's own schema
+  stays strict), so a static SPA fallback's `200` HTML, a non-`2xx`, a
+  network error, and no reply within `BACKEND_PROBE_TIMEOUT_MS` (10 s, applied
+  to the default fetch; a supplied fetch keeps its own signal) are all down
+  (`BACKEND_PROBE_NOT_HEALTH` names a `2xx` that isn't the health reply).
+  `BackendProbe` wraps it for a login gate — `AuthState.check_session` can't
+  tell a down backend from a logged-out caller: `probing`, `reachable`
+  (`null` until a probe settles, through SSR and prerender too), `error`, and
+  `probe()`, where a later probe supersedes one in flight. Options:
+  `fetch_health?`, `timeout_ms?`.
 - `ui_fetch.ts` — `ui_fetch(input, init?)` wraps `fetch` with
   `credentials: 'include'` for cookie-based session auth;
   `parse_response_error(response, fallback?)` safely extracts

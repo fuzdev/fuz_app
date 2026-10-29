@@ -29,6 +29,7 @@ effects, see ../../../docs/architecture.md.
 - `http/jsonrpc.ts` — JSON-RPC 2.0 envelope schemas (MCP superset), `JsonrpcErrorCode`, `_meta`.
 - `http/jsonrpc_errors.ts` — `ThrownJsonrpcError`, `jsonrpc_errors` throwers, HTTP-status mappings.
 - `http/jsonrpc_helpers.ts` — message builders, type guards, input/result normalizers, and `classify_jsonrpc_message`, the one envelope classifier both transports run.
+- `http/health_schema.ts` — `HEALTH_PATH` + the `HealthResponse` schema, browser-safe, shared by the health route spec and the client probe (`ui/backend_probe.svelte.ts`).
 - `http/common_routes.ts` — health check + readiness probe (`/ready` schema-drift deploy gate) + authenticated server-status route specs (the surface explorer route lives in `server/surface_route.ts`).
 - `http/db_routes.ts` — allowlist-gated keeper-only table browser route specs (`public` schema, minus the `NON_BROWSABLE_TABLES` credential floor).
 - `http/pending_effects.ts` — `emit_after_commit` + `dispatch_with_post_commit_rollback` (the shared rollback-discard wrapper both dispatch sites use) + `flush_request_effects` (the one two-queue flush HTTP and WS share, over `flush_pending_effects` + `flush_post_commit_effects`) + `EffectErrorContext` + `EmitAfterCommitContext`.
@@ -541,7 +542,7 @@ at send time.
 `http/common_routes.ts` exposes three generic route-spec factories with no
 auth-domain dependencies:
 
-- `create_health_route_spec()` — `GET /health`, public, returns `{status: 'ok'}`. Infrastructure endpoint for uptime monitors
+- `create_health_route_spec()` — `GET /health` (`HEALTH_PATH`), public, returns `{status: 'ok'}` (`HealthResponse`, both from `http/health_schema.ts`). Infrastructure endpoint for uptime monitors, and what `ui/backend_probe.svelte.ts` reads
 - `create_ready_route_spec({expected, log})` — `GET /ready`, public, the deploy gate. Introspects the live DB's columns (`db/schema_ready.ts`) and compares against the committed `expected` column map: `200 {ready: true}` on match, else `503 {error: 'schema_drift' | 'db_unreachable'}`. Detailed drift logs server-side only (minimal body — no schema leak, mirrors why `/api/surface` is admin-only). Throws at assembly on an empty `expected` (fail-loud). Opt-in like `/health`; pair with `load_expected_schema(url)` — loads + URL-caches a consumer's committed `expected_schema.json` and throws on an empty map
 - `create_server_status_route_spec({version, get_uptime_ms})` — `GET /api/server/status`, authenticated, returns `{version, uptime_ms}`
 
