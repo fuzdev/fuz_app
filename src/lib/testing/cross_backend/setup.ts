@@ -524,7 +524,8 @@ const generate_default_username = (): string => {
  * harness and doesn't need spec-shape validation (callers narrow the
  * `unknown` result against the shape they expect).
  *
- * `extra_headers` covers the daemon-token auth case for
+ * An `undefined` `params` leaves the key off the envelope — the no-arg call
+ * of a void-input method. `extra_headers` covers the daemon-token auth case for
  * `_testing_reset`; `Content-Type: application/json` is always set.
  * The JSON-RPC `id` mirrors `method` so server-side logs correlate
  * cleanly.
@@ -533,7 +534,7 @@ const rpc_via_transport = async (
 	transport: FetchTransport,
 	rpc_path: string,
 	method: string,
-	params: Record<string, unknown>,
+	params: Record<string, unknown> | undefined,
 	backend_name: string,
 	extra_headers?: Record<string, string>
 ): Promise<unknown> => {
@@ -590,8 +591,8 @@ export const capture_schema_snapshot = async (
 };
 
 /**
- * Capture a no-arg daemon-token introspection RPC and validate the wire
- * response against `schema`. The shared shape behind the parse-based
+ * Capture a no-arg (void-input) daemon-token introspection RPC, sent with no
+ * params, and validate the wire response against `schema`. The shared shape behind the parse-based
  * `capture_*` cross-impl parity probes: call a `_testing_*` introspection
  * action over the keeper's daemon-token channel, then `parse` so a shape
  * drift between the TS and Rust answers fails loud at the boundary.
@@ -610,7 +611,7 @@ const capture_via_daemon = async <T>(
 		handle.keeper_daemon_transport,
 		handle.config.rpc_path,
 		method,
-		{},
+		undefined,
 		handle.config.name,
 		{ [DAEMON_TOKEN_HEADER]: handle.daemon_token }
 	);

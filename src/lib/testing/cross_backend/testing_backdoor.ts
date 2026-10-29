@@ -119,12 +119,10 @@ const BACKDOOR_PARAMS: Readonly<Record<TestingBackdoorMethod, unknown>> = {
 	// The schema-dump read — `exclude_tables` is optional, so `{}` is valid
 	// and clears the 400 phase like the writes above.
 	_testing_schema_snapshot: {},
-	// The migration-tracker-dump read — input is an empty strict object, so `{}`
-	// is valid and clears the 400 phase, reaching the credential gate like the rest.
-	_testing_migration_tracker: {},
-	// The RPC-registry-dump read — input is an empty strict object, so `{}` is
-	// valid and clears the 400 phase, reaching the credential gate like the rest.
-	_testing_action_manifest: {},
+	// The migration-tracker-dump read — its input is void, so the call carries no params.
+	_testing_migration_tracker: undefined,
+	// The RPC-registry-dump read — its input is void, so the call carries no params.
+	_testing_action_manifest: undefined,
 	// The origin conformance probe — a valid `{patterns, origin}` pair, so it
 	// clears the 400 phase like the rest.
 	_testing_origin_check: { patterns: 'http://localhost:*', origin: null },

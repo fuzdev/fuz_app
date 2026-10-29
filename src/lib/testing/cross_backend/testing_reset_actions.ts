@@ -507,7 +507,7 @@ export const testing_migration_tracker_action_spec = {
 	initiator: 'frontend',
 	auth: TESTING_ACTION_AUTH,
 	side_effects: false,
-	input: z.strictObject({}),
+	input: z.void(),
 	output: MigrationTracker,
 	async: true,
 	description:
@@ -640,7 +640,7 @@ export const testing_action_manifest_action_spec = {
 	initiator: 'frontend',
 	auth: TESTING_ACTION_AUTH,
 	side_effects: false,
-	input: z.strictObject({}),
+	input: z.void(),
 	output: ActionManifest,
 	async: true,
 	description:
