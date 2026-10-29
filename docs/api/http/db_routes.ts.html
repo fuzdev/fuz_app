@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/BTZoVLbz.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CAODFmXb.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.DCwMCc9z.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.DG2dzQog.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.BESON4Zu.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.BGiXU97W.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BcwQFYZ2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/C3BYcZ2u.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/B0ywOZhm.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/BhO1D5h9.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.BQYPq7Su.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/CG_vFrAA.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.iYsEBAHl.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BL7ZH9U-.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DhdQKFKC.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -89,9 +89,9 @@ session/token metadata.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--
 not content.<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--[8--><p><!--[--><!--[2-->A table on the floor answers exactly like one that doesn't exist (404
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->table_not_found<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) so the browser doesn't confirm its presence.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--><!----></article><!----></section><section><header><!----><h3 class="tome-section-header svelte-dz8ld7"><div class="flex:1"><!--[0--><div class="word-break:break-all">NON_DELETABLE_TABLES</div><!----><!--]--></div> <a aria-label="hashlink" class="hashlink  svelte-1aeep1w" href="#NON_DELETABLE_TABLES"><!--[-1-->#<!--]--></a> <span class="hashlink-scroll-target svelte-1aeep1w" id="NON_DELETABLE_TABLES" aria-hidden="true"></span><!----><!----></h3><!----></header><!----> <article id="NON_DELETABLE_TABLES"><p class="row justify-content:space-between"><!--[0--><a class="module-link chip " href="/docs/api/http/db_routes.ts"><!--[-1-->http/db_routes.ts<!--]--></a><!--]--><!----> <!--[0--><a class="chip" href="https://github.com/fuzdev/fuz_app/blob/main/src/lib/http/db_routes.ts#L124" target="_blank" rel="noopener">view source</a><!--]--></p>  <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[0--><code data-lang="ts" class="svelte-jqsy8a"><!--[-1--><!----><span class="token_keyword">readonly</span> <span class="token_builtin">string</span><span class="token_punctuation">[]</span><!----><!--]--></code><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <code data-lang="ts" class="svelte-jqsy8a"><!--[-1--><!----><span class="token_special_keyword">import</span> <span class="token_punctuation">{</span><span class="token_constant">NON_DELETABLE_TABLES</span><span class="token_punctuation">}</span> <span class="token_special_keyword">from</span> <span class="token_string">'@fuzdev/fuz_app/http/db_routes.js'</span><span class="token_punctuation">;</span><!----><!--]--></code><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Tables this endpoint refuses to delete rows from, whatever their key shape.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Two kinds, one rule — a generic storage endpoint has no business deleting a
 row whose meaning lives in the domain layer:<!--]--><!--]--><!----></p><!--]--><!--[9--><!--[-1--><ul><!--[--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->audit_log<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> — the trail and the tamper path would otherwise be the same
-surface. It is also part of how revocation propagates: <!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/realtime/sse_auth_guard.ts"><!--[0--><!--[-1-->realtime/sse_auth_guard.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->
-and the WS auth guard close live connections by listening to audit events, so a
-raw row delete here is invisible to them.
+surface. It is also part of how revocation propagates: the revocation guard
+(<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/connection_closer.ts#create_revocation_guard"><!--[0--><!--[-1-->create_revocation_guard<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->) closes live connections by listening to audit
+events, so a raw row delete here is invisible to it.
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->bootstrap_lock<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> — deleting the singleton leaves <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/bootstrap_routes.ts#check_bootstrap_status"><!--[0--><!--[-1-->check_bootstrap_status<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->
 advertising an open bootstrap window on the next boot that
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->bootstrap_account.ts<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->'s atomic flip then always refuses.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->app_settings<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> — deleting the singleton makes every settings read throw.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->schema_version<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> — the migration tracker. Already refused by the
@@ -102,16 +102,16 @@ builtin set is a floor, never replaced.<!--]--><!--]--><!----></p><!--]--><!--]-
 			
 			<script>
 				{
-					__sveltekit_ueicn6 = {
+					__sveltekit_1pqvokp = {
 						base: "",
-						version: "4db7c5dddca61759cff27a30f76189560491a737"
+						version: "b4b9f1a21a57c975701fb1775af1227fdfe259cd"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.CXlCZqzx.js").then(async (kit) => {
-						kit.init(__sveltekit_ueicn6);
-						const app = await import("/_app/immutable/entry/app.DCwMCc9z.js");
+						kit.init(__sveltekit_1pqvokp);
+						const app = await import("/_app/immutable/entry/app.BESON4Zu.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],

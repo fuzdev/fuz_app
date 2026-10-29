@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/BTZoVLbz.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CAODFmXb.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.DCwMCc9z.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.DG2dzQog.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.BESON4Zu.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.BGiXU97W.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BcwQFYZ2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/C3BYcZ2u.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/B0ywOZhm.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/BhO1D5h9.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.BQYPq7Su.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/CG_vFrAA.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.iYsEBAHl.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BL7ZH9U-.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DhdQKFKC.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -70,8 +70,9 @@ overlay over a scrim, following <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><cod
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->inert<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> while it's open, and navigation, Escape, a scrim click, or
 widening out of narrow mode closes it. Escape never prevents the
 default, so the browser's close requests stay intact; it does nothing
-while a modal (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->:modal<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) is open, or when a window <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->keydown<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> listener
-registered before the overlay opened swallows it (a contextmenu, say).<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->The open overlay is a modal dialog: the sidebar takes <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role="dialog"<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->,
+while a modal (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->:modal<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) is open, when a window <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->keydown<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> listener
+registered before the overlay opened swallows it (a contextmenu, say),
+or when a visible <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/ui/popover.svelte.ts#Popover"><!--[0--><!--[-1-->Popover<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->'s <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->document<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> listener already handled it.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->The open overlay is a modal dialog: the sidebar takes <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role="dialog"<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->,
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->aria-modal<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->tabindex="-1"<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, and <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->sidebar_label<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> as its name, and
 focus moves into it, to its first control that takes focus, else to the
 sidebar itself — the content went inert and dropped it. The attributes
@@ -137,16 +138,16 @@ CSS or the viewport-free fields instead.<!--]--><!--]--><!----></p><!--]--><!--]
 			
 			<script>
 				{
-					__sveltekit_ueicn6 = {
+					__sveltekit_1pqvokp = {
 						base: "",
-						version: "4db7c5dddca61759cff27a30f76189560491a737"
+						version: "b4b9f1a21a57c975701fb1775af1227fdfe259cd"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.CXlCZqzx.js").then(async (kit) => {
-						kit.init(__sveltekit_ueicn6);
-						const app = await import("/_app/immutable/entry/app.DCwMCc9z.js");
+						kit.init(__sveltekit_1pqvokp);
+						const app = await import("/_app/immutable/entry/app.BESON4Zu.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],
