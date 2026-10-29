@@ -146,11 +146,14 @@ export class BackendProbe {
 	 *   that aborted would fail every later probe as `BACKEND_PROBE_ABORTED`
 	 */
 	constructor(options?: OmitStrict<BackendProbeOptions, 'signal'>) {
-		// copy the two fields, so a wider options object never forwards a `signal`
-		this.#options = options && {
-			fetch_health: options.fetch_health,
-			timeout_ms: options.timeout_ms
-		};
+		// copy the fields, so a wider options object never forwards a `signal`;
+		// `satisfies` makes an option added later a compile error until it's copied
+		this.#options =
+			options &&
+			({
+				fetch_health: options.fetch_health,
+				timeout_ms: options.timeout_ms
+			} satisfies Record<keyof OmitStrict<BackendProbeOptions, 'signal'>, unknown>);
 	}
 
 	/**
