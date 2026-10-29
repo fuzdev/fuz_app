@@ -225,13 +225,10 @@ export const create_audit_log_route_specs = (options?: AuditLogRouteOptions): Ar
 						// closed as a revocation closes it (TSDoc, "Credential
 						// deadline").
 						stream.on_close(
-							schedule_credential_deadline(
-								get_resolved_auth(c)?.credential_deadline ?? null,
-								() => {
-									log.info('audit stream: credential expired', ctx.account.id);
-									stream.close();
-								}
-							)
+							schedule_credential_deadline(resolved?.credential_deadline ?? null, () => {
+								log.info('audit stream: credential expired', ctx.account.id);
+								stream.close();
+							})
 						);
 					}
 					return response;

@@ -59,7 +59,6 @@
 import type { Hono } from 'hono';
 import type { UpgradeWebSocket } from 'hono/ws';
 import { Logger, type Logger as LoggerType } from '@fuzdev/fuz_util/log.ts';
-import type { Uuid } from '../primitive_schemas.ts';
 
 import {
 	get_request_context,
@@ -69,7 +68,7 @@ import {
 } from '../auth/request_context.ts';
 import { fuz_auth_guard_resolver } from '../auth/auth_guard_resolver.ts';
 import type { RoleName } from '../auth/role_schema.ts';
-import { get_resolved_auth, resolved_auth_scope } from '../auth/resolved_auth.ts';
+import { get_resolved_auth } from '../auth/resolved_auth.ts';
 import { verify_request_source } from '../http/origin.ts';
 import { parse_acting, type RouteAuth } from '../http/auth_shape.ts';
 import { get_client_ip } from '../http/client_ip.ts';
@@ -456,10 +455,10 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 			// Upgrade-time identity capture. The route's `require_auth` has
 			// already rejected unauthenticated upgrades, and its authorization
 			// phase set the request context, so it is non-null here. Per-message
-			// dispatch reads `account_id` + `credential_type` from these captured
-			// values; the live request_context is only used by the test-preset
-			// escape hatch (perform_action runs the authorization phase fresh on
-			// every message in production).
+			// dispatch reads the captured resolved credential; the live
+			// request_context is only used by the test-preset escape hatch
+			// (perform_action runs the authorization phase fresh on every message
+			// in production).
 			//
 			// Session / token validity is read here, by the auth middleware,
 			// and re-read once at admission (`onOpen` in
@@ -474,7 +473,6 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 			// of the closer, `session_revoke` / `token_revoke` are no-ops for
 			// connections that are already open.
 			const upgrade_context = require_request_context(c);
-			const account_id: Uuid = upgrade_context.account.id;
 			const client_ip = get_client_ip(c);
 			// The credential the auth middleware resolved — the one derivation
 			// both long-lived transports share (`get_resolved_auth`), the value
@@ -489,16 +487,11 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 					`register_action_ws: no resolved credential for the upgrade on ${path} — is the auth middleware wired?`
 				);
 			}
-			if (resolved.account_id !== account_id) {
+			if (resolved.account_id !== upgrade_context.account.id) {
 				throw new Error(
 					`register_action_ws: the credential and the request context name different accounts for the upgrade on ${path}`
 				);
 			}
-			// Captured at upgrade and consulted per message. Rule 3 rejects a
-			// narrowed token at the upgrade's guards above, so in practice this is always
-			// `full` on a live socket — but the per-message gate runs regardless,
-			// so the invariant is enforced rather than assumed.
-			const token_scope = resolved_auth_scope(resolved);
 			// Test escape hatch — captured once at upgrade. perform_action
 			// honors it per-message so harnesses with pre-baked
 			// `RequestContext` skip the live authorization phase. It skips the
@@ -510,10 +503,13 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 				? { request_context: get_request_context(c) }
 				: undefined;
 
+			// Captured at upgrade and passed per message, its scope consulted
+			// there. Rule 3 rejects a narrowed token at the upgrade's guards
+			// above, so in practice the scope is always `full` on a live socket —
+			// but the per-message gate runs regardless, so the invariant is
+			// enforced rather than assumed.
 			return create_ws_socket_events(endpoint, {
-				account_id,
 				client_ip,
-				token_scope,
 				upgrade_preset,
 				resolved,
 				upgrade_context

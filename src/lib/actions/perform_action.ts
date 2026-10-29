@@ -9,15 +9,15 @@
  *    on `'required'` axes.
  * 2. **Authorization phase** — when `auth.actor !== 'none'` (or
  *    `auth.account !== 'none' && actor === 'none'`), resolves the actor
- *    via `apply_authorization_phase` against the supplied `account_id`
+ *    via `apply_authorization_phase` against the resolved credential's account
  *    plus the request's `acting` selector, read off the raw params by
  *    `read_acting`. Failures fold into a JSON-RPC error envelope. The
  *    test-harness escape hatch lives in the caller — pass
  *    `preset.request_context` to skip the live phase and use a pre-baked
  *    context instead.
  * 3. **Post-authorization auth (403)** — gates `auth.credential_types`,
- *    the credential's `token_scope`, and `auth.roles` against the resolved
- *    context.
+ *    the credential's scope (`resolved_auth_scope`), and `auth.roles` against
+ *    the resolved context.
  * 4. **Rate limit (429)** — per-action IP / account throttling, throttle-
  *    requests semantics (every invocation records, regardless of outcome).
  *    Ahead of validation so the budget is charged for malformed params too
@@ -67,7 +67,11 @@ import {
 	has_any_scoped_role,
 	type RequestContext
 } from '../auth/request_context.ts';
-import type { BuiltinCredentialType } from '../auth/credential_type_schema.ts';
+import {
+	resolved_auth_scope,
+	resolved_auth_session_hash,
+	type ResolvedAuth
+} from '../auth/resolved_auth.ts';
 import type { Db } from '../db/db.ts';
 import { resolve_issues_invalid_reason } from '../schema_meta.ts';
 import { to_input_params } from '../http/schema_helpers.ts';
@@ -98,11 +102,7 @@ import type { RateLimiter } from '../rate_limiter.ts';
 import { is_public_auth, needs_actor, parse_acting, type RouteAuth } from '../http/auth_shape.ts';
 import type { ActionContext, ActionHandler, RpcAction } from './action_types.ts';
 import type { RequestClient } from './peer_request.ts';
-import {
-	token_scope_admits_method,
-	token_scope_method_capability,
-	type TokenScope
-} from '../auth/token_scope.ts';
+import { token_scope_admits_method, token_scope_method_capability } from '../auth/token_scope.ts';
 
 /**
  * Per-call inputs to `perform_action`. Each transport assembles this from
@@ -115,19 +115,14 @@ export interface PerformActionInput {
 	raw_params: unknown;
 	/** JSON-RPC request id — echoed onto the response. */
 	request_id: JsonrpcRequestId;
-	/** Authenticated account id, or `null` for anonymous. */
-	account_id: string | null;
-	/** Credential type the request arrived on, or `null` for anonymous. */
-	credential_type: BuiltinCredentialType | null;
-	/** Blake3 hash of the session token, or `null` for non-session credentials and anonymous. */
-	session_hash: string | null;
 	/**
-	 * The credential's authority narrowing — `null` only for the anonymous
-	 * caller, who holds no credential to narrow. Every resolved credential
-	 * carries one, so this mirrors the `null` shape `credential_type` already
-	 * has rather than introducing a permissive absent case.
+	 * The credential the request authenticated with (`get_resolved_auth`), or
+	 * `null` for anonymous. Its account is what the authorization phase
+	 * resolves the acting actor against, its type and scope what the
+	 * post-authorization gates read, and its type and session hash what the
+	 * handler sees on `ActionContext`.
 	 */
-	token_scope: TokenScope | null;
+	auth: ResolvedAuth | null;
 	/** Resolved client IP (`'unknown'` if upstream couldn't resolve). */
 	client_ip: string;
 	/** Per-request abort signal. HTTP: `c.req.raw.signal`. WS: `AbortSignal.any([socket, request])`. */
@@ -197,7 +192,7 @@ export type PerformActionResult =
  * Phase order: 401 → authz → 403 → 429 → 400 → handler. On the test-preset path
  * the dispatcher skips the live authorization phase and uses the supplied
  * pre-baked context for post-authorization checks; the 401 still fires when
- * the harness omits `account_id`.
+ * the harness omits `auth`.
  */
 export const perform_action = async (
 	input: PerformActionInput,
@@ -207,10 +202,7 @@ export const perform_action = async (
 		action,
 		raw_params,
 		request_id: id,
-		account_id,
-		credential_type,
-		session_hash,
-		token_scope,
+		auth,
 		client_ip,
 		signal,
 		notify,
@@ -228,6 +220,7 @@ export const perform_action = async (
 	} = deps;
 	const { spec, handler } = action;
 	const action_auth = spec.auth;
+	const account_id = auth?.account_id ?? null;
 
 	// step 1: pre-authorization auth — 401 short-circuit.
 	const pre = check_action_auth_pre_authorization(action_auth, account_id);
@@ -267,9 +260,8 @@ export const perform_action = async (
 	const post = check_action_auth_post_authorization(
 		action_auth,
 		request_context,
-		credential_type,
-		action.spec.method,
-		token_scope
+		auth,
+		action.spec.method
 	);
 	if (post) return error_result(post);
 
@@ -329,8 +321,8 @@ export const perform_action = async (
 			pending_effects,
 			post_commit_effects,
 			client_ip,
-			credential_type,
-			session_hash,
+			credential_type: auth?.credential_type ?? null,
+			session_hash: resolved_auth_session_hash(auth),
 			log,
 			notify,
 			signal
@@ -498,7 +490,7 @@ export const credential_type_required_error = (
  * **Scope second**, before the role gate, because scope is a fact about the
  * credential decided without a DB read, while the role gate reads the resolved
  * actor's grants. Coarse → fine, and an under-scoped token learns nothing about
- * the deployment's role structure. `token_scope` is `null` only for the
+ * the deployment's role structure. The scope is `null` only for the
  * anonymous caller, who has no credential to narrow.
  *
  * **Role gate third**: if the spec declares any roles and the actor doesn't hold
@@ -508,18 +500,18 @@ export const credential_type_required_error = (
 const check_action_auth_post_authorization = (
 	auth: RouteAuth,
 	request_context: RequestContext | null,
-	credential_type: BuiltinCredentialType | null,
-	method: string,
-	token_scope: TokenScope | null
+	credential: ResolvedAuth | null,
+	method: string
 ): JsonrpcErrorObject | null => {
 	if (auth.credential_types?.length) {
-		if (!credential_type || !auth.credential_types.includes(credential_type)) {
+		if (!credential || !auth.credential_types.includes(credential.credential_type)) {
 			return credential_type_required_error(auth.credential_types);
 		}
 	}
 	// Token-scope gate — second of three. See the doc comment for why the order
 	// is credential → scope → role.
-	if (token_scope && !token_scope_admits_method(token_scope, method)) {
+	const token_scope = resolved_auth_scope(credential);
+	if (token_scope !== null && !token_scope_admits_method(token_scope, method)) {
 		return jsonrpc_error_messages.forbidden('forbidden', {
 			reason: ERROR_TOKEN_SCOPE_REQUIRED,
 			required_scope: token_scope_method_capability(method)

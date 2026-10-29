@@ -114,7 +114,6 @@ import { UnreachableError } from '@fuzdev/fuz_util/error.ts';
 import type { Uuid } from '../primitive_schemas.ts';
 
 import type { RequestContext } from '../auth/request_context.ts';
-import type { TokenScope } from '../auth/token_scope.ts';
 import type { RoleName } from '../auth/role_schema.ts';
 import {
 	recheck_admission,
@@ -357,17 +356,17 @@ export interface WsSocketEndpoint {
  * @internal
  */
 export interface WsSocketUpgrade {
-	/** The account the upgrade authenticated as. */
-	account_id: Uuid;
 	/** The client IP, keyed by the per-IP action rate limiter. */
 	client_ip: string;
-	/** The token scope the upgrade carried, or `null`. */
-	token_scope: TokenScope | null;
 	/** The test-context preset, which skips the admission re-read and the live authorization phase. */
 	upgrade_preset: { request_context: RequestContext | null } | undefined;
-	/** The credential the auth middleware resolved, re-read at admission. */
+	/**
+	 * The credential the auth middleware resolved — re-read at admission,
+	 * passed to every message's dispatch, and the source of the connection's
+	 * identity.
+	 */
 	resolved: ResolvedAuth;
-	/** The request context the upgrade's authorization phase built. */
+	/** The request context the upgrade's authorization phase built, on the credential's account. */
 	upgrade_context: RequestContext;
 }
 
@@ -402,8 +401,10 @@ export const create_ws_socket_events = (
 		on_effect_error,
 		required_roles
 	} = endpoint;
-	const { account_id, client_ip, token_scope, upgrade_preset, resolved, upgrade_context } = upgrade;
-	const { credential_type } = resolved;
+	const { client_ip, upgrade_preset, resolved, upgrade_context } = upgrade;
+	// the request context's account — `register_action_ws` holds it to the
+	// credential's before the upgrade
+	const account_id: Uuid = upgrade_context.account.id;
 	// Session-based connections have a session hash for targeted
 	// revocation. Bearer/daemon connections pass null — still reachable
 	// by an `account` or `token` close target.
@@ -906,10 +907,7 @@ export const create_ws_socket_events = (
 					action,
 					raw_params: params,
 					request_id: id,
-					account_id,
-					credential_type,
-					session_hash,
-					token_scope,
+					auth: resolved,
 					client_ip,
 					signal,
 					notify,
