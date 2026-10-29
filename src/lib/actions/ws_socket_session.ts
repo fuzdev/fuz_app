@@ -908,6 +908,7 @@ export const create_ws_socket_events = (
 					request_id: id,
 					account_id,
 					credential_type,
+					session_hash,
 					token_scope,
 					client_ip,
 					signal,

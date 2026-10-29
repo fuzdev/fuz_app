@@ -246,7 +246,8 @@ credential's expiry, an audit stream on a session ends there, and the
 `_testing_shorten_credential_expiry` seam only shortens),
 `session_cap` (the
 `describe_session_cap_cross_tests` suite — logging in past the per-account
-session cap evicts the oldest session, and closes the socket it had open), `ws_connection_cap` (the real-upgrade
+session cap evicts the oldest session, and closes the socket it had open; the
+session list marks each login's own session current), `ws_connection_cap` (the real-upgrade
 `describe_ws_connection_cap_cross_tests` suite — one socket past the
 per-account connection cap closes the oldest with `WS_CLOSE_CONNECTION_LIMIT`
 and nothing else, and a closed connection frees its slot),

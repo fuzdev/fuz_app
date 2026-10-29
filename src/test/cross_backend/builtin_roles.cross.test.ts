@@ -71,7 +71,9 @@ describe('builtin roles: socket accounts holding admin', () => {
 	});
 	describe_session_cap_cross_tests({
 		setup_test: default_cross_process_setup(handle),
+		rpc_path,
 		ws: { base_url, ws_path },
+		ws_account_actions: capabilities.ws_account_actions,
 		ws_account_roles: [ROLE_ADMIN]
 	});
 	describe_credential_deadline_cross_tests({

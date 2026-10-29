@@ -118,7 +118,13 @@ export const create_account_actions = (
 		ctx: ActionAuthContext
 	): Promise<SessionListOutput> => {
 		const sessions = await query_session_list_for_account(ctx, ctx.auth.account.id);
-		return { sessions };
+		// no column holds it: the caller's own session is the one its credential hashes to
+		return {
+			sessions: sessions.map((session) => ({
+				...session,
+				is_current: session.id === ctx.session_hash
+			}))
+		};
 	};
 
 	const session_revoke_handler = async (

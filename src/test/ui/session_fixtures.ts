@@ -27,16 +27,20 @@ export const make_auth_session = (overrides: SessionOverrides = {}): AuthSession
 		account_id: 'acct-1',
 		created_at: '2026-01-01T00:00:00Z',
 		expires_at: '2026-02-01T00:00:00Z',
+		is_current: false,
 		...overrides
 	}) as AuthSessionJson;
 
-/** The same widening for the admin variant (`AuthSessionJson` + `username`). */
+/** The same widening for the admin variant (`AuthSessionJson` + `username`, without `is_current`). */
 export type AdminSessionOverrides = Omit<Partial<AdminSessionJson>, 'id'> & { id?: string };
 
 /** Build a default-shaped `AdminSessionJson` for stubs; override any field. */
 export const make_admin_session = (overrides: AdminSessionOverrides = {}): AdminSessionJson =>
 	({
-		...make_auth_session(),
+		id: 'sess-1',
+		account_id: 'acct-1',
+		created_at: '2026-01-01T00:00:00Z',
+		expires_at: '2026-02-01T00:00:00Z',
 		username: 'alice',
 		...overrides
 	}) as AdminSessionJson;

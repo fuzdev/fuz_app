@@ -181,11 +181,10 @@ export type SessionId = z.infer<typeof SessionId>;
 
 /**
  * Server-side auth session row, keyed by blake3 hash of the session token.
- * Structurally identical to the wire shape `AuthSessionJson` — kept as the
- * DB-row name so query signatures keep saying which side of the boundary
- * they read.
+ * The wire shape `AuthSessionJson` less `is_current`, which no column holds —
+ * the session list computes it per request.
  */
-export type AuthSession = AuthSessionJson;
+export type AuthSession = Omit<AuthSessionJson, 'is_current'>;
 
 /** API token for CLI/programmatic access. */
 export interface ApiToken {
@@ -222,7 +221,11 @@ export const AuthSessionJson = z.strictObject({
 	id: SessionId,
 	account_id: Uuid,
 	created_at: z.string(),
-	expires_at: z.string()
+	expires_at: z.string(),
+	is_current: z.boolean().meta({
+		description:
+			'Whether this is the session the request authenticated with — `false` on every row for a non-session credential.'
+	})
 });
 export type AuthSessionJson = z.infer<typeof AuthSessionJson>;
 

@@ -119,6 +119,8 @@ export interface PerformActionInput {
 	account_id: string | null;
 	/** Credential type the request arrived on, or `null` for anonymous. */
 	credential_type: BuiltinCredentialType | null;
+	/** Blake3 hash of the session token, or `null` for non-session credentials and anonymous. */
+	session_hash: string | null;
 	/**
 	 * The credential's authority narrowing — `null` only for the anonymous
 	 * caller, who holds no credential to narrow. Every resolved credential
@@ -207,6 +209,7 @@ export const perform_action = async (
 		request_id: id,
 		account_id,
 		credential_type,
+		session_hash,
 		token_scope,
 		client_ip,
 		signal,
@@ -327,6 +330,7 @@ export const perform_action = async (
 			post_commit_effects,
 			client_ip,
 			credential_type,
+			session_hash,
 			log,
 			notify,
 			signal

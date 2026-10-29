@@ -868,7 +868,7 @@ Options: `roles?: RoleSchemaResult` (drives admin-grant-path lookup),
 `create_account_actions(deps, options?)` in `auth/account_actions.ts`.
 
 - `account_verify_action_spec` — read; input `z.void()`; output `SessionAccountJson`.
-- `account_session_list_action_spec` — read; input `z.void()`; output `{sessions}`.
+- `account_session_list_action_spec` — read; input `z.void()`; output `{sessions}`, each with `is_current` (the session the request authenticated with; `false` on every row for a bearer or daemon-token caller).
 - `account_session_revoke_action_spec` — mutation; input `{session_id}`; output `{ok, revoked}`.
 - `account_session_revoke_all_action_spec` — mutation; input `z.void()`; output `{ok, count}`.
 - `account_token_create_action_spec` — mutation; input `{name?, scope, lifetime}` (both `scope` and `lifetime` required — default-deny at mint on both axes; `name` at most `API_TOKEN_NAME_LENGTH_MAX` = 255 characters, since it is copied into the audit row); output `{ok, token, id, name, expires_at}`. `scope` / `lifetime` declare `invalid_reason` `ERROR_TOKEN_SCOPE_INVALID` / `ERROR_TOKEN_LIFETIME_INVALID`, so every refusal of either carries it — the handler's over-cap scope refusal included.

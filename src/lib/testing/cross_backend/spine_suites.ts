@@ -803,7 +803,9 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 	session_cap: {
 		derive: (c) => ({
 			setup_test: c.setup(),
+			rpc_path: c.config.rpc_path,
 			ws: c.ws,
+			ws_account_actions: c.config.capabilities.ws_account_actions,
 			ws_account_roles: c.options.ws_required_roles
 		}),
 		describe: describe_session_cap_cross_tests,

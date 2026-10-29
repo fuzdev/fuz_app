@@ -286,9 +286,11 @@ return;`), since Enter and clicks still reach it.
 
 - `AccountSessions.svelte` — self-serve session list for the logged-in
   account. Instantiates `AccountSessionsState`, renders a `Datatable`
-  with per-row `revoke` and an optional `revoke all`. Calling
-  `revoke_all` clears `auth_state.verified` so the UI falls back to
-  the login page.
+  with per-row `revoke` and a `ConfirmButton` `revoke all`. The row the
+  server marks `is_current` is this browser's session: it reads
+  `current` and offers `log out` (`auth_state.logout`, the logout
+  request) in place of revoke, and a `revoke all` that succeeded logs
+  out the same way, so the UI falls back to the login page.
 
 ## Admin
 

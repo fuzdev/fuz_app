@@ -761,8 +761,8 @@ export const RoleGrantHistoryEventJson = AuditLogEventJson.extend({
 });
 export type RoleGrantHistoryEventJson = z.infer<typeof RoleGrantHistoryEventJson>;
 
-/** Zod schema for admin session listing (session + username). */
-export const AdminSessionJson = AuthSessionJson.extend({
+/** Zod schema for admin session listing (session + username, without `is_current`). */
+export const AdminSessionJson = AuthSessionJson.omit({ is_current: true }).extend({
 	username: z.string()
 });
 export type AdminSessionJson = z.infer<typeof AdminSessionJson>;

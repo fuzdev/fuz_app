@@ -1786,14 +1786,18 @@ cross-process only.
 
 Parity for the per-account session cap over real HTTP: logging in past
 `max_sessions` (default `DEFAULT_MAX_SESSIONS`) never refuses a login and
-evicts the oldest session.
+evicts the oldest session, and `account_session_list` marks each login's own
+session `is_current` (none for a bearer or daemon-token caller, even with a
+session cookie beside the daemon token).
 `describe_session_cap_cross_tests({setup_test, max_sessions?, login_path?,
-status_path?, ws?, ws_account_roles?})` — pass `ws` (`{base_url, ws_path, origin?}`) to also
-assert that the evicted session's socket is closed with
-`WS_CLOSE_SESSION_REVOKED` once the evicting login commits; omitted, that case
-is skipped, so a caller passes it only for a backend with `capabilities.ws`;
-`ws_account_roles` gives that case's account roles, for a backend whose WS
-upgrade requires one.
+status_path?, rpc_path?, ws?, ws_account_actions?, ws_account_roles?})` —
+pass `ws` (`{base_url, ws_path, origin?}`) to also assert that the evicted
+session's socket is closed with `WS_CLOSE_SESSION_REVOKED` once the evicting
+login commits; omitted, that case is skipped, so a caller passes it only for
+a backend with `capabilities.ws`. `ws_account_actions`
+(`capabilities.ws_account_actions`) also lists the sessions over a login's
+socket and asserts its own row is the one current; `ws_account_roles` gives
+the socket accounts' roles, for a backend whose WS upgrade requires one.
 Cross-process only.
 
 ### `cross_backend/sse_round_trip.ts` — `describe_cross_process_sse_tests`

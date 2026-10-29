@@ -2,13 +2,16 @@
 	/**
 	 * Self-serve session list for the logged-in account. Instantiates an
 	 * `AccountSessionsState` against `account_sessions_rpc_context` and renders
-	 * a `Datatable` with per-row revoke and an optional revoke-all. Calling
-	 * `revoke_all` clears `auth_state.verified` so the UI falls back to login.
+	 * a `Datatable` with per-row revoke and a confirmed revoke-all. The row the
+	 * server marks `is_current` is this browser's session: revoking it logs out
+	 * through `auth_state.logout`, as does a revoke-all that succeeded, so the
+	 * UI falls back to login instead of acting on a dead session.
 	 *
 	 * @module
 	 */
 
 	import { auth_state_context } from './auth_state.svelte.ts';
+	import ConfirmButton from './ConfirmButton.svelte';
 	import {
 		AccountSessionsState,
 		account_sessions_rpc_context
@@ -24,11 +27,22 @@
 
 	void account_sessions.fetch();
 
+	let logging_out = $state(false);
+
+	/** Revoking the current session is logging out — the same request, cookie cleared too. */
+	const handle_logout = async (): Promise<void> => {
+		logging_out = true;
+		try {
+			await auth_state.logout();
+		} finally {
+			logging_out = false;
+		}
+	};
+
 	const handle_revoke_all = async (): Promise<void> => {
 		await account_sessions.submit_revoke_all();
-		if (!account_sessions.revoke_all.error) {
-			auth_state.verified = false;
-		}
+		// a superseded or aborted run revoked nothing this call can vouch for
+		if (account_sessions.revoke_all.succeeded) await auth_state.logout();
 	};
 
 	const columns: Array<DatatableColumn<AuthSessionJson>> = [
@@ -58,13 +72,22 @@
 		{/if}
 		{#if account_sessions.active_count > 1}
 			<div class="mb_md">
-				<button type="button" onclick={() => handle_revoke_all()}>revoke all</button>
+				<ConfirmButton
+					onconfirm={() => handle_revoke_all()}
+					title="revoke all sessions"
+					label="revoke all"
+					pending={account_sessions.revoke_all.loading}
+				/>
 			</div>
 		{/if}
 		<Datatable {columns} rows={account_sessions.sessions} row_key={(row) => row.id} height="300px">
 			{#snippet cell(column, row)}
 				{#if column.key === 'id'}
-					<span class="chip palette_b">active</span>
+					{#if row.is_current}
+						<span class="chip palette_a">current</span>
+					{:else}
+						<span class="chip palette_b">active</span>
+					{/if}
 					<code class="text_50">{truncate_uuid(row.id)}</code>
 				{:else if column.key === 'created_at'}
 					<span title={format_datetime_local(row.created_at)}>
@@ -75,17 +98,23 @@
 						{format_relative_time(row.expires_at)}
 					</span>
 				{:else if column.key === 'account_id'}
-					{@const revoking = account_sessions.revoke.loading(row.id)}
-					{@const revoke_error = account_sessions.revoke.error(row.id)}
-					<button
-						type="button"
-						disabled={revoking}
-						onclick={() => account_sessions.submit_revoke(row.id)}
-					>
-						{revoking ? 'revoking…' : 'revoke'}
-					</button>
-					{#if revoke_error}
-						<span class="color_c_50 font_size_sm">{revoke_error}</span>
+					{#if row.is_current}
+						<button type="button" disabled={logging_out} onclick={() => handle_logout()}>
+							{logging_out ? 'logging out…' : 'log out'}
+						</button>
+					{:else}
+						{@const revoking = account_sessions.revoke.loading(row.id)}
+						{@const revoke_error = account_sessions.revoke.error(row.id)}
+						<button
+							type="button"
+							disabled={revoking}
+							onclick={() => account_sessions.submit_revoke(row.id)}
+						>
+							{revoking ? 'revoking…' : 'revoke'}
+						</button>
+						{#if revoke_error}
+							<span class="color_c_50 font_size_sm">{revoke_error}</span>
+						{/if}
 					{/if}
 				{:else if column.format}
 					{column.format(row[column.key], row)}

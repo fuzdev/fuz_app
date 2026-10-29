@@ -24,6 +24,7 @@ import type { RpcAction } from './action_types.ts';
 import { type RouteContext, type RouteSpec } from '../http/route_spec.ts';
 import { get_client_ip } from '../http/client_ip.ts';
 import { get_request_context } from '../auth/request_context.ts';
+import { get_resolved_auth } from '../auth/resolved_auth.ts';
 import {
 	ACCOUNT_ID_KEY,
 	CREDENTIAL_TYPE_KEY,
@@ -203,6 +204,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 				request_id: id,
 				account_id: c.get(ACCOUNT_ID_KEY) ?? null,
 				credential_type: c.get(CREDENTIAL_TYPE_KEY) ?? null,
+				session_hash: get_resolved_auth(c)?.token_hash ?? null,
 				token_scope: c.get(TOKEN_SCOPE_KEY) ?? null,
 				client_ip: get_client_ip(c),
 				signal: c.req.raw.signal,

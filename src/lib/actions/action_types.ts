@@ -119,6 +119,12 @@ export interface ActionContext {
 	 * row preserves what actually authenticated the request).
 	 */
 	credential_type: BuiltinCredentialType | null;
+	/**
+	 * Blake3 hash of the session token the request authenticated with — the
+	 * `auth_session.id` of the caller's own session — or `null` for any other
+	 * credential and for anonymous requests.
+	 */
+	session_hash: string | null;
 	/** Logger instance. */
 	log: Logger;
 	/**

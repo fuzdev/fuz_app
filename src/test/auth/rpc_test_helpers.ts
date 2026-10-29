@@ -39,6 +39,7 @@ export const create_test_action_context = (auth: RequestContext): ActionContext 
 	post_commit_effects: [],
 	client_ip: 'unknown',
 	credential_type: 'session',
+	session_hash: null,
 	log,
 	notify: () => {},
 	signal: new AbortController().signal
