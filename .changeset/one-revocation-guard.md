@@ -1,5 +1,0 @@
----
-'@fuzdev/fuz_app': minor
----
-
-break: one revocation guard — `create_revocation_guard(closer, log)` (`actions/connection_closer.ts`, with `AuditEventHandler`) replaces `create_ws_auth_guard` (`actions/transports_ws_auth_guard.ts`, deleted) and `create_sse_auth_guard`; `create_app_server` registers it once on `deps.connection_closer` when it mounts a WS endpoint or the audit stream, so its closes reach every WS transport and the audit stream registry through the fan-out. `WsEndpointSpec.auth_guard` and `extra_audit_handlers` are removed. `realtime/sse_auth_guard.ts` is renamed `realtime/audit_log_sse.ts`, and `create_audit_log_sse`'s `on_audit_event` only broadcasts — revocations close its streams through the closer it joined. To migrate: import from `realtime/audit_log_sse.ts`, and `AuditEventHandler` from `actions/connection_closer.ts`; register extra audit handlers on `deps.audit.add_listener`; a hand wiring registers `create_revocation_guard` over a closer holding its transports (`create_sse_connection_closer(registry, role)` for a registry)

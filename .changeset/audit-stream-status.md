@@ -1,5 +1,0 @@
----
-'@fuzdev/fuz_app': minor
----
-
-break: `AuditLogState.connected` is replaced by `stream_status` (`'off' | 'connecting' | 'open' | 'closed'`) — a stream whose reconnect the server refused reads `'closed'` instead of reconnecting forever, and `AdminAuditLog` offers a retry. `subscribe(filter?: AuditLogFilter)` applies the filter to live events and the gap fill (which runs only while the list was fetched with the same filter), gap rows merge by `seq`, a failed fill surfaces on the new `gap_fill` slot, and a full gap page sets `gap_truncated`; a fill keeps its range when the stream reopens, retries or is resubscribed while it is in flight or after it failed — the next fill starts from the oldest uncovered `seq`, not past the live rows that arrived meanwhile — an open during a newest-page `fetch` leaves its fill to that fetch's page, and a fill resolving after a later-page `fetch` under another filter no longer merges into it. New exports: `AuditLogFilter`, `AuditLogStreamStatus`, `audit_log_filter_matches`. To migrate: read `stream_status === 'open'` where you read `connected`
