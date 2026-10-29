@@ -10,8 +10,8 @@
  * `global_setup_schema_parity.ts`, dumps each backend's live RPC registry over
  * the `_testing_action_manifest` RPC (TS via `build_action_manifest`, Rust via
  * `fuz_testing::create_testing_action_manifest_action_spec`), and asserts
- * **method-set + per-method auth-shape** equality — failing loud with the
- * specific divergence.
+ * **method-set + per-method input-shape and auth-shape** equality — failing
+ * loud with the specific divergence.
  *
  * The manifest excludes the protocol actions (`heartbeat` / `cancel`) by
  * construction (the TS spine mounts them WS-only; the Rust stub on one shared
@@ -19,9 +19,9 @@
  * apples-to-apples. This complements the in-repo `spine_method_coverage` gate:
  * that proves *mounted ⟹ covered*; this proves *TS-mount-set ≡ Rust-mount-set*.
  *
- * The gate asserts **exact** parity — every mounted method and its full auth
- * shape (side-effects + the four auth axes) must match across the two impls,
- * with no allowlisted divergences.
+ * The gate asserts **exact** parity — every mounted method, its input shape
+ * (void or object), and its full auth shape (side-effects + the four auth
+ * axes) must match across the two impls, with no allowlisted divergences.
  *
  * Runs under the same dual-spawn `cross_backend_parity` project as the
  * schema-parity gate — one TS-spine + Rust-stub spawn serves both gates

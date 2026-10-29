@@ -3,7 +3,8 @@ import '../assert_dev_env.ts';
 /**
  * Cross-impl RPC **action-manifest** introspection — a normalized,
  * JSON-serializable dump of a backend's live RPC method set, one entry per
- * method carrying its auth shape, side-effect flag, and rate-limit class.
+ * method carrying its input shape, auth shape, side-effect flag, and
+ * rate-limit class.
  *
  * The sibling of `schema_introspect.ts`'s `SchemaSnapshot`: where that
  * captures the live *database* shape for the schema-parity gate, this
@@ -35,6 +36,7 @@ import { z } from 'zod';
 
 import { AuthAxisState, type RouteAuth } from '../../http/auth_shape.ts';
 import { RateLimitKey } from '../../http/error_schemas.ts';
+import { is_void_schema } from '../../http/schema_helpers.ts';
 import type { RequestResponseActionSpec } from '../../actions/action_spec.ts';
 
 /**
@@ -49,6 +51,12 @@ import type { RequestResponseActionSpec } from '../../actions/action_spec.ts';
 export const ActionManifestEntry = z.strictObject({
 	/** RPC method name (`spec.method`). */
 	method: z.string(),
+	/**
+	 * `'void'` when the input is `z.void()` (a parameterless method), else
+	 * `'object'` — the Rust spine's declared `InputShape`, which its dispatcher
+	 * enforces. A `z.strictObject({})` input is `'object'`.
+	 */
+	input: z.enum(['void', 'object']),
 	/** `true` when the action declares `side_effects` (mutation; POST-only on the RPC transport). */
 	side_effects: z.boolean(),
 	/** The `account` auth axis. */
@@ -75,17 +83,20 @@ const sorted_strings = (xs: ReadonlyArray<string> | undefined): Array<string> =>
 	[...(xs ?? [])].sort();
 
 /**
- * Normalize one spec's auth + side-effects into a manifest entry. Pulls the
- * four auth axes off `RouteAuth` (the same shape the Rust `AuthSpec` mirrors)
+ * Normalize one spec's input shape + auth + side-effects into a manifest
+ * entry. Reads the input shape off `is_void_schema(spec.input)`, pulls the
+ * four auth axes off `RouteAuth` (the same shape the Rust `AuthSpec` mirrors),
  * and flattens optional `roles` / `credential_types` to sorted arrays.
  */
 export const action_manifest_entry = (spec: {
 	readonly method: string;
+	readonly input: z.ZodType;
 	readonly auth: RouteAuth;
 	readonly side_effects: boolean;
 	readonly rate_limit?: RateLimitKey;
 }): ActionManifestEntry => ({
 	method: spec.method,
+	input: is_void_schema(spec.input) ? 'void' : 'object',
 	side_effects: spec.side_effects,
 	account: spec.auth.account,
 	actor: spec.auth.actor,
@@ -107,7 +118,7 @@ const compare_method = (a: ActionManifestEntry, b: ActionManifestEntry): number 
  */
 export const build_action_manifest = (
 	specs: ReadonlyArray<
-		Pick<RequestResponseActionSpec, 'method' | 'auth' | 'side_effects' | 'rate_limit'>
+		Pick<RequestResponseActionSpec, 'method' | 'input' | 'auth' | 'side_effects' | 'rate_limit'>
 	>
 ): ActionManifest => ({
 	methods: specs.map(action_manifest_entry).sort(compare_method)

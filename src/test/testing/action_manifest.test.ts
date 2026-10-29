@@ -2,8 +2,9 @@
  * Unit tests for `build_action_manifest` — the spec → normalized
  * `ActionManifestEntry` mapper the cross-impl manifest-parity gate dumps.
  *
- * Pins the normalization contract both impls must match: auth axes pass
- * through, `roles` / `credential_types` flatten to sorted arrays (absent and
+ * Pins the normalization contract both impls must match: `input` reads
+ * `'void'` for a `z.void()` input and `'object'` for anything else, auth axes
+ * pass through, `roles` / `credential_types` flatten to sorted arrays (absent and
  * empty both → `[]`), `side_effects` passes through, `rate_limit` is always
  * present (`null` when undeclared), and entries sort by `method`. A drift in
  * any of these would surface as a spurious cross-impl diff, so they're pinned
@@ -13,6 +14,7 @@
  */
 
 import { describe, test, assert } from 'vitest';
+import { z } from 'zod';
 
 import {
 	ActionManifestEntry,
@@ -26,13 +28,15 @@ const spec = (
 	method: string,
 	auth: RouteAuth,
 	side_effects = false,
-	rate_limit?: RateLimitKey
+	rate_limit?: RateLimitKey,
+	input: z.ZodType = z.strictObject({})
 ): {
 	method: string;
+	input: z.ZodType;
 	auth: RouteAuth;
 	side_effects: boolean;
 	rate_limit?: RateLimitKey;
-} => ({ method, auth, side_effects, rate_limit });
+} => ({ method, input, auth, side_effects, rate_limit });
 
 describe('action_manifest_entry', () => {
 	test('passes the auth axes + side_effects through', () => {
@@ -45,6 +49,7 @@ describe('action_manifest_entry', () => {
 		);
 		assert.deepStrictEqual(entry, {
 			method: 'admin_account_list',
+			input: 'object',
 			side_effects: false,
 			account: 'required',
 			actor: 'required',
@@ -93,6 +98,21 @@ describe('action_manifest_entry', () => {
 		);
 		assert.deepStrictEqual(entry.roles, ['admin', 'keeper']);
 		assert.deepStrictEqual(entry.credential_types, ['daemon_token', 'session']);
+	});
+
+	test('a z.void() input is void and every other input is an object', () => {
+		const auth: RouteAuth = { account: 'required', actor: 'none' };
+		assert.strictEqual(
+			action_manifest_entry(spec('account_verify', auth, false, undefined, z.void())).input,
+			'void'
+		);
+		// `z.strictObject({})` admits the same calls but is an object schema.
+		for (const input of [z.strictObject({}), z.strictObject({ id: z.string() })]) {
+			assert.strictEqual(
+				action_manifest_entry(spec('x', auth, false, undefined, input)).input,
+				'object'
+			);
+		}
 	});
 
 	test('side_effects passes through for mutations', () => {

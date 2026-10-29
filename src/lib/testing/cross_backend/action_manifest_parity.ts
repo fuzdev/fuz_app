@@ -8,8 +8,9 @@ import '../assert_dev_env.ts';
  * fuz_app spine and the Rust `testing_spine_stub`) are each other's parity
  * reference. After both bootstrap, dump each one's live RPC method set, diff,
  * fail loudly on drift. The diff entries name the specific divergence (a
- * method only one impl mounts, a per-method auth-axis, side-effect, or
- * rate-limit-class mismatch) so the error message points at the source.
+ * method only one impl mounts, a per-method input-shape, auth-axis,
+ * side-effect, or rate-limit-class mismatch) so the error message points at
+ * the source.
  *
  * ```ts
  * const manifest_a = await capture_action_manifest(ts_handle);
@@ -17,9 +18,10 @@ import '../assert_dev_env.ts';
  * assert_action_manifests_equal(manifest_a, manifest_b, {a: 'ts', b: 'rust'});
  * ```
  *
- * Non-coverage: the manifest captures `{method, side_effects, account, actor,
- * roles, credential_types, rate_limit}` — the wire-relevant auth shape. It does **not**
- * capture input/output schemas (the declared-surface wire shape is gated by
+ * Non-coverage: the manifest captures `{method, input, side_effects, account,
+ * actor, roles, credential_types, rate_limit}` — the wire-relevant auth shape
+ * plus whether the method takes params at all. It does **not** capture the
+ * input/output schemas themselves (the declared-surface wire shape is gated by
  * `rpc_round_trip`) nor the protocol actions `heartbeat` / `cancel` (excluded
  * by construction — see `action_manifest.ts`).
  *
@@ -41,6 +43,12 @@ const AUTH_LIST_FIELDS = ['roles', 'credential_types'] as const satisfies Readon
 /** Structured drift entry. `where` is the named source impl ('a' or 'b'). */
 export type ActionManifestDiff =
 	| { readonly kind: 'method_only_in'; readonly where: 'a' | 'b'; readonly method: string }
+	| {
+			readonly kind: 'input_differs';
+			readonly method: string;
+			readonly a: ActionManifestEntry['input'];
+			readonly b: ActionManifestEntry['input'];
+	  }
 	| {
 			readonly kind: 'side_effects_differ';
 			readonly method: string;
@@ -69,7 +77,8 @@ const string_lists_equal = (a: ReadonlyArray<string>, b: ReadonlyArray<string>):
  * Structural diff between two manifests — empty array means parity holds.
  *
  * Order is deterministic: methods in sorted order, with each method's
- * side-effect + auth-field sub-diffs grouped together.
+ * input-shape, side-effect, rate-limit, and auth-field sub-diffs grouped
+ * together.
  */
 export const diff_action_manifests = (
 	a: ActionManifest,
@@ -89,6 +98,9 @@ export const diff_action_manifests = (
 		if (!eb) {
 			diffs.push({ kind: 'method_only_in', where: 'a', method });
 			continue;
+		}
+		if (ea.input !== eb.input) {
+			diffs.push({ kind: 'input_differs', method, a: ea.input, b: eb.input });
 		}
 		if (ea.side_effects !== eb.side_effects) {
 			diffs.push({ kind: 'side_effects_differ', method, a: ea.side_effects, b: eb.side_effects });
@@ -134,6 +146,9 @@ export const format_action_manifest_diffs = (
 		switch (d.kind) {
 			case 'method_only_in':
 				lines.push(`  method ${d.method} only in ${where_label(d.where)}`);
+				break;
+			case 'input_differs':
+				lines.push(`  ${d.method} input differs: ${label_a}=${d.a}, ${label_b}=${d.b}`);
 				break;
 			case 'side_effects_differ':
 				lines.push(`  ${d.method} side_effects differs: ${label_a}=${d.a}, ${label_b}=${d.b}`);

@@ -261,8 +261,9 @@ per-method auth shape.
 
 - `cross_backend/action_manifest.ts` — `ActionManifest` / `ActionManifestEntry`
   Zod schema (the `_testing_action_manifest` wire validator) + `build_action_manifest(specs)`,
-  which normalizes each spec to `{method, side_effects, account, actor, roles,
-credential_types, rate_limit}` (auth axes pass through; `roles` /
+  which normalizes each spec to `{method, input, side_effects, account, actor, roles,
+credential_types, rate_limit}` (`input` is `'void'` for a `z.void()` input, by
+  `is_void_schema`, else `'object'` — the Rust `InputShape`; auth axes pass through; `roles` /
   `credential_types` flatten to sorted arrays; `rate_limit` is the declared
   class or an explicit `null`, so a missing key reads as drift rather than a
   default). Twin of `schema_introspect.ts`. Excludes the protocol actions
@@ -273,8 +274,8 @@ credential_types, rate_limit}` (auth axes pass through; `roles` /
   including them would be a spurious cross-impl diff.
 - `cross_backend/action_manifest_parity.ts` — `diff_action_manifests` /
   `format_action_manifest_diffs` / `assert_action_manifests_equal` (twin of
-  `schema_parity.ts`) — asserts exact method-set + per-method auth-shape parity.
-  `ActionManifestDiff` kinds: `method_only_in`, `side_effects_differ`,
+  `schema_parity.ts`) — asserts exact method-set + per-method input-shape and
+  auth-shape parity. `ActionManifestDiff` kinds: `method_only_in`, `input_differs`, `side_effects_differ`,
   `rate_limit_differs`, `auth_field_differs`, `auth_list_differs`.
 - `cross_backend/setup.ts` `capture_action_manifest(handle)` — dumps a backend's
   manifest over the daemon-token `_testing_action_manifest` channel (twin of

@@ -23,6 +23,7 @@ import type {
 
 const entry = (overrides: Partial<ActionManifestEntry> = {}): ActionManifestEntry => ({
 	method: 'm',
+	input: 'object',
 	side_effects: false,
 	account: 'required',
 	actor: 'none',
@@ -57,6 +58,14 @@ describe('diff_action_manifests', () => {
 			{ kind: 'method_only_in', where: 'a', method: 'only_a' },
 			{ kind: 'method_only_in', where: 'b', method: 'only_b' }
 		]);
+	});
+
+	test('input_differs', () => {
+		const diffs = diff_action_manifests(
+			manifest(entry({ method: 'm', input: 'void' })),
+			manifest(entry({ method: 'm', input: 'object' }))
+		);
+		assert.deepStrictEqual(diffs, [{ kind: 'input_differs', method: 'm', a: 'void', b: 'object' }]);
 	});
 
 	test('side_effects_differ', () => {
@@ -188,6 +197,14 @@ describe('format_action_manifest_diffs', () => {
 		);
 		assert.match(rendered, /ts=false/);
 		assert.match(rendered, /rust=true/);
+	});
+
+	test('input drift renders both sides', () => {
+		const rendered = format_action_manifest_diffs(
+			[{ kind: 'input_differs', method: 'account_verify', a: 'void', b: 'object' }],
+			{ a: 'ts', b: 'rust' }
+		);
+		assert.match(rendered, /account_verify input differs: ts=void, rust=object/);
 	});
 
 	test('rate_limit drift renders both sides, null included', () => {

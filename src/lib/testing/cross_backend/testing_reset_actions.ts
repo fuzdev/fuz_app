@@ -614,8 +614,9 @@ export const create_testing_shorten_credential_expiry_action = (): RpcAction =>
 
 /**
  * `_testing_action_manifest` — dump the backend's live RPC method set as a
- * normalized `ActionManifest` (one entry per method: `{method, side_effects,
- * account, actor, roles, credential_types}`) for cross-impl parity diffing.
+ * normalized `ActionManifest` (one entry per method: `{method, input,
+ * side_effects, account, actor, roles, credential_types, rate_limit}`) for
+ * cross-impl parity diffing.
  * The action-surface twin of `_testing_schema_snapshot`: where that
  * introspects the live *database*, this introspects the live *RPC registry*.
  * The cross-backend harness calls it on each backend, then
@@ -644,7 +645,7 @@ export const testing_action_manifest_action_spec = {
 	async: true,
 	description:
 		'Test-binary only — dump the live RPC registry as a normalized ' +
-		'{method, auth, side_effects, rate_limit} manifest for cross-impl method-set + ' +
+		'{method, input, auth, side_effects, rate_limit} manifest for cross-impl method-set + ' +
 		'auth-shape parity diffing.'
 } as const satisfies RequestResponseActionSpec;
 
