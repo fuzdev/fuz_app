@@ -823,6 +823,352 @@ describe('AuditLogState.subscribe', () => {
 			await state.fetch();
 			assert.strictEqual(state.gap_fill.error, null);
 		});
+
+		describe('a superseded fill', () => {
+			test('a reopen while a fill is in flight fills from that fill, not past live rows', async () => {
+				const gap = make_deferred<{ events: Array<AuditLogEventWithUsernamesJson> }>();
+				const rpc: AuditLogRpc = {
+					list: vi
+						.fn()
+						.mockResolvedValueOnce({ events: [make_event(1)] })
+						.mockReturnValueOnce(gap.promise)
+						.mockResolvedValue({ events: [make_event(2), make_event(3), make_event(4)] }),
+					role_grant_history: vi.fn()
+				};
+				const state = new AuditLogState({ get_rpc: () => rpc });
+				await state.fetch();
+				state.subscribe();
+				const source = latest_source();
+				source.open();
+				source.emit(make_event(5));
+				source.fail(false);
+				source.open();
+				await settle();
+				gap.resolve({ events: [] });
+				await settle();
+
+				assert.deepStrictEqual(vi.mocked(rpc.list).mock.calls[2]?.[0], {
+					since_seq: 1,
+					limit: AUDIT_LOG_LIST_LIMIT_MAX
+				});
+				assert.deepStrictEqual(seqs(state), [5, 4, 3, 2, 1]);
+			});
+
+			test('a reopen while a deferred fill is in flight fills from the fetched page', async () => {
+				const list = make_deferred<{ events: Array<AuditLogEventWithUsernamesJson> }>();
+				const gap = make_deferred<{ events: Array<AuditLogEventWithUsernamesJson> }>();
+				const rpc: AuditLogRpc = {
+					list: vi
+						.fn()
+						.mockReturnValueOnce(list.promise)
+						.mockReturnValueOnce(gap.promise)
+						.mockResolvedValue({ events: [make_event(11), make_event(12)] }),
+					role_grant_history: vi.fn()
+				};
+				const state = new AuditLogState({ get_rpc: () => rpc });
+				const fetching = state.fetch({ event_type: 'login' });
+				state.subscribe({ event_type: 'login' });
+				const source = latest_source();
+				source.open();
+				list.resolve({ events: [make_event(10)] });
+				await fetching;
+				assert.isTrue(state.gap_fill.loading);
+				source.emit(make_event(13));
+				source.fail(false);
+				source.open();
+				await settle();
+				gap.resolve({ events: [] });
+				await settle();
+
+				assert.deepStrictEqual(vi.mocked(rpc.list).mock.calls[2]?.[0], {
+					event_type: 'login',
+					since_seq: 10,
+					limit: AUDIT_LOG_LIST_LIMIT_MAX
+				});
+				assert.deepStrictEqual(seqs(state), [13, 12, 11, 10]);
+			});
+
+			test('a retry after the stream closed during a fill fills from that fill', async () => {
+				const gap = make_deferred<{ events: Array<AuditLogEventWithUsernamesJson> }>();
+				const rpc: AuditLogRpc = {
+					list: vi
+						.fn()
+						.mockResolvedValueOnce({ events: [make_event(1)] })
+						.mockReturnValueOnce(gap.promise)
+						.mockResolvedValue({ events: [make_event(2), make_event(3)] }),
+					role_grant_history: vi.fn()
+				};
+				const state = new AuditLogState({ get_rpc: () => rpc });
+				await state.fetch();
+				state.subscribe();
+				latest_source().open();
+				latest_source().emit(make_event(5));
+				latest_source().fail(true);
+				assert.strictEqual(state.stream_status, 'closed');
+
+				state.subscribe();
+				latest_source().open();
+				await settle();
+				gap.resolve({ events: [] });
+				await settle();
+
+				assert.strictEqual(vi.mocked(rpc.list).mock.calls[2]?.[0]?.since_seq, 1);
+				assert.deepStrictEqual(seqs(state), [5, 3, 2, 1]);
+			});
+
+			test('a failed fill is retried from its start on the next open', async () => {
+				const { rpc, calls } = make_list_rpc([make_event(1)], new Error('gap failed'), []);
+				const state = new AuditLogState({ get_rpc: () => rpc });
+				await state.fetch();
+				state.subscribe();
+				const source = latest_source();
+				source.open();
+				await settle();
+				assert.strictEqual(state.gap_fill.error, 'gap failed');
+				source.emit(make_event(5));
+
+				source.fail(false);
+				source.open();
+				await settle();
+
+				assert.strictEqual(calls[2]?.since_seq, 1);
+				assert.strictEqual(state.gap_fill.error, null);
+			});
+
+			test('a refresh that aborts a fill and fails leaves the fill owed', async () => {
+				const gap = make_deferred<{ events: Array<AuditLogEventWithUsernamesJson> }>();
+				const rpc: AuditLogRpc = {
+					list: vi
+						.fn()
+						.mockResolvedValueOnce({ events: [make_event(1)] })
+						.mockReturnValueOnce(gap.promise)
+						.mockRejectedValueOnce(new Error('refresh failed'))
+						.mockResolvedValue({ events: [] }),
+					role_grant_history: vi.fn()
+				};
+				const state = new AuditLogState({ get_rpc: () => rpc });
+				await state.fetch();
+				state.subscribe();
+				const source = latest_source();
+				source.open();
+				source.emit(make_event(5));
+				await state.fetch();
+				assert.strictEqual(state.list.error, 'refresh failed');
+				gap.resolve({ events: [make_event(2)] });
+				await settle();
+
+				source.fail(false);
+				source.open();
+				await settle();
+
+				assert.strictEqual(vi.mocked(rpc.list).mock.calls[3]?.[0]?.since_seq, 1);
+			});
+
+			test('a fill that commits clears what it owed', async () => {
+				const { rpc, calls } = make_list_rpc([make_event(1)], [make_event(2)], []);
+				const state = new AuditLogState({ get_rpc: () => rpc });
+				await state.fetch();
+				state.subscribe();
+				const source = latest_source();
+				source.open();
+				await settle();
+				source.emit(make_event(5));
+
+				source.fail(false);
+				source.open();
+				await settle();
+
+				assert.strictEqual(calls[2]?.since_seq, 5);
+			});
+
+			test('a fetch clears what a failed fill owed', async () => {
+				const { rpc, calls } = make_list_rpc([make_event(1)], new Error('gap failed'), [
+					make_event(4)
+				]);
+				const state = new AuditLogState({ get_rpc: () => rpc });
+				await state.fetch();
+				state.subscribe();
+				const source = latest_source();
+				source.open();
+				await settle();
+				await state.fetch();
+
+				source.fail(false);
+				source.open();
+				await settle();
+
+				assert.strictEqual(calls[3]?.since_seq, 4);
+			});
+		});
+
+		test('an open during a newest-page fetch defers its fill to that fetch', async () => {
+			const list = make_deferred<{ events: Array<AuditLogEventWithUsernamesJson> }>();
+			const rpc: AuditLogRpc = {
+				list: vi
+					.fn()
+					.mockResolvedValueOnce({ events: [make_event(8)] })
+					.mockReturnValueOnce(list.promise)
+					.mockResolvedValue({ events: [make_event(11)] }),
+				role_grant_history: vi.fn()
+			};
+			const state = new AuditLogState({ get_rpc: () => rpc });
+			await state.fetch();
+			const fetching = state.fetch();
+			state.subscribe();
+			const source = latest_source();
+			source.open();
+			source.emit(make_event(12));
+			source.fail(false);
+			source.open();
+			await settle();
+			// neither open filled past the page the fetch hasn't answered yet
+			assert.strictEqual(vi.mocked(rpc.list).mock.calls.length, 2);
+
+			list.resolve({ events: [make_event(10)] });
+			await fetching;
+			await settle();
+
+			assert.deepStrictEqual(vi.mocked(rpc.list).mock.calls[2]?.[0], {
+				since_seq: 10,
+				limit: AUDIT_LOG_LIST_LIMIT_MAX
+			});
+			assert.deepStrictEqual(seqs(state), [12, 11, 10]);
+		});
+
+		test('an open deferred to a newest-page fetch that fails still owes its range', async () => {
+			const list = make_deferred<{ events: Array<AuditLogEventWithUsernamesJson> }>();
+			const rpc: AuditLogRpc = {
+				list: vi
+					.fn()
+					.mockResolvedValueOnce({ events: [make_event(1)] })
+					.mockReturnValueOnce(list.promise)
+					.mockResolvedValue({ events: [make_event(2), make_event(3), make_event(4)] }),
+				role_grant_history: vi.fn()
+			};
+			const state = new AuditLogState({ get_rpc: () => rpc });
+			await state.fetch();
+			const fetching = state.fetch();
+			state.subscribe();
+			const source = latest_source();
+			source.open();
+			list.reject(new Error('refresh failed'));
+			await fetching;
+			assert.ok(state.list.error);
+			source.emit(make_event(5));
+			source.fail(false);
+			source.open();
+			await settle();
+
+			// the reopen fills from the deferred open's anchor, not past the live row
+			assert.deepStrictEqual(vi.mocked(rpc.list).mock.calls[2]?.[0], {
+				since_seq: 1,
+				limit: AUDIT_LOG_LIST_LIMIT_MAX
+			});
+			assert.deepStrictEqual(seqs(state), [5, 4, 3, 2, 1]);
+		});
+
+		test('an open deferred to a newest-page fetch keeps an earlier fill range it owes', async () => {
+			const gap = make_deferred<{ events: Array<AuditLogEventWithUsernamesJson> }>();
+			const list = make_deferred<{ events: Array<AuditLogEventWithUsernamesJson> }>();
+			const rpc: AuditLogRpc = {
+				list: vi
+					.fn()
+					.mockResolvedValueOnce({ events: [make_event(1)] })
+					.mockReturnValueOnce(gap.promise)
+					.mockReturnValueOnce(list.promise)
+					.mockResolvedValue({ events: [make_event(2), make_event(3), make_event(4)] }),
+				role_grant_history: vi.fn()
+			};
+			const state = new AuditLogState({ get_rpc: () => rpc });
+			await state.fetch();
+			state.subscribe();
+			const source = latest_source();
+			source.open();
+			// a live row advances the anchor past the fill still in flight
+			source.emit(make_event(5));
+			// the refresh aborts the fill, and the reopen during it defers
+			const fetching = state.fetch();
+			source.fail(false);
+			source.open();
+			list.reject(new Error('refresh failed'));
+			await fetching;
+			source.fail(false);
+			source.open();
+			await settle();
+
+			// the next fill starts where the aborted one did, not at the deferring anchor
+			assert.deepStrictEqual(vi.mocked(rpc.list).mock.calls[3]?.[0], {
+				since_seq: 1,
+				limit: AUDIT_LOG_LIST_LIMIT_MAX
+			});
+			assert.deepStrictEqual(seqs(state), [5, 4, 3, 2, 1]);
+		});
+
+		test('an open during a later-page fetch fills at once', async () => {
+			const page = make_deferred<{ events: Array<AuditLogEventWithUsernamesJson> }>();
+			const rpc: AuditLogRpc = {
+				list: vi
+					.fn()
+					.mockResolvedValueOnce({ events: [make_event(3)] })
+					.mockReturnValueOnce(page.promise)
+					.mockResolvedValue({ events: [] }),
+				role_grant_history: vi.fn()
+			};
+			const state = new AuditLogState({ get_rpc: () => rpc });
+			await state.fetch();
+			const paging = state.fetch({ offset: 50 });
+			state.subscribe();
+			latest_source().open();
+			await settle();
+
+			// a later page doesn't cover the newest events, so the open doesn't wait on it
+			assert.deepStrictEqual(vi.mocked(rpc.list).mock.calls[2]?.[0], {
+				since_seq: 3,
+				limit: AUDIT_LOG_LIST_LIMIT_MAX
+			});
+			page.resolve({ events: [] });
+			await paging;
+		});
+
+		test('a later-page fetch under another filter keeps a fill from merging', async () => {
+			const gap = make_deferred<{ events: Array<AuditLogEventWithUsernamesJson> }>();
+			const logout = make_event(0, { event_type: 'logout' });
+			const rpc: AuditLogRpc = {
+				list: vi
+					.fn()
+					.mockResolvedValueOnce({ events: [make_event(1)] })
+					.mockReturnValueOnce(gap.promise)
+					.mockResolvedValueOnce({ events: [logout] })
+					.mockResolvedValue({ events: [] }),
+				role_grant_history: vi.fn()
+			};
+			const state = new AuditLogState({ get_rpc: () => rpc });
+			await state.fetch();
+			state.subscribe();
+			latest_source().open();
+			await state.fetch({ event_type: 'logout', offset: 50 });
+			gap.resolve({ events: [make_event(2), make_event(3)] });
+			await settle();
+
+			assert.deepStrictEqual(seqs(state), [0]);
+		});
+
+		test('a later page does not run a deferred fill, which waits for the newest page', async () => {
+			const { rpc, calls } = make_list_rpc([make_event(3)], [make_event(9)], []);
+			const state = new AuditLogState({ get_rpc: () => rpc });
+			state.subscribe();
+			latest_source().open();
+			await settle();
+			assert.strictEqual(calls.length, 0);
+
+			await state.fetch({ offset: 50 });
+			await settle();
+			assert.strictEqual(calls.length, 1);
+
+			await state.fetch();
+			await settle();
+			assert.deepStrictEqual(calls[2], { since_seq: 9, limit: AUDIT_LOG_LIST_LIMIT_MAX });
+		});
 	});
 });
 

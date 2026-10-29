@@ -499,18 +499,23 @@ the `submit_*` prefix where the verb collides with a slot name.
   reconnect is refused; `subscribe` again to retry), `gap_truncated` (a gap
   fill returned a full `AUDIT_LOG_LIST_LIMIT_MAX` page, so events may be
   missing). Internal `#last_seq` anchors the gap fill (`fetch` sets it from
-  its result, `0` for an empty first page). Methods: `fetch(options?)` (RPC;
-  clears `gap_truncated` and a failed `gap_fill`, and a newest-page fetch
-  aborts an in-flight fill; mid-stream it keeps live events newer than the
-  page that match its filter), `fetch_role_grant_history`,
+  its result, `0` for an empty first page), and `#fill_since` keeps the start
+  a fill still owes — one a reopen, retry or failure cut short, or an open
+  deferred to a newest-page `fetch` that failed — so the next fill starts
+  there rather than past the live rows that arrived meanwhile. Methods:
+  `fetch(options?)` (RPC; clears `gap_truncated` and a failed `gap_fill`,
+  and a newest-page fetch aborts an in-flight fill; mid-stream it keeps
+  live events newer than the page that match its filter),
+  `fetch_role_grant_history`,
   `subscribe(filter?: AuditLogFilter)` (opens `EventSource` at
   `#stream_url`, default `/api/admin/audit/stream`; keeps live events that
   pass the filter and gap-fills via `since_seq` with the same filter — only
   while `events` was fetched with that filter: an open the list doesn't
-  match defers its fill to the `fetch` with the stream's filter, which fills
-  from its page, and live events under another filter merge only when they
-  match the list's, without advancing the anchor), `disconnect()` (also
-  aborts an in-flight gap fill). Live and
+  match, or one during a newest-page `fetch`, defers its fill to the `fetch`
+  with the stream's filter, which fills from its page; a fill merges only
+  while the list keeps its filter; and live events under another filter
+  merge only when they match the list's, without advancing the anchor),
+  `disconnect()` (also aborts an in-flight gap fill). Live and
   gap rows merge by `seq`, deduplicated by `id`, so `events` stays
   newest-first. `audit_log_filter_matches(event, filter)` is the client-side
   twin of the list query's filter. SSE stays on `EventSource` — streaming is

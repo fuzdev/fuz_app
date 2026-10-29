@@ -146,7 +146,9 @@ export const AuditLogListInput = z
 			description: 'Filter by outcome (`success` or `failure`).',
 			invalid_reason: ERROR_OUTCOME_INVALID
 		}),
-		account_id: Uuid.nullish().meta({ description: 'Filter by actor account id.' }),
+		account_id: Uuid.nullish().meta({
+			description: 'Filter by account id — matches the actor or the target account.'
+		}),
 		limit: z
 			.number()
 			.int()

@@ -134,15 +134,31 @@ export class AuditLogState {
 	/**
 	 * The highest `seq` the list covers — the gap-fill anchor. `fetch` sets it
 	 * from its result (`0` for an empty first page, which covers everything up
-	 * to then), and gap-filled events and live events under the list's filter
-	 * advance it.
+	 * to then), and gap-filled events and live events while the stream's filter
+	 * is the list's advance it.
 	 */
 	#last_seq: number | null = null;
 
 	/**
-	 * Whether the stream's last open skipped its gap fill (the list had no anchor
-	 * or another filter), so the `fetch` that anchors the list under the stream's
-	 * filter runs it.
+	 * The oldest `seq` a gap fill owes from — set when a fill starts, or when an
+	 * open defers its fill to an in-flight newest-page fetch, and cleared when a
+	 * fill commits or a fetch replaces the list. A fill aborted by a reopen or a
+	 * retry, one that failed, or a deferring fetch that failed leaves it, so the
+	 * next fill starts from there instead of past the live rows that arrived
+	 * meanwhile. Never above `#last_seq`, which only rises while it is set.
+	 */
+	#fill_since: number | null = null;
+
+	/**
+	 * Whether the latest `fetch` is for the newest page — with `list.loading`,
+	 * whether a newest-page fetch is in flight.
+	 */
+	#fetching_newest = false;
+
+	/**
+	 * Whether the stream's last open skipped its gap fill (the list had no
+	 * anchor or another filter, or a newest-page fetch was in flight), so the
+	 * `fetch` that anchors the list under the stream's filter runs it.
 	 */
 	#fill_deferred = false;
 
@@ -170,7 +186,8 @@ export class AuditLogState {
 	 * that match the fetch's filter are kept, so a fetch answering mid-stream
 	 * doesn't drop them. A newest-page fetch aborts an in-flight gap fill, which
 	 * its own query covers, and when the stream opened before the list matched
-	 * its filter, runs that open's gap fill from the fetched page.
+	 * its filter or while the fetch was in flight, runs that open's gap fill
+	 * from the fetched page.
 	 *
 	 * @param options - the list input; its filter fields become the list's filter
 	 * @mutates `this`
@@ -180,6 +197,7 @@ export class AuditLogState {
 		const newest_page = !options?.offset;
 		// the fill covers up to the stream's open, which this newer query covers too
 		if (newest_page) this.gap_fill.abort();
+		this.#fetching_newest = newest_page;
 		await this.list.run(async (signal) => {
 			const { events } = await this.#get_rpc().list(options);
 			// a superseded fetch must not overwrite a newer one's list
@@ -195,6 +213,7 @@ export class AuditLogState {
 			// a fresh list supersedes what an earlier gap fill missed
 			this.gap_truncated = false;
 			if (this.gap_fill.failed) this.gap_fill.reset();
+			this.#fill_since = null;
 			const stream_matches =
 				this.#event_source !== null && filters_equal(filter, this.#stream_filter);
 			// the stream opened before this list matched it, so events between this
@@ -253,10 +272,19 @@ export class AuditLogState {
 			if (DEV) console.log('[audit_log_sse] connected');
 			this.stream_status = 'open';
 			// fill any gap from before this open, or leave it to the fetch that
-			// anchors the list under the stream's filter
-			const fill = this.#last_seq != null && filters_equal(this.#list_filter, this.#stream_filter);
+			// anchors the list under the stream's filter — an in-flight newest-page
+			// fetch included, whose page may predate live rows already merged
+			const anchored =
+				this.#last_seq !== null && filters_equal(this.#list_filter, this.#stream_filter);
+			const fill = anchored && !(this.#fetching_newest && this.list.loading);
 			this.#fill_deferred = !fill;
-			if (fill) void this.#fill_gap(this.#last_seq!);
+			if (fill) {
+				void this.#fill_gap(this.#last_seq!);
+			} else if (anchored) {
+				// the fetch fills from its page when it commits; if it fails, the next
+				// fill still owes this open's range
+				this.#fill_since ??= this.#last_seq;
+			}
 		};
 
 		source.onmessage = (e) => {
@@ -310,15 +338,21 @@ export class AuditLogState {
 
 	/**
 	 * Fetch the events missed before the stream (re)opened, with the stream's
-	 * filter. A full page means the gap may hold more than the limit returns.
+	 * filter, from the start a fill still owes (`#fill_since`) or `since_seq`. A
+	 * full page means the gap may hold more than the limit returns.
 	 */
 	async #fill_gap(since_seq: number): Promise<void> {
 		const filter = this.#stream_filter;
+		const from = this.#fill_since ?? since_seq;
+		this.#fill_since = from;
 		await this.gap_fill.run(async (signal) => {
 			const limit = AUDIT_LOG_LIST_LIMIT_MAX;
-			const { events } = await this.#get_rpc().list({ ...filter, since_seq, limit });
+			const { events } = await this.#get_rpc().list({ ...filter, since_seq: from, limit });
 			// a disconnect or a newer fill aborted this one, maybe under another filter
 			if (signal.aborted) return;
+			// a later-page fetch under another filter replaced the list meanwhile
+			if (!filters_equal(this.#list_filter, filter)) return;
+			this.#fill_since = null;
 			if (events.length >= limit) this.gap_truncated = true;
 			this.#merge(events, true, true);
 		});
