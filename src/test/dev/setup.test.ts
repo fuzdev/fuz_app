@@ -5,7 +5,7 @@
  */
 
 import { test, describe, assert } from 'vitest';
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -32,6 +32,12 @@ const with_temp_dir = async (fn: (dir: string) => Promise<void>): Promise<void> 
 		await rm(dir, { recursive: true, force: true });
 	}
 };
+
+/** A node runtime whose `HOME` is `home`, so the default state dir lands in a temp dir. */
+const create_home_runtime = (home: string) => ({
+	...create_node_runtime([]),
+	env_get: (name: string) => (name === 'HOME' ? home : undefined)
+});
 
 /** A value `String.replace` would splice and an unquoted write would truncate. */
 const TRICKY_DATABASE_URL = `postgres://app:p$'a$&s$\`s "q" #x@localhost:5432/app db`;
@@ -106,25 +112,28 @@ describe('generate_cookie_key', () => {
 });
 
 describe('setup_bootstrap_token', () => {
-	test('writes 32 random bytes as 64 lowercase hex + LF at mode 0600', async () => {
+	test('writes 32 random bytes as 64 lowercase hex + LF at mode 0600 under ~/.{app_name}', async () => {
 		await with_temp_dir(async (dir) => {
-			const state_dir = join(dir, 'state');
-			const result = await setup_bootstrap_token(create_node_runtime(), 'app', {
-				state_dir,
+			const result = await setup_bootstrap_token(create_home_runtime(dir), 'app', {
 				log: silent_log
 			});
+			const state_dir = join(dir, '.app');
 			const token_path = join(state_dir, 'secret_bootstrap_token');
 			assert.deepStrictEqual(result, { created: true, token_path });
 			assert.match(await readFile(token_path, 'utf-8'), /^[0-9a-f]{64}\n$/);
 			assert.strictEqual((await stat(token_path)).mode & 0o777, 0o600);
+			assert.strictEqual((await stat(state_dir)).mode & 0o777, 0o700);
+			// the atomic write leaves no temp file beside the token
+			assert.deepStrictEqual(await readdir(state_dir), ['secret_bootstrap_token']);
 		});
 	});
 
 	test('keeps an existing token; reset mints a fresh one', async () => {
 		await with_temp_dir(async (dir) => {
-			const runtime = create_node_runtime();
-			const options = { state_dir: dir, log: silent_log };
-			const token_path = join(dir, 'secret_bootstrap_token');
+			const runtime = create_home_runtime(dir);
+			const options = { log: silent_log };
+			const state_dir = join(dir, '.app');
+			const token_path = join(state_dir, 'secret_bootstrap_token');
 			await setup_bootstrap_token(runtime, 'app', options);
 			const first = await readFile(token_path, 'utf-8');
 
@@ -137,6 +146,41 @@ describe('setup_bootstrap_token', () => {
 			const second = await readFile(token_path, 'utf-8');
 			assert.match(second, /^[0-9a-f]{64}\n$/);
 			assert.notStrictEqual(second, first);
+			assert.deepStrictEqual(await readdir(state_dir), ['secret_bootstrap_token']);
+		});
+	});
+
+	test('renames the token into place', async () => {
+		await with_temp_dir(async (dir) => {
+			const runtime = create_home_runtime(dir);
+			const renamed: Array<string> = [];
+			const result = await setup_bootstrap_token(
+				{
+					...runtime,
+					rename: async (old_path, new_path) => {
+						renamed.push(new_path);
+						await runtime.rename(old_path, new_path);
+					}
+				},
+				'app',
+				{ log: silent_log }
+			);
+			assert.deepStrictEqual(renamed, [result.token_path]);
+		});
+	});
+
+	test('a `state_dir` override replaces the HOME default', async () => {
+		await with_temp_dir(async (dir) => {
+			const state_dir = join(dir, 'state');
+			const result = await setup_bootstrap_token(create_home_runtime(dir), 'app', {
+				state_dir,
+				log: silent_log
+			});
+			assert.deepStrictEqual(result, {
+				created: true,
+				token_path: join(state_dir, 'secret_bootstrap_token')
+			});
+			assert.deepStrictEqual(await readdir(dir), ['state']);
 		});
 	});
 });
