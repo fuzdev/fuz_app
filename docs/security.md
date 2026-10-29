@@ -1894,8 +1894,11 @@ client may reuse bytes whose authorizing cell grant has since been revoked.
 reference the requested hash all return the **same 404** — never 403, never a
 response that distinguishes "this fact exists elsewhere" from "no such edge."
 Neither the existence of a fact nor the existence of a cell→fact edge leaks
-through the public surface. This is the same 404-over-403 mask the cell surface
-uses (see Authorization, "404-over-403 is the general mask").
+through the public surface. The view check runs before the edge check, so an
+unviewable cell does the same work whether or not it references the hash —
+the edge doesn't leak through response timing either. This is the same
+404-over-403 mask the cell surface uses (see Authorization, "404-over-403 is
+the general mask").
 
 **The bare-hash endpoint is admin-only.**
 

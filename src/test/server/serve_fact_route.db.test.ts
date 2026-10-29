@@ -47,6 +47,7 @@ import { chmod, mkdtemp, readdir, readlink, realpath, rm } from 'node:fs/promise
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { Db } from '#lib/db/db.ts';
 import { PgFactStore } from '#lib/db/fact_store.ts';
 import type { FactHash } from '@fuzdev/fuz_util/hash_schemas.ts';
 import { ERROR_INVALID_QUERY_PARAMS, ERROR_INVALID_ROUTE_PARAMS } from '#lib/http/error_schemas.ts';
@@ -64,6 +65,9 @@ import type { Uuid } from '#lib/primitive_schemas.ts';
 import { describe_db } from '../cell_db_fixture.ts';
 
 const PUBLIC_HEADERS = { host: 'localhost:5173', origin: TEST_ORIGIN };
+
+/** A well-formed hash no seeded cell references. */
+const UNREFERENCED_HASH = `blake3:${'0'.repeat(64)}`;
 
 const encode = (s: string): Uint8Array => new TextEncoder().encode(s);
 
@@ -244,6 +248,55 @@ describe_db('serve_fact_route', (get_db) => {
 		assert.strictEqual(as_owner.status, 200);
 		const back = new Uint8Array(await as_owner.arrayBuffer());
 		assert.deepEqual(back, bytes);
+	});
+
+	test('a non-viewer does the same reads whether or not the private cell references the hash', async () => {
+		// The view check runs before the edge check, so a caller that can't
+		// view a cell can't time its refs: a referenced hash and an unreferenced
+		// one issue the same statements and answer the same bodyless 404.
+		const recorded: Array<string> = [];
+		const inner = get_db();
+		const recording_db = new Db({
+			client: {
+				query: <T>(text: string, values?: Array<unknown>) => {
+					recorded.push(text);
+					return inner.client.query<T>(text, values);
+				}
+			},
+			transaction: (fn) => inner.transaction(fn)
+		});
+		const app = await create_cell_test_app(() => recording_db);
+		const owner = await app.create_account({ username: 'fact_order_owner' });
+		const other = await app.create_account({ username: 'fact_order_other' });
+		const hash = await put_embedded(encode('order secret'), 'text/plain', owner.actor.id);
+		const cell = await create_cell(app, {
+			kind: 'image',
+			data: { cover: hash }, // private (default visibility)
+			headers: owner.create_session_headers()
+		});
+
+		const ask = async (
+			asked: string,
+			headers?: Record<string, string>
+		): Promise<{ status: number; body: string; reads: Array<string> }> => {
+			recorded.length = 0;
+			const res = await get_cell_fact(app, cell.id, asked, headers);
+			return { status: res.status, body: await res.text(), reads: [...recorded] };
+		};
+
+		for (const [caller, headers] of [
+			['anonymous', undefined],
+			['signed-in non-viewer', other.create_session_headers()]
+		] as const) {
+			// the signed-in arm carries the order pin (anonymous makes no queries)
+			// warm the caller's session so a once-per-window touch can't skew the traces
+			await ask(UNREFERENCED_HASH, headers);
+			const referenced = await ask(hash, headers);
+			const unreferenced = await ask(UNREFERENCED_HASH, headers);
+			assert.strictEqual(referenced.status, 404, caller);
+			assert.strictEqual(referenced.body, '', caller);
+			assert.deepEqual(unreferenced, referenced, caller);
+		}
 	});
 
 	test('bare-hash endpoint is admin-only: anon → 403, non-admin → 403, admin → 200', async () => {

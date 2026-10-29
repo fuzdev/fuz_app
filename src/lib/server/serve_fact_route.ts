@@ -86,7 +86,10 @@
  * 404 is the universal "not viewable" response: missing fact, missing or
  * unviewable cell, or the cell doesn't reference the hash. We deliberately
  * don't distinguish 403 from 404 — neither the existence of a fact nor the
- * existence of a cell→fact edge should leak through the public surface.
+ * existence of a cell→fact edge should leak through the public surface. The
+ * view check runs before the edge check, so an unviewable cell does the same
+ * work whether or not it references the hash — its refs don't leak through
+ * response timing either.
  *
  * A ref is a `data` string value that is exactly a fact hash
  * (`derive_cell_refs`) — a hash inside prose or markup is not one. So a doc
@@ -357,9 +360,11 @@ const build_public_request_context = async (
  *
  * Resolves the named cell (404 if missing / soft-deleted), requires
  * `can_view_cell(caller, cell)` — or the steward arm,
- * `cell_steward_admits` — AND `cell.refs` to include the hash
- * (else 404, masked), then serves the bytes. Authz is scoped to this one
- * `(cell, hash)` edge — never unioned across the fact's other referrers.
+ * `cell_steward_admits` — and then `cell.refs` to include the hash
+ * (else 404, masked), then serves the bytes. The view check runs first, so a
+ * caller that can't view the cell learns nothing about its refs. Authz is
+ * scoped to this one `(cell, hash)` edge — never unioned across the fact's
+ * other referrers.
  *
  * Pure-public auth — the handler builds the per-request `RequestContext`
  * from the resolved account id (`get_public_account_id`) and enforces
@@ -391,15 +396,10 @@ export const create_serve_cell_fact_route_spec = (
 				return c.body(null, 404);
 			}
 
-			// The cell→fact edge: the cell must actually reference the hash.
-			// `cell.refs` is auto-derived from `data` on every write, so this is
-			// the authoritative "does this cell reference these bytes" check.
-			// Missing edge → 404 (masked), never "exists elsewhere".
-			if (!cell.refs?.includes(hash)) {
-				return c.body(null, 404);
-			}
-
-			// Per-reference view check — scoped to *this* cell only.
+			// Per-reference view check — scoped to *this* cell only. It runs
+			// before the edge check, so a cell the caller can't view does the
+			// same work, and answers the same 404, whether or not it references
+			// the hash — the edge stays unobservable to a non-viewer.
 			const req_ctx = await build_public_request_context(c, route);
 			// Unauthenticated callers skip the grant fetch entirely — no grant
 			// can admit a null req_ctx (the only admit path is the
@@ -416,6 +416,14 @@ export const create_serve_cell_fact_route_spec = (
 				!(await cell_steward_admits({ db: route.db }, req_ctx, cell))
 			) {
 				// 404 (not 403) so an unviewable cell→fact edge doesn't leak.
+				return c.body(null, 404);
+			}
+
+			// The cell→fact edge: the cell must actually reference the hash.
+			// `cell.refs` is auto-derived from `data` on every write, so this is
+			// the authoritative "does this cell reference these bytes" check.
+			// Missing edge → 404 (masked), never "exists elsewhere".
+			if (!cell.refs?.includes(hash)) {
 				return c.body(null, 404);
 			}
 

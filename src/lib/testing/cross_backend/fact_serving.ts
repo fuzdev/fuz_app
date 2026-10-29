@@ -17,6 +17,10 @@ import '../assert_dev_env.ts';
  * - **404-mask** — a missing cell and a viewable cell that doesn't reference
  *   the hash both 404 (never 403, never "exists elsewhere"), and every masked
  *   404 is bodyless, so its shape names no branch;
+ * - **unviewable cell hides its refs** — for a private cell the caller can't
+ *   view, a hash it references and one it doesn't answer the same masked 404
+ *   (the view check runs first, so the work done is the same too — each
+ *   spine's own suite pins that order);
  * - **hardening headers** — a served fact carries `X-Content-Type-Options:
  *   nosniff`, the `default-src 'none'; sandbox` CSP, and `Cache-Control:
  *   private, max-age=300`, whatever its content type;
@@ -301,6 +305,48 @@ export const describe_fact_serving_cross_tests = (options: FactServingCrossTestO
 				// A can read its own private cell's fact.
 				const a_via_a = await fact_get(t, cell_fact_path(a_cell, hash), a.create_session_headers());
 				assert.strictEqual(a_via_a.status, 200, 'A could not read its own private fact');
+			}
+		);
+
+		test_if(
+			capabilities.fact_serving,
+			'unviewable private cell: a referenced and an unreferenced hash answer alike',
+			async () => {
+				const fixture = await setup_test();
+				const owner = await fixture.create_account({ username: 'fact_unviewable_owner' });
+				const other = await fixture.create_account({ username: 'fact_unviewable_other' });
+				const hash = await cross_put_fact(fixture, rpc_path, {
+					content: 'unviewable-cell-bytes',
+					holder: owner.actor.id
+				});
+				const t = fixture.fresh_transport();
+				const cell_id = await create_cell_with_ref(
+					t,
+					owner.create_session_headers(),
+					hash,
+					'private'
+				);
+				const anon = fixture.fresh_transport({ origin: null });
+				// the view check runs before the edge check, so a caller that can't
+				// view the cell gets one answer whatever the cell references
+				for (const [label, transport, headers] of [
+					['anon', anon, {}],
+					['non-viewer', t, other.create_session_headers()]
+				] as const) {
+					const referenced = await fact_get(transport, cell_fact_path(cell_id, hash), headers);
+					const unreferenced = await fact_get(
+						transport,
+						cell_fact_path(cell_id, UNRELATED_HASH),
+						headers
+					);
+					assert_masked_404(referenced, `${label}: referenced hash`);
+					assert_masked_404(unreferenced, `${label}: unreferenced hash`);
+					assert.strictEqual(
+						unreferenced.content_type,
+						referenced.content_type,
+						`${label}: content type differs`
+					);
+				}
 			}
 		);
 
