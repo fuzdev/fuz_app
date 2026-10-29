@@ -22,7 +22,6 @@ import type {
 import type { QueryDeps } from '../db/query_deps.ts';
 import { load_env_file, parse_dotenv } from '../env/dotenv.ts';
 import { update_env_content } from '../env/update_env_variable.ts';
-import { generate_random_base64url } from '../crypto.ts';
 import { write_file_atomic } from '../runtime/fs.ts';
 import {
 	query_account_by_username,
@@ -129,6 +128,13 @@ export const parse_db_name = (url: string): string | null => {
 };
 
 /**
+ * Mint an operator-facing secret: 32 random bytes as lowercase hex, the shape
+ * `openssl rand -hex 32` writes, so a hand-made secret and a generated one
+ * look the same.
+ */
+const generate_secret_hex = (): string => to_hex(crypto.getRandomValues(new Uint8Array(32)));
+
+/**
  * Generate a cookie signing key in-process: 32 random bytes, hex-encoded.
  *
  * Hex, not base64url: `SECRET_FUZ_COOKIE_KEYS` separates rotated keys with
@@ -136,7 +142,7 @@ export const parse_db_name = (url: string): string | null => {
  *
  * @returns a 64-character lowercase hex key
  */
-export const generate_cookie_key = (): string => to_hex(crypto.getRandomValues(new Uint8Array(32)));
+export const generate_cookie_key = (): string => generate_secret_hex();
 
 // === File helpers ===
 
@@ -244,8 +250,10 @@ export const setup_env_file = async (
 /**
  * Create a bootstrap token file if it doesn't exist.
  *
- * The token is a one-shot secret used to create the first admin account.
- * Stored at `~/.{app_name}/secret_bootstrap_token` by default.
+ * The token is a one-shot secret used to create the first admin account:
+ * 32 random bytes as 64 lowercase hex characters plus one LF, the file
+ * `openssl rand -hex 32` writes. Stored at
+ * `~/.{app_name}/secret_bootstrap_token` by default.
  *
  * @param deps - file and env capabilities
  * @param app_name - application name (used for default state directory)
@@ -280,7 +288,7 @@ export const setup_bootstrap_token = async (
 	// existing files), so its 0600 holds unconditionally; the server-side
 	// `read_secure_file` refuses anything laxer at read time.
 	await deps.mkdir(state_dir, { recursive: true, mode: 0o700 });
-	const token = generate_random_base64url();
+	const token = generate_secret_hex();
 	await write_file_atomic(deps, token_path, token + '\n', { mode: 0o600 });
 	log.ok(`Created ~/.${app_name}/secret_bootstrap_token (one-shot, deleted after first use)`);
 	return { created: true, token_path };

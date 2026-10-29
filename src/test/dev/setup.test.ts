@@ -1,5 +1,5 @@
 /**
- * Tests for dev/setup.ts — the read helpers and `setup_env_file`.
+ * Tests for dev/setup.ts — the read helpers, `setup_env_file`, and the bootstrap token.
  *
  * @module
  */
@@ -12,6 +12,8 @@ import { join } from 'node:path';
 import {
 	generate_cookie_key,
 	read_env_var,
+	reset_bootstrap_token,
+	setup_bootstrap_token,
 	setup_env_file,
 	type SetupLogger
 } from '#lib/dev/setup.ts';
@@ -100,6 +102,42 @@ describe('generate_cookie_key', () => {
 		const key = generate_cookie_key();
 		assert.match(key, /^[0-9a-f]{64}$/);
 		assert.notStrictEqual(generate_cookie_key(), key);
+	});
+});
+
+describe('setup_bootstrap_token', () => {
+	test('writes 32 random bytes as 64 lowercase hex + LF at mode 0600', async () => {
+		await with_temp_dir(async (dir) => {
+			const state_dir = join(dir, 'state');
+			const result = await setup_bootstrap_token(create_node_runtime(), 'app', {
+				state_dir,
+				log: silent_log
+			});
+			const token_path = join(state_dir, 'secret_bootstrap_token');
+			assert.deepStrictEqual(result, { created: true, token_path });
+			assert.match(await readFile(token_path, 'utf-8'), /^[0-9a-f]{64}\n$/);
+			assert.strictEqual((await stat(token_path)).mode & 0o777, 0o600);
+		});
+	});
+
+	test('keeps an existing token; reset mints a fresh one', async () => {
+		await with_temp_dir(async (dir) => {
+			const runtime = create_node_runtime();
+			const options = { state_dir: dir, log: silent_log };
+			const token_path = join(dir, 'secret_bootstrap_token');
+			await setup_bootstrap_token(runtime, 'app', options);
+			const first = await readFile(token_path, 'utf-8');
+
+			const kept = await setup_bootstrap_token(runtime, 'app', options);
+			assert.deepStrictEqual(kept, { created: false, token_path });
+			assert.strictEqual(await readFile(token_path, 'utf-8'), first);
+
+			const reset = await reset_bootstrap_token(runtime, 'app', options);
+			assert.deepStrictEqual(reset, { created: true, token_path });
+			const second = await readFile(token_path, 'utf-8');
+			assert.match(second, /^[0-9a-f]{64}\n$/);
+			assert.notStrictEqual(second, first);
+		});
 	});
 });
 

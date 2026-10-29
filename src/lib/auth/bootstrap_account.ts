@@ -87,9 +87,10 @@ const strip_one_trailing_newline = (bytes: Uint8Array): Uint8Array =>
  * The fewest bytes a bootstrap token holds, counted after its one optional
  * trailing LF. A shorter file is read as unreadable: an empty or `"\n"` file
  * would otherwise leave bootstrap advertised as open while nothing can ever
- * match it, and a short token is guessable. Every generator writes at least
- * this much (32 random bytes, base64url or hex encoded). Twin of the Rust
- * `BOOTSTRAP_TOKEN_MIN_BYTES` (`fuz_auth`).
+ * match it, and a short token is guessable. Every generator writes more
+ * (32 random bytes as 64 lowercase hex characters); the readers accept any
+ * bytes that clear this floor. Twin of the Rust `BOOTSTRAP_TOKEN_MIN_BYTES`
+ * (`fuz_auth`).
  */
 export const BOOTSTRAP_TOKEN_MIN_BYTES = 32;
 

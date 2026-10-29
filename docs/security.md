@@ -202,7 +202,8 @@ legitimate operator.
   logs an error naming the file. An empty or `"\n"` file would otherwise
   advertise an open window nothing can match, and a short token is guessable.
   The generators (`setup_bootstrap_token`, the deploy recipes) write 32 random
-  bytes encoded.
+  bytes as 64 lowercase hex characters plus one LF, what `openssl rand -hex 32`
+  writes.
 
 ## Session Security
 
