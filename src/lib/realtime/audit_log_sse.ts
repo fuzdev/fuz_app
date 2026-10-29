@@ -201,7 +201,7 @@ export const create_audit_log_sse = (options: {
 	 * streams — neither the handlers' closes nor the revocation guard, which
 	 * closes through the same closer. Pass `null` only for a registry no
 	 * revocation has to reach (tests of the registry itself), or when the
-	 * caller adds `create_sse_connection_closer(registry)` itself — as
+	 * caller adds `create_sse_connection_closer(registry, required_role)` itself — as
 	 * `create_app_server` does, to hold the remover `add` returns.
 	 */
 	connection_closer: RealtimeCloser | null;
