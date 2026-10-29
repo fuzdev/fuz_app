@@ -738,8 +738,8 @@ event additionally records `credential_type` in metadata (defense in depth).
 
 - `role_grant_offer_create_action_spec` — session-only; input `{to_account_id, to_actor_id?, role, scope_kind?, scope_id?, message?}` (`scope_kind` + `scope_id` paired — both or neither, else `invalid_params`); output `{offer}`.
 - `role_grant_offer_accept_action_spec` — session-only; input `{offer_id}`; output `{role_grant_id, offer, superseded_offer_ids}`. Refuses a builtin-role offer that must not mint (see below), leaving it pending.
-- `role_grant_offer_decline_action_spec` — input `{offer_id, reason?}`; output `{ok}`.
-- `role_grant_offer_retract_action_spec` — input `{offer_id}`; output `{ok}`.
+- `role_grant_offer_decline_action_spec` — input `{offer_id, reason?}`; output `{offer}` (the declined offer, as accept answers its own).
+- `role_grant_offer_retract_action_spec` — input `{offer_id}`; output `{offer}` (the retracted offer).
 - `role_grant_offer_list_action_spec` — input `{account_id?}`; output `{offers}`.
 - `role_grant_offer_history_action_spec` — input `{account_id?, limit?, offset?}`; output `{offers}`.
 - `role_grant_revoke_action_spec` — input `{actor_id, role_grant_id, reason?}`; output `{ok, revoked}`.

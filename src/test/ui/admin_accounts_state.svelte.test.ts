@@ -39,7 +39,7 @@ const make_rpc = (overrides: Partial<AdminAccountsRpc> = {}): AdminAccountsRpc =
 	list_sessions: vi.fn().mockResolvedValue({ sessions: [] }),
 	create_role_grant: vi.fn().mockResolvedValue({ offer: make_offer() }),
 	revoke_role_grant: vi.fn().mockResolvedValue({ ok: true, revoked: true }),
-	retract_offer: vi.fn().mockResolvedValue({ ok: true }),
+	retract_offer: vi.fn().mockResolvedValue({ offer: make_offer() }),
 	session_revoke_all: vi.fn().mockResolvedValue({ ok: true, count: 1 }),
 	token_revoke_all: vi.fn().mockResolvedValue({ ok: true, count: 1 }),
 	...overrides

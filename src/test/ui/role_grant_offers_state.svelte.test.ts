@@ -69,8 +69,12 @@ const rpc_stub = (partial: Partial<RoleGrantOffersRpc> = {}): RoleGrantOffersRpc
 	accept: async () => {
 		throw new Error('rpc.accept not stubbed');
 	},
-	decline: async () => ({ ok: true }),
-	retract: async () => ({ ok: true }),
+	decline: async () => {
+		throw new Error('rpc.decline not stubbed');
+	},
+	retract: async () => {
+		throw new Error('rpc.retract not stubbed');
+	},
 	...partial
 });
 
@@ -459,26 +463,153 @@ describe('RoleGrantOffersState — mutations', () => {
 		assert.strictEqual(state.history[0]!.id, target.id);
 	});
 
-	test('decline removes the offer from the cache', async () => {
+	test('decline stamps the declined offer the server returns', async () => {
 		const offer = pending_offer();
-		const state = create_state({ list: async () => ({ offers: [offer] }) });
+		const declined: RoleGrantOfferJson = {
+			...offer,
+			declined_at: new Date().toISOString(),
+			decline_reason: 'no thanks'
+		};
+		const calls: Array<[string, string | null | undefined]> = [];
+		const state = create_state({
+			list: async () => ({ offers: [offer] }),
+			decline: async (offer_id, reason) => {
+				calls.push([offer_id, reason]);
+				return { offer: declined };
+			}
+		});
 		await state.fetch();
 
 		await state.submit_decline(offer.id, 'no thanks');
 
-		assert.strictEqual(state.history.length, 0);
+		assert.deepStrictEqual(calls, [[offer.id, 'no thanks']]);
+		assert.strictEqual(state.incoming.length, 0);
+		assert.deepStrictEqual(state.history, [declined]);
+		assert.isTrue(state.decline.succeeded(offer.id));
 	});
 
-	test('retract removes the offer from the cache', async () => {
+	test('retract stamps the retracted offer the server returns', async () => {
 		const outgoing = pending_offer({
 			to_account_id: OTHER_RECIPIENT_ID as RoleGrantOfferJson['to_account_id']
 		});
-		const state = create_state({ history: async () => ({ offers: [outgoing] }) });
+		const retracted: RoleGrantOfferJson = { ...outgoing, retracted_at: new Date().toISOString() };
+		const state = create_state({
+			history: async () => ({ offers: [outgoing] }),
+			retract: async () => ({ offer: retracted })
+		});
 		await state.fetch_history();
+		assert.strictEqual(state.outgoing.length, 1);
 
 		await state.submit_retract(outgoing.id);
 
-		assert.strictEqual(state.history.length, 0);
+		assert.strictEqual(state.outgoing.length, 0);
+		assert.deepStrictEqual(state.history, [retracted]);
+	});
+
+	test('a late pending copy never revives a terminal offer', async () => {
+		const offer = pending_offer();
+		const declined: RoleGrantOfferJson = { ...offer, declined_at: new Date().toISOString() };
+		const state = create_state({
+			list: async () => ({ offers: [offer] }),
+			decline: async () => ({ offer: declined })
+		});
+		await state.fetch();
+		await state.submit_decline(offer.id);
+
+		// a received notification delivered after the decline answered, then a stale seed
+		state.apply_notification({
+			method: ROLE_GRANT_OFFER_RECEIVED_NOTIFICATION_METHOD,
+			params: { offer }
+		});
+		await state.fetch();
+
+		assert.deepStrictEqual(state.history, [declined]);
+		assert.strictEqual(state.incoming.length, 0);
+	});
+
+	test('the terminal notification after a stamp leaves the offer as stamped', async () => {
+		const offer = pending_offer();
+		const declined: RoleGrantOfferJson = { ...offer, declined_at: new Date().toISOString() };
+		const state = create_state({
+			list: async () => ({ offers: [offer] }),
+			decline: async () => ({ offer: declined })
+		});
+		await state.fetch();
+		await state.submit_decline(offer.id);
+
+		state.apply_notification({
+			method: ROLE_GRANT_OFFER_DECLINED_NOTIFICATION_METHOD,
+			params: { offer: declined }
+		});
+
+		assert.deepStrictEqual(state.history, [declined]);
+	});
+});
+
+describe('RoleGrantOffersState — per-row verbs', () => {
+	test('two declines run independently, each keeping its own error', async () => {
+		const first = pending_offer();
+		const second = pending_offer();
+		const state = create_state({
+			list: async () => ({ offers: [first, second] }),
+			decline: async (offer_id) => {
+				if (offer_id === first.id) throw new Error('first failed');
+				return { offer: { ...second, declined_at: new Date().toISOString() } };
+			}
+		});
+		await state.fetch();
+
+		await Promise.all([state.submit_decline(first.id), state.submit_decline(second.id)]);
+
+		assert.strictEqual(state.decline.error(first.id), 'first failed');
+		assert.isTrue(state.decline.succeeded(second.id));
+		assert.deepStrictEqual(
+			state.incoming.map((o) => o.id),
+			[first.id]
+		);
+	});
+
+	test('pending is per row', async () => {
+		const first = pending_offer();
+		const second = pending_offer();
+		let resolve_accept: (() => void) | undefined;
+		const state = create_state({
+			list: async () => ({ offers: [first, second] }),
+			accept: (offer_id) =>
+				new Promise((resolve) => {
+					resolve_accept = () =>
+						resolve({
+							role_grant_id: next_uuid(),
+							offer: { ...first, id: offer_id as RoleGrantOfferJson['id'] },
+							superseded_offer_ids: []
+						});
+				})
+		});
+		await state.fetch();
+
+		const accepting = state.submit_accept(first.id);
+		assert.isTrue(state.accept.loading(first.id));
+		assert.isFalse(state.accept.loading(second.id));
+		resolve_accept!();
+		await accepting;
+		assert.isFalse(state.accept.loading(first.id));
+	});
+
+	test('reset clears the per-row slots', async () => {
+		const offer = pending_offer();
+		const state = create_state({
+			list: async () => ({ offers: [offer] }),
+			retract: async () => {
+				throw new Error('nope');
+			}
+		});
+		await state.fetch();
+		await state.submit_retract(offer.id);
+		assert.strictEqual(state.retract.error(offer.id), 'nope');
+
+		state.reset();
+
+		assert.isFalse(state.retract.has(offer.id));
 	});
 });
 

@@ -147,8 +147,9 @@ import {
 	type RoleGrantOfferAcceptInput,
 	type RoleGrantOfferAcceptOutput,
 	type RoleGrantOfferDeclineInput,
-	type RoleGrantOfferOkOutput,
+	type RoleGrantOfferDeclineOutput,
 	type RoleGrantOfferRetractInput,
+	type RoleGrantOfferRetractOutput,
 	type RoleGrantOfferListInput,
 	type RoleGrantOfferListOutput,
 	type RoleGrantOfferHistoryInput,
@@ -554,7 +555,7 @@ export const create_role_grant_offer_actions = (
 	const decline_handler = async (
 		input: RoleGrantOfferDeclineInput,
 		ctx: ActionActorContext
-	): Promise<RoleGrantOfferOkOutput> => {
+	): Promise<RoleGrantOfferDeclineOutput> => {
 		const auth = ctx.auth;
 		let declined;
 		try {
@@ -591,12 +592,12 @@ export const create_role_grant_offer_actions = (
 			}
 		});
 
+		const offer_json = to_role_grant_offer_json(declined);
 		if (notification_sender) {
 			// Grantor's account_id rides on `declined.from_account_id` from
 			// the decline RETURNING — no second SELECT needed. The decline
 			// reason rides along on `offer.decline_reason` — the DB set it
 			// in the RETURNING above.
-			const offer_json = to_role_grant_offer_json(declined);
 			emit_after_commit(ctx, () => {
 				notification_sender.send_to_account(
 					declined.from_account_id,
@@ -605,13 +606,14 @@ export const create_role_grant_offer_actions = (
 			});
 		}
 
-		return { ok: true };
+		// the terminal offer, as accept answers its own
+		return { offer: offer_json };
 	};
 
 	const retract_handler = async (
 		input: RoleGrantOfferRetractInput,
 		ctx: ActionActorContext
-	): Promise<RoleGrantOfferOkOutput> => {
+	): Promise<RoleGrantOfferRetractOutput> => {
 		const auth = ctx.auth;
 		let retracted;
 		try {
@@ -641,8 +643,8 @@ export const create_role_grant_offer_actions = (
 			}
 		});
 
+		const offer_json = to_role_grant_offer_json(retracted);
 		if (notification_sender) {
-			const offer_json = to_role_grant_offer_json(retracted);
 			emit_after_commit(ctx, () => {
 				notification_sender.send_to_account(
 					retracted.to_account_id,
@@ -651,7 +653,8 @@ export const create_role_grant_offer_actions = (
 			});
 		}
 
-		return { ok: true };
+		// the terminal offer, as accept answers its own
+		return { offer: offer_json };
 	};
 
 	const list_handler = async (

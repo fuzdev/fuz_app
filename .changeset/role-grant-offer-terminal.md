@@ -1,0 +1,5 @@
+---
+'@fuzdev/fuz_app': minor
+---
+
+break: `role_grant_offer_decline` and `role_grant_offer_retract` answer the terminal offer, `{offer}`, as `role_grant_offer_accept` answers its own, instead of `{ok: true}` — `RoleGrantOfferOkOutput` is replaced by `RoleGrantOfferDeclineOutput` and `RoleGrantOfferRetractOutput`, and the `decline` / `retract` methods of `RoleGrantOffersRpc` and `AdminAccountsRpc.retract_offer` return them. `RoleGrantOffersState.accept` / `decline` / `retract` are `KeyedAsyncSlot<string>`s keyed by offer id (read `state.decline.loading(offer_id)` / `.error(offer_id)` where you read `state.decline.loading` / `.error`), `submit_decline` / `submit_retract` stamp the returned offer into the cache so `history` shows it without waiting on the WS notification, a pending copy of an offer never replaces a terminal one, and `RoleGrantOfferInbox` shows each row's pending state and error on that row.

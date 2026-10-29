@@ -234,9 +234,13 @@ export const RoleGrantOfferAcceptOutput = z.strictObject({
 });
 export type RoleGrantOfferAcceptOutput = z.infer<typeof RoleGrantOfferAcceptOutput>;
 
-/** Output for `role_grant_offer_decline` / `role_grant_offer_retract`. */
-export const RoleGrantOfferOkOutput = z.strictObject({ ok: z.literal(true) });
-export type RoleGrantOfferOkOutput = z.infer<typeof RoleGrantOfferOkOutput>;
+/** Output for `role_grant_offer_decline` — the declined offer, as `accept` answers its own. */
+export const RoleGrantOfferDeclineOutput = z.strictObject({ offer: RoleGrantOfferJson });
+export type RoleGrantOfferDeclineOutput = z.infer<typeof RoleGrantOfferDeclineOutput>;
+
+/** Output for `role_grant_offer_retract` — the retracted offer, as `accept` answers its own. */
+export const RoleGrantOfferRetractOutput = z.strictObject({ offer: RoleGrantOfferJson });
+export type RoleGrantOfferRetractOutput = z.infer<typeof RoleGrantOfferRetractOutput>;
 
 /** Output for `role_grant_offer_list`. */
 export const RoleGrantOfferListOutput = z.strictObject({ offers: z.array(RoleGrantOfferJson) });
@@ -377,7 +381,7 @@ export const role_grant_offer_decline_action_spec = {
 	auth: { account: 'required', actor: 'required' },
 	side_effects: true,
 	input: RoleGrantOfferDeclineInput,
-	output: RoleGrantOfferOkOutput,
+	output: RoleGrantOfferDeclineOutput,
 	async: true,
 	description: 'Decline an offer. Recipient-only.',
 	error_reasons: [ERROR_ROLE_GRANT_OFFER_NOT_FOUND, ERROR_ROLE_GRANT_OFFER_TERMINAL]
@@ -390,7 +394,7 @@ export const role_grant_offer_retract_action_spec = {
 	auth: { account: 'required', actor: 'required' },
 	side_effects: true,
 	input: RoleGrantOfferRetractInput,
-	output: RoleGrantOfferOkOutput,
+	output: RoleGrantOfferRetractOutput,
 	async: true,
 	description: 'Retract an offer. Grantor-only, pre-decision.',
 	error_reasons: [ERROR_ROLE_GRANT_OFFER_NOT_FOUND, ERROR_ROLE_GRANT_OFFER_TERMINAL]

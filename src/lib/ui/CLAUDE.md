@@ -359,6 +359,8 @@ destructive actions.
   `format_role?` — consumers plug in display names for actor/scope ids.
   Accept is a `PendingButton`; decline is a `ConfirmButton` whose
   popover contains a textarea (max `ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX`).
+  Each row reads its own pending state and error from the keyed `accept` /
+  `decline` slots, so one row's failure never shows on another.
 - `RoleGrantOfferForm.svelte` — grantor-side create form. Props:
   `to_account_id`, `to_actor_id = null` (optional — narrows the offer
   to a specific actor on the recipient account; default account-grain),
@@ -386,14 +388,17 @@ destructive actions.
   `role_grant_offers_state_context`. Options: `rpc: RoleGrantOffersRpc`,
   `account_id: () => string | null`, `actor_id: () => string | null`.
   The narrow `RoleGrantOffersRpc` interface has six methods: `list`,
-  `history`, `create`, `accept`, `decline`, `retract`. Holds six
-  `AsyncSlot`s — five `AsyncSlot<void>` for status/error tracking
-  (`list` / `list_history` / `accept` / `decline` / `retract`) plus
-  one `AsyncSlot<RoleGrantOfferJson>` (`create`) that owns the
-  created offer so `submit_create` returns it via the slot's
-  supersession-safe `data` path. The `$state.raw` Map cache keyed by
-  offer id stays on the class (multiple ops + WS notifications merge
-  into it). Methods use the `submit_*` prefix to avoid slot-name
+  `history`, `create`, `accept`, `decline`, `retract`. Slots:
+  `AsyncSlot<void>` for `list` / `list_history`, one
+  `AsyncSlot<RoleGrantOfferJson>` (`create`) that owns the created offer
+  so `submit_create` returns it via the slot's supersession-safe `data`
+  path, and `KeyedAsyncSlot<string>` keyed by offer id for the per-row
+  `accept` / `decline` / `retract` (per-row pending + error;
+  `RoleGrantOfferInbox` binds each row to its own). The `$state.raw` Map
+  cache keyed by offer id stays on the class (multiple ops + WS
+  notifications merge into it; a pending copy never replaces a terminal
+  one). Each verb stamps the terminal offer its RPC answers into the
+  cache, so `history` shows it without waiting on the WS notification. Methods use the `submit_*` prefix to avoid slot-name
   collisions (`submit_create` / `submit_accept` / `submit_decline` /
   `submit_retract`); the fetch slot is named `list_history` so the
   derived view stays natural as `history`. `$derived.by` views:

@@ -62,7 +62,7 @@ import type {
 	RoleGrantOfferCreateInput,
 	RoleGrantOfferCreateOutput,
 	RoleGrantOfferRetractInput,
-	RoleGrantOfferOkOutput,
+	RoleGrantOfferRetractOutput,
 	RoleGrantRevokeInput,
 	RoleGrantRevokeOutput
 } from '../auth/role_grant_offer_action_specs.ts';
@@ -107,7 +107,9 @@ export interface AdminRpcApi {
 	role_grant_offer_create: (
 		input: RoleGrantOfferCreateInput
 	) => Promise<RoleGrantOfferCreateOutput>;
-	role_grant_offer_retract: (input: RoleGrantOfferRetractInput) => Promise<RoleGrantOfferOkOutput>;
+	role_grant_offer_retract: (
+		input: RoleGrantOfferRetractInput
+	) => Promise<RoleGrantOfferRetractOutput>;
 	role_grant_revoke: (input: RoleGrantRevokeInput) => Promise<RoleGrantRevokeOutput>;
 }
 

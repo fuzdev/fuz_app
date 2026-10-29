@@ -15,6 +15,9 @@ import '../assert_dev_env.ts';
  *   (`docs/security.md` §"404-over-403 is the general mask"), and the offer is
  *   left pending. The scope check comes before the terminal check, so a
  *   stranger learns nothing of an offer's state either.
+ * - **a decline or retract answers the terminal offer** — the offer as the
+ *   history then lists it, `declined_at` (with any `decline_reason`) or
+ *   `retracted_at` stamped, as `accept` answers its own.
  * - **already decided → 400** `invalid_request` with reason
  *   `role_grant_offer_terminal` — a decline or retract after an accept, a
  *   second decline, a second retract, and either one after the other.
@@ -50,7 +53,10 @@ import { rpc_call, type RpcCallResult } from '../rpc_helpers.ts';
 import {
 	ERROR_CANNOT_REVOKE_KEEPER_ADMIN,
 	ERROR_ROLE_GRANT_OFFER_NOT_FOUND,
-	ERROR_ROLE_GRANT_OFFER_TERMINAL
+	ERROR_ROLE_GRANT_OFFER_TERMINAL,
+	RoleGrantOfferDeclineOutput,
+	RoleGrantOfferHistoryOutput,
+	RoleGrantOfferRetractOutput
 } from '../../auth/role_grant_offer_action_specs.ts';
 import { AdminAccountListOutput } from '../../auth/admin_action_specs.ts';
 import { ROLE_ADMIN } from '../../auth/role_schema.ts';
@@ -216,6 +222,44 @@ export const describe_role_grant_offer_lifecycle_cross_tests = (
 
 			assert.ok(await is_pending(fixture, recipient, offer.id), 'the refusals leave it pending');
 			assert_ok(await retract(fixture, offer.id, fixture.create_session_headers()), 'retract');
+		});
+
+		test('a decline and a retract answer the terminal offer, as the history lists it', async () => {
+			const fixture = await setup_test();
+			const recipient = await fixture.create_account({ username: 'lifecycle_answered' });
+			const grantor_headers = fixture.create_session_headers();
+
+			const to_decline = await create_offer(fixture, recipient);
+			const { offer: declined } = expect_output(
+				await decline(fixture, to_decline.id, recipient.create_session_headers(), 'not now'),
+				RoleGrantOfferDeclineOutput
+			);
+			assert.strictEqual(declined.id, to_decline.id);
+			assert.ok(declined.declined_at, 'the declined offer carries declined_at');
+			assert.strictEqual(declined.decline_reason, 'not now');
+			assert.strictEqual(declined.retracted_at, null);
+
+			const to_retract = await create_offer(fixture, recipient);
+			const { offer: retracted } = expect_output(
+				await retract(fixture, to_retract.id, grantor_headers),
+				RoleGrantOfferRetractOutput
+			);
+			assert.strictEqual(retracted.id, to_retract.id);
+			assert.ok(retracted.retracted_at, 'the retracted offer carries retracted_at');
+			assert.strictEqual(retracted.declined_at, null);
+
+			const { offers } = expect_output(
+				await rpc(fixture, 'role_grant_offer_history', {}, grantor_headers),
+				RoleGrantOfferHistoryOutput
+			);
+			assert.deepStrictEqual(
+				offers.find((o) => o.id === declined.id),
+				declined
+			);
+			assert.deepStrictEqual(
+				offers.find((o) => o.id === retracted.id),
+				retracted
+			);
 		});
 
 		test('a decline or retract after accept → 400 role_grant_offer_terminal; a stranger still gets 404', async () => {

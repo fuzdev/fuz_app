@@ -50,7 +50,10 @@ describe_db('role_grant_offer_actions.decline', (get_db) => {
 			});
 			assert.ok(res.ok);
 			assert.strictEqual(res.status, 200);
-			assert.deepStrictEqual(res.result, { ok: true });
+			// the terminal offer, as accept answers its own
+			assert.strictEqual(res.result.offer.id, offer_id);
+			assert.ok(res.result.offer.declined_at);
+			assert.strictEqual(res.result.offer.decline_reason, 'no thanks');
 		});
 
 		test('wrong account returns offer_not_found', async () => {

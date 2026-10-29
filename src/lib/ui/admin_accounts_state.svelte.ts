@@ -34,7 +34,7 @@ import type {
 import type {
 	RoleGrantOfferCreateInput,
 	RoleGrantOfferCreateOutput,
-	RoleGrantOfferOkOutput,
+	RoleGrantOfferRetractOutput,
 	RoleGrantRevokeInput,
 	RoleGrantRevokeOutput
 } from '../auth/role_grant_offer_action_specs.ts';
@@ -63,7 +63,7 @@ export interface AdminAccountsRpc {
 	list_sessions: () => Promise<AdminSessionListOutput>;
 	create_role_grant: (params: RoleGrantOfferCreateInput) => Promise<RoleGrantOfferCreateOutput>;
 	revoke_role_grant: (params: RoleGrantRevokeInput) => Promise<RoleGrantRevokeOutput>;
-	retract_offer: (offer_id: Uuid) => Promise<RoleGrantOfferOkOutput>;
+	retract_offer: (offer_id: Uuid) => Promise<RoleGrantOfferRetractOutput>;
 	session_revoke_all: (params: AdminSessionRevokeAllInput) => Promise<AdminSessionRevokeAllOutput>;
 	token_revoke_all: (params: AdminTokenRevokeAllInput) => Promise<AdminTokenRevokeAllOutput>;
 }

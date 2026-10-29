@@ -13,14 +13,18 @@
  * delivery is pull-only via `subscribe()` — the consumer plumbs their
  * `FrontendWebsocketClient` / `ActionDispatcher` receiver to `apply_notification`.
  *
- * Holds six `AsyncSlot`s — one per RPC verb. The cache `#offers` lives on
- * the class (multiple ops write into it via `#merge_offers` /
- * `#remove_offer`); the `create` slot is typed `AsyncSlot<RoleGrantOfferJson>`
- * so `submit_create` can return the new offer via the slot's
- * supersession-safe `data` path, but the other slots' `data` is unused
- * (no single op owns the cache). Method names use the `submit_*` prefix
- * to avoid slot-name collisions; the `history` view stayed natural by
- * naming the fetch slot `list_history`.
+ * Holds one slot per RPC verb: `AsyncSlot`s for `list`, `list_history` and
+ * `create`, and `KeyedAsyncSlot`s keyed by offer id for the per-row verbs
+ * `accept`, `decline` and `retract`, so each row carries its own pending
+ * state and error. The cache `#offers` lives on the class (multiple ops
+ * write into it via `#merge_offers` / `#remove_offer`); the `create` slot is
+ * typed `AsyncSlot<RoleGrantOfferJson>` so `submit_create` can return the
+ * new offer via the slot's supersession-safe `data` path, but the other
+ * slots' `data` is unused (no single op owns the cache). Each terminal verb
+ * stamps the offer it answers into the cache, so `history` shows it whether
+ * or not its WS notification arrives. Method names use the `submit_*`
+ * prefix to avoid slot-name collisions; the `history` view stayed natural
+ * by naming the fetch slot `list_history`.
  *
  * @module
  */
@@ -28,6 +32,7 @@
 import { create_context } from '@fuzdev/fuz_ui/context_helpers.ts';
 
 import { AsyncSlot } from './async_slot.svelte.ts';
+import { KeyedAsyncSlot } from './keyed_async_slot.svelte.ts';
 import { is_iso8601_seconds_live } from '../timestamp.ts';
 import type { RoleGrantOfferJson } from '../auth/role_grant_offer_schema.ts';
 import {
@@ -85,8 +90,8 @@ export interface RoleGrantOffersRpc {
 		offer: RoleGrantOfferJson;
 		superseded_offer_ids: Array<string>;
 	}>;
-	decline: (offer_id: string, reason?: string | null) => Promise<{ ok: true }>;
-	retract: (offer_id: string) => Promise<{ ok: true }>;
+	decline: (offer_id: string, reason?: string | null) => Promise<{ offer: RoleGrantOfferJson }>;
+	retract: (offer_id: string) => Promise<{ offer: RoleGrantOfferJson }>;
 }
 
 /** Narrow WS notification envelope — method + params, matching `JsonrpcNotification`. */
@@ -125,9 +130,12 @@ export class RoleGrantOffersState {
 	readonly list = new AsyncSlot<void>();
 	readonly list_history = new AsyncSlot<void>();
 	readonly create = new AsyncSlot<RoleGrantOfferJson>();
-	readonly accept = new AsyncSlot<void>();
-	readonly decline = new AsyncSlot<void>();
-	readonly retract = new AsyncSlot<void>();
+	/** Per-offer accept, keyed by offer id. */
+	readonly accept = new KeyedAsyncSlot<string>();
+	/** Per-offer decline, keyed by offer id. */
+	readonly decline = new KeyedAsyncSlot<string>();
+	/** Per-offer retract, keyed by offer id. */
+	readonly retract = new KeyedAsyncSlot<string>();
 
 	#offers: Map<string, RoleGrantOfferJson> = $state.raw(new Map());
 
@@ -219,7 +227,7 @@ export class RoleGrantOffersState {
 
 	/** Accept an offer; stamps it terminal in the cache and drops any siblings the server superseded. */
 	async submit_accept(offer_id: string): Promise<void> {
-		await this.accept.run(async () => {
+		await this.accept.run(offer_id, async () => {
 			const result = await this.#rpc.accept(offer_id);
 			this.#merge_offers([result.offer]);
 			// siblings are authoritatively superseded server-side; the
@@ -231,17 +239,19 @@ export class RoleGrantOffersState {
 		});
 	}
 
+	/** Decline an offer; stamps the declined offer the server returns into the cache. */
 	async submit_decline(offer_id: string, reason?: string | null): Promise<void> {
-		await this.decline.run(async () => {
-			await this.#rpc.decline(offer_id, reason);
-			this.#remove_offer(offer_id);
+		await this.decline.run(offer_id, async () => {
+			const { offer } = await this.#rpc.decline(offer_id, reason);
+			this.#merge_offers([offer]);
 		});
 	}
 
+	/** Retract an offer; stamps the retracted offer the server returns into the cache. */
 	async submit_retract(offer_id: string): Promise<void> {
-		await this.retract.run(async () => {
-			await this.#rpc.retract(offer_id);
-			this.#remove_offer(offer_id);
+		await this.retract.run(offer_id, async () => {
+			const { offer } = await this.#rpc.retract(offer_id);
+			this.#merge_offers([offer]);
 		});
 	}
 
@@ -297,9 +307,16 @@ export class RoleGrantOffersState {
 		this.#offers = new Map();
 	}
 
+	/**
+	 * Merge offers into the cache by id. A terminal offer is never replaced by
+	 * a pending one — offers only move forward, so a late notification or seed
+	 * can't revive one a verb already stamped terminal.
+	 */
 	#merge_offers(offers: ReadonlyArray<RoleGrantOfferJson>): void {
 		const next = new Map(this.#offers);
 		for (const offer of offers) {
+			const known = next.get(offer.id);
+			if (known && is_terminal(known) && !is_terminal(offer)) continue;
 			next.set(offer.id, offer);
 		}
 		this.#offers = next;
