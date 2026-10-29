@@ -354,10 +354,11 @@ const RULE_3_DOWNGRADE_SITES: ReadonlyArray<{
 
 /**
  * The raw reads of the resolved credential — the context key by constant
- * (`RESOLVED_AUTH_KEY`), by literal (`'resolved_auth'` for `c.get(...)`,
- * `c.var.resolved_auth`), by bare identifier (`const { resolved_auth } =
- * c.var`), and the getter (`get_resolved_auth`). The bare identifier skips a
- * module path (`./resolved_auth.ts`), which names the module, not the value. Built from
+ * (`RESOLVED_AUTH_KEY`), by its value (the bare `resolved_auth`, which also
+ * matches the literal in `c.get('resolved_auth')` and `c.var.resolved_auth`,
+ * quote and dot being word boundaries), and the getter (`get_resolved_auth`).
+ * The bare value skips a module path (`./resolved_auth.ts`), which names the
+ * module, not the value. Built from
  * the live key value and the getter's name, so a rename moves the pattern
  * with it; the positive control below holds it to matching each spelling.
  *
@@ -372,8 +373,6 @@ const RULE_3_DOWNGRADE_SITES: ReadonlyArray<{
 const RAW_CREDENTIAL_READ = new RegExp(
 	[
 		`\\b${RESOLVED_AUTH_KEY_NAME}\\b`,
-		`'${RESOLVED_AUTH_KEY}'`,
-		`\\bc\\.var\\.${RESOLVED_AUTH_KEY}\\b`,
 		`\\b${RESOLVED_AUTH_KEY}\\b(?!\\.ts)`,
 		`\\b${get_resolved_auth.name}\\s*\\(`
 	].join('|'),
