@@ -53,8 +53,14 @@
  *   has committed) is written on the pool too — there is no transaction to
  *   join.
  *
- * A pool write is fail-open: a failed one is logged and counted
- * (`get_audit_write_failures`), and the request goes on.
+ * A pool write is fail-open: a failed one is counted
+ * (`get_audit_write_failures`) and logged as one `error` line carrying the
+ * whole row, secret metadata masked (`to_dropped_audit_row`), and the request
+ * goes on. Its checkout waits the backend's audit bound
+ * (`FUZ_DB_AUDIT_CHECKOUT_TIMEOUT_MS`, 30 s by default — `create_app_backend`
+ * hands the factory its pool `Db` through `Db.with_checkout_timeout`), longer
+ * than a request's, so a pool saturated enough to shed requests with a 503
+ * does not also drop the failure rows recording them.
  *
  * This is the Rust spine's split: `fuz_auth`'s `route_audit_emit` writes an
  * action's success row in the request transaction (`emit_in_tx`) and every
@@ -92,10 +98,14 @@
  */
 
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
+import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 import type { Uuid } from '../primitive_schemas.ts';
 
 import type { Db } from '../db/db.ts';
 import type { QueryDeps } from '../db/query_deps.ts';
+import { MASKED_VALUE } from '../env/mask.ts';
+import { schema_sensitivity } from '../schema_meta.ts';
+import { zod_maybe_get_field_schema } from '../zod.ts';
 import { emit_after_commit, type EmitAfterCommitContext } from '../http/pending_effects.ts';
 import type { RequestActorContext } from './request_context.ts';
 import { query_audit_log } from './audit_log_queries.ts';
@@ -361,6 +371,50 @@ export interface CreateAuditEmitterOptions {
  */
 let audit_write_failures = 0;
 
+/**
+ * The whole row a dropped pool write would have inserted, as the one JSON
+ * object its `audit row dropped` log line carries: `event_type`, `outcome`, the
+ * four id columns, `ip`, and `metadata` — with each metadata field whose
+ * schema in `config` is marked `sensitivity: 'secret'` replaced by
+ * `MASKED_VALUE`. No builtin event declares a secret field, so a builtin row
+ * logs whole, as the Rust twin's `fuz_auth::dropped_row_json` does.
+ *
+ * The masking reads only the top-level fields of an object metadata schema. A
+ * secret field nested under an object field, or declared in a union or
+ * discriminated-union schema, is logged in clear, and so is every
+ * `sensitivity: 'personal'` field. Keep secrets out of audit metadata — they
+ * would land in `audit_log` too.
+ *
+ * @param input - the row's input
+ * @param config - the emitter's `AuditLogConfig`, whose event schemas mark secret fields
+ * @returns the row, ready to `JSON.stringify`
+ */
+export const to_dropped_audit_row = <T extends string>(
+	input: AuditLogInput<T>,
+	config: AuditLogConfig
+): Record<string, unknown> => {
+	let metadata: unknown = input.metadata ?? null;
+	const schema = config.metadata_schemas[input.event_type];
+	if (schema && metadata !== null && typeof metadata === 'object' && !Array.isArray(metadata)) {
+		const masked: Record<string, unknown> = {};
+		for (const [key, value] of Object.entries(metadata)) {
+			const field = zod_maybe_get_field_schema(schema, key);
+			masked[key] = field && schema_sensitivity(field) === 'secret' ? MASKED_VALUE : value;
+		}
+		metadata = masked;
+	}
+	return {
+		event_type: input.event_type,
+		outcome: input.outcome ?? 'success',
+		actor_id: input.actor_id ?? null,
+		account_id: input.account_id ?? null,
+		target_account_id: input.target_account_id ?? null,
+		target_actor_id: input.target_actor_id ?? null,
+		ip: input.ip ?? null,
+		metadata
+	};
+};
+
 /** Number of audit rows an emitter failed to write since process start. */
 export const get_audit_write_failures = (): number => audit_write_failures;
 
@@ -408,8 +462,8 @@ export const create_audit_emitter = (options: CreateAuditEmitterOptions): AuditE
 		}
 	};
 
-	// The pool write. Never rejects: a failed write is logged, counted, and
-	// resolves `null`, so there is no row to announce.
+	// The pool write. Never rejects: a failed write is counted and logged with
+	// the whole row, and resolves `null`, so there is no row to announce.
 	const write = async <T extends string>(
 		input: AuditLogInput<T>
 	): Promise<AuditLogEvent | null> => {
@@ -417,7 +471,9 @@ export const create_audit_emitter = (options: CreateAuditEmitterOptions): AuditE
 			return await query_audit_log({ db }, input, audit_log_config);
 		} catch (err) {
 			audit_write_failures++;
-			log.error('Audit log write failed:', err);
+			log.error(
+				`audit row dropped: ${JSON.stringify(to_dropped_audit_row(input, audit_log_config))} error: ${to_error_message(err)}`
+			);
 			return null;
 		}
 	};

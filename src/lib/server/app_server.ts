@@ -48,6 +48,7 @@ import '../hono_context.ts';
 import { create_proxy_middleware_spec } from '../http/proxy.ts';
 import { create_static_middleware, type ServeStaticFactory } from './static.ts';
 import { log_startup_summary } from './startup.ts';
+import { create_app_error_handler } from './app_error_handler.ts';
 import {
 	create_app_surface_spec,
 	type AppSurfaceSpec,
@@ -1144,6 +1145,10 @@ const assemble_app_server = async (
 
 	// Hono app assembly
 	const app = new Hono();
+	// A throw that escapes every route catch — a credential leg's failed read
+	// above all — answers here: 503 for a failed pool checkout, Hono's default
+	// 500 for anything else.
+	app.onError(create_app_error_handler(log));
 
 	// Two-queue side-effect flush. `pending_effects` collects eager
 	// fire-and-forget promises (audit emits, api-token usage). `post_commit_effects` collects deferred thunks pushed via

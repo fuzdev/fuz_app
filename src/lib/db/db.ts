@@ -30,6 +30,13 @@ export interface DbClient {
 export interface DbDeps {
 	client: DbClient;
 	transaction: <T>(fn: (tx_db: Db) => Promise<T>) => Promise<T>;
+	/**
+	 * A `Db` over the same pool whose checkouts are bounded by `timeout_ms` —
+	 * supplied by the pg adapter (`create_pg_db`). Omitted where there is no
+	 * pool (PGlite, pglet), so `Db.with_checkout_timeout` returns the `Db`
+	 * itself.
+	 */
+	with_checkout_timeout?: (timeout_ms: number) => Db;
 }
 
 /**
@@ -83,10 +90,26 @@ export class Db {
 	readonly client: DbClient;
 
 	readonly #transaction: <T>(fn: (tx_db: Db) => Promise<T>) => Promise<T>;
+	readonly #with_checkout_timeout: ((timeout_ms: number) => Db) | undefined;
 
 	constructor(options: DbDeps) {
 		this.client = options.client;
 		this.#transaction = options.transaction;
+		this.#with_checkout_timeout = options.with_checkout_timeout;
+	}
+
+	/**
+	 * A `Db` over the same pool whose statements check out under `timeout_ms`
+	 * instead of the pool's own bound — the audit emitter's longer wait
+	 * (`db/db_pg.ts`, "Checkout timeout"). With no pool (PGlite, pglet, a
+	 * transaction-scoped `Db`) there is no checkout to bound, and the `Db`
+	 * itself is returned.
+	 *
+	 * @param timeout_ms - the checkout bound, in ms
+	 * @returns a `Db` sharing this one's pool
+	 */
+	with_checkout_timeout(timeout_ms: number): Db {
+		return this.#with_checkout_timeout?.(timeout_ms) ?? this;
 	}
 
 	/**

@@ -181,6 +181,17 @@ export interface SpineStubBackendConfigOptions {
 	 * Mirrors `TsSpineBackendConfigOptions.ws_receive_timeout_ms`.
 	 */
 	readonly ws_receive_timeout_ms?: number;
+	/**
+	 * Replace the request pool checkout bound (`FUZ_DB_CHECKOUT_TIMEOUT_MS`).
+	 * Mirrors `TsSpineBackendConfigOptions.db_checkout_timeout_ms`.
+	 */
+	readonly db_checkout_timeout_ms?: number;
+	/**
+	 * Replace the audit write pool checkout bound
+	 * (`FUZ_DB_AUDIT_CHECKOUT_TIMEOUT_MS`). Mirrors
+	 * `TsSpineBackendConfigOptions.db_audit_checkout_timeout_ms`.
+	 */
+	readonly db_audit_checkout_timeout_ms?: number;
 }
 
 /**

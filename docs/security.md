@@ -1426,6 +1426,39 @@ message just over it gets.
 What the server sends a socket is bounded separately — see
 [Outbound Bounds](#outbound-bounds).
 
+## Database Unavailable (Pool Checkout Timeout)
+
+Every pool checkout a request makes — a per-statement query, a transaction's
+connection, a credential leg's read — gives up after
+`FUZ_DB_CHECKOUT_TIMEOUT_MS` (default 5000, `1..=600000`, refused at boot when
+malformed) instead of queuing forever, so a saturated or unreachable database
+sheds requests rather than holding them and their memory without bound. A
+failed **checkout** answers 503 on every surface: the JSON-RPC envelope's
+`service_unavailable` (-32007, message `database unavailable`, no `data`) over
+HTTP RPC and WebSocket frames, and the flat `{"error": "service_unavailable"}`
+on REST routes, the SSE open, fact serving, and the credential walk — which
+still stops at the faulted leg rather than trying the next credential. A
+failed **query** on a connection already checked out keeps its 500 (the flat
+`internal_error`, or `text/plain` `Internal Server Error` from a credential
+leg). The cut is by phase, not error text. A WebSocket whose post-upgrade
+admission re-read cannot check out closes 1011. No `Retry-After`: an exhausted
+pool has no known reset time. The Rust spine answers byte for byte the same.
+The wait for a free connection and a new connection's connect are bounded one
+by one, so a checkout that waits and then connects can take about twice the
+bound.
+
+Audit rows written on the pool (failure rows, and the success rows of routes
+with no request transaction) wait longer: `FUZ_DB_AUDIT_CHECKOUT_TIMEOUT_MS`
+(default 30000), so saturating the pool to shed requests does not also drop
+the forensic rows recording them; a row dropped anyway is logged in full,
+secret-sensitive metadata masked, as one `audit row dropped` error line. A
+failed login awaits its failure row, so under a saturated pool it can wait up
+to this bound rather than the request's.
+
+PGlite and pglet have no pool, so both bounds are inert there (a value set
+with one is warned of at boot); an in-process query behind a long transaction
+still waits.
+
 ## Prototype Keys in Params
 
 The RPC dispatcher refuses a call whose object `params` hold an own

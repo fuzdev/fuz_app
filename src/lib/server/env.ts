@@ -15,13 +15,17 @@ import type { Result } from '@fuzdev/fuz_util/result.ts';
 import { create_keyring, type Keyring } from '../auth/keyring.ts';
 import { format_allowed_origins_error, parse_allowed_origins } from '../http/origin.ts';
 import { admit_origin_wildcards } from '../http/origin_wildcard.ts';
+import { DB_CHECKOUT_TIMEOUT_MAX_MS } from '../db/db_pg.ts';
 
 /**
  * Base Zod schema for server environment variables.
  *
- * Declares only what the spine reads — server config, database, cookie keys,
- * allowed origins and the wildcard opt-in, and the bootstrap token path —
- * matching the Rust spine's `BaseServerEnv`. Anything else (fact storage,
+ * Declares only what the spine reads — server config, database and its pool
+ * checkout bounds, cookie keys, allowed origins and the wildcard opt-in, and
+ * the bootstrap token path — matching the Rust spine's `BaseServerEnv`. The
+ * numeric vars parse as loosely as `PORT` (`z.coerce`, so `5e3` reads as 5000
+ * where the Rust twin refuses it); a blank or out-of-range value is refused on
+ * both. Anything else (fact storage,
  * X-Accel delivery, public URLs) is the app's own var: extend with
  * app-specific fields via `.extend()`.
  */
@@ -53,7 +57,27 @@ export const BaseServerEnv = z.strictObject({
 	FUZ_BOOTSTRAP_TOKEN_PATH: z
 		.string()
 		.optional()
-		.meta({ description: 'Path to one-shot admin bootstrap token', sensitivity: 'secret' })
+		.meta({ description: 'Path to one-shot admin bootstrap token', sensitivity: 'secret' }),
+	FUZ_DB_CHECKOUT_TIMEOUT_MS: z.coerce
+		.number()
+		.int()
+		.min(1)
+		.max(DB_CHECKOUT_TIMEOUT_MAX_MS)
+		.optional()
+		.meta({
+			description:
+				'Bound on the pool checkouts a request makes, in ms (default 5000); a failed checkout answers 503. Audit writes use FUZ_DB_AUDIT_CHECKOUT_TIMEOUT_MS instead, including the failed-login row a request waits on. Postgres only — PGlite and pglet have no pool'
+		}),
+	FUZ_DB_AUDIT_CHECKOUT_TIMEOUT_MS: z.coerce
+		.number()
+		.int()
+		.min(1)
+		.max(DB_CHECKOUT_TIMEOUT_MAX_MS)
+		.optional()
+		.meta({
+			description:
+				'Bound on the checkout behind each audit pool write, in ms (default 30000); a failed login waits on its row, so up to this bound. Postgres only'
+		})
 });
 export type BaseServerEnv = z.infer<typeof BaseServerEnv>;
 

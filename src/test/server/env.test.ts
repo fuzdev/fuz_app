@@ -37,6 +37,8 @@ describe('BaseServerEnv', () => {
 			'FUZ_ALLOWED_ORIGINS',
 			'FUZ_ALLOW_ORIGIN_WILDCARDS',
 			'FUZ_BOOTSTRAP_TOKEN_PATH',
+			'FUZ_DB_AUDIT_CHECKOUT_TIMEOUT_MS',
+			'FUZ_DB_CHECKOUT_TIMEOUT_MS',
 			'HOST',
 			'NODE_ENV',
 			'PORT',
@@ -100,6 +102,30 @@ describe('BaseServerEnv', () => {
 			SECRET_FUZ_COOKIE_KEYS: 'short'
 		});
 		assert.isFalse(result.success);
+	});
+
+	test('the pool checkout bounds read like PORT: unset, or whole ms from 1 to 600000', () => {
+		for (const name of [
+			'FUZ_DB_CHECKOUT_TIMEOUT_MS',
+			'FUZ_DB_AUDIT_CHECKOUT_TIMEOUT_MS'
+		] as const) {
+			// unset is the backend's default (5 s / 30 s), applied by `create_app_backend`
+			assert.strictEqual(BaseServerEnv.parse(VALID_ENV)[name], undefined);
+			for (const [value, expected] of [
+				['250', 250],
+				[' 250 ', 250],
+				['1', 1],
+				['600000', 600_000],
+				// `z.coerce`, like `PORT`: the Rust twin refuses this spelling
+				['5e3', 5000]
+			] as const) {
+				assert.strictEqual(BaseServerEnv.parse({ ...VALID_ENV, [name]: value })[name], expected);
+			}
+			for (const value of ['0', '-1', 'abc', '600001', '', '  ', '1.5']) {
+				const result = BaseServerEnv.safeParse({ ...VALID_ENV, [name]: value });
+				assert.isFalse(result.success, `${name}=${JSON.stringify(value)}`);
+			}
+		}
 	});
 
 	test('FUZ_ALLOW_ORIGIN_WILDCARDS is exactly true or false', () => {

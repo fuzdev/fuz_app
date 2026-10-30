@@ -32,7 +32,12 @@ import type { Db } from '../db/db.ts';
 import { create_pglite_db } from '../db/db_pglite.ts';
 import { create_pglet_db_driver, create_pglet_instance } from '../db/db_pglet.ts';
 import { assert_valid_sql_identifier } from '../db/sql_identifier.ts';
-import { create_pg_db, register_pg_type_parsers } from '../db/db_pg.ts';
+import {
+	create_pg_db,
+	create_pg_pool,
+	DEFAULT_DB_CHECKOUT_TIMEOUT_MS,
+	register_pg_type_parsers
+} from '../db/db_pg.ts';
 import { query_public_columns } from '../db/schema_ready.ts';
 import { pg_error_code } from '../db/pg_error.ts';
 
@@ -227,13 +232,17 @@ export const create_pg_factory = (
 				}
 				pool_ref = null;
 			}
-			const { Pool } = await import('pg');
+			const { default: pg } = await import('pg');
 			// Mirror production's int8→number coercion (`create_db`) so the
 			// test pg pool reads `BIGSERIAL` columns (e.g. `audit_log.seq`)
 			// as numbers like PGlite does — without this the pg leg of a
 			// `.db.test.ts` sees `seq` as a string and wire-schema parses fail.
 			await register_pg_type_parsers();
-			const pool = new Pool({ connectionString: test_url });
+			// production's pool, so a test reads production's checkout semantics
+			const pool = create_pg_pool(pg, {
+				connection_string: test_url,
+				checkout_timeout_ms: DEFAULT_DB_CHECKOUT_TIMEOUT_MS
+			});
 			pool_ref = pool;
 			const { db } = create_pg_db(pool);
 			try {

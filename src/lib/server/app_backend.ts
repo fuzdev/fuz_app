@@ -21,7 +21,8 @@ import type { Keyring } from '../auth/keyring.ts';
 import type { PasswordHashDeps } from '../auth/password.ts';
 import { run_migrations, type MigrationNamespace, type MigrationResult } from '../db/migrate.ts';
 import { AUTH_MIGRATION_NS } from '../auth/migrations.ts';
-import { create_db } from '../db/create_db.ts';
+import { create_db, is_pg_database_url } from '../db/create_db.ts';
+import { DEFAULT_DB_AUDIT_CHECKOUT_TIMEOUT_MS } from '../db/db_pg.ts';
 
 /**
  * Result of `create_app_backend()` — database metadata + deps bundle.
@@ -41,7 +42,10 @@ export interface AppBackend {
 
 /**
  * Callback that builds the bound `AuditEmitter` after the backend's pool
- * `Db` and `Logger` exist. Required on `CreateAppBackendOptions` so the
+ * `Db` and `Logger` exist. The `db` it is handed is the backend's pool with
+ * the audit checkout bound (`db_audit_checkout_timeout_ms`,
+ * `Db.with_checkout_timeout`), so the emitter's pool writes wait longer than a
+ * request's checkout. Required on `CreateAppBackendOptions` so the
  * consumer owns subscriber-chain composition and `AuditLogConfig`
  * selection without the factory holding a default.
  *
@@ -149,6 +153,26 @@ export interface CreateAppBackendOptions {
 	 * lifecycle, not server assembly.
 	 */
 	migration_namespaces?: ReadonlyArray<MigrationNamespace>;
+	/**
+	 * Bound on the pool checkouts a request makes, in ms — the server env's
+	 * `FUZ_DB_CHECKOUT_TIMEOUT_MS`. Default `DEFAULT_DB_CHECKOUT_TIMEOUT_MS`
+	 * (5 s). A failed checkout answers 503 on every surface. Audit writes use
+	 * `db_audit_checkout_timeout_ms` instead — the failed-login row a request
+	 * waits on included. A checkout that waits and then connects can take about
+	 * twice the bound (`db/db_pg.ts`, "Checkout timeout"). Postgres only:
+	 * PGlite and pglet have no pool, and a value passed with one is warned of
+	 * at boot. Twin of the Rust `BaseServerEnv::db_checkout_timeout`.
+	 */
+	db_checkout_timeout_ms?: number;
+	/**
+	 * Bound on the checkout behind each audit pool write, in ms — the server
+	 * env's `FUZ_DB_AUDIT_CHECKOUT_TIMEOUT_MS`. Default
+	 * `DEFAULT_DB_AUDIT_CHECKOUT_TIMEOUT_MS` (30 s). A failed login awaits its
+	 * row, so it can wait up to this bound. Postgres only, like
+	 * `db_checkout_timeout_ms`. Twin of the Rust
+	 * `BaseServerEnv::db_audit_checkout_timeout`.
+	 */
+	db_audit_checkout_timeout_ms?: number;
 }
 
 /**
@@ -156,6 +180,7 @@ export interface CreateAppBackendOptions {
  *
  * Calls `create_db` → `run_migrations` (auth namespace, then any
  * `migration_namespaces` from options in order) → `audit_factory({db, log})`
+ * (`db` with the audit checkout bound)
  * and bundles the result with the provided keyring and password deps and a
  * `connection_closer` (empty until `create_app_server` adds its transports).
  *
@@ -166,7 +191,19 @@ export interface CreateAppBackendOptions {
 export const create_app_backend = async (options: CreateAppBackendOptions): Promise<AppBackend> => {
 	const { database_url, keyring, password, read_secure_file, delete_file, audit_factory } = options;
 	const log = options.log ?? new Logger('server');
-	const { db, close, db_type, db_name } = await create_db(database_url);
+	const { db, close, db_type, db_name } = await create_db(database_url, {
+		checkout_timeout_ms: options.db_checkout_timeout_ms
+	});
+	// set but inert: fail loud rather than let an operator believe it applies
+	if (
+		!is_pg_database_url(database_url) &&
+		(options.db_checkout_timeout_ms !== undefined ||
+			options.db_audit_checkout_timeout_ms !== undefined)
+	) {
+		log.warn(
+			`${db_type} has no connection pool; FUZ_DB_CHECKOUT_TIMEOUT_MS and FUZ_DB_AUDIT_CHECKOUT_TIMEOUT_MS have no effect`
+		);
+	}
 	// Everything after `create_db` can throw — `run_migrations` (its
 	// `MigrationError` kinds include the reserved-namespace refusal),
 	// `audit_factory`.
@@ -178,7 +215,12 @@ export const create_app_backend = async (options: CreateAppBackendOptions): Prom
 			AUTH_MIGRATION_NS,
 			...(options.migration_namespaces ?? [])
 		]);
-		const audit = audit_factory({ db, log });
+		const audit = audit_factory({
+			db: db.with_checkout_timeout(
+				options.db_audit_checkout_timeout_ms ?? DEFAULT_DB_AUDIT_CHECKOUT_TIMEOUT_MS
+			),
+			log
+		});
 		return {
 			db_type,
 			db_name,

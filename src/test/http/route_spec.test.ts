@@ -42,6 +42,7 @@ import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
 import { create_test_request_context } from '#lib/testing/auth_apps.ts';
 import { ApiError, RateLimitError } from '#lib/http/error_schemas.ts';
 import { create_stub_db } from '#lib/testing/stubs.ts';
+import { DbCheckoutError } from '#lib/db/db_checkout_error.ts';
 import {
 	ThrownJsonrpcError,
 	JSONRPC_ERROR_CODES,
@@ -1316,6 +1317,31 @@ describe('events_to_surface', () => {
 });
 
 describe('error catch layer', () => {
+	test('a failed pool checkout answers the flat 503, no message', async () => {
+		const app = new Hono();
+		const specs: Array<RouteSpec> = [
+			{
+				method: 'GET',
+				path: '/test',
+				auth: { account: 'none', actor: 'none' },
+				handler: () => {
+					throw new DbCheckoutError({
+						cause: new Error('timeout exceeded when trying to connect')
+					});
+				},
+				description: 'Test',
+				input: z.null(),
+				output: z.null()
+			}
+		];
+		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
+
+		const res = await app.request('/test');
+		assert.strictEqual(res.status, 503);
+		assert.strictEqual(res.headers.get('content-type'), 'application/json');
+		assert.strictEqual(await res.text(), '{"error":"service_unavailable"}');
+	});
+
 	test('handler that throws ThrownJsonrpcError returns correct status and body', async () => {
 		const app = new Hono();
 		const specs: Array<RouteSpec> = [

@@ -170,6 +170,18 @@ export interface TsSpineBackendConfigOptions {
 	 * default. Mirrors `SpineStubBackendConfigOptions.ws_receive_timeout_ms`.
 	 */
 	readonly ws_receive_timeout_ms?: number;
+	/**
+	 * Replace the request pool checkout bound (`FUZ_DB_CHECKOUT_TIMEOUT_MS`).
+	 * Postgres only — over `memory://` the binary warns and runs unbounded.
+	 * Mirrors `SpineStubBackendConfigOptions.db_checkout_timeout_ms`.
+	 */
+	readonly db_checkout_timeout_ms?: number;
+	/**
+	 * Replace the audit write pool checkout bound
+	 * (`FUZ_DB_AUDIT_CHECKOUT_TIMEOUT_MS`), Postgres only. Mirrors
+	 * `SpineStubBackendConfigOptions.db_audit_checkout_timeout_ms`.
+	 */
+	readonly db_audit_checkout_timeout_ms?: number;
 }
 
 /**

@@ -487,6 +487,44 @@ describe('create_audit_emitter — emit', () => {
 	});
 });
 
+describe('create_audit_emitter — a dropped pool write', () => {
+	test('logs the whole row as one error line, secret metadata masked', async () => {
+		reset_audit_write_failures();
+		const lines: Array<string> = [];
+		const capture = {
+			error: (...args: Array<unknown>) => lines.push(args.map(String).join(' '))
+		} as unknown as Logger;
+		const audit_log_config = create_audit_log_config({
+			extra_events: {
+				probe_event: z.looseObject({
+					label: z.string(),
+					secret_thing: z.string().meta({ sensitivity: 'secret' })
+				})
+			}
+		});
+		const db = create_mock_db(vi.fn(() => Promise.reject(new Error('checkout timed out'))));
+		const audit = create_audit_emitter({ db, log: capture, audit_log_config });
+		try {
+			await audit.emit_pool({
+				event_type: 'probe_event',
+				outcome: 'failure',
+				account_id: 'acct-1' as Uuid,
+				ip: '203.0.113.9',
+				metadata: { label: 'kept', secret_thing: 'hunter2' }
+			});
+			assert.strictEqual(lines.length, 1, 'one line');
+			assert.strictEqual(
+				lines[0],
+				'audit row dropped: {"event_type":"probe_event","outcome":"failure","actor_id":null,"account_id":"acct-1","target_account_id":null,"target_actor_id":null,"ip":"203.0.113.9","metadata":{"label":"kept","secret_thing":"***"}} error: checkout timed out'
+			);
+			assert.notInclude(lines[0], 'hunter2');
+			assert.strictEqual(get_audit_write_failures(), 1);
+		} finally {
+			reset_audit_write_failures();
+		}
+	});
+});
+
 describe('create_audit_emitter — routing by outcome and transaction', () => {
 	/** A mock transaction-scoped `Db`: `in_transaction` answers `true`. */
 	const create_mock_tx_db = (mock_query?: ReturnType<typeof vi.fn>): Db =>

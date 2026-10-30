@@ -5,7 +5,8 @@
  * @module
  */
 
-import { describe, test, assert } from 'vitest';
+import { describe, test, assert, vi } from 'vitest';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
 import { create_session_config } from '#lib/auth/session_cookie.ts';
@@ -53,6 +54,36 @@ const create_server_config = (
 });
 
 describe('create_app_backend', () => {
+	test('a checkout bound set over a pool-less driver is warned of, and the audit db is the db', async () => {
+		for (const set of [true, false]) {
+			const log = new Logger('test', { level: 'off' });
+			const warns: Array<string> = [];
+			vi.spyOn(log, 'warn').mockImplementation((...args: Array<unknown>) => {
+				warns.push(args.map(String).join(' '));
+			});
+			let audit_db: unknown = null;
+			const backend = await create_app_backend({
+				database_url: 'memory://',
+				keyring,
+				password: stub_password_deps,
+				...fs_stubs,
+				log,
+				audit_factory: ({ db, log }) => {
+					audit_db = db;
+					return create_audit_emitter({ db, log });
+				},
+				...(set ? { db_checkout_timeout_ms: 250, db_audit_checkout_timeout_ms: 1_000 } : {})
+			});
+			try {
+				const matching = warns.filter((w) => w.includes('FUZ_DB_CHECKOUT_TIMEOUT_MS'));
+				assert.strictEqual(matching.length, set ? 1 : 0, `set: ${set}`);
+				assert.strictEqual(audit_db, backend.deps.db, 'no pool, so no separate bound');
+			} finally {
+				await backend.close();
+			}
+		}
+	});
+
 	test(
 		'accepts pre-initialized backend (skips create_app_backend)',
 		{ timeout: 15_000 },

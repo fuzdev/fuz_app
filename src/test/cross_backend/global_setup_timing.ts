@@ -6,7 +6,10 @@
  * `b`) and provides both serialized handles plus the two intervals, so
  * `sse_keep_alive.cross.test.ts` and `ws_receive_timeout.cross.test.ts` watch
  * each impl's timers fire within seconds instead of the defaults' 15 s and
- * 60 s.
+ * 60 s. Both also run with the pool checkout bounds shortened
+ * (`FUZ_DB_CHECKOUT_TIMEOUT_MS`, `FUZ_DB_AUDIT_CHECKOUT_TIMEOUT_MS`), which
+ * `db_checkout_timeout.cross.test.ts` boots and probes — a real bound on the
+ * stub's Postgres pool, a warned-of no-op on the TS spine's pool-less pglet.
  *
  * A dedicated dual-spawn, mirroring `global_setup_login_security.ts`: a
  * shortened receive timeout would close the standard suites' idle sockets
@@ -53,6 +56,13 @@ const AUDIT_SSE_KEEP_ALIVE_MS = 200;
  */
 const WS_RECEIVE_TIMEOUT_MS = 2000;
 
+/**
+ * The pool checkout bounds both backends boot with — far under the defaults
+ * (5 s and 30 s), and long enough that an idle local pool never trips them.
+ */
+const DB_CHECKOUT_TIMEOUT_MS = 250;
+const DB_AUDIT_CHECKOUT_TIMEOUT_MS = 1_000;
+
 // The generic "spawn two backends, provide two handles" maker, both backends
 // given the same two intervals.
 const create_dual_spawn = (stub_database_url: string) =>
@@ -63,7 +73,9 @@ const create_dual_spawn = (stub_database_url: string) =>
 					name: TIMING_TS.name,
 					port: TIMING_TS.port,
 					audit_sse_keep_alive_ms: AUDIT_SSE_KEEP_ALIVE_MS,
-					ws_receive_timeout_ms: WS_RECEIVE_TIMEOUT_MS
+					ws_receive_timeout_ms: WS_RECEIVE_TIMEOUT_MS,
+					db_checkout_timeout_ms: DB_CHECKOUT_TIMEOUT_MS,
+					db_audit_checkout_timeout_ms: DB_AUDIT_CHECKOUT_TIMEOUT_MS
 				}),
 			b: () =>
 				rust_spine_stub_backend_config({
@@ -71,7 +83,9 @@ const create_dual_spawn = (stub_database_url: string) =>
 					port: TIMING_STUB.port,
 					database_url: stub_database_url,
 					audit_sse_keep_alive_ms: AUDIT_SSE_KEEP_ALIVE_MS,
-					ws_receive_timeout_ms: WS_RECEIVE_TIMEOUT_MS
+					ws_receive_timeout_ms: WS_RECEIVE_TIMEOUT_MS,
+					db_checkout_timeout_ms: DB_CHECKOUT_TIMEOUT_MS,
+					db_audit_checkout_timeout_ms: DB_AUDIT_CHECKOUT_TIMEOUT_MS
 				})
 		},
 		provide_keys: { a: 'timing_handle_a', b: 'timing_handle_b' }

@@ -666,6 +666,10 @@ both; the second pins a silent admitted socket closed with
 `WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT` + its reason no sooner than the timeout,
 and a socket sending heartbeats kept open past twice it. Deadlines are
 generous and far under the defaults, so a spine ignoring the override fails.
+Both spines also boot with the pool checkout bounds shortened
+(`FUZ_DB_CHECKOUT_TIMEOUT_MS`, `FUZ_DB_AUDIT_CHECKOUT_TIMEOUT_MS`), and
+`db_checkout_timeout.cross.test.ts` holds each to answering `/health` and
+`/ready`.
 A dedicated project because a short receive timeout would close the standard
 suites' idle sockets. The stub runs over its own
 database (`CROSS_PROJECT_RESOURCES`), the TS leg on `memory://`.

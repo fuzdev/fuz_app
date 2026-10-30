@@ -7,12 +7,12 @@
 
 import { describe, assert, test } from 'vitest';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
-import type { Pool } from 'pg';
-
-import { create_pg_db } from '#lib/db/db_pg.ts';
+import { create_pg_db, type DbCheckoutPool } from '#lib/db/db_pg.ts';
 
 /** A pool whose one client answers `COMMIT` with `commit_command` and records every statement. */
-const create_stub_pool = (commit_command: string): { pool: Pool; statements: Array<string> } => {
+const create_stub_pool = (
+	commit_command: string
+): { pool: DbCheckoutPool; statements: Array<string> } => {
 	const statements: Array<string> = [];
 	const client = {
 		query: async (text: string) => {
@@ -23,7 +23,7 @@ const create_stub_pool = (commit_command: string): { pool: Pool; statements: Arr
 			statements.push('release');
 		}
 	};
-	const pool = { connect: async () => client } as unknown as Pool;
+	const pool = { connect: async () => client } as unknown as DbCheckoutPool;
 	return { pool, statements };
 };
 

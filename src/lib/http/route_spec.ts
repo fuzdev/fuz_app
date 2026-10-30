@@ -19,6 +19,7 @@ import { DEV } from 'esm-env';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import type { Db } from '../db/db.ts';
+import { is_db_checkout_error } from '../db/db_checkout_error.ts';
 import {
 	type RouteErrorSchemas,
 	type RateLimitKey,
@@ -26,6 +27,7 @@ import {
 	ERROR_INVALID_REQUEST_BODY,
 	ERROR_INVALID_ROUTE_PARAMS,
 	ERROR_INVALID_QUERY_PARAMS,
+	ERROR_SERVICE_UNAVAILABLE,
 	ERROR_UNSUPPORTED_CONTENT_TYPE
 } from './error_schemas.ts';
 import { is_post_content_type_refused } from './simple_request.ts';
@@ -413,14 +415,20 @@ const is_internal_error_body = (body: unknown): boolean =>
 	typeof body === 'object' &&
 	(body as { error?: unknown }).error === 'internal_error';
 
+/** Whether a JSON body is the catch layer's failed-checkout `{error: 'service_unavailable'}`. */
+const is_service_unavailable_body = (body: unknown): boolean =>
+	body !== null &&
+	typeof body === 'object' &&
+	(body as { error?: unknown }).error === ERROR_SERVICE_UNAVAILABLE;
+
 /**
  * Wrap a handler with DEV-only output and error validation.
  *
  * In development, validates 2xx JSON responses against the output schema
  * and non-2xx responses against declared error schemas. Wraps the error
  * catch layer, so the body built from a thrown error is validated too — except
- * a 500 `internal_error`, which the catch layer can answer on any route and so
- * is always accepted.
+ * a 500 `internal_error` and a failed checkout's 503 `service_unavailable`,
+ * which the catch layer can answer on any route and so are always accepted.
  * Logs an error for mismatches and returns the response unchanged —
  * does not throw. Non-JSON responses (SSE, binary) are skipped. In
  * production, returns the handler unchanged.
@@ -451,6 +459,8 @@ const wrap_output_validation = (
 		// declares it — checking it against a route's 500 schema would only
 		// misreport a schema problem the route can't fix
 		if (response.status === 500 && is_internal_error_body(body)) return response;
+		// the same for a failed pool checkout's 503, which any route can answer
+		if (response.status === 503 && is_service_unavailable_body(body)) return response;
 		const result = schema.safeParse(body);
 		if (!result.success) {
 			const label = response.ok
@@ -480,6 +490,9 @@ export const apply_middleware_specs = (app: Hono, specs: Array<MiddlewareSpec>):
  * fuz_app, recognized by its brand (`to_thrown_jsonrpc_error`) — and maps it
  * to a flat REST `ApiError` body (`{error: <reason>, message?, ...rest_data}`)
  * at the matching HTTP status.
+ * A failed pool checkout (`DbCheckoutError`) answers the flat 503
+ * `{error: 'service_unavailable'}` with no `message`, byte for byte the Rust
+ * spine's `db_unavailable_response`.
  * Catches anything else, a foreign error class carrying a JSON-RPC `code`
  * included, and maps to `{error: 'internal_error', message?}`
  * at 500 (`message` populated only in DEV). Existing handlers that return
@@ -508,6 +521,12 @@ const wrap_error_catch = (handler: Handler, log: Logger): Handler => {
 		try {
 			return await handler(c, next);
 		} catch (err) {
+			// a failed pool checkout is the database unavailable: the flat 503 the
+			// Rust spine's `db_unavailable_response` answers, no message
+			if (is_db_checkout_error(err)) {
+				log.error('pool checkout failed:', err);
+				return c.json({ error: ERROR_SERVICE_UNAVAILABLE }, 503);
+			}
 			// recognized by brand, so a second fuz_app copy's error maps too
 			const thrown = to_thrown_jsonrpc_error(err);
 			if (thrown) {

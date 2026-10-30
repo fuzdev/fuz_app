@@ -2805,10 +2805,14 @@ through `timing_env` (`default_backend_configs.ts`), which sets
 integer of ms up to 2³¹ − 1 and refuse to boot on anything else; unset keeps
 the defaults (`SSE_KEEP_ALIVE_INTERVAL_MS`, `DEFAULT_WS_RECEIVE_TIMEOUT`).
 fuz_app's `cross_backend_timing` project shortens both, so its suites watch
-each spine's timers fire within seconds.
+each spine's timers fire within seconds. `db_checkout_timeout_ms` and
+`db_audit_checkout_timeout_ms` set the production pool checkout bounds
+(`FUZ_DB_CHECKOUT_TIMEOUT_MS`, `FUZ_DB_AUDIT_CHECKOUT_TIMEOUT_MS`) the same
+way; the timing project boots both spines with them shortened.
 Cross-process only; fuz_app's own wiring is
-`src/test/cross_backend/sse_keep_alive.cross.test.ts` and
-`src/test/cross_backend/ws_receive_timeout.cross.test.ts`, under the
+`src/test/cross_backend/sse_keep_alive.cross.test.ts`,
+`src/test/cross_backend/ws_receive_timeout.cross.test.ts` and
+`src/test/cross_backend/db_checkout_timeout.cross.test.ts`, under the
 `cross_backend_timing` project.
 
 ### Role-gated participation parity — `cross_backend/role_grant_participation.ts`

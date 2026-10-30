@@ -115,11 +115,18 @@ silent fallback to in-memory):
 
 Returns `{db: Db, close, db_type: DbType, db_name: string}`. Drivers are
 dynamically imported — only the needed driver is loaded. Unsupported schemes
-throw.
+throw. For `postgres://` the pool comes from `create_pg_pool`, whose every
+checkout is bounded (`checkout_timeout_ms`, the server env's
+`FUZ_DB_CHECKOUT_TIMEOUT_MS`, default 5 s) and throws `DbCheckoutError`
+(`db/db_checkout_error.ts`) when it fails — answered 503 on every surface,
+where a failed query keeps its 500 (./security.md §Database Unavailable).
+`Db.with_checkout_timeout(ms)` lends a caller its own bound on the same pool —
+the audit emitter's pool writes (`FUZ_DB_AUDIT_CHECKOUT_TIMEOUT_MS`, 30 s).
+PGlite and pglet have no pool; the bounds are inert there.
 
 `Db` provides `query()`, `query_one()`, and `transaction()`. Constructor takes
 only `DbDeps` (client + transaction callback). Driver adapters live in their own
-modules: `create_pg_db(pool)` in `db_pg.ts`, `create_pglite_db(pglite)` in
+modules: `create_pg_db(pool)` (over a `create_pg_pool` pool) in `db_pg.ts`, `create_pglite_db(pglite)` in
 `db_pglite.ts` and `create_pglet_db_driver(pglet)` in `db_pglet.ts` — each returns
 `{db, close}` with driver-appropriate transaction wiring. `create_db` dynamically
 imports the appropriate driver package based on the URL. For pg, transactions

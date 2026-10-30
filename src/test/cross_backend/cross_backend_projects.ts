@@ -125,15 +125,16 @@ const DUAL_SPAWN_PROJECTS: ReadonlyArray<DualSpawnProject> = [
 		]
 	},
 	// The timing gates spawn both backends with the audit stream's keep-alive
-	// interval and the WS receive timeout shortened — a config nothing else can
-	// share (a short receive timeout would close the standard suites' idle
-	// sockets mid-case).
+	// interval, the WS receive timeout and the pool checkout bounds shortened —
+	// a config nothing else can share (a short receive timeout would close the
+	// standard suites' idle sockets mid-case).
 	{
 		name: 'cross_backend_timing',
 		global_setup: './src/test/cross_backend/global_setup_timing.ts',
 		include: [
 			'src/test/cross_backend/sse_keep_alive.cross.test.ts',
-			'src/test/cross_backend/ws_receive_timeout.cross.test.ts'
+			'src/test/cross_backend/ws_receive_timeout.cross.test.ts',
+			'src/test/cross_backend/db_checkout_timeout.cross.test.ts'
 		]
 	},
 	// The differential again, between two JS runtimes: the TS spine on Node and

@@ -282,7 +282,10 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 		// tables. Both stay off the standard declared surface
 		// (`create_spine_surface_spec`) — driven only by the dedicated cell /
 		// fact-serving cross suites, ws/sse-style.
-		migration_namespaces: [CELL_MIGRATION_NS, FACT_MIGRATION_NS]
+		migration_namespaces: [CELL_MIGRATION_NS, FACT_MIGRATION_NS],
+		// the pool checkout bounds, as a production server passes them
+		db_checkout_timeout_ms: env.FUZ_DB_CHECKOUT_TIMEOUT_MS,
+		db_audit_checkout_timeout_ms: env.FUZ_DB_AUDIT_CHECKOUT_TIMEOUT_MS
 	});
 
 	// Facts dir for the disk-stream / X-Accel serving paths. The cross suite

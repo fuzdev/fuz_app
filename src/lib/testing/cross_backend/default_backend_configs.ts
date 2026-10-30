@@ -121,6 +121,10 @@ export interface TimingEnvOptions {
 	readonly audit_sse_keep_alive_ms?: number;
 	/** The WS endpoints' receive timeout in ms (`WS_RECEIVE_TIMEOUT_MS_ENV`). */
 	readonly ws_receive_timeout_ms?: number;
+	/** The pool checkout bound of a request in ms (`FUZ_DB_CHECKOUT_TIMEOUT_MS`). */
+	readonly db_checkout_timeout_ms?: number;
+	/** The pool checkout bound of an audit write in ms (`FUZ_DB_AUDIT_CHECKOUT_TIMEOUT_MS`). */
+	readonly db_audit_checkout_timeout_ms?: number;
 }
 
 /**
@@ -135,6 +139,13 @@ export const timing_env = (options: TimingEnvOptions): Record<string, string> =>
 		: {}),
 	...(options.ws_receive_timeout_ms !== undefined
 		? { [WS_RECEIVE_TIMEOUT_MS_ENV]: String(options.ws_receive_timeout_ms) }
+		: {}),
+	// production vars (`BaseServerEnv`), so no test-only constant names them
+	...(options.db_checkout_timeout_ms !== undefined
+		? { FUZ_DB_CHECKOUT_TIMEOUT_MS: String(options.db_checkout_timeout_ms) }
+		: {}),
+	...(options.db_audit_checkout_timeout_ms !== undefined
+		? { FUZ_DB_AUDIT_CHECKOUT_TIMEOUT_MS: String(options.db_audit_checkout_timeout_ms) }
 		: {})
 });
 

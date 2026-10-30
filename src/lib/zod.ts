@@ -149,7 +149,7 @@ export const zod_get_schema_keys = <T extends z.ZodType>(
  * @param key - the property name
  * @returns the field's schema, or `undefined`
  */
-const zod_maybe_get_field_schema = (schema: z.ZodType, key: string): z.ZodType | undefined =>
+export const zod_maybe_get_field_schema = (schema: z.ZodType, key: string): z.ZodType | undefined =>
 	zod_unwrap_to_object(schema)?.shape[key];
 
 /**

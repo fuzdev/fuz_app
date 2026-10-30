@@ -19,6 +19,7 @@
  */
 
 import { DEV } from 'esm-env';
+import { is_db_checkout_error } from '../db/db_checkout_error.ts';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
 import {
@@ -246,6 +247,12 @@ export const jsonrpc_error_messages = Object.freeze({
 }) as Readonly<Record<JsonrpcErrorName, (...args: Array<any>) => JsonrpcErrorObject>>;
 
 /**
+ * The message every failed pool checkout answers with, on both spines — the
+ * Rust `fuz_http::DB_UNAVAILABLE_MESSAGE`.
+ */
+export const DB_UNAVAILABLE_MESSAGE = 'database unavailable';
+
+/**
  * Realm-global brand on `ThrownJsonrpcError.prototype`. `Symbol.for` makes
  * every copy of this module that one process resolves mint the same key, so
  * `to_thrown_jsonrpc_error` recognizes a `ThrownJsonrpcError` from any copy
@@ -281,6 +288,11 @@ Object.defineProperty(ThrownJsonrpcError.prototype, THROWN_JSONRPC_ERROR_BRAND, 
  * (another library's RPC error), or a `ThrownJsonrpcError` whose `code` was
  * cast outside the JSON-RPC set — so each caller masks it.
  *
+ * A failed pool checkout (`DbCheckoutError`, `db/db_checkout_error.ts`) is
+ * the database unavailable: `service_unavailable` with
+ * `DB_UNAVAILABLE_MESSAGE` and no `data` (HTTP 503), the Rust spine's
+ * `fuz_http::db_unavailable`.
+ *
  * The one thrown → wire conversion: the REST catch layer
  * (`apply_route_specs`), the RPC dispatch core (`perform_action`),
  * `create_jsonrpc_error_response_from_thrown`, the frontend HTTP and
@@ -293,6 +305,9 @@ Object.defineProperty(ThrownJsonrpcError.prototype, THROWN_JSONRPC_ERROR_BRAND, 
  */
 export const to_thrown_jsonrpc_error = (err: unknown): JsonrpcErrorObject | null => {
 	if (!(err instanceof Error)) return null;
+	if (is_db_checkout_error(err)) {
+		return { code: JSONRPC_ERROR_CODES.service_unavailable, message: DB_UNAVAILABLE_MESSAGE };
+	}
 	const {
 		code,
 		data,

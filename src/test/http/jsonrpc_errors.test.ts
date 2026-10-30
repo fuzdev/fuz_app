@@ -24,6 +24,8 @@ import {
 	http_status_to_jsonrpc_error_code,
 	type JsonrpcErrorName
 } from '#lib/http/jsonrpc_errors.ts';
+import { DbCheckoutError } from '#lib/db/db_checkout_error.ts';
+
 import { ForeignRpcError, SecondCopyThrownJsonrpcError } from './thrown_jsonrpc_error_helpers.ts';
 
 describe('JSONRPC_ERROR_CODES', () => {
@@ -448,6 +450,27 @@ describe('is_jsonrpc_error_code', () => {
 });
 
 describe('to_thrown_jsonrpc_error', () => {
+	test('a failed pool checkout is service_unavailable, from any copy of fuz_app', () => {
+		const cause = new Error('timeout exceeded when trying to connect');
+		// a second copy's class carries the same realm-global brand
+		class SecondCopyDbCheckoutError extends Error {}
+		Object.defineProperty(
+			SecondCopyDbCheckoutError.prototype,
+			Symbol.for('@fuzdev/fuz_app/DbCheckoutError'),
+			{ value: true }
+		);
+		for (const err of [new DbCheckoutError({ cause }), new SecondCopyDbCheckoutError('x')]) {
+			const thrown = to_thrown_jsonrpc_error(err);
+			assert.deepStrictEqual(thrown, {
+				code: JSONRPC_ERROR_CODES.service_unavailable,
+				message: 'database unavailable'
+			});
+			assert.strictEqual(jsonrpc_error_code_to_http_status(thrown!.code), 503);
+		}
+		// the driver's own error, unwrapped, is no checkout failure
+		assert.strictEqual(to_thrown_jsonrpc_error(cause), null);
+	});
+
 	test('reads a ThrownJsonrpcError', () => {
 		assert.deepStrictEqual(
 			to_thrown_jsonrpc_error(

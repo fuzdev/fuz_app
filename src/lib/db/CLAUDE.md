@@ -14,10 +14,19 @@ the code.
 
 - `db.ts` — `Db` abstraction over pg, PGlite and pglet, `query` / `query_one` /
   `transaction`, `no_nested_transaction` guard.
+- `db_checkout_error.ts` — `DbCheckoutError` (a failed pool checkout,
+  realm-global brand) + `is_db_checkout_error`; `to_thrown_jsonrpc_error` maps
+  it to `service_unavailable` (503), the route catch and the server's
+  `onError` to the flat `{error: 'service_unavailable'}`.
 - `create_db.ts` — URL-based driver auto-detection (`postgres` /
   `pglite-file` for `file://` / `pglet-memory` for `memory://`, over
   `@fuzdev/pglet-wasm`). An in-memory PGlite is `create_pglite_db(new PGlite())`.
-- `db_pg.ts` / `db_pglite.ts` / `db_pglet.ts` — driver adapters. `db_pg.ts` also
+- `db_pg.ts` / `db_pglite.ts` / `db_pglet.ts` — driver adapters. `db_pg.ts`'s
+  `create_pg_pool` builds the pool with a bounded checkout
+  (`connectionTimeoutMillis`, `DEFAULT_DB_CHECKOUT_TIMEOUT_MS`) whose failure
+  throws `DbCheckoutError`, plus `query_with_checkout_timeout` behind
+  `Db.with_checkout_timeout` (the audit emitter's longer wait,
+  `DEFAULT_DB_AUDIT_CHECKOUT_TIMEOUT_MS`); PGlite and pglet have no pool. It also
   exports `register_pg_type_parsers`, the shared int8→number coercion (so
   `BIGSERIAL` columns read as JS numbers, matching PGlite) — called by both
   `create_db` and the test pg factory (`testing/db.ts`) so prod and tests

@@ -1,7 +1,28 @@
 /**
  * PostgreSQL driver adapter for `Db`.
  *
- * Provides `create_pg_db()` to construct a `Db` backed by a `pg.Pool`.
+ * Provides `create_pg_pool()` to build the pool with a bounded checkout, and
+ * `create_pg_db()` to construct a `Db` backed by it.
+ *
+ * ## Checkout timeout
+ *
+ * Every checkout from a `create_pg_pool` pool — the wait for a free client,
+ * or a new client's connect — gives up after `checkout_timeout_ms`
+ * (`connectionTimeoutMillis`; default `DEFAULT_DB_CHECKOUT_TIMEOUT_MS`, 5 s)
+ * and throws a `DbCheckoutError` (`db/db_checkout_error.ts`), which every
+ * request surface answers with a 503. A query that fails on a client already
+ * checked out throws the driver's error as before (a 500). Per-statement
+ * `pool.query` and each transaction's `pool.connect()` both check out through
+ * the pool's `connect`, so both are bounded. The wait and the connect are
+ * bounded one by one, so a checkout that waits and is then handed a slot to
+ * connect in can take about twice the bound. `Db.with_checkout_timeout` gives
+ * a caller its own bound on the same pool — the audit emitter's pool writes
+ * wait `DEFAULT_DB_AUDIT_CHECKOUT_TIMEOUT_MS` (30 s), so a pool saturated
+ * enough to shed requests does not also drop the failure rows recording them.
+ * A request that awaits its audit row — a failed login does — can therefore
+ * wait up to that bound, not the request's. Twin of the Rust
+ * `fuz_db::create_pool` / `PoolOptions`.
+ *
  * Statically imports only `pg` types; the `pg` runtime is dynamically
  * imported where needed — by callers (e.g., `create_db`) that construct the
  * `Pool`, and by `register_pg_type_parsers` to reach `pg.types`. pglite-only
@@ -10,9 +31,124 @@
  * @module
  */
 
-import type { Pool } from 'pg';
+import type { Pool, PoolClient, PoolConfig } from 'pg';
 
 import { Db, no_nested_transaction, type DbDriverResult } from './db.ts';
+import { DbCheckoutError } from './db_checkout_error.ts';
+
+/** Default bound on one request's pool checkout — Rust `fuz_db::DEFAULT_CHECKOUT_TIMEOUT`. */
+export const DEFAULT_DB_CHECKOUT_TIMEOUT_MS = 5_000;
+
+/**
+ * Default bound on the checkout behind one audit pool write — Rust
+ * `fuz_db::DEFAULT_AUDIT_CHECKOUT_TIMEOUT`.
+ */
+export const DEFAULT_DB_AUDIT_CHECKOUT_TIMEOUT_MS = 30_000;
+
+/** The largest checkout bound either env var admits (10 minutes) — Rust `DB_CHECKOUT_TIMEOUT_MAX_MS`. */
+export const DB_CHECKOUT_TIMEOUT_MAX_MS = 600_000;
+
+/**
+ * A `pg.Pool` from `create_pg_pool`: a failed checkout throws `DbCheckoutError`,
+ * and `query_with_checkout_timeout` runs one statement under its own bound.
+ */
+export interface DbCheckoutPool extends Pool {
+	/**
+	 * `pool.query` with the checkout bounded by `timeout_ms` in place of the
+	 * pool's own.
+	 */
+	query_with_checkout_timeout: <T>(
+		timeout_ms: number,
+		text: string,
+		values?: Array<unknown>
+	) => Promise<{ rows: Array<T> }>;
+}
+
+/** Options for `create_pg_pool`. */
+export interface CreatePgPoolOptions {
+	/** The `postgres://` URL. */
+	connection_string: string;
+	/** Bound on every checkout, in ms — `DEFAULT_DB_CHECKOUT_TIMEOUT_MS` in production. */
+	checkout_timeout_ms: number;
+}
+
+/**
+ * Build a `pg.Pool` whose every checkout is bounded by
+ * `options.checkout_timeout_ms` and throws `DbCheckoutError` when it fails
+ * (module doc, "Checkout timeout").
+ *
+ * The pool wraps every error of its `connect` — the wait timing out, a new
+ * client's connect timing out or failing, a closed pool — and nothing a query
+ * on a checked-out client throws. `pool.query` checks out through the same
+ * `connect` (pg-pool's `query` calls `this.connect`), so per-statement queries
+ * keep pg-pool's own error-listener handling.
+ *
+ * `query_with_checkout_timeout` lends one statement its own bound by setting
+ * `options.connectionTimeoutMillis` for the synchronous span of `query` →
+ * `connect`: pg-pool reads it there, to arm the queue wait's timer or a new
+ * client's connect timer, and nowhere later on that checkout's path but one —
+ * a waiter that a freed slot later hands a brand-new client connects under the
+ * pool's own bound. Pinned against the installed pg-pool by
+ * `src/test/db/db_pg.db.test.ts`.
+ *
+ * @param pg - the `pg` module (dynamically imported by the caller)
+ * @param options - the URL and the checkout bound
+ * @returns the pool
+ */
+export const create_pg_pool = (
+	pg: { Pool: typeof Pool },
+	options: CreatePgPoolOptions
+): DbCheckoutPool => {
+	const config: PoolConfig = {
+		connectionString: options.connection_string,
+		connectionTimeoutMillis: options.checkout_timeout_ms
+	};
+	const to_checkout_error = (err: unknown): DbCheckoutError => new DbCheckoutError({ cause: err });
+	class CheckoutPool extends pg.Pool implements DbCheckoutPool {
+		// both forms: pg-pool's `query` passes a callback, a transaction awaits
+		override connect(): Promise<PoolClient>;
+		override connect(
+			callback: (
+				err: Error | undefined,
+				client: PoolClient | undefined,
+				done: (release?: any) => void
+			) => void
+		): void;
+		override connect(
+			callback?: (
+				err: Error | undefined,
+				client: PoolClient | undefined,
+				done: (release?: any) => void
+			) => void
+		): Promise<PoolClient> | void {
+			if (callback) {
+				super.connect((err, client, done) => {
+					callback(err ? to_checkout_error(err) : undefined, client, done);
+				});
+				return;
+			}
+			return super.connect().catch((err: unknown) => {
+				throw to_checkout_error(err);
+			});
+		}
+
+		query_with_checkout_timeout = <T>(
+			timeout_ms: number,
+			text: string,
+			values?: Array<unknown>
+		): Promise<{ rows: Array<T> }> => {
+			const previous = this.options.connectionTimeoutMillis;
+			this.options.connectionTimeoutMillis = timeout_ms;
+			try {
+				const result: Promise<unknown> = this.query(text, values);
+				return result as Promise<{ rows: Array<T> }>;
+			} finally {
+				this.options.connectionTimeoutMillis = previous;
+			}
+		};
+	}
+	return new CheckoutPool(config);
+};
 
 /**
  * Register the shared pg type-parser overrides on the module-global `pg.types`.
@@ -80,15 +216,31 @@ const create_pg_transaction =
 	};
 
 /**
- * Create a `Db` backed by a `pg.Pool`.
+ * Create a `Db` backed by a `create_pg_pool` pool.
  *
  * Owns the transaction implementation, acquiring a dedicated pool client
- * per transaction.
+ * per transaction. `db.with_checkout_timeout(ms)` returns a `Db` over the
+ * same pool whose statements check out under `ms` instead (its transactions
+ * keep the pool's own bound).
  *
- * @param pool - an already-constructed `pg.Pool`
+ * @param pool - a pool from `create_pg_pool`
  * @returns the `Db` instance and a `close` callback bound to `pool.end()`
  */
-export const create_pg_db = (pool: Pool): DbDriverResult => ({
-	db: new Db({ client: pool, transaction: create_pg_transaction(pool) }),
-	close: () => pool.end()
-});
+export const create_pg_db = (pool: DbCheckoutPool): DbDriverResult => {
+	const transaction = create_pg_transaction(pool);
+	return {
+		db: new Db({
+			client: pool,
+			transaction,
+			with_checkout_timeout: (timeout_ms) =>
+				new Db({
+					client: {
+						query: <T>(text: string, values?: Array<unknown>) =>
+							pool.query_with_checkout_timeout<T>(timeout_ms, text, values)
+					},
+					transaction
+				})
+		}),
+		close: () => pool.end()
+	};
+};

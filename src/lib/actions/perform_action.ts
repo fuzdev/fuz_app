@@ -77,6 +77,7 @@ import {
 	type ResolvedAuth
 } from '../auth/resolved_auth.ts';
 import type { Db } from '../db/db.ts';
+import { is_db_checkout_error } from '../db/db_checkout_error.ts';
 import { resolve_issues_invalid_reason } from '../schema_meta.ts';
 import { json_has_own_proto_key, to_input_params } from '../http/schema_helpers.ts';
 import { rate_limit_ip_key } from '../http/ip_canonical.ts';
@@ -241,12 +242,21 @@ export const perform_action = async (
 	if (preset !== undefined) {
 		request_context = preset.request_context;
 	} else if (!is_public_auth(action_auth)) {
-		const result = await apply_authorization_phase(
-			{ db },
-			account_id,
-			action_auth,
-			read_acting(action_auth, raw_params)
-		);
+		// A throw here (a failed checkout or read) answers the JSON-RPC envelope
+		// like a handler throw does — never escaping to the transport's REST
+		// catch — so the RPC endpoint answers in its own shape, as the Rust
+		// dispatcher does.
+		let result: Awaited<ReturnType<typeof apply_authorization_phase>>;
+		try {
+			result = await apply_authorization_phase(
+				{ db },
+				account_id,
+				action_auth,
+				read_acting(action_auth, raw_params)
+			);
+		} catch (err) {
+			return thrown_error_result(err, `authorization phase error: ${spec.method}`, log);
+		}
 		if (!result.ok) {
 			const { error: reason, ...rest } = result.body;
 			const code = http_status_to_jsonrpc_error_code(result.status);
@@ -374,26 +384,34 @@ export const perform_action = async (
 			use_transaction ? db.transaction((tx) => execute(tx)) : execute(db)
 		);
 	} catch (err) {
-		// a JSON-RPC error recognized by brand, a second fuz_app copy's included;
-		// anything else is an internal error, logged and masked
-		const thrown = to_thrown_jsonrpc_error(err);
-		if (thrown) {
-			return {
-				kind: 'error',
-				status: jsonrpc_error_code_to_http_status(thrown.code),
-				error: thrown
-			};
-		}
-		log.error(`unhandled action handler error: ${spec.method}`, err);
-		// Raw exception messages can leak internals (paths, SQL, secrets in a
-		// message) — surface them only in development; production falls back to
-		// the generic `internal_error` default. Same gate as the Zod-issue redaction.
-		return error_result(
-			jsonrpc_error_messages.internal_error(
-				dev_only(err instanceof Error ? err.message : undefined)
-			)
-		);
+		return thrown_error_result(err, `unhandled action handler error: ${spec.method}`, log);
 	}
+};
+
+/**
+ * The dispatcher's answer to a thrown value: the JSON-RPC error it carries
+ * (`to_thrown_jsonrpc_error` — a `ThrownJsonrpcError` from any copy of
+ * fuz_app, or a failed pool checkout's `service_unavailable`), else a logged,
+ * masked `internal_error`.
+ */
+const thrown_error_result = (err: unknown, context: string, log: Logger): PerformActionResult => {
+	const thrown = to_thrown_jsonrpc_error(err);
+	if (thrown) {
+		// a failed checkout is the server's to see, though the caller gets the 503
+		if (is_db_checkout_error(err)) log.error(context, err);
+		return {
+			kind: 'error',
+			status: jsonrpc_error_code_to_http_status(thrown.code),
+			error: thrown
+		};
+	}
+	log.error(context, err);
+	// Raw exception messages can leak internals (paths, SQL, secrets in a
+	// message) — surface them only in development; production falls back to
+	// the generic `internal_error` default. Same gate as the Zod-issue redaction.
+	return error_result(
+		jsonrpc_error_messages.internal_error(dev_only(err instanceof Error ? err.message : undefined))
+	);
 };
 
 /**

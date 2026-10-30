@@ -26,7 +26,12 @@ import { createServer } from 'node:net';
 import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 
 import type { Db } from '#lib/db/db.ts';
-import { create_pg_db, register_pg_type_parsers } from '#lib/db/db_pg.ts';
+import {
+	create_pg_db,
+	create_pg_pool,
+	DEFAULT_DB_CHECKOUT_TIMEOUT_MS,
+	register_pg_type_parsers
+} from '#lib/db/db_pg.ts';
 import { reset_public_schema, type DbFactoryBuilder } from '#lib/testing/db.ts';
 
 const PGLET_SERVER_BIN = process.env.PGLET_SERVER_BIN;
@@ -163,8 +168,13 @@ const resolve_server_db = (bin: string): Promise<Db> =>
 		// mirror the pg leg's int8→number coercion so BIGSERIAL columns read as numbers
 		await register_pg_type_parsers();
 		const server = await spawn_pglet_server(bin);
-		const { Pool } = await import('pg');
-		return create_pg_db(new Pool({ connectionString: server.url })).db;
+		const { default: pg } = await import('pg');
+		return create_pg_db(
+			create_pg_pool(pg, {
+				connection_string: server.url,
+				checkout_timeout_ms: DEFAULT_DB_CHECKOUT_TIMEOUT_MS
+			})
+		).db;
 	})());
 
 /**
