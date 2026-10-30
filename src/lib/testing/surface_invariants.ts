@@ -507,7 +507,7 @@ export const assert_ws_endpoints_include_protocol_actions = (surface: AppSurface
 			assert.ok(
 				method_names.has(expected),
 				`WS endpoint '${ep.path}' is missing protocol action method '${expected}' — ` +
-					`spread \`protocol_actions\` from 'actions/protocol.js' into \`actions\``
+					`spread \`protocol_actions\` from 'actions/protocol.ts' into \`actions\``
 			);
 		}
 	}

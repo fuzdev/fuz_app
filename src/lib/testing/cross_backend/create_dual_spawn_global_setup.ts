@@ -19,7 +19,7 @@ import '../assert_dev_env.ts';
  * ```ts
  * import {create_dual_spawn_global_setup} from
  *   '@fuzdev/fuz_app/testing/cross_backend/create_dual_spawn_global_setup.ts';
- * import {deno_backend_config, rust_backend_config} from './my_backend_config.js';
+ * import {deno_backend_config, rust_backend_config} from './my_backend_config.ts';
  *
  * export default create_dual_spawn_global_setup({
  *   configs: {a: deno_backend_config, b: rust_backend_config},

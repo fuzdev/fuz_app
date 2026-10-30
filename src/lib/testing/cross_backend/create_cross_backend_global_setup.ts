@@ -15,7 +15,7 @@ import '../assert_dev_env.ts';
  * ```ts
  * import {create_cross_backend_global_setup} from
  *   '@fuzdev/fuz_app/testing/cross_backend/create_cross_backend_global_setup.ts';
- * import {deno_backend_config, rust_backend_config} from './my_backend_config.js';
+ * import {deno_backend_config, rust_backend_config} from './my_backend_config.ts';
  *
  * export default create_cross_backend_global_setup({
  *   configs: {deno: deno_backend_config, rust: rust_backend_config},

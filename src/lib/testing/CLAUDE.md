@@ -426,7 +426,7 @@ RPC / WS structural invariants (options-free, apply over `surface.rpc_endpoints`
 
 * `assert_rpc_method_descriptions_present` — every RPC method on every endpoint has a non-empty `description`.
 * `assert_ws_method_descriptions_present` — every WS method on every endpoint has a non-empty `description`.
-* `assert_ws_endpoints_include_protocol_actions` — every WS endpoint includes `heartbeat` + `cancel` + `peer/ping` (the `protocol_actions` spread from `actions/protocol.js`).
+* `assert_ws_endpoints_include_protocol_actions` — every WS endpoint includes `heartbeat` + `cancel` + `peer/ping` (the `protocol_actions` spread from `actions/protocol.ts`).
 * `assert_ws_notifications_have_null_auth` — WS method `kind === 'remote_notification' ⟺ auth === null`; guards against drift between spec union and surface emitter.
 * `assert_no_testing_methods` — no `_testing_*` backdoor action (`TESTING_METHOD_PREFIX`) appears as an RPC or WS method on the declared surface. The test-binary actions are live-mounted only; this guards against a future wiring change folding `create_testing_actions(...)` into the surface-generating registry.
 
