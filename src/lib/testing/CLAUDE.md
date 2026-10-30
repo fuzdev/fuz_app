@@ -14,6 +14,7 @@ testing-patterns. This file is a reference index for the helpers themselves.
 ## Production guard — always the first import
 
 Every runtime-reachable module here starts with `import './assert_dev_env.ts';`
+(`import '../assert_dev_env.ts';` from a subdirectory, and so on by depth)
 — reads `DEV` from `esm-env` and throws if false, preventing production-bundle
 inclusion. Make this the first line in new modules. Enforced by
 `src/test/testing/assert_dev_env_coverage.test.ts`, which fails if any module

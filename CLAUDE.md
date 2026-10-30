@@ -128,7 +128,7 @@ that subtree.
 - **http/** — generic framework: `RouteSpec` + declarative transactions, three-layer error schema merge, JSON-RPC 2.0 envelopes + errors, origin/proxy middleware, `AppSurface` generation, post-commit `emit_after_commit`. → `src/lib/http/CLAUDE.md`
 - **actions/** — SAES (Symmetric Action Event System): `ActionSpec` types, registry-compile invariants, shared `perform_action` core, RPC dispatcher, WS endpoint, notification → SSE event bridge, transports (HTTP, WS frontend), the backend `ConnectionRegistry` (two-phase admission, per-account connection cap, and per-connection outbound byte budget — a connection sent more than its client takes closes with `WS_CLOSE_OUTBOUND_OVERFLOW`), the `ConnectionCloser` capability + `queue_connection_close` (revocations close live connections after their commit) + `create_revocation_guard` (the audit listener), `ActionDispatcher` + server→client peer requests (`peer/ping`), reactive `FrontendWebsocketClient`, typed RPC client. → `src/lib/actions/CLAUDE.md`
 - **ui/** — Svelte 5 components, runes-based `*_state.svelte.ts` modules, `*_rpc_context` DI pattern, auth/admin/role-grant-offer forms, datatable, popovers, layout shell. → `src/lib/ui/CLAUDE.md`
-- **testing/** — test utilities exported to consumers; every module starts with `import './assert_dev_env.ts'`. → `src/lib/testing/CLAUDE.md`
+- **testing/** — test utilities exported to consumers; every module but `cross_backend/make_cross_backend_project.ts` first imports `assert_dev_env.ts` (`'./assert_dev_env.ts'`, or `'../assert_dev_env.ts'` from a subdirectory). → `src/lib/testing/CLAUDE.md`
 
 ### Smaller subsystems
 
@@ -360,8 +360,10 @@ When working on tests, touch both directories together:
 
 - ./src/test/ — fuz_app's own suite. See ./src/test/CLAUDE.md.
 - `src/lib/testing/` — composable helpers exported to consumers. New shared
-  helpers belong here (every file starts with `import './assert_dev_env.ts'`).
-  See `src/lib/testing/CLAUDE.md`.
+  helpers belong here (every module but
+  `cross_backend/make_cross_backend_project.ts` first imports
+  `assert_dev_env.ts` — `'./assert_dev_env.ts'`, or `'../assert_dev_env.ts'`
+  from a subdirectory). See `src/lib/testing/CLAUDE.md`.
 
 When middleware or public API gains a new context variable, header, or field,
 update both the shared echo/mocks in `src/lib/testing/middleware.ts` and the
