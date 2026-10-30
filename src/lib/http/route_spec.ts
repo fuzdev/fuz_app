@@ -93,10 +93,10 @@ export type RouteMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
 /**
  * Per-request deps provided by the framework to route handlers.
  *
- * Audit writes and other rollback-resilient fire-and-forget calls run
- * through `AppDeps.audit.emit(ctx, input)` (see `auth/audit_emitter.ts`),
- * which captures the pool inside its closure — handlers can never
- * accidentally write audits against the request transaction.
+ * Audit writes run through `AppDeps.audit.emit(ctx, input)` (see
+ * `auth/audit_emitter.ts`). It writes a success row in the route's
+ * transaction when one is open and a failure row on the pool it closes over,
+ * so a refused attempt's row survives the rollback.
  *
  * Routes whose body manages its own transaction (signup, bootstrap)
  * declare `transaction: false` on the spec, which makes `route.db` the

@@ -50,6 +50,13 @@ export const register_pg_type_parsers = async (): Promise<void> => {
  * Acquires a dedicated client from the pool for each transaction,
  * ensuring `BEGIN` / `COMMIT` / `ROLLBACK` all hit the same connection.
  * Releases the client in `finally` regardless of outcome.
+ *
+ * Throws when PostgreSQL answers the `COMMIT` with `ROLLBACK` — a statement in
+ * the transaction failed and its error was swallowed (an un-awaited promise, a
+ * `catch` that never rethrew), so nothing committed. Without the check the
+ * caller would read the rolled-back transaction as a success. A handler that
+ * answers normally from a failed statement runs it under a savepoint and rolls
+ * back to it (`http/db_routes.ts`'s row delete does).
  */
 const create_pg_transaction =
 	(pool: Pool) =>
@@ -59,7 +66,10 @@ const create_pg_transaction =
 			await client.query('BEGIN');
 			const tx_db = new Db({ client, transaction: no_nested_transaction });
 			const result = await fn(tx_db);
-			await client.query('COMMIT');
+			const commit = await client.query('COMMIT');
+			if (commit.command === 'ROLLBACK') {
+				throw new Error('transaction aborted before COMMIT: PostgreSQL rolled it back');
+			}
 			return result;
 		} catch (err) {
 			await client.query('ROLLBACK');

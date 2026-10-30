@@ -643,7 +643,7 @@ describe('create_app_server.ws_endpoints dispatch through the assembled app', ()
 	});
 });
 
-/** A WS mutation that emits one success audit row through `audit`. */
+/** A WS mutation that emits one pool-written (failure) audit row through `audit`. */
 const audited_action_spec = {
 	method: 'audited',
 	kind: 'request_response',
@@ -658,10 +658,12 @@ const audited_action_spec = {
 
 const create_audited_action = (audit: AuditEmitter): RpcAction => ({
 	spec: audited_action_spec,
-	handler: (_input, ctx) => {
-		audit.emit(ctx, {
+	handler: async (_input, ctx) => {
+		await audit.emit(ctx, {
 			event_type: 'logout',
-			outcome: 'success',
+			// a failure row is the one written on the pool, outside the
+			// request's transaction, so it can still be in flight at the reply
+			outcome: 'failure',
 			account_id: ctx.auth?.account.id ?? null,
 			metadata: null
 		});

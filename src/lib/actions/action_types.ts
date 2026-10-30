@@ -82,9 +82,9 @@ export interface ActionContext {
 	request_client?: RequestClient;
 	/**
 	 * Transaction-scoped when `spec.side_effects` is true (the dispatcher
-	 * wraps in `db.transaction`); pool-level otherwise. Handlers that
-	 * need rollback-resilient writes call `deps.audit.emit(ctx, input)`,
-	 * which captures the pool inside its closure.
+	 * wraps in `db.transaction`); pool-level otherwise.
+	 * `deps.audit.emit(ctx, input)` writes a success row in this transaction
+	 * and a failure row on the pool the emitter closes over.
 	 */
 	db: Db;
 	/**

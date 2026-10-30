@@ -646,8 +646,8 @@ describe_db('AuditLogQueries', (get_db) => {
 			},
 			audit_log_config
 		});
-		audit.emit(
-			{ pending_effects, post_commit_effects },
+		await audit.emit(
+			{ db: get_db(), pending_effects, post_commit_effects },
 			{
 				event_type: 'classroom_create',
 				metadata: { classroom_id: 'cls-1', name: 'Period 3 English' }

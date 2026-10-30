@@ -136,6 +136,7 @@ export const create_recording_audit_emitter = (
 	const emitter: AuditEmitter = {
 		emit: (_ctx, input) => {
 			calls.push(input as AuditLogInput);
+			return Promise.resolve();
 		},
 		emit_role_grant_target: (ctx, auth, input) => {
 			calls.push({
@@ -148,6 +149,7 @@ export const create_recording_audit_emitter = (
 				ip: ctx.client_ip,
 				metadata: input.metadata
 			} as AuditLogInput);
+			return Promise.resolve();
 		},
 		emit_pool: (input) => {
 			calls.push(input as AuditLogInput);

@@ -196,7 +196,7 @@ export const create_bootstrap_route_specs = (
 						// Rust spine's `bootstrap_handler`, which does the same.
 						if (result.error === ERROR_TOKEN_FILE_MISSING) bootstrap_status.available = false;
 						ip_reserved.reservation.record();
-						deps.audit.emit(route, {
+						await deps.audit.emit(route, {
 							event_type: 'bootstrap',
 							outcome: 'failure',
 							ip: get_client_ip(c),
@@ -232,7 +232,7 @@ export const create_bootstrap_route_specs = (
 						}
 					}
 
-					deps.audit.emit(route, {
+					await deps.audit.emit(route, {
 						event_type: 'bootstrap',
 						actor_id: result.actor.id,
 						account_id: result.account.id,

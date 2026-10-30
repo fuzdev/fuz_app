@@ -95,8 +95,8 @@ export interface AccountActionOptions {
  * Create the self-service account RPC actions.
  *
  * @param deps - `RevokingActionFactoryDeps` (`log`, `audit`,
- *   `connection_closer`). `audit.emit` writes audit rows via the captured
- *   pool; the bound emitter encapsulates `on_audit_event` fan-out and the
+ *   `connection_closer`). `audit.emit` writes a success row in the request
+ *   transaction and a failure row via the captured pool; the bound emitter encapsulates `on_audit_event` fan-out and the
  *   optional `AuditLogConfig`. `connection_closer` closes a revoked
  *   credential's live connections after the revocation commits.
  * @param options - per-factory configuration
@@ -149,7 +149,7 @@ export const create_account_actions = (
 				session_hash: input.session_id
 			});
 		}
-		deps.audit.emit(ctx, {
+		await deps.audit.emit(ctx, {
 			event_type: 'session_revoke',
 			outcome: revoked ? 'success' : 'failure',
 			account_id: ctx.auth.account.id,
@@ -173,7 +173,7 @@ export const create_account_actions = (
 			kind: 'account',
 			account_id: ctx.auth.account.id
 		});
-		deps.audit.emit(ctx, {
+		await deps.audit.emit(ctx, {
 			event_type: 'session_revoke_all',
 			account_id: ctx.auth.account.id,
 			ip: ctx.client_ip,
@@ -224,7 +224,7 @@ export const create_account_actions = (
 				queue_connection_close(ctx, connection_closer, { kind: 'token', api_token_id });
 			}
 		}
-		deps.audit.emit(ctx, {
+		await deps.audit.emit(ctx, {
 			event_type: 'token_create',
 			account_id: ctx.auth.account.id,
 			ip: ctx.client_ip,
@@ -277,7 +277,7 @@ export const create_account_actions = (
 				api_token_id: input.token_id
 			});
 		}
-		deps.audit.emit(ctx, {
+		await deps.audit.emit(ctx, {
 			event_type: 'token_revoke',
 			outcome: revoked ? 'success' : 'failure',
 			account_id: ctx.auth.account.id,

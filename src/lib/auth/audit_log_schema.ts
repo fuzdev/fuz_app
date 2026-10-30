@@ -718,7 +718,12 @@ export interface AuditLogListOptions {
 	event_type_in?: Array<string>;
 	account_id?: Uuid;
 	outcome?: AuditOutcome;
-	/** When set, only return events with `seq` greater than this value. Enables SSE reconnection gap fill. */
+	/**
+	 * When set, only return events with `seq` greater than this value. Enables
+	 * SSE reconnection gap fill. `seq` is assigned at INSERT; an in-transaction
+	 * row commits later, so a row can become visible after a higher `seq` — a
+	 * gap fill can miss one that commits while the stream is down.
+	 */
 	since_seq?: number;
 }
 

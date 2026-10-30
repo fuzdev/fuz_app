@@ -1485,7 +1485,7 @@ describe('register_action_ws self-revocation', () => {
 
 	/** Mount `revoke_self` and open one socket whose sends and closes land on one timeline. */
 	const open_self_revoking_socket = async (
-		handler: (ctx: ActionContext, registry: ConnectionRegistry) => void
+		handler: (ctx: ActionContext, registry: ConnectionRegistry) => void | Promise<void>
 	): Promise<{ timeline: Array<string>; request: () => Promise<void> }> => {
 		const stub = create_stub_upgrade();
 		const { registry } = register_action_ws({
@@ -1499,8 +1499,8 @@ describe('register_action_ws self-revocation', () => {
 			actions: [
 				{
 					spec: revoke_self_spec,
-					handler: (_input: unknown, ctx: ActionContext) => {
-						handler(ctx, registry);
+					handler: async (_input: unknown, ctx: ActionContext) => {
+						await handler(ctx, registry);
 						return { revoked: true };
 					}
 				}
@@ -1566,12 +1566,12 @@ describe('register_action_ws self-revocation', () => {
 			log
 		});
 		let guarded = false;
-		const { timeline, request } = await open_self_revoking_socket((ctx, registry) => {
+		const { timeline, request } = await open_self_revoking_socket(async (ctx, registry) => {
 			if (!guarded) {
 				guarded = true;
 				audit.add_listener(create_revocation_guard(registry, log));
 			}
-			audit.emit(ctx, {
+			await audit.emit(ctx, {
 				event_type: 'session_revoke',
 				metadata: { session_id: SessionId.parse(hash_session_token(SESSION_ID)) }
 			});

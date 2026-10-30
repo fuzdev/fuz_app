@@ -33,9 +33,9 @@
  * ## Why the handlers close directly
  *
  * The audit listener (`create_revocation_guard`) closes connections too, but
- * only once the audit row is written, and that write is pool-routed and
- * fail-open. The handler's own close is the one that runs
- * whatever happens to the audit write, so the closer it holds must reach every
+ * only once the audit row is announced, and a row written outside a
+ * transaction (`/login`, `/password`) is fail-open. The handler's own close
+ * is the one that runs whatever happens to the audit row, so the closer it holds must reach every
  * transport whose connections outlive their credential. `RealtimeCloser` is
  * that fan-out, and `create_app_backend` puts one on `AppDeps`.
  *

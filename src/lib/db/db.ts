@@ -90,6 +90,18 @@ export class Db {
 	}
 
 	/**
+	 * Whether this `Db` is scoped to an open transaction — the `Db` a driver
+	 * adapter hands a `transaction` callback, which it builds with
+	 * `no_nested_transaction`. A pool-level `Db` answers `false`.
+	 *
+	 * The audit emitter reads it to write a success row inside the request's
+	 * transaction when one is open (`auth/audit_emitter.ts`).
+	 */
+	get in_transaction(): boolean {
+		return this.#transaction === no_nested_transaction;
+	}
+
+	/**
 	 * Execute a query and return all rows.
 	 *
 	 * @param text - SQL text with `$1`, `$2`, ... parameter placeholders

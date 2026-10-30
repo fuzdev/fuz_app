@@ -38,6 +38,7 @@ import {
 import type { Db } from '#lib/db/db.ts';
 
 const create_ctx = (client_ip = '203.0.113.5'): AuditEmitRoleGrantContext => ({
+	db: { in_transaction: false } as Db,
 	pending_effects: [],
 	post_commit_effects: [],
 	client_ip
@@ -49,12 +50,12 @@ const create_auth = (): { account: { id: Uuid }; actor: { id: Uuid } } => ({
 });
 
 describe('create_recording_audit_emitter — emit_role_grant_target', () => {
-	test('pushes one entry to calls per invocation', () => {
+	test('pushes one entry to calls per invocation', async () => {
 		const { emitter, calls } = create_recording_audit_emitter();
 		const ctx = create_ctx();
 		const auth = create_auth();
 
-		emitter.emit_role_grant_target(ctx, auth as never, {
+		await emitter.emit_role_grant_target(ctx, auth as never, {
 			event_type: 'role_grant_create',
 			target_account_id: 'tgt-acct' as Uuid,
 			target_actor_id: 'tgt-actor' as Uuid,
@@ -64,12 +65,12 @@ describe('create_recording_audit_emitter — emit_role_grant_target', () => {
 		assert.strictEqual(calls.length, 1);
 	});
 
-	test('lifts actor_id / account_id / ip from auth + ctx into the pushed entry', () => {
+	test('lifts actor_id / account_id / ip from auth + ctx into the pushed entry', async () => {
 		const { emitter, calls } = create_recording_audit_emitter();
 		const ctx = create_ctx('198.51.100.7');
 		const auth = create_auth();
 
-		emitter.emit_role_grant_target(ctx, auth as never, {
+		await emitter.emit_role_grant_target(ctx, auth as never, {
 			event_type: 'role_grant_revoke',
 			target_account_id: 'tgt-acct' as Uuid,
 			target_actor_id: 'tgt-actor' as Uuid,
@@ -83,13 +84,13 @@ describe('create_recording_audit_emitter — emit_role_grant_target', () => {
 		assert.strictEqual(lifted.ip, '198.51.100.7');
 	});
 
-	test('forwards event_type / outcome / target_*_id / metadata unchanged', () => {
+	test('forwards event_type / outcome / target_*_id / metadata unchanged', async () => {
 		const { emitter, calls } = create_recording_audit_emitter();
 		const ctx = create_ctx();
 		const auth = create_auth();
 		const metadata = { role: 'admin', scope_id: null, source_offer_id: 'offer-7' as Uuid };
 
-		emitter.emit_role_grant_target(ctx, auth as never, {
+		await emitter.emit_role_grant_target(ctx, auth as never, {
 			event_type: 'role_grant_create',
 			target_account_id: 'tgt-acct' as Uuid,
 			target_actor_id: 'tgt-actor' as Uuid,
@@ -105,12 +106,12 @@ describe('create_recording_audit_emitter — emit_role_grant_target', () => {
 		assert.deepStrictEqual(lifted.metadata, metadata);
 	});
 
-	test('null target_actor_id is preserved (account-grain offer shape)', () => {
+	test('null target_actor_id is preserved (account-grain offer shape)', async () => {
 		const { emitter, calls } = create_recording_audit_emitter();
 		const ctx = create_ctx();
 		const auth = create_auth();
 
-		emitter.emit_role_grant_target(ctx, auth as never, {
+		await emitter.emit_role_grant_target(ctx, auth as never, {
 			event_type: 'role_grant_offer_create',
 			target_account_id: 'tgt-acct' as Uuid,
 			target_actor_id: null,
@@ -124,13 +125,17 @@ describe('create_recording_audit_emitter — emit_role_grant_target', () => {
 		assert.strictEqual(calls[0]!.target_actor_id, null);
 	});
 
-	test('emit and emit_role_grant_target share the same calls array', () => {
+	test('emit and emit_role_grant_target share the same calls array', async () => {
 		const { emitter, calls } = create_recording_audit_emitter();
 		const ctx = create_ctx();
 		const auth = create_auth();
 
-		emitter.emit(ctx, { event_type: 'login', outcome: 'success', account_id: auth.account.id });
-		emitter.emit_role_grant_target(ctx, auth as never, {
+		await emitter.emit(ctx, {
+			event_type: 'login',
+			outcome: 'success',
+			account_id: auth.account.id
+		});
+		await emitter.emit_role_grant_target(ctx, auth as never, {
 			event_type: 'role_grant_create',
 			target_account_id: 'tgt-acct' as Uuid,
 			target_actor_id: 'tgt-actor' as Uuid,
@@ -142,13 +147,13 @@ describe('create_recording_audit_emitter — emit_role_grant_target', () => {
 		assert.strictEqual(calls[1]!.event_type, 'role_grant_create');
 	});
 
-	test('caller-owned calls array receives entries (calls_ref pass-through)', () => {
+	test('caller-owned calls array receives entries (calls_ref pass-through)', async () => {
 		const calls_ref: Array<AuditLogInput> = [];
 		const { emitter, calls } = create_recording_audit_emitter(calls_ref);
 		const ctx = create_ctx();
 		const auth = create_auth();
 
-		emitter.emit_role_grant_target(ctx, auth as never, {
+		await emitter.emit_role_grant_target(ctx, auth as never, {
 			event_type: 'role_grant_create',
 			target_account_id: 'tgt-acct' as Uuid,
 			target_actor_id: 'tgt-actor' as Uuid,

@@ -534,14 +534,16 @@ patterns:
 - **Audit fan-out** runs through the bound `AppDeps.audit` capability
   (`auth/audit_emitter.ts`), built by the consumer's `audit_factory`
   callback on `CreateAppBackendOptions` — typically a one-liner over
-  `create_audit_emitter`. `audit.emit(ctx, input)` writes via the pool
-  captured inside the closure, so entries persist when the request
-  transaction rolls back. The emitter also captures its registered
+  `create_audit_emitter`. `await audit.emit(ctx, input)` writes a success
+  row inside the request's transaction when one is open (`ctx.db`), so the
+  change and its row commit together, and every other row — failures above
+  all — via the pool captured inside the closure, so an attempt's row
+  persists when the request transaction rolls back. The emitter also captures its registered
   listeners and the optional `AuditLogConfig` so handlers cannot
   silently fall back to the builtin config or a stale callback. The write is
   eager, but the listeners hear of a **success** row only after the request's
-  transaction commits (its fan-out rides the `post_commit_effects` queue and
-  awaits the write) and never when the handler throws; a **failure** row is
+  transaction commits (its fan-out rides the `post_commit_effects` queue) and
+  never when the handler throws; a **failure** row is
   announced as soon as it is written. Action factories take
   `ActionFactoryDeps` (`{log, audit}`) directly; those whose handlers end
   credentials (`create_account_actions`, `create_admin_actions`, and the

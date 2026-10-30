@@ -156,7 +156,8 @@ export interface AdminActionOptions {
  *
  * @param deps - `RevokingActionFactoryDeps` (`log`, `audit`,
  *   `connection_closer`). `log` drives RPC-internal error logging;
- *   `audit.emit` writes audit rows via the captured pool. The bound emitter
+ *   `audit.emit` writes a success row in the request transaction and a
+ *   failure row via the captured pool. The bound emitter
  *   encapsulates listener fan-out and the optional `AuditLogConfig`.
  *   `connection_closer` closes the target account's live connections after a
  *   revoke-all, delete, or purge commits.
@@ -205,7 +206,7 @@ export const create_admin_actions = (
 		const auth = ctx.auth;
 		const account = await query_account_by_id(ctx, input.account_id);
 		if (!account) {
-			deps.audit.emit(ctx, {
+			await deps.audit.emit(ctx, {
 				event_type,
 				outcome: 'failure',
 				account_id: auth.account.id,
@@ -240,7 +241,7 @@ export const create_admin_actions = (
 		// because the FK linkage powers the username-join in
 		// `audit_log_list_with_usernames`; losing it on every success row
 		// to harden a corner case isn't worth the query-shape change.
-		deps.audit.emit(ctx, {
+		await deps.audit.emit(ctx, {
 			event_type,
 			account_id: auth.account.id,
 			target_account_id: input.account_id,
@@ -330,7 +331,7 @@ export const create_admin_actions = (
 			throw err;
 		}
 
-		deps.audit.emit(ctx, {
+		await deps.audit.emit(ctx, {
 			event_type: 'invite_create',
 			account_id: auth.account.id,
 			ip: ctx.client_ip,
@@ -356,7 +357,7 @@ export const create_admin_actions = (
 		if (!deleted) {
 			throw jsonrpc_errors.not_found('invite', { reason: ERROR_INVITE_NOT_FOUND });
 		}
-		deps.audit.emit(ctx, {
+		await deps.audit.emit(ctx, {
 			event_type: 'invite_delete',
 			account_id: auth.account.id,
 			ip: ctx.client_ip,
@@ -387,11 +388,11 @@ export const create_admin_actions = (
 		event_type: 'account_delete' | 'account_purge'
 	): Promise<void> => {
 		const auth = ctx.auth;
-		const deny = (
+		const deny = async (
 			reason: typeof ERROR_CANNOT_DELETE_KEEPER | typeof ERROR_CANNOT_DELETE_LAST_ADMIN,
 			message: string
-		): never => {
-			deps.audit.emit(ctx, {
+		): Promise<never> => {
+			await deps.audit.emit(ctx, {
 				event_type,
 				outcome: 'failure',
 				actor_id: auth.actor.id,
@@ -404,7 +405,7 @@ export const create_admin_actions = (
 		};
 		const verb = event_type === 'account_purge' ? 'purge' : 'delete';
 		if (await query_account_has_global_role(ctx, target_account_id, ROLE_KEEPER)) {
-			deny(ERROR_CANNOT_DELETE_KEEPER, `cannot ${verb} the keeper account`);
+			await deny(ERROR_CANNOT_DELETE_KEEPER, `cannot ${verb} the keeper account`);
 		}
 		// `_active_` variant: a tombstoned admin is already excluded from the
 		// active count, so removing it can't drop the tally — guarding it would
@@ -415,7 +416,7 @@ export const create_admin_actions = (
 			(await query_account_has_active_global_role(ctx, target_account_id, ROLE_ADMIN)) &&
 			(await query_count_active_accounts_with_global_role_for_update(ctx, ROLE_ADMIN)) <= 1
 		) {
-			deny(ERROR_CANNOT_DELETE_LAST_ADMIN, `cannot ${verb} the last admin account`);
+			await deny(ERROR_CANNOT_DELETE_LAST_ADMIN, `cannot ${verb} the last admin account`);
 		}
 	};
 
@@ -434,7 +435,7 @@ export const create_admin_actions = (
 			actors.map((a) => a.id)
 		);
 		for (const offer of superseded) {
-			deps.audit.emit_role_grant_target(ctx, ctx.auth, {
+			await deps.audit.emit_role_grant_target(ctx, ctx.auth, {
 				event_type: 'role_grant_offer_supersede',
 				target_account_id: offer.to_account_id,
 				target_actor_id: offer.to_actor_id,
@@ -486,7 +487,7 @@ export const create_admin_actions = (
 		const snapshot = await query_account_soft_delete(ctx, target_account_id, auth.actor.id);
 		if (!snapshot) {
 			// Missing or already soft-deleted — UUID probe key, failure audit is safe.
-			deps.audit.emit(ctx, {
+			await deps.audit.emit(ctx, {
 				event_type: 'account_delete',
 				outcome: 'failure',
 				actor_id: auth.actor.id,
@@ -511,7 +512,7 @@ export const create_admin_actions = (
 			kind: 'account',
 			account_id: target_account_id
 		});
-		deps.audit.emit(ctx, {
+		await deps.audit.emit(ctx, {
 			event_type: 'account_delete',
 			actor_id: auth.actor.id,
 			account_id: auth.account.id,
@@ -520,7 +521,7 @@ export const create_admin_actions = (
 			metadata: { username: snapshot.username, email: snapshot.email }
 		});
 		for (const actor of soft_deleted_actors) {
-			deps.audit.emit(ctx, {
+			await deps.audit.emit(ctx, {
 				event_type: 'actor_delete',
 				actor_id: auth.actor.id,
 				account_id: auth.account.id,
@@ -558,7 +559,7 @@ export const create_admin_actions = (
 		await cancel_outgoing_offers(ctx, input.account_id, actors);
 		const snapshot = await query_purge_account(ctx, input.account_id);
 		if (!snapshot) {
-			deps.audit.emit(ctx, {
+			await deps.audit.emit(ctx, {
 				event_type: 'account_purge',
 				outcome: 'failure',
 				actor_id: auth.actor.id,
@@ -579,7 +580,7 @@ export const create_admin_actions = (
 				auth.actor.id
 			}`
 		);
-		deps.audit.emit(ctx, {
+		await deps.audit.emit(ctx, {
 			event_type: 'account_purge',
 			actor_id: auth.actor.id,
 			account_id: auth.account.id,
@@ -588,7 +589,7 @@ export const create_admin_actions = (
 			metadata: { username: snapshot.username, email: snapshot.email }
 		});
 		for (const actor of actors) {
-			deps.audit.emit(ctx, {
+			await deps.audit.emit(ctx, {
 				event_type: 'actor_purge',
 				actor_id: auth.actor.id,
 				account_id: auth.account.id,
@@ -617,7 +618,7 @@ export const create_admin_actions = (
 		const snapshot = await query_account_undelete(ctx, input.account_id);
 		if (!snapshot) {
 			// Missing or not soft-deleted — UUID probe key, failure audit is safe.
-			deps.audit.emit(ctx, {
+			await deps.audit.emit(ctx, {
 				event_type: 'account_undelete',
 				outcome: 'failure',
 				actor_id: auth.actor.id,
@@ -633,7 +634,7 @@ export const create_admin_actions = (
 				undeleted_actors.push(actor);
 			}
 		}
-		deps.audit.emit(ctx, {
+		await deps.audit.emit(ctx, {
 			event_type: 'account_undelete',
 			actor_id: auth.actor.id,
 			account_id: auth.account.id,
@@ -642,7 +643,7 @@ export const create_admin_actions = (
 			metadata: { username: snapshot.username, email: snapshot.email }
 		});
 		for (const actor of undeleted_actors) {
-			deps.audit.emit(ctx, {
+			await deps.audit.emit(ctx, {
 				event_type: 'actor_undelete',
 				actor_id: auth.actor.id,
 				account_id: auth.account.id,
@@ -687,7 +688,7 @@ export const create_admin_actions = (
 		const { open_signup: old_value } = await query_app_settings_load(ctx);
 		await query_app_settings_update(ctx, input.open_signup, auth.actor.id);
 
-		deps.audit.emit(ctx, {
+		await deps.audit.emit(ctx, {
 			event_type: 'app_settings_update',
 			account_id: auth.account.id,
 			ip: ctx.client_ip,

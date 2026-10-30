@@ -135,9 +135,9 @@ export interface RegisterActionWsOptions {
 	 * `side_effects: true` actions, the same way HTTP RPC does. Per-message
 	 * authorization phase reads through this pool.
 	 *
-	 * Audit writes and other rollback-resilient fire-and-forget calls run
-	 * through `AppDeps.audit.emit` from the action factory's closure —
-	 * the dispatcher never holds an audit-side pool reference; the bound
+	 * Audit writes run through `AppDeps.audit.emit` from the action factory's
+	 * closure (a success row in the dispatch transaction, a failure row on the
+	 * pool) — the dispatcher never holds an audit-side pool reference; the bound
 	 * emitter owns the pool.
 	 */
 	db: Db;

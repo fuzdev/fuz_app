@@ -49,8 +49,8 @@ test('cell_audit_factory tracks in-flight writes, so the drain waits on them', a
 	} as unknown as Db;
 	const audit = cell_audit_factory({ db, log });
 
-	audit.emit(
-		{ pending_effects: [], post_commit_effects: [] },
+	await audit.emit(
+		{ db, pending_effects: [], post_commit_effects: [] },
 		{ event_type: 'login', outcome: 'success', account_id: WRITTEN_EVENT.account_id }
 	);
 	assert.strictEqual(gates.length, 1, 'the write starts at emit time');

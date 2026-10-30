@@ -145,8 +145,8 @@ const stub_db = create_noop_stub('stub_db');
  * already does this on the test backend.
  */
 export const create_test_audit_emitter = (): AuditEmitter => ({
-	emit: () => {},
-	emit_role_grant_target: () => {},
+	emit: async () => {},
+	emit_role_grant_target: async () => {},
 	emit_pool: async () => {},
 	notify: () => {},
 	add_listener: () => {

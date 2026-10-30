@@ -179,10 +179,10 @@ export const create_signup_route_specs = (
 					// back on PG unique violation.
 					let invite: Invite | undefined;
 
-					const emit_failure_audit = (
+					const emit_failure_audit = async (
 						reason: 'no_match' | 'signup_conflict' | 'internal_error'
-					): void => {
-						deps.audit.emit(route, {
+					): Promise<void> => {
+						await deps.audit.emit(route, {
 							event_type: 'signup',
 							outcome: 'failure',
 							ip: get_client_ip(c),
@@ -254,7 +254,7 @@ export const create_signup_route_specs = (
 						if (e instanceof NoMatchingInviteError) {
 							ip_reserved.reservation.record();
 							account_reservation?.record();
-							emit_failure_audit('no_match');
+							await emit_failure_audit('no_match');
 							await delay;
 							return c.json({ error: ERROR_NO_MATCHING_INVITE }, 403);
 						}
@@ -262,7 +262,7 @@ export const create_signup_route_specs = (
 						if (is_pg_unique_violation(e)) {
 							ip_reserved.reservation.record();
 							account_reservation?.record();
-							emit_failure_audit('signup_conflict');
+							await emit_failure_audit('signup_conflict');
 							await delay;
 							return c.json({ error: ERROR_SIGNUP_CONFLICT }, 409);
 						}
@@ -273,7 +273,7 @@ export const create_signup_route_specs = (
 						// `internal_error` before rethrowing. 5xx responses are
 						// not floored: they aren't response-time-controlled
 						// enumeration oracles.
-						emit_failure_audit('internal_error');
+						await emit_failure_audit('internal_error');
 						throw e;
 					}
 
@@ -294,7 +294,7 @@ export const create_signup_route_specs = (
 					// dry); the `finally` releases it.
 					if (open_signup) ip_reserved.reservation.record();
 
-					deps.audit.emit(route, {
+					await deps.audit.emit(route, {
 						event_type: 'signup',
 						account_id: result.account.id,
 						ip: get_client_ip(c),

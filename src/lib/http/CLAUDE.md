@@ -78,11 +78,11 @@ interface RouteContext {
 - **`route.pending_effects`** — direct push for eager fire-and-forget pool writes (audit, api-token usage tracking).
 - **`route.post_commit_effects`** — do not push directly; reach for `emit_after_commit` from `http/pending_effects.ts`. The helper pushes a thunk that the flush middleware invokes after the handler returns, closing the microtask-ordering window that an eager `Promise.resolve().then(fn)` leaves open inside the wrapping `db.transaction`.
 
-Pool-level fire-and-forget writes (audit logs, etc.) run through the bound
-`AppDeps.audit` capability — see `auth/CLAUDE.md` §AppDeps split. Handlers
-that need rollback-resilient writes call `deps.audit.emit(route, input)`,
-which captures the pool inside the bound emitter so the row lands even
-when the handler's transaction rolls back.
+Audit rows run through the bound `AppDeps.audit` capability — see
+`auth/CLAUDE.md` §Audit emitter. `await deps.audit.emit(route, input)` writes
+a success row in the route's transaction when one is open and a failure row
+via the pool captured inside the bound emitter, so a refused attempt's row
+lands even when the handler's transaction rolls back.
 
 ### Declarative transactions
 
@@ -609,8 +609,8 @@ instead of discovering the refusal — `ui/table_state.svelte.ts` gates on
 exclusion must not masquerade as one.
 
 **Every successful row delete is audited.** The `DELETE` handler defers a
-`deps.audit` emit through `emit_after_commit`, so the pool-routed row lands
-iff the delete's transaction commits — the success-only trail can't claim a
+`deps.audit.emit_pool` call through `emit_after_commit`, so the pool-routed
+row lands iff the delete's transaction commits — the success-only trail can't claim a
 delete that failed at COMMIT (the Rust twin commits before emitting for the
 same reason). Account-grain attribution (the browser's gate is account-grain,
 so no actor is claimed), metadata `{table, pk_column, id}`. Refusals emit

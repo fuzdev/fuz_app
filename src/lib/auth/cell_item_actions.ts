@@ -117,7 +117,7 @@ export const create_cell_item_actions = (deps: CellItemActionDeps): Array<RpcAct
 			if (is_pg_unique_violation(err)) throw position_taken_error();
 			throw err;
 		}
-		emit_cell_audit(ctx, deps.audit, auth, 'cell_item_insert', {
+		await emit_cell_audit(ctx, deps.audit, auth, 'cell_item_insert', {
 			parent_id: row.parent_id,
 			position: row.position,
 			child_id: row.child_id
@@ -142,7 +142,7 @@ export const create_cell_item_actions = (deps: CellItemActionDeps): Array<RpcAct
 			// Source row missing — raced with deleter. 404 covers the gap.
 			throw jsonrpc_errors.not_found('cell_item', { reason: ERROR_CELL_NOT_FOUND });
 		}
-		emit_cell_audit(ctx, deps.audit, auth, 'cell_item_move', {
+		await emit_cell_audit(ctx, deps.audit, auth, 'cell_item_move', {
 			parent_id: row.parent_id,
 			position_old: input.position,
 			position_new: row.position
@@ -158,7 +158,7 @@ export const create_cell_item_actions = (deps: CellItemActionDeps): Array<RpcAct
 		await require_editable_cell(ctx, auth, input.parent_id);
 		const deleted = await query_cell_item_delete(ctx, input.parent_id, input.position);
 		if (deleted) {
-			emit_cell_audit(ctx, deps.audit, auth, 'cell_item_delete', {
+			await emit_cell_audit(ctx, deps.audit, auth, 'cell_item_delete', {
 				parent_id: deleted.parent_id,
 				position: deleted.position,
 				child_id: deleted.child_id

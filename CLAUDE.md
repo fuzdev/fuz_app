@@ -235,10 +235,11 @@ auto-validation (params → query → pre-authorization auth → authorization
 phase → post-authorization auth → input validation → handler → DEV-only
 output + error validation). Duplicate method+path throws at registration. Declarative transactions: `transaction?: boolean` defaults
 to `false` for GET, `true` for mutations. Handlers receive `(c, route)`
-where `route` satisfies `QueryDeps`; for fire-and-forget effects that must
-outlive the transaction (audit writes), call `deps.audit.emit(route, input)`
-— the bound emitter closes over the pool so the row lands even when the
-handler's transaction rolls back. Its listeners hear of a success row only
+where `route` satisfies `QueryDeps`; audit rows go through
+`await deps.audit.emit(route, input)` — a success row is written in the
+route's transaction when one is open (it commits with the change), a failure
+row via the pool the bound emitter closes over (it lands even when the
+handler's transaction rolls back). Its listeners hear of a success row only
 after the commit; a revocation's connection closes are queued post-commit the
 same way (`queue_connection_close`). `generate_app_surface()` produces a
 JSON-serializable attack surface. Error schemas use three-layer merge

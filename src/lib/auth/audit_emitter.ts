@@ -6,24 +6,23 @@
  * consumer's `audit_factory` callback on `CreateAppBackendOptions` —
  * `create_app_backend` invokes the factory once with its constructed
  * `{db, log}` and lands the result on `AppDeps.audit`. Consumers reach
- * for `deps.audit.emit(ctx, input)` and never see the pool — handlers
- * cannot accidentally emit an audit event against the request's
- * transactional `db` (which would be rolled back with the parent on a
- * handler throw).
+ * for `await deps.audit.emit(ctx, input)`; the emitter picks where the row
+ * is written (see "Where a row is written").
  *
  * These methods cover every fan-out shape the auth domain needs
  * (`add_listener` and `listener_count` manage the listener chain):
  *
- * - `emit(ctx, input)` — fire-and-forget pool write. Pushes the in-flight
- *   promise onto `ctx.pending_effects` for post-response flushing. Errors are
- *   logged, never thrown. Returns `void` so callers don't pile up `void`
- *   keywords or accidentally `await` something whose handle is already in
- *   `pending_effects`.
+ * - `emit(ctx, input)` — the request-scoped emit. A success row inside a
+ *   request transaction is written in it and the promise rejects when the
+ *   INSERT fails; every other row is a fire-and-forget pool write whose
+ *   in-flight promise goes on `ctx.pending_effects`, and the returned promise
+ *   resolves at once.
  * - `emit_role_grant_target(ctx, auth, input)` — wrapper that lifts the
  *   `actor_id` / `account_id` / `ip` boilerplate every role-grant-shape audit
  *   site repeated. Delegates to `emit`.
  * - `emit_pool(input)` — awaitable pool write for code paths without a
- *   request context (ad-hoc maintenance scripts). Writes, then notifies.
+ *   request transaction (maintenance scripts, a post-commit thunk). Writes,
+ *   then notifies.
  * - `notify(event)` — fan out an already-written audit row (e.g. rows
  *   returned by `query_accept_offer` that were inserted in-transaction by
  *   the query layer, or the offer-expiry rows `auth/cleanup.ts` writes in
@@ -34,33 +33,51 @@
  * - `is_tracking_inflight()` — whether that barrier can wait on anything, so a
  *   test binary built without tracking is caught rather than racing.
  *
- * ## When listeners hear about a row
+ * ## Where a row is written
  *
- * `emit` writes the row at once, on the pool, whatever its outcome — the write
- * is outside the request's transaction, so it survives a rollback. Listener
- * fan-out is a separate step, and it depends on the outcome:
+ * The routing reads two things: the row's outcome and whether `ctx.db` is a
+ * transaction (`Db.in_transaction`).
+ *
+ * - A **success** row emitted inside a request transaction (an action with
+ *   `side_effects`, a route with `transaction: true`) is written **in that
+ *   transaction**: the change and the row that reports it commit together or
+ *   not at all. The INSERT is awaited, and a failed one rejects `emit`, so the
+ *   handler throws and its transaction rolls back — a committed change is
+ *   never left unaudited.
+ * - A **failure** row is written on the pool, outside the request's
+ *   transaction, so it survives the rollback that usually follows it — the
+ *   forensic record of a refused attempt.
+ * - A success row emitted with no request transaction open (a `GET`, or a
+ *   route that runs `transaction: false` and opens its own around just its
+ *   writes, like `/login` and `/password`, which emit once that transaction
+ *   has committed) is written on the pool too — there is no transaction to
+ *   join.
+ *
+ * A pool write is fail-open: a failed one is logged and counted
+ * (`get_audit_write_failures`), and the request goes on.
+ *
+ * This is the Rust spine's split: `fuz_auth`'s `route_audit_emit` writes an
+ * action's success row in the request transaction (`emit_in_tx`) and every
+ * failure row on the pool (`emit`), and its REST handlers (`/login`,
+ * `/password`, signup, bootstrap) emit on the pool. Two rows differ in
+ * routing between the twins, visible on the wire only when the audit INSERT
+ * fails: the TS `/logout` runs in a route transaction, so its success row is
+ * written in it (Rust writes it on the pool), and `db_admin_row_delete` is
+ * written on the pool after the commit on both (`http/db_routes.ts`, through
+ * `emit_pool`).
+ *
+ * ## When listeners hear about a row
  *
  * - A **failure** row is announced as soon as it is written. It records an
  *   attempt, which happened whether or not the request's transaction commits.
  * - A **success** row is announced only after the request's transaction
  *   commits (after the handler returns, on a route without one), and never
  *   when the handler throws: the fan-out is queued on
- *   `ctx.post_commit_effects` and awaits the write. A success row reports a
- *   state change, and the listeners act on it — the revocation listeners close
- *   connections, the audit stream broadcasts it. Announced before the commit,
- *   a close could run while the revoked credential still reads as valid, and a
- *   rolled-back revocation would close connections anyway.
- *
- * A success row emitted by a handler that later throws is still in the table —
- * the write is outside the transaction — but is never announced.
- *
- * A route that runs without a request transaction and opens its own around
- * just its writes (`/login`, `/password`) emits its success row once that
- * transaction has committed, so the row is written after the change it
- * reports. The Rust spine follows the same order: a success row emitted inside
- * a request transaction is written in that transaction and its fan-out queued
- * behind the commit, and `/login` and `/password` emit on the pool after their
- * own transaction commits.
+ *   `ctx.post_commit_effects`. A success row reports a state change, and the
+ *   listeners act on it — the revocation listeners close connections, the
+ *   audit stream broadcasts it. Announced before the commit, a close could run
+ *   while the revoked credential still reads as valid, and a rolled-back
+ *   revocation would close connections anyway.
  *
  * Listeners are a documented registration seam — `create_app_server`
  * registers additional listeners via `add_listener` after the backend is
@@ -78,6 +95,7 @@ import type { Logger } from '@fuzdev/fuz_util/log.ts';
 import type { Uuid } from '../primitive_schemas.ts';
 
 import type { Db } from '../db/db.ts';
+import type { QueryDeps } from '../db/query_deps.ts';
 import { emit_after_commit, type EmitAfterCommitContext } from '../http/pending_effects.ts';
 import type { RequestActorContext } from './request_context.ts';
 import { query_audit_log } from './audit_log_queries.ts';
@@ -89,25 +107,22 @@ import {
 } from './audit_log_schema.ts';
 
 /**
- * Per-request context required by `AuditEmitter.emit` — the request's two
- * side-effect queues. The bound emitter carries its own `log` reference
- * inside the closure, so per-call contexts don't need one.
+ * Per-request context required by `AuditEmitter.emit` — the request's `db`
+ * and its two side-effect queues. The bound emitter carries its own `log`
+ * reference inside the closure, so per-call contexts don't need one.
  *
- * The write is eager: the bound emitter fires the pool write immediately and
- * pushes the in-flight `Promise<void>` onto `pending_effects`. Deferring it
- * would only delay forensic visibility, since a pool-routed write is already
- * rollback-resilient. A success row's listener fan-out goes on
- * `post_commit_effects` instead (module doc, "When listeners hear about a
- * row").
- *
- * One success-only event also defers its *write*: the `db_admin_row_delete`
- * emit in `http/db_routes.ts` wraps the whole emit in `emit_after_commit`, so
- * the trail can't claim a mutation whose transaction failed at COMMIT.
+ * `db` decides where a success row is written: inside the request's
+ * transaction when `db.in_transaction`, else on the pool (module doc, "Where a
+ * row is written"). A pool write is eager — the emitter fires it immediately
+ * and pushes the in-flight `Promise<void>` onto `pending_effects`. A success
+ * row's listener fan-out goes on `post_commit_effects` (module doc, "When
+ * listeners hear about a row").
  *
  * Both `RouteContext` and `ActionContext` structurally satisfy this
- * shape, so handlers pass `route` / `ctx` directly.
+ * shape, so handlers pass `route` / `ctx` directly. Never pass one from a
+ * post-commit thunk: its transaction has ended — use `emit_pool` there.
  */
-export interface AuditEmitterContext extends EmitAfterCommitContext {
+export interface AuditEmitterContext extends EmitAfterCommitContext, QueryDeps {
 	pending_effects: Array<Promise<void>>;
 }
 
@@ -142,26 +157,30 @@ export interface AuditEmitRoleGrantInput<T extends string> {
  */
 export interface AuditEmitter {
 	/**
-	 * Fire-and-forget audit write via the captured pool.
+	 * Write an audit row for a request, routed by outcome and `ctx.db` (module
+	 * doc, "Where a row is written").
 	 *
-	 * The in-flight promise is pushed onto `ctx.pending_effects` so tests
-	 * with `await_pending_effects: true` can assert side effects inline.
-	 * Errors are logged, never thrown. A written row fans out to every
-	 * listener on the chain (`notify`): a failure row as soon as it is
-	 * written, a success row from `ctx.post_commit_effects` — after the
-	 * request's transaction commits, and never when the handler throws.
+	 * A success row inside a request transaction is written in it: the
+	 * promise settles once the INSERT has run, and rejects when it fails, so
+	 * the handler throws and the change rolls back with its row. Any other row
+	 * is a fire-and-forget pool write: its in-flight promise goes on
+	 * `ctx.pending_effects` (so tests with `await_pending_effects: true` can
+	 * assert it inline), its errors are logged and counted, never thrown, and
+	 * the returned promise resolves at once.
 	 *
-	 * Returns `void` deliberately — the in-flight promise is already on
-	 * `ctx.pending_effects`, and exposing it would tempt callers to `await`
-	 * (sequencing audit writes onto the response hot path) or sprinkle
-	 * `void` to placate `no-floating-promises`. For awaitable writes from
-	 * code paths without `pending_effects`, use `emit_pool`.
+	 * A written row fans out to every listener on the chain (`notify`): a
+	 * failure row as soon as it is written, a success row from
+	 * `ctx.post_commit_effects` — after the request's transaction commits, and
+	 * never when the handler throws.
 	 *
-	 * @mutates `audit_log` table - inserts the row via the captured pool
-	 * @mutates `ctx.pending_effects` - appends the in-flight settled promise
+	 * Always `await` it — the twin of the Rust `ctx.audit_emit(db, input).await?`.
+	 *
+	 * @mutates `audit_log` table - inserts the row in `ctx.db`'s transaction or via the captured pool
+	 * @mutates `ctx.pending_effects` - appends a pool write's in-flight settled promise
 	 * @mutates `ctx.post_commit_effects` - appends a success row's listener fan-out
+	 * @throws Error when an in-transaction INSERT fails
 	 */
-	emit<T extends string>(ctx: AuditEmitterContext, input: AuditLogInput<T>): void;
+	emit<T extends string>(ctx: AuditEmitterContext, input: AuditLogInput<T>): Promise<void>;
 	/**
 	 * Emit a role-grant-shape audit event with `actor_id` / `account_id` /
 	 * `ip` lifted from `auth` + `ctx`. Delegates to `emit`.
@@ -174,12 +193,15 @@ export interface AuditEmitter {
 		ctx: AuditEmitRoleGrantContext,
 		auth: RequestActorContext,
 		input: AuditEmitRoleGrantInput<T>
-	): void;
+	): Promise<void>;
 	/**
-	 * Awaitable pool write for code paths without a request context.
+	 * Awaitable pool write for code paths without a request transaction — a
+	 * maintenance script, or a post-commit thunk whose transaction has ended
+	 * (`db_admin_row_delete`, `http/db_routes.ts`).
 	 *
 	 * Writes, then notifies the listeners, whatever the outcome — there is no
-	 * request transaction to order the fan-out against. Errors are logged and
+	 * request transaction to order the fan-out against. Tracked by
+	 * `drain_inflight` like `emit`'s pool writes. Errors are logged and
 	 * swallowed (resolved void), so callers can sequence writes with
 	 * `await audit.emit_pool(...)` without try/catch boilerplate.
 	 *
@@ -274,7 +296,7 @@ export interface AuditEmitter {
 export type AuditEmitFn = <T extends string>(
 	ctx: AuditEmitterContext,
 	input: AuditLogInput<T>
-) => void;
+) => Promise<void>;
 
 /**
  * Wrap the bound `emit` before it gets captured by `emit_role_grant_target`'s
@@ -329,10 +351,11 @@ export interface CreateAuditEmitterOptions {
 }
 
 /**
- * Process-wide counter for audit rows an emitter failed to write. The pool
- * write behind `emit` / `emit_pool` / `emit_role_grant_target` is fail-open —
- * a refused `INSERT` is logged and the request proceeds — so a lost row is
- * otherwise visible only in the log. Same posture and lifetime as the drift
+ * Process-wide counter for audit rows an emitter failed to write on the pool.
+ * The pool write behind `emit` / `emit_pool` / `emit_role_grant_target` is
+ * fail-open — a refused `INSERT` is logged and the request proceeds — so a
+ * lost row is otherwise visible only in the log. An in-transaction write is
+ * not counted: its failure rejects `emit` and fails the request. Same posture and lifetime as the drift
  * counters in `auth/audit_log_queries.ts`: in-process, resets on restart, and
  * asserted zero per test by `install_audit_drift_guard`.
  */
@@ -399,7 +422,7 @@ export const create_audit_emitter = (options: CreateAuditEmitterOptions): AuditE
 		}
 	};
 
-	const emit_pool = async <T extends string>(input: AuditLogInput<T>): Promise<void> => {
+	const write_and_notify = async <T extends string>(input: AuditLogInput<T>): Promise<void> => {
 		const event = await write(input);
 		if (event) notify(event);
 	};
@@ -432,15 +455,26 @@ export const create_audit_emitter = (options: CreateAuditEmitterOptions): AuditE
 
 	const is_tracking_inflight = (): boolean => inflight !== null;
 
-	const base_emit: AuditEmitFn = (ctx, input) => {
+	const emit_pool = <T extends string>(input: AuditLogInput<T>): Promise<void> =>
+		track(write_and_notify(input));
+
+	// The routing — see the module doc, "Where a row is written".
+	const base_emit: AuditEmitFn = async (ctx, input) => {
 		if (input.outcome === 'failure') {
 			// an attempt happened whether or not the transaction commits
-			ctx.pending_effects.push(track(emit_pool(input)));
+			ctx.pending_effects.push(emit_pool(input));
 			return;
 		}
-		// A success row is written now and announced after the commit — and
-		// not at all on rollback, when the queue is discarded. See the module
-		// doc, "When listeners hear about a row".
+		if (ctx.db.in_transaction) {
+			// Written in the request's transaction, so it commits or rolls back
+			// with the change it reports; a throw here fails the handler. The
+			// fan-out waits for the commit and is discarded on rollback.
+			const event = await query_audit_log({ db: ctx.db }, input, audit_log_config);
+			emit_after_commit(ctx, () => notify(event));
+			return;
+		}
+		// No transaction to join: written on the pool now, announced once the
+		// handler has returned — and not at all if it throws.
 		const written = track(write(input));
 		ctx.pending_effects.push(written.then(() => undefined));
 		emit_after_commit(ctx, async () => {
@@ -458,7 +492,7 @@ export const create_audit_emitter = (options: CreateAuditEmitterOptions): AuditE
 		ctx: AuditEmitRoleGrantContext,
 		auth: RequestActorContext,
 		input: AuditEmitRoleGrantInput<T>
-	): void => {
+	): Promise<void> =>
 		emit<T>(ctx, {
 			event_type: input.event_type,
 			actor_id: auth.actor.id,
@@ -469,7 +503,6 @@ export const create_audit_emitter = (options: CreateAuditEmitterOptions): AuditE
 			ip: ctx.client_ip,
 			metadata: input.metadata
 		});
-	};
 
 	const add_listener = (listener: (event: AuditLogEvent) => void): (() => void) => {
 		const entry = { listener };

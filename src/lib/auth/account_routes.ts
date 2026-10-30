@@ -377,7 +377,7 @@ export const create_account_route_specs = (
 						await password.verify_dummy(pw);
 						ip_reserved.reservation.record();
 						account_reservation?.record();
-						deps.audit.emit(route, {
+						await deps.audit.emit(route, {
 							event_type: 'login',
 							outcome: 'failure',
 							ip: get_client_ip(c),
@@ -391,7 +391,7 @@ export const create_account_route_specs = (
 					if (!valid) {
 						ip_reserved.reservation.record();
 						account_reservation?.record();
-						deps.audit.emit(route, {
+						await deps.audit.emit(route, {
 							event_type: 'login',
 							outcome: 'failure',
 							account_id: account.id,
@@ -442,7 +442,7 @@ export const create_account_route_specs = (
 							deps.log
 						);
 					}
-					deps.audit.emit(route, {
+					await deps.audit.emit(route, {
 						event_type: 'login',
 						account_id: account.id,
 						ip: get_client_ip(c)
@@ -465,8 +465,8 @@ export const create_account_route_specs = (
 					await query_session_revoke_by_hash_unscoped(route, session_hash);
 					// Close this account's live connections once the revoke has
 					// committed — queued, so it never runs before the commit or on
-					// rollback, and it does not depend on the fail-open audit write
-					// below. Account-wide (not session-targeted) to match the Rust
+					// rollback, and it does not depend on the audit row below (written
+					// in the route transaction, so it commits with the revoke). Account-wide (not session-targeted) to match the Rust
 					// `account_logout` handler and the sibling `/password` handler
 					// — logout is a self-initiated account-grain operation. The
 					// audit listeners repeat the same close on the announced
@@ -480,7 +480,7 @@ export const create_account_route_specs = (
 				// Account-grain operation — no `actor_id` (which actor was
 				// resolved per-request is incidental to "this account ended
 				// its session"). Mirrors `login`.
-				deps.audit.emit(route, {
+				await deps.audit.emit(route, {
 					event_type: 'logout',
 					account_id: ctx.account.id,
 					ip: get_client_ip(c)
@@ -526,7 +526,7 @@ export const create_account_route_specs = (
 					if (!valid) {
 						ip_reserved.reservation.record();
 						account_reservation?.record();
-						deps.audit.emit(route, {
+						await deps.audit.emit(route, {
 							event_type: 'password_change',
 							outcome: 'failure',
 							account_id: ctx.account.id,
@@ -599,7 +599,7 @@ export const create_account_route_specs = (
 						// no cookie clear here either.
 						ip_reserved.reservation.record();
 						account_reservation?.record();
-						deps.audit.emit(route, {
+						await deps.audit.emit(route, {
 							event_type: 'password_change',
 							outcome: 'failure',
 							account_id: ctx.account.id,
@@ -627,7 +627,7 @@ export const create_account_route_specs = (
 					// account-level state; which per-request actor was resolved
 					// has no semantic bearing on "this account changed its
 					// password". Mirrors `login`/`logout`.
-					deps.audit.emit(route, {
+					await deps.audit.emit(route, {
 						event_type: 'password_change',
 						account_id: ctx.account.id,
 						ip: get_client_ip(c),

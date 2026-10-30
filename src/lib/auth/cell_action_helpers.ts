@@ -132,7 +132,8 @@ export const require_manageable_cell = async (
  * @param auth - the caller
  * @param event_type - the cell event
  * @param metadata - the event's metadata envelope
- * @mutates `audit_log` table - inserts the row through `audit.emit`
+ * @mutates `audit_log` table - inserts the row through `audit.emit`, in the request transaction
+ * @throws Error when the in-transaction INSERT fails, failing the handler
  */
 export const emit_cell_audit = <T extends string>(
 	ctx: ActionContext | ActionActorContext,
@@ -140,7 +141,7 @@ export const emit_cell_audit = <T extends string>(
 	auth: RequestActorContext,
 	event_type: T,
 	metadata: AuditLogInput<T>['metadata']
-): void => {
+): Promise<void> =>
 	audit.emit(ctx, {
 		event_type,
 		actor_id: auth.actor.id,
@@ -148,4 +149,3 @@ export const emit_cell_audit = <T extends string>(
 		ip: ctx.client_ip,
 		metadata
 	});
-};

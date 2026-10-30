@@ -10,6 +10,7 @@
 import { describe, test, assert, vi, afterEach } from 'vitest';
 import { create_deferred, wait, type Deferred } from '@fuzdev/fuz_util/async.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
+import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
 import { z } from 'zod';
 
@@ -68,7 +69,11 @@ const create_mock_db = (mock_query?: ReturnType<typeof vi.fn>): Db => {
 	return { query, query_one: vi.fn() } as any;
 };
 
-const create_ctx = (): AuditEmitterContext => ({ pending_effects: [], post_commit_effects: [] });
+const create_ctx = (db: Db = create_mock_db()): AuditEmitterContext => ({
+	db,
+	pending_effects: [],
+	post_commit_effects: []
+});
 
 /**
  * Drain both of `ctx`'s queues the way a dispatch site does once the handler
@@ -87,7 +92,7 @@ describe('create_audit_emitter — emit', () => {
 		const spy_error = vi.spyOn(console, 'error').mockImplementation(() => {});
 
 		// should not throw
-		audit.emit(ctx, create_input());
+		await audit.emit(ctx, create_input());
 
 		// wait for the rejected promise to settle
 		await wait();
@@ -102,7 +107,7 @@ describe('create_audit_emitter — emit', () => {
 		const ctx = create_ctx();
 		vi.spyOn(console, 'error').mockImplementation(() => {});
 		try {
-			audit.emit(ctx, create_input());
+			await audit.emit(ctx, create_input());
 			await flush_ctx(ctx);
 			assert.strictEqual(get_audit_write_failures(), 1);
 
@@ -117,13 +122,13 @@ describe('create_audit_emitter — emit', () => {
 		reset_audit_write_failures();
 		const audit = create_audit_emitter({ db: create_mock_db(), log, on_audit_event: noop });
 		const ctx = create_ctx();
-		audit.emit(ctx, create_input());
+		await audit.emit(ctx, create_input());
 		await flush_ctx(ctx);
 		await audit.emit_pool(create_input());
 		assert.strictEqual(get_audit_write_failures(), 0);
 	});
 
-	test('returns immediately without awaiting the query promise', () => {
+	test('returns immediately without awaiting the query promise', async () => {
 		let resolve_query: ((value: Array<AuditLogEvent>) => void) | undefined;
 		const query_promise = new Promise<Array<AuditLogEvent>>((resolve) => {
 			resolve_query = resolve;
@@ -133,7 +138,7 @@ describe('create_audit_emitter — emit', () => {
 		const audit = create_audit_emitter({ db, log, on_audit_event: noop });
 		const ctx = create_ctx();
 
-		audit.emit(ctx, create_input());
+		await audit.emit(ctx, create_input());
 
 		// query was called but its promise is still pending — function returned without awaiting
 		assert.strictEqual(mock_query.mock.calls.length, 1);
@@ -147,7 +152,7 @@ describe('create_audit_emitter — emit', () => {
 		const ctx = create_ctx();
 		const input = create_input();
 
-		audit.emit(ctx, input);
+		await audit.emit(ctx, input);
 		await wait();
 
 		assert.strictEqual(mock_query.mock.calls.length, 1);
@@ -165,18 +170,18 @@ describe('create_audit_emitter — emit', () => {
 		const ctx = create_ctx();
 		const spy_error = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-		audit.emit(ctx, create_input());
+		await audit.emit(ctx, create_input());
 
 		await wait();
 
 		assert.strictEqual(spy_error.mock.calls.length, 0);
 	});
 
-	test('pushes promise to pending_effects', () => {
+	test('pushes promise to pending_effects', async () => {
 		const audit = create_audit_emitter({ db: create_mock_db(), log, on_audit_event: noop });
 		const ctx = create_ctx();
 
-		audit.emit(ctx, create_input());
+		await audit.emit(ctx, create_input());
 
 		assert.strictEqual(ctx.pending_effects.length, 1);
 	});
@@ -192,7 +197,7 @@ describe('create_audit_emitter — emit', () => {
 		});
 		const ctx = create_ctx();
 
-		audit.emit(ctx, create_input());
+		await audit.emit(ctx, create_input());
 
 		await flush_ctx(ctx);
 
@@ -212,7 +217,7 @@ describe('create_audit_emitter — emit', () => {
 		});
 		const ctx = create_ctx();
 
-		audit.emit(ctx, create_input());
+		await audit.emit(ctx, create_input());
 
 		// the write is eager and has landed…
 		assert.strictEqual(ctx.pending_effects.length, 1);
@@ -237,7 +242,7 @@ describe('create_audit_emitter — emit', () => {
 		});
 		const ctx = create_ctx();
 
-		audit.emit(ctx, { event_type: 'logout', account_id: 'acct-1' as Uuid });
+		await audit.emit(ctx, { event_type: 'logout', account_id: 'acct-1' as Uuid });
 		await flush_pending_effects(ctx.pending_effects, log);
 		await wait();
 
@@ -261,7 +266,7 @@ describe('create_audit_emitter — emit', () => {
 		});
 		const ctx = create_ctx();
 
-		audit.emit(ctx, create_input());
+		await audit.emit(ctx, create_input());
 		ctx.post_commit_effects.length = 0;
 		await flush_ctx(ctx);
 		await wait();
@@ -281,7 +286,7 @@ describe('create_audit_emitter — emit', () => {
 		});
 		const ctx = create_ctx();
 
-		audit.emit(ctx, { ...create_input(), outcome: 'failure' });
+		await audit.emit(ctx, { ...create_input(), outcome: 'failure' });
 
 		assert.strictEqual(ctx.post_commit_effects.length, 0, 'nothing is deferred');
 		await flush_pending_effects(ctx.pending_effects, log);
@@ -306,7 +311,7 @@ describe('create_audit_emitter — emit', () => {
 		});
 		const ctx = create_ctx();
 
-		audit.emit(ctx, create_input());
+		await audit.emit(ctx, create_input());
 		// the commit lands before the audit write does
 		const flushed = flush_post_commit_effects(ctx.post_commit_effects, log);
 		await wait();
@@ -329,7 +334,7 @@ describe('create_audit_emitter — emit', () => {
 		const ctx = create_ctx();
 		vi.spyOn(console, 'error').mockImplementation(() => {});
 
-		audit.emit(ctx, create_input());
+		await audit.emit(ctx, create_input());
 
 		await flush_ctx(ctx);
 
@@ -347,7 +352,7 @@ describe('create_audit_emitter — emit', () => {
 		const ctx = create_ctx();
 		const spy_error = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-		audit.emit(ctx, create_input());
+		await audit.emit(ctx, create_input());
 
 		// the write settled without rejecting (fire-and-forget is resilient),
 		// and the listener's throw is contained by `notify`
@@ -372,7 +377,7 @@ describe('create_audit_emitter — emit', () => {
 		const ctx = create_ctx();
 		const spy_error = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-		audit.emit(ctx, create_input());
+		await audit.emit(ctx, create_input());
 
 		await flush_ctx(ctx);
 
@@ -395,7 +400,7 @@ describe('create_audit_emitter — emit', () => {
 			const audit = create_audit_emitter({ db: create_mock_db(), log, on_audit_event: noop });
 			const ctx = create_ctx();
 
-			audit.emit(ctx, create_input());
+			await audit.emit(ctx, create_input());
 			await wait();
 
 			assert.strictEqual(get_audit_unknown_event_type_failures(), 0);
@@ -413,7 +418,7 @@ describe('create_audit_emitter — emit', () => {
 			const audit = create_audit_emitter({ db: create_mock_db(), log, on_audit_event: noop });
 			const ctx = create_ctx();
 
-			audit.emit(ctx, {
+			await audit.emit(ctx, {
 				event_type: 'classroom_create',
 				metadata: { ok: true }
 			});
@@ -440,7 +445,7 @@ describe('create_audit_emitter — emit', () => {
 			});
 			const ctx = create_ctx();
 
-			audit.emit(ctx, {
+			await audit.emit(ctx, {
 				event_type: 'classroom_create',
 				metadata: { ok: true }
 			});
@@ -469,7 +474,7 @@ describe('create_audit_emitter — emit', () => {
 			});
 			const ctx = create_ctx();
 
-			audit.emit(ctx, {
+			await audit.emit(ctx, {
 				event_type: 'classroom_create',
 				metadata: { classroom_id: 42, name: 'Period 3' }
 			});
@@ -479,6 +484,71 @@ describe('create_audit_emitter — emit', () => {
 		} finally {
 			reset_audit_metadata_validation_failures();
 		}
+	});
+});
+
+describe('create_audit_emitter — routing by outcome and transaction', () => {
+	/** A mock transaction-scoped `Db`: `in_transaction` answers `true`. */
+	const create_mock_tx_db = (mock_query?: ReturnType<typeof vi.fn>): Db =>
+		({ ...(create_mock_db(mock_query) as object), in_transaction: true }) as Db;
+
+	test('a success row inside a transaction is written through the request db, not the pool', async () => {
+		const pool_query = vi.fn(() => Promise.resolve([FAKE_EVENT]));
+		const tx_query = vi.fn(() => Promise.resolve([FAKE_EVENT]));
+		const heard: Array<AuditLogEvent> = [];
+		const audit = create_audit_emitter({
+			db: create_mock_db(pool_query),
+			log,
+			on_audit_event: (e) => heard.push(e)
+		});
+		const ctx = create_ctx(create_mock_tx_db(tx_query));
+
+		await audit.emit(ctx, create_input());
+
+		assert.strictEqual(tx_query.mock.calls.length, 1, 'written in the transaction');
+		assert.strictEqual(pool_query.mock.calls.length, 0, 'never on the pool');
+		assert.strictEqual(ctx.pending_effects.length, 0, 'nothing in flight on the pool');
+		assert.deepStrictEqual(heard, [], 'not announced before the commit');
+		await flush_ctx(ctx);
+		assert.deepStrictEqual(heard, [FAKE_EVENT], 'announced from the post-commit queue');
+	});
+
+	test('a failed in-transaction write rejects emit and is not counted as a lost pool write', async () => {
+		reset_audit_write_failures();
+		const audit = create_audit_emitter({ db: create_mock_db(), log, on_audit_event: noop });
+		const ctx = create_ctx(
+			create_mock_tx_db(vi.fn(() => Promise.reject(new Error('insert refused'))))
+		);
+
+		await assert_rejects(() => audit.emit(ctx, create_input()), /insert refused/);
+		assert.strictEqual(get_audit_write_failures(), 0);
+		assert.strictEqual(ctx.post_commit_effects.length, 0, 'no fan-out queued');
+	});
+
+	test('a failure row inside a transaction is written on the pool', async () => {
+		const pool_query = vi.fn(() => Promise.resolve([FAKE_EVENT]));
+		const tx_query = vi.fn(() => Promise.resolve([FAKE_EVENT]));
+		const audit = create_audit_emitter({ db: create_mock_db(pool_query), log });
+		const ctx = create_ctx(create_mock_tx_db(tx_query));
+
+		await audit.emit(ctx, { ...create_input(), outcome: 'failure' });
+		await flush_ctx(ctx);
+
+		assert.strictEqual(pool_query.mock.calls.length, 1, 'survives the rollback');
+		assert.strictEqual(tx_query.mock.calls.length, 0);
+	});
+
+	test('a success row with no transaction open is written on the pool', async () => {
+		const pool_query = vi.fn(() => Promise.resolve([FAKE_EVENT]));
+		const request_query = vi.fn(() => Promise.resolve([FAKE_EVENT]));
+		const audit = create_audit_emitter({ db: create_mock_db(pool_query), log });
+		const ctx = create_ctx(create_mock_db(request_query));
+
+		await audit.emit(ctx, create_input());
+		await flush_ctx(ctx);
+
+		assert.strictEqual(pool_query.mock.calls.length, 1);
+		assert.strictEqual(request_query.mock.calls.length, 0);
 	});
 });
 
@@ -527,7 +597,7 @@ describe('create_audit_emitter — add_listener', () => {
 		audit.add_listener((event) => appended.push(event));
 		const ctx = create_ctx();
 
-		audit.emit(ctx, create_input());
+		await audit.emit(ctx, create_input());
 		await flush_ctx(ctx);
 
 		assert.strictEqual(initial.length, 1);
@@ -598,7 +668,7 @@ describe('create_audit_emitter — add_listener', () => {
 		audit.add_listener((event) => reached.push(event));
 		const ctx = create_ctx();
 
-		audit.emit(ctx, create_input());
+		await audit.emit(ctx, create_input());
 		await flush_ctx(ctx);
 
 		assert.strictEqual(reached.length, 1);
@@ -719,7 +789,7 @@ describe('create_audit_emitter — emit_role_grant_target', () => {
 		const ctx = { ...create_ctx(), client_ip: '203.0.113.1' };
 		const auth = create_auth();
 
-		audit.emit_role_grant_target(ctx, auth as never, {
+		await audit.emit_role_grant_target(ctx, auth as never, {
 			event_type: 'role_grant_create',
 			target_account_id: 'tgt-acct' as Uuid,
 			target_actor_id: 'tgt-actor' as Uuid,
@@ -732,7 +802,7 @@ describe('create_audit_emitter — emit_role_grant_target', () => {
 		assert.strictEqual((db.query as ReturnType<typeof vi.fn>).mock.calls.length, 1);
 	});
 
-	test('lifts actor_id / account_id / ip from auth + ctx into the inner emit input', () => {
+	test('lifts actor_id / account_id / ip from auth + ctx into the inner emit input', async () => {
 		// Intercept the lifted shape via `emit_decorator` — the cleanest
 		// view of what `emit_role_grant_target` passes to the closed-over
 		// `emit`. The decorator runs inside the closure (see
@@ -743,13 +813,13 @@ describe('create_audit_emitter — emit_role_grant_target', () => {
 			log,
 			emit_decorator: (inner) => (ctx, input) => {
 				observed.push(input as AuditLogInput);
-				inner(ctx, input);
+				return inner(ctx, input);
 			}
 		});
 		const ctx = { ...create_ctx(), client_ip: '198.51.100.7' };
 		const auth = create_auth();
 
-		audit.emit_role_grant_target(ctx, auth as never, {
+		await audit.emit_role_grant_target(ctx, auth as never, {
 			event_type: 'role_grant_revoke',
 			target_account_id: 'tgt-acct' as Uuid,
 			target_actor_id: 'tgt-actor' as Uuid,
@@ -775,25 +845,25 @@ describe('create_audit_emitter — emit_decorator', () => {
 	// noticed. The decorator runs INSIDE the closure so both call shapes
 	// route through it. These three tests are the executable record of
 	// that contract.
-	test('wraps emit so the wrapped function is what the slot exposes', () => {
+	test('wraps emit so the wrapped function is what the slot exposes', async () => {
 		const calls: Array<{ ctx: unknown; input: AuditLogInput }> = [];
 		const audit = create_audit_emitter({
 			db: create_mock_db(),
 			log,
 			emit_decorator: (inner) => (ctx, input) => {
 				calls.push({ ctx, input: input as AuditLogInput });
-				inner(ctx, input);
+				return inner(ctx, input);
 			}
 		});
 
 		const ctx = create_ctx();
-		audit.emit(ctx, create_input());
+		await audit.emit(ctx, create_input());
 
 		assert.strictEqual(calls.length, 1);
 		assert.strictEqual(calls[0]!.input.event_type, 'login');
 	});
 
-	test('emit_role_grant_target also routes through the decorator', () => {
+	test('emit_role_grant_target also routes through the decorator', async () => {
 		// The whole point of the decorator vs the old hot-patch — the
 		// inner closure captures the decorated `emit`, so role-grant-shape
 		// emissions land in the same capture array as bare `emit` calls.
@@ -806,12 +876,12 @@ describe('create_audit_emitter — emit_decorator', () => {
 			log,
 			emit_decorator: (inner) => (ctx, input) => {
 				calls.push(input as AuditLogInput);
-				inner(ctx, input);
+				return inner(ctx, input);
 			}
 		});
 
 		const ctx = { ...create_ctx(), client_ip: '1.2.3.4' };
-		audit.emit_role_grant_target(
+		await audit.emit_role_grant_target(
 			ctx,
 			{ account: { id: 'a' as Uuid }, actor: { id: 'b' as Uuid } } as never,
 			{
@@ -826,10 +896,10 @@ describe('create_audit_emitter — emit_decorator', () => {
 		assert.strictEqual(calls[0]!.event_type, 'role_grant_create');
 	});
 
-	test('default (no decorator) leaves emit semantically unchanged', () => {
+	test('default (no decorator) leaves emit semantically unchanged', async () => {
 		const audit = create_audit_emitter({ db: create_mock_db(), log });
 		const ctx = create_ctx();
-		audit.emit(ctx, create_input());
+		await audit.emit(ctx, create_input());
 		// One in-flight write queued — same shape the test suite has
 		// relied on since before the decorator existed.
 		assert.strictEqual(ctx.pending_effects.length, 1);
@@ -864,7 +934,7 @@ describe('create_audit_emitter — drain_inflight', () => {
 	test('waits for an in-flight success write', async () => {
 		const { db, gates } = create_gated_db();
 		const audit = create_audit_emitter({ db, log, track_inflight: true });
-		audit.emit(create_ctx(), create_input());
+		await audit.emit(create_ctx(), create_input());
 		assert.strictEqual(gates.length, 1, 'the write starts at emit time');
 
 		const drain = start_drain(audit);
@@ -884,7 +954,7 @@ describe('create_audit_emitter — drain_inflight', () => {
 			track_inflight: true,
 			on_audit_event: (event) => heard.push(event)
 		});
-		audit.emit(create_ctx(), { ...create_input(), outcome: 'failure' });
+		await audit.emit(create_ctx(), { ...create_input(), outcome: 'failure' });
 
 		const drain = start_drain(audit);
 		await wait();
@@ -905,7 +975,7 @@ describe('create_audit_emitter — drain_inflight', () => {
 
 		// and again once a write has settled
 		const ctx = create_ctx();
-		audit.emit(ctx, create_input());
+		await audit.emit(ctx, create_input());
 		gates[0]!.resolve();
 		await flush_ctx(ctx);
 		const again = start_drain(audit);
@@ -923,9 +993,9 @@ describe('create_audit_emitter — drain_inflight', () => {
 		audit.add_listener(() => {
 			if (chained) return;
 			chained = true;
-			audit.emit(create_ctx(), create_input());
+			void audit.emit(create_ctx(), create_input());
 		});
-		audit.emit(create_ctx(), { ...create_input(), outcome: 'failure' });
+		await audit.emit(create_ctx(), { ...create_input(), outcome: 'failure' });
 
 		const drain = start_drain(audit);
 		gates[0]!.resolve();
@@ -940,7 +1010,7 @@ describe('create_audit_emitter — drain_inflight', () => {
 	test('untracked: resolves at once with a write in flight', async () => {
 		const { db, gates } = create_gated_db();
 		const audit = create_audit_emitter({ db, log });
-		audit.emit(create_ctx(), create_input());
+		await audit.emit(create_ctx(), create_input());
 
 		const drain = start_drain(audit);
 		await wait();

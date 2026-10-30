@@ -93,7 +93,7 @@ export const create_cell_field_actions = (deps: CellFieldActionDeps): Array<RpcA
 			name: input.name,
 			target_id: input.target_id
 		});
-		emit_cell_audit(ctx, deps.audit, auth, 'cell_field_set', {
+		await emit_cell_audit(ctx, deps.audit, auth, 'cell_field_set', {
 			source_id: row.source_id,
 			name: row.name,
 			target_id: row.target_id
@@ -109,7 +109,7 @@ export const create_cell_field_actions = (deps: CellFieldActionDeps): Array<RpcA
 		await require_editable_cell(ctx, auth, input.source_id);
 		const deleted = await query_cell_field_delete(ctx, input.source_id, input.name);
 		if (deleted) {
-			emit_cell_audit(ctx, deps.audit, auth, 'cell_field_delete', {
+			await emit_cell_audit(ctx, deps.audit, auth, 'cell_field_delete', {
 				source_id: deleted.source_id,
 				name: deleted.name,
 				target_id: deleted.target_id

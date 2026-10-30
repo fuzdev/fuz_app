@@ -342,7 +342,7 @@ export const create_cell_grant_actions = (deps: CellGrantActionDeps): Array<RpcA
 			principal,
 			granted_by: auth.actor.id
 		});
-		emit_cell_audit(ctx, deps.audit, auth, 'cell_grant_create', {
+		await emit_cell_audit(ctx, deps.audit, auth, 'cell_grant_create', {
 			cell_id: row.cell_id,
 			grant_id: row.id,
 			level: row.level,
@@ -411,7 +411,7 @@ export const create_cell_grant_actions = (deps: CellGrantActionDeps): Array<RpcA
 			...(is_self_actor_grant ? { self: true as const } : {}),
 			...(is_steward ? { steward: true as const } : {})
 		};
-		emit_cell_audit(ctx, deps.audit, auth, 'cell_grant_revoke', audit_metadata);
+		await emit_cell_audit(ctx, deps.audit, auth, 'cell_grant_revoke', audit_metadata);
 		return { ok: true, still_admitted };
 	};
 

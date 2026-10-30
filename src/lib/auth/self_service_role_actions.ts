@@ -111,8 +111,8 @@ export interface SelfServiceRoleActionsOptions {
  * Build the unified self-service role toggle RPC action.
  *
  * @param deps - `RevokingActionFactoryDeps` (`log`, `audit`,
- *   `connection_closer`); `audit.emit` writes audit rows via the captured
- *   pool, and a disable closes the caller's connections gated on the role
+ *   `connection_closer`); `audit.emit` writes a success row in the request
+ *   transaction and a failure row via the captured pool, and a disable closes the caller's connections gated on the role
  *   through `connection_closer`.
  * @param options - optional eligible-role override plus optional role schema for default-eligibility derivation
  * @returns the `RpcAction` array to spread into a `create_rpc_endpoint` call
@@ -187,7 +187,7 @@ export const create_self_service_role_actions = (
 			// grantor and grantee are the same identity; admin direct-grant
 			// (separate code path) populates the same columns with the
 			// grantee actor.
-			deps.audit.emit(ctx, {
+			await deps.audit.emit(ctx, {
 				event_type: 'role_grant_create',
 				actor_id: auth.actor.id,
 				account_id: auth.account.id,
@@ -224,7 +224,7 @@ export const create_self_service_role_actions = (
 			return { ok: true, enabled: false, changed: false };
 		}
 		// Close the caller's connections gated on the role once the revoke has
-		// committed, not through the pool-routed audit write below — the
+		// committed, not through the audit row's announcement below — the
 		// admin revoke's rule (`role_grant_offer_actions.ts`). The grant is
 		// global, the only kind this surface toggles.
 		queue_connection_close(ctx, deps.connection_closer, {
@@ -237,7 +237,7 @@ export const create_self_service_role_actions = (
 		// always populates both target columns even on self-service so
 		// forensic queries that filter on `target_actor_id IS NOT NULL`
 		// don't silently miss self-toggled role_grants.
-		deps.audit.emit(ctx, {
+		await deps.audit.emit(ctx, {
 			event_type: 'role_grant_revoke',
 			actor_id: auth.actor.id,
 			account_id: auth.account.id,
@@ -258,7 +258,7 @@ export const create_self_service_role_actions = (
 		// both offerable and self-service-eligible has siblings). The WS supersede
 		// notification to each grantor is not sent (twin of the Rust path).
 		for (const offer of result.superseded_offers) {
-			deps.audit.emit_role_grant_target(ctx, auth, {
+			await deps.audit.emit_role_grant_target(ctx, auth, {
 				event_type: 'role_grant_offer_supersede',
 				target_account_id: offer.to_account_id,
 				target_actor_id: offer.to_actor_id,

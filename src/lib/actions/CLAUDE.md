@@ -663,8 +663,8 @@ its credential, so a close that missed the registration must belong to a
 revocation the re-read can see — true only if the close came after the commit
 (../../../docs/security.md §Closing on Revocation).
 
-The close does not depend on the audit write, which is pool-routed and
-fail-open. Failure outcomes (`revoked: false`, a 404) queue no close — they
+The close does not depend on the audit row's announcement (a row written
+outside a transaction — `/login`, `/password` — is fail-open). Failure outcomes (`revoked: false`, a 404) queue no close — they
 carry caller-supplied ids.
 
 **One closer for every transport.** `create_realtime_closer()` returns a

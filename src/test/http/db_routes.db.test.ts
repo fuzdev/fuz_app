@@ -7,33 +7,24 @@
  */
 
 import { describe, assert, test, beforeAll, afterAll, beforeEach } from 'vitest';
-import { Hono } from 'hono';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import {
 	create_db_route_specs,
 	type ColumnInfo,
+	type DbRouteDeps,
 	type DbRouteOptions
 } from '#lib/http/db_routes.ts';
 import { create_recording_audit_emitter } from '#lib/testing/audit_drift_guard.ts';
-import { apply_route_specs, type RouteSpec } from '#lib/http/route_spec.ts';
-import { flush_post_commit_effects } from '#lib/http/pending_effects.ts';
-import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
-import { REQUEST_CONTEXT_KEY, type RequestContext } from '#lib/auth/request_context.ts';
+import type { RouteSpec } from '#lib/http/route_spec.ts';
 import { audit_metadata_schemas } from '#lib/auth/audit_log_schema.ts';
-import { create_test_context } from '#lib/testing/entities.ts';
-import {
-	RESOLVED_AUTH_KEY,
-	TEST_CONTEXT_PRESET,
-	TEST_CONTEXT_PRESET_KEY
-} from '#lib/hono_context.ts';
-import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
 import type { Db } from '#lib/db/db.ts';
 import { pg_error_code } from '#lib/db/pg_error.ts';
 import { run_migrations } from '#lib/db/migrate.ts';
 import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
 import { create_pglite_db } from '#lib/db/db_pglite.ts';
 import { create_default_db_factory } from '#lib/testing/db.ts';
+import { create_db_routes_test_app, db_routes_keeper_ctx } from './db_routes_test_helpers.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -43,9 +34,6 @@ const factory = create_default_db_factory(async (db) => {
 });
 
 let db: Db;
-
-/** Create a request context with keeper role. */
-const keeper_ctx: RequestContext = create_test_context([{ role: 'keeper' }]);
 
 /** Recording audit emitter — `audit.calls` resets per test in `beforeEach`. */
 const audit = create_recording_audit_emitter();
@@ -84,30 +72,8 @@ const create_specs = (overrides?: Partial<DbRouteOptions>): Array<RouteSpec> =>
 	});
 
 /** Create a test Hono app with keeper auth (daemon_token credential) and db route specs. */
-const create_test_app = (specs: Array<RouteSpec>, app_db: Db = db) => {
-	const app = new Hono();
-	app.use('/*', async (c, next) => {
-		c.set(
-			RESOLVED_AUTH_KEY,
-			create_test_resolved_auth({
-				credential_type: 'daemon_token',
-				account_id: keeper_ctx.account.id
-			})
-		);
-		c.set(REQUEST_CONTEXT_KEY, keeper_ctx);
-		c.set(TEST_CONTEXT_PRESET_KEY, TEST_CONTEXT_PRESET);
-		// the queues + post-commit flush the app server provides — the DELETE
-		// route defers its audit emission via `emit_after_commit`, so the
-		// recording emitter observes it only when the flush runs (i.e. only
-		// for a committed transaction)
-		c.set('pending_effects', []);
-		c.set('post_commit_effects', []);
-		await next();
-		await flush_post_commit_effects(c.var.post_commit_effects, log);
-	});
-	apply_route_specs(app, specs, fuz_auth_guard_resolver, log, app_db);
-	return app;
-};
+const create_test_app = (specs: Array<RouteSpec>, app_db: Db = db) =>
+	create_db_routes_test_app(specs, app_db, log);
 
 beforeAll(async () => {
 	db = await factory.create();
@@ -826,13 +792,42 @@ describe('DELETE audit emission', () => {
 		assert.strictEqual(call.event_type, 'db_admin_row_delete');
 		// Account-grain attribution — the browser's gate is account-grain, so
 		// the emission claims no actor.
-		assert.strictEqual(call.account_id, keeper_ctx.account.id);
+		assert.strictEqual(call.account_id, db_routes_keeper_ctx.account.id);
 		assert.isUndefined(call.actor_id);
 		assert.deepStrictEqual(call.metadata, { table: 'browse_test', pk_column: 'id', id });
 		// The recording emitter bypasses `query_audit_log`'s fail-open metadata
 		// validation, so bind the emitted shape to the builtin schema here — a
 		// schema key rename fails this parse instead of bumping a prod counter.
 		audit_metadata_schemas.db_admin_row_delete.parse(call.metadata);
+	});
+
+	test('the post-commit flush waits for the row write', async () => {
+		// a pool write that lands a macrotask later, as a real INSERT does —
+		// the flush waits for it only if the thunk returns the write's promise
+		const written: Array<Parameters<DbRouteDeps['audit']['emit_pool']>[0]> = [];
+		const slow_deps: DbRouteDeps = {
+			audit: {
+				emit_pool: async (input) => {
+					await new Promise((resolve) => setTimeout(resolve, 20));
+					written.push(input);
+				}
+			}
+		};
+		const result = await db.query<{ id: string }>(
+			`INSERT INTO browse_test (label) VALUES ('awaited') RETURNING id`
+		);
+		const id = result[0]!.id;
+		const app = create_test_app(
+			create_db_route_specs(slow_deps, {
+				db_type: 'pglet-memory',
+				db_name: 'test',
+				browsable_tables: TEST_BROWSABLE
+			})
+		);
+		const res = await app.request(`/tables/browse_test/rows/${id}`, { method: 'DELETE' });
+		assert.strictEqual(res.status, 200);
+		assert.strictEqual(written.length, 1, 'the row was written before the response');
+		assert.strictEqual(written[0]!.event_type, 'db_admin_row_delete');
 	});
 
 	test('the audited id is the canonical PK rendering, not the URL spelling', async () => {

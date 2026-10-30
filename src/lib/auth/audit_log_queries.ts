@@ -2,12 +2,12 @@
  * Audit log database queries.
  *
  * Records and retrieves auth mutation events for security monitoring. The
- * canonical fire-and-forget entry point is `AppDeps.audit.emit(ctx, input)`
- * (see `auth/audit_emitter.ts`) — it closes over the pool so audit rows
- * persist even when the request transaction rolls back. This module only
- * exposes the in-transaction `query_*` primitives and the drift counters;
- * the bound emitter writes through `query_audit_log` against its captured
- * pool.
+ * request entry point is `AppDeps.audit.emit(ctx, input)` (see
+ * `auth/audit_emitter.ts`). It writes a success row in the request
+ * transaction and a failure row on the pool it closes over, so an attempt's
+ * row persists when the request transaction rolls back. This module only
+ * exposes the `query_*` primitives and the drift counters. The bound emitter
+ * writes through `query_audit_log`.
  *
  * @module
  */
@@ -107,10 +107,9 @@ export const reset_audit_unknown_event_type_failures = (): void => {
  * `create_audit_log_config({extra_events})`.
  *
  * In-transaction call site for query helpers that must atomically write the
- * row alongside other mutations (e.g. `query_accept_offer`). Fire-and-forget
- * call sites should reach for `AppDeps.audit.emit` instead — that wrapper
- * closes over the pool so audit rows persist when the parent transaction
- * rolls back.
+ * row alongside other mutations (e.g. `query_accept_offer`). Request handlers
+ * reach for `AppDeps.audit.emit` instead, which picks the transaction or the
+ * pool by outcome.
  *
  * @param deps - query dependencies
  * @param input - the audit event to record
@@ -254,6 +253,10 @@ export const query_audit_log_list_with_usernames = async (
 		params.push(options.outcome);
 	}
 
+	// TODO: `seq` is assigned at INSERT and an in-transaction row commits later,
+	// so a strict `seq >` cursor can miss a row that commits while the stream is
+	// down — anchor the gap fill at the cursor minus a margin, or on `created_at`,
+	// and de-dupe by `id` (the UI already does)
 	if (options?.since_seq != null) {
 		conditions.push(`al.seq > $${param_index++}`);
 		params.push(options.since_seq);

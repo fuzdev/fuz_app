@@ -962,11 +962,14 @@ expiry, a raw row delete — is under
   own (`transaction: false` routes), close straight after that commit with
   `close_connections_after_commit`, which logs a failing close rather than
   failing the committed request. The
-  close does not depend on the audit write, which is pool-routed and
-  fail-open: a failed audit INSERT leaves the revocation in place and the
-  connections closed. Nor does it wait for that write — the queue runs before
-  the request's in-flight pool writes are awaited, so a slow audit INSERT does
-  not hold a revoked connection open.
+  close does not depend on the audit row's announcement. A revocation's
+  success row is written in the request transaction where one is open, so a
+  failed audit INSERT rolls the revocation back and fails the request (no
+  close runs); `/login` and `/password` write theirs on the pool after their
+  own commit, fail-open, so a failed INSERT there leaves the revocation in
+  place and the connections closed. Nor does the close wait for a pool write
+  — the queue runs before the request's in-flight pool writes are awaited, so
+  a slow audit INSERT does not hold a revoked connection open.
 - **The audit listener.** `create_revocation_guard`, registered once on the
   backend's closer, repeats the close on every transport when the audit row is
   announced. The emitter announces a
@@ -2419,16 +2422,26 @@ is required and each intermediate proxy must be in `trusted_proxies`.
 
 ## Audit Logging
 
-All auth mutations _attempt_ a fire-and-forget audit write (never blocks or breaks
-auth flows). Delivery is **best-effort, not durable**: a failed insert is caught
-and logged, not retried — the mutation still succeeds and no audit row exists for
-that event. Listeners (the audit SSE stream, the revocation guard) are
+A **success** row emitted inside a request transaction — every mutating RPC
+action, and a route with `transaction: true` such as `/logout` — is written in
+that transaction: the change and the row reporting it commit together, and a
+failed insert fails the request and rolls the change back, so no committed
+mutation goes unaudited. Every other row — **failure** rows above all, and the
+success rows of `/login`, `/password`, signup and bootstrap, which commit their
+own transaction first — is a fire-and-forget pool write that survives a
+rollback (never blocks or breaks auth flows). Their delivery is
+**best-effort, not durable**: a failed insert is caught, counted, and logged,
+not retried — the request still succeeds and no audit row exists for that
+event. Listeners (the audit SSE stream, the revocation guard) are
 notified only _after_ a successful insert — a failure row as soon as it is
 written, a success row once the request's transaction has committed — so an audit
 outage also suppresses the security reactions chained off it. Enforcement that
 must survive an audit failure cannot be built on the listener path alone, which
 is why every revocation handler closes connections itself (see
-[Closing on Revocation](#closing-on-revocation)).
+[Closing on Revocation](#closing-on-revocation)). `seq` is assigned at INSERT;
+an in-transaction row commits later, so a row can become visible after a higher
+`seq` — a gap fill (`since_seq`) can miss one that commits while the stream is
+down.
 The audit log's identity columns (`actor_id`, `account_id`, `target_account_id`,
 `target_actor_id`) carry **no foreign key** — they are plain `UUID`. An audit log
 is an append-only historical record, not a live relational entity: a soft-delete

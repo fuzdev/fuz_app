@@ -136,27 +136,19 @@ export const NON_DELETABLE_TABLES: ReadonlyArray<string> = Object.freeze([
  */
 export interface DbRouteDeps {
 	/**
-	 * Pool-routed fire-and-forget audit emit. The row-`DELETE` handler defers
-	 * the call via `emit_after_commit`, so the success-only trail row can
-	 * never claim a delete whose transaction failed at COMMIT — the pool
-	 * routing means the write itself never rides the request transaction.
-	 * The context carries both of the request's side-effect queues: the write
-	 * goes on `pending_effects`, the row's listener fan-out on
-	 * `post_commit_effects`.
+	 * Awaitable pool audit write. The row-`DELETE` handler calls it from an
+	 * `emit_after_commit` thunk, so the success-only trail row can never
+	 * claim a delete whose transaction failed at COMMIT, and the row is
+	 * written on the pool because the request transaction has ended by then.
+	 * The flush awaits the returned promise.
 	 */
 	audit: {
-		emit: (
-			ctx: {
-				pending_effects: Array<Promise<void>>;
-				post_commit_effects: Array<() => void | Promise<void>>;
-			},
-			input: {
-				event_type: 'db_admin_row_delete';
-				account_id: Uuid | null;
-				ip: string;
-				metadata: { table: string; pk_column: string; id: string };
-			}
-		) => void;
+		emit_pool: (input: {
+			event_type: 'db_admin_row_delete';
+			account_id: Uuid | null;
+			ip: string;
+			metadata: { table: string; pk_column: string; id: string };
+		}) => Promise<void>;
 	};
 }
 
@@ -544,6 +536,14 @@ export const create_db_route_specs = (
 				}
 				const pk_column = pk_columns[0]!;
 
+				// The refusals below answer from a failed DELETE, which on PostgreSQL
+				// aborts the route's transaction — its COMMIT would come back as a
+				// ROLLBACK, which the pg driver throws on (`db/db_pg.ts`). A savepoint
+				// keeps the refusal's failure out of the transaction. Guarded because
+				// a consumer may run the route with `transaction: false`, and
+				// `SAVEPOINT` outside a transaction block is an error.
+				const savepoint = route.db.in_transaction;
+				if (savepoint) await route.db.query('SAVEPOINT db_admin_row_delete');
 				try {
 					// Typed PK compare, twinning the Rust spine: `$1` travels as an
 					// untyped text-format parameter, so PG infers the PK column's
@@ -573,19 +573,21 @@ export const create_db_route_specs = (
 					// delete through this endpoint is audited. Deferred via
 					// `emit_after_commit` so the pool-routed row can never claim a
 					// delete whose transaction failed at COMMIT — the Rust twin
-					// commits before emitting for the same reason. Account-grain
+					// commits before emitting for the same reason. The request
+					// transaction has ended by then, so the row goes through
+					// `emit_pool`, not the transaction-routing `emit`. Account-grain
 					// attribution — the browser is a raw storage surface, so no actor
 					// is claimed.
 					const account_id = c.var.request_context?.account.id ?? null;
 					const ip = get_client_ip(c);
-					emit_after_commit(route, () => {
-						deps.audit.emit(route, {
+					emit_after_commit(route, () =>
+						deps.audit.emit_pool({
 							event_type: 'db_admin_row_delete',
 							account_id,
 							ip,
 							metadata: { table: name, pk_column, id: deleted_id }
-						});
-					});
+						})
+					);
 
 					return c.json({ success: true });
 				} catch (err) {
@@ -596,21 +598,25 @@ export const create_db_route_specs = (
 					// NUL byte, rejected by the server encoding whatever the PK
 					// type) — so no row can match; answer with the same masked 404
 					// as a typed miss.
-					if (code === '22P02' || code === '22003' || code === '22021') {
-						return c.json({ error: ERROR_ROW_NOT_FOUND }, 404);
-					}
+					const uncoercible = code === '22P02' || code === '22003' || code === '22021';
 					// 23503 foreign_key_violation / 23001 restrict_violation — the
 					// same referencing-row refusal. Which one depends on the
 					// constraint: `ON DELETE RESTRICT` raises 23001 on PG 18, PGlite
 					// and pglet (23503 on PG ≤17), and `NO ACTION` — the default,
 					// when the constraint names no action — raises 23503 on all of
 					// them.
-					if (code === '23503' || code === '23001') {
-						const pg_err = err as Error & { detail?: string; constraint?: string };
-						log?.warn('Foreign key violation:', pg_err.detail, pg_err.constraint);
-						return c.json({ error: ERROR_FOREIGN_KEY_VIOLATION }, 409);
+					const referenced = code === '23503' || code === '23001';
+					// anything else fails the request, and the route's transaction
+					// rolls back whole
+					if (!uncoercible && !referenced) throw err;
+					// the refusal answers normally, so the transaction must commit
+					if (savepoint) await route.db.query('ROLLBACK TO SAVEPOINT db_admin_row_delete');
+					if (uncoercible) {
+						return c.json({ error: ERROR_ROW_NOT_FOUND }, 404);
 					}
-					throw err;
+					const pg_err = err as Error & { detail?: string; constraint?: string };
+					log?.warn('Foreign key violation:', pg_err.detail, pg_err.constraint);
+					return c.json({ error: ERROR_FOREIGN_KEY_VIOLATION }, 409);
 				}
 			}
 		}

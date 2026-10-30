@@ -124,9 +124,9 @@ upstream in `auth/signup_routes.ts` via `query_invite_find_unclaimed_match_for_u
 `audit_factory` callback over `create_audit_emitter`; closes over the pool +
 its registered listeners + optional `AuditLogConfig`. Its methods:
 
-- `emit(ctx, input)` — fire-and-forget pool write, pushes to `ctx.pending_effects`; a success row's listener fan-out goes on `ctx.post_commit_effects`
+- `emit(ctx, input)` — async, always awaited: a success row inside a request transaction is written in it (a failed INSERT rejects); any other row is a fire-and-forget pool write pushed to `ctx.pending_effects`; a success row's listener fan-out goes on `ctx.post_commit_effects`
 - `emit_role_grant_target(ctx, auth, input)` — lifts `actor_id` / `account_id` / `ip` boilerplate for role-grant-shape events; `input` is an `AuditEmitRoleGrantInput`
-- `emit_pool(input)` — awaitable pool write for code paths without a request context (ad-hoc maintenance scripts; not for success audits paired with a mutation — those write in-tx and `notify` post-commit). Writes, then notifies, whatever the outcome
+- `emit_pool(input)` — awaitable pool write for code paths without a request transaction (ad-hoc maintenance scripts, a post-commit thunk; not for success audits paired with a mutation — those write in-tx and `notify` post-commit). Writes, then notifies, whatever the outcome
 - `notify(event)` — fan out an already-written row to listeners (used by in-tx audit batches like `query_accept_offer.audit_events`)
 - `add_listener(listener)` — listener registration, returning a remover for that registration (idempotent; the same function registered twice is two registrations, each with its own remover). Twin of Rust `fuz_auth` `AuditEmitter::add_listener` in firing order and snapshot-at-notify
 - `listener_count()` — registered-listener count, for tests / diagnostics
@@ -143,13 +143,26 @@ without shallow-copying `AppDeps`, and removes them when its assembly fails or
 the next event, and one removed mid-fan-out still hears the in-flight event
 (converges with the Rust twin's cloned vec).
 
-**When listeners hear about a row.** `emit` always writes at once, on the pool
-(the row survives a rollback). The fan-out depends on the outcome: a
+**Where a row is written.** `emit` is async — always `await` it. A **success**
+row emitted inside a request transaction (`ctx.db.in_transaction`: an action
+with `side_effects`, a route with `transaction: true`) is written in that
+transaction, so the change and its row commit together; a failed INSERT
+rejects `emit` and the handler's transaction rolls back. A **failure** row, and
+a success row with no request transaction open (`/login`, `/password`,
+signup, bootstrap — which emit after their own transaction commits), is a
+fire-and-forget pool write, fail-open (logged, counted by
+`get_audit_write_failures`). The Rust spine's split is the same
+(`route_audit_emit`: `emit_in_tx` for an action's success row, `emit` on the
+pool otherwise); the TS `/logout` runs in a route transaction, so its row is
+in-transaction where Rust's is pooled. `db_admin_row_delete` is written on the
+pool after its commit on both twins (TS: `emit_pool` from a post-commit
+thunk).
+
+**When listeners hear about a row.** The fan-out depends on the outcome: a
 **failure** row is announced as soon as it is written — the attempt happened
 whatever the transaction does; a **success** row is announced only after the
-request's transaction commits (a thunk on `ctx.post_commit_effects` that awaits
-the write; after the handler returns, on a route without one) and never when
-the handler throws. The listeners act on a success row — the revocation guards
+request's transaction commits (a thunk on `ctx.post_commit_effects`; after the
+handler returns, on a route without one) and never when the handler throws. The listeners act on a success row — the revocation guards
 close connections, the audit stream broadcasts it — so announcing one before
 its commit would close while the revoked credential still reads as valid, and
 a rolled-back revocation would close anyway. A route that runs without a
@@ -158,7 +171,7 @@ request transaction and opens its own around just its writes (`/login`,
 spine follows the same order: a success row emitted inside a request
 transaction is written in it with its fan-out queued behind the commit, and
 `/login` and `/password` emit after their own commit. `AuditEmitterContext` is therefore
-`{pending_effects, post_commit_effects}` — `RouteContext` and `ActionContext`
+`{db, pending_effects, post_commit_effects}` — `RouteContext` and `ActionContext`
 both satisfy it.
 
 **Revocation scopes** (`auth/audit_log_schema.ts`) —
@@ -860,8 +873,8 @@ DEV-mode `create_validated_broadcaster` payload validation).
 Deps: `RevokingActionFactoryDeps & {notification_sender?: NotificationSender | null}`.
 `role_grant_revoke` of a global grant queues a close of the revokee account's
 connections gated on the role (`queue_connection_close`, `{kind: 'role'}`),
-run after the transaction commits and independent of the pool-routed audit
-write; the revocation guard repeats it on the announced row. A scoped revoke
+run after the transaction commits and independent of the audit row's
+announcement; the revocation guard repeats it on the announced row. A scoped revoke
 closes nothing — a role gate admits on global grants alone.
 `NotificationSender` is the narrow structural capability
 (`send_to_account(account_id, message): number`); `ConnectionRegistry`

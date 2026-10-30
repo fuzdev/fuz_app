@@ -562,7 +562,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 			if (input.path != null && is_pg_unique_violation(err)) throw path_taken_error();
 			throw err;
 		}
-		emit_cell_audit(ctx, deps.audit, auth, 'cell_create', cell_mutation_metadata(row));
+		await emit_cell_audit(ctx, deps.audit, auth, 'cell_create', cell_mutation_metadata(row));
 		return { cell: to_cell_json(row) };
 	};
 
@@ -696,7 +696,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 			// Raced with a deleter between the visibility check and the UPDATE.
 			throw cell_not_found_error();
 		}
-		emit_cell_audit(ctx, deps.audit, auth, 'cell_update', cell_mutation_metadata(updated));
+		await emit_cell_audit(ctx, deps.audit, auth, 'cell_update', cell_mutation_metadata(updated));
 		return { cell: to_cell_json(updated) };
 	};
 
@@ -713,7 +713,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 			// Raced with another deleter.
 			throw cell_not_found_error();
 		}
-		emit_cell_audit(ctx, deps.audit, auth, 'cell_delete', cell_mutation_metadata(existing));
+		await emit_cell_audit(ctx, deps.audit, auth, 'cell_delete', cell_mutation_metadata(existing));
 		return { ok: true, deleted: true };
 	};
 
@@ -760,7 +760,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 			if (await query_cell_get(ctx, input.cell_id)) throw cell_not_pending_error();
 			throw cell_not_found_error();
 		}
-		emit_cell_audit(ctx, deps.audit, auth, 'cell_moderate', {
+		await emit_cell_audit(ctx, deps.audit, auth, 'cell_moderate', {
 			cell_id: updated.id,
 			root_id: existing.root_id,
 			moderation: input.moderation
@@ -796,7 +796,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		// Raced with a deleter between the gates and the UPDATE.
 		if (!result) throw cell_not_found_error();
 		const updated = result.cell;
-		emit_cell_audit(ctx, deps.audit, auth, 'cell_policy_set', {
+		await emit_cell_audit(ctx, deps.audit, auth, 'cell_policy_set', {
 			cell_id: updated.id,
 			policy: updated.policy,
 			// read under the UPDATE's row lock, not from `existing`, which a set
@@ -1024,7 +1024,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		// `kind` is the source's (not the cloned row's) so the audit trail
 		// attributes the clone to the source's shape.
 		const cloned_child_count = deep ? cloneable_items.length : 0;
-		emit_cell_audit(ctx, deps.audit, auth, 'cell_clone', {
+		await emit_cell_audit(ctx, deps.audit, auth, 'cell_clone', {
 			source_id: source.id,
 			new_id: cloned_root.id,
 			deep,
