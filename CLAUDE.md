@@ -49,8 +49,9 @@ Standard gro commands apply (see Skill(fuz-stack)).
 
 ### After Changing fuz_app Source
 
-Consumer projects import from `dist/` via `.js` specifiers. After modifying
-fuz_app source, run `gro build` before consumers can see the changes:
+Consumer projects import fuz_app's `dist/` (the `exports` map serves both
+`.ts` and `.js` specifiers from it). After modifying fuz_app source, run
+`gro build` before consumers can see the changes:
 
 ```bash
 cd ~/dev/fuz_app && gro build    # rebuild dist/ with updated types
@@ -110,7 +111,7 @@ test-binary scenarios that spawn shell commands need `--allow-run`
 ## Library Modules
 
 fuz_app uses **deep path imports** — no barrel/index exports. The wildcard
-`exports` in `package.json` (`"./*.js"`) makes every module in `dist/` importable:
+`exports` in `package.json` (`"./*.ts"` and `"./*.js"`) makes every module in `dist/` importable:
 
 ```typescript
 import { create_app_server } from '@fuzdev/fuz_app/server/app_server.ts';
@@ -127,7 +128,7 @@ that subtree.
 - **http/** — generic framework: `RouteSpec` + declarative transactions, three-layer error schema merge, JSON-RPC 2.0 envelopes + errors, origin/proxy middleware, `AppSurface` generation, post-commit `emit_after_commit`. → `src/lib/http/CLAUDE.md`
 - **actions/** — SAES (Symmetric Action Event System): `ActionSpec` types, registry-compile invariants, shared `perform_action` core, RPC dispatcher, WS endpoint, notification → SSE event bridge, transports (HTTP, WS frontend), the backend `ConnectionRegistry` (two-phase admission, per-account connection cap, and per-connection outbound byte budget — a connection sent more than its client takes closes with `WS_CLOSE_OUTBOUND_OVERFLOW`), the `ConnectionCloser` capability + `queue_connection_close` (revocations close live connections after their commit) + `create_revocation_guard` (the audit listener), `ActionDispatcher` + server→client peer requests (`peer/ping`), reactive `FrontendWebsocketClient`, typed RPC client. → `src/lib/actions/CLAUDE.md`
 - **ui/** — Svelte 5 components, runes-based `*_state.svelte.ts` modules, `*_rpc_context` DI pattern, auth/admin/role-grant-offer forms, datatable, popovers, layout shell. → `src/lib/ui/CLAUDE.md`
-- **testing/** — test utilities exported to consumers; every module starts with `import './assert_dev_env.js'`. → `src/lib/testing/CLAUDE.md`
+- **testing/** — test utilities exported to consumers; every module starts with `import './assert_dev_env.ts'`. → `src/lib/testing/CLAUDE.md`
 
 ### Smaller subsystems
 
@@ -359,7 +360,7 @@ When working on tests, touch both directories together:
 
 - ./src/test/ — fuz_app's own suite. See ./src/test/CLAUDE.md.
 - `src/lib/testing/` — composable helpers exported to consumers. New shared
-  helpers belong here (every file starts with `import './assert_dev_env.js'`).
+  helpers belong here (every file starts with `import './assert_dev_env.ts'`).
   See `src/lib/testing/CLAUDE.md`.
 
 When middleware or public API gains a new context variable, header, or field,

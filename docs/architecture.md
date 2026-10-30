@@ -363,12 +363,12 @@ const MyAppEnv = BaseServerEnv.extend({
 type MyAppEnv = z.infer<typeof MyAppEnv>;
 ```
 
-Pass the extended schema to `load_env()` (from `env/load.js`) and optionally to
+Pass the extended schema to `load_env()` (from `env/load.ts`) and optionally to
 `create_app_server()` via `env_schema` for surface introspection.
 
 ### Schema Metadata Conventions
 
-`SchemaFieldMeta` (from `schema_meta.js`) defines the `.meta()` shape used
+`SchemaFieldMeta` (from `schema_meta.ts`) defines the `.meta()` shape used
 across env schemas and auth input schemas:
 
 - `description` — human-readable field description (env surface, docs)
@@ -583,7 +583,7 @@ queue above). The contract is two-sided: the thunk runs at flush time (after
 the wrapping `db.transaction` resolves, never mid-transaction), **and it is
 discarded if the handler's transaction rolls back** — both dispatch sites
 (`http/route_spec.ts`, `actions/perform_action.ts`) wrap their handler in the
-shared `dispatch_with_post_commit_rollback` helper (`http/pending_effects.js`),
+shared `dispatch_with_post_commit_rollback` helper (`http/pending_effects.ts`),
 which truncates the queue on a handler throw, so a rolled-back transaction never
 fires a notification for state that never committed. Reach for the eager
 `pending_effects` queue instead when a write must survive rollback (attempt

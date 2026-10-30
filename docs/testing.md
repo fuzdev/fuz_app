@@ -40,8 +40,8 @@ run the same standard suites against it over real HTTP — a Rust spine
   binary. In-process stays — it's the fast feedback path and the only
   viable path for a few in-process-only assertions (the WS test harness
   drives the dispatcher against a fake upgrade, etc.). Cross-process plumbing
-  ships in `testing/transports/{fetch_transport,bootstrap,ws_client,ws_transport,ws_raw_client,raw_http,sse_transport}.js`
-  and `testing/cross_backend/{backend_config,spawn_backend,testing_reset_actions,setup}.js`;
+  ships in `testing/transports/{fetch_transport,bootstrap,ws_client,ws_transport,ws_raw_client,raw_http,sse_transport}.ts`
+  and `testing/cross_backend/{backend_config,spawn_backend,testing_reset_actions,setup}.ts`;
   `default_cross_process_setup` fires `_testing_reset` over the keeper's
   daemon-token channel on every per-test invocation — full auth-table
   wipe + inline re-seed of a fresh keeper (and any declared
