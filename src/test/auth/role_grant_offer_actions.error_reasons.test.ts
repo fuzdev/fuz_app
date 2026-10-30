@@ -9,9 +9,12 @@
  *   `refuse_builtin_accept(...)`); helper reasons are followed transitively.
  *   A helper declared in another module escapes the scan.
  * - Handler-body slabbing ends at `\n\s*const \w+_handler\b` or
- *   `\n\s*return \[`; restructuring the factory's return shape breaks it.
- *   A helper's slab runs from its `const` line to its closing brace at its
- *   own indent (or the next statement there).
+ *   `\n\s*return \[`; restructuring the factory's return shape breaks it,
+ *   and a helper declared between two handlers lands in the earlier handler's
+ *   slab (its reasons count as that handler's throws) — declare
+ *   reason-carrying helpers above the first handler. A helper's slab runs
+ *   from its `const` line to its closing brace at its own indent (or the next
+ *   statement there).
  * - Matches `reason: ERROR_*` anywhere in the slab — comment and
  *   string-literal occurrences count as throws.
  *
@@ -118,7 +121,7 @@ assert(spec_to_handler.length > 0, 'no rpc_action() registrations parsed from ha
 for (const [spec_const, handler_name] of spec_to_handler) {
 	const spec = all_specs[spec_const] as RequestResponseActionSpec | undefined;
 	test(`${spec?.method ?? spec_const}: declared error_reasons match handler throws`, () => {
-		assert(spec, `spec const ${spec_const} not exported from role_grant_offer_action_specs.js`);
+		assert(spec, `spec const ${spec_const} not exported from role_grant_offer_action_specs.ts`);
 		const declared = new Set(spec.error_reasons ?? []);
 		const thrown = collect_thrown_reason_values(get_handler_body(handler_name));
 		for (const value of thrown) {
