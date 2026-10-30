@@ -319,21 +319,24 @@ export const create_role_grant_offer_actions = (
 		err: RoleGrantOfferBuiltinRefusedError
 	): Promise<ThrownJsonrpcError> => {
 		let error: ThrownJsonrpcError;
+		let data: { reason: string };
 		switch (err.refusal) {
 			case 'bootstrap_only':
 				// `keeper`'s grant path is bootstrap-only — the offer-create answer
 				// for a role no offer may confer
-				error = jsonrpc_errors.forbidden('role not grantable', {
-					reason: ERROR_ROLE_GRANT_OFFER_ROLE_NOT_GRANTABLE
-				});
+				data = { reason: ERROR_ROLE_GRANT_OFFER_ROLE_NOT_GRANTABLE };
+				error = jsonrpc_errors.forbidden('role not grantable', data);
 				break;
 			case 'scoped':
-				error = jsonrpc_errors.invalid_request({ reason: ERROR_ROLE_GRANT_BUILTIN_SCOPED });
+				data = { reason: ERROR_ROLE_GRANT_BUILTIN_SCOPED };
+				error = jsonrpc_errors.invalid_request(data);
 				break;
 			case 'grantor_not_authorized':
-				error = jsonrpc_errors.forbidden("the offer's grantor can no longer confer this role", {
-					reason: ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED
-				});
+				data = { reason: ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED };
+				error = jsonrpc_errors.forbidden(
+					"the offer's grantor can no longer confer this role",
+					data
+				);
 				break;
 		}
 		await audit.emit_role_grant_target(ctx, auth, {
@@ -345,7 +348,7 @@ export const create_role_grant_offer_actions = (
 				offer_id: err.offer.id,
 				role: err.offer.role,
 				scope_id: err.offer.scope_id,
-				reason: (error.data as { reason: string }).reason
+				reason: data.reason
 			}
 		});
 		return error;
