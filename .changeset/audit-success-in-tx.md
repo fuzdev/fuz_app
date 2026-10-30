@@ -1,7 +1,0 @@
----
-'@fuzdev/fuz_app': minor
----
-
-break: `AuditEmitter.emit` writes a success row inside the request's transaction when one is open (`ctx.db.in_transaction` — an action with `side_effects`, a route with `transaction: true`), so a change and the row reporting it commit or roll back together, as the Rust spine's `emit_in_tx` does; failure rows, and success rows with no transaction open (`/login`, `/password`, signup, bootstrap), stay fail-open pool writes that survive a rollback. `emit` and `emit_role_grant_target` now return `Promise<void>` and reject when the in-transaction INSERT fails, failing the handler; `AuditEmitterContext` gains `db`, `Db` gains `in_transaction`, `DbRouteDeps.audit` is `{emit_pool}`, and `emit_pool` writes are tracked by `drain_inflight`. To migrate: `await` every `emit` / `emit_role_grant_target` call (pass a context carrying the request `db` — `RouteContext` and `ActionContext` already do), make hand-built emitter stubs return a promise, and from a post-commit thunk call `emit_pool` instead of `emit`
-
-fix: the pg driver's `db.transaction` throws when Postgres answers its `COMMIT` with `ROLLBACK` (a statement in it failed and the error was swallowed — an un-awaited `emit`, say), instead of returning as though the transaction committed; a handler that catches a failed statement's error and answers normally must run the statement under a savepoint and roll back to it, as the `db_routes` row delete now does for its 404 and 409 refusals
