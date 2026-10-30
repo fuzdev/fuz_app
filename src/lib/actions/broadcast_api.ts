@@ -73,13 +73,6 @@ export interface CreateBroadcastApiOptions {
 }
 
 /**
- * Loose base shape for a broadcast API. Consumers typically declare a
- * stricter per-method interface (e.g. `BackendActionsApi`) and pin it via
- * the type parameter on `create_broadcast_api`.
- */
-export type BroadcastApi = Record<string, (input: never) => Promise<void>>;
-
-/**
  * Builds a typed broadcast API from a set of action specs.
  *
  * For each spec, adds a method keyed by `spec.method` that:

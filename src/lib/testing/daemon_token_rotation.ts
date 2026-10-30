@@ -20,9 +20,8 @@ import './assert_dev_env.ts';
 
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import type { EnvDeps, FsWriteDeps, FsRemoveDeps } from '../runtime/deps.ts';
+import type { FsWriteDeps, FsRemoveDeps } from '../runtime/deps.ts';
 import { write_file_atomic } from '../runtime/fs.ts';
-import { get_app_dir } from './daemon_info.ts';
 import type { QueryDeps } from '../db/query_deps.ts';
 import { generate_daemon_token, type DaemonTokenState } from '../auth/daemon_token.ts';
 import { resolve_keeper_account_id } from '../auth/daemon_token_middleware.ts';
@@ -31,23 +30,7 @@ import { resolve_keeper_account_id } from '../auth/daemon_token_middleware.ts';
 export const DEFAULT_ROTATION_INTERVAL_MS = 30_000;
 
 /** Deps for writing the daemon token to disk. */
-export type DaemonTokenWriteDeps = Pick<EnvDeps, 'env_get'> &
-	Pick<FsWriteDeps, 'mkdir' | 'write_text_file' | 'rename'>;
-
-/**
- * Get the daemon token file path (`~/.{name}/run/daemon_token`).
- *
- * @param runtime - runtime with `env_get` capability
- * @param name - application name
- * @returns path to `daemon_token`, or `null` if `$HOME` is not set
- */
-export const get_daemon_token_path = (
-	runtime: Pick<EnvDeps, 'env_get'>,
-	name: string
-): string | null => {
-	const app_dir = get_app_dir(runtime, name);
-	return app_dir ? `${app_dir}/run/daemon_token` : null;
-};
+export type DaemonTokenWriteDeps = Pick<FsWriteDeps, 'mkdir' | 'write_text_file' | 'rename'>;
 
 /**
  * Write the current token to disk atomically at mode `0600`.
@@ -76,10 +59,8 @@ export const write_daemon_token = async (
 export interface DaemonTokenRotationOptions {
 	/**
 	 * Absolute path the token file is written to. Caller computes from
-	 * its own conventions — e.g. `get_daemon_token_path(runtime, app_name)`
-	 * for the standard `~/.{name}/run/daemon_token` layout, or a path
-	 * derived from `PUBLIC_<APP>_DIR` for cross-process test setups that
-	 * isolate the app dir to a tmpdir.
+	 * its own conventions — e.g. a path derived from `PUBLIC_<APP>_DIR` for
+	 * cross-process test setups that isolate the app dir to a tmpdir.
 	 */
 	token_path: string;
 	/** Rotation interval in ms. Default: `30000` (30s). */
