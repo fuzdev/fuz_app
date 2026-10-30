@@ -27,7 +27,11 @@
  *    (`request_context.account.id`), settled by authentication, so the gate
  *    sits behind the authority gates by choice rather than necessity: a
  *    caller those gates refuse is answered 403, not 429.
- * 5. **Validate params (400)** — `spec.input.safeParse(raw_params)` with
+ * 5. **Validate params (400)** — first, object `params` holding an own
+ *    `__proto__` key at any depth (`json_has_own_proto_key`) are refused
+ *    with `data.reason` `params_proto_key` (`ERROR_PARAMS_PROTO_KEY`), on
+ *    every input schema, before it runs; then
+ *    `spec.input.safeParse(raw_params)` with
  *    `z.void()` / `?? {}` rules (`to_input_params`). A refusal is the generic
  *    `invalid params`, with `data.reason` when the first issue's field
  *    declares an `invalid_reason` (`to_invalid_params_error`) and the Zod
@@ -74,7 +78,7 @@ import {
 } from '../auth/resolved_auth.ts';
 import type { Db } from '../db/db.ts';
 import { resolve_issues_invalid_reason } from '../schema_meta.ts';
-import { to_input_params } from '../http/schema_helpers.ts';
+import { json_has_own_proto_key, to_input_params } from '../http/schema_helpers.ts';
 import { rate_limit_ip_key } from '../http/ip_canonical.ts';
 import { dispatch_with_post_commit_rollback } from '../http/pending_effects.ts';
 import {
@@ -96,6 +100,7 @@ import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,
 	ERROR_CREDENTIAL_TYPE_REQUIRED,
+	ERROR_PARAMS_PROTO_KEY,
 	ERROR_TOKEN_SCOPE_REQUIRED
 } from '../http/error_schemas.ts';
 import type { RateLimiter } from '../rate_limiter.ts';
@@ -301,6 +306,23 @@ export const perform_action = async (
 	// (`raw_params ?? {}`) lets all-optional-object methods omit `params`;
 	// a `z.void()` input reads every empty shape as the no-arg call — see
 	// `to_input_params`.
+	//
+	// An own `__proto__` key anywhere in object params is refused first, on
+	// every input: Zod drops a top-level one from a loose object and keeps a
+	// nested one by reference, so a schema alone would store it — a sink for
+	// any client that copies the value back with plain assignment. Only an
+	// object is walked, so a non-object `params` is the schema's refusal, as
+	// the Rust twin's shape check answers it ahead of its walk.
+	if (
+		typeof raw_params === 'object' &&
+		raw_params !== null &&
+		!Array.isArray(raw_params) &&
+		json_has_own_proto_key(raw_params)
+	) {
+		return error_result(
+			jsonrpc_error_messages.invalid_params('invalid params', { reason: ERROR_PARAMS_PROTO_KEY })
+		);
+	}
 	const params = to_input_params(spec.input, raw_params);
 	const parse_result = spec.input.safeParse(params);
 	if (!parse_result.success) {

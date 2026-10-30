@@ -57,7 +57,7 @@ import {
 } from '#lib/actions/transports.ts';
 import type { BuiltinCredentialType } from '#lib/auth/credential_type_schema.ts';
 import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
-import { ERROR_INSUFFICIENT_PERMISSIONS } from '#lib/http/error_schemas.ts';
+import { ERROR_INSUFFICIENT_PERMISSIONS, ERROR_PARAMS_PROTO_KEY } from '#lib/http/error_schemas.ts';
 import { RateLimiter } from '#lib/rate_limiter.ts';
 import type { EffectErrorContext } from '#lib/http/pending_effects.ts';
 import { create_stub_db } from '#lib/testing/stubs.ts';
@@ -650,6 +650,8 @@ describe('register_action_ws', () => {
 		const [void_res, strict_res] = h.fake.sends.map(parse_json);
 		assert.strictEqual(void_res.error?.code, JSONRPC_ERROR_CODES.invalid_params);
 		assert.strictEqual(strict_res.error?.code, JSONRPC_ERROR_CODES.invalid_params);
+		assert.deepStrictEqual(void_res.error?.data, { reason: ERROR_PARAMS_PROTO_KEY });
+		assert.deepStrictEqual(strict_res.error?.data, { reason: ERROR_PARAMS_PROTO_KEY });
 		assert.deepStrictEqual(received, []);
 	});
 

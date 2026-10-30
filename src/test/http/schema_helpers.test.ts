@@ -13,6 +13,7 @@ import {
 	is_void_schema,
 	to_void_params,
 	to_input_params,
+	json_has_own_proto_key,
 	safe_parse_dropping_unknown_keys,
 	schema_to_surface,
 	middleware_applies,
@@ -92,6 +93,49 @@ describe('to_input_params', () => {
 		assert.deepStrictEqual(to_input_params(input, null), {});
 		const params = { limit: 2 };
 		assert.strictEqual(to_input_params(input, params), params);
+	});
+});
+
+describe('json_has_own_proto_key', () => {
+	const has = (json: string): boolean => json_has_own_proto_key(JSON.parse(json));
+
+	test('finds an own key at the top level, nested in an object, and nested in an array', () => {
+		assert.strictEqual(has('{"__proto__":{"x":1}}'), true);
+		assert.strictEqual(has('{"__proto__":null}'), true);
+		assert.strictEqual(has('{"a":1,"b":{"c":{"__proto__":{}}}}'), true);
+		assert.strictEqual(has('{"a":{"b":[1,{"__proto__":{}}]}}'), true);
+		assert.strictEqual(has('[{"__proto__":1}]'), true);
+	});
+
+	test('reads an escaped spelling as the key it decodes to', () => {
+		assert.strictEqual(has('{"\\u005f_proto__":1}'), true);
+	});
+
+	test('admits constructor, prototype, a __proto__ value, and a near-miss key', () => {
+		assert.strictEqual(has('{"constructor":{"prototype":{"x":1}}}'), false);
+		assert.strictEqual(has('{"prototype":{}}'), false);
+		assert.strictEqual(has('{"a":"__proto__","b":["__proto__"]}'), false);
+		assert.strictEqual(has('{"__proto":1,"_proto__":1,"__PROTO__":1}'), false);
+		assert.strictEqual(has('{}'), false);
+		assert.strictEqual(has('[]'), false);
+	});
+
+	test('reads scalars as holding no key', () => {
+		for (const value of [null, undefined, 1, 'x', true]) {
+			assert.strictEqual(json_has_own_proto_key(value), false);
+		}
+	});
+
+	test('ignores an inherited __proto__ — an object literal sets the prototype', () => {
+		assert.strictEqual(json_has_own_proto_key({ __proto__: { x: 1 } }), false);
+	});
+
+	test('walks nesting deeper than the call stack without throwing', () => {
+		const depth = 400_000;
+		const deep = '{"a":'.repeat(depth) + '{}' + '}'.repeat(depth);
+		assert.strictEqual(has(deep), false);
+		const deep_hit = '['.repeat(depth) + '{"__proto__":1}' + ']'.repeat(depth);
+		assert.strictEqual(has(deep_hit), true);
 	});
 });
 

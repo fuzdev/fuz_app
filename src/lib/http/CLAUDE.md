@@ -17,7 +17,7 @@ effects, see ../../../docs/architecture.md.
 - `http/route_spec.ts` — `RouteSpec` + `apply_route_specs`, validation pipeline, transactions.
 - `http/auth_shape.ts` — canonical `RouteAuth` Zod schema + cross-axis invariants + predicates.
 - `http/error_schemas.ts` — `ERROR_*` constants, standard error shapes, `derive_error_schemas`.
-- `http/schema_helpers.ts` — shared Zod introspection (null/void/strict/surface/merge/middleware-applies) + `to_void_params` / `to_input_params` / `safe_parse_dropping_unknown_keys`.
+- `http/schema_helpers.ts` — shared Zod introspection (null/void/strict/surface/merge/middleware-applies) + `to_void_params` / `to_input_params` / `json_has_own_proto_key` / `safe_parse_dropping_unknown_keys`.
 - `http/middleware_spec.ts` — `MiddlewareSpec` interface.
 - `http/body_limit.ts` — `create_body_limit_middleware(max_size)`: the `413` body cap `create_app_server` mounts. Refuses on `Content-Length` without reading `c.req.raw.body` and answers `Connection: close` — `413` past the cap, `400` `ERROR_INVALID_CONTENT_LENGTH` when the value is not a plain run of ASCII digits (a length the cap cannot read, which Hono's `bodyLimit` would pass uncounted) — else falls through to Hono's `bodyLimit` (no `Content-Length`, or one beside `Transfer-Encoding`), which reads the body into memory up to the cap before the next middleware runs, so its `413` — no `Connection: close` — also precedes origin and auth. Mounted with `app.use`, not as a `MiddlewareSpec`, so neither status appears in a route's merged error schemas. After the header `413` Node and Bun close at once (the header is what makes them — Bun 1.4.3 is the tested floor, an older Bun kept the connection and served the next request) and Deno closes once the declared body has arrived (../../../docs/security.md §Body Size Limiting).
 - `http/surface.ts` — `AppSurface`, `AppSurfaceSpec`, `generate_app_surface`, diagnostics.
@@ -211,7 +211,7 @@ confirmation.
 
 ### `ERROR_*` constants by category
 
-- **Validation**: `ERROR_INVALID_REQUEST_BODY`, `ERROR_INVALID_JSON_BODY`, `ERROR_INVALID_ROUTE_PARAMS`, `ERROR_INVALID_QUERY_PARAMS`
+- **Validation**: `ERROR_INVALID_REQUEST_BODY`, `ERROR_INVALID_JSON_BODY`, `ERROR_INVALID_ROUTE_PARAMS`, `ERROR_INVALID_QUERY_PARAMS`, `ERROR_PARAMS_PROTO_KEY` (RPC params)
 - **Auth**: `ERROR_AUTHENTICATION_REQUIRED`, `ERROR_INSUFFICIENT_PERMISSIONS`, `ERROR_CREDENTIAL_TYPE_REQUIRED`, `ERROR_RATE_LIMIT_EXCEEDED`, `ERROR_INVALID_CREDENTIALS`, `ERROR_PAYLOAD_TOO_LARGE`, `ERROR_INVALID_CONTENT_LENGTH`
 - **Origin + bearer**: `ERROR_FORBIDDEN_ORIGIN`, `ERROR_INVALID_TOKEN`, `ERROR_ACCOUNT_NOT_FOUND`
 - **Keeper/daemon**: `ERROR_KEEPER_ACCOUNT_NOT_FOUND`
@@ -237,6 +237,7 @@ Key helpers:
 - `is_void_schema(schema)` — `instanceof z.ZodVoid`; a `z.void()` input declares a parameterless RPC method
 - `to_void_params(raw_params)` — reads absent, `null`, and `{}` params of a `z.void()` input as the no-arg call (`undefined`), passing any other shape through for `z.void()` to refuse — the twin of the Rust spine's `require_void_params`
 - `to_input_params(input, raw_params)` — the one params normalizer every receiving end runs before `input.safeParse`: `to_void_params` for a `z.void()` input, else absent/`null` → `{}`; used by both the server dispatch core (`perform_action`) and the peer receive path (`ActionDispatcher`)
+- `json_has_own_proto_key(value)` — whether any object in a parsed JSON value has an own `__proto__` key, by an iterative walk (no recursion — `JSON.parse` nests deeper than the call stack); the dispatcher refuses such params with `ERROR_PARAMS_PROTO_KEY`. Twin of the Rust `fuz_http::json_has_own_proto_key`
 - `safe_parse_dropping_unknown_keys(schema, value)` — the forward-compatible read of a remote-authored payload: when every issue is an unrecognized key, strips those keys from a copy and reparses; any other issue still fails. Used for response `result`s (`ActionEvent`) and peer replies (`peer/ping`); matches serde's ignore-unknown-fields default on the Rust spine
 - `is_strict_object_schema(schema)` — detects `z.strictObject()` by checking `schema.def.catchall instanceof z.ZodNever`
 - `schema_to_surface(schema)` — Zod → JSON Schema, with `$schema` and `default` keys stripped recursively (defaults may be non-deterministic; `$schema` is snapshot noise)
@@ -459,7 +460,7 @@ which holds a declaration to the same rules.
 - Builders in `http/jsonrpc_helpers.ts`: `create_jsonrpc_request`, `create_jsonrpc_notification`, `create_jsonrpc_response`, `create_jsonrpc_error_response`, `create_jsonrpc_error_response_from_thrown` (preserves code/message/data on a thrown JSON-RPC error, via `to_thrown_jsonrpc_error`; plain `Error` → `internal_error` with `{stack}` in DEV)
 - Type guards: `is_jsonrpc_request_id` (rejects NaN/Infinity), `is_jsonrpc_object`, `is_jsonrpc_request` / `_notification` / `_response` / `_error_response`
 - Converters: `to_jsonrpc_message_id`, `to_jsonrpc_params` (normalizes primitives to `{value}`)
-- Classifier: `classify_jsonrpc_message(json)` → `ClassifiedJsonrpcMessage` (`request` / `notification` / `response` / `invalid`, the last carrying the error and the id to answer it on), twin of the Rust `fuz_http::classify` in order and answers. The WS frame handler and the HTTP POST handler switch on it, each keeping its transport's arms: WS refuses batches before it, routes `cancel` and peer responses, and checks duplicate ids and the in-flight ceiling after; POST answers a notification or a response `invalid_request` on `id: null`. Only a refused request envelope carries data — the schema's issues, DEV-only. A `request` carries the frame as parsed, validated but not rebuilt, so an own `__proto__` key in `params` reaches the input schema and is refused there as on GET and the Rust spine (a Zod-rebuilt copy drops it).
+- Classifier: `classify_jsonrpc_message(json)` → `ClassifiedJsonrpcMessage` (`request` / `notification` / `response` / `invalid`, the last carrying the error and the id to answer it on), twin of the Rust `fuz_http::classify` in order and answers. The WS frame handler and the HTTP POST handler switch on it, each keeping its transport's arms: WS refuses batches before it, routes `cancel` and peer responses, and checks duplicate ids and the in-flight ceiling after; POST answers a notification or a response `invalid_request` on `id: null`. Only a refused request envelope carries data — the schema's issues, DEV-only. A `request` carries the frame as parsed, validated but not rebuilt, so an own `__proto__` key in `params` reaches the dispatcher, which refuses it (`ERROR_PARAMS_PROTO_KEY`) as on GET and the Rust spine (a Zod-rebuilt copy drops it).
 
 Handlers can `throw jsonrpc_errors.*` — `apply_route_specs`' error-catch
 layer converts to the flat REST body (`{error: <reason>, message?, ...rest_data}`)

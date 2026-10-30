@@ -1423,6 +1423,22 @@ message just over it gets.
 What the server sends a socket is bounded separately — see
 [Outbound Bounds](#outbound-bounds).
 
+## Prototype Keys in Params
+
+The RPC dispatcher refuses a call whose object `params` hold an own
+`__proto__` key at any depth: `invalid_params` (400) with `data.reason`
+`params_proto_key`, on every method and transport (POST, GET, WebSocket),
+before the input schema runs and after the authority gates and the rate
+limit. `JSON.parse` reads `"__proto__"` as an ordinary own key, but a client
+that copies stored JSON back with plain assignment — any shallow copy or
+deep-merge loop over cell `data` — hits the prototype setter instead, the
+classic prototype-pollution sink. Without the walk the key would be stored and
+served: Zod drops a top-level one from a loose object and passes a nested one
+through by reference, and the Rust spine keeps both. Own `constructor` and
+`prototype` keys are inert on a plain object and stay admitted. The walk is
+iterative and linear in the body's nodes. The Rust spine
+(`fuz_http::json_has_own_proto_key`) answers the same body.
+
 ## Authorization
 
 Roles are Zod-validated at I/O boundaries via `create_role_schema()` — not stored

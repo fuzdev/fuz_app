@@ -26,6 +26,10 @@
  *   naming a `shared_with` other than `'me'`, and an `order_by` /
  *   `order_direction` outside its enum is refused rather than defaulted.
  *
+ * - **prototype keys** — an own `__proto__` key in cell `data`, `policy`, or a
+ *   clone patch, at any depth, or at the top of `cell_list`'s params, is the
+ *   dispatcher's `params_proto_key` refusal (400), ahead of every schema.
+ *
  * Refusals that need a cell in place — a taken item position, moderating a
  * non-contribution, the IDOR masks — stay in the imperative cell suites.
  *
@@ -42,6 +46,7 @@ import {
 import { ERROR_CELL_FIELD_LIST_REQUIRES_SOURCE_OR_TARGET } from '#lib/auth/cell_field_action_specs.ts';
 import { ERROR_CELL_GRANT_NOT_FOUND } from '#lib/auth/cell_grant_action_specs.ts';
 import { ERROR_CELL_ITEM_LIST_REQUIRES_PARENT_OR_CHILD } from '#lib/auth/cell_item_action_specs.ts';
+import { ERROR_PARAMS_PROTO_KEY } from '#lib/http/error_schemas.ts';
 import type { ConformanceCase } from '#lib/testing/cross_backend/conformance_case.ts';
 
 /** A well-formed UUID that names no cell or grant. */
@@ -161,9 +166,69 @@ const schema_first_cases: Array<ConformanceCase> = [
 	}
 ];
 
+const proto_note =
+	'actions/perform_action.ts step 5 — an own `__proto__` key anywhere in params is refused before the input schema, so cell `data` and `policy` never store one';
+
+/** A case whose params are `json`, parsed so an own `__proto__` stays a key. */
+const proto_case = (
+	name: string,
+	method: string,
+	as: 'keeper' | 'anonymous',
+	json: string,
+	verb?: 'GET'
+): ConformanceCase => ({
+	name: `${as} → ${method}${verb ? ' via GET' : ''} ${name} → 400 params_proto_key`,
+	request: { method, as, params: JSON.parse(json), ...(verb && { verb }) },
+	expect: { status: 400, error_reason: ERROR_PARAMS_PROTO_KEY },
+	note: proto_note
+});
+
+const proto_cases: Array<ConformanceCase> = [
+	proto_case(
+		'with data.__proto__',
+		'cell_create',
+		'keeper',
+		'{"kind":"note","data":{"__proto__":{"x":1},"label":"l"}}'
+	),
+	proto_case(
+		'with __proto__ deep in data',
+		'cell_create',
+		'keeper',
+		'{"kind":"note","data":{"a":{"b":[{"__proto__":{}}]}}}'
+	),
+	proto_case(
+		'with policy.__proto__',
+		'cell_create',
+		'keeper',
+		'{"kind":"note","data":{},"policy":{"__proto__":{}}}'
+	),
+	proto_case(
+		'with data.__proto__',
+		'cell_update',
+		'keeper',
+		`{"cell_id":"${NIL_UUID}","data":{"__proto__":{"x":1}}}`
+	),
+	proto_case(
+		'with with_data_patch.__proto__',
+		'cell_clone',
+		'keeper',
+		`{"source_id":"${NIL_UUID}","with_data_patch":{"__proto__":{"x":1}}}`
+	),
+	proto_case(
+		'with policy.__proto__',
+		'cell_policy_set',
+		'keeper',
+		`{"cell_id":"${NIL_UUID}","policy":{"__proto__":{}}}`
+	),
+	proto_case('with a top-level __proto__', 'cell_list', 'anonymous', '{"__proto__":{}}'),
+	proto_case('with a top-level __proto__', 'cell_list', 'anonymous', '{"__proto__":{}}', 'GET'),
+	proto_case('with a top-level __proto__', 'cell_list', 'keeper', '{"__proto__":{}}', 'GET')
+];
+
 export const conformance_cell_cases: ReadonlyArray<ConformanceCase> = [
 	...shape_cases,
 	...grant_cases,
 	...pagination_cases,
-	...schema_first_cases
+	...schema_first_cases,
+	...proto_cases
 ];

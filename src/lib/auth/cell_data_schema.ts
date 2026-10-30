@@ -25,6 +25,11 @@
  * (`cell.visibility`) is likewise a peer column, enforced by `can_view_cell`
  * reading the column directly (no JSON dive).
  *
+ * **An own `__proto__` key never reaches this schema.** The dispatcher
+ * refuses params holding one at any depth (`ERROR_PARAMS_PROTO_KEY`), so
+ * stored `data` carries none — the loose object would drop a top-level one
+ * silently and keep a nested one.
+ *
  * @module
  */
 

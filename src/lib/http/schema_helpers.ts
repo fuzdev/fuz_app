@@ -82,6 +82,41 @@ export const to_input_params = (input: z.ZodType, raw_params: unknown): unknown 
 	is_void_schema(input) ? to_void_params(raw_params) : (raw_params ?? {});
 
 /**
+ * Check whether a parsed JSON value holds an own `__proto__` key in any
+ * object, at any depth — what the dispatcher refuses in a request's `params`
+ * (`ERROR_PARAMS_PROTO_KEY`).
+ *
+ * `JSON.parse` defines `"__proto__"` as an ordinary own key, but the first
+ * plain assignment that copies it (`target[key] = value`, as any shallow copy
+ * or merge loop does) hits the prototype setter instead, so stored JSON
+ * carrying one is a prototype-pollution sink for whoever reads it back. An
+ * own `constructor` or `prototype` key is inert on a plain object and is not
+ * checked.
+ *
+ * Walks with an explicit stack rather than recursion: `JSON.parse` accepts
+ * nesting deep enough to overflow the call stack, and the walk is linear in
+ * the value's nodes, which the request body limit bounds. The Rust spine's
+ * `fuz_http::json_has_own_proto_key` is the twin.
+ *
+ * @param value - a value as `JSON.parse` produced it
+ * @returns whether any object in `value` has an own `__proto__` key
+ */
+export const json_has_own_proto_key = (value: unknown): boolean => {
+	const stack: Array<unknown> = [value];
+	while (stack.length > 0) {
+		const current = stack.pop();
+		if (typeof current !== 'object' || current === null) continue;
+		if (Array.isArray(current)) {
+			for (const item of current) stack.push(item);
+			continue;
+		}
+		if (Object.hasOwn(current, '__proto__')) return true;
+		for (const item of Object.values(current)) stack.push(item);
+	}
+	return false;
+};
+
+/**
  * `schema.safeParse(value)`, except that keys the schema doesn't declare are
  * dropped rather than refused — the forward-compatible read of a payload a
  * remote authored.

@@ -31,6 +31,7 @@ import { token_scope_methods, type TokenScope } from '#lib/auth/token_scope.ts';
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,
+	ERROR_PARAMS_PROTO_KEY,
 	ERROR_TOKEN_SCOPE_REQUIRED
 } from '#lib/http/error_schemas.ts';
 import { RateLimiter } from '#lib/rate_limiter.ts';
@@ -386,6 +387,20 @@ describe('POST dispatcher', () => {
 		assert.strictEqual(body.error.data.reason, ERROR_AUTHENTICATION_REQUIRED);
 	});
 
+	test('the __proto__ refusal waits on the authority gates', async () => {
+		// a caller the gates refuse learns nothing about the params, the
+		// proto walk included
+		const app = create_test_app([{ spec: create_post_spec(), handler: () => ({ id: '1' }) }]);
+		const res = await app.request('/api/rpc', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: '{"jsonrpc":"2.0","id":"1","method":"thing_create","params":{"name":"x","__proto__":{}}}'
+		});
+		assert.strictEqual(res.status, 401);
+		const body = await res.json();
+		assert.strictEqual(body.error.data.reason, ERROR_AUTHENTICATION_REQUIRED);
+	});
+
 	test('returns forbidden for role-gated action without role', async () => {
 		const admin_spec: RequestResponseActionSpec = {
 			...create_post_spec(),
@@ -436,6 +451,27 @@ describe('POST dispatcher', () => {
 		assert.strictEqual(res.status, 403);
 		const body = await res.json();
 		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.forbidden);
+		assert.strictEqual(body.error.data.reason, ERROR_INSUFFICIENT_PERMISSIONS);
+	});
+
+	test('the role gate precedes the __proto__ refusal', async () => {
+		const admin_spec: RequestResponseActionSpec = {
+			...create_post_spec(),
+			method: 'admin_action',
+			auth: { account: 'required', actor: 'required', roles: ['admin'] },
+			input: z.strictObject({ name: z.string(), acting: ActingActor })
+		};
+		const app = create_test_app(
+			[{ spec: admin_spec, handler: () => ({ id: '1' }) }],
+			{ auth_context: create_test_request_context() } // no admin role
+		);
+		const res = await app.request('/api/rpc', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: '{"jsonrpc":"2.0","id":"1","method":"admin_action","params":{"name":"x","__proto__":{}}}'
+		});
+		assert.strictEqual(res.status, 403);
+		const body = await res.json();
 		assert.strictEqual(body.error.data.reason, ERROR_INSUFFICIENT_PERMISSIONS);
 	});
 
@@ -568,6 +604,7 @@ describe('POST dispatcher', () => {
 				JSONRPC_ERROR_CODES.invalid_params,
 				`${i}: ${JSON.stringify(body)}`
 			);
+			assert.deepStrictEqual(body.error.data, { reason: ERROR_PARAMS_PROTO_KEY }, `${i}`);
 		}
 		assert.strictEqual(called, 0);
 	});
@@ -1757,6 +1794,27 @@ describe('rate limit', () => {
 		assert.strictEqual(third.error?.code, JSONRPC_ERROR_CODES.rate_limited);
 	});
 
+	test('__proto__ params charge the budget — the second call is rate_limited', async () => {
+		const limiter = make_limiter(1);
+		const auth_context = create_test_request_context();
+		const app = create_test_app(
+			[{ spec: account_keyed_spec(), handler: () => ({ ok: true as const }) }],
+			{ auth_context, credential_type: 'session', action_account_rate_limiter: limiter }
+		);
+		const send = () =>
+			app.request(
+				new Request('http://localhost/api/rpc', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: '{"jsonrpc":"2.0","id":"1","method":"thing_throttled","params":{"name":"a","__proto__":{}}}'
+				})
+			);
+		const first = await (await send()).json();
+		assert.deepStrictEqual(first.error?.data, { reason: ERROR_PARAMS_PROTO_KEY });
+		const second_response = await send();
+		assert.strictEqual(second_response.status, 429);
+	});
+
 	test('malformed params on a non-limited spec are still invalid_params', async () => {
 		const limiter = make_limiter(1);
 		const auth_context = create_test_request_context();
@@ -1874,21 +1932,31 @@ describe('review probe: prototype-shaped params keys, POST and GET', () => {
 						`/api/rpc?method=${method}&id=1&params=${encodeURIComponent(params_json)}`
 					);
 		const body = await res.json();
-		return { status: res.status, code: body.error?.code ?? null, result: body.result };
+		return {
+			status: res.status,
+			code: body.error?.code ?? null,
+			reason: body.error?.data?.reason ?? null,
+			result: body.result
+		};
 	};
-	// [method, params, expected status] — POST and GET must agree
-	const cases: Array<[string, string, number]> = [
-		['p_void', '{"constructor":{"x":1}}', 400],
-		['p_void', '{"__proto__":null}', 400],
-		['p_strict', '{"a":"x","constructor":{"x":1}}', 400],
-		['p_strict', '{"a":"x","__proto__":null}', 400],
-		['p_strict', '{"a":"x","__proto__":{"x":1}}', 400],
-		['p_loose', '{"a":"x","__proto__":{"x":1}}', 200],
-		['p_loose', '{"a":"x","constructor":{"x":1}}', 200],
-		['p_nested', '{"f":{"a":"x","__proto__":{"x":1}}}', 400],
-		['p_nested', '{"f":{"a":"x"},"__proto__":{"x":1}}', 400]
+	const PROTO = ERROR_PARAMS_PROTO_KEY;
+	// [method, params, expected status, expected reason] — POST and GET must
+	// agree; an own `__proto__` anywhere is the dispatcher's reasoned refusal,
+	// ahead of every schema, while `constructor` is an ordinary key
+	const cases: Array<[string, string, number, string | null]> = [
+		['p_void', '{"constructor":{"x":1}}', 400, null],
+		['p_void', '{"__proto__":null}', 400, PROTO],
+		['p_strict', '{"a":"x","constructor":{"x":1}}', 400, null],
+		['p_strict', '{"a":"x","__proto__":null}', 400, PROTO],
+		['p_strict', '{"a":"x","__proto__":{"x":1}}', 400, PROTO],
+		['p_strict', '{"a":1,"__proto__":{"x":1}}', 400, PROTO],
+		['p_loose', '{"a":"x","__proto__":{"x":1}}', 400, PROTO],
+		['p_loose', '{"a":"x","b":{"c":[{"__proto__":{"x":1}}]}}', 400, PROTO],
+		['p_loose', '{"a":"x","constructor":{"x":1}}', 200, null],
+		['p_nested', '{"f":{"a":"x","__proto__":{"x":1}}}', 400, PROTO],
+		['p_nested', '{"f":{"a":"x"},"__proto__":{"x":1}}', 400, PROTO]
 	];
-	for (const [method, params, expected] of cases) {
+	for (const [method, params, expected, expected_reason] of cases) {
 		test(`${method} ${params} → ${expected} on POST and GET`, async () => {
 			received.length = 0;
 			const post = await call('POST', method, params);
@@ -1896,12 +1964,28 @@ describe('review probe: prototype-shaped params keys, POST and GET', () => {
 			assert.strictEqual(post.status, expected, `POST ${JSON.stringify(post)}`);
 			assert.deepStrictEqual(get, post, 'GET answers as POST');
 			if (expected === 400) assert.strictEqual(post.code, JSONRPC_ERROR_CODES.invalid_params);
+			assert.strictEqual(post.reason, expected_reason);
+			if (expected_reason === PROTO)
+				assert.deepStrictEqual(received, [], 'refused before dispatch');
 			for (const r of received) {
 				// nothing a handler sees inherits from a client-sent prototype
 				assert.strictEqual((r.input as any)?.x, undefined, 'no inherited x');
 			}
 		});
 	}
+
+	test('non-object GET params holding a __proto__ key are the schema refusal, without the reason', async () => {
+		// only object params are walked, as the Rust twin's shape check answers
+		// a non-object `params` ahead of its walk
+		for (const method of ['p_void', 'p_strict', 'p_loose']) {
+			received.length = 0;
+			const get = await call('GET', method, '[{"__proto__":{"x":1}}]');
+			assert.strictEqual(get.status, 400, method);
+			assert.strictEqual(get.code, JSONRPC_ERROR_CODES.invalid_params, method);
+			assert.strictEqual(get.reason, null, method);
+			assert.deepStrictEqual(received, [], method);
+		}
+	});
 
 	test('a frame-level own __proto__ cannot supply params, id, or method', async () => {
 		received.length = 0;

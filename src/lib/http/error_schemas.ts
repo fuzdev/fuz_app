@@ -30,6 +30,13 @@ export const ERROR_INVALID_ROUTE_PARAMS = 'invalid_route_params' as const;
 /** URL query params failed Zod validation. */
 export const ERROR_INVALID_QUERY_PARAMS = 'invalid_query_params' as const;
 
+/**
+ * An RPC call's `params` hold an own `__proto__` key, at any depth — refused
+ * by the dispatcher (`invalid_params`) before the input schema runs. See
+ * `json_has_own_proto_key`.
+ */
+export const ERROR_PARAMS_PROTO_KEY = 'params_proto_key' as const;
+
 // --- Core: Authentication & authorization (auto-derived by auth middleware) ---
 
 /** No valid session or bearer token. */
