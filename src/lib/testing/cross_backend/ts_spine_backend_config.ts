@@ -227,11 +227,9 @@ export const ts_spine_node_backend_config = (
 };
 
 /**
- * `BackendConfig` for the Bun TS spine binary — spawned via `bun run`. Bun
- * resolves the entry's relative `.js`→`.ts` source specifiers natively (no
- * flag needed — unlike Deno's `--sloppy-imports`, and like Gro's loader on
- * the Node path). `Bun.serve` is built in; the WS upgrade comes from the
- * optional `@hono/bun` peer dep.
+ * `BackendConfig` for the Bun TS spine binary — spawned via `bun run`.
+ * `Bun.serve` is built in; the WS upgrade comes from the optional `@hono/bun`
+ * peer dep.
  */
 export const ts_spine_bun_backend_config = (
 	options: TsSpineBackendConfigOptions = {}
@@ -266,12 +264,6 @@ export const ts_spine_bun_backend_config = (
  * `BackendConfig` for the Deno TS spine binary. The `--allow-*` set mirrors
  * the cross-process needs (net + read/write for the daemon-token file + env
  * + sys); `--unstable-detect-cjs` matches the ecosystem's Deno test entries.
- *
- * `--sloppy-imports` is required because the binary imports fuz_app **source**
- * via relative `.js` specifiers (the `src/lib` convention) — Deno resolves
- * `.js`→`.ts` only under this flag, whereas Gro's loader (the Node path)
- * does so natively. (zzz's Deno entry sidesteps it by importing fuz_app as a
- * built package; this binary tests live source instead.)
  */
 export const ts_spine_deno_backend_config = (
 	options: TsSpineBackendConfigOptions = {}
@@ -298,7 +290,6 @@ export const ts_spine_deno_backend_config = (
 				'--allow-ffi',
 				'--allow-run',
 				'--unstable-detect-cjs',
-				'--sloppy-imports',
 				TS_SPINE_DENO_ENTRY
 			],
 			database_url,
