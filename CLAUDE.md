@@ -155,15 +155,17 @@ Shared helpers accept small `*Deps` from `runtime/deps.ts` (not `Pick<GodType, .
 
 ### Peer Dependencies
 
-- `hono` (>=4), `zod` (^4), `svelte` (^5), `@sveltejs/kit` (^3)
-- `@fuzdev/fuz_util` (>=0.77.0)
+- `zod` (^4), `svelte` (^5), `@sveltejs/kit` (^3)
+- `hono` (>=4) — optional, for the server-side modules (routes, middleware, `create_app_server`)
+- `@fuzdev/fuz_util` (>=0.79.0)
 - `@fuzdev/fuz_schema` (^0.5.0) — the `Branded` behind fuz_util's `FactHash` (one deduped copy, as `Branded` keys on a unique symbol), and the `DaemonInfo` schema of `testing/daemon_info.ts`
-- `@node-rs/argon2` (>=2) — for `auth/password_argon2`
+- `@node-rs/argon2` (>=2) — optional, for `auth/password_argon2`
 - `@fuzdev/blake3-wasm` (>=0.2.0) — imported directly by `db/fact_disk_storage` (the streaming hasher); `auth/session_queries` and `auth/api_token` (session and API token hashes) reach it through `@fuzdev/fuz_util/hash_blake3.ts`
-- `pg` (>=8), `@electric-sql/pglite` (>=0.4) or `@fuzdev/pglet-wasm` (>=0.1.0) — optional, for `db/create_db` (`postgres://`, `file://` and `memory://` respectively); `@fuzdev/pglet-wasm` is also the default test database (`testing/db.ts`'s `create_default_db_factory`)
+- `pg` (>=8), `@electric-sql/pglite` (>=0.4) or `@fuzdev/pglet-wasm` (>=0.1.2) — optional, for `db/create_db` (`postgres://`, `file://` and `memory://` respectively); `@fuzdev/pglet-wasm` is also the default test database (`testing/db.ts`'s `create_default_db_factory`)
 - `@hono/node-server` (>=1), `@hono/node-ws` (>=1), `ws` (>=8) — optional, for the Node server adapter + WebSocket transport
 - `@hono/bun` (>=1), `@hono/deno` (>=1) — optional, for the Bun and Deno cross-backend testing server adapters (`testing/cross_backend/testing_server_bun.ts`, `testing/cross_backend/testing_server_deno.ts`)
 - `esm-env` (^1) — optional, for the DEV-only output-validation gate
+- `@fuzdev/fuz_css` (>=0.72.0) — optional, the classes and design tokens the `ui/` components are styled with
 
 ## Architecture
 
