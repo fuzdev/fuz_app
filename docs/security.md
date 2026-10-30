@@ -151,8 +151,8 @@ property; it isn't wire-observable for the runner to compare.)
 
 Beyond the constant-time Argon2id baseline, every 401 response is floored to
 `DEFAULT_LOGIN_FAIL_FLOOR_MS` (250ms) plus `DEFAULT_LOGIN_FAIL_JITTER_MS`
-(±25ms) random jitter. The handler races real work against a sleep and `await`s
-both, so observed response time is `max(work, delay)` — found-vs-not-found and
+(±25ms) random jitter. The handler starts the floor timer, then awaits it after
+the work, so observed response time is `max(work, delay)` — found-vs-not-found and
 rate-limit-skipped-vs-not paths all converge. 429 responses are intentionally
 not padded: they carry no oracle (the attacker just chose to overflow the
 bucket) and padding would let blocked attackers hold server resources open.
@@ -1545,8 +1545,9 @@ locked count less the revoked grant. Neither guard is
 recoverable from inside the app, so both are invariants, not foot-gun stops.
 
 **IDOR guard**: `query_revoke_role_grant()` requires an `actor_id` constraint. The
-revoke handler resolves the target actor from the URL and returns 404 on mismatch —
-a handler cannot revoke a role_grant belonging to a different actor. The same
+`role_grant_revoke` RPC action looks the grant up by `input.role_grant_id` and
+`input.actor_id` together and returns 404 on mismatch — a handler cannot revoke
+a role_grant belonging to a different actor. The same
 404-over-403 pattern applies to `query_accept_offer`, which throws
 `RoleGrantOfferNotFoundError` on both a missing offer id and a wrong-recipient
 lookup to avoid disclosing whether an offer id exists.
@@ -1672,8 +1673,9 @@ holds, and its wire rows omit `account_id` / `email` / timestamps / role
 state (control-plane and timing-oracle avoidance).
 
 **Duplicate prevention**: A partial unique index on
-`(actor_id, role, COALESCE(scope_id, sentinel))` prevents duplicate active
-role_grants per resource scope (global role_grants collapse via the sentinel uuid).
+`(actor_id, role, COALESCE(scope_kind, 'GLOBAL'), COALESCE(scope_id, sentinel))`
+prevents duplicate active role_grants per resource scope (global role_grants
+collapse via the `'GLOBAL'` token and the sentinel uuid).
 `query_create_role_grant()` is idempotent over the active grant (`ON CONFLICT
 DO NOTHING`); an expired but unrevoked row in the slot is first revoked
 (`revoked_reason = 'expired'`) and replaced by the fresh grant.
@@ -2085,7 +2087,8 @@ case-insensitive account uniques shadowing a TOCTOU.
 **Constant-time floor on denial paths**: 403 (`no_match`) and 409
 (`signup_conflict`) responses elapse at least
 `DEFAULT_SIGNUP_FAIL_FLOOR_MS` (250ms) ± `DEFAULT_SIGNUP_FAIL_JITTER_MS`
-(25ms) via the same `Promise.all(work, setTimeout)` pattern login uses.
+(25ms) via the same `start_fail_floor` login uses — the timer starts before
+the work and is awaited after it, so response time is `max(work, delay)`.
 Without the floor, an attacker can distinguish `no_match` (~5ms, bails
 before tx) from `signup_conflict` (~50ms+, Argon2id + tx + rollback) by
 response time and use the gap as a username-enumeration oracle. The
@@ -2134,8 +2137,9 @@ prevents dead-on-arrival invites, and both checks are case-insensitive.
 
 **Username validation**: The `Username` Zod schema (3-39 chars, starts with
 letter, ends with letter/number, middle allows dash/underscore, no `@` or `.`)
-is enforced on both signup and invite creation inputs. Email uses `z.email()`
-which requires `@` — the two namespaces are disjoint.
+is enforced on both signup and invite creation inputs. `Email` uses a custom
+regex (`EMAIL_REGEX` in `primitive_schemas.ts`) that requires `@` — the two
+namespaces are disjoint.
 
 **No email ownership verification at signup**: Signup does not verify that the
 user controls the email they provide. An email-only invite for `alice@example.com`
