@@ -10,7 +10,7 @@ import './assert_dev_env.ts';
  * missing index, constraint absent on one side) so the error
  * message points at the source.
  *
- * Consumer pattern (in zzz's integration runner or fuz_app's own
+ * Consumer pattern (in a dual-impl runner or fuz_app's own
  * cross-backend tests):
  *
  * ```ts

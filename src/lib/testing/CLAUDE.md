@@ -2153,8 +2153,8 @@ are `src/test/auth/cell_crud_parity.db.test.ts`
   `create_sse_frame_reader`. Built-in `fetch` + `TextDecoder` — no dep.
 - `surface_source: AppSurfaceSpec` — the same shape both in-process and
   cross-process tests pass. Constructed in TS via
-  `create_test_app_surface_spec` (or a consumer's equivalent like
-  `create_zzz_app_surface_spec`) — same builder both modes use. The
+  `create_test_app_surface_spec` (or a consumer's equivalent) — same
+  builder both modes use. The
   cross-process-ness lives in `setup_test: default_cross_process_setup(handle)`
   — the `FetchTransport`, not the schema source. The on-disk
   `*_attack_surface.json` snapshot is an observability artifact for human
@@ -2976,7 +2976,7 @@ real HTTP). A thin
 scenario→task→report adapter over `@fuzdev/fuz_util`'s benchmark library
 (`Benchmark`, `benchmark_stats_compare`, `benchmark_format_markdown`) —
 no stats engine reinvented. fuz_app ships the primitive; consumers wire
-scenarios + the run (zzz's `npm run benchmark:cross-impl` was the first).
+scenarios + the run.
 fuz_app also ships its **own** `npm run benchmark:cross-impl`
 (`src/benchmarks/cross_impl.bench.ts`) on the back of its TS spine binary —
 ts-node + ts-deno + ts-bun (+ the Rust `spine_stub` when `FUZ_TESTING_RUST_SPINE_STUB_BIN`

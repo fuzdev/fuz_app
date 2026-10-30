@@ -927,7 +927,7 @@ into any runner that orchestrates both impls.
 - `format_schema_diffs(diffs, labels?)` (`testing/schema_parity.ts`) — Human-readable multi-line rendering; labels identify the impls (`{a: 'deno', b: 'rust'}`)
 - `assert_schema_snapshots_equal(a, b, labels?)` (`testing/schema_parity.ts`) — Throw on drift with the canonical formatted message
 
-Consumer wiring (zzz pattern). Each backend bootstraps against a
+Consumer wiring. Each backend bootstraps against a
 freshly-recreated DB; the runner captures a snapshot post-bootstrap
 and asserts equality at the end:
 

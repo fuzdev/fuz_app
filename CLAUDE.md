@@ -105,8 +105,7 @@ to bump the consumer's `package.json` + `deno.json` constraints to
 admit the locally-published version, then re-run `npm install`. The
 symlink itself works fine once versions align; the `gro` transitive
 `oxc-parser` also forces `--allow-ffi` on the Deno binary, and
-test-binary scenarios that spawn shell commands need `--allow-run`
-(verified in zzz's cross-backend test config).
+test-binary scenarios that spawn shell commands need `--allow-run`.
 
 ## Library Modules
 
@@ -328,8 +327,8 @@ opt-in `cross_backend_*` vitest projects (gated behind
 self-tests and `src/lib/testing/CLAUDE.md` §"Building a TS test-server binary".
 
 **Cross-impl schema parity** — consumers running two backend impls
-against a shared schema (e.g., zzz's `--backend=both`) use
-`query_schema_snapshot` (`testing/schema_introspect.ts`) +
+against a shared schema use `query_schema_snapshot`
+(`testing/schema_introspect.ts`) +
 `assert_schema_snapshots_equal` / `diff_schema_snapshots` /
 `format_schema_diffs` (`testing/schema_parity.ts`) to gate structural
 drift between bootstrapped DBs. Captures tables / columns (with

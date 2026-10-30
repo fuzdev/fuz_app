@@ -22,7 +22,7 @@ import '../assert_dev_env.ts';
  * upgrade helper and passes the resulting factory as
  * `create_upgrade_websocket`; the core attaches it to the server once
  * `serve` returns (Node's `injectWebSocket`). fuz_app's own `testing_spine_server` passes a
- * no-domain build; consumers (zzz, fuz_forge) pass their domain build.
+ * no-domain build; consumers (fuz_forge) pass their domain build.
  *
  * **NEVER ships in a release.** This module lives under `cross_backend/` and
  * opens with `import '../assert_dev_env.ts';`, which throws on
