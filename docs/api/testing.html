@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/BTZoVLbz.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CAODFmXb.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.C79ELVYt.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.DIeazXh1.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.Jb0g48Nk.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.DvUu3Qv6.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BcwQFYZ2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/C3BYcZ2u.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/D9nnQ1-S.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/Bd5q54Ec.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.Csuddr_e.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/CTufak72.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.66uUQYSQ.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BL7ZH9U-.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DhdQKFKC.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -655,7 +655,7 @@ the matching <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="decla
 and <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->provide<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->s a serializable handle that <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->*.cross.test.ts<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> files read
 with <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/cross_backend/provided_context.ts#inject_backend_handle"><!--[0--><!--[-1-->inject_backend_handle<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->provided_context.ts<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->).<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->A consumer's <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->global_setup.ts<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> collapses to:<!--]--><!--]--><!----></p><!--]--><!--[15--><!--[0--><!--[--><code data-lang="ts" class="svelte-jqsy8a"><!--[-1--><!----><span class="token_special_keyword">import</span> <span class="token_punctuation">{</span>create_cross_backend_global_setup<span class="token_punctuation">}</span> <span class="token_special_keyword">from</span>
   <span class="token_string">'@fuzdev/fuz_app/testing/cross_backend/create_cross_backend_global_setup.ts'</span><span class="token_punctuation">;</span>
-<span class="token_special_keyword">import</span> <span class="token_punctuation">{</span>deno_backend_config<span class="token_punctuation">,</span> rust_backend_config<span class="token_punctuation">}</span> <span class="token_special_keyword">from</span> <span class="token_string">'./my_backend_config.js'</span><span class="token_punctuation">;</span>
+<span class="token_special_keyword">import</span> <span class="token_punctuation">{</span>deno_backend_config<span class="token_punctuation">,</span> rust_backend_config<span class="token_punctuation">}</span> <span class="token_special_keyword">from</span> <span class="token_string">'./my_backend_config.ts'</span><span class="token_punctuation">;</span>
 
 <span class="token_special_keyword">export</span> <span class="token_special_keyword">default</span> <span class="token_function">create_cross_backend_global_setup</span><span class="token_punctuation">({</span>
   configs<span class="token_operator">:</span> <span class="token_punctuation">{</span>deno<span class="token_operator">:</span> deno_backend_config<span class="token_punctuation">,</span> rust<span class="token_operator">:</span> rust_backend_config<span class="token_punctuation">},</span>
@@ -675,7 +675,7 @@ why the default <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->prov
 (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->global_setup_login_security.ts<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) reuses it with its own keys; any future
 two-backend gate can too.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->A consumer's dual-spawn <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->global_setup.ts<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> collapses to:<!--]--><!--]--><!----></p><!--]--><!--[15--><!--[0--><!--[--><code data-lang="ts" class="svelte-jqsy8a"><!--[-1--><!----><span class="token_special_keyword">import</span> <span class="token_punctuation">{</span>create_dual_spawn_global_setup<span class="token_punctuation">}</span> <span class="token_special_keyword">from</span>
   <span class="token_string">'@fuzdev/fuz_app/testing/cross_backend/create_dual_spawn_global_setup.ts'</span><span class="token_punctuation">;</span>
-<span class="token_special_keyword">import</span> <span class="token_punctuation">{</span>deno_backend_config<span class="token_punctuation">,</span> rust_backend_config<span class="token_punctuation">}</span> <span class="token_special_keyword">from</span> <span class="token_string">'./my_backend_config.js'</span><span class="token_punctuation">;</span>
+<span class="token_special_keyword">import</span> <span class="token_punctuation">{</span>deno_backend_config<span class="token_punctuation">,</span> rust_backend_config<span class="token_punctuation">}</span> <span class="token_special_keyword">from</span> <span class="token_string">'./my_backend_config.ts'</span><span class="token_punctuation">;</span>
 
 <span class="token_special_keyword">export</span> <span class="token_special_keyword">default</span> <span class="token_function">create_dual_spawn_global_setup</span><span class="token_punctuation">({</span>
   configs<span class="token_operator">:</span> <span class="token_punctuation">{</span>a<span class="token_operator">:</span> deno_backend_config<span class="token_punctuation">,</span> b<span class="token_operator">:</span> rust_backend_config<span class="token_punctuation">},</span>
@@ -1814,7 +1814,7 @@ stays domain-free. WebSocket endpoints mount through <!--]--><!--[3--><!--[0--><
 upgrade helper and passes the resulting factory as
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->create_upgrade_websocket<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->; the core attaches it to the server once
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->serve<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> returns (Node's <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->injectWebSocket<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->). fuz_app's own <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->testing_spine_server<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> passes a
-no-domain build; consumers (zzz, fuz_forge) pass their domain build.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[4--><strong><!--[--><!--[2-->NEVER ships in a release.<!--]--><!--]--><!----></strong><!--]--><!--[2--> This module lives under <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->cross_backend/<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> and
+no-domain build; consumers (fuz_forge) pass their domain build.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[4--><strong><!--[--><!--[2-->NEVER ships in a release.<!--]--><!--]--><!----></strong><!--]--><!--[2--> This module lives under <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->cross_backend/<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> and
 opens with <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->import '../assert_dev_env.ts';<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, which throws on
 production-bundle load. The runtime adapters reach for the optional
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->@hono/node-server<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> / <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->@hono/node-ws<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> peer deps; only test binaries import
@@ -2311,7 +2311,7 @@ snapshots of a parity comparison on PostgreSQL.<!--]--><!--]--><!----></p><!--]-
 reference. After both bootstrap, snapshot each, diff, fail loudly on
 drift. The diff entries name the specific divergence (column type,
 missing index, constraint absent on one side) so the error
-message points at the source.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Consumer pattern (in zzz's integration runner or fuz_app's own
+message points at the source.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Consumer pattern (in a dual-impl runner or fuz_app's own
 cross-backend tests):<!--]--><!--]--><!----></p><!--]--><!--[15--><!--[0--><!--[--><code data-lang="ts" class="svelte-jqsy8a"><!--[-1--><!----><span class="token_keyword">const</span> snapshot_a <span class="token_operator">=</span> <span class="token_special_keyword">await</span> <span class="token_function">query_schema_snapshot</span><span class="token_punctuation">(</span>db_after_deno_bootstrap<span class="token_punctuation">);</span>
 <span class="token_keyword">const</span> snapshot_b <span class="token_operator">=</span> <span class="token_special_keyword">await</span> <span class="token_function">query_schema_snapshot</span><span class="token_punctuation">(</span>db_after_rust_bootstrap<span class="token_punctuation">);</span>
 <span class="token_function">assert_schema_snapshots_equal</span><span class="token_punctuation">(</span>snapshot_a<span class="token_punctuation">,</span> snapshot_b<span class="token_punctuation">,</span> <span class="token_punctuation">{</span>a<span class="token_operator">:</span> <span class="token_string">'deno'</span><span class="token_punctuation">,</span> b<span class="token_operator">:</span> <span class="token_string">'rust'</span><span class="token_punctuation">});</span><!----><!--]--></code><!--]--><!--]--><!--]--><!--[8--><p><!--[--><!--[2-->Non-coverage — drift the gate does <!--]--><!--[4--><strong><!--[--><!--[2-->not<!--]--><!--]--><!----></strong><!--]--><!--[2--> detect:<!--]--><!--]--><!----></p><!--]--><!--[9--><!--[-1--><ul><!--[--><!--[10--><li><!--[--><!--[2-->regular triggers (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->pg_trigger<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->); <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->CONSTRAINT TRIGGER<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> is captured via
@@ -2440,16 +2440,16 @@ close-on-revoke).<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div
 			
 			<script>
 				{
-					__sveltekit_ku131f = {
+					__sveltekit_6669hq = {
 						base: "",
-						version: "8609f1390b997e34e336b96ff98d35cce4b3bdff"
+						version: "9010c603d16ba606e247d962bddf46f78d1dcab6"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.CXlCZqzx.js").then(async (kit) => {
-						kit.init(__sveltekit_ku131f);
-						const app = await import("/_app/immutable/entry/app.C79ELVYt.js");
+						kit.init(__sveltekit_6669hq);
+						const app = await import("/_app/immutable/entry/app.Jb0g48Nk.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],

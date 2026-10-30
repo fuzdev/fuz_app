@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/BTZoVLbz.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CAODFmXb.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.C79ELVYt.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.DIeazXh1.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.Jb0g48Nk.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.DvUu3Qv6.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BcwQFYZ2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/C3BYcZ2u.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/D9nnQ1-S.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/Bd5q54Ec.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.Csuddr_e.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/CTufak72.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.66uUQYSQ.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BL7ZH9U-.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DhdQKFKC.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -64,8 +64,8 @@ re-reads its credential or its role. <!--]--><!--[3--><!--[0--><!--[--><!--[0-->
 <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/realtime/sse_registry.ts#SseRegistry"><!--[0--><!--[-1-->SseRegistry<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> to <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/connection_closer.ts#ConnectionCloser"><!--[0--><!--[-1-->ConnectionCloser<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->, and a registry added to the
 backend's <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->deps.connection_closer<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> is closed by every revocation: the
 handlers' own post-commit closes (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/connection_closer.ts#queue_connection_close"><!--[0--><!--[-1-->queue_connection_close<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->), and the one
-audit listener on that closer (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/connection_closer.ts#create_revocation_guard"><!--[0--><!--[-1-->create_revocation_guard<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->), which is also the
-only closer for a role revocation.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/realtime/audit_log_sse.ts#create_audit_log_sse"><!--[0--><!--[-1-->create_audit_log_sse<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> builds the registry and its broadcaster and adds the
+audit listener on that closer (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/connection_closer.ts#create_revocation_guard"><!--[0--><!--[-1-->create_revocation_guard<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->), which repeats
+them.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/realtime/audit_log_sse.ts#create_audit_log_sse"><!--[0--><!--[-1-->create_audit_log_sse<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> builds the registry and its broadcaster and adds the
 registry to the closer — making the secure path the easy path for consumers.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/realtime/outbound_budget.ts"><!--[-1-->realtime/outbound_budget.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->The byte budget of the frames waiting to be written to one connection — a
 WebSocket or an SSE stream.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->A producer never waits on a recipient: a broadcast is synchronous and called
 from anywhere, so a client that stopped reading makes the server hold what it
@@ -110,16 +110,16 @@ and the timer stops when the stream closes. <!--]--><!--[3--><!--[0--><!--[--><!
 			
 			<script>
 				{
-					__sveltekit_ku131f = {
+					__sveltekit_6669hq = {
 						base: "",
-						version: "8609f1390b997e34e336b96ff98d35cce4b3bdff"
+						version: "9010c603d16ba606e247d962bddf46f78d1dcab6"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.CXlCZqzx.js").then(async (kit) => {
-						kit.init(__sveltekit_ku131f);
-						const app = await import("/_app/immutable/entry/app.C79ELVYt.js");
+						kit.init(__sveltekit_6669hq);
+						const app = await import("/_app/immutable/entry/app.Jb0g48Nk.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],

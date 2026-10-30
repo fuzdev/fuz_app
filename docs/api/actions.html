@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/BTZoVLbz.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CAODFmXb.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.C79ELVYt.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.DIeazXh1.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.Jb0g48Nk.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.DvUu3Qv6.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BcwQFYZ2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/C3BYcZ2u.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/D9nnQ1-S.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/Bd5q54Ec.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.Csuddr_e.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/CTufak72.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.66uUQYSQ.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BL7ZH9U-.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DhdQKFKC.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -156,11 +156,10 @@ role grants, never the session or token, and a one-way stream re-reads
 nothing. So a revocation takes effect on an open connection only when
 something closes it. <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/connection_closer.ts#ConnectionCloser"><!--[0--><!--[-1-->ConnectionCloser<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> is that capability, and every
 revocation handler holds one: the session and token revokes, the revoke-alls,
-account delete and purge, <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->/logout<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->/password<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, and the session and token
-caps for what they evict. A role revocation is the exception: it closes
-only the connections an endpoint gated on that role, and only through the
-audit listener (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/connection_closer.ts#create_revocation_guard"><!--[0--><!--[-1-->create_revocation_guard<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->) — no handler holds a closer for
-it. The auth cleanup holds one too
+account delete and purge, <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->/logout<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->/password<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, the session and token
+caps for what they evict, and the role revokes (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role_grant_revoke<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> and a
+self-service disable), which close only the connections an endpoint gated
+on the revoked role. The auth cleanup holds one too
 (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->AuthCleanupDeps.connection_closer<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->): its session sweep closes the
 connections of each expired session it deletes, after that delete commits.<!--]--><!--]--><!----></p><!--]--><!--[14--><!----><h2 id="closing-after-commit"><!--[--><!--[2-->Closing after commit<!--]--><!--]--><!----></h2><!----><!--]--><!--[8--><p><!--[--><!--[2-->A revocation runs inside a request transaction, and it must not close a
 connection until that transaction commits. <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/connection_closer.ts#queue_connection_close"><!--[0--><!--[-1-->queue_connection_close<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> defers
@@ -172,13 +171,13 @@ connection admission registers a connection and then re-reads its
 credential (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/resolved_auth.ts#revalidate_resolved_auth"><!--[0--><!--[-1-->revalidate_resolved_auth<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->): a close that missed the
 registration must belong to a revocation the re-read can see, which holds
 only if the close came after the commit.<!--]--><!--]--><!----></p><!--]--><!--[14--><!----><h2 id="why-the-handlers-close-directly"><!--[--><!--[2-->Why the handlers close directly<!--]--><!--]--><!----></h2><!----><!--]--><!--[8--><p><!--[--><!--[2-->The audit listener (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/connection_closer.ts#create_revocation_guard"><!--[0--><!--[-1-->create_revocation_guard<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->) closes connections too, but
-only once the audit row is written, and that write is pool-routed and
-fail-open. The handler's own close is the one that runs
-whatever happens to the audit write, so the closer it holds must reach every
+only once the audit row is announced, and a row written outside a
+transaction (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->/login<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->/password<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) is fail-open. The handler's own close
+is the one that runs whatever happens to the audit row, so the closer it holds must reach every
 transport whose connections outlive their credential. <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/connection_closer.ts#RealtimeCloser"><!--[0--><!--[-1-->RealtimeCloser<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> is
 that fan-out, and <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/server/app_backend.ts#create_app_backend"><!--[0--><!--[-1-->create_app_backend<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> puts one on <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/deps.ts#AppDeps"><!--[0--><!--[-1-->AppDeps<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></p><!--]--><!--[14--><!----><h2 id="the-audit-listener"><!--[--><!--[2-->The audit listener<!--]--><!--]--><!----></h2><!----><!--]--><!--[8--><p><!--[--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/connection_closer.ts#create_revocation_guard"><!--[0--><!--[-1-->create_revocation_guard<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> repeats a revocation's close when its audit row is
-announced, which covers a revocation emitted by code that holds no closer,
-and is the one closer of a role revocation. <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/server/app_server.ts#create_app_server"><!--[0--><!--[-1-->create_app_server<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> registers one
+announced, which covers a revocation emitted by code that holds no closer.
+<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/server/app_server.ts#create_app_server"><!--[0--><!--[-1-->create_app_server<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> registers one
 on <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->deps.connection_closer<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> when it mounts a WebSocket endpoint or the audit
 stream, so it reaches every member — each WebSocket connection registry and the audit
 stream registry — through the one fan-out.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Twin of the Rust spine's <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/connection_closer.ts#ConnectionCloser"><!--[0--><!--[-1-->ConnectionCloser<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->, <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/connection_closer.ts#ConnectionCloseTarget"><!--[0--><!--[-1-->ConnectionCloseTarget<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->,
@@ -356,7 +355,11 @@ past the limiter on a cheap 400 — and so a throttled caller never pays
 for schema work. The account key is the credential's own account
 (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->request_context.account.id<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->), settled by authentication, so the gate
 sits behind the authority gates by choice rather than necessity: a
-caller those gates refuse is answered 403, not 429.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->Validate params (400)<!--]--><!--]--><!----></strong><!--]--><!--[2--> — <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->spec.input.safeParse(raw_params)<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> with
+caller those gates refuse is answered 403, not 429.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->Validate params (400)<!--]--><!--]--><!----></strong><!--]--><!--[2--> — first, object <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->params<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> holding an own
+<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->__proto__<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> key at any depth (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/schema_helpers.ts#json_has_own_proto_key"><!--[0--><!--[-1-->json_has_own_proto_key<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->) are refused
+with <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->data.reason<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->params_proto_key<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/error_schemas.ts#ERROR_PARAMS_PROTO_KEY"><!--[0--><!--[-1-->ERROR_PARAMS_PROTO_KEY<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->), on
+every input schema, before it runs; then
+<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->spec.input.safeParse(raw_params)<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> with
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->z.void()<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> / <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->?? {}<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> rules (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/schema_helpers.ts#to_input_params"><!--[0--><!--[-1-->to_input_params<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->). A refusal is the generic
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->invalid params<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, with <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->data.reason<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> when the first issue's field
 declares an <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->invalid_reason<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/perform_action.ts#to_invalid_params_error"><!--[0--><!--[-1-->to_invalid_params_error<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->) and the Zod
@@ -575,16 +578,16 @@ everything and answers nothing.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]-
 			
 			<script>
 				{
-					__sveltekit_ku131f = {
+					__sveltekit_6669hq = {
 						base: "",
-						version: "8609f1390b997e34e336b96ff98d35cce4b3bdff"
+						version: "9010c603d16ba606e247d962bddf46f78d1dcab6"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.CXlCZqzx.js").then(async (kit) => {
-						kit.init(__sveltekit_ku131f);
-						const app = await import("/_app/immutable/entry/app.C79ELVYt.js");
+						kit.init(__sveltekit_6669hq);
+						const app = await import("/_app/immutable/entry/app.Jb0g48Nk.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],
