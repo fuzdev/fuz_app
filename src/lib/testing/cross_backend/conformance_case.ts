@@ -164,6 +164,15 @@ export const ConformanceCaseRequest = z.strictObject({
 		.unknown()
 		.optional()
 		.meta({ description: 'Request params / body. Omit for nullary methods.' }),
+	params_json: z
+		.string()
+		.optional()
+		.meta({
+			description:
+				'RPC params as raw JSON text, sent verbatim in place of `params` — for a ' +
+				'spelling `JSON.stringify` loses (`5.0`, `1e1`, `-0`). Exclusive with ' +
+				'`params` and `acting`; RPC methods only.'
+		}),
 	as: ConformancePrincipal,
 	acting: ConformanceActingBinding.optional().meta({
 		description:

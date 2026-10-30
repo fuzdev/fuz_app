@@ -54,5 +54,17 @@ export const conformance_actor_cases: ReadonlyArray<ConformanceCase> = [
 		request: { method: 'actor_search', as: 'keeper', params: { query: 'a' } },
 		expect: { status: 200 },
 		note: 'security.md §Authorization — an admin reaches the unbounded search'
+	},
+	{
+		name: 'admin → actor_search {limit: 5.0} → 200',
+		request: { method: 'actor_search', as: 'keeper', params_json: '{"query":"a","limit":5.0}' },
+		expect: { status: 200 },
+		note: '`limit` is `z.number().int()`, which reads any integral spelling; `params_json` keeps the `5.0`'
+	},
+	{
+		name: 'admin → actor_search {limit: 5.5} → 400',
+		request: { method: 'actor_search', as: 'keeper', params_json: '{"query":"a","limit":5.5}' },
+		expect: { status: 400 },
+		note: '`limit` is `z.number().int()`, which refuses a fraction'
 	}
 ];

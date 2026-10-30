@@ -121,6 +121,28 @@ export const create_rpc_post_init = (
 };
 
 /**
+ * Build a JSON-RPC request envelope as text with `params_json` spliced in
+ * verbatim as its `params`.
+ *
+ * For params `JSON.stringify` cannot spell: it writes `5.0` as `5` and `-0`
+ * as `0`, so a value can't carry a float-spelled integer to the server. The
+ * text is not checked; a malformed one reaches the server as sent.
+ *
+ * @param method - the JSON-RPC method
+ * @param params_json - the params as raw JSON text, or `undefined` to omit them
+ * @param id - request id (default `'test'`)
+ * @returns the envelope's JSON text
+ */
+export const create_rpc_request_text = (
+	method: string,
+	params_json: string | undefined,
+	id: string | number = 'test'
+): string => {
+	const head = JSON.stringify({ jsonrpc: JSONRPC_VERSION, method, id });
+	return params_json === undefined ? head : `${head.slice(0, -1)},"params":${params_json}}`;
+};
+
+/**
  * Build a GET URL with JSON-RPC query parameters.
  *
  * @param endpoint_path - the RPC endpoint path (e.g., `/api/rpc`)
@@ -258,6 +280,11 @@ export interface RpcCallArgs {
 	 * affordance and JSON-RPC 2.0 §4.2's prohibition on `params: null`.
 	 */
 	params?: unknown;
+	/**
+	 * Params as raw JSON text, sent verbatim in place of `params` — for a
+	 * spelling `JSON.stringify` loses (`5.0`, `-0`). Exclusive with `params`.
+	 */
+	params_json?: string;
 	/** Extra request headers (session cookie, bearer, etc.). Overrides defaults. */
 	headers?: Record<string, string>;
 	/** Request id. Defaults to `'test'`. */
@@ -330,11 +357,15 @@ export const rpc_call_raw = async (args: RpcCallArgs): Promise<RpcCallRawResult>
 		path,
 		method,
 		params,
+		params_json,
 		headers,
 		id = 'test',
 		verb = 'POST',
 		suppress_default_origin
 	} = args;
+	if (params !== undefined && params_json !== undefined) {
+		throw new Error(`rpc_call: pass params or params_json, not both (method=${method})`);
+	}
 
 	const defaults = suppress_default_origin
 		? RPC_CALL_DEFAULT_HEADERS_BASE
@@ -344,6 +375,9 @@ export const rpc_call_raw = async (args: RpcCallArgs): Promise<RpcCallRawResult>
 	let init: RequestInit;
 	if (verb === 'GET') {
 		url = create_rpc_get_url(path, method, params, id);
+		if (params_json !== undefined) {
+			url += `&${new URLSearchParams({ params: params_json }).toString()}`;
+		}
 		init = { method: 'GET', headers: merge_header_records(defaults, headers) };
 	} else {
 		url = path;
@@ -351,7 +385,7 @@ export const rpc_call_raw = async (args: RpcCallArgs): Promise<RpcCallRawResult>
 		init = {
 			method: 'POST',
 			headers: merge_header_records(defaults, post.headers as Record<string, string>, headers),
-			body: post.body
+			body: params_json === undefined ? post.body : create_rpc_request_text(method, params_json, id)
 		};
 	}
 

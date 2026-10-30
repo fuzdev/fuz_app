@@ -930,6 +930,7 @@ Request builders:
 
 - `create_rpc_post_init(method, params?, id?)` — `RequestInit` with JSON-RPC envelope body. `params === undefined || params === null` → envelope has no `params` field (JSON-RPC doesn't accept `"params": null`).
 - `create_rpc_get_url(endpoint_path, method, params?, id?)` — GET URL with `?method=&id=&params=<JSON>`.
+- `create_rpc_request_text(method, params_json, id?)` — the request envelope as text with `params_json` spliced in verbatim as `params`, for a spelling `JSON.stringify` loses (`5.0`, `-0`).
 
 Response assertions:
 
@@ -942,7 +943,7 @@ One-shot transport:
 - `http_transport(app)` — adapter for anything with a `request()` method.
 - `RpcCallResult` — discriminated `{ok: true, status, headers, result}` / `{ok: false, status, headers, error: {code, message, data?}}`. `headers` is the lowercased-key response-header snapshot so callers can assert header-level properties (e.g. the conformance runner's no-fingerprint invariant).
 - `headers_to_record(headers)` — snapshot a `Headers` into a lowercased-key `Record<string, string>` (multi-value collapses to the comma-joined form; `Set-Cookie` excluded). Used by `rpc_call` and the conformance table's REST branch to thread response headers through for assertions.
-- `RpcCallArgs` — `{app, path, method, params?, headers?, id?, verb?}`. `verb` defaults to `'POST'`; use `'GET'` for `side_effects: false` methods.
+- `RpcCallArgs` — `{app, path, method, params?, params_json?, headers?, id?, verb?}`. `verb` defaults to `'POST'`; use `'GET'` for `side_effects: false` methods. `params_json` sends raw JSON text in place of `params` (exclusive with it) on either verb.
 - `rpc_call_raw(args)` — the same request as `rpc_call`, the response unparsed: `RpcCallRawResult` `{status, headers, body}` with the whole envelope. `parse_rpc_call_result(raw, method)` turns it into an `RpcCallResult`; `rpc_call` is the two composed.
 - `rpc_call(args)` — merges `RPC_CALL_DEFAULT_HEADERS` (`host: 'localhost'`, `origin: TEST_ORIGIN`, `Content-Type: 'application/json'`) under caller headers. Envelope-shape violations throw; JSON-RPC errors return `{ok: false, error}` so callers assert on `error.code` / `error.data.reason`.
 - `rpc_call_typed<T>(args, output_schema)` — parses the success `result` through the schema; throws on envelope failure, error response, or schema mismatch. Use `rpc_call` when the test needs to assert on error shapes.
@@ -1369,7 +1370,7 @@ conformance cases assert _expected behavior_ — the security negatives
 wire-shape check passes green on even when behavior is wrong.
 
 - `conformance_case.ts` — `ConformanceCase` Zod schema:
-  `{name, request: {method, params?, as, acting?, verb?}, expect: {status,
+  `{name, request: {method, params?, params_json?, as, acting?, verb?}, expect: {status,
 error_reason?, fields?, headers?, equivalence_group?}, note?, xfail?}`. A case is **data** — `method`
   resolves its `input`/`output` from the live registry (RPC) or `RouteSpec`
   (the 6 REST auth routes), so the case never carries a schema. `as` is the

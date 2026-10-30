@@ -29,6 +29,9 @@
  * - **prototype keys** — an own `__proto__` key in cell `data`, `policy`, or a
  *   clone patch, at any depth, or at the top of `cell_list`'s params, is the
  *   dispatcher's `params_proto_key` refusal (400), ahead of every schema.
+ * - **integral spellings** — `limit` / `offset` read `5.0`, `1e1` and `-0` as
+ *   the integers they spell and refuse a fraction, sent through `params_json`
+ *   so the spelling survives.
  *
  * Refusals that need a cell in place — a taken item position, moderating a
  * non-contribution, the IDOR masks — stay in the imperative cell suites.
@@ -41,7 +44,8 @@
 import {
 	CELL_LIST_LIMIT_MAX,
 	ERROR_CELL_GET_REQUIRES_ID_OR_PATH,
-	ERROR_CELL_KIND_IN_DATA
+	ERROR_CELL_KIND_IN_DATA,
+	ERROR_CELL_NOT_FOUND
 } from '#lib/auth/cell_action_specs.ts';
 import { ERROR_CELL_FIELD_LIST_REQUIRES_SOURCE_OR_TARGET } from '#lib/auth/cell_field_action_specs.ts';
 import { ERROR_CELL_GRANT_NOT_FOUND } from '#lib/auth/cell_grant_action_specs.ts';
@@ -225,10 +229,59 @@ const proto_cases: Array<ConformanceCase> = [
 	proto_case('with a top-level __proto__', 'cell_list', 'keeper', '{"__proto__":{}}', 'GET')
 ];
 
+const integral_note =
+	'`z.number().int()` reads any integral spelling — `5.0`, `1e1`, `-0` — and refuses a fraction; the Rust fields decode through `fuz_http::deserialize_wire_int`. `params_json` keeps the spelling `JSON.stringify` would normalize';
+
+/** A case whose params go out as `json`, verbatim. */
+const spelled_case = (
+	as: 'keeper' | 'anonymous',
+	method: string,
+	json: string,
+	expect: ConformanceCase['expect'],
+	verb?: 'GET'
+): ConformanceCase => ({
+	name: `${as} → ${method}${verb ? ' via GET' : ''} ${json} → ${expect.status}`,
+	request: { method, as, params_json: json, ...(verb && { verb }) },
+	expect,
+	note: integral_note
+});
+
+const integral_cases: Array<ConformanceCase> = [
+	spelled_case('anonymous', 'cell_list', '{"limit":5.0}', { status: 200 }),
+	spelled_case('anonymous', 'cell_list', '{"limit":5.0}', { status: 200 }, 'GET'),
+	spelled_case('keeper', 'cell_list', '{"limit":5.0,"offset":1e1}', { status: 200 }),
+	spelled_case('keeper', 'cell_list', '{"limit":1e1}', { status: 200 }),
+	spelled_case('keeper', 'cell_list', '{"offset":-0}', { status: 200 }),
+	spelled_case('keeper', 'cell_list', '{"limit":-0}', { status: 400 }),
+	spelled_case('keeper', 'cell_list', '{"limit":5.5}', { status: 400 }),
+	spelled_case('keeper', 'cell_list', '{"offset":9007199254740992}', { status: 400 }),
+	// JS-canonical fractions serde_json's default float parse rounds onto an
+	// integer: TS refuses, Rust admits unless `float_roundtrip` is on
+	spelled_case('keeper', 'cell_list', '{"limit":0.9999999999999999}', { status: 400 }),
+	spelled_case('keeper', 'cell_list', '{"offset":4503599627370495.5}', { status: 400 }),
+	// a NIL endpoint names no cell, so an admitted page answers the miss — a
+	// refused limit would be the 400 ahead of it
+	spelled_case('keeper', 'cell_item_list', `{"parent_id":"${NIL_UUID}","limit":5.0}`, {
+		status: 404,
+		error_reason: ERROR_CELL_NOT_FOUND
+	}),
+	spelled_case('keeper', 'cell_item_list', `{"parent_id":"${NIL_UUID}","limit":5.5}`, {
+		status: 400
+	}),
+	spelled_case('keeper', 'cell_field_list', `{"source_id":"${NIL_UUID}","limit":5.0}`, {
+		status: 404,
+		error_reason: ERROR_CELL_NOT_FOUND
+	}),
+	spelled_case('keeper', 'cell_field_list', `{"source_id":"${NIL_UUID}","limit":5.5}`, {
+		status: 400
+	})
+];
+
 export const conformance_cell_cases: ReadonlyArray<ConformanceCase> = [
 	...shape_cases,
 	...grant_cases,
 	...pagination_cases,
 	...schema_first_cases,
-	...proto_cases
+	...proto_cases,
+	...integral_cases
 ];

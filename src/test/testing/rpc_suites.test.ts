@@ -8,6 +8,7 @@
  */
 
 import { describe, test, assert } from 'vitest';
+import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 import { z } from 'zod';
 
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
@@ -24,6 +25,8 @@ import type { RpcEndpointSpec } from '#lib/http/surface.ts';
 import {
 	create_rpc_post_init,
 	create_rpc_get_url,
+	create_rpc_request_text,
+	rpc_call_raw,
 	assert_jsonrpc_error_response,
 	assert_jsonrpc_success_response,
 	resolve_rpc_endpoints_for_setup
@@ -163,6 +166,33 @@ describe('rpc_helpers', () => {
 	test('create_rpc_get_url omits params for null', () => {
 		const url = create_rpc_get_url('/api/rpc', 'my_method', null);
 		assert.ok(!url.includes('params='));
+	});
+
+	test('create_rpc_request_text splices params_json verbatim', () => {
+		assert.strictEqual(
+			create_rpc_request_text('m', '{"limit":5.0,"offset":-0}', 'x'),
+			'{"jsonrpc":"2.0","method":"m","id":"x","params":{"limit":5.0,"offset":-0}}'
+		);
+		assert.strictEqual(
+			create_rpc_request_text('m', undefined, 1),
+			'{"jsonrpc":"2.0","method":"m","id":1}'
+		);
+	});
+
+	test('rpc_call_raw sends params_json verbatim on POST and GET', async () => {
+		const seen: Array<{ url: string; body: string | null }> = [];
+		const app = async (url: string, init?: RequestInit): Promise<Response> => {
+			seen.push({ url, body: typeof init?.body === 'string' ? init.body : null });
+			return new Response('{"jsonrpc":"2.0","id":"test","result":null}');
+		};
+		const params_json = '{"limit":1e1}';
+		await rpc_call_raw({ app, path: '/api/rpc', method: 'm', params_json });
+		await rpc_call_raw({ app, path: '/api/rpc', method: 'm', params_json, verb: 'GET' });
+		assert.ok(seen[0]!.body!.endsWith(',"params":{"limit":1e1}}'), seen[0]!.body!);
+		assert.strictEqual(new URL(seen[1]!.url, 'http://x').searchParams.get('params'), params_json);
+		await assert_rejects(() =>
+			rpc_call_raw({ app, path: '/api/rpc', method: 'm', params: {}, params_json })
+		);
 	});
 
 	test('assert_jsonrpc_error_response validates structure', () => {

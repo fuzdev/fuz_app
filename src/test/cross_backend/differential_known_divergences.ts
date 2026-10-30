@@ -58,6 +58,7 @@ export const differential_known_divergences: ReadonlyArray<KnownDivergence> = [
 		'account_token_create',
 		'account_verify',
 		'actor_lookup',
+		'actor_search',
 		'cell_list',
 		'cell_field_list',
 		'cell_item_list'

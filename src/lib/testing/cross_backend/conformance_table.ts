@@ -59,6 +59,7 @@ import {
 	headers_to_record,
 	parse_rpc_call_result,
 	rpc_call_raw,
+	create_rpc_request_text,
 	resolve_rpc_endpoints_for_setup,
 	type RpcEndpointsSuiteOption
 } from '../rpc_helpers.ts';
@@ -623,11 +624,22 @@ export const send_conformance_case = async (
 	const headers = request_headers
 		? { ...request_headers, ...principal.headers }
 		: principal.headers;
+	const { params_json } = c.request;
+	if (params_json !== undefined && (c.request.params !== undefined || c.request.acting)) {
+		throw new Error(
+			`conformance: case '${c.name}' sets params_json, so it can't also set params or acting.`
+		);
+	}
 	const params = c.request.acting
 		? bind_acting(c, resolve_acting_binding(c, c.request.acting, fixture, principal))
 		: c.request.params;
 
 	if (c.request.method.startsWith('/')) {
+		if (params_json !== undefined) {
+			throw new Error(
+				`conformance: case '${c.name}' sets params_json, which only RPC methods take.`
+			);
+		}
 		const suffix = c.request.method as RestAuthRouteSuffix;
 		if (!rest_auth_route_suffixes.includes(suffix)) {
 			throw new Error(
@@ -666,7 +678,7 @@ export const send_conformance_case = async (
 	if (ws) {
 		return {
 			target: { kind: 'rpc', ...found },
-			...(await send_ws_frame(c.request.method, params, principal, ws))
+			...(await send_ws_frame(c.request.method, params, params_json, principal, ws))
 		};
 	}
 	const raw = await rpc_call_raw({
@@ -674,6 +686,7 @@ export const send_conformance_case = async (
 		path: found.path,
 		method: c.request.method,
 		params,
+		...(params_json !== undefined && { params_json }),
 		headers,
 		...(c.request.verb && { verb: c.request.verb }),
 		...(suppress_default_origin && { suppress_default_origin: true })
@@ -706,6 +719,7 @@ const CONFORMANCE_REQUEST_ID = 'test';
 const send_ws_frame = async (
 	method: string,
 	params: unknown,
+	params_json: string | undefined,
 	principal: ResolvedConformancePrincipal,
 	ws: WsEndpointTarget
 ): Promise<Omit<ConformanceCaseResponse, 'target'>> => {
@@ -720,9 +734,17 @@ const send_ws_frame = async (
 		origin: principal.suppress_default_origin ? null : (ws.origin ?? ws.base_url)
 	});
 	try {
-		const frame: Record<string, unknown> = { jsonrpc: '2.0', id: CONFORMANCE_REQUEST_ID, method };
-		if (params !== undefined && params !== null) frame.params = params;
-		await client.send(frame);
+		if (params_json === undefined) {
+			const frame: Record<string, unknown> = {
+				jsonrpc: '2.0',
+				id: CONFORMANCE_REQUEST_ID,
+				method
+			};
+			if (params !== undefined && params !== null) frame.params = params;
+			await client.send(frame);
+		} else {
+			await client.send_text(create_rpc_request_text(method, params_json, CONFORMANCE_REQUEST_ID));
+		}
 		const body = await client.wait_for<{ error?: { code?: unknown } }>(
 			is_response_for(CONFORMANCE_REQUEST_ID)
 		);
