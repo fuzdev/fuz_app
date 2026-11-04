@@ -31,7 +31,7 @@ import type { AppServerContext } from '../server/app_server_context.ts';
 import type { SessionOptions } from '../auth/session_cookie.ts';
 import { create_stub_app_server_context } from './stubs.ts';
 import { TEST_ORIGIN } from './test_origin.ts';
-import { parse_any, type ValidationSchema } from '../schema_issues.ts';
+import { parse_any, type ValidationOutput, type ValidationSchema } from '../schema_issues.ts';
 
 /**
  * Union accepted by the suite-level `rpc_endpoints` option — eager array or
@@ -465,7 +465,12 @@ export const rpc_call_non_browser = (
  * are asserted per call site.
  */
 export type RpcCallResultForSpec<TSpec extends RequestResponseActionSpec> =
-	| { ok: true; status: number; headers: Record<string, string>; result: z.infer<TSpec['output']> }
+	| {
+			ok: true;
+			status: number;
+			headers: Record<string, string>;
+			result: ValidationOutput<TSpec['output']>;
+	  }
 	| {
 			ok: false;
 			status: number;
@@ -481,12 +486,13 @@ export type RpcCallForSpecArgs<TSpec extends RequestResponseActionSpec> = Omit<
 	/** Action spec whose `method` drives the envelope and whose `input`/`output` types pin params + result. */
 	spec: TSpec;
 	/** Params, typed against `spec.input`. */
-	params: z.infer<TSpec['input']>;
+	params: ValidationOutput<TSpec['input']>;
 };
 
 /**
- * Typed wrapper over `rpc_call` — binds `params` to `z.infer<spec.input>`
- * and the success `result` to `z.infer<spec.output>` via the generic.
+ * Typed wrapper over `rpc_call` — binds `params` and the success `result` to
+ * the output types of `spec.input` and `spec.output` (`ValidationOutput`) via
+ * the generic, for a Zod or a fuz_schema spec.
  *
  * Success results are validated at runtime against `spec.output` (same
  * contract as `rpc_call_typed`); a mismatch throws. Error responses come
@@ -518,7 +524,7 @@ export const rpc_call_for_spec = async <TSpec extends RequestResponseActionSpec>
 		ok: true,
 		status: res.status,
 		headers: res.headers,
-		result: parsed.value as z.infer<TSpec['output']>
+		result: parsed.value as ValidationOutput<TSpec['output']>
 	};
 };
 

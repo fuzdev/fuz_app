@@ -15,8 +15,7 @@ import {
 	optional,
 	string,
 	void as fuz_void,
-	with_default,
-	type AnySchema
+	with_default
 } from '@fuzdev/fuz_schema/schema.ts';
 import { meta } from '@fuzdev/fuz_schema/meta.ts';
 
@@ -27,14 +26,12 @@ import {
 	generate_frontend_actions_api
 } from '#lib/actions/action_codegen.ts';
 import type { ActionSpecUnion } from '#lib/actions/action_spec.ts';
-
-// `ActionSpec.input` / `.output` are typed `z.ZodType`; codegen reads either library
-const as_spec_schema = (schema: AnySchema): z.ZodType => schema as unknown as z.ZodType;
+import type { ValidationSchema } from '#lib/schema_issues.ts';
 
 const create_spec = (
 	method: string,
-	input: z.ZodType,
-	output: z.ZodType = z.strictObject({ ok: z.boolean() })
+	input: ValidationSchema,
+	output: ValidationSchema = z.strictObject({ ok: z.boolean() })
 ): ActionSpecUnion => ({
 	method,
 	kind: 'request_response',
@@ -48,11 +45,7 @@ const create_spec = (
 });
 
 const zod_spec = create_spec('zod_thing', z.strictObject({ name: z.string() }));
-const fuz_spec = create_spec(
-	'fuz_thing',
-	as_spec_schema(object({ name: string })),
-	as_spec_schema(object({ ok: literal(true) }))
-);
+const fuz_spec = create_spec('fuz_thing', object({ name: string }), object({ ok: literal(true) }));
 
 const FUZ_INFER_IMPORT = "import type {Infer} from '@fuzdev/fuz_schema/schema.ts';";
 const ZOD_IMPORT = "import {z} from 'zod';";
@@ -81,7 +74,7 @@ describe('generate_action_inputs_outputs over fuz_schema specs', () => {
 
 	test('a spec mixing libraries across input and output reads each', () => {
 		const imports = new ImportBuilder();
-		const spec = create_spec('half_thing', as_spec_schema(object({ name: string })));
+		const spec = create_spec('half_thing', object({ name: string }));
 		const block = generate_action_inputs_outputs([spec], imports);
 		assert.include(block, '\thalf_thing: Infer<typeof specs.half_thing_action_spec.input>;');
 		assert.include(block, '\thalf_thing: z.infer<typeof specs.half_thing_action_spec.output>;');
@@ -120,7 +113,7 @@ describe('FrontendActionsApi signature over fuz_schema specs', () => {
 	test('a fuz_schema void input emits the no-input signature', () => {
 		for (const input of [fuz_void, meta(fuz_void, { description: 'nothing' }), literal(null)]) {
 			const imports = new ImportBuilder();
-			const line = signature(create_spec('fuz_ping', as_spec_schema(input)), imports);
+			const line = signature(create_spec('fuz_ping', input), imports);
 			assert.include(line, 'fuz_ping: (input?: void, options?: RpcClientCallOptions)');
 			assert.notInclude(imports.build(), 'ActionInputs');
 		}
@@ -149,7 +142,7 @@ describe('FrontendActionsApi signature over fuz_schema specs', () => {
 			object({ name: optional(string) })
 		]) {
 			assert.include(
-				signature(create_spec('fuz_list', as_spec_schema(input))),
+				signature(create_spec('fuz_list', input)),
 				"fuz_list: (input?: ActionInputs['fuz_list'], options?: RpcClientCallOptions)"
 			);
 		}
@@ -157,7 +150,7 @@ describe('FrontendActionsApi signature over fuz_schema specs', () => {
 
 	test('a handler-guarded fuz_schema input accepting {} stays required', () => {
 		const input = meta(object({ id: optional(string) }), { empty_input_handler_guarded: true });
-		const spec = create_spec('fuz_get', as_spec_schema(input));
+		const spec = create_spec('fuz_get', input);
 		assert.isFalse(action_input_is_optional(spec));
 		assert.include(
 			signature(spec),

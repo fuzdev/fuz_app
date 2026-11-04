@@ -5,6 +5,12 @@
  * auth, side effects, and input/output schemas. `actions/action_bridge.ts`
  * derives the SSE `EventSpec` of a notification from one.
  *
+ * A spec is a plain object typed by these interfaces, written with
+ * `satisfies` (`satisfies RequestResponseActionSpec`) so its literal types
+ * survive; nothing parses a spec at runtime. Its `input` and `output` are
+ * schemas of either library, Zod or `@fuzdev/fuz_schema` (`ValidationSchema`).
+ * The registration-time checks live in `actions/compile_action_registry.ts`.
+ *
  * @see `actions/action_rpc.ts` for the JSON-RPC dispatcher
  * @see `actions/register_action_ws.ts` for the WebSocket dispatcher
  *
@@ -12,23 +18,27 @@
  */
 
 import { z } from 'zod';
+import type { void as fuz_void } from '@fuzdev/fuz_schema/schema.ts';
 
-import { RateLimitKey } from '../http/error_schemas.ts';
-import { RouteAuth } from '../http/auth_shape.ts';
+import type { RateLimitKey } from '../http/error_schemas.ts';
+import type { RouteAuth } from '../http/auth_shape.ts';
+import type { ValidationSchema } from '../schema_issues.ts';
 
-export const ActionKind = z.enum(['request_response', 'remote_notification', 'local_call']);
+/** The action kinds, in declaration order — what `ActionKind` and `is_action_spec` read. */
+export const ACTION_KINDS = ['request_response', 'remote_notification', 'local_call'] as const;
+export const ActionKind = z.enum(ACTION_KINDS);
 export type ActionKind = z.infer<typeof ActionKind>;
 
-export const ActionInitiator = z.enum(['frontend', 'backend', 'both']);
+/** Which side initiates an action — what `ActionInitiator` reads. */
+export const ACTION_INITIATORS = ['frontend', 'backend', 'both'] as const;
+export const ActionInitiator = z.enum(ACTION_INITIATORS);
 export type ActionInitiator = z.infer<typeof ActionInitiator>;
 
-export const ActionSideEffects = z.boolean();
-export type ActionSideEffects = z.infer<typeof ActionSideEffects>;
-
-export const ActionSpec = z.strictObject({
-	method: z.string(),
-	kind: ActionKind,
-	initiator: ActionInitiator,
+/** The fields every action spec carries; each kind narrows some of them. */
+export interface ActionSpec {
+	method: string;
+	kind: ActionKind;
+	initiator: ActionInitiator;
 	/**
 	 * The flat auth shape (canonical schema in `http/auth_shape.ts`).
 	 * `null` for `remote_notification` and `local_call` — those don't
@@ -41,12 +51,14 @@ export const ActionSpec = z.strictObject({
 	 * nothing on the RPC path mounts a guard from it; the dispatcher derives
 	 * the same `rpc:<method>` capability from `spec.method` instead.
 	 */
-	auth: RouteAuth.nullable(),
-	side_effects: ActionSideEffects,
-	input: z.custom<z.ZodType>((v) => v instanceof z.ZodType),
-	output: z.custom<z.ZodType>((v) => v instanceof z.ZodType),
-	async: z.boolean(),
-	description: z.string(),
+	auth: RouteAuth | null;
+	side_effects: boolean;
+	/** The input schema, Zod or `@fuzdev/fuz_schema`. */
+	input: ValidationSchema;
+	/** The output schema, Zod or `@fuzdev/fuz_schema`. */
+	output: ValidationSchema;
+	async: boolean;
+	description: string;
 	/**
 	 * Names the notification method this action emits as request-scoped
 	 * progress. Forward-compatible handshake — transport-agnostic, does not
@@ -54,7 +66,7 @@ export const ActionSpec = z.strictObject({
 	 * ensuring the named method is a `remote_notification` spec) is a
 	 * consumer-side concern.
 	 */
-	streams: z.string().optional(),
+	streams?: string;
 	/**
 	 * Error reason codes this action may surface via `error.data.reason` on
 	 * failure. Declarative metadata mirroring the `streams` precedent —
@@ -64,7 +76,7 @@ export const ActionSpec = z.strictObject({
 	 * import either side. Optional — actions that surface only standard
 	 * transport errors leave it unset.
 	 */
-	error_reasons: z.array(z.string()).readonly().optional(),
+	error_reasons?: ReadonlyArray<string>;
 	/**
 	 * Rate limit key the RPC dispatcher consults for this action. Optional —
 	 * actions without it skip the rate-limit hook entirely.
@@ -85,52 +97,48 @@ export const ActionSpec = z.strictObject({
 	 * `streams` and `error_reasons`; remote_notification / local_call
 	 * dispatchers don't read it.
 	 */
-	rate_limit: RateLimitKey.optional()
-});
-export type ActionSpec = z.infer<typeof ActionSpec>;
+	rate_limit?: RateLimitKey;
+}
 
-export const RequestResponseActionSpec = ActionSpec.extend({
-	kind: z.literal('request_response').default('request_response'),
-	auth: RouteAuth,
-	async: z.literal(true).default(true)
-});
-export type RequestResponseActionSpec = z.infer<typeof RequestResponseActionSpec>;
+/** A request answered with a response, through the auth gate. */
+export interface RequestResponseActionSpec extends ActionSpec {
+	kind: 'request_response';
+	auth: RouteAuth;
+	async: true;
+}
 
-export const RemoteNotificationActionSpec = ActionSpec.extend({
-	kind: z.literal('remote_notification').default('remote_notification'),
-	auth: z.null().default(null),
-	side_effects: z.literal(true).default(true),
-	output: z.custom<z.ZodVoid>((v) => v instanceof z.ZodVoid),
-	async: z.literal(true).default(true)
-});
-export type RemoteNotificationActionSpec = z.infer<typeof RemoteNotificationActionSpec>;
+/** A one-way message; its output is a void schema, Zod's `z.void()` or fuz_schema's `s.void`. */
+export interface RemoteNotificationActionSpec extends ActionSpec {
+	kind: 'remote_notification';
+	auth: null;
+	side_effects: true;
+	output: z.ZodVoid | typeof fuz_void;
+	async: true;
+}
 
 /**
  * Local calls can wrap synchronous or asynchronous actions, and are the
  * escape hatch for remote APIs that do not support SAES.
  */
-export const LocalCallActionSpec = ActionSpec.extend({
-	kind: z.literal('local_call').default('local_call'),
-	auth: z.null().default(null)
-});
-export type LocalCallActionSpec = z.infer<typeof LocalCallActionSpec>;
+export interface LocalCallActionSpec extends ActionSpec {
+	kind: 'local_call';
+	auth: null;
+}
 
-export const ActionSpecUnion = z.union([
-	RequestResponseActionSpec,
-	RemoteNotificationActionSpec,
-	LocalCallActionSpec
-]);
-export type ActionSpecUnion = z.infer<typeof ActionSpecUnion>;
+/** Any action spec, discriminated by `kind`. */
+export type ActionSpecUnion =
+	RequestResponseActionSpec | RemoteNotificationActionSpec | LocalCallActionSpec;
 
-/** Structural type guard for any `ActionSpecUnion` variant — checks `kind` is one of the three known values. */
+/** Structural type guard for any `ActionSpecUnion` variant — checks `kind` is one of `ACTION_KINDS`. */
 export const is_action_spec = (value: unknown): value is ActionSpecUnion =>
 	value !== null &&
 	typeof value === 'object' &&
 	'method' in value &&
 	'kind' in value &&
-	(ActionKind.options as ReadonlyArray<string>).includes(value.kind as string);
+	(ACTION_KINDS as ReadonlyArray<unknown>).includes(value.kind);
 
-export const ActionEventPhase = z.enum([
+/** The action event phases — what `ActionEventPhase` reads. */
+export const ACTION_EVENT_PHASES = [
 	'send_request',
 	'receive_request',
 	'send_response',
@@ -140,5 +148,6 @@ export const ActionEventPhase = z.enum([
 	'send',
 	'receive',
 	'execute'
-]);
+] as const;
+export const ActionEventPhase = z.enum(ACTION_EVENT_PHASES);
 export type ActionEventPhase = z.infer<typeof ActionEventPhase>;

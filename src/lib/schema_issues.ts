@@ -18,6 +18,8 @@ import {
 	SchemaError,
 	type AnySchema,
 	type Infer,
+	type InferInput,
+	type Schema,
 	type SchemaIssue
 } from '@fuzdev/fuz_schema/schema.ts';
 import type { Result } from '@fuzdev/fuz_util/result.ts';
@@ -48,11 +50,22 @@ export function assert_zod_schema(value: unknown, label: string): asserts value 
 	throw new Error(`${label} is neither a Zod schema nor a @fuzdev/fuz_schema schema`);
 }
 
-/** The output type of a `ValidationSchema`. */
-export type ValidationOutput<T extends ValidationSchema> = T extends z.ZodType
-	? z.output<T>
-	: T extends AnySchema
-		? Infer<T>
+/**
+ * The output type of a `ValidationSchema`: fuz_schema's `Infer` or Zod's
+ * `z.output`. The test narrows `T` itself: `Infer<T & Schema>` would read as
+ * `unknown`.
+ */
+export type ValidationOutput<T extends ValidationSchema> = T extends Schema
+	? Infer<T>
+	: T extends z.ZodType
+		? z.output<T>
+		: never;
+
+/** The input type of a `ValidationSchema`: fuz_schema's `InferInput` or Zod's `z.input`. */
+export type ValidationInput<T extends ValidationSchema> = T extends Schema
+	? InferInput<T>
+	: T extends z.ZodType
+		? z.input<T>
 		: never;
 
 /** One issue of a failed parse, in the library's own shape. */

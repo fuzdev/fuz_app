@@ -23,6 +23,7 @@ import {
 } from '#lib/testing/schema_generators.ts';
 import { zod_extract_fields, zod_unwrap_to_object, type SchemaFieldInfo } from '#lib/zod.ts';
 import { create_spine_live_rpc_endpoints } from '#lib/testing/cross_backend/full_spine_mount.ts';
+import { assert_zod_schema } from '#lib/schema_issues.ts';
 
 const NIL = '00000000-0000-0000-0000-000000000000';
 
@@ -247,6 +248,8 @@ describe('generate_input_test_cases — single-fault bodies', () => {
 		for (const endpoint of create_spine_live_rpc_endpoints()) {
 			for (const action of endpoint.actions) {
 				const { method, input } = action.spec;
+				// the spine's specs are all Zod, what this check walks
+				assert_zod_schema(input, `${method} input`);
 				for (const c of generate_input_test_cases(input, { label: method })) {
 					if (c.field === undefined) continue;
 					checked++;

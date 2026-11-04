@@ -15,7 +15,7 @@
  */
 
 import { assert } from 'vitest';
-import { z } from 'zod';
+import type { ValidationOutput } from '#lib/schema_issues.ts';
 
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import {
@@ -184,7 +184,7 @@ export const create_cell_admin_test_app = (get_db: () => Db): Promise<TestApp> =
 export const call = <TSpec extends RequestResponseActionSpec>(
 	test_app: TestApp,
 	spec: TSpec,
-	params: z.infer<TSpec['input']>,
+	params: ValidationOutput<TSpec['input']>,
 	headers?: Record<string, string>
 ): Promise<RpcCallResultForSpec<TSpec>> =>
 	rpc_call_for_spec({ app: test_app.app, path: RPC_PATH, spec, params, headers });

@@ -712,8 +712,11 @@ validated.broadcast('things', { method: 'thing_created', params: { id: '1' } });
 
 ## Canonical action-spec shape
 
-Action specs are declared at module scope with `satisfies` and
-`{method}_action_spec` naming. This preserves the literal `method` type,
+Action specs are plain objects typed by the `ActionSpec` interfaces, declared
+at module scope with `satisfies` and `{method}_action_spec` naming. Every
+required field is spelled (nothing parses a spec, so nothing fills a default), and
+`input` / `output` take a Zod or a `@fuzdev/fuz_schema` schema — a handler's
+types follow either (`ValidationOutput`). This preserves the literal `method` type,
 makes the spec importable without running any factory, drops the
 need for separate `*_METHOD` constants, and lines up with the
 identifier codegen derives from each method (`specs.{method}_action_spec`).

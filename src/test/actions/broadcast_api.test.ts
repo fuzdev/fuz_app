@@ -118,9 +118,8 @@ describe('create_broadcast_api', () => {
 			ws,
 			create_test_identity({ session_hash: 'hash_a', account_id: create_uuid() })
 		);
-		// `ActionSpec.input` is typed `z.ZodType`; the broadcast reads either library
 		const input = object({ id: string, owner_account_id: optional(string) });
-		const spec = { ...thing_changed_spec, input: input as unknown as z.ZodType };
+		const spec = { ...thing_changed_spec, input };
 		const log_errors: Array<Array<unknown>> = [];
 		const api = create_broadcast_api<TestApi>({
 			registry,

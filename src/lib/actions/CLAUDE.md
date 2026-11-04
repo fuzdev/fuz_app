@@ -23,10 +23,18 @@ the pair invariant.
 
 ## Action specs (`actions/action_spec.ts`)
 
-Canonical source of truth. Three concrete kinds discriminate on `kind`:
+Canonical source of truth. Specs are plain objects typed by TS interfaces
+(`ActionSpec` and its three kinds, `ActionSpecUnion`), written with
+`satisfies` so their literals survive; nothing parses a spec at runtime, so
+every required field is spelled — no defaults. `input` / `output` are a
+`ValidationSchema`, Zod or `@fuzdev/fuz_schema`. `ActionKind`,
+`ActionInitiator` and `ActionEventPhase` stay Zod enums (`ActionEventData`
+validates with them), built from the const lists `ACTION_KINDS`,
+`ACTION_INITIATORS` and `ACTION_EVENT_PHASES`; `is_action_spec` reads
+`ACTION_KINDS`. Three concrete kinds discriminate on `kind`:
 
 - `request_response` — `auth: RouteAuth` (non-null), `side_effects` arbitrary, `output` arbitrary, `async: true`.
-- `remote_notification` — `auth: null`, `side_effects: true`, `output: z.ZodVoid`, `async: true`.
+- `remote_notification` — `auth: null`, `side_effects: true`, `output` a void schema (`z.ZodVoid` or fuz_schema's `s.void`), `async: true`.
 - `local_call` — `auth: null`, `side_effects` arbitrary, `output` arbitrary, `async` boolean.
 
 `RouteAuth` is the flat record
@@ -251,8 +259,9 @@ interface RpcAction {
 ### `rpc_action(spec, handler)` — typed binder
 
 `rpc_action<TSpec extends RequestResponseActionSpec>(spec, handler)` pins
-the handler's input / output types to `z.infer<TSpec['input']>` /
-`z.infer<TSpec['output']>` and tightens `ctx.auth` per the conditional
+the handler's input / output types to `ValidationOutput<TSpec['input']>` /
+`ValidationOutput<TSpec['output']>` (`schema_issues.ts`: fuz_schema's `Infer`
+or Zod's `z.output`, per spec) and tightens `ctx.auth` per the conditional
 `HandlerForSpec<TSpec>`:
 
 - `auth.actor === 'required'` → `ctx.auth: RequestActorContext`.

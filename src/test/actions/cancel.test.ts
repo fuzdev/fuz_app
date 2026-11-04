@@ -14,7 +14,7 @@
 import { assert, describe, test } from 'vitest';
 import { z } from 'zod';
 
-import { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
+import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import {
 	CancelNotificationParams,
 	cancel_action,
@@ -54,7 +54,7 @@ describe('cancel_action', () => {
 // streaming handler (e.g. zzz's completion_create) would bail on cancel.
 // ------------------------------------------------------------------
 
-const slow_spec = RequestResponseActionSpec.parse({
+const slow_spec = {
 	method: 'slow',
 	kind: 'request_response',
 	initiator: 'frontend',
@@ -64,7 +64,7 @@ const slow_spec = RequestResponseActionSpec.parse({
 	output: z.strictObject({}),
 	async: true,
 	description: 'test — waits until ctx.signal aborts, then throws'
-});
+} satisfies RequestResponseActionSpec;
 
 const wait_for_abort = (signal: AbortSignal): Promise<void> =>
 	new Promise<void>((resolve) => {

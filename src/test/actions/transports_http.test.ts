@@ -13,6 +13,7 @@ import { meta } from '@fuzdev/fuz_schema/meta.ts';
 
 import { DEFAULT_MAX_GET_URL_LENGTH, FrontendHttpTransport } from '#lib/actions/transports_http.ts';
 import type { ActionSpecUnion } from '#lib/actions/action_spec.ts';
+import type { ValidationSchema } from '#lib/schema_issues.ts';
 import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
 import { is_jsonrpc_error_response } from '#lib/http/jsonrpc_helpers.ts';
 import type { JsonrpcRequest } from '#lib/http/jsonrpc.ts';
@@ -39,7 +40,7 @@ const stub_fetch = (body: string, status: number, status_text = ''): void => {
 const create_spec = (
 	method: string,
 	side_effects: boolean,
-	input: z.ZodType = z.strictObject({}).optional()
+	input: ValidationSchema = z.strictObject({}).optional()
 ): ActionSpecUnion => ({
 	method,
 	kind: 'request_response',
@@ -339,8 +340,6 @@ describe('FrontendHttpTransport GET reads', () => {
 	});
 
 	test('a read whose fuz_schema input carries a sensitive value at any depth is a POST', async () => {
-		// `ActionSpec.input` is typed `z.ZodType`; the transport reads either library
-		const as_spec_input = (schema: AnySchema): z.ZodType => schema as unknown as z.ZodType;
 		const sensitive_inputs: Array<AnySchema> = [
 			object({ token: meta(string, { sensitivity: 'secret' }) }),
 			optional(
@@ -354,7 +353,7 @@ describe('FrontendHttpTransport GET reads', () => {
 			stub_fetch(ok_body('r1'), 200);
 			await new FrontendHttpTransport({
 				url: '/api/rpc',
-				lookup_action_spec: lookup_of(create_spec('thing_get', false, as_spec_input(input)))
+				lookup_action_spec: lookup_of(create_spec('thing_get', false, input))
 			}).send(read({ token: 'hunter2' }));
 			const { url, init } = sent();
 			assert.strictEqual(init.method, 'POST');
@@ -366,9 +365,7 @@ describe('FrontendHttpTransport GET reads', () => {
 		stub_fetch(ok_body('r1'), 200);
 		await new FrontendHttpTransport({
 			url: '/api/rpc',
-			lookup_action_spec: lookup_of(
-				create_spec('thing_get', false, as_spec_input(object({ id: string })))
-			)
+			lookup_action_spec: lookup_of(create_spec('thing_get', false, object({ id: string })))
 		}).send(read({ id: 'x' }));
 		assert.strictEqual(sent().init.method, 'GET');
 	});

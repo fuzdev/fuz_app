@@ -12,7 +12,7 @@
 import { assert, describe, test } from 'vitest';
 import { z } from 'zod';
 
-import { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
+import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import {
 	heartbeat_action,
 	heartbeat_action_spec,
@@ -57,7 +57,7 @@ describe('heartbeat_action', () => {
 	});
 
 	test('composes alongside consumer actions — both dispatch independently', async () => {
-		const consumer_echo_spec = RequestResponseActionSpec.parse({
+		const consumer_echo_spec = {
 			method: 'consumer_echo',
 			kind: 'request_response',
 			initiator: 'frontend',
@@ -67,7 +67,7 @@ describe('heartbeat_action', () => {
 			output: z.strictObject({ value: z.string() }),
 			async: true,
 			description: 'test consumer echo'
-		});
+		} satisfies RequestResponseActionSpec;
 
 		const harness = create_ws_test_harness({
 			actions: [

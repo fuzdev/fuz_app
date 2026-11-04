@@ -30,8 +30,7 @@ const whoami_spec = {
 	initiator: 'frontend',
 	auth: { account: 'required', actor: 'required' },
 	side_effects: false,
-	// `ActionSpec.input` is typed `z.ZodType`; the dispatch path reads either library
-	input: object({ acting: ActingActor }) as unknown as z.ZodType,
+	input: object({ acting: ActingActor }),
 	output: z.strictObject({ actor_id: z.string(), acting: z.string().nullable() }),
 	async: true,
 	description: 'Returns the resolved actor and the parsed selector.'

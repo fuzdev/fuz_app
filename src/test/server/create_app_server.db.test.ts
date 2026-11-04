@@ -682,8 +682,7 @@ describe('create_app_server', () => {
 				initiator: 'frontend',
 				auth: { account: 'none', actor: 'none' },
 				side_effects: false,
-				// `ActionSpec.input` is typed `z.ZodType`; the dispatch path reads either library
-				input: method === 'zod_void' ? z.void() : (fuz_void as unknown as z.ZodType),
+				input: method === 'zod_void' ? z.void() : fuz_void,
 				output: z.strictObject({ ok: z.literal(true) }),
 				async: true,
 				description: 'Void-input parity action.'

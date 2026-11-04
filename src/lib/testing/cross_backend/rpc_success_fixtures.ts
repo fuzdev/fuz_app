@@ -37,7 +37,8 @@ import { ROLE_ADMIN } from '../../auth/role_schema.ts';
 import { rpc_call_typed } from '../rpc_helpers.ts';
 import type { RpcSuccessFixture, RpcSuccessFixtures } from '../rpc_round_trip.ts';
 import type { RequestResponseActionSpec } from '../../actions/action_spec.ts';
-import type { z } from 'zod';
+import type { Schema } from '@fuzdev/fuz_schema/schema.ts';
+import type { ValidationInput, ValidationOutput } from '../../schema_issues.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 import type { TestAccount } from '../app_server.ts';
 import type { TestFixture } from './setup.ts';
@@ -71,12 +72,12 @@ export const create_spine_rpc_success_fixtures = (
 	const call = <TSpec extends RequestResponseActionSpec>(
 		fixture: TestFixture,
 		spec: TSpec,
-		params: z.input<TSpec['input']>,
+		params: ValidationInput<TSpec['input']>,
 		headers: Record<string, string>
-	): Promise<z.infer<TSpec['output']>> =>
-		rpc_call_typed(
+	): Promise<ValidationOutput<TSpec['output']>> =>
+		rpc_call_typed<ValidationOutput<TSpec['output']>>(
 			{ app: fixture.transport, path: rpc_path, method: spec.method, params, headers },
-			spec.output as z.ZodType<z.infer<TSpec['output']>>
+			spec.output as Schema<ValidationOutput<TSpec['output']>, any>
 		);
 
 	const create_grantor = (fixture: TestFixture): Promise<TestAccount> =>

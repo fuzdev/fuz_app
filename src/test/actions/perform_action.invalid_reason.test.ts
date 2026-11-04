@@ -86,7 +86,7 @@ const FuzThingInput = object({
 const fuz_thing_spec: RequestResponseActionSpec = {
 	...thing_spec,
 	method: 'fuz_thing_put',
-	input: FuzThingInput as unknown as z.ZodType,
+	input: FuzThingInput,
 	description: 'a fuz_schema thing with declared reasons'
 };
 

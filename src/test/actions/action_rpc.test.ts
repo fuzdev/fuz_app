@@ -8,7 +8,7 @@ import { describe, assert, test } from 'vitest';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
-import { literal, void as fuz_void, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
+import { literal, void as fuz_void } from '@fuzdev/fuz_schema/schema.ts';
 import { meta } from '@fuzdev/fuz_schema/meta.ts';
 
 import { create_rpc_endpoint, RPC_GET_CACHE_CONTROL } from '#lib/actions/action_rpc.ts';
@@ -245,10 +245,7 @@ describe('create_rpc_endpoint', () => {
 		);
 	});
 
-	// `ActionSpec.input` / `.output` are typed `z.ZodType`; the registry reads
-	// either library's void and null by shape
-	const as_spec_schema = (schema: AnySchema): z.ZodType => schema as unknown as z.ZodType;
-
+	// the registry reads either library's void and null by shape
 	test('throws on a fuz_schema void output, as on z.void()', () => {
 		for (const output of [fuz_void, meta(fuz_void, { description: 'nothing' })]) {
 			const spec: RequestResponseActionSpec = {
@@ -257,8 +254,8 @@ describe('create_rpc_endpoint', () => {
 				initiator: 'frontend',
 				auth: { account: 'none', actor: 'none' },
 				side_effects: true,
-				input: as_spec_schema(fuz_void),
-				output: as_spec_schema(output),
+				input: fuz_void,
+				output,
 				async: true,
 				description: 'fuz_schema void-output action'
 			};
@@ -283,7 +280,7 @@ describe('create_rpc_endpoint', () => {
 			initiator: 'frontend',
 			auth: { account: 'none', actor: 'none' },
 			side_effects: false,
-			input: as_spec_schema(literal(null)),
+			input: literal(null),
 			output: z.strictObject({ ok: z.literal(true) }),
 			async: true,
 			description: 'fuz_schema null-input action'
@@ -308,7 +305,7 @@ describe('create_rpc_endpoint', () => {
 			initiator: 'frontend',
 			auth: { account: 'none', actor: 'none' },
 			side_effects: false,
-			input: as_spec_schema(fuz_void),
+			input: fuz_void,
 			output: z.strictObject({ ok: z.literal(true) }),
 			async: true,
 			description: 'fuz_schema void-input action'
