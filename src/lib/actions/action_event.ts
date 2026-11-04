@@ -30,8 +30,10 @@ import { resolve_issues_invalid_reason } from '../schema_meta.ts';
 import {
 	format_issues,
 	parse_any,
+	to_wire_issues,
 	type AnyIssue,
-	type ValidationSchema
+	type ValidationSchema,
+	type WireIssue
 } from '../schema_issues.ts';
 import type {
 	JsonrpcRequest,
@@ -62,20 +64,19 @@ import {
 export const ERROR_RESPONSE_OUTPUT_INVALID = 'response_output_invalid' as const;
 
 /**
- * `error.data` for a local input parse failure: the issues, and the declared
- * `invalid_reason` of the first issue's field — the reason the server would
- * answer the same input with, so a caller matching `data.reason` reads one
- * value whichever side refused.
+ * `error.data` for a local input parse failure: the issues as `WireIssue`s,
+ * and the declared `invalid_reason` of the first issue's field — the reason
+ * the server would answer the same input with, so a caller matching
+ * `data.reason` reads one value whichever side refused.
  */
 const to_local_invalid_params_data = (
 	input: ValidationSchema,
 	issues: Array<AnyIssue>,
 	value: unknown
-): { validation_errors: Array<AnyIssue>; reason?: string } => {
+): { validation_errors: Array<WireIssue>; reason?: string } => {
 	const reason = resolve_issues_invalid_reason(input, issues, value);
-	return reason === undefined
-		? { validation_errors: issues }
-		: { validation_errors: issues, reason };
+	const validation_errors = to_wire_issues(issues, value);
+	return reason === undefined ? { validation_errors } : { validation_errors, reason };
 };
 
 // TODO maybe just use runes in this module and remove `observe`
@@ -203,7 +204,10 @@ export class ActionEvent<
 							`response failed output validation for ${this.spec.method}: ${format_issues(
 								parsed.issues
 							)}`,
-							{ reason: ERROR_RESPONSE_OUTPUT_INVALID, validation_errors: parsed.issues }
+							{
+								reason: ERROR_RESPONSE_OUTPUT_INVALID,
+								validation_errors: to_wire_issues(parsed.issues, this.#data.output)
+							}
 						)
 					);
 				}
@@ -417,7 +421,9 @@ export class ActionEvent<
 		const answers_remote =
 			this.#data.kind === 'request_response' &&
 			(this.#data.phase === 'receive_request' || this.#data.phase === 'send_response');
-		return jsonrpc_error_messages.internal_error(answers_remote ? dev_only(message) : message);
+		return jsonrpc_error_messages.internal_error(
+			answers_remote ? dev_only(() => message) : message
+		);
 	}
 
 	/**
@@ -500,7 +506,7 @@ export class ActionEvent<
 				this.#fail(
 					jsonrpc_error_messages.validation_error(
 						`failed to parse output: ${format_issues(parsed.issues)}`,
-						{ output, validation_errors: parsed.issues }
+						{ output, validation_errors: to_wire_issues(parsed.issues, output) }
 					)
 				);
 			}

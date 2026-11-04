@@ -152,6 +152,7 @@ import { ActingActor } from '../http/auth_shape.ts';
 import { query_active_actors_by_account } from '../auth/account_queries.ts';
 import { get_route_params, type RouteContext, type RouteSpec } from '../http/route_spec.ts';
 import { ERROR_INVALID_ROUTE_PARAMS } from '../http/error_schemas.ts';
+import { WireIssue } from '../schema_issues.ts';
 import { query_get_fact, query_get_fact_meta } from '../db/fact_queries.ts';
 import { to_uint8 } from '../db/fact_store.ts';
 import { query_cell_get } from '../db/cell_queries.ts';
@@ -191,7 +192,7 @@ const cell_fact_params_schema = z.strictObject({
 const params_400_error = {
 	400: z.looseObject({
 		error: z.literal(ERROR_INVALID_ROUTE_PARAMS),
-		issues: z.array(z.unknown()).optional()
+		issues: z.array(WireIssue).optional()
 	})
 } as const;
 

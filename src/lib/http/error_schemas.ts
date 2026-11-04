@@ -15,6 +15,7 @@
 import { z } from 'zod';
 
 import { needs_actor, type RouteAuth } from './auth_shape.ts';
+import { WireIssue } from '../schema_issues.ts';
 
 // --- Core: Validation (auto-derived by route spec middleware) ---
 
@@ -245,8 +246,8 @@ export type ApiError = z.infer<typeof ApiError>;
  * parsing, or when the request body is not valid JSON.
  *
  * `error` is one of the four validation codes the framework emits.
- * `issues` carries Zod's validation issues for diagnostic display on the
- * three schema-failure cases (`invalid_request_body`,
+ * `issues` carries the validation issues as `WireIssue`s, whichever schema
+ * library refused, for diagnostic display on the three schema-failure cases (`invalid_request_body`,
  * `invalid_route_params`, `invalid_query_params`). The field is optional:
  * the `invalid_json_body` case (request body parse failure or non-object
  * root) emits no `issues`, and the schema-failure cases emit them only in
@@ -260,15 +261,7 @@ export const ValidationError = z.looseObject({
 		ERROR_INVALID_ROUTE_PARAMS,
 		ERROR_INVALID_QUERY_PARAMS
 	]),
-	issues: z
-		.array(
-			z.looseObject({
-				code: z.string(),
-				message: z.string(),
-				path: z.array(z.union([z.string(), z.number()]))
-			})
-		)
-		.optional()
+	issues: z.array(WireIssue).optional()
 });
 export type ValidationError = z.infer<typeof ValidationError>;
 

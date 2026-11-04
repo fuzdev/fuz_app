@@ -146,7 +146,7 @@ describe('declared invalid_reason on the RPC dispatcher', () => {
 			assert.strictEqual(error.code, JSONRPC_ERROR_CODES.invalid_params);
 			assert.strictEqual(error.message, 'invalid params');
 			assert.strictEqual(error.data?.reason, 'count_invalid', JSON.stringify(params));
-			// the Zod issues stay beside it under DEV
+			// the issues stay beside it under DEV
 			assert.ok(Array.isArray(error.data?.issues));
 		}
 	});
@@ -217,7 +217,15 @@ describe('declared invalid_reason on the RPC dispatcher', () => {
 		const error = event.data.error as { code: number; data?: any };
 		assert.strictEqual(error.code, JSONRPC_ERROR_CODES.invalid_params);
 		assert.strictEqual(error.data?.reason, 'count_invalid');
-		assert.ok(Array.isArray(error.data?.validation_errors));
+		assert.deepStrictEqual(error.data?.validation_errors, [
+			{
+				kind: 'min_value',
+				path: ['count'],
+				expected: '>= 1',
+				received: 'number',
+				message: 'Too small: expected number to be >=1'
+			}
+		]);
 		const extra = create_action_event(environment, thing_spec, { count: 0, extra: true });
 		extra.parse();
 		const extra_error = extra.data.error as { data?: any };

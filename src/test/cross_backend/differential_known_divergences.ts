@@ -14,8 +14,8 @@
 import type { KnownDivergence } from '#lib/testing/cross_backend/differential.ts';
 
 /**
- * The TS spine's DEV-only `issues` on `invalid_params`, in the input schema's
- * library's own shape (Zod's or fuz_schema's): the binary runs under `DEV`,
+ * The TS spine's DEV-only `issues` on `invalid_params`, as `WireIssue`s
+ * whichever library the input schema is in: the binary runs under `DEV`,
  * where `dev_only` keeps them on `error.data`; in production TS omits them,
  * and Rust omits them always.
  *
@@ -25,8 +25,7 @@ import type { KnownDivergence } from '#lib/testing/cross_backend/differential.ts
 const ts_dev_issues = (method: ReadonlyArray<string>): KnownDivergence => ({
 	method,
 	tracking_id: 'ts-dev-zod-issues',
-	reason:
-		"TS keeps the schema library's issues on invalid_params in DEV only; Rust never sends them",
+	reason: 'TS keeps the validation issues on invalid_params in DEV only; Rust never sends them',
 	what_differs: [{ path: 'body.error.data.issues', b: undefined }]
 });
 

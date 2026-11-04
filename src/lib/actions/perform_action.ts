@@ -35,7 +35,7 @@
  *    void / `?? {}` rules (`to_input_params`). A refusal is the generic
  *    `invalid params`, with `data.reason` when the first issue's field
  *    declares an `invalid_reason` (`to_invalid_params_error`) and the
- *    library's issues under DEV only. Runs **after** the authority gates: a
+ *    issues, as `WireIssue`s, under DEV only. Runs **after** the authority gates: a
  *    400 describing the action's input shape to a caller those gates
  *    refuse would confirm the method exists and describe how to call it,
  *    to a channel that should have learned nothing. Coarse authority
@@ -78,7 +78,12 @@ import {
 import type { Db } from '../db/db.ts';
 import { is_db_checkout_error } from '../db/db_checkout_error.ts';
 import { resolve_issues_invalid_reason } from '../schema_meta.ts';
-import { parse_any, type AnyIssue, type ValidationSchema } from '../schema_issues.ts';
+import {
+	parse_any,
+	to_wire_issues,
+	type AnyIssue,
+	type ValidationSchema
+} from '../schema_issues.ts';
 import { json_has_own_proto_key, to_input_params } from '../http/schema_helpers.ts';
 import { rate_limit_ip_key } from '../http/ip_canonical.ts';
 import { dispatch_with_post_commit_rollback } from '../http/pending_effects.ts';
@@ -408,9 +413,11 @@ const thrown_error_result = (err: unknown, context: string, log: Logger): Perfor
 	log.error(context, err);
 	// Raw exception messages can leak internals (paths, SQL, secrets in a
 	// message) — surface them only in development; production falls back to
-	// the generic `internal_error` default. Same gate as the Zod-issue redaction.
+	// the generic `internal_error` default. Same gate as the validation-issue redaction.
 	return error_result(
-		jsonrpc_error_messages.internal_error(dev_only(err instanceof Error ? err.message : undefined))
+		jsonrpc_error_messages.internal_error(
+			dev_only(() => (err instanceof Error ? err.message : undefined))
+		)
 	);
 };
 
@@ -418,8 +425,8 @@ const thrown_error_result = (err: unknown, context: string, log: Logger): Perfor
  * The `invalid_params` error an input validation failure answers: the generic
  * `invalid params` message, `data.reason` when the field the first issue lands
  * on declares an `invalid_reason` and no issue sits on the input itself
- * (`resolve_issues_invalid_reason`), and the library's issues under DEV
- * only (`dev_only`). With no declared reason, production sends no `data` at
+ * (`resolve_issues_invalid_reason`), and the issues as `WireIssue`s under
+ * DEV only (`dev_only`). With no declared reason, production sends no `data` at
  * all.
  *
  * @param input - the action's input schema, Zod or fuz_schema
@@ -433,7 +440,7 @@ export const to_invalid_params_error = (
 	params: unknown
 ): JsonrpcErrorObject => {
 	const reason = resolve_issues_invalid_reason(input, issues, params);
-	const issues_data = dev_only({ issues });
+	const issues_data = dev_only(() => ({ issues: to_wire_issues(issues, params) }));
 	return jsonrpc_error_messages.invalid_params(
 		'invalid params',
 		reason === undefined ? issues_data : { reason, ...issues_data }
@@ -624,7 +631,7 @@ export const serialize_action_result = (
 				create_jsonrpc_error_response(
 					id,
 					jsonrpc_error_messages.internal_error(
-						dev_only(error instanceof Error ? error.message : undefined)
+						dev_only(() => (error instanceof Error ? error.message : undefined))
 					)
 				)
 			),

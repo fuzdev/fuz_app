@@ -383,7 +383,7 @@ difference. The same cases run again over
 WS, against `differential_ws_known_divergences` (the HTTP ledger without its
 header row). The multi-actor `conformance_acting_cases.ts` rows run with the
 generated rows on a keeper seeded with `extra_actors`, over both transports.
-The TS spine runs under `DEV` there, so its DEV-only diagnostics (Zod
+The TS spine runs under `DEV` there, so its DEV-only diagnostics (the
 `issues` on `invalid_params`, the `X-Fuz-Auth-Debug` header) are ledger rows.
 The suite composition is `describe_spine_differential_suites`
 (`src/test/cross_backend/spine_differential.ts`), which takes the two
@@ -1931,7 +1931,7 @@ the option type states whether the bundle is read.
   pages tiling every row; a `data` that is no `CellData` — a non-object, or a
   non-string `label` / `summary` — refused 400 `invalid_params` with the
   generic message and no reason (no `data` beyond a TS spine's DEV-only
-  `issues`, an array of the schema library's issues) on `cell_create`, on `cell_update` of a
+  `issues`, an array of `WireIssue`s) on `cell_create`, on `cell_update` of a
   missing and of a hidden cell, and, with `cell_relations`, on `cell_clone`'s
   `with_data_patch` — ahead of the 404 mask the same hidden-cell call answers
   when well-typed, with the keeper's cell count unchanged; those cases run as

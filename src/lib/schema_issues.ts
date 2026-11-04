@@ -4,7 +4,8 @@
  * wholly one library, so one parse's issues are all of one kind; these
  * helpers read either, so the dispatcher, `ActionEvent` and the
  * forward-compatible reads treat a spec the same whichever library it is
- * written in.
+ * written in, and an error response carries either library's issues in one
+ * shape, `WireIssue`.
  *
  * @module
  */
@@ -151,3 +152,269 @@ export const format_issues = (issues: ReadonlyArray<AnyIssue>): string => {
  */
 export const is_schema_validation_error = (err: unknown): err is z.ZodError | SchemaError =>
 	err instanceof z.ZodError || err instanceof SchemaError;
+
+/**
+ * A validation issue as an error response carries it, for either schema
+ * library: `@fuzdev/fuz_schema`'s `SchemaIssue` as JSON, with `message` the
+ * text of the issue. `to_wire_issues` builds it from either library's issues.
+ *
+ * Loose: a client reads it, and a newer server may add fields.
+ */
+export const WireIssue = z.looseObject({
+	/** The fuz_schema kind of the check that failed, or `unknown_key` / `missing_key`. */
+	kind: z.string(),
+	/** Keys from the root value to the one that failed, outermost first. */
+	path: z.array(z.union([z.string(), z.number()])),
+	/** Describes what was expected, as fuz_schema writes it. */
+	expected: z.string(),
+	/** The type of the value that failed: `'null'`, `'array'`, `'NaN'`, `'Infinity'`, `'-Infinity'`, or its `typeof`. */
+	received: z.string(),
+	/** The issue as text: `format_issue` for a fuz_schema issue, Zod's own message for a Zod one. */
+	message: z.string()
+});
+export type WireIssue = z.infer<typeof WireIssue>;
+
+/**
+ * A failed parse's issues as `WireIssue`s, whichever library made them.
+ *
+ * A fuz_schema issue keeps its `kind`, `path`, `expected` and `received`, and
+ * its `message` is `format_issue`'s text, the path included.
+ *
+ * A Zod issue maps to the kind fuz_schema reports for the same check, its
+ * `message` Zod's own text, which names no path:
+ *
+ * - `invalid_type` — the type's kind (`string`, `number`, `boolean`,
+ *   `bigint`, `object`, `record`, `array`); `int` is `integer`, a `tuple` an
+ *   `array`, `null`, `undefined`, `void` and `nan` a `literal` of the value,
+ *   `nonoptional` a `missing_key`, and a type fuz_schema has no kind for
+ *   (`date`, `map`, `set`, `file`, `symbol`, `function`, `never`) a `check`
+ *   expecting the type's name. A missing key is reported as fuz_schema
+ *   reports it, as the type expected with `received: 'undefined'`.
+ * - `too_small` / `too_big` — `min_length` / `max_length` for a string,
+ *   array, set or file (`length >= N`), `min_value` / `max_value` otherwise
+ *   (`>= N`); an exclusive bound writes `>` or `<`, which fuz_schema has no
+ *   check for, and an exact length is reported as the bound it broke.
+ * - `invalid_format` — `uuid` for a `uuid` or `guid`, `iso_datetime` for a
+ *   `datetime`, `regex` for a `regex` (expecting its pattern), and a `check`
+ *   expecting the format's name for every other format.
+ * - `unrecognized_keys` — an `unknown_key` per key, the key appended to the
+ *   path, as fuz_schema reports them.
+ * - `invalid_union` — a `variant` expecting the options when Zod names a
+ *   discriminator, else a `union` expecting each option as fuz_schema names
+ *   it: by the type or the values it expected of the value, or by the
+ *   value's type when the option took the type and failed a refinement or a
+ *   field below. A union refused because more than one option matched is a
+ *   `union` expecting `exactly one option`.
+ * - `invalid_value` — a `literal` of one value, a `one_of` of more.
+ * - `custom` — a `check`; `not_multiple_of` a `check` expecting
+ *   `multiple of N`; `invalid_key` and `invalid_element` a `check` expecting
+ *   `a valid key` / `a valid element`.
+ *
+ * A Zod issue holds no value, so `received` is read from `input` at the
+ * issue's path: `'undefined'` where a key is missing or the path leads
+ * through something that isn't an object. Where an earlier step of a Zod
+ * pipe replaced the value, it names the input's value, not the replacement.
+ *
+ * @param issues - a failed parse's issues, either library
+ * @param input - the value that was parsed
+ * @returns the issues, one per issue but for a Zod `unrecognized_keys`, which is one per key
+ */
+export const to_wire_issues = (
+	issues: ReadonlyArray<AnyIssue>,
+	input: unknown
+): Array<WireIssue> => {
+	const wire: Array<WireIssue> = [];
+	for (const issue of issues) {
+		if (is_zod_issue(issue)) {
+			push_zod_wire_issues(wire, issue, input);
+		} else {
+			wire.push({
+				kind: issue.kind,
+				path: to_wire_path(issue.path),
+				expected: issue.expected,
+				received: issue.received,
+				message: format_issue(issue)
+			});
+		}
+	}
+	return wire;
+};
+
+// a symbol key has no JSON form, so it goes as its text
+const to_wire_path = (path: ReadonlyArray<PropertyKey>): Array<string | number> =>
+	path.map((key) => (typeof key === 'symbol' ? key.toString() : key));
+
+// the type of a value as fuz_schema's `received` names it
+const to_received = (value: unknown): string =>
+	value === null
+		? 'null'
+		: Array.isArray(value)
+			? 'array'
+			: typeof value === 'number' && !Number.isFinite(value)
+				? String(value)
+				: typeof value;
+
+// the value at `path` of `value`, by own keys, `undefined` where a key is
+// missing or the path leads through something that isn't an object
+const get_at = (value: unknown, path: ReadonlyArray<PropertyKey>): unknown => {
+	let at = value;
+	for (const key of path) {
+		if (at === null || typeof at !== 'object') return undefined;
+		at = Object.hasOwn(at, key) ? (at as Record<PropertyKey, unknown>)[key] : undefined;
+	}
+	return at;
+};
+
+// literals as fuz_schema's `expected` writes them, strings quoted
+const format_literals = (values: ReadonlyArray<unknown>): string =>
+	values.map((v) => (typeof v === 'string' ? JSON.stringify(v) : String(v))).join(' | ');
+
+// fuz_schema's kind and `expected` for a Zod `invalid_type` issue's `expected`,
+// where they differ from the type's own name
+const ZOD_TYPE_KINDS: Readonly<Record<string, { kind: string; expected: string }>> = {
+	string: { kind: 'string', expected: 'string' },
+	number: { kind: 'number', expected: 'number' },
+	boolean: { kind: 'boolean', expected: 'boolean' },
+	bigint: { kind: 'bigint', expected: 'bigint' },
+	int: { kind: 'integer', expected: 'integer' },
+	object: { kind: 'object', expected: 'object' },
+	record: { kind: 'record', expected: 'object' },
+	array: { kind: 'array', expected: 'array' },
+	tuple: { kind: 'array', expected: 'array' },
+	null: { kind: 'literal', expected: 'null' },
+	undefined: { kind: 'literal', expected: 'undefined' },
+	void: { kind: 'literal', expected: 'undefined' },
+	nan: { kind: 'literal', expected: 'NaN' },
+	nonoptional: { kind: 'missing_key', expected: 'a required key' }
+};
+
+// a Zod length origin, whose bounds fuz_schema checks as `min_length` / `max_length`
+const ZOD_LENGTH_ORIGINS: ReadonlySet<string> = new Set(['string', 'array', 'set', 'file']);
+
+// fuz_schema's kind for a Zod `invalid_format` format, a `check` when absent
+const ZOD_FORMAT_KINDS: Readonly<Record<string, string>> = {
+	uuid: 'uuid',
+	guid: 'uuid',
+	datetime: 'iso_datetime',
+	regex: 'regex'
+};
+
+// pushes the wire form of a Zod issue
+const push_zod_wire_issues = (
+	wire: Array<WireIssue>,
+	issue: z.core.$ZodIssue,
+	input: unknown
+): void => {
+	const { path } = issue;
+	if (issue.code === 'unrecognized_keys') {
+		// the object holding the keys, read once so the cost is linear in keys
+		const holder = get_at(input, path);
+		for (const key of issue.keys) {
+			wire.push({
+				kind: 'unknown_key',
+				path: to_wire_path([...path, key]),
+				expected: 'no unknown keys',
+				received: to_received(get_at(holder, [key])),
+				// Zod's text names every key, so a key of several gets the one-key form
+				message:
+					issue.keys.length === 1 ? issue.message : `Unrecognized key: ${JSON.stringify(key)}`
+			});
+		}
+		return;
+	}
+	const { kind, expected } = to_zod_kind(issue, input, path);
+	wire.push({
+		kind,
+		path: to_wire_path(path),
+		expected,
+		received: to_received(get_at(input, path)),
+		message: issue.message
+	});
+};
+
+// fuz_schema's kind and `expected` for a Zod issue other than `unrecognized_keys`
+const to_zod_kind = (
+	issue: Exclude<z.core.$ZodIssue, z.core.$ZodIssueUnrecognizedKeys>,
+	input: unknown,
+	path: ReadonlyArray<PropertyKey>
+): { kind: string; expected: string } => {
+	switch (issue.code) {
+		case 'invalid_type':
+			return ZOD_TYPE_KINDS[issue.expected] ?? { kind: 'check', expected: issue.expected };
+		case 'too_small': {
+			const op = issue.inclusive === false ? '>' : '>=';
+			return ZOD_LENGTH_ORIGINS.has(issue.origin)
+				? { kind: 'min_length', expected: `length ${op} ${issue.minimum}` }
+				: { kind: 'min_value', expected: `${op} ${issue.minimum}` };
+		}
+		case 'too_big': {
+			const op = issue.inclusive === false ? '<' : '<=';
+			return ZOD_LENGTH_ORIGINS.has(issue.origin)
+				? { kind: 'max_length', expected: `length ${op} ${issue.maximum}` }
+				: { kind: 'max_value', expected: `${op} ${issue.maximum}` };
+		}
+		case 'invalid_format': {
+			const kind = ZOD_FORMAT_KINDS[issue.format];
+			if (kind === undefined) return { kind: 'check', expected: issue.format };
+			return {
+				kind,
+				expected: kind === 'regex' ? (issue.pattern ?? 'regex') : kind
+			};
+		}
+		case 'not_multiple_of':
+			return { kind: 'check', expected: `multiple of ${issue.divisor}` };
+		case 'invalid_union':
+			if (issue.inclusive === false) return { kind: 'union', expected: 'exactly one option' };
+			if (issue.discriminator !== undefined && issue.options) {
+				return { kind: 'variant', expected: format_literals(issue.options) };
+			}
+			return {
+				kind: 'union',
+				expected: [...new Set(describe_union_options(issue, input, path))].join(' | ')
+			};
+		case 'invalid_key':
+			return { kind: 'check', expected: 'a valid key' };
+		case 'invalid_element':
+			return { kind: 'check', expected: 'a valid element' };
+		case 'invalid_value':
+			return {
+				kind: issue.values.length === 1 ? 'literal' : 'one_of',
+				expected: format_literals(issue.values)
+			};
+		case 'custom':
+			return { kind: 'check', expected: 'check' };
+		default: {
+			// a code a newer Zod added fails to compile here; at runtime it is a `check`
+			const unmapped: never = issue;
+			return { kind: 'check', expected: (unmapped as { code: string }).code };
+		}
+	}
+};
+
+// each option of a failed Zod union as fuz_schema's `expected` names it: by
+// the type or the values its issue on the value itself expected, a union's
+// own options in its place (a discriminated one is an object), and else by
+// the value's type, which the option matched: a refinement failed, or an
+// issue below the value, as an object or array option's (an option's issues
+// are relative to the union)
+const describe_union_options = (
+	issue: z.core.$ZodIssueInvalidUnion,
+	input: unknown,
+	path: ReadonlyArray<PropertyKey>
+): Array<string> =>
+	issue.errors.flatMap((option_issues) => {
+		if (!option_issues.length) return [];
+		const on_value = option_issues.find((i) => i.path.length === 0);
+		if (on_value?.code === 'invalid_union' && on_value.inclusive !== false) {
+			return on_value.discriminator === undefined
+				? describe_union_options(on_value, input, path)
+				: ['object'];
+		}
+		if (
+			(on_value?.code === 'invalid_type' && on_value.expected !== 'int') ||
+			on_value?.code === 'invalid_value'
+		) {
+			return [to_zod_kind(on_value, input, path).expected];
+		}
+		return [to_received(get_at(input, path))];
+	});

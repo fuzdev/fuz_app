@@ -445,7 +445,18 @@ describe('query validation', () => {
 		const res = await app.request('/search');
 		assert.strictEqual(res.status, 400);
 		const body = await res.json();
-		assert.strictEqual(body.error, 'invalid_query_params');
+		assert.deepStrictEqual(body, {
+			error: 'invalid_query_params',
+			issues: [
+				{
+					kind: 'string',
+					path: ['q'],
+					expected: 'string',
+					received: 'undefined',
+					message: 'Invalid input: expected string, received undefined'
+				}
+			]
+		});
 	});
 
 	test('returns 400 for extra unknown query param with strictObject', async () => {
@@ -467,7 +478,18 @@ describe('query validation', () => {
 		const res = await app.request('/search?q=test&extra=bad');
 		assert.strictEqual(res.status, 400);
 		const body = await res.json();
-		assert.strictEqual(body.error, 'invalid_query_params');
+		assert.deepStrictEqual(body, {
+			error: 'invalid_query_params',
+			issues: [
+				{
+					kind: 'unknown_key',
+					path: ['extra'],
+					expected: 'no unknown keys',
+					received: 'string',
+					message: 'Unrecognized key: "extra"'
+				}
+			]
+		});
 	});
 
 	test('no query schema skips validation', async () => {
@@ -487,6 +509,41 @@ describe('query validation', () => {
 
 		const res = await app.request('/test?anything=works');
 		assert.strictEqual(res.status, 200);
+	});
+});
+
+describe('route params validation', () => {
+	test('returns 400 with the issues for a param failing its schema', async () => {
+		const app = new Hono();
+		const specs: Array<RouteSpec> = [
+			{
+				method: 'GET',
+				path: '/things/:id',
+				auth: { account: 'none', actor: 'none' },
+				handler: (c) => c.json({ ok: true }),
+				description: 'Get a thing',
+				params: z.strictObject({ id: z.uuid() }),
+				input: z.null(),
+				output: z.null()
+			}
+		];
+		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
+
+		const res = await app.request('/things/nope');
+		assert.strictEqual(res.status, 400);
+		const body = await res.json();
+		assert.deepStrictEqual(body, {
+			error: 'invalid_route_params',
+			issues: [
+				{
+					kind: 'uuid',
+					path: ['id'],
+					expected: 'uuid',
+					received: 'string',
+					message: 'Invalid UUID'
+				}
+			]
+		});
 	});
 });
 

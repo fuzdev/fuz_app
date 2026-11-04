@@ -30,6 +30,7 @@ import {
 	jsonrpc_error_messages,
 	to_thrown_jsonrpc_error
 } from './jsonrpc_errors.ts';
+import { to_wire_issues } from '../schema_issues.ts';
 
 // --- Message builders ---
 
@@ -265,7 +266,9 @@ export const classify_jsonrpc_message = (json: unknown): ClassifiedJsonrpcMessag
 		return {
 			kind: 'invalid',
 			id,
-			error: jsonrpc_error_messages.invalid_request(dev_only({ issues: parsed.error.issues }))
+			error: jsonrpc_error_messages.invalid_request(
+				dev_only(() => ({ issues: to_wire_issues(parsed.error.issues, frame) }))
+			)
 		};
 	}
 	// the frame itself, validated — not Zod's rebuilt copy, which drops an own

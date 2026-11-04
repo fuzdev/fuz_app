@@ -8,7 +8,7 @@
  * upgrade, its `Request` / `Response` — never the spine's logic.
  *
  * The ledger is empty. The TS-vs-Rust ledger's rows are all TS-against-Rust
- * differences, and its DEV-only rows (Zod `issues` on `invalid_params`, the
+ * differences, and its DEV-only rows (the `issues` on `invalid_params`, the
  * `X-Fuz-Auth-Debug` header) show on both sides here, since both binaries run
  * the one spine under `DEV` — a ledger row naming them would fail as an entry
  * that no longer differs.

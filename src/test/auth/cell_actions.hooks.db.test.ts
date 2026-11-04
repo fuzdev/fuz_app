@@ -14,6 +14,7 @@
 
 import { test, assert } from 'vitest';
 import { z } from 'zod';
+import * as s from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	cell_clone_action_spec,
@@ -118,6 +119,39 @@ describe_db('cell hooks see the kinds', (get_db) => {
 			['shelf', null],
 			['post', null]
 		]);
+	});
+
+	test("a validator's thrown parse failure answers its issues as WireIssues", async () => {
+		const ZodCounted = z.object({ count: z.number() });
+		const FuzCounted = s.loose_object({ count: s.number });
+		const validate_data: CellActionDeps['validate_data'] = (kind, data) => {
+			if (kind === 'zod') ZodCounted.parse(data);
+			else s.parse_or_throw(FuzCounted, data);
+		};
+		const app = await create_cell_test_app(get_db, [], { validate_data });
+		const alice = await app.create_account({ username: 'hooks_issues_alice' });
+		const headers = alice.create_session_headers();
+		for (const [kind, message] of [
+			['zod', 'Invalid input: expected number, received string'],
+			['fuz', 'count: expected number, received string']
+		] as const) {
+			const refused = await call(
+				app,
+				cell_create_action_spec,
+				{ kind, data: { label: 'x', count: 'y' } },
+				headers
+			);
+			assert.ok(!refused.ok, kind);
+			assert.deepStrictEqual(
+				refused.error.data,
+				{
+					issues: [
+						{ kind: 'number', path: ['count'], expected: 'number', received: 'string', message }
+					]
+				},
+				kind
+			);
+		}
 	});
 
 	test('a write stores the caller data, not what the validator parses', async () => {

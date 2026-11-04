@@ -252,7 +252,23 @@ describe('ActionEvent receive_response output validation', () => {
 		assert.include(error.message, 'response failed output validation for ping');
 		const data = error.data as { reason: string; validation_errors: Array<unknown> };
 		assert.strictEqual(data.reason, ERROR_RESPONSE_OUTPUT_INVALID);
-		assert.ok(data.validation_errors.length > 0);
+		// the issues as `WireIssue`s, `received` read from the remote's result
+		assert.deepStrictEqual(data.validation_errors, [
+			{
+				kind: 'literal',
+				path: ['pong'],
+				expected: 'true',
+				received: 'string',
+				message: 'Invalid input: expected true'
+			},
+			{
+				kind: 'unknown_key',
+				path: ['extra'],
+				expected: 'no unknown keys',
+				received: 'number',
+				message: 'Unrecognized key: "extra"'
+			}
+		]);
 		await event.handle_async();
 		assert.ok(!response_handler_called);
 		assert.strictEqual(received_error, error);
@@ -431,6 +447,27 @@ describe('ActionEvent handle_sync', () => {
 		event.handle_sync();
 
 		assert.strictEqual(event.data.step, 'handled');
+	});
+
+	test('a handler output not matching spec.output fails with WireIssues', () => {
+		const env = new TestEnvironment([toggle_spec]);
+		env.add_handler('toggle_menu', 'execute', () => ({ open: 1 }));
+		const event = create_action_event(env, toggle_spec, null);
+		event.parse().handle_sync();
+		assert.strictEqual(event.data.step, 'failed');
+		const data = event.data.error?.data as { output: unknown; validation_errors: Array<unknown> };
+		assert.deepStrictEqual(data, {
+			output: { open: 1 },
+			validation_errors: [
+				{
+					kind: 'literal',
+					path: [],
+					expected: 'null',
+					received: 'object',
+					message: 'Invalid input: expected null, received object'
+				}
+			]
+		});
 	});
 
 	test('throws for non-local_call actions', () => {

@@ -24,6 +24,7 @@ import {
 	to_jsonrpc_message_id,
 	to_jsonrpc_params
 } from '#lib/http/jsonrpc_helpers.ts';
+import { WireIssue } from '#lib/schema_issues.ts';
 import { ForeignRpcError, SecondCopyThrownJsonrpcError } from './thrown_jsonrpc_error_helpers.ts';
 
 describe('create_jsonrpc_request', () => {
@@ -471,6 +472,12 @@ describe('classify_jsonrpc_message', () => {
 					assert.strictEqual(classified.error.code, JSONRPC_ERROR_CODES.invalid_request);
 					const data = classified.error.data as { issues?: unknown } | undefined;
 					assert.strictEqual(data?.issues !== undefined, expected.issues, 'DEV issues');
+					if (data?.issues !== undefined) {
+						assert.ok(Array.isArray(data.issues) && data.issues.length > 0);
+						for (const issue of data.issues) {
+							assert.ok(WireIssue.safeParse(issue).success, JSON.stringify(issue));
+						}
+					}
 					break;
 				}
 			}

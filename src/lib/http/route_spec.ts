@@ -42,6 +42,7 @@ import { is_null_schema, merge_error_schemas } from './schema_helpers.ts';
 import { dispatch_with_post_commit_rollback } from './pending_effects.ts';
 import type { MiddlewareSpec } from './middleware_spec.ts';
 import { assert_route_auth_acting_biconditional, type RouteAuth } from './auth_shape.ts';
+import { to_wire_issues } from '../schema_issues.ts';
 
 /**
  * Two-phase auth guard set returned by `AuthGuardResolver`.
@@ -345,7 +346,10 @@ const create_input_validation = (
 		const result = input_schema.safeParse(body);
 		if (!result.success) {
 			return c.json(
-				{ error: ERROR_INVALID_REQUEST_BODY, issues: dev_only(result.error.issues) },
+				{
+					error: ERROR_INVALID_REQUEST_BODY,
+					issues: dev_only(() => to_wire_issues(result.error.issues, body))
+				},
 				400
 			);
 		}
@@ -372,7 +376,10 @@ const create_params_validation = (params_schema?: z.ZodObject): Array<Middleware
 		const result = params_schema.safeParse(raw_params);
 		if (!result.success) {
 			return c.json(
-				{ error: ERROR_INVALID_ROUTE_PARAMS, issues: dev_only(result.error.issues) },
+				{
+					error: ERROR_INVALID_ROUTE_PARAMS,
+					issues: dev_only(() => to_wire_issues(result.error.issues, raw_params))
+				},
 				400
 			);
 		}
@@ -399,7 +406,10 @@ const create_query_validation = (query_schema?: z.ZodObject): Array<MiddlewareHa
 		const result = query_schema.safeParse(raw_query);
 		if (!result.success) {
 			return c.json(
-				{ error: ERROR_INVALID_QUERY_PARAMS, issues: dev_only(result.error.issues) },
+				{
+					error: ERROR_INVALID_QUERY_PARAMS,
+					issues: dev_only(() => to_wire_issues(result.error.issues, raw_query))
+				},
 				400
 			);
 		}
@@ -535,11 +545,11 @@ const wrap_error_catch = (handler: Handler, log: Logger): Handler => {
 			}
 			// generic error — internal_error. Raw exception messages can leak
 			// internals; surface them only in development (same gate as the
-			// Zod-issue redaction), production gets the bare error code.
+			// validation-issue redaction), production gets the bare error code.
 			log.error('Unhandled handler error', err);
 			const body: Record<string, unknown> = {
 				error: 'internal_error',
-				message: dev_only(err instanceof Error ? err.message : undefined)
+				message: dev_only(() => (err instanceof Error ? err.message : undefined))
 			};
 			return c.json(body, 500);
 		}

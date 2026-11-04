@@ -480,7 +480,8 @@ issue lands on declares one: `invalid_reason` in its `.meta()`
 deepest declaring field along the issue's path winning. Then every refusal of
 that field — missing, wrong type, `null`, out of range, malformed, or a fault
 inside it — carries the reason, on every transport (`perform_action`'s
-`to_invalid_params_error`); the library's issues stay DEV-only beside it. The
+`to_invalid_params_error`); the issues stay DEV-only beside it (see
+Validation issues below). The
 declaration is the one source: the adversarial suites expect it per generated
 case (`expected_invalid_reason`), and the Rust twin owes the same reason on
 every refusal of the field. A body with faults on several fields answers the
@@ -497,6 +498,20 @@ the unknown key out of the issues. Every declared reason is named
 `ERROR_TOKEN_SCOPE_INVALID` / `ERROR_TOKEN_LIFETIME_INVALID`. REST
 route validation keeps its flat `{error: 'invalid_request_body'}` — the
 declaration applies to RPC action inputs only.
+
+**Validation issues.** Every schema refusal carries its issues in one shape,
+`WireIssue` (`schema_issues.ts`): `{kind, path, expected, received,
+message}`, fuz_schema's `SchemaIssue` as JSON, whichever library the schema
+is written in — the REST `issues` of a `ValidationError`, the RPC
+`data.issues` of `invalid_params` and of a refused request envelope, and an
+`ActionEvent`'s `validation_errors`. `to_wire_issues` builds it: a
+fuz_schema issue keeps its fields, its `message` the `format_issue` text; a
+Zod issue maps to the kind fuz_schema reports for the same check, with Zod's
+own message, and `received` read from the input at its path; an
+`unrecognized_keys` issue becomes an `unknown_key` per key. The issues are a
+development diagnostic: the wire carries them only under `DEV` (`dev_only`,
+which in production skips the mapping too), and the Rust spine never sends
+them.
 
 ## DEV-only Output Validation
 

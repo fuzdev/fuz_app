@@ -76,9 +76,30 @@ describe('standard error schemas', () => {
 	test('ValidationError accepts error with issues', () => {
 		const result = ValidationError.safeParse({
 			error: 'invalid_request_body',
-			issues: [{ code: 'invalid_type', message: 'Expected string', path: ['name'] }]
+			issues: [
+				{
+					kind: 'string',
+					path: ['name'],
+					expected: 'string',
+					received: 'number',
+					message: 'Invalid input: expected string, received number'
+				}
+			]
 		});
 		assert.isTrue(result.success);
+	});
+
+	test("ValidationError refuses an issue in a library's own shape", () => {
+		const zod_shaped = ValidationError.safeParse({
+			error: 'invalid_request_body',
+			issues: [{ code: 'invalid_type', message: 'Expected string', path: ['name'] }]
+		});
+		assert.isFalse(zod_shaped.success);
+		const fuz_shaped = ValidationError.safeParse({
+			error: 'invalid_request_body',
+			issues: [{ kind: 'string', path: ['name'], expected: 'string', received: 'number' }]
+		});
+		assert.isFalse(fuz_shaped.success);
 	});
 
 	test('PermissionError requires insufficient_permissions literal', () => {
@@ -384,7 +405,15 @@ describe('error code constants', () => {
 		assert.isTrue(
 			ValidationError.safeParse({
 				error: ERROR_INVALID_REQUEST_BODY,
-				issues: [{ code: 'invalid_type', message: 'Expected string', path: ['name'] }]
+				issues: [
+					{
+						kind: 'string',
+						path: ['name'],
+						expected: 'string',
+						received: 'number',
+						message: 'Invalid input: expected string, received number'
+					}
+				]
 			}).success
 		);
 		assert.isTrue(

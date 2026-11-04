@@ -714,7 +714,7 @@ targets the sole remaining active admin (soft-deleted admins don't count; the
 count locks its rows, so concurrent removals can't both pass), `ERROR_INVITE_ACCOUNT_EXISTS_USERNAME` /
 `_EMAIL` / `ERROR_INVITE_DUPLICATE` on invite create, `ERROR_INVITE_NOT_FOUND`
 on invite delete. `invite_create` empty input is rejected at the schema via
-`.refine()` and surfaces as `invalid_params` with `error.data.issues`.
+`.refine()` and surfaces as `invalid_params` with `error.data.issues` (DEV-only `WireIssue`s).
 
 Closure state:
 

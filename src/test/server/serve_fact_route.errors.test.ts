@@ -44,6 +44,23 @@ describe('fact route 400 error schema', () => {
 				assert.ok(
 					schema!.safeParse({
 						error: ERROR_INVALID_ROUTE_PARAMS,
+						issues: [
+							{
+								kind: 'regex',
+								path: ['hash'],
+								expected: '/^[0-9a-f]{64}$/',
+								received: 'string',
+								message: 'Invalid string: must match pattern /^[0-9a-f]{64}$/'
+							}
+						]
+					}).success
+				);
+			});
+
+			test("refuses a DEV body whose issues are in a library's own shape", () => {
+				assert.ok(
+					!schema!.safeParse({
+						error: ERROR_INVALID_ROUTE_PARAMS,
 						issues: [{ code: 'invalid_format', path: ['hash'] }]
 					}).success
 				);

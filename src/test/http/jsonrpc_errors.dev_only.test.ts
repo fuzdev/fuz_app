@@ -1,14 +1,15 @@
 /**
- * `dev_only(value)` is the single gate that keeps internal diagnostic detail
- * out of production error responses — Zod `issues` (the `error.data` object on
- * JSON-RPC errors, the `issues` field on flat REST bodies) and raw exception
- * messages (the `internal_error` 500 message on both transports). It returns
- * the value in development and `undefined` in production, so `JSON.stringify`
- * drops the field. Vitest runs with `DEV=true`, so the production branch — the
- * one that actually closes the leaks — is never hit incidentally. This forces
+ * `dev_only(get)` is the single gate that keeps internal diagnostic detail
+ * out of production error responses — validation `issues` (the `error.data`
+ * object on JSON-RPC errors, the `issues` field on flat REST bodies) and raw
+ * exception messages (the `internal_error` 500 message on both transports). It
+ * returns `get()` in development and `undefined` in production without calling
+ * `get`, so `JSON.stringify` drops the field and production builds nothing.
+ * Vitest runs with `DEV=true`, so the production branch — the one that
+ * actually closes the leaks — is never hit incidentally. This forces
  * `DEV=false` via a scoped `esm-env` mock + a fresh module graph and asserts
- * the value is dropped, pinning the production short-circuit nothing else
- * exercises.
+ * the value is dropped and never built, pinning the production short-circuit
+ * nothing else exercises.
  *
  * @module
  */
@@ -26,19 +27,46 @@ test('dev_only drops the value in production (DEV=false)', async () => {
 	const { dev_only } = await import('#lib/http/jsonrpc_errors.ts');
 	// The leak shapes both call patterns produce: a wrapped `data` object (RPC)
 	// and a bare issues array (REST) — both must vanish in production.
-	assert.strictEqual(dev_only({ issues: [{ code: 'custom', message: 'x', path: [] }] }), undefined);
-	assert.strictEqual(dev_only([{ code: 'custom', message: 'x', path: [] }]), undefined);
+	assert.strictEqual(
+		dev_only(() => ({
+			issues: [{ kind: 'check', path: [], expected: 'check', received: 'string', message: 'x' }]
+		})),
+		undefined
+	);
+	assert.strictEqual(
+		dev_only(() => [
+			{ kind: 'check', path: [], expected: 'check', received: 'string', message: 'x' }
+		]),
+		undefined
+	);
 	// Internal-error masking composes through the same gate: a raw exception
 	// message drops to undefined, so the `internal_error` builder falls back to
 	// its generic default and the REST body omits `message`.
 	const err = new Error('boom: /var/secret leaked');
-	assert.strictEqual(dev_only(err instanceof Error ? err.message : undefined), undefined);
+	assert.strictEqual(
+		dev_only(() => (err instanceof Error ? err.message : undefined)),
+		undefined
+	);
+});
+
+test('dev_only never builds the value in production (DEV=false)', async () => {
+	vi.resetModules();
+	vi.doMock('esm-env', () => ({ DEV: false }));
+	const { dev_only } = await import('#lib/http/jsonrpc_errors.ts');
+	const get = vi.fn((): string => {
+		throw new Error('built in production');
+	});
+	assert.strictEqual(dev_only(get), undefined);
+	assert.strictEqual(get.mock.calls.length, 0);
 });
 
 test('dev_only passes the value through in development (DEV=true)', async () => {
 	vi.resetModules();
 	vi.doMock('esm-env', () => ({ DEV: true }));
 	const { dev_only } = await import('#lib/http/jsonrpc_errors.ts');
-	const issues = [{ code: 'custom', message: 'x', path: [] }];
-	assert.strictEqual(dev_only(issues), issues);
+	const issues = [{ kind: 'check', path: [], expected: 'check', received: 'string', message: 'x' }];
+	assert.strictEqual(
+		dev_only(() => issues),
+		issues
+	);
 });

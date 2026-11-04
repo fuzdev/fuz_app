@@ -59,7 +59,7 @@ import {
 	type RpcAction
 } from '../actions/action_types.ts';
 import { jsonrpc_errors, dev_only } from '../http/jsonrpc_errors.ts';
-import { is_schema_validation_error } from '../schema_issues.ts';
+import { is_schema_validation_error, to_wire_issues } from '../schema_issues.ts';
 import { is_pg_unique_violation } from '../db/pg_error.ts';
 import {
 	has_scoped_role,
@@ -401,7 +401,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 			if (is_schema_validation_error(err)) {
 				throw jsonrpc_errors.invalid_params(
 					'cell.data shape validation failed',
-					dev_only({ issues: err.issues })
+					dev_only(() => ({ issues: to_wire_issues(err.issues, data) }))
 				);
 			}
 			throw err;
@@ -422,7 +422,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 			if (is_schema_validation_error(err)) {
 				throw jsonrpc_errors.invalid_params(
 					'cell.policy validation failed',
-					dev_only({ issues: err.issues })
+					dev_only(() => ({ issues: to_wire_issues(err.issues, policy) }))
 				);
 			}
 			throw err;

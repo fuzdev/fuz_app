@@ -42,7 +42,8 @@ don't have the schema in scope. Same overloads on `get_route_params` and
 - `z.strictObject()` for inputs — rejects unknown keys
 - `z.looseObject()` for outputs with variable shapes
 - Input schemas validated in DEV + production (always-on caller contract;
-  malformed input returns 400 with `{error, issues}`)
+  malformed input returns 400 with `{error}`, plus `issues` — `WireIssue`s —
+  in development)
 - Output schemas validated in DEV only (via `esm-env`) — plus declared
   error schemas (4xx/5xx) for non-2xx responses. Logs an error on mismatch,
   returns the response unchanged; does not throw. Zero cost in production.

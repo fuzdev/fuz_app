@@ -115,13 +115,14 @@ export const JSONRPC_ERROR_CODES = Object.freeze({
 }) as Readonly<Record<JsonrpcErrorName, JsonrpcErrorCode>>;
 
 /**
- * Pass `value` through in development, return `undefined` in production — so
- * `JSON.stringify` drops the field from the response.
+ * Call `get` and return its value in development, return `undefined` in
+ * production without calling it — so `JSON.stringify` drops the field from the
+ * response, and production pays nothing to build it.
  *
  * The single gate for keeping internal diagnostic detail out of production
  * error responses. Two classes flow through it:
  *
- * - **Zod `issues`** — the issues array exposes field names, types, and
+ * - **Validation `issues`** — the issues array exposes field names, types, and
  *   constraints, enough to reverse-engineer an input schema (including on
  *   public/unauthenticated actions). Gate the whole `data` object on JSON-RPC
  *   errors (so `error.data` is absent, matching the Rust spine) and the
@@ -132,9 +133,15 @@ export const JSONRPC_ERROR_CODES = Object.freeze({
  *
  * A legitimate caller only ever needs the error code and a stable message.
  *
+ * A thunk rather than a value because the detail costs work to build — mapping
+ * a failed parse's issues walks the input — and a caller must not be able to
+ * make production pay for, or trip on, that work.
+ *
+ * @param get - builds the diagnostic detail, called only in development
+ * @returns the detail in development, `undefined` in production
  * @nodocs
  */
-export const dev_only = <T>(value: T): T | undefined => (DEV ? value : undefined);
+export const dev_only = <T>(get: () => T): T | undefined => (DEV ? get() : undefined);
 
 /**
  * Named constructors for `JsonrpcErrorObject` values.

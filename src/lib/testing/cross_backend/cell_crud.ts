@@ -58,6 +58,7 @@ import '../assert_dev_env.ts';
 import { describe, assert } from 'vitest';
 
 import { jsonrpc_error_messages } from '../../http/jsonrpc_errors.ts';
+import { WireIssue } from '../../schema_issues.ts';
 
 import {
 	CELL_KIND_LENGTH_MAX,
@@ -97,9 +98,7 @@ const INVALID_PARAMS_MESSAGE = jsonrpc_error_messages.invalid_params().message;
 /**
  * Assert `r` is a schema refusal: 400 `invalid_params` with the generic
  * message and no `data`, save the issues a TS spine adds under DEV alone —
- * an array of the schema library's issue objects, and never a `reason`. A Zod
- * issue has a string `code` and `message`; a fuz_schema issue a string
- * `kind`, and a `message` only when one was set.
+ * an array of `WireIssue`s, and never a `reason`.
  */
 const assert_schema_refusal = (r: RpcResult, label: string): void => {
 	const detail = `${label}: got ${r.status} ${JSON.stringify(r.error ?? r.result)}`;
@@ -117,13 +116,9 @@ const assert_schema_refusal = (r: RpcResult, label: string): void => {
 	const { issues } = data as { issues: unknown };
 	assert.ok(Array.isArray(issues), `${detail} — DEV-only issues that are no array`);
 	for (const issue of issues as Array<unknown>) {
-		const { code, kind, message } = (issue ?? {}) as Record<string, unknown>;
 		assert.ok(
-			typeof issue === 'object' &&
-				issue !== null &&
-				((typeof code === 'string' && typeof message === 'string') ||
-					(typeof kind === 'string' && (message === undefined || typeof message === 'string'))),
-			`${detail} — a DEV-only issue that is no Zod or fuz_schema issue`
+			WireIssue.safeParse(issue).success,
+			`${detail} — a DEV-only issue that is no WireIssue`
 		);
 	}
 };
