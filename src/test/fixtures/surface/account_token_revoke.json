@@ -1,0 +1,44 @@
+{
+	"name": "account_token_revoke",
+	"auth": {
+		"account": "required",
+		"actor": "none",
+		"credential_types": [
+			"session"
+		]
+	},
+	"input_schema": {
+		"type": "object",
+		"properties": {
+			"token_id": {
+				"type": "string",
+				"pattern": "^tok_[A-Za-z0-9_-]{12}$",
+				"description": "Public API token id (e.g. `tok_<12 chars>`)."
+			}
+		},
+		"required": [
+			"token_id"
+		],
+		"additionalProperties": false
+	},
+	"output_schema": {
+		"type": "object",
+		"properties": {
+			"ok": {
+				"type": "boolean",
+				"const": true
+			},
+			"revoked": {
+				"type": "boolean"
+			}
+		},
+		"required": [
+			"ok",
+			"revoked"
+		],
+		"additionalProperties": false
+	},
+	"side_effects": true,
+	"description": "Revoke an API token for the current account (IDOR-guarded).",
+	"rate_limit_key": null
+}

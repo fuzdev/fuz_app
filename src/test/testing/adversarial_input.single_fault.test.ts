@@ -19,11 +19,12 @@ import {
 import {
 	generate_valid_body,
 	generate_valid_object_with_field,
-	generate_valid_value
+	generate_valid_value,
+	to_object_schema_view
 } from '#lib/testing/schema_generators.ts';
 import { zod_extract_fields, zod_unwrap_to_object, type SchemaFieldInfo } from '#lib/zod.ts';
 import { create_spine_live_rpc_endpoints } from '#lib/testing/cross_backend/full_spine_mount.ts';
-import { assert_zod_schema } from '#lib/schema_issues.ts';
+import { parse_any, type ValidationSchema } from '#lib/schema_issues.ts';
 
 const NIL = '00000000-0000-0000-0000-000000000000';
 
@@ -73,19 +74,19 @@ const body_of = (cases: Array<InputTestCase>, label: string): Record<string, unk
  * its generated valid value, or (a type case on a field no valid body carries)
  * dropped, the whole input parses.
  */
-const is_single_fault = (input: z.ZodType, c: InputTestCase): boolean => {
-	const object_schema = zod_unwrap_to_object(input)!;
+const is_single_fault = (input: ValidationSchema, c: InputTestCase): boolean => {
+	const view = to_object_schema_view(input, 'is_single_fault: the input');
 	const field = c.field!;
-	const info = zod_extract_fields(object_schema).find((f) => f.name === field)!;
+	const info = view.fields.find((f) => f.name === field)!;
 	const body = c.body as Record<string, unknown>;
 	const restored = {
 		...body,
-		[field]: generate_valid_value(info, object_schema.shape[field] as z.ZodType)
+		[field]: generate_valid_value(info, view.field_schema(field)!)
 	};
-	if (input.safeParse(restored).success) return true;
+	if (parse_any(input, restored).ok) return true;
 	if (!/^(wrong type|null):/.test(c.label)) return false;
 	const { [field]: _dropped, ...without } = body;
-	return input.safeParse(without).success;
+	return parse_any(input, without).ok;
 };
 
 describe('generate_valid_object_with_field', () => {
@@ -245,19 +246,21 @@ describe('generate_input_test_cases — single-fault bodies', () => {
 
 	test("every per-field case over the spine's live mount is single-fault", () => {
 		let checked = 0;
+		const methods: Set<string> = new Set();
 		for (const endpoint of create_spine_live_rpc_endpoints()) {
 			for (const action of endpoint.actions) {
 				const { method, input } = action.spec;
-				// the spine's specs are all Zod, what this check walks
-				assert_zod_schema(input, `${method} input`);
 				for (const c of generate_input_test_cases(input, { label: method })) {
 					if (c.field === undefined) continue;
 					checked++;
+					methods.add(method);
 					assert.ok(is_single_fault(input, c), `${method} ${c.label}: ${JSON.stringify(c.body)}`);
 				}
 			}
 		}
 		assert.ok(checked > 0);
+		// a fuz_schema input among them
+		assert.ok(methods.has('account_token_revoke'));
 	});
 });
 

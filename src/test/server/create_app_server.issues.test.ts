@@ -1,7 +1,8 @@
 /**
  * The validation issues an assembled app answers a bad REST body and bad RPC
  * params with: `WireIssue`s under DEV, and in production the same body
- * without them.
+ * without them. Zod schemas and `account_token_revoke`'s fuz_schema input
+ * alike.
  *
  * Vitest runs with `DEV=true`, so each leg imports the server fresh under a
  * scoped `esm-env` mock (the `#lib/testing` harness can't load under
@@ -19,6 +20,7 @@ import { object } from '@fuzdev/fuz_schema/schema.ts';
 
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { WireIssue } from '#lib/schema_issues.ts';
+import { TokenRevokeInput, TokenRevokeOutput } from '#lib/auth/account_action_specs.ts';
 import type { RouteSpec } from '#lib/http/route_spec.ts';
 import { create_test_keyring } from '../auth/session_test_helpers.ts';
 
@@ -103,6 +105,22 @@ const create_app = async (dev: boolean) => {
 							description: 'Takes a thing.'
 						},
 						handler: async () => ({ ok: true as const })
+					},
+					{
+						// `account_token_revoke`'s fuz_schema schemas, on a public action so the
+						// refusal is reached without an account
+						spec: {
+							method: 'revoke_thing',
+							kind: 'request_response',
+							initiator: 'frontend',
+							auth: { account: 'none', actor: 'none' },
+							side_effects: true,
+							input: TokenRevokeInput,
+							output: TokenRevokeOutput,
+							async: true,
+							description: 'Revokes a thing.'
+						},
+						handler: async () => ({ ok: true as const, revoked: false })
 					}
 				]
 			}
@@ -126,6 +144,30 @@ const post_rpc = async (app: Awaited<ReturnType<typeof create_app>>): Promise<Re
 		headers: { 'content-type': 'application/json', origin: ORIGIN },
 		body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'take_thing', params: BAD })
 	});
+
+const post_rpc_token_revoke = async (
+	app: Awaited<ReturnType<typeof create_app>>
+): Promise<Response> =>
+	await app.request('/api/rpc', {
+		method: 'POST',
+		headers: { 'content-type': 'application/json', origin: ORIGIN },
+		body: JSON.stringify({
+			jsonrpc: '2.0',
+			id: 1,
+			method: 'revoke_thing',
+			params: { token_id: 'tok_short' }
+		})
+	});
+
+// the issue `tok_short` gets from `TokenRevokeInput`, in fuz_schema's words: the Zod
+// schema it replaced gave the same issue but for its message, Zod's own text
+const TOKEN_ID_ISSUE = {
+	kind: 'regex',
+	path: ['token_id'],
+	expected: '/^tok_[A-Za-z0-9_-]{12}$/',
+	received: 'string',
+	message: 'token_id: expected /^tok_[A-Za-z0-9_-]{12}$/, received string'
+};
 
 // the issues `BAD` gets from `Body`, in Zod's order
 const EXPECTED_ISSUES = [
@@ -180,6 +222,34 @@ describe('an assembled app answers a validation failure', () => {
 
 	test('bad RPC params without data in production', async () => {
 		const res = await post_rpc(await create_app(false));
+		assert.strictEqual(res.status, 400);
+		assert.deepStrictEqual(await res.json(), {
+			jsonrpc: '2.0',
+			id: 1,
+			error: { code: -32602, message: 'invalid params' }
+		});
+	});
+});
+
+describe('an assembled app answers a bad `account_token_revoke` input', () => {
+	test('with a fuz_schema regex issue under DEV', async () => {
+		const res = await post_rpc_token_revoke(await create_app(true));
+		assert.strictEqual(res.status, 400);
+		const body = await res.json();
+		assert.deepStrictEqual(body, {
+			jsonrpc: '2.0',
+			id: 1,
+			error: {
+				code: -32602,
+				message: 'invalid params',
+				data: { issues: [TOKEN_ID_ISSUE] }
+			}
+		});
+		assert.ok(WireIssue.safeParse(body.error.data.issues[0]).success);
+	});
+
+	test('without data in production, as under Zod', async () => {
+		const res = await post_rpc_token_revoke(await create_app(false));
 		assert.strictEqual(res.status, 400);
 		assert.deepStrictEqual(await res.json(), {
 			jsonrpc: '2.0',

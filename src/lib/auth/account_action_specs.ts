@@ -9,6 +9,16 @@
  */
 
 import { z } from 'zod';
+import { meta } from '@fuzdev/fuz_schema/meta.ts';
+import {
+	boolean,
+	literal,
+	object,
+	pipe,
+	regex,
+	string,
+	type Infer
+} from '@fuzdev/fuz_schema/schema.ts';
 
 import { bounded_string } from '../primitive_schemas.ts';
 import { TokenScopeInput } from './token_scope.ts';
@@ -21,7 +31,7 @@ import {
 	SessionAccountJson,
 	SessionId
 } from './account_schema.ts';
-import { ApiTokenId } from './api_token.ts';
+import { API_TOKEN_ID_REGEX, ApiTokenId } from './api_token.ts';
 
 // -- Input/output schemas ---------------------------------------------------
 
@@ -145,18 +155,26 @@ export const TokenListOutput = z.strictObject({
 });
 export type TokenListOutput = z.infer<typeof TokenListOutput>;
 
-/** Input for `account_token_revoke`. */
-export const TokenRevokeInput = z.strictObject({
-	token_id: ApiTokenId.meta({ description: 'Public API token id (e.g. `tok_<12 chars>`).' })
+/**
+ * Input for `account_token_revoke`, a `@fuzdev/fuz_schema` schema. Its
+ * `token_id` is `ApiTokenId`'s check written inline, as `ApiTokenId` is Zod.
+ */
+export const TokenRevokeInput = object({
+	token_id: meta(pipe(string, regex(API_TOKEN_ID_REGEX)), {
+		description: 'Public API token id (e.g. `tok_<12 chars>`).'
+	})
 });
-export type TokenRevokeInput = z.infer<typeof TokenRevokeInput>;
+export type TokenRevokeInput = Infer<typeof TokenRevokeInput>;
 
-/** Output for `account_token_revoke`. `revoked` is `false` for IDOR misses. */
-export const TokenRevokeOutput = z.strictObject({
-	ok: z.literal(true),
-	revoked: z.boolean()
+/**
+ * Output for `account_token_revoke`, a `@fuzdev/fuz_schema` schema.
+ * `revoked` is `false` for IDOR misses.
+ */
+export const TokenRevokeOutput = object({
+	ok: literal(true),
+	revoked: boolean
 });
-export type TokenRevokeOutput = z.infer<typeof TokenRevokeOutput>;
+export type TokenRevokeOutput = Infer<typeof TokenRevokeOutput>;
 
 // -- Action specs -----------------------------------------------------------
 

@@ -2,7 +2,9 @@
  * A generated file built from every codegen block over an all-Zod spec list —
  * fuz_app's own action specs and synthetic specs of each kind — the input of
  * `action_codegen.zod_fixture.test.ts`, which holds it to the text the
- * Zod-only codegen emitted.
+ * Zod-only codegen emitted, and holds fuz_app's own list, whose
+ * `account_token_revoke` is `@fuzdev/fuz_schema`, to that text with the
+ * method's types read by `Infer`.
  *
  * @module
  */
@@ -30,6 +32,8 @@ import { all_cell_grant_action_specs } from '#lib/auth/cell_grant_action_specs.t
 import { all_cell_field_action_specs } from '#lib/auth/cell_field_action_specs.ts';
 import { all_cell_item_action_specs } from '#lib/auth/cell_item_action_specs.ts';
 import { all_cell_audit_action_specs } from '#lib/auth/cell_audit_action_specs.ts';
+import { account_token_revoke_action_spec } from '#lib/auth/account_action_specs.ts';
+import { ApiTokenId } from '#lib/auth/api_token.ts';
 
 // one spec per input shape the signature reads: void, null, optional, defaulted, required
 const synthetic_specs: Array<ActionSpecUnion> = [
@@ -105,7 +109,7 @@ const synthetic_specs: Array<ActionSpecUnion> = [
  * fuz_app's own specs, as `action_spec_input_invariants.test.ts` walks them,
  * each method once (a spec can sit in more than one registry).
  */
-export const fuz_app_specs: Array<ActionSpecUnion> = [
+const fuz_app_specs: Array<ActionSpecUnion> = [
 	...new Map(
 		[
 			...all_fuz_auth_action_spec_registries.flatMap((r) => r.specs),
@@ -119,8 +123,26 @@ export const fuz_app_specs: Array<ActionSpecUnion> = [
 	).values()
 ];
 
+/**
+ * `account_token_revoke` with the Zod schemas it declared before its own moved
+ * to `@fuzdev/fuz_schema`, so the list stays all-Zod and the fixture keeps the
+ * method in its place.
+ */
+const zod_token_revoke_spec: ActionSpecUnion = {
+	...account_token_revoke_action_spec,
+	input: z.strictObject({
+		token_id: ApiTokenId.meta({ description: 'Public API token id (e.g. `tok_<12 chars>`).' })
+	}),
+	output: z.strictObject({ ok: z.literal(true), revoked: z.boolean() })
+};
+
+/** fuz_app's own specs and the synthetic ones, in the fixture's order. */
+export const fixture_specs: Array<ActionSpecUnion> = [...fuz_app_specs, ...synthetic_specs];
+
 /** The all-Zod spec list the fixture is generated from. */
-export const zod_fixture_specs: Array<ActionSpecUnion> = [...fuz_app_specs, ...synthetic_specs];
+export const zod_fixture_specs: Array<ActionSpecUnion> = fixture_specs.map((spec) =>
+	spec.method === account_token_revoke_action_spec.method ? zod_token_revoke_spec : spec
+);
 
 /**
  * Every codegen block over `specs` composed into one file: once with the

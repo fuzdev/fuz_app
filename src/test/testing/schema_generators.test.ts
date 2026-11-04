@@ -6,6 +6,7 @@
 
 import { describe, test, assert } from 'vitest';
 import { z } from 'zod';
+import { parse } from '@fuzdev/fuz_schema/schema.ts';
 
 import { generate_valid_body, resolve_valid_path } from '#lib/testing/schema_generators.ts';
 import { FactHashSchema } from '#lib/primitive_schemas.ts';
@@ -13,6 +14,7 @@ import {
 	account_session_revoke_action_spec,
 	account_token_revoke_action_spec
 } from '#lib/auth/account_action_specs.ts';
+import { API_TOKEN_ID_REGEX } from '#lib/auth/api_token.ts';
 
 describe('generate_valid_body — branded-string synthesis', () => {
 	test('satisfies blake3 session_id pattern (account_session_revoke)', () => {
@@ -25,8 +27,9 @@ describe('generate_valid_body — branded-string synthesis', () => {
 	test('satisfies tok_ token_id pattern (account_token_revoke)', () => {
 		const body = generate_valid_body(account_token_revoke_action_spec.input);
 		assert.ok(body, 'expected a body');
-		const parsed = account_token_revoke_action_spec.input.safeParse(body);
-		assert.ok(parsed.success, `body must round-trip: ${JSON.stringify(parsed)}`);
+		assert.match(String(body.token_id), API_TOKEN_ID_REGEX);
+		const parsed = parse(account_token_revoke_action_spec.input, body);
+		assert.ok(parsed.ok, `body must round-trip: ${JSON.stringify(parsed)}`);
 	});
 
 	test('satisfies a bare fixed-length hex pattern', () => {
