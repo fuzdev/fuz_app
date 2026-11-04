@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/BTZoVLbz.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CAODFmXb.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.Jb0g48Nk.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.DvUu3Qv6.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.69p5yPyN.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.C98iep4n.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BcwQFYZ2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/C3BYcZ2u.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/D9nnQ1-S.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/CTufak72.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.66uUQYSQ.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/QcvMMNge.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.Cro2vVKH.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BL7ZH9U-.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DhdQKFKC.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -78,8 +78,10 @@ route/RPC spec factories without running the TS server — need
 dependencies, none of which value-import <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->hono<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) lets them import it
 framework-free.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/server/app_server.ts"><!--[-1-->server/app_server.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Server assembly factory.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Consumers provide a pre-initialized <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/server/app_backend.ts#AppBackend"><!--[0--><!--[-1-->AppBackend<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> and options (session,
 origins, routes); <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->create_app_server()<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> handles middleware, bootstrap
-status, surface generation, and Hono app assembly.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/server/env.ts"><!--[-1-->server/env.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Base server environment schema and validation.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Provides <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/server/env.ts#BaseServerEnv"><!--[0--><!--[-1-->BaseServerEnv<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> — a shared Zod schema for common server env vars
-that apps can use directly or extend with app-specific fields.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Generic env loading lives in <!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/env/load.ts"><!--[0--><!--[-1-->env/load.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/server/fact_security_headers.ts"><!--[-1-->server/fact_security_headers.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->The untrusted-content hardening headers every served fact carries.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Fact bytes are served with a producer-supplied <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->content_type<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> emitted
+status, surface generation, and Hono app assembly.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/server/env.ts"><!--[-1-->server/env.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Base server environment schema and validation.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Provides <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/server/env.ts#BaseServerEnv"><!--[0--><!--[-1-->BaseServerEnv<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> — a shared <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->@fuzdev/fuz_schema<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> object schema for
+common server env vars that apps can use directly or extend with
+app-specific fields.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Generic env loading lives in <!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/env/load.ts"><!--[0--><!--[-1-->env/load.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->, and the value schemas
+(<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/env/env_schemas.ts#env_integer"><!--[0--><!--[-1-->env_integer<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->, <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/env/env_schemas.ts#EnvStringbool"><!--[0--><!--[-1-->EnvStringbool<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->) in <!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/env/env_schemas.ts"><!--[0--><!--[-1-->env/env_schemas.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/server/fact_security_headers.ts"><!--[-1-->server/fact_security_headers.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->The untrusted-content hardening headers every served fact carries.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Fact bytes are served with a producer-supplied <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->content_type<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> emitted
 verbatim, inline. To stop a fact stored as (or sniffable to) <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->text/html<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> from
 executing as stored XSS for any reader of a referencing cell, every fact
 response carries <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/server/fact_security_headers.ts#FACT_SECURITY_HEADERS"><!--[0--><!--[-1-->FACT_SECURITY_HEADERS<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->: <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->X-Content-Type-Options: nosniff<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> +
@@ -260,16 +262,16 @@ the same fixture corpus.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!---
 			
 			<script>
 				{
-					__sveltekit_6669hq = {
+					__sveltekit_1unqvuz = {
 						base: "",
-						version: "9010c603d16ba606e247d962bddf46f78d1dcab6"
+						version: "d3ecd9a44cab610d969e505a07f121663beace6d"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.CXlCZqzx.js").then(async (kit) => {
-						kit.init(__sveltekit_6669hq);
-						const app = await import("/_app/immutable/entry/app.Jb0g48Nk.js");
+						kit.init(__sveltekit_1unqvuz);
+						const app = await import("/_app/immutable/entry/app.69p5yPyN.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],
