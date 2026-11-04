@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/BTZoVLbz.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CAODFmXb.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.CDQBIJk7.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.CWQivmyN.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.BB5lYXod.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.C3FjPmeN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BcwQFYZ2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/C3BYcZ2u.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CE-egMPB.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/B3w_BlV7.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.DX8WC9so.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/nWmuUu-f.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.BBJq3KTq.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BL7ZH9U-.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DhdQKFKC.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -2287,9 +2287,11 @@ non-public call fails (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a cl
 some other way goes red rather than vacuous. The <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->success_fixtures<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> case
 also mutates — each fixture builds a row and the call revokes, deletes, or
 decides it — so it runs last on the describe's fixture, and each factory
-seeds its own rows.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/testing/schema_generators.ts"><!--[-1-->testing/schema_generators.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Schema-driven value generation helpers for testing.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Walks Zod schemas to generate valid values for route params, request bodies,
-and URL paths. Used by adversarial input, adversarial 404, and round-trip
-validation test suites.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/testing/schema_introspect.ts"><!--[-1-->testing/schema_introspect.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->PostgreSQL schema introspection — produces a normalized, JSON-serializable
+seeds its own rows.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/testing/schema_generators.ts"><!--[-1-->testing/schema_generators.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Schema-driven value generation helpers for testing.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Walks Zod and <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->@fuzdev/fuz_schema<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> schemas to generate valid values for
+route params, request bodies, and URL paths. Used by adversarial input,
+adversarial 404, and round-trip validation test suites. A schema of
+neither library throws, and so does an input no body can be generated
+for, rather than yielding no body.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/testing/schema_introspect.ts"><!--[-1-->testing/schema_introspect.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->PostgreSQL schema introspection — produces a normalized, JSON-serializable
 snapshot of a database's structure for cross-impl parity checks.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->The snapshot covers:<!--]--><!--]--><!----></p><!--]--><!--[9--><!--[-1--><ul><!--[--><!--[10--><li><!--[--><!--[2-->Tables with columns (data type, nullability, default, identity)<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->Indexes with canonical Postgres-rendered definitions<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->Constraints (CHECK, FOREIGN KEY, PRIMARY KEY, UNIQUE, EXCLUSION)<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->Sequences with data type — distinguishes <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->int4<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (SERIAL) from <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->int8<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->
 (BIGSERIAL)<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->Enum types (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->CREATE TYPE ... AS ENUM<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) with labels in declared order —
 so a label set / ordering drift (e.g. <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->cell_visibility<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) is a gated fact,
@@ -2439,16 +2441,16 @@ close-on-revoke).<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div
 			
 			<script>
 				{
-					__sveltekit_3ffgjn = {
+					__sveltekit_qvpgyb = {
 						base: "",
-						version: "1a9f6019e1036fca865c78055ec5e5046a0d4005"
+						version: "671450335f26137a466123fec0c28f72c0643a90"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.CXlCZqzx.js").then(async (kit) => {
-						kit.init(__sveltekit_3ffgjn);
-						const app = await import("/_app/immutable/entry/app.CDQBIJk7.js");
+						kit.init(__sveltekit_qvpgyb);
+						const app = await import("/_app/immutable/entry/app.BB5lYXod.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],
