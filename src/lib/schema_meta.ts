@@ -4,15 +4,36 @@
  * Cross-cutting metadata shape used by auth and action input schemas,
  * surface generation, and test helpers. The env schemas are
  * `@fuzdev/fuz_schema` and carry the same keys in its `meta`
- * (`sensitivity.ts`, `find_schema_sensitivity`).
+ * (`sensitivity.ts`, `find_schema_sensitivity`); this module adds
+ * `invalid_reason` to fuz_schema's `SchemaMeta`, so the declared refusal
+ * reason of an action input reads the same whichever library its schema is.
  *
  * @module
  */
 
 import type { z } from 'zod';
+import { is_schema, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
+import {
+	get_schema_entries,
+	get_schema_meta,
+	unwrap_schema
+} from '@fuzdev/fuz_schema/introspect.ts';
 
 import type { Sensitivity } from './sensitivity.ts';
 import { zod_get_schema_layers, zod_unwrap_to_object } from './zod.ts';
+import { issue_is_on_input, type AnyIssue, type ValidationSchema } from './schema_issues.ts';
+
+declare module '@fuzdev/fuz_schema/meta.ts' {
+	interface SchemaMeta {
+		/**
+		 * The `error.data.reason` an action input refuses this field with, as
+		 * `SchemaFieldMeta.invalid_reason` declares it on a Zod field. Read
+		 * through the field's layers (`get_schema_meta`), the outermost
+		 * declaration winning.
+		 */
+		invalid_reason?: string;
+	}
+}
 
 /** Zod `.meta()` shape for fuz_app schema metadata conventions. */
 export interface SchemaFieldMeta {
@@ -207,18 +228,20 @@ export const schema_has_sensitive_field = (schema: z.ZodType): boolean =>
  * key) ends the walk, so a fault inside a declared field still resolves to
  * that field's reason. An empty path — a whole-input fault such as an
  * unrecognized key on the input object — resolves to none, as does a schema
- * that is not an object.
+ * that is not an object. A `@fuzdev/fuz_schema` schema is walked through its
+ * entries (`get_schema_entries`) and reads the reason with `get_schema_meta`.
  *
- * @param input_schema - an action's input schema
- * @param path - the failing issue's path (`ZodError.issues[0].path`)
+ * @param input_schema - an action's input schema, Zod or fuz_schema
+ * @param path - the failing issue's path
  * @returns the declared reason, or `undefined`
  */
 export const resolve_invalid_reason = (
-	input_schema: z.ZodType,
+	input_schema: ValidationSchema,
 	path: ReadonlyArray<PropertyKey>
 ): string | undefined => {
+	if (is_schema(input_schema)) return resolve_schema_invalid_reason(input_schema, path);
 	let reason: string | undefined;
-	let schema = input_schema;
+	let schema = input_schema as z.ZodType;
 	for (const segment of path) {
 		if (typeof segment !== 'string') break;
 		const shape = zod_unwrap_to_object(schema)?.shape;
@@ -230,23 +253,63 @@ export const resolve_invalid_reason = (
 	return reason;
 };
 
+// the fuz_schema walk of `resolve_invalid_reason`
+const resolve_schema_invalid_reason = (
+	input_schema: AnySchema,
+	path: ReadonlyArray<PropertyKey>
+): string | undefined => {
+	let reason: string | undefined;
+	let schema = input_schema;
+	for (const segment of path) {
+		if (typeof segment !== 'string') break;
+		const entries = get_schema_entries(schema);
+		if (!entries || !Object.hasOwn(entries, segment)) break;
+		const field = entries[segment]!;
+		reason = get_schema_meta(field, 'invalid_reason') ?? reason;
+		schema = field;
+	}
+	return reason;
+};
+
 /**
  * The `error.data.reason` a failed input parse answers: the declared reason
  * of the first issue's field (`resolve_invalid_reason`), or none when any
- * issue sits on the input itself. Such an issue is an unknown key on the
- * input object (or a non-object input), which the Rust twin refuses before
- * reading any field, so a stale client sending an extra key gets the same
- * answer from both spines whatever else its body gets wrong.
+ * issue sits on the input itself (`issue_is_on_input`). Such an issue is an
+ * unknown key on the input object (or a non-object input), which the Rust
+ * twin refuses before reading any field, so a stale client sending an extra
+ * key gets the same answer from both spines whatever else its body gets
+ * wrong.
  *
- * @param input_schema - an action's input schema
- * @param issues - the failed parse's issues, in Zod's order
+ * A `@fuzdev/fuz_schema` parse reports at most a hundred issues, so faults on
+ * the fields can crowd an unknown key out of them. For a strict `object`
+ * input, `input` is checked for a key the schema doesn't name, as the Rust
+ * twin checks it, whatever the issues hold. A Zod parse reports every issue
+ * and `input` is not read.
+ *
+ * @param input_schema - an action's input schema, Zod or fuz_schema
+ * @param issues - the failed parse's issues, in the library's order
+ * @param input - the value that was parsed
  * @returns the declared reason, or `undefined`
  */
 export const resolve_issues_invalid_reason = (
-	input_schema: z.ZodType,
-	issues: ReadonlyArray<z.core.$ZodIssue>
+	input_schema: ValidationSchema,
+	issues: ReadonlyArray<AnyIssue>,
+	input: unknown
 ): string | undefined => {
 	const first = issues[0];
-	if (!first || issues.some((issue) => issue.path.length === 0)) return undefined;
+	if (!first || issues.some(issue_is_on_input)) return undefined;
+	if (is_schema(input_schema) && has_unknown_root_key(input_schema, input)) return undefined;
 	return resolve_invalid_reason(input_schema, first.path);
+};
+
+// whether `input` has a key the strict `object` at the root of `schema` doesn't
+// name, read as that object's own check reads it (`for in`, then `Object.hasOwn`)
+const has_unknown_root_key = (schema: AnySchema, input: unknown): boolean => {
+	const root = unwrap_schema(schema);
+	if (root.kind !== 'object') return false;
+	if (typeof input !== 'object' || input === null || Array.isArray(input)) return false;
+	for (const key in input) {
+		if (!Object.hasOwn(root.def, key)) return true;
+	}
+	return false;
 };

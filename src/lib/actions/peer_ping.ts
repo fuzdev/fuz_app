@@ -194,21 +194,21 @@ export const peer_ping_handler = async (
 
 	// the reply is remote-authored — a newer client may add fields
 	const parsed = safe_parse_dropping_unknown_keys(PingResponse, outcome.value);
-	if (!parsed.success) {
+	if (!parsed.ok) {
 		throw new ThrownJsonrpcError(
 			JSONRPC_ERROR_CODES.validation_error,
 			'peer/ping reply failed validation',
 			{ reason: REASON_PEER_PING_INVALID_REPLY }
 		);
 	}
-	if (parsed.data.nonce !== nonce) {
+	if (parsed.value.nonce !== nonce) {
 		throw new ThrownJsonrpcError(
 			JSONRPC_ERROR_CODES.validation_error,
 			'peer/ping reply nonce mismatch',
 			{ reason: REASON_PEER_PING_NONCE_MISMATCH }
 		);
 	}
-	return parsed.data;
+	return parsed.value;
 };
 
 /**

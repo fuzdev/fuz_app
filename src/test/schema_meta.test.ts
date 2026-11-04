@@ -9,6 +9,19 @@
 
 import { describe, assert, test } from 'vitest';
 import { z } from 'zod';
+import {
+	array,
+	integer,
+	min_value,
+	nullable,
+	number,
+	object,
+	optional,
+	parse,
+	pipe,
+	string
+} from '@fuzdev/fuz_schema/schema.ts';
+import { meta } from '@fuzdev/fuz_schema/meta.ts';
 
 import {
 	resolve_invalid_reason,
@@ -315,7 +328,7 @@ describe('resolve_issues_invalid_reason', () => {
 
 	test("a single fault answers its field's reason", () => {
 		assert.strictEqual(
-			resolve_issues_invalid_reason(Input, issues_of({ ...VALID, limit: 0 })),
+			resolve_issues_invalid_reason(Input, issues_of({ ...VALID, limit: 0 }), undefined),
 			'limit_bad'
 		);
 	});
@@ -324,7 +337,7 @@ describe('resolve_issues_invalid_reason', () => {
 		const issues = issues_of({ ...VALID, limit: 0, offset: -1 });
 		assert.ok(issues.length > 1);
 		assert.strictEqual(
-			resolve_issues_invalid_reason(Input, issues),
+			resolve_issues_invalid_reason(Input, issues, undefined),
 			resolve_invalid_reason(Input, issues[0]!.path)
 		);
 	});
@@ -341,7 +354,7 @@ describe('resolve_issues_invalid_reason', () => {
 				JSON.stringify(params)
 			);
 			assert.strictEqual(
-				resolve_issues_invalid_reason(Input, issues),
+				resolve_issues_invalid_reason(Input, issues, params),
 				undefined,
 				JSON.stringify(params)
 			);
@@ -352,13 +365,99 @@ describe('resolve_issues_invalid_reason', () => {
 		assert.strictEqual(
 			resolve_issues_invalid_reason(
 				Input,
-				issues_of({ ...VALID, lifetime: { days: 1, note: '', extra: 1 } })
+				issues_of({ ...VALID, lifetime: { days: 1, note: '', extra: 1 } }),
+				undefined
 			),
 			'lifetime_bad'
 		);
 	});
 
 	test('no issues answer none', () => {
-		assert.strictEqual(resolve_issues_invalid_reason(Input, []), undefined);
+		assert.strictEqual(resolve_issues_invalid_reason(Input, [], {}), undefined);
+	});
+});
+
+describe('resolve_issues_invalid_reason over fuz_schema issues', () => {
+	const FuzInner = object({
+		days: meta(pipe(number, integer, min_value(1)), { invalid_reason: 'days_invalid' }),
+		note: string
+	});
+	const FuzInput = object({
+		limit: meta(optional(nullable(pipe(number, integer, min_value(1)))), {
+			invalid_reason: 'limit_bad'
+		}),
+		// the declaration on an inner layer, wrapped after
+		offset: optional(meta(pipe(number, integer, min_value(0)), { invalid_reason: 'offset_bad' })),
+		lifetime: meta(FuzInner, { invalid_reason: 'lifetime_bad' }),
+		ids: optional(meta(array(number), { invalid_reason: 'ids_bad' })),
+		name: optional(string)
+	});
+	const FUZ_VALID = { lifetime: { days: 1, note: '' } };
+
+	const reason_of = (params: unknown): string | undefined => {
+		const result = parse(FuzInput, params);
+		assert.ok(!result.ok, `the params must be refused: ${JSON.stringify(params)}`);
+		return resolve_issues_invalid_reason(FuzInput, result.issues, params);
+	};
+
+	test("a field fault answers its field's reason, through its wrappers", () => {
+		for (const limit of ['x', 1.5, 0, true]) {
+			assert.strictEqual(reason_of({ ...FUZ_VALID, limit }), 'limit_bad', String(limit));
+		}
+		assert.strictEqual(reason_of({ ...FUZ_VALID, offset: -1 }), 'offset_bad');
+		// a missing required field is its own `missing_key` issue, or a refusal of `undefined`
+		assert.strictEqual(reason_of({}), 'lifetime_bad');
+		assert.strictEqual(reason_of({ ...FUZ_VALID, name: 4 }), undefined);
+	});
+
+	test('a fault inside a declared field takes the deepest declaration', () => {
+		assert.strictEqual(reason_of({ lifetime: { days: 0, note: '' } }), 'days_invalid');
+		assert.strictEqual(reason_of({ lifetime: { days: 1, note: 4 } }), 'lifetime_bad');
+	});
+
+	test('an unknown key on the input answers none, whatever else is wrong', () => {
+		for (const params of [
+			{ ...FUZ_VALID, extra: 1 },
+			{ ...FUZ_VALID, limit: 0, extra: 1 },
+			{ extra: 1, ...FUZ_VALID, offset: 'x' }
+		]) {
+			assert.strictEqual(reason_of(params), undefined, JSON.stringify(params));
+		}
+	});
+
+	test("an unknown key inside a declared field answers that field's reason", () => {
+		const result = parse(FuzInput, { lifetime: { days: 1, note: '', extra: 1 } });
+		assert.ok(!result.ok);
+		assert.deepStrictEqual(
+			result.issues.map((issue) => [issue.kind, issue.path]),
+			[['unknown_key', ['lifetime', 'extra']]]
+		);
+		assert.strictEqual(
+			resolve_issues_invalid_reason(FuzInput, result.issues, { lifetime: {} }),
+			'lifetime_bad'
+		);
+	});
+
+	test('a non-object input answers none', () => {
+		for (const params of [[1, 2], 'x', null, 4]) {
+			assert.strictEqual(reason_of(params), undefined, JSON.stringify(params));
+		}
+	});
+
+	test('an unknown key the issue cap crowds out still answers none', () => {
+		// more failing items than a parse reports issues, then an unknown key
+		const params = { ...FUZ_VALID, ids: Array.from({ length: 101 }, () => 'x'), extra: 1 };
+		const result = parse(FuzInput, params);
+		assert.ok(!result.ok);
+		assert.strictEqual(result.issues.length, 100);
+		assert.ok(result.issues.every((issue) => issue.kind !== 'unknown_key'));
+		assert.strictEqual(resolve_issues_invalid_reason(FuzInput, result.issues, params), undefined);
+		// without the extra key, the crowded field answers its own reason
+		const { extra: _, ...without } = params;
+		assert.strictEqual(reason_of(without), 'ids_bad');
+	});
+
+	test('no issues answer none', () => {
+		assert.strictEqual(resolve_issues_invalid_reason(FuzInput, [], {}), undefined);
 	});
 });

@@ -474,19 +474,23 @@ HTTP status.
 
 **Declared input reasons.** An RPC input validation failure answers the
 generic `invalid params` (-32602) with no reason, unless the field the first
-Zod issue lands on declares one: `invalid_reason` in its `.meta()`
-(`SchemaFieldMeta`, `schema_meta.ts`), read through the field's wrappers, the
+issue lands on declares one: `invalid_reason` in its `.meta()`
+(`SchemaFieldMeta`, `schema_meta.ts`), or in fuz_schema's `meta` for a
+`@fuzdev/fuz_schema` input, read through the field's wrappers, the
 deepest declaring field along the issue's path winning. Then every refusal of
 that field — missing, wrong type, `null`, out of range, malformed, or a fault
 inside it — carries the reason, on every transport (`perform_action`'s
-`to_invalid_params_error`); the Zod issues stay DEV-only beside it. The
+`to_invalid_params_error`); the library's issues stay DEV-only beside it. The
 declaration is the one source: the adversarial suites expect it per generated
 case (`expected_invalid_reason`), and the Rust twin owes the same reason on
 every refusal of the field. A body with faults on several fields answers the
-first issue's reason in Zod's order, which a twin checking in another order
-need not match, so the reason is defined for a single-fault body only; an
-unknown key on the input itself answers no reason whatever else is wrong, as
-the Rust twin refuses unknown keys first. Every declared reason is named
+first issue's reason in the library's order (Zod and fuz_schema both report
+fields, then unknown keys), which a twin checking in another order need not
+match, so the reason is defined for a single-fault body only; an unknown key
+on the input itself answers no reason whatever else is wrong, as the Rust
+twin refuses unknown keys first — for a fuz_schema strict `object` input
+checked against the input directly, since its hundred-issue cap can crowd
+the unknown key out of the issues. Every declared reason is named
 `<field>_invalid`. The paged reads declare `ERROR_LIMIT_INVALID` /
 `ERROR_OFFSET_INVALID` (and `audit_log_list` `ERROR_SINCE_SEQ_INVALID` /
 `ERROR_OUTCOME_INVALID`); `account_token_create` declares

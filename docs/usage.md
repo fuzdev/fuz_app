@@ -1584,8 +1584,8 @@ string. Content stays duck-typed in `data`.
   incoming `data` payload with the cell's `kind` — the input's on create, the
   existing cell's on update (`kind` is write-once), the source's on each cloned
   row (on the merged data). It accepts or throws, never rewrites: the handler
-  stores the caller's `data` as sent. A thrown `ZodError` surfaces as
-  `invalid_params` (`-32602`). Omit to pass payloads through unchecked.
+  stores the caller's `data` as sent. A thrown `ZodError` or fuz_schema
+  `SchemaError` surfaces as `invalid_params` (`-32602`). Omit to pass payloads through unchecked.
 - `authorize_create` — a **parent-aware capability gate** (`CellCreateAuthorize`),
   an object of two members. `authorize(auth, {kind, data, parent_id, parent_kind,
 root_id, root_policy}, ctx) => CellCreateVerdict | Promise<CellCreateVerdict>`,

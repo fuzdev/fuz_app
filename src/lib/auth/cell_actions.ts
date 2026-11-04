@@ -52,8 +52,6 @@
  * @module
  */
 
-import { z } from 'zod';
-
 import {
 	rpc_action,
 	type ActionActorContext,
@@ -61,6 +59,7 @@ import {
 	type RpcAction
 } from '../actions/action_types.ts';
 import { jsonrpc_errors, dev_only } from '../http/jsonrpc_errors.ts';
+import { is_schema_validation_error } from '../schema_issues.ts';
 import { is_pg_unique_violation } from '../db/pg_error.ts';
 import {
 	has_scoped_role,
@@ -226,7 +225,8 @@ export type CellCreateVerdict = { allow: false } | { allow: true; moderation_req
  *   It runs after the manage and root-only gates, so it decides validity, never
  *   authority: throw `jsonrpc_errors.invalid_params` with
  *   `ERROR_CELL_POLICY_INVALID` (or a reason of the consumer's), or a
- *   `ZodError`, which the handler turns into `invalid_params`. **Omitted
+ *   `ZodError` or fuz_schema `SchemaError`, which the handler turns into
+ *   `invalid_params`. **Omitted
  *   refuses every policy** (`ERROR_CELL_POLICY_UNSUPPORTED`, the Rust trait's
  *   default): an authorizer that reads no policy stores none.
  */
@@ -249,9 +249,10 @@ export interface CellCreateAuthorize {
  * existing cell's on an update carrying `data` (`kind` is write-once), the
  * source's for every row a clone writes (on the merged data). It accepts or
  * throws, never rewrites: the handler stores the caller's `data` as sent, and
- * it must not mutate it. A thrown `ZodError` becomes the standard
- * `invalid_params` JSON-RPC error so per-kind validation failures surface to
- * clients with code -32602 (not -32603 / internal); throw a `JsonrpcError`
+ * it must not mutate it. A thrown `ZodError` or fuz_schema `SchemaError`
+ * (`parse_or_throw`) becomes the standard `invalid_params` JSON-RPC error so
+ * per-kind validation failures surface to clients with code -32602 (not
+ * -32603 / internal); throw a `JsonrpcError`
  * (`jsonrpc_errors.invalid_params` with a reason) to choose the reason. When
  * omitted, payloads pass through as-is.
  *
@@ -386,17 +387,18 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 
 	/**
 	 * Run the optional `validate_data` deps callback and convert any thrown
-	 * `ZodError` into the standard `invalid_params` JSON-RPC error so per-
-	 * kind validation failures surface to clients with code -32602 (not
-	 * -32603 / internal). The dispatcher only auto-converts ZodError for
-	 * wire-level input schemas; sub-API validation runs inside the handler.
+	 * `ZodError` or `SchemaError` (`is_schema_validation_error`) into the
+	 * standard `invalid_params` JSON-RPC error so per-kind validation
+	 * failures surface to clients with code -32602 (not -32603 / internal).
+	 * The dispatcher only converts validation failures of wire-level input
+	 * schemas; sub-API validation runs inside the handler.
 	 */
 	const validate_data_or_throw = (kind: string | null, data: CellData): void => {
 		if (validate_data === undefined) return;
 		try {
 			validate_data(kind, data);
 		} catch (err) {
-			if (err instanceof z.ZodError) {
+			if (is_schema_validation_error(err)) {
 				throw jsonrpc_errors.invalid_params(
 					'cell.data shape validation failed',
 					dev_only({ issues: err.issues })
@@ -409,15 +411,15 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 	/**
 	 * Validate a non-null policy write through the mounted authorizer's
 	 * `validate_policy` — `ERROR_CELL_POLICY_UNSUPPORTED` when there is none
-	 * (no authorizer, or one without the member). A thrown `ZodError` becomes
-	 * `invalid_params`, as `validate_data_or_throw` does.
+	 * (no authorizer, or one without the member). A thrown `ZodError` or
+	 * `SchemaError` becomes `invalid_params`, as `validate_data_or_throw` does.
 	 */
 	const validate_policy_write = (policy: CellPolicy): void => {
 		if (authorize_create?.validate_policy === undefined) throw cell_policy_unsupported_error();
 		try {
 			authorize_create.validate_policy(policy);
 		} catch (err) {
-			if (err instanceof z.ZodError) {
+			if (is_schema_validation_error(err)) {
 				throw jsonrpc_errors.invalid_params(
 					'cell.policy validation failed',
 					dev_only({ issues: err.issues })

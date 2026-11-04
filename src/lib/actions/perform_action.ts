@@ -31,11 +31,11 @@
  *    `__proto__` key at any depth (`json_has_own_proto_key`) are refused
  *    with `data.reason` `params_proto_key` (`ERROR_PARAMS_PROTO_KEY`), on
  *    every input schema, before it runs; then
- *    `spec.input.safeParse(raw_params)` with
+ *    `spec.input` parses the params (`parse_any`, Zod or fuz_schema) with
  *    `z.void()` / `?? {}` rules (`to_input_params`). A refusal is the generic
  *    `invalid params`, with `data.reason` when the first issue's field
- *    declares an `invalid_reason` (`to_invalid_params_error`) and the Zod
- *    issues under DEV only. Runs **after** the authority gates: a
+ *    declares an `invalid_reason` (`to_invalid_params_error`) and the
+ *    library's issues under DEV only. Runs **after** the authority gates: a
  *    400 describing the action's input shape to a caller those gates
  *    refuse would confirm the method exists and describe how to call it,
  *    to a channel that should have learned nothing. Coarse authority
@@ -63,7 +63,6 @@
 
 import { DEV } from 'esm-env';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
-import type { z } from 'zod';
 import type { Uuid } from '../primitive_schemas.ts';
 
 import {
@@ -79,6 +78,7 @@ import {
 import type { Db } from '../db/db.ts';
 import { is_db_checkout_error } from '../db/db_checkout_error.ts';
 import { resolve_issues_invalid_reason } from '../schema_meta.ts';
+import { parse_any, type AnyIssue, type ValidationSchema } from '../schema_issues.ts';
 import { json_has_own_proto_key, to_input_params } from '../http/schema_helpers.ts';
 import { rate_limit_ip_key } from '../http/ip_canonical.ts';
 import { dispatch_with_post_commit_rollback } from '../http/pending_effects.ts';
@@ -117,7 +117,7 @@ import { token_scope_admits_method, token_scope_method_capability } from '../aut
 export interface PerformActionInput {
 	/** The resolved spec + handler (transport does method lookup). */
 	action: RpcAction;
-	/** Raw params from the wire envelope (post-`JsonrpcRequest.parse`, pre-`spec.input.safeParse`). */
+	/** Raw params from the wire envelope (post-`JsonrpcRequest.parse`, pre-`parse_any(spec.input, …)`). */
 	raw_params: unknown;
 	/** JSON-RPC request id — echoed onto the response. */
 	request_id: JsonrpcRequestId;
@@ -334,11 +334,11 @@ export const perform_action = async (
 		);
 	}
 	const params = to_input_params(spec.input, raw_params);
-	const parse_result = spec.input.safeParse(params);
-	if (!parse_result.success) {
-		return error_result(to_invalid_params_error(spec.input, parse_result.error.issues));
+	const parse_result = parse_any(spec.input, params);
+	if (!parse_result.ok) {
+		return error_result(to_invalid_params_error(spec.input, parse_result.issues, params));
 	}
-	const validated_input = parse_result.data;
+	const validated_input = parse_result.value;
 
 	// step 6: dispatch — transaction for mutations, pool for reads.
 	const use_transaction = spec.side_effects;
@@ -364,9 +364,9 @@ export const perform_action = async (
 
 		// DEV-only output validation — logs on mismatch, never throws.
 		if (DEV) {
-			const output_result = spec.output.safeParse(output);
-			if (!output_result.success) {
-				log.error(`action output schema mismatch: ${spec.method}`, output_result.error.issues);
+			const output_result = parse_any(spec.output, output);
+			if (!output_result.ok) {
+				log.error(`action output schema mismatch: ${spec.method}`, output_result.issues);
 			}
 		}
 
@@ -418,18 +418,21 @@ const thrown_error_result = (err: unknown, context: string, log: Logger): Perfor
  * The `invalid_params` error an input validation failure answers: the generic
  * `invalid params` message, `data.reason` when the field the first issue lands
  * on declares an `invalid_reason` and no issue sits on the input itself
- * (`resolve_issues_invalid_reason`), and the Zod issues under DEV only
- * (`dev_only`). With no declared reason, production sends no `data` at all.
+ * (`resolve_issues_invalid_reason`), and the library's issues under DEV
+ * only (`dev_only`). With no declared reason, production sends no `data` at
+ * all.
  *
- * @param input - the action's input schema
- * @param issues - the failed parse's issues, in Zod's order
+ * @param input - the action's input schema, Zod or fuz_schema
+ * @param issues - the failed parse's issues, in the library's order
+ * @param params - the value that was parsed
  * @returns the JSON-RPC error object
  */
 export const to_invalid_params_error = (
-	input: z.ZodType,
-	issues: ReadonlyArray<z.core.$ZodIssue>
+	input: ValidationSchema,
+	issues: ReadonlyArray<AnyIssue>,
+	params: unknown
 ): JsonrpcErrorObject => {
-	const reason = resolve_issues_invalid_reason(input, issues);
+	const reason = resolve_issues_invalid_reason(input, issues, params);
 	const issues_data = dev_only({ issues });
 	return jsonrpc_error_messages.invalid_params(
 		'invalid params',

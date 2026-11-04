@@ -14,17 +14,19 @@
 import type { KnownDivergence } from '#lib/testing/cross_backend/differential.ts';
 
 /**
- * The TS spine's DEV-only Zod `issues` on `invalid_params`: the binary runs
- * under `DEV`, where `dev_only` keeps them on `error.data`; in production TS
- * omits them, and Rust omits them always.
+ * The TS spine's DEV-only `issues` on `invalid_params`, in the input schema's
+ * library's own shape (Zod's or fuz_schema's): the binary runs under `DEV`,
+ * where `dev_only` keeps them on `error.data`; in production TS omits them,
+ * and Rust omits them always.
  *
  * Matched by method rather than case: the rule is the dispatcher's, the same
  * on every schema refusal, and Rust is held to sending none (`b: undefined`).
  */
-const ts_dev_zod_issues = (method: ReadonlyArray<string>): KnownDivergence => ({
+const ts_dev_issues = (method: ReadonlyArray<string>): KnownDivergence => ({
 	method,
 	tracking_id: 'ts-dev-zod-issues',
-	reason: 'TS keeps Zod issues on invalid_params in DEV only; Rust never sends them',
+	reason:
+		"TS keeps the schema library's issues on invalid_params in DEV only; Rust never sends them",
 	what_differs: [{ path: 'body.error.data.issues', b: undefined }]
 });
 
@@ -53,7 +55,7 @@ const PAGED_LIST_METHODS = [
 
 /** Divergences the main conformance arrays show. */
 export const differential_known_divergences: ReadonlyArray<KnownDivergence> = [
-	ts_dev_zod_issues([
+	ts_dev_issues([
 		...PAGED_LIST_METHODS,
 		'account_token_create',
 		'account_verify',
@@ -75,5 +77,5 @@ export const differential_ws_known_divergences: ReadonlyArray<KnownDivergence> =
 
 /** Divergences the participation cases show. */
 export const differential_participation_known_divergences: ReadonlyArray<KnownDivergence> = [
-	ts_dev_zod_issues(['role_grant_assign', 'role_grant_offer_create'])
+	ts_dev_issues(['role_grant_assign', 'role_grant_offer_create'])
 ];

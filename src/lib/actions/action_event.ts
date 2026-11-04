@@ -7,7 +7,6 @@
  * @module
  */
 
-import { z } from 'zod';
 import { create_uuid } from '../primitive_schemas.ts';
 import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 
@@ -28,6 +27,12 @@ import {
 } from '../http/jsonrpc_errors.ts';
 import { safe_parse_dropping_unknown_keys } from '../http/schema_helpers.ts';
 import { resolve_issues_invalid_reason } from '../schema_meta.ts';
+import {
+	format_issues,
+	parse_any,
+	type AnyIssue,
+	type ValidationSchema
+} from '../schema_issues.ts';
 import type {
 	JsonrpcRequest,
 	JsonrpcResponseOrError,
@@ -63,10 +68,11 @@ export const ERROR_RESPONSE_OUTPUT_INVALID = 'response_output_invalid' as const;
  * value whichever side refused.
  */
 const to_local_invalid_params_data = (
-	input: z.ZodType,
-	issues: Array<z.core.$ZodIssue>
-): { validation_errors: Array<z.core.$ZodIssue>; reason?: string } => {
-	const reason = resolve_issues_invalid_reason(input, issues);
+	input: ValidationSchema,
+	issues: Array<AnyIssue>,
+	value: unknown
+): { validation_errors: Array<AnyIssue>; reason?: string } => {
+	const reason = resolve_issues_invalid_reason(input, issues, value);
 	return reason === undefined
 		? { validation_errors: issues }
 		: { validation_errors: issues, reason };
@@ -188,16 +194,16 @@ export class ActionEvent<
 			// Input was already validated in the predecessor phase.
 			if (this.#data.phase === 'receive_response') {
 				const parsed = safe_parse_dropping_unknown_keys(this.spec.output, this.#data.output);
-				if (parsed.success) {
-					this.#transition_step('parsed', { output: parsed.data });
+				if (parsed.ok) {
+					this.#transition_step('parsed', { output: parsed.value });
 				} else {
 					this.#transition_to_error_phase(
 						'receive_error',
 						jsonrpc_error_messages.internal_error(
-							`response failed output validation for ${this.spec.method}: ${z.prettifyError(
-								parsed.error
+							`response failed output validation for ${this.spec.method}: ${format_issues(
+								parsed.issues
 							)}`,
-							{ reason: ERROR_RESPONSE_OUTPUT_INVALID, validation_errors: parsed.error.issues }
+							{ reason: ERROR_RESPONSE_OUTPUT_INVALID, validation_errors: parsed.issues }
 						)
 					);
 				}
@@ -210,9 +216,9 @@ export class ActionEvent<
 			}
 		}
 
-		const parsed = this.spec.input.safeParse(this.#data.input);
-		if (parsed.success) {
-			this.#transition_step('parsed', { input: parsed.data });
+		const parsed = parse_any(this.spec.input, this.#data.input);
+		if (parsed.ok) {
+			this.#transition_step('parsed', { input: parsed.value });
 		} else {
 			// Input validation errors fail immediately without transitioning to error phases.
 			// Design decision: Input validation failures are client-side programming errors
@@ -221,8 +227,8 @@ export class ActionEvent<
 			this.#fail(
 				// no need to protect this info
 				jsonrpc_error_messages.invalid_params(
-					`failed to parse input: ${z.prettifyError(parsed.error)}`,
-					to_local_invalid_params_data(this.spec.input, parsed.error.issues)
+					`failed to parse input: ${format_issues(parsed.issues)}`,
+					to_local_invalid_params_data(this.spec.input, parsed.issues, this.#data.input)
 				)
 			);
 		}
@@ -487,14 +493,14 @@ export class ActionEvent<
 
 	#complete_handling(output: unknown): void {
 		if (output !== undefined && should_validate_output(this.spec.kind, this.#data.phase)) {
-			const parsed = this.spec.output.safeParse(output);
-			if (parsed.success) {
-				this.#transition_step('handled', { output: parsed.data });
+			const parsed = parse_any(this.spec.output, output);
+			if (parsed.ok) {
+				this.#transition_step('handled', { output: parsed.value });
 			} else {
 				this.#fail(
 					jsonrpc_error_messages.validation_error(
-						`failed to parse output: ${z.prettifyError(parsed.error)}`,
-						{ output, validation_errors: parsed.error.issues }
+						`failed to parse output: ${format_issues(parsed.issues)}`,
+						{ output, validation_errors: parsed.issues }
 					)
 				);
 			}

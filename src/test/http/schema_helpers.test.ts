@@ -6,6 +6,23 @@
 
 import { describe, assert, test } from 'vitest';
 import { z } from 'zod';
+import {
+	array,
+	boolean,
+	check,
+	lazy,
+	literal,
+	number,
+	object,
+	object_with_rest,
+	optional,
+	pipe,
+	record,
+	string,
+	union,
+	variant,
+	type AnySchema
+} from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	is_null_schema,
@@ -15,6 +32,7 @@ import {
 	to_input_params,
 	json_has_own_proto_key,
 	safe_parse_dropping_unknown_keys,
+	UNKNOWN_KEY_PASSES_MAX,
 	schema_to_surface,
 	middleware_applies,
 	merge_error_schemas
@@ -148,24 +166,354 @@ describe('safe_parse_dropping_unknown_keys', () => {
 
 	test('passes a matching value through', () => {
 		const result = safe_parse_dropping_unknown_keys(schema, { a: 1 });
-		assert.ok(result.success);
-		assert.deepStrictEqual(result.data, { a: 1 });
+		assert.ok(result.ok);
+		assert.deepStrictEqual(result.value, { a: 1 });
 	});
 
 	test('drops undeclared keys at every depth without mutating the input', () => {
 		const value = { a: 1, x: 0, nested: { b: 'b', y: 0 }, list: [{ c: true, z: 0 }] };
 		const snapshot = structuredClone(value);
 		const result = safe_parse_dropping_unknown_keys(schema, value);
-		assert.ok(result.success);
-		assert.deepStrictEqual(result.data, { a: 1, nested: { b: 'b' }, list: [{ c: true }] });
+		assert.ok(result.ok);
+		assert.deepStrictEqual(result.value, { a: 1, nested: { b: 'b' }, list: [{ c: true }] });
 		assert.deepStrictEqual(value, snapshot);
 	});
 
 	test('still fails on any other issue, with the original issues', () => {
 		const result = safe_parse_dropping_unknown_keys(schema, { a: 'nope', x: 0 });
-		assert.ok(!result.success);
-		const codes = result.error.issues.map((issue) => issue.code).sort();
+		assert.ok(!result.ok);
+		const codes = result.issues.map((issue) => ('code' in issue ? issue.code : issue.kind)).sort();
 		assert.deepStrictEqual(codes, ['invalid_type', 'unrecognized_keys']);
+	});
+
+	test('drops an unknown key a Zod union of strict objects reports', () => {
+		const either = z.union([z.strictObject({ a: z.number() }), z.strictObject({ b: z.number() })]);
+		const result = safe_parse_dropping_unknown_keys(either, { a: 1, x: 1 });
+		assert.ok(result.ok);
+		assert.deepStrictEqual(result.value, { a: 1 });
+	});
+
+	test('drops the keys either stage of a pipe refuses', () => {
+		const piped = z
+			.strictObject({ a: z.number(), b: z.number().optional() })
+			.pipe(z.strictObject({ a: z.number() }));
+		const result = safe_parse_dropping_unknown_keys(piped, { a: 1, b: 2, c: 3 });
+		assert.ok(result.ok);
+		assert.deepStrictEqual(result.value, { a: 1 });
+	});
+});
+
+describe('safe_parse_dropping_unknown_keys with fuz_schema', () => {
+	const schema = object({
+		a: number,
+		nested: optional(object({ b: string })),
+		list: optional(array(object({ c: boolean })))
+	});
+
+	test('passes a matching value through', () => {
+		const result = safe_parse_dropping_unknown_keys(schema, { a: 1 });
+		assert.ok(result.ok);
+		assert.deepStrictEqual(result.value, { a: 1 });
+	});
+
+	test('drops undeclared keys at every depth without mutating the input', () => {
+		const value = { a: 1, x: 0, nested: { b: 'b', y: 0 }, list: [{ c: true, z: 0 }] };
+		const snapshot = structuredClone(value);
+		const result = safe_parse_dropping_unknown_keys(schema, value);
+		assert.ok(result.ok);
+		assert.deepStrictEqual(result.value, { a: 1, nested: { b: 'b' }, list: [{ c: true }] });
+		assert.deepStrictEqual(value, snapshot);
+	});
+
+	test('drops more unknown keys than one parse reports', () => {
+		const value: Record<string, unknown> = { a: 1 };
+		for (let i = 0; i < 250; i++) value[`k${i}`] = i;
+		const result = safe_parse_dropping_unknown_keys(schema, value);
+		assert.ok(result.ok);
+		assert.deepStrictEqual(result.value, { a: 1 });
+	});
+
+	// counts parses: `a` is checked once per parse
+	const create_counted = () => {
+		const counter = { parses: 0 };
+		const counted = object({
+			a: pipe(
+				number,
+				check(() => ++counter.parses > 0)
+			),
+			nested: optional(object({ b: string })),
+			list: optional(array(object({ c: boolean })))
+		});
+		return { counter, counted };
+	};
+
+	test('strips every unknown key of a strict object in one pass', () => {
+		const { counter, counted } = create_counted();
+		const value: Record<string, unknown> = { a: 1, nested: { b: 'b' } };
+		const nested = value.nested as Record<string, unknown>;
+		for (let i = 0; i < 2000; i++) {
+			value[`k${i}`] = i;
+			nested[`n${i}`] = i;
+		}
+		const result = safe_parse_dropping_unknown_keys(counted, value);
+		assert.ok(result.ok);
+		assert.deepStrictEqual(result.value, { a: 1, nested: { b: 'b' } });
+		// the first parse reports a hundred root keys, the schema-guided strip
+		// takes every unknown key at every depth, the second parse succeeds
+		assert.strictEqual(counter.parses, 2);
+	});
+
+	test('strips an unknown key on every array item in one pass', () => {
+		const { counter, counted } = create_counted();
+		const list = Array.from({ length: 1000 }, (_, i) => ({ c: true, [`x${i}`]: i }));
+		const result = safe_parse_dropping_unknown_keys(counted, { a: 1, list });
+		assert.ok(result.ok);
+		assert.deepStrictEqual(result.value, { a: 1, list: list.map(() => ({ c: true })) });
+		assert.strictEqual(counter.parses, 2);
+	});
+
+	// counts parses of `schema` at `{a, value}`: `a` is checked once per parse
+	const create_counted_at = (schema: AnySchema) => {
+		const counter = { parses: 0 };
+		const counted = object({
+			a: pipe(
+				number,
+				check(() => ++counter.parses > 0)
+			),
+			value: schema
+		});
+		return { counter, counted };
+	};
+
+	test('strips an unknown key on every record value in one pass', () => {
+		const { counter, counted } = create_counted_at(record(object({ c: boolean })));
+		const value: Record<string, unknown> = {};
+		const expected: Record<string, unknown> = {};
+		for (let i = 0; i < 1000; i++) {
+			value[`r${i}`] = { c: true, [`x${i}`]: i };
+			expected[`r${i}`] = { c: true };
+		}
+		const result = safe_parse_dropping_unknown_keys(counted, { a: 1, value });
+		assert.ok(result.ok);
+		assert.deepStrictEqual(result.value, { a: 1, value: expected });
+		assert.strictEqual(counter.parses, 2);
+	});
+
+	test("strips an unknown key on every variant item's option in one pass", () => {
+		const { counter, counted } = create_counted_at(
+			array(
+				variant('type', [
+					object({ type: literal('a'), a: number }),
+					object({ type: literal('b'), b: number })
+				])
+			)
+		);
+		const value = Array.from({ length: 1000 }, (_, i) =>
+			i % 2 ? { type: 'b', b: i, [`x${i}`]: i } : { type: 'a', a: i, [`x${i}`]: i }
+		);
+		const result = safe_parse_dropping_unknown_keys(counted, { a: 1, value });
+		assert.ok(result.ok);
+		assert.deepStrictEqual(result.value, {
+			a: 1,
+			value: Array.from({ length: 1000 }, (_, i) =>
+				i % 2 ? { type: 'b', b: i } : { type: 'a', a: i }
+			)
+		});
+		assert.strictEqual(counter.parses, 2);
+	});
+
+	test("a variant's last option of a discriminator wins, as in the variant's own map", () => {
+		const { counter, counted } = create_counted_at(
+			variant('t', [object({ t: literal('a'), p: number }), object({ t: literal('a'), q: number })])
+		);
+		const result = safe_parse_dropping_unknown_keys(counted, {
+			a: 1,
+			value: { t: 'a', q: 1, z: 1 }
+		});
+		assert.ok(result.ok);
+		assert.deepStrictEqual(result.value, { a: 1, value: { t: 'a', q: 1 } });
+		assert.strictEqual(counter.parses, 2);
+	});
+
+	test("the strip calls a lazy's function once, not once per value it reaches", () => {
+		let calls = 0;
+		const Counted: AnySchema = lazy(() => {
+			calls++;
+			return object({ n: number, next: optional(Counted) });
+		});
+		const { counted } = create_counted_at(array(Counted));
+		const value = Array.from({ length: 300 }, (_, i) => ({ n: i, [`x${i}`]: i }));
+		const result = safe_parse_dropping_unknown_keys(counted, { a: 1, value });
+		assert.ok(result.ok);
+		// one call from the lazy's own `run`, one from the walk
+		assert.strictEqual(calls, 2);
+	});
+
+	test('an own `__proto__` under an `object_with_rest` is not walked as a rest value', () => {
+		const shared = { k: 1 };
+		const v: Record<string, unknown> = { a: shared };
+		// a `__proto__` sharing an object another key holds: `structuredClone` keeps the sharing
+		Object.defineProperty(v, '__proto__', {
+			value: shared,
+			enumerable: true,
+			writable: true,
+			configurable: true
+		});
+		const result = safe_parse_dropping_unknown_keys(
+			object({ v: object_with_rest({ a: object({ k: number }) }, object({})) }),
+			{ v, extra: 1 }
+		);
+		assert.ok(result.ok);
+	});
+
+	interface TreeNode {
+		n: number;
+		children?: Array<TreeNode>;
+	}
+	const Tree: AnySchema = lazy(() => object({ n: number, children: optional(array(Tree)) }));
+
+	test('strips an unknown key on every node of a lazy tree in one pass', () => {
+		const { counter, counted } = create_counted_at(Tree);
+		// a root of 20 children of 30 grandchildren each, every node with an unknown key
+		const leaf = (n: number): Record<string, unknown> => ({ n, [`x${n}`]: n });
+		const value = {
+			...leaf(0),
+			children: Array.from({ length: 20 }, (_, i) => ({
+				...leaf(i),
+				children: Array.from({ length: 30 }, (_, j) => leaf(j))
+			}))
+		};
+		const expected: TreeNode = {
+			n: 0,
+			children: Array.from({ length: 20 }, (_, i) => ({
+				n: i,
+				children: Array.from({ length: 30 }, (_, j) => ({ n: j }))
+			}))
+		};
+		const result = safe_parse_dropping_unknown_keys(counted, { a: 1, value });
+		assert.ok(result.ok);
+		assert.deepStrictEqual(result.value, { a: 1, value: expected });
+		assert.strictEqual(counter.parses, 2);
+	});
+
+	test('strips an unknown key at every link of a 500-deep lazy chain in one pass', () => {
+		const Chain: AnySchema = lazy(() => object({ n: number, next: optional(Chain) }));
+		const { counter, counted } = create_counted_at(Chain);
+		let value: Record<string, unknown> | undefined;
+		let expected: Record<string, unknown> | undefined;
+		for (let i = 499; i >= 0; i--) {
+			value = { n: i, [`x${i}`]: i, ...(value && { next: value }) };
+			expected = { n: i, ...(expected && { next: expected }) };
+		}
+		const result = safe_parse_dropping_unknown_keys(counted, { a: 1, value });
+		assert.ok(result.ok);
+		assert.deepStrictEqual(result.value, { a: 1, value: expected });
+		assert.strictEqual(counter.parses, 2);
+	});
+
+	test("a union keeps every option's keys", () => {
+		const either = object({ x: union([object({ a: number }), object({ a: number, b: number })]) });
+		const result = safe_parse_dropping_unknown_keys(either, { x: { a: 1, b: 2 }, y: 0 });
+		assert.ok(result.ok);
+		assert.deepStrictEqual(result.value, { x: { a: 1, b: 2 } });
+	});
+
+	test('never mutates the input', () => {
+		const { counted } = create_counted_at(array(object({ c: boolean })));
+		const value = {
+			a: 1,
+			k: 0,
+			value: Array.from({ length: 300 }, (_, i) => ({ c: true, [`x${i}`]: i }))
+		};
+		const snapshot = structuredClone(value);
+		const result = safe_parse_dropping_unknown_keys(counted, value);
+		assert.ok(result.ok);
+		assert.deepStrictEqual(value, snapshot);
+	});
+
+	test('deletes an own `__proto__` key as any other unknown key', () => {
+		const value = JSON.parse(
+			'{"a": 1, "__proto__": {"p": 1}, "nested": {"b": "b", "__proto__": 0}}'
+		);
+		const result = safe_parse_dropping_unknown_keys(schema, value);
+		assert.ok(result.ok);
+		assert.ok(!Object.hasOwn(result.value, '__proto__'));
+		assert.ok(!Object.hasOwn(result.value.nested!, '__proto__'));
+		assert.strictEqual(Object.getPrototypeOf(result.value), Object.prototype);
+		assert.deepStrictEqual(result.value, { a: 1, nested: { b: 'b' } });
+	});
+
+	test('returns a real failure behind many unknown keys as that failure', () => {
+		const { counter, counted } = create_counted_at(array(object({ c: boolean })));
+		const value = Array.from({ length: 300 }, (_, i) => ({ c: true, [`x${i}`]: i }));
+		value[299]!.c = 'nope' as unknown as boolean;
+		const result = safe_parse_dropping_unknown_keys(counted, { a: 1, value });
+		assert.ok(!result.ok);
+		assert.strictEqual(counter.parses, 2);
+		assert.strictEqual(result.issues.length, 1);
+		const issue = result.issues[0]!;
+		assert.ok('kind' in issue);
+		assert.strictEqual(issue.kind, 'boolean');
+		assert.deepStrictEqual(issue.path, ['value', 299, 'c']);
+	});
+
+	test("drops a later pipe stage's unknown keys an earlier stage names", () => {
+		const piped = pipe(object({ a: number, b: optional(number) }), object({ a: number }));
+		const result = safe_parse_dropping_unknown_keys(piped, { a: 1, b: 2, c: 3 });
+		assert.ok(result.ok);
+		assert.deepStrictEqual(result.value, { a: 1 });
+	});
+
+	test('stops after the pass cap, returning the last failure', () => {
+		const counter = { parses: 0 };
+		// a later pipe stage's unknown keys go only as reported, a hundred per
+		// parse: the first stage names `b`, so the schema-guided strip keeps it
+		const counted = object({
+			a: pipe(
+				number,
+				check(() => ++counter.parses > 0)
+			),
+			list: array(pipe(object({ c: boolean, b: optional(number) }), object({ c: boolean })))
+		});
+		const list = Array.from({ length: 100 * (UNKNOWN_KEY_PASSES_MAX + 2) }, () => ({
+			c: true,
+			b: 1
+		}));
+		const value = { a: 1, list };
+		const result = safe_parse_dropping_unknown_keys(counted, value);
+		assert.ok(!result.ok);
+		assert.strictEqual(counter.parses, 1 + UNKNOWN_KEY_PASSES_MAX);
+		assert.ok(result.issues.every((issue) => 'kind' in issue && issue.kind === 'unknown_key'));
+		// the last pass's issues: the first parse reported the first hundred items
+		const first_index = result.issues[0]!.path[1];
+		assert.strictEqual(first_index, 100 * UNKNOWN_KEY_PASSES_MAX);
+	});
+
+	test('still fails on any other issue, with the original issues', () => {
+		const result = safe_parse_dropping_unknown_keys(schema, { a: 'nope', x: 0 });
+		assert.ok(!result.ok);
+		const kinds = result.issues.map((issue) => ('kind' in issue ? issue.kind : issue.code)).sort();
+		assert.deepStrictEqual(kinds, ['number', 'unknown_key']);
+	});
+
+	test('a union of strict objects is one issue of its own, not stripped', () => {
+		const either = union([object({ a: number }), object({ b: number })]);
+		const result = safe_parse_dropping_unknown_keys(either, { a: 1, x: 1 });
+		assert.ok(!result.ok);
+		assert.deepStrictEqual(
+			result.issues.map((issue) => ('kind' in issue ? issue.kind : issue.code)),
+			['union']
+		);
+	});
+
+	test("a variant's matched option's unknown keys are stripped", () => {
+		const tagged = variant('type', [
+			object({ type: literal('a'), a: number }),
+			object({ type: literal('b'), b: number })
+		]);
+		const result = safe_parse_dropping_unknown_keys(tagged, { type: 'a', a: 1, x: 1 });
+		assert.ok(result.ok);
+		assert.deepStrictEqual(result.value, { type: 'a', a: 1 });
 	});
 });
 
