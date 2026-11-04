@@ -21,7 +21,7 @@ import {
 	generate_valid_object_with_field,
 	generate_valid_value
 } from '#lib/testing/schema_generators.ts';
-import { zod_extract_fields, zod_unwrap_to_object, type ZodFieldInfo } from '#lib/zod.ts';
+import { zod_extract_fields, zod_unwrap_to_object, type SchemaFieldInfo } from '#lib/zod.ts';
 import { create_spine_live_rpc_endpoints } from '#lib/testing/cross_backend/full_spine_mount.ts';
 
 const NIL = '00000000-0000-0000-0000-000000000000';
@@ -53,7 +53,7 @@ const NeverWithCode = z
 	.strictObject({ id: z.uuid(), code: z.string().min(2).max(8).optional() })
 	.refine((v) => v.code === undefined, { message: 'code is not accepted' });
 
-const field_of = (schema: z.ZodType, name: string): ZodFieldInfo => {
+const field_of = (schema: z.ZodType, name: string): SchemaFieldInfo => {
 	const object_schema = zod_unwrap_to_object(schema)!;
 	return zod_extract_fields(object_schema).find((f) => f.name === name)!;
 };

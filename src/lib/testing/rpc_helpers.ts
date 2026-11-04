@@ -12,6 +12,7 @@ import './assert_dev_env.ts';
 
 import { assert } from 'vitest';
 import { z } from 'zod';
+import type { Schema } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	JSONRPC_VERSION,
@@ -30,6 +31,7 @@ import type { AppServerContext } from '../server/app_server_context.ts';
 import type { SessionOptions } from '../auth/session_cookie.ts';
 import { create_stub_app_server_context } from './stubs.ts';
 import { TEST_ORIGIN } from './test_origin.ts';
+import { parse_any, type ValidationSchema } from '../schema_issues.ts';
 
 /**
  * Union accepted by the suite-level `rpc_endpoints` option — eager array or
@@ -192,18 +194,19 @@ export const assert_jsonrpc_error_response = (
  * is provided, also validates the `result` field against the declared
  * output schema — matching the REST round-trip's `assert_response_matches_spec`.
  *
- * @param output_schema - optional Zod schema to validate the `result` field against
+ * @param output_schema - optional Zod or `@fuzdev/fuz_schema` schema to validate the `result` field against
  */
-export const assert_jsonrpc_success_response = (body: unknown, output_schema?: z.ZodType): void => {
+export const assert_jsonrpc_success_response = (
+	body: unknown,
+	output_schema?: ValidationSchema
+): void => {
 	const result = JsonrpcResponse.safeParse(body);
 	assert.ok(result.success, `not a valid JSON-RPC success response: ${JSON.stringify(body)}`);
 	if (output_schema) {
-		const output_result = output_schema.safeParse(result.data.result);
-		if (!output_result.success) {
+		const output_result = parse_any(output_schema, result.data.result);
+		if (!output_result.ok) {
 			assert.fail(
-				`JSON-RPC result does not match output schema: ${JSON.stringify(
-					output_result.error.issues
-				)}`
+				`JSON-RPC result does not match output schema: ${JSON.stringify(output_result.issues)}`
 			);
 		}
 	}
@@ -503,11 +506,11 @@ export const rpc_call_for_spec = async <TSpec extends RequestResponseActionSpec>
 	if (!res.ok) {
 		return res;
 	}
-	const parsed = spec.output.safeParse(res.result);
-	if (!parsed.success) {
+	const parsed = parse_any(spec.output, res.result);
+	if (!parsed.ok) {
 		throw new Error(
 			`rpc_call_for_spec(${spec.method}) result did not match spec.output: ${JSON.stringify(
-				parsed.error.issues
+				parsed.issues
 			)}`
 		);
 	}
@@ -515,7 +518,7 @@ export const rpc_call_for_spec = async <TSpec extends RequestResponseActionSpec>
 		ok: true,
 		status: res.status,
 		headers: res.headers,
-		result: parsed.data as z.infer<TSpec['output']>
+		result: parsed.value as z.infer<TSpec['output']>
 	};
 };
 
@@ -526,11 +529,12 @@ export const rpc_call_for_spec = async <TSpec extends RequestResponseActionSpec>
  * assert on specific error shapes.
  *
  * @throws Error if the response is a JSON-RPC error, if `rpc_call` throws
- *   on an envelope violation, or if the result fails `output_schema.safeParse`.
+ *   on an envelope violation, or if the result fails `output_schema` (a Zod or
+ *   `@fuzdev/fuz_schema` schema, parsed with `parse_any`).
  */
 export const rpc_call_typed = async <T>(
 	args: RpcCallArgs,
-	output_schema: z.ZodType<T>
+	output_schema: z.ZodType<T> | Schema<T, any>
 ): Promise<T> => {
 	const res = await rpc_call(args);
 	if (!res.ok) {
@@ -540,15 +544,15 @@ export const rpc_call_typed = async <T>(
 			} data=${JSON.stringify(res.error.data)}`
 		);
 	}
-	const parsed = output_schema.safeParse(res.result);
-	if (!parsed.success) {
+	const parsed = parse_any(output_schema, res.result);
+	if (!parsed.ok) {
 		throw new Error(
 			`rpc_call_typed(${args.method}) result did not match output schema: ${JSON.stringify(
-				parsed.error.issues
+				parsed.issues
 			)}`
 		);
 	}
-	return parsed.data;
+	return parsed.value;
 };
 
 // -- registry/surface lookup helpers -----------------------------------------

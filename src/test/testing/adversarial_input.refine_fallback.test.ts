@@ -185,7 +185,7 @@ describe('generate_input_test_cases — nested refine fallback', () => {
 		});
 		assert.throws(
 			() => generate_input_test_cases(schema, { label: 'never_method' }),
-			/generated base object fails validation for 'never_method'.*target: never valid/
+			/generated base object fails validation for 'never_method'[\s\S]*never valid[\s\S]*at target/
 		);
 	});
 });

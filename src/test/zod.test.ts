@@ -9,11 +9,11 @@ import {
 	zod_get_field_schema,
 	zod_unwrap_to_object,
 	zod_extract_fields,
-	type ZodFieldInfo
+	type SchemaFieldInfo
 } from '#lib/zod.ts';
 
 /** The `zod_extract_fields` info for a single field, the window onto the module-internal predicates. */
-const field_info = (schema: z.ZodType): ZodFieldInfo =>
+const field_info = (schema: z.ZodType): SchemaFieldInfo =>
 	zod_extract_fields(z.strictObject({ f: schema }))[0]!;
 
 // -- wrapper traversal --

@@ -15,6 +15,7 @@ import { ERROR_AUTHENTICATION_REQUIRED } from '../http/error_schemas.ts';
 import { ROLE_ADMIN } from '../auth/role_schema.ts';
 import type { TestAccount } from './app_server.ts';
 import { create_test_request_headers } from './test_origin.ts';
+import { parse_any } from '../schema_issues.ts';
 
 /**
  * Find a route spec matching the given method and path.
@@ -132,11 +133,11 @@ export const assert_response_matches_spec = async (
 	}
 
 	if (response.ok) {
-		const result = spec.output.safeParse(body);
-		if (!result.success) {
+		const result = parse_any(spec.output, body);
+		if (!result.ok) {
 			throw new Error(
 				`Output schema mismatch for ${method} ${path} (${response.status}): ${JSON.stringify(
-					result.error.issues
+					result.issues
 				)}`
 			);
 		}

@@ -80,6 +80,7 @@ import type { SetupTest, TestFixture } from './setup.ts';
 import { mint_narrowed_api_token } from './narrowed_api_token.ts';
 import { xfail_until } from './xfail.ts';
 import type { WsEndpointTarget } from './ws_endpoint.ts';
+import { parse_any } from '../../schema_issues.ts';
 
 /**
  * Names a seeded `extra_accounts` username for the `role_holder` /
@@ -862,11 +863,11 @@ const assert_rpc_case = (
 			)}`
 		);
 		assert.strictEqual(res.status, c.expect.status, `${c.name}: status`);
-		const parsed = action.spec.output.safeParse(res.result);
+		const parsed = parse_any(action.spec.output, res.result);
 		assert.ok(
-			parsed.success,
+			parsed.ok,
 			`${c.name}: result does not match spec.output: ${JSON.stringify(
-				parsed.success ? undefined : parsed.error.issues
+				parsed.ok ? undefined : parsed.issues
 			)}`
 		);
 		if (c.expect.fields) assert_fields(res.result, c.expect.fields, c.name);
@@ -899,11 +900,11 @@ const assert_rest_case = (
 	const { status, body } = sent;
 	assert.strictEqual(status, c.expect.status, `${c.name}: status`);
 	if (is_success_status(c.expect.status)) {
-		const parsed = route.output.safeParse(body);
+		const parsed = parse_any(route.output, body);
 		assert.ok(
-			parsed.success,
+			parsed.ok,
 			`${c.name}: body does not match route output: ${JSON.stringify(
-				parsed.success ? undefined : parsed.error.issues
+				parsed.ok ? undefined : parsed.issues
 			)}`
 		);
 	} else if (c.expect.error_reason !== undefined) {

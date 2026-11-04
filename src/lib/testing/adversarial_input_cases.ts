@@ -14,21 +14,23 @@ import './assert_dev_env.ts';
  * @module
  */
 
-import { z } from 'zod';
-
-import { zod_unwrap_to_object, zod_extract_fields } from '../zod.ts';
 import { resolve_invalid_reason } from '../schema_meta.ts';
-import { is_null_schema } from '../http/schema_helpers.ts';
 import { ERROR_INVALID_REQUEST_BODY, ERROR_INVALID_JSON_BODY } from '../http/error_schemas.ts';
+import { format_issues, parse_any, type ValidationSchema } from '../schema_issues.ts';
 import {
 	detect_format,
 	detect_json_schema_format,
-	format_zod_issues,
 	generate_valid_object,
 	generate_valid_object_with_field,
 	generate_valid_string_param,
-	to_field_json_schema
+	to_body_input,
+	to_field_json_schema,
+	to_object_schema_view,
+	type ObjectSchemaView
 } from './schema_generators.ts';
+
+/** Whether `schema` accepts `value`, a parse of either library (`parse_any`). */
+const accepts = (schema: ValidationSchema, value: unknown): boolean => parse_any(schema, value).ok;
 
 // --- Payload generation ---
 
@@ -156,43 +158,45 @@ export interface InputTestCaseOptions {
  * emitted only when the field refuses its value, so no case is accidentally
  * valid.
  *
- * @param input_schema - the input schema to attack
+ * A void or null input takes no body and gets no cases; an input of neither
+ * library, or one that is no object schema, throws rather than yielding none.
+ *
+ * @param input_schema - the input schema to attack, Zod or `@fuzdev/fuz_schema`
  * @param options - a base body to seed the cases, and a label for errors
- * @throws Error if the base body fails `input_schema.safeParse` — a seeded
+ * @throws Error if the input is of neither library or is neither void, null,
+ *   nor an object schema, or if the base body fails `input_schema` — a seeded
  *   base the schema refuses, or a generated one that surfaces broken
  *   generation logic — naming the issues rather than producing nonsense
  *   adversarial cases.
  */
 export const generate_input_test_cases = (
-	input_schema: z.ZodType,
+	input_schema: ValidationSchema,
 	options?: InputTestCaseOptions
 ): Array<InputTestCase> => {
-	if (is_null_schema(input_schema)) return [];
-
-	const object_schema = zod_unwrap_to_object(input_schema);
-	if (!object_schema) return [];
-
-	const fields = zod_extract_fields(object_schema);
-	const cases: Array<InputTestCase> = [];
 	const for_label = options?.label === undefined ? '' : ` for '${options.label}'`;
+	const view = to_body_input(input_schema, `adversarial_input: the input${for_label}`);
+	if (!view) return [];
+
+	const { fields } = view;
+	const cases: Array<InputTestCase> = [];
 
 	// the base object every case breaks one field of — must pass validation itself
 	let base: Record<string, unknown>;
 	if (options?.base) {
 		base = { ...options.base };
-		const base_result = input_schema.safeParse(base);
-		if (!base_result.success) {
+		const base_result = parse_any(input_schema, base);
+		if (!base_result.ok) {
 			throw new Error(
 				`adversarial_input: the seeded base${for_label} fails validation — ` +
-					`fix the base for: ${format_zod_issues(base_result.error)}`
+					`fix the base for: ${format_issues(base_result.issues)}`
 			);
 		}
 	} else {
-		const generated = generate_valid_object(object_schema, input_schema);
-		if (!generated.result.success) {
+		const generated = generate_valid_object(input_schema, input_schema);
+		if (!generated.result.ok) {
 			throw new Error(
 				`adversarial_input: generated base object fails validation${for_label} — ` +
-					`fix generate_valid_value for: ${format_zod_issues(generated.result.error)}`
+					`fix generate_valid_value for: ${format_issues(generated.result.issues)}`
 			);
 		}
 		base = generated.value;
@@ -206,9 +210,8 @@ export const generate_input_test_cases = (
 	});
 
 	// whole-body structural: extra unknown key (enforces strictObject)
-	// only emit if the schema rejects unknown keys (i.e. uses z.strictObject)
-	const extra_key_result = input_schema.safeParse({ ...base, __adversarial_extra: 'rejected' });
-	if (!extra_key_result.success) {
+	// only emit if the schema rejects unknown keys (a `z.strictObject`, a fuz_schema `object`)
+	if (!accepts(input_schema, { ...base, __adversarial_extra: 'rejected' })) {
 		cases.push({
 			label: 'extra unknown key',
 			body: { ...base, __adversarial_extra: 'should_be_rejected' },
@@ -217,12 +220,12 @@ export const generate_input_test_cases = (
 	}
 
 	for (const field of fields) {
-		const field_schema = object_schema.shape[field.name] as z.ZodType;
+		const field_schema = view.field_schema(field.name)!;
 
 		// the valid body every case on this field changes only the field of: the
 		// base, or for a field the base omits, one that carries it — so the case
 		// can't also break an object-level rule (exactly one of, both or neither)
-		const field_base = generate_valid_object_with_field(object_schema, input_schema, base, field);
+		const field_base = generate_valid_object_with_field(input_schema, input_schema, base, field);
 
 		// every per-field case breaks the field, so the field itself must refuse
 		// its value — a candidate it accepts (a `z.coerce` field given a wrong
@@ -231,7 +234,7 @@ export const generate_input_test_cases = (
 		// back to the base; a value case — a format or a bound — is built only on
 		// a body that is valid but for the field, or it tests no bound at all
 		const push_field_case = (label: string, value: unknown, kind: 'type' | 'value'): void => {
-			if (field_schema.safeParse(value).success) return;
+			if (accepts(field_schema, value)) return;
 			const body_base = field_base ?? (kind === 'type' ? base : null);
 			if (!body_base) return;
 			cases.push({
@@ -244,8 +247,8 @@ export const generate_input_test_cases = (
 		// the field's valid value the value cases start from
 		const valid_value = field_base?.[field.name];
 
-		// missing required field (skip fields with defaults — Zod fills them)
-		if (field.required && !field.has_default && !field_schema.safeParse(undefined).success) {
+		// missing required field (skip fields with defaults — the parse fills them)
+		if (field.required && !field.has_default && !accepts(field_schema, undefined)) {
 			const without: Record<string, unknown> = {};
 			for (const [k, v] of Object.entries(base)) {
 				if (k !== field.name) without[k] = v;
@@ -402,12 +405,12 @@ export const generate_input_test_cases = (
  * a failure on that field (`resolve_invalid_reason`), or `undefined` — no
  * reason — for an undeclared field or a whole-body case.
  *
- * @param input_schema - the input schema the case was generated from
+ * @param input_schema - the input schema the case was generated from, Zod or `@fuzdev/fuz_schema`
  * @param test_case - a case `generate_input_test_cases` produced from it
  * @returns the owed reason, or `undefined` when the refusal carries none
  */
 export const expected_invalid_reason = (
-	input_schema: z.ZodType,
+	input_schema: ValidationSchema,
 	test_case: InputTestCase
 ): string | undefined =>
 	test_case.field === undefined
@@ -425,22 +428,23 @@ export const expected_invalid_reason = (
  *   schema, naming the issues
  */
 const generate_string_record_base = (
-	schema: z.ZodObject,
+	schema: ValidationSchema,
+	view: ObjectSchemaView,
 	kind: 'params' | 'query'
 ): Record<string, string> => {
 	const base: Record<string, string> = {};
-	for (const field of zod_extract_fields(schema)) {
-		const value = generate_valid_string_param(field, schema.shape[field.name] as z.ZodType);
+	for (const field of view.fields) {
+		const value = generate_valid_string_param(field, view.field_schema(field.name)!);
 		if (value === null) {
 			throw new Error(`adversarial_input: no generated ${kind} value passes field '${field.name}'`);
 		}
 		base[field.name] = value;
 	}
-	const result = schema.safeParse(base);
-	if (!result.success) {
+	const result = parse_any(schema, base);
+	if (!result.ok) {
 		throw new Error(
 			`adversarial_input: generated ${kind} base fails validation — ` +
-				`fix generate_valid_string_param for: ${format_zod_issues(result.error)}`
+				`fix generate_valid_string_param for: ${format_issues(result.issues)}`
 		);
 	}
 	return base;
@@ -454,20 +458,24 @@ const generate_string_record_base = (
  * params accept any string value, and only a violation the field refuses.
  * Each case breaks one field of a valid params record.
  *
- * @throws Error if no valid params record can be generated
+ * @param params_schema - the params schema, a Zod or `@fuzdev/fuz_schema` object schema
+ * @throws Error if no valid params record can be generated, or `params_schema`
+ *   is no object schema or of neither library
  */
-export const generate_params_test_cases = (params_schema: z.ZodObject): Array<ParamsTestCase> => {
-	const fields = zod_extract_fields(params_schema);
+export const generate_params_test_cases = (
+	params_schema: ValidationSchema
+): Array<ParamsTestCase> => {
+	const view = to_object_schema_view(params_schema, 'adversarial_input: the params schema');
 	const cases: Array<ParamsTestCase> = [];
-	const base_params = generate_string_record_base(params_schema, 'params');
+	const base_params = generate_string_record_base(params_schema, view, 'params');
 
-	for (const field of fields) {
-		const field_schema = params_schema.shape[field.name] as z.ZodType;
+	for (const field of view.fields) {
+		const field_schema = view.field_schema(field.name)!;
 		const format = detect_format(field_schema);
 		if (!format) continue; // unconstrained string — any value passes
 
 		const violation = format_violation(format);
-		if (violation && !field_schema.safeParse(violation.value).success) {
+		if (violation && !accepts(field_schema, violation.value)) {
 			cases.push({
 				label: `${violation.label}: param ${field.name}`,
 				params: { ...base_params, [field.name]: violation.value }
@@ -488,18 +496,20 @@ export const generate_params_test_cases = (params_schema: z.ZodObject): Array<Pa
  *
  * Each case breaks one field of a valid query record.
  *
- * @throws Error if no valid query record can be generated
+ * @param query_schema - the query schema, a Zod or `@fuzdev/fuz_schema` object schema
+ * @throws Error if no valid query record can be generated, or `query_schema`
+ *   is no object schema or of neither library
  */
-export const generate_query_test_cases = (query_schema: z.ZodObject): Array<QueryTestCase> => {
-	const fields = zod_extract_fields(query_schema);
+export const generate_query_test_cases = (query_schema: ValidationSchema): Array<QueryTestCase> => {
+	const view = to_object_schema_view(query_schema, 'adversarial_input: the query schema');
 	const cases: Array<QueryTestCase> = [];
-	const base_query = generate_string_record_base(query_schema, 'query');
+	const base_query = generate_string_record_base(query_schema, view, 'query');
 
-	for (const field of fields) {
-		const field_schema = query_schema.shape[field.name] as z.ZodType;
+	for (const field of view.fields) {
+		const field_schema = view.field_schema(field.name)!;
 
 		// missing required field
-		if (field.required && !field.has_default && !field_schema.safeParse(undefined).success) {
+		if (field.required && !field.has_default && !accepts(field_schema, undefined)) {
 			const without: Record<string, string> = {};
 			for (const [k, v] of Object.entries(base_query)) {
 				if (k !== field.name) without[k] = v;
@@ -515,7 +525,7 @@ export const generate_query_test_cases = (query_schema: z.ZodObject): Array<Quer
 		if (!format) continue;
 
 		const violation = format_violation(format);
-		if (violation && !field_schema.safeParse(violation.value).success) {
+		if (violation && !accepts(field_schema, violation.value)) {
 			cases.push({
 				label: `${violation.label}: query ${field.name}`,
 				query: { ...base_query, [field.name]: violation.value }

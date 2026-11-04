@@ -13,7 +13,6 @@ import './assert_dev_env.ts';
  */
 
 import { assert } from 'vitest';
-import type { z } from 'zod';
 
 import type { AppSurfaceRpcEndpoint, AppSurfaceRpcMethod } from '../http/surface.ts';
 import { is_public_auth } from '../http/auth_shape.ts';
@@ -21,6 +20,7 @@ import { JSONRPC_ERROR_CODES } from '../http/jsonrpc_errors.ts';
 import type { JsonrpcErrorCode, JsonrpcRequestId } from '../http/jsonrpc.ts';
 import { ERROR_AUTHENTICATION_REQUIRED, ERROR_INVALID_JSON_BODY } from '../http/error_schemas.ts';
 import { PROTOCOL_ACTION_METHODS } from '../actions/action_codegen.ts';
+import type { ValidationSchema } from '../schema_issues.ts';
 import { TESTING_METHOD_PREFIX } from './surface_invariants.ts';
 import { assert_jsonrpc_error_response } from './rpc_helpers.ts';
 import {
@@ -335,14 +335,14 @@ export const assert_rpc_envelope_refusal = (
  * (`invalid_request`) before params validation runs, and the envelope cases
  * cover it. Every case returned owes 400 `invalid_params`.
  *
- * @param input - the method's input schema
+ * @param input - the method's input schema, Zod or `@fuzdev/fuz_schema`
  * @param options - a valid base `params` to seed the cases (`InputTestCaseOptions.base`),
  *   and the method name for error messages
  * @returns the cases, each a `params` object
  * @throws Error if the base `params`, seeded or generated, fails the input schema
  */
 export const generate_rpc_params_test_cases = (
-	input: z.ZodType,
+	input: ValidationSchema,
 	options?: InputTestCaseOptions
 ): Array<InputTestCase> =>
 	generate_input_test_cases(input, options).filter(
