@@ -2,7 +2,7 @@
  * Cross-registry property test for action spec input shapes.
  *
  * The asymmetry "schema accepts `{}` but rejects `undefined`" is a bug
- * class. `action_codegen.ts:430-431` probes both — when only `{}` parses,
+ * class. `action_input_is_optional` probes both — when only `{}` parses,
  * the typed `FrontendActionsApi` method signature emits `input:` required.
  * Adapter authors then write `() => api.foo()` (no args) and trip
  * `ActionEvent.parse` because `safeParse(undefined)` fails before the
@@ -41,6 +41,7 @@ import { all_fuz_auth_action_spec_registries } from '#lib/auth/all_action_spec_r
 import { protocol_action_specs } from '#lib/actions/protocol.ts';
 import { action_input_is_optional } from '#lib/actions/action_codegen.ts';
 import { is_empty_input_handler_guarded } from '#lib/schema_meta.ts';
+import { parse_any } from '#lib/schema_issues.ts';
 import { all_cell_action_specs } from '#lib/auth/cell_action_specs.ts';
 import { all_cell_grant_action_specs } from '#lib/auth/cell_grant_action_specs.ts';
 import { all_cell_field_action_specs } from '#lib/auth/cell_field_action_specs.ts';
@@ -63,8 +64,8 @@ describe('action spec input invariants', () => {
 		assert.ok(guarded.length > 0, 'no walked spec marks its input');
 		for (const spec of guarded) {
 			const { method } = spec;
-			assert.ok(spec.input.safeParse({}).success, `${method}: {} must reach the handler guard`);
-			assert.ok(!spec.input.safeParse(undefined).success, `${method}: undefined is no call`);
+			assert.ok(parse_any(spec.input, {}).ok, `${method}: {} must reach the handler guard`);
+			assert.ok(!parse_any(spec.input, undefined).ok, `${method}: undefined is no call`);
 			assert.ok(!action_input_is_optional(spec), `${method}: codegen must keep input required`);
 		}
 	});
@@ -73,7 +74,7 @@ describe('action spec input invariants', () => {
 		for (const spec of all_specs) {
 			assert.strictEqual(
 				action_input_is_optional(spec),
-				spec.input.safeParse(undefined).success,
+				parse_any(spec.input, undefined).ok,
 				`${spec.method}: the typed surface and the schema disagree on an omitted input`
 			);
 		}
@@ -82,9 +83,9 @@ describe('action spec input invariants', () => {
 	test('every spec input that accepts {} also accepts undefined', () => {
 		for (const spec of all_specs) {
 			if (is_empty_input_handler_guarded(spec.input)) continue;
-			const accepts_empty = spec.input.safeParse({}).success;
+			const accepts_empty = parse_any(spec.input, {}).ok;
 			if (!accepts_empty) continue;
-			const accepts_undefined = spec.input.safeParse(undefined).success;
+			const accepts_undefined = parse_any(spec.input, undefined).ok;
 			assert.ok(
 				accepts_undefined,
 				`${

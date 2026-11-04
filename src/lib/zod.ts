@@ -2,8 +2,8 @@
  * Zod schema introspection utilities.
  *
  * Generic helpers for walking, unwrapping, and extracting field info from Zod schemas.
- * Used by adversarial input testing, test-data generation, action codegen, and
- * auth-shape checks.
+ * Used by adversarial input testing, test-data generation, and auth-shape
+ * checks.
  *
  * @module
  */

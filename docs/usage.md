@@ -1071,7 +1071,7 @@ array) generate the typed surface `create_rpc_client` consumes from it. Under
 `gro gen`, each `.gen.ts` generator emits a sibling `.ts` — the committed
 artifact consumers import from. Canonical output:
 
-- **`ActionInputs`** / **`ActionOutputs`** — method→`z.infer<typeof spec.input|output>` maps (`action_collections.ts`)
+- **`ActionInputs`** / **`ActionOutputs`** — method→`z.infer<typeof spec.input|output>` maps (`Infer<…>` for a `@fuzdev/fuz_schema` schema; `action_collections.ts`)
 - **`FrontendActionsApi`** — typed interface with `(input, options?) => Promise<Result<...>>` signatures (`action_metatypes.ts`)
 
 ```typescript

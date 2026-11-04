@@ -1,6 +1,9 @@
 import { UnreachableError } from '@fuzdev/fuz_util/error.ts';
-import { zod_get_base_type } from '../zod.ts';
+import { is_schema } from '@fuzdev/fuz_schema/schema.ts';
+
 import { is_empty_input_handler_guarded } from '../schema_meta.ts';
+import { is_null_schema, is_void_schema } from '../http/schema_helpers.ts';
+import { assert_zod_schema, parse_any } from '../schema_issues.ts';
 
 import type { ActionSpecUnion, ActionEventPhase } from './action_spec.ts';
 import { ActionRegistry } from './action_registry.ts';
@@ -391,15 +394,34 @@ const to_action_property_key = (method: string): string =>
  * or accepts `{}` (what an omitted input is validated as) and is not marked
  * `empty_input_handler_guarded` (`SchemaFieldMeta`, read by
  * `is_empty_input_handler_guarded`). The rule codegen emits `input?:` by and
- * the input-shape invariant tests read.
+ * the input-shape invariant tests read. The input is a Zod or a
+ * `@fuzdev/fuz_schema` schema, parsed with `parse_any`.
  *
  * @param spec - the action spec
  * @returns whether the typed surface makes the input optional
+ * @throws Error when the input is neither a Zod nor a fuz_schema schema
  */
 export const action_input_is_optional = (spec: Pick<ActionSpecUnion, 'input'>): boolean => {
-	if (spec.input.safeParse(undefined).success) return true;
+	if (parse_any(spec.input, undefined).ok) return true;
 	if (is_empty_input_handler_guarded(spec.input)) return false;
-	return spec.input.safeParse({}).success;
+	return parse_any(spec.input, {}).ok;
+};
+
+/**
+ * Which library a spec's input or output schema is of — the type it is
+ * emitted as follows from it: `z.infer` for Zod, fuz_schema's `Infer` for
+ * `@fuzdev/fuz_schema`, each the schema's output type.
+ *
+ * @throws Error naming the method and the schema when it is of neither library
+ */
+const to_spec_schema_library = (
+	spec: ActionSpecUnion,
+	which: 'input' | 'output'
+): 'zod' | 'fuz_schema' => {
+	const schema: unknown = spec[which];
+	if (is_schema(schema)) return 'fuz_schema';
+	assert_zod_schema(schema, `action '${spec.method}' ${which}`);
+	return 'zod';
 };
 
 /**
@@ -432,17 +454,22 @@ export const action_input_is_optional = (spec: Pick<ActionSpecUnion, 'input'>): 
  * may omit the argument) when either (a) the schema accepts `undefined` —
  * `z.optional(z.strictObject(...))` and similar wrappers — or (b) the
  * schema accepts the empty object `{}` — `z.strictObject({acting:
-ActingActor})` and other all-optional-fields strict objects. The second
+ * ActingActor})` and other all-optional-fields strict objects. The second
  * probe mirrors the dispatcher's HTTP convention (`raw_params ?? {}` for
  * non-`z.void()` schemas in `actions/action_rpc.ts` / `http/route_spec.ts`):
  * if a request with no params reaches the handler, this is the value the
  * schema is asked to validate. A schema with required fields fails both
  * probes and stays `input:` (required at the typed surface). Refinements
- * and transforms run as part of `safeParse`, so their accept/reject
+ * and transforms run as part of the parse (`parse_any`), so their accept/reject
  * decisions feed into the optional/required choice naturally. An input
  * marked `empty_input_handler_guarded` is the exception: its schema accepts
  * `{}` but the handler refuses it, so it stays `input:`
  * (`action_input_is_optional` is the one rule).
+ *
+ * **No-input detection.** A void or null input — `z.void()`, `z.null()`, or
+ * a `@fuzdev/fuz_schema` `literal(undefined)` (`s.void`) or `literal(null)`,
+ * read by shape (`is_void_schema`, `is_null_schema`) — emits `input?: void`
+ * and no `ActionInputs` import.
  *
  * @param options.sync_returns_value - When true (default), sync `local_call`
  *   methods return the output value directly; when false they're wrapped in
@@ -451,6 +478,8 @@ ActingActor})` and other all-optional-fields strict objects. The second
  * @param options.collections_path - Import path that `ActionInputs` /
  *   `ActionOutputs` resolve to. Defaults to `'./action_collections.ts'`.
  * @returns one line like `foo: (input: ActionInputs['foo'], options?: RpcClientCallOptions) => Promise<Result<...>>;`
+ * @throws Error naming the method when the input is neither a Zod nor a
+ *   fuz_schema schema
  */
 const generate_actions_api_method_signature = (
 	spec: ActionSpecUnion,
@@ -459,8 +488,8 @@ const generate_actions_api_method_signature = (
 ): string => {
 	const sync_returns_value = options?.sync_returns_value ?? true;
 	const collections_path = options?.collections_path ?? DEFAULT_COLLECTIONS_PATH;
-	const innermost_type_name = zod_get_base_type(spec.input);
-	const has_input = innermost_type_name !== 'null' && innermost_type_name !== 'void';
+	to_spec_schema_library(spec, 'input');
+	const has_input = !is_null_schema(spec.input) && !is_void_schema(spec.input);
 	const input_optional = has_input && action_input_is_optional(spec);
 	const input_param = has_input
 		? `input${input_optional ? '?' : ''}: ActionInputs['${spec.method}']`
@@ -798,15 +827,20 @@ export const action_specs: Array<ActionSpecUnion> = Object.values(ActionSpecs);`
 /**
  * Emit `ActionInputs` + `ActionOutputs` runtime consts and matching interfaces.
  * The runtime consts reference `specs.{method}_action_spec.input` /
- * `.output`; the interfaces use `z.infer`.
+ * `.output`; the interfaces type each as its schema's output: `z.infer` for a
+ * Zod schema, `Infer` for a `@fuzdev/fuz_schema` one.
  *
- * Adds `import {z} from 'zod';` and the `* as specs` namespace import.
+ * Adds `import {z} from 'zod';` when any schema is Zod's,
+ * `import type {Infer} from '@fuzdev/fuz_schema/schema.ts';` when any is
+ * fuz_schema's, and the `* as specs` namespace import.
  *
  * @param options.qualify_spec - per-spec qualified identifier callback for
  *   multi-source consumers. The helper appends `.input` / `.output` to the
  *   callback's return value. When set, the helper skips the default
  *   `* as specs` import — the consumer manages its own namespace imports —
  *   and `specs_module` is ignored. Single-source consumers omit it.
+ * @throws Error naming the method when an input or output is neither a Zod
+ *   nor a fuz_schema schema
  */
 export const generate_action_inputs_outputs = (
 	specs: ReadonlyArray<ActionSpecUnion>,
@@ -839,20 +873,35 @@ export const ActionOutputs = {} as const;
 export interface ActionOutputs {}`;
 	}
 
-	imports.add('zod', 'z');
+	const libraries = filtered.map((s) => ({
+		input: to_spec_schema_library(s, 'input'),
+		output: to_spec_schema_library(s, 'output')
+	}));
+	const uses = (library: 'zod' | 'fuz_schema'): boolean =>
+		libraries.some((l) => l.input === library || l.output === library);
+	if (uses('zod')) imports.add('zod', 'z');
+	if (uses('fuz_schema')) imports.add_type('@fuzdev/fuz_schema/schema.ts', 'Infer');
 	const qualify = resolve_spec_qualifier(imports, options);
+	const infer = (library: 'zod' | 'fuz_schema'): string =>
+		library === 'zod' ? 'z.infer' : 'Infer';
 
 	const inputs_value = filtered
 		.map((s) => `\t${to_action_property_key(s.method)}: ${qualify(s)}.input,`)
 		.join('\n');
 	const inputs_type = filtered
-		.map((s) => `\t${to_action_property_key(s.method)}: z.infer<typeof ${qualify(s)}.input>;`)
+		.map(
+			(s, i) =>
+				`\t${to_action_property_key(s.method)}: ${infer(libraries[i]!.input)}<typeof ${qualify(s)}.input>;`
+		)
 		.join('\n');
 	const outputs_value = filtered
 		.map((s) => `\t${to_action_property_key(s.method)}: ${qualify(s)}.output,`)
 		.join('\n');
 	const outputs_type = filtered
-		.map((s) => `\t${to_action_property_key(s.method)}: z.infer<typeof ${qualify(s)}.output>;`)
+		.map(
+			(s, i) =>
+				`\t${to_action_property_key(s.method)}: ${infer(libraries[i]!.output)}<typeof ${qualify(s)}.output>;`
+		)
 		.join('\n');
 
 	return `/**
