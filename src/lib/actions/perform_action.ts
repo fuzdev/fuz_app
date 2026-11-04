@@ -32,7 +32,7 @@
  *    with `data.reason` `params_proto_key` (`ERROR_PARAMS_PROTO_KEY`), on
  *    every input schema, before it runs; then
  *    `spec.input` parses the params (`parse_any`, Zod or fuz_schema) with
- *    `z.void()` / `?? {}` rules (`to_input_params`). A refusal is the generic
+ *    void / `?? {}` rules (`to_input_params`). A refusal is the generic
  *    `invalid params`, with `data.reason` when the first issue's field
  *    declares an `invalid_reason` (`to_invalid_params_error`) and the
  *    library's issues under DEV only. Runs **after** the authority gates: a
@@ -312,9 +312,9 @@ export const perform_action = async (
 	}
 
 	// step 5: validate params. JSON-RPC 2.0 §4.2 forbids `params: null`;
-	// registration sites reject `z.null()` inputs. Empty-body convention
+	// registration sites reject null-schema inputs. Empty-body convention
 	// (`raw_params ?? {}`) lets all-optional-object methods omit `params`;
-	// a `z.void()` input reads every empty shape as the no-arg call — see
+	// a void input (Zod or fuz_schema) reads every empty shape as the no-arg call — see
 	// `to_input_params`.
 	//
 	// An own `__proto__` key anywhere in object params is refused first, on

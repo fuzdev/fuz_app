@@ -13,7 +13,7 @@ import { wait } from '@fuzdev/fuz_util/async.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { meta } from '@fuzdev/fuz_schema/meta.ts';
-import { object, string, with_default } from '@fuzdev/fuz_schema/schema.ts';
+import { object, string, void as fuz_void, with_default } from '@fuzdev/fuz_schema/schema.ts';
 import { z } from 'zod';
 
 import { create_session_config } from '#lib/auth/session_cookie.ts';
@@ -38,6 +38,7 @@ import { run_migrations } from '#lib/db/migrate.ts';
 import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
 import { BaseServerEnv } from '#lib/server/env.ts';
 import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
+import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
 import { create_test_keyring } from '../auth/session_test_helpers.ts';
 
 // 32+ char key for keyring
@@ -670,6 +671,108 @@ describe('create_app_server', () => {
 		const body = await res.json();
 		assert.strictEqual(res.status, 200, JSON.stringify(body));
 		assert.deepEqual(body, { jsonrpc: '2.0', id: 1, result: { ok: true } });
+	});
+
+	test('a fuz_schema void input answers every params shape as z.void() does', async () => {
+		const received: Record<string, Array<unknown>> = { zod_void: [], fuz_void: [] };
+		const create_spec = (method: 'zod_void' | 'fuz_void') =>
+			({
+				method,
+				kind: 'request_response',
+				initiator: 'frontend',
+				auth: { account: 'none', actor: 'none' },
+				side_effects: false,
+				// `ActionSpec.input` is typed `z.ZodType`; the dispatch path reads either library
+				input: method === 'zod_void' ? z.void() : (fuz_void as unknown as z.ZodType),
+				output: z.strictObject({ ok: z.literal(true) }),
+				async: true,
+				description: 'Void-input parity action.'
+			}) as const;
+		const result = await create_app_server(
+			await create_config({
+				rpc_endpoints: [
+					{
+						path: '/api/rpc',
+						actions: (['zod_void', 'fuz_void'] as const).map((method) => ({
+							spec: create_spec(method),
+							handler: async (input: unknown) => {
+								received[method]!.push(input);
+								return { ok: true as const };
+							}
+						}))
+					}
+				]
+			})
+		);
+		const surface_methods = result.surface_spec.surface.rpc_endpoints[0]!.methods;
+		const surface_input = (name: string) =>
+			surface_methods.find((m) => m.name === name)!.input_schema;
+		assert.isNull(surface_input('zod_void'));
+		assert.isNull(surface_input('fuz_void'));
+
+		const post = async (envelope: Record<string, unknown>): Promise<Response> =>
+			result.app.request('/api/rpc', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json', origin: TEST_ORIGIN },
+				body: JSON.stringify({ jsonrpc: '2.0', id: 1, ...envelope })
+			});
+		const get = async (method: string, params?: string): Promise<Response> =>
+			result.app.request(
+				`/api/rpc?method=${method}&id=1${
+					params === undefined ? '' : `&params=${encodeURIComponent(params)}`
+				}`,
+				{ headers: { origin: TEST_ORIGIN } }
+			);
+		// each case pins the z.void() answer — status and JSON-RPC error code, or
+		// the result — and the fuz_schema void must give the same
+		const cases: Array<{
+			label: string;
+			send: (method: string) => Promise<Response>;
+			status: number;
+			code: number | null;
+		}> = [
+			{ label: 'POST absent', send: (m) => post({ method: m }), status: 200, code: null },
+			{ label: 'POST {}', send: (m) => post({ method: m, params: {} }), status: 200, code: null },
+			{
+				label: 'POST null',
+				send: (m) => post({ method: m, params: null }),
+				status: 400,
+				code: JSONRPC_ERROR_CODES.invalid_request
+			},
+			{
+				label: 'POST {nope: 1}',
+				send: (m) => post({ method: m, params: { nope: 1 } }),
+				status: 400,
+				code: JSONRPC_ERROR_CODES.invalid_params
+			},
+			{ label: 'GET absent', send: (m) => get(m), status: 200, code: null },
+			{ label: 'GET {}', send: (m) => get(m, '{}'), status: 200, code: null },
+			{ label: 'GET null', send: (m) => get(m, 'null'), status: 200, code: null },
+			{
+				label: 'GET {"nope":1}',
+				send: (m) => get(m, '{"nope":1}'),
+				status: 400,
+				code: JSONRPC_ERROR_CODES.invalid_params
+			}
+		];
+		for (const { label, send, status, code } of cases) {
+			for (const method of ['zod_void', 'fuz_void']) {
+				const res = await send(method);
+				const body = await res.json();
+				const ctx = `${method} ${label}: ${JSON.stringify(body)}`;
+				assert.strictEqual(res.status, status, ctx);
+				if (code === null) {
+					assert.deepEqual(body, { jsonrpc: '2.0', id: 1, result: { ok: true } }, ctx);
+				} else {
+					assert.strictEqual(body.error.code, code, ctx);
+				}
+			}
+		}
+		// the handler sees the no-arg call as `undefined` on every accepted shape
+		const accepted = cases.filter((c) => c.code === null).length;
+		for (const method of ['zod_void', 'fuz_void']) {
+			assert.deepEqual(received[method], Array(accepted).fill(undefined), method);
+		}
 	});
 
 	test('rpc_endpoints factory form receives AppServerContext and auto-mounts', async () => {

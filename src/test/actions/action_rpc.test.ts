@@ -8,6 +8,8 @@ import { describe, assert, test } from 'vitest';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
+import { literal, void as fuz_void, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
+import { meta } from '@fuzdev/fuz_schema/meta.ts';
 
 import { create_rpc_endpoint, RPC_GET_CACHE_CONTROL } from '#lib/actions/action_rpc.ts';
 import type { RpcAction } from '#lib/actions/action_types.ts';
@@ -214,7 +216,7 @@ describe('create_rpc_endpoint', () => {
 					actions: [{ spec: void_output_spec, handler: () => undefined }],
 					log
 				}),
-			/RPC action "thing_void_output".*z\.void\(\) for output.*z\.null\(\)/s
+			/RPC action "thing_void_output".*void schema for output.*z\.void\(\).*s\.void.*z\.null\(\).*literal\(null\)/s
 		);
 	});
 
@@ -239,8 +241,86 @@ describe('create_rpc_endpoint', () => {
 					actions: [{ spec: legacy_null_spec, handler: () => ({ ok: true as const }) }],
 					log
 				}),
-			/RPC action "thing_legacy_null".*z\.null\(\).*z\.void\(\)/s
+			/RPC action "thing_legacy_null".*null schema for input.*z\.null\(\).*literal\(null\).*z\.void\(\).*s\.void/s
 		);
+	});
+
+	// `ActionSpec.input` / `.output` are typed `z.ZodType`; the registry reads
+	// either library's void and null by shape
+	const as_spec_schema = (schema: AnySchema): z.ZodType => schema as unknown as z.ZodType;
+
+	test('throws on a fuz_schema void output, as on z.void()', () => {
+		for (const output of [fuz_void, meta(fuz_void, { description: 'nothing' })]) {
+			const spec: RequestResponseActionSpec = {
+				method: 'thing_fuz_void_output',
+				kind: 'request_response',
+				initiator: 'frontend',
+				auth: { account: 'none', actor: 'none' },
+				side_effects: true,
+				input: as_spec_schema(fuz_void),
+				output: as_spec_schema(output),
+				async: true,
+				description: 'fuz_schema void-output action'
+			};
+			assert.throws(
+				() =>
+					create_rpc_endpoint({
+						action_ip_rate_limiter: null,
+						action_account_rate_limiter: null,
+						path: '/api/rpc',
+						actions: [{ spec, handler: () => undefined }],
+						log
+					}),
+				/RPC action "thing_fuz_void_output".*void schema for output/s
+			);
+		}
+	});
+
+	test('throws on a fuz_schema literal(null) input, as on z.null()', () => {
+		const spec: RequestResponseActionSpec = {
+			method: 'thing_fuz_null_input',
+			kind: 'request_response',
+			initiator: 'frontend',
+			auth: { account: 'none', actor: 'none' },
+			side_effects: false,
+			input: as_spec_schema(literal(null)),
+			output: z.strictObject({ ok: z.literal(true) }),
+			async: true,
+			description: 'fuz_schema null-input action'
+		};
+		assert.throws(
+			() =>
+				create_rpc_endpoint({
+					action_ip_rate_limiter: null,
+					action_account_rate_limiter: null,
+					path: '/api/rpc',
+					actions: [{ spec, handler: () => ({ ok: true as const }) }],
+					log
+				}),
+			/RPC action "thing_fuz_null_input".*null schema for input/s
+		);
+	});
+
+	test('accepts a fuz_schema void input', () => {
+		const spec: RequestResponseActionSpec = {
+			method: 'thing_fuz_void_input',
+			kind: 'request_response',
+			initiator: 'frontend',
+			auth: { account: 'none', actor: 'none' },
+			side_effects: false,
+			input: as_spec_schema(fuz_void),
+			output: z.strictObject({ ok: z.literal(true) }),
+			async: true,
+			description: 'fuz_schema void-input action'
+		};
+		const specs = create_rpc_endpoint({
+			action_ip_rate_limiter: null,
+			action_account_rate_limiter: null,
+			path: '/api/rpc',
+			actions: [{ spec, handler: () => ({ ok: true as const }) }],
+			log
+		});
+		assert.strictEqual(specs.length, 2);
 	});
 
 	test('description includes method count', () => {

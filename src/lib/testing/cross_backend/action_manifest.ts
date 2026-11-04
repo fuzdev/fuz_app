@@ -37,6 +37,7 @@ import { z } from 'zod';
 import { AuthAxisState, type RouteAuth } from '../../http/auth_shape.ts';
 import { RateLimitKey } from '../../http/error_schemas.ts';
 import { is_void_schema } from '../../http/schema_helpers.ts';
+import type { ValidationSchema } from '../../schema_issues.ts';
 import type { RequestResponseActionSpec } from '../../actions/action_spec.ts';
 
 /**
@@ -52,9 +53,9 @@ export const ActionManifestEntry = z.strictObject({
 	/** RPC method name (`spec.method`). */
 	method: z.string(),
 	/**
-	 * `'void'` when the input is `z.void()` (a parameterless method), else
-	 * `'object'` — the Rust spine's declared `InputShape`, which its dispatcher
-	 * enforces. A `z.strictObject({})` input is `'object'`.
+	 * `'void'` when the input is a void schema (`is_void_schema`: `z.void()`
+	 * or fuz_schema `s.void`, a parameterless method), else `'object'` — the
+	 * Rust spine's declared `InputShape`, which its dispatcher enforces. A `z.strictObject({})` input is `'object'`.
 	 */
 	input: z.enum(['void', 'object']),
 	/** `true` when the action declares `side_effects` (mutation; POST-only on the RPC transport). */
@@ -90,7 +91,7 @@ const sorted_strings = (xs: ReadonlyArray<string> | undefined): Array<string> =>
  */
 export const action_manifest_entry = (spec: {
 	readonly method: string;
-	readonly input: z.ZodType;
+	readonly input: ValidationSchema;
 	readonly auth: RouteAuth;
 	readonly side_effects: boolean;
 	readonly rate_limit?: RateLimitKey;

@@ -42,20 +42,26 @@ export const is_null_schema = (schema: ValidationSchema): boolean =>
 	(is_schema(schema) && schema.kind === 'literal' && schema.def === null);
 
 /**
- * Check if a schema is exactly `z.void()`.
+ * Check if a schema is exactly `z.void()`, or a `@fuzdev/fuz_schema`
+ * `literal(undefined)` (what its `s.void` is, `meta` copies included).
  *
- * RPC action specs use `z.void()` to declare a parameterless method —
+ * RPC action specs use a void schema to declare a parameterless method —
  * JSON-RPC 2.0 forbids `params: null` (params must be omitted or be a
- * Structured value), so `z.void()` is the correct schema for "no params"
- * and the dispatcher maps absent params to `undefined` for these specs.
+ * Structured value), so void is the correct schema for "no params" and the
+ * dispatcher maps absent params to `undefined` for these specs. Like
+ * `is_null_schema`, it reads the schema's kind rather than parsing
+ * `undefined`, so an optional schema is not void. `z.undefined()` is not
+ * void either.
  */
-export const is_void_schema = (schema: ValidationSchema): boolean => schema instanceof z.ZodVoid;
+export const is_void_schema = (schema: ValidationSchema): boolean =>
+	schema instanceof z.ZodVoid ||
+	(is_schema(schema) && schema.kind === 'literal' && schema.def === undefined);
 
 /**
- * Normalize the raw `params` of a `z.void()` input: an absent `params`, an
- * empty object, and the `null` a GET `?params=null` parses to are all the
- * no-arg call (`undefined`); anything else passes through for `z.void()` to
- * refuse.
+ * Normalize the raw `params` of a void input (`is_void_schema`): an absent
+ * `params`, an empty object, and the `null` a GET `?params=null` parses to
+ * are all the no-arg call (`undefined`); anything else passes through for the
+ * void schema to refuse.
  *
  * JSON-RPC 2.0 lets a parameterless call omit `params`, and an empty by-name
  * structure carries no parameters, so refusing `{}` would only break clients
@@ -81,18 +87,18 @@ export const to_void_params = (raw_params: unknown): unknown => {
 
 /**
  * Normalize the raw `params` of an RPC call for `input` to validate: for a
- * `z.void()` input, `to_void_params`; for any other input, an absent or
- * `null` `params` reads as `{}`, so an all-optional object input accepts a
- * call that omits them. Every receiving end — the server dispatch
- * (`perform_action`) and a peer receiving a request or notification
- * (`ActionDispatcher`) — reads params through this, so a peer is never
- * stricter than the server.
+ * void input (`is_void_schema`, Zod or fuz_schema), `to_void_params`; for
+ * any other input, an absent or `null` `params` reads as `{}`, so an
+ * all-optional object input accepts a call that omits them. Every receiving
+ * end — the server dispatch (`perform_action`) and a peer receiving a
+ * request or notification (`ActionDispatcher`) — reads params through this,
+ * so a peer is never stricter than the server.
  *
- * @param input - the action's input schema
+ * @param input - the action's input schema, Zod or fuz_schema
  * @param raw_params - the call's `params` as parsed off the wire
  * @returns the value the input parse (`parse_any`) reads
  */
-export const to_input_params = (input: z.ZodType, raw_params: unknown): unknown =>
+export const to_input_params = (input: ValidationSchema, raw_params: unknown): unknown =>
 	is_void_schema(input) ? to_void_params(raw_params) : (raw_params ?? {});
 
 /**
@@ -358,9 +364,9 @@ export interface SchemaToSurfaceOptions {
  * Convert a Zod or `@fuzdev/fuz_schema` schema to its JSON Schema for the
  * surface, with `$schema` and `default` stripped at every depth.
  *
- * Returns `null` for a null schema (`is_null_schema`) and a `z.void()`
- * (`is_void_schema`): no body, no params. Any other schema is written with
- * its library's emitter (`to_json_schema` for fuz_schema, `z.toJSONSchema`
+ * Returns `null` for a null schema (`is_null_schema`) and a void schema
+ * (`is_void_schema`), in either library: no body, no params. Any other
+ * schema is written with its library's emitter (`to_json_schema` for fuz_schema, `z.toJSONSchema`
  * for Zod) on the side `options.io` names. A part JSON Schema can't say (a
  * transform on the output side, a `z.custom()`, a fuz_schema `check`) is left
  * out or written as `{}` (a `pipe(string, check(…))` writes as

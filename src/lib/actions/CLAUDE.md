@@ -81,7 +81,7 @@ order and returns the `Map<method, RpcAction>` the dispatchers use:
 - **Auth-shape biconditional** — `actor !== 'none' ⟺ input declares acting?: ActingActor` (via `assert_route_auth_acting_biconditional`).
 - **No `auth.required_scope`** — the slot is route-spec-only; nothing mounts a guard from it on an action, so declaring it would be a control that silently does nothing. Narrowed tokens are gated per method by the scope check in `perform_action`, which derives the `rpc:<method>` capability from `spec.method` rather than trusting a hand-written one.
 - **Rate-limit account axis** — `rate_limit: 'account' | 'both'` requires `auth.account === 'required'`.
-- **JSON-RPC §4.2 wire validity** — `request_response` specs with a handler may not use `z.null()` for input (use `z.void()` for nullary), nor `z.void()` for output (a response always carries a `result`, which clients validate against `spec.output`; use `z.null()` when there's nothing to return).
+- **JSON-RPC §4.2 wire validity** — `request_response` specs with a handler may not use a null schema (`z.null()`, fuz_schema `literal(null)`) for input (use a void schema, `z.void()` or fuz_schema `s.void`, for nullary), nor a void schema for output (a response always carries a `result`, which clients validate against `spec.output`; use a null schema when there's nothing to return). Both are detected by shape (`is_null_schema` / `is_void_schema`), so a `meta` copy counts.
 - **Unique method names** across the array.
 
 Only `request_response` specs with a handler reach the dispatch map;
@@ -281,7 +281,7 @@ Pipeline (401 → authz → 403 → 429 → 400 → handler):
 2. Authorization phase — `apply_authorization_phase` against `account_id` + `read_acting(auth, raw_params)`, which takes the selector off the raw params (malformed reads as omitted) since validation runs later. Test escape hatch via `preset.request_context`
 3. Post-authorization auth (403) — credential-type gate, then token scope, then role
 4. Rate limit (429) — throttle-requests semantics, ahead of validation so malformed params charge the budget and a throttled caller pays no schema work
-5. Validate params (400) — first, object params holding an own `__proto__` key at any depth are refused on every input with `data.reason` `params_proto_key` (`json_has_own_proto_key` in `http/schema_helpers.ts`, an iterative walk; `ERROR_PARAMS_PROTO_KEY`; the Rust twin walks after its params-shape check, so a non-object `params` stays the schema's reasonless refusal); then `spec.input` parses them (`parse_any`, `schema_issues.ts` — a Zod or fuz_schema schema) with `z.void()` / `?? {}` rules; a `z.void()` input reads absent, `null` (GET `?params=null`), and `{}` alike as the no-arg call (`to_input_params` in `http/schema_helpers.ts`, via `to_void_params`, the twin of the Rust `require_void_params`; the peer receive path in `ActionDispatcher` runs the same normalizer) and refuses any other shape. A refusal is `to_invalid_params_error`: the generic `invalid params`, `data.reason` when the first issue's field declares an `invalid_reason` in its `.meta()` and no issue sits on the input itself, such as an unknown key (`resolve_issues_invalid_reason`, `schema_meta.ts` — see ../../../docs/architecture.md §Error Schema System), and the library's issues DEV-only
+5. Validate params (400) — first, object params holding an own `__proto__` key at any depth are refused on every input with `data.reason` `params_proto_key` (`json_has_own_proto_key` in `http/schema_helpers.ts`, an iterative walk; `ERROR_PARAMS_PROTO_KEY`; the Rust twin walks after its params-shape check, so a non-object `params` stays the schema's reasonless refusal); then `spec.input` parses them (`parse_any`, `schema_issues.ts` — a Zod or fuz_schema schema) with void / `?? {}` rules; a void input (`is_void_schema`: `z.void()` or fuz_schema `s.void`) reads absent, `null` (GET `?params=null`), and `{}` alike as the no-arg call (`to_input_params` in `http/schema_helpers.ts`, via `to_void_params`, the twin of the Rust `require_void_params`; the peer receive path in `ActionDispatcher` runs the same normalizer) and refuses any other shape. A refusal is `to_invalid_params_error`: the generic `invalid params`, `data.reason` when the first issue's field declares an `invalid_reason` in its `.meta()` and no issue sits on the input itself, such as an unknown key (`resolve_issues_invalid_reason`, `schema_meta.ts` — see ../../../docs/architecture.md §Error Schema System), and the library's issues DEV-only
 6. Dispatch + DEV output validation + error normalization — `spec.side_effects` picks transaction vs pool. `ThrownJsonrpcError` preserves code + data; generic throws become `internal_error`
 
 `PerformActionInput` carries `auth` (the request's `ResolvedAuth`, `null` for
@@ -1086,9 +1086,10 @@ methods) go to `environment.log`; unset falls back to `console_action_log`
 (warn/error to `console`, debug dropped) so failures are never silent, and
 `log: null` opts out (`resolve_action_log`). An inbound request or notification
 reads its params through the server dispatch core's normalizer
-(`to_input_params`): for a `z.void()` input, absent, `null`, and `{}` alike are
-the no-arg call; for any other input, absent or `null` params are `{}` (so an
-all-optional object input accepts a call that omits them).
+(`to_input_params`): for a void input (`z.void()` or fuz_schema `s.void`),
+absent, `null`, and `{}` alike are the no-arg call; for any other input,
+absent or `null` params are `{}` (so an all-optional object input accepts a
+call that omits them).
 
 **Naming.** `ActionDispatcher` is the (frontend) send/receive coordinator class.
 "ActionPeer" — unbackticked throughout the peer/ping + `request_client` docs — is

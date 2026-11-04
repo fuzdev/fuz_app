@@ -28,9 +28,11 @@ import {
 	transform,
 	union,
 	variant,
+	void as fuz_void,
 	with_default,
 	type AnySchema
 } from '@fuzdev/fuz_schema/schema.ts';
+import { meta } from '@fuzdev/fuz_schema/meta.ts';
 
 import {
 	is_null_schema,
@@ -98,6 +100,27 @@ describe('is_void_schema', () => {
 	test('returns false for z.strictObject()', () => {
 		assert.strictEqual(is_void_schema(z.strictObject({ name: z.string() })), false);
 	});
+
+	// fuz_schema's void is `literal(undefined)`, detected by shape (kind + def),
+	// so a `meta` copy (a new `{kind, def, run}` object) still reads void
+	const cases: Array<[label: string, schema: z.ZodType | AnySchema, expected: boolean]> = [
+		['z.void()', z.void(), true],
+		['s.void', fuz_void, true],
+		['literal(undefined)', literal(undefined), true],
+		['meta(s.void, …)', meta(fuz_void, { description: 'no params' }), true],
+		['z.undefined()', z.undefined(), false],
+		['z.null()', z.null(), false],
+		['literal(null)', literal(null), false],
+		['literal("undefined")', literal('undefined'), false],
+		['optional(string)', optional(string), false],
+		['s.string', string, false],
+		['object({})', object({}), false]
+	];
+	for (const [label, schema, expected] of cases) {
+		test(`${label} → ${expected}`, () => {
+			assert.strictEqual(is_void_schema(schema), expected);
+		});
+	}
 });
 
 describe('to_void_params', () => {
@@ -121,6 +144,22 @@ describe('to_input_params', () => {
 		}
 		const extra = { a: 1 };
 		assert.strictEqual(to_input_params(z.void(), extra), extra);
+	});
+
+	test('applies to_void_params to a fuz_schema void input', () => {
+		for (const input of [fuz_void, meta(fuz_void, { description: 'no params' })]) {
+			for (const params of [undefined, null, {}]) {
+				assert.strictEqual(to_input_params(input, params), undefined, JSON.stringify(params));
+			}
+			const extra = { a: 1 };
+			assert.strictEqual(to_input_params(input, extra), extra);
+		}
+	});
+
+	test('reads absent and null params of a fuz_schema object input as {}', () => {
+		const input = object({ limit: optional(number) });
+		assert.deepStrictEqual(to_input_params(input, undefined), {});
+		assert.deepStrictEqual(to_input_params(input, null), {});
 	});
 
 	test('reads absent and null params of any other input as {}', () => {
@@ -746,6 +785,17 @@ describe('schema_to_surface', () => {
 describe('schema_to_surface — fuz_schema', () => {
 	test('returns null for literal(null)', () => {
 		assert.strictEqual(schema_to_surface(literal(null)), null);
+	});
+
+	test('returns null for s.void on either side, as for z.void()', () => {
+		for (const io of ['input', 'output'] as const) {
+			assert.strictEqual(schema_to_surface(z.void(), { io }), null);
+			assert.strictEqual(schema_to_surface(fuz_void, { io }), null);
+			assert.strictEqual(
+				schema_to_surface(meta(fuz_void, { description: 'no params' }), { io }),
+				null
+			);
+		}
 	});
 
 	test('writes an object with $schema and default stripped at every depth', () => {

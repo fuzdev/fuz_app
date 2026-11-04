@@ -263,8 +263,9 @@ per-method auth shape.
 - `cross_backend/action_manifest.ts` — `ActionManifest` / `ActionManifestEntry`
   Zod schema (the `_testing_action_manifest` wire validator) + `build_action_manifest(specs)`,
   which normalizes each spec to `{method, input, side_effects, account, actor, roles,
-credential_types, rate_limit}` (`input` is `'void'` for a `z.void()` input, by
-  `is_void_schema`, else `'object'` — the Rust `InputShape`; auth axes pass through; `roles` /
+  credential_types, rate_limit}` (`input` is `'void'` for a `z.void()` or
+  fuz_schema `s.void` input, by `is_void_schema`, else `'object'` — the Rust
+  `InputShape`; auth axes pass through; `roles` /
   `credential_types` flatten to sorted arrays; `rate_limit` is the declared
   class or an explicit `null`, so a missing key reads as drift rather than a
   default). Twin of `schema_introspect.ts`. Excludes the protocol actions

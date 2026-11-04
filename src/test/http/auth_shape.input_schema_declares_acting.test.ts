@@ -18,8 +18,13 @@
 
 import { describe, test, assert } from 'vitest';
 import { z } from 'zod';
+import { object, optional, string, void as fuz_void } from '@fuzdev/fuz_schema/schema.ts';
 
-import { input_schema_declares_acting, ActingActor } from '#lib/http/auth_shape.ts';
+import {
+	assert_route_auth_acting_biconditional,
+	input_schema_declares_acting,
+	ActingActor
+} from '#lib/http/auth_shape.ts';
 
 describe('input_schema_declares_acting', () => {
 	test('canonical strictObject({acting: ActingActor}) returns true', () => {
@@ -95,5 +100,25 @@ describe('input_schema_declares_acting', () => {
 		// predicate even when wrapped.
 		const schema = z.optional(z.strictObject({ acting: z.string().optional() }));
 		assert.strictEqual(input_schema_declares_acting(schema), false);
+	});
+
+	test('a fuz_schema input declares no acting', () => {
+		assert.strictEqual(input_schema_declares_acting(fuz_void), false);
+		assert.strictEqual(input_schema_declares_acting(object({ acting: optional(string) })), false);
+	});
+
+	test('a fuz_schema void input passes the biconditional on actor: none and refuses it otherwise', () => {
+		assert_route_auth_acting_biconditional(
+			{ account: 'none', actor: 'none' },
+			{ input: fuz_void as unknown as z.ZodType },
+			'test'
+		);
+		assert.throws(() =>
+			assert_route_auth_acting_biconditional(
+				{ account: 'required', actor: 'required' },
+				{ input: fuz_void as unknown as z.ZodType },
+				'test'
+			)
+		);
 	});
 });

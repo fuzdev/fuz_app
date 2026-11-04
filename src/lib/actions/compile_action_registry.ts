@@ -24,11 +24,12 @@
  *   requires `auth.account === 'required'`; without an account on the
  *   request there is no key for the per-account bucket.
  * - **JSON-RPC §4.2 wire validity** — `request_response` specs whose
- *   handler will reach the dispatch map must not use `z.null()` for
- *   input (the wire format forbids `"params": null`; use `z.void()`
- *   for parameterless methods), nor `z.void()` for output (a response
- *   always carries a `result`, which clients validate against
- *   `spec.output`; use `z.null()` for methods with nothing to return).
+ *   handler will reach the dispatch map must not use a null schema
+ *   (`z.null()`, fuz_schema `literal(null)`) for input (the wire format
+ *   forbids `"params": null`; use a void schema, `z.void()` or fuz_schema
+ *   `s.void`, for parameterless methods), nor a void schema for output (a
+ *   response always carries a `result`, which clients validate against
+ *   `spec.output`; use a null schema for methods with nothing to return).
  * - **Duplicate method names** — JSON-RPC keys on `method`, so every
  *   spec in the array must declare a unique `method` regardless of
  *   kind / handler presence.
@@ -105,14 +106,14 @@ export const compile_action_registry = (
 				throw new Error(
 					`${
 						ctx
-					} uses z.null() for input — JSON-RPC 2.0 §4.2 forbids "params": null on the wire. Use z.void() for parameterless methods.`
+					} uses a null schema for input (z.null() or fuz_schema literal(null)) — JSON-RPC 2.0 §4.2 forbids "params": null on the wire. Use a void schema (z.void() or fuz_schema s.void) for parameterless methods.`
 				);
 			}
 			if (is_void_schema(spec.output)) {
 				throw new Error(
 					`${
 						ctx
-					} uses z.void() for output — a JSON-RPC response always carries a result, and clients validate it against spec.output, so no response could match. Use z.null() for methods with nothing to return.`
+					} uses a void schema for output (z.void() or fuz_schema s.void) — a JSON-RPC response always carries a result, and clients validate it against spec.output, so no response could match. Use a null schema (z.null() or fuz_schema literal(null)) for methods with nothing to return.`
 				);
 			}
 			action_map.set(spec.method, { spec, handler: action.handler });

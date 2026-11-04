@@ -33,8 +33,11 @@
  */
 
 import { z } from 'zod';
+import { is_schema } from '@fuzdev/fuz_schema/schema.ts';
+
 import { Uuid } from '../primitive_schemas.ts';
 import { zod_unwrap_to_object } from '../zod.ts';
+import type { ValidationSchema } from '../schema_issues.ts';
 
 /**
  * `acting` field shared by every input that needs the caller's acting actor.
@@ -297,9 +300,15 @@ export const is_plain_authenticated_auth = (auth: RouteAuth): boolean =>
  * authored as `z.optional(z.strictObject({acting: ActingActor}))` or
  * `z.strictObject({acting: ActingActor}).default({})` still trips the
  * predicate.
+ *
+ * A `@fuzdev/fuz_schema` schema (a void input, say) answers `false`:
+ * `ActingActor` is a Zod schema, so no fuz_schema input holds it, and a spec
+ * resolving an actor with one is refused by the biconditional.
  */
-export const input_schema_declares_acting = (schema: z.ZodType): boolean => {
-	const obj = zod_unwrap_to_object(schema);
+export const input_schema_declares_acting = (schema: ValidationSchema): boolean => {
+	// TODO: read a fuz_schema `ActingActor` twin once one exists
+	if (is_schema(schema)) return false;
+	const obj = zod_unwrap_to_object(schema as z.ZodType);
 	if (!obj) return false;
 	return (obj.shape as Record<string, z.ZodType | undefined>).acting === ActingActor;
 };

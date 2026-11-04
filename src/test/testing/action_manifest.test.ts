@@ -3,8 +3,8 @@
  * `ActionManifestEntry` mapper the cross-impl manifest-parity gate dumps.
  *
  * Pins the normalization contract both impls must match: `input` reads
- * `'void'` for a `z.void()` input and `'object'` for anything else, auth axes
- * pass through, `roles` / `credential_types` flatten to sorted arrays (absent and
+ * `'void'` for a void input (`z.void()` or fuz_schema `s.void`) and `'object'`
+ * for anything else, auth axes pass through, `roles` / `credential_types` flatten to sorted arrays (absent and
  * empty both → `[]`), `side_effects` passes through, `rate_limit` is always
  * present (`null` when undeclared), and entries sort by `method`. A drift in
  * any of these would surface as a spurious cross-impl diff, so they're pinned
@@ -15,6 +15,8 @@
 
 import { describe, test, assert } from 'vitest';
 import { z } from 'zod';
+import { object, void as fuz_void, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
+import { meta } from '@fuzdev/fuz_schema/meta.ts';
 
 import {
 	ActionManifestEntry,
@@ -113,6 +115,15 @@ describe('action_manifest_entry', () => {
 				'object'
 			);
 		}
+	});
+
+	test('a fuz_schema void input is void and a fuz_schema object is an object', () => {
+		const auth: RouteAuth = { account: 'required', actor: 'none' };
+		const entry_input = (input: AnySchema) =>
+			action_manifest_entry({ method: 'x', input, auth, side_effects: false }).input;
+		assert.strictEqual(entry_input(fuz_void), 'void');
+		assert.strictEqual(entry_input(meta(fuz_void, { description: 'no params' })), 'void');
+		assert.strictEqual(entry_input(object({})), 'object');
 	});
 
 	test('side_effects passes through for mutations', () => {

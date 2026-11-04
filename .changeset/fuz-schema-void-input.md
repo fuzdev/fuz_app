@@ -1,0 +1,5 @@
+---
+'@fuzdev/fuz_app': patch
+---
+
+feat: a `@fuzdev/fuz_schema` void schema (`s.void`, any `literal(undefined)`, `meta` copies included) reads as void on the server dispatch, registry, surface and manifest paths, as `z.void()` does: `is_void_schema` (`http/schema_helpers.ts`) detects it by shape, as `is_null_schema` detects `literal(null)`, so an action whose input is one answers absent, `{}` and GET `?params=null` params as the no-arg call (`to_input_params`, on the server dispatch and the `ActionDispatcher` receive path), its surface input is `null`, `compile_action_registry` refuses one as an output (and a fuz_schema `literal(null)` as an input), and `action_manifest_entry` records it as `'void'`. `to_input_params` and `action_manifest_entry` take either library's schema, and `input_schema_declares_acting` answers `false` for a fuz_schema schema instead of throwing, so `compile_action_registry` / `apply_route_specs` no longer throw a `TypeError` on a fuz_schema input such as `s.void`. `z.undefined()` stays non-void.
