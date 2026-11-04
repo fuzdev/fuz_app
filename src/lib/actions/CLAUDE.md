@@ -1239,8 +1239,8 @@ specs. Counterpart to `register_action_ws`: that handles frontend-initiated
 request-scoped dispatch, this handles backend-initiated broadcast.
 Request-scoped streaming stays on `ctx.notify` inside a handler.
 
-Per-method call: validates input against `spec.input` (logs + returns on
-failure), wraps in `JsonrpcNotification`, and sends it on `registry` — a
+Per-method call: validates input against `spec.input`, Zod or fuz_schema
+(`parse_any`; logs + returns on failure), wraps in `JsonrpcNotification`, and sends it on `registry` — a
 `BroadcastTarget`, `Pick<ConnectionRegistry, 'broadcast' |
 'broadcast_filtered'>`, typically `app_server.ws_endpoints[path]` or the
 registry a `WsEndpointSpec` supplies. No `Transports` collection and no fallback:

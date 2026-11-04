@@ -689,7 +689,8 @@ runs alongside the consumer's callback, and auto-appends
 `on_audit_event` inside the `audit_factory` body and pass
 `audit_log_event_specs` in `event_specs` on `AppServerOptions`.
 
-**Event specs** declare SSE event types with `EventSpec` for surface introspection
+**Event specs** declare SSE event types with `EventSpec` (its `params` a Zod or
+`@fuzdev/fuz_schema` schema) for surface introspection
 and DEV-only validation via `create_validated_broadcaster()`:
 
 ```typescript

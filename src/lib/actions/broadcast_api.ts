@@ -21,6 +21,7 @@
 import { Logger, type Logger as LoggerType } from '@fuzdev/fuz_util/log.ts';
 
 import { create_jsonrpc_notification, to_jsonrpc_params } from '../http/jsonrpc_helpers.ts';
+import { parse_any } from '../schema_issues.ts';
 import type { ActionSpecUnion } from './action_spec.ts';
 import type { ConnectionRegistry, ConnectionIdentity } from './connection_registry.ts';
 
@@ -115,18 +116,18 @@ export const create_broadcast_api = <TApi extends object>(
 	for (const spec of specs) {
 		const { method } = spec;
 		const send = (input: unknown): void => {
-			const parsed = spec.input.safeParse(input);
-			if (!parsed.success) {
-				log?.error(`[${method}] input validation failed:`, parsed.error.issues);
+			const parsed = parse_any(spec.input, input);
+			if (!parsed.ok) {
+				log?.error(`[${method}] input validation failed:`, parsed.issues);
 				return;
 			}
 
-			const notification = create_jsonrpc_notification(method, to_jsonrpc_params(parsed.data));
+			const notification = create_jsonrpc_notification(method, to_jsonrpc_params(parsed.value));
 
 			try {
 				if (should_deliver) {
 					registry.broadcast_filtered(notification, (identity) =>
-						should_deliver(identity, method, parsed.data)
+						should_deliver(identity, method, parsed.value)
 					);
 				} else {
 					registry.broadcast(notification);

@@ -8,6 +8,8 @@
 
 import { describe, assert, test, vi, afterEach } from 'vitest';
 import { z } from 'zod';
+import { array, object, optional, string, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
+import { meta } from '@fuzdev/fuz_schema/meta.ts';
 
 import { DEFAULT_MAX_GET_URL_LENGTH, FrontendHttpTransport } from '#lib/actions/transports_http.ts';
 import type { ActionSpecUnion } from '#lib/actions/action_spec.ts';
@@ -334,6 +336,41 @@ describe('FrontendHttpTransport GET reads', () => {
 			assert.notInclude(url, 'hunter2', 'the value stays out of the URL');
 			assert.include(init.body as string, 'hunter2');
 		}
+	});
+
+	test('a read whose fuz_schema input carries a sensitive value at any depth is a POST', async () => {
+		// `ActionSpec.input` is typed `z.ZodType`; the transport reads either library
+		const as_spec_input = (schema: AnySchema): z.ZodType => schema as unknown as z.ZodType;
+		const sensitive_inputs: Array<AnySchema> = [
+			object({ token: meta(string, { sensitivity: 'secret' }) }),
+			optional(
+				object({
+					filter: optional(object({ emails: array(meta(string, { sensitivity: 'personal' })) }))
+				})
+			)
+		];
+		for (const input of sensitive_inputs) {
+			vi.restoreAllMocks();
+			stub_fetch(ok_body('r1'), 200);
+			await new FrontendHttpTransport({
+				url: '/api/rpc',
+				lookup_action_spec: lookup_of(create_spec('thing_get', false, as_spec_input(input)))
+			}).send(read({ token: 'hunter2' }));
+			const { url, init } = sent();
+			assert.strictEqual(init.method, 'POST');
+			assert.notInclude(url, 'hunter2', 'the value stays out of the URL');
+			assert.include(init.body as string, 'hunter2');
+		}
+		// the control: a fuz_schema input with nothing sensitive reads as a GET
+		vi.restoreAllMocks();
+		stub_fetch(ok_body('r1'), 200);
+		await new FrontendHttpTransport({
+			url: '/api/rpc',
+			lookup_action_spec: lookup_of(
+				create_spec('thing_get', false, as_spec_input(object({ id: string })))
+			)
+		}).send(read({ id: 'x' }));
+		assert.strictEqual(sent().init.method, 'GET');
 	});
 
 	test('the sensitive check walks each spec once', async () => {

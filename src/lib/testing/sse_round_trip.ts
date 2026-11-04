@@ -45,6 +45,7 @@ import { AUTH_MIGRATION_NS } from '../auth/migrations.ts';
 import type { Db } from '../db/db.ts';
 import { account_session_revoke_all_action_spec } from '../auth/account_action_specs.ts';
 import { create_sse_frame_reader } from './transports/sse_frame_reader.ts';
+import { parse_any } from '../schema_issues.ts';
 
 /** Config for a single SSE route under test. */
 export interface SseRouteTestSpec {
@@ -144,11 +145,11 @@ const parse_and_validate_sse_payload = (
 				notification.method
 			}' (declared: ${event_specs.map((s) => s.method).join(', ')})`
 		);
-		const result = spec.params.safeParse(notification.params);
-		if (!result.success) {
+		const result = parse_any(spec.params, notification.params);
+		if (!result.ok) {
 			throw new Error(
 				`${route_path}: params mismatch for method '${notification.method}': ${JSON.stringify(
-					result.error.issues
+					result.issues
 				)}`
 			);
 		}

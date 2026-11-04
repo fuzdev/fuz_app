@@ -10,9 +10,11 @@ import { z } from 'zod';
 import { format_issue, number, object, parse_or_throw, string } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
+	assert_zod_schema,
 	format_issues,
 	is_schema_validation_error,
 	issue_is_on_input,
+	is_zod_schema,
 	parse_any,
 	unknown_key_targets,
 	type AnyIssue
@@ -34,6 +36,15 @@ describe('parse_any', () => {
 			const result = parse_any(schema, value);
 			assert.ok(result.ok);
 			assert.deepStrictEqual(result.value, value);
+		}
+	});
+
+	test('throws on a schema of neither library', () => {
+		for (const schema of [{}, { safeParse: () => ({ success: true }) }, null]) {
+			assert.throws(
+				() => parse_any(schema as unknown as z.ZodType, 1),
+				/parse_any: the schema is neither a Zod schema nor a @fuzdev\/fuz_schema schema/
+			);
 		}
 	});
 
@@ -130,5 +141,23 @@ describe('is_schema_validation_error', () => {
 		assert.ok(is_schema_validation_error(thrown(() => parse_or_throw(FuzInput, {}))));
 		assert.isFalse(is_schema_validation_error(new Error('x')));
 		assert.isFalse(is_schema_validation_error({ issues: [] }));
+	});
+});
+
+describe('is_zod_schema and assert_zod_schema', () => {
+	test('a Zod schema is one, a fuz_schema schema and other values are not', () => {
+		assert.isTrue(is_zod_schema(ZodInput));
+		assert.isTrue(is_zod_schema(z.void()));
+		for (const value of [FuzInput, string, {}, null, undefined, 'z']) {
+			assert.isFalse(is_zod_schema(value));
+		}
+	});
+
+	test('assert_zod_schema names the label', () => {
+		assert_zod_schema(ZodInput, 'the input');
+		assert.throws(
+			() => assert_zod_schema({}, "action 'thing' input"),
+			/^action 'thing' input is neither a Zod schema nor a @fuzdev\/fuz_schema schema$/
+		);
 	});
 });

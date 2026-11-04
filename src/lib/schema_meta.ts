@@ -5,8 +5,10 @@
  * surface generation, and test helpers. The env schemas are
  * `@fuzdev/fuz_schema` and carry the same keys in its `meta`
  * (`sensitivity.ts`, `find_schema_sensitivity`); this module adds
- * `invalid_reason` to fuz_schema's `SchemaMeta`, so the declared refusal
- * reason of an action input reads the same whichever library its schema is.
+ * `invalid_reason` and `empty_input_handler_guarded` to fuz_schema's
+ * `SchemaMeta`, so the declared refusal reason of an action input, its
+ * handler-guarded marker, and its sensitivity read the same whichever library
+ * its schema is.
  *
  * @module
  */
@@ -14,14 +16,21 @@
 import type { z } from 'zod';
 import { is_schema, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 import {
+	find_schema_meta,
 	get_schema_entries,
 	get_schema_meta,
 	unwrap_schema
 } from '@fuzdev/fuz_schema/introspect.ts';
+import { get_meta } from '@fuzdev/fuz_schema/meta.ts';
 
 import type { Sensitivity } from './sensitivity.ts';
 import { zod_get_schema_layers, zod_unwrap_to_object } from './zod.ts';
-import { issue_is_on_input, type AnyIssue, type ValidationSchema } from './schema_issues.ts';
+import {
+	assert_zod_schema,
+	issue_is_on_input,
+	type AnyIssue,
+	type ValidationSchema
+} from './schema_issues.ts';
 
 declare module '@fuzdev/fuz_schema/meta.ts' {
 	interface SchemaMeta {
@@ -32,6 +41,13 @@ declare module '@fuzdev/fuz_schema/meta.ts' {
 		 * declaration winning.
 		 */
 		invalid_reason?: string;
+		/**
+		 * Set on an action's input schema whose handler refuses the `{}` the
+		 * schema admits, as `SchemaFieldMeta.empty_input_handler_guarded`
+		 * declares it on a Zod input. Read from the input schema itself
+		 * (`get_meta`), so a wrapper around it drops it, as in Zod.
+		 */
+		empty_input_handler_guarded?: boolean;
 	}
 }
 
@@ -83,13 +99,19 @@ export interface SchemaFieldMeta {
 }
 
 /**
- * Whether `schema` carries `empty_input_handler_guarded: true` in its `.meta()`.
+ * Whether `schema` carries `empty_input_handler_guarded: true` in its
+ * metadata: a Zod schema's `.meta()`, a `@fuzdev/fuz_schema` schema's own
+ * `meta` (`get_meta`), read from the schema itself in both.
  *
- * @param schema - an action's input schema
+ * @param schema - an action's input schema, Zod or fuz_schema
  * @returns whether its handler refuses the `{}` the schema admits
+ * @throws Error when `schema` is neither a Zod nor a fuz_schema schema
  */
-export const is_empty_input_handler_guarded = (schema: z.ZodType): boolean =>
-	(schema.meta() as SchemaFieldMeta | undefined)?.empty_input_handler_guarded === true;
+export const is_empty_input_handler_guarded = (schema: ValidationSchema): boolean => {
+	if (is_schema(schema)) return get_meta(schema)?.empty_input_handler_guarded === true;
+	assert_zod_schema(schema, 'is_empty_input_handler_guarded: the input');
+	return (schema.meta() as SchemaFieldMeta | undefined)?.empty_input_handler_guarded === true;
+};
 
 /**
  * A `SchemaFieldMeta` key's value as a schema declares it, read through its
@@ -205,7 +227,10 @@ export const schema_sensitivity = (schema: z.ZodType): Sensitivity | undefined =
  * or `'personal'` on the schema itself or anywhere inside it: through its
  * wrappers (as `schema_sensitivity`), and into object fields, array and set
  * elements, tuple items, record and map keys and values, template literal
- * parts, union members and intersection sides.
+ * parts, union members and intersection sides. A `@fuzdev/fuz_schema` schema
+ * is read with `find_schema_meta` and `structural`: every layer, every step
+ * of a pipe, every option of a union or variant, a `lazy`'s schema, and the
+ * entries, rest, items and values of its objects, arrays and records.
  *
  * What keeps a read's input off the URL: `FrontendHttpTransport` sends a
  * read (`side_effects: false`) as a `GET` with the params in the query string,
@@ -213,11 +238,17 @@ export const schema_sensitivity = (schema: z.ZodType): Sensitivity | undefined =
  * value — that call goes as a `POST` (the transport walks each spec's input
  * once).
  *
- * @param schema - an action input schema
+ * @param schema - an action input schema, Zod or fuz_schema
  * @returns `true` when any value the schema admits may hold a sensitive field
+ * @throws Error when `schema` is neither a Zod nor a fuz_schema schema
  */
-export const schema_has_sensitive_field = (schema: z.ZodType): boolean =>
-	walk_sensitivity(schema, true) !== undefined;
+export const schema_has_sensitive_field = (schema: ValidationSchema): boolean => {
+	if (is_schema(schema)) {
+		return find_schema_meta(schema, 'sensitivity', { structural: true }).length > 0;
+	}
+	assert_zod_schema(schema, 'schema_has_sensitive_field: the input');
+	return walk_sensitivity(schema, true) !== undefined;
+};
 
 /**
  * The `error.data.reason` an input validation failure at `path` carries: the

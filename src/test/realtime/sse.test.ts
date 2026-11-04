@@ -8,6 +8,7 @@ import { describe, assert, test, vi } from 'vitest';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
+import { object, string } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	create_sse_response,
@@ -563,6 +564,25 @@ describe('create_validated_broadcaster', () => {
 		assert.include(String(warn.mock.calls[0]![1]), 'run_created');
 		// still broadcasts even on validation failure
 		assert.strictEqual(inner.broadcast.mock.calls.length, 1);
+		warn.mockRestore();
+	});
+
+	test('validates a fuz_schema params schema', () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+		const inner = { broadcast: vi.fn() };
+		const warn_log = new Logger('test', { level: 'warn' });
+		const validated = create_validated_broadcaster(
+			inner,
+			[{ method: 'run_done', params: object({ run_id: string }), description: 'A run finished' }],
+			warn_log
+		);
+
+		validated.broadcast('runs', { method: 'run_done', params: { run_id: '1' } });
+		assert.strictEqual(warn.mock.calls.length, 0, 'valid params pass');
+		validated.broadcast('runs', { method: 'run_done', params: { run_id: 1 } });
+		assert.strictEqual(warn.mock.calls.length, 1);
+		assert.include(String(warn.mock.calls[0]![1]), 'run_done');
+		assert.strictEqual(inner.broadcast.mock.calls.length, 2);
 		warn.mockRestore();
 	});
 

@@ -25,6 +25,29 @@ import type { Result } from '@fuzdev/fuz_util/result.ts';
 /** A schema of either library: a Zod schema or a `@fuzdev/fuz_schema` one. */
 export type ValidationSchema = z.ZodType | AnySchema;
 
+/**
+ * Whether `value` is a Zod schema. Zod's `instanceof` reads the schema's
+ * traits, so a schema made by another copy of Zod is one too.
+ *
+ * @param value - any value
+ */
+export const is_zod_schema = (value: unknown): value is z.ZodType => value instanceof z.ZodType;
+
+/**
+ * Throw unless `value` is a Zod schema, naming `label` — what a reader of a
+ * spec's schema calls once it has ruled out a `@fuzdev/fuz_schema` schema
+ * (`is_schema`), so a value of neither library fails loudly where it is read,
+ * rather than as a `TypeError` deeper in or a silent `undefined`.
+ *
+ * @param value - the schema, known not to be a fuz_schema schema
+ * @param label - names the schema in the error, e.g. `` `action 'foo' input` ``
+ * @throws Error when `value` is not a Zod schema, saying it is of neither library
+ */
+export function assert_zod_schema(value: unknown, label: string): asserts value is z.ZodType {
+	if (is_zod_schema(value)) return;
+	throw new Error(`${label} is neither a Zod schema nor a @fuzdev/fuz_schema schema`);
+}
+
 /** The output type of a `ValidationSchema`. */
 export type ValidationOutput<T extends ValidationSchema> = T extends z.ZodType
 	? z.output<T>
@@ -48,6 +71,7 @@ export type ParseAnyResult<T> = Result<{ value: T }, { issues: Array<AnyIssue> }
  * @param schema - a Zod or fuz_schema schema
  * @param value - the value to validate
  * @returns the output, or the issues
+ * @throws Error when `schema` is neither a Zod nor a fuz_schema schema
  */
 export const parse_any = <T extends ValidationSchema>(
 	schema: T,
@@ -59,7 +83,8 @@ export const parse_any = <T extends ValidationSchema>(
 			? { ok: true, value: result.value as ValidationOutput<T> }
 			: { ok: false, issues: result.issues };
 	}
-	const result = (schema as z.ZodType).safeParse(value);
+	assert_zod_schema(schema, 'parse_any: the schema');
+	const result = schema.safeParse(value);
 	return result.success
 		? { ok: true, value: result.data as ValidationOutput<T> }
 		: { ok: false, issues: result.error.issues };

@@ -12,18 +12,28 @@ import { z } from 'zod';
 import {
 	array,
 	integer,
+	lazy,
+	literal,
 	min_value,
 	nullable,
 	number,
 	object,
+	object_with_rest,
 	optional,
 	parse,
 	pipe,
-	string
+	record,
+	string,
+	transform,
+	union,
+	variant,
+	with_default,
+	type AnySchema
 } from '@fuzdev/fuz_schema/schema.ts';
 import { meta } from '@fuzdev/fuz_schema/meta.ts';
 
 import {
+	is_empty_input_handler_guarded,
 	resolve_invalid_reason,
 	resolve_issues_invalid_reason,
 	schema_has_sensitive_field,
@@ -227,6 +237,96 @@ describe('schema_has_sensitive_field', () => {
 		]) {
 			assert.isFalse(schema_has_sensitive_field(schema));
 		}
+	});
+});
+
+describe('schema_has_sensitive_field over fuz_schema', () => {
+	const secret = meta(string, { sensitivity: 'secret' });
+	const personal = meta(string, { sensitivity: 'personal' });
+
+	test('finds a secret or personal value at any depth', () => {
+		for (const sensitive of [secret, personal]) {
+			const cases: Array<[string, AnySchema]> = [
+				['root', sensitive],
+				['root field', object({ a: sensitive })],
+				['optional field', object({ a: optional(sensitive) })],
+				['nullable field', object({ a: nullable(sensitive) })],
+				['default field', object({ a: with_default(sensitive, 'x') })],
+				['optional input', optional(object({ a: sensitive }))],
+				['nested object', object({ a: object({ b: sensitive }) })],
+				['array of objects', object({ a: array(object({ b: sensitive })) })],
+				[
+					'union of objects',
+					object({ a: union([object({ b: number }), object({ c: sensitive })]) })
+				],
+				[
+					'variant',
+					variant('kind', [
+						object({ kind: literal('a') }),
+						object({ kind: literal('b'), q: sensitive })
+					])
+				],
+				['record value', object({ a: record(sensitive) })],
+				['rest', object_with_rest({ a: number }, sensitive)],
+				[
+					'pipe step',
+					object({
+						a: pipe(
+							string,
+							transform((v: string) => v),
+							sensitive
+						)
+					})
+				],
+				['lazy', object({ a: lazy(() => object({ b: sensitive })) })]
+			];
+			for (const [label, schema] of cases) {
+				assert.isTrue(schema_has_sensitive_field(schema), label);
+			}
+		}
+	});
+
+	test('an input with no sensitive value has none', () => {
+		for (const schema of [
+			literal(null),
+			object({ a: string, b: optional(array(object({ c: number }))) }),
+			union([object({ a: string }), object({ b: number })]),
+			object({ a: record(string) })
+		]) {
+			assert.isFalse(schema_has_sensitive_field(schema));
+		}
+	});
+
+	test('a schema of neither library throws', () => {
+		assert.throws(
+			() => schema_has_sensitive_field({} as unknown as z.ZodType),
+			/schema_has_sensitive_field: the input is neither a Zod schema nor a @fuzdev\/fuz_schema schema/
+		);
+	});
+});
+
+describe('is_empty_input_handler_guarded', () => {
+	test('reads the marker on a Zod input itself', () => {
+		const guarded = z.strictObject({ a: z.string().optional() }).meta({
+			empty_input_handler_guarded: true
+		});
+		assert.isTrue(is_empty_input_handler_guarded(guarded));
+		assert.isFalse(is_empty_input_handler_guarded(guarded.optional()), 'a wrapper drops it');
+		assert.isFalse(is_empty_input_handler_guarded(z.strictObject({})));
+	});
+
+	test('reads the marker on a fuz_schema input itself', () => {
+		const guarded = meta(object({ a: optional(string) }), { empty_input_handler_guarded: true });
+		assert.isTrue(is_empty_input_handler_guarded(guarded));
+		assert.isFalse(is_empty_input_handler_guarded(optional(guarded)), 'a wrapper drops it');
+		assert.isFalse(is_empty_input_handler_guarded(object({})));
+	});
+
+	test('a schema of neither library throws', () => {
+		assert.throws(
+			() => is_empty_input_handler_guarded({} as unknown as z.ZodType),
+			/is_empty_input_handler_guarded: the input is neither a Zod schema nor a @fuzdev\/fuz_schema schema/
+		);
 	});
 });
 

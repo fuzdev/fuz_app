@@ -11,6 +11,7 @@
 
 import { describe, assert, test } from 'vitest';
 import { z } from 'zod';
+import { object, optional, string } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	create_broadcast_api,
@@ -108,6 +109,39 @@ describe('create_broadcast_api', () => {
 		assert.strictEqual(log_errors.length, 1);
 		const first = log_errors[0]!;
 		assert.include(String(first[0]), 'input validation failed');
+	});
+
+	test('validates a fuz_schema input, sending the parsed value', async () => {
+		const registry = new ConnectionRegistry();
+		const { ws, sends } = create_fake_ws();
+		registry.add_connection(
+			ws,
+			create_test_identity({ session_hash: 'hash_a', account_id: create_uuid() })
+		);
+		// `ActionSpec.input` is typed `z.ZodType`; the broadcast reads either library
+		const input = object({ id: string, owner_account_id: optional(string) });
+		const spec = { ...thing_changed_spec, input: input as unknown as z.ZodType };
+		const log_errors: Array<Array<unknown>> = [];
+		const api = create_broadcast_api<TestApi>({
+			registry,
+			specs: [spec],
+			log: {
+				error: (...args: Array<unknown>) => log_errors.push(args),
+				info: () => {},
+				warn: () => {},
+				debug: () => {},
+				trace: () => {}
+			} as never
+		});
+
+		await api.thing_changed({ id: 'x' });
+		assert.strictEqual(sends.length, 1);
+		assert.deepStrictEqual(JSON.parse(sends[0]!).params, { id: 'x' });
+
+		await api.thing_changed({ id: 42 as unknown as string });
+		assert.strictEqual(sends.length, 1, 'an invalid input is not sent');
+		assert.strictEqual(log_errors.length, 1);
+		assert.include(String(log_errors[0]![0]), 'input validation failed');
 	});
 
 	test('a broadcast with no connections reaches nobody and does not throw', async () => {
