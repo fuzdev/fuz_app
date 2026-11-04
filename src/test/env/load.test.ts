@@ -1,14 +1,24 @@
 /**
- * Tests for env/load.ts — generic env loading from Zod schemas.
+ * Tests for env/load.ts — generic env loading from fuz_schema object schemas.
  *
  * @module
  */
 
 import { describe, test, assert, vi } from 'vitest';
-import { z } from 'zod';
+import {
+	check,
+	object,
+	optional,
+	pipe,
+	record,
+	string,
+	transform,
+	with_default
+} from '@fuzdev/fuz_schema/schema.ts';
 
 import { load_env, EnvValidationError, log_env_validation_error } from '#lib/env/load.ts';
 import { BaseServerEnv } from '#lib/server/env.ts';
+import { env_integer } from '#lib/env/env_schemas.ts';
 
 /** Minimal valid env for BaseServerEnv (only required fields, no defaults). */
 const VALID_ENV: Record<string, string> = {
@@ -42,14 +52,70 @@ describe('load_env', () => {
 	});
 
 	test('works with custom schemas', () => {
-		const schema = z.strictObject({
-			FOO: z.string(),
-			BAR: z.coerce.number()
+		const schema = object({
+			FOO: string,
+			BAR: env_integer()
 		});
 		const env: Record<string, string> = { FOO: 'hello', BAR: '42' };
 		const result = load_env(schema, (key) => env[key]);
 		assert.strictEqual(result.FOO, 'hello');
 		assert.strictEqual(result.BAR, 42);
+	});
+
+	test('reads only the schema keys', () => {
+		const read: Array<string> = [];
+		load_env(object({ A: optional(string), B: optional(string) }), (key) => {
+			read.push(key);
+			return undefined;
+		});
+		assert.deepStrictEqual(read, ['A', 'B']);
+	});
+
+	test('an unset var is a missing key: a pipe starting with optional runs no step', () => {
+		let steps = 0;
+		const schema = object({
+			MAYBE: pipe(
+				optional(string),
+				check((v: string | undefined) => {
+					steps++;
+					return v !== undefined;
+				}),
+				transform((v: string | undefined) => v!.toUpperCase())
+			),
+			WITH_DEFAULT: with_default(string, 'fallback')
+		});
+		const result = load_env(schema, () => undefined);
+		assert.strictEqual(steps, 0);
+		assert.isFalse('MAYBE' in result);
+		assert.strictEqual(result.WITH_DEFAULT, 'fallback');
+		// set, the steps run
+		const set = load_env(schema, (key) => (key === 'MAYBE' ? 'x' : undefined));
+		assert.strictEqual(steps, 1);
+		assert.strictEqual(set.MAYBE, 'X');
+	});
+
+	test('an unset var stays in raw as undefined', () => {
+		const schema = object({ SET: string, UNSET: string });
+		try {
+			load_env(schema, (key) => (key === 'SET' ? 'v' : undefined));
+			assert.fail('should have thrown');
+		} catch (e) {
+			assert.instanceOf(e, EnvValidationError);
+			assert.deepStrictEqual(e.raw, { SET: 'v', UNSET: undefined });
+			assert.isTrue('UNSET' in e.raw);
+			assert.deepStrictEqual(
+				e.issues.map((i) => i.path),
+				[['UNSET']]
+			);
+		}
+	});
+
+	test('throws a TypeError for a schema that is not an object schema', () => {
+		// refused by type too, a schema that outputs no object
+		// @ts-expect-error
+		assert.throws(() => load_env(string, () => undefined), TypeError);
+		// an object output that is not an object schema passes the type, and throws
+		assert.throws(() => load_env(record(string), () => undefined), TypeError);
 	});
 });
 
@@ -73,6 +139,17 @@ describe('EnvValidationError', () => {
 		for (const issue of issues) {
 			assert.include(issue, ':');
 		}
+	});
+
+	test('format_issues() is format_issue of each issue', () => {
+		const partial_env = new Map([['PORT', 'abc']]);
+		const err = catch_env_error((key) => partial_env.get(key));
+		assert.include(err.format_issues(), 'PORT: expected decimal digits, received string');
+		assert.strictEqual(err.format_issues().length, err.issues.length);
+	});
+
+	test('the message is unchanged', () => {
+		assert.strictEqual(catch_env_error(() => undefined).message, 'Environment validation failed');
 	});
 
 	test('format_issues() includes field names', () => {

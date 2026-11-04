@@ -1,8 +1,10 @@
 /**
  * Shared Zod `.meta()` conventions for fuz_app schemas.
  *
- * Cross-cutting metadata shape used by env schemas, auth input schemas,
- * surface generation, and test helpers.
+ * Cross-cutting metadata shape used by auth and action input schemas,
+ * surface generation, and test helpers. The env schemas are
+ * `@fuzdev/fuz_schema` and carry the same keys in its `meta`
+ * (`sensitivity.ts`, `find_schema_sensitivity`).
  *
  * @module
  */

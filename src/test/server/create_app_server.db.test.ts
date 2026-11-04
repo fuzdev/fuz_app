@@ -12,6 +12,8 @@ import { describe, test, assert, beforeAll } from 'vitest';
 import { wait } from '@fuzdev/fuz_util/async.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
+import { meta } from '@fuzdev/fuz_schema/meta.ts';
+import { object, string, with_default } from '@fuzdev/fuz_schema/schema.ts';
 import { z } from 'zod';
 
 import { create_session_config } from '#lib/auth/session_cookie.ts';
@@ -34,6 +36,7 @@ import { TEST_ORIGIN } from '#lib/testing/test_origin.ts';
 import { create_default_db_factory } from '#lib/testing/db.ts';
 import { run_migrations } from '#lib/db/migrate.ts';
 import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
+import { BaseServerEnv } from '#lib/server/env.ts';
 import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
 import { create_test_keyring } from '../auth/session_test_helpers.ts';
 
@@ -176,13 +179,30 @@ describe('create_app_server', () => {
 	});
 
 	test('env_schema is included in surface', async () => {
-		const TestEnv = z.strictObject({
-			PORT: z.number().default(4040).describe('Server port')
+		// a consumer field the base lacks, so a surface built from `BaseServerEnv` misses it
+		const TestEnv = object({
+			...BaseServerEnv.def,
+			EXTRA_SECRET: meta(with_default(string, 'x'), {
+				description: 'A consumer secret',
+				sensitivity: 'secret'
+			})
 		});
 		const result = await create_app_server(await create_config({ env_schema: TestEnv }));
-		assert.isTrue(result.surface_spec.surface.env.length > 0);
-		const port_entry = result.surface_spec.surface.env.find((e) => e.name === 'PORT');
-		assert.isDefined(port_entry);
+		const { env } = result.surface_spec.surface;
+		assert.deepStrictEqual(
+			env.map((e) => e.name),
+			Object.keys(TestEnv.def)
+		);
+		assert.deepStrictEqual(
+			env.find((e) => e.name === 'EXTRA_SECRET'),
+			{
+				name: 'EXTRA_SECRET',
+				description: 'A consumer secret',
+				sensitivity: 'secret',
+				has_default: true,
+				optional: true
+			}
+		);
 	});
 
 	test('surface route is not mounted by default', async () => {

@@ -6,6 +6,8 @@
 
 import { describe, assert, test } from 'vitest';
 import { Hono } from 'hono';
+import { meta } from '@fuzdev/fuz_schema/meta.ts';
+import { object, string, with_default } from '@fuzdev/fuz_schema/schema.ts';
 import { z } from 'zod';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
@@ -16,6 +18,7 @@ import {
 	get_route_query,
 	type RouteSpec
 } from '#lib/http/route_spec.ts';
+import { env_integer } from '#lib/env/env_schemas.ts';
 import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
 import { ActingActor } from '#lib/http/auth_shape.ts';
 import type { MiddlewareSpec } from '#lib/http/middleware_spec.ts';
@@ -911,9 +914,9 @@ describe('generate_app_surface', () => {
 	});
 
 	test('with env_schema includes env in surface', () => {
-		const schema = z.strictObject({
-			PORT: z.coerce.number().default(4040).meta({ description: 'Port' }),
-			SECRET: z.string().meta({ description: 'A secret', sensitivity: 'secret' })
+		const schema = object({
+			PORT: meta(with_default(env_integer(), 4040), { description: 'Port' }),
+			SECRET: meta(string, { description: 'A secret', sensitivity: 'secret' })
 		});
 		const surface = generate_app_surface({
 			middleware_specs: [],
@@ -956,8 +959,8 @@ describe('generate_app_surface', () => {
 	});
 
 	test('extended surface is JSON-serializable', () => {
-		const env_schema = z.strictObject({
-			PORT: z.coerce.number().default(4040).meta({ description: 'Port' })
+		const env_schema = object({
+			PORT: meta(with_default(env_integer(), 4040), { description: 'Port' })
 		});
 		const event_specs: Array<EventSpec> = [
 			{

@@ -11,7 +11,7 @@ import './assert_dev_env.ts';
 
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import type { z } from 'zod';
+import type { AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { SessionOptions } from '../auth/session_cookie.ts';
 import type { MiddlewareCarveOut, MiddlewareSpec } from '../http/middleware_spec.ts';
@@ -305,7 +305,7 @@ export interface CreateTestAppSurfaceSpecOptions {
 	/** Consumer's route factory — receives the same `AppServerContext` as production. */
 	create_route_specs: (ctx: AppServerContext) => Array<RouteSpec>;
 	/** Env schema for surface generation (default: `BaseServerEnv`). */
-	env_schema?: z.ZodObject;
+	env_schema?: AnySchema;
 	/** SSE event specs for surface generation. */
 	event_specs?: Array<EventSpec>;
 	/**

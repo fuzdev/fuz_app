@@ -16,7 +16,7 @@ import './assert_dev_env.ts';
  */
 
 import type { Hono } from 'hono';
-import { z } from 'zod';
+import { object } from '@fuzdev/fuz_schema/schema.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import type { Uuid } from '../primitive_schemas.ts';
 
@@ -639,7 +639,7 @@ export const create_loopback_app_server_options = (): Pick<
 	return {
 		allowed_origins: parsed.origins,
 		proxy: { trusted_proxies: ['127.0.0.1'], get_connection_ip: () => '127.0.0.1' },
-		env_schema: z.object({})
+		env_schema: object({})
 	};
 };
 

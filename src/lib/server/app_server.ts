@@ -11,7 +11,7 @@
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { logger } from 'hono/logger';
 import type { UpgradeWebSocket } from 'hono/ws';
-import { z } from 'zod';
+import type { AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import {
@@ -460,11 +460,12 @@ export interface AppServerOptions {
 		ReadonlyArray<WsEndpointSpec> | ((context: AppServerContext) => ReadonlyArray<WsEndpointSpec>);
 
 	/**
-	 * Env schema for surface generation. Defaults to `BaseServerEnv` —
-	 * pass an extended schema (typically `BaseServerEnv.extend({...})`)
-	 * when the consumer adds app-specific env vars.
+	 * Env schema for surface generation, a `@fuzdev/fuz_schema` object
+	 * schema. Defaults to `BaseServerEnv` — pass an extended schema
+	 * (typically `object({...BaseServerEnv.def, ...})`) when the consumer
+	 * adds app-specific env vars.
 	 */
-	env_schema?: z.ZodObject;
+	env_schema?: AnySchema;
 
 	/** Middleware applied after routes, before static serving. Included in surface. */
 	post_route_middleware?: Array<MiddlewareSpec>;

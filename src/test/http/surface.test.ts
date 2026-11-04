@@ -9,6 +9,20 @@
  */
 
 import { describe, assert, test } from 'vitest';
+import { meta } from '@fuzdev/fuz_schema/meta.ts';
+import {
+	message,
+	nullable,
+	number,
+	object,
+	optional,
+	pipe,
+	string,
+	transform,
+	union,
+	with_default,
+	with_default_fn
+} from '@fuzdev/fuz_schema/schema.ts';
 import { z } from 'zod';
 
 import {
@@ -209,8 +223,8 @@ describe('generate_app_surface', () => {
 	});
 
 	test('includes env when env_schema provided', () => {
-		const env_schema = z.strictObject({
-			PORT: z.number().default(4040)
+		const env_schema = object({
+			PORT: with_default(number, 4040)
 		});
 
 		const surface = generate_app_surface({
@@ -413,9 +427,9 @@ describe('collect_middleware_errors', () => {
 
 describe('env_schema_to_surface', () => {
 	test('extracts env entries from schema', () => {
-		const schema = z.strictObject({
-			PORT: z.number().default(4040),
-			SECRET: z.string()
+		const schema = object({
+			PORT: with_default(number, 4040),
+			SECRET: string
 		});
 
 		const entries = env_schema_to_surface(schema);
@@ -428,11 +442,12 @@ describe('env_schema_to_surface', () => {
 		assert.strictEqual(port.has_default, true);
 		assert.strictEqual(port.optional, true);
 		assert.strictEqual(secret.has_default, false);
+		assert.strictEqual(secret.optional, false);
 	});
 
 	test('detects sensitivity from meta', () => {
-		const schema = z.strictObject({
-			API_KEY: z.string().meta({ sensitivity: 'secret', description: 'The API key' })
+		const schema = object({
+			API_KEY: meta(string, { sensitivity: 'secret', description: 'The API key' })
 		});
 
 		const entries = env_schema_to_surface(schema);
@@ -442,10 +457,11 @@ describe('env_schema_to_surface', () => {
 	});
 
 	test('reads sensitivity and description under wrappers', () => {
-		const schema = z.strictObject({
-			OPTIONAL_KEY: z.string().meta({ sensitivity: 'secret', description: 'Optional' }).optional(),
-			DEFAULT_KEY: z.string().meta({ sensitivity: 'secret', description: 'Default' }).default('x'),
-			NULLABLE_KEY: z.string().meta({ sensitivity: 'secret', description: 'Nullable' }).nullable()
+		const secret = (description: string) => meta(string, { sensitivity: 'secret', description });
+		const schema = object({
+			OPTIONAL_KEY: optional(secret('Optional')),
+			DEFAULT_KEY: with_default(secret('Default'), 'x'),
+			NULLABLE_KEY: nullable(secret('Nullable'))
 		});
 
 		for (const entry of env_schema_to_surface(schema)) {
@@ -454,9 +470,75 @@ describe('env_schema_to_surface', () => {
 		}
 	});
 
+	test('reads sensitivity in a later pipe step and a union option', () => {
+		const schema = object({
+			PIPED: pipe(
+				string,
+				meta(
+					transform((v: string) => v),
+					{ sensitivity: 'secret' }
+				)
+			),
+			UNION: union([number, meta(string, { sensitivity: 'secret' })])
+		});
+
+		for (const entry of env_schema_to_surface(schema)) {
+			assert.strictEqual(entry.sensitivity, 'secret', entry.name);
+		}
+	});
+
+	test('a mark inside or outside a message is read', () => {
+		const schema = object({
+			INSIDE: message(meta(string, { sensitivity: 'secret' }), 'required'),
+			OUTSIDE: meta(message(string, 'required'), { sensitivity: 'secret' })
+		});
+
+		const [inside, outside] = env_schema_to_surface(schema);
+
+		assert.strictEqual(inside!.sensitivity, 'secret');
+		assert.strictEqual(outside!.sensitivity, 'secret');
+	});
+
+	test('optional and has_default are what a parse of undefined does', () => {
+		const schema = object({
+			REQUIRED: string,
+			OPTIONAL: optional(string),
+			DEFAULT: with_default(string, 'x'),
+			// a default of `undefined` is optional and has no default, as in Zod
+			DEFAULT_UNDEFINED: with_default(optional(string), undefined),
+			DEFAULT_FN: with_default_fn(string, () => 'made'),
+			// an `optional` outside the default answers first
+			OPTIONAL_DEFAULT: optional(with_default(string, 'x')),
+			NULLABLE: nullable(string)
+		});
+
+		const by_name = Object.fromEntries(
+			env_schema_to_surface(schema).map((e) => [e.name, [e.optional, e.has_default]])
+		);
+
+		assert.deepStrictEqual(by_name, {
+			REQUIRED: [false, false],
+			OPTIONAL: [true, false],
+			DEFAULT: [true, true],
+			DEFAULT_UNDEFINED: [true, false],
+			DEFAULT_FN: [true, true],
+			OPTIONAL_DEFAULT: [true, false],
+			NULLABLE: [false, false]
+		});
+	});
+
+	test('description is empty without meta', () => {
+		const entries = env_schema_to_surface(object({ BARE: string }));
+		assert.strictEqual(entries[0]!.description, '');
+	});
+
+	test('throws on a schema that is not an object schema', () => {
+		assert.throws(() => env_schema_to_surface(string), TypeError);
+	});
+
 	test('non-sensitive fields default to sensitivity=null', () => {
-		const schema = z.strictObject({
-			PORT: z.number().default(3000)
+		const schema = object({
+			PORT: with_default(number, 3000)
 		});
 
 		const entries = env_schema_to_surface(schema);

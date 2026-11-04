@@ -11,6 +11,7 @@
  */
 
 import { describe, test, assert, beforeAll, afterAll } from 'vitest';
+import { object } from '@fuzdev/fuz_schema/schema.ts';
 import { z } from 'zod';
 
 import { create_session_config } from '#lib/auth/session_cookie.ts';
@@ -104,7 +105,7 @@ describe('auth flow integration', () => {
 		const options: AppServerOptions = {
 			backend: test_server,
 			...base_config,
-			env_schema: z.object({})
+			env_schema: object({})
 		};
 
 		result = await create_app_server(options);

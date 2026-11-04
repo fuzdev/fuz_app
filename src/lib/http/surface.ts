@@ -7,6 +7,8 @@
  * @module
  */
 
+import { get_schema_entries, get_schema_fields } from '@fuzdev/fuz_schema/introspect.ts';
+import { parse, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 import { z } from 'zod';
 
 import type { EventSpec } from '../realtime/sse.ts';
@@ -24,8 +26,7 @@ import {
 	is_null_schema,
 	is_strict_object_schema
 } from './schema_helpers.ts';
-import type { Sensitivity } from '../sensitivity.ts';
-import { schema_meta_value, schema_sensitivity } from '../schema_meta.ts';
+import { find_schema_sensitivity, type Sensitivity } from '../sensitivity.ts';
 
 // --- Surface types ---
 
@@ -74,7 +75,7 @@ export interface AppSurfaceMiddleware {
 export interface AppSurfaceEnv {
 	name: string;
 	description: string;
-	/** Sensitivity level from `.meta({sensitivity})`. `null` when not sensitive. */
+	/** Sensitivity level from `meta(schema, {sensitivity})`. `null` when not sensitive. */
 	sensitivity: Sensitivity | null;
 	has_default: boolean;
 	optional: boolean;
@@ -200,7 +201,8 @@ export interface RpcEndpointSpec {
 export interface GenerateAppSurfaceOptions {
 	route_specs: Array<RouteSpec>;
 	middleware_specs: Array<MiddlewareSpec>;
-	env_schema?: z.ZodObject;
+	/** A `@fuzdev/fuz_schema` object schema of the app's env vars, such as `BaseServerEnv`. */
+	env_schema?: AnySchema;
 	event_specs?: Array<EventSpec>;
 	rpc_endpoints?: Array<RpcEndpointSpec>;
 	/**
@@ -235,27 +237,29 @@ export const collect_middleware_errors = (
 };
 
 /**
- * Convert env schema to surface entries using `.meta()` metadata, read
- * through each field's wrappers — `schema_meta_value` for the description,
- * the wider fail-safe `schema_sensitivity` walk for secrets.
+ * Convert a `@fuzdev/fuz_schema` env schema to surface entries, one per
+ * entry in order, reading each field's `meta`: the description from its
+ * layers (`get_schema_fields`), and the fail-safe `find_schema_sensitivity`
+ * for secrets. `optional` and `has_default` are what a parse of `undefined`
+ * does: accepted, and accepted with a value other than `undefined`.
  *
- * @param schema - Zod object schema with `.meta()` on fields
+ * @param schema - an object schema (under any wrappers) with `meta` on its fields
+ * @throws TypeError if `schema` is not an object schema
  */
-export const env_schema_to_surface = (schema: z.ZodObject): Array<AppSurfaceEnv> => {
-	const entries: Array<AppSurfaceEnv> = [];
-	for (const [name, field_schema] of Object.entries(schema.shape)) {
-		const field = field_schema as z.ZodType;
-		const undef_result = field.safeParse(undefined);
-		entries.push({
-			name,
-			// read through wrappers — a `.meta()` under `.optional()` is not on the outer schema
-			description: schema_meta_value(field, 'description') ?? '',
-			sensitivity: schema_sensitivity(field) ?? null,
-			has_default: undef_result.success && undef_result.data !== undefined,
-			optional: undef_result.success
-		});
+export const env_schema_to_surface = (schema: AnySchema): Array<AppSurfaceEnv> => {
+	if (!get_schema_entries(schema)) {
+		throw new TypeError(`env_schema must be an object schema, got '${schema.kind}'`);
 	}
-	return entries;
+	return get_schema_fields(schema).map((field) => {
+		const undef_result = parse(field.schema, undefined);
+		return {
+			name: field.name,
+			description: field.description ?? '',
+			sensitivity: find_schema_sensitivity(field.schema) ?? null,
+			has_default: undef_result.ok && undef_result.value !== undefined,
+			optional: undef_result.ok
+		};
+	});
 };
 
 /**

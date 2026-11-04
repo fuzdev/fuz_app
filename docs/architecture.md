@@ -350,31 +350,46 @@ for consumer use.
 
 ## Extending BaseServerEnv
 
-Apps extend `BaseServerEnv` with app-specific env vars using Zod's `.extend()`:
+`BaseServerEnv` is a `@fuzdev/fuz_schema` object schema. Apps extend it with
+app-specific env vars by spreading its `def` into a new `object`:
 
 ```typescript
 import { BaseServerEnv } from '@fuzdev/fuz_app/server/env.ts';
-import { z } from 'zod';
+import { env_integer, EnvStringbool } from '@fuzdev/fuz_app/env/env_schemas.ts';
+import { meta } from '@fuzdev/fuz_schema/meta.ts';
+import { object, optional, string, with_default, type Infer } from '@fuzdev/fuz_schema/schema.ts';
 
-const MyAppEnv = BaseServerEnv.extend({
-	FEATURE_FLAGS: z.string().optional().meta({ description: 'Comma-separated feature flags' }),
-	SMTP_API_KEY: z.string().meta({ description: 'SMTP API key', sensitivity: 'secret' })
+const MyAppEnv = object({
+	...BaseServerEnv.def,
+	FEATURE_FLAGS: meta(optional(string), { description: 'Comma-separated feature flags' }),
+	SMTP_API_KEY: meta(string, { description: 'SMTP API key', sensitivity: 'secret' }),
+	MAX_UPLOADS: meta(with_default(env_integer({ min: 1 }), 4), { description: 'Upload cap' }),
+	DEBUG_MODE: meta(with_default(EnvStringbool, false), { description: 'Verbose logging' })
 });
-type MyAppEnv = z.infer<typeof MyAppEnv>;
+type MyAppEnv = Infer<typeof MyAppEnv>;
 ```
 
 Pass the extended schema to `load_env()` (from `env/load.ts`) and optionally to
-`create_app_server()` via `env_schema` for surface introspection.
+`create_app_server()` via `env_schema` for surface introspection. `env_integer`
+and `EnvStringbool` (`env/env_schemas.ts`) read a whole number and a boolean
+word as the Rust spine reads them.
 
 ### Schema Metadata Conventions
 
-`SchemaFieldMeta` (from `schema_meta.ts`) defines the `.meta()` shape used
-across env schemas and auth input schemas:
+Env fields carry `meta` (`@fuzdev/fuz_schema/meta.ts`); `sensitivity.ts` adds
+`sensitivity` to fuz_schema's `SchemaMeta` by declaration merging. Importing
+`server/env.ts` or `env/env_schemas.ts` brings the declaration in; a module
+that imports neither and marks a fuz_schema field adds
+`import type {} from '@fuzdev/fuz_app/sensitivity.ts';`. Zod schemas
+(auth input schemas) carry the same keys in `.meta()`, shaped by
+`SchemaFieldMeta` (from `schema_meta.ts`):
 
 - `description` — human-readable field description (env surface, docs)
 - `sensitivity: 'secret'` — marks sensitive values for masking/redaction; `'personal'` marks personal data (a search term about people), not masked but, like a secret, kept out of read URLs (`schema_has_sensitive_field`)
 
-`env_schema_to_surface` reads these properties into `AppSurfaceEnv` entries.
+`env_schema_to_surface` reads these properties into `AppSurfaceEnv` entries,
+`sensitivity` through `find_schema_sensitivity`, which reads every schema a
+field reaches, `message` included.
 `generate_valid_value` uses type-based heuristics (format detection, length constraints, enum extraction) to produce valid test values.
 
 ## Error Schema System

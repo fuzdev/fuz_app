@@ -196,7 +196,7 @@ Types:
 `create_test_app` hard-codes the test-friendly `AppServerOptions`:
 `allowed_origins` exactly `TEST_ORIGIN` (built by
 `parse_allowed_origins`, as `create_app_server` requires), stub proxy pinned to `127.0.0.1`,
-`env_schema: z.object({})`, `rate_limiters: 'disabled_for_testing'` (every
+`env_schema: object({})` (fuz_schema), `rate_limiters: 'disabled_for_testing'` (every
 rate limiter `null` — a limiter passed through `app_options` wins over the
 mode, so a rate-limit test enables just the one it pins; the mode's stderr
 banner prints once per module instance — once per test file in an isolated
