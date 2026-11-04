@@ -73,8 +73,8 @@ import type { AuthGuardResolver } from '../http/route_spec.ts';
  *   (`account: 'none' && actor: 'none'`). The same holder reaches that route
  *   by dropping the credential, so the guard reads as a control and enforces
  *   nothing — the shape `compile_action_registry` refuses on an `ActionSpec`
- *   for the same reason. Extends `RouteAuth`'s leaf invariant, which the
- *   route pipeline never parses.
+ *   for the same reason. Extends `RouteAuth`'s leaf invariant (invariant 4,
+ *   which `assert_route_auth_invariants` checks for roles and credential types).
  */
 export const fuz_auth_guard_resolver: AuthGuardResolver = (auth) => {
 	const pre_authorization = [];

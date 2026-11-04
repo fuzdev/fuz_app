@@ -41,7 +41,11 @@ import type { JsonrpcErrorObject } from './jsonrpc.ts';
 import { is_null_schema, merge_error_schemas } from './schema_helpers.ts';
 import { dispatch_with_post_commit_rollback } from './pending_effects.ts';
 import type { MiddlewareSpec } from './middleware_spec.ts';
-import { assert_route_auth_acting_biconditional, type RouteAuth } from './auth_shape.ts';
+import {
+	assert_route_auth_acting_biconditional,
+	assert_route_auth_invariants,
+	type RouteAuth
+} from './auth_shape.ts';
 import { to_wire_issues } from '../schema_issues.ts';
 
 /**
@@ -622,7 +626,8 @@ const build_rest_error_body = (err: JsonrpcErrorObject): Record<string, unknown>
  * - `pending_effects`: eager fire-and-forget pool-write queue
  * - `post_commit_effects`: deferred-thunk queue (push via `emit_after_commit`)
  *
- * Also enforces registry-time invariant 2 from the auth-shape design:
+ * Also enforces the auth shape's registry-time invariants: the cross-axis
+ * invariants 1, 3, and 4 (`assert_route_auth_invariants`), and invariant 2:
  * `auth.actor !== 'none' ⟺ input or query declares acting?: ActingActor`.
  * REST is bi-located (GETs declare `acting` on `query`, mutations on
  * `input`), so the check passes both slots; the action-dispatcher
@@ -633,7 +638,7 @@ const build_rest_error_body = (err: JsonrpcErrorObject): Record<string, unknown>
  * @param authorize - optional authorization phase; runs after the pre-authorization guards and before the post-authorization guards
  * @param db - used for transaction wrapping and `RouteContext`
  * @mutates `app`
- * @throws Error if two specs share the same `method` + `path` (each combination must be unique), or if any spec violates the actor-acting biconditional
+ * @throws Error if two specs share the same `method` + `path` (each combination must be unique), or if any spec violates a cross-axis auth invariant or the actor-acting biconditional
  */
 export const apply_route_specs = (
 	app: Hono,
@@ -652,6 +657,7 @@ export const apply_route_specs = (
 			);
 		}
 		registered.add(route_key);
+		assert_route_auth_invariants(spec.auth, `Route "${route_key}"`);
 		assert_route_auth_acting_biconditional(
 			spec.auth,
 			{ input: spec.input, query: spec.query },

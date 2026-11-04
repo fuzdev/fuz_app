@@ -7,6 +7,10 @@
  * numbered — "registry-time invariant N" elsewhere in the codebase refers to
  * the `RouteAuth` cross-axis set in `http/auth_shape.ts`, a different list):
  *
+ * - **Auth-shape cross-axis invariants** — per `assert_route_auth_invariants`
+ *   in `http/auth_shape.ts`: roles imply a required actor, no accountless
+ *   actor, nothing to gate on unrestricted auth (that set's invariants 1, 3,
+ *   and 4). Fires for every spec with non-null auth.
  * - **Auth-shape biconditional** — per `assert_route_auth_acting_biconditional`
  *   in `http/auth_shape.ts`: `auth.actor !== 'none' ⟺ input declares
  *   acting?: ActingActor` (that set's invariant 2). Fires for every spec with
@@ -43,7 +47,10 @@
  */
 
 import type { Action, RpcAction } from './action_types.ts';
-import { assert_route_auth_acting_biconditional } from '../http/auth_shape.ts';
+import {
+	assert_route_auth_acting_biconditional,
+	assert_route_auth_invariants
+} from '../http/auth_shape.ts';
 import { is_null_schema, is_void_schema } from '../http/schema_helpers.ts';
 
 /** Result returned by `compile_action_registry`. */
@@ -63,7 +70,7 @@ export interface ActionRegistryCompileResult {
  *
  * @param actions - polymorphic action array; HTTP RPC passes `RpcAction[]` (narrower), WebSocket passes `Action[]` (kind-polymorphic — handler-less notification specs are accepted)
  * @param ctx_label - per-spec error-message prefix, e.g. `'RPC action'` or `'WS action'`. Combined with the spec method as `${ctx_label} "${method}"`.
- * @throws Error on biconditional violation, rate-limit/account-axis mismatch, JSON-RPC null-input or void-output, or duplicate method.
+ * @throws Error on a cross-axis invariant or biconditional violation, rate-limit/account-axis mismatch, JSON-RPC null-input or void-output, or duplicate method.
  */
 export const compile_action_registry = (
 	actions: ReadonlyArray<Action>,
@@ -81,6 +88,7 @@ export const compile_action_registry = (
 		// Auth-shape invariants apply to any spec with non-null auth (which
 		// per the spec union means `kind === 'request_response'`).
 		if (spec.auth !== null) {
+			assert_route_auth_invariants(spec.auth, ctx);
 			assert_route_auth_acting_biconditional(spec.auth, { input: spec.input }, ctx);
 			if (spec.auth.required_scope !== undefined) {
 				throw new Error(

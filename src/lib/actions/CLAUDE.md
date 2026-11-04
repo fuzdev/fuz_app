@@ -36,7 +36,9 @@ surface drives routes and SAES. Cross-axis invariants: roles imply
 `actor: 'required'`; `account: 'none'` implies `actor: 'none'` (no
 accountless actors in v1); the unrestricted leaf
 (`account: 'none', actor: 'none'`) cannot declare roles or credential
-gates. The biconditional `actor !== 'none' ⟺ input declares acting?: ActingActor`
+gates — checked at registration time via `assert_route_auth_invariants`, on
+action and route specs alike (a spec is a plain object nothing parses). The
+biconditional `actor !== 'none' ⟺ input declares acting?: ActingActor`
 is enforced at registration time via `assert_route_auth_acting_biconditional`.
 `required_scope` is the one axis actions cannot use — see §Registry compile.
 
@@ -78,6 +80,7 @@ non-`remote_notification` kind.
 `create_rpc_endpoint` and `register_action_ws`. Validates these checks in
 order and returns the `Map<method, RpcAction>` the dispatchers use:
 
+- **Auth-shape cross-axis invariants** — roles imply a required actor, no accountless actor, nothing to gate on unrestricted auth (via `assert_route_auth_invariants`).
 - **Auth-shape biconditional** — `actor !== 'none' ⟺ input declares acting?: ActingActor` (via `assert_route_auth_acting_biconditional`).
 - **No `auth.required_scope`** — the slot is route-spec-only; nothing mounts a guard from it on an action, so declaring it would be a control that silently does nothing. Narrowed tokens are gated per method by the scope check in `perform_action`, which derives the `rpc:<method>` capability from `spec.method` rather than trusting a hand-written one.
 - **Rate-limit account axis** — `rate_limit: 'account' | 'both'` requires `auth.account === 'required'`.

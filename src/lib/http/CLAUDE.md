@@ -15,7 +15,7 @@ effects, see ../../../docs/architecture.md.
 ## Module Map
 
 - `http/route_spec.ts` — `RouteSpec` + `apply_route_specs`, validation pipeline, transactions.
-- `http/auth_shape.ts` — canonical `RouteAuth` Zod schema + cross-axis invariants + predicates.
+- `http/auth_shape.ts` — canonical `RouteAuth` Zod schema + predicates + the registration-time checks: `assert_route_auth_invariants` (the cross-axis invariants 1, 3, 4) and `assert_route_auth_acting_biconditional` (invariant 2), both run by `apply_route_specs` and `compile_action_registry` on every spec.
 - `http/error_schemas.ts` — `ERROR_*` constants, standard error shapes, `derive_error_schemas`.
 - `http/schema_helpers.ts` — shared Zod introspection (null/void/strict/surface/merge/middleware-applies) + `to_void_params` / `to_input_params` / `json_has_own_proto_key` / `safe_parse_dropping_unknown_keys`.
 - `http/middleware_spec.ts` — `MiddlewareSpec` interface.

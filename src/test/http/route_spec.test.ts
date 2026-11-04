@@ -383,9 +383,8 @@ describe('auth.required_scope', () => {
 	 * same holder reaches the handler by dropping the credential, so the guard
 	 * would read as a control and enforce nothing — the shape
 	 * `compile_action_registry` refuses on an `ActionSpec` for the same reason.
-	 * `RouteAuth`'s `.superRefine` can't carry this one (it would need `auth/`'s
-	 * capability vocabulary, and the route pipeline never parses the schema), so
-	 * the resolver is where it lands.
+	 * `assert_route_auth_invariants` can't carry this one (it would need
+	 * `auth/`'s capability vocabulary), so the resolver is where it lands.
 	 */
 	test('a scope gate on an unrestricted route is refused at registration', () => {
 		assert.throws(

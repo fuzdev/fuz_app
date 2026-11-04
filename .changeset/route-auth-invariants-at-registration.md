@@ -1,0 +1,5 @@
+---
+'@fuzdev/fuz_app': minor
+---
+
+break: `RouteAuth`'s cross-axis invariants — roles imply `actor: 'required'`, no `actor` without an `account`, and no `roles` or `credential_types` on unrestricted auth (`account: 'none', actor: 'none'`) — are now checked at registration, by the new `assert_route_auth_invariants` (`http/auth_shape.ts`), on every route spec `apply_route_specs` mounts and every action spec `compile_action_registry` compiles (`create_rpc_endpoint`, `register_action_ws`, and so `create_app_server`'s `rpc_endpoints` and `ws_endpoints`). They lived only on the `RouteAuth` schema's `.superRefine`, which no registration path runs, so a spec breaking one mounted and ran: a role gate checked without a resolved actor, a credential gate on a route open to anyone. Such a spec now throws at assembly, naming the spec and every invariant it breaks. The `.superRefine` runs the same check. To migrate: fix any spec the throw names — give a role-gated spec `actor: 'required'` (and its input `acting?: ActingActor`), give an actor-axis spec an `account`, and drop `roles` / `credential_types` from unrestricted auth or gate it on an account.

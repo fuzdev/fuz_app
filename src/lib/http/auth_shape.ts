@@ -20,14 +20,16 @@
  * `actions → http` dependency direction (and `http/error_schemas.ts` /
  * `http/surface.ts` consume the type).
  *
- * Registry-time invariants 1, 3, and 4 live on the schema's
- * `.superRefine` so any spec that fails them throws at the Zod parse
- * boundary. Invariant 2 (the `actor !== 'none' ⟺ input or query
- * declares acting?: ActingActor` biconditional) needs introspection of
- * the spec's input/query schemas, so it is enforced at registration
- * time inside the dispatcher loops (`apply_route_specs`,
- * `create_rpc_endpoint`, `register_action_ws`) via the
- * `assert_route_auth_acting_biconditional` helper exported below.
+ * Every registry-time invariant is enforced at registration, inside the
+ * dispatcher loops every spec passes (`apply_route_specs` for route specs,
+ * `compile_action_registry` for `create_rpc_endpoint` and
+ * `register_action_ws`): the cross-axis invariants 1, 3, and 4 by
+ * `assert_route_auth_invariants`, which reads the auth shape alone, and
+ * invariant 2 (the `actor !== 'none' ⟺ input or query declares
+ * acting?: ActingActor` biconditional), which introspects the spec's
+ * input/query schemas, by `assert_route_auth_acting_biconditional`. Specs
+ * are plain objects that no registration path parses, so neither check
+ * can live only on a schema.
  *
  * @module
  */
@@ -124,11 +126,67 @@ export const parse_acting = (value: unknown): string | undefined => {
 export const AuthAxisState = z.enum(['none', 'optional', 'required']);
 export type AuthAxisState = z.infer<typeof AuthAxisState>;
 
+/** One broken cross-axis invariant: the offending field and why. */
+interface RouteAuthInvariantViolation {
+	path: 'roles' | 'actor' | 'credential_types';
+	message: string;
+}
+
+/**
+ * The cross-axis invariants 1, 3, and 4 an auth shape breaks, in that order —
+ * the one implementation behind `assert_route_auth_invariants` and the
+ * `RouteAuth` schema's `.superRefine`.
+ */
+const route_auth_invariant_violations = (auth: {
+	account: AuthAxisState;
+	actor: AuthAxisState;
+	roles?: ReadonlyArray<string>;
+	credential_types?: ReadonlyArray<string>;
+}): Array<RouteAuthInvariantViolation> => {
+	const violations: Array<RouteAuthInvariantViolation> = [];
+	// invariant 1: roles imply actor
+	if (auth.roles?.length && auth.actor !== 'required') {
+		violations.push({
+			path: 'roles',
+			message:
+				"auth.roles requires auth.actor === 'required' (role checks read the actor's role_grants)"
+		});
+	}
+	// invariant 3: no accountless actors yet
+	if (auth.account === 'none' && auth.actor !== 'none') {
+		violations.push({
+			path: 'actor',
+			message:
+				"auth.account === 'none' && auth.actor !== 'none' is not yet supported — accountless credentials (agent-token, group-actor) are out of scope for v1"
+		});
+	}
+	// invariant 4: unrestricted is leaf
+	if (auth.account === 'none' && auth.actor === 'none') {
+		if (auth.roles?.length) {
+			violations.push({
+				path: 'roles',
+				message:
+					"unrestricted auth (account === 'none' && actor === 'none') cannot declare roles — nothing to gate"
+			});
+		}
+		if (auth.credential_types?.length) {
+			violations.push({
+				path: 'credential_types',
+				message:
+					"unrestricted auth (account === 'none' && actor === 'none') cannot declare credential_types — nothing to gate"
+			});
+		}
+	}
+	return violations;
+};
+
 /**
  * The canonical auth shape used by both `ActionSpec.auth` and
  * `RouteSpec.auth`.
  *
- * Cross-axis registry invariants enforced via `.superRefine`:
+ * Cross-axis registry invariants, checked at registration by
+ * `assert_route_auth_invariants` (and by this schema's `.superRefine`, the
+ * same check, when a caller parses an auth shape):
  *
  * 1. **Roles imply actor.** `roles?.length` ⟹ `actor === 'required'`.
  *    Role checks read the actor's role_grants, so a role-gated spec without
@@ -140,8 +198,7 @@ export type AuthAxisState = z.infer<typeof AuthAxisState>;
  *    ⟹ no `roles`, no `credential_types` (nothing left to gate). The same
  *    rule covers `required_scope`, but enforcing it needs the capability
  *    vocabulary from `auth/`, so it lives with the other `required_scope`
- *    check in `fuz_auth_guard_resolver` — which is also the only site every
- *    route spec traverses, since the route pipeline never parses this schema.
+ *    check in `fuz_auth_guard_resolver`.
  *
  * Invariant 2 — the `actor !== 'none' ⟺ input or query declares
  * acting?: ActingActor` biconditional — needs introspection of the
@@ -191,42 +248,8 @@ export const RouteAuth = z
 		required_scope: z.string().optional()
 	})
 	.superRefine((value, ctx) => {
-		// invariant 1: roles imply actor
-		if (value.roles?.length && value.actor !== 'required') {
-			ctx.addIssue({
-				code: 'custom',
-				message:
-					"auth.roles requires auth.actor === 'required' (role checks read the actor's role_grants)",
-				path: ['roles']
-			});
-		}
-		// invariant 3: no accountless actors yet
-		if (value.account === 'none' && value.actor !== 'none') {
-			ctx.addIssue({
-				code: 'custom',
-				message:
-					"auth.account === 'none' && auth.actor !== 'none' is not yet supported — accountless credentials (agent-token, group-actor) are out of scope for v1",
-				path: ['actor']
-			});
-		}
-		// invariant 4: unrestricted is leaf
-		if (value.account === 'none' && value.actor === 'none') {
-			if (value.roles?.length) {
-				ctx.addIssue({
-					code: 'custom',
-					message:
-						"unrestricted auth (account === 'none' && actor === 'none') cannot declare roles — nothing to gate",
-					path: ['roles']
-				});
-			}
-			if (value.credential_types?.length) {
-				ctx.addIssue({
-					code: 'custom',
-					message:
-						"unrestricted auth (account === 'none' && actor === 'none') cannot declare credential_types — nothing to gate",
-					path: ['credential_types']
-				});
-			}
+		for (const { path, message } of route_auth_invariant_violations(value)) {
+			ctx.addIssue({ code: 'custom', message, path: [path] });
 		}
 	});
 export type RouteAuth = z.infer<typeof RouteAuth>;
@@ -293,6 +316,26 @@ export const is_keeper_auth = (auth: RouteAuth): boolean =>
  */
 export const is_plain_authenticated_auth = (auth: RouteAuth): boolean =>
 	auth.account === 'required' && !is_role_auth(auth) && !is_credential_gated_auth(auth);
+
+/**
+ * Registry-time check of the cross-axis invariants 1, 3, and 4 (see
+ * `RouteAuth`). Throws on violation, naming every invariant the shape breaks.
+ *
+ * Called by every dispatcher registration loop (`apply_route_specs`,
+ * `compile_action_registry`) on every spec it accepts, so a spec that breaks
+ * one fails at assembly rather than at its first request.
+ *
+ * @param auth - the route/action's auth shape
+ * @param context - identifier for the throwing message (route key, RPC method, etc.)
+ * @throws Error when any cross-axis invariant is violated
+ */
+export const assert_route_auth_invariants = (auth: RouteAuth, context: string): void => {
+	const violations = route_auth_invariant_violations(auth);
+	if (violations.length === 0) return;
+	throw new Error(
+		`${context}: ${violations.map((v) => v.message).join('; ')} (registry-time invariants)`
+	);
+};
 
 // --- Registry-time invariant 2 enforcement ---
 //
