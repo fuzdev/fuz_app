@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.155.1
+
+### Patch Changes
+
+- fix: peer `@fuzdev/fuz_schema` `^0.5.3`, the first release with `json_schema.ts`, which `http/schema_helpers.ts` and the testing generators import ([0a0c2ea](https://github.com/fuzdev/fuz_app/commit/0a0c2ea))
+
 ## 0.155.0
 
 ### Minor Changes
