@@ -9,9 +9,11 @@ import './assert_dev_env.ts';
 
 import {
 	format_issue,
+	iso_datetime,
 	number,
 	object,
 	parse,
+	pipe,
 	string,
 	type Infer
 } from '@fuzdev/fuz_schema/schema.ts';
@@ -42,8 +44,13 @@ export const DaemonInfo = object({
 	pid: number,
 	/** Port the server is listening on. */
 	port: number,
-	/** ISO timestamp when server started. */
-	started: string,
+	/**
+	 * When the server started, an RFC 3339 date and time in UTC
+	 * (`2026-01-01T00:00:00.000Z`): a four-digit year, seconds required, a
+	 * fraction of up to 9 digits or none, `Z` and no offset — fuz_schema's
+	 * `iso_datetime`.
+	 */
+	started: pipe(string, iso_datetime),
 	/** Package version of the application. */
 	app_version: string
 });

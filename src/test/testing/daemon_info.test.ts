@@ -46,6 +46,34 @@ describe('DaemonInfo schema', () => {
 		const result = parse(DaemonInfo, { ...MOCK_INFO, extra: 'field' });
 		assert.strictEqual(result.ok, false);
 	});
+
+	test('accepts a `toISOString` started', () => {
+		const started = new Date().toISOString();
+		const result = parse(DaemonInfo, { ...MOCK_INFO, started });
+		assert.ok(result.ok);
+		assert.strictEqual(result.value.started, started);
+	});
+
+	test('accepts a whole-second started', () => {
+		const result = parse(DaemonInfo, { ...MOCK_INFO, started: '2026-05-30T12:00:00Z' });
+		assert.ok(result.ok);
+	});
+
+	test('rejects a started that is not a date and time', () => {
+		for (const started of [
+			'yesterday',
+			'2026-01-01',
+			'2026-02-30T00:00:00.000Z',
+			'2026-01-01T00:00:00.000+00:00'
+		]) {
+			const result = parse(DaemonInfo, { ...MOCK_INFO, started });
+			assert.ok(!result.ok, started);
+			assert.ok(
+				result.issues.some((issue) => issue.kind === 'iso_datetime'),
+				started
+			);
+		}
+	});
 });
 
 describe('get_daemon_info_path', () => {

@@ -157,7 +157,7 @@ Shared helpers accept small `*Deps` from `runtime/deps.ts` (not `Pick<GodType, .
 - `zod` (^4), `svelte` (^5), `@sveltejs/kit` (^3)
 - `hono` (>=4) — optional, for the server-side modules (routes, middleware, `create_app_server`)
 - `@fuzdev/fuz_util` (>=0.79.0)
-- `@fuzdev/fuz_schema` (^0.5.0) — the `Branded` behind fuz_util's `FactHash` (one deduped copy, as `Branded` keys on a unique symbol), the `DaemonInfo` schema of `testing/daemon_info.ts`, and the env schemas (`BaseServerEnv`, `load_env`, `env/env_schemas.ts`, `find_schema_sensitivity`)
+- `@fuzdev/fuz_schema` (^0.5.2) — the `Branded` behind fuz_util's `FactHash` (one deduped copy, as `Branded` keys on a unique symbol), the `DaemonInfo` schema of `testing/daemon_info.ts` (its `started` an `iso_datetime`), and the env schemas (`BaseServerEnv`, `load_env`, `env/env_schemas.ts`, `find_schema_sensitivity`)
 - `@node-rs/argon2` (>=2) — optional, for `auth/password_argon2`
 - `@fuzdev/blake3-wasm` (>=0.2.0) — imported directly by `db/fact_disk_storage` (the streaming hasher); `auth/session_queries` and `auth/api_token` (session and API token hashes) reach it through `@fuzdev/fuz_util/hash_blake3.ts`
 - `pg` (>=8), `@electric-sql/pglite` (>=0.4) or `@fuzdev/pglet-wasm` (>=0.1.2) — optional, for `db/create_db` (`postgres://`, `file://` and `memory://` respectively); `@fuzdev/pglet-wasm` is also the default test database (`testing/db.ts`'s `create_default_db_factory`)

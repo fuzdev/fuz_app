@@ -10,8 +10,8 @@
  * Split out from `auth/account_schema.ts` so the auth module shrinks to
  * entity types + client-safe JSON shapes (its real responsibility) and
  * non-auth consumers can import these primitives without dragging the
- * auth domain along. Future cross-domain primitives (phone, url, slug)
- * land here too.
+ * auth domain along. Future cross-domain primitives (phone, slug) land
+ * here too; a URL is `Url` from `@fuzdev/fuz_util/url.ts`.
  *
  * Client-safe: nothing here imports `@fuzdev/blake3-wasm`, so wire schemas
  * that validate a hash don't pull the WASM binary into a bundle.
@@ -217,7 +217,9 @@ export const create_uuid = (): Uuid => crypto.randomUUID() as Uuid;
  * Branded UUID schema. Accepts either case and outputs lowercase — the form
  * Postgres renders a `uuid` in and every id the server mints — so a parsed id
  * compares equal to the same id read back from the database. The Rust spine
- * canonicalizes the same way.
+ * canonicalizes the same way. One exception: `z.uuid()` takes the max UUID
+ * (`ffffffff-ffff-ffff-ffff-ffffffffffff`) only in lowercase, and
+ * `.toLowerCase()` runs after the check, so the uppercase max is refused.
  *
  * `.toLowerCase()` rather than `.transform()`: an overwrite keeps the output
  * type and stays invisible to `z.toJSONSchema`, where a transform would leave
@@ -230,7 +232,14 @@ export type Uuid = z.infer<typeof Uuid>;
 export const UuidWithDefault = Uuid.default(create_uuid);
 export type UuidWithDefault = z.infer<typeof UuidWithDefault>;
 
-/** Branded ISO 8601 datetime schema. */
+/**
+ * Branded datetime schema, zod's default `z.iso.datetime()`: an RFC 3339 date
+ * and time in UTC with a real calendar date, `Z` and no offset, and a fraction
+ * of any length or none. Zod 4.6 requires the seconds; earlier zod 4, which
+ * the `zod` peer range admits, also takes `HH:MMZ`. fuz_schema's
+ * `iso_datetime` is this grammar with the seconds required and the fraction
+ * capped at 9 digits.
+ */
 export const Datetime = z.iso.datetime().brand('Datetime');
 export type Datetime = z.infer<typeof Datetime>;
 
