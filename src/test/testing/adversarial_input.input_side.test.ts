@@ -10,6 +10,18 @@
 
 import { describe, test, assert } from 'vitest';
 import { z } from 'zod';
+import {
+	check,
+	integer,
+	max_length,
+	min_length,
+	nullable,
+	number,
+	object,
+	pipe,
+	string,
+	uuid
+} from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	generate_input_test_cases,
@@ -17,7 +29,7 @@ import {
 	generate_query_test_cases,
 	type InputTestCase
 } from '#lib/testing/adversarial_input_cases.ts';
-import { to_field_json_schema } from '#lib/testing/schema_generators.ts';
+import { detect_format, to_field_json_schema } from '#lib/testing/schema_generators.ts';
 import {
 	bounded_string,
 	Blake3Hash,
@@ -62,8 +74,54 @@ describe('to_field_json_schema', () => {
 		assert.strictEqual(json.maxLength, undefined);
 	});
 
-	test('is null for a type JSON Schema cannot represent', () => {
-		assert.strictEqual(to_field_json_schema(z.date()), null);
+	test('writes a type JSON Schema cannot represent with no constraints', () => {
+		const { $schema: _, ...json } = to_field_json_schema(z.date());
+		assert.deepEqual(json, {});
+	});
+
+	test('keeps the bounds of the branches beside one JSON Schema cannot represent', () => {
+		const json = to_field_json_schema(z.union([z.string().max(3), z.date()]));
+		assert.deepEqual(json.anyOf, [{ type: 'string', maxLength: 3 }, {}]);
+	});
+
+	test("resolves a bare nullable's type array to its one non-null type", () => {
+		assert.strictEqual(to_field_json_schema(z.boolean().nullable()).type, 'boolean');
+	});
+});
+
+describe('to_field_json_schema — fuz_schema', () => {
+	test('reads the bounds of a pipe', () => {
+		const json = to_field_json_schema(pipe(string, min_length(2), max_length(8)));
+		assert.ok(json);
+		assert.strictEqual(json.type, 'string');
+		assert.strictEqual(json.minLength, 2);
+		assert.strictEqual(json.maxLength, 8);
+	});
+
+	test("resolves a nullable's one non-null type", () => {
+		// a bare `integer` folds to `type: ['integer', 'null']`, an anyOf when it has keywords
+		assert.strictEqual(to_field_json_schema(nullable(pipe(number, integer))).type, 'integer');
+		assert.strictEqual(to_field_json_schema(nullable(pipe(string, max_length(4)))).maxLength, 4);
+	});
+
+	test('keeps the bounds around a check JSON Schema cannot say', () => {
+		const json = to_field_json_schema(
+			pipe(
+				string,
+				max_length(5),
+				check((s: string) => s !== 'x')
+			)
+		);
+		assert.ok(json);
+		assert.strictEqual(json.maxLength, 5);
+	});
+
+	test('reads a format', () => {
+		assert.strictEqual(detect_format(pipe(string, uuid)), 'uuid');
+	});
+
+	test('throws on a schema fuz_schema refuses in either mode', () => {
+		assert.throws(() => to_field_json_schema(object({ constructor: string })), /Object\.prototype/);
 	});
 });
 
@@ -93,7 +151,7 @@ describe('generate_input_test_cases — transform and pipe fields', () => {
 	});
 
 	test('the pattern violation fails the real regex', () => {
-		const json = to_field_json_schema(Username)!;
+		const json = to_field_json_schema(Username);
 		const value = value_of(generate(), 'format: username (pattern violation)');
 		assert.strictEqual(typeof value, 'string');
 		assert.isFalse(new RegExp(json.pattern as string).test(value as string));

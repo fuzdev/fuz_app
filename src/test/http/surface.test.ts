@@ -12,6 +12,7 @@ import { describe, assert, test } from 'vitest';
 import { meta } from '@fuzdev/fuz_schema/meta.ts';
 import {
 	message,
+	min_length,
 	nullable,
 	number,
 	object,
@@ -572,5 +573,105 @@ describe('events_to_surface', () => {
 		const events = events_to_surface([]);
 
 		assert.strictEqual(events.length, 0);
+	});
+});
+
+describe('generate_app_surface — JSON Schema writing', () => {
+	test('describes a route input on its input side, through a transform', () => {
+		// the default output side throws on a transform; this route used to
+		// read as taking no input
+		const route = create_route({
+			method: 'POST',
+			path: '/named',
+			input: z.strictObject({
+				name: z
+					.string()
+					.min(3)
+					.transform((s) => s.toLowerCase())
+			})
+		});
+		const surface = generate_app_surface({ route_specs: [route], middleware_specs: [] });
+		const input = surface.routes[0]!.input_schema as Record<string, any>;
+		assert.deepStrictEqual(input.properties.name, { type: 'string', minLength: 3 });
+		assert.deepStrictEqual(surface.diagnostics, []);
+	});
+
+	test('writes an output transform as {} and records an info diagnostic', () => {
+		const route = create_route({
+			path: '/status',
+			output: z.strictObject({ name: z.string().transform((s) => s.toLowerCase()) })
+		});
+		const surface = generate_app_surface({ route_specs: [route], middleware_specs: [] });
+		const output = surface.routes[0]!.output_schema as Record<string, any>;
+		assert.deepStrictEqual(output.properties.name, {});
+		assert.strictEqual(surface.diagnostics.length, 1);
+		const [diagnostic] = surface.diagnostics;
+		assert.strictEqual(diagnostic!.level, 'info');
+		assert.strictEqual(diagnostic!.category, 'schema');
+		assert.strictEqual(diagnostic!.source, 'GET /status output');
+	});
+
+	test('throws naming the route for an output with no JSON Schema form', () => {
+		const route = create_route({ path: '/blob', output: z.custom<Blob>((v) => v instanceof Blob) });
+		assert.throws(
+			() => generate_app_surface({ route_specs: [route], middleware_specs: [] }),
+			/^GET \/blob output: has no JSON Schema form/
+		);
+	});
+
+	test('writes z.void() as null, a parameterless input', () => {
+		const route = create_route({ method: 'POST', path: '/ping', input: z.void() });
+		const surface = generate_app_surface({ route_specs: [route], middleware_specs: [] });
+		assert.strictEqual(surface.routes[0]!.input_schema, null);
+	});
+
+	test('writes fuz_schema schemas with their own emitter', () => {
+		// `RouteSpec` and `EventSpec` type their schemas as Zod today; the cast
+		// stands in for the widening that lets a fuz_schema schema reach here
+		const route = create_route({
+			method: 'POST',
+			path: '/things',
+			input: object({ name: pipe(string, min_length(1)), n: with_default(number, 1) }) as never,
+			output: object({
+				id: string,
+				size: pipe(
+					string,
+					transform((s: string) => s.length)
+				)
+			}) as never
+		});
+		const event: EventSpec = {
+			method: 'thing_created',
+			params: object({ id: string }) as never,
+			description: 'Created'
+		};
+		const surface = generate_app_surface({
+			route_specs: [route],
+			middleware_specs: [],
+			event_specs: [event]
+		});
+		const [r] = surface.routes;
+		assert.deepStrictEqual(r!.input_schema, {
+			type: 'object',
+			properties: { name: { type: 'string', minLength: 1 }, n: { type: 'number' } },
+			required: ['name'],
+			additionalProperties: false
+		});
+		assert.deepStrictEqual(r!.output_schema, {
+			type: 'object',
+			properties: { id: { type: 'string' }, size: {} },
+			required: ['id', 'size'],
+			additionalProperties: false
+		});
+		assert.deepStrictEqual(surface.events[0]!.params_schema, {
+			type: 'object',
+			properties: { id: { type: 'string' } },
+			required: ['id'],
+			additionalProperties: false
+		});
+		assert.deepStrictEqual(
+			surface.diagnostics.map((d) => [d.level, d.source]),
+			[['info', 'POST /things output']]
+		);
 	});
 });

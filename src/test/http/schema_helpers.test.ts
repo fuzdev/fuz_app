@@ -8,10 +8,15 @@ import { describe, assert, test } from 'vitest';
 import { z } from 'zod';
 import {
 	array,
+	bigint,
 	boolean,
 	check,
 	lazy,
 	literal,
+	loose_object,
+	message,
+	min_length,
+	nullable,
 	number,
 	object,
 	object_with_rest,
@@ -19,8 +24,11 @@ import {
 	pipe,
 	record,
 	string,
+	strip_object,
+	transform,
 	union,
 	variant,
+	with_default,
 	type AnySchema
 } from '@fuzdev/fuz_schema/schema.ts';
 
@@ -57,6 +65,16 @@ describe('is_null_schema', () => {
 
 	test('returns false for z.void()', () => {
 		assert.strictEqual(is_null_schema(z.void()), false);
+	});
+
+	test('returns true for a fuz_schema literal(null)', () => {
+		assert.strictEqual(is_null_schema(literal(null)), true);
+	});
+
+	test('returns false for a fuz_schema nullable and other literals', () => {
+		assert.strictEqual(is_null_schema(nullable(string)), false);
+		assert.strictEqual(is_null_schema(literal('null')), false);
+		assert.strictEqual(is_null_schema(literal(undefined)), false);
 	});
 });
 
@@ -518,6 +536,72 @@ describe('safe_parse_dropping_unknown_keys with fuz_schema', () => {
 });
 
 describe('is_strict_object_schema', () => {
+	test('returns true for a fuz_schema object, false for strip and loose objects', () => {
+		assert.strictEqual(is_strict_object_schema(object({ name: string })), true);
+		assert.strictEqual(is_strict_object_schema(strip_object({ name: string })), false);
+		assert.strictEqual(is_strict_object_schema(loose_object({ name: string })), false);
+		assert.strictEqual(is_strict_object_schema(string), false);
+	});
+
+	test('reads a refined fuz_schema object strict, as a refined z.strictObject() is', () => {
+		const refined = pipe(
+			object({ name: string }),
+			check((v) => v.name !== '')
+		);
+		assert.strictEqual(is_strict_object_schema(refined), true);
+		assert.strictEqual(
+			is_strict_object_schema(
+				pipe(
+					refined,
+					check((v) => v.name !== 'x')
+				)
+			),
+			true
+		);
+		assert.strictEqual(is_strict_object_schema(message(refined, 'bad thing')), true);
+		assert.strictEqual(
+			is_strict_object_schema(z.strictObject({ name: z.string() }).refine((v) => v.name !== '')),
+			true
+		);
+		assert.strictEqual(
+			is_strict_object_schema(
+				pipe(
+					strip_object({ name: string }),
+					check(() => true)
+				)
+			),
+			false
+		);
+	});
+
+	test('reads a transformed object not strict in either library', () => {
+		assert.strictEqual(
+			is_strict_object_schema(
+				pipe(
+					object({ name: string }),
+					transform((v) => v)
+				)
+			),
+			false
+		);
+		assert.strictEqual(
+			is_strict_object_schema(
+				pipe(
+					pipe(
+						object({ name: string }),
+						transform((v) => v)
+					),
+					check(() => true)
+				)
+			),
+			false
+		);
+		assert.strictEqual(
+			is_strict_object_schema(z.strictObject({ name: z.string() }).transform((v) => v)),
+			false
+		);
+	});
+
 	test('returns true for z.strictObject()', () => {
 		assert.strictEqual(is_strict_object_schema(z.strictObject({ name: z.string() })), true);
 	});
@@ -608,12 +692,125 @@ describe('schema_to_surface', () => {
 		assert.deepStrictEqual(a, b);
 	});
 
-	test('returns null for schema that cannot convert to JSON Schema', () => {
-		// custom schema that rejects null (so is_null_schema returns false)
-		// but throws on toJSONSchema — exercises the catch path
+	test('returns null for z.void()', () => {
+		assert.strictEqual(schema_to_surface(z.void()), null);
+	});
+
+	test('describes the input side with io input, through a transform', () => {
+		const schema = z.strictObject({
+			name: z
+				.string()
+				.min(2)
+				.transform((s) => s.toLowerCase())
+		});
+		const gaps: Array<string> = [];
+		const result = schema_to_surface(schema, {
+			io: 'input',
+			on_unrepresentable: (m) => gaps.push(m)
+		}) as Record<string, any>;
+		assert.deepStrictEqual(result.properties.name, { type: 'string', minLength: 2 });
+		assert.deepStrictEqual(gaps, []);
+	});
+
+	test('writes an output-side transform as {} and reports the gap', () => {
+		const schema = z.strictObject({
+			name: z.string().transform((s) => s.toLowerCase()),
+			id: z.number()
+		});
+		const gaps: Array<string> = [];
+		const result = schema_to_surface(schema, {
+			on_unrepresentable: (m) => gaps.push(m)
+		}) as Record<string, any>;
+		assert.deepStrictEqual(result.properties.name, {});
+		assert.deepStrictEqual(result.properties.id, { type: 'number' });
+		assert.deepStrictEqual(result.required, ['name', 'id']);
+		assert.strictEqual(gaps.length, 1);
+		assert.include(gaps[0], 'Transforms');
+	});
+
+	test('throws naming the source for a schema with no JSON Schema form', () => {
+		// a `z.custom()` that refuses null, so `is_null_schema` is false — this
+		// was a silent `null`, reading as "no input"
 		const unconvertible = z.custom<unknown>((v) => v !== null && v !== undefined);
-		const result = schema_to_surface(unconvertible);
-		assert.strictEqual(result, null);
+		assert.throws(
+			() => schema_to_surface(unconvertible, { source: 'POST /api/thing input' }),
+			/^POST \/api\/thing input: has no JSON Schema form: Custom types/
+		);
+	});
+
+	test('z.unknown() is the declared "anything", written as {}', () => {
+		assert.deepStrictEqual(schema_to_surface(z.unknown()), {});
+	});
+});
+
+describe('schema_to_surface — fuz_schema', () => {
+	test('returns null for literal(null)', () => {
+		assert.strictEqual(schema_to_surface(literal(null)), null);
+	});
+
+	test('writes an object with $schema and default stripped at every depth', () => {
+		const schema = object({
+			name: pipe(string, min_length(2)),
+			inner: object({ n: with_default(number, 42) })
+		});
+		assert.deepStrictEqual(schema_to_surface(schema, { io: 'input' }), {
+			type: 'object',
+			properties: {
+				name: { type: 'string', minLength: 2 },
+				inner: {
+					type: 'object',
+					properties: { n: { type: 'number' } },
+					additionalProperties: false
+				}
+			},
+			required: ['name', 'inner'],
+			additionalProperties: false
+		});
+	});
+
+	test('the output side requires a defaulted key, the input side does not', () => {
+		const schema = object({ n: with_default(number, 1) });
+		const output = schema_to_surface(schema, { io: 'output' }) as Record<string, unknown>;
+		const input = schema_to_surface(schema, { io: 'input' }) as Record<string, unknown>;
+		assert.deepStrictEqual(output.required, ['n']);
+		assert.strictEqual('required' in input, false);
+	});
+
+	test('writes a check as nothing and a transform output as {}, reporting each', () => {
+		const schema = object({
+			code: pipe(
+				string,
+				min_length(3),
+				check((s: string) => s !== 'bad')
+			),
+			size: pipe(
+				string,
+				transform((s: string) => s.length)
+			)
+		});
+		const gaps: Array<string> = [];
+		const result = schema_to_surface(schema, {
+			on_unrepresentable: (m) => gaps.push(m)
+		}) as Record<string, any>;
+		assert.deepStrictEqual(result.properties.code, { type: 'string', minLength: 3 });
+		assert.deepStrictEqual(result.properties.size, {});
+		// the emitter names the first thing it can't write, where it is
+		assert.strictEqual(gaps.length, 1);
+		assert.include(gaps[0], '#/properties/');
+	});
+
+	test('throws naming the source for a schema with no JSON Schema form', () => {
+		assert.throws(
+			() => schema_to_surface(bigint, { source: 'thing_get output' }),
+			/^thing_get output: has no JSON Schema form: .*bigint/
+		);
+	});
+
+	test('throws naming the source for a schema the emitter refuses in either mode', () => {
+		assert.throws(
+			() => schema_to_surface(object({ toString: string }), { source: 'thing_get input' }),
+			/^thing_get input: cannot be written as JSON Schema: .*Object\.prototype/
+		);
 	});
 });
 

@@ -102,8 +102,9 @@ export interface StandardCrossProcessTestOptions {
 	round_trip_skip_routes?: Array<string>;
 	/**
 	 * Forwarded to `describe_data_exposure_tests` as `skip_routes`
-	 * (`'METHOD /path'` keys), as the in-process bundle's consumers pass it
-	 * directly.
+	 * (`'METHOD /path'` keys for routes, `'/path method_name'` for RPC or WS
+	 * method outputs, `'/path method_name params'` for params the server pushes
+	 * over WS), as the in-process bundle's consumers pass it directly.
 	 */
 	data_exposure_skip_routes?: Array<string>;
 	/**

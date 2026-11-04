@@ -9,8 +9,10 @@
  */
 
 import { z } from 'zod';
+import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 import { is_schema, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 import { unwrap_schema } from '@fuzdev/fuz_schema/introspect.ts';
+import { to_json_schema } from '@fuzdev/fuz_schema/json_schema.ts';
 
 import type { RouteAuth } from './auth_shape.ts';
 import type { RouteMethod } from './route_spec.ts';
@@ -28,13 +30,16 @@ import {
 } from '../schema_issues.ts';
 
 /**
- * Check if a schema is exactly `z.null()`.
+ * Check if a schema is exactly `z.null()`, or a `@fuzdev/fuz_schema`
+ * `literal(null)`.
  *
- * Uses `instanceof` rather than runtime parsing to avoid false positives
- * from `z.nullable(z.string())` or similar schemas that accept null
- * but also accept other values.
+ * Reads the schema's kind rather than parsing `null`, to avoid false
+ * positives from `z.nullable(z.string())` or similar schemas that accept
+ * null but also accept other values.
  */
-export const is_null_schema = (schema: z.ZodType): boolean => schema instanceof z.ZodNull;
+export const is_null_schema = (schema: ValidationSchema): boolean =>
+	schema instanceof z.ZodNull ||
+	(is_schema(schema) && schema.kind === 'literal' && schema.def === null);
 
 /**
  * Check if a schema is exactly `z.void()`.
@@ -44,7 +49,7 @@ export const is_null_schema = (schema: z.ZodType): boolean => schema instanceof 
  * Structured value), so `z.void()` is the correct schema for "no params"
  * and the dispatcher maps absent params to `undefined` for these specs.
  */
-export const is_void_schema = (schema: z.ZodType): boolean => schema instanceof z.ZodVoid;
+export const is_void_schema = (schema: ValidationSchema): boolean => schema instanceof z.ZodVoid;
 
 /**
  * Normalize the raw `params` of a `z.void()` input: an absent `params`, an
@@ -299,27 +304,119 @@ const get_at_path = (value: unknown, path: ReadonlyArray<PropertyKey>): unknown 
 };
 
 /**
- * Check if a schema is a strict object (`z.strictObject()`).
+ * Check if a schema is a strict object: `z.strictObject()`, or a
+ * `@fuzdev/fuz_schema` `object` (which refuses unknown keys, where
+ * `strip_object` drops them and `loose_object` keeps them).
  *
- * Strict objects set `catchall` to `ZodNever` to reject unknown keys.
+ * Strict Zod objects set `catchall` to `ZodNever` to reject unknown keys.
  * Regular `z.object()` has `catchall: undefined` (strips unknown keys in Zod 4).
+ * A refined strict object reads strict in both libraries: Zod keeps a
+ * `.refine()` on the `ZodObject`, and a fuz_schema `pipe` is read through to
+ * its first schema when no stage of it is a `transform` (`message`, `flavor`,
+ * `brand` and `meta` keep the kind they wrap). A transformed object is not a
+ * strict object in either: Zod's is a `ZodPipe`. The two libraries differ on a
+ * pipe without a transform: Zod's `O.pipe(O)` is a `ZodPipe` and reads not
+ * strict, where fuz_schema's `pipe(F, F)` reads strict through to `F`.
  */
-export const is_strict_object_schema = (schema: z.ZodType): boolean =>
-	schema instanceof z.ZodObject && schema.def.catchall instanceof z.ZodNever;
+export const is_strict_object_schema = (schema: ValidationSchema): boolean =>
+	is_schema(schema)
+		? fuz_schema_untransformed_head(schema)?.kind === 'object'
+		: schema instanceof z.ZodObject && schema.def.catchall instanceof z.ZodNever;
+
+// the schema a value reaches first through every `pipe` it starts with, or
+// `null` when any of those pipes has a `transform` stage
+const fuz_schema_untransformed_head = (schema: AnySchema): AnySchema | null => {
+	let s = schema;
+	while (s.kind === 'pipe') {
+		const stages = s.def as ReadonlyArray<AnySchema>;
+		if (stages.some((stage) => stage.kind === 'transform')) return null;
+		s = stages[0]!;
+	}
+	return s;
+};
+
+/** Options of `schema_to_surface`. */
+export interface SchemaToSurfaceOptions {
+	/**
+	 * Which side of a parse to describe: `'input'`, what it accepts (a
+	 * request body, params, query), or `'output'`, what it returns (a
+	 * response, an error body, a pushed event).
+	 *
+	 * @default 'output'
+	 */
+	io?: 'input' | 'output';
+	/** Names the schema in a thrown error, e.g. `POST /api/thing input`. */
+	source?: string;
+	/**
+	 * Called with the library's message when part of the schema has no JSON
+	 * Schema form and is left out or written as `{}` there.
+	 */
+	on_unrepresentable?: (message: string) => void;
+}
 
 /**
- * Convert a Zod schema to a JSON-serializable representation for the surface.
+ * Convert a Zod or `@fuzdev/fuz_schema` schema to its JSON Schema for the
+ * surface, with `$schema` and `default` stripped at every depth.
  *
- * Returns `null` for null schemas, JSON Schema for object schemas.
+ * Returns `null` for a null schema (`is_null_schema`) and a `z.void()`
+ * (`is_void_schema`): no body, no params. Any other schema is written with
+ * its library's emitter (`to_json_schema` for fuz_schema, `z.toJSONSchema`
+ * for Zod) on the side `options.io` names. A part JSON Schema can't say (a
+ * transform on the output side, a `z.custom()`, a fuz_schema `check`) is left
+ * out or written as `{}` (a `pipe(string, check(…))` writes as
+ * `{type: 'string'}`), and `options.on_unrepresentable` hears the library's
+ * message, so the surface describes what it can and records the gap.
+ *
+ * It never answers `null` for a schema it failed to write, as that would
+ * read as "takes no input" and drop the schema out of every suite reading the
+ * surface: a schema with no JSON Schema form at all (`{}` where the schema
+ * isn't `z.unknown()` or `z.any()`), and one either emitter refuses outright
+ * (a fuz_schema entry named like a member of `Object.prototype`, metadata
+ * that isn't JSON), throw. So an output whose root is a transform (a Zod
+ * `.transform()`, a fuz_schema `pipe(object(…), transform(…))`), a
+ * `z.custom()`, or a `z.date()` throws, and since `generate_app_surface`
+ * runs at server assembly, a route or action declaring one fails the server
+ * at boot. That includes `z.unknown().transform(f)`, though `{}` would
+ * describe it: the output side of a transform is unknown, whatever its input.
+ *
+ * @param schema - the schema to describe, Zod or fuz_schema
+ * @param options - the side to describe, the schema's name for errors, and a listener for gaps
+ * @returns the JSON Schema, or `null` for a null or void schema
+ * @throws Error naming `options.source` when the schema can't be written, or nothing of it can
  */
-export const schema_to_surface = (schema: z.ZodType): unknown => {
-	if (is_null_schema(schema)) return null;
+export const schema_to_surface = (
+	schema: ValidationSchema,
+	options?: SchemaToSurfaceOptions
+): unknown => {
+	if (is_null_schema(schema) || is_void_schema(schema)) return null;
+	const io = options?.io ?? 'output';
+	const write = (unrepresentable: 'throw' | 'any'): unknown =>
+		strip_json_schema_noise(
+			is_schema(schema)
+				? to_json_schema(schema, { io, unrepresentable })
+				: z.toJSONSchema(schema as z.ZodType, { io, unrepresentable })
+		);
+	const fail = (message: string, cause: unknown): Error =>
+		new Error(`${options?.source ?? 'schema'}: ${message}`, { cause });
+	let gap: unknown;
 	try {
-		const json_schema = z.toJSONSchema(schema);
-		return strip_json_schema_noise(json_schema);
-	} catch {
-		return null;
+		return write('throw');
+	} catch (error) {
+		gap = error;
 	}
+	// part of the schema has no JSON Schema form: write the rest
+	let json: unknown;
+	try {
+		json = write('any');
+	} catch (error) {
+		throw fail(`cannot be written as JSON Schema: ${to_error_message(error)}`, error);
+	}
+	const message = to_error_message(gap);
+	if (typeof json === 'object' && json !== null && Object.keys(json).length === 0) {
+		throw fail(`has no JSON Schema form: ${message}`, gap);
+	}
+	options?.on_unrepresentable?.(message);
+	return json;
 };
 
 /**

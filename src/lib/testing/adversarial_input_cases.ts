@@ -267,10 +267,11 @@ export const generate_input_test_cases = (
 			push_field_case(`null: ${field.name}`, null, 'type');
 		}
 
+		if (!field_base) continue; // no body to break a constraint on
+
 		// the field's input-side JSON Schema — format, pattern and bounds, read
 		// through a transform or pipe and under a nullable's `anyOf`
 		const json = to_field_json_schema(field_schema);
-		if (!json || !field_base) continue; // no constraints, or no body to break them on
 
 		// format violation for constrained string fields
 		const format = detect_json_schema_format(json);

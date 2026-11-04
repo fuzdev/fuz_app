@@ -14,9 +14,12 @@ import './assert_dev_env.ts';
 
 import { test, assert, describe } from 'vitest';
 import { z } from 'zod';
+import { is_schema } from '@fuzdev/fuz_schema/schema.ts';
+import { to_json_schema } from '@fuzdev/fuz_schema/json_schema.ts';
 
 import type { RouteSpec } from '../http/route_spec.ts';
 import { is_null_schema } from '../http/schema_helpers.ts';
+import type { ValidationSchema } from '../schema_issues.ts';
 import { create_auth_test_apps, create_route_skip_filter, select_auth_app } from './auth_apps.ts';
 import type { AdversarialTestOptions } from './attack_surface.ts';
 import {
@@ -26,24 +29,32 @@ import {
 } from './schema_generators.ts';
 
 /**
- * Extract the error code from a 404 Zod schema for use in the stub handler.
+ * Extract the error code from a 404 error schema, Zod or `@fuzdev/fuz_schema`,
+ * for use in the stub handler.
  *
- * Supports `z.literal()` (`{const: '...'}`) and `z.enum()` (`{enum: [...]}`, uses first value).
+ * Reads the schema's output-side JSON Schema with `unrepresentable: 'any'`,
+ * so a field JSON Schema can't say (a transform, a `z.custom()`) beside
+ * `error` doesn't hide the code. Supports a literal (`{const: '...'}`) and an
+ * enum (`{enum: [...]}`, uses first value); `null` when `error` is neither.
+ * A schema either emitter refuses outright throws.
+ *
+ * @param schema - a route's declared 404 error schema
+ * @returns the code the stub handler answers with, or `null`
  */
-const extract_404_error_code = (schema: z.ZodType): string | null => {
-	try {
-		const json = z.toJSONSchema(schema) as Record<string, unknown>;
-		if (json.type !== 'object' || !json.properties || typeof json.properties !== 'object')
-			return null;
-		const props = json.properties as Record<string, unknown>;
-		if (!props.error || typeof props.error !== 'object') return null;
-		const error_schema = props.error as Record<string, unknown>;
-		if (typeof error_schema.const === 'string') return error_schema.const;
-		if (Array.isArray(error_schema.enum) && typeof error_schema.enum[0] === 'string')
-			return error_schema.enum[0];
-	} catch {
-		// schema can't be converted
-	}
+export const extract_404_error_code = (schema: ValidationSchema): string | null => {
+	const json = (
+		is_schema(schema)
+			? to_json_schema(schema, { unrepresentable: 'any' })
+			: z.toJSONSchema(schema as z.ZodType, { unrepresentable: 'any' })
+	) as Record<string, unknown>;
+	if (json.type !== 'object' || !json.properties || typeof json.properties !== 'object')
+		return null;
+	const props = json.properties as Record<string, unknown>;
+	if (!props.error || typeof props.error !== 'object') return null;
+	const error_schema = props.error as Record<string, unknown>;
+	if (typeof error_schema.const === 'string') return error_schema.const;
+	if (Array.isArray(error_schema.enum) && typeof error_schema.enum[0] === 'string')
+		return error_schema.enum[0];
 	return null;
 };
 

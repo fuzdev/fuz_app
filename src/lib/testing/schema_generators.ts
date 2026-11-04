@@ -11,6 +11,8 @@ import './assert_dev_env.ts';
  */
 
 import { z } from 'zod';
+import { is_schema } from '@fuzdev/fuz_schema/schema.ts';
+import { to_json_schema } from '@fuzdev/fuz_schema/json_schema.ts';
 import {
 	zod_unwrap_def,
 	zod_get_base_type,
@@ -20,41 +22,54 @@ import {
 } from '../zod.ts';
 
 import { is_null_schema } from '../http/schema_helpers.ts';
+import type { ValidationSchema } from '../schema_issues.ts';
 
 /**
  * The JSON Schema of a field's input side — where its format, pattern and
- * bounds live — or `null` when JSON Schema can't render the field or any part
- * of it (`z.date()`, `z.custom()`, a union with a `z.date()` branch).
+ * bounds live. Takes a Zod or a `@fuzdev/fuz_schema` field.
  *
  * Rendered with `io: 'input'`, so a field carrying a `.transform()` or a pipe
  * (`Username`) still yields the constraints its input is checked against;
  * the default output side throws on a transform. A pipe yields its input
  * side only, so constraints of the stage after it are not here. A
  * `.nullable()` / `.nullish()` field renders as
- * `anyOf: [{…}, {type: 'null'}]`; its one non-null branch is returned, so
- * the bounds and pattern read the same as on the bare field. A union of two
- * or more non-null branches returns the whole schema — its branches' bounds
- * are no single field's bounds.
+ * `anyOf: [{…}, {type: 'null'}]`, or a bare type as `type: [type, 'null']`;
+ * its one non-null branch or type is returned, so the bounds, pattern and
+ * `type` read the same as on the bare field. A union of two or more non-null
+ * branches returns the whole schema — its branches' bounds are no single
+ * field's bounds.
+ *
+ * Either library renders with `unrepresentable: 'any'`: a part JSON Schema
+ * can't say (a `z.date()`, a `z.custom()`, a fuz_schema `check` or `bigint`)
+ * is left out or `{}`, and the bounds around it still read, so a
+ * `pipe(string, max_length(n), check(…))` keeps its `maxLength` and a union
+ * with a `z.date()` branch keeps its other branches — every case the
+ * generators build from it is checked against the field itself before it's
+ * used. What an emitter refuses even then (a fuz_schema entry named like a
+ * member of `Object.prototype`, metadata that isn't JSON) throws: a mistake in
+ * the schema, not a gap in JSON Schema.
  *
  * A `.refine()` is never here: JSON Schema can't express one, so a bound a
  * refinement enforces (a code-point length, a cross-field rule) generates no
  * boundary case.
  *
  * @param field_schema - the field to read
- * @returns the field's input-side JSON Schema, or `null` when it can't be rendered
+ * @returns the field's input-side JSON Schema
+ * @throws Error when the emitter refuses `field_schema` with `unrepresentable: 'any'`
  */
-export const to_field_json_schema = (field_schema: z.ZodType): Record<string, unknown> | null => {
-	let json: Record<string, unknown>;
-	try {
-		json = z.toJSONSchema(field_schema, { io: 'input' });
-	} catch {
-		return null; // a type JSON Schema can't represent
-	}
+export const to_field_json_schema = (field_schema: ValidationSchema): Record<string, unknown> => {
+	const json: Record<string, unknown> = is_schema(field_schema)
+		? to_json_schema(field_schema, { io: 'input', unrepresentable: 'any' })
+		: z.toJSONSchema(field_schema as z.ZodType, { io: 'input', unrepresentable: 'any' });
 	if (Array.isArray(json.anyOf)) {
 		const branches = (json.anyOf as Array<Record<string, unknown>>).filter(
 			(branch) => branch.type !== 'null'
 		);
 		if (branches.length === 1) return branches[0]!;
+	}
+	if (Array.isArray(json.type)) {
+		const types = (json.type as Array<unknown>).filter((t) => t !== 'null');
+		if (types.length === 1) return { ...json, type: types[0] };
 	}
 	return json;
 };
@@ -87,10 +102,8 @@ export const detect_json_schema_format = (json: Record<string, unknown>): string
  * (`to_field_json_schema`). Returns the format string (e.g. `'uuid'`,
  * `'email'`), `'pattern'` for a regex, or `null`.
  */
-export const detect_format = (field_schema: z.ZodType): string | null => {
-	const json = to_field_json_schema(field_schema);
-	return json && detect_json_schema_format(json);
-};
+export const detect_format = (field_schema: ValidationSchema): string | null =>
+	detect_json_schema_format(to_field_json_schema(field_schema));
 
 /**
  * Extract a candidate value from a JSON Schema `pattern` when the shape is a
@@ -161,11 +174,9 @@ const generate_valid_string = (field_schema: z.ZodType): string => {
 	let max_length = Infinity;
 	let pattern: string | null = null;
 	const json = to_field_json_schema(field_schema);
-	if (json) {
-		if (typeof json.minLength === 'number') min_length = json.minLength;
-		if (typeof json.maxLength === 'number') max_length = json.maxLength;
-		if (typeof json.pattern === 'string') pattern = json.pattern;
-	}
+	if (typeof json.minLength === 'number') min_length = json.minLength;
+	if (typeof json.maxLength === 'number') max_length = json.maxLength;
+	if (typeof json.pattern === 'string') pattern = json.pattern;
 	const target = Math.max(min_length, Math.min(10, max_length));
 	const base = 'x'.repeat(target) || 'test_value';
 
@@ -227,19 +238,17 @@ export const generate_valid_value = (field: ZodFieldInfo, field_schema: z.ZodTyp
 				if (field_schema.safeParse(candidate).success) return candidate;
 			}
 			const json = to_field_json_schema(field_schema);
-			if (json) {
-				if (typeof json.minimum === 'number') return Math.ceil(json.minimum);
-				if (typeof json.exclusiveMinimum === 'number') return Math.floor(json.exclusiveMinimum) + 1;
-				if (typeof json.maximum === 'number') return Math.floor(json.maximum);
-				if (typeof json.exclusiveMaximum === 'number') return Math.ceil(json.exclusiveMaximum) - 1;
-			}
+			if (typeof json.minimum === 'number') return Math.ceil(json.minimum);
+			if (typeof json.exclusiveMinimum === 'number') return Math.floor(json.exclusiveMinimum) + 1;
+			if (typeof json.maximum === 'number') return Math.floor(json.maximum);
+			if (typeof json.exclusiveMaximum === 'number') return Math.ceil(json.exclusiveMaximum) - 1;
 			return 1; // fall through — generate_valid_body will report the failure
 		}
 		case 'boolean':
 			return true;
 		case 'array': {
 			const json = to_field_json_schema(field_schema);
-			const min_items = typeof json?.minItems === 'number' ? json.minItems : 0;
+			const min_items = typeof json.minItems === 'number' ? json.minItems : 0;
 			if (min_items === 0) return [];
 			const def = zod_unwrap_def(field_schema) as { element?: z.ZodType };
 			const element_schema = def.element;
@@ -462,15 +471,13 @@ export const generate_valid_string_param = (
 	candidates.push('1', '0', 'true', 'false');
 	// a number the URL string is preprocessed into: its default or its lower bound
 	const json = to_field_json_schema(field_schema);
-	if (json) {
-		const fallback = json.default;
-		if (typeof fallback === 'number' || typeof fallback === 'string') {
-			candidates.push(String(fallback));
-		}
-		if (typeof json.minimum === 'number') candidates.push(String(Math.ceil(json.minimum)));
-		if (typeof json.exclusiveMinimum === 'number') {
-			candidates.push(String(Math.floor(json.exclusiveMinimum) + 1));
-		}
+	const fallback = json.default;
+	if (typeof fallback === 'number' || typeof fallback === 'string') {
+		candidates.push(String(fallback));
+	}
+	if (typeof json.minimum === 'number') candidates.push(String(Math.ceil(json.minimum)));
+	if (typeof json.exclusiveMinimum === 'number') {
+		candidates.push(String(Math.floor(json.exclusiveMinimum) + 1));
 	}
 	candidates.push(generate_valid_string(field_schema));
 	return candidates.find((c) => field_schema.safeParse(c).success) ?? null;

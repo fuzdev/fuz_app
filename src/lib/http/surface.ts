@@ -27,6 +27,7 @@ import {
 	is_strict_object_schema
 } from './schema_helpers.ts';
 import { find_schema_sensitivity, type Sensitivity } from '../sensitivity.ts';
+import type { ValidationSchema } from '../schema_issues.ts';
 
 // --- Surface types ---
 
@@ -263,16 +264,45 @@ export const env_schema_to_surface = (schema: AnySchema): Array<AppSurfaceEnv> =
 };
 
 /**
- * Convert SSE event specs to surface entries.
+ * Convert SSE event specs to surface entries, each event's `params` written
+ * as the output side (`schema_to_surface`) — the server sends them.
+ *
+ * @param event_specs - the events to describe
+ * @param diagnostics - receives an `info` diagnostic per part of a schema with no JSON Schema form
+ * @throws Error naming the event when its params schema can't be written
  */
-export const events_to_surface = (event_specs: Array<EventSpec>): Array<AppSurfaceEvent> => {
+export const events_to_surface = (
+	event_specs: Array<EventSpec>,
+	diagnostics?: Array<AppSurfaceDiagnostic>
+): Array<AppSurfaceEvent> => {
+	const to_surface = create_to_surface(diagnostics);
 	return event_specs.map((spec) => ({
 		method: spec.method,
 		description: spec.description,
 		channel: spec.channel ?? null,
-		params_schema: schema_to_surface(spec.params)
+		params_schema: to_surface(spec.params, 'output', `event ${spec.method} params`)
 	}));
 };
+
+// `schema_to_surface` with its source named, recording each part of a schema
+// with no JSON Schema form as an `info` diagnostic: a transform's output or a
+// `z.custom()` is ordinary, so it's recorded on the surface, not warned at startup
+const create_to_surface =
+	(diagnostics: Array<AppSurfaceDiagnostic> | undefined) =>
+	(schema: ValidationSchema, io: 'input' | 'output', source: string): unknown =>
+		schema_to_surface(schema, {
+			io,
+			source,
+			on_unrepresentable: diagnostics
+				? (message) =>
+						diagnostics.push({
+							level: 'info',
+							category: 'schema',
+							message: `Part of the schema has no JSON Schema form and is left out or written as {} there: ${message}`,
+							source
+						})
+				: undefined
+		});
 
 /**
  * Generate a JSON-serializable attack surface from middleware, route specs,
@@ -282,6 +312,7 @@ export const generate_app_surface = (options: GenerateAppSurfaceOptions): AppSur
 	const { route_specs, middleware_specs, env_schema, event_specs, rpc_endpoints, ws_endpoints } =
 		options;
 	const diagnostics: Array<AppSurfaceDiagnostic> = [];
+	const to_surface = create_to_surface(diagnostics);
 
 	// Spec-level diagnostics: check for non-strict input schemas
 	for (const r of route_specs) {
@@ -302,7 +333,11 @@ export const generate_app_surface = (options: GenerateAppSurfaceOptions): AppSur
 			if (m.errors) {
 				const schemas: Record<string, unknown> = {};
 				for (const [status, schema] of Object.entries(m.errors)) {
-					const json_schema = schema_to_surface(schema as z.ZodType);
+					const json_schema = to_surface(
+						schema as z.ZodType,
+						'output',
+						`middleware ${m.name} errors.${status}`
+					);
 					if (json_schema !== null) {
 						schemas[status] = json_schema;
 					}
@@ -325,6 +360,8 @@ export const generate_app_surface = (options: GenerateAppSurfaceOptions): AppSur
 				.filter((m) => middleware_spec_applies(m, r.path))
 				.map((m) => m.name);
 
+			const route = `${r.method} ${r.path}`;
+
 			// Merge auto-derived + middleware + explicit error schemas
 			const mw_errors = collect_middleware_errors(middleware_specs, r.path);
 			const merged_errors = merge_error_schemas(r, mw_errors);
@@ -332,7 +369,11 @@ export const generate_app_surface = (options: GenerateAppSurfaceOptions): AppSur
 			if (merged_errors) {
 				const schemas: Record<string, unknown> = {};
 				for (const [status, schema] of Object.entries(merged_errors)) {
-					const json_schema = schema_to_surface(schema as z.ZodType);
+					const json_schema = to_surface(
+						schema as z.ZodType,
+						'output',
+						`${route} errors.${status}`
+					);
 					if (json_schema !== null) {
 						schemas[status] = json_schema;
 					}
@@ -352,10 +393,10 @@ export const generate_app_surface = (options: GenerateAppSurfaceOptions): AppSur
 				transaction: r.transaction ?? r.method !== 'GET',
 				raw_body: r.raw_body ?? false,
 				rate_limit_key: r.rate_limit ?? null,
-				params_schema: r.params ? schema_to_surface(r.params) : null,
-				query_schema: r.query ? schema_to_surface(r.query) : null,
-				input_schema: schema_to_surface(r.input),
-				output_schema: schema_to_surface(r.output),
+				params_schema: r.params ? to_surface(r.params, 'input', `${route} params`) : null,
+				query_schema: r.query ? to_surface(r.query, 'input', `${route} query`) : null,
+				input_schema: to_surface(r.input, 'input', `${route} input`),
+				output_schema: to_surface(r.output, 'output', `${route} output`),
 				error_schemas
 			};
 		}),
@@ -365,8 +406,12 @@ export const generate_app_surface = (options: GenerateAppSurfaceOptions): AppSur
 					methods: ep.actions.map((a) => ({
 						name: a.spec.method,
 						auth: a.spec.auth,
-						input_schema: schema_to_surface(a.spec.input),
-						output_schema: schema_to_surface(a.spec.output),
+						input_schema: to_surface(a.spec.input, 'input', `${ep.path} ${a.spec.method} input`),
+						output_schema: to_surface(
+							a.spec.output,
+							'output',
+							`${ep.path} ${a.spec.method} output`
+						),
 						side_effects: a.spec.side_effects,
 						description: a.spec.description,
 						rate_limit_key: a.spec.rate_limit ?? null
@@ -390,8 +435,12 @@ export const generate_app_surface = (options: GenerateAppSurfaceOptions): AppSur
 							// `request_response` carries a `RouteAuth`; notifications
 							// have `auth: null` (server-pushed, no inbound dispatch).
 							auth: a.spec.auth,
-							input_schema: schema_to_surface(a.spec.input),
-							output_schema: schema_to_surface(a.spec.output),
+							input_schema: to_surface(a.spec.input, 'input', `${ep.path} ${a.spec.method} input`),
+							output_schema: to_surface(
+								a.spec.output,
+								'output',
+								`${ep.path} ${a.spec.method} output`
+							),
 							description: a.spec.description,
 							side_effects: a.spec.side_effects,
 							rate_limit_key:
@@ -400,7 +449,7 @@ export const generate_app_surface = (options: GenerateAppSurfaceOptions): AppSur
 				}))
 			: [],
 		env: env_schema ? env_schema_to_surface(env_schema) : [],
-		events: event_specs?.length ? events_to_surface(event_specs) : []
+		events: event_specs?.length ? events_to_surface(event_specs, diagnostics) : []
 	};
 };
 

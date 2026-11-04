@@ -481,7 +481,7 @@ Support functions:
 
 Walks Zod schemas to generate valid values for adversarial/round-trip tests.
 
-- `to_field_json_schema(field_schema)` — the field's JSON Schema rendered with `io: 'input'`, so a `.transform()` or pipe field (`Username`) yields its input-side bounds and pattern instead of throwing; a `.nullable()` / `.nullish()` field's one non-null `anyOf` branch is returned; `null` for a type JSON Schema can't represent. A pipe yields its input stage only, and a `.refine()` never appears (a code-point length bound generates nothing). Every JSON Schema read in the generators goes through it.
+- `to_field_json_schema(field_schema)` — the field's JSON Schema rendered with `io: 'input'`, so a `.transform()` or pipe field (`Username`) yields its input-side bounds and pattern instead of throwing; a `.nullable()` / `.nullish()` field's one non-null `anyOf` branch (or one non-null `type` of a `type` array) is returned. Both libraries render with `unrepresentable: 'any'`, so it is never `null`: a part JSON Schema can't say (a `z.date()`, a `z.custom()`, a fuz_schema `check`) is left out or `{}` and the bounds around it still read; it throws on a schema an emitter refuses even then. A pipe yields its input stage only, and a `.refine()` never appears (a code-point length bound generates nothing). Every JSON Schema read in the generators goes through it.
 - `detect_format(field_schema)` — `detect_json_schema_format` over `to_field_json_schema`: the `format`, `'pattern'` for a regex, or `null`.
 - `generate_valid_value(field, field_schema)` — base-type switch producing a valid sample (UUIDs → nil UUID, strings → `'xxxxxxxxxx'`, numbers → `1`, objects → `generate_valid_object` against the field schema, so a nested refinement is satisfied too, enums → first entry, etc.). For branded-string refinements, walks a fallback chain synthesized from the `pattern` string the JSON Schema representation exposes: fixed-length hex (`^[0-9a-f]{N}$` — blake3 / sha256 / md5 digests; `0`.repeat(N)), prefix-lengthed slug (`^<prefix>_[A-Za-z0-9_-]{N}$` — `ApiTokenId`-style ids; `<prefix>_` + `x`.repeat(N)), absolute path prefix, URL prefix, two `/`-joined segments (an `owner/name` slug). First candidate that `safeParse` accepts is used.
 - `generate_valid_string_param(field, field_schema)` — a string a URL-sourced field (route param, query value) accepts: the nil UUID for a UUID field, else the first of `test_value`, the generated valid value as a string, `1`, `0`, `true`, `false`, the field's JSON Schema `default` or lower bound as a string (a preprocessed integer whose minimum is above one) and a synthesized string the field accepts; `null` when none does. The params and query case generators build their base from it.
@@ -560,7 +560,10 @@ rather than `ERROR_INVALID_JSON_BODY`.
 404 in `error_schemas` + an extractable error code (`z.literal` or first
 `z.enum`), replaces the handler with a stub returning `{error: <code>}`,
 fires with nil-UUID params, asserts 404 + body matches the declared 404 Zod
-schema. No DB needed.
+schema. No DB needed. The code comes from `extract_404_error_code(schema)`,
+which reads the output-side JSON Schema of a Zod or fuz_schema schema with
+`unrepresentable: 'any'`, so a field JSON Schema can't say beside `error`
+(a transform) no longer drops the route from the suite.
 
 ### `adversarial_headers.ts` — header injection suite
 
@@ -756,8 +759,8 @@ waiter on timeout so the `waiters` array doesn't grow.
 Six tests in two top-level groups:
 
 1. **schema-level** (3 tests, no DB) — walks JSON Schema representations:
-   - `no sensitive fields in any output schema` — `sensitive_field_blocklist`
-   - `no admin-only fields in non-admin output schemas` — `admin_only_field_blocklist`
+   - `no sensitive fields in any output schema` — `sensitive_field_blocklist`, over every route, RPC method and WS method output, and the params the server pushes over WS (a `remote_notification`'s payload, whose `output` is `z.void()`, and the request of a `request_response` with `initiator` `'backend'` or `'both'`)
+   - `no admin-only fields in non-admin output schemas` — `admin_only_field_blocklist`, over the route outputs a non-admin reaches; routes only, since the blocklist matches by name and domain RPC/WS outputs carry `created_by`/`updated_by` legitimately. Admin-gated means every role in an any-of `roles` (or a WS endpoint's `required_roles`) is `admin` or `keeper`, or the daemon token is required
    - `no sensitive fields in any error schema`
 2. **runtime** (3 tests, DB-backed via `create_test_app`):
    - `unauthenticated error responses contain no sensitive fields`
@@ -765,11 +768,21 @@ Six tests in two top-level groups:
    - `all 2xx responses pass field blocklists` — GETs sorted before POSTs so data-returning routes fire before destructive ones (logout, revoke-all) invalidate sessions
 
 Support functions: `collect_json_schema_property_names(schema)` (walks
-`properties`/`items`/`allOf`/`anyOf`/`oneOf`/`additionalProperties`),
-`assert_output_schemas_no_sensitive_fields(surface, fields?)`,
-`assert_non_admin_schemas_no_admin_fields(surface, fields?)`.
+`properties`/`patternProperties`/`additionalProperties`/`items`/`prefixItems`/`contains`,
+`allOf`/`anyOf`/`oneOf`/`not`/`if`/`then`/`else`, and `$defs`/`definitions`
+values, where a lazy or `.meta({id})` schema's body sits behind a `$ref`),
+`assert_output_schemas_no_sensitive_fields(surface_source, fields?, skip_routes?)`,
+`assert_non_admin_schemas_no_admin_fields(surface_source, fields?, skip_routes?)`.
+Both read each output from its spec on both sides (`schema_to_surface`): the
+output side the surface records, and the input side, since a transform's output
+has no JSON Schema form and a field inside a transformed subtree shows only
+there. The input side is a superset, so a transform that deliberately drops a
+blocklisted field is flagged too — skip that output by its key.
 
 Options: `{setup_test, surface_source, sensitive_fields?, admin_only_fields?, skip_routes?}`.
+`skip_routes` keys a route as `'METHOD /path'`, an RPC or WS method output
+as `'/path method_name'`, and pushed WS params as `'/path method_name params'`
+(the schema-level checks only).
 
 ### `rate_limiting.ts` — `describe_rate_limiting_tests`
 

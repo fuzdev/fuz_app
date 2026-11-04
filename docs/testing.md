@@ -623,8 +623,10 @@ describe_data_exposure_tests({
 
 Two test groups:
 
-1. **Schema-level** (3 tests, no DB) — walks JSON Schema output and error
-   schemas for blocklisted property names. Catches schema declaration bugs.
+1. **Schema-level** (3 tests, no DB) — walks the JSON Schema of every route,
+   RPC and WS output, pushed WS params, and route error schemas for sensitive
+   property names, and non-admin route outputs for admin-only ones. Catches
+   schema declaration bugs.
 2. **Runtime** (3 tests, DB-backed) — fires real requests and checks response
    bodies against field blocklists. Catches `SELECT *` leaks where handlers
    return more than the schema declares.
@@ -1003,15 +1005,16 @@ impls actually boot.
 - `collect_json_keys_recursive` (`testing/integration_helpers.ts`) — Recursively collect all key names from JSON
 - `sensitive_field_blocklist` (`testing/integration_helpers.ts`) — Fields that must never appear in any response
 - `admin_only_field_blocklist` (`testing/integration_helpers.ts`) — Fields restricted to admin/keeper responses
-- `assert_output_schemas_no_sensitive_fields` (`testing/data_exposure.ts`) — Walk output schemas for sensitive property names
-- `assert_non_admin_schemas_no_admin_fields` (`testing/data_exposure.ts`) — Walk non-admin schemas for admin-only fields
+- `assert_output_schemas_no_sensitive_fields` (`testing/data_exposure.ts`) — Walk route, RPC and WS output schemas (both sides of a transform) for sensitive property names
+- `assert_non_admin_schemas_no_admin_fields` (`testing/data_exposure.ts`) — Walk the outputs a non-admin reaches for admin-only fields
 - `collect_json_schema_property_names` (`testing/data_exposure.ts`) — Recursively collect property names from JSON Schema
 - `ErrorCoverageCollector` (`testing/error_coverage.ts`) — Track which declared error statuses/codes are exercised
 - `assert_error_coverage` (`testing/error_coverage.ts`) — Assert minimum error coverage threshold
 - `extract_declared_error_codes` (`testing/error_coverage.ts`) — Extract literal/enum codes from an error response schema
+- `extract_404_error_code` (`testing/adversarial_404.ts`) — The code a 404 schema's `error` declares (literal, or first of an enum), Zod or fuz_schema
 - `resolve_valid_path` (`testing/schema_generators.ts`) — Resolve route path with valid param values
 - `generate_valid_body` (`testing/schema_generators.ts`) — Generate valid request body from Zod schema
-- `to_field_json_schema` (`testing/schema_generators.ts`) — A field's input-side JSON Schema (through transforms, pipes and a nullable's `anyOf`)
+- `to_field_json_schema` (`testing/schema_generators.ts`) — A Zod or fuz_schema field's input-side JSON Schema (through transforms, pipes and a nullable's `anyOf`)
 - `detect_format` (`testing/schema_generators.ts`) — Detect format constraints (uuid, email, pattern)
 - `detect_json_schema_format` (`testing/schema_generators.ts`) — The format constraint of a field's JSON Schema
 - `generate_valid_value` (`testing/schema_generators.ts`) — Generate valid value for a Zod field
