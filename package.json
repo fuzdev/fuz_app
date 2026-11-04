@@ -51,7 +51,7 @@
     "pg": ">=8",
     "svelte": "^5",
     "ws": ">=8",
-    "zod": "^4"
+    "zod": "^4.6"
   },
   "peerDependenciesMeta": {
     "@electric-sql/pglite": {
