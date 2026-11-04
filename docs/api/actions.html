@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/BTZoVLbz.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CAODFmXb.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.69p5yPyN.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.C98iep4n.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.BzQzUGX2.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.TsPhnXgs.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BcwQFYZ2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/C3BYcZ2u.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/D9nnQ1-S.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/QcvMMNge.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.Cro2vVKH.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/Ww4fZjHp.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.DVaBfZ6o.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BL7ZH9U-.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DhdQKFKC.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -359,11 +359,11 @@ caller those gates refuse is answered 403, not 429.<!--]--><!--]--><!----></li><
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->__proto__<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> key at any depth (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/schema_helpers.ts#json_has_own_proto_key"><!--[0--><!--[-1-->json_has_own_proto_key<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->) are refused
 with <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->data.reason<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->params_proto_key<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/error_schemas.ts#ERROR_PARAMS_PROTO_KEY"><!--[0--><!--[-1-->ERROR_PARAMS_PROTO_KEY<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->), on
 every input schema, before it runs; then
-<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->spec.input.safeParse(raw_params)<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> with
+<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->spec.input<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> parses the params (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/schema_issues.ts#parse_any"><!--[0--><!--[-1-->parse_any<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->, Zod or fuz_schema) with
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->z.void()<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> / <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->?? {}<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> rules (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/schema_helpers.ts#to_input_params"><!--[0--><!--[-1-->to_input_params<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->). A refusal is the generic
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->invalid params<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, with <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->data.reason<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> when the first issue's field
-declares an <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->invalid_reason<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/perform_action.ts#to_invalid_params_error"><!--[0--><!--[-1-->to_invalid_params_error<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->) and the Zod
-issues under DEV only. Runs <!--]--><!--[4--><strong><!--[--><!--[2-->after<!--]--><!--]--><!----></strong><!--]--><!--[2--> the authority gates: a
+declares an <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->invalid_reason<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/perform_action.ts#to_invalid_params_error"><!--[0--><!--[-1-->to_invalid_params_error<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->) and the
+library's issues under DEV only. Runs <!--]--><!--[4--><strong><!--[--><!--[2-->after<!--]--><!--]--><!----></strong><!--]--><!--[2--> the authority gates: a
 400 describing the action's input shape to a caller those gates
 refuse would confirm the method exists and describe how to call it,
 to a channel that should have learned nothing. Coarse authority
@@ -578,16 +578,16 @@ everything and answers nothing.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]-
 			
 			<script>
 				{
-					__sveltekit_1unqvuz = {
+					__sveltekit_19wlucs = {
 						base: "",
-						version: "d3ecd9a44cab610d969e505a07f121663beace6d"
+						version: "4b7ec30ac102b408c39fe73cf51fef4563a28dba"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.CXlCZqzx.js").then(async (kit) => {
-						kit.init(__sveltekit_1unqvuz);
-						const app = await import("/_app/immutable/entry/app.69p5yPyN.js");
+						kit.init(__sveltekit_19wlucs);
+						const app = await import("/_app/immutable/entry/app.BzQzUGX2.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],

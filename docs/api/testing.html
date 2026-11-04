@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/BTZoVLbz.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CAODFmXb.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.69p5yPyN.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.C98iep4n.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.BzQzUGX2.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.TsPhnXgs.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BcwQFYZ2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/C3BYcZ2u.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/D9nnQ1-S.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/QcvMMNge.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.Cro2vVKH.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/Ww4fZjHp.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.DVaBfZ6o.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BL7ZH9U-.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DhdQKFKC.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -955,7 +955,7 @@ at bootstrap, never trimmed into a legal name. Bootstrap validates its body
 before its window check, so the padded bootstrap answers 400 even after
 bootstrap completed.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[4--><strong><!--[--><!--[2-->Email format (creation):<!--]--><!--]--><!----></strong><!--]--><!--[2--> the optional signup <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->email<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> is validated to a
 loose <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->local@domain.tld<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> shape on both spines — TS <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/primitive_schemas.ts#Email"><!--[0--><!--[-1-->Email<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->
-(<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->^[^\s@]+@[^\s@]+\.[^\s@]+$<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> plus a 254-byte (RFC 5321 octet) length bound; whitespace <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->White_Space ∪ {U+FEFF}<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->), Rust the
+(<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->^[^\s\u0085@]+@[^\s\u0085@]+\.[^\s\u0085@]+$<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> plus a 254-byte (RFC 5321 octet) length bound; whitespace <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->White_Space ∪ {U+FEFF}<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->), Rust the
 hand-rolled <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->is_valid_email<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->. A malformed email → 400, a well-formed one →
 403 no-matching-invite (the same accept/reject settle the username tables
 use). The accepted siblings include the single-char-TLD <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->a@b.c<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> that Zod's
@@ -2200,7 +2200,10 @@ reach a production bundle. The *consumer* half — validating a presented
 the Rust spine, whose producer is confined to <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->fuz_testing<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->The token file is written atomically at mode <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->0600<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> via
 <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/runtime/fs.ts#write_file_atomic"><!--[0--><!--[-1-->write_file_atomic<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> (unique temp name + exclusive create), so it never
 exists group/other-readable — the old optional-<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->chmod<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> pattern let a
-default umask land it at <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->0644<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/testing/data_exposure.ts"><!--[-1-->testing/data_exposure.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Composable data exposure test suite.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Verifies that sensitive database fields never leak through HTTP responses:<!--]--><!--]--><!----></p><!--]--><!--[9--><!--[-1--><ul><!--[--><!--[10--><li><!--[--><!--[2-->Schema-level: walks JSON Schema output/error schemas for blocklisted property names<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->Runtime: fires real requests and checks response bodies against field blocklists<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->Cross-privilege: verifies admin routes return 403 for non-admin users,
+default umask land it at <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->0644<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/testing/data_exposure.ts"><!--[-1-->testing/data_exposure.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Composable data exposure test suite.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Verifies that sensitive database fields never leak through HTTP responses:<!--]--><!--]--><!----></p><!--]--><!--[9--><!--[-1--><ul><!--[--><!--[10--><li><!--[--><!--[2-->Schema-level: walks the JSON Schema of every route, RPC, and WebSocket
+output (both sides of a transform), the params the server pushes over
+WebSocket, and every route error schema for sensitive property names,
+and non-admin route outputs for admin-only ones<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->Runtime: fires real requests and checks response bodies against field blocklists<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->Cross-privilege: verifies admin routes return 403 for non-admin users,
 and non-admin responses exclude admin-only fields<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--[8--><p><!--[--><!--[2-->Cadence: per-describe <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->setup_test()<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> call (see <!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/testing/round_trip.ts"><!--[0--><!--[-1-->testing/round_trip.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> module
 docstring). The runtime body manages its own request ordering (auth-free
 → cross-privilege → 2xx) to avoid session-invalidation contamination
@@ -2440,16 +2443,16 @@ close-on-revoke).<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div
 			
 			<script>
 				{
-					__sveltekit_1unqvuz = {
+					__sveltekit_19wlucs = {
 						base: "",
-						version: "d3ecd9a44cab610d969e505a07f121663beace6d"
+						version: "4b7ec30ac102b408c39fe73cf51fef4563a28dba"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.CXlCZqzx.js").then(async (kit) => {
-						kit.init(__sveltekit_1unqvuz);
-						const app = await import("/_app/immutable/entry/app.69p5yPyN.js");
+						kit.init(__sveltekit_19wlucs);
+						const app = await import("/_app/immutable/entry/app.BzQzUGX2.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],
