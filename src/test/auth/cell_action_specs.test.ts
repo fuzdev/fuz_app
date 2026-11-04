@@ -10,6 +10,7 @@ import { describe, test, assert } from 'vitest';
 import {
 	CELL_KIND_LENGTH_MAX,
 	CellCreateInput,
+	CellGetInput,
 	CellListInput
 } from '#lib/auth/cell_action_specs.ts';
 
@@ -43,5 +44,12 @@ describe('cell kind length cap', () => {
 		assert.ok(!CellListInput.safeParse({ kind: 'a'.repeat(CELL_KIND_LENGTH_MAX + 1) }).success);
 		// the empty filter is admitted: it matches nothing
 		assert.ok(CellListInput.safeParse({ kind: '' }).success);
+	});
+});
+
+describe('CellGetInput', () => {
+	// `zod-uuid-uppercase-max`: fails, and the ledger header's entry goes, when the input moves to the twin
+	test('the Zod cell_get input refuses the uppercase max UUID', () => {
+		assert.isFalse(CellGetInput.safeParse({ id: 'FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF' }).success);
 	});
 });

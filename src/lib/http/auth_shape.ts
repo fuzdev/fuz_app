@@ -33,9 +33,14 @@
  */
 
 import { z } from 'zod';
-import { is_schema } from '@fuzdev/fuz_schema/schema.ts';
+import { is_schema, parse } from '@fuzdev/fuz_schema/schema.ts';
+import { get_schema_entries } from '@fuzdev/fuz_schema/introspect.ts';
 
 import { Uuid } from '../primitive_schemas.ts';
+import {
+	ACTING_ACTOR_DESCRIPTION,
+	ActingActor as ActingActorFuz
+} from '../primitive_schemas_fuz.ts';
 import { zod_unwrap_to_object } from '../zod.ts';
 import type { ValidationSchema } from '../schema_issues.ts';
 
@@ -58,11 +63,11 @@ import type { ValidationSchema } from '../schema_issues.ts';
  * invariant 2: `auth.actor !== 'none'` ⟺ input (or query, on REST GETs)
  * declares `acting?: ActingActor`. Keeping the contract in one module
  * removes the http/ → auth/ import that an earlier split forced.
+ *
+ * A fuz_schema input declares the twin in `primitive_schemas_fuz.ts`, which
+ * the dispatcher finds the same way.
  */
-export const ActingActor = Uuid.optional().meta({
-	description:
-		'Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.'
-});
+export const ActingActor = Uuid.optional().meta({ description: ACTING_ACTOR_DESCRIPTION });
 export type ActingActor = z.infer<typeof ActingActor>;
 
 /**
@@ -85,12 +90,21 @@ export type ActingActor = z.infer<typeof ActingActor>;
  * an input schema behind it, so there a malformed selector is final (the
  * status route answers account-only).
  *
+ * The grammar is the fuz_schema twin's, so the uppercase max UUID reads as a
+ * selector, as on the Rust spine; naming no actor, it is refused by the
+ * authorization phase before a Zod input schema would see it. Every other
+ * value reads as the Zod `ActingActor` would. The id comes back lowercased.
+ * A route declaring `acting` on its Zod `query` schema doesn't read it here:
+ * that schema runs ahead of the authorization phase and refuses the uppercase
+ * max with a 400, a declared gap against the Rust spine until those query
+ * schemas move to the twin.
+ *
  * @param value - the raw `acting` field, from params / query / body
  * @returns the actor id, or `undefined` when absent or malformed
  */
 export const parse_acting = (value: unknown): string | undefined => {
-	const parsed = ActingActor.safeParse(value);
-	return parsed.success ? parsed.data : undefined;
+	const parsed = parse(ActingActorFuz, value);
+	return parsed.ok ? parsed.value : undefined;
 };
 
 /**
@@ -292,8 +306,11 @@ export const is_plain_authenticated_auth = (auth: RouteAuth): boolean =>
 
 /**
  * Whether a schema declares the canonical `acting?: ActingActor` field.
- * Reference-equality on the exported `ActingActor` schema — consumer
- * schemas with unrelated `acting` fields don't trip this check.
+ * Reference-equality on the exported `ActingActor` schema of the input's
+ * library — the Zod one here, the fuz_schema twin in
+ * `primitive_schemas_fuz.ts` — so consumer schemas with unrelated `acting`
+ * fields don't trip this check, nor does either twin in the other library's
+ * object.
  *
  * Peels through Zod wrappers (`optional`, `nullable`, `default`,
  * `transform`, `pipe`, `prefault`) via `zod_unwrap_to_object` so a spec
@@ -301,13 +318,13 @@ export const is_plain_authenticated_auth = (auth: RouteAuth): boolean =>
  * `z.strictObject({acting: ActingActor}).default({})` still trips the
  * predicate.
  *
- * A `@fuzdev/fuz_schema` schema (a void input, say) answers `false`:
- * `ActingActor` is a Zod schema, so no fuz_schema input holds it, and a spec
- * resolving an actor with one is refused by the biconditional.
+ * A `@fuzdev/fuz_schema` schema is read by `get_schema_entries`, which sees
+ * through its wrappers (`optional`, `nullable`, the defaults) and a `pipe` to
+ * the schema it starts with; a schema that isn't an object under them (a void
+ * input, say) answers `false`.
  */
 export const input_schema_declares_acting = (schema: ValidationSchema): boolean => {
-	// TODO: read a fuz_schema `ActingActor` twin once one exists
-	if (is_schema(schema)) return false;
+	if (is_schema(schema)) return get_schema_entries(schema)?.acting === ActingActorFuz;
 	const obj = zod_unwrap_to_object(schema as z.ZodType);
 	if (!obj) return false;
 	return (obj.shape as Record<string, z.ZodType | undefined>).acting === ActingActor;
@@ -320,8 +337,8 @@ export const input_schema_declares_acting = (schema: ValidationSchema): boolean 
  * field is omitted on action call sites).
  */
 export interface ActingSlots {
-	input: z.ZodType;
-	query?: z.ZodType;
+	input: ValidationSchema;
+	query?: ValidationSchema;
 }
 
 /**
@@ -358,12 +375,12 @@ export const assert_route_auth_acting_biconditional = (
 		throw new Error(
 			`${context}: auth.actor === '${auth.actor}' requires the ${
 				slot_phrase
-			} to declare 'acting?: ActingActor' (registry-time invariant 2)`
+			} to declare 'acting?: ActingActor', the Zod one or its fuz_schema twin (registry-time invariant 2)`
 		);
 	}
 	throw new Error(
 		`${context}: ${
 			slot_phrase
-		} declares 'acting?: ActingActor' but auth.actor === 'none' (registry-time invariant 2)`
+		} declares 'acting?: ActingActor' (Zod or fuz_schema) but auth.actor === 'none' (registry-time invariant 2)`
 	);
 };

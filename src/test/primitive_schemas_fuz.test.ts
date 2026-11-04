@@ -1,0 +1,213 @@
+/**
+ * Tests for the fuz_schema twins in `primitive_schemas_fuz.ts`, held to the
+ * Zod `Uuid`, `UuidWithDefault`, and `ActingActor` on one vector table, with
+ * the one difference between them declared.
+ *
+ * @module
+ */
+
+import { describe, assert, test } from 'vitest';
+import { z } from 'zod';
+import { get_meta } from '@fuzdev/fuz_schema/meta.ts';
+import { is_schema, parse } from '@fuzdev/fuz_schema/schema.ts';
+import { to_json_schema } from '@fuzdev/fuz_schema/json_schema.ts';
+
+import { Uuid as ZodUuid, UuidWithDefault as ZodUuidWithDefault } from '#lib/primitive_schemas.ts';
+import {
+	ACTING_ACTOR_DESCRIPTION,
+	ActingActor,
+	Uuid,
+	UuidWithDefault
+} from '#lib/primitive_schemas_fuz.ts';
+import { ActingActor as ZodActingActor } from '#lib/http/auth_shape.ts';
+
+/** The shape `crypto.randomUUID()` produces — a lowercase version-4 UUID. */
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+/** A row's result: the lowercased output, or `null` for a refusal. */
+type Verdict = string | null;
+
+/** One vector: the input and what both twins give for it. */
+interface UuidVector {
+	input: unknown;
+	expected: Verdict;
+}
+
+const UUID_VECTORS: Record<string, UuidVector> = {
+	'lowercase v4': {
+		input: 'f81d4fae-7dec-41d0-a765-00a0c91e6bf6',
+		expected: 'f81d4fae-7dec-41d0-a765-00a0c91e6bf6'
+	},
+	'uppercase v4': {
+		input: 'F81D4FAE-7DEC-41D0-A765-00A0C91E6BF6',
+		expected: 'f81d4fae-7dec-41d0-a765-00a0c91e6bf6'
+	},
+	'mixed case v1': {
+		input: 'f81D4fae-7DEC-11d0-A765-00a0C91e6bf6',
+		expected: 'f81d4fae-7dec-11d0-a765-00a0c91e6bf6'
+	},
+	'version 8': {
+		input: '3f8a1c2e-1234-8abc-9def-0123456789ab',
+		expected: '3f8a1c2e-1234-8abc-9def-0123456789ab'
+	},
+	'uppercase variant B': {
+		input: '3f8a1c2e-1234-4abc-Bdef-0123456789ab',
+		expected: '3f8a1c2e-1234-4abc-bdef-0123456789ab'
+	},
+	nil: {
+		input: '00000000-0000-0000-0000-000000000000',
+		expected: '00000000-0000-0000-0000-000000000000'
+	},
+	'lowercase max': {
+		input: 'ffffffff-ffff-ffff-ffff-ffffffffffff',
+		expected: 'ffffffff-ffff-ffff-ffff-ffffffffffff'
+	},
+	'uppercase max': {
+		input: 'FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF',
+		expected: 'ffffffff-ffff-ffff-ffff-ffffffffffff'
+	},
+	'mixed case max': {
+		input: 'ffffffff-FFFF-ffff-FFFF-ffffffffffff',
+		expected: 'ffffffff-ffff-ffff-ffff-ffffffffffff'
+	},
+	'version 0': { input: '00000000-0000-0000-0000-000000000001', expected: null },
+	'version 9': { input: '3f8a1c2e-1234-9abc-9def-0123456789ab', expected: null },
+	'variant 1': { input: '3f8a1c2e-1234-4abc-1def-0123456789ab', expected: null },
+	'variant c': { input: '3f8a1c2e-1234-4abc-cdef-0123456789ab', expected: null },
+	'all ones': { input: '11111111-1111-1111-1111-111111111111', expected: null },
+	'no dashes': { input: '3f8a1c2e12344abc9def0123456789ab', expected: null },
+	braced: { input: '{3f8a1c2e-1234-4abc-9def-0123456789ab}', expected: null },
+	urn: { input: 'urn:uuid:3f8a1c2e-1234-4abc-9def-0123456789ab', expected: null },
+	'non-hex digit': { input: 'g81d4fae-7dec-41d0-a765-00a0c91e6bf6', expected: null },
+	'a trailing newline': { input: 'f81d4fae-7dec-41d0-a765-00a0c91e6bf6\n', expected: null },
+	'not a uuid': { input: 'not-a-uuid', expected: null },
+	empty: { input: '', expected: null },
+	number: { input: 123, expected: null },
+	null: { input: null, expected: null },
+	undefined: { input: undefined, expected: null }
+};
+
+/**
+ * The rows where the Zod `Uuid` differs from the fuz_schema twin, with what
+ * Zod gives. Declared: RFC 9562 §4 reads a UUID case-insensitively, and the
+ * twin follows it for the max UUID too, as the Rust spine's `is_valid_uuid`
+ * does; `z.uuid()` spells its max alternative in lowercase only. The test
+ * turns red when a row closes, so the entry goes when Zod's `Uuid` does.
+ */
+const ZOD_UUID_DIVERGENCES: Record<string, { zod: Verdict; reason: string }> = {
+	'uppercase max': {
+		zod: null,
+		reason: 'z.uuid() takes the max UUID in lowercase only; the twin, in any case'
+	},
+	'mixed case max': {
+		zod: null,
+		reason: 'z.uuid() takes the max UUID in lowercase only; the twin, in any case'
+	}
+};
+
+const run_fuz = (input: unknown): Verdict => {
+	const result = parse(Uuid, input);
+	return result.ok ? result.value : null;
+};
+
+const run_zod = (input: unknown): Verdict => {
+	const result = ZodUuid.safeParse(input);
+	return result.success ? result.data : null;
+};
+
+describe('fuz_schema Uuid', () => {
+	for (const [name, { input, expected }] of Object.entries(UUID_VECTORS)) {
+		test(`${name}: ${expected === null ? 'refused' : 'accepted, lowercased'}`, () => {
+			assert.strictEqual(run_fuz(input), expected);
+		});
+	}
+
+	test('the Zod Uuid gives the same verdict and output but on the declared rows', () => {
+		for (const [name, { input, expected }] of Object.entries(UUID_VECTORS)) {
+			const divergence = ZOD_UUID_DIVERGENCES[name];
+			const zod = run_zod(input);
+			if (divergence) {
+				assert.strictEqual(zod, divergence.zod, `${name}: the declared Zod result`);
+				assert.notStrictEqual(zod, expected, `${name}: declared, so it must still differ`);
+			} else {
+				assert.strictEqual(zod, expected, name);
+			}
+		}
+		for (const name of Object.keys(ZOD_UUID_DIVERGENCES)) {
+			assert.isDefined(UUID_VECTORS[name], `a declared row names a vector: ${name}`);
+		}
+	});
+
+	test('its JSON Schema is the Zod Uuid’s but for the pattern, which differs on the declared rows', () => {
+		for (const io of ['input', 'output'] as const) {
+			const { pattern: fuz_pattern, ...fuz_rest } = to_json_schema(Uuid, { io });
+			const { pattern: zod_pattern, ...zod_rest } = z.toJSONSchema(ZodUuid, { io });
+			assert.deepEqual<Record<string, unknown>>(fuz_rest, zod_rest, io);
+			assert(typeof fuz_pattern === 'string');
+			assert(typeof zod_pattern === 'string');
+			// the patterns are judged by what they match, the vectors' strings
+			const fuz_regex = new RegExp(fuz_pattern);
+			const zod_regex = new RegExp(zod_pattern);
+			for (const [name, { input, expected }] of Object.entries(UUID_VECTORS)) {
+				if (typeof input !== 'string') continue;
+				assert.strictEqual(fuz_regex.test(input), expected !== null, `fuz ${io} ${name}`);
+				const zod_expected =
+					name in ZOD_UUID_DIVERGENCES ? ZOD_UUID_DIVERGENCES[name]!.zod : expected;
+				assert.strictEqual(zod_regex.test(input), zod_expected !== null, `zod ${io} ${name}`);
+			}
+		}
+	});
+
+	test('one Uuid type: either twin’s output is assignable to the other’s', () => {
+		const parsed = parse(Uuid, 'f81d4fae-7dec-41d0-a765-00a0c91e6bf6');
+		assert.ok(parsed.ok);
+		const fuz_out: Uuid = parsed.value;
+		const zod_out: ZodUuid = ZodUuid.parse('f81d4fae-7dec-41d0-a765-00a0c91e6bf6');
+		const zod_from_fuz: ZodUuid = fuz_out;
+		const fuz_from_zod: Uuid = zod_out;
+		// a cast from a plain string keeps working
+		const cast: ZodUuid = 'f81d4fae-7dec-41d0-a765-00a0c91e6bf6' as ZodUuid;
+		assert.strictEqual(zod_from_fuz, fuz_from_zod);
+		assert.strictEqual(cast, zod_out);
+		// @ts-expect-error a plain string is not a Uuid
+		const plain: ZodUuid = 'f81d4fae-7dec-41d0-a765-00a0c91e6bf6';
+		assert.isString(plain);
+	});
+});
+
+describe('fuz_schema UuidWithDefault', () => {
+	test('generates a fresh v4 for undefined', () => {
+		const a = parse(UuidWithDefault, undefined);
+		const b = parse(UuidWithDefault, undefined);
+		assert.ok(a.ok && b.ok);
+		assert.match(a.value, UUID_V4);
+		assert.notStrictEqual(a.value, b.value);
+	});
+
+	test('lowercases an explicit value and refuses an invalid one', () => {
+		const result = parse(UuidWithDefault, 'F81D4FAE-7DEC-41D0-A765-00A0C91E6BF6');
+		assert.ok(result.ok);
+		assert.strictEqual(result.value, 'f81d4fae-7dec-41d0-a765-00a0c91e6bf6');
+		assert.isFalse(parse(UuidWithDefault, 'nope').ok);
+		assert.isFalse(ZodUuidWithDefault.safeParse('nope').success);
+	});
+});
+
+describe('fuz_schema ActingActor', () => {
+	test('is an optional Uuid', () => {
+		assert.ok(is_schema(ActingActor));
+		const absent = parse(ActingActor, undefined);
+		assert.ok(absent.ok);
+		assert.isUndefined(absent.value);
+		const upper = parse(ActingActor, 'FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF');
+		assert.ok(upper.ok);
+		assert.strictEqual(upper.value, 'ffffffff-ffff-ffff-ffff-ffffffffffff');
+		assert.isFalse(parse(ActingActor, null).ok);
+		assert.isFalse(parse(ActingActor, 'not-a-uuid').ok);
+	});
+
+	test('carries the Zod twin’s description', () => {
+		assert.strictEqual(get_meta(ActingActor)?.description, ACTING_ACTOR_DESCRIPTION);
+		assert.strictEqual(z.globalRegistry.get(ZodActingActor)?.description, ACTING_ACTOR_DESCRIPTION);
+	});
+});

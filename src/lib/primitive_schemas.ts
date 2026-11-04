@@ -20,6 +20,7 @@
  */
 
 import { z } from 'zod';
+import type { Branded } from '@fuzdev/fuz_schema/schema.ts';
 import { FACT_HASH_EXACT, type FactHash } from '@fuzdev/fuz_util/hash_schemas.ts';
 
 // TODO consider `.brand()` on Username and Email for compile-time safety
@@ -219,13 +220,21 @@ export const create_uuid = (): Uuid => crypto.randomUUID() as Uuid;
  * compares equal to the same id read back from the database. The Rust spine
  * canonicalizes the same way. One exception: `z.uuid()` takes the max UUID
  * (`ffffffff-ffff-ffff-ffff-ffffffffffff`) only in lowercase, and
- * `.toLowerCase()` runs after the check, so the uppercase max is refused.
+ * `.toLowerCase()` runs after the check, so the uppercase max is refused,
+ * where the fuz_schema twin in `primitive_schemas_fuz.ts` and the Rust spine
+ * accept it.
  *
  * `.toLowerCase()` rather than `.transform()`: an overwrite keeps the output
  * type and stays invisible to `z.toJSONSchema`, where a transform would leave
  * no input schema to render.
+ *
+ * The output type is fuz_schema's `Branded<string, 'Uuid'>`, the twin's, by a
+ * cast as on `FactHashSchema`: Zod's `.brand('Uuid')` would output Zod's own
+ * brand, which a fuz_schema `Uuid` isn't assignable to.
  */
-export const Uuid = z.uuid().toLowerCase().brand('Uuid');
+export const Uuid: z.ZodUUID & z.ZodType<Branded<string, 'Uuid'>, string> = z
+	.uuid()
+	.toLowerCase() as z.ZodUUID & z.ZodType<Branded<string, 'Uuid'>, string>;
 export type Uuid = z.infer<typeof Uuid>;
 
 /** `Uuid` that defaults to a fresh `create_uuid()` when the input is `undefined`. */

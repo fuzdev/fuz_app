@@ -18,13 +18,24 @@
 
 import { describe, test, assert } from 'vitest';
 import { z } from 'zod';
-import { object, optional, string, void as fuz_void } from '@fuzdev/fuz_schema/schema.ts';
+import {
+	loose_object,
+	nullable,
+	object,
+	optional,
+	pipe,
+	string,
+	transform,
+	void as fuz_void,
+	with_default
+} from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	assert_route_auth_acting_biconditional,
 	input_schema_declares_acting,
 	ActingActor
 } from '#lib/http/auth_shape.ts';
+import { ActingActor as ActingActorFuz } from '#lib/primitive_schemas_fuz.ts';
 
 describe('input_schema_declares_acting', () => {
 	test('canonical strictObject({acting: ActingActor}) returns true', () => {
@@ -102,23 +113,105 @@ describe('input_schema_declares_acting', () => {
 		assert.strictEqual(input_schema_declares_acting(schema), false);
 	});
 
-	test('a fuz_schema input declares no acting', () => {
+	test('a fuz_schema input without the twin declares no acting', () => {
 		assert.strictEqual(input_schema_declares_acting(fuz_void), false);
+		assert.strictEqual(input_schema_declares_acting(string), false);
 		assert.strictEqual(input_schema_declares_acting(object({ acting: optional(string) })), false);
+		assert.strictEqual(input_schema_declares_acting(object({ other: ActingActorFuz })), false);
+	});
+
+	test('a fuz_schema object declaring the twin ActingActor declares acting', () => {
+		assert.strictEqual(input_schema_declares_acting(object({ acting: ActingActorFuz })), true);
+		assert.strictEqual(
+			input_schema_declares_acting(loose_object({ id: string, acting: ActingActorFuz })),
+			true
+		);
+		// through the wrappers `get_schema_entries` sees through
+		assert.strictEqual(
+			input_schema_declares_acting(optional(object({ acting: ActingActorFuz }))),
+			true
+		);
+		assert.strictEqual(
+			input_schema_declares_acting(nullable(object({ acting: ActingActorFuz }))),
+			true
+		);
+		assert.strictEqual(
+			input_schema_declares_acting(with_default(object({ acting: ActingActorFuz }), {})),
+			true
+		);
+		// and a pipe that starts with the object, as Zod's peels a pipe
+		assert.strictEqual(
+			input_schema_declares_acting(
+				pipe(
+					object({ acting: ActingActorFuz }),
+					transform((v) => v)
+				)
+			),
+			true
+		);
+	});
+
+	test('each library finds its own twin only', () => {
+		// reference equality per library: the Zod `ActingActor` in a fuz_schema
+		// object, or the twin in a Zod one, is no declaration
+		assert.strictEqual(
+			input_schema_declares_acting(object({ acting: ActingActor as unknown as typeof string })),
+			false
+		);
+		assert.strictEqual(
+			input_schema_declares_acting(
+				z.strictObject({ acting: ActingActorFuz as unknown as z.ZodOptional<z.ZodString> })
+			),
+			false
+		);
 	});
 
 	test('a fuz_schema void input passes the biconditional on actor: none and refuses it otherwise', () => {
 		assert_route_auth_acting_biconditional(
 			{ account: 'none', actor: 'none' },
-			{ input: fuz_void as unknown as z.ZodType },
+			{ input: fuz_void },
 			'test'
 		);
-		assert.throws(() =>
-			assert_route_auth_acting_biconditional(
-				{ account: 'required', actor: 'required' },
-				{ input: fuz_void as unknown as z.ZodType },
-				'test'
-			)
+		assert.throws(
+			() =>
+				assert_route_auth_acting_biconditional(
+					{ account: 'required', actor: 'required' },
+					{ input: fuz_void },
+					'test'
+				),
+			/to declare 'acting\?: ActingActor', the Zod one or its fuz_schema twin/
+		);
+	});
+
+	test('a fuz_schema input declaring the twin passes on actor: required and refuses actor: none', () => {
+		const input = object({ acting: ActingActorFuz });
+		assert_route_auth_acting_biconditional(
+			{ account: 'required', actor: 'required' },
+			{ input },
+			'test'
+		);
+		assert_route_auth_acting_biconditional(
+			{ account: 'required', actor: 'optional' },
+			{ input },
+			'test'
+		);
+		assert.throws(
+			() =>
+				assert_route_auth_acting_biconditional(
+					{ account: 'none', actor: 'none' },
+					{ input },
+					'test'
+				),
+			/declares 'acting\?: ActingActor' \(Zod or fuz_schema\) but auth\.actor === 'none'/
+		);
+		assert.throws(
+			() =>
+				assert_route_auth_acting_biconditional(
+					{ account: 'required', actor: 'none' },
+					{ input: z.null(), query: input },
+					'test'
+				),
+			/input or query schema declares/
 		);
 	});
 });

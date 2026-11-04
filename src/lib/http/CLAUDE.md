@@ -199,8 +199,9 @@ documents the framework's own emissions; consumers tighten via
 
 The same auto-derivation pattern is **not** appropriate for
 consumer-authored inputs (or handler outputs). A consumer's spec declares
-the exact `acting?: ActingActor` slot, and the framework reads it back via
-reference-equality to drive the authorization phase — auto-extending
+the exact `acting?: ActingActor` slot (the Zod one, or its fuz_schema twin
+in `primitive_schemas_fuz.ts` for a fuz_schema input), and the framework
+reads it back via reference-equality to drive the authorization phase — auto-extending
 schemas at registration time would obscure the source of truth ("did the
 spec declare this, or did the framework graft it on?") and quietly shadow
 consumer fields named `acting` that aren't the canonical `ActingActor`.
