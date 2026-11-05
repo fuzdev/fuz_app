@@ -12,13 +12,17 @@
  */
 
 import { z } from 'zod';
+import { object, type Infer } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { RouteSpec } from '../http/route_spec.ts';
-import { ActingActor } from '../http/auth_shape.ts';
+import { ActingActor } from '../primitive_schemas_fuz.ts';
 
-/** Query schema for the audit-log SSE route — multi-actor admins pass `?acting=<uuid>`. */
-export const AuditStreamQuery = z.strictObject({ acting: ActingActor });
-export type AuditStreamQuery = z.infer<typeof AuditStreamQuery>;
+/**
+ * Query schema for the audit-log SSE route, a `@fuzdev/fuz_schema` `object`
+ * that refuses unknown keys — multi-actor admins pass `?acting=<uuid>`.
+ */
+export const AuditStreamQuery = object({ acting: ActingActor });
+export type AuditStreamQuery = Infer<typeof AuditStreamQuery>;
 
 /** Default role required to access the audit-log SSE route. */
 export const DEFAULT_AUDIT_STREAM_ROLE = 'admin';

@@ -587,6 +587,12 @@ table browser; the factory is domain-agnostic.
 - `GET /tables/:name` — columns + rows (paginated via `?offset`/`?limit`, limit validated to `[1, 1000]` with default 100; bytea values come back as `<N bytes>` placeholders, NULL stays NULL, column metadata untouched) + total count + `primary_key` (the single PK column, or `null` when the table has none or a composite one) + `deletable` (whether the row-`DELETE` will accept this table at all — see below)
 - `DELETE /tables/:name/rows/:id` — delete by PK, compared typed as `"<pk>" = $1` (twinning the Rust spine — the untyped text-format param makes PG coerce the id with the PK type's input function, so the delete index-scans and follows the column type's semantics; an uncoercible id — 22P02/22003 — is the same clean 404 as a typed miss). `RETURNING "<pk>"::text` feeds the audit trail the row's canonical PK rendering. Returns 400 if the table is excluded by policy (`ERROR_TABLE_NOT_DELETABLE`) or has no single-column PK (`ERROR_TABLE_NO_PRIMARY_KEY`), 404 if row missing (`ERROR_ROW_NOT_FOUND`) or table missing/unbrowsable (`ERROR_TABLE_NOT_FOUND`), 409 on a referencing-row refusal (pg error `23503` foreign_key_violation, or `23001` restrict_violation — PG 18+ raises the latter for `ON DELETE RESTRICT`)
 
+Every route declares `acting?: ActingActor` on its `query` (registry-time
+invariant 2). The `{acting}`-only queries of `GET /health`, `GET /tables` and
+the row `DELETE` are `@fuzdev/fuz_schema` `object`s over the twin
+`ActingActor`; `GET /tables/:name`'s stays Zod, its paging params being
+`query_int`'s Zod preprocess.
+
 **The allowlist gates everything.** `DbRouteOptions.browsable_tables` is
 required with no "all" escape hatch — the table list shows only listed tables,
 and detail/`DELETE` on an unlisted table answer exactly like a table that

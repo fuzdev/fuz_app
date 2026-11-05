@@ -2,7 +2,8 @@
  * The validation issues an assembled app answers a bad REST body and bad RPC
  * params with: `WireIssue`s under DEV, and in production the same body
  * without them. Zod schemas and the fuz_schema inputs of
- * `account_token_revoke` and `actor_search` alike.
+ * `account_token_revoke` and `actor_search` alike, and a bad query on
+ * `GET /api/surface`, whose `{acting}` query is a fuz_schema `object`.
  *
  * Vitest runs with `DEV=true`, so each leg imports the server fresh under a
  * scoped `esm-env` mock (the `#lib/testing` harness can't load under
@@ -87,6 +88,7 @@ const create_app = async (dev: boolean) => {
 		session_options: create_session_config('test_session'),
 		allowed_origins: origins.origins,
 		env_schema: object({}),
+		surface_route: true,
 		proxy: { trusted_proxies: ['127.0.0.1'], get_connection_ip: () => '127.0.0.1' },
 		create_route_specs: () => [route],
 		rpc_endpoints: [
@@ -188,6 +190,30 @@ const post_rpc_actor_search = async (
 			params: { query: '', limit: 1.5, extra: 1 }
 		})
 	});
+
+const get_surface_bad_query = async (
+	app: Awaited<ReturnType<typeof create_app>>
+): Promise<Response> =>
+	await app.request('/api/surface?acting=not-a-uuid&x=1', { headers: { origin: ORIGIN } });
+
+// the issues that query gets from `object({acting: ActingActor})`, in fuz_schema's
+// words: the Zod query it replaced gave the same issues but for their messages
+const ACTING_QUERY_ISSUES = [
+	{
+		kind: 'uuid',
+		path: ['acting'],
+		expected: 'uuid',
+		received: 'string',
+		message: 'acting: expected uuid, received string'
+	},
+	{
+		kind: 'unknown_key',
+		path: ['x'],
+		expected: 'no unknown keys',
+		received: 'string',
+		message: 'x: expected no unknown keys, received string'
+	}
+];
 
 // the issues that input gets from `ActorSearchInput`, in fuz_schema's words: the
 // Zod schema it replaced gave the same issues but for their messages
@@ -334,6 +360,23 @@ describe('an assembled app answers a bad `actor_search` input', () => {
 			id: 1,
 			error: { code: -32602, message: 'invalid params' }
 		});
+	});
+});
+
+describe('an assembled app answers a bad `{acting}` route query', () => {
+	test('with fuz_schema issues under DEV', async () => {
+		const res = await get_surface_bad_query(await create_app(true));
+		assert.strictEqual(res.status, 400);
+		assert.deepStrictEqual(await res.json(), {
+			error: 'invalid_query_params',
+			issues: ACTING_QUERY_ISSUES
+		});
+	});
+
+	test('without issues in production, as under Zod', async () => {
+		const res = await get_surface_bad_query(await create_app(false));
+		assert.strictEqual(res.status, 400);
+		assert.deepStrictEqual(await res.json(), { error: 'invalid_query_params' });
 	});
 });
 

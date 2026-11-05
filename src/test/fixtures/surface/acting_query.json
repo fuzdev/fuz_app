@@ -1,0 +1,1389 @@
+[
+	{
+		"method": "GET",
+		"path": "/health",
+		"auth": {
+			"account": "required",
+			"actor": "required",
+			"roles": [
+				"keeper"
+			],
+			"credential_types": [
+				"daemon_token"
+			]
+		},
+		"applicable_middleware": [],
+		"description": "Database health and stats",
+		"is_mutation": false,
+		"transaction": false,
+		"raw_body": false,
+		"rate_limit_key": null,
+		"params_schema": null,
+		"query_schema": {
+			"type": "object",
+			"properties": {
+				"acting": {
+					"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+					"type": "string",
+					"format": "uuid",
+					"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+				}
+			},
+			"additionalProperties": false
+		},
+		"input_schema": null,
+		"output_schema": {
+			"type": "object",
+			"properties": {
+				"connected": {
+					"type": "boolean"
+				}
+			},
+			"required": [
+				"connected"
+			],
+			"additionalProperties": {}
+		},
+		"error_schemas": {
+			"400": {
+				"anyOf": [
+					{
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"enum": [
+									"invalid_request_body",
+									"invalid_json_body",
+									"invalid_route_params",
+									"invalid_query_params"
+								]
+							},
+							"issues": {
+								"type": "array",
+								"items": {
+									"type": "object",
+									"properties": {
+										"kind": {
+											"type": "string"
+										},
+										"path": {
+											"type": "array",
+											"items": {
+												"type": [
+													"string",
+													"number"
+												]
+											}
+										},
+										"expected": {
+											"type": "string"
+										},
+										"received": {
+											"type": "string"
+										},
+										"message": {
+											"type": "string"
+										}
+									},
+									"required": [
+										"kind",
+										"path",
+										"expected",
+										"received",
+										"message"
+									],
+									"additionalProperties": {}
+								}
+							}
+						},
+						"required": [
+							"error"
+						],
+						"additionalProperties": {}
+					},
+					{
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"const": "actor_required"
+							},
+							"available": {
+								"type": "array",
+								"items": {
+									"type": "object",
+									"properties": {
+										"id": {
+											"type": "string"
+										},
+										"name": {
+											"type": "string"
+										}
+									},
+									"required": [
+										"id",
+										"name"
+									],
+									"additionalProperties": {}
+								}
+							}
+						},
+						"required": [
+							"error",
+							"available"
+						],
+						"additionalProperties": {}
+					},
+					{
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"const": "actor_not_on_account"
+							}
+						},
+						"required": [
+							"error"
+						],
+						"additionalProperties": {}
+					}
+				]
+			},
+			"401": {
+				"type": "object",
+				"properties": {
+					"error": {
+						"type": "string"
+					}
+				},
+				"required": [
+					"error"
+				],
+				"additionalProperties": {}
+			},
+			"403": {
+				"anyOf": [
+					{
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"const": "credential_type_required"
+							},
+							"required_credential_types": {
+								"readOnly": true,
+								"type": "array",
+								"items": {
+									"type": "string"
+								}
+							}
+						},
+						"required": [
+							"error",
+							"required_credential_types"
+						],
+						"additionalProperties": {}
+					},
+					{
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"const": "insufficient_permissions"
+							},
+							"required_roles": {
+								"readOnly": true,
+								"type": "array",
+								"items": {
+									"type": "string"
+								}
+							}
+						},
+						"required": [
+							"error",
+							"required_roles"
+						],
+						"additionalProperties": {}
+					}
+				]
+			},
+			"500": {
+				"anyOf": [
+					{
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"const": "no_actors_on_account"
+							}
+						},
+						"required": [
+							"error"
+						],
+						"additionalProperties": {}
+					},
+					{
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"const": "account_vanished"
+							}
+						},
+						"required": [
+							"error"
+						],
+						"additionalProperties": {}
+					}
+				]
+			},
+			"503": {
+				"type": "object",
+				"properties": {
+					"error": {
+						"type": "string",
+						"const": "database_connection_failed"
+					}
+				},
+				"required": [
+					"error"
+				],
+				"additionalProperties": {}
+			}
+		}
+	},
+	{
+		"method": "GET",
+		"path": "/tables",
+		"auth": {
+			"account": "required",
+			"actor": "required",
+			"roles": [
+				"keeper"
+			],
+			"credential_types": [
+				"daemon_token"
+			]
+		},
+		"applicable_middleware": [],
+		"description": "List browsable tables with row counts",
+		"is_mutation": false,
+		"transaction": true,
+		"raw_body": false,
+		"rate_limit_key": null,
+		"params_schema": null,
+		"query_schema": {
+			"type": "object",
+			"properties": {
+				"acting": {
+					"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+					"type": "string",
+					"format": "uuid",
+					"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+				}
+			},
+			"additionalProperties": false
+		},
+		"input_schema": null,
+		"output_schema": {
+			"type": "object",
+			"properties": {
+				"tables": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {
+							"name": {
+								"type": "string"
+							},
+							"row_count": {
+								"type": "number"
+							}
+						},
+						"required": [
+							"name",
+							"row_count"
+						],
+						"additionalProperties": false
+					}
+				}
+			},
+			"required": [
+				"tables"
+			],
+			"additionalProperties": {}
+		},
+		"error_schemas": {
+			"400": {
+				"anyOf": [
+					{
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"enum": [
+									"invalid_request_body",
+									"invalid_json_body",
+									"invalid_route_params",
+									"invalid_query_params"
+								]
+							},
+							"issues": {
+								"type": "array",
+								"items": {
+									"type": "object",
+									"properties": {
+										"kind": {
+											"type": "string"
+										},
+										"path": {
+											"type": "array",
+											"items": {
+												"type": [
+													"string",
+													"number"
+												]
+											}
+										},
+										"expected": {
+											"type": "string"
+										},
+										"received": {
+											"type": "string"
+										},
+										"message": {
+											"type": "string"
+										}
+									},
+									"required": [
+										"kind",
+										"path",
+										"expected",
+										"received",
+										"message"
+									],
+									"additionalProperties": {}
+								}
+							}
+						},
+						"required": [
+							"error"
+						],
+						"additionalProperties": {}
+					},
+					{
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"const": "actor_required"
+							},
+							"available": {
+								"type": "array",
+								"items": {
+									"type": "object",
+									"properties": {
+										"id": {
+											"type": "string"
+										},
+										"name": {
+											"type": "string"
+										}
+									},
+									"required": [
+										"id",
+										"name"
+									],
+									"additionalProperties": {}
+								}
+							}
+						},
+						"required": [
+							"error",
+							"available"
+						],
+						"additionalProperties": {}
+					},
+					{
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"const": "actor_not_on_account"
+							}
+						},
+						"required": [
+							"error"
+						],
+						"additionalProperties": {}
+					}
+				]
+			},
+			"401": {
+				"type": "object",
+				"properties": {
+					"error": {
+						"type": "string"
+					}
+				},
+				"required": [
+					"error"
+				],
+				"additionalProperties": {}
+			},
+			"403": {
+				"anyOf": [
+					{
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"const": "credential_type_required"
+							},
+							"required_credential_types": {
+								"readOnly": true,
+								"type": "array",
+								"items": {
+									"type": "string"
+								}
+							}
+						},
+						"required": [
+							"error",
+							"required_credential_types"
+						],
+						"additionalProperties": {}
+					},
+					{
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"const": "insufficient_permissions"
+							},
+							"required_roles": {
+								"readOnly": true,
+								"type": "array",
+								"items": {
+									"type": "string"
+								}
+							}
+						},
+						"required": [
+							"error",
+							"required_roles"
+						],
+						"additionalProperties": {}
+					}
+				]
+			},
+			"500": {
+				"anyOf": [
+					{
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"const": "no_actors_on_account"
+							}
+						},
+						"required": [
+							"error"
+						],
+						"additionalProperties": {}
+					},
+					{
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"const": "account_vanished"
+							}
+						},
+						"required": [
+							"error"
+						],
+						"additionalProperties": {}
+					}
+				]
+			}
+		}
+	},
+	{
+		"method": "DELETE",
+		"path": "/tables/:name/rows/:id",
+		"auth": {
+			"account": "required",
+			"actor": "required",
+			"roles": [
+				"keeper"
+			],
+			"credential_types": [
+				"daemon_token"
+			]
+		},
+		"applicable_middleware": [],
+		"description": "Delete a row by primary key",
+		"is_mutation": true,
+		"transaction": true,
+		"raw_body": false,
+		"rate_limit_key": null,
+		"params_schema": {
+			"type": "object",
+			"properties": {
+				"name": {
+					"type": "string",
+					"pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+				},
+				"id": {
+					"type": "string"
+				}
+			},
+			"required": [
+				"name",
+				"id"
+			],
+			"additionalProperties": false
+		},
+		"query_schema": {
+			"type": "object",
+			"properties": {
+				"acting": {
+					"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+					"type": "string",
+					"format": "uuid",
+					"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+				}
+			},
+			"additionalProperties": false
+		},
+		"input_schema": null,
+		"output_schema": {
+			"type": "object",
+			"properties": {
+				"success": {
+					"type": "boolean"
+				}
+			},
+			"required": [
+				"success"
+			],
+			"additionalProperties": {}
+		},
+		"error_schemas": {
+			"400": {
+				"type": "object",
+				"properties": {
+					"error": {
+						"type": "string",
+						"enum": [
+							"invalid_route_params",
+							"table_no_primary_key",
+							"table_not_deletable"
+						]
+					}
+				},
+				"required": [
+					"error"
+				],
+				"additionalProperties": {}
+			},
+			"401": {
+				"type": "object",
+				"properties": {
+					"error": {
+						"type": "string"
+					}
+				},
+				"required": [
+					"error"
+				],
+				"additionalProperties": {}
+			},
+			"403": {
+				"anyOf": [
+					{
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"const": "credential_type_required"
+							},
+							"required_credential_types": {
+								"readOnly": true,
+								"type": "array",
+								"items": {
+									"type": "string"
+								}
+							}
+						},
+						"required": [
+							"error",
+							"required_credential_types"
+						],
+						"additionalProperties": {}
+					},
+					{
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"const": "insufficient_permissions"
+							},
+							"required_roles": {
+								"readOnly": true,
+								"type": "array",
+								"items": {
+									"type": "string"
+								}
+							}
+						},
+						"required": [
+							"error",
+							"required_roles"
+						],
+						"additionalProperties": {}
+					}
+				]
+			},
+			"404": {
+				"type": "object",
+				"properties": {
+					"error": {
+						"type": "string",
+						"enum": [
+							"table_not_found",
+							"row_not_found"
+						]
+					}
+				},
+				"required": [
+					"error"
+				],
+				"additionalProperties": {}
+			},
+			"409": {
+				"type": "object",
+				"properties": {
+					"error": {
+						"type": "string",
+						"const": "foreign_key_violation"
+					}
+				},
+				"required": [
+					"error"
+				],
+				"additionalProperties": {}
+			},
+			"500": {
+				"anyOf": [
+					{
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"const": "no_actors_on_account"
+							}
+						},
+						"required": [
+							"error"
+						],
+						"additionalProperties": {}
+					},
+					{
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"const": "account_vanished"
+							}
+						},
+						"required": [
+							"error"
+						],
+						"additionalProperties": {}
+					}
+				]
+			}
+		}
+	},
+	{
+		"method": "GET",
+		"path": "/api/facts/:hash",
+		"auth": {
+			"account": "required",
+			"actor": "required",
+			"roles": [
+				"admin"
+			],
+			"required_scope": "surface:fact_bare"
+		},
+		"applicable_middleware": [],
+		"description": "Serve content-addressed fact bytes by bare hash — admin only. Non-admin reads go through GET /api/cells/:cell_id/facts/:hash (per-reference).",
+		"is_mutation": false,
+		"transaction": false,
+		"raw_body": false,
+		"rate_limit_key": null,
+		"params_schema": {
+			"type": "object",
+			"properties": {
+				"hash": {
+					"type": "string",
+					"pattern": "^blake3:[0-9a-f]{64}$"
+				}
+			},
+			"required": [
+				"hash"
+			],
+			"additionalProperties": false
+		},
+		"query_schema": {
+			"type": "object",
+			"properties": {
+				"acting": {
+					"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+					"type": "string",
+					"format": "uuid",
+					"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+				}
+			},
+			"additionalProperties": false
+		},
+		"input_schema": null,
+		"output_schema": null,
+		"error_schemas": {
+			"400": {
+				"type": "object",
+				"properties": {
+					"error": {
+						"type": "string",
+						"const": "invalid_route_params"
+					},
+					"issues": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"kind": {
+									"type": "string"
+								},
+								"path": {
+									"type": "array",
+									"items": {
+										"type": [
+											"string",
+											"number"
+										]
+									}
+								},
+								"expected": {
+									"type": "string"
+								},
+								"received": {
+									"type": "string"
+								},
+								"message": {
+									"type": "string"
+								}
+							},
+							"required": [
+								"kind",
+								"path",
+								"expected",
+								"received",
+								"message"
+							],
+							"additionalProperties": {}
+						}
+					}
+				},
+				"required": [
+					"error"
+				],
+				"additionalProperties": {}
+			},
+			"401": {
+				"type": "object",
+				"properties": {
+					"error": {
+						"type": "string"
+					}
+				},
+				"required": [
+					"error"
+				],
+				"additionalProperties": {}
+			},
+			"403": {
+				"anyOf": [
+					{
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"const": "token_scope_required"
+							},
+							"required_scope": {
+								"type": "string"
+							}
+						},
+						"required": [
+							"error",
+							"required_scope"
+						],
+						"additionalProperties": {}
+					},
+					{
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"const": "insufficient_permissions"
+							},
+							"required_roles": {
+								"readOnly": true,
+								"type": "array",
+								"items": {
+									"type": "string"
+								}
+							}
+						},
+						"required": [
+							"error",
+							"required_roles"
+						],
+						"additionalProperties": {}
+					}
+				]
+			},
+			"500": {
+				"anyOf": [
+					{
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"const": "no_actors_on_account"
+							}
+						},
+						"required": [
+							"error"
+						],
+						"additionalProperties": {}
+					},
+					{
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"const": "account_vanished"
+							}
+						},
+						"required": [
+							"error"
+						],
+						"additionalProperties": {}
+					}
+				]
+			}
+		}
+	},
+	{
+		"method": "GET",
+		"path": "/api/surface",
+		"auth": {
+			"account": "required",
+			"actor": "required",
+			"roles": [
+				"admin"
+			],
+			"required_scope": "surface:app_surface"
+		},
+		"applicable_middleware": [],
+		"description": "Application surface (routes, middleware, schemas) — admin only",
+		"is_mutation": false,
+		"transaction": false,
+		"raw_body": false,
+		"rate_limit_key": null,
+		"params_schema": null,
+		"query_schema": {
+			"type": "object",
+			"properties": {
+				"acting": {
+					"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+					"type": "string",
+					"format": "uuid",
+					"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+				}
+			},
+			"additionalProperties": false
+		},
+		"input_schema": null,
+		"output_schema": {
+			"type": "object",
+			"properties": {
+				"routes": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {},
+						"additionalProperties": {}
+					}
+				},
+				"middleware": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {},
+						"additionalProperties": {}
+					}
+				}
+			},
+			"required": [
+				"routes",
+				"middleware"
+			],
+			"additionalProperties": {}
+		},
+		"error_schemas": {
+			"400": {
+				"anyOf": [
+					{
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"enum": [
+									"invalid_request_body",
+									"invalid_json_body",
+									"invalid_route_params",
+									"invalid_query_params"
+								]
+							},
+							"issues": {
+								"type": "array",
+								"items": {
+									"type": "object",
+									"properties": {
+										"kind": {
+											"type": "string"
+										},
+										"path": {
+											"type": "array",
+											"items": {
+												"type": [
+													"string",
+													"number"
+												]
+											}
+										},
+										"expected": {
+											"type": "string"
+										},
+										"received": {
+											"type": "string"
+										},
+										"message": {
+											"type": "string"
+										}
+									},
+									"required": [
+										"kind",
+										"path",
+										"expected",
+										"received",
+										"message"
+									],
+									"additionalProperties": {}
+								}
+							}
+						},
+						"required": [
+							"error"
+						],
+						"additionalProperties": {}
+					},
+					{
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"const": "actor_required"
+							},
+							"available": {
+								"type": "array",
+								"items": {
+									"type": "object",
+									"properties": {
+										"id": {
+											"type": "string"
+										},
+										"name": {
+											"type": "string"
+										}
+									},
+									"required": [
+										"id",
+										"name"
+									],
+									"additionalProperties": {}
+								}
+							}
+						},
+						"required": [
+							"error",
+							"available"
+						],
+						"additionalProperties": {}
+					},
+					{
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"const": "actor_not_on_account"
+							}
+						},
+						"required": [
+							"error"
+						],
+						"additionalProperties": {}
+					}
+				]
+			},
+			"401": {
+				"type": "object",
+				"properties": {
+					"error": {
+						"type": "string"
+					}
+				},
+				"required": [
+					"error"
+				],
+				"additionalProperties": {}
+			},
+			"403": {
+				"anyOf": [
+					{
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"const": "token_scope_required"
+							},
+							"required_scope": {
+								"type": "string"
+							}
+						},
+						"required": [
+							"error",
+							"required_scope"
+						],
+						"additionalProperties": {}
+					},
+					{
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"const": "insufficient_permissions"
+							},
+							"required_roles": {
+								"readOnly": true,
+								"type": "array",
+								"items": {
+									"type": "string"
+								}
+							}
+						},
+						"required": [
+							"error",
+							"required_roles"
+						],
+						"additionalProperties": {}
+					}
+				]
+			},
+			"500": {
+				"anyOf": [
+					{
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"const": "no_actors_on_account"
+							}
+						},
+						"required": [
+							"error"
+						],
+						"additionalProperties": {}
+					},
+					{
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"const": "account_vanished"
+							}
+						},
+						"required": [
+							"error"
+						],
+						"additionalProperties": {}
+					}
+				]
+			}
+		}
+	},
+	{
+		"method": "GET",
+		"path": "/audit/stream",
+		"auth": {
+			"account": "required",
+			"actor": "required",
+			"roles": [
+				"admin"
+			],
+			"credential_types": [
+				"session"
+			],
+			"required_scope": "surface:audit_stream"
+		},
+		"applicable_middleware": [],
+		"description": "Subscribe to realtime audit log events",
+		"is_mutation": false,
+		"transaction": false,
+		"raw_body": false,
+		"rate_limit_key": null,
+		"params_schema": null,
+		"query_schema": {
+			"type": "object",
+			"properties": {
+				"acting": {
+					"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+					"type": "string",
+					"format": "uuid",
+					"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+				}
+			},
+			"additionalProperties": false
+		},
+		"input_schema": null,
+		"output_schema": null,
+		"error_schemas": {
+			"400": {
+				"anyOf": [
+					{
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"enum": [
+									"invalid_request_body",
+									"invalid_json_body",
+									"invalid_route_params",
+									"invalid_query_params"
+								]
+							},
+							"issues": {
+								"type": "array",
+								"items": {
+									"type": "object",
+									"properties": {
+										"kind": {
+											"type": "string"
+										},
+										"path": {
+											"type": "array",
+											"items": {
+												"type": [
+													"string",
+													"number"
+												]
+											}
+										},
+										"expected": {
+											"type": "string"
+										},
+										"received": {
+											"type": "string"
+										},
+										"message": {
+											"type": "string"
+										}
+									},
+									"required": [
+										"kind",
+										"path",
+										"expected",
+										"received",
+										"message"
+									],
+									"additionalProperties": {}
+								}
+							}
+						},
+						"required": [
+							"error"
+						],
+						"additionalProperties": {}
+					},
+					{
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"const": "actor_required"
+							},
+							"available": {
+								"type": "array",
+								"items": {
+									"type": "object",
+									"properties": {
+										"id": {
+											"type": "string"
+										},
+										"name": {
+											"type": "string"
+										}
+									},
+									"required": [
+										"id",
+										"name"
+									],
+									"additionalProperties": {}
+								}
+							}
+						},
+						"required": [
+							"error",
+							"available"
+						],
+						"additionalProperties": {}
+					},
+					{
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"const": "actor_not_on_account"
+							}
+						},
+						"required": [
+							"error"
+						],
+						"additionalProperties": {}
+					}
+				]
+			},
+			"401": {
+				"type": "object",
+				"properties": {
+					"error": {
+						"type": "string"
+					}
+				},
+				"required": [
+					"error"
+				],
+				"additionalProperties": {}
+			},
+			"403": {
+				"anyOf": [
+					{
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"const": "token_scope_required"
+							},
+							"required_scope": {
+								"type": "string"
+							}
+						},
+						"required": [
+							"error",
+							"required_scope"
+						],
+						"additionalProperties": {}
+					},
+					{
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"const": "credential_type_required"
+							},
+							"required_credential_types": {
+								"readOnly": true,
+								"type": "array",
+								"items": {
+									"type": "string"
+								}
+							}
+						},
+						"required": [
+							"error",
+							"required_credential_types"
+						],
+						"additionalProperties": {}
+					},
+					{
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"const": "insufficient_permissions"
+							},
+							"required_roles": {
+								"readOnly": true,
+								"type": "array",
+								"items": {
+									"type": "string"
+								}
+							}
+						},
+						"required": [
+							"error",
+							"required_roles"
+						],
+						"additionalProperties": {}
+					}
+				]
+			},
+			"500": {
+				"anyOf": [
+					{
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"const": "no_actors_on_account"
+							}
+						},
+						"required": [
+							"error"
+						],
+						"additionalProperties": {}
+					},
+					{
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"const": "account_vanished"
+							}
+						},
+						"required": [
+							"error"
+						],
+						"additionalProperties": {}
+					}
+				]
+			}
+		}
+	}
+]

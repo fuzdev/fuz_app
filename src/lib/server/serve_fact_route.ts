@@ -138,7 +138,9 @@ import type { Context } from 'hono';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 import type { FactHash } from '@fuzdev/fuz_util/hash_schemas.ts';
 import { FactHashSchema, Uuid } from '../primitive_schemas.ts';
+import { ActingActor } from '../primitive_schemas_fuz.ts';
 import { z } from 'zod';
+import { object } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	build_request_context,
@@ -148,7 +150,6 @@ import {
 	type RequestContext
 } from '../auth/request_context.ts';
 import { ROLE_ADMIN } from '../auth/role_schema.ts';
-import { ActingActor } from '../http/auth_shape.ts';
 import { query_active_actors_by_account } from '../auth/account_queries.ts';
 import { get_route_params, type RouteContext, type RouteSpec } from '../http/route_spec.ts';
 import { ERROR_INVALID_ROUTE_PARAMS } from '../http/error_schemas.ts';
@@ -477,7 +478,7 @@ export const create_serve_fact_route_spec = (
 		// authorization phase to resolve an acting actor — registry-time
 		// invariant 2 requires the `acting?` slot. On a GET it lives on
 		// `query` (a multi-actor admin disambiguates via `?acting=<actor>`).
-		query: z.strictObject({ acting: ActingActor }),
+		query: object({ acting: ActingActor }),
 		input: z.null(),
 		// The body is a binary stream; no JSON output schema applies.
 		output: z.null(),

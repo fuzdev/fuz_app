@@ -9,10 +9,11 @@
  */
 
 import { z } from 'zod';
+import { object } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { RouteSpec } from '../http/route_spec.ts';
 import type { AppSurface } from '../http/surface.ts';
-import { ActingActor } from '../http/auth_shape.ts';
+import { ActingActor } from '../primitive_schemas_fuz.ts';
 import { ROLE_ADMIN } from '../auth/role_schema.ts';
 
 /** Options for the surface explorer route. */
@@ -48,7 +49,7 @@ export const create_surface_route_spec = (options: SurfaceRouteOptions): RouteSp
 	},
 	handler: (c) => c.json(options.surface),
 	description: 'Application surface (routes, middleware, schemas) — admin only',
-	query: z.strictObject({ acting: ActingActor }),
+	query: object({ acting: ActingActor }),
 	input: z.null(),
 	output: z.looseObject({
 		routes: z.array(z.looseObject({})),

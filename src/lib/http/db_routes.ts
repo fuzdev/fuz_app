@@ -12,7 +12,9 @@
 
 import { z } from 'zod';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
+import { object } from '@fuzdev/fuz_schema/schema.ts';
 import type { Uuid } from '../primitive_schemas.ts';
+import { ActingActor as ActingActorFuz } from '../primitive_schemas_fuz.ts';
 
 import type { Db, DbType } from '../db/db.ts';
 import { get_route_params, get_route_query, type RouteSpec } from './route_spec.ts';
@@ -284,7 +286,7 @@ export const create_db_route_specs = (
 				credential_types: ['daemon_token']
 			},
 			description: 'Database health and stats',
-			query: z.strictObject({ acting: ActingActor }),
+			query: object({ acting: ActingActorFuz }),
 			input: z.null(),
 			output: z.looseObject({ connected: z.boolean() }),
 			errors: {
@@ -334,7 +336,7 @@ export const create_db_route_specs = (
 				credential_types: ['daemon_token']
 			},
 			description: 'List browsable tables with row counts',
-			query: z.strictObject({ acting: ActingActor }),
+			query: object({ acting: ActingActorFuz }),
 			input: z.null(),
 			output: z.looseObject({
 				tables: z.array(z.strictObject({ name: z.string(), row_count: z.number() }))
@@ -376,6 +378,9 @@ export const create_db_route_specs = (
 			},
 			description: 'Get table columns and rows (paginated)',
 			params: z.strictObject({ name: z.string().regex(VALID_SQL_IDENTIFIER) }),
+			// Zod, unlike the `{acting}`-only queries here: its paging params are
+			// `query_int`'s Zod preprocess, which stays with the rest of these
+			// routes' Zod schemas
 			query: z.strictObject({
 				acting: ActingActor,
 				offset: query_int(z.number().int().min(0), 0),
@@ -487,7 +492,7 @@ export const create_db_route_specs = (
 				name: z.string().regex(VALID_SQL_IDENTIFIER),
 				id: z.string()
 			}),
-			query: z.strictObject({ acting: ActingActor }),
+			query: object({ acting: ActingActorFuz }),
 			input: z.null(),
 			output: z.looseObject({ success: z.boolean() }),
 			errors: {
