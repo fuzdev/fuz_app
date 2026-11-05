@@ -1,0 +1,5 @@
+---
+'@fuzdev/fuz_app': patch
+---
+
+fix: the Zod `Email` (`primitive_schemas.ts`) no longer takes time quadratic in the length of its input, a denial of service open to anyone through `POST /signup`'s `email`: an address of 80 KB took seconds to refuse, and one at the default 1 MiB body limit minutes. Its regex, now exported as `EMAIL_REGEX`, is spelled `/^[^\s\u0085@]+@[^\s\u0085@][^\s\u0085@.]*\.[^\s\u0085@]+$/`, linear in the input and with the verdict of the old spelling on every string, so the JSON Schema `pattern` of every `Email` node is that source, and a committed surface snapshot written through `gro gen` changes on those lines; regenerate it. The byte bound now runs before the regex and aborts, so an address past `EMAIL_LENGTH_MAX` (254) bytes is never read by it: verdicts and production answers are unchanged, and under DEV an address past the bound and off the grammar gets the length issue alone, where it got the grammar issue and then the length one. `primitive_schemas.ts` also exports the bound's check and message, `is_email_within_length_max` and `EMAIL_LENGTH_MESSAGE` (`Email must be at most 254 bytes`).

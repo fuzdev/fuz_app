@@ -172,11 +172,35 @@ export const EMAIL_LENGTH_MAX = 254;
  * (The Rust side correspondingly also rejects U+FEFF, which JS `\s` treats as
  * whitespace but Unicode `White_Space` does not — so both spines reject
  * exactly `White_Space ∪ {U+FEFF}`.)
+ *
+ * Linear in the input's length: the `@` can match only the first `@`, and the
+ * `\.` only the domain's first `.` after its first character, since the
+ * classes before each exclude it, so the tail after the `\.` is scanned once.
+ * The domain spelled `[^\s\u0085@]+\.[^\s\u0085@]+`, the same language, is
+ * quadratic: it tries every `.` as the split.
  */
-const EMAIL_REGEX = /^[^\s\u0085@]+@[^\s\u0085@]+\.[^\s\u0085@]+$/;
+export const EMAIL_REGEX = /^[^\s\u0085@]+@[^\s\u0085@][^\s\u0085@.]*\.[^\s\u0085@]+$/;
+
+/** The message of an email over `EMAIL_LENGTH_MAX` bytes. */
+export const EMAIL_LENGTH_MESSAGE = `Email must be at most ${EMAIL_LENGTH_MAX} bytes`;
 
 /** UTF-8 encoder for the `EMAIL_LENGTH_MAX` byte (octet) bound. */
 const utf8_encoder = new TextEncoder();
+
+/**
+ * Whether `s` is at most `EMAIL_LENGTH_MAX` bytes in UTF-8, the bound `Email`
+ * checks.
+ *
+ * `s.length` (UTF-16 units) is a cheap upper bound that short-circuits the
+ * `encode` on absurd inputs: a valid (<= 254-byte) address is necessarily
+ * <= 254 code units, so it never refuses one — the byte count is the real
+ * RFC-5321 octet bound, matching the Rust spine's `s.len()`.
+ *
+ * @param s - the address
+ * @returns `true` when the address is within the byte bound
+ */
+export const is_email_within_length_max = (s: string): boolean =>
+	s.length <= EMAIL_LENGTH_MAX && utf8_encoder.encode(s).length <= EMAIL_LENGTH_MAX;
 
 /**
  * Email validation. Every current consumer pairs it with `Username` (signup,
@@ -195,20 +219,14 @@ const utf8_encoder = new TextEncoder();
  * transform: case is preserved and surrounding whitespace is rejected (not
  * trimmed), so storage is verbatim and the case-insensitive lookup rides the
  * DB-side `LOWER(email)`.
+ *
+ * The byte bound runs first and aborts, so an address past it gets the
+ * length issue alone and is never read by the regex.
  */
 export const Email = z
 	.string()
-	.regex(EMAIL_REGEX)
-	// `s.length` (UTF-16 units) is a cheap upper bound that short-circuits the
-	// `encode` on absurd inputs: a valid (<= 254-byte) address is necessarily
-	// <= 254 code units, so this never rejects one — the byte count is the real
-	// RFC-5321 octet bound, matching the Rust spine's `s.len()`.
-	.refine(
-		(s) => s.length <= EMAIL_LENGTH_MAX && utf8_encoder.encode(s).length <= EMAIL_LENGTH_MAX,
-		{
-			message: `Email must be at most ${EMAIL_LENGTH_MAX} bytes`
-		}
-	);
+	.refine(is_email_within_length_max, { message: EMAIL_LENGTH_MESSAGE, abort: true })
+	.regex(EMAIL_REGEX);
 export type Email = z.infer<typeof Email>;
 
 /** Returns a new random (v4) `Uuid`. */

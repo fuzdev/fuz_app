@@ -77,7 +77,7 @@ import '../assert_dev_env.ts';
  *
  * **Email format (creation):** the optional signup `email` is validated to a
  * loose `local@domain.tld` shape on both spines — TS `Email`
- * (`^[^\s\u0085@]+@[^\s\u0085@]+\.[^\s\u0085@]+$` plus a 254-byte (RFC 5321 octet) length bound; whitespace `White_Space ∪ {U+FEFF}`), Rust the
+ * (`EMAIL_REGEX` plus a 254-byte (RFC 5321 octet) length bound; whitespace `White_Space ∪ {U+FEFF}`), Rust the
  * hand-rolled `is_valid_email`. A malformed email → 400, a well-formed one →
  * 403 no-matching-invite (the same accept/reject settle the username tables
  * use). The accepted siblings include the single-char-TLD `a@b.c` that Zod's
@@ -253,7 +253,7 @@ interface SignupEmailCase {
 
 /**
  * Signup email-format cases for the loose `Email` shape `local@domain.tld`
- * (TS `^[^\s\u0085@]+@[^\s\u0085@]+\.[^\s\u0085@]+$` plus the 254 length bound; Rust the
+ * (TS `EMAIL_REGEX` plus the 254 length bound; Rust the
  * hand-rolled `is_valid_email`). The rejected cases each violate the shape at
  * a different point — no `@`, no dot in the domain, empty local/domain, a dot
  * at a domain edge, surrounding whitespace, over the length bound — so a

@@ -2711,7 +2711,7 @@ USERNAME_LENGTH_MAX]` = `[3, 39]` boundary edges (just-outside → 400,
   `_`/`-` accepted), catching an off-by-one or position bug in the TS Zod
   `.min/.max/.regex` vs the Rust byte-scan `is_valid_username_for_creation`.
 - **Email format (creation)** — the optional signup `email` validated to the
-  loose `local@domain.tld` shape (TS `Email` `^[^\s\u0085@]+@[^\s\u0085@]+\.[^\s\u0085@]+$` + 254-byte
+  loose `local@domain.tld` shape (TS `Email`, `EMAIL_REGEX` + 254-byte
   bound, Rust `is_valid_email`): malformed (no `@` / no domain dot / empty
   side / dot at a domain edge / whitespace / over-length) → 400, well-formed →
   403 no-invite. Accepted siblings include the single-char-TLD `a@b.c` that

@@ -19,10 +19,32 @@ import {
 	UsernameProvided,
 	Email,
 	EMAIL_LENGTH_MAX,
+	EMAIL_LENGTH_MESSAGE,
+	EMAIL_REGEX,
 	USERNAME_LENGTH_MIN,
 	USERNAME_LENGTH_MAX,
 	USERNAME_PROVIDED_LENGTH_MAX
 } from '#lib/primitive_schemas.ts';
+
+/**
+ * The quadratic spelling of the `EMAIL_REGEX` grammar, the reference its
+ * verdicts are held to. Never run it on a long input.
+ */
+const EMAIL_REGEX_REFERENCE = /^[^\s\u0085@]+@[^\s\u0085@]+\.[^\s\u0085@]+$/;
+
+/** Calls `visit` on every string over `alphabet` of at most `max_length` characters. */
+const each_string = (
+	alphabet: ReadonlyArray<string>,
+	max_length: number,
+	visit: (s: string) => void
+): void => {
+	const extend = (s: string, remaining: number): void => {
+		visit(s);
+		if (remaining === 0) return;
+		for (const c of alphabet) extend(s + c, remaining - 1);
+	};
+	extend('', max_length);
+};
 
 // --- Username (creation schema) ---
 
@@ -354,5 +376,64 @@ describe('Email', () => {
 		assert.ok(!Email.safeParse('user@e\tx.com').success); // tab
 		assert.ok(!Email.safeParse('a\u0085b@c.d').success); // NEL (U+0085)
 		assert.ok(!Email.safeParse('a\ufeffb@c.d').success); // BOM/ZWNBSP (U+FEFF)
+	});
+
+	test('checks the byte bound first and aborts, so the regex never reads an address past it', () => {
+		const length_issue = [{ code: 'custom', message: EMAIL_LENGTH_MESSAGE }];
+		const issues_of = (input: string) =>
+			Email.safeParse(input).error?.issues.map((i) => ({ code: i.code, message: i.message }));
+		// off the grammar and past the bound: the length issue alone
+		assert.deepStrictEqual(issues_of('a'.repeat(EMAIL_LENGTH_MAX + 1)), length_issue);
+		assert.deepStrictEqual(issues_of(`a@b${'.'.repeat(1_000_000)}@`), length_issue);
+		// on the grammar and past the bound
+		assert.deepStrictEqual(issues_of(`${'a'.repeat(EMAIL_LENGTH_MAX)}@b.c`), length_issue);
+		// off the grammar within the bound: the grammar issue
+		assert.deepStrictEqual(
+			Email.safeParse('a@b').error?.issues.map((i) => i.code),
+			['invalid_format']
+		);
+	});
+});
+
+describe('EMAIL_REGEX', () => {
+	test('gives the verdict of its quadratic spelling on every short string', () => {
+		const differ: Array<string> = [];
+		let accepted = 0;
+		const visit = (s: string) => {
+			const verdict = EMAIL_REGEX.test(s);
+			if (verdict) accepted++;
+			if (verdict !== EMAIL_REGEX_REFERENCE.test(s)) differ.push(s);
+		};
+		// the structural characters, and with them each class of whitespace the
+		// grammar refuses: ASCII, NEL (U+0085), BOM (U+FEFF) and LS (U+2028)
+		each_string(['a', '.', '@'], 10, visit);
+		each_string(['a', '.', '@', ' ', '\u0085', '\ufeff', '\u2028'], 6, visit);
+		assert.deepStrictEqual(differ, []);
+		assert.ok(accepted > 0);
+	});
+
+	test('runs in time linear in the input on the shapes that make the quadratic spelling backtrack', () => {
+		// The quadratic spelling takes about a second on 40,000 characters of
+		// these shapes and grows with the square, so about half a minute on each
+		// of these, where the linear one takes under a millisecond: the bound is
+		// orders of magnitude from both, so neither a slow machine nor a busy one
+		// flips it, and a quadratic regression fails within a minute instead of
+		// hanging the run.
+		const n = 200_000;
+		const inputs = [
+			`a@b${'.'.repeat(n)}@`,
+			`a@b${'.'.repeat(n)} `,
+			`a@b${'.'.repeat(n)}`,
+			`a@b.${'.'.repeat(n)}`,
+			`a@${'b.'.repeat(n / 2)} `,
+			`a@${'.a'.repeat(n / 2)} `,
+			`${'a'.repeat(n)}@b.c `
+		];
+		for (const input of inputs) {
+			const start = performance.now();
+			EMAIL_REGEX.test(input);
+			const elapsed = performance.now() - start;
+			assert.ok(elapsed < 1000, `took ${elapsed} ms on ${JSON.stringify(input.slice(0, 8))}…`);
+		}
 	});
 });
