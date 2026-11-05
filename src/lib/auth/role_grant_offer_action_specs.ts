@@ -3,9 +3,10 @@
  * consentful-role-grants surface (offer lifecycle + admin revoke + the
  * immediate admin-only `role_grant_assign`).
  *
- * Import this module for the specs, Input/Output schemas, `ERROR_ROLE_GRANT_OFFER_*`
- * reason constants, and the `all_role_grant_offer_action_specs` registry.
- * Handlers live in `auth/role_grant_offer_actions.ts`.
+ * Import this module for the specs, Input/Output schemas (`@fuzdev/fuz_schema`
+ * schemas), `ERROR_ROLE_GRANT_OFFER_*` reason constants, and the
+ * `all_role_grant_offer_action_specs` registry. Handlers live in
+ * `auth/role_grant_offer_actions.ts`.
  *
  * Authorization enforcement: offer-lifecycle specs declare account+actor
  * required (no roles) and rely on `query_*` IDOR guards or in-handler
@@ -21,9 +22,25 @@
  * @module
  */
 
-import { z } from 'zod';
-import { Uuid, bounded_string } from '../primitive_schemas.ts';
+import { meta } from '@fuzdev/fuz_schema/meta.ts';
+import {
+	array,
+	check,
+	integer,
+	literal,
+	max_value,
+	message,
+	min_value,
+	nullable,
+	number,
+	object,
+	optional,
+	pipe,
+	with_default_fn,
+	type Infer
+} from '@fuzdev/fuz_schema/schema.ts';
 
+import { ActingActor, Uuid, bounded_string } from '../primitive_schemas_fuz.ts';
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
 import {
 	ERROR_INSUFFICIENT_PERMISSIONS,
@@ -32,14 +49,14 @@ import {
 	ERROR_ROLE_GRANT_NOT_FOUND,
 	ERROR_ROLE_NOT_WEB_GRANTABLE
 } from '../http/error_schemas.ts';
-import { RoleName } from './role_schema.ts';
-import { SCOPE_KIND_LENGTH_MAX, ScopeKindName } from './scope_kind_schema.ts';
+import { RoleName } from './role_schema_fuz.ts';
+import { SCOPE_KIND_LENGTH_MAX } from './scope_kind_schema.ts';
+import { ScopeKindName } from './scope_kind_schema_fuz.ts';
 import {
 	ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX,
 	RoleGrantOfferJson
 } from './role_grant_offer_schema.ts';
 import { ROLE_GRANT_REVOKED_REASON_LENGTH_MAX } from './account_schema.ts';
-import { ActingActor } from '../http/auth_shape.ts';
 
 /** Error reason — caller tried to offer themselves a role_grant. */
 export const ERROR_ROLE_GRANT_OFFER_SELF_TARGET = 'role_grant_offer_self_target' as const;
@@ -86,8 +103,8 @@ export const ERROR_CANNOT_REVOKE_LAST_ADMIN = 'cannot_revoke_last_admin' as cons
  * Whether a grant input's `scope_kind` + `scope_id` are paired — both absent
  * (a global grant) or both present (a scoped one), the
  * `role_grant_scope_kind_paired` / `role_grant_offer_scope_kind_paired`
- * CHECKs. The grant inputs refine on it so a half-scoped call is a `-32602`
- * rather than a constraint-violation 500.
+ * CHECKs. The grant inputs end in a `check` of it so a half-scoped call is a
+ * `-32602` rather than a constraint-violation 500.
  *
  * @param input - the grant input's scope pair
  * @returns `true` when both are set or both are absent
@@ -97,7 +114,10 @@ export const is_grant_scope_paired = (input: {
 	scope_id?: string | null;
 }): boolean => (input.scope_kind == null) === (input.scope_id == null);
 
-/** The message a half-scoped grant input fails with — the grant inputs' refine, and the UI's pre-RPC guard. */
+/**
+ * The message a half-scoped grant input fails with — the grant inputs' check,
+ * and the UI's pre-RPC guard.
+ */
 export const GRANT_SCOPE_PAIRED_MESSAGE =
 	"'scope_kind' and 'scope_id' must be given together (both for a scoped grant, neither for a global one)";
 
@@ -107,14 +127,21 @@ export const GRANT_SCOPE_PAIRED_MESSAGE =
  * index-side `'GLOBAL'` token among it, which with the all-zeros uuid would
  * otherwise equal a global grant's key in the partial unique indexes.
  */
-const GrantScopeKind = ScopeKindName.nullish().meta({
+const GrantScopeKind = meta(optional(nullable(ScopeKindName)), {
 	description: `Machine-readable kind tag for \`scope_id\` — paired-null with \`scope_id\` (both null for global, both non-null for scoped). Required iff \`scope_id\` is set. A scope-kind name: runs of lowercase letters (a-z) joined by single underscores, at most ${SCOPE_KIND_LENGTH_MAX} characters.`
 });
+
+/**
+ * The step a grant input ends in, after its object: a half-scoped input fails
+ * it with `GRANT_SCOPE_PAIRED_MESSAGE`, as a `check` issue on the input. It
+ * runs only on an input whose fields all passed.
+ */
+const GrantScopePaired = message(check(is_grant_scope_paired), GRANT_SCOPE_PAIRED_MESSAGE);
 
 // -- Input/output schemas ---------------------------------------------------
 
 /**
- * Input for `role_grant_offer_create`.
+ * Input for `role_grant_offer_create`, a `@fuzdev/fuz_schema` schema.
  *
  * `to_actor_id` (optional) narrows the offer to a specific actor on the
  * recipient account. When supplied, `role_grant_offer_accept` will only admit
@@ -124,176 +151,192 @@ const GrantScopeKind = ScopeKindName.nullish().meta({
  * events. Omit (or pass null) for the account-grain default — any actor
  * on `to_account_id` may accept.
  */
-export const RoleGrantOfferCreateInput = z
-	.strictObject({
-		to_account_id: Uuid.meta({ description: 'Account id of the recipient.' }),
-		to_actor_id: Uuid.nullish().meta({
+export const RoleGrantOfferCreateInput = pipe(
+	object({
+		to_account_id: meta(Uuid, { description: 'Account id of the recipient.' }),
+		to_actor_id: meta(optional(nullable(Uuid)), {
 			description:
 				'Optional actor-grain target on the recipient account. When set, only this actor may accept and the audit envelope carries it on offer-shape events. Must belong to `to_account_id`.'
 		}),
-		role: RoleName.meta({ description: 'Role being offered.' }),
+		role: meta(RoleName, { description: 'Role being offered.' }),
 		scope_kind: GrantScopeKind,
-		scope_id: Uuid.nullish().meta({
+		scope_id: meta(optional(nullable(Uuid)), {
 			description: 'Scope id for resource-scoped grants (e.g. classroom id). `null` for global.'
 		}),
-		message: bounded_string({ max: ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX })
-			.nullish()
-			.meta({ description: 'Optional free-form note from the grantor.' }),
+		message: meta(
+			optional(nullable(bounded_string({ max: ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX }))),
+			{
+				description: 'Optional free-form note from the grantor.'
+			}
+		),
 		acting: ActingActor
-	})
-	.refine(is_grant_scope_paired, { message: GRANT_SCOPE_PAIRED_MESSAGE });
-export type RoleGrantOfferCreateInput = z.infer<typeof RoleGrantOfferCreateInput>;
+	}),
+	GrantScopePaired
+);
+export type RoleGrantOfferCreateInput = Infer<typeof RoleGrantOfferCreateInput>;
 
-/** Input for `role_grant_offer_accept`. */
-export const RoleGrantOfferAcceptInput = z.strictObject({
-	offer_id: Uuid.meta({ description: 'The offer to accept.' }),
+/** Input for `role_grant_offer_accept`, a `@fuzdev/fuz_schema` schema. */
+export const RoleGrantOfferAcceptInput = object({
+	offer_id: meta(Uuid, { description: 'The offer to accept.' }),
 	acting: ActingActor
 });
-export type RoleGrantOfferAcceptInput = z.infer<typeof RoleGrantOfferAcceptInput>;
+export type RoleGrantOfferAcceptInput = Infer<typeof RoleGrantOfferAcceptInput>;
 
-/** Input for `role_grant_offer_decline`. */
-export const RoleGrantOfferDeclineInput = z.strictObject({
-	offer_id: Uuid.meta({ description: 'The offer to decline.' }),
-	reason: bounded_string({ max: ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX })
-		.nullish()
-		.meta({ description: 'Optional free-form reason given on decline.' }),
+/** Input for `role_grant_offer_decline`, a `@fuzdev/fuz_schema` schema. */
+export const RoleGrantOfferDeclineInput = object({
+	offer_id: meta(Uuid, { description: 'The offer to decline.' }),
+	reason: meta(optional(nullable(bounded_string({ max: ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX }))), {
+		description: 'Optional free-form reason given on decline.'
+	}),
 	acting: ActingActor
 });
-export type RoleGrantOfferDeclineInput = z.infer<typeof RoleGrantOfferDeclineInput>;
+export type RoleGrantOfferDeclineInput = Infer<typeof RoleGrantOfferDeclineInput>;
 
-/** Input for `role_grant_offer_retract`. */
-export const RoleGrantOfferRetractInput = z.strictObject({
-	offer_id: Uuid.meta({ description: 'The offer to retract.' }),
+/** Input for `role_grant_offer_retract`, a `@fuzdev/fuz_schema` schema. */
+export const RoleGrantOfferRetractInput = object({
+	offer_id: meta(Uuid, { description: 'The offer to retract.' }),
 	acting: ActingActor
 });
-export type RoleGrantOfferRetractInput = z.infer<typeof RoleGrantOfferRetractInput>;
+export type RoleGrantOfferRetractInput = Infer<typeof RoleGrantOfferRetractInput>;
 
-/** Input for `role_grant_offer_list`. `account_id` is admin-only (inspect another account's inbox). */
-export const RoleGrantOfferListInput = z
-	.strictObject({
-		account_id: Uuid.nullish().meta({
+/**
+ * Input for `role_grant_offer_list`, a `@fuzdev/fuz_schema` schema.
+ * `account_id` is admin-only (inspect another account's inbox). An omitted
+ * input reads as a fresh `{}`.
+ */
+export const RoleGrantOfferListInput = with_default_fn(
+	object({
+		account_id: meta(optional(nullable(Uuid)), {
 			description: 'Admin-only — list offers for another account. Defaults to the caller.'
 		}),
 		acting: ActingActor
-	})
-	.default({});
-export type RoleGrantOfferListInput = z.infer<typeof RoleGrantOfferListInput>;
+	}),
+	() => ({})
+);
+export type RoleGrantOfferListInput = Infer<typeof RoleGrantOfferListInput>;
 
 /**
- * Input for `role_grant_revoke`. Admin-only mutation that revokes an active
- * role_grant on a target actor. `actor_id` is the natural key — role_grants are
- * actor-scoped, and the admin UI reads `row.actor.id` straight from the
- * listing. Deriving `actor_id` from `account_id` would collapse under
- * multi-actor accounts.
+ * Input for `role_grant_revoke`, a `@fuzdev/fuz_schema` schema. Admin-only
+ * mutation that revokes an active role_grant on a target actor. `actor_id` is
+ * the natural key — role_grants are actor-scoped, and the admin UI reads
+ * `row.actor.id` straight from the listing. Deriving `actor_id` from
+ * `account_id` would collapse under multi-actor accounts.
  */
-export const RoleGrantRevokeInput = z.strictObject({
-	actor_id: Uuid.meta({ description: 'Actor whose role_grant to revoke.' }),
-	role_grant_id: Uuid.meta({ description: 'The role_grant to revoke.' }),
-	reason: bounded_string({ max: ROLE_GRANT_REVOKED_REASON_LENGTH_MAX }).nullish().meta({
+export const RoleGrantRevokeInput = object({
+	actor_id: meta(Uuid, { description: 'Actor whose role_grant to revoke.' }),
+	role_grant_id: meta(Uuid, { description: 'The role_grant to revoke.' }),
+	reason: meta(optional(nullable(bounded_string({ max: ROLE_GRANT_REVOKED_REASON_LENGTH_MAX }))), {
 		description:
 			'Optional free-form reason; stamped on `role_grant.revoked_reason` and surfaced on the revokee WS notification.'
 	}),
 	acting: ActingActor
 });
-export type RoleGrantRevokeInput = z.infer<typeof RoleGrantRevokeInput>;
+export type RoleGrantRevokeInput = Infer<typeof RoleGrantRevokeInput>;
 
 /** Max `role_grant_offer_history` page size. */
 export const ROLE_GRANT_OFFER_HISTORY_LIMIT_MAX = 500;
 
 /**
- * Input for `role_grant_offer_history`. Returns every offer involving the account
- * in either direction (recipient or grantor), including terminal rows, newest
- * first. `account_id` is admin-only.
+ * Input for `role_grant_offer_history`, a `@fuzdev/fuz_schema` schema. Returns
+ * every offer involving the account in either direction (recipient or
+ * grantor), including terminal rows, newest first. `account_id` is
+ * admin-only. An omitted input reads as a fresh `{}`. `offset` is bounded by
+ * `Number.MAX_SAFE_INTEGER`, the integers every number holds exactly.
  */
-export const RoleGrantOfferHistoryInput = z
-	.strictObject({
-		account_id: Uuid.nullish().meta({
+export const RoleGrantOfferHistoryInput = with_default_fn(
+	object({
+		account_id: meta(optional(nullable(Uuid)), {
 			description: 'Admin-only — history for another account. Defaults to the caller.'
 		}),
-		limit: z.number().int().min(1).max(ROLE_GRANT_OFFER_HISTORY_LIMIT_MAX).nullish().meta({
-			description: 'Max rows to return (default 100).',
-			invalid_reason: ERROR_LIMIT_INVALID
-		}),
-		offset: z.number().int().min(0).nullish().meta({
-			description: 'Pagination offset (default 0).',
-			invalid_reason: ERROR_OFFSET_INVALID
-		}),
+		limit: meta(
+			optional(
+				nullable(pipe(number, integer, min_value(1), max_value(ROLE_GRANT_OFFER_HISTORY_LIMIT_MAX)))
+			),
+			{ description: 'Max rows to return (default 100).', invalid_reason: ERROR_LIMIT_INVALID }
+		),
+		offset: meta(
+			optional(nullable(pipe(number, integer, min_value(0), max_value(Number.MAX_SAFE_INTEGER)))),
+			{ description: 'Pagination offset (default 0).', invalid_reason: ERROR_OFFSET_INVALID }
+		),
 		acting: ActingActor
-	})
-	.default({});
-export type RoleGrantOfferHistoryInput = z.infer<typeof RoleGrantOfferHistoryInput>;
+	}),
+	() => ({})
+);
+export type RoleGrantOfferHistoryInput = Infer<typeof RoleGrantOfferHistoryInput>;
 
-/** Output for `role_grant_offer_create`. */
-export const RoleGrantOfferCreateOutput = z.strictObject({
+/** Output for `role_grant_offer_create`, a `@fuzdev/fuz_schema` schema. */
+export const RoleGrantOfferCreateOutput = object({
 	offer: RoleGrantOfferJson
 });
-export type RoleGrantOfferCreateOutput = z.infer<typeof RoleGrantOfferCreateOutput>;
+export type RoleGrantOfferCreateOutput = Infer<typeof RoleGrantOfferCreateOutput>;
 
-/** Output for `role_grant_offer_accept`. */
-export const RoleGrantOfferAcceptOutput = z.strictObject({
+/** Output for `role_grant_offer_accept`, a `@fuzdev/fuz_schema` schema. */
+export const RoleGrantOfferAcceptOutput = object({
 	role_grant_id: Uuid,
 	offer: RoleGrantOfferJson,
-	superseded_offer_ids: z.array(Uuid)
+	superseded_offer_ids: array(Uuid)
 });
-export type RoleGrantOfferAcceptOutput = z.infer<typeof RoleGrantOfferAcceptOutput>;
+export type RoleGrantOfferAcceptOutput = Infer<typeof RoleGrantOfferAcceptOutput>;
 
 /** Output for `role_grant_offer_decline` — the declined offer, as `accept` answers its own. */
-export const RoleGrantOfferDeclineOutput = z.strictObject({ offer: RoleGrantOfferJson });
-export type RoleGrantOfferDeclineOutput = z.infer<typeof RoleGrantOfferDeclineOutput>;
+export const RoleGrantOfferDeclineOutput = object({ offer: RoleGrantOfferJson });
+export type RoleGrantOfferDeclineOutput = Infer<typeof RoleGrantOfferDeclineOutput>;
 
 /** Output for `role_grant_offer_retract` — the retracted offer, as `accept` answers its own. */
-export const RoleGrantOfferRetractOutput = z.strictObject({ offer: RoleGrantOfferJson });
-export type RoleGrantOfferRetractOutput = z.infer<typeof RoleGrantOfferRetractOutput>;
+export const RoleGrantOfferRetractOutput = object({ offer: RoleGrantOfferJson });
+export type RoleGrantOfferRetractOutput = Infer<typeof RoleGrantOfferRetractOutput>;
 
-/** Output for `role_grant_offer_list`. */
-export const RoleGrantOfferListOutput = z.strictObject({ offers: z.array(RoleGrantOfferJson) });
-export type RoleGrantOfferListOutput = z.infer<typeof RoleGrantOfferListOutput>;
+/** Output for `role_grant_offer_list`, a `@fuzdev/fuz_schema` schema. */
+export const RoleGrantOfferListOutput = object({ offers: array(RoleGrantOfferJson) });
+export type RoleGrantOfferListOutput = Infer<typeof RoleGrantOfferListOutput>;
 
-/** Output for `role_grant_offer_history`. */
-export const RoleGrantOfferHistoryOutput = z.strictObject({ offers: z.array(RoleGrantOfferJson) });
-export type RoleGrantOfferHistoryOutput = z.infer<typeof RoleGrantOfferHistoryOutput>;
+/** Output for `role_grant_offer_history`, a `@fuzdev/fuz_schema` schema. */
+export const RoleGrantOfferHistoryOutput = object({ offers: array(RoleGrantOfferJson) });
+export type RoleGrantOfferHistoryOutput = Infer<typeof RoleGrantOfferHistoryOutput>;
 
-/** Output for `role_grant_revoke`. */
-export const RoleGrantRevokeOutput = z.strictObject({
-	ok: z.literal(true),
-	revoked: z.literal(true)
+/** Output for `role_grant_revoke`, a `@fuzdev/fuz_schema` schema. */
+export const RoleGrantRevokeOutput = object({
+	ok: literal(true),
+	revoked: literal(true)
 });
-export type RoleGrantRevokeOutput = z.infer<typeof RoleGrantRevokeOutput>;
+export type RoleGrantRevokeOutput = Infer<typeof RoleGrantRevokeOutput>;
 
 /**
- * Input for `role_grant_assign` — the immediate admin-only conferral path, the
- * consent-free sibling of `role_grant_offer_create`. An admin assigns a
- * role_grant straight onto the target actor; there is no offer for a grantee to
- * accept. No `message` (no offer to carry it on). `scope_kind` pairs with
- * `scope_id` exactly as on `role_grant_offer_create` — both or neither — and
- * the grant row carries the pair.
+ * Input for `role_grant_assign`, a `@fuzdev/fuz_schema` schema — the immediate
+ * admin-only conferral path, the consent-free sibling of
+ * `role_grant_offer_create`. An admin assigns a role_grant straight onto the
+ * target actor; there is no offer for a grantee to accept. No `message` (no
+ * offer to carry it on). `scope_kind` pairs with `scope_id` exactly as on
+ * `role_grant_offer_create` — both or neither — and the grant row carries the
+ * pair.
  */
-export const RoleGrantAssignInput = z
-	.strictObject({
-		to_account_id: Uuid.meta({ description: 'Account id of the grantee.' }),
-		to_actor_id: Uuid.nullish().meta({
+export const RoleGrantAssignInput = pipe(
+	object({
+		to_account_id: meta(Uuid, { description: 'Account id of the grantee.' }),
+		to_actor_id: meta(optional(nullable(Uuid)), {
 			description:
 				"Optional actor-grain target on the grantee account. When set, must belong to `to_account_id`. Omit to resolve the account's sole active actor — a multi-actor account must name one."
 		}),
-		role: RoleName.meta({
+		role: meta(RoleName, {
 			description: "Role to assign. Must be admin-grantable (its `grant_paths` includes `'admin'`)."
 		}),
 		scope_kind: GrantScopeKind,
-		scope_id: Uuid.nullish().meta({
+		scope_id: meta(optional(nullable(Uuid)), {
 			description:
 				'Scope id for resource-scoped grants. `null` for a global role_grant. Builtin roles are global-only.'
 		}),
 		acting: ActingActor
-	})
-	.refine(is_grant_scope_paired, { message: GRANT_SCOPE_PAIRED_MESSAGE });
-export type RoleGrantAssignInput = z.infer<typeof RoleGrantAssignInput>;
+	}),
+	GrantScopePaired
+);
+export type RoleGrantAssignInput = Infer<typeof RoleGrantAssignInput>;
 
-/** Output for `role_grant_assign`. */
-export const RoleGrantAssignOutput = z.strictObject({
-	ok: z.literal(true),
+/** Output for `role_grant_assign`, a `@fuzdev/fuz_schema` schema. */
+export const RoleGrantAssignOutput = object({
+	ok: literal(true),
 	role_grant_id: Uuid
 });
-export type RoleGrantAssignOutput = z.infer<typeof RoleGrantAssignOutput>;
+export type RoleGrantAssignOutput = Infer<typeof RoleGrantAssignOutput>;
 
 // -- Action specs -----------------------------------------------------------
 

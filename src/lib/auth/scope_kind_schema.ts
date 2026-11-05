@@ -56,18 +56,23 @@ export const SCOPE_KIND_NAME_REGEX = /^[a-z]+(?:_[a-z]+)*$/;
  */
 export const SCOPE_KIND_LENGTH_MAX = 64;
 
+/** The message of a scope-kind name longer than `SCOPE_KIND_LENGTH_MAX`, in both `ScopeKindName`s. */
+export const SCOPE_KIND_NAME_LENGTH_MESSAGE = `Scope-kind names must be at most ${SCOPE_KIND_LENGTH_MAX} characters`;
+
+/** The message of a scope-kind name outside `SCOPE_KIND_NAME_REGEX`, in both `ScopeKindName`s. */
+export const SCOPE_KIND_NAME_PATTERN_MESSAGE =
+	'Scope-kind names must be lowercase letters and underscores (a-z_), no leading, trailing or consecutive underscores';
+
 /**
  * Zod schema for valid scope-kind name strings: a registered name, and the
  * `scope_kind` the grant inputs take. Twin of the Rust spine's
- * `is_valid_scope_kind_name`.
+ * `is_valid_scope_kind_name`, and of the `@fuzdev/fuz_schema` `ScopeKindName`
+ * in `auth/scope_kind_schema_fuz.ts`, built from the same constants.
  */
 export const ScopeKindName = bounded_string({
 	max: SCOPE_KIND_LENGTH_MAX,
-	max_message: `Scope-kind names must be at most ${SCOPE_KIND_LENGTH_MAX} characters`
-}).regex(
-	SCOPE_KIND_NAME_REGEX,
-	'Scope-kind names must be lowercase letters and underscores (a-z_), no leading, trailing or consecutive underscores'
-);
+	max_message: SCOPE_KIND_NAME_LENGTH_MESSAGE
+}).regex(SCOPE_KIND_NAME_REGEX, SCOPE_KIND_NAME_PATTERN_MESSAGE);
 export type ScopeKindName = z.infer<typeof ScopeKindName>;
 
 /**

@@ -2,9 +2,10 @@
  * The validation issues an assembled app answers a bad REST body and bad RPC
  * params with: `WireIssue`s under DEV, and in production the same body
  * without them. Zod schemas and the fuz_schema inputs of
- * `account_token_revoke`, `actor_search` and `self_service_role_set` alike,
- * and a bad query on `GET /api/surface`, whose `{acting}` query is a
- * fuz_schema `object`.
+ * `account_token_revoke`, `actor_search`, `self_service_role_set`,
+ * `role_grant_offer_create` and `role_grant_offer_history` alike, and a bad
+ * query on `GET /api/surface`, whose `{acting}` query is a fuz_schema
+ * `object`.
  *
  * Vitest runs with `DEV=true`, so each leg imports the server fresh under a
  * scoped `esm-env` mock (the `#lib/testing` harness can't load under
@@ -18,7 +19,8 @@
 import { test, assert, afterEach, vi, describe } from 'vitest';
 import { z } from 'zod';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
-import { object } from '@fuzdev/fuz_schema/schema.ts';
+import { object, pipe, with_default_fn, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
+import { get_schema_entries } from '@fuzdev/fuz_schema/introspect.ts';
 
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { WireIssue } from '#lib/schema_issues.ts';
@@ -29,6 +31,13 @@ import {
 	SelfServiceRoleSetOutput
 } from '#lib/auth/self_service_role_action_specs.ts';
 import { ROLE_NAME_LENGTH_MAX, ROLE_NAME_PATTERN_MESSAGE } from '#lib/auth/role_schema.ts';
+import {
+	RoleGrantOfferCreateInput,
+	RoleGrantOfferCreateOutput,
+	RoleGrantOfferHistoryInput,
+	RoleGrantOfferHistoryOutput
+} from '#lib/auth/role_grant_offer_action_specs.ts';
+import { SCOPE_KIND_NAME_PATTERN_MESSAGE } from '#lib/auth/scope_kind_schema.ts';
 import type { RouteSpec } from '#lib/http/route_spec.ts';
 import { create_test_keyring } from '../auth/session_test_helpers.ts';
 
@@ -49,6 +58,25 @@ const Body = z.strictObject({ name: z.string(), count: z.number() });
 // a public action the refusal is reached without an account
 const { acting: _, ...self_service_role_entries } = SelfServiceRoleSetInput.def;
 const SelfServiceRoleSetInputPublic = object(self_service_role_entries);
+
+// the role_grant_offer inputs less their `acting`, as above: the create input's
+// object and the `check` its pipe ends in, and the history input's object
+// under a fresh `{}` default
+// `object` read untyped, as its inference over an entries record of no known
+// keys runs too deep
+const untyped_object = object as unknown as (entries: Record<string, AnySchema>) => AnySchema;
+const without_acting = (schema: AnySchema): AnySchema => {
+	const { acting: _, ...entries } = get_schema_entries(schema)!;
+	return untyped_object(entries);
+};
+const RoleGrantOfferCreateInputPublic: AnySchema = pipe(
+	without_acting(RoleGrantOfferCreateInput),
+	RoleGrantOfferCreateInput.def[1] as AnySchema
+);
+const RoleGrantOfferHistoryInputPublic = with_default_fn(
+	without_acting(RoleGrantOfferHistoryInput),
+	() => ({})
+);
 
 const create_app = async (dev: boolean) => {
 	vi.resetModules();
@@ -165,6 +193,36 @@ const create_app = async (dev: boolean) => {
 							description: 'Toggles a thing.'
 						},
 						handler: async () => ({ ok: true as const, enabled: true, changed: false })
+					},
+					{
+						spec: {
+							method: 'offer_thing',
+							kind: 'request_response',
+							initiator: 'frontend',
+							auth: { account: 'none', actor: 'none' },
+							side_effects: true,
+							input: RoleGrantOfferCreateInputPublic,
+							output: RoleGrantOfferCreateOutput,
+							async: true,
+							description: 'Offers a thing.'
+						},
+						handler: async () => {
+							throw new Error('the handler was reached');
+						}
+					},
+					{
+						spec: {
+							method: 'page_thing',
+							kind: 'request_response',
+							initiator: 'frontend',
+							auth: { account: 'none', actor: 'none' },
+							side_effects: false,
+							input: RoleGrantOfferHistoryInputPublic,
+							output: RoleGrantOfferHistoryOutput,
+							async: true,
+							description: 'Pages things.'
+						},
+						handler: async () => ({ offers: [] })
 					}
 				]
 			}
@@ -470,6 +528,132 @@ describe('an assembled app answers a bad `self_service_role_set` input', () => {
 			id: 1,
 			error: { code: -32602, message: 'invalid params' }
 		});
+	});
+});
+
+const post_rpc_params = async (
+	app: Awaited<ReturnType<typeof create_app>>,
+	method: string,
+	params: unknown
+): Promise<Response> =>
+	await app.request('/api/rpc', {
+		method: 'POST',
+		headers: { 'content-type': 'application/json', origin: ORIGIN },
+		body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params })
+	});
+
+// half-scoped, with a field off its grammar and an unknown key: the fields'
+// issues alone, as the `check` that pairs the scope runs only on an input whose
+// fields passed, where Zod added a `check` issue on the input after them
+const HALF_SCOPED_CREATE = {
+	to_account_id: '0f8fad5b-d9cb-469f-a165-70867728950e',
+	role: 'teacher',
+	scope_kind: 'Room',
+	extra: 1
+};
+const HALF_SCOPED_CREATE_ISSUES = [
+	{
+		kind: 'regex',
+		path: ['scope_kind'],
+		expected: '/^[a-z]+(?:_[a-z]+)*$/',
+		received: 'string',
+		message: `scope_kind: ${SCOPE_KIND_NAME_PATTERN_MESSAGE}`
+	},
+	{
+		kind: 'unknown_key',
+		path: ['extra'],
+		expected: 'no unknown keys',
+		received: 'number',
+		message: 'extra: expected no unknown keys, received number'
+	}
+];
+
+describe('an assembled app answers a bad `role_grant_offer_create` input', () => {
+	test('with the fields’ fuz_schema issues under DEV, and no check issue', async () => {
+		const res = await post_rpc_params(await create_app(true), 'offer_thing', HALF_SCOPED_CREATE);
+		assert.strictEqual(res.status, 400);
+		const body = await res.json();
+		assert.deepStrictEqual(body, {
+			jsonrpc: '2.0',
+			id: 1,
+			error: {
+				code: -32602,
+				message: 'invalid params',
+				data: { issues: HALF_SCOPED_CREATE_ISSUES }
+			}
+		});
+		for (const issue of body.error.data.issues) assert.ok(WireIssue.safeParse(issue).success);
+	});
+
+	test('a half-scoped input whose fields pass gets the check issue under DEV', async () => {
+		const { scope_kind: _, extra: __, ...global } = HALF_SCOPED_CREATE;
+		const res = await post_rpc_params(await create_app(true), 'offer_thing', {
+			...global,
+			scope_id: '7c9e6679-7425-40de-944b-e07fc1f90ae7'
+		});
+		assert.strictEqual(res.status, 400);
+		const body = await res.json();
+		assert.deepStrictEqual(
+			body.error.data.issues.map((i: WireIssue) => [i.kind, i.path]),
+			[['check', []]]
+		);
+	});
+
+	test('without data in production, as under Zod', async () => {
+		const res = await post_rpc_params(await create_app(false), 'offer_thing', HALF_SCOPED_CREATE);
+		assert.strictEqual(res.status, 400);
+		assert.deepStrictEqual(await res.json(), {
+			jsonrpc: '2.0',
+			id: 1,
+			error: { code: -32602, message: 'invalid params' }
+		});
+	});
+});
+
+describe('an assembled app answers a bad `role_grant_offer_history` input', () => {
+	test('with its reason and fuz_schema issues under DEV', async () => {
+		const res = await post_rpc_params(await create_app(true), 'page_thing', { limit: 1.5 });
+		assert.strictEqual(res.status, 400);
+		assert.deepStrictEqual(await res.json(), {
+			jsonrpc: '2.0',
+			id: 1,
+			error: {
+				code: -32602,
+				message: 'invalid params',
+				data: {
+					reason: 'limit_invalid',
+					issues: [
+						{
+							kind: 'integer',
+							path: ['limit'],
+							expected: 'integer',
+							received: 'number',
+							message: 'limit: expected integer, received number'
+						}
+					]
+				}
+			}
+		});
+	});
+
+	test('with its reason and no issues in production, as under Zod', async () => {
+		const res = await post_rpc_params(await create_app(false), 'page_thing', { limit: 1.5 });
+		assert.strictEqual(res.status, 400);
+		assert.deepStrictEqual(await res.json(), {
+			jsonrpc: '2.0',
+			id: 1,
+			error: { code: -32602, message: 'invalid params', data: { reason: 'limit_invalid' } }
+		});
+	});
+
+	test('an omitted input reads as {}', async () => {
+		const res = await (await create_app(true)).request('/api/rpc', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', origin: ORIGIN },
+			body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'page_thing' })
+		});
+		assert.strictEqual(res.status, 200);
+		assert.deepStrictEqual(await res.json(), { jsonrpc: '2.0', id: 1, result: { offers: [] } });
 	});
 });
 

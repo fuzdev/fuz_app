@@ -1,0 +1,3873 @@
+{
+	"rpc": [
+		{
+			"name": "role_grant_offer_create",
+			"auth": {
+				"account": "required",
+				"actor": "required",
+				"credential_types": [
+					"session"
+				]
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"to_account_id": {
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+						"description": "Account id of the recipient."
+					},
+					"to_actor_id": {
+						"description": "Optional actor-grain target on the recipient account. When set, only this actor may accept and the audit envelope carries it on offer-shape events. Must belong to `to_account_id`.",
+						"anyOf": [
+							{
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"role": {
+						"type": "string",
+						"maxLength": 64,
+						"pattern": "^[a-z]+(?:_[a-z]+)*$",
+						"description": "Role being offered."
+					},
+					"scope_kind": {
+						"description": "Machine-readable kind tag for `scope_id` — paired-null with `scope_id` (both null for global, both non-null for scoped). Required iff `scope_id` is set. A scope-kind name: runs of lowercase letters (a-z) joined by single underscores, at most 64 characters.",
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 64,
+								"pattern": "^[a-z]+(?:_[a-z]+)*$"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"scope_id": {
+						"description": "Scope id for resource-scoped grants (e.g. classroom id). `null` for global.",
+						"anyOf": [
+							{
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"message": {
+						"description": "Optional free-form note from the grantor.",
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 500
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"required": [
+					"to_account_id",
+					"role"
+				],
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"offer": {
+						"type": "object",
+						"properties": {
+							"id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+								"description": "Offer id."
+							},
+							"from_actor_id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+								"description": "Actor that issued the offer."
+							},
+							"to_account_id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+								"description": "Account the offer is directed to."
+							},
+							"to_actor_id": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Optional actor-grain target on the recipient account. When set, only this actor may accept; when null any actor on `to_account_id` may accept."
+							},
+							"role": {
+								"type": "string",
+								"maxLength": 64,
+								"pattern": "^[a-z]+(?:_[a-z]+)*$",
+								"description": "Role being offered."
+							},
+							"scope_kind": {
+								"description": "Machine-readable kind tag for `scope_id` — paired-null with `scope_id` (both null for global, both non-null for scoped).",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"scope_id": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Scope the offered role_grant applies to (e.g. a classroom id). `null` for global role_grants."
+							},
+							"message": {
+								"anyOf": [
+									{
+										"type": "string",
+										"maxLength": 500
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Optional free-form note from the grantor."
+							},
+							"created_at": {
+								"type": "string",
+								"description": "ISO timestamp when the offer was created."
+							},
+							"expires_at": {
+								"type": "string",
+								"description": "ISO timestamp after which the offer is no longer valid."
+							},
+							"accepted_at": {
+								"description": "ISO timestamp when the offer was accepted.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"declined_at": {
+								"description": "ISO timestamp when the offer was declined.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"decline_reason": {
+								"anyOf": [
+									{
+										"type": "string",
+										"maxLength": 500
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Optional reason given on decline."
+							},
+							"retracted_at": {
+								"description": "ISO timestamp when the grantor retracted the offer.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"superseded_at": {
+								"description": "ISO timestamp when this offer was obsoleted by a sibling accept or by revoke of the resulting role_grant.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"resulting_role_grant_id": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Role grant produced by accepting this offer. `null` until/unless accepted."
+							}
+						},
+						"required": [
+							"id",
+							"from_actor_id",
+							"to_account_id",
+							"to_actor_id",
+							"role",
+							"scope_kind",
+							"scope_id",
+							"message",
+							"created_at",
+							"expires_at",
+							"accepted_at",
+							"declined_at",
+							"decline_reason",
+							"retracted_at",
+							"superseded_at",
+							"resulting_role_grant_id"
+						],
+						"additionalProperties": false,
+						"description": "A role_grant offer — a pending grant awaiting recipient consent."
+					}
+				},
+				"required": [
+					"offer"
+				],
+				"additionalProperties": false
+			},
+			"side_effects": true,
+			"description": "Offer a role_grant to another account. Admin-only by default (a consumer authorize callback may widen it for app roles); role's `grant_paths` must include `'admin'`. A builtin role is global-only and offered only by a global admin, whatever the callback says.",
+			"rate_limit_key": "account"
+		},
+		{
+			"name": "role_grant_offer_accept",
+			"auth": {
+				"account": "required",
+				"actor": "required",
+				"credential_types": [
+					"session"
+				]
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"offer_id": {
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+						"description": "The offer to accept."
+					},
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"required": [
+					"offer_id"
+				],
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"role_grant_id": {
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					},
+					"offer": {
+						"type": "object",
+						"properties": {
+							"id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+								"description": "Offer id."
+							},
+							"from_actor_id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+								"description": "Actor that issued the offer."
+							},
+							"to_account_id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+								"description": "Account the offer is directed to."
+							},
+							"to_actor_id": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Optional actor-grain target on the recipient account. When set, only this actor may accept; when null any actor on `to_account_id` may accept."
+							},
+							"role": {
+								"type": "string",
+								"maxLength": 64,
+								"pattern": "^[a-z]+(?:_[a-z]+)*$",
+								"description": "Role being offered."
+							},
+							"scope_kind": {
+								"description": "Machine-readable kind tag for `scope_id` — paired-null with `scope_id` (both null for global, both non-null for scoped).",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"scope_id": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Scope the offered role_grant applies to (e.g. a classroom id). `null` for global role_grants."
+							},
+							"message": {
+								"anyOf": [
+									{
+										"type": "string",
+										"maxLength": 500
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Optional free-form note from the grantor."
+							},
+							"created_at": {
+								"type": "string",
+								"description": "ISO timestamp when the offer was created."
+							},
+							"expires_at": {
+								"type": "string",
+								"description": "ISO timestamp after which the offer is no longer valid."
+							},
+							"accepted_at": {
+								"description": "ISO timestamp when the offer was accepted.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"declined_at": {
+								"description": "ISO timestamp when the offer was declined.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"decline_reason": {
+								"anyOf": [
+									{
+										"type": "string",
+										"maxLength": 500
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Optional reason given on decline."
+							},
+							"retracted_at": {
+								"description": "ISO timestamp when the grantor retracted the offer.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"superseded_at": {
+								"description": "ISO timestamp when this offer was obsoleted by a sibling accept or by revoke of the resulting role_grant.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"resulting_role_grant_id": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Role grant produced by accepting this offer. `null` until/unless accepted."
+							}
+						},
+						"required": [
+							"id",
+							"from_actor_id",
+							"to_account_id",
+							"to_actor_id",
+							"role",
+							"scope_kind",
+							"scope_id",
+							"message",
+							"created_at",
+							"expires_at",
+							"accepted_at",
+							"declined_at",
+							"decline_reason",
+							"retracted_at",
+							"superseded_at",
+							"resulting_role_grant_id"
+						],
+						"additionalProperties": false,
+						"description": "A role_grant offer — a pending grant awaiting recipient consent."
+					},
+					"superseded_offer_ids": {
+						"type": "array",
+						"items": {
+							"type": "string",
+							"format": "uuid",
+							"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+						}
+					}
+				},
+				"required": [
+					"role_grant_id",
+					"offer",
+					"superseded_offer_ids"
+				],
+				"additionalProperties": false
+			},
+			"side_effects": true,
+			"description": "Accept an offer. Atomically marks the offer accepted, inserts the role_grant, and supersedes sibling pending offers for the same (account, role, scope). A builtin-role offer is refused (and stays pending) when it is `keeper`, scoped, or its grantor no longer holds a global admin.",
+			"rate_limit_key": "account"
+		},
+		{
+			"name": "role_grant_offer_decline",
+			"auth": {
+				"account": "required",
+				"actor": "required"
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"offer_id": {
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+						"description": "The offer to decline."
+					},
+					"reason": {
+						"description": "Optional free-form reason given on decline.",
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 500
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"required": [
+					"offer_id"
+				],
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"offer": {
+						"type": "object",
+						"properties": {
+							"id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+								"description": "Offer id."
+							},
+							"from_actor_id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+								"description": "Actor that issued the offer."
+							},
+							"to_account_id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+								"description": "Account the offer is directed to."
+							},
+							"to_actor_id": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Optional actor-grain target on the recipient account. When set, only this actor may accept; when null any actor on `to_account_id` may accept."
+							},
+							"role": {
+								"type": "string",
+								"maxLength": 64,
+								"pattern": "^[a-z]+(?:_[a-z]+)*$",
+								"description": "Role being offered."
+							},
+							"scope_kind": {
+								"description": "Machine-readable kind tag for `scope_id` — paired-null with `scope_id` (both null for global, both non-null for scoped).",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"scope_id": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Scope the offered role_grant applies to (e.g. a classroom id). `null` for global role_grants."
+							},
+							"message": {
+								"anyOf": [
+									{
+										"type": "string",
+										"maxLength": 500
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Optional free-form note from the grantor."
+							},
+							"created_at": {
+								"type": "string",
+								"description": "ISO timestamp when the offer was created."
+							},
+							"expires_at": {
+								"type": "string",
+								"description": "ISO timestamp after which the offer is no longer valid."
+							},
+							"accepted_at": {
+								"description": "ISO timestamp when the offer was accepted.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"declined_at": {
+								"description": "ISO timestamp when the offer was declined.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"decline_reason": {
+								"anyOf": [
+									{
+										"type": "string",
+										"maxLength": 500
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Optional reason given on decline."
+							},
+							"retracted_at": {
+								"description": "ISO timestamp when the grantor retracted the offer.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"superseded_at": {
+								"description": "ISO timestamp when this offer was obsoleted by a sibling accept or by revoke of the resulting role_grant.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"resulting_role_grant_id": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Role grant produced by accepting this offer. `null` until/unless accepted."
+							}
+						},
+						"required": [
+							"id",
+							"from_actor_id",
+							"to_account_id",
+							"to_actor_id",
+							"role",
+							"scope_kind",
+							"scope_id",
+							"message",
+							"created_at",
+							"expires_at",
+							"accepted_at",
+							"declined_at",
+							"decline_reason",
+							"retracted_at",
+							"superseded_at",
+							"resulting_role_grant_id"
+						],
+						"additionalProperties": false,
+						"description": "A role_grant offer — a pending grant awaiting recipient consent."
+					}
+				},
+				"required": [
+					"offer"
+				],
+				"additionalProperties": false
+			},
+			"side_effects": true,
+			"description": "Decline an offer. Recipient-only.",
+			"rate_limit_key": null
+		},
+		{
+			"name": "role_grant_offer_retract",
+			"auth": {
+				"account": "required",
+				"actor": "required"
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"offer_id": {
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+						"description": "The offer to retract."
+					},
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"required": [
+					"offer_id"
+				],
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"offer": {
+						"type": "object",
+						"properties": {
+							"id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+								"description": "Offer id."
+							},
+							"from_actor_id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+								"description": "Actor that issued the offer."
+							},
+							"to_account_id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+								"description": "Account the offer is directed to."
+							},
+							"to_actor_id": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Optional actor-grain target on the recipient account. When set, only this actor may accept; when null any actor on `to_account_id` may accept."
+							},
+							"role": {
+								"type": "string",
+								"maxLength": 64,
+								"pattern": "^[a-z]+(?:_[a-z]+)*$",
+								"description": "Role being offered."
+							},
+							"scope_kind": {
+								"description": "Machine-readable kind tag for `scope_id` — paired-null with `scope_id` (both null for global, both non-null for scoped).",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"scope_id": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Scope the offered role_grant applies to (e.g. a classroom id). `null` for global role_grants."
+							},
+							"message": {
+								"anyOf": [
+									{
+										"type": "string",
+										"maxLength": 500
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Optional free-form note from the grantor."
+							},
+							"created_at": {
+								"type": "string",
+								"description": "ISO timestamp when the offer was created."
+							},
+							"expires_at": {
+								"type": "string",
+								"description": "ISO timestamp after which the offer is no longer valid."
+							},
+							"accepted_at": {
+								"description": "ISO timestamp when the offer was accepted.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"declined_at": {
+								"description": "ISO timestamp when the offer was declined.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"decline_reason": {
+								"anyOf": [
+									{
+										"type": "string",
+										"maxLength": 500
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Optional reason given on decline."
+							},
+							"retracted_at": {
+								"description": "ISO timestamp when the grantor retracted the offer.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"superseded_at": {
+								"description": "ISO timestamp when this offer was obsoleted by a sibling accept or by revoke of the resulting role_grant.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"resulting_role_grant_id": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Role grant produced by accepting this offer. `null` until/unless accepted."
+							}
+						},
+						"required": [
+							"id",
+							"from_actor_id",
+							"to_account_id",
+							"to_actor_id",
+							"role",
+							"scope_kind",
+							"scope_id",
+							"message",
+							"created_at",
+							"expires_at",
+							"accepted_at",
+							"declined_at",
+							"decline_reason",
+							"retracted_at",
+							"superseded_at",
+							"resulting_role_grant_id"
+						],
+						"additionalProperties": false,
+						"description": "A role_grant offer — a pending grant awaiting recipient consent."
+					}
+				},
+				"required": [
+					"offer"
+				],
+				"additionalProperties": false
+			},
+			"side_effects": true,
+			"description": "Retract an offer. Grantor-only, pre-decision.",
+			"rate_limit_key": null
+		},
+		{
+			"name": "role_grant_offer_list",
+			"auth": {
+				"account": "required",
+				"actor": "required"
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"account_id": {
+						"description": "Admin-only — list offers for another account. Defaults to the caller.",
+						"anyOf": [
+							{
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"offers": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"id": {
+									"type": "string",
+									"format": "uuid",
+									"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+									"description": "Offer id."
+								},
+								"from_actor_id": {
+									"type": "string",
+									"format": "uuid",
+									"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+									"description": "Actor that issued the offer."
+								},
+								"to_account_id": {
+									"type": "string",
+									"format": "uuid",
+									"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+									"description": "Account the offer is directed to."
+								},
+								"to_actor_id": {
+									"anyOf": [
+										{
+											"type": "string",
+											"format": "uuid",
+											"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+										},
+										{
+											"type": "null"
+										}
+									],
+									"description": "Optional actor-grain target on the recipient account. When set, only this actor may accept; when null any actor on `to_account_id` may accept."
+								},
+								"role": {
+									"type": "string",
+									"maxLength": 64,
+									"pattern": "^[a-z]+(?:_[a-z]+)*$",
+									"description": "Role being offered."
+								},
+								"scope_kind": {
+									"description": "Machine-readable kind tag for `scope_id` — paired-null with `scope_id` (both null for global, both non-null for scoped).",
+									"type": [
+										"string",
+										"null"
+									]
+								},
+								"scope_id": {
+									"anyOf": [
+										{
+											"type": "string",
+											"format": "uuid",
+											"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+										},
+										{
+											"type": "null"
+										}
+									],
+									"description": "Scope the offered role_grant applies to (e.g. a classroom id). `null` for global role_grants."
+								},
+								"message": {
+									"anyOf": [
+										{
+											"type": "string",
+											"maxLength": 500
+										},
+										{
+											"type": "null"
+										}
+									],
+									"description": "Optional free-form note from the grantor."
+								},
+								"created_at": {
+									"type": "string",
+									"description": "ISO timestamp when the offer was created."
+								},
+								"expires_at": {
+									"type": "string",
+									"description": "ISO timestamp after which the offer is no longer valid."
+								},
+								"accepted_at": {
+									"description": "ISO timestamp when the offer was accepted.",
+									"type": [
+										"string",
+										"null"
+									]
+								},
+								"declined_at": {
+									"description": "ISO timestamp when the offer was declined.",
+									"type": [
+										"string",
+										"null"
+									]
+								},
+								"decline_reason": {
+									"anyOf": [
+										{
+											"type": "string",
+											"maxLength": 500
+										},
+										{
+											"type": "null"
+										}
+									],
+									"description": "Optional reason given on decline."
+								},
+								"retracted_at": {
+									"description": "ISO timestamp when the grantor retracted the offer.",
+									"type": [
+										"string",
+										"null"
+									]
+								},
+								"superseded_at": {
+									"description": "ISO timestamp when this offer was obsoleted by a sibling accept or by revoke of the resulting role_grant.",
+									"type": [
+										"string",
+										"null"
+									]
+								},
+								"resulting_role_grant_id": {
+									"anyOf": [
+										{
+											"type": "string",
+											"format": "uuid",
+											"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+										},
+										{
+											"type": "null"
+										}
+									],
+									"description": "Role grant produced by accepting this offer. `null` until/unless accepted."
+								}
+							},
+							"required": [
+								"id",
+								"from_actor_id",
+								"to_account_id",
+								"to_actor_id",
+								"role",
+								"scope_kind",
+								"scope_id",
+								"message",
+								"created_at",
+								"expires_at",
+								"accepted_at",
+								"declined_at",
+								"decline_reason",
+								"retracted_at",
+								"superseded_at",
+								"resulting_role_grant_id"
+							],
+							"additionalProperties": false,
+							"description": "A role_grant offer — a pending grant awaiting recipient consent."
+						}
+					}
+				},
+				"required": [
+					"offers"
+				],
+				"additionalProperties": false
+			},
+			"side_effects": false,
+			"description": "List pending, non-expired offers for the caller. Admins may pass `account_id` to inspect another account.",
+			"rate_limit_key": null
+		},
+		{
+			"name": "role_grant_offer_history",
+			"auth": {
+				"account": "required",
+				"actor": "required"
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"account_id": {
+						"description": "Admin-only — history for another account. Defaults to the caller.",
+						"anyOf": [
+							{
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"limit": {
+						"description": "Max rows to return (default 100).",
+						"invalid_reason": "limit_invalid",
+						"anyOf": [
+							{
+								"type": "integer",
+								"minimum": 1,
+								"maximum": 500
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"offset": {
+						"description": "Pagination offset (default 0).",
+						"invalid_reason": "offset_invalid",
+						"anyOf": [
+							{
+								"type": "integer",
+								"minimum": 0,
+								"maximum": 9007199254740991
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"offers": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"id": {
+									"type": "string",
+									"format": "uuid",
+									"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+									"description": "Offer id."
+								},
+								"from_actor_id": {
+									"type": "string",
+									"format": "uuid",
+									"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+									"description": "Actor that issued the offer."
+								},
+								"to_account_id": {
+									"type": "string",
+									"format": "uuid",
+									"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+									"description": "Account the offer is directed to."
+								},
+								"to_actor_id": {
+									"anyOf": [
+										{
+											"type": "string",
+											"format": "uuid",
+											"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+										},
+										{
+											"type": "null"
+										}
+									],
+									"description": "Optional actor-grain target on the recipient account. When set, only this actor may accept; when null any actor on `to_account_id` may accept."
+								},
+								"role": {
+									"type": "string",
+									"maxLength": 64,
+									"pattern": "^[a-z]+(?:_[a-z]+)*$",
+									"description": "Role being offered."
+								},
+								"scope_kind": {
+									"description": "Machine-readable kind tag for `scope_id` — paired-null with `scope_id` (both null for global, both non-null for scoped).",
+									"type": [
+										"string",
+										"null"
+									]
+								},
+								"scope_id": {
+									"anyOf": [
+										{
+											"type": "string",
+											"format": "uuid",
+											"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+										},
+										{
+											"type": "null"
+										}
+									],
+									"description": "Scope the offered role_grant applies to (e.g. a classroom id). `null` for global role_grants."
+								},
+								"message": {
+									"anyOf": [
+										{
+											"type": "string",
+											"maxLength": 500
+										},
+										{
+											"type": "null"
+										}
+									],
+									"description": "Optional free-form note from the grantor."
+								},
+								"created_at": {
+									"type": "string",
+									"description": "ISO timestamp when the offer was created."
+								},
+								"expires_at": {
+									"type": "string",
+									"description": "ISO timestamp after which the offer is no longer valid."
+								},
+								"accepted_at": {
+									"description": "ISO timestamp when the offer was accepted.",
+									"type": [
+										"string",
+										"null"
+									]
+								},
+								"declined_at": {
+									"description": "ISO timestamp when the offer was declined.",
+									"type": [
+										"string",
+										"null"
+									]
+								},
+								"decline_reason": {
+									"anyOf": [
+										{
+											"type": "string",
+											"maxLength": 500
+										},
+										{
+											"type": "null"
+										}
+									],
+									"description": "Optional reason given on decline."
+								},
+								"retracted_at": {
+									"description": "ISO timestamp when the grantor retracted the offer.",
+									"type": [
+										"string",
+										"null"
+									]
+								},
+								"superseded_at": {
+									"description": "ISO timestamp when this offer was obsoleted by a sibling accept or by revoke of the resulting role_grant.",
+									"type": [
+										"string",
+										"null"
+									]
+								},
+								"resulting_role_grant_id": {
+									"anyOf": [
+										{
+											"type": "string",
+											"format": "uuid",
+											"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+										},
+										{
+											"type": "null"
+										}
+									],
+									"description": "Role grant produced by accepting this offer. `null` until/unless accepted."
+								}
+							},
+							"required": [
+								"id",
+								"from_actor_id",
+								"to_account_id",
+								"to_actor_id",
+								"role",
+								"scope_kind",
+								"scope_id",
+								"message",
+								"created_at",
+								"expires_at",
+								"accepted_at",
+								"declined_at",
+								"decline_reason",
+								"retracted_at",
+								"superseded_at",
+								"resulting_role_grant_id"
+							],
+							"additionalProperties": false,
+							"description": "A role_grant offer — a pending grant awaiting recipient consent."
+						}
+					}
+				},
+				"required": [
+					"offers"
+				],
+				"additionalProperties": false
+			},
+			"side_effects": false,
+			"description": "List every offer involving the caller (either direction), including terminal rows, newest first. Admins may pass `account_id` to inspect another account.",
+			"rate_limit_key": null
+		},
+		{
+			"name": "role_grant_revoke",
+			"auth": {
+				"account": "required",
+				"actor": "required",
+				"roles": [
+					"admin"
+				]
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"actor_id": {
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+						"description": "Actor whose role_grant to revoke."
+					},
+					"role_grant_id": {
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+						"description": "The role_grant to revoke."
+					},
+					"reason": {
+						"description": "Optional free-form reason; stamped on `role_grant.revoked_reason` and surfaced on the revokee WS notification.",
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 500
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"required": [
+					"actor_id",
+					"role_grant_id"
+				],
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"ok": {
+						"type": "boolean",
+						"const": true
+					},
+					"revoked": {
+						"type": "boolean",
+						"const": true
+					}
+				},
+				"required": [
+					"ok",
+					"revoked"
+				],
+				"additionalProperties": false
+			},
+			"side_effects": true,
+			"description": "Revoke an active role_grant on a target actor. Admin-only. Refuses the keeper account's global admin grant and the last active admin's. Supersedes any pending offers for the same (account, role, scope), and every pending offer the target actor made. Fires role_grant_revoke + role_grant_offer_supersede notifications.",
+			"rate_limit_key": "account"
+		},
+		{
+			"name": "role_grant_assign",
+			"auth": {
+				"account": "required",
+				"actor": "required",
+				"roles": [
+					"admin"
+				]
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"to_account_id": {
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+						"description": "Account id of the grantee."
+					},
+					"to_actor_id": {
+						"description": "Optional actor-grain target on the grantee account. When set, must belong to `to_account_id`. Omit to resolve the account's sole active actor — a multi-actor account must name one.",
+						"anyOf": [
+							{
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"role": {
+						"type": "string",
+						"maxLength": 64,
+						"pattern": "^[a-z]+(?:_[a-z]+)*$",
+						"description": "Role to assign. Must be admin-grantable (its `grant_paths` includes `'admin'`)."
+					},
+					"scope_kind": {
+						"description": "Machine-readable kind tag for `scope_id` — paired-null with `scope_id` (both null for global, both non-null for scoped). Required iff `scope_id` is set. A scope-kind name: runs of lowercase letters (a-z) joined by single underscores, at most 64 characters.",
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 64,
+								"pattern": "^[a-z]+(?:_[a-z]+)*$"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"scope_id": {
+						"description": "Scope id for resource-scoped grants. `null` for a global role_grant. Builtin roles are global-only.",
+						"anyOf": [
+							{
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"required": [
+					"to_account_id",
+					"role"
+				],
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"ok": {
+						"type": "boolean",
+						"const": true
+					},
+					"role_grant_id": {
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"required": [
+					"ok",
+					"role_grant_id"
+				],
+				"additionalProperties": false
+			},
+			"side_effects": true,
+			"description": "Immediately assign a role_grant to a target account — global-admin-only, no consent step (the capability-unlock UX). The role's `grant_paths` must include `'admin'`, and the consumer's offer `authorize` callback must admit it; `scope_kind` + `scope_id` are paired, and a builtin role is global-only. Idempotent: re-assigning an active grant returns it. Emits a role_grant_create audit event.",
+			"rate_limit_key": "account"
+		}
+	],
+	"ws": [
+		{
+			"name": "role_grant_offer_create",
+			"kind": "request_response",
+			"auth": {
+				"account": "required",
+				"actor": "required",
+				"credential_types": [
+					"session"
+				]
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"to_account_id": {
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+						"description": "Account id of the recipient."
+					},
+					"to_actor_id": {
+						"description": "Optional actor-grain target on the recipient account. When set, only this actor may accept and the audit envelope carries it on offer-shape events. Must belong to `to_account_id`.",
+						"anyOf": [
+							{
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"role": {
+						"type": "string",
+						"maxLength": 64,
+						"pattern": "^[a-z]+(?:_[a-z]+)*$",
+						"description": "Role being offered."
+					},
+					"scope_kind": {
+						"description": "Machine-readable kind tag for `scope_id` — paired-null with `scope_id` (both null for global, both non-null for scoped). Required iff `scope_id` is set. A scope-kind name: runs of lowercase letters (a-z) joined by single underscores, at most 64 characters.",
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 64,
+								"pattern": "^[a-z]+(?:_[a-z]+)*$"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"scope_id": {
+						"description": "Scope id for resource-scoped grants (e.g. classroom id). `null` for global.",
+						"anyOf": [
+							{
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"message": {
+						"description": "Optional free-form note from the grantor.",
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 500
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"required": [
+					"to_account_id",
+					"role"
+				],
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"offer": {
+						"type": "object",
+						"properties": {
+							"id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+								"description": "Offer id."
+							},
+							"from_actor_id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+								"description": "Actor that issued the offer."
+							},
+							"to_account_id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+								"description": "Account the offer is directed to."
+							},
+							"to_actor_id": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Optional actor-grain target on the recipient account. When set, only this actor may accept; when null any actor on `to_account_id` may accept."
+							},
+							"role": {
+								"type": "string",
+								"maxLength": 64,
+								"pattern": "^[a-z]+(?:_[a-z]+)*$",
+								"description": "Role being offered."
+							},
+							"scope_kind": {
+								"description": "Machine-readable kind tag for `scope_id` — paired-null with `scope_id` (both null for global, both non-null for scoped).",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"scope_id": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Scope the offered role_grant applies to (e.g. a classroom id). `null` for global role_grants."
+							},
+							"message": {
+								"anyOf": [
+									{
+										"type": "string",
+										"maxLength": 500
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Optional free-form note from the grantor."
+							},
+							"created_at": {
+								"type": "string",
+								"description": "ISO timestamp when the offer was created."
+							},
+							"expires_at": {
+								"type": "string",
+								"description": "ISO timestamp after which the offer is no longer valid."
+							},
+							"accepted_at": {
+								"description": "ISO timestamp when the offer was accepted.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"declined_at": {
+								"description": "ISO timestamp when the offer was declined.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"decline_reason": {
+								"anyOf": [
+									{
+										"type": "string",
+										"maxLength": 500
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Optional reason given on decline."
+							},
+							"retracted_at": {
+								"description": "ISO timestamp when the grantor retracted the offer.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"superseded_at": {
+								"description": "ISO timestamp when this offer was obsoleted by a sibling accept or by revoke of the resulting role_grant.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"resulting_role_grant_id": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Role grant produced by accepting this offer. `null` until/unless accepted."
+							}
+						},
+						"required": [
+							"id",
+							"from_actor_id",
+							"to_account_id",
+							"to_actor_id",
+							"role",
+							"scope_kind",
+							"scope_id",
+							"message",
+							"created_at",
+							"expires_at",
+							"accepted_at",
+							"declined_at",
+							"decline_reason",
+							"retracted_at",
+							"superseded_at",
+							"resulting_role_grant_id"
+						],
+						"additionalProperties": false,
+						"description": "A role_grant offer — a pending grant awaiting recipient consent."
+					}
+				},
+				"required": [
+					"offer"
+				],
+				"additionalProperties": false
+			},
+			"description": "Offer a role_grant to another account. Admin-only by default (a consumer authorize callback may widen it for app roles); role's `grant_paths` must include `'admin'`. A builtin role is global-only and offered only by a global admin, whatever the callback says.",
+			"side_effects": true,
+			"rate_limit_key": "account"
+		},
+		{
+			"name": "role_grant_offer_accept",
+			"kind": "request_response",
+			"auth": {
+				"account": "required",
+				"actor": "required",
+				"credential_types": [
+					"session"
+				]
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"offer_id": {
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+						"description": "The offer to accept."
+					},
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"required": [
+					"offer_id"
+				],
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"role_grant_id": {
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					},
+					"offer": {
+						"type": "object",
+						"properties": {
+							"id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+								"description": "Offer id."
+							},
+							"from_actor_id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+								"description": "Actor that issued the offer."
+							},
+							"to_account_id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+								"description": "Account the offer is directed to."
+							},
+							"to_actor_id": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Optional actor-grain target on the recipient account. When set, only this actor may accept; when null any actor on `to_account_id` may accept."
+							},
+							"role": {
+								"type": "string",
+								"maxLength": 64,
+								"pattern": "^[a-z]+(?:_[a-z]+)*$",
+								"description": "Role being offered."
+							},
+							"scope_kind": {
+								"description": "Machine-readable kind tag for `scope_id` — paired-null with `scope_id` (both null for global, both non-null for scoped).",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"scope_id": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Scope the offered role_grant applies to (e.g. a classroom id). `null` for global role_grants."
+							},
+							"message": {
+								"anyOf": [
+									{
+										"type": "string",
+										"maxLength": 500
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Optional free-form note from the grantor."
+							},
+							"created_at": {
+								"type": "string",
+								"description": "ISO timestamp when the offer was created."
+							},
+							"expires_at": {
+								"type": "string",
+								"description": "ISO timestamp after which the offer is no longer valid."
+							},
+							"accepted_at": {
+								"description": "ISO timestamp when the offer was accepted.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"declined_at": {
+								"description": "ISO timestamp when the offer was declined.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"decline_reason": {
+								"anyOf": [
+									{
+										"type": "string",
+										"maxLength": 500
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Optional reason given on decline."
+							},
+							"retracted_at": {
+								"description": "ISO timestamp when the grantor retracted the offer.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"superseded_at": {
+								"description": "ISO timestamp when this offer was obsoleted by a sibling accept or by revoke of the resulting role_grant.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"resulting_role_grant_id": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Role grant produced by accepting this offer. `null` until/unless accepted."
+							}
+						},
+						"required": [
+							"id",
+							"from_actor_id",
+							"to_account_id",
+							"to_actor_id",
+							"role",
+							"scope_kind",
+							"scope_id",
+							"message",
+							"created_at",
+							"expires_at",
+							"accepted_at",
+							"declined_at",
+							"decline_reason",
+							"retracted_at",
+							"superseded_at",
+							"resulting_role_grant_id"
+						],
+						"additionalProperties": false,
+						"description": "A role_grant offer — a pending grant awaiting recipient consent."
+					},
+					"superseded_offer_ids": {
+						"type": "array",
+						"items": {
+							"type": "string",
+							"format": "uuid",
+							"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+						}
+					}
+				},
+				"required": [
+					"role_grant_id",
+					"offer",
+					"superseded_offer_ids"
+				],
+				"additionalProperties": false
+			},
+			"description": "Accept an offer. Atomically marks the offer accepted, inserts the role_grant, and supersedes sibling pending offers for the same (account, role, scope). A builtin-role offer is refused (and stays pending) when it is `keeper`, scoped, or its grantor no longer holds a global admin.",
+			"side_effects": true,
+			"rate_limit_key": "account"
+		},
+		{
+			"name": "role_grant_offer_decline",
+			"kind": "request_response",
+			"auth": {
+				"account": "required",
+				"actor": "required"
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"offer_id": {
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+						"description": "The offer to decline."
+					},
+					"reason": {
+						"description": "Optional free-form reason given on decline.",
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 500
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"required": [
+					"offer_id"
+				],
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"offer": {
+						"type": "object",
+						"properties": {
+							"id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+								"description": "Offer id."
+							},
+							"from_actor_id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+								"description": "Actor that issued the offer."
+							},
+							"to_account_id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+								"description": "Account the offer is directed to."
+							},
+							"to_actor_id": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Optional actor-grain target on the recipient account. When set, only this actor may accept; when null any actor on `to_account_id` may accept."
+							},
+							"role": {
+								"type": "string",
+								"maxLength": 64,
+								"pattern": "^[a-z]+(?:_[a-z]+)*$",
+								"description": "Role being offered."
+							},
+							"scope_kind": {
+								"description": "Machine-readable kind tag for `scope_id` — paired-null with `scope_id` (both null for global, both non-null for scoped).",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"scope_id": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Scope the offered role_grant applies to (e.g. a classroom id). `null` for global role_grants."
+							},
+							"message": {
+								"anyOf": [
+									{
+										"type": "string",
+										"maxLength": 500
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Optional free-form note from the grantor."
+							},
+							"created_at": {
+								"type": "string",
+								"description": "ISO timestamp when the offer was created."
+							},
+							"expires_at": {
+								"type": "string",
+								"description": "ISO timestamp after which the offer is no longer valid."
+							},
+							"accepted_at": {
+								"description": "ISO timestamp when the offer was accepted.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"declined_at": {
+								"description": "ISO timestamp when the offer was declined.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"decline_reason": {
+								"anyOf": [
+									{
+										"type": "string",
+										"maxLength": 500
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Optional reason given on decline."
+							},
+							"retracted_at": {
+								"description": "ISO timestamp when the grantor retracted the offer.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"superseded_at": {
+								"description": "ISO timestamp when this offer was obsoleted by a sibling accept or by revoke of the resulting role_grant.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"resulting_role_grant_id": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Role grant produced by accepting this offer. `null` until/unless accepted."
+							}
+						},
+						"required": [
+							"id",
+							"from_actor_id",
+							"to_account_id",
+							"to_actor_id",
+							"role",
+							"scope_kind",
+							"scope_id",
+							"message",
+							"created_at",
+							"expires_at",
+							"accepted_at",
+							"declined_at",
+							"decline_reason",
+							"retracted_at",
+							"superseded_at",
+							"resulting_role_grant_id"
+						],
+						"additionalProperties": false,
+						"description": "A role_grant offer — a pending grant awaiting recipient consent."
+					}
+				},
+				"required": [
+					"offer"
+				],
+				"additionalProperties": false
+			},
+			"description": "Decline an offer. Recipient-only.",
+			"side_effects": true,
+			"rate_limit_key": null
+		},
+		{
+			"name": "role_grant_offer_retract",
+			"kind": "request_response",
+			"auth": {
+				"account": "required",
+				"actor": "required"
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"offer_id": {
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+						"description": "The offer to retract."
+					},
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"required": [
+					"offer_id"
+				],
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"offer": {
+						"type": "object",
+						"properties": {
+							"id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+								"description": "Offer id."
+							},
+							"from_actor_id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+								"description": "Actor that issued the offer."
+							},
+							"to_account_id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+								"description": "Account the offer is directed to."
+							},
+							"to_actor_id": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Optional actor-grain target on the recipient account. When set, only this actor may accept; when null any actor on `to_account_id` may accept."
+							},
+							"role": {
+								"type": "string",
+								"maxLength": 64,
+								"pattern": "^[a-z]+(?:_[a-z]+)*$",
+								"description": "Role being offered."
+							},
+							"scope_kind": {
+								"description": "Machine-readable kind tag for `scope_id` — paired-null with `scope_id` (both null for global, both non-null for scoped).",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"scope_id": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Scope the offered role_grant applies to (e.g. a classroom id). `null` for global role_grants."
+							},
+							"message": {
+								"anyOf": [
+									{
+										"type": "string",
+										"maxLength": 500
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Optional free-form note from the grantor."
+							},
+							"created_at": {
+								"type": "string",
+								"description": "ISO timestamp when the offer was created."
+							},
+							"expires_at": {
+								"type": "string",
+								"description": "ISO timestamp after which the offer is no longer valid."
+							},
+							"accepted_at": {
+								"description": "ISO timestamp when the offer was accepted.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"declined_at": {
+								"description": "ISO timestamp when the offer was declined.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"decline_reason": {
+								"anyOf": [
+									{
+										"type": "string",
+										"maxLength": 500
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Optional reason given on decline."
+							},
+							"retracted_at": {
+								"description": "ISO timestamp when the grantor retracted the offer.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"superseded_at": {
+								"description": "ISO timestamp when this offer was obsoleted by a sibling accept or by revoke of the resulting role_grant.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"resulting_role_grant_id": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Role grant produced by accepting this offer. `null` until/unless accepted."
+							}
+						},
+						"required": [
+							"id",
+							"from_actor_id",
+							"to_account_id",
+							"to_actor_id",
+							"role",
+							"scope_kind",
+							"scope_id",
+							"message",
+							"created_at",
+							"expires_at",
+							"accepted_at",
+							"declined_at",
+							"decline_reason",
+							"retracted_at",
+							"superseded_at",
+							"resulting_role_grant_id"
+						],
+						"additionalProperties": false,
+						"description": "A role_grant offer — a pending grant awaiting recipient consent."
+					}
+				},
+				"required": [
+					"offer"
+				],
+				"additionalProperties": false
+			},
+			"description": "Retract an offer. Grantor-only, pre-decision.",
+			"side_effects": true,
+			"rate_limit_key": null
+		},
+		{
+			"name": "role_grant_offer_list",
+			"kind": "request_response",
+			"auth": {
+				"account": "required",
+				"actor": "required"
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"account_id": {
+						"description": "Admin-only — list offers for another account. Defaults to the caller.",
+						"anyOf": [
+							{
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"offers": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"id": {
+									"type": "string",
+									"format": "uuid",
+									"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+									"description": "Offer id."
+								},
+								"from_actor_id": {
+									"type": "string",
+									"format": "uuid",
+									"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+									"description": "Actor that issued the offer."
+								},
+								"to_account_id": {
+									"type": "string",
+									"format": "uuid",
+									"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+									"description": "Account the offer is directed to."
+								},
+								"to_actor_id": {
+									"anyOf": [
+										{
+											"type": "string",
+											"format": "uuid",
+											"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+										},
+										{
+											"type": "null"
+										}
+									],
+									"description": "Optional actor-grain target on the recipient account. When set, only this actor may accept; when null any actor on `to_account_id` may accept."
+								},
+								"role": {
+									"type": "string",
+									"maxLength": 64,
+									"pattern": "^[a-z]+(?:_[a-z]+)*$",
+									"description": "Role being offered."
+								},
+								"scope_kind": {
+									"description": "Machine-readable kind tag for `scope_id` — paired-null with `scope_id` (both null for global, both non-null for scoped).",
+									"type": [
+										"string",
+										"null"
+									]
+								},
+								"scope_id": {
+									"anyOf": [
+										{
+											"type": "string",
+											"format": "uuid",
+											"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+										},
+										{
+											"type": "null"
+										}
+									],
+									"description": "Scope the offered role_grant applies to (e.g. a classroom id). `null` for global role_grants."
+								},
+								"message": {
+									"anyOf": [
+										{
+											"type": "string",
+											"maxLength": 500
+										},
+										{
+											"type": "null"
+										}
+									],
+									"description": "Optional free-form note from the grantor."
+								},
+								"created_at": {
+									"type": "string",
+									"description": "ISO timestamp when the offer was created."
+								},
+								"expires_at": {
+									"type": "string",
+									"description": "ISO timestamp after which the offer is no longer valid."
+								},
+								"accepted_at": {
+									"description": "ISO timestamp when the offer was accepted.",
+									"type": [
+										"string",
+										"null"
+									]
+								},
+								"declined_at": {
+									"description": "ISO timestamp when the offer was declined.",
+									"type": [
+										"string",
+										"null"
+									]
+								},
+								"decline_reason": {
+									"anyOf": [
+										{
+											"type": "string",
+											"maxLength": 500
+										},
+										{
+											"type": "null"
+										}
+									],
+									"description": "Optional reason given on decline."
+								},
+								"retracted_at": {
+									"description": "ISO timestamp when the grantor retracted the offer.",
+									"type": [
+										"string",
+										"null"
+									]
+								},
+								"superseded_at": {
+									"description": "ISO timestamp when this offer was obsoleted by a sibling accept or by revoke of the resulting role_grant.",
+									"type": [
+										"string",
+										"null"
+									]
+								},
+								"resulting_role_grant_id": {
+									"anyOf": [
+										{
+											"type": "string",
+											"format": "uuid",
+											"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+										},
+										{
+											"type": "null"
+										}
+									],
+									"description": "Role grant produced by accepting this offer. `null` until/unless accepted."
+								}
+							},
+							"required": [
+								"id",
+								"from_actor_id",
+								"to_account_id",
+								"to_actor_id",
+								"role",
+								"scope_kind",
+								"scope_id",
+								"message",
+								"created_at",
+								"expires_at",
+								"accepted_at",
+								"declined_at",
+								"decline_reason",
+								"retracted_at",
+								"superseded_at",
+								"resulting_role_grant_id"
+							],
+							"additionalProperties": false,
+							"description": "A role_grant offer — a pending grant awaiting recipient consent."
+						}
+					}
+				},
+				"required": [
+					"offers"
+				],
+				"additionalProperties": false
+			},
+			"description": "List pending, non-expired offers for the caller. Admins may pass `account_id` to inspect another account.",
+			"side_effects": false,
+			"rate_limit_key": null
+		},
+		{
+			"name": "role_grant_offer_history",
+			"kind": "request_response",
+			"auth": {
+				"account": "required",
+				"actor": "required"
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"account_id": {
+						"description": "Admin-only — history for another account. Defaults to the caller.",
+						"anyOf": [
+							{
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"limit": {
+						"description": "Max rows to return (default 100).",
+						"invalid_reason": "limit_invalid",
+						"anyOf": [
+							{
+								"type": "integer",
+								"minimum": 1,
+								"maximum": 500
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"offset": {
+						"description": "Pagination offset (default 0).",
+						"invalid_reason": "offset_invalid",
+						"anyOf": [
+							{
+								"type": "integer",
+								"minimum": 0,
+								"maximum": 9007199254740991
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"offers": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"id": {
+									"type": "string",
+									"format": "uuid",
+									"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+									"description": "Offer id."
+								},
+								"from_actor_id": {
+									"type": "string",
+									"format": "uuid",
+									"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+									"description": "Actor that issued the offer."
+								},
+								"to_account_id": {
+									"type": "string",
+									"format": "uuid",
+									"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+									"description": "Account the offer is directed to."
+								},
+								"to_actor_id": {
+									"anyOf": [
+										{
+											"type": "string",
+											"format": "uuid",
+											"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+										},
+										{
+											"type": "null"
+										}
+									],
+									"description": "Optional actor-grain target on the recipient account. When set, only this actor may accept; when null any actor on `to_account_id` may accept."
+								},
+								"role": {
+									"type": "string",
+									"maxLength": 64,
+									"pattern": "^[a-z]+(?:_[a-z]+)*$",
+									"description": "Role being offered."
+								},
+								"scope_kind": {
+									"description": "Machine-readable kind tag for `scope_id` — paired-null with `scope_id` (both null for global, both non-null for scoped).",
+									"type": [
+										"string",
+										"null"
+									]
+								},
+								"scope_id": {
+									"anyOf": [
+										{
+											"type": "string",
+											"format": "uuid",
+											"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+										},
+										{
+											"type": "null"
+										}
+									],
+									"description": "Scope the offered role_grant applies to (e.g. a classroom id). `null` for global role_grants."
+								},
+								"message": {
+									"anyOf": [
+										{
+											"type": "string",
+											"maxLength": 500
+										},
+										{
+											"type": "null"
+										}
+									],
+									"description": "Optional free-form note from the grantor."
+								},
+								"created_at": {
+									"type": "string",
+									"description": "ISO timestamp when the offer was created."
+								},
+								"expires_at": {
+									"type": "string",
+									"description": "ISO timestamp after which the offer is no longer valid."
+								},
+								"accepted_at": {
+									"description": "ISO timestamp when the offer was accepted.",
+									"type": [
+										"string",
+										"null"
+									]
+								},
+								"declined_at": {
+									"description": "ISO timestamp when the offer was declined.",
+									"type": [
+										"string",
+										"null"
+									]
+								},
+								"decline_reason": {
+									"anyOf": [
+										{
+											"type": "string",
+											"maxLength": 500
+										},
+										{
+											"type": "null"
+										}
+									],
+									"description": "Optional reason given on decline."
+								},
+								"retracted_at": {
+									"description": "ISO timestamp when the grantor retracted the offer.",
+									"type": [
+										"string",
+										"null"
+									]
+								},
+								"superseded_at": {
+									"description": "ISO timestamp when this offer was obsoleted by a sibling accept or by revoke of the resulting role_grant.",
+									"type": [
+										"string",
+										"null"
+									]
+								},
+								"resulting_role_grant_id": {
+									"anyOf": [
+										{
+											"type": "string",
+											"format": "uuid",
+											"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+										},
+										{
+											"type": "null"
+										}
+									],
+									"description": "Role grant produced by accepting this offer. `null` until/unless accepted."
+								}
+							},
+							"required": [
+								"id",
+								"from_actor_id",
+								"to_account_id",
+								"to_actor_id",
+								"role",
+								"scope_kind",
+								"scope_id",
+								"message",
+								"created_at",
+								"expires_at",
+								"accepted_at",
+								"declined_at",
+								"decline_reason",
+								"retracted_at",
+								"superseded_at",
+								"resulting_role_grant_id"
+							],
+							"additionalProperties": false,
+							"description": "A role_grant offer — a pending grant awaiting recipient consent."
+						}
+					}
+				},
+				"required": [
+					"offers"
+				],
+				"additionalProperties": false
+			},
+			"description": "List every offer involving the caller (either direction), including terminal rows, newest first. Admins may pass `account_id` to inspect another account.",
+			"side_effects": false,
+			"rate_limit_key": null
+		},
+		{
+			"name": "role_grant_revoke",
+			"kind": "request_response",
+			"auth": {
+				"account": "required",
+				"actor": "required",
+				"roles": [
+					"admin"
+				]
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"actor_id": {
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+						"description": "Actor whose role_grant to revoke."
+					},
+					"role_grant_id": {
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+						"description": "The role_grant to revoke."
+					},
+					"reason": {
+						"description": "Optional free-form reason; stamped on `role_grant.revoked_reason` and surfaced on the revokee WS notification.",
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 500
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"required": [
+					"actor_id",
+					"role_grant_id"
+				],
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"ok": {
+						"type": "boolean",
+						"const": true
+					},
+					"revoked": {
+						"type": "boolean",
+						"const": true
+					}
+				},
+				"required": [
+					"ok",
+					"revoked"
+				],
+				"additionalProperties": false
+			},
+			"description": "Revoke an active role_grant on a target actor. Admin-only. Refuses the keeper account's global admin grant and the last active admin's. Supersedes any pending offers for the same (account, role, scope), and every pending offer the target actor made. Fires role_grant_revoke + role_grant_offer_supersede notifications.",
+			"side_effects": true,
+			"rate_limit_key": "account"
+		},
+		{
+			"name": "role_grant_assign",
+			"kind": "request_response",
+			"auth": {
+				"account": "required",
+				"actor": "required",
+				"roles": [
+					"admin"
+				]
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"to_account_id": {
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+						"description": "Account id of the grantee."
+					},
+					"to_actor_id": {
+						"description": "Optional actor-grain target on the grantee account. When set, must belong to `to_account_id`. Omit to resolve the account's sole active actor — a multi-actor account must name one.",
+						"anyOf": [
+							{
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"role": {
+						"type": "string",
+						"maxLength": 64,
+						"pattern": "^[a-z]+(?:_[a-z]+)*$",
+						"description": "Role to assign. Must be admin-grantable (its `grant_paths` includes `'admin'`)."
+					},
+					"scope_kind": {
+						"description": "Machine-readable kind tag for `scope_id` — paired-null with `scope_id` (both null for global, both non-null for scoped). Required iff `scope_id` is set. A scope-kind name: runs of lowercase letters (a-z) joined by single underscores, at most 64 characters.",
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 64,
+								"pattern": "^[a-z]+(?:_[a-z]+)*$"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"scope_id": {
+						"description": "Scope id for resource-scoped grants. `null` for a global role_grant. Builtin roles are global-only.",
+						"anyOf": [
+							{
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"required": [
+					"to_account_id",
+					"role"
+				],
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"ok": {
+						"type": "boolean",
+						"const": true
+					},
+					"role_grant_id": {
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"required": [
+					"ok",
+					"role_grant_id"
+				],
+				"additionalProperties": false
+			},
+			"description": "Immediately assign a role_grant to a target account — global-admin-only, no consent step (the capability-unlock UX). The role's `grant_paths` must include `'admin'`, and the consumer's offer `authorize` callback must admit it; `scope_kind` + `scope_id` are paired, and a builtin role is global-only. Idempotent: re-assigning an active grant returns it. Emits a role_grant_create audit event.",
+			"side_effects": true,
+			"rate_limit_key": "account"
+		}
+	],
+	"events": [
+		{
+			"method": "role_grant_offer_received",
+			"description": "A new role_grant offer arrived in the recipient’s inbox.",
+			"channel": null,
+			"params_schema": {
+				"type": "object",
+				"properties": {
+					"offer": {
+						"type": "object",
+						"properties": {
+							"id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+								"description": "Offer id."
+							},
+							"from_actor_id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+								"description": "Actor that issued the offer."
+							},
+							"to_account_id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+								"description": "Account the offer is directed to."
+							},
+							"to_actor_id": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Optional actor-grain target on the recipient account. When set, only this actor may accept; when null any actor on `to_account_id` may accept."
+							},
+							"role": {
+								"type": "string",
+								"maxLength": 64,
+								"pattern": "^[a-z]+(?:_[a-z]+)*$",
+								"description": "Role being offered."
+							},
+							"scope_kind": {
+								"description": "Machine-readable kind tag for `scope_id` — paired-null with `scope_id` (both null for global, both non-null for scoped).",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"scope_id": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Scope the offered role_grant applies to (e.g. a classroom id). `null` for global role_grants."
+							},
+							"message": {
+								"anyOf": [
+									{
+										"type": "string",
+										"maxLength": 500
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Optional free-form note from the grantor."
+							},
+							"created_at": {
+								"type": "string",
+								"description": "ISO timestamp when the offer was created."
+							},
+							"expires_at": {
+								"type": "string",
+								"description": "ISO timestamp after which the offer is no longer valid."
+							},
+							"accepted_at": {
+								"description": "ISO timestamp when the offer was accepted.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"declined_at": {
+								"description": "ISO timestamp when the offer was declined.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"decline_reason": {
+								"anyOf": [
+									{
+										"type": "string",
+										"maxLength": 500
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Optional reason given on decline."
+							},
+							"retracted_at": {
+								"description": "ISO timestamp when the grantor retracted the offer.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"superseded_at": {
+								"description": "ISO timestamp when this offer was obsoleted by a sibling accept or by revoke of the resulting role_grant.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"resulting_role_grant_id": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Role grant produced by accepting this offer. `null` until/unless accepted."
+							}
+						},
+						"required": [
+							"id",
+							"from_actor_id",
+							"to_account_id",
+							"to_actor_id",
+							"role",
+							"scope_kind",
+							"scope_id",
+							"message",
+							"created_at",
+							"expires_at",
+							"accepted_at",
+							"declined_at",
+							"decline_reason",
+							"retracted_at",
+							"superseded_at",
+							"resulting_role_grant_id"
+						],
+						"additionalProperties": false,
+						"description": "A role_grant offer — a pending grant awaiting recipient consent."
+					}
+				},
+				"required": [
+					"offer"
+				],
+				"additionalProperties": false
+			}
+		},
+		{
+			"method": "role_grant_offer_retracted",
+			"description": "A pending role_grant offer was retracted by its grantor.",
+			"channel": null,
+			"params_schema": {
+				"type": "object",
+				"properties": {
+					"offer": {
+						"type": "object",
+						"properties": {
+							"id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+								"description": "Offer id."
+							},
+							"from_actor_id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+								"description": "Actor that issued the offer."
+							},
+							"to_account_id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+								"description": "Account the offer is directed to."
+							},
+							"to_actor_id": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Optional actor-grain target on the recipient account. When set, only this actor may accept; when null any actor on `to_account_id` may accept."
+							},
+							"role": {
+								"type": "string",
+								"maxLength": 64,
+								"pattern": "^[a-z]+(?:_[a-z]+)*$",
+								"description": "Role being offered."
+							},
+							"scope_kind": {
+								"description": "Machine-readable kind tag for `scope_id` — paired-null with `scope_id` (both null for global, both non-null for scoped).",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"scope_id": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Scope the offered role_grant applies to (e.g. a classroom id). `null` for global role_grants."
+							},
+							"message": {
+								"anyOf": [
+									{
+										"type": "string",
+										"maxLength": 500
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Optional free-form note from the grantor."
+							},
+							"created_at": {
+								"type": "string",
+								"description": "ISO timestamp when the offer was created."
+							},
+							"expires_at": {
+								"type": "string",
+								"description": "ISO timestamp after which the offer is no longer valid."
+							},
+							"accepted_at": {
+								"description": "ISO timestamp when the offer was accepted.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"declined_at": {
+								"description": "ISO timestamp when the offer was declined.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"decline_reason": {
+								"anyOf": [
+									{
+										"type": "string",
+										"maxLength": 500
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Optional reason given on decline."
+							},
+							"retracted_at": {
+								"description": "ISO timestamp when the grantor retracted the offer.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"superseded_at": {
+								"description": "ISO timestamp when this offer was obsoleted by a sibling accept or by revoke of the resulting role_grant.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"resulting_role_grant_id": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Role grant produced by accepting this offer. `null` until/unless accepted."
+							}
+						},
+						"required": [
+							"id",
+							"from_actor_id",
+							"to_account_id",
+							"to_actor_id",
+							"role",
+							"scope_kind",
+							"scope_id",
+							"message",
+							"created_at",
+							"expires_at",
+							"accepted_at",
+							"declined_at",
+							"decline_reason",
+							"retracted_at",
+							"superseded_at",
+							"resulting_role_grant_id"
+						],
+						"additionalProperties": false,
+						"description": "A role_grant offer — a pending grant awaiting recipient consent."
+					}
+				},
+				"required": [
+					"offer"
+				],
+				"additionalProperties": false
+			}
+		},
+		{
+			"method": "role_grant_offer_accepted",
+			"description": "A pending role_grant offer was accepted by its recipient.",
+			"channel": null,
+			"params_schema": {
+				"type": "object",
+				"properties": {
+					"offer": {
+						"type": "object",
+						"properties": {
+							"id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+								"description": "Offer id."
+							},
+							"from_actor_id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+								"description": "Actor that issued the offer."
+							},
+							"to_account_id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+								"description": "Account the offer is directed to."
+							},
+							"to_actor_id": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Optional actor-grain target on the recipient account. When set, only this actor may accept; when null any actor on `to_account_id` may accept."
+							},
+							"role": {
+								"type": "string",
+								"maxLength": 64,
+								"pattern": "^[a-z]+(?:_[a-z]+)*$",
+								"description": "Role being offered."
+							},
+							"scope_kind": {
+								"description": "Machine-readable kind tag for `scope_id` — paired-null with `scope_id` (both null for global, both non-null for scoped).",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"scope_id": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Scope the offered role_grant applies to (e.g. a classroom id). `null` for global role_grants."
+							},
+							"message": {
+								"anyOf": [
+									{
+										"type": "string",
+										"maxLength": 500
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Optional free-form note from the grantor."
+							},
+							"created_at": {
+								"type": "string",
+								"description": "ISO timestamp when the offer was created."
+							},
+							"expires_at": {
+								"type": "string",
+								"description": "ISO timestamp after which the offer is no longer valid."
+							},
+							"accepted_at": {
+								"description": "ISO timestamp when the offer was accepted.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"declined_at": {
+								"description": "ISO timestamp when the offer was declined.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"decline_reason": {
+								"anyOf": [
+									{
+										"type": "string",
+										"maxLength": 500
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Optional reason given on decline."
+							},
+							"retracted_at": {
+								"description": "ISO timestamp when the grantor retracted the offer.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"superseded_at": {
+								"description": "ISO timestamp when this offer was obsoleted by a sibling accept or by revoke of the resulting role_grant.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"resulting_role_grant_id": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Role grant produced by accepting this offer. `null` until/unless accepted."
+							}
+						},
+						"required": [
+							"id",
+							"from_actor_id",
+							"to_account_id",
+							"to_actor_id",
+							"role",
+							"scope_kind",
+							"scope_id",
+							"message",
+							"created_at",
+							"expires_at",
+							"accepted_at",
+							"declined_at",
+							"decline_reason",
+							"retracted_at",
+							"superseded_at",
+							"resulting_role_grant_id"
+						],
+						"additionalProperties": false,
+						"description": "A role_grant offer — a pending grant awaiting recipient consent."
+					}
+				},
+				"required": [
+					"offer"
+				],
+				"additionalProperties": false
+			}
+		},
+		{
+			"method": "role_grant_offer_declined",
+			"description": "A pending role_grant offer was declined by its recipient.",
+			"channel": null,
+			"params_schema": {
+				"type": "object",
+				"properties": {
+					"offer": {
+						"type": "object",
+						"properties": {
+							"id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+								"description": "Offer id."
+							},
+							"from_actor_id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+								"description": "Actor that issued the offer."
+							},
+							"to_account_id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+								"description": "Account the offer is directed to."
+							},
+							"to_actor_id": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Optional actor-grain target on the recipient account. When set, only this actor may accept; when null any actor on `to_account_id` may accept."
+							},
+							"role": {
+								"type": "string",
+								"maxLength": 64,
+								"pattern": "^[a-z]+(?:_[a-z]+)*$",
+								"description": "Role being offered."
+							},
+							"scope_kind": {
+								"description": "Machine-readable kind tag for `scope_id` — paired-null with `scope_id` (both null for global, both non-null for scoped).",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"scope_id": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Scope the offered role_grant applies to (e.g. a classroom id). `null` for global role_grants."
+							},
+							"message": {
+								"anyOf": [
+									{
+										"type": "string",
+										"maxLength": 500
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Optional free-form note from the grantor."
+							},
+							"created_at": {
+								"type": "string",
+								"description": "ISO timestamp when the offer was created."
+							},
+							"expires_at": {
+								"type": "string",
+								"description": "ISO timestamp after which the offer is no longer valid."
+							},
+							"accepted_at": {
+								"description": "ISO timestamp when the offer was accepted.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"declined_at": {
+								"description": "ISO timestamp when the offer was declined.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"decline_reason": {
+								"anyOf": [
+									{
+										"type": "string",
+										"maxLength": 500
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Optional reason given on decline."
+							},
+							"retracted_at": {
+								"description": "ISO timestamp when the grantor retracted the offer.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"superseded_at": {
+								"description": "ISO timestamp when this offer was obsoleted by a sibling accept or by revoke of the resulting role_grant.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"resulting_role_grant_id": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Role grant produced by accepting this offer. `null` until/unless accepted."
+							}
+						},
+						"required": [
+							"id",
+							"from_actor_id",
+							"to_account_id",
+							"to_actor_id",
+							"role",
+							"scope_kind",
+							"scope_id",
+							"message",
+							"created_at",
+							"expires_at",
+							"accepted_at",
+							"declined_at",
+							"decline_reason",
+							"retracted_at",
+							"superseded_at",
+							"resulting_role_grant_id"
+						],
+						"additionalProperties": false,
+						"description": "A role_grant offer — a pending grant awaiting recipient consent."
+					}
+				},
+				"required": [
+					"offer"
+				],
+				"additionalProperties": false
+			}
+		},
+		{
+			"method": "role_grant_offer_supersede",
+			"description": "A grantor’s pending role_grant offer was obsoleted by a sibling accept, by revoke of the resulting role_grant, or by destruction of the parent scope row.",
+			"channel": null,
+			"params_schema": {
+				"type": "object",
+				"properties": {
+					"offer": {
+						"type": "object",
+						"properties": {
+							"id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+								"description": "Offer id."
+							},
+							"from_actor_id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+								"description": "Actor that issued the offer."
+							},
+							"to_account_id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+								"description": "Account the offer is directed to."
+							},
+							"to_actor_id": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Optional actor-grain target on the recipient account. When set, only this actor may accept; when null any actor on `to_account_id` may accept."
+							},
+							"role": {
+								"type": "string",
+								"maxLength": 64,
+								"pattern": "^[a-z]+(?:_[a-z]+)*$",
+								"description": "Role being offered."
+							},
+							"scope_kind": {
+								"description": "Machine-readable kind tag for `scope_id` — paired-null with `scope_id` (both null for global, both non-null for scoped).",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"scope_id": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Scope the offered role_grant applies to (e.g. a classroom id). `null` for global role_grants."
+							},
+							"message": {
+								"anyOf": [
+									{
+										"type": "string",
+										"maxLength": 500
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Optional free-form note from the grantor."
+							},
+							"created_at": {
+								"type": "string",
+								"description": "ISO timestamp when the offer was created."
+							},
+							"expires_at": {
+								"type": "string",
+								"description": "ISO timestamp after which the offer is no longer valid."
+							},
+							"accepted_at": {
+								"description": "ISO timestamp when the offer was accepted.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"declined_at": {
+								"description": "ISO timestamp when the offer was declined.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"decline_reason": {
+								"anyOf": [
+									{
+										"type": "string",
+										"maxLength": 500
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Optional reason given on decline."
+							},
+							"retracted_at": {
+								"description": "ISO timestamp when the grantor retracted the offer.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"superseded_at": {
+								"description": "ISO timestamp when this offer was obsoleted by a sibling accept or by revoke of the resulting role_grant.",
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"resulting_role_grant_id": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"description": "Role grant produced by accepting this offer. `null` until/unless accepted."
+							}
+						},
+						"required": [
+							"id",
+							"from_actor_id",
+							"to_account_id",
+							"to_actor_id",
+							"role",
+							"scope_kind",
+							"scope_id",
+							"message",
+							"created_at",
+							"expires_at",
+							"accepted_at",
+							"declined_at",
+							"decline_reason",
+							"retracted_at",
+							"superseded_at",
+							"resulting_role_grant_id"
+						],
+						"additionalProperties": false,
+						"description": "A role_grant offer — a pending grant awaiting recipient consent."
+					},
+					"reason": {
+						"type": "string",
+						"enum": [
+							"sibling_accepted",
+							"role_grant_revoked",
+							"scope_destroyed"
+						]
+					},
+					"cause_id": {
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"required": [
+					"offer",
+					"reason",
+					"cause_id"
+				],
+				"additionalProperties": false
+			}
+		},
+		{
+			"method": "role_grant_revoke",
+			"description": "An active role_grant on the revokee’s account was revoked.",
+			"channel": null,
+			"params_schema": {
+				"type": "object",
+				"properties": {
+					"role_grant_id": {
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					},
+					"role": {
+						"type": "string",
+						"maxLength": 64,
+						"pattern": "^[a-z]+(?:_[a-z]+)*$"
+					},
+					"scope_id": {
+						"anyOf": [
+							{
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"reason": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 500
+							},
+							{
+								"type": "null"
+							}
+						]
+					}
+				},
+				"required": [
+					"role_grant_id",
+					"role",
+					"scope_id",
+					"reason"
+				],
+				"additionalProperties": false
+			}
+		}
+	],
+	"diagnostics": []
+}

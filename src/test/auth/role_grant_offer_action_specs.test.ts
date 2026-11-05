@@ -1,8 +1,8 @@
 /**
  * Tests for `role_grant_offer_action_specs.ts` — the `scope_kind` +
- * `scope_id` pairing both grant inputs refine on (both or neither; a
- * half-scoped call is `-32602` rather than a constraint-violation 500), and
- * the scope-kind grammar and length cap on `scope_kind`.
+ * `scope_id` pairing both grant inputs check (both or neither; a half-scoped
+ * call is `-32602` rather than a constraint-violation 500), and the
+ * scope-kind grammar and length cap on `scope_kind`.
  *
  * @module
  */
@@ -17,6 +17,7 @@ import {
 	RoleGrantOfferCreateInput
 } from '#lib/auth/role_grant_offer_action_specs.ts';
 import { SCOPE_KIND_LENGTH_MAX } from '#lib/auth/scope_kind_schema.ts';
+import { parse_any } from '#lib/schema_issues.ts';
 
 const SCOPE = '7c9e6679-7425-40de-944b-e07fc1f90ae7' as Uuid;
 const TO_ACCOUNT = '11111111-1111-4111-8111-111111111111' as Uuid;
@@ -38,15 +39,15 @@ describe('grant inputs pair scope_kind with scope_id', () => {
 		test(`${name} refuses a half-scoped input and admits a pair or a null pair`, () => {
 			const base = { to_account_id: TO_ACCOUNT, role: 'teacher' };
 			for (const half of [{ scope_id: SCOPE }, { scope_kind: 'classroom' }]) {
-				const refused = schema.safeParse({ ...base, ...half });
-				assert.ok(!refused.success);
-				assert.strictEqual(refused.error.issues[0]!.message, GRANT_SCOPE_PAIRED_MESSAGE);
+				const refused = parse_any(schema, { ...base, ...half });
+				assert.ok(!refused.ok);
+				assert.strictEqual(refused.issues[0]!.message, GRANT_SCOPE_PAIRED_MESSAGE);
 			}
-			const paired = schema.safeParse({ ...base, scope_kind: 'classroom', scope_id: SCOPE });
-			assert.ok(paired.success);
-			assert.strictEqual(paired.data.scope_kind, 'classroom');
-			assert.ok(schema.safeParse({ ...base, scope_kind: null, scope_id: null }).success);
-			assert.ok(schema.safeParse(base).success);
+			const paired = parse_any(schema, { ...base, scope_kind: 'classroom', scope_id: SCOPE });
+			assert.ok(paired.ok);
+			assert.strictEqual((paired.value as { scope_kind?: unknown }).scope_kind, 'classroom');
+			assert.ok(parse_any(schema, { ...base, scope_kind: null, scope_id: null }).ok);
+			assert.ok(parse_any(schema, base).ok);
 		});
 	}
 });
@@ -80,25 +81,25 @@ describe('grant inputs hold scope_kind to the scope-kind grammar', () => {
 		test(`${name} admits a scope_kind on the grammar and refuses one off it`, () => {
 			const base = { to_account_id: TO_ACCOUNT, role: 'teacher', scope_id: SCOPE };
 			for (const scope_kind of ON_GRAMMAR) {
-				const parsed = schema.safeParse({ ...base, scope_kind });
-				assert.ok(parsed.success, JSON.stringify(scope_kind));
-				assert.strictEqual(parsed.data.scope_kind, scope_kind);
+				const parsed = parse_any(schema, { ...base, scope_kind });
+				assert.ok(parsed.ok, JSON.stringify(scope_kind));
+				assert.strictEqual((parsed.value as { scope_kind?: unknown }).scope_kind, scope_kind);
 			}
 			for (const scope_kind of OFF_GRAMMAR) {
-				const refused = schema.safeParse({ ...base, scope_kind });
-				assert.ok(!refused.success, JSON.stringify(scope_kind));
-				assert.deepStrictEqual(refused.error.issues[0]!.path, ['scope_kind']);
+				const refused = parse_any(schema, { ...base, scope_kind });
+				assert.ok(!refused.ok, JSON.stringify(scope_kind));
+				assert.deepStrictEqual(refused.issues[0]!.path, ['scope_kind']);
 			}
 		});
 
 		test(`${name} refuses the index token with the all-zeros uuid`, () => {
-			const refused = schema.safeParse({
+			const refused = parse_any(schema, {
 				to_account_id: TO_ACCOUNT,
 				role: 'teacher',
 				scope_kind: 'GLOBAL',
 				scope_id: '00000000-0000-0000-0000-000000000000'
 			});
-			assert.ok(!refused.success);
+			assert.ok(!refused.ok);
 		});
 	}
 });

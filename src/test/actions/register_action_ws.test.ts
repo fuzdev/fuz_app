@@ -57,6 +57,9 @@ import {
 } from '#lib/actions/transports.ts';
 import type { BuiltinCredentialType } from '#lib/auth/credential_type_schema.ts';
 import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
+import { to_ws_actions } from '#lib/actions/protocol.ts';
+import { all_role_grant_offer_action_specs } from '#lib/auth/role_grant_offer_action_specs.ts';
+import { role_grant_offer_notification_actions } from '#lib/auth/role_grant_offer_notifications.ts';
 import { ERROR_INSUFFICIENT_PERMISSIONS, ERROR_PARAMS_PROTO_KEY } from '#lib/http/error_schemas.ts';
 import { RateLimiter } from '#lib/rate_limiter.ts';
 import type { EffectErrorContext } from '#lib/http/pending_effects.ts';
@@ -683,6 +686,29 @@ describe('register_action_ws', () => {
 
 		const res = parse_json(h.fake.sends[0]!);
 		assert.strictEqual(res.error.code, JSONRPC_ERROR_CODES.method_not_found);
+	});
+
+	test('a role_grant_offer notification the WS set carries is method_not_found inbound', async () => {
+		// `to_ws_actions` appends the notifications, handler-less, to an RPC list
+		// carrying the role_grant_offer actions: on the surface, never dispatched
+		const actions = to_ws_actions(
+			all_role_grant_offer_action_specs.map((spec) => ({ spec, handler: () => null }))
+		);
+		const notifications = role_grant_offer_notification_actions.filter((a) => actions.includes(a));
+		assert.strictEqual(notifications.length, role_grant_offer_notification_actions.length);
+		const h = await build_harness({ handlers: {}, actions });
+		await h.on_open();
+		let id = 0;
+		for (const { spec } of notifications) {
+			await h.on_message({ jsonrpc: '2.0', id: ++id, method: spec.method, params: {} });
+			// and as a notification, silenced as every inbound notification but `cancel` is
+			await h.on_message({ jsonrpc: '2.0', method: spec.method, params: {} });
+		}
+		const answers = h.fake.sends.map(parse_json);
+		assert.deepStrictEqual(
+			answers.map((res) => [res.id, res.error?.code]),
+			notifications.map((_, i) => [i + 1, JSONRPC_ERROR_CODES.method_not_found])
+		);
 	});
 
 	test('keeper action rejected without daemon_token + keeper role', async () => {

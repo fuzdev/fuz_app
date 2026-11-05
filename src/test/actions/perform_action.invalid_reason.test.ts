@@ -25,6 +25,7 @@ import { meta } from '@fuzdev/fuz_schema/meta.ts';
 
 import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
 import { to_invalid_params_error } from '#lib/actions/perform_action.ts';
+import { parse_any, type ValidationSchema } from '#lib/schema_issues.ts';
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import { create_action_event } from '#lib/actions/action_event.ts';
 import type { ActionEventEnvironment } from '#lib/actions/action_event_types.ts';
@@ -306,11 +307,11 @@ describe('declared invalid_reason on a fuz_schema-specced action', () => {
 	});
 });
 
-/** The reason `input` answers `params` with, through the dispatcher's mapping. */
-const reason_for = (input: z.ZodType, params: unknown): unknown => {
-	const result = input.safeParse(params);
-	assert.ok(!result.success, `refused: ${JSON.stringify(params)}`);
-	const data = to_invalid_params_error(input, result.error.issues, params).data as
+/** The reason `input`, Zod or fuz_schema, answers `params` with, through the dispatcher's mapping. */
+const reason_for = (input: ValidationSchema, params: unknown): unknown => {
+	const result = parse_any(input, params);
+	assert.ok(!result.ok, `refused: ${JSON.stringify(params)}`);
+	const data = to_invalid_params_error(input, result.issues, params).data as
 		{ reason?: unknown } | undefined;
 	return data?.reason;
 };

@@ -59,7 +59,7 @@ Convention — `*_schema.ts` is Zod-only; `*_ddl.ts` holds DDL strings.
 - `auth/account_schema.ts` — `Account`, `Actor`, `RoleGrant`, `AuthSession`, `ApiToken` + client-safe JSON shapes. Grant predicates over wire fields: `is_role_grant_active` (not revoked, not expired) and `has_global_role(role_grants, role, now?)` (an active grant of the role with `scope_id === null` — the bare-list form of `has_scoped_role(ctx, role, null)`, used client-side by `AuthState`).
 - `auth/role_schema.ts` — `RoleName` (lowercase letters and underscores, no leading, trailing or consecutive underscores, at most `ROLE_NAME_LENGTH_MAX` = 64 characters — the grammar every `role` input and every registered role holds, twin of the Rust `is_valid_role_name`), the constants it is built from (`ROLE_NAME_PATTERN`, `ROLE_NAME_LENGTH_MESSAGE`, `ROLE_NAME_PATTERN_MESSAGE`), `RoleSpec`, `ROLE_KEEPER`, `ROLE_ADMIN`, `is_builtin_role`, `create_role_schema`, `builtin_role_specs_by_name`, `role_has_grant_path`, `list_roles_with_grant_path`.
 - `auth/role_schema_fuz.ts` — the `@fuzdev/fuz_schema` twin of `RoleName` under the same name (`@nodocs` while the Zod one stays), `pipe(bounded_string({max, max_message}), message(regex(ROLE_NAME_PATTERN), ROLE_NAME_PATTERN_MESSAGE))` over the same constants: the same verdict, output and JSON Schema as the Zod one, and its messages; a string both too long and off the grammar gets the length issue alone, where Zod adds the grammar issue. Pinned by `role_schema_fuz.test.ts`. `self_service_role_set`'s input declares it; every other `role` input is the Zod one.
-- `auth/scope_kind_schema.ts` — `ScopeKindName`, `create_scope_kind_schema` (open registry, no builtins), `SCOPE_KIND_LENGTH_MAX` (64). `ScopeKindName` (grammar and cap) checks a registered name and the `scope_kind` on `role_grant_offer_create` / `role_grant_assign`, which is copied into the row and its audit metadata; off the grammar is the partial unique indexes' `'GLOBAL'` token.
+- `auth/scope_kind_schema.ts` — `ScopeKindName`, the constants its messages come from (`SCOPE_KIND_NAME_LENGTH_MESSAGE`, `SCOPE_KIND_NAME_PATTERN_MESSAGE`), `create_scope_kind_schema` (open registry, no builtins), `SCOPE_KIND_LENGTH_MAX` (64). `ScopeKindName` (grammar and cap) checks a registered name and the `scope_kind` on `role_grant_offer_create` / `role_grant_assign`, which is copied into the row and its audit metadata; off the grammar is the partial unique indexes' `'GLOBAL'` token.
 - `auth/credential_type_schema.ts` — `CredentialTypeName`, `CREDENTIAL_TYPE_SESSION` / `_API_TOKEN` / `_DAEMON_TOKEN`, `create_credential_type_schema`.
 - `auth/grant_path_schema.ts` — `GrantPathName`, `GRANT_PATH_ADMIN` / `_SELF_SERVICE` / `_SYSTEM` / `_BOOTSTRAP`, `create_grant_path_schema`.
 - `auth/token_lifetime.ts` — the temporal axis of a minted token: `TokenLifetimeInput` (required union on `account_token_create` — `{kind:'eternal'}` or `{kind:'ttl', days}`), `token_lifetime_to_expires_at`, `TOKEN_TTL_DAYS_MAX`. No default — `expires_at IS NULL` always means "deliberately eternal".
@@ -69,10 +69,11 @@ Convention — `*_schema.ts` is Zod-only; `*_ddl.ts` holds DDL strings.
 - `auth/audit_log_ddl.ts` — `audit_log` table DDL with `seq BIGSERIAL` for cursor-based gap fill (BIGSERIAL converges with the Rust spine; `create_db` registers a `pg.types` int8 parser so `seq` still reads as a JS number).
 - `auth/invite_schema.ts` — `Invite`, `CreateInviteInput`.
 - `auth/app_settings_schema.ts` — `AppSettings`, `UpdateAppSettingsInput` (single-row via `CHECK (id = 1)`).
-- `auth/role_grant_offer_schema.ts` — `RoleGrantOffer`, `RoleGrantOfferJson`, `to_role_grant_offer_json`, scope-sentinel constants.
+- `auth/scope_kind_schema_fuz.ts` — the `@fuzdev/fuz_schema` twin of `ScopeKindName` under the same name (`@nodocs` while the Zod one stays), built as the `RoleName` twin is, over `scope_kind_schema.ts`'s constants: the same verdict, output and JSON Schema as the Zod one, and its messages, but for the one length issue of a string too long and off the grammar. Pinned by `scope_kind_schema_fuz.test.ts`. The role_grant_offer schemas declare it.
+- `auth/role_grant_offer_schema.ts` — `RoleGrantOffer`, `RoleGrantOfferJson` (a `@fuzdev/fuz_schema` `object`: `role` the fuz_schema `RoleName`, `scope_kind` the fuz_schema `ScopeKindName` or `null`, so an offer row holding a name off either grammar fails it), `to_role_grant_offer_json`.
 - `auth/role_grant_offer_ddl.ts` — `role_grant_offer` table + indexes + `ROLE_GRANT_OFFER_SCOPE_SENTINEL_UUID` / `_GLOBAL_TOKEN` + `ROLE_GRANT_OFFER_COLUMNS` and the shared `ROLE_GRANT_OFFER_WITH_GRANTOR_SELECT` CTE tail (homed here per the placement rule in `db/sql_columns.ts`).
 - `auth/role_grant_sql.ts` — the liveness predicates every grant and offer read shares: `role_grant_active_sql(alias)` (not revoked, not expired) and `offer_pending_predicate(alias)` (every `OFFER_TERMINAL_COLUMNS` entry null), twins of the Rust spine's. The frozen partial-index DDL keeps its literal text.
-- `auth/role_grant_offer_notifications.ts` — six WS notification specs for the consentful-grant lifecycle.
+- `auth/role_grant_offer_notifications.ts` — the WS notification specs for the consentful-grant lifecycle, their `@fuzdev/fuz_schema` params, builders, `role_grant_offer_notification_actions`, `role_grant_offer_notification_specs`, and `create_validated_notification_sender`.
 
 ### Queries
 
@@ -758,6 +759,14 @@ event additionally records `credential_type` in metadata (defense in depth).
 > suite assume auto-accept and have to redesign their tests when they
 > discover otherwise.
 
+The specs' inputs and outputs are `@fuzdev/fuz_schema` schemas
+(`auth/role_grant_offer_action_specs.ts`), every object refusing unknown keys,
+`role` the fuz_schema `RoleName`, `scope_kind` the fuz_schema `ScopeKindName`.
+The create and assign inputs end in a `check` of `is_grant_scope_paired`
+(`GRANT_SCOPE_PAIRED_MESSAGE`), run only on an input whose fields all passed;
+the list and history inputs read an omitted input as a fresh `{}`
+(`with_default_fn`); history's `offset` is held to `Number.MAX_SAFE_INTEGER`.
+
 - `role_grant_offer_create_action_spec` — session-only; input `{to_account_id, to_actor_id?, role, scope_kind?, scope_id?, message?}` (`scope_kind` a `ScopeKindName`; `scope_kind` + `scope_id` paired — both or neither, else `invalid_params`); output `{offer}`.
 - `role_grant_offer_accept_action_spec` — session-only; input `{offer_id}`; output `{role_grant_id, offer, superseded_offer_ids}`. Refuses a builtin-role offer that must not mint (see below), leaving it pending.
 - `role_grant_offer_decline_action_spec` — input `{offer_id, reason?}`; output `{offer}` (the declined offer, as accept answers its own).
@@ -865,13 +874,25 @@ Post-commit via `emit_after_commit` (see `http/CLAUDE.md` §Pending Effects):
 - Retract — `role_grant_offer_retracted` → recipient.
 - Accept — `role_grant_offer_accepted` → grantor + `_supersede` per sibling.
 - Decline — `role_grant_offer_declined` → grantor.
-- Revoke — `role_grant_revoke` → revokee + `_supersede` per superseded offer (the revokee's incoming siblings and its own outgoing offers, each to its grantor).
+- Revoke (`role_grant_revoke`) — `role_grant_revoked` → revokee + `_supersede` per superseded offer (the revokee's incoming siblings and its own outgoing offers, each to its grantor).
 
-Spec module is `auth/role_grant_offer_notifications.ts` — six
-`RemoteNotificationActionSpec`s with Zod params schemas and notification
-builders, plus `role_grant_offer_notification_specs: Array<EventSpec>` for
-`create_app_server`'s `event_specs` (drives surface generation and
-DEV-mode `create_validated_broadcaster` payload validation).
+Spec module is `auth/role_grant_offer_notifications.ts` —
+`RemoteNotificationActionSpec`s with `@fuzdev/fuz_schema` params schemas and
+notification builders. `role_grant_revoked`'s params are
+`{role_grant_id, role, scope_kind, scope_id, reason}`, the grant's
+`scope_kind` and `scope_id` both `null` for a global grant, every key
+required. `role_grant_offer_notification_actions` holds the specs as
+handler-less actions: `to_ws_actions` (`actions/protocol.ts`) appends them to
+the WS action set of an RPC list holding `role_grant_offer_create`, so the WS
+endpoint's surface lists them as `remote_notification` methods. The revokee's
+notification is `role_grant_revoked`, not the admin action's
+`role_grant_revoke`, so the two methods never collide. They never reach
+dispatch: an inbound frame for one is answered `method_not_found`. They are not SSE events; `role_grant_offer_notification_specs`
+holds them as `EventSpec`s for a consumer that broadcasts them on an SSE
+channel of its own. Under DEV, `create_role_grant_offer_actions` wraps the
+sender in `create_validated_notification_sender`, which checks each params
+object against its spec's `input` and logs a mismatch, sending it either way;
+production sends unchecked.
 
 Deps: `RevokingActionFactoryDeps & {notification_sender?: NotificationSender | null}`.
 `role_grant_revoke` of a global grant queues a close of the revokee account's
@@ -882,7 +903,7 @@ closes nothing — a role gate admits on global grants alone.
 `NotificationSender` is the narrow structural capability
 (`send_to_account(account_id, message): number`); `ConnectionRegistry`
 satisfies it structurally. Target account travels via the send argument, not
-the payload — `revoked_by` is deliberately not in the `role_grant_revoke`
+the payload — `revoked_by` is deliberately not in the `role_grant_revoked`
 payload (the revokee doesn't need to learn the admin's identity). When
 `notification_sender` is absent, WS fan-out is silently skipped.
 

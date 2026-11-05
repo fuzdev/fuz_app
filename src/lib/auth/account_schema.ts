@@ -77,7 +77,7 @@ export interface Actor {
  * Maximum length of the optional free-form `revoked_reason` attached to a
  * revoked role_grant. Bounds the value at the schema layer so both the admin
  * input (when the route surfaces a reason field) and the revokee-facing
- * `role_grant_revoke` WS notification validate against the same ceiling.
+ * `role_grant_revoked` WS notification validate against the same ceiling.
  * Counted in UTF-16 code units.
  */
 export const ROLE_GRANT_REVOKED_REASON_LENGTH_MAX = 500;
@@ -101,7 +101,7 @@ export interface RoleGrant {
 	expires_at: string | null;
 	revoked_at: string | null;
 	revoked_by: Uuid | null;
-	/** Optional free-form reason attached on revoke (rides on the `role_grant_revoke` WS notification to the revokee). */
+	/** Optional free-form reason attached on revoke (rides on the `role_grant_revoked` WS notification to the revokee). */
 	revoked_reason: string | null;
 	granted_by: Uuid | null;
 	/** Offer that produced this role_grant (set by `query_accept_offer`). `null` for direct grants. */

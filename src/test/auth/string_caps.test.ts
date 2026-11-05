@@ -14,6 +14,7 @@
  */
 
 import { describe, test, assert } from 'vitest';
+import { get_schema_entries } from '@fuzdev/fuz_schema/introspect.ts';
 
 import { UsernameProvided, USERNAME_PROVIDED_LENGTH_MAX } from '#lib/primitive_schemas.ts';
 import {
@@ -39,7 +40,7 @@ import {
 	RoleGrantOfferJson,
 	ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX
 } from '#lib/auth/role_grant_offer_schema.ts';
-import { RoleGrantRevokeParams } from '#lib/auth/role_grant_offer_notifications.ts';
+import { RoleGrantRevokedParams } from '#lib/auth/role_grant_offer_notifications.ts';
 import { ROLE_GRANT_REVOKED_REASON_LENGTH_MAX } from '#lib/auth/account_schema.ts';
 import {
 	ActorSearchInput,
@@ -65,32 +66,32 @@ const capped: Array<[name: string, schema: ValidationSchema, max: number]> = [
 	['token_create name', TokenCreateInput.shape.name, API_TOKEN_NAME_LENGTH_MAX],
 	[
 		'role_grant_offer_create message',
-		RoleGrantOfferCreateInput.shape.message,
+		get_schema_entries(RoleGrantOfferCreateInput)!.message!,
 		ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX
 	],
 	[
 		'role_grant_offer_decline reason',
-		RoleGrantOfferDeclineInput.shape.reason,
+		RoleGrantOfferDeclineInput.def.reason,
 		ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX
 	],
 	[
 		'role_grant_revoke reason',
-		RoleGrantRevokeInput.shape.reason,
+		RoleGrantRevokeInput.def.reason,
 		ROLE_GRANT_REVOKED_REASON_LENGTH_MAX
 	],
 	[
-		'role_grant_revoke notification reason',
-		RoleGrantRevokeParams.shape.reason,
+		'role_grant_revoked notification reason',
+		RoleGrantRevokedParams.def.reason,
 		ROLE_GRANT_REVOKED_REASON_LENGTH_MAX
 	],
 	[
 		'RoleGrantOfferJson message',
-		RoleGrantOfferJson.shape.message,
+		RoleGrantOfferJson.def.message,
 		ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX
 	],
 	[
 		'RoleGrantOfferJson decline_reason',
-		RoleGrantOfferJson.shape.decline_reason,
+		RoleGrantOfferJson.def.decline_reason,
 		ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX
 	],
 	['actor_search query', ActorSearchInput.def.query, ACTOR_SEARCH_QUERY_LENGTH_MAX]

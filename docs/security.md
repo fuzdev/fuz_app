@@ -1825,7 +1825,7 @@ requires the grantor to call `query_role_grant_offer_create` again, which is
 audited.
 
 **Post-commit WS fan-out**: six JSON-RPC notifications (`role_grant_offer_received`
-/ `_retracted` / `_accepted` / `_declined` / `_supersede` + `role_grant_revoke`)
+/ `_retracted` / `_accepted` / `_declined` / `_supersede` + `role_grant_revoked`)
 ship alongside the above via `NotificationSender.send_to_account`, scheduled
 through `emit_after_commit` so sends are strictly post-commit **and discarded if
 the handler's transaction rolls back** — a rolled-back transaction cannot leak a
@@ -1839,7 +1839,7 @@ with no delivery receipt: `send_to_account` returns the socket count but a
 non-zero count only means `ws.send` didn't throw; flows that need durable
 delivery must persist the event and hydrate on reconnect. Payload sizes are
 bounded at the schema layer — `offer.decline_reason` at
-`ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX` (500), `role_grant_revoke.reason` at
+`ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX` (500), `role_grant_revoked.reason` at
 `ROLE_GRANT_REVOKED_REASON_LENGTH_MAX` (500) — so an untrusted input path
 cannot balloon a payload.
 

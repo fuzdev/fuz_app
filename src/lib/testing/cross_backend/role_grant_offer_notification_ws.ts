@@ -3,13 +3,16 @@ import '../assert_dev_env.ts';
 /**
  * Cross-process **role-grant-offer lifecycle WS notification** suite — the
  * machinery proof for the consentful-role-grants notification fan-out across
- * any spine backend. Covers all seven server-initiated notifications:
+ * any spine backend. Covers every server-initiated notification of the
+ * lifecycle:
  *
  * - `role_grant_offer_received` → recipient (offer created)
  * - `role_grant_offer_accepted` → grantor (recipient accepts)
  * - `role_grant_offer_declined` → grantor (recipient declines)
  * - `role_grant_offer_retracted` → recipient (grantor retracts)
- * - `role_grant_revoke` (flat, omits `revoked_by`) → revokee (active grant revoked)
+ * - `role_grant_revoked` (flat, omits `revoked_by`) → revokee (active grant
+ *   revoked by the `role_grant_revoke` action), for a global grant and a
+ *   scoped one unless `scope_kind` is `null`
  * - `role_grant_offer_supersede` → each superseded sibling's grantor, fired on
  *   BOTH the accept-cascade (`reason: 'sibling_accepted'`) and the
  *   revoke-cascade (`reason: 'role_grant_revoked'`)
@@ -60,11 +63,12 @@ import '../assert_dev_env.ts';
  */
 
 import { assert, describe } from 'vitest';
+import { parse_or_throw } from '@fuzdev/fuz_schema/schema.ts';
 
 import { rpc_call } from '../rpc_helpers.ts';
 import { WS_ADMISSION_PROBE_ID } from '../transports/ws_transport.ts';
 import { is_notification_with, is_response_for, type WsClient } from '../transports/ws_client.ts';
-import { ROLE_ADMIN } from '../../auth/role_schema.ts';
+import { ROLE_ADMIN, is_builtin_role } from '../../auth/role_schema.ts';
 import { WS_CLOSE_PERMISSION_REVOKED } from '../../actions/transports.ts';
 import {
 	ROLE_GRANT_OFFER_RECEIVED_NOTIFICATION_METHOD,
@@ -72,13 +76,13 @@ import {
 	ROLE_GRANT_OFFER_DECLINED_NOTIFICATION_METHOD,
 	ROLE_GRANT_OFFER_RETRACTED_NOTIFICATION_METHOD,
 	ROLE_GRANT_OFFER_SUPERSEDE_NOTIFICATION_METHOD,
-	ROLE_GRANT_REVOKE_NOTIFICATION_METHOD,
+	ROLE_GRANT_REVOKED_NOTIFICATION_METHOD,
 	RoleGrantOfferReceivedParams,
 	RoleGrantOfferAcceptedParams,
 	RoleGrantOfferDeclinedParams,
 	RoleGrantOfferRetractedParams,
 	RoleGrantOfferSupersedeParams,
-	RoleGrantRevokeParams
+	RoleGrantRevokedParams
 } from '../../auth/role_grant_offer_notifications.ts';
 import { type BackendCapabilities, test_if } from './capabilities.ts';
 import {
@@ -86,7 +90,7 @@ import {
 	create_pending_role_grant_offer
 } from './role_grant_cross_helpers.ts';
 import type { SetupTest, TestFixture } from './setup.ts';
-import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
+import { SPINE_PARTICIPANT_ROLE, SPINE_RPC_PATH } from './spine_surface_constants.ts';
 import { open_session_ws, type WsEndpointTarget, type WsSessionAccount } from './ws_endpoint.ts';
 
 /** The request id the bystander's barrier `heartbeat` goes out under. */
@@ -106,13 +110,25 @@ export interface RoleGrantOfferNotificationWsTestOptions extends WsEndpointTarge
 	 * that close instead of the notification frame.
 	 */
 	readonly ws_required_roles?: ReadonlyArray<string>;
+	/**
+	 * The role the scoped-revoke case assigns in a scope and revokes — one the
+	 * backend's registry holds with the `admin` grant path. Default
+	 * `SPINE_PARTICIPANT_ROLE`, the spine's own.
+	 */
+	readonly scoped_role?: string;
+	/**
+	 * A scope kind `scoped_role` applies to, for the scoped-revoke case; `null`
+	 * skips that case. Default `'space'` (the spine participant's), or `null`
+	 * for a builtin role, which is global-only.
+	 */
+	readonly scope_kind?: string | null;
 }
 
 /**
- * Register the role-grant-offer WS notification suite — seven cases over a real
+ * Register the role-grant-offer WS notification suite — cases over a real
  * upgrade, one per server-initiated notification (received / accepted /
- * declined / retracted / revoke + supersede on both the accept and revoke
- * cascades). Each opens the affected counterparty's socket, drives the
+ * declined / retracted / revoke, global and scoped, + supersede on both the
+ * accept and revoke cascades). Each opens the affected counterparty's socket, drives the
  * lifecycle RPC, and strict-parses the delivered frame against its canonical
  * params schema. Gated on `capabilities.ws`.
  */
@@ -121,6 +137,13 @@ export const describe_role_grant_offer_notification_ws_tests = (
 ): void => {
 	const { setup_test, capabilities, ws_required_roles = [] } = options;
 	const revoke_closes_the_socket = ws_required_roles.includes(ROLE_ADMIN);
+	const scoped_role = options.scoped_role ?? SPINE_PARTICIPANT_ROLE;
+	const scope_kind =
+		options.scope_kind === undefined
+			? is_builtin_role(scoped_role)
+				? null
+				: 'space'
+			: options.scope_kind;
 
 	// -- shared helpers -------------------------------------------------------
 
@@ -238,7 +261,7 @@ export const describe_role_grant_offer_notification_ws_tests = (
 
 						// Params strict-parse against the canonical wire schema — guards
 						// the serialization against field/null/datetime drift.
-						const params = RoleGrantOfferReceivedParams.parse(frame.params);
+						const params = parse_or_throw(RoleGrantOfferReceivedParams, frame.params);
 						assert.strictEqual(params.offer.to_account_id, recipient.account.id);
 						assert.strictEqual(params.offer.role, ROLE_ADMIN);
 						await assert_bystander_heard_nothing(bystander_ws);
@@ -279,7 +302,7 @@ export const describe_role_grant_offer_notification_ws_tests = (
 							),
 							5000
 						);
-						const params = RoleGrantOfferAcceptedParams.parse(frame.params);
+						const params = parse_or_throw(RoleGrantOfferAcceptedParams, frame.params);
 						assert.strictEqual(params.offer.id, offer.id);
 						assert.isNotNull(params.offer.accepted_at);
 						await assert_bystander_heard_nothing(bystander_ws);
@@ -319,7 +342,7 @@ export const describe_role_grant_offer_notification_ws_tests = (
 							),
 							5000
 						);
-						const params = RoleGrantOfferDeclinedParams.parse(frame.params);
+						const params = parse_or_throw(RoleGrantOfferDeclinedParams, frame.params);
 						assert.strictEqual(params.offer.id, offer.id);
 						// Decline reason rides inside the offer row, not a sibling field.
 						assert.strictEqual(params.offer.decline_reason, 'no thanks');
@@ -361,7 +384,7 @@ export const describe_role_grant_offer_notification_ws_tests = (
 							),
 							5000
 						);
-						const params = RoleGrantOfferRetractedParams.parse(frame.params);
+						const params = parse_or_throw(RoleGrantOfferRetractedParams, frame.params);
 						assert.strictEqual(params.offer.id, offer.id);
 						assert.strictEqual(params.offer.to_account_id, recipient.account.id);
 						assert.isNotNull(params.offer.retracted_at);
@@ -379,7 +402,7 @@ export const describe_role_grant_offer_notification_ws_tests = (
 			capabilities.ws,
 			revoke_closes_the_socket
 				? 'revoke closes the revokee WS gated on the revoked role'
-				: 'revoke delivers a flat role_grant_revoke to the revokee WS',
+				: 'revoke delivers a flat role_grant_revoked to the revokee WS',
 			async () => {
 				const fixture = await setup_test();
 				const revokee = await fixture.create_account({ roles: [ROLE_ADMIN] });
@@ -401,15 +424,17 @@ export const describe_role_grant_offer_notification_ws_tests = (
 						assert.isTrue(revoked.ok, `revoke failed: ${JSON.stringify(revoked)}`);
 
 						const is_revoke_frame = is_notification_with<{ role_grant_id: string }>(
-							ROLE_GRANT_REVOKE_NOTIFICATION_METHOD,
+							ROLE_GRANT_REVOKED_NOTIFICATION_METHOD,
 							(p) => p.role_grant_id === role_grant_id
 						);
 						// Flat params — guards the no-`offer`-wrapper, `revoked_by`-omitted
 						// shape against drift.
 						const assert_flat_revoke = (frame: { params?: unknown }): void => {
-							const params = RoleGrantRevokeParams.parse(frame.params);
+							const params = parse_or_throw(RoleGrantRevokedParams, frame.params);
 							assert.strictEqual(params.role_grant_id, role_grant_id);
 							assert.strictEqual(params.role, ROLE_ADMIN);
+							assert.strictEqual(params.scope_kind, null);
+							assert.strictEqual(params.scope_id, null);
 							assert.strictEqual(params.reason, 'cleanup');
 							assert.notProperty(frame.params, 'revoked_by');
 						};
@@ -428,6 +453,58 @@ export const describe_role_grant_offer_notification_ws_tests = (
 						}
 
 						assert_flat_revoke(await revokee_ws.wait_for(is_revoke_frame, 5000));
+						await assert_bystander_heard_nothing(bystander_ws);
+					} finally {
+						await revokee_ws.close();
+					}
+				} finally {
+					await bystander_ws.close();
+				}
+			}
+		);
+
+		test_if(
+			capabilities.ws && scope_kind !== null,
+			'a scoped revoke delivers its scope_kind and scope_id to the revokee WS',
+			async () => {
+				const fixture = await setup_test();
+				// `ROLE_ADMIN` opens a socket gated on it; the scoped revoke below takes
+				// no global grant, so a gated socket stays open
+				const revokee = await fixture.create_account({ roles: [ROLE_ADMIN] });
+				const scope_id = '44444444-4444-4444-8444-444444444444';
+				const assigned = await rpc(
+					fixture,
+					'role_grant_assign',
+					{ to_account_id: revokee.account.id, role: scoped_role, scope_kind, scope_id },
+					fixture.create_session_headers()
+				);
+				assert.isTrue(assigned.ok, `assign failed: ${JSON.stringify(assigned)}`);
+				const { role_grant_id } = assigned.result as { role_grant_id: string };
+
+				const bystander_ws = await open_bystander(fixture);
+				try {
+					const revokee_ws = await open_ws(revokee);
+					try {
+						const revoked = await rpc(
+							fixture,
+							'role_grant_revoke',
+							{ actor_id: revokee.actor.id, role_grant_id },
+							fixture.create_session_headers()
+						);
+						assert.isTrue(revoked.ok, `revoke failed: ${JSON.stringify(revoked)}`);
+
+						const frame = await revokee_ws.wait_for(
+							is_notification_with<{ role_grant_id: string }>(
+								ROLE_GRANT_REVOKED_NOTIFICATION_METHOD,
+								(p) => p.role_grant_id === role_grant_id
+							),
+							5000
+						);
+						const params = parse_or_throw(RoleGrantRevokedParams, frame.params);
+						assert.strictEqual(params.role, scoped_role);
+						assert.strictEqual(params.scope_kind, scope_kind);
+						assert.strictEqual(params.scope_id, scope_id);
+						assert.strictEqual(params.reason, null);
 						await assert_bystander_heard_nothing(bystander_ws);
 					} finally {
 						await revokee_ws.close();
@@ -478,7 +555,7 @@ export const describe_role_grant_offer_notification_ws_tests = (
 							),
 							5000
 						);
-						const params = RoleGrantOfferSupersedeParams.parse(frame.params);
+						const params = parse_or_throw(RoleGrantOfferSupersedeParams, frame.params);
 						assert.strictEqual(params.offer.id, keeper_offer.id);
 						assert.strictEqual(params.reason, 'sibling_accepted');
 						// cause_id points at the accepted sibling (grantor 2's offer).
@@ -534,7 +611,7 @@ export const describe_role_grant_offer_notification_ws_tests = (
 							),
 							5000
 						);
-						const params = RoleGrantOfferSupersedeParams.parse(frame.params);
+						const params = parse_or_throw(RoleGrantOfferSupersedeParams, frame.params);
 						assert.strictEqual(params.offer.id, sibling_offer.id);
 						assert.strictEqual(params.reason, 'role_grant_revoked');
 						// cause_id points at the revoked role_grant.

@@ -1625,19 +1625,26 @@ globalSetup handle.
 ### `cross_backend/role_grant_offer_notification_ws.ts` — `describe_role_grant_offer_notification_ws_tests`
 
 Real-upgrade coverage of the consentful-role-grants WS notification fan-out —
-the seven server-initiated notifications (`received` → recipient,
+the server-initiated notifications (`received` → recipient,
 `accepted`/`declined` → grantor, `retracted` → recipient, flat
-`role_grant_revoke` → revokee, and `role_grant_offer_supersede` → each
-superseded sibling's grantor on **both** the accept- and revoke-cascade paths).
+`role_grant_revoked` → revokee, global and scoped, and
+`role_grant_offer_supersede` → each superseded sibling's grantor on **both**
+the accept- and revoke-cascade paths).
 `describe_role_grant_offer_notification_ws_tests({setup_test, capabilities,
-base_url, ws_path, ws_required_roles?})` opens the affected counterparty's socket
+base_url, ws_path, ws_required_roles?, scoped_role?, scope_kind?})` opens the
+affected counterparty's socket
 (`create_admitted_ws_transport` — a targeted notification reaches only an
 admitted connection, and the handshake alone doesn't say it is one), drives the
 lifecycle RPC over `fixture.transport`, then
-strict-parses the delivered frame against its canonical params schema from
-`auth/role_grant_offer_notifications.ts` (the guard against serialization drift —
-field / null / datetime / the flat revoke shape / the supersede `reason` +
-`cause_id`). Every case also opens a **bystander** — a third account's
+strict-parses the delivered frame against its canonical `@fuzdev/fuz_schema`
+params schema from `auth/role_grant_offer_notifications.ts` (`parse_or_throw`;
+the guard against serialization drift — field / null / datetime / the flat
+revoke shape with its `scope_kind` and `scope_id` / the supersede `reason` +
+`cause_id`). The scoped-revoke case has the keeper assign `scoped_role`
+(default `SPINE_PARTICIPANT_ROLE`; `spine_suites` passes
+`suite_roles.conferral`) in a `scope_kind` scope (default `'space'`, `null`
+for a builtin role, which skips the case), revokes it, and holds the frame to
+that pair. Every case also opens a **bystander** — a third account's
 admitted socket, party to nothing the case drives — and once the targeted
 frame has landed sends a `heartbeat` on it and asserts it received nothing
 but the answers to its own requests. The barrier is what makes the silence

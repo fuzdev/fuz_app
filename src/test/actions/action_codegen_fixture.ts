@@ -3,9 +3,9 @@
  * fuz_app's own action specs and synthetic specs of each kind — the input of
  * `action_codegen.zod_fixture.test.ts`, which holds it to the text the
  * Zod-only codegen emitted, and holds fuz_app's own list, whose
- * `account_token_revoke`, `self_service_role_set`, `actor_lookup` and
- * `actor_search` are `@fuzdev/fuz_schema`, to that text with those methods'
- * types read by `Infer`.
+ * `account_token_revoke`, `self_service_role_set`, `actor_lookup`,
+ * `actor_search` and the role_grant_offer methods are `@fuzdev/fuz_schema`, to
+ * that text with those methods' types read by `Infer`.
  *
  * @module
  */
@@ -37,6 +37,8 @@ import { account_token_revoke_action_spec } from '#lib/auth/account_action_specs
 import { actor_lookup_action_spec } from '#lib/auth/actor_lookup_action_specs.ts';
 import { actor_search_action_spec } from '#lib/auth/actor_search_action_specs.ts';
 import { self_service_role_set_action_spec } from '#lib/auth/self_service_role_action_specs.ts';
+import { all_role_grant_offer_action_specs } from '#lib/auth/role_grant_offer_action_specs.ts';
+import { parse_any } from '#lib/schema_issues.ts';
 
 // one spec per input shape the signature reads: void, null, optional, defaulted, required
 const synthetic_specs: Array<ActionSpecUnion> = [
@@ -130,18 +132,26 @@ const fuz_app_specs: Array<ActionSpecUnion> = [
  * The Zod stand-in for the input of a method whose own schemas are
  * `@fuzdev/fuz_schema`. Codegen reads an input for its library, whether it is
  * null or void, and whether it takes `undefined` or `{}` (or carries the
- * `empty_input_handler_guarded` marker): a required key, as each of these
- * methods' inputs has, gives every answer theirs does, which
+ * `empty_input_handler_guarded` marker): a required key, as most of these
+ * methods' inputs have, gives every answer theirs does, which
  * `action_codegen.zod_fixture.test.ts` holds it to.
  */
 const ZodRequiredInput = z.strictObject({ required: z.string() });
+
+/**
+ * The Zod stand-in for the input of such a method that takes `undefined`, as
+ * `role_grant_offer_list`'s and `role_grant_offer_history`'s defaulted inputs
+ * do: an object of optional keys with a `{}` default, which takes `undefined`
+ * and `{}` as theirs do.
+ */
+const ZodDefaultedInput = z.strictObject({ optional: z.string().optional() }).default({});
 
 /** The Zod stand-in for their outputs, of which codegen reads only the library. */
 const ZodOutput = z.strictObject({});
 
 const to_zod_spec = (spec: RequestResponseActionSpec): RequestResponseActionSpec => ({
 	...spec,
-	input: ZodRequiredInput,
+	input: parse_any(spec.input, undefined).ok ? ZodDefaultedInput : ZodRequiredInput,
 	output: ZodOutput
 });
 
@@ -155,7 +165,8 @@ const zod_specs_by_method: Map<string, ActionSpecUnion> = new Map(
 		account_token_revoke_action_spec,
 		self_service_role_set_action_spec,
 		actor_lookup_action_spec,
-		actor_search_action_spec
+		actor_search_action_spec,
+		...all_role_grant_offer_action_specs
 	].map((spec): [string, ActionSpecUnion] => [spec.method, to_zod_spec(spec)])
 );
 
@@ -163,7 +174,9 @@ const zod_specs_by_method: Map<string, ActionSpecUnion> = new Map(
  * The methods of fuz_app's own list whose schemas are `@fuzdev/fuz_schema`, in
  * the fixture's order.
  */
-export const fuz_schema_methods: ReadonlyArray<string> = [...zod_specs_by_method.keys()];
+export const fuz_schema_methods: ReadonlyArray<string> = fuz_app_specs
+	.map((spec) => spec.method)
+	.filter((method) => zod_specs_by_method.has(method));
 
 /** fuz_app's own specs and the synthetic ones, in the fixture's order. */
 export const fixture_specs: Array<ActionSpecUnion> = [...fuz_app_specs, ...synthetic_specs];

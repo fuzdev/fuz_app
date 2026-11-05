@@ -24,6 +24,8 @@ import type { Action } from './action_types.ts';
 import { cancel_action } from './cancel.ts';
 import { heartbeat_action } from './heartbeat.ts';
 import { peer_ping_action } from './peer_ping.ts';
+import { role_grant_offer_create_action_spec } from '../auth/role_grant_offer_action_specs.ts';
+import { role_grant_offer_notification_actions } from '../auth/role_grant_offer_notifications.ts';
 
 /**
  * Canonical protocol `{spec, handler}` tuples for the server's
@@ -66,13 +68,26 @@ const PROTOCOL_METHODS: ReadonlySet<string> = new Set(protocol_actions.map((a) =
  * RPC list carries (`peer_ping_action`, which an HTTP caller must reach to be
  * refused `peer_no_transport`) is not registered twice.
  *
+ * When `rpc_actions` carries the role_grant_offer actions (it holds
+ * `role_grant_offer_create`), the role_grant_offer notifications follow, as
+ * the handler-less `role_grant_offer_notification_actions`, so the WS
+ * endpoint's surface lists what those actions push. With no handler a
+ * notification never reaches dispatch, and an inbound frame for one is
+ * answered `method_not_found`.
+ *
  * What a `WsEndpointSpec` that omits `actions` serves, from the server's sole
  * RPC endpoint (`actions/ws_endpoint_spec.ts`).
  *
  * @param rpc_actions - the RPC endpoint's actions
  * @returns the WS endpoint's actions
  */
-export const to_ws_actions = (rpc_actions: ReadonlyArray<Action>): Array<Action> => [
-	...protocol_actions,
-	...rpc_actions.filter((a) => !PROTOCOL_METHODS.has(a.spec.method))
-];
+export const to_ws_actions = (rpc_actions: ReadonlyArray<Action>): Array<Action> => {
+	const actions = [
+		...protocol_actions,
+		...rpc_actions.filter((a) => !PROTOCOL_METHODS.has(a.spec.method))
+	];
+	if (rpc_actions.some((a) => a.spec.method === role_grant_offer_create_action_spec.method)) {
+		actions.push(...role_grant_offer_notification_actions);
+	}
+	return actions;
+};

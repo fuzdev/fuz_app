@@ -46,9 +46,12 @@
  *
  * WS notifications fan out post-commit via `emit_after_commit` when a
  * `notification_sender` is wired: offer lifecycle transitions notify the
- * counterparty, `role_grant_revoke` notifies the revokee plus each superseded
- * pending offer's grantor. `role_grant_revoke` of a global grant also closes
- * the revokee's connections gated on the role through
+ * counterparty, `role_grant_revoke` notifies the revokee (`role_grant_revoked`)
+ * plus each superseded
+ * pending offer's grantor. Under DEV each notification's params are checked
+ * against its spec's schema before it is sent, a mismatch logged
+ * (`create_validated_notification_sender`). `role_grant_revoke` of a global
+ * grant also closes the revokee's connections gated on the role through
  * `deps.connection_closer`, after the commit.
  *
  * @module
@@ -118,7 +121,8 @@ import {
 	build_role_grant_offer_received_notification,
 	build_role_grant_offer_retracted_notification,
 	build_role_grant_offer_supersede_notification,
-	build_role_grant_revoke_notification,
+	build_role_grant_revoked_notification,
+	create_validated_notification_sender,
 	type NotificationSender
 } from './role_grant_offer_notifications.ts';
 import {
@@ -275,7 +279,12 @@ export const create_role_grant_offer_actions = (
 	},
 	options: RoleGrantOfferActionOptions = {}
 ): Array<RpcAction> => {
-	const { log, audit, connection_closer, notification_sender = null } = deps;
+	const { log, audit, connection_closer } = deps;
+	// under DEV each notification sent is checked against its spec's params
+	// schema, a mismatch logged, as DEV output validation does
+	const notification_sender = deps.notification_sender
+		? create_validated_notification_sender(deps.notification_sender, log)
+		: null;
 	const role_specs = options.roles?.role_specs ?? builtin_role_specs_by_name;
 	const default_ttl_ms = options.default_ttl_ms ?? ROLE_GRANT_OFFER_DEFAULT_TTL_MS;
 	const authorize = options.authorize ?? default_authorize;
@@ -842,9 +851,10 @@ export const create_role_grant_offer_actions = (
 			emit_after_commit(ctx, () => {
 				notification_sender.send_to_account(
 					target_account_id,
-					build_role_grant_revoke_notification({
+					build_role_grant_revoked_notification({
 						role_grant_id: result.id,
 						role: result.role,
+						scope_kind: result.scope_kind,
 						scope_id: result.scope_id,
 						reason
 					})

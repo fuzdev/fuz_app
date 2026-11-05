@@ -23,7 +23,7 @@ import {
 	ROLE_GRANT_OFFER_RECEIVED_NOTIFICATION_METHOD,
 	ROLE_GRANT_OFFER_RETRACTED_NOTIFICATION_METHOD,
 	ROLE_GRANT_OFFER_SUPERSEDE_NOTIFICATION_METHOD,
-	ROLE_GRANT_REVOKE_NOTIFICATION_METHOD
+	ROLE_GRANT_REVOKED_NOTIFICATION_METHOD
 } from '#lib/auth/role_grant_offer_notifications.ts';
 
 const RECIPIENT_ID = '11111111-1111-1111-1111-111111111111' as Uuid;
@@ -268,7 +268,7 @@ describe('RoleGrantOffersState — reducer', () => {
 		assert.strictEqual(state.history[0]!.superseded_at, superseded.superseded_at);
 	});
 
-	test('role_grant_revoke is a no-op for the offer cache', () => {
+	test('role_grant_revoked is a no-op for the offer cache', () => {
 		const state = create_state();
 		const offer = pending_offer();
 		state.apply_notification({
@@ -277,8 +277,14 @@ describe('RoleGrantOffersState — reducer', () => {
 		});
 
 		state.apply_notification({
-			method: ROLE_GRANT_REVOKE_NOTIFICATION_METHOD,
-			params: { role_grant_id: next_uuid(), role: 'admin', scope_id: null, reason: null }
+			method: ROLE_GRANT_REVOKED_NOTIFICATION_METHOD,
+			params: {
+				role_grant_id: next_uuid(),
+				role: 'admin',
+				scope_kind: null,
+				scope_id: null,
+				reason: null
+			}
 		});
 
 		assert.strictEqual(state.incoming.length, 1);

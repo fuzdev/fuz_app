@@ -58,7 +58,7 @@ import {
 	ROLE_GRANT_OFFER_RECEIVED_NOTIFICATION_METHOD,
 	ROLE_GRANT_OFFER_RETRACTED_NOTIFICATION_METHOD,
 	ROLE_GRANT_OFFER_SUPERSEDE_NOTIFICATION_METHOD,
-	ROLE_GRANT_REVOKE_NOTIFICATION_METHOD
+	ROLE_GRANT_REVOKED_NOTIFICATION_METHOD
 } from '../auth/role_grant_offer_notifications.ts';
 
 /**
@@ -296,8 +296,8 @@ export class RoleGrantOffersState {
 				this.#merge_offers([offer]);
 				return;
 			}
-			case ROLE_GRANT_REVOKE_NOTIFICATION_METHOD:
-				// role_grant_revoke is a role-grant-lifecycle event — the offer cache
+			case ROLE_GRANT_REVOKED_NOTIFICATION_METHOD:
+				// role_grant_revoked is a role-grant-lifecycle event — the offer cache
 				// is unaffected. Consumers handle it in an auth/role_grants state.
 				return;
 			default:

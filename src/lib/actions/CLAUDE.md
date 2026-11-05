@@ -802,8 +802,13 @@ actions of the server's sole `rpc_endpoints` entry through `to_ws_actions`
 (`actions/protocol.ts`): `protocol_actions` first, then the RPC list less any
 protocol action it carries (`peer_ping_action` rides the RPC list so an HTTP
 caller is refused `peer_no_transport` rather than `method_not_found`). One set
-of handler closures then runs on both transports. Assembly throws when a spec
-omits `actions` and no RPC endpoint, or more than one, resolves.
+of handler closures then runs on both transports. When the RPC list holds
+`role_grant_offer_create`, the handler-less
+`role_grant_offer_notification_actions` follow, so the WS surface lists what
+the role_grant_offer actions push as `remote_notification` methods; with no
+handler they never dispatch, and an inbound frame for one is answered
+`method_not_found`. Assembly throws when a spec omits `actions` and
+no RPC endpoint, or more than one, resolves.
 
 `max_connections_per_account` sets the per-account connection cap on the
 registry the mount creates (`RegisterActionWsOptions` carries the same field).

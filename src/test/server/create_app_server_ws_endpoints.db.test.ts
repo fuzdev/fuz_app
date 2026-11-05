@@ -13,7 +13,8 @@
  * - one revocation guard on `deps.connection_closer`, whatever mounts
  * - every mounted registry, and the audit stream registry, joins
  *   `deps.connection_closer`
- * - `actions` omitted: the sole RPC endpoint's set, through `to_ws_actions`
+ * - `actions` omitted: the sole RPC endpoint's set, through `to_ws_actions`,
+ *   the role_grant_offer notifications after it
  * - standard actions over WS surface
  * - `required_roles` upgrade-time gate
  * - surface emission (`surface.ws_endpoints`)
@@ -66,6 +67,10 @@ import {
 import { create_test_audit_event } from '#lib/testing/entities.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { protocol_actions, to_ws_actions } from '#lib/actions/protocol.ts';
+import {
+	role_grant_offer_notification_actions,
+	ROLE_GRANT_REVOKED_NOTIFICATION_METHOD
+} from '#lib/auth/role_grant_offer_notifications.ts';
 import { peer_ping_action } from '#lib/actions/peer_ping.ts';
 import { parse_allowed_origins } from '#lib/http/origin.ts';
 import {
@@ -568,6 +573,21 @@ describe('create_app_server.ws_endpoints', () => {
 		assert.deepStrictEqual(
 			expected.slice(0, protocol_actions.length),
 			protocol_actions.map((a) => a.spec.method)
+		);
+		// every role_grant_offer notification follows, as a `remote_notification`
+		// method, the revokee's `role_grant_revoked` beside the admin's
+		// `role_grant_revoke` action
+		const notification_methods = role_grant_offer_notification_actions.map((a) => a.spec.method);
+		assert.include(notification_methods, ROLE_GRANT_REVOKED_NOTIFICATION_METHOD);
+		assert.deepStrictEqual(expected.slice(-notification_methods.length), notification_methods);
+		for (const method of notification_methods) {
+			const entry = ws_endpoint.methods.find((m) => m.name === method);
+			assert.strictEqual(entry?.kind, 'remote_notification', method);
+			assert.strictEqual(entry?.auth, null, method);
+		}
+		assert.strictEqual(
+			ws_endpoint.methods.find((m) => m.name === 'role_grant_revoke')?.kind,
+			'request_response'
 		);
 		// and the upgrade mounted with them
 		assert.ok(result.ws_endpoints['/api/ws']);

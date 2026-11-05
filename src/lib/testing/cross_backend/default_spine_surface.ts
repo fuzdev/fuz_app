@@ -74,7 +74,7 @@ export interface SpineRpcEndpointsOptions {
 	/**
 	 * WS notification sender threaded into the role-grant-offer sub-factory for
 	 * server-initiated fan-out (`role_grant_offer_received` / `_accepted` /
-	 * `_declined` / `_retracted` / `_supersede`, flat `role_grant_revoke`).
+	 * `_declined` / `_retracted` / `_supersede`, flat `role_grant_revoked`).
 	 *
 	 * **Shared-instance trap.** Pass the SAME `ConnectionRegistry`
 	 * instance the WS endpoint registers connections against — the registry

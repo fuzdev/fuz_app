@@ -6,9 +6,9 @@
  * output alone, so the fixture never changes for an all-Zod list.
  *
  * fuz_app's own list, whose `account_token_revoke`, `self_service_role_set`,
- * `actor_lookup` and `actor_search` are `@fuzdev/fuz_schema`, generates the
- * same text but for those methods' types, read by `Infer`, and the `Infer`
- * import. The all-Zod list holds Zod stand-ins for those methods' schemas,
+ * `actor_lookup`, `actor_search` and role_grant_offer methods are
+ * `@fuzdev/fuz_schema`, generates the same text but for those methods' types,
+ * read by `Infer`, and the `Infer` import. The all-Zod list holds Zod stand-ins for those methods' schemas,
  * which give codegen the answers their own do.
  *
  * @module
@@ -44,6 +44,14 @@ test("fuz_app's own list differs from the fixture only in its fuz_schema methods
 	assert.strictEqual(actual.filter((line) => line === INFER_IMPORT).length, 2);
 	assert.notInclude(expected, INFER_IMPORT);
 	assert.deepStrictEqual(fuz_schema_methods, [
+		'role_grant_offer_create',
+		'role_grant_offer_accept',
+		'role_grant_offer_decline',
+		'role_grant_offer_retract',
+		'role_grant_offer_list',
+		'role_grant_offer_history',
+		'role_grant_revoke',
+		'role_grant_assign',
 		'account_token_revoke',
 		'self_service_role_set',
 		'actor_lookup',
@@ -80,6 +88,12 @@ test('the Zod stand-ins give codegen the answers the fuz_schema methods give', (
 		assert.strictEqual(is_null_schema(stand_in.input), is_null_schema(own.input), method);
 		assert.strictEqual(is_void_schema(stand_in.input), is_void_schema(own.input), method);
 		assert.strictEqual(action_input_is_optional(stand_in), action_input_is_optional(own), method);
-		assert.isFalse(action_input_is_optional(own), method);
 	}
+	// the defaulted stand-in is reached: the list and history inputs take `undefined`
+	assert.deepStrictEqual(
+		fuz_schema_methods.filter((method) =>
+			action_input_is_optional(fixture_specs.find((spec) => spec.method === method)!)
+		),
+		['role_grant_offer_list', 'role_grant_offer_history']
+	);
 });

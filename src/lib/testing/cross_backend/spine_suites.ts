@@ -457,10 +457,11 @@ export interface SpineSuiteRoles {
 	 */
 	readonly cell_grant?: string;
 	/**
-	 * The admin-grantable role `role_grant_offer_lifecycle` offers and
-	 * `role_grant_participation` confers. Default `SPINE_PARTICIPANT_ROLE`;
+	 * The admin-grantable role `role_grant_offer_lifecycle` offers,
+	 * `role_grant_participation` confers, and `role_grant_offer_notification_ws`
+	 * assigns in a scope and revokes. Default `SPINE_PARTICIPANT_ROLE`;
 	 * `ROLE_ADMIN` serves a backend with only the builtin roles (the scoped
-	 * assign case then skips, as a builtin is global-only).
+	 * assign and scoped revoke cases then skip, as a builtin is global-only).
 	 */
 	readonly conferral?: string;
 }
@@ -768,7 +769,8 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			capabilities: c.config.capabilities,
 			base_url: c.config.base_url,
 			ws_path: c.config.ws_path,
-			ws_required_roles: c.options.ws_required_roles
+			ws_required_roles: c.options.ws_required_roles,
+			scoped_role: c.options.suite_roles?.conferral
 		}),
 		describe: describe_role_grant_offer_notification_ws_tests,
 		required: { setup_test: true, capabilities: true, base_url: true, ws_path: true }
