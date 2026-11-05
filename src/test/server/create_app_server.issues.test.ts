@@ -1,8 +1,8 @@
 /**
  * The validation issues an assembled app answers a bad REST body and bad RPC
  * params with: `WireIssue`s under DEV, and in production the same body
- * without them. Zod schemas and `account_token_revoke`'s fuz_schema input
- * alike.
+ * without them. Zod schemas and the fuz_schema inputs of
+ * `account_token_revoke` and `actor_search` alike.
  *
  * Vitest runs with `DEV=true`, so each leg imports the server fresh under a
  * scoped `esm-env` mock (the `#lib/testing` harness can't load under
@@ -21,6 +21,7 @@ import { object } from '@fuzdev/fuz_schema/schema.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { WireIssue } from '#lib/schema_issues.ts';
 import { TokenRevokeInput, TokenRevokeOutput } from '#lib/auth/account_action_specs.ts';
+import { ActorSearchInput, ActorSearchOutput } from '#lib/auth/actor_search_action_specs.ts';
 import type { RouteSpec } from '#lib/http/route_spec.ts';
 import { create_test_keyring } from '../auth/session_test_helpers.ts';
 
@@ -121,6 +122,21 @@ const create_app = async (dev: boolean) => {
 							description: 'Revokes a thing.'
 						},
 						handler: async () => ({ ok: true as const, revoked: false })
+					},
+					{
+						// `actor_search`'s fuz_schema schemas, on a public action as above
+						spec: {
+							method: 'search_thing',
+							kind: 'request_response',
+							initiator: 'frontend',
+							auth: { account: 'none', actor: 'none' },
+							side_effects: false,
+							input: ActorSearchInput,
+							output: ActorSearchOutput,
+							async: true,
+							description: 'Searches things.'
+						},
+						handler: async () => ({ actors: [] })
 					}
 				]
 			}
@@ -158,6 +174,46 @@ const post_rpc_token_revoke = async (
 			params: { token_id: 'tok_short' }
 		})
 	});
+
+const post_rpc_actor_search = async (
+	app: Awaited<ReturnType<typeof create_app>>
+): Promise<Response> =>
+	await app.request('/api/rpc', {
+		method: 'POST',
+		headers: { 'content-type': 'application/json', origin: ORIGIN },
+		body: JSON.stringify({
+			jsonrpc: '2.0',
+			id: 1,
+			method: 'search_thing',
+			params: { query: '', limit: 1.5, extra: 1 }
+		})
+	});
+
+// the issues that input gets from `ActorSearchInput`, in fuz_schema's words: the
+// Zod schema it replaced gave the same issues but for their messages
+const ACTOR_SEARCH_ISSUES = [
+	{
+		kind: 'min_length',
+		path: ['query'],
+		expected: 'length >= 1',
+		received: 'string',
+		message: 'query: expected length >= 1, received string'
+	},
+	{
+		kind: 'integer',
+		path: ['limit'],
+		expected: 'integer',
+		received: 'number',
+		message: 'limit: expected integer, received number'
+	},
+	{
+		kind: 'unknown_key',
+		path: ['extra'],
+		expected: 'no unknown keys',
+		received: 'number',
+		message: 'extra: expected no unknown keys, received number'
+	}
+];
 
 // the issue `tok_short` gets from `TokenRevokeInput`, in fuz_schema's words: the Zod
 // schema it replaced gave the same issue but for its message, Zod's own text
@@ -250,6 +306,28 @@ describe('an assembled app answers a bad `account_token_revoke` input', () => {
 
 	test('without data in production, as under Zod', async () => {
 		const res = await post_rpc_token_revoke(await create_app(false));
+		assert.strictEqual(res.status, 400);
+		assert.deepStrictEqual(await res.json(), {
+			jsonrpc: '2.0',
+			id: 1,
+			error: { code: -32602, message: 'invalid params' }
+		});
+	});
+});
+
+describe('an assembled app answers a bad `actor_search` input', () => {
+	test('with fuz_schema issues under DEV', async () => {
+		const res = await post_rpc_actor_search(await create_app(true));
+		assert.strictEqual(res.status, 400);
+		assert.deepStrictEqual(await res.json(), {
+			jsonrpc: '2.0',
+			id: 1,
+			error: { code: -32602, message: 'invalid params', data: { issues: ACTOR_SEARCH_ISSUES } }
+		});
+	});
+
+	test('without data in production, as under Zod', async () => {
+		const res = await post_rpc_actor_search(await create_app(false));
 		assert.strictEqual(res.status, 400);
 		assert.deepStrictEqual(await res.json(), {
 			jsonrpc: '2.0',

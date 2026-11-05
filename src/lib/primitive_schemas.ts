@@ -31,7 +31,7 @@ export interface BoundedStringOptions {
 	min?: number;
 	/** Longest string admitted. */
 	max: number;
-	/** Message for the over-`max` issue, in place of Zod's default. */
+	/** Message for the over-`max` issue, in place of the schema library's default. */
 	max_message?: string;
 }
 

@@ -72,8 +72,20 @@
  * @module
  */
 
-import { z } from 'zod';
-import { Uuid, bounded_string } from '../primitive_schemas.ts';
+import { meta } from '@fuzdev/fuz_schema/meta.ts';
+import {
+	array,
+	integer,
+	max_value,
+	min_value,
+	number,
+	object,
+	optional,
+	pipe,
+	type Infer
+} from '@fuzdev/fuz_schema/schema.ts';
+
+import { Uuid, bounded_string } from '../primitive_schemas_fuz.ts';
 
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
 import { ActorLookupEntryJson } from './actor_lookup_action_specs.ts';
@@ -98,39 +110,35 @@ export const ACTOR_SEARCH_QUERY_LENGTH_MAX = 50;
 /**
  * Reason: `scope_ids` was empty and the caller is not admin. Distinct from
  * standard `invalid_params` issues so the visiones picker can surface a
- * specific "pick a scope first" message rather than echoing Zod issues.
+ * specific "pick a scope first" message rather than echoing validation issues.
  */
 export const ERROR_ACTOR_SEARCH_SCOPE_REQUIRED = 'actor_search_scope_required' as const;
 
-export const ActorSearchInput = z.strictObject({
-	query: bounded_string({ min: 1, max: ACTOR_SEARCH_QUERY_LENGTH_MAX }).meta({
+/** Input for `actor_search`, a `@fuzdev/fuz_schema` schema. */
+export const ActorSearchInput = object({
+	query: meta(bounded_string({ min: 1, max: ACTOR_SEARCH_QUERY_LENGTH_MAX }), {
 		description: `Case-insensitive prefix match against \`actor.name\`. Length 1–${
 			ACTOR_SEARCH_QUERY_LENGTH_MAX
 		}.`,
 		sensitivity: 'personal'
 	}),
-	scope_ids: z.array(Uuid).optional().meta({
+	scope_ids: meta(optional(array(Uuid)), {
 		description:
 			'Restrict results to actors holding a role_grant on any of these scopes. Required (non-empty) for non-admin callers; admin callers may omit or pass empty for unbounded search. Caller is responsible for pre-filtering against their own authority — the SQL filter does not enforce it.'
 	}),
-	limit: z
-		.number()
-		.int()
-		.min(1)
-		.max(ACTOR_SEARCH_LIMIT_MAX)
-		.optional()
-		.meta({
-			description: `Maximum rows to return. Defaults to ${ACTOR_SEARCH_LIMIT_DEFAULT}, hard cap ${
-				ACTOR_SEARCH_LIMIT_MAX
-			}.`
-		})
+	limit: meta(optional(pipe(number, integer, min_value(1), max_value(ACTOR_SEARCH_LIMIT_MAX))), {
+		description: `Maximum rows to return. Defaults to ${ACTOR_SEARCH_LIMIT_DEFAULT}, hard cap ${
+			ACTOR_SEARCH_LIMIT_MAX
+		}.`
+	})
 });
-export type ActorSearchInput = z.infer<typeof ActorSearchInput>;
+export type ActorSearchInput = Infer<typeof ActorSearchInput>;
 
-export const ActorSearchOutput = z.strictObject({
-	actors: z.array(ActorLookupEntryJson)
+/** Output for `actor_search`, a `@fuzdev/fuz_schema` schema. */
+export const ActorSearchOutput = object({
+	actors: array(ActorLookupEntryJson)
 });
-export type ActorSearchOutput = z.infer<typeof ActorSearchOutput>;
+export type ActorSearchOutput = Infer<typeof ActorSearchOutput>;
 
 export const actor_search_action_spec = {
 	method: 'actor_search',

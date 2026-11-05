@@ -995,7 +995,8 @@ columns, grantor labels, picker UIs):
   `scope_ids`.
 
 Both: `auth: {account: 'required', actor: 'none'}` + `rate_limit: 'account'`,
-pure reads (no audit, no side effects). `ActorLookupEntryJson` deliberately
+pure reads (no audit, no side effects), their input and output schemas
+`@fuzdev/fuz_schema` `object`s, which refuse unknown keys. `ActorLookupEntryJson` deliberately
 omits `account_id`, `email`, credentials, timestamps, and role state —
 control-plane details, timing-oracle avoidance, separation of concern. LIKE
 wildcards in the user-supplied query are escaped at the JS layer so

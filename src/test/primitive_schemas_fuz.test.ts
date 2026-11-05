@@ -1,7 +1,8 @@
 /**
  * Tests for the fuz_schema twins in `primitive_schemas_fuz.ts`, held to the
- * Zod `Uuid`, `UuidWithDefault`, and `ActingActor` on one vector table: both
- * libraries give every row the same verdict and output.
+ * Zod `Uuid`, `UuidWithDefault`, and `ActingActor` on one vector table, and to
+ * the Zod `bounded_string` on another: both libraries give every row the same
+ * verdict and output.
  *
  * @module
  */
@@ -12,12 +13,18 @@ import { get_meta } from '@fuzdev/fuz_schema/meta.ts';
 import { is_schema, parse } from '@fuzdev/fuz_schema/schema.ts';
 import { to_json_schema } from '@fuzdev/fuz_schema/json_schema.ts';
 
-import { Uuid as ZodUuid, UuidWithDefault as ZodUuidWithDefault } from '#lib/primitive_schemas.ts';
+import {
+	Uuid as ZodUuid,
+	UuidWithDefault as ZodUuidWithDefault,
+	bounded_string as zod_bounded_string,
+	type BoundedStringOptions
+} from '#lib/primitive_schemas.ts';
 import {
 	ACTING_ACTOR_DESCRIPTION,
 	ActingActor,
 	Uuid,
-	UuidWithDefault
+	UuidWithDefault,
+	bounded_string
 } from '#lib/primitive_schemas_fuz.ts';
 import { ActingActor as ZodActingActor } from '#lib/http/auth_shape.ts';
 
@@ -221,5 +228,83 @@ describe('fuz_schema ActingActor', () => {
 	test('carries the Zod twin’s description', () => {
 		assert.strictEqual(get_meta(ActingActor)?.description, ACTING_ACTOR_DESCRIPTION);
 		assert.strictEqual(z.globalRegistry.get(ZodActingActor)?.description, ACTING_ACTOR_DESCRIPTION);
+	});
+});
+
+/** U+1F600 — one code point, two UTF-16 code units. */
+const ASTRAL = '\u{1F600}';
+
+/** The bounds each row of `BOUNDED_STRING_VECTORS` runs under. */
+const BOUNDS: Array<BoundedStringOptions> = [{ max: 8 }, { min: 4, max: 8 }, { min: 1, max: 1 }];
+
+/** Strings around the bounds, ASCII and astral, and values that are no string. */
+const BOUNDED_STRING_VECTORS: Array<unknown> = [
+	'',
+	'a',
+	'aa',
+	'aaaa',
+	'a'.repeat(8),
+	'a'.repeat(9),
+	ASTRAL,
+	ASTRAL.repeat(2),
+	ASTRAL.repeat(4),
+	ASTRAL.repeat(4) + 'a',
+	ASTRAL.repeat(5),
+	null,
+	undefined,
+	8,
+	['a']
+];
+
+describe('fuz_schema bounded_string', () => {
+	test('the Zod bounded_string gives every row the same verdict', () => {
+		for (const options of BOUNDS) {
+			const fuz = bounded_string(options);
+			const zod = zod_bounded_string(options);
+			for (const input of BOUNDED_STRING_VECTORS) {
+				const label = `${JSON.stringify(options)} ${JSON.stringify(input)}`;
+				const fuz_result = parse(fuz, input);
+				assert.strictEqual(fuz_result.ok, zod.safeParse(input).success, label);
+				if (fuz_result.ok) assert.strictEqual(fuz_result.value, input, label);
+			}
+		}
+	});
+
+	test('counts UTF-16 code units: astral at the cap passes, one unit past is refused', () => {
+		const schema = bounded_string({ min: 4, max: 8 });
+		assert.ok(parse(schema, ASTRAL.repeat(4)).ok);
+		assert.ok(parse(schema, ASTRAL.repeat(2)).ok);
+		const over = parse(schema, ASTRAL.repeat(4) + 'a');
+		assert.ok(!over.ok);
+		assert.deepStrictEqual(
+			over.issues.map((i) => [i.kind, i.expected]),
+			[['max_length', 'length <= 8']]
+		);
+		const under = parse(schema, ASTRAL);
+		assert.ok(!under.ok);
+		assert.deepStrictEqual(
+			under.issues.map((i) => [i.kind, i.expected]),
+			[['min_length', 'length >= 4']]
+		);
+	});
+
+	test('its JSON Schema is the Zod bounded_string’s', () => {
+		for (const options of BOUNDS) {
+			assert.deepEqual<Record<string, unknown>>(
+				to_json_schema(bounded_string(options)),
+				z.toJSONSchema(zod_bounded_string(options)),
+				JSON.stringify(options)
+			);
+		}
+	});
+
+	test('max_message replaces the over-max message only', () => {
+		const schema = bounded_string({ min: 2, max: 4, max_message: 'too long' });
+		const over = parse(schema, 'aaaaa');
+		assert.ok(!over.ok);
+		assert.strictEqual(over.issues[0]!.message, 'too long');
+		const under = parse(schema, 'a');
+		assert.ok(!under.ok);
+		assert.isUndefined(under.issues[0]!.message);
 	});
 });

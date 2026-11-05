@@ -5,9 +5,9 @@
  * codegen's reading of a `@fuzdev/fuz_schema` spec must leave a Zod spec's
  * output alone, so the fixture never changes for an all-Zod list.
  *
- * fuz_app's own list, whose `account_token_revoke` is `@fuzdev/fuz_schema`,
- * generates the same text but for that method's types, read by `Infer`, and
- * the `Infer` import.
+ * fuz_app's own list, whose `account_token_revoke`, `actor_lookup` and
+ * `actor_search` are `@fuzdev/fuz_schema`, generates the same text but for
+ * those methods' types, read by `Infer`, and the `Infer` import.
  *
  * @module
  */
@@ -17,6 +17,7 @@ import { readFileSync } from 'node:fs';
 
 import {
 	fixture_specs,
+	fuz_schema_methods,
 	generate_codegen_fixture,
 	zod_fixture_specs
 } from './action_codegen_fixture.ts';
@@ -31,26 +32,35 @@ test('an all-Zod spec list generates the fixture byte for byte', () => {
 	assert.strictEqual(generate_codegen_fixture(zod_fixture_specs), expected);
 });
 
-test("fuz_app's own list differs from the fixture only in `account_token_revoke`'s types", () => {
+test("fuz_app's own list differs from the fixture only in its fuz_schema methods' types", () => {
 	const expected = readFileSync(FIXTURE_PATH, 'utf8');
 	const actual = generate_codegen_fixture(fixture_specs).split('\n');
 	// one `Infer` import per composed file, the plain and the qualified
 	assert.strictEqual(actual.filter((line) => line === INFER_IMPORT).length, 2);
 	assert.notInclude(expected, INFER_IMPORT);
-	const changed = actual.filter((line) => line.includes('account_token_revoke: Infer<'));
-	assert.deepStrictEqual(changed, [
-		'\taccount_token_revoke: Infer<typeof specs.account_token_revoke_action_spec.input>;',
-		'\taccount_token_revoke: Infer<typeof specs.account_token_revoke_action_spec.output>;',
-		'\taccount_token_revoke: Infer<typeof specs.account_token_revoke_action_spec.input>;',
-		'\taccount_token_revoke: Infer<typeof specs.account_token_revoke_action_spec.output>;',
-		'\taccount_token_revoke: Infer<typeof fixture_specs.account_token_revoke_action_spec.input>;',
-		'\taccount_token_revoke: Infer<typeof fixture_specs.account_token_revoke_action_spec.output>;'
+	assert.deepStrictEqual(fuz_schema_methods, [
+		'account_token_revoke',
+		'actor_lookup',
+		'actor_search'
 	]);
-	assert.strictEqual(
-		actual
-			.filter((line) => line !== INFER_IMPORT)
-			.join('\n')
-			.replaceAll('account_token_revoke: Infer<', 'account_token_revoke: z.infer<'),
-		expected
-	);
+	const changed = actual.filter((line) => line.includes(': Infer<'));
+	// each method's input and output, in the plain inputs-outputs block, the
+	// protocol-including one, and the qualified one
+	const typed = (ns: string, kind: string): Array<string> =>
+		fuz_schema_methods.map(
+			(method) => `\t${method}: Infer<typeof ${ns}.${method}_action_spec.${kind}>;`
+		);
+	assert.deepStrictEqual(changed, [
+		...typed('specs', 'input'),
+		...typed('specs', 'output'),
+		...typed('specs', 'input'),
+		...typed('specs', 'output'),
+		...typed('fixture_specs', 'input'),
+		...typed('fixture_specs', 'output')
+	]);
+	let restored = actual.filter((line) => line !== INFER_IMPORT).join('\n');
+	for (const method of fuz_schema_methods) {
+		restored = restored.replaceAll(`${method}: Infer<`, `${method}: z.infer<`);
+	}
+	assert.strictEqual(restored, expected);
 });

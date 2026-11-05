@@ -1,0 +1,74 @@
+{
+	"name": "actor_search",
+	"auth": {
+		"account": "required",
+		"actor": "none"
+	},
+	"input_schema": {
+		"type": "object",
+		"properties": {
+			"query": {
+				"type": "string",
+				"minLength": 1,
+				"maxLength": 50,
+				"description": "Case-insensitive prefix match against `actor.name`. Length 1–50.",
+				"sensitivity": "personal"
+			},
+			"scope_ids": {
+				"description": "Restrict results to actors holding a role_grant on any of these scopes. Required (non-empty) for non-admin callers; admin callers may omit or pass empty for unbounded search. Caller is responsible for pre-filtering against their own authority — the SQL filter does not enforce it.",
+				"type": "array",
+				"items": {
+					"type": "string",
+					"format": "uuid",
+					"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+				}
+			},
+			"limit": {
+				"description": "Maximum rows to return. Defaults to 20, hard cap 50.",
+				"type": "integer",
+				"minimum": 1,
+				"maximum": 50
+			}
+		},
+		"required": [
+			"query"
+		],
+		"additionalProperties": false
+	},
+	"output_schema": {
+		"type": "object",
+		"properties": {
+			"actors": {
+				"type": "array",
+				"items": {
+					"type": "object",
+					"properties": {
+						"id": {
+							"type": "string",
+							"format": "uuid",
+							"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+						},
+						"username": {
+							"type": "string"
+						},
+						"display_name": {
+							"type": "string"
+						}
+					},
+					"required": [
+						"id",
+						"username"
+					],
+					"additionalProperties": false
+				}
+			}
+		},
+		"required": [
+			"actors"
+		],
+		"additionalProperties": false
+	},
+	"side_effects": false,
+	"description": "Case-insensitive prefix search over actor.name, returning {id, username, display_name?} rows. Authenticated + per-account rate-limited; non-admin callers must pass at least one scope_id. Default limit 20, hard cap 50.",
+	"rate_limit_key": "account"
+}

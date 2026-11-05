@@ -1,0 +1,63 @@
+{
+	"name": "actor_lookup",
+	"auth": {
+		"account": "required",
+		"actor": "none"
+	},
+	"input_schema": {
+		"type": "object",
+		"properties": {
+			"ids": {
+				"minItems": 1,
+				"maxItems": 50,
+				"type": "array",
+				"items": {
+					"type": "string",
+					"format": "uuid",
+					"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+				},
+				"description": "Actor ids to resolve. Capped at 50; unknown ids are silently absent from the response."
+			}
+		},
+		"required": [
+			"ids"
+		],
+		"additionalProperties": false
+	},
+	"output_schema": {
+		"type": "object",
+		"properties": {
+			"actors": {
+				"type": "array",
+				"items": {
+					"type": "object",
+					"properties": {
+						"id": {
+							"type": "string",
+							"format": "uuid",
+							"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+						},
+						"username": {
+							"type": "string"
+						},
+						"display_name": {
+							"type": "string"
+						}
+					},
+					"required": [
+						"id",
+						"username"
+					],
+					"additionalProperties": false
+				}
+			}
+		},
+		"required": [
+			"actors"
+		],
+		"additionalProperties": false
+	},
+	"side_effects": false,
+	"description": "Batched id → (username, display_name) resolver, keyed by actor id. Powers the labels arc for surfaces that stamp an actor id (e.g. cell owners, grant grantors). Authenticated + per-account rate-limited to bound batched username enumeration. Cap 50; unknown ids absent from response.",
+	"rate_limit_key": "account"
+}

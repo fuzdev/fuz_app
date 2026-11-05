@@ -6,13 +6,14 @@
  *
  * The per-site complement to `primitive_schemas.bounded_string.test.ts`. These
  * cases only bite on a Zod that counts code points — there a site gone back to
- * a bare `.max()` fails them; on a code unit Zod they pass either way.
+ * a bare `.max()` fails them; on a code unit Zod they pass either way. A
+ * `@fuzdev/fuz_schema` site (`actor_search`'s `query`) counts code units
+ * itself, so its cases bite on any install.
  *
  * @module
  */
 
 import { describe, test, assert } from 'vitest';
-import type { z } from 'zod';
 
 import { UsernameProvided, USERNAME_PROVIDED_LENGTH_MAX } from '#lib/primitive_schemas.ts';
 import {
@@ -46,6 +47,7 @@ import {
 	ActorSearchInput,
 	ACTOR_SEARCH_QUERY_LENGTH_MAX
 } from '#lib/auth/actor_search_action_specs.ts';
+import { parse_any, type ValidationSchema } from '#lib/schema_issues.ts';
 
 /** U+1F600 — one code point, two UTF-16 code units. */
 const ASTRAL = '\u{1F600}';
@@ -54,7 +56,8 @@ const ASTRAL = '\u{1F600}';
 const astral_of = (units: number): string =>
 	ASTRAL.repeat(Math.floor(units / 2)) + (units % 2 === 0 ? '' : 'a');
 
-const capped: Array<[name: string, schema: z.ZodType, max: number]> = [
+// Zod sites and `@fuzdev/fuz_schema` ones alike, read through `parse_any`
+const capped: Array<[name: string, schema: ValidationSchema, max: number]> = [
 	['UsernameProvided', UsernameProvided, USERNAME_PROVIDED_LENGTH_MAX],
 	['Password', Password, PASSWORD_LENGTH_MAX],
 	['PasswordProvided', PasswordProvided, PASSWORD_LENGTH_MAX],
@@ -98,7 +101,7 @@ const capped: Array<[name: string, schema: z.ZodType, max: number]> = [
 		RoleGrantOfferJson.shape.decline_reason,
 		ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX
 	],
-	['actor_search query', ActorSearchInput.shape.query, ACTOR_SEARCH_QUERY_LENGTH_MAX]
+	['actor_search query', ActorSearchInput.def.query, ACTOR_SEARCH_QUERY_LENGTH_MAX]
 ];
 
 describe('length caps count UTF-16 code units', () => {
@@ -106,11 +109,11 @@ describe('length caps count UTF-16 code units', () => {
 		test(`${name}: astral at the cap passes, past it in units is refused`, () => {
 			const at_cap = astral_of(max);
 			assert.strictEqual(at_cap.length, max);
-			assert.ok(schema.safeParse(at_cap).success);
+			assert.ok(parse_any(schema, at_cap).ok);
 			const over = astral_of(max + 1);
 			assert.strictEqual(over.length, max + 1);
 			assert.ok(Array.from(over).length <= max, 'at or under the cap in code points');
-			assert.ok(!schema.safeParse(over).success);
+			assert.ok(!parse_any(schema, over).ok);
 		});
 	}
 });

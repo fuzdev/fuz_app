@@ -48,8 +48,19 @@
  * @module
  */
 
-import { z } from 'zod';
-import { Uuid } from '../primitive_schemas.ts';
+import { meta } from '@fuzdev/fuz_schema/meta.ts';
+import {
+	array,
+	max_length,
+	min_length,
+	object,
+	optional,
+	pipe,
+	string,
+	type Infer
+} from '@fuzdev/fuz_schema/schema.ts';
+
+import { Uuid } from '../primitive_schemas_fuz.ts';
 
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
 
@@ -59,31 +70,32 @@ import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
  */
 export const ACTOR_LOOKUP_IDS_MAX = 50;
 
-/** One resolved actor row. `display_name` omitted when blank. */
-export const ActorLookupEntryJson = z.strictObject({
+/**
+ * One resolved actor row, a `@fuzdev/fuz_schema` schema. `display_name`
+ * omitted when blank.
+ */
+export const ActorLookupEntryJson = object({
 	id: Uuid,
-	username: z.string(),
-	display_name: z.string().optional()
+	username: string,
+	display_name: optional(string)
 });
-export type ActorLookupEntryJson = z.infer<typeof ActorLookupEntryJson>;
+export type ActorLookupEntryJson = Infer<typeof ActorLookupEntryJson>;
 
-export const ActorLookupInput = z.strictObject({
-	ids: z
-		.array(Uuid)
-		.min(1)
-		.max(ACTOR_LOOKUP_IDS_MAX)
-		.meta({
-			description: `Actor ids to resolve. Capped at ${
-				ACTOR_LOOKUP_IDS_MAX
-			}; unknown ids are silently absent from the response.`
-		})
+/** Input for `actor_lookup`, a `@fuzdev/fuz_schema` schema. */
+export const ActorLookupInput = object({
+	ids: meta(pipe(array(Uuid), min_length(1), max_length(ACTOR_LOOKUP_IDS_MAX)), {
+		description: `Actor ids to resolve. Capped at ${
+			ACTOR_LOOKUP_IDS_MAX
+		}; unknown ids are silently absent from the response.`
+	})
 });
-export type ActorLookupInput = z.infer<typeof ActorLookupInput>;
+export type ActorLookupInput = Infer<typeof ActorLookupInput>;
 
-export const ActorLookupOutput = z.strictObject({
-	actors: z.array(ActorLookupEntryJson)
+/** Output for `actor_lookup`, a `@fuzdev/fuz_schema` schema. */
+export const ActorLookupOutput = object({
+	actors: array(ActorLookupEntryJson)
 });
-export type ActorLookupOutput = z.infer<typeof ActorLookupOutput>;
+export type ActorLookupOutput = Infer<typeof ActorLookupOutput>;
 
 export const actor_lookup_action_spec = {
 	method: 'actor_lookup',
