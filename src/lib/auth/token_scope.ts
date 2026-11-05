@@ -181,16 +181,16 @@ export const is_token_surface = (value: string): value is TokenSurface =>
 	(TOKEN_SURFACES as ReadonlyArray<string>).includes(value);
 
 /**
- * Name format for the identifier half of a capability string. Mirrors
- * `CredentialTypeName` / `ScopeKindName`; `RoleName` also refuses
- * consecutive underscores.
+ * Name format for the identifier half of a capability string: runs of
+ * lowercase letters (a-z) joined by single underscores, the grammar of
+ * `RoleName` / `CredentialTypeName` / `ScopeKindName` / `GrantPathName` too.
  *
  * Applied to the `surface:` arm only. The `rpc:` arm's identifier is an action
  * method name, whose vocabulary belongs to `ActionSpec` (and includes shapes
  * like `peer/ping` this regex would refuse); the dispatcher computes it from the
  * registered method, so nothing parses one.
  */
-export const TOKEN_SURFACE_NAME_REGEX = /^[a-z][a-z_]*[a-z]$|^[a-z]$/;
+export const TOKEN_SURFACE_NAME_REGEX = /^[a-z]+(?:_[a-z]+)*$/;
 
 // Capability-string prefixes. Private: `token_scope_method_capability` builds
 // the one capability anything computes, and `is_route_scope_capability` checks

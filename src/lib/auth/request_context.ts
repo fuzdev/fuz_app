@@ -459,7 +459,7 @@ export const get_public_account_id = (c: Context): string | null => {
 export const require_token_scope = (capability: string): MiddlewareHandler => {
 	if (!is_route_scope_capability(capability)) {
 		throw new Error(
-			`auth.required_scope "${capability}" is not a valid token-scope capability for a route \u2014 expected 'surface:<name>', where a surface name is lowercase letters and underscores ('rpc:<method>' is the action dispatcher's per-method gate, which a route never reaches)`
+			`auth.required_scope "${capability}" is not a valid token-scope capability for a route \u2014 expected 'surface:<name>', where a surface name is runs of lowercase letters joined by single underscores ('rpc:<method>' is the action dispatcher's per-method gate, which a route never reaches)`
 		);
 	}
 	return async (c, next): Promise<Response | void> => {

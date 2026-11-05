@@ -7,11 +7,44 @@
 import { assert, describe, test } from 'vitest';
 
 import {
+	is_route_scope_capability,
 	TOKEN_SCOPE_VERSION,
 	TokenScopeInput,
 	token_scope_from_input,
 	token_scope_label
 } from '#lib/auth/token_scope.ts';
+
+describe('is_route_scope_capability', () => {
+	test('a surface name is runs of lowercase letters joined by single underscores', () => {
+		for (const good of [
+			'surface:a',
+			'surface:upload',
+			'surface:file_bytes',
+			'surface:a_b_c',
+			'surface:db_admin'
+		]) {
+			assert.ok(is_route_scope_capability(good), good);
+		}
+		for (const bad of [
+			'rpc:account_verify',
+			'upload',
+			'surface:',
+			'surface:_upload',
+			'surface:upload_',
+			'surface:file__bytes',
+			'surface:file___bytes',
+			'surface:a_b__c',
+			'surface:__upload',
+			'surface:upload__',
+			'surface:__',
+			'surface:Upload',
+			'surface:file-bytes',
+			'surface:9lives'
+		]) {
+			assert.ok(!is_route_scope_capability(bad), bad);
+		}
+	});
+});
 
 describe('token_scope_from_input', () => {
 	test('a full input builds a current-version full scope', () => {

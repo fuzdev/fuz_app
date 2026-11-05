@@ -18,6 +18,7 @@ describe('ScopeKindName regex', () => {
 		assert.ok(ScopeKindName.safeParse('a').success);
 		assert.ok(ScopeKindName.safeParse('ab').success);
 		assert.ok(ScopeKindName.safeParse('multi_word_kind').success);
+		assert.ok(ScopeKindName.safeParse('a_b_c').success);
 	});
 
 	test('rejects empty / leading / trailing / non-lowercase', () => {
@@ -33,9 +34,27 @@ describe('ScopeKindName regex', () => {
 		assert.ok(!ScopeKindName.safeParse('123digit').success);
 	});
 
+	test('rejects runs of underscores', () => {
+		assert.ok(!ScopeKindName.safeParse('class__room').success);
+		assert.ok(!ScopeKindName.safeParse('class___room').success);
+		assert.ok(!ScopeKindName.safeParse('a_b__c').success);
+		assert.ok(!ScopeKindName.safeParse('__ab').success);
+		assert.ok(!ScopeKindName.safeParse('ab__').success);
+		assert.ok(!ScopeKindName.safeParse('__').success);
+	});
+
 	test('accepts a name at the length cap and rejects one past it', () => {
 		assert.ok(ScopeKindName.safeParse('a'.repeat(SCOPE_KIND_LENGTH_MAX)).success);
 		assert.ok(!ScopeKindName.safeParse('a'.repeat(SCOPE_KIND_LENGTH_MAX + 1)).success);
+		// underscores count toward the length like any other character
+		const with_underscores = `${'a_'.repeat(SCOPE_KIND_LENGTH_MAX / 2 - 1)}aa`;
+		assert.strictEqual(with_underscores.length, SCOPE_KIND_LENGTH_MAX);
+		assert.ok(ScopeKindName.safeParse(with_underscores).success);
+		assert.ok(!ScopeKindName.safeParse(`${with_underscores}a`).success);
+		// at the cap with a run of underscores is off the grammar
+		const with_run = `a${'_'.repeat(SCOPE_KIND_LENGTH_MAX - 2)}a`;
+		assert.strictEqual(with_run.length, SCOPE_KIND_LENGTH_MAX);
+		assert.ok(!ScopeKindName.safeParse(with_run).success);
 	});
 });
 
@@ -76,5 +95,13 @@ describe('create_scope_kind_schema', () => {
 		assert.throws(() => create_scope_kind_schema({ trailing_: {} }), /Invalid scope-kind name/);
 		assert.throws(() => create_scope_kind_schema({ 'has-dash': {} }), /Invalid scope-kind name/);
 		assert.throws(() => create_scope_kind_schema({ 'has.dot': {} }), /Invalid scope-kind name/);
+		assert.throws(() => create_scope_kind_schema({ class__room: {} }), /Invalid scope-kind name/);
+		assert.throws(() => create_scope_kind_schema({ class___room: {} }), /Invalid scope-kind name/);
+		// a run of underscores is off the grammar, not merely unusual: it throws at construction
+		assert.throws(
+			() => create_scope_kind_schema({ a__b: {} }),
+			'Invalid scope-kind name "a__b": Scope-kind names must be lowercase letters and underscores (a-z_), no leading, trailing or consecutive underscores'
+		);
+		assert.ok(create_scope_kind_schema({ a_b_c: {} }));
 	});
 });

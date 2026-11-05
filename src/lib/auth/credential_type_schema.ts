@@ -24,19 +24,19 @@
 import { z } from 'zod';
 
 /**
- * Letter (lowercase a-z) start and end (or single letter), with letters
- * and underscores in between. Mirrors `ScopeKindName` and `GrantPathName`;
- * `RoleName` also refuses consecutive underscores. Rejects empty strings,
- * leading or trailing underscores, uppercase, and digits.
+ * Runs of lowercase letters (a-z) joined by single underscores, the grammar
+ * of `RoleName`, `ScopeKindName` and `GrantPathName` too. Rejects empty
+ * strings, leading, trailing or consecutive underscores, uppercase, and
+ * digits.
  */
-export const CREDENTIAL_TYPE_NAME_REGEX = /^[a-z][a-z_]*[a-z]$|^[a-z]$/;
+export const CREDENTIAL_TYPE_NAME_REGEX = /^[a-z]+(?:_[a-z]+)*$/;
 
 /** Zod schema for valid credential-type name strings. */
 export const CredentialTypeName = z
 	.string()
 	.regex(
 		CREDENTIAL_TYPE_NAME_REGEX,
-		'Credential-type names must be lowercase letters and underscores (a-z_), no leading/trailing underscore'
+		'Credential-type names must be lowercase letters and underscores (a-z_), no leading, trailing or consecutive underscores'
 	);
 export type CredentialTypeName = z.infer<typeof CredentialTypeName>;
 

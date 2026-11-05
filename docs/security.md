@@ -386,8 +386,9 @@ registration. Nothing is lost by that: the RPC-only rule is all-or-nothing, so a
 surface
 name decides nothing and only labels which surface refused, and the sibling
 `rpc:` arm carries arbitrary consumer method names on the same wire field.
-Registration throws on a malformed capability (unknown section, empty or
-non-`[a-z_]` surface name, or `rpc:` on a route), on the field appearing on an `ActionSpec` (the
+Registration throws on a malformed capability (unknown section, a surface name
+empty or off the name grammar — runs of lowercase letters joined by single
+underscores — or `rpc:` on a route), on the field appearing on an `ActionSpec` (the
 dispatcher derives it from the method there), and on an unrestricted route (the
 same holder reaches it by dropping the credential) — each of the last two would
 be a control that silently does nothing.

@@ -16,12 +16,31 @@ import {
 	ROLE_ADMIN,
 	ROLE_KEEPER,
 	ROLE_NAME_LENGTH_MAX,
+	ROLE_NAME_PATTERN,
 	ROLE_NAME_PATTERN_MESSAGE,
 	RoleName
 } from '#lib/auth/role_schema.ts';
-import { create_credential_type_schema } from '#lib/auth/credential_type_schema.ts';
-import { create_grant_path_schema } from '#lib/auth/grant_path_schema.ts';
-import { create_scope_kind_schema } from '#lib/auth/scope_kind_schema.ts';
+import {
+	create_credential_type_schema,
+	CREDENTIAL_TYPE_NAME_REGEX
+} from '#lib/auth/credential_type_schema.ts';
+import { create_grant_path_schema, GRANT_PATH_NAME_REGEX } from '#lib/auth/grant_path_schema.ts';
+import { create_scope_kind_schema, SCOPE_KIND_NAME_REGEX } from '#lib/auth/scope_kind_schema.ts';
+import { TOKEN_SURFACE_NAME_REGEX } from '#lib/auth/token_scope.ts';
+
+describe('the name grammars', () => {
+	test('every sibling name grammar is the role grammar', () => {
+		for (const regex of [
+			GRANT_PATH_NAME_REGEX,
+			CREDENTIAL_TYPE_NAME_REGEX,
+			SCOPE_KIND_NAME_REGEX,
+			TOKEN_SURFACE_NAME_REGEX
+		]) {
+			assert.strictEqual(regex.source, ROLE_NAME_PATTERN.source);
+			assert.strictEqual(regex.flags, ROLE_NAME_PATTERN.flags);
+		}
+	});
+});
 
 describe('create_role_schema', () => {
 	test('merges app role specs with builtins', () => {

@@ -493,7 +493,9 @@ Four open string registries — `RoleName`, `ScopeKindName`,
 `CredentialTypeName`, `GrantPathName` — share the same factory shape:
 construction-time guards (name regex, duplicate detection, builtin-collision
 rejection), `ReadonlyMap` output, pass into `create_role_schema` for
-cross-axis validation.
+cross-axis validation. The four share one name grammar, runs of lowercase
+letters joined by single underscores, which a token's `surface:` name holds
+too.
 
 Dependency flow:
 

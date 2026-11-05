@@ -28,20 +28,19 @@
 import { z } from 'zod';
 
 /**
- * Letter (lowercase a-z) start and end (or single letter), with letters
- * and underscores in between. Mirrors `ScopeKindName` and
- * `CredentialTypeName`; `RoleName` also refuses consecutive underscores.
- * Rejects empty strings, leading or trailing underscores, uppercase, and
+ * Runs of lowercase letters (a-z) joined by single underscores, the grammar
+ * of `RoleName`, `ScopeKindName` and `CredentialTypeName` too. Rejects empty
+ * strings, leading, trailing or consecutive underscores, uppercase, and
  * digits.
  */
-export const GRANT_PATH_NAME_REGEX = /^[a-z][a-z_]*[a-z]$|^[a-z]$/;
+export const GRANT_PATH_NAME_REGEX = /^[a-z]+(?:_[a-z]+)*$/;
 
 /** Zod schema for valid grant-path name strings. */
 export const GrantPathName = z
 	.string()
 	.regex(
 		GRANT_PATH_NAME_REGEX,
-		'Grant-path names must be lowercase letters and underscores (a-z_), no leading/trailing underscore'
+		'Grant-path names must be lowercase letters and underscores (a-z_), no leading, trailing or consecutive underscores'
 	);
 export type GrantPathName = z.infer<typeof GrantPathName>;
 

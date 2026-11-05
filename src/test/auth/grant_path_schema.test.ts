@@ -14,7 +14,8 @@ import {
 	GRANT_PATH_ADMIN,
 	GRANT_PATH_BOOTSTRAP,
 	GRANT_PATH_SELF_SERVICE,
-	GRANT_PATH_SYSTEM
+	GRANT_PATH_SYSTEM,
+	GrantPathName
 } from '#lib/auth/grant_path_schema.ts';
 
 describe('create_grant_path_schema', () => {
@@ -54,12 +55,32 @@ describe('create_grant_path_schema', () => {
 		assert.throws(() => create_grant_path_schema({ trailing_: {} }));
 		assert.throws(() => create_grant_path_schema({ 'has-dash': {} }));
 		assert.throws(() => create_grant_path_schema({ 'has space': {} }));
+		assert.throws(() => create_grant_path_schema({ invite__only: {} }));
+		assert.throws(() => create_grant_path_schema({ invite___only: {} }));
+		assert.throws(() => create_grant_path_schema({ a_b__c: {} }));
+		assert.throws(() => create_grant_path_schema({ __ab: {} }));
+		assert.throws(() => create_grant_path_schema({ ab__: {} }));
+		// a run of underscores is off the grammar, not merely unusual: it throws at construction
+		assert.throws(
+			() => create_grant_path_schema({ a__b: {} }),
+			'Invalid grant-path name "a__b": Grant-path names must be lowercase letters and underscores (a-z_), no leading, trailing or consecutive underscores'
+		);
 	});
 
 	test('accepts valid grant-path names', () => {
 		assert.ok(create_grant_path_schema({ a: {} }));
 		assert.ok(create_grant_path_schema({ invite_only: {} }));
 		assert.ok(create_grant_path_schema({ ab: {} }));
+		assert.ok(create_grant_path_schema({ a_b_c: {} }));
+	});
+
+	test('GrantPathName refuses runs of underscores', () => {
+		for (const name of ['a', 'invite_only', 'a_b_c', `${'a_'.repeat(40)}a`]) {
+			assert.ok(GrantPathName.safeParse(name).success, name);
+		}
+		for (const name of ['a__b', 'a___b', 'a_b__c', '__ab', 'ab__', '__', '_', '']) {
+			assert.ok(!GrantPathName.safeParse(name).success, name);
+		}
 	});
 
 	test('builtins exported as a const tuple', () => {

@@ -13,7 +13,8 @@ import {
 	create_credential_type_schema,
 	CREDENTIAL_TYPE_API_TOKEN,
 	CREDENTIAL_TYPE_DAEMON_TOKEN,
-	CREDENTIAL_TYPE_SESSION
+	CREDENTIAL_TYPE_SESSION,
+	CredentialTypeName
 } from '#lib/auth/credential_type_schema.ts';
 
 describe('create_credential_type_schema', () => {
@@ -53,6 +54,31 @@ describe('create_credential_type_schema', () => {
 		assert.throws(() => create_credential_type_schema({ trailing_: {} }));
 		assert.throws(() => create_credential_type_schema({ 'has-dash': {} }));
 		assert.throws(() => create_credential_type_schema({ 'has space': {} }));
+		assert.throws(() => create_credential_type_schema({ sso__assertion: {} }));
+		assert.throws(() => create_credential_type_schema({ sso___assertion: {} }));
+		assert.throws(() => create_credential_type_schema({ a_b__c: {} }));
+		assert.throws(() => create_credential_type_schema({ __ab: {} }));
+		assert.throws(() => create_credential_type_schema({ ab__: {} }));
+		// a run of underscores is off the grammar, not merely unusual: it throws at construction
+		assert.throws(
+			() => create_credential_type_schema({ a__b: {} }),
+			'Invalid credential-type name "a__b": Credential-type names must be lowercase letters and underscores (a-z_), no leading, trailing or consecutive underscores'
+		);
+	});
+
+	test('accepts valid credential-type names', () => {
+		assert.ok(create_credential_type_schema({ a: {} }));
+		assert.ok(create_credential_type_schema({ sso_assertion: {} }));
+		assert.ok(create_credential_type_schema({ a_b_c: {} }));
+	});
+
+	test('CredentialTypeName refuses runs of underscores', () => {
+		for (const name of ['a', 'sso_assertion', 'a_b_c', `${'a_'.repeat(40)}a`]) {
+			assert.ok(CredentialTypeName.safeParse(name).success, name);
+		}
+		for (const name of ['a__b', 'a___b', 'a_b__c', '__ab', 'ab__', '__', '_', '']) {
+			assert.ok(!CredentialTypeName.safeParse(name).success, name);
+		}
 	});
 
 	test('builtins exported as a const tuple', () => {

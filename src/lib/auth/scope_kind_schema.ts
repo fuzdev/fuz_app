@@ -35,13 +35,12 @@ import { z } from 'zod';
 import { bounded_string } from '../primitive_schemas.ts';
 
 /**
- * Letter (lowercase a-z) start and end (or single letter), with letters
- * and underscores in between. Mirrors `CredentialTypeName` and
- * `GrantPathName`; `RoleName` also refuses consecutive underscores. Rejects
- * empty strings, leading or trailing underscores, uppercase, digits, and the
- * index-side `'GLOBAL'` token.
+ * Runs of lowercase letters (a-z) joined by single underscores, the grammar
+ * of `RoleName`, `CredentialTypeName` and `GrantPathName` too. Rejects empty
+ * strings, leading, trailing or consecutive underscores, uppercase, digits,
+ * and the index-side `'GLOBAL'` token.
  */
-export const SCOPE_KIND_NAME_REGEX = /^[a-z][a-z_]*[a-z]$|^[a-z]$/;
+export const SCOPE_KIND_NAME_REGEX = /^[a-z]+(?:_[a-z]+)*$/;
 
 /**
  * Maximum length of a `scope_kind`, in UTF-16 code units (what
@@ -49,7 +48,8 @@ export const SCOPE_KIND_NAME_REGEX = /^[a-z][a-z_]*[a-z]$|^[a-z]$/;
  * — the grant inputs (`role_grant_offer_create`, `role_grant_assign`) copy it
  * into the row and its audit metadata — and a registered name, so no
  * registry declares a kind the grant inputs would refuse. Same value as
- * `ROLE_NAME_LENGTH_MAX`, and as the Rust spine's `SCOPE_KIND_LENGTH_MAX`.
+ * `ROLE_NAME_LENGTH_MAX`, whose grammar the name shares, and as the Rust
+ * spine's `SCOPE_KIND_LENGTH_MAX`.
  */
 export const SCOPE_KIND_LENGTH_MAX = 64;
 
@@ -59,7 +59,7 @@ export const ScopeKindName = bounded_string({
 	max_message: `Scope-kind names must be at most ${SCOPE_KIND_LENGTH_MAX} characters`
 }).regex(
 	SCOPE_KIND_NAME_REGEX,
-	'Scope-kind names must be lowercase letters and underscores (a-z_), no leading/trailing underscore'
+	'Scope-kind names must be lowercase letters and underscores (a-z_), no leading, trailing or consecutive underscores'
 );
 export type ScopeKindName = z.infer<typeof ScopeKindName>;
 

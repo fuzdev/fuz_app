@@ -47,7 +47,9 @@ export const ROLE_NAME_LENGTH_MAX = 64;
  * The grammar of a role name: runs of lowercase letters joined by single
  * underscores, so no leading, trailing or consecutive underscores. Both
  * `RoleName`s hold it, the Zod one here and the `@fuzdev/fuz_schema` twin in
- * `auth/role_schema_fuz.ts`.
+ * `auth/role_schema_fuz.ts`, and the sibling name grammars are the same
+ * pattern: `GRANT_PATH_NAME_REGEX`, `CREDENTIAL_TYPE_NAME_REGEX`,
+ * `SCOPE_KIND_NAME_REGEX` and `TOKEN_SURFACE_NAME_REGEX`.
  */
 export const ROLE_NAME_PATTERN = /^[a-z]+(?:_[a-z]+)*$/;
 

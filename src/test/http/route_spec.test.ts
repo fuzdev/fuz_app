@@ -364,7 +364,15 @@ describe('auth.required_scope', () => {
 		assert.strictEqual(res.status, 403);
 		assert.deepStrictEqual(await res.json(), token_scope_denied_body('surface:file_store'));
 
-		for (const bad of ['not_a_capability', 'surface:', 'rpc:', 'surface:Not Valid', 'files:read']) {
+		for (const bad of [
+			'not_a_capability',
+			'surface:',
+			'rpc:',
+			'surface:Not Valid',
+			'surface:file__store',
+			'surface:file___store',
+			'files:read'
+		]) {
 			assert.throws(
 				() =>
 					fuz_auth_guard_resolver({
