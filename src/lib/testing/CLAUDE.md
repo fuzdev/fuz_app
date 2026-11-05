@@ -534,9 +534,7 @@ handler needing real seeded state, a path segment no schema describes. A
 route whose params merely carry a format needs no entry: `resolve_valid_path`
 synthesizes a segment the route accepts.
 
-Also exported: `describe_adversarial_auth(options)` (group 3 on its own) and
-`build_error_schema_lookup(specs, middleware_specs?)` (pre-built
-`Map<string, RouteErrorSchemas>` for per-response validation).
+Also exported: `describe_adversarial_auth(options)` (group 3 on its own).
 
 ### `adversarial_input.ts` + `adversarial_input_cases.ts` — schema-walk payload generation
 
