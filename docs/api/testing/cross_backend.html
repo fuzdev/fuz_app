@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/BTZoVLbz.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CAODFmXb.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.BTc19Ycq.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.CF9CpsLL.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.DE9BBiY5.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.BMntZb_n.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BcwQFYZ2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/C3BYcZ2u.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CE-egMPB.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/D123x_ul.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.yo4YUfWB.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/Dw2rBTH_.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.CmH0xUGA.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BL7ZH9U-.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DhdQKFKC.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -901,9 +901,10 @@ Nothing trims a creation username: a padded one is refused 400 at signup and
 at bootstrap, never trimmed into a legal name. Bootstrap validates its body
 before its window check, so the padded bootstrap answers 400 even after
 bootstrap completed.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[4--><strong><!--[--><!--[2-->Email format (creation):<!--]--><!--]--><!----></strong><!--]--><!--[2--> the optional signup <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->email<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> is validated to a
-loose <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->local@domain.tld<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> shape on both spines — TS <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/primitive_schemas.ts#Email"><!--[0--><!--[-1-->Email<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->
-(<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->^[^\s\u0085@]+@[^\s\u0085@]+\.[^\s\u0085@]+$<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> plus a 254-byte (RFC 5321 octet) length bound; whitespace <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->White_Space ∪ {U+FEFF}<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->), Rust the
-hand-rolled <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->is_valid_email<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->. A malformed email → 400, a well-formed one →
+loose <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->local@domain.tld<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> shape on both spines — TS <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/primitive_schemas.ts#Email"><!--[0--><!--[-1-->Email<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/primitive_schemas.ts#EMAIL_REGEX"><!--[0--><!--[-1-->EMAIL_REGEX<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->:
+a non-empty local part, one <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->@<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, a domain holding a <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->.<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> at neither of its
+edges, no whitespace — <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->White_Space ∪ {U+FEFF}<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> — plus a 254-byte (RFC 5321
+octet) length bound), Rust the hand-rolled <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->is_valid_email<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->. A malformed email → 400, a well-formed one →
 403 no-matching-invite (the same accept/reject settle the username tables
 use). The accepted siblings include the single-char-TLD <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->a@b.c<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> that Zod's
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->z.email()<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> would reject — the deliberately-looser rule both spines now
@@ -2153,16 +2154,16 @@ marker with a tracking id and a reason, nothing more.<!--]--><!--]--><!----></p>
 			
 			<script>
 				{
-					__sveltekit_1e1lmgn = {
+					__sveltekit_7rfk2v = {
 						base: "",
-						version: "80d88242a8506ecf079aa279f74af542c178d09c"
+						version: "8b65616a82376028a35c3a526f282db94a0a4e8b"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.CXlCZqzx.js").then(async (kit) => {
-						kit.init(__sveltekit_1e1lmgn);
-						const app = await import("/_app/immutable/entry/app.BTc19Ycq.js");
+						kit.init(__sveltekit_7rfk2v);
+						const app = await import("/_app/immutable/entry/app.DE9BBiY5.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],
