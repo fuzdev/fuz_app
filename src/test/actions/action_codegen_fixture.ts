@@ -3,9 +3,10 @@
  * fuz_app's own action specs and synthetic specs of each kind — the input of
  * `action_codegen.zod_fixture.test.ts`, which holds it to the text the
  * Zod-only codegen emitted, and holds fuz_app's own list, whose
- * `account_token_revoke`, `self_service_role_set`, `actor_lookup`,
- * `actor_search` and the role_grant_offer methods are `@fuzdev/fuz_schema`, to
- * that text with those methods' types read by `Infer`.
+ * `@fuzdev/fuz_schema` inputs and outputs (`account_token_revoke`,
+ * `self_service_role_set`, `actor_lookup`, `actor_search`, the
+ * role_grant_offer methods, and the admin methods' inputs and row-free
+ * outputs), to that text with those types read by `Infer`.
  *
  * @module
  */
@@ -25,7 +26,7 @@ import {
 	generate_frontend_actions_api,
 	generate_typed_action_event_alias
 } from '#lib/actions/action_codegen.ts';
-import type { ActionSpecUnion, RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
+import type { ActionSpecUnion } from '#lib/actions/action_spec.ts';
 import { protocol_action_specs } from '#lib/actions/protocol.ts';
 import { all_fuz_auth_action_spec_registries } from '#lib/auth/all_action_spec_registries.ts';
 import { all_cell_action_specs } from '#lib/auth/cell_action_specs.ts';
@@ -33,12 +34,8 @@ import { all_cell_grant_action_specs } from '#lib/auth/cell_grant_action_specs.t
 import { all_cell_field_action_specs } from '#lib/auth/cell_field_action_specs.ts';
 import { all_cell_item_action_specs } from '#lib/auth/cell_item_action_specs.ts';
 import { all_cell_audit_action_specs } from '#lib/auth/cell_audit_action_specs.ts';
-import { account_token_revoke_action_spec } from '#lib/auth/account_action_specs.ts';
-import { actor_lookup_action_spec } from '#lib/auth/actor_lookup_action_specs.ts';
-import { actor_search_action_spec } from '#lib/auth/actor_search_action_specs.ts';
-import { self_service_role_set_action_spec } from '#lib/auth/self_service_role_action_specs.ts';
-import { all_role_grant_offer_action_specs } from '#lib/auth/role_grant_offer_action_specs.ts';
 import { parse_any } from '#lib/schema_issues.ts';
+import { is_schema } from '@fuzdev/fuz_schema/schema.ts';
 
 // one spec per input shape the signature reads: void, null, optional, defaulted, required
 const synthetic_specs: Array<ActionSpecUnion> = [
@@ -129,62 +126,57 @@ const fuz_app_specs: Array<ActionSpecUnion> = [
 ];
 
 /**
- * The Zod stand-in for the input of a method whose own schemas are
- * `@fuzdev/fuz_schema`. Codegen reads an input for its library, whether it is
- * null or void, and whether it takes `undefined` or `{}` (or carries the
- * `empty_input_handler_guarded` marker): a required key, as most of these
- * methods' inputs have, gives every answer theirs does, which
- * `action_codegen.zod_fixture.test.ts` holds it to.
+ * The Zod stand-in for a `@fuzdev/fuz_schema` input. Codegen reads an input
+ * for its library, whether it is null or void, and whether it takes
+ * `undefined` or `{}` (or carries the `empty_input_handler_guarded` marker): a
+ * required key, as most of these inputs have, gives every answer theirs does,
+ * which `action_codegen.zod_fixture.test.ts` holds it to.
  */
 const ZodRequiredInput = z.strictObject({ required: z.string() });
 
 /**
- * The Zod stand-in for the input of such a method that takes `undefined`, as
- * `role_grant_offer_list`'s and `role_grant_offer_history`'s defaulted inputs
- * do: an object of optional keys with a `{}` default, which takes `undefined`
- * and `{}` as theirs do.
+ * The Zod stand-in for such an input that takes `undefined`, as the defaulted
+ * inputs of the listings do: an object of optional keys with a `{}` default,
+ * which takes `undefined` and `{}` as theirs do.
  */
 const ZodDefaultedInput = z.strictObject({ optional: z.string().optional() }).default({});
 
-/** The Zod stand-in for their outputs, of which codegen reads only the library. */
+/** The Zod stand-in for a `@fuzdev/fuz_schema` output, of which codegen reads only the library. */
 const ZodOutput = z.strictObject({});
 
-const to_zod_spec = (spec: RequestResponseActionSpec): RequestResponseActionSpec => ({
-	...spec,
-	input: parse_any(spec.input, undefined).ok ? ZodDefaultedInput : ZodRequiredInput,
-	output: ZodOutput
-});
+/** The spec with each `@fuzdev/fuz_schema` side replaced by its Zod stand-in. */
+const to_zod_spec = (spec: ActionSpecUnion): ActionSpecUnion =>
+	({
+		...spec,
+		input: is_schema(spec.input)
+			? parse_any(spec.input, undefined).ok
+				? ZodDefaultedInput
+				: ZodRequiredInput
+			: spec.input,
+		output: is_schema(spec.output) ? ZodOutput : spec.output
+	}) as ActionSpecUnion;
 
 /**
- * Zod stand-ins for the specs of the methods whose own schemas are
- * `@fuzdev/fuz_schema`, keyed by method, so the list stays all-Zod and the
- * fixture keeps each method in its place.
- */
-const zod_specs_by_method: Map<string, ActionSpecUnion> = new Map(
-	[
-		account_token_revoke_action_spec,
-		self_service_role_set_action_spec,
-		actor_lookup_action_spec,
-		actor_search_action_spec,
-		...all_role_grant_offer_action_specs
-	].map((spec): [string, ActionSpecUnion] => [spec.method, to_zod_spec(spec)])
-);
-
-/**
- * The methods of fuz_app's own list whose schemas are `@fuzdev/fuz_schema`, in
+ * The methods of fuz_app's own list whose input is `@fuzdev/fuz_schema`, in
  * the fixture's order.
  */
-export const fuz_schema_methods: ReadonlyArray<string> = fuz_app_specs
-	.map((spec) => spec.method)
-	.filter((method) => zod_specs_by_method.has(method));
+export const fuz_schema_input_methods: ReadonlyArray<string> = fuz_app_specs
+	.filter((spec) => is_schema(spec.input))
+	.map((spec) => spec.method);
+
+/**
+ * The methods of fuz_app's own list whose output is `@fuzdev/fuz_schema`, in
+ * the fixture's order.
+ */
+export const fuz_schema_output_methods: ReadonlyArray<string> = fuz_app_specs
+	.filter((spec) => is_schema(spec.output))
+	.map((spec) => spec.method);
 
 /** fuz_app's own specs and the synthetic ones, in the fixture's order. */
 export const fixture_specs: Array<ActionSpecUnion> = [...fuz_app_specs, ...synthetic_specs];
 
 /** The all-Zod spec list the fixture is generated from. */
-export const zod_fixture_specs: Array<ActionSpecUnion> = fixture_specs.map(
-	(spec) => zod_specs_by_method.get(spec.method) ?? spec
-);
+export const zod_fixture_specs: Array<ActionSpecUnion> = fixture_specs.map(to_zod_spec);
 
 /**
  * Every codegen block over `specs` composed into one file: once with the

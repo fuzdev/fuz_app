@@ -2142,9 +2142,10 @@ already has an account returns 409 with per-field errors
 (`invite_account_exists_username`, `invite_account_exists_email`). This
 prevents dead-on-arrival invites, and both checks are case-insensitive.
 
-**Username validation**: The `Username` Zod schema (3-39 chars, starts with
-letter, ends with letter/number, middle allows dash/underscore, no `@` or `.`)
-is enforced on both signup and invite creation inputs. `Email` uses a custom
+**Username validation**: The `Username` schema (Zod, and its
+`@fuzdev/fuz_schema` twin on `invite_create`; 3-39 chars, starts with letter,
+ends with letter/number, middle allows dash/underscore, no `@` or `.`) is
+enforced on both signup and invite creation inputs. `Email` uses a custom
 regex (`EMAIL_REGEX` in `primitive_schemas.ts`) that requires `@` — the two
 namespaces are disjoint.
 

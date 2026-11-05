@@ -196,6 +196,13 @@ export const to_global_role_revocation = (
  */
 export const AUDIT_EVENT_TYPE_NAME_REGEX = /^[A-Za-z][A-Za-z0-9_./-]*$/;
 
+/** The message of an audit event-type name past `NAME_LENGTH_MAX`. */
+export const AUDIT_EVENT_TYPE_NAME_LENGTH_MESSAGE = `must be at most ${NAME_LENGTH_MAX} characters`;
+
+/** The message of an audit event-type name off `AUDIT_EVENT_TYPE_NAME_REGEX`. */
+export const AUDIT_EVENT_TYPE_NAME_PATTERN_MESSAGE =
+	'must start with a letter; only letters, digits, _ . / - allowed';
+
 /**
  * Zod schema for valid audit event-type name strings: `AUDIT_EVENT_TYPE_NAME_REGEX`,
  * at most `NAME_LENGTH_MAX` UTF-16 code units. Twin of the Rust spine's
@@ -203,10 +210,8 @@ export const AUDIT_EVENT_TYPE_NAME_REGEX = /^[A-Za-z][A-Za-z0-9_./-]*$/;
  */
 export const AuditEventTypeName = bounded_string({
 	max: NAME_LENGTH_MAX,
-	max_message: `must be at most ${NAME_LENGTH_MAX} characters`
-}).regex(AUDIT_EVENT_TYPE_NAME_REGEX, {
-	message: 'must start with a letter; only letters, digits, _ . / - allowed'
-});
+	max_message: AUDIT_EVENT_TYPE_NAME_LENGTH_MESSAGE
+}).regex(AUDIT_EVENT_TYPE_NAME_REGEX, { message: AUDIT_EVENT_TYPE_NAME_PATTERN_MESSAGE });
 export type AuditEventTypeName = z.infer<typeof AuditEventTypeName>;
 
 /** Zod schema for audit event outcomes. */

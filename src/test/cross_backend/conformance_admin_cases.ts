@@ -140,7 +140,7 @@ const pagination_cases: Array<ConformanceCase> = PAGED_LISTS.flatMap(
 );
 
 /**
- * An offset past `Number.MAX_SAFE_INTEGER` — `int()` refuses it, with the
+ * An offset past `Number.MAX_SAFE_INTEGER` — its bound refuses it, with the
  * reason `offset` declares for every refusal; one list stands for the shared
  * pagination parser.
  */
@@ -149,18 +149,18 @@ const unsafe_offset_case: ConformanceCase = {
 	request: { method: 'admin_account_list', as: 'keeper', params: { offset: 1e16 } },
 	expect: { status: 400, error_reason: ERROR_OFFSET_INVALID },
 	note:
-		'auth/admin_action_specs.ts — `offset` is `int()`, which refuses an integer past ' +
-		'`Number.MAX_SAFE_INTEGER`'
+		'auth/admin_action_specs.ts — `offset` is an integer at most `Number.MAX_SAFE_INTEGER`, ' +
+		'which refuses one past it'
 };
 
-/** The audit list's `since_seq` cursor, `int().min(0)` — the same safe-integer bound. */
+/** The audit list's `since_seq` cursor, an integer at least zero — the same safe-integer bound. */
 const unsafe_since_seq_case: ConformanceCase = {
 	name: 'admin → audit_log_list {since_seq: 1e16} → 400',
 	request: { method: 'audit_log_list', as: 'keeper', params: { since_seq: 1e16 } },
 	expect: { status: 400, error_reason: ERROR_SINCE_SEQ_INVALID },
 	note:
-		'auth/admin_action_specs.ts — `since_seq` is `int().min(0)`, which refuses an integer past ' +
-		'`Number.MAX_SAFE_INTEGER`'
+		'auth/admin_action_specs.ts — `since_seq` is an integer in [0, `Number.MAX_SAFE_INTEGER`], ' +
+		'which refuses one past it'
 };
 
 /**

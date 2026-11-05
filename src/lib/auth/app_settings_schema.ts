@@ -1,13 +1,14 @@
 /**
- * App settings types and client-safe schemas.
+ * App settings types and client-safe schemas, `@fuzdev/fuz_schema` schemas.
  *
  * Single-row table for global app configuration (e.g. open signup toggle).
  *
  * @module
  */
 
-import { z } from 'zod';
-import { Uuid } from '../primitive_schemas.ts';
+import { boolean, nullable, object, string, type Infer } from '@fuzdev/fuz_schema/schema.ts';
+
+import { Uuid } from '../primitive_schemas_fuz.ts';
 
 /** App settings row from the database. */
 export interface AppSettings {
@@ -16,22 +17,17 @@ export interface AppSettings {
 	updated_by: Uuid | null;
 }
 
-/** Zod schema for client-safe app settings data. */
-export const AppSettingsJson = z.strictObject({
-	open_signup: z.boolean(),
-	updated_at: z.string().nullable(),
-	updated_by: Uuid.nullable()
+/** Client-safe app settings data. */
+export const AppSettingsJson = object({
+	open_signup: boolean,
+	updated_at: nullable(string),
+	updated_by: nullable(Uuid)
 });
-export type AppSettingsJson = z.infer<typeof AppSettingsJson>;
+export type AppSettingsJson = Infer<typeof AppSettingsJson>;
 
-/** Zod schema for admin app settings with resolved updater username. */
-export const AppSettingsWithUsernameJson = AppSettingsJson.extend({
-	updated_by_username: z.string().nullable()
+/** Admin app settings with the updater's username resolved. */
+export const AppSettingsWithUsernameJson = object({
+	...AppSettingsJson.def,
+	updated_by_username: nullable(string)
 });
-export type AppSettingsWithUsernameJson = z.infer<typeof AppSettingsWithUsernameJson>;
-
-/** Zod schema for updating app settings. */
-export const UpdateAppSettingsInput = z.strictObject({
-	open_signup: z.boolean()
-});
-export type UpdateAppSettingsInput = z.infer<typeof UpdateAppSettingsInput>;
+export type AppSettingsWithUsernameJson = Infer<typeof AppSettingsWithUsernameJson>;

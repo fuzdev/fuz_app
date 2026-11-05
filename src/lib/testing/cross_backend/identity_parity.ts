@@ -76,9 +76,10 @@ import '../assert_dev_env.ts';
  * bootstrap completed.
  *
  * **Email format (creation):** the optional signup `email` is validated to a
- * loose `local@domain.tld` shape on both spines — TS `Email`
- * (`EMAIL_REGEX` plus a 254-byte (RFC 5321 octet) length bound; whitespace `White_Space ∪ {U+FEFF}`), Rust the
- * hand-rolled `is_valid_email`. A malformed email → 400, a well-formed one →
+ * loose `local@domain.tld` shape on both spines — TS `Email` (`EMAIL_REGEX`:
+ * a non-empty local part, one `@`, a domain holding a `.` at neither of its
+ * edges, no whitespace — `White_Space ∪ {U+FEFF}` — plus a 254-byte (RFC 5321
+ * octet) length bound), Rust the hand-rolled `is_valid_email`. A malformed email → 400, a well-formed one →
  * 403 no-matching-invite (the same accept/reject settle the username tables
  * use). The accepted siblings include the single-char-TLD `a@b.c` that Zod's
  * `z.email()` would reject — the deliberately-looser rule both spines now
@@ -253,14 +254,15 @@ interface SignupEmailCase {
 
 /**
  * Signup email-format cases for the loose `Email` shape `local@domain.tld`
- * (TS `EMAIL_REGEX` plus the 254 length bound; Rust the
- * hand-rolled `is_valid_email`). The rejected cases each violate the shape at
- * a different point — no `@`, no dot in the domain, empty local/domain, a dot
- * at a domain edge, surrounding whitespace, over the length bound — so a
- * backend policing only one of them is caught. The accepted siblings are the
- * don't-over-reject control and include the shapes Zod's `z.email()` rejects
- * but our looser rule accepts — single-char TLD `a@b.c` and consecutive dots
- * `a..b@c.d` — pinning the deliberately-looser shared rule in both directions.
+ * (TS `EMAIL_REGEX` plus the 254 length bound; Rust the hand-rolled
+ * `is_valid_email`). The rejected cases each violate the shape at a different
+ * point — no `@`, no dot in the domain, empty local/domain, a dot at a domain
+ * edge (beside another dot inside the domain too), surrounding whitespace,
+ * over the length bound — so a backend policing only one of them is caught.
+ * The accepted siblings are the don't-over-reject control and include the
+ * shapes Zod's `z.email()` rejects but our looser rule accepts — single-char
+ * TLD `a@b.c` and consecutive dots `a..b@c.d` and `a@b..c` — pinning the
+ * deliberately-looser shared rule in both directions.
  * Every case rides a valid username so the rejection (or the 403 no-invite
  * settle) isolates the email.
  */
@@ -271,6 +273,8 @@ const SIGNUP_EMAIL_CASES: ReadonlyArray<SignupEmailCase> = [
 	{ email: 'user@', label: 'empty domain', status: 400 },
 	{ email: 'user@.com', label: 'domain starts with a dot', status: 400 },
 	{ email: 'user@com.', label: 'domain ends with a dot', status: 400 },
+	{ email: 'user@.example.com', label: 'multi-label domain starts with a dot', status: 400 },
+	{ email: 'user@example.com.', label: 'multi-label domain ends with a dot', status: 400 },
 	{ email: 'a@@b.c', label: 'two @', status: 400 },
 	{ email: ' user@example.com', label: 'leading whitespace', status: 400 },
 	{ email: 'user@example.com ', label: 'trailing whitespace', status: 400 },
@@ -307,6 +311,11 @@ const SIGNUP_EMAIL_CASES: ReadonlyArray<SignupEmailCase> = [
 	{
 		email: 'a..b@c.d',
 		label: 'consecutive dots (looser than z.email)',
+		status: VALID_USERNAME_NO_INVITE_STATUS
+	},
+	{
+		email: 'user@example..com',
+		label: 'consecutive dots inside the domain (looser than z.email)',
 		status: VALID_USERNAME_NO_INVITE_STATUS
 	},
 	{

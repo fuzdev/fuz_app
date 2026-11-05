@@ -1,0 +1,3130 @@
+{
+	"rpc": [
+		{
+			"name": "admin_account_list",
+			"auth": {
+				"account": "required",
+				"actor": "required",
+				"roles": [
+					"admin"
+				]
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					},
+					"limit": {
+						"description": "Max accounts to return (default 50, max 200).",
+						"invalid_reason": "limit_invalid",
+						"anyOf": [
+							{
+								"type": "integer",
+								"minimum": 1,
+								"maximum": 200
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"offset": {
+						"description": "Pagination offset.",
+						"invalid_reason": "offset_invalid",
+						"anyOf": [
+							{
+								"type": "integer",
+								"minimum": 0,
+								"maximum": 9007199254740991
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"include_deleted": {
+						"description": "Include soft-deleted (tombstoned) accounts in the listing. Default false (active only). Used by the admin UI to surface accounts for reactivation via `account_undelete`.",
+						"type": [
+							"boolean",
+							"null"
+						]
+					}
+				},
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"accounts": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"account": {
+									"type": "object",
+									"properties": {
+										"id": {
+											"type": "string",
+											"format": "uuid",
+											"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+										},
+										"username": {},
+										"email": {
+											"anyOf": [
+												{
+													"type": "string",
+													"pattern": "^[^\\s\\u0085@]+@[^\\s\\u0085@]+\\.[^\\s\\u0085@]+$"
+												},
+												{
+													"type": "null"
+												}
+											]
+										},
+										"email_verified": {
+											"type": "boolean"
+										},
+										"created_at": {
+											"type": "string"
+										},
+										"updated_at": {
+											"type": "string"
+										},
+										"updated_by": {
+											"anyOf": [
+												{
+													"type": "string",
+													"format": "uuid",
+													"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+												},
+												{
+													"type": "null"
+												}
+											]
+										},
+										"deleted_at": {
+											"type": [
+												"string",
+												"null"
+											]
+										}
+									},
+									"required": [
+										"id",
+										"username",
+										"email",
+										"email_verified",
+										"created_at",
+										"updated_at",
+										"updated_by",
+										"deleted_at"
+									],
+									"additionalProperties": false
+								},
+								"actor": {
+									"anyOf": [
+										{
+											"type": "object",
+											"properties": {
+												"id": {
+													"type": "string",
+													"format": "uuid",
+													"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+												},
+												"name": {
+													"type": "string"
+												}
+											},
+											"required": [
+												"id",
+												"name"
+											],
+											"additionalProperties": false
+										},
+										{
+											"type": "null"
+										}
+									]
+								},
+								"role_grants": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"properties": {
+											"id": {
+												"type": "string",
+												"format": "uuid",
+												"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+											},
+											"role": {
+												"type": "string"
+											},
+											"scope_kind": {
+												"type": [
+													"string",
+													"null"
+												]
+											},
+											"scope_id": {
+												"anyOf": [
+													{
+														"type": "string",
+														"format": "uuid",
+														"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+													},
+													{
+														"type": "null"
+													}
+												]
+											},
+											"created_at": {
+												"type": "string"
+											},
+											"expires_at": {
+												"type": [
+													"string",
+													"null"
+												]
+											},
+											"granted_by": {
+												"anyOf": [
+													{
+														"type": "string",
+														"format": "uuid",
+														"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+													},
+													{
+														"type": "null"
+													}
+												]
+											}
+										},
+										"required": [
+											"id",
+											"role",
+											"scope_kind",
+											"scope_id",
+											"created_at",
+											"expires_at",
+											"granted_by"
+										],
+										"additionalProperties": false
+									}
+								},
+								"pending_offers": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"properties": {
+											"id": {
+												"type": "string",
+												"format": "uuid",
+												"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+											},
+											"role": {
+												"type": "string"
+											},
+											"scope_kind": {
+												"type": [
+													"string",
+													"null"
+												]
+											},
+											"scope_id": {
+												"anyOf": [
+													{
+														"type": "string",
+														"format": "uuid",
+														"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+													},
+													{
+														"type": "null"
+													}
+												]
+											},
+											"from_actor_id": {
+												"type": "string",
+												"format": "uuid",
+												"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+											},
+											"from_username": {
+												"type": "string"
+											},
+											"created_at": {
+												"type": "string"
+											},
+											"expires_at": {
+												"type": "string"
+											}
+										},
+										"required": [
+											"id",
+											"role",
+											"scope_kind",
+											"scope_id",
+											"from_actor_id",
+											"from_username",
+											"created_at",
+											"expires_at"
+										],
+										"additionalProperties": false
+									}
+								}
+							},
+							"required": [
+								"account",
+								"actor",
+								"role_grants",
+								"pending_offers"
+							],
+							"additionalProperties": false
+						}
+					},
+					"grantable_roles": {
+						"type": "array",
+						"items": {
+							"type": "string",
+							"maxLength": 64,
+							"pattern": "^[a-z]+(?:_[a-z]+)*$"
+						}
+					}
+				},
+				"required": [
+					"accounts",
+					"grantable_roles"
+				],
+				"additionalProperties": false
+			},
+			"side_effects": false,
+			"description": "List all accounts with their actors, role_grants, and pending offers. Admin-only.",
+			"rate_limit_key": "account"
+		},
+		{
+			"name": "admin_session_list",
+			"auth": {
+				"account": "required",
+				"actor": "required",
+				"roles": [
+					"admin"
+				]
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"sessions": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"id": {
+									"type": "string",
+									"pattern": "^[0-9a-f]{64}$"
+								},
+								"account_id": {
+									"type": "string",
+									"format": "uuid",
+									"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+								},
+								"created_at": {
+									"type": "string"
+								},
+								"expires_at": {
+									"type": "string"
+								},
+								"username": {
+									"type": "string"
+								}
+							},
+							"required": [
+								"id",
+								"account_id",
+								"created_at",
+								"expires_at",
+								"username"
+							],
+							"additionalProperties": false
+						}
+					}
+				},
+				"required": [
+					"sessions"
+				],
+				"additionalProperties": false
+			},
+			"side_effects": false,
+			"description": "List every active auth session across all accounts. Admin-only.",
+			"rate_limit_key": "account"
+		},
+		{
+			"name": "admin_session_revoke_all",
+			"auth": {
+				"account": "required",
+				"actor": "required",
+				"roles": [
+					"admin"
+				]
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"account_id": {
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+						"description": "Account whose sessions to revoke."
+					},
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"required": [
+					"account_id"
+				],
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"ok": {
+						"type": "boolean",
+						"const": true
+					},
+					"count": {
+						"type": "number"
+					}
+				},
+				"required": [
+					"ok",
+					"count"
+				],
+				"additionalProperties": false
+			},
+			"side_effects": true,
+			"description": "Revoke all sessions for an account. Admin-only.",
+			"rate_limit_key": "account"
+		},
+		{
+			"name": "admin_token_revoke_all",
+			"auth": {
+				"account": "required",
+				"actor": "required",
+				"roles": [
+					"admin"
+				]
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"account_id": {
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+						"description": "Account whose API tokens to revoke."
+					},
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"required": [
+					"account_id"
+				],
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"ok": {
+						"type": "boolean",
+						"const": true
+					},
+					"count": {
+						"type": "number"
+					}
+				},
+				"required": [
+					"ok",
+					"count"
+				],
+				"additionalProperties": false
+			},
+			"side_effects": true,
+			"description": "Revoke all API tokens for an account. Admin-only.",
+			"rate_limit_key": "account"
+		},
+		{
+			"name": "audit_log_list",
+			"auth": {
+				"account": "required",
+				"actor": "required",
+				"roles": [
+					"admin"
+				]
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"event_type": {
+						"description": "Filter by event type. Accepts builtin or consumer-registered names (regex-validated, at most 64 characters).",
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 64,
+								"pattern": "^[A-Za-z][A-Za-z0-9_./-]*$"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"outcome": {
+						"description": "Filter by outcome (`success` or `failure`).",
+						"invalid_reason": "outcome_invalid",
+						"anyOf": [
+							{
+								"type": "string",
+								"enum": [
+									"success",
+									"failure"
+								]
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"account_id": {
+						"description": "Filter by account id — matches the actor or the target account.",
+						"anyOf": [
+							{
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"limit": {
+						"description": "Max rows to return (default 50, max 200).",
+						"invalid_reason": "limit_invalid",
+						"anyOf": [
+							{
+								"type": "integer",
+								"minimum": 1,
+								"maximum": 200
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"offset": {
+						"description": "Pagination offset.",
+						"invalid_reason": "offset_invalid",
+						"anyOf": [
+							{
+								"type": "integer",
+								"minimum": 0,
+								"maximum": 9007199254740991
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"since_seq": {
+						"description": "Gap-fill from this seq forward. Used for SSE reconnection.",
+						"invalid_reason": "since_seq_invalid",
+						"anyOf": [
+							{
+								"type": "integer",
+								"minimum": 0,
+								"maximum": 9007199254740991
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"events": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"id": {
+									"type": "string",
+									"format": "uuid",
+									"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+								},
+								"seq": {
+									"type": "integer",
+									"minimum": -9007199254740991,
+									"maximum": 9007199254740991
+								},
+								"event_type": {
+									"type": "string",
+									"maxLength": 64,
+									"pattern": "^[A-Za-z][A-Za-z0-9_./-]*$"
+								},
+								"outcome": {
+									"type": "string",
+									"enum": [
+										"success",
+										"failure"
+									]
+								},
+								"actor_id": {
+									"anyOf": [
+										{
+											"type": "string",
+											"format": "uuid",
+											"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+										},
+										{
+											"type": "null"
+										}
+									]
+								},
+								"account_id": {
+									"anyOf": [
+										{
+											"type": "string",
+											"format": "uuid",
+											"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+										},
+										{
+											"type": "null"
+										}
+									]
+								},
+								"target_account_id": {
+									"anyOf": [
+										{
+											"type": "string",
+											"format": "uuid",
+											"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+										},
+										{
+											"type": "null"
+										}
+									]
+								},
+								"target_actor_id": {
+									"anyOf": [
+										{
+											"type": "string",
+											"format": "uuid",
+											"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+										},
+										{
+											"type": "null"
+										}
+									]
+								},
+								"ip": {
+									"type": [
+										"string",
+										"null"
+									]
+								},
+								"created_at": {
+									"type": "string"
+								},
+								"metadata": {
+									"anyOf": [
+										{
+											"type": "object",
+											"propertyNames": {
+												"type": "string"
+											},
+											"additionalProperties": {}
+										},
+										{
+											"type": "null"
+										}
+									]
+								},
+								"username": {
+									"type": [
+										"string",
+										"null"
+									]
+								},
+								"target_username": {
+									"type": [
+										"string",
+										"null"
+									]
+								}
+							},
+							"required": [
+								"id",
+								"seq",
+								"event_type",
+								"outcome",
+								"actor_id",
+								"account_id",
+								"target_account_id",
+								"target_actor_id",
+								"ip",
+								"created_at",
+								"metadata",
+								"username",
+								"target_username"
+							],
+							"additionalProperties": false
+						}
+					}
+				},
+				"required": [
+					"events"
+				],
+				"additionalProperties": false
+			},
+			"side_effects": false,
+			"description": "List audit log events with optional filters. Admin-only.",
+			"rate_limit_key": "account"
+		},
+		{
+			"name": "audit_log_role_grant_history",
+			"auth": {
+				"account": "required",
+				"actor": "required",
+				"roles": [
+					"admin"
+				]
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"limit": {
+						"description": "Max rows to return (default 50, max 200).",
+						"invalid_reason": "limit_invalid",
+						"anyOf": [
+							{
+								"type": "integer",
+								"minimum": 1,
+								"maximum": 200
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"offset": {
+						"description": "Pagination offset.",
+						"invalid_reason": "offset_invalid",
+						"anyOf": [
+							{
+								"type": "integer",
+								"minimum": 0,
+								"maximum": 9007199254740991
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"events": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"id": {
+									"type": "string",
+									"format": "uuid",
+									"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+								},
+								"seq": {
+									"type": "integer",
+									"minimum": -9007199254740991,
+									"maximum": 9007199254740991
+								},
+								"event_type": {
+									"type": "string",
+									"maxLength": 64,
+									"pattern": "^[A-Za-z][A-Za-z0-9_./-]*$"
+								},
+								"outcome": {
+									"type": "string",
+									"enum": [
+										"success",
+										"failure"
+									]
+								},
+								"actor_id": {
+									"anyOf": [
+										{
+											"type": "string",
+											"format": "uuid",
+											"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+										},
+										{
+											"type": "null"
+										}
+									]
+								},
+								"account_id": {
+									"anyOf": [
+										{
+											"type": "string",
+											"format": "uuid",
+											"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+										},
+										{
+											"type": "null"
+										}
+									]
+								},
+								"target_account_id": {
+									"anyOf": [
+										{
+											"type": "string",
+											"format": "uuid",
+											"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+										},
+										{
+											"type": "null"
+										}
+									]
+								},
+								"target_actor_id": {
+									"anyOf": [
+										{
+											"type": "string",
+											"format": "uuid",
+											"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+										},
+										{
+											"type": "null"
+										}
+									]
+								},
+								"ip": {
+									"type": [
+										"string",
+										"null"
+									]
+								},
+								"created_at": {
+									"type": "string"
+								},
+								"metadata": {
+									"anyOf": [
+										{
+											"type": "object",
+											"propertyNames": {
+												"type": "string"
+											},
+											"additionalProperties": {}
+										},
+										{
+											"type": "null"
+										}
+									]
+								},
+								"username": {
+									"type": [
+										"string",
+										"null"
+									]
+								},
+								"target_username": {
+									"type": [
+										"string",
+										"null"
+									]
+								}
+							},
+							"required": [
+								"id",
+								"seq",
+								"event_type",
+								"outcome",
+								"actor_id",
+								"account_id",
+								"target_account_id",
+								"target_actor_id",
+								"ip",
+								"created_at",
+								"metadata",
+								"username",
+								"target_username"
+							],
+							"additionalProperties": false
+						}
+					}
+				},
+				"required": [
+					"events"
+				],
+				"additionalProperties": false
+			},
+			"side_effects": false,
+			"description": "List role_grant grant and revoke events with usernames. Admin-only.",
+			"rate_limit_key": "account"
+		},
+		{
+			"name": "invite_create",
+			"auth": {
+				"account": "required",
+				"actor": "required",
+				"roles": [
+					"admin"
+				]
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"email": {
+						"description": "Invitee email.",
+						"anyOf": [
+							{
+								"type": "string",
+								"pattern": "^[^\\s\\u0085@]+@[^\\s\\u0085@]+\\.[^\\s\\u0085@]+$"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"username": {
+						"description": "Invitee username.",
+						"anyOf": [
+							{
+								"type": "string",
+								"minLength": 3,
+								"maxLength": 39,
+								"pattern": "^[a-zA-Z][0-9a-zA-Z_-]*[0-9a-zA-Z]$"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"ok": {
+						"type": "boolean",
+						"const": true
+					},
+					"invite": {
+						"type": "object",
+						"properties": {
+							"id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+							},
+							"email": {
+								"anyOf": [
+									{
+										"type": "string",
+										"pattern": "^[^\\s\\u0085@]+@[^\\s\\u0085@]+\\.[^\\s\\u0085@]+$"
+									},
+									{
+										"type": "null"
+									}
+								]
+							},
+							"username": {
+								"anyOf": [
+									{},
+									{
+										"type": "null"
+									}
+								]
+							},
+							"claimed_by": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								]
+							},
+							"claimed_at": {
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"created_at": {
+								"type": "string"
+							},
+							"created_by": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								]
+							}
+						},
+						"required": [
+							"id",
+							"email",
+							"username",
+							"claimed_by",
+							"claimed_at",
+							"created_at",
+							"created_by"
+						],
+						"additionalProperties": false
+					}
+				},
+				"required": [
+					"ok",
+					"invite"
+				],
+				"additionalProperties": false
+			},
+			"side_effects": true,
+			"description": "Create an invite addressed to an email, username, or both. Admin-only.",
+			"rate_limit_key": "account"
+		},
+		{
+			"name": "invite_list",
+			"auth": {
+				"account": "required",
+				"actor": "required",
+				"roles": [
+					"admin"
+				]
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"invites": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"id": {
+									"type": "string",
+									"format": "uuid",
+									"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+								},
+								"email": {
+									"anyOf": [
+										{
+											"type": "string",
+											"pattern": "^[^\\s\\u0085@]+@[^\\s\\u0085@]+\\.[^\\s\\u0085@]+$"
+										},
+										{
+											"type": "null"
+										}
+									]
+								},
+								"username": {
+									"anyOf": [
+										{},
+										{
+											"type": "null"
+										}
+									]
+								},
+								"claimed_by": {
+									"anyOf": [
+										{
+											"type": "string",
+											"format": "uuid",
+											"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+										},
+										{
+											"type": "null"
+										}
+									]
+								},
+								"claimed_at": {
+									"type": [
+										"string",
+										"null"
+									]
+								},
+								"created_at": {
+									"type": "string"
+								},
+								"created_by": {
+									"anyOf": [
+										{
+											"type": "string",
+											"format": "uuid",
+											"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+										},
+										{
+											"type": "null"
+										}
+									]
+								},
+								"created_by_username": {
+									"type": [
+										"string",
+										"null"
+									]
+								},
+								"claimed_by_username": {
+									"type": [
+										"string",
+										"null"
+									]
+								}
+							},
+							"required": [
+								"id",
+								"email",
+								"username",
+								"claimed_by",
+								"claimed_at",
+								"created_at",
+								"created_by",
+								"created_by_username",
+								"claimed_by_username"
+							],
+							"additionalProperties": false
+						}
+					}
+				},
+				"required": [
+					"invites"
+				],
+				"additionalProperties": false
+			},
+			"side_effects": false,
+			"description": "List all invites with creator and claimer usernames. Admin-only.",
+			"rate_limit_key": "account"
+		},
+		{
+			"name": "invite_delete",
+			"auth": {
+				"account": "required",
+				"actor": "required",
+				"roles": [
+					"admin"
+				]
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"invite_id": {
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+						"description": "Invite to delete. Must be unclaimed."
+					},
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"required": [
+					"invite_id"
+				],
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"ok": {
+						"type": "boolean",
+						"const": true
+					}
+				},
+				"required": [
+					"ok"
+				],
+				"additionalProperties": false
+			},
+			"side_effects": true,
+			"description": "Delete an unclaimed invite. Admin-only.",
+			"rate_limit_key": "account"
+		},
+		{
+			"name": "account_delete",
+			"auth": {
+				"account": "required",
+				"actor": "required"
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"account_id": {
+						"description": "Account to soft-delete. Omit for self-delete; another account requires admin.",
+						"anyOf": [
+							{
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"ok": {
+						"type": "boolean",
+						"const": true
+					},
+					"deleted": {
+						"type": "boolean"
+					}
+				},
+				"required": [
+					"ok",
+					"deleted"
+				],
+				"additionalProperties": false
+			},
+			"side_effects": true,
+			"description": "Soft-delete an account (reversible tombstone): blocks auth, revokes sessions/tokens, soft-deletes its actor(s). Self-service for own account; admin required to delete another.",
+			"rate_limit_key": "account"
+		},
+		{
+			"name": "account_purge",
+			"auth": {
+				"account": "required",
+				"actor": "required",
+				"roles": [
+					"keeper"
+				],
+				"credential_types": [
+					"daemon_token"
+				]
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"account_id": {
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+						"description": "Account to hard-purge."
+					},
+					"confirm": {
+						"description": "Must be `true` — fail-loud guard against an accidental irreversible purge.",
+						"type": "boolean"
+					},
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"required": [
+					"account_id"
+				],
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"ok": {
+						"type": "boolean",
+						"const": true
+					},
+					"purged": {
+						"type": "boolean"
+					}
+				},
+				"required": [
+					"ok",
+					"purged"
+				],
+				"additionalProperties": false
+			},
+			"side_effects": true,
+			"description": "Hard-purge an account (irreversible cascading delete). Keeper-only + explicit confirm. Audit ids survive; identity snapshotted in metadata.",
+			"rate_limit_key": "account"
+		},
+		{
+			"name": "account_undelete",
+			"auth": {
+				"account": "required",
+				"actor": "required",
+				"roles": [
+					"admin"
+				]
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"account_id": {
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+						"description": "Soft-deleted account to reactivate."
+					},
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"required": [
+					"account_id"
+				],
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"ok": {
+						"type": "boolean",
+						"const": true
+					},
+					"undeleted": {
+						"type": "boolean"
+					}
+				},
+				"required": [
+					"ok",
+					"undeleted"
+				],
+				"additionalProperties": false
+			},
+			"side_effects": true,
+			"description": "Reactivate a soft-deleted account (clears the deleted_at tombstone on the account + its actors). Admin-only. Does not restore revoked sessions/tokens — principals re-auth fresh.",
+			"rate_limit_key": "account"
+		},
+		{
+			"name": "app_settings_get",
+			"auth": {
+				"account": "required",
+				"actor": "required",
+				"roles": [
+					"admin"
+				]
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"settings": {
+						"type": "object",
+						"properties": {
+							"open_signup": {
+								"type": "boolean"
+							},
+							"updated_at": {
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"updated_by": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								]
+							},
+							"updated_by_username": {
+								"type": [
+									"string",
+									"null"
+								]
+							}
+						},
+						"required": [
+							"open_signup",
+							"updated_at",
+							"updated_by",
+							"updated_by_username"
+						],
+						"additionalProperties": false
+					}
+				},
+				"required": [
+					"settings"
+				],
+				"additionalProperties": false
+			},
+			"side_effects": false,
+			"description": "Read global app settings. Admin-only.",
+			"rate_limit_key": null
+		},
+		{
+			"name": "app_settings_update",
+			"auth": {
+				"account": "required",
+				"actor": "required",
+				"roles": [
+					"admin"
+				]
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"open_signup": {
+						"type": "boolean",
+						"description": "New value for the open signup toggle."
+					},
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"required": [
+					"open_signup"
+				],
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"ok": {
+						"type": "boolean",
+						"const": true
+					},
+					"settings": {
+						"type": "object",
+						"properties": {
+							"open_signup": {
+								"type": "boolean"
+							},
+							"updated_at": {
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"updated_by": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								]
+							},
+							"updated_by_username": {
+								"type": [
+									"string",
+									"null"
+								]
+							}
+						},
+						"required": [
+							"open_signup",
+							"updated_at",
+							"updated_by",
+							"updated_by_username"
+						],
+						"additionalProperties": false
+					}
+				},
+				"required": [
+					"ok",
+					"settings"
+				],
+				"additionalProperties": false
+			},
+			"side_effects": true,
+			"description": "Update global app settings (currently just the open signup toggle). Admin-only.",
+			"rate_limit_key": "account"
+		}
+	],
+	"ws": [
+		{
+			"name": "admin_account_list",
+			"kind": "request_response",
+			"auth": {
+				"account": "required",
+				"actor": "required",
+				"roles": [
+					"admin"
+				]
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					},
+					"limit": {
+						"description": "Max accounts to return (default 50, max 200).",
+						"invalid_reason": "limit_invalid",
+						"anyOf": [
+							{
+								"type": "integer",
+								"minimum": 1,
+								"maximum": 200
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"offset": {
+						"description": "Pagination offset.",
+						"invalid_reason": "offset_invalid",
+						"anyOf": [
+							{
+								"type": "integer",
+								"minimum": 0,
+								"maximum": 9007199254740991
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"include_deleted": {
+						"description": "Include soft-deleted (tombstoned) accounts in the listing. Default false (active only). Used by the admin UI to surface accounts for reactivation via `account_undelete`.",
+						"type": [
+							"boolean",
+							"null"
+						]
+					}
+				},
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"accounts": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"account": {
+									"type": "object",
+									"properties": {
+										"id": {
+											"type": "string",
+											"format": "uuid",
+											"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+										},
+										"username": {},
+										"email": {
+											"anyOf": [
+												{
+													"type": "string",
+													"pattern": "^[^\\s\\u0085@]+@[^\\s\\u0085@]+\\.[^\\s\\u0085@]+$"
+												},
+												{
+													"type": "null"
+												}
+											]
+										},
+										"email_verified": {
+											"type": "boolean"
+										},
+										"created_at": {
+											"type": "string"
+										},
+										"updated_at": {
+											"type": "string"
+										},
+										"updated_by": {
+											"anyOf": [
+												{
+													"type": "string",
+													"format": "uuid",
+													"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+												},
+												{
+													"type": "null"
+												}
+											]
+										},
+										"deleted_at": {
+											"type": [
+												"string",
+												"null"
+											]
+										}
+									},
+									"required": [
+										"id",
+										"username",
+										"email",
+										"email_verified",
+										"created_at",
+										"updated_at",
+										"updated_by",
+										"deleted_at"
+									],
+									"additionalProperties": false
+								},
+								"actor": {
+									"anyOf": [
+										{
+											"type": "object",
+											"properties": {
+												"id": {
+													"type": "string",
+													"format": "uuid",
+													"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+												},
+												"name": {
+													"type": "string"
+												}
+											},
+											"required": [
+												"id",
+												"name"
+											],
+											"additionalProperties": false
+										},
+										{
+											"type": "null"
+										}
+									]
+								},
+								"role_grants": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"properties": {
+											"id": {
+												"type": "string",
+												"format": "uuid",
+												"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+											},
+											"role": {
+												"type": "string"
+											},
+											"scope_kind": {
+												"type": [
+													"string",
+													"null"
+												]
+											},
+											"scope_id": {
+												"anyOf": [
+													{
+														"type": "string",
+														"format": "uuid",
+														"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+													},
+													{
+														"type": "null"
+													}
+												]
+											},
+											"created_at": {
+												"type": "string"
+											},
+											"expires_at": {
+												"type": [
+													"string",
+													"null"
+												]
+											},
+											"granted_by": {
+												"anyOf": [
+													{
+														"type": "string",
+														"format": "uuid",
+														"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+													},
+													{
+														"type": "null"
+													}
+												]
+											}
+										},
+										"required": [
+											"id",
+											"role",
+											"scope_kind",
+											"scope_id",
+											"created_at",
+											"expires_at",
+											"granted_by"
+										],
+										"additionalProperties": false
+									}
+								},
+								"pending_offers": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"properties": {
+											"id": {
+												"type": "string",
+												"format": "uuid",
+												"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+											},
+											"role": {
+												"type": "string"
+											},
+											"scope_kind": {
+												"type": [
+													"string",
+													"null"
+												]
+											},
+											"scope_id": {
+												"anyOf": [
+													{
+														"type": "string",
+														"format": "uuid",
+														"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+													},
+													{
+														"type": "null"
+													}
+												]
+											},
+											"from_actor_id": {
+												"type": "string",
+												"format": "uuid",
+												"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+											},
+											"from_username": {
+												"type": "string"
+											},
+											"created_at": {
+												"type": "string"
+											},
+											"expires_at": {
+												"type": "string"
+											}
+										},
+										"required": [
+											"id",
+											"role",
+											"scope_kind",
+											"scope_id",
+											"from_actor_id",
+											"from_username",
+											"created_at",
+											"expires_at"
+										],
+										"additionalProperties": false
+									}
+								}
+							},
+							"required": [
+								"account",
+								"actor",
+								"role_grants",
+								"pending_offers"
+							],
+							"additionalProperties": false
+						}
+					},
+					"grantable_roles": {
+						"type": "array",
+						"items": {
+							"type": "string",
+							"maxLength": 64,
+							"pattern": "^[a-z]+(?:_[a-z]+)*$"
+						}
+					}
+				},
+				"required": [
+					"accounts",
+					"grantable_roles"
+				],
+				"additionalProperties": false
+			},
+			"description": "List all accounts with their actors, role_grants, and pending offers. Admin-only.",
+			"side_effects": false,
+			"rate_limit_key": "account"
+		},
+		{
+			"name": "admin_session_list",
+			"kind": "request_response",
+			"auth": {
+				"account": "required",
+				"actor": "required",
+				"roles": [
+					"admin"
+				]
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"sessions": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"id": {
+									"type": "string",
+									"pattern": "^[0-9a-f]{64}$"
+								},
+								"account_id": {
+									"type": "string",
+									"format": "uuid",
+									"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+								},
+								"created_at": {
+									"type": "string"
+								},
+								"expires_at": {
+									"type": "string"
+								},
+								"username": {
+									"type": "string"
+								}
+							},
+							"required": [
+								"id",
+								"account_id",
+								"created_at",
+								"expires_at",
+								"username"
+							],
+							"additionalProperties": false
+						}
+					}
+				},
+				"required": [
+					"sessions"
+				],
+				"additionalProperties": false
+			},
+			"description": "List every active auth session across all accounts. Admin-only.",
+			"side_effects": false,
+			"rate_limit_key": "account"
+		},
+		{
+			"name": "admin_session_revoke_all",
+			"kind": "request_response",
+			"auth": {
+				"account": "required",
+				"actor": "required",
+				"roles": [
+					"admin"
+				]
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"account_id": {
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+						"description": "Account whose sessions to revoke."
+					},
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"required": [
+					"account_id"
+				],
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"ok": {
+						"type": "boolean",
+						"const": true
+					},
+					"count": {
+						"type": "number"
+					}
+				},
+				"required": [
+					"ok",
+					"count"
+				],
+				"additionalProperties": false
+			},
+			"description": "Revoke all sessions for an account. Admin-only.",
+			"side_effects": true,
+			"rate_limit_key": "account"
+		},
+		{
+			"name": "admin_token_revoke_all",
+			"kind": "request_response",
+			"auth": {
+				"account": "required",
+				"actor": "required",
+				"roles": [
+					"admin"
+				]
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"account_id": {
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+						"description": "Account whose API tokens to revoke."
+					},
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"required": [
+					"account_id"
+				],
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"ok": {
+						"type": "boolean",
+						"const": true
+					},
+					"count": {
+						"type": "number"
+					}
+				},
+				"required": [
+					"ok",
+					"count"
+				],
+				"additionalProperties": false
+			},
+			"description": "Revoke all API tokens for an account. Admin-only.",
+			"side_effects": true,
+			"rate_limit_key": "account"
+		},
+		{
+			"name": "audit_log_list",
+			"kind": "request_response",
+			"auth": {
+				"account": "required",
+				"actor": "required",
+				"roles": [
+					"admin"
+				]
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"event_type": {
+						"description": "Filter by event type. Accepts builtin or consumer-registered names (regex-validated, at most 64 characters).",
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 64,
+								"pattern": "^[A-Za-z][A-Za-z0-9_./-]*$"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"outcome": {
+						"description": "Filter by outcome (`success` or `failure`).",
+						"invalid_reason": "outcome_invalid",
+						"anyOf": [
+							{
+								"type": "string",
+								"enum": [
+									"success",
+									"failure"
+								]
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"account_id": {
+						"description": "Filter by account id — matches the actor or the target account.",
+						"anyOf": [
+							{
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"limit": {
+						"description": "Max rows to return (default 50, max 200).",
+						"invalid_reason": "limit_invalid",
+						"anyOf": [
+							{
+								"type": "integer",
+								"minimum": 1,
+								"maximum": 200
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"offset": {
+						"description": "Pagination offset.",
+						"invalid_reason": "offset_invalid",
+						"anyOf": [
+							{
+								"type": "integer",
+								"minimum": 0,
+								"maximum": 9007199254740991
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"since_seq": {
+						"description": "Gap-fill from this seq forward. Used for SSE reconnection.",
+						"invalid_reason": "since_seq_invalid",
+						"anyOf": [
+							{
+								"type": "integer",
+								"minimum": 0,
+								"maximum": 9007199254740991
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"events": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"id": {
+									"type": "string",
+									"format": "uuid",
+									"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+								},
+								"seq": {
+									"type": "integer",
+									"minimum": -9007199254740991,
+									"maximum": 9007199254740991
+								},
+								"event_type": {
+									"type": "string",
+									"maxLength": 64,
+									"pattern": "^[A-Za-z][A-Za-z0-9_./-]*$"
+								},
+								"outcome": {
+									"type": "string",
+									"enum": [
+										"success",
+										"failure"
+									]
+								},
+								"actor_id": {
+									"anyOf": [
+										{
+											"type": "string",
+											"format": "uuid",
+											"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+										},
+										{
+											"type": "null"
+										}
+									]
+								},
+								"account_id": {
+									"anyOf": [
+										{
+											"type": "string",
+											"format": "uuid",
+											"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+										},
+										{
+											"type": "null"
+										}
+									]
+								},
+								"target_account_id": {
+									"anyOf": [
+										{
+											"type": "string",
+											"format": "uuid",
+											"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+										},
+										{
+											"type": "null"
+										}
+									]
+								},
+								"target_actor_id": {
+									"anyOf": [
+										{
+											"type": "string",
+											"format": "uuid",
+											"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+										},
+										{
+											"type": "null"
+										}
+									]
+								},
+								"ip": {
+									"type": [
+										"string",
+										"null"
+									]
+								},
+								"created_at": {
+									"type": "string"
+								},
+								"metadata": {
+									"anyOf": [
+										{
+											"type": "object",
+											"propertyNames": {
+												"type": "string"
+											},
+											"additionalProperties": {}
+										},
+										{
+											"type": "null"
+										}
+									]
+								},
+								"username": {
+									"type": [
+										"string",
+										"null"
+									]
+								},
+								"target_username": {
+									"type": [
+										"string",
+										"null"
+									]
+								}
+							},
+							"required": [
+								"id",
+								"seq",
+								"event_type",
+								"outcome",
+								"actor_id",
+								"account_id",
+								"target_account_id",
+								"target_actor_id",
+								"ip",
+								"created_at",
+								"metadata",
+								"username",
+								"target_username"
+							],
+							"additionalProperties": false
+						}
+					}
+				},
+				"required": [
+					"events"
+				],
+				"additionalProperties": false
+			},
+			"description": "List audit log events with optional filters. Admin-only.",
+			"side_effects": false,
+			"rate_limit_key": "account"
+		},
+		{
+			"name": "audit_log_role_grant_history",
+			"kind": "request_response",
+			"auth": {
+				"account": "required",
+				"actor": "required",
+				"roles": [
+					"admin"
+				]
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"limit": {
+						"description": "Max rows to return (default 50, max 200).",
+						"invalid_reason": "limit_invalid",
+						"anyOf": [
+							{
+								"type": "integer",
+								"minimum": 1,
+								"maximum": 200
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"offset": {
+						"description": "Pagination offset.",
+						"invalid_reason": "offset_invalid",
+						"anyOf": [
+							{
+								"type": "integer",
+								"minimum": 0,
+								"maximum": 9007199254740991
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"events": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"id": {
+									"type": "string",
+									"format": "uuid",
+									"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+								},
+								"seq": {
+									"type": "integer",
+									"minimum": -9007199254740991,
+									"maximum": 9007199254740991
+								},
+								"event_type": {
+									"type": "string",
+									"maxLength": 64,
+									"pattern": "^[A-Za-z][A-Za-z0-9_./-]*$"
+								},
+								"outcome": {
+									"type": "string",
+									"enum": [
+										"success",
+										"failure"
+									]
+								},
+								"actor_id": {
+									"anyOf": [
+										{
+											"type": "string",
+											"format": "uuid",
+											"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+										},
+										{
+											"type": "null"
+										}
+									]
+								},
+								"account_id": {
+									"anyOf": [
+										{
+											"type": "string",
+											"format": "uuid",
+											"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+										},
+										{
+											"type": "null"
+										}
+									]
+								},
+								"target_account_id": {
+									"anyOf": [
+										{
+											"type": "string",
+											"format": "uuid",
+											"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+										},
+										{
+											"type": "null"
+										}
+									]
+								},
+								"target_actor_id": {
+									"anyOf": [
+										{
+											"type": "string",
+											"format": "uuid",
+											"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+										},
+										{
+											"type": "null"
+										}
+									]
+								},
+								"ip": {
+									"type": [
+										"string",
+										"null"
+									]
+								},
+								"created_at": {
+									"type": "string"
+								},
+								"metadata": {
+									"anyOf": [
+										{
+											"type": "object",
+											"propertyNames": {
+												"type": "string"
+											},
+											"additionalProperties": {}
+										},
+										{
+											"type": "null"
+										}
+									]
+								},
+								"username": {
+									"type": [
+										"string",
+										"null"
+									]
+								},
+								"target_username": {
+									"type": [
+										"string",
+										"null"
+									]
+								}
+							},
+							"required": [
+								"id",
+								"seq",
+								"event_type",
+								"outcome",
+								"actor_id",
+								"account_id",
+								"target_account_id",
+								"target_actor_id",
+								"ip",
+								"created_at",
+								"metadata",
+								"username",
+								"target_username"
+							],
+							"additionalProperties": false
+						}
+					}
+				},
+				"required": [
+					"events"
+				],
+				"additionalProperties": false
+			},
+			"description": "List role_grant grant and revoke events with usernames. Admin-only.",
+			"side_effects": false,
+			"rate_limit_key": "account"
+		},
+		{
+			"name": "invite_create",
+			"kind": "request_response",
+			"auth": {
+				"account": "required",
+				"actor": "required",
+				"roles": [
+					"admin"
+				]
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"email": {
+						"description": "Invitee email.",
+						"anyOf": [
+							{
+								"type": "string",
+								"pattern": "^[^\\s\\u0085@]+@[^\\s\\u0085@]+\\.[^\\s\\u0085@]+$"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"username": {
+						"description": "Invitee username.",
+						"anyOf": [
+							{
+								"type": "string",
+								"minLength": 3,
+								"maxLength": 39,
+								"pattern": "^[a-zA-Z][0-9a-zA-Z_-]*[0-9a-zA-Z]$"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"ok": {
+						"type": "boolean",
+						"const": true
+					},
+					"invite": {
+						"type": "object",
+						"properties": {
+							"id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+							},
+							"email": {
+								"anyOf": [
+									{
+										"type": "string",
+										"pattern": "^[^\\s\\u0085@]+@[^\\s\\u0085@]+\\.[^\\s\\u0085@]+$"
+									},
+									{
+										"type": "null"
+									}
+								]
+							},
+							"username": {
+								"anyOf": [
+									{},
+									{
+										"type": "null"
+									}
+								]
+							},
+							"claimed_by": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								]
+							},
+							"claimed_at": {
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"created_at": {
+								"type": "string"
+							},
+							"created_by": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								]
+							}
+						},
+						"required": [
+							"id",
+							"email",
+							"username",
+							"claimed_by",
+							"claimed_at",
+							"created_at",
+							"created_by"
+						],
+						"additionalProperties": false
+					}
+				},
+				"required": [
+					"ok",
+					"invite"
+				],
+				"additionalProperties": false
+			},
+			"description": "Create an invite addressed to an email, username, or both. Admin-only.",
+			"side_effects": true,
+			"rate_limit_key": "account"
+		},
+		{
+			"name": "invite_list",
+			"kind": "request_response",
+			"auth": {
+				"account": "required",
+				"actor": "required",
+				"roles": [
+					"admin"
+				]
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"invites": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"id": {
+									"type": "string",
+									"format": "uuid",
+									"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+								},
+								"email": {
+									"anyOf": [
+										{
+											"type": "string",
+											"pattern": "^[^\\s\\u0085@]+@[^\\s\\u0085@]+\\.[^\\s\\u0085@]+$"
+										},
+										{
+											"type": "null"
+										}
+									]
+								},
+								"username": {
+									"anyOf": [
+										{},
+										{
+											"type": "null"
+										}
+									]
+								},
+								"claimed_by": {
+									"anyOf": [
+										{
+											"type": "string",
+											"format": "uuid",
+											"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+										},
+										{
+											"type": "null"
+										}
+									]
+								},
+								"claimed_at": {
+									"type": [
+										"string",
+										"null"
+									]
+								},
+								"created_at": {
+									"type": "string"
+								},
+								"created_by": {
+									"anyOf": [
+										{
+											"type": "string",
+											"format": "uuid",
+											"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+										},
+										{
+											"type": "null"
+										}
+									]
+								},
+								"created_by_username": {
+									"type": [
+										"string",
+										"null"
+									]
+								},
+								"claimed_by_username": {
+									"type": [
+										"string",
+										"null"
+									]
+								}
+							},
+							"required": [
+								"id",
+								"email",
+								"username",
+								"claimed_by",
+								"claimed_at",
+								"created_at",
+								"created_by",
+								"created_by_username",
+								"claimed_by_username"
+							],
+							"additionalProperties": false
+						}
+					}
+				},
+				"required": [
+					"invites"
+				],
+				"additionalProperties": false
+			},
+			"description": "List all invites with creator and claimer usernames. Admin-only.",
+			"side_effects": false,
+			"rate_limit_key": "account"
+		},
+		{
+			"name": "invite_delete",
+			"kind": "request_response",
+			"auth": {
+				"account": "required",
+				"actor": "required",
+				"roles": [
+					"admin"
+				]
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"invite_id": {
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+						"description": "Invite to delete. Must be unclaimed."
+					},
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"required": [
+					"invite_id"
+				],
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"ok": {
+						"type": "boolean",
+						"const": true
+					}
+				},
+				"required": [
+					"ok"
+				],
+				"additionalProperties": false
+			},
+			"description": "Delete an unclaimed invite. Admin-only.",
+			"side_effects": true,
+			"rate_limit_key": "account"
+		},
+		{
+			"name": "account_delete",
+			"kind": "request_response",
+			"auth": {
+				"account": "required",
+				"actor": "required"
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"account_id": {
+						"description": "Account to soft-delete. Omit for self-delete; another account requires admin.",
+						"anyOf": [
+							{
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"ok": {
+						"type": "boolean",
+						"const": true
+					},
+					"deleted": {
+						"type": "boolean"
+					}
+				},
+				"required": [
+					"ok",
+					"deleted"
+				],
+				"additionalProperties": false
+			},
+			"description": "Soft-delete an account (reversible tombstone): blocks auth, revokes sessions/tokens, soft-deletes its actor(s). Self-service for own account; admin required to delete another.",
+			"side_effects": true,
+			"rate_limit_key": "account"
+		},
+		{
+			"name": "account_purge",
+			"kind": "request_response",
+			"auth": {
+				"account": "required",
+				"actor": "required",
+				"roles": [
+					"keeper"
+				],
+				"credential_types": [
+					"daemon_token"
+				]
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"account_id": {
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+						"description": "Account to hard-purge."
+					},
+					"confirm": {
+						"description": "Must be `true` — fail-loud guard against an accidental irreversible purge.",
+						"type": "boolean"
+					},
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"required": [
+					"account_id"
+				],
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"ok": {
+						"type": "boolean",
+						"const": true
+					},
+					"purged": {
+						"type": "boolean"
+					}
+				},
+				"required": [
+					"ok",
+					"purged"
+				],
+				"additionalProperties": false
+			},
+			"description": "Hard-purge an account (irreversible cascading delete). Keeper-only + explicit confirm. Audit ids survive; identity snapshotted in metadata.",
+			"side_effects": true,
+			"rate_limit_key": "account"
+		},
+		{
+			"name": "account_undelete",
+			"kind": "request_response",
+			"auth": {
+				"account": "required",
+				"actor": "required",
+				"roles": [
+					"admin"
+				]
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"account_id": {
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+						"description": "Soft-deleted account to reactivate."
+					},
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"required": [
+					"account_id"
+				],
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"ok": {
+						"type": "boolean",
+						"const": true
+					},
+					"undeleted": {
+						"type": "boolean"
+					}
+				},
+				"required": [
+					"ok",
+					"undeleted"
+				],
+				"additionalProperties": false
+			},
+			"description": "Reactivate a soft-deleted account (clears the deleted_at tombstone on the account + its actors). Admin-only. Does not restore revoked sessions/tokens — principals re-auth fresh.",
+			"side_effects": true,
+			"rate_limit_key": "account"
+		},
+		{
+			"name": "app_settings_get",
+			"kind": "request_response",
+			"auth": {
+				"account": "required",
+				"actor": "required",
+				"roles": [
+					"admin"
+				]
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"settings": {
+						"type": "object",
+						"properties": {
+							"open_signup": {
+								"type": "boolean"
+							},
+							"updated_at": {
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"updated_by": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								]
+							},
+							"updated_by_username": {
+								"type": [
+									"string",
+									"null"
+								]
+							}
+						},
+						"required": [
+							"open_signup",
+							"updated_at",
+							"updated_by",
+							"updated_by_username"
+						],
+						"additionalProperties": false
+					}
+				},
+				"required": [
+					"settings"
+				],
+				"additionalProperties": false
+			},
+			"description": "Read global app settings. Admin-only.",
+			"side_effects": false,
+			"rate_limit_key": null
+		},
+		{
+			"name": "app_settings_update",
+			"kind": "request_response",
+			"auth": {
+				"account": "required",
+				"actor": "required",
+				"roles": [
+					"admin"
+				]
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"open_signup": {
+						"type": "boolean",
+						"description": "New value for the open signup toggle."
+					},
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					}
+				},
+				"required": [
+					"open_signup"
+				],
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"ok": {
+						"type": "boolean",
+						"const": true
+					},
+					"settings": {
+						"type": "object",
+						"properties": {
+							"open_signup": {
+								"type": "boolean"
+							},
+							"updated_at": {
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"updated_by": {
+								"anyOf": [
+									{
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									{
+										"type": "null"
+									}
+								]
+							},
+							"updated_by_username": {
+								"type": [
+									"string",
+									"null"
+								]
+							}
+						},
+						"required": [
+							"open_signup",
+							"updated_at",
+							"updated_by",
+							"updated_by_username"
+						],
+						"additionalProperties": false
+					}
+				},
+				"required": [
+					"ok",
+					"settings"
+				],
+				"additionalProperties": false
+			},
+			"description": "Update global app settings (currently just the open signup toggle). Admin-only.",
+			"side_effects": true,
+			"rate_limit_key": "account"
+		}
+	],
+	"diagnostics": [
+		{
+			"level": "info",
+			"category": "schema",
+			"message": "Part of the schema has no JSON Schema form and is left out or written as {} there: Transforms cannot be represented in JSON Schema",
+			"source": "/api/rpc admin_account_list output"
+		},
+		{
+			"level": "info",
+			"category": "schema",
+			"message": "Part of the schema has no JSON Schema form and is left out or written as {} there: Transforms cannot be represented in JSON Schema",
+			"source": "/api/rpc invite_create output"
+		},
+		{
+			"level": "info",
+			"category": "schema",
+			"message": "Part of the schema has no JSON Schema form and is left out or written as {} there: Transforms cannot be represented in JSON Schema",
+			"source": "/api/rpc invite_list output"
+		},
+		{
+			"level": "info",
+			"category": "schema",
+			"message": "Part of the schema has no JSON Schema form and is left out or written as {} there: Transforms cannot be represented in JSON Schema",
+			"source": "/ws admin_account_list output"
+		},
+		{
+			"level": "info",
+			"category": "schema",
+			"message": "Part of the schema has no JSON Schema form and is left out or written as {} there: Transforms cannot be represented in JSON Schema",
+			"source": "/ws invite_create output"
+		},
+		{
+			"level": "info",
+			"category": "schema",
+			"message": "Part of the schema has no JSON Schema form and is left out or written as {} there: Transforms cannot be represented in JSON Schema",
+			"source": "/ws invite_list output"
+		}
+	]
+}

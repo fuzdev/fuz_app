@@ -30,7 +30,21 @@ import {
  * The quadratic spelling of the `EMAIL_REGEX` grammar, the reference its
  * verdicts are held to. Never run it on a long input.
  */
-const EMAIL_REGEX_REFERENCE = /^[^\s\u0085@]+@[^\s\u0085@]+\.[^\s\u0085@]+$/;
+const EMAIL_REGEX_REFERENCE =
+	/^[^\s\u0085@]+@[^\s\u0085@.][^\s\u0085@]*\.[^\s\u0085@]*[^\s\u0085@.]$/;
+
+/**
+ * The Rust spine's `is_valid_email` but for its length bound, as it reads:
+ * no whitespace, one `@` after a non-empty local part, and a domain that holds
+ * a `.` and neither starts nor ends with one.
+ */
+const is_email_by_rule = (s: string): boolean => {
+	if (s === '' || /[\s\u0085]/.test(s)) return false;
+	const parts = s.split('@');
+	if (parts.length !== 2 || parts[0] === '') return false;
+	const domain = parts[1]!;
+	return domain.includes('.') && !domain.startsWith('.') && !domain.endsWith('.');
+};
 
 /** Calls `visit` on every string over `alphabet` of at most `max_length` characters. */
 const each_string = (
@@ -320,6 +334,19 @@ describe('Email', () => {
 		assert.ok(!Email.safeParse('a@@b.c').success); // two `@`
 	});
 
+	test('refuses a domain with a dot at either edge, as the Rust is_valid_email does', () => {
+		// a domain with another dot inside still has a dot at its edge
+		assert.ok(!Email.safeParse('a@.b.c').success);
+		assert.ok(!Email.safeParse('a@b.c.').success);
+		assert.ok(!Email.safeParse('a@.b.c.').success);
+		assert.ok(!Email.safeParse('a@..b').success);
+		assert.ok(!Email.safeParse('a@b..').success);
+		assert.ok(!Email.safeParse('a@.').success);
+		// a run of dots inside the domain is not at its edge
+		assert.ok(Email.safeParse('a@b..c').success);
+		assert.ok(Email.safeParse('a@b.c.d').success);
+	});
+
 	test('enforces the length bound', () => {
 		// 254 ASCII chars total: a 242-char local + "@example.com" (12).
 		const at_max = `${'a'.repeat(EMAIL_LENGTH_MAX - 12)}@example.com`;
@@ -396,13 +423,15 @@ describe('Email', () => {
 });
 
 describe('EMAIL_REGEX', () => {
-	test('gives the verdict of its quadratic spelling on every short string', () => {
+	test('gives the verdict of its quadratic spelling and of the Rust rule on every short string', () => {
 		const differ: Array<string> = [];
 		let accepted = 0;
 		const visit = (s: string) => {
 			const verdict = EMAIL_REGEX.test(s);
 			if (verdict) accepted++;
-			if (verdict !== EMAIL_REGEX_REFERENCE.test(s)) differ.push(s);
+			if (verdict !== EMAIL_REGEX_REFERENCE.test(s) || verdict !== is_email_by_rule(s)) {
+				differ.push(s);
+			}
 		};
 		// the structural characters, and with them each class of whitespace the
 		// grammar refuses: ASCII, NEL (U+0085), BOM (U+FEFF) and LS (U+2028)
@@ -426,6 +455,7 @@ describe('EMAIL_REGEX', () => {
 			`a@b${'.'.repeat(n)}`,
 			`a@b.${'.'.repeat(n)}`,
 			`a@${'b.'.repeat(n / 2)} `,
+			`a@${'b.'.repeat(n / 2)}.`,
 			`a@${'.a'.repeat(n / 2)} `,
 			`${'a'.repeat(n)}@b.c `
 		];

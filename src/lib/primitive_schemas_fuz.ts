@@ -1,8 +1,8 @@
 /**
- * `@fuzdev/fuz_schema` twins of the Zod `bounded_string`, `Uuid`,
- * `UuidWithDefault` (`primitive_schemas.ts`), and `ActingActor`
- * (`http/auth_shape.ts`), under the same names, for schemas written in
- * fuz_schema.
+ * `@fuzdev/fuz_schema` twins of the Zod `bounded_string`, `Username`,
+ * `Email`, `Uuid`, `UuidWithDefault` (`primitive_schemas.ts`), and
+ * `ActingActor` (`http/auth_shape.ts`), under the same names, for schemas
+ * written in fuz_schema.
  *
  * The output type is shared: the Zod `Uuid` outputs fuz_schema's
  * `Branded<string, 'Uuid'>` too, so a value parsed by either twin goes where
@@ -21,11 +21,13 @@
 import { meta } from '@fuzdev/fuz_schema/meta.ts';
 import {
 	brand,
+	check,
 	max_length,
 	message,
 	min_length,
 	optional,
 	pipe,
+	regex,
 	string,
 	to_lower_case,
 	uuid,
@@ -34,7 +36,17 @@ import {
 	type PipeSchema
 } from '@fuzdev/fuz_schema/schema.ts';
 
-import { create_uuid, type BoundedStringOptions } from './primitive_schemas.ts';
+import {
+	create_uuid,
+	EMAIL_LENGTH_MAX,
+	EMAIL_LENGTH_MESSAGE,
+	EMAIL_REGEX,
+	is_email_within_length_max,
+	USERNAME_LENGTH_MAX,
+	USERNAME_LENGTH_MIN,
+	USERNAME_REGEX,
+	type BoundedStringOptions
+} from './primitive_schemas.ts';
 
 /**
  * A string schema whose length is bounded in UTF-16 code units, the twin of
@@ -56,6 +68,45 @@ export const bounded_string = (
 		max_message === undefined ? max_length(max) : message(max_length(max), max_message);
 	return min === undefined ? pipe(string, max_step) : pipe(string, min_length(min), max_step);
 };
+
+/**
+ * Username for account creation, the twin of the Zod `Username`: the same
+ * bounds and grammar, output in lowercase. Every input gets the same verdict
+ * and output from both; a string outside the bounds and off the grammar gets
+ * the length issue alone, where Zod adds the grammar issue after it.
+ *
+ * @nodocs
+ */
+export const Username = pipe(
+	bounded_string({ min: USERNAME_LENGTH_MIN, max: USERNAME_LENGTH_MAX }),
+	regex(USERNAME_REGEX),
+	to_lower_case
+);
+/** @nodocs */
+export type Username = Infer<typeof Username>;
+
+/**
+ * Email validation, the twin of the Zod `Email`: `EMAIL_REGEX` and at most
+ * `EMAIL_LENGTH_MAX` UTF-8 bytes, no transform. The `max_length` ahead of the
+ * grammar refuses a string past the bound in UTF-16 code units, which is past
+ * it in bytes too, before the regex reads it, and the `check` after it the
+ * multibyte address within the units but past the bytes, both with
+ * `EMAIL_LENGTH_MESSAGE`. Every input gets the same verdict and output from
+ * both; a string past the bound in code units gets the length issue as a
+ * `max_length`, where Zod gives a `check`, and one within the bound in code
+ * units but past it in bytes and off the grammar gets the grammar issue, where
+ * Zod gives the length one.
+ *
+ * @nodocs
+ */
+export const Email = pipe(
+	string,
+	message(max_length(EMAIL_LENGTH_MAX), EMAIL_LENGTH_MESSAGE),
+	regex(EMAIL_REGEX),
+	message(check(is_email_within_length_max), EMAIL_LENGTH_MESSAGE)
+);
+/** @nodocs */
+export type Email = Infer<typeof Email>;
 
 /**
  * Branded UUID schema: a UUID of RFC 9562 in either case, output in

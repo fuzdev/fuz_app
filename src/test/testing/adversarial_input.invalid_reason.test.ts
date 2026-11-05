@@ -26,9 +26,10 @@ import {
 	ERROR_OUTCOME_INVALID,
 	ERROR_SINCE_SEQ_INVALID
 } from '#lib/http/error_schemas.ts';
+import type { ValidationSchema } from '#lib/schema_issues.ts';
 
 /** Each case's label → the reason it owes. */
-const owed = (input: z.ZodType): Map<string, string | undefined> =>
+const owed = (input: ValidationSchema): Map<string, string | undefined> =>
 	new Map(
 		generate_rpc_params_test_cases(input).map((tc) => [
 			tc.label,

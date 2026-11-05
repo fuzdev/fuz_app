@@ -38,7 +38,11 @@ import {
 	ERROR_TOKEN_SCOPE_INVALID,
 	TokenCreateInput
 } from '#lib/auth/account_action_specs.ts';
-import { AdminAccountListInput, AuditLogListInput } from '#lib/auth/admin_action_specs.ts';
+import {
+	AdminAccountListInput,
+	AuditLogListInput,
+	AuditLogRoleGrantHistoryInput
+} from '#lib/auth/admin_action_specs.ts';
 import { RoleGrantOfferHistoryInput } from '#lib/auth/role_grant_offer_action_specs.ts';
 import {
 	ERROR_LIMIT_INVALID,
@@ -318,7 +322,12 @@ const reason_for = (input: ValidationSchema, params: unknown): unknown => {
 
 describe('the spine inputs declare the reasons the Rust twin sends', () => {
 	test('paged reads', () => {
-		for (const input of [AdminAccountListInput, AuditLogListInput, RoleGrantOfferHistoryInput]) {
+		for (const input of [
+			AdminAccountListInput,
+			AuditLogListInput,
+			AuditLogRoleGrantHistoryInput,
+			RoleGrantOfferHistoryInput
+		]) {
 			for (const limit of [0, 100_000, 1.5, 'x', true]) {
 				assert.strictEqual(reason_for(input, { limit }), ERROR_LIMIT_INVALID);
 			}

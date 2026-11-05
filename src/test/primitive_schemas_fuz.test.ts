@@ -1,8 +1,9 @@
 /**
  * Tests for the fuz_schema twins in `primitive_schemas_fuz.ts`, held to the
- * Zod `Uuid`, `UuidWithDefault`, and `ActingActor` on one vector table, and to
- * the Zod `bounded_string` on another: both libraries give every row the same
- * verdict and output.
+ * Zod `Uuid`, `UuidWithDefault`, and `ActingActor` on one vector table, to
+ * the Zod `bounded_string` on another, and to the Zod `Username` and `Email`
+ * on a third: both libraries give every row the same verdict and output, and
+ * `Username` and `Email` the same wire issues but for the declared ones.
  *
  * @module
  */
@@ -14,6 +15,12 @@ import { is_schema, parse } from '@fuzdev/fuz_schema/schema.ts';
 import { to_json_schema } from '@fuzdev/fuz_schema/json_schema.ts';
 
 import {
+	EMAIL_LENGTH_MAX,
+	EMAIL_LENGTH_MESSAGE,
+	Email as ZodEmail,
+	USERNAME_LENGTH_MAX,
+	USERNAME_LENGTH_MIN,
+	Username as ZodUsername,
 	Uuid as ZodUuid,
 	UuidWithDefault as ZodUuidWithDefault,
 	bounded_string as zod_bounded_string,
@@ -22,11 +29,14 @@ import {
 import {
 	ACTING_ACTOR_DESCRIPTION,
 	ActingActor,
+	Email,
+	Username,
 	Uuid,
 	UuidWithDefault,
 	bounded_string
 } from '#lib/primitive_schemas_fuz.ts';
 import { ActingActor as ZodActingActor } from '#lib/http/auth_shape.ts';
+import { parse_any, to_wire_issues, type WireIssue } from '#lib/schema_issues.ts';
 
 /** The shape `crypto.randomUUID()` produces — a lowercase version-4 UUID. */
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -306,5 +316,204 @@ describe('fuz_schema bounded_string', () => {
 		const under = parse(schema, 'a');
 		assert.ok(!under.ok);
 		assert.isUndefined(under.issues[0]!.message);
+	});
+});
+
+/** What a parse gave: its output, or its wire issues. */
+const outcome_of = (
+	schema: Parameters<typeof parse_any>[0],
+	input: unknown
+): { ok: true; value: unknown } | { ok: false; issues: Array<WireIssue> } => {
+	const result = parse_any(schema, input);
+	return result.ok
+		? { ok: true, value: result.value }
+		: { ok: false, issues: to_wire_issues(result.issues, input) };
+};
+
+const USERNAME_VECTORS: Array<unknown> = [
+	'alice',
+	'Alice',
+	'ALICE',
+	'a1',
+	'a-b_c',
+	'abc',
+	'a'.repeat(USERNAME_LENGTH_MAX),
+	'a'.repeat(USERNAME_LENGTH_MAX + 1),
+	'1'.repeat(USERNAME_LENGTH_MAX + 1),
+	'ab',
+	'a',
+	'1',
+	'',
+	'1ab',
+	'ab-',
+	'a b',
+	' alice',
+	'al.ice',
+	'al@ice',
+	'аlice',
+	ASTRAL.repeat(2),
+	null,
+	undefined,
+	3,
+	['alice']
+];
+
+describe('fuz_schema Username', () => {
+	test('the Zod Username gives every row the same verdict, output and issues but one', () => {
+		for (const input of USERNAME_VECTORS) {
+			const label = JSON.stringify(input);
+			const fuz = outcome_of(Username, input);
+			const zod = outcome_of(ZodUsername, input);
+			assert.strictEqual(fuz.ok, zod.ok, label);
+			if (fuz.ok && zod.ok) {
+				assert.strictEqual(fuz.value, zod.value, label);
+				assert.strictEqual(fuz.value, (input as string).toLowerCase(), label);
+				continue;
+			}
+			assert.ok(!fuz.ok && !zod.ok);
+			// declared: a string too short or too long gets the length issue alone,
+			// where Zod adds the grammar issue after it; and a value that is no
+			// string the type issue alone, where the Zod `bounded_string`'s length
+			// check still reads the `length` of an array, adding a `min_length`
+			const zod_issues =
+				zod.issues.length === 2 &&
+				(fuz.issues[0]?.kind.endsWith('_length') ||
+					(fuz.issues[0]?.kind === 'string' && zod.issues[1]!.kind === 'min_length'))
+					? zod.issues.slice(0, 1)
+					: zod.issues;
+			assert.deepStrictEqual(
+				fuz.issues.map(({ message: _, ...rest }) => rest),
+				zod_issues.map(({ message: _, ...rest }) => rest),
+				label
+			);
+		}
+	});
+
+	test('a short username gets one issue, where Zod gives two', () => {
+		const fuz = outcome_of(Username, 'a');
+		const zod = outcome_of(ZodUsername, 'a');
+		assert.ok(!fuz.ok && !zod.ok);
+		assert.deepStrictEqual(
+			fuz.issues.map((i) => i.kind),
+			['min_length']
+		);
+		assert.deepStrictEqual(
+			zod.issues.map((i) => i.kind),
+			['min_length', 'regex']
+		);
+		assert.strictEqual(fuz.issues[0]!.expected, `length >= ${USERNAME_LENGTH_MIN}`);
+	});
+
+	test('its JSON Schema is the Zod Username’s on the input side', () => {
+		assert.deepEqual<Record<string, unknown>>(
+			to_json_schema(Username, { io: 'input' }),
+			z.toJSONSchema(ZodUsername, { io: 'input' })
+		);
+	});
+});
+
+const EMAIL_VECTORS: Array<unknown> = [
+	'user@example.com',
+	'User@Example.com',
+	'user+tag@example.co.uk',
+	'a@b.c',
+	'a..b@c.d',
+	'a@b..c',
+	'a@.b.c',
+	'a@b.c.',
+	'user@.com',
+	'user@com.',
+	'user@host',
+	'@example.com',
+	'user@',
+	'a@@b.c',
+	'not-an-email',
+	'',
+	' user@example.com',
+	'a\u0085b@c.d',
+	'a\ufeffb@c.d',
+	`${'a'.repeat(EMAIL_LENGTH_MAX - 12)}@example.com`,
+	`${'a'.repeat(EMAIL_LENGTH_MAX - 11)}@example.com`,
+	'a'.repeat(EMAIL_LENGTH_MAX + 1),
+	`${'\u00fc'.repeat(121)}@example.com`,
+	`${'\u00fc'.repeat(122)}@example.com`,
+	`${ASTRAL.repeat(60)}@example.com`,
+	`${ASTRAL.repeat(61)}@example.com`,
+	null,
+	undefined,
+	1
+];
+
+describe('fuz_schema Email', () => {
+	test('the Zod Email gives every row the same verdict, output and issues but one', () => {
+		for (const input of EMAIL_VECTORS) {
+			const label = JSON.stringify(input);
+			const fuz = outcome_of(Email, input);
+			const zod = outcome_of(ZodEmail, input);
+			assert.strictEqual(fuz.ok, zod.ok, label);
+			if (fuz.ok && zod.ok) {
+				assert.strictEqual(fuz.value, input, label);
+				assert.strictEqual(zod.value, input, label);
+				continue;
+			}
+			assert.ok(!fuz.ok && !zod.ok);
+			if (typeof input === 'string' && input.length > EMAIL_LENGTH_MAX) {
+				// declared: past the bound in code units, the one length issue, a
+				// `max_length` where Zod gives its byte `check`, after the grammar
+				// issue when the string is off the grammar too
+				assert.deepStrictEqual(fuz.issues, [
+					{
+						kind: 'max_length',
+						path: [],
+						expected: `length <= ${EMAIL_LENGTH_MAX}`,
+						received: 'string',
+						message: EMAIL_LENGTH_MESSAGE
+					}
+				]);
+				assert.deepStrictEqual(zod.issues.at(-1), {
+					kind: 'check',
+					path: [],
+					expected: 'check',
+					received: 'string',
+					message: EMAIL_LENGTH_MESSAGE
+				});
+				continue;
+			}
+			assert.deepStrictEqual(
+				fuz.issues.map(({ message: _, ...rest }) => rest),
+				zod.issues.map(({ message: _, ...rest }) => rest),
+				label
+			);
+			// the byte bound's issue carries the Zod refine's message
+			for (const [i, issue] of fuz.issues.entries()) {
+				if (issue.kind === 'check') {
+					assert.strictEqual(issue.message, EMAIL_LENGTH_MESSAGE, label);
+					assert.strictEqual(zod.issues[i]!.message, EMAIL_LENGTH_MESSAGE, label);
+				}
+			}
+		}
+	});
+
+	test('bounds UTF-8 bytes: a multibyte address within the units but past the bytes fails the check', () => {
+		const at = `${'\u00fc'.repeat(121)}@example.com`;
+		const over = `${'\u00fc'.repeat(122)}@example.com`;
+		assert.ok(over.length <= EMAIL_LENGTH_MAX);
+		assert.ok(parse(Email, at).ok);
+		const result = outcome_of(Email, over);
+		assert.ok(!result.ok);
+		assert.deepStrictEqual(
+			result.issues.map((i) => [i.kind, i.message]),
+			[['check', EMAIL_LENGTH_MESSAGE]]
+		);
+	});
+
+	test('its JSON Schema is the Zod Email’s with the bound as maxLength', () => {
+		const fuz_json = to_json_schema(Email, { io: 'input', unrepresentable: 'any' });
+		const zod_json = z.toJSONSchema(ZodEmail, { io: 'input' });
+		assert.deepEqual<Record<string, unknown>>(fuz_json, {
+			...zod_json,
+			maxLength: EMAIL_LENGTH_MAX
+		});
+		assert.throws(() => to_json_schema(Email, { io: 'input' }), /check/);
 	});
 });

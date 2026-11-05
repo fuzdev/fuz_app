@@ -3,36 +3,52 @@
  *
  * Import this module for the specs, Input/Output schemas, and the
  * `all_admin_action_specs` registry. Handlers live in `auth/admin_actions.ts`.
+ * Every input is a `@fuzdev/fuz_schema` schema, and so is every output that
+ * holds no row schema; the outputs of the listings and of `invite_create`
+ * are Zod.
  *
  * Authorization is declared at the spec level (`auth: {role: ROLE_ADMIN}`)
  * so the RPC dispatcher enforces admin before the handler runs and the
  * generated surface accurately reports the requirement.
  *
- * The registry always includes `app_settings_get` / `app_settings_update` —
- * the runtime factory only wires their handlers when
- * `AdminActionOptions.app_settings` is provided; dispatch falls back to
- * `method_not_found` when absent.
+ * The registry includes `app_settings_get` / `app_settings_update`, and
+ * `create_admin_actions` always wires their handlers.
  *
  * @module
  */
 
 import { z } from 'zod';
-import { Uuid, Email, Username } from '../primitive_schemas.ts';
+import { meta } from '@fuzdev/fuz_schema/meta.ts';
+import {
+	boolean,
+	check_at,
+	integer,
+	literal,
+	max_value,
+	message,
+	min_value,
+	nullable,
+	number,
+	object,
+	optional,
+	pipe,
+	with_default_fn,
+	type Infer
+} from '@fuzdev/fuz_schema/schema.ts';
 
+import { ActingActor, Email, Username, Uuid } from '../primitive_schemas_fuz.ts';
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
 import { ROLE_ADMIN, ROLE_KEEPER, RoleName } from './role_schema.ts';
 import { CREDENTIAL_TYPE_DAEMON_TOKEN } from './credential_type_schema.ts';
 import { NAME_LENGTH_MAX } from './name_schema.ts';
 import { AdminAccountEntryJson } from './account_schema.ts';
-import { ActingActor } from '../http/auth_shape.ts';
 import {
 	AdminSessionJson,
 	AUDIT_LOG_DEFAULT_LIMIT,
-	AuditEventTypeName,
 	AuditLogEventWithUsernamesJson,
-	AuditOutcome,
 	RoleGrantHistoryEventJson
 } from './audit_log_schema.ts';
+import { AuditEventTypeName, AuditOutcome } from './audit_log_schema_fuz.ts';
 import { InviteJson, InviteWithUsernamesJson } from './invite_schema.ts';
 import { AppSettingsWithUsernameJson } from './app_settings_schema.ts';
 import {
@@ -50,37 +66,58 @@ export const ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT = 50;
 /** Max `admin_account_list` page size. */
 export const ADMIN_ACCOUNT_LIST_LIMIT_MAX = 200;
 
+/** The message `invite_create` fails with when it is given neither `email` nor `username`. */
+export const INVITE_TARGET_REQUIRED_MESSAGE = 'at least one of email or username is required';
+
 // -- Input/output schemas ---------------------------------------------------
 
-/** Input for `admin_account_list`. */
-export const AdminAccountListInput = z
-	.strictObject({
+/**
+ * A page's `limit`, an integer in `[1, max]`, or absent, with the reason
+ * every refusal of it carries.
+ */
+const page_limit = (max: number, description: string) =>
+	meta(optional(nullable(pipe(number, integer, min_value(1), max_value(max)))), {
+		description,
+		invalid_reason: ERROR_LIMIT_INVALID
+	});
+
+/**
+ * An integer at least zero, bounded by `Number.MAX_SAFE_INTEGER`, the
+ * integers every number holds exactly, or absent: a page's `offset` and the
+ * audit list's `since_seq`.
+ */
+const SafeCount = optional(
+	nullable(pipe(number, integer, min_value(0), max_value(Number.MAX_SAFE_INTEGER)))
+);
+
+/** A page's `offset`, with the reason every refusal of it carries. */
+const PageOffset = meta(SafeCount, {
+	description: 'Pagination offset.',
+	invalid_reason: ERROR_OFFSET_INVALID
+});
+
+/**
+ * Input for `admin_account_list`, a `@fuzdev/fuz_schema` schema. An omitted
+ * input reads as a fresh `{}`.
+ */
+export const AdminAccountListInput = with_default_fn(
+	object({
 		acting: ActingActor,
-		limit: z
-			.number()
-			.int()
-			.min(1)
-			.max(ADMIN_ACCOUNT_LIST_LIMIT_MAX)
-			.nullish()
-			.meta({
-				description: `Max accounts to return (default ${ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT}, max ${
-					ADMIN_ACCOUNT_LIST_LIMIT_MAX
-				}).`,
-				invalid_reason: ERROR_LIMIT_INVALID
-			}),
-		offset: z
-			.number()
-			.int()
-			.min(0)
-			.nullish()
-			.meta({ description: 'Pagination offset.', invalid_reason: ERROR_OFFSET_INVALID }),
-		include_deleted: z.boolean().nullish().meta({
+		limit: page_limit(
+			ADMIN_ACCOUNT_LIST_LIMIT_MAX,
+			`Max accounts to return (default ${ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT}, max ${
+				ADMIN_ACCOUNT_LIST_LIMIT_MAX
+			}).`
+		),
+		offset: PageOffset,
+		include_deleted: meta(optional(nullable(boolean)), {
 			description:
 				'Include soft-deleted (tombstoned) accounts in the listing. Default false (active only). Used by the admin UI to surface accounts for reactivation via `account_undelete`.'
 		})
-	})
-	.default({});
-export type AdminAccountListInput = z.infer<typeof AdminAccountListInput>;
+	}),
+	() => ({})
+);
+export type AdminAccountListInput = Infer<typeof AdminAccountListInput>;
 
 /** Output for `admin_account_list`. */
 export const AdminAccountListOutput = z.strictObject({
@@ -89,13 +126,12 @@ export const AdminAccountListOutput = z.strictObject({
 });
 export type AdminAccountListOutput = z.infer<typeof AdminAccountListOutput>;
 
-/** Input for `admin_session_list`. */
-export const AdminSessionListInput = z
-	.strictObject({
-		acting: ActingActor
-	})
-	.default({});
-export type AdminSessionListInput = z.infer<typeof AdminSessionListInput>;
+/**
+ * Input for `admin_session_list`, a `@fuzdev/fuz_schema` schema. An omitted
+ * input reads as a fresh `{}`.
+ */
+export const AdminSessionListInput = with_default_fn(object({ acting: ActingActor }), () => ({}));
+export type AdminSessionListInput = Infer<typeof AdminSessionListInput>;
 
 /** Output for `admin_session_list`. Cross-account listing; fan-out already scoped by role auth. */
 export const AdminSessionListOutput = z.strictObject({
@@ -103,78 +139,67 @@ export const AdminSessionListOutput = z.strictObject({
 });
 export type AdminSessionListOutput = z.infer<typeof AdminSessionListOutput>;
 
-/** Input for `admin_session_revoke_all`. */
-export const AdminSessionRevokeAllInput = z.strictObject({
-	account_id: Uuid.meta({ description: 'Account whose sessions to revoke.' }),
+/** Input for `admin_session_revoke_all`, a `@fuzdev/fuz_schema` schema. */
+export const AdminSessionRevokeAllInput = object({
+	account_id: meta(Uuid, { description: 'Account whose sessions to revoke.' }),
 	acting: ActingActor
 });
-export type AdminSessionRevokeAllInput = z.infer<typeof AdminSessionRevokeAllInput>;
+export type AdminSessionRevokeAllInput = Infer<typeof AdminSessionRevokeAllInput>;
 
-/** Output for `admin_session_revoke_all`. */
-export const AdminSessionRevokeAllOutput = z.strictObject({
-	ok: z.literal(true),
-	count: z.number()
+/** Output for `admin_session_revoke_all`, a `@fuzdev/fuz_schema` schema. */
+export const AdminSessionRevokeAllOutput = object({
+	ok: literal(true),
+	count: pipe(number, integer, min_value(0))
 });
-export type AdminSessionRevokeAllOutput = z.infer<typeof AdminSessionRevokeAllOutput>;
+export type AdminSessionRevokeAllOutput = Infer<typeof AdminSessionRevokeAllOutput>;
 
-/** Input for `admin_token_revoke_all`. */
-export const AdminTokenRevokeAllInput = z.strictObject({
-	account_id: Uuid.meta({ description: 'Account whose API tokens to revoke.' }),
+/** Input for `admin_token_revoke_all`, a `@fuzdev/fuz_schema` schema. */
+export const AdminTokenRevokeAllInput = object({
+	account_id: meta(Uuid, { description: 'Account whose API tokens to revoke.' }),
 	acting: ActingActor
 });
-export type AdminTokenRevokeAllInput = z.infer<typeof AdminTokenRevokeAllInput>;
+export type AdminTokenRevokeAllInput = Infer<typeof AdminTokenRevokeAllInput>;
 
-/** Output for `admin_token_revoke_all`. */
-export const AdminTokenRevokeAllOutput = z.strictObject({
-	ok: z.literal(true),
-	count: z.number()
+/** Output for `admin_token_revoke_all`, a `@fuzdev/fuz_schema` schema. */
+export const AdminTokenRevokeAllOutput = object({
+	ok: literal(true),
+	count: pipe(number, integer, min_value(0))
 });
-export type AdminTokenRevokeAllOutput = z.infer<typeof AdminTokenRevokeAllOutput>;
+export type AdminTokenRevokeAllOutput = Infer<typeof AdminTokenRevokeAllOutput>;
 
 /**
- * Input for `audit_log_list`. All filter fields are optional — omit for the
- * default newest-first page. `since_seq` exists for SSE reconnection gap
- * fill (caller supplies the highest seq seen; server returns everything
- * after).
+ * Input for `audit_log_list`, a `@fuzdev/fuz_schema` schema. All filter
+ * fields are optional — omit for the default newest-first page, and an
+ * omitted input reads as a fresh `{}`. `since_seq` exists for SSE
+ * reconnection gap fill (caller supplies the highest seq seen; server returns
+ * everything after).
  */
-export const AuditLogListInput = z
-	.strictObject({
-		event_type: AuditEventTypeName.nullish().meta({
+export const AuditLogListInput = with_default_fn(
+	object({
+		event_type: meta(optional(nullable(AuditEventTypeName)), {
 			description: `Filter by event type. Accepts builtin or consumer-registered names (regex-validated, at most ${NAME_LENGTH_MAX} characters).`
 		}),
-		outcome: AuditOutcome.nullish().meta({
+		outcome: meta(optional(nullable(AuditOutcome)), {
 			description: 'Filter by outcome (`success` or `failure`).',
 			invalid_reason: ERROR_OUTCOME_INVALID
 		}),
-		account_id: Uuid.nullish().meta({
+		account_id: meta(optional(nullable(Uuid)), {
 			description: 'Filter by account id — matches the actor or the target account.'
 		}),
-		limit: z
-			.number()
-			.int()
-			.min(1)
-			.max(AUDIT_LOG_LIST_LIMIT_MAX)
-			.nullish()
-			.meta({
-				description: `Max rows to return (default ${AUDIT_LOG_DEFAULT_LIMIT}, max ${
-					AUDIT_LOG_LIST_LIMIT_MAX
-				}).`,
-				invalid_reason: ERROR_LIMIT_INVALID
-			}),
-		offset: z
-			.number()
-			.int()
-			.min(0)
-			.nullish()
-			.meta({ description: 'Pagination offset.', invalid_reason: ERROR_OFFSET_INVALID }),
-		since_seq: z.number().int().min(0).nullish().meta({
+		limit: page_limit(
+			AUDIT_LOG_LIST_LIMIT_MAX,
+			`Max rows to return (default ${AUDIT_LOG_DEFAULT_LIMIT}, max ${AUDIT_LOG_LIST_LIMIT_MAX}).`
+		),
+		offset: PageOffset,
+		since_seq: meta(SafeCount, {
 			description: 'Gap-fill from this seq forward. Used for SSE reconnection.',
 			invalid_reason: ERROR_SINCE_SEQ_INVALID
 		}),
 		acting: ActingActor
-	})
-	.default({});
-export type AuditLogListInput = z.infer<typeof AuditLogListInput>;
+	}),
+	() => ({})
+);
+export type AuditLogListInput = Infer<typeof AuditLogListInput>;
 
 /** Output for `audit_log_list`. */
 export const AuditLogListOutput = z.strictObject({
@@ -182,31 +207,22 @@ export const AuditLogListOutput = z.strictObject({
 });
 export type AuditLogListOutput = z.infer<typeof AuditLogListOutput>;
 
-/** Input for `audit_log_role_grant_history`. */
-export const AuditLogRoleGrantHistoryInput = z
-	.strictObject({
-		limit: z
-			.number()
-			.int()
-			.min(1)
-			.max(AUDIT_LOG_LIST_LIMIT_MAX)
-			.nullish()
-			.meta({
-				description: `Max rows to return (default ${AUDIT_LOG_DEFAULT_LIMIT}, max ${
-					AUDIT_LOG_LIST_LIMIT_MAX
-				}).`,
-				invalid_reason: ERROR_LIMIT_INVALID
-			}),
-		offset: z
-			.number()
-			.int()
-			.min(0)
-			.nullish()
-			.meta({ description: 'Pagination offset.', invalid_reason: ERROR_OFFSET_INVALID }),
+/**
+ * Input for `audit_log_role_grant_history`, a `@fuzdev/fuz_schema` schema.
+ * An omitted input reads as a fresh `{}`.
+ */
+export const AuditLogRoleGrantHistoryInput = with_default_fn(
+	object({
+		limit: page_limit(
+			AUDIT_LOG_LIST_LIMIT_MAX,
+			`Max rows to return (default ${AUDIT_LOG_DEFAULT_LIMIT}, max ${AUDIT_LOG_LIST_LIMIT_MAX}).`
+		),
+		offset: PageOffset,
 		acting: ActingActor
-	})
-	.default({});
-export type AuditLogRoleGrantHistoryInput = z.infer<typeof AuditLogRoleGrantHistoryInput>;
+	}),
+	() => ({})
+);
+export type AuditLogRoleGrantHistoryInput = Infer<typeof AuditLogRoleGrantHistoryInput>;
 
 /** Output for `audit_log_role_grant_history`. */
 export const AuditLogRoleGrantHistoryOutput = z.strictObject({
@@ -214,18 +230,24 @@ export const AuditLogRoleGrantHistoryOutput = z.strictObject({
 });
 export type AuditLogRoleGrantHistoryOutput = z.infer<typeof AuditLogRoleGrantHistoryOutput>;
 
-/** Input for `invite_create`. At least one of `email` / `username` must be provided. */
-export const InviteCreateInput = z
-	.strictObject({
-		email: Email.nullish().meta({ description: 'Invitee email.' }),
-		username: Username.nullish().meta({ description: 'Invitee username.' }),
+/**
+ * Input for `invite_create`, a `@fuzdev/fuz_schema` schema. At least one of
+ * `email` / `username` must be provided: an input with neither fails with
+ * `INVITE_TARGET_REQUIRED_MESSAGE`, a `check` issue at `email`. The check runs
+ * only on an input whose fields all passed.
+ */
+export const InviteCreateInput = pipe(
+	object({
+		email: meta(optional(nullable(Email)), { description: 'Invitee email.' }),
+		username: meta(optional(nullable(Username)), { description: 'Invitee username.' }),
 		acting: ActingActor
-	})
-	.refine((v) => v.email != null || v.username != null, {
-		message: 'at least one of email or username is required',
-		path: ['email']
-	});
-export type InviteCreateInput = z.infer<typeof InviteCreateInput>;
+	}),
+	message(
+		check_at('email', (v) => v.email != null || v.username != null),
+		INVITE_TARGET_REQUIRED_MESSAGE
+	)
+);
+export type InviteCreateInput = Infer<typeof InviteCreateInput>;
 
 /** Output for `invite_create`. */
 export const InviteCreateOutput = z.strictObject({
@@ -234,13 +256,12 @@ export const InviteCreateOutput = z.strictObject({
 });
 export type InviteCreateOutput = z.infer<typeof InviteCreateOutput>;
 
-/** Input for `invite_list`. */
-export const InviteListInput = z
-	.strictObject({
-		acting: ActingActor
-	})
-	.default({});
-export type InviteListInput = z.infer<typeof InviteListInput>;
+/**
+ * Input for `invite_list`, a `@fuzdev/fuz_schema` schema. An omitted input
+ * reads as a fresh `{}`.
+ */
+export const InviteListInput = with_default_fn(object({ acting: ActingActor }), () => ({}));
+export type InviteListInput = Infer<typeof InviteListInput>;
 
 /** Output for `invite_list`. Uses the enriched row including creator/claimer usernames. */
 export const InviteListOutput = z.strictObject({
@@ -248,46 +269,45 @@ export const InviteListOutput = z.strictObject({
 });
 export type InviteListOutput = z.infer<typeof InviteListOutput>;
 
-/** Input for `invite_delete`. */
-export const InviteDeleteInput = z.strictObject({
-	invite_id: Uuid.meta({ description: 'Invite to delete. Must be unclaimed.' }),
+/** Input for `invite_delete`, a `@fuzdev/fuz_schema` schema. */
+export const InviteDeleteInput = object({
+	invite_id: meta(Uuid, { description: 'Invite to delete. Must be unclaimed.' }),
 	acting: ActingActor
 });
-export type InviteDeleteInput = z.infer<typeof InviteDeleteInput>;
+export type InviteDeleteInput = Infer<typeof InviteDeleteInput>;
 
-/** Output for `invite_delete`. */
-export const InviteDeleteOutput = z.strictObject({
-	ok: z.literal(true)
+/** Output for `invite_delete`, a `@fuzdev/fuz_schema` schema. */
+export const InviteDeleteOutput = object({
+	ok: literal(true)
 });
-export type InviteDeleteOutput = z.infer<typeof InviteDeleteOutput>;
+export type InviteDeleteOutput = Infer<typeof InviteDeleteOutput>;
 
-/** Input for `app_settings_get`. */
-export const AppSettingsGetInput = z
-	.strictObject({
-		acting: ActingActor
-	})
-	.default({});
-export type AppSettingsGetInput = z.infer<typeof AppSettingsGetInput>;
+/**
+ * Input for `app_settings_get`, a `@fuzdev/fuz_schema` schema. An omitted
+ * input reads as a fresh `{}`.
+ */
+export const AppSettingsGetInput = with_default_fn(object({ acting: ActingActor }), () => ({}));
+export type AppSettingsGetInput = Infer<typeof AppSettingsGetInput>;
 
-/** Output for `app_settings_get`. */
-export const AppSettingsGetOutput = z.strictObject({
+/** Output for `app_settings_get`, a `@fuzdev/fuz_schema` schema. */
+export const AppSettingsGetOutput = object({
 	settings: AppSettingsWithUsernameJson
 });
-export type AppSettingsGetOutput = z.infer<typeof AppSettingsGetOutput>;
+export type AppSettingsGetOutput = Infer<typeof AppSettingsGetOutput>;
 
-/** Input for `app_settings_update`. */
-export const AppSettingsUpdateInput = z.strictObject({
-	open_signup: z.boolean().meta({ description: 'New value for the open signup toggle.' }),
+/** Input for `app_settings_update`, a `@fuzdev/fuz_schema` schema. */
+export const AppSettingsUpdateInput = object({
+	open_signup: meta(boolean, { description: 'New value for the open signup toggle.' }),
 	acting: ActingActor
 });
-export type AppSettingsUpdateInput = z.infer<typeof AppSettingsUpdateInput>;
+export type AppSettingsUpdateInput = Infer<typeof AppSettingsUpdateInput>;
 
-/** Output for `app_settings_update`. */
-export const AppSettingsUpdateOutput = z.strictObject({
-	ok: z.literal(true),
+/** Output for `app_settings_update`, a `@fuzdev/fuz_schema` schema. */
+export const AppSettingsUpdateOutput = object({
+	ok: literal(true),
 	settings: AppSettingsWithUsernameJson
 });
-export type AppSettingsUpdateOutput = z.infer<typeof AppSettingsUpdateOutput>;
+export type AppSettingsUpdateOutput = Infer<typeof AppSettingsUpdateOutput>;
 
 /**
  * `data.reason` on `account_purge` when `confirm: true` is absent.
@@ -321,63 +341,69 @@ export const ERROR_CANNOT_DELETE_KEEPER = 'cannot_delete_keeper' as const;
 export const ERROR_CANNOT_DELETE_LAST_ADMIN = 'cannot_delete_last_admin' as const;
 
 /**
- * Input for `account_delete` (soft delete). `account_id` is optional —
- * omitted (or equal to the caller's own account) is a self-delete; a
- * different account requires the admin role (handler-enforced
- * elevation, like `role_grant_offer_list`).
+ * Input for `account_delete` (soft delete), a `@fuzdev/fuz_schema` schema.
+ * `account_id` is optional — omitted (or equal to the caller's own account)
+ * is a self-delete; a different account requires the admin role
+ * (handler-enforced elevation, like `role_grant_offer_list`). An omitted
+ * input reads as a fresh `{}`.
  */
-export const AccountDeleteInput = z
-	.strictObject({
-		account_id: Uuid.nullish().meta({
+export const AccountDeleteInput = with_default_fn(
+	object({
+		account_id: meta(optional(nullable(Uuid)), {
 			description: 'Account to soft-delete. Omit for self-delete; another account requires admin.'
 		}),
 		acting: ActingActor
-	})
-	.default({});
-export type AccountDeleteInput = z.infer<typeof AccountDeleteInput>;
+	}),
+	() => ({})
+);
+export type AccountDeleteInput = Infer<typeof AccountDeleteInput>;
 
-/** Output for `account_delete`. */
-export const AccountDeleteOutput = z.strictObject({
-	ok: z.literal(true),
-	deleted: z.boolean()
+/** Output for `account_delete`, a `@fuzdev/fuz_schema` schema. */
+export const AccountDeleteOutput = object({
+	ok: literal(true),
+	deleted: boolean
 });
-export type AccountDeleteOutput = z.infer<typeof AccountDeleteOutput>;
+export type AccountDeleteOutput = Infer<typeof AccountDeleteOutput>;
 
-/** Input for `account_purge` (hard, irreversible delete). Keeper-only. */
-export const AccountPurgeInput = z.strictObject({
-	account_id: Uuid.meta({ description: 'Account to hard-purge.' }),
-	confirm: z.boolean().optional().meta({
+/**
+ * Input for `account_purge` (hard, irreversible delete), a
+ * `@fuzdev/fuz_schema` schema. Keeper-only.
+ */
+export const AccountPurgeInput = object({
+	account_id: meta(Uuid, { description: 'Account to hard-purge.' }),
+	confirm: meta(optional(boolean), {
 		description: 'Must be `true` — fail-loud guard against an accidental irreversible purge.'
 	}),
 	acting: ActingActor
 });
-export type AccountPurgeInput = z.infer<typeof AccountPurgeInput>;
+export type AccountPurgeInput = Infer<typeof AccountPurgeInput>;
 
-/** Output for `account_purge`. */
-export const AccountPurgeOutput = z.strictObject({
-	ok: z.literal(true),
-	purged: z.boolean()
+/** Output for `account_purge`, a `@fuzdev/fuz_schema` schema. */
+export const AccountPurgeOutput = object({
+	ok: literal(true),
+	purged: boolean
 });
-export type AccountPurgeOutput = z.infer<typeof AccountPurgeOutput>;
+export type AccountPurgeOutput = Infer<typeof AccountPurgeOutput>;
 
 /**
- * Input for `account_undelete` (reactivation). `account_id` is required —
- * unlike `account_delete` there is no self path: a soft-deleted account
- * can't authenticate (auth resolution excludes it, sessions are revoked),
- * so reactivation is always an admin acting on another account.
+ * Input for `account_undelete` (reactivation), a `@fuzdev/fuz_schema`
+ * schema. `account_id` is required — unlike `account_delete` there is no
+ * self path: a soft-deleted account can't authenticate (auth resolution
+ * excludes it, sessions are revoked), so reactivation is always an admin
+ * acting on another account.
  */
-export const AccountUndeleteInput = z.strictObject({
-	account_id: Uuid.meta({ description: 'Soft-deleted account to reactivate.' }),
+export const AccountUndeleteInput = object({
+	account_id: meta(Uuid, { description: 'Soft-deleted account to reactivate.' }),
 	acting: ActingActor
 });
-export type AccountUndeleteInput = z.infer<typeof AccountUndeleteInput>;
+export type AccountUndeleteInput = Infer<typeof AccountUndeleteInput>;
 
-/** Output for `account_undelete`. */
-export const AccountUndeleteOutput = z.strictObject({
-	ok: z.literal(true),
-	undeleted: z.boolean()
+/** Output for `account_undelete`, a `@fuzdev/fuz_schema` schema. */
+export const AccountUndeleteOutput = object({
+	ok: literal(true),
+	undeleted: boolean
 });
-export type AccountUndeleteOutput = z.infer<typeof AccountUndeleteOutput>;
+export type AccountUndeleteOutput = Infer<typeof AccountUndeleteOutput>;
 
 // -- Action specs -----------------------------------------------------------
 

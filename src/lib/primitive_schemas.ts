@@ -114,6 +114,13 @@ export const USERNAME_LENGTH_MIN = 3;
 /** Maximum username length (matches GitHub's limit). The grammar is ASCII, so units and characters agree. */
 export const USERNAME_LENGTH_MAX = 39;
 
+/**
+ * The creation username's grammar: a letter, then letters, digits, `_` or
+ * `-`, ending in a letter or digit. ASCII, so it needs at least two
+ * characters, and `Username` bounds the length beside it.
+ */
+export const USERNAME_REGEX = /^[a-zA-Z][0-9a-zA-Z_-]*[0-9a-zA-Z]$/;
+
 /** Maximum length for username input on login/lookup, in UTF-16 code units, measured before trimming — more permissive than `USERNAME_LENGTH_MAX` for forward-compatibility if the creation limit is raised. */
 export const USERNAME_PROVIDED_LENGTH_MAX = 255;
 
@@ -128,7 +135,7 @@ export const USERNAME_PROVIDED_LENGTH_MAX = 255;
  * `LOWER(username) = LOWER($1)` lookup contract simple.
  */
 export const Username = bounded_string({ min: USERNAME_LENGTH_MIN, max: USERNAME_LENGTH_MAX })
-	.regex(/^[a-zA-Z][0-9a-zA-Z_-]*[0-9a-zA-Z]$/)
+	.regex(USERNAME_REGEX)
 	.transform((s) => s.toLowerCase());
 export type Username = z.infer<typeof Username>;
 
@@ -161,10 +168,11 @@ export const EMAIL_LENGTH_MAX = 254;
 
 /**
  * Loose email shape `local@domain.tld`: a non-empty local part, exactly one
- * `@`, a domain with an interior dot (a non-empty label on each side), and
- * no whitespace. Accepts `a@b.c` (single-char TLDs are fine) and
- * `user+tag@a.co`; rejects `notanemail`, `@x.com`, `user@`, `user@host`, and
- * any whitespace.
+ * `@`, a domain that holds a `.` and neither starts nor ends with one, and
+ * no whitespace. Accepts `a@b.c` (single-char TLDs are fine), `a@b..c` and
+ * `user+tag@a.co`; rejects `notanemail`, `@x.com`, `user@`, `user@host`,
+ * `a@.b.c`, `a@b.c.`, and any whitespace. The Rust spine's `is_valid_email`
+ * is the same rule.
  *
  * The negated class excludes `\s` **plus** U+0085 (NEL): JS's `\s` omits
  * U+0085 but Unicode `White_Space` (Rust's `char::is_whitespace`) includes
@@ -174,22 +182,22 @@ export const EMAIL_LENGTH_MAX = 254;
  * exactly `White_Space ∪ {U+FEFF}`.)
  *
  * Linear in the input's length: the `@` can match only the first `@`, and the
- * `\.` only the domain's first `.` after its first character, since the
- * classes before each exclude it, so the tail after the `\.` is scanned once.
- * The domain spelled `[^\s\u0085@]+\.[^\s\u0085@]+`, the same language, is
- * quadratic: it tries every `.` as the split.
+ * `\.` only the domain's first `.`, since the classes before each exclude it,
+ * so the tail after the `\.` is scanned once. The domain spelled
+ * `[^\s\u0085@.][^\s\u0085@]*\.[^\s\u0085@]*[^\s\u0085@.]`, the same
+ * language, is quadratic: it tries every `.` as the split.
  */
-export const EMAIL_REGEX = /^[^\s\u0085@]+@[^\s\u0085@][^\s\u0085@.]*\.[^\s\u0085@]+$/;
+export const EMAIL_REGEX = /^[^\s\u0085@]+@[^\s\u0085@.]+\.[^\s\u0085@]*[^\s\u0085@.]$/;
 
-/** The message of an email over `EMAIL_LENGTH_MAX` bytes. */
+/** The message of an email over `EMAIL_LENGTH_MAX` bytes, on either schema library's `Email`. */
 export const EMAIL_LENGTH_MESSAGE = `Email must be at most ${EMAIL_LENGTH_MAX} bytes`;
 
 /** UTF-8 encoder for the `EMAIL_LENGTH_MAX` byte (octet) bound. */
 const utf8_encoder = new TextEncoder();
 
 /**
- * Whether `s` is at most `EMAIL_LENGTH_MAX` bytes in UTF-8, the bound `Email`
- * checks.
+ * Whether `s` is at most `EMAIL_LENGTH_MAX` bytes in UTF-8, the bound both
+ * `Email` schemas check.
  *
  * `s.length` (UTF-16 units) is a cheap upper bound that short-circuits the
  * `encode` on absurd inputs: a valid (<= 254-byte) address is necessarily

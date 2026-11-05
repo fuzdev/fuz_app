@@ -54,7 +54,7 @@ Cross-cutting notes that don't live on any single symbol:
 
 ### Schemas, types, DDL
 
-Convention — `*_schema.ts` is Zod-only; `*_ddl.ts` holds DDL strings.
+Convention — `*_schema.ts` holds a domain's schemas, Zod or `@fuzdev/fuz_schema`; a `*_schema_fuz.ts` holds the fuz_schema twins of Zod schemas that stay; `*_ddl.ts` holds DDL strings.
 
 - `auth/account_schema.ts` — `Account`, `Actor`, `RoleGrant`, `AuthSession`, `ApiToken` + client-safe JSON shapes. Grant predicates over wire fields: `is_role_grant_active` (not revoked, not expired) and `has_global_role(role_grants, role, now?)` (an active grant of the role with `scope_id === null` — the bare-list form of `has_scoped_role(ctx, role, null)`, used client-side by `AuthState`).
 - `auth/name_schema.ts` — the name grammar the auth vocabularies share: `NAME_REGEX` (runs of lowercase letters joined by single underscores), `NAME_LENGTH_MAX` (64), `is_valid_name`, `create_name_schema(label)` (the Zod schema, `bounded_string` then the regex) and the message builders `format_name_length_message` / `format_name_pattern_message`, so each domain keeps its own label in its messages. `RoleName`, `ScopeKindName`, `GrantPathName`, `CredentialTypeName` and a token's `surface:` name (`is_route_scope_capability`) hold it; `AuditEventTypeName` takes its cap over its own grammar. Twin of the Rust `fuz_auth::is_valid_name` / `NAME_LENGTH_MAX`.
@@ -67,9 +67,10 @@ Convention — `*_schema.ts` is Zod-only; `*_ddl.ts` holds DDL strings.
 - `auth/token_scope.ts` — per-credential authority narrowing stored on `api_token.scope`: `TokenScope` / `TokenScopeInput` + constructors, `parse_stored_token_scope` (fail-closed), `token_scope_admits_method` / `_non_rpc`, and the `<section>:<id>` capability vocabulary (`token_scope_method_capability` for the dispatcher's `rpc:<method>`, `is_route_scope_capability` for the `surface:<name>` a `RouteAuth.required_scope` may declare, `token_scope_denied_body`, `TOKEN_SURFACES`). Not an open registry — see ../../../docs/security.md §Token scoping for why the identifier half is deliberately unregistered.
 - `auth/auth_ddl.ts` — `CREATE TABLE` / index / seed strings for the core identity tables.
 - `auth/audit_log_schema.ts` — `AUDIT_EVENT_TYPES` (the builtin event types), `AuditEventType` / `AuditEventTypeName` (`AUDIT_EVENT_TYPE_NAME_REGEX` under `NAME_LENGTH_MAX`), `audit_metadata_schemas`, `AuditLogEvent`, `AuditLogInput`, `AuditLogConfig`, `create_audit_log_config`.
+- `auth/audit_log_schema_fuz.ts` — the `@fuzdev/fuz_schema` twins of `AuditEventTypeName` and `AuditOutcome` under the same names (`@nodocs` while the Zod ones stay), over `audit_log_schema.ts`'s grammar and messages (`AUDIT_EVENT_TYPE_NAME_LENGTH_MESSAGE`, `AUDIT_EVENT_TYPE_NAME_PATTERN_MESSAGE`): the same verdict, output and JSON Schema as the Zod ones, and their messages, but for the one length issue of a name too long and off the grammar. Pinned by `audit_log_schema_fuz.test.ts`. `audit_log_list`'s input declares them.
 - `auth/audit_log_ddl.ts` — `audit_log` table DDL with `seq BIGSERIAL` for cursor-based gap fill (BIGSERIAL converges with the Rust spine; `create_db` registers a `pg.types` int8 parser so `seq` still reads as a JS number).
 - `auth/invite_schema.ts` — `Invite`, `CreateInviteInput`.
-- `auth/app_settings_schema.ts` — `AppSettings`, `UpdateAppSettingsInput` (single-row via `CHECK (id = 1)`).
+- `auth/app_settings_schema.ts` — `AppSettings` (single-row via `CHECK (id = 1)`) and its `@fuzdev/fuz_schema` schemas `AppSettingsJson` and `AppSettingsWithUsernameJson`.
 - `auth/scope_kind_schema_fuz.ts` — the `@fuzdev/fuz_schema` twin of `ScopeKindName` under the same name (`@nodocs` while the Zod one stays), built as the `RoleName` twin is, over `scope_kind_schema.ts`'s constants: the same verdict, output and JSON Schema as the Zod one, and its messages, but for the one length issue of a string too long and off the grammar. Pinned by `scope_kind_schema_fuz.test.ts`. The role_grant_offer schemas declare it.
 - `auth/role_grant_offer_schema.ts` — `RoleGrantOffer`, `RoleGrantOfferJson` (a `@fuzdev/fuz_schema` `object`: `role` the fuz_schema `RoleName`, `scope_kind` the fuz_schema `ScopeKindName` or `null`, so an offer row holding a name off either grammar fails it), `to_role_grant_offer_json`.
 - `auth/role_grant_offer_ddl.ts` — `role_grant_offer` table + indexes + `ROLE_GRANT_OFFER_SCOPE_SENTINEL_UUID` / `_GLOBAL_TOKEN` + `ROLE_GRANT_OFFER_COLUMNS` and the shared `ROLE_GRANT_OFFER_WITH_GRANTOR_SELECT` CTE tail (homed here per the placement rule in `db/sql_columns.ts`).
@@ -693,15 +694,15 @@ authenticate.
 - `account_delete_action_spec` — mutation (soft delete); self-or-admin (`{account, actor}`, handler elevates to admin when `account_id` ≠ self); the self path is session-only, handler-enforced ahead of the target guards (an API or daemon token gets the dispatcher's `ERROR_CREDENTIAL_TYPE_REQUIRED` 403 via `credential_type_required_error`), while an admin deleting another account keeps any credential; input `{account_id?}`; output `{ok, deleted}`. Tombstones account + actor(s), revokes sessions/tokens, emits `account_delete` + per-actor `actor_delete`. Refuses a keeper-role target (`ERROR_CANNOT_DELETE_KEEPER`) or the sole active admin (`ERROR_CANNOT_DELETE_LAST_ADMIN`) — both fail-loud with a failure-audit row.
 - `account_purge_action_spec` — mutation (hard purge); keeper-only (`credential_types: ['daemon_token']` + `roles: ['keeper']`) + `confirm: true` + WARN; input `{account_id, confirm?}`; output `{ok, purged}`. Cascading delete; emits `account_purge` + per-actor `actor_purge` (identity snapshot survives in metadata since `audit_log` ids carry no FK). Refuses a keeper-role target (`ERROR_CANNOT_DELETE_KEEPER`) or the sole active admin (`ERROR_CANNOT_DELETE_LAST_ADMIN`).
 - `account_undelete_action_spec` — mutation (reactivation, inverse of soft delete); admin-only (`roles: ['admin']` — no self path, a tombstoned account can't authenticate); input `{account_id}`; output `{ok, undeleted}`. Clears the `deleted_at` tombstone on the account + its actor(s), emits `account_undelete` + per-actor `actor_undelete`. Does not restore revoked sessions/tokens.
-- `admin_session_list_action_spec` — read; input `{acting?}` (`.default({})`); output `{sessions}`.
+- `admin_session_list_action_spec` — read; input `{acting?}` (an omitted input reads as `{}`); output `{sessions}`.
 - `admin_session_revoke_all_action_spec` — mutation; input `{account_id}`; output `{ok, count}`.
 - `admin_token_revoke_all_action_spec` — mutation; input `{account_id}`; output `{ok, count}`.
 - `audit_log_list_action_spec` — read; input `{event_type?, outcome?, account_id?, limit?, offset?, since_seq?}`; output `{events}`.
 - `audit_log_role_grant_history_action_spec` — read; input `{limit?, offset?}`; output `{events}`.
 - `invite_create_action_spec` — mutation; input `{email?, username?}`; output `{ok, invite}`.
-- `invite_list_action_spec` — read; input `{acting?}` (`.default({})`); output `{invites}`.
+- `invite_list_action_spec` — read; input `{acting?}` (an omitted input reads as `{}`); output `{invites}`.
 - `invite_delete_action_spec` — mutation; input `{invite_id}`; output `{ok}`.
-- `app_settings_get_action_spec` — read; input `{acting?}` (`.default({})`); output `{settings}`.
+- `app_settings_get_action_spec` — read; input `{acting?}` (an omitted input reads as `{}`); output `{settings}`.
 - `app_settings_update_action_spec` — mutation; input `{open_signup}`; output `{ok, settings}`.
 
 Constants: `AUDIT_LOG_LIST_LIMIT_MAX = 200`, `ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT = 50`,

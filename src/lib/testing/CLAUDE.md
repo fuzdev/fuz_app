@@ -2713,8 +2713,9 @@ USERNAME_LENGTH_MAX]` = `[3, 39]` boundary edges (just-outside → 400,
 - **Email format (creation)** — the optional signup `email` validated to the
   loose `local@domain.tld` shape (TS `Email`, `EMAIL_REGEX` + 254-byte
   bound, Rust `is_valid_email`): malformed (no `@` / no domain dot / empty
-  side / dot at a domain edge / whitespace / over-length) → 400, well-formed →
-  403 no-invite. Accepted siblings include the single-char-TLD `a@b.c` that
+  side / dot at a domain edge, beside another dot inside it too / whitespace /
+  over-length) → 400, well-formed → 403 no-invite. Accepted siblings include
+  the single-char-TLD `a@b.c` and the consecutive dots inside a domain that
   Zod's `z.email()` rejects — the deliberately-looser shared rule. **Closed a
   real divergence**: the Rust spine previously length-checked the email only,
   accepting any non-empty string TS rejected.
