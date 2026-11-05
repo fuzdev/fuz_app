@@ -19,6 +19,7 @@ import {
 	create_serve_cell_fact_route_spec
 } from '#lib/server/serve_fact_route.ts';
 import { ERROR_INVALID_ROUTE_PARAMS } from '#lib/http/error_schemas.ts';
+import { parse_any } from '#lib/schema_issues.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -37,12 +38,12 @@ describe('fact route 400 error schema', () => {
 			});
 
 			test('accepts the production body, which omits issues', () => {
-				assert.ok(schema!.safeParse({ error: ERROR_INVALID_ROUTE_PARAMS }).success);
+				assert.ok(parse_any(schema!, { error: ERROR_INVALID_ROUTE_PARAMS }).ok);
 			});
 
 			test('accepts the DEV body, which carries issues', () => {
 				assert.ok(
-					schema!.safeParse({
+					parse_any(schema!, {
 						error: ERROR_INVALID_ROUTE_PARAMS,
 						issues: [
 							{
@@ -53,21 +54,21 @@ describe('fact route 400 error schema', () => {
 								message: 'Invalid string: must match pattern /^[0-9a-f]{64}$/'
 							}
 						]
-					}).success
+					}).ok
 				);
 			});
 
 			test("refuses a DEV body whose issues are in a library's own shape", () => {
 				assert.ok(
-					!schema!.safeParse({
+					!parse_any(schema!, {
 						error: ERROR_INVALID_ROUTE_PARAMS,
 						issues: [{ code: 'invalid_format', path: ['hash'] }]
-					}).success
+					}).ok
 				);
 			});
 
 			test('still refuses a different error literal', () => {
-				assert.ok(!schema!.safeParse({ error: 'unauthenticated' }).success);
+				assert.ok(!parse_any(schema!, { error: 'unauthenticated' }).ok);
 			});
 		});
 	}

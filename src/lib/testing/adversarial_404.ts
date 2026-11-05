@@ -5,7 +5,8 @@ import './assert_dev_env.ts';
  *
  * Creates stub handlers that return 404 with the declared error code,
  * fires requests with valid-format-but-nonexistent params (nil UUIDs),
- * and validates response bodies against the declared 404 Zod schemas.
+ * and validates response bodies against the declared 404 schemas, Zod or
+ * `@fuzdev/fuz_schema`.
  *
  * No DB needed — tests schema conformance of 404 responses, not real handlers.
  *
@@ -19,7 +20,7 @@ import { to_json_schema } from '@fuzdev/fuz_schema/json_schema.ts';
 
 import type { RouteSpec } from '../http/route_spec.ts';
 import { is_null_schema } from '../http/schema_helpers.ts';
-import type { ValidationSchema } from '../schema_issues.ts';
+import { parse_any, type ValidationSchema } from '../schema_issues.ts';
 import { create_auth_test_apps, create_route_skip_filter, select_auth_app } from './auth_apps.ts';
 import type { AdversarialTestOptions } from './attack_surface.ts';
 import {
@@ -65,14 +66,14 @@ export const extract_404_error_code = (schema: ValidationSchema): string | null 
  * 1. Creates a stub handler returning 404 with the declared error code
  * 2. Fires a request with valid-format params (nil UUIDs for UUID params)
  * 3. Validates response status is 404
- * 4. Validates response body matches the declared 404 Zod schema
+ * 4. Validates response body matches the declared 404 schema (`parse_any`)
  */
 export const describe_adversarial_404 = (options: AdversarialTestOptions): void => {
 	const { build, roles } = options;
 	const { surface, route_specs } = build();
 	const is_skipped = create_route_skip_filter(options.skip_routes);
 
-	// Build spec lookup for Zod schema access
+	// Build spec lookup for schema access
 	const spec_lookup: Map<string, RouteSpec> = new Map();
 	for (const spec of route_specs) {
 		spec_lookup.set(`${spec.method} ${spec.path}`, spec);
@@ -141,8 +142,14 @@ export const describe_adversarial_404 = (options: AdversarialTestOptions): void 
 					error_code,
 					`Expected error '${error_code}' for ${key}, got: ${body.error}`
 				);
-				// Validate against declared 404 Zod schema
-				spec.errors![404]!.parse(body);
+				// Validate against the declared 404 schema
+				const parsed = parse_any(spec.errors![404]!, body);
+				assert.ok(
+					parsed.ok,
+					`404 body for ${key} does not match its declared schema: ${
+						parsed.ok ? '' : JSON.stringify(parsed.issues)
+					}`
+				);
 			});
 		}
 	});

@@ -394,7 +394,9 @@ field reaches, `message` included.
 
 ## Error Schema System
 
-Error responses are typed via Zod schemas in `http/error_schemas.ts`. Standard
+Error responses are typed via Zod schemas in `http/error_schemas.ts`; a route's
+or middleware's own error schemas (`RouteErrorSchemas`) may be Zod or
+`@fuzdev/fuz_schema`. Standard
 shapes: `ApiError`, `ValidationError`, `PermissionError`,
 `CredentialTypeRequiredError`, `RateLimitError`, `PayloadTooLargeError`,
 `ForeignKeyError` — all `z.looseObject`.
@@ -429,7 +431,8 @@ in handlers), the action dispatchers (`create_rpc_endpoint` and
 (./usage.md §Rate limiters covers defaults and turning them off). Surface
 exposes `rate_limit_key` on `AppSurfaceRpcMethod` for introspection.
 
-`RouteSpec.query?: z.ZodObject` declares an optional query parameter schema. When
+`RouteSpec.query?: z.ZodObject | AnySchema` declares an optional query parameter
+schema, Zod or a fuz_schema object schema. When
 present, `apply_route_specs` adds query validation middleware that parses
 `c.req.query()` against the schema and returns 400 (`ERROR_INVALID_QUERY_PARAMS`)
 on failure. Validated query data is accessed via `get_route_query(c, schema)`. The query

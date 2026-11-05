@@ -5,10 +5,11 @@
  * then applied to Hono. The attack surface is generated from the specs —
  * always accurate, always complete.
  *
- * Input/output schemas align with SAES `ActionSpec` conventions:
- * - `input`: Zod schema for the request body (`z.null()` for no body)
- * - `output`: Zod schema for the success response body
- * - `z.strictObject()` for inputs (reject unknown keys)
+ * Input/output schemas align with SAES `ActionSpec` conventions, and each is
+ * a Zod or `@fuzdev/fuz_schema` schema (`ValidationSchema`):
+ * - `input`: the request body schema (`z.null()` or `literal(null)` for no body)
+ * - `output`: the success response body schema
+ * - a strict object for inputs (reject unknown keys): `z.strictObject()` or `object`
  *
  * @module
  */
@@ -16,6 +17,8 @@
 import type { Context, Handler, Hono, MiddlewareHandler } from 'hono';
 import type { z } from 'zod';
 import { DEV } from 'esm-env';
+import { is_schema, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
+import { get_schema_entries } from '@fuzdev/fuz_schema/introspect.ts';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import type { Db } from '../db/db.ts';
@@ -46,7 +49,12 @@ import {
 	assert_route_auth_invariants,
 	type RouteAuth
 } from './auth_shape.ts';
-import { to_wire_issues } from '../schema_issues.ts';
+import {
+	parse_any,
+	to_wire_issues,
+	type ValidationOutput,
+	type ValidationSchema
+} from '../schema_issues.ts';
 
 /**
  * Two-phase auth guard set returned by `AuthGuardResolver`.
@@ -145,8 +153,10 @@ export type RouteHandler = (c: Context, route: RouteContext) => Response | Promi
 /**
  * A single route definition — the unit of the surface map.
  *
- * `input` and `output` schemas align with SAES `ActionSpec` naming.
- * Use `z.null()` for routes with no request body (GET, DELETE without body).
+ * `input` and `output` schemas align with SAES `ActionSpec` naming. Every
+ * schema field takes a Zod or a `@fuzdev/fuz_schema` schema, validated through
+ * `parse_any`. Use `z.null()` (or fuz_schema's `literal(null)`) for routes with
+ * no request body (GET, DELETE without body).
  */
 export interface RouteSpec {
 	method: RouteMethod;
@@ -155,18 +165,25 @@ export interface RouteSpec {
 	handler: RouteHandler;
 	description: string;
 	/**
-	 * URL path parameter schema. Use `z.strictObject()` with string fields matching `:param` segments.
+	 * URL path parameter schema. Use `z.strictObject()` (or fuz_schema's
+	 * `object`) with string fields matching `:param` segments. A fuz_schema
+	 * schema must be an object schema under any wrappers (`get_schema_entries`);
+	 * `apply_route_specs` throws on one that isn't.
 	 *
 	 * REST-only — actions dispatch through a single JSON-RPC endpoint and encode
 	 * everything in `input`, so `params` doesn't appear on `ActionSpec`.
 	 */
-	params?: z.ZodObject;
-	/** URL query parameter schema. Use `z.strictObject()` with string fields. */
-	query?: z.ZodObject;
-	/** Request body schema. Use `z.null()` for routes with no body. */
-	input: z.ZodType;
+	params?: z.ZodObject | AnySchema;
+	/**
+	 * URL query parameter schema. Use `z.strictObject()` (or fuz_schema's
+	 * `object`) with string fields; a fuz_schema schema must be an object
+	 * schema, as for `params`.
+	 */
+	query?: z.ZodObject | AnySchema;
+	/** Request body schema. Use `z.null()` (or `literal(null)`) for routes with no body. */
+	input: ValidationSchema;
 	/** Success response body schema. */
-	output: z.ZodType;
+	output: ValidationSchema;
 	/**
 	 * Marks a route whose request and/or response carries **raw bytes or a
 	 * streaming protocol** rather than JSON — git smart-HTTP, file-store
@@ -249,7 +266,8 @@ export interface RouteSpec {
  * Get validated input from the Hono context.
  *
  * Call after the input validation middleware has run. Pass the route's
- * `input` Zod schema to infer the typed shape directly:
+ * `input` schema, Zod or `@fuzdev/fuz_schema`, to infer the typed shape
+ * directly (`ValidationOutput`):
  *
  * ```ts
  * const input = get_route_input(c, my_route_spec.input);
@@ -261,9 +279,12 @@ export interface RouteSpec {
  * const input = get_route_input<MyInput>(c);
  * ```
  */
-export function get_route_input<S extends z.ZodType>(c: Context, schema: S): z.infer<S>;
+export function get_route_input<S extends ValidationSchema>(
+	c: Context,
+	schema: S
+): ValidationOutput<S>;
 export function get_route_input<T = unknown>(c: Context): T;
-export function get_route_input(c: Context, _schema?: z.ZodType): unknown {
+export function get_route_input(c: Context, _schema?: ValidationSchema): unknown {
 	return c.get('validated_input');
 }
 
@@ -274,9 +295,12 @@ export function get_route_input(c: Context, _schema?: z.ZodType): unknown {
  * `params` schema to infer the typed shape, or supply an explicit type
  * argument. See `get_route_input` for the two call shapes.
  */
-export function get_route_params<S extends z.ZodType>(c: Context, schema: S): z.infer<S>;
+export function get_route_params<S extends ValidationSchema>(
+	c: Context,
+	schema: S
+): ValidationOutput<S>;
 export function get_route_params<T = unknown>(c: Context): T;
-export function get_route_params(c: Context, _schema?: z.ZodType): unknown {
+export function get_route_params(c: Context, _schema?: ValidationSchema): unknown {
 	return c.get('validated_params');
 }
 
@@ -287,9 +311,12 @@ export function get_route_params(c: Context, _schema?: z.ZodType): unknown {
  * `query` schema to infer the typed shape, or supply an explicit type
  * argument. See `get_route_input` for the two call shapes.
  */
-export function get_route_query<S extends z.ZodType>(c: Context, schema: S): z.infer<S>;
+export function get_route_query<S extends ValidationSchema>(
+	c: Context,
+	schema: S
+): ValidationOutput<S>;
 export function get_route_query<T = unknown>(c: Context): T;
-export function get_route_query(c: Context, _schema?: z.ZodType): unknown {
+export function get_route_query(c: Context, _schema?: ValidationSchema): unknown {
 	return c.get('validated_query');
 }
 
@@ -331,7 +358,7 @@ const create_content_type_check = (spec: RouteSpec): Array<MiddlewareHandler> =>
  * @mutates `c.var.validated_input` - set to the parsed and validated body on success
  */
 const create_input_validation = (
-	input_schema: z.ZodType,
+	input_schema: ValidationSchema,
 	method: RouteMethod
 ): Array<MiddlewareHandler> => {
 	if (method === 'GET') return [];
@@ -347,17 +374,17 @@ const create_input_validation = (
 		if (typeof body !== 'object' || body === null || Array.isArray(body)) {
 			return c.json({ error: ERROR_INVALID_JSON_BODY }, 400);
 		}
-		const result = input_schema.safeParse(body);
-		if (!result.success) {
+		const result = parse_any(input_schema, body);
+		if (!result.ok) {
 			return c.json(
 				{
 					error: ERROR_INVALID_REQUEST_BODY,
-					issues: dev_only(() => to_wire_issues(result.error.issues, body))
+					issues: dev_only(() => to_wire_issues(result.issues, body))
 				},
 				400
 			);
 		}
-		c.set('validated_input', result.data);
+		c.set('validated_input', result.value);
 		await next();
 	};
 	return [validate];
@@ -372,22 +399,24 @@ const create_input_validation = (
  *
  * @mutates `c.var.validated_params` - set to the parsed and validated path params on success
  */
-const create_params_validation = (params_schema?: z.ZodObject): Array<MiddlewareHandler> => {
+const create_params_validation = (
+	params_schema?: z.ZodObject | AnySchema
+): Array<MiddlewareHandler> => {
 	if (!params_schema) return [];
 
 	const validate: MiddlewareHandler = async (c, next): Promise<Response | void> => {
 		const raw_params = c.req.param();
-		const result = params_schema.safeParse(raw_params);
-		if (!result.success) {
+		const result = parse_any(params_schema, raw_params);
+		if (!result.ok) {
 			return c.json(
 				{
 					error: ERROR_INVALID_ROUTE_PARAMS,
-					issues: dev_only(() => to_wire_issues(result.error.issues, raw_params))
+					issues: dev_only(() => to_wire_issues(result.issues, raw_params))
 				},
 				400
 			);
 		}
-		c.set('validated_params', result.data);
+		c.set('validated_params', result.value);
 		await next();
 	};
 	return [validate];
@@ -402,22 +431,24 @@ const create_params_validation = (params_schema?: z.ZodObject): Array<Middleware
  *
  * @mutates `c.var.validated_query` - set to the parsed and validated query params on success
  */
-const create_query_validation = (query_schema?: z.ZodObject): Array<MiddlewareHandler> => {
+const create_query_validation = (
+	query_schema?: z.ZodObject | AnySchema
+): Array<MiddlewareHandler> => {
 	if (!query_schema) return [];
 
 	const validate: MiddlewareHandler = async (c, next): Promise<Response | void> => {
 		const raw_query = c.req.query();
-		const result = query_schema.safeParse(raw_query);
-		if (!result.success) {
+		const result = parse_any(query_schema, raw_query);
+		if (!result.ok) {
 			return c.json(
 				{
 					error: ERROR_INVALID_QUERY_PARAMS,
-					issues: dev_only(() => to_wire_issues(result.error.issues, raw_query))
+					issues: dev_only(() => to_wire_issues(result.issues, raw_query))
 				},
 				400
 			);
 		}
-		c.set('validated_query', result.data);
+		c.set('validated_query', result.value);
 		await next();
 	};
 	return [validate];
@@ -443,13 +474,15 @@ const is_service_unavailable_body = (body: unknown): boolean =>
  * catch layer, so the body built from a thrown error is validated too — except
  * a 500 `internal_error` and a failed checkout's 503 `service_unavailable`,
  * which the catch layer can answer on any route and so are always accepted.
+ * Each schema is Zod or `@fuzdev/fuz_schema`, parsed with `parse_any`; the
+ * log carries the library's own issues.
  * Logs an error for mismatches and returns the response unchanged —
  * does not throw. Non-JSON responses (SSE, binary) are skipped. In
  * production, returns the handler unchanged.
  */
 const wrap_output_validation = (
 	handler: Handler,
-	output_schema: z.ZodType,
+	output_schema: ValidationSchema,
 	error_schemas: RouteErrorSchemas | null,
 	log: Logger
 ): Handler => {
@@ -475,12 +508,12 @@ const wrap_output_validation = (
 		if (response.status === 500 && is_internal_error_body(body)) return response;
 		// the same for a failed pool checkout's 503, which any route can answer
 		if (response.status === 503 && is_service_unavailable_body(body)) return response;
-		const result = schema.safeParse(body);
-		if (!result.success) {
+		const result = parse_any(schema, body);
+		if (!result.ok) {
 			const label = response.ok
 				? 'Output schema mismatch'
 				: `Error schema mismatch (${response.status})`;
-			log.error(`${label}: ${c.req.method} ${c.req.path}`, result.error.issues);
+			log.error(`${label}: ${c.req.method} ${c.req.path}`, result.issues);
 		}
 		return response;
 	};
@@ -634,11 +667,15 @@ const build_rest_error_body = (err: JsonrpcErrorObject): Record<string, unknown>
  * registries (`compile_action_registry`) share the same helper with
  * `input` only — `ActionSpec` has no `query` shape.
  *
+ * A `@fuzdev/fuz_schema` `params` or `query` must be an object schema
+ * (`get_schema_entries`), as the path params and query string are an object:
+ * one that isn't throws naming the route.
+ *
  * @param resolve_auth_guards - maps `RouteAuth` to middleware — use `fuz_auth_guard_resolver` from `auth/auth_guard_resolver.ts`
  * @param authorize - optional authorization phase; runs after the pre-authorization guards and before the post-authorization guards
  * @param db - used for transaction wrapping and `RouteContext`
  * @mutates `app`
- * @throws Error if two specs share the same `method` + `path` (each combination must be unique), or if any spec violates a cross-axis auth invariant or the actor-acting biconditional
+ * @throws Error if two specs share the same `method` + `path` (each combination must be unique), if any spec violates a cross-axis auth invariant or the actor-acting biconditional, or if a fuz_schema `params` or `query` is not an object schema
  */
 export const apply_route_specs = (
 	app: Hono,
@@ -657,6 +694,8 @@ export const apply_route_specs = (
 			);
 		}
 		registered.add(route_key);
+		assert_object_slot(spec.params, 'params', route_key);
+		assert_object_slot(spec.query, 'query', route_key);
 		assert_route_auth_invariants(spec.auth, `Route "${route_key}"`);
 		assert_route_auth_acting_biconditional(
 			spec.auth,
@@ -718,6 +757,19 @@ export const apply_route_specs = (
 			handler
 		);
 	}
+};
+
+// throws unless a fuz_schema `params` / `query` is an object schema under any
+// wrappers; a Zod one is a `z.ZodObject` by its type
+const assert_object_slot = (
+	schema: z.ZodObject | AnySchema | undefined,
+	slot: 'params' | 'query',
+	route_key: string
+): void => {
+	if (schema === undefined || !is_schema(schema) || get_schema_entries(schema)) return;
+	throw new Error(
+		`Route "${route_key}": ${slot} is a @fuzdev/fuz_schema '${schema.kind}' schema, not an object schema`
+	);
 };
 
 /**

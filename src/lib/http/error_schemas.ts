@@ -15,7 +15,7 @@
 import { z } from 'zod';
 
 import { needs_actor, type RouteAuth } from './auth_shape.ts';
-import { WireIssue } from '../schema_issues.ts';
+import { WireIssue, type ValidationSchema } from '../schema_issues.ts';
 
 // --- Core: Validation (auto-derived by route spec middleware) ---
 
@@ -382,11 +382,16 @@ export const AccountVanishedError = z.looseObject({
 export type AccountVanishedError = z.infer<typeof AccountVanishedError>;
 
 /**
- * Error schema map — maps HTTP status codes to Zod schemas.
+ * Error schema map — maps HTTP status codes to Zod or `@fuzdev/fuz_schema`
+ * schemas.
  *
- * Used on `RouteSpec.errors` and internally by `derive_error_schemas`.
+ * Used on `RouteSpec.errors` and `MiddlewareSpec.errors`; `derive_error_schemas`
+ * returns its Zod-only form, `DerivedErrorSchemas`.
  */
-export type RouteErrorSchemas = Partial<Record<number, z.ZodType>>;
+export type RouteErrorSchemas = Partial<Record<number, ValidationSchema>>;
+
+/** The error schemas `derive_error_schemas` builds, all of them Zod. */
+export type DerivedErrorSchemas = Partial<Record<number, z.ZodType>>;
 
 /**
  * Rate limit key type — declares what a route or RPC action's rate limiter
@@ -446,8 +451,8 @@ export const derive_error_schemas = ({
 	has_query = false,
 	rate_limit,
 	checks_content_type = false
-}: DeriveErrorSchemasOptions): RouteErrorSchemas => {
-	const errors: RouteErrorSchemas = {};
+}: DeriveErrorSchemasOptions): DerivedErrorSchemas => {
+	const errors: DerivedErrorSchemas = {};
 
 	const has_validation = has_input || has_params || has_query;
 	if (needs_actor(auth)) {

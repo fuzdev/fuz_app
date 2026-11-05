@@ -508,9 +508,9 @@ export const merge_error_schemas = (
 	spec: {
 		method: RouteMethod;
 		auth: RouteAuth;
-		input: z.ZodType;
-		params?: z.ZodObject;
-		query?: z.ZodObject;
+		input: ValidationSchema;
+		params?: ValidationSchema;
+		query?: ValidationSchema;
 		rate_limit?: RateLimitKey;
 		errors?: RouteErrorSchemas;
 	},

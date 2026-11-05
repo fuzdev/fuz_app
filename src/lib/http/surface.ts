@@ -8,8 +8,7 @@
  */
 
 import { get_schema_entries, get_schema_fields } from '@fuzdev/fuz_schema/introspect.ts';
-import { parse, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
-import { z } from 'zod';
+import { is_schema, parse, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { EventSpec } from '../realtime/sse.ts';
 import type { MiddlewareSpec } from './middleware_spec.ts';
@@ -304,6 +303,11 @@ const create_to_surface =
 				: undefined
 		});
 
+// a fuz_schema input that is not a strict `object`: a `strip_object` drops
+// unknown keys and a `loose_object` keeps them, so the text names neither
+const FUZ_SCHEMA_NOT_STRICT_INPUT_MESSAGE =
+	'Input schema is not a strict object (@fuzdev/fuz_schema `object`) — unknown keys may not be refused';
+
 /**
  * Generate a JSON-serializable attack surface from middleware, route specs,
  * and optional env/event metadata.
@@ -320,7 +324,9 @@ export const generate_app_surface = (options: GenerateAppSurfaceOptions): AppSur
 			diagnostics.push({
 				level: 'warning',
 				category: 'schema',
-				message: 'Input schema is not z.strictObject() — unknown keys will be silently stripped',
+				message: is_schema(r.input)
+					? FUZ_SCHEMA_NOT_STRICT_INPUT_MESSAGE
+					: 'Input schema is not z.strictObject() — unknown keys will be silently stripped',
 				source: `${r.method} ${r.path} input`
 			});
 		}
@@ -334,7 +340,7 @@ export const generate_app_surface = (options: GenerateAppSurfaceOptions): AppSur
 				const schemas: Record<string, unknown> = {};
 				for (const [status, schema] of Object.entries(m.errors)) {
 					const json_schema = to_surface(
-						schema as z.ZodType,
+						schema!,
 						'output',
 						`middleware ${m.name} errors.${status}`
 					);
@@ -369,11 +375,7 @@ export const generate_app_surface = (options: GenerateAppSurfaceOptions): AppSur
 			if (merged_errors) {
 				const schemas: Record<string, unknown> = {};
 				for (const [status, schema] of Object.entries(merged_errors)) {
-					const json_schema = to_surface(
-						schema as z.ZodType,
-						'output',
-						`${route} errors.${status}`
-					);
+					const json_schema = to_surface(schema!, 'output', `${route} errors.${status}`);
 					if (json_schema !== null) {
 						schemas[status] = json_schema;
 					}

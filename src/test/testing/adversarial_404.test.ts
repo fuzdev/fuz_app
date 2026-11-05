@@ -1,15 +1,28 @@
 /**
  * Tests for `extract_404_error_code` — the error code the adversarial 404
- * stub answers with, read from a Zod or a fuz_schema 404 schema.
+ * stub answers with, read from a Zod or a fuz_schema 404 schema — and
+ * `describe_adversarial_404` over a route whose params, input and 404 are all
+ * fuz_schema, its body validated with `parse_any`.
  *
  * @module
  */
 
 import { describe, test, assert } from 'vitest';
 import { z } from 'zod';
-import { literal, object, one_of, pipe, string, transform } from '@fuzdev/fuz_schema/schema.ts';
+import {
+	literal,
+	loose_object,
+	min_length,
+	object,
+	one_of,
+	pipe,
+	string,
+	transform
+} from '@fuzdev/fuz_schema/schema.ts';
 
-import { extract_404_error_code } from '#lib/testing/adversarial_404.ts';
+import { describe_adversarial_404, extract_404_error_code } from '#lib/testing/adversarial_404.ts';
+import { create_app_surface_spec } from '#lib/http/surface.ts';
+import { Uuid } from '#lib/primitive_schemas_fuz.ts';
 
 describe('extract_404_error_code', () => {
 	test('reads a Zod literal and the first of an enum', () => {
@@ -61,4 +74,27 @@ describe('extract_404_error_code', () => {
 		assert.strictEqual(extract_404_error_code(object({ error: string })), null);
 		assert.strictEqual(extract_404_error_code(z.string()), null);
 	});
+});
+
+// a fuz_schema route: its 404 test is generated and its stub's body parsed
+// against the fuz_schema 404 schema
+describe_adversarial_404({
+	build: () =>
+		create_app_surface_spec({
+			middleware_specs: [],
+			route_specs: [
+				{
+					method: 'POST',
+					path: '/fuz_things/:id/rename',
+					auth: { account: 'none', actor: 'none' },
+					handler: (c) => c.json({ ok: true }),
+					description: 'Rename a fuz_schema thing',
+					params: object({ id: Uuid }),
+					input: object({ name: pipe(string, min_length(1)) }),
+					output: loose_object({ ok: literal(true) }),
+					errors: { 404: loose_object({ error: literal('fuz_thing_not_found') }) }
+				}
+			]
+		}),
+	roles: []
 });

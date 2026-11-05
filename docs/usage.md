@@ -7,8 +7,10 @@ see ../CLAUDE.md. For testing patterns, see ./testing.md.
 
 ## Writing Route Specs
 
-Every route requires `input` and `output` Zod schemas. Input is auto-validated
-by middleware; handlers access validated data via `get_route_input(c, schema)`,
+Every route requires `input` and `output` schemas, each Zod or
+`@fuzdev/fuz_schema` (`params`, `query` and `errors` too; a fuz_schema `params`
+or `query` must be an object schema). Input is auto-validated by middleware
+(`parse_any`); handlers access validated data via `get_route_input(c, schema)`,
 which infers the typed shape from the schema directly.
 
 ```typescript
@@ -38,8 +40,8 @@ const my_route_spec: RouteSpec = {
 don't have the schema in scope. Same overloads on `get_route_params` and
 `get_route_query`.
 
-- `z.null()` for routes with no request body (GET, or POST with no input)
-- `z.strictObject()` for inputs — rejects unknown keys
+- `z.null()` (or fuz_schema `literal(null)`) for routes with no request body (GET, or POST with no input)
+- `z.strictObject()` (or fuz_schema `object`) for inputs — rejects unknown keys
 - `z.looseObject()` for outputs with variable shapes
 - Input schemas validated in DEV + production (always-on caller contract;
   malformed input returns 400 with `{error}`, plus `issues` — `WireIssue`s —

@@ -403,8 +403,8 @@ or Postgres and runs in the `cross-ts` CI job.
 - `assert_surface_deterministic(build_surface)` — build twice, `deepStrictEqual` results; catches nondeterminism in surface generation.
 - `assert_only_expected_public_routes(surface, list)` — bidirectional: no unexpected public routes, no missing expected ones. Format: `['GET /health', 'POST /api/account/login']`.
 - `assert_full_middleware_stack(surface, prefix, mws)` — every route under `prefix` has exactly `mws` as its middleware chain.
-- `get_route_error_schema(lookup, route, status)` — reads from a pre-built merged-error-schema map.
-- `assert_error_schema_valid(lookup, route, status, body)` — assert a schema exists + parses the body.
+- `get_route_error_schema(lookup, route, status)` — reads from a pre-built merged-error-schema map; the schema is Zod or fuz_schema (`ValidationSchema`).
+- `assert_error_schema_valid(lookup, route, status, body)` — assert a schema exists + parses the body (`parse_any`); a mismatch throws an `Error` carrying the issues.
 
 ### `surface_invariants.ts` — structural + policy invariants
 
@@ -474,7 +474,7 @@ Methods:
 
 Support functions:
 
-- `extract_declared_error_codes(schema)` — reads `schema.shape.error`; returns the literal value(s) for `z.literal` / `z.enum`, `null` otherwise.
+- `extract_declared_error_codes(schema)` — reads the object's `error` field, Zod (`schema.shape.error`) or fuz_schema (`get_schema_entries`, any object kind under any wrappers); returns the literal value(s) for `z.literal` / `z.enum` / `literal` / `one_of`, `null` otherwise.
 - `assert_error_coverage(collector, specs, options?)` — logs `[error coverage] covered/total (N.M%)` with uncovered list; fails when `min_coverage > 0` and the ratio falls below.
 - `DEFAULT_INTEGRATION_ERROR_COVERAGE = 0.2` — conservative baseline for the standard integration/admin suites; consumers tighten as their own test coverage matures.
 
@@ -564,9 +564,9 @@ rather than `ERROR_INVALID_JSON_BODY`.
 
 `describe_adversarial_404({build, roles})` — for every route with `params` +
 404 in `error_schemas` + an extractable error code (`z.literal` or first
-`z.enum`), replaces the handler with a stub returning `{error: <code>}`,
-fires with nil-UUID params, asserts 404 + body matches the declared 404 Zod
-schema. No DB needed. The code comes from `extract_404_error_code(schema)`,
+`z.enum`, fuz_schema `literal` or first `one_of`), replaces the handler with a
+stub returning `{error: <code>}`, fires with nil-UUID params, asserts 404 +
+body matches the declared 404 schema, Zod or fuz_schema (`parse_any`). No DB needed. The code comes from `extract_404_error_code(schema)`,
 which reads the output-side JSON Schema of a Zod or fuz_schema schema with
 `unrepresentable: 'any'`, so a field JSON Schema can't say beside `error`
 (a transform) no longer drops the route from the suite.

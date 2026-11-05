@@ -1062,4 +1062,33 @@ describe('merge_error_schemas', () => {
 		assert.ok(result);
 		assert.strictEqual(result[500], RouteError);
 	});
+	test('takes fuz_schema params, query, input and errors', () => {
+		const NotFound = loose_object({ error: literal('thing_not_found') });
+		const MwError = object({ error: literal('down') });
+		const result = merge_error_schemas(
+			{
+				method: 'POST',
+				auth: { account: 'none', actor: 'none' },
+				params: object({ id: string }),
+				query: object({ q: string }),
+				input: object({ name: string }),
+				errors: { 404: NotFound }
+			},
+			{ 503: MwError }
+		);
+		assert.ok(result);
+		assert.strictEqual(result[404], NotFound);
+		assert.strictEqual(result[503], MwError);
+		assert.ok(result[400]); // derived from the params, query and input
+		assert.ok(result[415]); // derived for a POST
+	});
+
+	test('a fuz_schema null input derives no 400', () => {
+		const result = merge_error_schemas({
+			method: 'GET',
+			auth: { account: 'none', actor: 'none' },
+			input: literal(null)
+		});
+		assert.strictEqual(result, null);
+	});
 });

@@ -74,7 +74,7 @@ export const describe_adversarial_input = (options: AdversarialTestOptions): voi
 	)
 		return;
 
-	// lookup RouteSpec by method+path for Zod schema access
+	// lookup RouteSpec by method+path for schema access
 	const spec_lookup: Map<string, RouteSpec> = new Map();
 	for (const spec of route_specs) {
 		spec_lookup.set(`${spec.method} ${spec.path}`, spec);

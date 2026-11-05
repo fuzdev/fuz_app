@@ -11,6 +11,8 @@
 import { describe, assert, test } from 'vitest';
 import { meta } from '@fuzdev/fuz_schema/meta.ts';
 import {
+	literal,
+	loose_object,
 	message,
 	min_length,
 	nullable,
@@ -19,6 +21,7 @@ import {
 	optional,
 	pipe,
 	string,
+	strip_object,
 	transform,
 	union,
 	with_default,
@@ -31,6 +34,7 @@ import {
 	create_app_surface_spec,
 	collect_middleware_errors,
 	env_schema_to_surface,
+	type AppSurfaceDiagnostic,
 	events_to_surface
 } from '#lib/http/surface.ts';
 import type { RouteSpec } from '#lib/http/route_spec.ts';
@@ -673,5 +677,67 @@ describe('generate_app_surface — JSON Schema writing', () => {
 			surface.diagnostics.map((d) => [d.level, d.source]),
 			[['info', 'POST /things output']]
 		);
+	});
+});
+
+describe('the non-strict input warning', () => {
+	const warnings = (input: RouteSpec['input']) =>
+		generate_app_surface({
+			route_specs: [create_route({ method: 'POST', input })],
+			middleware_specs: []
+		}).diagnostics.filter((d) => d.level === 'warning');
+
+	test('names z.strictObject() for a Zod input', () => {
+		assert.deepStrictEqual(warnings(z.object({ x: z.string() })), [
+			{
+				level: 'warning',
+				category: 'schema',
+				message: 'Input schema is not z.strictObject() — unknown keys will be silently stripped',
+				source: 'POST /test input'
+			}
+		]);
+	});
+
+	test('names the strict fuz_schema object for a strip_object or loose_object input', () => {
+		const expected: Array<AppSurfaceDiagnostic> = [
+			{
+				level: 'warning',
+				category: 'schema',
+				message:
+					'Input schema is not a strict object (@fuzdev/fuz_schema `object`) — unknown keys may not be refused',
+				source: 'POST /test input'
+			}
+		];
+		assert.deepStrictEqual(warnings(strip_object({ x: string })), expected);
+		assert.deepStrictEqual(warnings(loose_object({ x: string })), expected);
+	});
+
+	test('is absent for a strict fuz_schema object', () => {
+		assert.deepStrictEqual(warnings(object({ x: string })), []);
+	});
+});
+
+describe('fuz_schema error schemas on the surface', () => {
+	test('a route and a middleware error schema are written like Zod ones', () => {
+		const surface = generate_app_surface({
+			route_specs: [
+				create_route({ errors: { 404: loose_object({ error: literal('thing_not_found') }) } })
+			],
+			middleware_specs: [create_middleware({ errors: { 503: object({ error: literal('down') }) } })]
+		});
+		assert.deepStrictEqual(surface.routes[0]!.error_schemas?.['404'], {
+			type: 'object',
+			properties: { error: { type: 'string', const: 'thing_not_found' } },
+			required: ['error'],
+			additionalProperties: {}
+		});
+		assert.deepStrictEqual(surface.middleware[0]!.error_schemas, {
+			'503': {
+				type: 'object',
+				properties: { error: { type: 'string', const: 'down' } },
+				required: ['error'],
+				additionalProperties: false
+			}
+		});
 	});
 });

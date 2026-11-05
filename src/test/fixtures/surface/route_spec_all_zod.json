@@ -1,0 +1,402 @@
+{
+	"surface": {
+		"diagnostics": [
+			{
+				"level": "warning",
+				"category": "schema",
+				"message": "Input schema is not z.strictObject() — unknown keys will be silently stripped",
+				"source": "POST /loose input"
+			}
+		],
+		"middleware": [
+			{
+				"name": "thing_gate",
+				"path": "/things/*",
+				"error_schemas": {
+					"403": {
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"const": "thing_gate_refused"
+							}
+						},
+						"required": [
+							"error"
+						],
+						"additionalProperties": {}
+					}
+				}
+			}
+		],
+		"routes": [
+			{
+				"method": "POST",
+				"path": "/things/:thing_id",
+				"auth": {
+					"account": "none",
+					"actor": "none"
+				},
+				"applicable_middleware": [
+					"thing_gate"
+				],
+				"description": "Renames a thing.",
+				"is_mutation": true,
+				"transaction": true,
+				"raw_body": false,
+				"rate_limit_key": null,
+				"params_schema": {
+					"type": "object",
+					"properties": {
+						"thing_id": {
+							"type": "string",
+							"format": "uuid",
+							"pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+						}
+					},
+					"required": [
+						"thing_id"
+					],
+					"additionalProperties": false
+				},
+				"query_schema": {
+					"type": "object",
+					"properties": {
+						"mode": {
+							"type": "string",
+							"enum": [
+								"a",
+								"b"
+							]
+						}
+					},
+					"required": [
+						"mode"
+					],
+					"additionalProperties": false
+				},
+				"input_schema": {
+					"type": "object",
+					"properties": {
+						"name": {
+							"type": "string",
+							"minLength": 1
+						}
+					},
+					"required": [
+						"name"
+					],
+					"additionalProperties": false
+				},
+				"output_schema": {
+					"type": "object",
+					"properties": {
+						"id": {
+							"type": "string",
+							"format": "uuid",
+							"pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+						},
+						"name": {
+							"type": "string"
+						},
+						"mode": {
+							"type": "string",
+							"enum": [
+								"a",
+								"b"
+							]
+						}
+					},
+					"required": [
+						"id",
+						"name",
+						"mode"
+					],
+					"additionalProperties": false
+				},
+				"error_schemas": {
+					"400": {
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"enum": [
+									"invalid_request_body",
+									"invalid_json_body",
+									"invalid_route_params",
+									"invalid_query_params"
+								]
+							},
+							"issues": {
+								"type": "array",
+								"items": {
+									"type": "object",
+									"properties": {
+										"kind": {
+											"type": "string"
+										},
+										"path": {
+											"type": "array",
+											"items": {
+												"type": [
+													"string",
+													"number"
+												]
+											}
+										},
+										"expected": {
+											"type": "string"
+										},
+										"received": {
+											"type": "string"
+										},
+										"message": {
+											"type": "string"
+										}
+									},
+									"required": [
+										"kind",
+										"path",
+										"expected",
+										"received",
+										"message"
+									],
+									"additionalProperties": {}
+								}
+							}
+						},
+						"required": [
+							"error"
+						],
+						"additionalProperties": {}
+					},
+					"403": {
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"const": "thing_gate_refused"
+							}
+						},
+						"required": [
+							"error"
+						],
+						"additionalProperties": {}
+					},
+					"404": {
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"const": "thing_not_found"
+							}
+						},
+						"required": [
+							"error"
+						],
+						"additionalProperties": {}
+					},
+					"415": {
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"const": "unsupported_content_type"
+							}
+						},
+						"required": [
+							"error"
+						],
+						"additionalProperties": {}
+					}
+				}
+			},
+			{
+				"method": "POST",
+				"path": "/loose",
+				"auth": {
+					"account": "none",
+					"actor": "none"
+				},
+				"applicable_middleware": [],
+				"description": "Takes a loose body.",
+				"is_mutation": true,
+				"transaction": true,
+				"raw_body": false,
+				"rate_limit_key": null,
+				"params_schema": null,
+				"query_schema": null,
+				"input_schema": {
+					"type": "object",
+					"properties": {
+						"x": {
+							"type": "string"
+						}
+					},
+					"required": [
+						"x"
+					]
+				},
+				"output_schema": null,
+				"error_schemas": {
+					"400": {
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"enum": [
+									"invalid_request_body",
+									"invalid_json_body",
+									"invalid_route_params",
+									"invalid_query_params"
+								]
+							},
+							"issues": {
+								"type": "array",
+								"items": {
+									"type": "object",
+									"properties": {
+										"kind": {
+											"type": "string"
+										},
+										"path": {
+											"type": "array",
+											"items": {
+												"type": [
+													"string",
+													"number"
+												]
+											}
+										},
+										"expected": {
+											"type": "string"
+										},
+										"received": {
+											"type": "string"
+										},
+										"message": {
+											"type": "string"
+										}
+									},
+									"required": [
+										"kind",
+										"path",
+										"expected",
+										"received",
+										"message"
+									],
+									"additionalProperties": {}
+								}
+							}
+						},
+						"required": [
+							"error"
+						],
+						"additionalProperties": {}
+					},
+					"415": {
+						"type": "object",
+						"properties": {
+							"error": {
+								"type": "string",
+								"const": "unsupported_content_type"
+							}
+						},
+						"required": [
+							"error"
+						],
+						"additionalProperties": {}
+					}
+				}
+			}
+		],
+		"rpc_endpoints": [],
+		"ws_endpoints": [],
+		"env": [],
+		"events": []
+	},
+	"exchanges": [
+		{
+			"label": "valid",
+			"status": 200,
+			"body": "{\"id\":\"0b7d4f0e-3f7c-4a51-9b8e-6c1f2a3d4e5f\",\"name\":\"n\",\"mode\":\"a\"}",
+			"logs": []
+		},
+		{
+			"label": "invalid params",
+			"status": 400,
+			"body": "{\"error\":\"invalid_route_params\",\"issues\":[{\"kind\":\"uuid\",\"path\":[\"thing_id\"],\"expected\":\"uuid\",\"received\":\"string\",\"message\":\"Invalid UUID\"}]}",
+			"logs": []
+		},
+		{
+			"label": "invalid query",
+			"status": 400,
+			"body": "{\"error\":\"invalid_query_params\",\"issues\":[{\"kind\":\"one_of\",\"path\":[\"mode\"],\"expected\":\"\\\"a\\\" | \\\"b\\\"\",\"received\":\"string\",\"message\":\"Invalid option: expected one of \\\"a\\\"|\\\"b\\\"\"}]}",
+			"logs": []
+		},
+		{
+			"label": "missing query",
+			"status": 400,
+			"body": "{\"error\":\"invalid_query_params\",\"issues\":[{\"kind\":\"one_of\",\"path\":[\"mode\"],\"expected\":\"\\\"a\\\" | \\\"b\\\"\",\"received\":\"undefined\",\"message\":\"Invalid option: expected one of \\\"a\\\"|\\\"b\\\"\"}]}",
+			"logs": []
+		},
+		{
+			"label": "unknown query key",
+			"status": 400,
+			"body": "{\"error\":\"invalid_query_params\",\"issues\":[{\"kind\":\"unknown_key\",\"path\":[\"extra\"],\"expected\":\"no unknown keys\",\"received\":\"string\",\"message\":\"Unrecognized key: \\\"extra\\\"\"}]}",
+			"logs": []
+		},
+		{
+			"label": "invalid input",
+			"status": 400,
+			"body": "{\"error\":\"invalid_request_body\",\"issues\":[{\"kind\":\"string\",\"path\":[\"name\"],\"expected\":\"string\",\"received\":\"number\",\"message\":\"Invalid input: expected string, received number\"},{\"kind\":\"unknown_key\",\"path\":[\"extra\"],\"expected\":\"no unknown keys\",\"received\":\"null\",\"message\":\"Unrecognized key: \\\"extra\\\"\"}]}",
+			"logs": []
+		},
+		{
+			"label": "empty name",
+			"status": 400,
+			"body": "{\"error\":\"invalid_request_body\",\"issues\":[{\"kind\":\"min_length\",\"path\":[\"name\"],\"expected\":\"length >= 1\",\"received\":\"string\",\"message\":\"Too small: expected string to have >=1 characters\"}]}",
+			"logs": []
+		},
+		{
+			"label": "invalid json",
+			"status": 400,
+			"body": "{\"error\":\"invalid_json_body\"}",
+			"logs": []
+		},
+		{
+			"label": "non-object json",
+			"status": 400,
+			"body": "{\"error\":\"invalid_json_body\"}",
+			"logs": []
+		},
+		{
+			"label": "declared 404",
+			"status": 404,
+			"body": "{\"error\":\"thing_not_found\"}",
+			"logs": []
+		},
+		{
+			"label": "undeclared 404 body",
+			"status": 404,
+			"body": "{\"error\":\"something_else\"}",
+			"logs": [
+				"[\"Error schema mismatch (404): POST /things/0b7d4f0e-3f7c-4a51-9b8e-6c1f2a3d4e5f\",[{\"code\":\"invalid_value\",\"values\":[\"thing_not_found\"],\"path\":[\"error\"],\"message\":\"Invalid input: expected \\\"thing_not_found\\\"\"}]]"
+			]
+		},
+		{
+			"label": "output mismatch",
+			"status": 200,
+			"body": "{\"id\":\"0b7d4f0e-3f7c-4a51-9b8e-6c1f2a3d4e5f\",\"name\":5,\"mode\":\"b\"}",
+			"logs": [
+				"[\"Output schema mismatch: POST /things/0b7d4f0e-3f7c-4a51-9b8e-6c1f2a3d4e5f\",[{\"expected\":\"string\",\"code\":\"invalid_type\",\"path\":[\"name\"],\"message\":\"Invalid input: expected string, received number\"}]]"
+			]
+		},
+		{
+			"label": "loose input",
+			"status": 200,
+			"body": "null",
+			"logs": []
+		}
+	]
+}

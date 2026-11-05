@@ -146,11 +146,11 @@ export const assert_response_matches_spec = async (
 		if (merged) {
 			const status_schema = merged[response.status];
 			if (status_schema) {
-				const result = status_schema.safeParse(body);
-				if (!result.success) {
+				const result = parse_any(status_schema, body);
+				if (!result.ok) {
 					throw new Error(
 						`Error schema mismatch for ${method} ${path} (${response.status}): ${JSON.stringify(
-							result.error.issues
+							result.issues
 						)}`
 					);
 				}

@@ -15,23 +15,39 @@ import './assert_dev_env.ts';
 
 import { z } from 'zod';
 import { assert } from 'vitest';
+import { is_schema } from '@fuzdev/fuz_schema/schema.ts';
+import { get_schema_entries } from '@fuzdev/fuz_schema/introspect.ts';
 
 import type { RouteSpec } from '../http/route_spec.ts';
 import { merge_error_schemas } from '../http/schema_helpers.ts';
 import { find_route_spec, assert_response_matches_spec } from './integration_helpers.ts';
+import type { ValidationSchema } from '../schema_issues.ts';
 
 /**
  * Extract declared error code values from an error response schema.
  *
  * Recognizes schemas shaped like `z.object({error: z.literal(...)})` or
- * `z.object({error: z.enum([...])})` (incl. `looseObject`/`strictObject`).
- * Returns the set of declared code values, or `null` if the schema doesn't
- * expose a literal/enum `error` field (e.g., bare `ApiError` with `z.string()`).
+ * `z.object({error: z.enum([...])})` (incl. `looseObject`/`strictObject`),
+ * and the `@fuzdev/fuz_schema` forms `object({error: literal(...)})` or
+ * `object({error: one_of([...])})` (any object kind, under any wrappers —
+ * `get_schema_entries`; the `error` entry itself read as given, as the Zod
+ * field is). Returns the set of declared code values, or `null` if the schema
+ * doesn't expose a literal/enum `error` field (e.g., bare `ApiError` with
+ * `z.string()`).
  *
  * Used by coverage reporting to split a single declared status into per-code
  * rows when the route's error schema names specific codes.
  */
-export const extract_declared_error_codes = (schema: z.ZodType): Array<string> | null => {
+export const extract_declared_error_codes = (schema: ValidationSchema): Array<string> | null => {
+	if (is_schema(schema)) {
+		const error_field = get_schema_entries(schema)?.error;
+		if (!error_field) return null;
+		if (error_field.kind === 'literal') return [String(error_field.def)];
+		if (error_field.kind === 'one_of') {
+			return error_field.def.map(String);
+		}
+		return null;
+	}
 	if (!(schema instanceof z.ZodObject)) return null;
 	const error_field = schema.shape.error;
 	if (!error_field) return null;

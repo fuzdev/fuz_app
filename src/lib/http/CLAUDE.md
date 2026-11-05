@@ -48,19 +48,26 @@ consumers.
 - `auth: RouteAuth` — flat record `{account, actor, roles?, credential_types?, required_scope?}` from `http/auth_shape.ts`. `account` / `actor` are `'none' | 'optional' | 'required'`. `required_scope` names the capability a narrowed api token's scope must admit — `surface:<name>`, a non-RPC surface refused to every narrowed token (an `rpc:<method>` capability throws at registration: it is the dispatcher's per-method gate, which a route never reaches) — and is route-spec-only: `compile_action_registry` rejects it on an `ActionSpec`, where the dispatcher derives `rpc:<method>` from `spec.method`. Otherwise the same shape governs `ActionSpec.auth` (see `actions/CLAUDE.md`).
 - `handler: RouteHandler` — `(c: Context, route: RouteContext) => Response | Promise<Response>`
 - `description` — free-text, surfaced in `AppSurface`
-- `params?: z.ZodObject` — strict-object schema for URL path params
-- `query?: z.ZodObject` — strict-object schema for URL query string
-- `input: z.ZodType` — request body schema; `z.null()` for no-body (GET/DELETE)
-- `output: z.ZodType` — success response schema
+- `params?: z.ZodObject | AnySchema` — strict-object schema for URL path params
+- `query?: z.ZodObject | AnySchema` — strict-object schema for URL query string
+- `input: ValidationSchema` — request body schema; `z.null()` (or fuz_schema `literal(null)`) for no-body (GET/DELETE)
+- `output: ValidationSchema` — success response schema
 - `mints_credential?: boolean` — the route issues a session cookie while declaring no auth (login, signup, bootstrap); assembly refuses it outside `AUTH_MIDDLEWARE_PATH`, as it does any route whose `auth.account` is not `'none'` (`assert_credential_routes_in_auth_scope` in `auth/middleware.ts`)
 - `reads_credential?: boolean` — the handler reads the resolved account while the route declares no auth gate, answering an anonymous caller itself (account status, the cell-scoped fact read, `create_rpc_endpoint`'s pair, whose dispatcher gates per action); held inside `AUTH_MIDDLEWARE_PATH` by the same assertion. Such a handler reads the account through `get_public_account_id` (`auth/request_context.ts`), which answers a scope-narrowed token as anonymous — the RPC pair excepted, its dispatcher gating each method
 - `rate_limit?: RateLimitKey` — metadata only (`'ip' | 'account' | 'both'`); auto-derives 429
 - `errors?: RouteErrorSchemas` — handler-specific error schemas keyed by HTTP status
 - `transaction?: boolean` — declarative transaction wrapping (see below)
 
-Input/output naming mirrors SAES `ActionSpec`. Use `z.strictObject()` for
-inputs — the surface diagnostic warns on non-strict objects because unknown
-keys are silently stripped by Zod 4's default `z.object()`.
+Every schema field takes a Zod or a `@fuzdev/fuz_schema` schema
+(`ValidationSchema`, `schema_issues.ts`), validated through `parse_any`, its
+refusals answered with `to_wire_issues`'s `WireIssue`s either way. A fuz_schema
+`params` or `query` must be an object schema under any wrappers
+(`get_schema_entries`); `apply_route_specs` throws naming the route on one that
+isn't. Input/output naming mirrors SAES `ActionSpec`. Use a strict object for
+inputs — `z.strictObject()` or fuz_schema's `object` — the surface diagnostic
+warns on non-strict objects because unknown keys are silently stripped by Zod
+4's default `z.object()` (and by fuz_schema's `strip_object`, kept by its
+`loose_object`); the warning names the library's strict form.
 
 ### `RouteContext` — per-request deps
 
@@ -124,7 +131,8 @@ Duplicate `method path` pairs throw at registration.
 
 Validated values are accessed via `get_route_input(c, schema)`,
 `get_route_params(c, schema)`, `get_route_query(c, schema)` — pass the
-matching Zod schema and the return type infers as `z.infer<typeof schema>`.
+matching schema, Zod or fuz_schema, and the return type infers as
+`ValidationOutput<typeof schema>`.
 Each helper has a `<T>(c)` overload (no schema arg) for callers without the
 schema in scope.
 
@@ -157,7 +165,7 @@ WS); see ../../../docs/architecture.md §DEV-only Output Validation.
 
 - `ERROR_*` `snake_case` string constants — single source of truth; use `.literal(ERROR_*)` in Zod schemas and inline checks in handlers
 - `ApiError`, `ValidationError`, `PermissionError`, `CredentialTypeRequiredError`, `RateLimitError`, `PayloadTooLargeError`, `UnsupportedContentTypeError`, `ForeignKeyError` — standard shapes
-- `RouteErrorSchemas = Partial<Record<number, z.ZodType>>`
+- `RouteErrorSchemas = Partial<Record<number, ValidationSchema>>` — Zod or fuz_schema, on `RouteSpec.errors` and `MiddlewareSpec.errors`; `derive_error_schemas` returns the Zod-only `DerivedErrorSchemas`
 - `RateLimitKey = 'ip' | 'account' | 'both'`
 
 All standard shapes use `z.looseObject` — intentional because multiple

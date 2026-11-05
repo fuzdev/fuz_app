@@ -13,11 +13,11 @@ import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assert } from 'vitest';
-import type { z } from 'zod';
 
 import type { AppSurface, AppSurfaceRoute } from '../http/surface.ts';
 import type { RouteErrorSchemas } from '../http/error_schemas.ts';
 import { is_public_auth } from '../http/auth_shape.ts';
+import { parse_any, type ValidationSchema } from '../schema_issues.ts';
 
 /**
  * Resolve an absolute path relative to the caller's module.
@@ -90,14 +90,14 @@ export const assert_only_expected_public_routes = (
  * @param lookup - map from `"METHOD /path"` to merged error schemas
  * @param route - the surface route to look up
  * @param status - HTTP status code
- * @returns the Zod schema for that route+status, or `undefined` when no error
- *   schema is declared for the status code
+ * @returns the Zod or `@fuzdev/fuz_schema` schema for that route+status, or
+ *   `undefined` when no error schema is declared for the status code
  */
 export const get_route_error_schema = (
 	lookup: Map<string, RouteErrorSchemas>,
 	route: AppSurfaceRoute,
 	status: number
-): z.ZodType | undefined => {
+): ValidationSchema | undefined => {
 	const key = `${route.method} ${route.path}`;
 	return lookup.get(key)?.[status];
 };
@@ -113,7 +113,8 @@ export const get_route_error_schema = (
  * @param status - expected HTTP status code
  * @param body - the parsed response body to validate
  * @throws AssertionError if no schema is declared for the route+status pair.
- * @throws ZodError if the body does not satisfy the declared schema.
+ * @throws Error if the body does not satisfy the declared schema, its message
+ *   carrying the failed parse's issues (`parse_any`).
  */
 export const assert_error_schema_valid = (
 	lookup: Map<string, RouteErrorSchemas>,
@@ -123,7 +124,14 @@ export const assert_error_schema_valid = (
 ): void => {
 	const schema = get_route_error_schema(lookup, route, status);
 	assert.ok(schema, `missing error schema for ${status} on ${route.method} ${route.path}`);
-	schema.parse(body);
+	const result = parse_any(schema, body);
+	if (!result.ok) {
+		throw new Error(
+			`error schema mismatch for ${status} on ${route.method} ${route.path}: ${JSON.stringify(
+				result.issues
+			)}`
+		);
+	}
 };
 
 /**
