@@ -2532,7 +2532,7 @@ Cross-process only — the per-surface in-process TS pins live beside each
 module's own tests (`account_status.test.ts`, `action_rpc.test.ts`,
 `serve_fact_route.db.test.ts`);
 
-### Grant-verb role grammar parity — `cross_backend/role_grant_role_grammar.ts`
+### Grant-verb role and scope-kind grammar parity — `cross_backend/role_grant_role_grammar.ts`
 
 `describe_role_grant_role_grammar_cross_tests({setup_test, rpc_path?})` — an
 off-grammar `role` (uppercase, hyphen, digit, leading, trailing or consecutive
@@ -2543,9 +2543,14 @@ cap) on `role_grant_assign` and `role_grant_offer_create` answers
 strings. The control — an on-grammar role no registry holds, refused past
 validation with `role_not_web_grantable` — keeps the audit read from being
 vacuous, and the same refusal for a role exactly at the length cap pins that
-boundary. Exists because the action-manifest parity gate captures no param
+boundary. An off-grammar `scope_kind` with its `scope_id` (the same grammar
+and cap, `ScopeKindName`, among them `'GLOBAL'` with the all-zeros uuid, the
+partial unique indexes' key for a global grant) is refused the same way and
+recorded in no row; with an unregistered role, on-grammar ones (one at the cap)
+are refused past validation with the verb's not-grantable reason. Exists
+because the action-manifest parity gate captures no param
 schemas while the Rust spine parses params by hand, and the grant verbs write
-the role they refuse into their failure rows. Ungated; cross-process only (it
+the role and `scope_kind` they refuse into their failure rows. Ungated; cross-process only (it
 reads the audit log behind `_testing_drain_effects`).
 
 ### API-token lifetime parity — `cross_backend/token_lifetime.ts`

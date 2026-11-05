@@ -30,9 +30,7 @@ import {
 	CELL_PATH_LENGTH_MAX
 } from '#lib/auth/cell_action_specs.ts';
 import { TokenCreateInput, API_TOKEN_NAME_LENGTH_MAX } from '#lib/auth/account_action_specs.ts';
-import { SCOPE_KIND_LENGTH_MAX } from '#lib/auth/scope_kind_schema.ts';
 import {
-	RoleGrantAssignInput,
 	RoleGrantOfferCreateInput,
 	RoleGrantOfferDeclineInput,
 	RoleGrantRevokeInput
@@ -65,12 +63,6 @@ const capped: Array<[name: string, schema: ValidationSchema, max: number]> = [
 	['cell_create kind', CellCreateInput.shape.kind, CELL_KIND_LENGTH_MAX],
 	['cell_list kind', CellListInput.unwrap().shape.kind, CELL_KIND_LENGTH_MAX],
 	['token_create name', TokenCreateInput.shape.name, API_TOKEN_NAME_LENGTH_MAX],
-	[
-		'role_grant_offer_create scope_kind',
-		RoleGrantOfferCreateInput.shape.scope_kind,
-		SCOPE_KIND_LENGTH_MAX
-	],
-	['role_grant_assign scope_kind', RoleGrantAssignInput.shape.scope_kind, SCOPE_KIND_LENGTH_MAX],
 	[
 		'role_grant_offer_create message',
 		RoleGrantOfferCreateInput.shape.message,

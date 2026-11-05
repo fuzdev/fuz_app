@@ -2,7 +2,7 @@
  * Tests for `role_grant_offer_action_specs.ts` — the `scope_kind` +
  * `scope_id` pairing both grant inputs refine on (both or neither; a
  * half-scoped call is `-32602` rather than a constraint-violation 500), and
- * the length cap on `scope_kind`.
+ * the scope-kind grammar and length cap on `scope_kind`.
  *
  * @module
  */
@@ -51,30 +51,54 @@ describe('grant inputs pair scope_kind with scope_id', () => {
 	}
 });
 
-describe('grant inputs cap scope_kind', () => {
+describe('grant inputs hold scope_kind to the scope-kind grammar', () => {
+	/** Each breaks one rule of the `ScopeKindName` grammar, or its length cap. */
+	const OFF_GRAMMAR: ReadonlyArray<string> = [
+		'GLOBAL', // the partial unique indexes' token for a global grant
+		'Classroom', // uppercase
+		'class-room', // hyphen
+		'room1', // digit
+		'_room', // leading underscore
+		'room_', // trailing underscore
+		'a__b', // a run of two underscores
+		'class room', // space
+		'', // empty
+		'\u{1F600}', // outside a-z
+		'a'.repeat(SCOPE_KIND_LENGTH_MAX + 1) // on the alphabet, one past the cap
+	];
+	const ON_GRAMMAR: ReadonlyArray<string> = [
+		'classroom',
+		'a',
+		'a_b_c',
+		'a'.repeat(SCOPE_KIND_LENGTH_MAX) // at the cap
+	];
+
 	for (const [name, schema] of [
 		['RoleGrantAssignInput', RoleGrantAssignInput],
 		['RoleGrantOfferCreateInput', RoleGrantOfferCreateInput]
 	] as const) {
-		test(`${name} admits a scope_kind at the cap and refuses one past it`, () => {
+		test(`${name} admits a scope_kind on the grammar and refuses one off it`, () => {
 			const base = { to_account_id: TO_ACCOUNT, role: 'teacher', scope_id: SCOPE };
-			assert.ok(
-				schema.safeParse({ ...base, scope_kind: 'a'.repeat(SCOPE_KIND_LENGTH_MAX) }).success
-			);
-			assert.ok(
-				!schema.safeParse({ ...base, scope_kind: 'a'.repeat(SCOPE_KIND_LENGTH_MAX + 1) }).success
-			);
-			// the count is UTF-16 code units: an astral character costs two
-			assert.ok(
-				schema.safeParse({ ...base, scope_kind: '\u{1F600}'.repeat(SCOPE_KIND_LENGTH_MAX / 2) })
-					.success
-			);
-			assert.ok(
-				!schema.safeParse({
-					...base,
-					scope_kind: '\u{1F600}'.repeat(SCOPE_KIND_LENGTH_MAX / 2) + 'a'
-				}).success
-			);
+			for (const scope_kind of ON_GRAMMAR) {
+				const parsed = schema.safeParse({ ...base, scope_kind });
+				assert.ok(parsed.success, JSON.stringify(scope_kind));
+				assert.strictEqual(parsed.data.scope_kind, scope_kind);
+			}
+			for (const scope_kind of OFF_GRAMMAR) {
+				const refused = schema.safeParse({ ...base, scope_kind });
+				assert.ok(!refused.success, JSON.stringify(scope_kind));
+				assert.deepStrictEqual(refused.error.issues[0]!.path, ['scope_kind']);
+			}
+		});
+
+		test(`${name} refuses the index token with the all-zeros uuid`, () => {
+			const refused = schema.safeParse({
+				to_account_id: TO_ACCOUNT,
+				role: 'teacher',
+				scope_kind: 'GLOBAL',
+				scope_id: '00000000-0000-0000-0000-000000000000'
+			});
+			assert.ok(!refused.success);
 		});
 	}
 });

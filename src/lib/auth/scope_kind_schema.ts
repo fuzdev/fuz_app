@@ -22,10 +22,12 @@
  *
  * The literal `'GLOBAL'` (uppercase) appears as an index expression
  * inside the partial unique indexes on `role_grant` and `role_grant_offer`
- * (`COALESCE(scope_kind, 'GLOBAL')`) — never as a column value, never
- * as a registry entry. The uppercase form is structurally distinct
- * from any consumer-declared kind (which match the lowercase
- * `ScopeKindName` regex), so it cannot collide.
+ * (`COALESCE(scope_kind, 'GLOBAL')`), never as a registry entry. It is off
+ * the `ScopeKindName` grammar, so no registry declares it and the grant
+ * inputs (`role_grant_offer_create`, `role_grant_assign`) refuse it: a row
+ * written through them never holds it. One written by other means could,
+ * and with the all-zeros `scope_id` it would share a global grant's index
+ * key.
  *
  * @module
  */
@@ -44,16 +46,21 @@ export const SCOPE_KIND_NAME_REGEX = /^[a-z]+(?:_[a-z]+)*$/;
 
 /**
  * Maximum length of a `scope_kind`, in UTF-16 code units (what
- * `String.length` measures; enforced by `bounded_string`). Bounds the tag where it enters
- * — the grant inputs (`role_grant_offer_create`, `role_grant_assign`) copy it
- * into the row and its audit metadata — and a registered name, so no
+ * `String.length` measures; enforced by `bounded_string`). Part of the
+ * `ScopeKindName` grammar, which bounds a registered name and the tag where
+ * it enters — the grant inputs (`role_grant_offer_create`,
+ * `role_grant_assign`) copy it into the row and its audit metadata — so no
  * registry declares a kind the grant inputs would refuse. Same value as
  * `ROLE_NAME_LENGTH_MAX`, whose grammar the name shares, and as the Rust
  * spine's `SCOPE_KIND_LENGTH_MAX`.
  */
 export const SCOPE_KIND_LENGTH_MAX = 64;
 
-/** Zod schema for valid scope-kind name strings. */
+/**
+ * Zod schema for valid scope-kind name strings: a registered name, and the
+ * `scope_kind` the grant inputs take. Twin of the Rust spine's
+ * `is_valid_scope_kind_name`.
+ */
 export const ScopeKindName = bounded_string({
 	max: SCOPE_KIND_LENGTH_MAX,
 	max_message: `Scope-kind names must be at most ${SCOPE_KIND_LENGTH_MAX} characters`
@@ -93,8 +100,8 @@ export interface ScopeKindSchemaResult {
  *
  * Open registry — no builtins. The `'GLOBAL'` token used inside the
  * partial unique indexes on `role_grant` and `role_grant_offer` is not a
- * registry entry (it's an index expression only) and cannot collide
- * with consumer-declared kinds because the regex rejects uppercase.
+ * registry entry (it's an index expression only), and no consumer can
+ * declare it because the regex rejects uppercase.
  *
  * Call once at server init. Pass the result into `create_role_schema`'s
  * optional `scope_kinds` parameter so each role's

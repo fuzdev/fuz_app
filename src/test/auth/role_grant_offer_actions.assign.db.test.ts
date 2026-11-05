@@ -35,11 +35,12 @@ import type { AuditLogEvent } from '#lib/auth/audit_log_schema.ts';
 import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
 import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
 import { install_audit_drift_guard } from '#lib/testing/audit_drift_guard.ts';
-import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
+import { rpc_call, rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 import { describe_db } from '../auth_db_default.ts';
 import {
 	RPC_PATH,
 	TEST_APP_ROLE,
+	admit_all_authorize,
 	create_app_role_route_specs,
 	create_route_specs,
 	session_options
@@ -317,6 +318,68 @@ describe_db('role_grant_offer_actions.assign', (get_db) => {
 				[second_actor.id, ROLE_ADMIN]
 			);
 			assert.strictEqual(rows.length, 1, 'the named actor holds the new grant');
+		});
+	});
+
+	describe('the index token as a scope_kind', () => {
+		// `'GLOBAL'` with the all-zeros uuid is the partial unique index's key for
+		// a global grant (`COALESCE(scope_kind, 'GLOBAL')`, `COALESCE(scope_id,
+		// <nil>)`); off the scope-kind grammar, it is refused before it reaches it
+		const NIL_UUID = '00000000-0000-0000-0000-000000000000';
+		const setup = async (username: string) => {
+			const test_app = await create_test_app({
+				session_options,
+				create_route_specs: create_app_role_route_specs({ authorize: admit_all_authorize }),
+				db: get_db(),
+				roles: [ROLE_ADMIN]
+			});
+			const target = await test_app.create_account({ username });
+			const assign = (params: { scope_kind?: string; scope_id?: string }) =>
+				rpc_call({
+					app: test_app.app,
+					path: RPC_PATH,
+					method: role_grant_assign_action_spec.method,
+					params: { to_account_id: target.account.id, role: TEST_APP_ROLE, ...params },
+					headers: test_app.create_session_headers()
+				});
+			return { target, assign };
+		};
+
+		test('on an actor holding the role globally, it is invalid_params, not a 500', async () => {
+			const { target, assign } = await setup('assign_global_token_held');
+			const global = await assign({});
+			assert.ok(global.ok, JSON.stringify(global));
+
+			const res = await assign({ scope_kind: 'GLOBAL', scope_id: NIL_UUID });
+			assert.ok(!res.ok);
+			assert.strictEqual(res.status, 400, JSON.stringify(res));
+			assert.strictEqual(res.error.code, JSONRPC_ERROR_CODES.invalid_params);
+			assert.strictEqual(
+				(res.error.data as { reason?: unknown } | undefined)?.reason,
+				undefined,
+				'a validation refusal, no reason'
+			);
+
+			const rows = await get_db().query<{ scope_kind: string | null }>(
+				`SELECT scope_kind FROM role_grant WHERE actor_id = $1 AND role = $2`,
+				[target.actor.id, TEST_APP_ROLE]
+			);
+			assert.deepStrictEqual(rows, [{ scope_kind: null }], 'only the global grant');
+		});
+
+		test('it plants no row, so a later global grant lands', async () => {
+			const { target, assign } = await setup('assign_global_token_planted');
+			const planted = await assign({ scope_kind: 'GLOBAL', scope_id: NIL_UUID });
+			assert.ok(!planted.ok);
+			assert.strictEqual(planted.status, 400, JSON.stringify(planted));
+
+			const global = await assign({});
+			assert.ok(global.ok, JSON.stringify(global));
+			const rows = await get_db().query<{ scope_kind: string | null }>(
+				`SELECT scope_kind FROM role_grant WHERE actor_id = $1 AND role = $2`,
+				[target.actor.id, TEST_APP_ROLE]
+			);
+			assert.deepStrictEqual(rows, [{ scope_kind: null }], 'only the global grant');
 		});
 	});
 

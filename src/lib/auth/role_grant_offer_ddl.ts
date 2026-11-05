@@ -22,10 +22,11 @@ import type { RoleGrantOffer } from './role_grant_offer_schema.ts';
 export const ROLE_GRANT_OFFER_SCOPE_SENTINEL_UUID = '00000000-0000-0000-0000-000000000000';
 
 /**
- * Index-side token for the global case in the partial unique index. Uppercase
- * so it cannot collide with consumer-declared `ScopeKindName` values (which
- * are lowercase by regex). Never appears as a column value — column-level
- * `scope_kind = NULL` and `scope_id = NULL` together encode the global case.
+ * Index-side token for the global case in the partial unique index.
+ * Uppercase, so it is off the `ScopeKindName` grammar: no registry declares
+ * it, and the grant inputs refuse it, so no row they write holds it.
+ * Column-level `scope_kind = NULL` and `scope_id = NULL` together encode the
+ * global case.
  */
 export const ROLE_GRANT_OFFER_SCOPE_KIND_GLOBAL_TOKEN = 'GLOBAL';
 
