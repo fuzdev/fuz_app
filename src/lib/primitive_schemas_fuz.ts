@@ -7,11 +7,9 @@
  * `Branded<string, 'Uuid'>` too, so a value parsed by either twin goes where
  * the other's is taken.
  *
- * One declared difference: this `Uuid` takes the max UUID in any case, as RFC
- * 9562 §4 reads a UUID case-insensitively, and lowercases it; the Zod `Uuid`
- * refuses the uppercase max, as `z.uuid()` spells that alternative in
- * lowercase only. Every other string gets the same verdict and output from
- * both.
+ * Both twins have one grammar, RFC 9562's read case-insensitively as its §4
+ * says, the max UUID included, and the Rust spine's: every input gets the same
+ * verdict and output from both, and their JSON Schema is the same.
  *
  * The exports are `@nodocs` while the Zod schemas of the same names stay, as
  * the docs build refuses two exports of one name.

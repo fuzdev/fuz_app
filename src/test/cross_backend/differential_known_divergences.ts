@@ -10,29 +10,7 @@
  *
  * A declared divergence no case shows yet is recorded here in prose under its
  * tracking id, so it isn't lost. The differential can't check a prose entry,
- * so each names the unit test that turns red when it closes:
- *
- * - `zod-uuid-uppercase-max` — the max UUID in upper or mixed case
- *   (`FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF`). The Rust spine's grammar
- *   (`fuz_http::is_valid_uuid`) takes it, as the fuz_schema `Uuid` twin in
- *   `primitive_schemas_fuz.ts` does; the Zod `Uuid` (`z.uuid()`) takes the
- *   max in lowercase only. Two families diverge on it. A Zod `Uuid` input
- *   field (`cell_get.id`, say): TS answers `-32602` `invalid_params`, Rust
- *   reads an id naming nothing (not found, `-32003`). A REST route declaring
- *   `query: z.strictObject({acting: ActingActor})` (`audit_log_route_schema.ts`,
- *   `http/db_routes.ts`, `server/serve_fact_route.ts`): TS answers 400
- *   `invalid_query_params` ahead of auth, Rust passes the shape check and
- *   answers 401 to an anonymous caller and `actor_not_on_account` to an
- *   authenticated one. The `acting` selector of an action, the status route
- *   and the WS upgrade read by the twin's grammar (`parse_acting`) and agree.
- *   Closes when the built-in specs' inputs and query schemas move to the
- *   fuz_schema twins. No case here exercises it: the table runner sends no
- *   query string, and a case pins one answer on each backend's conformance
- *   leg. The closing tests: for the input family, `CellGetInput` › `the Zod
- *   cell_get input refuses the uppercase max UUID` in
- *   `auth/cell_action_specs.test.ts`; for the query family, `AuditStreamQuery` ›
- *   `the Zod acting query refuses the uppercase max UUID` in
- *   `auth/audit_log_route_schema.test.ts`.
+ * so each names the unit test that turns red when it closes. None is open.
  *
  * @module
  */

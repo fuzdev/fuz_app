@@ -92,14 +92,11 @@ export type ActingActor = z.infer<typeof ActingActor>;
  * an input schema behind it, so there a malformed selector is final (the
  * status route answers account-only).
  *
- * The grammar is the fuz_schema twin's, so the uppercase max UUID reads as a
- * selector, as on the Rust spine; naming no actor, it is refused by the
- * authorization phase before a Zod input schema would see it. Every other
- * value reads as the Zod `ActingActor` would. The id comes back lowercased.
- * A route declaring `acting` on its Zod `query` schema doesn't read it here:
- * that schema runs ahead of the authorization phase and refuses the uppercase
- * max with a 400, a declared gap against the Rust spine until those query
- * schemas move to the twin.
+ * The grammar is the fuz_schema twin's, which is the Zod `ActingActor`'s and
+ * the Rust spine's, so every value reads as the Zod `ActingActor` would, the
+ * max UUID in any case included. The id comes back lowercased. A route
+ * declaring `acting` on its Zod `query` schema doesn't read it here: that
+ * schema runs ahead of the authorization phase, with the same grammar.
  *
  * @param value - the raw `acting` field, from params / query / body
  * @returns the actor id, or `undefined` when absent or malformed

@@ -48,8 +48,15 @@ describe('cell kind length cap', () => {
 });
 
 describe('CellGetInput', () => {
-	// `zod-uuid-uppercase-max`: fails, and the ledger header's entry goes, when the input moves to the twin
-	test('the Zod cell_get input refuses the uppercase max UUID', () => {
-		assert.isFalse(CellGetInput.safeParse({ id: 'FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF' }).success);
+	// the Rust spine's grammar: the max UUID in any case, lowercased
+	test('takes the max UUID in any case', () => {
+		for (const id of [
+			'FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF',
+			'ffffffff-FFFF-ffff-FFFF-ffffffffffff'
+		]) {
+			const result = CellGetInput.safeParse({ id });
+			assert(result.success, id);
+			assert.strictEqual(result.data.id, 'ffffffff-ffff-ffff-ffff-ffffffffffff');
+		}
 	});
 });

@@ -17,11 +17,10 @@ describe('AuditStreamQuery', () => {
 		assert.isFalse(AuditStreamQuery.safeParse({ acting: 'not-a-uuid' }).success);
 	});
 
-	// `zod-uuid-uppercase-max`: a declared gap against the Rust spine; this fails,
-	// and the ledger header's entry goes, when the query schema moves to the twin
-	test('the Zod acting query refuses the uppercase max UUID', () => {
-		assert.isFalse(
-			AuditStreamQuery.safeParse({ acting: 'FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF' }).success
-		);
+	// the Rust spine's grammar: the max UUID in any case, lowercased
+	test('takes the max UUID in any case as the acting selector', () => {
+		const result = AuditStreamQuery.safeParse({ acting: 'FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF' });
+		assert(result.success);
+		assert.strictEqual(result.data.acting, 'ffffffff-ffff-ffff-ffff-ffffffffffff');
 	});
 });

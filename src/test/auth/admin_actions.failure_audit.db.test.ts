@@ -26,7 +26,7 @@ import { describe_db } from '../auth_db_default.ts';
 import { RPC_PATH, create_admin_route_specs, session_options } from './admin_rpc_test_helpers.ts';
 
 // Valid v4 UUID that won't collide with bootstrap/test accounts. Must be
-// version-4 because `Uuid = z.uuid()` rejects non-RFC-4122 shapes.
+// version-4 because `Uuid` checks the RFC 9562 version and variant.
 const missing_account_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' as Uuid;
 
 describe_db('admin_actions_failure_audit', (get_db) => {

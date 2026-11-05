@@ -697,8 +697,9 @@ export const describe_standard_admin_integration_tests = (
 
 			test('admin session revoke-all 404 emits failure audit', async () => {
 				const fixture = await options.setup_test();
-				// `Uuid = z.uuid()` is v4-strict; use a valid v4 shape so we hit the
-				// handler's account lookup rather than failing at param validation.
+				// `Uuid` checks the RFC 9562 version and variant; use a valid v4 shape
+				// so we hit the handler's account lookup rather than failing at param
+				// validation.
 				const missing_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa01' as Uuid;
 
 				const res = await rpc_call_for_spec({

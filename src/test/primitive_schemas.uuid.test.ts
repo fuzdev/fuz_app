@@ -59,23 +59,43 @@ describe('Uuid schema', () => {
 			Uuid.parse('f81D4fae-7DEC-11d0-A765-00a0C91e6bf6'),
 			'f81d4fae-7dec-11d0-a765-00a0c91e6bf6'
 		);
-		// the nil and max ids parse in lowercase only, as before
 		assert.strictEqual(
 			Uuid.parse('00000000-0000-0000-0000-000000000000'),
 			'00000000-0000-0000-0000-000000000000'
 		);
-		assert.strictEqual(
-			Uuid.parse('ffffffff-ffff-ffff-ffff-ffffffffffff'),
-			'ffffffff-ffff-ffff-ffff-ffffffffffff'
-		);
-		assert.equal(Uuid.safeParse('FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF').success, false);
+		// the max UUID in any case, as RFC 9562 §4 and the Rust spine read it,
+		// where `z.uuid()` takes it in lowercase only
+		for (const max of [
+			'ffffffff-ffff-ffff-ffff-ffffffffffff',
+			'FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF',
+			'ffffffff-FFFF-ffff-FFFF-ffffffffffff'
+		]) {
+			assert.strictEqual(Uuid.parse(max), 'ffffffff-ffff-ffff-ffff-ffffffffffff', max);
+		}
+		assert.isFalse(z.uuid().safeParse('FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF').success);
 	});
 
-	test('its JSON schema is a plain uuid string', () => {
+	test('a refusal is a uuid format issue', () => {
+		const result = Uuid.safeParse('not-a-uuid');
+		assert(!result.success);
+		assert.strictEqual(result.error.issues.length, 1);
+		const [issue] = result.error.issues;
+		assert.strictEqual(issue!.code, 'invalid_format');
+		assert.strictEqual((issue as { format?: string }).format, 'uuid');
+	});
+
+	test('its JSON schema is a uuid string, z.uuid()’s but for the pattern', () => {
 		// the lowercasing is an overwrite, not a transform: the rendered schema
-		// is the one `z.uuid()` renders, input and output alike
+		// is the one `z.uuid()` renders, input and output alike, but for the
+		// pattern, which takes the max UUID in any case
 		for (const io of ['input', 'output'] as const) {
-			assert.deepEqual(z.toJSONSchema(Uuid, { io }), z.toJSONSchema(z.uuid(), { io }));
+			const { pattern, ...rest } = z.toJSONSchema(Uuid, { io });
+			const { pattern: bare_pattern, ...bare_rest } = z.toJSONSchema(z.uuid(), { io });
+			assert.deepEqual(rest, bare_rest, io);
+			assert.strictEqual(rest.format, 'uuid', io);
+			assert(typeof pattern === 'string');
+			assert(typeof bare_pattern === 'string');
+			assert.notStrictEqual(pattern, bare_pattern, io);
 		}
 	});
 });

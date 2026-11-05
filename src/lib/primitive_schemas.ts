@@ -215,14 +215,30 @@ export type Email = z.infer<typeof Email>;
 export const create_uuid = (): Uuid => crypto.randomUUID() as Uuid;
 
 /**
+ * The UUID grammar of RFC 9562, in either case: five groups of hex digits,
+ * 8-4-4-4-12, with a version from 1 to 8 and the RFC's variant, or the nil or
+ * the max UUID. It is `z.uuid()`'s own but for the max UUID, which `z.uuid()`
+ * spells in lowercase only, where RFC 9562 §4 reads a UUID case-insensitively.
+ * The same source as the pattern fuz_schema's `uuid` renders to JSON Schema,
+ * which a test holds it to, and the grammar of the Rust spine's
+ * `is_valid_uuid`.
+ */
+const UUID_REGEX =
+	/^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$/;
+
+/**
  * Branded UUID schema. Accepts either case and outputs lowercase — the form
  * Postgres renders a `uuid` in and every id the server mints — so a parsed id
  * compares equal to the same id read back from the database. The Rust spine
- * canonicalizes the same way. One exception: `z.uuid()` takes the max UUID
- * (`ffffffff-ffff-ffff-ffff-ffffffffffff`) only in lowercase, and
- * `.toLowerCase()` runs after the check, so the uppercase max is refused,
- * where the fuz_schema twin in `primitive_schemas_fuz.ts` and the Rust spine
- * accept it.
+ * canonicalizes the same way, and its grammar is this one, the fuz_schema
+ * twin's in `primitive_schemas_fuz.ts`: `z.uuid()` with the max UUID taken in
+ * any case. Issues and JSON Schema keep `format: 'uuid'`; only the `pattern`
+ * differs from a bare `z.uuid()`'s, rendered or on a Zod issue (the wire
+ * issue drops it).
+ *
+ * `pattern` is a `$ZodUUIDDef` field that `z.uuid()` honors (its default
+ * applies only when none is given) but whose public params type omits it,
+ * hence the cast on the params.
  *
  * `.toLowerCase()` rather than `.transform()`: an overwrite keeps the output
  * type and stays invisible to `z.toJSONSchema`, where a transform would leave
@@ -233,7 +249,7 @@ export const create_uuid = (): Uuid => crypto.randomUUID() as Uuid;
  * brand, which a fuz_schema `Uuid` isn't assignable to.
  */
 export const Uuid: z.ZodUUID & z.ZodType<Branded<string, 'Uuid'>, string> = z
-	.uuid()
+	.uuid({ pattern: UUID_REGEX } as z.core.$ZodUUIDParams)
 	.toLowerCase() as z.ZodUUID & z.ZodType<Branded<string, 'Uuid'>, string>;
 export type Uuid = z.infer<typeof Uuid>;
 
