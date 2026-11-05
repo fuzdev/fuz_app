@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/BTZoVLbz.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CAODFmXb.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.C_pgF16Q.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.BefgwnlS.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.BTc19Ycq.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.CF9CpsLL.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BcwQFYZ2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/C3BYcZ2u.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CE-egMPB.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/BWPFK79u.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.D2OZBon3.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/D123x_ul.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.yo4YUfWB.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BL7ZH9U-.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DhdQKFKC.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -1252,7 +1252,10 @@ is the grantor, so the fixture's keeper must hold <!--]--><!--[3--><!--[0--><!--
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> option, <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/cross_backend/spine_surface_constants.ts#SPINE_PARTICIPANT_ROLE"><!--[0--><!--[-1-->SPINE_PARTICIPANT_ROLE<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> by default; <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/role_schema.ts#ROLE_ADMIN"><!--[0--><!--[-1-->ROLE_ADMIN<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> serves a
 backend with only the builtin roles.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/testing/cross_backend/role_grant_offer_notification_ws.ts"><!--[-1-->testing/cross_backend/role_grant_offer_notification_ws.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Cross-process <!--]--><!--[4--><strong><!--[--><!--[2-->role-grant-offer lifecycle WS notification<!--]--><!--]--><!----></strong><!--]--><!--[2--> suite — the
 machinery proof for the consentful-role-grants notification fan-out across
-any spine backend. Covers all seven server-initiated notifications:<!--]--><!--]--><!----></p><!--]--><!--[9--><!--[-1--><ul><!--[--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role_grant_offer_received<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> → recipient (offer created)<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role_grant_offer_accepted<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> → grantor (recipient accepts)<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role_grant_offer_declined<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> → grantor (recipient declines)<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role_grant_offer_retracted<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> → recipient (grantor retracts)<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role_grant_revoke<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (flat, omits <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->revoked_by<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) → revokee (active grant revoked)<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role_grant_offer_supersede<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> → each superseded sibling's grantor, fired on
+any spine backend. Covers every server-initiated notification of the
+lifecycle:<!--]--><!--]--><!----></p><!--]--><!--[9--><!--[-1--><ul><!--[--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role_grant_offer_received<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> → recipient (offer created)<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role_grant_offer_accepted<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> → grantor (recipient accepts)<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role_grant_offer_declined<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> → grantor (recipient declines)<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role_grant_offer_retracted<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> → recipient (grantor retracts)<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role_grant_revoked<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (flat, omits <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->revoked_by<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) → revokee (active grant
+revoked by the <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role_grant_revoke<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> action), for a global grant and a
+scoped one unless <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->scope_kind<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> is <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->null<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role_grant_offer_supersede<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> → each superseded sibling's grantor, fired on
 BOTH the accept-cascade (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->reason: 'sibling_accepted'<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) and the
 revoke-cascade (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->reason: 'role_grant_revoked'<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->)<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--[8--><p><!--[--><!--[2-->These exercise only spine primitives (accounts, role-grants, offers, WS
 notifications) — zero consumer domain — so the suite lives here and runs
@@ -2450,16 +2453,16 @@ close-on-revoke).<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div
 			
 			<script>
 				{
-					__sveltekit_9xw8kx = {
+					__sveltekit_1e1lmgn = {
 						base: "",
-						version: "313f8b096f9e58a13c44169faecd62396e1a89ec"
+						version: "80d88242a8506ecf079aa279f74af542c178d09c"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.CXlCZqzx.js").then(async (kit) => {
-						kit.init(__sveltekit_9xw8kx);
-						const app = await import("/_app/immutable/entry/app.C_pgF16Q.js");
+						kit.init(__sveltekit_1e1lmgn);
+						const app = await import("/_app/immutable/entry/app.BTc19Ycq.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],
