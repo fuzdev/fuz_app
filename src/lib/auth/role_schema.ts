@@ -44,22 +44,23 @@ import type { ScopeKindSchemaResult } from './scope_kind_schema.ts';
 export const ROLE_NAME_LENGTH_MAX = 64;
 
 /**
- * The grammar of a role name: lowercase letters and underscores, no leading or
- * trailing underscore. Both `RoleName`s hold it, the Zod one here and the
- * `@fuzdev/fuz_schema` twin in `auth/role_schema_fuz.ts`.
+ * The grammar of a role name: runs of lowercase letters joined by single
+ * underscores, so no leading, trailing or consecutive underscores. Both
+ * `RoleName`s hold it, the Zod one here and the `@fuzdev/fuz_schema` twin in
+ * `auth/role_schema_fuz.ts`.
  */
-export const ROLE_NAME_PATTERN = /^[a-z][a-z_]*[a-z]$|^[a-z]$/;
+export const ROLE_NAME_PATTERN = /^[a-z]+(?:_[a-z]+)*$/;
 
 /** The message of a role name longer than `ROLE_NAME_LENGTH_MAX`, in both `RoleName`s. */
 export const ROLE_NAME_LENGTH_MESSAGE = `Role names must be at most ${ROLE_NAME_LENGTH_MAX} characters`;
 
 /** The message of a role name outside `ROLE_NAME_PATTERN`, in both `RoleName`s. */
 export const ROLE_NAME_PATTERN_MESSAGE =
-	'Role names must be lowercase letters and underscores (a-z_), no leading/trailing underscore';
+	'Role names must be lowercase letters and underscores (a-z_), no leading, trailing or consecutive underscores';
 
 /**
- * Valid role name: lowercase letters and underscores, no leading/trailing
- * underscore, at most `ROLE_NAME_LENGTH_MAX` characters.
+ * Valid role name: lowercase letters and underscores, no leading, trailing or
+ * consecutive underscores, at most `ROLE_NAME_LENGTH_MAX` characters.
  */
 export const RoleName = bounded_string({
 	max: ROLE_NAME_LENGTH_MAX,

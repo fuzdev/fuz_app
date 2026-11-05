@@ -59,8 +59,9 @@ This creates a clean trust boundary:
 Roles are validated by Zod at I/O boundaries via `create_role_schema()`, not stored
 in a DB table. Builtins (`keeper`, `admin`) are fixed; consumers extend with
 app-defined roles at server init — names of lowercase letters and underscores,
-at most 64 characters (`RoleName`). Intentionally coarse — fine-grained access
-(per-cell, per-resource) is application logic checking cell relationships, not the
+no leading, trailing or consecutive underscores, at most 64 characters
+(`RoleName`). Intentionally coarse — fine-grained access (per-cell,
+per-resource) is application logic checking cell relationships, not the
 role_grant system.
 
 ## Bootstrap

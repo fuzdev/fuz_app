@@ -16,6 +16,7 @@ import {
 	ROLE_ADMIN,
 	ROLE_KEEPER,
 	ROLE_NAME_LENGTH_MAX,
+	ROLE_NAME_PATTERN_MESSAGE,
 	RoleName
 } from '#lib/auth/role_schema.ts';
 import { create_credential_type_schema } from '#lib/auth/credential_type_schema.ts';
@@ -74,6 +75,14 @@ describe('create_role_schema', () => {
 		assert.throws(() => create_role_schema([{ name: 'admin/keeper' }]));
 		assert.throws(() => create_role_schema([{ name: '_leading' }]));
 		assert.throws(() => create_role_schema([{ name: 'trailing_' }]));
+		assert.throws(() => create_role_schema([{ name: 'classroom__admin' }]));
+		assert.throws(() => create_role_schema([{ name: 'classroom___admin' }]));
+		assert.throws(() => create_role_schema([{ name: 'a_b__c' }]));
+		// a run of underscores is off the grammar, not merely unusual: it throws at assembly
+		assert.throws(
+			() => create_role_schema([{ name: 'a__b' }]),
+			`Invalid role name "a__b": ${ROLE_NAME_PATTERN_MESSAGE}`
+		);
 		assert.throws(() => create_role_schema([{ name: 'has-dash' }]));
 		assert.throws(() => create_role_schema([{ name: 'has.dot' }]));
 		assert.throws(() => create_role_schema([{ name: '123' }]));
@@ -84,6 +93,7 @@ describe('create_role_schema', () => {
 		assert.ok(create_role_schema([{ name: 'teacher' }]));
 		assert.ok(create_role_schema([{ name: 'classroom_admin' }]));
 		assert.ok(create_role_schema([{ name: 'ab' }]));
+		assert.ok(create_role_schema([{ name: 'a_b_c' }]));
 	});
 
 	test('a role name is capped at ROLE_NAME_LENGTH_MAX characters', () => {
@@ -93,7 +103,8 @@ describe('create_role_schema', () => {
 		assert.ok(RoleName.safeParse(at_max).success);
 		assert.ok(!RoleName.safeParse(over_max).success);
 		// underscores count toward the length like any other character
-		const with_underscores = `a${'_'.repeat(ROLE_NAME_LENGTH_MAX - 2)}a`;
+		const with_underscores = `${'a_'.repeat(ROLE_NAME_LENGTH_MAX / 2 - 1)}aa`;
+		assert.strictEqual(with_underscores.length, ROLE_NAME_LENGTH_MAX);
 		assert.ok(RoleName.safeParse(with_underscores).success);
 		assert.ok(!RoleName.safeParse(`${with_underscores}a`).success);
 

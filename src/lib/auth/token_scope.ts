@@ -182,7 +182,8 @@ export const is_token_surface = (value: string): value is TokenSurface =>
 
 /**
  * Name format for the identifier half of a capability string. Mirrors
- * `RoleName` / `CredentialTypeName` / `ScopeKindName`.
+ * `CredentialTypeName` / `ScopeKindName`; `RoleName` also refuses
+ * consecutive underscores.
  *
  * Applied to the `surface:` arm only. The `rpc:` arm's identifier is an action
  * method name, whose vocabulary belongs to `ActionSpec` (and includes shapes

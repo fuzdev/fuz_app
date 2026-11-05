@@ -2535,8 +2535,9 @@ module's own tests (`account_status.test.ts`, `action_rpc.test.ts`,
 ### Grant-verb role grammar parity — `cross_backend/role_grant_role_grammar.ts`
 
 `describe_role_grant_role_grammar_cross_tests({setup_test, rpc_path?})` — an
-off-grammar `role` (uppercase, hyphen, digit, leading or trailing underscore,
-space, empty, or all lowercase and one character past the length cap) on `role_grant_assign` and `role_grant_offer_create` answers
+off-grammar `role` (uppercase, hyphen, digit, leading, trailing or consecutive
+underscores, space, empty, or all lowercase and one character past the length
+cap) on `role_grant_assign` and `role_grant_offer_create` answers
 `invalid_params` with no `data.reason`, and after the refusals no
 `role_grant_create` / `role_grant_offer_create` audit row carries one of those
 strings. The control — an on-grammar role no registry holds, refused past

@@ -33,10 +33,17 @@ const CORPUS: Array<[label: string, input: unknown]> = [
 	['builtin admin', 'admin'],
 	['builtin keeper', 'keeper'],
 	['inner underscore', 'a_b'],
+	['inner underscores', 'a_b_c'],
 	['double underscore', 'a__b'],
+	['triple underscore', 'a___b'],
 	['many underscores', 'a___________b'],
+	['double underscore after single', 'a_b__c'],
+	['double underscore leading', '__ab'],
+	['double underscore trailing', 'ab__'],
 	['at the cap', 'a'.repeat(ROLE_NAME_LENGTH_MAX)],
-	['at the cap with underscores', 'a' + '_'.repeat(ROLE_NAME_LENGTH_MAX - 2) + 'a'],
+	['at the cap with underscores', 'a_'.repeat(ROLE_NAME_LENGTH_MAX / 2 - 1) + 'aa'],
+	['at the cap with a run of underscores', 'a' + '_'.repeat(ROLE_NAME_LENGTH_MAX - 2) + 'a'],
+	['one past the cap with underscores', 'a_'.repeat(ROLE_NAME_LENGTH_MAX / 2) + 'a'],
 	['one past the cap', 'a'.repeat(ROLE_NAME_LENGTH_MAX + 1)],
 	['far past the cap', 'a'.repeat(1000)],
 	['one past the cap, uppercase', 'A'.repeat(ROLE_NAME_LENGTH_MAX + 1)],
@@ -116,7 +123,7 @@ describe('fuz_schema RoleName', () => {
 	test('keeps the pattern message text', () => {
 		assert.strictEqual(
 			ROLE_NAME_PATTERN_MESSAGE,
-			'Role names must be lowercase letters and underscores (a-z_), no leading/trailing underscore'
+			'Role names must be lowercase letters and underscores (a-z_), no leading, trailing or consecutive underscores'
 		);
 	});
 

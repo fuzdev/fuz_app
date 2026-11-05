@@ -29,9 +29,10 @@ import { z } from 'zod';
 
 /**
  * Letter (lowercase a-z) start and end (or single letter), with letters
- * and underscores in between. Mirrors `RoleName`, `ScopeKindName`,
- * `CredentialTypeName`. Rejects empty strings, leading or trailing
- * underscores, uppercase, and digits.
+ * and underscores in between. Mirrors `ScopeKindName` and
+ * `CredentialTypeName`; `RoleName` also refuses consecutive underscores.
+ * Rejects empty strings, leading or trailing underscores, uppercase, and
+ * digits.
  */
 export const GRANT_PATH_NAME_REGEX = /^[a-z][a-z_]*[a-z]$|^[a-z]$/;
 

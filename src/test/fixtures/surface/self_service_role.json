@@ -13,7 +13,7 @@
 			"role": {
 				"type": "string",
 				"maxLength": 64,
-				"pattern": "^[a-z][a-z_]*[a-z]$|^[a-z]$",
+				"pattern": "^[a-z]+(?:_[a-z]+)*$",
 				"description": "Role to toggle. Must be in the configured allowlist."
 			},
 			"enabled": {

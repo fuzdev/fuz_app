@@ -46,6 +46,7 @@ describe('validate_self_service_eligible_roles', () => {
 			/not a valid role name/
 		);
 		assert.throws(() => validate_self_service_eligible_roles(['_x']), /not a valid role name/);
+		assert.throws(() => validate_self_service_eligible_roles(['x__y']), /not a valid role name/);
 	});
 });
 

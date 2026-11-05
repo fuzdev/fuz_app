@@ -36,9 +36,10 @@ import { bounded_string } from '../primitive_schemas.ts';
 
 /**
  * Letter (lowercase a-z) start and end (or single letter), with letters
- * and underscores in between. Mirrors `RoleName`. Rejects empty strings,
- * leading or trailing underscores, uppercase, digits, and the index-side
- * `'GLOBAL'` token.
+ * and underscores in between. Mirrors `CredentialTypeName` and
+ * `GrantPathName`; `RoleName` also refuses consecutive underscores. Rejects
+ * empty strings, leading or trailing underscores, uppercase, digits, and the
+ * index-side `'GLOBAL'` token.
  */
 export const SCOPE_KIND_NAME_REGEX = /^[a-z][a-z_]*[a-z]$|^[a-z]$/;
 
@@ -48,8 +49,7 @@ export const SCOPE_KIND_NAME_REGEX = /^[a-z][a-z_]*[a-z]$|^[a-z]$/;
  * — the grant inputs (`role_grant_offer_create`, `role_grant_assign`) copy it
  * into the row and its audit metadata — and a registered name, so no
  * registry declares a kind the grant inputs would refuse. Same value as
- * `ROLE_NAME_LENGTH_MAX`, whose grammar the name mirrors, and as the Rust
- * spine's `SCOPE_KIND_LENGTH_MAX`.
+ * `ROLE_NAME_LENGTH_MAX`, and as the Rust spine's `SCOPE_KIND_LENGTH_MAX`.
  */
 export const SCOPE_KIND_LENGTH_MAX = 64;
 

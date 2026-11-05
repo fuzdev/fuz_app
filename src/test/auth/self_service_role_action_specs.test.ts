@@ -2,7 +2,7 @@
  * `self_service_role_set`'s `@fuzdev/fuz_schema` schemas, held to the Zod
  * schemas they replaced, rebuilt here: the same verdict and output on a corpus
  * of inputs and of outputs, and the same wire issues but for `message`. The
- * surface entry is the Zod-era one as JSON, captured in
+ * surface entry is the Zod schemas' one as JSON, captured in
  * `fixtures/surface/self_service_role.json`, and the acting check still finds
  * the input's `acting`.
  *
@@ -80,6 +80,8 @@ const INPUT_CORPUS: Array<[label: string, input: unknown]> = [
 	['one past the cap, off the grammar', { role: LONG_OFF_GRAMMAR, enabled: true }],
 	['leading underscore', { role: '_admin', enabled: true }],
 	['trailing underscore', { role: 'admin_', enabled: true }],
+	['double underscore', { role: 'ad__min', enabled: true }],
+	['triple underscore', { role: 'ad___min', enabled: true }],
 	['uppercase', { role: 'Admin', enabled: true }],
 	['digit', { role: 'admin2', enabled: true }],
 	['empty role', { role: '', enabled: true }],
@@ -162,7 +164,7 @@ describe('self_service_role_set schemas', () => {
 		);
 	});
 
-	test('the surface entry is the Zod-era one', () => {
+	test("the surface entry is the Zod schemas' one as JSON", () => {
 		const surface = generate_app_surface({
 			route_specs: [],
 			middleware_specs: [],

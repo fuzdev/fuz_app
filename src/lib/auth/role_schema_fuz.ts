@@ -26,8 +26,8 @@ import {
 } from './role_schema.ts';
 
 /**
- * Valid role name: lowercase letters and underscores, no leading/trailing
- * underscore, at most `ROLE_NAME_LENGTH_MAX` UTF-16 code units, the twin of
+ * Valid role name: lowercase letters and underscores, no leading, trailing or
+ * consecutive underscores, at most `ROLE_NAME_LENGTH_MAX` UTF-16 code units, the twin of
  * the Zod `RoleName`. A string it refuses gets the Zod one's message; a
  * value that is no string, fuz_schema's.
  *

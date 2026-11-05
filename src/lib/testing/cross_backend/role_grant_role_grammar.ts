@@ -4,11 +4,12 @@ import '../assert_dev_env.ts';
  * Cross-backend parity suite for an **off-grammar `role`** on the grant verbs.
  *
  * `role_grant_assign` and `role_grant_offer_create` declare `role` as
- * `RoleName` (lowercase letters and underscores, no leading or trailing
- * underscore, at most 64 characters). A role string outside that grammar is refused at input
- * validation — JSON-RPC `invalid_params`, with no `data.reason` — and writes
- * no audit row: a role is caller-chosen text until it passes the grammar, and
- * the grant verbs record the role they refuse in their failure rows.
+ * `RoleName` (lowercase letters and underscores, no leading, trailing or
+ * consecutive underscores, at most 64 characters). A role string outside that
+ * grammar is refused at input validation — JSON-RPC `invalid_params`, with no
+ * `data.reason` — and writes no audit row: a role is caller-chosen text until
+ * it passes the grammar, and the grant verbs record the role they refuse in
+ * their failure rows.
  *
  * - **refused at validation** — each off-grammar role, on each verb, answers
  *   `invalid_params` with no reason, so the refusal is the input schema's and
@@ -64,6 +65,8 @@ const OFF_GRAMMAR_ROLES: ReadonlyArray<string> = [
 	'role1', // digit
 	'_role', // leading underscore
 	'role_', // trailing underscore
+	'role__name', // a run of two underscores
+	'role___name', // a run of three
 	'role name', // space
 	'', // empty
 	OVER_LENGTH_ROLE // on the alphabet, one past the length cap

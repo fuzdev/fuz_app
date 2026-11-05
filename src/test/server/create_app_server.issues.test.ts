@@ -238,7 +238,7 @@ const SELF_SERVICE_ROLE_ISSUES = [
 	{
 		kind: 'regex',
 		path: ['role'],
-		expected: '/^[a-z][a-z_]*[a-z]$|^[a-z]$/',
+		expected: '/^[a-z]+(?:_[a-z]+)*$/',
 		received: 'string',
 		message: `role: ${ROLE_NAME_PATTERN_MESSAGE}`
 	},
