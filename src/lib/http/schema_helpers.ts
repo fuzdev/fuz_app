@@ -22,6 +22,7 @@ import {
 	type RouteErrorSchemas
 } from './error_schemas.ts';
 import {
+	assert_validation_schema,
 	parse_any,
 	unknown_key_targets,
 	type ParseAnyResult,
@@ -364,6 +365,13 @@ export interface SchemaToSurfaceOptions {
  * Convert a Zod or `@fuzdev/fuz_schema` schema to its JSON Schema for the
  * surface, with `$schema` and `default` stripped at every depth.
  *
+ * A value of neither library throws first (`assert_validation_schema`),
+ * naming `options.source`, so a slot that surface generation reads before
+ * any registration does — a route's, an event's `params`, a `ws_endpoints`
+ * action's — fails server assembly naming the slot, as registration refuses
+ * a route's or action's slot, not as a JSON Schema the emitter could not
+ * write.
+ *
  * Returns `null` for a null schema (`is_null_schema`) and a void schema
  * (`is_void_schema`), in either library: no body, no params. Any other
  * schema is written with its library's emitter (`to_json_schema` for fuz_schema, `z.toJSONSchema`
@@ -388,12 +396,13 @@ export interface SchemaToSurfaceOptions {
  * @param schema - the schema to describe, Zod or fuz_schema
  * @param options - the side to describe, the schema's name for errors, and a listener for gaps
  * @returns the JSON Schema, or `null` for a null or void schema
- * @throws Error naming `options.source` when the schema can't be written, or nothing of it can
+ * @throws Error naming `options.source` when the value is of neither library, when the schema can't be written, or when nothing of it can
  */
 export const schema_to_surface = (
 	schema: ValidationSchema,
 	options?: SchemaToSurfaceOptions
 ): unknown => {
+	assert_validation_schema(schema, options?.source ?? 'schema');
 	if (is_null_schema(schema) || is_void_schema(schema)) return null;
 	const io = options?.io ?? 'output';
 	const write = (unrepresentable: 'throw' | 'any'): unknown =>
@@ -495,10 +504,30 @@ export const middleware_spec_applies = (
 	!(spec.carve_outs ?? []).some((carve_out) => middleware_applies(carve_out.path, route_path));
 
 /**
+ * Copy an error-schema map without its entries left `undefined`, so a
+ * status declared `undefined` reads as absent: it overrides nothing beneath
+ * it in a merge.
+ *
+ * @param errors - a route's or middleware's error schemas, keyed by status
+ * @returns the entries that hold a schema
+ */
+export const strip_undefined_error_schemas = (
+	errors: RouteErrorSchemas
+): Record<number, ValidationSchema> => {
+	const defined: Record<number, ValidationSchema> = {};
+	for (const [status, schema] of Object.entries(errors)) {
+		if (schema !== undefined) defined[Number(status)] = schema;
+	}
+	return defined;
+};
+
+/**
  * Merge auto-derived, middleware, and explicit error schemas for a route spec.
  *
  * Merge order: derived -> middleware -> explicit route errors.
- * Later layers override earlier ones for the same status code.
+ * Later layers override earlier ones for the same status code; an entry left
+ * `undefined` is absent (`strip_undefined_error_schemas`), so it leaves the
+ * layer beneath it in place.
  *
  * @param spec - the route spec (reads `method`, `auth`, `input`, `params`, `query`, `rate_limit`, `errors`)
  * @param middleware_errors - errors contributed by middleware whose path matches the route
@@ -515,7 +544,7 @@ export const merge_error_schemas = (
 		errors?: RouteErrorSchemas;
 	},
 	middleware_errors?: RouteErrorSchemas | null
-): RouteErrorSchemas | null => {
+): Record<number, ValidationSchema> | null => {
 	const derived = derive_error_schemas({
 		auth: spec.auth,
 		has_input: !is_null_schema(spec.input),
@@ -524,6 +553,10 @@ export const merge_error_schemas = (
 		rate_limit: spec.rate_limit,
 		checks_content_type: spec.method === 'POST'
 	});
-	const merged = { ...derived, ...middleware_errors, ...spec.errors };
+	const merged = {
+		...derived,
+		...(middleware_errors && strip_undefined_error_schemas(middleware_errors)),
+		...(spec.errors && strip_undefined_error_schemas(spec.errors))
+	};
 	return Object.keys(merged).length > 0 ? merged : null;
 };

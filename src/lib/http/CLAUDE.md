@@ -60,10 +60,14 @@ consumers.
 
 Every schema field takes a Zod or a `@fuzdev/fuz_schema` schema
 (`ValidationSchema`, `schema_issues.ts`), validated through `parse_any`, its
-refusals answered with `to_wire_issues`'s `WireIssue`s either way. A fuz_schema
-`params` or `query` must be an object schema under any wrappers
-(`get_schema_entries`); `apply_route_specs` throws naming the route on one that
-isn't. Input/output naming mirrors SAES `ActionSpec`. Use a strict object for
+refusals answered with `to_wire_issues`'s `WireIssue`s either way. A slot
+holding a value of neither library throws at registration, naming the route
+and the slot (`assert_validation_schema`) — in an assembled app, surface
+generation (`schema_to_surface`) reads most slots first and throws the same
+refusal; `params`, `query` and an `errors` entry
+may be absent. A fuz_schema `params` or `query` must be an object schema
+under any wrappers (`get_schema_entries`); `apply_route_specs` throws naming
+the route on one that isn't. Input/output naming mirrors SAES `ActionSpec`. Use a strict object for
 inputs — `z.strictObject()` or fuz_schema's `object` — the surface diagnostic
 warns on non-strict objects because unknown keys are silently stripped by Zod
 4's default `z.object()` (and by fuz_schema's `strip_object`, kept by its
@@ -178,7 +182,9 @@ Pair every schema with the `z.infer` type export.
 ### Three-layer error-schema merge
 
 `merge_error_schemas(spec, middleware_errors?)` (in `http/schema_helpers.ts`)
-merges three layers, later overrides earlier at the same status code:
+merges three layers, later overrides earlier at the same status code; an
+entry left `undefined` is absent (`strip_undefined_error_schemas`), so it
+overrides nothing:
 
 1. **Derived** — from `derive_error_schemas({auth, has_input?, has_params?, has_query?, rate_limit?, checks_content_type?})`:
    - `has_input || has_params || has_query` → 400 `ValidationError`
@@ -249,10 +255,11 @@ Key helpers:
 - `json_has_own_proto_key(value)` — whether any object in a parsed JSON value has an own `__proto__` key, by an iterative walk (no recursion — `JSON.parse` nests deeper than the call stack); the dispatcher refuses such params with `ERROR_PARAMS_PROTO_KEY`. Twin of the Rust `fuz_http::json_has_own_proto_key`
 - `safe_parse_dropping_unknown_keys(schema, value)` — the forward-compatible read of a remote-authored payload, Zod or fuz_schema, returning `parse_any`'s `{ok, value}` / `{ok: false, issues}`: while every issue is an unknown key (`unknown_key_targets`), strips them from a copy and reparses — after the first parse that reports unknown keys, one schema-guided pass deletes every key a strict fuz_schema `object` doesn't name anywhere the schema reaches (entries, array items, record values, the `variant` option), as a fuz_schema parse reports at most a hundred issues; a key under a fuz_schema `union` is never stripped (the union fails as one issue of its own), and a later `pipe` stage is stripped only as reported — until nothing is left to strip, capped at `UNKNOWN_KEY_PASSES_MAX` passes (the last failure returned past it); any other issue still fails. A Zod union of strict objects reports the key and is stripped, a fuz_schema `union` reports one issue of its own and is not. Used for response `result`s (`ActionEvent`) and peer replies (`peer/ping`); matches serde's ignore-unknown-fields default on the Rust spine
 - `is_strict_object_schema(schema)` — detects `z.strictObject()` by checking `schema.def.catchall instanceof z.ZodNever`, or a fuz_schema `object` (not `strip_object` / `loose_object`); a fuz_schema `pipe` is read through to its first schema when no stage is a `transform` (so a refined `object` reads strict), while any Zod `ZodPipe` — even `O.pipe(O)` with no transform — reads not strict
-- `schema_to_surface(schema, {io?, source?, on_unrepresentable?}?)` — Zod or fuz_schema → JSON Schema (`z.toJSONSchema` or fuz_schema's `to_json_schema`, by `is_schema`), on the side `io` names (`'output'` by default), with `$schema` and `default` keys stripped recursively (defaults may be non-deterministic; `$schema` is snapshot noise). `null` for a null or void schema. A part JSON Schema can't say (an output-side transform, a `z.custom()`, a fuz_schema `check`) is left out or written as `{}` (`unrepresentable: 'any'`) and reported to `on_unrepresentable`; a schema with nothing describable (`{}` from a schema other than `z.unknown()` / `z.any()`) or one an emitter refuses outright throws, prefixed with `source` — so a root-level transform output (`z.unknown().transform(f)` included), `z.custom()` or `z.date()` fails server assembly. It never answers `null` for a failure, which would read as "no input" and drop the schema from every suite that reads the surface
+- `schema_to_surface(schema, {io?, source?, on_unrepresentable?}?)` — throws first on a value of neither library (`assert_validation_schema`, naming `source`, so an assembled app's slot of neither library fails boot as registration would refuse it, not as an unwritable JSON Schema); Zod or fuz_schema → JSON Schema (`z.toJSONSchema` or fuz_schema's `to_json_schema`, by `is_schema`), on the side `io` names (`'output'` by default), with `$schema` and `default` keys stripped recursively (defaults may be non-deterministic; `$schema` is snapshot noise). `null` for a null or void schema. A part JSON Schema can't say (an output-side transform, a `z.custom()`, a fuz_schema `check`) is left out or written as `{}` (`unrepresentable: 'any'`) and reported to `on_unrepresentable`; a schema with nothing describable (`{}` from a schema other than `z.unknown()` / `z.any()`) or one an emitter refuses outright throws, prefixed with `source` — so a root-level transform output (`z.unknown().transform(f)` included), `z.custom()` or `z.date()` fails server assembly. It never answers `null` for a failure, which would read as "no input" and drop the schema from every suite that reads the surface
 - `middleware_applies(mw_path, route_path)` — Hono pattern matching: `'*'`, exact, `'/api/*'` prefix (handles `prefix.slice(0, -1)` so `/api/*` also matches the bare `/api`)
 - `middleware_spec_applies(spec, route_path)` — the layer runs on the route: its `path` applies and none of its `carve_outs` does; what surface generation merges middleware errors by
 - `merge_error_schemas(spec, middleware_errors?)` — the three-layer merge described above
+- `strip_undefined_error_schemas(errors)` — an error-schema map without its `undefined` entries, what the merge and `collect_middleware_errors` read each layer through
 
 ## Surface Generation
 

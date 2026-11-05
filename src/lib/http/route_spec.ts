@@ -50,6 +50,7 @@ import {
 	type RouteAuth
 } from './auth_shape.ts';
 import {
+	assert_validation_schema,
 	parse_any,
 	to_wire_issues,
 	type ValidationOutput,
@@ -667,15 +668,18 @@ const build_rest_error_body = (err: JsonrpcErrorObject): Record<string, unknown>
  * registries (`compile_action_registry`) share the same helper with
  * `input` only — `ActionSpec` has no `query` shape.
  *
- * A `@fuzdev/fuz_schema` `params` or `query` must be an object schema
- * (`get_schema_entries`), as the path params and query string are an object:
- * one that isn't throws naming the route.
+ * Every schema slot (`params`, `query`, `input`, `output`, each `errors`
+ * entry) must hold a Zod or a `@fuzdev/fuz_schema` schema
+ * (`assert_validation_schema`): a value of neither library throws naming the
+ * route and the slot. A `@fuzdev/fuz_schema` `params` or `query` must be an
+ * object schema (`get_schema_entries`), as the path params and query string
+ * are an object: one that isn't throws naming the route.
  *
  * @param resolve_auth_guards - maps `RouteAuth` to middleware — use `fuz_auth_guard_resolver` from `auth/auth_guard_resolver.ts`
  * @param authorize - optional authorization phase; runs after the pre-authorization guards and before the post-authorization guards
  * @param db - used for transaction wrapping and `RouteContext`
  * @mutates `app`
- * @throws Error if two specs share the same `method` + `path` (each combination must be unique), if any spec violates a cross-axis auth invariant or the actor-acting biconditional, or if a fuz_schema `params` or `query` is not an object schema
+ * @throws Error if two specs share the same `method` + `path` (each combination must be unique), if a schema slot holds a value of neither library, if any spec violates a cross-axis auth invariant or the actor-acting biconditional, or if a fuz_schema `params` or `query` is not an object schema
  */
 export const apply_route_specs = (
 	app: Hono,
@@ -694,6 +698,7 @@ export const apply_route_specs = (
 			);
 		}
 		registered.add(route_key);
+		assert_schema_slots(spec, route_key);
 		assert_object_slot(spec.params, 'params', route_key);
 		assert_object_slot(spec.query, 'query', route_key);
 		assert_route_auth_invariants(spec.auth, `Route "${route_key}"`);
@@ -756,6 +761,21 @@ export const apply_route_specs = (
 			...input_validation,
 			handler
 		);
+	}
+};
+
+// throws unless every schema slot holds a Zod or fuz_schema schema; `params`,
+// `query` and an `errors` entry may be absent
+const assert_schema_slots = (spec: RouteSpec, route_key: string): void => {
+	const label = `Route "${route_key}"`;
+	if (spec.params !== undefined) assert_validation_schema(spec.params, `${label}: params`);
+	if (spec.query !== undefined) assert_validation_schema(spec.query, `${label}: query`);
+	assert_validation_schema(spec.input, `${label}: input`);
+	assert_validation_schema(spec.output, `${label}: output`);
+	if (spec.errors) {
+		for (const [status, schema] of Object.entries(spec.errors)) {
+			if (schema !== undefined) assert_validation_schema(schema, `${label}: errors.${status}`);
+		}
 	}
 };
 

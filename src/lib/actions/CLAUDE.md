@@ -88,6 +88,7 @@ non-`remote_notification` kind.
 `create_rpc_endpoint` and `register_action_ws`. Validates these checks in
 order and returns the `Map<method, RpcAction>` the dispatchers use:
 
+- **Schema slots** — `input` and `output` each hold a Zod or a fuz_schema schema (via `assert_validation_schema`, `schema_issues.ts`), on every spec; a value of neither library throws naming the action and the slot.
 - **Auth-shape cross-axis invariants** — roles imply a required actor, no accountless actor, nothing to gate on unrestricted auth (via `assert_route_auth_invariants`).
 - **Auth-shape biconditional** — `actor !== 'none' ⟺ input declares acting?: ActingActor` (via `assert_route_auth_acting_biconditional`).
 - **No `auth.required_scope`** — the slot is route-spec-only; nothing mounts a guard from it on an action, so declaring it would be a control that silently does nothing. Narrowed tokens are gated per method by the scope check in `perform_action`, which derives the `rpc:<method>` capability from `spec.method` rather than trusting a hand-written one.

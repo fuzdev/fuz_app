@@ -51,6 +51,24 @@ export function assert_zod_schema(value: unknown, label: string): asserts value 
 }
 
 /**
+ * Throw unless `value` is a schema of either library (`is_schema` or
+ * `is_zod_schema`), naming `label` — what spec registration runs on each
+ * schema slot, so a value of neither library fails at registration rather
+ * than at request time.
+ *
+ * @param value - the value a spec declares as a schema
+ * @param label - names the spec and slot in the error, e.g. `` `RPC action "foo": input` ``
+ * @throws Error when `value` is neither a Zod nor a fuz_schema schema
+ */
+export function assert_validation_schema(
+	value: unknown,
+	label: string
+): asserts value is ValidationSchema {
+	if (is_schema(value)) return;
+	assert_zod_schema(value, label);
+}
+
+/**
  * The output type of a `ValidationSchema`: fuz_schema's `Infer` or Zod's
  * `z.output`. The test narrows `T` itself: `Infer<T & Schema>` would read as
  * `unknown`.

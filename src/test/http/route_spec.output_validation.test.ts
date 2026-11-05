@@ -120,6 +120,16 @@ describe('DEV output + error validation', () => {
 		assert.deepStrictEqual(got.errors, ['Unhandled handler error']);
 	});
 
+	test('an errors entry left undefined keeps the derived schema for its status', async () => {
+		const got = await request((c) => c.json({ not: 'a validation error' }, 400), {
+			method: 'POST',
+			input: z.strictObject({}),
+			errors: { 400: undefined }
+		});
+		assert.strictEqual(got.status, 400);
+		assert.deepStrictEqual(got.errors, ['Error schema mismatch (400): POST /v']);
+	});
+
 	test('an error status with no declared schema is not validated', async () => {
 		const got = await request((c) => c.json({ anything: 1 }, 418));
 		assert.strictEqual(got.status, 418);

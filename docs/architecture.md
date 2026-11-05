@@ -414,7 +414,8 @@ shapes: `ApiError`, `ValidationError`, `PermissionError`,
   so they declare none)
 - Routes declare handler-specific errors via `RouteSpec.errors`
 - `merge_error_schemas(spec, middleware_errors?)` merges all three —
-  later layers override earlier for the same status code.
+  later layers override earlier for the same status code; an entry left
+  `undefined` is absent, so it overrides nothing.
 
 `RouteSpec.rate_limit?: RateLimitKey` (`'ip' | 'account' | 'both'`) declares what a
 route's rate limiter is keyed on — metadata for surface introspection and policy

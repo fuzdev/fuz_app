@@ -22,6 +22,7 @@ import {
 	schema_to_surface,
 	middleware_spec_applies,
 	merge_error_schemas,
+	strip_undefined_error_schemas,
 	is_null_schema,
 	is_strict_object_schema
 } from './schema_helpers.ts';
@@ -220,6 +221,8 @@ export interface GenerateAppSurfaceOptions {
 
 /**
  * Collect error schemas from all middleware that applies to a route path.
+ * An entry left `undefined` is absent (`strip_undefined_error_schemas`),
+ * so it leaves an earlier layer's schema for that status in place.
  *
  * @returns merged middleware error schemas, or `null` if none
  */
@@ -230,7 +233,7 @@ export const collect_middleware_errors = (
 	const errors: RouteErrorSchemas = {};
 	for (const mw of middleware) {
 		if (mw.errors && middleware_spec_applies(mw, route_path)) {
-			Object.assign(errors, mw.errors);
+			Object.assign(errors, strip_undefined_error_schemas(mw.errors));
 		}
 	}
 	return Object.keys(errors).length > 0 ? errors : null;
@@ -339,11 +342,8 @@ export const generate_app_surface = (options: GenerateAppSurfaceOptions): AppSur
 			if (m.errors) {
 				const schemas: Record<string, unknown> = {};
 				for (const [status, schema] of Object.entries(m.errors)) {
-					const json_schema = to_surface(
-						schema!,
-						'output',
-						`middleware ${m.name} errors.${status}`
-					);
+					if (schema === undefined) continue;
+					const json_schema = to_surface(schema, 'output', `middleware ${m.name} errors.${status}`);
 					if (json_schema !== null) {
 						schemas[status] = json_schema;
 					}
@@ -375,7 +375,7 @@ export const generate_app_surface = (options: GenerateAppSurfaceOptions): AppSur
 			if (merged_errors) {
 				const schemas: Record<string, unknown> = {};
 				for (const [status, schema] of Object.entries(merged_errors)) {
-					const json_schema = to_surface(schema!, 'output', `${route} errors.${status}`);
+					const json_schema = to_surface(schema, 'output', `${route} errors.${status}`);
 					if (json_schema !== null) {
 						schemas[status] = json_schema;
 					}

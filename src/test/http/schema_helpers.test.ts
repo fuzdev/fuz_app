@@ -45,7 +45,8 @@ import {
 	UNKNOWN_KEY_PASSES_MAX,
 	schema_to_surface,
 	middleware_applies,
-	merge_error_schemas
+	merge_error_schemas,
+	strip_undefined_error_schemas
 } from '#lib/http/schema_helpers.ts';
 
 describe('is_null_schema', () => {
@@ -1062,6 +1063,48 @@ describe('merge_error_schemas', () => {
 		assert.ok(result);
 		assert.strictEqual(result[500], RouteError);
 	});
+	test('an explicit entry left undefined keeps the derived schema', () => {
+		const spec = {
+			method: 'POST',
+			auth: { account: 'none', actor: 'none' },
+			input: z.strictObject({ name: z.string() })
+		} as const;
+		const derived = merge_error_schemas(spec);
+		const result = merge_error_schemas({ ...spec, errors: { 400: undefined } });
+		assert.ok(derived?.[400]);
+		assert.ok(result);
+		assert.strictEqual(result[400], derived[400]);
+		assert.deepStrictEqual(Object.keys(result), ['400', '415']);
+	});
+
+	test('a middleware entry left undefined keeps the derived schema', () => {
+		const spec = {
+			method: 'POST',
+			auth: { account: 'none', actor: 'none' },
+			input: z.strictObject({ name: z.string() })
+		} as const;
+		const derived = merge_error_schemas(spec);
+		const result = merge_error_schemas(spec, { 400: undefined });
+		assert.ok(derived?.[400]);
+		assert.ok(result);
+		assert.strictEqual(result[400], derived[400]);
+	});
+
+	test('an explicit entry left undefined keeps the middleware schema', () => {
+		const MwError = z.looseObject({ error: z.literal('mw') });
+		const result = merge_error_schemas(
+			{
+				method: 'GET',
+				auth: { account: 'none', actor: 'none' },
+				input: z.null(),
+				errors: { 500: undefined }
+			},
+			{ 500: MwError }
+		);
+		assert.ok(result);
+		assert.strictEqual(result[500], MwError);
+	});
+
 	test('takes fuz_schema params, query, input and errors', () => {
 		const NotFound = loose_object({ error: literal('thing_not_found') });
 		const MwError = object({ error: literal('down') });
@@ -1090,5 +1133,19 @@ describe('merge_error_schemas', () => {
 			input: literal(null)
 		});
 		assert.strictEqual(result, null);
+	});
+});
+
+describe('strip_undefined_error_schemas', () => {
+	test('drops the entries left undefined and keeps the rest', () => {
+		const NotFound = z.looseObject({ error: z.literal('not_found') });
+		const result = strip_undefined_error_schemas({ 400: undefined, 404: NotFound });
+		assert.deepStrictEqual(Object.keys(result), ['404']);
+		assert.strictEqual(result[404], NotFound);
+	});
+
+	test('returns a copy', () => {
+		const errors = { 404: z.looseObject({ error: z.string() }) };
+		assert.notStrictEqual(strip_undefined_error_schemas(errors), errors);
 	});
 });

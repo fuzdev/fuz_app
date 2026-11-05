@@ -390,8 +390,11 @@ export type AccountVanishedError = z.infer<typeof AccountVanishedError>;
  */
 export type RouteErrorSchemas = Partial<Record<number, ValidationSchema>>;
 
-/** The error schemas `derive_error_schemas` builds, all of them Zod. */
-export type DerivedErrorSchemas = Partial<Record<number, z.ZodType>>;
+/**
+ * The error schemas `derive_error_schemas` builds, all of them Zod, with no
+ * entry left `undefined`.
+ */
+export type DerivedErrorSchemas = Record<number, z.ZodType>;
 
 /**
  * Rate limit key type — declares what a route or RPC action's rate limiter

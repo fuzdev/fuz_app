@@ -381,7 +381,52 @@ describe('create_app_surface_spec', () => {
 	});
 });
 
+describe('generate_app_surface — error entries left undefined', () => {
+	const post = (overrides: Partial<RouteSpec> = {}): RouteSpec =>
+		create_route({
+			method: 'POST',
+			path: '/api/things',
+			input: z.strictObject({ name: z.string() }),
+			...overrides
+		});
+
+	test('a route entry left undefined keeps the derived schema', () => {
+		const derived = generate_app_surface({ route_specs: [post()], middleware_specs: [] });
+		const surface = generate_app_surface({
+			route_specs: [post({ errors: { 400: undefined } })],
+			middleware_specs: []
+		});
+		const error_schemas = surface.routes[0]!.error_schemas;
+		assert.ok(error_schemas);
+		assert.deepStrictEqual(Object.keys(error_schemas), ['400', '415']);
+		assert.deepStrictEqual(error_schemas, derived.routes[0]!.error_schemas);
+	});
+
+	test('a middleware entry left undefined keeps the derived schema', () => {
+		const derived = generate_app_surface({ route_specs: [post()], middleware_specs: [] });
+		const surface = generate_app_surface({
+			route_specs: [post()],
+			middleware_specs: [create_middleware({ path: '/api/*', errors: { 400: undefined } })]
+		});
+		assert.deepStrictEqual(surface.routes[0]!.error_schemas, derived.routes[0]!.error_schemas);
+		assert.strictEqual(surface.middleware[0]!.error_schemas, null);
+	});
+});
+
 describe('collect_middleware_errors', () => {
+	test('an entry left undefined keeps an earlier middleware schema', () => {
+		const AuthError = z.strictObject({ error: z.literal('auth') });
+		const middleware = [
+			create_middleware({ name: 'auth', path: '/api/*', errors: { 401: AuthError } }),
+			create_middleware({ name: 'later', path: '/api/*', errors: { 401: undefined } })
+		];
+
+		const errors = collect_middleware_errors(middleware, '/api/things');
+
+		assert.ok(errors);
+		assert.strictEqual(errors[401], AuthError);
+	});
+
 	test('collects errors from matching middleware', () => {
 		const ApiError = z.strictObject({ error: z.string() });
 		const middleware = [

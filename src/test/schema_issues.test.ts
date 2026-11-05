@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { format_issue, number, object, parse_or_throw, string } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
+	assert_validation_schema,
 	assert_zod_schema,
 	format_issues,
 	is_schema_validation_error,
@@ -144,7 +145,7 @@ describe('is_schema_validation_error', () => {
 	});
 });
 
-describe('is_zod_schema and assert_zod_schema', () => {
+describe('is_zod_schema, assert_zod_schema and assert_validation_schema', () => {
 	test('a Zod schema is one, a fuz_schema schema and other values are not', () => {
 		assert.isTrue(is_zod_schema(ZodInput));
 		assert.isTrue(is_zod_schema(z.void()));
@@ -159,5 +160,16 @@ describe('is_zod_schema and assert_zod_schema', () => {
 			() => assert_zod_schema({}, "action 'thing' input"),
 			/^action 'thing' input is neither a Zod schema nor a @fuzdev\/fuz_schema schema$/
 		);
+	});
+
+	test('assert_validation_schema admits either library and names the label', () => {
+		assert_validation_schema(ZodInput, 'the input');
+		assert_validation_schema(FuzInput, 'the input');
+		for (const value of [{}, null, undefined, 'z']) {
+			assert.throws(
+				() => assert_validation_schema(value, 'Route "GET /x": output'),
+				/^Route "GET \/x": output is neither a Zod schema nor a @fuzdev\/fuz_schema schema$/
+			);
+		}
 	});
 });
