@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/BTZoVLbz.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CAODFmXb.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.D7EnDSmc.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.b1VYxndY.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.C_pgF16Q.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.BefgwnlS.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BcwQFYZ2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/C3BYcZ2u.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CE-egMPB.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/T2R7L06i.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.CPCMn9lK.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/BWPFK79u.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.D2OZBon3.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BL7ZH9U-.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DhdQKFKC.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -1312,12 +1312,14 @@ there; this suite is only for flows the table cannot carry.<!--]--><!--]--><!---
 every spine mounts the standard RPC surface it drives.
 The role is the <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> option, <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->participant<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> by default: a backend without
 it passes another admin-grantable role (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/role_schema.ts#ROLE_ADMIN"><!--[0--><!--[-1-->ROLE_ADMIN<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> for one with only the
-builtins, which skips the scoped case — builtins are global-only).<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/testing/cross_backend/role_grant_role_grammar.ts"><!--[-1-->testing/cross_backend/role_grant_role_grammar.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Cross-backend parity suite for an <!--]--><!--[4--><strong><!--[--><!--[2-->off-grammar <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--]--><!----></strong><!--]--><!--[2--> on the grant verbs.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role_grant_assign<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> and <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role_grant_offer_create<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> declare <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> as
-<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/role_schema.ts#RoleName"><!--[0--><!--[-1-->RoleName<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> (lowercase letters and underscores, no leading or trailing
-underscore, at most 64 characters). A role string outside that grammar is refused at input
-validation — JSON-RPC <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->invalid_params<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, with no <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->data.reason<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> — and writes
-no audit row: a role is caller-chosen text until it passes the grammar, and
-the grant verbs record the role they refuse in their failure rows.<!--]--><!--]--><!----></p><!--]--><!--[9--><!--[-1--><ul><!--[--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->refused at validation<!--]--><!--]--><!----></strong><!--]--><!--[2--> — each off-grammar role, on each verb, answers
+builtins, which skips the scoped case — builtins are global-only).<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/testing/cross_backend/role_grant_role_grammar.ts"><!--[-1-->testing/cross_backend/role_grant_role_grammar.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Cross-backend parity suite for an <!--]--><!--[4--><strong><!--[--><!--[2-->off-grammar <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> or <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->scope_kind<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--]--><!----></strong><!--]--><!--[2--> on
+the grant verbs.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role_grant_assign<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> and <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role_grant_offer_create<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> declare <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> as
+<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/role_schema.ts#RoleName"><!--[0--><!--[-1-->RoleName<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> (lowercase letters and underscores, no leading, trailing or
+consecutive underscores, at most 64 characters). A role string outside that
+grammar is refused at input validation — JSON-RPC <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->invalid_params<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, with no
+<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->data.reason<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> — and writes no audit row: a role is caller-chosen text until
+it passes the grammar, and the grant verbs record the role they refuse in
+their failure rows.<!--]--><!--]--><!----></p><!--]--><!--[9--><!--[-1--><ul><!--[--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->refused at validation<!--]--><!--]--><!----></strong><!--]--><!--[2--> — each off-grammar role, on each verb, answers
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->invalid_params<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> with no reason, so the refusal is the input schema's and
 not a grant-path or authorizer one. One of them is all lowercase letters
 and one character past the length cap: the cap is part of the grammar, so
@@ -1325,7 +1327,13 @@ a failure row never carries an arbitrarily long caller-chosen string.<!--]--><!-
 off-grammar role. The control keeps that read from being vacuous: an
 on-grammar role no registry holds is refused past validation with
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role_not_web_grantable<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, the refusal a failure row records — as is one
-exactly at the length cap, which pins the boundary.<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--[8--><p><!--[--><!--[2-->Exists because the action-manifest parity gate captures no param schemas
+exactly at the length cap, which pins the boundary.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->scope_kind<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> too<!--]--><!--]--><!----></strong><!--]--><!--[2--> — <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->scope_kind<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> is a <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/scope_kind_schema.ts#ScopeKindName"><!--[0--><!--[-1-->ScopeKindName<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->, the same grammar
+and cap, so an off-grammar one with its <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->scope_id<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> is refused the same way
+and recorded in no row. Among them is <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->'GLOBAL'<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> with the all-zeros
+uuid, the partial unique indexes' key for a global grant, which a spine
+letting it through would answer with a 500 on an actor already holding
+the role globally. The role is on the grammar and held by no registry, so
+a <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->scope_kind<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> let through is refused past validation with a reason.<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--[8--><p><!--[--><!--[2-->Exists because the action-manifest parity gate captures no param schemas
 while the Rust spine parses params by hand — a spine that let an off-grammar
 role reach its grant path would answer with a different error and write the
 caller's text into the audit log. Both verbs are on every spine's standard
@@ -2442,16 +2450,16 @@ close-on-revoke).<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div
 			
 			<script>
 				{
-					__sveltekit_1hrxe9f = {
+					__sveltekit_9xw8kx = {
 						base: "",
-						version: "31a1fa62483f7df8b2633e0106c41745c388bd7f"
+						version: "313f8b096f9e58a13c44169faecd62396e1a89ec"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.CXlCZqzx.js").then(async (kit) => {
-						kit.init(__sveltekit_1hrxe9f);
-						const app = await import("/_app/immutable/entry/app.D7EnDSmc.js");
+						kit.init(__sveltekit_9xw8kx);
+						const app = await import("/_app/immutable/entry/app.C_pgF16Q.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],
