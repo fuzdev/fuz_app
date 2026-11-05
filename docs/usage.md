@@ -1332,7 +1332,7 @@ role_grant_offers_state_context.set(role_grant_offers);
 void role_grant_offers.fetch();
 const unsubscribe = role_grant_offers.subscribe((handler) => {
 	// Your websocket receiver calls `handler(notification)` on every incoming
-	// JSON-RPC notification whose method is one of the six role-grant-offer kinds.
+	// JSON-RPC notification whose method is one of the role-grant-offer kinds.
 	return ws_client.on_notification(handler);
 });
 ```

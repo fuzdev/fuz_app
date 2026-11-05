@@ -1824,7 +1824,7 @@ first accepted or when the admin revoked. A fresh post-revoke grant
 requires the grantor to call `query_role_grant_offer_create` again, which is
 audited.
 
-**Post-commit WS fan-out**: six JSON-RPC notifications (`role_grant_offer_received`
+**Post-commit WS fan-out**: the JSON-RPC notifications (`role_grant_offer_received`
 / `_retracted` / `_accepted` / `_declined` / `_supersede` + `role_grant_revoked`)
 ship alongside the above via `NotificationSender.send_to_account`, scheduled
 through `emit_after_commit` so sends are strictly post-commit **and discarded if

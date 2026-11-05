@@ -61,7 +61,7 @@ reducer — `subscribe(subscribe_fn)` is a thin subscription adapter over
 it. Six methods land on the reducer: `role_grant_offer_received` /
 `_retracted` / `_accepted` / `_declined` / `_supersede` all merge a
 `{offer}` payload; `role_grant_revoked` is ignored at this layer (role_grant
-lifecycle lives in auth/role_grants state). The six notification specs and
+lifecycle lives in auth/role_grants state). The notification specs and
 their payload shapes are defined in `auth/role_grant_offer_notifications.ts`
 (see `auth/CLAUDE.md` §WS notifications).
 
@@ -407,7 +407,7 @@ destructive actions.
   `incoming` (recipient-side pending, soonest-expiry first),
   `outgoing` (grantor-side pending, newest-created first), `history`
   (all known, newest-created first). Reducer `apply_notification`
-  handles the six role-grant-offer notification methods;
+  handles the role-grant-offer notification methods;
   `role_grant_revoked` is deliberately ignored here (auth/role_grants
   concern). `reset()` clears every slot + the Map.
 

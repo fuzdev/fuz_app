@@ -2,7 +2,7 @@
  * Reactive state for the consentful-role-grants offer flow.
  *
  * Maintains one offer cache keyed by id, seeded by the RPC list/history
- * actions and kept live by the six role-grant-offer WebSocket notifications.
+ * actions and kept live by the role-grant-offer WebSocket notifications.
  * `incoming` (recipient-side pending) and `outgoing` (grantor-side pending)
  * are derived views; `history` is the full cache ordered newest-first for
  * the grantor/admin history view.
