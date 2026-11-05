@@ -1,8 +1,11 @@
 /**
  * An all-Zod `RouteSpec` using every schema field (`params`, `query`,
- * `input`, `output`, a 404 error) plus a non-strict-input route and a
+ * `input`, `output`, a 404 error) plus a non-strict-input route, a `GET`
+ * whose query preprocesses and transforms, a `z.null()`-input `POST`, a
+ * coercing and transforming input, a `GET` whose params transform, and a
  * middleware declaring an error, and what they answer: the surface and a set
- * of exchanges (status, body text, `log.error` calls). Captured once into
+ * of exchanges (status, body text, `log.error` calls). The handlers echo the
+ * parsed values, so the exchanges pin parsed against raw. Captured once into
  * `fixtures/surface/route_spec_all_zod.json`, which
  * `route_spec.all_zod.test.ts` holds the live answer to byte for byte, so a
  * change to how route schemas are read moves nothing for a Zod spec.
@@ -64,6 +67,92 @@ const loose_route: RouteSpec = {
 	handler: (c) => c.json(null)
 };
 
+// a strict integer spelling with a default, as `http/db_routes.ts` reads `offset` / `limit`
+const query_int = (bounds: z.ZodNumber, fallback: number) =>
+	z.preprocess(
+		(v) =>
+			v === undefined
+				? undefined
+				: typeof v === 'string' && /^[+-]?\d+$/.test(v)
+					? Number(v)
+					: Number.NaN,
+		bounds.default(fallback)
+	);
+
+const ThingViewQuery = z.strictObject({
+	limit: query_int(z.number().int().min(1).max(10), 5),
+	tag: z
+		.string()
+		.transform((v) => v.toUpperCase())
+		.optional()
+});
+
+const view_route: RouteSpec = {
+	method: 'GET',
+	path: '/things/:thing_id',
+	auth: { account: 'none', actor: 'none' },
+	description: 'Views a thing.',
+	params: ThingParams,
+	query: ThingViewQuery,
+	input: z.null(),
+	output: z.strictObject({ id: Uuid, limit: z.number().int(), tag: z.string().nullable() }),
+	handler: (c) => {
+		const { thing_id } = get_route_params(c, ThingParams);
+		const { limit, tag } = get_route_query(c, ThingViewQuery);
+		return c.json({ id: thing_id, limit, tag: tag ?? null });
+	}
+};
+
+const touch_route: RouteSpec = {
+	method: 'POST',
+	path: '/things/:thing_id/touch',
+	auth: { account: 'none', actor: 'none' },
+	description: 'Touches a thing.',
+	params: ThingParams,
+	input: z.null(),
+	output: z.strictObject({ id: Uuid, touched: z.literal(true) }),
+	handler: (c) => {
+		const { thing_id } = get_route_params(c, ThingParams);
+		return c.json({ id: thing_id, touched: true });
+	}
+};
+
+const CountInput = z.strictObject({
+	count: z.coerce.number().int(),
+	label: z.string().transform((v) => v.toUpperCase())
+});
+
+const count_route: RouteSpec = {
+	method: 'POST',
+	path: '/counts',
+	auth: { account: 'none', actor: 'none' },
+	description: 'Counts a thing.',
+	input: CountInput,
+	output: z.strictObject({ count: z.number().int(), label: z.string() }),
+	handler: (c) => {
+		const { count, label } = get_route_input(c, CountInput);
+		return c.json({ count, label });
+	}
+};
+
+const TagParams = z.strictObject({ tag: z.string().transform((v) => v.toUpperCase()) });
+
+const tag_route: RouteSpec = {
+	method: 'GET',
+	path: '/tags/:tag',
+	auth: { account: 'none', actor: 'none' },
+	description: 'Views a tag.',
+	params: TagParams,
+	input: z.null(),
+	output: z.strictObject({ tag: z.string() }),
+	handler: (c) => {
+		const { tag } = get_route_params(c, TagParams);
+		return c.json({ tag });
+	}
+};
+
+const ROUTES = [thing_route, loose_route, view_route, touch_route, count_route, tag_route];
+
 const middleware: MiddlewareSpec = {
 	name: 'thing_gate',
 	path: '/things/*',
@@ -76,8 +165,10 @@ const middleware: MiddlewareSpec = {
 /** One request the probe sends. */
 interface ProbeRequest {
 	label: string;
+	/** `POST` with a JSON content type when omitted. */
+	method?: 'GET';
 	url: string;
-	body: string;
+	body?: string;
 }
 
 /** What the app answered one request with. */
@@ -104,12 +195,31 @@ const REQUESTS: Array<ProbeRequest> = [
 	{ label: 'declared 404', url: `${THING}?mode=a`, body: '{"name":"missing"}' },
 	{ label: 'undeclared 404 body', url: `${THING}?mode=a`, body: '{"name":"wrong_404"}' },
 	{ label: 'output mismatch', url: `${THING}?mode=b`, body: '{"name":"wrong_output"}' },
-	{ label: 'loose input', url: '/loose', body: '{"x":"y","z":1}' }
+	{ label: 'loose input', url: '/loose', body: '{"x":"y","z":1}' },
+	{ label: 'get', method: 'GET', url: `${THING}?limit=3&tag=x` },
+	{ label: 'get defaulted query', method: 'GET', url: THING },
+	{ label: 'get signed limit', method: 'GET', url: `${THING}?limit=%2B7` },
+	{ label: 'get limit not an integer', method: 'GET', url: `${THING}?limit=1.5` },
+	{ label: 'get limit spelled loosely', method: 'GET', url: `${THING}?limit=%201` },
+	{ label: 'get limit out of range', method: 'GET', url: `${THING}?limit=11` },
+	{ label: 'get empty tag', method: 'GET', url: `${THING}?tag=` },
+	{ label: 'get unknown query key', method: 'GET', url: `${THING}?extra=1` },
+	{ label: 'get invalid params', method: 'GET', url: '/things/not-a-uuid' },
+	{ label: 'get transformed params', method: 'GET', url: '/tags/ab' },
+	{ label: 'null input, no body', url: `${THING}/touch`, body: '' },
+	{ label: 'null input, json null', url: `${THING}/touch`, body: 'null' },
+	{ label: 'null input, an object body', url: `${THING}/touch`, body: '{"a":1}' },
+	{ label: 'null input, invalid json', url: `${THING}/touch`, body: '{' },
+	{ label: 'coerced input', url: '/counts', body: '{"count":"7","label":"ab"}' },
+	{ label: 'coerced input, number', url: '/counts', body: '{"count":7.0,"label":"ab"}' },
+	{ label: 'coerce refused', url: '/counts', body: '{"count":"x","label":"ab"}' },
+	{ label: 'coerced empty string', url: '/counts', body: '{"count":"","label":""}' },
+	{ label: 'transform refused', url: '/counts', body: '{"count":1,"label":5}' }
 ];
 
 /** The surface of the probe's specs. */
 export const probe_all_zod_surface = (): AppSurface =>
-	generate_app_surface({ route_specs: [thing_route, loose_route], middleware_specs: [middleware] });
+	generate_app_surface({ route_specs: ROUTES, middleware_specs: [middleware] });
 
 /** Send each probe request to an app built from the probe's specs. */
 export const probe_all_zod_exchanges = async (): Promise<Array<ProbeExchange>> => {
@@ -119,21 +229,16 @@ export const probe_all_zod_exchanges = async (): Promise<Array<ProbeExchange>> =
 		calls.push(JSON.stringify(args));
 	};
 	const app = new Hono();
-	apply_route_specs(
-		app,
-		[thing_route, loose_route],
-		fuz_auth_guard_resolver,
-		log,
-		create_stub_db()
-	);
+	apply_route_specs(app, ROUTES, fuz_auth_guard_resolver, log, create_stub_db());
 	const exchanges: Array<ProbeExchange> = [];
-	for (const { label, url, body } of REQUESTS) {
+	for (const { label, method, url, body } of REQUESTS) {
 		calls = [];
-		const res = await app.request(url, {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body
-		});
+		const res = await app.request(
+			url,
+			method === 'GET'
+				? { method }
+				: { method: 'POST', headers: { 'content-type': 'application/json' }, body }
+		);
 		exchanges.push({ label, status: res.status, body: await res.text(), logs: calls });
 	}
 	return exchanges;
