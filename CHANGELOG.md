@@ -1,5 +1,15 @@
 # @fuzdev/fuz_app
 
+## 0.157.0
+
+### Minor Changes
+
+- break: `RouteSpec`'s schema fields take a Zod or a `@fuzdev/fuz_schema` schema: `input` and `output` are typed `ValidationSchema` where they were `z.ZodType`, `params` and `query` `z.ZodObject | AnySchema` where they were `z.ZodObject`, and `RouteErrorSchemas` (so `RouteSpec.errors` and `MiddlewareSpec.errors`) maps a status to a `ValidationSchema`. Every one is validated through `parse_any`, its refusal answered with the same `WireIssue`s as before, so a route written in Zod answers byte for byte as it did. `apply_route_specs` throws, naming the route, on a fuz_schema `params` or `query` that is no object schema. `get_route_input`, `get_route_params` and `get_route_query` infer by `ValidationOutput`, so a fuz_schema schema types the value. `derive_error_schemas` returns the new Zod-only `DerivedErrorSchemas`. The non-strict-input surface warning for a fuz_schema `strip_object` or `loose_object` input names fuz_schema's `object`; the Zod text is unchanged. In the testing helpers, `get_route_error_schema` returns a `ValidationSchema`, `assert_error_schema_valid` throws an `Error` carrying the issues where it threw a `ZodError`, and `extract_declared_error_codes` reads a fuz_schema `literal` or `one_of` `error` field. To migrate: where code reads a route spec's schema as Zod — `spec.input.safeParse(x)`, `spec.errors[404].parse(x)`, `spec.params.shape`, a `z.ZodType` parameter fed `spec.output` — use `parse_any(spec.input, x)` (`schema_issues.ts`), or narrow first with `is_zod_schema` / `assert_zod_schema`; catch an `Error`, not a `ZodError`, from `assert_error_schema_valid`. ([ee1acfd](https://github.com/fuzdev/fuz_app/commit/ee1acfd))
+
+### Patch Changes
+
+- fix: the Zod `Uuid` (and so `UuidWithDefault` and `ActingActor`) takes the max UUID in any case, lowercased, as RFC 9562 §4, the fuz_schema twin in `primitive_schemas_fuz.ts`, and the Rust spine's `is_valid_uuid` read it, where `z.uuid()` took it in lowercase only: an upper- or mixed-case `FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF` in a `Uuid` input, params or query field, `?acting=` included, now passes validation (answering, say, not-found or `actor_not_on_account` instead of `invalid_params` / `invalid_query_params`), as on the Rust spine. Every other string gets the verdict and output it got. Issues and JSON Schema keep `format: 'uuid'`; the JSON Schema `pattern` of every `Uuid` field (in `AppSurface` and anything rendered from it) is now fuz_schema's `uuid` pattern string, so a committed surface snapshot regenerates with only that string changed. ([63e760d](https://github.com/fuzdev/fuz_app/commit/63e760d))
+
 ## 0.156.0
 
 ### Minor Changes
