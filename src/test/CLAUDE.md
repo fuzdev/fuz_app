@@ -380,7 +380,8 @@ surface and the spine's live mount (every authed method's anonymous 401, every
 credential gate's refused channels, every role gate's fresh non-admin — the
 cell verbs, actor resolvers and `_testing_*` backdoors included) and
 `conformance_admin_cases.ts` (offer list/history across accounts, invite
-errors, admin-list pagination bounds) — plus, resolved through the runner's
+errors, admin-list pagination bounds, the `audit_log_list` `event_type`
+filter's length cap) — plus, resolved through the runner's
 `live_rpc_endpoints` (`create_spine_live_rpc_endpoints`), the off-surface rows
 `conformance_actor_cases.ts` (`actor_lookup`'s empty-`ids` bound, the
 `actor_search` scope gate) and `conformance_cell_cases.ts` (`kind` inside

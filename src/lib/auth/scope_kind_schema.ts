@@ -34,45 +34,30 @@
 
 import { z } from 'zod';
 
-import { bounded_string } from '../primitive_schemas.ts';
+import {
+	create_name_schema,
+	format_name_length_message,
+	format_name_pattern_message
+} from './name_schema.ts';
 
-/**
- * Runs of lowercase letters (a-z) joined by single underscores, the grammar
- * of `RoleName`, `CredentialTypeName` and `GrantPathName` too. Rejects empty
- * strings, leading, trailing or consecutive underscores, uppercase, digits,
- * and the index-side `'GLOBAL'` token.
- */
-export const SCOPE_KIND_NAME_REGEX = /^[a-z]+(?:_[a-z]+)*$/;
+/** The message of a scope-kind name longer than `NAME_LENGTH_MAX`, in both `ScopeKindName`s. */
+export const SCOPE_KIND_NAME_LENGTH_MESSAGE = format_name_length_message('Scope-kind');
 
-/**
- * Maximum length of a `scope_kind`, in UTF-16 code units (what
- * `String.length` measures; enforced by `bounded_string`). Part of the
- * `ScopeKindName` grammar, which bounds a registered name and the tag where
- * it enters — the grant inputs (`role_grant_offer_create`,
- * `role_grant_assign`) copy it into the row and its audit metadata — so no
- * registry declares a kind the grant inputs would refuse. Same value as
- * `ROLE_NAME_LENGTH_MAX`, whose grammar the name shares, and as the Rust
- * spine's `SCOPE_KIND_LENGTH_MAX`.
- */
-export const SCOPE_KIND_LENGTH_MAX = 64;
-
-/** The message of a scope-kind name longer than `SCOPE_KIND_LENGTH_MAX`, in both `ScopeKindName`s. */
-export const SCOPE_KIND_NAME_LENGTH_MESSAGE = `Scope-kind names must be at most ${SCOPE_KIND_LENGTH_MAX} characters`;
-
-/** The message of a scope-kind name outside `SCOPE_KIND_NAME_REGEX`, in both `ScopeKindName`s. */
-export const SCOPE_KIND_NAME_PATTERN_MESSAGE =
-	'Scope-kind names must be lowercase letters and underscores (a-z_), no leading, trailing or consecutive underscores';
+/** The message of a scope-kind name off `NAME_REGEX`, in both `ScopeKindName`s. */
+export const SCOPE_KIND_NAME_PATTERN_MESSAGE = format_name_pattern_message('Scope-kind');
 
 /**
  * Zod schema for valid scope-kind name strings: a registered name, and the
- * `scope_kind` the grant inputs take. Twin of the Rust spine's
- * `is_valid_scope_kind_name`, and of the `@fuzdev/fuz_schema` `ScopeKindName`
- * in `auth/scope_kind_schema_fuz.ts`, built from the same constants.
+ * `scope_kind` the grant inputs take. The shared name grammar
+ * (`auth/name_schema.ts`), at most `NAME_LENGTH_MAX` UTF-16 code units, which
+ * bounds a registered name and the tag where it enters — the grant inputs
+ * (`role_grant_offer_create`, `role_grant_assign`) copy it into the row and
+ * its audit metadata — so no registry declares a kind the grant inputs would
+ * refuse. Off the grammar is the index-side `'GLOBAL'` token. Twin of the Rust
+ * spine's `is_valid_name`, and of the `@fuzdev/fuz_schema` `ScopeKindName` in
+ * `auth/scope_kind_schema_fuz.ts`, built from the same constants.
  */
-export const ScopeKindName = bounded_string({
-	max: SCOPE_KIND_LENGTH_MAX,
-	max_message: SCOPE_KIND_NAME_LENGTH_MESSAGE
-}).regex(SCOPE_KIND_NAME_REGEX, SCOPE_KIND_NAME_PATTERN_MESSAGE);
+export const ScopeKindName = create_name_schema('Scope-kind');
 export type ScopeKindName = z.infer<typeof ScopeKindName>;
 
 /**
@@ -119,7 +104,7 @@ export interface ScopeKindSchemaResult {
  * @param consumer_kinds - the consumer-declared scope-kind set with optional metadata
  * @returns `{ScopeKind, scope_kinds}` — Zod schema and metadata map
  *
- * @throws Error if any `consumer_kinds` key fails the `ScopeKindName` regex or appears more than once
+ * @throws Error if any `consumer_kinds` key fails `ScopeKindName` (its grammar or its length cap) or appears more than once
  *
  * @example
  * ```ts

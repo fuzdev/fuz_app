@@ -25,7 +25,7 @@
  *   anonymous → 401.
  * - **(d) builtin roles are global-only** — `scope_kind` + `scope_id` are
  *   paired on both grant inputs (a half-scoped call → 400 `-32602`), a
- *   `scope_kind` past `SCOPE_KIND_LENGTH_MAX` is refused on both (400, with a
+ *   `scope_kind` past `NAME_LENGTH_MAX` is refused on both (400, with a
  *   `scope_kind` exactly at the cap reaching the handler as the control), a scoped
  *   `admin` is refused on assign and offer create → 400
  *   `role_grant_builtin_scoped`, and a builtin offer from a caller without a
@@ -49,9 +49,9 @@ import {
 	ERROR_ROLE_GRANT_OFFER_ROLE_NOT_GRANTABLE
 } from '#lib/auth/role_grant_offer_action_specs.ts';
 import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
-import { SCOPE_KIND_LENGTH_MAX } from '#lib/auth/scope_kind_schema.ts';
 import { SPINE_PARTICIPANT_ROLE } from '#lib/testing/cross_backend/spine_surface_constants.ts';
 import type { ConformanceCase } from '#lib/testing/cross_backend/conformance_case.ts';
+import { NAME_LENGTH_MAX } from '#lib/auth/name_schema.ts';
 
 /**
  * `extra_accounts` username the participation suite seeds holding
@@ -244,7 +244,7 @@ export const conformance_participation_cases: ReadonlyArray<ConformanceCase> = [
 			params: {
 				to_account_id: NIL_UUID,
 				role: SPINE_PARTICIPANT_ROLE,
-				scope_kind: 'k'.repeat(SCOPE_KIND_LENGTH_MAX),
+				scope_kind: 'k'.repeat(NAME_LENGTH_MAX),
 				scope_id: SCOPE_UUID
 			}
 		},
@@ -261,7 +261,7 @@ export const conformance_participation_cases: ReadonlyArray<ConformanceCase> = [
 			params: {
 				to_account_id: NIL_UUID,
 				role: SPINE_PARTICIPANT_ROLE,
-				scope_kind: 'k'.repeat(SCOPE_KIND_LENGTH_MAX + 1),
+				scope_kind: 'k'.repeat(NAME_LENGTH_MAX + 1),
 				scope_id: SCOPE_UUID
 			}
 		},
@@ -276,7 +276,7 @@ export const conformance_participation_cases: ReadonlyArray<ConformanceCase> = [
 			params: {
 				to_account_id: NIL_UUID,
 				role: SPINE_PARTICIPANT_ROLE,
-				scope_kind: 'k'.repeat(SCOPE_KIND_LENGTH_MAX + 1),
+				scope_kind: 'k'.repeat(NAME_LENGTH_MAX + 1),
 				scope_id: SCOPE_UUID
 			}
 		},

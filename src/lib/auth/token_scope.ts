@@ -31,6 +31,8 @@
 
 import { z } from 'zod';
 
+import { is_valid_name } from './name_schema.ts';
+
 /** Current `TokenScope` document version. Must match the Rust `TOKEN_SCOPE_VERSION`. */
 export const TOKEN_SCOPE_VERSION = 1;
 
@@ -180,18 +182,6 @@ export type TokenSurface = (typeof TOKEN_SURFACES)[number];
 export const is_token_surface = (value: string): value is TokenSurface =>
 	(TOKEN_SURFACES as ReadonlyArray<string>).includes(value);
 
-/**
- * Name format for the identifier half of a capability string: runs of
- * lowercase letters (a-z) joined by single underscores, the grammar of
- * `RoleName` / `CredentialTypeName` / `ScopeKindName` / `GrantPathName` too.
- *
- * Applied to the `surface:` arm only. The `rpc:` arm's identifier is an action
- * method name, whose vocabulary belongs to `ActionSpec` (and includes shapes
- * like `peer/ping` this regex would refuse); the dispatcher computes it from the
- * registered method, so nothing parses one.
- */
-export const TOKEN_SURFACE_NAME_REGEX = /^[a-z]+(?:_[a-z]+)*$/;
-
 // Capability-string prefixes. Private: `token_scope_method_capability` builds
 // the one capability anything computes, and `is_route_scope_capability` checks
 // the one a route declares, so nothing outside this module concatenates these.
@@ -219,15 +209,20 @@ export const token_scope_method_capability = (method: string): string =>
  * Callers turn `false` into a registration-time throw: `RouteAuth.required_scope`
  * is typed as a plain string so `http/` needs no `auth/` import, and this is the
  * single point where that string becomes a mounted guard, so it is where the
- * value gets checked. The identifier is checked for shape
- * (`TOKEN_SURFACE_NAME_REGEX`), not membership — a consumer names its own surface.
+ * value gets checked. The identifier is checked for shape, not membership —
+ * a consumer names its own surface: the shared name grammar (`is_valid_name`),
+ * runs of lowercase letters joined by single underscores, at most
+ * `NAME_LENGTH_MAX` characters. The `rpc:` arm's identifier is an action method
+ * name, whose vocabulary belongs to `ActionSpec` (and includes shapes like
+ * `peer/ping` the grammar would refuse); the dispatcher computes it from the
+ * registered method, so nothing parses one.
  *
  * @param value - the declared capability string, e.g. `surface:audit_stream`
  * @returns whether `value` is a well-formed `surface:<name>` capability
  */
 export const is_route_scope_capability = (value: string): boolean =>
 	value.startsWith(CAPABILITY_SURFACE_PREFIX) &&
-	TOKEN_SURFACE_NAME_REGEX.test(value.slice(CAPABILITY_SURFACE_PREFIX.length));
+	is_valid_name(value.slice(CAPABILITY_SURFACE_PREFIX.length));
 
 /**
  * Build the flat denial body a non-RPC route returns when a narrowed token

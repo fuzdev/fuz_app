@@ -49,8 +49,8 @@ import {
 	ERROR_ROLE_GRANT_NOT_FOUND,
 	ERROR_ROLE_NOT_WEB_GRANTABLE
 } from '../http/error_schemas.ts';
+import { NAME_LENGTH_MAX } from './name_schema.ts';
 import { RoleName } from './role_schema_fuz.ts';
-import { SCOPE_KIND_LENGTH_MAX } from './scope_kind_schema.ts';
 import { ScopeKindName } from './scope_kind_schema_fuz.ts';
 import {
 	ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX,
@@ -128,7 +128,7 @@ export const GRANT_SCOPE_PAIRED_MESSAGE =
  * otherwise equal a global grant's key in the partial unique indexes.
  */
 const GrantScopeKind = meta(optional(nullable(ScopeKindName)), {
-	description: `Machine-readable kind tag for \`scope_id\` — paired-null with \`scope_id\` (both null for global, both non-null for scoped). Required iff \`scope_id\` is set. A scope-kind name: runs of lowercase letters (a-z) joined by single underscores, at most ${SCOPE_KIND_LENGTH_MAX} characters.`
+	description: `Machine-readable kind tag for \`scope_id\` — paired-null with \`scope_id\` (both null for global, both non-null for scoped). Required iff \`scope_id\` is set. A scope-kind name: runs of lowercase letters (a-z) joined by single underscores, at most ${NAME_LENGTH_MAX} characters.`
 });
 
 /**

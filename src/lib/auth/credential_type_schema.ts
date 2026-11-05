@@ -23,21 +23,14 @@
 
 import { z } from 'zod';
 
-/**
- * Runs of lowercase letters (a-z) joined by single underscores, the grammar
- * of `RoleName`, `ScopeKindName` and `GrantPathName` too. Rejects empty
- * strings, leading, trailing or consecutive underscores, uppercase, and
- * digits.
- */
-export const CREDENTIAL_TYPE_NAME_REGEX = /^[a-z]+(?:_[a-z]+)*$/;
+import { create_name_schema } from './name_schema.ts';
 
-/** Zod schema for valid credential-type name strings. */
-export const CredentialTypeName = z
-	.string()
-	.regex(
-		CREDENTIAL_TYPE_NAME_REGEX,
-		'Credential-type names must be lowercase letters and underscores (a-z_), no leading, trailing or consecutive underscores'
-	);
+/**
+ * Zod schema for valid credential-type name strings: the shared name grammar
+ * (`auth/name_schema.ts`), runs of lowercase letters joined by single
+ * underscores, at most `NAME_LENGTH_MAX` characters.
+ */
+export const CredentialTypeName = create_name_schema('Credential-type');
 export type CredentialTypeName = z.infer<typeof CredentialTypeName>;
 
 // Builtin credential types — provided by fuz_app, always available.
@@ -131,7 +124,7 @@ export interface CredentialTypeSchemaResult {
  * @param consumer_types - optional consumer-declared credential-type set with optional metadata
  * @returns `{CredentialType, credential_types}` — Zod schema and metadata map
  *
- * @throws Error if any `consumer_types` key fails the `CredentialTypeName` regex, collides with a builtin name, or appears more than once
+ * @throws Error if any `consumer_types` key fails `CredentialTypeName` (its grammar or its length cap), collides with a builtin name, or appears more than once
  *
  * @example
  * ```ts

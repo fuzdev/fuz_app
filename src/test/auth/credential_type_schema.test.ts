@@ -16,6 +16,7 @@ import {
 	CREDENTIAL_TYPE_SESSION,
 	CredentialTypeName
 } from '#lib/auth/credential_type_schema.ts';
+import { NAME_LENGTH_MAX } from '#lib/auth/name_schema.ts';
 
 describe('create_credential_type_schema', () => {
 	test('builtins-only round-trip', () => {
@@ -73,12 +74,35 @@ describe('create_credential_type_schema', () => {
 	});
 
 	test('CredentialTypeName refuses runs of underscores', () => {
-		for (const name of ['a', 'sso_assertion', 'a_b_c', `${'a_'.repeat(40)}a`]) {
+		for (const name of [
+			'a',
+			'sso_assertion',
+			'a_b_c',
+			`${'a_'.repeat(NAME_LENGTH_MAX / 2 - 1)}aa`
+		]) {
 			assert.ok(CredentialTypeName.safeParse(name).success, name);
 		}
 		for (const name of ['a__b', 'a___b', 'a_b__c', '__ab', 'ab__', '__', '_', '']) {
 			assert.ok(!CredentialTypeName.safeParse(name).success, name);
 		}
+	});
+
+	test('CredentialTypeName is capped at NAME_LENGTH_MAX characters', () => {
+		const at_max = 'a'.repeat(NAME_LENGTH_MAX);
+		const over_max = 'a'.repeat(NAME_LENGTH_MAX + 1);
+		assert.ok(CredentialTypeName.safeParse(at_max).success);
+		const over = CredentialTypeName.safeParse(over_max);
+		assert.ok(!over.success);
+		assert.strictEqual(
+			over.error.issues[0]!.message,
+			'Credential-type names must be at most 64 characters'
+		);
+		// a registered name past the cap throws at construction
+		assert.ok(create_credential_type_schema({ [at_max]: {} }));
+		assert.throws(
+			() => create_credential_type_schema({ [over_max]: {} }),
+			`Invalid credential-type name "${over_max}": Credential-type names must be at most 64 characters`
+		);
 	});
 
 	test('builtins exported as a const tuple', () => {

@@ -6,11 +6,8 @@
 
 import { describe, assert, test } from 'vitest';
 
-import {
-	create_scope_kind_schema,
-	SCOPE_KIND_LENGTH_MAX,
-	ScopeKindName
-} from '#lib/auth/scope_kind_schema.ts';
+import { create_scope_kind_schema, ScopeKindName } from '#lib/auth/scope_kind_schema.ts';
+import { NAME_LENGTH_MAX } from '#lib/auth/name_schema.ts';
 
 describe('ScopeKindName regex', () => {
 	test('accepts valid lowercase names', () => {
@@ -44,16 +41,16 @@ describe('ScopeKindName regex', () => {
 	});
 
 	test('accepts a name at the length cap and rejects one past it', () => {
-		assert.ok(ScopeKindName.safeParse('a'.repeat(SCOPE_KIND_LENGTH_MAX)).success);
-		assert.ok(!ScopeKindName.safeParse('a'.repeat(SCOPE_KIND_LENGTH_MAX + 1)).success);
+		assert.ok(ScopeKindName.safeParse('a'.repeat(NAME_LENGTH_MAX)).success);
+		assert.ok(!ScopeKindName.safeParse('a'.repeat(NAME_LENGTH_MAX + 1)).success);
 		// underscores count toward the length like any other character
-		const with_underscores = `${'a_'.repeat(SCOPE_KIND_LENGTH_MAX / 2 - 1)}aa`;
-		assert.strictEqual(with_underscores.length, SCOPE_KIND_LENGTH_MAX);
+		const with_underscores = `${'a_'.repeat(NAME_LENGTH_MAX / 2 - 1)}aa`;
+		assert.strictEqual(with_underscores.length, NAME_LENGTH_MAX);
 		assert.ok(ScopeKindName.safeParse(with_underscores).success);
 		assert.ok(!ScopeKindName.safeParse(`${with_underscores}a`).success);
 		// at the cap with a run of underscores is off the grammar
-		const with_run = `a${'_'.repeat(SCOPE_KIND_LENGTH_MAX - 2)}a`;
-		assert.strictEqual(with_run.length, SCOPE_KIND_LENGTH_MAX);
+		const with_run = `a${'_'.repeat(NAME_LENGTH_MAX - 2)}a`;
+		assert.strictEqual(with_run.length, NAME_LENGTH_MAX);
 		assert.ok(!ScopeKindName.safeParse(with_run).success);
 	});
 });
@@ -81,10 +78,10 @@ describe('create_scope_kind_schema', () => {
 
 	test('rejects a scope-kind name past the length cap at construction', () => {
 		assert.throws(
-			() => create_scope_kind_schema({ ['a'.repeat(SCOPE_KIND_LENGTH_MAX + 1)]: {} }),
+			() => create_scope_kind_schema({ ['a'.repeat(NAME_LENGTH_MAX + 1)]: {} }),
 			/at most/
 		);
-		create_scope_kind_schema({ ['a'.repeat(SCOPE_KIND_LENGTH_MAX)]: {} });
+		create_scope_kind_schema({ ['a'.repeat(NAME_LENGTH_MAX)]: {} });
 	});
 
 	test('rejects invalid scope-kind names at construction', () => {

@@ -56,16 +56,17 @@ export type RoleGrantRoleGrammarCrossTestOptions = RpcPathCrossSuiteOptions;
 const NIL_UUID = '00000000-0000-0000-0000-000000000000';
 
 /**
- * The longest role name the grammar admits — an independent copy of the
- * producers' `ROLE_NAME_LENGTH_MAX`, so a cap moved on one spine fails here.
+ * The longest role name or scope kind the grammar admits — an independent
+ * copy of the producers' `NAME_LENGTH_MAX`, so a cap moved on one spine fails
+ * here.
  */
-const ROLE_NAME_LENGTH_MAX = 64;
+const NAME_LENGTH_MAX = 64;
 
 /** All lowercase letters, so only its length is off the grammar. */
-const OVER_LENGTH_ROLE = 'a'.repeat(ROLE_NAME_LENGTH_MAX + 1);
+const OVER_LENGTH_ROLE = 'a'.repeat(NAME_LENGTH_MAX + 1);
 
 /** On the grammar at exactly the length cap, held by no registry. */
-const AT_LENGTH_ROLE = 'a'.repeat(ROLE_NAME_LENGTH_MAX);
+const AT_LENGTH_ROLE = 'a'.repeat(NAME_LENGTH_MAX);
 
 /** Each breaks one rule of the `RoleName` grammar. */
 const OFF_GRAMMAR_ROLES: ReadonlyArray<string> = [
@@ -84,12 +85,6 @@ const OFF_GRAMMAR_ROLES: ReadonlyArray<string> = [
 /** On the grammar, held by no registry. */
 const UNREGISTERED_ROLE = 'not_a_registered_role';
 
-/**
- * The longest scope kind the grammar admits — an independent copy of the
- * producers' `SCOPE_KIND_LENGTH_MAX`.
- */
-const SCOPE_KIND_LENGTH_MAX = 64;
-
 /** Each breaks one rule of the `ScopeKindName` grammar. */
 const OFF_GRAMMAR_SCOPE_KINDS: ReadonlyArray<string> = [
 	'GLOBAL', // the partial unique indexes' token for a global grant
@@ -99,14 +94,11 @@ const OFF_GRAMMAR_SCOPE_KINDS: ReadonlyArray<string> = [
 	'a_', // trailing underscore
 	'a1', // digit
 	'', // empty
-	'a'.repeat(SCOPE_KIND_LENGTH_MAX + 1) // on the alphabet, one past the length cap
+	'a'.repeat(NAME_LENGTH_MAX + 1) // on the alphabet, one past the length cap
 ];
 
 /** On the grammar, the second exactly at the length cap. */
-const ON_GRAMMAR_SCOPE_KINDS: ReadonlyArray<string> = [
-	'classroom',
-	'a'.repeat(SCOPE_KIND_LENGTH_MAX)
-];
+const ON_GRAMMAR_SCOPE_KINDS: ReadonlyArray<string> = ['classroom', 'a'.repeat(NAME_LENGTH_MAX)];
 
 const GRANT_METHODS = ['role_grant_assign', 'role_grant_offer_create'] as const;
 

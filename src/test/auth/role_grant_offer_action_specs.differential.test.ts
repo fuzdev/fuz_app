@@ -36,11 +36,8 @@ import { is_schema } from '@fuzdev/fuz_schema/schema.ts';
 
 import { Uuid as ZodUuid, bounded_string as zod_bounded_string } from '#lib/primitive_schemas.ts';
 import { ActingActor as ZodActingActor } from '#lib/http/auth_shape.ts';
-import { RoleName as ZodRoleName, ROLE_NAME_LENGTH_MAX } from '#lib/auth/role_schema.ts';
-import {
-	ScopeKindName as ZodScopeKindName,
-	SCOPE_KIND_LENGTH_MAX
-} from '#lib/auth/scope_kind_schema.ts';
+import { RoleName as ZodRoleName } from '#lib/auth/role_schema.ts';
+import { ScopeKindName as ZodScopeKindName } from '#lib/auth/scope_kind_schema.ts';
 import { ROLE_GRANT_REVOKED_REASON_LENGTH_MAX } from '#lib/auth/account_schema.ts';
 import {
 	ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX,
@@ -81,6 +78,7 @@ import {
 	type ValidationSchema,
 	type WireIssue
 } from '#lib/schema_issues.ts';
+import { NAME_LENGTH_MAX } from '#lib/auth/name_schema.ts';
 
 // -- the Zod schemas the port replaced --------------------------------------
 
@@ -205,9 +203,9 @@ const ROLES: ReadonlyArray<unknown> = [
 	'teacher',
 	'a',
 	'a_b',
-	'a'.repeat(ROLE_NAME_LENGTH_MAX),
-	'a'.repeat(ROLE_NAME_LENGTH_MAX + 1),
-	'A'.repeat(ROLE_NAME_LENGTH_MAX + 1),
+	'a'.repeat(NAME_LENGTH_MAX),
+	'a'.repeat(NAME_LENGTH_MAX + 1),
+	'A'.repeat(NAME_LENGTH_MAX + 1),
 	'',
 	'Admin',
 	'a__b',
@@ -218,9 +216,9 @@ const ROLES: ReadonlyArray<unknown> = [
 const SCOPE_KINDS: ReadonlyArray<unknown> = [
 	'classroom',
 	'a_b',
-	'a'.repeat(SCOPE_KIND_LENGTH_MAX),
-	'a'.repeat(SCOPE_KIND_LENGTH_MAX + 1),
-	'A'.repeat(SCOPE_KIND_LENGTH_MAX + 1),
+	'a'.repeat(NAME_LENGTH_MAX),
+	'a'.repeat(NAME_LENGTH_MAX + 1),
+	'A'.repeat(NAME_LENGTH_MAX + 1),
 	'GLOBAL',
 	'a__b',
 	'',
@@ -364,7 +362,7 @@ const grant_corpus = (fields: Fields): Array<[string, unknown]> => [
 	['half-scoped, unknown key', { ...GRANT_GLOBAL, scope_id: ID2, extra: 1 }],
 	[
 		'half-scoped, bad field and unknown key',
-		{ to_account_id: ID, role: 'A'.repeat(ROLE_NAME_LENGTH_MAX + 1), scope_kind: 'room', extra: 1 }
+		{ to_account_id: ID, role: 'A'.repeat(NAME_LENGTH_MAX + 1), scope_kind: 'room', extra: 1 }
 	]
 ];
 

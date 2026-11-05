@@ -15,12 +15,7 @@ import { create_uuid } from '#lib/primitive_schemas.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_test_app } from '#lib/testing/app_server.ts';
 import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
-import {
-	create_role_schema,
-	ROLE_ADMIN,
-	ROLE_NAME_LENGTH_MAX,
-	ROLE_NAME_LENGTH_MESSAGE
-} from '#lib/auth/role_schema.ts';
+import { create_role_schema, ROLE_ADMIN, ROLE_NAME_LENGTH_MESSAGE } from '#lib/auth/role_schema.ts';
 import { create_self_service_role_actions } from '#lib/auth/self_service_role_actions.ts';
 import {
 	ERROR_ROLE_NOT_SELF_SERVICE_ELIGIBLE,
@@ -36,6 +31,7 @@ import type { AppServerContext } from '#lib/server/app_server_context.ts';
 import type { RouteSpec } from '#lib/http/route_spec.ts';
 
 import { describe_db } from '../auth_db_default.ts';
+import { NAME_LENGTH_MAX } from '#lib/auth/name_schema.ts';
 
 const session_options = create_session_config('test_session');
 const RPC_PATH = '/api/rpc';
@@ -356,7 +352,7 @@ describe_db('self_service_role_actions', (get_db) => {
 				db: get_db()
 			});
 			const caller = await test_app.create_account({ username: 'set_invalid_user' });
-			const params = { role: 'A'.repeat(ROLE_NAME_LENGTH_MAX + 1), enabled: 'yes', acting: 'x' };
+			const params = { role: 'A'.repeat(NAME_LENGTH_MAX + 1), enabled: 'yes', acting: 'x' };
 			const res = await rpc_call({
 				app: test_app.app,
 				path: RPC_PATH,
@@ -375,7 +371,7 @@ describe_db('self_service_role_actions', (get_db) => {
 					{
 						kind: 'max_length',
 						path: ['role'],
-						expected: `length <= ${ROLE_NAME_LENGTH_MAX}`,
+						expected: `length <= ${NAME_LENGTH_MAX}`,
 						received: 'string',
 						message: `role: ${ROLE_NAME_LENGTH_MESSAGE}`
 					},

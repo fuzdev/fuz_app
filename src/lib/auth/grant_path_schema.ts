@@ -27,21 +27,14 @@
 
 import { z } from 'zod';
 
-/**
- * Runs of lowercase letters (a-z) joined by single underscores, the grammar
- * of `RoleName`, `ScopeKindName` and `CredentialTypeName` too. Rejects empty
- * strings, leading, trailing or consecutive underscores, uppercase, and
- * digits.
- */
-export const GRANT_PATH_NAME_REGEX = /^[a-z]+(?:_[a-z]+)*$/;
+import { create_name_schema } from './name_schema.ts';
 
-/** Zod schema for valid grant-path name strings. */
-export const GrantPathName = z
-	.string()
-	.regex(
-		GRANT_PATH_NAME_REGEX,
-		'Grant-path names must be lowercase letters and underscores (a-z_), no leading, trailing or consecutive underscores'
-	);
+/**
+ * Zod schema for valid grant-path name strings: the shared name grammar
+ * (`auth/name_schema.ts`), runs of lowercase letters joined by single
+ * underscores, at most `NAME_LENGTH_MAX` characters.
+ */
+export const GrantPathName = create_name_schema('Grant-path');
 export type GrantPathName = z.infer<typeof GrantPathName>;
 
 // Builtin grant paths — provided by fuz_app, always available.
@@ -143,7 +136,7 @@ export interface GrantPathSchemaResult {
  * @param consumer_paths - optional consumer-declared grant-path set with optional metadata
  * @returns `{GrantPath, grant_paths}` — Zod schema and metadata map
  *
- * @throws Error if any `consumer_paths` key fails the `GrantPathName` regex, collides with a builtin name, or appears more than once
+ * @throws Error if any `consumer_paths` key fails `GrantPathName` (its grammar or its length cap), collides with a builtin name, or appears more than once
  *
  * @example
  * ```ts

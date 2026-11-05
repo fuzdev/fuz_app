@@ -30,7 +30,7 @@ import {
 	SelfServiceRoleSetInput,
 	SelfServiceRoleSetOutput
 } from '#lib/auth/self_service_role_action_specs.ts';
-import { ROLE_NAME_LENGTH_MAX, ROLE_NAME_PATTERN_MESSAGE } from '#lib/auth/role_schema.ts';
+import { ROLE_NAME_PATTERN_MESSAGE } from '#lib/auth/role_schema.ts';
 import {
 	RoleGrantOfferCreateInput,
 	RoleGrantOfferCreateOutput,
@@ -40,6 +40,7 @@ import {
 import { SCOPE_KIND_NAME_PATTERN_MESSAGE } from '#lib/auth/scope_kind_schema.ts';
 import type { RouteSpec } from '#lib/http/route_spec.ts';
 import { create_test_keyring } from '../auth/session_test_helpers.ts';
+import { NAME_LENGTH_MAX } from '#lib/auth/name_schema.ts';
 
 afterEach(() => {
 	vi.doUnmock('esm-env');
@@ -509,7 +510,7 @@ describe('an assembled app answers a bad `self_service_role_set` input', () => {
 				jsonrpc: '2.0',
 				id: 1,
 				method: 'toggle_thing',
-				params: { role: 'A'.repeat(ROLE_NAME_LENGTH_MAX + 1), enabled: true }
+				params: { role: 'A'.repeat(NAME_LENGTH_MAX + 1), enabled: true }
 			})
 		});
 		assert.strictEqual(res.status, 400);

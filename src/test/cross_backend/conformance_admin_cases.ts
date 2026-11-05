@@ -23,6 +23,8 @@
  *   cursor past it on `audit_log_list`. Neither spine clamps an out-of-range page. Each
  *   refusal carries the reason its field declares (`limit_invalid`,
  *   `offset_invalid`, `since_seq_invalid`), whatever the fault.
+ * - **audit event-type filter** — `audit_log_list`'s `event_type` at the
+ *   shared name length cap is admitted, and one past it refused (400).
  *
  * Each `note` cites where its property is stated: the input schemas and
  * their TSDoc in `auth/admin_action_specs.ts` and
@@ -36,6 +38,7 @@ import {
 	ADMIN_ACCOUNT_LIST_LIMIT_MAX,
 	AUDIT_LOG_LIST_LIMIT_MAX
 } from '#lib/auth/admin_action_specs.ts';
+import { NAME_LENGTH_MAX } from '#lib/auth/name_schema.ts';
 import { ROLE_GRANT_OFFER_HISTORY_LIMIT_MAX } from '#lib/auth/role_grant_offer_action_specs.ts';
 import {
 	ERROR_INVITE_ACCOUNT_EXISTS_USERNAME,
@@ -160,10 +163,40 @@ const unsafe_since_seq_case: ConformanceCase = {
 		'`Number.MAX_SAFE_INTEGER`'
 };
 
+/**
+ * The audit list's `event_type` filter, `AuditEventTypeName`: its own grammar
+ * under the shared `NAME_LENGTH_MAX`. A name at the cap filters (matching
+ * nothing); one past it is `invalid_params` with no reason on both spines, so
+ * `status` pins it.
+ */
+const event_type_filter_cases: Array<ConformanceCase> = [
+	{
+		name: 'admin → audit_log_list {event_type: <at the cap>} → 200',
+		request: {
+			method: 'audit_log_list',
+			as: 'keeper',
+			params: { event_type: 'a'.repeat(NAME_LENGTH_MAX) }
+		},
+		expect: { status: 200, fields: { events: [] } },
+		note: 'auth/audit_log_schema.ts — `AuditEventTypeName` admits a name of `NAME_LENGTH_MAX` characters'
+	},
+	{
+		name: 'admin → audit_log_list {event_type: <one past the cap>} → 400',
+		request: {
+			method: 'audit_log_list',
+			as: 'keeper',
+			params: { event_type: 'a'.repeat(NAME_LENGTH_MAX + 1) }
+		},
+		expect: { status: 400 },
+		note: 'auth/audit_log_schema.ts — `AuditEventTypeName` refuses a name past `NAME_LENGTH_MAX` characters'
+	}
+];
+
 export const conformance_admin_cases: ReadonlyArray<ConformanceCase> = [
 	...offer_cross_account_cases,
 	...invite_cases,
 	...pagination_cases,
 	unsafe_offset_case,
-	unsafe_since_seq_case
+	unsafe_since_seq_case,
+	...event_type_filter_cases
 ];

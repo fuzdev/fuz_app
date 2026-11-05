@@ -17,6 +17,7 @@ import {
 	GRANT_PATH_SYSTEM,
 	GrantPathName
 } from '#lib/auth/grant_path_schema.ts';
+import { NAME_LENGTH_MAX } from '#lib/auth/name_schema.ts';
 
 describe('create_grant_path_schema', () => {
 	test('builtins-only round-trip', () => {
@@ -75,12 +76,30 @@ describe('create_grant_path_schema', () => {
 	});
 
 	test('GrantPathName refuses runs of underscores', () => {
-		for (const name of ['a', 'invite_only', 'a_b_c', `${'a_'.repeat(40)}a`]) {
+		for (const name of ['a', 'invite_only', 'a_b_c', `${'a_'.repeat(NAME_LENGTH_MAX / 2 - 1)}aa`]) {
 			assert.ok(GrantPathName.safeParse(name).success, name);
 		}
 		for (const name of ['a__b', 'a___b', 'a_b__c', '__ab', 'ab__', '__', '_', '']) {
 			assert.ok(!GrantPathName.safeParse(name).success, name);
 		}
+	});
+
+	test('GrantPathName is capped at NAME_LENGTH_MAX characters', () => {
+		const at_max = 'a'.repeat(NAME_LENGTH_MAX);
+		const over_max = 'a'.repeat(NAME_LENGTH_MAX + 1);
+		assert.ok(GrantPathName.safeParse(at_max).success);
+		const over = GrantPathName.safeParse(over_max);
+		assert.ok(!over.success);
+		assert.strictEqual(
+			over.error.issues[0]!.message,
+			'Grant-path names must be at most 64 characters'
+		);
+		// a registered name past the cap throws at construction
+		assert.ok(create_grant_path_schema({ [at_max]: {} }));
+		assert.throws(
+			() => create_grant_path_schema({ [over_max]: {} }),
+			`Invalid grant-path name "${over_max}": Grant-path names must be at most 64 characters`
+		);
 	});
 
 	test('builtins exported as a const tuple', () => {

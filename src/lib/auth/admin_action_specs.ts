@@ -22,6 +22,7 @@ import { Uuid, Email, Username } from '../primitive_schemas.ts';
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
 import { ROLE_ADMIN, ROLE_KEEPER, RoleName } from './role_schema.ts';
 import { CREDENTIAL_TYPE_DAEMON_TOKEN } from './credential_type_schema.ts';
+import { NAME_LENGTH_MAX } from './name_schema.ts';
 import { AdminAccountEntryJson } from './account_schema.ts';
 import { ActingActor } from '../http/auth_shape.ts';
 import {
@@ -139,8 +140,7 @@ export type AdminTokenRevokeAllOutput = z.infer<typeof AdminTokenRevokeAllOutput
 export const AuditLogListInput = z
 	.strictObject({
 		event_type: AuditEventTypeName.nullish().meta({
-			description:
-				'Filter by event type. Accepts builtin or consumer-registered names (regex-validated).'
+			description: `Filter by event type. Accepts builtin or consumer-registered names (regex-validated, at most ${NAME_LENGTH_MAX} characters).`
 		}),
 		outcome: AuditOutcome.nullish().meta({
 			description: 'Filter by outcome (`success` or `failure`).',

@@ -27,9 +27,7 @@ import {
 	self_service_role_set_action_spec
 } from '#lib/auth/self_service_role_action_specs.ts';
 import {
-	ROLE_NAME_LENGTH_MAX,
 	ROLE_NAME_LENGTH_MESSAGE,
-	ROLE_NAME_PATTERN,
 	ROLE_NAME_PATTERN_MESSAGE,
 	RoleName as ZodRoleName
 } from '#lib/auth/role_schema.ts';
@@ -42,6 +40,7 @@ import { ActingActor } from '#lib/primitive_schemas_fuz.ts';
 import { generate_app_surface } from '#lib/http/surface.ts';
 import { action_manifest_entry } from '#lib/testing/cross_backend/action_manifest.ts';
 import { parse_any, to_wire_issues, type WireIssue } from '#lib/schema_issues.ts';
+import { NAME_LENGTH_MAX, NAME_REGEX } from '#lib/auth/name_schema.ts';
 
 const SURFACE_FIXTURE_PATH = new URL('../fixtures/surface/self_service_role.json', import.meta.url);
 
@@ -63,14 +62,14 @@ const ZodOutput = z.strictObject({
 });
 
 const ID = '0f8fad5b-d9cb-469f-a165-70867728950e';
-const LONG = 'a'.repeat(ROLE_NAME_LENGTH_MAX + 1);
-const LONG_OFF_GRAMMAR = 'A'.repeat(ROLE_NAME_LENGTH_MAX + 1);
+const LONG = 'a'.repeat(NAME_LENGTH_MAX + 1);
+const LONG_OFF_GRAMMAR = 'A'.repeat(NAME_LENGTH_MAX + 1);
 
 const INPUT_CORPUS: Array<[label: string, input: unknown]> = [
 	['enable', { role: 'admin', enabled: true }],
 	['disable', { role: 'admin', enabled: false }],
 	['one letter', { role: 'a', enabled: true }],
-	['at the cap', { role: 'a'.repeat(ROLE_NAME_LENGTH_MAX), enabled: true }],
+	['at the cap', { role: 'a'.repeat(NAME_LENGTH_MAX), enabled: true }],
 	['with acting', { role: 'a_b', enabled: true, acting: ID }],
 	['with acting uppercase', { role: 'a_b', enabled: true, acting: ID.toUpperCase() }],
 	['with acting undefined', { role: 'a_b', enabled: true, acting: undefined }],
@@ -137,8 +136,8 @@ const without_messages = (issues: Array<WireIssue>): Array<Omit<WireIssue, 'mess
  */
 const declared_zod_issues = (input: unknown, issues: Array<WireIssue>): Array<WireIssue> => {
 	const role = (input as { role?: unknown } | null)?.role;
-	if (typeof role !== 'string' || role.length <= ROLE_NAME_LENGTH_MAX) return issues;
-	if (ROLE_NAME_PATTERN.test(role)) return issues;
+	if (typeof role !== 'string' || role.length <= NAME_LENGTH_MAX) return issues;
+	if (NAME_REGEX.test(role)) return issues;
 	const grammar = issues.findIndex((i) => i.kind === 'regex' && i.path[0] === 'role');
 	assert.ok(grammar > 0 && issues[grammar - 1]!.kind === 'max_length');
 	return issues.filter((_, i) => i !== grammar);
@@ -270,7 +269,7 @@ describe('self_service_role_set schemas', () => {
 					{
 						kind: 'max_length',
 						path: ['role'],
-						expected: `length <= ${ROLE_NAME_LENGTH_MAX}`,
+						expected: `length <= ${NAME_LENGTH_MAX}`,
 						received: 'string',
 						message: `role: ${ROLE_NAME_LENGTH_MESSAGE}`
 					},
@@ -296,7 +295,7 @@ describe('self_service_role_set schemas', () => {
 					{
 						kind: 'regex',
 						path: ['role'],
-						expected: String(ROLE_NAME_PATTERN),
+						expected: String(NAME_REGEX),
 						received: 'string',
 						message: `role: ${ROLE_NAME_PATTERN_MESSAGE}`
 					}

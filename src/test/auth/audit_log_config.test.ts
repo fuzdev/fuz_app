@@ -17,6 +17,7 @@ import {
 	builtin_audit_log_config,
 	create_audit_log_config
 } from '#lib/auth/audit_log_schema.ts';
+import { NAME_LENGTH_MAX } from '#lib/auth/name_schema.ts';
 
 describe('builtin_audit_log_config', () => {
 	test('event_types is AUDIT_EVENT_TYPES', () => {
@@ -132,6 +133,18 @@ describe('create_audit_log_config', () => {
 			/invalid format/
 		);
 	});
+
+	test('an extra_events key is at most NAME_LENGTH_MAX characters', () => {
+		const at_max = `app.${'a'.repeat(NAME_LENGTH_MAX - 4)}`;
+		const over_max = `${at_max}a`;
+		assert.isTrue(
+			create_audit_log_config({ extra_events: { [at_max]: null } }).event_types.includes(at_max)
+		);
+		assert.throws(
+			() => create_audit_log_config({ extra_events: { [over_max]: null } }),
+			`extra_events key "${over_max}" has invalid format: must be at most 64 characters`
+		);
+	});
 });
 
 describe('AuditEventTypeName invariant', () => {
@@ -140,5 +153,17 @@ describe('AuditEventTypeName invariant', () => {
 			const result = AuditEventTypeName.safeParse(t);
 			assert.isTrue(result.success, `builtin "${t}" failed AuditEventTypeName format`);
 		}
+	});
+
+	test('the length cap comes before the grammar, and both report', () => {
+		const result = AuditEventTypeName.safeParse(`1${'a'.repeat(NAME_LENGTH_MAX)}`);
+		assert.ok(!result.success);
+		assert.deepStrictEqual(
+			result.error.issues.map((i) => i.message),
+			[
+				'must be at most 64 characters',
+				'must start with a letter; only letters, digits, _ . / - allowed'
+			]
+		);
 	});
 });

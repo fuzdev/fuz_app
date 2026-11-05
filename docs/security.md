@@ -388,7 +388,7 @@ name decides nothing and only labels which surface refused, and the sibling
 `rpc:` arm carries arbitrary consumer method names on the same wire field.
 Registration throws on a malformed capability (unknown section, a surface name
 empty or off the name grammar — runs of lowercase letters joined by single
-underscores — or `rpc:` on a route), on the field appearing on an `ActionSpec` (the
+underscores, at most 64 characters — or `rpc:` on a route), on the field appearing on an `ActionSpec` (the
 dispatcher derives it from the method there), and on an unrestricted route (the
 same holder reaches it by dropping the credential) — each of the last two would
 be a control that silently does nothing.
@@ -1482,13 +1482,13 @@ Roles are Zod-validated at I/O boundaries via `create_role_schema()` — not sto
 in a DB table. Built-in roles: `keeper` (system-level) and `admin` (app-level).
 Consumer apps extend with app-defined roles at server init; unknown roles are hard
 rejections. A role name is lowercase letters and underscores with no leading, trailing
-or consecutive underscores, at most 64 characters (`RoleName`, `ROLE_NAME_LENGTH_MAX`):
+or consecutive underscores, at most 64 characters (`RoleName`, `NAME_LENGTH_MAX`):
 a registered role outside that grammar throws at assembly, and a `role` param
 outside it is refused at input validation, before any gate that would record
 the caller's text in a failure audit row. The Rust spine holds the same grammar
-(`is_valid_role_name`). The `scope_kind` on `role_grant_offer_create` and
+(`is_valid_name`). The `scope_kind` on `role_grant_offer_create` and
 `role_grant_assign` is held to the same grammar and cap as a registered scope
-kind (`ScopeKindName`; `is_valid_scope_kind_name` on the Rust spine) and is
+kind (`ScopeKindName`; `is_valid_name` on the Rust spine) and is
 refused at validation the same way. Off that grammar is the index-side
 `'GLOBAL'` token, which with the all-zeros `scope_id` would equal a global
 grant's key in the partial unique indexes (see Duplicate prevention below).
@@ -1498,7 +1498,7 @@ at input validation too, on both spines, counted in UTF-16 code units: an API
 token's `name` (`API_TOKEN_NAME_LENGTH_MAX`, 255), a cell's `kind` on
 `cell_create` and as a `cell_list` filter (`CELL_KIND_LENGTH_MAX`, 64), and
 the `scope_kind` on `role_grant_offer_create` and `role_grant_assign`
-(`SCOPE_KIND_LENGTH_MAX`, 64, part of its grammar). A longer value is refused `invalid_params`
+(`NAME_LENGTH_MAX`, 64, part of its grammar). A longer value is refused `invalid_params`
 before any row is written. Every `.min()` / `.max()` bound on a wire string,
 a bare `.min(1)` aside (it reads the same in either unit), is enforced on
 `String.length` by `bounded_string` (`primitive_schemas.ts`), not by Zod's

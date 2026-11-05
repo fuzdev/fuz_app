@@ -10,11 +10,12 @@
  */
 
 import { z } from 'zod';
-import { Uuid, Email } from '../primitive_schemas.ts';
+import { bounded_string, Uuid, Email } from '../primitive_schemas.ts';
 
 import { AuthSessionJson, SessionId } from './account_schema.ts';
 import { ApiTokenId } from './api_token.ts';
 import { BuiltinCredentialType } from './credential_type_schema.ts';
+import { NAME_LENGTH_MAX } from './name_schema.ts';
 
 /**
  * Defense-in-depth audit field — records the credential channel
@@ -189,12 +190,21 @@ export const to_global_role_revocation = (
 /**
  * Letter start, then letters, digits, `_`, `.`, `/`, `-`. Accepts snake_case,
  * dotted, and namespaced consumer conventions; rejects empty strings, leading
- * separators, whitespace, and control characters.
+ * separators, whitespace, and control characters. The audit event type's own
+ * grammar, wider than the shared name grammar (`auth/name_schema.ts`), whose
+ * length cap `AuditEventTypeName` takes.
  */
 export const AUDIT_EVENT_TYPE_NAME_REGEX = /^[A-Za-z][A-Za-z0-9_./-]*$/;
 
-/** Zod schema for valid audit event-type name strings. */
-export const AuditEventTypeName = z.string().regex(AUDIT_EVENT_TYPE_NAME_REGEX, {
+/**
+ * Zod schema for valid audit event-type name strings: `AUDIT_EVENT_TYPE_NAME_REGEX`,
+ * at most `NAME_LENGTH_MAX` UTF-16 code units. Twin of the Rust spine's
+ * `is_valid_audit_event_type_name`.
+ */
+export const AuditEventTypeName = bounded_string({
+	max: NAME_LENGTH_MAX,
+	max_message: `must be at most ${NAME_LENGTH_MAX} characters`
+}).regex(AUDIT_EVENT_TYPE_NAME_REGEX, {
 	message: 'must start with a letter; only letters, digits, _ . / - allowed'
 });
 export type AuditEventTypeName = z.infer<typeof AuditEventTypeName>;
@@ -730,7 +740,8 @@ export interface AuditLogListOptions {
 /**
  * Zod schema for client-safe audit log event.
  *
- * `event_type` is `AuditEventTypeName` (regex-validated string) — matches
+ * `event_type` is `AuditEventTypeName` (regex-validated string, at most
+ * `NAME_LENGTH_MAX` characters) — matches
  * the `AuditLogEvent` row and the DB's `TEXT NOT NULL` column. Consumer
  * types registered via `create_audit_log_config({extra_events})` round-trip
  * through queries, `on_audit_event` callbacks, and JSON-RPC responses

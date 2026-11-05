@@ -16,8 +16,8 @@ import {
 	RoleGrantAssignInput,
 	RoleGrantOfferCreateInput
 } from '#lib/auth/role_grant_offer_action_specs.ts';
-import { SCOPE_KIND_LENGTH_MAX } from '#lib/auth/scope_kind_schema.ts';
 import { parse_any } from '#lib/schema_issues.ts';
+import { NAME_LENGTH_MAX } from '#lib/auth/name_schema.ts';
 
 const SCOPE = '7c9e6679-7425-40de-944b-e07fc1f90ae7' as Uuid;
 const TO_ACCOUNT = '11111111-1111-4111-8111-111111111111' as Uuid;
@@ -65,13 +65,13 @@ describe('grant inputs hold scope_kind to the scope-kind grammar', () => {
 		'class room', // space
 		'', // empty
 		'\u{1F600}', // outside a-z
-		'a'.repeat(SCOPE_KIND_LENGTH_MAX + 1) // on the alphabet, one past the cap
+		'a'.repeat(NAME_LENGTH_MAX + 1) // on the alphabet, one past the cap
 	];
 	const ON_GRAMMAR: ReadonlyArray<string> = [
 		'classroom',
 		'a',
 		'a_b_c',
-		'a'.repeat(SCOPE_KIND_LENGTH_MAX) // at the cap
+		'a'.repeat(NAME_LENGTH_MAX) // at the cap
 	];
 
 	for (const [name, schema] of [

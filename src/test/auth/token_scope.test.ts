@@ -13,6 +13,7 @@ import {
 	token_scope_from_input,
 	token_scope_label
 } from '#lib/auth/token_scope.ts';
+import { NAME_LENGTH_MAX } from '#lib/auth/name_schema.ts';
 
 describe('is_route_scope_capability', () => {
 	test('a surface name is runs of lowercase letters joined by single underscores', () => {
@@ -43,6 +44,11 @@ describe('is_route_scope_capability', () => {
 		]) {
 			assert.ok(!is_route_scope_capability(bad), bad);
 		}
+	});
+
+	test('a surface name is at most NAME_LENGTH_MAX characters', () => {
+		assert.ok(is_route_scope_capability(`surface:${'a'.repeat(NAME_LENGTH_MAX)}`));
+		assert.ok(!is_route_scope_capability(`surface:${'a'.repeat(NAME_LENGTH_MAX + 1)}`));
 	});
 });
 

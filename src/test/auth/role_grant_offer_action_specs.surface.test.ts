@@ -26,10 +26,10 @@ import {
 	role_grant_offer_notification_specs,
 	ROLE_GRANT_REVOKED_NOTIFICATION_METHOD
 } from '#lib/auth/role_grant_offer_notifications.ts';
-import { SCOPE_KIND_LENGTH_MAX, SCOPE_KIND_NAME_REGEX } from '#lib/auth/scope_kind_schema.ts';
 import { to_ws_actions, protocol_actions } from '#lib/actions/protocol.ts';
 import type { ResolvedWsEndpointSpec } from '#lib/actions/ws_endpoint_spec.ts';
 import { generate_app_surface, type AppSurfaceDiagnostic } from '#lib/http/surface.ts';
+import { NAME_LENGTH_MAX, NAME_REGEX } from '#lib/auth/name_schema.ts';
 
 const FIXTURE_PATH = new URL('../fixtures/surface/role_grant_offer.json', import.meta.url);
 
@@ -64,7 +64,7 @@ const capture_surface = () => {
 /** The JSON Schema of `nullable(ScopeKindName)`, the Zod `ScopeKindName`'s with a `null` beside it. */
 const NULLABLE_SCOPE_KIND = {
 	anyOf: [
-		{ type: 'string', maxLength: SCOPE_KIND_LENGTH_MAX, pattern: SCOPE_KIND_NAME_REGEX.source },
+		{ type: 'string', maxLength: NAME_LENGTH_MAX, pattern: NAME_REGEX.source },
 		{ type: 'null' }
 	]
 };

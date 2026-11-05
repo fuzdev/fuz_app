@@ -23,7 +23,6 @@
 
 import { z } from 'zod';
 
-import { bounded_string } from '../primitive_schemas.ts';
 import {
 	CREDENTIAL_TYPE_DAEMON_TOKEN,
 	type CredentialTypeSchemaResult
@@ -33,41 +32,29 @@ import {
 	GRANT_PATH_BOOTSTRAP,
 	type GrantPathSchemaResult
 } from './grant_path_schema.ts';
+import {
+	create_name_schema,
+	format_name_length_message,
+	format_name_pattern_message
+} from './name_schema.ts';
 import type { ScopeKindSchemaResult } from './scope_kind_schema.ts';
 
-/**
- * The longest role name `RoleName` admits, in characters. A role string is
- * caller-chosen text until it passes the grammar, and the grant verbs record
- * the role they refuse in a failure audit row, so the grammar bounds its
- * length too. Same value as the Rust spine's `ROLE_NAME_LENGTH_MAX`.
- */
-export const ROLE_NAME_LENGTH_MAX = 64;
+/** The message of a role name longer than `NAME_LENGTH_MAX`, in both `RoleName`s. */
+export const ROLE_NAME_LENGTH_MESSAGE = format_name_length_message('Role');
+
+/** The message of a role name off `NAME_REGEX`, in both `RoleName`s. */
+export const ROLE_NAME_PATTERN_MESSAGE = format_name_pattern_message('Role');
 
 /**
- * The grammar of a role name: runs of lowercase letters joined by single
- * underscores, so no leading, trailing or consecutive underscores. Both
- * `RoleName`s hold it, the Zod one here and the `@fuzdev/fuz_schema` twin in
- * `auth/role_schema_fuz.ts`, and the sibling name grammars are the same
- * pattern: `GRANT_PATH_NAME_REGEX`, `CREDENTIAL_TYPE_NAME_REGEX`,
- * `SCOPE_KIND_NAME_REGEX` and `TOKEN_SURFACE_NAME_REGEX`.
+ * Valid role name: the shared name grammar (`auth/name_schema.ts`), lowercase
+ * letters and underscores, no leading, trailing or consecutive underscores, at
+ * most `NAME_LENGTH_MAX` characters. A role string is caller-chosen text until
+ * it passes the grammar, and the grant verbs record the role they refuse in a
+ * failure audit row, so the grammar bounds its length too. Both `RoleName`s
+ * hold it, the Zod one here and the `@fuzdev/fuz_schema` twin in
+ * `auth/role_schema_fuz.ts`.
  */
-export const ROLE_NAME_PATTERN = /^[a-z]+(?:_[a-z]+)*$/;
-
-/** The message of a role name longer than `ROLE_NAME_LENGTH_MAX`, in both `RoleName`s. */
-export const ROLE_NAME_LENGTH_MESSAGE = `Role names must be at most ${ROLE_NAME_LENGTH_MAX} characters`;
-
-/** The message of a role name outside `ROLE_NAME_PATTERN`, in both `RoleName`s. */
-export const ROLE_NAME_PATTERN_MESSAGE =
-	'Role names must be lowercase letters and underscores (a-z_), no leading, trailing or consecutive underscores';
-
-/**
- * Valid role name: lowercase letters and underscores, no leading, trailing or
- * consecutive underscores, at most `ROLE_NAME_LENGTH_MAX` characters.
- */
-export const RoleName = bounded_string({
-	max: ROLE_NAME_LENGTH_MAX,
-	max_message: ROLE_NAME_LENGTH_MESSAGE
-}).regex(ROLE_NAME_PATTERN, ROLE_NAME_PATTERN_MESSAGE);
+export const RoleName = create_name_schema('Role');
 export type RoleName = z.infer<typeof RoleName>;
 
 // Builtin roles — provided by fuz_app, always available.
@@ -126,7 +113,7 @@ export const is_builtin_role = (name: string): name is BuiltinRole =>
  * `builtin_role_specs_by_name`.
  */
 export interface RoleSpec {
-	/** Unique role name. Must match `RoleName` — its regex and length cap; collisions with builtins throw. */
+	/** Unique role name. Must match `RoleName` — the name grammar and its length cap; collisions with builtins throw. */
 	name: string;
 	/** Admin-UI-facing copy describing the role's intent. */
 	description?: string;
@@ -246,8 +233,8 @@ const validate_registry_membership = (
  *
  * Construction-time guards (all fire on misconfiguration):
  *
- * 1. Every `consumer_roles[i].name` matches `RoleName` — its regex and its
- *    `ROLE_NAME_LENGTH_MAX` length cap.
+ * 1. Every `consumer_roles[i].name` matches `RoleName` — the name grammar
+ *    and its `NAME_LENGTH_MAX` length cap.
  * 2. No two consumer roles share a name.
  * 3. No consumer role collides with a builtin (`keeper` / `admin`).
  * 4. When `options.credential_types` is supplied, every entry in

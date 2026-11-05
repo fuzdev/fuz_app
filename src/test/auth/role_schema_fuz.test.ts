@@ -15,14 +15,13 @@ import { is_schema, parse } from '@fuzdev/fuz_schema/schema.ts';
 import { to_json_schema } from '@fuzdev/fuz_schema/json_schema.ts';
 
 import {
-	ROLE_NAME_LENGTH_MAX,
 	ROLE_NAME_LENGTH_MESSAGE,
-	ROLE_NAME_PATTERN,
 	ROLE_NAME_PATTERN_MESSAGE,
 	RoleName as ZodRoleName
 } from '#lib/auth/role_schema.ts';
 import { RoleName } from '#lib/auth/role_schema_fuz.ts';
 import { parse_any, to_wire_issues, type WireIssue } from '#lib/schema_issues.ts';
+import { NAME_LENGTH_MAX, NAME_REGEX } from '#lib/auth/name_schema.ts';
 
 /** Strings of the grammar and around it, and values that are no string. */
 const CORPUS: Array<[label: string, input: unknown]> = [
@@ -40,16 +39,16 @@ const CORPUS: Array<[label: string, input: unknown]> = [
 	['double underscore after single', 'a_b__c'],
 	['double underscore leading', '__ab'],
 	['double underscore trailing', 'ab__'],
-	['at the cap', 'a'.repeat(ROLE_NAME_LENGTH_MAX)],
-	['at the cap with underscores', 'a_'.repeat(ROLE_NAME_LENGTH_MAX / 2 - 1) + 'aa'],
-	['at the cap with a run of underscores', 'a' + '_'.repeat(ROLE_NAME_LENGTH_MAX - 2) + 'a'],
-	['one past the cap with underscores', 'a_'.repeat(ROLE_NAME_LENGTH_MAX / 2) + 'a'],
-	['one past the cap', 'a'.repeat(ROLE_NAME_LENGTH_MAX + 1)],
+	['at the cap', 'a'.repeat(NAME_LENGTH_MAX)],
+	['at the cap with underscores', 'a_'.repeat(NAME_LENGTH_MAX / 2 - 1) + 'aa'],
+	['at the cap with a run of underscores', 'a' + '_'.repeat(NAME_LENGTH_MAX - 2) + 'a'],
+	['one past the cap with underscores', 'a_'.repeat(NAME_LENGTH_MAX / 2) + 'a'],
+	['one past the cap', 'a'.repeat(NAME_LENGTH_MAX + 1)],
 	['far past the cap', 'a'.repeat(1000)],
-	['one past the cap, uppercase', 'A'.repeat(ROLE_NAME_LENGTH_MAX + 1)],
-	['one past the cap, leading underscore', '_' + 'a'.repeat(ROLE_NAME_LENGTH_MAX)],
-	['one past the cap, underscores', '_'.repeat(ROLE_NAME_LENGTH_MAX + 1)],
-	['at the cap, uppercase', 'A'.repeat(ROLE_NAME_LENGTH_MAX)],
+	['one past the cap, uppercase', 'A'.repeat(NAME_LENGTH_MAX + 1)],
+	['one past the cap, leading underscore', '_' + 'a'.repeat(NAME_LENGTH_MAX)],
+	['one past the cap, underscores', '_'.repeat(NAME_LENGTH_MAX + 1)],
+	['at the cap, uppercase', 'A'.repeat(NAME_LENGTH_MAX)],
 	['underscore', '_'],
 	['two underscores', '__'],
 	['leading underscore', '_admin'],
@@ -143,9 +142,7 @@ describe('fuz_schema RoleName', () => {
 			}
 			assert.ok(!fuz.ok && !zod.ok);
 			const too_long_off_grammar =
-				typeof input === 'string' &&
-				input.length > ROLE_NAME_LENGTH_MAX &&
-				!ROLE_NAME_PATTERN.test(input);
+				typeof input === 'string' && input.length > NAME_LENGTH_MAX && !NAME_REGEX.test(input);
 			// declared: a string too long and off the grammar gets the one length
 			// issue, as fuz_schema's `pipe` stops at its first failing step
 			const zod_issues = too_long_off_grammar ? zod.issues.slice(0, 1) : zod.issues;
@@ -179,19 +176,19 @@ describe('fuz_schema RoleName', () => {
 	});
 
 	test('the length issue and the grammar issue carry their messages', () => {
-		const long = parse(RoleName, 'a'.repeat(ROLE_NAME_LENGTH_MAX + 1));
+		const long = parse(RoleName, 'a'.repeat(NAME_LENGTH_MAX + 1));
 		assert.ok(!long.ok);
 		assert.deepStrictEqual(
 			long.issues.map((i) => [i.kind, i.expected, i.message]),
-			[['max_length', `length <= ${ROLE_NAME_LENGTH_MAX}`, ROLE_NAME_LENGTH_MESSAGE]]
+			[['max_length', `length <= ${NAME_LENGTH_MAX}`, ROLE_NAME_LENGTH_MESSAGE]]
 		);
 		const off = parse(RoleName, '_a');
 		assert.ok(!off.ok);
 		assert.deepStrictEqual(
 			off.issues.map((i) => [i.kind, i.expected, i.message]),
-			[['regex', String(ROLE_NAME_PATTERN), ROLE_NAME_PATTERN_MESSAGE]]
+			[['regex', String(NAME_REGEX), ROLE_NAME_PATTERN_MESSAGE]]
 		);
-		const both = parse(RoleName, 'A'.repeat(ROLE_NAME_LENGTH_MAX + 1));
+		const both = parse(RoleName, 'A'.repeat(NAME_LENGTH_MAX + 1));
 		assert.ok(!both.ok);
 		assert.deepStrictEqual(
 			both.issues.map((i) => i.kind),
@@ -207,8 +204,8 @@ describe('fuz_schema RoleName', () => {
 		assert.deepEqual<Record<string, unknown>>(to_json_schema(RoleName), {
 			$schema: 'https://json-schema.org/draft/2020-12/schema',
 			type: 'string',
-			maxLength: ROLE_NAME_LENGTH_MAX,
-			pattern: ROLE_NAME_PATTERN.source
+			maxLength: NAME_LENGTH_MAX,
+			pattern: NAME_REGEX.source
 		});
 	});
 });

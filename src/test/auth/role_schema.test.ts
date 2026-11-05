@@ -15,32 +15,13 @@ import {
 	role_has_grant_path,
 	ROLE_ADMIN,
 	ROLE_KEEPER,
-	ROLE_NAME_LENGTH_MAX,
-	ROLE_NAME_PATTERN,
 	ROLE_NAME_PATTERN_MESSAGE,
 	RoleName
 } from '#lib/auth/role_schema.ts';
-import {
-	create_credential_type_schema,
-	CREDENTIAL_TYPE_NAME_REGEX
-} from '#lib/auth/credential_type_schema.ts';
-import { create_grant_path_schema, GRANT_PATH_NAME_REGEX } from '#lib/auth/grant_path_schema.ts';
-import { create_scope_kind_schema, SCOPE_KIND_NAME_REGEX } from '#lib/auth/scope_kind_schema.ts';
-import { TOKEN_SURFACE_NAME_REGEX } from '#lib/auth/token_scope.ts';
-
-describe('the name grammars', () => {
-	test('every sibling name grammar is the role grammar', () => {
-		for (const regex of [
-			GRANT_PATH_NAME_REGEX,
-			CREDENTIAL_TYPE_NAME_REGEX,
-			SCOPE_KIND_NAME_REGEX,
-			TOKEN_SURFACE_NAME_REGEX
-		]) {
-			assert.strictEqual(regex.source, ROLE_NAME_PATTERN.source);
-			assert.strictEqual(regex.flags, ROLE_NAME_PATTERN.flags);
-		}
-	});
-});
+import { create_credential_type_schema } from '#lib/auth/credential_type_schema.ts';
+import { create_grant_path_schema } from '#lib/auth/grant_path_schema.ts';
+import { NAME_LENGTH_MAX } from '#lib/auth/name_schema.ts';
+import { create_scope_kind_schema } from '#lib/auth/scope_kind_schema.ts';
 
 describe('create_role_schema', () => {
 	test('merges app role specs with builtins', () => {
@@ -115,15 +96,15 @@ describe('create_role_schema', () => {
 		assert.ok(create_role_schema([{ name: 'a_b_c' }]));
 	});
 
-	test('a role name is capped at ROLE_NAME_LENGTH_MAX characters', () => {
-		assert.strictEqual(ROLE_NAME_LENGTH_MAX, 64);
-		const at_max = 'a'.repeat(ROLE_NAME_LENGTH_MAX);
-		const over_max = 'a'.repeat(ROLE_NAME_LENGTH_MAX + 1);
+	test('a role name is capped at NAME_LENGTH_MAX characters', () => {
+		assert.strictEqual(NAME_LENGTH_MAX, 64);
+		const at_max = 'a'.repeat(NAME_LENGTH_MAX);
+		const over_max = 'a'.repeat(NAME_LENGTH_MAX + 1);
 		assert.ok(RoleName.safeParse(at_max).success);
 		assert.ok(!RoleName.safeParse(over_max).success);
 		// underscores count toward the length like any other character
-		const with_underscores = `${'a_'.repeat(ROLE_NAME_LENGTH_MAX / 2 - 1)}aa`;
-		assert.strictEqual(with_underscores.length, ROLE_NAME_LENGTH_MAX);
+		const with_underscores = `${'a_'.repeat(NAME_LENGTH_MAX / 2 - 1)}aa`;
+		assert.strictEqual(with_underscores.length, NAME_LENGTH_MAX);
 		assert.ok(RoleName.safeParse(with_underscores).success);
 		assert.ok(!RoleName.safeParse(`${with_underscores}a`).success);
 
@@ -132,7 +113,7 @@ describe('create_role_schema', () => {
 		assert.ok(Role.safeParse(at_max).success);
 		assert.throws(
 			() => create_role_schema([{ name: over_max }]),
-			`Invalid role name "${over_max}": Role names must be at most ${ROLE_NAME_LENGTH_MAX} characters`
+			`Invalid role name "${over_max}": Role names must be at most ${NAME_LENGTH_MAX} characters`
 		);
 	});
 

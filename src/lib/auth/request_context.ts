@@ -60,6 +60,7 @@ import {
 	SESSION_TOKEN_KEY
 } from '../hono_context.ts';
 import { credential_deadline_after } from './credential_deadline.ts';
+import { NAME_LENGTH_MAX } from './name_schema.ts';
 import { get_resolved_auth, resolved_auth_scope } from './resolved_auth.ts';
 import {
 	is_route_scope_capability,
@@ -459,7 +460,7 @@ export const get_public_account_id = (c: Context): string | null => {
 export const require_token_scope = (capability: string): MiddlewareHandler => {
 	if (!is_route_scope_capability(capability)) {
 		throw new Error(
-			`auth.required_scope "${capability}" is not a valid token-scope capability for a route \u2014 expected 'surface:<name>', where a surface name is runs of lowercase letters joined by single underscores ('rpc:<method>' is the action dispatcher's per-method gate, which a route never reaches)`
+			`auth.required_scope "${capability}" is not a valid token-scope capability for a route \u2014 expected 'surface:<name>', where a surface name is runs of lowercase letters joined by single underscores, at most ${NAME_LENGTH_MAX} characters ('rpc:<method>' is the action dispatcher's per-method gate, which a route never reaches)`
 		);
 	}
 	return async (c, next): Promise<Response | void> => {
