@@ -7,13 +7,18 @@
  *
  * fuz_app's own list, whose `account_token_revoke`, `actor_lookup` and
  * `actor_search` are `@fuzdev/fuz_schema`, generates the same text but for
- * those methods' types, read by `Infer`, and the `Infer` import.
+ * those methods' types, read by `Infer`, and the `Infer` import. The all-Zod
+ * list holds Zod stand-ins for those methods' schemas, which give codegen the
+ * answers their own do.
  *
  * @module
  */
 
 import { assert, test } from 'vitest';
 import { readFileSync } from 'node:fs';
+
+import { action_input_is_optional } from '#lib/actions/action_codegen.ts';
+import { is_null_schema, is_void_schema } from '#lib/http/schema_helpers.ts';
 
 import {
 	fixture_specs,
@@ -63,4 +68,17 @@ test("fuz_app's own list differs from the fixture only in its fuz_schema methods
 		restored = restored.replaceAll(`${method}: Infer<`, `${method}: z.infer<`);
 	}
 	assert.strictEqual(restored, expected);
+});
+
+test('the Zod stand-ins give codegen the answers the fuz_schema methods give', () => {
+	const by_method = new Map(zod_fixture_specs.map((spec) => [spec.method, spec]));
+	for (const method of fuz_schema_methods) {
+		const own = fixture_specs.find((spec) => spec.method === method)!;
+		const stand_in = by_method.get(method)!;
+		assert.notStrictEqual(stand_in.input, own.input, method);
+		assert.strictEqual(is_null_schema(stand_in.input), is_null_schema(own.input), method);
+		assert.strictEqual(is_void_schema(stand_in.input), is_void_schema(own.input), method);
+		assert.strictEqual(action_input_is_optional(stand_in), action_input_is_optional(own), method);
+		assert.isFalse(action_input_is_optional(own), method);
+	}
 });

@@ -24,7 +24,7 @@ import {
 	generate_frontend_actions_api,
 	generate_typed_action_event_alias
 } from '#lib/actions/action_codegen.ts';
-import type { ActionSpecUnion } from '#lib/actions/action_spec.ts';
+import type { ActionSpecUnion, RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import { protocol_action_specs } from '#lib/actions/protocol.ts';
 import { all_fuz_auth_action_spec_registries } from '#lib/auth/all_action_spec_registries.ts';
 import { all_cell_action_specs } from '#lib/auth/cell_action_specs.ts';
@@ -33,18 +33,8 @@ import { all_cell_field_action_specs } from '#lib/auth/cell_field_action_specs.t
 import { all_cell_item_action_specs } from '#lib/auth/cell_item_action_specs.ts';
 import { all_cell_audit_action_specs } from '#lib/auth/cell_audit_action_specs.ts';
 import { account_token_revoke_action_spec } from '#lib/auth/account_action_specs.ts';
-import { ApiTokenId } from '#lib/auth/api_token.ts';
-import {
-	ACTOR_LOOKUP_IDS_MAX,
-	actor_lookup_action_spec
-} from '#lib/auth/actor_lookup_action_specs.ts';
-import {
-	ACTOR_SEARCH_LIMIT_DEFAULT,
-	ACTOR_SEARCH_LIMIT_MAX,
-	ACTOR_SEARCH_QUERY_LENGTH_MAX,
-	actor_search_action_spec
-} from '#lib/auth/actor_search_action_specs.ts';
-import { Uuid, bounded_string } from '#lib/primitive_schemas.ts';
+import { actor_lookup_action_spec } from '#lib/auth/actor_lookup_action_specs.ts';
+import { actor_search_action_spec } from '#lib/auth/actor_search_action_specs.ts';
 
 // one spec per input shape the signature reads: void, null, optional, defaulted, required
 const synthetic_specs: Array<ActionSpecUnion> = [
@@ -134,78 +124,35 @@ const fuz_app_specs: Array<ActionSpecUnion> = [
 	).values()
 ];
 
-/** `account_token_revoke` with the Zod schemas it declared before its own moved to `@fuzdev/fuz_schema`. */
-const zod_token_revoke_spec: ActionSpecUnion = {
-	...account_token_revoke_action_spec,
-	input: z.strictObject({
-		token_id: ApiTokenId.meta({ description: 'Public API token id (e.g. `tok_<12 chars>`).' })
-	}),
-	output: z.strictObject({ ok: z.literal(true), revoked: z.boolean() })
-};
+/**
+ * The Zod stand-in for the input of a method whose own schemas are
+ * `@fuzdev/fuz_schema`. Codegen reads an input for its library, whether it is
+ * null or void, and whether it takes `undefined` or `{}` (or carries the
+ * `empty_input_handler_guarded` marker): a required key, as each of these
+ * methods' inputs has, gives every answer theirs does, which
+ * `action_codegen.zod_fixture.test.ts` holds it to.
+ */
+const ZodRequiredInput = z.strictObject({ required: z.string() });
 
-// the Zod `ActorLookupEntryJson` both actor outputs held
-const ZodActorLookupEntryJson = z.strictObject({
-	id: Uuid,
-	username: z.string(),
-	display_name: z.string().optional()
+/** The Zod stand-in for their outputs, of which codegen reads only the library. */
+const ZodOutput = z.strictObject({});
+
+const to_zod_spec = (spec: RequestResponseActionSpec): RequestResponseActionSpec => ({
+	...spec,
+	input: ZodRequiredInput,
+	output: ZodOutput
 });
 
-/** `actor_lookup` with the Zod schemas it declared before its own moved to `@fuzdev/fuz_schema`. */
-const zod_actor_lookup_spec: ActionSpecUnion = {
-	...actor_lookup_action_spec,
-	input: z.strictObject({
-		ids: z
-			.array(Uuid)
-			.min(1)
-			.max(ACTOR_LOOKUP_IDS_MAX)
-			.meta({
-				description: `Actor ids to resolve. Capped at ${
-					ACTOR_LOOKUP_IDS_MAX
-				}; unknown ids are silently absent from the response.`
-			})
-	}),
-	output: z.strictObject({ actors: z.array(ZodActorLookupEntryJson) })
-};
-
-/** `actor_search` with the Zod schemas it declared before its own moved to `@fuzdev/fuz_schema`. */
-const zod_actor_search_spec: ActionSpecUnion = {
-	...actor_search_action_spec,
-	input: z.strictObject({
-		query: bounded_string({ min: 1, max: ACTOR_SEARCH_QUERY_LENGTH_MAX }).meta({
-			description: `Case-insensitive prefix match against \`actor.name\`. Length 1–${
-				ACTOR_SEARCH_QUERY_LENGTH_MAX
-			}.`,
-			sensitivity: 'personal'
-		}),
-		scope_ids: z.array(Uuid).optional().meta({
-			description:
-				'Restrict results to actors holding a role_grant on any of these scopes. Required (non-empty) for non-admin callers; admin callers may omit or pass empty for unbounded search. Caller is responsible for pre-filtering against their own authority — the SQL filter does not enforce it.'
-		}),
-		limit: z
-			.number()
-			.int()
-			.min(1)
-			.max(ACTOR_SEARCH_LIMIT_MAX)
-			.optional()
-			.meta({
-				description: `Maximum rows to return. Defaults to ${ACTOR_SEARCH_LIMIT_DEFAULT}, hard cap ${
-					ACTOR_SEARCH_LIMIT_MAX
-				}.`
-			})
-	}),
-	output: z.strictObject({ actors: z.array(ZodActorLookupEntryJson) })
-};
-
 /**
- * The Zod specs of the methods whose own schemas moved to `@fuzdev/fuz_schema`,
- * keyed by method, so the list stays all-Zod and the fixture keeps each method
- * in its place.
+ * Zod stand-ins for the specs of the methods whose own schemas are
+ * `@fuzdev/fuz_schema`, keyed by method, so the list stays all-Zod and the
+ * fixture keeps each method in its place.
  */
-const zod_specs_by_method: Map<string, ActionSpecUnion> = new Map([
-	[zod_token_revoke_spec.method, zod_token_revoke_spec],
-	[zod_actor_lookup_spec.method, zod_actor_lookup_spec],
-	[zod_actor_search_spec.method, zod_actor_search_spec]
-]);
+const zod_specs_by_method: Map<string, ActionSpecUnion> = new Map(
+	[account_token_revoke_action_spec, actor_lookup_action_spec, actor_search_action_spec].map(
+		(spec): [string, ActionSpecUnion] => [spec.method, to_zod_spec(spec)]
+	)
+);
 
 /** The methods of fuz_app's own list whose schemas are `@fuzdev/fuz_schema`. */
 export const fuz_schema_methods: ReadonlyArray<string> = [...zod_specs_by_method.keys()];
