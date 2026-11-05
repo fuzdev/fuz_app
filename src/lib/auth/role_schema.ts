@@ -44,16 +44,27 @@ import type { ScopeKindSchemaResult } from './scope_kind_schema.ts';
 export const ROLE_NAME_LENGTH_MAX = 64;
 
 /**
+ * The grammar of a role name: lowercase letters and underscores, no leading or
+ * trailing underscore. Both `RoleName`s hold it, the Zod one here and the
+ * `@fuzdev/fuz_schema` twin in `auth/role_schema_fuz.ts`.
+ */
+export const ROLE_NAME_PATTERN = /^[a-z][a-z_]*[a-z]$|^[a-z]$/;
+
+/** The message of a role name longer than `ROLE_NAME_LENGTH_MAX`, in both `RoleName`s. */
+export const ROLE_NAME_LENGTH_MESSAGE = `Role names must be at most ${ROLE_NAME_LENGTH_MAX} characters`;
+
+/** The message of a role name outside `ROLE_NAME_PATTERN`, in both `RoleName`s. */
+export const ROLE_NAME_PATTERN_MESSAGE =
+	'Role names must be lowercase letters and underscores (a-z_), no leading/trailing underscore';
+
+/**
  * Valid role name: lowercase letters and underscores, no leading/trailing
  * underscore, at most `ROLE_NAME_LENGTH_MAX` characters.
  */
 export const RoleName = bounded_string({
 	max: ROLE_NAME_LENGTH_MAX,
-	max_message: `Role names must be at most ${ROLE_NAME_LENGTH_MAX} characters`
-}).regex(
-	/^[a-z][a-z_]*[a-z]$|^[a-z]$/,
-	'Role names must be lowercase letters and underscores (a-z_), no leading/trailing underscore'
-);
+	max_message: ROLE_NAME_LENGTH_MESSAGE
+}).regex(ROLE_NAME_PATTERN, ROLE_NAME_PATTERN_MESSAGE);
 export type RoleName = z.infer<typeof RoleName>;
 
 // Builtin roles — provided by fuz_app, always available.

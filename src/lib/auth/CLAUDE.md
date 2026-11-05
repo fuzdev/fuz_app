@@ -57,7 +57,8 @@ Cross-cutting notes that don't live on any single symbol:
 Convention — `*_schema.ts` is Zod-only; `*_ddl.ts` holds DDL strings.
 
 - `auth/account_schema.ts` — `Account`, `Actor`, `RoleGrant`, `AuthSession`, `ApiToken` + client-safe JSON shapes. Grant predicates over wire fields: `is_role_grant_active` (not revoked, not expired) and `has_global_role(role_grants, role, now?)` (an active grant of the role with `scope_id === null` — the bare-list form of `has_scoped_role(ctx, role, null)`, used client-side by `AuthState`).
-- `auth/role_schema.ts` — `RoleName` (lowercase letters and underscores, no leading or trailing underscore, at most `ROLE_NAME_LENGTH_MAX` = 64 characters — the grammar every `role` input and every registered role holds, twin of the Rust `is_valid_role_name`), `RoleSpec`, `ROLE_KEEPER`, `ROLE_ADMIN`, `is_builtin_role`, `create_role_schema`, `builtin_role_specs_by_name`, `role_has_grant_path`, `list_roles_with_grant_path`.
+- `auth/role_schema.ts` — `RoleName` (lowercase letters and underscores, no leading or trailing underscore, at most `ROLE_NAME_LENGTH_MAX` = 64 characters — the grammar every `role` input and every registered role holds, twin of the Rust `is_valid_role_name`), the constants it is built from (`ROLE_NAME_PATTERN`, `ROLE_NAME_LENGTH_MESSAGE`, `ROLE_NAME_PATTERN_MESSAGE`), `RoleSpec`, `ROLE_KEEPER`, `ROLE_ADMIN`, `is_builtin_role`, `create_role_schema`, `builtin_role_specs_by_name`, `role_has_grant_path`, `list_roles_with_grant_path`.
+- `auth/role_schema_fuz.ts` — the `@fuzdev/fuz_schema` twin of `RoleName` under the same name (`@nodocs` while the Zod one stays), `pipe(bounded_string({max, max_message}), message(regex(ROLE_NAME_PATTERN), ROLE_NAME_PATTERN_MESSAGE))` over the same constants: the same verdict, output and JSON Schema as the Zod one, and its messages; a string both too long and off the grammar gets the length issue alone, where Zod adds the grammar issue. Pinned by `role_schema_fuz.test.ts`. `self_service_role_set`'s input declares it; every other `role` input is the Zod one.
 - `auth/scope_kind_schema.ts` — `ScopeKindName`, `create_scope_kind_schema` (open registry, no builtins), `SCOPE_KIND_LENGTH_MAX` (64 — bounds a registered name and the `scope_kind` on `role_grant_offer_create` / `role_grant_assign`, which is copied into the row and its audit metadata).
 - `auth/credential_type_schema.ts` — `CredentialTypeName`, `CREDENTIAL_TYPE_SESSION` / `_API_TOKEN` / `_DAEMON_TOKEN`, `create_credential_type_schema`.
 - `auth/grant_path_schema.ts` — `GrantPathName`, `GRANT_PATH_ADMIN` / `_SELF_SERVICE` / `_SYSTEM` / `_BOOTSTRAP`, `create_grant_path_schema`.
@@ -958,7 +959,8 @@ account actions hits `method_not_found` on first admin-suite run.
 `auth/self_service_role_actions.ts`. One static action
 `self_service_role_set({role, enabled})` toggles a global role_grant on the
 caller. Idempotent in both directions (`changed: false` when the post-call
-state already matched).
+state already matched). Its input and output are `@fuzdev/fuz_schema`
+`object`s, refusing unknown keys, `role` the fuz_schema `RoleName` twin.
 
 Audit metadata carries `self_service: true` so admin reviewers can
 distinguish self-toggled role_grants. Eligibility derives from

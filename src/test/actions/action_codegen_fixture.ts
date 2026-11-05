@@ -3,8 +3,9 @@
  * fuz_app's own action specs and synthetic specs of each kind — the input of
  * `action_codegen.zod_fixture.test.ts`, which holds it to the text the
  * Zod-only codegen emitted, and holds fuz_app's own list, whose
- * `account_token_revoke`, `actor_lookup` and `actor_search` are
- * `@fuzdev/fuz_schema`, to that text with those methods' types read by `Infer`.
+ * `account_token_revoke`, `self_service_role_set`, `actor_lookup` and
+ * `actor_search` are `@fuzdev/fuz_schema`, to that text with those methods'
+ * types read by `Infer`.
  *
  * @module
  */
@@ -35,6 +36,7 @@ import { all_cell_audit_action_specs } from '#lib/auth/cell_audit_action_specs.t
 import { account_token_revoke_action_spec } from '#lib/auth/account_action_specs.ts';
 import { actor_lookup_action_spec } from '#lib/auth/actor_lookup_action_specs.ts';
 import { actor_search_action_spec } from '#lib/auth/actor_search_action_specs.ts';
+import { self_service_role_set_action_spec } from '#lib/auth/self_service_role_action_specs.ts';
 
 // one spec per input shape the signature reads: void, null, optional, defaulted, required
 const synthetic_specs: Array<ActionSpecUnion> = [
@@ -149,12 +151,18 @@ const to_zod_spec = (spec: RequestResponseActionSpec): RequestResponseActionSpec
  * fixture keeps each method in its place.
  */
 const zod_specs_by_method: Map<string, ActionSpecUnion> = new Map(
-	[account_token_revoke_action_spec, actor_lookup_action_spec, actor_search_action_spec].map(
-		(spec): [string, ActionSpecUnion] => [spec.method, to_zod_spec(spec)]
-	)
+	[
+		account_token_revoke_action_spec,
+		self_service_role_set_action_spec,
+		actor_lookup_action_spec,
+		actor_search_action_spec
+	].map((spec): [string, ActionSpecUnion] => [spec.method, to_zod_spec(spec)])
 );
 
-/** The methods of fuz_app's own list whose schemas are `@fuzdev/fuz_schema`. */
+/**
+ * The methods of fuz_app's own list whose schemas are `@fuzdev/fuz_schema`, in
+ * the fixture's order.
+ */
 export const fuz_schema_methods: ReadonlyArray<string> = [...zod_specs_by_method.keys()];
 
 /** fuz_app's own specs and the synthetic ones, in the fixture's order. */

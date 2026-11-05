@@ -4,7 +4,7 @@
  * Covers happy path on both branches (`enabled: true` / `false`), idempotent
  * no-op on both branches, ineligible-role rejection, factory-time typo
  * detection, audit-row shapes (including the `self_service: true` metadata
- * flag), and unauthenticated rejection.
+ * flag), an invalid input's `-32602` issues, and unauthenticated rejection.
  *
  * @module
  */
@@ -15,7 +15,12 @@ import { create_uuid } from '#lib/primitive_schemas.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_test_app } from '#lib/testing/app_server.ts';
 import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
-import { create_role_schema, ROLE_ADMIN } from '#lib/auth/role_schema.ts';
+import {
+	create_role_schema,
+	ROLE_ADMIN,
+	ROLE_NAME_LENGTH_MAX,
+	ROLE_NAME_LENGTH_MESSAGE
+} from '#lib/auth/role_schema.ts';
 import { create_self_service_role_actions } from '#lib/auth/self_service_role_actions.ts';
 import {
 	ERROR_ROLE_NOT_SELF_SERVICE_ELIGIBLE,
@@ -342,6 +347,54 @@ describe_db('self_service_role_actions', (get_db) => {
 				(res.error.data as { reason: string } | undefined)?.reason,
 				ERROR_ROLE_NOT_SELF_SERVICE_ELIGIBLE
 			);
+		});
+
+		test('an invalid input is refused with -32602 and, under DEV, fuz_schema issues', async () => {
+			const test_app = await create_test_app({
+				session_options,
+				create_route_specs,
+				db: get_db()
+			});
+			const caller = await test_app.create_account({ username: 'set_invalid_user' });
+			const params = { role: 'A'.repeat(ROLE_NAME_LENGTH_MAX + 1), enabled: 'yes', acting: 'x' };
+			const res = await rpc_call({
+				app: test_app.app,
+				path: RPC_PATH,
+				method: self_service_role_set_action_spec.method,
+				params,
+				headers: caller.create_session_headers()
+			});
+			assert.ok(!res.ok, JSON.stringify(res));
+			assert.strictEqual(res.error.code, JSONRPC_ERROR_CODES.invalid_params);
+			// the input's issues: `acting` off the UUID grammar reads as omitted to the
+			// authorization phase, so validation is what refuses it; the role, too long
+			// and off the grammar, gets the one length issue, the Zod schema a grammar
+			// issue too
+			assert.deepStrictEqual(res.error.data, {
+				issues: [
+					{
+						kind: 'max_length',
+						path: ['role'],
+						expected: `length <= ${ROLE_NAME_LENGTH_MAX}`,
+						received: 'string',
+						message: `role: ${ROLE_NAME_LENGTH_MESSAGE}`
+					},
+					{
+						kind: 'boolean',
+						path: ['enabled'],
+						expected: 'boolean',
+						received: 'string',
+						message: 'enabled: expected boolean, received string'
+					},
+					{
+						kind: 'uuid',
+						path: ['acting'],
+						expected: 'uuid',
+						received: 'string',
+						message: 'acting: expected uuid, received string'
+					}
+				]
+			});
 		});
 
 		test('unauthenticated call returns -32001', async () => {

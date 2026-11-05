@@ -1,0 +1,60 @@
+{
+	"name": "self_service_role_set",
+	"auth": {
+		"account": "required",
+		"actor": "required",
+		"credential_types": [
+			"session"
+		]
+	},
+	"input_schema": {
+		"type": "object",
+		"properties": {
+			"role": {
+				"type": "string",
+				"maxLength": 64,
+				"pattern": "^[a-z][a-z_]*[a-z]$|^[a-z]$",
+				"description": "Role to toggle. Must be in the configured allowlist."
+			},
+			"enabled": {
+				"type": "boolean",
+				"description": "Desired post-call state. `true` grants if not held; `false` revokes if held. Idempotent in both directions."
+			},
+			"acting": {
+				"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+				"type": "string",
+				"format": "uuid",
+				"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+			}
+		},
+		"required": [
+			"role",
+			"enabled"
+		],
+		"additionalProperties": false
+	},
+	"output_schema": {
+		"type": "object",
+		"properties": {
+			"ok": {
+				"type": "boolean",
+				"const": true
+			},
+			"enabled": {
+				"type": "boolean"
+			},
+			"changed": {
+				"type": "boolean"
+			}
+		},
+		"required": [
+			"ok",
+			"enabled",
+			"changed"
+		],
+		"additionalProperties": false
+	},
+	"side_effects": true,
+	"description": "Toggle a self-service role. Idempotent in both directions — `changed: false` when post-call state already matched the request.",
+	"rate_limit_key": "account"
+}

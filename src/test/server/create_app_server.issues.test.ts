@@ -2,8 +2,9 @@
  * The validation issues an assembled app answers a bad REST body and bad RPC
  * params with: `WireIssue`s under DEV, and in production the same body
  * without them. Zod schemas and the fuz_schema inputs of
- * `account_token_revoke` and `actor_search` alike, and a bad query on
- * `GET /api/surface`, whose `{acting}` query is a fuz_schema `object`.
+ * `account_token_revoke`, `actor_search` and `self_service_role_set` alike,
+ * and a bad query on `GET /api/surface`, whose `{acting}` query is a
+ * fuz_schema `object`.
  *
  * Vitest runs with `DEV=true`, so each leg imports the server fresh under a
  * scoped `esm-env` mock (the `#lib/testing` harness can't load under
@@ -23,6 +24,11 @@ import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { WireIssue } from '#lib/schema_issues.ts';
 import { TokenRevokeInput, TokenRevokeOutput } from '#lib/auth/account_action_specs.ts';
 import { ActorSearchInput, ActorSearchOutput } from '#lib/auth/actor_search_action_specs.ts';
+import {
+	SelfServiceRoleSetInput,
+	SelfServiceRoleSetOutput
+} from '#lib/auth/self_service_role_action_specs.ts';
+import { ROLE_NAME_LENGTH_MAX, ROLE_NAME_PATTERN_MESSAGE } from '#lib/auth/role_schema.ts';
 import type { RouteSpec } from '#lib/http/route_spec.ts';
 import { create_test_keyring } from '../auth/session_test_helpers.ts';
 
@@ -37,6 +43,12 @@ const ORIGIN = 'http://localhost:5173';
 const log = new Logger('test', { level: 'off' });
 
 const Body = z.strictObject({ name: z.string(), count: z.number() });
+
+// `self_service_role_set`'s fuz_schema input less its `acting`, which only an
+// actor-requiring action may declare, and validation runs after auth there: on
+// a public action the refusal is reached without an account
+const { acting: _, ...self_service_role_entries } = SelfServiceRoleSetInput.def;
+const SelfServiceRoleSetInputPublic = object(self_service_role_entries);
 
 const create_app = async (dev: boolean) => {
 	vi.resetModules();
@@ -139,6 +151,20 @@ const create_app = async (dev: boolean) => {
 							description: 'Searches things.'
 						},
 						handler: async () => ({ actors: [] })
+					},
+					{
+						spec: {
+							method: 'toggle_thing',
+							kind: 'request_response',
+							initiator: 'frontend',
+							auth: { account: 'none', actor: 'none' },
+							side_effects: true,
+							input: SelfServiceRoleSetInputPublic,
+							output: SelfServiceRoleSetOutput,
+							async: true,
+							description: 'Toggles a thing.'
+						},
+						handler: async () => ({ ok: true as const, enabled: true, changed: false })
 					}
 				]
 			}
@@ -190,6 +216,47 @@ const post_rpc_actor_search = async (
 			params: { query: '', limit: 1.5, extra: 1 }
 		})
 	});
+
+const post_rpc_self_service_role = async (
+	app: Awaited<ReturnType<typeof create_app>>
+): Promise<Response> =>
+	await app.request('/api/rpc', {
+		method: 'POST',
+		headers: { 'content-type': 'application/json', origin: ORIGIN },
+		body: JSON.stringify({
+			jsonrpc: '2.0',
+			id: 1,
+			method: 'toggle_thing',
+			params: { role: '_admin', enabled: 1, extra: 1 }
+		})
+	});
+
+// the issues that input gets from `self_service_role_set`'s input, in fuz_schema's
+// words: the Zod schema it replaced gave the same issues but for their messages,
+// the role's the bare `RoleName` message where fuz_schema's has its path before it
+const SELF_SERVICE_ROLE_ISSUES = [
+	{
+		kind: 'regex',
+		path: ['role'],
+		expected: '/^[a-z][a-z_]*[a-z]$|^[a-z]$/',
+		received: 'string',
+		message: `role: ${ROLE_NAME_PATTERN_MESSAGE}`
+	},
+	{
+		kind: 'boolean',
+		path: ['enabled'],
+		expected: 'boolean',
+		received: 'number',
+		message: 'enabled: expected boolean, received number'
+	},
+	{
+		kind: 'unknown_key',
+		path: ['extra'],
+		expected: 'no unknown keys',
+		received: 'number',
+		message: 'extra: expected no unknown keys, received number'
+	}
+];
 
 const get_surface_bad_query = async (
 	app: Awaited<ReturnType<typeof create_app>>
@@ -354,6 +421,49 @@ describe('an assembled app answers a bad `actor_search` input', () => {
 
 	test('without data in production, as under Zod', async () => {
 		const res = await post_rpc_actor_search(await create_app(false));
+		assert.strictEqual(res.status, 400);
+		assert.deepStrictEqual(await res.json(), {
+			jsonrpc: '2.0',
+			id: 1,
+			error: { code: -32602, message: 'invalid params' }
+		});
+	});
+});
+
+describe('an assembled app answers a bad `self_service_role_set` input', () => {
+	test('with fuz_schema issues under DEV', async () => {
+		const res = await post_rpc_self_service_role(await create_app(true));
+		assert.strictEqual(res.status, 400);
+		const body = await res.json();
+		assert.deepStrictEqual(body, {
+			jsonrpc: '2.0',
+			id: 1,
+			error: { code: -32602, message: 'invalid params', data: { issues: SELF_SERVICE_ROLE_ISSUES } }
+		});
+		for (const issue of body.error.data.issues) assert.ok(WireIssue.safeParse(issue).success);
+	});
+
+	test('a role too long and off the grammar gets the one length issue under DEV', async () => {
+		const res = await (await create_app(true)).request('/api/rpc', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', origin: ORIGIN },
+			body: JSON.stringify({
+				jsonrpc: '2.0',
+				id: 1,
+				method: 'toggle_thing',
+				params: { role: 'A'.repeat(ROLE_NAME_LENGTH_MAX + 1), enabled: true }
+			})
+		});
+		assert.strictEqual(res.status, 400);
+		const body = await res.json();
+		assert.deepStrictEqual(
+			body.error.data.issues.map((i: WireIssue) => [i.kind, i.path]),
+			[['max_length', ['role']]]
+		);
+	});
+
+	test('without data in production, as under Zod', async () => {
+		const res = await post_rpc_self_service_role(await create_app(false));
 		assert.strictEqual(res.status, 400);
 		assert.deepStrictEqual(await res.json(), {
 			jsonrpc: '2.0',

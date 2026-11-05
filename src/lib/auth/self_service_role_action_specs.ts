@@ -8,37 +8,39 @@
  * @module
  */
 
-import { z } from 'zod';
+import { meta } from '@fuzdev/fuz_schema/meta.ts';
+import { boolean, literal, object, type Infer } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
-import { RoleName } from './role_schema.ts';
-import { ActingActor } from '../http/auth_shape.ts';
+import { ActingActor } from '../primitive_schemas_fuz.ts';
+import { RoleName } from './role_schema_fuz.ts';
 
 /** Error reason — caller asked to self-toggle a role outside the configured allowlist. */
 export const ERROR_ROLE_NOT_SELF_SERVICE_ELIGIBLE = 'role_not_self_service_eligible' as const;
 
-/** Input for `self_service_role_set`. */
-export const SelfServiceRoleSetInput = z.strictObject({
-	role: RoleName.meta({ description: 'Role to toggle. Must be in the configured allowlist.' }),
-	enabled: z.boolean().meta({
+/** Input for `self_service_role_set`, a `@fuzdev/fuz_schema` schema. */
+export const SelfServiceRoleSetInput = object({
+	role: meta(RoleName, { description: 'Role to toggle. Must be in the configured allowlist.' }),
+	enabled: meta(boolean, {
 		description:
 			'Desired post-call state. `true` grants if not held; `false` revokes if held. Idempotent in both directions.'
 	}),
 	acting: ActingActor
 });
-export type SelfServiceRoleSetInput = z.infer<typeof SelfServiceRoleSetInput>;
+export type SelfServiceRoleSetInput = Infer<typeof SelfServiceRoleSetInput>;
 
 /**
- * Output for `self_service_role_set`. `enabled` echoes the post-call state
- * (always equals the input `enabled` on success). `changed` is `true` only
- * when the call mutated — re-grants / re-revokes return `false`.
+ * Output for `self_service_role_set`, a `@fuzdev/fuz_schema` schema. `enabled`
+ * echoes the post-call state (always equals the input `enabled` on success).
+ * `changed` is `true` only when the call mutated — re-grants / re-revokes
+ * return `false`.
  */
-export const SelfServiceRoleSetOutput = z.strictObject({
-	ok: z.literal(true),
-	enabled: z.boolean(),
-	changed: z.boolean()
+export const SelfServiceRoleSetOutput = object({
+	ok: literal(true),
+	enabled: boolean,
+	changed: boolean
 });
-export type SelfServiceRoleSetOutput = z.infer<typeof SelfServiceRoleSetOutput>;
+export type SelfServiceRoleSetOutput = Infer<typeof SelfServiceRoleSetOutput>;
 
 /**
  * `rate_limit: 'account'` bounds audit-row churn. The toggle is idempotent

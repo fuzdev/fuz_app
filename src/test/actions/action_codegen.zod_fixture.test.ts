@@ -5,11 +5,11 @@
  * codegen's reading of a `@fuzdev/fuz_schema` spec must leave a Zod spec's
  * output alone, so the fixture never changes for an all-Zod list.
  *
- * fuz_app's own list, whose `account_token_revoke`, `actor_lookup` and
- * `actor_search` are `@fuzdev/fuz_schema`, generates the same text but for
- * those methods' types, read by `Infer`, and the `Infer` import. The all-Zod
- * list holds Zod stand-ins for those methods' schemas, which give codegen the
- * answers their own do.
+ * fuz_app's own list, whose `account_token_revoke`, `self_service_role_set`,
+ * `actor_lookup` and `actor_search` are `@fuzdev/fuz_schema`, generates the
+ * same text but for those methods' types, read by `Infer`, and the `Infer`
+ * import. The all-Zod list holds Zod stand-ins for those methods' schemas,
+ * which give codegen the answers their own do.
  *
  * @module
  */
@@ -45,6 +45,7 @@ test("fuz_app's own list differs from the fixture only in its fuz_schema methods
 	assert.notInclude(expected, INFER_IMPORT);
 	assert.deepStrictEqual(fuz_schema_methods, [
 		'account_token_revoke',
+		'self_service_role_set',
 		'actor_lookup',
 		'actor_search'
 	]);
