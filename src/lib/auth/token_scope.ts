@@ -40,6 +40,7 @@ import {
 	variant,
 	type Infer
 } from '@fuzdev/fuz_schema/schema.ts';
+import { to_bytes } from '@fuzdev/fuz_util/bytes.ts';
 
 import { is_valid_name } from './name_schema.ts';
 
@@ -47,7 +48,10 @@ import { is_valid_name } from './name_schema.ts';
 export const TOKEN_SCOPE_VERSION = 1;
 
 /**
- * Serialized-document cap. Matches the Rust `MAX_TOKEN_SCOPE_BYTES` and
+ * Serialized-document cap, in UTF-8 bytes of the document's compact JSON (no
+ * whitespace, what `JSON.stringify` writes) — never the text a driver or
+ * Postgres prints it as, which for `jsonb` adds a space after every `:` and
+ * `,`. Matches the Rust `MAX_TOKEN_SCOPE_BYTES`, which measures the same, and
  * fuz_forge's `MAX_POLICY_BYTES`.
  */
 export const MAX_TOKEN_SCOPE_BYTES = 4 * 1024;
@@ -257,8 +261,34 @@ export const token_scope_label = (scope: TokenScope): string => {
 	return `${scope.methods.length} methods`;
 };
 
+/** The UTF-8 byte length of `json`, the unit `MAX_TOKEN_SCOPE_BYTES` counts. */
+const token_scope_json_bytes = (json: string): number => to_bytes(json).length;
+
 /**
- * Parse a stored document, enforcing the size cap and the schema.
+ * Read a document's parsed JSON value, enforcing the size cap on its compact
+ * serialization and the schema; `null` when it is unreadable.
+ */
+const token_scope_from_value = (value: unknown): TokenScope | null => {
+	// `JSON.stringify(undefined)` returns `undefined`, not a string — so a row
+	// missing the column entirely must be caught here rather than measured.
+	// Absent is *unreadable*, which is fail-closed: the caller refuses the
+	// credential.
+	const json = JSON.stringify(value);
+	if (json === undefined || token_scope_json_bytes(json) > MAX_TOKEN_SCOPE_BYTES) return null;
+	const parsed = parse(TokenScope, value);
+	return parsed.ok ? parsed.value : null;
+};
+
+/**
+ * Parse a stored document, enforcing the size cap and the schema. The cap is
+ * measured on the document's compact serialization, not on `raw`, so the
+ * spaced text Postgres prints a `jsonb` as reads as the document it is.
+ *
+ * A `raw` past twice the cap is refused before it is parsed. Postgres prints a
+ * `jsonb` as its compact form plus one space after each `:` and `,` outside
+ * strings, each of which is a byte of that form beside its braces, so the
+ * printed text of a document either spine can write is under twice the cap and
+ * never refused here.
  *
  * **Fail-closed**: returns `null` on an unreadable document, and every caller on
  * the enforcement path treats `null` as "refuse the credential" rather than
@@ -268,28 +298,29 @@ export const token_scope_label = (scope: TokenScope): string => {
  * authority exactly when something is already wrong.
  */
 export const parse_token_scope = (raw: string): TokenScope | null => {
-	if (raw.length > MAX_TOKEN_SCOPE_BYTES) return null;
+	// code units, which never exceed UTF-8 bytes, so this refuses no text the byte cap reads
+	if (raw.length > 2 * MAX_TOKEN_SCOPE_BYTES) return null;
 	let value: unknown;
 	try {
 		value = JSON.parse(raw);
 	} catch {
 		return null;
 	}
-	const parsed = parse(TokenScope, value);
-	return parsed.ok ? parsed.value : null;
+	return token_scope_from_value(value);
 };
 
 /**
- * Serialize for storage, enforcing the size cap.
+ * Serialize for storage, enforcing the size cap in UTF-8 bytes.
  *
  * Throws on an over-cap document — the mint path maps that to a 400, matching
  * the Rust side's `TokenScopeError::TooLarge`.
  */
 export const serialize_token_scope = (scope: TokenScope): string => {
 	const json = JSON.stringify(scope);
-	if (json.length > MAX_TOKEN_SCOPE_BYTES) {
+	const bytes = token_scope_json_bytes(json);
+	if (bytes > MAX_TOKEN_SCOPE_BYTES) {
 		throw new Error(
-			`token scope document is ${json.length} bytes, exceeding the ${MAX_TOKEN_SCOPE_BYTES} byte cap`
+			`token scope document is ${bytes} bytes, exceeding the ${MAX_TOKEN_SCOPE_BYTES} byte cap`
 		);
 	}
 	return json;
@@ -301,15 +332,9 @@ export const serialize_token_scope = (scope: TokenScope): string => {
  *
  * The DB driver may hand `scope` back already-parsed (JSONB → object) or as
  * text depending on backend, so both are normalized here rather than at each
- * call site. Lives here rather than beside the queries so the pure scope module
+ * call site, and either is held to the cap by its compact serialization, as
+ * the Rust spine holds the spaced `scope::text` it reads. Lives here rather than beside the queries so the pure scope module
  * owns every parse — and so mocking the query module doesn't drag this along.
  */
-export const parse_stored_token_scope = (value: unknown): TokenScope | null => {
-	if (typeof value === 'string') return parse_token_scope(value);
-	// `JSON.stringify(undefined)` returns `undefined`, not a string — so a row
-	// missing the column entirely must be caught here rather than reaching
-	// `parse_token_scope` and throwing on `.length`. Absent is *unreadable*,
-	// which is fail-closed: the caller refuses the credential.
-	const json = JSON.stringify(value);
-	return json === undefined ? null : parse_token_scope(json);
-};
+export const parse_stored_token_scope = (value: unknown): TokenScope | null =>
+	typeof value === 'string' ? parse_token_scope(value) : token_scope_from_value(value);

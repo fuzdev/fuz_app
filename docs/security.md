@@ -302,7 +302,11 @@ The mint's `scope` is a closed shape on both spines: an unknown key is refused
 and the second marks tokens that predate scoping, which a minter forging it
 would launder — as are a `methods` list on `full` and a `null` one. Duplicate
 method names collapse into one. A document past the 4 KiB cap
-(`MAX_TOKEN_SCOPE_BYTES`) is refused 400 before anything is written.
+(`MAX_TOKEN_SCOPE_BYTES`) is refused 400 before anything is written. Both
+spines count the cap in UTF-8 bytes of the document's compact JSON, at mint
+and when a stored document is read — never the text Postgres prints a `jsonb`
+as, which adds a space after every `:` and `,` — so a document one spine
+mints, the other reads, and one past the cap fails closed on both.
 
 **A narrowed token is RPC-only.** `methods` denies outright every non-RPC
 spine surface that reads account data or carries authority, whatever its

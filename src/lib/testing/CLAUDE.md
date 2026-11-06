@@ -127,6 +127,16 @@ mismatch.
 - `create_recording_audit_emitter(calls_ref?)` — no-op `AuditEmitter` pushing every `emit` and `emit_pool` call into `calls`. Pass `calls_ref` to write into a caller-owned array; omit to let the helper allocate. Returns `{emitter, calls}` — destructure `emitter` as the `audit` dep and read `calls` to assert. `add_listener` records (never fires) and returns a remover with the production semantics, so `listener_count` tracks what a server registered and released. Replaces per-file capturing emitters previously duplicated across `password_change.test.ts`, `audit_log.test.ts`, etc.
 - `RecordingAuditEmitter` — `{emitter: AuditEmitter; calls: Array<AuditLogInput>}`.
 
+### `token_scope_fixtures.ts` — scope documents built to a size
+
+`token_scope_methods_at_bytes(bytes, filler)` — method names whose `methods`
+scope document is exactly `bytes` compact UTF-8 bytes, the unit
+`MAX_TOKEN_SCOPE_BYTES` counts: `account_token_list`, names ending in `filler`
+(multibyte for a document far under its byte size in UTF-16 code units), and
+an ASCII pad. The Rust spine's tests build the same list, so a boundary pinned
+on one spine is the boundary on the other. `token_scope_methods_bytes(methods)`
+measures one. Hono-free, imported by the cross-process token suite.
+
 ### `connection_closer_helpers.ts` — `ConnectionCloser` test doubles
 
 - `create_recording_closer()` — `{closer, calls}`; `closer.close_connections(target)` records the `target` and `close_all_connections()` records `{kind: 'all'}` into `calls`, closing nothing. To see a handler's closes, add it to the backend's closer (`ctx.deps.connection_closer.add(closer)`) or build the factory's deps with it. The closes are queued post-commit, so they have run by the time a `create_test_app` response is in hand (`await_pending_effects: true` flushes both queues).
@@ -2572,7 +2582,11 @@ a `{kind:'ttl', days}` mint returns and stores a bounded `expires_at`
 (create output + `account_token_list` read-back), `{kind:'eternal'}` stores
 NULL, an omitted or out-of-range lifetime 400s identically on both
 spines, and a `name` at `API_TOKEN_NAME_LENGTH_MAX` mints and reads back whole
-while one UTF-16 code unit past it is `invalid_params`. It also pins the
+while one UTF-16 code unit past it is `invalid_params`. It pins the scope cap
+as compact UTF-8 bytes at mint and at read: a two-byte scope at
+`MAX_TOKEN_SCOPE_BYTES`, and an ASCII one under it whose printed `jsonb` text
+is past it, mint, authenticate as bearers and list as `N methods`; one byte
+past the cap is `invalid_params` with `ERROR_TOKEN_SCOPE_INVALID`. It also pins the
 credential legs' order from stored state: a bearer sent beside a winning
 daemon token keeps `last_used_at` null (never validated), against a token used
 alone whose touch lands. Exists because the action-manifest parity gate captures no param

@@ -33,6 +33,15 @@ import '../assert_dev_env.ts';
  *   mints and reads back whole, and one unit past it is `invalid_params`,
  *   with an astral-plane name at each side of the boundary so the two spines
  *   count the same unit.
+ * - **The scope cap** — `MAX_TOKEN_SCOPE_BYTES` counts UTF-8 bytes of the
+ *   compact document on both spines, at mint and at read: a two-byte scope at
+ *   the cap mints, authenticates as a bearer for a method it lists, and lists
+ *   as `N methods`, though Postgres prints it past the cap, and so does an
+ *   ASCII scope under the cap whose printed text is past it; one byte past the
+ *   cap, far under it in UTF-16 code units, is `invalid_params` with
+ *   `ERROR_TOKEN_SCOPE_INVALID`. A spine counting code units mints the one
+ *   past the cap, and one measuring the printed `scope::text` fails the
+ *   others closed — `unreadable` in the list, an anonymous bearer.
  * - **A token sent beside a winning daemon token is never used** — the
  *   credential legs run daemon token → session cookie → bearer on both
  *   spines, the first that authenticates winning, so a request carrying the
@@ -56,9 +65,12 @@ import {
 	account_token_create_action_spec,
 	account_token_list_action_spec,
 	API_TOKEN_NAME_LENGTH_MAX,
+	ERROR_TOKEN_SCOPE_INVALID,
 	TokenCreateOutput,
 	TokenListOutput
 } from '../../auth/account_action_specs.ts';
+import { MAX_TOKEN_SCOPE_BYTES } from '../../auth/token_scope.ts';
+import { token_scope_methods_at_bytes } from '../token_scope_fixtures.ts';
 import { DAEMON_TOKEN_HEADER } from '../../auth/daemon_token.ts';
 import { cross_rpc_call, error_reason, expect_output } from './cross_rpc.ts';
 import { assert_iso8601_seconds } from './wire_shapes.ts';
@@ -179,6 +191,52 @@ export const describe_token_lifetime_cross_tests = (
 			const row = listed.tokens.find((t) => t.id === created.id);
 			assert.ok(row, 'the minted token must appear in account_token_list');
 			assert.strictEqual(row.expires_at, null, 'the stored token must be eternal');
+		});
+
+		test('the scope cap counts compact UTF-8 bytes at mint and at read', async () => {
+			const fixture = await setup_test();
+			const two_byte = '\u00e9'.repeat(40);
+			const mint = (name: string, methods: Array<string>): ReturnType<typeof cross_rpc_call> =>
+				cross_rpc_call(
+					fixture.transport,
+					rpc_path,
+					account_token_create_action_spec.method,
+					{ name, scope: { kind: 'methods', methods }, lifetime: { kind: 'eternal' } },
+					fixture.create_session_headers()
+				);
+			const admitted: Array<[name: string, methods: Array<string>]> = [
+				['at-cap', token_scope_methods_at_bytes(MAX_TOKEN_SCOPE_BYTES, two_byte)],
+				['spaced', token_scope_methods_at_bytes(MAX_TOKEN_SCOPE_BYTES - 50, 'm')]
+			];
+			const listed_labels = new Map<string, string>();
+			for (const [name, methods] of admitted) {
+				const minted = expect_output(await mint(name, methods), TokenCreateOutput);
+				// the resolve path reads the stored scope: the token lists its account's tokens
+				const listed = expect_output(
+					await cross_rpc_call(
+						fixture.fresh_transport({ origin: null }),
+						rpc_path,
+						account_token_list_action_spec.method,
+						undefined,
+						{ authorization: `Bearer ${minted.token}` }
+					),
+					TokenListOutput
+				);
+				for (const t of listed.tokens) listed_labels.set(t.id, t.scope);
+				assert.strictEqual(
+					listed_labels.get(minted.id),
+					`${methods.length} methods`,
+					`${name}: the stored scope reads back on the list`
+				);
+			}
+
+			const res = await mint(
+				'over-cap',
+				token_scope_methods_at_bytes(MAX_TOKEN_SCOPE_BYTES + 1, two_byte)
+			);
+			assert.ok(!res.ok, 'a scope one byte past the cap must be refused');
+			assert.strictEqual(res.error?.code, -32602, JSON.stringify(res.error));
+			assert.strictEqual(error_reason(res), ERROR_TOKEN_SCOPE_INVALID);
 		});
 
 		test('a token sent beside a winning daemon token is never used', async () => {
