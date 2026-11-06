@@ -19,13 +19,10 @@ import {
 	array,
 	boolean,
 	literal,
-	min_length,
 	nullable,
 	object,
 	one_of,
 	optional,
-	pipe,
-	string,
 	variant,
 	type Infer
 } from '@fuzdev/fuz_schema/schema.ts';
@@ -78,7 +75,9 @@ export type CellGrantLevel = Infer<typeof CellGrantLevel>;
 /**
  * Wire-input principal. Discriminated by `kind`. Actor-shaped principals
  * carry a resolved `actor_id` — the picker UI runs `actor_search` to
- * convert a typed name to an id before this verb is called.
+ * convert a typed name to an id before this verb is called. A role-shaped
+ * principal's `role` is a `RoleName`, so a string off the name grammar is
+ * refused as `invalid_params` before the handler's role-registry check.
  */
 export const CellGrantPrincipalInput = variant('kind', [
 	object({
@@ -87,7 +86,7 @@ export const CellGrantPrincipalInput = variant('kind', [
 	}),
 	object({
 		kind: literal('role'),
-		role: pipe(string, min_length(1)),
+		role: RoleName,
 		scope_id: meta(optional(nullable(Uuid)), {
 			description: '`null` / omitted = any-scope grant (admits any matching-role role_grant).'
 		})

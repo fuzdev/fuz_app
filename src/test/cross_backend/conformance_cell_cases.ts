@@ -25,6 +25,11 @@
  *   (pinned across spines by the differential); so is anonymous `cell_list`
  *   naming a `shared_with` other than `'me'`, and an `order_by` /
  *   `order_direction` outside its enum is refused rather than defaulted.
+ * - **closed input values** — a grant principal's `role` off the name
+ *   grammar, and a `cell_list` `moderation` filter outside `CellModeration`,
+ *   are the reason-less 400 the schema step answers; an unregistered role on
+ *   the grammar reaches the handler, which masks a missing cell as 404; an
+ *   anonymous caller is the 401 whatever the role, ahead of the input.
  *
  * - **prototype keys** — an own `__proto__` key in cell `data`, `policy`, or a
  *   clone patch, at any depth, or at the top of `cell_list`'s params, is the
@@ -50,7 +55,8 @@ import {
 import { ERROR_CELL_FIELD_LIST_REQUIRES_SOURCE_OR_TARGET } from '#lib/auth/cell_field_action_specs.ts';
 import { ERROR_CELL_GRANT_NOT_FOUND } from '#lib/auth/cell_grant_action_specs.ts';
 import { ERROR_CELL_ITEM_LIST_REQUIRES_PARENT_OR_CHILD } from '#lib/auth/cell_item_action_specs.ts';
-import { ERROR_PARAMS_PROTO_KEY } from '#lib/http/error_schemas.ts';
+import { NAME_LENGTH_MAX } from '#lib/auth/name_schema.ts';
+import { ERROR_AUTHENTICATION_REQUIRED, ERROR_PARAMS_PROTO_KEY } from '#lib/http/error_schemas.ts';
 import type { ConformanceCase } from '#lib/testing/cross_backend/conformance_case.ts';
 
 /** A well-formed UUID that names no cell or grant. */
@@ -170,6 +176,76 @@ const schema_first_cases: Array<ConformanceCase> = [
 	}
 ];
 
+const grant_role_note =
+	'auth/cell_grant_action_specs.ts `CellGrantPrincipalInput` — a role-shaped principal’s `role` is a `RoleName`, so a string off the name grammar is the reason-less schema refusal, ahead of the manage-tier 404 mask; a name on the grammar reaches the handler';
+
+const moderation_filter_note =
+	'auth/cell_action_specs.ts `CellListInput` — the `moderation` filter is a `CellModeration`, so another value is the reason-less schema refusal rather than a filter matching nothing';
+
+/** A role-shaped `cell_grant_create` on a cell that doesn't exist. */
+const grant_role_params = (role: string) => ({
+	cell_id: NIL_UUID,
+	level: 'viewer',
+	principal: { kind: 'role', role }
+});
+
+const input_cases: Array<ConformanceCase> = [
+	...(
+		[
+			['off the name grammar', 'Not_A_Role'],
+			['past NAME_LENGTH_MAX', 'a'.repeat(NAME_LENGTH_MAX + 1)],
+			['empty', ''],
+			['with a space', 'a b']
+		] as const
+	).map(([label, role]): ConformanceCase => ({
+		name: `keeper → cell_grant_create with a role ${label} → 400`,
+		request: { method: 'cell_grant_create', as: 'keeper', params: grant_role_params(role) },
+		expect: { status: 400 },
+		note: grant_role_note
+	})),
+	{
+		name: 'keeper → cell_grant_create with an unregistered role on the grammar, NIL cell → 404 cell_not_found',
+		request: { method: 'cell_grant_create', as: 'keeper', params: grant_role_params('nobody') },
+		expect: { status: 404, error_reason: ERROR_CELL_NOT_FOUND },
+		note: grant_role_note
+	},
+	{
+		name: 'keeper → cell_grant_create with an unregistered role at NAME_LENGTH_MAX, NIL cell → 404 cell_not_found',
+		request: {
+			method: 'cell_grant_create',
+			as: 'keeper',
+			params: grant_role_params('a'.repeat(NAME_LENGTH_MAX))
+		},
+		expect: { status: 404, error_reason: ERROR_CELL_NOT_FOUND },
+		note: grant_role_note
+	},
+	{
+		name: 'anonymous → cell_grant_create with a role off the name grammar → 401',
+		request: {
+			method: 'cell_grant_create',
+			as: 'anonymous',
+			params: grant_role_params('Not_A_Role')
+		},
+		expect: { status: 401, error_reason: ERROR_AUTHENTICATION_REQUIRED },
+		note: `${grant_role_note}; authentication answers before the input is decoded`
+	},
+	...(['bogus', 'Pending', '', null, 1] as const).map((moderation): ConformanceCase => {
+		const shown = typeof moderation === 'string' ? `'${moderation}'` : String(moderation);
+		return {
+			name: `keeper → cell_list {moderation: ${shown}} → 400`,
+			request: { method: 'cell_list', as: 'keeper', params: { moderation } },
+			expect: { status: 400 },
+			note: moderation_filter_note
+		};
+	}),
+	{
+		name: "keeper → cell_list {moderation: 'pending'} → 200",
+		request: { method: 'cell_list', as: 'keeper', params: { moderation: 'pending' } },
+		expect: { status: 200 },
+		note: moderation_filter_note
+	}
+];
+
 const proto_note =
 	'actions/perform_action.ts step 5 — an own `__proto__` key anywhere in params is refused before the input schema, so cell `data` and `policy` never store one';
 
@@ -282,6 +358,7 @@ export const conformance_cell_cases: ReadonlyArray<ConformanceCase> = [
 	...grant_cases,
 	...pagination_cases,
 	...schema_first_cases,
+	...input_cases,
 	...proto_cases,
 	...integral_cases
 ];

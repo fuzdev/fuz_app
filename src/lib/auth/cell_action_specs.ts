@@ -25,7 +25,6 @@ import {
 	pipe,
 	record,
 	safe_integer,
-	string,
 	with_default_fn,
 	type Infer
 } from '@fuzdev/fuz_schema/schema.ts';
@@ -539,9 +538,9 @@ export const CellListInput = with_default_fn(
 			description:
 				'Scope to a directory subtree by governing root (`cell.root_id = ?`) — the feed + mod-queue key.'
 		}),
-		moderation: meta(optional(string), {
+		moderation: meta(optional(CellModeration), {
 			description:
-				"Filter by moderation lifecycle marker (`'pending'` drives the moderation queue)."
+				"Filter by moderation lifecycle marker (`'pending'` drives the moderation queue). Another value is refused."
 		}),
 		shared_with: meta(optional(literal('me')), {
 			description:

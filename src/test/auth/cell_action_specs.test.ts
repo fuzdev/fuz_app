@@ -3,7 +3,8 @@
  * `cell_create` and on the `cell_list` filter, and the verdicts and issues of
  * the spots where the `@fuzdev/fuz_schema` forms read differently from the
  * Zod ones they replaced: the grant principal's `variant`, the item
- * position's pipe, and `cell_list`'s omitted input — and that every cell
+ * position's pipe, and `cell_list`'s omitted input; the grant principal's
+ * `RoleName` and `cell_list`'s closed moderation filter; and that every cell
  * input is strict and `cell_list`'s paging bounds hold.
  *
  * @module
@@ -23,6 +24,7 @@ import {
 } from '#lib/auth/cell_action_specs.ts';
 import { CellGrantCreateInput } from '#lib/auth/cell_grant_action_specs.ts';
 import { CellItemPosition } from '#lib/auth/cell_item_action_specs.ts';
+import { NAME_LENGTH_MAX } from '#lib/auth/name_schema.ts';
 
 const ID = '3f8a1c2e-1234-4abc-9def-0123456789ab';
 
@@ -51,6 +53,22 @@ describe('cell kind length cap', () => {
 		assert.ok(!is(CellListInput, { kind: 'a'.repeat(CELL_KIND_LENGTH_MAX + 1) }));
 		// the empty filter is admitted: it matches nothing
 		assert.ok(is(CellListInput, { kind: '' }));
+	});
+});
+
+describe('CellListInput moderation filter', () => {
+	test('takes a CellModeration marker and refuses any other value', () => {
+		for (const moderation of ['pending', 'approved', 'rejected']) {
+			assert.ok(is(CellListInput, { moderation }), moderation);
+		}
+		for (const moderation of ['', 'bogus', 'Pending', null, 1]) {
+			const result = parse(CellListInput, { moderation });
+			assert.ok(!result.ok, String(moderation));
+			assert.deepStrictEqual(
+				result.issues.map((i) => i.path),
+				[['moderation']]
+			);
+		}
 	});
 });
 
@@ -94,7 +112,7 @@ describe('CellGrantPrincipalInput', () => {
 		assert.ok(!empty_role.ok);
 		assert.deepStrictEqual(
 			empty_role.issues.map((i) => [i.kind, i.path]),
-			[['min_length', ['principal', 'role']]]
+			[['regex', ['principal', 'role']]]
 		);
 		const other_arm = create({ kind: 'actor', actor_id: ID, role: 'member' });
 		assert.ok(!other_arm.ok);
@@ -108,6 +126,25 @@ describe('CellGrantPrincipalInput', () => {
 			role_extra.issues.map((i) => [i.kind, i.path]),
 			[['unknown_key', ['principal', 'actor_id']]]
 		);
+	});
+
+	test('a role is a RoleName: off the name grammar or past NAME_LENGTH_MAX is refused', () => {
+		for (const role of [
+			'Admin',
+			'a_',
+			'_a',
+			'a__b',
+			'a1',
+			'GLOBAL',
+			'a b',
+			'a'.repeat(NAME_LENGTH_MAX + 1)
+		]) {
+			assert.ok(!create({ kind: 'role', role }).ok, role);
+		}
+		assert.ok(create({ kind: 'role', role: 'a'.repeat(NAME_LENGTH_MAX) }).ok);
+		assert.ok(create({ kind: 'role', role: 'teaching_assistant' }).ok);
+		// an unregistered name on the grammar passes the schema: the handler refuses it
+		assert.ok(create({ kind: 'role', role: 'nobody' }).ok);
 	});
 });
 
