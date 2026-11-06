@@ -17,6 +17,8 @@ effects, see ../../../docs/architecture.md.
 - `http/route_spec.ts` — `RouteSpec` + `apply_route_specs`, validation pipeline, transactions.
 - `http/auth_shape.ts` — canonical `RouteAuth` type + `AuthAxisState` + predicates + the registration-time checks: `assert_route_auth_invariants` (the cross-axis invariants 1, 3, 4) and `assert_route_auth_acting_biconditional` (invariant 2), both run by `apply_route_specs` and `compile_action_registry` on every spec.
 - `http/error_schemas.ts` — `ERROR_*` constants, the per-code REST error definitions (`rest_error`, `REST_*`), standard error shapes, `derive_route_errors`, `to_error_schemas`.
+- `http/route_error_check.ts` — `check_route_error` (whether an error response is one its route's map declares, the rule the DEV error check and `assert_response_matches_spec` share; `ALWAYS_ACCEPTED_ERRORS`, `is_error_status`, `format_route_error_check`) `is_json_response`, and the test helpers' hono-free route lookup (`compile_route_path`, a template read as Hono's `getPattern` reads it; `to_mounted_routes`; `find_mounted_route`). Hono-free and `esm-env`-free.
+- `http/dev_route_error_check.ts` — `create_dev_route_error_check({route_specs, route_errors, log})`: the DEV-only outer error check, `null` outside DEV; `create_route_lookup`, its lookup by Hono's own router.
 - `http/schema_helpers.ts` — shared schema introspection (null/void/strict/surface/middleware-applies), the route error map (`resolve_route_errors`), and `to_void_params` / `to_input_params` / `json_has_own_proto_key` / `safe_parse_dropping_unknown_keys`.
 - `http/middleware_spec.ts` — `MiddlewareSpec` interface.
 - `http/body_limit.ts` — `create_body_limit_middleware(max_size)`: the `413` body cap `create_app_server` mounts, as `create_body_limit_middleware_spec(max_size)`, a `MiddlewareSpec` at `'*'` ahead of the other middleware, absent with `max_body_size: null`. Its hono-free shape, `body_limit_middleware_shape` (`http/body_limit_schema.ts`), declares its `413` `payload_too_large` and `400` `invalid_content_length`, so every route's error map carries both; `create_test_app_surface_spec` lists the same shape with a stub handler. Refuses on `Content-Length` without reading `c.req.raw.body` and answers `Connection: close` — `413` past the cap, `400` `ERROR_INVALID_CONTENT_LENGTH` when the value is not a plain run of ASCII digits (a length the cap cannot read, which Hono's `bodyLimit` would pass uncounted) — else falls through to Hono's `bodyLimit` (no `Content-Length`, or one beside `Transfer-Encoding`), which reads the body into memory up to the cap before the next middleware runs, so its `413` — no `Connection: close` — also precedes origin and auth. After the header `413` Node and Bun close at once (the header is what makes them — Bun 1.4.3 is the tested floor, an older Bun kept the connection and served the next request) and Deno closes once the declared body has arrived (../../../docs/security.md §Body Size Limiting).
@@ -118,8 +120,8 @@ wrapper). See `auth/signup_routes.ts`.
 5. **Post-authorization auth guards** — `require_role(roles)` (403 `ERROR_INSUFFICIENT_PERMISSIONS` with `required_roles: ReadonlyArray<string>`) when `auth.roles?.length`. The only gate in this phase, because it is the only one that reads `REQUEST_CONTEXT_KEY` (populated by step 4) rather than the auth middleware's own context vars. Multi-role specs admit any-of via `has_any_scoped_role(ctx, roles, null)`.
 6. **Input validation** — JSON body parsed + validated; mismatch returns 400 `ERROR_INVALID_JSON_BODY` (not JSON) or `ERROR_INVALID_REQUEST_BODY` (schema failure with `issues`). Every schema refusal's `issues` are `WireIssue`s (`to_wire_issues`, `schema_issues.ts`), sent under DEV only (`dev_only`). Skipped on GET and on a null input (`is_null_schema`: `z.null()` or `literal(null)`). The validated input lands on `c.var.validated_input`.
 7. **Handler** — wrapped in transaction when `use_transaction` (see above), receives `RouteContext`
-8. **Error catch** — catches a thrown JSON-RPC error (`ThrownJsonrpcError`, recognized by brand through `to_thrown_jsonrpc_error`, so one from a second fuz_app copy maps too; a foreign error class carrying a JSON-RPC `code` falls to the generic path) → maps to HTTP status + the flat REST `ApiError` body (`{error: <reason>, message?, ...rest_data}`); catches generic `Error` → 500 `{error: 'internal_error', message?}` (message only in DEV). The reason string comes from `err.data.reason` when set (consumer-supplied canonical reason override) or from `jsonrpc_error_code_to_name(err.code)` (e.g. `-32003 → 'not_found'`). The flat shape matches what middleware and direct handlers emit — REST callers see one envelope across every emit site, while the JSON-RPC dispatcher keeps its own `{jsonrpc, id, error: {code, message, data}}` envelope on the RPC mount.
-9. **DEV-only output + error validation** — wraps the error catch (see below), so a body built from a thrown error is validated like a returned one
+8. **Error catch** — catches a thrown JSON-RPC error (`ThrownJsonrpcError`, recognized by brand through `to_thrown_jsonrpc_error`, so one from a second fuz_app copy maps too; a foreign error class carrying a JSON-RPC `code` falls to the generic path) → maps to HTTP status + the flat REST error body (`{error: <reason>, message?, ...rest_data}`); catches generic `Error` → 500 `{error: 'internal_error', message?}` (message only in DEV). The reason string comes from `err.data.reason` when set (consumer-supplied canonical reason override) or from `jsonrpc_error_code_to_name(err.code)` (e.g. `-32003 → 'not_found'`). The flat shape matches what middleware and direct handlers emit — REST callers see one envelope across every emit site, while the JSON-RPC dispatcher keeps its own `{jsonrpc, id, error: {code, message, data}}` envelope on the RPC mount.
+9. **DEV-only output validation** — a 2xx JSON body against `spec.output` (see below); error responses are the outer DEV error check's
 
 **Ordering: 401 → authz → 403 → 400 → handler.** Mirrors the RPC dispatcher
 (`actions/action_rpc.ts`) so HTTP RPC and REST fail with the same priority, and
@@ -147,18 +149,17 @@ schema in scope.
 are the contract with external callers.
 
 **Output and error schemas are validated DEV-only** via `DEV` from
-`esm-env`. `wrap_output_validation`:
+`esm-env`, each in one place:
 
-- Skips streaming responses (non-`application/json` Content-Type) so SSE doesn't hang on `.json()`
-- On 2xx JSON: validates body against `spec.output`
-- On non-2xx JSON: validates body against the route's error map at that HTTP status (`resolve_route_errors`) — returned or built by the error catch from a thrown error. `create_app_server` passes `apply_route_specs` the map it built for the surface, middleware included; without one, a route's own map is used
-- Always accepts a 500 `{error: 'internal_error'}`: the error catch answers it for any generic throw, so no route declares it
-- On a `jsonrpc` route (the pair `create_rpc_endpoint` builds), skips a JSON-RPC error envelope (`is_jsonrpc_error_response`): the endpoint answers its refusals as envelopes, which no REST error definition describes, and the dispatch core checks its own outputs; `assert_response_matches_spec` skips one the same way. On any other route an envelope-shaped body is checked
-- **Logs on mismatch, returns the response unchanged** — never throws, never mutates the body
+- **Output** — `wrap_output_validation`, per route: a 2xx JSON body against `spec.output`. Skips non-`application/json` responses so SSE doesn't hang on `.json()`.
+- **Errors** — `create_dev_route_error_check` (`http/dev_route_error_check.ts`), one outer middleware `create_app_server` mounts outermost (`app.use('*')`, first after `onError`), so it sees what every layer answers — a middleware's refusal (body limit, origin, auth guards) as much as a handler's or the error catch's. After the request it finds the route with Hono's own router (`create_route_lookup`: the `SmartRouter` over a `RegExpRouter` and a `TrieRouter` that `new Hono()` builds, the route specs added in mount order, the first match the route, `HEAD` read as `GET`) and checks a JSON body at 400 and up against the route's error map (`check_route_error`, `http/route_error_check.ts`): a status the map lacks logs `Undeclared error status (S): METHOD path`, a body off the status's schema `Error schema mismatch (S): METHOD path`. Always accepted: a 500 `internal_error` and a 503 `service_unavailable` (`ALWAYS_ACCEPTED_ERRORS`, which the catch layers answer on any route). On a `jsonrpc` route (the pair `create_rpc_endpoint` builds) a JSON-RPC error envelope is skipped (`is_jsonrpc_error_response`): the endpoint answers its refusals as envelopes, which no REST error definition describes, and the dispatch core checks its own outputs. On any other route an envelope-shaped body is checked. Skipped: non-JSON responses (`is_json_response`, the gate both checks run), and a request no route spec matches — an unmatched path's 404 is Hono's plain text, with no JSON convention to hold it to. `assert_response_matches_spec` runs the same `check_route_error`.
+- **Logs on mismatch, returns the response unchanged** — never throws (a throw inside the error check, its logger's included, is swallowed), never mutates the body
 
-Production short-circuits to the unwrapped handler — no parse work on the
-hot path. Uniform across all three action-handler surfaces (REST, RPC,
-WS); see ../../../docs/architecture.md §DEV-only Output Validation.
+Production short-circuits: `wrap_output_validation` returns the handler
+unwrapped and `create_dev_route_error_check` returns `null`, so nothing is
+mounted — no parse work on the hot path. Uniform across all three
+action-handler surfaces (REST, RPC, WS); see ../../../docs/architecture.md
+§DEV-only Output Validation.
 
 ### Helpers
 
@@ -169,10 +170,10 @@ WS); see ../../../docs/architecture.md §DEV-only Output Validation.
 
 `http/error_schemas.ts` is the **declarative** error surface:
 
-- `ERROR_*` `snake_case` string constants — single source of truth for codes; they double as JSON-RPC `data.reason`s, so they carry no HTTP status
-- `rest_error(status, code, fields?, headers?)` → `RestErrorDef<S, C, F>` — one code at one status, its body `loose_object({error: literal(code), ...fields})` as `.schema`; `headers` derives response headers from a body (`Retry-After`). Status and code must be literals. One `REST_*` definition per code a route or middleware answers (`REST_TABLE_NOT_FOUND`, `REST_RATE_LIMIT_EXCEEDED`, …); a code with a second body shape gets a second definition (`REST_AUTHENTICATION_REQUIRED_BOOTSTRAP`, `/account/status`'s 401 with `bootstrap_available`)
+- `ERROR_*` `snake_case` string constants (`ERROR_FORBIDDEN_HOST` / `REST_FORBIDDEN_HOST` the Rust spine's host gate, which the TS spine lacks) — single source of truth for codes; they double as JSON-RPC `data.reason`s, so they carry no HTTP status
+- `rest_error(status, code, fields?, headers?)` → `RestErrorDef<S, C, F>` — one code at one status; the code must be a code, `REST_ERROR_CODE_PATTERN` (`^[a-z][a-z0-9_]*$`, `is_rest_error_code`) — a throw at definition, and a literal plainly off it (prose, uppercase, a leading digit) a type error — so prose goes in `message`; its body `loose_object({error: literal(code), ...fields})` as `.schema`; `headers` derives response headers from a body (`Retry-After`). Status and code must be literals. One `REST_*` definition per code a route or middleware answers (`REST_TABLE_NOT_FOUND`, `REST_RATE_LIMIT_EXCEEDED`, …); a code with a second body shape gets a second definition (`REST_AUTHENTICATION_REQUIRED_BOOTSTRAP`, `/account/status`'s 401 with `bootstrap_available`)
 - `to_error_schemas(defs)` — a status map from definitions: one schema at a status maps to it, more to a `union` in list order
-- `ApiError`, `InvalidInputError`, `PermissionError`, `CredentialTypeRequiredError`, `TokenScopeRequiredError`, `RateLimitError`, `PayloadTooLargeError`, `UnsupportedContentTypeError`, `ForeignKeyError`, and the authorization-phase shapes — standard shapes, `@fuzdev/fuz_schema` schemas; each single-code one is its definition's `.schema`. `InvalidInputError` is one object over the four input codes (`one_of`), so its surface entry is one `enum`
+- `InvalidInputError`, `PermissionError`, `CredentialTypeRequiredError`, `TokenScopeRequiredError`, `RateLimitError`, `PayloadTooLargeError`, `UnsupportedContentTypeError`, `ForeignKeyError`, and the authorization-phase shapes — standard shapes, `@fuzdev/fuz_schema` schemas; each single-code one is its definition's `.schema`. `InvalidInputError` is one object over the four input codes (`one_of`), so its surface entry is one `enum`
 - `ErrorSchemas = Record<number, AnySchema>` — a status map, what `to_error_schemas` groups definitions into: one schema at a status, or a `union` of them
 - `same_rest_error(a, b)` / `dedupe_rest_errors(defs)` — a definition is the same as another when it is the same object, or the same status, code, `headers`, and field schemas; a list keeps the first of each
 - `RateLimitKey` (`rate_limiter.ts`) — `'ip' | 'account' | 'both'`
@@ -216,7 +217,7 @@ route's map keyed `METHOD path` (`route_errors_key`); `create_app_surface_spec`
 builds it once and carries it as `AppSurfaceSpec.route_errors`, and
 `create_app_server` hands the same map to `apply_route_specs`. Every reader
 reads it: the surface (status-keyed, a status's definitions an `anyOf`), the
-DEV output check, `assert_response_matches_spec`, error coverage
+DEV error check, `assert_response_matches_spec`, error coverage
 (`ErrorCoverageCollector`, which reads codes from `defs`), `describe_adversarial_auth`,
 `describe_adversarial_404`, and `assert_error_schema_valid`.
 `get_route_errors(route_errors, spec)` reads a map, or without one resolves the

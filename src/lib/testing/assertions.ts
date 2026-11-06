@@ -19,6 +19,12 @@ import type { AppSurface, AppSurfaceRoute } from '../http/surface.ts';
 import type { RouteErrors } from '../http/schema_helpers.ts';
 import { is_public_auth } from '../http/auth_shape.ts';
 import { parse_any } from '../schema_issues.ts';
+import {
+	check_route_error,
+	format_route_error_check,
+	is_error_status,
+	is_json_response
+} from '../http/route_error_check.ts';
 
 /**
  * Resolve an absolute path relative to the caller's module.
@@ -104,7 +110,8 @@ export const get_route_error_schema = (
 };
 
 /**
- * Assert that an error schema exists for a route+status and validate the body against it.
+ * Assert that a route declares an error — its status, and its `error` code
+ * at that status — and that the body parses against the route's schema there.
  *
  * Protected routes should always have auto-derived error schemas (401 for authenticated,
  * 403 for role-restricted). A missing schema indicates a gap in error schema derivation.
@@ -113,7 +120,8 @@ export const get_route_error_schema = (
  * @param route - the surface route to validate against
  * @param status - expected HTTP status code
  * @param body - the parsed response body to validate
- * @throws AssertionError if no schema is declared for the route+status pair.
+ * @throws AssertionError if no schema is declared for the route+status pair,
+ *   or if the body's `error` is no code the route declares at the status.
  * @throws Error if the body does not satisfy the declared schema, its message
  *   carrying the failed parse's issues (`parse_any`).
  */
@@ -123,13 +131,56 @@ export const assert_error_schema_valid = (
 	status: number,
 	body: unknown
 ): void => {
+	const key = `${route.method} ${route.path}`;
 	const schema = get_route_error_schema(lookup, route, status);
-	assert.ok(schema, `missing error schema for ${status} on ${route.method} ${route.path}`);
+	assert.ok(schema, `missing error schema for ${status} on ${key}`);
+	const code = (body as { error?: unknown } | null)?.error;
+	assert.ok(
+		lookup.get(key)!.defs.some((def) => def.status === status && def.code === code),
+		`${key} declares no error code ${JSON.stringify(code)} at ${status}`
+	);
 	const result = parse_any(schema, body);
 	if (!result.ok) {
 		throw new Error(
-			`error schema mismatch for ${status} on ${route.method} ${route.path}: ${JSON.stringify(
-				result.issues
+			`error schema mismatch for ${status} on ${key}: ${JSON.stringify(result.issues)}`
+		);
+	}
+};
+
+/**
+ * Assert that a response is not an error its route leaves undeclared: a JSON
+ * body at an error status must be at a status the route's error map declares
+ * and parse against it, by the rule the DEV error check runs
+ * (`check_route_error` — a 500 `internal_error` and a 503
+ * `service_unavailable` always accepted, a JSON-RPC error envelope on a
+ * `jsonrpc` route not a REST error body). A success status or a non-JSON
+ * response passes.
+ *
+ * @param errors - the route's error map
+ * @param jsonrpc - whether the route answers JSON-RPC envelopes (`RouteSpec.jsonrpc`)
+ * @param response - the response, read through a clone
+ * @param label - what names the request in a failure
+ * @throws Error on a JSON error the route's map doesn't declare
+ */
+export const assert_error_response_declared = async (
+	errors: RouteErrors,
+	jsonrpc: boolean,
+	response: Response,
+	label: string
+): Promise<void> => {
+	if (!is_error_status(response.status)) return;
+	if (!is_json_response(response)) return;
+	let body: unknown;
+	try {
+		body = await response.clone().json();
+	} catch {
+		return;
+	}
+	const check = check_route_error(errors, response.status, body, jsonrpc);
+	if (!check.ok) {
+		throw new Error(
+			`${format_route_error_check(check, response.status, label)}: ${JSON.stringify(
+				check.kind === 'schema_mismatch' ? check.issues : body
 			)}`
 		);
 	}

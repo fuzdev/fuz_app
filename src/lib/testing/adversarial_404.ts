@@ -15,8 +15,8 @@ import './assert_dev_env.ts';
 import { test, assert, describe } from 'vitest';
 
 import type { RouteSpec } from '../http/route_spec.ts';
-import { get_route_errors, is_null_schema } from '../http/schema_helpers.ts';
-import { parse_any } from '../schema_issues.ts';
+import { is_null_schema } from '../http/schema_helpers.ts';
+import { assert_error_schema_valid } from './assertions.ts';
 import { create_auth_test_apps, create_route_skip_filter, select_auth_app } from './auth_apps.ts';
 import type { AdversarialTestOptions } from './attack_surface.ts';
 import {
@@ -32,8 +32,8 @@ import {
  * 1. Creates a stub handler returning 404 with the first such definition's code
  * 2. Fires a request with valid-format params (nil UUIDs for UUID params)
  * 3. Validates response status is 404
- * 4. Validates response body matches the 404 of the route's error map
- *    (`resolve_route_errors`, `parse_any`)
+ * 4. Validates the code is one the route's error map (`resolve_route_errors`)
+ *    declares at 404, and the body parses against its 404 (`assert_error_schema_valid`)
  */
 export const describe_adversarial_404 = (options: AdversarialTestOptions): void => {
 	const { build, roles } = options;
@@ -108,14 +108,8 @@ export const describe_adversarial_404 = (options: AdversarialTestOptions): void 
 					error_code,
 					`Expected error '${error_code}' for ${key}, got: ${body.error}`
 				);
-				// Validate against the route's declared 404
-				const parsed = parse_any(get_route_errors(route_errors, spec).schemas[404]!, body);
-				assert.ok(
-					parsed.ok,
-					`404 body for ${key} does not match its declared schema: ${
-						parsed.ok ? '' : JSON.stringify(parsed.issues)
-					}`
-				);
+				// the code is the route's own at 404, and the body its schema there
+				assert_error_schema_valid(route_errors, route, 404, body);
 			});
 		}
 	});

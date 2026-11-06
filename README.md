@@ -45,7 +45,8 @@ const {app} = await create_app_server({backend, ...});
 Deno.serve({port: PORT, hostname: HOST}, app.fetch);
 ```
 
-See [CLAUDE.md](CLAUDE.md) for more usage patterns and the AI-generated docs.
+See [CLAUDE.md](CLAUDE.md) for more usage patterns and the AI-generated docs,
+and the [fuz-stack skill](https://docs.fuz.dev/skills/fuz-stack) for coding conventions shared across the Fuz stack.
 
 ## Contributing
 

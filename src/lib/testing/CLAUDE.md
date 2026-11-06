@@ -418,7 +418,8 @@ or Postgres and runs in the `cross-ts` CI job.
 - `assert_only_expected_public_routes(surface, list)` — bidirectional: no unexpected public routes, no missing expected ones. Format: `['GET /health', 'POST /api/account/login']`.
 - `assert_full_middleware_stack(surface, prefix, mws)` — every route under `prefix` has exactly `mws` as its middleware chain.
 - `get_route_error_schema(lookup, route, status)` — reads the route's error map (`lookup` is `AppSurfaceSpec.route_errors`) at a status, a fuz_schema schema.
-- `assert_error_schema_valid(lookup, route, status, body)` — assert a schema exists + parses the body (`parse_any`); a mismatch throws an `Error` carrying the issues.
+- `assert_error_schema_valid(lookup, route, status, body)` — assert the route declares the status and the body's `error` code at it (a definition in its map's `defs`), and the body parses against the status's schema (`parse_any`); a mismatch throws an `Error` carrying the issues. Every adversarial refusal runs through it.
+- `assert_error_response_declared(errors, jsonrpc, response, label)` — a JSON error response (400 and up) is one the route's map declares, by `check_route_error` (the DEV error check's rule: 500 `internal_error` / 503 `service_unavailable` always accepted, a JSON-RPC envelope on a `jsonrpc` route skipped, a success or non-JSON response passing); what the attack-surface suite's `correct auth passes guard` holds each answer to.
 
 ### `surface_invariants.ts` — structural + policy invariants
 
@@ -432,9 +433,9 @@ Structural invariants (options-free, universal):
 - `assert_descriptions_present` — every route has a non-empty description.
 - `assert_no_duplicate_routes` — no duplicate method+path pairs.
 - `assert_middleware_errors_propagated` — every middleware-declared error status appears on every applicable route.
-- `assert_error_schemas_structurally_valid` — every declared error schema has an `error` property at the top level (matches `ApiError`).
+- `assert_error_codes_specific` — every declared error body (each union branch, routes and middleware) has an `error` that is a `const` or an `enum` — a definition built by `rest_error`; the one tightness invariant.
+- `assert_error_codes_well_formed` — every declared `error` code matches `REST_ERROR_CODE_PATTERN` (`^[a-z][a-z0-9_]*$`): a code, never prose, which goes in `message`.
 - `assert_error_code_status_consistency` — the same `z.literal()` error code never appears at two different HTTP statuses.
-- `assert_404_schemas_use_specific_errors` — routes with params declaring 404 must use `z.literal()` or `z.enum()`, not generic `z.string()`.
 
 RPC / WS structural invariants (options-free, apply over `surface.rpc_endpoints`
 
@@ -457,13 +458,6 @@ Policy invariants (configurable, sensible defaults):
 - `assert_no_unexpected_public_mutations` — public mutation routes must be in `public_mutation_allowlist`.
 - `assert_mutation_routes_use_post` — routes with input schemas must not be GET (bypasses browser GET idempotency assumptions).
 - `assert_keeper_routes_under_prefix` — keeper routes must be under `keeper_route_prefixes` (default `['/api/']`).
-
-Tightness audit:
-
-- `audit_error_schema_tightness(surface) => Array<ErrorSchemaAuditEntry>` — classifies every route × status combination as `'literal' | 'enum' | 'generic'`.
-- `assert_error_schema_tightness(surface, options?)` — fails routes below a threshold (`min_specificity`, default `'enum'`) with `allowlist` + `ignore_statuses` escape hatches.
-- `default_error_schema_tightness` — `{}`: nothing exempt, as every declared error is a definition whose `error` is a literal. Applied by `describe_standard_attack_surface_tests` when `error_schema_tightness` is omitted; pass an override config or `null` to opt out.
-- **Merge semantics in `describe_standard_attack_surface_tests`**: consumer-supplied `allowlist` and `ignore_statuses` are concatenated after the defaults', so they are additive rather than replacing. Scalar fields like `min_specificity` are overwritten by the consumer. Exported as `resolve_standard_error_schema_tightness(consumer_options)` for consumers calling `assert_error_schema_tightness` directly outside the suite.
 
 Aggregate runners (called by the standard attack-surface suite):
 
@@ -516,9 +510,9 @@ naming it.
 
 ### `integration_helpers.ts` — route lookup + body checks
 
-- `find_route_spec(specs, method, path)` — exact match then parameterized match (`:foo` matches any segment).
+- `find_route_spec(specs, method, path)` — the first spec in list (mount) order whose method and path template match, as Hono dispatches (the hono-free `find_mounted_route`; the DEV check reads Hono's own router), `HEAD` read as `GET`, the path read as Hono reads it (pathname, percent-decoded); a template passed as the path (a segment that is `*` or starts with `:`) finds its own spec first, outranking mount order.
 - `find_auth_route(specs, suffix, method)` — suffix-ending match for REST auth routes; decouples tests from consumer prefix. `suffix` is typed as `RestAuthRouteSuffix` and throws at runtime on unknown values (only login/logout/password/verify/signup/bootstrap remain on REST).
-- `assert_response_matches_spec(specs, method, path, response, route_errors?)` — 2xx → validates against `spec.output`; non-2xx → validates against the route's error map at that status: the one in `route_errors` (`AppSurfaceSpec.route_errors`, middleware included), else the route's own. Non-JSON responses allowed only when no schema applies.
+- `assert_response_matches_spec(specs, method, path, response, route_errors?)` — 2xx → validates against `spec.output`; an error status (400 and up) → `check_route_error` against the route's error map — the one in `route_errors` (`AppSurfaceSpec.route_errors`, middleware included), else the route's own: a status the map lacks throws (`Undeclared error status (S): METHOD path: …`), as does a body off its schema, with the DEV error check's exemptions (500 `internal_error`, 503 `service_unavailable`, a JSON-RPC envelope on a `jsonrpc` route). Non-JSON responses allowed only when no schema applies. The round trips and `ErrorCoverageCollector.assert_and_record` run through it.
 - `assert_no_error_info_leakage(body, context)` — rejects field-name patterns (`stack`, `trace`, `sql`, …) + value patterns (`node_modules`, stack-like `at …`, `.ts:NN`).
 - `assert_rate_limit_retry_after_header(response, body)` — `Retry-After` numeric header equals `Math.ceil(body.retry_after)`.
 - `sensitive_field_blocklist` — `['password_hash', 'token_hash']`; never in any response body.
@@ -535,12 +529,12 @@ Single-call bundle of 5 top-level groups (10 named tests + every adversarial
 case per route):
 
 1. **attack surface snapshot** — `matches committed snapshot`, `is deterministic`.
-2. **attack surface structure** — `only expected public routes`, `full middleware stack on API routes`, `surface invariants`, `rpc/ws surface invariants`, `security policy`, `error schema tightness` (logs counts and asserts against `default_error_schema_tightness` by default; pass an override config or `null` via `error_schema_tightness`).
-3. **adversarial HTTP auth enforcement** — `unauthenticated → 401`, `wrong role → 403` × roles, `authenticated without role → 403`, `credential-gated routes reject a disallowed credential → 403`, `correct auth passes guard`. The role blocks cover role routes the session-credentialed role apps reach (a keeper route's channel gate answers first); the credential block probes every `auth.credential_types` route on the first builtin channel its allowlist omits, using `AuthTestApps.by_credential_type` (one keeper-role app per builtin channel; `keeper` is its `daemon_token` entry).
+2. **attack surface structure** — `only expected public routes`, `full middleware stack on API routes`, `surface invariants`, `rpc/ws surface invariants`, `security policy`.
+3. **adversarial HTTP auth enforcement** — `unauthenticated → 401`, `wrong role → 403` × roles, `authenticated without role → 403`, `credential-gated routes reject a disallowed credential → 403`, `correct auth passes guard`. Every refusal is held to the route's own error map (`assert_error_schema_valid`: the status, the code at it, the body), and `correct auth passes guard`, which takes any status but the gates' from a handler on stub deps, holds a JSON error it answers to the map too (`assert_error_response_declared`). The role blocks cover role routes the session-credentialed role apps reach (a keeper route's channel gate answers first); the credential block probes every `auth.credential_types` route on the first builtin channel its allowlist omits, using `AuthTestApps.by_credential_type` (one keeper-role app per builtin channel; `keeper` is its `daemon_token` entry).
 4. **adversarial input validation** — delegated to `describe_adversarial_input`.
 5. **adversarial 404 response validation** — delegated to `describe_adversarial_404`.
 
-Options: `{build: () => AppSurfaceSpec, snapshot_path, expected_public_routes, expected_api_middleware, roles, api_path_prefix?, security_policy?, error_schema_tightness?, skip_routes?}`.
+Options: `{build: () => AppSurfaceSpec, snapshot_path, expected_public_routes, expected_api_middleware, roles, api_path_prefix?, security_policy?, skip_routes?}`.
 
 `skip_routes` is a list of `'METHOD /path'` surface keys the three
 adversarial sub-suites drop, forwarded to each of them (it also sits on
@@ -559,7 +553,9 @@ Also exported: `describe_adversarial_auth(options)` (group 3 on its own).
 query validation failures at every route with correct-auth credentials so
 validation middleware is actually exercised (not short-circuited by 401).
 All cases expect 400 with one of `ERROR_INVALID_REQUEST_BODY` /
-`_INVALID_JSON_BODY` / `_INVALID_ROUTE_PARAMS` / `_INVALID_QUERY_PARAMS`.
+`_INVALID_JSON_BODY` / `_INVALID_ROUTE_PARAMS` / `_INVALID_QUERY_PARAMS`, a
+code the route's own error map declares at 400, and a body its schema there
+accepts (`assert_error_schema_valid`).
 
 The generators live in the hono-free `adversarial_input_cases.ts`, so the
 cross-process suites reuse them:
@@ -580,8 +576,8 @@ rather than `ERROR_INVALID_JSON_BODY`.
 `describe_adversarial_404({build, roles})` — for every route with `params` and
 a 404 definition of its own in `errors`, replaces the handler with a stub
 returning `{error: <code>}` (the first 404 definition's code), fires with
-nil-UUID params, asserts 404 + body matches the route error map's 404
-(`parse_any`, `AppSurfaceSpec.route_errors`). No DB needed.
+nil-UUID params, asserts 404, a code the route error map declares at 404, and a body its 404
+accepts (`assert_error_schema_valid`, `AppSurfaceSpec.route_errors`). No DB needed.
 
 ### `adversarial_headers.ts` — header injection suite
 

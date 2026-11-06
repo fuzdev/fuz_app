@@ -30,7 +30,6 @@ import {
 	AccountVanishedError,
 	ActorNotOnAccountError,
 	ActorRequiredError,
-	ApiError,
 	CredentialTypeRequiredError,
 	ERROR_ACCOUNT_VANISHED,
 	ERROR_ACTOR_NOT_ON_ACCOUNT,
@@ -86,7 +85,6 @@ const ZodWireIssue = z.looseObject({
 	received: z.string(),
 	message: z.string()
 });
-const ZodApiError = z.looseObject({ error: z.string() });
 const ZodValidationError = z.looseObject({
 	error: z.enum([
 		ERROR_INVALID_REQUEST_BODY,
@@ -304,7 +302,6 @@ const CODE_POOL: ReadonlyArray<unknown> = [
 ];
 
 const STANDARD_ROWS: Array<Row> = [
-	{ name: 'ApiError', fuz: ApiError, zod: ZodApiError, samples: [{ error: 'x' }] },
 	{
 		name: 'InvalidInputError',
 		fuz: InvalidInputError,
@@ -559,6 +556,12 @@ const DEFINITIONS: Record<
 		code: 'forbidden_origin',
 		zod: zod_error('forbidden_origin'),
 		sample: { error: 'forbidden_origin' }
+	},
+	REST_FORBIDDEN_HOST: {
+		status: 403,
+		code: 'forbidden_host',
+		zod: zod_error('forbidden_host'),
+		sample: { error: 'forbidden_host' }
 	},
 	REST_ALREADY_BOOTSTRAPPED: {
 		status: 403,

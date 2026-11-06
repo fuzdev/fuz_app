@@ -5,8 +5,8 @@ import './assert_dev_env.ts';
  *
  * Two categories:
  * - **Structural** — validate internal consistency (error schema presence,
- *   descriptions, duplicates, middleware propagation, error schema validity,
- *   error code consistency). No options needed.
+ *   descriptions, duplicates, middleware propagation, every error naming a
+ *   code, error code consistency). No options needed.
  * - **Policy** — enforce security policy (sensitive routes rate-limited,
  *   no public mutations, mutation method conventions). Configurable with
  *   sensible defaults.
@@ -37,7 +37,9 @@ import { PROTOCOL_ACTION_METHODS } from '../actions/action_codegen.ts';
 import {
 	ERROR_INVALID_QUERY_PARAMS,
 	ERROR_INVALID_REQUEST_BODY,
-	ERROR_INVALID_ROUTE_PARAMS
+	ERROR_INVALID_ROUTE_PARAMS,
+	REST_ERROR_CODE_PATTERN,
+	is_rest_error_code
 } from '../http/error_schemas.ts';
 
 // --- Structural invariants ---
@@ -171,46 +173,80 @@ export const assert_middleware_errors_propagated = (surface: AppSurface): void =
 };
 
 /**
- * Every route's declared error schemas must have an `error` field at the top level
- * (conforming to the `ApiError` base shape `{error: string}`).
+ * Every error a route or middleware layer declares names its code exactly:
+ * each body at each status (each branch of an `anyOf` or `oneOf`) is an
+ * object whose `error` is a `const` or an `enum` — what a definition built by
+ * `rest_error` writes. A bare string `error`, or a body with no `error`, is a
+ * contract a client can't key on.
  *
- * Walks union branches (`anyOf` from `z.union`, `oneOf` from
- * `z.discriminatedUnion`) so every emit shape inside a merged 400 / 404
- * is checked, not just the top-level wrapper.
- *
- * Catches typos in error schema definitions and ensures consumers can always
- * read `.error` from error responses.
+ * @throws AssertionError naming the route or layer, the status, and the body
  */
-export const assert_error_schemas_structurally_valid = (surface: AppSurface): void => {
-	for (const route of surface.routes) {
-		if (!route.error_schemas) continue;
-		for (const [status, schema] of Object.entries(route.error_schemas)) {
-			assert_branch_has_error_property(schema, format_route_key(route), status);
+export const assert_error_codes_specific = (surface: AppSurface): void => {
+	for (const { label, status, branch } of each_error_branch(surface)) {
+		const error_prop = get_error_property(branch);
+		assert.ok(
+			error_prop && (typeof error_prop.const === 'string' || Array.isArray(error_prop.enum)),
+			`${label} error schema for status ${status} does not name its code — ` +
+				`declare it with rest_error: ${JSON.stringify(branch)}`
+		);
+	}
+};
+
+/**
+ * Every declared `error` code is a code — `REST_ERROR_CODE_PATTERN`, a
+ * lowercase letter then lowercase letters, digits, and `_` — never prose,
+ * which belongs in `message`. `rest_error` refuses one off the pattern; this
+ * holds a surface built another way (a snapshot, a hand-written layer) to the
+ * same rule.
+ *
+ * @throws AssertionError naming the route or layer, the status, and the code
+ */
+export const assert_error_codes_well_formed = (surface: AppSurface): void => {
+	for (const { label, status, branch } of each_error_branch(surface)) {
+		const error_prop = get_error_property(branch);
+		if (!error_prop) continue;
+		const codes: Array<unknown> =
+			error_prop.const !== undefined
+				? [error_prop.const]
+				: Array.isArray(error_prop.enum)
+					? error_prop.enum
+					: [];
+		for (const code of codes) {
+			assert.ok(
+				is_rest_error_code(code),
+				`${label} error code ${JSON.stringify(code)} at status ${status} is not a code ` +
+					`(${REST_ERROR_CODE_PATTERN.source}) — put prose in \`message\``
+			);
 		}
 	}
 };
 
-const assert_branch_has_error_property = (
-	schema: unknown,
-	route_key: string,
-	status: string
-): void => {
-	const branches = get_union_branches(schema);
-	if (branches) {
-		for (const branch of branches) {
-			assert_branch_has_error_property(branch, route_key, status);
+/** Every body every route and middleware layer declares, one per union branch. */
+const each_error_branch = (
+	surface: AppSurface
+): Array<{ label: string; status: string; branch: unknown }> => {
+	const out: Array<{ label: string; status: string; branch: unknown }> = [];
+	const visit = (label: string, status: string, schema: unknown): void => {
+		const branches = get_union_branches(schema);
+		if (branches) {
+			for (const branch of branches) visit(label, status, branch);
+			return;
 		}
-		return;
+		out.push({ label, status, branch: schema });
+	};
+	for (const route of surface.routes) {
+		if (!route.error_schemas) continue;
+		for (const [status, schema] of Object.entries(route.error_schemas)) {
+			visit(format_route_key(route), status, schema);
+		}
 	}
-	if (typeof schema !== 'object' || schema === null) return;
-	const s = schema as Record<string, unknown>;
-	if (s.type === 'object' && s.properties && typeof s.properties === 'object') {
-		const props = s.properties as Record<string, unknown>;
-		assert.ok(
-			'error' in props,
-			`${route_key} error schema for status ${status} missing 'error' property`
-		);
+	for (const mw of surface.middleware) {
+		if (!mw.error_schemas) continue;
+		for (const [status, schema] of Object.entries(mw.error_schemas)) {
+			visit(`middleware '${mw.name}'`, status, schema);
+		}
 	}
+	return out;
 };
 
 /**
@@ -269,8 +305,8 @@ export const assert_error_code_status_consistency = (surface: AppSurface): void 
 /**
  * Extract the `error` property's JSON Schema from a route error schema.
  *
- * Navigates `schema.properties.error` — the common structure for all
- * `ApiError`-shaped schemas. Returns `null` if the schema doesn't conform.
+ * Navigates `schema.properties.error` — every error body is an object with
+ * an `error` code. Returns `null` if the schema doesn't conform.
  */
 const get_error_property = (schema: unknown): Record<string, unknown> | null => {
 	if (typeof schema !== 'object' || schema === null) return null;
@@ -284,9 +320,9 @@ const get_error_property = (schema: unknown): Record<string, unknown> | null => 
 /**
  * Read the branch array off a JSON Schema union, if present.
  *
- * Zod 4 emits `anyOf` for `z.union(...)` and `oneOf` for
- * `z.discriminatedUnion(...)` via `z.toJSONSchema`; both are union-shaped
- * for tightness/code-extraction purposes. Nested unions are NOT flattened
+ * The surface writes a status with several definitions as an `anyOf`, and a
+ * `oneOf` from a JSON Schema written another way is read the same; both are
+ * union-shaped for code extraction. Nested unions are NOT flattened
  * by `toJSONSchema`, so every caller must recurse through the returned
  * branches. Returns the branch array or `null` for non-union schemas.
  */
@@ -321,147 +357,6 @@ const extract_error_consts = (schema: unknown): Array<string> => {
 	if (!error_prop) return [];
 	if (typeof error_prop.const === 'string') return [error_prop.const];
 	return [];
-};
-
-/**
- * Check if a JSON Schema error property uses specific error codes (`const` or `enum`),
- * not just generic `z.string()` (`{type: 'string'}`).
- *
- * Returns `true` for `z.literal()` (`{const: '...'}`) and `z.enum()` (`{enum: [...]}`),
- * and for union schemas where every branch is specific. Defers to
- * `classify_error_specificity` so the union walk stays in one place.
- */
-const has_specific_error_schema = (schema: unknown): boolean =>
-	classify_error_specificity(schema) !== 'generic';
-
-/**
- * Routes declaring 404 error schemas should use specific `z.literal()` or `z.enum()`
- * error codes, not generic `z.string()`.
- *
- * A generic 404 schema (`ApiError` with `z.string()`) means the error code is
- * unconstrained — the handler could return any string, making client error handling
- * fragile. Routes with params (`:id`) are the primary 404 producers; their error
- * schemas should use specific constants like `ERROR_ACCOUNT_NOT_FOUND`.
- *
- * Only flags routes that have `params_schema` (param-driven resource lookup) — routes
- * declaring 404 for other reasons (e.g., bootstrap not configured) may legitimately
- * use generic schemas.
- */
-export const assert_404_schemas_use_specific_errors = (surface: AppSurface): void => {
-	for (const route of surface.routes) {
-		if (!route.error_schemas || !('404' in route.error_schemas)) continue;
-		if (route.params_schema === null) continue;
-		assert.ok(
-			has_specific_error_schema(route.error_schemas['404']),
-			`${format_route_key(route)} declares 404 with params but uses generic error schema — ` +
-				`use a specific z.literal() or z.enum() error code`
-		);
-	}
-};
-
-// --- Audit tools ---
-
-/** Specificity level of an error schema's `error` field. */
-export type ErrorSchemaSpecificity = 'literal' | 'enum' | 'generic';
-
-/** A single entry in the error schema tightness audit report. */
-export interface ErrorSchemaAuditEntry {
-	method: string;
-	route_path: string;
-	status: string;
-	specificity: ErrorSchemaSpecificity;
-	/** The literal value or enum values, if specific. */
-	error_codes: Array<string> | null;
-}
-
-/**
- * Classify the specificity of a JSON Schema error property.
- *
- * - `'literal'` — `z.literal()` (`{const: '...'}`)
- * - `'enum'` — `z.enum()` (`{enum: [...]}`)
- * - `'generic'` — `z.string()` or unrecognized
- *
- * Walks union branches (`anyOf` from `z.union`, `oneOf` from
- * `z.discriminatedUnion`) — the surface writes a route's status as an
- * `anyOf` when its error map holds more than one definition there (e.g. a
- * validation 400 beside the actor-resolution 400s), and a `oneOf` from a
- * JSON Schema written another way is read the same. Reports the **minimum**
- * specificity across branches — a union's contract is only as tight as
- * its loosest member.
- */
-const classify_error_specificity = (schema: unknown): ErrorSchemaSpecificity => {
-	const branches = get_union_branches(schema);
-	if (branches) {
-		if (branches.length === 0) return 'generic';
-		let min: ErrorSchemaSpecificity = 'literal';
-		for (const branch of branches) {
-			const branch_specificity = classify_error_specificity(branch);
-			if (SPECIFICITY_ORDER[branch_specificity] < SPECIFICITY_ORDER[min]) {
-				min = branch_specificity;
-			}
-		}
-		return min;
-	}
-	const error_prop = get_error_property(schema);
-	if (!error_prop) return 'generic';
-	if (typeof error_prop.const === 'string') return 'literal';
-	if (Array.isArray(error_prop.enum)) return 'enum';
-	return 'generic';
-};
-
-/**
- * Extract error code values from a JSON Schema error property.
- *
- * Returns the literal value or enum array, or `null` for generic schemas.
- *
- * For union schemas (`anyOf` / `oneOf`), collects codes from every branch
- * (deduped). If any branch is generic, returns `null` because the union
- * admits arbitrary strings on that branch.
- */
-const extract_error_codes = (schema: unknown): Array<string> | null => {
-	const branches = get_union_branches(schema);
-	if (branches) {
-		const codes = new Set<string>();
-		for (const branch of branches) {
-			const branch_codes = extract_error_codes(branch);
-			if (branch_codes === null) return null;
-			for (const code of branch_codes) codes.add(code);
-		}
-		return [...codes];
-	}
-	const error_prop = get_error_property(schema);
-	if (!error_prop) return null;
-	if (typeof error_prop.const === 'string') return [error_prop.const];
-	if (Array.isArray(error_prop.enum))
-		return error_prop.enum.filter((v): v is string => typeof v === 'string');
-	return null;
-};
-
-/**
- * Audit error schema tightness across all routes in a surface.
- *
- * Reports which route x status code combinations use generic `ApiError`
- * (`z.string()`) vs specific `z.literal()` or `z.enum()` error codes.
- * Use the output to prioritize progressive tightening of error schemas.
- *
- * @returns audit entries for every route x status combination
- */
-export const audit_error_schema_tightness = (surface: AppSurface): Array<ErrorSchemaAuditEntry> => {
-	const entries: Array<ErrorSchemaAuditEntry> = [];
-	for (const route of surface.routes) {
-		if (!route.error_schemas) continue;
-		for (const [status, schema] of Object.entries(route.error_schemas)) {
-			const specificity = classify_error_specificity(schema);
-			entries.push({
-				method: route.method,
-				route_path: route.path,
-				status,
-				specificity,
-				error_codes: extract_error_codes(schema)
-			});
-		}
-	}
-	return entries;
 };
 
 // --- RPC / WS structural invariants ---
@@ -745,74 +640,6 @@ export const assert_keeper_routes_under_prefix = (
 	}
 };
 
-// --- Error schema tightness assertion ---
-
-/** Numeric specificity ranking for threshold comparisons. */
-const SPECIFICITY_ORDER: Record<ErrorSchemaSpecificity, number> = {
-	literal: 2,
-	enum: 1,
-	generic: 0
-};
-
-/** Options for `assert_error_schema_tightness`. */
-export interface ErrorSchemaTightnessOptions {
-	/** Minimum specificity level. Error schemas below this threshold fail. Default: `'enum'`. */
-	min_specificity?: ErrorSchemaSpecificity;
-	/** HTTP status codes to skip (e.g., middleware-injected codes). */
-	ignore_statuses?: Array<number>;
-	/** Routes to skip, in `'METHOD /path'` format. */
-	allowlist?: Array<string>;
-}
-
-/**
- * Baseline error schema tightness applied by
- * `describe_standard_attack_surface_tests` when no config is passed:
- * `min_specificity: 'enum'` (the assertion default), with no status or route
- * exempt. Every error a route declares is a definition (`rest_error`), whose
- * `error` is a literal, so the framework's own 401/403/429 need no exemption.
- * Consumers can pass a config with project-specific `allowlist` or
- * `ignore_statuses` entries, or pass `null` to skip the assertion entirely.
- */
-export const default_error_schema_tightness: ErrorSchemaTightnessOptions = {};
-
-/**
- * Assert that all error schemas meet a minimum specificity threshold.
- *
- * Calls `audit_error_schema_tightness` and fails on any entry below
- * the configured threshold. Use `allowlist` and `ignore_statuses` to exclude
- * known exceptions during progressive tightening.
- *
- * @throws AssertionError listing every route × status combination whose error
- *   schema specificity is below `min_specificity` (default `'enum'`) and is
- *   not in `allowlist` or `ignore_statuses`.
- */
-export const assert_error_schema_tightness = (
-	surface: AppSurface,
-	options?: ErrorSchemaTightnessOptions
-): void => {
-	const min_specificity = options?.min_specificity ?? 'enum';
-	const ignore_statuses = new Set(options?.ignore_statuses?.map(String));
-	const allowlist = new Set(options?.allowlist);
-	const threshold = SPECIFICITY_ORDER[min_specificity];
-
-	const entries = audit_error_schema_tightness(surface);
-	const failures: Array<string> = [];
-
-	for (const entry of entries) {
-		if (ignore_statuses.has(entry.status)) continue;
-		const key = `${entry.method} ${entry.route_path}`;
-		if (allowlist.has(key)) continue;
-		if (SPECIFICITY_ORDER[entry.specificity] < threshold) {
-			failures.push(`${key} → ${entry.status} (${entry.specificity})`);
-		}
-	}
-
-	assert.ok(
-		failures.length === 0,
-		`Error schemas below '${min_specificity}' threshold:\n  ${failures.join('\n  ')}`
-	);
-};
-
 // --- Aggregate runners ---
 
 /**
@@ -820,8 +647,8 @@ export const assert_error_schema_tightness = (
  *
  * Catches schema/surface generation bugs: missing 401/403/400 declarations,
  * empty descriptions, duplicate routes, middleware-injected error codes
- * unpropagated to routes, structurally invalid error schemas, error codes
- * appearing at multiple statuses, and generic 404 schemas on param routes.
+ * unpropagated to routes, an error that doesn't name its code or whose code
+ * is not one, and error codes appearing at multiple statuses.
  *
  * @throws AssertionError on the first invariant violation; the message names
  *   the offending route and the missing/inconsistent field.
@@ -835,9 +662,9 @@ export const assert_surface_invariants = (surface: AppSurface): void => {
 	assert_descriptions_present(surface);
 	assert_no_duplicate_routes(surface);
 	assert_middleware_errors_propagated(surface);
-	assert_error_schemas_structurally_valid(surface);
+	assert_error_codes_specific(surface);
+	assert_error_codes_well_formed(surface);
 	assert_error_code_status_consistency(surface);
-	assert_404_schemas_use_specific_errors(surface);
 };
 
 /**

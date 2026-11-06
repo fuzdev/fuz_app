@@ -5,11 +5,13 @@
  */
 
 import { describe, assert, test } from 'vitest';
-import { parse } from '@fuzdev/fuz_schema/schema.ts';
+import { parse, string } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
-	ApiError,
 	InvalidInputError,
+	REST_ERROR_CODE_PATTERN,
+	is_rest_error_code,
+	rest_error,
 	PermissionError,
 	CredentialTypeRequiredError,
 	RateLimitError,
@@ -64,22 +66,69 @@ import {
 	AccountVanishedError
 } from '#lib/http/error_schemas.ts';
 
+describe('rest_error codes', () => {
+	test('a code is a lowercase letter, then lowercase letters, digits and _', () => {
+		for (const code of ['a', 'not_found', 'error_2', 'x_y_z']) {
+			assert.isTrue(is_rest_error_code(code), code);
+			assert.strictEqual(rest_error(400, code as 'x').code, code);
+		}
+		assert.strictEqual(REST_ERROR_CODE_PATTERN.source, '^[a-z][a-z0-9_]*$');
+	});
+
+	test('a definition refuses prose, throwing at definition', () => {
+		const refused = [
+			'',
+			'File not found',
+			'not-found',
+			'Not_found',
+			'_leading',
+			'2fa_required',
+			'trailing ',
+			'dotted.code',
+			'with:colon',
+			'emoji_🙂'
+		];
+		for (const code of refused) {
+			assert.isFalse(is_rest_error_code(code), code);
+			// the type-level check refuses most of these too; the runtime one is the whole grammar
+			assert.throws(() => rest_error(400, code as 'x'), /is not an error code/, code);
+		}
+		assert.isFalse(is_rest_error_code(42));
+	});
+
+	test('a definition refuses fields with an error entry, which would replace its code', () => {
+		assert.throws(
+			() => rest_error(404, 'thing_not_found', { error: string }),
+			/hold an `error` entry/
+		);
+	});
+
+	test('the type refuses a literal code plainly off the grammar', () => {
+		// a call whose code the type refuses still throws at runtime — a cast is no way around it
+		assert.throws(() => {
+			// @ts-expect-error - prose
+			rest_error(404, 'File not found');
+		});
+		assert.throws(() => {
+			// @ts-expect-error - uppercase
+			rest_error(404, 'Not_found');
+		});
+		assert.throws(() => {
+			// @ts-expect-error - a leading digit
+			rest_error(404, '2fa');
+		});
+		assert.throws(() => {
+			// @ts-expect-error - a hyphen
+			rest_error(404, 'not-found');
+		});
+		assert.throws(() => {
+			// @ts-expect-error - empty
+			rest_error(404, '');
+		});
+	});
+});
+
 describe('standard error schemas', () => {
-	test('ApiError accepts basic error response', () => {
-		const result = parse(ApiError, { error: ERROR_AUTHENTICATION_REQUIRED });
-		assert.isTrue(result.ok);
-	});
-
-	test('ApiError allows extra fields (looseObject)', () => {
-		const result = parse(ApiError, { error: 'test', extra: 'field' });
-		assert.isTrue(result.ok);
-	});
-
-	test('ApiError rejects missing error field', () => {
-		const result = parse(ApiError, { message: 'wrong' });
-		assert.isFalse(result.ok);
-	});
-
 	test('InvalidInputError accepts error with issues', () => {
 		const result = parse(InvalidInputError, {
 			error: 'invalid_request_body',
@@ -329,7 +378,9 @@ describe('error code constants', () => {
 	});
 
 	test('constants are used by standard error schemas', () => {
-		assert.isTrue(parse(ApiError, { error: ERROR_AUTHENTICATION_REQUIRED }).ok);
+		assert.isTrue(
+			parse(REST_AUTHENTICATION_REQUIRED.schema, { error: ERROR_AUTHENTICATION_REQUIRED }).ok
+		);
 		assert.isTrue(
 			parse(PermissionError, {
 				error: ERROR_INSUFFICIENT_PERMISSIONS,

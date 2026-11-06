@@ -259,9 +259,9 @@ describe('TableState.delete_row', () => {
 		assert.strictEqual(state.total, 1);
 	});
 
-	test('sets delete_error on failure', async () => {
+	test('sets delete_error to the message on failure, preferred to the code', async () => {
 		fetch_mock.mockResolvedValueOnce(
-			json_response({ error: 'foreign_key_violation', detail: 'referenced by sessions' }, 409)
+			json_response({ error: 'foreign_key_violation', message: 'referenced by sessions' }, 409)
 		);
 
 		const state = new TableState();
@@ -273,10 +273,10 @@ describe('TableState.delete_row', () => {
 		const result = await state.delete_row({ id: '1' });
 
 		assert.strictEqual(result, false);
-		assert.strictEqual(state.delete_error, 'foreign_key_violation: referenced by sessions');
+		assert.strictEqual(state.delete_error, 'referenced by sessions');
 	});
 
-	test('sets delete_error with fallback when error field is missing', async () => {
+	test('sets delete_error with fallback when the body has neither message nor error', async () => {
 		fetch_mock.mockResolvedValueOnce(json_response({ detail: 'something went wrong' }, 500));
 
 		const state = new TableState();
@@ -288,10 +288,10 @@ describe('TableState.delete_row', () => {
 		const result = await state.delete_row({ id: '1' });
 
 		assert.strictEqual(result, false);
-		assert.strictEqual(state.delete_error, 'unknown error: something went wrong');
+		assert.strictEqual(state.delete_error, 'Error: 500');
 	});
 
-	test('sets delete_error to error field when no detail', async () => {
+	test('sets delete_error to the error code when no message', async () => {
 		fetch_mock.mockResolvedValueOnce(json_response({ error: 'row_not_found' }, 404));
 
 		const state = new TableState();

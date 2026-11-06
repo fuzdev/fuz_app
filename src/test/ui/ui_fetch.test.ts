@@ -6,7 +6,7 @@
 
 import { describe, assert, test, vi } from 'vitest';
 
-import { ui_fetch, parse_response_error } from '#lib/ui/ui_fetch.ts';
+import { ui_fetch, parse_response_error, format_error_body } from '#lib/ui/ui_fetch.ts';
 
 describe('ui_fetch', () => {
 	test('sets credentials to include', async () => {
@@ -50,16 +50,36 @@ describe('parse_response_error', () => {
 		assert.strictEqual(result, 'unauthorized');
 	});
 
-	test('uses fallback when JSON has no error field', async () => {
-		const response = new Response(JSON.stringify({ message: 'oops' }), { status: 500 });
-		const result = await parse_response_error(response, 'Something went wrong');
-		assert.strictEqual(result, 'Something went wrong');
+	test('prefers the message to the error code', async () => {
+		const response = new Response(
+			JSON.stringify({ error: 'file_not_found', message: 'No file at that path.' }),
+			{ status: 404 }
+		);
+		assert.strictEqual(await parse_response_error(response), 'No file at that path.');
 	});
 
-	test('uses default message when no fallback and no error field', async () => {
+	test('reads a message with no error code', async () => {
 		const response = new Response(JSON.stringify({ message: 'oops' }), { status: 500 });
-		const result = await parse_response_error(response);
-		assert.strictEqual(result, 'Error: 500');
+		assert.strictEqual(await parse_response_error(response, 'Something went wrong'), 'oops');
+	});
+
+	test('an empty or non-string message falls back to the code', async () => {
+		for (const message of ['', 42, null]) {
+			const response = new Response(JSON.stringify({ error: 'conflict', message }), {
+				status: 409
+			});
+			assert.strictEqual(await parse_response_error(response), 'conflict');
+		}
+	});
+
+	test('uses fallback when JSON has neither message nor error', async () => {
+		const response = new Response(JSON.stringify({ detail: 'oops' }), { status: 500 });
+		assert.strictEqual(
+			await parse_response_error(response, 'Something went wrong'),
+			'Something went wrong'
+		);
+		const bare = new Response(JSON.stringify({ detail: 'oops' }), { status: 500 });
+		assert.strictEqual(await parse_response_error(bare), 'Error: 500');
 	});
 
 	test('uses fallback for non-JSON response body', async () => {
@@ -84,5 +104,20 @@ describe('parse_response_error', () => {
 		const response = new Response(JSON.stringify({ error: 42 }), { status: 400 });
 		const result = await parse_response_error(response, 'Bad request');
 		assert.strictEqual(result, 'Bad request');
+	});
+});
+
+describe('format_error_body', () => {
+	test('the message, else the code, else the fallback', () => {
+		assert.strictEqual(format_error_body({ error: 'a_code', message: 'Prose.' }, 'f'), 'Prose.');
+		assert.strictEqual(format_error_body({ error: 'a_code' }, 'f'), 'a_code');
+		assert.strictEqual(format_error_body({ error: '', message: '' }, 'f'), 'f');
+		assert.strictEqual(format_error_body({ error: 1 }, 'f'), 'f');
+	});
+
+	test('a body that is no object is the fallback', () => {
+		for (const body of [null, undefined, 'text', 3, ['error']]) {
+			assert.strictEqual(format_error_body(body, 'f'), 'f');
+		}
 	});
 });

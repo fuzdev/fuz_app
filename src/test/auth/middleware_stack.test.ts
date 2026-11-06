@@ -11,7 +11,11 @@
 import { describe, test, assert } from 'vitest';
 
 import { create_test_middleware_stack_app, TEST_MIDDLEWARE_PATH } from '#lib/testing/middleware.ts';
-import { describe_standard_adversarial_headers } from '#lib/testing/adversarial_headers.ts';
+import {
+	create_standard_adversarial_cases,
+	describe_standard_adversarial_headers
+} from '#lib/testing/adversarial_headers.ts';
+import { REST_FORBIDDEN_ORIGIN } from '#lib/http/error_schemas.ts';
 import {
 	create_test_raw_api_token,
 	create_test_validated_api_token
@@ -64,6 +68,19 @@ describe_standard_adversarial_headers(
 	{ connection_ip: TRUSTED_PROXY },
 	ALLOWED_ORIGIN
 );
+
+describe('the standard adversarial header cases', () => {
+	test('each refusal is an error definition, at the status the case expects', () => {
+		const refusals = create_standard_adversarial_cases(ALLOWED_ORIGIN).filter(
+			(tc) => tc.expected_error
+		);
+		assert.ok(refusals.length > 0);
+		for (const tc of refusals) {
+			assert.strictEqual(tc.expected_error, REST_FORBIDDEN_ORIGIN, tc.name);
+			assert.strictEqual(tc.expected_status, tc.expected_error?.status, tc.name);
+		}
+	});
+});
 
 // --- Host header spoofing ---
 

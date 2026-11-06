@@ -144,13 +144,7 @@ export class TableState {
 				{ method: 'DELETE' }
 			);
 			if (!response.ok) {
-				try {
-					const data = await response.json();
-					const error_msg = data.error || 'unknown error';
-					this.delete_error = data.detail ? `${error_msg}: ${data.detail}` : error_msg;
-				} catch {
-					this.delete_error = `Error: ${response.status}`;
-				}
+				this.delete_error = await parse_response_error(response);
 				return false;
 			}
 			// Remove from UI

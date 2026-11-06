@@ -401,7 +401,10 @@ definition, `rest_error(status, code, fields?, headers?)`: its status, its
 (`REST_TABLE_NOT_FOUND`, `REST_RATE_LIMIT_EXCEEDED`, …). The `ERROR_*`
 constants carry no status, since they double as JSON-RPC `data.reason`s.
 `RouteSpec.errors` and `MiddlewareSpec.errors` are lists of definitions, so
-every declared error names its code. Standard shapes: `ApiError`,
+every declared error names its code, and a code is a code:
+`rest_error` refuses one off `^[a-z][a-z0-9_]*$` (`REST_ERROR_CODE_PATTERN`),
+so prose goes in `message`, which the UI shows in preference to the code
+(`format_error_body`, `ui/ui_fetch.ts`). Standard shapes:
 `InvalidInputError`, `PermissionError`, `CredentialTypeRequiredError`,
 `TokenScopeRequiredError`, `RateLimitError`, `PayloadTooLargeError`,
 `UnsupportedContentTypeError`, `ForeignKeyError` — all loose objects, each
@@ -436,10 +439,18 @@ shapes of one code at one status are both kept.
 
 `create_app_surface_spec` builds every route's map once
 (`AppSurfaceSpec.route_errors`, keyed `METHOD path`), and `create_app_server`
-passes the same map to `apply_route_specs`. Every reader reads it: the
+hands the same map to the DEV error check. Every reader reads it: the
 surface, which stays status-keyed (a status with several definitions is an
-`anyOf` of their bodies), the DEV output check, `assert_response_matches_spec`,
+`anyOf` of their bodies), the DEV error check, `assert_response_matches_spec`,
 error coverage, and the attack-surface suites.
+
+An error a route answers that its map doesn't declare fails: the DEV error
+check logs it, `assert_response_matches_spec` (and so the round trips) throws,
+and the adversarial suites hold every refusal to the route's own map — its
+status, its code there, and its body. A 500 `internal_error` and a 503
+`service_unavailable` are the exceptions, answerable on any route and declared
+by none. Run against the Rust spine over the cross-process round trip, this is
+REST error-code parity between the spines.
 
 `RouteSpec.rate_limit?: RateLimitKey` (`'ip' | 'account' | 'both'`) declares what a
 route's rate limiter is keyed on — metadata for surface introspection and policy
@@ -481,7 +492,7 @@ transport, while a foreign error class carrying a JSON-RPC `code` is masked
 as `internal_error`:
 
 - **REST** — `wrap_error_catch` in `http/route_spec.ts` flattens to the
-  `ApiError` shape `{error: <reason>, message?, ...rest}`. `reason` comes
+  flat REST error shape `{error: <reason>, message?, ...rest}`. `reason` comes
   from `err.data.reason` (handler override) or falls back to
   `jsonrpc_error_code_to_name(err.code)` (e.g. `-32600` →
   `invalid_request`). HTTP status comes from `jsonrpc_error_code_to_status`.
@@ -556,14 +567,19 @@ Coverage spans every action-handler surface — two validation sites, one
 per transport family:
 
 - **REST routes** — `wrap_output_validation` in `http/route_spec.ts` (applied
-  by `apply_route_specs`). Validates 2xx JSON responses against
-  `RouteSpec.output`, and non-2xx JSON responses against the route's error
-  map at that status, middleware included — including the body
-  the error catch builds from a thrown `ThrownJsonrpcError`, since validation
-  wraps the catch. A 500 `internal_error` is always accepted: the catch
-  answers it for any generic throw, on any route. Streaming responses
-  (SSE) are skipped via a `Content-Type` check. Clones the `Response` body
-  so validation does not consume the stream.
+  by `apply_route_specs`) validates 2xx JSON responses against
+  `RouteSpec.output`. Error responses are checked in one place for the
+  whole app: `create_dev_route_error_check` (`http/dev_route_error_check.ts`),
+  an outer middleware `create_app_server` mounts outermost, so a middleware's
+  refusal counts as much as a handler's or the body the error catch builds
+  from a thrown `ThrownJsonrpcError`. It finds the request's route (the first
+  route spec in mount order matching it, `HEAD` as `GET`) and logs a JSON
+  error at a status the route's map doesn't declare, or off its schema. A
+  500 `internal_error` and a 503 `service_unavailable` are always accepted,
+  a JSON-RPC error envelope on the RPC endpoint is not a REST body, and an
+  unmatched path is skipped. Streaming and other non-JSON responses
+  are skipped via a `Content-Type` check. Both clone the `Response` body so
+  validation does not consume the stream.
 - **JSON-RPC + WebSocket actions** — the shared `perform_action` core in
   `actions/perform_action.ts`. Validates the handler return value against
   `spec.output` before the result envelope is written. Runs inside the
@@ -580,8 +596,9 @@ checked against their schemas during any DEV test or manual request
 that hits the code path.
 
 Production behavior: `wrap_output_validation` and the `if (DEV)` block
-inside `actions/perform_action.ts` short-circuit to the unwrapped handler
-— zero runtime cost and no schema-parse work on the hot path.
+inside `actions/perform_action.ts` short-circuit to the unwrapped handler,
+and `create_dev_route_error_check` returns `null`, so `create_app_server`
+mounts nothing — zero runtime cost and no schema-parse work on the hot path.
 
 The receiving side is a different boundary. A client's `ActionEvent`
 validates a response's `result` against `spec.output` in every mode — to

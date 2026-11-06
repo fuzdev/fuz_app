@@ -120,6 +120,14 @@ export const ERROR_INVALID_CONTENT_LENGTH = 'invalid_content_length' as const;
 export const ERROR_FORBIDDEN_ORIGIN = 'forbidden_origin' as const;
 
 /**
+ * The request's `Host` names a host the server doesn't answer to — the Rust
+ * spine's DNS-rebinding gate (`host_gate`), its `FORBIDDEN_HOST_REASON`. The
+ * TS spine has no host gate; a surface describing a Rust server that mounts
+ * one declares it.
+ */
+export const ERROR_FORBIDDEN_HOST = 'forbidden_host' as const;
+
+/**
  * A `POST` whose `Content-Type` the route refuses: anything but
  * `application/json` on a JSON route, a CORS-safelisted type or none on a
  * `raw_body` one. See `http/simple_request.ts`.
@@ -325,14 +333,53 @@ export interface RestErrorDef<
 type Exact<T, TWide> = TWide extends T ? never : T;
 
 /**
+ * The grammar of an `error` code: a lowercase ASCII letter, then lowercase
+ * letters, digits, and `_` — a code, never prose. Prose goes in `message`.
+ */
+export const REST_ERROR_CODE_PATTERN = /^[a-z][a-z0-9_]*$/;
+
+/** The characters a code can't start with, beside an uppercase letter. */
+type CodeHeadRefused = '_' | '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9';
+
+/** Characters prose has and a code doesn't, beside an uppercase letter. */
+type CodeCharRefused = ' ' | '-' | '.' | ',' | ':' | '/' | "'" | '!' | '?';
+
+/**
+ * Refuses, at the type level, only the forms plainly off
+ * `REST_ERROR_CODE_PATTERN`: empty, holding an uppercase letter, starting with
+ * a digit or `_`, or holding a space or one of a few punctuation marks. Other
+ * characters (`@`, `#`, `(`, non-ASCII), and a code typed as a union, pass
+ * it. The runtime check in `rest_error` is the authority on the grammar.
+ */
+type RestErrorCode<T extends string> = T extends ''
+	? never
+	: T extends Lowercase<T>
+		? T extends `${CodeHeadRefused}${string}`
+			? never
+			: T extends `${string}${CodeCharRefused}${string}`
+				? never
+				: T
+		: never;
+
+/**
+ * Whether a value is an `error` code, by `REST_ERROR_CODE_PATTERN`.
+ *
+ * @param value - the value to test
+ */
+export const is_rest_error_code = (value: unknown): value is string =>
+	typeof value === 'string' && REST_ERROR_CODE_PATTERN.test(value);
+
+/**
  * Define a REST error: its status, its code, and the fields its body carries
  * beside `error`.
  *
  * @param status - the HTTP status it answers at, a literal
- * @param code - the `error` code, a literal, usually an `ERROR_*` constant
+ * @param code - the `error` code, a literal matching `REST_ERROR_CODE_PATTERN`, usually an `ERROR_*` constant
  * @param fields - the body's other entries
  * @param headers - the response headers to derive from a body
  * @returns the definition, its body schema a `loose_object`
+ * @throws Error when `code` is not an error code (`REST_ERROR_CODE_PATTERN`), or
+ *   when `fields` has an own `error` entry, which would replace the code
  */
 // @__NO_SIDE_EFFECTS__
 export const rest_error = <
@@ -343,10 +390,20 @@ export const rest_error = <
 	const TFields extends SchemaEntries = Record<never, never>
 >(
 	status: Exact<TStatus, number>,
-	code: Exact<TCode, string>,
+	code: Exact<RestErrorCode<TCode>, string>,
 	fields?: TFields,
 	headers?: (body: RestErrorBody<TCode, TFields>) => Record<string, string>
 ): RestErrorDef<TStatus, TCode, TFields> => {
+	if (fields && Object.hasOwn(fields, 'error')) {
+		throw new Error(
+			`rest_error: fields of ${JSON.stringify(code)} hold an \`error\` entry, which would replace its code`
+		);
+	}
+	if (!is_rest_error_code(code)) {
+		throw new Error(
+			`rest_error: ${JSON.stringify(code)} is not an error code (${REST_ERROR_CODE_PATTERN.source}) — put prose in \`message\``
+		);
+	}
 	const def_fields = (fields ?? {}) as TFields;
 	const schema = loose_object({
 		error: literal(code as TCode),
@@ -467,6 +524,8 @@ export const REST_TOKEN_SCOPE_REQUIRED = rest_error(403, ERROR_TOKEN_SCOPE_REQUI
 });
 // 403: the origin check, bootstrap, signup
 export const REST_FORBIDDEN_ORIGIN = rest_error(403, ERROR_FORBIDDEN_ORIGIN);
+// 403: the Rust spine's host gate
+export const REST_FORBIDDEN_HOST = rest_error(403, ERROR_FORBIDDEN_HOST);
 export const REST_ALREADY_BOOTSTRAPPED = rest_error(403, ERROR_ALREADY_BOOTSTRAPPED);
 export const REST_NO_MATCHING_INVITE = rest_error(403, ERROR_NO_MATCHING_INVITE);
 
@@ -503,10 +562,6 @@ export const REST_SCHEMA_DRIFT = rest_error(503, ERROR_SCHEMA_DRIFT);
 export const REST_DB_UNREACHABLE = rest_error(503, ERROR_DB_UNREACHABLE);
 
 // --- Standard error shapes ---
-
-/** Base API error — all JSON error responses have at least `{error: string}`. */
-export const ApiError = loose_object({ error: string });
-export type ApiError = Infer<typeof ApiError>;
 
 /**
  * Input refusal — returned when params / query / body fails its schema, or

@@ -15,12 +15,29 @@ export const ui_fetch = (input: RequestInfo | URL, init?: RequestInit): Promise<
 	fetch(input, { ...init, credentials: 'include' });
 
 /**
- * Safely extract an error message from a non-ok response.
+ * The text to show for an error body: its `message` when it carries one,
+ * else its `error` code — a body's `error` is a machine-readable code, and
+ * prose, when the server sends any, is in `message`.
+ *
+ * @param body - the parsed error body, of any shape
+ * @param fallback - the text when the body has neither
+ */
+export const format_error_body = (body: unknown, fallback: string): string => {
+	if (body === null || typeof body !== 'object') return fallback;
+	const { message, error } = body as { message?: unknown; error?: unknown };
+	if (typeof message === 'string' && message) return message;
+	if (typeof error === 'string' && error) return error;
+	return fallback;
+};
+
+/**
+ * Safely extract an error message from a non-ok response: its `message`,
+ * else its `error` code (`format_error_body`).
  *
  * Handles responses with non-JSON bodies (e.g. HTML 404 pages)
  * that would throw on `response.json()`.
  *
- * @param fallback - message when no `.error` field is found
+ * @param fallback - message when the body has no `message` or `error`
  */
 export const parse_response_error = async (
 	response: Response,
@@ -28,8 +45,7 @@ export const parse_response_error = async (
 ): Promise<string> => {
 	const default_message = fallback ?? `Error: ${response.status}`;
 	try {
-		const data = await response.json();
-		return typeof data?.error === 'string' ? data.error : default_message;
+		return format_error_body(await response.json(), default_message);
 	} catch {
 		return default_message;
 	}

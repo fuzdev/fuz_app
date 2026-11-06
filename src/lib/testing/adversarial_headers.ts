@@ -20,7 +20,7 @@ import './assert_dev_env.ts';
 import { test, assert, describe } from 'vitest';
 
 import { parse_any } from '../schema_issues.ts';
-import { ApiError, ERROR_FORBIDDEN_ORIGIN } from '../http/error_schemas.ts';
+import { REST_FORBIDDEN_ORIGIN, type RestErrorDef } from '../http/error_schemas.ts';
 import {
 	create_test_middleware_stack_app,
 	TEST_MIDDLEWARE_PATH,
@@ -42,8 +42,8 @@ export interface AdversarialHeaderCase {
 	name: string;
 	headers: Record<string, string>;
 	expected_status: number;
-	/** Expected `error` field in the JSON body, which must also parse as `ApiError`. */
-	expected_error?: string;
+	/** The error definition the JSON body must be — its code, and a body its schema accepts. */
+	expected_error?: RestErrorDef;
 	/** Whether the request should reach token validation or be short-circuited by earlier middleware. */
 	validate_expectation: 'called' | 'not_called';
 }
@@ -71,7 +71,7 @@ export const create_standard_adversarial_cases = (
 			Origin: 'https://attacker.com'
 		},
 		expected_status: 403,
-		expected_error: ERROR_FORBIDDEN_ORIGIN,
+		expected_error: REST_FORBIDDEN_ORIGIN,
 		validate_expectation: 'not_called'
 	},
 	{
@@ -96,7 +96,7 @@ export const create_standard_adversarial_cases = (
 			Origin: ''
 		},
 		expected_status: 403,
-		expected_error: ERROR_FORBIDDEN_ORIGIN,
+		expected_error: REST_FORBIDDEN_ORIGIN,
 		validate_expectation: 'not_called'
 	},
 	{
@@ -163,8 +163,9 @@ export const describe_standard_adversarial_headers = (
 				assert.strictEqual(res.status, tc.expected_status);
 				const body = await res.json();
 				if (tc.expected_error) {
-					assert.strictEqual(body.error, tc.expected_error);
-					const parsed = parse_any(ApiError, body);
+					assert.strictEqual(body.error, tc.expected_error.code);
+					assert.strictEqual(res.status, tc.expected_error.status);
+					const parsed = parse_any(tc.expected_error.schema, body);
 					assert.ok(parsed.ok, `error body fails its schema: ${JSON.stringify(body)}`);
 				}
 				if (tc.expected_status === 200) {

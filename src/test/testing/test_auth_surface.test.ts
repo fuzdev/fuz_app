@@ -26,10 +26,7 @@ import {
 	assert_only_expected_public_routes,
 	assert_full_middleware_stack
 } from '#lib/testing/assertions.ts';
-import {
-	describe_adversarial_auth,
-	resolve_standard_error_schema_tightness
-} from '#lib/testing/attack_surface.ts';
+import { describe_adversarial_auth } from '#lib/testing/attack_surface.ts';
 import { describe_adversarial_404 } from '#lib/testing/adversarial_404.ts';
 import { describe_adversarial_input } from '#lib/testing/adversarial_input.ts';
 import { resolve_valid_path, generate_valid_body } from '#lib/testing/schema_generators.ts';
@@ -41,8 +38,8 @@ import {
 	type AppSurface
 } from '#lib/http/surface.ts';
 import {
-	audit_error_schema_tightness,
-	assert_error_schema_tightness
+	assert_error_codes_specific,
+	assert_error_codes_well_formed
 } from '#lib/testing/surface_invariants.ts';
 import { rest_error } from '#lib/http/error_schemas.ts';
 import { ActingActor } from '#lib/http/auth_shape.ts';
@@ -754,135 +751,13 @@ describe_adversarial_404({
 	roles: []
 });
 
-describe('error schema tightness baseline', () => {
-	test('audit returns typed entries for all error schemas', () => {
-		const surface_spec = create_app_surface_spec({
+describe('every declared error names a code', () => {
+	test("the adversarial specs' surface, derived and middleware errors included", () => {
+		const { surface } = create_app_surface_spec({
 			middleware_specs: adversarial_middleware,
 			route_specs: adversarial_specs
 		});
-		const audit = audit_error_schema_tightness(surface_spec.surface);
-		assert.ok(Array.isArray(audit));
-		// the adversarial specs include authenticated/role/keeper routes,
-		// which get auto-derived error schemas (401, 403) — verify those appear
-		const statuses = new Set(audit.map((e) => e.status));
-		assert.ok(statuses.has('401'), 'should include derived 401 schemas');
-		assert.ok(statuses.has('403'), 'should include derived 403 schemas');
-		// every entry should have a recognized specificity
-		const valid_specificities = new Set(['literal', 'enum', 'generic']);
-		for (const entry of audit) {
-			assert.ok(
-				valid_specificities.has(entry.specificity),
-				`unexpected specificity: ${entry.specificity}`
-			);
-		}
-	});
-
-	test('assert_error_schema_tightness passes with permissive threshold', () => {
-		const surface_spec = create_app_surface_spec({
-			middleware_specs: adversarial_middleware,
-			route_specs: adversarial_specs
-		});
-		// generic threshold = no failures (baseline — consumers tighten from here)
-		assert_error_schema_tightness(surface_spec.surface, { min_specificity: 'generic' });
-	});
-});
-
-describe('resolve_standard_error_schema_tightness', () => {
-	// Surface built with one consumer-allowlisted route (`POST /api/foo`) and
-	// one unlisted generic route (`POST /api/unlisted`). Consumer-allowlisted
-	// route must pass; unlisted must fail. A definition's `error` is always a
-	// literal, so the generic 400 is written into the surface by hand.
-	const mixed_specs: Array<RouteSpec> = [
-		{
-			method: 'POST',
-			path: '/api/foo',
-			auth: { account: 'none', actor: 'none' },
-			handler: stub_handler,
-			description: 'Consumer-allowlisted generic route',
-			input: z.strictObject({ name: z.string() }),
-			output: z.null()
-		},
-		{
-			method: 'POST',
-			path: '/api/unlisted',
-			auth: { account: 'none', actor: 'none' },
-			handler: stub_handler,
-			description: 'Generic route not in any allowlist',
-			input: z.strictObject({ name: z.string() }),
-			output: z.null()
-		}
-	];
-	const GENERIC_400 = {
-		type: 'object',
-		properties: { error: { type: 'string' } },
-		required: ['error'],
-		additionalProperties: {}
-	};
-	const mixed_surface = (): AppSurface => {
-		const surface = create_app_surface_spec({
-			middleware_specs: [],
-			route_specs: mixed_specs
-		}).surface;
-		for (const route of surface.routes) {
-			route.error_schemas = { ...route.error_schemas, '400': GENERIC_400 };
-		}
-		return surface;
-	};
-
-	test('null → null (opt-out preserved)', () => {
-		assert.strictEqual(resolve_standard_error_schema_tightness(null), null);
-	});
-
-	test('undefined → the defaults, which exempt nothing', () => {
-		const resolved = resolve_standard_error_schema_tightness(undefined);
-		assert.ok(resolved);
-		assert.deepStrictEqual(resolved.allowlist, []);
-		assert.deepStrictEqual(resolved.ignore_statuses, []);
-	});
-
-	test('the defaults pass a surface whose every error is a definition', () => {
-		const surface_spec = create_app_surface_spec({
-			middleware_specs: adversarial_middleware,
-			route_specs: adversarial_specs
-		});
-		assert_error_schema_tightness(
-			surface_spec.surface,
-			resolve_standard_error_schema_tightness(undefined)!
-		);
-	});
-
-	test('consumer allowlist is the consumer entries', () => {
-		const resolved = resolve_standard_error_schema_tightness({
-			allowlist: ['POST /api/foo']
-		});
-		assert.ok(resolved);
-		assert.deepStrictEqual(resolved.allowlist, ['POST /api/foo']);
-
-		// Runtime behavior: consumer-allowlisted route passes, unlisted fails.
-		const surface = mixed_surface();
-		assert.throws(
-			() => assert_error_schema_tightness(surface, resolved),
-			/POST \/api\/unlisted → 400 \(generic\)/
-		);
-		try {
-			assert_error_schema_tightness(surface, resolved);
-			assert.fail('expected assert_error_schema_tightness to throw');
-		} catch (e) {
-			const msg = (e as Error).message;
-			assert.ok(!msg.includes('POST /api/foo'), 'consumer-allowlisted route must not fail');
-		}
-	});
-
-	test('consumer ignore_statuses are kept', () => {
-		const resolved = resolve_standard_error_schema_tightness({ ignore_statuses: [503] });
-		assert.ok(resolved);
-		assert.deepStrictEqual(resolved.ignore_statuses, [503]);
-	});
-
-	test('consumer min_specificity overrides default', () => {
-		const resolved = resolve_standard_error_schema_tightness({ min_specificity: 'literal' });
-		assert.ok(resolved);
-		assert.strictEqual(resolved.min_specificity, 'literal');
-		assert.deepStrictEqual(resolved.allowlist, []);
+		assert_error_codes_specific(surface);
+		assert_error_codes_well_formed(surface);
 	});
 });

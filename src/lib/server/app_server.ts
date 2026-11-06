@@ -55,6 +55,7 @@ import {
 	type AppSurfaceDiagnostic,
 	type RpcEndpointSpec
 } from '../http/surface.ts';
+import { create_dev_route_error_check } from '../http/dev_route_error_check.ts';
 import {
 	apply_middleware_specs,
 	apply_route_specs,
@@ -1157,6 +1158,15 @@ const assemble_app_server = async (
 	// 500 for anything else.
 	app.onError(create_app_error_handler(log));
 
+	// DEV only, and outermost, so it sees what every layer answers: logs a JSON
+	// error at a status its route's error map doesn't declare, or off its schema
+	const dev_route_error_check = create_dev_route_error_check({
+		route_specs,
+		route_errors: surface_spec.route_errors,
+		log
+	});
+	if (dev_route_error_check) app.use('*', dev_route_error_check);
+
 	// Two-queue side-effect flush. `pending_effects` collects eager
 	// fire-and-forget promises (audit emits, api-token usage). `post_commit_effects` collects deferred thunks pushed via
 	// `emit_after_commit` (WS notifications, anything that must observe a
@@ -1206,16 +1216,7 @@ const assemble_app_server = async (
 
 	apply_middleware_specs(app, middleware_specs);
 	const authorize = create_fuz_authorization_handler({ db: deps.db });
-	// each route's DEV output check reads the error map the surface wrote
-	apply_route_specs(
-		app,
-		route_specs,
-		fuz_auth_guard_resolver,
-		log,
-		deps.db,
-		authorize,
-		surface_spec.route_errors
-	);
+	apply_route_specs(app, route_specs, fuz_auth_guard_resolver, log, deps.db, authorize);
 
 	// WS endpoint auto-mount — must run after `app` exists and
 	// `apply_route_specs` has registered the request routes. Each spec

@@ -24,7 +24,6 @@ import type { Logger } from '@fuzdev/fuz_util/log.ts';
 import type { Db } from '../db/db.ts';
 import { is_db_checkout_error } from '../db/db_checkout_error.ts';
 import {
-	type ErrorSchemas,
 	type RestErrorDef,
 	ERROR_INVALID_JSON_BODY,
 	ERROR_INVALID_REQUEST_BODY,
@@ -43,8 +42,8 @@ import {
 	to_thrown_jsonrpc_error
 } from './jsonrpc_errors.ts';
 import type { JsonrpcErrorObject } from './jsonrpc.ts';
-import { is_jsonrpc_error_response } from './jsonrpc_helpers.ts';
-import { get_route_errors, is_null_schema, type RouteErrors } from './schema_helpers.ts';
+import { is_null_schema } from './schema_helpers.ts';
+import { is_json_response } from './route_error_check.ts';
 import { dispatch_with_post_commit_rollback } from './pending_effects.ts';
 import type { MiddlewareSpec } from './middleware_spec.ts';
 import {
@@ -469,50 +468,30 @@ const create_query_validation = (
 	return [validate];
 };
 
-/** Whether a JSON body is the catch layer's `{error: 'internal_error'}` shape. */
-const is_internal_error_body = (body: unknown): boolean =>
-	body !== null &&
-	typeof body === 'object' &&
-	(body as { error?: unknown }).error === ERROR_INTERNAL_ERROR;
-
-/** Whether a JSON body is the catch layer's failed-checkout `{error: 'service_unavailable'}`. */
-const is_service_unavailable_body = (body: unknown): boolean =>
-	body !== null &&
-	typeof body === 'object' &&
-	(body as { error?: unknown }).error === ERROR_SERVICE_UNAVAILABLE;
-
 /**
- * Wrap a handler with DEV-only output and error validation.
+ * Wrap a handler with DEV-only output validation.
  *
- * In development, validates 2xx JSON responses against the output schema
- * and non-2xx responses against declared error schemas. Wraps the error
- * catch layer, so the body built from a thrown error is validated too — except
- * a 500 `internal_error` and a failed checkout's 503 `service_unavailable`,
- * which the catch layer can answer on any route and so are always accepted,
- * and, on a `jsonrpc` route (the RPC endpoint's), a JSON-RPC error envelope,
- * which no REST error definition describes.
- * Each schema is Zod or `@fuzdev/fuz_schema`, parsed with `parse_any`; the
- * log carries the library's own issues.
- * Logs an error for mismatches and returns the response unchanged —
- * does not throw. Non-JSON responses (SSE, binary) are skipped. In
- * production, returns the handler unchanged.
+ * In development, validates 2xx JSON responses against the output schema,
+ * logging an error on a mismatch and returning the response unchanged — it
+ * never throws. Non-2xx responses are the DEV error check's
+ * (`create_dev_route_error_check`), which `create_app_server` mounts
+ * outermost so it sees what every layer answers. Non-JSON responses (SSE,
+ * binary) are skipped. The schema is Zod or `@fuzdev/fuz_schema`, parsed
+ * with `parse_any`; the log carries the library's own issues. In production,
+ * returns the handler unchanged.
  */
 const wrap_output_validation = (
 	handler: Handler,
 	output_schema: ValidationSchema,
-	error_schemas: ErrorSchemas,
-	jsonrpc: boolean,
 	log: Logger
 ): Handler => {
 	if (!DEV) return handler;
-	if (is_null_schema(output_schema) && Object.keys(error_schemas).length === 0) return handler;
+	if (is_null_schema(output_schema)) return handler;
 	return async (c, next) => {
 		const response = await handler(c, next);
+		if (!response.ok) return response;
 		// Only validate JSON responses — streaming responses (SSE) would hang on .json().
-		const content_type = response.headers.get('Content-Type');
-		if (!content_type?.includes('application/json')) return response;
-		const schema = response.ok ? output_schema : error_schemas[response.status];
-		if (!schema) return response;
+		if (!is_json_response(response)) return response;
 		let body: unknown;
 		try {
 			body = await response.clone().json();
@@ -520,21 +499,9 @@ const wrap_output_validation = (
 			// clone() or json() failed on a response claiming application/json
 			return response;
 		}
-		// the catch layer can answer `internal_error` on any route, so no route
-		// declares it — checking it against a route's 500 schema would only
-		// misreport a schema problem the route can't fix
-		if (response.status === 500 && is_internal_error_body(body)) return response;
-		// the same for a failed pool checkout's 503, which any route can answer
-		if (response.status === 503 && is_service_unavailable_body(body)) return response;
-		// the JSON-RPC endpoint answers its refusals as envelopes, which no REST
-		// error definition describes; the dispatch core checks its own outputs
-		if (jsonrpc && !response.ok && is_jsonrpc_error_response(body)) return response;
-		const result = parse_any(schema, body);
+		const result = parse_any(output_schema, body);
 		if (!result.ok) {
-			const label = response.ok
-				? 'Output schema mismatch'
-				: `Error schema mismatch (${response.status})`;
-			log.error(`${label}: ${c.req.method} ${c.req.path}`, result.issues);
+			log.error(`Output schema mismatch: ${c.req.method} ${c.req.path}`, result.issues);
 		}
 		return response;
 	};
@@ -556,7 +523,7 @@ export const apply_middleware_specs = (app: Hono, specs: Array<MiddlewareSpec>):
  *
  * Catches a thrown JSON-RPC error — a `ThrownJsonrpcError` from any copy of
  * fuz_app, recognized by its brand (`to_thrown_jsonrpc_error`) — and maps it
- * to a flat REST `ApiError` body (`{error: <reason>, message?, ...rest_data}`)
+ * to a flat REST error body (`{error: <reason>, message?, ...rest_data}`)
  * at the matching HTTP status.
  * A failed pool checkout (`DbCheckoutError`) answers the flat 503
  * `{error: 'service_unavailable'}` with no `message`, byte for byte the Rust
@@ -581,7 +548,7 @@ export const apply_middleware_specs = (app: Hono, specs: Array<MiddlewareSpec>):
  * REST callers key on HTTP status + `error` reason, and the JSON-RPC code
  * is recoverable via `http_status_to_jsonrpc_error_code(status)` on the
  * rare consumer that wants it. Keeping the shape transport-shaped (REST
- * emits ApiError; JSON-RPC dispatcher emits the JSON-RPC envelope) avoids
+ * emits the flat body; JSON-RPC dispatcher emits the JSON-RPC envelope) avoids
  * a hybrid envelope that has to be normalized on the way out.
  */
 const wrap_error_catch = (handler: Handler, log: Logger): Handler => {
@@ -657,7 +624,7 @@ const build_rest_error_body = (err: JsonrpcErrorObject): Record<string, unknown>
  * For each spec: resolves auth to guards via the provided resolver,
  * adds input validation middleware (for routes with non-null input schemas),
  * runs the optional authorization phase to resolve the acting actor + build
- * the request context, wraps handler with DEV-only output and error
+ * the request context, wraps handler with DEV-only output
  * validation, wraps with error catch layer (a thrown JSON-RPC error,
  * recognized via `to_thrown_jsonrpc_error`, maps to its status; any other
  * throw to a 500), and registers the route.
@@ -695,15 +662,13 @@ const build_rest_error_body = (err: JsonrpcErrorObject): Record<string, unknown>
  * must be an object schema (`get_schema_entries`), as the path params and
  * query string are an object: one that isn't throws naming the route.
  *
- * In DEV each handler's responses are checked against the route's error map
- * (`resolve_route_errors`): the one in `route_errors`, which
- * `create_app_server` builds with its middleware, or for a route it has no
- * entry for, the route's own without middleware.
+ * In DEV each handler's 2xx JSON responses are checked against its `output`.
+ * Error responses are checked by the DEV error check
+ * (`create_dev_route_error_check`), which `create_app_server` mounts outermost.
  *
  * @param resolve_auth_guards - maps `RouteAuth` to middleware — use `fuz_auth_guard_resolver` from `auth/auth_guard_resolver.ts`
  * @param authorize - optional authorization phase; runs after the pre-authorization guards and before the post-authorization guards
  * @param db - used for transaction wrapping and `RouteContext`
- * @param route_errors - each route's error map, keyed `METHOD path` (`resolve_app_route_errors`)
  * @mutates `app`
  * @throws Error if two specs share the same `method` + `path` (each combination must be unique), if a schema slot holds a value of neither library or an `errors` entry is not a definition, if any spec violates a cross-axis auth invariant or the actor-acting biconditional, or if a fuz_schema `params` or `query` is not an object schema
  */
@@ -713,8 +678,7 @@ export const apply_route_specs = (
 	resolve_auth_guards: AuthGuardResolver,
 	log: Logger,
 	db: Db,
-	authorize?: AuthorizationHandler,
-	route_errors?: ReadonlyMap<string, RouteErrors> | null
+	authorize?: AuthorizationHandler
 ): void => {
 	const registered = new Set<string>();
 	for (const spec of specs) {
@@ -742,7 +706,6 @@ export const apply_route_specs = (
 		const params_validation = create_params_validation(spec.params);
 		const query_validation = create_query_validation(spec.query);
 		const input_validation = create_input_validation(spec.input, spec.method);
-		const { schemas: error_schemas } = get_route_errors(route_errors, spec);
 		const authorization: Array<MiddlewareHandler> = authorize
 			? [
 					async (c, next): Promise<Response | void> => {
@@ -774,14 +737,8 @@ export const apply_route_specs = (
 		};
 		// Step 2: error catch layer — a thrown error becomes its REST body here
 		handler = wrap_error_catch(handler, log);
-		// Step 3: output validation, outside the catch so thrown-error bodies are checked too
-		handler = wrap_output_validation(
-			handler,
-			spec.output,
-			error_schemas,
-			spec.jsonrpc ?? false,
-			log
-		);
+		// Step 3: output validation of a 2xx body
+		handler = wrap_output_validation(handler, spec.output, log);
 		app.on(
 			spec.method,
 			[spec.path],

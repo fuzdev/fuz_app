@@ -694,8 +694,10 @@ format_scope, global_label)` helper — `global_label = null` renders no
   one signal, once aborted, would fail every later probe.
 - `ui_fetch.ts` — `ui_fetch(input, init?)` wraps `fetch` with
   `credentials: 'include'` for cookie-based session auth;
-  `parse_response_error(response, fallback?)` safely extracts
-  `body.error` even from non-JSON responses (HTML 404 pages, etc.).
+  `parse_response_error(response, fallback?)` safely extracts the text to
+  show even from non-JSON responses (HTML 404 pages, etc.) through
+  `format_error_body(body, fallback)`: the body's `message`, else its
+  `error` code. `table_state` and `auth_state` show refusals through it.
 - `ui_format.ts` — display helpers:
   - `format_relative_time(timestamp, now?)` — "2m ago", "3h ago",
     "5d ago", "2mo ago", "1y ago"; "just now" when under a minute;

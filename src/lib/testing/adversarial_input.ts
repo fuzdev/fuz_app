@@ -4,13 +4,14 @@ import './assert_dev_env.ts';
  * Adversarial input validation testing for route specs.
  *
  * Fires the payloads `adversarial_input_cases.ts` generates against a test
- * app and asserts 400 responses before handlers are reached.
+ * app and asserts 400 responses before handlers are reached, each with a
+ * code the route's own error map declares at 400 and a body its schema there
+ * accepts.
  *
  * @module
  */
 
 import { test, assert, describe } from 'vitest';
-import { parse_or_throw } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { RouteSpec } from '../http/route_spec.ts';
 import {
@@ -19,7 +20,6 @@ import {
 	filter_routes_with_query
 } from '../http/surface_query.ts';
 import {
-	InvalidInputError,
 	ERROR_INVALID_REQUEST_BODY,
 	ERROR_INVALID_JSON_BODY,
 	ERROR_INVALID_ROUTE_PARAMS,
@@ -27,6 +27,7 @@ import {
 } from '../http/error_schemas.ts';
 import { create_auth_test_apps, create_route_skip_filter, select_auth_app } from './auth_apps.ts';
 import type { AdversarialTestOptions } from './attack_surface.ts';
+import { assert_error_schema_valid } from './assertions.ts';
 import { resolve_valid_path, to_route_content_type } from './schema_generators.ts';
 import {
 	generate_input_test_cases,
@@ -62,7 +63,7 @@ const build_query_url = (path: string, query: Record<string, string>): string =>
  */
 export const describe_adversarial_input = (options: AdversarialTestOptions): void => {
 	const { build, roles } = options;
-	const { surface, route_specs } = build();
+	const { surface, route_specs, route_errors } = build();
 	const is_skipped = create_route_skip_filter(options.skip_routes);
 
 	const routes_with_input = filter_routes_with_input(surface).filter((r) => !is_skipped(r));
@@ -148,10 +149,8 @@ export const describe_adversarial_input = (options: AdversarialTestOptions): voi
 									expected_error,
 									`Expected ${expected_error} for ${key} [${tc.label}], got: ${body.error}`
 								);
-								// validate response body structure matches error schema
-								if (tc.expected_error === 'invalid_request_body') {
-									parse_or_throw(InvalidInputError, body);
-								}
+								// the status and code are the route's own, and the body its schema there
+								assert_error_schema_valid(route_errors, route, 400, body);
 							});
 						}
 					});
@@ -204,8 +203,8 @@ export const describe_adversarial_input = (options: AdversarialTestOptions): voi
 										body.error
 									}`
 								);
-								// validate response body structure matches error schema
-								parse_or_throw(InvalidInputError, body);
+								// the status and code are the route's own, and the body its schema there
+								assert_error_schema_valid(route_errors, route, 400, body);
 							});
 						}
 					});
@@ -260,8 +259,8 @@ export const describe_adversarial_input = (options: AdversarialTestOptions): voi
 										body.error
 									}`
 								);
-								// validate response body structure matches error schema
-								parse_or_throw(InvalidInputError, body);
+								// the status and code are the route's own, and the body its schema there
+								assert_error_schema_valid(route_errors, route, 400, body);
 							});
 						}
 					});

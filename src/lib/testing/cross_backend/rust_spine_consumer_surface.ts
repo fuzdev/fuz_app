@@ -35,6 +35,7 @@ import { create_signup_route_shape } from '../../auth/signup_route_schema.ts';
 import { create_standard_rpc_actions } from '../../auth/standard_rpc_actions.ts';
 import { create_health_route_spec } from '../../http/common_routes.ts';
 import type { MiddlewareSpec } from '../../http/middleware_spec.ts';
+import { REST_FORBIDDEN_HOST } from '../../http/error_schemas.ts';
 import { prefix_route_specs, type RouteSpec } from '../../http/route_spec.ts';
 import type { AppSurfaceSpec, RpcEndpointSpec } from '../../http/surface.ts';
 import type { AppServerContext } from '../../server/app_server_context.ts';
@@ -201,7 +202,12 @@ export const create_rust_spine_consumer_surface_spec = (
 		daemon_token: true,
 		transform_middleware: options.host_gate
 			? (specs: Array<MiddlewareSpec>): Array<MiddlewareSpec> => [
-					{ name: 'host_validation', path: '*', handler: stub_mw },
+					{
+						name: 'host_validation',
+						path: '*',
+						handler: stub_mw,
+						errors: [REST_FORBIDDEN_HOST]
+					},
 					...specs
 				]
 			: undefined

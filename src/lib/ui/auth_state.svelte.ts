@@ -35,7 +35,7 @@
 import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 import { create_context } from '@fuzdev/fuz_ui/context_helpers.ts';
 
-import { ui_fetch } from './ui_fetch.ts';
+import { parse_response_error, ui_fetch } from './ui_fetch.ts';
 import {
 	type ActorSummaryJson,
 	is_role_grant_active,
@@ -223,12 +223,7 @@ export class AuthState {
 				return true;
 			}
 
-			try {
-				const data = await response.json();
-				this.verify_error = data.error ?? `Error: ${response.status}`;
-			} catch {
-				this.verify_error = `Error: ${response.status}`;
-			}
+			this.verify_error = await parse_response_error(response);
 			return false;
 		} catch (e) {
 			this.verify_error = to_error_message(e, 'Connection failed');

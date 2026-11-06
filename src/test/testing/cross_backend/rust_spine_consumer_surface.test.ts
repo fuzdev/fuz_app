@@ -20,6 +20,7 @@ import {
 	ACCOUNT_ROUTER_PATHS,
 	create_rust_spine_consumer_surface_spec
 } from '#lib/testing/cross_backend/rust_spine_consumer_surface.ts';
+import { REST_FORBIDDEN_HOST } from '#lib/http/error_schemas.ts';
 
 const domain_action_specs: Array<ActionSpecUnion> = [
 	...protocol_action_specs,
@@ -76,6 +77,26 @@ describe('create_rust_spine_consumer_surface_spec', () => {
 		assert.strictEqual(without[0], 'body_limit');
 		assert.deepStrictEqual(with_gate.slice(0, 2), ['body_limit', 'host_validation']);
 		assert.deepStrictEqual([with_gate[0], ...with_gate.slice(2)], without);
+	});
+
+	test("host_validation declares the gate's 403 forbidden_host on every route", () => {
+		const spec = create_rust_spine_consumer_surface_spec({
+			session_options: fuz_session_config,
+			domain_action_specs,
+			host_gate: true
+		});
+		const layer = spec.surface.middleware.find((m) => m.name === 'host_validation')!;
+		assert.deepStrictEqual(Object.keys(layer.error_schemas!), ['403']);
+		for (const errors of spec.route_errors.values()) {
+			assert.ok(errors.defs.includes(REST_FORBIDDEN_HOST));
+		}
+		const without = create_rust_spine_consumer_surface_spec({
+			session_options: fuz_session_config,
+			domain_action_specs
+		});
+		for (const errors of without.route_errors.values()) {
+			assert.notInclude(errors.defs, REST_FORBIDDEN_HOST);
+		}
 	});
 
 	test('mounts the standard actions and the request-response domain specs only', () => {

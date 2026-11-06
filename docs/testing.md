@@ -653,94 +653,24 @@ describe_data_exposure_tests({
 });
 ```
 
-## Error Schema Tightness
+## Declared Errors
 
-The standard attack surface suite includes an audit that classifies error
-schemas by specificity:
+Every error a route answers is declared, and named by its code. The
+standard attack surface suite holds both:
 
-- **literal** — one code (`literal('account_not_found')`, a definition's body) — best, clients can match exact codes
-- **enum** — a set of codes (`one_of(['table_not_found', 'row_not_found'])`) — good, constrained set
-- **generic** — a plain string (bare `ApiError`) — weakest, clients can't distinguish errors
-
-The audit reads the written JSON Schema (`const` / `enum`), so a Zod
-`z.literal` / `z.enum` classifies the same.
-
-### Informational Audit
-
-The audit logs a summary during test runs:
-
-```typescript
-import { audit_error_schema_tightness } from '@fuzdev/fuz_app/testing/surface_invariants.ts';
-
-const entries = audit_error_schema_tightness(surface);
-const generic = entries.filter((e) => e.specificity === 'generic');
-// log as appropriate for your project
-```
-
-Each `ErrorSchemaAuditEntry` contains `method`, `route_path`, `status`,
-`specificity`, and `error_codes` (the literal/enum values, or `null` for generic).
-
-### Policy Enforcement
-
-`describe_standard_attack_surface_tests` asserts against
-`default_error_schema_tightness` by default: `min_specificity: 'enum'`, with
-no status or route exempt. Every declared error is a definition, whose
-`error` is a literal, so the framework's own 401, 403 and 429 pass as they
-are.
-
-Consumer-supplied `allowlist` and `ignore_statuses` are **additive** to the
-defaults' (`resolve_standard_error_schema_tightness`):
-
-```typescript
-describe_standard_attack_surface_tests({
-	// ...other options...
-	error_schema_tightness: {
-		min_specificity: 'enum', // fail if any error schema is 'generic'
-		ignore_statuses: [400],
-		allowlist: ['GET /health']
-	}
-});
-```
-
-Pass `null` to skip the assertion and keep the audit informational-only:
-
-```typescript
-describe_standard_attack_surface_tests({
-	// ...other options...
-	error_schema_tightness: null
-});
-```
-
-Or call `assert_error_schema_tightness` directly:
-
-```typescript
-import { assert_error_schema_tightness } from '@fuzdev/fuz_app/testing/surface_invariants.ts';
-
-assert_error_schema_tightness(surface, { min_specificity: 'enum' });
-```
-
-`assert_error_schema_tightness` takes the options literally — the merge
-only happens inside `describe_standard_attack_surface_tests`. To apply the
-same merge outside the suite, use
-`resolve_standard_error_schema_tightness` from
-`@fuzdev/fuz_app/testing/attack_surface.ts`.
-
-The stock allowlist assumes `create_account_route_specs` and
-`create_db_route_specs` are mounted under `/api/account` + `/api/db`
-(the convention in every fuz_app consumer). If you mount them elsewhere,
-extend your own `allowlist` with the correct prefix.
-
-**Guidance on acceptable specificity:**
-
-- **Auth routes** (login, bootstrap, password change) — target `literal` or `enum`.
-  These are the most security-sensitive and clients need to distinguish failure modes
-  (rate limited vs invalid credentials vs account locked).
-- **CRUD routes** — `enum` is usually sufficient. Common pattern: `{404: literal, 409: literal}` for
-  not-found and conflict, with auth errors auto-derived.
-- **Read-only routes** — `generic` is acceptable for 401/403 (auto-derived auth errors).
-  The auth middleware produces consistent error shapes regardless.
-- **Middleware-derived errors** — inherently `generic` (middleware can't know handler context).
-  These don't need tightening.
+- **Every declared error names a code** — `assert_error_codes_specific`, in
+  `assert_surface_invariants`: each body at each status (each branch of a
+  union, routes and middleware alike) has an `error` that is a `const` or an
+  `enum`, what a definition built by `rest_error` writes.
+  `assert_error_codes_well_formed` holds each code to
+  `^[a-z][a-z0-9_]*$`: a code, never prose, which goes in `message`.
+  `rest_error` refuses one off it at definition.
+- **Every error answered is declared** — the adversarial suites hold each
+  refusal to the route's own error map (the status, the code there, and the
+  body), and `assert_response_matches_spec`, which the round trips and error
+  coverage run through, throws on a JSON error at a status the map lacks. A
+  500 `internal_error` and a 503 `service_unavailable` are always accepted, as
+  in the DEV error check, which logs the same in a running app.
 
 ## Round-Trip Validation
 
@@ -990,9 +920,9 @@ impls actually boot.
 - `resolve_fixture_path` (`testing/assertions.ts`) — Resolve absolute path relative to caller's module
 - `assert_surface_matches_snapshot` (`testing/assertions.ts`) — Compare live surface to committed JSON
 - `assert_surface_invariants` (`testing/surface_invariants.ts`) — Assert all structural invariants on `AppSurface`
-- `assert_error_schema_tightness` (`testing/surface_invariants.ts`) — Enforce minimum error schema specificity
-- `audit_error_schema_tightness` (`testing/surface_invariants.ts`) — Classify error schema specificity across routes
-- `assert_response_matches_spec` (`testing/integration_helpers.ts`) — Validate response body against the route's output, or its error map at the status (`route_errors` when given)
+- `assert_error_codes_specific` (`testing/surface_invariants.ts`) — Every declared error's `error` is a literal or an enum
+- `assert_error_codes_well_formed` (`testing/surface_invariants.ts`) — Every declared error code matches `^[a-z][a-z0-9_]*$`
+- `assert_response_matches_spec` (`testing/integration_helpers.ts`) — Validate response body against the route's output, or its error map at the status (`route_errors` when given), failing an undeclared error status
 - `assert_rate_limit_retry_after_header` (`testing/integration_helpers.ts`) — Assert 429 `Retry-After` header matches body
 - `find_route_spec` (`testing/integration_helpers.ts`) — Look up route spec by method + path
 - `assert_no_sensitive_fields_in_json` (`testing/integration_helpers.ts`) — Assert no blocklisted fields in parsed JSON

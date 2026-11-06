@@ -22,11 +22,7 @@ import {
 	assert_surface_invariants,
 	assert_rpc_ws_surface_invariants,
 	assert_surface_security_policy,
-	audit_error_schema_tightness,
-	assert_error_schema_tightness,
-	default_error_schema_tightness,
-	type SurfaceSecurityPolicyOptions,
-	type ErrorSchemaTightnessOptions
+	type SurfaceSecurityPolicyOptions
 } from './surface_invariants.ts';
 import { describe_adversarial_input } from './adversarial_input.ts';
 import { describe_adversarial_404 } from './adversarial_404.ts';
@@ -37,8 +33,10 @@ import {
 	assert_surface_deterministic,
 	assert_only_expected_public_routes,
 	assert_full_middleware_stack,
-	assert_error_schema_valid
+	assert_error_schema_valid,
+	assert_error_response_declared
 } from './assertions.ts';
+import { get_route_errors } from '../http/schema_helpers.ts';
 import type { RouteSpec } from '../http/route_spec.ts';
 import type { AppSurfaceSpec } from '../http/surface.ts';
 import {
@@ -237,16 +235,26 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
 						test_path(route),
 						probe_init(route)
 					);
-					// handler may error (500) or return 404 (stub deps) — that's fine, we only verify auth passed
+					// the handler runs on stub deps, so any status it answers is fine
+					// but the gates' — and an error it answers must be one the route declares
 					assert.notStrictEqual(res.status, 401, 'should not be 401 (auth rejected)');
 					assert.notStrictEqual(res.status, 403, 'should not be 403 (role rejected)');
 					assert.notStrictEqual(res.status, 415, 'should not be 415 (content type refused)');
-					// handler-level 404 (resource not found with stub deps) is fine —
-					// only reject router-level 404 (route not registered)
+					// only reject router-level 404 (route not registered), Hono's plain text
 					if (res.status === 404) {
-						const body = await res.json().catch(() => null);
+						const body = await res
+							.clone()
+							.json()
+							.catch(() => null);
 						assert.ok(body?.error, `route not registered: ${route.method} ${route.path}`);
 					}
+					const spec = spec_lookup.get(`${route.method} ${route.path}`)!;
+					await assert_error_response_declared(
+						get_route_errors(route_errors, spec),
+						spec.jsonrpc ?? false,
+						res,
+						`${route.method} ${route.path}`
+					);
 					// SSE streams need explicit cleanup — the suspended promise keeps the event loop alive.
 					// Only cancel streaming responses; regular JSON bodies don't need it.
 					if (res.headers.get('Content-Type')?.includes('text/event-stream')) {
@@ -259,39 +267,6 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
 };
 
 // --- Standard attack surface test suite ---
-
-/**
- * Merge a consumer's `error_schema_tightness` option with
- * `default_error_schema_tightness` so `allowlist` and `ignore_statuses` are
- * additive rather than replacing.
- *
- * - `undefined` → return the default as-is.
- * - `null` → return `null` (opt out of the assertion).
- * - object → spread the default, then consumer overrides for scalar fields
- *   (`min_specificity`), then concat stock-then-consumer for the list fields
- *   (`allowlist`, `ignore_statuses`) so consumer entries extend rather than
- *   replace.
- *
- * Exported for direct use when a consumer calls `assert_error_schema_tightness`
- * outside the standard suite but still wants the additive merge.
- */
-export const resolve_standard_error_schema_tightness = (
-	consumer: ErrorSchemaTightnessOptions | null | undefined
-): ErrorSchemaTightnessOptions | null => {
-	if (consumer === null) return null;
-	return {
-		...default_error_schema_tightness,
-		...consumer,
-		allowlist: [
-			...(default_error_schema_tightness.allowlist ?? []),
-			...(consumer?.allowlist ?? [])
-		],
-		ignore_statuses: [
-			...(default_error_schema_tightness.ignore_statuses ?? []),
-			...(consumer?.ignore_statuses ?? [])
-		]
-	};
-};
 
 /** Options for the standard attack surface test suite. */
 export interface StandardAttackSurfaceOptions {
@@ -309,17 +284,6 @@ export interface StandardAttackSurfaceOptions {
 	api_path_prefix?: string;
 	/** Security policy configuration. Omit for sensible defaults. */
 	security_policy?: SurfaceSecurityPolicyOptions;
-	/**
-	 * Error schema tightness assertion config. Defaults to
-	 * `default_error_schema_tightness` (`min_specificity: 'enum'`, nothing
-	 * exempt).
-	 *
-	 * Consumer-supplied `allowlist` and `ignore_statuses` are **additive** to
-	 * the defaults' (`resolve_standard_error_schema_tightness`). Pass a narrower
-	 * config to extend either list or tighten `min_specificity`; pass `null`
-	 * to skip the assertion and keep the audit log informational-only.
-	 */
-	error_schema_tightness?: ErrorSchemaTightnessOptions | null;
 	/**
 	 * Routes the three adversarial sub-suites skip, in `'METHOD /path'` form
 	 * — the escape hatch every sibling suite carries (`round_trip`,
@@ -341,10 +305,9 @@ export interface StandardAttackSurfaceOptions {
  * 5. Surface invariants — structural assertions over `surface.routes` (error schemas, descriptions, duplicates, consistency)
  * 6. RPC/WS surface invariants — structural assertions over `surface.rpc_endpoints` + `surface.ws_endpoints` (descriptions, protocol-action spread, kind ⇔ auth)
  * 7. Security policy — rate limiting on sensitive routes, no unexpected public mutations, method conventions
- * 8. Error schema tightness — informational log of generic vs specific error schemas, plus assertion against `default_error_schema_tightness` by default (opt out with `error_schema_tightness: null`)
- * 9. Adversarial auth — unauthenticated/wrong-role/correct-auth enforcement
- * 10. Adversarial input — input body and params validation
- * 11. Adversarial 404 — stub 404 handlers, validate response bodies against declared schemas
+ * 8. Adversarial auth — unauthenticated/wrong-role/correct-auth enforcement, every refusal a status and code of the route's own error map
+ * 9. Adversarial input — input body and params validation, each 400 a code of the route's own map
+ * 10. Adversarial 404 — stub 404 handlers, validate response bodies against the route's declared 404
  *
  * Consumer test files call this with project-specific options, then add
  * any project-specific assertions in additional `describe` blocks.
@@ -362,10 +325,6 @@ export const describe_standard_attack_surface_tests = (
 		security_policy,
 		skip_routes
 	} = options;
-
-	const error_schema_tightness = resolve_standard_error_schema_tightness(
-		options.error_schema_tightness
-	);
 
 	const built = build();
 	const { surface } = built;
@@ -399,26 +358,6 @@ export const describe_standard_attack_surface_tests = (
 
 		test('security policy', () => {
 			assert_surface_security_policy(surface, security_policy);
-		});
-
-		test('error schema tightness', () => {
-			const entries = audit_error_schema_tightness(surface);
-			const generic = entries.filter((e) => e.specificity === 'generic');
-			const literal = entries.filter((e) => e.specificity === 'literal');
-			const enumerated = entries.filter((e) => e.specificity === 'enum');
-			console.log(
-				`[error schema tightness] ${entries.length} total: ` +
-					`${literal.length} literal, ${enumerated.length} enum, ${generic.length} generic`
-			);
-			if (generic.length > 0) {
-				console.log(
-					`[error schema tightness] generic schemas:\n` +
-						generic.map((e) => `  ${e.method} ${e.route_path} → ${e.status}`).join('\n')
-				);
-			}
-			if (error_schema_tightness) {
-				assert_error_schema_tightness(surface, error_schema_tightness);
-			}
 		});
 	});
 

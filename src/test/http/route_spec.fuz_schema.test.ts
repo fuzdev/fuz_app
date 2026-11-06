@@ -2,7 +2,8 @@
  * `RouteSpec` schemas written in `@fuzdev/fuz_schema`: params, query and
  * input validated through `parse_any`, refusals answered with canonical
  * `WireIssue`s under DEV and without them in production, parsed values
- * delivered to the handler, DEV output + error validation logging a fuz_schema
+ * delivered to the handler, DEV output validation and the DEV error check
+ * (mounted outermost, as `create_app_server` mounts it) logging a fuz_schema
  * mismatch, and the registration check on a `params` / `query` that is no
  * object schema. Through `apply_route_specs` on a bare Hono app, and through
  * the assembled app (`create_app_server`).
@@ -38,6 +39,8 @@ import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
 import { Uuid } from '#lib/primitive_schemas_fuz.ts';
 import { create_stub_db } from '#lib/testing/stubs.ts';
 import { rest_error } from '#lib/http/error_schemas.ts';
+import { create_dev_route_error_check } from '#lib/http/dev_route_error_check.ts';
+import { resolve_app_route_errors } from '#lib/http/schema_helpers.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_test_keyring } from '../auth/session_test_helpers.ts';
 
@@ -85,6 +88,13 @@ const send = async (url: string, body: string, specs = [thing_route]): Promise<A
 		errors.push(args);
 	};
 	const app = new Hono();
+	// the DEV error check outermost, as `create_app_server` mounts it
+	const dev_check = create_dev_route_error_check({
+		route_specs: specs,
+		route_errors: resolve_app_route_errors(specs),
+		log
+	});
+	if (dev_check) app.use('*', dev_check);
 	apply_route_specs(app, specs, fuz_auth_guard_resolver, log, create_stub_db());
 	const res = await app.request(url, {
 		method: 'POST',
@@ -231,7 +241,7 @@ describe('a fuz_schema route delivers', () => {
 	});
 });
 
-describe('DEV output + error validation of a fuz_schema route', () => {
+describe('DEV output validation and the DEV error check on a fuz_schema route', () => {
 	// the library's own issues, as for a Zod route, each with no custom `message`
 	test('logs an output mismatch with the fuz_schema issues', async () => {
 		const got = await send(`${THING}?mode=a`, '{"name":"wrong_output"}');

@@ -292,6 +292,18 @@ describe('bootstrap', () => {
 		assert.strictEqual(state.verify_error, 'invalid_token');
 	});
 
+	test('failure prefers the message to the code', async () => {
+		fetch_mock.mockResolvedValueOnce(
+			json_response({ error: 'invalid_token', message: 'That token is not the one on disk.' }, 401)
+		);
+
+		const state = new AuthState();
+		const result = await state.bootstrap('bad-token', 'admin', 'password');
+
+		assert.strictEqual(result, false);
+		assert.strictEqual(state.verify_error, 'That token is not the one on disk.');
+	});
+
 	test('failure without error field uses status', async () => {
 		fetch_mock.mockResolvedValueOnce(json_response({}, 403));
 

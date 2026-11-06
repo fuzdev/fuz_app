@@ -11,6 +11,8 @@
  * route), and the logged mismatch of the undeclared 404 body carries
  * fuz_schema issues, as the 404 is a definition (it was a Zod schema). Its
  * 404, the middleware's 403, and every other byte are the Zod-era capture's.
+ * The exchanges run behind the DEV error check, mounted outermost as
+ * `create_app_server` mounts it, whose logged mismatch is the same bytes.
  *
  * @module
  */

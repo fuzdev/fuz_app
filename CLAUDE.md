@@ -237,7 +237,7 @@ routes (logout, password_change, account_verify) without picking a persona.
 Routes are data (`RouteSpec[]`). `apply_route_specs` registers them with
 auto-validation (params → query → pre-authorization auth → authorization
 phase → post-authorization auth → input validation → handler → DEV-only
-output + error validation). Duplicate method+path throws at registration. Declarative transactions: `transaction?: boolean` defaults
+output validation). Duplicate method+path throws at registration. Declarative transactions: `transaction?: boolean` defaults
 to `false` for GET, `true` for mutations. Handlers receive `(c, route)`
 where `route` satisfies `QueryDeps`; audit rows go through
 `await deps.audit.emit(route, input)` — a success row is written in the
@@ -248,11 +248,18 @@ after the commit; a revocation's connection closes are queued post-commit the
 same way (`queue_connection_close`). `generate_app_surface()` produces a
 JSON-serializable attack surface. Each route's declared errors are one map,
 the union of derived, middleware, and explicit error definitions, read by the
-surface, the DEV check, and the test helpers (see ./docs/architecture.md).
+surface, the DEV error check, and the test helpers (see ./docs/architecture.md).
+Every declared `error` is a code (`^[a-z][a-z0-9_]*$`, enforced by
+`rest_error`); prose goes in `message`, which the UI prefers.
 
 Input validation runs in both DEV and production (always-on contract for
-callers). Output + error-schema validation runs **DEV-only** via `esm-env` —
-logs an error on mismatch, returns the response unchanged. The asymmetry is
+callers). Output and error validation run **DEV-only** via `esm-env` — the
+2xx output per route, and errors in one outer middleware
+(`http/dev_route_error_check.ts`, mounted outermost by `create_app_server`, so
+middleware refusals count) that logs a JSON error at a status its route's
+map doesn't declare or off its schema (500 `internal_error` and 503
+`service_unavailable` always accepted) — each logging an error on mismatch and
+returning the response unchanged. The asymmetry is
 deliberate: caller-facing inputs must be validated; server-authored outputs
 are trusted at runtime and checked during development. See
 ./docs/architecture.md §DEV-only Output Validation.

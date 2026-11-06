@@ -16,32 +16,72 @@ import { ROLE_ADMIN } from '../auth/role_schema.ts';
 import type { TestAccount } from './app_server.ts';
 import { create_test_request_headers } from './test_origin.ts';
 import { parse_any } from '../schema_issues.ts';
-import { is_jsonrpc_error_response } from '../http/jsonrpc_helpers.ts';
+import {
+	check_route_error,
+	find_mounted_route,
+	format_route_error_check,
+	is_error_status,
+	is_json_response,
+	to_mounted_routes,
+	type MountedRoute
+} from '../http/route_error_check.ts';
+
+/** Each spec list's compiled routes, so a list is compiled once. */
+const mounted_routes_cache: WeakMap<
+	ReadonlyArray<RouteSpec>,
+	Array<MountedRoute<RouteSpec>>
+> = new WeakMap();
 
 /**
- * Find a route spec matching the given method and path.
+ * A request path as Hono reads it: the URL's pathname (a query string
+ * dropped, `.` and `..` segments resolved), percent-decoded by `decodeURI`
+ * with `%25` kept, or the raw path when decoding fails.
+ */
+const to_hono_path = (path: string): string => {
+	let pathname = new URL(path, 'http://localhost').pathname;
+	if (pathname.includes('%')) {
+		try {
+			pathname = decodeURI(pathname.replaceAll('%25', '%2525'));
+		} catch {
+			// a malformed escape: Hono matches the raw path
+		}
+	}
+	return pathname;
+};
+
+/**
+ * Find the route spec a request reaches: the first in list (mount) order
+ * whose method and path template match it, `HEAD` read as `GET` — the order
+ * Hono dispatches by, which the DEV error check reads through Hono's own
+ * router (`create_route_lookup`). This lookup is hono-free
+ * (`find_mounted_route`), pinned against Hono by the route-lookup tests. The
+ * path is read as Hono reads it: its pathname, percent-decoded.
  *
- * Supports both exact matches and parameterized paths (`:param` segments).
+ * A path template passed as the path (`/api/things/:id`, a segment that is
+ * `*` or starts with `:`) finds its own spec first, outranking mount order.
  *
- * @param path - request path (exact or with concrete param values)
+ * @param specs - the route specs, in mount order
+ * @param method - the request method
+ * @param path - request path, concrete or a route's own template
  */
 export const find_route_spec = (
 	specs: Array<RouteSpec>,
 	method: string,
 	path: string
 ): RouteSpec | undefined => {
-	// exact match first
-	const exact = specs.find((s) => s.method === method && s.path === path);
-	if (exact) return exact;
-
-	// parameterized match — `:param` segments match any value
-	return specs.find((s) => {
-		if (s.method !== method) return false;
-		const spec_parts = s.path.split('/');
-		const path_parts = path.split('/');
-		if (spec_parts.length !== path_parts.length) return false;
-		return spec_parts.every((sp, i) => sp.startsWith(':') || sp === path_parts[i]);
-	});
+	// a template names its own spec; only a whole param or wildcard segment
+	// makes one, as a concrete path can hold a `:` mid-segment
+	if (path.split('/').some((segment) => segment === '*' || segment.startsWith(':'))) {
+		const read_method = method === 'HEAD' ? 'GET' : method;
+		const own = specs.find((s) => s.method === read_method && s.path === path);
+		if (own) return own;
+	}
+	let routes = mounted_routes_cache.get(specs);
+	if (!routes) {
+		routes = to_mounted_routes(specs, (spec) => spec);
+		mounted_routes_cache.set(specs, routes);
+	}
+	return find_mounted_route(routes, method, to_hono_path(path));
 };
 
 /**
@@ -89,18 +129,30 @@ export const find_auth_route = (
 /**
  * Validate a response body against the route spec's declared schemas.
  *
- * For 2xx responses, validates against `spec.output`.
- * For error responses, validates against the route's error map
- * (`resolve_route_errors`) at that status: the one in `route_errors` — an
- * `AppSurfaceSpec`'s, built with the app's middleware — or, without one, the
- * route's own without middleware. On a `jsonrpc` route (the RPC endpoint's),
- * a JSON-RPC error envelope is not checked: no REST error definition
- * describes one. On any other route it is checked like any error body.
+ * For 2xx responses, validates against `spec.output`. For an error response
+ * (400 and up), checks it against the route's error map
+ * (`resolve_route_errors`) — the one in `route_errors`, an `AppSurfaceSpec`'s,
+ * built with the app's middleware, or without one the route's own — by the
+ * rule the DEV error check runs (`check_route_error`): the status must be
+ * declared and the body must parse against it. A 500 `internal_error` and a
+ * 503 `service_unavailable` are always accepted, and on a `jsonrpc` route (the
+ * RPC endpoint's) a JSON-RPC error envelope is not a REST error body; on any
+ * other route it is checked like any error body.
+ *
+ * The route is the one `find_route_spec` finds, the request's as Hono
+ * dispatches it. A failure reads as the DEV check logs it
+ * (`format_route_error_check`), then `: ` and the issues or the body as JSON.
+ *
+ * Only a JSON response, by its `Content-Type` (`is_json_response`, the DEV
+ * check's gate), has a body to check. A non-JSON response passes only where
+ * no schema applies: a 2xx on a route with a null output, or an error status
+ * the map doesn't declare.
  *
  * @param route_errors - each route's error map, keyed `METHOD path` (`AppSurfaceSpec.route_errors`)
- * @throws Error if no route spec matches `method` + `path`, if the response
- *   body fails to parse against the declared output / error schema, or if the
- *   response is non-JSON despite a declared schema for that status.
+ * @throws Error if no route spec matches `method` + `path`, if the body fails
+ *   its output schema, if a JSON error is at a status the route's map lacks or
+ *   off its schema, or if the response is non-JSON despite a declared schema
+ *   for its status.
  */
 export const assert_response_matches_spec = async (
 	route_specs: Array<RouteSpec>,
@@ -114,11 +166,18 @@ export const assert_response_matches_spec = async (
 		throw new Error(`No route spec found for ${method} ${path}`);
 	}
 
-	const cloned = response.clone();
+	// the DEV error check's gate: only a JSON response has a body to check
 	let body: unknown;
-	try {
-		body = await cloned.json();
-	} catch {
+	let parsed = false;
+	if (is_json_response(response)) {
+		try {
+			body = await response.clone().json();
+			parsed = true;
+		} catch {
+			// a body claiming JSON that isn't — read as non-JSON below
+		}
+	}
+	if (!parsed) {
 		// Non-JSON response — only acceptable when no schema applies.
 		// If the spec declares an output or error schema for this status,
 		// getting non-JSON is a real bug.
@@ -148,18 +207,19 @@ export const assert_response_matches_spec = async (
 				)}`
 			);
 		}
-	} else if (!(spec.jsonrpc && is_jsonrpc_error_response(body))) {
-		// a JSON-RPC error envelope, the RPC endpoint's refusal, is no REST error body
-		const status_schema = get_route_errors(route_errors, spec).schemas[response.status];
-		if (status_schema) {
-			const result = parse_any(status_schema, body);
-			if (!result.ok) {
-				throw new Error(
-					`Error schema mismatch for ${method} ${path} (${response.status}): ${JSON.stringify(
-						result.issues
-					)}`
-				);
-			}
+	} else if (is_error_status(response.status)) {
+		const check = check_route_error(
+			get_route_errors(route_errors, spec),
+			response.status,
+			body,
+			spec.jsonrpc ?? false
+		);
+		if (!check.ok) {
+			throw new Error(
+				`${format_route_error_check(check, response.status, `${method} ${path}`)}: ${JSON.stringify(
+					check.kind === 'schema_mismatch' ? check.issues : body
+				)}`
+			);
 		}
 	}
 };

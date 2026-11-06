@@ -29,6 +29,8 @@ import type { MiddlewareSpec } from '#lib/http/middleware_spec.ts';
 import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
 import { Uuid } from '#lib/primitive_schemas.ts';
 import { rest_error } from '#lib/http/error_schemas.ts';
+import { create_dev_route_error_check } from '#lib/http/dev_route_error_check.ts';
+import { resolve_app_route_errors } from '#lib/http/schema_helpers.ts';
 import { create_stub_db } from '#lib/testing/stubs.ts';
 
 const ThingParams = z.strictObject({ thing_id: Uuid });
@@ -231,6 +233,14 @@ export const probe_all_zod_exchanges = async (): Promise<Array<ProbeExchange>> =
 		calls.push(JSON.stringify(args));
 	};
 	const app = new Hono();
+	// the DEV error check outermost, as `create_app_server` mounts it; the
+	// middleware isn't mounted here, so the maps are the routes' own
+	const check = create_dev_route_error_check({
+		route_specs: ROUTES,
+		route_errors: resolve_app_route_errors(ROUTES),
+		log
+	});
+	if (check) app.use('*', check);
 	apply_route_specs(app, ROUTES, fuz_auth_guard_resolver, log, create_stub_db());
 	const exchanges: Array<ProbeExchange> = [];
 	for (const { label, method, url, body } of REQUESTS) {

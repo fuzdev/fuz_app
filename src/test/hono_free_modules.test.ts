@@ -41,6 +41,7 @@ const HONO_SIDE: ReadonlySet<string> = new Set([
 	'auth/session_middleware.ts',
 	'auth/signup_routes.ts',
 	'http/body_limit.ts',
+	'http/dev_route_error_check.ts',
 	'http/proxy.ts',
 	'realtime/sse.ts',
 	'server/app_server.ts',
