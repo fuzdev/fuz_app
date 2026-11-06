@@ -19,6 +19,7 @@
  */
 
 import { describe, test, assert } from 'vitest';
+import { is } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	cell_create_action_spec,
@@ -261,7 +262,7 @@ describe_db('cell audit', (get_db) => {
 			assert.ok(as_owner.result.events.length > 0);
 			// Wire shape carries no `ip` (PII dropped) — strict parse + key check.
 			for (const ev of as_owner.result.events) {
-				assert.doesNotThrow(() => CellAuditEventJson.parse(ev));
+				assert.ok(is(CellAuditEventJson, ev), JSON.stringify(ev));
 				assert.ok(!('ip' in ev), 'no ip on the wire');
 			}
 

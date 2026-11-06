@@ -9,7 +9,7 @@
  * gated above `can_view_cell`.
  *
  * Read-only; no audit side effect. Returns the most-recent
- * `CELL_AUDIT_LIST_DEFAULT_LIMIT` events; pagination is intentionally
+ * `CELL_AUDIT_LIST_EVENTS_MAX` events; pagination is intentionally
  * not on the wire yet — the only consumer renders a single page. Add
  * `{before, limit}` input + `{next_before}` output together when a
  * paginating consumer surfaces.
@@ -17,11 +17,19 @@
  * @module
  */
 
-import { z } from 'zod';
-import { Uuid } from '../primitive_schemas.ts';
+import { meta } from '@fuzdev/fuz_schema/meta.ts';
+import {
+	array,
+	nullable,
+	number,
+	object,
+	one_of,
+	string,
+	type Infer
+} from '@fuzdev/fuz_schema/schema.ts';
 
+import { ActingActor, Uuid } from '../primitive_schemas_fuz.ts';
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
-import { ActingActor } from '../http/auth_shape.ts';
 
 /**
  * Wire shape for a single cell-audit row. Narrower than
@@ -42,29 +50,33 @@ import { ActingActor } from '../http/auth_shape.ts';
  * event-detail view later — keep the wire surface honest about what
  * consumers use.
  */
-export const CellAuditEventJson = z.strictObject({
+export const CellAuditEventJson = object({
 	id: Uuid,
-	seq: z.number(),
-	event_type: z.string(),
-	outcome: z.enum(['success', 'failure']),
-	actor_id: Uuid.nullable(),
-	created_at: z.string()
+	seq: number,
+	event_type: string,
+	outcome: one_of(['success', 'failure']),
+	actor_id: nullable(Uuid),
+	created_at: string
 });
-export type CellAuditEventJson = z.infer<typeof CellAuditEventJson>;
+export type CellAuditEventJson = Infer<typeof CellAuditEventJson>;
 
-/** Page size for `cell_audit_list`. Single page at MVP; no cursor wire. */
-export const CELL_AUDIT_LIST_DEFAULT_LIMIT = 50;
+/**
+ * The most events `cell_audit_list` returns, the most recent first. Fixed:
+ * the input takes no `limit` and the output no cursor, so this is the whole
+ * timeline a caller sees.
+ */
+export const CELL_AUDIT_LIST_EVENTS_MAX = 50;
 
-export const CellAuditListInput = z.strictObject({
-	cell_id: Uuid.meta({ description: 'Cell whose audit trail to fetch.' }),
+export const CellAuditListInput = object({
+	cell_id: meta(Uuid, { description: 'Cell whose audit trail to fetch.' }),
 	acting: ActingActor
 });
-export type CellAuditListInput = z.infer<typeof CellAuditListInput>;
+export type CellAuditListInput = Infer<typeof CellAuditListInput>;
 
-export const CellAuditListOutput = z.strictObject({
-	events: z.array(CellAuditEventJson)
+export const CellAuditListOutput = object({
+	events: array(CellAuditEventJson)
 });
-export type CellAuditListOutput = z.infer<typeof CellAuditListOutput>;
+export type CellAuditListOutput = Infer<typeof CellAuditListOutput>;
 
 export const cell_audit_list_action_spec = {
 	method: 'cell_audit_list',

@@ -19,7 +19,7 @@ import type { AuditLogEvent } from './audit_log_schema.ts';
 
 import {
 	cell_audit_list_action_spec,
-	CELL_AUDIT_LIST_DEFAULT_LIMIT,
+	CELL_AUDIT_LIST_EVENTS_MAX,
 	type CellAuditEventJson,
 	type CellAuditListInput,
 	type CellAuditListOutput
@@ -56,7 +56,7 @@ export const create_cell_audit_actions = (): Array<RpcAction> => {
 		// aren't consulted (manage tier is owner/admin only).
 		const cell = await require_manageable_cell(ctx, auth, input.cell_id);
 		const rows = await query_audit_log_list_by_cell(ctx, cell.id, {
-			limit: CELL_AUDIT_LIST_DEFAULT_LIMIT
+			limit: CELL_AUDIT_LIST_EVENTS_MAX
 		});
 		return { events: rows.map(to_cell_audit_event_json) };
 	};

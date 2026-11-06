@@ -7,8 +7,23 @@
  * @module
  */
 
-import { z } from 'zod';
-import { Uuid } from '../primitive_schemas.ts';
+import {
+	boolean,
+	loose_object,
+	min_value,
+	nullable,
+	number,
+	one_of,
+	optional,
+	pipe,
+	record,
+	safe_integer,
+	string,
+	unknown,
+	type Infer
+} from '@fuzdev/fuz_schema/schema.ts';
+
+import { Uuid } from '../primitive_schemas_fuz.ts';
 
 /**
  * Shared metadata envelope for cell mutations. `kind` and `path` are
@@ -20,12 +35,12 @@ import { Uuid } from '../primitive_schemas.ts';
  * Loose object: per-kind handlers may extend the metadata without spec
  * churn.
  */
-export const CellAuditMetadata = z.looseObject({
+export const CellAuditMetadata = loose_object({
 	cell_id: Uuid,
-	kind: z.string().optional(),
-	path: z.string().optional()
+	kind: optional(string),
+	path: optional(string)
 });
-export type CellAuditMetadata = z.infer<typeof CellAuditMetadata>;
+export type CellAuditMetadata = Infer<typeof CellAuditMetadata>;
 
 /**
  * Metadata envelope for `cell_clone`.
@@ -41,14 +56,14 @@ export type CellAuditMetadata = z.infer<typeof CellAuditMetadata>;
  * cloner (who owns — and can audit — the clone). Non-viewable children are
  * dropped silently (D8).
  */
-export const CellCloneAuditMetadata = z.looseObject({
+export const CellCloneAuditMetadata = loose_object({
 	source_id: Uuid,
 	new_id: Uuid,
-	deep: z.boolean(),
-	item_count: z.number().int().nonnegative(),
-	kind: z.string().optional()
+	deep: boolean,
+	item_count: pipe(number, safe_integer, min_value(0)),
+	kind: optional(string)
 });
-export type CellCloneAuditMetadata = z.infer<typeof CellCloneAuditMetadata>;
+export type CellCloneAuditMetadata = Infer<typeof CellCloneAuditMetadata>;
 
 /**
  * Metadata envelope for `cell_moderate`. `cell_id` is the moderated
@@ -56,21 +71,21 @@ export type CellCloneAuditMetadata = z.infer<typeof CellCloneAuditMetadata>;
  * moderation authority gated the call); `moderation` is the terminal decision
  * applied (`'approved'` | `'rejected'`).
  */
-export const CellModerateAuditMetadata = z.looseObject({
+export const CellModerateAuditMetadata = loose_object({
 	cell_id: Uuid,
 	root_id: Uuid,
-	moderation: z.enum(['approved', 'rejected'])
+	moderation: one_of(['approved', 'rejected'])
 });
-export type CellModerateAuditMetadata = z.infer<typeof CellModerateAuditMetadata>;
+export type CellModerateAuditMetadata = Infer<typeof CellModerateAuditMetadata>;
 
 /**
  * Metadata envelope for `cell_policy_set`. `cell_id` is the root; `policy` is
  * the policy written (`null` when cleared) and `previous_policy` the one it
  * replaced, so the audit trail carries every policy a root has had.
  */
-export const CellPolicySetAuditMetadata = z.looseObject({
+export const CellPolicySetAuditMetadata = loose_object({
 	cell_id: Uuid,
-	policy: z.record(z.string(), z.unknown()).nullable(),
-	previous_policy: z.record(z.string(), z.unknown()).nullable()
+	policy: nullable(record(unknown)),
+	previous_policy: nullable(record(unknown))
 });
-export type CellPolicySetAuditMetadata = z.infer<typeof CellPolicySetAuditMetadata>;
+export type CellPolicySetAuditMetadata = Infer<typeof CellPolicySetAuditMetadata>;

@@ -6,7 +6,7 @@
  * output alone, so the fixture never changes for an all-Zod list.
  *
  * fuz_app's own list, whose account, `self_service_role_set`,
- * `actor_lookup`, `actor_search`, admin and role_grant_offer methods are
+ * `actor_lookup`, `actor_search`, admin, role_grant_offer, and cell methods are
  * `@fuzdev/fuz_schema`, generates the same text but for those types, read by `Infer`, and the
  * `Infer` import. The all-Zod list holds Zod stand-ins for those schemas,
  * which give codegen the answers their own do.
@@ -84,8 +84,20 @@ test("fuz_app's own list differs from the fixture only in its fuz_schema methods
 		'app_settings_get',
 		'app_settings_update'
 	];
-	assert.deepStrictEqual(fuz_schema_input_methods, [...admin_inputs, ...offers, ...fully]);
-	assert.deepStrictEqual(fuz_schema_output_methods, [...admin_inputs, ...offers, ...fully]);
+	// the cell methods, in `all_cell_action_specs`' order
+	const cells: ReadonlyArray<string> = ['cell_audit_list'];
+	assert.deepStrictEqual(fuz_schema_input_methods, [
+		...admin_inputs,
+		...offers,
+		...fully,
+		...cells
+	]);
+	assert.deepStrictEqual(fuz_schema_output_methods, [
+		...admin_inputs,
+		...offers,
+		...fully,
+		...cells
+	]);
 	const changed = actual.filter((line) => line.includes(': Infer<'));
 	// each method's input and output, in the plain inputs-outputs block, the
 	// protocol-including one, and the qualified one

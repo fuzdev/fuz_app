@@ -8,8 +8,9 @@
  * @module
  */
 
-import { z } from 'zod';
-import { Uuid } from '../primitive_schemas.ts';
+import { loose_object, string, type Infer } from '@fuzdev/fuz_schema/schema.ts';
+
+import { Uuid } from '../primitive_schemas_fuz.ts';
 
 /**
  * Metadata envelope for `cell_field_set`. Emitted on every successful
@@ -17,17 +18,17 @@ import { Uuid } from '../primitive_schemas.ts';
  * reader correlates create-vs-update via repeated `(source_id, name)`
  * if needed.
  */
-export const CellFieldSetAuditMetadata = z.looseObject({
+export const CellFieldSetAuditMetadata = loose_object({
 	source_id: Uuid,
-	name: z.string(),
+	name: string,
 	target_id: Uuid
 });
-export type CellFieldSetAuditMetadata = z.infer<typeof CellFieldSetAuditMetadata>;
+export type CellFieldSetAuditMetadata = Infer<typeof CellFieldSetAuditMetadata>;
 
 /** Metadata envelope for `cell_field_delete`. */
-export const CellFieldDeleteAuditMetadata = z.looseObject({
+export const CellFieldDeleteAuditMetadata = loose_object({
 	source_id: Uuid,
-	name: z.string(),
+	name: string,
 	target_id: Uuid
 });
-export type CellFieldDeleteAuditMetadata = z.infer<typeof CellFieldDeleteAuditMetadata>;
+export type CellFieldDeleteAuditMetadata = Infer<typeof CellFieldDeleteAuditMetadata>;

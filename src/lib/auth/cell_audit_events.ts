@@ -17,7 +17,7 @@
  * @module
  */
 
-import type { z } from 'zod';
+import type { AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	CellAuditMetadata,
@@ -46,7 +46,7 @@ import {
  * field / item relation events. Read-only verbs (`cell_get`, `cell_list`,
  * `cell_*_list`, `cell_audit_list`) emit nothing and are absent here.
  */
-export const cell_audit_events: Readonly<Record<string, z.ZodType>> = {
+export const cell_audit_events: Readonly<Record<string, AnySchema>> = {
 	cell_create: CellAuditMetadata,
 	cell_update: CellAuditMetadata,
 	cell_delete: CellAuditMetadata,

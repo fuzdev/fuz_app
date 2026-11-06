@@ -7,33 +7,34 @@
  * @module
  */
 
-import { z } from 'zod';
-import { Uuid } from '../primitive_schemas.ts';
+import { loose_object, string, type Infer } from '@fuzdev/fuz_schema/schema.ts';
+
+import { Uuid } from '../primitive_schemas_fuz.ts';
 
 /** Metadata envelope for `cell_item_insert`. */
-export const CellItemInsertAuditMetadata = z.looseObject({
+export const CellItemInsertAuditMetadata = loose_object({
 	parent_id: Uuid,
-	position: z.string(),
+	position: string,
 	child_id: Uuid
 });
-export type CellItemInsertAuditMetadata = z.infer<typeof CellItemInsertAuditMetadata>;
+export type CellItemInsertAuditMetadata = Infer<typeof CellItemInsertAuditMetadata>;
 
 /**
  * Metadata envelope for `cell_item_move`. Carries both old and new
  * position so the audit trail shows the reorder without a join back to
  * the live row.
  */
-export const CellItemMoveAuditMetadata = z.looseObject({
+export const CellItemMoveAuditMetadata = loose_object({
 	parent_id: Uuid,
-	position_old: z.string(),
-	position_new: z.string()
+	position_old: string,
+	position_new: string
 });
-export type CellItemMoveAuditMetadata = z.infer<typeof CellItemMoveAuditMetadata>;
+export type CellItemMoveAuditMetadata = Infer<typeof CellItemMoveAuditMetadata>;
 
 /** Metadata envelope for `cell_item_delete`. */
-export const CellItemDeleteAuditMetadata = z.looseObject({
+export const CellItemDeleteAuditMetadata = loose_object({
 	parent_id: Uuid,
-	position: z.string(),
+	position: string,
 	child_id: Uuid
 });
-export type CellItemDeleteAuditMetadata = z.infer<typeof CellItemDeleteAuditMetadata>;
+export type CellItemDeleteAuditMetadata = Infer<typeof CellItemDeleteAuditMetadata>;

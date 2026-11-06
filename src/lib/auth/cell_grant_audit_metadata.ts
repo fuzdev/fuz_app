@@ -11,8 +11,18 @@
  * @module
  */
 
-import { z } from 'zod';
-import { Uuid } from '../primitive_schemas.ts';
+import {
+	literal,
+	loose_object,
+	nullable,
+	one_of,
+	optional,
+	string,
+	union,
+	type Infer
+} from '@fuzdev/fuz_schema/schema.ts';
+
+import { Uuid } from '../primitive_schemas_fuz.ts';
 
 /**
  * Principal columns as stored on `cell_grant`. Discriminated by which
@@ -20,11 +30,11 @@ import { Uuid } from '../primitive_schemas.ts';
  * `{role, scope_id}` for a role-shaped grant. Actor-shaped grants
  * carry only the id; names are never persisted in the audit envelope.
  */
-export const CellGrantPrincipalAuditMetadata = z.union([
-	z.looseObject({ actor_id: Uuid }),
-	z.looseObject({ role: z.string(), scope_id: Uuid.nullable() })
+export const CellGrantPrincipalAuditMetadata = union([
+	loose_object({ actor_id: Uuid }),
+	loose_object({ role: string, scope_id: nullable(Uuid) })
 ]);
-export type CellGrantPrincipalAuditMetadata = z.infer<typeof CellGrantPrincipalAuditMetadata>;
+export type CellGrantPrincipalAuditMetadata = Infer<typeof CellGrantPrincipalAuditMetadata>;
 
 /**
  * Metadata envelope for `cell_grant_create`.
@@ -34,13 +44,13 @@ export type CellGrantPrincipalAuditMetadata = z.infer<typeof CellGrantPrincipalA
  * via `grant_id` if needed; the design doesn't require distinguishing
  * the two at the metadata level.
  */
-export const CellGrantCreateAuditMetadata = z.looseObject({
+export const CellGrantCreateAuditMetadata = loose_object({
 	cell_id: Uuid,
 	grant_id: Uuid,
-	level: z.enum(['viewer', 'editor']),
+	level: one_of(['viewer', 'editor']),
 	principal: CellGrantPrincipalAuditMetadata
 });
-export type CellGrantCreateAuditMetadata = z.infer<typeof CellGrantCreateAuditMetadata>;
+export type CellGrantCreateAuditMetadata = Infer<typeof CellGrantCreateAuditMetadata>;
 
 /**
  * Metadata envelope for `cell_grant_revoke`.
@@ -53,12 +63,12 @@ export type CellGrantCreateAuditMetadata = z.infer<typeof CellGrantCreateAuditMe
  * three — the boolean is enough for forensic review and avoids
  * surface-doubling with parallel events.
  */
-export const CellGrantRevokeAuditMetadata = z.looseObject({
+export const CellGrantRevokeAuditMetadata = loose_object({
 	cell_id: Uuid,
 	grant_id: Uuid,
-	level: z.enum(['viewer', 'editor']),
+	level: one_of(['viewer', 'editor']),
 	principal: CellGrantPrincipalAuditMetadata,
-	self: z.literal(true).optional(),
-	steward: z.literal(true).optional()
+	self: optional(literal(true)),
+	steward: optional(literal(true))
 });
-export type CellGrantRevokeAuditMetadata = z.infer<typeof CellGrantRevokeAuditMetadata>;
+export type CellGrantRevokeAuditMetadata = Infer<typeof CellGrantRevokeAuditMetadata>;

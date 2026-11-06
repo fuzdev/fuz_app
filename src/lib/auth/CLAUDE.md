@@ -415,8 +415,8 @@ root_id, root_policy}` than `validate_data` and returns a `CellCreateVerdict`
     Distinct from `create_cell_actions` (the CRUD-only factory it bundles).
 - `auth/cell_audit_metadata.ts` + `cell_grant_audit_metadata.ts` +
   `cell_field_audit_metadata.ts` + `cell_item_audit_metadata.ts` — audit
-  metadata envelopes (IDs only), registered via `extra_events:` on the
-  consumer's `create_audit_log_config`.
+  metadata envelopes (IDs only), `@fuzdev/fuz_schema` `loose_object`s,
+  registered via `extra_events:` on the consumer's `create_audit_log_config`.
 - `auth/cell_audit_events.ts` — `cell_audit_events`, the canonical
   `event_type → metadata` map bundling every cell-domain audit event.
   Consumers spread it into `extra_events` to register the whole layer in
