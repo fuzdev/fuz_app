@@ -194,7 +194,7 @@ describe_db('cell create authorizer + kind invariants', (get_db) => {
 			const actor = await app.create_account({ username: 'kind_top_level_update' });
 			const h = actor.create_session_headers();
 			const { id } = await create_cell(app, { kind: 'note', data: { label: 'a' }, headers: h });
-			// `kind` is not a field on `CellUpdateInput` (z.strictObject), so a
+			// `kind` is not a field on `CellUpdateInput` (a strict `object`), so a
 			// top-level `kind` has no wire path in — kind is structurally immutable.
 			const res = await call(
 				app,

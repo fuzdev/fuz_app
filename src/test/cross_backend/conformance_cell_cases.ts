@@ -150,13 +150,13 @@ const schema_first_cases: Array<ConformanceCase> = [
 		name: "anonymous → cell_list {shared_with: 'bogus'} → 400",
 		request: { method: 'cell_list', as: 'anonymous', params: { shared_with: 'bogus' } },
 		expect: { status: 400 },
-		note: `auth/cell_action_specs.ts \`CellListInput\` — \`shared_with\` is \`z.literal('me')\`; ${schema_first_note} (not cell_list_shared_with_requires_auth)`
+		note: `auth/cell_action_specs.ts \`CellListInput\` — \`shared_with\` is \`literal('me')\`; ${schema_first_note} (not cell_list_shared_with_requires_auth)`
 	},
 	...(['order_by', 'order_direction'] as const).map((key): ConformanceCase => ({
 		name: `keeper → cell_list {${key}: 'bogus'} → 400`,
 		request: { method: 'cell_list', as: 'keeper', params: { [key]: 'bogus' } },
 		expect: { status: 400 },
-		note: `auth/cell_action_specs.ts \`CellListInput\` — \`${key}\` is a \`z.enum\`, so another value is refused, not defaulted`
+		note: `auth/cell_action_specs.ts \`CellListInput\` — \`${key}\` is a \`one_of\`, so another value is refused, not defaulted`
 	})),
 	{
 		name: 'keeper → cell_field_list naming neither endpoint, {limit: 0} → 400',
@@ -306,7 +306,7 @@ const proto_cases: Array<ConformanceCase> = [
 ];
 
 const integral_note =
-	'`z.number().int()` reads any integral spelling — `5.0`, `1e1`, `-0` — and refuses a fraction; the Rust fields decode through `fuz_http::deserialize_wire_int`. `params_json` keeps the spelling `JSON.stringify` would normalize';
+	'An `integer` reads any integral spelling — `5.0`, `1e1`, `-0` — and refuses a fraction; the Rust fields decode through `fuz_http::deserialize_wire_int`. `params_json` keeps the spelling `JSON.stringify` would normalize';
 
 /** A case whose params go out as `json`, verbatim. */
 const spelled_case = (

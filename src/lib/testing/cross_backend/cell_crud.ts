@@ -15,7 +15,7 @@ import '../assert_dev_env.ts';
  *
  * Drives the full lifecycle (create → get → update → delete → list, threading
  * the created id) plus the authz matrix the wire contract guarantees. Every
- * success response is parsed against the verb's declared Zod **output** schema
+ * success response is parsed against the verb's declared **output** schema
  * (`CellCreateOutput` / `CellGetOutput` / …), so a TS↔Rust envelope drift —
  * not just a `CellJson` field drift — fails the suite:
  *
@@ -162,7 +162,7 @@ export const describe_cell_crud_cross_tests = (
 				assert.strictEqual(created.cell.created_by, owner.actor.id);
 				assert.strictEqual(created.cell.updated_by, null);
 				assert.strictEqual(created.cell.grant_count, 0);
-				// Byte-shape gate: `CellJson`'s `z.string()` accepts a millisecond
+				// Byte-shape gate: `CellJson`'s `Timestamp` accepts a millisecond
 				// stamp too, so `expect_output` alone can't tell the two spines
 				// apart on the timestamp columns.
 				assert_iso8601_seconds(created.cell.created_at, 'cell_create.created_at');

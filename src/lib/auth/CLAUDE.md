@@ -485,8 +485,8 @@ than read back — the `expires_at` on `account_token_create`'s output — use
 `to_iso8601_seconds` (`timestamp.ts`), so the mint and the later
 `account_token_list` read agree byte for byte.
 
-The `*Json` schemas type these as `z.string()`, which a millisecond stamp
-also satisfies — so the shape is pinned behaviorally by
+The `*Json` schemas type these as `Timestamp` (`iso_datetime`), which a
+millisecond stamp also satisfies — so the shape is pinned behaviorally by
 `assert_iso8601_seconds` (`testing/cross_backend/wire_shapes.ts`) inside the
 shared suites, on both backends.
 

@@ -9,7 +9,7 @@ import '../assert_dev_env.ts';
  * Like the CRUD suite (and ws / sse), these verbs are live-mounted on the
  * spine RPC path but stay off the standard declared surface, so the generic
  * `describe_rpc_round_trip_tests` never drives them. Every success response
- * is parsed against the verb's declared Zod **output** schema, so a TS↔Rust
+ * is parsed against the verb's declared **output** schema, so a TS↔Rust
  * envelope drift fails the suite — not just a payload-field drift.
  *
  * Coverage (gated on `capabilities.cell_relations`):
@@ -384,7 +384,7 @@ export const describe_cell_relations_cross_tests = (
 			"cell_list shared_with other than 'me' → invalid_params",
 			async () => {
 				const fixture = await setup_test();
-				// TS rejects at the schema (`z.literal('me')`), Rust in the handler
+				// TS rejects at the schema (`literal('me')`), Rust in the handler
 				// guard — both must land on -32602, so a caller can't widen the
 				// grant-driven branch to another actor on either spine.
 				const bad = await cross_rpc_call(
