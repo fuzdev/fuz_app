@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/BTZoVLbz.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CAODFmXb.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.DaAbYZ94.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.DXFPYkub.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.BZDSsfMw.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.D6eRP_Dw.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BcwQFYZ2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/C3BYcZ2u.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CE-egMPB.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/Bx2T945S.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.-XBuu-RE.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/Ev4DNfWA.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.BbWlp60_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BL7ZH9U-.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DhdQKFKC.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -191,7 +191,9 @@ one surface warning, and prints a stderr banner once per module instance
 (anything else throws at assembly). Omit or <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->undefined<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> to use the
 default (1 MiB). Pass <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->null<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> to explicitly disable body size limiting,
 which adds a security warning to the surface's diagnostics (logged at
-startup).<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--> <!--[0--><p class="row gap_md"><strong>type</strong> <!--[0--><!--[-1--><code class="type-json-view svelte-jzdoj9" title="number | null"><!--[--><!--[-1--><code data-lang="ts" class="svelte-jqsy8a inline"><!--[-1--><!----><span class="token_builtin">number</span><!----><!--]--></code><!--]--><!--[0--> | <!--]--><!--[-1--><code data-lang="ts" class="svelte-jqsy8a inline"><!--[-1--><!----><span class="token_keyword">null</span><!----><!--]--></code><!--]--><!--]--></code><!--]--><!--]--><!----></p><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--><!----></section><section class="svelte-pitz0d"><h4><code>daemon_token_state<!--[0--><strong>?</strong><!--]--></code></h4> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Daemon token state for keeper auth. Omit to disable.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--> <!--[0--><p class="row gap_md"><strong>type</strong> <!--[1--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/daemon_token.ts#DaemonTokenState"><!--[-1-->DaemonTokenState<!--]--></a><!--]--><!--]--><!----></p><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--><!----></section><section class="svelte-pitz0d"><h4><code>surface_route<!--[0--><strong>?</strong><!--]--></code></h4> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Mount <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->GET /api/surface<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, which serves this server's generated
+startup). The limit is mounted as a middleware spec at <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->'*'<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> ahead of
+the others (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/body_limit.ts#create_body_limit_middleware_spec"><!--[0--><!--[-1-->create_body_limit_middleware_spec<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->), so every route's
+error map declares its <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->413<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> and <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->400<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->; with <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->null<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> it is absent.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--> <!--[0--><p class="row gap_md"><strong>type</strong> <!--[0--><!--[-1--><code class="type-json-view svelte-jzdoj9" title="number | null"><!--[--><!--[-1--><code data-lang="ts" class="svelte-jqsy8a inline"><!--[-1--><!----><span class="token_builtin">number</span><!----><!--]--></code><!--]--><!--[0--> | <!--]--><!--[-1--><code data-lang="ts" class="svelte-jqsy8a inline"><!--[-1--><!----><span class="token_keyword">null</span><!----><!--]--></code><!--]--><!--]--></code><!--]--><!--]--><!----></p><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--><!----></section><section class="svelte-pitz0d"><h4><code>daemon_token_state<!--[0--><strong>?</strong><!--]--></code></h4> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Daemon token state for keeper auth. Omit to disable.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--> <!--[0--><p class="row gap_md"><strong>type</strong> <!--[1--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/daemon_token.ts#DaemonTokenState"><!--[-1-->DaemonTokenState<!--]--></a><!--]--><!--]--><!----></p><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--><!----></section><section class="svelte-pitz0d"><h4><code>surface_route<!--[0--><strong>?</strong><!--]--></code></h4> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Mount <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->GET /api/surface<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, which serves this server's generated
 <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/surface.ts#AppSurface"><!--[0--><!--[-1-->AppSurface<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> (every route, its auth, and its schemas) to an admin UI such
 as <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->AdminSurface.svelte<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->. Off by default — the Rust spine serves no such
 route, and a map of the API is nothing to publish unasked.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->When mounted the route is admin-only (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->roles: ['admin']<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, so it takes the
@@ -302,16 +304,16 @@ end-to-end.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!---
 			
 			<script>
 				{
-					__sveltekit_1vnz0ds = {
+					__sveltekit_1oapurk = {
 						base: "",
-						version: "21cc624cbf55cf69e8b3ce69614c955711af9e29"
+						version: "551ce060382631f8d179f2a92d604e09cba10e48"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.CXlCZqzx.js").then(async (kit) => {
-						kit.init(__sveltekit_1vnz0ds);
-						const app = await import("/_app/immutable/entry/app.DaAbYZ94.js");
+						kit.init(__sveltekit_1oapurk);
+						const app = await import("/_app/immutable/entry/app.BZDSsfMw.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],
