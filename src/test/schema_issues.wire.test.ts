@@ -357,7 +357,7 @@ describe('to_wire_issues of Zod issues', () => {
 		test(label, () => {
 			const wire = wire_of(schema, input);
 			assert.deepStrictEqual(fields_of(wire), expected);
-			for (const w of wire) assert.ok(WireIssue.safeParse(w).success, JSON.stringify(w));
+			for (const w of wire) assert.ok(s.is(WireIssue, w), JSON.stringify(w));
 		});
 	}
 
@@ -409,7 +409,7 @@ describe('to_wire_issues of Zod issues', () => {
 
 	test('WireIssue admits a field a newer server adds', () => {
 		const [wire] = wire_of(z.string(), 1);
-		assert.ok(WireIssue.safeParse({ ...wire!, added: true }).success);
+		assert.ok(s.is(WireIssue, { ...wire!, added: true }));
 	});
 
 	test('serializes a bigint bound, which a raw Zod issue cannot', () => {
@@ -445,7 +445,7 @@ describe('to_wire_issues of fuz_schema issues', () => {
 		]);
 		for (const [i, w] of wire.entries()) {
 			assert.strictEqual(w.message, s.format_issue(result.issues[i]!));
-			assert.ok(WireIssue.safeParse(w).success);
+			assert.ok(s.is(WireIssue, w));
 		}
 	});
 

@@ -18,8 +18,8 @@ import './assert_dev_env.ts';
  */
 
 import { test, assert, describe } from 'vitest';
-import type { z } from 'zod';
 
+import { parse_any } from '../schema_issues.ts';
 import { ApiError, ERROR_FORBIDDEN_ORIGIN } from '../http/error_schemas.ts';
 import {
 	create_test_middleware_stack_app,
@@ -42,9 +42,8 @@ export interface AdversarialHeaderCase {
 	name: string;
 	headers: Record<string, string>;
 	expected_status: number;
+	/** Expected `error` field in the JSON body, which must also parse as `ApiError`. */
 	expected_error?: string;
-	/** Zod schema to validate error response body against. Defaults to `ApiError` when `expected_error` is set. */
-	expected_error_schema?: z.ZodType;
 	/** Whether the request should reach token validation or be short-circuited by earlier middleware. */
 	validate_expectation: 'called' | 'not_called';
 }
@@ -165,8 +164,8 @@ export const describe_standard_adversarial_headers = (
 				const body = await res.json();
 				if (tc.expected_error) {
 					assert.strictEqual(body.error, tc.expected_error);
-					const error_schema = tc.expected_error_schema ?? ApiError;
-					error_schema.parse(body);
+					const parsed = parse_any(ApiError, body);
+					assert.ok(parsed.ok, `error body fails its schema: ${JSON.stringify(body)}`);
 				}
 				if (tc.expected_status === 200) {
 					assert.strictEqual(body.ok, true, 'expected ok to be true for 200 response');

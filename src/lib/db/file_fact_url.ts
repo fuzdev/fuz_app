@@ -26,18 +26,18 @@
  */
 
 import { FACT_HASH_PREFIX, type FactHash } from '@fuzdev/fuz_util/hash_schemas.ts';
-import { z } from 'zod';
+import { brand, pipe, regex, string, type Infer } from '@fuzdev/fuz_schema/schema.ts';
 
 /** Anchored, capture-group form: `^file:(<shard>)/(<rest>)$`. */
 export const FILE_FACT_URL_PATTERN = /^file:([0-9a-f]{2})\/([0-9a-f]{62})$/;
 
 /**
- * Branded URL form. Construct only via `parse_file_fact_url` or
- * `mint_file_fact_url` — those are the validated boundaries. Direct
- * string literals don't satisfy the brand.
+ * Branded URL form, a `@fuzdev/fuz_schema` schema. Construct only via
+ * `parse_file_fact_url` or `mint_file_fact_url` — those are the validated
+ * boundaries. Direct string literals don't satisfy the brand.
  */
-export const FileFactUrl = z.string().regex(FILE_FACT_URL_PATTERN).brand('FileFactUrl');
-export type FileFactUrl = z.infer<typeof FileFactUrl>;
+export const FileFactUrl = brand(pipe(string, regex(FILE_FACT_URL_PATTERN)), 'FileFactUrl');
+export type FileFactUrl = Infer<typeof FileFactUrl>;
 
 /**
  * Split a `FactHash` into its on-disk `<shard>/<rest>` parts — the first 2

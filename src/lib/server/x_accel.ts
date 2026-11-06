@@ -123,7 +123,7 @@
  * @module
  */
 
-import { z } from 'zod';
+import { brand, object, parse_or_throw, string, type Infer } from '@fuzdev/fuz_schema/schema.ts';
 
 import { FACT_SECURITY_HEADERS, fact_security_header_directives } from './fact_security_headers.ts';
 
@@ -311,16 +311,17 @@ const collect_errors = (config: string, facts_location: string): Array<string> =
  * X-Accel serving is impossible to enable without proving at boot that the
  * facts location is `internal;` and carries the fact hardening headers — a
  * public facts location would bypass every cell-visibility check. A
- * Zod-branded type: the brand can't be forged without an explicit cast, so the
- * factory is the only ordinary construction path.
+ * branded `@fuzdev/fuz_schema` `object`: the brand can't be forged without an
+ * explicit cast, so the factory is the only ordinary construction path.
  */
-export const XAccelConfig = z
-	.strictObject({
+export const XAccelConfig = brand(
+	object({
 		/** The validated redirect prefix the serving path prepends (e.g. `/_facts/`). */
-		redirect_prefix: z.string()
-	})
-	.brand('XAccelConfig');
-export type XAccelConfig = z.infer<typeof XAccelConfig>;
+		redirect_prefix: string
+	}),
+	'XAccelConfig'
+);
+export type XAccelConfig = Infer<typeof XAccelConfig>;
 
 /**
  * A misconfigured X-Accel facts location — a fail-loud boot error thrown by
@@ -359,7 +360,7 @@ export const create_x_accel_config = (
 	if (!validation.ok) {
 		throw new XAccelConfigError(validation.errors);
 	}
-	return XAccelConfig.parse({ redirect_prefix });
+	return parse_or_throw(XAccelConfig, { redirect_prefix });
 };
 
 /** Strip every trailing `/` so `/_facts/` and `/_facts` compare equal. */

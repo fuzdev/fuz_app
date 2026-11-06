@@ -21,7 +21,7 @@ import { readFileSync } from 'node:fs';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
-import { is_schema } from '@fuzdev/fuz_schema/schema.ts';
+import { is, is_schema } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	create_db_route_specs,
@@ -332,7 +332,7 @@ describe('through the route stack, an invalid query', () => {
 			assert.strictEqual(res.status, 400);
 			const body = await res.json();
 			assert.deepStrictEqual(body, { error: 'invalid_query_params', issues: EXPECTED_ISSUES });
-			for (const issue of body.issues) assert.ok(WireIssue.safeParse(issue).success);
+			for (const issue of body.issues) assert.ok(is(WireIssue, issue));
 		});
 	}
 

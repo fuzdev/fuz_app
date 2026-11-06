@@ -208,7 +208,7 @@ export interface ResolvedConformancePrincipal {
 
 /**
  * A deliberately malformed `X-Daemon-Token` value for the `invalid_daemon`
- * principal. Fails the `DaemonToken` Zod schema (not 43 base64url chars), so
+ * principal. Fails the `DaemonToken` schema (not 43 base64url chars), so
  * the daemon-token middleware soft-fail-discards it rather than authenticating
  * — the request falls through with no identity, surfacing
  * `credential_type_required` on a daemon-gated action (matching the Rust

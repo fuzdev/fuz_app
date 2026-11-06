@@ -11,8 +11,7 @@
  * @module
  */
 
-import { z } from 'zod';
-import { object, type Infer } from '@fuzdev/fuz_schema/schema.ts';
+import { literal, object, type Infer } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { RouteSpec } from '../http/route_spec.ts';
 import { ActingActor } from '../primitive_schemas_fuz.ts';
@@ -31,7 +30,7 @@ export const DEFAULT_AUDIT_STREAM_ROLE = 'admin';
  * The `GET /audit/stream` SSE route shape minus its handler — pure hono-free
  * data. `create_audit_log_route_specs` spreads this and attaches the live SSE
  * handler; cross-process surface builders spread it with a stub handler. The
- * output is `z.null()` because SSE streams have no JSON response body.
+ * output is `literal(null)` because SSE streams have no JSON response body.
  *
  * @param required_role - role gating the stream (default `DEFAULT_AUDIT_STREAM_ROLE`)
  * @returns the SSE route shape minus its handler
@@ -66,6 +65,6 @@ export const create_audit_log_route_shape = (
 	},
 	description: 'Subscribe to realtime audit log events',
 	query: AuditStreamQuery,
-	input: z.null(),
-	output: z.null() // SSE — no JSON response
+	input: literal(null),
+	output: literal(null) // SSE — no JSON response
 });

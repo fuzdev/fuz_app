@@ -11,6 +11,7 @@
 
 import { test, assert } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { is } from '@fuzdev/fuz_schema/schema.ts';
 
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_actor_lookup_actions } from '#lib/auth/actor_lookup_actions.ts';
@@ -232,7 +233,7 @@ describe_db('actor_lookup and actor_search on fuz_schema', (get_db) => {
 			const label = `${method} ${JSON.stringify(params)}`;
 			assert.strictEqual(res.status, 400, label);
 			assert.strictEqual(res.body, invalid_params_body(issues), label);
-			for (const issue of issues) assert.ok(WireIssue.safeParse(issue).success, label);
+			for (const issue of issues) assert.ok(is(WireIssue, issue), label);
 		}
 	});
 });

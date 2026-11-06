@@ -11,6 +11,7 @@
 
 import { test, assert } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { is } from '@fuzdev/fuz_schema/schema.ts';
 
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_account_actions } from '#lib/auth/account_actions.ts';
@@ -125,7 +126,7 @@ describe_db('account_token_revoke', (get_db) => {
 		assert.deepStrictEqual(issues[0]!.path, ['token_id']);
 		// the received type, as the Zod schema's issue named it too
 		assert.strictEqual(issues[0]!.received, 'string');
-		for (const issue of issues) assert.ok(WireIssue.safeParse(issue).success);
+		for (const issue of issues) assert.ok(is(WireIssue, issue));
 	});
 
 	test('an unknown key → -32602 with an unknown_key issue under DEV', async () => {

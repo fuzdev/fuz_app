@@ -15,7 +15,7 @@
 import { z } from 'zod';
 
 import { needs_actor, type RouteAuth } from './auth_shape.ts';
-import { WireIssue, type ValidationSchema } from '../schema_issues.ts';
+import type { ValidationSchema } from '../schema_issues.ts';
 
 // --- Core: Validation (auto-derived by route spec middleware) ---
 
@@ -237,6 +237,17 @@ export const ERROR_DATABASE_CONNECTION_FAILED = 'database_connection_failed' as 
 // --- Standard error shapes ---
 // Using z.looseObject — error responses may carry extra context fields.
 
+// TODO: a Zod copy of `WireIssue` (`schema_issues.ts`, a fuz_schema schema),
+// which a Zod `ValidationError` can't hold — goes when `ValidationError` is a
+// fuz_schema schema
+const ZodWireIssue = z.looseObject({
+	kind: z.string(),
+	path: z.array(z.union([z.string(), z.number()])),
+	expected: z.string(),
+	received: z.string(),
+	message: z.string()
+});
+
 /** Base API error — all JSON error responses have at least `{error: string}`. */
 export const ApiError = z.looseObject({ error: z.string() });
 export type ApiError = z.infer<typeof ApiError>;
@@ -261,7 +272,7 @@ export const ValidationError = z.looseObject({
 		ERROR_INVALID_ROUTE_PARAMS,
 		ERROR_INVALID_QUERY_PARAMS
 	]),
-	issues: z.array(WireIssue).optional()
+	issues: z.array(ZodWireIssue).optional()
 });
 export type ValidationError = z.infer<typeof ValidationError>;
 

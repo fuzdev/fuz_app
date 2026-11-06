@@ -8,14 +8,17 @@
  * @module
  */
 
-import { z } from 'zod';
 import { timingSafeEqual } from 'node:crypto';
+import { message, pipe, regex, string, type Infer } from '@fuzdev/fuz_schema/schema.ts';
 
 import { generate_random_base64url } from '../crypto.ts';
 
-/** Daemon token format: 43 base64url characters (256 bits). */
-export const DaemonToken = z.string().regex(/^[A-Za-z0-9_-]{43}$/, 'Invalid daemon token format');
-export type DaemonToken = z.infer<typeof DaemonToken>;
+/** Daemon token format, a `@fuzdev/fuz_schema` schema: 43 base64url characters (256 bits). */
+export const DaemonToken = pipe(
+	string,
+	message(regex(/^[A-Za-z0-9_-]{43}$/), 'Invalid daemon token format')
+);
+export type DaemonToken = Infer<typeof DaemonToken>;
 
 /** The `X-Daemon-Token` header name. */
 export const DAEMON_TOKEN_HEADER = 'X-Daemon-Token';

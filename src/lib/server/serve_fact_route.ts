@@ -140,7 +140,7 @@ import type { FactHash } from '@fuzdev/fuz_util/hash_schemas.ts';
 import { FactHashSchema, Uuid } from '../primitive_schemas.ts';
 import { ActingActor } from '../primitive_schemas_fuz.ts';
 import { z } from 'zod';
-import { object } from '@fuzdev/fuz_schema/schema.ts';
+import { array, literal, loose_object, object, optional } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	build_request_context,
@@ -191,9 +191,9 @@ const cell_fact_params_schema = z.strictObject({
  * literal alone.
  */
 const params_400_error = {
-	400: z.looseObject({
-		error: z.literal(ERROR_INVALID_ROUTE_PARAMS),
-		issues: z.array(WireIssue).optional()
+	400: loose_object({
+		error: literal(ERROR_INVALID_ROUTE_PARAMS),
+		issues: optional(array(WireIssue))
 	})
 } as const;
 

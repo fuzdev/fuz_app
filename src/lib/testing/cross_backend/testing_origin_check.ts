@@ -13,7 +13,21 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import { z } from 'zod';
+import {
+	array,
+	boolean,
+	literal,
+	min_value,
+	nullable,
+	number,
+	object,
+	optional,
+	pipe,
+	safe_integer,
+	string,
+	union,
+	type Infer
+} from '@fuzdev/fuz_schema/schema.ts';
 
 import { rpc_action, type RpcAction } from '../../actions/action_types.ts';
 import type { RequestResponseActionSpec } from '../../actions/action_spec.ts';
@@ -24,30 +38,33 @@ import {
 } from '../../http/origin.ts';
 import { TESTING_ACTION_AUTH } from './spine_surface_constants.ts';
 
-/** Input of `_testing_origin_check`. */
-export const TestingOriginCheckInput = z.strictObject({
+/** Input of `_testing_origin_check`, a `@fuzdev/fuz_schema` `object`. */
+export const TestingOriginCheckInput = object({
 	/** An allowlist value, as `FUZ_ALLOWED_ORIGINS` would carry it. */
-	patterns: z.string(),
+	patterns: string,
 	/** One `Origin` header's value, or `null` for a request without one. */
-	origin: z.string().nullable()
+	origin: nullable(string)
 });
-export type TestingOriginCheckInput = z.infer<typeof TestingOriginCheckInput>;
+export type TestingOriginCheckInput = Infer<typeof TestingOriginCheckInput>;
 
 /**
- * Output of `_testing_origin_check`: the request-level answer when the list
- * parses, else every refusal — `index` the 1-based entry position, absent for
- * a list-level refusal.
+ * Output of `_testing_origin_check`, a `@fuzdev/fuz_schema` `union`: the
+ * request-level answer when the list parses, else every refusal — `index` the
+ * 1-based entry position, absent for a list-level refusal.
  */
-export const TestingOriginCheckOutput = z.union([
-	z.strictObject({ ok: z.literal(true), allowed: z.boolean() }),
-	z.strictObject({
-		ok: z.literal(false),
-		errors: z.array(
-			z.strictObject({ index: z.number().int().min(1).optional(), kind: AllowedOriginsErrorKind })
+export const TestingOriginCheckOutput = union([
+	object({ ok: literal(true), allowed: boolean }),
+	object({
+		ok: literal(false),
+		errors: array(
+			object({
+				index: optional(pipe(number, safe_integer, min_value(1))),
+				kind: AllowedOriginsErrorKind
+			})
 		)
 	})
 ]);
-export type TestingOriginCheckOutput = z.infer<typeof TestingOriginCheckOutput>;
+export type TestingOriginCheckOutput = Infer<typeof TestingOriginCheckOutput>;
 
 /**
  * Answer one `_testing_origin_check` input: parse `patterns` with

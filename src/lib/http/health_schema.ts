@@ -6,11 +6,11 @@
  * @module
  */
 
-import { z } from 'zod';
+import { literal, object, type Infer } from '@fuzdev/fuz_schema/schema.ts';
 
 /** The public liveness route both spines mount. */
 export const HEALTH_PATH = '/health';
 
-/** The liveness route's response body. */
-export const HealthResponse = z.strictObject({ status: z.literal('ok') });
-export type HealthResponse = z.infer<typeof HealthResponse>;
+/** The liveness route's response body, a `@fuzdev/fuz_schema` `object`. */
+export const HealthResponse = object({ status: literal('ok') });
+export type HealthResponse = Infer<typeof HealthResponse>;

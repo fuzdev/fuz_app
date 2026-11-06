@@ -56,6 +56,7 @@ import '../assert_dev_env.ts';
  */
 
 import { describe, assert } from 'vitest';
+import { is } from '@fuzdev/fuz_schema/schema.ts';
 
 import { jsonrpc_error_messages } from '../../http/jsonrpc_errors.ts';
 import { WireIssue } from '../../schema_issues.ts';
@@ -116,10 +117,7 @@ const assert_schema_refusal = (r: RpcResult, label: string): void => {
 	const { issues } = data as { issues: unknown };
 	assert.ok(Array.isArray(issues), `${detail} — DEV-only issues that are no array`);
 	for (const issue of issues as Array<unknown>) {
-		assert.ok(
-			WireIssue.safeParse(issue).success,
-			`${detail} — a DEV-only issue that is no WireIssue`
-		);
+		assert.ok(is(WireIssue, issue), `${detail} — a DEV-only issue that is no WireIssue`);
 	}
 };
 

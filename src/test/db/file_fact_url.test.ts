@@ -13,6 +13,7 @@
 
 import { describe, test, assert } from 'vitest';
 import type { FactHash } from '@fuzdev/fuz_util/hash_schemas.ts';
+import { is } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	FILE_FACT_URL_PATTERN,
@@ -82,7 +83,7 @@ describe('file fact url grammar', () => {
 	test('accepts a well-formed URL and splits it into shard + rest', () => {
 		for (const [label, url, shard, rest] of ACCEPTED) {
 			assert(FILE_FACT_URL_PATTERN.test(url), `pattern accepts: ${label}`);
-			assert(FileFactUrl.safeParse(url).success, `FileFactUrl accepts: ${label}`);
+			assert(is(FileFactUrl, url), `FileFactUrl accepts: ${label}`);
 			assert.deepEqual(parse_file_fact_url(url), { url, shard, rest }, label);
 		}
 	});
@@ -90,7 +91,7 @@ describe('file fact url grammar', () => {
 	test('rejects every other shape', () => {
 		for (const [label, url] of REJECTED) {
 			assert(!FILE_FACT_URL_PATTERN.test(url), `pattern rejects: ${label}`);
-			assert(!FileFactUrl.safeParse(url).success, `FileFactUrl rejects: ${label}`);
+			assert(!is(FileFactUrl, url), `FileFactUrl rejects: ${label}`);
 			assert.equal(parse_file_fact_url(url), null, `parse_file_fact_url rejects: ${label}`);
 		}
 	});

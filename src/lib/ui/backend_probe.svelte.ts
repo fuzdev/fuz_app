@@ -13,7 +13,7 @@
  */
 
 import { to_error_message } from '@fuzdev/fuz_util/error.ts';
-import { z } from 'zod';
+import { is, loose_object } from '@fuzdev/fuz_schema/schema.ts';
 import type { Result } from '@fuzdev/fuz_util/result.ts';
 import type { OmitStrict } from '@fuzdev/fuz_util/types.ts';
 
@@ -35,7 +35,7 @@ export const BACKEND_PROBE_TIMEOUT_MS = 10_000;
  * The client's read of the health reply — loose, so a field added to the
  * route's output never reads as a dead backend. The route spec stays strict.
  */
-const HealthReply = z.looseObject(HealthResponse.shape);
+const HealthReply = loose_object(HealthResponse.def);
 
 /** Options for `probe_backend`; `BackendProbe` takes all but `signal`. */
 export interface BackendProbeOptions {
@@ -110,7 +110,7 @@ export const probe_backend = async (options?: BackendProbeOptions): Promise<Back
 		// a dropped connection mid-body, not a wrong body
 		return { ok: false, error: to_error_message(err, 'network error') };
 	}
-	if (!HealthReply.safeParse(body).success) {
+	if (!is(HealthReply, body)) {
 		return { ok: false, error: BACKEND_PROBE_NOT_HEALTH };
 	}
 	return { ok: true };

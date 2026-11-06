@@ -23,12 +23,16 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import { z } from 'zod';
 import { array, literal, parse, string, strip_object } from '@fuzdev/fuz_schema/schema.ts';
 
 import { USERNAME_LENGTH_MAX } from '../../primitive_schemas.ts';
 import { Uuid } from '../../primitive_schemas_fuz.ts';
-import { format_issues } from '../../schema_issues.ts';
+import {
+	format_issues,
+	parse_any,
+	type ValidationOutput,
+	type ValidationSchema
+} from '../../schema_issues.ts';
 
 import { DAEMON_TOKEN_HEADER } from '../../auth/daemon_token.ts';
 import { DEFAULT_TEST_PASSWORD } from '../test_credentials.ts';
@@ -595,22 +599,45 @@ export const capture_schema_snapshot = async (
 };
 
 /**
+ * Parse a `capture_*` probe's answer with `schema`, of either library: the
+ * parsed value, or a throw naming `method` with the issues, so a shape drift
+ * between the TS and Rust answers fails loud at the boundary.
+ *
+ * @param method - the `_testing_*` method that answered, named in the error
+ * @param schema - the answer's schema
+ * @param raw - the answer as it came off the wire
+ * @returns the parsed answer, the schema's output
+ * @throws Error when `raw` fails `schema`
+ */
+export const parse_capture_answer = <T extends ValidationSchema>(
+	method: string,
+	schema: T,
+	raw: unknown
+): ValidationOutput<T> => {
+	const parsed = parse_any(schema, raw);
+	if (!parsed.ok) {
+		throw new Error(`${method}: the answer fails its schema:\n${format_issues(parsed.issues)}`);
+	}
+	return parsed.value;
+};
+
+/**
  * Capture a no-arg (void-input) daemon-token introspection RPC, sent with no
- * params, and validate the wire response against `schema`. The shared shape behind the parse-based
- * `capture_*` cross-impl parity probes: call a `_testing_*` introspection
- * action over the keeper's daemon-token channel, then `parse` so a shape
- * drift between the TS and Rust answers fails loud at the boundary.
+ * params, and validate the wire response against `schema`, of either library.
+ * The shared shape behind the parse-based `capture_*` cross-impl parity
+ * probes: call a `_testing_*` introspection action over the keeper's
+ * daemon-token channel, then `parse_capture_answer`.
  *
  * (`capture_schema_snapshot` deliberately stays separate: it *casts* rather
  * than parses — narrowing a large snapshot to the Zod model would silently
  * drop unmodeled fields the parity diff should still see — and it takes an
  * `exclude_tables` param.)
  */
-const capture_via_daemon = async <T>(
+const capture_via_daemon = async <T extends ValidationSchema>(
 	handle: ReconstructedBootstrappedBackendHandle,
 	method: string,
-	schema: z.ZodType<T>
-): Promise<T> => {
+	schema: T
+): Promise<ValidationOutput<T>> => {
 	const raw = await rpc_via_transport(
 		handle.keeper_daemon_transport,
 		handle.config.rpc_path,
@@ -619,7 +646,7 @@ const capture_via_daemon = async <T>(
 		handle.config.name,
 		{ [DAEMON_TOKEN_HEADER]: handle.daemon_token }
 	);
-	return schema.parse(raw);
+	return parse_capture_answer(method, schema, raw);
 };
 
 /**

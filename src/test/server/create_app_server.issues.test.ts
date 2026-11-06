@@ -19,7 +19,7 @@
 import { test, assert, afterEach, vi, describe } from 'vitest';
 import { z } from 'zod';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
-import { object, pipe, with_default_fn, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
+import { is, object, pipe, with_default_fn, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 import { get_schema_entries } from '@fuzdev/fuz_schema/introspect.ts';
 
 import { create_session_config } from '#lib/auth/session_cookie.ts';
@@ -408,7 +408,7 @@ describe('an assembled app answers a validation failure', () => {
 		assert.strictEqual(res.status, 400);
 		const body = await res.json();
 		assert.deepStrictEqual(body, { error: 'invalid_request_body', issues: EXPECTED_ISSUES });
-		for (const issue of body.issues) assert.ok(WireIssue.safeParse(issue).success);
+		for (const issue of body.issues) assert.ok(is(WireIssue, issue));
 	});
 
 	test('bad RPC params with WireIssues under DEV', async () => {
@@ -453,7 +453,7 @@ describe('an assembled app answers a bad `account_token_revoke` input', () => {
 				data: { issues: [TOKEN_ID_ISSUE] }
 			}
 		});
-		assert.ok(WireIssue.safeParse(body.error.data.issues[0]).success);
+		assert.ok(is(WireIssue, body.error.data.issues[0]));
 	});
 
 	test('without data in production, as under Zod', async () => {
@@ -499,7 +499,7 @@ describe('an assembled app answers a bad `self_service_role_set` input', () => {
 			id: 1,
 			error: { code: -32602, message: 'invalid params', data: { issues: SELF_SERVICE_ROLE_ISSUES } }
 		});
-		for (const issue of body.error.data.issues) assert.ok(WireIssue.safeParse(issue).success);
+		for (const issue of body.error.data.issues) assert.ok(is(WireIssue, issue));
 	});
 
 	test('a role too long and off the grammar gets the one length issue under DEV', async () => {
@@ -583,7 +583,7 @@ describe('an assembled app answers a bad `role_grant_offer_create` input', () =>
 				data: { issues: HALF_SCOPED_CREATE_ISSUES }
 			}
 		});
-		for (const issue of body.error.data.issues) assert.ok(WireIssue.safeParse(issue).success);
+		for (const issue of body.error.data.issues) assert.ok(is(WireIssue, issue));
 	});
 
 	test('a half-scoped input whose fields pass gets the check issue under DEV', async () => {

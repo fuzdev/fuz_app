@@ -12,10 +12,15 @@
 
 import { z } from 'zod';
 import {
+	array,
 	format_issue,
 	is_schema,
+	loose_object,
+	number,
 	parse,
 	SchemaError,
+	string,
+	union,
 	type AnySchema,
 	type Infer,
 	type InferInput,
@@ -210,25 +215,26 @@ export const is_schema_validation_error = (err: unknown): err is z.ZodError | Sc
 	err instanceof z.ZodError || err instanceof SchemaError;
 
 /**
- * A validation issue as an error response carries it, for either schema
- * library: `@fuzdev/fuz_schema`'s `SchemaIssue` as JSON, with `message` the
- * text of the issue. `to_wire_issues` builds it from either library's issues.
+ * A `@fuzdev/fuz_schema` `loose_object`: a validation issue as an error
+ * response carries it, for either schema library — fuz_schema's `SchemaIssue`
+ * as JSON, with `message` the text of the issue. `to_wire_issues` builds it
+ * from either library's issues.
  *
  * Loose: a client reads it, and a newer server may add fields.
  */
-export const WireIssue = z.looseObject({
+export const WireIssue = loose_object({
 	/** The fuz_schema kind of the check that failed, or `unknown_key` / `missing_key`. */
-	kind: z.string(),
+	kind: string,
 	/** Keys from the root value to the one that failed, outermost first. */
-	path: z.array(z.union([z.string(), z.number()])),
+	path: array(union([string, number])),
 	/** Describes what was expected, as fuz_schema writes it. */
-	expected: z.string(),
+	expected: string,
 	/** The type of the value that failed: `'null'`, `'array'`, `'NaN'`, `'Infinity'`, `'-Infinity'`, or its `typeof`. */
-	received: z.string(),
+	received: string,
 	/** The issue as text: `format_issue` for a fuz_schema issue, Zod's own message for a Zod one. */
-	message: z.string()
+	message: string
 });
-export type WireIssue = z.infer<typeof WireIssue>;
+export type WireIssue = Infer<typeof WireIssue>;
 
 /**
  * A failed parse's issues as `WireIssue`s, whichever library made them.

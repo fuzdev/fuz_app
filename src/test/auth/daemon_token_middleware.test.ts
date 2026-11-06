@@ -6,6 +6,7 @@
 
 import { describe, test, assert, vi, beforeEach } from 'vitest';
 import { Hono } from 'hono';
+import { is, parse } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	generate_daemon_token,
@@ -133,26 +134,32 @@ describe('generate_daemon_token', () => {
 	});
 });
 
-describe('DaemonToken Zod schema', () => {
+describe('DaemonToken schema', () => {
 	test('accepts valid tokens', () => {
 		const token = generate_daemon_token();
-		assert.ok(DaemonToken.safeParse(token).success);
+		assert.ok(is(DaemonToken, token));
 	});
 
 	test('rejects empty string', () => {
-		assert.ok(!DaemonToken.safeParse('').success);
+		assert.ok(!is(DaemonToken, ''));
 	});
 
 	test('rejects too-short string', () => {
-		assert.ok(!DaemonToken.safeParse('abc').success);
+		assert.ok(!is(DaemonToken, 'abc'));
 	});
 
 	test('rejects string with invalid characters', () => {
-		assert.ok(!DaemonToken.safeParse('a'.repeat(42) + '!').success);
+		assert.ok(!is(DaemonToken, 'a'.repeat(42) + '!'));
 	});
 
 	test('rejects string with spaces', () => {
-		assert.ok(!DaemonToken.safeParse('a'.repeat(42) + ' ').success);
+		assert.ok(!is(DaemonToken, 'a'.repeat(42) + ' '));
+	});
+
+	test("a refusal carries the schema's message", () => {
+		const result = parse(DaemonToken, 'abc');
+		assert.ok(!result.ok);
+		assert.strictEqual(result.issues[0]!.message, 'Invalid daemon token format');
 	});
 });
 
@@ -325,8 +332,8 @@ describe('create_daemon_token_middleware', () => {
 	});
 
 	test('malformed token format soft-fails (pass-through, no context)', async () => {
-		// A Zod-malformed token is a soft-fail discard, not a 401 — same
-		// pass-through semantics as the invalid-value case.
+		// A token that fails `DaemonToken` is a soft-fail discard, not a 401 —
+		// same pass-through semantics as the invalid-value case.
 		const state = create_state();
 		const app = create_daemon_app(state);
 
@@ -337,6 +344,21 @@ describe('create_daemon_token_middleware', () => {
 		const body = await res.json();
 		assert.strictEqual(body.context, null);
 		assert.strictEqual(body.credential_type, null);
+	});
+
+	test('a malformed token is refused by its format, before any token compare', async () => {
+		const log = new Logger('test', { level: 'off' });
+		const debug = vi.spyOn(log, 'debug');
+		const app = new Hono();
+		app.use('/*', create_daemon_token_middleware(create_state(), mock_deps, log));
+		app.get('/test', (c) => c.json({ ok: true }));
+		// the token's alphabet, one character short
+		const res = await app.request('/test', { headers: { [DAEMON_TOKEN_HEADER]: 'a'.repeat(42) } });
+		assert.strictEqual(res.status, 200);
+		assert.deepStrictEqual(
+			debug.mock.calls.map((call) => call[0]),
+			['daemon token auth soft-fail: malformed token']
+		);
 	});
 
 	test('no keeper_account_id soft-fails (pass-through) when lazy refresh also yields null', async () => {

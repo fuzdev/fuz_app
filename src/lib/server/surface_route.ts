@@ -8,8 +8,7 @@
  * @module
  */
 
-import { z } from 'zod';
-import { object } from '@fuzdev/fuz_schema/schema.ts';
+import { array, literal, loose_object, object } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { RouteSpec } from '../http/route_spec.ts';
 import type { AppSurface } from '../http/surface.ts';
@@ -50,9 +49,9 @@ export const create_surface_route_spec = (options: SurfaceRouteOptions): RouteSp
 	handler: (c) => c.json(options.surface),
 	description: 'Application surface (routes, middleware, schemas) — admin only',
 	query: object({ acting: ActingActor }),
-	input: z.null(),
-	output: z.looseObject({
-		routes: z.array(z.looseObject({})),
-		middleware: z.array(z.looseObject({}))
+	input: literal(null),
+	output: loose_object({
+		routes: array(loose_object({})),
+		middleware: array(loose_object({}))
 	})
 });

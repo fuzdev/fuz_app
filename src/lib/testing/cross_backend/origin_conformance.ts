@@ -24,7 +24,24 @@ import '../assert_dev_env.ts';
 
 import { readFileSync } from 'node:fs';
 import { assert, describe, test } from 'vitest';
-import { z } from 'zod';
+import {
+	array,
+	boolean,
+	literal,
+	min_length,
+	min_value,
+	nullable,
+	number,
+	object,
+	optional,
+	parse,
+	parse_or_throw,
+	pipe,
+	safe_integer,
+	string,
+	union,
+	type Infer
+} from '@fuzdev/fuz_schema/schema.ts';
 
 import { AllowedOriginsErrorKind } from '../../http/origin.ts';
 import { cross_rpc_call } from './cross_rpc.ts';
@@ -37,38 +54,38 @@ import {
 } from './testing_origin_check.ts';
 
 /** One expected refusal of a parse row. */
-export const OriginConformanceError = z.strictObject({
-	index: z.number().int().min(1).optional(),
+export const OriginConformanceError = object({
+	index: optional(pipe(number, safe_integer, min_value(1))),
 	kind: AllowedOriginsErrorKind
 });
-export type OriginConformanceError = z.infer<typeof OriginConformanceError>;
+export type OriginConformanceError = Infer<typeof OriginConformanceError>;
 
 /** A parse row: the value parses (`ok: true`), or is refused with `errors`. */
-export const OriginConformanceParseRow = z.union([
-	z.strictObject({ raw: z.string(), ok: z.literal(true), note: z.string().optional() }),
-	z.strictObject({
-		raw: z.string(),
-		errors: z.array(OriginConformanceError).min(1),
-		note: z.string().optional()
+export const OriginConformanceParseRow = union([
+	object({ raw: string, ok: literal(true), note: optional(string) }),
+	object({
+		raw: string,
+		errors: pipe(array(OriginConformanceError), min_length(1)),
+		note: optional(string)
 	})
 ]);
-export type OriginConformanceParseRow = z.infer<typeof OriginConformanceParseRow>;
+export type OriginConformanceParseRow = Infer<typeof OriginConformanceParseRow>;
 
 /** A match row: a valid allowlist, one `Origin` value or `null`, and the answer. */
-export const OriginConformanceMatchRow = z.strictObject({
-	patterns: z.string(),
-	origin: z.string().nullable(),
-	allowed: z.boolean(),
-	note: z.string().optional()
+export const OriginConformanceMatchRow = object({
+	patterns: string,
+	origin: nullable(string),
+	allowed: boolean,
+	note: optional(string)
 });
-export type OriginConformanceMatchRow = z.infer<typeof OriginConformanceMatchRow>;
+export type OriginConformanceMatchRow = Infer<typeof OriginConformanceMatchRow>;
 
-/** The conformance table. */
-export const OriginConformance = z.strictObject({
-	parse: z.array(OriginConformanceParseRow).min(1),
-	match: z.array(OriginConformanceMatchRow).min(1)
+/** The conformance table, a `@fuzdev/fuz_schema` `object`. */
+export const OriginConformance = object({
+	parse: pipe(array(OriginConformanceParseRow), min_length(1)),
+	match: pipe(array(OriginConformanceMatchRow), min_length(1))
 });
-export type OriginConformance = z.infer<typeof OriginConformance>;
+export type OriginConformance = Infer<typeof OriginConformance>;
 
 /** The committed table, resolved relative to this module. */
 export const ORIGIN_CONFORMANCE_URL: URL = new URL('./origin_conformance.json', import.meta.url);
@@ -80,7 +97,7 @@ export const ORIGIN_CONFORMANCE_URL: URL = new URL('./origin_conformance.json', 
  * @throws Error when the file doesn't match `OriginConformance`
  */
 export const load_origin_conformance = (): OriginConformance =>
-	OriginConformance.parse(JSON.parse(readFileSync(ORIGIN_CONFORMANCE_URL, 'utf8')));
+	parse_or_throw(OriginConformance, JSON.parse(readFileSync(ORIGIN_CONFORMANCE_URL, 'utf8')));
 
 /** One table row as the action input that checks it. */
 export interface OriginConformanceCheck {
@@ -180,8 +197,8 @@ export const describe_origin_conformance_cross_tests = (
 					headers
 				);
 				assert.ok(res.ok, `${check.label}: RPC failed: ${JSON.stringify(res.error)}`);
-				const parsed = TestingOriginCheckOutput.safeParse(res.result);
-				answers.push(parsed.success ? parsed.data : res.result);
+				const parsed = parse(TestingOriginCheckOutput, res.result);
+				answers.push(parsed.ok ? parsed.value : res.result);
 			}
 			assert_origin_conformance(checks, answers, 'backend');
 		});

@@ -9,7 +9,17 @@
 
 import { readFileSync } from 'node:fs';
 
-import { z } from 'zod';
+import {
+	integer,
+	literal,
+	loose_object,
+	min_value,
+	number,
+	object,
+	one_of,
+	pipe,
+	string
+} from '@fuzdev/fuz_schema/schema.ts';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import type { RouteSpec } from './route_spec.ts';
@@ -33,7 +43,7 @@ export const create_health_route_spec = (): RouteSpec => ({
 	auth: { account: 'none', actor: 'none' },
 	handler: (c) => c.json({ status: 'ok' } satisfies HealthResponse),
 	description: 'Health check',
-	input: z.null(),
+	input: literal(null),
 	output: HealthResponse
 });
 
@@ -121,12 +131,10 @@ export const create_ready_route_spec = (options: ReadyRouteOptions): RouteSpec =
 		path: '/ready',
 		auth: { account: 'none', actor: 'none' },
 		description: 'Readiness probe — verifies the live DB schema matches the expected column map',
-		input: z.null(),
-		output: z.strictObject({ ready: z.literal(true) }),
+		input: literal(null),
+		output: object({ ready: literal(true) }),
 		errors: {
-			503: z.strictObject({
-				error: z.enum([READY_ERROR.schema_drift, READY_ERROR.db_unreachable])
-			})
+			503: object({ error: one_of([READY_ERROR.schema_drift, READY_ERROR.db_unreachable]) })
 		},
 		handler: async (c, route) => {
 			try {
@@ -148,7 +156,7 @@ export const create_ready_route_spec = (options: ReadyRouteOptions): RouteSpec =
 export interface ServerStatusOptions {
 	/** Application version string. */
 	version: string;
-	/** Returns milliseconds since server start. */
+	/** Returns whole milliseconds since server start, which the route's output requires. */
 	get_uptime_ms: () => number;
 }
 
@@ -164,6 +172,6 @@ export const create_server_status_route_spec = (options: ServerStatusOptions): R
 	auth: { account: 'required', actor: 'none' },
 	handler: (c) => c.json({ version: options.version, uptime_ms: options.get_uptime_ms() }),
 	description: 'Server version and uptime',
-	input: z.null(),
-	output: z.looseObject({ version: z.string(), uptime_ms: z.number() })
+	input: literal(null),
+	output: loose_object({ version: string, uptime_ms: pipe(number, integer, min_value(0)) })
 });

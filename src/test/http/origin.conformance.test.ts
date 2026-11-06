@@ -39,7 +39,7 @@ describe('origin conformance table', () => {
 		const seen = new Set(
 			table.parse.flatMap((row) => ('errors' in row ? row.errors.map((e) => e.kind) : []))
 		);
-		for (const kind of AllowedOriginsErrorKind.options) {
+		for (const kind of AllowedOriginsErrorKind.def) {
 			assert.ok(seen.has(kind), `no parse row is refused with ${kind}`);
 		}
 	});
@@ -58,7 +58,7 @@ describe('origin conformance table', () => {
 	});
 
 	test('every refusal kind has a message', () => {
-		for (const kind of AllowedOriginsErrorKind.options) {
+		for (const kind of AllowedOriginsErrorKind.def) {
 			assert.ok(ALLOWED_ORIGINS_ERROR_MESSAGES[kind], kind);
 		}
 	});

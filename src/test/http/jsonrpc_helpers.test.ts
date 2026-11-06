@@ -5,6 +5,7 @@
  */
 
 import { describe, assert, test } from 'vitest';
+import { is } from '@fuzdev/fuz_schema/schema.ts';
 
 import { JSONRPC_VERSION, type JsonrpcRequestId } from '#lib/http/jsonrpc.ts';
 import { ThrownJsonrpcError, JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
@@ -475,7 +476,7 @@ describe('classify_jsonrpc_message', () => {
 					if (data?.issues !== undefined) {
 						assert.ok(Array.isArray(data.issues) && data.issues.length > 0);
 						for (const issue of data.issues) {
-							assert.ok(WireIssue.safeParse(issue).success, JSON.stringify(issue));
+							assert.ok(is(WireIssue, issue), JSON.stringify(issue));
 						}
 					}
 					break;

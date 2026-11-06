@@ -22,7 +22,7 @@
 import { escape_regexp } from '@fuzdev/fuz_util/regexp.ts';
 import type { Result } from '@fuzdev/fuz_util/result.ts';
 import type { Context, Handler } from 'hono';
-import { z } from 'zod';
+import { one_of, type Infer } from '@fuzdev/fuz_schema/schema.ts';
 
 import { ERROR_FORBIDDEN_ORIGIN } from './error_schemas.ts';
 import type { MiddlewareCarveOut } from './middleware_spec.ts';
@@ -48,10 +48,11 @@ export const is_browser_context = (c: Context): boolean =>
 	c.req.header('Origin') !== undefined || c.req.header('Referer') !== undefined;
 
 /**
- * Why one allowlist entry was refused. The wire names both spines emit — the
- * Rust spine's `OriginPatternError::kind` returns the same strings.
+ * Why one allowlist entry was refused, a `@fuzdev/fuz_schema` `one_of` whose
+ * `def` is the names. The wire names both spines emit — the Rust spine's
+ * `OriginPatternError::kind` returns the same strings.
  */
-export const OriginPatternErrorKind = z.enum([
+export const OriginPatternErrorKind = one_of([
 	'empty_entry',
 	'not_printable_ascii',
 	'missing_scheme',
@@ -69,11 +70,14 @@ export const OriginPatternErrorKind = z.enum([
 	'invalid_port',
 	'default_port'
 ]);
-export type OriginPatternErrorKind = z.infer<typeof OriginPatternErrorKind>;
+export type OriginPatternErrorKind = Infer<typeof OriginPatternErrorKind>;
 
-/** Why an allowlist value was refused: `no_origins` (a blank value) or an entry's kind. */
-export const AllowedOriginsErrorKind = z.enum(['no_origins', ...OriginPatternErrorKind.options]);
-export type AllowedOriginsErrorKind = z.infer<typeof AllowedOriginsErrorKind>;
+/**
+ * Why an allowlist value was refused: `no_origins` (a blank value) or an
+ * entry's kind. A `one_of` whose `def` is the names.
+ */
+export const AllowedOriginsErrorKind = one_of(['no_origins', ...OriginPatternErrorKind.def]);
+export type AllowedOriginsErrorKind = Infer<typeof AllowedOriginsErrorKind>;
 
 /** The operator-facing reason for each refusal kind. */
 export const ALLOWED_ORIGINS_ERROR_MESSAGES: Readonly<Record<AllowedOriginsErrorKind, string>> = {

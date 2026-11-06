@@ -17,6 +17,7 @@
 import { DEV } from 'esm-env';
 import type { MiddlewareHandler } from 'hono';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
+import { is } from '@fuzdev/fuz_schema/schema.ts';
 
 import { RESOLVED_AUTH_KEY } from '../hono_context.ts';
 import { get_resolved_auth } from './resolved_auth.ts';
@@ -67,7 +68,7 @@ export const resolve_keeper_account_id = async (deps: QueryDeps): Promise<string
  *   401, so downstream auth enforcement returns `credential_type_required`
  *   (not a hard fail). Silent on the wire (anti-enumeration); in `DEV` only,
  *   sets `X-Fuz-Auth-Debug: daemon_token_discarded_browser_context`.
- * - Header present + Zod-invalid (malformed): soft-fail discard (pass through,
+ * - Header present + malformed (fails `DaemonToken`): soft-fail discard (pass through,
  *   not 401) — mirrors the bearer guard and the Rust spine's `resolve.rs`
  *   (`None`). Downstream a daemon-gated action returns `credential_type_required`;
  *   a public action proceeds anonymous.
@@ -126,14 +127,13 @@ export const create_daemon_token_middleware = (
 			return;
 		}
 
-		// Zod-validate the token format at the I/O boundary. A malformed token is
+		// Validate the token format at the I/O boundary. A malformed token is
 		// a soft-fail discard (pass through), not a 401 — mirroring the bearer
 		// guard and the Rust spine's `resolve.rs`, which return `None` on an
 		// unparseable credential. The request falls through: on a daemon-gated
 		// action the dispatcher returns `credential_type_required` downstream; on
 		// a public action it proceeds anonymous.
-		const parse_result = DaemonToken.safeParse(token_header);
-		if (!parse_result.success) {
+		if (!is(DaemonToken, token_header)) {
 			log.debug('daemon token auth soft-fail: malformed token');
 			await next();
 			return;
@@ -142,7 +142,7 @@ export const create_daemon_token_middleware = (
 		// Well-formed but not the current/previous token — soft-fail discard, not
 		// a 401, for the same reason: no downgrade, falls through to downstream
 		// `credential_type_required` (matching the Rust spine's `None`).
-		if (!validate_daemon_token(parse_result.data, state)) {
+		if (!validate_daemon_token(token_header, state)) {
 			log.debug('daemon token auth soft-fail: token not found or invalid');
 			await next();
 			return;
