@@ -1,9 +1,9 @@
 /**
  * The `cell.moderation` read rules, in pure and SQL form side by side.
  *
- * `moderation` is free `TEXT` with no CHECK, so each rule is an allowlist over
- * the literals: a marker this module doesn't name (a typo, a future state)
- * admits nothing.
+ * `moderation` is `null` or one of the three markers below: the create
+ * authorizer's verdict and `cell_moderate` write nothing else, and `CellJson`
+ * refuses any other on the wire. Each rule names the markers it admits.
  *
  * **Audience admission** — `cell_moderation_admits_audience` and
  * `cell_moderation_admits_audience_sql`: unmoderated (`null`) or `'approved'`.
@@ -17,8 +17,7 @@
  * **Stewardship** — `cell_moderation_is_stewardable` and
  * `cell_moderation_is_stewardable_sql`: exactly `'pending'` or `'rejected'`, the
  * states in which the governing root's manager reads a contribution its
- * audience can't (`can_steward_cell`). An unknown marker is neither admitted
- * nor stewardable, so only its owner and admins read it.
+ * audience can't (`can_steward_cell`).
  *
  * The pure and SQL forms are written once each here, next to each other, over
  * the same literal constants; every predicate and query composes them rather
@@ -38,8 +37,8 @@ export const CELL_MODERATION_REJECTED = 'rejected';
 
 /**
  * Whether a cell's `moderation` marker admits it to an audience beyond its
- * owner — unmoderated (`null`) or `'approved'`; `'pending'`, `'rejected'`, and
- * any unknown marker do not.
+ * owner — unmoderated (`null`) or `'approved'`; `'pending'` and `'rejected'`
+ * do not.
  *
  * @param moderation - the cell's `moderation` column
  * @returns whether the public and grant read arms may admit the cell

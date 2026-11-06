@@ -25,7 +25,7 @@ import {
 	type Infer
 } from '@fuzdev/fuz_schema/schema.ts';
 
-import { ActingActor, Uuid } from '../primitive_schemas_fuz.ts';
+import { ActingActor, Timestamp, Uuid } from '../primitive_schemas_fuz.ts';
 import { CellRelationListLimit } from './cell_relation_list_limit.ts';
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
 
@@ -49,9 +49,9 @@ export type CellFieldName = Infer<typeof CellFieldName>;
 /** Wire-format for a `cell_field` row. ISO `created_at`, branded UUIDs. */
 export const FieldJson = object({
 	source_id: Uuid,
-	name: string,
+	name: CellFieldName,
 	target_id: Uuid,
-	created_at: string
+	created_at: Timestamp
 });
 export type FieldJson = Infer<typeof FieldJson>;
 

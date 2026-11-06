@@ -298,8 +298,8 @@ export const create_cell_grant_actions = (deps: CellGrantActionDeps): Array<RpcA
 		// cell_get.
 		const cell = await require_manageable_cell(ctx, auth, input.cell_id);
 		// A grant extends a cell's audience, and a contribution whose moderation
-		// doesn't admit one (pending, rejected, or an unknown marker) has none past
-		// its author and admins — `can_view_cell`'s grant arm wouldn't admit on it —
+		// doesn't admit one (pending or rejected) has none past its author and
+		// admins — `can_view_cell`'s grant arm wouldn't admit on it —
 		// so refuse the grant rather than mint a row that would wake up on
 		// approval. After the manage gate, so a non-manager keeps the 404 mask; no
 		// admin exemption.

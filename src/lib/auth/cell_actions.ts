@@ -115,6 +115,7 @@ import {
 	type CellCloneInput,
 	type CellCloneOutput,
 	type CellJson,
+	type CellModeration,
 	type CellPath
 } from './cell_action_specs.ts';
 import {
@@ -319,7 +320,8 @@ export const to_cell_json = (row: CellRow): CellJson => ({
 	refs: row.refs,
 	parent_id: row.parent_id,
 	root_id: row.root_id,
-	moderation: row.moderation,
+	// written only as the create verdict's or `cell_moderate`'s marker
+	moderation: row.moderation as CellModeration | null,
 	policy: row.policy,
 	created_by: row.created_by,
 	updated_by: row.updated_by,

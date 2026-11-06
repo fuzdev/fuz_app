@@ -30,7 +30,13 @@ import {
 	type Infer
 } from '@fuzdev/fuz_schema/schema.ts';
 
-import { ActingActor, bounded_string, FactHashSchema, Uuid } from '../primitive_schemas_fuz.ts';
+import {
+	ActingActor,
+	bounded_string,
+	FactHashSchema,
+	Timestamp,
+	Uuid
+} from '../primitive_schemas_fuz.ts';
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
 import {
 	all_cell_grant_action_specs,
@@ -307,6 +313,15 @@ export const CELL_LIST_LIMIT_DEFAULT = 50;
 export const CELL_RELATIONS_BUNDLE_LIMIT = 500;
 
 /**
+ * A cell's `moderation` marker on the wire, when it has one: `'pending'`,
+ * `'approved'`, or `'rejected'` — the markers the create authorizer's verdict
+ * and `cell_moderate` write, and the only ones the read rules in
+ * `db/cell_moderation.ts` name.
+ */
+export const CellModeration = one_of(['pending', 'approved', 'rejected']);
+export type CellModeration = Infer<typeof CellModeration>;
+
+/**
  * Wire form for a cell row. `data` is the typed-but-permissive `CellData`
  * shape (kind / label / summary typed-and-optional, additional fields
  * pass through). Per-kind shape validation is sub-API and handled by
@@ -326,7 +341,7 @@ export const CellJson = object({
 	id: Uuid,
 	path: nullable(CellPath),
 	data: CellData,
-	kind: meta(nullable(string), {
+	kind: meta(nullable(bounded_string({ max: CELL_KIND_LENGTH_MAX })), {
 		description:
 			'Capability / identity tag — a write-once top-level column (peer to `visibility` / `path`), not a field inside `data`. `null` for a typeless cell. The discriminator a creation authorizer gates on; fixed at birth.'
 	}),
@@ -343,7 +358,7 @@ export const CellJson = object({
 		description:
 			'Governing root of the directory subtree, denormalized for flat-subtree queries (`root_id = parent.root_id ?? parent.id`). `null` for a root. Set once at create, immutable in v1.'
 	}),
-	moderation: meta(nullable(string), {
+	moderation: meta(nullable(CellModeration), {
 		description:
 			"Approval-lifecycle marker for a gated contribution (`'pending'` / `'approved'` / `'rejected'`); `null` = unmoderated. A control field with a non-author writer — peer to `visibility`, never inside `data` (set by the create authorizer's verdict, transitioned only by `cell_moderate`)."
 	}),
@@ -353,9 +368,9 @@ export const CellJson = object({
 	}),
 	created_by: nullable(Uuid),
 	updated_by: nullable(Uuid),
-	created_at: string,
-	updated_at: nullable(string),
-	deleted_at: nullable(string),
+	created_at: Timestamp,
+	updated_at: nullable(Timestamp),
+	deleted_at: nullable(Timestamp),
 	grant_count: meta(pipe(number, safe_integer, min_value(0)), {
 		description:
 			'Number of `cell_grant` rows naming this cell. Non-leaky scalar (no actor/role identity); surfaces "Shared with N" badges. Derived in SQL via a correlated subquery on `idx_cell_grant_cell`.'

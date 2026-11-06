@@ -45,6 +45,7 @@ import {
 	type CellFieldDeleteOutput,
 	type CellFieldListInput,
 	type CellFieldListOutput,
+	type CellFieldName,
 	type FieldJson,
 	ERROR_CELL_FIELD_LIST_REQUIRES_SOURCE_OR_TARGET
 } from './cell_field_action_specs.ts';
@@ -71,7 +72,9 @@ export type CellFieldActionDeps = ActionFactoryDeps;
 
 export const to_field_json = (row: CellFieldRow): FieldJson => ({
 	source_id: row.source_id,
-	name: row.name,
+	// `cell_field.name` is a DB-shape string, written only through
+	// `cell_field_set`'s `CellFieldName`; brand it at the wire boundary
+	name: row.name as CellFieldName,
 	target_id: row.target_id,
 	created_at: row.created_at
 });

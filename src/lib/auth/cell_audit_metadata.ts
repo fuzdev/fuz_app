@@ -15,15 +15,13 @@ import {
 	number,
 	optional,
 	pipe,
-	record,
 	safe_integer,
 	string,
-	unknown,
 	type Infer
 } from '@fuzdev/fuz_schema/schema.ts';
 
 import { Uuid } from '../primitive_schemas_fuz.ts';
-import { CellModerationDecision } from './cell_action_specs.ts';
+import { CellModerationDecision, CellPolicy } from './cell_action_specs.ts';
 
 /**
  * Shared metadata envelope for cell mutations. `kind` and `path` are
@@ -85,7 +83,7 @@ export type CellModerateAuditMetadata = Infer<typeof CellModerateAuditMetadata>;
  */
 export const CellPolicySetAuditMetadata = loose_object({
 	cell_id: Uuid,
-	policy: nullable(record(unknown)),
-	previous_policy: nullable(record(unknown))
+	policy: nullable(CellPolicy),
+	previous_policy: nullable(CellPolicy)
 });
 export type CellPolicySetAuditMetadata = Infer<typeof CellPolicySetAuditMetadata>;

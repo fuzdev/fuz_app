@@ -30,7 +30,8 @@ import {
 	type Infer
 } from '@fuzdev/fuz_schema/schema.ts';
 
-import { ActingActor, Uuid } from '../primitive_schemas_fuz.ts';
+import { ActingActor, Timestamp, Uuid } from '../primitive_schemas_fuz.ts';
+import { RoleName } from './role_schema.ts';
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
 
 // -- Error reasons ----------------------------------------------------------
@@ -55,7 +56,7 @@ export const ERROR_CELL_GRANT_UNKNOWN_ROLE = 'cell_grant_unknown_role' as const;
 
 /**
  * Error reason — `cell_grant_create` on a cell whose `moderation` doesn't
- * admit an audience (pending, rejected, or an unknown marker). A grant would
+ * admit an audience (pending or rejected). A grant would
  * extend an audience the cell doesn't have yet.
  */
 export const ERROR_CELL_GRANT_UNAPPROVED = 'cell_grant_unapproved' as const;
@@ -104,10 +105,10 @@ export const GrantJson = object({
 	cell_id: Uuid,
 	level: CellGrantLevel,
 	actor_id: nullable(Uuid),
-	role: nullable(string),
+	role: nullable(RoleName),
 	scope_id: nullable(Uuid),
 	granted_by: nullable(Uuid),
-	created_at: string
+	created_at: Timestamp
 });
 export type GrantJson = Infer<typeof GrantJson>;
 

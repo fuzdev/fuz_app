@@ -23,13 +23,14 @@ import {
 	nullable,
 	number,
 	object,
-	one_of,
-	string,
+	pipe,
+	safe_integer,
 	type Infer
 } from '@fuzdev/fuz_schema/schema.ts';
 
-import { ActingActor, Uuid } from '../primitive_schemas_fuz.ts';
+import { ActingActor, Timestamp, Uuid } from '../primitive_schemas_fuz.ts';
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
+import { AuditEventTypeName, AuditOutcome } from './audit_log_schema.ts';
 
 /**
  * Wire shape for a single cell-audit row. Narrower than
@@ -52,11 +53,11 @@ import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
  */
 export const CellAuditEventJson = object({
 	id: Uuid,
-	seq: number,
-	event_type: string,
-	outcome: one_of(['success', 'failure']),
+	seq: pipe(number, safe_integer),
+	event_type: AuditEventTypeName,
+	outcome: AuditOutcome,
 	actor_id: nullable(Uuid),
-	created_at: string
+	created_at: Timestamp
 });
 export type CellAuditEventJson = Infer<typeof CellAuditEventJson>;
 

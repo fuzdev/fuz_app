@@ -37,9 +37,9 @@
  * (`has_scoped_role(auth, ROLE_ADMIN, null)`), never a scoped one.
  *
  * Moderation gates the audience: a cell's effective audience is its
- * visibility or grants **and** its admission, so a pending, rejected, or
- * unknown-marker contribution is readable through `can_view_cell` by its owner
- * and a global admin alone, whatever its `visibility` or grants say. The
+ * visibility or grants **and** its admission, so a pending or rejected
+ * contribution is readable through `can_view_cell` by its owner and a global
+ * admin alone, whatever its `visibility` or grants say. The
  * `editor` grant arm of `can_edit_cell` follows the same admission; the owner,
  * admin, and manage arms don't consult it.
  *

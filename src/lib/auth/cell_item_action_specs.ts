@@ -20,7 +20,6 @@ import {
 	optional,
 	pipe,
 	regex,
-	string,
 	type Infer
 } from '@fuzdev/fuz_schema/schema.ts';
 import {
@@ -28,7 +27,7 @@ import {
 	FRACTIONAL_INDEX_REGEX
 } from '@fuzdev/fuz_util/fractional_index.ts';
 
-import { ActingActor, bounded_string, Uuid } from '../primitive_schemas_fuz.ts';
+import { ActingActor, bounded_string, Timestamp, Uuid } from '../primitive_schemas_fuz.ts';
 import { CellRelationListLimit } from './cell_relation_list_limit.ts';
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
 
@@ -80,7 +79,7 @@ export const ItemJson = object({
 	parent_id: Uuid,
 	position: CellItemPosition,
 	child_id: Uuid,
-	created_at: string
+	created_at: Timestamp
 });
 export type ItemJson = Infer<typeof ItemJson>;
 
