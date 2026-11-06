@@ -60,9 +60,9 @@ import '../assert_dev_env.ts';
  */
 
 import { describe, assert } from 'vitest';
-import { z } from 'zod';
+import { object } from '@fuzdev/fuz_schema/schema.ts';
 import { fact_hash_bytes } from '@fuzdev/fuz_util/fact_hash.ts';
-import { FactHashSchema } from '../../primitive_schemas.ts';
+import { FactHashSchema } from '../../primitive_schemas_fuz.ts';
 
 import { CellCreateOutput } from '../../auth/cell_action_specs.ts';
 import {
@@ -99,7 +99,7 @@ const NIL_UUID = '00000000-0000-0000-0000-000000000000';
  * a TS↔Rust drift in the seeder's envelope (extra field, non-`blake3:` hash)
  * fails here rather than silently downstream.
  */
-const TestingPutFactOutput = z.strictObject({ hash: FactHashSchema });
+const TestingPutFactOutput = object({ hash: FactHashSchema });
 
 /** Input for `cross_put_fact` — `_testing_put_fact`'s params. */
 export interface CrossPutFactInput {

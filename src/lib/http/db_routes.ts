@@ -10,15 +10,33 @@
  * @module
  */
 
-import { z } from 'zod';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
-import { object } from '@fuzdev/fuz_schema/schema.ts';
+import { meta } from '@fuzdev/fuz_schema/meta.ts';
+import {
+	array,
+	boolean,
+	integer,
+	literal,
+	loose_object,
+	max_value,
+	min_value,
+	nullable,
+	number,
+	object,
+	pipe,
+	record,
+	regex,
+	safe_integer,
+	string,
+	transform,
+	unknown,
+	with_default
+} from '@fuzdev/fuz_schema/schema.ts';
 import type { Uuid } from '../primitive_schemas.ts';
-import { ActingActor as ActingActorFuz } from '../primitive_schemas_fuz.ts';
+import { ActingActor } from '../primitive_schemas_fuz.ts';
 
 import type { Db, DbType } from '../db/db.ts';
 import { get_route_params, get_route_query, type RouteSpec } from './route_spec.ts';
-import { ActingActor } from './auth_shape.ts';
 import {
 	ERROR_TABLE_NOT_FOUND,
 	ERROR_TABLE_NO_PRIMARY_KEY,
@@ -68,6 +86,44 @@ export interface ColumnInfo {
 	data_type: string;
 	is_nullable: string;
 }
+
+// the spellings `query_int` reads as an integer: decimal digits with an optional sign
+const QUERY_INT_PATTERN = /^[+-]?\d+$/;
+
+/**
+ * A strict integer query param with bounds and a default — accepts exactly
+ * the spellings the Rust twin's `str::parse::<i64>` does (`[+-]?digits`), so
+ * the twins refuse the same ones (`""`, `" 5"`, `"1e2"`, `"5.0"`, `"0x10"`),
+ * then a safe integer within `[min, max]`. An absent param is `fallback`.
+ *
+ * The surface writes it as a string with `QUERY_INT_PATTERN`, its bounds in
+ * the description: the steps after the `transform` read a number JSON Schema
+ * can't say the string becomes.
+ *
+ * @param min - the least integer accepted
+ * @param max - the greatest integer accepted
+ * @param fallback - the value of an absent param
+ * @returns the query param schema, whose output is a number
+ */
+const query_int = (min: number, max: number, fallback: number) =>
+	meta(
+		with_default(
+			pipe(
+				pipe(string, regex(QUERY_INT_PATTERN), transform(Number)),
+				safe_integer,
+				min_value(min),
+				max_value(max)
+			),
+			fallback
+		),
+		{ description: `an integer from ${min} to ${max}, as decimal digits with an optional sign` }
+	);
+
+/** A count or position the db routes answer with: a non-negative integer. */
+const Count = pipe(number, integer, min_value(0));
+
+/** A table name in a path: a valid SQL identifier. */
+const TableName = pipe(string, regex(VALID_SQL_IDENTIFIER));
 
 /** Default page size for `GET /tables/:name` rows. */
 export const DB_TABLE_ROWS_DEFAULT_LIMIT = 100;
@@ -263,22 +319,6 @@ export const create_db_route_specs = (
 		return query_table_exists(db, name);
 	};
 
-	/**
-	 * Strict integer query param — accepts exactly what the Rust twin's
-	 * `str::parse::<i64>` does (`[+-]?digits`), so the twins refuse the same
-	 * spellings (`z.coerce` alone admits `""`, `" 5"`, `"1e2"`, `"5.0"`).
-	 */
-	const query_int = (bounds: z.ZodNumber, fallback: number) =>
-		z.preprocess(
-			(v) =>
-				v === undefined
-					? undefined
-					: typeof v === 'string' && /^[+-]?\d+$/.test(v)
-						? Number(v)
-						: Number.NaN,
-			bounds.default(fallback)
-		);
-
 	return [
 		{
 			method: 'GET',
@@ -290,9 +330,9 @@ export const create_db_route_specs = (
 				credential_types: ['daemon_token']
 			},
 			description: 'Database health and stats',
-			query: object({ acting: ActingActorFuz }),
-			input: z.null(),
-			output: z.looseObject({ connected: z.boolean() }),
+			query: object({ acting: ActingActor }),
+			input: literal(null),
+			output: loose_object({ connected: boolean }),
 			errors: [REST_DATABASE_CONNECTION_FAILED],
 			handler: async (c, route) => {
 				try {
@@ -338,10 +378,10 @@ export const create_db_route_specs = (
 				credential_types: ['daemon_token']
 			},
 			description: 'List browsable tables with row counts',
-			query: object({ acting: ActingActorFuz }),
-			input: z.null(),
-			output: z.looseObject({
-				tables: z.array(z.strictObject({ name: z.string(), row_count: z.number() }))
+			query: object({ acting: ActingActor }),
+			input: literal(null),
+			output: loose_object({
+				tables: array(object({ name: string, row_count: Count }))
 			}),
 			transaction: true,
 			handler: async (c, route) => {
@@ -379,34 +419,22 @@ export const create_db_route_specs = (
 				credential_types: ['daemon_token']
 			},
 			description: 'Get table columns and rows (paginated)',
-			params: z.strictObject({ name: z.string().regex(VALID_SQL_IDENTIFIER) }),
-			// Zod, unlike the `{acting}`-only queries here: its paging params are
-			// `query_int`'s Zod preprocess, which stays with the rest of these
-			// routes' Zod schemas
-			query: z.strictObject({
+			params: object({ name: TableName }),
+			query: object({
 				acting: ActingActor,
-				offset: query_int(z.number().int().min(0), 0),
-				limit: query_int(
-					z.number().int().min(1).max(DB_TABLE_ROWS_LIMIT_MAX),
-					DB_TABLE_ROWS_DEFAULT_LIMIT
-				)
+				offset: query_int(0, Number.MAX_SAFE_INTEGER, 0),
+				limit: query_int(1, DB_TABLE_ROWS_LIMIT_MAX, DB_TABLE_ROWS_DEFAULT_LIMIT)
 			}),
-			input: z.null(),
+			input: literal(null),
 			errors: [REST_TABLE_NOT_FOUND],
-			output: z.looseObject({
-				columns: z.array(
-					z.strictObject({
-						column_name: z.string(),
-						data_type: z.string(),
-						is_nullable: z.string()
-					})
-				),
-				rows: z.array(z.record(z.string(), z.unknown())),
-				total: z.number(),
-				offset: z.number(),
-				limit: z.number(),
-				primary_key: z.string().nullable(),
-				deletable: z.boolean()
+			output: loose_object({
+				columns: array(object({ column_name: string, data_type: string, is_nullable: string })),
+				rows: array(record(unknown)),
+				total: Count,
+				offset: Count,
+				limit: Count,
+				primary_key: nullable(string),
+				deletable: boolean
 			}),
 			transaction: true,
 			handler: async (c, route) => {
@@ -487,13 +515,10 @@ export const create_db_route_specs = (
 				credential_types: ['daemon_token']
 			},
 			description: 'Delete a row by primary key',
-			params: z.strictObject({
-				name: z.string().regex(VALID_SQL_IDENTIFIER),
-				id: z.string()
-			}),
-			query: object({ acting: ActingActorFuz }),
-			input: z.null(),
-			output: z.looseObject({ success: z.boolean() }),
+			params: object({ name: TableName, id: string }),
+			query: object({ acting: ActingActor }),
+			input: literal(null),
+			output: loose_object({ success: boolean }),
 			errors: [
 				REST_TABLE_NOT_DELETABLE,
 				REST_TABLE_NO_PRIMARY_KEY,

@@ -1,0 +1,1256 @@
+{
+	"routes": [
+		{
+			"method": "GET",
+			"path": "/health",
+			"auth": {
+				"account": "required",
+				"actor": "required",
+				"roles": [
+					"keeper"
+				],
+				"credential_types": [
+					"daemon_token"
+				]
+			},
+			"applicable_middleware": [],
+			"description": "Database health and stats",
+			"is_mutation": false,
+			"transaction": false,
+			"raw_body": false,
+			"rate_limit_key": null,
+			"params_schema": null,
+			"query_schema": {
+				"type": "object",
+				"properties": {
+					"acting": {
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor."
+					}
+				},
+				"additionalProperties": false
+			},
+			"input_schema": null,
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"connected": {
+						"type": "boolean"
+					}
+				},
+				"required": [
+					"connected"
+				],
+				"additionalProperties": {}
+			},
+			"error_schemas": {
+				"400": {
+					"anyOf": [
+						{
+							"type": "object",
+							"properties": {
+								"error": {
+									"type": "string",
+									"const": "invalid_query_params"
+								},
+								"issues": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"properties": {
+											"kind": {
+												"type": "string"
+											},
+											"path": {
+												"type": "array",
+												"items": {
+													"type": [
+														"string",
+														"number"
+													]
+												}
+											},
+											"expected": {
+												"type": "string"
+											},
+											"received": {
+												"type": "string"
+											},
+											"message": {
+												"type": "string"
+											}
+										},
+										"required": [
+											"kind",
+											"path",
+											"expected",
+											"received",
+											"message"
+										],
+										"additionalProperties": {}
+									}
+								}
+							},
+							"required": [
+								"error"
+							],
+							"additionalProperties": {}
+						},
+						{
+							"type": "object",
+							"properties": {
+								"error": {
+									"type": "string",
+									"const": "actor_required"
+								},
+								"available": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"properties": {
+											"id": {
+												"type": "string"
+											},
+											"name": {
+												"type": "string"
+											}
+										},
+										"required": [
+											"id",
+											"name"
+										],
+										"additionalProperties": {}
+									}
+								}
+							},
+							"required": [
+								"error",
+								"available"
+							],
+							"additionalProperties": {}
+						},
+						{
+							"type": "object",
+							"properties": {
+								"error": {
+									"type": "string",
+									"const": "actor_not_on_account"
+								}
+							},
+							"required": [
+								"error"
+							],
+							"additionalProperties": {}
+						}
+					]
+				},
+				"401": {
+					"type": "object",
+					"properties": {
+						"error": {
+							"type": "string",
+							"const": "authentication_required"
+						}
+					},
+					"required": [
+						"error"
+					],
+					"additionalProperties": {}
+				},
+				"403": {
+					"anyOf": [
+						{
+							"type": "object",
+							"properties": {
+								"error": {
+									"type": "string",
+									"const": "credential_type_required"
+								},
+								"required_credential_types": {
+									"type": "array",
+									"items": {
+										"type": "string"
+									},
+									"readOnly": true
+								}
+							},
+							"required": [
+								"error",
+								"required_credential_types"
+							],
+							"additionalProperties": {}
+						},
+						{
+							"type": "object",
+							"properties": {
+								"error": {
+									"type": "string",
+									"const": "insufficient_permissions"
+								},
+								"required_roles": {
+									"type": "array",
+									"items": {
+										"type": "string"
+									},
+									"readOnly": true
+								}
+							},
+							"required": [
+								"error",
+								"required_roles"
+							],
+							"additionalProperties": {}
+						}
+					]
+				},
+				"500": {
+					"anyOf": [
+						{
+							"type": "object",
+							"properties": {
+								"error": {
+									"type": "string",
+									"const": "no_actors_on_account"
+								}
+							},
+							"required": [
+								"error"
+							],
+							"additionalProperties": {}
+						},
+						{
+							"type": "object",
+							"properties": {
+								"error": {
+									"type": "string",
+									"const": "account_vanished"
+								}
+							},
+							"required": [
+								"error"
+							],
+							"additionalProperties": {}
+						}
+					]
+				},
+				"503": {
+					"type": "object",
+					"properties": {
+						"error": {
+							"type": "string",
+							"const": "database_connection_failed"
+						}
+					},
+					"required": [
+						"error"
+					],
+					"additionalProperties": {}
+				}
+			}
+		},
+		{
+			"method": "GET",
+			"path": "/tables",
+			"auth": {
+				"account": "required",
+				"actor": "required",
+				"roles": [
+					"keeper"
+				],
+				"credential_types": [
+					"daemon_token"
+				]
+			},
+			"applicable_middleware": [],
+			"description": "List browsable tables with row counts",
+			"is_mutation": false,
+			"transaction": true,
+			"raw_body": false,
+			"rate_limit_key": null,
+			"params_schema": null,
+			"query_schema": {
+				"type": "object",
+				"properties": {
+					"acting": {
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor."
+					}
+				},
+				"additionalProperties": false
+			},
+			"input_schema": null,
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"tables": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"name": {
+									"type": "string"
+								},
+								"row_count": {
+									"type": "number"
+								}
+							},
+							"required": [
+								"name",
+								"row_count"
+							],
+							"additionalProperties": false
+						}
+					}
+				},
+				"required": [
+					"tables"
+				],
+				"additionalProperties": {}
+			},
+			"error_schemas": {
+				"400": {
+					"anyOf": [
+						{
+							"type": "object",
+							"properties": {
+								"error": {
+									"type": "string",
+									"const": "invalid_query_params"
+								},
+								"issues": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"properties": {
+											"kind": {
+												"type": "string"
+											},
+											"path": {
+												"type": "array",
+												"items": {
+													"type": [
+														"string",
+														"number"
+													]
+												}
+											},
+											"expected": {
+												"type": "string"
+											},
+											"received": {
+												"type": "string"
+											},
+											"message": {
+												"type": "string"
+											}
+										},
+										"required": [
+											"kind",
+											"path",
+											"expected",
+											"received",
+											"message"
+										],
+										"additionalProperties": {}
+									}
+								}
+							},
+							"required": [
+								"error"
+							],
+							"additionalProperties": {}
+						},
+						{
+							"type": "object",
+							"properties": {
+								"error": {
+									"type": "string",
+									"const": "actor_required"
+								},
+								"available": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"properties": {
+											"id": {
+												"type": "string"
+											},
+											"name": {
+												"type": "string"
+											}
+										},
+										"required": [
+											"id",
+											"name"
+										],
+										"additionalProperties": {}
+									}
+								}
+							},
+							"required": [
+								"error",
+								"available"
+							],
+							"additionalProperties": {}
+						},
+						{
+							"type": "object",
+							"properties": {
+								"error": {
+									"type": "string",
+									"const": "actor_not_on_account"
+								}
+							},
+							"required": [
+								"error"
+							],
+							"additionalProperties": {}
+						}
+					]
+				},
+				"401": {
+					"type": "object",
+					"properties": {
+						"error": {
+							"type": "string",
+							"const": "authentication_required"
+						}
+					},
+					"required": [
+						"error"
+					],
+					"additionalProperties": {}
+				},
+				"403": {
+					"anyOf": [
+						{
+							"type": "object",
+							"properties": {
+								"error": {
+									"type": "string",
+									"const": "credential_type_required"
+								},
+								"required_credential_types": {
+									"type": "array",
+									"items": {
+										"type": "string"
+									},
+									"readOnly": true
+								}
+							},
+							"required": [
+								"error",
+								"required_credential_types"
+							],
+							"additionalProperties": {}
+						},
+						{
+							"type": "object",
+							"properties": {
+								"error": {
+									"type": "string",
+									"const": "insufficient_permissions"
+								},
+								"required_roles": {
+									"type": "array",
+									"items": {
+										"type": "string"
+									},
+									"readOnly": true
+								}
+							},
+							"required": [
+								"error",
+								"required_roles"
+							],
+							"additionalProperties": {}
+						}
+					]
+				},
+				"500": {
+					"anyOf": [
+						{
+							"type": "object",
+							"properties": {
+								"error": {
+									"type": "string",
+									"const": "no_actors_on_account"
+								}
+							},
+							"required": [
+								"error"
+							],
+							"additionalProperties": {}
+						},
+						{
+							"type": "object",
+							"properties": {
+								"error": {
+									"type": "string",
+									"const": "account_vanished"
+								}
+							},
+							"required": [
+								"error"
+							],
+							"additionalProperties": {}
+						}
+					]
+				}
+			}
+		},
+		{
+			"method": "GET",
+			"path": "/tables/:name",
+			"auth": {
+				"account": "required",
+				"actor": "required",
+				"roles": [
+					"keeper"
+				],
+				"credential_types": [
+					"daemon_token"
+				]
+			},
+			"applicable_middleware": [],
+			"description": "Get table columns and rows (paginated)",
+			"is_mutation": false,
+			"transaction": true,
+			"raw_body": false,
+			"rate_limit_key": null,
+			"params_schema": {
+				"type": "object",
+				"properties": {
+					"name": {
+						"type": "string",
+						"pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+					}
+				},
+				"required": [
+					"name"
+				],
+				"additionalProperties": false
+			},
+			"query_schema": {
+				"type": "object",
+				"properties": {
+					"acting": {
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					},
+					"offset": {
+						"type": "integer",
+						"minimum": 0,
+						"maximum": 9007199254740991
+					},
+					"limit": {
+						"type": "integer",
+						"minimum": 1,
+						"maximum": 1000
+					}
+				},
+				"additionalProperties": false
+			},
+			"input_schema": null,
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"columns": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"column_name": {
+									"type": "string"
+								},
+								"data_type": {
+									"type": "string"
+								},
+								"is_nullable": {
+									"type": "string"
+								}
+							},
+							"required": [
+								"column_name",
+								"data_type",
+								"is_nullable"
+							],
+							"additionalProperties": false
+						}
+					},
+					"rows": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"propertyNames": {
+								"type": "string"
+							},
+							"additionalProperties": {}
+						}
+					},
+					"total": {
+						"type": "number"
+					},
+					"offset": {
+						"type": "number"
+					},
+					"limit": {
+						"type": "number"
+					},
+					"primary_key": {
+						"type": [
+							"string",
+							"null"
+						]
+					},
+					"deletable": {
+						"type": "boolean"
+					}
+				},
+				"required": [
+					"columns",
+					"rows",
+					"total",
+					"offset",
+					"limit",
+					"primary_key",
+					"deletable"
+				],
+				"additionalProperties": {}
+			},
+			"error_schemas": {
+				"400": {
+					"anyOf": [
+						{
+							"type": "object",
+							"properties": {
+								"error": {
+									"type": "string",
+									"const": "invalid_route_params"
+								},
+								"issues": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"properties": {
+											"kind": {
+												"type": "string"
+											},
+											"path": {
+												"type": "array",
+												"items": {
+													"type": [
+														"string",
+														"number"
+													]
+												}
+											},
+											"expected": {
+												"type": "string"
+											},
+											"received": {
+												"type": "string"
+											},
+											"message": {
+												"type": "string"
+											}
+										},
+										"required": [
+											"kind",
+											"path",
+											"expected",
+											"received",
+											"message"
+										],
+										"additionalProperties": {}
+									}
+								}
+							},
+							"required": [
+								"error"
+							],
+							"additionalProperties": {}
+						},
+						{
+							"type": "object",
+							"properties": {
+								"error": {
+									"type": "string",
+									"const": "invalid_query_params"
+								},
+								"issues": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"properties": {
+											"kind": {
+												"type": "string"
+											},
+											"path": {
+												"type": "array",
+												"items": {
+													"type": [
+														"string",
+														"number"
+													]
+												}
+											},
+											"expected": {
+												"type": "string"
+											},
+											"received": {
+												"type": "string"
+											},
+											"message": {
+												"type": "string"
+											}
+										},
+										"required": [
+											"kind",
+											"path",
+											"expected",
+											"received",
+											"message"
+										],
+										"additionalProperties": {}
+									}
+								}
+							},
+							"required": [
+								"error"
+							],
+							"additionalProperties": {}
+						},
+						{
+							"type": "object",
+							"properties": {
+								"error": {
+									"type": "string",
+									"const": "actor_required"
+								},
+								"available": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"properties": {
+											"id": {
+												"type": "string"
+											},
+											"name": {
+												"type": "string"
+											}
+										},
+										"required": [
+											"id",
+											"name"
+										],
+										"additionalProperties": {}
+									}
+								}
+							},
+							"required": [
+								"error",
+								"available"
+							],
+							"additionalProperties": {}
+						},
+						{
+							"type": "object",
+							"properties": {
+								"error": {
+									"type": "string",
+									"const": "actor_not_on_account"
+								}
+							},
+							"required": [
+								"error"
+							],
+							"additionalProperties": {}
+						}
+					]
+				},
+				"401": {
+					"type": "object",
+					"properties": {
+						"error": {
+							"type": "string",
+							"const": "authentication_required"
+						}
+					},
+					"required": [
+						"error"
+					],
+					"additionalProperties": {}
+				},
+				"403": {
+					"anyOf": [
+						{
+							"type": "object",
+							"properties": {
+								"error": {
+									"type": "string",
+									"const": "credential_type_required"
+								},
+								"required_credential_types": {
+									"type": "array",
+									"items": {
+										"type": "string"
+									},
+									"readOnly": true
+								}
+							},
+							"required": [
+								"error",
+								"required_credential_types"
+							],
+							"additionalProperties": {}
+						},
+						{
+							"type": "object",
+							"properties": {
+								"error": {
+									"type": "string",
+									"const": "insufficient_permissions"
+								},
+								"required_roles": {
+									"type": "array",
+									"items": {
+										"type": "string"
+									},
+									"readOnly": true
+								}
+							},
+							"required": [
+								"error",
+								"required_roles"
+							],
+							"additionalProperties": {}
+						}
+					]
+				},
+				"404": {
+					"type": "object",
+					"properties": {
+						"error": {
+							"type": "string",
+							"const": "table_not_found"
+						}
+					},
+					"required": [
+						"error"
+					],
+					"additionalProperties": {}
+				},
+				"500": {
+					"anyOf": [
+						{
+							"type": "object",
+							"properties": {
+								"error": {
+									"type": "string",
+									"const": "no_actors_on_account"
+								}
+							},
+							"required": [
+								"error"
+							],
+							"additionalProperties": {}
+						},
+						{
+							"type": "object",
+							"properties": {
+								"error": {
+									"type": "string",
+									"const": "account_vanished"
+								}
+							},
+							"required": [
+								"error"
+							],
+							"additionalProperties": {}
+						}
+					]
+				}
+			}
+		},
+		{
+			"method": "DELETE",
+			"path": "/tables/:name/rows/:id",
+			"auth": {
+				"account": "required",
+				"actor": "required",
+				"roles": [
+					"keeper"
+				],
+				"credential_types": [
+					"daemon_token"
+				]
+			},
+			"applicable_middleware": [],
+			"description": "Delete a row by primary key",
+			"is_mutation": true,
+			"transaction": true,
+			"raw_body": false,
+			"rate_limit_key": null,
+			"params_schema": {
+				"type": "object",
+				"properties": {
+					"name": {
+						"type": "string",
+						"pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+					},
+					"id": {
+						"type": "string"
+					}
+				},
+				"required": [
+					"name",
+					"id"
+				],
+				"additionalProperties": false
+			},
+			"query_schema": {
+				"type": "object",
+				"properties": {
+					"acting": {
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+						"description": "Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor."
+					}
+				},
+				"additionalProperties": false
+			},
+			"input_schema": null,
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"success": {
+						"type": "boolean"
+					}
+				},
+				"required": [
+					"success"
+				],
+				"additionalProperties": {}
+			},
+			"error_schemas": {
+				"400": {
+					"anyOf": [
+						{
+							"type": "object",
+							"properties": {
+								"error": {
+									"type": "string",
+									"const": "invalid_route_params"
+								},
+								"issues": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"properties": {
+											"kind": {
+												"type": "string"
+											},
+											"path": {
+												"type": "array",
+												"items": {
+													"type": [
+														"string",
+														"number"
+													]
+												}
+											},
+											"expected": {
+												"type": "string"
+											},
+											"received": {
+												"type": "string"
+											},
+											"message": {
+												"type": "string"
+											}
+										},
+										"required": [
+											"kind",
+											"path",
+											"expected",
+											"received",
+											"message"
+										],
+										"additionalProperties": {}
+									}
+								}
+							},
+							"required": [
+								"error"
+							],
+							"additionalProperties": {}
+						},
+						{
+							"type": "object",
+							"properties": {
+								"error": {
+									"type": "string",
+									"const": "invalid_query_params"
+								},
+								"issues": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"properties": {
+											"kind": {
+												"type": "string"
+											},
+											"path": {
+												"type": "array",
+												"items": {
+													"type": [
+														"string",
+														"number"
+													]
+												}
+											},
+											"expected": {
+												"type": "string"
+											},
+											"received": {
+												"type": "string"
+											},
+											"message": {
+												"type": "string"
+											}
+										},
+										"required": [
+											"kind",
+											"path",
+											"expected",
+											"received",
+											"message"
+										],
+										"additionalProperties": {}
+									}
+								}
+							},
+							"required": [
+								"error"
+							],
+							"additionalProperties": {}
+						},
+						{
+							"type": "object",
+							"properties": {
+								"error": {
+									"type": "string",
+									"const": "actor_required"
+								},
+								"available": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"properties": {
+											"id": {
+												"type": "string"
+											},
+											"name": {
+												"type": "string"
+											}
+										},
+										"required": [
+											"id",
+											"name"
+										],
+										"additionalProperties": {}
+									}
+								}
+							},
+							"required": [
+								"error",
+								"available"
+							],
+							"additionalProperties": {}
+						},
+						{
+							"type": "object",
+							"properties": {
+								"error": {
+									"type": "string",
+									"const": "actor_not_on_account"
+								}
+							},
+							"required": [
+								"error"
+							],
+							"additionalProperties": {}
+						},
+						{
+							"type": "object",
+							"properties": {
+								"error": {
+									"type": "string",
+									"const": "table_not_deletable"
+								}
+							},
+							"required": [
+								"error"
+							],
+							"additionalProperties": {}
+						},
+						{
+							"type": "object",
+							"properties": {
+								"error": {
+									"type": "string",
+									"const": "table_no_primary_key"
+								}
+							},
+							"required": [
+								"error"
+							],
+							"additionalProperties": {}
+						}
+					]
+				},
+				"401": {
+					"type": "object",
+					"properties": {
+						"error": {
+							"type": "string",
+							"const": "authentication_required"
+						}
+					},
+					"required": [
+						"error"
+					],
+					"additionalProperties": {}
+				},
+				"403": {
+					"anyOf": [
+						{
+							"type": "object",
+							"properties": {
+								"error": {
+									"type": "string",
+									"const": "credential_type_required"
+								},
+								"required_credential_types": {
+									"type": "array",
+									"items": {
+										"type": "string"
+									},
+									"readOnly": true
+								}
+							},
+							"required": [
+								"error",
+								"required_credential_types"
+							],
+							"additionalProperties": {}
+						},
+						{
+							"type": "object",
+							"properties": {
+								"error": {
+									"type": "string",
+									"const": "insufficient_permissions"
+								},
+								"required_roles": {
+									"type": "array",
+									"items": {
+										"type": "string"
+									},
+									"readOnly": true
+								}
+							},
+							"required": [
+								"error",
+								"required_roles"
+							],
+							"additionalProperties": {}
+						}
+					]
+				},
+				"404": {
+					"anyOf": [
+						{
+							"type": "object",
+							"properties": {
+								"error": {
+									"type": "string",
+									"const": "table_not_found"
+								}
+							},
+							"required": [
+								"error"
+							],
+							"additionalProperties": {}
+						},
+						{
+							"type": "object",
+							"properties": {
+								"error": {
+									"type": "string",
+									"const": "row_not_found"
+								}
+							},
+							"required": [
+								"error"
+							],
+							"additionalProperties": {}
+						}
+					]
+				},
+				"409": {
+					"type": "object",
+					"properties": {
+						"error": {
+							"type": "string",
+							"const": "foreign_key_violation"
+						}
+					},
+					"required": [
+						"error"
+					],
+					"additionalProperties": {}
+				},
+				"500": {
+					"anyOf": [
+						{
+							"type": "object",
+							"properties": {
+								"error": {
+									"type": "string",
+									"const": "no_actors_on_account"
+								}
+							},
+							"required": [
+								"error"
+							],
+							"additionalProperties": {}
+						},
+						{
+							"type": "object",
+							"properties": {
+								"error": {
+									"type": "string",
+									"const": "account_vanished"
+								}
+							},
+							"required": [
+								"error"
+							],
+							"additionalProperties": {}
+						}
+					]
+				}
+			}
+		}
+	],
+	"diagnostics": []
+}

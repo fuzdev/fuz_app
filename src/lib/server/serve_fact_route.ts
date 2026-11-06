@@ -137,10 +137,8 @@ import { join } from 'node:path';
 import type { Context } from 'hono';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 import type { FactHash } from '@fuzdev/fuz_util/hash_schemas.ts';
-import { FactHashSchema, Uuid } from '../primitive_schemas.ts';
-import { ActingActor } from '../primitive_schemas_fuz.ts';
-import { z } from 'zod';
-import { object } from '@fuzdev/fuz_schema/schema.ts';
+import { ActingActor, FactHashSchema, Uuid } from '../primitive_schemas_fuz.ts';
+import { literal, object } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	build_request_context,
@@ -168,19 +166,14 @@ import { FACT_CACHE_CONTROL, FACT_SECURITY_HEADERS } from './fact_security_heade
  * standard params-validation error shape (`ERROR_INVALID_ROUTE_PARAMS`),
  * which the round-trip validator expects.
  */
-const bare_hash_params_schema = z.strictObject({
-	hash: FactHashSchema
-});
+const bare_hash_params_schema = object({ hash: FactHashSchema });
 
 /**
  * Path-param schema for the cell-scoped route. `cell_id` validates as a
  * `Uuid`; `hash` as the canonical fact-hash form. Malformed values 400 via
  * the standard params-validation shape.
  */
-const cell_fact_params_schema = z.strictObject({
-	cell_id: Uuid,
-	hash: FactHashSchema
-});
+const cell_fact_params_schema = object({ cell_id: Uuid, hash: FactHashSchema });
 
 export interface CreateServeFactRouteSpecOptions {
 	/** Absolute path of the facts directory. Used for the dev/test streaming path. */
@@ -370,9 +363,9 @@ export const create_serve_cell_fact_route_spec = (
 		description:
 			"Serve content-addressed fact bytes through a named referencing cell. 404 unless the cell admits the caller via can_view_cell (or the steward arm: the governing root's manager reading a pending or rejected contribution) AND references the hash (per-reference, never union-of-referrers).",
 		params: cell_fact_params_schema,
-		input: z.null(),
+		input: literal(null),
 		// The body is a binary stream; no JSON output schema applies.
-		output: z.null(),
+		output: literal(null),
 		handler: async (c, route) => {
 			const { cell_id, hash } = get_route_params<{ cell_id: Uuid; hash: FactHash }>(c);
 
@@ -463,9 +456,9 @@ export const create_serve_fact_route_spec = (
 		// invariant 2 requires the `acting?` slot. On a GET it lives on
 		// `query` (a multi-actor admin disambiguates via `?acting=<actor>`).
 		query: object({ acting: ActingActor }),
-		input: z.null(),
+		input: literal(null),
 		// The body is a binary stream; no JSON output schema applies.
-		output: z.null(),
+		output: literal(null),
 		handler: async (c, route) => {
 			const { hash } = get_route_params<{ hash: FactHash }>(c);
 

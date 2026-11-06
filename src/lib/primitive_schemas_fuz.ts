@@ -1,6 +1,6 @@
 /**
  * `@fuzdev/fuz_schema` twins of the Zod `bounded_string`, `Username`,
- * `Email`, `Uuid`, `UuidWithDefault` (`primitive_schemas.ts`), and
+ * `Email`, `Uuid`, `UuidWithDefault`, `FactHashSchema` (`primitive_schemas.ts`), and
  * `ActingActor` (`http/auth_shape.ts`), under the same names, for schemas
  * written in fuz_schema; `UsernameCanonical`, the username an output carries;
  * `UsernameProvided`, the username login and lookup take; `Timestamp`, a
@@ -8,8 +8,8 @@
  * have no Zod twin.
  *
  * The output type is shared: the Zod `Uuid` outputs fuz_schema's
- * `Branded<string, 'Uuid'>` too, so a value parsed by either twin goes where
- * the other's is taken.
+ * `Branded<string, 'Uuid'>` too, and both `FactHashSchema`s output fuz_util's
+ * `FactHash`, so a value parsed by either twin goes where the other's is taken.
  *
  * Both twins have one grammar, RFC 9562's read case-insensitively as its §4
  * says, the max UUID included, and the Rust spine's: every input gets the same
@@ -40,6 +40,8 @@ import {
 	type Infer,
 	type PipeSchema
 } from '@fuzdev/fuz_schema/schema.ts';
+
+import { FACT_HASH_EXACT } from '@fuzdev/fuz_util/hash_schemas.ts';
 
 import {
 	create_uuid,
@@ -186,6 +188,16 @@ export type UuidWithDefault = Infer<typeof UuidWithDefault>;
  */
 export const Timestamp = pipe(string, iso_datetime);
 export type Timestamp = Infer<typeof Timestamp>;
+
+/**
+ * A `blake3:`-prefixed fact hash on the wire, the twin of the Zod
+ * `FactHashSchema`: `FACT_HASH_EXACT`, its output fuz_util's `FactHash`, which
+ * `fact_hash_bytes`, `fact_hash_stream`, and `FactStore` take. The twins agree
+ * on every input, and their JSON Schema is the same `pattern`.
+ *
+ * @nodocs
+ */
+export const FactHashSchema = brand(pipe(string, regex(FACT_HASH_EXACT)), 'FactHash');
 
 /** A BLAKE3 hex hash's grammar: 64 lowercase hex characters (256-bit output). */
 export const BLAKE3_HASH_REGEX = /^[0-9a-f]{64}$/;

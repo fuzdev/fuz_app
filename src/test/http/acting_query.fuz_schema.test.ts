@@ -10,9 +10,11 @@
  * `c.req.query()` builds them (null-prototype): the same verdict, the same
  * output, and the same wire issues but for `message`. Their surface entries
  * are the Zod-era ones as JSON, captured in
- * `fixtures/surface/acting_query.json`, but for the moves of the error rules
- * (`ERROR_MOVES`): each `GET`'s derived 400 is the query and actor codes, and
- * no body or params code (it was one enum of the four input codes beside the
+ * `fixtures/surface/acting_query.json`, but for `GET /tables`' `row_count`, a
+ * non-negative integer where the Zod one was any number
+ * (`http/db_routes.surface.test.ts` holds the db routes whole), and the moves
+ * of the error rules (`ERROR_MOVES`): each `GET`'s derived 400 is the query
+ * and actor codes, and no body or params code (it was one enum of the four input codes beside the
  * actor ones); the `DELETE`'s 400 is its params' and query's codes, the actor
  * codes, and its handler's two, all unioned (its own enum replaced the
  * derived one); the bare-hash fact route's 400 is its params' code with the
@@ -203,12 +205,12 @@ describe('the ported `{acting}` queries', () => {
 		assert.strictEqual(specs.at(-1)!.query, AuditStreamQuery);
 	});
 
-	test('`GET /tables/:name` keeps its Zod query, which still declares acting', () => {
+	test("`GET /tables/:name`'s query, `acting` beside the paging, declares acting too", () => {
 		const detail = create_db_route_specs(DB_ROUTE_DEPS, DB_ROUTE_OPTIONS).find(
 			(s) => s.method === 'GET' && s.path === '/tables/:name'
 		);
 		assert.ok(detail?.query);
-		assert.ok(!is_schema(detail.query));
+		assert.ok(is_schema(detail.query));
 		assert.ok(input_schema_declares_acting(detail.query));
 	});
 
@@ -330,6 +332,24 @@ const ERROR_MOVES: Record<string, Record<number, ErrorMove>> = {
 	'GET /audit/stream': { 400: ACTING_QUERY_400, 401: AUTH_401 }
 };
 
+/**
+ * Declared: `GET /tables`' `row_count` is a non-negative integer, where the
+ * Zod one was any number.
+ */
+const with_row_count_move = (route: Record<string, any>): Record<string, any> => {
+	if (`${route.method} ${route.path}` !== 'GET /tables') return route;
+	const { tables } = route.output_schema.properties;
+	assert.deepStrictEqual(tables.items.properties.row_count, { type: 'number' });
+	const properties = { ...tables.items.properties, row_count: { type: 'integer', minimum: 0 } };
+	return {
+		...route,
+		output_schema: {
+			...route.output_schema,
+			properties: { tables: { ...tables, items: { ...tables.items, properties } } }
+		}
+	};
+};
+
 describe('the surface entries of the ported routes', () => {
 	test('are the Zod-era ones as JSON, `description` now written last', () => {
 		const surface = generate_app_surface({
@@ -341,7 +361,9 @@ describe('the surface entries of the ported routes', () => {
 		const captured: Array<Record<string, any>> = JSON.parse(expected);
 		assert.deepStrictEqual(
 			surface.routes,
-			captured.map((r) => with_error_moves(r, ERROR_MOVES[`${r.method} ${r.path}`]))
+			captured.map((r) =>
+				with_error_moves(with_row_count_move(r), ERROR_MOVES[`${r.method} ${r.path}`])
+			)
 		);
 		// equal as JSON, not byte for byte: fuz_schema writes a node's keywords in
 		// its own order, `type` first and `description` last, where Zod wrote
