@@ -449,8 +449,10 @@ export const describe_identity_parity_cross_tests = (
 		test('case-insensitive login — uppercase submission matches a mixed-case account', async () => {
 			const fixture = await setup_test();
 			// Mixed-case ASCII username (valid per the `Username` regex), stored
-			// lowercase; an all-uppercase submission matches only if the lookup
-			// folds case on this backend.
+			// lowercase on every fixture: through signup's `Username` across
+			// processes, by the harness in process, and held there by the
+			// `account_username_lowercase` CHECK. An all-uppercase submission
+			// matches only if the lookup folds case on this backend.
 			await fixture.create_account({ username: 'Canon_Mixed_User' });
 			assert_attempt(await login(fixture, 'CANON_MIXED_USER'), 200, 'uppercase login');
 		});

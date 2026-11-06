@@ -11,6 +11,9 @@
  * `RouteAuth` (the two pair: `auth.actor !== 'none'` ⟺ input declares
  * `acting?: ActingActor`).
  *
+ * The wire schemas are `@fuzdev/fuz_schema` schemas, `SessionId` among them,
+ * but for `ClientApiTokenJson`, which is Zod.
+ *
  * DDL lives in `auth/auth_ddl.ts`; role system in `auth/role_schema.ts`.
  * See docs/identity.md for design rationale.
  *
@@ -18,7 +21,21 @@
  */
 
 import { z } from 'zod';
-import { Uuid, Blake3Hash, Username, Email } from '../primitive_schemas.ts';
+import { meta } from '@fuzdev/fuz_schema/meta.ts';
+import {
+	array,
+	boolean,
+	brand,
+	nullable,
+	object,
+	string,
+	type Infer
+} from '@fuzdev/fuz_schema/schema.ts';
+
+import { Uuid as ZodUuid, type Username } from '../primitive_schemas.ts';
+import { Blake3Hash, Email, Timestamp, UsernameCanonical, Uuid } from '../primitive_schemas_fuz.ts';
+import { RoleName } from './role_schema_fuz.ts';
+import { ScopeKindName } from './scope_kind_schema_fuz.ts';
 
 import { is_iso8601_seconds_live } from '../timestamp.ts';
 
@@ -169,15 +186,15 @@ export const has_global_role = (
 
 /**
  * A session's storage key — the blake3 hash of its raw token, branded so a
- * bare `string` can't stand in for one. `Blake3Hash` (`primitive_schemas.ts`) is
- * the shape; this is the meaning. Mint only via `hash_session_token`, or
- * `SessionId.parse` at an external boundary.
+ * bare `string` can't stand in for one. `Blake3Hash` (`primitive_schemas_fuz.ts`)
+ * is the shape; this is the meaning. Mint only via `hash_session_token`, or a
+ * parse of this schema at an external boundary.
  *
  * The raw token itself is never typed — it stays a `string` that exists only
  * long enough to be hashed.
  */
-export const SessionId = Blake3Hash.brand('SessionId');
-export type SessionId = z.infer<typeof SessionId>;
+export const SessionId = brand(Blake3Hash, 'SessionId');
+export type SessionId = Infer<typeof SessionId>;
 
 /**
  * Server-side auth session row, keyed by blake3 hash of the session token.
@@ -204,35 +221,39 @@ export interface ApiToken {
 	scope: unknown;
 }
 
-// Client-safe Zod schemas — for route output validation and ActionSpec outputs.
+// Client-safe schemas — for route output validation and ActionSpec outputs.
 
-/** Zod schema for `SessionAccount` — account without sensitive fields. */
-export const SessionAccountJson = z.strictObject({
+/**
+ * `SessionAccount` — account without sensitive fields, a `@fuzdev/fuz_schema`
+ * schema. Its `username` is `UsernameCanonical`, the lowercase an account row
+ * holds.
+ */
+export const SessionAccountJson = object({
 	id: Uuid,
-	username: Username,
-	email: Email.nullable(),
-	email_verified: z.boolean(),
-	created_at: z.string()
+	username: UsernameCanonical,
+	email: nullable(Email),
+	email_verified: boolean,
+	created_at: Timestamp
 });
-export type SessionAccountJson = z.infer<typeof SessionAccountJson>;
+export type SessionAccountJson = Infer<typeof SessionAccountJson>;
 
-/** Zod schema for `AuthSession` — id is the blake3 hash, safe for client. */
-export const AuthSessionJson = z.strictObject({
+/** `AuthSession` — id is the blake3 hash, safe for client. A `@fuzdev/fuz_schema` schema. */
+export const AuthSessionJson = object({
 	id: SessionId,
 	account_id: Uuid,
-	created_at: z.string(),
-	expires_at: z.string(),
-	is_current: z.boolean().meta({
+	created_at: Timestamp,
+	expires_at: Timestamp,
+	is_current: meta(boolean, {
 		description:
 			'Whether this is the session the request authenticated with — `false` on every row for a non-session credential.'
 	})
 });
-export type AuthSessionJson = z.infer<typeof AuthSessionJson>;
+export type AuthSessionJson = Infer<typeof AuthSessionJson>;
 
 /** Zod schema for client-safe API token listing (excludes `token_hash`). */
 export const ClientApiTokenJson = z.strictObject({
 	id: z.string(),
-	account_id: Uuid,
+	account_id: ZodUuid,
 	name: z.string(),
 	expires_at: z.string().nullable(),
 	last_used_at: z.string().nullable(),
@@ -248,41 +269,46 @@ export const ClientApiTokenJson = z.strictObject({
 });
 export type ClientApiTokenJson = z.infer<typeof ClientApiTokenJson>;
 
-/** Zod schema for the role_grant summary returned in admin account listings. */
-export const RoleGrantSummaryJson = z.strictObject({
+/** The role_grant summary returned in admin account listings, a `@fuzdev/fuz_schema` schema. */
+export const RoleGrantSummaryJson = object({
 	id: Uuid,
-	role: z.string(),
-	scope_kind: z.string().nullable(),
-	scope_id: Uuid.nullable(),
-	created_at: z.string(),
-	expires_at: z.string().nullable(),
-	granted_by: Uuid.nullable()
+	role: RoleName,
+	scope_kind: nullable(ScopeKindName),
+	scope_id: nullable(Uuid),
+	created_at: Timestamp,
+	expires_at: nullable(Timestamp),
+	granted_by: nullable(Uuid)
 });
-export type RoleGrantSummaryJson = z.infer<typeof RoleGrantSummaryJson>;
+export type RoleGrantSummaryJson = Infer<typeof RoleGrantSummaryJson>;
 
-/** Zod schema for the actor summary returned in admin account listings. */
-export const ActorSummaryJson = z.strictObject({
+/** The actor summary returned in admin account listings, a `@fuzdev/fuz_schema` schema. */
+export const ActorSummaryJson = object({
 	id: Uuid,
-	name: z.string()
+	name: string
 });
-export type ActorSummaryJson = z.infer<typeof ActorSummaryJson>;
+export type ActorSummaryJson = Infer<typeof ActorSummaryJson>;
 
-/** Zod schema for admin-facing account data — extends `SessionAccountJson` with audit fields. */
-export const AdminAccountJson = SessionAccountJson.extend({
-	updated_at: z.string(),
-	updated_by: Uuid.nullable(),
+/**
+ * Admin-facing account data — `SessionAccountJson`'s entries with audit
+ * fields, a `@fuzdev/fuz_schema` schema.
+ */
+export const AdminAccountJson = object({
+	...SessionAccountJson.def,
+	updated_at: Timestamp,
+	updated_by: nullable(Uuid),
 	/**
 	 * Soft-delete tombstone, non-null when the account is deleted. Surfaced
 	 * so the admin UI can mark tombstoned rows (shown only when the listing
 	 * is requested with `include_deleted`) and offer reactivation via
 	 * `account_undelete`. Active listings always carry `null` here.
 	 */
-	deleted_at: z.string().nullable()
+	deleted_at: nullable(Timestamp)
 });
-export type AdminAccountJson = z.infer<typeof AdminAccountJson>;
+export type AdminAccountJson = Infer<typeof AdminAccountJson>;
 
 /**
- * Zod schema for a pending role_grant offer surfaced in admin account listings.
+ * A pending role_grant offer surfaced in admin account listings, a
+ * `@fuzdev/fuz_schema` schema.
  *
  * Deliberately narrower than `RoleGrantOfferJson`: omits `message` and
  * `decline_reason` so cross-admin visibility of the listing does not expose
@@ -294,26 +320,29 @@ export type AdminAccountJson = z.infer<typeof AdminAccountJson>;
  * at a glance whose pending offer is blocking a "+ {role}" button; the
  * resolution runs inside the listing query's parallel batch.
  */
-export const PendingOfferSummaryJson = z.strictObject({
+export const PendingOfferSummaryJson = object({
 	id: Uuid,
-	role: z.string(),
-	scope_kind: z.string().nullable(),
-	scope_id: Uuid.nullable(),
+	role: RoleName,
+	scope_kind: nullable(ScopeKindName),
+	scope_id: nullable(Uuid),
 	from_actor_id: Uuid,
-	from_username: z.string(),
-	created_at: z.string(),
-	expires_at: z.string()
+	from_username: string,
+	created_at: Timestamp,
+	expires_at: Timestamp
 });
-export type PendingOfferSummaryJson = z.infer<typeof PendingOfferSummaryJson>;
+export type PendingOfferSummaryJson = Infer<typeof PendingOfferSummaryJson>;
 
-/** Zod schema for an admin account listing entry (account + actor + role_grants + pending offers). */
-export const AdminAccountEntryJson = z.strictObject({
+/**
+ * An admin account listing entry (account + actor + role_grants + pending
+ * offers), a `@fuzdev/fuz_schema` schema.
+ */
+export const AdminAccountEntryJson = object({
 	account: AdminAccountJson,
-	actor: ActorSummaryJson.nullable(),
-	role_grants: z.array(RoleGrantSummaryJson),
-	pending_offers: z.array(PendingOfferSummaryJson)
+	actor: nullable(ActorSummaryJson),
+	role_grants: array(RoleGrantSummaryJson),
+	pending_offers: array(PendingOfferSummaryJson)
 });
-export type AdminAccountEntryJson = z.infer<typeof AdminAccountEntryJson>;
+export type AdminAccountEntryJson = Infer<typeof AdminAccountEntryJson>;
 
 // Input types
 

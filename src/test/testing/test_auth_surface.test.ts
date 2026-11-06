@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { describe, assert, test, afterEach } from 'vitest';
 import { z } from 'zod';
+import { parse } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	stub,
@@ -642,7 +643,7 @@ describe('generate_valid_body', () => {
 	});
 
 	test('generates valid body for hex-pattern string (blake3 hash)', async () => {
-		// `account_session_revoke_action_spec.input` has `session_id: Blake3Hash`
+		// `account_session_revoke_action_spec.input` has `session_id: SessionId`
 		// (`^[0-9a-f]{64}$`). The generator must produce a value that round-trips
 		// through the input schema without error — previously it returned the
 		// default `'xxxxxxxxxx'` which fails the regex.
@@ -650,8 +651,8 @@ describe('generate_valid_body', () => {
 			await import('#lib/auth/account_action_specs.ts');
 		const body = generate_valid_body(account_session_revoke_action_spec.input);
 		assert.ok(body);
-		const parsed = account_session_revoke_action_spec.input.safeParse(body);
-		assert.ok(parsed.success, `generated body should pass schema: ${JSON.stringify(parsed)}`);
+		const parsed = parse(account_session_revoke_action_spec.input, body);
+		assert.ok(parsed.ok, `generated body should pass schema: ${JSON.stringify(parsed)}`);
 	});
 });
 

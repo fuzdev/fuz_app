@@ -1,8 +1,9 @@
 /**
  * `@fuzdev/fuz_schema` twins of the Zod `bounded_string`, `Username`,
- * `Email`, `Uuid`, `UuidWithDefault` (`primitive_schemas.ts`), and
- * `ActingActor` (`http/auth_shape.ts`), under the same names, for schemas
- * written in fuz_schema.
+ * `Email`, `Uuid`, `UuidWithDefault`, `Blake3Hash` (`primitive_schemas.ts`),
+ * and `ActingActor` (`http/auth_shape.ts`), under the same names, for schemas
+ * written in fuz_schema, `UsernameCanonical`, the username an output
+ * carries, and `Timestamp`, a timestamp on the wire.
  *
  * The output type is shared: the Zod `Uuid` outputs fuz_schema's
  * `Branded<string, 'Uuid'>` too, so a value parsed by either twin goes where
@@ -22,6 +23,7 @@ import { meta } from '@fuzdev/fuz_schema/meta.ts';
 import {
 	brand,
 	check,
+	iso_datetime,
 	max_length,
 	message,
 	min_length,
@@ -86,6 +88,25 @@ export const Username = pipe(
 export type Username = Infer<typeof Username>;
 
 /**
+ * A username's canonical grammar, `USERNAME_REGEX` in lowercase: a lowercase
+ * letter, then lowercase letters, digits, `_` or `-`, ending in a lowercase
+ * letter or digit. What `Username` outputs, and what an `account` row holds
+ * (its `account_username_lowercase` CHECK).
+ */
+export const USERNAME_CANONICAL_REGEX = /^[a-z][0-9a-z_-]*[0-9a-z]$/;
+
+/**
+ * A username as an account row holds it, the `username` of an output: the
+ * bounds of `Username` and `USERNAME_CANONICAL_REGEX`, no transform. A
+ * username in any other case fails, where the Zod `Username` lowercased it.
+ */
+export const UsernameCanonical = pipe(
+	bounded_string({ min: USERNAME_LENGTH_MIN, max: USERNAME_LENGTH_MAX }),
+	regex(USERNAME_CANONICAL_REGEX)
+);
+export type UsernameCanonical = Infer<typeof UsernameCanonical>;
+
+/**
  * Email validation, the twin of the Zod `Email`: `EMAIL_REGEX` and at most
  * `EMAIL_LENGTH_MAX` UTF-8 bytes, no transform. The `max_length` ahead of the
  * grammar refuses a string past the bound in UTF-16 code units, which is past
@@ -128,6 +149,32 @@ export type Uuid = Infer<typeof Uuid>;
 export const UuidWithDefault = with_default_fn(Uuid, create_uuid);
 /** @nodocs */
 export type UuidWithDefault = Infer<typeof UuidWithDefault>;
+
+/**
+ * A timestamp on the wire: a date and time of RFC 3339 in UTC, fuz_schema's
+ * `iso_datetime`, which both spines' `YYYY-MM-DDTHH:MM:SSZ`
+ * (`iso8601_timestamp_column`) and a `toISOString()` stamp satisfy. Not
+ * branded, unlike the Zod `Datetime`.
+ */
+export const Timestamp = pipe(string, iso_datetime);
+export type Timestamp = Infer<typeof Timestamp>;
+
+/** A BLAKE3 hex hash's grammar: 64 lowercase hex characters (256-bit output). */
+export const BLAKE3_HASH_REGEX = /^[0-9a-f]{64}$/;
+
+/** The message of a string off `BLAKE3_HASH_REGEX`. */
+export const BLAKE3_HASH_MESSAGE = 'Expected a 64-character lowercase hex blake3 hash';
+
+/**
+ * A BLAKE3 hex hash, the twin of the Zod `Blake3Hash`: `BLAKE3_HASH_REGEX`,
+ * whose issue carries `BLAKE3_HASH_MESSAGE`. A value that is no string gets
+ * fuz_schema's message.
+ *
+ * @nodocs
+ */
+export const Blake3Hash = pipe(string, message(regex(BLAKE3_HASH_REGEX), BLAKE3_HASH_MESSAGE));
+/** @nodocs */
+export type Blake3Hash = Infer<typeof Blake3Hash>;
 
 /** The `description` both `ActingActor` twins carry. */
 export const ACTING_ACTOR_DESCRIPTION =

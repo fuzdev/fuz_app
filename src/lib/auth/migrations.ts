@@ -306,6 +306,35 @@ const AUTH_MIGRATIONS: Array<Migration> = [
     AND superseded_at IS NULL
     AND expire_audited_at IS NULL`);
 		}
+	},
+	// Every `account.username` lowercase, as `Username` canonicalizes every
+	// name production creates, so the wire's username (`UsernameCanonical`)
+	// is the stored one and the case-insensitive unique index reads the same
+	// value as the column.
+	//
+	// `ADD CONSTRAINT … CHECK` validates the rows already there: a database
+	// holding a username with an uppercase letter (one written outside the
+	// creation paths, by hand or by a harness) fails the migration on
+	// `check_violation`, and the chain's transaction rolls back. Lowercase
+	// those rows (`UPDATE account SET username = lower(username)`, which the
+	// unique index on `LOWER(username)` keeps from colliding) and migrate
+	// again. Idempotent without PL/pgSQL, as `role_grant_scope_kind_paired`:
+	// probe `information_schema.table_constraints`, then add only if absent.
+	{
+		name: 'account_username_lowercase',
+		up: async (db: Db): Promise<void> => {
+			const existing = await db.query(
+				`SELECT 1 FROM information_schema.table_constraints
+				 WHERE table_schema = 'public'
+				   AND table_name = 'account'
+				   AND constraint_name = 'account_username_lowercase'`
+			);
+			if (existing.length === 0) {
+				await db.query(`ALTER TABLE account
+					ADD CONSTRAINT account_username_lowercase
+					CHECK (username = lower(username))`);
+			}
+		}
 	}
 ];
 

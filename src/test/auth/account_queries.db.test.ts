@@ -6,6 +6,7 @@
 
 import { describe, assert, test } from 'vitest';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
+import { pg_error_code } from '#lib/db/pg_error.ts';
 
 import {
 	query_create_account,
@@ -335,14 +336,18 @@ describe_db('account queries', (get_db) => {
 			assert.strictEqual(found.username, 'charlie');
 		});
 
-		test('rejects duplicate usernames (case-insensitive)', async () => {
+		test('rejects a username that is not lowercase (account_username_lowercase)', async () => {
 			const db = get_db();
 			const deps = { db };
 			await query_create_account(deps, { username: 'heidi', password_hash: 'hash' });
-			const err = await assert_rejects(() =>
-				query_create_account(deps, { username: 'HEIDI', password_hash: 'hash2' })
-			);
-			assert.ok(err.message.includes('unique') || err.message.includes('duplicate'));
+			// the CHECK refuses the case before the case-insensitive unique index is reached
+			for (const username of ['HEIDI', 'Ivan']) {
+				const err = await assert_rejects(() =>
+					query_create_account(deps, { username, password_hash: 'hash2' })
+				);
+				assert.strictEqual(pg_error_code(err), '23514', username);
+				assert.include(err.message, 'account_username_lowercase', username);
+			}
 		});
 
 		test('update_password with non-null updated_by sets the column', async () => {

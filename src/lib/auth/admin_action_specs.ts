@@ -3,9 +3,9 @@
  *
  * Import this module for the specs, Input/Output schemas, and the
  * `all_admin_action_specs` registry. Handlers live in `auth/admin_actions.ts`.
- * Every input is a `@fuzdev/fuz_schema` schema, and so is every output that
- * holds no row schema; the outputs of the listings and of `invite_create`
- * are Zod.
+ * Every input is a `@fuzdev/fuz_schema` schema, and so is every output but
+ * those of `audit_log_list`, `audit_log_role_grant_history`, `invite_create`
+ * and `invite_list`, which are Zod.
  *
  * Authorization is declared at the spec level (`auth: {role: ROLE_ADMIN}`)
  * so the RPC dispatcher enforces admin before the handler runs and the
@@ -20,6 +20,7 @@
 import { z } from 'zod';
 import { meta } from '@fuzdev/fuz_schema/meta.ts';
 import {
+	array,
 	boolean,
 	check_at,
 	integer,
@@ -38,7 +39,8 @@ import {
 
 import { ActingActor, Email, Username, Uuid } from '../primitive_schemas_fuz.ts';
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
-import { ROLE_ADMIN, ROLE_KEEPER, RoleName } from './role_schema.ts';
+import { ROLE_ADMIN, ROLE_KEEPER } from './role_schema.ts';
+import { RoleName } from './role_schema_fuz.ts';
 import { CREDENTIAL_TYPE_DAEMON_TOKEN } from './credential_type_schema.ts';
 import { NAME_LENGTH_MAX } from './name_schema.ts';
 import { AdminAccountEntryJson } from './account_schema.ts';
@@ -119,12 +121,12 @@ export const AdminAccountListInput = with_default_fn(
 );
 export type AdminAccountListInput = Infer<typeof AdminAccountListInput>;
 
-/** Output for `admin_account_list`. */
-export const AdminAccountListOutput = z.strictObject({
-	accounts: z.array(AdminAccountEntryJson),
-	grantable_roles: z.array(RoleName)
+/** Output for `admin_account_list`, a `@fuzdev/fuz_schema` schema. */
+export const AdminAccountListOutput = object({
+	accounts: array(AdminAccountEntryJson),
+	grantable_roles: array(RoleName)
 });
-export type AdminAccountListOutput = z.infer<typeof AdminAccountListOutput>;
+export type AdminAccountListOutput = Infer<typeof AdminAccountListOutput>;
 
 /**
  * Input for `admin_session_list`, a `@fuzdev/fuz_schema` schema. An omitted
@@ -133,11 +135,14 @@ export type AdminAccountListOutput = z.infer<typeof AdminAccountListOutput>;
 export const AdminSessionListInput = with_default_fn(object({ acting: ActingActor }), () => ({}));
 export type AdminSessionListInput = Infer<typeof AdminSessionListInput>;
 
-/** Output for `admin_session_list`. Cross-account listing; fan-out already scoped by role auth. */
-export const AdminSessionListOutput = z.strictObject({
-	sessions: z.array(AdminSessionJson)
+/**
+ * Output for `admin_session_list`, a `@fuzdev/fuz_schema` schema.
+ * Cross-account listing; fan-out already scoped by role auth.
+ */
+export const AdminSessionListOutput = object({
+	sessions: array(AdminSessionJson)
 });
-export type AdminSessionListOutput = z.infer<typeof AdminSessionListOutput>;
+export type AdminSessionListOutput = Infer<typeof AdminSessionListOutput>;
 
 /** Input for `admin_session_revoke_all`, a `@fuzdev/fuz_schema` schema. */
 export const AdminSessionRevokeAllInput = object({

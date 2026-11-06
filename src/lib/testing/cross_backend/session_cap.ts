@@ -54,6 +54,7 @@ import '../assert_dev_env.ts';
  */
 
 import { describe, test, assert } from 'vitest';
+import { parse } from '@fuzdev/fuz_schema/schema.ts';
 
 import { heartbeat_action_spec } from '../../actions/heartbeat.ts';
 import { WS_CLOSE_SESSION_REVOKED } from '../../actions/transports.ts';
@@ -262,12 +263,9 @@ export const describe_session_cap_cross_tests = (options: SessionCapCrossTestOpt
 			});
 			try {
 				const result = await client.request(1, 'account_session_list', undefined);
-				const parsed = SessionListOutput.safeParse(result);
-				assert.ok(
-					parsed.success,
-					`the socket's session list parses (got ${JSON.stringify(result)})`
-				);
-				const current = parsed.data.sessions.filter((s) => s.is_current).map((s) => s.id);
+				const parsed = parse(SessionListOutput, result);
+				assert.ok(parsed.ok, `the socket's session list parses (got ${JSON.stringify(result)})`);
+				const current = parsed.value.sessions.filter((s) => s.is_current).map((s) => s.id);
 				assert.deepStrictEqual(
 					current,
 					on_first.current,

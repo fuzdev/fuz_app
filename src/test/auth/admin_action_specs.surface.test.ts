@@ -13,6 +13,15 @@
  *   `invite_create`'s input on each endpoint
  * - the revoke-all outputs' `count` is a non-negative integer, where the Zod
  *   one was any number
+ * - the fuz_schema outputs of the listings (`MOVED_OUTPUT_METHODS`): every
+ *   timestamp is a `Timestamp`, gaining `format: 'date-time'` and the
+ *   `iso_datetime` `pattern` (an `anyOf` with `null` where nullable); the
+ *   account's `username`, `{}` at capture (the Zod `Username`'s transform has
+ *   no JSON Schema form, an `info` diagnostic on the output), is
+ *   `UsernameCanonical`, its bounds and lowercase grammar; a grant's or an
+ *   offer's `role` and `scope_kind` take the `RoleName` and `ScopeKindName`
+ *   grammar; and the account's `email` gains `maxLength`, as the input's did,
+ *   its byte `check` an `info` diagnostic in place of the transform's
  *
  * @module
  */
@@ -24,7 +33,16 @@ import { all_admin_action_specs } from '#lib/auth/admin_action_specs.ts';
 import { to_ws_actions, protocol_actions } from '#lib/actions/protocol.ts';
 import type { ResolvedWsEndpointSpec } from '#lib/actions/ws_endpoint_spec.ts';
 import { generate_app_surface, type AppSurfaceDiagnostic } from '#lib/http/surface.ts';
-import { EMAIL_LENGTH_MAX, EMAIL_REGEX } from '#lib/primitive_schemas.ts';
+import {
+	EMAIL_LENGTH_MAX,
+	EMAIL_REGEX,
+	USERNAME_LENGTH_MAX,
+	USERNAME_LENGTH_MIN
+} from '#lib/primitive_schemas.ts';
+import { USERNAME_CANONICAL_REGEX } from '#lib/primitive_schemas_fuz.ts';
+import { NAME_LENGTH_MAX, NAME_REGEX } from '#lib/auth/name_schema.ts';
+
+import { with_timestamp_format } from '../surface_test_helpers.ts';
 
 const FIXTURE_PATH = new URL('../fixtures/surface/admin.json', import.meta.url);
 
@@ -104,18 +122,75 @@ const with_integer_count = (entry: Record<string, unknown>): Record<string, unkn
 	};
 };
 
+/** The methods whose output moved from Zod to fuz_schema with a row in it. */
+const MOVED_OUTPUT_METHODS: ReadonlyArray<unknown> = ['admin_account_list', 'admin_session_list'];
+
+const USERNAME_NODE = {
+	type: 'string',
+	minLength: USERNAME_LENGTH_MIN,
+	maxLength: USERNAME_LENGTH_MAX,
+	pattern: USERNAME_CANONICAL_REGEX.source
+};
+const NAME_NODE = { type: 'string', maxLength: NAME_LENGTH_MAX, pattern: NAME_REGEX.source };
+
+// declared: in a moved output, the nodes found by their Zod-era form at their keys
+const with_row_nodes = (value: unknown): unknown => {
+	if (Array.isArray(value)) return value.map(with_row_nodes);
+	if (typeof value !== 'object' || value === null) return value;
+	const out: Record<string, unknown> = {};
+	for (const [key, child] of Object.entries(value)) {
+		const node = child as Record<string, any>;
+		if (key === 'username' && JSON.stringify(child) === '{}') {
+			out[key] = USERNAME_NODE;
+		} else if (key === 'role' && JSON.stringify(child) === '{"type":"string"}') {
+			out[key] = NAME_NODE;
+		} else if (key === 'scope_kind' && JSON.stringify(node.type) === '["string","null"]') {
+			const { type: _, ...rest } = node;
+			out[key] = { anyOf: [NAME_NODE, { type: 'null' }], ...rest };
+		} else if (key === 'email' && Array.isArray(node.anyOf)) {
+			const [string_node, ...others] = node.anyOf;
+			out[key] = { ...node, anyOf: [{ ...string_node, maxLength: EMAIL_LENGTH_MAX }, ...others] };
+		} else {
+			out[key] = with_row_nodes(child);
+		}
+	}
+	return out;
+};
+
+const with_moved_output = (entry: Record<string, unknown>): Record<string, unknown> =>
+	MOVED_OUTPUT_METHODS.includes(entry.name)
+		? { ...entry, output_schema: with_timestamp_format(with_row_nodes(entry.output_schema)) }
+		: entry;
+
 const expected_entries = (head: Array<Record<string, unknown>>): unknown =>
 	(with_email_pattern(head) as Array<Record<string, unknown>>)
 		.map(with_email_max_length)
-		.map(with_integer_count);
+		.map(with_integer_count)
+		.map(with_moved_output);
 
-const check_diagnostic = (source: string): AppSurfaceDiagnostic => ({
+const check_diagnostic = (
+	source: string,
+	pointer = '#/properties/email/anyOf/0'
+): AppSurfaceDiagnostic => ({
 	level: 'info',
 	category: 'schema',
-	message:
-		'Part of the schema has no JSON Schema form and is left out or written as {} there: cannot express `check` at #/properties/email/anyOf/0: it holds a function',
+	message: `Part of the schema has no JSON Schema form and is left out or written as {} there: cannot express \`check\` at ${pointer}: it holds a function`,
 	source
 });
+
+/** Where a moved output's `Email` check sits, by method. */
+const OUTPUT_EMAIL_POINTERS: Record<string, string> = {
+	admin_account_list: '#/properties/accounts/items/properties/account/properties/email/anyOf/0'
+};
+
+// declared: a moved output's transform diagnostic is its `Email` check's, or none
+const with_moved_diagnostics = (list: Array<AppSurfaceDiagnostic>): Array<AppSurfaceDiagnostic> =>
+	list.flatMap((d) => {
+		const [endpoint, method, side] = d.source!.split(' ');
+		if (side !== 'output' || !MOVED_OUTPUT_METHODS.includes(method)) return [d];
+		const pointer = OUTPUT_EMAIL_POINTERS[method!];
+		return pointer ? [check_diagnostic(`${endpoint} ${method} output`, pointer)] : [];
+	});
 
 describe('admin surface', () => {
 	const head: SurfaceCapture = JSON.parse(readFileSync(FIXTURE_PATH, 'utf8'));
@@ -155,8 +230,8 @@ describe('admin surface', () => {
 			return [...list.slice(0, i), check_diagnostic(source), ...list.slice(i)];
 		};
 		assert.deepStrictEqual(surface.diagnostics, [
-			...at(rpc, '/api/rpc invite_create input'),
-			...at(ws, '/ws invite_create input')
+			...at(with_moved_diagnostics(rpc), '/api/rpc invite_create input'),
+			...at(with_moved_diagnostics(ws), '/ws invite_create input')
 		]);
 	});
 });

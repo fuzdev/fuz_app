@@ -18,6 +18,7 @@ import { afterEach, describe, assert, test, vi } from 'vitest';
 import { Hono } from 'hono';
 import { WSContext } from 'hono/ws';
 import { z } from 'zod';
+import { parse_or_throw } from '@fuzdev/fuz_schema/schema.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { create_uuid } from '#lib/primitive_schemas.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
@@ -1599,7 +1600,7 @@ describe('register_action_ws self-revocation', () => {
 			}
 			await audit.emit(ctx, {
 				event_type: 'session_revoke',
-				metadata: { session_id: SessionId.parse(hash_session_token(SESSION_ID)) }
+				metadata: { session_id: parse_or_throw(SessionId, hash_session_token(SESSION_ID)) }
 			});
 		});
 

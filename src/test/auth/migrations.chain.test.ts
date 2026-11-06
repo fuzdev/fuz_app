@@ -28,7 +28,8 @@ const EXPECTED_MIGRATION_NAMES = [
 	'api_token_hash_unique_index',
 	'audit_log_metadata_gin_index',
 	'drop_session_last_seen_at',
-	'role_grant_offer_expire_audited_at'
+	'role_grant_offer_expire_audited_at',
+	'account_username_lowercase'
 ];
 
 describe('AUTH_MIGRATION_NS', () => {

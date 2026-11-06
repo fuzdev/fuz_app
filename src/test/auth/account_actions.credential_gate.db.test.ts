@@ -20,6 +20,7 @@
  */
 
 import { describe, test, assert } from 'vitest';
+import { parse_or_throw } from '@fuzdev/fuz_schema/schema.ts';
 
 import { SessionId } from '#lib/auth/account_schema.ts';
 
@@ -121,7 +122,7 @@ describe_db('credential_channel_gate', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: account_session_revoke_action_spec,
-				params: { session_id: SessionId.parse('0'.repeat(64)) },
+				params: { session_id: parse_or_throw(SessionId, '0'.repeat(64)) },
 				headers: test_app.create_bearer_headers(),
 				suppress_default_origin: true
 			});
@@ -265,7 +266,7 @@ describe_db('credential_channel_gate', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: account_session_revoke_action_spec,
-				params: { session_id: SessionId.parse('0'.repeat(64)) }
+				params: { session_id: parse_or_throw(SessionId, '0'.repeat(64)) }
 			});
 			assert.strictEqual(res.ok, false);
 			assert.strictEqual(res.status, 401);
@@ -339,7 +340,7 @@ describe_db('credential_channel_gate', (get_db) => {
 					app: test_app.app,
 					path: RPC_PATH,
 					spec: account_session_revoke_action_spec,
-					params: { session_id: SessionId.parse('0'.repeat(64)) },
+					params: { session_id: parse_or_throw(SessionId, '0'.repeat(64)) },
 					headers: test_app.create_bearer_headers(),
 					suppress_default_origin: true
 				}),

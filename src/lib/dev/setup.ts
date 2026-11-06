@@ -434,9 +434,12 @@ export const reset_database = async (
 
 /** Input to `seed_dev_account`. */
 export interface SeedDevAccountInput {
-	/** Account username. Policy is bypassed — any non-empty string is accepted. */
+	/**
+	 * Account username, stored lowercased, as the `account_username_lowercase`
+	 * CHECK requires. Its length and grammar (`Username`) are not checked.
+	 */
 	username: string;
-	/** Account password. Policy is bypassed — any non-empty string is accepted. */
+	/** Account password, hashed as given — the password policy is bypassed. */
 	password: string;
 	/** Roles to grant via role_grant (idempotent). */
 	roles?: ReadonlyArray<string>;
@@ -457,11 +460,15 @@ export interface SeedDevAccountDeps extends QueryDeps {
 }
 
 /**
- * Seed a development test account, bypassing username/password policy.
+ * Seed a development test account, bypassing the username and password
+ * policy: the username is stored lowercased, for the account and its actor's
+ * `name`, its length and grammar unchecked, and the password is hashed as
+ * given.
  *
- * Idempotent by username — if an account with the given username already
- * exists, reuses it and only reconciles the requested role grants. Never
- * updates an existing password (rerun would silently rotate it).
+ * Idempotent by username, compared case-insensitively — if an account with
+ * the given username already exists, reuses it and only reconciles the
+ * requested role grants. Never updates an existing password (rerun would
+ * silently rotate it).
  *
  * Intended for `scripts/dev_setup.ts` — do not call in production.
  *
@@ -476,7 +483,8 @@ export const seed_dev_account = async (
 	const log = options?.log ?? default_setup_logger;
 	const query_deps: QueryDeps = { db: deps.db };
 
-	const existing = await query_account_by_username(query_deps, input.username);
+	const username = input.username.toLowerCase();
+	const existing = await query_account_by_username(query_deps, username);
 	if (existing) {
 		const actors = await query_actors_by_account(query_deps, existing.id);
 		if (actors.length === 0) {
@@ -499,7 +507,7 @@ export const seed_dev_account = async (
 
 	const password_hash = await deps.hash_password(input.password);
 	const { account, actor } = await query_create_account_with_actor(query_deps, {
-		username: input.username,
+		username,
 		password_hash
 	});
 	for (const role of input.roles ?? []) {

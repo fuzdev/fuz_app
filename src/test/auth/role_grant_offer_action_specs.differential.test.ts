@@ -18,6 +18,10 @@
  * - **the strict output `scope_kind`**: an offer's `scope_kind` is a
  *   `ScopeKindName` or `null` (Zod: any string or `null`), so an output or
  *   notification holding one off the grammar fails.
+ * - **the strict output timestamp**: an offer's timestamps are fuz_schema's
+ *   `iso_datetime` (Zod: any string), so an output or notification holding
+ *   one that is no date and time of RFC 3339 in UTC fails. Both spines write
+ *   `YYYY-MM-DDTHH:MM:SSZ`.
  * - **one bound issue**: a history `limit` past `Number.MAX_SAFE_INTEGER`
  *   gets the `max_value` issue of its bound alone, where Zod's `.int()` adds
  *   the safe-range `max_value` issue before it. The reason is the same.
@@ -35,6 +39,7 @@ import { z } from 'zod';
 import { is_schema } from '@fuzdev/fuz_schema/schema.ts';
 
 import { Uuid as ZodUuid, bounded_string as zod_bounded_string } from '#lib/primitive_schemas.ts';
+import { Timestamp } from '#lib/primitive_schemas_fuz.ts';
 import { ActingActor as ZodActingActor } from '#lib/http/auth_shape.ts';
 import { RoleName as ZodRoleName } from '#lib/auth/role_schema.ts';
 import { ScopeKindName as ZodScopeKindName } from '#lib/auth/scope_kind_schema.ts';
@@ -235,7 +240,18 @@ const texts = (max: number): ReadonlyArray<unknown> => [
 	1,
 	false
 ];
-const STRINGS: ReadonlyArray<unknown> = [NOW, '', 'x', 1, null];
+const TIMESTAMPS: ReadonlyArray<unknown> = [
+	NOW,
+	'2026-11-05T12:00:00Z',
+	'2026-11-05T12:00:00.123456789Z',
+	'2026-11-05T12:00:00+00:00',
+	'2026-11-05 12:00:00+00',
+	'2026-02-30T00:00:00Z',
+	'',
+	'x',
+	1,
+	null
+];
 const LIMITS: ReadonlyArray<unknown> = [
 	1,
 	100,
@@ -318,13 +334,13 @@ const OFFER_FIELDS: Fields = {
 	scope_kind: [...SCOPE_KINDS, null],
 	scope_id: [...UUIDS, null],
 	message: [...texts(ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX), null],
-	created_at: STRINGS,
-	expires_at: STRINGS,
-	accepted_at: STRINGS,
-	declined_at: STRINGS,
+	created_at: TIMESTAMPS,
+	expires_at: TIMESTAMPS,
+	accepted_at: TIMESTAMPS,
+	declined_at: TIMESTAMPS,
 	decline_reason: [...texts(ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX), null],
-	retracted_at: STRINGS,
-	superseded_at: STRINGS,
+	retracted_at: TIMESTAMPS,
+	superseded_at: TIMESTAMPS,
 	resulting_role_grant_id: [...UUIDS, null]
 };
 const OFFERS = corpus_of(OFFER, OFFER_FIELDS);
@@ -397,6 +413,9 @@ const at_path = (input: unknown, path: ReadonlyArray<unknown>): unknown =>
 const off_scope_kind_grammar = (value: unknown): boolean =>
 	typeof value === 'string' && !parse_any(ZodScopeKindName, value).ok;
 
+const off_timestamp_grammar = (value: unknown): boolean =>
+	typeof value === 'string' && !parse_any(Timestamp, value).ok;
+
 interface Counts {
 	matched: number;
 	refused: number;
@@ -404,13 +423,14 @@ interface Counts {
 	one_length_issue: number;
 	one_bound_issue: number;
 	strict_scope_kind: number;
+	strict_timestamp: number;
 }
 
 const run = (
 	schema: ValidationSchema,
 	zod_schema: ValidationSchema,
 	corpus: ReadonlyArray<[string, unknown]>,
-	allow: { trailing_check?: boolean; strict_scope_kind?: boolean } = {}
+	allow: { trailing_check?: boolean; strict_scope_kind?: boolean; strict_timestamp?: boolean } = {}
 ): Counts => {
 	const counts: Counts = {
 		matched: 0,
@@ -418,7 +438,8 @@ const run = (
 		trailing_check: 0,
 		one_length_issue: 0,
 		one_bound_issue: 0,
-		strict_scope_kind: 0
+		strict_scope_kind: 0,
+		strict_timestamp: 0
 	};
 	for (const [label, input] of corpus) {
 		const fuz = outcome_of(schema, input);
@@ -429,10 +450,18 @@ const run = (
 			continue;
 		}
 		if (!fuz.ok && zod.ok) {
-			// declared: the strict output `scope_kind`, the one issue
-			assert.ok(allow.strict_scope_kind, `${label}: fuz refused what Zod took`);
 			assert.strictEqual(fuz.issues.length, 1, label);
 			const issue = fuz.issues[0]!;
+			if (issue.kind === 'iso_datetime') {
+				// declared: the strict output timestamp, the one issue
+				assert.ok(allow.strict_timestamp, `${label}: fuz refused what Zod took`);
+				assert.match(String(issue.path.at(-1)), /_at$/, label);
+				assert.ok(off_timestamp_grammar(at_path(input, issue.path)), label);
+				counts.strict_timestamp++;
+				continue;
+			}
+			// declared: the strict output `scope_kind`, the one issue
+			assert.ok(allow.strict_scope_kind, `${label}: fuz refused what Zod took`);
 			assert.strictEqual(issue.path.at(-1), 'scope_kind', label);
 			assert.include(['max_length', 'regex'], issue.kind, label);
 			assert.ok(off_scope_kind_grammar(at_path(input, issue.path)), label);
@@ -616,20 +645,22 @@ describe('the role_grant_offer schemas agree with the Zod ones', () => {
 		}
 	});
 
-	test('RoleGrantOfferJson, but for the strict scope_kind', () => {
+	test('RoleGrantOfferJson, but for the strict scope_kind and timestamps', () => {
 		const counts = run(RoleGrantOfferJson, ZodRoleGrantOfferJson, OFFERS, {
-			strict_scope_kind: true
+			strict_scope_kind: true,
+			strict_timestamp: true
 		});
+		assert.ok(counts.strict_timestamp >= 24, JSON.stringify(counts));
 		assert.ok(counts.matched >= 30, JSON.stringify(counts));
 		assert.ok(counts.refused >= 60, JSON.stringify(counts));
 		assert.ok(counts.strict_scope_kind >= 6, JSON.stringify(counts));
 		assert.ok(counts.one_length_issue >= 1, JSON.stringify(counts));
 	});
 
-	test('the outputs, but for the strict scope_kind', () => {
+	test('the outputs, but for the strict scope_kind and timestamps', () => {
 		const offer = (o: unknown) => ({ offer: o });
 		const offers = (o: unknown) => ({ offers: [OFFER, o] });
-		const allow = { strict_scope_kind: true };
+		const allow = { strict_scope_kind: true, strict_timestamp: true };
 		for (const [schema, zod_schema, corpus] of [
 			[RoleGrantOfferCreateOutput, ZodOfferOutput, offer_wrapped({}, {}, offer)],
 			[RoleGrantOfferDeclineOutput, ZodOfferOutput, offer_wrapped({}, {}, offer)],
@@ -664,8 +695,8 @@ describe('the role_grant_offer schemas agree with the Zod ones', () => {
 		assert.ok(assign.matched >= 4 && assign.refused >= 6, JSON.stringify(assign));
 	});
 
-	test('the offer notification params, but for the strict scope_kind', () => {
-		const allow = { strict_scope_kind: true };
+	test('the offer notification params, but for the strict scope_kind and timestamps', () => {
+		const allow = { strict_scope_kind: true, strict_timestamp: true };
 		for (const schema of [
 			RoleGrantOfferReceivedParams,
 			RoleGrantOfferRetractedParams,

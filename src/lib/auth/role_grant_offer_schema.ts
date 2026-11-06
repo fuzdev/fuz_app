@@ -13,10 +13,10 @@
  */
 
 import { meta } from '@fuzdev/fuz_schema/meta.ts';
-import { nullable, object, string, type Infer } from '@fuzdev/fuz_schema/schema.ts';
+import { nullable, object, type Infer } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { Uuid } from '../primitive_schemas.ts';
-import { Uuid as UuidSchema, bounded_string } from '../primitive_schemas_fuz.ts';
+import { Timestamp, Uuid as UuidSchema, bounded_string } from '../primitive_schemas_fuz.ts';
 import { RoleName } from './role_schema_fuz.ts';
 import { ScopeKindName } from './scope_kind_schema_fuz.ts';
 
@@ -147,23 +147,23 @@ export const RoleGrantOfferJson = meta(
 		message: meta(nullable(bounded_string({ max: ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX })), {
 			description: 'Optional free-form note from the grantor.'
 		}),
-		created_at: meta(string, { description: 'ISO timestamp when the offer was created.' }),
-		expires_at: meta(string, {
+		created_at: meta(Timestamp, { description: 'ISO timestamp when the offer was created.' }),
+		expires_at: meta(Timestamp, {
 			description: 'ISO timestamp after which the offer is no longer valid.'
 		}),
-		accepted_at: meta(nullable(string), {
+		accepted_at: meta(nullable(Timestamp), {
 			description: 'ISO timestamp when the offer was accepted.'
 		}),
-		declined_at: meta(nullable(string), {
+		declined_at: meta(nullable(Timestamp), {
 			description: 'ISO timestamp when the offer was declined.'
 		}),
 		decline_reason: meta(nullable(bounded_string({ max: ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX })), {
 			description: 'Optional reason given on decline.'
 		}),
-		retracted_at: meta(nullable(string), {
+		retracted_at: meta(nullable(Timestamp), {
 			description: 'ISO timestamp when the grantor retracted the offer.'
 		}),
-		superseded_at: meta(nullable(string), {
+		superseded_at: meta(nullable(Timestamp), {
 			description:
 				'ISO timestamp when this offer was obsoleted by a sibling accept or by revoke of the resulting role_grant.'
 		}),

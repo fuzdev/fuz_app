@@ -77,7 +77,9 @@ harness's `connect`, `create_bearer_auth_test_app`'s `pre_context`.
 ### `db_entities.ts` — DB-backed entity factories
 
 `create_test_account_with_actor(db, {username, password_hash?})` wraps
-`query_create_account_with_actor` with default `password_hash` (`'hash'`).
+`query_create_account_with_actor` with default `password_hash` (`'hash'`),
+storing the username lowercased, as every production creation path does and
+the `account_username_lowercase` CHECK requires.
 Returns `{account, actor}`. Replaces the per-file `create_user` /
 `create_test_actor` / `create_test_account` helpers that had accumulated
 across the auth test suite. Use for query-level tests needing real DB rows
@@ -183,7 +185,9 @@ cookie" flow, split by intent:
 - `create_test_account_with_credentials(options)` — general path used by `TestApp.create_account` for additional non-keeper accounts. Same body, no lock interaction (additional accounts aren't bootstraps).
 
 Both take `{db, keyring, session_options, password, username?, password_value?, roles?}`
-(shared `CreateTestAccountWithCredentialsOptions` / `BootstrapTestKeeperOptions`).
+(shared `CreateTestAccountWithCredentialsOptions` / `BootstrapTestKeeperOptions`),
+and store the username lowercased, as the Rust spine's `_testing_reset` seeds
+do, so the returned `account.username` is its lowercase.
 
 Types:
 

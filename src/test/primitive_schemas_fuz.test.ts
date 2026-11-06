@@ -3,7 +3,10 @@
  * Zod `Uuid`, `UuidWithDefault`, and `ActingActor` on one vector table, to
  * the Zod `bounded_string` on another, and to the Zod `Username` and `Email`
  * on a third: both libraries give every row the same verdict and output, and
- * `Username` and `Email` the same wire issues but for the declared ones.
+ * `Username` and `Email` the same wire issues but for the declared ones. The
+ * `Blake3Hash` twin is held to the Zod one, its message included;
+ * `UsernameCanonical` and `Timestamp`, which have no Zod twin, to their
+ * grammars.
  *
  * @module
  */
@@ -15,11 +18,13 @@ import { is_schema, parse } from '@fuzdev/fuz_schema/schema.ts';
 import { to_json_schema } from '@fuzdev/fuz_schema/json_schema.ts';
 
 import {
+	Blake3Hash as ZodBlake3Hash,
 	EMAIL_LENGTH_MAX,
 	EMAIL_LENGTH_MESSAGE,
 	Email as ZodEmail,
 	USERNAME_LENGTH_MAX,
 	USERNAME_LENGTH_MIN,
+	USERNAME_REGEX,
 	Username as ZodUsername,
 	Uuid as ZodUuid,
 	UuidWithDefault as ZodUuidWithDefault,
@@ -29,8 +34,13 @@ import {
 import {
 	ACTING_ACTOR_DESCRIPTION,
 	ActingActor,
+	BLAKE3_HASH_MESSAGE,
+	Blake3Hash,
 	Email,
+	Timestamp,
+	USERNAME_CANONICAL_REGEX,
 	Username,
+	UsernameCanonical,
 	Uuid,
 	UuidWithDefault,
 	bounded_string
@@ -515,5 +525,113 @@ describe('fuz_schema Email', () => {
 			maxLength: EMAIL_LENGTH_MAX
 		});
 		assert.throws(() => to_json_schema(Email, { io: 'input' }), /check/);
+	});
+});
+
+describe('fuz_schema Blake3Hash', () => {
+	const vectors: ReadonlyArray<unknown> = [
+		'a'.repeat(64),
+		'0123456789abcdef'.repeat(4),
+		'A'.repeat(64),
+		'a'.repeat(63),
+		'a'.repeat(65),
+		'g'.repeat(64),
+		` ${'a'.repeat(64)}`,
+		'',
+		1,
+		null
+	];
+
+	test('the Zod Blake3Hash gives every row the same verdict and output, and its message', () => {
+		for (const input of vectors) {
+			const fuz = outcome_of(Blake3Hash, input);
+			const zod = outcome_of(ZodBlake3Hash, input);
+			assert.deepStrictEqual(fuz.ok, zod.ok, String(input));
+			if (fuz.ok && zod.ok) {
+				assert.strictEqual(fuz.value, zod.value);
+				continue;
+			}
+			assert.ok(!fuz.ok && !zod.ok);
+			assert.deepStrictEqual(
+				fuz.issues.map(({ message: _, ...rest }) => rest),
+				zod.issues.map(({ message: _, ...rest }) => rest)
+			);
+			if (typeof input === 'string') {
+				assert.deepStrictEqual(
+					fuz.issues.map((i) => i.message),
+					[BLAKE3_HASH_MESSAGE]
+				);
+			}
+		}
+	});
+
+	test('its JSON Schema is the Zod Blake3Hash’s', () => {
+		assert.deepEqual<Record<string, unknown>>(
+			to_json_schema(Blake3Hash, { io: 'output' }),
+			z.toJSONSchema(ZodBlake3Hash, { io: 'output' })
+		);
+	});
+});
+
+describe('UsernameCanonical', () => {
+	test('takes what the Zod Username outputs, and refuses a username in another case', () => {
+		for (const input of ['alice', 'ab1', 'a-b_c', 'a'.repeat(USERNAME_LENGTH_MAX)]) {
+			assert.strictEqual(ZodUsername.parse(input), input);
+			assert.ok(parse(UsernameCanonical, input).ok, input);
+		}
+		for (const input of ['Alice', 'ALICE', 'aB1']) {
+			assert.strictEqual(ZodUsername.parse(input), input.toLowerCase());
+			const result = outcome_of(UsernameCanonical, input);
+			assert.ok(!result.ok, input);
+			assert.deepStrictEqual(
+				result.issues.map((i) => [i.kind, i.expected]),
+				[['regex', String(USERNAME_CANONICAL_REGEX)]]
+			);
+		}
+		for (const input of ['ab', 'a'.repeat(USERNAME_LENGTH_MAX + 1), '1ab', 'ab-', '', 1, null]) {
+			assert.ok(!parse(UsernameCanonical, input).ok, String(input));
+			assert.ok(!ZodUsername.safeParse(input).success, String(input));
+		}
+	});
+
+	test('its grammar is USERNAME_REGEX in lowercase', () => {
+		assert.strictEqual(
+			USERNAME_CANONICAL_REGEX.source,
+			USERNAME_REGEX.source.replaceAll('a-zA-Z', 'a-z')
+		);
+	});
+
+	test('its JSON Schema has the bounds and the lowercase grammar', () => {
+		const { $schema: _, ...json } = to_json_schema(UsernameCanonical, { io: 'output' });
+		assert.deepEqual<Record<string, unknown>>(json, {
+			type: 'string',
+			minLength: USERNAME_LENGTH_MIN,
+			maxLength: USERNAME_LENGTH_MAX,
+			pattern: USERNAME_CANONICAL_REGEX.source
+		});
+	});
+});
+
+describe('Timestamp', () => {
+	test('takes both spines’ timestamps and a toISOString stamp, and refuses other forms', () => {
+		for (const input of [
+			'2026-11-05T12:34:56Z',
+			new Date(0).toISOString(),
+			'2024-02-29T23:59:59.123456789Z'
+		]) {
+			assert.ok(parse(Timestamp, input).ok, input);
+		}
+		for (const input of [
+			'2026-11-05T12:34:56+00:00',
+			'2026-11-05 12:34:56+00',
+			'2026-11-05T12:34Z',
+			'2026-02-30T00:00:00Z',
+			'10000-01-01T00:00:00Z',
+			'',
+			0,
+			null
+		]) {
+			assert.ok(!parse(Timestamp, input).ok, String(input));
+		}
 	});
 });

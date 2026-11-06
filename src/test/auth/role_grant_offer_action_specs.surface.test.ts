@@ -6,6 +6,9 @@
  *
  * - the offer's `scope_kind` is a `ScopeKindName` or `null` on every output
  *   side, so its node gains the grammar's `maxLength` and `pattern`
+ * - the offer's timestamps are `Timestamp`s, so each node gains
+ *   `format: 'date-time'` and the `iso_datetime` `pattern`, the nullable ones
+ *   as an `anyOf` with `null`
  * - the revokee's notification is renamed from `role_grant_revoke`, the admin
  *   action's method, to `role_grant_revoked`, and its params gain a required
  *   `scope_kind`, beside `scope_id`
@@ -30,6 +33,8 @@ import { to_ws_actions, protocol_actions } from '#lib/actions/protocol.ts';
 import type { ResolvedWsEndpointSpec } from '#lib/actions/ws_endpoint_spec.ts';
 import { generate_app_surface, type AppSurfaceDiagnostic } from '#lib/http/surface.ts';
 import { NAME_LENGTH_MAX, NAME_REGEX } from '#lib/auth/name_schema.ts';
+
+import { with_timestamp_format } from '../surface_test_helpers.ts';
 
 const FIXTURE_PATH = new URL('../fixtures/surface/role_grant_offer.json', import.meta.url);
 
@@ -89,6 +94,10 @@ const with_strict_scope_kind = (value: unknown): unknown => {
 	return out;
 };
 
+/** The scope_kind and the timestamp moves, which every entry and event takes. */
+const with_declared_moves = (value: unknown): unknown =>
+	with_timestamp_format(with_strict_scope_kind(value));
+
 // the method the revokee's notification had in the capture, the admin action's
 const HEAD_REVOKE_NOTIFICATION_METHOD = 'role_grant_revoke';
 
@@ -138,11 +147,11 @@ describe('role_grant_offer surface', () => {
 	});
 
 	test('the RPC entries are the Zod-era ones but for the declared moves', () => {
-		assert.deepStrictEqual(surface.rpc_endpoints[0]!.methods, with_strict_scope_kind(head.rpc));
+		assert.deepStrictEqual(surface.rpc_endpoints[0]!.methods, with_declared_moves(head.rpc));
 	});
 
 	test('the events are the Zod-era ones but for the declared moves', () => {
-		const expected = (with_strict_scope_kind(head.events) as SurfaceCapture['events']).map((e) =>
+		const expected = (with_declared_moves(head.events) as SurfaceCapture['events']).map((e) =>
 			e.method === HEAD_REVOKE_NOTIFICATION_METHOD
 				? {
 						...e,
@@ -159,7 +168,7 @@ describe('role_grant_offer surface', () => {
 		const protocol = protocol_actions.length;
 		assert.deepStrictEqual(
 			methods.slice(protocol, protocol + METHODS.size),
-			with_strict_scope_kind(head.ws)
+			with_declared_moves(head.ws)
 		);
 		const notifications = methods.slice(protocol + METHODS.size);
 		// every notification, `role_grant_revoked` among them

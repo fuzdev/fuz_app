@@ -20,8 +20,8 @@ describe('generate_valid_body — branded-string synthesis', () => {
 	test('satisfies blake3 session_id pattern (account_session_revoke)', () => {
 		const body = generate_valid_body(account_session_revoke_action_spec.input);
 		assert.ok(body, 'expected a body');
-		const parsed = account_session_revoke_action_spec.input.safeParse(body);
-		assert.ok(parsed.success, `body must round-trip: ${JSON.stringify(parsed)}`);
+		const parsed = parse(account_session_revoke_action_spec.input, body);
+		assert.ok(parsed.ok, `body must round-trip: ${JSON.stringify(parsed)}`);
 	});
 
 	test('satisfies tok_ token_id pattern (account_token_revoke)', () => {

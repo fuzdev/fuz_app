@@ -19,6 +19,7 @@ import './assert_dev_env.ts';
  */
 
 import { describe, test, assert, afterAll } from 'vitest';
+import { parse_or_throw } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { SessionOptions } from '../auth/session_cookie.ts';
 import {
@@ -503,14 +504,14 @@ export const describe_standard_integration_tests = (
 					);
 					const body = await res.json();
 					// Throws on any extra/missing field across account/actor/role_grants.
-					const parsed = AccountStatusOutput.parse(body);
+					const parsed = parse_or_throw(AccountStatusOutput, body);
 					// Single-actor keeper: actor resolved, role_grants populated.
 					assert.ok(parsed.actor, 'single-actor keeper must resolve a non-null actor');
 					assert.ok(
 						parsed.role_grants.length > 0,
 						'single-actor keeper must have populated role_grants'
 					);
-					// Byte-shape gate: `z.string()` accepts a millisecond stamp too,
+					// Byte-shape gate: `iso_datetime` accepts a millisecond stamp too,
 					// so the schema parse above can't tell the two spines apart.
 					assert_iso8601_seconds(parsed.account.created_at, 'account.created_at');
 					for (const grant of parsed.role_grants) {

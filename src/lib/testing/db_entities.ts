@@ -40,7 +40,9 @@ export interface TestAccountWithActor {
  * so suites that don't exercise password verification can stay terse.
  * Replaces the per-file `create_user` / `create_test_actor` /
  * `create_test_account` helpers that had accumulated across the auth
- * test suite.
+ * test suite. The username is stored lowercased, as every production
+ * creation path stores it and the `account_username_lowercase` CHECK
+ * requires.
  */
 export const create_test_account_with_actor = async (
 	db: Db,
@@ -48,7 +50,7 @@ export const create_test_account_with_actor = async (
 ): Promise<TestAccountWithActor> =>
 	query_create_account_with_actor(
 		{ db },
-		{ username: options.username, password_hash: options.password_hash ?? 'hash' }
+		{ username: options.username.toLowerCase(), password_hash: options.password_hash ?? 'hash' }
 	);
 
 /**

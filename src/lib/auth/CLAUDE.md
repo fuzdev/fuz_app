@@ -56,7 +56,7 @@ Cross-cutting notes that don't live on any single symbol:
 
 Convention — `*_schema.ts` holds a domain's schemas, Zod or `@fuzdev/fuz_schema`; a `*_schema_fuz.ts` holds the fuz_schema twins of Zod schemas that stay; `*_ddl.ts` holds DDL strings.
 
-- `auth/account_schema.ts` — `Account`, `Actor`, `RoleGrant`, `AuthSession`, `ApiToken` + client-safe JSON shapes. Grant predicates over wire fields: `is_role_grant_active` (not revoked, not expired) and `has_global_role(role_grants, role, now?)` (an active grant of the role with `scope_id === null` — the bare-list form of `has_scoped_role(ctx, role, null)`, used client-side by `AuthState`).
+- `auth/account_schema.ts` — `Account`, `Actor`, `RoleGrant`, `AuthSession`, `ApiToken` + client-safe JSON shapes, `@fuzdev/fuz_schema` schemas but for the Zod `ClientApiTokenJson`: `SessionId` (`brand(Blake3Hash, 'SessionId')`, minted by `hash_session_token`), `SessionAccountJson` and `AdminAccountJson` (their `username` `UsernameCanonical`, so a username in another case fails), `AuthSessionJson`, `RoleGrantSummaryJson` and `PendingOfferSummaryJson` (`role` the fuz_schema `RoleName`, `scope_kind` the fuz_schema `ScopeKindName` or `null`), `ActorSummaryJson`, `AdminAccountEntryJson`; every timestamp a `Timestamp`. Grant predicates over wire fields: `is_role_grant_active` (not revoked, not expired) and `has_global_role(role_grants, role, now?)` (an active grant of the role with `scope_id === null` — the bare-list form of `has_scoped_role(ctx, role, null)`, used client-side by `AuthState`).
 - `auth/name_schema.ts` — the name grammar the auth vocabularies share: `NAME_REGEX` (runs of lowercase letters joined by single underscores), `NAME_LENGTH_MAX` (64), `is_valid_name`, `create_name_schema(label)` (the Zod schema, `bounded_string` then the regex) and the message builders `format_name_length_message` / `format_name_pattern_message`, so each domain keeps its own label in its messages. `RoleName`, `ScopeKindName`, `GrantPathName`, `CredentialTypeName` and a token's `surface:` name (`is_route_scope_capability`) hold it; `AuditEventTypeName` takes its cap over its own grammar. Twin of the Rust `fuz_auth::is_valid_name` / `NAME_LENGTH_MAX`.
 - `auth/role_schema.ts` — `RoleName` (`create_name_schema('Role')`: lowercase letters and underscores, no leading, trailing or consecutive underscores, at most `NAME_LENGTH_MAX` = 64 characters — the grammar every `role` input and every registered role holds, twin of the Rust `is_valid_name`), its messages (`ROLE_NAME_LENGTH_MESSAGE`, `ROLE_NAME_PATTERN_MESSAGE`), `RoleSpec`, `ROLE_KEEPER`, `ROLE_ADMIN`, `is_builtin_role`, `create_role_schema`, `builtin_role_specs_by_name`, `role_has_grant_path`, `list_roles_with_grant_path`.
 - `auth/role_schema_fuz.ts` — the `@fuzdev/fuz_schema` twin of `RoleName` under the same name (`@nodocs` while the Zod one stays), `pipe(bounded_string({max: NAME_LENGTH_MAX, max_message}), message(regex(NAME_REGEX), ROLE_NAME_PATTERN_MESSAGE))` over the same constants: the same verdict, output and JSON Schema as the Zod one, and its messages; a string both too long and off the grammar gets the length issue alone, where Zod adds the grammar issue. Pinned by `role_schema_fuz.test.ts`. `self_service_role_set`'s input declares it; every other `role` input is the Zod one.
@@ -932,8 +932,11 @@ narrowed token that names it: the REST probe is the `surface:account_verify`
 rule-3 surface, refused to every narrowed token, and `GET /status` answers one
 as the anonymous caller.
 
-`session_id` validates as `Blake3Hash`; `token_id` as `ApiTokenId`
-(`tok_[A-Za-z0-9_-]{12}`).
+`session_id` validates as `SessionId`, the fuz_schema `Blake3Hash` branded;
+`token_id` as `ApiTokenId` (`tok_[A-Za-z0-9_-]{12}`). The inputs of
+`account_session_revoke` and `account_token_revoke` and the outputs of
+`account_verify`, `account_session_list` and `account_token_revoke` are
+`@fuzdev/fuz_schema` schemas; the rest are Zod.
 
 Audit events via `deps.audit.emit` with `ip: ctx.client_ip`:
 `session_revoke`, `session_revoke_all`, `token_create`, `token_revoke`. Every

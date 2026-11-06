@@ -4,7 +4,8 @@
  * row-free outputs, and the app settings schemas. On corpora of single
  * changes to a valid value, each pair gives the same verdict and output, and
  * the same wire issues but for `message`, which is the Zod text, behind the
- * issue's path, wherever Zod's was a custom one.
+ * issue's path, wherever Zod's was a custom one. The outputs that hold a row
+ * are held to theirs in `row_schemas.differential.test.ts`.
  *
  * The Zod schemas here are built over the current `Email`, whose grammar
  * refuses a domain with a dot at its edge on both libraries.
@@ -452,13 +453,11 @@ describe('the admin schemas agree with the Zod ones', () => {
 		}
 	});
 
-	test('the row-free outputs are fuz_schema schemas and the listings stay Zod', () => {
+	test('the outputs are fuz_schema schemas but those of the audit and invite rows', () => {
 		const zod_outputs = all_admin_action_specs
 			.filter((spec) => !is_schema(spec.output))
 			.map((spec) => spec.method);
 		assert.deepStrictEqual(zod_outputs, [
-			'admin_account_list',
-			'admin_session_list',
 			'audit_log_list',
 			'audit_log_role_grant_history',
 			'invite_create',

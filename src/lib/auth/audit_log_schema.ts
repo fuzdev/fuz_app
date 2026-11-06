@@ -10,9 +10,10 @@
  */
 
 import { z } from 'zod';
-import { bounded_string, Uuid, Email } from '../primitive_schemas.ts';
+import { object, string, type Infer } from '@fuzdev/fuz_schema/schema.ts';
+import { Blake3Hash, bounded_string, Uuid, Email } from '../primitive_schemas.ts';
 
-import { AuthSessionJson, SessionId } from './account_schema.ts';
+import { AuthSessionJson } from './account_schema.ts';
 import { ApiTokenId } from './api_token.ts';
 import { BuiltinCredentialType } from './credential_type_schema.ts';
 import { NAME_LENGTH_MAX } from './name_schema.ts';
@@ -274,7 +275,7 @@ export const audit_metadata_schemas = Object.freeze({
 		})
 		.nullable(),
 	session_revoke: z.looseObject({
-		session_id: SessionId.meta({
+		session_id: Blake3Hash.meta({
 			description: 'Blake3 hash identifying the revoked session row.'
 		}),
 		credential_type: credential_type_meta
@@ -782,8 +783,14 @@ export const RoleGrantHistoryEventJson = AuditLogEventJson.extend({
 });
 export type RoleGrantHistoryEventJson = z.infer<typeof RoleGrantHistoryEventJson>;
 
-/** Zod schema for admin session listing (session + username, without `is_current`). */
-export const AdminSessionJson = AuthSessionJson.omit({ is_current: true }).extend({
-	username: z.string()
+const { is_current: _, ...admin_session_entries } = AuthSessionJson.def;
+
+/**
+ * Admin session listing (session + username, without `is_current`), a
+ * `@fuzdev/fuz_schema` schema. `username` is a plain string.
+ */
+export const AdminSessionJson = object({
+	...admin_session_entries,
+	username: string
 });
-export type AdminSessionJson = z.infer<typeof AdminSessionJson>;
+export type AdminSessionJson = Infer<typeof AdminSessionJson>;

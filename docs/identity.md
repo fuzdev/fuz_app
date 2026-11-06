@@ -160,8 +160,10 @@ Distilled from design exploration — the choices that most affect consumers:
    reserved for v2); arbitrary-actor checks read
    `query_role_grant_find_active_for_actor(actor)`
 5. **Username immutable, case-insensitive unique** — username is identity (logs, URLs,
-   mental models). A `LOWER()` unique index prevents case-variant duplicates.
-   Display name can change freely
+   mental models). Stored lowercase, the form `Username` canonicalizes every
+   new name to, held there by the `account_username_lowercase` CHECK, and a
+   `LOWER()` unique index prevents case-variant duplicates. Display name can
+   change freely
 6. **Password hashing: Argon2id** with OWASP-recommended parameters
 7. **Token/session hashing: blake3** — fast, tokens are high-entropy
 8. **Single-user mode** — planned for personal local instances,

@@ -149,7 +149,9 @@ export type BootstrapTestKeeperOptions = CreateTestAccountWithCredentialsOptions
  * having happened.
  *
  * Creates an account with actor, grants roles, creates an API token,
- * creates a session, and signs a session cookie.
+ * creates a session, and signs a session cookie. The username is stored
+ * lowercased, as every production creation path stores it, so the returned
+ * `account.username` is the lowercase of `options.username`.
  *
  * @mutates the underlying `options.db` — inserts rows into `account`, `actor`,
  *   `role_grant` (one per role), `api_token`, and `auth_session`.
@@ -175,8 +177,10 @@ export const create_test_account_with_credentials = async (
 
 	const deps = { db };
 	const password_hash = await password.hash_password(password_value);
+	// lowercase, as `Username` stores every name production creates, and as the
+	// `account_username_lowercase` CHECK requires
 	const { account, actor } = await query_create_account_with_actor(deps, {
-		username,
+		username: username.toLowerCase(),
 		password_hash,
 		...(email !== undefined && { email })
 	});

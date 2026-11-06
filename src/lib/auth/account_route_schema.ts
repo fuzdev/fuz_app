@@ -13,6 +13,7 @@
  */
 
 import { z } from 'zod';
+import { array, nullable, object, type Infer } from '@fuzdev/fuz_schema/schema.ts';
 
 import { ActorSummaryJson, RoleGrantSummaryJson, SessionAccountJson } from './account_schema.ts';
 import { UsernameProvided } from '../primitive_schemas.ts';
@@ -29,13 +30,13 @@ import {
 export const AccountStatusInput = z.null();
 export type AccountStatusInput = z.infer<typeof AccountStatusInput>;
 
-/** Output for `GET /api/account/status`. */
-export const AccountStatusOutput = z.strictObject({
+/** Output for `GET /api/account/status`, a `@fuzdev/fuz_schema` schema. */
+export const AccountStatusOutput = object({
 	account: SessionAccountJson,
-	actor: ActorSummaryJson.nullable(),
-	role_grants: z.array(RoleGrantSummaryJson)
+	actor: nullable(ActorSummaryJson),
+	role_grants: array(RoleGrantSummaryJson)
 });
-export type AccountStatusOutput = z.infer<typeof AccountStatusOutput>;
+export type AccountStatusOutput = Infer<typeof AccountStatusOutput>;
 
 /** Error body for `GET /api/account/status` on the unauthenticated path. */
 export const AccountStatusUnauthenticatedError = z.looseObject({

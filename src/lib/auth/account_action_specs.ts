@@ -11,6 +11,7 @@
 import { z } from 'zod';
 import { meta } from '@fuzdev/fuz_schema/meta.ts';
 import {
+	array,
 	boolean,
 	literal,
 	object,
@@ -43,17 +44,20 @@ export type VerifyInput = z.infer<typeof VerifyInput>;
 export const SessionListInput = z.void();
 export type SessionListInput = z.infer<typeof SessionListInput>;
 
-/** Output for `account_session_list`. */
-export const SessionListOutput = z.strictObject({
-	sessions: z.array(AuthSessionJson)
+/** Output for `account_session_list`, a `@fuzdev/fuz_schema` schema. */
+export const SessionListOutput = object({
+	sessions: array(AuthSessionJson)
 });
-export type SessionListOutput = z.infer<typeof SessionListOutput>;
+export type SessionListOutput = Infer<typeof SessionListOutput>;
 
-/** Input for `account_session_revoke`. `session_id` is the blake3 hash. */
-export const SessionRevokeInput = z.strictObject({
-	session_id: SessionId.meta({ description: 'Session id (blake3 hash) to revoke.' })
+/**
+ * Input for `account_session_revoke`, a `@fuzdev/fuz_schema` schema.
+ * `session_id` is the blake3 hash.
+ */
+export const SessionRevokeInput = object({
+	session_id: meta(SessionId, { description: 'Session id (blake3 hash) to revoke.' })
 });
-export type SessionRevokeInput = z.infer<typeof SessionRevokeInput>;
+export type SessionRevokeInput = Infer<typeof SessionRevokeInput>;
 
 /** Output for `account_session_revoke`. `revoked` is `false` for IDOR misses. */
 export const SessionRevokeOutput = z.strictObject({
