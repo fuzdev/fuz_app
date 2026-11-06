@@ -55,14 +55,10 @@ import {
 } from '#lib/primitive_schemas.ts';
 import { ActingActor as ZodActingActor } from '#lib/http/auth_shape.ts';
 import {
-	AuditEventTypeName as ZodAuditEventTypeName,
-	AuditOutcome as ZodAuditOutcome
-} from '#lib/auth/audit_log_schema.ts';
-import {
 	AUDIT_EVENT_TYPE_NAME_LENGTH_MESSAGE,
 	AUDIT_EVENT_TYPE_NAME_PATTERN_MESSAGE,
 	AUDIT_EVENT_TYPE_NAME_REGEX
-} from '#lib/auth/audit_log_schema_fuz.ts';
+} from '#lib/auth/audit_log_schema.ts';
 import { AppSettingsJson, AppSettingsWithUsernameJson } from '#lib/auth/app_settings_schema.ts';
 import {
 	ADMIN_ACCOUNT_LIST_LIMIT_MAX,
@@ -99,6 +95,7 @@ import {
 	type WireIssue
 } from '#lib/schema_issues.ts';
 import { NAME_LENGTH_MAX } from '#lib/auth/name_schema.ts';
+import { ZodAuditEventTypeName, ZodAuditOutcome } from './zod_name_oracles.ts';
 
 // -- the Zod schemas the port replaced --------------------------------------
 

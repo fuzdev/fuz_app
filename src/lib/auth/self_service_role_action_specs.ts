@@ -13,7 +13,7 @@ import { boolean, literal, object, type Infer } from '@fuzdev/fuz_schema/schema.
 
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
 import { ActingActor } from '../primitive_schemas_fuz.ts';
-import { RoleName } from './role_schema_fuz.ts';
+import { RoleName } from './role_schema.ts';
 
 /** Error reason — caller asked to self-toggle a role outside the configured allowlist. */
 export const ERROR_ROLE_NOT_SELF_SERVICE_ELIGIBLE = 'role_not_self_service_eligible' as const;

@@ -15,7 +15,11 @@ import { create_uuid } from '#lib/primitive_schemas.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_test_app } from '#lib/testing/app_server.ts';
 import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
-import { create_role_schema, ROLE_ADMIN, ROLE_NAME_LENGTH_MESSAGE } from '#lib/auth/role_schema.ts';
+import {
+	create_role_registry,
+	ROLE_ADMIN,
+	ROLE_NAME_LENGTH_MESSAGE
+} from '#lib/auth/role_schema.ts';
 import { create_self_service_role_actions } from '#lib/auth/self_service_role_actions.ts';
 import {
 	ERROR_ROLE_NOT_SELF_SERVICE_ELIGIBLE,
@@ -36,7 +40,7 @@ import { NAME_LENGTH_MAX } from '#lib/auth/name_schema.ts';
 const session_options = create_session_config('test_session');
 const RPC_PATH = '/api/rpc';
 
-const test_roles = create_role_schema([{ name: 'teacher', grant_paths: ['self_service'] }]);
+const test_roles = create_role_registry([{ name: 'teacher', grant_paths: ['self_service'] }]);
 
 const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
 	...create_rpc_endpoint({
@@ -68,10 +72,10 @@ describe_db('self_service_role_actions', (get_db) => {
 			);
 		});
 
-		test('accepts eligible_roles when no roles schema is supplied', () => {
+		test('accepts eligible_roles when no roles registry is supplied', () => {
 			// Without `roles`, no validation runs — a typo at startup goes
 			// undetected. Documented as the tradeoff for callers without a
-			// full role schema.
+			// full role registry.
 			assert.doesNotThrow(() =>
 				create_self_service_role_actions(
 					{

@@ -1,8 +1,7 @@
 /**
- * Audit log types and client-safe schemas. The wire rows and the builtin
- * metadata schemas are `@fuzdev/fuz_schema` schemas; the event-type and
- * outcome vocabularies are Zod, with their fuz_schema twins in
- * `auth/audit_log_schema_fuz.ts`.
+ * Audit log types and client-safe `@fuzdev/fuz_schema` schemas: the
+ * event-type and outcome vocabularies, the builtin metadata schemas, and the
+ * wire rows.
  *
  * Records auth mutations (login, logout, grant, revoke, etc.) for
  * security monitoring and operational visibility.
@@ -12,17 +11,19 @@
  * @module
  */
 
-import { z } from 'zod';
 import { meta } from '@fuzdev/fuz_schema/meta.ts';
 import {
 	boolean,
+	format_issue,
 	literal,
 	loose_object,
+	message,
 	nullable,
 	number,
 	object,
 	one_of,
 	optional,
+	parse,
 	pipe,
 	record,
 	regex,
@@ -33,20 +34,12 @@ import {
 	type Infer
 } from '@fuzdev/fuz_schema/schema.ts';
 
-import { bounded_string } from '../primitive_schemas.ts';
-import { Email, Timestamp, Uuid } from '../primitive_schemas_fuz.ts';
+import { bounded_string, Email, Timestamp, Uuid } from '../primitive_schemas_fuz.ts';
 import { assert_validation_schema, type ValidationSchema } from '../schema_issues.ts';
 import { AuthSessionJson, SessionId } from './account_schema.ts';
 import { API_TOKEN_ID_REGEX } from './api_token.ts';
 import { BUILTIN_CREDENTIAL_TYPES } from './credential_type_schema.ts';
 import { NAME_LENGTH_MAX } from './name_schema.ts';
-import {
-	AUDIT_EVENT_TYPE_NAME_LENGTH_MESSAGE,
-	AUDIT_EVENT_TYPE_NAME_PATTERN_MESSAGE,
-	AUDIT_EVENT_TYPE_NAME_REGEX,
-	AuditEventTypeName as AuditEventTypeNameFuz,
-	AuditOutcome as AuditOutcomeFuz
-} from './audit_log_schema_fuz.ts';
 
 /** An API token's public id (`tok_…`), `ApiTokenId`'s check in fuz_schema. */
 const TokenId = pipe(string, regex(API_TOKEN_ID_REGEX));
@@ -100,9 +93,8 @@ export const AUDIT_EVENT_TYPES = Object.freeze([
 	'db_admin_row_delete'
 ] as const);
 
-/** Zod schema for audit event types. */
-export const AuditEventType = z.enum(AUDIT_EVENT_TYPES);
-export type AuditEventType = z.infer<typeof AuditEventType>;
+/** A builtin audit event type, one of `AUDIT_EVENT_TYPES`. */
+export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
 
 /**
  * What a **successful** audit row invalidates — the axis the revocation
@@ -222,19 +214,38 @@ export const to_global_role_revocation = (
 };
 
 /**
- * Zod schema for valid audit event-type name strings: `AUDIT_EVENT_TYPE_NAME_REGEX`,
- * at most `NAME_LENGTH_MAX` UTF-16 code units. Twin of the Rust spine's
- * `is_valid_audit_event_type_name`.
+ * Letter start, then letters, digits, `_`, `.`, `/`, `-`. Accepts snake_case,
+ * dotted, and namespaced consumer conventions; rejects empty strings, leading
+ * separators, whitespace, and control characters. The audit event type's own
+ * grammar, wider than the shared name grammar (`auth/name_schema.ts`), whose
+ * length cap `AuditEventTypeName` takes.
  */
-export const AuditEventTypeName = bounded_string({
-	max: NAME_LENGTH_MAX,
-	max_message: AUDIT_EVENT_TYPE_NAME_LENGTH_MESSAGE
-}).regex(AUDIT_EVENT_TYPE_NAME_REGEX, { message: AUDIT_EVENT_TYPE_NAME_PATTERN_MESSAGE });
-export type AuditEventTypeName = z.infer<typeof AuditEventTypeName>;
+export const AUDIT_EVENT_TYPE_NAME_REGEX = /^[A-Za-z][A-Za-z0-9_./-]*$/;
 
-/** Zod schema for audit event outcomes. */
-export const AuditOutcome = z.enum(['success', 'failure']);
-export type AuditOutcome = z.infer<typeof AuditOutcome>;
+/** The message of an audit event-type name past `NAME_LENGTH_MAX`. */
+export const AUDIT_EVENT_TYPE_NAME_LENGTH_MESSAGE = `must be at most ${NAME_LENGTH_MAX} characters`;
+
+/** The message of an audit event-type name off `AUDIT_EVENT_TYPE_NAME_REGEX`. */
+export const AUDIT_EVENT_TYPE_NAME_PATTERN_MESSAGE =
+	'must start with a letter; only letters, digits, _ . / - allowed';
+
+/**
+ * Valid audit event-type name strings: `AUDIT_EVENT_TYPE_NAME_REGEX`, at most
+ * `NAME_LENGTH_MAX` UTF-16 code units. A string it refuses gets
+ * `AUDIT_EVENT_TYPE_NAME_LENGTH_MESSAGE` or
+ * `AUDIT_EVENT_TYPE_NAME_PATTERN_MESSAGE`, the length one alone for a string
+ * both too long and off the grammar; a value that is no string, fuz_schema's
+ * message. Twin of the Rust spine's `is_valid_audit_event_type_name`.
+ */
+export const AuditEventTypeName = pipe(
+	bounded_string({ max: NAME_LENGTH_MAX, max_message: AUDIT_EVENT_TYPE_NAME_LENGTH_MESSAGE }),
+	message(regex(AUDIT_EVENT_TYPE_NAME_REGEX), AUDIT_EVENT_TYPE_NAME_PATTERN_MESSAGE)
+);
+export type AuditEventTypeName = Infer<typeof AuditEventTypeName>;
+
+/** Audit event outcome. */
+export const AuditOutcome = one_of(['success', 'failure']);
+export type AuditOutcome = Infer<typeof AuditOutcome>;
 
 /**
  * Per-event-type metadata schemas, `@fuzdev/fuz_schema` `loose_object`s so
@@ -709,10 +720,10 @@ export const create_audit_log_config = (options?: CreateAuditLogConfigOptions): 
 				}" collides with a builtin event type — pick a distinct string (e.g. "app_${t}")`
 			);
 		}
-		const name_check = AuditEventTypeName.safeParse(t);
-		if (!name_check.success) {
+		const name_check = parse(AuditEventTypeName, t);
+		if (!name_check.ok) {
 			throw new Error(
-				`extra_events key "${t}" has invalid format: ${name_check.error.issues[0]!.message}`
+				`extra_events key "${t}" has invalid format: ${format_issue(name_check.issues[0]!)}`
 			);
 		}
 		extra_keys.push(t);
@@ -768,8 +779,8 @@ export interface AuditLogListOptions {
 export const AuditLogEventJson = object({
 	id: Uuid,
 	seq: pipe(number, safe_integer),
-	event_type: AuditEventTypeNameFuz,
-	outcome: AuditOutcomeFuz,
+	event_type: AuditEventTypeName,
+	outcome: AuditOutcome,
 	actor_id: nullable(Uuid),
 	account_id: nullable(Uuid),
 	target_account_id: nullable(Uuid),

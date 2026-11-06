@@ -36,18 +36,18 @@ import {
 
 import { ActingActor, Email, Username, Uuid } from '../primitive_schemas_fuz.ts';
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
-import { ROLE_ADMIN, ROLE_KEEPER } from './role_schema.ts';
-import { RoleName } from './role_schema_fuz.ts';
+import { ROLE_ADMIN, ROLE_KEEPER, RoleName } from './role_schema.ts';
 import { CREDENTIAL_TYPE_DAEMON_TOKEN } from './credential_type_schema.ts';
 import { NAME_LENGTH_MAX } from './name_schema.ts';
 import { AdminAccountEntryJson } from './account_schema.ts';
 import {
 	AdminSessionJson,
 	AUDIT_LOG_DEFAULT_LIMIT,
+	AuditEventTypeName,
 	AuditLogEventWithUsernamesJson,
+	AuditOutcome,
 	RoleGrantHistoryEventJson
 } from './audit_log_schema.ts';
-import { AuditEventTypeName, AuditOutcome } from './audit_log_schema_fuz.ts';
 import { InviteJson, InviteWithUsernamesJson } from './invite_schema.ts';
 import { AppSettingsWithUsernameJson } from './app_settings_schema.ts';
 import {

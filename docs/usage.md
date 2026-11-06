@@ -1643,7 +1643,7 @@ editor grant can rewrite `data`, and the policy decides who may contribute.
 - **A clone is born without one** — cloning a root never copies its governance
   onto a cell the cloner owns.
 
-`create_cell_grant_actions` takes `roles` (a `create_role_schema()` result) so
+`create_cell_grant_actions` takes `roles` (a `create_role_registry()` result) so
 role-shaped grants validate against the app's role vocabulary, and an optional
 `authorize_grant_create` (`CellGrantCreateAuthorize`): `(auth, {cell_id,
 cell_created_by, level, principal}, ctx) => boolean | Promise<boolean>`, asked of a

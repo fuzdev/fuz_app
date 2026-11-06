@@ -34,8 +34,8 @@ import {
 
 import { Uuid as ZodUuid, type Username } from '../primitive_schemas.ts';
 import { Blake3Hash, Email, Timestamp, UsernameCanonical, Uuid } from '../primitive_schemas_fuz.ts';
-import { RoleName } from './role_schema_fuz.ts';
-import { ScopeKindName } from './scope_kind_schema_fuz.ts';
+import { RoleName } from './role_schema.ts';
+import { ScopeKindName } from './scope_kind_schema.ts';
 
 import { is_iso8601_seconds_live } from '../timestamp.ts';
 
@@ -108,7 +108,7 @@ export interface RoleGrant {
 	 * Machine-readable kind tag for the polymorphic `scope_id`. Paired-null
 	 * with `scope_id` per the `role_grant_scope_kind_paired` CHECK: both null
 	 * (global) or both non-null (scoped). Consumer-declared via
-	 * `create_scope_kind_schema(...)`; v1 keeps validation registry-membership
+	 * `create_scope_kind_registry(...)`; v1 keeps validation registry-membership
 	 * only, with no INSERT-time `(role, scope_kind)` enforcement.
 	 */
 	scope_kind: string | null;

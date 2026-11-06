@@ -54,25 +54,22 @@ Cross-cutting notes that don't live on any single symbol:
 
 ### Schemas, types, DDL
 
-Convention — `*_schema.ts` holds a domain's schemas, Zod or `@fuzdev/fuz_schema`; a `*_schema_fuz.ts` holds the fuz_schema twins of Zod schemas that stay; `*_ddl.ts` holds DDL strings.
+Convention — `*_schema.ts` holds a domain's schemas, Zod or `@fuzdev/fuz_schema`; `*_ddl.ts` holds DDL strings.
 
-- `auth/account_schema.ts` — `Account`, `Actor`, `RoleGrant`, `AuthSession`, `ApiToken` + client-safe JSON shapes, `@fuzdev/fuz_schema` schemas but for the Zod `ClientApiTokenJson`: `SessionId` (`brand(Blake3Hash, 'SessionId')`, minted by `hash_session_token`), `SessionAccountJson` and `AdminAccountJson` (their `username` `UsernameCanonical`, so a username in another case fails), `AuthSessionJson`, `RoleGrantSummaryJson` and `PendingOfferSummaryJson` (`role` the fuz_schema `RoleName`, `scope_kind` the fuz_schema `ScopeKindName` or `null`), `ActorSummaryJson`, `AdminAccountEntryJson`; every timestamp a `Timestamp`. Grant predicates over wire fields: `is_role_grant_active` (not revoked, not expired) and `has_global_role(role_grants, role, now?)` (an active grant of the role with `scope_id === null` — the bare-list form of `has_scoped_role(ctx, role, null)`, used client-side by `AuthState`).
-- `auth/name_schema.ts` — the name grammar the auth vocabularies share: `NAME_REGEX` (runs of lowercase letters joined by single underscores), `NAME_LENGTH_MAX` (64), `is_valid_name`, `create_name_schema(label)` (the Zod schema, `bounded_string` then the regex) and the message builders `format_name_length_message` / `format_name_pattern_message`, so each domain keeps its own label in its messages. `RoleName`, `ScopeKindName`, `GrantPathName`, `CredentialTypeName` and a token's `surface:` name (`is_route_scope_capability`) hold it; `AuditEventTypeName` takes its cap over its own grammar. Twin of the Rust `fuz_auth::is_valid_name` / `NAME_LENGTH_MAX`.
-- `auth/role_schema.ts` — `RoleName` (`create_name_schema('Role')`: lowercase letters and underscores, no leading, trailing or consecutive underscores, at most `NAME_LENGTH_MAX` = 64 characters — the grammar every `role` input and every registered role holds, twin of the Rust `is_valid_name`), its messages (`ROLE_NAME_LENGTH_MESSAGE`, `ROLE_NAME_PATTERN_MESSAGE`), `RoleSpec`, `ROLE_KEEPER`, `ROLE_ADMIN`, `is_builtin_role`, `create_role_schema`, `builtin_role_specs_by_name`, `role_has_grant_path`, `list_roles_with_grant_path`.
-- `auth/role_schema_fuz.ts` — the `@fuzdev/fuz_schema` twin of `RoleName` under the same name (`@nodocs` while the Zod one stays), `pipe(bounded_string({max: NAME_LENGTH_MAX, max_message}), message(regex(NAME_REGEX), ROLE_NAME_PATTERN_MESSAGE))` over the same constants: the same verdict, output and JSON Schema as the Zod one, and its messages; a string both too long and off the grammar gets the length issue alone, where Zod adds the grammar issue. Pinned by `role_schema_fuz.test.ts`. `self_service_role_set`'s input declares it; every other `role` input is the Zod one.
-- `auth/scope_kind_schema.ts` — `ScopeKindName`, the constants its messages come from (`SCOPE_KIND_NAME_LENGTH_MESSAGE`, `SCOPE_KIND_NAME_PATTERN_MESSAGE`), `create_scope_kind_schema` (open registry, no builtins). `ScopeKindName` (`create_name_schema('Scope-kind')`, grammar and cap) checks a registered name and the `scope_kind` on `role_grant_offer_create` / `role_grant_assign`, which is copied into the row and its audit metadata; off the grammar is the partial unique indexes' `'GLOBAL'` token.
-- `auth/credential_type_schema.ts` — `CredentialTypeName` (`create_name_schema('Credential-type')`), `CREDENTIAL_TYPE_SESSION` / `_API_TOKEN` / `_DAEMON_TOKEN`, `create_credential_type_schema`.
-- `auth/grant_path_schema.ts` — `GrantPathName` (`create_name_schema('Grant-path')`), `GRANT_PATH_ADMIN` / `_SELF_SERVICE` / `_SYSTEM` / `_BOOTSTRAP`, `create_grant_path_schema`.
+- `auth/account_schema.ts` — `Account`, `Actor`, `RoleGrant`, `AuthSession`, `ApiToken` + client-safe JSON shapes, `@fuzdev/fuz_schema` schemas but for the Zod `ClientApiTokenJson`: `SessionId` (`brand(Blake3Hash, 'SessionId')`, minted by `hash_session_token`), `SessionAccountJson` and `AdminAccountJson` (their `username` `UsernameCanonical`, so a username in another case fails), `AuthSessionJson`, `RoleGrantSummaryJson` and `PendingOfferSummaryJson` (`role` a `RoleName`, `scope_kind` a `ScopeKindName` or `null`), `ActorSummaryJson`, `AdminAccountEntryJson`; every timestamp a `Timestamp`. Grant predicates over wire fields: `is_role_grant_active` (not revoked, not expired) and `has_global_role(role_grants, role, now?)` (an active grant of the role with `scope_id === null` — the bare-list form of `has_scoped_role(ctx, role, null)`, used client-side by `AuthState`).
+- `auth/name_schema.ts` — the name grammar the auth vocabularies share: `NAME_REGEX` (runs of lowercase letters joined by single underscores), `NAME_LENGTH_MAX` (64), `is_valid_name`, `create_name_schema(label)` (the `@fuzdev/fuz_schema` schema, `pipe(bounded_string, message(regex))`: a string too long and off the grammar gets the one length issue, a value that is no string fuz_schema's message; its JSON Schema `maxLength` and `pattern`) and the message builders `format_name_length_message` / `format_name_pattern_message`, so each domain keeps its own label in its messages. `RoleName`, `ScopeKindName`, `GrantPathName`, `CredentialTypeName` and a token's `surface:` name (`is_route_scope_capability`) hold it; `AuditEventTypeName` takes its cap over its own grammar. Twin of the Rust `fuz_auth::is_valid_name` / `NAME_LENGTH_MAX`.
+- `auth/role_schema.ts` — `RoleName` (`create_name_schema('Role')`: lowercase letters and underscores, no leading, trailing or consecutive underscores, at most `NAME_LENGTH_MAX` = 64 characters — the grammar every `role` input and every registered role holds, twin of the Rust `is_valid_name`), its messages (`ROLE_NAME_LENGTH_MESSAGE`, `ROLE_NAME_PATTERN_MESSAGE`), `RoleSpec`, `ROLE_KEEPER`, `ROLE_ADMIN`, `BUILTIN_ROLES` and its type `BuiltinRole`, `is_builtin_role`, `create_role_registry` (returns `{role_specs}`), `builtin_role_specs`, `role_has_grant_path`, `list_roles_with_grant_path`. Pinned against a Zod copy by `role_schema.name.test.ts`.
+- `auth/scope_kind_schema.ts` — `ScopeKindName`, the constants its messages come from (`SCOPE_KIND_NAME_LENGTH_MESSAGE`, `SCOPE_KIND_NAME_PATTERN_MESSAGE`), `create_scope_kind_registry` (open registry, no builtins; returns `{scope_kinds}`). `ScopeKindName` (`create_name_schema('Scope-kind')`, grammar and cap) checks a registered name and the `scope_kind` on `role_grant_offer_create` / `role_grant_assign`, which is copied into the row and its audit metadata; off the grammar is the partial unique indexes' `'GLOBAL'` token. Pinned against a Zod copy by `scope_kind_schema.name.test.ts`.
+- `auth/credential_type_schema.ts` — `CredentialTypeName` (`create_name_schema('Credential-type')`), `CREDENTIAL_TYPE_SESSION` / `_API_TOKEN` / `_DAEMON_TOKEN`, `BUILTIN_CREDENTIAL_TYPES` and its type `BuiltinCredentialType`, `create_credential_type_registry` (returns `{credential_types}`).
+- `auth/grant_path_schema.ts` — `GrantPathName` (`create_name_schema('Grant-path')`), `GRANT_PATH_ADMIN` / `_SELF_SERVICE` / `_SYSTEM` / `_BOOTSTRAP`, `BUILTIN_GRANT_PATHS` and its type `BuiltinGrantPath`, `create_grant_path_registry` (returns `{grant_paths}`).
 - `auth/token_lifetime.ts` — the temporal axis of a minted token: `TokenLifetimeInput` (required union on `account_token_create` — `{kind:'eternal'}` or `{kind:'ttl', days}`), `token_lifetime_to_expires_at`, `TOKEN_TTL_DAYS_MAX`. No default — `expires_at IS NULL` always means "deliberately eternal".
 - `auth/token_scope.ts` — per-credential authority narrowing stored on `api_token.scope`: `TokenScope` / `TokenScopeInput` + constructors, `parse_stored_token_scope` (fail-closed), `token_scope_admits_method` / `_non_rpc`, and the `<section>:<id>` capability vocabulary (`token_scope_method_capability` for the dispatcher's `rpc:<method>`, `is_route_scope_capability` for the `surface:<name>` a `RouteAuth.required_scope` may declare, `token_scope_denied_body`, `TOKEN_SURFACES`). Not an open registry — see ../../../docs/security.md §Token scoping for why the identifier half is deliberately unregistered.
 - `auth/auth_ddl.ts` — `CREATE TABLE` / index / seed strings for the core identity tables.
-- `auth/audit_log_schema.ts` — `AUDIT_EVENT_TYPES` (the builtin event types), `AuditEventType` / `AuditEventTypeName` (Zod, `AUDIT_EVENT_TYPE_NAME_REGEX` under `NAME_LENGTH_MAX`), `audit_metadata_schemas` (fuz_schema), `AuditLogEvent`, `AuditLogInput`, `AuditLogConfig` (`metadata_schemas` of either library), `create_audit_log_config`, and the `@fuzdev/fuz_schema` wire rows `AuditLogEventJson` (`seq` `pipe(number, safe_integer)`, `created_at` a `Timestamp`), `AuditLogEventWithUsernamesJson`, `RoleGrantHistoryEventJson` and `AdminSessionJson`, built over the twins of `audit_log_schema_fuz.ts`.
-- `auth/audit_log_schema_fuz.ts` — the `@fuzdev/fuz_schema` twins of `AuditEventTypeName` and `AuditOutcome` under the same names (`@nodocs` while the Zod ones stay), and the grammar and messages both are built from (`AUDIT_EVENT_TYPE_NAME_REGEX`, `AUDIT_EVENT_TYPE_NAME_LENGTH_MESSAGE`, `AUDIT_EVENT_TYPE_NAME_PATTERN_MESSAGE`), here because `audit_log_schema.ts` builds its rows from the twins: the same verdict, output and JSON Schema as the Zod ones, and their messages, but for the one length issue of a name too long and off the grammar. Pinned by `audit_log_schema_fuz.test.ts`. `audit_log_list`'s input declares them.
+- `auth/audit_log_schema.ts` — `@fuzdev/fuz_schema` throughout: `AUDIT_EVENT_TYPES` (the builtin event types) and the type `AuditEventType` (`(typeof AUDIT_EVENT_TYPES)[number]`), `AuditEventTypeName` (`pipe(bounded_string, message(regex))`, `AUDIT_EVENT_TYPE_NAME_REGEX` under `NAME_LENGTH_MAX`, with `AUDIT_EVENT_TYPE_NAME_LENGTH_MESSAGE` / `AUDIT_EVENT_TYPE_NAME_PATTERN_MESSAGE`; a name too long and off the grammar gets the one length issue), `AuditOutcome` (`one_of(['success', 'failure'])`), `audit_metadata_schemas`, `AuditLogEvent`, `AuditLogInput`, `AuditLogConfig` (`metadata_schemas` of either library), `create_audit_log_config` (refuses an `extra_events` key off `AuditEventTypeName` with its first issue's message), and the wire rows `AuditLogEventJson` (`seq` `pipe(number, safe_integer)`, `created_at` a `Timestamp`), `AuditLogEventWithUsernamesJson`, `RoleGrantHistoryEventJson` and `AdminSessionJson`. `audit_log_list`'s input declares `AuditEventTypeName` and `AuditOutcome`. Pinned against Zod copies by `audit_log_schema.names.test.ts`.
 - `auth/audit_log_ddl.ts` — `audit_log` table DDL with `seq BIGSERIAL` for cursor-based gap fill (BIGSERIAL converges with the Rust spine; `create_db` registers a `pg.types` int8 parser so `seq` still reads as a JS number).
 - `auth/invite_schema.ts` — `Invite`, `CreateInviteInput`, and the `@fuzdev/fuz_schema` rows `InviteJson` (`username` a `UsernameCanonical` or `null`, timestamps `Timestamp`s) and `InviteWithUsernamesJson`, whose resolved names are plain strings.
 - `auth/app_settings_schema.ts` — `AppSettings` (single-row via `CHECK (id = 1)`) and its `@fuzdev/fuz_schema` schemas `AppSettingsJson` and `AppSettingsWithUsernameJson`.
-- `auth/scope_kind_schema_fuz.ts` — the `@fuzdev/fuz_schema` twin of `ScopeKindName` under the same name (`@nodocs` while the Zod one stays), built as the `RoleName` twin is, over `scope_kind_schema.ts`'s constants: the same verdict, output and JSON Schema as the Zod one, and its messages, but for the one length issue of a string too long and off the grammar. Pinned by `scope_kind_schema_fuz.test.ts`. The role_grant_offer schemas declare it.
-- `auth/role_grant_offer_schema.ts` — `RoleGrantOffer`, `RoleGrantOfferJson` (a `@fuzdev/fuz_schema` `object`: `role` the fuz_schema `RoleName`, `scope_kind` the fuz_schema `ScopeKindName` or `null`, so an offer row holding a name off either grammar fails it), `to_role_grant_offer_json`.
+- `auth/role_grant_offer_schema.ts` — `RoleGrantOffer`, `RoleGrantOfferJson` (a `@fuzdev/fuz_schema` `object`: `role` a `RoleName`, `scope_kind` a `ScopeKindName` or `null`, so an offer row holding a name off either grammar fails it), `to_role_grant_offer_json`.
 - `auth/role_grant_offer_ddl.ts` — `role_grant_offer` table + indexes + `ROLE_GRANT_OFFER_SCOPE_SENTINEL_UUID` / `_GLOBAL_TOKEN` + `ROLE_GRANT_OFFER_COLUMNS` and the shared `ROLE_GRANT_OFFER_WITH_GRANTOR_SELECT` CTE tail (homed here per the placement rule in `db/sql_columns.ts`).
 - `auth/role_grant_sql.ts` — the liveness predicates every grant and offer read shares: `role_grant_active_sql(alias)` (not revoked, not expired) and `offer_pending_predicate(alias)` (every `OFFER_TERMINAL_COLUMNS` entry null), twins of the Rust spine's. The frozen partial-index DDL keeps its literal text.
 - `auth/role_grant_offer_notifications.ts` — the WS notification specs for the consentful-grant lifecycle, their `@fuzdev/fuz_schema` params, builders, `role_grant_offer_notification_actions`, `role_grant_offer_notification_specs`, and `create_validated_notification_sender`.
@@ -495,7 +492,7 @@ index-backed, matching the Rust twin (which aliases nothing, so its bare
 Four open string registries — `RoleName`, `ScopeKindName`,
 `CredentialTypeName`, `GrantPathName` — share the same factory shape:
 construction-time guards (name regex, duplicate detection, builtin-collision
-rejection), `ReadonlyMap` output, pass into `create_role_schema` for
+rejection), `ReadonlyMap` output, pass into `create_role_registry` for
 cross-axis validation. The four share one name grammar, runs of lowercase
 letters joined by single underscores, at most `NAME_LENGTH_MAX` characters
 (`auth/name_schema.ts`), which a token's `surface:` name holds too.
@@ -503,9 +500,9 @@ letters joined by single underscores, at most `NAME_LENGTH_MAX` characters
 Dependency flow:
 
 ```
-create_credential_type_schema()
-create_scope_kind_schema()        → create_role_schema({roles, options}) → role_specs
-create_grant_path_schema()
+create_credential_type_registry()
+create_scope_kind_registry()        → create_role_registry({roles, options}) → role_specs
+create_grant_path_registry()
 ```
 
 `role_specs` drives downstream defaults:
@@ -729,7 +726,7 @@ on invite delete. `invite_create` empty input is rejected at the schema via
 
 Closure state:
 
-- `grantable_roles` derived once from `options.roles?.role_specs ?? builtin_role_specs_by_name`
+- `grantable_roles` derived once from `options.roles?.role_specs ?? builtin_role_specs`
   via `list_roles_with_grant_path(_, GRANT_PATH_ADMIN)`.
 - `app_settings_get`/`_update` handlers are always wired and read/write the DB
   directly (`query_app_settings_load`/`query_app_settings_update`);
@@ -768,7 +765,7 @@ event additionally records `credential_type` in metadata (defense in depth).
 
 The specs' inputs and outputs are `@fuzdev/fuz_schema` schemas
 (`auth/role_grant_offer_action_specs.ts`), every object refusing unknown keys,
-`role` the fuz_schema `RoleName`, `scope_kind` the fuz_schema `ScopeKindName`.
+`role` a `RoleName`, `scope_kind` a `ScopeKindName`.
 The create and assign inputs end in a `check` of `is_grant_scope_paired`
 (`GRANT_SCOPE_PAIRED_MESSAGE`), run only on an input whose fields all passed;
 the list and history inputs read an omitted input as a fresh `{}`
@@ -914,7 +911,7 @@ the payload — `revoked_by` is deliberately not in the `role_grant_revoked`
 payload (the revokee doesn't need to learn the admin's identity). When
 `notification_sender` is absent, WS fan-out is silently skipped.
 
-Options: `roles?: RoleSchemaResult` (drives admin-grant-path lookup),
+Options: `roles?: RoleRegistry` (drives admin-grant-path lookup),
 `default_ttl_ms?` (defaults to `ROLE_GRANT_OFFER_DEFAULT_TTL_MS` = 30 days),
 `authorize?: RoleGrantOfferCreateAuthorize`.
 
@@ -993,7 +990,7 @@ account actions hits `method_not_found` on first admin-suite run.
 `self_service_role_set({role, enabled})` toggles a global role_grant on the
 caller. Idempotent in both directions (`changed: false` when the post-call
 state already matched). Its input and output are `@fuzdev/fuz_schema`
-`object`s, refusing unknown keys, `role` the fuz_schema `RoleName` twin.
+`object`s, refusing unknown keys, `role` a `RoleName`.
 
 Audit metadata carries `self_service: true` so admin reviewers can
 distinguish self-toggled role_grants. Eligibility derives from

@@ -23,7 +23,7 @@ import type { Logger } from '@fuzdev/fuz_util/log.ts';
 import { create_account_route_specs } from '../../auth/account_routes.ts';
 import { create_audit_log_route_specs } from '../../auth/audit_log_routes.ts';
 import type { NotificationSender } from '../../auth/role_grant_offer_notifications.ts';
-import { create_role_schema, type RoleSchemaResult } from '../../auth/role_schema.ts';
+import { create_role_registry, type RoleRegistry } from '../../auth/role_schema.ts';
 import { GRANT_PATH_ADMIN } from '../../auth/grant_path_schema.ts';
 import { create_session_config, type SessionOptions } from '../../auth/session_cookie.ts';
 import { create_signup_route_specs } from '../../auth/signup_routes.ts';
@@ -64,7 +64,7 @@ export const spine_session_options: SessionOptions<string> = create_session_conf
  * entry also gives the admin suite real app-role grant-path coverage
  * (`admin_account_list.grantable_roles` carries it on both spines).
  */
-export const spine_roles: RoleSchemaResult = create_role_schema([
+export const spine_roles: RoleRegistry = create_role_registry([
 	{ name: SPINE_CELL_EDITOR_ROLE, grant_paths: [] },
 	{ name: SPINE_PARTICIPANT_ROLE, grant_paths: [GRANT_PATH_ADMIN] }
 ]);

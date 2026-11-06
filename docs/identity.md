@@ -56,8 +56,8 @@ This creates a clean trust boundary:
 | **admin**   | App-level    | CLI or web (by keeper) | Users, content, config                     |
 | App-defined | Per-app      | Web (by admin)         | App-specific (`teacher`, `approved`, etc.) |
 
-Roles are validated by Zod at I/O boundaries via `create_role_schema()`, not stored
-in a DB table. Builtins (`keeper`, `admin`) are fixed; consumers extend with
+Roles are declared at server init via `create_role_registry()`, not stored
+in a DB table; a `role` input is held to the `RoleName` grammar. Builtins (`keeper`, `admin`) are fixed; consumers extend with
 app-defined roles at server init — names of lowercase letters and underscores,
 no leading, trailing or consecutive underscores, at most 64 characters
 (`RoleName`). Intentionally coarse — fine-grained access (per-cell,
@@ -151,7 +151,7 @@ Distilled from design exploration — the choices that most affect consumers:
    polymorphic id with a machine-readable kind. Both null = global,
    both non-null = scoped, mismatch rejected by the
    `role_grant_scope_kind_paired` CHECK at the DB layer. Consumers declare
-   their kinds via `create_scope_kind_schema(...)` (open string
+   their kinds via `create_scope_kind_registry(...)` (open string
    registry). Authorization reads stay uniform regardless of path —
    request-actor checks go through the in-memory
    `has_scoped_role` / `has_any_scoped_role` helpers on the

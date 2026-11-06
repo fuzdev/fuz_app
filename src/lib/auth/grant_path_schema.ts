@@ -25,17 +25,17 @@
  * @module
  */
 
-import { z } from 'zod';
+import { format_issue, parse, type Infer } from '@fuzdev/fuz_schema/schema.ts';
 
 import { create_name_schema } from './name_schema.ts';
 
 /**
- * Zod schema for valid grant-path name strings: the shared name grammar
+ * Valid grant-path name strings: the shared name grammar
  * (`auth/name_schema.ts`), runs of lowercase letters joined by single
  * underscores, at most `NAME_LENGTH_MAX` characters.
  */
 export const GrantPathName = create_name_schema('Grant-path');
-export type GrantPathName = z.infer<typeof GrantPathName>;
+export type GrantPathName = Infer<typeof GrantPathName>;
 
 // Builtin grant paths — provided by fuz_app, always available.
 
@@ -59,9 +59,8 @@ export const BUILTIN_GRANT_PATHS = [
 	GRANT_PATH_BOOTSTRAP
 ] as const;
 
-/** Zod enum for builtin grant paths only. */
-export const BuiltinGrantPath = z.enum(BUILTIN_GRANT_PATHS);
-export type BuiltinGrantPath = z.infer<typeof BuiltinGrantPath>;
+/** A builtin grant-path name. */
+export type BuiltinGrantPath = (typeof BUILTIN_GRANT_PATHS)[number];
 
 /**
  * Per-grant-path metadata. `description` is admin-UI-facing copy
@@ -78,7 +77,7 @@ export interface GrantPathMeta {
  * Typed `ReadonlyMap` for the contract — but JS Maps don't honor
  * `Object.freeze` for `.set` / `.delete` / `.clear` (they mutate
  * internal slots, not own properties), so freeze adds no runtime guard
- * here. Read once at startup by `create_grant_path_schema`; runtime
+ * here. Read once at startup by `create_grant_path_registry`; runtime
  * mutation has no effect on already-built schemas.
  */
 export const builtin_grant_path_meta: ReadonlyMap<string, GrantPathMeta> = new Map([
@@ -106,16 +105,8 @@ export const builtin_grant_path_meta: ReadonlyMap<string, GrantPathMeta> = new M
 	]
 ]);
 
-/** The result of `create_grant_path_schema` — a Zod schema and metadata map. */
-export interface GrantPathSchemaResult {
-	/**
-	 * Zod schema that validates grant-path name strings against the
-	 * registered set (builtins + consumer-declared). Use at I/O
-	 * boundaries (admin UIs, codegen) and as the construction-time check
-	 * inside `create_role_schema` for every `RoleSpec.grant_paths`
-	 * entry.
-	 */
-	GrantPath: z.ZodType<string>;
+/** The result of `create_grant_path_registry` — the metadata map. */
+export interface GrantPathRegistry {
 	/**
 	 * Map of every registered grant-path to its metadata. Keyed by
 	 * name. Read at startup by admin / codegen surfaces.
@@ -124,41 +115,41 @@ export interface GrantPathSchemaResult {
 }
 
 /**
- * Create a grant-path schema from the builtin set plus optional
+ * Create a grant-path registry from the builtin set plus optional
  * consumer-declared additions.
  *
  * Builtins (`admin`, `self_service`, `system`, `bootstrap`) are always
  * present; consumer entries that collide with a builtin name throw at
- * construction. Pass the result into `create_role_schema`'s optional
+ * construction. Pass the result into `create_role_registry`'s optional
  * `grant_paths` parameter so each role's `grant_paths` entries are
  * validated against this set at construction time.
  *
  * @param consumer_paths - optional consumer-declared grant-path set with optional metadata
- * @returns `{GrantPath, grant_paths}` — Zod schema and metadata map
+ * @returns `{grant_paths}` — the metadata map
  *
  * @throws Error if any `consumer_paths` key fails `GrantPathName` (its grammar or its length cap), collides with a builtin name, or appears more than once
  *
  * @example
  * ```ts
  * // simple — builtins only
- * const {GrantPath, grant_paths} = create_grant_path_schema();
+ * const {grant_paths} = create_grant_path_registry();
  *
  * // with consumer extensions
- * const {GrantPath} = create_grant_path_schema({
+ * const {grant_paths} = create_grant_path_registry({
  *   invite_only: {description: 'Granted by claiming a consumer-issued invite.'},
  * });
  * ```
  */
-export const create_grant_path_schema = (
+export const create_grant_path_registry = (
 	consumer_paths: Record<string, GrantPathMeta> = {}
-): GrantPathSchemaResult => {
+): GrantPathRegistry => {
 	const consumer_names = Object.keys(consumer_paths);
 
 	const seen: Set<string> = new Set();
 	for (const name of consumer_names) {
-		const parsed = GrantPathName.safeParse(name);
-		if (!parsed.success) {
-			throw new Error(`Invalid grant-path name "${name}": ${parsed.error.issues[0]!.message}`);
+		const parsed = parse(GrantPathName, name);
+		if (!parsed.ok) {
+			throw new Error(`Invalid grant-path name "${name}": ${format_issue(parsed.issues[0]!)}`);
 		}
 		if (builtin_grant_path_meta.has(name)) {
 			throw new Error(`Consumer grant-path "${name}" collides with builtin grant-path`);
@@ -169,13 +160,10 @@ export const create_grant_path_schema = (
 		seen.add(name);
 	}
 
-	const all_names = [...BUILTIN_GRANT_PATHS, ...consumer_names];
-	const GrantPath = z.enum(all_names as [string, ...Array<string>]);
-
 	const grant_paths: Map<string, GrantPathMeta> = new Map(builtin_grant_path_meta);
 	for (const name of consumer_names) {
 		grant_paths.set(name, consumer_paths[name]!);
 	}
 
-	return { GrantPath, grant_paths };
+	return { grant_paths };
 };

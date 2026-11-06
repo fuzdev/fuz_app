@@ -86,7 +86,7 @@ import {
 	type RunnerTestSuite
 } from 'vitest';
 
-import { ROLE_KEEPER, ROLE_ADMIN, type RoleSchemaResult } from '../../auth/role_schema.ts';
+import { ROLE_KEEPER, ROLE_ADMIN, type RoleRegistry } from '../../auth/role_schema.ts';
 import type { SessionOptions } from '../../auth/session_cookie.ts';
 import type { AppSurfaceSpec } from '../../http/surface.ts';
 import { resolve_rpc_endpoints_for_setup, type RpcEndpointsSuiteOption } from '../rpc_helpers.ts';
@@ -482,8 +482,8 @@ export interface SpineCrossSuitesOptions {
 	 * still runs once, from the declared surface.
 	 */
 	readonly live_rpc_endpoints?: RpcEndpointsSuiteOption;
-	/** The backend's role schema; given, the standard bundle runs its admin suite. */
-	readonly roles?: RoleSchemaResult;
+	/** The backend's role registry; given, the standard bundle runs its admin suite. */
+	readonly roles?: RoleRegistry;
 	/**
 	 * Setup options every suite's `setup_test` starts from — a signup path the
 	 * backend mounts elsewhere, `reject_unknown_audit_metadata_keys` for a

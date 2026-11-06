@@ -15,23 +15,23 @@
  * `BuiltinCredentialType` is the closed set middleware sets on the Hono
  * context (`hono_context.ts`) and the audit log records — middleware only
  * ever authenticates through a builtin. Consumer-declared types live in
- * the registry `create_credential_type_schema` builds, consulted when
+ * the registry `create_credential_type_registry` builds, consulted when
  * validating `RoleSpec.required_credential_types`.
  *
  * @module
  */
 
-import { z } from 'zod';
+import { format_issue, parse, type Infer } from '@fuzdev/fuz_schema/schema.ts';
 
 import { create_name_schema } from './name_schema.ts';
 
 /**
- * Zod schema for valid credential-type name strings: the shared name grammar
+ * Valid credential-type name strings: the shared name grammar
  * (`auth/name_schema.ts`), runs of lowercase letters joined by single
  * underscores, at most `NAME_LENGTH_MAX` characters.
  */
 export const CredentialTypeName = create_name_schema('Credential-type');
-export type CredentialTypeName = z.infer<typeof CredentialTypeName>;
+export type CredentialTypeName = Infer<typeof CredentialTypeName>;
 
 // Builtin credential types — provided by fuz_app, always available.
 
@@ -56,9 +56,8 @@ export const BUILTIN_CREDENTIAL_TYPES = [
 	CREDENTIAL_TYPE_DAEMON_TOKEN
 ] as const;
 
-/** Zod enum for builtin credential types only. */
-export const BuiltinCredentialType = z.enum(BUILTIN_CREDENTIAL_TYPES);
-export type BuiltinCredentialType = z.infer<typeof BuiltinCredentialType>;
+/** A builtin credential-type name, the closed set middleware authenticates through. */
+export type BuiltinCredentialType = (typeof BUILTIN_CREDENTIAL_TYPES)[number];
 
 /**
  * Per-credential-type metadata. `description` is admin-UI-facing copy
@@ -75,7 +74,7 @@ export interface CredentialTypeMeta {
  * Typed `ReadonlyMap` for the contract — but JS Maps don't honor
  * `Object.freeze` for `.set` / `.delete` / `.clear` (they mutate
  * internal slots, not own properties), so freeze adds no runtime guard
- * here. Read once at startup by `create_credential_type_schema`;
+ * here. Read once at startup by `create_credential_type_registry`;
  * runtime mutation has no effect on already-built schemas.
  */
 export const builtin_credential_type_meta: ReadonlyMap<string, CredentialTypeMeta> = new Map([
@@ -93,16 +92,8 @@ export const builtin_credential_type_meta: ReadonlyMap<string, CredentialTypeMet
 	]
 ]);
 
-/** The result of `create_credential_type_schema` — a Zod schema and metadata map. */
-export interface CredentialTypeSchemaResult {
-	/**
-	 * Zod schema that validates credential-type name strings against the
-	 * registered set (builtins + consumer-declared). Use at I/O
-	 * boundaries (admin UIs, codegen) and as the construction-time check
-	 * inside `create_role_schema` for every
-	 * `RoleSpec.required_credential_types` entry.
-	 */
-	CredentialType: z.ZodType<string>;
+/** The result of `create_credential_type_registry` — the metadata map. */
+export interface CredentialTypeRegistry {
 	/**
 	 * Map of every registered credential-type to its metadata. Keyed by
 	 * name. Read at startup by admin / codegen surfaces.
@@ -111,42 +102,42 @@ export interface CredentialTypeSchemaResult {
 }
 
 /**
- * Create a credential-type schema from the builtin set plus optional
+ * Create a credential-type registry from the builtin set plus optional
  * consumer-declared additions.
  *
  * Builtins (`session`, `api_token`, `daemon_token`) are always present;
  * consumer entries that collide with a builtin name throw at
- * construction. Pass the result into `create_role_schema`'s optional
+ * construction. Pass the result into `create_role_registry`'s optional
  * `credential_types` parameter so each role's
  * `required_credential_types` entries are validated against this set
  * at construction time.
  *
  * @param consumer_types - optional consumer-declared credential-type set with optional metadata
- * @returns `{CredentialType, credential_types}` — Zod schema and metadata map
+ * @returns `{credential_types}` — the metadata map
  *
  * @throws Error if any `consumer_types` key fails `CredentialTypeName` (its grammar or its length cap), collides with a builtin name, or appears more than once
  *
  * @example
  * ```ts
  * // simple — builtins only
- * const {CredentialType, credential_types} = create_credential_type_schema();
+ * const {credential_types} = create_credential_type_registry();
  *
  * // with consumer extensions
- * const {CredentialType} = create_credential_type_schema({
+ * const {credential_types} = create_credential_type_registry({
  *   sso_assertion: {description: 'OIDC SSO assertion bound to an IdP-asserted account.'},
  * });
  * ```
  */
-export const create_credential_type_schema = (
+export const create_credential_type_registry = (
 	consumer_types: Record<string, CredentialTypeMeta> = {}
-): CredentialTypeSchemaResult => {
+): CredentialTypeRegistry => {
 	const consumer_names = Object.keys(consumer_types);
 
 	const seen: Set<string> = new Set();
 	for (const name of consumer_names) {
-		const parsed = CredentialTypeName.safeParse(name);
-		if (!parsed.success) {
-			throw new Error(`Invalid credential-type name "${name}": ${parsed.error.issues[0]!.message}`);
+		const parsed = parse(CredentialTypeName, name);
+		if (!parsed.ok) {
+			throw new Error(`Invalid credential-type name "${name}": ${format_issue(parsed.issues[0]!)}`);
 		}
 		if (builtin_credential_type_meta.has(name)) {
 			throw new Error(`Consumer credential-type "${name}" collides with builtin credential-type`);
@@ -157,13 +148,10 @@ export const create_credential_type_schema = (
 		seen.add(name);
 	}
 
-	const all_names = [...BUILTIN_CREDENTIAL_TYPES, ...consumer_names];
-	const CredentialType = z.enum(all_names as [string, ...Array<string>]);
-
 	const credential_types: Map<string, CredentialTypeMeta> = new Map(builtin_credential_type_meta);
 	for (const name of consumer_names) {
 		credential_types.set(name, consumer_types[name]!);
 	}
 
-	return { CredentialType, credential_types };
+	return { credential_types };
 };

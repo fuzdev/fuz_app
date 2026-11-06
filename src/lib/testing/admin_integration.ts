@@ -8,7 +8,7 @@ import './assert_dev_env.ts';
  * surface — see `role_grant_offer_create` / `role_grant_revoke`), session/token
  * management, and audit log routes against a real database.
  *
- * Consumers call it with their route factory, session config, role schema,
+ * Consumers call it with their route factory, session config, role registry,
  * and RPC endpoint specs — all admin route tests come for free.
  *
  * Scope: admin *semantics* — cross-admin isolation, role_grant grant/revoke
@@ -31,7 +31,7 @@ import { describe, test, assert, afterAll } from 'vitest';
 import type { Uuid } from '../primitive_schemas.ts';
 
 import type { SessionOptions } from '../auth/session_cookie.ts';
-import { ROLE_ADMIN, type RoleSchemaResult } from '../auth/role_schema.ts';
+import { ROLE_ADMIN, type RoleRegistry } from '../auth/role_schema.ts';
 import { GRANT_PATH_ADMIN } from '../auth/grant_path_schema.ts';
 import type { TestAccount, TestApp } from './app_server.ts';
 import { create_test_request_headers } from './test_origin.ts';
@@ -110,8 +110,8 @@ export interface StandardAdminIntegrationTestOptions {
 	surface_source: AppSurfaceSpec;
 	/** Session config — needed for cookie_name + factory-form rpc_endpoints resolution. */
 	session_options: SessionOptions<string>;
-	/** Role schema result from `create_role_schema()` — used to determine valid/invalid/web-grantable roles. */
-	roles: RoleSchemaResult;
+	/** Role registry from `create_role_registry()` — used to determine valid/invalid/web-grantable roles. */
+	roles: RoleRegistry;
 	/**
 	 * RPC endpoint specs — the source `RpcAction` arrays. Required; role_grant
 	 * grant/revoke are RPC-only and the suite hard-fails without them.

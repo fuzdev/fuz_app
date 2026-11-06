@@ -1,6 +1,7 @@
 /**
- * The `@fuzdev/fuz_schema` twins of `auth/audit_log_schema_fuz.ts`, held to
- * the Zod `AuditEventTypeName` and `AuditOutcome`: on one corpus each, the
+ * `AuditEventTypeName` and `AuditOutcome` (`auth/audit_log_schema.ts`), held
+ * to the Zod copies of them they were (`ZodAuditEventTypeName`,
+ * `ZodAuditOutcome`): on one corpus each, the
  * same verdict, the same output, and the same wire issues, `message` included
  * where Zod's is one of the custom messages. Two differences are declared for
  * `AuditEventTypeName`: a string both too long and off the grammar gets the
@@ -16,18 +17,17 @@ import { is_schema } from '@fuzdev/fuz_schema/schema.ts';
 import { to_json_schema } from '@fuzdev/fuz_schema/json_schema.ts';
 
 import {
-	AuditEventTypeName as ZodAuditEventTypeName,
-	AuditOutcome as ZodAuditOutcome
-} from '#lib/auth/audit_log_schema.ts';
-import {
 	AUDIT_EVENT_TYPE_NAME_LENGTH_MESSAGE,
 	AUDIT_EVENT_TYPE_NAME_PATTERN_MESSAGE,
 	AUDIT_EVENT_TYPE_NAME_REGEX,
+	AUDIT_EVENT_TYPES,
+	type AuditEventType,
 	AuditEventTypeName,
 	AuditOutcome
-} from '#lib/auth/audit_log_schema_fuz.ts';
+} from '#lib/auth/audit_log_schema.ts';
 import { parse_any, to_wire_issues, type WireIssue } from '#lib/schema_issues.ts';
 import { NAME_LENGTH_MAX } from '#lib/auth/name_schema.ts';
+import { ZodAuditEventTypeName, ZodAuditOutcome } from './zod_name_oracles.ts';
 
 /** Names of the grammar and around it, and values that are no string. */
 const EVENT_TYPE_CORPUS: Array<unknown> = [
@@ -89,7 +89,7 @@ const CUSTOM_MESSAGES: ReadonlyArray<string> = [
 	AUDIT_EVENT_TYPE_NAME_PATTERN_MESSAGE
 ];
 
-describe('fuz_schema AuditEventTypeName', () => {
+describe('AuditEventTypeName', () => {
 	test('is a fuz_schema schema', () => {
 		assert.ok(is_schema(AuditEventTypeName));
 	});
@@ -102,7 +102,7 @@ describe('fuz_schema AuditEventTypeName', () => {
 		);
 	});
 
-	test('agrees with the Zod AuditEventTypeName on every row but the declared differences', () => {
+	test('agrees with its Zod copy on every row but the declared differences', () => {
 		let matched = 0;
 		let custom = 0;
 		let declared = 0;
@@ -153,7 +153,7 @@ describe('fuz_schema AuditEventTypeName', () => {
 		assert.ok(declared >= 2, `${declared} too long and off the grammar`);
 	});
 
-	test('its JSON Schema is the Zod AuditEventTypeName’s, byte for byte', () => {
+	test('its JSON Schema is its Zod copy’s, byte for byte', () => {
 		assert.strictEqual(
 			JSON.stringify(to_json_schema(AuditEventTypeName)),
 			JSON.stringify(z.toJSONSchema(ZodAuditEventTypeName))
@@ -161,8 +161,8 @@ describe('fuz_schema AuditEventTypeName', () => {
 	});
 });
 
-describe('fuz_schema AuditOutcome', () => {
-	test('agrees with the Zod AuditOutcome on every row, its issues but for message', () => {
+describe('AuditOutcome', () => {
+	test('agrees with its Zod copy on every row, its issues but for message', () => {
 		for (const input of OUTCOME_CORPUS) {
 			const label = JSON.stringify(input) ?? String(input);
 			const fuz = outcome_of(AuditOutcome, input);
@@ -181,10 +181,22 @@ describe('fuz_schema AuditOutcome', () => {
 		}
 	});
 
-	test('its JSON Schema is the Zod AuditOutcome’s, byte for byte', () => {
+	test('its JSON Schema is its Zod copy’s, byte for byte', () => {
 		assert.strictEqual(
 			JSON.stringify(to_json_schema(AuditOutcome)),
 			JSON.stringify(z.toJSONSchema(ZodAuditOutcome))
 		);
+	});
+});
+
+describe('AuditEventType', () => {
+	test('is the union of AUDIT_EVENT_TYPES and nothing else', () => {
+		// compile-time: each direction fails typecheck when the type drifts
+		const every: ReadonlyArray<AuditEventType> = AUDIT_EVENT_TYPES;
+		const to_builtin = (t: AuditEventType): (typeof AUDIT_EVENT_TYPES)[number] => t;
+		assert.ok(every.every((t) => AUDIT_EVENT_TYPES.includes(to_builtin(t))));
+		// @ts-expect-error a name outside the builtins is no AuditEventType
+		const _outside: AuditEventType = 'app_login';
+		assert.ok(!AUDIT_EVENT_TYPES.some((t) => t === _outside));
 	});
 });

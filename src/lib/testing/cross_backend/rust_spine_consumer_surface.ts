@@ -29,7 +29,7 @@ import {
 	account_status_route_shape,
 	create_account_route_shapes
 } from '../../auth/account_route_schema.ts';
-import type { RoleSchemaResult } from '../../auth/role_schema.ts';
+import type { RoleRegistry } from '../../auth/role_schema.ts';
 import type { SessionOptions } from '../../auth/session_cookie.ts';
 import { create_signup_route_shape } from '../../auth/signup_route_schema.ts';
 import { create_standard_rpc_actions } from '../../auth/standard_rpc_actions.ts';
@@ -73,8 +73,8 @@ export interface RustSpineConsumerRpcEndpointsOptions {
 	 * `create_self_service_role_actions`), built against the stub context.
 	 */
 	readonly extra_rpc_actions?: (ctx: AppServerContext) => Array<RpcAction>;
-	/** The consumer's role schema, for the standard admin and role-grant-offer actions. */
-	readonly roles?: RoleSchemaResult;
+	/** The consumer's role registry, for the standard admin and role-grant-offer actions. */
+	readonly roles?: RoleRegistry;
 	/**
 	 * Domain methods kept off the declared surface — ones the spec-derived
 	 * suites can't drive (an input whose `.refine()` the generic body generator

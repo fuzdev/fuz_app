@@ -1478,7 +1478,7 @@ iterative and linear in the body's nodes. The Rust spine
 
 ## Authorization
 
-Roles are Zod-validated at I/O boundaries via `create_role_schema()` — not stored
+Roles are declared at server init via `create_role_registry()` — not stored
 in a DB table. Built-in roles: `keeper` (system-level) and `admin` (app-level).
 Consumer apps extend with app-defined roles at server init; unknown roles are hard
 rejections. A role name is lowercase letters and underscores with no leading, trailing

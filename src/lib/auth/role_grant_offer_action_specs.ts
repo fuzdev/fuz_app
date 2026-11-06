@@ -50,8 +50,8 @@ import {
 	ERROR_ROLE_NOT_WEB_GRANTABLE
 } from '../http/error_schemas.ts';
 import { NAME_LENGTH_MAX } from './name_schema.ts';
-import { RoleName } from './role_schema_fuz.ts';
-import { ScopeKindName } from './scope_kind_schema_fuz.ts';
+import { RoleName } from './role_schema.ts';
+import { ScopeKindName } from './scope_kind_schema.ts';
 import {
 	ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX,
 	RoleGrantOfferJson

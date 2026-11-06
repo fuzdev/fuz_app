@@ -421,7 +421,7 @@ describe_standard_admin_integration_tests({
 		// ROLE_KEEPER is always implied — list only the extras.
 		extra_keeper_roles: [ROLE_ADMIN]
 	}),
-	roles: my_roles, // RoleSchemaResult from create_role_schema() — distinct from extra_keeper_roles
+	roles: my_roles, // RoleRegistry from create_role_registry() — distinct from extra_keeper_roles
 	admin_prefix: '/api/admin' // default, scopes schema validation
 });
 ```

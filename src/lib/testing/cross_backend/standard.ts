@@ -15,7 +15,7 @@ import '../assert_dev_env.ts';
  * - `describe_data_exposure_tests`
  *
  * **Gated on `roles`** — included when the consumer supplies a
- * `RoleSchemaResult`:
+ * `RoleRegistry`:
  *
  * - `describe_standard_admin_integration_tests`
  *
@@ -36,7 +36,7 @@ import '../assert_dev_env.ts';
  */
 
 import type { SessionOptions } from '../../auth/session_cookie.ts';
-import type { RoleSchemaResult } from '../../auth/role_schema.ts';
+import type { RoleRegistry } from '../../auth/role_schema.ts';
 import type { AppSurfaceSpec } from '../../http/surface.ts';
 import { describe_standard_integration_tests } from '../integration.ts';
 import { describe_standard_admin_integration_tests } from '../admin_integration.ts';
@@ -77,10 +77,10 @@ export interface StandardCrossProcessTestOptions {
 	 */
 	rpc_endpoints: RpcEndpointsSuiteOption;
 	/**
-	 * Role schema result from `create_role_schema()`.
+	 * Role registry from `create_role_registry()`.
 	 * When provided, the admin integration suite is included.
 	 */
-	roles?: RoleSchemaResult;
+	roles?: RoleRegistry;
 	/**
 	 * Path prefix where admin routes are mounted.
 	 * Default `'/api/admin'`.

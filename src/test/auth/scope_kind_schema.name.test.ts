@@ -1,7 +1,6 @@
 /**
- * The `@fuzdev/fuz_schema` `ScopeKindName` twin
- * (`auth/scope_kind_schema_fuz.ts`), held to the Zod `ScopeKindName` on one
- * corpus: the same verdict, the same output, and
+ * `ScopeKindName` (`auth/scope_kind_schema.ts`), held to the Zod copy of it
+ * it was (`ZodScopeKindName`) on one corpus: the same verdict, the same output, and
  * the same wire issues, `message` included where it is one of the two custom
  * messages. Two differences are declared: a string both too long and outside
  * the grammar gets the length issue alone, where Zod adds the grammar issue
@@ -18,11 +17,11 @@ import { to_json_schema } from '@fuzdev/fuz_schema/json_schema.ts';
 import {
 	SCOPE_KIND_NAME_LENGTH_MESSAGE,
 	SCOPE_KIND_NAME_PATTERN_MESSAGE,
-	ScopeKindName as ZodScopeKindName
+	ScopeKindName
 } from '#lib/auth/scope_kind_schema.ts';
-import { ScopeKindName } from '#lib/auth/scope_kind_schema_fuz.ts';
 import { parse_any, to_wire_issues, type WireIssue } from '#lib/schema_issues.ts';
 import { NAME_LENGTH_MAX, NAME_REGEX } from '#lib/auth/name_schema.ts';
+import { ZodScopeKindName } from './zod_name_oracles.ts';
 
 /** Strings of the grammar and around it, and values that are no string. */
 const CORPUS: Array<[label: string, input: unknown]> = [
@@ -115,7 +114,7 @@ const CUSTOM_MESSAGES: ReadonlyArray<string> = [
 	SCOPE_KIND_NAME_PATTERN_MESSAGE
 ];
 
-describe('fuz_schema ScopeKindName', () => {
+describe('ScopeKindName', () => {
 	test('is a fuz_schema schema', () => {
 		assert.ok(is_schema(ScopeKindName));
 	});
@@ -127,7 +126,7 @@ describe('fuz_schema ScopeKindName', () => {
 		);
 	});
 
-	test('agrees with the Zod ScopeKindName on every row but the declared differences', () => {
+	test('agrees with its Zod copy on every row but the declared differences', () => {
 		let matched = 0;
 		let custom = 0;
 		let declared = 0;
@@ -197,7 +196,7 @@ describe('fuz_schema ScopeKindName', () => {
 		);
 	});
 
-	test('its JSON Schema is the Zod ScopeKindName’s, byte for byte', () => {
+	test('its JSON Schema is its Zod copy’s, byte for byte', () => {
 		assert.strictEqual(
 			JSON.stringify(to_json_schema(ScopeKindName)),
 			JSON.stringify(z.toJSONSchema(ZodScopeKindName))

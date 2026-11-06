@@ -14,9 +14,9 @@
  * @module
  */
 
-import type { z } from 'zod';
+import { message, pipe, regex, type PipeSchema, type string } from '@fuzdev/fuz_schema/schema.ts';
 
-import { bounded_string } from '../primitive_schemas.ts';
+import { bounded_string } from '../primitive_schemas_fuz.ts';
 
 /**
  * The longest name the grammar admits, in UTF-16 code units (what
@@ -63,16 +63,19 @@ export const format_name_pattern_message = (label: string): string =>
 	`${label} names must be lowercase letters and underscores (a-z_), no leading, trailing or consecutive underscores`;
 
 /**
- * A Zod schema for a name of one domain: `bounded_string` at
- * `NAME_LENGTH_MAX`, then `NAME_REGEX`, each with the domain's message. A
- * string both too long and off the grammar gets both issues, the length one
- * first.
+ * A `@fuzdev/fuz_schema` schema for a name of one domain: `bounded_string`
+ * at `NAME_LENGTH_MAX`, then `NAME_REGEX`, each with the domain's message. A
+ * string both too long and off the grammar gets the one length issue, as the
+ * `pipe` stops at its first failing step; a value that is no string gets
+ * fuz_schema's message. Its JSON Schema is `maxLength` and `pattern`.
  *
  * @param label - the domain's label, capitalized, e.g. `'Role'` or `'Scope-kind'`
  * @returns the name schema
  */
-export const create_name_schema = (label: string): z.ZodString =>
-	bounded_string({
-		max: NAME_LENGTH_MAX,
-		max_message: format_name_length_message(label)
-	}).regex(NAME_REGEX, format_name_pattern_message(label));
+export const create_name_schema = (
+	label: string
+): PipeSchema<string, PipeSchema<string, typeof string>> =>
+	pipe(
+		bounded_string({ max: NAME_LENGTH_MAX, max_message: format_name_length_message(label) }),
+		message(regex(NAME_REGEX), format_name_pattern_message(label))
+	);

@@ -6,11 +6,12 @@
  */
 
 import { describe, assert, test } from 'vitest';
+import { is, parse } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	BUILTIN_CREDENTIAL_TYPES,
 	builtin_credential_type_meta,
-	create_credential_type_schema,
+	create_credential_type_registry,
 	CREDENTIAL_TYPE_API_TOKEN,
 	CREDENTIAL_TYPE_DAEMON_TOKEN,
 	CREDENTIAL_TYPE_SESSION,
@@ -18,59 +19,62 @@ import {
 } from '#lib/auth/credential_type_schema.ts';
 import { NAME_LENGTH_MAX } from '#lib/auth/name_schema.ts';
 
-describe('create_credential_type_schema', () => {
+describe('create_credential_type_registry', () => {
 	test('builtins-only round-trip', () => {
-		const { CredentialType, credential_types } = create_credential_type_schema();
+		const { credential_types } = create_credential_type_registry();
 		assert.strictEqual(credential_types.size, 3);
-		assert.ok(CredentialType.safeParse(CREDENTIAL_TYPE_SESSION).success);
-		assert.ok(CredentialType.safeParse(CREDENTIAL_TYPE_API_TOKEN).success);
-		assert.ok(CredentialType.safeParse(CREDENTIAL_TYPE_DAEMON_TOKEN).success);
-		assert.ok(!CredentialType.safeParse('unknown').success);
+		assert.ok(credential_types.has(CREDENTIAL_TYPE_SESSION));
+		assert.ok(credential_types.has(CREDENTIAL_TYPE_API_TOKEN));
+		assert.ok(credential_types.has(CREDENTIAL_TYPE_DAEMON_TOKEN));
+		assert.ok(!credential_types.has('unknown'));
 	});
 
 	test('consumer-declared types extend the registry', () => {
-		const { CredentialType, credential_types } = create_credential_type_schema({
+		const { credential_types } = create_credential_type_registry({
 			sso_assertion: { description: 'OIDC SSO assertion' },
 			agent_token: {}
 		});
 		assert.strictEqual(credential_types.size, 5);
-		assert.ok(CredentialType.safeParse('sso_assertion').success);
-		assert.ok(CredentialType.safeParse('agent_token').success);
+		assert.ok(credential_types.has('sso_assertion'));
+		assert.ok(credential_types.has('agent_token'));
 		assert.strictEqual(credential_types.get('sso_assertion')?.description, 'OIDC SSO assertion');
 	});
 
 	test('throws on collision with a builtin name', () => {
-		assert.throws(() => create_credential_type_schema({ session: {} }), /collides with builtin/);
-		assert.throws(() => create_credential_type_schema({ api_token: {} }), /collides with builtin/);
+		assert.throws(() => create_credential_type_registry({ session: {} }), /collides with builtin/);
 		assert.throws(
-			() => create_credential_type_schema({ daemon_token: {} }),
+			() => create_credential_type_registry({ api_token: {} }),
+			/collides with builtin/
+		);
+		assert.throws(
+			() => create_credential_type_registry({ daemon_token: {} }),
 			/collides with builtin/
 		);
 	});
 
 	test('rejects invalid credential-type names', () => {
-		assert.throws(() => create_credential_type_schema({ '': {} }));
-		assert.throws(() => create_credential_type_schema({ BadName: {} }));
-		assert.throws(() => create_credential_type_schema({ _leading: {} }));
-		assert.throws(() => create_credential_type_schema({ trailing_: {} }));
-		assert.throws(() => create_credential_type_schema({ 'has-dash': {} }));
-		assert.throws(() => create_credential_type_schema({ 'has space': {} }));
-		assert.throws(() => create_credential_type_schema({ sso__assertion: {} }));
-		assert.throws(() => create_credential_type_schema({ sso___assertion: {} }));
-		assert.throws(() => create_credential_type_schema({ a_b__c: {} }));
-		assert.throws(() => create_credential_type_schema({ __ab: {} }));
-		assert.throws(() => create_credential_type_schema({ ab__: {} }));
+		assert.throws(() => create_credential_type_registry({ '': {} }));
+		assert.throws(() => create_credential_type_registry({ BadName: {} }));
+		assert.throws(() => create_credential_type_registry({ _leading: {} }));
+		assert.throws(() => create_credential_type_registry({ trailing_: {} }));
+		assert.throws(() => create_credential_type_registry({ 'has-dash': {} }));
+		assert.throws(() => create_credential_type_registry({ 'has space': {} }));
+		assert.throws(() => create_credential_type_registry({ sso__assertion: {} }));
+		assert.throws(() => create_credential_type_registry({ sso___assertion: {} }));
+		assert.throws(() => create_credential_type_registry({ a_b__c: {} }));
+		assert.throws(() => create_credential_type_registry({ __ab: {} }));
+		assert.throws(() => create_credential_type_registry({ ab__: {} }));
 		// a run of underscores is off the grammar, not merely unusual: it throws at construction
 		assert.throws(
-			() => create_credential_type_schema({ a__b: {} }),
+			() => create_credential_type_registry({ a__b: {} }),
 			'Invalid credential-type name "a__b": Credential-type names must be lowercase letters and underscores (a-z_), no leading, trailing or consecutive underscores'
 		);
 	});
 
 	test('accepts valid credential-type names', () => {
-		assert.ok(create_credential_type_schema({ a: {} }));
-		assert.ok(create_credential_type_schema({ sso_assertion: {} }));
-		assert.ok(create_credential_type_schema({ a_b_c: {} }));
+		assert.ok(create_credential_type_registry({ a: {} }));
+		assert.ok(create_credential_type_registry({ sso_assertion: {} }));
+		assert.ok(create_credential_type_registry({ a_b_c: {} }));
 	});
 
 	test('CredentialTypeName refuses runs of underscores', () => {
@@ -80,27 +84,27 @@ describe('create_credential_type_schema', () => {
 			'a_b_c',
 			`${'a_'.repeat(NAME_LENGTH_MAX / 2 - 1)}aa`
 		]) {
-			assert.ok(CredentialTypeName.safeParse(name).success, name);
+			assert.ok(is(CredentialTypeName, name), name);
 		}
 		for (const name of ['a__b', 'a___b', 'a_b__c', '__ab', 'ab__', '__', '_', '']) {
-			assert.ok(!CredentialTypeName.safeParse(name).success, name);
+			assert.ok(!is(CredentialTypeName, name), name);
 		}
 	});
 
 	test('CredentialTypeName is capped at NAME_LENGTH_MAX characters', () => {
 		const at_max = 'a'.repeat(NAME_LENGTH_MAX);
 		const over_max = 'a'.repeat(NAME_LENGTH_MAX + 1);
-		assert.ok(CredentialTypeName.safeParse(at_max).success);
-		const over = CredentialTypeName.safeParse(over_max);
-		assert.ok(!over.success);
+		assert.ok(is(CredentialTypeName, at_max));
+		const over = parse(CredentialTypeName, over_max);
+		assert.ok(!over.ok);
 		assert.strictEqual(
-			over.error.issues[0]!.message,
+			over.issues[0]!.message,
 			'Credential-type names must be at most 64 characters'
 		);
 		// a registered name past the cap throws at construction
-		assert.ok(create_credential_type_schema({ [at_max]: {} }));
+		assert.ok(create_credential_type_registry({ [at_max]: {} }));
 		assert.throws(
-			() => create_credential_type_schema({ [over_max]: {} }),
+			() => create_credential_type_registry({ [over_max]: {} }),
 			`Invalid credential-type name "${over_max}": Credential-type names must be at most 64 characters`
 		);
 	});

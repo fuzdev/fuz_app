@@ -8,7 +8,7 @@ import {
 import { create_cell_field_actions } from './cell_field_actions.ts';
 import { create_cell_item_actions } from './cell_item_actions.ts';
 import { create_cell_audit_actions } from './cell_audit_actions.ts';
-import type { RoleSchemaResult } from './role_schema.ts';
+import type { RoleRegistry } from './role_schema.ts';
 
 /**
  * Dependencies for `create_all_cell_actions` — the CRUD factory's
@@ -28,7 +28,7 @@ export type AllCellActionDeps = CellActionDeps & {
  * schema (the same one `create_standard_rpc_actions` takes).
  */
 export interface AllCellActionsOptions {
-	readonly roles: RoleSchemaResult;
+	readonly roles: RoleRegistry;
 }
 
 /**
@@ -49,7 +49,7 @@ export interface AllCellActionsOptions {
  *
  * @param deps - `AllCellActionDeps` (`log`, `audit`, the optional `validate_data`,
  *   `authorize_create`, `authorize_grant_create`, and `authorize_grant_revoke`)
- * @param options - the role schema for grant validation
+ * @param options - the role registry for grant validation
  * @returns every cell `RpcAction`, in mount order
  */
 export const create_all_cell_actions = (

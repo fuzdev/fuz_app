@@ -13,7 +13,7 @@ import { protocol_action_specs } from '#lib/actions/protocol.ts';
 import { actor_lookup_action_spec } from '#lib/auth/actor_lookup_action_specs.ts';
 import { create_actor_search_actions } from '#lib/auth/actor_search_actions.ts';
 import { role_grant_offer_received_notification_spec } from '#lib/auth/role_grant_offer_notifications.ts';
-import { create_role_schema } from '#lib/auth/role_schema.ts';
+import { create_role_registry } from '#lib/auth/role_schema.ts';
 import { fuz_session_config } from '#lib/auth/session_cookie.ts';
 import type { ActionSpecUnion } from '#lib/actions/action_spec.ts';
 import {
@@ -95,7 +95,7 @@ describe('create_rust_spine_consumer_surface_spec', () => {
 			domain_action_specs,
 			exclude_methods: [actor_lookup_action_spec.method],
 			extra_rpc_actions: (ctx) => create_actor_search_actions({ log: ctx.deps.log }),
-			roles: create_role_schema([])
+			roles: create_role_registry([])
 		});
 		const methods = rpc_methods(spec);
 		assert.notInclude(methods, actor_lookup_action_spec.method);

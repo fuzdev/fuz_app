@@ -56,8 +56,8 @@ import type { EventSpec } from '../realtime/sse.ts';
 import type { JsonrpcNotification } from '../http/jsonrpc.ts';
 import { create_jsonrpc_notification } from '../http/jsonrpc_helpers.ts';
 import { parse_any } from '../schema_issues.ts';
-import { RoleName } from './role_schema_fuz.ts';
-import { ScopeKindName } from './scope_kind_schema_fuz.ts';
+import { RoleName } from './role_schema.ts';
+import { ScopeKindName } from './scope_kind_schema.ts';
 import { RoleGrantOfferJson } from './role_grant_offer_schema.ts';
 import { ROLE_GRANT_REVOKED_REASON_LENGTH_MAX } from './account_schema.ts';
 

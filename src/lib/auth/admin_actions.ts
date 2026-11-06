@@ -34,11 +34,11 @@ import { queue_connection_close } from '../actions/connection_closer.ts';
 import { credential_type_required_error } from '../actions/perform_action.ts';
 import { jsonrpc_errors, ThrownJsonrpcError } from '../http/jsonrpc_errors.ts';
 import {
-	builtin_role_specs_by_name,
+	builtin_role_specs,
 	list_roles_with_grant_path,
 	ROLE_ADMIN,
 	ROLE_KEEPER,
-	type RoleSchemaResult
+	type RoleRegistry
 } from './role_schema.ts';
 import { has_scoped_role } from './request_context.ts';
 import {
@@ -143,12 +143,12 @@ import {
 /** Options for `create_admin_actions`. */
 export interface AdminActionOptions {
 	/**
-	 * Role schema result from `create_role_schema()`. Defaults to builtin
+	 * Role registry from `create_role_registry()`. Defaults to builtin
 	 * roles only. Used to derive `grantable_roles` (the subset whose
 	 * `RoleSpec.grant_paths` includes `'admin'`) returned by
 	 * `admin_account_list`.
 	 */
-	roles?: RoleSchemaResult;
+	roles?: RoleRegistry;
 }
 
 /**
@@ -161,14 +161,14 @@ export interface AdminActionOptions {
  *   encapsulates listener fan-out and the optional `AuditLogConfig`.
  *   `connection_closer` closes the target account's live connections after a
  *   revoke-all, delete, or purge commits.
- * @param options - role schema for `grantable_roles` derivation
+ * @param options - role registry for `grantable_roles` derivation
  * @returns the `RpcAction` array to spread into a `create_rpc_endpoint` call
  */
 export const create_admin_actions = (
 	deps: RevokingActionFactoryDeps,
 	options: AdminActionOptions = {}
 ): Array<RpcAction> => {
-	const role_specs = options.roles?.role_specs ?? builtin_role_specs_by_name;
+	const role_specs = options.roles?.role_specs ?? builtin_role_specs;
 	const grantable_roles = list_roles_with_grant_path(role_specs, GRANT_PATH_ADMIN);
 	const { connection_closer } = deps;
 

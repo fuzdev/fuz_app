@@ -23,14 +23,14 @@ import {
 	ROLE_NAME_PATTERN_MESSAGE,
 	RoleName
 } from '#lib/auth/role_schema.ts';
-import { RoleName as FuzRoleName } from '#lib/auth/role_schema_fuz.ts';
 import {
 	SCOPE_KIND_NAME_LENGTH_MESSAGE,
 	SCOPE_KIND_NAME_PATTERN_MESSAGE,
 	ScopeKindName
 } from '#lib/auth/scope_kind_schema.ts';
-import { ScopeKindName as FuzScopeKindName } from '#lib/auth/scope_kind_schema_fuz.ts';
 import { is_route_scope_capability } from '#lib/auth/token_scope.ts';
+import { parse_any, to_wire_issues } from '#lib/schema_issues.ts';
+import { ZodCredentialTypeName, ZodGrantPathName } from './zod_name_oracles.ts';
 
 /** Names on the grammar and around it, each with its verdict. */
 const CORPUS: Array<[name: string, valid: boolean]> = [
@@ -66,16 +66,10 @@ describe('the shared name grammar', () => {
 	test('every reader gives each name the verdict of is_valid_name', () => {
 		for (const [name, valid] of CORPUS) {
 			assert.strictEqual(is_valid_name(name), valid, name);
-			assert.strictEqual(RoleName.safeParse(name).success, valid, `RoleName ${name}`);
-			assert.strictEqual(parse(FuzRoleName, name).ok, valid, `fuz RoleName ${name}`);
-			assert.strictEqual(ScopeKindName.safeParse(name).success, valid, `ScopeKindName ${name}`);
-			assert.strictEqual(parse(FuzScopeKindName, name).ok, valid, `fuz ScopeKindName ${name}`);
-			assert.strictEqual(GrantPathName.safeParse(name).success, valid, `GrantPathName ${name}`);
-			assert.strictEqual(
-				CredentialTypeName.safeParse(name).success,
-				valid,
-				`CredentialTypeName ${name}`
-			);
+			assert.strictEqual(parse(RoleName, name).ok, valid, `RoleName ${name}`);
+			assert.strictEqual(parse(ScopeKindName, name).ok, valid, `ScopeKindName ${name}`);
+			assert.strictEqual(parse(GrantPathName, name).ok, valid, `GrantPathName ${name}`);
+			assert.strictEqual(parse(CredentialTypeName, name).ok, valid, `CredentialTypeName ${name}`);
 			assert.strictEqual(is_route_scope_capability(`surface:${name}`), valid, `surface:${name}`);
 		}
 	});
@@ -98,30 +92,99 @@ describe('the shared name grammar', () => {
 			[GrantPathName, 'Grant-path'],
 			[CredentialTypeName, 'Credential-type']
 		] as const) {
-			const long = schema.safeParse('a'.repeat(NAME_LENGTH_MAX + 1));
-			assert.ok(!long.success);
+			const long = parse(schema, 'a'.repeat(NAME_LENGTH_MAX + 1));
+			assert.ok(!long.ok);
 			assert.deepStrictEqual(
-				long.error.issues.map((i) => i.message),
+				long.issues.map((i) => i.message),
 				[format_name_length_message(label)]
 			);
-			const off = schema.safeParse('a__b');
-			assert.ok(!off.success);
+			const off = parse(schema, 'a__b');
+			assert.ok(!off.ok);
 			assert.deepStrictEqual(
-				off.error.issues.map((i) => i.message),
+				off.issues.map((i) => i.message),
 				[format_name_pattern_message(label)]
 			);
 		}
 	});
 
-	test('create_name_schema reports the length issue before the grammar issue', () => {
-		const result = create_name_schema('Test').safeParse('A'.repeat(NAME_LENGTH_MAX + 1));
-		assert.ok(!result.success);
+	test('create_name_schema reports the one length issue for a name too long and off the grammar', () => {
+		const result = parse(create_name_schema('Test'), 'A'.repeat(NAME_LENGTH_MAX + 1));
+		assert.ok(!result.ok);
 		assert.deepStrictEqual(
-			result.error.issues.map((i) => i.message),
-			[
-				'Test names must be at most 64 characters',
-				'Test names must be lowercase letters and underscores (a-z_), no leading, trailing or consecutive underscores'
-			]
+			result.issues.map((i) => [i.kind, i.message]),
+			[['max_length', 'Test names must be at most 64 characters']]
 		);
+	});
+
+	test('a value that is no string gets one string issue', () => {
+		for (const input of [null, undefined, 1, true, ['a'], {}, Object('a')]) {
+			const result = parse(create_name_schema('Test'), input);
+			assert.ok(!result.ok);
+			assert.deepStrictEqual(
+				result.issues.map((i) => i.kind),
+				['string']
+			);
+		}
+	});
+
+	test('GrantPathName and CredentialTypeName agree with their Zod copies', () => {
+		const inputs: Array<unknown> = [
+			'',
+			'a',
+			'admin',
+			'a_b_c',
+			'a'.repeat(NAME_LENGTH_MAX),
+			'a'.repeat(NAME_LENGTH_MAX + 1),
+			`${'a_'.repeat(NAME_LENGTH_MAX / 2 - 1)}aa`,
+			`${'a_'.repeat(NAME_LENGTH_MAX / 2)}a`,
+			'A'.repeat(NAME_LENGTH_MAX + 1),
+			`1${'a'.repeat(NAME_LENGTH_MAX)}`,
+			'1abc',
+			'Admin',
+			'GLOBAL',
+			'_a',
+			'a_',
+			'a__b',
+			'a.',
+			'a-b',
+			'a b',
+			'a\n',
+			'rôle',
+			'\u{1d41a}',
+			'__proto__',
+			'constructor',
+			null,
+			undefined,
+			1,
+			true,
+			['a'],
+			{}
+		];
+		for (const [schema, zod_schema, label] of [
+			[GrantPathName, ZodGrantPathName, 'GrantPathName'],
+			[CredentialTypeName, ZodCredentialTypeName, 'CredentialTypeName']
+		] as const) {
+			for (const input of inputs) {
+				const name = `${label} ${JSON.stringify(input) ?? String(input)}`;
+				const fuz = parse_any(schema, input);
+				const zod = parse_any(zod_schema, input);
+				assert.strictEqual(fuz.ok, zod.ok, name);
+				if (fuz.ok && zod.ok) {
+					assert.strictEqual(fuz.value, input, name);
+					continue;
+				}
+				assert.ok(!fuz.ok && !zod.ok);
+				const fuz_issues = to_wire_issues(fuz.issues, input);
+				const zod_issues = to_wire_issues(zod.issues, input);
+				// declared: a string too long and off the grammar gets the one length issue
+				const expected = zod_issues.slice(0, 1);
+				assert.strictEqual(fuz_issues.length, 1, name);
+				const { message: fuz_message, ...fuz_rest } = fuz_issues[0]!;
+				const { message: zod_message, ...zod_rest } = expected[0]!;
+				assert.deepStrictEqual(fuz_rest, zod_rest, name);
+				// declared: a value that is no string gets fuz_schema's message
+				if (typeof input === 'string') assert.strictEqual(fuz_message, zod_message, name);
+			}
+		}
 	});
 });

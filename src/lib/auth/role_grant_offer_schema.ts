@@ -17,8 +17,8 @@ import { nullable, object, type Infer } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { Uuid } from '../primitive_schemas.ts';
 import { Timestamp, Uuid as UuidSchema, bounded_string } from '../primitive_schemas_fuz.ts';
-import { RoleName } from './role_schema_fuz.ts';
-import { ScopeKindName } from './scope_kind_schema_fuz.ts';
+import { RoleName } from './role_schema.ts';
+import { ScopeKindName } from './scope_kind_schema.ts';
 
 /** Maximum length of the optional message attached to an offer, and of a decline reason, in UTF-16 code units. */
 export const ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX = 500;
@@ -49,7 +49,7 @@ export interface RoleGrantOffer {
 	 * Machine-readable kind tag for the polymorphic `scope_id`. Paired-null
 	 * with `scope_id` per the `role_grant_offer_scope_kind_paired` CHECK: both
 	 * null (global) or both non-null (scoped). Consumer-declared via
-	 * `create_scope_kind_schema(...)`; v1 keeps validation registry-membership
+	 * `create_scope_kind_registry(...)`; v1 keeps validation registry-membership
 	 * only, with no INSERT-time `(role, scope_kind)` enforcement.
 	 */
 	scope_kind: string | null;
@@ -113,7 +113,7 @@ export interface CreateRoleGrantOfferInput {
 	/**
 	 * Machine-readable kind for the `scope_id`. Required iff `scope_id` is
 	 * set; must be null when `scope_id` is null (DB-level CHECK rejects the
-	 * mismatch). Consumer-declared via `create_scope_kind_schema(...)`.
+	 * mismatch). Consumer-declared via `create_scope_kind_registry(...)`.
 	 */
 	scope_kind?: string | null;
 	scope_id?: Uuid | null;

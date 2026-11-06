@@ -873,7 +873,7 @@ header/account mismatch. Direct-grant fixtures (test focuses on revoke or
 isolation, not the consent path) go through `create_test_role_grant_direct`
 from `db_entities.ts`.
 
-Required options: `{setup_test, surface_source, session_options, rpc_endpoints: RpcEndpointsSuiteOption, roles: RoleSchemaResult, admin_prefix?}`.
+Required options: `{setup_test, surface_source, session_options, rpc_endpoints: RpcEndpointsSuiteOption, roles: RoleRegistry, admin_prefix?}`.
 
 fuz_app runs it cross-process through the standard bundle
 and in-process as a consumer wires it

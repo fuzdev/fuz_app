@@ -70,12 +70,12 @@ import { jsonrpc_errors, type ThrownJsonrpcError } from '../http/jsonrpc_errors.
 import { emit_after_commit } from '../http/pending_effects.ts';
 import { queue_connection_close } from '../actions/connection_closer.ts';
 import {
-	builtin_role_specs_by_name,
+	builtin_role_specs,
 	is_builtin_role,
 	ROLE_ADMIN,
 	ROLE_KEEPER,
 	role_has_grant_path,
-	type RoleSchemaResult
+	type RoleRegistry
 } from './role_schema.ts';
 import { GRANT_PATH_ADMIN } from './grant_path_schema.ts';
 import {
@@ -202,12 +202,12 @@ export type RoleGrantOfferCreateAuthorize = (
 /** Options for `create_role_grant_offer_actions`. */
 export interface RoleGrantOfferActionOptions {
 	/**
-	 * Role schema result from `create_role_schema()`. Defaults to builtin roles only.
+	 * Role registry from `create_role_registry()`. Defaults to builtin roles only.
 	 * Drives the grantability gate: a role is offerable / revocable through
 	 * this surface only when its `RoleSpec.grant_paths` includes `'admin'`
 	 * (the `GRANT_PATH_ADMIN` constant).
 	 */
-	roles?: RoleSchemaResult;
+	roles?: RoleRegistry;
 	/** TTL applied to newly-created offers. Defaults to `ROLE_GRANT_OFFER_DEFAULT_TTL_MS`. */
 	default_ttl_ms?: number;
 	/**
@@ -270,7 +270,7 @@ const default_authorize: RoleGrantOfferCreateAuthorize = async (auth, _input, _d
  * `role_grant_revoke` and the immediate `role_grant_assign`.
  *
  * @param deps - `RevokingActionFactoryDeps` (`log`, `audit`, and the `connection_closer` a revoked global grant closes the revokee's role-gated connections through) plus optional `notification_sender` for WS fan-out — when absent, WS fan-out is silently skipped (DB-only side effects still happen). Consumers wiring `ConnectionRegistry` assign its instance directly (the registry's `send_to_account` signature accepts the broader `JsonrpcMessageFromServerToClient`, which is contravariantly compatible)
- * @param options - role schema, default TTL, authorization override
+ * @param options - role registry, default TTL, authorization override
  * @returns the `RpcAction` array to spread into a `create_rpc_endpoint` call
  */
 export const create_role_grant_offer_actions = (
@@ -285,7 +285,7 @@ export const create_role_grant_offer_actions = (
 	const notification_sender = deps.notification_sender
 		? create_validated_notification_sender(deps.notification_sender, log)
 		: null;
-	const role_specs = options.roles?.role_specs ?? builtin_role_specs_by_name;
+	const role_specs = options.roles?.role_specs ?? builtin_role_specs;
 	const default_ttl_ms = options.default_ttl_ms ?? ROLE_GRANT_OFFER_DEFAULT_TTL_MS;
 	const authorize = options.authorize ?? default_authorize;
 

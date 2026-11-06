@@ -35,7 +35,7 @@ export const ERROR_CELL_GRANT_PRINCIPAL_IS_OWNER = 'cell_grant_principal_is_owne
 
 /**
  * Error reason — role-shaped principal references a role string not
- * registered in the role schema. Would produce a dead grant row that
+ * registered in the role registry. Would produce a dead grant row that
  * no role_grant could match.
  */
 export const ERROR_CELL_GRANT_UNKNOWN_ROLE = 'cell_grant_unknown_role' as const;

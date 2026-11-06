@@ -15,8 +15,8 @@
  * `(scope_kind=NULL, scope_id=NULL)`.
  *
  * Open registry, no builtins. Consumers declare their kinds via
- * `create_scope_kind_schema(consumer_kinds)` and pass the result to
- * `create_role_schema` so `RoleSpec.applicable_scope_kinds` can be
+ * `create_scope_kind_registry(consumer_kinds)` and pass the result to
+ * `create_role_registry` so `RoleSpec.applicable_scope_kinds` can be
  * validated at construction time. Mirrors the open-string registry
  * pattern used for `RoleName`, `AuditEventTypeName`, and `CredentialTypeName`.
  *
@@ -32,7 +32,7 @@
  * @module
  */
 
-import { z } from 'zod';
+import { format_issue, parse, type Infer } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	create_name_schema,
@@ -40,25 +40,26 @@ import {
 	format_name_pattern_message
 } from './name_schema.ts';
 
-/** The message of a scope-kind name longer than `NAME_LENGTH_MAX`, in both `ScopeKindName`s. */
+/** The message of a scope-kind name longer than `NAME_LENGTH_MAX`. */
 export const SCOPE_KIND_NAME_LENGTH_MESSAGE = format_name_length_message('Scope-kind');
 
-/** The message of a scope-kind name off `NAME_REGEX`, in both `ScopeKindName`s. */
+/** The message of a scope-kind name off `NAME_REGEX`. */
 export const SCOPE_KIND_NAME_PATTERN_MESSAGE = format_name_pattern_message('Scope-kind');
 
 /**
- * Zod schema for valid scope-kind name strings: a registered name, and the
+ * Valid scope-kind name strings: a registered name, and the
  * `scope_kind` the grant inputs take. The shared name grammar
  * (`auth/name_schema.ts`), at most `NAME_LENGTH_MAX` UTF-16 code units, which
  * bounds a registered name and the tag where it enters — the grant inputs
  * (`role_grant_offer_create`, `role_grant_assign`) copy it into the row and
  * its audit metadata — so no registry declares a kind the grant inputs would
- * refuse. Off the grammar is the index-side `'GLOBAL'` token. Twin of the Rust
- * spine's `is_valid_name`, and of the `@fuzdev/fuz_schema` `ScopeKindName` in
- * `auth/scope_kind_schema_fuz.ts`, built from the same constants.
+ * refuse. Off the grammar is the index-side `'GLOBAL'` token. A string it
+ * refuses gets `SCOPE_KIND_NAME_LENGTH_MESSAGE` or
+ * `SCOPE_KIND_NAME_PATTERN_MESSAGE`; a value that is no string, fuz_schema's
+ * message. Twin of the Rust spine's `is_valid_name`.
  */
 export const ScopeKindName = create_name_schema('Scope-kind');
-export type ScopeKindName = z.infer<typeof ScopeKindName>;
+export type ScopeKindName = Infer<typeof ScopeKindName>;
 
 /**
  * Per-scope-kind metadata. `description` is admin-UI-facing copy
@@ -69,31 +70,26 @@ export interface ScopeKindMeta {
 	description?: string;
 }
 
-/** The result of `create_scope_kind_schema` — a Zod schema and metadata map. */
-export interface ScopeKindSchemaResult {
-	/**
-	 * Zod schema that validates scope-kind name strings against the
-	 * registered set. Use at I/O boundaries (admin UIs, codegen) and as
-	 * the construction-time check inside `create_role_schema` for every
-	 * `RoleSpec.applicable_scope_kinds` entry.
-	 */
-	ScopeKind: z.ZodType<string>;
+/** The result of `create_scope_kind_registry` — the metadata map. */
+export interface ScopeKindRegistry {
 	/**
 	 * Map of every registered scope-kind to its metadata. Keyed by name.
-	 * Read at startup by admin / codegen surfaces.
+	 * Read at startup by admin / codegen surfaces, and by
+	 * `create_role_registry` to check every `RoleSpec.applicable_scope_kinds`
+	 * entry.
 	 */
 	scope_kinds: ReadonlyMap<string, ScopeKindMeta>;
 }
 
 /**
- * Create a scope-kind schema from a consumer-declared registry.
+ * Create a scope-kind registry from the consumer-declared set.
  *
  * Open registry — no builtins. The `'GLOBAL'` token used inside the
  * partial unique indexes on `role_grant` and `role_grant_offer` is not a
  * registry entry (it's an index expression only), and no consumer can
  * declare it because the regex rejects uppercase.
  *
- * Call once at server init. Pass the result into `create_role_schema`'s
+ * Call once at server init. Pass the result into `create_role_registry`'s
  * optional `scope_kinds` parameter so each role's
  * `applicable_scope_kinds` entries are validated against this set at
  * construction time. v1 keeps `applicable_scope_kinds` informative-only
@@ -102,28 +98,28 @@ export interface ScopeKindSchemaResult {
  * consumer usage.
  *
  * @param consumer_kinds - the consumer-declared scope-kind set with optional metadata
- * @returns `{ScopeKind, scope_kinds}` — Zod schema and metadata map
+ * @returns `{scope_kinds}` — the metadata map
  *
  * @throws Error if any `consumer_kinds` key fails `ScopeKindName` (its grammar or its length cap) or appears more than once
  *
  * @example
  * ```ts
  * // visiones
- * const {ScopeKind, scope_kinds} = create_scope_kind_schema({
+ * const {scope_kinds} = create_scope_kind_registry({
  *   classroom: {description: 'A classroom — teacher and student role_grants scope here.'},
  * });
  * ```
  */
-export const create_scope_kind_schema = (
+export const create_scope_kind_registry = (
 	consumer_kinds: Record<string, ScopeKindMeta>
-): ScopeKindSchemaResult => {
+): ScopeKindRegistry => {
 	const names = Object.keys(consumer_kinds);
 
 	const seen: Set<string> = new Set();
 	for (const name of names) {
-		const parsed = ScopeKindName.safeParse(name);
-		if (!parsed.success) {
-			throw new Error(`Invalid scope-kind name "${name}": ${parsed.error.issues[0]!.message}`);
+		const parsed = parse(ScopeKindName, name);
+		if (!parsed.ok) {
+			throw new Error(`Invalid scope-kind name "${name}": ${format_issue(parsed.issues[0]!)}`);
 		}
 		if (seen.has(name)) {
 			throw new Error(`Duplicate scope-kind name "${name}"`);
@@ -131,13 +127,10 @@ export const create_scope_kind_schema = (
 		seen.add(name);
 	}
 
-	const ScopeKind: z.ZodType<string> =
-		names.length === 0 ? z.never() : z.enum(names as [string, ...Array<string>]);
-
 	const scope_kinds: Map<string, ScopeKindMeta> = new Map();
 	for (const name of names) {
 		scope_kinds.set(name, consumer_kinds[name]!);
 	}
 
-	return { ScopeKind, scope_kinds };
+	return { scope_kinds };
 };

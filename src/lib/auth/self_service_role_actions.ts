@@ -37,15 +37,17 @@
  * @module
  */
 
+import { is } from '@fuzdev/fuz_schema/schema.ts';
+
 import { rpc_action, type ActionActorContext, type RpcAction } from '../actions/action_types.ts';
 import { queue_connection_close } from '../actions/connection_closer.ts';
 import { jsonrpc_errors } from '../http/jsonrpc_errors.ts';
 import {
-	builtin_role_specs_by_name,
+	builtin_role_specs,
 	is_builtin_role,
 	list_roles_with_grant_path,
 	RoleName,
-	type RoleSchemaResult
+	type RoleRegistry
 } from './role_schema.ts';
 import { GRANT_PATH_SELF_SERVICE } from './grant_path_schema.ts';
 import type { RevokingActionFactoryDeps } from './deps.ts';
@@ -65,7 +67,7 @@ import {
  * Refuses a builtin role (`admin` / `keeper`) — self-toggling one would hand
  * any account instance-wide authority, so no eligible set may name it — and a
  * name outside the `RoleName` grammar. The same fail-loud-at-boot shape as
- * `create_role_schema`, which refuses a builtin name where only app roles
+ * `create_role_registry`, which refuses a builtin name where only app roles
  * belong. Twin of the Rust `validate_self_service_eligible_roles`.
  *
  * @param roles - the eligible role names
@@ -78,7 +80,7 @@ export const validate_self_service_eligible_roles = (roles: Iterable<string>): v
 				`self-service eligible role "${role}" is a builtin role — builtin roles are never self-service`
 			);
 		}
-		if (!RoleName.safeParse(role).success) {
+		if (!is(RoleName, role)) {
 			throw new Error(`self-service eligible role "${role}" is not a valid role name`);
 		}
 	}
@@ -89,7 +91,7 @@ export interface SelfServiceRoleActionsOptions {
 	/**
 	 * Optional override allowlist of role strings eligible for
 	 * self-service. When omitted, eligibility is derived from
-	 * `roles.role_specs` (or `builtin_role_specs_by_name` when `roles`
+	 * `roles.role_specs` (or `builtin_role_specs` when `roles`
 	 * is also omitted) by selecting every role whose
 	 * `RoleSpec.grant_paths` includes `'self_service'`. Pass an empty
 	 * array to lock the surface down (every call comes back as
@@ -100,11 +102,11 @@ export interface SelfServiceRoleActionsOptions {
 	 */
 	eligible_roles?: ReadonlyArray<string>;
 	/**
-	 * Optional role schema. Drives default eligibility derivation from
+	 * Optional role registry. Drives default eligibility derivation from
 	 * `RoleSpec.grant_paths` and validates the `eligible_roles` override
 	 * (when supplied) against the registered role set.
 	 */
-	roles?: RoleSchemaResult;
+	roles?: RoleRegistry;
 }
 
 /**
@@ -114,7 +116,7 @@ export interface SelfServiceRoleActionsOptions {
  *   `connection_closer`); `audit.emit` writes a success row in the request
  *   transaction and a failure row via the captured pool, and a disable closes the caller's connections gated on the role
  *   through `connection_closer`.
- * @param options - optional eligible-role override plus optional role schema for default-eligibility derivation
+ * @param options - optional eligible-role override plus optional role registry for default-eligibility derivation
  * @returns the `RpcAction` array to spread into a `create_rpc_endpoint` call
  * @throws Error at factory time if any `eligible_roles` entry is missing from `options.roles.role_specs`
  * @throws Error at factory time if the eligible set names a builtin role or an invalid role name
@@ -123,7 +125,7 @@ export const create_self_service_role_actions = (
 	deps: RevokingActionFactoryDeps,
 	options: SelfServiceRoleActionsOptions = {}
 ): Array<RpcAction> => {
-	const role_specs = options.roles?.role_specs ?? builtin_role_specs_by_name;
+	const role_specs = options.roles?.role_specs ?? builtin_role_specs;
 
 	const eligible: ReadonlySet<string> = options.eligible_roles
 		? new Set(options.eligible_roles)
@@ -137,7 +139,7 @@ export const create_self_service_role_actions = (
 				throw new Error(
 					`create_self_service_role_actions: eligible_roles entry "${
 						r
-					}" is not registered in roles.role_specs — typo or missing call to create_role_schema`
+					}" is not registered in roles.role_specs — typo or missing call to create_role_registry`
 				);
 			}
 		}

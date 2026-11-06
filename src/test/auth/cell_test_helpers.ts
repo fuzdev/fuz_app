@@ -23,7 +23,7 @@ import {
 	create_serve_cell_fact_route_spec
 } from '#lib/server/serve_fact_route.ts';
 import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
-import { create_role_schema, ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
+import { create_role_registry, ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
 import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
 import { create_audit_log_config } from '#lib/auth/audit_log_schema.ts';
 import { create_all_cell_actions } from '#lib/auth/all_cell_actions.ts';
@@ -60,11 +60,11 @@ export const session_options = create_session_config('test_session');
 export const RPC_PATH = '/api/rpc';
 
 /**
- * Role schema for the cell suites. `member` is a consumer role registered
+ * Role registry for the cell suites. `member` is a consumer role registered
  * so role-shaped `cell_grant` principals have a valid role to reference
  * (the unknown-role gate reads `roles.role_specs`).
  */
-export const cell_test_roles = create_role_schema([{ name: 'member' }]);
+export const cell_test_roles = create_role_registry([{ name: 'member' }]);
 
 /** Consumer role registered in `cell_test_roles`. */
 export const ROLE_MEMBER = 'member';

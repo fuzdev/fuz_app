@@ -120,7 +120,7 @@ import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
 import { Db, no_nested_transaction } from '#lib/db/db.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
 import { prefix_route_specs, type RouteSpec } from '#lib/http/route_spec.ts';
-import { create_role_schema, ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
+import { create_role_registry, ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
 import { GRANT_PATH_ADMIN, GRANT_PATH_SELF_SERVICE } from '#lib/auth/grant_path_schema.ts';
 import { query_create_role_grant } from '#lib/auth/role_grant_queries.ts';
 import type { AuditLogEvent } from '#lib/auth/audit_log_schema.ts';
@@ -137,7 +137,7 @@ const RPC_PATH = '/api/rpc';
 const SELF_SERVICE_ROLE = 'helper';
 /** An admin-grantable app role, grantable at a scope (builtin roles are global-only). */
 const APP_ROLE = 'teacher';
-const test_roles = create_role_schema([
+const test_roles = create_role_registry([
 	{ name: SELF_SERVICE_ROLE, grant_paths: [GRANT_PATH_SELF_SERVICE] },
 	{ name: APP_ROLE, grant_paths: [GRANT_PATH_ADMIN] }
 ]);

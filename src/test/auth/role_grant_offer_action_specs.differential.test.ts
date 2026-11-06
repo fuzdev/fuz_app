@@ -41,8 +41,6 @@ import { is_schema } from '@fuzdev/fuz_schema/schema.ts';
 import { Uuid as ZodUuid, bounded_string as zod_bounded_string } from '#lib/primitive_schemas.ts';
 import { Timestamp } from '#lib/primitive_schemas_fuz.ts';
 import { ActingActor as ZodActingActor } from '#lib/http/auth_shape.ts';
-import { RoleName as ZodRoleName } from '#lib/auth/role_schema.ts';
-import { ScopeKindName as ZodScopeKindName } from '#lib/auth/scope_kind_schema.ts';
 import { ROLE_GRANT_REVOKED_REASON_LENGTH_MAX } from '#lib/auth/account_schema.ts';
 import {
 	ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX,
@@ -84,6 +82,7 @@ import {
 	type WireIssue
 } from '#lib/schema_issues.ts';
 import { NAME_LENGTH_MAX } from '#lib/auth/name_schema.ts';
+import { ZodRoleName, ZodScopeKindName } from './zod_name_oracles.ts';
 
 // -- the Zod schemas the port replaced --------------------------------------
 

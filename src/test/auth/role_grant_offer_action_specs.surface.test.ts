@@ -66,7 +66,7 @@ const capture_surface = () => {
 	return surface;
 };
 
-/** The JSON Schema of `nullable(ScopeKindName)`, the Zod `ScopeKindName`'s with a `null` beside it. */
+/** The JSON Schema of `nullable(ScopeKindName)`, `ScopeKindName`'s with a `null` beside it. */
 const NULLABLE_SCOPE_KIND = {
 	anyOf: [
 		{ type: 'string', maxLength: NAME_LENGTH_MAX, pattern: NAME_REGEX.source },

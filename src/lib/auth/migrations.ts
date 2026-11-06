@@ -102,7 +102,7 @@ const AUTH_MIGRATION_NAMESPACE = 'fuz_auth';
  *   partial unique index is scoped by
  *   `(to_account, role, scope_kind, scope, from_actor)` so multiple
  *   grantors may coexist. `scope_kind` is informative-only in v1
- *   (registry-membership validation against `create_scope_kind_schema`);
+ *   (registry-membership validation against `create_scope_kind_registry`);
  *   v2 may add INSERT-time `(role, scope_kind)` enforcement.
  */
 const AUTH_MIGRATIONS: Array<Migration> = [

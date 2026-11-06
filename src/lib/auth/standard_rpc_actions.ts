@@ -63,7 +63,7 @@ export interface StandardRpcActionsDeps extends RevokingActionFactoryDeps {
  * option flows to admin + role-grant-offer.
  *
  * @param deps - `StandardRpcActionsDeps` (`log`, `audit`, `connection_closer` from `RevokingActionFactoryDeps`; optional `notification_sender` for WS fan-out)
- * @param options - role schema, role-grant-offer config, account config
+ * @param options - role registry, role-grant-offer config, account config
  * @returns RPC actions to pass as `rpc_endpoints` or spread into `create_rpc_endpoint`
  */
 export const create_standard_rpc_actions = (

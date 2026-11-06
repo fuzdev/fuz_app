@@ -1,14 +1,14 @@
 /**
- * Role system — builtin roles, role specs, and extensible role schema factory.
+ * Role system — builtin roles, role specs, and extensible role registry factory.
  *
  * Defines the authorization policy vocabulary: which roles exist, their
  * required credential types, the scope kinds each role applies to, and
  * the grant paths through which each role can be granted. Each role
- * gets a structured `RoleSpec`; the factory `create_role_schema` merges
+ * gets a structured `RoleSpec`; the factory `create_role_registry` merges
  * builtins with consumer-declared specs and validates every cross-axis
  * field against the corresponding open registries
- * (`create_credential_type_schema`, `create_scope_kind_schema`,
- * `create_grant_path_schema`) at construction time so misconfigurations
+ * (`create_credential_type_registry`, `create_scope_kind_registry`,
+ * `create_grant_path_registry`) at construction time so misconfigurations
  * fire at server startup, not at first call.
  *
  * `RoleSpec` carries the four cross-axis fields that the dispatcher
@@ -21,28 +21,28 @@
  * @module
  */
 
-import { z } from 'zod';
+import { format_issue, parse, type Infer } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	CREDENTIAL_TYPE_DAEMON_TOKEN,
-	type CredentialTypeSchemaResult
+	type CredentialTypeRegistry
 } from './credential_type_schema.ts';
 import {
 	GRANT_PATH_ADMIN,
 	GRANT_PATH_BOOTSTRAP,
-	type GrantPathSchemaResult
+	type GrantPathRegistry
 } from './grant_path_schema.ts';
 import {
 	create_name_schema,
 	format_name_length_message,
 	format_name_pattern_message
 } from './name_schema.ts';
-import type { ScopeKindSchemaResult } from './scope_kind_schema.ts';
+import type { ScopeKindRegistry } from './scope_kind_schema.ts';
 
-/** The message of a role name longer than `NAME_LENGTH_MAX`, in both `RoleName`s. */
+/** The message of a role name longer than `NAME_LENGTH_MAX`. */
 export const ROLE_NAME_LENGTH_MESSAGE = format_name_length_message('Role');
 
-/** The message of a role name off `NAME_REGEX`, in both `RoleName`s. */
+/** The message of a role name off `NAME_REGEX`. */
 export const ROLE_NAME_PATTERN_MESSAGE = format_name_pattern_message('Role');
 
 /**
@@ -50,12 +50,12 @@ export const ROLE_NAME_PATTERN_MESSAGE = format_name_pattern_message('Role');
  * letters and underscores, no leading, trailing or consecutive underscores, at
  * most `NAME_LENGTH_MAX` characters. A role string is caller-chosen text until
  * it passes the grammar, and the grant verbs record the role they refuse in a
- * failure audit row, so the grammar bounds its length too. Both `RoleName`s
- * hold it, the Zod one here and the `@fuzdev/fuz_schema` twin in
- * `auth/role_schema_fuz.ts`.
+ * failure audit row, so the grammar bounds its length too. A string it
+ * refuses gets `ROLE_NAME_LENGTH_MESSAGE` or `ROLE_NAME_PATTERN_MESSAGE`; a
+ * value that is no string, fuz_schema's message.
  */
 export const RoleName = create_name_schema('Role');
-export type RoleName = z.infer<typeof RoleName>;
+export type RoleName = Infer<typeof RoleName>;
 
 // Builtin roles — provided by fuz_app, always available.
 
@@ -68,9 +68,8 @@ export const ROLE_ADMIN = 'admin';
 /** The builtin role names as a const tuple. */
 export const BUILTIN_ROLES = [ROLE_KEEPER, ROLE_ADMIN] as const;
 
-/** Zod schema for builtin roles only. */
-export const BuiltinRole = z.enum(BUILTIN_ROLES);
-export type BuiltinRole = z.infer<typeof BuiltinRole>;
+/** A builtin role name, `keeper` or `admin`. */
+export type BuiltinRole = (typeof BUILTIN_ROLES)[number];
 
 /**
  * Whether `name` is a builtin role (`keeper` / `admin`).
@@ -92,10 +91,10 @@ export const is_builtin_role = (name: string): name is BuiltinRole =>
  * Each role declares the credential types its holders are meant to use, the
  * scope kinds it applies to, and the grant paths through which it can
  * be granted. Every cross-axis field is an open-registry string array —
- * `required_credential_types` against `create_credential_type_schema`,
- * `applicable_scope_kinds` against `create_scope_kind_schema`,
- * `grant_paths` against `create_grant_path_schema`. Pass the registry
- * results to `create_role_schema` and every entry is checked at
+ * `required_credential_types` against `create_credential_type_registry`,
+ * `applicable_scope_kinds` against `create_scope_kind_registry`,
+ * `grant_paths` against `create_grant_path_registry`. Pass the registry
+ * results to `create_role_registry` and every entry is checked at
  * construction time.
  *
  * Empty arrays carry meaning:
@@ -110,7 +109,7 @@ export const is_builtin_role = (name: string): name is BuiltinRole =>
  *   flows. Only useful for diagnostic snapshotting.
  *
  * Builtins (`keeper`, `admin`) ship preconfigured in
- * `builtin_role_specs_by_name`.
+ * `builtin_role_specs`.
  */
 export interface RoleSpec {
 	/** Unique role name. Must match `RoleName` — the name grammar and its length cap; collisions with builtins throw. */
@@ -120,7 +119,7 @@ export interface RoleSpec {
 	/**
 	 * Credential types whose holders are meant to exercise this role.
 	 * Informative only: each entry is checked at construction time against
-	 * the `credential_types` registry passed to `create_role_schema`, but no
+	 * the `credential_types` registry passed to `create_role_registry`, but no
 	 * middleware or dispatcher reads it per request — a route or action
 	 * gates credentials with its own `auth.credential_types` (the keeper
 	 * verbs declare `['daemon_token']` there). Empty array = any
@@ -130,14 +129,14 @@ export interface RoleSpec {
 	/**
 	 * Scope kinds at which this role's role_grants may be granted. Each
 	 * entry is checked at construction time against the `scope_kinds`
-	 * registry passed to `create_role_schema`. Empty array = global only.
+	 * registry passed to `create_role_registry`. Empty array = global only.
 	 * v1 keeps this informative-only (no INSERT-time enforcement).
 	 */
 	applicable_scope_kinds?: ReadonlyArray<string>;
 	/**
 	 * Grant paths through which this role can be granted. Each entry is
 	 * checked at construction time against the `grant_paths` registry
-	 * passed to `create_role_schema`. Drives downstream defaults:
+	 * passed to `create_role_registry`. Drives downstream defaults:
 	 *
 	 * - `admin_actions.grantable_roles` ⊇ {role : `'admin'` ∈ grant_paths}
 	 * - `self_service_role_actions` default eligibility ⊇ {role : `'self_service'` ∈ grant_paths}
@@ -150,13 +149,13 @@ export interface RoleSpec {
 
 /**
  * Builtin role specs, keyed by role name. Not overridable by consumers
- * — read once at startup by `create_role_schema` and the action
+ * — read once at startup by `create_role_registry` and the action
  * factories that fall back to builtins when no consumer `roles` is
  * supplied. `ReadonlyMap` encodes the contract; runtime mutation has
- * no effect on already-built role schemas (the factory copies entries
+ * no effect on already-built role registries (the factory copies entries
  * into a fresh `Map`).
  */
-export const builtin_role_specs_by_name: ReadonlyMap<string, RoleSpec> = new Map<string, RoleSpec>([
+export const builtin_role_specs: ReadonlyMap<string, RoleSpec> = new Map<string, RoleSpec>([
 	[
 		ROLE_KEEPER,
 		{
@@ -182,19 +181,17 @@ export const builtin_role_specs_by_name: ReadonlyMap<string, RoleSpec> = new Map
 ]);
 
 /** Optional registries to validate `RoleSpec` cross-axis fields against at construction time. */
-export interface CreateRoleSchemaOptions {
-	/** Pass `create_credential_type_schema()` to validate `RoleSpec.required_credential_types` entries. */
-	credential_types?: CredentialTypeSchemaResult;
-	/** Pass `create_scope_kind_schema()` to validate `RoleSpec.applicable_scope_kinds` entries. */
-	scope_kinds?: ScopeKindSchemaResult;
-	/** Pass `create_grant_path_schema()` to validate `RoleSpec.grant_paths` entries. */
-	grant_paths?: GrantPathSchemaResult;
+export interface CreateRoleRegistryOptions {
+	/** Pass `create_credential_type_registry()` to validate `RoleSpec.required_credential_types` entries. */
+	credential_types?: CredentialTypeRegistry;
+	/** Pass `create_scope_kind_registry()` to validate `RoleSpec.applicable_scope_kinds` entries. */
+	scope_kinds?: ScopeKindRegistry;
+	/** Pass `create_grant_path_registry()` to validate `RoleSpec.grant_paths` entries. */
+	grant_paths?: GrantPathRegistry;
 }
 
-/** The result of `create_role_schema` — a Zod schema and spec map for all roles. */
-export interface RoleSchemaResult {
-	/** Zod schema that validates role strings. Use at I/O boundaries (grant endpoint, role_grant queries). */
-	Role: z.ZodType<string>;
+/** The result of `create_role_registry` — the spec map for all roles. */
+export interface RoleRegistry {
 	/** Specs for every role (builtins + app-defined). Keyed by role name. */
 	role_specs: ReadonlyMap<string, RoleSpec>;
 }
@@ -219,12 +216,10 @@ const validate_registry_membership = (
 };
 
 /**
- * Create a role schema and spec map that extends the builtins with
- * app-defined roles.
+ * Create the role spec map that extends the builtins with app-defined
+ * roles.
  *
- * Call once at server init. The returned `Role` schema validates role
- * strings at I/O boundaries (grant endpoint, role_grant queries). The
- * `role_specs` map is read by the admin / self-service factories to derive
+ * Call once at server init. The `role_specs` map is read by the admin / self-service factories to derive
  * their default eligibility filters from `RoleSpec.grant_paths`, and by the
  * cell grant verbs to refuse an unregistered role principal.
  * `RoleSpec.required_credential_types` is validated here but enforced
@@ -246,24 +241,24 @@ const validate_registry_membership = (
  *    `grant_paths` is registered in that map. (Builtins use only
  *    `'admin'` and `'bootstrap'`, both of which are builtin grant
  *    paths, so they pass the default registry from
- *    `create_grant_path_schema()`.)
+ *    `create_grant_path_registry()`.)
  *
  * @param consumer_roles - app-defined role specs
  * @param options - optional registries for cross-axis validation
- * @returns `{Role, role_specs}` — Zod schema and full spec map
+ * @returns `{role_specs}` — the full spec map
  *
  * @throws Error if any `consumer_roles` entry fails any of the construction-time guards above
  *
  * @example
  * ```ts
  * // visiones — opt into all four registries for full construction-time validation
- * const credential_types = create_credential_type_schema();
- * const scope_kinds = create_scope_kind_schema({
+ * const credential_types = create_credential_type_registry();
+ * const scope_kinds = create_scope_kind_registry({
  *   classroom: {description: 'A classroom — teacher and student role_grants scope here.'},
  * });
- * const grant_paths = create_grant_path_schema();
+ * const grant_paths = create_grant_path_registry();
  *
- * const {Role, role_specs} = create_role_schema(
+ * const {role_specs} = create_role_registry(
  *   [
  *     {
  *       name: 'teacher',
@@ -276,21 +271,21 @@ const validate_registry_membership = (
  * );
  * ```
  */
-export const create_role_schema = (
+export const create_role_registry = (
 	consumer_roles: ReadonlyArray<RoleSpec>,
-	options: CreateRoleSchemaOptions = {}
-): RoleSchemaResult => {
+	options: CreateRoleRegistryOptions = {}
+): RoleRegistry => {
 	const credential_types_registry = options.credential_types?.credential_types ?? null;
 	const scope_kinds_registry = options.scope_kinds?.scope_kinds ?? null;
 	const grant_paths_registry = options.grant_paths?.grant_paths ?? null;
 
 	const seen: Set<string> = new Set();
 	for (const spec of consumer_roles) {
-		const parsed = RoleName.safeParse(spec.name);
-		if (!parsed.success) {
-			throw new Error(`Invalid role name "${spec.name}": ${parsed.error.issues[0]!.message}`);
+		const parsed = parse(RoleName, spec.name);
+		if (!parsed.ok) {
+			throw new Error(`Invalid role name "${spec.name}": ${format_issue(parsed.issues[0]!)}`);
 		}
-		if (builtin_role_specs_by_name.has(spec.name)) {
+		if (builtin_role_specs.has(spec.name)) {
 			throw new Error(`App role "${spec.name}" collides with builtin role`);
 		}
 		if (seen.has(spec.name)) {
@@ -313,15 +308,12 @@ export const create_role_schema = (
 		validate_registry_membership(spec.name, 'grant_paths', spec.grant_paths, grant_paths_registry);
 	}
 
-	const role_specs: Map<string, RoleSpec> = new Map(builtin_role_specs_by_name);
+	const role_specs: Map<string, RoleSpec> = new Map(builtin_role_specs);
 	for (const spec of consumer_roles) {
 		role_specs.set(spec.name, spec);
 	}
 
-	const all_names = [...role_specs.keys()];
-	const Role = z.enum(all_names as [string, ...Array<string>]);
-
-	return { Role, role_specs };
+	return { role_specs };
 };
 
 /**

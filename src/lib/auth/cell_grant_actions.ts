@@ -12,7 +12,7 @@
  * - `cell_grant_create` — admin / owner only. Refuses a cell whose
  *   `moderation` doesn't admit an audience (403 `cell_grant_unapproved`,
  *   after the manage gate). Validates role-shaped
- *   principals against the role schema; rejects owner-as-principal.
+ *   principals against the role registry; rejects owner-as-principal.
  *   Actor-shaped principals carry a pre-resolved `actor_id` (callers pick
  *   via `actor_search`). Idempotent — re-granting the same principal
  *   updates `level` via UPSERT. A mounted `authorize_grant_create` is asked
@@ -45,7 +45,7 @@ import {
 	type RpcAction
 } from '../actions/action_types.ts';
 import { jsonrpc_errors } from '../http/jsonrpc_errors.ts';
-import type { RoleSchemaResult } from './role_schema.ts';
+import type { RoleRegistry } from './role_schema.ts';
 import type { ActionFactoryDeps } from './deps.ts';
 import type { RequestActorContext } from './request_context.ts';
 import type { Uuid } from '../primitive_schemas.ts';
@@ -182,7 +182,7 @@ export type CellGrantRevokeAuthorize = (
 /**
  * Dependencies for `create_cell_grant_actions`.
  *
- * `roles` is the role schema — read for the role-validity gate on
+ * `roles` is the role registry — read for the role-validity gate on
  * `cell_grant_create`; `authorize_grant_create` is the optional consumer gate
  * (`CellGrantCreateAuthorize`) and `authorize_grant_revoke` the optional
  * steward widening of `cell_grant_revoke` (`CellGrantRevokeAuthorize`). The
@@ -190,7 +190,7 @@ export type CellGrantRevokeAuthorize = (
  * fire-and-forget plumbing.
  */
 export type CellGrantActionDeps = ActionFactoryDeps & {
-	roles: RoleSchemaResult;
+	roles: RoleRegistry;
 	authorize_grant_create?: CellGrantCreateAuthorize;
 	authorize_grant_revoke?: CellGrantRevokeAuthorize;
 };

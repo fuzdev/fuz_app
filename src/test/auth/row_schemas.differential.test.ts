@@ -56,7 +56,6 @@ import {
 	Uuid as ZodUuid
 } from '#lib/primitive_schemas.ts';
 import { Timestamp, USERNAME_CANONICAL_REGEX } from '#lib/primitive_schemas_fuz.ts';
-import { RoleName as ZodRoleName } from '#lib/auth/role_schema.ts';
 import { NAME_LENGTH_MAX } from '#lib/auth/name_schema.ts';
 import {
 	ActorSummaryJson,
@@ -70,13 +69,11 @@ import {
 } from '#lib/auth/account_schema.ts';
 import {
 	AdminSessionJson,
-	AuditEventTypeName as ZodAuditEventTypeName,
+	AUDIT_EVENT_TYPE_NAME_LENGTH_MESSAGE,
 	AuditLogEventJson,
 	AuditLogEventWithUsernamesJson,
-	AuditOutcome as ZodAuditOutcome,
 	RoleGrantHistoryEventJson
 } from '#lib/auth/audit_log_schema.ts';
-import { AUDIT_EVENT_TYPE_NAME_LENGTH_MESSAGE } from '#lib/auth/audit_log_schema_fuz.ts';
 import { audit_log_event_specs } from '#lib/realtime/audit_log_sse.ts';
 import {
 	SessionListOutput,
@@ -99,6 +96,7 @@ import {
 	type ValidationSchema,
 	type WireIssue
 } from '#lib/schema_issues.ts';
+import { ZodAuditEventTypeName, ZodAuditOutcome, ZodRoleName } from './zod_name_oracles.ts';
 
 // -- the Zod schemas the port replaced --------------------------------------
 

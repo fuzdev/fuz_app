@@ -25,7 +25,7 @@ import {
 	create_role_grant_offer_actions,
 	type RoleGrantOfferCreateAuthorize
 } from '#lib/auth/role_grant_offer_actions.ts';
-import { create_role_schema, type RoleSchemaResult } from '#lib/auth/role_schema.ts';
+import { create_role_registry, type RoleRegistry } from '#lib/auth/role_schema.ts';
 import { GRANT_PATH_ADMIN } from '#lib/auth/grant_path_schema.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
 import type { RouteSpec } from '#lib/http/route_spec.ts';
@@ -55,7 +55,7 @@ export const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
 export const TEST_APP_ROLE = 'teacher';
 
 /** A consumer registry with one admin-grantable app role (`TEST_APP_ROLE`). */
-export const app_roles: RoleSchemaResult = create_role_schema([
+export const app_roles: RoleRegistry = create_role_registry([
 	{ name: TEST_APP_ROLE, grant_paths: [GRANT_PATH_ADMIN] }
 ]);
 

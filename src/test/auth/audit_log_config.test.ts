@@ -11,6 +11,7 @@ import { describe, test, assert } from 'vitest';
 import { z } from 'zod';
 import {
 	loose_object as fuz_loose_object,
+	parse,
 	string as fuz_string
 } from '@fuzdev/fuz_schema/schema.ts';
 
@@ -171,20 +172,36 @@ describe('create_audit_log_config', () => {
 describe('AuditEventTypeName invariant', () => {
 	test('every builtin AUDIT_EVENT_TYPES entry passes the schema', () => {
 		for (const t of AUDIT_EVENT_TYPES) {
-			const result = AuditEventTypeName.safeParse(t);
-			assert.isTrue(result.success, `builtin "${t}" failed AuditEventTypeName format`);
+			assert.isTrue(
+				parse(AuditEventTypeName, t).ok,
+				`builtin "${t}" failed AuditEventTypeName format`
+			);
 		}
 	});
 
-	test('the length cap comes before the grammar, and both report', () => {
-		const result = AuditEventTypeName.safeParse(`1${'a'.repeat(NAME_LENGTH_MAX)}`);
-		assert.ok(!result.success);
+	test('the length cap comes before the grammar, and reports alone', () => {
+		const result = parse(AuditEventTypeName, `1${'a'.repeat(NAME_LENGTH_MAX)}`);
+		assert.ok(!result.ok);
 		assert.deepStrictEqual(
-			result.error.issues.map((i) => i.message),
-			[
-				'must be at most 64 characters',
-				'must start with a letter; only letters, digits, _ . / - allowed'
-			]
+			result.issues.map((i) => i.message),
+			['must be at most 64 characters']
 		);
+	});
+
+	test('a key both too long and off the grammar throws with the length message', () => {
+		const key = `1${'a'.repeat(NAME_LENGTH_MAX)}`;
+		assert.throws(
+			() => create_audit_log_config({ extra_events: { [key]: null } }),
+			`extra_events key "${key}" has invalid format: must be at most 64 characters`
+		);
+	});
+
+	test('a key off the grammar throws with the pattern message', () => {
+		for (const key of ['1login', '_login', 'log in', 'login\n', '']) {
+			assert.throws(
+				() => create_audit_log_config({ extra_events: { [key]: null } }),
+				`extra_events key "${key}" has invalid format: must start with a letter; only letters, digits, _ . / - allowed`
+			);
+		}
 	});
 });
