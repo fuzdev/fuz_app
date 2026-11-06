@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/BTZoVLbz.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CAODFmXb.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.CQlQOU5U.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.DYi0ln7S.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.DTO8QTMB.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.BwdgglFA.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BcwQFYZ2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/C3BYcZ2u.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CE-egMPB.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/BY_3CNAg.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.DcQ_praj.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/CeRoGCQG.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.-im1VQSH.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BL7ZH9U-.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DhdQKFKC.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -996,8 +996,9 @@ with the login limiters enabled + the loopback proxy trusted (see
 failed logins from one forwarded IP each return <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->401<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, and the next
 returns <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->429<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> with the canonical `{error: "rate_limit_exceeded",
 retry_after}<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1--> body **and** a <!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->Retry-After: ceil(retry_after)` header. The
-429 wire shape is the cross-impl contract — TS <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/rate_limiter.ts#rate_limit_exceeded_response"><!--[0--><!--[-1-->rate_limit_exceeded_response<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->
-and Rust <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->route_response::rate_limit_exceeded<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> must agree.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->trusted-proxy / XFF resolution is honored<!--]--><!--]--><!----></strong><!--]--><!--[2--> — distinct
+429 wire shape is the cross-impl contract — TS
+<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->route_fail(REST_RATE_LIMIT_EXCEEDED, {retry_after})<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> and Rust
+<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->route_response::rate_limit_exceeded<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> must agree.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->trusted-proxy / XFF resolution is honored<!--]--><!--]--><!----></strong><!--]--><!--[2--> — distinct
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->X-Forwarded-For<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> IPs get independent buckets: after exhausting one
 forwarded IP to <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->429<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, a *different* forwarded IP is unaffected (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->401<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->,
 not <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->429<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->). A backend that ignored XFF and keyed on the (loopback) TCP
@@ -2491,16 +2492,16 @@ close-on-revoke).<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div
 			
 			<script>
 				{
-					__sveltekit_1nzq1iq = {
+					__sveltekit_1gxxmx6 = {
 						base: "",
-						version: "8de16672934723f07687bd65a89d126cd0660339"
+						version: "ed36a62cbb599338a57fb1dfbc3c3156f5981edf"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.CXlCZqzx.js").then(async (kit) => {
-						kit.init(__sveltekit_1nzq1iq);
-						const app = await import("/_app/immutable/entry/app.CQlQOU5U.js");
+						kit.init(__sveltekit_1gxxmx6);
+						const app = await import("/_app/immutable/entry/app.DTO8QTMB.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],

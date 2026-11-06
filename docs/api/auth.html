@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/BTZoVLbz.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CAODFmXb.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.CQlQOU5U.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.DYi0ln7S.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.DTO8QTMB.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.BwdgglFA.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BcwQFYZ2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/C3BYcZ2u.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CE-egMPB.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/BY_3CNAg.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.DcQ_praj.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/CeRoGCQG.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.-im1VQSH.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BL7ZH9U-.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DhdQKFKC.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -386,9 +386,9 @@ without weakening production.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--
 Token verification and account creation happen in a single transaction.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/auth/bootstrap_route_schema.ts"><!--[-1-->auth/bootstrap_route_schema.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Hono-free wire shape + schemas for <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->POST /bootstrap<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Split from <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->bootstrap_routes.ts<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> so the route's declared shape (method,
 path, auth, input/output/error schemas) is importable <!--]--><!--[4--><strong><!--[--><!--[2-->without<!--]--><!--]--><!----></strong><!--]--><!--[2--> the
 hono-coupled handler (which sets a session cookie and reads the client
-IP off the Hono context). <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/bootstrap_routes.ts#create_bootstrap_route_specs"><!--[0--><!--[-1-->create_bootstrap_route_specs<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> spreads
-<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/bootstrap_route_schema.ts#bootstrap_route_shape"><!--[0--><!--[-1-->bootstrap_route_shape<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> and attaches the live handler; the test surface
-builder (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/stubs.ts#create_test_app_surface_spec"><!--[0--><!--[-1-->create_test_app_surface_spec<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->) spreads it with a stub handler so
+IP off the Hono context). <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/bootstrap_routes.ts#create_bootstrap_route_specs"><!--[0--><!--[-1-->create_bootstrap_route_specs<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> attaches the live
+handler to <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/bootstrap_route_schema.ts#bootstrap_route_shape"><!--[0--><!--[-1-->bootstrap_route_shape<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/route_spec.ts#attach_route_handler"><!--[0--><!--[-1-->attach_route_handler<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->); the test surface
+builder (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/stubs.ts#create_test_app_surface_spec"><!--[0--><!--[-1-->create_test_app_surface_spec<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->) attaches a stub handler so
 attack-surface generation reads the real shape without pulling the
 in-process Hono app onto cross-process consumers. Single source of truth —
 the shape can't drift between the live route and the surface.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/auth/bootstrap_routes.ts"><!--[-1-->auth/bootstrap_routes.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Bootstrap route spec for first-time account creation.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->One-shot endpoint: exchanges a bootstrap token + credentials for
@@ -1024,16 +1024,16 @@ the reads that answer it as anonymous and the server status read.<!--]--><!--]--
 			
 			<script>
 				{
-					__sveltekit_1nzq1iq = {
+					__sveltekit_1gxxmx6 = {
 						base: "",
-						version: "8de16672934723f07687bd65a89d126cd0660339"
+						version: "ed36a62cbb599338a57fb1dfbc3c3156f5981edf"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.CXlCZqzx.js").then(async (kit) => {
-						kit.init(__sveltekit_1nzq1iq);
-						const app = await import("/_app/immutable/entry/app.CQlQOU5U.js");
+						kit.init(__sveltekit_1gxxmx6);
+						const app = await import("/_app/immutable/entry/app.DTO8QTMB.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],
