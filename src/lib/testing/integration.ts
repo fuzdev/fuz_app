@@ -168,7 +168,7 @@ export const describe_standard_integration_tests = (
 		const { cookie_name } = options.session_options;
 
 		// Error coverage tracking across test groups
-		const error_collector = new ErrorCoverageCollector();
+		const error_collector = new ErrorCoverageCollector(options.surface_source.route_errors);
 
 		// the auth routes this suite drives: login / logout / password, signup
 		// (when wired), and the shared RPC endpoint — admin-role routes belong to
@@ -192,15 +192,7 @@ export const describe_standard_integration_tests = (
 			// the admin suite instead.
 			const auth_routes = route_specs.filter(is_suite_auth_route);
 			assert_error_coverage(error_collector, auth_routes.length > 0 ? auth_routes : route_specs, {
-				min_coverage: options.error_coverage_min ?? DEFAULT_INTEGRATION_ERROR_COVERAGE,
-				// Authorization denials (403) on these scoped auth routes — the
-				// credential-channel gate on /logout + /password, the invite gate on
-				// /signup — are exercised by the conformance + attack-surface suites,
-				// not this lifecycle suite. Drop 403 from this collector's denominator
-				// (same spirit as the [401, 403, 429] ignore in the attack-surface
-				// tightness defaults); otherwise #10 adding /logout's 403 to the spine
-				// surface tips the ratio under threshold here though the gate is tested.
-				ignore_statuses: [403]
+				min_coverage: options.error_coverage_min ?? DEFAULT_INTEGRATION_ERROR_COVERAGE
 			});
 		});
 
@@ -1153,7 +1145,13 @@ export const describe_standard_integration_tests = (
 					})
 				});
 				assert.strictEqual(res.status, 401);
-				await assert_response_matches_spec(route_specs, 'POST', login_route.path, res);
+				await assert_response_matches_spec(
+					route_specs,
+					'POST',
+					login_route.path,
+					res,
+					options.surface_source.route_errors
+				);
 			});
 
 			test('POST /logout 200 response matches output schema', async () => {
@@ -1170,7 +1168,13 @@ export const describe_standard_integration_tests = (
 					body: JSON.stringify({})
 				});
 				assert.strictEqual(res.status, 200);
-				await assert_response_matches_spec(route_specs, 'POST', logout_route.path, res);
+				await assert_response_matches_spec(
+					route_specs,
+					'POST',
+					logout_route.path,
+					res,
+					options.surface_source.route_errors
+				);
 			});
 
 			test('POST /logout 401 response matches declared error schema', async () => {
@@ -1189,7 +1193,13 @@ export const describe_standard_integration_tests = (
 					body: JSON.stringify({})
 				});
 				assert.strictEqual(res.status, 401);
-				await assert_response_matches_spec(route_specs, 'POST', logout_route.path, res);
+				await assert_response_matches_spec(
+					route_specs,
+					'POST',
+					logout_route.path,
+					res,
+					options.surface_source.route_errors
+				);
 			});
 		});
 

@@ -121,9 +121,10 @@ describe('create_app_server', () => {
 	});
 
 	test('surface contains middleware specs', () => {
-		// proxy + 4 auth middleware (origin, session, request_context, bearer_auth)
-		assert.isTrue(shared.surface_spec.surface.middleware.length >= 5);
-		assert.strictEqual(shared.surface_spec.surface.middleware[0]!.name, 'trusted_proxy');
+		// the body limit, the proxy, and the auth middleware (origin, session, request_context, bearer_auth)
+		assert.isTrue(shared.surface_spec.surface.middleware.length >= 6);
+		assert.strictEqual(shared.surface_spec.surface.middleware[0]!.name, 'body_limit');
+		assert.strictEqual(shared.surface_spec.surface.middleware[1]!.name, 'trusted_proxy');
 	});
 
 	test('bootstrap_status defaults to unavailable when omitted', () => {

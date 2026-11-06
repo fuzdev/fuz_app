@@ -1288,7 +1288,9 @@ payloads are rejected with 413 and `{error: 'payload_too_large'}`
 (`PayloadTooLargeError` schema). Configure via `max_body_size` on
 `AppServerOptions`; pass `null` to disable. A non-safe-integer or negative
 value throws at assembly; `null` adds a security warning to the startup
-diagnostics.
+diagnostics. The limit is mounted as a middleware spec at `*`, ahead of the
+others, so every route's declared errors carry its 413 `payload_too_large`
+and 400 `invalid_content_length`; with `null` neither is declared.
 
 On both spines the 413 comes first for a declared `Content-Length` over the
 cap; a length-less (chunked) body over the cap is refused too, but which

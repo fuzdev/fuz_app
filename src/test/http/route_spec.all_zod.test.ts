@@ -1,9 +1,16 @@
 /**
  * An all-Zod `RouteSpec` answers byte for byte what it answered before route
- * specs took `@fuzdev/fuz_schema` schemas: its surface (JSON Schema, merged
- * error schemas, the non-strict-input warning text) and every exchange of
+ * specs took `@fuzdev/fuz_schema` schemas: its surface (JSON Schema, the
+ * route error maps, the non-strict-input warning text) and every exchange of
  * `route_spec_all_zod_helpers.ts` (status, body, `log.error` arguments),
  * captured in `fixtures/surface/route_spec_all_zod.json`.
+ *
+ * The capture was taken again when errors became definitions, which moved
+ * two things and nothing else: each route's 400 is the codes its slots
+ * derive, one branch each (it was one enum of the four input codes on every
+ * route), and the logged mismatch of the undeclared 404 body carries
+ * fuz_schema issues, as the 404 is a definition (it was a Zod schema). Its
+ * 404, the middleware's 403, and every other byte are the Zod-era capture's.
  *
  * @module
  */

@@ -19,7 +19,13 @@
  * - `/bootstrap`'s `token` gains `maxLength`, `BOOTSTRAP_TOKEN_LENGTH_MAX`,
  *   the token file's cap, where the Zod one had no maximum
  *
- * Every error schema is the capture's.
+ * The error schemas are the capture's but for the moves of the error rules,
+ * `ERROR_MOVES`: the body 400 is the two body definitions, derived for each
+ * route with a body (the routes declared it as one enum of the two codes);
+ * the derived 401 is `authentication_required` exactly (it was any string);
+ * `/password` declares the `invalid_credentials` 401 its handler answers,
+ * beside the derived one; and the rate limit's `retry_after` is a
+ * non-negative integer (it was any number).
  *
  * @module
  */
@@ -44,6 +50,14 @@ import {
 	USERNAME_LENGTH_MIN
 } from '#lib/primitive_schemas.ts';
 import { USERNAME_CANONICAL_REGEX } from '#lib/primitive_schemas_fuz.ts';
+import {
+	REST_AUTHENTICATION_REQUIRED,
+	REST_INVALID_CREDENTIALS,
+	REST_INVALID_JSON_BODY,
+	REST_INVALID_REQUEST_BODY,
+	REST_RATE_LIMIT_EXCEEDED
+} from '#lib/http/error_schemas.ts';
+import { with_error_moves, type ErrorMove } from '../surface_test_helpers.ts';
 
 const FIXTURE_PATH = new URL('../fixtures/surface/account_routes.json', import.meta.url);
 
@@ -141,6 +155,33 @@ const with_output_username = (route: Record<string, any>): Record<string, any> =
 	};
 };
 
+const BODY_400: ErrorMove = {
+	from: ['invalid_json_body', 'invalid_request_body'],
+	to: [REST_INVALID_REQUEST_BODY, REST_INVALID_JSON_BODY]
+};
+const AUTH_401: ErrorMove = { from: ['*'], to: [REST_AUTHENTICATION_REQUIRED] };
+const RATE_429: ErrorMove = { from: ['rate_limit_exceeded'], to: [REST_RATE_LIMIT_EXCEEDED] };
+
+// the declared moves of the error rules, by `METHOD path` and status
+const ERROR_MOVES: Record<string, Record<number, ErrorMove>> = {
+	'GET /verify': { 401: AUTH_401 },
+	'POST /login': { 400: BODY_400, 429: RATE_429 },
+	'POST /logout': { 401: AUTH_401 },
+	'POST /password': {
+		400: BODY_400,
+		401: { from: ['*'], to: [REST_AUTHENTICATION_REQUIRED, REST_INVALID_CREDENTIALS] },
+		429: RATE_429
+	},
+	'POST /signup': { 400: BODY_400, 429: RATE_429 },
+	'POST /bootstrap': { 400: BODY_400, 429: RATE_429 }
+};
+
+/** A captured route with every declared move applied: its own, then the error rules'. */
+const moved = (r: Record<string, any>): Record<string, any> => {
+	const key = `${r.method} ${r.path}`;
+	return with_error_moves(MOVES[key]?.(r) ?? r, ERROR_MOVES[key]);
+};
+
 const TRANSFORM_MESSAGE =
 	'Part of the schema has no JSON Schema form and is left out or written as {} there: Transforms cannot be represented in JSON Schema';
 
@@ -172,14 +213,15 @@ describe('account routes surface', () => {
 	});
 
 	test('the routes are the Zod-era ones but for the declared moves', () => {
-		const expected = head.routes.map((r) => MOVES[`${r.method} ${r.path}`]?.(r) ?? r);
-		assert.deepStrictEqual(surface.routes, expected);
+		assert.deepStrictEqual(surface.routes, head.routes.map(moved));
 	});
 
-	test('every error schema is the capture', () => {
+	test("every error schema is the capture's but for the error rules' moves", () => {
 		assert.deepStrictEqual(
 			surface.routes.map((r) => r.error_schemas),
-			head.routes.map((r) => r.error_schemas)
+			head.routes.map(
+				(r) => with_error_moves(r, ERROR_MOVES[`${r.method} ${r.path}`]).error_schemas
+			)
 		);
 	});
 

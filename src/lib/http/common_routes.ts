@@ -16,7 +16,6 @@ import {
 	min_value,
 	number,
 	object,
-	one_of,
 	pipe,
 	string
 } from '@fuzdev/fuz_schema/schema.ts';
@@ -24,7 +23,12 @@ import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import type { RouteSpec } from './route_spec.ts';
 import { HEALTH_PATH, HealthResponse } from './health_schema.ts';
-import { ERROR_DB_UNREACHABLE, ERROR_SCHEMA_DRIFT } from './error_schemas.ts';
+import {
+	ERROR_DB_UNREACHABLE,
+	ERROR_SCHEMA_DRIFT,
+	REST_DB_UNREACHABLE,
+	REST_SCHEMA_DRIFT
+} from './error_schemas.ts';
 import {
 	check_schema_drift,
 	format_schema_drift,
@@ -133,9 +137,7 @@ export const create_ready_route_spec = (options: ReadyRouteOptions): RouteSpec =
 		description: 'Readiness probe — verifies the live DB schema matches the expected column map',
 		input: literal(null),
 		output: object({ ready: literal(true) }),
-		errors: {
-			503: object({ error: one_of([ERROR_SCHEMA_DRIFT, ERROR_DB_UNREACHABLE]) })
-		},
+		errors: [REST_SCHEMA_DRIFT, REST_DB_UNREACHABLE],
 		handler: async (c, route) => {
 			try {
 				const drift = await check_schema_drift(route.db, options.expected);

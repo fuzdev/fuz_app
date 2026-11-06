@@ -127,7 +127,7 @@ describe('assert_middleware_stack_mounted — accepted', () => {
 		const stack = await create_stack();
 		assert_middleware_stack_mounted(
 			stack,
-			stack.map((spec) => ({ ...spec, errors: { ...spec.errors } }))
+			stack.map((spec) => ({ ...spec, errors: spec.errors && [...spec.errors] }))
 		);
 	});
 
@@ -300,26 +300,50 @@ const build_surface = (transform_middleware?: TransformMiddleware) =>
 	});
 
 describe('create_test_app_surface_spec — transform_middleware', () => {
-	test('the middleware list mirrors the real one: the proxy, then the auth stack', () => {
+	test('the middleware list mirrors the real one: the body limit, the proxy, then the auth stack', () => {
 		const names: Array<Array<string>> = [];
 		const surface_spec = build_surface((specs) => {
 			names.push(specs.map((s) => s.name));
 			return specs;
 		});
 		const expected = ['trusted_proxy', 'origin', 'session', 'request_context', 'bearer_auth'];
+		// the transform gets the stack; the body limit heads the list outside it
 		assert.deepStrictEqual(names, [expected]);
 		assert.deepStrictEqual(
 			surface_spec.surface.middleware.map((m) => m.name),
-			expected
+			['body_limit', ...expected]
 		);
 		assert.deepStrictEqual(
 			build_surface().surface.middleware.map((m) => [m.name, m.path]),
 			[
+				['body_limit', '*'],
 				['trusted_proxy', '*'],
 				['origin', ORIGIN_MIDDLEWARE_PATH],
 				...expected.slice(2).map((n) => [n, AUTH_MIDDLEWARE_PATH])
 			]
 		);
+	});
+
+	test('with max_body_size: null the body limit is left out, and so are its codes', () => {
+		const surface_spec = create_test_app_surface_spec({
+			session_options,
+			create_route_specs: () => [create_health_route_spec()],
+			max_body_size: null
+		});
+		assert.notInclude(
+			surface_spec.surface.middleware.map((m) => m.name),
+			'body_limit'
+		);
+		assert.deepStrictEqual(Object.keys(surface_spec.surface.routes[0]!.error_schemas!), ['403']);
+		const with_limit = create_test_app_surface_spec({
+			session_options,
+			create_route_specs: () => [create_health_route_spec()]
+		});
+		assert.deepStrictEqual(Object.keys(with_limit.surface.routes[0]!.error_schemas!), [
+			'400',
+			'403',
+			'413'
+		]);
 	});
 
 	test('layers around the stack are accepted, including a shared stub_mw', () => {
@@ -331,6 +355,7 @@ describe('create_test_app_surface_spec — transform_middleware', () => {
 		assert.deepStrictEqual(
 			surface_spec.surface.middleware.map((m) => m.name),
 			[
+				'body_limit',
 				'host_validation',
 				'trusted_proxy',
 				'origin',

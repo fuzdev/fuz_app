@@ -245,7 +245,7 @@ export interface RouteAuth {
 //
 // Pure derived reads of `RouteAuth`. Live here so every consumer that
 // branches on the shape (the dispatcher's authorization phase, route
-// guards, `merge_error_schemas`, `surface_query`, the surface explorer
+// guards, `derive_route_errors`, `surface_query`, the surface explorer
 // UI, and the testing harnesses) goes through one source of truth
 // instead of inlining axis comparisons that drift over time.
 

@@ -9,13 +9,14 @@ import './assert_dev_env.ts';
 import { assert } from 'vitest';
 
 import type { RouteSpec, RouteMethod } from '../http/route_spec.ts';
-import { is_null_schema, merge_error_schemas } from '../http/schema_helpers.ts';
+import { get_route_errors, is_null_schema, type RouteErrors } from '../http/schema_helpers.ts';
 import { is_public_auth, type RouteAuth } from '../http/auth_shape.ts';
 import { ERROR_AUTHENTICATION_REQUIRED } from '../http/error_schemas.ts';
 import { ROLE_ADMIN } from '../auth/role_schema.ts';
 import type { TestAccount } from './app_server.ts';
 import { create_test_request_headers } from './test_origin.ts';
 import { parse_any } from '../schema_issues.ts';
+import { is_jsonrpc_error_response } from '../http/jsonrpc_helpers.ts';
 
 /**
  * Find a route spec matching the given method and path.
@@ -89,8 +90,14 @@ export const find_auth_route = (
  * Validate a response body against the route spec's declared schemas.
  *
  * For 2xx responses, validates against `spec.output`.
- * For error responses, validates against the merged error schema for that status code.
+ * For error responses, validates against the route's error map
+ * (`resolve_route_errors`) at that status: the one in `route_errors` — an
+ * `AppSurfaceSpec`'s, built with the app's middleware — or, without one, the
+ * route's own without middleware. On a `jsonrpc` route (the RPC endpoint's),
+ * a JSON-RPC error envelope is not checked: no REST error definition
+ * describes one. On any other route it is checked like any error body.
  *
+ * @param route_errors - each route's error map, keyed `METHOD path` (`AppSurfaceSpec.route_errors`)
  * @throws Error if no route spec matches `method` + `path`, if the response
  *   body fails to parse against the declared output / error schema, or if the
  *   response is non-JSON despite a declared schema for that status.
@@ -99,7 +106,8 @@ export const assert_response_matches_spec = async (
 	route_specs: Array<RouteSpec>,
 	method: string,
 	path: string,
-	response: Response
+	response: Response,
+	route_errors?: ReadonlyMap<string, RouteErrors> | null
 ): Promise<void> => {
 	const spec = find_route_spec(route_specs, method, path);
 	if (!spec) {
@@ -120,8 +128,7 @@ export const assert_response_matches_spec = async (
 			);
 		}
 		if (!response.ok) {
-			const merged = merge_error_schemas(spec);
-			if (merged?.[response.status]) {
+			if (get_route_errors(route_errors, spec).schemas[response.status]) {
 				throw new Error(
 					`${method} ${path} (${
 						response.status
@@ -141,19 +148,17 @@ export const assert_response_matches_spec = async (
 				)}`
 			);
 		}
-	} else {
-		const merged = merge_error_schemas(spec);
-		if (merged) {
-			const status_schema = merged[response.status];
-			if (status_schema) {
-				const result = parse_any(status_schema, body);
-				if (!result.ok) {
-					throw new Error(
-						`Error schema mismatch for ${method} ${path} (${response.status}): ${JSON.stringify(
-							result.issues
-						)}`
-					);
-				}
+	} else if (!(spec.jsonrpc && is_jsonrpc_error_response(body))) {
+		// a JSON-RPC error envelope, the RPC endpoint's refusal, is no REST error body
+		const status_schema = get_route_errors(route_errors, spec).schemas[response.status];
+		if (status_schema) {
+			const result = parse_any(status_schema, body);
+			if (!result.ok) {
+				throw new Error(
+					`Error schema mismatch for ${method} ${path} (${response.status}): ${JSON.stringify(
+						result.issues
+					)}`
+				);
 			}
 		}
 	}

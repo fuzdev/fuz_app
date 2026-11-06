@@ -2,7 +2,7 @@
  * App surface generation — JSON-serializable attack surface from route and middleware specs.
  *
  * Pure schema helpers (`is_null_schema`, `schema_to_surface`, `middleware_applies`, `middleware_spec_applies`,
- * `merge_error_schemas`) live in `http/schema_helpers.ts`.
+ * `resolve_route_errors`) live in `http/schema_helpers.ts`.
  *
  * @module
  */
@@ -14,7 +14,7 @@ import type { EventSpec } from '../realtime/sse.ts';
 import type { MiddlewareSpec } from './middleware_spec.ts';
 import type { RouteSpec } from './route_spec.ts';
 import type { RouteAuth } from './auth_shape.ts';
-import type { ErrorSchemas } from './error_schemas.ts';
+import { to_error_schemas } from './error_schemas.ts';
 import type { RateLimitKey } from '../rate_limiter.ts';
 import type { RpcAction } from '../actions/action_types.ts';
 import type { ActionKind } from '../actions/action_spec.ts';
@@ -22,10 +22,11 @@ import type { ResolvedWsEndpointSpec } from '../actions/ws_endpoint_spec.ts';
 import {
 	schema_to_surface,
 	middleware_spec_applies,
-	merge_error_schemas,
-	strip_undefined_error_schemas,
+	get_route_errors,
+	resolve_app_route_errors,
 	is_null_schema,
-	is_strict_object_schema
+	is_strict_object_schema,
+	type RouteErrors
 } from './schema_helpers.ts';
 import { find_schema_sensitivity, type Sensitivity } from '../sensitivity.ts';
 import type { ValidationSchema } from '../schema_issues.ts';
@@ -189,6 +190,12 @@ export interface AppSurfaceSpec {
 	surface: AppSurface;
 	route_specs: Array<RouteSpec>;
 	middleware_specs: Array<MiddlewareSpec>;
+	/**
+	 * Each route's error map (`resolve_route_errors` against `middleware_specs`),
+	 * keyed `METHOD path` — the one the surface writes, and the one the DEV
+	 * output check and the test helpers read.
+	 */
+	route_errors: ReadonlyMap<string, RouteErrors>;
 	rpc_endpoints: Array<RpcEndpointSpec>;
 	ws_endpoints: Array<ResolvedWsEndpointSpec>;
 }
@@ -216,29 +223,15 @@ export interface GenerateAppSurfaceOptions {
 	 * it — so the surface records the exact patterns the upgrade gate matches.
 	 */
 	ws_endpoints?: ReadonlyArray<ResolvedWsEndpointSpec>;
+	/**
+	 * Each route's error map, keyed `METHOD path`, when the caller has built
+	 * it (`resolve_app_route_errors` over the same routes and middleware);
+	 * resolved here otherwise.
+	 */
+	route_errors?: ReadonlyMap<string, RouteErrors>;
 }
 
 // --- Surface generation ---
-
-/**
- * Collect error schemas from all middleware that applies to a route path.
- * An entry left `undefined` is absent (`strip_undefined_error_schemas`),
- * so it leaves an earlier layer's schema for that status in place.
- *
- * @returns merged middleware error schemas, or `null` if none
- */
-export const collect_middleware_errors = (
-	middleware: Array<MiddlewareSpec>,
-	route_path: string
-): ErrorSchemas | null => {
-	const errors: ErrorSchemas = {};
-	for (const mw of middleware) {
-		if (mw.errors && middleware_spec_applies(mw, route_path)) {
-			Object.assign(errors, strip_undefined_error_schemas(mw.errors));
-		}
-	}
-	return Object.keys(errors).length > 0 ? errors : null;
-};
 
 /**
  * Convert a `@fuzdev/fuz_schema` env schema to surface entries, one per
@@ -319,6 +312,8 @@ const FUZ_SCHEMA_NOT_STRICT_INPUT_MESSAGE =
 export const generate_app_surface = (options: GenerateAppSurfaceOptions): AppSurface => {
 	const { route_specs, middleware_specs, env_schema, event_specs, rpc_endpoints, ws_endpoints } =
 		options;
+	const route_errors =
+		options.route_errors ?? resolve_app_route_errors(route_specs, middleware_specs);
 	const diagnostics: Array<AppSurfaceDiagnostic> = [];
 	const to_surface = create_to_surface(diagnostics);
 
@@ -342,8 +337,7 @@ export const generate_app_surface = (options: GenerateAppSurfaceOptions): AppSur
 			let mw_error_schemas: Record<string, unknown> | null = null;
 			if (m.errors) {
 				const schemas: Record<string, unknown> = {};
-				for (const [status, schema] of Object.entries(m.errors)) {
-					if (schema === undefined) continue;
+				for (const [status, schema] of Object.entries(to_error_schemas(m.errors))) {
 					const json_schema = to_surface(schema, 'output', `middleware ${m.name} errors.${status}`);
 					if (json_schema !== null) {
 						schemas[status] = json_schema;
@@ -369,21 +363,17 @@ export const generate_app_surface = (options: GenerateAppSurfaceOptions): AppSur
 
 			const route = `${r.method} ${r.path}`;
 
-			// Merge auto-derived + middleware + explicit error schemas
-			const mw_errors = collect_middleware_errors(middleware_specs, r.path);
-			const merged_errors = merge_error_schemas(r, mw_errors);
+			// the route's error map: derived, middleware, and explicit, unioned
 			let error_schemas: Record<string, unknown> | null = null;
-			if (merged_errors) {
-				const schemas: Record<string, unknown> = {};
-				for (const [status, schema] of Object.entries(merged_errors)) {
-					const json_schema = to_surface(schema, 'output', `${route} errors.${status}`);
-					if (json_schema !== null) {
-						schemas[status] = json_schema;
-					}
+			const schemas: Record<string, unknown> = {};
+			for (const [status, schema] of Object.entries(get_route_errors(route_errors, r).schemas)) {
+				const json_schema = to_surface(schema, 'output', `${route} errors.${status}`);
+				if (json_schema !== null) {
+					schemas[status] = json_schema;
 				}
-				if (Object.keys(schemas).length > 0) {
-					error_schemas = schemas;
-				}
+			}
+			if (Object.keys(schemas).length > 0) {
+				error_schemas = schemas;
 			}
 
 			return {
@@ -457,14 +447,18 @@ export const generate_app_surface = (options: GenerateAppSurfaceOptions): AppSur
 };
 
 /**
- * Create an `AppSurfaceSpec` — the surface bundled with its source specs.
+ * Create an `AppSurfaceSpec` — the surface bundled with its source specs and
+ * each route's error map, built once and read by both.
  */
 export const create_app_surface_spec = (options: GenerateAppSurfaceOptions): AppSurfaceSpec => {
-	const surface = generate_app_surface(options);
+	const route_errors =
+		options.route_errors ?? resolve_app_route_errors(options.route_specs, options.middleware_specs);
+	const surface = generate_app_surface({ ...options, route_errors });
 	return {
 		surface,
 		route_specs: options.route_specs,
 		middleware_specs: options.middleware_specs,
+		route_errors,
 		rpc_endpoints: options.rpc_endpoints ?? [],
 		ws_endpoints: options.ws_endpoints ? [...options.ws_endpoints] : []
 	};

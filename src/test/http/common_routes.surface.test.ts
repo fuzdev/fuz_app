@@ -9,6 +9,14 @@
  * `to_json_schema` writes metadata (Zod wrote `.readonly()` first): a move of
  * key order alone, applied before the comparison of serializations.
  *
+ * The error schemas are the capture's but for the moves of the error rules,
+ * `ERROR_MOVES`: the derived 400 is the codes each route's slots derive — a
+ * query's, the actor codes, a params' — and no body code on these `GET`s (it
+ * was one enum of the four input codes, or the fact route's own params
+ * literal); the derived 401 is `authentication_required` exactly (it was any
+ * string); and `/ready`'s 503 is its two definitions, loose objects (it was a
+ * strict object over an enum of the two codes).
+ *
  * @module
  */
 
@@ -29,6 +37,16 @@ import {
 } from '#lib/server/serve_fact_route.ts';
 import { generate_app_surface, type AppSurfaceDiagnostic } from '#lib/http/surface.ts';
 import type { RouteSpec } from '#lib/http/route_spec.ts';
+import {
+	REST_ACTOR_NOT_ON_ACCOUNT,
+	REST_ACTOR_REQUIRED,
+	REST_AUTHENTICATION_REQUIRED,
+	REST_DB_UNREACHABLE,
+	REST_INVALID_QUERY_PARAMS,
+	REST_INVALID_ROUTE_PARAMS,
+	REST_SCHEMA_DRIFT
+} from '#lib/http/error_schemas.ts';
+import { with_error_moves, type ErrorMove } from '../surface_test_helpers.ts';
 
 const FIXTURE_PATH = new URL('../fixtures/surface/common_routes.json', import.meta.url);
 
@@ -69,6 +87,48 @@ const MOVES: Record<string, (route: Record<string, any>) => Record<string, any>>
 	}
 };
 
+const ANY_INPUT_400 = [
+	'invalid_request_body',
+	'invalid_json_body',
+	'invalid_route_params',
+	'invalid_query_params',
+	'actor_required',
+	'actor_not_on_account'
+];
+const AUTH_401: ErrorMove = { from: ['*'], to: [REST_AUTHENTICATION_REQUIRED] };
+const ACTING_QUERY_400: ErrorMove = {
+	from: ANY_INPUT_400,
+	to: [REST_INVALID_QUERY_PARAMS, REST_ACTOR_REQUIRED, REST_ACTOR_NOT_ON_ACCOUNT]
+};
+
+// the declared moves of the error rules, by `METHOD path` and status
+const ERROR_MOVES: Record<string, Record<number, ErrorMove>> = {
+	'GET /ready': {
+		503: { from: ['schema_drift', 'db_unreachable'], to: [REST_SCHEMA_DRIFT, REST_DB_UNREACHABLE] }
+	},
+	'GET /api/server/status': { 401: AUTH_401 },
+	'GET /api/surface': { 400: ACTING_QUERY_400, 401: AUTH_401 },
+	'GET /audit/stream': { 400: ACTING_QUERY_400, 401: AUTH_401 },
+	'GET /api/facts/:hash': {
+		400: {
+			from: ['invalid_route_params'],
+			to: [
+				REST_INVALID_ROUTE_PARAMS,
+				REST_INVALID_QUERY_PARAMS,
+				REST_ACTOR_REQUIRED,
+				REST_ACTOR_NOT_ON_ACCOUNT
+			]
+		},
+		401: AUTH_401
+	}
+};
+
+/** A captured route with every declared move applied: its own, then the error rules'. */
+const moved = (r: Record<string, any>): Record<string, any> => {
+	const key = `${r.method} ${r.path}`;
+	return with_error_moves(MOVES[key]?.(r) ?? r, ERROR_MOVES[key]);
+};
+
 /** The capture with each `readOnly` key last in its node, where fuz_schema writes it. */
 const move_read_only = (value: unknown): unknown => {
 	if (Array.isArray(value)) return value.map(move_read_only);
@@ -97,22 +157,21 @@ describe('common routes surface', () => {
 		);
 	});
 
-	test('the routes are the Zod-era ones but for the declared move', () => {
-		const expected = head.routes.map((r) => MOVES[`${r.method} ${r.path}`]?.(r) ?? r);
-		assert.deepStrictEqual(surface.routes, expected);
+	test('the routes are the Zod-era ones but for the declared moves', () => {
+		assert.deepStrictEqual(surface.routes, head.routes.map(moved));
 	});
 
 	test('the routes serialize to the capture key for key', () => {
-		const expected = move_read_only(
-			head.routes.map((r) => MOVES[`${r.method} ${r.path}`]?.(r) ?? r)
-		);
+		const expected = move_read_only(head.routes.map(moved));
 		assert.strictEqual(JSON.stringify(surface.routes), JSON.stringify(expected));
 	});
 
-	test('every error schema is the capture', () => {
+	test("every error schema is the capture's but for the error rules' moves", () => {
 		assert.deepStrictEqual(
 			surface.routes.map((r) => r.error_schemas),
-			head.routes.map((r) => r.error_schemas)
+			head.routes.map(
+				(r) => with_error_moves(r, ERROR_MOVES[`${r.method} ${r.path}`]).error_schemas
+			)
 		);
 	});
 

@@ -7,8 +7,10 @@
  * to Zod copies of the schemas they were, kept here. Over each schema's valid
  * samples and every variant of them one edit away (a node replaced by a value
  * of the pool, a key dropped, a key added), the verdict and the output are
- * Zod's. The one declared difference: `/api/server/status`'s `uptime_ms` is a
- * non-negative integer, where Zod took any number. An input holding a `Date`,
+ * Zod's. Two declared differences: `/api/server/status`'s `uptime_ms` is a
+ * non-negative integer, where Zod took any number, and `/ready`'s 503 is its
+ * two definitions (`REST_SCHEMA_DRIFT`, `REST_DB_UNREACHABLE`), loose objects
+ * that keep an unknown key the strict Zod one refused. An input holding a `Date`,
  * which a loose object keeps where Zod copies it into a plain object, is held
  * to Zod's verdict alone: no JSON body holds one.
  *
@@ -47,7 +49,11 @@ import {
 	OriginConformanceMatchRow,
 	OriginConformanceParseRow
 } from '#lib/testing/cross_backend/origin_conformance.ts';
-import { ERROR_DB_UNREACHABLE, ERROR_SCHEMA_DRIFT } from '#lib/http/error_schemas.ts';
+import {
+	ERROR_DB_UNREACHABLE,
+	ERROR_SCHEMA_DRIFT,
+	to_error_schemas
+} from '#lib/http/error_schemas.ts';
 import { generate_app_surface } from '#lib/http/surface.ts';
 
 // --- the Zod copies, as the library wrote them ---
@@ -283,6 +289,14 @@ const surface_spec = create_surface_route_spec({
 
 const audit_shape = create_audit_log_route_shape();
 
+/** A `/ready` 503 body with a key beside its `error`, which the strict Zod one refused. */
+const is_ready_503_with_extra_key = (input: unknown): boolean =>
+	typeof input === 'object' &&
+	input !== null &&
+	!Array.isArray(input) &&
+	Object.keys(input).length > 1 &&
+	ZodReady503.safeParse({ error: (input as { error?: unknown }).error }).success;
+
 /** A route slot, typed `ValidationSchema`, as the fuz_schema schema it must be. */
 const fuz_slot = (schema: ValidationSchema | undefined): AnySchema => {
 	if (!is_schema(schema)) throw new Error('a route slot is no fuz_schema schema');
@@ -335,9 +349,10 @@ const ROWS: Array<Row> = [
 	},
 	{
 		name: '/ready 503',
-		fuz: fuz_slot(ready_spec.errors?.[503]),
+		fuz: to_error_schemas(ready_spec.errors ?? [])[503]!,
 		zod: ZodReady503,
 		samples: [{ error: ERROR_SCHEMA_DRIFT }, { error: ERROR_DB_UNREACHABLE }],
+		declared: (input, zod_ok) => zod_ok || is_ready_503_with_extra_key(input),
 		pool: [ERROR_SCHEMA_DRIFT, ERROR_DB_UNREACHABLE, 'schema_drift ']
 	},
 	{
@@ -451,7 +466,10 @@ describe('leaf schemas against their Zod copies', () => {
 					accepted++;
 					// a loose object given a `Date` keeps it, where Zod copies it into a
 					// plain object: no JSON body holds one, so the verdict alone
-					if (!holds_date(input)) {
+					// where Zod refused, a declared loose object answers the input itself
+					if (!zod_result.success) {
+						assert.strictEqual(fuz_result.value, input, label);
+					} else if (!holds_date(input)) {
 						assert.deepStrictEqual(fuz_result.value, zod_result.data, label);
 					}
 				} else {
@@ -479,7 +497,17 @@ describe('the null slots', () => {
 	});
 });
 
-describe('the declared difference', () => {
+describe('the declared differences', () => {
+	test("/ready's 503 keeps a key beside its code, which the strict Zod one refused", () => {
+		const schema = to_error_schemas(ready_spec.errors ?? [])[503]!;
+		for (const error of [ERROR_SCHEMA_DRIFT, ERROR_DB_UNREACHABLE]) {
+			const input = { error, detail: 'x' };
+			assert.ok(!ZodReady503.safeParse(input).success);
+			assert.ok(parse_any(schema, input).ok, error);
+		}
+		assert.ok(!parse_any(schema, { error: 'other', detail: 'x' }).ok);
+	});
+
 	test("/api/server/status's uptime_ms refuses a fraction and a negative Zod took", () => {
 		for (const uptime_ms of [1.5, -1, 0.1]) {
 			const input = { version: '1', uptime_ms };

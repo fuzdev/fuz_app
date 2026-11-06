@@ -3,70 +3,29 @@ import './assert_dev_env.ts';
 /**
  * Error reachability coverage tracking.
  *
- * Tracks which declared error statuses (and specific error codes) are
- * actually exercised in tests. `ErrorCoverageCollector` records status
- * codes (optionally with body `error` codes) observed during test runs,
- * then `assert_error_coverage` compares against declared error schemas
- * to find uncovered error paths — reporting per-code when the declared
- * schema is a literal or enum, per-status otherwise.
+ * Tracks which declared error codes are actually exercised in tests.
+ * `ErrorCoverageCollector` records status codes (optionally with body
+ * `error` codes) observed during test runs, then `assert_error_coverage`
+ * compares against each route's error map (`resolve_route_errors`) to find
+ * uncovered error paths — one per declared code at each status, read from
+ * the map's definitions.
  *
  * @module
  */
 
-import { z } from 'zod';
 import { assert } from 'vitest';
-import { is_schema } from '@fuzdev/fuz_schema/schema.ts';
-import { get_schema_entries } from '@fuzdev/fuz_schema/introspect.ts';
 
 import type { RouteSpec } from '../http/route_spec.ts';
-import { merge_error_schemas } from '../http/schema_helpers.ts';
+import { get_route_errors, type RouteErrors } from '../http/schema_helpers.ts';
 import { find_route_spec, assert_response_matches_spec } from './integration_helpers.ts';
-import type { ValidationSchema } from '../schema_issues.ts';
 
-/**
- * Extract declared error code values from an error response schema.
- *
- * Recognizes schemas shaped like `z.object({error: z.literal(...)})` or
- * `z.object({error: z.enum([...])})` (incl. `looseObject`/`strictObject`),
- * and the `@fuzdev/fuz_schema` forms `object({error: literal(...)})` or
- * `object({error: one_of([...])})` (any object kind, under any wrappers —
- * `get_schema_entries`; the `error` entry itself read as given, as the Zod
- * field is). Returns the set of declared code values, or `null` if the schema
- * doesn't expose a literal/enum `error` field (e.g., bare `ApiError` with
- * `z.string()`).
- *
- * Used by coverage reporting to split a single declared status into per-code
- * rows when the route's error schema names specific codes.
- */
-export const extract_declared_error_codes = (schema: ValidationSchema): Array<string> | null => {
-	if (is_schema(schema)) {
-		const error_field = get_schema_entries(schema)?.error;
-		if (!error_field) return null;
-		if (error_field.kind === 'literal') return [String(error_field.def)];
-		if (error_field.kind === 'one_of') {
-			return error_field.def.map(String);
-		}
-		return null;
-	}
-	if (!(schema instanceof z.ZodObject)) return null;
-	const error_field = schema.shape.error;
-	if (!error_field) return null;
-	if (error_field instanceof z.ZodLiteral) {
-		return [...(error_field.values as Set<unknown>)].map(String);
-	}
-	if (error_field instanceof z.ZodEnum) {
-		return (error_field.options as ReadonlyArray<unknown>).map(String);
-	}
-	return null;
-};
-
-/** Uncovered entry — either a status-level row (no `code`) or a specific-code row. */
+/** Uncovered entry — a declared code at a status of a route, never observed. */
 export interface UncoveredEntry {
 	method: string;
 	path: string;
 	status: number;
-	/** Declared code value missing, when the status's error schema names specific codes. */
-	code?: string;
+	/** The declared code missing. */
+	code: string;
 }
 
 /** Options controlling which routes/statuses are considered for coverage. */
@@ -82,7 +41,7 @@ interface CoverageEntry {
 	method: string;
 	path: string;
 	status: number;
-	code?: string;
+	code: string;
 	covered: boolean;
 }
 
@@ -91,8 +50,9 @@ interface CoverageEntry {
  *
  * Single source of truth for the route → status → code traversal used by
  * both `uncovered()` and `assert_error_coverage`. Yields one entry per
- * declared coverage path with a `covered` flag, applying the "any-code"
- * rule (status-only observation covers all declared codes).
+ * declared (status, code) of each route's error map, read from its
+ * definitions, with a `covered` flag, applying the "any-code" rule
+ * (status-only observation covers all declared codes).
  */
 const walk_coverage = (
 	collector: ErrorCoverageCollector,
@@ -105,24 +65,16 @@ const walk_coverage = (
 	for (const spec of route_specs) {
 		const route_key = `${spec.method} ${spec.path}`;
 		if (ignore_routes.has(route_key)) continue;
-		const merged = merge_error_schemas(spec);
-		if (!merged) continue;
-		for (const status_str of Object.keys(merged)) {
-			const status = Number(status_str);
+		// a code with two shapes at one status is one path
+		const seen: Set<string> = new Set();
+		for (const { status, code } of get_route_errors(collector.route_errors, spec).defs) {
 			if (ignore_statuses.has(status)) continue;
-			const error_schema = merged[status];
-			if (!error_schema) continue;
 			const status_key = `${spec.method} ${spec.path}:${status}`;
-			const status_observed = collector.observed.has(status_key);
-			const codes = extract_declared_error_codes(error_schema);
-			if (codes && codes.length > 0) {
-				for (const code of codes) {
-					const covered = status_observed || collector.observed.has(`${status_key}:${code}`);
-					entries.push({ method: spec.method, path: spec.path, status, code, covered });
-				}
-			} else {
-				entries.push({ method: spec.method, path: spec.path, status, covered: status_observed });
-			}
+			const code_key = `${status_key}:${code}`;
+			if (seen.has(code_key)) continue;
+			seen.add(code_key);
+			const covered = collector.observed.has(status_key) || collector.observed.has(code_key);
+			entries.push({ method: spec.method, path: spec.path, status, code, covered });
 		}
 	}
 	return entries;
@@ -142,9 +94,23 @@ const walk_coverage = (
  * requirements for the same status — i.e., if a caller records just the status,
  * all declared codes for that status are considered covered. Per-code tracking
  * is additive: callers who know the body's `error` value should pass it to get
- * precise per-code gap reporting on routes with literal/enum error schemas.
+ * precise per-code gap reporting.
  */
 export class ErrorCoverageCollector {
+	/**
+	 * Each route's error map, keyed `METHOD path` (`AppSurfaceSpec.route_errors`),
+	 * which the declared paths and the response checks read; without one, a
+	 * route's own map without middleware.
+	 */
+	readonly route_errors: ReadonlyMap<string, RouteErrors> | null;
+
+	/**
+	 * @param route_errors - each route's error map, keyed `METHOD path` (`AppSurfaceSpec.route_errors`)
+	 */
+	constructor(route_errors?: ReadonlyMap<string, RouteErrors> | null) {
+		this.route_errors = route_errors ?? null;
+	}
+
 	/**
 	 * Observed keys: `"METHOD /spec-path:STATUS"` or `"METHOD /spec-path:STATUS:CODE"`.
 	 *
@@ -161,9 +127,7 @@ export class ErrorCoverageCollector {
 	 * it is stored alongside the status for per-code coverage tracking.
 	 *
 	 * @param path - request path (may be concrete)
-	 * @param code - observed body `error` code (pass when the route's error
-	 *   schema declares specific codes: a fuz_schema `literal` or `one_of`, or a
-	 *   Zod `z.literal` or `z.enum`)
+	 * @param code - observed body `error` code, for per-code coverage
 	 * @mutates `this.observed` - adds the resolved `"METHOD /spec-path:STATUS"`
 	 *   key (and the `:CODE` variant when `code` is provided).
 	 */
@@ -207,7 +171,7 @@ export class ErrorCoverageCollector {
 		response: Response,
 		code?: string
 	): Promise<void> {
-		await assert_response_matches_spec(route_specs, method, path, response);
+		await assert_response_matches_spec(route_specs, method, path, response, this.route_errors);
 		let resolved_code = code;
 		if (resolved_code === undefined && !response.ok && !response.bodyUsed) {
 			try {
@@ -225,17 +189,15 @@ export class ErrorCoverageCollector {
 	/**
 	 * Find declared error paths that were never observed.
 	 *
-	 * Computes the declared set from `merge_error_schemas` for each route spec.
-	 * For statuses whose error schema names specific codes (a fuz_schema
-	 * `literal` or `one_of`, or a Zod `z.literal` or `z.enum`, on `error`),
-	 * reports per-code rows; otherwise reports one row per status.
-	 * A status-only observation (no code) satisfies all declared codes for that
-	 * status — the "any-code" rule.
+	 * Computes the declared set from each route's error map
+	 * (`resolve_route_errors`, `this.route_errors`): one row per declared code
+	 * at each status. A status-only observation (no code) satisfies all
+	 * declared codes for that status — the "any-code" rule.
 	 */
 	uncovered(route_specs: Array<RouteSpec>, options?: CoverageFilterOptions): Array<UncoveredEntry> {
 		return walk_coverage(this, route_specs, options)
 			.filter((entry) => !entry.covered)
-			.map(({ method, path, status, code }) => ({ method, path, status, ...(code && { code }) }));
+			.map(({ method, path, status, code }) => ({ method, path, status, code }));
 	}
 }
 
@@ -260,19 +222,15 @@ export interface ErrorCoverageOptions extends CoverageFilterOptions {
  */
 const format_uncovered = (
 	entry: Pick<CoverageEntry, 'method' | 'path' | 'status' | 'code'>
-): string =>
-	`${entry.method} ${entry.path} → ${entry.status}${entry.code ? ` (${entry.code})` : ''}`;
+): string => `${entry.method} ${entry.path} → ${entry.status} (${entry.code})`;
 
 /**
  * Assert error coverage meets a minimum threshold.
  *
- * Computes the ratio of exercised error paths to total declared error paths.
- * For routes whose status error schema names specific codes (a fuz_schema
- * `literal` or `one_of`, or a Zod `z.literal` or `z.enum`, on `error`), each
- * declared code counts as one coverage path; for schemas without declared
- * codes (`ApiError`, its `error` any string), the status counts as one
- * path. A status-only observation covers all declared codes for that status
- * (the "any-code" rule).
+ * Computes the ratio of exercised error paths to total declared error paths,
+ * each declared code at each status of a route's error map
+ * (`collector.route_errors`) one path. A status-only observation covers all
+ * declared codes for that status (the "any-code" rule).
  *
  * When `min_coverage` is 0 (default), logs coverage info without failing.
  * When > 0, fails if coverage is below the threshold.

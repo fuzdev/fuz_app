@@ -1,6 +1,6 @@
 /**
- * `describe_adversarial_404` fails a route whose fuz_schema 404 schema refuses
- * the stub's bare `{error}` body (here it requires a `resource` field): the
+ * `describe_adversarial_404` fails a route whose 404 definition refuses the
+ * stub's bare `{error}` body (here it requires a `resource` field): the
  * generated test is flagged `fails` before it runs, as `test.fails` would, so the run passes
  * only when the body check throws.
  *
@@ -8,13 +8,14 @@
  */
 
 import { assert, beforeAll, describe } from 'vitest';
-import { literal, loose_object, object, string } from '@fuzdev/fuz_schema/schema.ts';
+import { loose_object, object, string } from '@fuzdev/fuz_schema/schema.ts';
 
 import { describe_adversarial_404 } from '#lib/testing/adversarial_404.ts';
 import { create_app_surface_spec } from '#lib/http/surface.ts';
 import { Uuid } from '#lib/primitive_schemas_fuz.ts';
+import { rest_error } from '#lib/http/error_schemas.ts';
 
-describe('a fuz_schema 404 schema the stub body does not satisfy', () => {
+describe('a 404 definition the stub body does not satisfy', () => {
 	describe_adversarial_404({
 		build: () =>
 			create_app_surface_spec({
@@ -29,9 +30,7 @@ describe('a fuz_schema 404 schema the stub body does not satisfy', () => {
 						params: object({ id: Uuid }),
 						input: object({ name: string }),
 						output: loose_object({}),
-						errors: {
-							404: loose_object({ error: literal('fuz_strict_thing_not_found'), resource: string })
-						}
+						errors: [rest_error(404, 'fuz_strict_thing_not_found', { resource: string })]
 					}
 				]
 			}),

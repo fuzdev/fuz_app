@@ -9,17 +9,17 @@ guards live in `auth/` and consume these primitives. Routes and actions in
 other domains should do the same — extend, don't special-case.
 
 For the design rationale behind declarative routes, DEV-only output
-validation, the three-layer error-schema merge, and fire-and-forget
+validation, the route error map, and fire-and-forget
 effects, see ../../../docs/architecture.md.
 
 ## Module Map
 
 - `http/route_spec.ts` — `RouteSpec` + `apply_route_specs`, validation pipeline, transactions.
 - `http/auth_shape.ts` — canonical `RouteAuth` type + `AuthAxisState` + predicates + the registration-time checks: `assert_route_auth_invariants` (the cross-axis invariants 1, 3, 4) and `assert_route_auth_acting_biconditional` (invariant 2), both run by `apply_route_specs` and `compile_action_registry` on every spec.
-- `http/error_schemas.ts` — `ERROR_*` constants, the per-code REST error definitions (`rest_error`, `REST_*`), standard error shapes, `derive_error_schemas`, `to_error_schemas`.
-- `http/schema_helpers.ts` — shared Zod introspection (null/void/strict/surface/merge/middleware-applies) + `to_void_params` / `to_input_params` / `json_has_own_proto_key` / `safe_parse_dropping_unknown_keys`.
+- `http/error_schemas.ts` — `ERROR_*` constants, the per-code REST error definitions (`rest_error`, `REST_*`), standard error shapes, `derive_route_errors`, `to_error_schemas`.
+- `http/schema_helpers.ts` — shared schema introspection (null/void/strict/surface/middleware-applies), the route error map (`resolve_route_errors`), and `to_void_params` / `to_input_params` / `json_has_own_proto_key` / `safe_parse_dropping_unknown_keys`.
 - `http/middleware_spec.ts` — `MiddlewareSpec` interface.
-- `http/body_limit.ts` — `create_body_limit_middleware(max_size)`: the `413` body cap `create_app_server` mounts. Refuses on `Content-Length` without reading `c.req.raw.body` and answers `Connection: close` — `413` past the cap, `400` `ERROR_INVALID_CONTENT_LENGTH` when the value is not a plain run of ASCII digits (a length the cap cannot read, which Hono's `bodyLimit` would pass uncounted) — else falls through to Hono's `bodyLimit` (no `Content-Length`, or one beside `Transfer-Encoding`), which reads the body into memory up to the cap before the next middleware runs, so its `413` — no `Connection: close` — also precedes origin and auth. Mounted with `app.use`, not as a `MiddlewareSpec`, so neither status appears in a route's merged error schemas. After the header `413` Node and Bun close at once (the header is what makes them — Bun 1.4.3 is the tested floor, an older Bun kept the connection and served the next request) and Deno closes once the declared body has arrived (../../../docs/security.md §Body Size Limiting).
+- `http/body_limit.ts` — `create_body_limit_middleware(max_size)`: the `413` body cap `create_app_server` mounts, as `create_body_limit_middleware_spec(max_size)`, a `MiddlewareSpec` at `'*'` ahead of the other middleware, absent with `max_body_size: null`. Its hono-free shape, `body_limit_middleware_shape` (`http/body_limit_schema.ts`), declares its `413` `payload_too_large` and `400` `invalid_content_length`, so every route's error map carries both; `create_test_app_surface_spec` lists the same shape with a stub handler. Refuses on `Content-Length` without reading `c.req.raw.body` and answers `Connection: close` — `413` past the cap, `400` `ERROR_INVALID_CONTENT_LENGTH` when the value is not a plain run of ASCII digits (a length the cap cannot read, which Hono's `bodyLimit` would pass uncounted) — else falls through to Hono's `bodyLimit` (no `Content-Length`, or one beside `Transfer-Encoding`), which reads the body into memory up to the cap before the next middleware runs, so its `413` — no `Connection: close` — also precedes origin and auth. After the header `413` Node and Bun close at once (the header is what makes them — Bun 1.4.3 is the tested floor, an older Bun kept the connection and served the next request) and Deno closes once the declared body has arrived (../../../docs/security.md §Body Size Limiting).
 - `http/surface.ts` — `AppSurface`, `AppSurfaceSpec`, `generate_app_surface`, diagnostics.
 - `http/surface_query.ts` — pure filters/groupings over `AppSurface`.
 - `http/proxy.ts` — trusted-proxy middleware, CIDR parsing, rightmost-first XFF resolution. Pulls `hono/utils/ipaddr` for CIDR matching.
@@ -55,7 +55,8 @@ consumers.
 - `mints_credential?: boolean` — the route issues a session cookie while declaring no auth (login, signup, bootstrap); assembly refuses it outside `AUTH_MIDDLEWARE_PATH`, as it does any route whose `auth.account` is not `'none'` (`assert_credential_routes_in_auth_scope` in `auth/middleware.ts`)
 - `reads_credential?: boolean` — the handler reads the resolved account while the route declares no auth gate, answering an anonymous caller itself (account status, the cell-scoped fact read, `create_rpc_endpoint`'s pair, whose dispatcher gates per action); held inside `AUTH_MIDDLEWARE_PATH` by the same assertion. Such a handler reads the account through `get_public_account_id` (`auth/request_context.ts`), which answers a scope-narrowed token as anonymous — the RPC pair excepted, its dispatcher gating each method
 - `rate_limit?: RateLimitKey` — metadata only (`'ip' | 'account' | 'both'`); auto-derives 429
-- `errors?: ErrorSchemas` — handler-specific error schemas keyed by HTTP status
+- `errors?: ReadonlyArray<RestErrorDef>` — the handler's own error definitions (`rest_error`); joins the route error map beside the derived and middleware ones
+- `jsonrpc?: boolean` — the route answers JSON-RPC envelopes, not REST bodies; set by `create_rpc_endpoint`, read by the DEV error check and `assert_response_matches_spec`
 - `transaction?: boolean` — declarative transaction wrapping (see below)
 
 Every schema field takes a Zod or a `@fuzdev/fuz_schema` schema
@@ -150,8 +151,9 @@ are the contract with external callers.
 
 - Skips streaming responses (non-`application/json` Content-Type) so SSE doesn't hang on `.json()`
 - On 2xx JSON: validates body against `spec.output`
-- On non-2xx JSON: validates body against the merged error schema for that HTTP status — returned or built by the error catch from a thrown error
+- On non-2xx JSON: validates body against the route's error map at that HTTP status (`resolve_route_errors`) — returned or built by the error catch from a thrown error. `create_app_server` passes `apply_route_specs` the map it built for the surface, middleware included; without one, a route's own map is used
 - Always accepts a 500 `{error: 'internal_error'}`: the error catch answers it for any generic throw, so no route declares it
+- On a `jsonrpc` route (the pair `create_rpc_endpoint` builds), skips a JSON-RPC error envelope (`is_jsonrpc_error_response`): the endpoint answers its refusals as envelopes, which no REST error definition describes, and the dispatch core checks its own outputs; `assert_response_matches_spec` skips one the same way. On any other route an envelope-shaped body is checked
 - **Logs on mismatch, returns the response unchanged** — never throws, never mutates the body
 
 Production short-circuits to the unwrapped handler — no parse work on the
@@ -171,8 +173,13 @@ WS); see ../../../docs/architecture.md §DEV-only Output Validation.
 - `rest_error(status, code, fields?, headers?)` → `RestErrorDef<S, C, F>` — one code at one status, its body `loose_object({error: literal(code), ...fields})` as `.schema`; `headers` derives response headers from a body (`Retry-After`). Status and code must be literals. One `REST_*` definition per code a route or middleware answers (`REST_TABLE_NOT_FOUND`, `REST_RATE_LIMIT_EXCEEDED`, …); a code with a second body shape gets a second definition (`REST_AUTHENTICATION_REQUIRED_BOOTSTRAP`, `/account/status`'s 401 with `bootstrap_available`)
 - `to_error_schemas(defs)` — a status map from definitions: one schema at a status maps to it, more to a `union` in list order
 - `ApiError`, `InvalidInputError`, `PermissionError`, `CredentialTypeRequiredError`, `TokenScopeRequiredError`, `RateLimitError`, `PayloadTooLargeError`, `UnsupportedContentTypeError`, `ForeignKeyError`, and the authorization-phase shapes — standard shapes, `@fuzdev/fuz_schema` schemas; each single-code one is its definition's `.schema`. `InvalidInputError` is one object over the four input codes (`one_of`), so its surface entry is one `enum`
-- `ErrorSchemas = Partial<Record<number, ValidationSchema>>` — fuz_schema or Zod, on `RouteSpec.errors` and `MiddlewareSpec.errors`; `derive_error_schemas` returns the fuz_schema `DerivedErrorSchemas`
+- `ErrorSchemas = Record<number, AnySchema>` — a status map, what `to_error_schemas` groups definitions into: one schema at a status, or a `union` of them
+- `same_rest_error(a, b)` / `dedupe_rest_errors(defs)` — a definition is the same as another when it is the same object, or the same status, code, `headers`, and field schemas; a list keeps the first of each
 - `RateLimitKey` (`rate_limiter.ts`) — `'ip' | 'account' | 'both'`
+
+`RouteSpec.errors` and `MiddlewareSpec.errors` are lists of definitions
+(`ReadonlyArray<RestErrorDef>`), so a Zod error entry is impossible by type,
+and `apply_route_specs` refuses anything else at registration.
 
 All error bodies are loose objects — intentional because multiple
 producers (middleware + handler) can emit different extra fields at the
@@ -182,28 +189,44 @@ same status code, and a thrown error flattens its `data` into the body. The
 
 Pair every schema with its `Infer` type export.
 
-### Three-layer error-schema merge
+### The route error map
 
-`merge_error_schemas(spec, middleware_errors?)` (in `http/schema_helpers.ts`)
-merges three layers, later overrides earlier at the same status code; an
-entry left `undefined` is absent (`strip_undefined_error_schemas`), so it
-overrides nothing:
+A route's declared errors are **one map**, built by
+`resolve_route_errors(spec, middleware_specs?)` (in `http/schema_helpers.ts`):
+the union of three layers, in order, where nothing replaces anything — a
+definition at a status another layer declares is one more branch there, and a
+repeat (`same_rest_error`) counts once. Two shapes of one code at one status
+(`REST_AUTHENTICATION_REQUIRED` and `REST_AUTHENTICATION_REQUIRED_BOOTSTRAP`)
+are both kept, a union of their bodies. The result, `RouteErrors`, holds the
+definitions (`defs`) and the status map they group into (`schemas`):
 
-1. **Derived** — from `derive_error_schemas({auth, has_input?, has_params?, has_query?, rate_limit?, checks_content_type?})`:
-   - `has_input || has_params || has_query` → 400 `InvalidInputError`
-   - `auth.account === 'required'` or `auth.actor === 'required'` → 401 `ApiError`
-   - `auth.roles?.length` → 403 `PermissionError` (carries `required_roles`)
-   - `auth.credential_types?.length` → 403 `CredentialTypeRequiredError` (carries `required_credential_types`)
-   - `auth.required_scope` → 403 `TokenScopeRequiredError` (carries `required_scope`); a route with more than one 403 gate derives a `union` of their shapes, since any of them can answer
-   - `rate_limit` → 429 `RateLimitError`
-   - `checks_content_type` (every `POST`) → 415 `UnsupportedContentTypeError`
-   - `auth.actor !== 'none'` → widens 400 to a union with `ActorRequiredError` / `ActorNotOnAccountError` and adds 500 union of `NoActorsOnAccountError` / `AccountVanishedError`. Mirrors what the dispatcher's authorization phase actually emits on routes whose input declares `acting?: ActingActor` (per registry-time invariant 2), so the surface documents those bodies and the round-trip and attack-surface suites, which check real responses against the declared schemas, accept them. DEV-mode error-schema validation never sees them: it wraps only the handler, and the authorization phase answers before it runs.
-2. **Middleware** — from `MiddlewareSpec.errors` that apply to the route's path (via `middleware_applies`)
-3. **Explicit** — `RouteSpec.errors` — always wins
+1. **Derived** — `derive_route_errors({method, auth, has_input?, has_params?, has_query?, rate_limit?})`, narrowed to the slots the route has:
+   - a body — `input` not null, `method` not `GET` (the input middleware skips a `GET`) → 400 `invalid_request_body`, `invalid_json_body`
+   - `params` → 400 `invalid_route_params`; `query` → 400 `invalid_query_params`
+   - `auth.actor !== 'none'` → 400 `actor_required`, `actor_not_on_account`, 500 `no_actors_on_account`, `account_vanished` — what the dispatcher's authorization phase emits on routes whose input declares `acting?: ActingActor` (per registry-time invariant 2)
+   - `auth.account === 'required'` or `auth.actor === 'required'` → 401 `authentication_required` (`REST_AUTHENTICATION_REQUIRED`), the only body the pre-authorization gate answers
+   - `auth.required_scope` → 403 `token_scope_required`; `auth.credential_types?.length` → 403 `credential_type_required`; `auth.roles?.length` → 403 `insufficient_permissions` — in the order the gates fire, each carrying what the route demanded
+   - `rate_limit` → 429 `rate_limit_exceeded` (`retry_after`, a non-negative integer of seconds)
+   - every `POST` → 415 `unsupported_content_type`
+2. **Middleware** — the definitions of each `MiddlewareSpec` that runs on the route (`middleware_spec_applies`: its path, less its carve-outs), in list order — the body limit's 413 and 400, the origin check's 403 `forbidden_origin`, a consumer layer's own
+3. **Explicit** — `RouteSpec.errors`, the handler's own codes (a 404, a 409, a second 401)
 
-Routes typically only need `errors` for handler-specific codes (404, 409, 422).
+`resolve_app_route_errors(route_specs, middleware_specs)` builds every
+route's map keyed `METHOD path` (`route_errors_key`); `create_app_surface_spec`
+builds it once and carries it as `AppSurfaceSpec.route_errors`, and
+`create_app_server` hands the same map to `apply_route_specs`. Every reader
+reads it: the surface (status-keyed, a status's definitions an `anyOf`), the
+DEV output check, `assert_response_matches_spec`, error coverage
+(`ErrorCoverageCollector`, which reads codes from `defs`), `describe_adversarial_auth`,
+`describe_adversarial_404`, and `assert_error_schema_valid`.
+`get_route_errors(route_errors, spec)` reads a map, or without one resolves the
+route alone; given a map with no entry for the route, it throws naming the key.
 
-Actor-failure folding reads `spec.auth.actor !== 'none'` directly — per
+Routes typically only declare `errors` for handler-specific codes (404, 409,
+422): what the framework answers is derived, and what a middleware layer
+answers is the layer's.
+
+The derived actor codes read `spec.auth.actor !== 'none'` directly — per
 registry-time invariant 2 (`actor !== 'none' ⟺ input declares acting?: ActingActor`),
 the auth-shape axis is the single source of truth.
 
@@ -211,9 +234,10 @@ the auth-shape axis is the single source of truth.
 above is sound because the framework authors the errors at fixed
 middleware sites — 401 from `require_auth`, 400 from
 `create_input_validation`, 403 from `require_role` /
-`require_credential_types`, 429 from rate limiters. Auto-derivation
-documents the framework's own emissions; consumers tighten via
-`RouteSpec.errors` when their handler narrows the surface.
+`require_credential_types`, 429 from rate limiters — and narrows each to
+the slots that reach those sites. Auto-derivation documents the framework's
+own emissions; consumers add their handler's codes in `RouteSpec.errors`,
+beside them.
 
 The same auto-derivation pattern is **not** appropriate for
 consumer-authored inputs (or handler outputs). A consumer's spec declares
@@ -246,7 +270,7 @@ confirmation.
 (input validation) and `http/surface.ts` (surface generation).
 
 **Import `is_null_schema`, `is_void_schema`, `to_void_params`, `to_input_params`, `is_strict_object_schema`, `schema_to_surface`,
-`middleware_applies`, and `merge_error_schemas` from `http/schema_helpers.ts`,
+`middleware_applies`, and `resolve_route_errors` from `http/schema_helpers.ts`,
 not from `http/surface.ts`.** The helpers were moved; `http/surface.ts`
 only imports and re-uses them for generation logic.
 
@@ -261,9 +285,8 @@ Key helpers:
 - `is_strict_object_schema(schema)` — detects `z.strictObject()` by checking `schema.def.catchall instanceof z.ZodNever`, or a fuz_schema `object` (not `strip_object` / `loose_object`); a fuz_schema `pipe` is read through to its first schema when no stage is a `transform` (so a refined `object` reads strict), while any Zod `ZodPipe` — even `O.pipe(O)` with no transform — reads not strict
 - `schema_to_surface(schema, {io?, source?, on_unrepresentable?}?)` — throws first on a value of neither library (`assert_validation_schema`, naming `source`, so an assembled app's slot of neither library fails boot as registration would refuse it, not as an unwritable JSON Schema); Zod or fuz_schema → JSON Schema (`z.toJSONSchema` or fuz_schema's `to_json_schema`, by `is_schema`), on the side `io` names (`'output'` by default), with `$schema` and `default` keys stripped recursively (defaults may be non-deterministic; `$schema` is snapshot noise). `null` for a null or void schema. A part JSON Schema can't say (an output-side transform, a `z.custom()`, a fuz_schema `check`) is left out or written as `{}` (`unrepresentable: 'any'`) and reported to `on_unrepresentable`; a schema with nothing describable (`{}` from a schema other than `z.unknown()` / `z.any()`) or one an emitter refuses outright throws, prefixed with `source` — so a root-level transform output (`z.unknown().transform(f)` included), `z.custom()` or `z.date()` fails server assembly. It never answers `null` for a failure, which would read as "no input" and drop the schema from every suite that reads the surface
 - `middleware_applies(mw_path, route_path)` — Hono pattern matching: `'*'`, exact, `'/api/*'` prefix (handles `prefix.slice(0, -1)` so `/api/*` also matches the bare `/api`)
-- `middleware_spec_applies(spec, route_path)` — the layer runs on the route: its `path` applies and none of its `carve_outs` does; what surface generation merges middleware errors by
-- `merge_error_schemas(spec, middleware_errors?)` — the three-layer merge described above
-- `strip_undefined_error_schemas(errors)` — an error-schema map without its `undefined` entries, what the merge and `collect_middleware_errors` read each layer through
+- `middleware_spec_applies(spec, route_path)` — the layer runs on the route: its `path` applies and none of its `carve_outs` does; what the route error map takes middleware definitions by
+- `resolve_route_errors(spec, middleware_specs?)`, `resolve_app_route_errors`, `get_route_errors`, `route_errors_key` — the route error map described above
 
 ## Surface Generation
 
@@ -289,7 +312,7 @@ params and query on the input side (what the server accepts, so a
 event params on the output side — with an `info` diagnostic (category
 `schema`, `source` naming the route or method and side) for each schema
 part of which is left out or written as `{}`, throws naming the same source for one
-that can't be written, runs the three-layer merge per route, derives `is_mutation`
+that can't be written, writes each route's error map (`route_errors`) status by status, derives `is_mutation`
 and `transaction` from method/spec, and surfaces RPC methods with their
 `RouteAuth` directly (same shape on both `ActionSpec.auth` and
 `RouteSpec.auth`, no translation step).
@@ -313,7 +336,7 @@ The per-route auth predicates these filters compose over (`is_public_auth`,
 in `http/auth_shape.ts` next to the canonical `RouteAuth` type — import
 them from there, not from this module. Same predicates back the
 dispatcher's authorization phase, the route-spec auth-guard resolver,
-`derive_error_schemas`'s actor-failure folding, and the testing harnesses.
+`derive_route_errors`'s actor codes, and the testing harnesses.
 
 Consumer code (tests, attack-surface helpers, `SurfaceExplorer.svelte`)
 should reach for these rather than inlining `.filter` chains.
@@ -327,7 +350,7 @@ interface MiddlewareSpec {
 	name: string;
 	path: string; // Hono pattern — '*', exact, or '/api/*'
 	handler: MiddlewareHandler;
-	errors?: ErrorSchemas; // schemas this layer may emit, keyed by status
+	errors?: ReadonlyArray<RestErrorDef>; // definitions this layer may answer with
 }
 ```
 

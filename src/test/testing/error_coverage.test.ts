@@ -1,74 +1,92 @@
 /**
- * Tests for `extract_declared_error_codes` — the codes a declared error
- * schema names, read from a Zod or a `@fuzdev/fuz_schema` schema, which split
- * a status into per-code coverage rows.
+ * Tests for `ErrorCoverageCollector` and `assert_error_coverage`: the declared
+ * paths are each route error map's codes, one per (status, code), read from
+ * its definitions — middleware included when the collector holds the map.
  *
  * @module
  */
 
 import { describe, test, assert } from 'vitest';
 import { z } from 'zod';
-import {
-	check,
-	literal,
-	loose_object,
-	object,
-	one_of,
-	optional,
-	pipe,
-	string,
-	strip_object
-} from '@fuzdev/fuz_schema/schema.ts';
 
-import { extract_declared_error_codes } from '#lib/testing/error_coverage.ts';
+import { ErrorCoverageCollector, assert_error_coverage } from '#lib/testing/error_coverage.ts';
+import { REST_AUTHENTICATION_REQUIRED_BOOTSTRAP, rest_error } from '#lib/http/error_schemas.ts';
+import { create_app_surface_spec } from '#lib/http/surface.ts';
+import type { RouteSpec } from '#lib/http/route_spec.ts';
 
-describe('extract_declared_error_codes', () => {
-	test('reads a Zod literal and enum', () => {
-		assert.deepStrictEqual(
-			extract_declared_error_codes(z.looseObject({ error: z.literal('a_not_found') })),
-			['a_not_found']
-		);
-		assert.deepStrictEqual(
-			extract_declared_error_codes(z.strictObject({ error: z.enum(['a', 'b']) })),
-			['a', 'b']
-		);
-	});
+const route: RouteSpec = {
+	method: 'GET',
+	path: '/api/things/:id',
+	auth: { account: 'required', actor: 'none' },
+	description: 'Gets a thing.',
+	params: z.strictObject({ id: z.string() }),
+	input: z.null(),
+	output: z.null(),
+	// a second shape of the derived 401's code, and a 404 of its own
+	errors: [REST_AUTHENTICATION_REQUIRED_BOOTSTRAP, rest_error(404, 'thing_not_found')],
+	handler: (c) => c.json(null)
+};
+const spec = create_app_surface_spec({
+	route_specs: [route],
+	middleware_specs: [
+		{
+			name: 'gate',
+			path: '/api/*',
+			handler: async (_c, next) => next(),
+			errors: [rest_error(403, 'gate_refused')]
+		}
+	]
+});
 
-	test('reads a fuz_schema literal and one_of, on any object kind', () => {
-		assert.deepStrictEqual(
-			extract_declared_error_codes(loose_object({ error: literal('a_not_found') })),
-			['a_not_found']
-		);
-		assert.deepStrictEqual(extract_declared_error_codes(object({ error: one_of(['a', 'b']) })), [
-			'a',
-			'b'
+const rows = (collector: ErrorCoverageCollector, ignore_statuses?: Array<number>) =>
+	collector.uncovered([route], { ignore_statuses }).map(({ status, code }) => `${status} ${code}`);
+
+describe('ErrorCoverageCollector', () => {
+	test("one row per declared code of the route error map, a code's two shapes one row", () => {
+		assert.deepStrictEqual(rows(new ErrorCoverageCollector(spec.route_errors)), [
+			'400 invalid_route_params',
+			'401 authentication_required',
+			'403 gate_refused',
+			'404 thing_not_found'
 		]);
-		assert.deepStrictEqual(extract_declared_error_codes(strip_object({ error: literal('c') })), [
-			'c'
+	});
+
+	test("without the map, the route's own: no middleware row", () => {
+		assert.deepStrictEqual(rows(new ErrorCoverageCollector()), [
+			'400 invalid_route_params',
+			'401 authentication_required',
+			'404 thing_not_found'
 		]);
 	});
 
-	test('reads a fuz_schema object under a pipe', () => {
-		const schema = pipe(
-			object({ error: literal('a') }),
-			check(() => true)
-		);
-		assert.deepStrictEqual(extract_declared_error_codes(schema), ['a']);
+	test('an observed code covers its row; a status alone covers every code there', () => {
+		const collector = new ErrorCoverageCollector(spec.route_errors);
+		collector.record([route], 'GET', '/api/things/abc', 404, 'thing_not_found');
+		collector.record([route], 'GET', '/api/things/abc', 403);
+		assert.deepStrictEqual(rows(collector), [
+			'400 invalid_route_params',
+			'401 authentication_required'
+		]);
+		assert.deepStrictEqual(rows(collector, [400]), ['401 authentication_required']);
 	});
 
-	test('is null for a fuz_schema error field that names no code', () => {
-		assert.strictEqual(extract_declared_error_codes(loose_object({ error: string })), null);
-		// the field is read as given, as the Zod one is: an optional code is no declared code
-		assert.strictEqual(
-			extract_declared_error_codes(loose_object({ error: optional(literal('a')) })),
-			null
-		);
-		assert.strictEqual(extract_declared_error_codes(loose_object({ other: literal('a') })), null);
+	test('assert_and_record checks the body against the map and records its code', async () => {
+		const collector = new ErrorCoverageCollector(spec.route_errors);
+		const response = new Response(JSON.stringify({ error: 'gate_refused' }), {
+			status: 403,
+			headers: { 'content-type': 'application/json' }
+		});
+		await collector.assert_and_record([route], 'GET', '/api/things/abc', response);
+		assert.ok(collector.observed.has('GET /api/things/:id:403:gate_refused'));
 	});
+});
 
-	test('is null for a schema that is no object', () => {
-		assert.strictEqual(extract_declared_error_codes(literal('a')), null);
-		assert.strictEqual(extract_declared_error_codes(string), null);
-		assert.strictEqual(extract_declared_error_codes(z.literal('a')), null);
+describe('assert_error_coverage', () => {
+	test('the ratio is over the declared codes', () => {
+		const collector = new ErrorCoverageCollector(spec.route_errors);
+		collector.record([route], 'GET', '/api/things/abc', 400);
+		collector.record([route], 'GET', '/api/things/abc', 401);
+		assert_error_coverage(collector, [route], { min_coverage: 0.5 });
+		assert.throws(() => assert_error_coverage(collector, [route], { min_coverage: 0.75 }));
 	});
 });

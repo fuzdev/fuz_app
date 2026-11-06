@@ -68,6 +68,8 @@ import type { MiddlewareHandler } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 
 import { ERROR_INVALID_CONTENT_LENGTH, ERROR_PAYLOAD_TOO_LARGE } from './error_schemas.ts';
+import type { MiddlewareSpec } from './middleware_spec.ts';
+import { body_limit_middleware_shape } from './body_limit_schema.ts';
 
 /** A well-formed `Content-Length` value: one or more ASCII digits and nothing else. */
 const CONTENT_LENGTH_DIGITS = /^[0-9]+$/;
@@ -110,3 +112,18 @@ export const create_body_limit_middleware = (max_size: number): MiddlewareHandle
 		return streaming_limit(c, next);
 	};
 };
+
+/**
+ * Create the body size limit as a middleware spec — `body_limit_middleware_shape`
+ * at `'*'` with its handler — which `create_app_server` mounts ahead of the
+ * other middleware, so every route's error map carries the limit's `413` and
+ * `400`.
+ *
+ * @param max_size - the largest accepted body, in bytes; a safe integer, `0` or more
+ * @returns the spec, its handler `create_body_limit_middleware(max_size)`
+ * @throws Error when `max_size` is not a safe integer `0` or more
+ */
+export const create_body_limit_middleware_spec = (max_size: number): MiddlewareSpec => ({
+	...body_limit_middleware_shape,
+	handler: create_body_limit_middleware(max_size)
+});

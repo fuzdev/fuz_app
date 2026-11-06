@@ -16,12 +16,10 @@ import {
 	array,
 	integer,
 	literal,
-	loose_object,
 	min_value,
 	nullable,
 	number,
 	object,
-	one_of,
 	pipe,
 	type Infer
 } from '@fuzdev/fuz_schema/schema.ts';
@@ -31,8 +29,6 @@ import { UsernameCanonical, UsernameProvided } from '../primitive_schemas_fuz.ts
 import { Password, PasswordProvided } from './password.ts';
 import type { RouteSpec } from '../http/route_spec.ts';
 import {
-	ERROR_INVALID_JSON_BODY,
-	ERROR_INVALID_REQUEST_BODY,
 	REST_AUTHENTICATION_REQUIRED_BOOTSTRAP,
 	REST_INVALID_CREDENTIALS
 } from '../http/error_schemas.ts';
@@ -149,9 +145,7 @@ export const account_status_route_shape = {
 	description: 'Current account info (unauthenticated: 401 with bootstrap status)',
 	input: AccountStatusInput,
 	output: AccountStatusOutput,
-	errors: {
-		401: AccountStatusUnauthenticatedError
-	}
+	errors: [REST_AUTHENTICATION_REQUIRED_BOOTSTRAP]
 } satisfies Omit<RouteSpec, 'handler'>;
 
 /** Option inputs that shape the account route metadata (not its handlers). */
@@ -207,10 +201,7 @@ export const create_account_route_shapes = (
 		// so a reservation waiting for a slot, and the Argon2 verify, hold no
 		// database connection.
 		transaction: false,
-		errors: {
-			400: loose_object({ error: one_of([ERROR_INVALID_JSON_BODY, ERROR_INVALID_REQUEST_BODY]) }),
-			401: REST_INVALID_CREDENTIALS.schema
-		}
+		errors: [REST_INVALID_CREDENTIALS]
 	},
 	{
 		method: 'POST',
@@ -237,8 +228,7 @@ export const create_account_route_shapes = (
 		// and the revocations, so a reservation waiting for a slot, and the
 		// Argon2 verify and hash, hold no database connection.
 		transaction: false,
-		errors: {
-			400: loose_object({ error: one_of([ERROR_INVALID_JSON_BODY, ERROR_INVALID_REQUEST_BODY]) })
-		}
+		// a wrong current password answers `invalid_credentials`, as login does
+		errors: [REST_INVALID_CREDENTIALS]
 	}
 ];

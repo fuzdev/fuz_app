@@ -21,6 +21,7 @@ import {
 	object,
 	object_with_rest,
 	optional,
+	parse,
 	pipe,
 	record,
 	string,
@@ -45,9 +46,20 @@ import {
 	UNKNOWN_KEY_PASSES_MAX,
 	schema_to_surface,
 	middleware_applies,
-	merge_error_schemas,
-	strip_undefined_error_schemas
+	get_route_errors,
+	resolve_app_route_errors,
+	resolve_route_errors,
+	route_errors_key,
+	type RouteErrors,
+	type RouteErrorsSpec
 } from '#lib/http/schema_helpers.ts';
+import {
+	REST_AUTHENTICATION_REQUIRED,
+	REST_AUTHENTICATION_REQUIRED_BOOTSTRAP,
+	REST_INVALID_ROUTE_PARAMS,
+	rest_error,
+	type RestErrorDef
+} from '#lib/http/error_schemas.ts';
 
 describe('is_null_schema', () => {
 	test('returns true for z.null()', () => {
@@ -910,242 +922,240 @@ describe('middleware_applies', () => {
 	});
 });
 
-describe('merge_error_schemas', () => {
-	test('returns null for no-auth no-input route', () => {
-		const result = merge_error_schemas({
-			method: 'GET',
-			auth: { account: 'none', actor: 'none' },
-			input: z.null()
-		});
-		assert.strictEqual(result, null);
+/** A route's error map as `status code` rows, in order. */
+const rows = (errors: RouteErrors): Array<string> =>
+	errors.defs.map((def) => `${def.status} ${def.code}`);
+
+const NONE = { account: 'none', actor: 'none' } as const;
+
+describe('resolve_route_errors — narrowing to the slots a route has', () => {
+	test('a public GET with no slots answers nothing of its own', () => {
+		const errors = resolve_route_errors({ method: 'GET', path: '/x', auth: NONE, input: z.null() });
+		assert.deepStrictEqual(errors.defs, []);
+		assert.deepStrictEqual(errors.schemas, {});
 	});
 
-	test('derives 401 for authenticated route', () => {
-		const result = merge_error_schemas({
+	test('a GET with an input declares no body code', () => {
+		const errors = resolve_route_errors({
 			method: 'GET',
-			auth: { account: 'required', actor: 'none' },
-			input: z.null()
-		});
-		assert.ok(result);
-		assert.ok(result[401]);
-		assert.strictEqual(result[400], undefined);
-	});
-
-	test('derives 415 for every POST route', () => {
-		const result = merge_error_schemas({
-			method: 'POST',
-			auth: { account: 'none', actor: 'none' },
-			input: z.null()
-		});
-		assert.ok(result?.[415]);
-	});
-
-	test('derives 400 for route with input', () => {
-		const result = merge_error_schemas({
-			method: 'GET',
-			auth: { account: 'none', actor: 'none' },
+			path: '/x',
+			auth: NONE,
 			input: z.strictObject({ name: z.string() })
 		});
-		assert.ok(result);
-		assert.ok(result[400]);
+		assert.deepStrictEqual(rows(errors), []);
 	});
 
-	test('derives 400 for route with params', () => {
-		const result = merge_error_schemas({
+	test('a DELETE with a body declares the body codes and no 415', () => {
+		const errors = resolve_route_errors({
+			method: 'DELETE',
+			path: '/x',
+			auth: NONE,
+			input: object({ name: string })
+		});
+		assert.deepStrictEqual(rows(errors), ['400 invalid_request_body', '400 invalid_json_body']);
+	});
+
+	test('params alone declare only the route-params code', () => {
+		const errors = resolve_route_errors({
 			method: 'GET',
-			auth: { account: 'none', actor: 'none' },
+			path: '/x/:id',
+			auth: NONE,
+			input: literal(null),
+			params: object({ id: string })
+		});
+		assert.deepStrictEqual(rows(errors), ['400 invalid_route_params']);
+		assert.strictEqual(errors.schemas[400], REST_INVALID_ROUTE_PARAMS.schema);
+	});
+
+	test('a query alone declares only the query code', () => {
+		const errors = resolve_route_errors({
+			method: 'GET',
+			path: '/x',
+			auth: NONE,
 			input: z.null(),
-			params: z.strictObject({ id: z.string() })
+			query: z.strictObject({ q: z.string() })
 		});
-		assert.ok(result);
-		assert.ok(result[400]);
+		assert.deepStrictEqual(rows(errors), ['400 invalid_query_params']);
 	});
 
-	test('derives 401 + 403 for role route', () => {
-		const result = merge_error_schemas({
-			method: 'GET',
-			auth: { account: 'required', actor: 'required', roles: ['admin'] },
+	test('an RPC endpoint, a POST with a null input, declares only the 415', () => {
+		const errors = resolve_route_errors({
+			method: 'POST',
+			path: '/api/rpc',
+			auth: NONE,
 			input: z.null()
 		});
-		assert.ok(result);
-		assert.ok(result[401]);
-		assert.ok(result[403]);
+		assert.deepStrictEqual(rows(errors), ['415 unsupported_content_type']);
 	});
 
-	test('derives 401 + 403 for keeper route', () => {
-		const result = merge_error_schemas({
+	test('the auth axes and the rate limit', () => {
+		const errors = resolve_route_errors({
 			method: 'GET',
-			auth: {
-				account: 'required',
-				actor: 'required',
-				roles: ['keeper'],
-				credential_types: ['daemon_token']
-			},
-			input: z.null()
-		});
-		assert.ok(result);
-		assert.ok(result[401]);
-		assert.ok(result[403]);
-	});
-
-	test('derives 429 for ip rate-limited route', () => {
-		const result = merge_error_schemas({
-			method: 'GET',
-			auth: { account: 'none', actor: 'none' },
+			path: '/x',
+			auth: { account: 'required', actor: 'none', roles: ['admin'] },
 			input: z.null(),
 			rate_limit: 'ip'
 		});
-		assert.ok(result);
-		assert.ok(result[429]);
-	});
-
-	test('derives 429 for account rate-limited route', () => {
-		const result = merge_error_schemas({
-			method: 'GET',
-			auth: { account: 'none', actor: 'none' },
-			input: z.null(),
-			rate_limit: 'account'
-		});
-		assert.ok(result);
-		assert.ok(result[429]);
-	});
-
-	test('derives 429 for both rate-limited route', () => {
-		const result = merge_error_schemas({
-			method: 'GET',
-			auth: { account: 'none', actor: 'none' },
-			input: z.null(),
-			rate_limit: 'both'
-		});
-		assert.ok(result);
-		assert.ok(result[429]);
-	});
-
-	test('explicit errors override derived', () => {
-		const Custom404 = z.looseObject({ error: z.literal('not_found') });
-		const result = merge_error_schemas({
-			method: 'GET',
-			auth: { account: 'required', actor: 'none' },
-			input: z.null(),
-			errors: { 404: Custom404 }
-		});
-		assert.ok(result);
-		assert.strictEqual(result[404], Custom404);
-		assert.ok(result[401]); // derived still present
-	});
-
-	test('middleware errors merge with derived', () => {
-		const MwError = z.looseObject({ error: z.string() });
-		const result = merge_error_schemas(
-			{
-				method: 'GET',
-				auth: { account: 'none', actor: 'none' },
-				input: z.null()
-			},
-			{ 503: MwError }
-		);
-		assert.ok(result);
-		assert.strictEqual(result[503], MwError);
-	});
-
-	test('explicit overrides middleware for same status', () => {
-		const MwError = z.looseObject({ error: z.literal('mw') });
-		const RouteError = z.looseObject({ error: z.literal('route') });
-		const result = merge_error_schemas(
-			{
-				method: 'GET',
-				auth: { account: 'none', actor: 'none' },
-				input: z.null(),
-				errors: { 500: RouteError }
-			},
-			{ 500: MwError }
-		);
-		assert.ok(result);
-		assert.strictEqual(result[500], RouteError);
-	});
-	test('an explicit entry left undefined keeps the derived schema', () => {
-		const spec = {
-			method: 'POST',
-			auth: { account: 'none', actor: 'none' },
-			input: z.strictObject({ name: z.string() })
-		} as const;
-		const derived = merge_error_schemas(spec);
-		const result = merge_error_schemas({ ...spec, errors: { 400: undefined } });
-		assert.ok(derived?.[400]);
-		assert.ok(result);
-		assert.strictEqual(result[400], derived[400]);
-		assert.deepStrictEqual(Object.keys(result), ['400', '415']);
-	});
-
-	test('a middleware entry left undefined keeps the derived schema', () => {
-		const spec = {
-			method: 'POST',
-			auth: { account: 'none', actor: 'none' },
-			input: z.strictObject({ name: z.string() })
-		} as const;
-		const derived = merge_error_schemas(spec);
-		const result = merge_error_schemas(spec, { 400: undefined });
-		assert.ok(derived?.[400]);
-		assert.ok(result);
-		assert.strictEqual(result[400], derived[400]);
-	});
-
-	test('an explicit entry left undefined keeps the middleware schema', () => {
-		const MwError = z.looseObject({ error: z.literal('mw') });
-		const result = merge_error_schemas(
-			{
-				method: 'GET',
-				auth: { account: 'none', actor: 'none' },
-				input: z.null(),
-				errors: { 500: undefined }
-			},
-			{ 500: MwError }
-		);
-		assert.ok(result);
-		assert.strictEqual(result[500], MwError);
-	});
-
-	test('takes fuz_schema params, query, input and errors', () => {
-		const NotFound = loose_object({ error: literal('thing_not_found') });
-		const MwError = object({ error: literal('down') });
-		const result = merge_error_schemas(
-			{
-				method: 'POST',
-				auth: { account: 'none', actor: 'none' },
-				params: object({ id: string }),
-				query: object({ q: string }),
-				input: object({ name: string }),
-				errors: { 404: NotFound }
-			},
-			{ 503: MwError }
-		);
-		assert.ok(result);
-		assert.strictEqual(result[404], NotFound);
-		assert.strictEqual(result[503], MwError);
-		assert.ok(result[400]); // derived from the params, query and input
-		assert.ok(result[415]); // derived for a POST
-	});
-
-	test('a fuz_schema null input derives no 400', () => {
-		const result = merge_error_schemas({
-			method: 'GET',
-			auth: { account: 'none', actor: 'none' },
-			input: literal(null)
-		});
-		assert.strictEqual(result, null);
+		assert.deepStrictEqual(rows(errors), [
+			'401 authentication_required',
+			'403 insufficient_permissions',
+			'429 rate_limit_exceeded'
+		]);
 	});
 });
 
-describe('strip_undefined_error_schemas', () => {
-	test('drops the entries left undefined and keeps the rest', () => {
-		const NotFound = z.looseObject({ error: z.literal('not_found') });
-		const result = strip_undefined_error_schemas({ 400: undefined, 404: NotFound });
-		assert.deepStrictEqual(Object.keys(result), ['404']);
-		assert.strictEqual(result[404], NotFound);
+describe('resolve_route_errors — the union of derived, middleware, and explicit', () => {
+	const gate_403 = rest_error(403, 'gate_refused');
+	const other_403 = rest_error(403, 'other_refused');
+	const down = rest_error(503, 'down');
+	const spec: RouteErrorsSpec = {
+		method: 'POST',
+		path: '/api/things',
+		auth: { account: 'required', actor: 'none', roles: ['admin'] },
+		input: object({ name: string }),
+		errors: [rest_error(400, 'name_taken'), rest_error(403, 'thing_locked')]
+	};
+	const mw = (
+		name: string,
+		path: string,
+		errors: ReadonlyArray<RestErrorDef>,
+		carve_outs?: Array<{ path: string; reason: string }>
+	) => ({ name, path, errors, ...(carve_outs && { carve_outs }) });
+
+	test('every layer adds its definitions, in order, replacing none', () => {
+		const errors = resolve_route_errors(spec, [
+			mw('a', '*', [gate_403]),
+			mw('b', '/api/*', [other_403, down])
+		]);
+		assert.deepStrictEqual(rows(errors), [
+			'400 invalid_request_body',
+			'400 invalid_json_body',
+			'401 authentication_required',
+			'403 insufficient_permissions',
+			'415 unsupported_content_type',
+			'403 gate_refused',
+			'403 other_refused',
+			'503 down',
+			'400 name_taken',
+			'403 thing_locked'
+		]);
+		const admits = (status: number, error: string): boolean =>
+			parse(errors.schemas[status]!, { error, required_roles: ['admin'] }).ok;
+		// at one status, each layer's body: derived, both middleware, the route's own
+		for (const code of [
+			'insufficient_permissions',
+			'gate_refused',
+			'other_refused',
+			'thing_locked'
+		]) {
+			assert.ok(admits(403, code), code);
+		}
+		assert.ok(admits(400, 'invalid_request_body'));
+		assert.ok(admits(400, 'name_taken'));
+		assert.ok(!admits(400, 'invalid_query_params'));
 	});
 
-	test('returns a copy', () => {
-		const errors = { 404: z.looseObject({ error: z.string() }) };
-		assert.notStrictEqual(strip_undefined_error_schemas(errors), errors);
+	test('a middleware layer adds to another at the same status, replacing nothing', () => {
+		const errors = resolve_route_errors(
+			{ method: 'GET', path: '/api/x', auth: NONE, input: z.null() },
+			[mw('a', '*', [gate_403]), mw('b', '*', [other_403])]
+		);
+		assert.deepStrictEqual(rows(errors), ['403 gate_refused', '403 other_refused']);
+		assert.deepStrictEqual(errors.schemas[403]!.def, [gate_403.schema, other_403.schema]);
+	});
+
+	test('a definition declared by two layers counts once, at its first place', () => {
+		const errors = resolve_route_errors(
+			{
+				method: 'GET',
+				path: '/api/x',
+				auth: { account: 'required', actor: 'none' },
+				input: z.null(),
+				errors: [REST_AUTHENTICATION_REQUIRED, gate_403, rest_error(403, 'gate_refused')]
+			},
+			[mw('a', '*', [gate_403]), mw('b', '*', [gate_403])]
+		);
+		assert.deepStrictEqual(rows(errors), ['401 authentication_required', '403 gate_refused']);
+		assert.strictEqual(errors.schemas[401], REST_AUTHENTICATION_REQUIRED.schema);
+		assert.strictEqual(errors.schemas[403], gate_403.schema);
+	});
+
+	test('two shapes of one code at one status are both kept, a union of their bodies', () => {
+		const errors = resolve_route_errors({
+			method: 'GET',
+			path: '/api/account/status',
+			auth: { account: 'required', actor: 'none' },
+			input: z.null(),
+			errors: [REST_AUTHENTICATION_REQUIRED_BOOTSTRAP]
+		});
+		assert.deepStrictEqual(errors.defs, [
+			REST_AUTHENTICATION_REQUIRED,
+			REST_AUTHENTICATION_REQUIRED_BOOTSTRAP
+		]);
+		const schema = errors.schemas[401]!;
+		assert.deepStrictEqual(schema.def, [
+			REST_AUTHENTICATION_REQUIRED.schema,
+			REST_AUTHENTICATION_REQUIRED_BOOTSTRAP.schema
+		]);
+		assert.ok(parse(schema, { error: 'authentication_required' }).ok);
+		assert.ok(parse(schema, { error: 'authentication_required', bootstrap_available: true }).ok);
+	});
+
+	test('a middleware layer contributes only where it runs: its path, less its carve-outs', () => {
+		const layers = [
+			mw('api', '/api/*', [gate_403]),
+			mw('exact', '/api/one', [other_403]),
+			mw('carved', '*', [down], [{ path: '/api/files/*', reason: 'its own cap' }])
+		];
+		const at = (path: string): Array<string> =>
+			rows(resolve_route_errors({ method: 'GET', path, auth: NONE, input: z.null() }, layers));
+		assert.deepStrictEqual(at('/api/one'), ['403 gate_refused', '403 other_refused', '503 down']);
+		assert.deepStrictEqual(at('/api'), ['403 gate_refused', '503 down']);
+		assert.deepStrictEqual(at('/apiary'), ['503 down']);
+		assert.deepStrictEqual(at('/api/files/:name'), ['403 gate_refused']);
+		assert.deepStrictEqual(at('/health'), ['503 down']);
+	});
+
+	test('no middleware list is the route alone', () => {
+		assert.deepStrictEqual(
+			resolve_route_errors(spec, null).defs,
+			resolve_route_errors(spec, []).defs
+		);
+	});
+});
+
+describe('resolve_app_route_errors and get_route_errors', () => {
+	const route = (method: 'GET' | 'POST', path: string): RouteErrorsSpec => ({
+		method,
+		path,
+		auth: NONE,
+		input: z.null()
+	});
+	const layers = [{ path: '*', errors: [rest_error(403, 'gate_refused')] }];
+
+	test('each route keyed METHOD path, resolved against the one middleware list', () => {
+		const map = resolve_app_route_errors([route('GET', '/a'), route('POST', '/a')], layers);
+		assert.deepStrictEqual([...map.keys()], ['GET /a', 'POST /a']);
+		assert.deepStrictEqual(rows(map.get('POST /a')!), [
+			'415 unsupported_content_type',
+			'403 gate_refused'
+		]);
+		assert.strictEqual(route_errors_key(route('GET', '/a')), 'GET /a');
+	});
+
+	test('get_route_errors reads the map, or with no map resolves the route alone', () => {
+		const map = resolve_app_route_errors([route('GET', '/a')], layers);
+		assert.strictEqual(get_route_errors(map, route('GET', '/a')), map.get('GET /a'));
+		assert.deepStrictEqual(rows(get_route_errors(null, route('GET', '/a'))), []);
+		assert.deepStrictEqual(rows(get_route_errors(undefined, route('GET', '/a'))), []);
+	});
+
+	test('get_route_errors throws, naming the key, for a route the given map lacks', () => {
+		const map = resolve_app_route_errors([route('GET', '/a')], layers);
+		assert.throws(
+			() => get_route_errors(map, route('GET', '/b')),
+			/^get_route_errors: the route error map has no entry for 'GET \/b'$/
+		);
+		assert.throws(() => get_route_errors(new Map(), route('POST', '/a')), /'POST \/a'/);
 	});
 });

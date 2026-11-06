@@ -25,6 +25,7 @@ import type { Db } from '../db/db.ts';
 import { is_db_checkout_error } from '../db/db_checkout_error.ts';
 import {
 	type ErrorSchemas,
+	type RestErrorDef,
 	ERROR_INVALID_JSON_BODY,
 	ERROR_INVALID_REQUEST_BODY,
 	ERROR_INVALID_ROUTE_PARAMS,
@@ -42,7 +43,8 @@ import {
 	to_thrown_jsonrpc_error
 } from './jsonrpc_errors.ts';
 import type { JsonrpcErrorObject } from './jsonrpc.ts';
-import { is_null_schema, merge_error_schemas } from './schema_helpers.ts';
+import { is_jsonrpc_error_response } from './jsonrpc_helpers.ts';
+import { get_route_errors, is_null_schema, type RouteErrors } from './schema_helpers.ts';
 import { dispatch_with_post_commit_rollback } from './pending_effects.ts';
 import type { MiddlewareSpec } from './middleware_spec.ts';
 import {
@@ -205,6 +207,15 @@ export interface RouteSpec {
 	 */
 	raw_body?: boolean;
 	/**
+	 * The route answers JSON-RPC 2.0 envelopes, its refusals included, not REST
+	 * bodies — the pair `create_rpc_endpoint` builds. A JSON-RPC error envelope
+	 * it answers is left out of the DEV error check and
+	 * `assert_response_matches_spec`: no REST error definition describes one,
+	 * and the dispatch core checks its own outputs. On any other route an
+	 * envelope-shaped body is checked like any error body.
+	 */
+	jsonrpc?: boolean;
+	/**
 	 * Marks a route that issues a credential — a session cookie — while
 	 * declaring no auth itself: login, signup, bootstrap. A forged cross-site
 	 * request to one is login CSRF, so it must take the origin check, and
@@ -236,21 +247,23 @@ export interface RouteSpec {
 	/**
 	 * Rate limit key type — declares what this route's rate limiter is keyed on.
 	 *
-	 * When set, 429 (`RateLimitError`) is auto-derived in `derive_error_schemas`.
+	 * When set, 429 `rate_limit_exceeded` is derived (`derive_route_errors`).
 	 * The actual `RateLimiter` instance is still wired imperatively in the handler —
 	 * this field is metadata for surface introspection and policy invariants.
 	 */
 	rate_limit?: RateLimitKey;
 	/**
-	 * Handler-specific error response schemas keyed by HTTP status code.
+	 * The handler's error definitions (`rest_error`), one per code it answers
+	 * with (a 404 for not-found, a 409 for a conflict).
 	 *
-	 * Middleware errors (auth 401/403, validation 400, rate limit 429) are
-	 * auto-derived from `auth`, `input`, and `rate_limit`. Declare handler-specific
-	 * errors here (e.g., 404 for not-found, 409 for conflicts).
-	 *
-	 * Explicit entries override auto-derived ones for the same status code.
+	 * What the framework's own middleware answers (the input 400s, auth
+	 * 401/403, rate limit 429) is derived from `method`, `auth`, the input
+	 * slots, and `rate_limit` (`derive_route_errors`), and the middleware
+	 * layers declare their own. The route's error map
+	 * (`resolve_route_errors`) is the union of all three: a definition here at
+	 * a status another layer declares adds a branch there and replaces nothing.
 	 */
-	errors?: ErrorSchemas;
+	errors?: ReadonlyArray<RestErrorDef>;
 	/**
 	 * Whether to wrap the handler in a database transaction.
 	 *
@@ -475,7 +488,9 @@ const is_service_unavailable_body = (body: unknown): boolean =>
  * and non-2xx responses against declared error schemas. Wraps the error
  * catch layer, so the body built from a thrown error is validated too — except
  * a 500 `internal_error` and a failed checkout's 503 `service_unavailable`,
- * which the catch layer can answer on any route and so are always accepted.
+ * which the catch layer can answer on any route and so are always accepted,
+ * and, on a `jsonrpc` route (the RPC endpoint's), a JSON-RPC error envelope,
+ * which no REST error definition describes.
  * Each schema is Zod or `@fuzdev/fuz_schema`, parsed with `parse_any`; the
  * log carries the library's own issues.
  * Logs an error for mismatches and returns the response unchanged —
@@ -485,17 +500,18 @@ const is_service_unavailable_body = (body: unknown): boolean =>
 const wrap_output_validation = (
 	handler: Handler,
 	output_schema: ValidationSchema,
-	error_schemas: ErrorSchemas | null,
+	error_schemas: ErrorSchemas,
+	jsonrpc: boolean,
 	log: Logger
 ): Handler => {
 	if (!DEV) return handler;
-	if (is_null_schema(output_schema) && !error_schemas) return handler;
+	if (is_null_schema(output_schema) && Object.keys(error_schemas).length === 0) return handler;
 	return async (c, next) => {
 		const response = await handler(c, next);
 		// Only validate JSON responses — streaming responses (SSE) would hang on .json().
 		const content_type = response.headers.get('Content-Type');
 		if (!content_type?.includes('application/json')) return response;
-		const schema = response.ok ? output_schema : error_schemas?.[response.status];
+		const schema = response.ok ? output_schema : error_schemas[response.status];
 		if (!schema) return response;
 		let body: unknown;
 		try {
@@ -510,6 +526,9 @@ const wrap_output_validation = (
 		if (response.status === 500 && is_internal_error_body(body)) return response;
 		// the same for a failed pool checkout's 503, which any route can answer
 		if (response.status === 503 && is_service_unavailable_body(body)) return response;
+		// the JSON-RPC endpoint answers its refusals as envelopes, which no REST
+		// error definition describes; the dispatch core checks its own outputs
+		if (jsonrpc && !response.ok && is_jsonrpc_error_response(body)) return response;
 		const result = parse_any(schema, body);
 		if (!result.ok) {
 			const label = response.ok
@@ -669,18 +688,24 @@ const build_rest_error_body = (err: JsonrpcErrorObject): Record<string, unknown>
  * registries (`compile_action_registry`) share the same helper with
  * `input` only — `ActionSpec` has no `query` shape.
  *
- * Every schema slot (`params`, `query`, `input`, `output`, each `errors`
- * entry) must hold a Zod or a `@fuzdev/fuz_schema` schema
- * (`assert_validation_schema`): a value of neither library throws naming the
- * route and the slot. A `@fuzdev/fuz_schema` `params` or `query` must be an
- * object schema (`get_schema_entries`), as the path params and query string
- * are an object: one that isn't throws naming the route.
+ * Every schema slot (`params`, `query`, `input`, `output`) must hold a Zod
+ * or a `@fuzdev/fuz_schema` schema (`assert_validation_schema`), and every
+ * `errors` entry an error definition (`rest_error`): anything else throws
+ * naming the route and the slot. A `@fuzdev/fuz_schema` `params` or `query`
+ * must be an object schema (`get_schema_entries`), as the path params and
+ * query string are an object: one that isn't throws naming the route.
+ *
+ * In DEV each handler's responses are checked against the route's error map
+ * (`resolve_route_errors`): the one in `route_errors`, which
+ * `create_app_server` builds with its middleware, or for a route it has no
+ * entry for, the route's own without middleware.
  *
  * @param resolve_auth_guards - maps `RouteAuth` to middleware — use `fuz_auth_guard_resolver` from `auth/auth_guard_resolver.ts`
  * @param authorize - optional authorization phase; runs after the pre-authorization guards and before the post-authorization guards
  * @param db - used for transaction wrapping and `RouteContext`
+ * @param route_errors - each route's error map, keyed `METHOD path` (`resolve_app_route_errors`)
  * @mutates `app`
- * @throws Error if two specs share the same `method` + `path` (each combination must be unique), if a schema slot holds a value of neither library, if any spec violates a cross-axis auth invariant or the actor-acting biconditional, or if a fuz_schema `params` or `query` is not an object schema
+ * @throws Error if two specs share the same `method` + `path` (each combination must be unique), if a schema slot holds a value of neither library or an `errors` entry is not a definition, if any spec violates a cross-axis auth invariant or the actor-acting biconditional, or if a fuz_schema `params` or `query` is not an object schema
  */
 export const apply_route_specs = (
 	app: Hono,
@@ -688,7 +713,8 @@ export const apply_route_specs = (
 	resolve_auth_guards: AuthGuardResolver,
 	log: Logger,
 	db: Db,
-	authorize?: AuthorizationHandler
+	authorize?: AuthorizationHandler,
+	route_errors?: ReadonlyMap<string, RouteErrors> | null
 ): void => {
 	const registered = new Set<string>();
 	for (const spec of specs) {
@@ -716,7 +742,7 @@ export const apply_route_specs = (
 		const params_validation = create_params_validation(spec.params);
 		const query_validation = create_query_validation(spec.query);
 		const input_validation = create_input_validation(spec.input, spec.method);
-		const merged_errors = merge_error_schemas(spec, null);
+		const { schemas: error_schemas } = get_route_errors(route_errors, spec);
 		const authorization: Array<MiddlewareHandler> = authorize
 			? [
 					async (c, next): Promise<Response | void> => {
@@ -749,7 +775,13 @@ export const apply_route_specs = (
 		// Step 2: error catch layer — a thrown error becomes its REST body here
 		handler = wrap_error_catch(handler, log);
 		// Step 3: output validation, outside the catch so thrown-error bodies are checked too
-		handler = wrap_output_validation(handler, spec.output, merged_errors, log);
+		handler = wrap_output_validation(
+			handler,
+			spec.output,
+			error_schemas,
+			spec.jsonrpc ?? false,
+			log
+		);
 		app.on(
 			spec.method,
 			[spec.path],
@@ -765,17 +797,22 @@ export const apply_route_specs = (
 	}
 };
 
-// throws unless every schema slot holds a Zod or fuz_schema schema; `params`,
-// `query` and an `errors` entry may be absent
+// throws unless every schema slot holds a Zod or fuz_schema schema and every
+// `errors` entry is a definition; `params` and `query` may be absent
 const assert_schema_slots = (spec: RouteSpec, route_key: string): void => {
 	const label = `Route "${route_key}"`;
 	if (spec.params !== undefined) assert_validation_schema(spec.params, `${label}: params`);
 	if (spec.query !== undefined) assert_validation_schema(spec.query, `${label}: query`);
 	assert_validation_schema(spec.input, `${label}: input`);
 	assert_validation_schema(spec.output, `${label}: output`);
-	if (spec.errors) {
-		for (const [status, schema] of Object.entries(spec.errors)) {
-			if (schema !== undefined) assert_validation_schema(schema, `${label}: errors.${status}`);
+	if (spec.errors !== undefined) {
+		if (!Array.isArray(spec.errors)) {
+			throw new Error(`${label}: errors is not a list of error definitions (\`rest_error\`)`);
+		}
+		for (const [i, def] of spec.errors.entries()) {
+			if (!is_schema((def as Partial<RestErrorDef> | null)?.schema)) {
+				throw new Error(`${label}: errors[${i}] is not an error definition (\`rest_error\`)`);
+			}
 		}
 	}
 };

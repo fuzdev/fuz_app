@@ -124,7 +124,7 @@ that subtree.
 ### Dense subsystems (see nested CLAUDE.md)
 
 - **auth/** — crypto (keyring, session, password, api/daemon tokens, bootstrap), schemas + DDL, `query_*` over `QueryDeps`, middleware, routes, RPC action registries (admin, role-grant-offer, account, self-service-role, actor-lookup, actor-search) + `standard_rpc_actions` bundle, cleanup. → `src/lib/auth/CLAUDE.md`; the digest and credential formats shared with the Rust spine (algorithm, encoding, compare rule): the fuz-stack skill's `twin-impl.md` § Digests
-- **http/** — generic framework: `RouteSpec` + declarative transactions, three-layer error schema merge, JSON-RPC 2.0 envelopes + errors, origin/proxy middleware, `AppSurface` generation, post-commit `emit_after_commit`. → `src/lib/http/CLAUDE.md`
+- **http/** — generic framework: `RouteSpec` + declarative transactions, the route error map (derived ∪ middleware ∪ explicit error definitions), JSON-RPC 2.0 envelopes + errors, origin/proxy middleware, `AppSurface` generation, post-commit `emit_after_commit`. → `src/lib/http/CLAUDE.md`
 - **actions/** — SAES (Symmetric Action Event System): `ActionSpec` types, registry-compile invariants, shared `perform_action` core, RPC dispatcher, WS endpoint, notification → SSE event bridge, transports (HTTP, WS frontend), the backend `ConnectionRegistry` (two-phase admission, per-account connection cap, and per-connection outbound byte budget — a connection sent more than its client takes closes with `WS_CLOSE_OUTBOUND_OVERFLOW`), the `ConnectionCloser` capability + `queue_connection_close` (revocations close live connections after their commit) + `create_revocation_guard` (the audit listener), `ActionDispatcher` + server→client peer requests (`peer/ping`), reactive `FrontendWebsocketClient`, typed RPC client. → `src/lib/actions/CLAUDE.md`
 - **ui/** — Svelte 5 components, runes-based `*_state.svelte.ts` modules, `*_rpc_context` DI pattern, auth/admin/role-grant-offer forms, datatable, popovers, layout shell. → `src/lib/ui/CLAUDE.md`
 - **testing/** — test utilities exported to consumers; every module but `cross_backend/make_cross_backend_project.ts` first imports `assert_dev_env.ts` (`'./assert_dev_env.ts'`, or `'../assert_dev_env.ts'` from a subdirectory). → `src/lib/testing/CLAUDE.md`
@@ -246,8 +246,9 @@ row via the pool the bound emitter closes over (it lands even when the
 handler's transaction rolls back). Its listeners hear of a success row only
 after the commit; a revocation's connection closes are queued post-commit the
 same way (`queue_connection_close`). `generate_app_surface()` produces a
-JSON-serializable attack surface. Error schemas use three-layer merge
-(derived + middleware + explicit — see ./docs/architecture.md).
+JSON-serializable attack surface. Each route's declared errors are one map,
+the union of derived, middleware, and explicit error definitions, read by the
+surface, the DEV check, and the test helpers (see ./docs/architecture.md).
 
 Input validation runs in both DEV and production (always-on contract for
 callers). Output + error-schema validation runs **DEV-only** via `esm-env` —

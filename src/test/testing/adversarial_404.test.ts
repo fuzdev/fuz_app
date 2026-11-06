@@ -1,83 +1,28 @@
 /**
- * Tests for `extract_404_error_code` — the error code the adversarial 404
- * stub answers with, read from a Zod or a fuz_schema 404 schema — and
- * `describe_adversarial_404` over a route whose params, input and 404 are all
- * fuz_schema, its body validated with `parse_any`.
+ * `describe_adversarial_404` over a route whose params and input are
+ * fuz_schema and whose 404 is a definition: the stub answers the
+ * definition's code, its body validated with `parse_any` against the route's
+ * declared 404.
  *
  * @module
  */
 
-import { describe, test, assert } from 'vitest';
-import { z } from 'zod';
 import {
 	literal,
 	loose_object,
 	min_length,
 	object,
-	one_of,
 	pipe,
-	string,
-	transform
+	string
 } from '@fuzdev/fuz_schema/schema.ts';
 
-import { describe_adversarial_404, extract_404_error_code } from '#lib/testing/adversarial_404.ts';
+import { describe_adversarial_404 } from '#lib/testing/adversarial_404.ts';
+import { rest_error } from '#lib/http/error_schemas.ts';
 import { create_app_surface_spec } from '#lib/http/surface.ts';
 import { Uuid } from '#lib/primitive_schemas_fuz.ts';
 
-describe('extract_404_error_code', () => {
-	test('reads a Zod literal and the first of an enum', () => {
-		assert.strictEqual(
-			extract_404_error_code(z.looseObject({ error: z.literal('thing_not_found') })),
-			'thing_not_found'
-		);
-		assert.strictEqual(
-			extract_404_error_code(z.looseObject({ error: z.enum(['a_not_found', 'b_not_found']) })),
-			'a_not_found'
-		);
-	});
-
-	test('reads the code beside a field JSON Schema cannot say', () => {
-		// an output-side transform used to throw the whole read into `null`,
-		// dropping the route from the suite
-		const schema = z.looseObject({
-			error: z.literal('thing_not_found'),
-			name: z.string().transform((s) => s.length)
-		});
-		assert.strictEqual(extract_404_error_code(schema), 'thing_not_found');
-	});
-
-	test('reads a fuz_schema literal and the first of a one_of', () => {
-		assert.strictEqual(
-			extract_404_error_code(object({ error: literal('thing_not_found') })),
-			'thing_not_found'
-		);
-		assert.strictEqual(
-			extract_404_error_code(object({ error: one_of(['a_not_found', 'b_not_found']) })),
-			'a_not_found'
-		);
-		assert.strictEqual(
-			extract_404_error_code(
-				object({
-					error: literal('thing_not_found'),
-					size: pipe(
-						string,
-						transform((s: string) => s.length)
-					)
-				})
-			),
-			'thing_not_found'
-		);
-	});
-
-	test('is null when error is no literal or enum', () => {
-		assert.strictEqual(extract_404_error_code(z.looseObject({ error: z.string() })), null);
-		assert.strictEqual(extract_404_error_code(object({ error: string })), null);
-		assert.strictEqual(extract_404_error_code(z.string()), null);
-	});
-});
-
 // a fuz_schema route: its 404 test is generated and its stub's body parsed
-// against the fuz_schema 404 schema
+// against its 404 definition
 describe_adversarial_404({
 	build: () =>
 		create_app_surface_spec({
@@ -92,7 +37,7 @@ describe_adversarial_404({
 					params: object({ id: Uuid }),
 					input: object({ name: pipe(string, min_length(1)) }),
 					output: loose_object({ ok: literal(true) }),
-					errors: { 404: loose_object({ error: literal('fuz_thing_not_found') }) }
+					errors: [rest_error(404, 'fuz_thing_not_found')]
 				}
 			]
 		}),

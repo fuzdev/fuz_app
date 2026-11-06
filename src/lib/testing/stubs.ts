@@ -15,7 +15,8 @@ import type { AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { SessionOptions } from '../auth/session_cookie.ts';
 import type { MiddlewareCarveOut, MiddlewareSpec } from '../http/middleware_spec.ts';
-import { ApiError } from '../http/error_schemas.ts';
+import { REST_FORBIDDEN_ORIGIN } from '../http/error_schemas.ts';
+import { body_limit_middleware_shape } from '../http/body_limit_schema.ts';
 import type { AppDeps } from '../auth/deps.ts';
 import type { AuditEmitter } from '../auth/audit_emitter.ts';
 import { create_realtime_closer } from '../actions/connection_closer.ts';
@@ -245,7 +246,7 @@ export const create_stub_api_middleware = (options?: {
 			name: 'origin',
 			path: ORIGIN_MIDDLEWARE_PATH,
 			handler: create_stub_mw(),
-			errors: { 403: ApiError },
+			errors: [REST_FORBIDDEN_ORIGIN],
 			...(origin_carve_outs.length > 0 && { carve_outs: origin_carve_outs })
 		},
 		...(options?.include_daemon_token
@@ -254,7 +255,7 @@ export const create_stub_api_middleware = (options?: {
 						name: 'daemon_token',
 						path: AUTH_MIDDLEWARE_PATH,
 						handler: create_stub_mw(),
-						errors: {}
+						errors: []
 					}
 				]
 			: []),
@@ -264,7 +265,7 @@ export const create_stub_api_middleware = (options?: {
 			name: 'bearer_auth',
 			path: AUTH_MIDDLEWARE_PATH,
 			handler: create_stub_mw(),
-			errors: {}
+			errors: []
 		}
 	];
 	return specs;
@@ -382,6 +383,13 @@ export interface CreateTestAppSurfaceSpecOptions {
 	 * @default false
 	 */
 	daemon_token?: boolean;
+	/**
+	 * Symmetric with `AppServerOptions.max_body_size` — `null` leaves out the
+	 * body limit's spec, which `create_app_server` mounts ahead of the other
+	 * middleware unless the limit is disabled. Only whether it is `null` is
+	 * read: the spec's handler here is a stub.
+	 */
+	max_body_size?: number | null;
 }
 
 /**
@@ -424,7 +432,9 @@ const assert_self_resolved_ws_origins = (endpoint: WsEndpointSpec): WsEndpointSp
  * one: a stub `trusted_proxy` spec at `'*'`, then the stub auth stack (with
  * `daemon_token` when `options.daemon_token` is set). If
  * `create_app_server` changes how it wires routes, update this helper
- * to stay in sync (single source of truth for all consumers).
+ * to stay in sync (single source of truth for all consumers). The body
+ * limit's spec heads the list unless `max_body_size` is `null`, as it does on
+ * the live server.
  *
  * @param options - surface spec options
  * @returns the surface spec for the standard suites
@@ -528,6 +538,13 @@ export const create_test_app_surface_spec = (
 		// handed can't rewrite the originals the check matches against
 		middleware_specs = options.transform_middleware(stack_specs.map((spec) => ({ ...spec })));
 		assert_middleware_stack_mounted(stack_specs, middleware_specs);
+	}
+	// mirrors `create_app_server`'s body limit spec, ahead of the transformed stack
+	if (options.max_body_size !== null) {
+		middleware_specs = [
+			{ ...body_limit_middleware_shape, handler: create_stub_mw() },
+			...middleware_specs
+		];
 	}
 
 	const surface_spec = create_app_surface_spec({

@@ -6,8 +6,8 @@
  * error definitions (`rest_error`, one `REST_*` per code a route or middleware
  * answers, each with its HTTP status and body schema), the standard error
  * shapes as `@fuzdev/fuz_schema` schemas, a type for error schema maps, and
- * `derive_error_schemas` to auto-populate middleware-produced errors from a
- * route's auth requirement and input schema.
+ * `derive_route_errors`, the definitions the framework answers a route with
+ * from its method, auth requirement, and input slots.
  *
  * Used in `RouteSpec.errors` and `MiddlewareSpec.errors` for surface
  * introspection and DEV-mode validation.
@@ -17,11 +17,14 @@
 
 import {
 	array,
+	integer,
 	literal,
 	loose_object,
+	min_value,
 	number,
 	one_of,
 	optional,
+	pipe,
 	string,
 	boolean,
 	union,
@@ -35,8 +38,9 @@ import {
 import { meta } from '@fuzdev/fuz_schema/meta.ts';
 
 import { needs_actor, type RouteAuth } from './auth_shape.ts';
-import { WireIssue, type ValidationSchema } from '../schema_issues.ts';
+import { WireIssue } from '../schema_issues.ts';
 import type { RateLimitKey } from '../rate_limiter.ts';
+import type { RouteMethod } from './route_spec.ts';
 
 // --- Core: Validation (auto-derived by route spec middleware) ---
 
@@ -353,30 +357,56 @@ export const rest_error = <
 		: { status, code, fields: def_fields, schema };
 };
 
-/** What `to_error_schemas` groups: a definition, or a status and a schema of one. */
-export interface ErrorSchemaEntry {
-	readonly status: number;
-	readonly schema: AnySchema;
-}
+/**
+ * Whether two definitions are the same: one object, or the same status, code,
+ * and `headers`, with the same schema at every field.
+ *
+ * @param a - one definition
+ * @param b - the other
+ */
+export const same_rest_error = (a: RestErrorDef, b: RestErrorDef): boolean => {
+	if (a === b) return true;
+	if (a.status !== b.status || a.code !== b.code || a.headers !== b.headers) return false;
+	const a_keys = Object.keys(a.fields);
+	const b_fields: Record<string, unknown> = b.fields;
+	return (
+		a_keys.length === Object.keys(b.fields).length &&
+		a_keys.every((key) => Object.hasOwn(b_fields, key) && b_fields[key] === a.fields[key])
+	);
+};
+
+/**
+ * A list of definitions with each repeat after its first left out
+ * (`same_rest_error`), in list order.
+ *
+ * @param defs - the definitions
+ * @returns the distinct definitions
+ */
+export const dedupe_rest_errors = (defs: Iterable<RestErrorDef>): Array<RestErrorDef> => {
+	const distinct: Array<RestErrorDef> = [];
+	for (const def of defs) {
+		if (!distinct.some((seen) => same_rest_error(seen, def))) distinct.push(def);
+	}
+	return distinct;
+};
 
 /**
  * Build an error-schema map from a list of definitions, grouped by status.
- * A status with one schema maps to it, and one with more to a `union` of them
- * in list order; a schema listed twice counts once.
+ * A status with one definition maps to its schema, and one with more to a
+ * `union` of their schemas in list order — two shapes of one code included,
+ * each a branch; a definition listed twice counts once (`dedupe_rest_errors`).
  *
- * @param entries - the definitions, or entries of a status and a schema
+ * @param defs - the definitions
  * @returns the error schemas, keyed by status
  */
-export const to_error_schemas = (
-	entries: ReadonlyArray<ErrorSchemaEntry>
-): Record<number, AnySchema> => {
+export const to_error_schemas = (defs: Iterable<RestErrorDef>): ErrorSchemas => {
 	const by_status: Map<number, Array<AnySchema>> = new Map();
-	for (const { status, schema } of entries) {
+	for (const { status, schema } of dedupe_rest_errors(defs)) {
 		const schemas = by_status.get(status);
-		if (!schemas) by_status.set(status, [schema]);
-		else if (!schemas.includes(schema)) schemas.push(schema);
+		if (schemas) schemas.push(schema);
+		else by_status.set(status, [schema]);
 	}
-	const errors: Record<number, AnySchema> = {};
+	const errors: ErrorSchemas = {};
 	for (const [status, schemas] of by_status) {
 		errors[status] = schemas.length === 1 ? schemas[0]! : union(schemas);
 	}
@@ -457,7 +487,7 @@ export const REST_UNSUPPORTED_CONTENT_TYPE = rest_error(415, ERROR_UNSUPPORTED_C
 export const REST_RATE_LIMIT_EXCEEDED = rest_error(
 	429,
 	ERROR_RATE_LIMIT_EXCEEDED,
-	{ retry_after: number },
+	{ retry_after: pipe(number, integer, min_value(0)) },
 	(body) => ({ 'Retry-After': String(Math.ceil(body.retry_after)) })
 );
 
@@ -579,8 +609,8 @@ export type ForeignKeyError = Infer<typeof ForeignKeyError>;
  * race (account/actor row deleted between credential validation and
  * the dispatcher's follow-up read).
  *
- * Used by `derive_error_schemas` when `auth.actor !== 'none'` so the
- * merged error surface matches what the dispatcher actually emits.
+ * Derived by `derive_route_errors` when `auth.actor !== 'none'` so the
+ * route's error map matches what the dispatcher actually emits.
  */
 export const ActorRequiredError = REST_ACTOR_REQUIRED.schema;
 export type ActorRequiredError = Infer<typeof ActorRequiredError>;
@@ -595,73 +625,77 @@ export const AccountVanishedError = REST_ACCOUNT_VANISHED.schema;
 export type AccountVanishedError = Infer<typeof AccountVanishedError>;
 
 /**
- * Error schema map — maps HTTP status codes to `@fuzdev/fuz_schema` or Zod
- * schemas.
- *
- * Used on `RouteSpec.errors` and `MiddlewareSpec.errors`; `derive_error_schemas`
- * returns its fuz_schema form, `DerivedErrorSchemas`.
+ * Error schema map — an HTTP status to the schema of every body a route
+ * answers at it, built from definitions by `to_error_schemas`.
  */
-export type ErrorSchemas = Partial<Record<number, ValidationSchema>>;
+export type ErrorSchemas = Record<number, AnySchema>;
 
 /**
- * The error schemas `derive_error_schemas` builds, all of them
- * `@fuzdev/fuz_schema` schemas, with no entry left `undefined`.
+ * What `derive_route_errors` reads of a route: its method, auth requirement,
+ * which input slots it has, and its rate limit key.
  */
-export type DerivedErrorSchemas = Record<number, AnySchema>;
-
-/**
- * Derive error schemas from a route's auth requirement, input schema, and rate limit config.
- *
- * Returns the error schemas that middleware will auto-produce for this route.
- * Route handlers can declare additional error schemas via `RouteSpec.errors`;
- * explicit entries override auto-derived ones for the same status code.
- *
- * Derivation rules under the new flat-record auth shape:
- * - **Has input / params / query schema**: 400 (`InvalidInputError`).
- * - **`auth.account === 'required'`** or **`auth.actor === 'required'`**: 401
- *   (`ApiError`) — pre-authorization 401 fires when the credential isn't there.
- *   `'optional'` does not derive 401.
- * - **`auth.roles?.length`**: 403 (`PermissionError` carrying `required_roles`).
- * - **`auth.credential_types?.length`**: 403 (`CredentialTypeRequiredError`
- *   carrying `required_credential_types` — symmetric with `PermissionError`).
- *   Today the only credential gate is keeper; future gates reuse the literal.
- * - **`auth.required_scope`**: 403 (`TokenScopeRequiredError` carrying
- *   `required_scope`) — the refusal `require_token_scope` emits.
- *   A route declaring more than one of these three gates derives the union
- *   of their shapes, since any of them can be the one that answers.
- * - **`auth.actor !== 'none'`** (`'optional'` or `'required'`): extends 400
- *   with `ActorRequiredError` / `ActorNotOnAccountError` and adds 500 union
- *   of `NoActorsOnAccountError` / `AccountVanishedError`. The dispatcher's
- *   authorization phase emits these whenever it tries to resolve an actor.
- * - **rate_limit**: 429 (`RateLimitError` with `retry_after`).
- * - **checks_content_type**: 415 (`UnsupportedContentTypeError`) —
- *   every `POST` route (see `is_post_content_type_refused` in
- *   `http/simple_request.ts`).
- */
-export interface DeriveErrorSchemasOptions {
+export interface DeriveRouteErrorsOptions {
+	method: RouteMethod;
 	auth: RouteAuth;
+	/** Whether the route has a body schema, an `input` other than `null`. */
 	has_input?: boolean;
 	has_params?: boolean;
 	has_query?: boolean;
 	rate_limit?: RateLimitKey;
-	checks_content_type?: boolean;
 }
 
-export const derive_error_schemas = ({
+/**
+ * Derive the error definitions the framework answers a route with, from its
+ * method, auth requirement, input slots, and rate limit — each narrowed to
+ * what the route's own middleware can emit.
+ *
+ * Route handlers declare additional definitions via `RouteSpec.errors`; the
+ * route's error map (`resolve_route_errors`) is the union of these, the
+ * applying middleware's, and the route's own.
+ *
+ * Derivation rules:
+ * - **A body**, an `input` other than `null` on a method other than `GET`:
+ *   400 `invalid_request_body` and `invalid_json_body`. A `GET` reads no body.
+ * - **`params`**: 400 `invalid_route_params`. **`query`**: 400
+ *   `invalid_query_params`.
+ * - **`auth.account === 'required'`** or **`auth.actor === 'required'`**: 401
+ *   `authentication_required` — the pre-authorization gate's refusal when the
+ *   credential isn't there. `'optional'` does not derive 401.
+ * - **`auth.required_scope`**: 403 `token_scope_required` (carrying
+ *   `required_scope`). **`auth.credential_types?.length`**: 403
+ *   `credential_type_required` (carrying `required_credential_types`).
+ *   **`auth.roles?.length`**: 403 `insufficient_permissions` (carrying
+ *   `required_roles`). In the order the gates fire; a route with more than
+ *   one has each.
+ * - **`auth.actor !== 'none'`**: 400 `actor_required` and
+ *   `actor_not_on_account`, and 500 `no_actors_on_account` and
+ *   `account_vanished` — what the dispatcher's authorization phase emits
+ *   when it resolves an actor.
+ * - **`rate_limit`**: 429 `rate_limit_exceeded` (with `retry_after`).
+ * - **`POST`**: 415 `unsupported_content_type` (see
+ *   `is_post_content_type_refused` in `http/simple_request.ts`).
+ *
+ * @param options - what the derivation reads of the route
+ * @returns the definitions, in the order above
+ */
+export const derive_route_errors = ({
+	method,
 	auth,
 	has_input = false,
 	has_params = false,
 	has_query = false,
-	rate_limit,
-	checks_content_type = false
-}: DeriveErrorSchemasOptions): DerivedErrorSchemas => {
-	const entries: Array<ErrorSchemaEntry> = [];
+	rate_limit
+}: DeriveRouteErrorsOptions): Array<RestErrorDef> => {
+	const defs: Array<RestErrorDef> = [];
 
-	if (has_input || has_params || has_query) {
-		entries.push({ status: 400, schema: InvalidInputError });
+	// the input middleware runs on a body only off `GET` (`create_input_validation`)
+	if (has_input && method !== 'GET') {
+		defs.push(REST_INVALID_REQUEST_BODY, REST_INVALID_JSON_BODY);
 	}
+	if (has_params) defs.push(REST_INVALID_ROUTE_PARAMS);
+	if (has_query) defs.push(REST_INVALID_QUERY_PARAMS);
 	if (needs_actor(auth)) {
-		entries.push(
+		defs.push(
 			REST_ACTOR_REQUIRED,
 			REST_ACTOR_NOT_ON_ACCOUNT,
 			REST_NO_ACTORS_ON_ACCOUNT,
@@ -674,22 +708,19 @@ export const derive_error_schemas = ({
 	// `actor === 'required'` (no credential to resolve an actor against,
 	// per registry-time invariant 3 forbidding accountless actors in v1).
 	if (auth.account === 'required' || auth.actor === 'required') {
-		entries.push({ status: 401, schema: ApiError });
+		defs.push(REST_AUTHENTICATION_REQUIRED);
 	}
 
 	// 403 fires from any of three gates: the token-scope refusal
 	// (`auth.required_scope`, pre-authorization), the credential-type gate, and
-	// the role gate (both post-authorization). A route can declare any
-	// combination, so collect the shapes its gates can emit — in the order they
-	// fire — and union them when there's more than one, so DEV-mode
-	// error-schema validation accepts whichever the pipeline produced.
-	if (auth.required_scope !== undefined) entries.push(REST_TOKEN_SCOPE_REQUIRED);
-	if (auth.credential_types?.length) entries.push(REST_CREDENTIAL_TYPE_REQUIRED);
-	if (auth.roles?.length) entries.push(REST_INSUFFICIENT_PERMISSIONS);
+	// the role gate (both post-authorization), in the order they fire
+	if (auth.required_scope !== undefined) defs.push(REST_TOKEN_SCOPE_REQUIRED);
+	if (auth.credential_types?.length) defs.push(REST_CREDENTIAL_TYPE_REQUIRED);
+	if (auth.roles?.length) defs.push(REST_INSUFFICIENT_PERMISSIONS);
 
-	if (rate_limit) entries.push(REST_RATE_LIMIT_EXCEEDED);
+	if (rate_limit) defs.push(REST_RATE_LIMIT_EXCEEDED);
 
-	if (checks_content_type) entries.push(REST_UNSUPPORTED_CONTENT_TYPE);
+	if (method === 'POST') defs.push(REST_UNSUPPORTED_CONTENT_TYPE);
 
-	return to_error_schemas(entries);
+	return defs;
 };

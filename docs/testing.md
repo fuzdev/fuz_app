@@ -683,23 +683,21 @@ Each `ErrorSchemaAuditEntry` contains `method`, `route_path`, `status`,
 ### Policy Enforcement
 
 `describe_standard_attack_surface_tests` asserts against
-`default_error_schema_tightness` by default: `min_specificity: 'enum'`,
-`ignore_statuses: [401, 403, 429]`, and `allowlist` seeded with
-`fuz_app_stock_route_tightness_allowlist` (currently empty — all
-fuz_app-shipped stock routes have been tightened in place; the hook is
-retained for future stock-route debt).
+`default_error_schema_tightness` by default: `min_specificity: 'enum'`, with
+no status or route exempt. Every declared error is a definition, whose
+`error` is a literal, so the framework's own 401, 403 and 429 pass as they
+are.
 
-Consumer-supplied `allowlist` and `ignore_statuses` are **additive** — the
-suite merges them underneath the stock defaults, so the snippet below
-extends rather than replaces the list:
+Consumer-supplied `allowlist` and `ignore_statuses` are **additive** to the
+defaults' (`resolve_standard_error_schema_tightness`):
 
 ```typescript
 describe_standard_attack_surface_tests({
 	// ...other options...
 	error_schema_tightness: {
 		min_specificity: 'enum', // fail if any error schema is 'generic'
-		ignore_statuses: [400], // appended to [401, 403, 429]
-		allowlist: ['GET /health'] // appended to the stock list
+		ignore_statuses: [400],
+		allowlist: ['GET /health']
 	}
 });
 ```
@@ -813,8 +811,10 @@ to temporarily skip that assertion (leaves the gap visible).
 
 ## Error Coverage Tracking
 
-Track which declared error statuses (and specific error codes) are exercised
-during tests:
+Track which declared error codes are exercised during tests. The declared
+paths are each route's error map (`resolve_route_errors`): pass the collector
+the map — `surface_spec.route_errors`, which carries the middleware's
+definitions — or, without one, it reads each route's own map:
 
 ```typescript
 import {
@@ -822,11 +822,11 @@ import {
 	assert_error_coverage
 } from '@fuzdev/fuz_app/testing/error_coverage.ts';
 
-const collector = new ErrorCoverageCollector();
+const collector = new ErrorCoverageCollector(surface_spec.route_errors);
 
 // In tests, record error responses. `assert_and_record` validates the
 // response against its spec and auto-extracts `body.error` (via a cloned
-// response) for per-code tracking on routes with literal/enum schemas:
+// response) for per-code tracking:
 await collector.assert_and_record(route_specs, 'POST', '/api/account/login', response);
 
 // `record` is the lower-level primitive — pass the body's `error` code as
@@ -845,26 +845,16 @@ assert_error_coverage(collector, route_specs, {
 });
 ```
 
-### Per-code vs per-status paths
+### Per-code paths
 
-Coverage is computed against the schema shape of each declared error:
+Every declared error is a definition, so coverage counts each declared code at
+each status as one path, read from the route error map's definitions — a code
+with two shapes at one status (the account status route's 401) is one path.
+An observation without a code satisfies all codes for that status (the
+"any-code" rule); passing `body.error` to `record` narrows coverage to the
+specific code.
 
-- **Literal or enum error code** (e.g.,
-  `loose_object({error: literal('account_not_found')})` or
-  `loose_object({error: one_of(['insufficient_permissions', 'role_not_web_grantable'])})`,
-  or the Zod `z.literal` / `z.enum` forms):
-  each code is counted as one coverage path. An observation without a code
-  satisfies all codes for that status (the "any-code" rule); passing `body.error`
-  to `record` narrows coverage to the specific code.
-- **Generic error shape** (`ApiError`, its `error` any string): the status is
-  counted as one path; observations (with or without code) cover it.
-
-`uncovered(route_specs)` returns entries shaped
-`{method, path, status, code?}` — status-only rows for generic schemas,
-per-code rows for literal/enum schemas.
-
-`extract_declared_error_codes(schema)` is exported as a helper for consumers
-who want to introspect the declared codes directly.
+`uncovered(route_specs)` returns entries shaped `{method, path, status, code}`.
 
 ### Standard Suite Error Coverage
 
@@ -1002,7 +992,7 @@ impls actually boot.
 - `assert_surface_invariants` (`testing/surface_invariants.ts`) — Assert all structural invariants on `AppSurface`
 - `assert_error_schema_tightness` (`testing/surface_invariants.ts`) — Enforce minimum error schema specificity
 - `audit_error_schema_tightness` (`testing/surface_invariants.ts`) — Classify error schema specificity across routes
-- `assert_response_matches_spec` (`testing/integration_helpers.ts`) — Validate response body against route spec schemas
+- `assert_response_matches_spec` (`testing/integration_helpers.ts`) — Validate response body against the route's output, or its error map at the status (`route_errors` when given)
 - `assert_rate_limit_retry_after_header` (`testing/integration_helpers.ts`) — Assert 429 `Retry-After` header matches body
 - `find_route_spec` (`testing/integration_helpers.ts`) — Look up route spec by method + path
 - `assert_no_sensitive_fields_in_json` (`testing/integration_helpers.ts`) — Assert no blocklisted fields in parsed JSON
@@ -1012,10 +1002,8 @@ impls actually boot.
 - `assert_output_schemas_no_sensitive_fields` (`testing/data_exposure.ts`) — Walk route, RPC and WS output schemas (both sides of a transform) for sensitive property names
 - `assert_non_admin_schemas_no_admin_fields` (`testing/data_exposure.ts`) — Walk the outputs a non-admin reaches for admin-only fields
 - `collect_json_schema_property_names` (`testing/data_exposure.ts`) — Recursively collect property names from JSON Schema
-- `ErrorCoverageCollector` (`testing/error_coverage.ts`) — Track which declared error statuses/codes are exercised
+- `ErrorCoverageCollector` (`testing/error_coverage.ts`) — Track which declared error codes are exercised, against the route error maps it is given
 - `assert_error_coverage` (`testing/error_coverage.ts`) — Assert minimum error coverage threshold
-- `extract_declared_error_codes` (`testing/error_coverage.ts`) — Extract literal/enum codes from an error response schema
-- `extract_404_error_code` (`testing/adversarial_404.ts`) — The code a 404 schema's `error` declares (literal, or first of an enum), Zod or fuz_schema
 - `resolve_valid_path` (`testing/schema_generators.ts`) — Resolve route path with valid param values
 - `generate_valid_body` (`testing/schema_generators.ts`) — Generate valid request body from a Zod or fuz_schema input
 - `to_field_json_schema` (`testing/schema_generators.ts`) — A Zod or fuz_schema field's input-side JSON Schema (through transforms, pipes and a nullable's `anyOf`)

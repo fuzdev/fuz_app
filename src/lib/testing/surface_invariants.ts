@@ -34,6 +34,11 @@ import {
 	format_route_key
 } from '../http/surface_query.ts';
 import { PROTOCOL_ACTION_METHODS } from '../actions/action_codegen.ts';
+import {
+	ERROR_INVALID_QUERY_PARAMS,
+	ERROR_INVALID_REQUEST_BODY,
+	ERROR_INVALID_ROUTE_PARAMS
+} from '../http/error_schemas.ts';
 
 // --- Structural invariants ---
 
@@ -71,42 +76,56 @@ export const assert_role_routes_declare_403 = (surface: AppSurface): void => {
 };
 
 /**
- * Every route with non-null `input_schema` has 400 in `error_schemas`.
+ * Assert each route declares a 400 naming `code` among its branches — the
+ * code its input middleware answers when it refuses the slot.
+ */
+const assert_routes_declare_400_code = (
+	routes: ReadonlyArray<AppSurface['routes'][number]>,
+	code: string,
+	slot: string
+): void => {
+	for (const route of routes) {
+		const declared = route.error_schemas?.['400'];
+		assert.ok(declared, `${format_route_key(route)} has ${slot} but missing 400 error schema`);
+		assert.ok(
+			extract_error_consts(declared).includes(code),
+			`${format_route_key(route)} has ${slot} but its 400 error schema does not name ${code}`
+		);
+	}
+};
+
+/**
+ * Every route with a body — a non-null `input_schema` on a method other than
+ * `GET`, which reads no body — declares a 400 naming `invalid_request_body`.
  */
 export const assert_input_routes_declare_400 = (surface: AppSurface): void => {
-	const routes = filter_routes_with_input(surface);
-	for (const route of routes) {
-		assert.ok(
-			route.error_schemas && '400' in route.error_schemas,
-			`${format_route_key(route)} has input but missing 400 error schema`
-		);
-	}
+	assert_routes_declare_400_code(
+		filter_routes_with_input(surface).filter((route) => route.method !== 'GET'),
+		ERROR_INVALID_REQUEST_BODY,
+		'input'
+	);
 };
 
 /**
- * Every route with non-null `params_schema` has 400 in `error_schemas`.
+ * Every route with non-null `params_schema` declares a 400 naming `invalid_route_params`.
  */
 export const assert_params_routes_declare_400 = (surface: AppSurface): void => {
-	const routes = filter_routes_with_params(surface);
-	for (const route of routes) {
-		assert.ok(
-			route.error_schemas && '400' in route.error_schemas,
-			`${format_route_key(route)} has params but missing 400 error schema`
-		);
-	}
+	assert_routes_declare_400_code(
+		filter_routes_with_params(surface),
+		ERROR_INVALID_ROUTE_PARAMS,
+		'params'
+	);
 };
 
 /**
- * Every route with non-null `query_schema` has 400 in `error_schemas`.
+ * Every route with non-null `query_schema` declares a 400 naming `invalid_query_params`.
  */
 export const assert_query_routes_declare_400 = (surface: AppSurface): void => {
-	const routes = filter_routes_with_query(surface);
-	for (const route of routes) {
-		assert.ok(
-			route.error_schemas && '400' in route.error_schemas,
-			`${format_route_key(route)} has query schema but missing 400 error schema`
-		);
-	}
+	assert_routes_declare_400_code(
+		filter_routes_with_query(surface),
+		ERROR_INVALID_QUERY_PARAMS,
+		'query schema'
+	);
 };
 
 /**
@@ -363,10 +382,10 @@ export interface ErrorSchemaAuditEntry {
  * - `'generic'` — `z.string()` or unrecognized
  *
  * Walks union branches (`anyOf` from `z.union`, `oneOf` from
- * `z.discriminatedUnion`) — `derive_error_schemas` emits `anyOf` when it
- * merges multiple shapes at one status (e.g. validation 400 +
- * actor-resolution 400), and a consumer that explicitly declares a
- * discriminated-union error schema emits `oneOf`. Reports the **minimum**
+ * `z.discriminatedUnion`) — the surface writes a route's status as an
+ * `anyOf` when its error map holds more than one definition there (e.g. a
+ * validation 400 beside the actor-resolution 400s), and a `oneOf` from a
+ * JSON Schema written another way is read the same. Reports the **minimum**
  * specificity across branches — a union's contract is only as tight as
  * its loosest member.
  */
@@ -746,43 +765,15 @@ export interface ErrorSchemaTightnessOptions {
 }
 
 /**
- * Routes shipped by fuz_app whose error schemas require a tightness exemption.
- *
- * Currently empty — every fuz_app-shipped route (account login/password/
- * bootstrap/signup, db health/tables/:name/tables/:name/rows/:id) was tightened
- * in place to `z.enum([...])` / `z.literal(...)` against every emit-site error
- * code.
- *
- * Kept as a forward-compatibility hook: when new stock routes ship with
- * heterogeneous error surfaces that need an interim generic schema, add
- * them here instead of forcing every consumer to hand-maintain the entry.
- *
- * Paths assume the standard `/api/account` + `/api/db` prefixes used by every
- * fuz_app consumer. Merged into `default_error_schema_tightness.allowlist` so
- * consumers calling `assert_error_schema_tightness` directly inherit the
- * exemptions; the standard attack-surface suite also prepends these entries
- * underneath any consumer-supplied allowlist so project-specific entries are
- * additive.
- */
-export const fuz_app_stock_route_tightness_allowlist: ReadonlyArray<string> = [];
-
-/**
  * Baseline error schema tightness applied by
- * `describe_standard_attack_surface_tests` when no config is passed.
- *
- * Uses `min_specificity: 'enum'` (the assertion default) with `ignore_statuses`
- * for middleware-derived status codes that are commonly generic (auth middleware
- * produces multiple error codes at 401/403, and 429 comes from rate limiters),
- * and `allowlist` seeded with `fuz_app_stock_route_tightness_allowlist` so
- * fuz_app-shipped routes with heterogeneous generic schemas don't force every
- * consumer to hand-maintain an identical allowlist. Consumers can pass a
- * narrower config with project-specific `allowlist` entries, or pass `null`
- * to skip the assertion entirely.
+ * `describe_standard_attack_surface_tests` when no config is passed:
+ * `min_specificity: 'enum'` (the assertion default), with no status or route
+ * exempt. Every error a route declares is a definition (`rest_error`), whose
+ * `error` is a literal, so the framework's own 401/403/429 need no exemption.
+ * Consumers can pass a config with project-specific `allowlist` or
+ * `ignore_statuses` entries, or pass `null` to skip the assertion entirely.
  */
-export const default_error_schema_tightness: ErrorSchemaTightnessOptions = {
-	ignore_statuses: [401, 403, 429],
-	allowlist: [...fuz_app_stock_route_tightness_allowlist]
-};
+export const default_error_schema_tightness: ErrorSchemaTightnessOptions = {};
 
 /**
  * Assert that all error schemas meet a minimum specificity threshold.

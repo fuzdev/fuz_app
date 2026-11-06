@@ -37,6 +37,7 @@ import {
 import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
 import { Uuid } from '#lib/primitive_schemas_fuz.ts';
 import { create_stub_db } from '#lib/testing/stubs.ts';
+import { rest_error } from '#lib/http/error_schemas.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_test_keyring } from '../auth/session_test_helpers.ts';
 
@@ -44,7 +45,7 @@ const ThingParams = object({ thing_id: Uuid });
 const ThingQuery = object({ mode: one_of(['a', 'b']) });
 const ThingInput = object({ name: pipe(string, min_length(1)) });
 const ThingOutput = object({ id: Uuid, name: string, mode: one_of(['a', 'b']) });
-const ThingNotFound = loose_object({ error: literal('thing_not_found') });
+const REST_THING_NOT_FOUND = rest_error(404, 'thing_not_found');
 
 const thing_route: RouteSpec = {
 	method: 'POST',
@@ -55,7 +56,7 @@ const thing_route: RouteSpec = {
 	query: ThingQuery,
 	input: ThingInput,
 	output: ThingOutput,
-	errors: { 404: ThingNotFound },
+	errors: [REST_THING_NOT_FOUND],
 	handler: (c) => {
 		// the overloads infer each value's type from the fuz_schema schema
 		const { thing_id }: { thing_id: string } = get_route_params(c, ThingParams);

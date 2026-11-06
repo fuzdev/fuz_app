@@ -1,8 +1,9 @@
 /**
  * Tests for the DEV-only output + error validation `apply_route_specs` wraps
  * around every REST handler: 2xx JSON against `output`, non-2xx JSON against
- * the merged error schema for its status — returned or built by the error
- * catch from a thrown error — and non-JSON responses skipped. Mismatches log
+ * the route's error map at its status (`resolve_route_errors`) — returned or
+ * built by the error catch from a thrown error — and non-JSON responses
+ * skipped. Mismatches log
  * and pass the response through unchanged.
  *
  * @module
@@ -15,6 +16,9 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { DEV } from 'esm-env';
 
 import { apply_route_specs, type RouteSpec } from '#lib/http/route_spec.ts';
+import type { MiddlewareSpec } from '#lib/http/middleware_spec.ts';
+import { rest_error } from '#lib/http/error_schemas.ts';
+import { resolve_app_route_errors } from '#lib/http/schema_helpers.ts';
 import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
 import { jsonrpc_errors } from '#lib/http/jsonrpc_errors.ts';
 import { ActingActor } from '#lib/http/auth_shape.ts';
@@ -23,7 +27,7 @@ import { create_stub_db } from '#lib/testing/stubs.ts';
 const db = create_stub_db();
 
 const Output = z.strictObject({ ok: z.literal(true) });
-const ConflictError = z.object({ error: z.literal('slug_taken') });
+const REST_SLUG_TAKEN = rest_error(409, 'slug_taken');
 
 /**
  * Mount one route (a GET by default) and return its response plus the
@@ -31,7 +35,8 @@ const ConflictError = z.object({ error: z.literal('slug_taken') });
  */
 const request = async (
 	handler: RouteSpec['handler'],
-	overrides?: Partial<RouteSpec>
+	overrides?: Partial<RouteSpec>,
+	middleware_specs?: Array<MiddlewareSpec>
 ): Promise<{ status: number; body: string; errors: Array<string> }> => {
 	const log = new Logger('test', { level: 'off' });
 	const error_spy = vi.spyOn(log, 'error');
@@ -44,10 +49,18 @@ const request = async (
 		description: 'validation probe',
 		input: z.null(),
 		output: Output,
-		errors: { 409: ConflictError },
+		errors: [REST_SLUG_TAKEN],
 		...overrides
 	};
-	apply_route_specs(app, [spec], fuz_auth_guard_resolver, log, db);
+	apply_route_specs(
+		app,
+		[spec],
+		fuz_auth_guard_resolver,
+		log,
+		db,
+		undefined,
+		middleware_specs && resolve_app_route_errors([spec], middleware_specs)
+	);
 	const res = await app.request(
 		'/v',
 		spec.method === 'GET'
@@ -120,14 +133,72 @@ describe('DEV output + error validation', () => {
 		assert.deepStrictEqual(got.errors, ['Unhandled handler error']);
 	});
 
-	test('an errors entry left undefined keeps the derived schema for its status', async () => {
-		const got = await request((c) => c.json({ not: 'a validation error' }, 400), {
+	test('a definition at a derived status adds a branch, replacing none', async () => {
+		const overrides: Partial<RouteSpec> = {
 			method: 'POST',
 			input: z.strictObject({}),
-			errors: { 400: undefined }
+			errors: [rest_error(400, 'name_taken')]
+		};
+		const derived = await request((c) => c.json({ error: 'invalid_request_body' }, 400), overrides);
+		assert.strictEqual(derived.status, 400);
+		assert.deepStrictEqual(derived.errors, []);
+		const own = await request((c) => c.json({ error: 'name_taken' }, 400), overrides);
+		assert.deepStrictEqual(own.errors, []);
+		const neither = await request((c) => c.json({ error: 'other' }, 400), overrides);
+		assert.deepStrictEqual(neither.errors, ['Error schema mismatch (400): POST /v']);
+	});
+
+	test('on a jsonrpc route, a JSON-RPC error envelope at a declared status is not checked', async () => {
+		const envelope = {
+			jsonrpc: '2.0',
+			id: null,
+			error: { code: -32600, message: 'Invalid Request' }
+		};
+		const got = await request((c) => c.json(envelope, 409), { jsonrpc: true });
+		assert.strictEqual(got.status, 409);
+		assert.deepStrictEqual(got.errors, []);
+		// a REST body there still is
+		const rest = await request((c) => c.json({ error: { code: -32600 } }, 409), { jsonrpc: true });
+		assert.deepStrictEqual(rest.errors, ['Error schema mismatch (409): GET /v']);
+	});
+
+	test('on a REST route, an envelope-shaped body is checked like any error body', async () => {
+		const envelope = {
+			jsonrpc: '2.0',
+			id: null,
+			error: { code: -32600, message: 'Invalid Request' }
+		};
+		const got = await request((c) => c.json(envelope, 409));
+		assert.strictEqual(got.status, 409);
+		assert.deepStrictEqual(got.errors, ['Error schema mismatch (409): GET /v']);
+	});
+
+	test('a GET declares no body code: its 400 is only what its slots derive', async () => {
+		const got = await request((c) => c.json({ error: 'invalid_request_body' }, 400), {
+			method: 'GET',
+			input: z.strictObject({}),
+			query: z.strictObject({})
 		});
-		assert.strictEqual(got.status, 400);
-		assert.deepStrictEqual(got.errors, ['Error schema mismatch (400): POST /v']);
+		assert.deepStrictEqual(got.errors, ['Error schema mismatch (400): GET /v']);
+		const query = await request((c) => c.json({ error: 'invalid_query_params' }, 400), {
+			query: z.strictObject({})
+		});
+		assert.deepStrictEqual(query.errors, []);
+	});
+
+	test('the error map apply_route_specs is given carries the middleware definitions', async () => {
+		const mw: MiddlewareSpec = {
+			name: 'gate',
+			path: '*',
+			handler: async (_c, next) => next(),
+			errors: [rest_error(409, 'gate_conflict')]
+		};
+		const handler: RouteSpec['handler'] = (c) => c.json({ error: 'gate_conflict' }, 409);
+		assert.deepStrictEqual((await request(handler, {}, [mw])).errors, []);
+		// without the map, the route's own: the middleware's code is off it
+		assert.deepStrictEqual((await request(handler)).errors, [
+			'Error schema mismatch (409): GET /v'
+		]);
 	});
 
 	test('an error status with no declared schema is not validated', async () => {

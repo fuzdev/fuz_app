@@ -39,7 +39,7 @@
 
 import { describe, test, assert } from 'vitest';
 import { z } from 'zod';
-import { is, parse } from '@fuzdev/fuz_schema/schema.ts';
+import { is, parse, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	bounded_string as zod_bounded_string,
@@ -102,7 +102,9 @@ import {
 	ERROR_INVALID_TOKEN,
 	ERROR_NO_MATCHING_INVITE,
 	ERROR_SIGNUP_CONFLICT,
-	ERROR_TOKEN_FILE_MISSING
+	ERROR_TOKEN_FILE_MISSING,
+	to_error_schemas,
+	type RestErrorDef
 } from '#lib/http/error_schemas.ts';
 import { parse_any, type ValidationSchema } from '#lib/schema_issues.ts';
 
@@ -197,9 +199,16 @@ const ZodBootstrapInput = z.strictObject({
 	password: ZodPassword
 });
 const zod_error = (error: string) => z.looseObject({ error: z.literal(error) });
-const ZodBodyError = z.looseObject({
-	error: z.enum([ERROR_INVALID_JSON_BODY, ERROR_INVALID_REQUEST_BODY])
-});
+
+/** A route shape's own errors at a status, the one schema its definitions there group into. */
+const declared = (
+	shape: { readonly errors?: ReadonlyArray<RestErrorDef> },
+	status: number
+): AnySchema => {
+	const schema = to_error_schemas(shape.errors ?? [])[status];
+	if (!schema) throw new Error(`no error declared at ${status}`);
+	return schema;
+};
 
 // -- the corpora ------------------------------------------------------------
 
@@ -661,16 +670,17 @@ const pairs: ReadonlyArray<Pair> = [
 	},
 	...(
 		[
-			['/login 400', login_shape.errors![400]!, ZodBodyError],
-			['/login 401', login_shape.errors![401]!, zod_error(ERROR_INVALID_CREDENTIALS)],
-			['/password 400', password_shape.errors![400]!, ZodBodyError],
-			['/signup 400', signup_shape.errors![400]!, ZodBodyError],
-			['/signup 403', signup_shape.errors![403]!, zod_error(ERROR_NO_MATCHING_INVITE)],
-			['/signup 409', signup_shape.errors![409]!, zod_error(ERROR_SIGNUP_CONFLICT)],
-			['/bootstrap 400', bootstrap_route_shape.errors[400], ZodBodyError],
-			['/bootstrap 401', bootstrap_route_shape.errors[401], zod_error(ERROR_INVALID_TOKEN)],
-			['/bootstrap 403', bootstrap_route_shape.errors[403], zod_error(ERROR_ALREADY_BOOTSTRAPPED)],
-			['/bootstrap 404', bootstrap_route_shape.errors[404], zod_error(ERROR_TOKEN_FILE_MISSING)]
+			['/login 401', declared(login_shape, 401), zod_error(ERROR_INVALID_CREDENTIALS)],
+			['/password 401', declared(password_shape, 401), zod_error(ERROR_INVALID_CREDENTIALS)],
+			['/signup 403', declared(signup_shape, 403), zod_error(ERROR_NO_MATCHING_INVITE)],
+			['/signup 409', declared(signup_shape, 409), zod_error(ERROR_SIGNUP_CONFLICT)],
+			['/bootstrap 401', declared(bootstrap_route_shape, 401), zod_error(ERROR_INVALID_TOKEN)],
+			[
+				'/bootstrap 403',
+				declared(bootstrap_route_shape, 403),
+				zod_error(ERROR_ALREADY_BOOTSTRAPPED)
+			],
+			['/bootstrap 404', declared(bootstrap_route_shape, 404), zod_error(ERROR_TOKEN_FILE_MISSING)]
 		] as const
 	).map(([name, fuz, zod]): Pair => ({
 		name,

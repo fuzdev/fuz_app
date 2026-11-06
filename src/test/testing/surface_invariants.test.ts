@@ -11,6 +11,7 @@ import {
 	assert_protected_routes_declare_401,
 	assert_role_routes_declare_403,
 	assert_input_routes_declare_400,
+	assert_params_routes_declare_400,
 	assert_descriptions_present,
 	assert_no_duplicate_routes,
 	assert_surface_invariants,
@@ -28,6 +29,21 @@ import type { RouteSpec } from '#lib/http/route_spec.ts';
 import type { MiddlewareSpec } from '#lib/http/middleware_spec.ts';
 import { generate_app_surface, type AppSurface } from '#lib/http/surface.ts';
 import { stub_handler, stub_mw } from '#lib/testing/stubs.ts';
+import { schema_to_surface } from '#lib/http/schema_helpers.ts';
+import { REST_RATE_LIMIT_EXCEEDED } from '#lib/http/error_schemas.ts';
+
+/**
+ * A surface with its first route's 404 set to a JSON Schema written from a Zod
+ * one — a declaration no definition can make (a generic `error`, an enum), for
+ * the invariants that read the surface as data.
+ */
+const with_declared_404 = (surface: AppSurface, schema: z.ZodType): AppSurface => {
+	surface.routes[0]!.error_schemas = {
+		...surface.routes[0]!.error_schemas,
+		'404': schema_to_surface(schema, { io: 'output' })
+	};
+	return surface;
+};
 
 const test_middleware: Array<MiddlewareSpec> = [
 	{ name: 'origin', path: '/api/*', handler: stub_mw }
@@ -154,6 +170,54 @@ describe('assert_input_routes_declare_400', () => {
 		const route = surface.routes.find((r) => r.input_schema !== null)!;
 		route.error_schemas = { '401': {}, '403': {} };
 		assert.throws(() => assert_input_routes_declare_400(surface), /missing 400/);
+	});
+
+	test('fails when the 400 of a route with a body names no body code', () => {
+		const surface = generate_app_surface({
+			middleware_specs: [],
+			route_specs: [
+				{
+					method: 'POST',
+					path: '/api/things/:id',
+					auth: { account: 'none', actor: 'none' },
+					handler: stub_handler,
+					description: 'Takes a thing',
+					params: z.strictObject({ id: z.string() }),
+					input: z.strictObject({ name: z.string() }),
+					output: z.null()
+				}
+			]
+		});
+		assert_input_routes_declare_400(surface);
+		const declared = surface.routes[0]!.error_schemas!['400'] as { anyOf: Array<any> };
+		// the params' branch alone, as the old fact routes declared
+		surface.routes[0]!.error_schemas!['400'] = declared.anyOf.find(
+			(b) => b.properties.error.const === 'invalid_route_params'
+		);
+		assert_params_routes_declare_400(surface);
+		assert.throws(
+			() => assert_input_routes_declare_400(surface),
+			/has input but its 400 error schema does not name invalid_request_body/
+		);
+	});
+
+	test('a GET with an input reads no body, so it needs no 400', () => {
+		const surface = generate_app_surface({
+			middleware_specs: [],
+			route_specs: [
+				{
+					method: 'GET',
+					path: '/api/things',
+					auth: { account: 'none', actor: 'none' },
+					handler: stub_handler,
+					description: 'Lists things',
+					input: z.strictObject({ name: z.string() }),
+					output: z.null()
+				}
+			]
+		});
+		assert.strictEqual(surface.routes[0]!.error_schemas, null);
+		assert_input_routes_declare_400(surface);
 	});
 });
 
@@ -292,9 +356,7 @@ describe('assert_sensitive_routes_rate_limited', () => {
 				description: 'Login',
 				input: z.strictObject({ username: z.string() }),
 				output: z.null(),
-				errors: {
-					429: z.strictObject({ error: z.literal('rate_limit_exceeded'), retry_after: z.number() })
-				}
+				errors: [REST_RATE_LIMIT_EXCEEDED]
 			}
 		];
 		const surface = generate_app_surface({ middleware_specs: [], route_specs: specs });
@@ -389,11 +451,13 @@ describe('assert_404_schemas_use_specific_errors', () => {
 				description: 'Get thing',
 				params: z.strictObject({ id: z.uuid() }),
 				input: z.null(),
-				output: z.null(),
-				errors: { 404: z.looseObject({ error: z.literal('thing_not_found') }) }
+				output: z.null()
 			}
 		];
-		const surface = generate_app_surface({ middleware_specs: [], route_specs: specs });
+		const surface = with_declared_404(
+			generate_app_surface({ middleware_specs: [], route_specs: specs }),
+			z.looseObject({ error: z.literal('thing_not_found') })
+		);
 		assert_404_schemas_use_specific_errors(surface);
 	});
 
@@ -407,11 +471,13 @@ describe('assert_404_schemas_use_specific_errors', () => {
 				description: 'Delete thing',
 				params: z.strictObject({ id: z.uuid() }),
 				input: z.null(),
-				output: z.null(),
-				errors: { 404: z.looseObject({ error: z.enum(['thing_not_found', 'parent_not_found']) }) }
+				output: z.null()
 			}
 		];
-		const surface = generate_app_surface({ middleware_specs: [], route_specs: specs });
+		const surface = with_declared_404(
+			generate_app_surface({ middleware_specs: [], route_specs: specs }),
+			z.looseObject({ error: z.enum(['thing_not_found', 'parent_not_found']) })
+		);
 		assert_404_schemas_use_specific_errors(surface);
 	});
 
@@ -425,11 +491,13 @@ describe('assert_404_schemas_use_specific_errors', () => {
 				description: 'Get thing',
 				params: z.strictObject({ id: z.uuid() }),
 				input: z.null(),
-				output: z.null(),
-				errors: { 404: z.looseObject({ error: z.string() }) }
+				output: z.null()
 			}
 		];
-		const surface = generate_app_surface({ middleware_specs: [], route_specs: specs });
+		const surface = with_declared_404(
+			generate_app_surface({ middleware_specs: [], route_specs: specs }),
+			z.looseObject({ error: z.string() })
+		);
 		assert.throws(() => assert_404_schemas_use_specific_errors(surface), /generic error schema/);
 	});
 
@@ -443,16 +511,16 @@ describe('assert_404_schemas_use_specific_errors', () => {
 				description: 'Get thing',
 				params: z.strictObject({ id: z.uuid() }),
 				input: z.null(),
-				output: z.null(),
-				errors: {
-					404: z.union([
-						z.looseObject({ error: z.literal('thing_not_found') }),
-						z.looseObject({ error: z.literal('parent_not_found') })
-					])
-				}
+				output: z.null()
 			}
 		];
-		const surface = generate_app_surface({ middleware_specs: [], route_specs: specs });
+		const surface = with_declared_404(
+			generate_app_surface({ middleware_specs: [], route_specs: specs }),
+			z.union([
+				z.looseObject({ error: z.literal('thing_not_found') }),
+				z.looseObject({ error: z.literal('parent_not_found') })
+			])
+		);
 		assert_404_schemas_use_specific_errors(surface);
 	});
 
@@ -466,16 +534,16 @@ describe('assert_404_schemas_use_specific_errors', () => {
 				description: 'Get thing',
 				params: z.strictObject({ id: z.uuid() }),
 				input: z.null(),
-				output: z.null(),
-				errors: {
-					404: z.union([
-						z.looseObject({ error: z.literal('thing_not_found') }),
-						z.looseObject({ error: z.string() })
-					])
-				}
+				output: z.null()
 			}
 		];
-		const surface = generate_app_surface({ middleware_specs: [], route_specs: specs });
+		const surface = with_declared_404(
+			generate_app_surface({ middleware_specs: [], route_specs: specs }),
+			z.union([
+				z.looseObject({ error: z.literal('thing_not_found') }),
+				z.looseObject({ error: z.string() })
+			])
+		);
 		assert.throws(() => assert_404_schemas_use_specific_errors(surface), /generic error schema/);
 	});
 
@@ -488,11 +556,13 @@ describe('assert_404_schemas_use_specific_errors', () => {
 				handler: stub_handler,
 				description: 'Bootstrap',
 				input: z.strictObject({ token: z.string() }),
-				output: z.null(),
-				errors: { 404: z.looseObject({ error: z.string() }) }
+				output: z.null()
 			}
 		];
-		const surface = generate_app_surface({ middleware_specs: [], route_specs: specs });
+		const surface = with_declared_404(
+			generate_app_surface({ middleware_specs: [], route_specs: specs }),
+			z.looseObject({ error: z.string() })
+		);
 		// Should pass — no params, so generic 404 is fine
 		assert_404_schemas_use_specific_errors(surface);
 	});
@@ -615,8 +685,8 @@ describe('assert_surface_security_policy', () => {
 });
 
 describe('audit_error_schema_tightness union walk', () => {
-	/** Build a single-route surface with a synthetic 400 error schema. */
-	const build_with_400 = (errors: NonNullable<RouteSpec['errors']>): AppSurface => {
+	/** Build a single-route surface whose 400 is a synthetic JSON Schema, written from a Zod one. */
+	const build_with_400 = (schema: z.ZodType): AppSurface => {
 		const specs: Array<RouteSpec> = [
 			{
 				method: 'POST',
@@ -625,50 +695,52 @@ describe('audit_error_schema_tightness union walk', () => {
 				handler: stub_handler,
 				description: 'Probe',
 				input: z.strictObject({ name: z.string() }),
-				output: z.null(),
-				errors
+				output: z.null()
 			}
 		];
-		return generate_app_surface({ middleware_specs: [], route_specs: specs });
+		const surface = generate_app_surface({ middleware_specs: [], route_specs: specs });
+		surface.routes[0]!.error_schemas = {
+			...surface.routes[0]!.error_schemas,
+			'400': schema_to_surface(schema, { io: 'output' })
+		};
+		return surface;
 	};
 
 	test('anyOf union of [literal, enum] reports enum (min specificity)', () => {
-		const surface = build_with_400({
-			400: z.union([
+		const surface = build_with_400(
+			z.union([
 				z.looseObject({ error: z.literal('a') }),
 				z.looseObject({ error: z.enum(['b', 'c']) })
 			])
-		});
+		);
 		const entry = audit_error_schema_tightness(surface).find((e) => e.status === '400')!;
 		assert.strictEqual(entry.specificity, 'enum');
 		assert.deepStrictEqual([...new Set(entry.error_codes)].sort(), ['a', 'b', 'c']);
 	});
 
 	test('anyOf union with a generic branch reports generic and null codes', () => {
-		const surface = build_with_400({
-			400: z.union([z.looseObject({ error: z.literal('a') }), z.looseObject({ error: z.string() })])
-		});
+		const surface = build_with_400(
+			z.union([z.looseObject({ error: z.literal('a') }), z.looseObject({ error: z.string() })])
+		);
 		const entry = audit_error_schema_tightness(surface).find((e) => e.status === '400')!;
 		assert.strictEqual(entry.specificity, 'generic');
 		assert.strictEqual(entry.error_codes, null);
 	});
 
 	test('oneOf union (z.discriminatedUnion) reports min specificity across branches', () => {
-		const surface = build_with_400({
-			400: z.discriminatedUnion('error', [
+		const surface = build_with_400(
+			z.discriminatedUnion('error', [
 				z.looseObject({ error: z.literal('a'), detail: z.string() }),
 				z.looseObject({ error: z.literal('b') })
 			])
-		});
+		);
 		const entry = audit_error_schema_tightness(surface).find((e) => e.status === '400')!;
 		assert.strictEqual(entry.specificity, 'literal');
 		assert.deepStrictEqual([...new Set(entry.error_codes)].sort(), ['a', 'b']);
 	});
 
 	test('flat literal schema still reports literal (regression check)', () => {
-		const surface = build_with_400({
-			400: z.looseObject({ error: z.literal('only_one') })
-		});
+		const surface = build_with_400(z.looseObject({ error: z.literal('only_one') }));
 		const entry = audit_error_schema_tightness(surface).find((e) => e.status === '400')!;
 		assert.strictEqual(entry.specificity, 'literal');
 		assert.deepStrictEqual(entry.error_codes, ['only_one']);
@@ -678,15 +750,15 @@ describe('audit_error_schema_tightness union walk', () => {
 		// `z.union([z.union([A, B]), C])` emits nested `anyOf` — recursion
 		// inside `classify_error_specificity` / `extract_error_codes` is what
 		// makes the inner branches visible.
-		const surface = build_with_400({
-			400: z.union([
+		const surface = build_with_400(
+			z.union([
 				z.union([
 					z.looseObject({ error: z.literal('inner_a') }),
 					z.looseObject({ error: z.literal('inner_b') })
 				]),
 				z.looseObject({ error: z.literal('outer') })
 			])
-		});
+		);
 		const entry = audit_error_schema_tightness(surface).find((e) => e.status === '400')!;
 		assert.strictEqual(entry.specificity, 'literal');
 		assert.deepStrictEqual([...new Set(entry.error_codes)].sort(), ['inner_a', 'inner_b', 'outer']);

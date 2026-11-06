@@ -72,8 +72,10 @@ describe('create_rust_spine_consumer_surface_spec', () => {
 			domain_action_specs,
 			host_gate: true
 		}).surface.middleware.map((m) => m.name);
-		assert.strictEqual(with_gate[0], 'host_validation');
-		assert.deepStrictEqual(with_gate.slice(1), without);
+		// the body limit heads both, ahead of the transformed stack
+		assert.strictEqual(without[0], 'body_limit');
+		assert.deepStrictEqual(with_gate.slice(0, 2), ['body_limit', 'host_validation']);
+		assert.deepStrictEqual([with_gate[0], ...with_gate.slice(2)], without);
 	});
 
 	test('mounts the standard actions and the request-response domain specs only', () => {

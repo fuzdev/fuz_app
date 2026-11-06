@@ -15,6 +15,7 @@ which infers the typed shape from the schema directly.
 
 ```typescript
 import { get_route_input, type RouteSpec } from '@fuzdev/fuz_app/http/route_spec.ts';
+import { REST_FOREIGN_KEY_VIOLATION } from '@fuzdev/fuz_app/http/error_schemas.ts';
 import { z } from 'zod';
 
 const My_Input = z.strictObject({ name: z.string().min(1) });
@@ -27,7 +28,7 @@ const my_route_spec: RouteSpec = {
 	description: 'Create a thing',
 	input: My_Input,
 	output: My_Output,
-	errors: { 409: ForeignKeyError }, // handler-specific; overrides auto-derived
+	errors: [REST_FOREIGN_KEY_VIOLATION], // the handler's own codes, beside the derived ones
 	handler: async (c) => {
 		const { name } = get_route_input(c, My_Input); // typed as {name: string}
 		const id = create_thing(name);

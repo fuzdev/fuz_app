@@ -16,7 +16,14 @@ import { to_json_schema } from '@fuzdev/fuz_schema/json_schema.ts';
 
 import type { RouteAuth } from './auth_shape.ts';
 import type { RouteMethod } from './route_spec.ts';
-import { derive_error_schemas, type ErrorSchemas } from './error_schemas.ts';
+import {
+	dedupe_rest_errors,
+	derive_route_errors,
+	to_error_schemas,
+	type ErrorSchemas,
+	type RestErrorDef
+} from './error_schemas.ts';
+import type { MiddlewareSpec } from './middleware_spec.ts';
 import type { RateLimitKey } from '../rate_limiter.ts';
 import {
 	assert_validation_schema,
@@ -501,59 +508,113 @@ export const middleware_spec_applies = (
 	!(spec.carve_outs ?? []).some((carve_out) => middleware_applies(carve_out.path, route_path));
 
 /**
- * Copy an error-schema map without its entries left `undefined`, so a
- * status declared `undefined` reads as absent: it overrides nothing beneath
- * it in a merge.
- *
- * @param errors - a route's or middleware's error schemas, keyed by status
- * @returns the entries that hold a schema
+ * A route's error map: every error definition the route can answer with, and
+ * the status map they group into. Built by `resolve_route_errors`, and read by
+ * every reader of a route's declared errors — the surface, the DEV output
+ * check, the test helpers, error coverage, and the attack-surface suite.
  */
-export const strip_undefined_error_schemas = (
-	errors: ErrorSchemas
-): Record<number, ValidationSchema> => {
-	const defined: Record<number, ValidationSchema> = {};
-	for (const [status, schema] of Object.entries(errors)) {
-		if (schema !== undefined) defined[Number(status)] = schema;
+export interface RouteErrors {
+	/**
+	 * The definitions, in order — derived, then each applying middleware's, then
+	 * the route's own — with each repeat left out (`dedupe_rest_errors`). Two
+	 * shapes of one code at one status are both kept.
+	 */
+	readonly defs: ReadonlyArray<RestErrorDef>;
+	/** The definitions grouped by status (`to_error_schemas`): one schema, or a `union` of them. */
+	readonly schemas: ErrorSchemas;
+}
+
+/** What `resolve_route_errors` reads of a route spec. */
+export interface RouteErrorsSpec {
+	readonly method: RouteMethod;
+	readonly path: string;
+	readonly auth: RouteAuth;
+	readonly input: ValidationSchema;
+	readonly params?: ValidationSchema;
+	readonly query?: ValidationSchema;
+	readonly rate_limit?: RateLimitKey;
+	readonly errors?: ReadonlyArray<RestErrorDef>;
+}
+
+/**
+ * Resolve a route's error map: the union of the definitions derived from it
+ * (`derive_route_errors`, narrowed to the slots it has), those of each
+ * middleware layer that runs on it (`middleware_spec_applies`), in list order,
+ * and its own `errors`. Nothing replaces anything: a definition at a status
+ * another layer declares is one more branch there, and a repeat counts once.
+ *
+ * @param spec - the route spec
+ * @param middleware_specs - the app's middleware layers, of which those that apply to the route contribute
+ * @returns the route's error map
+ */
+export const resolve_route_errors = (
+	spec: RouteErrorsSpec,
+	middleware_specs?: ReadonlyArray<Pick<MiddlewareSpec, 'path' | 'carve_outs' | 'errors'>> | null
+): RouteErrors => {
+	const all: Array<RestErrorDef> = derive_route_errors({
+		method: spec.method,
+		auth: spec.auth,
+		has_input: !is_null_schema(spec.input),
+		has_params: spec.params !== undefined,
+		has_query: spec.query !== undefined,
+		rate_limit: spec.rate_limit
+	});
+	if (middleware_specs) {
+		for (const mw of middleware_specs) {
+			if (mw.errors && middleware_spec_applies(mw, spec.path)) all.push(...mw.errors);
+		}
 	}
-	return defined;
+	if (spec.errors) all.push(...spec.errors);
+	const defs = dedupe_rest_errors(all);
+	return { defs, schemas: to_error_schemas(defs) };
 };
 
 /**
- * Merge auto-derived, middleware, and explicit error schemas for a route spec.
+ * Resolve every route's error map (`resolve_route_errors`) against one
+ * middleware list, keyed by `route_errors_key` (`METHOD path`).
  *
- * Merge order: derived -> middleware -> explicit route errors.
- * Later layers override earlier ones for the same status code; an entry left
- * `undefined` is absent (`strip_undefined_error_schemas`), so it leaves the
- * layer beneath it in place.
- *
- * @param spec - the route spec (reads `method`, `auth`, `input`, `params`, `query`, `rate_limit`, `errors`)
- * @param middleware_errors - errors contributed by middleware whose path matches the route
- * @returns merged error schemas, or `null` if empty
+ * @param route_specs - the app's routes
+ * @param middleware_specs - the app's middleware layers
+ * @returns each route's error map
  */
-export const merge_error_schemas = (
-	spec: {
-		method: RouteMethod;
-		auth: RouteAuth;
-		input: ValidationSchema;
-		params?: ValidationSchema;
-		query?: ValidationSchema;
-		rate_limit?: RateLimitKey;
-		errors?: ErrorSchemas;
-	},
-	middleware_errors?: ErrorSchemas | null
-): Record<number, ValidationSchema> | null => {
-	const derived = derive_error_schemas({
-		auth: spec.auth,
-		has_input: !is_null_schema(spec.input),
-		has_params: !!spec.params,
-		has_query: !!spec.query,
-		rate_limit: spec.rate_limit,
-		checks_content_type: spec.method === 'POST'
-	});
-	const merged = {
-		...derived,
-		...(middleware_errors && strip_undefined_error_schemas(middleware_errors)),
-		...(spec.errors && strip_undefined_error_schemas(spec.errors))
-	};
-	return Object.keys(merged).length > 0 ? merged : null;
+export const resolve_app_route_errors = (
+	route_specs: ReadonlyArray<RouteErrorsSpec>,
+	middleware_specs?: ReadonlyArray<Pick<MiddlewareSpec, 'path' | 'carve_outs' | 'errors'>> | null
+): Map<string, RouteErrors> => {
+	const route_errors: Map<string, RouteErrors> = new Map();
+	for (const spec of route_specs) {
+		route_errors.set(route_errors_key(spec), resolve_route_errors(spec, middleware_specs));
+	}
+	return route_errors;
+};
+
+/**
+ * The key of a route in a map of route error maps, `METHOD path`.
+ *
+ * @param route - the route's method and path template
+ */
+export const route_errors_key = (route: {
+	readonly method: string;
+	readonly path: string;
+}): string => `${route.method} ${route.path}`;
+
+/**
+ * A route's error map from a map built by `resolve_app_route_errors`, or,
+ * with no map, resolved from the route alone — without middleware.
+ *
+ * @param route_errors - the app's route error maps, if the caller has them
+ * @param spec - the route spec
+ * @throws Error naming the route's key when a map is given with no entry for
+ *   the route — a map built over other routes, which would silently drop the
+ *   middleware's definitions
+ */
+export const get_route_errors = (
+	route_errors: ReadonlyMap<string, RouteErrors> | null | undefined,
+	spec: RouteErrorsSpec
+): RouteErrors => {
+	if (route_errors == null) return resolve_route_errors(spec);
+	const key = route_errors_key(spec);
+	const errors = route_errors.get(key);
+	if (!errors) throw new Error(`get_route_errors: the route error map has no entry for '${key}'`);
+	return errors;
 };

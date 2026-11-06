@@ -42,9 +42,9 @@ import {
 } from '#lib/http/surface.ts';
 import {
 	audit_error_schema_tightness,
-	assert_error_schema_tightness,
-	fuz_app_stock_route_tightness_allowlist
+	assert_error_schema_tightness
 } from '#lib/testing/surface_invariants.ts';
+import { rest_error } from '#lib/http/error_schemas.ts';
 import { ActingActor } from '#lib/http/auth_shape.ts';
 import { FactHashSchema } from '#lib/primitive_schemas.ts';
 
@@ -673,9 +673,9 @@ const adversarial_404_specs: Array<RouteSpec> = [
 		params: z.strictObject({ id: z.uuid() }),
 		input: z.null(),
 		output: z.looseObject({ name: z.string() }),
-		errors: { 404: z.looseObject({ error: z.literal(ERROR_THING_NOT_FOUND) }) }
+		errors: [rest_error(404, ERROR_THING_NOT_FOUND)]
 	},
-	// Route with params + enum 404 → should generate a test (uses first enum value)
+	// Route with params + two 404 definitions → should generate a test (uses the first)
 	{
 		method: 'DELETE',
 		path: '/items/:id',
@@ -686,9 +686,7 @@ const adversarial_404_specs: Array<RouteSpec> = [
 		query: z.strictObject({ acting: ActingActor }),
 		input: z.null(),
 		output: z.looseObject({ ok: z.literal(true) }),
-		errors: {
-			404: z.looseObject({ error: z.enum([ERROR_ITEM_NOT_FOUND, ERROR_WIDGET_NOT_FOUND]) })
-		}
+		errors: [rest_error(404, ERROR_ITEM_NOT_FOUND), rest_error(404, ERROR_WIDGET_NOT_FOUND)]
 	},
 	// Route with params + input + 404 → should generate a test with valid body
 	{
@@ -700,7 +698,7 @@ const adversarial_404_specs: Array<RouteSpec> = [
 		params: z.strictObject({ id: z.uuid() }),
 		input: z.strictObject({ name: z.string().min(1) }),
 		output: z.looseObject({ ok: z.literal(true) }),
-		errors: { 404: z.looseObject({ error: z.literal(ERROR_THING_NOT_FOUND) }) }
+		errors: [rest_error(404, ERROR_THING_NOT_FOUND)]
 	},
 	// Route with params but no 404 → should be skipped
 	{
@@ -722,7 +720,7 @@ const adversarial_404_specs: Array<RouteSpec> = [
 		description: 'Status check',
 		input: z.null(),
 		output: z.looseObject({ ok: z.literal(true) }),
-		errors: { 404: z.looseObject({ error: z.literal('not_configured') }) }
+		errors: [rest_error(404, 'not_configured')]
 	}
 ];
 
@@ -792,10 +790,8 @@ describe('error schema tightness baseline', () => {
 describe('resolve_standard_error_schema_tightness', () => {
 	// Surface built with one consumer-allowlisted route (`POST /api/foo`) and
 	// one unlisted generic route (`POST /api/unlisted`). Consumer-allowlisted
-	// route must pass; unlisted must fail. Stock-allowlist behavior is covered
-	// by the `deepStrictEqual` check in the additive-merge test — whatever
-	// entries ship in `fuz_app_stock_route_tightness_allowlist` survive the
-	// concat.
+	// route must pass; unlisted must fail. A definition's `error` is always a
+	// literal, so the generic 400 is written into the surface by hand.
 	const mixed_specs: Array<RouteSpec> = [
 		{
 			method: 'POST',
@@ -804,8 +800,7 @@ describe('resolve_standard_error_schema_tightness', () => {
 			handler: stub_handler,
 			description: 'Consumer-allowlisted generic route',
 			input: z.strictObject({ name: z.string() }),
-			output: z.null(),
-			errors: { 400: z.looseObject({ error: z.string() }) }
+			output: z.null()
 		},
 		{
 			method: 'POST',
@@ -814,46 +809,63 @@ describe('resolve_standard_error_schema_tightness', () => {
 			handler: stub_handler,
 			description: 'Generic route not in any allowlist',
 			input: z.strictObject({ name: z.string() }),
-			output: z.null(),
-			errors: { 400: z.looseObject({ error: z.string() }) }
+			output: z.null()
 		}
 	];
+	const GENERIC_400 = {
+		type: 'object',
+		properties: { error: { type: 'string' } },
+		required: ['error'],
+		additionalProperties: {}
+	};
+	const mixed_surface = (): AppSurface => {
+		const surface = create_app_surface_spec({
+			middleware_specs: [],
+			route_specs: mixed_specs
+		}).surface;
+		for (const route of surface.routes) {
+			route.error_schemas = { ...route.error_schemas, '400': GENERIC_400 };
+		}
+		return surface;
+	};
 
 	test('null → null (opt-out preserved)', () => {
 		assert.strictEqual(resolve_standard_error_schema_tightness(null), null);
 	});
 
-	test('undefined → stock defaults', () => {
+	test('undefined → the defaults, which exempt nothing', () => {
 		const resolved = resolve_standard_error_schema_tightness(undefined);
 		assert.ok(resolved);
-		assert.deepStrictEqual(resolved.allowlist, [...fuz_app_stock_route_tightness_allowlist]);
-		assert.deepStrictEqual(resolved.ignore_statuses, [401, 403, 429]);
+		assert.deepStrictEqual(resolved.allowlist, []);
+		assert.deepStrictEqual(resolved.ignore_statuses, []);
 	});
 
-	test('consumer allowlist is additive — stock entries prefix, consumer entries suffix', () => {
+	test('the defaults pass a surface whose every error is a definition', () => {
+		const surface_spec = create_app_surface_spec({
+			middleware_specs: adversarial_middleware,
+			route_specs: adversarial_specs
+		});
+		assert_error_schema_tightness(
+			surface_spec.surface,
+			resolve_standard_error_schema_tightness(undefined)!
+		);
+	});
+
+	test('consumer allowlist is the consumer entries', () => {
 		const resolved = resolve_standard_error_schema_tightness({
 			allowlist: ['POST /api/foo']
 		});
 		assert.ok(resolved);
-		// deepStrictEqual pins the exact concat order: stock first, then consumer.
-		// Whatever stock entries ship survive the merge; consumer entries are
-		// appended rather than replacing.
-		assert.deepStrictEqual(resolved.allowlist, [
-			...fuz_app_stock_route_tightness_allowlist,
-			'POST /api/foo'
-		]);
+		assert.deepStrictEqual(resolved.allowlist, ['POST /api/foo']);
 
 		// Runtime behavior: consumer-allowlisted route passes, unlisted fails.
-		const surface_spec = create_app_surface_spec({
-			middleware_specs: [],
-			route_specs: mixed_specs
-		});
+		const surface = mixed_surface();
 		assert.throws(
-			() => assert_error_schema_tightness(surface_spec.surface, resolved),
+			() => assert_error_schema_tightness(surface, resolved),
 			/POST \/api\/unlisted → 400 \(generic\)/
 		);
 		try {
-			assert_error_schema_tightness(surface_spec.surface, resolved);
+			assert_error_schema_tightness(surface, resolved);
 			assert.fail('expected assert_error_schema_tightness to throw');
 		} catch (e) {
 			const msg = (e as Error).message;
@@ -861,17 +873,16 @@ describe('resolve_standard_error_schema_tightness', () => {
 		}
 	});
 
-	test('consumer ignore_statuses is additive', () => {
+	test('consumer ignore_statuses are kept', () => {
 		const resolved = resolve_standard_error_schema_tightness({ ignore_statuses: [503] });
 		assert.ok(resolved);
-		assert.deepStrictEqual(resolved.ignore_statuses, [401, 403, 429, 503]);
+		assert.deepStrictEqual(resolved.ignore_statuses, [503]);
 	});
 
 	test('consumer min_specificity overrides default', () => {
 		const resolved = resolve_standard_error_schema_tightness({ min_specificity: 'literal' });
 		assert.ok(resolved);
 		assert.strictEqual(resolved.min_specificity, 'literal');
-		// stock allowlist survives the override
-		assert.deepStrictEqual(resolved.allowlist, [...fuz_app_stock_route_tightness_allowlist]);
+		assert.deepStrictEqual(resolved.allowlist, []);
 	});
 });

@@ -395,39 +395,55 @@ field reaches, `message` included.
 ## Error Schema System
 
 Error responses are typed in `http/error_schemas.ts` as `@fuzdev/fuz_schema`
-schemas; a route's or middleware's own error schemas (`ErrorSchemas`) may be
-fuz_schema or Zod. Each code a route or middleware answers has a REST error
+schemas. Each code a route or middleware answers has a REST error
 definition, `rest_error(status, code, fields?, headers?)`: its status, its
 `ERROR_*` code, and its body, `loose_object({error: literal(code), ...fields})`
 (`REST_TABLE_NOT_FOUND`, `REST_RATE_LIMIT_EXCEEDED`, …). The `ERROR_*`
 constants carry no status, since they double as JSON-RPC `data.reason`s.
-Standard shapes: `ApiError`, `InvalidInputError`, `PermissionError`,
-`CredentialTypeRequiredError`, `TokenScopeRequiredError`, `RateLimitError`,
-`PayloadTooLargeError`, `UnsupportedContentTypeError`, `ForeignKeyError` — all
-loose objects, each single-code one its definition's schema.
-`to_error_schemas(defs)` groups definitions into a status map.
+`RouteSpec.errors` and `MiddlewareSpec.errors` are lists of definitions, so
+every declared error names its code. Standard shapes: `ApiError`,
+`InvalidInputError`, `PermissionError`, `CredentialTypeRequiredError`,
+`TokenScopeRequiredError`, `RateLimitError`, `PayloadTooLargeError`,
+`UnsupportedContentTypeError`, `ForeignKeyError` — all loose objects, each
+single-code one its definition's schema. `to_error_schemas(defs)` groups
+definitions into a status map.
 
-**Three-layer merge**: derived → middleware → explicit route.
+**One error map per route**: `resolve_route_errors(spec, middleware_specs)`
+(`http/schema_helpers.ts`) is the union of three layers — derived, each
+middleware layer that runs on the route, and the route's own — in that order.
+Nothing replaces anything: a definition at a status another layer declares is
+one more branch there, a definition declared twice counts once, and two
+shapes of one code at one status are both kept.
 
-- `derive_error_schemas({auth, has_input?, has_params?, has_query?, rate_limit?, checks_content_type?})` auto-populates
-  auth/validation/rate-limit errors. 400 is derived when `has_input`, `has_params`, or
-  `has_query` is true. When `auth.actor !== 'none'`, the 400 union widens with
-  `ActorRequiredError` / `ActorNotOnAccountError` and a 500 union of
-  `NoActorsOnAccountError` / `AccountVanishedError` is added, so the surface documents
-  what the dispatcher's authorization phase actually emits, and the round-trip and
-  attack-surface suites, which check real responses against it, accept those bodies.
-  DEV-mode error-schema validation never sees them: it wraps only the handler.
-- `MiddlewareSpec.errors` declares what each middleware layer can return (origin → 403;
-  the bearer_auth and daemon_token layers soft-fail through on every non-success path,
-  so they declare none)
-- Routes declare handler-specific errors via `RouteSpec.errors`
-- `merge_error_schemas(spec, middleware_errors?)` merges all three —
-  later layers override earlier for the same status code; an entry left
-  `undefined` is absent, so it overrides nothing.
+- `derive_route_errors({method, auth, has_input?, has_params?, has_query?, rate_limit?})`
+  derives what the framework's own middleware answers, narrowed to the slots
+  the route has: the body codes (`invalid_request_body`, `invalid_json_body`)
+  only off `GET` and with an input, `invalid_route_params` with params,
+  `invalid_query_params` with a query, 401 `authentication_required` when the
+  account or actor is required, a 403 per gate the route declares (token scope,
+  credential type, role), 429 with `rate_limit`, 415 on a `POST`. When
+  `auth.actor !== 'none'` it adds the authorization phase's 400s
+  (`actor_required`, `actor_not_on_account`) and 500s (`no_actors_on_account`,
+  `account_vanished`).
+- `MiddlewareSpec.errors` declares what each middleware layer can return —
+  the body limit's 413 `payload_too_large` and 400 `invalid_content_length`
+  (`create_app_server` mounts the limit as a `*` spec ahead of the others
+  unless `max_body_size` is `null`), the origin check's 403
+  `forbidden_origin`; the bearer_auth and daemon_token layers soft-fail through
+  on every non-success path, so they declare an empty list. A layer counts on
+  the routes its `path` applies to, less its `carve_outs`.
+- Routes declare their handler's codes via `RouteSpec.errors`.
+
+`create_app_surface_spec` builds every route's map once
+(`AppSurfaceSpec.route_errors`, keyed `METHOD path`), and `create_app_server`
+passes the same map to `apply_route_specs`. Every reader reads it: the
+surface, which stays status-keyed (a status with several definitions is an
+`anyOf` of their bodies), the DEV output check, `assert_response_matches_spec`,
+error coverage, and the attack-surface suites.
 
 `RouteSpec.rate_limit?: RateLimitKey` (`'ip' | 'account' | 'both'`) declares what a
 route's rate limiter is keyed on — metadata for surface introspection and policy
-invariants, auto-derives 429 in `derive_error_schemas`. All 429 responses include a
+invariants, derives 429 in `derive_route_errors`. All 429 responses include a
 `Retry-After` HTTP header via `rate_limit_exceeded_response(c, retry_after)` from
 `rate_limiter.ts`.
 
@@ -541,8 +557,8 @@ per transport family:
 
 - **REST routes** — `wrap_output_validation` in `http/route_spec.ts` (applied
   by `apply_route_specs`). Validates 2xx JSON responses against
-  `RouteSpec.output`, and non-2xx JSON responses against the matching
-  declared error schema from the three-layer merge above — including the body
+  `RouteSpec.output`, and non-2xx JSON responses against the route's error
+  map at that status, middleware included — including the body
   the error catch builds from a thrown `ThrownJsonrpcError`, since validation
   wraps the catch. A 500 `internal_error` is always accepted: the catch
   answers it for any generic throw, on any route. Streaming responses

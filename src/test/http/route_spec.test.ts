@@ -43,7 +43,11 @@ import {
 } from '#lib/hono_context.ts';
 import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
 import { create_test_request_context } from '#lib/testing/auth_apps.ts';
-import { ApiError, RateLimitError } from '#lib/http/error_schemas.ts';
+import {
+	REST_INVALID_CREDENTIALS,
+	REST_RATE_LIMIT_EXCEEDED,
+	rest_error
+} from '#lib/http/error_schemas.ts';
 import { create_stub_db } from '#lib/testing/stubs.ts';
 import { DbCheckoutError } from '#lib/db/db_checkout_error.ts';
 import {
@@ -1123,28 +1127,36 @@ describe('generate_app_surface', () => {
 		assert.ok(errors['400']);
 	});
 
-	test('explicit errors override auto-derived for same status', () => {
+	test('explicit errors union with the derived ones at the same status, replacing none', () => {
 		const surface = generate_app_surface({
 			middleware_specs: [],
 			route_specs: [
 				{
 					method: 'POST',
 					path: '/login',
-					auth: { account: 'none', actor: 'none' },
+					auth: { account: 'required', actor: 'none' },
 					handler: (c) => c.json({}),
 					description: 'Login',
 					input: z.strictObject({ username: z.string() }),
 					output: z.null(),
-					errors: { 401: ApiError, 429: RateLimitError }
+					errors: [REST_INVALID_CREDENTIALS, rest_error(400, 'name_taken')]
 				}
 			]
 		});
 		const errors = surface.routes[0]!.error_schemas;
 		assert.ok(errors);
-		// Has both auto-derived 400 and explicit 401, 429
-		assert.ok(errors['400']);
-		assert.ok(errors['401']);
-		assert.ok(errors['429']);
+		const codes = (status: string): Array<unknown> =>
+			(errors[status] as { anyOf: Array<{ properties: { error: { const: unknown } } }> }).anyOf.map(
+				(branch) => branch.properties.error.const
+			);
+		// the derived 400s first, then the route's own
+		assert.deepStrictEqual(codes('400'), [
+			'invalid_request_body',
+			'invalid_json_body',
+			'name_taken'
+		]);
+		// the derived 401 beside the route's own
+		assert.deepStrictEqual(codes('401'), ['authentication_required', 'invalid_credentials']);
 	});
 
 	test('error_schemas are JSON-serializable', () => {
@@ -1159,7 +1171,7 @@ describe('generate_app_surface', () => {
 					description: 'Test',
 					input: z.strictObject({ x: z.number() }),
 					output: z.null(),
-					errors: { 429: RateLimitError }
+					errors: [REST_RATE_LIMIT_EXCEEDED]
 				}
 			]
 		});

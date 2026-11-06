@@ -22,6 +22,7 @@ import { create_health_route_spec } from '#lib/http/common_routes.ts';
 import type { RouteSpec } from '#lib/http/route_spec.ts';
 import type { MiddlewareCarveOut } from '#lib/http/middleware_spec.ts';
 import { create_stub_app_deps } from '#lib/testing/stubs.ts';
+import { REST_FORBIDDEN_ORIGIN } from '#lib/http/error_schemas.ts';
 import { create_serve_cell_fact_route_spec } from '#lib/server/serve_fact_route.ts';
 import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
@@ -178,12 +179,11 @@ describe('create_auth_middleware_specs', () => {
 		assert.strictEqual(daemon.path, '/custom/*');
 	});
 
-	test('origin middleware has 403 error schema', async () => {
+	test('origin middleware declares its 403, forbidden_origin exactly', async () => {
 		const deps = create_stub_app_deps();
 		const specs = await create_auth_middleware_specs(deps, create_options());
 		const origin = specs.find((s) => s.name === 'origin')!;
-		assert.ok(origin.errors);
-		assert.ok(origin.errors[403]);
+		assert.deepStrictEqual(origin.errors, [REST_FORBIDDEN_ORIGIN]);
 	});
 
 	test('bearer_auth middleware declares no errors (soft-fails on every path)', async () => {

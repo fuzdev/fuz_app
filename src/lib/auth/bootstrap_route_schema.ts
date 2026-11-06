@@ -17,11 +17,9 @@
 import { meta } from '@fuzdev/fuz_schema/meta.ts';
 import {
 	literal,
-	loose_object,
 	max_length,
 	min_length,
 	object,
-	one_of,
 	pipe,
 	string,
 	type Infer
@@ -32,8 +30,6 @@ import { Username, UsernameCanonical, Uuid } from '../primitive_schemas_fuz.ts';
 import { Password } from './password.ts';
 import type { RouteSpec } from '../http/route_spec.ts';
 import {
-	ERROR_INVALID_JSON_BODY,
-	ERROR_INVALID_REQUEST_BODY,
 	REST_ALREADY_BOOTSTRAPPED,
 	REST_INVALID_TOKEN,
 	REST_TOKEN_FILE_MISSING
@@ -92,10 +88,5 @@ export const bootstrap_route_shape = {
 	input: BootstrapInput,
 	output: BootstrapOutput,
 	rate_limit: 'ip',
-	errors: {
-		400: loose_object({ error: one_of([ERROR_INVALID_JSON_BODY, ERROR_INVALID_REQUEST_BODY]) }),
-		401: REST_INVALID_TOKEN.schema,
-		403: REST_ALREADY_BOOTSTRAPPED.schema,
-		404: REST_TOKEN_FILE_MISSING.schema
-	}
+	errors: [REST_INVALID_TOKEN, REST_ALREADY_BOOTSTRAPPED, REST_TOKEN_FILE_MISSING]
 } satisfies Omit<RouteSpec, 'handler'>;

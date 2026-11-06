@@ -8,7 +8,7 @@
  * @module
  */
 
-import { Hono, type Context, type MiddlewareHandler } from 'hono';
+import { Hono, type Context } from 'hono';
 import { logger } from 'hono/logger';
 import type { UpgradeWebSocket } from 'hono/ws';
 import type { AnySchema } from '@fuzdev/fuz_schema/schema.ts';
@@ -77,7 +77,7 @@ import {
 } from '../auth/middleware.ts';
 import { fuz_auth_guard_resolver } from '../auth/auth_guard_resolver.ts';
 import { create_fuz_authorization_handler } from '../auth/request_context.ts';
-import { create_body_limit_middleware } from '../http/body_limit.ts';
+import { create_body_limit_middleware_spec } from '../http/body_limit.ts';
 import { admit_origin_wildcards, ALLOWED_ORIGINS_VAR } from '../http/origin_wildcard.ts';
 import { create_rpc_endpoint } from '../actions/action_rpc.ts';
 import { register_action_ws } from '../actions/register_action_ws.ts';
@@ -268,7 +268,9 @@ export interface AppServerOptions {
 	 * (anything else throws at assembly). Omit or `undefined` to use the
 	 * default (1 MiB). Pass `null` to explicitly disable body size limiting,
 	 * which adds a security warning to the surface's diagnostics (logged at
-	 * startup).
+	 * startup). The limit is mounted as a middleware spec at `'*'` ahead of
+	 * the others (`create_body_limit_middleware_spec`), so every route's
+	 * error map declares its `413` and `400`; with `null` it is absent.
 	 */
 	max_body_size?: number | null;
 	/** Daemon token state for keeper auth. Omit to disable. */
@@ -873,11 +875,12 @@ const assemble_app_server = async (
 		log.warn(`${ALLOWED_ORIGINS_VAR}: ${warning} (origin ${entry})`);
 	}
 	// body size limit — rejects oversized payloads before auth/validation; the
-	// middleware throws on a cap that is not a safe integer 0 or more
-	const body_limit_middleware: MiddlewareHandler | null =
+	// middleware throws on a cap that is not a safe integer 0 or more. A spec,
+	// so the surface and each route's error map declare its 413 and 400.
+	const body_limit_spec: MiddlewareSpec | null =
 		options.max_body_size === null
 			? null
-			: create_body_limit_middleware(options.max_body_size ?? DEFAULT_BODY_LIMIT_BYTES);
+			: create_body_limit_middleware_spec(options.max_body_size ?? DEFAULT_BODY_LIMIT_BYTES);
 
 	// Rate limiters — the ones built here are the server's to dispose, on
 	// close or when assembly fails.
@@ -1112,10 +1115,13 @@ const assemble_app_server = async (
 		}
 	}
 
-	// Surface + logging
-	const surface_middleware = options.post_route_middleware
-		? [...middleware_specs, ...options.post_route_middleware]
-		: middleware_specs;
+	// Surface + logging — the body limit first, where it runs, ahead of the
+	// middleware specs
+	const surface_middleware = [
+		...(body_limit_spec ? [body_limit_spec] : []),
+		...middleware_specs,
+		...(options.post_route_middleware ?? [])
+	];
 	const all_event_specs = [
 		...(options.event_specs ?? []),
 		...(audit_sse ? audit_log_event_specs : [])
@@ -1194,13 +1200,22 @@ const assemble_app_server = async (
 	}
 
 	// body size limit, built with the option checks above
-	if (body_limit_middleware) {
-		app.use(body_limit_middleware);
+	if (body_limit_spec) {
+		apply_middleware_specs(app, [body_limit_spec]);
 	}
 
 	apply_middleware_specs(app, middleware_specs);
 	const authorize = create_fuz_authorization_handler({ db: deps.db });
-	apply_route_specs(app, route_specs, fuz_auth_guard_resolver, log, deps.db, authorize);
+	// each route's DEV output check reads the error map the surface wrote
+	apply_route_specs(
+		app,
+		route_specs,
+		fuz_auth_guard_resolver,
+		log,
+		deps.db,
+		authorize,
+		surface_spec.route_errors
+	);
 
 	// WS endpoint auto-mount — must run after `app` exists and
 	// `apply_route_specs` has registered the request routes. Each spec

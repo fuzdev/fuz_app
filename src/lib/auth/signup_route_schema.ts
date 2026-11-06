@@ -12,26 +12,13 @@
  * @module
  */
 
-import {
-	literal,
-	loose_object,
-	nullable,
-	object,
-	one_of,
-	optional,
-	type Infer
-} from '@fuzdev/fuz_schema/schema.ts';
+import { literal, nullable, object, optional, type Infer } from '@fuzdev/fuz_schema/schema.ts';
 
 import { Email, Username, UsernameCanonical, Uuid } from '../primitive_schemas_fuz.ts';
 
 import { Password } from './password.ts';
 import type { RouteSpec } from '../http/route_spec.ts';
-import {
-	ERROR_INVALID_JSON_BODY,
-	ERROR_INVALID_REQUEST_BODY,
-	REST_NO_MATCHING_INVITE,
-	REST_SIGNUP_CONFLICT
-} from '../http/error_schemas.ts';
+import { REST_NO_MATCHING_INVITE, REST_SIGNUP_CONFLICT } from '../http/error_schemas.ts';
 
 /**
  * Input for `POST /signup`, a `@fuzdev/fuz_schema` schema. `email` is optional
@@ -83,9 +70,5 @@ export const create_signup_route_shape = (
 	input: SignupInput,
 	output: SignupOutput,
 	rate_limit: options.signup_account_rate_limited ? 'both' : 'ip',
-	errors: {
-		400: loose_object({ error: one_of([ERROR_INVALID_JSON_BODY, ERROR_INVALID_REQUEST_BODY]) }),
-		403: REST_NO_MATCHING_INVITE.schema,
-		409: REST_SIGNUP_CONFLICT.schema
-	}
+	errors: [REST_NO_MATCHING_INVITE, REST_SIGNUP_CONFLICT]
 });

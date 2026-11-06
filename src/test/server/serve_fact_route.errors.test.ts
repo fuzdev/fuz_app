@@ -1,8 +1,10 @@
 /**
  * The fact routes' declared 400 error schema.
  *
- * Both fact routes tighten their auto-derived 400 to the literal
- * `invalid_route_params` shape params validation emits. That body carries
+ * Both fact routes declare no errors of their own: their 400 is what their
+ * slots derive (`resolve_route_errors`) — the `invalid_route_params` params
+ * validation emits, and on the bare-hash route the query and actor codes —
+ * and never a body code, as neither reads a body. The params body carries
  * `issues` only under DEV (`dev_only`), so the declared schema must admit a
  * body without it — a required `issues` makes the production body fail
  * `describe_round_trip_validation`, which parses declared error schemas
@@ -18,7 +20,12 @@ import {
 	create_serve_fact_route_spec,
 	create_serve_cell_fact_route_spec
 } from '#lib/server/serve_fact_route.ts';
-import { ERROR_INVALID_ROUTE_PARAMS } from '#lib/http/error_schemas.ts';
+import {
+	ERROR_INVALID_JSON_BODY,
+	ERROR_INVALID_REQUEST_BODY,
+	ERROR_INVALID_ROUTE_PARAMS
+} from '#lib/http/error_schemas.ts';
+import { resolve_route_errors } from '#lib/http/schema_helpers.ts';
 import { parse_any } from '#lib/schema_issues.ts';
 
 const log = new Logger('test', { level: 'off' });
@@ -31,7 +38,8 @@ const route_400_schemas = [
 describe('fact route 400 error schema', () => {
 	for (const [label, create] of route_400_schemas) {
 		describe(label, () => {
-			const schema = create({ facts_dir: '/tmp/facts', log }).errors?.[400];
+			const spec = create({ facts_dir: '/tmp/facts', log });
+			const schema = resolve_route_errors(spec).schemas[400];
 
 			test('declares a 400 schema', () => {
 				assert.ok(schema);
@@ -67,8 +75,14 @@ describe('fact route 400 error schema', () => {
 				);
 			});
 
-			test('still refuses a different error literal', () => {
+			test('still refuses a different error literal, a body code among them', () => {
 				assert.ok(!parse_any(schema!, { error: 'unauthenticated' }).ok);
+				assert.ok(!parse_any(schema!, { error: ERROR_INVALID_REQUEST_BODY }).ok);
+				assert.ok(!parse_any(schema!, { error: ERROR_INVALID_JSON_BODY }).ok);
+			});
+
+			test('declares no errors of its own', () => {
+				assert.strictEqual(spec.errors, undefined);
 			});
 		});
 	}

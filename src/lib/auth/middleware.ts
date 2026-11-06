@@ -12,7 +12,7 @@ import type { AppDeps } from './deps.ts';
 import type { DaemonTokenState } from './daemon_token.ts';
 import type { MiddlewareCarveOut, MiddlewareSpec } from '../http/middleware_spec.ts';
 import type { RouteSpec } from '../http/route_spec.ts';
-import { ApiError } from '../http/error_schemas.ts';
+import { REST_FORBIDDEN_ORIGIN } from '../http/error_schemas.ts';
 import { middleware_applies, middleware_paths_overlap } from '../http/schema_helpers.ts';
 
 /**
@@ -325,7 +325,7 @@ export const create_auth_middleware_specs = async (
 		name: 'origin',
 		path: ORIGIN_MIDDLEWARE_PATH,
 		handler: verify_request_source(allowed_origins, origin_carve_outs),
-		errors: { 403: ApiError },
+		errors: [REST_FORBIDDEN_ORIGIN],
 		...(origin_carve_outs.length > 0 && { carve_outs: origin_carve_outs })
 	};
 
@@ -341,7 +341,7 @@ export const create_auth_middleware_specs = async (
 			// session and bearer legs, then the dispatcher's credential gate
 			// (matching the Rust spine's `None`). The layer returns no error
 			// response of its own.
-			errors: {}
+			errors: []
 		};
 	}
 
@@ -361,7 +361,7 @@ export const create_auth_middleware_specs = async (
 			// happens downstream — the RPC dispatcher's pre-authorization /
 			// post-authorization auth gates, or `require_auth` / `require_role` on
 			// REST — producing consistent JSON-RPC or route-level errors.
-			errors: {}
+			errors: []
 		}
 	];
 

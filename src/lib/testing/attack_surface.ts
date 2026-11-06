@@ -25,7 +25,6 @@ import {
 	audit_error_schema_tightness,
 	assert_error_schema_tightness,
 	default_error_schema_tightness,
-	fuz_app_stock_route_tightness_allowlist,
 	type SurfaceSecurityPolicyOptions,
 	type ErrorSchemaTightnessOptions
 } from './surface_invariants.ts';
@@ -40,10 +39,8 @@ import {
 	assert_full_middleware_stack,
 	assert_error_schema_valid
 } from './assertions.ts';
-import type { MiddlewareSpec } from '../http/middleware_spec.ts';
 import type { RouteSpec } from '../http/route_spec.ts';
-import { merge_error_schemas } from '../http/schema_helpers.ts';
-import { collect_middleware_errors, type AppSurfaceSpec } from '../http/surface.ts';
+import type { AppSurfaceSpec } from '../http/surface.ts';
 import {
 	filter_protected_routes,
 	filter_role_routes,
@@ -54,7 +51,6 @@ import {
 	CREDENTIAL_TYPE_SESSION
 } from '../auth/credential_type_schema.ts';
 import {
-	type ErrorSchemas,
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,
 	ERROR_CREDENTIAL_TYPE_REQUIRED
@@ -62,32 +58,8 @@ import {
 // --- Adversarial test runner ---
 
 /**
- * Build a lookup from `"METHOD /path"` to merged error schemas (auto-derived + middleware + explicit).
- *
- * Uses `merge_error_schemas` to ensure consistency with surface generation —
- * accounts for auth, input, params, and middleware when auto-deriving error schemas.
- */
-const build_error_schema_lookup = (
-	route_specs: Array<RouteSpec>,
-	middleware_specs?: Array<MiddlewareSpec>
-): Map<string, ErrorSchemas> => {
-	const lookup: Map<string, ErrorSchemas> = new Map();
-	for (const spec of route_specs) {
-		const key = `${spec.method} ${spec.path}`;
-		const mw_errors = middleware_specs
-			? collect_middleware_errors(middleware_specs, spec.path)
-			: null;
-		const merged = merge_error_schemas(spec, mw_errors);
-		if (merged && Object.keys(merged).length > 0) {
-			lookup.set(key, merged);
-		}
-	}
-	return lookup;
-};
-
-/**
  * Build a lookup from `"METHOD /path"` to the route's own `RouteSpec` — the
- * companion of `build_error_schema_lookup`, so a generated request can reach
+ * companion of the surface spec's `route_errors`, so a generated request can reach
  * the route's `params` schema and synthesize path segments the route will
  * actually accept.
  */
@@ -129,7 +101,7 @@ export interface AdversarialTestOptions {
  */
 export const describe_adversarial_auth = (options: AdversarialTestOptions): void => {
 	const { build, roles } = options;
-	const { surface, route_specs, middleware_specs } = build();
+	const { surface, route_specs, route_errors } = build();
 	const is_skipped = create_route_skip_filter(options.skip_routes);
 	const protected_routes = filter_protected_routes(surface).filter((r) => !is_skipped(r));
 
@@ -140,8 +112,8 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
 		(r) => !is_skipped(r)
 	);
 
-	// merged error schemas (auto-derived + middleware + handler-specific) for response validation
-	const error_schema_lookup = build_error_schema_lookup(route_specs, middleware_specs);
+	// each route's error map (derived, middleware, and handler-specific), for response validation
+	const error_schema_lookup = route_errors;
 
 	// The route's own spec, so a path param with a declared format (a
 	// `blake3:…` fact hash, a `tok_…` id) is synthesized into a value params
@@ -310,7 +282,10 @@ export const resolve_standard_error_schema_tightness = (
 	return {
 		...default_error_schema_tightness,
 		...consumer,
-		allowlist: [...fuz_app_stock_route_tightness_allowlist, ...(consumer?.allowlist ?? [])],
+		allowlist: [
+			...(default_error_schema_tightness.allowlist ?? []),
+			...(consumer?.allowlist ?? [])
+		],
 		ignore_statuses: [
 			...(default_error_schema_tightness.ignore_statuses ?? []),
 			...(consumer?.ignore_statuses ?? [])
@@ -336,13 +311,11 @@ export interface StandardAttackSurfaceOptions {
 	security_policy?: SurfaceSecurityPolicyOptions;
 	/**
 	 * Error schema tightness assertion config. Defaults to
-	 * `default_error_schema_tightness` (ignores 401/403/429,
-	 * `min_specificity: 'enum'`, allowlist seeded with
-	 * `fuz_app_stock_route_tightness_allowlist`).
+	 * `default_error_schema_tightness` (`min_specificity: 'enum'`, nothing
+	 * exempt).
 	 *
-	 * Consumer-supplied `allowlist` and `ignore_statuses` are **additive** —
-	 * the suite merges them underneath the stock defaults, so project-specific
-	 * entries don't need to re-list fuz_app's own stock routes. Pass a narrower
+	 * Consumer-supplied `allowlist` and `ignore_statuses` are **additive** to
+	 * the defaults' (`resolve_standard_error_schema_tightness`). Pass a narrower
 	 * config to extend either list or tighten `min_specificity`; pass `null`
 	 * to skip the assertion and keep the audit log informational-only.
 	 */

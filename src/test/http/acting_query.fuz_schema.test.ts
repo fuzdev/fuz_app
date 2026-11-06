@@ -10,8 +10,17 @@
  * `c.req.query()` builds them (null-prototype): the same verdict, the same
  * output, and the same wire issues but for `message`. Their surface entries
  * are the Zod-era ones as JSON, captured in
- * `fixtures/surface/acting_query.json`, and through the route stack an
- * invalid query is answered with fuz_schema's issue messages under DEV.
+ * `fixtures/surface/acting_query.json`, but for the moves of the error rules
+ * (`ERROR_MOVES`): each `GET`'s derived 400 is the query and actor codes, and
+ * no body or params code (it was one enum of the four input codes beside the
+ * actor ones); the `DELETE`'s 400 is its params' and query's codes, the actor
+ * codes, and its handler's two, all unioned (its own enum replaced the
+ * derived one); the bare-hash fact route's 400 is its params' code with the
+ * query and actor codes (its own params literal replaced them); each derived
+ * 401 is `authentication_required` exactly (it was any string); and the
+ * `DELETE`'s 404 is its two definitions (it was one enum). Through the route
+ * stack an invalid query is answered with fuz_schema's issue messages under
+ * DEV.
  *
  * @module
  */
@@ -42,6 +51,19 @@ import { parse_any, to_wire_issues, WireIssue } from '#lib/schema_issues.ts';
 import { Db } from '#lib/db/db.ts';
 
 const log = new Logger('test', { level: 'off' });
+
+import {
+	REST_ACTOR_NOT_ON_ACCOUNT,
+	REST_ACTOR_REQUIRED,
+	REST_AUTHENTICATION_REQUIRED,
+	REST_INVALID_QUERY_PARAMS,
+	REST_INVALID_ROUTE_PARAMS,
+	REST_ROW_NOT_FOUND,
+	REST_TABLE_NO_PRIMARY_KEY,
+	REST_TABLE_NOT_DELETABLE,
+	REST_TABLE_NOT_FOUND
+} from '#lib/http/error_schemas.ts';
+import { with_error_moves, type ErrorMove } from '../surface_test_helpers.ts';
 
 const SURFACE_FIXTURE_PATH = new URL('../fixtures/surface/acting_query.json', import.meta.url);
 
@@ -261,6 +283,53 @@ describe('the ported `{acting}` queries', () => {
 	});
 });
 
+const ANY_INPUT_400 = [
+	'invalid_request_body',
+	'invalid_json_body',
+	'invalid_route_params',
+	'invalid_query_params',
+	'actor_required',
+	'actor_not_on_account'
+];
+const ACTOR_400 = [REST_ACTOR_REQUIRED, REST_ACTOR_NOT_ON_ACCOUNT];
+const AUTH_401: ErrorMove = { from: ['*'], to: [REST_AUTHENTICATION_REQUIRED] };
+const ACTING_QUERY_400: ErrorMove = {
+	from: ANY_INPUT_400,
+	to: [REST_INVALID_QUERY_PARAMS, ...ACTOR_400]
+};
+
+// the declared moves of the error rules, by `METHOD path` and status
+const ERROR_MOVES: Record<string, Record<number, ErrorMove>> = {
+	'GET /health': { 400: ACTING_QUERY_400, 401: AUTH_401 },
+	'GET /tables': { 400: ACTING_QUERY_400, 401: AUTH_401 },
+	'DELETE /tables/:name/rows/:id': {
+		400: {
+			from: ['invalid_route_params', 'table_no_primary_key', 'table_not_deletable'],
+			to: [
+				REST_INVALID_ROUTE_PARAMS,
+				REST_INVALID_QUERY_PARAMS,
+				...ACTOR_400,
+				REST_TABLE_NOT_DELETABLE,
+				REST_TABLE_NO_PRIMARY_KEY
+			]
+		},
+		401: AUTH_401,
+		404: {
+			from: ['table_not_found', 'row_not_found'],
+			to: [REST_TABLE_NOT_FOUND, REST_ROW_NOT_FOUND]
+		}
+	},
+	'GET /api/facts/:hash': {
+		400: {
+			from: ['invalid_route_params'],
+			to: [REST_INVALID_ROUTE_PARAMS, REST_INVALID_QUERY_PARAMS, ...ACTOR_400]
+		},
+		401: AUTH_401
+	},
+	'GET /api/surface': { 400: ACTING_QUERY_400, 401: AUTH_401 },
+	'GET /audit/stream': { 400: ACTING_QUERY_400, 401: AUTH_401 }
+};
+
 describe('the surface entries of the ported routes', () => {
 	test('are the Zod-era ones as JSON, `description` now written last', () => {
 		const surface = generate_app_surface({
@@ -269,7 +338,11 @@ describe('the surface entries of the ported routes', () => {
 		});
 		assert.deepStrictEqual(surface.diagnostics, []);
 		const expected = readFileSync(SURFACE_FIXTURE_PATH, 'utf8');
-		assert.deepStrictEqual(surface.routes, JSON.parse(expected));
+		const captured: Array<Record<string, any>> = JSON.parse(expected);
+		assert.deepStrictEqual(
+			surface.routes,
+			captured.map((r) => with_error_moves(r, ERROR_MOVES[`${r.method} ${r.path}`]))
+		);
 		// equal as JSON, not byte for byte: fuz_schema writes a node's keywords in
 		// its own order, `type` first and `description` last, where Zod wrote
 		// `description` first

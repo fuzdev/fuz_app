@@ -152,7 +152,6 @@ import {
 import { ROLE_ADMIN } from '../auth/role_schema.ts';
 import { query_active_actors_by_account } from '../auth/account_queries.ts';
 import { get_route_params, type RouteContext, type RouteSpec } from '../http/route_spec.ts';
-import { REST_INVALID_ROUTE_PARAMS } from '../http/error_schemas.ts';
 import { query_get_fact, query_get_fact_meta } from '../db/fact_queries.ts';
 import { to_uint8 } from '../db/fact_store.ts';
 import { query_cell_get } from '../db/cell_queries.ts';
@@ -182,14 +181,6 @@ const cell_fact_params_schema = z.strictObject({
 	cell_id: Uuid,
 	hash: FactHashSchema
 });
-
-/**
- * Shared error-schema entry: tighten the auto-derived 400 to the literal
- * emitted by params validation (`REST_INVALID_ROUTE_PARAMS`, whose `issues`
- * are optional because the framework emits them through `dev_only` — a
- * production body carries the `error` literal alone).
- */
-const params_400_error = { 400: REST_INVALID_ROUTE_PARAMS.schema } as const;
 
 export interface CreateServeFactRouteSpecOptions {
 	/** Absolute path of the facts directory. Used for the dev/test streaming path. */
@@ -382,7 +373,6 @@ export const create_serve_cell_fact_route_spec = (
 		input: z.null(),
 		// The body is a binary stream; no JSON output schema applies.
 		output: z.null(),
-		errors: params_400_error,
 		handler: async (c, route) => {
 			const { cell_id, hash } = get_route_params<{ cell_id: Uuid; hash: FactHash }>(c);
 
@@ -476,7 +466,6 @@ export const create_serve_fact_route_spec = (
 		input: z.null(),
 		// The body is a binary stream; no JSON output schema applies.
 		output: z.null(),
-		errors: params_400_error,
 		handler: async (c, route) => {
 			const { hash } = get_route_params<{ hash: FactHash }>(c);
 

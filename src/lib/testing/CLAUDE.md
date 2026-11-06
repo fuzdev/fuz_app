@@ -38,7 +38,7 @@ time (never runtime), where a throwing guard would break `vite build`.
 - `create_stub_api_middleware({include_daemon_token?, origin_carve_outs?})` — stub `MiddlewareSpec[]` matching `create_auth_middleware_specs`'s output (origin, optional daemon_token, session, request_context, bearer_auth) for surface generation without booting real auth — the same names, paths, order, and declared `errors` (`origin` declares a 403; `bearer_auth` and `daemon_token` declare none, since both soft-fail through `next()`), pinned against the real factory by `auth/middleware.mounted.test.ts`. The surface merges middleware errors into every route under the path, so a stub declaring more would widen the test surface with statuses the live server never returns. Each spec gets its own pass-through handler (not the shared `stub_mw`), so `assert_middleware_stack_mounted` tells the layers apart. See `auth/CLAUDE.md` §Middleware for the real stack.
 - `create_stub_app_backend(options?)` — stub `AppBackend` with no database: `create_stub_app_deps()` (or `options.deps`), no migration results, a `close` that does nothing (or `options.close`). For assembling a server in tests that never reach the database.
 - `create_stub_app_server_context(session_options)` — stub `AppServerContext` over `create_stub_app_backend()`; rate limiters null, `bootstrap_status.available: false`.
-- `create_test_app_surface_spec(options)` — builds an `AppSurfaceSpec` mirroring `create_app_server`'s route assembly, in its order (consumer routes, then bootstrap routes, RPC endpoint routes, and `GET /api/surface`, + stub middleware + surface generation). `GET /api/surface` is listed only with `surface_route: true`, as `create_app_server` mounts it only when opted in — pass the same value to both so the surface-derived suites probe it exactly when the live server serves it. `daemon_token: true` lists the `daemon_token` layer `create_app_server` mounts when given a `daemon_token_state` (`create_test_app` always passes one, and `default_in_process_suite_options` sets it, along with `app_options.surface_route`); `testing/test_app_server.db.test.ts` pins the stub's routes (order, auth, error schemas, applicable middleware) and middleware names against `create_test_app`'s for every `surface_route` setting. Its middleware list mirrors the real one — a stub `trusted_proxy` spec at `'*'`, then the stub auth stack — so every route's `applicable_middleware` starts with `trusted_proxy` (a route outside `/api/*` lists `['trusted_proxy', 'origin']`, since the origin check covers every path, and a route under an origin carve-out drops `origin`), as on the live server. `CreateTestAppSurfaceSpecOptions`: `session_options`, `create_route_specs`, `env_schema?`, `event_specs?`, `rpc_endpoints?`, `ws_endpoints?`, `allowed_origins?`, `origin_carve_outs?`, `transform_middleware?`, `bootstrap?`, `surface_route?`, `daemon_token?`. Throws, like `create_app_server`, on an endpoint path outside `AUTH_MIDDLEWARE_PATH` (`assert_endpoint_in_auth_scope`), on a route that reads or mints a credential outside it (`assert_credential_routes_in_auth_scope`), on an origin carve-out that overlaps that scope (`assert_origin_carve_outs_valid`), and on a `transform_middleware` that moves, drops, duplicates, reorders, wraps, or replaces the stub proxy spec or a stub auth spec (`assert_middleware_stack_mounted`); the transform receives shallow copies in a fresh array, so an in-place mutation can't slip past the check. Throws on a `ws_endpoints` spec with no `allowed_origins` of its own when no `allowed_origins` option is given (there is no server list to default from). Bootstrap is opt-in (symmetric with `create_app_server` — omit to skip; pass the same value as prod to mount routes at `bootstrap.route_prefix ?? '/api/account'`). Single source of truth for attack-surface tests — track `create_app_server` wiring changes here.
+- `create_test_app_surface_spec(options)` — builds an `AppSurfaceSpec` mirroring `create_app_server`'s route assembly, in its order (consumer routes, then bootstrap routes, RPC endpoint routes, and `GET /api/surface`, + stub middleware + surface generation). `GET /api/surface` is listed only with `surface_route: true`, as `create_app_server` mounts it only when opted in — pass the same value to both so the surface-derived suites probe it exactly when the live server serves it. `daemon_token: true` lists the `daemon_token` layer `create_app_server` mounts when given a `daemon_token_state` (`create_test_app` always passes one, and `default_in_process_suite_options` sets it, along with `app_options.surface_route`); `testing/test_app_server.db.test.ts` pins the stub's routes (order, auth, error schemas, applicable middleware) and middleware names against `create_test_app`'s for every `surface_route` setting. Its middleware list mirrors the real one — the body limit's shape at `'*'` (`body_limit_middleware_shape` with a stub handler, left out with `max_body_size: null`), a stub `trusted_proxy` spec at `'*'`, then the stub auth stack — so every route's `applicable_middleware` starts with `body_limit`, `trusted_proxy` (a route outside `/api/*` lists `['body_limit', 'trusted_proxy', 'origin']`, since the origin check covers every path, and a route under an origin carve-out drops `origin`), as on the live server, and every route's error map carries the limit's 413 and 400 and the origin check's 403 `forbidden_origin`. `CreateTestAppSurfaceSpecOptions`: `session_options`, `create_route_specs`, `env_schema?`, `event_specs?`, `rpc_endpoints?`, `ws_endpoints?`, `allowed_origins?`, `origin_carve_outs?`, `transform_middleware?`, `bootstrap?`, `surface_route?`, `daemon_token?`, `max_body_size?`. Throws, like `create_app_server`, on an endpoint path outside `AUTH_MIDDLEWARE_PATH` (`assert_endpoint_in_auth_scope`), on a route that reads or mints a credential outside it (`assert_credential_routes_in_auth_scope`), on an origin carve-out that overlaps that scope (`assert_origin_carve_outs_valid`), and on a `transform_middleware` that moves, drops, duplicates, reorders, wraps, or replaces the stub proxy spec or a stub auth spec (`assert_middleware_stack_mounted`); the transform receives shallow copies in a fresh array, so an in-place mutation can't slip past the check. Throws on a `ws_endpoints` spec with no `allowed_origins` of its own when no `allowed_origins` option is given (there is no server list to default from). Bootstrap is opt-in (symmetric with `create_app_server` — omit to skip; pass the same value as prod to mount routes at `bootstrap.route_prefix ?? '/api/account'`). Single source of truth for attack-surface tests — track `create_app_server` wiring changes here.
 
 Throwing stubs surface mock escape: a test that accidentally reaches into
 stub territory breaks immediately with a label-scoped error rather than
@@ -417,7 +417,7 @@ or Postgres and runs in the `cross-ts` CI job.
 - `assert_surface_deterministic(build_surface)` — build twice, `deepStrictEqual` results; catches nondeterminism in surface generation.
 - `assert_only_expected_public_routes(surface, list)` — bidirectional: no unexpected public routes, no missing expected ones. Format: `['GET /health', 'POST /api/account/login']`.
 - `assert_full_middleware_stack(surface, prefix, mws)` — every route under `prefix` has exactly `mws` as its middleware chain.
-- `get_route_error_schema(lookup, route, status)` — reads from a pre-built merged-error-schema map; the schema is Zod or fuz_schema (`ValidationSchema`).
+- `get_route_error_schema(lookup, route, status)` — reads the route's error map (`lookup` is `AppSurfaceSpec.route_errors`) at a status, a fuz_schema schema.
 - `assert_error_schema_valid(lookup, route, status, body)` — assert a schema exists + parses the body (`parse_any`); a mismatch throws an `Error` carrying the issues.
 
 ### `surface_invariants.ts` — structural + policy invariants
@@ -462,9 +462,8 @@ Tightness audit:
 
 - `audit_error_schema_tightness(surface) => Array<ErrorSchemaAuditEntry>` — classifies every route × status combination as `'literal' | 'enum' | 'generic'`.
 - `assert_error_schema_tightness(surface, options?)` — fails routes below a threshold (`min_specificity`, default `'enum'`) with `allowlist` + `ignore_statuses` escape hatches.
-- `fuz_app_stock_route_tightness_allowlist` — currently empty. Every fuz_app-shipped route (account login/password/bootstrap/signup, db health/tables/:name/tables/:name/rows/:id) has been tightened in place to `z.enum([...])` / `z.literal(...)` against every emit-site code. Kept as a forward-compatibility hook for future stock routes that need an interim exemption; paths assume the standard `/api/account` + `/api/db` prefixes.
-- `default_error_schema_tightness` — `{ignore_statuses: [401, 403, 429], allowlist: fuz_app_stock_route_tightness_allowlist}`. Applied by `describe_standard_attack_surface_tests` when `error_schema_tightness` is omitted; pass an override config or `null` to opt out.
-- **Merge semantics in `describe_standard_attack_surface_tests`**: consumer-supplied `allowlist` and `ignore_statuses` are concatenated underneath the defaults (stock entries first, consumer entries last), so consumer allowlists are additive rather than replacing. Scalar fields like `min_specificity` are overwritten by the consumer. Exported as `resolve_standard_error_schema_tightness(consumer_options)` for consumers calling `assert_error_schema_tightness` directly outside the suite.
+- `default_error_schema_tightness` — `{}`: nothing exempt, as every declared error is a definition whose `error` is a literal. Applied by `describe_standard_attack_surface_tests` when `error_schema_tightness` is omitted; pass an override config or `null` to opt out.
+- **Merge semantics in `describe_standard_attack_surface_tests`**: consumer-supplied `allowlist` and `ignore_statuses` are concatenated after the defaults', so they are additive rather than replacing. Scalar fields like `min_specificity` are overwritten by the consumer. Exported as `resolve_standard_error_schema_tightness(consumer_options)` for consumers calling `assert_error_schema_tightness` directly outside the suite.
 
 Aggregate runners (called by the standard attack-surface suite):
 
@@ -474,7 +473,12 @@ Aggregate runners (called by the standard attack-surface suite):
 
 ### `error_coverage.ts` — reachability tracking
 
-`ErrorCoverageCollector` tracks which declared error paths get exercised.
+`ErrorCoverageCollector` tracks which declared error paths get exercised:
+each code of each route's error map (`resolve_route_errors`), one path per
+(status, code), read from its definitions. `new ErrorCoverageCollector(route_errors?)`
+takes the maps (`AppSurfaceSpec.route_errors`, middleware included); without
+them a route's own map is read. The standard suites pass
+`surface_source.route_errors`.
 Observations live in a `Set<string>` keyed by `"METHOD /spec-path:STATUS"` or
 `"METHOD /spec-path:STATUS:CODE"` — the two shapes coexist and a status-only
 observation satisfies the "any-code" coverage rule for all declared codes at
@@ -484,11 +488,10 @@ Methods:
 
 - `record(specs, method, path, status, code?)` — resolves concrete paths back to spec templates (e.g. `/api/accounts/abc` → `/api/accounts/:id`).
 - `assert_and_record(specs, method, path, response, code?)` — wraps `assert_response_matches_spec` and auto-extracts `body.error` from the JSON body via `response.clone()`. Pass an explicit `code` when the body was already consumed.
-- `uncovered(specs, options?)` — per-status rows for generic schemas, per-code rows for `z.literal` / `z.enum` schemas.
+- `uncovered(specs, options?)` — one `{method, path, status, code}` row per declared code never observed.
 
 Support functions:
 
-- `extract_declared_error_codes(schema)` — reads the object's `error` field, Zod (`schema.shape.error`) or fuz_schema (`get_schema_entries`, any object kind under any wrappers); returns the literal value(s) for `z.literal` / `z.enum` / `literal` / `one_of`, `null` otherwise.
 - `assert_error_coverage(collector, specs, options?)` — logs `[error coverage] covered/total (N.M%)` with uncovered list; fails when `min_coverage > 0` and the ratio falls below.
 - `DEFAULT_INTEGRATION_ERROR_COVERAGE = 0.2` — conservative baseline for the standard integration/admin suites; consumers tighten as their own test coverage matures.
 
@@ -515,7 +518,7 @@ naming it.
 
 - `find_route_spec(specs, method, path)` — exact match then parameterized match (`:foo` matches any segment).
 - `find_auth_route(specs, suffix, method)` — suffix-ending match for REST auth routes; decouples tests from consumer prefix. `suffix` is typed as `RestAuthRouteSuffix` and throws at runtime on unknown values (only login/logout/password/verify/signup/bootstrap remain on REST).
-- `assert_response_matches_spec(specs, method, path, response)` — 2xx → validates against `spec.output`; non-2xx → validates against merged error schemas for that status. Non-JSON responses allowed only when no schema applies.
+- `assert_response_matches_spec(specs, method, path, response, route_errors?)` — 2xx → validates against `spec.output`; non-2xx → validates against the route's error map at that status: the one in `route_errors` (`AppSurfaceSpec.route_errors`, middleware included), else the route's own. Non-JSON responses allowed only when no schema applies.
 - `assert_no_error_info_leakage(body, context)` — rejects field-name patterns (`stack`, `trace`, `sql`, …) + value patterns (`node_modules`, stack-like `at …`, `.ts:NN`).
 - `assert_rate_limit_retry_after_header(response, body)` — `Retry-After` numeric header equals `Math.ceil(body.retry_after)`.
 - `sensitive_field_blocklist` — `['password_hash', 'token_hash']`; never in any response body.
@@ -574,14 +577,11 @@ rather than `ERROR_INVALID_JSON_BODY`.
 
 ### `adversarial_404.ts` — 404 schema conformance
 
-`describe_adversarial_404({build, roles})` — for every route with `params` +
-404 in `error_schemas` + an extractable error code (`z.literal` or first
-`z.enum`, fuz_schema `literal` or first `one_of`), replaces the handler with a
-stub returning `{error: <code>}`, fires with nil-UUID params, asserts 404 +
-body matches the declared 404 schema, Zod or fuz_schema (`parse_any`). No DB needed. The code comes from `extract_404_error_code(schema)`,
-which reads the output-side JSON Schema of a Zod or fuz_schema schema with
-`unrepresentable: 'any'`, so a field JSON Schema can't say beside `error`
-(a transform) no longer drops the route from the suite.
+`describe_adversarial_404({build, roles})` — for every route with `params` and
+a 404 definition of its own in `errors`, replaces the handler with a stub
+returning `{error: <code>}` (the first 404 definition's code), fires with
+nil-UUID params, asserts 404 + body matches the route error map's 404
+(`parse_any`, `AppSurfaceSpec.route_errors`). No DB needed.
 
 ### `adversarial_headers.ts` — header injection suite
 
@@ -849,11 +849,9 @@ auth-related routes (login/logout/verify/sessions/tokens/password/signup)
 and asserts `DEFAULT_INTEGRATION_ERROR_COVERAGE` (20%). Bootstrap is
 excluded because no describe block in this suite drives it — its declared
 codes would always be uncovered. Consumer-specific routes aren't exercised
-here either — they don't count against the baseline. 403 authorization
-denials (the credential-channel gate on `/logout` + `/password`, the invite
-gate on `/signup`) are likewise excluded via `ignore_statuses: [403]` — they're
-exercised by the conformance + attack-surface suites, not this lifecycle suite.
-Override with
+here either — they don't count against the baseline. The declared paths are
+the route error maps of `surface_source`, middleware included (the origin
+check's 403, the body limit's 413 and 400). Override with
 `error_coverage_min?: number` (set to `0` to skip the assertion — useful for
 minimal route sets whose declared error codes outpace the suite's
 denial-path drivers).

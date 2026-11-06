@@ -128,6 +128,7 @@ export const assert_route_authenticated = (
  */
 export const describe_round_trip_validation = (options: RoundTripTestOptions): void => {
 	const describe_time_specs = options.surface_source.route_specs;
+	const route_errors = options.surface_source.route_errors;
 	const skip_set = new Set(options.skip_routes);
 
 	describe('round-trip validation', () => {
@@ -223,7 +224,13 @@ export const describe_round_trip_validation = (options: RoundTripTestOptions): v
 						.catch(() => undefined);
 					assert_route_authenticated(route_key, res.status, body, principal);
 				}
-				await assert_response_matches_spec(describe_time_specs, spec.method, url, res);
+				await assert_response_matches_spec(
+					describe_time_specs,
+					spec.method,
+					url,
+					res,
+					route_errors
+				);
 			} catch (e) {
 				throw new Error(
 					`Round-trip validation failed for ${route_key} (status ${res.status}): ${
@@ -262,7 +269,13 @@ export const describe_round_trip_validation = (options: RoundTripTestOptions): v
 							.text()
 							.catch(() => '<unreadable>')}`
 					);
-					await assert_response_matches_spec(describe_time_specs, spec.method, url, res);
+					await assert_response_matches_spec(
+						describe_time_specs,
+						spec.method,
+						url,
+						res,
+						route_errors
+					);
 				} catch (e) {
 					throw new Error(
 						`Round-trip success-fixture failed for ${route_key} (status ${res.status}): ${

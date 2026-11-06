@@ -1,15 +1,19 @@
 /**
  * The REST error schemas — the standard shapes, every `REST_*` definition's
- * body, the error schemas `derive_error_schemas` builds, the route entries
- * built from definitions, and the action manifest — `@fuzdev/fuz_schema`
- * schemas, held to the Zod schemas they replaced, rebuilt here. Over each
- * schema's valid bodies and every variant of them one edit away (a node
- * replaced by a value of the pool, a key dropped, a key added), the verdict
- * and the output are Zod's, and the surface writes the same JSON Schema, as a
- * value: `to_json_schema` writes a `readOnly` annotation after the node's
- * keywords, where Zod wrote it first. An input holding a `Date`, which a loose
- * object keeps where Zod copies it into a plain object, is held to Zod's
+ * body, the route entries built from definitions, and the action manifest —
+ * `@fuzdev/fuz_schema` schemas, held to the Zod schemas they replaced, rebuilt
+ * here. Over each schema's valid bodies and every variant of them one edit
+ * away (a node replaced by a value of the pool, a key dropped, a key added),
+ * the verdict and the output are Zod's, and the surface writes the same JSON
+ * Schema, as a value: `to_json_schema` writes a `readOnly` annotation after
+ * the node's keywords, where Zod wrote it first. One declared difference: the
+ * rate limit's `retry_after` is a non-negative integer, where Zod took any
+ * number — both spines send whole seconds. An input holding a `Date`, which a
+ * loose object keeps where Zod copies it into a plain object, is held to Zod's
  * verdict alone: no JSON body holds one.
+ *
+ * What `derive_route_errors` derives is no port of the Zod derivation — it
+ * narrows to the slots a route has — and `error_schemas.test.ts` holds it.
  *
  * Every definition's status and code are pinned here, and the table is the
  * module's whole set: a definition added or dropped fails it.
@@ -19,7 +23,7 @@
 
 import { describe, test, assert } from 'vitest';
 import { z } from 'zod';
-import { is, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
+import { is, string as string_schema, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 
 import * as error_schemas from '#lib/http/error_schemas.ts';
 import {
@@ -28,7 +32,6 @@ import {
 	ActorRequiredError,
 	ApiError,
 	CredentialTypeRequiredError,
-	derive_error_schemas,
 	ERROR_ACCOUNT_VANISHED,
 	ERROR_ACTOR_NOT_ON_ACCOUNT,
 	ERROR_ACTOR_REQUIRED,
@@ -52,16 +55,17 @@ import {
 	RateLimitError,
 	REST_AUTHENTICATION_REQUIRED_BOOTSTRAP,
 	REST_RATE_LIMIT_EXCEEDED,
+	dedupe_rest_errors,
 	rest_error,
+	same_rest_error,
 	to_error_schemas,
 	TokenScopeRequiredError,
 	UnsupportedContentTypeError,
-	type DeriveErrorSchemasOptions,
 	type RestErrorDef
 } from '#lib/http/error_schemas.ts';
 import { parse_any, type ValidationSchema } from '#lib/schema_issues.ts';
-import { schema_to_surface } from '#lib/http/schema_helpers.ts';
-import { AuthAxisState, type RouteAuth } from '#lib/http/auth_shape.ts';
+import { resolve_route_errors, schema_to_surface } from '#lib/http/schema_helpers.ts';
+import { AuthAxisState } from '#lib/http/auth_shape.ts';
 import { RateLimitKey } from '#lib/rate_limiter.ts';
 import { ActionManifest, ActionManifestEntry } from '#lib/testing/cross_backend/action_manifest.ts';
 import {
@@ -136,37 +140,6 @@ const ZodActionManifestEntry = z.strictObject({
 	rate_limit: ZodRateLimitKey.nullable()
 });
 const ZodActionManifest = z.strictObject({ methods: z.array(ZodActionManifestEntry) });
-
-/** `derive_error_schemas` as it was, building Zod schemas. */
-const zod_derive_error_schemas = ({
-	auth,
-	has_input = false,
-	has_params = false,
-	has_query = false,
-	rate_limit,
-	checks_content_type = false
-}: DeriveErrorSchemasOptions): Record<number, z.ZodType> => {
-	const errors: Record<number, z.ZodType> = {};
-	const has_validation = has_input || has_params || has_query;
-	if (auth.actor !== 'none') {
-		errors[400] = has_validation
-			? z.union([ZodValidationError, ZodActorRequiredError, ZodActorNotOnAccountError])
-			: z.union([ZodActorRequiredError, ZodActorNotOnAccountError]);
-		errors[500] = z.union([ZodNoActorsOnAccountError, ZodAccountVanishedError]);
-	} else if (has_validation) {
-		errors[400] = ZodValidationError;
-	}
-	if (auth.account === 'required' || auth.actor === 'required') errors[401] = ZodApiError;
-	const forbidden: Array<z.ZodType> = [];
-	if (auth.required_scope !== undefined) forbidden.push(ZodTokenScopeRequiredError);
-	if (auth.credential_types?.length) forbidden.push(ZodCredentialTypeRequiredError);
-	if (auth.roles?.length) forbidden.push(ZodPermissionError);
-	if (forbidden.length === 1) errors[403] = forbidden[0]!;
-	else if (forbidden.length > 1) errors[403] = z.union(forbidden);
-	if (rate_limit) errors[429] = ZodRateLimitError;
-	if (checks_content_type) errors[415] = ZodUnsupportedContentTypeError;
-	return errors;
-};
 
 // --- the inputs ---
 
@@ -247,20 +220,44 @@ const holds_date = (value: unknown): boolean =>
 	value instanceof Date ||
 	(value !== null && typeof value === 'object' && Object.values(value).some(holds_date));
 
-/** Asserts `fuz` gives Zod's verdict and output on `input`; returns the verdict. */
+/**
+ * Asserts `fuz` gives Zod's verdict and output on `input`, or the verdict
+ * `declared` gives where a difference is declared; returns the verdict.
+ */
 const assert_same = (
 	label: string,
 	fuz: ValidationSchema,
 	zod: z.ZodType,
-	input: unknown
+	input: unknown,
+	declared?: Declared
 ): boolean => {
 	const zod_result = zod.safeParse(input);
 	const fuz_result = parse_any(fuz, input);
-	assert.strictEqual(fuz_result.ok, zod_result.success, label);
+	const expected = declared ? declared(input, zod_result.success) : zod_result.success;
+	assert.strictEqual(fuz_result.ok, expected, label);
 	if (fuz_result.ok && !holds_date(input)) {
 		assert.deepStrictEqual(fuz_result.value, zod_result.data, label);
 	}
 	return fuz_result.ok;
+};
+
+/** A declared difference: the verdict the fuz_schema form gives where Zod's is `zod_ok`. */
+type Declared = (input: unknown, zod_ok: boolean) => boolean;
+
+/** The rate limit's `retry_after` is a non-negative integer, where Zod took any number. */
+const RETRY_AFTER_INTEGER: Declared = (input, zod_ok) => {
+	const retry_after = (input as { retry_after?: unknown } | null)?.retry_after;
+	return zod_ok && Number.isInteger(retry_after) && (retry_after as number) >= 0;
+};
+
+/** The Zod surface of a rate limit body with `retry_after` moved to what the definition writes. */
+const move_retry_after = (json: unknown): unknown => {
+	const node = json as { properties: Record<string, unknown> };
+	assert.deepStrictEqual(node.properties.retry_after, { type: 'number' });
+	return {
+		...node,
+		properties: { ...node.properties, retry_after: { type: 'integer', minimum: 0 } }
+	};
 };
 
 // a JSON Schema node with its keys sorted, so the comparison is of values
@@ -290,6 +287,9 @@ interface Row {
 	zod: z.ZodType;
 	samples: ReadonlyArray<unknown>;
 	pool?: ReadonlyArray<unknown>;
+	declared?: Declared;
+	/** The declared move of the Zod surface, to what the fuz_schema form writes. */
+	move?: (json: unknown) => unknown;
 }
 
 const CODE_POOL: ReadonlyArray<unknown> = [
@@ -342,8 +342,11 @@ const STANDARD_ROWS: Array<Row> = [
 		zod: ZodRateLimitError,
 		samples: [
 			{ error: ERROR_RATE_LIMIT_EXCEEDED, retry_after: 60 },
-			{ error: ERROR_RATE_LIMIT_EXCEEDED, retry_after: 0.5 }
-		]
+			{ error: ERROR_RATE_LIMIT_EXCEEDED, retry_after: 0 }
+		],
+		pool: [0.5, -1, 2 ** 53],
+		declared: RETRY_AFTER_INTEGER,
+		move: move_retry_after
 	},
 	{
 		name: 'PayloadTooLargeError',
@@ -678,7 +681,11 @@ const DEFINITION_ROWS: Array<Row> = exported_defs().map(([name, def]) => ({
 	fuz: def.schema,
 	zod: DEFINITIONS[name]?.zod ?? z.never(),
 	samples: [DEFINITIONS[name]?.sample ?? {}],
-	pool: CODE_POOL
+	pool: name === 'REST_RATE_LIMIT_EXCEEDED' ? [...CODE_POOL, 0.5, -1] : CODE_POOL,
+	...(name === 'REST_RATE_LIMIT_EXCEEDED' && {
+		declared: RETRY_AFTER_INTEGER,
+		move: move_retry_after
+	})
 }));
 
 const log = new Logger('test', { level: 'off' });
@@ -688,15 +695,21 @@ const login_shape = create_account_route_shapes({ login_account_rate_limited: tr
 const signup_shape = create_signup_route_shape({ signup_account_rate_limited: true });
 const fact_spec = create_serve_fact_route_spec({ facts_dir: '/facts', log });
 
+/** A route shape's own errors at a status, the schema its definitions there group into. */
+const own_errors_at = (
+	shape: { readonly errors?: ReadonlyArray<RestErrorDef> } | undefined,
+	status: number
+): AnySchema | undefined => to_error_schemas(shape?.errors ?? [])[status];
+
 /** The route entries built from definitions, against the Zod-era literals they were. */
 const ROUTE_ENTRY_ROWS: Array<[name: string, schema: ValidationSchema | undefined, code: string]> =
 	[
-		['POST /login 401', login_shape?.errors?.[401], 'invalid_credentials'],
-		['POST /signup 403', signup_shape.errors?.[403], 'no_matching_invite'],
-		['POST /signup 409', signup_shape.errors?.[409], 'signup_conflict'],
-		['POST /bootstrap 401', bootstrap_route_shape.errors[401], 'invalid_token'],
-		['POST /bootstrap 403', bootstrap_route_shape.errors[403], 'already_bootstrapped'],
-		['POST /bootstrap 404', bootstrap_route_shape.errors[404], 'token_file_missing']
+		['POST /login 401', own_errors_at(login_shape, 401), 'invalid_credentials'],
+		['POST /signup 403', own_errors_at(signup_shape, 403), 'no_matching_invite'],
+		['POST /signup 409', own_errors_at(signup_shape, 409), 'signup_conflict'],
+		['POST /bootstrap 401', own_errors_at(bootstrap_route_shape, 401), 'invalid_token'],
+		['POST /bootstrap 403', own_errors_at(bootstrap_route_shape, 403), 'already_bootstrapped'],
+		['POST /bootstrap 404', own_errors_at(bootstrap_route_shape, 404), 'token_file_missing']
 	];
 
 const run_rows = (rows: ReadonlyArray<Row>): void => {
@@ -707,7 +720,7 @@ const run_rows = (rows: ReadonlyArray<Row>): void => {
 			let accepted = 0;
 			let refused = 0;
 			for (const input of inputs) {
-				const ok = assert_same(`${row.name} ${show(input)}`, row.fuz, row.zod, input);
+				const ok = assert_same(`${row.name} ${show(input)}`, row.fuz, row.zod, input, row.declared);
 				if (ok) accepted++;
 				else refused++;
 				assert.strictEqual(is(row.fuz, input), ok, `${row.name} ${show(input)} (is)`);
@@ -722,12 +735,17 @@ const run_rows = (rows: ReadonlyArray<Row>): void => {
 const surface_of = (schema: ValidationSchema): unknown =>
 	sort_keys(schema_to_surface(schema, { io: 'output' }));
 
+const zod_surface_of = (row: Row): unknown =>
+	row.move
+		? sort_keys(row.move(schema_to_surface(row.zod, { io: 'output' })))
+		: surface_of(row.zod);
+
 describe('the standard error shapes against their Zod copies', () => {
 	run_rows(STANDARD_ROWS);
 
-	test('each writes the Zod JSON Schema, as a value', () => {
+	test('each writes the Zod JSON Schema, as a value, but for a declared move', () => {
 		for (const row of STANDARD_ROWS) {
-			assert.deepStrictEqual(surface_of(row.fuz), surface_of(row.zod), row.name);
+			assert.deepStrictEqual(surface_of(row.fuz), zod_surface_of(row), row.name);
 		}
 	});
 });
@@ -767,9 +785,9 @@ describe('the REST error definitions', () => {
 
 	run_rows(DEFINITION_ROWS);
 
-	test('each writes the Zod JSON Schema, as a value', () => {
+	test('each writes the Zod JSON Schema, as a value, but for a declared move', () => {
 		for (const row of DEFINITION_ROWS) {
-			assert.deepStrictEqual(surface_of(row.fuz), surface_of(row.zod), row.name);
+			assert.deepStrictEqual(surface_of(row.fuz), zod_surface_of(row), row.name);
 		}
 	});
 
@@ -810,119 +828,10 @@ describe('the route entries built from definitions', () => {
 		});
 	}
 
-	test("the fact route's 400 is the route-params definition", () => {
-		assert.strictEqual(fact_spec.errors?.[400], error_schemas.REST_INVALID_ROUTE_PARAMS.schema);
-	});
-});
-
-// --- derive_error_schemas against its Zod copy ---
-
-const AXES: ReadonlyArray<Pick<RouteAuth, 'account' | 'actor'>> = [
-	{ account: 'none', actor: 'none' },
-	{ account: 'optional', actor: 'none' },
-	{ account: 'optional', actor: 'optional' },
-	{ account: 'required', actor: 'none' },
-	{ account: 'required', actor: 'optional' },
-	{ account: 'required', actor: 'required' }
-];
-const AUTHS: Array<RouteAuth> = AXES.flatMap((axes) =>
-	[false, true].flatMap((roles) =>
-		[false, true].flatMap((credential_types) =>
-			[false, true].map((scope): RouteAuth => ({
-				...axes,
-				...(roles && { roles: ['admin'] }),
-				...(credential_types && { credential_types: ['session'] }),
-				...(scope && { required_scope: 'surface:x' })
-			}))
-		)
-	)
-);
-const SLOTS: ReadonlyArray<Partial<DeriveErrorSchemasOptions>> = [
-	{},
-	{ has_input: true },
-	{ has_params: true },
-	{ has_query: true }
-];
-const DERIVE_OPTIONS: Array<DeriveErrorSchemasOptions> = AUTHS.flatMap((auth) =>
-	SLOTS.flatMap((slots) =>
-		[undefined, 'ip' as const].flatMap((rate_limit) =>
-			[false, true].map((checks_content_type) => ({
-				auth,
-				...slots,
-				rate_limit,
-				checks_content_type
-			}))
-		)
-	)
-);
-
-/** Every body any derived schema may see: each sample and its top-level variants. */
-const DERIVED_BODIES: Array<unknown> = (() => {
-	const samples: Array<object> = [
-		...STANDARD_ROWS.filter((r) => r.name.endsWith('Error')).flatMap(
-			(r) => r.samples as Array<object>
-		),
-		...Object.values(DEFINITIONS).map((d) => d.sample)
-	];
-	const out: Array<unknown> = [...samples];
-	for (const sample of samples) {
-		out.push({ ...sample, extra: 1 });
-		for (const key of Object.keys(sample)) {
-			const { [key]: _, ...dropped } = sample as Record<string, unknown>;
-			out.push(dropped);
-			for (const v of [null, 1, 'x', [], ['a'], {}]) out.push({ ...sample, [key]: v });
-		}
-	}
-	return out;
-})();
-
-// an id per schema, so a status's pair is checked once however many option sets derive it
-const schema_ids: WeakMap<object, number> = new WeakMap();
-const schema_id = (schema: object): number => {
-	let id = schema_ids.get(schema);
-	if (id === undefined) schema_ids.set(schema, (id = schema_ids_next++));
-	return id;
-};
-let schema_ids_next = 0;
-// a union by its members, which a call builds anew around the same ones
-const pair_key = (fuz: AnySchema, zod: z.ZodType): string => {
-	const fuz_members: ReadonlyArray<object> =
-		fuz.kind === 'union' ? (fuz.def as Array<object>) : [fuz];
-	const zod_members: ReadonlyArray<object> = zod instanceof z.ZodUnion ? zod.options : [zod];
-	return `${fuz_members.map(schema_id).join(',')}|${zod_members.map(schema_id).join(',')}`;
-};
-
-describe('derive_error_schemas against its Zod copy', () => {
-	const checked: Set<string> = new Set();
-	for (const auth of AUTHS) {
-		test(`${JSON.stringify(auth)} derives the same statuses, verdicts, outputs, and surface`, () => {
-			for (const options of DERIVE_OPTIONS.filter((o) => o.auth === auth)) {
-				const label = JSON.stringify(options);
-				const fuz = derive_error_schemas(options);
-				const zod = zod_derive_error_schemas(options);
-				assert.deepStrictEqual(Object.keys(fuz), Object.keys(zod), label);
-				for (const status of Object.keys(zod).map(Number)) {
-					const fuz_schema = fuz[status]!;
-					const zod_schema = zod[status]!;
-					const key = `${status}:${pair_key(fuz_schema, zod_schema)}`;
-					if (checked.has(key)) continue;
-					checked.add(key);
-					for (const body of DERIVED_BODIES) {
-						assert_same(`${label} ${status} ${show(body)}`, fuz_schema, zod_schema, body);
-					}
-					assert.deepStrictEqual(surface_of(fuz_schema), surface_of(zod_schema), label);
-				}
-			}
-		});
-	}
-
-	test('the option sets reach every derived status', () => {
-		const statuses = new Set(
-			DERIVE_OPTIONS.flatMap((o) => Object.keys(derive_error_schemas(o)).map(Number))
-		);
-		assert.deepStrictEqual(
-			[...statuses].sort((a, b) => a - b),
-			[400, 401, 403, 415, 429, 500]
+	test("the fact route declares no errors of its own, its params' 400 derived", () => {
+		assert.strictEqual(fact_spec.errors, undefined);
+		assert.ok(
+			resolve_route_errors(fact_spec).defs.includes(error_schemas.REST_INVALID_ROUTE_PARAMS)
 		);
 	});
 });
@@ -946,5 +855,42 @@ describe('to_error_schemas', () => {
 
 	test('nothing given is no entry', () => {
 		assert.deepStrictEqual(to_error_schemas([]), {});
+	});
+
+	test('a definition rebuilt the same counts once, a second shape of its code twice', () => {
+		const fields = { detail: string_schema };
+		const d1 = rest_error(404, 'd_missing', fields);
+		const d2 = rest_error(404, 'd_missing', fields);
+		const d3 = rest_error(404, 'd_missing', { detail: string_schema, more: string_schema });
+		assert.deepStrictEqual(to_error_schemas([d1, d2]), { 404: d1.schema });
+		assert.deepStrictEqual(to_error_schemas([d1, d3])[404]!.def, [d1.schema, d3.schema]);
+	});
+});
+
+describe('same_rest_error', () => {
+	test('the same status, code, headers, and field schemas', () => {
+		const headers = () => ({});
+		const a = rest_error(429, 'x_limited', { n: string_schema }, headers);
+		assert.ok(same_rest_error(a, a));
+		assert.ok(same_rest_error(a, rest_error(429, 'x_limited', { n: string_schema }, headers)));
+		assert.ok(!same_rest_error(a, rest_error(429, 'x_limited', { n: string_schema })));
+		assert.ok(!same_rest_error(a, rest_error(400, 'x_limited', { n: string_schema }, headers)));
+		assert.ok(!same_rest_error(a, rest_error(429, 'y_limited', { n: string_schema }, headers)));
+		assert.ok(!same_rest_error(a, rest_error(429, 'x_limited', { m: string_schema }, headers)));
+		assert.ok(!same_rest_error(a, rest_error(429, 'x_limited', {}, headers)));
+	});
+
+	test('dedupe_rest_errors keeps two of one code and fields whose headers differ', () => {
+		const fields = { n: string_schema };
+		const a = rest_error(429, 'x_limited', fields, () => ({ 'Retry-After': '1' }));
+		const b = rest_error(429, 'x_limited', fields, () => ({ 'Retry-After': '2' }));
+		const c = rest_error(429, 'x_limited', fields);
+		assert.deepStrictEqual(dedupe_rest_errors([a, b, c]), [a, b, c]);
+	});
+
+	test('dedupe_rest_errors keeps the first of each, in order', () => {
+		const a = rest_error(404, 'a_missing');
+		const b = rest_error(409, 'b_conflict');
+		assert.deepStrictEqual(dedupe_rest_errors([a, b, rest_error(404, 'a_missing'), b]), [a, b]);
 	});
 });

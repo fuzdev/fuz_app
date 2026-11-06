@@ -1,9 +1,9 @@
 /**
  * An all-Zod `RouteSpec` using every schema field (`params`, `query`,
- * `input`, `output`, a 404 error) plus a non-strict-input route, a `GET`
+ * `input`, `output`) and a 404 error definition plus a non-strict-input route, a `GET`
  * whose query preprocesses and transforms, a `z.null()`-input `POST`, a
  * coercing and transforming input, a `GET` whose params transform, and a
- * middleware declaring an error, and what they answer: the surface and a set
+ * middleware declaring an error definition, and what they answer: the surface and a set
  * of exchanges (status, body text, `log.error` calls). The handlers echo the
  * parsed values, so the exchanges pin parsed against raw. Captured once into
  * `fixtures/surface/route_spec_all_zod.json`, which
@@ -28,13 +28,15 @@ import { generate_app_surface, type AppSurface } from '#lib/http/surface.ts';
 import type { MiddlewareSpec } from '#lib/http/middleware_spec.ts';
 import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
 import { Uuid } from '#lib/primitive_schemas.ts';
+import { rest_error } from '#lib/http/error_schemas.ts';
 import { create_stub_db } from '#lib/testing/stubs.ts';
 
 const ThingParams = z.strictObject({ thing_id: Uuid });
 const ThingQuery = z.strictObject({ mode: z.enum(['a', 'b']) });
 const ThingInput = z.strictObject({ name: z.string().min(1) });
 const ThingOutput = z.strictObject({ id: Uuid, name: z.string(), mode: z.enum(['a', 'b']) });
-const ThingNotFound = z.looseObject({ error: z.literal('thing_not_found') });
+// an error is a definition, never a Zod schema
+const THING_NOT_FOUND = rest_error(404, 'thing_not_found');
 
 const thing_route: RouteSpec = {
 	method: 'POST',
@@ -45,7 +47,7 @@ const thing_route: RouteSpec = {
 	query: ThingQuery,
 	input: ThingInput,
 	output: ThingOutput,
-	errors: { 404: ThingNotFound },
+	errors: [THING_NOT_FOUND],
 	handler: (c) => {
 		const { thing_id } = get_route_params(c, ThingParams);
 		const { mode } = get_route_query(c, ThingQuery);
@@ -159,7 +161,7 @@ const middleware: MiddlewareSpec = {
 	handler: async (_c, next) => {
 		await next();
 	},
-	errors: { 403: z.looseObject({ error: z.literal('thing_gate_refused') }) }
+	errors: [rest_error(403, 'thing_gate_refused')]
 };
 
 /** One request the probe sends. */

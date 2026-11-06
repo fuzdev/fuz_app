@@ -2,7 +2,7 @@
  * Tests for surface.ts - App surface generation.
  *
  * Tests the surface generation functions directly:
- * `generate_app_surface`, `create_app_surface_spec`, `collect_middleware_errors`,
+ * `generate_app_surface`, `create_app_surface_spec` (and the route error map it carries),
  * `env_schema_to_surface`, `events_to_surface`.
  *
  * @module
@@ -11,7 +11,6 @@
 import { describe, assert, test } from 'vitest';
 import { meta } from '@fuzdev/fuz_schema/meta.ts';
 import {
-	literal,
 	loose_object,
 	message,
 	min_length,
@@ -32,12 +31,12 @@ import { z } from 'zod';
 import {
 	generate_app_surface,
 	create_app_surface_spec,
-	collect_middleware_errors,
 	env_schema_to_surface,
 	type AppSurfaceDiagnostic,
 	events_to_surface
 } from '#lib/http/surface.ts';
 import type { RouteSpec } from '#lib/http/route_spec.ts';
+import { rest_error } from '#lib/http/error_schemas.ts';
 import type { MiddlewareSpec } from '#lib/http/middleware_spec.ts';
 import type { EventSpec } from '#lib/realtime/sse.ts';
 import type { WsEndpointSpec } from '#lib/actions/ws_endpoint_spec.ts';
@@ -282,11 +281,10 @@ describe('generate_app_surface', () => {
 	});
 
 	test('merges middleware error schemas into route error schemas', () => {
-		const ApiError = z.strictObject({ error: z.string() });
 		const mw = create_middleware({
 			name: 'auth',
 			path: '/api/*',
-			errors: { 401: ApiError }
+			errors: [rest_error(401, 'session_expired')]
 		});
 		const route = create_route({
 			path: '/api/things',
@@ -299,21 +297,37 @@ describe('generate_app_surface', () => {
 		});
 
 		assert.ok(surface.routes[0]!.error_schemas);
-		assert.ok(surface.routes[0]!.error_schemas['401']);
+		// the derived 401 and the middleware's, a union
+		const branches = (surface.routes[0]!.error_schemas['401'] as { anyOf: Array<any> }).anyOf;
+		assert.deepStrictEqual(
+			branches.map((b) => b.properties.error.const),
+			['authentication_required', 'session_expired']
+		);
 	});
 
-	test('middleware error schemas on surface are serialized', () => {
-		const ApiError = z.strictObject({ error: z.string() });
+	test('middleware error schemas on surface are serialized, grouped by status', () => {
 		const mw = create_middleware({
 			name: 'origin',
 			path: '/api/*',
-			errors: { 403: ApiError }
+			errors: [
+				rest_error(403, 'forbidden_origin'),
+				rest_error(403, 'blocked'),
+				rest_error(413, 'big')
+			]
 		});
 
 		const surface = generate_app_surface({ route_specs: [], middleware_specs: [mw] });
 
-		assert.ok(surface.middleware[0]!.error_schemas);
-		assert.ok(surface.middleware[0]!.error_schemas['403']);
+		const error_schemas = surface.middleware[0]!.error_schemas;
+		assert.ok(error_schemas);
+		assert.deepStrictEqual(Object.keys(error_schemas), ['403', '413']);
+		assert.strictEqual((error_schemas['403'] as { anyOf: Array<unknown> }).anyOf.length, 2);
+	});
+
+	test('a middleware declaring an empty list has null error_schemas', () => {
+		const mw = create_middleware({ name: 'bearer', errors: [] });
+		const surface = generate_app_surface({ route_specs: [], middleware_specs: [mw] });
+		assert.strictEqual(surface.middleware[0]!.error_schemas, null);
 	});
 
 	test('middleware without errors has null error_schemas', () => {
@@ -379,99 +393,37 @@ describe('create_app_surface_spec', () => {
 		assert.strictEqual(spec.route_specs[0], route);
 		assert.strictEqual(spec.middleware_specs[0], mw);
 	});
-});
 
-describe('generate_app_surface — error entries left undefined', () => {
-	const post = (overrides: Partial<RouteSpec> = {}): RouteSpec =>
-		create_route({
-			method: 'POST',
+	test('carries each route error map, the one the surface writes', () => {
+		const route = create_route({
 			path: '/api/things',
-			input: z.strictObject({ name: z.string() }),
-			...overrides
+			auth: { account: 'required', actor: 'none' }
 		});
+		const mw = create_middleware({ path: '/api/*', errors: [rest_error(403, 'gate_refused')] });
 
-	test('a route entry left undefined keeps the derived schema', () => {
-		const derived = generate_app_surface({ route_specs: [post()], middleware_specs: [] });
-		const surface = generate_app_surface({
-			route_specs: [post({ errors: { 400: undefined } })],
-			middleware_specs: []
+		const spec = create_app_surface_spec({ route_specs: [route], middleware_specs: [mw] });
+
+		assert.deepStrictEqual([...spec.route_errors.keys()], ['GET /api/things']);
+		const errors = spec.route_errors.get('GET /api/things')!;
+		assert.deepStrictEqual(
+			errors.defs.map((def) => def.code),
+			['authentication_required', 'gate_refused']
+		);
+		assert.deepStrictEqual(Object.keys(spec.surface.routes[0]!.error_schemas!), ['401', '403']);
+	});
+
+	test('takes a prebuilt route error map, which the surface writes', () => {
+		const route = create_route({ path: '/api/things' });
+		const route_errors = new Map([
+			['GET /api/things', { defs: [], schemas: { 418: rest_error(418, 'teapot').schema } }]
+		]);
+		const spec = create_app_surface_spec({
+			route_specs: [route],
+			middleware_specs: [],
+			route_errors
 		});
-		const error_schemas = surface.routes[0]!.error_schemas;
-		assert.ok(error_schemas);
-		assert.deepStrictEqual(Object.keys(error_schemas), ['400', '415']);
-		assert.deepStrictEqual(error_schemas, derived.routes[0]!.error_schemas);
-	});
-
-	test('a middleware entry left undefined keeps the derived schema', () => {
-		const derived = generate_app_surface({ route_specs: [post()], middleware_specs: [] });
-		const surface = generate_app_surface({
-			route_specs: [post()],
-			middleware_specs: [create_middleware({ path: '/api/*', errors: { 400: undefined } })]
-		});
-		assert.deepStrictEqual(surface.routes[0]!.error_schemas, derived.routes[0]!.error_schemas);
-		assert.strictEqual(surface.middleware[0]!.error_schemas, null);
-	});
-});
-
-describe('collect_middleware_errors', () => {
-	test('an entry left undefined keeps an earlier middleware schema', () => {
-		const AuthError = z.strictObject({ error: z.literal('auth') });
-		const middleware = [
-			create_middleware({ name: 'auth', path: '/api/*', errors: { 401: AuthError } }),
-			create_middleware({ name: 'later', path: '/api/*', errors: { 401: undefined } })
-		];
-
-		const errors = collect_middleware_errors(middleware, '/api/things');
-
-		assert.ok(errors);
-		assert.strictEqual(errors[401], AuthError);
-	});
-
-	test('collects errors from matching middleware', () => {
-		const ApiError = z.strictObject({ error: z.string() });
-		const middleware = [
-			create_middleware({ name: 'auth', path: '/api/*', errors: { 401: ApiError } }),
-			create_middleware({ name: 'logger', path: '/*' })
-		];
-
-		const errors = collect_middleware_errors(middleware, '/api/things');
-
-		assert.ok(errors);
-		assert.ok(errors['401']);
-	});
-
-	test('returns null when no middleware has errors', () => {
-		const middleware = [create_middleware({ name: 'logger', path: '/*' })];
-
-		const errors = collect_middleware_errors(middleware, '/api/things');
-
-		assert.strictEqual(errors, null);
-	});
-
-	test('skips middleware that does not apply to path', () => {
-		const ApiError = z.strictObject({ error: z.string() });
-		const middleware = [
-			create_middleware({ name: 'admin_auth', path: '/admin/*', errors: { 401: ApiError } })
-		];
-
-		const errors = collect_middleware_errors(middleware, '/api/things');
-
-		assert.strictEqual(errors, null);
-	});
-
-	test('merges errors from multiple matching middleware', () => {
-		const AuthError = z.strictObject({ error: z.literal('auth') });
-		const OriginError = z.strictObject({ error: z.literal('origin') });
-		const middleware = [
-			create_middleware({ name: 'auth', path: '/api/*', errors: { 401: AuthError } }),
-			create_middleware({ name: 'origin', path: '/api/*', errors: { 403: OriginError } })
-		];
-
-		const errors = collect_middleware_errors(middleware, '/api/things');
-
-		assert.ok(errors);
-		assert.ok(errors['401']);
-		assert.ok(errors['403']);
+		assert.strictEqual(spec.route_errors, route_errors);
+		assert.deepStrictEqual(Object.keys(spec.surface.routes[0]!.error_schemas!), ['418']);
 	});
 });
 
@@ -762,13 +714,11 @@ describe('the non-strict input warning', () => {
 	});
 });
 
-describe('fuz_schema error schemas on the surface', () => {
-	test('a route and a middleware error schema are written like Zod ones', () => {
+describe('error definitions on the surface', () => {
+	test('a route and a middleware definition are written as loose objects of their code', () => {
 		const surface = generate_app_surface({
-			route_specs: [
-				create_route({ errors: { 404: loose_object({ error: literal('thing_not_found') }) } })
-			],
-			middleware_specs: [create_middleware({ errors: { 503: object({ error: literal('down') }) } })]
+			route_specs: [create_route({ errors: [rest_error(404, 'thing_not_found')] })],
+			middleware_specs: [create_middleware({ errors: [rest_error(503, 'down')] })]
 		});
 		assert.deepStrictEqual(surface.routes[0]!.error_schemas?.['404'], {
 			type: 'object',
@@ -781,7 +731,7 @@ describe('fuz_schema error schemas on the surface', () => {
 				type: 'object',
 				properties: { error: { type: 'string', const: 'down' } },
 				required: ['error'],
-				additionalProperties: false
+				additionalProperties: {}
 			}
 		});
 	});

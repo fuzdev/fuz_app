@@ -20,14 +20,18 @@ import type { Db, DbType } from '../db/db.ts';
 import { get_route_params, get_route_query, type RouteSpec } from './route_spec.ts';
 import { ActingActor } from './auth_shape.ts';
 import {
-	ForeignKeyError,
 	ERROR_TABLE_NOT_FOUND,
 	ERROR_TABLE_NO_PRIMARY_KEY,
 	ERROR_TABLE_NOT_DELETABLE,
 	ERROR_ROW_NOT_FOUND,
 	ERROR_FOREIGN_KEY_VIOLATION,
-	ERROR_INVALID_ROUTE_PARAMS,
-	ERROR_DATABASE_CONNECTION_FAILED
+	ERROR_DATABASE_CONNECTION_FAILED,
+	REST_DATABASE_CONNECTION_FAILED,
+	REST_FOREIGN_KEY_VIOLATION,
+	REST_ROW_NOT_FOUND,
+	REST_TABLE_NO_PRIMARY_KEY,
+	REST_TABLE_NOT_DELETABLE,
+	REST_TABLE_NOT_FOUND
 } from './error_schemas.ts';
 import { assert_valid_sql_identifier, VALID_SQL_IDENTIFIER } from '../db/sql_identifier.ts';
 import { pg_error_code } from '../db/pg_error.ts';
@@ -289,9 +293,7 @@ export const create_db_route_specs = (
 			query: object({ acting: ActingActorFuz }),
 			input: z.null(),
 			output: z.looseObject({ connected: z.boolean() }),
-			errors: {
-				503: z.looseObject({ error: z.literal(ERROR_DATABASE_CONNECTION_FAILED) })
-			},
+			errors: [REST_DATABASE_CONNECTION_FAILED],
 			handler: async (c, route) => {
 				try {
 					await route.db.query('SELECT 1');
@@ -390,10 +392,7 @@ export const create_db_route_specs = (
 				)
 			}),
 			input: z.null(),
-			errors: {
-				400: z.looseObject({ error: z.literal(ERROR_INVALID_ROUTE_PARAMS) }),
-				404: z.looseObject({ error: z.literal(ERROR_TABLE_NOT_FOUND) })
-			},
+			errors: [REST_TABLE_NOT_FOUND],
 			output: z.looseObject({
 				columns: z.array(
 					z.strictObject({
@@ -495,19 +494,13 @@ export const create_db_route_specs = (
 			query: object({ acting: ActingActorFuz }),
 			input: z.null(),
 			output: z.looseObject({ success: z.boolean() }),
-			errors: {
-				400: z.looseObject({
-					error: z.enum([
-						ERROR_INVALID_ROUTE_PARAMS,
-						ERROR_TABLE_NO_PRIMARY_KEY,
-						ERROR_TABLE_NOT_DELETABLE
-					])
-				}),
-				404: z.looseObject({
-					error: z.enum([ERROR_TABLE_NOT_FOUND, ERROR_ROW_NOT_FOUND])
-				}),
-				409: ForeignKeyError
-			},
+			errors: [
+				REST_TABLE_NOT_DELETABLE,
+				REST_TABLE_NO_PRIMARY_KEY,
+				REST_TABLE_NOT_FOUND,
+				REST_ROW_NOT_FOUND,
+				REST_FOREIGN_KEY_VIOLATION
+			],
 			handler: async (c, route) => {
 				const { name, id } = get_route_params<{ name: string; id: string }>(c);
 

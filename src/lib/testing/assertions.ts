@@ -13,11 +13,12 @@ import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assert } from 'vitest';
+import type { AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { AppSurface, AppSurfaceRoute } from '../http/surface.ts';
-import type { ErrorSchemas } from '../http/error_schemas.ts';
+import type { RouteErrors } from '../http/schema_helpers.ts';
 import { is_public_auth } from '../http/auth_shape.ts';
-import { parse_any, type ValidationSchema } from '../schema_issues.ts';
+import { parse_any } from '../schema_issues.ts';
 
 /**
  * Resolve an absolute path relative to the caller's module.
@@ -85,21 +86,21 @@ export const assert_only_expected_public_routes = (
 };
 
 /**
- * Look up the merged error schema for a route+status from a pre-built schema lookup.
+ * Look up the error schema for a route+status in its error map.
  *
- * @param lookup - map from `"METHOD /path"` to merged error schemas
+ * @param lookup - map from `"METHOD /path"` to each route's error map (`AppSurfaceSpec.route_errors`)
  * @param route - the surface route to look up
  * @param status - HTTP status code
- * @returns the Zod or `@fuzdev/fuz_schema` schema for that route+status, or
+ * @returns the `@fuzdev/fuz_schema` schema for that route+status, or
  *   `undefined` when no error schema is declared for the status code
  */
 export const get_route_error_schema = (
-	lookup: Map<string, ErrorSchemas>,
+	lookup: ReadonlyMap<string, RouteErrors>,
 	route: AppSurfaceRoute,
 	status: number
-): ValidationSchema | undefined => {
+): AnySchema | undefined => {
 	const key = `${route.method} ${route.path}`;
-	return lookup.get(key)?.[status];
+	return lookup.get(key)?.schemas[status];
 };
 
 /**
@@ -108,7 +109,7 @@ export const get_route_error_schema = (
  * Protected routes should always have auto-derived error schemas (401 for authenticated,
  * 403 for role-restricted). A missing schema indicates a gap in error schema derivation.
  *
- * @param lookup - map from `"METHOD /path"` to merged error schemas
+ * @param lookup - map from `"METHOD /path"` to each route's error map (`AppSurfaceSpec.route_errors`)
  * @param route - the surface route to validate against
  * @param status - expected HTTP status code
  * @param body - the parsed response body to validate
@@ -117,7 +118,7 @@ export const get_route_error_schema = (
  *   carrying the failed parse's issues (`parse_any`).
  */
 export const assert_error_schema_valid = (
-	lookup: Map<string, ErrorSchemas>,
+	lookup: ReadonlyMap<string, RouteErrors>,
 	route: AppSurfaceRoute,
 	status: number,
 	body: unknown

@@ -314,6 +314,8 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 			// the dispatcher reads the resolved credential per action, so the
 			// endpoint stays inside the auth middleware's scope however it mounts
 			reads_credential: true,
+			// answers JSON-RPC envelopes, not REST bodies
+			jsonrpc: true,
 			handler: post_handler,
 			description: `JSON-RPC 2.0 endpoint — ${actions.length} method${
 				actions.length === 1 ? '' : 's'
@@ -327,6 +329,8 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 			path: endpoint_path,
 			auth: { account: 'none', actor: 'none' }, // per-action auth inside dispatcher
 			reads_credential: true,
+			// answers JSON-RPC envelopes, not REST bodies
+			jsonrpc: true,
 			handler: get_handler,
 			description: `JSON-RPC 2.0 endpoint (side-effect-free reads) — ${actions.length} method${
 				actions.length === 1 ? '' : 's'

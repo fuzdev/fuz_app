@@ -5,8 +5,7 @@ import './assert_dev_env.ts';
  *
  * Creates stub handlers that return 404 with the declared error code,
  * fires requests with valid-format-but-nonexistent params (nil UUIDs),
- * and validates response bodies against the declared 404 schemas, Zod or
- * `@fuzdev/fuz_schema`.
+ * and validates response bodies against the route's declared 404.
  *
  * No DB needed — tests schema conformance of 404 responses, not real handlers.
  *
@@ -14,13 +13,10 @@ import './assert_dev_env.ts';
  */
 
 import { test, assert, describe } from 'vitest';
-import { z } from 'zod';
-import { is_schema } from '@fuzdev/fuz_schema/schema.ts';
-import { to_json_schema } from '@fuzdev/fuz_schema/json_schema.ts';
 
 import type { RouteSpec } from '../http/route_spec.ts';
-import { is_null_schema } from '../http/schema_helpers.ts';
-import { parse_any, type ValidationSchema } from '../schema_issues.ts';
+import { get_route_errors, is_null_schema } from '../http/schema_helpers.ts';
+import { parse_any } from '../schema_issues.ts';
 import { create_auth_test_apps, create_route_skip_filter, select_auth_app } from './auth_apps.ts';
 import type { AdversarialTestOptions } from './attack_surface.ts';
 import {
@@ -30,47 +26,18 @@ import {
 } from './schema_generators.ts';
 
 /**
- * Extract the error code from a 404 error schema, Zod or `@fuzdev/fuz_schema`,
- * for use in the stub handler.
- *
- * Reads the schema's output-side JSON Schema with `unrepresentable: 'any'`,
- * so a field JSON Schema can't say (a transform, a `z.custom()`) beside
- * `error` doesn't hide the code. Supports a literal (`{const: '...'}`) and an
- * enum (`{enum: [...]}`, uses first value); `null` when `error` is neither.
- * A schema either emitter refuses outright throws.
- *
- * @param schema - a route's declared 404 error schema
- * @returns the code the stub handler answers with, or `null`
- */
-export const extract_404_error_code = (schema: ValidationSchema): string | null => {
-	const json = (
-		is_schema(schema)
-			? to_json_schema(schema, { unrepresentable: 'any' })
-			: z.toJSONSchema(schema as z.ZodType, { unrepresentable: 'any' })
-	) as Record<string, unknown>;
-	if (json.type !== 'object' || !json.properties || typeof json.properties !== 'object')
-		return null;
-	const props = json.properties as Record<string, unknown>;
-	if (!props.error || typeof props.error !== 'object') return null;
-	const error_schema = props.error as Record<string, unknown>;
-	if (typeof error_schema.const === 'string') return error_schema.const;
-	if (Array.isArray(error_schema.enum) && typeof error_schema.enum[0] === 'string')
-		return error_schema.enum[0];
-	return null;
-};
-
-/**
  * Generate adversarial 404 response validation tests.
  *
- * For each route with `params` + 404 in `error_schemas`:
- * 1. Creates a stub handler returning 404 with the declared error code
+ * For each route with `params` and a 404 definition of its own in `errors`:
+ * 1. Creates a stub handler returning 404 with the first such definition's code
  * 2. Fires a request with valid-format params (nil UUIDs for UUID params)
  * 3. Validates response status is 404
- * 4. Validates response body matches the declared 404 schema (`parse_any`)
+ * 4. Validates response body matches the 404 of the route's error map
+ *    (`resolve_route_errors`, `parse_any`)
  */
 export const describe_adversarial_404 = (options: AdversarialTestOptions): void => {
 	const { build, roles } = options;
-	const { surface, route_specs } = build();
+	const { surface, route_specs, route_errors } = build();
 	const is_skipped = create_route_skip_filter(options.skip_routes);
 
 	// Build spec lookup for schema access
@@ -79,7 +46,7 @@ export const describe_adversarial_404 = (options: AdversarialTestOptions): void 
 		spec_lookup.set(`${spec.method} ${spec.path}`, spec);
 	}
 
-	// Find testable routes: params + 404 + extractable error code
+	// Find testable routes: params + a 404 definition of the route's own
 	const testable: Array<{ key: string; error_code: string; spec: RouteSpec }> = [];
 	for (const route of surface.routes) {
 		if (route.params_schema === null) continue;
@@ -88,12 +55,11 @@ export const describe_adversarial_404 = (options: AdversarialTestOptions): void 
 		if (is_skipped(route)) continue;
 		const key = `${route.method} ${route.path}`;
 		const spec = spec_lookup.get(key);
-		if (!spec?.params || !spec.errors?.[404]) continue;
+		if (!spec?.params) continue;
+		const not_found = spec.errors?.find((def) => def.status === 404);
+		if (!not_found) continue;
 
-		const error_code = extract_404_error_code(spec.errors[404]);
-		if (!error_code) continue;
-
-		testable.push({ key, error_code, spec });
+		testable.push({ key, error_code: not_found.code, spec });
 	}
 
 	if (testable.length === 0) return;
@@ -142,8 +108,8 @@ export const describe_adversarial_404 = (options: AdversarialTestOptions): void 
 					error_code,
 					`Expected error '${error_code}' for ${key}, got: ${body.error}`
 				);
-				// Validate against the declared 404 schema
-				const parsed = parse_any(spec.errors![404]!, body);
+				// Validate against the route's declared 404
+				const parsed = parse_any(get_route_errors(route_errors, spec).schemas[404]!, body);
 				assert.ok(
 					parsed.ok,
 					`404 body for ${key} does not match its declared schema: ${

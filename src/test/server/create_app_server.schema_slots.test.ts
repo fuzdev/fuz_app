@@ -23,6 +23,7 @@ import { parse_allowed_origins } from '#lib/http/origin.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import type { RpcAction } from '#lib/actions/action_types.ts';
 import type { RouteSpec } from '#lib/http/route_spec.ts';
+import { rest_error } from '#lib/http/error_schemas.ts';
 import { create_stub_upgrade } from '#lib/testing/ws_round_trip.ts';
 import { create_test_keyring } from '../auth/session_test_helpers.ts';
 
@@ -148,9 +149,9 @@ describe('create_app_server on a schema slot of neither library', () => {
 		);
 	});
 
-	test('boots on a schema in every slot, an errors entry left undefined included', async () => {
+	test('boots on a schema in every slot and a definition in errors', async () => {
 		await boot({
-			create_route_specs: () => [route({ errors: { 404: undefined } })],
+			create_route_specs: () => [route({ errors: [rest_error(404, 'thing_not_found')] })],
 			rpc_endpoints: rpc_endpoints(action({}))
 		});
 	});
