@@ -104,7 +104,11 @@ import type { Uuid } from '../primitive_schemas.ts';
 import type { Db } from '../db/db.ts';
 import type { QueryDeps } from '../db/query_deps.ts';
 import { MASKED_VALUE } from '../env/mask.ts';
+import { is_schema } from '@fuzdev/fuz_schema/schema.ts';
+import { get_schema_entries } from '@fuzdev/fuz_schema/introspect.ts';
 import { schema_sensitivity } from '../schema_meta.ts';
+import { find_schema_sensitivity } from '../sensitivity.ts';
+import { is_zod_schema, type ValidationSchema } from '../schema_issues.ts';
 import { zod_maybe_get_field_schema } from '../zod.ts';
 import { emit_after_commit, type EmitAfterCommitContext } from '../http/pending_effects.ts';
 import type { RequestActorContext } from './request_context.ts';
@@ -372,6 +376,24 @@ export interface CreateAuditEmitterOptions {
 let audit_write_failures = 0;
 
 /**
+ * Whether `key` is a top-level field of the object metadata schema `schema`
+ * marked `sensitivity: 'secret'`, on either schema library.
+ */
+const is_secret_field = (schema: ValidationSchema, key: string): boolean => {
+	if (is_schema(schema)) {
+		const entries = get_schema_entries(schema);
+		return (
+			entries !== undefined &&
+			Object.hasOwn(entries, key) &&
+			find_schema_sensitivity(entries[key]!) === 'secret'
+		);
+	}
+	if (!is_zod_schema(schema)) return false;
+	const field = zod_maybe_get_field_schema(schema, key);
+	return field !== undefined && schema_sensitivity(field) === 'secret';
+};
+
+/**
  * The whole row a dropped pool write would have inserted, as the one JSON
  * object its `audit row dropped` log line carries: `event_type`, `outcome`, the
  * four id columns, `ip`, and `metadata` — with each metadata field whose
@@ -379,9 +401,14 @@ let audit_write_failures = 0;
  * `MASKED_VALUE`. No builtin event declares a secret field, so a builtin row
  * logs whole, as the Rust twin's `fuz_auth::dropped_row_json` does.
  *
- * The masking reads only the top-level fields of an object metadata schema. A
- * secret field nested under an object field, or declared in a union or
- * discriminated-union schema, is logged in clear, and so is every
+ * The masking reads only the entries an object metadata schema declares, Zod
+ * (`schema_sensitivity`) or `@fuzdev/fuz_schema` (`find_schema_sensitivity`,
+ * over the entries `get_schema_entries` finds under any wrapper), a key
+ * matching only an own entry, never a name the entries inherit such as
+ * `constructor`. On both libraries alike, a secret field nested under an
+ * object field, a field of a union or discriminated-union metadata schema, a
+ * `sensitivity: 'secret'` on the object schema itself, and a key only a rest
+ * or catchall schema covers are logged in clear, and so is every
  * `sensitivity: 'personal'` field. Keep secrets out of audit metadata — they
  * would land in `audit_log` too.
  *
@@ -396,12 +423,12 @@ export const to_dropped_audit_row = <T extends string>(
 	let metadata: unknown = input.metadata ?? null;
 	const schema = config.metadata_schemas[input.event_type];
 	if (schema && metadata !== null && typeof metadata === 'object' && !Array.isArray(metadata)) {
-		const masked: Record<string, unknown> = {};
-		for (const [key, value] of Object.entries(metadata)) {
-			const field = zod_maybe_get_field_schema(schema, key);
-			masked[key] = field && schema_sensitivity(field) === 'secret' ? MASKED_VALUE : value;
-		}
-		metadata = masked;
+		metadata = Object.fromEntries(
+			Object.entries(metadata).map(([key, value]) => [
+				key,
+				is_secret_field(schema, key) ? MASKED_VALUE : value
+			])
+		);
 	}
 	return {
 		event_type: input.event_type,

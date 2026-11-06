@@ -55,12 +55,14 @@ import {
 } from '#lib/primitive_schemas.ts';
 import { ActingActor as ZodActingActor } from '#lib/http/auth_shape.ts';
 import {
-	AUDIT_EVENT_TYPE_NAME_LENGTH_MESSAGE,
-	AUDIT_EVENT_TYPE_NAME_PATTERN_MESSAGE,
-	AUDIT_EVENT_TYPE_NAME_REGEX,
 	AuditEventTypeName as ZodAuditEventTypeName,
 	AuditOutcome as ZodAuditOutcome
 } from '#lib/auth/audit_log_schema.ts';
+import {
+	AUDIT_EVENT_TYPE_NAME_LENGTH_MESSAGE,
+	AUDIT_EVENT_TYPE_NAME_PATTERN_MESSAGE,
+	AUDIT_EVENT_TYPE_NAME_REGEX
+} from '#lib/auth/audit_log_schema_fuz.ts';
 import { AppSettingsJson, AppSettingsWithUsernameJson } from '#lib/auth/app_settings_schema.ts';
 import {
 	ADMIN_ACCOUNT_LIST_LIMIT_MAX,
@@ -453,16 +455,11 @@ describe('the admin schemas agree with the Zod ones', () => {
 		}
 	});
 
-	test('the outputs are fuz_schema schemas but those of the audit and invite rows', () => {
+	test('the outputs are fuz_schema schemas but those of the invite rows', () => {
 		const zod_outputs = all_admin_action_specs
 			.filter((spec) => !is_schema(spec.output))
 			.map((spec) => spec.method);
-		assert.deepStrictEqual(zod_outputs, [
-			'audit_log_list',
-			'audit_log_role_grant_history',
-			'invite_create',
-			'invite_list'
-		]);
+		assert.deepStrictEqual(zod_outputs, ['invite_create', 'invite_list']);
 	});
 
 	test('invite_create, but for the trailing check, one length issue, the email bound and the array username', () => {

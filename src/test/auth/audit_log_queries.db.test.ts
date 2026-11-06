@@ -1,4 +1,5 @@
 import { assert, test, beforeEach, vi } from 'vitest';
+import { parse } from '@fuzdev/fuz_schema/schema.ts';
 import { z } from 'zod';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
@@ -505,12 +506,12 @@ describe_db('AuditLogQueries', (get_db) => {
 		);
 		const events = await query_audit_log_list(deps);
 		const wire = JSON.parse(JSON.stringify(events[0]));
-		const parsed = AuditLogEventJson.safeParse(wire);
+		const parsed = parse(AuditLogEventJson, wire);
 		assert.ok(
-			parsed.success,
-			`AuditLogEventJson rejected consumer event_type: ${JSON.stringify(parsed.error?.issues)}`
+			parsed.ok,
+			`AuditLogEventJson rejected consumer event_type: ${JSON.stringify(parsed)}`
 		);
-		assert.strictEqual(parsed.data.event_type, 'classroom_create');
+		assert.strictEqual(parsed.value.event_type, 'classroom_create');
 	});
 
 	test('consumer event type with metadata mismatch increments counter (fail-open)', async () => {

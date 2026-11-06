@@ -4,8 +4,7 @@
  * Import this module for the specs, Input/Output schemas, and the
  * `all_admin_action_specs` registry. Handlers live in `auth/admin_actions.ts`.
  * Every input is a `@fuzdev/fuz_schema` schema, and so is every output but
- * those of `audit_log_list`, `audit_log_role_grant_history`, `invite_create`
- * and `invite_list`, which are Zod.
+ * those of `invite_create` and `invite_list`, which are Zod.
  *
  * Authorization is declared at the spec level (`auth: {role: ROLE_ADMIN}`)
  * so the RPC dispatcher enforces admin before the handler runs and the
@@ -206,11 +205,11 @@ export const AuditLogListInput = with_default_fn(
 );
 export type AuditLogListInput = Infer<typeof AuditLogListInput>;
 
-/** Output for `audit_log_list`. */
-export const AuditLogListOutput = z.strictObject({
-	events: z.array(AuditLogEventWithUsernamesJson)
+/** Output for `audit_log_list`, a `@fuzdev/fuz_schema` schema. */
+export const AuditLogListOutput = object({
+	events: array(AuditLogEventWithUsernamesJson)
 });
-export type AuditLogListOutput = z.infer<typeof AuditLogListOutput>;
+export type AuditLogListOutput = Infer<typeof AuditLogListOutput>;
 
 /**
  * Input for `audit_log_role_grant_history`, a `@fuzdev/fuz_schema` schema.
@@ -229,11 +228,11 @@ export const AuditLogRoleGrantHistoryInput = with_default_fn(
 );
 export type AuditLogRoleGrantHistoryInput = Infer<typeof AuditLogRoleGrantHistoryInput>;
 
-/** Output for `audit_log_role_grant_history`. */
-export const AuditLogRoleGrantHistoryOutput = z.strictObject({
-	events: z.array(RoleGrantHistoryEventJson)
+/** Output for `audit_log_role_grant_history`, a `@fuzdev/fuz_schema` schema. */
+export const AuditLogRoleGrantHistoryOutput = object({
+	events: array(RoleGrantHistoryEventJson)
 });
-export type AuditLogRoleGrantHistoryOutput = z.infer<typeof AuditLogRoleGrantHistoryOutput>;
+export type AuditLogRoleGrantHistoryOutput = Infer<typeof AuditLogRoleGrantHistoryOutput>;
 
 /**
  * Input for `invite_create`, a `@fuzdev/fuz_schema` schema. At least one of

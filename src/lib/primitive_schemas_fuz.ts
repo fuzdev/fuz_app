@@ -1,9 +1,10 @@
 /**
  * `@fuzdev/fuz_schema` twins of the Zod `bounded_string`, `Username`,
- * `Email`, `Uuid`, `UuidWithDefault`, `Blake3Hash` (`primitive_schemas.ts`),
- * and `ActingActor` (`http/auth_shape.ts`), under the same names, for schemas
- * written in fuz_schema, `UsernameCanonical`, the username an output
- * carries, and `Timestamp`, a timestamp on the wire.
+ * `Email`, `Uuid`, `UuidWithDefault` (`primitive_schemas.ts`), and
+ * `ActingActor` (`http/auth_shape.ts`), under the same names, for schemas
+ * written in fuz_schema; `UsernameCanonical`, the username an output carries;
+ * `Timestamp`, a timestamp on the wire; and `Blake3Hash`, a BLAKE3 hex hash,
+ * which has no Zod twin.
  *
  * The output type is shared: the Zod `Uuid` outputs fuz_schema's
  * `Branded<string, 'Uuid'>` too, so a value parsed by either twin goes where
@@ -13,7 +14,7 @@
  * says, the max UUID included, and the Rust spine's: every input gets the same
  * verdict and output from both, and their JSON Schema is the same.
  *
- * The exports are `@nodocs` while the Zod schemas of the same names stay, as
+ * The twins are `@nodocs` while the Zod schemas of the same names stay, as
  * the docs build refuses two exports of one name.
  *
  * @module
@@ -166,14 +167,10 @@ export const BLAKE3_HASH_REGEX = /^[0-9a-f]{64}$/;
 export const BLAKE3_HASH_MESSAGE = 'Expected a 64-character lowercase hex blake3 hash';
 
 /**
- * A BLAKE3 hex hash, the twin of the Zod `Blake3Hash`: `BLAKE3_HASH_REGEX`,
- * whose issue carries `BLAKE3_HASH_MESSAGE`. A value that is no string gets
- * fuz_schema's message.
- *
- * @nodocs
+ * A BLAKE3 hex hash: `BLAKE3_HASH_REGEX`, whose issue carries
+ * `BLAKE3_HASH_MESSAGE`. A value that is no string gets fuz_schema's message.
  */
 export const Blake3Hash = pipe(string, message(regex(BLAKE3_HASH_REGEX), BLAKE3_HASH_MESSAGE));
-/** @nodocs */
 export type Blake3Hash = Infer<typeof Blake3Hash>;
 
 /** The `description` both `ActingActor` twins carry. */

@@ -186,7 +186,7 @@ const { keyring, allowed_origins, bootstrap_token_path } = env_config;
 // falls back to `builtin_audit_log_config`.
 const audit_log_config = create_audit_log_config({
 	extra_events: {
-		// Either a Zod schema (validates metadata):
+		// Either a metadata schema, Zod or `@fuzdev/fuz_schema` (validates metadata):
 		thing_created: z.looseObject({ thing_id: z.string(), name: z.string() }),
 		// …or `null` (registers the event_type without metadata validation):
 		thing_archived: null

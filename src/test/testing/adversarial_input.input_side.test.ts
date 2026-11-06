@@ -32,7 +32,6 @@ import {
 import { detect_format, to_field_json_schema } from '#lib/testing/schema_generators.ts';
 import {
 	bounded_string,
-	Blake3Hash,
 	Datetime,
 	Email,
 	FactHashSchema,
@@ -234,7 +233,7 @@ describe('generate_input_test_cases — no case is accidentally valid', () => {
 		uuid: Uuid,
 		uuid_nullable: Uuid.nullable(),
 		datetime: Datetime,
-		blake3: Blake3Hash,
+		blake3: z.string().regex(/^[0-9a-f]{64}$/),
 		fact_hash: FactHashSchema.nullish(),
 		bounded: bounded_string({ min: 2, max: 5 }).nullish(),
 		piped: z.string().max(5).pipe(z.string().min(2)),

@@ -123,7 +123,12 @@ const with_integer_count = (entry: Record<string, unknown>): Record<string, unkn
 };
 
 /** The methods whose output moved from Zod to fuz_schema with a row in it. */
-const MOVED_OUTPUT_METHODS: ReadonlyArray<unknown> = ['admin_account_list', 'admin_session_list'];
+const MOVED_OUTPUT_METHODS: ReadonlyArray<unknown> = [
+	'admin_account_list',
+	'admin_session_list',
+	'audit_log_list',
+	'audit_log_role_grant_history'
+];
 
 const USERNAME_NODE = {
 	type: 'string',

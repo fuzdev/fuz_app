@@ -1,7 +1,7 @@
 /**
  * Reusable validator-schema primitives — `bounded_string`, `Username`,
  * `UsernameProvided`, `Email`, the branded `Uuid` and `Datetime` with their
- * factories, and the hash schemas `Blake3Hash` and `FactHashSchema`. Lives at
+ * factories, and the hash schema `FactHashSchema`. Lives at
  * the top level (not inside `auth/` or `http/`) because these shapes don't
  * depend on or imply any domain — accounts hold a username and email, but
  * invites, password resets, cells, and other surfaces all reach for the same
@@ -300,12 +300,6 @@ export const get_datetime_now = (): Datetime => new Date().toISOString() as Date
 /** `Datetime` that defaults to `get_datetime_now()` when the input is `undefined`. */
 export const DatetimeNow = Datetime.default(get_datetime_now);
 export type DatetimeNow = z.infer<typeof DatetimeNow>;
-
-/** Zod schema for a BLAKE3 hex hash — 64 lowercase hex characters (256-bit output). */
-export const Blake3Hash = z
-	.string()
-	.regex(/^[0-9a-f]{64}$/, 'Expected a 64-character lowercase hex blake3 hash');
-export type Blake3Hash = z.infer<typeof Blake3Hash>;
 
 /**
  * Wire-form schema for a `blake3:`-prefixed fact hash, whose output is

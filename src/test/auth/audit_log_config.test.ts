@@ -9,6 +9,10 @@
 
 import { describe, test, assert } from 'vitest';
 import { z } from 'zod';
+import {
+	loose_object as fuz_loose_object,
+	string as fuz_string
+} from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	AUDIT_EVENT_TYPES,
@@ -81,6 +85,23 @@ describe('create_audit_log_config', () => {
 		// null entry: type is registered, but no schema entry — validation skips
 		assert.isTrue(config.event_types.includes('classroom_delete'));
 		assert.isUndefined(config.metadata_schemas.classroom_delete);
+	});
+
+	test('a fuz_schema metadata schema populates metadata_schemas as a Zod one does', () => {
+		const classroom_schema = fuz_loose_object({ classroom_id: fuz_string });
+		const config = create_audit_log_config({
+			extra_events: { classroom_create: classroom_schema }
+		});
+		assert.strictEqual(config.metadata_schemas.classroom_create, classroom_schema);
+	});
+
+	test('rejects an extra_events value that is neither null nor a schema', () => {
+		for (const value of [{}, 'schema', 1]) {
+			assert.throws(
+				() => create_audit_log_config({ extra_events: { classroom_create: value as never } }),
+				/extra_events key "classroom_create"/
+			);
+		}
 	});
 
 	test('rejects extra_events keys that collide with a builtin', () => {

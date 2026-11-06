@@ -7,6 +7,7 @@
  */
 
 import { describe, assert, test, beforeAll, afterAll, beforeEach } from 'vitest';
+import { parse_or_throw } from '@fuzdev/fuz_schema/schema.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import {
@@ -798,7 +799,7 @@ describe('DELETE audit emission', () => {
 		// The recording emitter bypasses `query_audit_log`'s fail-open metadata
 		// validation, so bind the emitted shape to the builtin schema here — a
 		// schema key rename fails this parse instead of bumping a prod counter.
-		audit_metadata_schemas.db_admin_row_delete.parse(call.metadata);
+		parse_or_throw(audit_metadata_schemas.db_admin_row_delete, call.metadata);
 	});
 
 	test('the post-commit flush waits for the row write', async () => {

@@ -1,10 +1,12 @@
 /**
- * The row schemas of the account and session outputs, `@fuzdev/fuz_schema`
- * schemas, held to the Zod schemas they replaced, rebuilt here:
- * `SessionAccountJson`, `AuthSessionJson`, `RoleGrantSummaryJson`,
- * `ActorSummaryJson`, `AdminAccountJson`, `PendingOfferSummaryJson`,
- * `AdminAccountEntryJson` and `AdminSessionJson`, the outputs and the input
- * that hold them, and `SessionId`. On corpora of single changes to a valid
+ * The row schemas of the account, session and audit outputs,
+ * `@fuzdev/fuz_schema` schemas, held to the Zod schemas they replaced,
+ * rebuilt here: `SessionAccountJson`, `AuthSessionJson`,
+ * `RoleGrantSummaryJson`, `ActorSummaryJson`, `AdminAccountJson`,
+ * `PendingOfferSummaryJson`, `AdminAccountEntryJson`, `AdminSessionJson`,
+ * `AuditLogEventJson`, `AuditLogEventWithUsernamesJson` and
+ * `RoleGrantHistoryEventJson`, the outputs, input and SSE params that hold
+ * them, and `SessionId`. On corpora of single changes to a valid
  * value, each pair gives the same verdict and output, and the same wire
  * issues but for `message`, which is the Zod text, behind the issue's path,
  * wherever Zod's was a custom one.
@@ -27,9 +29,14 @@
  *   holding one off the grammar fails.
  * - **one length issue**, **the array username** and **the email bound**, as
  *   in `admin_action_specs.differential.test.ts`: a `username` outside its
- *   bounds and off the grammar, or an array, gets one issue; an `email` past
+ *   bounds and off the grammar, or an array, gets one issue, and so does an
+ *   `event_type` too long and off its grammar; an `email` past
  *   `EMAIL_LENGTH_MAX` code units gets a `max_length` issue, and one within
  *   them, past the bytes and off the grammar, the grammar issue.
+ * - **the safe-integer issue**: a `seq` that is a finite number but no safe
+ *   integer gets a `safe_integer` issue, where Zod's `.int()` gives an
+ *   `integer` issue for a fraction and a `max_value` one past the safe range.
+ *   Both refuse it.
  *
  * @module
  */
@@ -61,14 +68,28 @@ import {
 	SessionAccountJson,
 	SessionId
 } from '#lib/auth/account_schema.ts';
-import { AdminSessionJson } from '#lib/auth/audit_log_schema.ts';
+import {
+	AdminSessionJson,
+	AuditEventTypeName as ZodAuditEventTypeName,
+	AuditLogEventJson,
+	AuditLogEventWithUsernamesJson,
+	AuditOutcome as ZodAuditOutcome,
+	RoleGrantHistoryEventJson
+} from '#lib/auth/audit_log_schema.ts';
+import { AUDIT_EVENT_TYPE_NAME_LENGTH_MESSAGE } from '#lib/auth/audit_log_schema_fuz.ts';
+import { audit_log_event_specs } from '#lib/realtime/audit_log_sse.ts';
 import {
 	SessionListOutput,
 	SessionRevokeInput,
 	account_verify_action_spec
 } from '#lib/auth/account_action_specs.ts';
 import { AccountStatusOutput } from '#lib/auth/account_route_schema.ts';
-import { AdminAccountListOutput, AdminSessionListOutput } from '#lib/auth/admin_action_specs.ts';
+import {
+	AdminAccountListOutput,
+	AdminSessionListOutput,
+	AuditLogListOutput,
+	AuditLogRoleGrantHistoryOutput
+} from '#lib/auth/admin_action_specs.ts';
 import {
 	parse_any,
 	to_wire_issues,
@@ -143,6 +164,26 @@ const ZodAdminAccountListOutput = z.strictObject({
 	grantable_roles: z.array(ZodRoleName)
 });
 const ZodAdminSessionListOutput = z.strictObject({ sessions: z.array(ZodAdminSessionJson) });
+const ZodAuditLogEventJson = z.strictObject({
+	id: ZodUuid,
+	seq: z.number().int(),
+	event_type: ZodAuditEventTypeName,
+	outcome: ZodAuditOutcome,
+	actor_id: ZodUuid.nullable(),
+	account_id: ZodUuid.nullable(),
+	target_account_id: ZodUuid.nullable(),
+	target_actor_id: ZodUuid.nullable(),
+	ip: z.string().nullable(),
+	created_at: z.string(),
+	metadata: z.record(z.string(), z.unknown()).nullable()
+});
+const ZodAuditLogEventWithUsernamesJson = ZodAuditLogEventJson.extend({
+	username: z.string().nullable(),
+	target_username: z.string().nullable()
+});
+const ZodAuditLogListOutput = z.strictObject({
+	events: z.array(ZodAuditLogEventWithUsernamesJson)
+});
 
 // -- corpora ----------------------------------------------------------------
 
@@ -340,6 +381,47 @@ const OFFER_FIELDS: Fields = {
 	created_at: TIMESTAMPS,
 	expires_at: TIMESTAMPS
 };
+const AUDIT_EVENT = {
+	id: ID,
+	seq: 1,
+	event_type: 'login',
+	outcome: 'success',
+	actor_id: null,
+	account_id: ID,
+	target_account_id: null,
+	target_actor_id: null,
+	ip: '127.0.0.1',
+	created_at: NOW,
+	metadata: { username: 'alice' }
+};
+const AUDIT_EVENT_FIELDS: Fields = {
+	id: UUIDS,
+	seq: [0, 1, Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER + 1, -1, 1.5, 1e300, NaN, '1', null],
+	event_type: [
+		'login',
+		'app.thing/created-v2',
+		'a'.repeat(NAME_LENGTH_MAX),
+		'a'.repeat(NAME_LENGTH_MAX + 1),
+		'1'.repeat(NAME_LENGTH_MAX + 1),
+		'',
+		'1login',
+		1
+	],
+	outcome: ['success', 'failure', 'Success', '', 0],
+	actor_id: [...UUIDS, null],
+	account_id: [...UUIDS, null],
+	target_account_id: [...UUIDS, null],
+	target_actor_id: [...UUIDS, null],
+	ip: STRINGS,
+	created_at: TIMESTAMPS,
+	metadata: [null, {}, { a: 1, b: [null] }, JSON.parse('{"__proto__":{"x":1}}'), [], [1], 'x', 1]
+};
+const WITH_USERNAMES = { ...AUDIT_EVENT, username: 'alice', target_username: null };
+const WITH_USERNAMES_FIELDS: Fields = {
+	...AUDIT_EVENT_FIELDS,
+	username: STRINGS,
+	target_username: STRINGS
+};
 const ENTRY = {
 	account: ADMIN_ACCOUNT,
 	actor: ACTOR,
@@ -389,7 +471,8 @@ const off_name_grammar = (value: unknown): boolean =>
 /** The custom messages Zod's issues carry, which the fuz_schema issues keep behind their path. */
 const CUSTOM_MESSAGES: ReadonlyArray<string> = [
 	EMAIL_LENGTH_MESSAGE,
-	BLAKE3_HASH_MESSAGE_AT_CAPTURE
+	BLAKE3_HASH_MESSAGE_AT_CAPTURE,
+	AUDIT_EVENT_TYPE_NAME_LENGTH_MESSAGE
 ];
 
 interface Counts {
@@ -401,6 +484,7 @@ interface Counts {
 	one_length_issue: number;
 	array_username: number;
 	email_bound: number;
+	one_safe_integer_issue: number;
 	custom_message: number;
 }
 
@@ -443,6 +527,7 @@ const run = (
 		one_length_issue: 0,
 		array_username: 0,
 		email_bound: 0,
+		one_safe_integer_issue: 0,
 		custom_message: 0
 	};
 	for (const [label, input] of corpus) {
@@ -469,7 +554,7 @@ const run = (
 			const prev = zod_issues[i - 1];
 			const dropped =
 				issue.kind === 'regex' &&
-				issue.path.at(-1) === 'username' &&
+				(issue.path.at(-1) === 'username' || issue.path.at(-1) === 'event_type') &&
 				(prev?.kind === 'max_length' || prev?.kind === 'min_length') &&
 				same_path(prev, issue);
 			if (dropped) counts.one_length_issue++;
@@ -510,6 +595,18 @@ const run = (
 			if (dropped) counts.array_username++;
 			return !dropped;
 		});
+		// declared: one safe-integer issue where Zod gives `.int()`'s
+		zod_issues = zod_issues.flatMap((issue, i) => {
+			if (issue.path.at(-1) !== 'seq') return [issue];
+			const prev = zod_issues[i - 1];
+			if (prev !== undefined && same_path(prev, issue)) return [];
+			const value = at_path(input, issue.path);
+			if (typeof value !== 'number' || Number.isNaN(value) || Number.isSafeInteger(value)) {
+				return [issue];
+			}
+			counts.one_safe_integer_issue++;
+			return [{ ...issue, kind: 'safe_integer', expected: 'safe_integer' }];
+		});
 		// a field Zod took and fuz refused, beside one both refused
 		const fuz_issues = fuz.issues.filter((issue) => {
 			const kind = strict_kind_of(issue, at_path(input, issue.path));
@@ -535,7 +632,7 @@ const at_least = (counts: Counts, floors: Partial<Counts>): void => {
 	}
 };
 
-describe('the account and session row schemas agree with the Zod ones', () => {
+describe('the account, session and audit row schemas agree with the Zod ones', () => {
 	test('are fuz_schema schemas', () => {
 		for (const schema of [
 			SessionId,
@@ -551,7 +648,12 @@ describe('the account and session row schemas agree with the Zod ones', () => {
 			SessionRevokeInput,
 			AccountStatusOutput,
 			AdminAccountListOutput,
-			AdminSessionListOutput
+			AdminSessionListOutput,
+			AuditLogEventJson,
+			AuditLogEventWithUsernamesJson,
+			RoleGrantHistoryEventJson,
+			AuditLogListOutput,
+			AuditLogRoleGrantHistoryOutput
 		]) {
 			assert.ok(is_schema(schema));
 		}
@@ -673,6 +775,41 @@ describe('the account and session row schemas agree with the Zod ones', () => {
 			canonical_username: 2,
 			strict_name: 8
 		});
+	});
+
+	test('the audit rows, but for the strict timestamp and one issue', () => {
+		const event = run(
+			AuditLogEventJson,
+			ZodAuditLogEventJson,
+			corpus_of(AUDIT_EVENT, AUDIT_EVENT_FIELDS)
+		);
+		at_least(event, {
+			matched: 30,
+			refused: 50,
+			strict_timestamp: 7,
+			one_length_issue: 1,
+			one_safe_integer_issue: 2,
+			custom_message: 2
+		});
+		for (const schema of [AuditLogEventWithUsernamesJson, RoleGrantHistoryEventJson]) {
+			const counts = run(
+				schema,
+				ZodAuditLogEventWithUsernamesJson,
+				corpus_of(WITH_USERNAMES, WITH_USERNAMES_FIELDS)
+			);
+			at_least(counts, { matched: 35, refused: 55, strict_timestamp: 7 });
+		}
+		for (const schema of [AuditLogListOutput, AuditLogRoleGrantHistoryOutput]) {
+			const counts = run(schema, ZodAuditLogListOutput, [
+				...wrapped((v) => ({ events: [v] }), corpus_of(WITH_USERNAMES, WITH_USERNAMES_FIELDS)),
+				...corpus_of({ events: [] }, { events: [null, {}, [null]] })
+			]);
+			at_least(counts, { matched: 35, refused: 55, strict_timestamp: 7 });
+		}
+		// every audit SSE event's params are the row
+		for (const spec of audit_log_event_specs) {
+			assert.strictEqual(spec.params, AuditLogEventJson, spec.method);
+		}
 	});
 
 	test('a username in another case fails, where Zod gave its lowercase', () => {

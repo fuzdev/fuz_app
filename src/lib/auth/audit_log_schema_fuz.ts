@@ -4,14 +4,16 @@
  * schemas written in fuz_schema.
  *
  * `AuditEventTypeName` is built from the constants the Zod one is, the
- * grammar and the two messages of `audit_log_schema.ts` and the bound of
- * `auth/name_schema.ts`, so the two can't drift apart. They give every input
+ * grammar and the two messages this module exports and the bound of
+ * `auth/name_schema.ts`, so the two can't drift apart. The constants live
+ * here, not beside the Zod schema, because `audit_log_schema.ts` builds its
+ * wire rows from these twins. They give every input
  * the same verdict and output, and write the same JSON Schema (`maxLength`
  * and `pattern`); a string both too long and off the grammar gets the one
  * length issue from this twin, as its `pipe` stops at the first failing step,
  * where the Zod one adds the grammar issue after it.
  *
- * The exports are `@nodocs` while the Zod schemas of the same names stay, as
+ * The twins are `@nodocs` while the Zod schemas of the same names stay, as
  * the docs build refuses two exports of one name.
  *
  * @module
@@ -21,11 +23,22 @@ import { message, one_of, pipe, regex, type Infer } from '@fuzdev/fuz_schema/sch
 
 import { bounded_string } from '../primitive_schemas_fuz.ts';
 import { NAME_LENGTH_MAX } from './name_schema.ts';
-import {
-	AUDIT_EVENT_TYPE_NAME_LENGTH_MESSAGE,
-	AUDIT_EVENT_TYPE_NAME_PATTERN_MESSAGE,
-	AUDIT_EVENT_TYPE_NAME_REGEX
-} from './audit_log_schema.ts';
+
+/**
+ * Letter start, then letters, digits, `_`, `.`, `/`, `-`. Accepts snake_case,
+ * dotted, and namespaced consumer conventions; rejects empty strings, leading
+ * separators, whitespace, and control characters. The audit event type's own
+ * grammar, wider than the shared name grammar (`auth/name_schema.ts`), whose
+ * length cap `AuditEventTypeName` takes.
+ */
+export const AUDIT_EVENT_TYPE_NAME_REGEX = /^[A-Za-z][A-Za-z0-9_./-]*$/;
+
+/** The message of an audit event-type name past `NAME_LENGTH_MAX`. */
+export const AUDIT_EVENT_TYPE_NAME_LENGTH_MESSAGE = `must be at most ${NAME_LENGTH_MAX} characters`;
+
+/** The message of an audit event-type name off `AUDIT_EVENT_TYPE_NAME_REGEX`. */
+export const AUDIT_EVENT_TYPE_NAME_PATTERN_MESSAGE =
+	'must start with a letter; only letters, digits, _ . / - allowed';
 
 /**
  * Valid audit event-type name: `AUDIT_EVENT_TYPE_NAME_REGEX`, at most

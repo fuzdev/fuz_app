@@ -3,8 +3,9 @@
  * Zod `Uuid`, `UuidWithDefault`, and `ActingActor` on one vector table, to
  * the Zod `bounded_string` on another, and to the Zod `Username` and `Email`
  * on a third: both libraries give every row the same verdict and output, and
- * `Username` and `Email` the same wire issues but for the declared ones. The
- * `Blake3Hash` twin is held to the Zod one, its message included;
+ * `Username` and `Email` the same wire issues but for the declared ones.
+ * `Blake3Hash` is held to the Zod one it replaced, rebuilt, its message
+ * included;
  * `UsernameCanonical` and `Timestamp`, which have no Zod twin, to their
  * grammars.
  *
@@ -18,7 +19,6 @@ import { is_schema, parse } from '@fuzdev/fuz_schema/schema.ts';
 import { to_json_schema } from '@fuzdev/fuz_schema/json_schema.ts';
 
 import {
-	Blake3Hash as ZodBlake3Hash,
 	EMAIL_LENGTH_MAX,
 	EMAIL_LENGTH_MESSAGE,
 	Email as ZodEmail,
@@ -529,6 +529,10 @@ describe('fuz_schema Email', () => {
 });
 
 describe('fuz_schema Blake3Hash', () => {
+	/** The Zod `Blake3Hash` it replaced, rebuilt. */
+	const ZodBlake3Hash = z
+		.string()
+		.regex(/^[0-9a-f]{64}$/, 'Expected a 64-character lowercase hex blake3 hash');
 	const vectors: ReadonlyArray<unknown> = [
 		'a'.repeat(64),
 		'0123456789abcdef'.repeat(4),
@@ -542,7 +546,7 @@ describe('fuz_schema Blake3Hash', () => {
 		null
 	];
 
-	test('the Zod Blake3Hash gives every row the same verdict and output, and its message', () => {
+	test('the Zod Blake3Hash it replaced gives every row the same verdict and output, and its message', () => {
 		for (const input of vectors) {
 			const fuz = outcome_of(Blake3Hash, input);
 			const zod = outcome_of(ZodBlake3Hash, input);

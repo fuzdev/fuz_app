@@ -197,6 +197,13 @@ describe('zod_get_field_schema', () => {
 		assert.throws(() => zod_get_field_schema(schema, 'absent'), /Field "absent" not found/);
 	});
 
+	test('throws for a name the shape only inherits', () => {
+		const schema = z.strictObject({ name: z.string() });
+		for (const key of ['constructor', 'toString', '__proto__']) {
+			assert.throws(() => zod_get_field_schema(schema, key), /not found/, key);
+		}
+	});
+
 	test('throws for non-object schema', () => {
 		assert.throws(() => zod_get_field_schema(z.string(), 'x'), /Field "x" not found/);
 	});

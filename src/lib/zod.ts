@@ -143,14 +143,20 @@ export const zod_get_schema_keys = <T extends z.ZodType>(
 
 /**
  * Get the field schema for a key in an object schema, returning `undefined` if
- * the schema is not an object or the key is missing.
+ * the schema is not an object or the key is not one of its own fields (a name
+ * the shape only inherits, such as `constructor` or `toString`, included).
  *
  * @param schema - Zod schema (typically a `ZodObject` with possible wrappers)
  * @param key - the property name
  * @returns the field's schema, or `undefined`
  */
-export const zod_maybe_get_field_schema = (schema: z.ZodType, key: string): z.ZodType | undefined =>
-	zod_unwrap_to_object(schema)?.shape[key];
+export const zod_maybe_get_field_schema = (
+	schema: z.ZodType,
+	key: string
+): z.ZodType | undefined => {
+	const shape = zod_unwrap_to_object(schema)?.shape;
+	return shape && Object.hasOwn(shape, key) ? shape[key] : undefined;
+};
 
 /**
  * Get the field schema for a key in an object schema.

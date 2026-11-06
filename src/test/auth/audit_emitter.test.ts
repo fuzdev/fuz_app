@@ -13,6 +13,13 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
 import { z } from 'zod';
+import { meta as fuz_meta } from '@fuzdev/fuz_schema/meta.ts';
+import {
+	loose_object as fuz_loose_object,
+	nullable as fuz_nullable,
+	string as fuz_string
+} from '@fuzdev/fuz_schema/schema.ts';
+import type {} from '#lib/sensitivity.ts';
 
 import {
 	create_audit_emitter,
@@ -457,6 +464,41 @@ describe('create_audit_emitter — emit', () => {
 		}
 	});
 
+	test('metadata mismatch against a fuz_schema audit_log_config schema bumps the metadata counter', async () => {
+		reset_audit_metadata_validation_failures();
+		try {
+			vi.spyOn(console, 'error').mockImplementation(() => {});
+			const audit_log_config = create_audit_log_config({
+				extra_events: {
+					classroom_create: fuz_loose_object({ classroom_id: fuz_string, name: fuz_string })
+				}
+			});
+			const audit = create_audit_emitter({
+				db: create_mock_db(),
+				log,
+				on_audit_event: noop,
+				audit_log_config
+			});
+			const ctx = create_ctx();
+
+			await audit.emit(ctx, {
+				event_type: 'classroom_create',
+				metadata: { classroom_id: 'c1', name: 'Period 3' }
+			});
+			await wait();
+			assert.strictEqual(get_audit_metadata_validation_failures(), 0, 'matching metadata');
+
+			await audit.emit(ctx, {
+				event_type: 'classroom_create',
+				metadata: { classroom_id: 42, name: 'Period 3' }
+			});
+			await wait();
+			assert.strictEqual(get_audit_metadata_validation_failures(), 1);
+		} finally {
+			reset_audit_metadata_validation_failures();
+		}
+	});
+
 	test('metadata mismatch against audit_log_config schema bumps the metadata counter', async () => {
 		reset_audit_metadata_validation_failures();
 		try {
@@ -488,6 +530,41 @@ describe('create_audit_emitter — emit', () => {
 });
 
 describe('create_audit_emitter — a dropped pool write', () => {
+	test('masks a secret field of a fuz_schema metadata schema, under a nullable too', async () => {
+		reset_audit_write_failures();
+		const lines: Array<string> = [];
+		const capture = {
+			error: (...args: Array<unknown>) => lines.push(args.map(String).join(' '))
+		} as unknown as Logger;
+		const audit_log_config = create_audit_log_config({
+			extra_events: {
+				probe_event: fuz_nullable(
+					fuz_loose_object({
+						label: fuz_string,
+						secret_thing: fuz_meta(fuz_string, { sensitivity: 'secret' })
+					})
+				)
+			}
+		});
+		const db = create_mock_db(vi.fn(() => Promise.reject(new Error('checkout timed out'))));
+		const audit = create_audit_emitter({ db, log: capture, audit_log_config });
+		try {
+			await audit.emit_pool({
+				event_type: 'probe_event',
+				outcome: 'failure',
+				metadata: { label: 'kept', secret_thing: 'hunter2', constructor: 'kept too' }
+			});
+			assert.strictEqual(lines.length, 1, 'one line');
+			assert.include(
+				lines[0],
+				'"metadata":{"label":"kept","secret_thing":"***","constructor":"kept too"}'
+			);
+			assert.notInclude(lines[0], 'hunter2');
+		} finally {
+			reset_audit_write_failures();
+		}
+	});
+
 	test('logs the whole row as one error line, secret metadata masked', async () => {
 		reset_audit_write_failures();
 		const lines: Array<string> = [];
@@ -521,6 +598,61 @@ describe('create_audit_emitter — a dropped pool write', () => {
 			assert.strictEqual(get_audit_write_failures(), 1);
 		} finally {
 			reset_audit_write_failures();
+		}
+	});
+	test('a metadata key that is an inherited name is logged, masked by the schema alone, on either library', async () => {
+		// `JSON.parse` makes `__proto__` an own key, as a request body would; the
+		// Zod mask once read `constructor` and the rest through the shape's
+		// prototype and threw, losing the line
+		const metadata = (): Record<string, unknown> =>
+			JSON.parse(
+				'{"__proto__":1,"constructor":"c","toString":"t","undeclared":"u","label":"kept","secret_thing":"hunter2"}'
+			);
+		const schemas = {
+			zod: z.looseObject({
+				label: z.string(),
+				secret_thing: z.string().meta({ sensitivity: 'secret' })
+			}),
+			fuz_schema: fuz_loose_object({
+				label: fuz_string,
+				secret_thing: fuz_meta(fuz_string, { sensitivity: 'secret' })
+			})
+		};
+		for (const [library, schema] of Object.entries(schemas)) {
+			reset_audit_write_failures();
+			const lines: Array<string> = [];
+			const capture = {
+				error: (...args: Array<unknown>) => lines.push(args.map(String).join(' '))
+			} as unknown as Logger;
+			const audit_log_config = create_audit_log_config({ extra_events: { probe_event: schema } });
+			const db = create_mock_db(vi.fn(() => Promise.reject(new Error('checkout timed out'))));
+			const audit = create_audit_emitter({ db, log: capture, audit_log_config });
+			try {
+				await audit.emit_pool({
+					event_type: 'probe_event',
+					outcome: 'failure',
+					metadata: metadata()
+				});
+				assert.strictEqual(lines.length, 1, `${library}: one line`);
+				const [, row_json] = /^audit row dropped: (.*) error: checkout timed out$/.exec(lines[0]!)!;
+				const row = JSON.parse(row_json!);
+				assert.deepEqual(
+					Object.entries(row.metadata),
+					[
+						['__proto__', 1],
+						['constructor', 'c'],
+						['toString', 't'],
+						['undeclared', 'u'],
+						['label', 'kept'],
+						['secret_thing', '***']
+					],
+					library
+				);
+				assert.notInclude(lines[0], 'hunter2', library);
+				assert.strictEqual(get_audit_write_failures(), 1, library);
+			} finally {
+				reset_audit_write_failures();
+			}
 		}
 	});
 });

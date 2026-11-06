@@ -1,7 +1,15 @@
 import './assert_dev_env.ts';
 
 import { assert, beforeEach, afterEach } from 'vitest';
-import { z } from 'zod';
+import {
+	format_issue,
+	nullable,
+	object,
+	parse,
+	type AnySchema,
+	type SchemaEntries,
+	type SchemaWrapperDef
+} from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	get_audit_metadata_validation_failures,
@@ -173,23 +181,24 @@ export const create_recording_audit_emitter = (
 
 /**
  * The closed-world twin of a builtin event's `audit_metadata_schemas` entry:
- * the same fields, with unknown keys refused. The registry's schemas are
- * `z.looseObject` so a consumer can add fields to a builtin event (a builtin's
- * schema can't be overridden), so this is opt-in.
+ * the same fields, with unknown keys refused — its `loose_object`'s `def`
+ * spread into an `object`, under the `nullable` it may have. The registry's
+ * schemas are `loose_object`s so a consumer can add fields to a builtin event
+ * (a builtin's schema can't be overridden), so this is opt-in.
  */
-const to_closed_metadata_schema = (schema: z.ZodType): z.ZodType => {
-	if (schema instanceof z.ZodNullable) {
-		return to_closed_metadata_schema(schema.unwrap() as z.ZodType).nullable();
+const to_closed_metadata_schema = (schema: AnySchema): AnySchema => {
+	if (schema.kind === 'nullable') {
+		return nullable(to_closed_metadata_schema((schema.def as SchemaWrapperDef<AnySchema>).schema));
 	}
-	if (schema instanceof z.ZodObject) return z.strictObject(schema.shape);
+	if (schema.kind === 'loose_object') return object({ ...(schema.def as SchemaEntries) });
 	return schema;
 };
 
-const declared_metadata_schemas: Map<string, z.ZodType> = new Map(
+const declared_metadata_schemas: Map<string, AnySchema> = new Map(
 	Object.entries(audit_metadata_schemas)
 );
 
-const closed_metadata_schemas: Map<string, z.ZodType> = new Map(
+const closed_metadata_schemas: Map<string, AnySchema> = new Map(
 	Object.entries(audit_metadata_schemas).map(([event_type, schema]) => [
 		event_type,
 		to_closed_metadata_schema(schema)
@@ -230,13 +239,11 @@ export const assert_audit_event_metadata = (
 		options?.reject_unknown_keys ? closed_metadata_schemas : declared_metadata_schemas
 	).get(event.event_type);
 	if (!schema) return;
-	const parsed = schema.safeParse(event.metadata);
-	if (parsed.success) return;
+	const parsed = parse(schema, event.metadata);
+	if (parsed.ok) return;
 	assert.fail(
 		`audit row ${event.event_type} (outcome=${event.outcome}) carries metadata outside its ` +
 			`audit_metadata_schemas entry: ${JSON.stringify(event.metadata)} — ` +
-			parsed.error.issues
-				.map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`)
-				.join('; ')
+			parsed.issues.map(format_issue).join('; ')
 	);
 };

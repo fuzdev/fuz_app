@@ -16,13 +16,16 @@ import { is_schema } from '@fuzdev/fuz_schema/schema.ts';
 import { to_json_schema } from '@fuzdev/fuz_schema/json_schema.ts';
 
 import {
-	AUDIT_EVENT_TYPE_NAME_LENGTH_MESSAGE,
-	AUDIT_EVENT_TYPE_NAME_PATTERN_MESSAGE,
-	AUDIT_EVENT_TYPE_NAME_REGEX,
 	AuditEventTypeName as ZodAuditEventTypeName,
 	AuditOutcome as ZodAuditOutcome
 } from '#lib/auth/audit_log_schema.ts';
-import { AuditEventTypeName, AuditOutcome } from '#lib/auth/audit_log_schema_fuz.ts';
+import {
+	AUDIT_EVENT_TYPE_NAME_LENGTH_MESSAGE,
+	AUDIT_EVENT_TYPE_NAME_PATTERN_MESSAGE,
+	AUDIT_EVENT_TYPE_NAME_REGEX,
+	AuditEventTypeName,
+	AuditOutcome
+} from '#lib/auth/audit_log_schema_fuz.ts';
 import { parse_any, to_wire_issues, type WireIssue } from '#lib/schema_issues.ts';
 import { NAME_LENGTH_MAX } from '#lib/auth/name_schema.ts';
 

@@ -66,8 +66,8 @@ Convention — `*_schema.ts` holds a domain's schemas, Zod or `@fuzdev/fuz_schem
 - `auth/token_lifetime.ts` — the temporal axis of a minted token: `TokenLifetimeInput` (required union on `account_token_create` — `{kind:'eternal'}` or `{kind:'ttl', days}`), `token_lifetime_to_expires_at`, `TOKEN_TTL_DAYS_MAX`. No default — `expires_at IS NULL` always means "deliberately eternal".
 - `auth/token_scope.ts` — per-credential authority narrowing stored on `api_token.scope`: `TokenScope` / `TokenScopeInput` + constructors, `parse_stored_token_scope` (fail-closed), `token_scope_admits_method` / `_non_rpc`, and the `<section>:<id>` capability vocabulary (`token_scope_method_capability` for the dispatcher's `rpc:<method>`, `is_route_scope_capability` for the `surface:<name>` a `RouteAuth.required_scope` may declare, `token_scope_denied_body`, `TOKEN_SURFACES`). Not an open registry — see ../../../docs/security.md §Token scoping for why the identifier half is deliberately unregistered.
 - `auth/auth_ddl.ts` — `CREATE TABLE` / index / seed strings for the core identity tables.
-- `auth/audit_log_schema.ts` — `AUDIT_EVENT_TYPES` (the builtin event types), `AuditEventType` / `AuditEventTypeName` (`AUDIT_EVENT_TYPE_NAME_REGEX` under `NAME_LENGTH_MAX`), `audit_metadata_schemas`, `AuditLogEvent`, `AuditLogInput`, `AuditLogConfig`, `create_audit_log_config`.
-- `auth/audit_log_schema_fuz.ts` — the `@fuzdev/fuz_schema` twins of `AuditEventTypeName` and `AuditOutcome` under the same names (`@nodocs` while the Zod ones stay), over `audit_log_schema.ts`'s grammar and messages (`AUDIT_EVENT_TYPE_NAME_LENGTH_MESSAGE`, `AUDIT_EVENT_TYPE_NAME_PATTERN_MESSAGE`): the same verdict, output and JSON Schema as the Zod ones, and their messages, but for the one length issue of a name too long and off the grammar. Pinned by `audit_log_schema_fuz.test.ts`. `audit_log_list`'s input declares them.
+- `auth/audit_log_schema.ts` — `AUDIT_EVENT_TYPES` (the builtin event types), `AuditEventType` / `AuditEventTypeName` (Zod, `AUDIT_EVENT_TYPE_NAME_REGEX` under `NAME_LENGTH_MAX`), `audit_metadata_schemas` (fuz_schema), `AuditLogEvent`, `AuditLogInput`, `AuditLogConfig` (`metadata_schemas` of either library), `create_audit_log_config`, and the `@fuzdev/fuz_schema` wire rows `AuditLogEventJson` (`seq` `pipe(number, safe_integer)`, `created_at` a `Timestamp`), `AuditLogEventWithUsernamesJson`, `RoleGrantHistoryEventJson` and `AdminSessionJson`, built over the twins of `audit_log_schema_fuz.ts`.
+- `auth/audit_log_schema_fuz.ts` — the `@fuzdev/fuz_schema` twins of `AuditEventTypeName` and `AuditOutcome` under the same names (`@nodocs` while the Zod ones stay), and the grammar and messages both are built from (`AUDIT_EVENT_TYPE_NAME_REGEX`, `AUDIT_EVENT_TYPE_NAME_LENGTH_MESSAGE`, `AUDIT_EVENT_TYPE_NAME_PATTERN_MESSAGE`), here because `audit_log_schema.ts` builds its rows from the twins: the same verdict, output and JSON Schema as the Zod ones, and their messages, but for the one length issue of a name too long and off the grammar. Pinned by `audit_log_schema_fuz.test.ts`. `audit_log_list`'s input declares them.
 - `auth/audit_log_ddl.ts` — `audit_log` table DDL with `seq BIGSERIAL` for cursor-based gap fill (BIGSERIAL converges with the Rust spine; `create_db` registers a `pg.types` int8 parser so `seq` still reads as a JS number).
 - `auth/invite_schema.ts` — `Invite`, `CreateInviteInput`.
 - `auth/app_settings_schema.ts` — `AppSettings` (single-row via `CHECK (id = 1)`) and its `@fuzdev/fuz_schema` schemas `AppSettingsJson` and `AppSettingsWithUsernameJson`.
@@ -542,8 +542,13 @@ TSDoc. The pattern that spans emit sites:
 ### Audit event extensibility
 
 Consumers extend the closed `AUDIT_EVENT_TYPES` enum via
-`create_audit_log_config({extra_events})` — Zod schema or `null` per type;
-collisions with builtins or name-format failures throw at construction. The
+`create_audit_log_config({extra_events})` — a metadata schema, Zod or
+`@fuzdev/fuz_schema`, or `null` per type; collisions with builtins,
+name-format failures and a value of neither library throw at construction.
+`query_audit_log` validates through `parse_any`, and a dropped row's log line
+masks the `sensitivity: 'secret'` fields of either library's object schema.
+The builtin `audit_metadata_schemas` are fuz_schema `loose_object`s
+(`nullable` where the event may carry none, `literal(null)` for `logout`). The
 DB column is `TEXT NOT NULL` (no enum), so consumer types round-trip through
 list queries, the `audit_log_list` RPC, and SSE identically to builtins.
 
