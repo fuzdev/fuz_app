@@ -130,13 +130,20 @@ export interface RawHttpHeadRequest {
 	readonly path: string;
 	/**
 	 * Request headers beyond `Host` and `Content-Length`, which the helper
-	 * writes — naming either here, in any casing, throws. Nothing else is
+	 * writes from `host` and `content_length` — naming either here, in any
+	 * casing, throws. Nothing else is
 	 * defaulted — no `Origin`, no credential — so a request carries exactly
 	 * what the caller names.
 	 */
 	readonly headers: Readonly<Record<string, string>>;
 	/** The `Content-Length` to declare; no body byte is sent. */
 	readonly content_length: number;
+	/**
+	 * The `Host` to send, for a probe of a server's host check.
+	 *
+	 * @default the host of `base_url`
+	 */
+	readonly host?: string;
 	/**
 	 * How long to wait for the response.
 	 *
@@ -167,7 +174,8 @@ export interface RawHttpHeadRequest {
  * @param base_url - the server's base URL; only its host and port are used
  * @param request - the method, path, headers and declared length to send
  * @returns the parsed response; its `body` is the raw text
- * @throws Error when `request.headers` names `Host` or `Content-Length`, or
+ * @throws Error when `request.headers` names `Host` or `Content-Length`, when
+ * a header name or value or the host holds a CR or LF, or
  * when no whole response arrives — the connection was refused, the server
  * closed it before any byte or partway through a response, or it waited for
  * the body it should have refused without
@@ -181,6 +189,7 @@ export const raw_http_send_head = async (
 		path,
 		headers,
 		content_length,
+		host = new URL(base_url).host,
 		read_timeout_ms = RAW_HTTP_READ_TIMEOUT_MS
 	} = request;
 	// a caller-named `Host` or `Content-Length` would replace the helper's line,
@@ -192,11 +201,18 @@ export const raw_http_send_head = async (
 	if (collision !== undefined) {
 		throw new Error(
 			`raw_http_send_head writes Host and Content-Length itself; drop '${collision}' from ` +
-				'`headers` and declare the length through `content_length`'
+				'`headers` and set them through `host` and `content_length`'
+		);
+	}
+	// a CR or LF would end the line early and smuggle a header or a request in
+	const broken = [host, ...Object.entries(headers).flat()].find((text) => /[\r\n]/.test(text));
+	if (broken !== undefined) {
+		throw new Error(
+			`raw_http_send_head: a CR or LF in a header name or value or the host: ${JSON.stringify(broken)}`
 		);
 	}
 	const header_lines = raw_http_header_lines({
-		Host: new URL(base_url).host,
+		Host: host,
 		...headers,
 		'Content-Length': String(content_length)
 	});

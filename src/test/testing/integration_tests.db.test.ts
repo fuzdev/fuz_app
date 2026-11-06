@@ -101,13 +101,31 @@ const rpc_verify_status_no_origin = async (
 
 // --- Run the standard integration test suite ---
 
-describe_standard_integration_tests(
-	default_in_process_suite_options({
+describe_standard_integration_tests({
+	...default_in_process_suite_options({
 		session_options: fuz_session_config,
 		create_route_specs: test_route_factory,
 		rpc_endpoints: test_rpc_endpoints
-	})
-);
+	}),
+	// exactly what the suite leaves uncovered on these routes, so a dropped
+	// record or one covered code swapped for another fails; a code the suite
+	// comes to cover leaves this list, and a newly declared one is driven
+	check_uncovered_errors: (uncovered) => {
+		assert.deepStrictEqual(
+			uncovered.map(({ method, path, status, code }) => `${method} ${path} ${status} ${code}`),
+			[
+				'POST /api/account/login 400 invalid_request_body',
+				'POST /api/account/login 400 invalid_json_body',
+				'POST /api/account/login 429 rate_limit_exceeded',
+				'POST /api/account/logout 403 credential_type_required',
+				'POST /api/account/password 400 invalid_request_body',
+				'POST /api/account/password 400 invalid_json_body',
+				'POST /api/account/password 403 credential_type_required',
+				'POST /api/account/password 429 rate_limit_exceeded'
+			]
+		);
+	}
+});
 
 // --- Standalone tests for the helpers ---
 

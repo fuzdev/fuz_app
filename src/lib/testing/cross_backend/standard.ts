@@ -45,6 +45,7 @@ import { describe_rpc_round_trip_tests, type RpcSuccessFixtures } from '../rpc_r
 import { describe_data_exposure_tests } from '../data_exposure.ts';
 import type { RpcEndpointsSuiteOption } from '../rpc_helpers.ts';
 import type { BackendCapabilities } from './capabilities.ts';
+import type { UncoveredEntry } from '../error_coverage.ts';
 import type { SetupTest, TestFixture } from './setup.ts';
 
 /**
@@ -92,6 +93,28 @@ export interface StandardCrossProcessTestOptions {
 	 * `0` to skip the assertion entirely.
 	 */
 	error_coverage_min?: number;
+	/**
+	 * Base URL the spawned backend is reachable at. Forwarded to
+	 * `describe_standard_integration_tests`, whose middleware-gate probes write
+	 * their request heads to the socket.
+	 */
+	base_url: string;
+	/**
+	 * Forwarded to `describe_standard_integration_tests` — the backend's
+	 * request-body cap on every counted route but the RPC endpoint, when it
+	 * isn't the spine default.
+	 */
+	max_body_bytes?: number;
+	/**
+	 * Forwarded to `describe_standard_integration_tests` — the backend's
+	 * request-body cap on the RPC endpoint, when it isn't `max_body_bytes`.
+	 */
+	rpc_max_body_bytes?: number;
+	/**
+	 * Forwarded to `describe_standard_integration_tests` — called with the
+	 * declared error paths of its counted routes it never observed.
+	 */
+	check_uncovered_errors?: (uncovered: Array<UncoveredEntry>) => void;
 	/**
 	 * Forwarded to `describe_round_trip_validation` as `skip_routes`
 	 * (`'METHOD /path'` keys). For consumer REST routes whose responses
@@ -157,7 +180,11 @@ export const describe_standard_cross_process_tests = (
 		capabilities: options.capabilities,
 		session_options: options.session_options,
 		rpc_endpoints: options.rpc_endpoints,
-		error_coverage_min: options.error_coverage_min
+		error_coverage_min: options.error_coverage_min,
+		base_url: options.base_url,
+		max_body_bytes: options.max_body_bytes,
+		rpc_max_body_bytes: options.rpc_max_body_bytes,
+		check_uncovered_errors: options.check_uncovered_errors
 	});
 	describe_round_trip_validation({
 		setup_test: options.setup_test,

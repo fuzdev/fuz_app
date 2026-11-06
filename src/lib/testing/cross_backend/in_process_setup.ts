@@ -253,9 +253,11 @@ export interface DefaultInProcessSuiteOptions {
  * Build the full in-process suite bundle in a single helper invocation.
  * Output covers `{setup_test, surface_source, capabilities}` plus every
  * factory input the Tier 1 suites read at their top level
- * (`session_options`, `create_route_specs`, `rpc_endpoints`) — so the
- * call site spreads once and adds only suite-specific extras
- * (`roles`, `skip_routes`, `input_overrides`, `db_factories`, ...).
+ * (`session_options`, `create_route_specs`, `rpc_endpoints`), and the
+ * integration suite's `base_url` (`null`, no socket) and `max_body_bytes`
+ * (`app_options.max_body_size`) — so the call site spreads once and adds
+ * only suite-specific extras (`roles`, `skip_routes`, `input_overrides`,
+ * `db_factories`, ...).
  *
  * ```ts
  * // Suite-extras-free call: helper output is the entire options bag.
@@ -289,6 +291,8 @@ export const default_in_process_suite_options = <const O extends DefaultInProces
 	session_options: O['session_options'];
 	create_route_specs: O['create_route_specs'];
 	rpc_endpoints: O['rpc_endpoints'];
+	base_url: null;
+	max_body_bytes: number | undefined;
 } => ({
 	setup_test: default_in_process_setup({
 		session_options: options.session_options,
@@ -312,11 +316,16 @@ export const default_in_process_suite_options = <const O extends DefaultInProces
 			// and live app stay in sync by construction.
 			bootstrap: options.bootstrap,
 			surface_route: options.app_options?.surface_route,
+			max_body_size: options.app_options?.max_body_size,
+			origin_carve_outs: options.app_options?.origin_carve_outs,
 			// `create_test_app` always passes a `daemon_token_state`
 			daemon_token: true
 		}),
 	capabilities: in_process_capabilities,
 	session_options: options.session_options,
 	create_route_specs: options.create_route_specs,
-	rpc_endpoints: options.rpc_endpoints
+	rpc_endpoints: options.rpc_endpoints,
+	// in-process: no socket, and the limit `create_app_server` mounts
+	base_url: null,
+	max_body_bytes: options.app_options?.max_body_size ?? undefined
 });

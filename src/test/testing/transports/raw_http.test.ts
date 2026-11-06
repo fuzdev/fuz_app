@@ -200,6 +200,24 @@ describe('raw_http_send_head', () => {
 		assert.ok(seen.startsWith('POST /x HTTP/1.1\r\n'), seen);
 	});
 
+	test("sends the given host in place of the base URL's", async () => {
+		let seen = '';
+		const base_url = await listen((socket, data) => {
+			seen = data;
+			socket.write(RESPONSE_413);
+		});
+		await raw_http_send_head(base_url, {
+			path: '/x',
+			headers: {},
+			content_length: 0,
+			host: 'other.invalid'
+		});
+		assert.strictEqual(
+			seen,
+			'POST /x HTTP/1.1\r\nHost: other.invalid\r\nContent-Length: 0\r\n\r\n'
+		);
+	});
+
 	test('throws when no whole response arrives in time', async () => {
 		const base_url = await listen(() => {});
 		await assert_rejects(
@@ -236,6 +254,21 @@ describe('raw_http_send_head', () => {
 				raw_http_send_head('http://127.0.0.1:1', { path: '/x', headers: {}, content_length: 1 }),
 			/connection refused or closed before any response/
 		);
+	});
+
+	test('refuses a CR or LF in the host or a header name or value', async () => {
+		const requests: Array<{ headers: Record<string, string>; host?: string }> = [
+			{ headers: {}, host: 'a.invalid\r\nX-Smuggled: 1' },
+			{ headers: { 'x-a\nb': '1' } },
+			{ headers: { 'x-a': '1\r\n\r\nGET / HTTP/1.1' } }
+		];
+		for (const request of requests) {
+			await assert_rejects(
+				() =>
+					raw_http_send_head('http://127.0.0.1:1', { path: '/x', content_length: 0, ...request }),
+				/a CR or LF in a header name or value or the host/
+			);
+		}
 	});
 
 	test('refuses a Host or Content-Length in headers, in any casing', async () => {

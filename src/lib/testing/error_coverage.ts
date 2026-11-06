@@ -4,11 +4,13 @@ import './assert_dev_env.ts';
  * Error reachability coverage tracking.
  *
  * Tracks which declared error codes are actually exercised in tests.
- * `ErrorCoverageCollector` records status codes (optionally with body
- * `error` codes) observed during test runs, then `assert_error_coverage`
- * compares against each route's error map (`resolve_route_error_map`) to find
- * uncovered error paths — one per declared code at each status, read from
- * the map's definitions.
+ * `ErrorCoverageCollector` records the error responses observed during test
+ * runs, each by its body's `error` code where it is known, then
+ * `assert_error_coverage` compares against each route's error map
+ * (`resolve_route_error_map`) to find uncovered error paths — one per declared
+ * code at each status, read from the map's definitions. An observation with a
+ * code covers that one path; one recorded with a `null` code covers every code
+ * declared at its status.
  *
  * @module
  */
@@ -52,8 +54,10 @@ interface CoverageEntry {
  * Single source of truth for the route → status → code traversal used by
  * both `uncovered()` and `assert_error_coverage`. Yields one entry per
  * declared (status, code) of each route's error map, read from its
- * definitions, with a `covered` flag, applying the "any-code" rule
- * (status-only observation covers all declared codes).
+ * definitions, with a `covered` flag: covered when that code was observed
+ * at that status, or when the status was observed with a `null` code (the
+ * "any-code" rule, for a response that carries none). Every definition
+ * carries a code, so a declared status always has at least one.
  */
 const walk_coverage = (
 	collector: ErrorCoverageCollector,
@@ -85,17 +89,17 @@ const walk_coverage = (
  * Tracks which route × status (and route × status × code) combinations have
  * been exercised in tests.
  *
- * Use `record()` to log an observed status (optionally with the body's `error`
- * code), or `assert_and_record()` to combine response validation with tracking
- * (auto-extracts `body.error` from the response when present).
+ * Use `record()` to log an observed status with the body's `error` code (`null`
+ * for none), or `assert_and_record()` to combine response validation with
+ * tracking (reads `body.error` from the response).
  * After all tests, call `uncovered()` to find declared error paths never
  * exercised.
  *
- * An observation recorded without a code still satisfies "any-code" coverage
- * requirements for the same status — i.e., if a caller records just the status,
- * all declared codes for that status are considered covered. Per-code tracking
- * is additive: callers who know the body's `error` value should pass it to get
- * precise per-code gap reporting.
+ * An observation with a code covers exactly that (route, status, code): a
+ * `forbidden_origin` 403 leaves a declared `credential_type_required` 403
+ * uncovered. An observation recorded with a `null` code — a response that
+ * carries none — satisfies the "any-code" rule for its status: every code
+ * declared there counts as covered.
  */
 export class ErrorCoverageCollector {
 	/**
@@ -113,68 +117,74 @@ export class ErrorCoverageCollector {
 	}
 
 	/**
-	 * Observed keys: `"METHOD /spec-path:STATUS"` or `"METHOD /spec-path:STATUS:CODE"`.
-	 *
-	 * Both shapes coexist — the code-less key marks the status as covered at any
-	 * code; a code-bearing key adds per-code precision.
+	 * Observed keys: `"METHOD /spec-path:STATUS:CODE"` for an observation with a
+	 * code, `"METHOD /spec-path:STATUS"` for one without, which covers every
+	 * code declared at the status.
 	 */
 	readonly observed: Set<string> = new Set();
 
 	/**
-	 * Record an observed error status (optionally with the body's `error` code) for a route.
+	 * Record an observed error status and its body's `error` code for a route.
 	 *
 	 * Resolves the concrete request path back to the spec template path
-	 * (e.g., `/api/accounts/abc` → `/api/accounts/:id`). When `code` is provided,
-	 * it is stored alongside the status for per-code coverage tracking.
+	 * (e.g., `/api/accounts/abc` → `/api/accounts/:id`). A `code` covers that
+	 * code alone; `null`, for a response that truly carries no code, covers
+	 * every code declared at the status — so any-code coverage is asked for,
+	 * never had by leaving the code out.
 	 *
 	 * @param path - request path (may be concrete)
-	 * @param code - observed body `error` code, for per-code coverage
-	 * @mutates `this.observed` - adds the resolved `"METHOD /spec-path:STATUS"`
-	 *   key (and the `:CODE` variant when `code` is provided).
+	 * @param code - the body's `error` code, or `null` when the response has none
+	 * @mutates `this.observed` - adds `"METHOD /spec-path:STATUS:CODE"` for a
+	 *   code, `"METHOD /spec-path:STATUS"` for `null`.
 	 */
 	record(
 		route_specs: Array<RouteSpec>,
 		method: string,
 		path: string,
 		status: number,
-		code?: string
+		code: string | null
 	): void {
 		const spec = find_route_spec(route_specs, method, path);
 		const spec_path = spec ? spec.path : path;
 		const base_key = `${method} ${spec_path}:${status}`;
-		this.observed.add(base_key);
-		if (code !== undefined) {
-			this.observed.add(`${base_key}:${code}`);
-		}
+		// a known code covers that code alone, so a refusal at a shared status
+		// is no evidence for the others there
+		this.observed.add(code === null ? base_key : `${base_key}:${code}`);
 	}
 
 	/**
 	 * Validate a response against its route spec and record the status.
 	 *
-	 * Wraps `assert_response_matches_spec` and records the status code. For
-	 * error responses, auto-extracts `body.error` from the JSON body (via a
-	 * cloned response, so the original stream stays usable) and records it
-	 * for per-code coverage. Pass an explicit `code` to override the
-	 * auto-extracted value or when the body was already consumed.
+	 * Wraps `assert_response_matches_spec` and records the status with the
+	 * body's `error` code, read from a clone so the original stream stays
+	 * usable; a body with no string `error` records `null`. Pass `code` when
+	 * the body was already consumed.
 	 *
-	 * @param code - observed body `error` code (override; if omitted and the
-	 *   response body is a JSON object with a string `error` field, that value
-	 *   is auto-extracted)
+	 * @param code - the body's `error` code, or `null` when it has none; read
+	 *   from the body when omitted
 	 * @mutates `this.observed` - via `record` after `assert_response_matches_spec`
 	 *   succeeds.
 	 * @throws Error if the response body fails the route spec's declared
-	 *   schemas (propagated from `assert_response_matches_spec`).
+	 *   schemas (propagated from `assert_response_matches_spec`), or if the
+	 *   body was consumed and no `code` was given.
 	 */
 	async assert_and_record(
 		route_specs: Array<RouteSpec>,
 		method: string,
 		path: string,
 		response: Response,
-		code?: string
+		code?: string | null
 	): Promise<void> {
+		if (code === undefined && response.bodyUsed) {
+			throw new Error(
+				`assert_and_record: the body of ${method} ${path} was consumed; pass its code ` +
+					'(or `null` for none)'
+			);
+		}
 		await assert_response_matches_spec(route_specs, method, path, response, this.route_error_maps);
 		let resolved_code = code;
-		if (resolved_code === undefined && !response.ok && !response.bodyUsed) {
+		if (resolved_code === undefined) {
+			resolved_code = null;
 			try {
 				const body = await response.clone().json();
 				if (body && typeof (body as { error?: unknown }).error === 'string') {
@@ -192,8 +202,9 @@ export class ErrorCoverageCollector {
 	 *
 	 * Computes the declared set from each route's error map
 	 * (`resolve_route_error_map`, `this.route_error_maps`): one row per declared code
-	 * at each status. A status-only observation (no code) satisfies all
-	 * declared codes for that status — the "any-code" rule.
+	 * at each status. An observation with a code covers that row alone; a
+	 * status-only observation (a `null` code) covers every row at its status — the
+	 * "any-code" rule.
 	 */
 	uncovered(route_specs: Array<RouteSpec>, options?: CoverageFilterOptions): Array<UncoveredEntry> {
 		return walk_coverage(this, route_specs, options)
@@ -230,8 +241,9 @@ const format_uncovered = (
  *
  * Computes the ratio of exercised error paths to total declared error paths,
  * each declared code at each status of a route's error map
- * (`collector.route_error_maps`) one path. A status-only observation covers all
- * declared codes for that status (the "any-code" rule).
+ * (`collector.route_error_maps`) one path. An observation with a code covers
+ * that path alone; a status-only observation (a `null` code) covers every declared code at
+ * its status (the "any-code" rule).
  *
  * When `min_coverage` is 0 (default), logs coverage info without failing.
  * When > 0, fails if coverage is below the threshold.

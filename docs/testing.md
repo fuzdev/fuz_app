@@ -780,9 +780,12 @@ assert_error_coverage(collector, route_specs, {
 Every declared error is a definition, so coverage counts each declared code at
 each status as one path, read from the route error map's definitions — a code
 with two shapes at one status (the account status route's 401) is one path.
-An observation without a code satisfies all codes for that status (the
-"any-code" rule); passing `body.error` to `record` narrows coverage to the
-specific code.
+An observation with a code covers that code alone — a `forbidden_origin` 403
+leaves a `credential_type_required` 403 uncovered — and `assert_and_record`
+reads it from `body.error`. `record`'s code is required: `null`, for a
+response that carries none, satisfies all codes for that status (the
+"any-code" rule), so any-code coverage is asked for and never had by leaving
+the code out.
 
 `uncovered(route_specs)` returns entries shaped `{method, path, status, code}`.
 
@@ -800,6 +803,14 @@ the composable suites. Many declared error schemas come from middleware
 Consumers should increase this as their test suites mature by passing a
 custom `min_coverage` to `assert_error_coverage` in their app-specific
 test extensions.
+
+Middleware errors count per route: the origin check's 403, the body limit's
+413 and 400, and the Rust spine's host gate's 403 are declared on every route
+they apply to. The integration suite probes each gate a counted route's error
+map declares (`testing/middleware_gate_probes.ts`) and records the refusal, so
+it needs `base_url` (the backend's socket, `null` in-process, which
+`default_in_process_suite_options` gives) and the backend's body caps when
+they aren't the spine default (`max_body_bytes`, `rpc_max_body_bytes`).
 
 ```typescript
 import { DEFAULT_INTEGRATION_ERROR_COVERAGE } from '@fuzdev/fuz_app/testing/error_coverage.ts';

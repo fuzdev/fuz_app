@@ -473,15 +473,22 @@ each code of each route's error map (`resolve_route_error_map`), one path per
 takes the maps (`AppSurfaceSpec.route_error_maps`, middleware included); without
 them a route's own map is read. The standard suites pass
 `surface_source.route_error_maps`.
-Observations live in a `Set<string>` keyed by `"METHOD /spec-path:STATUS"` or
-`"METHOD /spec-path:STATUS:CODE"` — the two shapes coexist and a status-only
-observation satisfies the "any-code" coverage rule for all declared codes at
-that status.
+Observations live in a `Set<string>` keyed by `"METHOD /spec-path:STATUS:CODE"`
+for an observation with a code, which covers that path alone (a
+`forbidden_origin` 403 leaves `credential_type_required` uncovered), or
+`"METHOD /spec-path:STATUS"` for one recorded with a `null` code (a response
+that carries none), which satisfies the "any-code" rule for every code declared
+at that status — asked for explicitly, never had by omission.
 
 Methods:
 
-- `record(specs, method, path, status, code?)` — resolves concrete paths back to spec templates (e.g. `/api/accounts/abc` → `/api/accounts/:id`).
-- `assert_and_record(specs, method, path, response, code?)` — wraps `assert_response_matches_spec` and auto-extracts `body.error` from the JSON body via `response.clone()`. Pass an explicit `code` when the body was already consumed.
+- `record(specs, method, path, status, code: string | null)` — resolves concrete
+  paths back to spec templates (e.g. `/api/accounts/abc` → `/api/accounts/:id`);
+  `code` is the body's `error`, `null` only for a response that has none.
+- `assert_and_record(specs, method, path, response, code?)` — wraps
+  `assert_response_matches_spec` and reads `body.error` from the JSON body via
+  `response.clone()` (`null` when there is none). Pass `code` when the body was
+  already consumed; without it a consumed body throws.
 - `uncovered(specs, options?)` — one `{method, path, status, code}` row per declared code never observed.
 
 Support functions:
@@ -839,20 +846,54 @@ these thematic areas:
 9. Token revocation + cross-account isolation
 10. Response body schema validation + error-response information leakage
 11. Signup invite edge cases + expired credential rejection + error-coverage breadth
+12. Middleware gates — one test per gate each counted route's error map declares (`middleware_gate_probes.ts`, below)
 
 An `ErrorCoverageCollector` runs across groups; `afterAll` filters to
-auth-related routes (login/logout/verify/sessions/tokens/password/signup)
-and asserts `DEFAULT_INTEGRATION_ERROR_COVERAGE` (20%). Bootstrap is
+the routes it counts — login, logout, password, signup (when wired) and the
+RPC path — and asserts `DEFAULT_INTEGRATION_ERROR_COVERAGE` (20%). Bootstrap is
 excluded because no describe block in this suite drives it — its declared
 codes would always be uncovered. Consumer-specific routes aren't exercised
 here either — they don't count against the baseline. The declared paths are
 the route error maps of `surface_source`, middleware included (the origin
-check's 403, the body limit's 413 and 400). Override with
+check's 403, the body limit's 413 and 400, and the Rust spine's host gate's
+403 where the surface declares it), counted per (route, status, code), so
+every error response a test asserts is recorded, and the middleware-gate group
+probes each gate on each counted route. Override with
 `error_coverage_min?: number` (set to `0` to skip the assertion — useful for
 minimal route sets whose declared error codes outpace the suite's
 denial-path drivers).
 
-Options: `{setup_test, surface_source, session_options, rpc_endpoints, error_coverage_min?}`.
+Options: `{setup_test, surface_source, session_options, rpc_endpoints, base_url,
+max_body_bytes?, rpc_max_body_bytes?, error_coverage_min?,
+check_uncovered_errors?}`; the last is called with the declared paths left
+uncovered before the floor is asserted, which fuz_app's own wirings hold to an
+exact set. `base_url` is the
+backend's socket, `null` in-process (`default_in_process_suite_options` gives
+`null`, and `max_body_bytes` from `app_options.max_body_size`); the caps
+default to `SPINE_BODY_LIMIT_DEFAULT_BYTES`, the RPC endpoint's to
+`max_body_bytes`.
+
+### `middleware_gate_probes.ts` — the integration suite's gate probes
+
+`plan_middleware_gate_probes({route_specs, route_error_maps, base_url,
+max_body_bytes?, rpc_path, rpc_max_body_bytes?})` plans one
+`MiddlewareGateProbe` per gate a route's error map declares, so a carved-out
+route or a backend without the layer gets none: a foreign `Origin`
+(`GATE_PROBE_FOREIGN_ORIGIN`) → 403 `forbidden_origin`; a foreign `Host`
+(`GATE_PROBE_FOREIGN_HOST`) → 403 `forbidden_host`; a declared
+`Content-Length` one over the route's cap → 413 `payload_too_large`; and,
+in-process only, an unreadable `Content-Length` → 400 `invalid_content_length`
+(over a socket Node's parser and hyper answer that one themselves with a
+bodiless 400, and `fetch` can't send it). Each probe is a request head with no
+body and no credential, refused before auth, rate limiting and body parsing;
+in-process the probes share one fixture. A route whose path has a param or
+wildcard segment throws rather than be probed at its literal template.
+`send_middleware_gate_probe(probe, base_url, transport)` writes it to the socket
+with `raw_http_send_head` (`fetch` replaces a caller's `Host` and
+`Content-Length`), or in-process through the transport, whose `Request` keeps
+both. `assert_middleware_gate_refusal(probe, response, collector, route_specs)`
+asserts the declared status and code, then `assert_and_record`s it.
+`format_middleware_gate_probe` names a probe's test.
 
 ### `admin_integration.ts` — `describe_standard_admin_integration_tests`
 
@@ -1208,6 +1249,9 @@ the in-process backend exposes; wire-level audit observability lives in the
 consumer's own audit `.cross.test.ts`). The omission rationale lives in the
 module doc once instead of repeating in each consumer's `*.cross.test.ts`.
 
+`base_url` (required — the integration suite's middleware-gate probes write
+to the socket), `max_body_bytes` and `rpc_max_body_bytes` forward to the
+integration suite;
 `rpc_success_fixtures`, `rpc_skip_methods` and `rpc_input_overrides`
 forward to the RPC round-trip's `success_fixtures`, `skip_methods` and
 `input_overrides` (`describe_spine_cross_suites` also forwards
@@ -1272,7 +1316,8 @@ here never reaches it.
   request-body cap on `rpc_path` and its inbound WS message cap, when they
   aren't the spine defaults (`SPINE_BODY_LIMIT_DEFAULT_BYTES`,
   `DEFAULT_WS_MAX_MESSAGE_BYTES`). The first reaches `body_size`,
-  `body_size_smuggling` and `transport_composition`'s RPC over-cap row (each
+  `body_size_smuggling`, `transport_composition`'s RPC over-cap row and the
+  standard bundle's middleware-gate probes of the RPC endpoint (each
   takes it as `rpc_max_body_bytes`), the second `ws_round_trip`'s
   `max_message_bytes` — one value per limit for every suite probing it.
 - **`exclude`** — `{[suite]: reason}`; the reason is required and shows in the
@@ -2163,13 +2208,15 @@ are `src/test/auth/cell_crud_parity.db.test.ts`
   `raw_http_parse_json` (a body's JSON, `undefined` when it isn't), and
   `RAW_HTTP_READ_TIMEOUT_MS`, the suites' default read window.
   `raw_http_send_head(base_url, {method?, path, headers, content_length,
-  read_timeout_ms?})` (`RawHttpHeadRequest`) is the over-cap probe built on
-  them: the request head alone, declaring `content_length` body bytes and
-  sending none, read until one whole response — so a server that refuses on
-  the declared length answers and one that reads the body first fails on the
-  read timeout. It writes `Host` and `Content-Length` itself (naming either in
-  `headers` throws), defaults nothing else, and throws when no whole response
-  arrives. The body-size, body-size smuggling, credential-header,
+  host?, read_timeout_ms?})` (`RawHttpHeadRequest`) is the over-cap probe
+  built on them: the request head alone, declaring `content_length` body
+  bytes and sending none, read until one whole response — so a server that
+  refuses on the declared length answers and one that reads the body first
+  fails on the read timeout. It writes `Host` (`host`, default the base URL's)
+  and `Content-Length` itself (naming either in `headers` throws), defaults
+  nothing else, and throws on a CR or LF in the host or a header name or value,
+  and when no whole response arrives. The middleware-gate probes and the
+  body-size, body-size smuggling, credential-header,
   origin-scope and transport-composition suites share this module; they take
   the 1 MiB cap they probe from `SPINE_BODY_LIMIT_DEFAULT_BYTES`
   (`spine_surface_constants.ts`).

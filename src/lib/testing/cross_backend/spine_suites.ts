@@ -520,8 +520,9 @@ export interface SpineCrossSuitesOptions {
 	/**
 	 * The backend's request-body cap on `rpc_path`, in bytes, when it isn't the
 	 * spine default (`SPINE_BODY_LIMIT_DEFAULT_BYTES`): the boundary
-	 * `body_size`, `body_size_smuggling` and `transport_composition`'s RPC
-	 * over-cap row probe.
+	 * `body_size`, `body_size_smuggling`, `transport_composition`'s RPC
+	 * over-cap row and the standard bundle's body-limit probe of the RPC
+	 * endpoint probe.
 	 */
 	readonly rpc_max_body_bytes?: number;
 	/**
@@ -853,7 +854,9 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			roles: c.options.roles,
 			rpc_success_fixtures: c.options.rpc_success_fixtures,
 			rpc_skip_methods: c.options.rpc_skip_methods,
-			rpc_input_overrides: c.options.rpc_input_overrides
+			rpc_input_overrides: c.options.rpc_input_overrides,
+			base_url: c.config.base_url,
+			rpc_max_body_bytes: c.options.rpc_max_body_bytes
 		}),
 		describe: describe_standard_cross_process_tests,
 		required: {
@@ -861,7 +864,8 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			surface_source: true,
 			session_options: true,
 			rpc_endpoints: true,
-			capabilities: true
+			capabilities: true,
+			base_url: true
 		}
 	},
 	testing_backdoor: {

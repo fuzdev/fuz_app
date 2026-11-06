@@ -1143,7 +1143,7 @@ export const describe_standard_admin_integration_tests = (
 						headers: { host: 'localhost', 'content-type': to_route_content_type(route) }
 					});
 					if (res.status === 401 || res.status === 403) {
-						error_collector.record(route_specs, route.method, route.path, res.status);
+						await error_collector.assert_and_record(route_specs, route.method, route.path, res);
 					}
 				}
 			});

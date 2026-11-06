@@ -37,7 +37,8 @@ import {
 import {
 	ErrorCoverageCollector,
 	assert_error_coverage,
-	DEFAULT_INTEGRATION_ERROR_COVERAGE
+	DEFAULT_INTEGRATION_ERROR_COVERAGE,
+	type UncoveredEntry
 } from './error_coverage.ts';
 import { is_public_auth } from '../http/auth_shape.ts';
 import {
@@ -62,6 +63,13 @@ import type { SetupTest } from './cross_backend/setup.ts';
 import { DEFAULT_TEST_PASSWORD } from './test_credentials.ts';
 import { create_test_request_headers, TEST_ORIGIN } from './test_origin.ts';
 import { create_test_raw_api_token } from './entities.ts';
+import {
+	assert_middleware_gate_refusal,
+	format_middleware_gate_probe,
+	plan_middleware_gate_probes,
+	send_middleware_gate_probe,
+	type MiddlewareGateProbeTransport
+} from './middleware_gate_probes.ts';
 
 /**
  * Configuration for `describe_standard_integration_tests`.
@@ -115,6 +123,31 @@ export interface StandardIntegrationTestOptions {
 	 * denial-path drivers.
 	 */
 	error_coverage_min?: number;
+	/**
+	 * Base URL the backend is reachable at, or `null` in-process. The
+	 * middleware-gate probes write their heads to the socket when there is one
+	 * (`fetch` replaces a caller's `Host` and `Content-Length`), and go through
+	 * the fixture's transport when there isn't.
+	 */
+	base_url: string | null;
+	/**
+	 * The backend's request-body cap on every counted route but the RPC
+	 * endpoint, in bytes — the body-limit probe declares one byte more.
+	 * Default `SPINE_BODY_LIMIT_DEFAULT_BYTES`, the spines' default.
+	 */
+	max_body_bytes?: number;
+	/**
+	 * The backend's request-body cap on the RPC endpoint, in bytes, when it
+	 * isn't `max_body_bytes`.
+	 */
+	rpc_max_body_bytes?: number;
+	/**
+	 * Called once the suite's tests have run, with the declared error paths of
+	 * the counted routes it never observed, before the coverage floor is
+	 * asserted — for a wiring that holds its coverage to an exact set, which
+	 * catches one covered code swapped for another where a ratio can't.
+	 */
+	check_uncovered_errors?: (uncovered: Array<UncoveredEntry>) => void;
 }
 
 /**
@@ -124,7 +157,8 @@ export interface StandardIntegrationTestOptions {
  * revocation, password change (incl. API token revocation), origin
  * verification, bearer auth (incl. browser context discard on mutations),
  * token revocation, cross-account isolation, expired credential rejection,
- * signup invite edge cases, and response body validation.
+ * signup invite edge cases, response body validation, and the middleware
+ * gates each counted route's error map declares (`middleware_gate_probes.ts`).
  *
  * Each test group asserts that required routes exist, failing with a descriptive
  * message if the consumer's route specs are misconfigured.
@@ -191,7 +225,9 @@ export const describe_standard_integration_tests = (
 			// routes would dilute the ratio; admin-role routes are scoped to
 			// the admin suite instead.
 			const auth_routes = route_specs.filter(is_suite_auth_route);
-			assert_error_coverage(error_collector, auth_routes.length > 0 ? auth_routes : route_specs, {
+			const scoped_routes = auth_routes.length > 0 ? auth_routes : route_specs;
+			options.check_uncovered_errors?.(error_collector.uncovered(scoped_routes));
+			assert_error_coverage(error_collector, scoped_routes, {
 				min_coverage: options.error_coverage_min ?? DEFAULT_INTEGRATION_ERROR_COVERAGE
 			});
 		});
@@ -749,7 +785,7 @@ export const describe_standard_integration_tests = (
 					})
 				});
 				assert.strictEqual(res.status, 401);
-				error_collector.record(route_specs, 'POST', password_route.path, 401);
+				await error_collector.assert_and_record(route_specs, 'POST', password_route.path, res);
 
 				// Session should still be valid (password didn't change)
 				const verify_res = await rpc_call_for_spec({
@@ -947,6 +983,12 @@ export const describe_standard_integration_tests = (
 					headers: { cookie: `${cookie_name}=${non_admin.session_cookie}` }
 				});
 				assert.strictEqual(res.status, 403);
+				await error_collector.assert_and_record(
+					route_specs,
+					admin_route.method,
+					admin_route.path,
+					res
+				);
 				const body = await res.json();
 				assert.strictEqual(body.error, 'insufficient_permissions');
 			});
@@ -1145,13 +1187,7 @@ export const describe_standard_integration_tests = (
 					})
 				});
 				assert.strictEqual(res.status, 401);
-				await assert_response_matches_spec(
-					route_specs,
-					'POST',
-					login_route.path,
-					res,
-					options.surface_source.route_error_maps
-				);
+				await error_collector.assert_and_record(route_specs, 'POST', login_route.path, res);
 			});
 
 			test('POST /logout 200 response matches output schema', async () => {
@@ -1193,13 +1229,7 @@ export const describe_standard_integration_tests = (
 					body: JSON.stringify({})
 				});
 				assert.strictEqual(res.status, 401);
-				await assert_response_matches_spec(
-					route_specs,
-					'POST',
-					logout_route.path,
-					res,
-					options.surface_source.route_error_maps
-				);
+				await error_collector.assert_and_record(route_specs, 'POST', logout_route.path, res);
 			});
 		});
 
@@ -1214,11 +1244,12 @@ export const describe_standard_integration_tests = (
 		describe('error coverage breadth', () => {
 			test('exercises 401 on multiple auth-required routes for error coverage', async () => {
 				const fixture = await options.setup_test();
-				// Hit several auth-required RPC methods without credentials to
-				// broaden error coverage beyond just /login. RPC 401s are tracked
-				// against the shared endpoint path. The dispatcher runs auth before
-				// params validation, so any well-formed param body works — we just
-				// need each call to be type-correct wrt its spec.
+				// Hit several auth-required RPC methods without credentials. A
+				// refusal on the RPC endpoint is a JSON-RPC envelope, not a declared
+				// REST error, so these assert the 401 without recording it; the
+				// logout probe below is the REST one that counts. The dispatcher runs
+				// auth before params validation, so any well-formed param body works
+				// — we just need each call to be type-correct wrt its spec.
 				//
 				// Fresh transport so the per-test session cookie in
 				// `fixture.transport`'s jar doesn't leak into these unauthed
@@ -1232,7 +1263,6 @@ export const describe_standard_integration_tests = (
 					headers: { host: 'localhost' }
 				});
 				assert.strictEqual(session_list.status, 401);
-				error_collector.record(route_specs, 'POST', rpc_path, 401);
 
 				const session_revoke_all = await rpc_call_for_spec({
 					app: { request: unauthed },
@@ -1242,7 +1272,6 @@ export const describe_standard_integration_tests = (
 					headers: { host: 'localhost' }
 				});
 				assert.strictEqual(session_revoke_all.status, 401);
-				error_collector.record(route_specs, 'POST', rpc_path, 401);
 
 				const token_list = await rpc_call_for_spec({
 					app: { request: unauthed },
@@ -1252,7 +1281,6 @@ export const describe_standard_integration_tests = (
 					headers: { host: 'localhost' }
 				});
 				assert.strictEqual(token_list.status, 401);
-				error_collector.record(route_specs, 'POST', rpc_path, 401);
 
 				const token_create = await rpc_call_for_spec({
 					app: { request: unauthed },
@@ -1266,7 +1294,6 @@ export const describe_standard_integration_tests = (
 					headers: { host: 'localhost' }
 				});
 				assert.strictEqual(token_create.status, 401);
-				error_collector.record(route_specs, 'POST', rpc_path, 401);
 
 				const verify = await rpc_call_for_spec({
 					app: { request: unauthed },
@@ -1276,7 +1303,6 @@ export const describe_standard_integration_tests = (
 					headers: { host: 'localhost' }
 				});
 				assert.strictEqual(verify.status, 401);
-				error_collector.record(route_specs, 'POST', rpc_path, 401);
 				// Also exercise POST /logout without auth (still REST)
 				const logout_route = find_auth_route(route_specs, '/logout', 'POST');
 				if (logout_route) {
@@ -1286,7 +1312,7 @@ export const describe_standard_integration_tests = (
 						body: JSON.stringify({})
 					});
 					assert.strictEqual(res.status, 401, 'POST /logout without auth should return 401');
-					error_collector.record(route_specs, 'POST', logout_route.path, 401);
+					await error_collector.assert_and_record(route_specs, 'POST', logout_route.path, res);
 				}
 			});
 		});
@@ -1352,7 +1378,7 @@ export const describe_standard_integration_tests = (
 					401,
 					'Bearer with Origin should be discarded → unauthenticated'
 				);
-				error_collector.record(route_specs, 'POST', logout_route.path, 401);
+				await error_collector.assert_and_record(route_specs, 'POST', logout_route.path, res);
 			});
 
 			test('bearer token with Referer header discarded on POST password', async () => {
@@ -1375,7 +1401,7 @@ export const describe_standard_integration_tests = (
 					401,
 					'Bearer with Referer should be discarded → unauthenticated'
 				);
-				error_collector.record(route_specs, 'POST', password_route.path, 401);
+				await error_collector.assert_and_record(route_specs, 'POST', password_route.path, res);
 			});
 		});
 
@@ -1398,6 +1424,38 @@ export const describe_standard_integration_tests = (
 					await error_collector.assert_and_record(route_specs, 'POST', route.path, res);
 				}
 			});
+		});
+
+		// --- 12c. Middleware gates: each counted route's declared gates refuse ---
+
+		describe('middleware gates', () => {
+			// One probe per gate each counted route's error map declares — the
+			// origin check, the Rust spine's host gate, the body limit — each a
+			// bodiless head with no credential that the gate refuses before auth,
+			// rate limiting or body parsing. A gate the map doesn't declare on a
+			// route (a carve-out, a backend without the layer) gets no probe.
+			const probes = plan_middleware_gate_probes({
+				route_specs: route_specs.filter(is_suite_auth_route),
+				route_error_maps: options.surface_source.route_error_maps,
+				base_url: options.base_url,
+				max_body_bytes: options.max_body_bytes,
+				rpc_path,
+				rpc_max_body_bytes: options.rpc_max_body_bytes
+			});
+			// in-process the probes share one fixture's transport, made by the first
+			// to run; over a socket they need none, as they read and write no state
+			let in_process_transport: Promise<MiddlewareGateProbeTransport> | null = null;
+			const get_transport = (): Promise<MiddlewareGateProbeTransport> =>
+				(in_process_transport ??= options
+					.setup_test()
+					.then((fixture) => fixture.fresh_transport({ origin: null })));
+			for (const probe of probes) {
+				test(format_middleware_gate_probe(probe), async () => {
+					const transport = options.base_url === null ? await get_transport() : null;
+					const res = await send_middleware_gate_probe(probe, options.base_url, transport);
+					await assert_middleware_gate_refusal(probe, res, error_collector, route_specs);
+				});
+			}
 		});
 
 		// --- 13. Password change revokes API tokens ---
@@ -1529,6 +1587,7 @@ export const describe_standard_integration_tests = (
 					403,
 					'Signup with non-matching email should be rejected'
 				);
+				await error_collector.assert_and_record(route_specs, 'POST', signup_route.path, signup_res);
 				const body = await signup_res.json();
 				assert.strictEqual(body.error, 'no_matching_invite');
 			});
@@ -1590,6 +1649,12 @@ export const describe_standard_integration_tests = (
 					})
 				});
 				assert.strictEqual(no_match_res.status, 403, 'Expected 403 for non-matching invite');
+				await error_collector.assert_and_record(
+					route_specs,
+					'POST',
+					signup_route.path,
+					no_match_res
+				);
 				const no_match_body = await no_match_res.json();
 
 				// Create invite for a different email via RPC
@@ -1619,6 +1684,12 @@ export const describe_standard_integration_tests = (
 					})
 				});
 				assert.strictEqual(conflict_res.status, 409, 'Expected 409 for username conflict');
+				await error_collector.assert_and_record(
+					route_specs,
+					'POST',
+					signup_route.path,
+					conflict_res
+				);
 				const conflict_body = await conflict_res.json();
 
 				// Assert both failure responses have identical Object.keys()
