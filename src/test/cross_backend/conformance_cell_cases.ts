@@ -30,7 +30,6 @@
  *   are the reason-less 400 the schema step answers; an unregistered role on
  *   the grammar reaches the handler, which masks a missing cell as 404; an
  *   anonymous caller is the 401 whatever the role, ahead of the input.
- *
  * - **prototype keys** — an own `__proto__` key in cell `data`, `policy`, or a
  *   clone patch, at any depth, or at the top of `cell_list`'s params, is the
  *   dispatcher's `params_proto_key` refusal (400), ahead of every schema.
