@@ -765,9 +765,18 @@ type TypedActionEvent<
 };
 
 /**
- * Emit the `ActionSpecs` runtime const + interface + the `action_specs:
+ * Emit the `ActionSpecs` runtime const + type + the `action_specs:
  * Array<ActionSpecUnion>` value bundling every spec. Adds the `* as specs`
  * namespace import + the `ActionSpecUnion` type import.
+ *
+ * The const is annotated with the type, whose members are `readonly` like an
+ * `as const` literal's. Inferred, its type is every spec's schema types
+ * written out, and a consumer compiled with `declaration: true` hits TS7056
+ * once its spec list is long enough; declared, it serializes as the type's
+ * name. The type is an alias and not an interface: an alias has an implicit
+ * index signature, so `Object.values(ActionSpecs)` stays typed by the specs
+ * and `action_specs` checks each against `ActionSpecUnion`, where over an
+ * interface it is `any[]`.
  *
  * @param options.qualify_spec - per-spec qualified identifier callback for
  *   multi-source consumers (e.g. ``(s) => `admin_specs.${s.method}_action_spec` ``).
@@ -795,8 +804,8 @@ export const generate_action_specs_record = (
  * Action specifications indexed by method name.
  * These represent the complete action spec definitions.
  */
-export const ActionSpecs = {} as const;
-export interface ActionSpecs {}
+export const ActionSpecs: ActionSpecs = {};
+export type ActionSpecs = {};
 
 export const action_specs: Array<ActionSpecUnion> = Object.values(ActionSpecs);`;
 	}
@@ -807,19 +816,19 @@ export const action_specs: Array<ActionSpecUnion> = Object.values(ActionSpecs);`
 		.map((s) => `\t${to_action_property_key(s.method)}: ${qualify(s)},`)
 		.join('\n');
 	const type_lines = filtered
-		.map((s) => `\t${to_action_property_key(s.method)}: typeof ${qualify(s)};`)
+		.map((s) => `\treadonly ${to_action_property_key(s.method)}: typeof ${qualify(s)};`)
 		.join('\n');
 
 	return `/**
  * Action specifications indexed by method name.
  * These represent the complete action spec definitions.
  */
-export const ActionSpecs = {
+export const ActionSpecs: ActionSpecs = {
 ${value_lines}
-} as const;
-export interface ActionSpecs {
+};
+export type ActionSpecs = {
 ${type_lines}
-}
+};
 
 export const action_specs: Array<ActionSpecUnion> = Object.values(ActionSpecs);`;
 };

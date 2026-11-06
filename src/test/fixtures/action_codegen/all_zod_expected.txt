@@ -718,7 +718,7 @@ export type BroadcastActionMethod = z.infer<typeof BroadcastActionMethod>;
  * Action specifications indexed by method name.
  * These represent the complete action spec definitions.
  */
-export const ActionSpecs = {
+export const ActionSpecs: ActionSpecs = {
 	admin_account_list: specs.admin_account_list_action_spec,
 	admin_session_list: specs.admin_session_list_action_spec,
 	admin_session_revoke_all: specs.admin_session_revoke_all_action_spec,
@@ -776,66 +776,66 @@ export const ActionSpecs = {
 	fixture_load: specs.fixture_load_action_spec,
 	'fixture/list': specs.fixture_list_action_spec,
 	fixture_ask: specs.fixture_ask_action_spec,
-} as const;
-export interface ActionSpecs {
-	admin_account_list: typeof specs.admin_account_list_action_spec;
-	admin_session_list: typeof specs.admin_session_list_action_spec;
-	admin_session_revoke_all: typeof specs.admin_session_revoke_all_action_spec;
-	admin_token_revoke_all: typeof specs.admin_token_revoke_all_action_spec;
-	audit_log_list: typeof specs.audit_log_list_action_spec;
-	audit_log_role_grant_history: typeof specs.audit_log_role_grant_history_action_spec;
-	invite_create: typeof specs.invite_create_action_spec;
-	invite_list: typeof specs.invite_list_action_spec;
-	invite_delete: typeof specs.invite_delete_action_spec;
-	account_delete: typeof specs.account_delete_action_spec;
-	account_purge: typeof specs.account_purge_action_spec;
-	account_undelete: typeof specs.account_undelete_action_spec;
-	app_settings_get: typeof specs.app_settings_get_action_spec;
-	app_settings_update: typeof specs.app_settings_update_action_spec;
-	role_grant_offer_create: typeof specs.role_grant_offer_create_action_spec;
-	role_grant_offer_accept: typeof specs.role_grant_offer_accept_action_spec;
-	role_grant_offer_decline: typeof specs.role_grant_offer_decline_action_spec;
-	role_grant_offer_retract: typeof specs.role_grant_offer_retract_action_spec;
-	role_grant_offer_list: typeof specs.role_grant_offer_list_action_spec;
-	role_grant_offer_history: typeof specs.role_grant_offer_history_action_spec;
-	role_grant_revoke: typeof specs.role_grant_revoke_action_spec;
-	role_grant_assign: typeof specs.role_grant_assign_action_spec;
-	account_verify: typeof specs.account_verify_action_spec;
-	account_session_list: typeof specs.account_session_list_action_spec;
-	account_session_revoke: typeof specs.account_session_revoke_action_spec;
-	account_session_revoke_all: typeof specs.account_session_revoke_all_action_spec;
-	account_token_create: typeof specs.account_token_create_action_spec;
-	account_token_list: typeof specs.account_token_list_action_spec;
-	account_token_revoke: typeof specs.account_token_revoke_action_spec;
-	self_service_role_set: typeof specs.self_service_role_set_action_spec;
-	actor_lookup: typeof specs.actor_lookup_action_spec;
-	actor_search: typeof specs.actor_search_action_spec;
-	cell_create: typeof specs.cell_create_action_spec;
-	cell_get: typeof specs.cell_get_action_spec;
-	cell_update: typeof specs.cell_update_action_spec;
-	cell_delete: typeof specs.cell_delete_action_spec;
-	cell_list: typeof specs.cell_list_action_spec;
-	cell_clone: typeof specs.cell_clone_action_spec;
-	cell_moderate: typeof specs.cell_moderate_action_spec;
-	cell_policy_set: typeof specs.cell_policy_set_action_spec;
-	cell_grant_create: typeof specs.cell_grant_create_action_spec;
-	cell_grant_revoke: typeof specs.cell_grant_revoke_action_spec;
-	cell_grant_list: typeof specs.cell_grant_list_action_spec;
-	cell_field_set: typeof specs.cell_field_set_action_spec;
-	cell_field_delete: typeof specs.cell_field_delete_action_spec;
-	cell_field_list: typeof specs.cell_field_list_action_spec;
-	cell_item_insert: typeof specs.cell_item_insert_action_spec;
-	cell_item_move: typeof specs.cell_item_move_action_spec;
-	cell_item_delete: typeof specs.cell_item_delete_action_spec;
-	cell_item_list: typeof specs.cell_item_list_action_spec;
-	cell_audit_list: typeof specs.cell_audit_list_action_spec;
-	fixture_changed: typeof specs.fixture_changed_action_spec;
-	fixture_ping: typeof specs.fixture_ping_action_spec;
-	fixture_toggle: typeof specs.fixture_toggle_action_spec;
-	fixture_load: typeof specs.fixture_load_action_spec;
-	'fixture/list': typeof specs.fixture_list_action_spec;
-	fixture_ask: typeof specs.fixture_ask_action_spec;
-}
+};
+export type ActionSpecs = {
+	readonly admin_account_list: typeof specs.admin_account_list_action_spec;
+	readonly admin_session_list: typeof specs.admin_session_list_action_spec;
+	readonly admin_session_revoke_all: typeof specs.admin_session_revoke_all_action_spec;
+	readonly admin_token_revoke_all: typeof specs.admin_token_revoke_all_action_spec;
+	readonly audit_log_list: typeof specs.audit_log_list_action_spec;
+	readonly audit_log_role_grant_history: typeof specs.audit_log_role_grant_history_action_spec;
+	readonly invite_create: typeof specs.invite_create_action_spec;
+	readonly invite_list: typeof specs.invite_list_action_spec;
+	readonly invite_delete: typeof specs.invite_delete_action_spec;
+	readonly account_delete: typeof specs.account_delete_action_spec;
+	readonly account_purge: typeof specs.account_purge_action_spec;
+	readonly account_undelete: typeof specs.account_undelete_action_spec;
+	readonly app_settings_get: typeof specs.app_settings_get_action_spec;
+	readonly app_settings_update: typeof specs.app_settings_update_action_spec;
+	readonly role_grant_offer_create: typeof specs.role_grant_offer_create_action_spec;
+	readonly role_grant_offer_accept: typeof specs.role_grant_offer_accept_action_spec;
+	readonly role_grant_offer_decline: typeof specs.role_grant_offer_decline_action_spec;
+	readonly role_grant_offer_retract: typeof specs.role_grant_offer_retract_action_spec;
+	readonly role_grant_offer_list: typeof specs.role_grant_offer_list_action_spec;
+	readonly role_grant_offer_history: typeof specs.role_grant_offer_history_action_spec;
+	readonly role_grant_revoke: typeof specs.role_grant_revoke_action_spec;
+	readonly role_grant_assign: typeof specs.role_grant_assign_action_spec;
+	readonly account_verify: typeof specs.account_verify_action_spec;
+	readonly account_session_list: typeof specs.account_session_list_action_spec;
+	readonly account_session_revoke: typeof specs.account_session_revoke_action_spec;
+	readonly account_session_revoke_all: typeof specs.account_session_revoke_all_action_spec;
+	readonly account_token_create: typeof specs.account_token_create_action_spec;
+	readonly account_token_list: typeof specs.account_token_list_action_spec;
+	readonly account_token_revoke: typeof specs.account_token_revoke_action_spec;
+	readonly self_service_role_set: typeof specs.self_service_role_set_action_spec;
+	readonly actor_lookup: typeof specs.actor_lookup_action_spec;
+	readonly actor_search: typeof specs.actor_search_action_spec;
+	readonly cell_create: typeof specs.cell_create_action_spec;
+	readonly cell_get: typeof specs.cell_get_action_spec;
+	readonly cell_update: typeof specs.cell_update_action_spec;
+	readonly cell_delete: typeof specs.cell_delete_action_spec;
+	readonly cell_list: typeof specs.cell_list_action_spec;
+	readonly cell_clone: typeof specs.cell_clone_action_spec;
+	readonly cell_moderate: typeof specs.cell_moderate_action_spec;
+	readonly cell_policy_set: typeof specs.cell_policy_set_action_spec;
+	readonly cell_grant_create: typeof specs.cell_grant_create_action_spec;
+	readonly cell_grant_revoke: typeof specs.cell_grant_revoke_action_spec;
+	readonly cell_grant_list: typeof specs.cell_grant_list_action_spec;
+	readonly cell_field_set: typeof specs.cell_field_set_action_spec;
+	readonly cell_field_delete: typeof specs.cell_field_delete_action_spec;
+	readonly cell_field_list: typeof specs.cell_field_list_action_spec;
+	readonly cell_item_insert: typeof specs.cell_item_insert_action_spec;
+	readonly cell_item_move: typeof specs.cell_item_move_action_spec;
+	readonly cell_item_delete: typeof specs.cell_item_delete_action_spec;
+	readonly cell_item_list: typeof specs.cell_item_list_action_spec;
+	readonly cell_audit_list: typeof specs.cell_audit_list_action_spec;
+	readonly fixture_changed: typeof specs.fixture_changed_action_spec;
+	readonly fixture_ping: typeof specs.fixture_ping_action_spec;
+	readonly fixture_toggle: typeof specs.fixture_toggle_action_spec;
+	readonly fixture_load: typeof specs.fixture_load_action_spec;
+	readonly 'fixture/list': typeof specs.fixture_list_action_spec;
+	readonly fixture_ask: typeof specs.fixture_ask_action_spec;
+};
 
 export const action_specs: Array<ActionSpecUnion> = Object.values(ActionSpecs);
 
@@ -2353,7 +2353,7 @@ import type {ActionInputs} from './action_collections.ts';
  * Action specifications indexed by method name.
  * These represent the complete action spec definitions.
  */
-export const ActionSpecs = {
+export const ActionSpecs: ActionSpecs = {
 	admin_account_list: fixture_specs.admin_account_list_action_spec,
 	admin_session_list: fixture_specs.admin_session_list_action_spec,
 	admin_session_revoke_all: fixture_specs.admin_session_revoke_all_action_spec,
@@ -2411,66 +2411,66 @@ export const ActionSpecs = {
 	fixture_load: fixture_specs.fixture_load_action_spec,
 	'fixture/list': fixture_specs.fixture_list_action_spec,
 	fixture_ask: fixture_specs.fixture_ask_action_spec,
-} as const;
-export interface ActionSpecs {
-	admin_account_list: typeof fixture_specs.admin_account_list_action_spec;
-	admin_session_list: typeof fixture_specs.admin_session_list_action_spec;
-	admin_session_revoke_all: typeof fixture_specs.admin_session_revoke_all_action_spec;
-	admin_token_revoke_all: typeof fixture_specs.admin_token_revoke_all_action_spec;
-	audit_log_list: typeof fixture_specs.audit_log_list_action_spec;
-	audit_log_role_grant_history: typeof fixture_specs.audit_log_role_grant_history_action_spec;
-	invite_create: typeof fixture_specs.invite_create_action_spec;
-	invite_list: typeof fixture_specs.invite_list_action_spec;
-	invite_delete: typeof fixture_specs.invite_delete_action_spec;
-	account_delete: typeof fixture_specs.account_delete_action_spec;
-	account_purge: typeof fixture_specs.account_purge_action_spec;
-	account_undelete: typeof fixture_specs.account_undelete_action_spec;
-	app_settings_get: typeof fixture_specs.app_settings_get_action_spec;
-	app_settings_update: typeof fixture_specs.app_settings_update_action_spec;
-	role_grant_offer_create: typeof fixture_specs.role_grant_offer_create_action_spec;
-	role_grant_offer_accept: typeof fixture_specs.role_grant_offer_accept_action_spec;
-	role_grant_offer_decline: typeof fixture_specs.role_grant_offer_decline_action_spec;
-	role_grant_offer_retract: typeof fixture_specs.role_grant_offer_retract_action_spec;
-	role_grant_offer_list: typeof fixture_specs.role_grant_offer_list_action_spec;
-	role_grant_offer_history: typeof fixture_specs.role_grant_offer_history_action_spec;
-	role_grant_revoke: typeof fixture_specs.role_grant_revoke_action_spec;
-	role_grant_assign: typeof fixture_specs.role_grant_assign_action_spec;
-	account_verify: typeof fixture_specs.account_verify_action_spec;
-	account_session_list: typeof fixture_specs.account_session_list_action_spec;
-	account_session_revoke: typeof fixture_specs.account_session_revoke_action_spec;
-	account_session_revoke_all: typeof fixture_specs.account_session_revoke_all_action_spec;
-	account_token_create: typeof fixture_specs.account_token_create_action_spec;
-	account_token_list: typeof fixture_specs.account_token_list_action_spec;
-	account_token_revoke: typeof fixture_specs.account_token_revoke_action_spec;
-	self_service_role_set: typeof fixture_specs.self_service_role_set_action_spec;
-	actor_lookup: typeof fixture_specs.actor_lookup_action_spec;
-	actor_search: typeof fixture_specs.actor_search_action_spec;
-	cell_create: typeof fixture_specs.cell_create_action_spec;
-	cell_get: typeof fixture_specs.cell_get_action_spec;
-	cell_update: typeof fixture_specs.cell_update_action_spec;
-	cell_delete: typeof fixture_specs.cell_delete_action_spec;
-	cell_list: typeof fixture_specs.cell_list_action_spec;
-	cell_clone: typeof fixture_specs.cell_clone_action_spec;
-	cell_moderate: typeof fixture_specs.cell_moderate_action_spec;
-	cell_policy_set: typeof fixture_specs.cell_policy_set_action_spec;
-	cell_grant_create: typeof fixture_specs.cell_grant_create_action_spec;
-	cell_grant_revoke: typeof fixture_specs.cell_grant_revoke_action_spec;
-	cell_grant_list: typeof fixture_specs.cell_grant_list_action_spec;
-	cell_field_set: typeof fixture_specs.cell_field_set_action_spec;
-	cell_field_delete: typeof fixture_specs.cell_field_delete_action_spec;
-	cell_field_list: typeof fixture_specs.cell_field_list_action_spec;
-	cell_item_insert: typeof fixture_specs.cell_item_insert_action_spec;
-	cell_item_move: typeof fixture_specs.cell_item_move_action_spec;
-	cell_item_delete: typeof fixture_specs.cell_item_delete_action_spec;
-	cell_item_list: typeof fixture_specs.cell_item_list_action_spec;
-	cell_audit_list: typeof fixture_specs.cell_audit_list_action_spec;
-	fixture_changed: typeof fixture_specs.fixture_changed_action_spec;
-	fixture_ping: typeof fixture_specs.fixture_ping_action_spec;
-	fixture_toggle: typeof fixture_specs.fixture_toggle_action_spec;
-	fixture_load: typeof fixture_specs.fixture_load_action_spec;
-	'fixture/list': typeof fixture_specs.fixture_list_action_spec;
-	fixture_ask: typeof fixture_specs.fixture_ask_action_spec;
-}
+};
+export type ActionSpecs = {
+	readonly admin_account_list: typeof fixture_specs.admin_account_list_action_spec;
+	readonly admin_session_list: typeof fixture_specs.admin_session_list_action_spec;
+	readonly admin_session_revoke_all: typeof fixture_specs.admin_session_revoke_all_action_spec;
+	readonly admin_token_revoke_all: typeof fixture_specs.admin_token_revoke_all_action_spec;
+	readonly audit_log_list: typeof fixture_specs.audit_log_list_action_spec;
+	readonly audit_log_role_grant_history: typeof fixture_specs.audit_log_role_grant_history_action_spec;
+	readonly invite_create: typeof fixture_specs.invite_create_action_spec;
+	readonly invite_list: typeof fixture_specs.invite_list_action_spec;
+	readonly invite_delete: typeof fixture_specs.invite_delete_action_spec;
+	readonly account_delete: typeof fixture_specs.account_delete_action_spec;
+	readonly account_purge: typeof fixture_specs.account_purge_action_spec;
+	readonly account_undelete: typeof fixture_specs.account_undelete_action_spec;
+	readonly app_settings_get: typeof fixture_specs.app_settings_get_action_spec;
+	readonly app_settings_update: typeof fixture_specs.app_settings_update_action_spec;
+	readonly role_grant_offer_create: typeof fixture_specs.role_grant_offer_create_action_spec;
+	readonly role_grant_offer_accept: typeof fixture_specs.role_grant_offer_accept_action_spec;
+	readonly role_grant_offer_decline: typeof fixture_specs.role_grant_offer_decline_action_spec;
+	readonly role_grant_offer_retract: typeof fixture_specs.role_grant_offer_retract_action_spec;
+	readonly role_grant_offer_list: typeof fixture_specs.role_grant_offer_list_action_spec;
+	readonly role_grant_offer_history: typeof fixture_specs.role_grant_offer_history_action_spec;
+	readonly role_grant_revoke: typeof fixture_specs.role_grant_revoke_action_spec;
+	readonly role_grant_assign: typeof fixture_specs.role_grant_assign_action_spec;
+	readonly account_verify: typeof fixture_specs.account_verify_action_spec;
+	readonly account_session_list: typeof fixture_specs.account_session_list_action_spec;
+	readonly account_session_revoke: typeof fixture_specs.account_session_revoke_action_spec;
+	readonly account_session_revoke_all: typeof fixture_specs.account_session_revoke_all_action_spec;
+	readonly account_token_create: typeof fixture_specs.account_token_create_action_spec;
+	readonly account_token_list: typeof fixture_specs.account_token_list_action_spec;
+	readonly account_token_revoke: typeof fixture_specs.account_token_revoke_action_spec;
+	readonly self_service_role_set: typeof fixture_specs.self_service_role_set_action_spec;
+	readonly actor_lookup: typeof fixture_specs.actor_lookup_action_spec;
+	readonly actor_search: typeof fixture_specs.actor_search_action_spec;
+	readonly cell_create: typeof fixture_specs.cell_create_action_spec;
+	readonly cell_get: typeof fixture_specs.cell_get_action_spec;
+	readonly cell_update: typeof fixture_specs.cell_update_action_spec;
+	readonly cell_delete: typeof fixture_specs.cell_delete_action_spec;
+	readonly cell_list: typeof fixture_specs.cell_list_action_spec;
+	readonly cell_clone: typeof fixture_specs.cell_clone_action_spec;
+	readonly cell_moderate: typeof fixture_specs.cell_moderate_action_spec;
+	readonly cell_policy_set: typeof fixture_specs.cell_policy_set_action_spec;
+	readonly cell_grant_create: typeof fixture_specs.cell_grant_create_action_spec;
+	readonly cell_grant_revoke: typeof fixture_specs.cell_grant_revoke_action_spec;
+	readonly cell_grant_list: typeof fixture_specs.cell_grant_list_action_spec;
+	readonly cell_field_set: typeof fixture_specs.cell_field_set_action_spec;
+	readonly cell_field_delete: typeof fixture_specs.cell_field_delete_action_spec;
+	readonly cell_field_list: typeof fixture_specs.cell_field_list_action_spec;
+	readonly cell_item_insert: typeof fixture_specs.cell_item_insert_action_spec;
+	readonly cell_item_move: typeof fixture_specs.cell_item_move_action_spec;
+	readonly cell_item_delete: typeof fixture_specs.cell_item_delete_action_spec;
+	readonly cell_item_list: typeof fixture_specs.cell_item_list_action_spec;
+	readonly cell_audit_list: typeof fixture_specs.cell_audit_list_action_spec;
+	readonly fixture_changed: typeof fixture_specs.fixture_changed_action_spec;
+	readonly fixture_ping: typeof fixture_specs.fixture_ping_action_spec;
+	readonly fixture_toggle: typeof fixture_specs.fixture_toggle_action_spec;
+	readonly fixture_load: typeof fixture_specs.fixture_load_action_spec;
+	readonly 'fixture/list': typeof fixture_specs.fixture_list_action_spec;
+	readonly fixture_ask: typeof fixture_specs.fixture_ask_action_spec;
+};
 
 export const action_specs: Array<ActionSpecUnion> = Object.values(ActionSpecs);
 

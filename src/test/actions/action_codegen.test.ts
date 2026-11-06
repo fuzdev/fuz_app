@@ -6,6 +6,7 @@
 
 import { describe, assert, test } from 'vitest';
 import { z } from 'zod';
+import ts from 'typescript';
 import { is } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
@@ -909,12 +910,12 @@ describe('generate_typed_action_event_alias', () => {
 });
 
 describe('generate_action_specs_record', () => {
-	test('emits ActionSpecs const + interface + action_specs array (protocol actions filtered)', () => {
+	test('emits ActionSpecs const + type + action_specs array (protocol actions filtered)', () => {
 		const imports = new ImportBuilder();
 		const result = generate_action_specs_record(fixture_specs, imports);
 
-		assert.ok(result.includes('export const ActionSpecs = {'));
-		assert.ok(result.includes('export interface ActionSpecs {'));
+		assert.ok(result.includes('export const ActionSpecs: ActionSpecs = {'));
+		assert.ok(result.includes('export type ActionSpecs = {'));
 		assert.ok(
 			result.includes(
 				'export const action_specs: Array<ActionSpecUnion> = Object.values(ActionSpecs);'
@@ -926,12 +927,83 @@ describe('generate_action_specs_record', () => {
 		assert.ok(result.includes('menu_toggle: specs.menu_toggle_action_spec,'));
 		assert.ok(!result.includes('heartbeat: specs.heartbeat_action_spec,'));
 		assert.ok(!result.includes('cancel: specs.cancel_action_spec,'));
-		// Per-spec interface entries.
-		assert.ok(result.includes('thing_create: typeof specs.thing_create_action_spec;'));
+		// Per-spec type entries.
+		assert.ok(result.includes('\treadonly thing_create: typeof specs.thing_create_action_spec;'));
 		// Imports the `* as specs` namespace + ActionSpecUnion type.
 		const built = imports.build();
 		assert.ok(built.includes("import * as specs from './action_specs.ts';"));
 		assert.ok(built.includes('ActionSpecUnion'));
+	});
+
+	test('declares the const as its type, so its declaration never spells out the specs', () => {
+		for (const specs of [fixture_specs, []]) {
+			const imports = new ImportBuilder();
+			const block = generate_action_specs_record(specs, imports);
+			// an unannotated const fails `isolatedDeclarations`, and under `declaration: true`
+			// its inferred type is written out in full, TS7056 for a long enough spec list
+			const { outputText, diagnostics } = ts.transpileDeclaration(
+				`${imports.build()}\n\n${block}\n`,
+				{ reportDiagnostics: true }
+			);
+			assert.deepEqual(
+				diagnostics?.map((d) => ts.flattenDiagnosticMessageText(d.messageText, '\n')),
+				[]
+			);
+			assert.include(outputText, 'export declare const ActionSpecs: ActionSpecs;');
+		}
+		const result = generate_action_specs_record(fixture_specs, new ImportBuilder());
+		assert.notInclude(result, 'as const');
+		// readonly as the `as const` literal it replaces was
+		const members = result
+			.slice(result.indexOf('export type ActionSpecs = {'))
+			.split('\n')
+			.filter((line) => line.startsWith('\t'));
+		assert.ok(members.length > 0);
+		for (const line of members) assert.ok(line.startsWith('\treadonly '), line);
+	});
+
+	test('keeps `Object.values(ActionSpecs)` typed, so `action_specs` checks every spec', () => {
+		// over an interface, which has no implicit index signature, `Object.values` is `any[]`
+		// and a spec of an invalid `kind` would compile into `action_specs`
+		const spec = fixture_specs.find((s) => s.method === 'thing_create');
+		assert.ok(spec);
+		const { method } = spec;
+		const check = (kind: string): Array<string> => {
+			const block = generate_action_specs_record([spec], new ImportBuilder(), {
+				qualify_spec: (s) => `local_${s.method}`
+			});
+			const source = `type ActionSpecUnion = {
+	method: string;
+	kind: 'request_response' | 'remote_notification' | 'local_call';
+};
+const local_${method} = {method: '${method}', kind: '${kind}'} as const;
+
+${block}
+`;
+			const file_name = '/action_specs_probe.ts';
+			const options: ts.CompilerOptions = {
+				strict: true,
+				noEmit: true,
+				target: ts.ScriptTarget.ES2022,
+				lib: ['lib.es2022.d.ts']
+			};
+			const host = ts.createCompilerHost(options);
+			const get_source_file = host.getSourceFile.bind(host);
+			host.getSourceFile = (name, version, ...rest) =>
+				name === file_name
+					? ts.createSourceFile(name, source, version)
+					: get_source_file(name, version, ...rest);
+			const file_exists = host.fileExists.bind(host);
+			host.fileExists = (name) => name === file_name || file_exists(name);
+			const program = ts.createProgram([file_name], options, host);
+			return ts
+				.getPreEmitDiagnostics(program, program.getSourceFile(file_name))
+				.map((d) => ts.flattenDiagnosticMessageText(d.messageText, '\n'));
+		};
+		assert.deepEqual(check('request_response'), []);
+		const diagnostics = check('not_a_kind');
+		assert.strictEqual(diagnostics.length, 1, diagnostics.join('\n'));
+		assert.include(diagnostics[0], `'"not_a_kind"' is not assignable`);
 	});
 
 	test('include_protocol_actions: true retains heartbeat + cancel', () => {
@@ -1386,8 +1458,8 @@ describe('empty-input behavior', () => {
 	test('generate_action_specs_record — empty body, skips `* as specs` import', () => {
 		const imports = new ImportBuilder();
 		const result = generate_action_specs_record([], imports);
-		assert.ok(result.includes('export const ActionSpecs = {} as const;'));
-		assert.ok(result.includes('export interface ActionSpecs {}'));
+		assert.ok(result.includes('export const ActionSpecs: ActionSpecs = {};'));
+		assert.ok(result.includes('export type ActionSpecs = {};'));
 		assert.ok(
 			result.includes('export const action_specs: Array<ActionSpecUnion> = Object.values(')
 		);
