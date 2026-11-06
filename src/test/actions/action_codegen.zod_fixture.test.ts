@@ -85,7 +85,27 @@ test("fuz_app's own list differs from the fixture only in its fuz_schema methods
 		'app_settings_update'
 	];
 	// the cell methods, in `all_cell_action_specs`' order
-	const cells: ReadonlyArray<string> = ['cell_audit_list'];
+	const cells: ReadonlyArray<string> = [
+		'cell_create',
+		'cell_get',
+		'cell_update',
+		'cell_delete',
+		'cell_list',
+		'cell_clone',
+		'cell_moderate',
+		'cell_policy_set',
+		'cell_grant_create',
+		'cell_grant_revoke',
+		'cell_grant_list',
+		'cell_field_set',
+		'cell_field_delete',
+		'cell_field_list',
+		'cell_item_insert',
+		'cell_item_move',
+		'cell_item_delete',
+		'cell_item_list',
+		'cell_audit_list'
+	];
 	assert.deepStrictEqual(fuz_schema_input_methods, [
 		...admin_inputs,
 		...offers,
@@ -157,7 +177,8 @@ test('the Zod stand-ins give codegen the answers the fuz_schema methods give', (
 			'account_delete',
 			'app_settings_get',
 			'role_grant_offer_list',
-			'role_grant_offer_history'
+			'role_grant_offer_history',
+			'cell_list'
 		]
 	);
 });

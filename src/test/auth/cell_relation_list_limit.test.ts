@@ -6,6 +6,7 @@
  */
 
 import { describe, test, assert } from 'vitest';
+import { is } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	CELL_RELATION_LIST_LIMIT_DEFAULT,
@@ -30,13 +31,13 @@ describe('CellRelationListLimit', () => {
 			CELL_RELATION_LIST_LIMIT_DEFAULT,
 			CELL_RELATION_LIST_LIMIT_MAX
 		]) {
-			assert.ok(CellRelationListLimit.safeParse(ok).success, String(ok));
+			assert.ok(is(CellRelationListLimit, ok), String(ok));
 		}
 	});
 
 	test('refuses zero, negatives, fractions, and past the cap', () => {
 		for (const bad of [0, -1, 1.5, CELL_RELATION_LIST_LIMIT_MAX + 1, null, '5']) {
-			assert.ok(!CellRelationListLimit.safeParse(bad).success, String(bad));
+			assert.ok(!is(CellRelationListLimit, bad), String(bad));
 		}
 	});
 
@@ -46,11 +47,9 @@ describe('CellRelationListLimit', () => {
 			[CellItemListInput, ['parent_id', 'child_id']]
 		] as const) {
 			for (const key of keys) {
-				assert.ok(schema.safeParse({ [key]: ID, limit: CELL_RELATION_LIST_LIMIT_MAX }).success);
-				assert.ok(
-					!schema.safeParse({ [key]: ID, limit: CELL_RELATION_LIST_LIMIT_MAX + 1 }).success
-				);
-				assert.ok(!schema.safeParse({ [key]: ID, limit: 0 }).success);
+				assert.ok(is(schema, { [key]: ID, limit: CELL_RELATION_LIST_LIMIT_MAX }));
+				assert.ok(!is(schema, { [key]: ID, limit: CELL_RELATION_LIST_LIMIT_MAX + 1 }));
+				assert.ok(!is(schema, { [key]: ID, limit: 0 }));
 			}
 		}
 	});

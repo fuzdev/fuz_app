@@ -1,49 +1,56 @@
 /**
- * Tests for `cell_action_specs.ts` — the length cap on the wire `kind`, on
- * `cell_create` and on the `cell_list` filter.
+ * Tests for the cell wire schemas — the length cap on the wire `kind`, on
+ * `cell_create` and on the `cell_list` filter, and the verdicts and issues of
+ * the spots where the `@fuzdev/fuz_schema` forms read differently from the
+ * Zod ones they replaced: the grant principal's `variant`, the item
+ * position's pipe, and `cell_list`'s omitted input — and that every cell
+ * input is strict and `cell_list`'s paging bounds hold.
  *
  * @module
  */
 
 import { describe, test, assert } from 'vitest';
+import { is, parse } from '@fuzdev/fuz_schema/schema.ts';
+
+import { FRACTIONAL_INDEX_LENGTH_MAX } from '@fuzdev/fuz_util/fractional_index.ts';
 
 import {
 	CELL_KIND_LENGTH_MAX,
 	CellCreateInput,
 	CellGetInput,
-	CellListInput
+	CellListInput,
+	all_cell_action_specs
 } from '#lib/auth/cell_action_specs.ts';
+import { CellGrantCreateInput } from '#lib/auth/cell_grant_action_specs.ts';
+import { CellItemPosition } from '#lib/auth/cell_item_action_specs.ts';
+
+const ID = '3f8a1c2e-1234-4abc-9def-0123456789ab';
 
 const astral = '\u{1F600}';
 
 describe('cell kind length cap', () => {
 	test('CellCreateInput admits a kind at the cap and refuses one past it', () => {
-		const at_cap = CellCreateInput.safeParse({ data: {}, kind: 'a'.repeat(CELL_KIND_LENGTH_MAX) });
-		assert.ok(at_cap.success);
-		assert.strictEqual(at_cap.data.kind?.length, CELL_KIND_LENGTH_MAX);
-		assert.ok(
-			!CellCreateInput.safeParse({ data: {}, kind: 'a'.repeat(CELL_KIND_LENGTH_MAX + 1) }).success
-		);
+		const at_cap = parse(CellCreateInput, { data: {}, kind: 'a'.repeat(CELL_KIND_LENGTH_MAX) });
+		assert.ok(at_cap.ok);
+		assert.strictEqual(at_cap.value.kind?.length, CELL_KIND_LENGTH_MAX);
+		assert.ok(!is(CellCreateInput, { data: {}, kind: 'a'.repeat(CELL_KIND_LENGTH_MAX + 1) }));
 		// typeless stays admitted
-		assert.ok(CellCreateInput.safeParse({ data: {}, kind: null }).success);
-		assert.ok(CellCreateInput.safeParse({ data: {} }).success);
+		assert.ok(is(CellCreateInput, { data: {}, kind: null }));
+		assert.ok(is(CellCreateInput, { data: {} }));
 	});
 
 	test('CellCreateInput counts UTF-16 code units', () => {
+		assert.ok(is(CellCreateInput, { data: {}, kind: astral.repeat(CELL_KIND_LENGTH_MAX / 2) }));
 		assert.ok(
-			CellCreateInput.safeParse({ data: {}, kind: astral.repeat(CELL_KIND_LENGTH_MAX / 2) }).success
-		);
-		assert.ok(
-			!CellCreateInput.safeParse({ data: {}, kind: astral.repeat(CELL_KIND_LENGTH_MAX / 2) + 'a' })
-				.success
+			!is(CellCreateInput, { data: {}, kind: astral.repeat(CELL_KIND_LENGTH_MAX / 2) + 'a' })
 		);
 	});
 
 	test('CellListInput admits a kind filter at the cap and refuses one past it', () => {
-		assert.ok(CellListInput.safeParse({ kind: 'a'.repeat(CELL_KIND_LENGTH_MAX) }).success);
-		assert.ok(!CellListInput.safeParse({ kind: 'a'.repeat(CELL_KIND_LENGTH_MAX + 1) }).success);
+		assert.ok(is(CellListInput, { kind: 'a'.repeat(CELL_KIND_LENGTH_MAX) }));
+		assert.ok(!is(CellListInput, { kind: 'a'.repeat(CELL_KIND_LENGTH_MAX + 1) }));
 		// the empty filter is admitted: it matches nothing
-		assert.ok(CellListInput.safeParse({ kind: '' }).success);
+		assert.ok(is(CellListInput, { kind: '' }));
 	});
 });
 
@@ -54,9 +61,131 @@ describe('CellGetInput', () => {
 			'FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF',
 			'ffffffff-FFFF-ffff-FFFF-ffffffffffff'
 		]) {
-			const result = CellGetInput.safeParse({ id });
-			assert(result.success, id);
-			assert.strictEqual(result.data.id, 'ffffffff-ffff-ffff-ffff-ffffffffffff');
+			const result = parse(CellGetInput, { id });
+			assert(result.ok, id);
+			assert.strictEqual(result.value.id, 'ffffffff-ffff-ffff-ffff-ffffffffffff');
 		}
+	});
+});
+
+describe('CellGrantPrincipalInput', () => {
+	const create = (principal: unknown) =>
+		parse(CellGrantCreateInput, { cell_id: ID, level: 'viewer', principal });
+
+	test('takes either arm', () => {
+		assert.ok(create({ kind: 'actor', actor_id: ID }).ok);
+		assert.ok(create({ kind: 'role', role: 'member' }).ok);
+		assert.ok(create({ kind: 'role', role: 'member', scope_id: null }).ok);
+		assert.ok(create({ kind: 'role', role: 'member', scope_id: ID }).ok);
+	});
+
+	test('an unknown or missing kind is one issue at the discriminator', () => {
+		for (const principal of [{ kind: 'group' }, { actor_id: ID }]) {
+			const result = create(principal);
+			assert.ok(!result.ok);
+			assert.strictEqual(result.issues.length, 1);
+			assert.strictEqual(result.issues[0]!.kind, 'variant');
+			assert.deepStrictEqual(result.issues[0]!.path, ['principal', 'kind']);
+		}
+	});
+
+	test("an arm's fields are checked by that arm alone", () => {
+		const empty_role = create({ kind: 'role', role: '' });
+		assert.ok(!empty_role.ok);
+		assert.deepStrictEqual(
+			empty_role.issues.map((i) => [i.kind, i.path]),
+			[['min_length', ['principal', 'role']]]
+		);
+		const other_arm = create({ kind: 'actor', actor_id: ID, role: 'member' });
+		assert.ok(!other_arm.ok);
+		assert.deepStrictEqual(
+			other_arm.issues.map((i) => [i.kind, i.path]),
+			[['unknown_key', ['principal', 'role']]]
+		);
+		const role_extra = create({ kind: 'role', role: 'member', actor_id: ID });
+		assert.ok(!role_extra.ok);
+		assert.deepStrictEqual(
+			role_extra.issues.map((i) => [i.kind, i.path]),
+			[['unknown_key', ['principal', 'actor_id']]]
+		);
+	});
+});
+
+describe('CellItemPosition', () => {
+	test('takes the base62 alphabet up to the cap', () => {
+		assert.ok(is(CellItemPosition, 'a0Z'));
+		assert.ok(is(CellItemPosition, 'a'.repeat(FRACTIONAL_INDEX_LENGTH_MAX)));
+	});
+
+	test('a length failure is the one issue, ahead of the alphabet', () => {
+		const empty = parse(CellItemPosition, '');
+		assert.ok(!empty.ok);
+		assert.deepStrictEqual(
+			empty.issues.map((i) => i.kind),
+			['min_length']
+		);
+		const over = parse(CellItemPosition, '-'.repeat(FRACTIONAL_INDEX_LENGTH_MAX + 1));
+		assert.ok(!over.ok);
+		assert.deepStrictEqual(
+			over.issues.map((i) => i.kind),
+			['max_length']
+		);
+		const off_alphabet = parse(CellItemPosition, 'a-b');
+		assert.ok(!off_alphabet.ok);
+		assert.deepStrictEqual(
+			off_alphabet.issues.map((i) => i.kind),
+			['regex']
+		);
+	});
+});
+
+describe('CellListInput omitted', () => {
+	test('reads as a fresh empty object, and null is refused', () => {
+		const a = parse(CellListInput, undefined);
+		const b = parse(CellListInput, undefined);
+		assert.ok(a.ok && b.ok);
+		assert.deepStrictEqual(a.value, {});
+		assert.notStrictEqual(a.value, b.value, 'each parse makes its own');
+		assert.ok(!is(CellListInput, null));
+	});
+});
+
+describe('cell inputs', () => {
+	/** A valid input per method, every spec of `all_cell_action_specs` named. */
+	const valid: Record<(typeof all_cell_action_specs)[number]['method'], Record<string, unknown>> = {
+		cell_create: { data: {} },
+		cell_get: { id: ID },
+		cell_update: { cell_id: ID },
+		cell_delete: { cell_id: ID },
+		cell_list: { limit: 1, offset: 0 },
+		cell_clone: { source_id: ID },
+		cell_moderate: { cell_id: ID, moderation: 'approved' },
+		cell_policy_set: { cell_id: ID, policy: null },
+		cell_grant_create: { cell_id: ID, level: 'viewer', principal: { kind: 'actor', actor_id: ID } },
+		cell_grant_revoke: { grant_id: ID },
+		cell_grant_list: { cell_id: ID },
+		cell_field_set: { source_id: ID, name: 'cover', target_id: ID },
+		cell_field_delete: { source_id: ID, name: 'cover' },
+		cell_field_list: { source_id: ID },
+		cell_item_insert: { parent_id: ID, child_id: ID, position: 'a0' },
+		cell_item_move: { parent_id: ID, position: 'a0', new_position: 'a1' },
+		cell_item_delete: { parent_id: ID, position: 'a0' },
+		cell_item_list: { parent_id: ID },
+		cell_audit_list: { cell_id: ID }
+	};
+
+	for (const spec of all_cell_action_specs) {
+		test(`${spec.method} takes a valid input and refuses an unknown key`, () => {
+			const input = valid[spec.method];
+			assert.ok(is(spec.input, input), 'the valid input passes');
+			assert.ok(!is(spec.input, { ...input, zzz: 1 }));
+		});
+	}
+
+	test('CellListInput holds its paging bounds', () => {
+		assert.ok(is(CellListInput, { limit: 1, offset: 0 }));
+		assert.ok(!is(CellListInput, { limit: 0 }));
+		assert.ok(!is(CellListInput, { limit: 1.5 }));
+		assert.ok(!is(CellListInput, { offset: -1 }));
 	});
 });

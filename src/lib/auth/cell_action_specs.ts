@@ -6,12 +6,32 @@
  * @module
  */
 
-import { z } from 'zod';
-import { Uuid, FactHashSchema, bounded_string } from '../primitive_schemas.ts';
-import type { SchemaFieldMeta } from '../schema_meta.ts';
+import { meta } from '@fuzdev/fuz_schema/meta.ts';
+import {
+	array,
+	boolean,
+	brand,
+	integer,
+	literal,
+	loose_object,
+	max_length,
+	max_value,
+	min_value,
+	nullable,
+	number,
+	object,
+	one_of,
+	optional,
+	pipe,
+	record,
+	safe_integer,
+	string,
+	with_default_fn,
+	type Infer
+} from '@fuzdev/fuz_schema/schema.ts';
 
+import { ActingActor, bounded_string, FactHashSchema, Uuid } from '../primitive_schemas_fuz.ts';
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
-import { ActingActor } from '../http/auth_shape.ts';
 import {
 	all_cell_grant_action_specs,
 	cell_grant_create_action_spec,
@@ -56,8 +76,8 @@ import { CellData } from './cell_data_schema.ts';
  * `cell.data`, which is content metadata only. `can_view_cell` reads
  * the column directly.
  */
-export const CellVisibility = z.enum(['private', 'public']);
-export type CellVisibility = z.infer<typeof CellVisibility>;
+export const CellVisibility = one_of(['private', 'public']);
+export type CellVisibility = Infer<typeof CellVisibility>;
 
 // Re-exported so the codegen's `cell_specs.*` qualifier resolves them
 // under the single cell-layer namespace. `cell_action_specs.ts` is the
@@ -232,11 +252,11 @@ export const ERROR_CELL_LIST_SHARED_WITH_REQUIRES_AUTH =
  * and interprets it (`CellCreateAuthorizeInput.root_policy`). Loose for that
  * reason — the keys are the consumer's. Twin of the Rust `CellPolicy`.
  */
-export const CellPolicy = z.looseObject({}).meta({
+export const CellPolicy = meta(loose_object({}), {
 	description:
 		"A root's contribution policy — a JSON object the mounted create authorizer validates and interprets; the spine stores it without reading it."
 });
-export type CellPolicy = z.infer<typeof CellPolicy>;
+export type CellPolicy = Infer<typeof CellPolicy>;
 
 /**
  * Wire form for `cell.path`.
@@ -250,14 +270,14 @@ export const CELL_PATH_LENGTH_MAX = 256;
 
 /**
  * Branded so the type system distinguishes a validated path from any other
- * string. Construct via `CellPath.parse(s)` at external boundaries; the
- * RPC dispatcher does this automatically when the wire schema (`CellCreateInput`,
+ * string. Construct by parsing it (`parse(CellPath, s)`) at external
+ * boundaries; the RPC dispatcher does this automatically when the wire schema (`CellCreateInput`,
  * `CellGetInput`, `CellUpdateInput`, `CellListInput`) is parsed at the entry
  * point. Frontend callers handing a raw string to `api.cell_*` cast at the
  * callsite (`as CellPath`) — the runtime check still runs server-side.
  */
-export const CellPath = bounded_string({ min: 1, max: CELL_PATH_LENGTH_MAX }).brand('CellPath');
-export type CellPath = z.infer<typeof CellPath>;
+export const CellPath = brand(bounded_string({ min: 1, max: CELL_PATH_LENGTH_MAX }), 'CellPath');
+export type CellPath = Infer<typeof CellPath>;
 
 /**
  * Maximum length of a cell `kind` on the wire, in UTF-16 code units (what
@@ -302,46 +322,46 @@ export const CELL_RELATIONS_BUNDLE_LIMIT = 500;
  * live in the `cell_item` / `cell_field` sibling tables. Bundled arrays
  * appear on `CellGetOutput`; other read verbs (`cell_list`) do not bundle.
  */
-export const CellJson = z.strictObject({
+export const CellJson = object({
 	id: Uuid,
-	path: CellPath.nullable(),
+	path: nullable(CellPath),
 	data: CellData,
-	kind: z.string().nullable().meta({
+	kind: meta(nullable(string), {
 		description:
 			'Capability / identity tag — a write-once top-level column (peer to `visibility` / `path`), not a field inside `data`. `null` for a typeless cell. The discriminator a creation authorizer gates on; fixed at birth.'
 	}),
-	visibility: CellVisibility.meta({
+	visibility: meta(CellVisibility, {
 		description:
 			"Access-control tag. `'public'` admits everyone (including unauthenticated visitors); `'private'` (default) admits admin / owner / `cell_grant`-admitted callers. Past admin and owner, either admits only while `moderation` is `null` or `'approved'`. Top-level column, not inside `data`."
 	}),
-	refs: z.array(FactHashSchema).nullable(),
-	parent_id: Uuid.nullable().meta({
+	refs: nullable(array(FactHashSchema)),
+	parent_id: meta(nullable(Uuid), {
 		description:
 			'Immediate container in the directory tree (the directory this cell lives in). `null` = a root (parentless). Set once at create, immutable in v1.'
 	}),
-	root_id: Uuid.nullable().meta({
+	root_id: meta(nullable(Uuid), {
 		description:
 			'Governing root of the directory subtree, denormalized for flat-subtree queries (`root_id = parent.root_id ?? parent.id`). `null` for a root. Set once at create, immutable in v1.'
 	}),
-	moderation: z.string().nullable().meta({
+	moderation: meta(nullable(string), {
 		description:
 			"Approval-lifecycle marker for a gated contribution (`'pending'` / `'approved'` / `'rejected'`); `null` = unmoderated. A control field with a non-author writer — peer to `visibility`, never inside `data` (set by the create authorizer's verdict, transitioned only by `cell_moderate`)."
 	}),
-	policy: CellPolicy.nullable().meta({
+	policy: meta(nullable(CellPolicy), {
 		description:
 			"A root's contribution policy, read by the create authorizer for every contribution under it; `null` = the authorizer's floor governs, and always `null` on a cell with a parent. A manage-tier control field — set at the root's `cell_create`, changed only by `cell_policy_set`, never inside `data`."
 	}),
-	created_by: Uuid.nullable(),
-	updated_by: Uuid.nullable(),
-	created_at: z.string(),
-	updated_at: z.string().nullable(),
-	deleted_at: z.string().nullable(),
-	grant_count: z.number().int().nonnegative().meta({
+	created_by: nullable(Uuid),
+	updated_by: nullable(Uuid),
+	created_at: string,
+	updated_at: nullable(string),
+	deleted_at: nullable(string),
+	grant_count: meta(pipe(number, safe_integer, min_value(0)), {
 		description:
 			'Number of `cell_grant` rows naming this cell. Non-leaky scalar (no actor/role identity); surfaces "Shared with N" badges. Derived in SQL via a correlated subquery on `idx_cell_grant_cell`.'
 	})
 });
-export type CellJson = z.infer<typeof CellJson>;
+export type CellJson = Infer<typeof CellJson>;
 
 // -- cell_create ------------------------------------------------------------
 
@@ -350,37 +370,35 @@ export type CellJson = z.infer<typeof CellJson>;
  * stamps it from auth.actor.id. `path` is admin-only; non-admin callers
  * supplying `path` get `ERROR_CELL_PATH_ADMIN_ONLY` (forbidden).
  */
-export const CellCreateInput = z.strictObject({
-	data: CellData.meta({
+export const CellCreateInput = object({
+	data: meta(CellData, {
 		description:
 			'Cell content. Base fields (label / summary) typed; extras loose. A `kind` key here is rejected (`ERROR_CELL_KIND_IN_DATA`) — kind is the top-level field. Per-kind shape is sub-API.'
 	}),
-	kind: bounded_string({ max: CELL_KIND_LENGTH_MAX })
-		.nullish()
-		.meta({
-			description: `Capability / identity tag, written to the top-level \`cell.kind\` column (not \`data\`). Write-once — fixed at birth, not updatable. Non-empty when present (an empty string is rejected \`ERROR_CELL_KIND_EMPTY\`) and at most ${CELL_KIND_LENGTH_MAX} characters; omit / null for a typeless cell. A creation authorizer (if mounted) gates on this.`
-		}),
-	visibility: CellVisibility.optional().meta({
+	kind: meta(optional(nullable(bounded_string({ max: CELL_KIND_LENGTH_MAX }))), {
+		description: `Capability / identity tag, written to the top-level \`cell.kind\` column (not \`data\`). Write-once — fixed at birth, not updatable. Non-empty when present (an empty string is rejected \`ERROR_CELL_KIND_EMPTY\`) and at most ${CELL_KIND_LENGTH_MAX} characters; omit / null for a typeless cell. A creation authorizer (if mounted) gates on this.`
+	}),
+	visibility: meta(optional(CellVisibility), {
 		description:
 			"Access-control tag. Top-level column (not in `data`). Default `'private'` when omitted."
 	}),
-	path: CellPath.nullish().meta({
+	path: meta(optional(nullable(CellPath)), {
 		description: 'Admin-only named lookup alias. Globally unique on active rows.'
 	}),
-	parent_id: Uuid.nullish().meta({
+	parent_id: meta(optional(nullable(Uuid)), {
 		description:
 			'Immediate container — the directory this cell is created in. Omit / null = a root (parentless). The handler resolves `root_id` from it and gates the create through the parent-aware authorizer; `root_id` / `moderation` are handler-derived, never wire input.'
 	}),
-	policy: CellPolicy.nullish().meta({
+	policy: meta(optional(nullable(CellPolicy)), {
 		description:
 			"The new root's contribution policy. Root-only (beside a `parent_id` it is refused `ERROR_CELL_POLICY_ROOT_ONLY`), and the mounted create authorizer must accept it (`ERROR_CELL_POLICY_UNSUPPORTED` when none can). Omit / null = no policy."
 	}),
 	acting: ActingActor
 });
-export type CellCreateInput = z.infer<typeof CellCreateInput>;
+export type CellCreateInput = Infer<typeof CellCreateInput>;
 
-export const CellCreateOutput = z.strictObject({ cell: CellJson });
-export type CellCreateOutput = z.infer<typeof CellCreateOutput>;
+export const CellCreateOutput = object({ cell: CellJson });
+export type CellCreateOutput = Infer<typeof CellCreateOutput>;
 
 // -- cell_get ---------------------------------------------------------------
 
@@ -392,14 +410,15 @@ export type CellCreateOutput = z.infer<typeof CellCreateOutput>;
  * row matches OR when `can_view_cell` rejects the caller — same code so
  * private-cell existence doesn't leak.
  */
-export const CellGetInput = z
-	.strictObject({
-		id: Uuid.optional(),
-		path: CellPath.optional(),
+export const CellGetInput = meta(
+	object({
+		id: optional(Uuid),
+		path: optional(CellPath),
 		acting: ActingActor
-	})
-	.meta({ empty_input_handler_guarded: true } satisfies SchemaFieldMeta);
-export type CellGetInput = z.infer<typeof CellGetInput>;
+	}),
+	{ empty_input_handler_guarded: true }
+);
+export type CellGetInput = Infer<typeof CellGetInput>;
 
 /**
  * Output for `cell_get`. Bundles relation arrays (`fields` + `items`)
@@ -412,16 +431,16 @@ export type CellGetInput = z.infer<typeof CellGetInput>;
  * `cell_item_list({parent_id, position_after})` /
  * `cell_field_list({source_id})` when truncated.
  */
-export const CellGetOutput = z.strictObject({
+export const CellGetOutput = object({
 	cell: CellJson,
-	fields: z.array(FieldJson),
-	fields_truncated: z.boolean(),
-	items: z.array(ItemJson),
-	items_truncated: z.boolean(),
-	can_edit: z.boolean(),
-	can_grant: z.boolean()
+	fields: array(FieldJson),
+	fields_truncated: boolean,
+	items: array(ItemJson),
+	items_truncated: boolean,
+	can_edit: boolean,
+	can_grant: boolean
 });
-export type CellGetOutput = z.infer<typeof CellGetOutput>;
+export type CellGetOutput = Infer<typeof CellGetOutput>;
 
 // -- cell_update ------------------------------------------------------------
 
@@ -433,33 +452,33 @@ export type CellGetOutput = z.infer<typeof CellGetOutput>;
  * (`can_manage_cell` = admin / owner) — editor-grant holders editing
  * `data` cannot flip visibility (`ERROR_CELL_VISIBILITY_MANAGE_ONLY`).
  */
-export const CellUpdateInput = z.strictObject({
-	cell_id: Uuid.meta({ description: 'Cell to update.' }),
-	data: CellData.optional(),
-	visibility: CellVisibility.optional().meta({
+export const CellUpdateInput = object({
+	cell_id: meta(Uuid, { description: 'Cell to update.' }),
+	data: optional(CellData),
+	visibility: meta(optional(CellVisibility), {
 		description: 'Access-control tag. Top-level column (not in `data`). Manage-tier write.'
 	}),
-	path: CellPath.nullable().optional().meta({ description: 'Admin-only path write.' }),
+	path: meta(optional(nullable(CellPath)), { description: 'Admin-only path write.' }),
 	acting: ActingActor
 });
-export type CellUpdateInput = z.infer<typeof CellUpdateInput>;
+export type CellUpdateInput = Infer<typeof CellUpdateInput>;
 
-export const CellUpdateOutput = z.strictObject({ cell: CellJson });
-export type CellUpdateOutput = z.infer<typeof CellUpdateOutput>;
+export const CellUpdateOutput = object({ cell: CellJson });
+export type CellUpdateOutput = Infer<typeof CellUpdateOutput>;
 
 // -- cell_delete ------------------------------------------------------------
 
-export const CellDeleteInput = z.strictObject({
-	cell_id: Uuid.meta({ description: 'Cell to soft-delete.' }),
+export const CellDeleteInput = object({
+	cell_id: meta(Uuid, { description: 'Cell to soft-delete.' }),
 	acting: ActingActor
 });
-export type CellDeleteInput = z.infer<typeof CellDeleteInput>;
+export type CellDeleteInput = Infer<typeof CellDeleteInput>;
 
-export const CellDeleteOutput = z.strictObject({
-	ok: z.literal(true),
-	deleted: z.boolean()
+export const CellDeleteOutput = object({
+	ok: literal(true),
+	deleted: boolean
 });
-export type CellDeleteOutput = z.infer<typeof CellDeleteOutput>;
+export type CellDeleteOutput = Infer<typeof CellDeleteOutput>;
 
 // -- cell_list --------------------------------------------------------------
 
@@ -483,52 +502,51 @@ export type CellDeleteOutput = z.infer<typeof CellDeleteOutput>;
  * reject the combination at the schema layer because SQL emptiness is
  * correct.
  */
-export const CellListInput = z
-	.strictObject({
-		ids: z
-			.array(Uuid)
-			.max(CELL_LIST_LIMIT_MAX)
-			.optional()
-			.meta({ description: 'Batch-fetch by id. Visibility predicate still applies.' }),
-		kind: bounded_string({ max: CELL_KIND_LENGTH_MAX }).optional().meta({
+export const CellListInput = with_default_fn(
+	object({
+		ids: meta(optional(pipe(array(Uuid), max_length(CELL_LIST_LIMIT_MAX))), {
+			description: 'Batch-fetch by id. Visibility predicate still applies.'
+		}),
+		kind: meta(optional(bounded_string({ max: CELL_KIND_LENGTH_MAX })), {
 			description:
 				'Match `cell.kind = ?`. An empty string matches nothing — no cell carries an empty kind.'
 		}),
-		visibility: CellVisibility.optional().meta({
+		visibility: meta(optional(CellVisibility), {
 			description:
 				"Match `cell.visibility = ?`. The SQL-side auth-narrow already filters to public-or-admitted; this is an additional narrowing filter (e.g. `visibility: 'public'` on the discovery feed so authed callers don't see their own private entries mixed in)."
 		}),
-		ref: FactHashSchema.optional().meta({ description: 'Match cells referencing this fact hash.' }),
-		created_by: Uuid.optional().meta({ description: 'Filter to a specific creator.' }),
-		path_prefix: CellPath.optional().meta({
+		ref: meta(optional(FactHashSchema), { description: 'Match cells referencing this fact hash.' }),
+		created_by: meta(optional(Uuid), { description: 'Filter to a specific creator.' }),
+		path_prefix: meta(optional(CellPath), {
 			description: 'Match cells whose path starts with this.'
 		}),
-		root_id: Uuid.optional().meta({
+		root_id: meta(optional(Uuid), {
 			description:
 				'Scope to a directory subtree by governing root (`cell.root_id = ?`) — the feed + mod-queue key.'
 		}),
-		moderation: z.string().optional().meta({
+		moderation: meta(optional(string), {
 			description:
 				"Filter by moderation lifecycle marker (`'pending'` drives the moderation queue)."
 		}),
-		shared_with: z.literal('me').optional().meta({
+		shared_with: meta(optional(literal('me')), {
 			description:
 				'Narrow to cells admitting the caller via `cell_grant`, excluding cells the caller owns. Self-only — a `Uuid` form would need cross-actor role_grant loading.'
 		}),
-		order_by: z.enum(['created_at', 'updated_at']).optional(),
-		order_direction: z.enum(['asc', 'desc']).optional(),
-		limit: z.number().int().positive().max(CELL_LIST_LIMIT_MAX).optional(),
-		offset: z.number().int().nonnegative().optional(),
+		order_by: optional(one_of(['created_at', 'updated_at'])),
+		order_direction: optional(one_of(['asc', 'desc'])),
+		limit: optional(pipe(number, integer, min_value(1), max_value(CELL_LIST_LIMIT_MAX))),
+		offset: optional(pipe(number, safe_integer, min_value(0))),
 		acting: ActingActor
-	})
-	.default({});
-export type CellListInput = z.infer<typeof CellListInput>;
+	}),
+	() => ({})
+);
+export type CellListInput = Infer<typeof CellListInput>;
 
-export const CellListOutput = z.strictObject({
-	cells: z.array(CellJson),
-	cell_grants: z.record(z.string(), z.array(GrantJson)).optional()
+export const CellListOutput = object({
+	cells: array(CellJson),
+	cell_grants: optional(record(array(GrantJson)))
 });
-export type CellListOutput = z.infer<typeof CellListOutput>;
+export type CellListOutput = Infer<typeof CellListOutput>;
 
 // -- cell_clone -------------------------------------------------------------
 
@@ -539,26 +557,26 @@ export type CellListOutput = z.infer<typeof CellListOutput>;
  * only in the `cell_clone` audit row's `source_id` — no provenance
  * fields are stamped into `data`.
  */
-export const CellCloneInput = z.strictObject({
-	source_id: Uuid.meta({ description: 'Cell to clone.' }),
-	deep: z.boolean().optional().meta({
+export const CellCloneInput = object({
+	source_id: meta(Uuid, { description: 'Cell to clone.' }),
+	deep: meta(optional(boolean), {
 		description: 'Recurse into `items[]` (depth=1 — clones direct children only). Default false.'
 	}),
 	// TODO: cap `with_data_patch` size/depth once a consumer measures the
 	// upper bound. `CellData` is a loose object, unbounded — a multi-MB patch is in scope
 	// today, gated only by the JSON-RPC body limit. Realistic patches are
-	// O(few KB); a `.refine` on serialized size would tighten the surface
+	// O(few KB); a `check` on serialized size would tighten the surface
 	// without disturbing the patch-wins-last semantics.
-	with_data_patch: CellData.optional().meta({
+	with_data_patch: meta(optional(CellData), {
 		description:
 			"Optional shallow patch merged into the new root cell's `data` (patch-last semantics)."
 	}),
 	acting: ActingActor
 });
-export type CellCloneInput = z.infer<typeof CellCloneInput>;
+export type CellCloneInput = Infer<typeof CellCloneInput>;
 
-export const CellCloneOutput = z.strictObject({ cell: CellJson });
-export type CellCloneOutput = z.infer<typeof CellCloneOutput>;
+export const CellCloneOutput = object({ cell: CellJson });
+export type CellCloneOutput = Infer<typeof CellCloneOutput>;
 
 // -- cell_moderate ----------------------------------------------------------
 
@@ -570,8 +588,8 @@ export type CellCloneOutput = z.infer<typeof CellCloneOutput>;
  * `visibility → 'public'`); `'rejected'` holds a pending one back or takes an
  * approved one down, leaving visibility as it was.
  */
-export const CellModerationDecision = z.enum(['approved', 'rejected']);
-export type CellModerationDecision = z.infer<typeof CellModerationDecision>;
+export const CellModerationDecision = one_of(['approved', 'rejected']);
+export type CellModerationDecision = Infer<typeof CellModerationDecision>;
 
 /**
  * Input for `cell_moderate` — the `pending → approved | rejected` decision, plus
@@ -585,17 +603,17 @@ export type CellModerationDecision = z.infer<typeof CellModerationDecision>;
  * allow — approving one that is not pending, or rejecting one already rejected
  * or never moderated.
  */
-export const CellModerateInput = z.strictObject({
-	cell_id: Uuid.meta({ description: 'Contribution to moderate.' }),
-	moderation: CellModerationDecision.meta({
+export const CellModerateInput = object({
+	cell_id: meta(Uuid, { description: 'Contribution to moderate.' }),
+	moderation: meta(CellModerationDecision, {
 		description: 'Terminal decision: `approved` (publishes, visibility → public) or `rejected`.'
 	}),
 	acting: ActingActor
 });
-export type CellModerateInput = z.infer<typeof CellModerateInput>;
+export type CellModerateInput = Infer<typeof CellModerateInput>;
 
-export const CellModerateOutput = z.strictObject({ cell: CellJson });
-export type CellModerateOutput = z.infer<typeof CellModerateOutput>;
+export const CellModerateOutput = object({ cell: CellJson });
+export type CellModerateOutput = Infer<typeof CellModerateOutput>;
 
 // -- cell_policy_set --------------------------------------------------------
 
@@ -607,17 +625,17 @@ export type CellModerateOutput = z.infer<typeof CellModerateOutput>;
  * parent, then the mounted authorizer's validation of a non-null policy
  * (`ERROR_CELL_POLICY_UNSUPPORTED` when none can).
  */
-export const CellPolicySetInput = z.strictObject({
-	cell_id: Uuid.meta({ description: 'Root whose policy to set.' }),
-	policy: CellPolicy.nullable().meta({
+export const CellPolicySetInput = object({
+	cell_id: meta(Uuid, { description: 'Root whose policy to set.' }),
+	policy: meta(nullable(CellPolicy), {
 		description: 'The new policy (a JSON object), or `null` to clear it.'
 	}),
 	acting: ActingActor
 });
-export type CellPolicySetInput = z.infer<typeof CellPolicySetInput>;
+export type CellPolicySetInput = Infer<typeof CellPolicySetInput>;
 
-export const CellPolicySetOutput = z.strictObject({ cell: CellJson });
-export type CellPolicySetOutput = z.infer<typeof CellPolicySetOutput>;
+export const CellPolicySetOutput = object({ cell: CellJson });
+export type CellPolicySetOutput = Infer<typeof CellPolicySetOutput>;
 
 // -- Action specs -----------------------------------------------------------
 

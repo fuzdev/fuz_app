@@ -14,10 +14,23 @@
  * @module
  */
 
-import { z } from 'zod';
-import { Uuid } from '../primitive_schemas.ts';
+import { meta } from '@fuzdev/fuz_schema/meta.ts';
+import {
+	array,
+	boolean,
+	literal,
+	min_length,
+	nullable,
+	object,
+	one_of,
+	optional,
+	pipe,
+	string,
+	variant,
+	type Infer
+} from '@fuzdev/fuz_schema/schema.ts';
 
-import { ActingActor } from '../http/auth_shape.ts';
+import { ActingActor, Uuid } from '../primitive_schemas_fuz.ts';
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
 
 // -- Error reasons ----------------------------------------------------------
@@ -58,45 +71,45 @@ export const ERROR_CELL_GRANT_NOT_AUTHORIZED = 'cell_grant_not_authorized' as co
 // -- Shared schemas ---------------------------------------------------------
 
 /** Grant level — view-only or view-plus-edit. */
-export const CellGrantLevel = z.enum(['viewer', 'editor']);
-export type CellGrantLevel = z.infer<typeof CellGrantLevel>;
+export const CellGrantLevel = one_of(['viewer', 'editor']);
+export type CellGrantLevel = Infer<typeof CellGrantLevel>;
 
 /**
  * Wire-input principal. Discriminated by `kind`. Actor-shaped principals
  * carry a resolved `actor_id` — the picker UI runs `actor_search` to
  * convert a typed name to an id before this verb is called.
  */
-export const CellGrantPrincipalInput = z.discriminatedUnion('kind', [
-	z.strictObject({
-		kind: z.literal('actor'),
+export const CellGrantPrincipalInput = variant('kind', [
+	object({
+		kind: literal('actor'),
 		actor_id: Uuid
 	}),
-	z.strictObject({
-		kind: z.literal('role'),
-		role: z.string().min(1),
-		scope_id: Uuid.nullish().meta({
+	object({
+		kind: literal('role'),
+		role: pipe(string, min_length(1)),
+		scope_id: meta(optional(nullable(Uuid)), {
 			description: '`null` / omitted = any-scope grant (admits any matching-role role_grant).'
 		})
 	})
 ]);
-export type CellGrantPrincipalInput = z.infer<typeof CellGrantPrincipalInput>;
+export type CellGrantPrincipalInput = Infer<typeof CellGrantPrincipalInput>;
 
 /**
  * Wire-format for a cell_grant row. Mirrors `CellJson`'s shape — ISO-string
  * `created_at`, branded UUIDs, principal columns surfaced as-is. Caller
  * inspects `actor_id` xor `role` to render the right principal label.
  */
-export const GrantJson = z.strictObject({
+export const GrantJson = object({
 	id: Uuid,
 	cell_id: Uuid,
 	level: CellGrantLevel,
-	actor_id: Uuid.nullable(),
-	role: z.string().nullable(),
-	scope_id: Uuid.nullable(),
-	granted_by: Uuid.nullable(),
-	created_at: z.string()
+	actor_id: nullable(Uuid),
+	role: nullable(string),
+	scope_id: nullable(Uuid),
+	granted_by: nullable(Uuid),
+	created_at: string
 });
-export type GrantJson = z.infer<typeof GrantJson>;
+export type GrantJson = Infer<typeof GrantJson>;
 
 // -- cell_grant_create ------------------------------------------------------
 
@@ -105,26 +118,26 @@ export type GrantJson = z.infer<typeof GrantJson>;
  * re-granting the same `(cell_id, principal)` pair updates `level` +
  * `granted_by` rather than producing a duplicate row.
  */
-export const CellGrantCreateInput = z.strictObject({
-	cell_id: Uuid.meta({ description: 'Cell to grant access on.' }),
-	level: CellGrantLevel.meta({ description: 'Grant level: `viewer` or `editor`.' }),
-	principal: CellGrantPrincipalInput.meta({
+export const CellGrantCreateInput = object({
+	cell_id: meta(Uuid, { description: 'Cell to grant access on.' }),
+	level: meta(CellGrantLevel, { description: 'Grant level: `viewer` or `editor`.' }),
+	principal: meta(CellGrantPrincipalInput, {
 		description: 'Subject of the grant. Discriminated by `kind`.'
 	}),
 	acting: ActingActor
 });
-export type CellGrantCreateInput = z.infer<typeof CellGrantCreateInput>;
+export type CellGrantCreateInput = Infer<typeof CellGrantCreateInput>;
 
-export const CellGrantCreateOutput = z.strictObject({ grant: GrantJson });
-export type CellGrantCreateOutput = z.infer<typeof CellGrantCreateOutput>;
+export const CellGrantCreateOutput = object({ grant: GrantJson });
+export type CellGrantCreateOutput = Infer<typeof CellGrantCreateOutput>;
 
 // -- cell_grant_revoke ------------------------------------------------------
 
-export const CellGrantRevokeInput = z.strictObject({
-	grant_id: Uuid.meta({ description: 'Grant to revoke.' }),
+export const CellGrantRevokeInput = object({
+	grant_id: meta(Uuid, { description: 'Grant to revoke.' }),
 	acting: ActingActor
 });
-export type CellGrantRevokeInput = z.infer<typeof CellGrantRevokeInput>;
+export type CellGrantRevokeInput = Infer<typeof CellGrantRevokeInput>;
 
 /**
  * Output for `cell_grant_revoke`. `still_admitted` is `true` when the
@@ -132,24 +145,24 @@ export type CellGrantRevokeInput = z.infer<typeof CellGrantRevokeInput>;
  * grant, ownership, admin). Always `true` for a manager's revoke; a
  * self-revoker or a scope steward may hold no other path.
  */
-export const CellGrantRevokeOutput = z.strictObject({
-	ok: z.literal(true),
-	still_admitted: z.boolean()
+export const CellGrantRevokeOutput = object({
+	ok: literal(true),
+	still_admitted: boolean
 });
-export type CellGrantRevokeOutput = z.infer<typeof CellGrantRevokeOutput>;
+export type CellGrantRevokeOutput = Infer<typeof CellGrantRevokeOutput>;
 
 // -- cell_grant_list --------------------------------------------------------
 
-export const CellGrantListInput = z.strictObject({
-	cell_id: Uuid.meta({ description: 'Cell whose grants to list.' }),
+export const CellGrantListInput = object({
+	cell_id: meta(Uuid, { description: 'Cell whose grants to list.' }),
 	acting: ActingActor
 });
-export type CellGrantListInput = z.infer<typeof CellGrantListInput>;
+export type CellGrantListInput = Infer<typeof CellGrantListInput>;
 
-export const CellGrantListOutput = z.strictObject({
-	grants: z.array(GrantJson)
+export const CellGrantListOutput = object({
+	grants: array(GrantJson)
 });
-export type CellGrantListOutput = z.infer<typeof CellGrantListOutput>;
+export type CellGrantListOutput = Infer<typeof CellGrantListOutput>;
 
 // -- Action specs -----------------------------------------------------------
 

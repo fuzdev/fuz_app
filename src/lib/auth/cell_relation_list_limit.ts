@@ -11,7 +11,15 @@
  * @module
  */
 
-import { z } from 'zod';
+import { meta } from '@fuzdev/fuz_schema/meta.ts';
+import {
+	integer,
+	max_value,
+	min_value,
+	number,
+	optional,
+	pipe
+} from '@fuzdev/fuz_schema/schema.ts';
 
 /** Cap on a relation-list page, forward and reverse alike. */
 export const CELL_RELATION_LIST_LIMIT_MAX = 500;
@@ -20,12 +28,9 @@ export const CELL_RELATION_LIST_LIMIT_MAX = 500;
 export const CELL_RELATION_LIST_LIMIT_DEFAULT = 50;
 
 /** The `limit` input of `cell_field_list` and `cell_item_list`. */
-export const CellRelationListLimit = z
-	.number()
-	.int()
-	.positive()
-	.max(CELL_RELATION_LIST_LIMIT_MAX)
-	.optional()
-	.meta({
+export const CellRelationListLimit = meta(
+	optional(pipe(number, integer, min_value(1), max_value(CELL_RELATION_LIST_LIMIT_MAX))),
+	{
 		description: `The most edges a page holds, each one whose other end the caller can view — forward and reverse alike: default ${CELL_RELATION_LIST_LIMIT_DEFAULT}, max ${CELL_RELATION_LIST_LIMIT_MAX}.`
-	});
+	}
+);

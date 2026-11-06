@@ -64,8 +64,8 @@ const capped: Array<[name: string, schema: ValidationSchema, max: number]> = [
 	['Password', Password, PASSWORD_LENGTH_MAX],
 	['PasswordProvided', PasswordProvided, PASSWORD_LENGTH_MAX],
 	['CellPath', CellPath, CELL_PATH_LENGTH_MAX],
-	['cell_create kind', CellCreateInput.shape.kind, CELL_KIND_LENGTH_MAX],
-	['cell_list kind', CellListInput.unwrap().shape.kind, CELL_KIND_LENGTH_MAX],
+	['cell_create kind', CellCreateInput.def.kind, CELL_KIND_LENGTH_MAX],
+	['cell_list kind', CellListInput.def.schema.def.kind, CELL_KIND_LENGTH_MAX],
 	['token_create name', TokenCreateInput.def.name, API_TOKEN_NAME_LENGTH_MAX],
 	[
 		'role_grant_offer_create message',

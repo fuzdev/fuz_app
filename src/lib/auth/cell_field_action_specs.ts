@@ -11,11 +11,21 @@
  * @module
  */
 
-import { z } from 'zod';
-import { Uuid } from '../primitive_schemas.ts';
-import type { SchemaFieldMeta } from '../schema_meta.ts';
+import { meta } from '@fuzdev/fuz_schema/meta.ts';
+import {
+	array,
+	boolean,
+	brand,
+	literal,
+	object,
+	optional,
+	pipe,
+	regex,
+	string,
+	type Infer
+} from '@fuzdev/fuz_schema/schema.ts';
 
-import { ActingActor } from '../http/auth_shape.ts';
+import { ActingActor, Uuid } from '../primitive_schemas_fuz.ts';
 import { CellRelationListLimit } from './cell_relation_list_limit.ts';
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
 
@@ -33,17 +43,17 @@ export const ERROR_CELL_FIELD_LIST_REQUIRES_SOURCE_OR_TARGET =
  * trailing, 64-char cap. No reserved names yet.
  */
 export const CELL_FIELD_NAME_REGEX = /^[a-z][a-z0-9_]{0,63}$/;
-export const CellFieldName = z.string().regex(CELL_FIELD_NAME_REGEX).brand('CellFieldName');
-export type CellFieldName = z.infer<typeof CellFieldName>;
+export const CellFieldName = brand(pipe(string, regex(CELL_FIELD_NAME_REGEX)), 'CellFieldName');
+export type CellFieldName = Infer<typeof CellFieldName>;
 
 /** Wire-format for a `cell_field` row. ISO `created_at`, branded UUIDs. */
-export const FieldJson = z.strictObject({
+export const FieldJson = object({
 	source_id: Uuid,
-	name: z.string(),
+	name: string,
 	target_id: Uuid,
-	created_at: z.string()
+	created_at: string
 });
-export type FieldJson = z.infer<typeof FieldJson>;
+export type FieldJson = Infer<typeof FieldJson>;
 
 // -- cell_field_set ---------------------------------------------------------
 
@@ -51,18 +61,18 @@ export type FieldJson = z.infer<typeof FieldJson>;
  * Input for `cell_field_set`. UPSERT on `(source_id, name)` — re-issuing
  * the same input updates `target_id` and bumps `created_at`.
  */
-export const CellFieldSetInput = z.strictObject({
-	source_id: Uuid.meta({ description: 'Cell whose field to set.' }),
-	name: CellFieldName.meta({
+export const CellFieldSetInput = object({
+	source_id: meta(Uuid, { description: 'Cell whose field to set.' }),
+	name: meta(CellFieldName, {
 		description: 'Field name. snake_case identifier; max 64 chars.'
 	}),
-	target_id: Uuid.meta({ description: 'Cell the field points at.' }),
+	target_id: meta(Uuid, { description: 'Cell the field points at.' }),
 	acting: ActingActor
 });
-export type CellFieldSetInput = z.infer<typeof CellFieldSetInput>;
+export type CellFieldSetInput = Infer<typeof CellFieldSetInput>;
 
-export const CellFieldSetOutput = z.strictObject({ field: FieldJson });
-export type CellFieldSetOutput = z.infer<typeof CellFieldSetOutput>;
+export const CellFieldSetOutput = object({ field: FieldJson });
+export type CellFieldSetOutput = Infer<typeof CellFieldSetOutput>;
 
 // -- cell_field_delete ------------------------------------------------------
 
@@ -70,18 +80,18 @@ export type CellFieldSetOutput = z.infer<typeof CellFieldSetOutput>;
  * Input for `cell_field_delete`. Idempotent: a successful response is
  * returned even when no row matched.
  */
-export const CellFieldDeleteInput = z.strictObject({
-	source_id: Uuid.meta({ description: 'Cell whose field to delete.' }),
-	name: CellFieldName.meta({ description: 'Field name to delete.' }),
+export const CellFieldDeleteInput = object({
+	source_id: meta(Uuid, { description: 'Cell whose field to delete.' }),
+	name: meta(CellFieldName, { description: 'Field name to delete.' }),
 	acting: ActingActor
 });
-export type CellFieldDeleteInput = z.infer<typeof CellFieldDeleteInput>;
+export type CellFieldDeleteInput = Infer<typeof CellFieldDeleteInput>;
 
-export const CellFieldDeleteOutput = z.strictObject({
-	ok: z.literal(true),
-	deleted: z.boolean()
+export const CellFieldDeleteOutput = object({
+	ok: literal(true),
+	deleted: boolean
 });
-export type CellFieldDeleteOutput = z.infer<typeof CellFieldDeleteOutput>;
+export type CellFieldDeleteOutput = Infer<typeof CellFieldDeleteOutput>;
 
 // -- cell_field_list --------------------------------------------------------
 
@@ -98,28 +108,29 @@ export type CellFieldDeleteOutput = z.infer<typeof CellFieldDeleteOutput>;
  * `name_after` (return rows whose `name > name_after` lex); the reverse
  * listing has no cursor, oldest field first.
  */
-export const CellFieldListInput = z
-	.strictObject({
-		source_id: Uuid.optional().meta({
+export const CellFieldListInput = meta(
+	object({
+		source_id: meta(optional(Uuid), {
 			description: 'List forward fields whose source is this cell.'
 		}),
-		target_id: Uuid.optional().meta({
+		target_id: meta(optional(Uuid), {
 			description: 'List reverse upfields whose target is this cell.'
 		}),
-		name_after: CellFieldName.optional().meta({
+		name_after: meta(optional(CellFieldName), {
 			description:
 				'Cursor for forward pagination — return rows whose name > this lex. Forward only.'
 		}),
 		limit: CellRelationListLimit,
 		acting: ActingActor
-	})
-	.meta({ empty_input_handler_guarded: true } satisfies SchemaFieldMeta);
-export type CellFieldListInput = z.infer<typeof CellFieldListInput>;
+	}),
+	{ empty_input_handler_guarded: true }
+);
+export type CellFieldListInput = Infer<typeof CellFieldListInput>;
 
-export const CellFieldListOutput = z.strictObject({
-	fields: z.array(FieldJson)
+export const CellFieldListOutput = object({
+	fields: array(FieldJson)
 });
-export type CellFieldListOutput = z.infer<typeof CellFieldListOutput>;
+export type CellFieldListOutput = Infer<typeof CellFieldListOutput>;
 
 // -- Action specs -----------------------------------------------------------
 

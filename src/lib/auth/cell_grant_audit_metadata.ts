@@ -15,7 +15,6 @@ import {
 	literal,
 	loose_object,
 	nullable,
-	one_of,
 	optional,
 	string,
 	union,
@@ -23,6 +22,7 @@ import {
 } from '@fuzdev/fuz_schema/schema.ts';
 
 import { Uuid } from '../primitive_schemas_fuz.ts';
+import { CellGrantLevel } from './cell_grant_action_specs.ts';
 
 /**
  * Principal columns as stored on `cell_grant`. Discriminated by which
@@ -47,7 +47,7 @@ export type CellGrantPrincipalAuditMetadata = Infer<typeof CellGrantPrincipalAud
 export const CellGrantCreateAuditMetadata = loose_object({
 	cell_id: Uuid,
 	grant_id: Uuid,
-	level: one_of(['viewer', 'editor']),
+	level: CellGrantLevel,
 	principal: CellGrantPrincipalAuditMetadata
 });
 export type CellGrantCreateAuditMetadata = Infer<typeof CellGrantCreateAuditMetadata>;
@@ -66,7 +66,7 @@ export type CellGrantCreateAuditMetadata = Infer<typeof CellGrantCreateAuditMeta
 export const CellGrantRevokeAuditMetadata = loose_object({
 	cell_id: Uuid,
 	grant_id: Uuid,
-	level: one_of(['viewer', 'editor']),
+	level: CellGrantLevel,
 	principal: CellGrantPrincipalAuditMetadata,
 	self: optional(literal(true)),
 	steward: optional(literal(true))

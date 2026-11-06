@@ -13,7 +13,6 @@ import {
 	min_value,
 	nullable,
 	number,
-	one_of,
 	optional,
 	pipe,
 	record,
@@ -24,6 +23,7 @@ import {
 } from '@fuzdev/fuz_schema/schema.ts';
 
 import { Uuid } from '../primitive_schemas_fuz.ts';
+import { CellModerationDecision } from './cell_action_specs.ts';
 
 /**
  * Shared metadata envelope for cell mutations. `kind` and `path` are
@@ -74,7 +74,7 @@ export type CellCloneAuditMetadata = Infer<typeof CellCloneAuditMetadata>;
 export const CellModerateAuditMetadata = loose_object({
 	cell_id: Uuid,
 	root_id: Uuid,
-	moderation: one_of(['approved', 'rejected'])
+	moderation: CellModerationDecision
 });
 export type CellModerateAuditMetadata = Infer<typeof CellModerateAuditMetadata>;
 

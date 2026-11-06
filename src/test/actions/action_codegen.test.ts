@@ -6,6 +6,7 @@
 
 import { describe, assert, test } from 'vitest';
 import { z } from 'zod';
+import { is } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	ImportBuilder,
@@ -261,7 +262,7 @@ describe('FrontendActionsApi method signature', () => {
 			cell_field_list_action_spec,
 			cell_item_list_action_spec
 		]) {
-			assert.ok(spec.input.safeParse({}).success, `${spec.method}: precondition`);
+			assert.ok(is(spec.input, {}), `${spec.method}: precondition`);
 			const sig = api_signature(spec, new ImportBuilder());
 			assert.ok(sig.includes(`input: ActionInputs['${spec.method}']`), sig);
 		}

@@ -3,10 +3,12 @@
  *
  * The wire-side shape every cell consumer can read without per-kind
  * knowledge: a permissive bag with two universally-relevant typed
- * fields. Per-kind schemas extend this and narrow `kind` to a literal.
+ * fields. A per-kind schema spreads its `def`
+ * (`loose_object({...CellData.def, ...})`).
  *
- * Loose object: arbitrary additional fields pass through unvalidated,
- * preserving the "unknown kinds ship without RPC churn" property. Per-kind
+ * Loose object (`@fuzdev/fuz_schema`'s `loose_object`): arbitrary additional
+ * fields pass through unvalidated, preserving the "unknown kinds ship without
+ * RPC churn" property. Per-kind
  * shape enforcement is opt-in via the `validate_data` deps slot — see
  * `auth/cell_actions.ts`.
  *
@@ -33,7 +35,7 @@
  * @module
  */
 
-import { z } from 'zod';
+import { loose_object, optional, string, type Infer } from '@fuzdev/fuz_schema/schema.ts';
 
 /**
  * Base cell-data shape. All fields optional; loose mode admits arbitrary
@@ -41,8 +43,8 @@ import { z } from 'zod';
  * touching the wire schema. `kind` lives on the top-level `cell.kind`
  * column, not here (see the module doc).
  */
-export const CellData = z.looseObject({
-	label: z.string().optional(),
-	summary: z.string().optional()
+export const CellData = loose_object({
+	label: optional(string),
+	summary: optional(string)
 });
-export type CellData = z.infer<typeof CellData>;
+export type CellData = Infer<typeof CellData>;

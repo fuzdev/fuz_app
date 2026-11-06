@@ -84,7 +84,7 @@ export const to_item_json = (row: CellItemRow): ItemJson => ({
 	parent_id: row.parent_id,
 	// `cell.position` is a DB-shape string; brand at the wire boundary so
 	// consumers can round-trip it without casting (the DB CHECK constraint
-	// is the runtime validator on egress, the Zod brand is the validator
+	// is the runtime validator on egress, the `CellItemPosition` schema is the validator
 	// on ingress).
 	position: row.position as CellItemPosition,
 	child_id: row.child_id,

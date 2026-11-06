@@ -271,15 +271,16 @@ Generic-only — no app vocabulary on the wire; per-kind shape is the
 consumer's `validate_data(kind, data)` callback on `CellActionDeps`, which
 accepts or throws and never rewrites (the handler stores the caller's `data`).
 
-- `auth/cell_data_schema.ts` — `CellData` base (`z.looseObject` with
-  optional `label` / `summary`); per-kind sub-API extends it. **`kind` is
+- `auth/cell_data_schema.ts` — `CellData` base (a `@fuzdev/fuz_schema`
+  `loose_object` with optional `label` / `summary`); a per-kind schema spreads
+  its `def` (`loose_object({...CellData.def, ...})`). **`kind` is
   not in `data`** — it is a top-level `cell.kind` column (peer to
   `visibility` / `path`), the write-once capability/identity axis; a stray
   `kind` inside `data` is rejected fail-loud (`ERROR_CELL_KIND_IN_DATA`).
 - `auth/cell_action_specs.ts` — `CellVisibility` enum, `CellPath` brand,
   `CELL_KIND_LENGTH_MAX` (64 — the wire `kind` on `cell_create` and the
   `cell_list` filter; the tag is copied into the cell's audit rows),
-  `CellJson`, `CellPolicy` (a root's contribution policy, `z.looseObject`), the
+  `CellJson`, `CellPolicy` (a root's contribution policy, a `loose_object`), the
   generic verb specs (`cell_create / get / update / delete / list / clone /
 moderate / policy_set`), error reasons, and `all_cell_action_specs`
   (spreads in the grant / field / item / audit registries so codegen + UI
@@ -291,7 +292,8 @@ moderate / policy_set`), error reasons, and `all_cell_action_specs`
 - `auth/cell_grant_action_specs.ts` / `cell_field_action_specs.ts` /
   `cell_item_action_specs.ts` / `cell_audit_action_specs.ts` — the
   `cell_grant_*` / `cell_field_*` / `cell_item_*` / `cell_audit_list`
-  specs + their wire JSON shapes.
+  specs + their wire JSON shapes. Every cell wire schema is
+  `@fuzdev/fuz_schema`.
 - `auth/cell_authorize.ts` — pure predicates over
   `(RequestContext | null, CellRow, grants)`: `can_view_cell`,
   `can_edit_cell`, and `can_manage_cell` (= admin ‖ owner, where owner is

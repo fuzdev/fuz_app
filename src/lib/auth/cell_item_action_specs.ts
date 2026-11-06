@@ -10,15 +10,25 @@
  * @module
  */
 
-import { z } from 'zod';
-import { Uuid, bounded_string } from '../primitive_schemas.ts';
-import type { SchemaFieldMeta } from '../schema_meta.ts';
+import { meta } from '@fuzdev/fuz_schema/meta.ts';
+import {
+	array,
+	boolean,
+	brand,
+	literal,
+	object,
+	optional,
+	pipe,
+	regex,
+	string,
+	type Infer
+} from '@fuzdev/fuz_schema/schema.ts';
 import {
 	FRACTIONAL_INDEX_LENGTH_MAX,
 	FRACTIONAL_INDEX_REGEX
 } from '@fuzdev/fuz_util/fractional_index.ts';
 
-import { ActingActor } from '../http/auth_shape.ts';
+import { ActingActor, bounded_string, Uuid } from '../primitive_schemas_fuz.ts';
 import { CellRelationListLimit } from './cell_relation_list_limit.ts';
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
 
@@ -50,10 +60,11 @@ export const ERROR_CELL_ITEM_POSITION_TAKEN = 'cell_item_position_taken' as cons
  * contract; the no-trailing-`'0'` invariant lives in the helper, not the
  * wire.
  */
-export const CellItemPosition = bounded_string({ min: 1, max: FRACTIONAL_INDEX_LENGTH_MAX })
-	.regex(FRACTIONAL_INDEX_REGEX)
-	.brand('CellItemPosition');
-export type CellItemPosition = z.infer<typeof CellItemPosition>;
+export const CellItemPosition = brand(
+	pipe(bounded_string({ min: 1, max: FRACTIONAL_INDEX_LENGTH_MAX }), regex(FRACTIONAL_INDEX_REGEX)),
+	'CellItemPosition'
+);
+export type CellItemPosition = Infer<typeof CellItemPosition>;
 
 /**
  * Wire-format for a `cell_item` row.
@@ -61,17 +72,17 @@ export type CellItemPosition = z.infer<typeof CellItemPosition>;
  * `position` is branded `CellItemPosition` so consumers that round-trip
  * the value back into a `position_after` / `position` input field don't
  * need a cast at every call site. Wire ingress is validated by the
- * `CellItemPosition` Zod schema (alphabet + length); wire egress trusts
+ * `CellItemPosition` schema (alphabet + length); wire egress trusts
  * the DB CHECK constraint that backs `cell_item.position`, so the
  * server-side `to_item_json` casts a raw string from `CellItemRow`.
  */
-export const ItemJson = z.strictObject({
+export const ItemJson = object({
 	parent_id: Uuid,
 	position: CellItemPosition,
 	child_id: Uuid,
-	created_at: z.string()
+	created_at: string
 });
-export type ItemJson = z.infer<typeof ItemJson>;
+export type ItemJson = Infer<typeof ItemJson>;
 
 // -- cell_item_insert -------------------------------------------------------
 
@@ -81,18 +92,18 @@ export type ItemJson = z.infer<typeof ItemJson>;
  * client-side. Returns `cell_item_position_taken` on `(parent_id,
  * position)` unique violation; client refreshes bracket and retries.
  */
-export const CellItemInsertInput = z.strictObject({
-	parent_id: Uuid.meta({ description: 'Cell to insert into.' }),
-	child_id: Uuid.meta({ description: 'Cell to insert as a child.' }),
-	position: CellItemPosition.meta({
+export const CellItemInsertInput = object({
+	parent_id: meta(Uuid, { description: 'Cell to insert into.' }),
+	child_id: meta(Uuid, { description: 'Cell to insert as a child.' }),
+	position: meta(CellItemPosition, {
 		description: 'Fractional-indexing key. Client-computed via `fractional_index_between`.'
 	}),
 	acting: ActingActor
 });
-export type CellItemInsertInput = z.infer<typeof CellItemInsertInput>;
+export type CellItemInsertInput = Infer<typeof CellItemInsertInput>;
 
-export const CellItemInsertOutput = z.strictObject({ item: ItemJson });
-export type CellItemInsertOutput = z.infer<typeof CellItemInsertOutput>;
+export const CellItemInsertOutput = object({ item: ItemJson });
+export type CellItemInsertOutput = Infer<typeof CellItemInsertOutput>;
 
 // -- cell_item_move ---------------------------------------------------------
 
@@ -100,32 +111,32 @@ export type CellItemInsertOutput = z.infer<typeof CellItemInsertOutput>;
  * Input for `cell_item_move`. Move within the same parent (cross-parent
  * moves are a future extension).
  */
-export const CellItemMoveInput = z.strictObject({
-	parent_id: Uuid.meta({ description: 'Parent cell.' }),
-	position: CellItemPosition.meta({ description: 'Current position of the row to move.' }),
-	new_position: CellItemPosition.meta({ description: 'New fractional-indexing key.' }),
+export const CellItemMoveInput = object({
+	parent_id: meta(Uuid, { description: 'Parent cell.' }),
+	position: meta(CellItemPosition, { description: 'Current position of the row to move.' }),
+	new_position: meta(CellItemPosition, { description: 'New fractional-indexing key.' }),
 	acting: ActingActor
 });
-export type CellItemMoveInput = z.infer<typeof CellItemMoveInput>;
+export type CellItemMoveInput = Infer<typeof CellItemMoveInput>;
 
-export const CellItemMoveOutput = z.strictObject({ item: ItemJson });
-export type CellItemMoveOutput = z.infer<typeof CellItemMoveOutput>;
+export const CellItemMoveOutput = object({ item: ItemJson });
+export type CellItemMoveOutput = Infer<typeof CellItemMoveOutput>;
 
 // -- cell_item_delete -------------------------------------------------------
 
 /** Input for `cell_item_delete`. Idempotent on the slot key. */
-export const CellItemDeleteInput = z.strictObject({
-	parent_id: Uuid.meta({ description: 'Parent cell.' }),
-	position: CellItemPosition.meta({ description: 'Slot to delete.' }),
+export const CellItemDeleteInput = object({
+	parent_id: meta(Uuid, { description: 'Parent cell.' }),
+	position: meta(CellItemPosition, { description: 'Slot to delete.' }),
 	acting: ActingActor
 });
-export type CellItemDeleteInput = z.infer<typeof CellItemDeleteInput>;
+export type CellItemDeleteInput = Infer<typeof CellItemDeleteInput>;
 
-export const CellItemDeleteOutput = z.strictObject({
-	ok: z.literal(true),
-	deleted: z.boolean()
+export const CellItemDeleteOutput = object({
+	ok: literal(true),
+	deleted: boolean
 });
-export type CellItemDeleteOutput = z.infer<typeof CellItemDeleteOutput>;
+export type CellItemDeleteOutput = Infer<typeof CellItemDeleteOutput>;
 
 // -- cell_item_list ---------------------------------------------------------
 
@@ -143,27 +154,28 @@ export type CellItemDeleteOutput = z.infer<typeof CellItemDeleteOutput>;
  * `position_after` (return rows with `position > position_after`); the
  * reverse listing has no cursor, oldest item first.
  */
-export const CellItemListInput = z
-	.strictObject({
-		parent_id: Uuid.optional().meta({
+export const CellItemListInput = meta(
+	object({
+		parent_id: meta(optional(Uuid), {
 			description: 'List forward items whose parent is this cell.'
 		}),
-		child_id: Uuid.optional().meta({
+		child_id: meta(optional(Uuid), {
 			description: 'List reverse parents whose child is this cell.'
 		}),
-		position_after: CellItemPosition.optional().meta({
+		position_after: meta(optional(CellItemPosition), {
 			description: 'Cursor for forward pagination — return rows whose position > this.'
 		}),
 		limit: CellRelationListLimit,
 		acting: ActingActor
-	})
-	.meta({ empty_input_handler_guarded: true } satisfies SchemaFieldMeta);
-export type CellItemListInput = z.infer<typeof CellItemListInput>;
+	}),
+	{ empty_input_handler_guarded: true }
+);
+export type CellItemListInput = Infer<typeof CellItemListInput>;
 
-export const CellItemListOutput = z.strictObject({
-	items: z.array(ItemJson)
+export const CellItemListOutput = object({
+	items: array(ItemJson)
 });
-export type CellItemListOutput = z.infer<typeof CellItemListOutput>;
+export type CellItemListOutput = Infer<typeof CellItemListOutput>;
 
 // -- Action specs -----------------------------------------------------------
 
