@@ -455,11 +455,10 @@ describe('the admin schemas agree with the Zod ones', () => {
 		}
 	});
 
-	test('the outputs are fuz_schema schemas but those of the invite rows', () => {
-		const zod_outputs = all_admin_action_specs
-			.filter((spec) => !is_schema(spec.output))
-			.map((spec) => spec.method);
-		assert.deepStrictEqual(zod_outputs, ['invite_create', 'invite_list']);
+	test('every output of all_admin_action_specs is a fuz_schema schema', () => {
+		for (const spec of all_admin_action_specs) {
+			assert.ok(is_schema(spec.output), spec.method);
+		}
 	});
 
 	test('invite_create, but for the trailing check, one length issue, the email bound and the array username', () => {

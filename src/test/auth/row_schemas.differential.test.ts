@@ -1,12 +1,12 @@
 /**
- * The row schemas of the account, session and audit outputs,
+ * The row schemas of the account, session, audit and invite outputs,
  * `@fuzdev/fuz_schema` schemas, held to the Zod schemas they replaced,
  * rebuilt here: `SessionAccountJson`, `AuthSessionJson`,
  * `RoleGrantSummaryJson`, `ActorSummaryJson`, `AdminAccountJson`,
  * `PendingOfferSummaryJson`, `AdminAccountEntryJson`, `AdminSessionJson`,
- * `AuditLogEventJson`, `AuditLogEventWithUsernamesJson` and
- * `RoleGrantHistoryEventJson`, the outputs, input and SSE params that hold
- * them, and `SessionId`. On corpora of single changes to a valid
+ * `AuditLogEventJson`, `AuditLogEventWithUsernamesJson`,
+ * `RoleGrantHistoryEventJson`, `InviteJson` and `InviteWithUsernamesJson`,
+ * the outputs, input and SSE params that hold them, and `SessionId`. On corpora of single changes to a valid
  * value, each pair gives the same verdict and output, and the same wire
  * issues but for `message`, which is the Zod text, behind the issue's path,
  * wherever Zod's was a custom one.
@@ -17,7 +17,7 @@
  *   `iso_datetime` (Zod: any string), so a row holding one that is no date
  *   and time of RFC 3339 in UTC fails. Both spines write
  *   `YYYY-MM-DDTHH:MM:SSZ`.
- * - **the canonical username**: an account's `username` is
+ * - **the canonical username**: an account's or an invite's `username` is
  *   `UsernameCanonical` (Zod: the creation `Username`, which lowercased), so
  *   a username with an uppercase letter fails, where Zod gave its lowercase.
  *   Both spines store every username lowercase, which the
@@ -88,8 +88,11 @@ import {
 	AdminAccountListOutput,
 	AdminSessionListOutput,
 	AuditLogListOutput,
-	AuditLogRoleGrantHistoryOutput
+	AuditLogRoleGrantHistoryOutput,
+	InviteCreateOutput,
+	InviteListOutput
 } from '#lib/auth/admin_action_specs.ts';
+import { InviteJson, InviteWithUsernamesJson } from '#lib/auth/invite_schema.ts';
 import {
 	parse_any,
 	to_wire_issues,
@@ -181,6 +184,21 @@ const ZodAuditLogEventWithUsernamesJson = ZodAuditLogEventJson.extend({
 	username: z.string().nullable(),
 	target_username: z.string().nullable()
 });
+const ZodInviteJson = z.strictObject({
+	id: ZodUuid,
+	email: ZodEmail.nullable(),
+	username: ZodUsername.nullable(),
+	claimed_by: ZodUuid.nullable(),
+	claimed_at: z.string().nullable(),
+	created_at: z.string(),
+	created_by: ZodUuid.nullable()
+});
+const ZodInviteWithUsernamesJson = ZodInviteJson.extend({
+	created_by_username: z.string().nullable(),
+	claimed_by_username: z.string().nullable()
+});
+const ZodInviteCreateOutput = z.strictObject({ ok: z.literal(true), invite: ZodInviteJson });
+const ZodInviteListOutput = z.strictObject({ invites: z.array(ZodInviteWithUsernamesJson) });
 const ZodAuditLogListOutput = z.strictObject({
 	events: z.array(ZodAuditLogEventWithUsernamesJson)
 });
@@ -422,6 +440,35 @@ const WITH_USERNAMES_FIELDS: Fields = {
 	username: STRINGS,
 	target_username: STRINGS
 };
+const INVITE = {
+	id: ID,
+	email: 'bob@example.com',
+	username: 'bob',
+	claimed_by: null,
+	claimed_at: null,
+	created_at: NOW,
+	created_by: ID2
+};
+const INVITE_FIELDS: Fields = {
+	id: UUIDS,
+	email: EMAILS,
+	username: USERNAMES,
+	claimed_by: [...UUIDS, null],
+	claimed_at: TIMESTAMPS,
+	created_at: TIMESTAMPS,
+	created_by: [...UUIDS, null]
+};
+const INVITE_WITH_USERNAMES = {
+	...INVITE,
+	created_by_username: 'alice',
+	claimed_by_username: null
+};
+const INVITE_WITH_USERNAMES_FIELDS: Fields = {
+	...INVITE_FIELDS,
+	created_by_username: STRINGS,
+	claimed_by_username: STRINGS
+};
+
 const ENTRY = {
 	account: ADMIN_ACCOUNT,
 	actor: ACTOR,
@@ -632,7 +679,7 @@ const at_least = (counts: Counts, floors: Partial<Counts>): void => {
 	}
 };
 
-describe('the account, session and audit row schemas agree with the Zod ones', () => {
+describe('the row schemas agree with the Zod ones', () => {
 	test('are fuz_schema schemas', () => {
 		for (const schema of [
 			SessionId,
@@ -653,7 +700,11 @@ describe('the account, session and audit row schemas agree with the Zod ones', (
 			AuditLogEventWithUsernamesJson,
 			RoleGrantHistoryEventJson,
 			AuditLogListOutput,
-			AuditLogRoleGrantHistoryOutput
+			AuditLogRoleGrantHistoryOutput,
+			InviteJson,
+			InviteWithUsernamesJson,
+			InviteCreateOutput,
+			InviteListOutput
 		]) {
 			assert.ok(is_schema(schema));
 		}
@@ -810,6 +861,43 @@ describe('the account, session and audit row schemas agree with the Zod ones', (
 		for (const spec of audit_log_event_specs) {
 			assert.strictEqual(spec.params, AuditLogEventJson, spec.method);
 		}
+	});
+
+	test('the invites, but for the strict timestamp, the canonical username and the email', () => {
+		const invite = run(InviteJson, ZodInviteJson, corpus_of(INVITE, INVITE_FIELDS));
+		at_least(invite, {
+			matched: 20,
+			refused: 35,
+			strict_timestamp: 14,
+			canonical_username: 2,
+			one_length_issue: 2,
+			array_username: 1,
+			email_bound: 1
+		});
+		const with_usernames = run(
+			InviteWithUsernamesJson,
+			ZodInviteWithUsernamesJson,
+			corpus_of(INVITE_WITH_USERNAMES, INVITE_WITH_USERNAMES_FIELDS)
+		);
+		at_least(with_usernames, {
+			matched: 25,
+			refused: 40,
+			strict_timestamp: 14,
+			canonical_username: 2
+		});
+		const create = run(InviteCreateOutput, ZodInviteCreateOutput, [
+			...wrapped((v) => ({ ok: true, invite: v }), corpus_of(INVITE, INVITE_FIELDS)),
+			...corpus_of({ ok: true, invite: INVITE }, { ok: [false, 1], invite: [null, {}] })
+		]);
+		at_least(create, { matched: 20, refused: 40, strict_timestamp: 14, canonical_username: 2 });
+		const list = run(InviteListOutput, ZodInviteListOutput, [
+			...wrapped(
+				(v) => ({ invites: [v] }),
+				corpus_of(INVITE_WITH_USERNAMES, INVITE_WITH_USERNAMES_FIELDS)
+			),
+			...corpus_of({ invites: [] }, { invites: [null, {}, [null]] })
+		]);
+		at_least(list, { matched: 25, refused: 40, strict_timestamp: 14, canonical_username: 2 });
 	});
 
 	test('a username in another case fails, where Zod gave its lowercase', () => {

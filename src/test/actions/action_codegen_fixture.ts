@@ -5,8 +5,8 @@
  * Zod-only codegen emitted, and holds fuz_app's own list, whose
  * `@fuzdev/fuz_schema` inputs and outputs (`account_token_revoke`,
  * `self_service_role_set`, `actor_lookup`, `actor_search`, the
- * role_grant_offer methods, the admin methods' inputs and their outputs but
- * those that hold an invite row, `account_session_revoke`'s input,
+ * role_grant_offer methods, the admin methods' inputs and outputs,
+ * `account_session_revoke`'s input,
  * and the outputs of `account_verify` and `account_session_list`), to that
  * text with those types read by `Infer`.
  *

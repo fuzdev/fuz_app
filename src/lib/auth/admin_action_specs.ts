@@ -3,8 +3,7 @@
  *
  * Import this module for the specs, Input/Output schemas, and the
  * `all_admin_action_specs` registry. Handlers live in `auth/admin_actions.ts`.
- * Every input is a `@fuzdev/fuz_schema` schema, and so is every output but
- * those of `invite_create` and `invite_list`, which are Zod.
+ * Every input and output is a `@fuzdev/fuz_schema` schema.
  *
  * Authorization is declared at the spec level (`auth: {role: ROLE_ADMIN}`)
  * so the RPC dispatcher enforces admin before the handler runs and the
@@ -16,7 +15,6 @@
  * @module
  */
 
-import { z } from 'zod';
 import { meta } from '@fuzdev/fuz_schema/meta.ts';
 import {
 	array,
@@ -253,12 +251,12 @@ export const InviteCreateInput = pipe(
 );
 export type InviteCreateInput = Infer<typeof InviteCreateInput>;
 
-/** Output for `invite_create`. */
-export const InviteCreateOutput = z.strictObject({
-	ok: z.literal(true),
+/** Output for `invite_create`, a `@fuzdev/fuz_schema` schema. */
+export const InviteCreateOutput = object({
+	ok: literal(true),
 	invite: InviteJson
 });
-export type InviteCreateOutput = z.infer<typeof InviteCreateOutput>;
+export type InviteCreateOutput = Infer<typeof InviteCreateOutput>;
 
 /**
  * Input for `invite_list`, a `@fuzdev/fuz_schema` schema. An omitted input
@@ -267,11 +265,14 @@ export type InviteCreateOutput = z.infer<typeof InviteCreateOutput>;
 export const InviteListInput = with_default_fn(object({ acting: ActingActor }), () => ({}));
 export type InviteListInput = Infer<typeof InviteListInput>;
 
-/** Output for `invite_list`. Uses the enriched row including creator/claimer usernames. */
-export const InviteListOutput = z.strictObject({
-	invites: z.array(InviteWithUsernamesJson)
+/**
+ * Output for `invite_list`, a `@fuzdev/fuz_schema` schema. Uses the enriched
+ * row including creator/claimer usernames.
+ */
+export const InviteListOutput = object({
+	invites: array(InviteWithUsernamesJson)
 });
-export type InviteListOutput = z.infer<typeof InviteListOutput>;
+export type InviteListOutput = Infer<typeof InviteListOutput>;
 
 /** Input for `invite_delete`, a `@fuzdev/fuz_schema` schema. */
 export const InviteDeleteInput = object({

@@ -7,8 +7,8 @@
  *
  * fuz_app's own list, whose `account_token_revoke`, `self_service_role_set`,
  * `actor_lookup`, `actor_search` and role_grant_offer methods are
- * `@fuzdev/fuz_schema`, as are the admin methods' inputs and their outputs but
- * those that hold an invite row, `account_session_revoke`'s input,
+ * `@fuzdev/fuz_schema`, as are the admin methods' inputs and outputs,
+ * `account_session_revoke`'s input,
  * and the outputs of `account_verify` and `account_session_list`,
  * generates the same text but for those types, read by `Infer`, and the
  * `Infer` import. The all-Zod list holds Zod stand-ins for those schemas,
@@ -64,7 +64,7 @@ test("fuz_app's own list differs from the fixture only in its fuz_schema methods
 		'actor_search'
 	];
 	// the admin methods, in the registry's order and ahead of the others in the
-	// fixture's; those with an invite row in their output keep it Zod
+	// fixture's
 	const admin_inputs: ReadonlyArray<string> = [
 		'admin_account_list',
 		'admin_session_list',
@@ -81,7 +81,6 @@ test("fuz_app's own list differs from the fixture only in its fuz_schema methods
 		'app_settings_get',
 		'app_settings_update'
 	];
-	const zod_outputs = new Set(['invite_create', 'invite_list']);
 	// the account methods: `account_session_revoke`'s input, and the outputs of
 	// `account_verify` and `account_session_list`, beside their Zod inputs
 	assert.deepStrictEqual(fuz_schema_input_methods, [
@@ -91,7 +90,7 @@ test("fuz_app's own list differs from the fixture only in its fuz_schema methods
 		...fully
 	]);
 	assert.deepStrictEqual(fuz_schema_output_methods, [
-		...admin_inputs.filter((method) => !zod_outputs.has(method)),
+		...admin_inputs,
 		...offers,
 		'account_verify',
 		'account_session_list',

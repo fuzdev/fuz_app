@@ -7,8 +7,15 @@
  * @module
  */
 
-import { z } from 'zod';
-import { Uuid, Username, Email } from '../primitive_schemas.ts';
+import { nullable, object, string, type Infer } from '@fuzdev/fuz_schema/schema.ts';
+
+import {
+	Email,
+	Timestamp,
+	UsernameCanonical,
+	Uuid,
+	type Username
+} from '../primitive_schemas_fuz.ts';
 
 /** Invite row from the database. */
 export interface Invite {
@@ -21,24 +28,31 @@ export interface Invite {
 	created_by: Uuid | null;
 }
 
-/** Zod schema for client-safe invite data. */
-export const InviteJson = z.strictObject({
+/**
+ * Client-safe invite data, a `@fuzdev/fuz_schema` schema. Its `username` is
+ * `UsernameCanonical`, the lowercase every creation path stores.
+ */
+export const InviteJson = object({
 	id: Uuid,
-	email: Email.nullable(),
-	username: Username.nullable(),
-	claimed_by: Uuid.nullable(),
-	claimed_at: z.string().nullable(),
-	created_at: z.string(),
-	created_by: Uuid.nullable()
+	email: nullable(Email),
+	username: nullable(UsernameCanonical),
+	claimed_by: nullable(Uuid),
+	claimed_at: nullable(Timestamp),
+	created_at: Timestamp,
+	created_by: nullable(Uuid)
 });
-export type InviteJson = z.infer<typeof InviteJson>;
+export type InviteJson = Infer<typeof InviteJson>;
 
-/** Zod schema for invite data with resolved creator/claimer usernames. */
-export const InviteWithUsernamesJson = InviteJson.extend({
-	created_by_username: z.string().nullable(),
-	claimed_by_username: z.string().nullable()
+/**
+ * Invite data with resolved creator/claimer usernames, a `@fuzdev/fuz_schema`
+ * schema. The resolved names are plain strings.
+ */
+export const InviteWithUsernamesJson = object({
+	...InviteJson.def,
+	created_by_username: nullable(string),
+	claimed_by_username: nullable(string)
 });
-export type InviteWithUsernamesJson = z.infer<typeof InviteWithUsernamesJson>;
+export type InviteWithUsernamesJson = Infer<typeof InviteWithUsernamesJson>;
 
 /** Input for creating an invite. */
 export interface CreateInviteInput {

@@ -15,13 +15,14 @@
  *   one was any number
  * - the fuz_schema outputs of the listings (`MOVED_OUTPUT_METHODS`): every
  *   timestamp is a `Timestamp`, gaining `format: 'date-time'` and the
- *   `iso_datetime` `pattern` (an `anyOf` with `null` where nullable); the
- *   account's `username`, `{}` at capture (the Zod `Username`'s transform has
- *   no JSON Schema form, an `info` diagnostic on the output), is
- *   `UsernameCanonical`, its bounds and lowercase grammar; a grant's or an
- *   offer's `role` and `scope_kind` take the `RoleName` and `ScopeKindName`
- *   grammar; and the account's `email` gains `maxLength`, as the input's did,
- *   its byte `check` an `info` diagnostic in place of the transform's
+ *   `iso_datetime` `pattern` (an `anyOf` with `null` where nullable); an
+ *   account's or an invite's `username`, `{}` at capture (the Zod
+ *   `Username`'s transform has no JSON Schema form, an `info` diagnostic on
+ *   the output), is `UsernameCanonical`, its bounds and lowercase grammar; a
+ *   grant's or an offer's `role` and `scope_kind` take the `RoleName` and
+ *   `ScopeKindName` grammar; and an account's or an invite's `email` gains
+ *   `maxLength`, as the input's did, its byte `check` an `info` diagnostic in
+ *   place of the transform's
  *
  * @module
  */
@@ -127,7 +128,9 @@ const MOVED_OUTPUT_METHODS: ReadonlyArray<unknown> = [
 	'admin_account_list',
 	'admin_session_list',
 	'audit_log_list',
-	'audit_log_role_grant_history'
+	'audit_log_role_grant_history',
+	'invite_create',
+	'invite_list'
 ];
 
 const USERNAME_NODE = {
@@ -147,6 +150,8 @@ const with_row_nodes = (value: unknown): unknown => {
 		const node = child as Record<string, any>;
 		if (key === 'username' && JSON.stringify(child) === '{}') {
 			out[key] = USERNAME_NODE;
+		} else if (key === 'username' && JSON.stringify(node.anyOf?.[0]) === '{}') {
+			out[key] = { ...node, anyOf: [USERNAME_NODE, ...node.anyOf.slice(1)] };
 		} else if (key === 'role' && JSON.stringify(child) === '{"type":"string"}') {
 			out[key] = NAME_NODE;
 		} else if (key === 'scope_kind' && JSON.stringify(node.type) === '["string","null"]') {
@@ -185,7 +190,9 @@ const check_diagnostic = (
 
 /** Where a moved output's `Email` check sits, by method. */
 const OUTPUT_EMAIL_POINTERS: Record<string, string> = {
-	admin_account_list: '#/properties/accounts/items/properties/account/properties/email/anyOf/0'
+	admin_account_list: '#/properties/accounts/items/properties/account/properties/email/anyOf/0',
+	invite_create: '#/properties/invite/properties/email/anyOf/0',
+	invite_list: '#/properties/invites/items/properties/email/anyOf/0'
 };
 
 // declared: a moved output's transform diagnostic is its `Email` check's, or none
