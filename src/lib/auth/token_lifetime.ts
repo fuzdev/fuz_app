@@ -20,7 +20,17 @@
  * @module
  */
 
-import { z } from 'zod';
+import {
+	integer,
+	literal,
+	max_value,
+	min_value,
+	number,
+	object,
+	pipe,
+	variant,
+	type Infer
+} from '@fuzdev/fuz_schema/schema.ts';
 
 /**
  * Upper bound on `ttl.days` — a sanity cap (100 years), not a policy ceiling.
@@ -30,20 +40,21 @@ import { z } from 'zod';
 export const TOKEN_TTL_DAYS_MAX = 36_500;
 
 /**
- * Caller-provided lifetime for `account_token_create`.
+ * Caller-provided lifetime for `account_token_create`, a `@fuzdev/fuz_schema`
+ * schema.
  *
  * `eternal` mints a never-expiring token (`expires_at` NULL); `ttl` bounds it
  * to `days` from mint time. `eternal` is deliberately the first variant so
  * schema-driven test generators produce it by default.
  */
-export const TokenLifetimeInput = z.discriminatedUnion('kind', [
-	z.strictObject({ kind: z.literal('eternal') }),
-	z.strictObject({
-		kind: z.literal('ttl'),
-		days: z.number().int().min(1).max(TOKEN_TTL_DAYS_MAX)
+export const TokenLifetimeInput = variant('kind', [
+	object({ kind: literal('eternal') }),
+	object({
+		kind: literal('ttl'),
+		days: pipe(number, integer, min_value(1), max_value(TOKEN_TTL_DAYS_MAX))
 	})
 ]);
-export type TokenLifetimeInput = z.infer<typeof TokenLifetimeInput>;
+export type TokenLifetimeInput = Infer<typeof TokenLifetimeInput>;
 
 /**
  * Resolve a lifetime input to the `expires_at` value the mint query stores.

@@ -33,9 +33,9 @@ over the pool so rows persist when request transactions roll back. See root
 
 - `auth/keyring.ts` — `Keyring`, `create_keyring` (validates — the one way to build a `Keyring`), `validate_keyring`.
 - `auth/session_cookie.ts` — `SessionOptions<T>`, `parse_session`, `process_session_cookie` (`'none' | 'clear'` — no refresh action; the 30-day lifetime is an absolute cap signed once at mint), `create_session_config`, `fuz_session_config`, `SESSION_AGE_MAX`.
-- `auth/password.ts` — `Password`, `PasswordProvided`, `PasswordHashDeps`, `PASSWORD_LENGTH_MIN` (12, OWASP), `PASSWORD_LENGTH_MAX` (300).
+- `auth/password.ts` — `Password`, `PasswordProvided` (`@fuzdev/fuz_schema` schemas), `PasswordHashDeps`, `PASSWORD_LENGTH_MIN` (12, OWASP), `PASSWORD_LENGTH_MAX` (300).
 - `auth/password_argon2.ts` — `hash_password`, `verify_password`, `verify_dummy`, `argon2_password_deps`.
-- `auth/api_token.ts` — `API_TOKEN_PREFIX` (`secret_fuz_token_`), `hash_api_token`, `generate_api_token`, and the shape precheck `is_api_token_shaped` (`API_TOKEN_REGEX`: the prefix plus exactly `API_TOKEN_BODY_LENGTH` = 43 base64url chars).
+- `auth/api_token.ts` — `API_TOKEN_PREFIX` (`secret_fuz_token_`), `ApiTokenId` (the public id, `pipe(string, regex(API_TOKEN_ID_REGEX))`, a `@fuzdev/fuz_schema` schema), `hash_api_token`, `generate_api_token`, and the shape precheck `is_api_token_shaped` (`API_TOKEN_REGEX`: the prefix plus exactly `API_TOKEN_BODY_LENGTH` = 43 base64url chars).
 - `auth/daemon_token.ts` — `DaemonToken`, `DAEMON_TOKEN_HEADER` (`X-Daemon-Token`), `generate_daemon_token`, `validate_daemon_token`, `DaemonTokenState`.
 - `auth/bootstrap_account.ts` — `bootstrap_account` (one-shot, `bootstrap_lock`-protected) + `read_bootstrap_token`, the read both it and `check_bootstrap_status` use: the secure read less one trailing LF, a token under `BOOTSTRAP_TOKEN_MIN_BYTES` (32) refused as unreadable with an error log.
 
@@ -56,14 +56,14 @@ Cross-cutting notes that don't live on any single symbol:
 
 Convention — `*_schema.ts` holds a domain's schemas, Zod or `@fuzdev/fuz_schema`; `*_ddl.ts` holds DDL strings.
 
-- `auth/account_schema.ts` — `Account`, `Actor`, `RoleGrant`, `AuthSession`, `ApiToken` + client-safe JSON shapes, `@fuzdev/fuz_schema` schemas but for the Zod `ClientApiTokenJson`: `SessionId` (`brand(Blake3Hash, 'SessionId')`, minted by `hash_session_token`), `SessionAccountJson` and `AdminAccountJson` (their `username` `UsernameCanonical`, so a username in another case fails), `AuthSessionJson`, `RoleGrantSummaryJson` and `PendingOfferSummaryJson` (`role` a `RoleName`, `scope_kind` a `ScopeKindName` or `null`), `ActorSummaryJson`, `AdminAccountEntryJson`; every timestamp a `Timestamp`. Grant predicates over wire fields: `is_role_grant_active` (not revoked, not expired) and `has_global_role(role_grants, role, now?)` (an active grant of the role with `scope_id === null` — the bare-list form of `has_scoped_role(ctx, role, null)`, used client-side by `AuthState`).
+- `auth/account_schema.ts` — `Account`, `Actor`, `RoleGrant`, `AuthSession`, `ApiToken` + client-safe JSON shapes, `@fuzdev/fuz_schema` schemas: `SessionId` (`brand(Blake3Hash, 'SessionId')`, minted by `hash_session_token`), `SessionAccountJson` and `AdminAccountJson` (their `username` `UsernameCanonical`, so a username in another case fails), `AuthSessionJson`, `RoleGrantSummaryJson` and `PendingOfferSummaryJson` (`role` a `RoleName`, `scope_kind` a `ScopeKindName` or `null`), `ActorSummaryJson`, `AdminAccountEntryJson`, `ClientApiTokenJson` (`id` an `ApiTokenId`); every timestamp a `Timestamp`. Grant predicates over wire fields: `is_role_grant_active` (not revoked, not expired) and `has_global_role(role_grants, role, now?)` (an active grant of the role with `scope_id === null` — the bare-list form of `has_scoped_role(ctx, role, null)`, used client-side by `AuthState`).
 - `auth/name_schema.ts` — the name grammar the auth vocabularies share: `NAME_REGEX` (runs of lowercase letters joined by single underscores), `NAME_LENGTH_MAX` (64), `is_valid_name`, `create_name_schema(label)` (the `@fuzdev/fuz_schema` schema, `pipe(bounded_string, message(regex))`: a string too long and off the grammar gets the one length issue, a value that is no string fuz_schema's message; its JSON Schema `maxLength` and `pattern`) and the message builders `format_name_length_message` / `format_name_pattern_message`, so each domain keeps its own label in its messages. `RoleName`, `ScopeKindName`, `GrantPathName`, `CredentialTypeName` and a token's `surface:` name (`is_route_scope_capability`) hold it; `AuditEventTypeName` takes its cap over its own grammar. Twin of the Rust `fuz_auth::is_valid_name` / `NAME_LENGTH_MAX`.
 - `auth/role_schema.ts` — `RoleName` (`create_name_schema('Role')`: lowercase letters and underscores, no leading, trailing or consecutive underscores, at most `NAME_LENGTH_MAX` = 64 characters — the grammar every `role` input and every registered role holds, twin of the Rust `is_valid_name`), its messages (`ROLE_NAME_LENGTH_MESSAGE`, `ROLE_NAME_PATTERN_MESSAGE`), `RoleSpec`, `ROLE_KEEPER`, `ROLE_ADMIN`, `BUILTIN_ROLES` and its type `BuiltinRole`, `is_builtin_role`, `create_role_registry` (returns `{role_specs}`), `builtin_role_specs`, `role_has_grant_path`, `list_roles_with_grant_path`. Pinned against a Zod copy by `role_schema.name.test.ts`.
 - `auth/scope_kind_schema.ts` — `ScopeKindName`, the constants its messages come from (`SCOPE_KIND_NAME_LENGTH_MESSAGE`, `SCOPE_KIND_NAME_PATTERN_MESSAGE`), `create_scope_kind_registry` (open registry, no builtins; returns `{scope_kinds}`). `ScopeKindName` (`create_name_schema('Scope-kind')`, grammar and cap) checks a registered name and the `scope_kind` on `role_grant_offer_create` / `role_grant_assign`, which is copied into the row and its audit metadata; off the grammar is the partial unique indexes' `'GLOBAL'` token. Pinned against a Zod copy by `scope_kind_schema.name.test.ts`.
 - `auth/credential_type_schema.ts` — `CredentialTypeName` (`create_name_schema('Credential-type')`), `CREDENTIAL_TYPE_SESSION` / `_API_TOKEN` / `_DAEMON_TOKEN`, `BUILTIN_CREDENTIAL_TYPES` and its type `BuiltinCredentialType`, `create_credential_type_registry` (returns `{credential_types}`).
 - `auth/grant_path_schema.ts` — `GrantPathName` (`create_name_schema('Grant-path')`), `GRANT_PATH_ADMIN` / `_SELF_SERVICE` / `_SYSTEM` / `_BOOTSTRAP`, `BUILTIN_GRANT_PATHS` and its type `BuiltinGrantPath`, `create_grant_path_registry` (returns `{grant_paths}`).
-- `auth/token_lifetime.ts` — the temporal axis of a minted token: `TokenLifetimeInput` (required union on `account_token_create` — `{kind:'eternal'}` or `{kind:'ttl', days}`), `token_lifetime_to_expires_at`, `TOKEN_TTL_DAYS_MAX`. No default — `expires_at IS NULL` always means "deliberately eternal".
-- `auth/token_scope.ts` — per-credential authority narrowing stored on `api_token.scope`: `TokenScope` / `TokenScopeInput` + constructors, `parse_stored_token_scope` (fail-closed), `token_scope_admits_method` / `_non_rpc`, and the `<section>:<id>` capability vocabulary (`token_scope_method_capability` for the dispatcher's `rpc:<method>`, `is_route_scope_capability` for the `surface:<name>` a `RouteAuth.required_scope` may declare, `token_scope_denied_body`, `TOKEN_SURFACES`). Not an open registry — see ../../../docs/security.md §Token scoping for why the identifier half is deliberately unregistered.
+- `auth/token_lifetime.ts` — the temporal axis of a minted token: `TokenLifetimeInput` (required `variant` on `account_token_create` — `{kind:'eternal'}` or `{kind:'ttl', days}`, a `@fuzdev/fuz_schema` schema), `token_lifetime_to_expires_at`, `TOKEN_TTL_DAYS_MAX`. No default — `expires_at IS NULL` always means "deliberately eternal".
+- `auth/token_scope.ts` — per-credential authority narrowing stored on `api_token.scope`: `TokenScope` / `TokenScopeInput` (`@fuzdev/fuz_schema` `variant`s of strict `object` arms) + constructors, `parse_stored_token_scope` (fail-closed), `token_scope_admits_method` / `_non_rpc`, and the `<section>:<id>` capability vocabulary (`token_scope_method_capability` for the dispatcher's `rpc:<method>`, `is_route_scope_capability` for the `surface:<name>` a `RouteAuth.required_scope` may declare, `token_scope_denied_body`, `TOKEN_SURFACES`). Not an open registry — see ../../../docs/security.md §Token scoping for why the identifier half is deliberately unregistered.
 - `auth/auth_ddl.ts` — `CREATE TABLE` / index / seed strings for the core identity tables.
 - `auth/audit_log_schema.ts` — `@fuzdev/fuz_schema` throughout: `AUDIT_EVENT_TYPES` (the builtin event types) and the type `AuditEventType` (`(typeof AUDIT_EVENT_TYPES)[number]`), `AuditEventTypeName` (`pipe(bounded_string, message(regex))`, `AUDIT_EVENT_TYPE_NAME_REGEX` under `NAME_LENGTH_MAX`, with `AUDIT_EVENT_TYPE_NAME_LENGTH_MESSAGE` / `AUDIT_EVENT_TYPE_NAME_PATTERN_MESSAGE`; a name too long and off the grammar gets the one length issue), `AuditOutcome` (`one_of(['success', 'failure'])`), `audit_metadata_schemas`, `AuditLogEvent`, `AuditLogInput`, `AuditLogConfig` (`metadata_schemas` of either library), `create_audit_log_config` (refuses an `extra_events` key off `AuditEventTypeName` with its first issue's message), and the wire rows `AuditLogEventJson` (`seq` `pipe(number, safe_integer)`, `created_at` a `Timestamp`), `AuditLogEventWithUsernamesJson`, `RoleGrantHistoryEventJson` and `AdminSessionJson`. `audit_log_list`'s input declares `AuditEventTypeName` and `AuditOutcome`. Pinned against Zod copies by `audit_log_schema.names.test.ts`.
 - `auth/audit_log_ddl.ts` — `audit_log` table DDL with `seq BIGSERIAL` for cursor-based gap fill (BIGSERIAL converges with the Rust spine; `create_db` registers a `pg.types` int8 parser so `seq` still reads as a JS number).
@@ -214,7 +214,12 @@ attack surface — and a backend-spawning consumer assembling its surface import
 the shapes without dragging `hono/cookie` / `hono/streaming` (and the optional
 `hono` peer) onto a Rust-only cross-process suite. Shared route-limit constants
 (`DEFAULT_MAX_SESSIONS` / `_TOKENS`) live in `account_route_schema.ts` for the
-same reason (the RPC `account_actions` reads `DEFAULT_MAX_TOKENS`).
+same reason (the RPC `account_actions` reads `DEFAULT_MAX_TOKENS`). The
+account, signup and bootstrap shapes' schemas, error bodies included, are
+`@fuzdev/fuz_schema` schemas: `/login` takes `UsernameProvided` and
+`PasswordProvided`; the output `username` of `/logout`, `/signup` and
+`/bootstrap` is a `UsernameCanonical`; `/password`'s revoke counts are
+non-negative integers.
 
 **`POST /login` timing floor.** Login 401s are floored to
 `DEFAULT_LOGIN_FAIL_FLOOR_MS` (250ms) + uniform jitter (±25ms) via
@@ -919,12 +924,12 @@ Options: `roles?: RoleRegistry` (drives admin-grant-path lookup),
 
 `create_account_actions(deps, options?)` in `auth/account_actions.ts`.
 
-- `account_verify_action_spec` — read; input `z.void()`; output `SessionAccountJson`.
-- `account_session_list_action_spec` — read; input `z.void()`; output `{sessions}`, each with `is_current` (the session the request authenticated with; `false` on every row for a bearer or daemon-token caller).
+- `account_verify_action_spec` — read; input fuz_schema's `void`; output `SessionAccountJson`.
+- `account_session_list_action_spec` — read; input fuz_schema's `void`; output `{sessions}`, each with `is_current` (the session the request authenticated with; `false` on every row for a bearer or daemon-token caller).
 - `account_session_revoke_action_spec` — mutation; input `{session_id}`; output `{ok, revoked}`.
-- `account_session_revoke_all_action_spec` — mutation; input `z.void()`; output `{ok, count}`.
-- `account_token_create_action_spec` — mutation; input `{name?, scope, lifetime}` (both `scope` and `lifetime` required — default-deny at mint on both axes; `name` at most `API_TOKEN_NAME_LENGTH_MAX` = 255 characters, since it is copied into the audit row); output `{ok, token, id, name, expires_at}`. `scope` / `lifetime` declare `invalid_reason` `ERROR_TOKEN_SCOPE_INVALID` / `ERROR_TOKEN_LIFETIME_INVALID`, so every refusal of either carries it — the handler's over-cap scope refusal included.
-- `account_token_list_action_spec` — read; input `z.void()`; output `{tokens}`.
+- `account_session_revoke_all_action_spec` — mutation; input fuz_schema's `void`; output `{ok, count}`, `count` a non-negative integer.
+- `account_token_create_action_spec` — mutation; input `{name?, scope, lifetime}` (both `scope` and `lifetime` required — default-deny at mint on both axes; `name` at most `API_TOKEN_NAME_LENGTH_MAX` = 255 characters, since it is copied into the audit row); output `{ok, token, id, name, expires_at}`, `expires_at` a `Timestamp` or `null`. `scope` / `lifetime` declare `invalid_reason` `ERROR_TOKEN_SCOPE_INVALID` / `ERROR_TOKEN_LIFETIME_INVALID`, so every refusal of either carries it — the handler's over-cap scope refusal included.
+- `account_token_list_action_spec` — read; input fuz_schema's `void`; output `{tokens}`, each a `ClientApiTokenJson`.
 - `account_token_revoke_action_spec` — mutation; input `{token_id}`; output `{ok, revoked}`.
 
 `account_verify` is intentionally on both surfaces: the REST `GET /verify`
@@ -935,10 +940,8 @@ rule-3 surface, refused to every narrowed token, and `GET /status` answers one
 as the anonymous caller.
 
 `session_id` validates as `SessionId`, the fuz_schema `Blake3Hash` branded;
-`token_id` as `ApiTokenId` (`tok_[A-Za-z0-9_-]{12}`). The inputs of
-`account_session_revoke` and `account_token_revoke` and the outputs of
-`account_verify`, `account_session_list` and `account_token_revoke` are
-`@fuzdev/fuz_schema` schemas; the rest are Zod.
+`token_id` as `ApiTokenId` (`tok_[A-Za-z0-9_-]{12}`). Every input and output
+is a `@fuzdev/fuz_schema` schema.
 
 Audit events via `deps.audit.emit` with `ip: ctx.client_ip`:
 `session_revoke`, `session_revoke_all`, `token_create`, `token_revoke`. Every

@@ -24,7 +24,11 @@ import '../assert_dev_env.ts';
  */
 
 import { z } from 'zod';
-import { Uuid, USERNAME_LENGTH_MAX } from '../../primitive_schemas.ts';
+import { array, literal, parse, string, strip_object } from '@fuzdev/fuz_schema/schema.ts';
+
+import { USERNAME_LENGTH_MAX } from '../../primitive_schemas.ts';
+import { Uuid } from '../../primitive_schemas_fuz.ts';
+import { format_issues } from '../../schema_issues.ts';
 
 import { DAEMON_TOKEN_HEADER } from '../../auth/daemon_token.ts';
 import { DEFAULT_TEST_PASSWORD } from '../test_credentials.ts';
@@ -477,19 +481,19 @@ export interface CrossProcessSetupOptions {
 
 /**
  * Structural subset of `SignupOutput` the runner cares about. Looser
- * than the canonical `auth/signup_routes.ts` schema — kept local so this
+ * than the canonical `auth/signup_route_schema.ts` schema — kept local so this
  * module doesn't pull the full auth-domain schema into its dep graph.
  */
-const SignupResponseShape = z.object({
-	ok: z.literal(true),
-	account: z.object({ id: Uuid, username: z.string() }),
-	actor: z.object({ id: Uuid })
+const SignupResponseShape = strip_object({
+	ok: literal(true),
+	account: strip_object({ id: Uuid, username: string }),
+	actor: strip_object({ id: Uuid })
 });
 
 /** Structural subset of `account_token_create`'s output. */
-const TokenCreateResponseShape = z.object({
-	token: z.string(),
-	id: z.string()
+const TokenCreateResponseShape = strip_object({
+	token: string,
+	id: string
 });
 
 /**
@@ -658,7 +662,7 @@ export const capture_migration_tracker = async (
 export const EXPIRED_SESSION_OFFSET_SECONDS = -60;
 
 /** Structural subset of `_testing_mint_session`'s output. */
-const MintSessionResponseShape = z.object({ session_cookie: z.string() });
+const MintSessionResponseShape = strip_object({ session_cookie: string });
 
 /** Output shape of a `_testing_reset` seeded account (keeper or extra). */
 interface SeededAccountResponse {
@@ -669,20 +673,20 @@ interface SeededAccountResponse {
 }
 
 /** Structural subset of `_testing_reset`'s output. */
-const TestingResetResponseShape = z.object({
-	account: z.object({ id: Uuid, username: z.string() }),
-	actor: z.object({ id: Uuid }),
-	api_token: z.string(),
-	session_cookie: z.string(),
-	extra_accounts: z.array(
-		z.object({
-			account: z.object({ id: Uuid, username: z.string() }),
-			actor: z.object({ id: Uuid }),
-			api_token: z.string(),
-			session_cookie: z.string()
+const TestingResetResponseShape = strip_object({
+	account: strip_object({ id: Uuid, username: string }),
+	actor: strip_object({ id: Uuid }),
+	api_token: string,
+	session_cookie: string,
+	extra_accounts: array(
+		strip_object({
+			account: strip_object({ id: Uuid, username: string }),
+			actor: strip_object({ id: Uuid }),
+			api_token: string,
+			session_cookie: string
 		})
 	),
-	extra_actors: z.array(z.object({ id: Uuid, name: z.string() }))
+	extra_actors: array(strip_object({ id: Uuid, name: string }))
 });
 
 /**
@@ -720,23 +724,23 @@ const fire_testing_reset = async (
 		handle.config.name,
 		{ [DAEMON_TOKEN_HEADER]: handle.daemon_token }
 	);
-	const parsed = TestingResetResponseShape.safeParse(raw);
-	if (!parsed.success) {
+	const parsed = parse(TestingResetResponseShape, raw);
+	if (!parsed.ok) {
 		throw new Error(
-			`_testing_reset(${handle.config.name}) returned unexpected result: ${JSON.stringify(raw)} (${
-				parsed.error.message
-			})`
+			`_testing_reset(${handle.config.name}) returned unexpected result: ${JSON.stringify(raw)} (${format_issues(
+				parsed.issues
+			)})`
 		);
 	}
 	return {
 		keeper: {
-			account: parsed.data.account,
-			actor: parsed.data.actor,
-			api_token: parsed.data.api_token,
-			session_cookie: parsed.data.session_cookie
+			account: parsed.value.account,
+			actor: parsed.value.actor,
+			api_token: parsed.value.api_token,
+			session_cookie: parsed.value.session_cookie
 		},
-		extra_accounts: parsed.data.extra_accounts,
-		extra_actors: parsed.data.extra_actors
+		extra_accounts: parsed.value.extra_accounts,
+		extra_actors: parsed.value.extra_actors
 	};
 };
 
@@ -856,12 +860,12 @@ const mint_account = async (
 		);
 	}
 	const signup_raw: unknown = await signup_response.json();
-	const parsed = SignupResponseShape.safeParse(signup_raw);
-	if (!parsed.success) {
+	const parsed = parse(SignupResponseShape, signup_raw);
+	if (!parsed.ok) {
 		throw new Error(
-			`signup(${handle.config.name}) returned unexpected body: ${JSON.stringify(signup_raw)} (${
-				parsed.error.message
-			})`
+			`signup(${handle.config.name}) returned unexpected body: ${JSON.stringify(signup_raw)} (${format_issues(
+				parsed.issues
+			)})`
 		);
 	}
 
@@ -891,8 +895,8 @@ const mint_account = async (
 		{ scope: { kind: 'full' }, lifetime: { kind: 'eternal' } },
 		handle.config.name
 	);
-	const token_parsed = TokenCreateResponseShape.safeParse(token_result);
-	if (!token_parsed.success) {
+	const token_parsed = parse(TokenCreateResponseShape, token_result);
+	if (!token_parsed.ok) {
 		throw new Error(
 			`account_token_create(${handle.config.name}) returned unexpected result: ${JSON.stringify(
 				token_result
@@ -902,10 +906,10 @@ const mint_account = async (
 
 	return {
 		transport,
-		account: parsed.data.account,
-		actor: parsed.data.actor,
+		account: parsed.value.account,
+		actor: parsed.value.actor,
 		session_cookie: extract_cookie_value(transport, handle.config.cookie_name, handle.config.name),
-		api_token: token_parsed.data.token
+		api_token: token_parsed.value.token
 	};
 };
 
@@ -1144,14 +1148,14 @@ export const default_cross_process_setup = (
 					handle.config.name,
 					{ [DAEMON_TOKEN_HEADER]: handle.daemon_token }
 				);
-				const parsed = MintSessionResponseShape.safeParse(raw);
-				if (!parsed.success) {
+				const parsed = parse(MintSessionResponseShape, raw);
+				if (!parsed.ok) {
 					throw new Error(
 						`_testing_mint_session(${handle.config.name}) returned unexpected result: ` +
-							`${JSON.stringify(raw)} (${parsed.error.message})`
+							`${JSON.stringify(raw)} (${format_issues(parsed.issues)})`
 					);
 				}
-				return `${cookie_name}=${parsed.data.session_cookie}`;
+				return `${cookie_name}=${parsed.value.session_cookie}`;
 			}
 		};
 	};

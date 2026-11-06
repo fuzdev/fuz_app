@@ -3,8 +3,9 @@
  * `Email`, `Uuid`, `UuidWithDefault` (`primitive_schemas.ts`), and
  * `ActingActor` (`http/auth_shape.ts`), under the same names, for schemas
  * written in fuz_schema; `UsernameCanonical`, the username an output carries;
- * `Timestamp`, a timestamp on the wire; and `Blake3Hash`, a BLAKE3 hex hash,
- * which has no Zod twin.
+ * `UsernameProvided`, the username login and lookup take; `Timestamp`, a
+ * timestamp on the wire; and `Blake3Hash`, a BLAKE3 hex hash. The last four
+ * have no Zod twin.
  *
  * The output type is shared: the Zod `Uuid` outputs fuz_schema's
  * `Branded<string, 'Uuid'>` too, so a value parsed by either twin goes where
@@ -33,6 +34,7 @@ import {
 	regex,
 	string,
 	to_lower_case,
+	transform,
 	uuid,
 	with_default_fn,
 	type Infer,
@@ -47,6 +49,7 @@ import {
 	is_email_within_length_max,
 	USERNAME_LENGTH_MAX,
 	USERNAME_LENGTH_MIN,
+	USERNAME_PROVIDED_LENGTH_MAX,
 	USERNAME_REGEX,
 	type BoundedStringOptions
 } from './primitive_schemas.ts';
@@ -106,6 +109,30 @@ export const UsernameCanonical = pipe(
 	regex(USERNAME_CANONICAL_REGEX)
 );
 export type UsernameCanonical = Infer<typeof UsernameCanonical>;
+
+/**
+ * Username submitted for login or lookup — minimal validation, for
+ * forward-compatibility if the creation grammar changes: at least one and at
+ * most `USERNAME_PROVIDED_LENGTH_MAX` UTF-16 code units, measured before
+ * trimming, holding a character that isn't whitespace.
+ *
+ * Canonicalized to `.trim().toLowerCase()` at parse time, so login's
+ * per-account rate-limit key and its lookup see one value whatever the casing
+ * or surrounding whitespace, as `Username` canonicalizes what is stored.
+ *
+ * A whitespace-only identifier is refused, not canonicalized to `""` and left
+ * to fall through to a lookup-miss 401: an empty identifier is malformed
+ * input, not a wrong credential, and the Rust spine's `account_login` refuses
+ * it too. JS `\s` is exactly the set `trim` removes (ECMA-262's WhiteSpace and
+ * LineTerminator), so the `regex` ahead of the transform refuses what would
+ * trim to nothing.
+ */
+export const UsernameProvided = pipe(
+	bounded_string({ min: 1, max: USERNAME_PROVIDED_LENGTH_MAX }),
+	message(regex(/\S/), 'Username must not be empty after trimming whitespace'),
+	transform((s) => s.trim().toLowerCase())
+);
+export type UsernameProvided = Infer<typeof UsernameProvided>;
 
 /**
  * Email validation, the twin of the Zod `Email`: `EMAIL_REGEX` and at most

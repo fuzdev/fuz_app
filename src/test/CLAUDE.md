@@ -554,8 +554,8 @@ neither refusal reading the request body — are pinned by
 refusals through the assembled app, and the unread body for the 413); the
 smuggling probe is cross-only), and `identity_parity` (the
 imperative `describe_identity_parity_cross_tests` suite —
-`testing/cross_backend/identity_parity.ts` — pinning the `primitive_schemas`
-twins (`Username`, `UsernameProvided`, `Email`) + login/signup input handling
+`testing/cross_backend/identity_parity.ts` — pinning the identity
+primitives (`Username`, `UsernameProvided`, `Email`) + login/signup input handling
 end-to-end: case-insensitive + whitespace-trim **login canonicalization**,
 a Turkish-`İ` homograph **no-Unicode-fold-collision** negative,
 **username-or-email login** (an account with an email logs in by that email,

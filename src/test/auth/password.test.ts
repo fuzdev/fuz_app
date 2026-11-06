@@ -5,6 +5,7 @@
  */
 
 import { describe, assert, test } from 'vitest';
+import { is } from '@fuzdev/fuz_schema/schema.ts';
 
 import { hash_password, verify_password, verify_dummy } from '#lib/auth/password_argon2.ts';
 import {
@@ -89,49 +90,40 @@ describe('PASSWORD_LENGTH_MAX', () => {
 
 describe('Password schema', () => {
 	test('accepts valid password at minimum length', () => {
-		const result = Password.safeParse('a'.repeat(PASSWORD_LENGTH_MIN));
-		assert.ok(result.success);
+		assert.ok(is(Password, 'a'.repeat(PASSWORD_LENGTH_MIN)));
 	});
 
 	test('accepts valid password at maximum length', () => {
-		const result = Password.safeParse('a'.repeat(PASSWORD_LENGTH_MAX));
-		assert.ok(result.success);
+		assert.ok(is(Password, 'a'.repeat(PASSWORD_LENGTH_MAX)));
 	});
 
 	test('rejects password below minimum length', () => {
-		const result = Password.safeParse('a'.repeat(PASSWORD_LENGTH_MIN - 1));
-		assert.strictEqual(result.success, false);
+		assert.ok(!is(Password, 'a'.repeat(PASSWORD_LENGTH_MIN - 1)));
 	});
 
 	test('rejects password above maximum length', () => {
-		const result = Password.safeParse('a'.repeat(PASSWORD_LENGTH_MAX + 1));
-		assert.strictEqual(result.success, false);
+		assert.ok(!is(Password, 'a'.repeat(PASSWORD_LENGTH_MAX + 1)));
 	});
 
 	test('rejects empty string', () => {
-		const result = Password.safeParse('');
-		assert.strictEqual(result.success, false);
+		assert.ok(!is(Password, ''));
 	});
 });
 
 describe('PasswordProvided schema', () => {
 	test('accepts single character (minimal validation for login)', () => {
-		const result = PasswordProvided.safeParse('a');
-		assert.ok(result.success);
+		assert.ok(is(PasswordProvided, 'a'));
 	});
 
 	test('accepts password at maximum length', () => {
-		const result = PasswordProvided.safeParse('a'.repeat(PASSWORD_LENGTH_MAX));
-		assert.ok(result.success);
+		assert.ok(is(PasswordProvided, 'a'.repeat(PASSWORD_LENGTH_MAX)));
 	});
 
 	test('rejects empty string', () => {
-		const result = PasswordProvided.safeParse('');
-		assert.strictEqual(result.success, false);
+		assert.ok(!is(PasswordProvided, ''));
 	});
 
 	test('rejects password above maximum length', () => {
-		const result = PasswordProvided.safeParse('a'.repeat(PASSWORD_LENGTH_MAX + 1));
-		assert.strictEqual(result.success, false);
+		assert.ok(!is(PasswordProvided, 'a'.repeat(PASSWORD_LENGTH_MAX + 1)));
 	});
 });

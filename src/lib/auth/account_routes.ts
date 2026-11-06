@@ -346,7 +346,7 @@ export const create_account_route_specs = (
 					// parse time — the validated value lands canonical in
 					// `c.var.validated_input`, so the per-account rate-limit key,
 					// DB lookup, and audit metadata see one form. See
-					// `primitive_schemas.ts` for the schema-layer canonicalization.
+					// `primitive_schemas_fuz.ts` for the schema-layer canonicalization.
 					const { username, password: pw } = get_route_input<LoginInput>(c);
 
 					// DB lookup first so we can key the per-account rate limit by a canonical value

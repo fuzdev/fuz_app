@@ -113,6 +113,26 @@ describe('login verify_dummy behavior', () => {
 		assert.strictEqual(tracking.verify_password_count, 0, 'verify_password should not be called');
 	});
 
+	test('a whitespace-only username is a 400 with the trim message, verifying nothing', async () => {
+		for (const username of [' ', '﻿', '  ', '\t\n']) {
+			const res = await test_app.app.request('/api/account/login', {
+				method: 'POST',
+				headers: login_headers,
+				body: JSON.stringify({ username, password: 'any-password-1234' })
+			});
+			assert.strictEqual(res.status, 400, JSON.stringify(username));
+			const body = await res.json();
+			assert.strictEqual(body.error, 'invalid_request_body');
+			// the issue's `message` is its `format_issue` line, the path ahead of the text
+			assert.deepStrictEqual(
+				body.issues.map((i: { path: Array<string>; message: string }) => [i.path, i.message]),
+				[[['username'], 'username: Username must not be empty after trimming whitespace']]
+			);
+		}
+		assert.strictEqual(tracking.verify_dummy_count, 0);
+		assert.strictEqual(tracking.verify_password_count, 0);
+	});
+
 	test('existing username with wrong password calls verify_password, not verify_dummy', async () => {
 		const res = await test_app.app.request('/api/account/login', {
 			method: 'POST',

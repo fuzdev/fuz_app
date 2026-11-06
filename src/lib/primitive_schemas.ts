@@ -1,7 +1,7 @@
 /**
  * Reusable validator-schema primitives — `bounded_string`, `Username`,
- * `UsernameProvided`, `Email`, the branded `Uuid` and `Datetime` with their
- * factories, and the hash schema `FactHashSchema`. Lives at
+ * `Email`, the branded `Uuid` and `Datetime` with their factories, and the
+ * hash schema `FactHashSchema`. Lives at
  * the top level (not inside `auth/` or `http/`) because these shapes don't
  * depend on or imply any domain — accounts hold a username and email, but
  * invites, password resets, cells, and other surfaces all reach for the same
@@ -138,26 +138,6 @@ export const Username = bounded_string({ min: USERNAME_LENGTH_MIN, max: USERNAME
 	.regex(USERNAME_REGEX)
 	.transform((s) => s.toLowerCase());
 export type Username = z.infer<typeof Username>;
-
-/**
- * Username submitted for login or lookup — minimal validation for forward-compatibility if format rules change.
- *
- * Canonicalized via `.trim().toLowerCase()` at parse time so login's
- * per-account rate-limit key and DB lookup see a uniform value
- * regardless of casing or surrounding whitespace. Mirrors the storage
- * canonicalization on `Username` so submission and storage agree.
- *
- * The trailing `.refine` rejects a whitespace-only identifier: `.min(1)`
- * runs on the raw string (so `"   "` passes it), and without the post-trim
- * check the value would canonicalize to `""` and fall through to a
- * lookup-miss 401 instead of a 400 — an empty identifier is malformed
- * input, not a wrong credential. Keeps the Rust spine's
- * `account_login` (which rejects empty-after-trim) in parity.
- */
-export const UsernameProvided = bounded_string({ min: 1, max: USERNAME_PROVIDED_LENGTH_MAX })
-	.transform((s) => s.trim().toLowerCase())
-	.refine((s) => s.length > 0, { message: 'Username must not be empty after trimming whitespace' });
-export type UsernameProvided = z.infer<typeof UsernameProvided>;
 
 /**
  * Maximum email length in **bytes** — RFC 5321 §4.5.3.1.3 path-length limit

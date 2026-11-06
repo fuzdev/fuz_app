@@ -130,7 +130,7 @@ already restricts the channel.
 
 Argon2id with OWASP-recommended parameters. Two password schemas: `Password`
 enforces `PASSWORD_LENGTH_MIN` to `PASSWORD_LENGTH_MAX` (300) on creation paths
-(signup, bootstrap, password change). `PasswordProvided` uses `min(1)` on
+(signup, bootstrap, password change). `PasswordProvided` takes a minimum of 1 on
 login and current-password verification for forward-compatibility if length
 requirements change.
 

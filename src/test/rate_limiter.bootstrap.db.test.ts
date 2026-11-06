@@ -11,6 +11,7 @@
 
 import { describe, test, assert, vi, afterEach, beforeAll } from 'vitest';
 import { Hono } from 'hono';
+import { parse_or_throw } from '@fuzdev/fuz_schema/schema.ts';
 
 import { RateLimiter } from '#lib/rate_limiter.ts';
 import { create_bootstrap_route_specs } from '#lib/auth/bootstrap_routes.ts';
@@ -260,9 +261,9 @@ describe('bootstrap handler rate limiting', () => {
 		const res = await bootstrap_request(app);
 		assert.strictEqual(res.status, 200);
 
-		// `parse` validates the `Uuid` ids + rejects extras (`strictObject`);
+		// `parse_or_throw` validates the `Uuid` ids + rejects extras (`object`);
 		// `deepStrictEqual` pins the remaining shape and value.
-		const body = BootstrapOutput.parse(await res.json());
+		const body = parse_or_throw(BootstrapOutput, await res.json());
 		assert.deepStrictEqual(body, {
 			ok: true,
 			account: { id: body.account.id, username: 'admin' },
@@ -461,7 +462,7 @@ describe('bootstrap success audit', () => {
 
 		const res = await bootstrap_request(app);
 		assert.strictEqual(res.status, 200);
-		const body = BootstrapOutput.parse(await res.json());
+		const body = parse_or_throw(BootstrapOutput, await res.json());
 		assert.strictEqual(body.ok, true);
 		assert.strictEqual(body.account.username, 'admin');
 

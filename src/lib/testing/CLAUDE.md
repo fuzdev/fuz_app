@@ -2680,7 +2680,7 @@ check.
 ### Identity-primitive parity — `cross_backend/identity_parity.ts`
 
 `describe_identity_parity_cross_tests({setup_test, login_path?, signup_path?, bootstrap_path?, password_path?})` —
-the imperative suite pinning the `primitive_schemas` twins (`Username`,
+the imperative suite pinning the identity primitives (`Username`,
 `UsernameProvided`, `Email`) + login/signup input handling end-to-end over real
 HTTP (flat REST `/login` + `/signup`, so imperative, not a `conformance_table`
 row). The facets, each a TS↔Rust reimplementation pair that the spec-derived
@@ -2699,7 +2699,7 @@ round-trip / conformance suites never vary:
 - **Login input validation** — malformed login input → 400 `invalid_request_body`
   on every spine: whitespace-only username (empty after trim), over-long username
   (> 255), empty password, unknown body key (strict object). TS runs the full
-  `LoginInput` Zod schema; the Rust spine enforces the same shape in
+  `LoginInput` schema; the Rust spine enforces the same shape in
   `account_login` (closed a cluster where three of these fell through to a
   lookup-miss 401 on Rust and a whitespace-only identifier 401'd on TS). Asserted
   by error reason, not just status.

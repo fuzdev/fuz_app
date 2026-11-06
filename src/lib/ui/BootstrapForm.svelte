@@ -16,8 +16,10 @@
 	import { resolve } from '$app/paths';
 	import PendingButton from '@fuzdev/fuz_ui/PendingButton.svelte';
 	import { autofocus } from '@fuzdev/fuz_ui/autofocus.svelte.ts';
+	import { is } from '@fuzdev/fuz_schema/schema.ts';
 
-	import { Username, USERNAME_LENGTH_MAX, USERNAME_LENGTH_MIN } from '../primitive_schemas.ts';
+	import { USERNAME_LENGTH_MAX, USERNAME_LENGTH_MIN } from '../primitive_schemas.ts';
+	import { Username } from '../primitive_schemas_fuz.ts';
 	import { PASSWORD_LENGTH_MIN } from '../auth/password.ts';
 	import { auth_state_context } from './auth_state.svelte.ts';
 	import { FormState } from './form_state.svelte.ts';
@@ -40,7 +42,7 @@
 	let password = $state.raw('');
 	let password_confirm = $state.raw('');
 
-	const username_valid = $derived(Username.safeParse(username).success);
+	const username_valid = $derived(is(Username, username));
 	const passwords_match = $derived(password === password_confirm);
 	const can_submit = $derived(
 		token.trim() &&

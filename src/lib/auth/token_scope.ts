@@ -29,7 +29,17 @@
  * @module
  */
 
-import { z } from 'zod';
+import {
+	array,
+	boolean,
+	literal,
+	object,
+	optional,
+	parse,
+	string,
+	variant,
+	type Infer
+} from '@fuzdev/fuz_schema/schema.ts';
 
 import { is_valid_name } from './name_schema.ts';
 
@@ -43,7 +53,7 @@ export const TOKEN_SCOPE_VERSION = 1;
 export const MAX_TOKEN_SCOPE_BYTES = 4 * 1024;
 
 /**
- * The stored `api_token.scope` document.
+ * The stored `api_token.scope` document, a `@fuzdev/fuz_schema` schema.
  *
  * `grandfathered` is a fact about the *row* — the `api_token_scope` migration
  * wrote it; no minter chose it — that only the token list cares about. The
@@ -55,35 +65,35 @@ export const MAX_TOKEN_SCOPE_BYTES = 4 * 1024;
  * The discriminated union also refuses the contradiction
  * `{kind: 'full', methods: [...]}`.
  */
-export const TokenScope = z.discriminatedUnion('kind', [
-	z.strictObject({
-		version: z.literal(TOKEN_SCOPE_VERSION),
-		kind: z.literal('full'),
-		grandfathered: z.boolean().optional()
+export const TokenScope = variant('kind', [
+	object({
+		version: literal(TOKEN_SCOPE_VERSION),
+		kind: literal('full'),
+		grandfathered: optional(boolean)
 	}),
-	z.strictObject({
-		version: z.literal(TOKEN_SCOPE_VERSION),
-		kind: z.literal('methods'),
-		methods: z.array(z.string()),
-		grandfathered: z.boolean().optional()
+	object({
+		version: literal(TOKEN_SCOPE_VERSION),
+		kind: literal('methods'),
+		methods: array(string),
+		grandfathered: optional(boolean)
 	})
 ]);
-export type TokenScope = z.infer<typeof TokenScope>;
+export type TokenScope = Infer<typeof TokenScope>;
 
 /**
  * The `scope` input accepted by `account_token_create` — the stored shape minus
- * the row-owned fields.
+ * the row-owned fields, a `@fuzdev/fuz_schema` schema.
  *
  * A minter cannot set `version` or `grandfathered`: the first is stamped by
  * `token_scope_full` / `token_scope_methods`, and the second is the migration's
  * mark for tokens that predate scoping. Letting a caller forge `grandfathered`
  * would turn a tracked debt into a laundered one.
  */
-export const TokenScopeInput = z.discriminatedUnion('kind', [
-	z.strictObject({ kind: z.literal('full') }),
-	z.strictObject({ kind: z.literal('methods'), methods: z.array(z.string()) })
+export const TokenScopeInput = variant('kind', [
+	object({ kind: literal('full') }),
+	object({ kind: literal('methods'), methods: array(string) })
 ]);
-export type TokenScopeInput = z.infer<typeof TokenScopeInput>;
+export type TokenScopeInput = Infer<typeof TokenScopeInput>;
 
 /** A deliberately-minted full-authority scope. */
 export const token_scope_full = (): TokenScope => ({
@@ -265,8 +275,8 @@ export const parse_token_scope = (raw: string): TokenScope | null => {
 	} catch {
 		return null;
 	}
-	const parsed = TokenScope.safeParse(value);
-	return parsed.success ? parsed.data : null;
+	const parsed = parse(TokenScope, value);
+	return parsed.ok ? parsed.value : null;
 };
 
 /**

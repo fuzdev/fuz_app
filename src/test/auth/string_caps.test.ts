@@ -7,16 +7,19 @@
  * The per-site complement to `primitive_schemas.bounded_string.test.ts`. These
  * cases only bite on a Zod that counts code points — there a site gone back to
  * a bare `.max()` fails them; on a code unit Zod they pass either way. A
- * `@fuzdev/fuz_schema` site (`actor_search`'s `query`) counts code units
- * itself, so its cases bite on any install.
+ * `@fuzdev/fuz_schema` site (`actor_search`'s `query`, the passwords, the
+ * login username, the token name) counts code units itself, so its cases bite
+ * on any install.
  *
  * @module
  */
 
 import { describe, test, assert } from 'vitest';
 import { get_schema_entries } from '@fuzdev/fuz_schema/introspect.ts';
+import { is } from '@fuzdev/fuz_schema/schema.ts';
 
-import { UsernameProvided, USERNAME_PROVIDED_LENGTH_MAX } from '#lib/primitive_schemas.ts';
+import { USERNAME_PROVIDED_LENGTH_MAX } from '#lib/primitive_schemas.ts';
+import { UsernameProvided } from '#lib/primitive_schemas_fuz.ts';
 import {
 	Password,
 	PasswordProvided,
@@ -63,7 +66,7 @@ const capped: Array<[name: string, schema: ValidationSchema, max: number]> = [
 	['CellPath', CellPath, CELL_PATH_LENGTH_MAX],
 	['cell_create kind', CellCreateInput.shape.kind, CELL_KIND_LENGTH_MAX],
 	['cell_list kind', CellListInput.unwrap().shape.kind, CELL_KIND_LENGTH_MAX],
-	['token_create name', TokenCreateInput.shape.name, API_TOKEN_NAME_LENGTH_MAX],
+	['token_create name', TokenCreateInput.def.name, API_TOKEN_NAME_LENGTH_MAX],
 	[
 		'role_grant_offer_create message',
 		get_schema_entries(RoleGrantOfferCreateInput)!.message!,
@@ -116,10 +119,10 @@ describe('Password floor counts UTF-16 code units', () => {
 		const at_min = astral_of(PASSWORD_LENGTH_MIN);
 		assert.strictEqual(at_min.length, PASSWORD_LENGTH_MIN);
 		assert.ok(Array.from(at_min).length < PASSWORD_LENGTH_MIN);
-		assert.ok(Password.safeParse(at_min).success);
+		assert.ok(is(Password, at_min));
 	});
 
 	test('one code unit under the floor is refused', () => {
-		assert.ok(!Password.safeParse(astral_of(PASSWORD_LENGTH_MIN - 1)).success);
+		assert.ok(!is(Password, astral_of(PASSWORD_LENGTH_MIN - 1)));
 	});
 });

@@ -36,10 +36,19 @@ import {
 	Email,
 	FactHashSchema,
 	Username,
-	UsernameProvided,
 	USERNAME_LENGTH_MAX,
+	USERNAME_PROVIDED_LENGTH_MAX,
 	Uuid
 } from '#lib/primitive_schemas.ts';
+
+/**
+ * A Zod transform-then-refine string, the shape of the login username before
+ * it moved to fuz_schema: bounded, trimmed and lowercased, then refused when
+ * the trim left nothing.
+ */
+const ZodTrimmedLogin = bounded_string({ min: 1, max: USERNAME_PROVIDED_LENGTH_MAX })
+	.transform((s) => s.trim().toLowerCase())
+	.refine((s) => s.length > 0, { message: 'empty after trimming' });
 
 const labels_of = (cases: Array<InputTestCase>, field: string): Array<string> =>
 	cases.filter((c) => c.field === field).map((c) => c.label);
@@ -125,7 +134,7 @@ describe('to_field_json_schema — fuz_schema', () => {
 });
 
 describe('generate_input_test_cases — transform and pipe fields', () => {
-	const Input = z.strictObject({ username: Username, login: UsernameProvided });
+	const Input = z.strictObject({ username: Username, login: ZodTrimmedLogin });
 	// generated per test, so a generator failure fails each test, not collection
 	const generate = () => generate_input_test_cases(Input);
 
@@ -227,7 +236,7 @@ describe('generate_input_test_cases — no case is accidentally valid', () => {
 	const fixtures: Record<string, z.ZodType> = {
 		username: Username,
 		username_nullish: Username.nullish(),
-		username_provided: UsernameProvided,
+		username_provided: ZodTrimmedLogin,
 		email: Email,
 		email_nullish: Email.nullish(),
 		uuid: Uuid,

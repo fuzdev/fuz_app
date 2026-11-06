@@ -9,7 +9,7 @@
 
 import { describe, test, assert } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { is_schema, parse } from '@fuzdev/fuz_schema/schema.ts';
+import { is, is_schema, parse } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	API_TOKEN_NAME_LENGTH_MAX,
@@ -25,22 +25,19 @@ const base = { scope: { kind: 'full' }, lifetime: { kind: 'eternal' } } as const
 
 describe('TokenCreateInput name', () => {
 	test('defaults when omitted', () => {
-		const parsed = TokenCreateInput.safeParse(base);
-		assert.ok(parsed.success);
-		assert.strictEqual(parsed.data.name, 'CLI token');
+		const parsed = parse(TokenCreateInput, base);
+		assert.ok(parsed.ok);
+		assert.strictEqual(parsed.value.name, 'CLI token');
 	});
 
 	test('admits a name at the cap and refuses one past it', () => {
-		const at_cap = TokenCreateInput.safeParse({
+		const at_cap = parse(TokenCreateInput, {
 			...base,
 			name: 'a'.repeat(API_TOKEN_NAME_LENGTH_MAX)
 		});
-		assert.ok(at_cap.success);
-		assert.strictEqual(at_cap.data.name.length, API_TOKEN_NAME_LENGTH_MAX);
-		assert.ok(
-			!TokenCreateInput.safeParse({ ...base, name: 'a'.repeat(API_TOKEN_NAME_LENGTH_MAX + 1) })
-				.success
-		);
+		assert.ok(at_cap.ok);
+		assert.strictEqual(at_cap.value.name.length, API_TOKEN_NAME_LENGTH_MAX);
+		assert.ok(!is(TokenCreateInput, { ...base, name: 'a'.repeat(API_TOKEN_NAME_LENGTH_MAX + 1) }));
 	});
 
 	test('counts UTF-16 code units, so an astral character costs two', () => {
@@ -48,13 +45,10 @@ describe('TokenCreateInput name', () => {
 		// the cap is odd: the largest whole number of astral characters, plus one unit
 		const at_cap = astral.repeat((API_TOKEN_NAME_LENGTH_MAX - 1) / 2) + 'a';
 		assert.strictEqual(at_cap.length, API_TOKEN_NAME_LENGTH_MAX);
-		assert.ok(TokenCreateInput.safeParse({ ...base, name: at_cap }).success);
-		assert.ok(!TokenCreateInput.safeParse({ ...base, name: at_cap + 'a' }).success);
+		assert.ok(is(TokenCreateInput, { ...base, name: at_cap }));
+		assert.ok(!is(TokenCreateInput, { ...base, name: at_cap + 'a' }));
 		assert.ok(
-			!TokenCreateInput.safeParse({
-				...base,
-				name: astral.repeat((API_TOKEN_NAME_LENGTH_MAX + 1) / 2)
-			}).success
+			!is(TokenCreateInput, { ...base, name: astral.repeat((API_TOKEN_NAME_LENGTH_MAX + 1) / 2) })
 		);
 	});
 });

@@ -1,0 +1,953 @@
+{
+	"routes": [
+		{
+			"method": "GET",
+			"path": "/verify",
+			"auth": {
+				"account": "required",
+				"actor": "none",
+				"required_scope": "surface:account_verify"
+			},
+			"applicable_middleware": [],
+			"description": "Session-validity probe for nginx auth_request (empty body; 200, 401, or 403 for a narrowed token)",
+			"is_mutation": false,
+			"transaction": false,
+			"raw_body": false,
+			"rate_limit_key": null,
+			"params_schema": null,
+			"query_schema": null,
+			"input_schema": null,
+			"output_schema": null,
+			"error_schemas": {
+				"401": {
+					"type": "object",
+					"properties": {
+						"error": {
+							"type": "string"
+						}
+					},
+					"required": [
+						"error"
+					],
+					"additionalProperties": {}
+				},
+				"403": {
+					"type": "object",
+					"properties": {
+						"error": {
+							"type": "string",
+							"const": "token_scope_required"
+						},
+						"required_scope": {
+							"type": "string"
+						}
+					},
+					"required": [
+						"error",
+						"required_scope"
+					],
+					"additionalProperties": {}
+				}
+			}
+		},
+		{
+			"method": "POST",
+			"path": "/login",
+			"auth": {
+				"account": "none",
+				"actor": "none"
+			},
+			"applicable_middleware": [],
+			"description": "Exchange credentials for session",
+			"is_mutation": true,
+			"transaction": false,
+			"raw_body": false,
+			"rate_limit_key": "both",
+			"params_schema": null,
+			"query_schema": null,
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"username": {
+						"type": "string",
+						"minLength": 1,
+						"maxLength": 255
+					},
+					"password": {
+						"type": "string",
+						"minLength": 1,
+						"maxLength": 300,
+						"sensitivity": "secret"
+					}
+				},
+				"required": [
+					"username",
+					"password"
+				],
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"ok": {
+						"type": "boolean",
+						"const": true
+					}
+				},
+				"required": [
+					"ok"
+				],
+				"additionalProperties": false
+			},
+			"error_schemas": {
+				"400": {
+					"type": "object",
+					"properties": {
+						"error": {
+							"type": "string",
+							"enum": [
+								"invalid_json_body",
+								"invalid_request_body"
+							]
+						}
+					},
+					"required": [
+						"error"
+					],
+					"additionalProperties": {}
+				},
+				"401": {
+					"type": "object",
+					"properties": {
+						"error": {
+							"type": "string",
+							"const": "invalid_credentials"
+						}
+					},
+					"required": [
+						"error"
+					],
+					"additionalProperties": {}
+				},
+				"415": {
+					"type": "object",
+					"properties": {
+						"error": {
+							"type": "string",
+							"const": "unsupported_content_type"
+						}
+					},
+					"required": [
+						"error"
+					],
+					"additionalProperties": {}
+				},
+				"429": {
+					"type": "object",
+					"properties": {
+						"error": {
+							"type": "string",
+							"const": "rate_limit_exceeded"
+						},
+						"retry_after": {
+							"type": "number"
+						}
+					},
+					"required": [
+						"error",
+						"retry_after"
+					],
+					"additionalProperties": {}
+				}
+			}
+		},
+		{
+			"method": "POST",
+			"path": "/logout",
+			"auth": {
+				"account": "required",
+				"actor": "none",
+				"credential_types": [
+					"session"
+				]
+			},
+			"applicable_middleware": [],
+			"description": "Revoke current session and clear cookie",
+			"is_mutation": true,
+			"transaction": true,
+			"raw_body": false,
+			"rate_limit_key": null,
+			"params_schema": null,
+			"query_schema": null,
+			"input_schema": null,
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"ok": {
+						"type": "boolean",
+						"const": true
+					},
+					"username": {
+						"type": "string"
+					}
+				},
+				"required": [
+					"ok",
+					"username"
+				],
+				"additionalProperties": false
+			},
+			"error_schemas": {
+				"401": {
+					"type": "object",
+					"properties": {
+						"error": {
+							"type": "string"
+						}
+					},
+					"required": [
+						"error"
+					],
+					"additionalProperties": {}
+				},
+				"403": {
+					"type": "object",
+					"properties": {
+						"error": {
+							"type": "string",
+							"const": "credential_type_required"
+						},
+						"required_credential_types": {
+							"readOnly": true,
+							"type": "array",
+							"items": {
+								"type": "string"
+							}
+						}
+					},
+					"required": [
+						"error",
+						"required_credential_types"
+					],
+					"additionalProperties": {}
+				},
+				"415": {
+					"type": "object",
+					"properties": {
+						"error": {
+							"type": "string",
+							"const": "unsupported_content_type"
+						}
+					},
+					"required": [
+						"error"
+					],
+					"additionalProperties": {}
+				}
+			}
+		},
+		{
+			"method": "POST",
+			"path": "/password",
+			"auth": {
+				"account": "required",
+				"actor": "none",
+				"credential_types": [
+					"session"
+				]
+			},
+			"applicable_middleware": [],
+			"description": "Change password (revokes all sessions and API tokens)",
+			"is_mutation": true,
+			"transaction": false,
+			"raw_body": false,
+			"rate_limit_key": "both",
+			"params_schema": null,
+			"query_schema": null,
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"current_password": {
+						"type": "string",
+						"minLength": 1,
+						"maxLength": 300,
+						"sensitivity": "secret"
+					},
+					"new_password": {
+						"type": "string",
+						"minLength": 12,
+						"maxLength": 300,
+						"sensitivity": "secret"
+					}
+				},
+				"required": [
+					"current_password",
+					"new_password"
+				],
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"ok": {
+						"type": "boolean",
+						"const": true
+					},
+					"sessions_revoked": {
+						"type": "number"
+					},
+					"tokens_revoked": {
+						"type": "number"
+					}
+				},
+				"required": [
+					"ok",
+					"sessions_revoked",
+					"tokens_revoked"
+				],
+				"additionalProperties": false
+			},
+			"error_schemas": {
+				"400": {
+					"type": "object",
+					"properties": {
+						"error": {
+							"type": "string",
+							"enum": [
+								"invalid_json_body",
+								"invalid_request_body"
+							]
+						}
+					},
+					"required": [
+						"error"
+					],
+					"additionalProperties": {}
+				},
+				"401": {
+					"type": "object",
+					"properties": {
+						"error": {
+							"type": "string"
+						}
+					},
+					"required": [
+						"error"
+					],
+					"additionalProperties": {}
+				},
+				"403": {
+					"type": "object",
+					"properties": {
+						"error": {
+							"type": "string",
+							"const": "credential_type_required"
+						},
+						"required_credential_types": {
+							"readOnly": true,
+							"type": "array",
+							"items": {
+								"type": "string"
+							}
+						}
+					},
+					"required": [
+						"error",
+						"required_credential_types"
+					],
+					"additionalProperties": {}
+				},
+				"415": {
+					"type": "object",
+					"properties": {
+						"error": {
+							"type": "string",
+							"const": "unsupported_content_type"
+						}
+					},
+					"required": [
+						"error"
+					],
+					"additionalProperties": {}
+				},
+				"429": {
+					"type": "object",
+					"properties": {
+						"error": {
+							"type": "string",
+							"const": "rate_limit_exceeded"
+						},
+						"retry_after": {
+							"type": "number"
+						}
+					},
+					"required": [
+						"error",
+						"retry_after"
+					],
+					"additionalProperties": {}
+				}
+			}
+		},
+		{
+			"method": "GET",
+			"path": "/status",
+			"auth": {
+				"account": "none",
+				"actor": "none"
+			},
+			"applicable_middleware": [],
+			"description": "Current account info (unauthenticated: 401 with bootstrap status)",
+			"is_mutation": false,
+			"transaction": false,
+			"raw_body": false,
+			"rate_limit_key": null,
+			"params_schema": null,
+			"query_schema": null,
+			"input_schema": null,
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"account": {
+						"type": "object",
+						"properties": {
+							"id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+							},
+							"username": {
+								"type": "string",
+								"minLength": 3,
+								"maxLength": 39,
+								"pattern": "^[a-z][0-9a-z_-]*[0-9a-z]$"
+							},
+							"email": {
+								"anyOf": [
+									{
+										"type": "string",
+										"maxLength": 254,
+										"pattern": "^[^\\s\\u0085@]+@[^\\s\\u0085@.]+\\.[^\\s\\u0085@]*[^\\s\\u0085@.]$"
+									},
+									{
+										"type": "null"
+									}
+								]
+							},
+							"email_verified": {
+								"type": "boolean"
+							},
+							"created_at": {
+								"type": "string",
+								"format": "date-time",
+								"pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+							}
+						},
+						"required": [
+							"id",
+							"username",
+							"email",
+							"email_verified",
+							"created_at"
+						],
+						"additionalProperties": false
+					},
+					"actor": {
+						"anyOf": [
+							{
+								"type": "object",
+								"properties": {
+									"id": {
+										"type": "string",
+										"format": "uuid",
+										"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+									},
+									"name": {
+										"type": "string"
+									}
+								},
+								"required": [
+									"id",
+									"name"
+								],
+								"additionalProperties": false
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"role_grants": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"id": {
+									"type": "string",
+									"format": "uuid",
+									"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+								},
+								"role": {
+									"type": "string",
+									"maxLength": 64,
+									"pattern": "^[a-z]+(?:_[a-z]+)*$"
+								},
+								"scope_kind": {
+									"anyOf": [
+										{
+											"type": "string",
+											"maxLength": 64,
+											"pattern": "^[a-z]+(?:_[a-z]+)*$"
+										},
+										{
+											"type": "null"
+										}
+									]
+								},
+								"scope_id": {
+									"anyOf": [
+										{
+											"type": "string",
+											"format": "uuid",
+											"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+										},
+										{
+											"type": "null"
+										}
+									]
+								},
+								"created_at": {
+									"type": "string",
+									"format": "date-time",
+									"pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+								},
+								"expires_at": {
+									"anyOf": [
+										{
+											"type": "string",
+											"format": "date-time",
+											"pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+										},
+										{
+											"type": "null"
+										}
+									]
+								},
+								"granted_by": {
+									"anyOf": [
+										{
+											"type": "string",
+											"format": "uuid",
+											"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+										},
+										{
+											"type": "null"
+										}
+									]
+								}
+							},
+							"required": [
+								"id",
+								"role",
+								"scope_kind",
+								"scope_id",
+								"created_at",
+								"expires_at",
+								"granted_by"
+							],
+							"additionalProperties": false
+						}
+					}
+				},
+				"required": [
+					"account",
+					"actor",
+					"role_grants"
+				],
+				"additionalProperties": false
+			},
+			"error_schemas": {
+				"401": {
+					"type": "object",
+					"properties": {
+						"error": {
+							"type": "string",
+							"const": "authentication_required"
+						},
+						"bootstrap_available": {
+							"type": "boolean"
+						}
+					},
+					"required": [
+						"error"
+					],
+					"additionalProperties": {}
+				}
+			}
+		},
+		{
+			"method": "POST",
+			"path": "/signup",
+			"auth": {
+				"account": "none",
+				"actor": "none"
+			},
+			"applicable_middleware": [],
+			"description": "Create account (invite-gated or open signup)",
+			"is_mutation": true,
+			"transaction": false,
+			"raw_body": false,
+			"rate_limit_key": "both",
+			"params_schema": null,
+			"query_schema": null,
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"username": {
+						"type": "string",
+						"minLength": 3,
+						"maxLength": 39,
+						"pattern": "^[a-zA-Z][0-9a-zA-Z_-]*[0-9a-zA-Z]$"
+					},
+					"password": {
+						"type": "string",
+						"minLength": 12,
+						"maxLength": 300,
+						"sensitivity": "secret"
+					},
+					"email": {
+						"anyOf": [
+							{
+								"type": "string",
+								"pattern": "^[^\\s\\u0085@]+@[^\\s\\u0085@.]+\\.[^\\s\\u0085@]*[^\\s\\u0085@.]$"
+							},
+							{
+								"type": "null"
+							}
+						]
+					}
+				},
+				"required": [
+					"username",
+					"password"
+				],
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"ok": {
+						"type": "boolean",
+						"const": true
+					},
+					"account": {
+						"type": "object",
+						"properties": {
+							"id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+							},
+							"username": {}
+						},
+						"required": [
+							"id",
+							"username"
+						],
+						"additionalProperties": false
+					},
+					"actor": {
+						"type": "object",
+						"properties": {
+							"id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+							}
+						},
+						"required": [
+							"id"
+						],
+						"additionalProperties": false
+					}
+				},
+				"required": [
+					"ok",
+					"account",
+					"actor"
+				],
+				"additionalProperties": false
+			},
+			"error_schemas": {
+				"400": {
+					"type": "object",
+					"properties": {
+						"error": {
+							"type": "string",
+							"enum": [
+								"invalid_json_body",
+								"invalid_request_body"
+							]
+						}
+					},
+					"required": [
+						"error"
+					],
+					"additionalProperties": {}
+				},
+				"403": {
+					"type": "object",
+					"properties": {
+						"error": {
+							"type": "string",
+							"const": "no_matching_invite"
+						}
+					},
+					"required": [
+						"error"
+					],
+					"additionalProperties": {}
+				},
+				"409": {
+					"type": "object",
+					"properties": {
+						"error": {
+							"type": "string",
+							"const": "signup_conflict"
+						}
+					},
+					"required": [
+						"error"
+					],
+					"additionalProperties": {}
+				},
+				"415": {
+					"type": "object",
+					"properties": {
+						"error": {
+							"type": "string",
+							"const": "unsupported_content_type"
+						}
+					},
+					"required": [
+						"error"
+					],
+					"additionalProperties": {}
+				},
+				"429": {
+					"type": "object",
+					"properties": {
+						"error": {
+							"type": "string",
+							"const": "rate_limit_exceeded"
+						},
+						"retry_after": {
+							"type": "number"
+						}
+					},
+					"required": [
+						"error",
+						"retry_after"
+					],
+					"additionalProperties": {}
+				}
+			}
+		},
+		{
+			"method": "POST",
+			"path": "/bootstrap",
+			"auth": {
+				"account": "none",
+				"actor": "none"
+			},
+			"applicable_middleware": [],
+			"description": "Create initial keeper account (one-shot)",
+			"is_mutation": true,
+			"transaction": false,
+			"raw_body": false,
+			"rate_limit_key": "ip",
+			"params_schema": null,
+			"query_schema": null,
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"token": {
+						"type": "string",
+						"minLength": 1,
+						"sensitivity": "secret"
+					},
+					"username": {
+						"type": "string",
+						"minLength": 3,
+						"maxLength": 39,
+						"pattern": "^[a-zA-Z][0-9a-zA-Z_-]*[0-9a-zA-Z]$"
+					},
+					"password": {
+						"type": "string",
+						"minLength": 12,
+						"maxLength": 300,
+						"sensitivity": "secret"
+					}
+				},
+				"required": [
+					"token",
+					"username",
+					"password"
+				],
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"ok": {
+						"type": "boolean",
+						"const": true
+					},
+					"account": {
+						"type": "object",
+						"properties": {
+							"id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+							},
+							"username": {}
+						},
+						"required": [
+							"id",
+							"username"
+						],
+						"additionalProperties": false
+					},
+					"actor": {
+						"type": "object",
+						"properties": {
+							"id": {
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+							}
+						},
+						"required": [
+							"id"
+						],
+						"additionalProperties": false
+					}
+				},
+				"required": [
+					"ok",
+					"account",
+					"actor"
+				],
+				"additionalProperties": false
+			},
+			"error_schemas": {
+				"400": {
+					"type": "object",
+					"properties": {
+						"error": {
+							"type": "string",
+							"enum": [
+								"invalid_json_body",
+								"invalid_request_body"
+							]
+						}
+					},
+					"required": [
+						"error"
+					],
+					"additionalProperties": {}
+				},
+				"401": {
+					"type": "object",
+					"properties": {
+						"error": {
+							"type": "string",
+							"const": "invalid_token"
+						}
+					},
+					"required": [
+						"error"
+					],
+					"additionalProperties": {}
+				},
+				"403": {
+					"type": "object",
+					"properties": {
+						"error": {
+							"type": "string",
+							"const": "already_bootstrapped"
+						}
+					},
+					"required": [
+						"error"
+					],
+					"additionalProperties": {}
+				},
+				"404": {
+					"type": "object",
+					"properties": {
+						"error": {
+							"type": "string",
+							"const": "token_file_missing"
+						}
+					},
+					"required": [
+						"error"
+					],
+					"additionalProperties": {}
+				},
+				"415": {
+					"type": "object",
+					"properties": {
+						"error": {
+							"type": "string",
+							"const": "unsupported_content_type"
+						}
+					},
+					"required": [
+						"error"
+					],
+					"additionalProperties": {}
+				},
+				"429": {
+					"type": "object",
+					"properties": {
+						"error": {
+							"type": "string",
+							"const": "rate_limit_exceeded"
+						},
+						"retry_after": {
+							"type": "number"
+						}
+					},
+					"required": [
+						"error",
+						"retry_after"
+					],
+					"additionalProperties": {}
+				}
+			}
+		}
+	],
+	"diagnostics": [
+		{
+			"level": "info",
+			"category": "schema",
+			"message": "Part of the schema has no JSON Schema form and is left out or written as {} there: cannot express `check` at #/properties/account/properties/email/anyOf/0: it holds a function",
+			"source": "GET /status output"
+		},
+		{
+			"level": "info",
+			"category": "schema",
+			"message": "Part of the schema has no JSON Schema form and is left out or written as {} there: Transforms cannot be represented in JSON Schema",
+			"source": "POST /signup output"
+		},
+		{
+			"level": "info",
+			"category": "schema",
+			"message": "Part of the schema has no JSON Schema form and is left out or written as {} there: Transforms cannot be represented in JSON Schema",
+			"source": "POST /bootstrap output"
+		}
+	]
+}

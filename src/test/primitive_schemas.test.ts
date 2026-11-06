@@ -1,5 +1,7 @@
 /**
- * Tests for `primitive_schemas.ts` — Username / UsernameProvided / Email.
+ * Tests for `primitive_schemas.ts` — Username / Email — and the login
+ * `UsernameProvided` of `primitive_schemas_fuz.ts`, which pairs with
+ * `Username`.
  *
  * Pins the canonicalization contract: both `Username` and `UsernameProvided`
  * canonicalize at parse time so every creation / lookup site agrees on a
@@ -13,10 +15,10 @@
  */
 
 import { describe, test, assert } from 'vitest';
+import { is, parse, parse_or_throw } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	Username,
-	UsernameProvided,
 	Email,
 	EMAIL_LENGTH_MAX,
 	EMAIL_LENGTH_MESSAGE,
@@ -25,6 +27,10 @@ import {
 	USERNAME_LENGTH_MAX,
 	USERNAME_PROVIDED_LENGTH_MAX
 } from '#lib/primitive_schemas.ts';
+import { UsernameProvided } from '#lib/primitive_schemas_fuz.ts';
+
+/** `UsernameProvided`'s output, throwing on a refusal. */
+const provided = (raw: string): string => parse_or_throw(UsernameProvided, raw);
 
 /**
  * The quadratic spelling of the `EMAIL_REGEX` grammar, the reference its
@@ -132,61 +138,99 @@ describe('Username', () => {
 
 describe('UsernameProvided', () => {
 	test('trims and lowercases at parse time', () => {
-		assert.strictEqual(UsernameProvided.parse('  Admin  '), 'admin');
-		assert.strictEqual(UsernameProvided.parse('\tADMIN\n'), 'admin');
-		assert.strictEqual(UsernameProvided.parse(' user '), 'user');
+		assert.strictEqual(provided('  Admin  '), 'admin');
+		assert.strictEqual(provided('\tADMIN\n'), 'admin');
+		assert.strictEqual(provided(' user '), 'user');
 	});
 
 	test('lowercases without surrounding whitespace', () => {
-		assert.strictEqual(UsernameProvided.parse('Admin'), 'admin');
-		assert.strictEqual(UsernameProvided.parse('MixedCase'), 'mixedcase');
+		assert.strictEqual(provided('Admin'), 'admin');
+		assert.strictEqual(provided('MixedCase'), 'mixedcase');
 	});
 
 	test('passes through already-canonical input unchanged', () => {
-		assert.strictEqual(UsernameProvided.parse('admin'), 'admin');
+		assert.strictEqual(provided('admin'), 'admin');
 	});
 
 	test('is idempotent under repeat parse', () => {
 		const inputs = ['  Admin  ', 'admin', 'USER', 'mAlFoRmEd@but.allowed'];
 		for (const raw of inputs) {
-			const once = UsernameProvided.parse(raw);
-			const twice = UsernameProvided.parse(once);
+			const once = provided(raw);
+			const twice = provided(once);
 			assert.strictEqual(once, twice, `UsernameProvided not idempotent for '${raw}'`);
 		}
 	});
 
 	test('rejects too-short / too-long input', () => {
-		// `min(1)` rejects the empty string outright; the trailing `.refine`
+		// `min_length(1)` rejects the empty string outright; the `regex(/\S/)`
 		// additionally rejects whitespace-only input that trims to empty (see the
 		// dedicated case below).
-		assert.ok(!UsernameProvided.safeParse('').success);
-		assert.ok(!UsernameProvided.safeParse('a'.repeat(USERNAME_PROVIDED_LENGTH_MAX + 1)).success);
-		assert.ok(UsernameProvided.safeParse('a').success);
+		assert.ok(!is(UsernameProvided, ''));
+		assert.ok(!is(UsernameProvided, 'a'.repeat(USERNAME_PROVIDED_LENGTH_MAX + 1)));
+		assert.ok(is(UsernameProvided, 'a'));
 		// Pin the at-max boundary symmetrically with the `Username` block above
 		// — `min`/`max` is a single off-by-one site, so missing the at-max
 		// accept assertion leaves the high bound only one-sided.
-		assert.ok(UsernameProvided.safeParse('a'.repeat(USERNAME_PROVIDED_LENGTH_MAX)).success);
+		assert.ok(is(UsernameProvided, 'a'.repeat(USERNAME_PROVIDED_LENGTH_MAX)));
 	});
 
 	test('rejects whitespace-only input (empty after trim)', () => {
-		// `min(1)` runs on the raw string (so a space passes the length gate), but
-		// the trailing `.refine` rejects the empty post-trim value — a
+		// `min_length(1)` runs on the raw string (so a space passes the length
+		// gate), but the `regex(/\S/)` rejects what would trim to empty — a
 		// whitespace-only identifier is malformed input, not a wrong credential.
 		// The login handler therefore 400s it (`invalid_request_body`) rather than
 		// routing `''` into a lookup-miss 401; the Rust spine's `account_login`
 		// rejects empty-after-trim the same way. Pinned cross-impl by the
 		// `identity_parity` login-validation suite.
-		assert.ok(!UsernameProvided.safeParse(' ').success);
-		assert.ok(!UsernameProvided.safeParse('   ').success);
-		assert.ok(!UsernameProvided.safeParse('\t\n').success);
+		assert.ok(!is(UsernameProvided, ' '));
+		assert.ok(!is(UsernameProvided, '   '));
+		assert.ok(!is(UsernameProvided, '\t\n'));
+	});
+
+	test('refuses exactly the strings that trim to empty, over every BMP code point', () => {
+		// the `regex(/\S/)` stands for the trim: JS `\s` is `trim`'s set, so a
+		// code point alone is refused exactly when it trims away
+		const misses: Array<string> = [];
+		for (let c = 0; c <= 0xffff; c++) {
+			const ch = String.fromCharCode(c);
+			if (is(UsernameProvided, ch) !== (ch.trim() !== '')) misses.push(c.toString(16));
+		}
+		assert.deepStrictEqual(misses, []);
+	});
+
+	test('refuses whitespace-only input with the trim message', () => {
+		for (const raw of [' ', '﻿', ' ', ' ', '　 \t', ' '.repeat(255)]) {
+			const result = parse(UsernameProvided, raw);
+			assert.ok(!result.ok, JSON.stringify(raw));
+			assert.deepStrictEqual(
+				result.issues.map((i) => i.message),
+				['Username must not be empty after trimming whitespace'],
+				JSON.stringify(raw)
+			);
+		}
+		// past the length bound, the length issue alone
+		const over = parse(UsernameProvided, ' '.repeat(USERNAME_PROVIDED_LENGTH_MAX + 1));
+		assert.ok(!over.ok);
+		assert.deepStrictEqual(
+			over.issues.map((i) => i.kind),
+			['max_length']
+		);
+	});
+
+	test('keeps what trim keeps', () => {
+		// U+0085 and U+180E are not JS whitespace, and a lone surrogate is a code unit
+		assert.strictEqual(provided('\u0085'), '\u0085');
+		assert.strictEqual(provided('᠎'), '᠎');
+		assert.strictEqual(provided(' \ud800 '), '\ud800');
+		assert.strictEqual(provided('﻿Admin '), 'admin');
 	});
 
 	test('admits email-shaped input (login allows username-or-email)', () => {
 		// `UsernameProvided` is the permissive login schema — `@` / `.` are
 		// allowed so `query_account_by_username_or_email` can route to either
 		// lookup. Canonical lowering applies uniformly.
-		assert.strictEqual(UsernameProvided.parse('User@Example.com'), 'user@example.com');
-		assert.strictEqual(UsernameProvided.parse(' USER@EXAMPLE.com '), 'user@example.com');
+		assert.strictEqual(provided('User@Example.com'), 'user@example.com');
+		assert.strictEqual(provided(' USER@EXAMPLE.com '), 'user@example.com');
 	});
 
 	test('canonicalizes whitespace-surrounded input to the same key as bare input', () => {
@@ -195,9 +239,9 @@ describe('UsernameProvided', () => {
 		// can alternate ` admin` and `admin` to double the bucket. Both
 		// canonicalize to `admin` here, so the rate-limit key (whatever the
 		// caller derives from this) cannot drift.
-		assert.strictEqual(UsernameProvided.parse('admin'), UsernameProvided.parse(' admin'));
-		assert.strictEqual(UsernameProvided.parse('admin'), UsernameProvided.parse('Admin'));
-		assert.strictEqual(UsernameProvided.parse('admin'), UsernameProvided.parse(' ADMIN '));
+		assert.strictEqual(provided('admin'), provided(' admin'));
+		assert.strictEqual(provided('admin'), provided('Admin'));
+		assert.strictEqual(provided('admin'), provided(' ADMIN '));
 	});
 });
 
@@ -215,7 +259,7 @@ describe('Username/UsernameProvided cross-schema parity', () => {
 		const inputs = ['Admin', 'ADMIN', 'MixedCase42', 'a1b', 'Test_User-42'];
 		for (const raw of inputs) {
 			const via_creation = Username.parse(raw);
-			const via_login = UsernameProvided.parse(raw);
+			const via_login = provided(raw);
 			assert.strictEqual(
 				via_creation,
 				via_login,
@@ -227,7 +271,7 @@ describe('Username/UsernameProvided cross-schema parity', () => {
 	test('lowercase input passes through identically', () => {
 		const inputs = ['admin', 'a1b', 'test_user', 'user-42'];
 		for (const raw of inputs) {
-			assert.strictEqual(Username.parse(raw), UsernameProvided.parse(raw));
+			assert.strictEqual(Username.parse(raw), provided(raw));
 		}
 	});
 
@@ -240,13 +284,13 @@ describe('Username/UsernameProvided cross-schema parity', () => {
 		// invariant above only applies to inputs both schemas accept.
 		// Pinning the asymmetry here makes the boundary explicit.
 		assert.ok(!Username.safeParse(' admin ').success);
-		assert.strictEqual(UsernameProvided.parse(' admin '), 'admin');
+		assert.strictEqual(provided(' admin '), 'admin');
 
 		assert.ok(!Username.safeParse('user@example.com').success);
-		assert.strictEqual(UsernameProvided.parse('user@example.com'), 'user@example.com');
+		assert.strictEqual(provided('user@example.com'), 'user@example.com');
 
 		assert.ok(!Username.safeParse('1leading_digit').success);
-		assert.strictEqual(UsernameProvided.parse('1leading_digit'), '1leading_digit');
+		assert.strictEqual(provided('1leading_digit'), '1leading_digit');
 	});
 });
 

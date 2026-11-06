@@ -12,8 +12,17 @@
  * @module
  */
 
-import { z } from 'zod';
-import { Uuid, Username, Email } from '../primitive_schemas.ts';
+import {
+	literal,
+	loose_object,
+	nullable,
+	object,
+	one_of,
+	optional,
+	type Infer
+} from '@fuzdev/fuz_schema/schema.ts';
+
+import { Email, Username, UsernameCanonical, Uuid } from '../primitive_schemas_fuz.ts';
 
 import { Password } from './password.ts';
 import type { RouteSpec } from '../http/route_spec.ts';
@@ -24,27 +33,31 @@ import {
 	ERROR_INVALID_REQUEST_BODY
 } from '../http/error_schemas.ts';
 
-/** Input for `POST /signup`. `email` is optional (absent or `null` = no email) and must match any referenced invite. */
-export const SignupInput = z.strictObject({
+/**
+ * Input for `POST /signup`, a `@fuzdev/fuz_schema` schema. `email` is optional
+ * (absent or `null` = no email) and must match any referenced invite.
+ */
+export const SignupInput = object({
 	username: Username,
 	password: Password,
-	email: Email.nullish()
+	email: optional(nullable(Email))
 });
-export type SignupInput = z.infer<typeof SignupInput>;
+export type SignupInput = Infer<typeof SignupInput>;
 
 /**
- * Output for `POST /signup`.
+ * Output for `POST /signup`, a `@fuzdev/fuz_schema` schema.
  *
  * Session cookie is the operative side effect. The returned `account` and
  * `actor` mirror `BootstrapOutput` so cross-process per-test setup can read
- * the per-test identity straight off the signup response.
+ * the per-test identity straight off the signup response. Its `username` is
+ * the account row's, `UsernameCanonical`.
  */
-export const SignupOutput = z.strictObject({
-	ok: z.literal(true),
-	account: z.strictObject({ id: Uuid, username: Username }),
-	actor: z.strictObject({ id: Uuid })
+export const SignupOutput = object({
+	ok: literal(true),
+	account: object({ id: Uuid, username: UsernameCanonical }),
+	actor: object({ id: Uuid })
 });
-export type SignupOutput = z.infer<typeof SignupOutput>;
+export type SignupOutput = Infer<typeof SignupOutput>;
 
 /** Option inputs that shape the signup route metadata (not its handler). */
 export interface SignupRouteShapeOptions {
@@ -71,10 +84,8 @@ export const create_signup_route_shape = (
 	output: SignupOutput,
 	rate_limit: options.signup_account_rate_limited ? 'both' : 'ip',
 	errors: {
-		400: z.looseObject({
-			error: z.enum([ERROR_INVALID_JSON_BODY, ERROR_INVALID_REQUEST_BODY])
-		}),
-		403: z.looseObject({ error: z.literal(ERROR_NO_MATCHING_INVITE) }),
-		409: z.looseObject({ error: z.literal(ERROR_SIGNUP_CONFLICT) })
+		400: loose_object({ error: one_of([ERROR_INVALID_JSON_BODY, ERROR_INVALID_REQUEST_BODY]) }),
+		403: loose_object({ error: literal(ERROR_NO_MATCHING_INVITE) }),
+		409: loose_object({ error: literal(ERROR_SIGNUP_CONFLICT) })
 	}
 });

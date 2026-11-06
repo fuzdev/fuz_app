@@ -13,6 +13,7 @@
  */
 
 import { describe, assert, test } from 'vitest';
+import { is, parse_or_throw } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	TOKEN_TTL_DAYS_MAX,
@@ -22,19 +23,21 @@ import {
 
 describe('TokenLifetimeInput', () => {
 	test('parses the strict union', () => {
-		assert.deepStrictEqual(TokenLifetimeInput.parse({ kind: 'eternal' }), { kind: 'eternal' });
-		assert.deepStrictEqual(TokenLifetimeInput.parse({ kind: 'ttl', days: 30 }), {
+		assert.deepStrictEqual(parse_or_throw(TokenLifetimeInput, { kind: 'eternal' }), {
+			kind: 'eternal'
+		});
+		assert.deepStrictEqual(parse_or_throw(TokenLifetimeInput, { kind: 'ttl', days: 30 }), {
 			kind: 'ttl',
 			days: 30
 		});
-		// `z.number().int()` accepts integral floats — the Rust parser mirrors
+		// `integer` accepts integral floats — the Rust parser mirrors
 		// this (a JSON `30.0` parses to 30 on both spines)
-		assert.deepStrictEqual(TokenLifetimeInput.parse({ kind: 'ttl', days: 30.0 }), {
+		assert.deepStrictEqual(parse_or_throw(TokenLifetimeInput, { kind: 'ttl', days: 30.0 }), {
 			kind: 'ttl',
 			days: 30
 		});
 		assert.strictEqual(
-			TokenLifetimeInput.parse({ kind: 'ttl', days: TOKEN_TTL_DAYS_MAX }).kind,
+			parse_or_throw(TokenLifetimeInput, { kind: 'ttl', days: TOKEN_TTL_DAYS_MAX }).kind,
 			'ttl'
 		);
 	});
@@ -55,10 +58,7 @@ describe('TokenLifetimeInput', () => {
 			{ kind: 'ttl', days: 1, and: 2 } // strict: unknown key
 		];
 		for (const value of rejected) {
-			assert.isFalse(
-				TokenLifetimeInput.safeParse(value).success,
-				`must reject ${JSON.stringify(value)}`
-			);
+			assert.isFalse(is(TokenLifetimeInput, value), `must reject ${JSON.stringify(value)}`);
 		}
 	});
 });

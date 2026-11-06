@@ -5,14 +5,13 @@
  * `Account`, `Actor`, `RoleGrant`, `AuthSession`, and `ApiToken`.
  *
  * Identifier primitives (`Username`, `UsernameProvided`, `Email`) live
- * in `primitive_schemas.ts` — they're general validator shapes that
- * don't depend on the auth domain. The auth-shape request-contract
+ * in `primitive_schemas.ts` and `primitive_schemas_fuz.ts` — they're general
+ * validator shapes that don't depend on the auth domain. The auth-shape request-contract
  * primitive `ActingActor` lives in `http/auth_shape.ts` next to
  * `RouteAuth` (the two pair: `auth.actor !== 'none'` ⟺ input declares
  * `acting?: ActingActor`).
  *
- * The wire schemas are `@fuzdev/fuz_schema` schemas, `SessionId` among them,
- * but for `ClientApiTokenJson`, which is Zod.
+ * The wire schemas are `@fuzdev/fuz_schema` schemas, `SessionId` among them.
  *
  * DDL lives in `auth/auth_ddl.ts`; role system in `auth/role_schema.ts`.
  * See docs/identity.md for design rationale.
@@ -20,7 +19,6 @@
  * @module
  */
 
-import { z } from 'zod';
 import { meta } from '@fuzdev/fuz_schema/meta.ts';
 import {
 	array,
@@ -32,10 +30,11 @@ import {
 	type Infer
 } from '@fuzdev/fuz_schema/schema.ts';
 
-import { Uuid as ZodUuid, type Username } from '../primitive_schemas.ts';
+import type { Username } from '../primitive_schemas.ts';
 import { Blake3Hash, Email, Timestamp, UsernameCanonical, Uuid } from '../primitive_schemas_fuz.ts';
 import { RoleName } from './role_schema.ts';
 import { ScopeKindName } from './scope_kind_schema.ts';
+import { ApiTokenId } from './api_token.ts';
 
 import { is_iso8601_seconds_live } from '../timestamp.ts';
 
@@ -250,24 +249,24 @@ export const AuthSessionJson = object({
 });
 export type AuthSessionJson = Infer<typeof AuthSessionJson>;
 
-/** Zod schema for client-safe API token listing (excludes `token_hash`). */
-export const ClientApiTokenJson = z.strictObject({
-	id: z.string(),
-	account_id: ZodUuid,
-	name: z.string(),
-	expires_at: z.string().nullable(),
-	last_used_at: z.string().nullable(),
-	last_used_ip: z.string().nullable(),
-	created_at: z.string(),
+/** Client-safe API token listing (excludes `token_hash`), a `@fuzdev/fuz_schema` schema. */
+export const ClientApiTokenJson = object({
+	id: ApiTokenId,
+	account_id: Uuid,
+	name: string,
+	expires_at: nullable(Timestamp),
+	last_used_at: nullable(Timestamp),
+	last_used_ip: nullable(string),
+	created_at: Timestamp,
 	/**
 	 * Human-readable scope label (`full` / `full (grandfathered)` /
 	 * `N methods`). A label rather than the document so the list stays a display
 	 * surface — nothing authorizes off this, and a grandfathered token reads
 	 * differently from a deliberately-full one.
 	 */
-	scope: z.string()
+	scope: string
 });
-export type ClientApiTokenJson = z.infer<typeof ClientApiTokenJson>;
+export type ClientApiTokenJson = Infer<typeof ClientApiTokenJson>;
 
 /** The role_grant summary returned in admin account listings, a `@fuzdev/fuz_schema` schema. */
 export const RoleGrantSummaryJson = object({

@@ -37,12 +37,9 @@ import {
 import { bounded_string, Email, Timestamp, Uuid } from '../primitive_schemas_fuz.ts';
 import { assert_validation_schema, type ValidationSchema } from '../schema_issues.ts';
 import { AuthSessionJson, SessionId } from './account_schema.ts';
-import { API_TOKEN_ID_REGEX } from './api_token.ts';
+import { ApiTokenId } from './api_token.ts';
 import { BUILTIN_CREDENTIAL_TYPES } from './credential_type_schema.ts';
 import { NAME_LENGTH_MAX } from './name_schema.ts';
-
-/** An API token's public id (`tok_…`), `ApiTokenId`'s check in fuz_schema. */
-const TokenId = pipe(string, regex(API_TOKEN_ID_REGEX));
 
 /**
  * Defense-in-depth audit field — records the credential channel
@@ -326,12 +323,12 @@ export const audit_metadata_schemas = Object.freeze({
 		credential_type: credential_type_meta
 	}),
 	token_create: loose_object({
-		token_id: meta(TokenId, { description: 'Public id of the created API token (`tok_…`).' }),
+		token_id: meta(ApiTokenId, { description: 'Public id of the created API token (`tok_…`).' }),
 		name: meta(string, { description: 'Operator-supplied label for the token.' }),
 		credential_type: credential_type_meta
 	}),
 	token_revoke: loose_object({
-		token_id: meta(TokenId, { description: 'Public id of the revoked API token (`tok_…`).' }),
+		token_id: meta(ApiTokenId, { description: 'Public id of the revoked API token (`tok_…`).' }),
 		credential_type: credential_type_meta
 	}),
 	token_revoke_all: loose_object({

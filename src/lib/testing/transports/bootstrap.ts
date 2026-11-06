@@ -20,23 +20,25 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import { z } from 'zod';
-import { Uuid } from '../../primitive_schemas.ts';
+import { parse, string, strip_object } from '@fuzdev/fuz_schema/schema.ts';
+
+import { Uuid } from '../../primitive_schemas_fuz.ts';
+import { format_issues } from '../../schema_issues.ts';
 
 import type { BackendConfig } from '../cross_backend/backend_config.ts';
 import type { FetchTransport } from './fetch_transport.ts';
 
 /**
  * The `BootstrapOutput` envelope shape the cross-process bootstrap call
- * cares about. Looser than the full `BootstrapOutput` Zod schema in
- * `auth/bootstrap_account.ts` — that schema is the canonical wire shape
+ * cares about. Looser than the full `BootstrapOutput` schema in
+ * `auth/bootstrap_route_schema.ts` — that schema is the canonical wire shape
  * on the server side, and this one is a structural subset the runner
  * uses to extract the keeper identity. Kept local so cross-process
  * testing doesn't pull the full auth-domain schema into its dep graph.
  */
-const BootstrapResponse = z.object({
-	account: z.object({ id: Uuid, username: z.string() }),
-	actor: z.object({ id: Uuid })
+const BootstrapResponse = strip_object({
+	account: strip_object({ id: Uuid, username: string }),
+	actor: strip_object({ id: Uuid })
 });
 
 /** Input for `bootstrap()`. */
@@ -98,18 +100,18 @@ export const bootstrap = async (options: BootstrapOptions): Promise<BootstrapRes
 		throw new Error(`bootstrap(${config.name}) failed: status=${response.status} body=${body}`);
 	}
 	const raw: unknown = await response.json();
-	const parsed = BootstrapResponse.safeParse(raw);
-	if (!parsed.success) {
+	const parsed = parse(BootstrapResponse, raw);
+	if (!parsed.ok) {
 		throw new Error(
-			`bootstrap(${config.name}) returned unexpected body: ${JSON.stringify(raw)} (${
-				parsed.error.message
-			})`
+			`bootstrap(${config.name}) returned unexpected body: ${JSON.stringify(raw)} (${format_issues(
+				parsed.issues
+			)})`
 		);
 	}
 	return {
 		transport,
-		account: parsed.data.account,
-		actor: parsed.data.actor,
+		account: parsed.value.account,
+		actor: parsed.value.actor,
 		cookies: transport.cookies()
 	};
 };

@@ -5,6 +5,7 @@
  */
 
 import { assert, describe, test } from 'vitest';
+import { is } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	is_route_scope_capability,
@@ -86,6 +87,6 @@ describe('TokenScopeInput', () => {
 		['an unknown kind', { kind: 'everything' }]
 	];
 	test.each(refused)('refuses %s', (_label, input) => {
-		assert.strictEqual(TokenScopeInput.safeParse(input).success, false);
+		assert.strictEqual(is(TokenScopeInput, input), false);
 	});
 });

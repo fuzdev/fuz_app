@@ -2,7 +2,7 @@ import '../assert_dev_env.ts';
 
 /**
  * Cross-backend identity-primitive parity for fuz_app's own spine over real
- * HTTP — the `primitive_schemas` twins (`Username`, `UsernameProvided`,
+ * HTTP — the identity primitives (`Username`, `UsernameProvided`,
  * `Email`) and the login/signup input handling that enforces them, pinned
  * facet-by-facet so a TS↔Rust divergence in any one surfaces as a failure:
  * how usernames are **canonicalized** on the login lookup, the **ASCII-only
@@ -68,7 +68,7 @@ import '../assert_dev_env.ts';
  * spine with `open_signup` at its `false` default), and each format violation
  * (leading non-letter, trailing punctuation, embedded disallowed char) → 400,
  * with mid-string `_`/`-` accepted siblings as the don't-over-reject control.
- * Signup is also strict-object on both spines (TS `z.strictObject`, Rust
+ * Signup is also strict-object on both spines (TS a strict fuz_schema `object`, Rust
  * `#[serde(deny_unknown_fields)]`), so an unknown signup body key → 400.
  * Nothing trims a creation username: a padded one is refused 400 at signup and
  * at bootstrap, never trimmed into a legal name. Bootstrap validates its body
@@ -575,9 +575,9 @@ export const describe_identity_parity_cross_tests = (
 
 	describe('login input validation parity', () => {
 		// Malformed login input → 400 `invalid_request_body` on every spine. TS
-		// runs the full `LoginInput` Zod schema (`UsernameProvided` non-empty /
+		// runs the full `LoginInput` schema (`UsernameProvided` non-empty /
 		// max 255 / non-empty-after-trim, `PasswordProvided` non-empty / max 300,
-		// `z.strictObject`); the Rust spine enforces the same shape in
+		// a strict `object`); the Rust spine enforces the same shape in
 		// `account_login` (an extra key fails `deny_unknown_fields` → 400, not
 		// axum's 422). These each previously fell through to a lookup-miss 401 (or
 		// a bespoke-string 400) on one backend — a status *and* body divergence the
@@ -675,7 +675,7 @@ export const describe_identity_parity_cross_tests = (
 	});
 
 	describe('signup input validation parity', () => {
-		// Signup is `z.strictObject` on TS and `#[serde(deny_unknown_fields)]` on
+		// Signup is a strict fuz_schema `object` on TS and `#[serde(deny_unknown_fields)]` on
 		// the Rust spine — an unknown body key → 400 `invalid_request_body` on
 		// both (the Rust spine previously ignored it via serde). The username is
 		// valid so the rejection isolates the unknown key (a valid body would

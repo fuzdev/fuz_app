@@ -9,7 +9,7 @@
  * @module
  */
 
-import { z } from 'zod';
+import { pipe, regex, string, type Infer } from '@fuzdev/fuz_schema/schema.ts';
 import { hash_blake3 } from '@fuzdev/fuz_util/hash_blake3.ts';
 
 import { generate_random_base64url } from '../crypto.ts';
@@ -50,9 +50,9 @@ export const is_api_token_shaped = (raw: string): boolean => API_TOKEN_REGEX.tes
  */
 export const API_TOKEN_ID_REGEX = /^tok_[A-Za-z0-9_-]{12}$/;
 
-/** Zod schema for the public API token id. */
-export const ApiTokenId = z.string().regex(API_TOKEN_ID_REGEX);
-export type ApiTokenId = z.infer<typeof ApiTokenId>;
+/** The public API token id, `API_TOKEN_ID_REGEX`, a `@fuzdev/fuz_schema` schema. */
+export const ApiTokenId = pipe(string, regex(API_TOKEN_ID_REGEX));
+export type ApiTokenId = Infer<typeof ApiTokenId>;
 
 /**
  * Hash an API token for storage using blake3.

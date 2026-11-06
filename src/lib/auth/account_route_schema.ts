@@ -12,11 +12,24 @@
  * @module
  */
 
-import { z } from 'zod';
-import { array, nullable, object, type Infer } from '@fuzdev/fuz_schema/schema.ts';
+import {
+	array,
+	boolean,
+	integer,
+	literal,
+	loose_object,
+	min_value,
+	nullable,
+	number,
+	object,
+	one_of,
+	optional,
+	pipe,
+	type Infer
+} from '@fuzdev/fuz_schema/schema.ts';
 
 import { ActorSummaryJson, RoleGrantSummaryJson, SessionAccountJson } from './account_schema.ts';
-import { UsernameProvided } from '../primitive_schemas.ts';
+import { UsernameCanonical, UsernameProvided } from '../primitive_schemas_fuz.ts';
 import { Password, PasswordProvided } from './password.ts';
 import type { RouteSpec } from '../http/route_spec.ts';
 import {
@@ -26,9 +39,9 @@ import {
 	ERROR_INVALID_REQUEST_BODY
 } from '../http/error_schemas.ts';
 
-/** Input for `GET /api/account/status`. No parameters — caller is the subject. */
-export const AccountStatusInput = z.null();
-export type AccountStatusInput = z.infer<typeof AccountStatusInput>;
+/** Input for `GET /api/account/status`, `literal(null)`. No parameters — caller is the subject. */
+export const AccountStatusInput = literal(null);
+export type AccountStatusInput = Infer<typeof AccountStatusInput>;
 
 /** Output for `GET /api/account/status`, a `@fuzdev/fuz_schema` schema. */
 export const AccountStatusOutput = object({
@@ -38,51 +51,70 @@ export const AccountStatusOutput = object({
 });
 export type AccountStatusOutput = Infer<typeof AccountStatusOutput>;
 
-/** Error body for `GET /api/account/status` on the unauthenticated path. */
-export const AccountStatusUnauthenticatedError = z.looseObject({
-	error: z.literal(ERROR_AUTHENTICATION_REQUIRED),
-	bootstrap_available: z.boolean().optional()
+/**
+ * Error body for `GET /api/account/status` on the unauthenticated path, a
+ * `@fuzdev/fuz_schema` schema.
+ */
+export const AccountStatusUnauthenticatedError = loose_object({
+	error: literal(ERROR_AUTHENTICATION_REQUIRED),
+	bootstrap_available: optional(boolean)
 });
-export type AccountStatusUnauthenticatedError = z.infer<typeof AccountStatusUnauthenticatedError>;
+export type AccountStatusUnauthenticatedError = Infer<typeof AccountStatusUnauthenticatedError>;
 
-/** Input for `POST /login`. Accepts a username or email in the `username` field. */
-export const LoginInput = z.strictObject({
+/**
+ * Input for `POST /login`, a `@fuzdev/fuz_schema` schema. Accepts a username
+ * or email in the `username` field.
+ */
+export const LoginInput = object({
 	username: UsernameProvided,
 	password: PasswordProvided
 });
-export type LoginInput = z.infer<typeof LoginInput>;
+export type LoginInput = Infer<typeof LoginInput>;
 
-/** Output for `POST /login`. Session cookie is the operative side effect. */
-export const LoginOutput = z.strictObject({
-	ok: z.literal(true)
+/**
+ * Output for `POST /login`, a `@fuzdev/fuz_schema` schema. Session cookie is
+ * the operative side effect.
+ */
+export const LoginOutput = object({
+	ok: literal(true)
 });
-export type LoginOutput = z.infer<typeof LoginOutput>;
+export type LoginOutput = Infer<typeof LoginOutput>;
 
-/** Input for `POST /logout`. Session identity flows through the cookie. */
-export const LogoutInput = z.null();
-export type LogoutInput = z.infer<typeof LogoutInput>;
+/** Input for `POST /logout`, `literal(null)`. Session identity flows through the cookie. */
+export const LogoutInput = literal(null);
+export type LogoutInput = Infer<typeof LogoutInput>;
 
-/** Output for `POST /logout`. Includes the revoked account's username for UI redraw. */
-export const LogoutOutput = z.strictObject({
-	ok: z.literal(true),
-	username: z.string()
+/**
+ * Output for `POST /logout`, a `@fuzdev/fuz_schema` schema. Includes the
+ * revoked account's username for UI redraw, as the account row holds it.
+ */
+export const LogoutOutput = object({
+	ok: literal(true),
+	username: UsernameCanonical
 });
-export type LogoutOutput = z.infer<typeof LogoutOutput>;
+export type LogoutOutput = Infer<typeof LogoutOutput>;
 
-/** Input for `POST /password`. `current_password` is minimally validated; `new_password` enforces the full policy. */
-export const PasswordChangeInput = z.strictObject({
+/**
+ * Input for `POST /password`, a `@fuzdev/fuz_schema` schema.
+ * `current_password` is minimally validated; `new_password` enforces the full
+ * policy.
+ */
+export const PasswordChangeInput = object({
 	current_password: PasswordProvided,
 	new_password: Password
 });
-export type PasswordChangeInput = z.infer<typeof PasswordChangeInput>;
+export type PasswordChangeInput = Infer<typeof PasswordChangeInput>;
 
-/** Output for `POST /password`. Counts are returned so the UI can summarize the revoke-all cascade. */
-export const PasswordChangeOutput = z.strictObject({
-	ok: z.literal(true),
-	sessions_revoked: z.number(),
-	tokens_revoked: z.number()
+/**
+ * Output for `POST /password`, a `@fuzdev/fuz_schema` schema. Counts are
+ * returned so the UI can summarize the revoke-all cascade.
+ */
+export const PasswordChangeOutput = object({
+	ok: literal(true),
+	sessions_revoked: pipe(number, integer, min_value(0)),
+	tokens_revoked: pipe(number, integer, min_value(0))
 });
-export type PasswordChangeOutput = z.infer<typeof PasswordChangeOutput>;
+export type PasswordChangeOutput = Infer<typeof PasswordChangeOutput>;
 
 /**
  * Default maximum sessions per account.
@@ -163,8 +195,8 @@ export const create_account_route_shapes = (
 		},
 		description:
 			'Session-validity probe for nginx auth_request (empty body; 200, 401, or 403 for a narrowed token)',
-		input: z.null(),
-		output: z.null()
+		input: literal(null),
+		output: literal(null)
 	},
 	{
 		method: 'POST',
@@ -180,10 +212,8 @@ export const create_account_route_shapes = (
 		// database connection.
 		transaction: false,
 		errors: {
-			400: z.looseObject({
-				error: z.enum([ERROR_INVALID_JSON_BODY, ERROR_INVALID_REQUEST_BODY])
-			}),
-			401: z.looseObject({ error: z.literal(ERROR_INVALID_CREDENTIALS) })
+			400: loose_object({ error: one_of([ERROR_INVALID_JSON_BODY, ERROR_INVALID_REQUEST_BODY]) }),
+			401: loose_object({ error: literal(ERROR_INVALID_CREDENTIALS) })
 		}
 	},
 	{
@@ -212,9 +242,7 @@ export const create_account_route_shapes = (
 		// Argon2 verify and hash, hold no database connection.
 		transaction: false,
 		errors: {
-			400: z.looseObject({
-				error: z.enum([ERROR_INVALID_JSON_BODY, ERROR_INVALID_REQUEST_BODY])
-			})
+			400: loose_object({ error: one_of([ERROR_INVALID_JSON_BODY, ERROR_INVALID_REQUEST_BODY]) })
 		}
 	}
 ];

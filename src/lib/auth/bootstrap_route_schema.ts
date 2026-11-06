@@ -14,8 +14,19 @@
  * @module
  */
 
-import { z } from 'zod';
-import { Uuid, Username } from '../primitive_schemas.ts';
+import { meta } from '@fuzdev/fuz_schema/meta.ts';
+import {
+	literal,
+	loose_object,
+	min_length,
+	object,
+	one_of,
+	pipe,
+	string,
+	type Infer
+} from '@fuzdev/fuz_schema/schema.ts';
+
+import { Username, UsernameCanonical, Uuid } from '../primitive_schemas_fuz.ts';
 
 import { Password } from './password.ts';
 import type { RouteSpec } from '../http/route_spec.ts';
@@ -27,21 +38,28 @@ import {
 	ERROR_INVALID_REQUEST_BODY
 } from '../http/error_schemas.ts';
 
-/** Input for `POST /bootstrap`. `token` is the one-shot token file contents. */
-export const BootstrapInput = z.strictObject({
-	token: z.string().min(1).meta({ sensitivity: 'secret' }),
+/**
+ * Input for `POST /bootstrap`, a `@fuzdev/fuz_schema` schema. `token` is the
+ * one-shot token file contents.
+ */
+export const BootstrapInput = object({
+	token: meta(pipe(string, min_length(1)), { sensitivity: 'secret' }),
 	username: Username,
 	password: Password
 });
-export type BootstrapInput = z.infer<typeof BootstrapInput>;
+export type BootstrapInput = Infer<typeof BootstrapInput>;
 
-/** Output for `POST /bootstrap`. Session cookie is the operative side effect. */
-export const BootstrapOutput = z.strictObject({
-	ok: z.literal(true),
-	account: z.strictObject({ id: Uuid, username: Username }),
-	actor: z.strictObject({ id: Uuid })
+/**
+ * Output for `POST /bootstrap`, a `@fuzdev/fuz_schema` schema. Session cookie
+ * is the operative side effect. Its `username` is the account row's,
+ * `UsernameCanonical`.
+ */
+export const BootstrapOutput = object({
+	ok: literal(true),
+	account: object({ id: Uuid, username: UsernameCanonical }),
+	actor: object({ id: Uuid })
 });
-export type BootstrapOutput = z.infer<typeof BootstrapOutput>;
+export type BootstrapOutput = Infer<typeof BootstrapOutput>;
 
 /**
  * The `POST /bootstrap` route shape minus its handler — pure hono-free data.
@@ -60,11 +78,9 @@ export const bootstrap_route_shape = {
 	output: BootstrapOutput,
 	rate_limit: 'ip',
 	errors: {
-		400: z.looseObject({
-			error: z.enum([ERROR_INVALID_JSON_BODY, ERROR_INVALID_REQUEST_BODY])
-		}),
-		401: z.looseObject({ error: z.literal(ERROR_INVALID_TOKEN) }),
-		403: z.looseObject({ error: z.literal(ERROR_ALREADY_BOOTSTRAPPED) }),
-		404: z.looseObject({ error: z.literal(ERROR_TOKEN_FILE_MISSING) })
+		400: loose_object({ error: one_of([ERROR_INVALID_JSON_BODY, ERROR_INVALID_REQUEST_BODY]) }),
+		401: loose_object({ error: literal(ERROR_INVALID_TOKEN) }),
+		403: loose_object({ error: literal(ERROR_ALREADY_BOOTSTRAPPED) }),
+		404: loose_object({ error: literal(ERROR_TOKEN_FILE_MISSING) })
 	}
 } satisfies Omit<RouteSpec, 'handler'>;

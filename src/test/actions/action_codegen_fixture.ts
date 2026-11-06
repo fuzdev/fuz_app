@@ -5,10 +5,9 @@
  * Zod-only codegen emitted, and holds fuz_app's own list, whose
  * `@fuzdev/fuz_schema` inputs and outputs (`account_token_revoke`,
  * `self_service_role_set`, `actor_lookup`, `actor_search`, the
- * role_grant_offer methods, the admin methods' inputs and outputs,
- * `account_session_revoke`'s input,
- * and the outputs of `account_verify` and `account_session_list`), to that
- * text with those types read by `Infer`.
+ * role_grant_offer methods, the admin methods' inputs and outputs, and the
+ * account methods' inputs and outputs), to that text with those types read by
+ * `Infer`.
  *
  * @module
  */
@@ -37,6 +36,7 @@ import { all_cell_field_action_specs } from '#lib/auth/cell_field_action_specs.t
 import { all_cell_item_action_specs } from '#lib/auth/cell_item_action_specs.ts';
 import { all_cell_audit_action_specs } from '#lib/auth/cell_audit_action_specs.ts';
 import { parse_any } from '#lib/schema_issues.ts';
+import { is_void_schema } from '#lib/http/schema_helpers.ts';
 import { is_schema } from '@fuzdev/fuz_schema/schema.ts';
 
 // one spec per input shape the signature reads: void, null, optional, defaulted, required
@@ -143,6 +143,9 @@ const ZodRequiredInput = z.strictObject({ required: z.string() });
  */
 const ZodDefaultedInput = z.strictObject({ optional: z.string().optional() }).default({});
 
+/** The Zod stand-in for a `@fuzdev/fuz_schema` `void` input, read by shape as `z.void()` is. */
+const ZodVoidInput = z.void();
+
 /** The Zod stand-in for a `@fuzdev/fuz_schema` output, of which codegen reads only the library. */
 const ZodOutput = z.strictObject({});
 
@@ -151,9 +154,11 @@ const to_zod_spec = (spec: ActionSpecUnion): ActionSpecUnion =>
 	({
 		...spec,
 		input: is_schema(spec.input)
-			? parse_any(spec.input, undefined).ok
-				? ZodDefaultedInput
-				: ZodRequiredInput
+			? is_void_schema(spec.input)
+				? ZodVoidInput
+				: parse_any(spec.input, undefined).ok
+					? ZodDefaultedInput
+					: ZodRequiredInput
 			: spec.input,
 		output: is_schema(spec.output) ? ZodOutput : spec.output
 	}) as ActionSpecUnion;

@@ -453,7 +453,7 @@ export const describe_standard_integration_tests = (
 				assert.strictEqual(res.status, 200);
 				const body = await res.json();
 				// Throws on any extra or missing field — drift on either backend fails.
-				LoginOutput.parse(body);
+				parse_or_throw(LoginOutput, body);
 			});
 		});
 

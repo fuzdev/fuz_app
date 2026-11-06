@@ -1,0 +1,921 @@
+{
+	"rpc": [
+		{
+			"name": "account_verify",
+			"auth": {
+				"account": "required",
+				"actor": "none"
+			},
+			"input_schema": null,
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"id": {
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					},
+					"username": {
+						"type": "string",
+						"minLength": 3,
+						"maxLength": 39,
+						"pattern": "^[a-z][0-9a-z_-]*[0-9a-z]$"
+					},
+					"email": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 254,
+								"pattern": "^[^\\s\\u0085@]+@[^\\s\\u0085@.]+\\.[^\\s\\u0085@]*[^\\s\\u0085@.]$"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"email_verified": {
+						"type": "boolean"
+					},
+					"created_at": {
+						"type": "string",
+						"format": "date-time",
+						"pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+					}
+				},
+				"required": [
+					"id",
+					"username",
+					"email",
+					"email_verified",
+					"created_at"
+				],
+				"additionalProperties": false
+			},
+			"side_effects": false,
+			"description": "Verify the current session and echo the caller account.",
+			"rate_limit_key": null
+		},
+		{
+			"name": "account_session_list",
+			"auth": {
+				"account": "required",
+				"actor": "none"
+			},
+			"input_schema": null,
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"sessions": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"id": {
+									"type": "string",
+									"pattern": "^[0-9a-f]{64}$"
+								},
+								"account_id": {
+									"type": "string",
+									"format": "uuid",
+									"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+								},
+								"created_at": {
+									"type": "string",
+									"format": "date-time",
+									"pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+								},
+								"expires_at": {
+									"type": "string",
+									"format": "date-time",
+									"pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+								},
+								"is_current": {
+									"type": "boolean",
+									"description": "Whether this is the session the request authenticated with — `false` on every row for a non-session credential."
+								}
+							},
+							"required": [
+								"id",
+								"account_id",
+								"created_at",
+								"expires_at",
+								"is_current"
+							],
+							"additionalProperties": false
+						}
+					}
+				},
+				"required": [
+					"sessions"
+				],
+				"additionalProperties": false
+			},
+			"side_effects": false,
+			"description": "List auth sessions for the current account.",
+			"rate_limit_key": null
+		},
+		{
+			"name": "account_session_revoke",
+			"auth": {
+				"account": "required",
+				"actor": "none",
+				"credential_types": [
+					"session"
+				]
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"session_id": {
+						"type": "string",
+						"pattern": "^[0-9a-f]{64}$",
+						"description": "Session id (blake3 hash) to revoke."
+					}
+				},
+				"required": [
+					"session_id"
+				],
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"ok": {
+						"type": "boolean",
+						"const": true
+					},
+					"revoked": {
+						"type": "boolean"
+					}
+				},
+				"required": [
+					"ok",
+					"revoked"
+				],
+				"additionalProperties": false
+			},
+			"side_effects": true,
+			"description": "Revoke a single auth session for the current account (IDOR-guarded).",
+			"rate_limit_key": null
+		},
+		{
+			"name": "account_session_revoke_all",
+			"auth": {
+				"account": "required",
+				"actor": "none",
+				"credential_types": [
+					"session"
+				]
+			},
+			"input_schema": null,
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"ok": {
+						"type": "boolean",
+						"const": true
+					},
+					"count": {
+						"type": "number"
+					}
+				},
+				"required": [
+					"ok",
+					"count"
+				],
+				"additionalProperties": false
+			},
+			"side_effects": true,
+			"description": "Revoke every auth session for the current account.",
+			"rate_limit_key": null
+		},
+		{
+			"name": "account_token_create",
+			"auth": {
+				"account": "required",
+				"actor": "none",
+				"credential_types": [
+					"session"
+				]
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"name": {
+						"description": "Human-friendly label; shown in the token list. At most 255 characters.",
+						"type": "string",
+						"maxLength": 255
+					},
+					"scope": {
+						"oneOf": [
+							{
+								"type": "object",
+								"properties": {
+									"kind": {
+										"type": "string",
+										"const": "full"
+									}
+								},
+								"required": [
+									"kind"
+								],
+								"additionalProperties": false
+							},
+							{
+								"type": "object",
+								"properties": {
+									"kind": {
+										"type": "string",
+										"const": "methods"
+									},
+									"methods": {
+										"type": "array",
+										"items": {
+											"type": "string"
+										}
+									}
+								},
+								"required": [
+									"kind",
+									"methods"
+								],
+								"additionalProperties": false
+							}
+						],
+						"description": "What the token may do. `{kind:'full'}` for full account authority, or `{kind:'methods',methods:[…]}` to narrow it to named RPC methods — a narrowed token is RPC-only and reaches no non-RPC surface that reads account data or carries authority.",
+						"invalid_reason": "token_scope_invalid"
+					},
+					"lifetime": {
+						"oneOf": [
+							{
+								"type": "object",
+								"properties": {
+									"kind": {
+										"type": "string",
+										"const": "eternal"
+									}
+								},
+								"required": [
+									"kind"
+								],
+								"additionalProperties": false
+							},
+							{
+								"type": "object",
+								"properties": {
+									"kind": {
+										"type": "string",
+										"const": "ttl"
+									},
+									"days": {
+										"type": "integer",
+										"minimum": 1,
+										"maximum": 36500
+									}
+								},
+								"required": [
+									"kind",
+									"days"
+								],
+								"additionalProperties": false
+							}
+						],
+						"description": "How long the token lives. `{kind:'eternal'}` never expires; `{kind:'ttl',days:N}` expires N days from mint.",
+						"invalid_reason": "token_lifetime_invalid"
+					}
+				},
+				"required": [
+					"scope",
+					"lifetime"
+				],
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"ok": {
+						"type": "boolean",
+						"const": true
+					},
+					"token": {
+						"type": "string",
+						"description": "Raw token — shown once, store securely."
+					},
+					"id": {
+						"type": "string",
+						"pattern": "^tok_[A-Za-z0-9_-]{12}$"
+					},
+					"name": {
+						"type": "string"
+					},
+					"expires_at": {
+						"description": "ISO 8601 expiry, or `null` for an eternal token.",
+						"type": [
+							"string",
+							"null"
+						]
+					}
+				},
+				"required": [
+					"ok",
+					"token",
+					"id",
+					"name",
+					"expires_at"
+				],
+				"additionalProperties": false
+			},
+			"side_effects": true,
+			"description": "Create an API token for the current account. Raw token is returned once.",
+			"rate_limit_key": "account"
+		},
+		{
+			"name": "account_token_list",
+			"auth": {
+				"account": "required",
+				"actor": "none"
+			},
+			"input_schema": null,
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"tokens": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"id": {
+									"type": "string"
+								},
+								"account_id": {
+									"type": "string",
+									"format": "uuid",
+									"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+								},
+								"name": {
+									"type": "string"
+								},
+								"expires_at": {
+									"type": [
+										"string",
+										"null"
+									]
+								},
+								"last_used_at": {
+									"type": [
+										"string",
+										"null"
+									]
+								},
+								"last_used_ip": {
+									"type": [
+										"string",
+										"null"
+									]
+								},
+								"created_at": {
+									"type": "string"
+								},
+								"scope": {
+									"type": "string"
+								}
+							},
+							"required": [
+								"id",
+								"account_id",
+								"name",
+								"expires_at",
+								"last_used_at",
+								"last_used_ip",
+								"created_at",
+								"scope"
+							],
+							"additionalProperties": false
+						}
+					}
+				},
+				"required": [
+					"tokens"
+				],
+				"additionalProperties": false
+			},
+			"side_effects": false,
+			"description": "List API tokens for the current account. Hashes are never returned.",
+			"rate_limit_key": null
+		},
+		{
+			"name": "account_token_revoke",
+			"auth": {
+				"account": "required",
+				"actor": "none",
+				"credential_types": [
+					"session"
+				]
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"token_id": {
+						"type": "string",
+						"pattern": "^tok_[A-Za-z0-9_-]{12}$",
+						"description": "Public API token id (e.g. `tok_<12 chars>`)."
+					}
+				},
+				"required": [
+					"token_id"
+				],
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"ok": {
+						"type": "boolean",
+						"const": true
+					},
+					"revoked": {
+						"type": "boolean"
+					}
+				},
+				"required": [
+					"ok",
+					"revoked"
+				],
+				"additionalProperties": false
+			},
+			"side_effects": true,
+			"description": "Revoke an API token for the current account (IDOR-guarded).",
+			"rate_limit_key": null
+		}
+	],
+	"ws": [
+		{
+			"name": "account_verify",
+			"kind": "request_response",
+			"auth": {
+				"account": "required",
+				"actor": "none"
+			},
+			"input_schema": null,
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"id": {
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+					},
+					"username": {
+						"type": "string",
+						"minLength": 3,
+						"maxLength": 39,
+						"pattern": "^[a-z][0-9a-z_-]*[0-9a-z]$"
+					},
+					"email": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 254,
+								"pattern": "^[^\\s\\u0085@]+@[^\\s\\u0085@.]+\\.[^\\s\\u0085@]*[^\\s\\u0085@.]$"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"email_verified": {
+						"type": "boolean"
+					},
+					"created_at": {
+						"type": "string",
+						"format": "date-time",
+						"pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+					}
+				},
+				"required": [
+					"id",
+					"username",
+					"email",
+					"email_verified",
+					"created_at"
+				],
+				"additionalProperties": false
+			},
+			"description": "Verify the current session and echo the caller account.",
+			"side_effects": false,
+			"rate_limit_key": null
+		},
+		{
+			"name": "account_session_list",
+			"kind": "request_response",
+			"auth": {
+				"account": "required",
+				"actor": "none"
+			},
+			"input_schema": null,
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"sessions": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"id": {
+									"type": "string",
+									"pattern": "^[0-9a-f]{64}$"
+								},
+								"account_id": {
+									"type": "string",
+									"format": "uuid",
+									"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+								},
+								"created_at": {
+									"type": "string",
+									"format": "date-time",
+									"pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+								},
+								"expires_at": {
+									"type": "string",
+									"format": "date-time",
+									"pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+								},
+								"is_current": {
+									"type": "boolean",
+									"description": "Whether this is the session the request authenticated with — `false` on every row for a non-session credential."
+								}
+							},
+							"required": [
+								"id",
+								"account_id",
+								"created_at",
+								"expires_at",
+								"is_current"
+							],
+							"additionalProperties": false
+						}
+					}
+				},
+				"required": [
+					"sessions"
+				],
+				"additionalProperties": false
+			},
+			"description": "List auth sessions for the current account.",
+			"side_effects": false,
+			"rate_limit_key": null
+		},
+		{
+			"name": "account_session_revoke",
+			"kind": "request_response",
+			"auth": {
+				"account": "required",
+				"actor": "none",
+				"credential_types": [
+					"session"
+				]
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"session_id": {
+						"type": "string",
+						"pattern": "^[0-9a-f]{64}$",
+						"description": "Session id (blake3 hash) to revoke."
+					}
+				},
+				"required": [
+					"session_id"
+				],
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"ok": {
+						"type": "boolean",
+						"const": true
+					},
+					"revoked": {
+						"type": "boolean"
+					}
+				},
+				"required": [
+					"ok",
+					"revoked"
+				],
+				"additionalProperties": false
+			},
+			"description": "Revoke a single auth session for the current account (IDOR-guarded).",
+			"side_effects": true,
+			"rate_limit_key": null
+		},
+		{
+			"name": "account_session_revoke_all",
+			"kind": "request_response",
+			"auth": {
+				"account": "required",
+				"actor": "none",
+				"credential_types": [
+					"session"
+				]
+			},
+			"input_schema": null,
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"ok": {
+						"type": "boolean",
+						"const": true
+					},
+					"count": {
+						"type": "number"
+					}
+				},
+				"required": [
+					"ok",
+					"count"
+				],
+				"additionalProperties": false
+			},
+			"description": "Revoke every auth session for the current account.",
+			"side_effects": true,
+			"rate_limit_key": null
+		},
+		{
+			"name": "account_token_create",
+			"kind": "request_response",
+			"auth": {
+				"account": "required",
+				"actor": "none",
+				"credential_types": [
+					"session"
+				]
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"name": {
+						"description": "Human-friendly label; shown in the token list. At most 255 characters.",
+						"type": "string",
+						"maxLength": 255
+					},
+					"scope": {
+						"oneOf": [
+							{
+								"type": "object",
+								"properties": {
+									"kind": {
+										"type": "string",
+										"const": "full"
+									}
+								},
+								"required": [
+									"kind"
+								],
+								"additionalProperties": false
+							},
+							{
+								"type": "object",
+								"properties": {
+									"kind": {
+										"type": "string",
+										"const": "methods"
+									},
+									"methods": {
+										"type": "array",
+										"items": {
+											"type": "string"
+										}
+									}
+								},
+								"required": [
+									"kind",
+									"methods"
+								],
+								"additionalProperties": false
+							}
+						],
+						"description": "What the token may do. `{kind:'full'}` for full account authority, or `{kind:'methods',methods:[…]}` to narrow it to named RPC methods — a narrowed token is RPC-only and reaches no non-RPC surface that reads account data or carries authority.",
+						"invalid_reason": "token_scope_invalid"
+					},
+					"lifetime": {
+						"oneOf": [
+							{
+								"type": "object",
+								"properties": {
+									"kind": {
+										"type": "string",
+										"const": "eternal"
+									}
+								},
+								"required": [
+									"kind"
+								],
+								"additionalProperties": false
+							},
+							{
+								"type": "object",
+								"properties": {
+									"kind": {
+										"type": "string",
+										"const": "ttl"
+									},
+									"days": {
+										"type": "integer",
+										"minimum": 1,
+										"maximum": 36500
+									}
+								},
+								"required": [
+									"kind",
+									"days"
+								],
+								"additionalProperties": false
+							}
+						],
+						"description": "How long the token lives. `{kind:'eternal'}` never expires; `{kind:'ttl',days:N}` expires N days from mint.",
+						"invalid_reason": "token_lifetime_invalid"
+					}
+				},
+				"required": [
+					"scope",
+					"lifetime"
+				],
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"ok": {
+						"type": "boolean",
+						"const": true
+					},
+					"token": {
+						"type": "string",
+						"description": "Raw token — shown once, store securely."
+					},
+					"id": {
+						"type": "string",
+						"pattern": "^tok_[A-Za-z0-9_-]{12}$"
+					},
+					"name": {
+						"type": "string"
+					},
+					"expires_at": {
+						"description": "ISO 8601 expiry, or `null` for an eternal token.",
+						"type": [
+							"string",
+							"null"
+						]
+					}
+				},
+				"required": [
+					"ok",
+					"token",
+					"id",
+					"name",
+					"expires_at"
+				],
+				"additionalProperties": false
+			},
+			"description": "Create an API token for the current account. Raw token is returned once.",
+			"side_effects": true,
+			"rate_limit_key": "account"
+		},
+		{
+			"name": "account_token_list",
+			"kind": "request_response",
+			"auth": {
+				"account": "required",
+				"actor": "none"
+			},
+			"input_schema": null,
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"tokens": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"id": {
+									"type": "string"
+								},
+								"account_id": {
+									"type": "string",
+									"format": "uuid",
+									"pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+								},
+								"name": {
+									"type": "string"
+								},
+								"expires_at": {
+									"type": [
+										"string",
+										"null"
+									]
+								},
+								"last_used_at": {
+									"type": [
+										"string",
+										"null"
+									]
+								},
+								"last_used_ip": {
+									"type": [
+										"string",
+										"null"
+									]
+								},
+								"created_at": {
+									"type": "string"
+								},
+								"scope": {
+									"type": "string"
+								}
+							},
+							"required": [
+								"id",
+								"account_id",
+								"name",
+								"expires_at",
+								"last_used_at",
+								"last_used_ip",
+								"created_at",
+								"scope"
+							],
+							"additionalProperties": false
+						}
+					}
+				},
+				"required": [
+					"tokens"
+				],
+				"additionalProperties": false
+			},
+			"description": "List API tokens for the current account. Hashes are never returned.",
+			"side_effects": false,
+			"rate_limit_key": null
+		},
+		{
+			"name": "account_token_revoke",
+			"kind": "request_response",
+			"auth": {
+				"account": "required",
+				"actor": "none",
+				"credential_types": [
+					"session"
+				]
+			},
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"token_id": {
+						"type": "string",
+						"pattern": "^tok_[A-Za-z0-9_-]{12}$",
+						"description": "Public API token id (e.g. `tok_<12 chars>`)."
+					}
+				},
+				"required": [
+					"token_id"
+				],
+				"additionalProperties": false
+			},
+			"output_schema": {
+				"type": "object",
+				"properties": {
+					"ok": {
+						"type": "boolean",
+						"const": true
+					},
+					"revoked": {
+						"type": "boolean"
+					}
+				},
+				"required": [
+					"ok",
+					"revoked"
+				],
+				"additionalProperties": false
+			},
+			"description": "Revoke an API token for the current account (IDOR-guarded).",
+			"side_effects": true,
+			"rate_limit_key": null
+		}
+	],
+	"diagnostics": [
+		{
+			"level": "info",
+			"category": "schema",
+			"message": "Part of the schema has no JSON Schema form and is left out or written as {} there: cannot express `check` at #/properties/email/anyOf/0: it holds a function",
+			"source": "/api/rpc account_verify output"
+		},
+		{
+			"level": "info",
+			"category": "schema",
+			"message": "Part of the schema has no JSON Schema form and is left out or written as {} there: cannot express `check` at #/properties/email/anyOf/0: it holds a function",
+			"source": "/ws account_verify output"
+		}
+	]
+}

@@ -8,20 +8,24 @@
  * @module
  */
 
-import { z } from 'zod';
 import { meta } from '@fuzdev/fuz_schema/meta.ts';
 import {
 	array,
 	boolean,
+	integer,
 	literal,
+	min_value,
+	nullable,
+	number,
 	object,
 	pipe,
-	regex,
 	string,
+	void as fuz_void,
+	with_default,
 	type Infer
 } from '@fuzdev/fuz_schema/schema.ts';
 
-import { bounded_string } from '../primitive_schemas.ts';
+import { bounded_string, Timestamp } from '../primitive_schemas_fuz.ts';
 import { TokenScopeInput } from './token_scope.ts';
 import { TokenLifetimeInput } from './token_lifetime.ts';
 
@@ -32,17 +36,17 @@ import {
 	SessionAccountJson,
 	SessionId
 } from './account_schema.ts';
-import { API_TOKEN_ID_REGEX, ApiTokenId } from './api_token.ts';
+import { ApiTokenId } from './api_token.ts';
 
 // -- Input/output schemas ---------------------------------------------------
 
-/** Input for `account_verify`. No parameters — the caller is the subject. */
-export const VerifyInput = z.void();
-export type VerifyInput = z.infer<typeof VerifyInput>;
+/** Input for `account_verify`, fuz_schema's `void`. No parameters — the caller is the subject. */
+export const VerifyInput = fuz_void;
+export type VerifyInput = Infer<typeof VerifyInput>;
 
-/** Input for `account_session_list`. No parameters. */
-export const SessionListInput = z.void();
-export type SessionListInput = z.infer<typeof SessionListInput>;
+/** Input for `account_session_list`, fuz_schema's `void`. No parameters. */
+export const SessionListInput = fuz_void;
+export type SessionListInput = Infer<typeof SessionListInput>;
 
 /** Output for `account_session_list`, a `@fuzdev/fuz_schema` schema. */
 export const SessionListOutput = object({
@@ -59,23 +63,29 @@ export const SessionRevokeInput = object({
 });
 export type SessionRevokeInput = Infer<typeof SessionRevokeInput>;
 
-/** Output for `account_session_revoke`. `revoked` is `false` for IDOR misses. */
-export const SessionRevokeOutput = z.strictObject({
-	ok: z.literal(true),
-	revoked: z.boolean()
+/**
+ * Output for `account_session_revoke`, a `@fuzdev/fuz_schema` schema.
+ * `revoked` is `false` for IDOR misses.
+ */
+export const SessionRevokeOutput = object({
+	ok: literal(true),
+	revoked: boolean
 });
-export type SessionRevokeOutput = z.infer<typeof SessionRevokeOutput>;
+export type SessionRevokeOutput = Infer<typeof SessionRevokeOutput>;
 
-/** Input for `account_session_revoke_all`. No parameters. */
-export const SessionRevokeAllInput = z.void();
-export type SessionRevokeAllInput = z.infer<typeof SessionRevokeAllInput>;
+/** Input for `account_session_revoke_all`, fuz_schema's `void`. No parameters. */
+export const SessionRevokeAllInput = fuz_void;
+export type SessionRevokeAllInput = Infer<typeof SessionRevokeAllInput>;
 
-/** Output for `account_session_revoke_all`. */
-export const SessionRevokeAllOutput = z.strictObject({
-	ok: z.literal(true),
-	count: z.number()
+/**
+ * Output for `account_session_revoke_all`, a `@fuzdev/fuz_schema` schema.
+ * `count` is the number of sessions revoked.
+ */
+export const SessionRevokeAllOutput = object({
+	ok: literal(true),
+	count: pipe(number, integer, min_value(0))
 });
-export type SessionRevokeAllOutput = z.infer<typeof SessionRevokeAllOutput>;
+export type SessionRevokeAllOutput = Infer<typeof SessionRevokeAllOutput>;
 
 /**
  * Maximum length of an API token's `name`, in UTF-16 code units (what
@@ -100,26 +110,23 @@ export const ERROR_TOKEN_SCOPE_INVALID = 'token_scope_invalid' as const;
 export const ERROR_TOKEN_LIFETIME_INVALID = 'token_lifetime_invalid' as const;
 
 /**
- * Input for `account_token_create`.
+ * Input for `account_token_create`, a `@fuzdev/fuz_schema` schema.
  *
  * `scope` is **required** — default-deny at mint. There is deliberately no
  * permissive default: a caller who wants full authority spells
  * `{kind: 'full'}`, and the stored document records that they did. That is the
  * reversal of the 2026-02 design, where the field existed but nothing depended
- * on it. Because `scope` has no default, the object as a whole no longer
- * carries `.prefault({})`.
+ * on it. Because `scope` has no default, the object as a whole has none.
  *
  * `lifetime` follows the same rule — a never-expiring token is
  * `{kind: 'eternal'}`, spelled out, so `expires_at IS NULL` always means
  * "deliberately eternal" (see `auth/token_lifetime.ts`).
  */
-export const TokenCreateInput = z.strictObject({
-	name: bounded_string({ max: API_TOKEN_NAME_LENGTH_MAX })
-		.default('CLI token')
-		.meta({
-			description: `Human-friendly label; shown in the token list. At most ${API_TOKEN_NAME_LENGTH_MAX} characters.`
-		}),
-	scope: TokenScopeInput.meta({
+export const TokenCreateInput = object({
+	name: meta(with_default(bounded_string({ max: API_TOKEN_NAME_LENGTH_MAX }), 'CLI token'), {
+		description: `Human-friendly label; shown in the token list. At most ${API_TOKEN_NAME_LENGTH_MAX} characters.`
+	}),
+	scope: meta(TokenScopeInput, {
 		description:
 			"What the token may do. `{kind:'full'}` for full account authority, or " +
 			"`{kind:'methods',methods:[…]}` to narrow it to named RPC methods — a " +
@@ -127,44 +134,43 @@ export const TokenCreateInput = z.strictObject({
 			'account data or carries authority.',
 		invalid_reason: ERROR_TOKEN_SCOPE_INVALID
 	}),
-	lifetime: TokenLifetimeInput.meta({
+	lifetime: meta(TokenLifetimeInput, {
 		description:
 			"How long the token lives. `{kind:'eternal'}` never expires; " +
 			"`{kind:'ttl',days:N}` expires N days from mint.",
 		invalid_reason: ERROR_TOKEN_LIFETIME_INVALID
 	})
 });
-export type TokenCreateInput = z.infer<typeof TokenCreateInput>;
-
-/** Output for `account_token_create`. `token` is returned exactly once. */
-export const TokenCreateOutput = z.strictObject({
-	ok: z.literal(true),
-	token: z.string().meta({ description: 'Raw token — shown once, store securely.' }),
-	id: ApiTokenId,
-	name: z.string(),
-	expires_at: z
-		.string()
-		.nullable()
-		.meta({ description: 'ISO 8601 expiry, or `null` for an eternal token.' })
-});
-export type TokenCreateOutput = z.infer<typeof TokenCreateOutput>;
-
-/** Input for `account_token_list`. No parameters. */
-export const TokenListInput = z.void();
-export type TokenListInput = z.infer<typeof TokenListInput>;
-
-/** Output for `account_token_list`. Hashes are excluded. */
-export const TokenListOutput = z.strictObject({
-	tokens: z.array(ClientApiTokenJson)
-});
-export type TokenListOutput = z.infer<typeof TokenListOutput>;
+export type TokenCreateInput = Infer<typeof TokenCreateInput>;
 
 /**
- * Input for `account_token_revoke`, a `@fuzdev/fuz_schema` schema. Its
- * `token_id` is `ApiTokenId`'s check written inline, as `ApiTokenId` is Zod.
+ * Output for `account_token_create`, a `@fuzdev/fuz_schema` schema. `token`
+ * is returned exactly once.
  */
+export const TokenCreateOutput = object({
+	ok: literal(true),
+	token: meta(string, { description: 'Raw token — shown once, store securely.' }),
+	id: ApiTokenId,
+	name: string,
+	expires_at: meta(nullable(Timestamp), {
+		description: 'ISO 8601 expiry, or `null` for an eternal token.'
+	})
+});
+export type TokenCreateOutput = Infer<typeof TokenCreateOutput>;
+
+/** Input for `account_token_list`, fuz_schema's `void`. No parameters. */
+export const TokenListInput = fuz_void;
+export type TokenListInput = Infer<typeof TokenListInput>;
+
+/** Output for `account_token_list`, a `@fuzdev/fuz_schema` schema. Hashes are excluded. */
+export const TokenListOutput = object({
+	tokens: array(ClientApiTokenJson)
+});
+export type TokenListOutput = Infer<typeof TokenListOutput>;
+
+/** Input for `account_token_revoke`, a `@fuzdev/fuz_schema` schema. */
 export const TokenRevokeInput = object({
-	token_id: meta(pipe(string, regex(API_TOKEN_ID_REGEX)), {
+	token_id: meta(ApiTokenId, {
 		description: 'Public API token id (e.g. `tok_<12 chars>`).'
 	})
 });

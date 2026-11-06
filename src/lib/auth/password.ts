@@ -7,9 +7,10 @@
  * @module
  */
 
-import { z } from 'zod';
+import { meta } from '@fuzdev/fuz_schema/meta.ts';
+import type { Infer } from '@fuzdev/fuz_schema/schema.ts';
 
-import { bounded_string } from '../primitive_schemas.ts';
+import { bounded_string } from '../primitive_schemas_fuz.ts';
 
 /** Minimum password length, in UTF-16 code units (OWASP recommendation). */
 export const PASSWORD_LENGTH_MIN = 12;
@@ -17,18 +18,28 @@ export const PASSWORD_LENGTH_MIN = 12;
 /** Maximum password length, in UTF-16 code units. Caps hashing cost to prevent DoS via oversized passwords. */
 export const PASSWORD_LENGTH_MAX = 300;
 
-/** Password for account creation or password change — enforces current length policy. Also usable for client-side UX validation. */
-export const Password = bounded_string({
-	min: PASSWORD_LENGTH_MIN,
-	max: PASSWORD_LENGTH_MAX
-}).meta({ sensitivity: 'secret' });
-export type Password = z.infer<typeof Password>;
+/**
+ * Password for account creation or password change — enforces current length
+ * policy. Also usable for client-side UX validation. A `@fuzdev/fuz_schema`
+ * schema.
+ */
+export const Password = meta(
+	bounded_string({ min: PASSWORD_LENGTH_MIN, max: PASSWORD_LENGTH_MAX }),
+	{
+		sensitivity: 'secret'
+	}
+);
+export type Password = Infer<typeof Password>;
 
-/** Password submitted for login or verification — minimal validation for forward-compatibility if length requirements change. */
-export const PasswordProvided = bounded_string({ min: 1, max: PASSWORD_LENGTH_MAX }).meta({
+/**
+ * Password submitted for login or verification — minimal validation for
+ * forward-compatibility if length requirements change. A `@fuzdev/fuz_schema`
+ * schema.
+ */
+export const PasswordProvided = meta(bounded_string({ min: 1, max: PASSWORD_LENGTH_MAX }), {
 	sensitivity: 'secret'
 });
-export type PasswordProvided = z.infer<typeof PasswordProvided>;
+export type PasswordProvided = Infer<typeof PasswordProvided>;
 
 /**
  * Injectable password hashing dependencies.

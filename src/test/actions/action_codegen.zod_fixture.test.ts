@@ -5,12 +5,9 @@
  * codegen's reading of a `@fuzdev/fuz_schema` spec must leave a Zod spec's
  * output alone, so the fixture never changes for an all-Zod list.
  *
- * fuz_app's own list, whose `account_token_revoke`, `self_service_role_set`,
- * `actor_lookup`, `actor_search` and role_grant_offer methods are
- * `@fuzdev/fuz_schema`, as are the admin methods' inputs and outputs,
- * `account_session_revoke`'s input,
- * and the outputs of `account_verify` and `account_session_list`,
- * generates the same text but for those types, read by `Infer`, and the
+ * fuz_app's own list, whose account, `self_service_role_set`,
+ * `actor_lookup`, `actor_search`, admin and role_grant_offer methods are
+ * `@fuzdev/fuz_schema`, generates the same text but for those types, read by `Infer`, and the
  * `Infer` import. The all-Zod list holds Zod stand-ins for those schemas,
  * which give codegen the answers their own do.
  *
@@ -58,6 +55,12 @@ test("fuz_app's own list differs from the fixture only in its fuz_schema methods
 		'role_grant_assign'
 	];
 	const fully: ReadonlyArray<string> = [
+		'account_verify',
+		'account_session_list',
+		'account_session_revoke',
+		'account_session_revoke_all',
+		'account_token_create',
+		'account_token_list',
 		'account_token_revoke',
 		'self_service_role_set',
 		'actor_lookup',
@@ -81,21 +84,8 @@ test("fuz_app's own list differs from the fixture only in its fuz_schema methods
 		'app_settings_get',
 		'app_settings_update'
 	];
-	// the account methods: `account_session_revoke`'s input, and the outputs of
-	// `account_verify` and `account_session_list`, beside their Zod inputs
-	assert.deepStrictEqual(fuz_schema_input_methods, [
-		...admin_inputs,
-		...offers,
-		'account_session_revoke',
-		...fully
-	]);
-	assert.deepStrictEqual(fuz_schema_output_methods, [
-		...admin_inputs,
-		...offers,
-		'account_verify',
-		'account_session_list',
-		...fully
-	]);
+	assert.deepStrictEqual(fuz_schema_input_methods, [...admin_inputs, ...offers, ...fully]);
+	assert.deepStrictEqual(fuz_schema_output_methods, [...admin_inputs, ...offers, ...fully]);
 	const changed = actual.filter((line) => line.includes(': Infer<'));
 	// each method's input and output, in the plain inputs-outputs block, the
 	// protocol-including one, and the qualified one
@@ -134,10 +124,17 @@ test('the Zod stand-ins give codegen the answers the fuz_schema methods give', (
 		const output_is_own = !fuz_schema_output_methods.includes(spec.method);
 		assert.strictEqual(stand_in.output === spec.output, output_is_own, spec.method);
 	}
+	const own_input = (method: string) => fixture_specs.find((spec) => spec.method === method)!;
+	// the void stand-in is reached
+	assert.deepStrictEqual(
+		fuz_schema_input_methods.filter((method) => is_void_schema(own_input(method).input)),
+		['account_verify', 'account_session_list', 'account_session_revoke_all', 'account_token_list']
+	);
 	// the defaulted stand-in is reached: the defaulted inputs take `undefined`
 	assert.deepStrictEqual(
-		fuz_schema_input_methods.filter((method) =>
-			action_input_is_optional(fixture_specs.find((spec) => spec.method === method)!)
+		fuz_schema_input_methods.filter(
+			(method) =>
+				!is_void_schema(own_input(method).input) && action_input_is_optional(own_input(method))
 		),
 		[
 			'admin_account_list',
