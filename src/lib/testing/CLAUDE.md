@@ -2707,7 +2707,10 @@ round-trip / conformance suites never vary:
   padded creation name (space, tab, U+0085) → 400, never trimmed into a legal
   one — at signup, and at bootstrap (`bootstrap_path`, default
   `/api/account/bootstrap`, `null` to skip), where the body is validated ahead
-  of the window check, so the 400 holds after bootstrap completed.
+  of the window check, so the 400 holds after bootstrap completed. There the
+  `token` past `BOOTSTRAP_TOKEN_LENGTH_MAX` UTF-16 code units is 400 and one at
+  it reaches the closed window's 403, ASCII, two-byte, and astral, so both
+  spines count code units, not bytes or scalar values.
 - **Length + format regex parity** — both `[USERNAME_LENGTH_MIN,
 USERNAME_LENGTH_MAX]` = `[3, 39]` boundary edges (just-outside → 400,
   just-inside → 403 no-matching-invite) and the creation regex shape (leading

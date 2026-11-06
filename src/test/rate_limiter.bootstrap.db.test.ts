@@ -15,7 +15,8 @@ import { parse_or_throw } from '@fuzdev/fuz_schema/schema.ts';
 
 import { RateLimiter } from '#lib/rate_limiter.ts';
 import { create_bootstrap_route_specs } from '#lib/auth/bootstrap_routes.ts';
-import { BootstrapOutput } from '#lib/auth/bootstrap_route_schema.ts';
+import { BOOTSTRAP_TOKEN_LENGTH_MAX, BootstrapOutput } from '#lib/auth/bootstrap_route_schema.ts';
+import { MAX_SECURE_FILE_SIZE } from '#lib/runtime/secure_file.ts';
 import { apply_route_specs } from '#lib/http/route_spec.ts';
 import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
@@ -29,6 +30,8 @@ import type { Db } from '#lib/db/db.ts';
 import {
 	ERROR_RATE_LIMIT_EXCEEDED,
 	ERROR_ALREADY_BOOTSTRAPPED,
+	ERROR_INVALID_REQUEST_BODY,
+	ERROR_INVALID_TOKEN,
 	ERROR_TOKEN_FILE_MISSING
 } from '#lib/http/error_schemas.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
@@ -390,6 +393,74 @@ describe('password max length validation', () => {
 			})
 		});
 		assert.strictEqual(res.status, 400);
+	});
+});
+
+describe('token max length validation', () => {
+	const astral = '\u{1F600}';
+	// each at the cap in UTF-16 code units: ASCII, two-byte, and astral
+	const at_max = [
+		'x'.repeat(BOOTSTRAP_TOKEN_LENGTH_MAX),
+		'\u00e9'.repeat(BOOTSTRAP_TOKEN_LENGTH_MAX),
+		astral.repeat(BOOTSTRAP_TOKEN_LENGTH_MAX / 2)
+	];
+	// each one unit past it, or one astral character, two units
+	const over_max = [
+		'x'.repeat(BOOTSTRAP_TOKEN_LENGTH_MAX + 1),
+		'\u00e9'.repeat(BOOTSTRAP_TOKEN_LENGTH_MAX + 1),
+		astral.repeat(BOOTSTRAP_TOKEN_LENGTH_MAX / 2) + 'a',
+		astral.repeat(BOOTSTRAP_TOKEN_LENGTH_MAX / 2 + 1)
+	];
+
+	/** POST a bootstrap with `token` to an app whose audit rows land in its db. */
+	const attempt = async (token: string) => {
+		let audit: AuditEmitter | undefined;
+		const test_app = await create_bootstrap_app(null, undefined, {
+			create_audit: (audit_db) =>
+				(audit = create_audit_emitter({ db: audit_db, log, track_inflight: true }))
+		});
+		const res = await test_app.app.request('/bootstrap', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ token, username: 'admin', password: 'secure_password_123' })
+		});
+		const body = await res.json();
+		assert.ok(audit);
+		await audit.drain_inflight();
+		const audit_rows = await test_app.db.query<{ outcome: string }>(
+			"SELECT outcome FROM audit_log WHERE event_type = 'bootstrap'"
+		);
+		return { res, body, audit_rows, read_secure_file: test_app.read_secure_file };
+	};
+
+	test('the cap is the token file cap', () => {
+		assert.strictEqual(BOOTSTRAP_TOKEN_LENGTH_MAX, MAX_SECURE_FILE_SIZE);
+	});
+
+	test('a token at the cap in code units passes validation to the compare', async () => {
+		for (const token of at_max) {
+			assert.strictEqual(token.length, BOOTSTRAP_TOKEN_LENGTH_MAX);
+			const { res, body, audit_rows, read_secure_file } = await attempt(token);
+			assert.strictEqual(res.status, 401, `${token.length} units`);
+			assert.strictEqual(body.error, ERROR_INVALID_TOKEN);
+			assert.strictEqual(read_secure_file.mock.calls.length, 1);
+			assert.deepStrictEqual(
+				audit_rows.map((r) => r.outcome),
+				['failure'],
+				'the wrong token writes its failure row'
+			);
+		}
+	});
+
+	test('a token past the cap is a malformed body: 400, no token read, no audit row', async () => {
+		for (const token of over_max) {
+			assert.ok(token.length > BOOTSTRAP_TOKEN_LENGTH_MAX);
+			const { res, body, audit_rows, read_secure_file } = await attempt(token);
+			assert.strictEqual(res.status, 400, `${token.length} units`);
+			assert.strictEqual(body.error, ERROR_INVALID_REQUEST_BODY);
+			assert.strictEqual(read_secure_file.mock.calls.length, 0, 'the token file is never read');
+			assert.deepStrictEqual(audit_rows, [], 'a malformed body writes no audit row');
+		}
 	});
 });
 

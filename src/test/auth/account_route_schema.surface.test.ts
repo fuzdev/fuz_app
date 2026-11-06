@@ -16,6 +16,8 @@
  * - `/signup`'s `email` gains `maxLength`, the `max_length` the fuz_schema
  *   `Email` bounds its code units by ahead of its byte `check`, which has no
  *   JSON Schema form, an `info` diagnostic on the input
+ * - `/bootstrap`'s `token` gains `maxLength`, `BOOTSTRAP_TOKEN_LENGTH_MAX`,
+ *   the token file's cap, where the Zod one had no maximum
  *
  * Every error schema is the capture's.
  *
@@ -30,7 +32,10 @@ import {
 	create_account_route_shapes
 } from '#lib/auth/account_route_schema.ts';
 import { create_signup_route_shape } from '#lib/auth/signup_route_schema.ts';
-import { bootstrap_route_shape } from '#lib/auth/bootstrap_route_schema.ts';
+import {
+	BOOTSTRAP_TOKEN_LENGTH_MAX,
+	bootstrap_route_shape
+} from '#lib/auth/bootstrap_route_schema.ts';
 import { generate_app_surface, type AppSurfaceDiagnostic } from '#lib/http/surface.ts';
 import type { RouteSpec } from '#lib/http/route_spec.ts';
 import {
@@ -112,7 +117,16 @@ const MOVES: Record<string, (route: Record<string, any>) => Record<string, any>>
 			})
 		});
 	},
-	'POST /bootstrap': (route) => with_output_username(route)
+	'POST /bootstrap': (route) => {
+		const { token } = route.input_schema.properties;
+		assert.deepStrictEqual(token, { type: 'string', minLength: 1, sensitivity: 'secret' });
+		return with_output_username({
+			...route,
+			input_schema: with_properties(route.input_schema, {
+				token: { ...token, maxLength: BOOTSTRAP_TOKEN_LENGTH_MAX }
+			})
+		});
+	}
 };
 
 // declared: the output account's `username`, `{}` at capture, is `UsernameCanonical`

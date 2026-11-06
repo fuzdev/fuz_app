@@ -73,7 +73,11 @@ import '../assert_dev_env.ts';
  * Nothing trims a creation username: a padded one is refused 400 at signup and
  * at bootstrap, never trimmed into a legal name. Bootstrap validates its body
  * before its window check, so the padded bootstrap answers 400 even after
- * bootstrap completed.
+ * bootstrap completed. Its `token` is bounded the same way: past
+ * `BOOTSTRAP_TOKEN_LENGTH_MAX` UTF-16 code units it is 400, at the cap it
+ * reaches the closed window's 403, with a two-byte and an astral token at
+ * each side so the spines count the same unit — neither bytes nor scalar
+ * values.
  *
  * **Email format (creation):** the optional signup `email` is validated to a
  * loose `local@domain.tld` shape on both spines — TS `Email` (`EMAIL_REGEX`:
@@ -114,6 +118,7 @@ import {
 	ERROR_INVALID_REQUEST_BODY,
 	ERROR_NO_MATCHING_INVITE
 } from '../../http/error_schemas.ts';
+import { BOOTSTRAP_TOKEN_LENGTH_MAX } from '../../auth/bootstrap_route_schema.ts';
 import { DEFAULT_TEST_PASSWORD } from '../test_credentials.ts';
 import type { SetupTest } from './setup.ts';
 import { test_if } from './capabilities.ts';
@@ -739,6 +744,44 @@ export const describe_identity_parity_cross_tests = (
 					{ status: 403, error: ERROR_ALREADY_BOOTSTRAPPED },
 					'bootstrap unpadded control'
 				);
+			}
+		);
+
+		// The token's maximum is UTF-16 code units on every spine: a two-byte
+		// token at the cap is twice the cap in bytes and still reaches the closed
+		// window, and an astral one is half the cap in scalar values and refused
+		// one character past it.
+		test_if(
+			bootstrap_path !== null,
+			'a token past its maximum in code units → 400, ahead of the window check',
+			async () => {
+				const fixture = await setup_test();
+				const astral = '\u{1F600}';
+				const attempt = (token: string): Promise<Attempt> =>
+					post_json(fixture, bootstrap_path!, {
+						token,
+						username: 'token_length_keeper',
+						password: DEFAULT_TEST_PASSWORD
+					});
+				for (const token of [
+					'x'.repeat(BOOTSTRAP_TOKEN_LENGTH_MAX),
+					'\u00e9'.repeat(BOOTSTRAP_TOKEN_LENGTH_MAX),
+					astral.repeat(BOOTSTRAP_TOKEN_LENGTH_MAX / 2)
+				]) {
+					assert.deepStrictEqual(
+						await attempt(token),
+						{ status: 403, error: ERROR_ALREADY_BOOTSTRAPPED },
+						`a ${token.length}-unit token passes validation`
+					);
+				}
+				for (const token of [
+					'x'.repeat(BOOTSTRAP_TOKEN_LENGTH_MAX + 1),
+					'\u00e9'.repeat(BOOTSTRAP_TOKEN_LENGTH_MAX + 1),
+					astral.repeat(BOOTSTRAP_TOKEN_LENGTH_MAX / 2) + 'a',
+					astral.repeat(BOOTSTRAP_TOKEN_LENGTH_MAX / 2 + 1)
+				]) {
+					assert_attempt(await attempt(token), 400, `a ${token.length}-unit token`);
+				}
 			}
 		);
 	});

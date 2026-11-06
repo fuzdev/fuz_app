@@ -191,7 +191,11 @@ legitimate operator.
 - **`on_bootstrap` error isolation**: Callback failures are caught and logged
   without preventing the bootstrap success response
 - **Input validation**: Bootstrap username uses the `Username` schema (same
-  constraints as signup), not a weaker `min(1)` check
+  constraints as signup), not a weaker `min(1)` check. The token is at most
+  `BOOTSTRAP_TOKEN_LENGTH_MAX` (4096) UTF-16 code units, the token file's cap:
+  a longer one can never match, so it is a malformed body (`400
+  invalid_request_body`), refused before the window check and the token read,
+  with no audit row. The body is validated first on both spines
 - **Exact token compare**: the provided token must equal the token file's raw
   bytes less one optional trailing LF, compared in constant time — nothing is
   trimmed, so a file holding `tok\r\n`, `tok  \n`, or a leading newline

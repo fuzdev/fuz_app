@@ -219,7 +219,10 @@ account, signup and bootstrap shapes' schemas, error bodies included, are
 `@fuzdev/fuz_schema` schemas: `/login` takes `UsernameProvided` and
 `PasswordProvided`; the output `username` of `/logout`, `/signup` and
 `/bootstrap` is a `UsernameCanonical`; `/password`'s revoke counts are
-non-negative integers.
+non-negative integers; `/bootstrap`'s `token` is 1 to
+`BOOTSTRAP_TOKEN_LENGTH_MAX` (4096, the token file's cap) UTF-16 code units,
+a longer one a `400 invalid_request_body` before the window check, with no
+audit row — twin of the Rust `BOOTSTRAP_TOKEN_LENGTH_MAX`.
 
 **`POST /login` timing floor.** Login 401s are floored to
 `DEFAULT_LOGIN_FAIL_FLOOR_MS` (250ms) + uniform jitter (±25ms) via

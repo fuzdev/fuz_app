@@ -18,6 +18,7 @@ import { meta } from '@fuzdev/fuz_schema/meta.ts';
 import {
 	literal,
 	loose_object,
+	max_length,
 	min_length,
 	object,
 	one_of,
@@ -39,11 +40,25 @@ import {
 } from '../http/error_schemas.ts';
 
 /**
+ * The longest `token` `POST /bootstrap` takes, in UTF-16 code units: the token
+ * file's cap, `MAX_SECURE_FILE_SIZE` bytes. A token that can match the file is
+ * at most that many bytes in UTF-8, and no more code units than bytes, so the
+ * bound refuses none that could match. A longer one is a malformed body, a
+ * `400 invalid_request_body` refused before the bootstrap window or the token
+ * file is read, with no audit row. Twin of the Rust spine's
+ * `BOOTSTRAP_TOKEN_LENGTH_MAX`, which counts the same units.
+ */
+export const BOOTSTRAP_TOKEN_LENGTH_MAX = 4096;
+
+/**
  * Input for `POST /bootstrap`, a `@fuzdev/fuz_schema` schema. `token` is the
- * one-shot token file contents.
+ * one-shot token file contents, 1 to `BOOTSTRAP_TOKEN_LENGTH_MAX` UTF-16 code
+ * units.
  */
 export const BootstrapInput = object({
-	token: meta(pipe(string, min_length(1)), { sensitivity: 'secret' }),
+	token: meta(pipe(string, min_length(1), max_length(BOOTSTRAP_TOKEN_LENGTH_MAX)), {
+		sensitivity: 'secret'
+	}),
 	username: Username,
 	password: Password
 });

@@ -22,6 +22,9 @@
  *   bootstrap is `UsernameCanonical` (Zod: any string on logout, the creation
  *   `Username`, which lowercased, on signup and bootstrap), so a username off
  *   the lowercase grammar or its bounds fails.
+ * - **the bootstrap token's maximum**: `BootstrapInput`'s `token` is at most
+ *   `BOOTSTRAP_TOKEN_LENGTH_MAX` UTF-16 code units, the token file's cap (Zod:
+ *   no maximum). A longer one can never match the file.
  * - **the kept `__proto__` key**: a loose object (an error body,
  *   `AccountStatusUnauthenticatedError`) given an own `__proto__` key, as
  *   `JSON.parse` defines one, returns the input with it, where Zod's copy
@@ -86,6 +89,7 @@ import {
 } from '#lib/auth/signup_route_schema.ts';
 import {
 	bootstrap_route_shape,
+	BOOTSTRAP_TOKEN_LENGTH_MAX,
 	BootstrapInput,
 	BootstrapOutput
 } from '#lib/auth/bootstrap_route_schema.ts';
@@ -357,7 +361,12 @@ const created_extra = [
 // -- the declared differences -----------------------------------------------
 
 type Difference =
-	'strict timestamp' | 'token id' | 'count' | 'canonical username' | 'kept __proto__ key';
+	| 'strict timestamp'
+	| 'token id'
+	| 'count'
+	| 'canonical username'
+	| 'bootstrap token max'
+	| 'kept __proto__ key';
 
 /** The declared difference a value refused by fuz_schema and taken by Zod falls under, if any. */
 type Recognizer = (value: any) => Difference | null;
@@ -625,7 +634,23 @@ const pairs: ReadonlyArray<Pair> = [
 		name: 'BootstrapInput',
 		fuz: BootstrapInput,
 		zod: ZodBootstrapInput,
-		values: around(bootstrap, with_each(bootstrap, 'token', [' ', 'x'.repeat(5000)]))
+		values: around(
+			bootstrap,
+			with_each(bootstrap, 'token', [
+				' ',
+				'x'.repeat(BOOTSTRAP_TOKEN_LENGTH_MAX),
+				'x'.repeat(BOOTSTRAP_TOKEN_LENGTH_MAX + 1),
+				'\u{1F600}'.repeat(BOOTSTRAP_TOKEN_LENGTH_MAX / 2),
+				'\u{1F600}'.repeat(BOOTSTRAP_TOKEN_LENGTH_MAX / 2) + 'a',
+				'x'.repeat(5000)
+			])
+		),
+		recognize: (value) =>
+			is_record(value) &&
+			typeof value.token === 'string' &&
+			value.token.length > BOOTSTRAP_TOKEN_LENGTH_MAX
+				? 'bootstrap token max'
+				: null
 	},
 	{
 		name: 'BootstrapOutput',
@@ -693,7 +718,14 @@ describe('the account schemas agree with the Zod ones', () => {
 	test('every declared difference is reached', () => {
 		assert.sameMembers(
 			[...seen.keys()],
-			['strict timestamp', 'token id', 'count', 'canonical username', 'kept __proto__ key']
+			[
+				'strict timestamp',
+				'token id',
+				'count',
+				'canonical username',
+				'bootstrap token max',
+				'kept __proto__ key'
+			]
 		);
 	});
 });
