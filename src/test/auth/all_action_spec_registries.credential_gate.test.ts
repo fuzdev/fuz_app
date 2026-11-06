@@ -49,6 +49,7 @@ import { describe, test, assert } from 'vitest';
 import { all_fuz_auth_action_spec_registries } from '#lib/auth/all_action_spec_registries.ts';
 import { create_account_route_shapes } from '#lib/auth/account_route_schema.ts';
 import { create_audit_log_route_shape } from '#lib/auth/audit_log_route_schema.ts';
+import type { RouteShape } from '#lib/http/route_spec.ts';
 import {
 	CREDENTIAL_TYPE_DAEMON_TOKEN,
 	CREDENTIAL_TYPE_SESSION
@@ -181,7 +182,7 @@ const discover_session_gated_endpoints = (): Array<string> => {
 	const endpoints = [...discover_gated_methods()]
 		.filter(([, types]) => types.includes(CREDENTIAL_TYPE_SESSION))
 		.map(([method]) => method);
-	const route_shapes = [
+	const route_shapes: Array<RouteShape> = [
 		...create_account_route_shapes({ login_account_rate_limited: false }),
 		create_audit_log_route_shape()
 	];

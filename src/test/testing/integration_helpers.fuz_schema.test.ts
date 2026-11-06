@@ -10,12 +10,13 @@
 import { describe, test, assert } from 'vitest';
 import { object, string } from '@fuzdev/fuz_schema/schema.ts';
 
-import type { RouteSpec } from '#lib/http/route_spec.ts';
+import { define_route, type RouteSpec } from '#lib/http/route_spec.ts';
+import { route_ok } from '#lib/http/route_result.ts';
 import { assert_response_matches_spec, find_route_spec } from '#lib/testing/integration_helpers.ts';
 import { rest_error } from '#lib/http/error_schemas.ts';
 import { resolve_app_route_error_maps } from '#lib/http/route_errors.ts';
 
-const spec: RouteSpec = {
+const spec = define_route({
 	method: 'POST',
 	path: '/api/things',
 	auth: { account: 'none', actor: 'none' },
@@ -23,8 +24,8 @@ const spec: RouteSpec = {
 	input: object({ name: string }),
 	output: object({ id: string }),
 	errors: [rest_error(409, 'thing_taken')],
-	handler: (c) => c.json({ id: 'x' })
-};
+	handler: () => route_ok({ id: 'x' })
+});
 
 const ENVELOPE = { jsonrpc: '2.0', id: 1, error: { code: -32602, message: 'Invalid params' } };
 

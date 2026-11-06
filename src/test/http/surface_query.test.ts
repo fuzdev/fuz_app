@@ -20,7 +20,7 @@ import {
 	surface_auth_summary
 } from '#lib/http/surface_query.ts';
 import { generate_app_surface, type AppSurface } from '#lib/http/surface.ts';
-import type { RouteSpec } from '#lib/http/route_spec.ts';
+import { define_route, type RouteSpec } from '#lib/http/route_spec.ts';
 import type { MiddlewareSpec } from '#lib/http/middleware_spec.ts';
 import { stub_handler, stub_mw } from '#lib/testing/stubs.ts';
 import { is_public_auth } from '#lib/http/auth_shape.ts';
@@ -30,7 +30,7 @@ const test_middleware: Array<MiddlewareSpec> = [
 ];
 
 const test_specs: Array<RouteSpec> = [
-	{
+	define_route({
 		method: 'GET',
 		path: '/health',
 		auth: { account: 'none', actor: 'none' },
@@ -38,8 +38,8 @@ const test_specs: Array<RouteSpec> = [
 		description: 'Health check',
 		input: z.null(),
 		output: z.null()
-	},
-	{
+	}),
+	define_route({
 		method: 'POST',
 		path: '/api/login',
 		auth: { account: 'none', actor: 'none' },
@@ -47,8 +47,8 @@ const test_specs: Array<RouteSpec> = [
 		description: 'Login',
 		input: z.strictObject({ username: z.string() }),
 		output: z.null()
-	},
-	{
+	}),
+	define_route({
 		method: 'GET',
 		path: '/api/me',
 		auth: { account: 'required', actor: 'none' },
@@ -56,8 +56,8 @@ const test_specs: Array<RouteSpec> = [
 		description: 'Current user',
 		input: z.null(),
 		output: z.null()
-	},
-	{
+	}),
+	define_route({
 		method: 'POST',
 		path: '/api/admin/grant',
 		auth: { account: 'required', actor: 'required', roles: ['admin'] },
@@ -65,8 +65,8 @@ const test_specs: Array<RouteSpec> = [
 		description: 'Grant role',
 		input: z.strictObject({ role: z.string() }),
 		output: z.null()
-	},
-	{
+	}),
+	define_route({
 		method: 'DELETE',
 		path: '/api/admin/revoke',
 		auth: { account: 'required', actor: 'required', roles: ['admin'] },
@@ -74,8 +74,8 @@ const test_specs: Array<RouteSpec> = [
 		description: 'Revoke role',
 		input: z.null(),
 		output: z.null()
-	},
-	{
+	}),
+	define_route({
 		method: 'POST',
 		path: '/api/keeper/sync',
 		auth: {
@@ -88,8 +88,8 @@ const test_specs: Array<RouteSpec> = [
 		description: 'Keeper sync',
 		input: z.null(),
 		output: z.null()
-	},
-	{
+	}),
+	define_route({
 		method: 'GET',
 		path: '/api/accounts/:id',
 		auth: { account: 'required', actor: 'required', roles: ['admin'] },
@@ -98,8 +98,8 @@ const test_specs: Array<RouteSpec> = [
 		input: z.null(),
 		output: z.null(),
 		params: z.strictObject({ id: z.string() })
-	},
-	{
+	}),
+	define_route({
 		method: 'GET',
 		path: '/api/audit-log',
 		auth: { account: 'required', actor: 'required', roles: ['admin'] },
@@ -108,8 +108,8 @@ const test_specs: Array<RouteSpec> = [
 		input: z.null(),
 		output: z.null(),
 		query: z.strictObject({ limit: z.number().optional() })
-	},
-	{
+	}),
+	define_route({
 		method: 'POST',
 		path: '/api/account/login',
 		auth: { account: 'none', actor: 'none' },
@@ -118,8 +118,8 @@ const test_specs: Array<RouteSpec> = [
 		input: z.strictObject({ username: z.string() }),
 		output: z.null(),
 		rate_limit: 'ip'
-	},
-	{
+	}),
+	define_route({
 		// A session-channel gate with no role — the shape `POST /logout` and
 		// `POST /password` carry. It answers to neither the keeper filter nor
 		// `is_plain_authenticated_auth`, so before the `credential`
@@ -131,7 +131,7 @@ const test_specs: Array<RouteSpec> = [
 		description: 'Mint an api token',
 		input: z.null(),
 		output: z.null()
-	}
+	})
 ];
 
 const build_surface = (): AppSurface =>
@@ -234,7 +234,7 @@ describe('surface_auth_summary', () => {
 		const surface = generate_app_surface({
 			middleware_specs: [],
 			route_specs: [
-				{
+				define_route({
 					method: 'GET',
 					path: '/api/admin/audit/stream',
 					auth: {
@@ -247,7 +247,7 @@ describe('surface_auth_summary', () => {
 					description: 'Audit stream',
 					input: z.null(),
 					output: z.null()
-				}
+				})
 			]
 		});
 		const summary = surface_auth_summary(surface);

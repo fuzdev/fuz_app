@@ -31,7 +31,8 @@ import { require_request_context } from '#lib/auth/request_context.ts';
 import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
 import { ActingActor } from '#lib/http/auth_shape.ts';
 import { ERROR_ACTOR_REQUIRED, ERROR_CREDENTIAL_TYPE_REQUIRED } from '#lib/http/error_schemas.ts';
-import type { RouteSpec } from '#lib/http/route_spec.ts';
+import { define_route, type RouteSpec } from '#lib/http/route_spec.ts';
+import { route_ok } from '#lib/http/route_result.ts';
 
 import { describe_db } from '../auth_db_default.ts';
 
@@ -40,7 +41,7 @@ const SESSION_ONLY_PATH = '/api/test_session_only';
 
 /** Session-gated and actor-grain — the combination that makes the order observable. */
 const create_route_specs = (): Array<RouteSpec> => [
-	{
+	define_route({
 		method: 'GET',
 		path: SESSION_ONLY_PATH,
 		auth: { account: 'required', actor: 'required', credential_types: ['session'] },
@@ -48,8 +49,8 @@ const create_route_specs = (): Array<RouteSpec> => [
 		query: z.strictObject({ acting: ActingActor }),
 		input: z.null(),
 		output: z.strictObject({ actor_id: z.string().nullable() }),
-		handler: (c) => c.json({ actor_id: require_request_context(c).actor?.id ?? null })
-	}
+		handler: (c) => route_ok({ actor_id: require_request_context(c).actor?.id ?? null })
+	})
 ];
 
 describe('fuz_auth_guard_resolver phase assignment', () => {

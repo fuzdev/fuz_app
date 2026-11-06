@@ -8,6 +8,8 @@
  * @module
  */
 
+import { route_ok } from '#lib/http/route_result.ts';
+import { define_route } from '#lib/http/route_spec.ts';
 import { describe, test, assert, beforeAll } from 'vitest';
 import { wait } from '@fuzdev/fuz_util/async.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
@@ -302,7 +304,7 @@ describe('create_app_server', () => {
 			await create_config({
 				await_pending_effects: false,
 				create_route_specs: () => [
-					{
+					define_route({
 						method: 'POST',
 						path: '/effect-test',
 						auth: { account: 'none', actor: 'none' },
@@ -312,9 +314,9 @@ describe('create_app_server', () => {
 						handler: async (c) => {
 							const effects = c.var.pending_effects;
 							effects.push(Promise.reject(new Error('effect failed')));
-							return c.json({ ok: true });
+							return route_ok({ ok: true });
 						}
-					}
+					})
 				],
 				on_effect_error: (error, ctx) => {
 					errors.push({ error, transport: ctx.transport, method: ctx.method, path: ctx.path });
@@ -345,7 +347,7 @@ describe('create_app_server', () => {
 			await create_config({
 				await_pending_effects: true,
 				create_route_specs: () => [
-					{
+					define_route({
 						method: 'POST',
 						path: '/effect-test',
 						auth: { account: 'none', actor: 'none' },
@@ -354,9 +356,9 @@ describe('create_app_server', () => {
 						output: z.strictObject({ ok: z.boolean() }),
 						handler: async (c) => {
 							c.var.pending_effects.push(Promise.reject(new Error('effect failed')));
-							return c.json({ ok: true });
+							return route_ok({ ok: true });
 						}
-					}
+					})
 				],
 				on_effect_error: (error) => {
 					errors.push(error);
@@ -386,15 +388,15 @@ describe('create_app_server', () => {
 			await create_config({
 				max_body_size: 100, // 100 bytes
 				create_route_specs: () => [
-					{
+					define_route({
 						method: 'POST',
 						path: '/echo',
 						auth: { account: 'none', actor: 'none' },
 						description: 'Echo input',
 						input: z.looseObject({ data: z.string() }),
 						output: z.looseObject({ ok: z.boolean() }),
-						handler: async (c) => c.json({ ok: true })
-					}
+						handler: async () => route_ok({ ok: true })
+					})
 				]
 			})
 		);
@@ -432,15 +434,15 @@ describe('create_app_server', () => {
 			await create_config({
 				max_body_size: 100, // 100 bytes
 				create_route_specs: () => [
-					{
+					define_route({
 						method: 'POST',
 						path: '/echo',
 						auth: { account: 'none', actor: 'none' },
 						description: 'Echo input',
 						input: z.looseObject({ data: z.string() }),
 						output: z.looseObject({ ok: z.boolean() }),
-						handler: async (c) => c.json({ ok: true })
-					}
+						handler: async () => route_ok({ ok: true })
+					})
 				]
 			})
 		);
@@ -475,15 +477,15 @@ describe('create_app_server', () => {
 			await create_config({
 				max_body_size: 100, // 100 bytes
 				create_route_specs: () => [
-					{
+					define_route({
 						method: 'POST',
 						path: '/echo',
 						auth: { account: 'none', actor: 'none' },
 						description: 'Echo input',
 						input: z.looseObject({ data: z.string() }),
 						output: z.looseObject({ ok: z.boolean() }),
-						handler: async (c) => c.json({ ok: true })
-					}
+						handler: async () => route_ok({ ok: true })
+					})
 				]
 			})
 		);
@@ -521,15 +523,15 @@ describe('create_app_server', () => {
 			await create_config({
 				max_body_size: 100, // 100 bytes
 				create_route_specs: () => [
-					{
+					define_route({
 						method: 'POST',
 						path: '/api/echo',
 						auth: { account: 'required', actor: 'none' },
 						description: 'Echo input',
 						input: z.looseObject({ data: z.string() }),
 						output: z.looseObject({ ok: z.boolean() }),
-						handler: async (c) => c.json({ ok: true })
-					}
+						handler: async () => route_ok({ ok: true })
+					})
 				]
 			})
 		);
@@ -558,15 +560,15 @@ describe('create_app_server', () => {
 			await create_config({
 				max_body_size: null,
 				create_route_specs: () => [
-					{
+					define_route({
 						method: 'POST',
 						path: '/echo',
 						auth: { account: 'none', actor: 'none' },
 						description: 'Echo input',
 						input: z.looseObject({ data: z.string() }),
 						output: z.looseObject({ ok: z.boolean() }),
-						handler: async (c) => c.json({ ok: true })
-					}
+						handler: async () => route_ok({ ok: true })
+					})
 				]
 			})
 		);

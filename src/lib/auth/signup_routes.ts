@@ -19,17 +19,17 @@ import {
 } from './invite_queries.ts';
 import type { Invite } from './invite_schema.ts';
 import { create_signup_route_shape, type SignupInput } from './signup_route_schema.ts';
-import { get_route_input, type RouteSpec } from '../http/route_spec.ts';
+import { attach_route_handler, get_route_input, type RouteSpec } from '../http/route_spec.ts';
+import { route_fail, route_ok } from '../http/route_result.ts';
 import { get_client_ip } from '../http/client_ip.ts';
 import { rate_limit_ip_key } from '../http/ip_canonical.ts';
-import {
-	rate_limit_exceeded_response,
-	reserve_optional,
-	type RateLimiter,
-	type RateLimitReservation
-} from '../rate_limiter.ts';
+import { reserve_optional, type RateLimiter, type RateLimitReservation } from '../rate_limiter.ts';
 import type { RouteFactoryDeps } from './deps.ts';
-import { ERROR_NO_MATCHING_INVITE, ERROR_SIGNUP_CONFLICT } from '../http/error_schemas.ts';
+import {
+	REST_NO_MATCHING_INVITE,
+	REST_RATE_LIMIT_EXCEEDED,
+	REST_SIGNUP_CONFLICT
+} from '../http/error_schemas.ts';
 import { is_pg_unique_violation } from '../db/pg_error.ts';
 import type { AuthSessionRouteOptions } from './account_routes.ts';
 import { start_fail_floor, warn_if_fail_floor_disabled } from './fail_floor.ts';
@@ -88,7 +88,7 @@ export interface SignupRouteOptions extends AuthSessionRouteOptions {
 	 */
 	signup_fail_jitter_ms?: number;
 }
-// `create_signup_route_specs` spreads the shape and attaches the live handler
+// `create_signup_route_specs` attaches the live handler to the shape
 // below.
 
 /**
@@ -113,11 +113,11 @@ export const create_signup_route_specs = (
 	warn_if_fail_floor_disabled('signup', signup_fail_floor_ms, deps.log);
 
 	return [
-		{
-			...create_signup_route_shape({
+		attach_route_handler(
+			create_signup_route_shape({
 				signup_account_rate_limited: signup_account_rate_limiter !== null
 			}),
-			handler: async (c, route) => {
+			async (c, route) => {
 				// Per-IP rate limit (before any work). 429 stays fast. Reserved,
 				// not checked: the attempt counts against the cap until it settles
 				// below, so a concurrent burst can't all pass before any of it
@@ -129,7 +129,7 @@ export const create_signup_route_specs = (
 					signal: c.req.raw.signal
 				});
 				if (!ip_reserved.ok) {
-					return rate_limit_exceeded_response(c, ip_reserved.retry_after);
+					return route_fail(REST_RATE_LIMIT_EXCEEDED, { retry_after: ip_reserved.retry_after });
 				}
 				let account_reservation: RateLimitReservation | null = null;
 				try {
@@ -144,7 +144,9 @@ export const create_signup_route_specs = (
 						{ signal: c.req.raw.signal }
 					);
 					if (!account_reserved.ok) {
-						return rate_limit_exceeded_response(c, account_reserved.retry_after);
+						return route_fail(REST_RATE_LIMIT_EXCEEDED, {
+							retry_after: account_reserved.retry_after
+						});
 					}
 					account_reservation = account_reserved.reservation;
 
@@ -256,7 +258,7 @@ export const create_signup_route_specs = (
 							account_reservation?.record();
 							await emit_failure_audit('no_match');
 							await delay;
-							return c.json({ error: ERROR_NO_MATCHING_INVITE }, 403);
+							return route_fail(REST_NO_MATCHING_INVITE);
 						}
 						// Unique constraint violation: username or email already exists.
 						if (is_pg_unique_violation(e)) {
@@ -264,7 +266,7 @@ export const create_signup_route_specs = (
 							account_reservation?.record();
 							await emit_failure_audit('signup_conflict');
 							await delay;
-							return c.json({ error: ERROR_SIGNUP_CONFLICT }, 409);
+							return route_fail(REST_SIGNUP_CONFLICT);
 						}
 						// Unclassified failure (e.g. session create error, Argon2
 						// fault on hash, DB outage mid-tx). Tx is rolled back so
@@ -300,7 +302,7 @@ export const create_signup_route_specs = (
 						ip: get_client_ip(c),
 						metadata: invite ? { invite_id: invite.id, username } : { open_signup: true, username }
 					});
-					return c.json({
+					return route_ok({
 						ok: true,
 						account: { id: result.account.id, username: result.account.username },
 						actor: { id: result.actor.id }
@@ -310,7 +312,7 @@ export const create_signup_route_specs = (
 					account_reservation?.release();
 				}
 			}
-		}
+		)
 	];
 };
 

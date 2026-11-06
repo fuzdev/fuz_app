@@ -21,7 +21,8 @@ import type { Logger } from '@fuzdev/fuz_util/log.ts';
 import { UnreachableError } from '@fuzdev/fuz_util/error.ts';
 
 import type { RpcAction } from './action_types.ts';
-import { type RouteContext, type RouteSpec } from '../http/route_spec.ts';
+import { define_route, type RouteContext, type RouteSpec } from '../http/route_spec.ts';
+import { route_raw, type RouteRaw } from '../http/route_result.ts';
 import { get_client_ip } from '../http/client_ip.ts';
 import { get_request_context } from '../auth/request_context.ts';
 import { get_resolved_auth } from '../auth/resolved_auth.ts';
@@ -74,6 +75,18 @@ export interface CreateRpcEndpointOptions {
 	 */
 	action_account_rate_limiter: RateLimiter | null;
 }
+
+/**
+ * A JSON-RPC envelope answered at `status`, with the bytes and `Content-Type`
+ * `c.json` writes, as a raw result: the endpoint answers envelopes, its
+ * refusals included, which no REST definition describes.
+ */
+const envelope_response = (c: Context, envelope: unknown, status: number): RouteRaw =>
+	route_raw(
+		c.body(JSON.stringify(envelope), status as ContentfulStatusCode, {
+			'Content-Type': 'application/json'
+		})
+	);
 
 /**
  * Single JSON-RPC 2.0 endpoint — the canonical RPC transport binding.
@@ -153,17 +166,19 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 		raw_params: unknown,
 		id: JsonrpcRequestId,
 		restrict_to_reads: boolean
-	): Promise<Response> => {
+	): Promise<RouteRaw> => {
 		const action = action_map.get(method_name);
 		if (!action) {
-			return c.json(
+			return envelope_response(
+				c,
 				create_jsonrpc_error_response(id, jsonrpc_error_messages.method_not_found(method_name)),
 				jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.method_not_found)
 			);
 		}
 
 		if (restrict_to_reads && action.spec.side_effects) {
-			return c.json(
+			return envelope_response(
+				c,
 				create_jsonrpc_error_response(
 					id,
 					jsonrpc_error_messages.invalid_request({
@@ -219,20 +234,22 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 		// dispatcher emits (the value space is verified by
 		// `jsonrpc_error_code_to_http_status`), which the cast to Hono's
 		// `ContentfulStatusCode` bridges. The content type is `c.json`'s.
-		return c.body(body, status as ContentfulStatusCode, {
-			'Content-Type': 'application/json'
-		});
+		return route_raw(
+			c.body(body, status as ContentfulStatusCode, {
+				'Content-Type': 'application/json'
+			})
+		);
 	};
 
 	// POST handler — parse JSON-RPC envelope from body
-	const post_handler = async (c: Context, route: RouteContext): Promise<Response> => {
+	const post_handler = async (c: Context, route: RouteContext): Promise<RouteRaw> => {
 		// step 1: parse envelope
 		let body: unknown;
 		try {
 			body = await c.req.json();
 		} catch {
 			const error = create_jsonrpc_error_response(null, jsonrpc_error_messages.parse_error());
-			return c.json(error, 400);
+			return envelope_response(c, error, 400);
 		}
 
 		// the classifier the WS path runs; HTTP issues no server-initiated
@@ -245,10 +262,15 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 				return dispatch(c, route, method, params, id, false);
 			}
 			case 'invalid':
-				return c.json(create_jsonrpc_error_response(classified.id, classified.error), 400);
+				return envelope_response(
+					c,
+					create_jsonrpc_error_response(classified.id, classified.error),
+					400
+				);
 			case 'notification':
 			case 'response':
-				return c.json(
+				return envelope_response(
+					c,
 					create_jsonrpc_error_response(null, jsonrpc_error_messages.invalid_request()),
 					400
 				);
@@ -258,7 +280,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 	};
 
 	// GET handler — extract method and params from query string
-	const get_handler = async (c: Context, route: RouteContext): Promise<Response> => {
+	const get_handler = async (c: Context, route: RouteContext): Promise<RouteRaw> => {
 		// A read answers for one caller at one moment: no cache — the browser's,
 		// a proxy's — may keep it and answer a later call, or another caller,
 		// with it. Every response of the route, errors included.
@@ -270,7 +292,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 				null,
 				jsonrpc_error_messages.invalid_request({ reason: 'missing method query parameter' })
 			);
-			return c.json(error, 400);
+			return envelope_response(c, error, 400);
 		}
 
 		const id_raw = c.req.query('id');
@@ -279,7 +301,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 				null,
 				jsonrpc_error_messages.invalid_request({ reason: 'missing id query parameter' })
 			);
-			return c.json(error, 400);
+			return envelope_response(c, error, 400);
 		}
 
 		// parse integer ids so GET ?id=42 matches POST {id: 42} behavior
@@ -299,7 +321,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 					id,
 					jsonrpc_error_messages.invalid_params('params query parameter is not valid JSON')
 				);
-				return c.json(error, 400);
+				return envelope_response(c, error, 400);
 			}
 		}
 
@@ -307,7 +329,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 	};
 
 	return [
-		{
+		define_route({
 			method: 'POST',
 			path: endpoint_path,
 			auth: { account: 'none', actor: 'none' }, // per-action auth inside dispatcher
@@ -323,8 +345,8 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 			input: z.null(), // dispatcher owns body parsing; rpc_endpoints surface has the real schemas
 			output: z.any(), // varies by method
 			transaction: false // per-action inside dispatcher
-		},
-		{
+		}),
+		define_route({
 			method: 'GET',
 			path: endpoint_path,
 			auth: { account: 'none', actor: 'none' }, // per-action auth inside dispatcher
@@ -338,6 +360,6 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 			input: z.null(), // params from query string, validated by dispatcher
 			output: z.any(), // varies by method
 			transaction: false // per-action inside dispatcher
-		}
+		})
 	];
 };

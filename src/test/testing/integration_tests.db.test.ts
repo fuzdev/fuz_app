@@ -16,7 +16,8 @@ import { create_health_route_spec } from '#lib/http/common_routes.ts';
 import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import { create_account_actions } from '#lib/auth/account_actions.ts';
 import { account_verify_action_spec } from '#lib/auth/account_action_specs.ts';
-import { prefix_route_specs, type RouteSpec } from '#lib/http/route_spec.ts';
+import { define_route, prefix_route_specs, type RouteSpec } from '#lib/http/route_spec.ts';
+import { route_raw } from '#lib/http/route_result.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
 import type { RpcEndpointSpec } from '#lib/http/surface.ts';
 import { create_test_app } from '#lib/testing/app_server.ts';
@@ -307,24 +308,24 @@ describe('create_test_app', () => {
 describe('find_route_spec', () => {
 	const specs: Array<RouteSpec> = [
 		...prefix_route_specs('/api/account', [
-			{
+			define_route({
 				method: 'GET',
 				path: '/verify',
 				auth: { account: 'required', actor: 'none' },
-				handler: () => new Response(),
+				handler: () => route_raw(new Response()),
 				description: 'test',
 				input: { safeParse: () => ({ success: true }) } as never,
 				output: { safeParse: () => ({ success: true }) } as never
-			},
-			{
+			}),
+			define_route({
 				method: 'POST',
 				path: '/tokens/:id/revoke',
 				auth: { account: 'required', actor: 'none' },
-				handler: () => new Response(),
+				handler: () => route_raw(new Response()),
 				description: 'test',
 				input: { safeParse: () => ({ success: true }) } as never,
 				output: { safeParse: () => ({ success: true }) } as never
-			}
+			})
 		])
 	];
 
@@ -348,15 +349,15 @@ describe('find_route_spec', () => {
 
 describe('find_auth_route', () => {
 	const specs: Array<RouteSpec> = prefix_route_specs('/api/account', [
-		{
+		define_route({
 			method: 'POST',
 			path: '/login',
 			auth: { account: 'none', actor: 'none' },
-			handler: () => new Response(),
+			handler: () => route_raw(new Response()),
 			description: 'test',
 			input: { safeParse: () => ({ success: true }) } as never,
 			output: { safeParse: () => ({ success: true }) } as never
-		}
+		})
 	]);
 
 	test('finds by suffix and method', () => {

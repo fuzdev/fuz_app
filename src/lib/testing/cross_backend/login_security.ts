@@ -17,8 +17,9 @@ import '../assert_dev_env.ts';
  *   failed logins from one forwarded IP each return `401`, and the next
  *   returns `429` with the canonical `{error: "rate_limit_exceeded",
  *   retry_after}` body **and** a `Retry-After: ceil(retry_after)` header. The
- *   429 wire shape is the cross-impl contract — TS `rate_limit_exceeded_response`
- *   and Rust `route_response::rate_limit_exceeded` must agree.
+ *   429 wire shape is the cross-impl contract — TS
+ *   `route_fail(REST_RATE_LIMIT_EXCEEDED, {retry_after})` and Rust
+ *   `route_response::rate_limit_exceeded` must agree.
  * - **trusted-proxy / XFF resolution is honored** — distinct
  *   `X-Forwarded-For` IPs get independent buckets: after exhausting one
  *   forwarded IP to `429`, a *different* forwarded IP is unaffected (`401`,

@@ -38,7 +38,8 @@ import {
 	RoleGrantOfferHistoryOutput
 } from '#lib/auth/role_grant_offer_action_specs.ts';
 import { SCOPE_KIND_NAME_PATTERN_MESSAGE } from '#lib/auth/scope_kind_schema.ts';
-import type { RouteSpec } from '#lib/http/route_spec.ts';
+import { define_route } from '#lib/http/route_spec.ts';
+import { route_ok } from '#lib/http/route_result.ts';
 import { create_test_keyring } from '../auth/session_test_helpers.ts';
 import { NAME_LENGTH_MAX } from '#lib/auth/name_schema.ts';
 
@@ -96,15 +97,15 @@ const create_app = async (dev: boolean) => {
 		client: { query: refuse },
 		transaction: refuse
 	});
-	const route: RouteSpec = {
+	const route = define_route({
 		method: 'POST',
 		path: '/api/things',
 		auth: { account: 'none', actor: 'none' },
 		description: 'Takes a thing.',
 		input: Body,
 		output: z.strictObject({ ok: z.literal(true) }),
-		handler: (c) => c.json({ ok: true })
-	};
+		handler: () => route_ok({ ok: true })
+	});
 	const server = await create_app_server({
 		backend: {
 			db_type: 'pglet-memory',

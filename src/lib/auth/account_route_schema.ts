@@ -27,7 +27,7 @@ import {
 import { ActorSummaryJson, RoleGrantSummaryJson, SessionAccountJson } from './account_schema.ts';
 import { UsernameCanonical, UsernameProvided } from '../primitive_schemas_fuz.ts';
 import { Password, PasswordProvided } from './password.ts';
-import type { RouteSpec } from '../http/route_spec.ts';
+import { define_route_shape } from '../http/route_spec.ts';
 import {
 	REST_AUTHENTICATION_REQUIRED_BOOTSTRAP,
 	REST_INVALID_CREDENTIALS
@@ -117,9 +117,9 @@ export const DEFAULT_MAX_TOKENS = 10;
 
 /**
  * The `GET /status` route shape minus its handler — pure hono-free data.
- * `create_account_status_route_spec` spreads this and attaches the live handler
- * (which reads the account id off the request context); surface generation
- * spreads it with a stub handler.
+ * `create_account_status_route_spec` attaches the live handler to it
+ * (`attach_route_handler`), which reads the account id off the request
+ * context; surface generation attaches a stub.
  *
  * The path is **relative** like the sibling account shapes (`/login`,
  * `/verify`), so it composes under `prefix_route_specs('/api/account', …)` into
@@ -127,7 +127,7 @@ export const DEFAULT_MAX_TOKENS = 10;
  * account surface serves `/status`, matching the Rust `account_router`);
  * mirror Rust by mounting it as part of the account family, not separately.
  */
-export const account_status_route_shape = {
+export const account_status_route_shape = define_route_shape({
 	method: 'GET',
 	path: '/status',
 	auth: { account: 'none', actor: 'none' },
@@ -138,7 +138,7 @@ export const account_status_route_shape = {
 	input: AccountStatusInput,
 	output: AccountStatusOutput,
 	errors: [REST_AUTHENTICATION_REQUIRED_BOOTSTRAP]
-} satisfies Omit<RouteSpec, 'handler'>;
+});
 
 /** Option inputs that shape the account route metadata (not its handlers). */
 export interface AccountRouteShapeOptions {
@@ -149,78 +149,73 @@ export interface AccountRouteShapeOptions {
 /**
  * The four account route shapes (`/verify`, `/login`, `/logout`, `/password`)
  * minus their handlers — pure hono-free data. `create_account_route_specs`
- * spreads each and attaches the live handler; cross-process surface builders
- * spread them with stub handlers. Single source of truth — the shapes can't
- * drift between the live routes and the surface.
+ * attaches the live handler to each (`attach_route_handler`); cross-process
+ * surface builders attach stubs (`stub_route_spec`). Single source of truth —
+ * the shapes can't drift between the live routes and the surface.
  *
  * Returns a fixed 4-tuple `[verify, login, logout, password]` so destructuring
- * yields non-optional shapes under `noUncheckedIndexedAccess`.
+ * yields non-optional shapes under `noUncheckedIndexedAccess`, each with the
+ * types `attach_route_handler` checks its handler against.
  */
-export const create_account_route_shapes = (
-	options: AccountRouteShapeOptions
-): [
-	Omit<RouteSpec, 'handler'>,
-	Omit<RouteSpec, 'handler'>,
-	Omit<RouteSpec, 'handler'>,
-	Omit<RouteSpec, 'handler'>
-] => [
-	{
-		method: 'GET',
-		path: '/verify',
-		// a non-RPC surface: the probe answers 200 for the account behind a
-		// credential, so a narrowed token is refused it (it would otherwise pass
-		// an nginx `auth_request` gate as its account)
-		auth: {
-			account: 'required',
-			actor: 'none',
-			required_scope: 'surface:account_verify'
-		},
-		description:
-			'Session-validity probe for nginx auth_request (empty body; 200, 401, or 403 for a narrowed token)',
-		input: literal(null),
-		output: literal(null)
-	},
-	{
-		method: 'POST',
-		path: '/login',
-		auth: { account: 'none', actor: 'none' },
-		mints_credential: true,
-		description: 'Exchange credentials for session',
-		input: LoginInput,
-		output: LoginOutput,
-		rate_limit: 'both',
-		// The handler opens its own transaction around just the session writes,
-		// so a reservation waiting for a slot, and the Argon2 verify, hold no
-		// database connection.
-		transaction: false,
-		errors: [REST_INVALID_CREDENTIALS]
-	},
-	{
-		method: 'POST',
-		path: '/logout',
-		// `credential_types: ['session']` — see `docs/security.md` §Credential-channel gating.
-		// Logout is a session-bound operation; a bearer / daemon token holds no session
-		// to end, so the dispatcher rejects it (403 `credential_type_required`) rather than
-		// returning a misleading 200 + a phantom `logout` audit row for a no-op.
-		auth: { account: 'required', actor: 'none', credential_types: ['session'] },
-		description: 'Revoke current session and clear cookie',
-		input: LogoutInput,
-		output: LogoutOutput
-	},
-	{
-		method: 'POST',
-		path: '/password',
-		// `credential_types: ['session']` — see `docs/security.md` §Credential-channel gating.
-		auth: { account: 'required', actor: 'none', credential_types: ['session'] },
-		description: 'Change password (revokes all sessions and API tokens)',
-		input: PasswordChangeInput,
-		output: PasswordChangeOutput,
-		rate_limit: options.login_account_rate_limited ? 'both' : 'ip',
-		// The handler opens its own transaction around just the password update
-		// and the revocations, so a reservation waiting for a slot, and the
-		// Argon2 verify and hash, hold no database connection.
-		transaction: false,
-		// a wrong current password answers `invalid_credentials`, as login does
-		errors: [REST_INVALID_CREDENTIALS]
-	}
-];
+export const create_account_route_shapes = (options: AccountRouteShapeOptions) =>
+	[
+		define_route_shape({
+			method: 'GET',
+			path: '/verify',
+			// a non-RPC surface: the probe answers 200 for the account behind a
+			// credential, so a narrowed token is refused it (it would otherwise pass
+			// an nginx `auth_request` gate as its account)
+			auth: {
+				account: 'required',
+				actor: 'none',
+				required_scope: 'surface:account_verify'
+			},
+			description:
+				'Session-validity probe for nginx auth_request (empty body; 200, 401, or 403 for a narrowed token)',
+			input: literal(null),
+			output: literal(null)
+		}),
+		define_route_shape({
+			method: 'POST',
+			path: '/login',
+			auth: { account: 'none', actor: 'none' },
+			mints_credential: true,
+			description: 'Exchange credentials for session',
+			input: LoginInput,
+			output: LoginOutput,
+			rate_limit: 'both',
+			// The handler opens its own transaction around just the session writes,
+			// so a reservation waiting for a slot, and the Argon2 verify, hold no
+			// database connection.
+			transaction: false,
+			errors: [REST_INVALID_CREDENTIALS]
+		}),
+		define_route_shape({
+			method: 'POST',
+			path: '/logout',
+			// `credential_types: ['session']` — see `docs/security.md` §Credential-channel gating.
+			// Logout is a session-bound operation; a bearer / daemon token holds no session
+			// to end, so the dispatcher rejects it (403 `credential_type_required`) rather than
+			// returning a misleading 200 + a phantom `logout` audit row for a no-op.
+			auth: { account: 'required', actor: 'none', credential_types: ['session'] },
+			description: 'Revoke current session and clear cookie',
+			input: LogoutInput,
+			output: LogoutOutput
+		}),
+		define_route_shape({
+			method: 'POST',
+			path: '/password',
+			// `credential_types: ['session']` — see `docs/security.md` §Credential-channel gating.
+			auth: { account: 'required', actor: 'none', credential_types: ['session'] },
+			description: 'Change password (revokes all sessions and API tokens)',
+			input: PasswordChangeInput,
+			output: PasswordChangeOutput,
+			rate_limit: options.login_account_rate_limited ? 'both' : 'ip',
+			// The handler opens its own transaction around just the password update
+			// and the revocations, so a reservation waiting for a slot, and the
+			// Argon2 verify and hash, hold no database connection.
+			transaction: false,
+			// a wrong current password answers `invalid_credentials`, as login does
+			errors: [REST_INVALID_CREDENTIALS]
+		})
+	] as const;

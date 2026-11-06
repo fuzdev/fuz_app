@@ -14,15 +14,25 @@ Every route requires `input` and `output` schemas, each Zod or
 (`parse_any`); handlers access validated data via `get_route_input(c, schema)`,
 which infers the typed shape from the schema directly.
 
+A handler returns a result and the framework builds the response:
+`route_ok(value)` answers `value` as JSON at 200, `route_fail(def, fields?)`
+the definition's body at its status with its headers (`Retry-After`), and
+`route_raw(response)` a response built by hand (an empty body, bytes, a
+stream) as it is. `define_route` checks them against the route: the value
+against `output`, each failure against `errors` and the codes `auth` and
+`rate_limit` derive (the 401, the auth 403s, the 429). Headers and cookies set
+on `c` before returning carry over.
+
 ```typescript
-import { get_route_input, type RouteSpec } from '@fuzdev/fuz_app/http/route_spec.ts';
+import { define_route, get_route_input } from '@fuzdev/fuz_app/http/route_spec.ts';
+import { route_fail, route_ok } from '@fuzdev/fuz_app/http/route_result.ts';
 import { REST_FOREIGN_KEY_VIOLATION } from '@fuzdev/fuz_app/http/error_schemas.ts';
 import { z } from 'zod';
 
 const My_Input = z.strictObject({ name: z.string().min(1) });
 const My_Output = z.strictObject({ ok: z.literal(true), id: z.string() });
 
-const my_route_spec: RouteSpec = {
+const my_route_spec = define_route({
 	method: 'POST',
 	path: '/things',
 	auth: { account: 'required', actor: 'required', roles: ['admin'] },
@@ -32,11 +42,17 @@ const my_route_spec: RouteSpec = {
 	errors: [REST_FOREIGN_KEY_VIOLATION], // the handler's own codes, beside the derived ones
 	handler: async (c) => {
 		const { name } = get_route_input(c, My_Input); // typed as {name: string}
-		const id = create_thing(name);
-		return c.json({ ok: true, id });
+		const id = await create_thing(name);
+		if (id === null) return route_fail(REST_FOREIGN_KEY_VIOLATION); // `{error}` at 409
+		return route_ok({ ok: true, id }); // checked against `My_Output`
 	}
-};
+});
 ```
+
+A shape kept apart from its handler — a hono-free module a cross-process
+suite builds its surface from — is a `define_route_shape(shape)`, and
+`attach_route_handler(shape, handler)` checks the handler as `define_route`
+does.
 
 `get_route_input<T>(c)` (no schema arg) is also available for callers who
 don't have the schema in scope. Same overloads on `get_route_params` and
@@ -545,11 +561,14 @@ import {
 	revalidate_resolved_auth
 } from '@fuzdev/fuz_app/auth/resolved_auth.ts';
 import { require_request_context } from '@fuzdev/fuz_app/auth/request_context.ts';
+import { define_route } from '@fuzdev/fuz_app/http/route_spec.ts';
+import { route_fail, route_raw } from '@fuzdev/fuz_app/http/route_result.ts';
+import { REST_AUTHENTICATION_REQUIRED } from '@fuzdev/fuz_app/http/error_schemas.ts';
 
 const registry = new SseRegistry<SseNotification>();
 
 // SSE route — clients subscribe
-const subscribe_spec: RouteSpec = {
+const subscribe_spec = define_route({
 	method: 'GET',
 	path: '/subscribe',
 	auth: { account: 'required', actor: 'none' },
@@ -574,7 +593,7 @@ const subscribe_spec: RouteSpec = {
 		}
 		if (!live) {
 			pending.unsubscribe();
-			return c.json({ error: 'authentication_required' }, 401);
+			return route_fail(REST_AUTHENTICATION_REQUIRED); // `auth` derives the 401
 		}
 		const { response, stream } = create_sse_response<SseNotification>(c, log);
 		if (registry.admit(pending, stream)) {
@@ -582,9 +601,9 @@ const subscribe_spec: RouteSpec = {
 		} else {
 			stream.close(); // a revocation closed it while it was pending
 		}
-		return response;
+		return route_raw(response); // the stream, as it is
 	}
-};
+});
 
 // Broadcast from any handler
 registry.broadcast('things', { method: 'thing_created', params: { id, name } });

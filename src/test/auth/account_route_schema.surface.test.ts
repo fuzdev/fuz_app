@@ -44,6 +44,7 @@ import {
 } from '#lib/auth/bootstrap_route_schema.ts';
 import { generate_app_surface, type AppSurfaceDiagnostic } from '#lib/http/surface.ts';
 import type { RouteSpec } from '#lib/http/route_spec.ts';
+import { stub_route_spec } from '#lib/testing/stubs.ts';
 import {
 	EMAIL_LENGTH_MAX,
 	USERNAME_LENGTH_MAX,
@@ -67,13 +68,12 @@ interface SurfaceCapture {
 }
 
 const capture_surface = () => {
-	const handler: RouteSpec['handler'] = (c) => c.json(null);
 	const route_specs: Array<RouteSpec> = [
 		...create_account_route_shapes({ login_account_rate_limited: true }),
 		account_status_route_shape,
 		create_signup_route_shape({ signup_account_rate_limited: true }),
 		bootstrap_route_shape
-	].map((shape) => ({ ...shape, handler }));
+	].map((shape) => stub_route_spec(shape));
 	return generate_app_surface({ route_specs, middleware_specs: [] });
 };
 

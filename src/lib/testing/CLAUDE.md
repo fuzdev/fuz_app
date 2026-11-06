@@ -30,7 +30,8 @@ time (never runtime), where a throwing guard would break `vite build`.
 - `create_noop_stub<T>(label, overrides?)` — Proxy whose every method returns `async () => undefined`; `overrides` pins specific props.
 - `stub` — pre-built throwing stub labelled `'stub'`.
 - `create_stub_db()` — real `Db` whose `client.query` yields `{rows: []}` and `transaction(fn)` synchronously calls `fn(inner_stub_db)`. Safe for `apply_route_specs`'s declarative transaction wrapper.
-- `stub_handler()` — fresh `Response('stub')`.
+- `stub_handler()` — a fresh `Response('stub')` as a `route_raw` result, a handler that fits any route (`attach_route_handler(shape, stub_handler)`).
+- `stub_route_spec(shape)` — a spec for a surface that is described and never served: `shape` with a handler that throws when run (the spine routes of `create_rust_spine_consumer_surface_spec`).
 - `stub_mw` — pass-through middleware (`async (_c, next) => next()`).
 - `create_stub_app_deps()` — factory: fresh `AppDeps` with no-op keyring/password/`delete_file`, a `read_secure_file` that throws ENOENT (the no-token-file state), a `create_noop_stub` DB, silent `Logger`, no-op `audit`, an empty `connection_closer`.
 - `create_test_audit_emitter()` — no-op `AuditEmitter`; `emit` / `emit_role_grant_target` / `emit_pool` resolve immediately, `notify` no-op, `add_listener` throws (use `create_recording_audit_emitter` for a listener-accepting emitter), `listener_count` returns 0, `drain_inflight` resolves immediately, `is_tracking_inflight` returns `false`.
@@ -2808,8 +2809,9 @@ over real HTTP on both spines:
 - **per-IP limit fires** — `default_login_ip_rate_limit.max_attempts` (5, the
   shared cap on both impls) failed logins from one forwarded IP → 401, the next →
   `429` with the canonical `{error: "rate_limit_exceeded", retry_after}` body +
-  `Retry-After: ceil(retry_after)` header (TS `rate_limit_exceeded_response` ↔
-  Rust `route_response::rate_limit_exceeded`).
+  `Retry-After: ceil(retry_after)` header (TS
+  `route_fail(REST_RATE_LIMIT_EXCEEDED, {retry_after})` ↔ Rust
+  `route_response::rate_limit_exceeded`).
 - **XFF keying** — exhaust one forwarded IP to 429, then a _distinct_ forwarded IP
   → 401 (not 429), proving the limiter keys on the resolved `X-Forwarded-For` IP,
   not the loopback TCP peer (a backend ignoring XFF would 429 the fresh IP too).

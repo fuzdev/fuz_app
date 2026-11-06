@@ -7,6 +7,8 @@
  * @module
  */
 
+import { define_route } from '#lib/http/route_spec.ts';
+import { route_ok } from '#lib/http/route_result.ts';
 import {
 	literal,
 	loose_object,
@@ -28,17 +30,17 @@ describe_adversarial_404({
 		create_app_surface_spec({
 			middleware_specs: [],
 			route_specs: [
-				{
+				define_route({
 					method: 'POST',
 					path: '/fuz_things/:id/rename',
 					auth: { account: 'none', actor: 'none' },
-					handler: (c) => c.json({ ok: true }),
+					handler: () => route_ok({ ok: true }),
 					description: 'Rename a fuz_schema thing',
 					params: object({ id: Uuid }),
 					input: object({ name: pipe(string, min_length(1)) }),
 					output: loose_object({ ok: literal(true) }),
 					errors: [rest_error(404, 'fuz_thing_not_found')]
-				}
+				})
 			]
 		}),
 	roles: []

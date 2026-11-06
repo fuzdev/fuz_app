@@ -16,33 +16,34 @@
  * @module
  */
 
+import { route_ok } from '#lib/http/route_result.ts';
 import { describe, test, assert } from 'vitest';
 import { z } from 'zod';
 
 import { create_auth_test_apps, select_auth_app } from '#lib/testing/auth_apps.ts';
 import { ActingActor } from '#lib/http/auth_shape.ts';
-import type { RouteSpec } from '#lib/http/route_spec.ts';
+import { define_route, type RouteSpec } from '#lib/http/route_spec.ts';
 
 const specs: Array<RouteSpec> = [
-	{
+	define_route({
 		method: 'GET',
 		path: '/public',
 		auth: { account: 'none', actor: 'none' },
-		handler: (c) => c.json({ ok: true }),
+		handler: () => route_ok({ ok: true }),
 		description: 'Public',
 		input: z.null(),
-		output: z.null()
-	},
-	{
+		output: z.strictObject({ ok: z.literal(true) })
+	}),
+	define_route({
 		method: 'GET',
 		path: '/authed',
 		auth: { account: 'required', actor: 'none' },
-		handler: (c) => c.json({ ok: true }),
+		handler: () => route_ok({ ok: true }),
 		description: 'Authenticated',
 		input: z.null(),
-		output: z.null()
-	},
-	{
+		output: z.strictObject({ ok: z.literal(true) })
+	}),
+	define_route({
 		method: 'GET',
 		path: '/session-only-role',
 		auth: {
@@ -51,13 +52,13 @@ const specs: Array<RouteSpec> = [
 			roles: ['admin'],
 			credential_types: ['session']
 		},
-		handler: (c) => c.json({ ok: true }),
+		handler: () => route_ok({ ok: true }),
 		description: 'Session-gated admin route',
 		query: z.strictObject({ acting: ActingActor }),
 		input: z.null(),
-		output: z.null()
-	},
-	{
+		output: z.strictObject({ ok: z.literal(true) })
+	}),
+	define_route({
 		method: 'POST',
 		path: '/keeper-auth',
 		auth: {
@@ -66,12 +67,12 @@ const specs: Array<RouteSpec> = [
 			roles: ['keeper'],
 			credential_types: ['daemon_token']
 		},
-		handler: (c) => c.json({ ok: true }),
+		handler: () => route_ok({ ok: true }),
 		description: 'Keeper route',
 		query: z.strictObject({ acting: ActingActor }),
 		input: z.null(),
-		output: z.null()
-	}
+		output: z.strictObject({ ok: z.literal(true) })
+	})
 ];
 
 const build_apps = () => create_auth_test_apps(specs, ['admin', 'keeper']);

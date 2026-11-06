@@ -35,7 +35,8 @@ import { run_migrations } from '#lib/db/migrate.ts';
 import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 import { emit_after_commit } from '#lib/http/pending_effects.ts';
-import { get_route_input, type RouteSpec } from '#lib/http/route_spec.ts';
+import { define_route, get_route_input, type RouteSpec } from '#lib/http/route_spec.ts';
+import { route_ok } from '#lib/http/route_result.ts';
 import { rpc_action } from '#lib/actions/action_types.ts';
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
@@ -44,6 +45,8 @@ import type { Db } from '#lib/db/db.ts';
 const session_options = create_session_config('test_session');
 const RPC_PATH = '/api/rpc';
 const REST_PATH = '/test/rollback_probe';
+const REST_BUILD_PATH = '/test/rollback_probe_build';
+const REST_BUILD_NO_TX_PATH = `${REST_BUILD_PATH}_no_tx`;
 
 const factory = create_default_db_factory(async (db) => {
 	await run_migrations(db, [AUTH_MIGRATION_NS]);
@@ -57,6 +60,11 @@ const next_token = (): string => `tok_${++token_counter}`;
 /** Shared input/output schemas — the RPC action and the REST route mount the same probe. */
 const probe_input = z.strictObject({ fail: z.boolean(), token: z.string() });
 const probe_output = z.strictObject({ ok: z.literal(true) });
+/** The REST probe whose result can't become a response, by `mode`. */
+const build_probe_input = z.strictObject({
+	mode: z.enum(['bare_response', 'malformed', 'unserializable']),
+	token: z.string()
+});
 
 /** Public, side-effecting probe action: write a row, queue both effect kinds, throw iff `fail`. */
 const probe_action_spec = {
@@ -94,7 +102,7 @@ const setup = async (get_db: () => Db) => {
 	const rest_sinks: Sinks = { eager: [], deferred: [] };
 
 	const create_route_specs = (_ctx: AppServerContext): Array<RouteSpec> => [
-		{
+		define_route({
 			method: 'POST',
 			path: REST_PATH,
 			auth: { account: 'none', actor: 'none' },
@@ -115,9 +123,34 @@ const setup = async (get_db: () => Db) => {
 					rest_sinks.deferred.push(token);
 				});
 				if (fail) throw new Error('intentional REST probe failure (rollback)');
-				return c.json({ ok: true });
+				return route_ok({ ok: true });
 			}
-		}
+		}),
+		// the same probe with and without a transaction: without one the insert
+		// stays, and the deferred effect is still discarded
+		...([REST_BUILD_PATH, REST_BUILD_NO_TX_PATH] as const).map((path) =>
+			define_route({
+				method: 'POST',
+				path,
+				auth: { account: 'none', actor: 'none' },
+				input: build_probe_input,
+				output: probe_output,
+				transaction: path === REST_BUILD_PATH,
+				description: 'Test probe REST route whose result fails to become a response.',
+				handler: async (c, route) => {
+					const { mode, token } = get_route_input(c, build_probe_input);
+					await route.db.query('INSERT INTO rollback_probe (token) VALUES ($1)', [token]);
+					emit_after_commit({ post_commit_effects: route.post_commit_effects }, () => {
+						rest_sinks.deferred.push(token);
+					});
+					// a handler typed `any`, or JS, gets past the types either way
+					if (mode === 'bare_response') return c.json({ ok: true }) as never;
+					if (mode === 'malformed') return { ok: true } as never;
+					const unserializable: unknown = { ok: true, n: 1n };
+					return route_ok(unserializable as { ok: true });
+				}
+			})
+		)
 	];
 
 	const probe_rpc_action = rpc_action(probe_action_spec, async (input, ctx) => {
@@ -231,4 +264,50 @@ describe_db('post_commit_effects rollback discard (REST dispatch / route_spec)',
 
 		await test_app.cleanup();
 	});
+});
+
+describe_db('a result that fails to become a response rolls back (REST dispatch)', (get_db) => {
+	for (const mode of ['bare_response', 'malformed', 'unserializable'] as const) {
+		test(`${mode}: 500, the row rolls back, the deferred effect is discarded`, async () => {
+			const { test_app, rest_sinks } = await setup(get_db);
+			const token = next_token();
+
+			const response = await test_app.app.request(REST_BUILD_PATH, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ mode, token })
+			});
+
+			assert.strictEqual(response.status, 500);
+			assert.deepStrictEqual(rest_sinks.deferred, [], 'post-commit effect must NOT fire');
+			assert.strictEqual(
+				await count_probe_rows(test_app.backend.deps.db, token),
+				0,
+				'the handler INSERT must roll back'
+			);
+
+			await test_app.cleanup();
+		});
+
+		test(`${mode} without a transaction: 500, the row stays, the deferred effect is discarded`, async () => {
+			const { test_app, rest_sinks } = await setup(get_db);
+			const token = next_token();
+
+			const response = await test_app.app.request(REST_BUILD_NO_TX_PATH, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ mode, token })
+			});
+
+			assert.strictEqual(response.status, 500);
+			assert.deepStrictEqual(rest_sinks.deferred, [], 'post-commit effect must NOT fire');
+			assert.strictEqual(
+				await count_probe_rows(test_app.backend.deps.db, token),
+				1,
+				'no transaction undoes the handler INSERT'
+			);
+
+			await test_app.cleanup();
+		});
+	}
 });

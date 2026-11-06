@@ -24,11 +24,9 @@
  * @module
  */
 
-import type { Context } from 'hono';
 import { LruMap } from '@fuzdev/fuz_util/lru_map.ts';
 import { one_of, type Infer } from '@fuzdev/fuz_schema/schema.ts';
 
-import { REST_RATE_LIMIT_EXCEEDED } from './http/error_schemas.ts';
 import { PERIODIC_INTERVAL_MS_MAX } from './periodic.ts';
 
 /**
@@ -778,19 +776,4 @@ export const reserve_optional = async (
  */
 export const create_rate_limiter = (options?: Partial<RateLimiterOptions>): RateLimiter => {
 	return new RateLimiter({ ...default_login_ip_rate_limit, ...options });
-};
-
-/**
- * Build a 429 rate-limit-exceeded JSON response with `Retry-After` header.
- *
- * @param c - Hono context
- * @param retry_after - seconds until the client should retry
- * @returns a 429 Response
- */
-export const rate_limit_exceeded_response = (c: Context, retry_after: number): Response => {
-	const body = { error: REST_RATE_LIMIT_EXCEEDED.code, retry_after };
-	return c.json(body, {
-		status: REST_RATE_LIMIT_EXCEEDED.status,
-		headers: REST_RATE_LIMIT_EXCEEDED.headers!(body)
-	});
 };

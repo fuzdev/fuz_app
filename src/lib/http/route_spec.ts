@@ -3,7 +3,10 @@
  *
  * Routes are defined as data (method, path, auth, input/output schemas, handler),
  * then applied to Hono. The attack surface is generated from the specs —
- * always accurate, always complete.
+ * always accurate, always complete. A handler returns a result
+ * (`http/route_result.ts`) and `apply_route_specs` builds the response; a spec
+ * is made by `define_route` (or `define_route_shape` + `attach_route_handler`),
+ * which checks the handler's results against the route.
  *
  * Input/output schemas align with SAES `ActionSpec` conventions, and each is
  * a Zod or `@fuzdev/fuz_schema` schema (`ValidationSchema`):
@@ -15,6 +18,7 @@
  */
 
 import type { Context, Handler, Hono, MiddlewareHandler } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { z } from 'zod';
 import { DEV } from 'esm-env';
 import { is_schema, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
@@ -26,6 +30,13 @@ import { format_route_key } from './surface_query.ts';
 import { is_db_checkout_error } from '../db/db_checkout_error.ts';
 import {
 	type RestErrorDef,
+	type REST_AUTHENTICATION_REQUIRED,
+	type REST_CREDENTIAL_TYPE_REQUIRED,
+	type REST_INSUFFICIENT_PERMISSIONS,
+	type REST_INTERNAL_ERROR,
+	type REST_RATE_LIMIT_EXCEEDED,
+	type REST_SERVICE_UNAVAILABLE,
+	type REST_TOKEN_SCOPE_REQUIRED,
 	ERROR_INVALID_JSON_BODY,
 	ERROR_INVALID_REQUEST_BODY,
 	ERROR_INVALID_ROUTE_PARAMS,
@@ -47,6 +58,7 @@ import { is_null_schema } from './schema_helpers.ts';
 import { is_json_response } from './route_error_check.ts';
 import { dispatch_with_post_commit_rollback } from './pending_effects.ts';
 import type { MiddlewareSpec } from './middleware_spec.ts';
+import type { ReadonlyJson, RouteFailOf, RouteOk, RouteRaw, RouteResult } from './route_result.ts';
 import {
 	assert_route_auth_acting_biconditional,
 	assert_route_auth_invariants,
@@ -56,6 +68,7 @@ import {
 	assert_validation_schema,
 	parse_any,
 	to_wire_issues,
+	type ValidationInput,
 	type ValidationOutput,
 	type ValidationSchema
 } from '../schema_issues.ts';
@@ -147,12 +160,21 @@ export interface RouteContext {
 
 /**
  * Route handler function — receives the Hono context and a `RouteContext`
- * with per-request deps (db, pending_effects).
+ * with per-request deps (db, pending_effects), and returns a result
+ * (`route_ok`, `route_fail`, `route_raw` in `http/route_result.ts`) that
+ * `apply_route_specs` turns into the response.
+ *
+ * The type a `RouteSpec` stores, any result: `define_route` and
+ * `attach_route_handler` check a handler against its route
+ * (`TypedRouteHandler`) before it is stored.
  *
  * TypeScript allows fewer params, so handlers that don't need `route`
  * can use `(c) => ...` without changes.
  */
-export type RouteHandler = (c: Context, route: RouteContext) => Response | Promise<Response>;
+export type RouteHandler = (c: Context, route: RouteContext) => RouteResult | Promise<RouteResult>;
+
+/** Marks a `RouteSpec` made by `define_route` or `attach_route_handler`; no runtime property. */
+declare const ROUTE_SPEC_BRAND: unique symbol;
 
 /**
  * A single route definition — the unit of the surface map.
@@ -166,6 +188,7 @@ export interface RouteSpec {
 	method: RouteMethod;
 	path: string;
 	auth: RouteAuth;
+	/** Returns a result the framework answers with; see `RouteHandler`. */
 	handler: RouteHandler;
 	description: string;
 	/**
@@ -275,7 +298,181 @@ export interface RouteSpec {
 	 * that manages its own transaction like signup).
 	 */
 	transaction?: boolean;
+	/**
+	 * Present only in the types: a spec whose handler was checked against its
+	 * route, which only `define_route` and `attach_route_handler` make. A spread
+	 * of a spec keeps it, and is not checked again.
+	 */
+	readonly [ROUTE_SPEC_BRAND]: true;
 }
+
+/** The catch layers' answers, which a handler may also give on any route (`ALWAYS_ACCEPTED_ERRORS`). */
+export type RouteAlwaysErrors = typeof REST_INTERNAL_ERROR | typeof REST_SERVICE_UNAVAILABLE;
+
+/**
+ * The derived definitions a handler may itself answer with, read off its
+ * route's `auth` and `rate_limit` types: the 401 and the auth 403s (a handler
+ * that re-checks admission) and the 429 of a rate-limited route. The input
+ * 400s, the actor codes, and the 415 are the pipeline's alone, and left out.
+ */
+export type RouteHandlerDerivedErrors<TAuth extends RouteAuth, TRateLimit> =
+	| (TAuth['account'] extends 'required'
+			? typeof REST_AUTHENTICATION_REQUIRED
+			: TAuth['actor'] extends 'required'
+				? typeof REST_AUTHENTICATION_REQUIRED
+				: never)
+	| (TAuth['required_scope'] extends string ? typeof REST_TOKEN_SCOPE_REQUIRED : never)
+	| (TAuth['credential_types'] extends ReadonlyArray<string>
+			? typeof REST_CREDENTIAL_TYPE_REQUIRED
+			: never)
+	| (TAuth['roles'] extends ReadonlyArray<string> ? typeof REST_INSUFFICIENT_PERMISSIONS : never)
+	| (TRateLimit extends RateLimitKey ? typeof REST_RATE_LIMIT_EXCEEDED : never);
+
+/**
+ * What a handler of a route may return: a success typed by the input side of
+ * its `output`, a raw response, or a failure of a definition the route
+ * allows — its `errors`, the derived ones a handler may give
+ * (`RouteHandlerDerivedErrors`), and the catch layers' (`RouteAlwaysErrors`).
+ */
+export type RouteHandlerResult<
+	TErrors extends ReadonlyArray<RestErrorDef>,
+	TOutput extends ValidationSchema,
+	TAuth extends RouteAuth,
+	TRateLimit
+> =
+	| RouteOk<ReadonlyJson<ValidationInput<TOutput>>>
+	| RouteRaw
+	| RouteFailOf<TErrors[number] | RouteAlwaysErrors | RouteHandlerDerivedErrors<TAuth, TRateLimit>>;
+
+/** A route handler checked against its route; see `RouteHandlerResult`. */
+export type TypedRouteHandler<
+	TErrors extends ReadonlyArray<RestErrorDef>,
+	TOutput extends ValidationSchema,
+	TAuth extends RouteAuth,
+	TRateLimit
+> = (
+	c: Context,
+	route: RouteContext
+) =>
+	| RouteHandlerResult<TErrors, TOutput, TAuth, TRateLimit>
+	| Promise<RouteHandlerResult<TErrors, TOutput, TAuth, TRateLimit>>;
+
+/** The fields of a route that carry no type parameter. */
+type RouteShapePlain = Omit<
+	RouteSpec,
+	'handler' | 'errors' | 'output' | 'auth' | 'rate_limit' | typeof ROUTE_SPEC_BRAND
+>;
+
+/**
+ * A route minus its handler, with the types its handler is checked against
+ * kept: what `define_route_shape` returns and `attach_route_handler` takes,
+ * the hono-free half of a route a cross-process suite builds its surface from.
+ */
+export type RouteShape<
+	TErrors extends ReadonlyArray<RestErrorDef> = ReadonlyArray<RestErrorDef>,
+	TOutput extends ValidationSchema = ValidationSchema,
+	TAuth extends RouteAuth = RouteAuth,
+	TRateLimit extends RateLimitKey | undefined = RateLimitKey | undefined
+> = RouteShapePlain & {
+	auth: TAuth;
+	output: TOutput;
+	errors?: TErrors;
+	rate_limit?: TRateLimit;
+};
+
+/**
+ * Refuses an `errors` list whose definitions were erased to `RestErrorDef`
+ * (a code typed `string`), which would allow a handler any failure.
+ */
+export type KnownRouteErrors<TErrors extends ReadonlyArray<RestErrorDef>> =
+	string extends TErrors[number]['code'] ? ReadonlyArray<never> : TErrors;
+
+/**
+ * Define a route: its handler is checked against the route's `output`,
+ * `errors`, `auth`, and `rate_limit` (`TypedRouteHandler`), and the spec is
+ * returned as it is, typed as a `RouteSpec`.
+ *
+ * A literal `errors` list is read as given; a list typed
+ * `Array<RestErrorDef>` is refused (`KnownRouteErrors`).
+ *
+ * @param spec - the route, its handler returning `route_ok`, `route_fail`, or `route_raw`
+ * @returns `spec`
+ */
+// @__NO_SIDE_EFFECTS__
+export const define_route = <
+	const TErrors extends ReadonlyArray<RestErrorDef> = [],
+	TOutput extends ValidationSchema = ValidationSchema,
+	const TAuth extends RouteAuth = RouteAuth,
+	TRateLimit extends RateLimitKey | undefined = undefined
+>(
+	spec: RouteShape<TErrors, TOutput, TAuth, TRateLimit> & {
+		errors?: KnownRouteErrors<TErrors>;
+		handler: TypedRouteHandler<TErrors, TOutput, TAuth, TRateLimit>;
+	}
+): RouteSpec => spec as unknown as RouteSpec;
+
+/**
+ * Define a route minus its handler, keeping the types `attach_route_handler`
+ * checks its handler against.
+ *
+ * @param shape - the route without `handler`
+ * @returns `shape`
+ */
+// @__NO_SIDE_EFFECTS__
+export const define_route_shape = <
+	const TErrors extends ReadonlyArray<RestErrorDef> = [],
+	TOutput extends ValidationSchema = ValidationSchema,
+	const TAuth extends RouteAuth = RouteAuth,
+	TRateLimit extends RateLimitKey | undefined = undefined
+>(
+	shape: RouteShape<TErrors, TOutput, TAuth, TRateLimit> & { errors?: KnownRouteErrors<TErrors> }
+): RouteShape<TErrors, TOutput, TAuth, TRateLimit> => shape;
+
+/**
+ * Attach a handler to a route shape (`define_route_shape`), checked as
+ * `define_route` checks one.
+ *
+ * @param shape - the route without `handler`
+ * @param handler - the handler, returning `route_ok`, `route_fail`, or `route_raw`
+ * @returns a new spec, `shape` with `handler`
+ */
+// @__NO_SIDE_EFFECTS__
+export const attach_route_handler = <
+	TErrors extends ReadonlyArray<RestErrorDef>,
+	TOutput extends ValidationSchema,
+	TAuth extends RouteAuth,
+	TRateLimit extends RateLimitKey | undefined
+>(
+	shape: RouteShape<TErrors, TOutput, TAuth, TRateLimit> & { errors?: KnownRouteErrors<TErrors> },
+	handler: TypedRouteHandler<TErrors, TOutput, TAuth, TRateLimit>
+): RouteSpec => ({ ...shape, handler }) as unknown as RouteSpec;
+
+/**
+ * Build the response for a handler's result: a success as JSON at 200, a
+ * failure as its body at its definition's status with the headers the
+ * definition derives (`Retry-After`), a raw result as it is. Headers and
+ * cookies set on `c` before carry over, as Hono builds the response from `c`.
+ *
+ * @param c - the Hono context
+ * @param result - the handler's result
+ * @throws TypeError when `result` is not a result `route_ok`, `route_fail`, or `route_raw` made: a `Response`, a success without a value, a failure without its status or definition, a raw result without a response, `undefined` or `null`
+ */
+export const to_route_response = (c: Context, result: RouteResult): Response => {
+	// each branch checks the field it reads, so a malformed or nullish result
+	// falls through to the throw — a `Response` has its own `ok` and `status`,
+	// but no `value` or `def`
+	if (result?.ok === true) {
+		if (result.value !== undefined) return c.json(result.value as never);
+	} else if (result?.ok === 'raw') {
+		if (result.response instanceof Response) return result.response;
+	} else if (!result?.ok && result?.def !== undefined && typeof result.status === 'number') {
+		const body = result.body as never;
+		return c.json(body, result.status as ContentfulStatusCode, result.def.headers?.(body));
+	}
+	throw new TypeError(
+		`${c.req.method} ${c.req.path}: a route handler returned ${result instanceof Response ? 'a Response' : 'a malformed result'} — return \`route_ok\`, \`route_fail\`, or \`route_raw\``
+	);
+};
 
 /**
  * Get validated input from the Hono context.
@@ -531,13 +728,13 @@ export const apply_middleware_specs = (app: Hono, specs: Array<MiddlewareSpec>):
  * spine's `db_unavailable_response`.
  * Catches anything else, a foreign error class carrying a JSON-RPC `code`
  * included, and maps to `{error: 'internal_error', message?}`
- * at 500 (`message` populated only in DEV). Existing handlers that return
- * `c.json()` directly are unaffected — the catch layer only activates when
- * something is thrown.
+ * at 500 (`message` populated only in DEV). A handler's returned result is
+ * unaffected — the catch layer only activates when something is thrown.
  *
- * The flat shape matches what middleware and direct handler emissions
- * produce (e.g. `c.json({error: ERROR_FOO}, status)`,
- * `c.json(failure.body, status)` from the dispatcher's authorization phase),
+ * The flat shape matches what middleware and handler failures produce
+ * (`c.json({error: ERROR_FOO}, status)` in a middleware, `route_fail(def)` in a
+ * handler, `c.json(failure.body, status)` from the dispatcher's authorization
+ * phase),
  * so REST callers see one error envelope across every emit site. The
  * `<reason>` string comes from `err.data.reason` when set (consumer-supplied
  * canonical reason code) or from `jsonrpc_error_code_to_name(err.code)`
@@ -626,7 +823,8 @@ const build_rest_error_body = (err: JsonrpcErrorObject): Record<string, unknown>
  * adds input validation middleware (for routes with non-null input schemas),
  * runs the optional authorization phase to resolve the acting actor + build
  * the request context, wraps handler with DEV-only output
- * validation, wraps with error catch layer (a thrown JSON-RPC error,
+ * validation, builds each response from its handler's result
+ * (`to_route_response`), wraps with error catch layer (a thrown JSON-RPC error,
  * recognized via `to_thrown_jsonrpc_error`, maps to its status; any other
  * throw to a 500), and registers the route.
  *
@@ -716,7 +914,8 @@ export const apply_route_specs = (
 					}
 				]
 			: [];
-		// Step 1: adapt RouteHandler → Handler (construct RouteContext, call spec.handler)
+		// Step 1: adapt RouteHandler → Handler (construct RouteContext, call
+		// spec.handler, build the response from its result)
 		const use_transaction = spec.transaction ?? spec.method !== 'GET';
 		const inner = spec.handler;
 		// Discard post-commit effects a handler queued (`emit_after_commit`) if it
@@ -724,16 +923,21 @@ export const apply_route_specs = (
 		// those effects would announce state that never committed. The eager
 		// `pending_effects` queue (attempt audits, run outside the transaction) is
 		// untouched. Shared with the action dispatcher (actions/perform_action.ts)
-		// via `dispatch_with_post_commit_rollback`.
-		let handler: Handler = (c) => {
+		// via `dispatch_with_post_commit_rollback`. The response is built inside
+		// the dispatch, so a result that can't become one (a bare `Response`, a
+		// malformed result, a body `JSON.stringify` refuses) throws before the
+		// commit and rolls back.
+		let handler: Handler = async (c) => {
 			const route_context = {
 				pending_effects: c.var.pending_effects,
 				post_commit_effects: c.var.post_commit_effects
 			};
-			return dispatch_with_post_commit_rollback(c.var.post_commit_effects, () =>
+			return dispatch_with_post_commit_rollback(c.var.post_commit_effects, async () =>
 				use_transaction
-					? db.transaction(async (tx) => inner(c, { db: tx, ...route_context }))
-					: inner(c, { db, ...route_context })
+					? db.transaction(async (tx) =>
+							to_route_response(c, await inner(c, { db: tx, ...route_context }))
+						)
+					: to_route_response(c, await inner(c, { db, ...route_context }))
 			);
 		};
 		// Step 2: error catch layer — a thrown error becomes its REST body here

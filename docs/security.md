@@ -424,7 +424,7 @@ rather than about a role it also lacks), and a `token_scope_required` entry in
 your generated attack surface:
 
 ```typescript
-const stream_route: RouteSpec = {
+const stream_route = define_route({
 	method: 'GET',
 	path: '/api/files/:id',
 	auth: {
@@ -434,7 +434,7 @@ const stream_route: RouteSpec = {
 		required_scope: 'surface:file_store',
 	},
 	// ...
-};
+});
 ```
 
 A surface that isn't a route spec — your own WebSocket upgrade, anything Hono's
@@ -1185,8 +1185,9 @@ Client IP is resolved by trusted proxy middleware (see [Trusted Proxy](#trusted-
 over the wire on both the TS spine and the Rust spine by the `login_security`
 cross-backend suite — the first request past the per-IP cap on one forwarded IP
 returns `429 {error: "rate_limit_exceeded", retry_after}` with a
-`Retry-After: ceil(retry_after)` header on both impls (`rate_limit_exceeded_response`
-↔ `route_response::rate_limit_exceeded`).
+`Retry-After: ceil(retry_after)` header on both impls
+(`route_fail(REST_RATE_LIMIT_EXCEEDED, {retry_after})` ↔
+`route_response::rate_limit_exceeded`).
 
 ### Why bearer auth is not rate limited
 

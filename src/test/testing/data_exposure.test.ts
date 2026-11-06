@@ -6,6 +6,7 @@
  * @module
  */
 
+import { route_raw } from '#lib/http/route_result.ts';
 import { describe, test, assert } from 'vitest';
 import { z } from 'zod';
 
@@ -16,7 +17,7 @@ import {
 } from '#lib/testing/data_exposure.ts';
 import { schema_to_surface } from '#lib/http/schema_helpers.ts';
 import { create_app_surface_spec, type AppSurfaceSpec } from '#lib/http/surface.ts';
-import type { RouteSpec } from '#lib/http/route_spec.ts';
+import { define_route, type RouteSpec } from '#lib/http/route_spec.ts';
 import type { RouteAuth } from '#lib/http/auth_shape.ts';
 import type {
 	RequestResponseActionSpec,
@@ -35,15 +36,16 @@ const TransformedSensitive = z.strictObject({
 	account: Sensitive.transform((x) => x)
 });
 
-const route = (output: z.ZodType, auth: RouteAuth = AUTHED): RouteSpec => ({
-	method: 'GET',
-	path: '/api/thing',
-	auth,
-	handler: () => new Response(null),
-	description: 'A thing.',
-	input: z.null(),
-	output
-});
+const route = (output: z.ZodType, auth: RouteAuth = AUTHED): RouteSpec =>
+	define_route({
+		method: 'GET',
+		path: '/api/thing',
+		auth,
+		handler: () => route_raw(new Response(null)),
+		description: 'A thing.',
+		input: z.null(),
+		output
+	});
 
 const rpc_spec = (
 	output: z.ZodType,

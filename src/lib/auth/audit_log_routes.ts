@@ -15,10 +15,11 @@
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 import { UnreachableError } from '@fuzdev/fuz_util/error.ts';
 
-import type { RouteSpec } from '../http/route_spec.ts';
+import { attach_route_handler, type RouteSpec } from '../http/route_spec.ts';
+import { route_fail, route_raw } from '../http/route_result.ts';
 import {
-	ERROR_AUTHENTICATION_REQUIRED,
-	ERROR_INSUFFICIENT_PERMISSIONS
+	REST_AUTHENTICATION_REQUIRED,
+	REST_INSUFFICIENT_PERMISSIONS
 } from '../http/error_schemas.ts';
 import { has_test_context_preset } from '../hono_context.ts';
 import {
@@ -117,125 +118,121 @@ export const create_audit_log_route_specs = (options?: AuditLogRouteOptions): Ar
 	validate_sse_keep_alive_ms(keep_alive_ms);
 	const required_role = options.required_role ?? DEFAULT_AUDIT_STREAM_ROLE;
 	return [
-		{
-			...create_audit_log_route_shape(required_role),
-			handler: async (c, route) => {
-				// Rule 3 is declared on the route shape's `auth.required_scope`,
-				// so a narrowed token is refused ahead of the role gate rather
-				// than here.
-				const ctx = require_request_context(c);
-				// scope = session hash (capped → tabs-per-session limit and
-				// session-specific `session_revoke` close). groups = [account_id]
-				// (uncapped → coarse close on role_grant_revoke / session_revoke_all
-				// / password_change / account delete). The route shape admits
-				// sessions only, so `api_token_id` is null here; it is registered
-				// when present so that a consumer widening the credential gate
-				// still has a revoked token's stream closed by `token_revoke`.
-				// Both come off the resolved credential, which carries each only
-				// for its own credential type.
-				const resolved = get_resolved_auth(c);
-				const session_hash = resolved_auth_session_hash(resolved);
-				const api_token_id = resolved_auth_api_token_id(resolved);
+		attach_route_handler(create_audit_log_route_shape(required_role), async (c, route) => {
+			// Rule 3 is declared on the route shape's `auth.required_scope`,
+			// so a narrowed token is refused ahead of the role gate rather
+			// than here.
+			const ctx = require_request_context(c);
+			// scope = session hash (capped → tabs-per-session limit and
+			// session-specific `session_revoke` close). groups = [account_id]
+			// (uncapped → coarse close on role_grant_revoke / session_revoke_all
+			// / password_change / account delete). The route shape admits
+			// sessions only, so `api_token_id` is null here; it is registered
+			// when present so that a consumer widening the credential gate
+			// still has a revoked token's stream closed by `token_revoke`.
+			// Both come off the resolved credential, which carries each only
+			// for its own credential type.
+			const resolved = get_resolved_auth(c);
+			const session_hash = resolved_auth_session_hash(resolved);
+			const api_token_id = resolved_auth_api_token_id(resolved);
 
-				// Register pending first: from here every revocation finds the
-				// stream (TSDoc, "Admission").
-				const pending = registry.subscribe_pending({
-					channels: [AUDIT_LOG_CHANNEL],
-					scope: session_hash ?? undefined,
-					groups: api_token_id === null ? [ctx.account.id] : [ctx.account.id, api_token_id]
-				});
-				// The pending registration is released on every path that does not
-				// admit it — a refusal, a failed re-read, a throw while building the
-				// response — so none of them can leak an entry nothing delivers to.
-				let admitted = false;
-				try {
-					// Re-read what the gates read, now that the stream is registered:
-					// a revocation that closed before the registration is committed,
-					// so these see it. A throw here fails closed — no stream opens
-					// unchecked. Skipped under the test-preset escape hatch, whose
-					// pre-baked context has no rows behind it to re-read, and for a
-					// registration born closed by the shutdown, which admission
-					// refuses whatever they answer.
-					if (!has_test_context_preset(c) && !registry.closing) {
-						const reread = async (): Promise<Response | null> => {
-							// Global grants only, like the `require_role` gate that ran in
-							// the pipeline — a scoped grant must not open the instance-wide
-							// stream.
-							const recheck =
-								resolved === null
-									? 'credential_revoked'
-									: await recheck_admission(route, {
-											resolved,
-											request_context: ctx,
-											required_roles: [required_role]
-										});
-							switch (recheck) {
-								case 'admitted':
-									return null;
-								case 'credential_revoked':
-									log.info('audit stream: credential revoked during the request', ctx.account.id);
-									return c.json({ error: ERROR_AUTHENTICATION_REQUIRED }, 401);
-								case 'actor_inactive':
-									log.info('audit stream: acting actor deleted during the request', ctx.account.id);
-									return c.json({ error: ERROR_AUTHENTICATION_REQUIRED }, 401);
-								case 'role_revoked':
-									log.info('audit stream: role revoked during the request', ctx.account.id);
-									return c.json(
-										{ error: ERROR_INSUFFICIENT_PERMISSIONS, required_roles: [required_role] },
-										403
-									);
-								default:
-									throw new UnreachableError(recheck);
-							}
-						};
-						const refusal = await reread().catch((error: unknown) => {
-							// the shutdown closed the registration and then the database
-							// under the re-read: the answer is the shutdown's — admission
-							// below refuses, since a closing registry admits nothing —
-							// not a failure
-							if (registry.closing) {
-								log.info('audit stream: re-read ended by the shutdown', ctx.account.id, error);
+			// Register pending first: from here every revocation finds the
+			// stream (TSDoc, "Admission").
+			const pending = registry.subscribe_pending({
+				channels: [AUDIT_LOG_CHANNEL],
+				scope: session_hash ?? undefined,
+				groups: api_token_id === null ? [ctx.account.id] : [ctx.account.id, api_token_id]
+			});
+			// The pending registration is released on every path that does not
+			// admit it — a refusal, a failed re-read, a throw while building the
+			// response — so none of them can leak an entry nothing delivers to.
+			let admitted = false;
+			try {
+				// Re-read what the gates read, now that the stream is registered:
+				// a revocation that closed before the registration is committed,
+				// so these see it. A throw here fails closed — no stream opens
+				// unchecked. Skipped under the test-preset escape hatch, whose
+				// pre-baked context has no rows behind it to re-read, and for a
+				// registration born closed by the shutdown, which admission
+				// refuses whatever they answer.
+				if (!has_test_context_preset(c) && !registry.closing) {
+					const reread = async () => {
+						// Global grants only, like the `require_role` gate that ran in
+						// the pipeline — a scoped grant must not open the instance-wide
+						// stream.
+						const recheck =
+							resolved === null
+								? 'credential_revoked'
+								: await recheck_admission(route, {
+										resolved,
+										request_context: ctx,
+										required_roles: [required_role]
+									});
+						switch (recheck) {
+							case 'admitted':
 								return null;
-							}
-							throw error;
-						});
-						if (refusal) return refusal;
-					}
-
-					// Admit — the cap's eviction happens here, after every gate. A
-					// registration a revocation or the shutdown closed while it was
-					// pending, or one born closed, is not admitted: the stream is
-					// closed at once, so the body is the
-					// connect comment and nothing else, and the client reconnects
-					// into the gates. The close listener goes on first: a client that
-					// left during the re-reads gets a stream that is already closed,
-					// whose listener runs at once and removes the registration, so
-					// `admit` refuses it rather than evicting a live stream for it.
-					const { response, stream } = create_sse_response<SseNotification>(c, log, {
-						account_id: ctx.account.id,
-						keep_alive_ms
+							case 'credential_revoked':
+								log.info('audit stream: credential revoked during the request', ctx.account.id);
+								return route_fail(REST_AUTHENTICATION_REQUIRED);
+							case 'actor_inactive':
+								log.info('audit stream: acting actor deleted during the request', ctx.account.id);
+								return route_fail(REST_AUTHENTICATION_REQUIRED);
+							case 'role_revoked':
+								log.info('audit stream: role revoked during the request', ctx.account.id);
+								return route_fail(REST_INSUFFICIENT_PERMISSIONS, {
+									required_roles: [required_role]
+								});
+							default:
+								throw new UnreachableError(recheck);
+						}
+					};
+					const refusal = await reread().catch((error: unknown) => {
+						// the shutdown closed the registration and then the database
+						// under the re-read: the answer is the shutdown's — admission
+						// below refuses, since a closing registry admits nothing —
+						// not a failure
+						if (registry.closing) {
+							log.info('audit stream: re-read ended by the shutdown', ctx.account.id, error);
+							return null;
+						}
+						throw error;
 					});
-					stream.on_close(pending.unsubscribe);
-					admitted = registry.admit(pending, stream);
-					if (!admitted) {
-						log.info('audit stream: closed before admission', ctx.account.id);
-						stream.close();
-					} else {
-						// The stream ends when the credential it opened on expires —
-						// closed as a revocation closes it (TSDoc, "Credential
-						// deadline").
-						stream.on_close(
-							schedule_credential_deadline(resolved?.credential_deadline ?? null, () => {
-								log.info('audit stream: credential expired', ctx.account.id);
-								stream.close();
-							})
-						);
-					}
-					return response;
-				} finally {
-					if (!admitted) pending.unsubscribe();
+					if (refusal) return refusal;
 				}
+
+				// Admit — the cap's eviction happens here, after every gate. A
+				// registration a revocation or the shutdown closed while it was
+				// pending, or one born closed, is not admitted: the stream is
+				// closed at once, so the body is the
+				// connect comment and nothing else, and the client reconnects
+				// into the gates. The close listener goes on first: a client that
+				// left during the re-reads gets a stream that is already closed,
+				// whose listener runs at once and removes the registration, so
+				// `admit` refuses it rather than evicting a live stream for it.
+				const { response, stream } = create_sse_response<SseNotification>(c, log, {
+					account_id: ctx.account.id,
+					keep_alive_ms
+				});
+				stream.on_close(pending.unsubscribe);
+				admitted = registry.admit(pending, stream);
+				if (!admitted) {
+					log.info('audit stream: closed before admission', ctx.account.id);
+					stream.close();
+				} else {
+					// The stream ends when the credential it opened on expires —
+					// closed as a revocation closes it (TSDoc, "Credential
+					// deadline").
+					stream.on_close(
+						schedule_credential_deadline(resolved?.credential_deadline ?? null, () => {
+							log.info('audit stream: credential expired', ctx.account.id);
+							stream.close();
+						})
+					);
+				}
+				return route_raw(response);
+			} finally {
+				if (!admitted) pending.unsubscribe();
 			}
-		}
+		})
 	];
 };

@@ -14,20 +14,21 @@ import { z } from 'zod';
 import { literal, loose_object, object, string } from '@fuzdev/fuz_schema/schema.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import { apply_route_specs, type RouteSpec } from '#lib/http/route_spec.ts';
+import { apply_route_specs, define_route } from '#lib/http/route_spec.ts';
+import { route_ok } from '#lib/http/route_result.ts';
 import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
 import { create_stub_db } from '#lib/testing/stubs.ts';
 import { rest_error } from '#lib/http/error_schemas.ts';
 
-const base_route: RouteSpec = {
+const base_route = define_route({
 	method: 'POST',
 	path: '/api/things',
 	auth: { account: 'none', actor: 'none' },
 	description: 'Takes a thing.',
 	input: z.strictObject({ name: z.string() }),
 	output: z.strictObject({ ok: z.literal(true) }),
-	handler: (c) => c.json({ ok: true })
-};
+	handler: () => route_ok({ ok: true })
+});
 
 // a spec is data: a JS caller, or one cast past the types, can put anything in a slot
 const register = (overrides: Record<string, unknown>): void => {

@@ -30,6 +30,7 @@ import {
 
 import {
 	apply_route_specs,
+	define_route,
 	get_route_input,
 	get_route_params,
 	get_route_query,
@@ -37,6 +38,7 @@ import {
 } from '#lib/http/route_spec.ts';
 import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
 import { Uuid } from '#lib/primitive_schemas_fuz.ts';
+import { route_fail, route_ok, route_raw, type RouteRaw } from '#lib/http/route_result.ts';
 import { create_stub_db } from '#lib/testing/stubs.ts';
 import { rest_error } from '#lib/http/error_schemas.ts';
 import { create_dev_route_error_check } from '#lib/http/dev_route_error_check.ts';
@@ -50,7 +52,16 @@ const ThingInput = object({ name: pipe(string, min_length(1)) });
 const ThingOutput = object({ id: Uuid, name: string, mode: one_of(['a', 'b']) });
 const REST_THING_NOT_FOUND = rest_error(404, 'thing_not_found');
 
-const thing_route: RouteSpec = {
+// a JSON answer the route did not declare, with the bytes and type `c.json` writes
+const json_raw = (body: unknown, status: number): RouteRaw =>
+	route_raw(
+		new Response(JSON.stringify(body), {
+			status,
+			headers: { 'Content-Type': 'application/json' }
+		})
+	);
+
+const thing_route = define_route({
 	method: 'POST',
 	path: '/api/things/:thing_id',
 	auth: { account: 'none', actor: 'none' },
@@ -65,12 +76,13 @@ const thing_route: RouteSpec = {
 		const { thing_id }: { thing_id: string } = get_route_params(c, ThingParams);
 		const { mode }: { mode: 'a' | 'b' } = get_route_query(c, ThingQuery);
 		const { name }: { name: string } = get_route_input(c, ThingInput);
-		if (name === 'missing') return c.json({ error: 'thing_not_found' }, 404);
-		if (name === 'wrong_404') return c.json({ error: 'something_else' }, 404);
-		if (name === 'wrong_output') return c.json({ id: thing_id, name: 5, mode });
-		return c.json({ id: thing_id, name, mode });
+		if (name === 'missing') return route_fail(REST_THING_NOT_FOUND);
+		// deliberate violations, built raw
+		if (name === 'wrong_404') return json_raw({ error: 'something_else' }, 404);
+		if (name === 'wrong_output') return json_raw({ id: thing_id, name: 5, mode }, 200);
+		return route_ok({ id: thing_id, name, mode });
 	}
-};
+});
 
 const THING_ID = '0b7d4f0e-3f7c-4a51-9b8e-6c1f2a3d4e5f';
 const THING = `/api/things/${THING_ID}`;
@@ -204,7 +216,7 @@ describe('a fuz_schema route delivers', () => {
 
 	test('the parsed query, not the raw one: a default fills an absent key', async () => {
 		const Q = object({ mode: with_default(one_of(['a', 'b']), 'b') });
-		const spec: RouteSpec = {
+		const spec = define_route({
 			method: 'POST',
 			path: '/q',
 			auth: { account: 'none', actor: 'none' },
@@ -212,8 +224,8 @@ describe('a fuz_schema route delivers', () => {
 			query: Q,
 			input: literal(null),
 			output: loose_object({}),
-			handler: (c) => c.json(get_route_query(c, Q))
-		};
+			handler: (c) => route_ok(get_route_query(c, Q))
+		});
 		const got = await send('/q', 'null', [spec]);
 		assert.strictEqual(got.status, 200);
 		assert.deepStrictEqual(got.body, { mode: 'b' });
@@ -226,15 +238,15 @@ describe('a fuz_schema route delivers', () => {
 				transform((v: string) => v.toUpperCase())
 			)
 		});
-		const spec: RouteSpec = {
+		const spec = define_route({
 			method: 'POST',
 			path: '/i',
 			auth: { account: 'none', actor: 'none' },
 			description: 'Echoes its input.',
 			input: I,
 			output: loose_object({}),
-			handler: (c) => c.json(get_route_input(c, I))
-		};
+			handler: (c) => route_ok(get_route_input(c, I))
+		});
 		const got = await send('/i', '{"name":"abc"}', [spec]);
 		assert.strictEqual(got.status, 200);
 		assert.deepStrictEqual(got.body, { name: 'ABC' });

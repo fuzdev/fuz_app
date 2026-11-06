@@ -19,11 +19,12 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import {
 	apply_route_specs,
+	define_route,
 	get_route_input,
 	get_route_params,
-	get_route_query,
-	type RouteSpec
+	get_route_query
 } from '#lib/http/route_spec.ts';
+import { route_fail, route_ok, route_raw, type RouteRaw } from '#lib/http/route_result.ts';
 import { generate_app_surface, type AppSurface } from '#lib/http/surface.ts';
 import type { MiddlewareSpec } from '#lib/http/middleware_spec.ts';
 import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
@@ -40,7 +41,16 @@ const ThingOutput = z.strictObject({ id: Uuid, name: z.string(), mode: z.enum(['
 // an error is a definition, never a Zod schema
 const THING_NOT_FOUND = rest_error(404, 'thing_not_found');
 
-const thing_route: RouteSpec = {
+// a JSON answer the route did not declare, with the bytes and type `c.json` writes
+const json_raw = (body: unknown, status: number): RouteRaw =>
+	route_raw(
+		new Response(JSON.stringify(body), {
+			status,
+			headers: { 'Content-Type': 'application/json' }
+		})
+	);
+
+const thing_route = define_route({
 	method: 'POST',
 	path: '/things/:thing_id',
 	auth: { account: 'none', actor: 'none' },
@@ -54,22 +64,23 @@ const thing_route: RouteSpec = {
 		const { thing_id } = get_route_params(c, ThingParams);
 		const { mode } = get_route_query(c, ThingQuery);
 		const { name } = get_route_input(c, ThingInput);
-		if (name === 'missing') return c.json({ error: 'thing_not_found' }, 404);
-		if (name === 'wrong_404') return c.json({ error: 'something_else' }, 404);
-		if (name === 'wrong_output') return c.json({ id: thing_id, name: 5, mode }, 200);
-		return c.json({ id: thing_id, name, mode });
+		if (name === 'missing') return route_fail(THING_NOT_FOUND);
+		// deliberate violations, built raw
+		if (name === 'wrong_404') return json_raw({ error: 'something_else' }, 404);
+		if (name === 'wrong_output') return json_raw({ id: thing_id, name: 5, mode }, 200);
+		return route_ok({ id: thing_id, name, mode });
 	}
-};
+});
 
-const loose_route: RouteSpec = {
+const loose_route = define_route({
 	method: 'POST',
 	path: '/loose',
 	auth: { account: 'none', actor: 'none' },
 	description: 'Takes a loose body.',
 	input: z.object({ x: z.string() }),
 	output: z.null(),
-	handler: (c) => c.json(null)
-};
+	handler: () => route_ok(null)
+});
 
 // a strict integer spelling with a default, as `http/db_routes.ts` reads `offset` / `limit`
 const query_int = (bounds: z.ZodNumber, fallback: number) =>
@@ -91,7 +102,7 @@ const ThingViewQuery = z.strictObject({
 		.optional()
 });
 
-const view_route: RouteSpec = {
+const view_route = define_route({
 	method: 'GET',
 	path: '/things/:thing_id',
 	auth: { account: 'none', actor: 'none' },
@@ -103,11 +114,11 @@ const view_route: RouteSpec = {
 	handler: (c) => {
 		const { thing_id } = get_route_params(c, ThingParams);
 		const { limit, tag } = get_route_query(c, ThingViewQuery);
-		return c.json({ id: thing_id, limit, tag: tag ?? null });
+		return route_ok({ id: thing_id, limit, tag: tag ?? null });
 	}
-};
+});
 
-const touch_route: RouteSpec = {
+const touch_route = define_route({
 	method: 'POST',
 	path: '/things/:thing_id/touch',
 	auth: { account: 'none', actor: 'none' },
@@ -117,16 +128,16 @@ const touch_route: RouteSpec = {
 	output: z.strictObject({ id: Uuid, touched: z.literal(true) }),
 	handler: (c) => {
 		const { thing_id } = get_route_params(c, ThingParams);
-		return c.json({ id: thing_id, touched: true });
+		return route_ok({ id: thing_id, touched: true });
 	}
-};
+});
 
 const CountInput = z.strictObject({
 	count: z.coerce.number().int(),
 	label: z.string().transform((v) => v.toUpperCase())
 });
 
-const count_route: RouteSpec = {
+const count_route = define_route({
 	method: 'POST',
 	path: '/counts',
 	auth: { account: 'none', actor: 'none' },
@@ -135,13 +146,13 @@ const count_route: RouteSpec = {
 	output: z.strictObject({ count: z.number().int(), label: z.string() }),
 	handler: (c) => {
 		const { count, label } = get_route_input(c, CountInput);
-		return c.json({ count, label });
+		return route_ok({ count, label });
 	}
-};
+});
 
 const TagParams = z.strictObject({ tag: z.string().transform((v) => v.toUpperCase()) });
 
-const tag_route: RouteSpec = {
+const tag_route = define_route({
 	method: 'GET',
 	path: '/tags/:tag',
 	auth: { account: 'none', actor: 'none' },
@@ -151,9 +162,9 @@ const tag_route: RouteSpec = {
 	output: z.strictObject({ tag: z.string() }),
 	handler: (c) => {
 		const { tag } = get_route_params(c, TagParams);
-		return c.json({ tag });
+		return route_ok({ tag });
 	}
-};
+});
 
 const ROUTES = [thing_route, loose_route, view_route, touch_route, count_route, tag_route];
 

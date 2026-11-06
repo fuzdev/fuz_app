@@ -581,7 +581,11 @@ export const REST_INTERNAL_ERROR = rest_error(500, ERROR_INTERNAL_ERROR);
 
 // 503: a failed pool checkout any route can answer with, and the health and readiness checks
 export const REST_SERVICE_UNAVAILABLE = rest_error(503, ERROR_SERVICE_UNAVAILABLE);
-export const REST_DATABASE_CONNECTION_FAILED = rest_error(503, ERROR_DATABASE_CONNECTION_FAILED);
+/** `GET /health`'s failed check: the database is not connected, and its type. */
+export const REST_DATABASE_CONNECTION_FAILED = rest_error(503, ERROR_DATABASE_CONNECTION_FAILED, {
+	connected: literal(false),
+	type: string
+});
 export const REST_SCHEMA_DRIFT = rest_error(503, ERROR_SCHEMA_DRIFT);
 export const REST_DB_UNREACHABLE = rest_error(503, ERROR_DB_UNREACHABLE);
 

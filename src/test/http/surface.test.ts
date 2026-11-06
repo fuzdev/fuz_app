@@ -8,6 +8,7 @@
  * @module
  */
 
+import { route_ok } from '#lib/http/route_result.ts';
 import { describe, assert, test } from 'vitest';
 import { meta } from '@fuzdev/fuz_schema/meta.ts';
 import {
@@ -41,19 +42,21 @@ import type { MiddlewareSpec } from '#lib/http/middleware_spec.ts';
 import type { EventSpec } from '#lib/realtime/sse.ts';
 import type { WsEndpointSpec } from '#lib/actions/ws_endpoint_spec.ts';
 
-const noop_handler = async (c: any) => c.json({ ok: true });
+const noop_handler = async () => route_ok({ ok: true });
 const noop_middleware = async (_c: any, next: any) => next();
 
-const create_route = (overrides: Partial<RouteSpec> = {}): RouteSpec => ({
-	method: 'GET',
-	path: '/test',
-	auth: { account: 'none', actor: 'none' },
-	description: 'Test route',
-	input: z.null(),
-	output: z.strictObject({ ok: z.boolean() }),
-	handler: noop_handler,
-	...overrides
-});
+// a spec as data, its handler unchecked against it
+const create_route = (overrides: Partial<RouteSpec> = {}): RouteSpec =>
+	({
+		method: 'GET',
+		path: '/test',
+		auth: { account: 'none', actor: 'none' },
+		description: 'Test route',
+		input: z.null(),
+		output: z.strictObject({ ok: z.boolean() }),
+		handler: noop_handler,
+		...overrides
+	}) as RouteSpec;
 
 const create_middleware = (overrides: Partial<MiddlewareSpec> = {}): MiddlewareSpec => ({
 	name: 'test_mw',

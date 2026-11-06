@@ -13,9 +13,10 @@ import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 import { ErrorCoverageCollector, assert_error_coverage } from '#lib/testing/error_coverage.ts';
 import { REST_AUTHENTICATION_REQUIRED_BOOTSTRAP, rest_error } from '#lib/http/error_schemas.ts';
 import { create_app_surface_spec } from '#lib/http/surface.ts';
-import type { RouteSpec } from '#lib/http/route_spec.ts';
+import { define_route } from '#lib/http/route_spec.ts';
+import { route_ok } from '#lib/http/route_result.ts';
 
-const route: RouteSpec = {
+const route = define_route({
 	method: 'GET',
 	path: '/api/things/:id',
 	auth: { account: 'required', actor: 'none' },
@@ -25,8 +26,8 @@ const route: RouteSpec = {
 	output: z.null(),
 	// a second shape of the derived 401's code, and a 404 of its own
 	errors: [REST_AUTHENTICATION_REQUIRED_BOOTSTRAP, rest_error(404, 'thing_not_found')],
-	handler: (c) => c.json(null)
-};
+	handler: () => route_ok(null)
+});
 const spec = create_app_surface_spec({
 	route_specs: [route],
 	middleware_specs: [

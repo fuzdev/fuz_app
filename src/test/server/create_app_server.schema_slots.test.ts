@@ -10,6 +10,7 @@
  * @module
  */
 
+import { route_ok } from '#lib/http/route_result.ts';
 import { describe, assert, test } from 'vitest';
 import { z } from 'zod';
 import { object } from '@fuzdev/fuz_schema/schema.ts';
@@ -22,7 +23,7 @@ import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
 import { parse_allowed_origins } from '#lib/http/origin.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import type { RpcAction } from '#lib/actions/action_types.ts';
-import type { RouteSpec } from '#lib/http/route_spec.ts';
+import { define_route, type RouteSpec } from '#lib/http/route_spec.ts';
 import { rest_error } from '#lib/http/error_schemas.ts';
 import { create_stub_upgrade } from '#lib/testing/ws_round_trip.ts';
 import { create_test_keyring } from '../auth/session_test_helpers.ts';
@@ -74,16 +75,17 @@ const boot_error = async (overrides: Partial<AppServerOptions>): Promise<string>
 	return thrown.message;
 };
 
-const route = (overrides: Record<string, unknown>): RouteSpec => ({
-	method: 'POST',
-	path: '/api/things',
-	auth: { account: 'none', actor: 'none' },
-	description: 'Takes a thing.',
-	input: z.strictObject({ name: z.string() }),
-	output: z.strictObject({ ok: z.literal(true) }),
-	handler: (c) => c.json({ ok: true }),
-	...overrides
-});
+const route = (overrides: Record<string, unknown>): RouteSpec =>
+	define_route({
+		method: 'POST',
+		path: '/api/things',
+		auth: { account: 'none', actor: 'none' },
+		description: 'Takes a thing.',
+		input: z.strictObject({ name: z.string() }),
+		output: z.strictObject({ ok: z.literal(true) }),
+		handler: () => route_ok({ ok: true }),
+		...overrides
+	});
 
 const action = (slots: { input?: unknown; output?: unknown }): RpcAction =>
 	({

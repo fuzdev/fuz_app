@@ -21,14 +21,10 @@ import {
 } from '@fuzdev/fuz_schema/schema.ts';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import type { RouteSpec } from './route_spec.ts';
+import { define_route, type RouteSpec } from './route_spec.ts';
+import { route_fail, route_ok } from './route_result.ts';
 import { HEALTH_PATH, HealthResponse } from './health_schema.ts';
-import {
-	ERROR_DB_UNREACHABLE,
-	ERROR_SCHEMA_DRIFT,
-	REST_DB_UNREACHABLE,
-	REST_SCHEMA_DRIFT
-} from './error_schemas.ts';
+import { REST_DB_UNREACHABLE, REST_SCHEMA_DRIFT } from './error_schemas.ts';
 import {
 	check_schema_drift,
 	format_schema_drift,
@@ -41,15 +37,16 @@ import {
  * Infrastructure endpoint for uptime monitors and load balancers.
  * Bootstrap availability is exposed via `/api/account/status` instead.
  */
-export const create_health_route_spec = (): RouteSpec => ({
-	method: 'GET',
-	path: HEALTH_PATH,
-	auth: { account: 'none', actor: 'none' },
-	handler: (c) => c.json({ status: 'ok' } satisfies HealthResponse),
-	description: 'Health check',
-	input: literal(null),
-	output: HealthResponse
-});
+export const create_health_route_spec = (): RouteSpec =>
+	define_route({
+		method: 'GET',
+		path: HEALTH_PATH,
+		auth: { account: 'none', actor: 'none' },
+		handler: () => route_ok({ status: 'ok' }),
+		description: 'Health check',
+		input: literal(null),
+		output: HealthResponse
+	});
 
 /** Module-level cache of loaded expected-schema fixtures, keyed by URL. */
 const expected_schema_cache = new Map<string, ExpectedSchema>();
@@ -130,7 +127,7 @@ export const create_ready_route_spec = (options: ReadyRouteOptions): RouteSpec =
 				'tables passes for any live DB. Pass a non-empty expected column map.'
 		);
 	}
-	return {
+	return define_route({
 		method: 'GET',
 		path: '/ready',
 		auth: { account: 'none', actor: 'none' },
@@ -138,20 +135,20 @@ export const create_ready_route_spec = (options: ReadyRouteOptions): RouteSpec =
 		input: literal(null),
 		output: object({ ready: literal(true) }),
 		errors: [REST_SCHEMA_DRIFT, REST_DB_UNREACHABLE],
-		handler: async (c, route) => {
+		handler: async (_c, route) => {
 			try {
 				const drift = await check_schema_drift(route.db, options.expected);
-				if (drift.ok) return c.json({ ready: true });
+				if (drift.ok) return route_ok({ ready: true });
 				// Detailed drift goes to the server log only — the public body stays a
 				// minimal error code so the endpoint doesn't leak schema structure.
 				options.log?.error(`[ready] schema drift detected:\n${format_schema_drift(drift)}`);
-				return c.json({ error: ERROR_SCHEMA_DRIFT }, 503);
+				return route_fail(REST_SCHEMA_DRIFT);
 			} catch (err) {
 				options.log?.error('[ready] readiness check failed (db unreachable?):', err);
-				return c.json({ error: ERROR_DB_UNREACHABLE }, 503);
+				return route_fail(REST_DB_UNREACHABLE);
 			}
 		}
-	};
+	});
 };
 
 /** Options for the authenticated server status route. */
@@ -168,12 +165,13 @@ export interface ServerStatusOptions {
  * Returns version and uptime. Unlike the public health check,
  * this requires authentication.
  */
-export const create_server_status_route_spec = (options: ServerStatusOptions): RouteSpec => ({
-	method: 'GET',
-	path: '/api/server/status',
-	auth: { account: 'required', actor: 'none' },
-	handler: (c) => c.json({ version: options.version, uptime_ms: options.get_uptime_ms() }),
-	description: 'Server version and uptime',
-	input: literal(null),
-	output: loose_object({ version: string, uptime_ms: pipe(number, integer, min_value(0)) })
-});
+export const create_server_status_route_spec = (options: ServerStatusOptions): RouteSpec =>
+	define_route({
+		method: 'GET',
+		path: '/api/server/status',
+		auth: { account: 'required', actor: 'none' },
+		handler: () => route_ok({ version: options.version, uptime_ms: options.get_uptime_ms() }),
+		description: 'Server version and uptime',
+		input: literal(null),
+		output: loose_object({ version: string, uptime_ms: pipe(number, integer, min_value(0)) })
+	});

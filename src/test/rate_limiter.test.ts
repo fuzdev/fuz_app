@@ -14,12 +14,10 @@ import {
 	try_reserve_optional,
 	reserve_optional,
 	create_rate_limiter,
-	rate_limit_exceeded_response,
 	default_login_ip_rate_limit,
 	default_login_account_rate_limit,
 	DEFAULT_RATE_LIMITER_MAX_KEYS
 } from '#lib/rate_limiter.ts';
-import { ERROR_RATE_LIMIT_EXCEEDED } from '#lib/http/error_schemas.ts';
 import { get_client_ip } from '#lib/http/client_ip.ts';
 
 import {
@@ -593,36 +591,6 @@ describe('get_client_ip', () => {
 		});
 		await app.fetch(new Request('http://localhost/test'));
 		assert.strictEqual(captured_ip, '10.0.0.1');
-	});
-});
-
-// --- rate_limit_exceeded_response ---
-
-describe('rate_limit_exceeded_response', () => {
-	test('returns 429 with correct body and Retry-After header', async () => {
-		const app = new Hono();
-		app.get('/test', (c) => rate_limit_exceeded_response(c, 57));
-		const res = await app.fetch(new Request('http://localhost/test'));
-		assert.strictEqual(res.status, 429);
-		assert.strictEqual(res.headers.get('Retry-After'), '57');
-		assert.strictEqual(res.headers.get('Content-Type'), 'application/json');
-		const body = await res.json();
-		assert.deepStrictEqual(body, { error: ERROR_RATE_LIMIT_EXCEEDED, retry_after: 57 });
-	});
-
-	test('Retry-After header rounds up fractional seconds', async () => {
-		const app = new Hono();
-		app.get('/test', (c) => rate_limit_exceeded_response(c, 12.3));
-		const res = await app.fetch(new Request('http://localhost/test'));
-		assert.strictEqual(res.headers.get('Retry-After'), '13');
-	});
-
-	test('handles 0 retry_after', async () => {
-		const app = new Hono();
-		app.get('/test', (c) => rate_limit_exceeded_response(c, 0));
-		const res = await app.fetch(new Request('http://localhost/test'));
-		assert.strictEqual(res.status, 429);
-		assert.strictEqual(res.headers.get('Retry-After'), '0');
 	});
 });
 

@@ -22,7 +22,13 @@ import { z } from 'zod';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { literal, object } from '@fuzdev/fuz_schema/schema.ts';
 
-import { apply_route_specs, type RouteSpec } from '#lib/http/route_spec.ts';
+import {
+	apply_route_specs,
+	define_route,
+	type RouteSpec,
+	type TypedRouteHandler
+} from '#lib/http/route_spec.ts';
+import { route_fail, route_ok, route_raw, type RouteRaw } from '#lib/http/route_result.ts';
 import type { MiddlewareSpec } from '#lib/http/middleware_spec.ts';
 import {
 	ERROR_INTERNAL_ERROR,
@@ -50,16 +56,44 @@ const db = create_stub_db();
 
 const REST_SLUG_TAKEN = rest_error(409, 'slug_taken');
 
-const route = (overrides: Partial<RouteSpec> & Pick<RouteSpec, 'handler'>): RouteSpec => ({
-	method: 'GET',
-	path: '/v',
-	auth: { account: 'none', actor: 'none' },
-	description: 'error check probe',
-	input: z.null(),
-	output: z.strictObject({ ok: z.literal(true) }),
-	errors: [REST_SLUG_TAKEN],
-	...overrides
-});
+const probe_auth = { account: 'none', actor: 'none' } as const;
+const ProbeOutput = z.strictObject({ ok: z.literal(true) });
+
+/** A probe's handler, checked against the base route; what the types refuse it answers raw. */
+type ProbeHandler = TypedRouteHandler<
+	[typeof REST_SLUG_TAKEN],
+	typeof ProbeOutput,
+	typeof probe_auth,
+	undefined
+>;
+
+// the overrides are spread over the checked spec unchecked: the probes rewrite
+// `errors`, `input`, and the rest, which the DEV check is the net for
+const route = (
+	overrides: Partial<Omit<RouteSpec, 'handler'>> & { handler: ProbeHandler }
+): RouteSpec => {
+	const { handler, ...rest } = overrides;
+	const spec = define_route({
+		method: 'GET',
+		path: '/v',
+		auth: probe_auth,
+		description: 'error check probe',
+		input: z.null(),
+		output: ProbeOutput,
+		errors: [REST_SLUG_TAKEN],
+		handler
+	});
+	return { ...spec, ...rest };
+};
+
+/** A JSON body at any status, as the bytes `c.json` writes, answered raw. */
+const json_raw = (body: unknown, status: number): RouteRaw =>
+	route_raw(
+		new Response(JSON.stringify(body), {
+			status,
+			headers: { 'Content-Type': 'application/json' }
+		})
+	);
 
 /**
  * Mount the specs behind the check, outermost, with any middleware between,
@@ -92,8 +126,8 @@ const mount = (
 
 /** One GET route answering what `handler` answers, requested once. */
 const answer = async (
-	handler: RouteSpec['handler'],
-	overrides?: Partial<RouteSpec>
+	handler: ProbeHandler,
+	overrides?: Partial<Omit<RouteSpec, 'handler'>>
 ): Promise<{ status: number; body: string; errors: Array<string> }> => {
 	const spec = route({ handler, ...overrides });
 	const { request, errors } = mount([spec]);
@@ -108,20 +142,20 @@ const answer = async (
 
 describe('the DEV error check — declared statuses and bodies', () => {
 	test('a declared code at its status logs nothing', async () => {
-		const got = await answer((c) => c.json({ error: 'slug_taken' }, 409));
+		const got = await answer(() => route_fail(REST_SLUG_TAKEN));
 		assert.strictEqual(got.status, 409);
 		assert.deepStrictEqual(got.errors, []);
 	});
 
 	test('an undeclared status logs and passes the response through unchanged', async () => {
-		const got = await answer((c) => c.json({ error: 'teapot' }, 418));
+		const got = await answer(() => json_raw({ error: 'teapot' }, 418));
 		assert.strictEqual(got.status, 418);
 		assert.strictEqual(got.body, '{"error":"teapot"}');
 		assert.deepStrictEqual(got.errors, ['Undeclared error status (418): GET /v']);
 	});
 
 	test('a body off its status schema logs', async () => {
-		const got = await answer((c) => c.json({ error: 'other_reason' }, 409));
+		const got = await answer(() => json_raw({ error: 'other_reason' }, 409));
 		assert.deepStrictEqual(got.errors, ['Error schema mismatch (409): GET /v']);
 	});
 
@@ -149,28 +183,28 @@ describe('the DEV error check — declared statuses and bodies', () => {
 			input: z.strictObject({}),
 			errors: [rest_error(400, 'name_taken')]
 		};
-		const derived = await answer((c) => c.json({ error: 'invalid_request_body' }, 400), overrides);
+		const derived = await answer(() => json_raw({ error: 'invalid_request_body' }, 400), overrides);
 		assert.deepStrictEqual(derived.errors, []);
-		const own = await answer((c) => c.json({ error: 'name_taken' }, 400), overrides);
+		const own = await answer(() => json_raw({ error: 'name_taken' }, 400), overrides);
 		assert.deepStrictEqual(own.errors, []);
-		const neither = await answer((c) => c.json({ error: 'other' }, 400), overrides);
+		const neither = await answer(() => json_raw({ error: 'other' }, 400), overrides);
 		assert.deepStrictEqual(neither.errors, ['Error schema mismatch (400): POST /v']);
 	});
 
 	test('a GET declares no body code: its 400 is only what its slots derive', async () => {
-		const got = await answer((c) => c.json({ error: 'invalid_request_body' }, 400), {
+		const got = await answer(() => json_raw({ error: 'invalid_request_body' }, 400), {
 			query: z.strictObject({})
 		});
 		assert.deepStrictEqual(got.errors, ['Error schema mismatch (400): GET /v']);
-		const query = await answer((c) => c.json({ error: 'invalid_query_params' }, 400), {
+		const query = await answer(() => json_raw({ error: 'invalid_query_params' }, 400), {
 			query: z.strictObject({})
 		});
 		assert.deepStrictEqual(query.errors, []);
 	});
 
 	test('a success status is not an error, and a 3xx is not read', async () => {
-		assert.deepStrictEqual((await answer((c) => c.json({ ok: true }))).errors, []);
-		assert.deepStrictEqual((await answer((c) => c.json({ moved: 1 }, 301))).errors, []);
+		assert.deepStrictEqual((await answer(() => route_ok({ ok: true }))).errors, []);
+		assert.deepStrictEqual((await answer(() => json_raw({ moved: 1 }, 301))).errors, []);
 	});
 });
 
@@ -211,14 +245,14 @@ describe('the DEV error check — exemptions', () => {
 	});
 
 	test('only at their own status: internal_error at 502 and service_unavailable at 500 are not', async () => {
-		const at_502 = await answer((c) => c.json({ error: ERROR_INTERNAL_ERROR }, 502));
+		const at_502 = await answer(() => json_raw({ error: ERROR_INTERNAL_ERROR }, 502));
 		assert.deepStrictEqual(at_502.errors, ['Undeclared error status (502): GET /v']);
-		const at_500 = await answer((c) => c.json({ error: ERROR_SERVICE_UNAVAILABLE }, 500));
+		const at_500 = await answer(() => json_raw({ error: ERROR_SERVICE_UNAVAILABLE }, 500));
 		assert.deepStrictEqual(at_500.errors, ['Undeclared error status (500): GET /v']);
 	});
 
 	test('a non-JSON error is skipped', async () => {
-		const got = await answer((c) => c.text('nope', 418));
+		const got = await answer((c) => route_raw(c.text('nope', 418)));
 		assert.strictEqual(got.status, 418);
 		assert.deepStrictEqual(got.errors, []);
 	});
@@ -229,10 +263,10 @@ describe('the DEV error check — exemptions', () => {
 			id: null,
 			error: { code: -32600, message: 'Invalid Request' }
 		};
-		const got = await answer((c) => c.json(envelope, 418), { jsonrpc: true });
+		const got = await answer(() => json_raw(envelope, 418), { jsonrpc: true });
 		assert.deepStrictEqual(got.errors, []);
 		// a REST body there still is
-		const rest = await answer((c) => c.json({ error: 'teapot' }, 418), { jsonrpc: true });
+		const rest = await answer(() => json_raw({ error: 'teapot' }, 418), { jsonrpc: true });
 		assert.deepStrictEqual(rest.errors, ['Undeclared error status (418): GET /v']);
 	});
 
@@ -242,7 +276,7 @@ describe('the DEV error check — exemptions', () => {
 			id: null,
 			error: { code: -32600, message: 'Invalid Request' }
 		};
-		const got = await answer((c) => c.json(envelope, 409));
+		const got = await answer(() => json_raw(envelope, 409));
 		assert.deepStrictEqual(got.errors, ['Error schema mismatch (409): GET /v']);
 	});
 });
@@ -259,7 +293,7 @@ describe('the DEV error check — what it sees and how it finds the route', () =
 	});
 
 	test("a middleware's refusal is checked against the route's map, its layer's codes included", async () => {
-		const spec = route({ handler: (c) => c.json({ ok: true }) });
+		const spec = route({ handler: () => route_ok({ ok: true }) });
 		const declared = mount([spec], [gate('gate_refused', 403)]);
 		const ok = await declared.request('/v', { headers: { 'x-refuse': '1' } });
 		assert.strictEqual(ok.status, 403);
@@ -271,7 +305,7 @@ describe('the DEV error check — what it sees and how it finds the route', () =
 
 	test('HEAD is read as GET', async () => {
 		const { request, errors } = mount([
-			route({ handler: (c) => c.json({ error: 'teapot' }, 418) })
+			route({ handler: () => json_raw({ error: 'teapot' }, 418) })
 		]);
 		const res = await request('/v', { method: 'HEAD' });
 		assert.strictEqual(res.status, 418);
@@ -283,12 +317,12 @@ describe('the DEV error check — what it sees and how it finds the route', () =
 		const specs = [
 			route({
 				path: '/things/new',
-				handler: (c) => c.json({ error: 'slug_taken' }, 409)
+				handler: () => json_raw({ error: 'slug_taken' }, 409)
 			}),
 			route({
 				path: '/things/:id',
 				errors: [],
-				handler: (c) => c.json({ error: 'slug_taken' }, 409)
+				handler: () => json_raw({ error: 'slug_taken' }, 409)
 			})
 		];
 		const first = mount(specs);
@@ -301,8 +335,8 @@ describe('the DEV error check — what it sees and how it finds the route', () =
 
 	test('the method is part of the match', async () => {
 		const specs = [
-			route({ method: 'POST', path: '/v', errors: [], handler: (c) => c.json({ ok: true }) }),
-			route({ handler: (c) => c.json({ error: 'slug_taken' }, 409) })
+			route({ method: 'POST', path: '/v', errors: [], handler: () => route_ok({ ok: true }) }),
+			route({ handler: () => json_raw({ error: 'slug_taken' }, 409) })
 		];
 		const { request, errors } = mount(specs);
 		await request('/v');
@@ -310,7 +344,7 @@ describe('the DEV error check — what it sees and how it finds the route', () =
 	});
 
 	test('a path no spec matches is skipped, its JSON error included', async () => {
-		const spec = route({ handler: (c) => c.json({ ok: true }) });
+		const spec = route({ handler: () => route_ok({ ok: true }) });
 		const { request, errors } = mount(
 			[spec],
 			[
@@ -330,7 +364,7 @@ describe('the DEV error check — what it sees and how it finds the route', () =
 
 describe('the DEV error check never changes the response', () => {
 	test('a throwing logger leaves an undeclared 418 as it was', async () => {
-		const spec = route({ handler: (c) => c.json({ error: 'teapot' }, 418) });
+		const spec = route({ handler: () => json_raw({ error: 'teapot' }, 418) });
 		const log = new Logger('test', { level: 'off' });
 		vi.spyOn(log, 'error').mockImplementation(() => {
 			throw new Error('the logger broke');
@@ -350,7 +384,7 @@ describe('the DEV error check never changes the response', () => {
 	});
 
 	test('a JSON-looking body that is not JSON by its Content-Type is not checked', async () => {
-		const got = await answer((c) => c.text('{"error":"x"}', 418));
+		const got = await answer((c) => route_raw(c.text('{"error":"x"}', 418)));
 		assert.strictEqual(got.status, 418);
 		assert.deepStrictEqual(got.errors, []);
 	});
@@ -428,15 +462,15 @@ describe('the DEV error check outside DEV', () => {
 		vi.resetModules();
 	});
 
-	const teapot_route: RouteSpec = {
+	const teapot_route: RouteSpec = define_route({
 		method: 'GET',
 		path: '/api/teapot',
 		auth: { account: 'none', actor: 'none' },
 		description: 'Answers a status no map declares.',
 		input: literal(null),
 		output: object({ ok: literal(true) }),
-		handler: (c) => c.json({ error: 'teapot' }, 418)
-	};
+		handler: () => json_raw({ error: 'teapot' }, 418)
+	});
 
 	const ORIGIN = 'http://localhost:5173';
 

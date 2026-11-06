@@ -435,6 +435,16 @@ shapes of one code at one status are both kept.
   the routes its `path` applies to, less its `carve_outs`.
 - Routes declare their handler's codes via `RouteSpec.errors`.
 
+A handler answers a failure as a result, `route_fail(def, fields?)`, and
+`define_route` refuses at the type level one the route doesn't allow: a
+definition outside its `errors`, the 401 and auth 403s its `auth` derives,
+the 429 of its `rate_limit`, and the catch layers' 500 and 503 — read by what
+reaches the wire, so a definition whose body an allowed one accepts at the
+same status and code passes. The input 400s, the actor codes, and the 415 are
+the pipeline's, and no handler answers them. A response a handler builds by
+hand (`route_raw`) is not typed by the route, and the checks below are its
+net.
+
 `create_app_surface_spec` builds every route's map once
 (`AppSurfaceSpec.route_error_maps`, keyed `METHOD path`), and `create_app_server`
 hands the same map to the DEV error check. Every reader reads it: the
@@ -452,9 +462,9 @@ REST error-code parity between the spines.
 
 `RouteSpec.rate_limit?: RateLimitKey` (`'ip' | 'account' | 'both'`) declares what a
 route's rate limiter is keyed on — metadata for surface introspection and policy
-invariants, derives 429 in `derive_route_errors`. All 429 responses include a
-`Retry-After` HTTP header via `rate_limit_exceeded_response(c, retry_after)` from
-`rate_limiter.ts`.
+invariants, derives 429 in `derive_route_errors`, which its handler may then
+answer with: `route_fail(REST_RATE_LIMIT_EXCEEDED, {retry_after})`, whose
+definition derives the `Retry-After` HTTP header from the body.
 
 `ActionSpec.rate_limit?: RateLimitKey` is the parallel for action specs — but
 unlike `RouteSpec.rate_limit` (metadata only, with imperative limiter wiring
@@ -498,8 +508,9 @@ as `internal_error`:
   `actions/perform_action.ts` catches handler throws, preserves
   `err.code` and `err.data` for `ThrownJsonrpcError`, and folds them
   into a `PerformActionResult` of `{kind: 'error', error, status}`.
-  The HTTP shim (`actions/action_rpc.ts`) binds this via `c.json`
-  with the JSON-RPC envelope shape; the WebSocket shim
+  The HTTP shim (`actions/action_rpc.ts`) answers it as the JSON-RPC
+  envelope, a `route_raw` result with `c.json`'s bytes and content type;
+  the WebSocket shim
   (`actions/ws_socket_session.ts`) sends the same envelope over the
   socket. Both wire shapes share a single normalization site.
 

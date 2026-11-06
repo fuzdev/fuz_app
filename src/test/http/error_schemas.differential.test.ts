@@ -626,7 +626,12 @@ const DEFINITIONS: Record<
 	REST_DATABASE_CONNECTION_FAILED: {
 		status: 503,
 		code: 'database_connection_failed',
-		zod: zod_error('database_connection_failed'),
+		// the body `GET /health` and the Rust spine send on a failed check
+		zod: z.looseObject({
+			error: z.literal('database_connection_failed'),
+			connected: z.literal(false),
+			type: z.string()
+		}),
 		sample: { error: 'database_connection_failed', connected: false, type: 'pglet' }
 	},
 	REST_SCHEMA_DRIFT: {

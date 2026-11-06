@@ -24,7 +24,13 @@ import type { BootstrapServerOptions } from '../server/app_server.ts';
 import type { AppServerContext } from '../server/app_server_context.ts';
 import type { AppBackend } from '../server/app_backend.ts';
 import { Db } from '../db/db.ts';
-import { prefix_route_specs, type RouteSpec } from '../http/route_spec.ts';
+import {
+	attach_route_handler,
+	prefix_route_specs,
+	type RouteShape,
+	type RouteSpec
+} from '../http/route_spec.ts';
+import { route_raw, type RouteRaw } from '../http/route_result.ts';
 import { bootstrap_route_shape } from '../auth/bootstrap_route_schema.ts';
 import { create_rpc_endpoint } from '../actions/action_rpc.ts';
 import { create_surface_route_spec, type SurfaceRouteOptions } from '../server/surface_route.ts';
@@ -124,8 +130,25 @@ export const create_stub_db = (): Db =>
 		transaction: async (fn) => fn(create_stub_db())
 	});
 
-/** Stub handler that returns a 200 response. */
-export const stub_handler = (): Response => new Response('stub');
+/** Stub handler that answers a 200 `stub` text response, as a raw result. */
+export const stub_handler = (): RouteRaw => route_raw(new Response('stub'));
+
+/**
+ * A route spec for a surface that is described and never served — a
+ * backend's routes declared from their shapes: `shape` with a handler that
+ * throws when it is run. Its handler is checked against nothing, as it
+ * returns nothing.
+ *
+ * @param shape - the route minus its handler (`define_route_shape`)
+ * @returns the spec, for surface generation
+ */
+export const stub_route_spec = (shape: RouteShape): RouteSpec =>
+	// a handler that never returns fits any route, so the shape's own types are not needed
+	attach_route_handler(shape as RouteShape<[]>, () => {
+		throw new Error(
+			`stub_route_spec: ${shape.method} ${shape.path} is surface-only, its handler never runs`
+		);
+	});
 
 /** Stub middleware that passes through. */
 export const stub_mw = async (_c: any, next: any): Promise<void> => next();
@@ -490,9 +513,9 @@ export const create_test_app_surface_spec = (
 		options.bootstrap && options.bootstrap.mode !== 'disabled'
 			? prefix_route_specs(options.bootstrap.route_prefix ?? '/api/account', [
 					// Surface generation reads the route shape only — the live hono
-					// handler never runs here, so a stub satisfies the RouteSpec type
-					// without pulling the in-process Hono app onto cross-process consumers.
-					{ ...bootstrap_route_shape, handler: stub_handler }
+					// handler never runs here, so a stub stands in for it without
+					// pulling the in-process Hono app onto cross-process consumers.
+					attach_route_handler(bootstrap_route_shape, stub_handler)
 				])
 			: [];
 	for (const route of bootstrap_route_specs) {

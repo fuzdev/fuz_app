@@ -37,6 +37,7 @@ import {
 } from '#lib/server/serve_fact_route.ts';
 import { generate_app_surface, type AppSurfaceDiagnostic } from '#lib/http/surface.ts';
 import type { RouteSpec } from '#lib/http/route_spec.ts';
+import { stub_route_spec } from '#lib/testing/stubs.ts';
 import {
 	REST_ACTOR_NOT_ON_ACCOUNT,
 	REST_ACTOR_REQUIRED,
@@ -56,7 +57,6 @@ interface SurfaceCapture {
 }
 
 const capture_surface = () => {
-	const handler: RouteSpec['handler'] = (c) => c.json(null);
 	const log = new Logger('test', { level: 'off' });
 	const route_specs: Array<RouteSpec> = [
 		create_health_route_spec(),
@@ -65,7 +65,7 @@ const capture_surface = () => {
 		create_surface_route_spec({
 			surface: generate_app_surface({ route_specs: [], middleware_specs: [] })
 		}),
-		{ ...create_audit_log_route_shape(), handler },
+		stub_route_spec(create_audit_log_route_shape()),
 		create_serve_cell_fact_route_spec({ facts_dir: '/facts', log }),
 		create_serve_fact_route_spec({ facts_dir: '/facts', log })
 	];

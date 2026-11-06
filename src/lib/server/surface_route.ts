@@ -10,7 +10,8 @@
 
 import { array, literal, loose_object, object } from '@fuzdev/fuz_schema/schema.ts';
 
-import type { RouteSpec } from '../http/route_spec.ts';
+import { define_route, type RouteSpec } from '../http/route_spec.ts';
+import { route_ok } from '../http/route_result.ts';
 import type { AppSurface } from '../http/surface.ts';
 import { ActingActor } from '../primitive_schemas_fuz.ts';
 import { ROLE_ADMIN } from '../auth/role_schema.ts';
@@ -35,23 +36,24 @@ export interface SurfaceRouteOptions {
  * @param options - the surface to serve
  * @returns the `GET /api/surface` route spec
  */
-export const create_surface_route_spec = (options: SurfaceRouteOptions): RouteSpec => ({
-	method: 'GET',
-	path: '/api/surface',
-	auth: {
-		account: 'required',
-		actor: 'required',
-		roles: [ROLE_ADMIN],
-		// rule 3 — the surface map is not an RPC method, so a narrowed token
-		// gets none of it
-		required_scope: 'surface:app_surface'
-	},
-	handler: (c) => c.json(options.surface),
-	description: 'Application surface (routes, middleware, schemas) — admin only',
-	query: object({ acting: ActingActor }),
-	input: literal(null),
-	output: loose_object({
-		routes: array(loose_object({})),
-		middleware: array(loose_object({}))
-	})
-});
+export const create_surface_route_spec = (options: SurfaceRouteOptions): RouteSpec =>
+	define_route({
+		method: 'GET',
+		path: '/api/surface',
+		auth: {
+			account: 'required',
+			actor: 'required',
+			roles: [ROLE_ADMIN],
+			// rule 3 — the surface map is not an RPC method, so a narrowed token
+			// gets none of it
+			required_scope: 'surface:app_surface'
+		},
+		handler: () => route_ok(options.surface),
+		description: 'Application surface (routes, middleware, schemas) — admin only',
+		query: object({ acting: ActingActor }),
+		input: literal(null),
+		output: loose_object({
+			routes: array(loose_object({})),
+			middleware: array(loose_object({}))
+		})
+	});

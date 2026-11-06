@@ -14,8 +14,10 @@
  * - so the diagnostics gain one `info` for that query, which names the step
  *   JSON Schema can't say.
  *
- * The error schemas are the capture's: the routes' error rules are the ones
- * it was captured under.
+ * The error schemas are the capture's, the routes' error rules the ones it
+ * was captured under, but for `GET /health`'s 503, which declares the fields
+ * its body carries beside the code, `connected: false` and `type`, where the
+ * capture declared the code alone.
  *
  * @module
  */
@@ -29,6 +31,9 @@ import {
 	type DbRouteDeps
 } from '#lib/http/db_routes.ts';
 import { generate_app_surface, type AppSurfaceDiagnostic } from '#lib/http/surface.ts';
+import { REST_DATABASE_CONNECTION_FAILED } from '#lib/http/error_schemas.ts';
+
+import { with_error_moves } from '../surface_test_helpers.ts';
 
 const FIXTURE_PATH = new URL('../fixtures/surface/db_routes.json', import.meta.url);
 
@@ -73,6 +78,10 @@ const query_int_node = (min: number, max: number) => ({
 
 // the declared moves of one route, by `METHOD path`
 const MOVES: Record<string, (route: Record<string, any>) => Record<string, any>> = {
+	'GET /health': (route) =>
+		with_error_moves(route, {
+			503: { from: ['database_connection_failed'], to: [REST_DATABASE_CONNECTION_FAILED] }
+		}),
 	'GET /tables': (route) => {
 		const { tables } = route.output_schema.properties;
 		return {

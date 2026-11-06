@@ -7,12 +7,13 @@
  * @module
  */
 
+import { route_ok } from '#lib/http/route_result.ts';
 import { describe, assert, test } from 'vitest';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import { apply_route_specs, type RouteSpec } from '#lib/http/route_spec.ts';
+import { apply_route_specs, define_route, type RouteSpec } from '#lib/http/route_spec.ts';
 import {
 	ActingActor,
 	is_keeper_auth,
@@ -126,35 +127,35 @@ const create_test_app = (
 
 /** Example route specs covering all auth types for testing. */
 const test_route_specs: Array<RouteSpec> = [
-	{
+	define_route({
 		method: 'GET',
 		path: '/public',
 		auth: { account: 'none', actor: 'none' },
-		handler: (c) => c.json({ ok: true }),
+		handler: () => route_ok({ ok: true }),
 		description: 'Public endpoint',
 		input: z.null(),
-		output: z.null()
-	},
-	{
+		output: z.strictObject({ ok: z.literal(true) })
+	}),
+	define_route({
 		method: 'GET',
 		path: '/authed',
 		auth: { account: 'required', actor: 'none' },
-		handler: (c) => c.json({ ok: true }),
+		handler: () => route_ok({ ok: true }),
 		description: 'Requires authentication',
 		input: z.null(),
-		output: z.null()
-	},
-	{
+		output: z.strictObject({ ok: z.literal(true) })
+	}),
+	define_route({
 		method: 'POST',
 		path: '/admin',
 		auth: { account: 'required', actor: 'required', roles: ['admin'] },
-		handler: (c) => c.json({ ok: true }),
+		handler: () => route_ok({ ok: true }),
 		description: 'Requires admin role',
 		query: z.strictObject({ acting: ActingActor }),
 		input: z.null(),
-		output: z.null()
-	},
-	{
+		output: z.strictObject({ ok: z.literal(true) })
+	}),
+	define_route({
 		method: 'POST',
 		path: '/keeper',
 		auth: {
@@ -163,13 +164,13 @@ const test_route_specs: Array<RouteSpec> = [
 			roles: ['keeper'],
 			credential_types: ['daemon_token']
 		},
-		handler: (c) => c.json({ ok: true }),
+		handler: () => route_ok({ ok: true }),
 		description: 'Requires keeper credentials',
 		query: z.strictObject({ acting: ActingActor }),
 		input: z.null(),
-		output: z.null()
-	},
-	{
+		output: z.strictObject({ ok: z.literal(true) })
+	}),
+	define_route({
 		method: 'DELETE',
 		path: '/keeper-delete',
 		auth: {
@@ -178,12 +179,12 @@ const test_route_specs: Array<RouteSpec> = [
 			roles: ['keeper'],
 			credential_types: ['daemon_token']
 		},
-		handler: (c) => c.json({ ok: true }),
+		handler: () => route_ok({ ok: true }),
 		description: 'Requires keeper credentials (DELETE)',
 		query: z.strictObject({ acting: ActingActor }),
 		input: z.null(),
-		output: z.null()
-	}
+		output: z.strictObject({ ok: z.literal(true) })
+	})
 ];
 
 /**

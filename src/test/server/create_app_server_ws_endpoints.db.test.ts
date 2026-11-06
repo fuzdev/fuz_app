@@ -86,7 +86,8 @@ import type { AuditLogEvent } from '#lib/auth/audit_log_schema.ts';
 import type { WsEndpointSpec } from '#lib/actions/ws_endpoint_spec.ts';
 import type { Action, RpcAction } from '#lib/actions/action_types.ts';
 import type { LocalCallActionSpec } from '#lib/actions/action_spec.ts';
-import type { RouteSpec } from '#lib/http/route_spec.ts';
+import { define_route } from '#lib/http/route_spec.ts';
+import { route_ok } from '#lib/http/route_result.ts';
 import { all_standard_action_specs } from '#lib/auth/standard_action_specs.ts';
 import { create_standard_rpc_actions } from '#lib/auth/standard_rpc_actions.ts';
 import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
@@ -847,15 +848,15 @@ describe('create_app_server.ws_endpoints', () => {
 		// would silently shadow the consumer's GET route — Hono is last-wins.
 		const stub = create_stub_upgrade();
 		const { config } = await create_test_setup();
-		const colliding_route_spec: RouteSpec = {
+		const colliding_route_spec = define_route({
 			method: 'GET',
 			path: '/api/ws',
 			auth: { account: 'none', actor: 'none' },
-			handler: (c) => c.json({ hi: 'from rest' }),
+			handler: () => route_ok({ hi: 'from rest' }),
 			description: 'consumer route that overlaps the WS path',
 			input: z.null(),
 			output: z.strictObject({ hi: z.string() })
-		};
+		});
 		const err = await assert_rejects(() =>
 			create_tracked_app_server({
 				...config,
@@ -873,15 +874,15 @@ describe('create_app_server.ws_endpoints', () => {
 		// so a future refactor doesn't widen it accidentally.
 		const stub = create_stub_upgrade();
 		const { config } = await create_test_setup();
-		const non_colliding_route_spec: RouteSpec = {
+		const non_colliding_route_spec = define_route({
 			method: 'POST',
 			path: '/api/ws',
 			auth: { account: 'none', actor: 'none' },
-			handler: (c) => c.json({ hi: 'posted' }),
+			handler: () => route_ok({ hi: 'posted' }),
 			description: 'consumer POST at the same path as the WS upgrade',
 			input: z.strictObject({}),
 			output: z.strictObject({ hi: z.string() })
-		};
+		});
 		const result = await create_tracked_app_server({
 			...config,
 			create_upgrade_websocket: () => stub.upgradeWebSocket,

@@ -11,9 +11,9 @@
  * @module
  */
 
-import { literal, object, type Infer } from '@fuzdev/fuz_schema/schema.ts';
+import { literal, object, type Infer, type Schema } from '@fuzdev/fuz_schema/schema.ts';
 
-import type { RouteSpec } from '../http/route_spec.ts';
+import { define_route_shape, type RouteShape } from '../http/route_spec.ts';
 import { ActingActor } from '../primitive_schemas_fuz.ts';
 
 /**
@@ -26,10 +26,19 @@ export type AuditStreamQuery = Infer<typeof AuditStreamQuery>;
 /** Default role required to access the audit-log SSE route. */
 export const DEFAULT_AUDIT_STREAM_ROLE = 'admin';
 
+/** The audit stream's `auth`: the gates its handler may itself answer as. */
+export interface AuditStreamAuth {
+	account: 'required';
+	actor: 'required';
+	roles: ReadonlyArray<string>;
+	credential_types: ReadonlyArray<string>;
+	required_scope: 'surface:audit_stream';
+}
+
 /**
  * The `GET /audit/stream` SSE route shape minus its handler — pure hono-free
- * data. `create_audit_log_route_specs` spreads this and attaches the live SSE
- * handler; cross-process surface builders spread it with a stub handler. The
+ * data. `create_audit_log_route_specs` attaches the live SSE handler to it
+ * (`attach_route_handler`); cross-process surface builders attach a stub. The
  * output is `literal(null)` because SSE streams have no JSON response body.
  *
  * @param required_role - role gating the stream (default `DEFAULT_AUDIT_STREAM_ROLE`)
@@ -37,34 +46,35 @@ export const DEFAULT_AUDIT_STREAM_ROLE = 'admin';
  */
 export const create_audit_log_route_shape = (
 	required_role: string = DEFAULT_AUDIT_STREAM_ROLE
-): Omit<RouteSpec, 'handler'> => ({
-	method: 'GET',
-	path: '/audit/stream',
-	auth: {
-		account: 'required',
-		actor: 'required',
-		roles: [required_role],
-		// The stream is a session channel: a long-lived, instance-wide admin
-		// feed is not handed to a credential channel the deployment never
-		// chose. Widening the gate loses no close — the handler registers a
-		// bearer's stream under its API token id, and a token revocation closes
-		// by that id (`create_sse_connection_closer`, which the handlers and the
-		// `token` scope of `create_revocation_guard` both close through) — so
-		// widening is a consumer's explicit
-		// choice about the channel, not a hole in revocation.
-		credential_types: ['session'],
-		// Rule 3 — a narrowed token holds no audit feed. Same reasoning as the
-		// WS upgrade: this is a long-lived server→client stream whose contents
-		// are decided by the account's role, not by any per-message scope
-		// check, so there is no point after open at which a narrowing could
-		// apply. Unreachable behind the credential gate above on the default
-		// mount, and kept deliberately: it is the rule-3 declaration the
-		// surface census matches on, and it still governs a consumer that
-		// widens the channel gate.
-		required_scope: 'surface:audit_stream'
-	},
-	description: 'Subscribe to realtime audit log events',
-	query: AuditStreamQuery,
-	input: literal(null),
-	output: literal(null) // SSE — no JSON response
-});
+): RouteShape<[], Schema<null, null, 'literal', null>, AuditStreamAuth, undefined> =>
+	define_route_shape({
+		method: 'GET',
+		path: '/audit/stream',
+		auth: {
+			account: 'required',
+			actor: 'required',
+			roles: [required_role],
+			// The stream is a session channel: a long-lived, instance-wide admin
+			// feed is not handed to a credential channel the deployment never
+			// chose. Widening the gate loses no close — the handler registers a
+			// bearer's stream under its API token id, and a token revocation closes
+			// by that id (`create_sse_connection_closer`, which the handlers and the
+			// `token` scope of `create_revocation_guard` both close through) — so
+			// widening is a consumer's explicit
+			// choice about the channel, not a hole in revocation.
+			credential_types: ['session'],
+			// Rule 3 — a narrowed token holds no audit feed. Same reasoning as the
+			// WS upgrade: this is a long-lived server→client stream whose contents
+			// are decided by the account's role, not by any per-message scope
+			// check, so there is no point after open at which a narrowing could
+			// apply. Unreachable behind the credential gate above on the default
+			// mount, and kept deliberately: it is the rule-3 declaration the
+			// surface census matches on, and it still governs a consumer that
+			// widens the channel gate.
+			required_scope: 'surface:audit_stream'
+		},
+		description: 'Subscribe to realtime audit log events',
+		query: AuditStreamQuery,
+		input: literal(null),
+		output: literal(null) // SSE — no JSON response
+	});

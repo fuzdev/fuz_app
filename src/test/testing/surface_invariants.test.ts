@@ -24,7 +24,7 @@ import {
 	assert_keeper_routes_under_prefix,
 	assert_surface_security_policy
 } from '#lib/testing/surface_invariants.ts';
-import type { RouteSpec } from '#lib/http/route_spec.ts';
+import { define_route, type RouteSpec } from '#lib/http/route_spec.ts';
 import type { MiddlewareSpec } from '#lib/http/middleware_spec.ts';
 import { generate_app_surface, type AppSurface } from '#lib/http/surface.ts';
 import { stub_handler, stub_mw } from '#lib/testing/stubs.ts';
@@ -51,7 +51,7 @@ const test_middleware: Array<MiddlewareSpec> = [
 /** Well-formed surface that passes all invariants. */
 const build_valid_surface = (): AppSurface => {
 	const specs: Array<RouteSpec> = [
-		{
+		define_route({
 			method: 'GET',
 			path: '/health',
 			auth: { account: 'none', actor: 'none' },
@@ -59,8 +59,8 @@ const build_valid_surface = (): AppSurface => {
 			description: 'Health check',
 			input: z.null(),
 			output: z.null()
-		},
-		{
+		}),
+		define_route({
 			method: 'GET',
 			path: '/api/me',
 			auth: { account: 'required', actor: 'none' },
@@ -68,8 +68,8 @@ const build_valid_surface = (): AppSurface => {
 			description: 'Current user',
 			input: z.null(),
 			output: z.null()
-		},
-		{
+		}),
+		define_route({
 			method: 'POST',
 			path: '/api/admin/grant',
 			auth: { account: 'required', actor: 'required', roles: ['admin'] },
@@ -77,8 +77,8 @@ const build_valid_surface = (): AppSurface => {
 			description: 'Grant role',
 			input: z.strictObject({ role: z.string() }),
 			output: z.null()
-		},
-		{
+		}),
+		define_route({
 			method: 'POST',
 			path: '/api/keeper/sync',
 			auth: {
@@ -91,8 +91,8 @@ const build_valid_surface = (): AppSurface => {
 			description: 'Keeper sync',
 			input: z.null(),
 			output: z.null()
-		},
-		{
+		}),
+		define_route({
 			method: 'POST',
 			path: '/api/account/token',
 			auth: { account: 'required', actor: 'none', credential_types: ['session'] },
@@ -100,7 +100,7 @@ const build_valid_surface = (): AppSurface => {
 			description: 'Mint an api token',
 			input: z.null(),
 			output: z.null()
-		}
+		})
 	];
 	return generate_app_surface({ middleware_specs: test_middleware, route_specs: specs });
 };
@@ -175,7 +175,7 @@ describe('assert_input_routes_declare_400', () => {
 		const surface = generate_app_surface({
 			middleware_specs: [],
 			route_specs: [
-				{
+				define_route({
 					method: 'POST',
 					path: '/api/things/:id',
 					auth: { account: 'none', actor: 'none' },
@@ -184,7 +184,7 @@ describe('assert_input_routes_declare_400', () => {
 					params: z.strictObject({ id: z.string() }),
 					input: z.strictObject({ name: z.string() }),
 					output: z.null()
-				}
+				})
 			]
 		});
 		assert_input_routes_declare_400(surface);
@@ -204,7 +204,7 @@ describe('assert_input_routes_declare_400', () => {
 		const surface = generate_app_surface({
 			middleware_specs: [],
 			route_specs: [
-				{
+				define_route({
 					method: 'GET',
 					path: '/api/things',
 					auth: { account: 'none', actor: 'none' },
@@ -212,7 +212,7 @@ describe('assert_input_routes_declare_400', () => {
 					description: 'Lists things',
 					input: z.strictObject({ name: z.string() }),
 					output: z.null()
-				}
+				})
 			]
 		});
 		assert.strictEqual(surface.routes[0]!.error_schemas, null);
@@ -251,7 +251,7 @@ describe('assert_error_codes_specific', () => {
 			generate_app_surface({
 				middleware_specs: [],
 				route_specs: [
-					{
+					define_route({
 						method: 'GET',
 						path: '/api/things/:id',
 						auth: { account: 'required', actor: 'none' },
@@ -260,7 +260,7 @@ describe('assert_error_codes_specific', () => {
 						params: z.strictObject({ id: z.uuid() }),
 						input: z.null(),
 						output: z.null()
-					}
+					})
 				]
 			}),
 			schema
@@ -418,7 +418,7 @@ describe('assert_error_code_status_consistency', () => {
 describe('assert_sensitive_routes_rate_limited', () => {
 	test('passes when sensitive routes have rate_limit_key', () => {
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'POST',
 				path: '/api/account/login',
 				auth: { account: 'none', actor: 'none' },
@@ -427,7 +427,7 @@ describe('assert_sensitive_routes_rate_limited', () => {
 				input: z.strictObject({ username: z.string() }),
 				output: z.null(),
 				rate_limit: 'both'
-			}
+			})
 		];
 		const surface = generate_app_surface({ middleware_specs: [], route_specs: specs });
 		assert_sensitive_routes_rate_limited(surface);
@@ -435,7 +435,7 @@ describe('assert_sensitive_routes_rate_limited', () => {
 
 	test('passes when sensitive routes have 429 in error schemas', () => {
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'POST',
 				path: '/api/account/login',
 				auth: { account: 'none', actor: 'none' },
@@ -444,7 +444,7 @@ describe('assert_sensitive_routes_rate_limited', () => {
 				input: z.strictObject({ username: z.string() }),
 				output: z.null(),
 				errors: [REST_RATE_LIMIT_EXCEEDED]
-			}
+			})
 		];
 		const surface = generate_app_surface({ middleware_specs: [], route_specs: specs });
 		assert_sensitive_routes_rate_limited(surface);
@@ -452,7 +452,7 @@ describe('assert_sensitive_routes_rate_limited', () => {
 
 	test('fails when sensitive route lacks rate limiting', () => {
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'POST',
 				path: '/api/account/login',
 				auth: { account: 'none', actor: 'none' },
@@ -460,7 +460,7 @@ describe('assert_sensitive_routes_rate_limited', () => {
 				description: 'Login',
 				input: z.strictObject({ username: z.string() }),
 				output: z.null()
-			}
+			})
 		];
 		const surface = generate_app_surface({ middleware_specs: [], route_specs: specs });
 		assert.throws(() => assert_sensitive_routes_rate_limited(surface), /no rate limiting/);
@@ -470,7 +470,7 @@ describe('assert_sensitive_routes_rate_limited', () => {
 describe('assert_no_unexpected_public_mutations', () => {
 	test('passes when public mutations are in allowlist', () => {
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'POST',
 				path: '/api/account/login',
 				auth: { account: 'none', actor: 'none' },
@@ -478,7 +478,7 @@ describe('assert_no_unexpected_public_mutations', () => {
 				description: 'Login',
 				input: z.strictObject({ username: z.string() }),
 				output: z.null()
-			}
+			})
 		];
 		const surface = generate_app_surface({ middleware_specs: [], route_specs: specs });
 		assert_no_unexpected_public_mutations(surface, ['POST /api/account/login']);
@@ -486,7 +486,7 @@ describe('assert_no_unexpected_public_mutations', () => {
 
 	test('fails when public mutation not in allowlist', () => {
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'POST',
 				path: '/api/webhook',
 				auth: { account: 'none', actor: 'none' },
@@ -494,7 +494,7 @@ describe('assert_no_unexpected_public_mutations', () => {
 				description: 'Webhook',
 				input: z.strictObject({ data: z.string() }),
 				output: z.null()
-			}
+			})
 		];
 		const surface = generate_app_surface({ middleware_specs: [], route_specs: specs });
 		assert.throws(() => assert_no_unexpected_public_mutations(surface), /not in the allowlist/);
@@ -508,7 +508,7 @@ describe('assert_mutation_routes_use_post', () => {
 
 	test('fails when GET route has input schema', () => {
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'GET',
 				path: '/api/bad',
 				auth: { account: 'none', actor: 'none' },
@@ -516,7 +516,7 @@ describe('assert_mutation_routes_use_post', () => {
 				description: 'Bad GET with body',
 				input: z.strictObject({ name: z.string() }),
 				output: z.null()
-			}
+			})
 		];
 		const surface = generate_app_surface({ middleware_specs: [], route_specs: specs });
 		assert.throws(() => assert_mutation_routes_use_post(surface), /input schema on GET/);
@@ -530,7 +530,7 @@ describe('assert_keeper_routes_under_prefix', () => {
 
 	test('passes when keeper routes are under /api/', () => {
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'GET',
 				path: '/api/db/tables',
 				auth: {
@@ -543,7 +543,7 @@ describe('assert_keeper_routes_under_prefix', () => {
 				description: 'List tables',
 				input: z.null(),
 				output: z.null()
-			}
+			})
 		];
 		const surface = generate_app_surface({ middleware_specs: [], route_specs: specs });
 		assert_keeper_routes_under_prefix(surface);
@@ -551,7 +551,7 @@ describe('assert_keeper_routes_under_prefix', () => {
 
 	test('fails when keeper route is outside expected prefix', () => {
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'GET',
 				path: '/admin/sync',
 				auth: {
@@ -564,7 +564,7 @@ describe('assert_keeper_routes_under_prefix', () => {
 				description: 'Admin sync',
 				input: z.null(),
 				output: z.null()
-			}
+			})
 		];
 		const surface = generate_app_surface({ middleware_specs: [], route_specs: specs });
 		assert.throws(
@@ -575,7 +575,7 @@ describe('assert_keeper_routes_under_prefix', () => {
 
 	test('accepts custom prefixes', () => {
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'GET',
 				path: '/internal/sync',
 				auth: {
@@ -588,7 +588,7 @@ describe('assert_keeper_routes_under_prefix', () => {
 				description: 'Internal sync',
 				input: z.null(),
 				output: z.null()
-			}
+			})
 		];
 		const surface = generate_app_surface({ middleware_specs: [], route_specs: specs });
 		assert.throws(() => assert_keeper_routes_under_prefix(surface));
@@ -612,7 +612,7 @@ describe('assert_surface_invariants', () => {
 describe('assert_surface_security_policy', () => {
 	test('passes for well-formed surface with config', () => {
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'GET',
 				path: '/health',
 				auth: { account: 'none', actor: 'none' },
@@ -620,8 +620,8 @@ describe('assert_surface_security_policy', () => {
 				description: 'Health check',
 				input: z.null(),
 				output: z.null()
-			},
-			{
+			}),
+			define_route({
 				method: 'POST',
 				path: '/api/account/login',
 				auth: { account: 'none', actor: 'none' },
@@ -630,7 +630,7 @@ describe('assert_surface_security_policy', () => {
 				input: z.strictObject({ username: z.string() }),
 				output: z.null(),
 				rate_limit: 'both'
-			}
+			})
 		];
 		const surface = generate_app_surface({ middleware_specs: [], route_specs: specs });
 		assert_surface_security_policy(surface, {

@@ -4,9 +4,9 @@
  * Split from `bootstrap_routes.ts` so the route's declared shape (method,
  * path, auth, input/output/error schemas) is importable **without** the
  * hono-coupled handler (which sets a session cookie and reads the client
- * IP off the Hono context). `create_bootstrap_route_specs` spreads
- * `bootstrap_route_shape` and attaches the live handler; the test surface
- * builder (`create_test_app_surface_spec`) spreads it with a stub handler so
+ * IP off the Hono context). `create_bootstrap_route_specs` attaches the live
+ * handler to `bootstrap_route_shape` (`attach_route_handler`); the test surface
+ * builder (`create_test_app_surface_spec`) attaches a stub handler so
  * attack-surface generation reads the real shape without pulling the
  * in-process Hono app onto cross-process consumers. Single source of truth —
  * the shape can't drift between the live route and the surface.
@@ -28,7 +28,7 @@ import {
 import { Username, UsernameCanonical, Uuid } from '../primitive_schemas_fuz.ts';
 
 import { Password } from './password.ts';
-import type { RouteSpec } from '../http/route_spec.ts';
+import { define_route_shape } from '../http/route_spec.ts';
 import {
 	REST_ALREADY_BOOTSTRAPPED,
 	REST_INVALID_TOKEN,
@@ -74,11 +74,11 @@ export type BootstrapOutput = Infer<typeof BootstrapOutput>;
 
 /**
  * The `POST /bootstrap` route shape minus its handler — pure hono-free data.
- * `create_bootstrap_route_specs` spreads this and attaches the live handler;
- * surface generation spreads it with a stub handler (handlers are never run
+ * `create_bootstrap_route_specs` attaches the live handler to it
+ * (`attach_route_handler`); surface generation attaches a stub (handlers are never run
  * during surface assembly, only the shape is read).
  */
-export const bootstrap_route_shape = {
+export const bootstrap_route_shape = define_route_shape({
 	method: 'POST',
 	path: '/bootstrap',
 	auth: { account: 'none', actor: 'none' },
@@ -89,4 +89,4 @@ export const bootstrap_route_shape = {
 	output: BootstrapOutput,
 	rate_limit: 'ip',
 	errors: [REST_INVALID_TOKEN, REST_ALREADY_BOOTSTRAPPED, REST_TOKEN_FILE_MISSING]
-} satisfies Omit<RouteSpec, 'handler'>;
+});

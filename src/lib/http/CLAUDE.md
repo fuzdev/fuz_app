@@ -14,7 +14,8 @@ effects, see ../../../docs/architecture.md.
 
 ## Module Map
 
-- `http/route_spec.ts` — `RouteSpec` + `apply_route_specs`, validation pipeline, transactions.
+- `http/route_spec.ts` — `RouteSpec` + `apply_route_specs`, validation pipeline, transactions; `define_route`, `define_route_shape` + `attach_route_handler` (a handler checked against its route), `to_route_response`.
+- `http/route_result.ts` — what a handler returns: `route_ok`, `route_fail`, `route_raw` (`RouteResult`). Hono-free (types only).
 - `http/auth_shape.ts` — canonical `RouteAuth` type + `AuthAxisState` + predicates + the registration-time checks: `assert_route_auth_invariants` (the cross-axis invariants 1, 3, 4) and `assert_route_auth_acting_biconditional` (invariant 2), both run by `apply_route_specs` and `compile_action_registry` on every spec.
 - `http/error_schemas.ts` — `ERROR_*` constants, the per-code REST error definitions (`rest_error`, `REST_*`), `derive_route_errors`, `to_error_schemas`.
 - `http/route_errors.ts` — the route error map: `RouteErrorMap`, `resolve_route_error_map`, `resolve_app_route_error_maps`, `get_route_error_map`.
@@ -49,7 +50,7 @@ consumers.
 - `method` — `'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'`
 - `path` — Hono path (supports `:param` segments)
 - `auth: RouteAuth` — flat record `{account, actor, roles?, credential_types?, required_scope?}` from `http/auth_shape.ts`. `account` / `actor` are `'none' | 'optional' | 'required'`. `required_scope` names the capability a narrowed api token's scope must admit — `surface:<name>`, a non-RPC surface refused to every narrowed token (an `rpc:<method>` capability throws at registration: it is the dispatcher's per-method gate, which a route never reaches) — and is route-spec-only: `compile_action_registry` rejects it on an `ActionSpec`, where the dispatcher derives `rpc:<method>` from `spec.method`. Otherwise the same shape governs `ActionSpec.auth` (see `actions/CLAUDE.md`).
-- `handler: RouteHandler` — `(c: Context, route: RouteContext) => Response | Promise<Response>`
+- `handler: RouteHandler` — `(c: Context, route: RouteContext) => RouteResult | Promise<RouteResult>`, a result the framework answers with (§Handlers and results)
 - `description` — free-text, surfaced in `AppSurface`
 - `params?: z.ZodObject | AnySchema` — strict-object schema for URL path params
 - `query?: z.ZodObject | AnySchema` — strict-object schema for URL query string
@@ -76,6 +77,50 @@ inputs — `z.strictObject()` or fuz_schema's `object` — the surface diagnosti
 warns on non-strict objects because unknown keys are silently stripped by Zod
 4's default `z.object()` (and by fuz_schema's `strip_object`, kept by its
 `loose_object`); the warning names the library's strict form.
+
+### Handlers and results
+
+A handler returns a result, not a `Response`; `apply_route_specs` builds the
+response from it (`to_route_response`) inside any wrapping transaction, so a
+result that can't become one (a bare `Response`, a result no factory made
+such as `{ok: true}` without `value`, `undefined`, a body `JSON.stringify`
+refuses) throws before the commit, rolls back, and discards the post-commit
+effects:
+
+- `route_ok(value)` — `value` as JSON at 200.
+- `route_fail(def, fields?)` — `{error: def.code, ...fields}` at `def.status`,
+  with the headers `def` derives (`REST_RATE_LIMIT_EXCEEDED`'s `Retry-After`).
+  `fields` is absent for a bare code, optional when every field is, required
+  when any is.
+- `route_raw(response)` — the response as it is, at any status: an empty body,
+  bytes, a stream, an SSE response, a JSON-RPC envelope (`c.body(json, status,
+  {'Content-Type': 'application/json'})`). A `Response` typed as `c.json`'s
+  return is refused: a JSON answer of the route's own is `route_ok` or
+  `route_fail`.
+
+Headers and cookies a handler sets on `c` (`c.header`, `setCookie`) before it
+returns carry onto the response the framework builds. A failure is plain data
+(`ok: false`), so domain code and shared helpers fail without the context and
+a handler forwards one (`if (!result.ok) return result`). A thrown error is
+still the error catch's.
+
+A spec is made by `define_route(spec)`, or by `attach_route_handler(shape,
+handler)` over a `define_route_shape(shape)` — the split the hono-free
+`*_route_schema.ts` shapes use. Each checks the handler at the definition
+(`TypedRouteHandler`): `route_ok`'s value against the input side of `output`
+(made readonly at every depth, `ReadonlyJson`, so `route_ok` keeps literals as
+written), and each `route_fail` against what the route allows — its `errors`,
+the derived codes a handler may itself give (`RouteHandlerDerivedErrors`: the
+401 and the auth 403s its `auth` derives, the 429 of a `rate_limit`), and the
+catch layers' 500 `internal_error` and 503 `service_unavailable`
+(`RouteAlwaysErrors`). A failure is allowed when an allowed definition at the
+same status and code accepts its body, so the bare 401 passes where
+`REST_AUTHENTICATION_REQUIRED_BOOTSTRAP` is declared, and the reverse. An
+`errors` list typed `Array<RestErrorDef>` is refused (`KnownRouteErrors`).
+`RouteSpec` carries a phantom brand, in the types only, that just these two
+mint, so a spec literal doesn't typecheck; a spread of a spec keeps the brand
+and is not checked again (the DEV error check covers a rewritten `auth` or
+`errors`). At runtime they return the spec, or the shape with its handler.
 
 ### `RouteContext` — per-request deps
 
@@ -120,7 +165,7 @@ wrapper). See `auth/signup_routes.ts`.
 4. **Authorization phase** — when `spec.auth.actor !== 'none'`, resolves the acting actor against the resolved credential's account (`get_resolved_auth`, set by the auth middleware) plus the `acting` selector (`validated_query.acting` on GETs; read off the raw body on mutations, since body validation now runs after the gates), builds `RequestContext` via `build_request_context`, and sets `REQUEST_CONTEXT_KEY`. When `auth.account !== 'none' && auth.actor === 'none'`, an account-only context is built. Resolution failures return 400 `ERROR_ACTOR_REQUIRED` (with `available[]`) or `ERROR_ACTOR_NOT_ON_ACCOUNT` (or 500 `ERROR_NO_ACTORS_ON_ACCOUNT` on signup-invariant violation, 500 `ERROR_ACCOUNT_VANISHED` on torn account/actor reads after a successful resolve). Public routes (`account: 'none' && actor: 'none'`) skip this phase entirely.
 5. **Post-authorization auth guards** — `require_role(roles)` (403 `ERROR_INSUFFICIENT_PERMISSIONS` with `required_roles: ReadonlyArray<string>`) when `auth.roles?.length`. The only gate in this phase, because it is the only one that reads `REQUEST_CONTEXT_KEY` (populated by step 4) rather than the auth middleware's own context vars. Multi-role specs admit any-of via `has_any_scoped_role(ctx, roles, null)`.
 6. **Input validation** — JSON body parsed + validated; mismatch returns 400 `ERROR_INVALID_JSON_BODY` (not JSON) or `ERROR_INVALID_REQUEST_BODY` (schema failure with `issues`). Every schema refusal's `issues` are `WireIssue`s (`to_wire_issues`, `schema_issues.ts`), sent under DEV only (`dev_only`). Skipped on GET and on a null input (`is_null_schema`: `z.null()` or `literal(null)`). The validated input lands on `c.var.validated_input`.
-7. **Handler** — wrapped in transaction when `use_transaction` (see above), receives `RouteContext`
+7. **Handler** — wrapped in transaction when `use_transaction` (see above), receives `RouteContext`; its result becomes the response (`to_route_response`)
 8. **Error catch** — catches a thrown JSON-RPC error (`ThrownJsonrpcError`, recognized by brand through `to_thrown_jsonrpc_error`, so one from a second fuz_app copy maps too; a foreign error class carrying a JSON-RPC `code` falls to the generic path) → maps to HTTP status + the flat REST error body (`{error: <reason>, message?, ...rest_data}`); catches generic `Error` → 500 `{error: 'internal_error', message?}` (message only in DEV). The reason string comes from `err.data.reason` when set (consumer-supplied canonical reason override) or from `jsonrpc_error_code_to_name(err.code)` (e.g. `-32003 → 'not_found'`). The flat shape matches what middleware and direct handlers emit — REST callers see one envelope across every emit site, while the JSON-RPC dispatcher keeps its own `{jsonrpc, id, error: {code, message, data}}` envelope on the RPC mount.
 9. **DEV-only output validation** — a 2xx JSON body against `spec.output` (see below); error responses are the outer DEV error check's
 

@@ -39,7 +39,7 @@ import { REST_FORBIDDEN_HOST } from '../../http/error_schemas.ts';
 import { prefix_route_specs, type RouteSpec } from '../../http/route_spec.ts';
 import type { AppSurfaceSpec, RpcEndpointSpec } from '../../http/surface.ts';
 import type { AppServerContext } from '../../server/app_server_context.ts';
-import { create_test_app_surface_spec, stub_handler, stub_mw } from '../stubs.ts';
+import { create_test_app_surface_spec, stub_mw, stub_route_spec } from '../stubs.ts';
 import { SPINE_ACCOUNT_PATH_PREFIX, SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
 /**
@@ -54,11 +54,6 @@ export const ACCOUNT_ROUTER_PATHS = ['/status', '/login', '/logout', '/password'
 
 /** Surface generation never invokes handlers — see the module doc. */
 const noop_action_handler = (async () => undefined) as unknown as ActionHandler;
-
-const to_route_spec = (shape: Omit<RouteSpec, 'handler'>): RouteSpec => ({
-	...shape,
-	handler: stub_handler
-});
 
 /** Options for `create_rust_spine_consumer_rpc_endpoints`. */
 export interface RustSpineConsumerRpcEndpointsOptions {
@@ -171,7 +166,7 @@ const create_spine_consumer_route_specs = (ctx: AppServerContext): Array<RouteSp
 				create_signup_route_shape({
 					signup_account_rate_limited: ctx.signup_account_rate_limiter !== null
 				})
-			].map(to_route_spec)
+			].map((shape) => stub_route_spec(shape))
 		)
 	];
 };

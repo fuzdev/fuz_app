@@ -11,7 +11,7 @@ import { Hono } from 'hono';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { create_serve_fact_route_spec } from '#lib/server/serve_fact_route.ts';
-import type { RouteContext } from '#lib/http/route_spec.ts';
+import { to_route_response, type RouteContext } from '#lib/http/route_spec.ts';
 
 describe('create_serve_fact_route_spec handler re-check', () => {
 	test('no admin context → 404, logged at error', async () => {
@@ -23,9 +23,9 @@ describe('create_serve_fact_route_spec handler re-check', () => {
 		const spec = create_serve_fact_route_spec({ facts_dir: '/tmp/facts', log });
 		// mount the bare handler, as a regression that skipped the auth gate would
 		const app = new Hono();
-		app.get(spec.path, (c) => {
+		app.get(spec.path, async (c) => {
 			c.set('validated_params', { hash: `blake3:${'0'.repeat(64)}` });
-			return spec.handler(c, {} as RouteContext);
+			return to_route_response(c, await spec.handler(c, {} as RouteContext));
 		});
 
 		const res = await app.request('/api/facts/x');

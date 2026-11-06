@@ -13,7 +13,8 @@ import { Hono } from 'hono';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { create_account_route_shapes } from '#lib/auth/account_route_schema.ts';
-import { apply_route_specs, type RouteSpec } from '#lib/http/route_spec.ts';
+import { apply_route_specs, attach_route_handler } from '#lib/http/route_spec.ts';
+import { route_raw } from '#lib/http/route_result.ts';
 import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
 import { REQUEST_CONTEXT_KEY, type RequestContext } from '#lib/auth/request_context.ts';
 import {
@@ -50,7 +51,9 @@ const ctx: RequestContext = {
 /** The `/verify` shape with a stand-in for the live handler's answer, under a credential of `scope`. */
 const create_verify_app = (scope: TokenScope): Hono => {
 	const [verify_shape] = create_account_route_shapes({ login_account_rate_limited: false });
-	const spec: RouteSpec = { ...verify_shape, handler: (c) => c.body(null, 200) };
+	const spec = attach_route_handler(verify_shape, () =>
+		route_raw(new Response(null, { status: 200 }))
+	);
 	const app = new Hono();
 	app.use('/*', async (c, next) => {
 		(c as any).set(

@@ -4,6 +4,7 @@
  * @module
  */
 
+import { route_ok } from '#lib/http/route_result.ts';
 import { writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -30,7 +31,7 @@ import { describe_adversarial_auth } from '#lib/testing/attack_surface.ts';
 import { describe_adversarial_404 } from '#lib/testing/adversarial_404.ts';
 import { describe_adversarial_input } from '#lib/testing/adversarial_input.ts';
 import { resolve_valid_path, generate_valid_body } from '#lib/testing/schema_generators.ts';
-import type { RouteSpec } from '#lib/http/route_spec.ts';
+import { define_route, type RouteSpec } from '#lib/http/route_spec.ts';
 import type { MiddlewareSpec } from '#lib/http/middleware_spec.ts';
 import {
 	generate_app_surface,
@@ -53,9 +54,10 @@ describe('stubs', () => {
 		assert.throws(() => stub.foo, /Throwing stub 'stub'/);
 	});
 
-	test('stub_handler returns a Response', () => {
+	test('stub_handler returns a raw result holding a Response', () => {
 		const res = stub_handler();
-		assert.ok(res instanceof Response);
+		assert.strictEqual(res.ok, 'raw');
+		assert.ok(res.response instanceof Response);
 	});
 
 	test('stub_mw calls next', async () => {
@@ -136,34 +138,34 @@ describe('resolve_fixture_path', () => {
 
 describe('create_test_app_from_specs', () => {
 	const test_specs: Array<RouteSpec> = [
-		{
+		define_route({
 			method: 'GET',
 			path: '/public',
 			auth: { account: 'none', actor: 'none' },
-			handler: (c) => c.json({ ok: true }),
+			handler: () => route_ok({ ok: true }),
 			description: 'Public route',
 			input: z.null(),
-			output: z.null()
-		},
-		{
+			output: z.strictObject({ ok: z.literal(true) })
+		}),
+		define_route({
 			method: 'GET',
 			path: '/protected',
 			auth: { account: 'required', actor: 'none' },
-			handler: (c) => c.json({ secret: true }),
+			handler: () => route_ok({ secret: true }),
 			description: 'Protected route',
 			input: z.null(),
-			output: z.null()
-		},
-		{
+			output: z.strictObject({ secret: z.literal(true) })
+		}),
+		define_route({
 			method: 'POST',
 			path: '/admin',
 			auth: { account: 'required', actor: 'required', roles: ['admin'] },
-			handler: (c) => c.json({ admin: true }),
+			handler: () => route_ok({ admin: true }),
 			description: 'Admin route',
 			query: z.strictObject({ acting: ActingActor }),
 			input: z.null(),
-			output: z.null()
-		}
+			output: z.strictObject({ admin: z.literal(true) })
+		})
 	];
 
 	test('creates app without auth context', async () => {
@@ -202,7 +204,7 @@ const build_test_surface = (): AppSurface => {
 		{ name: 'session', path: '/api/*', handler: stub_mw }
 	];
 	const routes: Array<RouteSpec> = [
-		{
+		define_route({
 			method: 'GET',
 			path: '/health',
 			auth: { account: 'none', actor: 'none' },
@@ -210,8 +212,8 @@ const build_test_surface = (): AppSurface => {
 			description: 'Health check',
 			input: z.null(),
 			output: z.null()
-		},
-		{
+		}),
+		define_route({
 			method: 'POST',
 			path: '/api/login',
 			auth: { account: 'none', actor: 'none' },
@@ -219,8 +221,8 @@ const build_test_surface = (): AppSurface => {
 			description: 'Login',
 			input: z.null(),
 			output: z.null()
-		},
-		{
+		}),
+		define_route({
 			method: 'GET',
 			path: '/api/protected',
 			auth: { account: 'required', actor: 'none' },
@@ -228,8 +230,8 @@ const build_test_surface = (): AppSurface => {
 			description: 'Protected resource',
 			input: z.null(),
 			output: z.null()
-		},
-		{
+		}),
+		define_route({
 			method: 'POST',
 			path: '/api/admin',
 			auth: { account: 'required', actor: 'required', roles: ['admin'] },
@@ -237,7 +239,7 @@ const build_test_surface = (): AppSurface => {
 			description: 'Admin action',
 			input: z.null(),
 			output: z.null()
-		}
+		})
 	];
 	return generate_app_surface({ middleware_specs: middleware, route_specs: routes });
 };
@@ -325,7 +327,7 @@ describe('assert_full_middleware_stack', () => {
 	});
 
 	const carved_route_specs: Array<RouteSpec> = [
-		{
+		define_route({
 			method: 'GET',
 			path: '/api/files/:name',
 			auth: { account: 'required', actor: 'none' },
@@ -333,8 +335,8 @@ describe('assert_full_middleware_stack', () => {
 			description: 'Read a file',
 			input: z.null(),
 			output: z.null()
-		},
-		{
+		}),
+		define_route({
 			method: 'GET',
 			path: '/api/things',
 			auth: { account: 'required', actor: 'none' },
@@ -342,7 +344,7 @@ describe('assert_full_middleware_stack', () => {
 			description: 'List things',
 			input: z.null(),
 			output: z.null()
-		}
+		})
 	];
 	// a body cap over `/api/*` that carves `/api/files/*` out
 	const build_carved_surface = (): AppSurface =>
@@ -459,45 +461,45 @@ describe('assert_full_middleware_stack', () => {
 
 // Exercise the adversarial runner with minimal specs
 const adversarial_specs: Array<RouteSpec> = [
-	{
+	define_route({
 		method: 'GET',
 		path: '/public',
 		auth: { account: 'none', actor: 'none' },
-		handler: (c) => c.json({ ok: true }),
+		handler: () => route_ok({ ok: true }),
 		description: 'Public route',
 		input: z.null(),
-		output: z.null()
-	},
-	{
+		output: z.strictObject({ ok: z.literal(true) })
+	}),
+	define_route({
 		method: 'GET',
 		path: '/protected',
 		auth: { account: 'required', actor: 'none' },
-		handler: (c) => c.json({ secret: true }),
+		handler: () => route_ok({ secret: true }),
 		description: 'Protected route',
 		input: z.null(),
-		output: z.null()
-	},
-	{
+		output: z.strictObject({ secret: z.literal(true) })
+	}),
+	define_route({
 		method: 'POST',
 		path: '/admin-only',
 		auth: { account: 'required', actor: 'required', roles: ['admin'] },
-		handler: (c) => c.json({ admin: true }),
+		handler: () => route_ok({ admin: true }),
 		description: 'Admin route',
 		query: z.strictObject({ acting: ActingActor }),
 		input: z.null(),
-		output: z.null()
-	},
-	{
+		output: z.strictObject({ admin: z.literal(true) })
+	}),
+	define_route({
 		method: 'DELETE',
 		path: '/keeper-role',
 		auth: { account: 'required', actor: 'required', roles: ['keeper'] },
-		handler: (c) => c.json({ keeper: true }),
+		handler: () => route_ok({ keeper: true }),
 		description: 'Keeper role route',
 		query: z.strictObject({ acting: ActingActor }),
 		input: z.null(),
-		output: z.null()
-	},
-	{
+		output: z.strictObject({ keeper: z.literal(true) })
+	}),
+	define_route({
 		method: 'POST',
 		path: '/keeper-auth',
 		auth: {
@@ -506,13 +508,13 @@ const adversarial_specs: Array<RouteSpec> = [
 			roles: ['keeper'],
 			credential_types: ['daemon_token']
 		},
-		handler: (c) => c.json({ keeper: true }),
+		handler: () => route_ok({ keeper: true }),
 		description: 'Keeper auth route',
 		query: z.strictObject({ acting: ActingActor }),
 		input: z.null(),
-		output: z.null()
-	},
-	{
+		output: z.strictObject({ keeper: z.literal(true) })
+	}),
+	define_route({
 		// The audit SSE stream's shape: a role gate *and* a session-channel
 		// gate. Both blocks must reach it — the role cases through the session
 		// credential the role apps carry, and the credential case on a channel
@@ -527,13 +529,13 @@ const adversarial_specs: Array<RouteSpec> = [
 			roles: ['admin'],
 			credential_types: ['session']
 		},
-		handler: (c) => c.json({ streamed: true }),
+		handler: () => route_ok({ streamed: true }),
 		description: 'Session-channel-gated admin route',
 		query: z.strictObject({ acting: ActingActor }),
 		input: z.null(),
-		output: z.null()
-	},
-	{
+		output: z.strictObject({ streamed: z.literal(true) })
+	}),
+	define_route({
 		// Regression guard for the params-schema-aware path synthesizer. The
 		// hash param carries a pattern (`^blake3:[0-9a-f]{64}$`), so a
 		// `test_hash` segment would 400 at params validation *before* the
@@ -544,11 +546,11 @@ const adversarial_specs: Array<RouteSpec> = [
 		path: '/patterned-params/:hash',
 		auth: { account: 'required', actor: 'none' },
 		params: z.strictObject({ hash: FactHashSchema }),
-		handler: (c) => c.json({ ok: true }),
+		handler: () => route_ok({ ok: true }),
 		description: 'Protected route with a format-constrained path param',
 		input: z.null(),
-		output: z.null()
-	}
+		output: z.strictObject({ ok: z.literal(true) })
+	})
 ];
 
 const adversarial_middleware: Array<MiddlewareSpec> = [];
@@ -569,15 +571,15 @@ describe_adversarial_auth({
 		create_app_surface_spec({
 			middleware_specs: adversarial_middleware,
 			route_specs: [
-				{
+				define_route({
 					method: 'GET',
 					path: '/:slug{.+\\.git}/info/refs',
 					auth: { account: 'required', actor: 'none' },
-					handler: (c) => c.json({ slug: c.req.param('slug') }),
+					handler: (c) => route_ok({ slug: c.req.param('slug') }),
 					description: 'A route behind a `{re}` param',
 					input: z.null(),
-					output: z.null()
-				}
+					output: z.strictObject({ slug: z.string().optional() })
+				})
 			]
 		}),
 	roles: ['admin', 'keeper'],
@@ -592,18 +594,18 @@ describe_adversarial_input({
 		create_app_surface_spec({
 			middleware_specs: adversarial_middleware,
 			route_specs: [
-				{
+				define_route({
 					method: 'POST',
 					path: '/raw-upload/:id',
 					auth: { account: 'required', actor: 'none' },
 					params: z.strictObject({ id: z.uuid() }),
 					query: z.strictObject({ size: z.string().regex(/^\d+$/) }),
-					handler: (c) => c.json({ ok: true }),
+					handler: () => route_ok({ ok: true }),
 					description: 'Raw-byte upload with a uuid param and a numeric query',
 					input: z.null(),
-					output: z.null(),
+					output: z.strictObject({ ok: z.literal(true) }),
 					raw_body: true
-				}
+				})
 			]
 		}),
 	roles: ['admin', 'keeper']
@@ -815,7 +817,7 @@ const ERROR_WIDGET_NOT_FOUND = 'widget_not_found' as const;
 
 const adversarial_404_specs: Array<RouteSpec> = [
 	// Route with params + literal 404 → should generate a test
-	{
+	define_route({
 		method: 'GET',
 		path: '/things/:id',
 		auth: { account: 'required', actor: 'none' },
@@ -825,9 +827,9 @@ const adversarial_404_specs: Array<RouteSpec> = [
 		input: z.null(),
 		output: z.looseObject({ name: z.string() }),
 		errors: [rest_error(404, ERROR_THING_NOT_FOUND)]
-	},
+	}),
 	// Route with params + two 404 definitions → should generate a test (uses the first)
-	{
+	define_route({
 		method: 'DELETE',
 		path: '/items/:id',
 		auth: { account: 'required', actor: 'required', roles: ['admin'] },
@@ -838,9 +840,9 @@ const adversarial_404_specs: Array<RouteSpec> = [
 		input: z.null(),
 		output: z.looseObject({ ok: z.literal(true) }),
 		errors: [rest_error(404, ERROR_ITEM_NOT_FOUND), rest_error(404, ERROR_WIDGET_NOT_FOUND)]
-	},
+	}),
 	// Route with params + input + 404 → should generate a test with valid body
-	{
+	define_route({
 		method: 'POST',
 		path: '/things/:id/rename',
 		auth: { account: 'required', actor: 'none' },
@@ -850,9 +852,9 @@ const adversarial_404_specs: Array<RouteSpec> = [
 		input: z.strictObject({ name: z.string().min(1) }),
 		output: z.looseObject({ ok: z.literal(true) }),
 		errors: [rest_error(404, ERROR_THING_NOT_FOUND)]
-	},
+	}),
 	// Route with params but no 404 → should be skipped
-	{
+	define_route({
 		method: 'GET',
 		path: '/widgets/:id',
 		auth: { account: 'none', actor: 'none' },
@@ -861,9 +863,9 @@ const adversarial_404_specs: Array<RouteSpec> = [
 		params: z.strictObject({ id: z.uuid() }),
 		input: z.null(),
 		output: z.looseObject({ name: z.string() })
-	},
+	}),
 	// Route with 404 but no params → should be skipped
-	{
+	define_route({
 		method: 'GET',
 		path: '/status',
 		auth: { account: 'none', actor: 'none' },
@@ -872,7 +874,7 @@ const adversarial_404_specs: Array<RouteSpec> = [
 		input: z.null(),
 		output: z.looseObject({ ok: z.literal(true) }),
 		errors: [rest_error(404, 'not_configured')]
-	}
+	})
 ];
 
 describe_adversarial_404({
@@ -891,7 +893,7 @@ describe_adversarial_404({
 		create_app_surface_spec({
 			middleware_specs: [],
 			route_specs: [
-				{
+				define_route({
 					method: 'GET',
 					path: '/health',
 					auth: { account: 'none', actor: 'none' },
@@ -899,7 +901,7 @@ describe_adversarial_404({
 					description: 'Health',
 					input: z.null(),
 					output: z.null()
-				}
+				})
 			]
 		}),
 	roles: []

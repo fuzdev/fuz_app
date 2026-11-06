@@ -26,7 +26,8 @@ import {
 } from '#lib/http/auth_shape.ts';
 import { compile_action_registry } from '#lib/actions/compile_action_registry.ts';
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
-import { apply_route_specs, type RouteSpec } from '#lib/http/route_spec.ts';
+import { apply_route_specs, define_route, type RouteSpec } from '#lib/http/route_spec.ts';
+import { route_ok } from '#lib/http/route_result.ts';
 import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
 import { create_stub_app_backend, create_stub_db } from '#lib/testing/stubs.ts';
 import { create_loopback_app_server_options } from '#lib/testing/app_server.ts';
@@ -235,15 +236,16 @@ describe('compile_action_registry refuses a spec breaking a cross-axis invariant
 	});
 });
 
-const create_route_spec = (auth: RouteAuth, path = '/things'): RouteSpec => ({
-	method: 'POST',
-	path,
-	auth,
-	handler: (c) => c.json(null),
-	description: 'Create a thing',
-	input: z.strictObject({ name: z.string() }),
-	output: z.null()
-});
+const create_route_spec = (auth: RouteAuth, path = '/things'): RouteSpec =>
+	define_route({
+		method: 'POST',
+		path,
+		auth,
+		handler: () => route_ok(null),
+		description: 'Create a thing',
+		input: z.strictObject({ name: z.string() }),
+		output: z.null()
+	});
 
 describe('apply_route_specs refuses a spec breaking a cross-axis invariant', () => {
 	for (const { name, auth, message } of VIOLATIONS) {

@@ -36,14 +36,9 @@ import type { Uuid } from '../primitive_schemas.ts';
 import { ActingActor } from '../primitive_schemas_fuz.ts';
 
 import type { Db, DbType } from '../db/db.ts';
-import { get_route_params, get_route_query, type RouteSpec } from './route_spec.ts';
+import { define_route, get_route_params, get_route_query, type RouteSpec } from './route_spec.ts';
+import { route_fail, route_ok } from './route_result.ts';
 import {
-	ERROR_TABLE_NOT_FOUND,
-	ERROR_TABLE_NO_PRIMARY_KEY,
-	ERROR_TABLE_NOT_DELETABLE,
-	ERROR_ROW_NOT_FOUND,
-	ERROR_FOREIGN_KEY_VIOLATION,
-	ERROR_DATABASE_CONNECTION_FAILED,
 	REST_DATABASE_CONNECTION_FAILED,
 	REST_FOREIGN_KEY_VIOLATION,
 	REST_ROW_NOT_FOUND,
@@ -320,7 +315,7 @@ export const create_db_route_specs = (
 	};
 
 	return [
-		{
+		define_route({
 			method: 'GET',
 			path: '/health',
 			auth: {
@@ -334,7 +329,7 @@ export const create_db_route_specs = (
 			input: literal(null),
 			output: loose_object({ connected: boolean }),
 			errors: [REST_DATABASE_CONNECTION_FAILED],
-			handler: async (c, route) => {
+			handler: async (_c, route) => {
 				try {
 					await route.db.query('SELECT 1');
 
@@ -348,7 +343,7 @@ export const create_db_route_specs = (
 
 					const stats = extra_stats ? await extra_stats(route.db) : {};
 
-					return c.json({
+					return route_ok({
 						connected: true,
 						type: db_type,
 						name: db_name,
@@ -357,18 +352,11 @@ export const create_db_route_specs = (
 					});
 				} catch (err) {
 					log?.error('Database health check failed:', err);
-					return c.json(
-						{
-							connected: false,
-							type: db_type,
-							error: ERROR_DATABASE_CONNECTION_FAILED
-						},
-						503
-					);
+					return route_fail(REST_DATABASE_CONNECTION_FAILED, { connected: false, type: db_type });
 				}
 			}
-		},
-		{
+		}),
+		define_route({
 			method: 'GET',
 			path: '/tables',
 			auth: {
@@ -384,7 +372,7 @@ export const create_db_route_specs = (
 				tables: array(object({ name: string, row_count: Count }))
 			}),
 			transaction: true,
-			handler: async (c, route) => {
+			handler: async (_c, route) => {
 				await set_statement_timeout(route.db);
 				// Existence still comes from `information_schema` — a listed table
 				// that hasn't migrated in yet is silently absent, not a 500.
@@ -406,10 +394,10 @@ export const create_db_route_specs = (
 					});
 				}
 
-				return c.json({ tables });
+				return route_ok({ tables });
 			}
-		},
-		{
+		}),
+		define_route({
 			method: 'GET',
 			path: '/tables/:name',
 			auth: {
@@ -444,7 +432,7 @@ export const create_db_route_specs = (
 				// Allowlist gate, masked: an unlisted (or floor) table answers
 				// exactly like one that doesn't exist.
 				if (!(await gate_browsable_table(route.db, name))) {
-					return c.json({ error: ERROR_TABLE_NOT_FOUND }, 404);
+					return route_fail(REST_TABLE_NOT_FOUND);
 				}
 
 				// `udt_name` is internal (drives the byte-value placeholder;
@@ -497,15 +485,15 @@ export const create_db_route_specs = (
 									return `"${ident}"`;
 								})
 								.join(', ');
-				const rows = await route.db.query(
+				const rows = await route.db.query<Record<string, unknown>>(
 					`SELECT ${select_list} FROM "${assert_valid_sql_identifier(name)}" LIMIT $1 OFFSET $2`,
 					[limit, offset]
 				);
 
-				return c.json({ columns, rows, total, offset, limit, primary_key, deletable });
+				return route_ok({ columns, rows, total, offset, limit, primary_key, deletable });
 			}
-		},
-		{
+		}),
+		define_route({
 			method: 'DELETE',
 			path: '/tables/:name/rows/:id',
 			auth: {
@@ -532,7 +520,7 @@ export const create_db_route_specs = (
 				// Same allowlist gate and masking as the detail route — an
 				// unbrowsable table exposes no rows to delete either.
 				if (!(await gate_browsable_table(route.db, name))) {
-					return c.json({ error: ERROR_TABLE_NOT_FOUND }, 404);
+					return route_fail(REST_TABLE_NOT_FOUND);
 				}
 
 				// Policy exclusion, checked before the key shape: the trail and the
@@ -544,7 +532,7 @@ export const create_db_route_specs = (
 				// declared as a union with whatever the route's `auth` derives, which a
 				// consumer rewriting `auth` (as fuz_forge does) would silently invalidate.
 				if (non_deletable.has(name)) {
-					return c.json({ error: ERROR_TABLE_NOT_DELETABLE }, 400);
+					return route_fail(REST_TABLE_NOT_DELETABLE);
 				}
 
 				// Single-column primary keys only. Deleting by a single
@@ -555,7 +543,7 @@ export const create_db_route_specs = (
 				// cell); an absent PK has nothing to target. Refuse both.
 				const pk_columns = await query_primary_key_columns(route.db, name);
 				if (pk_columns.length !== 1) {
-					return c.json({ error: ERROR_TABLE_NO_PRIMARY_KEY }, 400);
+					return route_fail(REST_TABLE_NO_PRIMARY_KEY);
 				}
 				const pk_column = pk_columns[0]!;
 
@@ -588,7 +576,7 @@ export const create_db_route_specs = (
 					);
 
 					if (result.length === 0) {
-						return c.json({ error: ERROR_ROW_NOT_FOUND }, 404);
+						return route_fail(REST_ROW_NOT_FOUND);
 					}
 					const deleted_id = result[0]!.pk_text;
 
@@ -612,7 +600,7 @@ export const create_db_route_specs = (
 						})
 					);
 
-					return c.json({ success: true });
+					return route_ok({ success: true });
 				} catch (err) {
 					const code = pg_error_code(err);
 					// 22P02 invalid_text_representation / 22003 numeric_value_out_of_range
@@ -635,13 +623,13 @@ export const create_db_route_specs = (
 					// the refusal answers normally, so the transaction must commit
 					if (savepoint) await route.db.query('ROLLBACK TO SAVEPOINT db_admin_row_delete');
 					if (uncoercible) {
-						return c.json({ error: ERROR_ROW_NOT_FOUND }, 404);
+						return route_fail(REST_ROW_NOT_FOUND);
 					}
 					const pg_err = err as Error & { detail?: string; constraint?: string };
 					log?.warn('Foreign key violation:', pg_err.detail, pg_err.constraint);
-					return c.json({ error: ERROR_FOREIGN_KEY_VIOLATION }, 409);
+					return route_fail(REST_FOREIGN_KEY_VIOLATION);
 				}
 			}
-		}
+		})
 	];
 };

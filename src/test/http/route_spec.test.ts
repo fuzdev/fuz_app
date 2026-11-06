@@ -14,10 +14,12 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 import {
 	apply_middleware_specs,
 	apply_route_specs,
+	define_route,
 	prefix_route_specs,
 	get_route_query,
 	type RouteSpec
 } from '#lib/http/route_spec.ts';
+import { route_ok } from '#lib/http/route_result.ts';
 import { env_integer } from '#lib/env/env_schemas.ts';
 import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
 import { ActingActor } from '#lib/http/auth_shape.ts';
@@ -48,7 +50,7 @@ import {
 	REST_RATE_LIMIT_EXCEEDED,
 	rest_error
 } from '#lib/http/error_schemas.ts';
-import { create_stub_db } from '#lib/testing/stubs.ts';
+import { create_stub_db, stub_handler } from '#lib/testing/stubs.ts';
 import { DbCheckoutError } from '#lib/db/db_checkout_error.ts';
 import {
 	ThrownJsonrpcError,
@@ -64,15 +66,15 @@ describe('apply_route_specs', () => {
 	test('registers a GET route', async () => {
 		const app = new Hono();
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'GET',
 				path: '/test',
 				auth: { account: 'none', actor: 'none' },
-				handler: (c) => c.json({ ok: true }),
+				handler: () => route_ok({ ok: true }),
 				description: 'Test route',
 				input: z.null(),
-				output: z.null()
-			}
+				output: z.strictObject({ ok: z.literal(true) })
+			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
 
@@ -85,15 +87,15 @@ describe('apply_route_specs', () => {
 	test('registers a POST route', async () => {
 		const app = new Hono();
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'POST',
 				path: '/create',
 				auth: { account: 'none', actor: 'none' },
-				handler: (c) => c.json({ created: true }),
+				handler: () => route_ok({ created: true }),
 				description: 'Create route',
 				input: z.null(),
-				output: z.null()
-			}
+				output: z.strictObject({ created: z.literal(true) })
+			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
 
@@ -107,15 +109,15 @@ describe('apply_route_specs', () => {
 	test('auth none adds no guard', async () => {
 		const app = new Hono();
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'GET',
 				path: '/public',
 				auth: { account: 'none', actor: 'none' },
-				handler: (c) => c.json({ public: true }),
+				handler: () => route_ok({ public: true }),
 				description: 'Public route',
 				input: z.null(),
-				output: z.null()
-			}
+				output: z.strictObject({ public: z.literal(true) })
+			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
 
@@ -126,15 +128,15 @@ describe('apply_route_specs', () => {
 	test('auth authenticated returns 401 when unauthenticated', async () => {
 		const app = new Hono();
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'GET',
 				path: '/protected',
 				auth: { account: 'required', actor: 'none' },
-				handler: (c) => c.json({ secret: true }),
+				handler: () => route_ok({ secret: true }),
 				description: 'Protected route',
 				input: z.null(),
-				output: z.null()
-			}
+				output: z.strictObject({ secret: z.literal(true) })
+			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
 
@@ -156,15 +158,15 @@ describe('apply_route_specs', () => {
 			await next();
 		});
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'GET',
 				path: '/protected',
 				auth: { account: 'required', actor: 'none' },
-				handler: (c) => c.json({ secret: true }),
+				handler: () => route_ok({ secret: true }),
 				description: 'Protected route',
 				input: z.null(),
-				output: z.null()
-			}
+				output: z.strictObject({ secret: z.literal(true) })
+			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
 
@@ -175,16 +177,16 @@ describe('apply_route_specs', () => {
 	test('auth role returns 401 when unauthenticated', async () => {
 		const app = new Hono();
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'POST',
 				path: '/admin',
 				auth: { account: 'required', actor: 'required', roles: ['admin'] },
-				handler: (c) => c.json({ admin: true }),
+				handler: () => route_ok({ admin: true }),
 				description: 'Admin route',
 				query: z.strictObject({ acting: ActingActor }),
 				input: z.null(),
-				output: z.null()
-			}
+				output: z.strictObject({ admin: z.literal(true) })
+			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
 
@@ -208,16 +210,16 @@ describe('apply_route_specs', () => {
 			await next();
 		});
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'POST',
 				path: '/admin',
 				auth: { account: 'required', actor: 'required', roles: ['admin'] },
-				handler: (c) => c.json({ admin: true }),
+				handler: () => route_ok({ admin: true }),
 				description: 'Admin route',
 				query: z.strictObject({ acting: ActingActor }),
 				input: z.null(),
-				output: z.null()
-			}
+				output: z.strictObject({ admin: z.literal(true) })
+			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
 
@@ -241,16 +243,16 @@ describe('apply_route_specs', () => {
 			await next();
 		});
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'POST',
 				path: '/admin',
 				auth: { account: 'required', actor: 'required', roles: ['admin'] },
-				handler: (c) => c.json({ admin: true }),
+				handler: () => route_ok({ admin: true }),
 				description: 'Admin route',
 				query: z.strictObject({ acting: ActingActor }),
 				input: z.null(),
-				output: z.null()
-			}
+				output: z.strictObject({ admin: z.literal(true) })
+			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
 
@@ -288,7 +290,7 @@ describe('auth.required_scope', () => {
 			await next();
 		});
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'GET',
 				path: '/stream',
 				auth: {
@@ -297,12 +299,12 @@ describe('auth.required_scope', () => {
 					roles: ['admin'],
 					required_scope
 				},
-				handler: (c) => c.json({ streamed: true }),
+				handler: () => route_ok({ streamed: true }),
 				description: 'Scope-gated route',
 				query: z.strictObject({ acting: ActingActor }),
 				input: z.null(),
-				output: z.null()
-			}
+				output: z.strictObject({ streamed: z.literal(true) })
+			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
 		return app;
@@ -415,19 +417,19 @@ describe('query validation', () => {
 	test('validates query params and sets validated_query', async () => {
 		const app = new Hono();
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'GET',
 				path: '/search',
 				auth: { account: 'none', actor: 'none' },
 				handler: (c) => {
 					const q = get_route_query<{ q: string }>(c);
-					return c.json({ query: q.q });
+					return route_ok({ query: q.q });
 				},
 				description: 'Search',
 				query: z.strictObject({ q: z.string().min(1) }),
 				input: z.null(),
 				output: z.strictObject({ query: z.string() })
-			}
+			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
 
@@ -440,16 +442,16 @@ describe('query validation', () => {
 	test('returns 400 for missing required query param', async () => {
 		const app = new Hono();
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'GET',
 				path: '/search',
 				auth: { account: 'none', actor: 'none' },
-				handler: (c) => c.json({ ok: true }),
+				handler: () => route_ok({ ok: true }),
 				description: 'Search',
 				query: z.strictObject({ q: z.string().min(1) }),
 				input: z.null(),
-				output: z.null()
-			}
+				output: z.strictObject({ ok: z.literal(true) })
+			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
 
@@ -473,16 +475,16 @@ describe('query validation', () => {
 	test('returns 400 for extra unknown query param with strictObject', async () => {
 		const app = new Hono();
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'GET',
 				path: '/search',
 				auth: { account: 'none', actor: 'none' },
-				handler: (c) => c.json({ ok: true }),
+				handler: () => route_ok({ ok: true }),
 				description: 'Search',
 				query: z.strictObject({ q: z.string() }),
 				input: z.null(),
-				output: z.null()
-			}
+				output: z.strictObject({ ok: z.literal(true) })
+			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
 
@@ -506,15 +508,15 @@ describe('query validation', () => {
 	test('no query schema skips validation', async () => {
 		const app = new Hono();
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'GET',
 				path: '/test',
 				auth: { account: 'none', actor: 'none' },
-				handler: (c) => c.json({ ok: true }),
+				handler: () => route_ok({ ok: true }),
 				description: 'Test',
 				input: z.null(),
-				output: z.null()
-			}
+				output: z.strictObject({ ok: z.literal(true) })
+			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
 
@@ -527,16 +529,16 @@ describe('route params validation', () => {
 	test('returns 400 with the issues for a param failing its schema', async () => {
 		const app = new Hono();
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'GET',
 				path: '/things/:id',
 				auth: { account: 'none', actor: 'none' },
-				handler: (c) => c.json({ ok: true }),
+				handler: () => route_ok({ ok: true }),
 				description: 'Get a thing',
 				params: z.strictObject({ id: z.uuid() }),
 				input: z.null(),
-				output: z.null()
-			}
+				output: z.strictObject({ ok: z.literal(true) })
+			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
 
@@ -583,24 +585,24 @@ describe('apply_middleware_specs', () => {
 describe('prefix_route_specs', () => {
 	test('prepends prefix to all paths', () => {
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'GET',
 				path: '/list',
 				auth: { account: 'none', actor: 'none' },
-				handler: (c) => c.json({}),
+				handler: stub_handler,
 				description: 'List items',
 				input: z.null(),
 				output: z.null()
-			},
-			{
+			}),
+			define_route({
 				method: 'POST',
 				path: '/create',
 				auth: { account: 'required', actor: 'none' },
-				handler: (c) => c.json({}),
+				handler: stub_handler,
 				description: 'Create item',
 				input: z.null(),
 				output: z.null()
-			}
+			})
 		];
 
 		const prefixed = prefix_route_specs('/api/items', specs);
@@ -610,24 +612,24 @@ describe('prefix_route_specs', () => {
 
 	test('uses prefix as path for root routes', () => {
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'GET',
 				path: '/',
 				auth: { account: 'none', actor: 'none' },
-				handler: (c) => c.json({}),
+				handler: stub_handler,
 				description: 'Root route',
 				input: z.null(),
 				output: z.null()
-			},
-			{
+			}),
+			define_route({
 				method: 'GET',
 				path: '/:id',
 				auth: { account: 'none', actor: 'none' },
-				handler: (c) => c.json({}),
+				handler: stub_handler,
 				description: 'Sub route',
 				input: z.null(),
 				output: z.null()
-			}
+			})
 		];
 
 		const prefixed = prefix_route_specs('/api/items', specs);
@@ -636,9 +638,9 @@ describe('prefix_route_specs', () => {
 	});
 
 	test('preserves other spec properties', () => {
-		const handler = (c: any) => c.json({});
+		const handler = stub_handler;
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'DELETE',
 				path: '/:id',
 				auth: {
@@ -651,7 +653,7 @@ describe('prefix_route_specs', () => {
 				description: 'Delete item',
 				input: z.null(),
 				output: z.null()
-			}
+			})
 		];
 
 		const prefixed = prefix_route_specs('/items', specs);
@@ -669,24 +671,24 @@ describe('prefix_route_specs', () => {
 	test('throws on duplicate method+path', () => {
 		const app = new Hono();
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'GET',
 				path: '/items',
 				auth: { account: 'none', actor: 'none' },
-				handler: (c) => c.json({ first: true }),
+				handler: stub_handler,
 				description: 'First',
 				input: z.null(),
 				output: z.null()
-			},
-			{
+			}),
+			define_route({
 				method: 'GET',
 				path: '/items',
 				auth: { account: 'none', actor: 'none' },
-				handler: (c) => c.json({ second: true }),
+				handler: stub_handler,
 				description: 'Second',
 				input: z.null(),
 				output: z.null()
-			}
+			})
 		];
 		assert.throws(
 			() => apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db),
@@ -710,16 +712,16 @@ describe('prefix_route_specs', () => {
 			roles: ['keeper'],
 			credential_types: ['daemon_token']
 		} as const;
-		const valid_spec: RouteSpec = {
+		const valid_spec = define_route({
 			method: 'GET',
 			path: '/items',
 			auth: keeper_auth,
-			handler: (c) => c.json({ ok: true }),
+			handler: stub_handler,
 			description: 'Valid keeper spec',
 			input: z.null(),
 			query: z.strictObject({ acting: ActingActor }),
 			output: z.null()
-		};
+		});
 		const violating_duplicate: RouteSpec = {
 			...valid_spec,
 			query: undefined,
@@ -735,24 +737,24 @@ describe('prefix_route_specs', () => {
 	test('allows same path with different methods', () => {
 		const app = new Hono();
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'GET',
 				path: '/items',
 				auth: { account: 'none', actor: 'none' },
-				handler: (c) => c.json({ ok: true }),
+				handler: stub_handler,
 				description: 'Get items',
 				input: z.null(),
 				output: z.null()
-			},
-			{
+			}),
+			define_route({
 				method: 'POST',
 				path: '/items',
 				auth: { account: 'none', actor: 'none' },
-				handler: (c) => c.json({ ok: true }),
+				handler: stub_handler,
 				description: 'Create item',
 				input: z.null(),
 				output: z.null()
-			}
+			})
 		];
 		// should not throw
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
@@ -762,15 +764,15 @@ describe('prefix_route_specs', () => {
 describe('prefix_route_specs immutability', () => {
 	test('does not mutate original specs', () => {
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'GET',
 				path: '/test',
 				auth: { account: 'none', actor: 'none' },
-				handler: (c) => c.json({}),
+				handler: stub_handler,
 				description: 'Test route',
 				input: z.null(),
 				output: z.null()
-			}
+			})
 		];
 
 		prefix_route_specs('/prefix', specs);
@@ -844,33 +846,33 @@ describe('generate_app_surface', () => {
 			{ name: 'session', path: '/api/*', handler: async (_c, next) => next() }
 		];
 		const routes: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'GET',
 				path: '/health',
 				auth: { account: 'none', actor: 'none' },
-				handler: (c) => c.json({}),
+				handler: stub_handler,
 				description: 'Health check',
 				input: z.null(),
 				output: z.null()
-			},
-			{
+			}),
+			define_route({
 				method: 'POST',
 				path: '/api/login',
 				auth: { account: 'none', actor: 'none' },
-				handler: (c) => c.json({}),
+				handler: stub_handler,
 				description: 'Login',
 				input: z.null(),
 				output: z.null()
-			},
-			{
+			}),
+			define_route({
 				method: 'GET',
 				path: '/api/protected',
 				auth: { account: 'required', actor: 'none' },
-				handler: (c) => c.json({}),
+				handler: stub_handler,
 				description: 'Protected resource',
 				input: z.null(),
 				output: z.null()
-			}
+			})
 		];
 
 		const surface = generate_app_surface({ middleware_specs: middleware, route_specs: routes });
@@ -892,15 +894,15 @@ describe('generate_app_surface', () => {
 			{ name: 'test', path: '/*', handler: async (_c, next) => next() }
 		];
 		const routes: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'GET',
 				path: '/test',
 				auth: { account: 'required', actor: 'required', roles: ['admin'] },
-				handler: (c) => c.json({}),
+				handler: stub_handler,
 				description: 'Test route',
 				input: z.null(),
 				output: z.null()
-			}
+			})
 		];
 
 		const surface = generate_app_surface({ middleware_specs: middleware, route_specs: routes });
@@ -913,15 +915,15 @@ describe('generate_app_surface', () => {
 		const surface = generate_app_surface({
 			middleware_specs: [],
 			route_specs: [
-				{
+				define_route({
 					method: 'GET',
 					path: '/test',
 					auth: { account: 'none', actor: 'none' },
-					handler: (c) => c.json({}),
+					handler: stub_handler,
 					description: 'Test endpoint',
 					input: z.null(),
 					output: z.null()
-				}
+				})
 			]
 		});
 
@@ -930,25 +932,25 @@ describe('generate_app_surface', () => {
 
 	test('auth types are preserved', () => {
 		const routes: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'GET',
 				path: '/a',
 				auth: { account: 'none', actor: 'none' },
-				handler: (c) => c.json({}),
+				handler: stub_handler,
 				description: 'A',
 				input: z.null(),
 				output: z.null()
-			},
-			{
+			}),
+			define_route({
 				method: 'GET',
 				path: '/b',
 				auth: { account: 'required', actor: 'none' },
-				handler: (c) => c.json({}),
+				handler: stub_handler,
 				description: 'B',
 				input: z.null(),
 				output: z.null()
-			},
-			{
+			}),
+			define_route({
 				method: 'GET',
 				path: '/c',
 				auth: {
@@ -957,11 +959,11 @@ describe('generate_app_surface', () => {
 					roles: ['keeper'],
 					credential_types: ['daemon_token']
 				},
-				handler: (c) => c.json({}),
+				handler: stub_handler,
 				description: 'C',
 				input: z.null(),
 				output: z.null()
-			}
+			})
 		];
 
 		const surface = generate_app_surface({ middleware_specs: [], route_specs: routes });
@@ -1052,15 +1054,15 @@ describe('generate_app_surface', () => {
 		const surface = generate_app_surface({
 			middleware_specs: [],
 			route_specs: [
-				{
+				define_route({
 					method: 'GET',
 					path: '/health',
 					auth: { account: 'none', actor: 'none' },
-					handler: (c) => c.json({}),
+					handler: stub_handler,
 					description: 'Health',
 					input: z.null(),
 					output: z.null()
-				}
+				})
 			]
 		});
 		assert.strictEqual(surface.routes[0]!.error_schemas, null);
@@ -1070,15 +1072,15 @@ describe('generate_app_surface', () => {
 		const surface = generate_app_surface({
 			middleware_specs: [],
 			route_specs: [
-				{
+				define_route({
 					method: 'GET',
 					path: '/protected',
 					auth: { account: 'required', actor: 'none' },
-					handler: (c) => c.json({}),
+					handler: stub_handler,
 					description: 'Protected',
 					input: z.null(),
 					output: z.null()
-				}
+				})
 			]
 		});
 		const errors = surface.routes[0]!.error_schemas;
@@ -1090,15 +1092,15 @@ describe('generate_app_surface', () => {
 		const surface = generate_app_surface({
 			middleware_specs: [],
 			route_specs: [
-				{
+				define_route({
 					method: 'POST',
 					path: '/admin',
 					auth: { account: 'required', actor: 'required', roles: ['admin'] },
-					handler: (c) => c.json({}),
+					handler: stub_handler,
 					description: 'Admin',
 					input: z.null(),
 					output: z.null()
-				}
+				})
 			]
 		});
 		const errors = surface.routes[0]!.error_schemas;
@@ -1111,15 +1113,15 @@ describe('generate_app_surface', () => {
 		const surface = generate_app_surface({
 			middleware_specs: [],
 			route_specs: [
-				{
+				define_route({
 					method: 'POST',
 					path: '/create',
 					auth: { account: 'none', actor: 'none' },
-					handler: (c) => c.json({}),
+					handler: stub_handler,
 					description: 'Create',
 					input: z.strictObject({ name: z.string() }),
 					output: z.null()
-				}
+				})
 			]
 		});
 		const errors = surface.routes[0]!.error_schemas;
@@ -1131,16 +1133,16 @@ describe('generate_app_surface', () => {
 		const surface = generate_app_surface({
 			middleware_specs: [],
 			route_specs: [
-				{
+				define_route({
 					method: 'POST',
 					path: '/login',
 					auth: { account: 'required', actor: 'none' },
-					handler: (c) => c.json({}),
+					handler: stub_handler,
 					description: 'Login',
 					input: z.strictObject({ username: z.string() }),
 					output: z.null(),
 					errors: [REST_INVALID_CREDENTIALS, rest_error(400, 'name_taken')]
-				}
+				})
 			]
 		});
 		const errors = surface.routes[0]!.error_schemas;
@@ -1163,16 +1165,16 @@ describe('generate_app_surface', () => {
 		const surface = generate_app_surface({
 			middleware_specs: [],
 			route_specs: [
-				{
+				define_route({
 					method: 'POST',
 					path: '/test',
 					auth: { account: 'required', actor: 'required', roles: ['admin'] },
-					handler: (c) => c.json({}),
+					handler: stub_handler,
 					description: 'Test',
 					input: z.strictObject({ x: z.number() }),
 					output: z.null(),
 					errors: [REST_RATE_LIMIT_EXCEEDED]
-				}
+				})
 			]
 		});
 		const json = JSON.stringify(surface);
@@ -1185,15 +1187,15 @@ describe('input validation', () => {
 	const create_input_app = () => {
 		const app = new Hono();
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'POST',
 				path: '/test',
 				auth: { account: 'none', actor: 'none' },
 				description: 'content type test',
 				input: z.strictObject({ name: z.string() }),
 				output: z.strictObject({ ok: z.literal(true) }),
-				handler: async (c) => c.json({ ok: true })
-			}
+				handler: async () => route_ok({ ok: true })
+			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
 		return app;
@@ -1266,15 +1268,15 @@ describe('GET body validation guard', () => {
 	test('GET route with non-null input skips body parsing', async () => {
 		const app = new Hono();
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'GET',
 				path: '/items',
 				auth: { account: 'none', actor: 'none' },
 				description: 'List items',
 				input: z.strictObject({ limit: z.number() }),
 				output: z.strictObject({ ok: z.boolean() }),
-				handler: (c) => c.json({ ok: true })
-			}
+				handler: () => route_ok({ ok: true })
+			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
 
@@ -1288,15 +1290,15 @@ describe('GET body validation guard', () => {
 	test('GET route with null input still works', async () => {
 		const app = new Hono();
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'GET',
 				path: '/health',
 				auth: { account: 'none', actor: 'none' },
 				description: 'Health',
 				input: z.null(),
 				output: z.strictObject({ ok: z.boolean() }),
-				handler: (c) => c.json({ ok: true })
-			}
+				handler: () => route_ok({ ok: true })
+			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
 
@@ -1307,15 +1309,15 @@ describe('GET body validation guard', () => {
 	test('POST route with non-null input still validates body', async () => {
 		const app = new Hono();
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'POST',
 				path: '/create',
 				auth: { account: 'none', actor: 'none' },
 				description: 'Create',
 				input: z.strictObject({ name: z.string() }),
 				output: z.strictObject({ ok: z.boolean() }),
-				handler: (c) => c.json({ ok: true })
-			}
+				handler: () => route_ok({ ok: true })
+			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
 
@@ -1329,15 +1331,15 @@ describe('GET body validation guard', () => {
 	});
 
 	test('surface shows input_schema for GET route with non-null input', () => {
-		const route: RouteSpec = {
+		const route = define_route({
 			method: 'GET',
 			path: '/items',
 			auth: { account: 'none', actor: 'none' },
 			description: 'List items',
 			input: z.strictObject({ limit: z.number() }),
 			output: z.strictObject({ ok: z.boolean() }),
-			handler: (c: any) => c.json({ ok: true })
-		};
+			handler: () => route_ok({ ok: true })
+		});
 
 		const surface = generate_app_surface({ route_specs: [route], middleware_specs: [] });
 
@@ -1399,7 +1401,7 @@ describe('error catch layer', () => {
 	test('a failed pool checkout answers the flat 503, no message', async () => {
 		const app = new Hono();
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'GET',
 				path: '/test',
 				auth: { account: 'none', actor: 'none' },
@@ -1411,7 +1413,7 @@ describe('error catch layer', () => {
 				description: 'Test',
 				input: z.null(),
 				output: z.null()
-			}
+			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
 
@@ -1424,7 +1426,7 @@ describe('error catch layer', () => {
 	test('handler that throws ThrownJsonrpcError returns correct status and body', async () => {
 		const app = new Hono();
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'GET',
 				path: '/test',
 				auth: { account: 'none', actor: 'none' },
@@ -1434,7 +1436,7 @@ describe('error catch layer', () => {
 				description: 'Test',
 				input: z.null(),
 				output: z.null()
-			}
+			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
 
@@ -1450,7 +1452,7 @@ describe('error catch layer', () => {
 	test('ThrownJsonrpcError with data flattens data under the response body', async () => {
 		const app = new Hono();
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'POST',
 				path: '/test',
 				auth: { account: 'none', actor: 'none' },
@@ -1462,7 +1464,7 @@ describe('error catch layer', () => {
 				description: 'Test',
 				input: z.null(),
 				output: z.null()
-			}
+			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
 
@@ -1481,7 +1483,7 @@ describe('error catch layer', () => {
 	test('ThrownJsonrpcError without data omits extras from response', async () => {
 		const app = new Hono();
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'GET',
 				path: '/test',
 				auth: { account: 'none', actor: 'none' },
@@ -1491,7 +1493,7 @@ describe('error catch layer', () => {
 				description: 'Test',
 				input: z.null(),
 				output: z.null()
-			}
+			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
 
@@ -1512,7 +1514,7 @@ describe('error catch layer', () => {
 		// land on `body.error` instead of the generic JSON-RPC name.
 		const app = new Hono();
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'POST',
 				path: '/test',
 				auth: { account: 'none', actor: 'none' },
@@ -1525,7 +1527,7 @@ describe('error catch layer', () => {
 				description: 'Test',
 				input: z.null(),
 				output: z.null()
-			}
+			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
 
@@ -1547,7 +1549,7 @@ describe('error catch layer', () => {
 		// another class, so `instanceof` would miss it and answer 500
 		const app = new Hono();
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'POST',
 				path: '/test',
 				auth: { account: 'none', actor: 'none' },
@@ -1560,7 +1562,7 @@ describe('error catch layer', () => {
 				description: 'Test',
 				input: z.null(),
 				output: z.null()
-			}
+			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
 
@@ -1577,7 +1579,7 @@ describe('error catch layer', () => {
 		// are no part of fuz_app's wire contract
 		const app = new Hono();
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'GET',
 				path: '/test',
 				auth: { account: 'none', actor: 'none' },
@@ -1589,7 +1591,7 @@ describe('error catch layer', () => {
 				description: 'Test',
 				input: z.null(),
 				output: z.null()
-			}
+			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
 
@@ -1602,7 +1604,7 @@ describe('error catch layer', () => {
 	test('an Error whose numeric code is not a JSON-RPC one is an internal error', async () => {
 		const app = new Hono();
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'GET',
 				path: '/test',
 				auth: { account: 'none', actor: 'none' },
@@ -1612,7 +1614,7 @@ describe('error catch layer', () => {
 				description: 'Test',
 				input: z.null(),
 				output: z.null()
-			}
+			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
 
@@ -1624,7 +1626,7 @@ describe('error catch layer', () => {
 	test('generic Error maps to internal_error 500 with message in DEV', async () => {
 		const app = new Hono();
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'GET',
 				path: '/test',
 				auth: { account: 'none', actor: 'none' },
@@ -1634,7 +1636,7 @@ describe('error catch layer', () => {
 				description: 'Test',
 				input: z.null(),
 				output: z.null()
-			}
+			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
 
@@ -1649,15 +1651,15 @@ describe('error catch layer', () => {
 	test('handler that returns normally is unaffected by catch layer', async () => {
 		const app = new Hono();
 		const specs: Array<RouteSpec> = [
-			{
+			define_route({
 				method: 'GET',
 				path: '/test',
 				auth: { account: 'none', actor: 'none' },
-				handler: (c) => c.json({ ok: true }),
+				handler: () => route_ok({ ok: true }),
 				description: 'Test',
 				input: z.null(),
-				output: z.null()
-			}
+				output: z.strictObject({ ok: z.literal(true) })
+			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
 
@@ -1692,7 +1694,7 @@ describe('error catch layer', () => {
 		for (const { name, error, expected_status } of cases) {
 			const app = new Hono();
 			const specs: Array<RouteSpec> = [
-				{
+				define_route({
 					method: 'GET',
 					path: '/test',
 					auth: { account: 'none', actor: 'none' },
@@ -1702,7 +1704,7 @@ describe('error catch layer', () => {
 					description: 'Test',
 					input: z.null(),
 					output: z.null()
-				}
+				})
 			];
 			apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
 
@@ -1713,16 +1715,18 @@ describe('error catch layer', () => {
 });
 
 describe('apply_route_specs content type', () => {
-	const post_route = (overrides: Partial<RouteSpec> = {}): RouteSpec => ({
-		method: 'POST',
-		path: '/test',
-		auth: { account: 'none', actor: 'none' },
-		handler: (c) => c.json({ ok: true }),
-		description: 'Test route',
-		input: z.null(),
-		output: z.strictObject({ ok: z.boolean() }),
-		...overrides
-	});
+	// a spec as data, its handler unchecked against it
+	const post_route = (overrides: Partial<RouteSpec> = {}): RouteSpec =>
+		({
+			method: 'POST',
+			path: '/test',
+			auth: { account: 'none', actor: 'none' },
+			handler: () => route_ok({ ok: true }),
+			description: 'Test route',
+			input: z.null(),
+			output: z.strictObject({ ok: z.boolean() }),
+			...overrides
+		}) as RouteSpec;
 
 	test('a POST requires application/json, bodyless or not', async () => {
 		const app = new Hono();

@@ -11,10 +11,11 @@
  * @module
  */
 
+import { route_ok } from '#lib/http/route_result.ts';
+import { define_route, type RouteSpec } from '#lib/http/route_spec.ts';
 import { describe, test, assert } from 'vitest';
 import { z } from 'zod';
 
-import type { RouteSpec } from '#lib/http/route_spec.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_test_app_surface_spec } from '#lib/testing/stubs.ts';
@@ -102,24 +103,24 @@ const ok_output = z.strictObject({ ok: z.literal(true) });
 
 // `POST` first, so on a shared account the `GET` after it would 401
 const create_route_specs = (_ctx: AppServerContext): Array<RouteSpec> => [
-	{
+	define_route({
 		method: 'POST',
 		path: BURN_PATH,
 		auth: { account: 'required', actor: 'none' },
-		handler: (c) => c.json({ ok: true }),
+		handler: () => route_ok({ ok: true }),
 		description: "End the caller's session",
 		input: z.null(),
 		output: ok_output
-	},
-	{
+	}),
+	define_route({
 		method: 'GET',
 		path: PEEK_PATH,
 		auth: { account: 'required', actor: 'none' },
-		handler: (c) => c.json({ ok: true }),
+		handler: () => route_ok({ ok: true }),
 		description: 'Read as the caller',
 		input: z.null(),
 		output: ok_output
-	}
+	})
 ];
 
 /** Session cookies the fake backend still honors. */

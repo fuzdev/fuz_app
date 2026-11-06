@@ -6,6 +6,7 @@
  * @module
  */
 
+import { route_ok, route_raw, type RouteRaw } from '#lib/http/route_result.ts';
 import { afterEach, assert, describe, test, vi } from 'vitest';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { literal, object } from '@fuzdev/fuz_schema/schema.ts';
@@ -26,28 +27,40 @@ import {
 	REST_PAYLOAD_TOO_LARGE,
 	rest_error
 } from '#lib/http/error_schemas.ts';
-import type { RouteSpec } from '#lib/http/route_spec.ts';
+import { define_route, type RouteSpec } from '#lib/http/route_spec.ts';
 
 const servers: Array<AppServer> = [];
 afterEach(async () => {
 	for (const server of servers.splice(0)) await server.close();
 });
 
+/** A JSON answer at any status, as the bytes `c.json` writes, raw so no definition is needed. */
+const json_raw = (body: unknown, status: number): RouteRaw =>
+	route_raw(
+		new Response(JSON.stringify(body), {
+			status,
+			headers: { 'Content-Type': 'application/json' }
+		})
+	);
+
 /** A public route whose handler answers whatever error the test names. */
-const echo_route = (errors?: RouteSpec['errors']): RouteSpec => ({
-	method: 'GET',
-	path: '/api/echo',
-	auth: { account: 'none', actor: 'none' },
-	description: 'Answers the error the query names.',
-	input: literal(null),
-	output: object({ ok: literal(true) }),
-	...(errors && { errors }),
-	handler: (c) => {
-		const code = c.req.query('code');
-		const status = Number(c.req.query('status'));
-		return code ? c.json({ error: code }, status as 400) : c.json({ ok: true });
-	}
-});
+const echo_route = (errors?: RouteSpec['errors']): RouteSpec => {
+	const spec = define_route({
+		method: 'GET',
+		path: '/api/echo',
+		auth: { account: 'none', actor: 'none' },
+		description: 'Answers the error the query names.',
+		input: literal(null),
+		output: object({ ok: literal(true) }),
+		handler: (c) => {
+			const code = c.req.query('code');
+			const status = Number(c.req.query('status'));
+			return code ? json_raw({ error: code }, status) : route_ok({ ok: true });
+		}
+	});
+	// the errors under test are the case's, and the handler answers them raw
+	return errors ? { ...spec, errors } : spec;
+};
 
 const assemble = async (
 	overrides: Partial<AppServerOptions> = {},

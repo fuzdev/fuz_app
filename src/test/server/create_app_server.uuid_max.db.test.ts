@@ -21,7 +21,8 @@ import {
 	ERROR_INVALID_ROUTE_PARAMS
 } from '#lib/http/error_schemas.ts';
 import { JSONRPC_INVALID_PARAMS } from '#lib/http/jsonrpc.ts';
-import { get_route_params, type RouteSpec } from '#lib/http/route_spec.ts';
+import { define_route, get_route_params, type RouteSpec } from '#lib/http/route_spec.ts';
+import { route_ok } from '#lib/http/route_result.ts';
 
 import { describe_db } from '../auth_db_default.ts';
 
@@ -45,7 +46,7 @@ const ThingParams = z.strictObject({ id: Uuid });
 const ActingQuery = z.strictObject({ acting: ActingActor });
 
 const create_route_specs = (): Array<RouteSpec> => [
-	{
+	define_route({
 		method: 'GET',
 		path: '/api/things/:id',
 		auth: { account: 'required', actor: 'none' },
@@ -53,9 +54,9 @@ const create_route_specs = (): Array<RouteSpec> => [
 		params: ThingParams,
 		input: z.null(),
 		output: z.strictObject({ id: z.string() }),
-		handler: (c) => c.json({ id: get_route_params(c, ThingParams).id })
-	},
-	{
+		handler: (c) => route_ok({ id: get_route_params(c, ThingParams).id })
+	}),
+	define_route({
 		method: 'GET',
 		path: '/api/acting_echo',
 		auth: { account: 'required', actor: 'required' },
@@ -63,8 +64,8 @@ const create_route_specs = (): Array<RouteSpec> => [
 		query: ActingQuery,
 		input: z.null(),
 		output: z.strictObject({ ok: z.literal(true) }),
-		handler: (c) => c.json({ ok: true as const })
-	}
+		handler: () => route_ok({ ok: true as const })
+	})
 ];
 
 const EchoInput = z.strictObject({ id: Uuid });

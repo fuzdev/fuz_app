@@ -21,7 +21,8 @@ import { query_audit_log_list } from '#lib/auth/audit_log_queries.ts';
 import { get_audit_write_failures } from '#lib/auth/audit_emitter.ts';
 import type { AuditLogEvent } from '#lib/auth/audit_log_schema.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
-import type { RouteHandler, RouteSpec } from '#lib/http/route_spec.ts';
+import { define_route, type RouteSpec, type TypedRouteHandler } from '#lib/http/route_spec.ts';
+import { route_ok } from '#lib/http/route_result.ts';
 
 const session_options = create_session_config('test_session');
 
@@ -53,15 +54,21 @@ describe('audit rows and the request transaction', () => {
 		).length;
 
 	beforeAll(async () => {
-		const route = (path: string, handler: RouteHandler): RouteSpec => ({
-			method: 'POST',
-			path,
-			auth: { account: 'none', actor: 'none' },
-			description: `audit transaction probe ${path}`,
-			input: z.null(),
-			output: z.strictObject({ ok: z.literal(true) }),
-			handler
-		});
+		const auth = { account: 'none', actor: 'none' } as const;
+		const output = z.strictObject({ ok: z.literal(true) });
+		const route = (
+			path: string,
+			handler: TypedRouteHandler<[], typeof output, typeof auth, undefined>
+		): RouteSpec =>
+			define_route({
+				method: 'POST',
+				path,
+				auth,
+				description: `audit transaction probe ${path}`,
+				input: z.null(),
+				output,
+				handler
+			});
 		test_app = await create_test_app({
 			session_options,
 			create_route_specs: (ctx) => [
@@ -82,16 +89,16 @@ describe('audit rows and the request transaction', () => {
 					timeline.push('handler threw');
 					throw new Error('deliberate handler crash');
 				}),
-				route('/api/success_commits', async (c, r) => {
+				route('/api/success_commits', async (_c, r) => {
 					await r.db.query('INSERT INTO audit_tx_probe (marker) VALUES ($1)', ['committed']);
 					await ctx.deps.audit.emit(r, {
 						event_type: 'login',
 						metadata: { username: 'probe', test: 'success_commits' }
 					});
 					timeline.push('handler returned');
-					return c.json({ ok: true });
+					return route_ok({ ok: true });
 				}),
-				route('/api/audit_insert_fails', async (c, r) => {
+				route('/api/audit_insert_fails', async (_c, r) => {
 					await r.db.query('INSERT INTO audit_tx_probe (marker) VALUES ($1)', ['unaudited']);
 					// an account id that isn't a uuid — the in-transaction INSERT fails
 					await ctx.deps.audit.emit(r, {
@@ -99,7 +106,7 @@ describe('audit rows and the request transaction', () => {
 						account_id: 'not-a-uuid' as Uuid,
 						metadata: { username: 'probe', test: 'audit_insert_fails' }
 					});
-					return c.json({ ok: true });
+					return route_ok({ ok: true });
 				})
 			]
 		});

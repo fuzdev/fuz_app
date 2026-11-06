@@ -5,6 +5,8 @@
  * @module
  */
 
+import { route_ok } from '#lib/http/route_result.ts';
+import { define_route } from '#lib/http/route_spec.ts';
 import { describe, test, assert } from 'vitest';
 import { z } from 'zod';
 import { string } from '@fuzdev/fuz_schema/schema.ts';
@@ -24,7 +26,7 @@ const REST_THING_INVALID = rest_error(422, 'thing_invalid', { field: string });
 
 const spec = create_app_surface_spec({
 	route_specs: [
-		{
+		define_route({
 			method: 'GET',
 			path: '/things/:id',
 			auth: { account: 'none', actor: 'none' },
@@ -32,8 +34,8 @@ const spec = create_app_surface_spec({
 			input: z.null(),
 			output: z.null(),
 			errors: [REST_THING_NOT_FOUND, REST_THING_TAKEN, REST_THING_INVALID],
-			handler: (c) => c.json(null)
-		}
+			handler: () => route_ok(null)
+		})
 	],
 	middleware_specs: [
 		{ name: 'gate', path: '*', handler: async (_c, next) => next(), errors: [REST_GATE_REFUSED] }

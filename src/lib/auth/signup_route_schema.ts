@@ -17,7 +17,7 @@ import { literal, nullable, object, optional, type Infer } from '@fuzdev/fuz_sch
 import { Email, Username, UsernameCanonical, Uuid } from '../primitive_schemas_fuz.ts';
 
 import { Password } from './password.ts';
-import type { RouteSpec } from '../http/route_spec.ts';
+import { define_route_shape, type RouteShape } from '../http/route_spec.ts';
 import { REST_NO_MATCHING_INVITE, REST_SIGNUP_CONFLICT } from '../http/error_schemas.ts';
 
 /**
@@ -54,21 +54,28 @@ export interface SignupRouteShapeOptions {
 
 /**
  * The `POST /signup` route shape minus its handler — pure hono-free data.
- * `create_signup_route_specs` spreads this and attaches the live handler;
- * cross-process surface builders spread it with a stub handler. Single source
+ * `create_signup_route_specs` attaches the live handler to it
+ * (`attach_route_handler`); cross-process surface builders attach a stub
+ * (`stub_route_spec`). Single source
  * of truth — the shape can't drift between the live route and the surface.
  */
 export const create_signup_route_shape = (
 	options: SignupRouteShapeOptions
-): Omit<RouteSpec, 'handler'> => ({
-	method: 'POST',
-	path: '/signup',
-	auth: { account: 'none', actor: 'none' },
-	mints_credential: true,
-	description: 'Create account (invite-gated or open signup)',
-	transaction: false, // manages its own transaction for TOCTOU safety
-	input: SignupInput,
-	output: SignupOutput,
-	rate_limit: options.signup_account_rate_limited ? 'both' : 'ip',
-	errors: [REST_NO_MATCHING_INVITE, REST_SIGNUP_CONFLICT]
-});
+): RouteShape<
+	readonly [typeof REST_NO_MATCHING_INVITE, typeof REST_SIGNUP_CONFLICT],
+	typeof SignupOutput,
+	{ account: 'none'; actor: 'none' },
+	'both' | 'ip'
+> =>
+	define_route_shape({
+		method: 'POST',
+		path: '/signup',
+		auth: { account: 'none', actor: 'none' },
+		mints_credential: true,
+		description: 'Create account (invite-gated or open signup)',
+		transaction: false, // manages its own transaction for TOCTOU safety
+		input: SignupInput,
+		output: SignupOutput,
+		rate_limit: options.signup_account_rate_limited ? 'both' : 'ip',
+		errors: [REST_NO_MATCHING_INVITE, REST_SIGNUP_CONFLICT]
+	});

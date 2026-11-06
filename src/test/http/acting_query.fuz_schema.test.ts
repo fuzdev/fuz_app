@@ -20,7 +20,9 @@
  * derived one); the bare-hash fact route's 400 is its params' code with the
  * query and actor codes (its own params literal replaced them); each derived
  * 401 is `authentication_required` exactly (it was any string); and the
- * `DELETE`'s 404 is its two definitions (it was one enum). Through the route
+ * `DELETE`'s 404 is its two definitions (it was one enum); and `GET /health`'s
+ * 503 declares the fields its body carries beside the code, `connected` and
+ * `type` (it declared the code alone). Through the route
  * stack an invalid query is answered with fuz_schema's issue messages under
  * DEV.
  *
@@ -46,7 +48,8 @@ import {
 	create_audit_log_route_shape
 } from '#lib/auth/audit_log_route_schema.ts';
 import { ActingActor, input_schema_declares_acting } from '#lib/http/auth_shape.ts';
-import { apply_route_specs, type RouteSpec } from '#lib/http/route_spec.ts';
+import { apply_route_specs, attach_route_handler, type RouteSpec } from '#lib/http/route_spec.ts';
+import { route_raw } from '#lib/http/route_result.ts';
 import { generate_app_surface, type AppSurface } from '#lib/http/surface.ts';
 import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
 import { parse_any, to_wire_issues, WireIssue } from '#lib/schema_issues.ts';
@@ -58,6 +61,7 @@ import {
 	REST_ACTOR_NOT_ON_ACCOUNT,
 	REST_ACTOR_REQUIRED,
 	REST_AUTHENTICATION_REQUIRED,
+	REST_DATABASE_CONNECTION_FAILED,
 	REST_INVALID_QUERY_PARAMS,
 	REST_INVALID_ROUTE_PARAMS,
 	REST_ROW_NOT_FOUND,
@@ -100,7 +104,7 @@ const create_acting_query_route_specs = (): Array<RouteSpec> => {
 		create_surface_route_spec({
 			surface: { diagnostics: [], middleware: [], routes: [] } as unknown as AppSurface
 		}),
-		{ ...create_audit_log_route_shape(), handler: () => new Response(null) }
+		attach_route_handler(create_audit_log_route_shape(), () => route_raw(new Response(null)))
 	];
 };
 
@@ -302,7 +306,11 @@ const ACTING_QUERY_400: ErrorMove = {
 
 // the declared moves of the error rules, by `METHOD path` and status
 const ERROR_MOVES: Record<string, Record<number, ErrorMove>> = {
-	'GET /health': { 400: ACTING_QUERY_400, 401: AUTH_401 },
+	'GET /health': {
+		400: ACTING_QUERY_400,
+		401: AUTH_401,
+		503: { from: ['database_connection_failed'], to: [REST_DATABASE_CONNECTION_FAILED] }
+	},
 	'GET /tables': { 400: ACTING_QUERY_400, 401: AUTH_401 },
 	'DELETE /tables/:name/rows/:id': {
 		400: {

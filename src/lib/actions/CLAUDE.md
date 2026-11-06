@@ -191,7 +191,7 @@ use `auth: {account: 'none', actor: 'none'}` and `transaction: false`.
 
 The HTTP RPC dispatcher is a thin shim around `perform_action`
 (`actions/perform_action.ts`). The shim owns wire-shape concerns (envelope
-parsing, GET vs POST split, `c.json` binding); the
+parsing, GET vs POST split, the envelope responses — each a `route_raw`); the
 auth/validation/dispatch pipeline is shared with the WebSocket dispatcher.
 
 **Phase order: 401 → authz → 403 → 429 → 400 → handler.** Authorize first,
@@ -211,7 +211,7 @@ Shim responsibilities (per-request):
 3. GET read restriction — GET rejected for `side_effects: true` actions. Every response the GET handler writes, its refusals included, carries `Cache-Control: no-store` (`RPC_GET_CACHE_CONTROL`; a pre-handler middleware refusal, like the origin 403, does not): a read answers one caller at one moment.
 4. Build `PerformActionInput` from `get_resolved_auth(c)` + `get_client_ip` + `c.req.raw.signal`. Test-preset escape hatch reads `has_test_context_preset(c)` + `REQUEST_CONTEXT_KEY`.
 5. Call `perform_action` (shared core).
-6. Bind result via `serialize_action_result(id, result, method, log)` (`actions/perform_action.ts`, shared with WS) → `{body, status}`, written with `c.json`'s content type.
+6. Bind result via `serialize_action_result(id, result, method, log)` (`actions/perform_action.ts`, shared with WS) → `{body, status}`, written with `c.json`'s bytes and content type and returned as a `route_raw`, as is every envelope the shim answers: no REST definition describes one.
 
 Error paths: `ThrownJsonrpcError` (recognized through
 `to_thrown_jsonrpc_error` in `http/jsonrpc_errors.ts` by its realm-global

@@ -10,6 +10,7 @@
  * @module
  */
 
+import { route_ok } from '#lib/http/route_result.ts';
 import { describe, test, assert, beforeAll, afterAll } from 'vitest';
 import { object } from '@fuzdev/fuz_schema/schema.ts';
 import { z } from 'zod';
@@ -27,7 +28,7 @@ import {
 	create_test_app_server,
 	create_loopback_app_server_options
 } from '#lib/testing/app_server.ts';
-import type { RouteSpec } from '#lib/http/route_spec.ts';
+import { define_route, type RouteSpec } from '#lib/http/route_spec.ts';
 import { create_test_raw_api_token } from '#lib/testing/entities.ts';
 import { ROLE_KEEPER, ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { ActingActor } from '#lib/http/auth_shape.ts';
@@ -39,42 +40,45 @@ import {
 const session_options = create_session_config('test_session');
 
 /** Route that requires any authenticated user. */
-const create_authenticated_route_spec = (): RouteSpec => ({
-	method: 'GET',
-	path: '/api/me',
-	auth: { account: 'required', actor: 'none' },
-	description: 'Return current account info',
-	input: z.null(),
-	output: z.looseObject({ username: z.string(), actor_id: z.string() }),
-	handler: (c) => {
-		const ctx = require_request_context(c);
-		return c.json({ username: ctx.account.username, actor_id: ctx.actor?.id ?? null });
-	}
-});
+const create_authenticated_route_spec = (): RouteSpec =>
+	define_route({
+		method: 'GET',
+		path: '/api/me',
+		auth: { account: 'required', actor: 'none' },
+		description: 'Return current account info',
+		input: z.null(),
+		output: z.looseObject({ username: z.string(), actor_id: z.string().nullable() }),
+		handler: (c) => {
+			const ctx = require_request_context(c);
+			return route_ok({ username: ctx.account.username, actor_id: ctx.actor?.id ?? null });
+		}
+	});
 
 /** Route that requires the keeper role. */
-const create_keeper_route_spec = (): RouteSpec => ({
-	method: 'GET',
-	path: '/api/keeper-only',
-	auth: { account: 'required', actor: 'required', roles: [ROLE_KEEPER] },
-	description: 'Keeper-only endpoint',
-	query: z.strictObject({ acting: ActingActor }),
-	input: z.null(),
-	output: z.looseObject({ ok: z.literal(true) }),
-	handler: (c) => c.json({ ok: true as const })
-});
+const create_keeper_route_spec = (): RouteSpec =>
+	define_route({
+		method: 'GET',
+		path: '/api/keeper-only',
+		auth: { account: 'required', actor: 'required', roles: [ROLE_KEEPER] },
+		description: 'Keeper-only endpoint',
+		query: z.strictObject({ acting: ActingActor }),
+		input: z.null(),
+		output: z.looseObject({ ok: z.literal(true) }),
+		handler: () => route_ok({ ok: true as const })
+	});
 
 /** Route that requires the admin role. */
-const create_admin_route_spec = (): RouteSpec => ({
-	method: 'GET',
-	path: '/api/admin-only',
-	auth: { account: 'required', actor: 'required', roles: [ROLE_ADMIN] },
-	description: 'Admin-only endpoint',
-	query: z.strictObject({ acting: ActingActor }),
-	input: z.null(),
-	output: z.looseObject({ ok: z.literal(true) }),
-	handler: (c) => c.json({ ok: true as const })
-});
+const create_admin_route_spec = (): RouteSpec =>
+	define_route({
+		method: 'GET',
+		path: '/api/admin-only',
+		auth: { account: 'required', actor: 'required', roles: [ROLE_ADMIN] },
+		description: 'Admin-only endpoint',
+		query: z.strictObject({ acting: ActingActor }),
+		input: z.null(),
+		output: z.looseObject({ ok: z.literal(true) }),
+		handler: () => route_ok({ ok: true as const })
+	});
 
 describe('auth flow integration', () => {
 	let test_server: TestAppServer;

@@ -7,6 +7,8 @@
  * @module
  */
 
+import { define_route } from '#lib/http/route_spec.ts';
+import { stub_handler } from '#lib/testing/stubs.ts';
 import { assert, beforeAll, describe } from 'vitest';
 import { loose_object, object, string } from '@fuzdev/fuz_schema/schema.ts';
 
@@ -21,17 +23,17 @@ describe('a 404 definition the stub body does not satisfy', () => {
 			create_app_surface_spec({
 				middleware_specs: [],
 				route_specs: [
-					{
+					define_route({
 						method: 'POST',
 						path: '/fuz_strict_things/:id',
 						auth: { account: 'none', actor: 'none' },
-						handler: (c) => c.json(null),
+						handler: stub_handler,
 						description: 'A thing whose 404 names the resource',
 						params: object({ id: Uuid }),
 						input: object({ name: string }),
 						output: loose_object({}),
 						errors: [rest_error(404, 'fuz_strict_thing_not_found', { resource: string })]
-					}
+					})
 				]
 			}),
 		roles: []

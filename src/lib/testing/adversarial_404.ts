@@ -15,6 +15,8 @@ import './assert_dev_env.ts';
 import { test, assert, describe } from 'vitest';
 
 import type { RouteSpec } from '../http/route_spec.ts';
+import type { RestErrorDef } from '../http/error_schemas.ts';
+import { route_fail } from '../http/route_result.ts';
 import { format_route_key } from '../http/surface_query.ts';
 import { is_null_schema } from '../http/schema_helpers.ts';
 import { assert_error_schema_valid } from './assertions.ts';
@@ -48,7 +50,7 @@ export const describe_adversarial_404 = (options: AdversarialTestOptions): void 
 	}
 
 	// Find testable routes: params + a 404 definition of the route's own
-	const testable: Array<{ key: string; error_code: string; spec: RouteSpec }> = [];
+	const testable: Array<{ key: string; not_found: RestErrorDef; spec: RouteSpec }> = [];
 	for (const route of surface.routes) {
 		if (route.params_schema === null) continue;
 		if (!route.error_schemas || !('404' in route.error_schemas)) continue;
@@ -60,29 +62,33 @@ export const describe_adversarial_404 = (options: AdversarialTestOptions): void 
 		const not_found = spec.errors?.find((def) => def.status === 404);
 		if (!not_found) continue;
 
-		testable.push({ key, error_code: not_found.code, spec });
+		testable.push({ key, not_found, spec });
 	}
 
 	if (testable.length === 0) return;
 
 	describe('adversarial 404 response validation', () => {
 		// Create stub specs: replace handlers for testable routes with 404 stubs
-		const error_code_by_key: Map<string, string> = new Map();
+		const not_found_by_key: Map<string, RestErrorDef> = new Map();
 		for (const entry of testable) {
-			error_code_by_key.set(entry.key, entry.error_code);
+			not_found_by_key.set(entry.key, entry.not_found);
 		}
 		const stub_specs = route_specs.map((spec): RouteSpec => {
-			const error_code = error_code_by_key.get(format_route_key(spec));
-			if (!error_code) return spec;
+			const not_found = not_found_by_key.get(format_route_key(spec));
+			if (!not_found) return spec;
 			return {
 				...spec,
-				handler: (c) => c.json({ error: error_code }, 404)
+				// the code alone, `{error}` at 404: a stub has no fields to give
+				handler: () =>
+					// eslint-disable-next-line @typescript-eslint/no-generated-empty-object-type
+					route_fail(not_found as RestErrorDef<number, string, Record<never, never>>)
 			};
 		});
 
 		const apps = create_auth_test_apps(stub_specs, roles);
 
-		for (const { key, error_code, spec } of testable) {
+		for (const { key, not_found, spec } of testable) {
+			const error_code = not_found.code;
 			test(key, async () => {
 				const route = surface.routes.find((r) => format_route_key(r) === key)!;
 				const app = select_auth_app(apps, route.auth);

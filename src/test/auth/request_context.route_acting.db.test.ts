@@ -34,7 +34,8 @@ import { query_create_actor } from '#lib/auth/account_queries.ts';
 import { require_request_context } from '#lib/auth/request_context.ts';
 import { ActingActor } from '#lib/http/auth_shape.ts';
 import { ERROR_ACTOR_REQUIRED, ERROR_INVALID_REQUEST_BODY } from '#lib/http/error_schemas.ts';
-import { get_route_input, type RouteSpec } from '#lib/http/route_spec.ts';
+import { define_route, get_route_input, type RouteSpec } from '#lib/http/route_spec.ts';
+import { route_ok } from '#lib/http/route_result.ts';
 
 import { describe_db } from '../auth_db_default.ts';
 
@@ -50,7 +51,7 @@ const ActingEchoInput = z.strictObject({ acting: ActingActor, note: z.string() }
  * input validation read the same body.
  */
 const create_route_specs = (): Array<RouteSpec> => [
-	{
+	define_route({
 		method: 'POST',
 		path: ACTING_PATH,
 		auth: { account: 'required', actor: 'required' },
@@ -61,9 +62,9 @@ const create_route_specs = (): Array<RouteSpec> => [
 		handler: (c) => {
 			const ctx = require_request_context(c);
 			const input = get_route_input(c, ActingEchoInput);
-			return c.json({ actor_id: ctx.actor?.id ?? null, note: input.note });
+			return route_ok({ actor_id: ctx.actor?.id ?? null, note: input.note });
 		}
-	}
+	})
 ];
 
 describe_db('request_context — acting on a mutation body', (get_db) => {

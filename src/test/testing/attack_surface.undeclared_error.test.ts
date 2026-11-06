@@ -13,6 +13,8 @@ import { literal, loose_object } from '@fuzdev/fuz_schema/schema.ts';
 
 import { describe_adversarial_auth } from '#lib/testing/attack_surface.ts';
 import { create_app_surface_spec } from '#lib/http/surface.ts';
+import { define_route } from '#lib/http/route_spec.ts';
+import { route_raw } from '#lib/http/route_result.ts';
 
 const ROUTE = 'GET /api/teapot';
 
@@ -40,15 +42,23 @@ describe('a handler answering an error its route does not declare', () => {
 			create_app_surface_spec({
 				middleware_specs: [],
 				route_specs: [
-					{
+					define_route({
 						method: 'GET',
 						path: '/api/teapot',
 						auth: { account: 'required', actor: 'none' },
-						handler: (c) => c.json({ error: 'teapot' }, 418),
+						// a JSON error no definition declares: answered raw, as the types
+						// let no failure through undeclared
+						handler: () =>
+							route_raw(
+								new Response(JSON.stringify({ error: 'teapot' }), {
+									status: 418,
+									headers: { 'Content-Type': 'application/json' }
+								})
+							),
 						description: 'Answers a status no definition declares.',
 						input: literal(null),
 						output: loose_object({})
-					}
+					})
 				]
 			}),
 		roles: []
