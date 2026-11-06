@@ -417,8 +417,8 @@ or Postgres and runs in the `cross-ts` CI job.
 - `assert_surface_deterministic(build_surface)` — build twice, `deepStrictEqual` results; catches nondeterminism in surface generation.
 - `assert_only_expected_public_routes(surface, list)` — bidirectional: no unexpected public routes, no missing expected ones. Format: `['GET /health', 'POST /api/account/login']`.
 - `assert_full_middleware_stack(surface, prefix, mws)` — every route under `prefix` has exactly `mws` as its middleware chain.
-- `get_route_error_schema(lookup, route, status)` — reads the route's error map (`lookup` is `AppSurfaceSpec.route_errors`) at a status, a fuz_schema schema.
-- `assert_error_schema_valid(lookup, route, status, body)` — assert the route declares the status and the body's `error` code at it (a definition in its map's `defs`), and the body parses against the status's schema (`parse_any`); a mismatch throws an `Error` carrying the issues. Every adversarial refusal runs through it.
+- `get_route_error_schema(lookup, route, status)` — reads the route's error map (`lookup` is `AppSurfaceSpec.route_error_maps`) at a status, a fuz_schema schema.
+- `assert_error_schema_valid(lookup, route, status, body)` — assert the route declares the status, and the body parses against the status's schema (`parse_any`), a union of its definitions' `literal(code)` bodies, so a code the route doesn't declare at the status fails the parse; a mismatch throws an `Error` carrying the issues. Every adversarial refusal runs through it.
 - `assert_error_response_declared(errors, jsonrpc, response, label)` — a JSON error response (400 and up) is one the route's map declares, by `check_route_error` (the DEV error check's rule: 500 `internal_error` / 503 `service_unavailable` always accepted, a JSON-RPC envelope on a `jsonrpc` route skipped, a success or non-JSON response passing); what the attack-surface suite's `correct auth passes guard` holds each answer to.
 
 ### `surface_invariants.ts` — structural + policy invariants
@@ -432,10 +432,10 @@ Structural invariants (options-free, universal):
 - `assert_query_routes_declare_400` — every route with query has 400.
 - `assert_descriptions_present` — every route has a non-empty description.
 - `assert_no_duplicate_routes` — no duplicate method+path pairs.
-- `assert_middleware_errors_propagated` — every middleware-declared error status appears on every applicable route.
+- `assert_middleware_errors_propagated` — every middleware-declared error status appears on every applicable route. Holds by construction on a generated surface (the route error map unions the layers); it checks a snapshot or a hand-built surface.
 - `assert_error_codes_specific` — every declared error body (each union branch, routes and middleware) has an `error` that is a `const` or an `enum` — a definition built by `rest_error`; the one tightness invariant.
 - `assert_error_codes_well_formed` — every declared `error` code matches `REST_ERROR_CODE_PATTERN` (`^[a-z][a-z0-9_]*$`): a code, never prose, which goes in `message`.
-- `assert_error_code_status_consistency` — the same `z.literal()` error code never appears at two different HTTP statuses.
+- `assert_error_code_status_consistency` — the same `const` error code (a definition's `literal`) never appears at two different HTTP statuses, read through every `anyOf` / `oneOf` branch.
 
 RPC / WS structural invariants (options-free, apply over `surface.rpc_endpoints`
 
@@ -468,11 +468,11 @@ Aggregate runners (called by the standard attack-surface suite):
 ### `error_coverage.ts` — reachability tracking
 
 `ErrorCoverageCollector` tracks which declared error paths get exercised:
-each code of each route's error map (`resolve_route_errors`), one path per
-(status, code), read from its definitions. `new ErrorCoverageCollector(route_errors?)`
-takes the maps (`AppSurfaceSpec.route_errors`, middleware included); without
+each code of each route's error map (`resolve_route_error_map`), one path per
+(status, code), read from its definitions. `new ErrorCoverageCollector(route_error_maps?)`
+takes the maps (`AppSurfaceSpec.route_error_maps`, middleware included); without
 them a route's own map is read. The standard suites pass
-`surface_source.route_errors`.
+`surface_source.route_error_maps`.
 Observations live in a `Set<string>` keyed by `"METHOD /spec-path:STATUS"` or
 `"METHOD /spec-path:STATUS:CODE"` — the two shapes coexist and a status-only
 observation satisfies the "any-code" coverage rule for all declared codes at
@@ -502,7 +502,7 @@ naming it.
 - `detect_format(field_schema)` — `detect_json_schema_format` over `to_field_json_schema`: the `format`, `'pattern'` for a regex, or `null`.
 - `generate_valid_value(field, field_schema)` — base-type switch producing a valid sample (UUIDs → nil UUID, strings → `'xxxxxxxxxx'`, numbers → `1`, objects → `generate_valid_object` against the field schema, so a nested refinement is satisfied too, enums → first entry, records → `{}`, a void field → `undefined`, etc.). For branded-string refinements, walks a fallback chain synthesized from the `pattern` string the JSON Schema representation exposes: fixed-length hex (`^[0-9a-f]{N}$` — blake3 / sha256 / md5 digests; `0`.repeat(N)), prefix-lengthed slug (`^<prefix>_[A-Za-z0-9_-]{N}$` — `ApiTokenId`-style ids; `<prefix>_` + `x`.repeat(N)), absolute path prefix, URL prefix, two `/`-joined segments (an `owner/name` slug). First candidate the field accepts is used.
 - `generate_valid_string_param(field, field_schema)` — a string a URL-sourced field (route param, query value) accepts: the nil UUID for a UUID field, else the first of `test_value`, the generated valid value as a string, `1`, `0`, `true`, `false`, the field's JSON Schema `default` or lower bound as a string (a preprocessed integer whose minimum is above one) and a synthesized string the field accepts; `null` when none does. The params and query case generators build their base from it.
-- `resolve_valid_path(path, params_schema?)` — swaps `:param` for a value the params schema accepts. Prefers `test_<name>` wherever the field schema admits it (the param name keeps failure messages readable); otherwise a UUID param takes the nil UUID and anything else is synthesized from the schema, percent-encoded. A synthesized value containing `/` is refused (it would route elsewhere) and falls back to `test_<name>`.
+- `resolve_valid_path(path, params_schema?)` — swaps each whole param segment (`:name`, `:name{re}`, optional or not, read as Hono reads a template: `split_route_template` / `parse_route_param`) for a value the params schema accepts; a `:` inside a literal segment (`files:upload`) stays. Prefers `test_<name>` wherever the field schema admits it (the param name keeps failure messages readable); otherwise a UUID param takes the nil UUID and anything else is synthesized from the schema, percent-encoded. A synthesized value containing `/` is refused (it would route elsewhere) and falls back to `test_<name>`.
 - `to_route_content_type(route)` — the `Content-Type` a well-formed request to the route sends: `application/json`, or `application/octet-stream` for a `raw_body` route. Every `POST` route refuses anything else with 415 before its other gates, so every probe in the harnesses (auth, params and query fuzz, 404, data exposure, round trip) sends it, body or not.
 - `generate_valid_object(object_schema, schema) => {value, result}` — required and defaulted fields; when `schema` (refinements included) refuses those, each optional field alone in declaration order, the first that parses; failing that, the optional fields added cumulatively until it parses. Covers a `.refine()` over optional fields (at least one of, exactly one of, both of) at any depth, and, where one optional field suffices, keeps the others (an `acting` declared first) out. Returns the last `parse_any` result (`GeneratedObject`) and leaves the throw to the caller, which renders its issues with `format_issues` (`schema_issues.ts`).
 - `generate_valid_object_with_field(object_schema, schema, base, field)` — a valid object carrying `field`, built from the valid `base`: `base` itself when it carries the field; else the field joins `base`, with the optional fields `base` omits filled as `generate_valid_object` fills them (a pair rule: `scope_kind` needs `scope_id`); failing that, the field replaces `base`'s optional fields, refilled around it (exactly one of: adding `slug` drops `id`). `null` when no object the generator builds carries the field. The body a single-fault case on a field the base omits changes.
@@ -512,7 +512,7 @@ naming it.
 
 - `find_route_spec(specs, method, path)` — the first spec in list (mount) order whose method and path template match, as Hono dispatches (the hono-free `find_mounted_route`; the DEV check reads Hono's own router), `HEAD` read as `GET`, the path read as Hono reads it (pathname, percent-decoded); a template passed as the path (a segment that is `*` or starts with `:`) finds its own spec first, outranking mount order.
 - `find_auth_route(specs, suffix, method)` — suffix-ending match for REST auth routes; decouples tests from consumer prefix. `suffix` is typed as `RestAuthRouteSuffix` and throws at runtime on unknown values (only login/logout/password/verify/signup/bootstrap remain on REST).
-- `assert_response_matches_spec(specs, method, path, response, route_errors?)` — 2xx → validates against `spec.output`; an error status (400 and up) → `check_route_error` against the route's error map — the one in `route_errors` (`AppSurfaceSpec.route_errors`, middleware included), else the route's own: a status the map lacks throws (`Undeclared error status (S): METHOD path: …`), as does a body off its schema, with the DEV error check's exemptions (500 `internal_error`, 503 `service_unavailable`, a JSON-RPC envelope on a `jsonrpc` route). Non-JSON responses allowed only when no schema applies. The round trips and `ErrorCoverageCollector.assert_and_record` run through it.
+- `assert_response_matches_spec(specs, method, path, response, route_error_maps?)` — 2xx → validates against `spec.output`; an error status (400 and up) → `assert_error_response_declared` against the route's error map — the one in `route_error_maps` (`AppSurfaceSpec.route_error_maps`, middleware included), else the route's own: a status the map lacks throws (`Undeclared error status (S): METHOD path: …`), as does a body off its schema, with the DEV error check's exemptions (500 `internal_error`, 503 `service_unavailable`, a JSON-RPC envelope on a `jsonrpc` route). Non-JSON responses allowed only when no schema applies. The round trips and `ErrorCoverageCollector.assert_and_record` run through it.
 - `assert_no_error_info_leakage(body, context)` — rejects field-name patterns (`stack`, `trace`, `sql`, …) + value patterns (`node_modules`, stack-like `at …`, `.ts:NN`).
 - `assert_rate_limit_retry_after_header(response, body)` — `Retry-After` numeric header equals `Math.ceil(body.retry_after)`.
 - `sensitive_field_blocklist` — `['password_hash', 'token_hash']`; never in any response body.
@@ -577,7 +577,7 @@ rather than `ERROR_INVALID_JSON_BODY`.
 a 404 definition of its own in `errors`, replaces the handler with a stub
 returning `{error: <code>}` (the first 404 definition's code), fires with
 nil-UUID params, asserts 404, a code the route error map declares at 404, and a body its 404
-accepts (`assert_error_schema_valid`, `AppSurfaceSpec.route_errors`). No DB needed.
+accepts (`assert_error_schema_valid`, `AppSurfaceSpec.route_error_maps`). No DB needed.
 
 ### `adversarial_headers.ts` — header injection suite
 
@@ -802,7 +802,7 @@ as `'/path method_name'`, and pushed WS params as `'/path method_name params'`
 
 Two test groups:
 
-1. IP rate limiting on login — fires `max_attempts + 1` requests; last should be 429 with `RateLimitError` body + valid `Retry-After` header.
+1. IP rate limiting on login — fires `max_attempts + 1` requests; last should be 429 with a `REST_RATE_LIMIT_EXCEEDED` body + valid `Retry-After` header.
 2. Per-account rate limiting on login — same username exhausts the bucket; a different username is not blocked.
 
 No bearer group — the bearer path carries no rate limiter on either spine

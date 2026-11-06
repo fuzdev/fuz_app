@@ -4,13 +4,14 @@
  * Defines `ERROR_*` constants (single source of truth for machine-parseable
  * error codes, which double as JSON-RPC `data.reason`s), the per-code REST
  * error definitions (`rest_error`, one `REST_*` per code a route or middleware
- * answers, each with its HTTP status and body schema), the standard error
- * shapes as `@fuzdev/fuz_schema` schemas, a type for error schema maps, and
- * `derive_route_errors`, the definitions the framework answers a route with
- * from its method, auth requirement, and input slots.
+ * answers, each with its HTTP status and its body as a `@fuzdev/fuz_schema`
+ * schema), a type for error schema maps, and `derive_route_errors`, the
+ * definitions the framework answers a route with from its method, auth
+ * requirement, and input slots.
  *
- * Used in `RouteSpec.errors` and `MiddlewareSpec.errors` for surface
- * introspection and DEV-mode validation.
+ * Used in `RouteSpec.errors` and `MiddlewareSpec.errors`, which each route's
+ * error map (`http/route_errors.ts`) unions with the derived definitions for
+ * the surface, the DEV error check, and the test helpers.
  *
  * @module
  */
@@ -22,7 +23,6 @@ import {
 	loose_object,
 	min_value,
 	number,
-	one_of,
 	optional,
 	pipe,
 	string,
@@ -491,10 +491,13 @@ export const REST_INVALID_QUERY_PARAMS = rest_error(400, ERROR_INVALID_QUERY_PAR
 });
 // 400: the body limit
 export const REST_INVALID_CONTENT_LENGTH = rest_error(400, ERROR_INVALID_CONTENT_LENGTH);
-// 400: the authorization phase; `available` lists the account's actors
+// 400 and 500: the authorization phase, which resolves the acting actor on a
+// route whose `auth.actor` is not `'none'` (`derive_route_errors`)
+/** No `acting` selector on a multi-actor account; `available` lists the account's actors. */
 export const REST_ACTOR_REQUIRED = rest_error(400, ERROR_ACTOR_REQUIRED, {
 	available: array(loose_object({ id: string, name: string }))
 });
+/** The `acting` selector names an actor that isn't the account's. */
 export const REST_ACTOR_NOT_ON_ACCOUNT = rest_error(400, ERROR_ACTOR_NOT_ON_ACCOUNT);
 // 400: the table browser's row `DELETE`
 export const REST_TABLE_NOT_DELETABLE = rest_error(400, ERROR_TABLE_NOT_DELETABLE);
@@ -513,12 +516,28 @@ export const REST_INVALID_CREDENTIALS = rest_error(401, ERROR_INVALID_CREDENTIAL
 export const REST_INVALID_TOKEN = rest_error(401, ERROR_INVALID_TOKEN);
 
 // 403: the auth gates; each names what the route demanded, not what the caller holds
+/**
+ * The role gate's refusal (`require_role`, and the dispatcher's): the actor
+ * holds none of the route's `auth.roles`. `required_roles` is the whole
+ * disjunction, so a client can say "requires admin or steward".
+ */
 export const REST_INSUFFICIENT_PERMISSIONS = rest_error(403, ERROR_INSUFFICIENT_PERMISSIONS, {
 	required_roles: meta(array(string), { readOnly: true })
 });
+/**
+ * The credential-type gate's refusal (`require_credential_types`, and the
+ * dispatcher's): the request's credential type is not in the route's
+ * `auth.credential_types`, which `required_credential_types` carries.
+ */
 export const REST_CREDENTIAL_TYPE_REQUIRED = rest_error(403, ERROR_CREDENTIAL_TYPE_REQUIRED, {
 	required_credential_types: meta(array(string), { readOnly: true })
 });
+/**
+ * The token-scope gate's refusal (`require_token_scope`, and
+ * `token_scope_surface_denial`): a narrowed api token reaches a capability its
+ * scope does not admit. `required_scope` is the route's `auth.required_scope`,
+ * verbatim. See `docs/security.md` §Token scoping.
+ */
 export const REST_TOKEN_SCOPE_REQUIRED = rest_error(403, ERROR_TOKEN_SCOPE_REQUIRED, {
 	required_scope: string
 });
@@ -535,11 +554,14 @@ export const REST_TABLE_NOT_FOUND = rest_error(404, ERROR_TABLE_NOT_FOUND);
 export const REST_ROW_NOT_FOUND = rest_error(404, ERROR_ROW_NOT_FOUND);
 
 // 409
+/** A delete blocked by rows that reference the row. */
 export const REST_FOREIGN_KEY_VIOLATION = rest_error(409, ERROR_FOREIGN_KEY_VIOLATION);
 export const REST_SIGNUP_CONFLICT = rest_error(409, ERROR_SIGNUP_CONFLICT);
 
 // 413, 415
+/** The body limit's refusal: the request body exceeds the size limit. */
 export const REST_PAYLOAD_TOO_LARGE = rest_error(413, ERROR_PAYLOAD_TOO_LARGE);
+/** A `POST` route refuses the request's `Content-Type`. */
 export const REST_UNSUPPORTED_CONTENT_TYPE = rest_error(415, ERROR_UNSUPPORTED_CONTENT_TYPE);
 
 /** The rate limiter's refusal; `retry_after` is in seconds, `Retry-After` its ceiling. */
@@ -551,7 +573,9 @@ export const REST_RATE_LIMIT_EXCEEDED = rest_error(
 );
 
 // 500: the authorization phase, and the catch layer any route can answer with
+/** The account's actors enumerated empty, a signup invariant broken. */
 export const REST_NO_ACTORS_ON_ACCOUNT = rest_error(500, ERROR_NO_ACTORS_ON_ACCOUNT);
+/** The account or actor row was deleted between credential validation and the actor read. */
 export const REST_ACCOUNT_VANISHED = rest_error(500, ERROR_ACCOUNT_VANISHED);
 export const REST_INTERNAL_ERROR = rest_error(500, ERROR_INTERNAL_ERROR);
 
@@ -560,124 +584,6 @@ export const REST_SERVICE_UNAVAILABLE = rest_error(503, ERROR_SERVICE_UNAVAILABL
 export const REST_DATABASE_CONNECTION_FAILED = rest_error(503, ERROR_DATABASE_CONNECTION_FAILED);
 export const REST_SCHEMA_DRIFT = rest_error(503, ERROR_SCHEMA_DRIFT);
 export const REST_DB_UNREACHABLE = rest_error(503, ERROR_DB_UNREACHABLE);
-
-// --- Standard error shapes ---
-
-/**
- * Input refusal — returned when params / query / body fails its schema, or
- * when the request body is not valid JSON.
- *
- * `error` is one of the four input codes the framework emits.
- * `issues` carries the validation issues as `WireIssue`s, whichever schema
- * library refused, for diagnostic display on the three schema-failure cases
- * (`invalid_request_body`, `invalid_route_params`, `invalid_query_params`).
- * The field is optional: the `invalid_json_body` case (request body parse
- * failure or non-object root) emits no `issues`, and the schema-failure cases
- * emit them only in development — production omits them (via `dev_only`) so
- * error responses don't leak input-schema structure to callers.
- *
- * One object over the four codes rather than a union of their definitions, so
- * its surface entry is one `enum`.
- */
-export const InvalidInputError = loose_object({
-	error: one_of([
-		REST_INVALID_REQUEST_BODY.code,
-		REST_INVALID_JSON_BODY.code,
-		REST_INVALID_ROUTE_PARAMS.code,
-		REST_INVALID_QUERY_PARAMS.code
-	]),
-	issues: INPUT_ISSUES
-});
-export type InvalidInputError = Infer<typeof InvalidInputError>;
-
-/**
- * Permission error — returned by `require_role()` and the dispatcher's
- * post-authorization role gate when the actor's role_grants don't include any
- * of the route's `auth.roles`.
- *
- * `required_roles` carries the full disjunction the route declared
- * (`auth.roles` from the new flat-record shape). Single-role specs surface
- * as a one-element array; multi-role disjunctions show every admittable
- * role so clients can render targeted copy ("requires admin or steward").
- */
-export const PermissionError = REST_INSUFFICIENT_PERMISSIONS.schema;
-export type PermissionError = Infer<typeof PermissionError>;
-
-/**
- * Credential-type error — returned by the dispatcher's post-authorization
- * credential gate (and the `require_credential_types` REST middleware) when
- * the request's credential type isn't in the route's
- * `auth.credential_types` allowlist.
- *
- * `required_credential_types` carries what the route declared
- * (`['daemon_token']` for keeper; future gates carry their own labels).
- * Symmetric with `PermissionError`'s `required_roles`: clients see what
- * the route demanded, not what their credential is.
- */
-export const CredentialTypeRequiredError = REST_CREDENTIAL_TYPE_REQUIRED.schema;
-export type CredentialTypeRequiredError = Infer<typeof CredentialTypeRequiredError>;
-
-/**
- * Token-scope error — returned by the `require_token_scope` guard (and its
- * direct-call twin `token_scope_surface_denial`) when a **narrowed** api token
- * reaches a capability its scope does not admit. See
- * `docs/security.md` §Token scoping.
- *
- * `required_scope` carries the capability string the route demands, verbatim
- * from its `auth.required_scope` (`surface:audit_stream`, …) — matching the Rust
- * `token_scope_surface_denied_response` and the dispatcher's own per-method
- * denial. Third in the family with `PermissionError` and
- * `CredentialTypeRequiredError` — each names what the route demanded rather
- * than what the caller holds.
- */
-export const TokenScopeRequiredError = REST_TOKEN_SCOPE_REQUIRED.schema;
-export type TokenScopeRequiredError = Infer<typeof TokenScopeRequiredError>;
-
-/** Rate limit error — returned when a rate limiter rejects the request. */
-export const RateLimitError = REST_RATE_LIMIT_EXCEEDED.schema;
-export type RateLimitError = Infer<typeof RateLimitError>;
-
-/** Payload too large error — returned when the request body exceeds the size limit. */
-export const PayloadTooLargeError = REST_PAYLOAD_TOO_LARGE.schema;
-export type PayloadTooLargeError = Infer<typeof PayloadTooLargeError>;
-
-/** Unsupported content type error — returned when a `POST` route refuses the request's `Content-Type`. */
-export const UnsupportedContentTypeError = REST_UNSUPPORTED_CONTENT_TYPE.schema;
-export type UnsupportedContentTypeError = Infer<typeof UnsupportedContentTypeError>;
-
-/** Foreign key violation error — returned when a delete is blocked by references. */
-export const ForeignKeyError = REST_FOREIGN_KEY_VIOLATION.schema;
-export type ForeignKeyError = Infer<typeof ForeignKeyError>;
-
-/**
- * Authorization-phase failure shapes. Surfaced when the dispatcher's
- * `apply_authorization_phase` rejects a request before the handler runs —
- * the route is acting-aware (input declares `acting?: ActingActor` or
- * auth requires role_grants), but actor resolution failed.
- *
- * 400: `actor_required` (with `available[]`) for unspecified-actor on
- * a multi-actor account; `actor_not_on_account` for a supplied actor
- * id that doesn't belong to the authenticated account.
- *
- * 500: `no_actors_on_account` for a signup-invariant violation (the
- * actor list enumerated empty); `account_vanished` for a torn-read
- * race (account/actor row deleted between credential validation and
- * the dispatcher's follow-up read).
- *
- * Derived by `derive_route_errors` when `auth.actor !== 'none'` so the
- * route's error map matches what the dispatcher actually emits.
- */
-export const ActorRequiredError = REST_ACTOR_REQUIRED.schema;
-export type ActorRequiredError = Infer<typeof ActorRequiredError>;
-
-export const ActorNotOnAccountError = REST_ACTOR_NOT_ON_ACCOUNT.schema;
-export type ActorNotOnAccountError = Infer<typeof ActorNotOnAccountError>;
-
-export const NoActorsOnAccountError = REST_NO_ACTORS_ON_ACCOUNT.schema;
-export type NoActorsOnAccountError = Infer<typeof NoActorsOnAccountError>;
-
-export const AccountVanishedError = REST_ACCOUNT_VANISHED.schema;
-export type AccountVanishedError = Infer<typeof AccountVanishedError>;
 
 /**
  * Error schema map — an HTTP status to the schema of every body a route
@@ -705,7 +611,7 @@ export interface DeriveRouteErrorsOptions {
  * what the route's own middleware can emit.
  *
  * Route handlers declare additional definitions via `RouteSpec.errors`; the
- * route's error map (`resolve_route_errors`) is the union of these, the
+ * route's error map (`resolve_route_error_map`) is the union of these, the
  * applying middleware's, and the route's own.
  *
  * Derivation rules:

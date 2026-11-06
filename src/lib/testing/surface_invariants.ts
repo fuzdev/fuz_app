@@ -154,6 +154,11 @@ export const assert_no_duplicate_routes = (surface: AppSurface): void => {
 /**
  * Every applicable middleware that declares errors must have those status codes
  * present in the route's `error_schemas`.
+ *
+ * Holds by construction for a surface `generate_app_surface` builds: each
+ * route's error map (`resolve_route_error_map`) already unions every applying
+ * layer's definitions. It earns its place only on a surface built another
+ * way — a committed snapshot read back, or one written by hand.
  */
 export const assert_middleware_errors_propagated = (surface: AppSurface): void => {
 	const middleware_with_errors: Array<AppSurfaceMiddleware> = surface.middleware.filter(
@@ -250,19 +255,15 @@ const each_error_branch = (
 };
 
 /**
- * The same `z.literal()` error code should not appear at different HTTP status codes
- * across routes.
+ * One error code at one HTTP status: the same code declared at two statuses
+ * across the surface's routes and middleware layers fails — e.g.
+ * `invalid_credentials` at both 401 and 403 would be a bug.
  *
- * Extracts `const` values from error schema `error` properties (which correspond to
- * `z.literal()` in the Zod source). Walks union branches (`anyOf` from `z.union`,
- * `oneOf` from `z.discriminatedUnion`) so literal codes nested inside merged unions
- * (e.g. validation 400 + actor-resolution 400) are still tracked. Flags when the
- * same literal appears at different status codes — e.g., `ERROR_INVALID_CREDENTIALS`
- * at both 401 and 403 would be a bug.
- *
- * Only checks `const` values (literal schemas). Generic `z.string()` schemas
- * (which produce `{type: 'string'}`) and `z.enum()` schemas are ignored — the
- * literal-only narrow keeps the check unambiguous.
+ * Reads each body's `error` `const` (what `rest_error` writes), through every
+ * branch of an `anyOf` or `oneOf` — the surface writes a status with several
+ * definitions as an `anyOf` — and nested unions within them. An `error` with
+ * no `const` (an `enum`, a bare string) is not read; `assert_error_codes_specific`
+ * refuses the bare string.
  */
 export const assert_error_code_status_consistency = (surface: AppSurface): void => {
 	// Map from error code literal → Set of status codes where it appears
@@ -322,9 +323,9 @@ const get_error_property = (schema: unknown): Record<string, unknown> | null => 
  *
  * The surface writes a status with several definitions as an `anyOf`, and a
  * `oneOf` from a JSON Schema written another way is read the same; both are
- * union-shaped for code extraction. Nested unions are NOT flattened
- * by `toJSONSchema`, so every caller must recurse through the returned
- * branches. Returns the branch array or `null` for non-union schemas.
+ * union-shaped for code extraction. Nested unions are not flattened, so
+ * every caller must recurse through the returned branches. Returns the
+ * branch array or `null` for non-union schemas.
  */
 const get_union_branches = (schema: unknown): Array<unknown> | null => {
 	if (typeof schema !== 'object' || schema === null) return null;
@@ -338,11 +339,11 @@ const get_union_branches = (schema: unknown): Array<unknown> | null => {
  * Extract every `const` value from a JSON Schema error property, walking
  * union branches.
  *
- * Looks for `schema.properties.error.const` — the JSON Schema representation
- * of `z.literal('some_error_code')` — and recurses into `anyOf` / `oneOf`
- * branches so literals nested inside `z.union` or `z.discriminatedUnion`
- * are still tracked. Returns an empty array for schemas with no literal
- * codes (`z.enum`, `z.string`, non-object schemas).
+ * Looks for `schema.properties.error.const` — what a definition's
+ * `literal(code)` writes — and recurses into `anyOf` / `oneOf` branches, so
+ * a code in a status of several definitions is still tracked. Returns an
+ * empty array for schemas with no `const` code (an `enum`, a bare string,
+ * a non-object schema).
  */
 const extract_error_consts = (schema: unknown): Array<string> => {
 	const branches = get_union_branches(schema);
@@ -647,8 +648,9 @@ export const assert_keeper_routes_under_prefix = (
  *
  * Catches schema/surface generation bugs: missing 401/403/400 declarations,
  * empty descriptions, duplicate routes, middleware-injected error codes
- * unpropagated to routes, an error that doesn't name its code or whose code
- * is not one, and error codes appearing at multiple statuses.
+ * unpropagated to routes (by construction on a generated surface, so a
+ * snapshot's check), an error that doesn't name its code or whose code is
+ * not one, and error codes appearing at multiple statuses.
  *
  * @throws AssertionError on the first invariant violation; the message names
  *   the offending route and the missing/inconsistent field.

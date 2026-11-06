@@ -4,7 +4,7 @@
  * (`assert_response_matches_spec`) share.
  *
  * A JSON body at an error status (400 and up) is declared when the route's
- * error map (`resolve_route_errors`) has that status and the body parses
+ * error map (`resolve_route_error_map`) has that status and the body parses
  * against it. Three exemptions: a 500 `internal_error` and a 503
  * `service_unavailable` (`ALWAYS_ACCEPTED_ERRORS`), which the catch layers
  * answer on any route and no route declares, and, on a `jsonrpc` route, a
@@ -12,7 +12,8 @@
  * non-JSON response, by `is_json_response`, is not checked at all.
  *
  * Also the hono-free route lookup the test helpers run (`find_route_spec`):
- * a route's Hono path template compiled to a `RegExp` (`compile_route_path`),
+ * a route's Hono path template read segment by segment (`split_route_template`,
+ * `parse_route_param`) and compiled to a `RegExp` (`compile_route_path`),
  * and the first route in mount order matching a request, `HEAD` read as
  * `GET` (`find_mounted_route`). The DEV check, on the Hono side, looks routes
  * up with Hono's own router (`create_route_lookup`); the two are pinned
@@ -31,7 +32,7 @@ import {
 	type RestErrorDef
 } from './error_schemas.ts';
 import { is_jsonrpc_error_response } from './jsonrpc_helpers.ts';
-import type { RouteErrors } from './schema_helpers.ts';
+import type { RouteErrorMap } from './route_errors.ts';
 import { parse_any, type AnyIssue } from '../schema_issues.ts';
 
 /**
@@ -78,7 +79,7 @@ export type RouteErrorCheck =
  * @returns `ok`, or why not: no definition at the status, or a body off the status's schema
  */
 export const check_route_error = (
-	errors: RouteErrors,
+	errors: RouteErrorMap,
 	status: number,
 	body: unknown,
 	jsonrpc: boolean
@@ -122,11 +123,38 @@ const escape_regexp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]
 /** A param segment as Hono reads one: `:name`, or `:name{re}` (`getPattern`). */
 const PARAM_SEGMENT = /^:([^{}]+)(?:\{(.+)\})?$/;
 
+/** A param segment of a route template, as `parse_route_param` reads it. */
+export interface RouteParam {
+	/** The param's name, the key of its value in the route's `params`. */
+	readonly name: string;
+	/** The `re` of `:name{re}`, or `null` for a bare `:name`. */
+	readonly pattern: string | null;
+	/** Whether the segment ends in `?`, an optional param. */
+	readonly optional: boolean;
+}
+
+/**
+ * Read a template segment as Hono reads a param: a whole segment `:name` or
+ * `:name{re}`, either with a trailing `?`. A segment that doesn't start with
+ * `:` is literal text, a `:` inside it (`files:upload`) included.
+ *
+ * @param segment - one segment of a template split by `split_route_template`
+ * @returns the param, or `null` for a segment that is not one
+ */
+export const parse_route_param = (segment: string): RouteParam | null => {
+	const optional = segment.startsWith(':') && segment.endsWith('?');
+	const param = PARAM_SEGMENT.exec(optional ? segment.slice(0, -1) : segment);
+	return param ? { name: param[1]!, pattern: param[2] ?? null, optional } : null;
+};
+
 /**
  * A template's segments, split on `/` with each `{…}` group kept whole, as
- * Hono's `splitRoutingPath` splits them.
+ * Hono's `splitRoutingPath` splits them; a leading `/` gives no empty first
+ * segment.
+ *
+ * @param template - a route's path template
  */
-const split_route_template = (template: string): Array<string> => {
+export const split_route_template = (template: string): Array<string> => {
 	const groups: Array<[string, string]> = [];
 	const marked = template.replace(/\{[^}]+\}/g, (group, index: number) => {
 		const mark = `@${index}`;

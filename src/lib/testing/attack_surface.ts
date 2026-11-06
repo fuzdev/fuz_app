@@ -36,13 +36,14 @@ import {
 	assert_error_schema_valid,
 	assert_error_response_declared
 } from './assertions.ts';
-import { get_route_errors } from '../http/schema_helpers.ts';
+import { get_route_error_map } from '../http/route_errors.ts';
 import type { RouteSpec } from '../http/route_spec.ts';
 import type { AppSurfaceSpec } from '../http/surface.ts';
 import {
 	filter_protected_routes,
 	filter_role_routes,
-	filter_credential_gated_routes
+	filter_credential_gated_routes,
+	format_route_key
 } from '../http/surface_query.ts';
 import {
 	BUILTIN_CREDENTIAL_TYPES,
@@ -57,14 +58,14 @@ import {
 
 /**
  * Build a lookup from `"METHOD /path"` to the route's own `RouteSpec` — the
- * companion of the surface spec's `route_errors`, so a generated request can reach
+ * companion of the surface spec's `route_error_maps`, so a generated request can reach
  * the route's `params` schema and synthesize path segments the route will
  * actually accept.
  */
 const build_route_spec_lookup = (route_specs: Array<RouteSpec>): Map<string, RouteSpec> => {
 	const lookup: Map<string, RouteSpec> = new Map();
 	for (const spec of route_specs) {
-		lookup.set(`${spec.method} ${spec.path}`, spec);
+		lookup.set(format_route_key(spec), spec);
 	}
 	return lookup;
 };
@@ -99,7 +100,7 @@ export interface AdversarialTestOptions {
  */
 export const describe_adversarial_auth = (options: AdversarialTestOptions): void => {
 	const { build, roles } = options;
-	const { surface, route_specs, route_errors } = build();
+	const { surface, route_specs, route_error_maps } = build();
 	const is_skipped = create_route_skip_filter(options.skip_routes);
 	const protected_routes = filter_protected_routes(surface).filter((r) => !is_skipped(r));
 
@@ -111,7 +112,7 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
 	);
 
 	// each route's error map (derived, middleware, and handler-specific), for response validation
-	const error_schema_lookup = route_errors;
+	const error_schema_lookup = route_error_maps;
 
 	// The route's own spec, so a path param with a declared format (a
 	// `blake3:…` fact hash, a `tok_…` id) is synthesized into a value params
@@ -119,7 +120,7 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
 	// before ever reaching the 401 / 403 gate the case is asserting.
 	const spec_lookup = build_route_spec_lookup(route_specs);
 	const test_path = (route: { method: string; path: string }): string =>
-		resolve_valid_path(route.path, spec_lookup.get(`${route.method} ${route.path}`)?.params);
+		resolve_valid_path(route.path, spec_lookup.get(format_route_key(route))?.params);
 
 	const apps = create_auth_test_apps(route_specs, roles);
 	// every probe carries the content type a real client sends, so the
@@ -132,9 +133,9 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
 	describe('adversarial HTTP auth enforcement', () => {
 		describe('unauthenticated → 401', () => {
 			for (const route of protected_routes) {
-				test(`${route.method} ${route.path}`, async () => {
+				test(format_route_key(route), async () => {
 					const res = await apps.public.request(test_path(route), probe_init(route));
-					assert.strictEqual(res.status, 401, `${route.method} ${route.path}`);
+					assert.strictEqual(res.status, 401, format_route_key(route));
 					const body = await res.json();
 					assert.strictEqual(body.error, ERROR_AUTHENTICATION_REQUIRED);
 					assert_error_schema_valid(error_schema_lookup, route, 401, body);
@@ -169,7 +170,7 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
 							const app = apps.by_role.get(wrong_role);
 							if (!app) throw new Error(`No test app for role '${wrong_role}'`);
 							const res = await app.request(test_path(route), probe_init(route));
-							assert.strictEqual(res.status, 403, `${route.method} ${route.path}`);
+							assert.strictEqual(res.status, 403, format_route_key(route));
 							const body = await res.json();
 							assert.strictEqual(body.error, ERROR_INSUFFICIENT_PERMISSIONS);
 							assert.deepStrictEqual(body.required_roles, required_roles);
@@ -181,9 +182,9 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
 
 			describe('authenticated without role → 403', () => {
 				for (const route of role_only_routes) {
-					test(`${route.method} ${route.path}`, async () => {
+					test(format_route_key(route), async () => {
 						const res = await apps.authed.request(test_path(route), probe_init(route));
-						assert.strictEqual(res.status, 403, `${route.method} ${route.path}`);
+						assert.strictEqual(res.status, 403, format_route_key(route));
 						const body = await res.json();
 						assert.strictEqual(body.error, ERROR_INSUFFICIENT_PERMISSIONS);
 						assert.deepStrictEqual(body.required_roles, route.auth.roles ?? []);
@@ -218,7 +219,7 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
 						const res = await apps.by_credential_type
 							.get(refused)!
 							.request(test_path(route), probe_init(route));
-						assert.strictEqual(res.status, 403, `${route.method} ${route.path}`);
+						assert.strictEqual(res.status, 403, format_route_key(route));
 						const body = await res.json();
 						assert.strictEqual(body.error, ERROR_CREDENTIAL_TYPE_REQUIRED);
 						assert.deepStrictEqual(body.required_credential_types, admitted);
@@ -230,7 +231,7 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
 
 		describe('correct auth passes guard', () => {
 			for (const route of protected_routes) {
-				test(`${route.method} ${route.path}`, async () => {
+				test(format_route_key(route), async () => {
 					const res = await select_auth_app(apps, route.auth).request(
 						test_path(route),
 						probe_init(route)
@@ -248,12 +249,12 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
 							.catch(() => null);
 						assert.ok(body?.error, `route not registered: ${route.method} ${route.path}`);
 					}
-					const spec = spec_lookup.get(`${route.method} ${route.path}`)!;
+					const spec = spec_lookup.get(format_route_key(route))!;
 					await assert_error_response_declared(
-						get_route_errors(route_errors, spec),
+						get_route_error_map(route_error_maps, spec),
 						spec.jsonrpc ?? false,
 						res,
-						`${route.method} ${route.path}`
+						format_route_key(route)
 					);
 					// SSE streams need explicit cleanup — the suspended promise keeps the event loop alive.
 					// Only cancel streaming responses; regular JSON bodies don't need it.

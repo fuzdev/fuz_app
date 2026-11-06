@@ -29,7 +29,7 @@ import type { SessionOptions } from '../auth/session_cookie.ts';
 import type { AppServerContext } from '../server/app_server_context.ts';
 import type { RouteSpec } from '../http/route_spec.ts';
 import { RateLimiter } from '../rate_limiter.ts';
-import { RateLimitError } from '../http/error_schemas.ts';
+import { REST_RATE_LIMIT_EXCEEDED } from '../http/error_schemas.ts';
 import { AUTH_MIGRATION_NS } from '../auth/migrations.ts';
 import { create_test_app, type SuiteAppOptions } from './app_server.ts';
 import { create_test_request_headers } from './test_origin.ts';
@@ -81,7 +81,7 @@ export interface RateLimitingTestOptions {
  *
  * Creates 2 test groups:
  * 1. IP rate limiting on login — fires `max_attempts + 1` login requests,
- *    verifies the last returns 429 with a valid `RateLimitError` body.
+ *    verifies the last returns 429 with a valid `REST_RATE_LIMIT_EXCEEDED` body.
  * 2. Per-account rate limiting on login — fires `max_attempts + 1` login
  *    requests with the same username, verifies the last returns 429.
  *
@@ -155,7 +155,7 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 					});
 					assert.strictEqual(blocked_res.status, 429);
 					const body = await blocked_res.json();
-					parse_or_throw(RateLimitError, body);
+					parse_or_throw(REST_RATE_LIMIT_EXCEEDED.schema, body);
 					assert.ok(
 						typeof body.retry_after === 'number' && body.retry_after > 0,
 						'Expected positive retry_after'
@@ -221,7 +221,7 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 					});
 					assert.strictEqual(blocked_res.status, 429);
 					const body = await blocked_res.json();
-					parse_or_throw(RateLimitError, body);
+					parse_or_throw(REST_RATE_LIMIT_EXCEEDED.schema, body);
 					assert.ok(
 						typeof body.retry_after === 'number' && body.retry_after > 0,
 						'Expected positive retry_after'

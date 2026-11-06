@@ -1,6 +1,6 @@
 /**
  * Tests for `get_route_error_schema` and `assert_error_schema_valid` over a
- * lookup of route error maps (`AppSurfaceSpec.route_errors`).
+ * lookup of route error maps (`AppSurfaceSpec.route_error_maps`).
  *
  * @module
  */
@@ -40,7 +40,7 @@ const spec = create_app_surface_spec({
 	]
 });
 const route = spec.surface.routes[0]!;
-const lookup = spec.route_errors;
+const lookup = spec.route_error_maps;
 
 describe('get_route_error_schema', () => {
 	test("returns the route error map's schema at a status", () => {
@@ -61,22 +61,34 @@ describe('assert_error_schema_valid', () => {
 		assert_error_schema_valid(lookup, route, 409, { error: 'gate_refused' });
 	});
 
+	// the status's schema is a union of `literal(code)` bodies, so its parse
+	// alone refuses a code the route doesn't declare there
 	test('fails a code the route does not declare at the status', () => {
 		assert.throws(
 			() => assert_error_schema_valid(lookup, route, 404, { error: 'other' }),
-			'GET /things/:id declares no error code "other" at 404'
+			'error schema mismatch for 404 on GET /things/:id (error "other"): [{"kind":"literal"'
 		);
 		// declared, but at another status
 		assert.throws(
 			() => assert_error_schema_valid(lookup, route, 404, { error: 'thing_taken' }),
-			'GET /things/:id declares no error code "thing_taken" at 404'
+			'error schema mismatch for 404 on GET /things/:id (error "thing_taken"): [{"kind":"literal"'
+		);
+		// a status of several definitions: a code of none of them
+		assert.throws(
+			() => assert_error_schema_valid(lookup, route, 409, { error: 'thing_not_found' }),
+			'error schema mismatch for 409 on GET /things/:id (error "thing_not_found")'
+		);
+		// a code declared at the status, with another definition's fields
+		assert.throws(
+			() => assert_error_schema_valid(lookup, route, 422, { error: 'thing_not_found', field: 'x' }),
+			'error schema mismatch for 422 on GET /things/:id (error "thing_not_found")'
 		);
 	});
 
 	test('throws an Error with the issues on a body off its schema', () => {
 		assert.throws(
 			() => assert_error_schema_valid(lookup, route, 422, { error: 'thing_invalid', field: 1 }),
-			'error schema mismatch for 422 on GET /things/:id: [{"kind":"string","expected":"string","received":"number","path":["field"]}]'
+			'error schema mismatch for 422 on GET /things/:id (error "thing_invalid"): [{"kind":"string","expected":"string","received":"number","path":["field"]}]'
 		);
 	});
 

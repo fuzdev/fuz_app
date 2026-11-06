@@ -119,7 +119,7 @@ Key helpers:
 - `create_session_headers(extra?)` — headers with the bootstrapped session cookie
 - `create_bearer_headers(extra?)` — headers with the bootstrapped Bearer token
 - `create_account({username?, password_value?, roles?})` — create additional accounts for multi-account tests
-- `assert_response_matches_spec(route_specs, method, path, response, route_errors?)` — validate response body against the route's output, or its error map at the status
+- `assert_response_matches_spec(route_specs, method, path, response, route_error_maps?)` — validate response body against the route's output, or its error map at the status
 
 **WASM caching**: the in-memory factories built from one loaded copy of
 `db.ts` share a single WASM instance per driver (pglet-wasm, PGlite) via its

@@ -1,6 +1,7 @@
 /**
- * The REST error schemas — the standard shapes, every `REST_*` definition's
- * body, the route entries built from definitions, and the action manifest —
+ * The REST error schemas — every `REST_*` definition's body, the route
+ * entries built from definitions, the auth and rate-limit enums, and the
+ * action manifest —
  * `@fuzdev/fuz_schema` schemas, held to the Zod schemas they replaced, rebuilt
  * here. Over each schema's valid bodies and every variant of them one edit
  * away (a node replaced by a value of the pool, a key dropped, a key added),
@@ -27,10 +28,6 @@ import { is, string as string_schema, type AnySchema } from '@fuzdev/fuz_schema/
 
 import * as error_schemas from '#lib/http/error_schemas.ts';
 import {
-	AccountVanishedError,
-	ActorNotOnAccountError,
-	ActorRequiredError,
-	CredentialTypeRequiredError,
 	ERROR_ACCOUNT_VANISHED,
 	ERROR_ACTOR_NOT_ON_ACCOUNT,
 	ERROR_ACTOR_REQUIRED,
@@ -46,31 +43,31 @@ import {
 	ERROR_RATE_LIMIT_EXCEEDED,
 	ERROR_TOKEN_SCOPE_REQUIRED,
 	ERROR_UNSUPPORTED_CONTENT_TYPE,
-	ForeignKeyError,
-	InvalidInputError,
-	NoActorsOnAccountError,
-	PayloadTooLargeError,
-	PermissionError,
-	RateLimitError,
 	REST_AUTHENTICATION_REQUIRED_BOOTSTRAP,
 	REST_RATE_LIMIT_EXCEEDED,
+	REST_UNSUPPORTED_CONTENT_TYPE,
+	REST_TOKEN_SCOPE_REQUIRED,
+	REST_PAYLOAD_TOO_LARGE,
+	REST_NO_ACTORS_ON_ACCOUNT,
+	REST_INSUFFICIENT_PERMISSIONS,
+	REST_FOREIGN_KEY_VIOLATION,
+	REST_CREDENTIAL_TYPE_REQUIRED,
+	REST_ACTOR_REQUIRED,
+	REST_ACTOR_NOT_ON_ACCOUNT,
+	REST_ACCOUNT_VANISHED,
 	dedupe_rest_errors,
 	rest_error,
 	same_rest_error,
 	to_error_schemas,
-	TokenScopeRequiredError,
-	UnsupportedContentTypeError,
 	type RestErrorDef
 } from '#lib/http/error_schemas.ts';
 import { parse_any, type ValidationSchema } from '#lib/schema_issues.ts';
-import { resolve_route_errors, schema_to_surface } from '#lib/http/schema_helpers.ts';
+import { schema_to_surface } from '#lib/http/schema_helpers.ts';
+import { resolve_route_error_map } from '#lib/http/route_errors.ts';
 import { AuthAxisState } from '#lib/http/auth_shape.ts';
 import { RateLimitKey } from '#lib/rate_limiter.ts';
 import { ActionManifest, ActionManifestEntry } from '#lib/testing/cross_backend/action_manifest.ts';
-import {
-	AccountStatusUnauthenticatedError,
-	create_account_route_shapes
-} from '#lib/auth/account_route_schema.ts';
+import { create_account_route_shapes } from '#lib/auth/account_route_schema.ts';
 import { create_signup_route_shape } from '#lib/auth/signup_route_schema.ts';
 import { bootstrap_route_shape } from '#lib/auth/bootstrap_route_schema.ts';
 import { create_serve_fact_route_spec } from '#lib/server/serve_fact_route.ts';
@@ -84,15 +81,6 @@ const ZodWireIssue = z.looseObject({
 	expected: z.string(),
 	received: z.string(),
 	message: z.string()
-});
-const ZodValidationError = z.looseObject({
-	error: z.enum([
-		ERROR_INVALID_REQUEST_BODY,
-		ERROR_INVALID_JSON_BODY,
-		ERROR_INVALID_ROUTE_PARAMS,
-		ERROR_INVALID_QUERY_PARAMS
-	]),
-	issues: z.array(ZodWireIssue).optional()
 });
 const ZodPermissionError = z.looseObject({
 	error: z.literal(ERROR_INSUFFICIENT_PERMISSIONS),
@@ -303,39 +291,27 @@ const CODE_POOL: ReadonlyArray<unknown> = [
 
 const STANDARD_ROWS: Array<Row> = [
 	{
-		name: 'InvalidInputError',
-		fuz: InvalidInputError,
-		zod: ZodValidationError,
-		samples: [
-			{ error: ERROR_INVALID_REQUEST_BODY, issues: [WIRE_ISSUE] },
-			{ error: ERROR_INVALID_JSON_BODY },
-			{ error: ERROR_INVALID_ROUTE_PARAMS, issues: [] },
-			{ error: ERROR_INVALID_QUERY_PARAMS, issues: [WIRE_ISSUE, { ...WIRE_ISSUE, path: [] }] }
-		],
-		pool: CODE_POOL
-	},
-	{
-		name: 'PermissionError',
-		fuz: PermissionError,
+		name: 'REST_INSUFFICIENT_PERMISSIONS',
+		fuz: REST_INSUFFICIENT_PERMISSIONS.schema,
 		zod: ZodPermissionError,
 		samples: [{ error: ERROR_INSUFFICIENT_PERMISSIONS, required_roles: ['admin', 'keeper'] }],
 		pool: CODE_POOL
 	},
 	{
-		name: 'CredentialTypeRequiredError',
-		fuz: CredentialTypeRequiredError,
+		name: 'REST_CREDENTIAL_TYPE_REQUIRED',
+		fuz: REST_CREDENTIAL_TYPE_REQUIRED.schema,
 		zod: ZodCredentialTypeRequiredError,
 		samples: [{ error: ERROR_CREDENTIAL_TYPE_REQUIRED, required_credential_types: ['session'] }]
 	},
 	{
-		name: 'TokenScopeRequiredError',
-		fuz: TokenScopeRequiredError,
+		name: 'REST_TOKEN_SCOPE_REQUIRED',
+		fuz: REST_TOKEN_SCOPE_REQUIRED.schema,
 		zod: ZodTokenScopeRequiredError,
 		samples: [{ error: ERROR_TOKEN_SCOPE_REQUIRED, required_scope: 'surface:audit_stream' }]
 	},
 	{
-		name: 'RateLimitError',
-		fuz: RateLimitError,
+		name: 'REST_RATE_LIMIT_EXCEEDED',
+		fuz: REST_RATE_LIMIT_EXCEEDED.schema,
 		zod: ZodRateLimitError,
 		samples: [
 			{ error: ERROR_RATE_LIMIT_EXCEEDED, retry_after: 60 },
@@ -346,26 +322,26 @@ const STANDARD_ROWS: Array<Row> = [
 		move: move_retry_after
 	},
 	{
-		name: 'PayloadTooLargeError',
-		fuz: PayloadTooLargeError,
+		name: 'REST_PAYLOAD_TOO_LARGE',
+		fuz: REST_PAYLOAD_TOO_LARGE.schema,
 		zod: ZodPayloadTooLargeError,
 		samples: [{ error: ERROR_PAYLOAD_TOO_LARGE }]
 	},
 	{
-		name: 'UnsupportedContentTypeError',
-		fuz: UnsupportedContentTypeError,
+		name: 'REST_UNSUPPORTED_CONTENT_TYPE',
+		fuz: REST_UNSUPPORTED_CONTENT_TYPE.schema,
 		zod: ZodUnsupportedContentTypeError,
 		samples: [{ error: ERROR_UNSUPPORTED_CONTENT_TYPE }]
 	},
 	{
-		name: 'ForeignKeyError',
-		fuz: ForeignKeyError,
+		name: 'REST_FOREIGN_KEY_VIOLATION',
+		fuz: REST_FOREIGN_KEY_VIOLATION.schema,
 		zod: ZodForeignKeyError,
 		samples: [{ error: ERROR_FOREIGN_KEY_VIOLATION }]
 	},
 	{
-		name: 'ActorRequiredError',
-		fuz: ActorRequiredError,
+		name: 'REST_ACTOR_REQUIRED',
+		fuz: REST_ACTOR_REQUIRED.schema,
 		zod: ZodActorRequiredError,
 		samples: [
 			{ error: ERROR_ACTOR_REQUIRED, available: [ACTOR] },
@@ -373,26 +349,26 @@ const STANDARD_ROWS: Array<Row> = [
 		]
 	},
 	{
-		name: 'ActorNotOnAccountError',
-		fuz: ActorNotOnAccountError,
+		name: 'REST_ACTOR_NOT_ON_ACCOUNT',
+		fuz: REST_ACTOR_NOT_ON_ACCOUNT.schema,
 		zod: ZodActorNotOnAccountError,
 		samples: [{ error: ERROR_ACTOR_NOT_ON_ACCOUNT }]
 	},
 	{
-		name: 'NoActorsOnAccountError',
-		fuz: NoActorsOnAccountError,
+		name: 'REST_NO_ACTORS_ON_ACCOUNT',
+		fuz: REST_NO_ACTORS_ON_ACCOUNT.schema,
 		zod: ZodNoActorsOnAccountError,
 		samples: [{ error: ERROR_NO_ACTORS_ON_ACCOUNT }]
 	},
 	{
-		name: 'AccountVanishedError',
-		fuz: AccountVanishedError,
+		name: 'REST_ACCOUNT_VANISHED',
+		fuz: REST_ACCOUNT_VANISHED.schema,
 		zod: ZodAccountVanishedError,
 		samples: [{ error: ERROR_ACCOUNT_VANISHED }]
 	},
 	{
-		name: 'AccountStatusUnauthenticatedError',
-		fuz: AccountStatusUnauthenticatedError,
+		name: 'REST_AUTHENTICATION_REQUIRED_BOOTSTRAP',
+		fuz: REST_AUTHENTICATION_REQUIRED_BOOTSTRAP.schema,
 		zod: z.looseObject({
 			error: z.literal('authentication_required'),
 			bootstrap_available: z.boolean().optional()
@@ -743,7 +719,7 @@ const zod_surface_of = (row: Row): unknown =>
 		? sort_keys(row.move(schema_to_surface(row.zod, { io: 'output' })))
 		: surface_of(row.zod);
 
-describe('the standard error shapes against their Zod copies', () => {
+describe('more samples of the definitions, and the auth and rate-limit enums, against their Zod copies', () => {
 	run_rows(STANDARD_ROWS);
 
 	test('each writes the Zod JSON Schema, as a value, but for a declared move', () => {
@@ -834,7 +810,7 @@ describe('the route entries built from definitions', () => {
 	test("the fact route declares no errors of its own, its params' 400 derived", () => {
 		assert.strictEqual(fact_spec.errors, undefined);
 		assert.ok(
-			resolve_route_errors(fact_spec).defs.includes(error_schemas.REST_INVALID_ROUTE_PARAMS)
+			resolve_route_error_map(fact_spec).defs.includes(error_schemas.REST_INVALID_ROUTE_PARAMS)
 		);
 	});
 });

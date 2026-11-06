@@ -13,7 +13,7 @@ import { object, string } from '@fuzdev/fuz_schema/schema.ts';
 import type { RouteSpec } from '#lib/http/route_spec.ts';
 import { assert_response_matches_spec, find_route_spec } from '#lib/testing/integration_helpers.ts';
 import { rest_error } from '#lib/http/error_schemas.ts';
-import { resolve_app_route_errors } from '#lib/http/schema_helpers.ts';
+import { resolve_app_route_error_maps } from '#lib/http/route_errors.ts';
 
 const spec: RouteSpec = {
 	method: 'POST',
@@ -80,7 +80,7 @@ describe('assert_response_matches_spec on a fuz_schema route', () => {
 });
 
 describe('assert_response_matches_spec reads the route error map it is given', () => {
-	const route_errors = resolve_app_route_errors(
+	const route_error_maps = resolve_app_route_error_maps(
 		[spec],
 		[{ path: '/api/*', errors: [rest_error(409, 'gate_conflict')] }]
 	);
@@ -92,14 +92,14 @@ describe('assert_response_matches_spec reads the route error map it is given', (
 			'POST',
 			'/api/things',
 			gate_conflict(),
-			route_errors
+			route_error_maps
 		);
 		await assert_response_matches_spec(
 			[spec],
 			'POST',
 			'/api/things',
 			json({ error: 'thing_taken' }, 409),
-			route_errors
+			route_error_maps
 		);
 	});
 
@@ -110,7 +110,7 @@ describe('assert_response_matches_spec reads the route error map it is given', (
 			'POST',
 			'/api/things',
 			json(ENVELOPE, 409),
-			resolve_app_route_errors([rpc_spec], [])
+			resolve_app_route_error_maps([rpc_spec], [])
 		);
 	});
 
@@ -122,7 +122,7 @@ describe('assert_response_matches_spec reads the route error map it is given', (
 				'POST',
 				'/api/things',
 				json(ENVELOPE, 409),
-				route_errors
+				route_error_maps
 			);
 		} catch (e) {
 			err = e;

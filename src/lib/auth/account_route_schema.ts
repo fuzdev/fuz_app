@@ -46,14 +46,6 @@ export const AccountStatusOutput = object({
 export type AccountStatusOutput = Infer<typeof AccountStatusOutput>;
 
 /**
- * Error body for `GET /api/account/status` on the unauthenticated path, a
- * `@fuzdev/fuz_schema` schema: `REST_AUTHENTICATION_REQUIRED_BOOTSTRAP`'s,
- * `authentication_required` with the optional `bootstrap_available`.
- */
-export const AccountStatusUnauthenticatedError = REST_AUTHENTICATION_REQUIRED_BOOTSTRAP.schema;
-export type AccountStatusUnauthenticatedError = Infer<typeof AccountStatusUnauthenticatedError>;
-
-/**
  * Input for `POST /login`, a `@fuzdev/fuz_schema` schema. Accepts a username
  * or email in the `username` field.
  */

@@ -1162,7 +1162,7 @@ const assemble_app_server = async (
 	// error at a status its route's error map doesn't declare, or off its schema
 	const dev_route_error_check = create_dev_route_error_check({
 		route_specs,
-		route_errors: surface_spec.route_errors,
+		route_error_maps: surface_spec.route_error_maps,
 		log
 	});
 	if (dev_route_error_check) app.use('*', dev_route_error_check);

@@ -173,7 +173,7 @@ export const describe_standard_admin_integration_tests = (
 		const grantable_role = pick_grantable_role(role_specs);
 
 		// Error coverage tracking across test groups
-		const error_collector = new ErrorCoverageCollector(options.surface_source.route_errors);
+		const error_collector = new ErrorCoverageCollector(options.surface_source.route_error_maps);
 
 		afterAll(() => {
 			// Scope coverage to admin auth-related routes. Account listing,

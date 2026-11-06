@@ -25,6 +25,7 @@ import './assert_dev_env.ts';
 import { describe, test, beforeAll, assert } from 'vitest';
 
 import { ROLE_ADMIN } from '../auth/role_schema.ts';
+import { format_route_key } from '../http/surface_query.ts';
 import { needs_actor, input_schema_declares_acting } from '../http/auth_shape.ts';
 import type { TestAccount } from './app_server.ts';
 import {
@@ -128,7 +129,7 @@ export const assert_route_authenticated = (
  */
 export const describe_round_trip_validation = (options: RoundTripTestOptions): void => {
 	const describe_time_specs = options.surface_source.route_specs;
-	const route_errors = options.surface_source.route_errors;
+	const route_error_maps = options.surface_source.route_error_maps;
 	const skip_set = new Set(options.skip_routes);
 
 	describe('round-trip validation', () => {
@@ -168,7 +169,7 @@ export const describe_round_trip_validation = (options: RoundTripTestOptions): v
 		};
 
 		test.each(describe_time_specs)('$method $path produces schema-valid response', async (spec) => {
-			const route_key = `${spec.method} ${spec.path}`;
+			const route_key = format_route_key(spec);
 			if (skip_set.has(route_key)) return;
 			// Raw-byte / streaming routes (git smart-HTTP, binary upload/download)
 			// can't be round-tripped — no meaningful body to synthesize, no JSON
@@ -229,7 +230,7 @@ export const describe_round_trip_validation = (options: RoundTripTestOptions): v
 					spec.method,
 					url,
 					res,
-					route_errors
+					route_error_maps
 				);
 			} catch (e) {
 				throw new Error(
@@ -274,7 +275,7 @@ export const describe_round_trip_validation = (options: RoundTripTestOptions): v
 						spec.method,
 						url,
 						res,
-						route_errors
+						route_error_maps
 					);
 				} catch (e) {
 					throw new Error(

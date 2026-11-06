@@ -26,7 +26,7 @@
  *   `BOOTSTRAP_TOKEN_LENGTH_MAX` UTF-16 code units, the token file's cap (Zod:
  *   no maximum). A longer one can never match the file.
  * - **the kept `__proto__` key**: a loose object (an error body,
- *   `AccountStatusUnauthenticatedError`) given an own `__proto__` key, as
+ *   `REST_AUTHENTICATION_REQUIRED_BOOTSTRAP`'s) given an own `__proto__` key, as
  *   `JSON.parse` defines one, returns the input with it, where Zod's copy
  *   dropped it. Both take the value; only the server writes these bodies.
  *
@@ -73,7 +73,6 @@ import {
 } from '#lib/auth/password.ts';
 import {
 	AccountStatusInput,
-	AccountStatusUnauthenticatedError,
 	create_account_route_shapes,
 	LoginInput,
 	LoginOutput,
@@ -103,6 +102,7 @@ import {
 	ERROR_NO_MATCHING_INVITE,
 	ERROR_SIGNUP_CONFLICT,
 	ERROR_TOKEN_FILE_MISSING,
+	REST_AUTHENTICATION_REQUIRED_BOOTSTRAP,
 	to_error_schemas,
 	type RestErrorDef
 } from '#lib/http/error_schemas.ts';
@@ -565,8 +565,8 @@ const pairs: ReadonlyArray<Pair> = [
 	{ name: '/verify input', fuz: verify_shape.input, zod: z.null(), values: VOIDS },
 	{ name: '/verify output', fuz: verify_shape.output, zod: z.null(), values: VOIDS },
 	{
-		name: 'AccountStatusUnauthenticatedError',
-		fuz: AccountStatusUnauthenticatedError,
+		name: 'REST_AUTHENTICATION_REQUIRED_BOOTSTRAP',
+		fuz: REST_AUTHENTICATION_REQUIRED_BOOTSTRAP.schema,
 		zod: ZodAccountStatusUnauthenticatedError,
 		loose: true,
 		values: around({ error: ERROR_AUTHENTICATION_REQUIRED, bootstrap_available: true }, [

@@ -87,14 +87,14 @@ describe('create_rust_spine_consumer_surface_spec', () => {
 		});
 		const layer = spec.surface.middleware.find((m) => m.name === 'host_validation')!;
 		assert.deepStrictEqual(Object.keys(layer.error_schemas!), ['403']);
-		for (const errors of spec.route_errors.values()) {
+		for (const errors of spec.route_error_maps.values()) {
 			assert.ok(errors.defs.includes(REST_FORBIDDEN_HOST));
 		}
 		const without = create_rust_spine_consumer_surface_spec({
 			session_options: fuz_session_config,
 			domain_action_specs
 		});
-		for (const errors of without.route_errors.values()) {
+		for (const errors of without.route_error_maps.values()) {
 			assert.notInclude(errors.defs, REST_FORBIDDEN_HOST);
 		}
 	});

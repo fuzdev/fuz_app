@@ -404,15 +404,13 @@ constants carry no status, since they double as JSON-RPC `data.reason`s.
 every declared error names its code, and a code is a code:
 `rest_error` refuses one off `^[a-z][a-z0-9_]*$` (`REST_ERROR_CODE_PATTERN`),
 so prose goes in `message`, which the UI shows in preference to the code
-(`format_error_body`, `ui/ui_fetch.ts`). Standard shapes:
-`InvalidInputError`, `PermissionError`, `CredentialTypeRequiredError`,
-`TokenScopeRequiredError`, `RateLimitError`, `PayloadTooLargeError`,
-`UnsupportedContentTypeError`, `ForeignKeyError` — all loose objects, each
-single-code one its definition's schema. `to_error_schemas(defs)` groups
-definitions into a status map.
+(`format_error_body`, `ui/ui_fetch.ts`). Every body is a loose object, read
+through its definition (`REST_RATE_LIMIT_EXCEEDED.schema`); there are no
+standalone shape schemas. `to_error_schemas(defs)` groups definitions into a
+status map.
 
-**One error map per route**: `resolve_route_errors(spec, middleware_specs)`
-(`http/schema_helpers.ts`) is the union of three layers — derived, each
+**One error map per route**: `resolve_route_error_map(spec, middleware_specs)`
+(`http/route_errors.ts`) is the union of three layers — derived, each
 middleware layer that runs on the route, and the route's own — in that order.
 Nothing replaces anything: a definition at a status another layer declares is
 one more branch there, a definition declared twice counts once, and two
@@ -438,7 +436,7 @@ shapes of one code at one status are both kept.
 - Routes declare their handler's codes via `RouteSpec.errors`.
 
 `create_app_surface_spec` builds every route's map once
-(`AppSurfaceSpec.route_errors`, keyed `METHOD path`), and `create_app_server`
+(`AppSurfaceSpec.route_error_maps`, keyed `METHOD path`), and `create_app_server`
 hands the same map to the DEV error check. Every reader reads it: the
 surface, which stays status-keyed (a status with several definitions is an
 `anyOf` of their bodies), the DEV error check, `assert_response_matches_spec`,
@@ -542,7 +540,8 @@ declaration applies to RPC action inputs only.
 **Validation issues.** Every schema refusal carries its issues in one shape,
 `WireIssue` (`schema_issues.ts`): `{kind, path, expected, received,
 message}`, fuz_schema's `SchemaIssue` as JSON, whichever library the schema
-is written in — the REST `issues` of an `InvalidInputError`, the RPC
+is written in — the REST `issues` of an input refusal (`invalid_request_body`,
+`invalid_route_params`, `invalid_query_params`), the RPC
 `data.issues` of `invalid_params` and of a refused request envelope, and an
 `ActionEvent`'s `validation_errors`. `to_wire_issues` builds it: a
 fuz_schema issue keeps its fields, its `message` the `format_issue` text; a

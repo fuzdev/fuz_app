@@ -1285,7 +1285,7 @@ For v1 single-process deployments, the in-memory limiter is sufficient.
 `create_app_server` applies a body size limit (`http/body_limit.ts`) before
 auth and route handling. Default: 1 MiB (`DEFAULT_BODY_LIMIT_BYTES`). Oversized
 payloads are rejected with 413 and `{error: 'payload_too_large'}`
-(`PayloadTooLargeError` schema). Configure via `max_body_size` on
+(`REST_PAYLOAD_TOO_LARGE`). Configure via `max_body_size` on
 `AppServerOptions`; pass `null` to disable. A non-safe-integer or negative
 value throws at assembly; `null` adds a security warning to the startup
 diagnostics. The limit is mounted as a middleware spec at `*`, ahead of the

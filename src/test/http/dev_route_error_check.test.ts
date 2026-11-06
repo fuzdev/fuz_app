@@ -29,13 +29,12 @@ import {
 	ERROR_SERVICE_UNAVAILABLE,
 	rest_error
 } from '#lib/http/error_schemas.ts';
-import { resolve_app_route_errors } from '#lib/http/schema_helpers.ts';
+import { resolve_app_route_error_maps } from '#lib/http/route_errors.ts';
 import {
 	create_dev_route_error_check,
 	create_route_lookup
 } from '#lib/http/dev_route_error_check.ts';
 import {
-	check_route_error,
 	compile_route_path,
 	find_mounted_route,
 	to_mounted_routes
@@ -81,7 +80,7 @@ const mount = (
 	const app = new Hono();
 	const check = create_dev_route_error_check({
 		route_specs: specs,
-		route_errors: resolve_app_route_errors(specs, middleware_specs),
+		route_error_maps: resolve_app_route_error_maps(specs, middleware_specs),
 		log
 	});
 	assert.ok(check);
@@ -339,7 +338,7 @@ describe('the DEV error check never changes the response', () => {
 		const app = new Hono();
 		const check = create_dev_route_error_check({
 			route_specs: [spec],
-			route_errors: resolve_app_route_errors([spec]),
+			route_error_maps: resolve_app_route_error_maps([spec]),
 			log
 		});
 		assert.ok(check);
@@ -354,31 +353,6 @@ describe('the DEV error check never changes the response', () => {
 		const got = await answer((c) => c.text('{"error":"x"}', 418));
 		assert.strictEqual(got.status, 418);
 		assert.deepStrictEqual(got.errors, []);
-	});
-});
-
-describe('check_route_error', () => {
-	const errors = resolve_app_route_errors([route({ handler: () => new Response() })]).get(
-		'GET /v'
-	)!;
-
-	test('answers each kind', () => {
-		assert.deepStrictEqual(check_route_error(errors, 409, { error: 'slug_taken' }, false), {
-			ok: true
-		});
-		assert.deepStrictEqual(check_route_error(errors, 418, { error: 'x' }, false), {
-			ok: false,
-			kind: 'undeclared_status'
-		});
-		const mismatch = check_route_error(errors, 409, { error: 'x' }, false);
-		assert.ok(!mismatch.ok && mismatch.kind === 'schema_mismatch' && mismatch.issues.length > 0);
-	});
-
-	test('the exemptions take the body, not just the status', () => {
-		assert.ok(check_route_error(errors, 500, { error: 'internal_error', message: 'm' }, false).ok);
-		assert.ok(check_route_error(errors, 503, { error: 'service_unavailable' }, false).ok);
-		assert.ok(!check_route_error(errors, 500, { error: 'boom' }, false).ok);
-		assert.ok(!check_route_error(errors, 503, { error: 'down' }, false).ok);
 	});
 });
 
@@ -399,6 +373,8 @@ describe('compile_route_path matches as Hono does', () => {
 		'/a/:id{[0-9]+}?': ['/a', '/a/12', '/a/x', '/a/'],
 		'/f/*': ['/f', '/f/x/y'],
 		'/e/:kind{draft|published}': ['/e/draft', '/e/xpublished', '/zpublished', '/e/draft/x'],
+		'/g/:p{a/b}': ['/g/a/b', '/g/a', '/g/ab'],
+		'/:s{.+\\.git}/info/refs': ['/r.git/info/refs', '/o/r.git/info/refs', '/r/info/refs'],
 		'*': ['/', '/any/thing']
 	};
 
@@ -442,30 +418,6 @@ describe('compile_route_path matches as Hono does', () => {
 			assert.strictEqual(find_mounted_route(mounted, method, path), hono, `${method} ${path}`);
 		}
 		assert.strictEqual(lookup('GET', '/a/me'), 0);
-	});
-
-	test('a `*` inside a segment is refused, not guessed at', () => {
-		assert.throws(() => compile_route_path('/a*'), /has a `\*` inside a segment/);
-		assert.throws(() => compile_route_path('/x/b*c/d'), /"b\*c"/);
-		// a whole `*` segment, and a `*` inside a param's pattern, are read
-		compile_route_path('/x/*');
-		compile_route_path('/f/:name{.*}');
-	});
-
-	test('find_mounted_route takes the first in order and reads HEAD as GET', () => {
-		const routes = to_mounted_routes(
-			[
-				{ method: 'GET', path: '/a/:id', name: 'param' },
-				{ method: 'GET', path: '/a/new', name: 'literal' },
-				{ method: 'POST', path: '/a/new', name: 'post' }
-			],
-			(r) => r.name
-		);
-		assert.strictEqual(find_mounted_route(routes, 'GET', '/a/new'), 'param');
-		assert.strictEqual(find_mounted_route(routes, 'HEAD', '/a/new'), 'param');
-		assert.strictEqual(find_mounted_route(routes, 'POST', '/a/new'), 'post');
-		assert.strictEqual(find_mounted_route(routes, 'DELETE', '/a/new'), undefined);
-		assert.strictEqual(find_mounted_route(routes, 'GET', '/b'), undefined);
 	});
 });
 
@@ -560,7 +512,9 @@ describe('the DEV error check outside DEV', () => {
 		try {
 			const { create_dev_route_error_check: create } =
 				await import('#lib/http/dev_route_error_check.ts');
-			assert.isNull(create({ route_specs: [], route_errors: new Map(), log: new Logger('test') }));
+			assert.isNull(
+				create({ route_specs: [], route_error_maps: new Map(), log: new Logger('test') })
+			);
 			assert.ok(!mounted(app));
 			const res = await app.request('/api/teapot', { headers: { origin: ORIGIN } });
 			assert.strictEqual(res.status, 418);

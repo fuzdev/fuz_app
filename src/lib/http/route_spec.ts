@@ -22,6 +22,7 @@ import { get_schema_entries } from '@fuzdev/fuz_schema/introspect.ts';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import type { Db } from '../db/db.ts';
+import { format_route_key } from './surface_query.ts';
 import { is_db_checkout_error } from '../db/db_checkout_error.ts';
 import {
 	type RestErrorDef,
@@ -259,7 +260,7 @@ export interface RouteSpec {
 	 * 401/403, rate limit 429) is derived from `method`, `auth`, the input
 	 * slots, and `rate_limit` (`derive_route_errors`), and the middleware
 	 * layers declare their own. The route's error map
-	 * (`resolve_route_errors`) is the union of all three: a definition here at
+	 * (`resolve_route_error_map`) is the union of all three: a definition here at
 	 * a status another layer declares adds a branch there and replaces nothing.
 	 */
 	errors?: ReadonlyArray<RestErrorDef>;
@@ -682,7 +683,7 @@ export const apply_route_specs = (
 ): void => {
 	const registered = new Set<string>();
 	for (const spec of specs) {
-		const route_key = `${spec.method} ${spec.path}`;
+		const route_key = format_route_key(spec);
 		if (registered.has(route_key)) {
 			throw new Error(
 				`Duplicate route: ${route_key} — each method+path combination must be unique`

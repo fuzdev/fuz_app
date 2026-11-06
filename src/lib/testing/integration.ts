@@ -168,7 +168,7 @@ export const describe_standard_integration_tests = (
 		const { cookie_name } = options.session_options;
 
 		// Error coverage tracking across test groups
-		const error_collector = new ErrorCoverageCollector(options.surface_source.route_errors);
+		const error_collector = new ErrorCoverageCollector(options.surface_source.route_error_maps);
 
 		// the auth routes this suite drives: login / logout / password, signup
 		// (when wired), and the shared RPC endpoint — admin-role routes belong to
@@ -1150,7 +1150,7 @@ export const describe_standard_integration_tests = (
 					'POST',
 					login_route.path,
 					res,
-					options.surface_source.route_errors
+					options.surface_source.route_error_maps
 				);
 			});
 
@@ -1173,7 +1173,7 @@ export const describe_standard_integration_tests = (
 					'POST',
 					logout_route.path,
 					res,
-					options.surface_source.route_errors
+					options.surface_source.route_error_maps
 				);
 			});
 
@@ -1198,7 +1198,7 @@ export const describe_standard_integration_tests = (
 					'POST',
 					logout_route.path,
 					res,
-					options.surface_source.route_errors
+					options.surface_source.route_error_maps
 				);
 			});
 		});

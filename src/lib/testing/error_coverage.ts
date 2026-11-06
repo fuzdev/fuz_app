@@ -6,7 +6,7 @@ import './assert_dev_env.ts';
  * Tracks which declared error codes are actually exercised in tests.
  * `ErrorCoverageCollector` records status codes (optionally with body
  * `error` codes) observed during test runs, then `assert_error_coverage`
- * compares against each route's error map (`resolve_route_errors`) to find
+ * compares against each route's error map (`resolve_route_error_map`) to find
  * uncovered error paths — one per declared code at each status, read from
  * the map's definitions.
  *
@@ -16,7 +16,8 @@ import './assert_dev_env.ts';
 import { assert } from 'vitest';
 
 import type { RouteSpec } from '../http/route_spec.ts';
-import { get_route_errors, type RouteErrors } from '../http/schema_helpers.ts';
+import { format_route_key } from '../http/surface_query.ts';
+import { get_route_error_map, type RouteErrorMap } from '../http/route_errors.ts';
 import { find_route_spec, assert_response_matches_spec } from './integration_helpers.ts';
 
 /** Uncovered entry — a declared code at a status of a route, never observed. */
@@ -63,11 +64,11 @@ const walk_coverage = (
 	const ignore_statuses = new Set(options?.ignore_statuses);
 	const entries: Array<CoverageEntry> = [];
 	for (const spec of route_specs) {
-		const route_key = `${spec.method} ${spec.path}`;
+		const route_key = format_route_key(spec);
 		if (ignore_routes.has(route_key)) continue;
 		// a code with two shapes at one status is one path
 		const seen: Set<string> = new Set();
-		for (const { status, code } of get_route_errors(collector.route_errors, spec).defs) {
+		for (const { status, code } of get_route_error_map(collector.route_error_maps, spec).defs) {
 			if (ignore_statuses.has(status)) continue;
 			const status_key = `${spec.method} ${spec.path}:${status}`;
 			const code_key = `${status_key}:${code}`;
@@ -98,17 +99,17 @@ const walk_coverage = (
  */
 export class ErrorCoverageCollector {
 	/**
-	 * Each route's error map, keyed `METHOD path` (`AppSurfaceSpec.route_errors`),
+	 * Each route's error map, keyed `METHOD path` (`AppSurfaceSpec.route_error_maps`),
 	 * which the declared paths and the response checks read; without one, a
 	 * route's own map without middleware.
 	 */
-	readonly route_errors: ReadonlyMap<string, RouteErrors> | null;
+	readonly route_error_maps: ReadonlyMap<string, RouteErrorMap> | null;
 
 	/**
-	 * @param route_errors - each route's error map, keyed `METHOD path` (`AppSurfaceSpec.route_errors`)
+	 * @param route_error_maps - each route's error map, keyed `METHOD path` (`AppSurfaceSpec.route_error_maps`)
 	 */
-	constructor(route_errors?: ReadonlyMap<string, RouteErrors> | null) {
-		this.route_errors = route_errors ?? null;
+	constructor(route_error_maps?: ReadonlyMap<string, RouteErrorMap> | null) {
+		this.route_error_maps = route_error_maps ?? null;
 	}
 
 	/**
@@ -171,7 +172,7 @@ export class ErrorCoverageCollector {
 		response: Response,
 		code?: string
 	): Promise<void> {
-		await assert_response_matches_spec(route_specs, method, path, response, this.route_errors);
+		await assert_response_matches_spec(route_specs, method, path, response, this.route_error_maps);
 		let resolved_code = code;
 		if (resolved_code === undefined && !response.ok && !response.bodyUsed) {
 			try {
@@ -190,7 +191,7 @@ export class ErrorCoverageCollector {
 	 * Find declared error paths that were never observed.
 	 *
 	 * Computes the declared set from each route's error map
-	 * (`resolve_route_errors`, `this.route_errors`): one row per declared code
+	 * (`resolve_route_error_map`, `this.route_error_maps`): one row per declared code
 	 * at each status. A status-only observation (no code) satisfies all
 	 * declared codes for that status — the "any-code" rule.
 	 */
@@ -229,7 +230,7 @@ const format_uncovered = (
  *
  * Computes the ratio of exercised error paths to total declared error paths,
  * each declared code at each status of a route's error map
- * (`collector.route_errors`) one path. A status-only observation covers all
+ * (`collector.route_error_maps`) one path. A status-only observation covers all
  * declared codes for that status (the "any-code" rule).
  *
  * When `min_coverage` is 0 (default), logs coverage info without failing.

@@ -16,7 +16,8 @@ import { assert } from 'vitest';
 import type { AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { AppSurface, AppSurfaceRoute } from '../http/surface.ts';
-import type { RouteErrors } from '../http/schema_helpers.ts';
+import type { RouteErrorMap } from '../http/route_errors.ts';
+import { format_route_key } from '../http/surface_query.ts';
 import { is_public_auth } from '../http/auth_shape.ts';
 import { parse_any } from '../schema_issues.ts';
 import {
@@ -82,7 +83,7 @@ export const assert_only_expected_public_routes = (
 	const expected = new Set(expected_public);
 	const actual_public = surface.routes
 		.filter((r) => is_public_auth(r.auth))
-		.map((r) => `${r.method} ${r.path}`);
+		.map((r) => format_route_key(r));
 
 	const unexpected = actual_public.filter((r) => !expected.has(r));
 	const missing = expected_public.filter((r) => !actual_public.includes(r));
@@ -94,55 +95,53 @@ export const assert_only_expected_public_routes = (
 /**
  * Look up the error schema for a route+status in its error map.
  *
- * @param lookup - map from `"METHOD /path"` to each route's error map (`AppSurfaceSpec.route_errors`)
+ * @param lookup - map from `"METHOD /path"` to each route's error map (`AppSurfaceSpec.route_error_maps`)
  * @param route - the surface route to look up
  * @param status - HTTP status code
  * @returns the `@fuzdev/fuz_schema` schema for that route+status, or
  *   `undefined` when no error schema is declared for the status code
  */
 export const get_route_error_schema = (
-	lookup: ReadonlyMap<string, RouteErrors>,
+	lookup: ReadonlyMap<string, RouteErrorMap>,
 	route: AppSurfaceRoute,
 	status: number
 ): AnySchema | undefined => {
-	const key = `${route.method} ${route.path}`;
-	return lookup.get(key)?.schemas[status];
+	return lookup.get(format_route_key(route))?.schemas[status];
 };
 
 /**
  * Assert that a route declares an error — its status, and its `error` code
  * at that status — and that the body parses against the route's schema there.
+ * The schema at a status is a union of its definitions' bodies, each
+ * `error` a `literal` of its code for a definition made by `rest_error`
+ * (`to_error_schemas`), so a code the route
+ * doesn't declare at the status fails the parse.
  *
  * Protected routes should always have auto-derived error schemas (401 for authenticated,
  * 403 for role-restricted). A missing schema indicates a gap in error schema derivation.
  *
- * @param lookup - map from `"METHOD /path"` to each route's error map (`AppSurfaceSpec.route_errors`)
+ * @param lookup - map from `"METHOD /path"` to each route's error map (`AppSurfaceSpec.route_error_maps`)
  * @param route - the surface route to validate against
  * @param status - expected HTTP status code
  * @param body - the parsed response body to validate
- * @throws AssertionError if no schema is declared for the route+status pair,
- *   or if the body's `error` is no code the route declares at the status.
- * @throws Error if the body does not satisfy the declared schema, its message
- *   carrying the failed parse's issues (`parse_any`).
+ * @throws AssertionError if no schema is declared for the route+status pair.
+ * @throws Error if the body does not satisfy the declared schema, a code the
+ *   route doesn't declare at the status included, its message carrying the
+ *   failed parse's issues (`parse_any`).
  */
 export const assert_error_schema_valid = (
-	lookup: ReadonlyMap<string, RouteErrors>,
+	lookup: ReadonlyMap<string, RouteErrorMap>,
 	route: AppSurfaceRoute,
 	status: number,
 	body: unknown
 ): void => {
-	const key = `${route.method} ${route.path}`;
+	const key = format_route_key(route);
 	const schema = get_route_error_schema(lookup, route, status);
 	assert.ok(schema, `missing error schema for ${status} on ${key}`);
-	const code = (body as { error?: unknown } | null)?.error;
-	assert.ok(
-		lookup.get(key)!.defs.some((def) => def.status === status && def.code === code),
-		`${key} declares no error code ${JSON.stringify(code)} at ${status}`
-	);
 	const result = parse_any(schema, body);
 	if (!result.ok) {
 		throw new Error(
-			`error schema mismatch for ${status} on ${key}: ${JSON.stringify(result.issues)}`
+			`error schema mismatch for ${status} on ${key} (error ${JSON.stringify((body as { error?: unknown } | null)?.error)}): ${JSON.stringify(result.issues)}`
 		);
 	}
 };
@@ -163,7 +162,7 @@ export const assert_error_schema_valid = (
  * @throws Error on a JSON error the route's map doesn't declare
  */
 export const assert_error_response_declared = async (
-	errors: RouteErrors,
+	errors: RouteErrorMap,
 	jsonrpc: boolean,
 	response: Response,
 	label: string

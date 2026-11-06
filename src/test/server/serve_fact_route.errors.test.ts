@@ -2,7 +2,7 @@
  * The fact routes' declared 400 error schema.
  *
  * Both fact routes declare no errors of their own: their 400 is what their
- * slots derive (`resolve_route_errors`) — the `invalid_route_params` params
+ * slots derive (`resolve_route_error_map`) — the `invalid_route_params` params
  * validation emits, and on the bare-hash route the query and actor codes —
  * and never a body code, as neither reads a body. The params body carries
  * `issues` only under DEV (`dev_only`), so the declared schema must admit a
@@ -25,7 +25,7 @@ import {
 	ERROR_INVALID_REQUEST_BODY,
 	ERROR_INVALID_ROUTE_PARAMS
 } from '#lib/http/error_schemas.ts';
-import { resolve_route_errors } from '#lib/http/schema_helpers.ts';
+import { resolve_route_error_map } from '#lib/http/route_errors.ts';
 import { parse_any } from '#lib/schema_issues.ts';
 
 const log = new Logger('test', { level: 'off' });
@@ -39,7 +39,7 @@ describe('fact route 400 error schema', () => {
 	for (const [label, create] of route_400_schemas) {
 		describe(label, () => {
 			const spec = create({ facts_dir: '/tmp/facts', log });
-			const schema = resolve_route_errors(spec).schemas[400];
+			const schema = resolve_route_error_map(spec).schemas[400];
 
 			test('declares a 400 schema', () => {
 				assert.ok(schema);

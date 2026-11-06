@@ -8,8 +8,9 @@ see ../CLAUDE.md. For testing patterns, see ./testing.md.
 ## Writing Route Specs
 
 Every route requires `input` and `output` schemas, each Zod or
-`@fuzdev/fuz_schema` (`params`, `query` and `errors` too; a fuz_schema `params`
-or `query` must be an object schema). Input is auto-validated by middleware
+`@fuzdev/fuz_schema` (`params` and `query` too; a fuz_schema `params` or
+`query` must be an object schema), and lists in `errors` the error definitions
+(`rest_error`, `REST_*`) its handler answers beyond the derived ones. Input is auto-validated by middleware
 (`parse_any`); handlers access validated data via `get_route_input(c, schema)`,
 which infers the typed shape from the schema directly.
 

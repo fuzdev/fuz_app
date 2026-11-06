@@ -15,6 +15,7 @@ import './assert_dev_env.ts';
 import { test, assert, describe } from 'vitest';
 
 import type { RouteSpec } from '../http/route_spec.ts';
+import { format_route_key } from '../http/surface_query.ts';
 import { is_null_schema } from '../http/schema_helpers.ts';
 import { assert_error_schema_valid } from './assertions.ts';
 import { create_auth_test_apps, create_route_skip_filter, select_auth_app } from './auth_apps.ts';
@@ -32,18 +33,18 @@ import {
  * 1. Creates a stub handler returning 404 with the first such definition's code
  * 2. Fires a request with valid-format params (nil UUIDs for UUID params)
  * 3. Validates response status is 404
- * 4. Validates the code is one the route's error map (`resolve_route_errors`)
+ * 4. Validates the code is one the route's error map (`resolve_route_error_map`)
  *    declares at 404, and the body parses against its 404 (`assert_error_schema_valid`)
  */
 export const describe_adversarial_404 = (options: AdversarialTestOptions): void => {
 	const { build, roles } = options;
-	const { surface, route_specs, route_errors } = build();
+	const { surface, route_specs, route_error_maps } = build();
 	const is_skipped = create_route_skip_filter(options.skip_routes);
 
 	// Build spec lookup for schema access
 	const spec_lookup: Map<string, RouteSpec> = new Map();
 	for (const spec of route_specs) {
-		spec_lookup.set(`${spec.method} ${spec.path}`, spec);
+		spec_lookup.set(format_route_key(spec), spec);
 	}
 
 	// Find testable routes: params + a 404 definition of the route's own
@@ -53,7 +54,7 @@ export const describe_adversarial_404 = (options: AdversarialTestOptions): void 
 		if (!route.error_schemas || !('404' in route.error_schemas)) continue;
 
 		if (is_skipped(route)) continue;
-		const key = `${route.method} ${route.path}`;
+		const key = format_route_key(route);
 		const spec = spec_lookup.get(key);
 		if (!spec?.params) continue;
 		const not_found = spec.errors?.find((def) => def.status === 404);
@@ -71,7 +72,7 @@ export const describe_adversarial_404 = (options: AdversarialTestOptions): void 
 			error_code_by_key.set(entry.key, entry.error_code);
 		}
 		const stub_specs = route_specs.map((spec): RouteSpec => {
-			const error_code = error_code_by_key.get(`${spec.method} ${spec.path}`);
+			const error_code = error_code_by_key.get(format_route_key(spec));
 			if (!error_code) return spec;
 			return {
 				...spec,
@@ -83,7 +84,7 @@ export const describe_adversarial_404 = (options: AdversarialTestOptions): void 
 
 		for (const { key, error_code, spec } of testable) {
 			test(key, async () => {
-				const route = surface.routes.find((r) => `${r.method} ${r.path}` === key)!;
+				const route = surface.routes.find((r) => format_route_key(r) === key)!;
 				const app = select_auth_app(apps, route.auth);
 				const url = resolve_valid_path(route.path, spec.params);
 
@@ -109,7 +110,7 @@ export const describe_adversarial_404 = (options: AdversarialTestOptions): void 
 					`Expected error '${error_code}' for ${key}, got: ${body.error}`
 				);
 				// the code is the route's own at 404, and the body its schema there
-				assert_error_schema_valid(route_errors, route, 404, body);
+				assert_error_schema_valid(route_error_maps, route, 404, body);
 			});
 		}
 	});

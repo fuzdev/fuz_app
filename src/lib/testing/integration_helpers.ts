@@ -9,7 +9,8 @@ import './assert_dev_env.ts';
 import { assert } from 'vitest';
 
 import type { RouteSpec, RouteMethod } from '../http/route_spec.ts';
-import { get_route_errors, is_null_schema, type RouteErrors } from '../http/schema_helpers.ts';
+import { is_null_schema } from '../http/schema_helpers.ts';
+import { get_route_error_map, type RouteErrorMap } from '../http/route_errors.ts';
 import { is_public_auth, type RouteAuth } from '../http/auth_shape.ts';
 import { ERROR_AUTHENTICATION_REQUIRED } from '../http/error_schemas.ts';
 import { ROLE_ADMIN } from '../auth/role_schema.ts';
@@ -17,14 +18,12 @@ import type { TestAccount } from './app_server.ts';
 import { create_test_request_headers } from './test_origin.ts';
 import { parse_any } from '../schema_issues.ts';
 import {
-	check_route_error,
 	find_mounted_route,
-	format_route_error_check,
-	is_error_status,
 	is_json_response,
 	to_mounted_routes,
 	type MountedRoute
 } from '../http/route_error_check.ts';
+import { assert_error_response_declared } from './assertions.ts';
 
 /** Each spec list's compiled routes, so a list is compiled once. */
 const mounted_routes_cache: WeakMap<
@@ -131,9 +130,10 @@ export const find_auth_route = (
  *
  * For 2xx responses, validates against `spec.output`. For an error response
  * (400 and up), checks it against the route's error map
- * (`resolve_route_errors`) — the one in `route_errors`, an `AppSurfaceSpec`'s,
- * built with the app's middleware, or without one the route's own — by the
- * rule the DEV error check runs (`check_route_error`): the status must be
+ * (`resolve_route_error_map`) — the one in `route_error_maps`, an
+ * `AppSurfaceSpec`'s, built with the app's middleware, or without one the
+ * route's own — through `assert_error_response_declared`, by the rule the DEV
+ * error check runs (`check_route_error`): the status must be
  * declared and the body must parse against it. A 500 `internal_error` and a
  * 503 `service_unavailable` are always accepted, and on a `jsonrpc` route (the
  * RPC endpoint's) a JSON-RPC error envelope is not a REST error body; on any
@@ -148,7 +148,7 @@ export const find_auth_route = (
  * no schema applies: a 2xx on a route with a null output, or an error status
  * the map doesn't declare.
  *
- * @param route_errors - each route's error map, keyed `METHOD path` (`AppSurfaceSpec.route_errors`)
+ * @param route_error_maps - each route's error map, keyed `METHOD path` (`AppSurfaceSpec.route_error_maps`)
  * @throws Error if no route spec matches `method` + `path`, if the body fails
  *   its output schema, if a JSON error is at a status the route's map lacks or
  *   off its schema, or if the response is non-JSON despite a declared schema
@@ -159,7 +159,7 @@ export const assert_response_matches_spec = async (
 	method: string,
 	path: string,
 	response: Response,
-	route_errors?: ReadonlyMap<string, RouteErrors> | null
+	route_error_maps?: ReadonlyMap<string, RouteErrorMap> | null
 ): Promise<void> => {
 	const spec = find_route_spec(route_specs, method, path);
 	if (!spec) {
@@ -187,7 +187,7 @@ export const assert_response_matches_spec = async (
 			);
 		}
 		if (!response.ok) {
-			if (get_route_errors(route_errors, spec).schemas[response.status]) {
+			if (get_route_error_map(route_error_maps, spec).schemas[response.status]) {
 				throw new Error(
 					`${method} ${path} (${
 						response.status
@@ -207,20 +207,13 @@ export const assert_response_matches_spec = async (
 				)}`
 			);
 		}
-	} else if (is_error_status(response.status)) {
-		const check = check_route_error(
-			get_route_errors(route_errors, spec),
-			response.status,
-			body,
-			spec.jsonrpc ?? false
+	} else {
+		await assert_error_response_declared(
+			get_route_error_map(route_error_maps, spec),
+			spec.jsonrpc ?? false,
+			response,
+			`${method} ${path}`
 		);
-		if (!check.ok) {
-			throw new Error(
-				`${format_route_error_check(check, response.status, `${method} ${path}`)}: ${JSON.stringify(
-					check.kind === 'schema_mismatch' ? check.issues : body
-				)}`
-			);
-		}
 	}
 };
 

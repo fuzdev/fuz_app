@@ -33,7 +33,7 @@ import {
 import {
 	ERROR_INVALID_CONTENT_LENGTH,
 	ERROR_PAYLOAD_TOO_LARGE,
-	PayloadTooLargeError
+	REST_PAYLOAD_TOO_LARGE
 } from '#lib/http/error_schemas.ts';
 import type { AppBackend } from '#lib/server/app_backend.ts';
 import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
@@ -424,7 +424,7 @@ describe('create_app_server', () => {
 		assert.strictEqual(large_res.status, 413);
 		const body = await large_res.json();
 		assert.strictEqual(body.error, ERROR_PAYLOAD_TOO_LARGE);
-		parse_or_throw(PayloadTooLargeError, body);
+		parse_or_throw(REST_PAYLOAD_TOO_LARGE.schema, body);
 	});
 
 	test('an oversized Content-Length is refused without reading the request body', async () => {
@@ -509,7 +509,7 @@ describe('create_app_server', () => {
 		assert.strictEqual(res.status, 413);
 		const body = await res.json();
 		assert.strictEqual(body.error, ERROR_PAYLOAD_TOO_LARGE);
-		parse_or_throw(PayloadTooLargeError, body);
+		parse_or_throw(REST_PAYLOAD_TOO_LARGE.schema, body);
 	});
 
 	test('body size limit defaults to DEFAULT_BODY_LIMIT_BYTES', () => {

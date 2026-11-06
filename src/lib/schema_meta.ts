@@ -9,7 +9,7 @@
  * `SchemaMeta`, so the declared refusal reason of an action input, its
  * handler-guarded marker, and its sensitivity read the same whichever library
  * its schema is. It also adds JSON Schema's `readOnly` annotation, which
- * `to_json_schema` writes as Zod's `.readonly()` did.
+ * `to_json_schema` writes onto the node.
  *
  * @module
  */
@@ -52,7 +52,7 @@ declare module '@fuzdev/fuz_schema/meta.ts' {
 		/**
 		 * JSON Schema's `readOnly` annotation, which `to_json_schema` copies onto
 		 * the node: written on the role and credential-type lists of the 403
-		 * bodies (`http/error_schemas.ts`), as Zod's `.readonly()` wrote it.
+		 * bodies (`http/error_schemas.ts`).
 		 */
 		readOnly?: boolean;
 	}

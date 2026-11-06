@@ -6,6 +6,7 @@
 
 import { describe, test, assert } from 'vitest';
 import { z } from 'zod';
+import { Hono } from 'hono';
 import { parse } from '@fuzdev/fuz_schema/schema.ts';
 
 import { generate_valid_body, resolve_valid_path } from '#lib/testing/schema_generators.ts';
@@ -111,6 +112,69 @@ describe('resolve_valid_path — params-schema-aware synthesis', () => {
 			resolve_valid_path('/things/:id', params),
 			'/things/00000000-0000-0000-0000-000000000000'
 		);
+	});
+});
+
+describe('resolve_valid_path — the template read as Hono reads it', () => {
+	const CASES: Array<[template: string, resolved: string]> = [
+		['/things/:id', '/things/test_id'],
+		['/a/:x/b/:y', '/a/test_x/b/test_y'],
+		// a `:` inside a literal segment is no param
+		['/v1/files:upload', '/v1/files:upload'],
+		['/v1/:bucket/files:upload', '/v1/test_bucket/files:upload'],
+		// a `{re}` goes with its param, a `/` inside it included
+		['/f/:name{[0-9]+}', '/f/test_name'],
+		['/f/:path{.+/.+}', '/f/test_path'],
+		// an optional param is filled
+		['/a/:id?', '/a/test_id'],
+		['/a/:id{[0-9]+}?', '/a/test_id'],
+		// no params, a wildcard, and the root are left as they are
+		['/health', '/health'],
+		['/api/*', '/api/*'],
+		['/', '/'],
+		['/a/', '/a/'],
+		// a name is what Hono reads, its fallback percent-encoded
+		['/a/:x-:y', '/a/test_x-%3Ay'],
+		['/a/:p#q', '/a/test_p%23q']
+	];
+
+	for (const [template, resolved] of CASES) {
+		test(template, () => {
+			assert.strictEqual(resolve_valid_path(template), resolved);
+		});
+	}
+
+	test('a param schema fills each param by its own name', () => {
+		const params = z.strictObject({ bucket: z.uuid(), name: z.string() });
+		assert.strictEqual(
+			resolve_valid_path('/v1/:bucket/files:upload/:name{.+}', params),
+			'/v1/00000000-0000-0000-0000-000000000000/files:upload/test_name'
+		);
+	});
+
+	test('Hono routes each filled path back to its own template', async () => {
+		for (const template of [
+			'/things/:id',
+			'/a/:x/b/:y',
+			'/v1/:bucket/files:upload',
+			'/a/:id?',
+			'/a/:x-:y'
+		]) {
+			const app = new Hono();
+			app.get(template, (c) => c.text('hit'));
+			const res = await app.request(resolve_valid_path(template));
+			assert.strictEqual(await res.text(), 'hit', template);
+		}
+	});
+
+	test('a filled value is not held to its {re}', async () => {
+		// the value comes from the params schema alone, so `test_n` misses `[0-9]+`
+		const template = '/f/:n{[0-9]+}';
+		const app = new Hono();
+		app.get(template, (c) => c.text('hit'));
+		const res = await app.request(resolve_valid_path(template));
+		assert.strictEqual(res.status, 404);
+		assert.notStrictEqual(await res.text(), 'hit');
 	});
 });
 

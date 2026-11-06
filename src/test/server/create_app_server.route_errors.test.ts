@@ -71,7 +71,7 @@ const assemble = async (
 };
 
 const codes_at = (server: AppServer, key: string): Array<string> =>
-	server.surface_spec.route_errors.get(key)!.defs.map((def) => `${def.status} ${def.code}`);
+	server.surface_spec.route_error_maps.get(key)!.defs.map((def) => `${def.status} ${def.code}`);
 
 describe('create_app_server — the body limit declared as a middleware spec', () => {
 	test('by default it heads the middleware and every route declares its 413 and 400', async () => {
@@ -80,7 +80,7 @@ describe('create_app_server — the body limit declared as a middleware spec', (
 		assert.strictEqual(middleware[0]!.name, body_limit_middleware_shape.name);
 		assert.strictEqual(middleware[0]!.path, '*');
 		assert.deepStrictEqual(Object.keys(middleware[0]!.error_schemas!), ['400', '413']);
-		const defs = server.surface_spec.route_errors.get('GET /api/echo')!.defs;
+		const defs = server.surface_spec.route_error_maps.get('GET /api/echo')!.defs;
 		assert.ok(defs.includes(REST_PAYLOAD_TOO_LARGE));
 		assert.ok(defs.includes(REST_INVALID_CONTENT_LENGTH));
 		for (const route of server.surface_spec.surface.routes) {

@@ -23,6 +23,7 @@ import './assert_dev_env.ts';
 import { describe, test, beforeAll, assert } from 'vitest';
 
 import type { AppSurfaceSpec } from '../http/surface.ts';
+import { format_route_key } from '../http/surface_query.ts';
 import { ROLE_ADMIN, ROLE_KEEPER } from '../auth/role_schema.ts';
 import type { TestAccount } from './app_server.ts';
 import { create_test_request_headers } from './test_origin.ts';
@@ -131,7 +132,7 @@ const collect_output_schema_entries = (
 	const entries: Array<OutputSchemaEntry> = [];
 	for (const r of surface_source.route_specs) {
 		entries.push({
-			key: `${r.method} ${r.path}`,
+			key: format_route_key(r),
 			kind: 'route',
 			schema: r.output,
 			elevated: is_elevated_auth(r.auth)
@@ -375,7 +376,7 @@ export const describe_data_exposure_tests = (options: DataExposureTestOptions): 
 			const protected_specs = route_specs.filter((s) => !is_public_auth(s.auth));
 
 			for (const spec of protected_specs) {
-				const route_key = `${spec.method} ${spec.path}`;
+				const route_key = format_route_key(spec);
 				if (skip_set.has(route_key)) continue;
 
 				const url = resolve_valid_path(spec.path, spec.params);
@@ -414,7 +415,7 @@ export const describe_data_exposure_tests = (options: DataExposureTestOptions): 
 			const admin_specs = route_specs.filter((s) => s.auth.roles?.includes('admin') ?? false);
 
 			for (const spec of admin_specs) {
-				const route_key = `${spec.method} ${spec.path}`;
+				const route_key = format_route_key(spec);
 				if (skip_set.has(route_key)) continue;
 
 				const url = resolve_valid_path(spec.path, spec.params);
@@ -453,7 +454,7 @@ export const describe_data_exposure_tests = (options: DataExposureTestOptions): 
 			});
 
 			for (const spec of sorted_specs) {
-				const route_key = `${spec.method} ${spec.path}`;
+				const route_key = format_route_key(spec);
 				if (skip_set.has(route_key)) continue;
 
 				// keeper auth (daemon token) is strictly more privileged than admin

@@ -403,8 +403,8 @@ describe('create_app_surface_spec', () => {
 
 		const spec = create_app_surface_spec({ route_specs: [route], middleware_specs: [mw] });
 
-		assert.deepStrictEqual([...spec.route_errors.keys()], ['GET /api/things']);
-		const errors = spec.route_errors.get('GET /api/things')!;
+		assert.deepStrictEqual([...spec.route_error_maps.keys()], ['GET /api/things']);
+		const errors = spec.route_error_maps.get('GET /api/things')!;
 		assert.deepStrictEqual(
 			errors.defs.map((def) => def.code),
 			['authentication_required', 'gate_refused']
@@ -414,15 +414,15 @@ describe('create_app_surface_spec', () => {
 
 	test('takes a prebuilt route error map, which the surface writes', () => {
 		const route = create_route({ path: '/api/things' });
-		const route_errors = new Map([
+		const route_error_maps = new Map([
 			['GET /api/things', { defs: [], schemas: { 418: rest_error(418, 'teapot').schema } }]
 		]);
 		const spec = create_app_surface_spec({
 			route_specs: [route],
 			middleware_specs: [],
-			route_errors
+			route_error_maps
 		});
-		assert.strictEqual(spec.route_errors, route_errors);
+		assert.strictEqual(spec.route_error_maps, route_error_maps);
 		assert.deepStrictEqual(Object.keys(spec.surface.routes[0]!.error_schemas!), ['418']);
 	});
 });

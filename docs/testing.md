@@ -742,8 +742,8 @@ to temporarily skip that assertion (leaves the gap visible).
 ## Error Coverage Tracking
 
 Track which declared error codes are exercised during tests. The declared
-paths are each route's error map (`resolve_route_errors`): pass the collector
-the map — `surface_spec.route_errors`, which carries the middleware's
+paths are each route's error map (`resolve_route_error_map`): pass the collector
+the map — `surface_spec.route_error_maps`, which carries the middleware's
 definitions — or, without one, it reads each route's own map:
 
 ```typescript
@@ -752,7 +752,7 @@ import {
 	assert_error_coverage
 } from '@fuzdev/fuz_app/testing/error_coverage.ts';
 
-const collector = new ErrorCoverageCollector(surface_spec.route_errors);
+const collector = new ErrorCoverageCollector(surface_spec.route_error_maps);
 
 // In tests, record error responses. `assert_and_record` validates the
 // response against its spec and auto-extracts `body.error` (via a cloned
@@ -922,7 +922,7 @@ impls actually boot.
 - `assert_surface_invariants` (`testing/surface_invariants.ts`) — Assert all structural invariants on `AppSurface`
 - `assert_error_codes_specific` (`testing/surface_invariants.ts`) — Every declared error's `error` is a literal or an enum
 - `assert_error_codes_well_formed` (`testing/surface_invariants.ts`) — Every declared error code matches `^[a-z][a-z0-9_]*$`
-- `assert_response_matches_spec` (`testing/integration_helpers.ts`) — Validate response body against the route's output, or its error map at the status (`route_errors` when given), failing an undeclared error status
+- `assert_response_matches_spec` (`testing/integration_helpers.ts`) — Validate response body against the route's output, or its error map at the status (`route_error_maps` when given), failing an undeclared error status
 - `assert_rate_limit_retry_after_header` (`testing/integration_helpers.ts`) — Assert 429 `Retry-After` header matches body
 - `find_route_spec` (`testing/integration_helpers.ts`) — Look up route spec by method + path
 - `assert_no_sensitive_fields_in_json` (`testing/integration_helpers.ts`) — Assert no blocklisted fields in parsed JSON

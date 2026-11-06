@@ -13,6 +13,7 @@ import { Hono } from 'hono';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { apply_route_specs, type RouteSpec } from '../http/route_spec.ts';
+import { format_route_key } from '../http/surface_query.ts';
 import { is_public_auth, type RouteAuth } from '../http/auth_shape.ts';
 import {
 	BUILTIN_CREDENTIAL_TYPES,
@@ -194,5 +195,5 @@ export const create_route_skip_filter = (
 	skip_routes: Array<string> | undefined
 ): ((route: { method: string; path: string }) => boolean) => {
 	const skip_set = new Set(skip_routes);
-	return (route) => skip_set.has(`${route.method} ${route.path}`);
+	return (route) => skip_set.has(format_route_key(route));
 };

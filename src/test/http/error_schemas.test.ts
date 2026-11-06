@@ -8,15 +8,9 @@ import { describe, assert, test } from 'vitest';
 import { parse, string } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
-	InvalidInputError,
 	REST_ERROR_CODE_PATTERN,
 	is_rest_error_code,
 	rest_error,
-	PermissionError,
-	CredentialTypeRequiredError,
-	RateLimitError,
-	PayloadTooLargeError,
-	ForeignKeyError,
 	derive_route_errors,
 	to_error_schemas,
 	REST_AUTHENTICATION_REQUIRED,
@@ -60,10 +54,13 @@ import {
 	ERROR_ACTOR_NOT_ON_ACCOUNT,
 	ERROR_NO_ACTORS_ON_ACCOUNT,
 	ERROR_ACCOUNT_VANISHED,
-	ActorRequiredError,
-	ActorNotOnAccountError,
-	NoActorsOnAccountError,
-	AccountVanishedError
+	REST_ACCOUNT_VANISHED,
+	REST_ACTOR_NOT_ON_ACCOUNT,
+	REST_ACTOR_REQUIRED,
+	REST_FOREIGN_KEY_VIOLATION,
+	REST_INVALID_REQUEST_BODY,
+	REST_NO_ACTORS_ON_ACCOUNT,
+	REST_PAYLOAD_TOO_LARGE
 } from '#lib/http/error_schemas.ts';
 
 describe('rest_error codes', () => {
@@ -129,8 +126,8 @@ describe('rest_error codes', () => {
 });
 
 describe('standard error schemas', () => {
-	test('InvalidInputError accepts error with issues', () => {
-		const result = parse(InvalidInputError, {
+	test('REST_INVALID_REQUEST_BODY accepts error with issues', () => {
+		const result = parse(REST_INVALID_REQUEST_BODY.schema, {
 			error: 'invalid_request_body',
 			issues: [
 				{
@@ -145,70 +142,70 @@ describe('standard error schemas', () => {
 		assert.isTrue(result.ok);
 	});
 
-	test("InvalidInputError refuses an issue in a library's own shape", () => {
-		const zod_shaped = parse(InvalidInputError, {
+	test("REST_INVALID_REQUEST_BODY refuses an issue in a library's own shape", () => {
+		const zod_shaped = parse(REST_INVALID_REQUEST_BODY.schema, {
 			error: 'invalid_request_body',
 			issues: [{ code: 'invalid_type', message: 'Expected string', path: ['name'] }]
 		});
 		assert.isFalse(zod_shaped.ok);
-		const fuz_shaped = parse(InvalidInputError, {
+		const fuz_shaped = parse(REST_INVALID_REQUEST_BODY.schema, {
 			error: 'invalid_request_body',
 			issues: [{ kind: 'string', path: ['name'], expected: 'string', received: 'number' }]
 		});
 		assert.isFalse(fuz_shaped.ok);
 	});
 
-	test('PermissionError requires insufficient_permissions literal', () => {
-		const valid = parse(PermissionError, {
+	test('REST_INSUFFICIENT_PERMISSIONS requires insufficient_permissions literal', () => {
+		const valid = parse(REST_INSUFFICIENT_PERMISSIONS.schema, {
 			error: ERROR_INSUFFICIENT_PERMISSIONS,
 			required_roles: ['admin']
 		});
 		assert.isTrue(valid.ok);
 
-		const invalid = parse(PermissionError, {
+		const invalid = parse(REST_INSUFFICIENT_PERMISSIONS.schema, {
 			error: 'wrong_error',
 			required_roles: ['admin']
 		});
 		assert.isFalse(invalid.ok);
 	});
 
-	test('CredentialTypeRequiredError requires credential_type_required literal', () => {
-		const valid = parse(CredentialTypeRequiredError, {
+	test('REST_CREDENTIAL_TYPE_REQUIRED requires credential_type_required literal', () => {
+		const valid = parse(REST_CREDENTIAL_TYPE_REQUIRED.schema, {
 			error: ERROR_CREDENTIAL_TYPE_REQUIRED,
 			required_credential_types: ['daemon_token']
 		});
 		assert.isTrue(valid.ok);
 
-		const invalid = parse(CredentialTypeRequiredError, {
+		const invalid = parse(REST_CREDENTIAL_TYPE_REQUIRED.schema, {
 			error: 'wrong_error',
 			required_credential_types: ['daemon_token']
 		});
 		assert.isFalse(invalid.ok);
 	});
 
-	test('RateLimitError requires rate_limit_exceeded and retry_after', () => {
-		const valid = parse(RateLimitError, {
+	test('REST_RATE_LIMIT_EXCEEDED requires rate_limit_exceeded and retry_after', () => {
+		const valid = parse(REST_RATE_LIMIT_EXCEEDED.schema, {
 			error: ERROR_RATE_LIMIT_EXCEEDED,
 			retry_after: 60
 		});
 		assert.isTrue(valid.ok);
 
-		const missing_retry = parse(RateLimitError, {
+		const missing_retry = parse(REST_RATE_LIMIT_EXCEEDED.schema, {
 			error: ERROR_RATE_LIMIT_EXCEEDED
 		});
 		assert.isFalse(missing_retry.ok);
 	});
 
-	test('PayloadTooLargeError requires payload_too_large literal', () => {
-		const valid = parse(PayloadTooLargeError, { error: ERROR_PAYLOAD_TOO_LARGE });
+	test('REST_PAYLOAD_TOO_LARGE requires payload_too_large literal', () => {
+		const valid = parse(REST_PAYLOAD_TOO_LARGE.schema, { error: ERROR_PAYLOAD_TOO_LARGE });
 		assert.isTrue(valid.ok);
 
-		const invalid = parse(PayloadTooLargeError, { error: 'wrong_error' });
+		const invalid = parse(REST_PAYLOAD_TOO_LARGE.schema, { error: 'wrong_error' });
 		assert.isFalse(invalid.ok);
 	});
 
-	test('ForeignKeyError accepts error without detail or constraint', () => {
-		const result = parse(ForeignKeyError, {
+	test('REST_FOREIGN_KEY_VIOLATION accepts error without detail or constraint', () => {
+		const result = parse(REST_FOREIGN_KEY_VIOLATION.schema, {
 			error: ERROR_FOREIGN_KEY_VIOLATION
 		});
 		assert.isTrue(result.ok);
@@ -382,19 +379,19 @@ describe('error code constants', () => {
 			parse(REST_AUTHENTICATION_REQUIRED.schema, { error: ERROR_AUTHENTICATION_REQUIRED }).ok
 		);
 		assert.isTrue(
-			parse(PermissionError, {
+			parse(REST_INSUFFICIENT_PERMISSIONS.schema, {
 				error: ERROR_INSUFFICIENT_PERMISSIONS,
 				required_roles: ['admin']
 			}).ok
 		);
 		assert.isTrue(
-			parse(CredentialTypeRequiredError, {
+			parse(REST_CREDENTIAL_TYPE_REQUIRED.schema, {
 				error: ERROR_CREDENTIAL_TYPE_REQUIRED,
 				required_credential_types: ['daemon_token']
 			}).ok
 		);
 		assert.isTrue(
-			parse(InvalidInputError, {
+			parse(REST_INVALID_REQUEST_BODY.schema, {
 				error: ERROR_INVALID_REQUEST_BODY,
 				issues: [
 					{
@@ -408,18 +405,18 @@ describe('error code constants', () => {
 			}).ok
 		);
 		assert.isTrue(
-			parse(RateLimitError, {
+			parse(REST_RATE_LIMIT_EXCEEDED.schema, {
 				error: ERROR_RATE_LIMIT_EXCEEDED,
 				retry_after: 60
 			}).ok
 		);
 		assert.isTrue(
-			parse(PayloadTooLargeError, {
+			parse(REST_PAYLOAD_TOO_LARGE.schema, {
 				error: ERROR_PAYLOAD_TOO_LARGE
 			}).ok
 		);
 		assert.isTrue(
-			parse(ForeignKeyError, {
+			parse(REST_FOREIGN_KEY_VIOLATION.schema, {
 				error: ERROR_FOREIGN_KEY_VIOLATION
 			}).ok
 		);
@@ -427,31 +424,31 @@ describe('error code constants', () => {
 });
 
 describe('authorization-phase actor error schemas', () => {
-	test('ActorRequiredError accepts available[] with id+name entries', () => {
-		const result = parse(ActorRequiredError, {
+	test('REST_ACTOR_REQUIRED accepts available[] with id+name entries', () => {
+		const result = parse(REST_ACTOR_REQUIRED.schema, {
 			error: ERROR_ACTOR_REQUIRED,
 			available: [{ id: '00000000-0000-4000-8000-000000000001', name: 'alice' }]
 		});
 		assert.isTrue(result.ok);
 	});
 
-	test('ActorRequiredError rejects missing available', () => {
-		const result = parse(ActorRequiredError, { error: ERROR_ACTOR_REQUIRED });
+	test('REST_ACTOR_REQUIRED rejects missing available', () => {
+		const result = parse(REST_ACTOR_REQUIRED.schema, { error: ERROR_ACTOR_REQUIRED });
 		assert.isFalse(result.ok);
 	});
 
-	test('ActorNotOnAccountError accepts the literal-only shape', () => {
-		const result = parse(ActorNotOnAccountError, { error: ERROR_ACTOR_NOT_ON_ACCOUNT });
+	test('REST_ACTOR_NOT_ON_ACCOUNT accepts the literal-only shape', () => {
+		const result = parse(REST_ACTOR_NOT_ON_ACCOUNT.schema, { error: ERROR_ACTOR_NOT_ON_ACCOUNT });
 		assert.isTrue(result.ok);
 	});
 
-	test('NoActorsOnAccountError accepts the literal-only shape', () => {
-		const result = parse(NoActorsOnAccountError, { error: ERROR_NO_ACTORS_ON_ACCOUNT });
+	test('REST_NO_ACTORS_ON_ACCOUNT accepts the literal-only shape', () => {
+		const result = parse(REST_NO_ACTORS_ON_ACCOUNT.schema, { error: ERROR_NO_ACTORS_ON_ACCOUNT });
 		assert.isTrue(result.ok);
 	});
 
-	test('AccountVanishedError accepts the literal-only shape', () => {
-		const result = parse(AccountVanishedError, { error: ERROR_ACCOUNT_VANISHED });
+	test('REST_ACCOUNT_VANISHED accepts the literal-only shape', () => {
+		const result = parse(REST_ACCOUNT_VANISHED.schema, { error: ERROR_ACCOUNT_VANISHED });
 		assert.isTrue(result.ok);
 	});
 });

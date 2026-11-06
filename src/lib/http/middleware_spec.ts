@@ -29,7 +29,7 @@ export interface MiddlewareSpec {
 	handler: MiddlewareHandler;
 	/**
 	 * The error definitions this layer can answer with. Each joins the error map
-	 * (`resolve_route_errors`) of every route the layer runs on, beside the
+	 * (`resolve_route_error_map`) of every route the layer runs on, beside the
 	 * route's own, replacing none of them. An empty list says the layer answers
 	 * with no error of its own.
 	 */

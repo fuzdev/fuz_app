@@ -43,7 +43,7 @@ const rows = (collector: ErrorCoverageCollector, ignore_statuses?: Array<number>
 
 describe('ErrorCoverageCollector', () => {
 	test("one row per declared code of the route error map, a code's two shapes one row", () => {
-		assert.deepStrictEqual(rows(new ErrorCoverageCollector(spec.route_errors)), [
+		assert.deepStrictEqual(rows(new ErrorCoverageCollector(spec.route_error_maps)), [
 			'400 invalid_route_params',
 			'401 authentication_required',
 			'403 gate_refused',
@@ -60,7 +60,7 @@ describe('ErrorCoverageCollector', () => {
 	});
 
 	test('an observed code covers its row; a status alone covers every code there', () => {
-		const collector = new ErrorCoverageCollector(spec.route_errors);
+		const collector = new ErrorCoverageCollector(spec.route_error_maps);
 		collector.record([route], 'GET', '/api/things/abc', 404, 'thing_not_found');
 		collector.record([route], 'GET', '/api/things/abc', 403);
 		assert.deepStrictEqual(rows(collector), [
@@ -71,7 +71,7 @@ describe('ErrorCoverageCollector', () => {
 	});
 
 	test('assert_and_record checks the body against the map and records its code', async () => {
-		const collector = new ErrorCoverageCollector(spec.route_errors);
+		const collector = new ErrorCoverageCollector(spec.route_error_maps);
 		const response = new Response(JSON.stringify({ error: 'gate_refused' }), {
 			status: 403,
 			headers: { 'content-type': 'application/json' }
@@ -83,7 +83,7 @@ describe('ErrorCoverageCollector', () => {
 
 describe('assert_error_coverage', () => {
 	test('the ratio is over the declared codes', () => {
-		const collector = new ErrorCoverageCollector(spec.route_errors);
+		const collector = new ErrorCoverageCollector(spec.route_error_maps);
 		collector.record([route], 'GET', '/api/things/abc', 400);
 		collector.record([route], 'GET', '/api/things/abc', 401);
 		assert_error_coverage(collector, [route], { min_coverage: 0.5 });

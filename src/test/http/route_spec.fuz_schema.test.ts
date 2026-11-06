@@ -40,7 +40,7 @@ import { Uuid } from '#lib/primitive_schemas_fuz.ts';
 import { create_stub_db } from '#lib/testing/stubs.ts';
 import { rest_error } from '#lib/http/error_schemas.ts';
 import { create_dev_route_error_check } from '#lib/http/dev_route_error_check.ts';
-import { resolve_app_route_errors } from '#lib/http/schema_helpers.ts';
+import { resolve_app_route_error_maps } from '#lib/http/route_errors.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_test_keyring } from '../auth/session_test_helpers.ts';
 
@@ -91,7 +91,7 @@ const send = async (url: string, body: string, specs = [thing_route]): Promise<A
 	// the DEV error check outermost, as `create_app_server` mounts it
 	const dev_check = create_dev_route_error_check({
 		route_specs: specs,
-		route_errors: resolve_app_route_errors(specs),
+		route_error_maps: resolve_app_route_error_maps(specs),
 		log
 	});
 	if (dev_check) app.use('*', dev_check);

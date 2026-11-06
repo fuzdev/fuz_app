@@ -29,6 +29,7 @@ import {
 } from '../zod.ts';
 
 import { is_null_schema, is_void_schema } from '../http/schema_helpers.ts';
+import { parse_route_param, split_route_template } from '../http/route_error_check.ts';
 import {
 	assert_zod_schema,
 	format_issues,
@@ -734,8 +735,14 @@ export const to_route_content_type = (route: { raw_body?: boolean }): string =>
  * Resolve a route path with valid-ish param values so params validation passes.
  * Used when testing input on routes that also have params.
  *
+ * The template is read as Hono reads it (`split_route_template`,
+ * `parse_route_param`): only a whole param segment — `:name` or `:name{re}`,
+ * optional or not — is filled, so a `:` inside a literal segment
+ * (`/v1/files:upload`) stays, and a `{re}` goes with its param. An optional
+ * param is filled too.
+ *
  * Without a params schema (or for a param the schema doesn't name) each
- * `:name` becomes `test_<name>` — fine for an unconstrained segment. With
+ * param becomes `test_<name>` — fine for an unconstrained segment. With
  * one, `test_<name>` is still preferred wherever the field schema accepts
  * it, because the param name in the URL is what makes a failure message
  * readable. Only a segment that refuses it falls through: a `uuid` param
@@ -743,36 +750,38 @@ export const to_route_content_type = (route: { raw_body?: boolean }): string =>
  * anything else is synthesized by `generate_valid_string`, so a
  * format-constrained segment (a `blake3:…` fact hash, a `tok_…` id)
  * resolves to a value its schema accepts instead of a `test_<name>` that
- * 400s before the route's real gates run.
+ * 400s before the route's real gates run. A `{re}` is not read: the value
+ * comes from the schema alone.
  *
  * The synthesized value is percent-encoded, and a value containing `/` is
  * refused (it would silently add a path segment and route elsewhere) —
  * both fall back to `test_<name>`.
  *
- * @param path - the route path, its params as `:name`
+ * @param path - the route's path template
  * @param params_schema - the route's params schema, a Zod or `@fuzdev/fuz_schema` object schema
  * @throws Error when `params_schema` is no object schema, or of neither library
  */
 export const resolve_valid_path = (path: string, params_schema?: ValidationSchema): string => {
-	if (!params_schema) {
-		return path.replace(/:(\w+)/g, 'test_$1');
-	}
-	const view = to_object_schema_view(
-		params_schema,
-		`resolve_valid_path(${path}): the params schema`
-	);
-	return path.replace(/:(\w+)/g, (_match, name: string) => {
-		const fallback = `test_${name}`;
-		const field_schema = view.field_schema(name);
+	const view = params_schema
+		? to_object_schema_view(params_schema, `resolve_valid_path(${path}): the params schema`)
+		: null;
+	const fill = (name: string): string => {
+		const fallback = encodeURIComponent(`test_${name}`);
+		const field_schema = view?.field_schema(name);
 		if (!field_schema) return fallback;
-		if (accepts(field_schema, fallback)) return fallback;
+		if (accepts(field_schema, `test_${name}`)) return fallback;
 		if (to_base_type(field_schema) === 'uuid') return NIL_UUID;
 		const format = detect_format(field_schema);
 		if (format === 'uuid') return NIL_UUID;
 		const generated = generate_valid_string(field_schema);
 		if (generated.includes('/')) return fallback;
 		return encodeURIComponent(generated);
+	};
+	const segments = split_route_template(path).map((segment) => {
+		const param = parse_route_param(segment);
+		return param ? fill(param.name) : segment;
 	});
+	return (path.startsWith('/') ? '/' : '') + segments.join('/');
 };
 
 /**

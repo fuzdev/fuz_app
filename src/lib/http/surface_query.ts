@@ -101,8 +101,17 @@ export const filter_routes_with_params = (surface: AppSurface): Array<AppSurface
 export const filter_routes_with_query = (surface: AppSurface): Array<AppSurfaceRoute> =>
 	surface.routes.filter((r) => r.query_schema !== null);
 
-/** Format a route as `'METHOD /path'` (e.g. `'GET /health'`). */
-export const format_route_key = (route: AppSurfaceRoute): string => `${route.method} ${route.path}`;
+/**
+ * Format a route as `'METHOD /path'` (e.g. `'GET /health'`): a surface route or
+ * a route spec, its path the template. The key of a route in a map of route
+ * error maps (`resolve_app_route_error_maps`).
+ *
+ * @param route - the route's method and path template
+ */
+export const format_route_key = (route: {
+	readonly method: string;
+	readonly path: string;
+}): string => `${route.method} ${route.path}`;
 
 /**
  * Summarize route auth distribution across the surface.

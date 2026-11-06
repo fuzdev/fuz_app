@@ -17,7 +17,8 @@ import type { RouteSpec } from '../http/route_spec.ts';
 import {
 	filter_routes_with_input,
 	filter_routes_with_params,
-	filter_routes_with_query
+	filter_routes_with_query,
+	format_route_key
 } from '../http/surface_query.ts';
 import {
 	ERROR_INVALID_REQUEST_BODY,
@@ -63,7 +64,7 @@ const build_query_url = (path: string, query: Record<string, string>): string =>
  */
 export const describe_adversarial_input = (options: AdversarialTestOptions): void => {
 	const { build, roles } = options;
-	const { surface, route_specs, route_errors } = build();
+	const { surface, route_specs, route_error_maps } = build();
 	const is_skipped = create_route_skip_filter(options.skip_routes);
 
 	const routes_with_input = filter_routes_with_input(surface).filter((r) => !is_skipped(r));
@@ -80,7 +81,7 @@ export const describe_adversarial_input = (options: AdversarialTestOptions): voi
 	// lookup RouteSpec by method+path for schema access
 	const spec_lookup: Map<string, RouteSpec> = new Map();
 	for (const spec of route_specs) {
-		spec_lookup.set(`${spec.method} ${spec.path}`, spec);
+		spec_lookup.set(format_route_key(spec), spec);
 	}
 
 	const apps = create_auth_test_apps(route_specs, roles);
@@ -91,7 +92,7 @@ export const describe_adversarial_input = (options: AdversarialTestOptions): voi
 		if (routes_with_input.length > 0) {
 			// every surface route with input must have a matching RouteSpec
 			const missing_specs = routes_with_input
-				.map((r) => `${r.method} ${r.path}`)
+				.map((r) => format_route_key(r))
 				.filter((key) => !spec_lookup.has(key));
 			if (missing_specs.length > 0) {
 				throw new Error(
@@ -105,7 +106,7 @@ export const describe_adversarial_input = (options: AdversarialTestOptions): voi
 
 			describe('input body', () => {
 				for (const route of routes_with_input) {
-					const key = `${route.method} ${route.path}`;
+					const key = format_route_key(route);
 					const spec = spec_lookup.get(key)!;
 
 					const test_cases = generate_input_test_cases(spec.input);
@@ -150,7 +151,7 @@ export const describe_adversarial_input = (options: AdversarialTestOptions): voi
 									`Expected ${expected_error} for ${key} [${tc.label}], got: ${body.error}`
 								);
 								// the status and code are the route's own, and the body its schema there
-								assert_error_schema_valid(route_errors, route, 400, body);
+								assert_error_schema_valid(route_error_maps, route, 400, body);
 							});
 						}
 					});
@@ -172,7 +173,7 @@ export const describe_adversarial_input = (options: AdversarialTestOptions): voi
 
 			describe('params', () => {
 				for (const route of routes_with_params) {
-					const key = `${route.method} ${route.path}`;
+					const key = format_route_key(route);
 					const spec = spec_lookup.get(key);
 					if (!spec?.params) continue;
 
@@ -204,7 +205,7 @@ export const describe_adversarial_input = (options: AdversarialTestOptions): voi
 									}`
 								);
 								// the status and code are the route's own, and the body its schema there
-								assert_error_schema_valid(route_errors, route, 400, body);
+								assert_error_schema_valid(route_error_maps, route, 400, body);
 							});
 						}
 					});
@@ -227,7 +228,7 @@ export const describe_adversarial_input = (options: AdversarialTestOptions): voi
 
 			describe('query params', () => {
 				for (const route of routes_with_query) {
-					const key = `${route.method} ${route.path}`;
+					const key = format_route_key(route);
 					const spec = spec_lookup.get(key);
 					if (!spec?.query) continue;
 
@@ -260,7 +261,7 @@ export const describe_adversarial_input = (options: AdversarialTestOptions): voi
 									}`
 								);
 								// the status and code are the route's own, and the body its schema there
-								assert_error_schema_valid(route_errors, route, 400, body);
+								assert_error_schema_valid(route_error_maps, route, 400, body);
 							});
 						}
 					});

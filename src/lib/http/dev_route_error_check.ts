@@ -35,7 +35,7 @@ import {
 	is_error_status,
 	is_json_response
 } from './route_error_check.ts';
-import { get_route_errors, type RouteErrors, type RouteErrorsSpec } from './schema_helpers.ts';
+import { get_route_error_map, type RouteErrorMap, type RouteErrorMapSpec } from './route_errors.ts';
 
 /**
  * A lookup of the route a request reaches, by Hono's own router — the
@@ -78,7 +78,7 @@ export const create_route_lookup = <
 };
 
 /** What `create_dev_route_error_check` reads of a route spec. */
-export interface DevRouteErrorCheckSpec extends RouteErrorsSpec {
+export interface DevRouteErrorCheckSpec extends RouteErrorMapSpec {
 	readonly jsonrpc?: boolean;
 }
 
@@ -86,8 +86,8 @@ export interface DevRouteErrorCheckSpec extends RouteErrorsSpec {
 export interface DevRouteErrorCheckOptions {
 	/** The app's route specs, in mount order. */
 	route_specs: ReadonlyArray<DevRouteErrorCheckSpec>;
-	/** Each route's error map, keyed `METHOD path` (`resolve_app_route_errors`). */
-	route_errors: ReadonlyMap<string, RouteErrors>;
+	/** Each route's error map, keyed `METHOD path` (`resolve_app_route_error_maps`). */
+	route_error_maps: ReadonlyMap<string, RouteErrorMap>;
 	/** Receives each response its route doesn't declare. */
 	log: Logger;
 }
@@ -97,15 +97,15 @@ export interface DevRouteErrorCheckOptions {
  *
  * @param options - the routes, their error maps, and the logger
  * @returns the middleware to mount outermost, or `null` in production
- * @throws Error when `route_errors` lacks a route of `route_specs` (`get_route_errors`)
+ * @throws Error when `route_error_maps` lacks a route of `route_specs` (`get_route_error_map`)
  */
 export const create_dev_route_error_check = (
 	options: DevRouteErrorCheckOptions
 ): MiddlewareHandler | null => {
 	if (!DEV) return null;
-	const { route_errors, log } = options;
+	const { route_error_maps, log } = options;
 	const find_route = create_route_lookup(options.route_specs, (spec) => ({
-		errors: get_route_errors(route_errors, spec),
+		errors: get_route_error_map(route_error_maps, spec),
 		jsonrpc: spec.jsonrpc ?? false
 	}));
 	// named, so an assembled app's route table shows it

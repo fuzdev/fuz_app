@@ -59,9 +59,8 @@ export interface RustSpineRebuildOptions {
 	readonly crate: string;
 	/**
 	 * Cargo workspace directory. Defaults to `$FUZ_RUST_SPINE_STUB_WORKSPACE_DIR`,
-	 * then `~/dev/private_fuz`. This file is test-only (never shipped in the
-	 * package), so the dev-machine default is a convenience, not published
-	 * content — CI/operators set the env var.
+	 * then a `fuz` checkout beside this one (`~/dev/fuz`), a dev-machine
+	 * convenience — CI/operators set the env var.
 	 */
 	readonly workspace_dir?: string;
 }
@@ -78,7 +77,7 @@ export interface RustSpineGlobalSetupOptions extends RustSpineRebuildOptions {
 }
 
 const resolve_workspace_dir = (override: string | undefined): string =>
-	override ?? process.env[RUST_WORKSPACE_DIR_ENV] ?? join(homedir(), 'dev', 'private_fuz');
+	override ?? process.env[RUST_WORKSPACE_DIR_ENV] ?? join(homedir(), 'dev', 'fuz');
 
 /**
  * The Postgres URL the Rust stub connects to, as `rust_spine_stub_backend_config`
