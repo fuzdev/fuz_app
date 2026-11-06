@@ -20,7 +20,7 @@
 import { z } from 'zod';
 import type { void as fuz_void } from '@fuzdev/fuz_schema/schema.ts';
 
-import type { RateLimitKey } from '../http/error_schemas.ts';
+import type { RateLimitKey } from '../rate_limiter.ts';
 import type { RouteAuth } from '../http/auth_shape.ts';
 import type { ValidationSchema } from '../schema_issues.ts';
 

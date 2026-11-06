@@ -15,7 +15,7 @@
 
 import { describe, test, assert } from 'vitest';
 import { z } from 'zod';
-import { object, void as fuz_void, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
+import { is, object, void as fuz_void, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 import { meta } from '@fuzdev/fuz_schema/meta.ts';
 
 import {
@@ -24,7 +24,7 @@ import {
 	build_action_manifest
 } from '#lib/testing/cross_backend/action_manifest.ts';
 import type { RouteAuth } from '#lib/http/auth_shape.ts';
-import type { RateLimitKey } from '#lib/http/error_schemas.ts';
+import type { RateLimitKey } from '#lib/rate_limiter.ts';
 
 const spec = (
 	method: string,
@@ -69,7 +69,7 @@ describe('action_manifest_entry', () => {
 		// The column is required, not optional: a backend that omits it fails
 		// the manifest capture's strict parse rather than reading as a default.
 		const { rate_limit: _omitted, ...without_rate_limit } = entry;
-		assert.ok(!ActionManifestEntry.safeParse(without_rate_limit).success);
+		assert.ok(!is(ActionManifestEntry, without_rate_limit));
 	});
 
 	test('a declared rate_limit class passes through', () => {

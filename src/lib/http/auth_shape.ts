@@ -28,14 +28,14 @@
  * invariant 2 (the `actor !== 'none' ⟺ input or query declares
  * acting?: ActingActor` biconditional), which introspects the spec's
  * input/query schemas, by `assert_route_auth_acting_biconditional`. Specs
- * are plain objects that no registration path parses, so neither check
- * can live only on a schema.
+ * are plain objects that no registration path parses, so both checks live in
+ * code rather than on a schema.
  *
  * @module
  */
 
 import { z } from 'zod';
-import { is_schema, parse } from '@fuzdev/fuz_schema/schema.ts';
+import { is_schema, one_of, parse, type Infer } from '@fuzdev/fuz_schema/schema.ts';
 import { get_schema_entries } from '@fuzdev/fuz_schema/introspect.ts';
 
 import { Uuid } from '../primitive_schemas.ts';
@@ -120,8 +120,8 @@ export const parse_acting = (value: unknown): string | undefined => {
  *   credential; the authorization phase 4xx for `actor === 'required'`
  *   without an actor binding).
  */
-export const AuthAxisState = z.enum(['none', 'optional', 'required']);
-export type AuthAxisState = z.infer<typeof AuthAxisState>;
+export const AuthAxisState = one_of(['none', 'optional', 'required']);
+export type AuthAxisState = Infer<typeof AuthAxisState>;
 
 /** One broken cross-axis invariant: the offending field and why. */
 interface RouteAuthInvariantViolation {
@@ -131,8 +131,7 @@ interface RouteAuthInvariantViolation {
 
 /**
  * The cross-axis invariants 1, 3, and 4 an auth shape breaks, in that order —
- * the one implementation behind `assert_route_auth_invariants` and the
- * `RouteAuth` schema's `.superRefine`.
+ * the implementation behind `assert_route_auth_invariants`.
  */
 const route_auth_invariant_violations = (auth: {
 	account: AuthAxisState;
@@ -182,8 +181,7 @@ const route_auth_invariant_violations = (auth: {
  * `RouteSpec.auth`.
  *
  * Cross-axis registry invariants, checked at registration by
- * `assert_route_auth_invariants` (and by this schema's `.superRefine`, the
- * same check, when a caller parses an auth shape):
+ * `assert_route_auth_invariants`:
  *
  * 1. **Roles imply actor.** `roles?.length` ⟹ `actor === 'required'`.
  *    Role checks read the actor's role_grants, so a role-gated spec without
@@ -199,57 +197,49 @@ const route_auth_invariant_violations = (auth: {
  *
  * Invariant 2 — the `actor !== 'none' ⟺ input or query declares
  * acting?: ActingActor` biconditional — needs introspection of the
- * spec's input/query schemas, so it is checked at registration time,
- * not on this schema. See `assert_route_auth_acting_biconditional`
- * below.
+ * spec's input/query schemas, so it is checked separately at registration.
+ * See `assert_route_auth_acting_biconditional` below.
  */
-export const RouteAuth = z
-	.strictObject({
-		account: AuthAxisState,
-		actor: AuthAxisState,
-		roles: z.array(z.string()).readonly().optional(),
-		credential_types: z.array(z.string()).readonly().optional(),
-		/**
-		 * The capability a **narrowed** api token's scope must admit to reach this
-		 * route, in the `<section>:<id>` vocabulary a denial reports back as
-		 * `required_scope`:
-		 *
-		 * - `surface:<name>` — a non-RPC surface, refused to every narrowed token
-		 *   whatever its method list says (token scoping's rule that a narrowed
-		 *   token is RPC-only). `surface:audit_stream`, `surface:fact_bare`,
-		 *   `surface:account_verify`, and `surface:app_surface` are the spine's
-		 *   route-spec ones; a consumer names its own without registering it.
-		 *
-		 * The `rpc:<method>` arm of that vocabulary is the dispatcher's per-method
-		 * gate, which a route never reaches, so a route may not declare it.
-		 *
-		 * Declaring it makes the guard resolver mount the refusal ahead of the role
-		 * gate, instead of the route hand-rolling the check in its handler (which
-		 * the auth phase has already role-gated by then, so a narrowed token whose
-		 * account lacks the role would be told about the role rather than about the
-		 * scope).
-		 *
-		 * Opt-in rather than blanket: no narrowed token reaches login (which reads
-		 * no credential) or logout and the password change (session-only), the
-		 * RPC endpoint runs its own per-method check inside the dispatcher, the
-		 * `reads_credential` routes that answer anonymous callers (account status,
-		 * the cell-scoped fact read) can't take the field and answer a narrowed
-		 * token as anonymous in their handler (`get_public_account_id`), and the
-		 * server-status route admits a narrowed token by design — and all are
-		 * route specs too.
-		 *
-		 * Typed as a plain string here to keep `http/` from importing `auth/`; the
-		 * resolver checks it at registration and throws on anything but a
-		 * well-formed `surface:<name>`.
-		 */
-		required_scope: z.string().optional()
-	})
-	.superRefine((value, ctx) => {
-		for (const { path, message } of route_auth_invariant_violations(value)) {
-			ctx.addIssue({ code: 'custom', message, path: [path] });
-		}
-	});
-export type RouteAuth = z.infer<typeof RouteAuth>;
+export interface RouteAuth {
+	account: AuthAxisState;
+	actor: AuthAxisState;
+	roles?: ReadonlyArray<string> | undefined;
+	credential_types?: ReadonlyArray<string> | undefined;
+	/**
+	 * The capability a **narrowed** api token's scope must admit to reach this
+	 * route, in the `<section>:<id>` vocabulary a denial reports back as
+	 * `required_scope`:
+	 *
+	 * - `surface:<name>` — a non-RPC surface, refused to every narrowed token
+	 *   whatever its method list says (token scoping's rule that a narrowed
+	 *   token is RPC-only). `surface:audit_stream`, `surface:fact_bare`,
+	 *   `surface:account_verify`, and `surface:app_surface` are the spine's
+	 *   route-spec ones; a consumer names its own without registering it.
+	 *
+	 * The `rpc:<method>` arm of that vocabulary is the dispatcher's per-method
+	 * gate, which a route never reaches, so a route may not declare it.
+	 *
+	 * Declaring it makes the guard resolver mount the refusal ahead of the role
+	 * gate, instead of the route hand-rolling the check in its handler (which
+	 * the auth phase has already role-gated by then, so a narrowed token whose
+	 * account lacks the role would be told about the role rather than about the
+	 * scope).
+	 *
+	 * Opt-in rather than blanket: no narrowed token reaches login (which reads
+	 * no credential) or logout and the password change (session-only), the
+	 * RPC endpoint runs its own per-method check inside the dispatcher, the
+	 * `reads_credential` routes that answer anonymous callers (account status,
+	 * the cell-scoped fact read) can't take the field and answer a narrowed
+	 * token as anonymous in their handler (`get_public_account_id`), and the
+	 * server-status route admits a narrowed token by design — and all are
+	 * route specs too.
+	 *
+	 * Typed as a plain string here to keep `http/` from importing `auth/`; the
+	 * resolver checks it at registration and throws on anything but a
+	 * well-formed `surface:<name>`.
+	 */
+	required_scope?: string | undefined;
+}
 
 // --- Predicates over the flat-record shape ---
 //
@@ -337,12 +327,12 @@ export const assert_route_auth_invariants = (auth: RouteAuth, context: string): 
 // --- Registry-time invariant 2 enforcement ---
 //
 // The biconditional `auth.actor !== 'none' ⟺ input (or query, on REST
-// GETs) declares acting?: ActingActor`. Cannot live on the `RouteAuth`
-// schema's `.superRefine` because it requires introspecting the spec's
-// input/query schemas for reference equality with the canonical
-// `ActingActor` schema above. Enforced at registration time by every
-// dispatcher loop (`apply_route_specs`, `compile_action_registry` for
-// `create_rpc_endpoint` + `register_action_ws`).
+// GETs) declares acting?: ActingActor`. Checked apart from the cross-axis
+// invariants because it introspects the spec's input/query schemas for
+// reference equality with the canonical `ActingActor` schema above.
+// Enforced at registration time by every dispatcher loop
+// (`apply_route_specs`, `compile_action_registry` for `create_rpc_endpoint`
+// + `register_action_ws`).
 
 /**
  * Whether a schema declares the canonical `acting?: ActingActor` field.

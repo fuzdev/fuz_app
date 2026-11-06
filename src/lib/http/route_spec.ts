@@ -24,15 +24,16 @@ import type { Logger } from '@fuzdev/fuz_util/log.ts';
 import type { Db } from '../db/db.ts';
 import { is_db_checkout_error } from '../db/db_checkout_error.ts';
 import {
-	type RouteErrorSchemas,
-	type RateLimitKey,
+	type ErrorSchemas,
 	ERROR_INVALID_JSON_BODY,
 	ERROR_INVALID_REQUEST_BODY,
 	ERROR_INVALID_ROUTE_PARAMS,
 	ERROR_INVALID_QUERY_PARAMS,
+	ERROR_INTERNAL_ERROR,
 	ERROR_SERVICE_UNAVAILABLE,
 	ERROR_UNSUPPORTED_CONTENT_TYPE
 } from './error_schemas.ts';
+import type { RateLimitKey } from '../rate_limiter.ts';
 import { is_post_content_type_refused } from './simple_request.ts';
 import {
 	jsonrpc_error_code_to_http_status,
@@ -249,7 +250,7 @@ export interface RouteSpec {
 	 *
 	 * Explicit entries override auto-derived ones for the same status code.
 	 */
-	errors?: RouteErrorSchemas;
+	errors?: ErrorSchemas;
 	/**
 	 * Whether to wrap the handler in a database transaction.
 	 *
@@ -459,7 +460,7 @@ const create_query_validation = (
 const is_internal_error_body = (body: unknown): boolean =>
 	body !== null &&
 	typeof body === 'object' &&
-	(body as { error?: unknown }).error === 'internal_error';
+	(body as { error?: unknown }).error === ERROR_INTERNAL_ERROR;
 
 /** Whether a JSON body is the catch layer's failed-checkout `{error: 'service_unavailable'}`. */
 const is_service_unavailable_body = (body: unknown): boolean =>
@@ -484,7 +485,7 @@ const is_service_unavailable_body = (body: unknown): boolean =>
 const wrap_output_validation = (
 	handler: Handler,
 	output_schema: ValidationSchema,
-	error_schemas: RouteErrorSchemas | null,
+	error_schemas: ErrorSchemas | null,
 	log: Logger
 ): Handler => {
 	if (!DEV) return handler;
@@ -586,7 +587,7 @@ const wrap_error_catch = (handler: Handler, log: Logger): Handler => {
 			// validation-issue redaction), production gets the bare error code.
 			log.error('Unhandled handler error', err);
 			const body: Record<string, unknown> = {
-				error: 'internal_error',
+				error: ERROR_INTERNAL_ERROR,
 				message: dev_only(() => (err instanceof Error ? err.message : undefined))
 			};
 			return c.json(body, 500);

@@ -23,6 +23,7 @@ import './assert_dev_env.ts';
  */
 
 import { describe, test, assert } from 'vitest';
+import { parse_or_throw } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { SessionOptions } from '../auth/session_cookie.ts';
 import type { AppServerContext } from '../server/app_server_context.ts';
@@ -154,7 +155,7 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 					});
 					assert.strictEqual(blocked_res.status, 429);
 					const body = await blocked_res.json();
-					RateLimitError.parse(body);
+					parse_or_throw(RateLimitError, body);
 					assert.ok(
 						typeof body.retry_after === 'number' && body.retry_after > 0,
 						'Expected positive retry_after'
@@ -220,7 +221,7 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 					});
 					assert.strictEqual(blocked_res.status, 429);
 					const body = await blocked_res.json();
-					RateLimitError.parse(body);
+					parse_or_throw(RateLimitError, body);
 					assert.ok(
 						typeof body.retry_after === 'number' && body.retry_after > 0,
 						'Expected positive retry_after'

@@ -14,7 +14,6 @@
 
 import {
 	array,
-	boolean,
 	integer,
 	literal,
 	loose_object,
@@ -23,7 +22,6 @@ import {
 	number,
 	object,
 	one_of,
-	optional,
 	pipe,
 	type Infer
 } from '@fuzdev/fuz_schema/schema.ts';
@@ -33,10 +31,10 @@ import { UsernameCanonical, UsernameProvided } from '../primitive_schemas_fuz.ts
 import { Password, PasswordProvided } from './password.ts';
 import type { RouteSpec } from '../http/route_spec.ts';
 import {
-	ERROR_AUTHENTICATION_REQUIRED,
-	ERROR_INVALID_CREDENTIALS,
 	ERROR_INVALID_JSON_BODY,
-	ERROR_INVALID_REQUEST_BODY
+	ERROR_INVALID_REQUEST_BODY,
+	REST_AUTHENTICATION_REQUIRED_BOOTSTRAP,
+	REST_INVALID_CREDENTIALS
 } from '../http/error_schemas.ts';
 
 /** Input for `GET /api/account/status`, `literal(null)`. No parameters — caller is the subject. */
@@ -53,12 +51,10 @@ export type AccountStatusOutput = Infer<typeof AccountStatusOutput>;
 
 /**
  * Error body for `GET /api/account/status` on the unauthenticated path, a
- * `@fuzdev/fuz_schema` schema.
+ * `@fuzdev/fuz_schema` schema: `REST_AUTHENTICATION_REQUIRED_BOOTSTRAP`'s,
+ * `authentication_required` with the optional `bootstrap_available`.
  */
-export const AccountStatusUnauthenticatedError = loose_object({
-	error: literal(ERROR_AUTHENTICATION_REQUIRED),
-	bootstrap_available: optional(boolean)
-});
+export const AccountStatusUnauthenticatedError = REST_AUTHENTICATION_REQUIRED_BOOTSTRAP.schema;
 export type AccountStatusUnauthenticatedError = Infer<typeof AccountStatusUnauthenticatedError>;
 
 /**
@@ -213,7 +209,7 @@ export const create_account_route_shapes = (
 		transaction: false,
 		errors: {
 			400: loose_object({ error: one_of([ERROR_INVALID_JSON_BODY, ERROR_INVALID_REQUEST_BODY]) }),
-			401: loose_object({ error: literal(ERROR_INVALID_CREDENTIALS) })
+			401: REST_INVALID_CREDENTIALS.schema
 		}
 	},
 	{

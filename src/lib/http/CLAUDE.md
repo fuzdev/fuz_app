@@ -15,8 +15,8 @@ effects, see ../../../docs/architecture.md.
 ## Module Map
 
 - `http/route_spec.ts` — `RouteSpec` + `apply_route_specs`, validation pipeline, transactions.
-- `http/auth_shape.ts` — canonical `RouteAuth` Zod schema + predicates + the registration-time checks: `assert_route_auth_invariants` (the cross-axis invariants 1, 3, 4) and `assert_route_auth_acting_biconditional` (invariant 2), both run by `apply_route_specs` and `compile_action_registry` on every spec.
-- `http/error_schemas.ts` — `ERROR_*` constants, standard error shapes, `derive_error_schemas`.
+- `http/auth_shape.ts` — canonical `RouteAuth` type + `AuthAxisState` + predicates + the registration-time checks: `assert_route_auth_invariants` (the cross-axis invariants 1, 3, 4) and `assert_route_auth_acting_biconditional` (invariant 2), both run by `apply_route_specs` and `compile_action_registry` on every spec.
+- `http/error_schemas.ts` — `ERROR_*` constants, the per-code REST error definitions (`rest_error`, `REST_*`), standard error shapes, `derive_error_schemas`, `to_error_schemas`.
 - `http/schema_helpers.ts` — shared Zod introspection (null/void/strict/surface/merge/middleware-applies) + `to_void_params` / `to_input_params` / `json_has_own_proto_key` / `safe_parse_dropping_unknown_keys`.
 - `http/middleware_spec.ts` — `MiddlewareSpec` interface.
 - `http/body_limit.ts` — `create_body_limit_middleware(max_size)`: the `413` body cap `create_app_server` mounts. Refuses on `Content-Length` without reading `c.req.raw.body` and answers `Connection: close` — `413` past the cap, `400` `ERROR_INVALID_CONTENT_LENGTH` when the value is not a plain run of ASCII digits (a length the cap cannot read, which Hono's `bodyLimit` would pass uncounted) — else falls through to Hono's `bodyLimit` (no `Content-Length`, or one beside `Transfer-Encoding`), which reads the body into memory up to the cap before the next middleware runs, so its `413` — no `Connection: close` — also precedes origin and auth. Mounted with `app.use`, not as a `MiddlewareSpec`, so neither status appears in a route's merged error schemas. After the header `413` Node and Bun close at once (the header is what makes them — Bun 1.4.3 is the tested floor, an older Bun kept the connection and served the next request) and Deno closes once the declared body has arrived (../../../docs/security.md §Body Size Limiting).
@@ -55,7 +55,7 @@ consumers.
 - `mints_credential?: boolean` — the route issues a session cookie while declaring no auth (login, signup, bootstrap); assembly refuses it outside `AUTH_MIDDLEWARE_PATH`, as it does any route whose `auth.account` is not `'none'` (`assert_credential_routes_in_auth_scope` in `auth/middleware.ts`)
 - `reads_credential?: boolean` — the handler reads the resolved account while the route declares no auth gate, answering an anonymous caller itself (account status, the cell-scoped fact read, `create_rpc_endpoint`'s pair, whose dispatcher gates per action); held inside `AUTH_MIDDLEWARE_PATH` by the same assertion. Such a handler reads the account through `get_public_account_id` (`auth/request_context.ts`), which answers a scope-narrowed token as anonymous — the RPC pair excepted, its dispatcher gating each method
 - `rate_limit?: RateLimitKey` — metadata only (`'ip' | 'account' | 'both'`); auto-derives 429
-- `errors?: RouteErrorSchemas` — handler-specific error schemas keyed by HTTP status
+- `errors?: ErrorSchemas` — handler-specific error schemas keyed by HTTP status
 - `transaction?: boolean` — declarative transaction wrapping (see below)
 
 Every schema field takes a Zod or a `@fuzdev/fuz_schema` schema
@@ -167,17 +167,20 @@ WS); see ../../../docs/architecture.md §DEV-only Output Validation.
 
 `http/error_schemas.ts` is the **declarative** error surface:
 
-- `ERROR_*` `snake_case` string constants — single source of truth; use `.literal(ERROR_*)` in Zod schemas and inline checks in handlers
-- `ApiError`, `ValidationError`, `PermissionError`, `CredentialTypeRequiredError`, `RateLimitError`, `PayloadTooLargeError`, `UnsupportedContentTypeError`, `ForeignKeyError` — standard shapes
-- `RouteErrorSchemas = Partial<Record<number, ValidationSchema>>` — Zod or fuz_schema, on `RouteSpec.errors` and `MiddlewareSpec.errors`; `derive_error_schemas` returns the Zod-only `DerivedErrorSchemas`
-- `RateLimitKey = 'ip' | 'account' | 'both'`
+- `ERROR_*` `snake_case` string constants — single source of truth for codes; they double as JSON-RPC `data.reason`s, so they carry no HTTP status
+- `rest_error(status, code, fields?, headers?)` → `RestErrorDef<S, C, F>` — one code at one status, its body `loose_object({error: literal(code), ...fields})` as `.schema`; `headers` derives response headers from a body (`Retry-After`). Status and code must be literals. One `REST_*` definition per code a route or middleware answers (`REST_TABLE_NOT_FOUND`, `REST_RATE_LIMIT_EXCEEDED`, …); a code with a second body shape gets a second definition (`REST_AUTHENTICATION_REQUIRED_BOOTSTRAP`, `/account/status`'s 401 with `bootstrap_available`)
+- `to_error_schemas(defs)` — a status map from definitions: one schema at a status maps to it, more to a `union` in list order
+- `ApiError`, `InvalidInputError`, `PermissionError`, `CredentialTypeRequiredError`, `TokenScopeRequiredError`, `RateLimitError`, `PayloadTooLargeError`, `UnsupportedContentTypeError`, `ForeignKeyError`, and the authorization-phase shapes — standard shapes, `@fuzdev/fuz_schema` schemas; each single-code one is its definition's `.schema`. `InvalidInputError` is one object over the four input codes (`one_of`), so its surface entry is one `enum`
+- `ErrorSchemas = Partial<Record<number, ValidationSchema>>` — fuz_schema or Zod, on `RouteSpec.errors` and `MiddlewareSpec.errors`; `derive_error_schemas` returns the fuz_schema `DerivedErrorSchemas`
+- `RateLimitKey` (`rate_limiter.ts`) — `'ip' | 'account' | 'both'`
 
-All standard shapes use `z.looseObject` — intentional because multiple
+All error bodies are loose objects — intentional because multiple
 producers (middleware + handler) can emit different extra fields at the
-same status code. The `error` string literal is the contract; extra keys
-(`required_roles`, `required_credential_types`, `retry_after`, `detail`) are diagnostic.
+same status code, and a thrown error flattens its `data` into the body. The
+`error` code is the contract; extra keys (`required_roles`,
+`required_credential_types`, `retry_after`, `message`) are diagnostic.
 
-Pair every schema with the `z.infer` type export.
+Pair every schema with its `Infer` type export.
 
 ### Three-layer error-schema merge
 
@@ -187,13 +190,14 @@ entry left `undefined` is absent (`strip_undefined_error_schemas`), so it
 overrides nothing:
 
 1. **Derived** — from `derive_error_schemas({auth, has_input?, has_params?, has_query?, rate_limit?, checks_content_type?})`:
-   - `has_input || has_params || has_query` → 400 `ValidationError`
+   - `has_input || has_params || has_query` → 400 `InvalidInputError`
    - `auth.account === 'required'` or `auth.actor === 'required'` → 401 `ApiError`
    - `auth.roles?.length` → 403 `PermissionError` (carries `required_roles`)
-   - `auth.credential_types?.length` → 403 `CredentialTypeRequiredError` (carries `required_credential_types`; both gates set yields `z.union([PermissionError, CredentialTypeRequiredError])`)
+   - `auth.credential_types?.length` → 403 `CredentialTypeRequiredError` (carries `required_credential_types`)
+   - `auth.required_scope` → 403 `TokenScopeRequiredError` (carries `required_scope`); a route with more than one 403 gate derives a `union` of their shapes, since any of them can answer
    - `rate_limit` → 429 `RateLimitError`
    - `checks_content_type` (every `POST`) → 415 `UnsupportedContentTypeError`
-   - `auth.actor !== 'none'` → widens 400 to a union with `ActorRequiredError` / `ActorNotOnAccountError` and adds 500 union of `NoActorsOnAccountError` / `AccountVanishedError`. Mirrors what the dispatcher's authorization phase actually emits on routes whose input declares `acting?: ActingActor` (per registry-time invariant 2) — so DEV-mode error-schema validation doesn't reject the auth phase's body.
+   - `auth.actor !== 'none'` → widens 400 to a union with `ActorRequiredError` / `ActorNotOnAccountError` and adds 500 union of `NoActorsOnAccountError` / `AccountVanishedError`. Mirrors what the dispatcher's authorization phase actually emits on routes whose input declares `acting?: ActingActor` (per registry-time invariant 2), so the surface documents those bodies and the round-trip and attack-surface suites, which check real responses against the declared schemas, accept them. DEV-mode error-schema validation never sees them: it wraps only the handler, and the authorization phase answers before it runs.
 2. **Middleware** — from `MiddlewareSpec.errors` that apply to the route's path (via `middleware_applies`)
 3. **Explicit** — `RouteSpec.errors` — always wins
 
@@ -306,7 +310,7 @@ No side effects, no state — filters and groupings over `AppSurface`:
 The per-route auth predicates these filters compose over (`is_public_auth`,
 `is_role_auth`, `is_credential_gated_auth`, `is_keeper_auth`,
 `is_plain_authenticated_auth`, plus `needs_actor`) live
-in `http/auth_shape.ts` next to the canonical `RouteAuth` schema — import
+in `http/auth_shape.ts` next to the canonical `RouteAuth` type — import
 them from there, not from this module. Same predicates back the
 dispatcher's authorization phase, the route-spec auth-guard resolver,
 `derive_error_schemas`'s actor-failure folding, and the testing harnesses.
@@ -323,7 +327,7 @@ interface MiddlewareSpec {
 	name: string;
 	path: string; // Hono pattern — '*', exact, or '/api/*'
 	handler: MiddlewareHandler;
-	errors?: RouteErrorSchemas; // schemas this layer may emit, keyed by status
+	errors?: ErrorSchemas; // schemas this layer may emit, keyed by status
 }
 ```
 
@@ -674,4 +678,4 @@ Interfaces exported for consumer use: `TableInfo`, `TableWithCount`,
 - **Middleware ordering** is assembled by `create_app_server` — see the root ../../../CLAUDE.md §Middleware Ordering. The invariants `http/` needs consumers to uphold: trusted-proxy runs before auth/rate-limit; origin verification runs before session parsing; `client_ip` must be set before any handler or rate limiter reads it
 - **No re-exports.** Import every symbol from its canonical source module. `http/surface.ts` no longer re-exports schema helpers — go through `http/schema_helpers.ts`
 - **Input/output schemas align with SAES.** When wiring RPC via `actions/action_rpc.ts`, the same Zod types flow through unchanged (see `actions/CLAUDE.md` §Single JSON-RPC 2.0 endpoint)
-- **Error modules are complementary, not redundant.** `http/error_schemas.ts` is Zod-first (for routes and surface); `http/jsonrpc_errors.ts` is throw-first (for handlers and the catch layer). A single `ERROR_*` code can be raised either way depending on whether the handler needs to also attach diagnostic fields
+- **Error modules are complementary, not redundant.** `http/error_schemas.ts` is declaration-first (for routes and surface); `http/jsonrpc_errors.ts` is throw-first (for handlers and the catch layer). A single `ERROR_*` code can be raised either way depending on whether the handler needs to also attach diagnostic fields

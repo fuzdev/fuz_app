@@ -8,7 +8,8 @@
  * `invalid_reason` and `empty_input_handler_guarded` to fuz_schema's
  * `SchemaMeta`, so the declared refusal reason of an action input, its
  * handler-guarded marker, and its sensitivity read the same whichever library
- * its schema is.
+ * its schema is. It also adds JSON Schema's `readOnly` annotation, which
+ * `to_json_schema` writes as Zod's `.readonly()` did.
  *
  * @module
  */
@@ -48,6 +49,12 @@ declare module '@fuzdev/fuz_schema/meta.ts' {
 		 * (`get_meta`), so a wrapper around it drops it, as in Zod.
 		 */
 		empty_input_handler_guarded?: boolean;
+		/**
+		 * JSON Schema's `readOnly` annotation, which `to_json_schema` copies onto
+		 * the node: written on the role and credential-type lists of the 403
+		 * bodies (`http/error_schemas.ts`), as Zod's `.readonly()` wrote it.
+		 */
+		readOnly?: boolean;
 	}
 }
 

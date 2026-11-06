@@ -75,7 +75,8 @@ the code.
   `fuz_db` twin's; `src/test/db/status.test.ts` pins the shared fixture.
 - `schema_ready.ts` — `/ready` deploy-gate core: `query_public_columns`
   (keeps `schema_version`, unlike `query_schema_snapshot`), pure
-  `check_schema_drift` / `format_schema_drift`, `READY_ERROR`. Column-presence
+  `check_schema_drift` / `format_schema_drift` (the `/ready` 503 codes are
+  `ERROR_SCHEMA_DRIFT` / `ERROR_DB_UNREACHABLE` in `http/error_schemas.ts`). Column-presence
   drift detection only (engine-portable); the HTTP route + fixture loader live
   in `http/common_routes.ts`, the gen-time regen helper in
   `testing/schema_ready_fixture.ts`.

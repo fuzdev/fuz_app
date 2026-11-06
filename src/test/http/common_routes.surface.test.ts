@@ -4,7 +4,10 @@
  * routes — held to the Zod-era one captured in
  * `fixtures/surface/common_routes.json`. Equal as JSON apart from one declared
  * move, applied to the capture here: `/api/server/status`'s `uptime_ms` is a
- * non-negative integer, where the Zod one was any number.
+ * non-negative integer, where the Zod one was any number. Key for key, each
+ * `readOnly` annotation moves after its node's keywords, where
+ * `to_json_schema` writes metadata (Zod wrote `.readonly()` first): a move of
+ * key order alone, applied before the comparison of serializations.
  *
  * @module
  */
@@ -66,6 +69,15 @@ const MOVES: Record<string, (route: Record<string, any>) => Record<string, any>>
 	}
 };
 
+/** The capture with each `readOnly` key last in its node, where fuz_schema writes it. */
+const move_read_only = (value: unknown): unknown => {
+	if (Array.isArray(value)) return value.map(move_read_only);
+	if (value === null || typeof value !== 'object') return value;
+	const { readOnly, ...rest } = value as Record<string, unknown>;
+	const moved = Object.fromEntries(Object.entries(rest).map(([k, v]) => [k, move_read_only(v)]));
+	return readOnly === undefined ? moved : { ...moved, readOnly };
+};
+
 describe('common routes surface', () => {
 	const head: SurfaceCapture = JSON.parse(readFileSync(FIXTURE_PATH, 'utf8'));
 	const surface = capture_surface();
@@ -91,7 +103,9 @@ describe('common routes surface', () => {
 	});
 
 	test('the routes serialize to the capture key for key', () => {
-		const expected = head.routes.map((r) => MOVES[`${r.method} ${r.path}`]?.(r) ?? r);
+		const expected = move_read_only(
+			head.routes.map((r) => MOVES[`${r.method} ${r.path}`]?.(r) ?? r)
+		);
 		assert.strictEqual(JSON.stringify(surface.routes), JSON.stringify(expected));
 	});
 

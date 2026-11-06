@@ -135,9 +135,3 @@ export const format_schema_drift = (drift: SchemaDriftResult): string => {
 	}
 	return lines.join('\n');
 };
-
-/** Error codes a readiness check returns at `503` (conforms to `{error: string}`). */
-export const READY_ERROR = {
-	schema_drift: 'schema_drift',
-	db_unreachable: 'db_unreachable'
-} as const;

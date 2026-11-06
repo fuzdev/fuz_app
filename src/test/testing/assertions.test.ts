@@ -10,7 +10,7 @@ import { z } from 'zod';
 import { literal, loose_object } from '@fuzdev/fuz_schema/schema.ts';
 
 import { assert_error_schema_valid, get_route_error_schema } from '#lib/testing/assertions.ts';
-import type { RouteErrorSchemas } from '#lib/http/error_schemas.ts';
+import type { ErrorSchemas } from '#lib/http/error_schemas.ts';
 import { generate_app_surface } from '#lib/http/surface.ts';
 
 const FuzNotFound = loose_object({ error: literal('thing_not_found') });
@@ -31,7 +31,7 @@ const route = generate_app_surface({
 	middleware_specs: []
 }).routes[0]!;
 
-const lookup: Map<string, RouteErrorSchemas> = new Map([
+const lookup: Map<string, ErrorSchemas> = new Map([
 	['GET /things/:id', { 404: FuzNotFound, 409: ZodConflict }]
 ]);
 

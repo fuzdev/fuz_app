@@ -16,11 +16,8 @@ import { to_json_schema } from '@fuzdev/fuz_schema/json_schema.ts';
 
 import type { RouteAuth } from './auth_shape.ts';
 import type { RouteMethod } from './route_spec.ts';
-import {
-	derive_error_schemas,
-	type RateLimitKey,
-	type RouteErrorSchemas
-} from './error_schemas.ts';
+import { derive_error_schemas, type ErrorSchemas } from './error_schemas.ts';
+import type { RateLimitKey } from '../rate_limiter.ts';
 import {
 	assert_validation_schema,
 	parse_any,
@@ -512,7 +509,7 @@ export const middleware_spec_applies = (
  * @returns the entries that hold a schema
  */
 export const strip_undefined_error_schemas = (
-	errors: RouteErrorSchemas
+	errors: ErrorSchemas
 ): Record<number, ValidationSchema> => {
 	const defined: Record<number, ValidationSchema> = {};
 	for (const [status, schema] of Object.entries(errors)) {
@@ -541,9 +538,9 @@ export const merge_error_schemas = (
 		params?: ValidationSchema;
 		query?: ValidationSchema;
 		rate_limit?: RateLimitKey;
-		errors?: RouteErrorSchemas;
+		errors?: ErrorSchemas;
 	},
-	middleware_errors?: RouteErrorSchemas | null
+	middleware_errors?: ErrorSchemas | null
 ): Record<number, ValidationSchema> | null => {
 	const derived = derive_error_schemas({
 		auth: spec.auth,

@@ -1,5 +1,6 @@
 /**
- * Tests for the common route spec factories (health check, server status).
+ * Tests for the common route spec factories (health check, readiness, server
+ * status).
  *
  * Creates test Hono apps from route specs and exercises both metadata
  * and HTTP behavior for authenticated and unauthenticated requests.
@@ -13,8 +14,11 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import {
 	create_health_route_spec,
+	create_ready_route_spec,
 	create_server_status_route_spec
 } from '#lib/http/common_routes.ts';
+import { ERROR_DB_UNREACHABLE, ERROR_SCHEMA_DRIFT } from '#lib/http/error_schemas.ts';
+import { Db, type DbClient } from '#lib/db/db.ts';
 import { apply_route_specs } from '#lib/http/route_spec.ts';
 import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
 import { REQUEST_CONTEXT_KEY, type RequestContext } from '#lib/auth/request_context.ts';
@@ -96,6 +100,70 @@ describe('health route handler', () => {
 			headers: { cookie: 'test_session=some_value', authorization: 'Bearer some_token' }
 		});
 		assert.strictEqual(res_both.status, 200);
+	});
+});
+
+describe('ready route handler', () => {
+	const expected = { schema_version: ['name', 'sequence'] };
+
+	/** A db whose column query answers `rows`, or throws when given none. */
+	const create_ready_db = (rows?: Array<{ table_name: string; column_name: string }>): Db => {
+		const client: DbClient = {
+			query: async <T>() => {
+				if (!rows) throw new Error('connection refused');
+				return { rows: rows as Array<T> };
+			}
+		};
+		const db: Db = new Db({ client, transaction: async (fn) => fn(db) });
+		return db;
+	};
+
+	const request_ready = async (db: Db): Promise<{ status: number; body: unknown }> => {
+		const app = new Hono();
+		apply_route_specs(
+			app,
+			[create_ready_route_spec({ expected })],
+			fuz_auth_guard_resolver,
+			log,
+			db
+		);
+		const res = await app.request('/ready');
+		return { status: res.status, body: await res.json() };
+	};
+
+	test('answers 200 {ready: true} when every expected column is live', async () => {
+		const db = create_ready_db([
+			{ table_name: 'schema_version', column_name: 'name' },
+			{ table_name: 'schema_version', column_name: 'sequence' }
+		]);
+		assert.deepStrictEqual(await request_ready(db), { status: 200, body: { ready: true } });
+	});
+
+	test('answers 503 schema_drift when a column is missing', async () => {
+		const db = create_ready_db([{ table_name: 'schema_version', column_name: 'name' }]);
+		assert.deepStrictEqual(await request_ready(db), {
+			status: 503,
+			body: { error: ERROR_SCHEMA_DRIFT }
+		});
+	});
+
+	test('answers 503 schema_drift when a table is missing', async () => {
+		assert.deepStrictEqual(await request_ready(create_ready_db([])), {
+			status: 503,
+			body: { error: ERROR_SCHEMA_DRIFT }
+		});
+	});
+
+	test('answers 503 db_unreachable when the column query throws', async () => {
+		assert.deepStrictEqual(await request_ready(create_ready_db()), {
+			status: 503,
+			body: { error: ERROR_DB_UNREACHABLE }
+		});
+	});
+
+	test('the two codes are distinct', () => {
+		assert.strictEqual(ERROR_SCHEMA_DRIFT, 'schema_drift');
+		assert.strictEqual(ERROR_DB_UNREACHABLE, 'db_unreachable');
 	});
 });
 

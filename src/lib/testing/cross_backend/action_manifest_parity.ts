@@ -28,7 +28,7 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import type { RateLimitKey } from '../../http/error_schemas.ts';
+import type { RateLimitKey } from '../../rate_limiter.ts';
 import type { ActionManifest, ActionManifestEntry } from './action_manifest.ts';
 
 /** The auth axes compared as scalars (`'none' | 'optional' | 'required'`). */

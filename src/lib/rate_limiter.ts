@@ -26,9 +26,23 @@
 
 import type { Context } from 'hono';
 import { LruMap } from '@fuzdev/fuz_util/lru_map.ts';
+import { one_of, type Infer } from '@fuzdev/fuz_schema/schema.ts';
 
-import { ERROR_RATE_LIMIT_EXCEEDED } from './http/error_schemas.ts';
+import { REST_RATE_LIMIT_EXCEEDED } from './http/error_schemas.ts';
 import { PERIODIC_INTERVAL_MS_MAX } from './periodic.ts';
+
+/**
+ * Rate limit key type — declares what a route or RPC action's rate limiter
+ * is keyed on.
+ *
+ * - `'ip'` — per-IP rate limiting (login, bootstrap, password change, signup)
+ * - `'account'` — per-account rate limiting. On REST auth routes the key is
+ *   the submitted identifier (login). On RPC actions (post-auth) the key is
+ *   the resolved actor id (`request_context.actor.id`) — separate namespace.
+ * - `'both'` — both keys.
+ */
+export const RateLimitKey = one_of(['ip', 'account', 'both']);
+export type RateLimitKey = Infer<typeof RateLimitKey>;
 
 /**
  * Default tracked-key cap: bounds worst-case memory under key-enumeration
@@ -773,8 +787,10 @@ export const create_rate_limiter = (options?: Partial<RateLimiterOptions>): Rate
  * @param retry_after - seconds until the client should retry
  * @returns a 429 Response
  */
-export const rate_limit_exceeded_response = (c: Context, retry_after: number): Response =>
-	c.json(
-		{ error: ERROR_RATE_LIMIT_EXCEEDED, retry_after },
-		{ status: 429, headers: { 'Retry-After': String(Math.ceil(retry_after)) } }
-	);
+export const rate_limit_exceeded_response = (c: Context, retry_after: number): Response => {
+	const body = { error: REST_RATE_LIMIT_EXCEEDED.code, retry_after };
+	return c.json(body, {
+		status: REST_RATE_LIMIT_EXCEEDED.status,
+		headers: REST_RATE_LIMIT_EXCEEDED.headers!(body)
+	});
+};

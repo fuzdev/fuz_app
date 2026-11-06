@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { assert } from 'vitest';
 
 import type { AppSurface, AppSurfaceRoute } from '../http/surface.ts';
-import type { RouteErrorSchemas } from '../http/error_schemas.ts';
+import type { ErrorSchemas } from '../http/error_schemas.ts';
 import { is_public_auth } from '../http/auth_shape.ts';
 import { parse_any, type ValidationSchema } from '../schema_issues.ts';
 
@@ -94,7 +94,7 @@ export const assert_only_expected_public_routes = (
  *   `undefined` when no error schema is declared for the status code
  */
 export const get_route_error_schema = (
-	lookup: Map<string, RouteErrorSchemas>,
+	lookup: Map<string, ErrorSchemas>,
 	route: AppSurfaceRoute,
 	status: number
 ): ValidationSchema | undefined => {
@@ -117,7 +117,7 @@ export const get_route_error_schema = (
  *   carrying the failed parse's issues (`parse_any`).
  */
 export const assert_error_schema_valid = (
-	lookup: Map<string, RouteErrorSchemas>,
+	lookup: Map<string, ErrorSchemas>,
 	route: AppSurfaceRoute,
 	status: number,
 	body: unknown

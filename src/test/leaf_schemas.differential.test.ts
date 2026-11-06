@@ -47,7 +47,7 @@ import {
 	OriginConformanceMatchRow,
 	OriginConformanceParseRow
 } from '#lib/testing/cross_backend/origin_conformance.ts';
-import { READY_ERROR } from '#lib/db/schema_ready.ts';
+import { ERROR_DB_UNREACHABLE, ERROR_SCHEMA_DRIFT } from '#lib/http/error_schemas.ts';
 import { generate_app_surface } from '#lib/http/surface.ts';
 
 // --- the Zod copies, as the library wrote them ---
@@ -83,7 +83,7 @@ const ZodWireIssue = z.looseObject({
 const ZodHealthResponse = z.strictObject({ status: z.literal('ok') });
 const ZodReadyOutput = z.strictObject({ ready: z.literal(true) });
 const ZodReady503 = z.strictObject({
-	error: z.enum([READY_ERROR.schema_drift, READY_ERROR.db_unreachable])
+	error: z.enum([ERROR_SCHEMA_DRIFT, ERROR_DB_UNREACHABLE])
 });
 const ZodServerStatusOutput = z.looseObject({ version: z.string(), uptime_ms: z.number() });
 const ZodSurfaceOutput = z.looseObject({
@@ -337,8 +337,8 @@ const ROWS: Array<Row> = [
 		name: '/ready 503',
 		fuz: fuz_slot(ready_spec.errors?.[503]),
 		zod: ZodReady503,
-		samples: [{ error: READY_ERROR.schema_drift }, { error: READY_ERROR.db_unreachable }],
-		pool: [READY_ERROR.schema_drift, READY_ERROR.db_unreachable, 'schema_drift ']
+		samples: [{ error: ERROR_SCHEMA_DRIFT }, { error: ERROR_DB_UNREACHABLE }],
+		pool: [ERROR_SCHEMA_DRIFT, ERROR_DB_UNREACHABLE, 'schema_drift ']
 	},
 	{
 		name: '/api/server/status output',

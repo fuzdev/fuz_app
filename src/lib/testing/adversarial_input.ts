@@ -10,6 +10,8 @@ import './assert_dev_env.ts';
  */
 
 import { test, assert, describe } from 'vitest';
+import { parse_or_throw } from '@fuzdev/fuz_schema/schema.ts';
+
 import type { RouteSpec } from '../http/route_spec.ts';
 import {
 	filter_routes_with_input,
@@ -17,7 +19,7 @@ import {
 	filter_routes_with_query
 } from '../http/surface_query.ts';
 import {
-	ValidationError,
+	InvalidInputError,
 	ERROR_INVALID_REQUEST_BODY,
 	ERROR_INVALID_JSON_BODY,
 	ERROR_INVALID_ROUTE_PARAMS,
@@ -148,7 +150,7 @@ export const describe_adversarial_input = (options: AdversarialTestOptions): voi
 								);
 								// validate response body structure matches error schema
 								if (tc.expected_error === 'invalid_request_body') {
-									ValidationError.parse(body);
+									parse_or_throw(InvalidInputError, body);
 								}
 							});
 						}
@@ -203,7 +205,7 @@ export const describe_adversarial_input = (options: AdversarialTestOptions): voi
 									}`
 								);
 								// validate response body structure matches error schema
-								ValidationError.parse(body);
+								parse_or_throw(InvalidInputError, body);
 							});
 						}
 					});
@@ -259,7 +261,7 @@ export const describe_adversarial_input = (options: AdversarialTestOptions): voi
 									}`
 								);
 								// validate response body structure matches error schema
-								ValidationError.parse(body);
+								parse_or_throw(InvalidInputError, body);
 							});
 						}
 					});

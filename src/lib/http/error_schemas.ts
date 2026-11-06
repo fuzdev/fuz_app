@@ -2,9 +2,12 @@
  * Standard error response schemas and error code constants for fuz_app routes.
  *
  * Defines `ERROR_*` constants (single source of truth for machine-parseable
- * error codes), Zod schemas for error response shapes, a type for error schema
- * maps, and `derive_error_schemas` to auto-populate middleware-produced errors
- * from a route's auth requirement and input schema.
+ * error codes, which double as JSON-RPC `data.reason`s), the per-code REST
+ * error definitions (`rest_error`, one `REST_*` per code a route or middleware
+ * answers, each with its HTTP status and body schema), the standard error
+ * shapes as `@fuzdev/fuz_schema` schemas, a type for error schema maps, and
+ * `derive_error_schemas` to auto-populate middleware-produced errors from a
+ * route's auth requirement and input schema.
  *
  * Used in `RouteSpec.errors` and `MiddlewareSpec.errors` for surface
  * introspection and DEV-mode validation.
@@ -12,23 +15,41 @@
  * @module
  */
 
-import { z } from 'zod';
+import {
+	array,
+	literal,
+	loose_object,
+	number,
+	one_of,
+	optional,
+	string,
+	boolean,
+	union,
+	type AnySchema,
+	type Infer,
+	type Schema,
+	type SchemaEntries,
+	type SchemaObjectInput,
+	type SchemaObjectOutput
+} from '@fuzdev/fuz_schema/schema.ts';
+import { meta } from '@fuzdev/fuz_schema/meta.ts';
 
 import { needs_actor, type RouteAuth } from './auth_shape.ts';
-import type { ValidationSchema } from '../schema_issues.ts';
+import { WireIssue, type ValidationSchema } from '../schema_issues.ts';
+import type { RateLimitKey } from '../rate_limiter.ts';
 
 // --- Core: Validation (auto-derived by route spec middleware) ---
 
-/** Request body failed Zod validation. */
+/** Request body failed its input schema. */
 export const ERROR_INVALID_REQUEST_BODY = 'invalid_request_body' as const;
 
 /** Request body is not valid JSON or not an object. */
 export const ERROR_INVALID_JSON_BODY = 'invalid_json_body' as const;
 
-/** URL path params failed Zod validation. */
+/** URL path params failed their schema. */
 export const ERROR_INVALID_ROUTE_PARAMS = 'invalid_route_params' as const;
 
-/** URL query params failed Zod validation. */
+/** URL query params failed their schema. */
 export const ERROR_INVALID_QUERY_PARAMS = 'invalid_query_params' as const;
 
 /**
@@ -49,7 +70,7 @@ export const ERROR_INSUFFICIENT_PERMISSIONS = 'insufficient_permissions' as cons
 /**
  * Route requires a credential type the request didn't arrive on.
  * Symmetric with `ERROR_INSUFFICIENT_PERMISSIONS` + `required_roles`:
- * the body carries `required_credential_types: ReadonlyArray<string>`
+ * the body carries `required_credential_types: Array<string>`
  * — what the route demanded, not what arrived. Today the only
  * credential gate is keeper (`['daemon_token']`); future gates
  * (`agent_token`, `group_actor_token`) reuse the same literal and
@@ -234,47 +255,255 @@ export const ERROR_ROW_NOT_FOUND = 'row_not_found' as const;
 /** Database health-check query failed (connectivity or query error). */
 export const ERROR_DATABASE_CONNECTION_FAILED = 'database_connection_failed' as const;
 
-// --- Standard error shapes ---
-// Using z.looseObject — error responses may carry extra context fields.
+// --- Readiness (`GET /ready`) ---
 
-// TODO: a Zod copy of `WireIssue` (`schema_issues.ts`, a fuz_schema schema),
-// which a Zod `ValidationError` can't hold — goes when `ValidationError` is a
-// fuz_schema schema
-const ZodWireIssue = z.looseObject({
-	kind: z.string(),
-	path: z.array(z.union([z.string(), z.number()])),
-	expected: z.string(),
-	received: z.string(),
-	message: z.string()
-});
+/** The live database lacks a table or column the deploy expects (`db/schema_ready.ts`). */
+export const ERROR_SCHEMA_DRIFT = 'schema_drift' as const;
 
-/** Base API error — all JSON error responses have at least `{error: string}`. */
-export const ApiError = z.looseObject({ error: z.string() });
-export type ApiError = z.infer<typeof ApiError>;
+/** The readiness check could not query the database. */
+export const ERROR_DB_UNREACHABLE = 'db_unreachable' as const;
+
+// --- Catch-all ---
 
 /**
- * Input validation error — returned when params / query / body fails Zod
- * parsing, or when the request body is not valid JSON.
- *
- * `error` is one of the four validation codes the framework emits.
- * `issues` carries the validation issues as `WireIssue`s, whichever schema
- * library refused, for diagnostic display on the three schema-failure cases (`invalid_request_body`,
- * `invalid_route_params`, `invalid_query_params`). The field is optional:
- * the `invalid_json_body` case (request body parse failure or non-object
- * root) emits no `issues`, and the schema-failure cases emit them only in
- * development — production omits them (via `dev_only`) so error responses
- * don't leak input-schema structure to callers.
+ * An unexpected failure — the catch layer's answer to an error no route
+ * declares (`{error: 'internal_error', message?}`, the message DEV-only).
  */
-export const ValidationError = z.looseObject({
-	error: z.enum([
-		ERROR_INVALID_REQUEST_BODY,
-		ERROR_INVALID_JSON_BODY,
-		ERROR_INVALID_ROUTE_PARAMS,
-		ERROR_INVALID_QUERY_PARAMS
-	]),
-	issues: z.array(ZodWireIssue).optional()
+export const ERROR_INTERNAL_ERROR = 'internal_error' as const;
+
+// --- REST error definitions ---
+// one per (status, code) a route or middleware answers; a body is a
+// `loose_object` — error responses may carry extra context fields (`message`,
+// a thrown error's flattened `data`), and a client reads them
+
+/** The entries of a definition's body schema: `error`, its code, beside its fields. */
+export type RestErrorEntries<TCode extends string, TFields extends SchemaEntries> = {
+	error: Schema<TCode, TCode, 'literal', TCode>;
+} & TFields;
+
+/** The body schema of a definition, `loose_object({error: literal(code), ...fields})`. */
+export type RestErrorSchema<TCode extends string, TFields extends SchemaEntries> = Schema<
+	SchemaObjectOutput<RestErrorEntries<TCode, TFields>> & Record<string, unknown>,
+	SchemaObjectInput<RestErrorEntries<TCode, TFields>> & Record<string, unknown>,
+	'loose_object',
+	RestErrorEntries<TCode, TFields>
+>;
+
+/** The body a definition puts on the wire. */
+export type RestErrorBody<TCode extends string, TFields extends SchemaEntries> = Infer<
+	RestErrorSchema<TCode, TFields>
+>;
+
+/**
+ * A REST error definition: one code at one HTTP status, with the fields its
+ * body carries beside `error`. The status lives here and not on the `ERROR_*`
+ * constant, which is also a JSON-RPC `data.reason` with no fixed status.
+ *
+ * The same code may have more than one definition, each a shape of its own
+ * (`REST_AUTHENTICATION_REQUIRED` and `REST_AUTHENTICATION_REQUIRED_BOOTSTRAP`).
+ */
+export interface RestErrorDef<
+	TStatus extends number = number,
+	TCode extends string = string,
+	TFields extends SchemaEntries = SchemaEntries
+> {
+	readonly status: TStatus;
+	readonly code: TCode;
+	/** The body's entries beside `error`. */
+	readonly fields: TFields;
+	/** `loose_object({error: literal(code), ...fields})`, what the surface and the DEV check read. */
+	readonly schema: RestErrorSchema<TCode, TFields>;
+	/** Response headers a definition derives from its body (`Retry-After`). */
+	headers?(body: RestErrorBody<TCode, TFields>): Record<string, string>;
+}
+
+/** Refuses a widened `number` or `string`, so a definition names one status and one code. */
+type Exact<T, TWide> = TWide extends T ? never : T;
+
+/**
+ * Define a REST error: its status, its code, and the fields its body carries
+ * beside `error`.
+ *
+ * @param status - the HTTP status it answers at, a literal
+ * @param code - the `error` code, a literal, usually an `ERROR_*` constant
+ * @param fields - the body's other entries
+ * @param headers - the response headers to derive from a body
+ * @returns the definition, its body schema a `loose_object`
+ */
+// @__NO_SIDE_EFFECTS__
+export const rest_error = <
+	const TStatus extends number,
+	const TCode extends string,
+	// a definition with no fields beside `error` has no entries
+	// eslint-disable-next-line @typescript-eslint/no-generated-empty-object-type
+	const TFields extends SchemaEntries = Record<never, never>
+>(
+	status: Exact<TStatus, number>,
+	code: Exact<TCode, string>,
+	fields?: TFields,
+	headers?: (body: RestErrorBody<TCode, TFields>) => Record<string, string>
+): RestErrorDef<TStatus, TCode, TFields> => {
+	const def_fields = (fields ?? {}) as TFields;
+	const schema = loose_object({
+		error: literal(code as TCode),
+		...def_fields
+	}) as unknown as RestErrorSchema<TCode, TFields>;
+	return headers
+		? { status, code, fields: def_fields, schema, headers }
+		: { status, code, fields: def_fields, schema };
+};
+
+/** What `to_error_schemas` groups: a definition, or a status and a schema of one. */
+export interface ErrorSchemaEntry {
+	readonly status: number;
+	readonly schema: AnySchema;
+}
+
+/**
+ * Build an error-schema map from a list of definitions, grouped by status.
+ * A status with one schema maps to it, and one with more to a `union` of them
+ * in list order; a schema listed twice counts once.
+ *
+ * @param entries - the definitions, or entries of a status and a schema
+ * @returns the error schemas, keyed by status
+ */
+export const to_error_schemas = (
+	entries: ReadonlyArray<ErrorSchemaEntry>
+): Record<number, AnySchema> => {
+	const by_status: Map<number, Array<AnySchema>> = new Map();
+	for (const { status, schema } of entries) {
+		const schemas = by_status.get(status);
+		if (!schemas) by_status.set(status, [schema]);
+		else if (!schemas.includes(schema)) schemas.push(schema);
+	}
+	const errors: Record<number, AnySchema> = {};
+	for (const [status, schemas] of by_status) {
+		errors[status] = schemas.length === 1 ? schemas[0]! : union(schemas);
+	}
+	return errors;
+};
+
+/**
+ * The validation issues a 400 input refusal carries, as `WireIssue`s,
+ * whichever schema library refused: optional, since the framework emits them
+ * only in development (`dev_only`), so error responses don't leak
+ * input-schema structure to callers.
+ */
+const INPUT_ISSUES = optional(array(WireIssue));
+
+// 400: input validation, the route's own middleware
+export const REST_INVALID_REQUEST_BODY = rest_error(400, ERROR_INVALID_REQUEST_BODY, {
+	issues: INPUT_ISSUES
 });
-export type ValidationError = z.infer<typeof ValidationError>;
+export const REST_INVALID_JSON_BODY = rest_error(400, ERROR_INVALID_JSON_BODY);
+export const REST_INVALID_ROUTE_PARAMS = rest_error(400, ERROR_INVALID_ROUTE_PARAMS, {
+	issues: INPUT_ISSUES
+});
+export const REST_INVALID_QUERY_PARAMS = rest_error(400, ERROR_INVALID_QUERY_PARAMS, {
+	issues: INPUT_ISSUES
+});
+// 400: the body limit
+export const REST_INVALID_CONTENT_LENGTH = rest_error(400, ERROR_INVALID_CONTENT_LENGTH);
+// 400: the authorization phase; `available` lists the account's actors
+export const REST_ACTOR_REQUIRED = rest_error(400, ERROR_ACTOR_REQUIRED, {
+	available: array(loose_object({ id: string, name: string }))
+});
+export const REST_ACTOR_NOT_ON_ACCOUNT = rest_error(400, ERROR_ACTOR_NOT_ON_ACCOUNT);
+// 400: the table browser's row `DELETE`
+export const REST_TABLE_NOT_DELETABLE = rest_error(400, ERROR_TABLE_NOT_DELETABLE);
+export const REST_TABLE_NO_PRIMARY_KEY = rest_error(400, ERROR_TABLE_NO_PRIMARY_KEY);
+
+// 401
+export const REST_AUTHENTICATION_REQUIRED = rest_error(401, ERROR_AUTHENTICATION_REQUIRED);
+/** `GET /api/account/status`'s anonymous answer: the same code, with the bootstrap status. */
+export const REST_AUTHENTICATION_REQUIRED_BOOTSTRAP = rest_error(
+	401,
+	ERROR_AUTHENTICATION_REQUIRED,
+	{ bootstrap_available: optional(boolean) }
+);
+export const REST_INVALID_CREDENTIALS = rest_error(401, ERROR_INVALID_CREDENTIALS);
+/** The bootstrap token didn't match. */
+export const REST_INVALID_TOKEN = rest_error(401, ERROR_INVALID_TOKEN);
+
+// 403: the auth gates; each names what the route demanded, not what the caller holds
+export const REST_INSUFFICIENT_PERMISSIONS = rest_error(403, ERROR_INSUFFICIENT_PERMISSIONS, {
+	required_roles: meta(array(string), { readOnly: true })
+});
+export const REST_CREDENTIAL_TYPE_REQUIRED = rest_error(403, ERROR_CREDENTIAL_TYPE_REQUIRED, {
+	required_credential_types: meta(array(string), { readOnly: true })
+});
+export const REST_TOKEN_SCOPE_REQUIRED = rest_error(403, ERROR_TOKEN_SCOPE_REQUIRED, {
+	required_scope: string
+});
+// 403: the origin check, bootstrap, signup
+export const REST_FORBIDDEN_ORIGIN = rest_error(403, ERROR_FORBIDDEN_ORIGIN);
+export const REST_ALREADY_BOOTSTRAPPED = rest_error(403, ERROR_ALREADY_BOOTSTRAPPED);
+export const REST_NO_MATCHING_INVITE = rest_error(403, ERROR_NO_MATCHING_INVITE);
+
+// 404
+export const REST_TOKEN_FILE_MISSING = rest_error(404, ERROR_TOKEN_FILE_MISSING);
+export const REST_TABLE_NOT_FOUND = rest_error(404, ERROR_TABLE_NOT_FOUND);
+export const REST_ROW_NOT_FOUND = rest_error(404, ERROR_ROW_NOT_FOUND);
+
+// 409
+export const REST_FOREIGN_KEY_VIOLATION = rest_error(409, ERROR_FOREIGN_KEY_VIOLATION);
+export const REST_SIGNUP_CONFLICT = rest_error(409, ERROR_SIGNUP_CONFLICT);
+
+// 413, 415
+export const REST_PAYLOAD_TOO_LARGE = rest_error(413, ERROR_PAYLOAD_TOO_LARGE);
+export const REST_UNSUPPORTED_CONTENT_TYPE = rest_error(415, ERROR_UNSUPPORTED_CONTENT_TYPE);
+
+/** The rate limiter's refusal; `retry_after` is in seconds, `Retry-After` its ceiling. */
+export const REST_RATE_LIMIT_EXCEEDED = rest_error(
+	429,
+	ERROR_RATE_LIMIT_EXCEEDED,
+	{ retry_after: number },
+	(body) => ({ 'Retry-After': String(Math.ceil(body.retry_after)) })
+);
+
+// 500: the authorization phase, and the catch layer any route can answer with
+export const REST_NO_ACTORS_ON_ACCOUNT = rest_error(500, ERROR_NO_ACTORS_ON_ACCOUNT);
+export const REST_ACCOUNT_VANISHED = rest_error(500, ERROR_ACCOUNT_VANISHED);
+export const REST_INTERNAL_ERROR = rest_error(500, ERROR_INTERNAL_ERROR);
+
+// 503: a failed pool checkout any route can answer with, and the health and readiness checks
+export const REST_SERVICE_UNAVAILABLE = rest_error(503, ERROR_SERVICE_UNAVAILABLE);
+export const REST_DATABASE_CONNECTION_FAILED = rest_error(503, ERROR_DATABASE_CONNECTION_FAILED);
+export const REST_SCHEMA_DRIFT = rest_error(503, ERROR_SCHEMA_DRIFT);
+export const REST_DB_UNREACHABLE = rest_error(503, ERROR_DB_UNREACHABLE);
+
+// --- Standard error shapes ---
+
+/** Base API error — all JSON error responses have at least `{error: string}`. */
+export const ApiError = loose_object({ error: string });
+export type ApiError = Infer<typeof ApiError>;
+
+/**
+ * Input refusal — returned when params / query / body fails its schema, or
+ * when the request body is not valid JSON.
+ *
+ * `error` is one of the four input codes the framework emits.
+ * `issues` carries the validation issues as `WireIssue`s, whichever schema
+ * library refused, for diagnostic display on the three schema-failure cases
+ * (`invalid_request_body`, `invalid_route_params`, `invalid_query_params`).
+ * The field is optional: the `invalid_json_body` case (request body parse
+ * failure or non-object root) emits no `issues`, and the schema-failure cases
+ * emit them only in development — production omits them (via `dev_only`) so
+ * error responses don't leak input-schema structure to callers.
+ *
+ * One object over the four codes rather than a union of their definitions, so
+ * its surface entry is one `enum`.
+ */
+export const InvalidInputError = loose_object({
+	error: one_of([
+		REST_INVALID_REQUEST_BODY.code,
+		REST_INVALID_JSON_BODY.code,
+		REST_INVALID_ROUTE_PARAMS.code,
+		REST_INVALID_QUERY_PARAMS.code
+	]),
+	issues: INPUT_ISSUES
+});
+export type InvalidInputError = Infer<typeof InvalidInputError>;
 
 /**
  * Permission error — returned by `require_role()` and the dispatcher's
@@ -286,11 +515,8 @@ export type ValidationError = z.infer<typeof ValidationError>;
  * as a one-element array; multi-role disjunctions show every admittable
  * role so clients can render targeted copy ("requires admin or steward").
  */
-export const PermissionError = z.looseObject({
-	error: z.literal(ERROR_INSUFFICIENT_PERMISSIONS),
-	required_roles: z.array(z.string()).readonly()
-});
-export type PermissionError = z.infer<typeof PermissionError>;
+export const PermissionError = REST_INSUFFICIENT_PERMISSIONS.schema;
+export type PermissionError = Infer<typeof PermissionError>;
 
 /**
  * Credential-type error — returned by the dispatcher's post-authorization
@@ -303,11 +529,8 @@ export type PermissionError = z.infer<typeof PermissionError>;
  * Symmetric with `PermissionError`'s `required_roles`: clients see what
  * the route demanded, not what their credential is.
  */
-export const CredentialTypeRequiredError = z.looseObject({
-	error: z.literal(ERROR_CREDENTIAL_TYPE_REQUIRED),
-	required_credential_types: z.array(z.string()).readonly()
-});
-export type CredentialTypeRequiredError = z.infer<typeof CredentialTypeRequiredError>;
+export const CredentialTypeRequiredError = REST_CREDENTIAL_TYPE_REQUIRED.schema;
+export type CredentialTypeRequiredError = Infer<typeof CredentialTypeRequiredError>;
 
 /**
  * Token-scope error — returned by the `require_token_scope` guard (and its
@@ -322,36 +545,24 @@ export type CredentialTypeRequiredError = z.infer<typeof CredentialTypeRequiredE
  * `CredentialTypeRequiredError` — each names what the route demanded rather
  * than what the caller holds.
  */
-export const TokenScopeRequiredError = z.looseObject({
-	error: z.literal(ERROR_TOKEN_SCOPE_REQUIRED),
-	required_scope: z.string()
-});
-export type TokenScopeRequiredError = z.infer<typeof TokenScopeRequiredError>;
+export const TokenScopeRequiredError = REST_TOKEN_SCOPE_REQUIRED.schema;
+export type TokenScopeRequiredError = Infer<typeof TokenScopeRequiredError>;
 
 /** Rate limit error — returned when a rate limiter rejects the request. */
-export const RateLimitError = z.looseObject({
-	error: z.literal(ERROR_RATE_LIMIT_EXCEEDED),
-	retry_after: z.number()
-});
-export type RateLimitError = z.infer<typeof RateLimitError>;
+export const RateLimitError = REST_RATE_LIMIT_EXCEEDED.schema;
+export type RateLimitError = Infer<typeof RateLimitError>;
 
 /** Payload too large error — returned when the request body exceeds the size limit. */
-export const PayloadTooLargeError = z.looseObject({
-	error: z.literal(ERROR_PAYLOAD_TOO_LARGE)
-});
-export type PayloadTooLargeError = z.infer<typeof PayloadTooLargeError>;
+export const PayloadTooLargeError = REST_PAYLOAD_TOO_LARGE.schema;
+export type PayloadTooLargeError = Infer<typeof PayloadTooLargeError>;
 
 /** Unsupported content type error — returned when a `POST` route refuses the request's `Content-Type`. */
-export const UnsupportedContentTypeError = z.looseObject({
-	error: z.literal(ERROR_UNSUPPORTED_CONTENT_TYPE)
-});
-export type UnsupportedContentTypeError = z.infer<typeof UnsupportedContentTypeError>;
+export const UnsupportedContentTypeError = REST_UNSUPPORTED_CONTENT_TYPE.schema;
+export type UnsupportedContentTypeError = Infer<typeof UnsupportedContentTypeError>;
 
 /** Foreign key violation error — returned when a delete is blocked by references. */
-export const ForeignKeyError = z.looseObject({
-	error: z.literal(ERROR_FOREIGN_KEY_VIOLATION)
-});
-export type ForeignKeyError = z.infer<typeof ForeignKeyError>;
+export const ForeignKeyError = REST_FOREIGN_KEY_VIOLATION.schema;
+export type ForeignKeyError = Infer<typeof ForeignKeyError>;
 
 /**
  * Authorization-phase failure shapes. Surfaced when the dispatcher's
@@ -371,54 +582,32 @@ export type ForeignKeyError = z.infer<typeof ForeignKeyError>;
  * Used by `derive_error_schemas` when `auth.actor !== 'none'` so the
  * merged error surface matches what the dispatcher actually emits.
  */
-export const ActorRequiredError = z.looseObject({
-	error: z.literal(ERROR_ACTOR_REQUIRED),
-	available: z.array(z.looseObject({ id: z.string(), name: z.string() }))
-});
-export type ActorRequiredError = z.infer<typeof ActorRequiredError>;
+export const ActorRequiredError = REST_ACTOR_REQUIRED.schema;
+export type ActorRequiredError = Infer<typeof ActorRequiredError>;
 
-export const ActorNotOnAccountError = z.looseObject({
-	error: z.literal(ERROR_ACTOR_NOT_ON_ACCOUNT)
-});
-export type ActorNotOnAccountError = z.infer<typeof ActorNotOnAccountError>;
+export const ActorNotOnAccountError = REST_ACTOR_NOT_ON_ACCOUNT.schema;
+export type ActorNotOnAccountError = Infer<typeof ActorNotOnAccountError>;
 
-export const NoActorsOnAccountError = z.looseObject({
-	error: z.literal(ERROR_NO_ACTORS_ON_ACCOUNT)
-});
-export type NoActorsOnAccountError = z.infer<typeof NoActorsOnAccountError>;
+export const NoActorsOnAccountError = REST_NO_ACTORS_ON_ACCOUNT.schema;
+export type NoActorsOnAccountError = Infer<typeof NoActorsOnAccountError>;
 
-export const AccountVanishedError = z.looseObject({
-	error: z.literal(ERROR_ACCOUNT_VANISHED)
-});
-export type AccountVanishedError = z.infer<typeof AccountVanishedError>;
+export const AccountVanishedError = REST_ACCOUNT_VANISHED.schema;
+export type AccountVanishedError = Infer<typeof AccountVanishedError>;
 
 /**
- * Error schema map — maps HTTP status codes to Zod or `@fuzdev/fuz_schema`
+ * Error schema map — maps HTTP status codes to `@fuzdev/fuz_schema` or Zod
  * schemas.
  *
  * Used on `RouteSpec.errors` and `MiddlewareSpec.errors`; `derive_error_schemas`
- * returns its Zod-only form, `DerivedErrorSchemas`.
+ * returns its fuz_schema form, `DerivedErrorSchemas`.
  */
-export type RouteErrorSchemas = Partial<Record<number, ValidationSchema>>;
+export type ErrorSchemas = Partial<Record<number, ValidationSchema>>;
 
 /**
- * The error schemas `derive_error_schemas` builds, all of them Zod, with no
- * entry left `undefined`.
+ * The error schemas `derive_error_schemas` builds, all of them
+ * `@fuzdev/fuz_schema` schemas, with no entry left `undefined`.
  */
-export type DerivedErrorSchemas = Record<number, z.ZodType>;
-
-/**
- * Rate limit key type — declares what a route or RPC action's rate limiter
- * is keyed on.
- *
- * - `'ip'` — per-IP rate limiting (login, bootstrap, password change, signup)
- * - `'account'` — per-account rate limiting. On REST auth routes the key is
- *   the submitted identifier (login). On RPC actions (post-auth) the key is
- *   the resolved actor id (`request_context.actor.id`) — separate namespace.
- * - `'both'` — both keys.
- */
-export const RateLimitKey = z.enum(['ip', 'account', 'both']);
-export type RateLimitKey = z.infer<typeof RateLimitKey>;
+export type DerivedErrorSchemas = Record<number, AnySchema>;
 
 /**
  * Derive error schemas from a route's auth requirement, input schema, and rate limit config.
@@ -428,7 +617,7 @@ export type RateLimitKey = z.infer<typeof RateLimitKey>;
  * explicit entries override auto-derived ones for the same status code.
  *
  * Derivation rules under the new flat-record auth shape:
- * - **Has input / params / query schema**: 400 (`ValidationError`).
+ * - **Has input / params / query schema**: 400 (`InvalidInputError`).
  * - **`auth.account === 'required'`** or **`auth.actor === 'required'`**: 401
  *   (`ApiError`) — pre-authorization 401 fires when the credential isn't there.
  *   `'optional'` does not derive 401.
@@ -466,16 +655,18 @@ export const derive_error_schemas = ({
 	rate_limit,
 	checks_content_type = false
 }: DeriveErrorSchemasOptions): DerivedErrorSchemas => {
-	const errors: DerivedErrorSchemas = {};
+	const entries: Array<ErrorSchemaEntry> = [];
 
-	const has_validation = has_input || has_params || has_query;
+	if (has_input || has_params || has_query) {
+		entries.push({ status: 400, schema: InvalidInputError });
+	}
 	if (needs_actor(auth)) {
-		errors[400] = has_validation
-			? z.union([ValidationError, ActorRequiredError, ActorNotOnAccountError])
-			: z.union([ActorRequiredError, ActorNotOnAccountError]);
-		errors[500] = z.union([NoActorsOnAccountError, AccountVanishedError]);
-	} else if (has_validation) {
-		errors[400] = ValidationError;
+		entries.push(
+			REST_ACTOR_REQUIRED,
+			REST_ACTOR_NOT_ON_ACCOUNT,
+			REST_NO_ACTORS_ON_ACCOUNT,
+			REST_ACCOUNT_VANISHED
+		);
 	}
 
 	// 401 fires when the dispatcher's pre-authorization gate rejects an
@@ -483,7 +674,7 @@ export const derive_error_schemas = ({
 	// `actor === 'required'` (no credential to resolve an actor against,
 	// per registry-time invariant 3 forbidding accountless actors in v1).
 	if (auth.account === 'required' || auth.actor === 'required') {
-		errors[401] = ApiError;
+		entries.push({ status: 401, schema: ApiError });
 	}
 
 	// 403 fires from any of three gates: the token-scope refusal
@@ -492,23 +683,13 @@ export const derive_error_schemas = ({
 	// combination, so collect the shapes its gates can emit — in the order they
 	// fire — and union them when there's more than one, so DEV-mode
 	// error-schema validation accepts whichever the pipeline produced.
-	const forbidden_shapes: Array<z.ZodType> = [];
-	if (auth.required_scope !== undefined) forbidden_shapes.push(TokenScopeRequiredError);
-	if (auth.credential_types?.length) forbidden_shapes.push(CredentialTypeRequiredError);
-	if (auth.roles?.length) forbidden_shapes.push(PermissionError);
-	if (forbidden_shapes.length === 1) {
-		errors[403] = forbidden_shapes[0]!;
-	} else if (forbidden_shapes.length > 1) {
-		errors[403] = z.union(forbidden_shapes);
-	}
+	if (auth.required_scope !== undefined) entries.push(REST_TOKEN_SCOPE_REQUIRED);
+	if (auth.credential_types?.length) entries.push(REST_CREDENTIAL_TYPE_REQUIRED);
+	if (auth.roles?.length) entries.push(REST_INSUFFICIENT_PERMISSIONS);
 
-	if (rate_limit) {
-		errors[429] = RateLimitError;
-	}
+	if (rate_limit) entries.push(REST_RATE_LIMIT_EXCEEDED);
 
-	if (checks_content_type) {
-		errors[415] = UnsupportedContentTypeError;
-	}
+	if (checks_content_type) entries.push(REST_UNSUPPORTED_CONTENT_TYPE);
 
-	return errors;
+	return to_error_schemas(entries);
 };

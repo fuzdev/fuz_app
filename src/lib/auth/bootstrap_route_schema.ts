@@ -32,11 +32,11 @@ import { Username, UsernameCanonical, Uuid } from '../primitive_schemas_fuz.ts';
 import { Password } from './password.ts';
 import type { RouteSpec } from '../http/route_spec.ts';
 import {
-	ERROR_INVALID_TOKEN,
-	ERROR_ALREADY_BOOTSTRAPPED,
-	ERROR_TOKEN_FILE_MISSING,
 	ERROR_INVALID_JSON_BODY,
-	ERROR_INVALID_REQUEST_BODY
+	ERROR_INVALID_REQUEST_BODY,
+	REST_ALREADY_BOOTSTRAPPED,
+	REST_INVALID_TOKEN,
+	REST_TOKEN_FILE_MISSING
 } from '../http/error_schemas.ts';
 
 /**
@@ -94,8 +94,8 @@ export const bootstrap_route_shape = {
 	rate_limit: 'ip',
 	errors: {
 		400: loose_object({ error: one_of([ERROR_INVALID_JSON_BODY, ERROR_INVALID_REQUEST_BODY]) }),
-		401: loose_object({ error: literal(ERROR_INVALID_TOKEN) }),
-		403: loose_object({ error: literal(ERROR_ALREADY_BOOTSTRAPPED) }),
-		404: loose_object({ error: literal(ERROR_TOKEN_FILE_MISSING) })
+		401: REST_INVALID_TOKEN.schema,
+		403: REST_ALREADY_BOOTSTRAPPED.schema,
+		404: REST_TOKEN_FILE_MISSING.schema
 	}
 } satisfies Omit<RouteSpec, 'handler'>;

@@ -9,7 +9,7 @@
 
 import type { MiddlewareHandler } from 'hono';
 
-import type { RouteErrorSchemas } from './error_schemas.ts';
+import type { ErrorSchemas } from './error_schemas.ts';
 
 /**
  * Paths a middleware layer explicitly does not run on, and why — the named
@@ -28,7 +28,7 @@ export interface MiddlewareSpec {
 	path: string;
 	handler: MiddlewareHandler;
 	/** Error response schemas this middleware can produce, keyed by HTTP status code. */
-	errors?: RouteErrorSchemas;
+	errors?: ErrorSchemas;
 	/**
 	 * Paths under `path` the layer does not run on. The handler enforces them
 	 * itself (Hono mounts by `path` alone); the field is what keeps the

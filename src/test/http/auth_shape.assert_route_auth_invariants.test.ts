@@ -3,7 +3,8 @@
  * invariants 1, 3, and 4, checked at registration on every route and action
  * spec: directly, through `compile_action_registry` (the loop behind
  * `create_rpc_endpoint` and `register_action_ws`), through
- * `apply_route_specs`, and through the assembled app.
+ * `apply_route_specs`, and through the assembled app — and the predicates
+ * over the shape that every reader branches on.
  *
  * @module
  */
@@ -13,7 +14,16 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import { assert_route_auth_invariants, RouteAuth } from '#lib/http/auth_shape.ts';
+import {
+	assert_route_auth_invariants,
+	is_credential_gated_auth,
+	is_keeper_auth,
+	is_plain_authenticated_auth,
+	is_public_auth,
+	is_role_auth,
+	needs_actor,
+	type RouteAuth
+} from '#lib/http/auth_shape.ts';
 import { compile_action_registry } from '#lib/actions/compile_action_registry.ts';
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import { apply_route_specs, type RouteSpec } from '#lib/http/route_spec.ts';
@@ -106,17 +116,82 @@ describe('assert_route_auth_invariants', () => {
 			)
 		);
 	});
+});
 
-	test('the RouteAuth schema reports the same violations on a parse', () => {
-		for (const { auth, message } of VIOLATIONS) {
-			const parsed = RouteAuth.safeParse(auth);
-			assert.ok(!parsed.success);
+/** Each predicate's answer, keyed by its name, over each shape. */
+const PREDICATE_ROWS: Array<{ auth: RouteAuth; true_of: Array<string> }> = [
+	{ auth: { account: 'none', actor: 'none' }, true_of: ['is_public_auth'] },
+	{
+		auth: { account: 'none', actor: 'none', roles: [], credential_types: [] },
+		true_of: ['is_public_auth']
+	},
+	{ auth: { account: 'optional', actor: 'none' }, true_of: [] },
+	{ auth: { account: 'optional', actor: 'optional' }, true_of: ['needs_actor'] },
+	{ auth: { account: 'required', actor: 'none' }, true_of: ['is_plain_authenticated_auth'] },
+	{
+		auth: { account: 'required', actor: 'none', roles: [] },
+		true_of: ['is_plain_authenticated_auth']
+	},
+	{
+		auth: { account: 'required', actor: 'required' },
+		true_of: ['needs_actor', 'is_plain_authenticated_auth']
+	},
+	{
+		auth: { account: 'required', actor: 'required', roles: ['admin'] },
+		true_of: ['needs_actor', 'is_role_auth']
+	},
+	{
+		auth: { account: 'required', actor: 'none', credential_types: ['session'] },
+		true_of: ['is_credential_gated_auth']
+	},
+	{
+		auth: {
+			account: 'required',
+			actor: 'required',
+			roles: ['keeper'],
+			credential_types: ['daemon_token']
+		},
+		true_of: ['needs_actor', 'is_role_auth', 'is_credential_gated_auth', 'is_keeper_auth']
+	},
+	{
+		auth: { account: 'required', actor: 'none', credential_types: ['session', 'daemon_token'] },
+		true_of: ['is_credential_gated_auth', 'is_keeper_auth']
+	},
+	{
+		auth: { account: 'required', actor: 'none', required_scope: 'surface:x' },
+		true_of: ['is_plain_authenticated_auth']
+	}
+];
+
+const PREDICATES: Record<string, (auth: RouteAuth) => boolean> = {
+	is_public_auth,
+	needs_actor,
+	is_role_auth,
+	is_credential_gated_auth,
+	is_keeper_auth,
+	is_plain_authenticated_auth
+};
+
+describe('the auth-shape predicates', () => {
+	for (const { auth, true_of } of PREDICATE_ROWS) {
+		test(`over ${JSON.stringify(auth)}`, () => {
+			for (const [name, predicate] of Object.entries(PREDICATES)) {
+				assert.strictEqual(predicate(auth), true_of.includes(name), name);
+			}
+		});
+	}
+
+	test('every predicate is true of some shape and false of another', () => {
+		for (const name of Object.keys(PREDICATES)) {
 			assert.ok(
-				parsed.error.issues.some((issue) => message.test(issue.message)),
-				`expected ${message} among the parse issues`
+				PREDICATE_ROWS.some((r) => r.true_of.includes(name)),
+				name
+			);
+			assert.ok(
+				PREDICATE_ROWS.some((r) => !r.true_of.includes(name)),
+				name
 			);
 		}
-		for (const auth of VALID) assert.ok(RouteAuth.safeParse(auth).success);
 	});
 });
 

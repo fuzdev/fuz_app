@@ -140,7 +140,7 @@ import type { FactHash } from '@fuzdev/fuz_util/hash_schemas.ts';
 import { FactHashSchema, Uuid } from '../primitive_schemas.ts';
 import { ActingActor } from '../primitive_schemas_fuz.ts';
 import { z } from 'zod';
-import { array, literal, loose_object, object, optional } from '@fuzdev/fuz_schema/schema.ts';
+import { object } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	build_request_context,
@@ -152,8 +152,7 @@ import {
 import { ROLE_ADMIN } from '../auth/role_schema.ts';
 import { query_active_actors_by_account } from '../auth/account_queries.ts';
 import { get_route_params, type RouteContext, type RouteSpec } from '../http/route_spec.ts';
-import { ERROR_INVALID_ROUTE_PARAMS } from '../http/error_schemas.ts';
-import { WireIssue } from '../schema_issues.ts';
+import { REST_INVALID_ROUTE_PARAMS } from '../http/error_schemas.ts';
 import { query_get_fact, query_get_fact_meta } from '../db/fact_queries.ts';
 import { to_uint8 } from '../db/fact_store.ts';
 import { query_cell_get } from '../db/cell_queries.ts';
@@ -186,16 +185,11 @@ const cell_fact_params_schema = z.strictObject({
 
 /**
  * Shared error-schema entry: tighten the auto-derived 400 to the literal
- * emitted by params validation. `issues` is optional because the framework
- * emits it through `dev_only` — a production body carries the `error`
- * literal alone.
+ * emitted by params validation (`REST_INVALID_ROUTE_PARAMS`, whose `issues`
+ * are optional because the framework emits them through `dev_only` — a
+ * production body carries the `error` literal alone).
  */
-const params_400_error = {
-	400: loose_object({
-		error: literal(ERROR_INVALID_ROUTE_PARAMS),
-		issues: optional(array(WireIssue))
-	})
-} as const;
+const params_400_error = { 400: REST_INVALID_ROUTE_PARAMS.schema } as const;
 
 export interface CreateServeFactRouteSpecOptions {
 	/** Absolute path of the facts directory. Used for the dev/test streaming path. */

@@ -13,7 +13,13 @@ import { wait } from '@fuzdev/fuz_util/async.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { meta } from '@fuzdev/fuz_schema/meta.ts';
-import { object, string, void as fuz_void, with_default } from '@fuzdev/fuz_schema/schema.ts';
+import {
+	object,
+	parse_or_throw,
+	string,
+	void as fuz_void,
+	with_default
+} from '@fuzdev/fuz_schema/schema.ts';
 import { z } from 'zod';
 
 import { create_session_config } from '#lib/auth/session_cookie.ts';
@@ -417,7 +423,7 @@ describe('create_app_server', () => {
 		assert.strictEqual(large_res.status, 413);
 		const body = await large_res.json();
 		assert.strictEqual(body.error, ERROR_PAYLOAD_TOO_LARGE);
-		PayloadTooLargeError.parse(body);
+		parse_or_throw(PayloadTooLargeError, body);
 	});
 
 	test('an oversized Content-Length is refused without reading the request body', async () => {
@@ -502,7 +508,7 @@ describe('create_app_server', () => {
 		assert.strictEqual(res.status, 413);
 		const body = await res.json();
 		assert.strictEqual(body.error, ERROR_PAYLOAD_TOO_LARGE);
-		PayloadTooLargeError.parse(body);
+		parse_or_throw(PayloadTooLargeError, body);
 	});
 
 	test('body size limit defaults to DEFAULT_BODY_LIMIT_BYTES', () => {

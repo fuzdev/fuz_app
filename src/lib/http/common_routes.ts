@@ -24,10 +24,10 @@ import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import type { RouteSpec } from './route_spec.ts';
 import { HEALTH_PATH, HealthResponse } from './health_schema.ts';
+import { ERROR_DB_UNREACHABLE, ERROR_SCHEMA_DRIFT } from './error_schemas.ts';
 import {
 	check_schema_drift,
 	format_schema_drift,
-	READY_ERROR,
 	type ExpectedSchema
 } from '../db/schema_ready.ts';
 
@@ -134,7 +134,7 @@ export const create_ready_route_spec = (options: ReadyRouteOptions): RouteSpec =
 		input: literal(null),
 		output: object({ ready: literal(true) }),
 		errors: {
-			503: object({ error: one_of([READY_ERROR.schema_drift, READY_ERROR.db_unreachable]) })
+			503: object({ error: one_of([ERROR_SCHEMA_DRIFT, ERROR_DB_UNREACHABLE]) })
 		},
 		handler: async (c, route) => {
 			try {
@@ -143,10 +143,10 @@ export const create_ready_route_spec = (options: ReadyRouteOptions): RouteSpec =
 				// Detailed drift goes to the server log only — the public body stays a
 				// minimal error code so the endpoint doesn't leak schema structure.
 				options.log?.error(`[ready] schema drift detected:\n${format_schema_drift(drift)}`);
-				return c.json({ error: READY_ERROR.schema_drift }, 503);
+				return c.json({ error: ERROR_SCHEMA_DRIFT }, 503);
 			} catch (err) {
 				options.log?.error('[ready] readiness check failed (db unreachable?):', err);
-				return c.json({ error: READY_ERROR.db_unreachable }, 503);
+				return c.json({ error: ERROR_DB_UNREACHABLE }, 503);
 			}
 		}
 	};

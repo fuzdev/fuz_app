@@ -54,7 +54,7 @@ import {
 	CREDENTIAL_TYPE_SESSION
 } from '../auth/credential_type_schema.ts';
 import {
-	type RouteErrorSchemas,
+	type ErrorSchemas,
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,
 	ERROR_CREDENTIAL_TYPE_REQUIRED
@@ -70,8 +70,8 @@ import {
 const build_error_schema_lookup = (
 	route_specs: Array<RouteSpec>,
 	middleware_specs?: Array<MiddlewareSpec>
-): Map<string, RouteErrorSchemas> => {
-	const lookup: Map<string, RouteErrorSchemas> = new Map();
+): Map<string, ErrorSchemas> => {
+	const lookup: Map<string, ErrorSchemas> = new Map();
 	for (const spec of route_specs) {
 		const key = `${spec.method} ${spec.path}`;
 		const mw_errors = middleware_specs

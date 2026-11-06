@@ -14,7 +14,8 @@ import type { EventSpec } from '../realtime/sse.ts';
 import type { MiddlewareSpec } from './middleware_spec.ts';
 import type { RouteSpec } from './route_spec.ts';
 import type { RouteAuth } from './auth_shape.ts';
-import type { RateLimitKey, RouteErrorSchemas } from './error_schemas.ts';
+import type { ErrorSchemas } from './error_schemas.ts';
+import type { RateLimitKey } from '../rate_limiter.ts';
 import type { RpcAction } from '../actions/action_types.ts';
 import type { ActionKind } from '../actions/action_spec.ts';
 import type { ResolvedWsEndpointSpec } from '../actions/ws_endpoint_spec.ts';
@@ -229,8 +230,8 @@ export interface GenerateAppSurfaceOptions {
 export const collect_middleware_errors = (
 	middleware: Array<MiddlewareSpec>,
 	route_path: string
-): RouteErrorSchemas | null => {
-	const errors: RouteErrorSchemas = {};
+): ErrorSchemas | null => {
+	const errors: ErrorSchemas = {};
 	for (const mw of middleware) {
 		if (mw.errors && middleware_spec_applies(mw, route_path)) {
 			Object.assign(errors, strip_undefined_error_schemas(mw.errors));

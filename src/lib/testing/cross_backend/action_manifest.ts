@@ -32,10 +32,18 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import { z } from 'zod';
+import {
+	array,
+	boolean,
+	nullable,
+	object,
+	one_of,
+	string,
+	type Infer
+} from '@fuzdev/fuz_schema/schema.ts';
 
 import { AuthAxisState, type RouteAuth } from '../../http/auth_shape.ts';
-import { RateLimitKey } from '../../http/error_schemas.ts';
+import { RateLimitKey } from '../../rate_limiter.ts';
 import { is_void_schema } from '../../http/schema_helpers.ts';
 import type { ValidationSchema } from '../../schema_issues.ts';
 import type { RequestResponseActionSpec } from '../../actions/action_spec.ts';
@@ -49,35 +57,35 @@ import type { RequestResponseActionSpec } from '../../actions/action_spec.ts';
  * nullable rather than optional for the same reason — an unthrottled action
  * serializes an explicit `null`, so a missing key is drift, not a default.
  */
-export const ActionManifestEntry = z.strictObject({
+export const ActionManifestEntry = object({
 	/** RPC method name (`spec.method`). */
-	method: z.string(),
+	method: string,
 	/**
 	 * `'void'` when the input is a void schema (`is_void_schema`: `z.void()`
 	 * or fuz_schema `s.void`, a parameterless method), else `'object'` — the
 	 * Rust spine's declared `InputShape`, which its dispatcher enforces. A `z.strictObject({})` input is `'object'`.
 	 */
-	input: z.enum(['void', 'object']),
+	input: one_of(['void', 'object']),
 	/** `true` when the action declares `side_effects` (mutation; POST-only on the RPC transport). */
-	side_effects: z.boolean(),
+	side_effects: boolean,
 	/** The `account` auth axis. */
 	account: AuthAxisState,
 	/** The `actor` auth axis. */
 	actor: AuthAxisState,
 	/** Required roles (any-of), sorted; `[]` when the action declares no role gate. */
-	roles: z.array(z.string()),
+	roles: array(string),
 	/** Permitted credential channels, sorted; `[]` when ungated (any credential). */
-	credential_types: z.array(z.string()),
+	credential_types: array(string),
 	/** Per-action rate-limit class, or `null` when the action declares none. */
-	rate_limit: RateLimitKey.nullable()
+	rate_limit: nullable(RateLimitKey)
 });
-export type ActionManifestEntry = z.infer<typeof ActionManifestEntry>;
+export type ActionManifestEntry = Infer<typeof ActionManifestEntry>;
 
 /** The full action manifest — every entry, sorted by `method`. */
-export const ActionManifest = z.strictObject({
-	methods: z.array(ActionManifestEntry)
+export const ActionManifest = object({
+	methods: array(ActionManifestEntry)
 });
-export type ActionManifest = z.infer<typeof ActionManifest>;
+export type ActionManifest = Infer<typeof ActionManifest>;
 
 /** Sorted copy of a readonly string list (stable cross-impl ordering). */
 const sorted_strings = (xs: ReadonlyArray<string> | undefined): Array<string> =>

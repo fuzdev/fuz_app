@@ -162,7 +162,8 @@ export class ErrorCoverageCollector {
 	 *
 	 * @param path - request path (may be concrete)
 	 * @param code - observed body `error` code (pass when the route's error
-	 *   schema declares specific codes via `z.literal` or `z.enum`)
+	 *   schema declares specific codes: a fuz_schema `literal` or `one_of`, or a
+	 *   Zod `z.literal` or `z.enum`)
 	 * @mutates `this.observed` - adds the resolved `"METHOD /spec-path:STATUS"`
 	 *   key (and the `:CODE` variant when `code` is provided).
 	 */
@@ -225,8 +226,9 @@ export class ErrorCoverageCollector {
 	 * Find declared error paths that were never observed.
 	 *
 	 * Computes the declared set from `merge_error_schemas` for each route spec.
-	 * For statuses whose error schema names specific codes (via `z.literal` or
-	 * `z.enum`), reports per-code rows; otherwise reports one row per status.
+	 * For statuses whose error schema names specific codes (a fuz_schema
+	 * `literal` or `one_of`, or a Zod `z.literal` or `z.enum`, on `error`),
+	 * reports per-code rows; otherwise reports one row per status.
 	 * A status-only observation (no code) satisfies all declared codes for that
 	 * status — the "any-code" rule.
 	 */
@@ -265,9 +267,10 @@ const format_uncovered = (
  * Assert error coverage meets a minimum threshold.
  *
  * Computes the ratio of exercised error paths to total declared error paths.
- * For routes whose status error schema names specific codes (`z.literal` or
- * `z.enum`), each declared code counts as one coverage path; for schemas
- * without declared codes (`ApiError`/`z.string()`), the status counts as one
+ * For routes whose status error schema names specific codes (a fuz_schema
+ * `literal` or `one_of`, or a Zod `z.literal` or `z.enum`, on `error`), each
+ * declared code counts as one coverage path; for schemas without declared
+ * codes (`ApiError`, its `error` any string), the status counts as one
  * path. A status-only observation covers all declared codes for that status
  * (the "any-code" rule).
  *

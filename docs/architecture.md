@@ -394,21 +394,29 @@ field reaches, `message` included.
 
 ## Error Schema System
 
-Error responses are typed via Zod schemas in `http/error_schemas.ts`; a route's
-or middleware's own error schemas (`RouteErrorSchemas`) may be Zod or
-`@fuzdev/fuz_schema`. Standard
-shapes: `ApiError`, `ValidationError`, `PermissionError`,
-`CredentialTypeRequiredError`, `RateLimitError`, `PayloadTooLargeError`,
-`ForeignKeyError` — all `z.looseObject`.
+Error responses are typed in `http/error_schemas.ts` as `@fuzdev/fuz_schema`
+schemas; a route's or middleware's own error schemas (`ErrorSchemas`) may be
+fuz_schema or Zod. Each code a route or middleware answers has a REST error
+definition, `rest_error(status, code, fields?, headers?)`: its status, its
+`ERROR_*` code, and its body, `loose_object({error: literal(code), ...fields})`
+(`REST_TABLE_NOT_FOUND`, `REST_RATE_LIMIT_EXCEEDED`, …). The `ERROR_*`
+constants carry no status, since they double as JSON-RPC `data.reason`s.
+Standard shapes: `ApiError`, `InvalidInputError`, `PermissionError`,
+`CredentialTypeRequiredError`, `TokenScopeRequiredError`, `RateLimitError`,
+`PayloadTooLargeError`, `UnsupportedContentTypeError`, `ForeignKeyError` — all
+loose objects, each single-code one its definition's schema.
+`to_error_schemas(defs)` groups definitions into a status map.
 
 **Three-layer merge**: derived → middleware → explicit route.
 
-- `derive_error_schemas({auth, has_input?, has_params?, has_query?, rate_limit?})` auto-populates
+- `derive_error_schemas({auth, has_input?, has_params?, has_query?, rate_limit?, checks_content_type?})` auto-populates
   auth/validation/rate-limit errors. 400 is derived when `has_input`, `has_params`, or
   `has_query` is true. When `auth.actor !== 'none'`, the 400 union widens with
   `ActorRequiredError` / `ActorNotOnAccountError` and a 500 union of
-  `NoActorsOnAccountError` / `AccountVanishedError` is added so DEV-mode error-schema
-  validation matches what the dispatcher's authorization phase actually emits.
+  `NoActorsOnAccountError` / `AccountVanishedError` is added, so the surface documents
+  what the dispatcher's authorization phase actually emits, and the round-trip and
+  attack-surface suites, which check real responses against it, accept those bodies.
+  DEV-mode error-schema validation never sees them: it wraps only the handler.
 - `MiddlewareSpec.errors` declares what each middleware layer can return (origin → 403;
   the bearer_auth and daemon_token layers soft-fail through on every non-success path,
   so they declare none)
@@ -443,9 +451,10 @@ All error codes are centralized as `ERROR_*` constants in `error_schemas.ts` —
 snake_case machine-parseable strings, single source of truth for production code
 and tests.
 
-**looseObject is intentional**: Multiple producers (middleware + handler) can emit
-different shapes at the same status code. The `error` field is the contract; extra
-context fields (`required_role`, `retry_after`, `detail`) are diagnostic.
+**Loose error bodies are intentional**: Multiple producers (middleware + handler) can
+emit different shapes at the same status code, and a thrown error flattens its `data`
+into the body. The `error` code is the contract; extra context fields
+(`required_roles`, `retry_after`, `message`) are diagnostic.
 
 **Thrown errors serialize per-transport.** Handlers that throw a
 `ThrownJsonrpcError` (e.g. `jsonrpc_errors.forbidden(...)`) hit the
@@ -506,7 +515,7 @@ declaration applies to RPC action inputs only.
 **Validation issues.** Every schema refusal carries its issues in one shape,
 `WireIssue` (`schema_issues.ts`): `{kind, path, expected, received,
 message}`, fuz_schema's `SchemaIssue` as JSON, whichever library the schema
-is written in — the REST `issues` of a `ValidationError`, the RPC
+is written in — the REST `issues` of an `InvalidInputError`, the RPC
 `data.issues` of `invalid_params` and of a refused request envelope, and an
 `ActionEvent`'s `validation_errors`. `to_wire_issues` builds it: a
 fuz_schema issue keeps its fields, its `message` the `format_issue` text; a

@@ -658,9 +658,12 @@ describe_data_exposure_tests({
 The standard attack surface suite includes an audit that classifies error
 schemas by specificity:
 
-- **literal** — `z.literal('ERROR_ACCOUNT_NOT_FOUND')` — best, clients can match exact codes
-- **enum** — `z.enum(['ERROR_A', 'ERROR_B'])` — good, constrained set
-- **generic** — `z.string()` (bare `ApiError`) — weakest, clients can't distinguish errors
+- **literal** — one code (`literal('account_not_found')`, a definition's body) — best, clients can match exact codes
+- **enum** — a set of codes (`one_of(['table_not_found', 'row_not_found'])`) — good, constrained set
+- **generic** — a plain string (bare `ApiError`) — weakest, clients can't distinguish errors
+
+The audit reads the written JSON Schema (`const` / `enum`), so a Zod
+`z.literal` / `z.enum` classifies the same.
 
 ### Informational Audit
 
@@ -847,12 +850,13 @@ assert_error_coverage(collector, route_specs, {
 Coverage is computed against the schema shape of each declared error:
 
 - **Literal or enum error code** (e.g.,
-  `z.looseObject({error: z.literal('account_not_found')})` or
-  `z.looseObject({error: z.enum(['insufficient_permissions', 'role_not_web_grantable'])})`):
+  `loose_object({error: literal('account_not_found')})` or
+  `loose_object({error: one_of(['insufficient_permissions', 'role_not_web_grantable'])})`,
+  or the Zod `z.literal` / `z.enum` forms):
   each code is counted as one coverage path. An observation without a code
   satisfies all codes for that status (the "any-code" rule); passing `body.error`
   to `record` narrows coverage to the specific code.
-- **Generic error shape** (`ApiError` with `error: z.string()`): the status is
+- **Generic error shape** (`ApiError`, its `error` any string): the status is
   counted as one path; observations (with or without code) cover it.
 
 `uncovered(route_specs)` returns entries shaped

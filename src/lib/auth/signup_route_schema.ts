@@ -27,10 +27,10 @@ import { Email, Username, UsernameCanonical, Uuid } from '../primitive_schemas_f
 import { Password } from './password.ts';
 import type { RouteSpec } from '../http/route_spec.ts';
 import {
-	ERROR_NO_MATCHING_INVITE,
-	ERROR_SIGNUP_CONFLICT,
 	ERROR_INVALID_JSON_BODY,
-	ERROR_INVALID_REQUEST_BODY
+	ERROR_INVALID_REQUEST_BODY,
+	REST_NO_MATCHING_INVITE,
+	REST_SIGNUP_CONFLICT
 } from '../http/error_schemas.ts';
 
 /**
@@ -85,7 +85,7 @@ export const create_signup_route_shape = (
 	rate_limit: options.signup_account_rate_limited ? 'both' : 'ip',
 	errors: {
 		400: loose_object({ error: one_of([ERROR_INVALID_JSON_BODY, ERROR_INVALID_REQUEST_BODY]) }),
-		403: loose_object({ error: literal(ERROR_NO_MATCHING_INVITE) }),
-		409: loose_object({ error: literal(ERROR_SIGNUP_CONFLICT) })
+		403: REST_NO_MATCHING_INVITE.schema,
+		409: REST_SIGNUP_CONFLICT.schema
 	}
 });
