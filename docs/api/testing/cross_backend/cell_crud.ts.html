@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/BTZoVLbz.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CAODFmXb.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.DTO8QTMB.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.BwdgglFA.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.BRhK5mwY.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.CNLIVRZK.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BcwQFYZ2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/C3BYcZ2u.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CE-egMPB.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/CeRoGCQG.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.-im1VQSH.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/BbEjyr7j.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.C7zC6Vay.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BL7ZH9U-.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DhdQKFKC.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -64,7 +64,7 @@ are the cell validators. This one gates on <!--]--><!--[3--><!--[0--><!--[--><!-
 against any backend that live-mounts the cell surface (the TS spine binary,
 the in-process Hono app, and the Rust <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->testing_spine_stub<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->).<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Drives the full lifecycle (create → get → update → delete → list, threading
 the created id) plus the authz matrix the wire contract guarantees. Every
-success response is parsed against the verb's declared Zod <!--]--><!--[4--><strong><!--[--><!--[2-->output<!--]--><!--]--><!----></strong><!--]--><!--[2--> schema
+success response is parsed against the verb's declared <!--]--><!--[4--><strong><!--[--><!--[2-->output<!--]--><!--]--><!----></strong><!--]--><!--[2--> schema
 (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/cell_action_specs.ts#CellCreateOutput"><!--[0--><!--[-1-->CellCreateOutput<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> / <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/cell_action_specs.ts#CellGetOutput"><!--[0--><!--[-1-->CellGetOutput<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> / …), so a TS↔Rust envelope drift —
 not just a <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/cell_action_specs.ts#CellJson"><!--[0--><!--[-1-->CellJson<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> field drift — fails the suite:<!--]--><!--]--><!----></p><!--]--><!--[9--><!--[-1--><ul><!--[--><!--[10--><li><!--[--><!--[2-->owner does full CRUD; responses match the output schemas exactly;<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->anon sees <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->public<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> cells only — <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->private<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> is 404 (existence not leaked);<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->a non-owner non-admin editing / reading / deleting another's private cell
 gets 404 (IDOR mask), never 403;<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->admin reaches any cell;<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->cell_list<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> pages honor <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->limit<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> + <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->offset<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, and a page is visible rows:
@@ -87,16 +87,16 @@ here.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--
 			
 			<script>
 				{
-					__sveltekit_1gxxmx6 = {
+					__sveltekit_1ae88s8 = {
 						base: "",
-						version: "ed36a62cbb599338a57fb1dfbc3c3156f5981edf"
+						version: "7ccfa5f1c26b26d47563604f4a32026236c03f9e"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.CXlCZqzx.js").then(async (kit) => {
-						kit.init(__sveltekit_1gxxmx6);
-						const app = await import("/_app/immutable/entry/app.DTO8QTMB.js");
+						kit.init(__sveltekit_1ae88s8);
+						const app = await import("/_app/immutable/entry/app.BRhK5mwY.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],

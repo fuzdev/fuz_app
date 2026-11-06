@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/BTZoVLbz.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CAODFmXb.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.DTO8QTMB.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.BwdgglFA.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.BRhK5mwY.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.CNLIVRZK.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BcwQFYZ2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/C3BYcZ2u.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CE-egMPB.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/CeRoGCQG.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.-im1VQSH.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/BbEjyr7j.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.C7zC6Vay.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BL7ZH9U-.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DhdQKFKC.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -435,7 +435,7 @@ used by the cell-domain event types. The handler 404-masks for
 callers who are not in the cell's manage tier (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/cell_authorize.ts#can_manage_cell"><!--[0--><!--[-1-->can_manage_cell<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> =
 admin / owner) — the timeline reveals who-touched-the-cell, so it is
 gated above <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/cell_authorize.ts#can_view_cell"><!--[0--><!--[-1-->can_view_cell<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Read-only; no audit side effect. Returns the most-recent
-<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/cell_audit_action_specs.ts#CELL_AUDIT_LIST_DEFAULT_LIMIT"><!--[0--><!--[-1-->CELL_AUDIT_LIST_DEFAULT_LIMIT<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> events; pagination is intentionally
+<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/cell_audit_action_specs.ts#CELL_AUDIT_LIST_EVENTS_MAX"><!--[0--><!--[-1-->CELL_AUDIT_LIST_EVENTS_MAX<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> events; pagination is intentionally
 not on the wire yet — the only consumer renders a single page. Add
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->{before, limit}<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> input + <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->{next_before}<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> output together when a
 paginating consumer surfaces.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/auth/cell_audit_actions.ts"><!--[-1-->auth/cell_audit_actions.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->cell_audit_list<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> handler — per-cell audit timeline read.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Authz is <!--]--><!--[4--><strong><!--[--><!--[2-->manage-tier<!--]--><!--]--><!----></strong><!--]--><!--[2--> (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/cell_authorize.ts#can_manage_cell"><!--[0--><!--[-1-->can_manage_cell<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> = admin / owner), NOT
@@ -477,14 +477,16 @@ role_grant matching those literals (<!--]--><!--[3--><!--[0--><!--[--><!--[-1-->
 role_grant). The grant's <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->level<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->viewer<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> / <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->editor<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) gates which
 predicate it satisfies.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->The admin bypass on every tier is the <!--]--><!--[4--><strong><!--[--><!--[2-->global<!--]--><!--]--><!----></strong><!--]--><!--[2--> <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->admin<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> grant
 (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->has_scoped_role(auth, ROLE_ADMIN, null)<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->), never a scoped one.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Moderation gates the audience: a cell's effective audience is its
-visibility or grants <!--]--><!--[4--><strong><!--[--><!--[2-->and<!--]--><!--]--><!----></strong><!--]--><!--[2--> its admission, so a pending, rejected, or
-unknown-marker contribution is readable through <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/cell_authorize.ts#can_view_cell"><!--[0--><!--[-1-->can_view_cell<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> by its owner
-and a global admin alone, whatever its <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->visibility<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> or grants say. The
+visibility or grants <!--]--><!--[4--><strong><!--[--><!--[2-->and<!--]--><!--]--><!----></strong><!--]--><!--[2--> its admission, so a pending or rejected
+contribution is readable through <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/cell_authorize.ts#can_view_cell"><!--[0--><!--[-1-->can_view_cell<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> by its owner and a global
+admin alone, whatever its <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->visibility<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> or grants say. The
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->editor<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> grant arm of <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/cell_authorize.ts#can_edit_cell"><!--[0--><!--[-1-->can_edit_cell<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> follows the same admission; the owner,
 admin, and manage arms don't consult it.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/auth/cell_data_schema.ts"><!--[-1-->auth/cell_data_schema.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Generic cell-data base schema.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->The wire-side shape every cell consumer can read without per-kind
 knowledge: a permissive bag with two universally-relevant typed
-fields. Per-kind schemas extend this and narrow <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->kind<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> to a literal.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Loose object: arbitrary additional fields pass through unvalidated,
-preserving the "unknown kinds ship without RPC churn" property. Per-kind
+fields. A per-kind schema spreads its <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->def<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->
+(<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->loose_object({...CellData.def, ...})<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->).<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Loose object (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->@fuzdev/fuz_schema<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->'s <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->loose_object<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->): arbitrary additional
+fields pass through unvalidated, preserving the "unknown kinds ship without
+RPC churn" property. Per-kind
 shape enforcement is opt-in via the <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->validate_data<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> deps slot — see
 <!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/auth/cell_actions.ts"><!--[0--><!--[-1-->auth/cell_actions.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[4--><strong><!--[--><!--[2-->Discipline<!--]--><!--]--><!----></strong><!--]--><!--[2-->: a field joins <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/cell_data_schema.ts#CellData"><!--[0--><!--[-1-->CellData<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> only when at least two
 consumers in different domains read it generically. <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->label<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (list/index
@@ -1024,16 +1026,16 @@ the reads that answer it as anonymous and the server status read.<!--]--><!--]--
 			
 			<script>
 				{
-					__sveltekit_1gxxmx6 = {
+					__sveltekit_1ae88s8 = {
 						base: "",
-						version: "ed36a62cbb599338a57fb1dfbc3c3156f5981edf"
+						version: "7ccfa5f1c26b26d47563604f4a32026236c03f9e"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.CXlCZqzx.js").then(async (kit) => {
-						kit.init(__sveltekit_1gxxmx6);
-						const app = await import("/_app/immutable/entry/app.DTO8QTMB.js");
+						kit.init(__sveltekit_1ae88s8);
+						const app = await import("/_app/immutable/entry/app.BRhK5mwY.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],

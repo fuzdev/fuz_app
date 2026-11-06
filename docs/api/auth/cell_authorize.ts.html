@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/BTZoVLbz.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CAODFmXb.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.DTO8QTMB.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.BwdgglFA.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.BRhK5mwY.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.CNLIVRZK.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BcwQFYZ2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/C3BYcZ2u.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CE-egMPB.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/CeRoGCQG.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.-im1VQSH.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/BbEjyr7j.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.C7zC6Vay.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BL7ZH9U-.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DhdQKFKC.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -75,9 +75,9 @@ role_grant matching those literals (<!--]--><!--[3--><!--[0--><!--[--><!--[-1-->
 role_grant). The grant's <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->level<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->viewer<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> / <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->editor<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) gates which
 predicate it satisfies.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->The admin bypass on every tier is the <!--]--><!--[4--><strong><!--[--><!--[2-->global<!--]--><!--]--><!----></strong><!--]--><!--[2--> <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->admin<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> grant
 (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->has_scoped_role(auth, ROLE_ADMIN, null)<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->), never a scoped one.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Moderation gates the audience: a cell's effective audience is its
-visibility or grants <!--]--><!--[4--><strong><!--[--><!--[2-->and<!--]--><!--]--><!----></strong><!--]--><!--[2--> its admission, so a pending, rejected, or
-unknown-marker contribution is readable through <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/cell_authorize.ts#can_view_cell"><!--[0--><!--[-1-->can_view_cell<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> by its owner
-and a global admin alone, whatever its <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->visibility<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> or grants say. The
+visibility or grants <!--]--><!--[4--><strong><!--[--><!--[2-->and<!--]--><!--]--><!----></strong><!--]--><!--[2--> its admission, so a pending or rejected
+contribution is readable through <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/cell_authorize.ts#can_view_cell"><!--[0--><!--[-1-->can_view_cell<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> by its owner and a global
+admin alone, whatever its <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->visibility<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> or grants say. The
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->editor<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> grant arm of <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/cell_authorize.ts#can_edit_cell"><!--[0--><!--[-1-->can_edit_cell<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> follows the same admission; the owner,
 admin, and manage arms don't consult it.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--> <!--[-1--><!--]--> <!--[--><!--]--> <!--[-1--><!--]--></section><!--]--> <!--[0--><section><a href="https://github.com/fuzdev/fuz_app/blob/main/src/lib/auth/cell_authorize.ts" class="chip" target="_blank" rel="noopener">view source</a></section><!--]--> <!--[0--><section><header><!----><h2 class="tome-section-header svelte-dz8ld7"><div class="flex:1"><!--[-1-->Declarations<!--]--></div> <a aria-label="hashlink" class="hashlink  svelte-1aeep1w" href="#Declarations"><!--[-1-->#<!--]--></a> <span class="hashlink-scroll-target svelte-1aeep1w" id="Declarations" aria-hidden="true"></span><!----><!----></h2><!----></header><!----> <!--[0--><section><label class="display:block position:relative"><input type="search" placeholder="search declarations in this module..." value=""/> <!--[-1--><!--]--></label> <p><!--[1-->5 declarations<!--]--></p><!----></section><!--]--> <!--[-1--><!--[--><section><header><!----><h3 class="tome-section-header svelte-dz8ld7"><div class="flex:1"><!--[0--><div class="word-break:break-all">can_edit_cell</div><!----><!--]--></div> <a aria-label="hashlink" class="hashlink  svelte-1aeep1w" href="#can_edit_cell"><!--[-1-->#<!--]--></a> <span class="hashlink-scroll-target svelte-1aeep1w" id="can_edit_cell" aria-hidden="true"></span><!----><!----></h3><!----></header><!----> <article id="can_edit_cell"><p class="row justify-content:space-between"><!--[0--><a class="module-link chip " href="/docs/api/auth/cell_authorize.ts"><!--[-1-->auth/cell_authorize.ts<!--]--></a><!--]--><!----> <!--[0--><a class="chip" href="https://github.com/fuzdev/fuz_app/blob/main/src/lib/auth/cell_authorize.ts#L206" target="_blank" rel="noopener">view source</a><!--]--></p>  <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[0--><code data-lang="ts" class="svelte-jqsy8a"><!--[-1--><!----><span class="token_punctuation">(</span>auth<span class="token_type_annotation"><span class="token_operator">:</span> <span class="token_type"><span class="token_type_name token_class_name">RequestContext</span> <span class="token_operator">|</span> <span class="token_keyword">null</span></span></span><span class="token_punctuation">,</span> cell<span class="token_type_annotation"><span class="token_operator">:</span> <span class="token_type"><span class="token_type_name token_class_name">CellRow</span></span></span><span class="token_punctuation">,</span> grants<span class="token_type_annotation"><span class="token_operator">:</span> <span class="token_type"><span class="token_keyword">readonly</span> <span class="token_type_name token_class_name">CellGrantRow</span><span class="token_punctuation">[]</span> <span class="token_operator">|</span> <span class="token_keyword">null</span></span></span><span class="token_punctuation">)</span><span class="token_type_annotation"><span class="token_operator">:</span> <span class="token_type"><span class="token_builtin">boolean</span></span></span><!----><!--]--></code><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <code data-lang="ts" class="svelte-jqsy8a"><!--[-1--><!----><span class="token_special_keyword">import</span> <span class="token_punctuation">{</span>can_edit_cell<span class="token_punctuation">}</span> <span class="token_special_keyword">from</span> <span class="token_string">'@fuzdev/fuz_app/auth/cell_authorize.js'</span><span class="token_punctuation">;</span><!----><!--]--></code><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Edit authorization for a cell.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Unauthenticated callers can never edit. Admin always allowed.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->IMPORTANT: the <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->cell.created_by === null<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> branch is <!--]--><!--[4--><strong><!--[--><!--[2-->explicit
 defense-in-depth<!--]--><!--]--><!----></strong><!--]--><!--[2-->. NULL <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->created_by<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> means system origin (well-known
@@ -116,16 +116,16 @@ the acting actor, the global <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><
 			
 			<script>
 				{
-					__sveltekit_1gxxmx6 = {
+					__sveltekit_1ae88s8 = {
 						base: "",
-						version: "ed36a62cbb599338a57fb1dfbc3c3156f5981edf"
+						version: "7ccfa5f1c26b26d47563604f4a32026236c03f9e"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.CXlCZqzx.js").then(async (kit) => {
-						kit.init(__sveltekit_1gxxmx6);
-						const app = await import("/_app/immutable/entry/app.DTO8QTMB.js");
+						kit.init(__sveltekit_1ae88s8);
+						const app = await import("/_app/immutable/entry/app.BRhK5mwY.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],
