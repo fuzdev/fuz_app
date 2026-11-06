@@ -40,7 +40,8 @@ import {
 import {
 	resolve_valid_path,
 	generate_valid_body,
-	to_route_content_type
+	to_route_content_type,
+	type RouteParamValues
 } from './schema_generators.ts';
 import type { SetupTest, TestFixture } from './cross_backend/setup.ts';
 import type { AppSurfaceSpec } from '../http/surface.ts';
@@ -63,6 +64,12 @@ export interface RoundTripTestOptions {
 	skip_routes?: Array<string>;
 	/** Override generated bodies for specific routes (`'METHOD /path'` → body). */
 	input_overrides?: Map<string, Record<string, unknown>>;
+	/**
+	 * Path param values for specific routes (`'METHOD /path'` → param name →
+	 * value), used before the generated ones — needed for a `{re}` param whose
+	 * pattern refuses the generated value. See `RouteParamValues`.
+	 */
+	param_values?: RouteParamValues;
 	/**
 	 * Success-case fixtures for routes whose **populated success body** the
 	 * generic nil-id input can't reach — referential REST routes whose path
@@ -177,7 +184,7 @@ export const describe_round_trip_validation = (options: RoundTripTestOptions): v
 			// every consumer hand-list them in `skip_routes`.
 			if (spec.raw_body) return;
 
-			const url = resolve_valid_path(spec.path, spec.params);
+			const url = resolve_valid_path(spec.path, spec.params, options.param_values?.[route_key]);
 
 			const override = options.input_overrides?.get(route_key);
 			let body = override ?? generate_valid_body(spec.input);
@@ -252,7 +259,9 @@ export const describe_round_trip_validation = (options: RoundTripTestOptions): v
 				assert.ok(spec, `success_fixtures references unknown route '${route_key}'`);
 
 				const seeded = await build(fixture);
-				const url = seeded.url ?? resolve_valid_path(spec.path, spec.params);
+				const url =
+					seeded.url ??
+					resolve_valid_path(spec.path, spec.params, options.param_values?.[route_key]);
 				const body = seeded.body;
 				const headers = pick_auth_headers(spec, fixture, authed_account, admin_account);
 

@@ -86,7 +86,7 @@ export const describe_adversarial_404 = (options: AdversarialTestOptions): void 
 			test(key, async () => {
 				const route = surface.routes.find((r) => format_route_key(r) === key)!;
 				const app = select_auth_app(apps, route.auth);
-				const url = resolve_valid_path(route.path, spec.params);
+				const url = resolve_valid_path(route.path, spec.params, options.param_values?.[key]);
 
 				const request_init: RequestInit = {
 					method: route.method,

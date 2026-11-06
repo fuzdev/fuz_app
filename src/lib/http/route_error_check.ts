@@ -201,6 +201,44 @@ const expand_optional_params = (template: string): Array<string> | null => {
 	return results.filter((v, i, a) => a.indexOf(v) === i);
 };
 
+/**
+ * The regexp source of a `{re}` param's pattern, grouped so an alternation
+ * stays inside it, as Hono's RegExpRouter reads it.
+ */
+const to_route_param_source = (pattern: string): string => `(?:${pattern})`;
+
+/**
+ * Compile the `re` of a `:name{re}` param to the `RegExp` a value of the param
+ * must match, grouped and anchored at both ends, `^(?:re)$`, as
+ * `compile_route_path` reads it inside a template. That is Hono's RegExpRouter
+ * reading; its TrieRouter, which SmartRouter falls back to for some route
+ * sets, anchors `^re$` and leaves a top-level alternation ungrouped, so
+ * `^a|b$` takes `ab` where the grouped form refuses it. The grouped form is
+ * the stricter of the two: a value it accepts both routers accept. Test it
+ * against the value as Hono reads it (`decode_route_path`).
+ *
+ * @param pattern - the param's `re` (`RouteParam.pattern`)
+ */
+export const compile_route_param_pattern = (pattern: string): RegExp =>
+	new RegExp(`^${to_route_param_source(pattern)}$`);
+
+/**
+ * A request path, or a part of one, as Hono's router reads it: percent-decoded
+ * by `decodeURI` with `%25` kept, so an encoded `/`, `#`, `?` or `%` stays
+ * encoded, or the raw text when decoding fails.
+ *
+ * @param path - the request pathname, or a percent-encoded segment of one
+ */
+export const decode_route_path = (path: string): string => {
+	if (!path.includes('%')) return path;
+	try {
+		return decodeURI(path.replaceAll('%25', '%2525'));
+	} catch {
+		// a malformed escape: Hono matches the raw path
+		return path;
+	}
+};
+
 /** The regexp source of a template with no optional param. */
 const to_route_path_source = (template: string): string => {
 	const segments = split_route_template(template);
@@ -214,7 +252,7 @@ const to_route_path_source = (template: string): string => {
 		}
 		const param = PARAM_SEGMENT.exec(segment);
 		if (param) {
-			source += param[2] ? `/(?:${param[2]})` : '/[^/]+';
+			source += param[2] ? `/${to_route_param_source(param[2])}` : '/[^/]+';
 			continue;
 		}
 		if (segment.includes('*')) {

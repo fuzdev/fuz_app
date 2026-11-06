@@ -47,6 +47,7 @@ import type { RpcEndpointsSuiteOption } from '../rpc_helpers.ts';
 import type { BackendCapabilities } from './capabilities.ts';
 import type { UncoveredEntry } from '../error_coverage.ts';
 import type { SetupTest, TestFixture } from './setup.ts';
+import type { RouteParamValues } from '../schema_generators.ts';
 
 /**
  * Configuration for `describe_standard_cross_process_tests`.
@@ -131,6 +132,13 @@ export interface StandardCrossProcessTestOptions {
 	 */
 	data_exposure_skip_routes?: Array<string>;
 	/**
+	 * Forwarded to `describe_round_trip_validation` and
+	 * `describe_data_exposure_tests` as `param_values` (`'METHOD /path'` →
+	 * param name → value), for a `{re}` param whose pattern refuses the
+	 * generated value. See `RouteParamValues`.
+	 */
+	param_values?: RouteParamValues;
+	/**
 	 * Forwarded to `describe_rpc_round_trip_tests` as `success_fixtures`
 	 * (method name → async params factory). Drives a populated **success**
 	 * body for referential RPC reads (`*_get`, `*_log`) the nil-id round-trip
@@ -190,7 +198,8 @@ export const describe_standard_cross_process_tests = (
 		setup_test: options.setup_test,
 		surface_source: options.surface_source,
 		skip_routes: options.round_trip_skip_routes,
-		success_fixtures: options.rest_success_fixtures
+		success_fixtures: options.rest_success_fixtures,
+		param_values: options.param_values
 	});
 	describe_rpc_round_trip_tests({
 		setup_test: options.setup_test,
@@ -204,7 +213,8 @@ export const describe_standard_cross_process_tests = (
 	describe_data_exposure_tests({
 		setup_test: options.setup_test,
 		surface_source: options.surface_source,
-		skip_routes: options.data_exposure_skip_routes
+		skip_routes: options.data_exposure_skip_routes,
+		param_values: options.param_values
 	});
 	if (options.roles) {
 		describe_standard_admin_integration_tests({

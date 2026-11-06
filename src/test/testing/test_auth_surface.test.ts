@@ -323,6 +323,138 @@ describe('assert_full_middleware_stack', () => {
 			/No routes found under/
 		);
 	});
+
+	const carved_route_specs: Array<RouteSpec> = [
+		{
+			method: 'GET',
+			path: '/api/files/:name',
+			auth: { account: 'required', actor: 'none' },
+			handler: stub_handler,
+			description: 'Read a file',
+			input: z.null(),
+			output: z.null()
+		},
+		{
+			method: 'GET',
+			path: '/api/things',
+			auth: { account: 'required', actor: 'none' },
+			handler: stub_handler,
+			description: 'List things',
+			input: z.null(),
+			output: z.null()
+		}
+	];
+	// a body cap over `/api/*` that carves `/api/files/*` out
+	const build_carved_surface = (): AppSurface =>
+		generate_app_surface({
+			middleware_specs: [
+				{
+					name: 'body_cap',
+					path: '/api/*',
+					handler: stub_mw,
+					carve_outs: [{ path: '/api/files/*', reason: 'the file store caps its own bodies' }]
+				},
+				{ name: 'session', path: '/api/*', handler: stub_mw }
+			],
+			route_specs: carved_route_specs
+		});
+	const find_route = (surface: AppSurface, path: string) =>
+		surface.routes.find((r) => r.path === path)!;
+
+	test('a carved-out route lacking the layer passes', () => {
+		const surface = build_carved_surface();
+		assert.deepStrictEqual(find_route(surface, '/api/files/:name').applicable_middleware, [
+			'session'
+		]);
+		assert_full_middleware_stack(surface, '/api/', ['body_cap', 'session']);
+	});
+
+	test('a route no carve-out covers lacking the layer fails', () => {
+		const surface = build_carved_surface();
+		find_route(surface, '/api/things').applicable_middleware = ['session'];
+		assert.throws(
+			() => assert_full_middleware_stack(surface, '/api/', ['body_cap', 'session']),
+			/GET \/api\/things has wrong middleware stack/
+		);
+	});
+
+	test('a carved-out route still listing the layer fails', () => {
+		const surface = build_carved_surface();
+		find_route(surface, '/api/files/:name').applicable_middleware = ['body_cap', 'session'];
+		assert.throws(
+			() => assert_full_middleware_stack(surface, '/api/', ['body_cap', 'session']),
+			/GET \/api\/files\/:name has wrong middleware stack \(carved out of body_cap\)/
+		);
+	});
+
+	test('a carve-out relaxes nothing where another layer of the name runs', () => {
+		// a second `body_cap` covers the carved-out file routes, so they keep the name
+		const surface = generate_app_surface({
+			middleware_specs: [
+				{
+					name: 'body_cap',
+					path: '/api/*',
+					handler: stub_mw,
+					carve_outs: [{ path: '/api/files/*', reason: 'the file store caps its own bodies' }]
+				},
+				{ name: 'body_cap', path: '/api/files/*', handler: stub_mw }
+			],
+			route_specs: carved_route_specs
+		});
+		assert.deepStrictEqual(find_route(surface, '/api/files/:name').applicable_middleware, [
+			'body_cap'
+		]);
+		assert_full_middleware_stack(surface, '/api/', ['body_cap']);
+		find_route(surface, '/api/files/:name').applicable_middleware = [];
+		assert.throws(
+			() => assert_full_middleware_stack(surface, '/api/', ['body_cap']),
+			/GET \/api\/files\/:name has wrong middleware stack/
+		);
+	});
+
+	test('an exact-template carve-out relaxes no route under it', () => {
+		const meta_route: RouteSpec = { ...carved_route_specs[0]!, path: '/api/files/:name/meta' };
+		const surface = generate_app_surface({
+			middleware_specs: [
+				{
+					name: 'body_cap',
+					path: '/api/*',
+					handler: stub_mw,
+					carve_outs: [{ path: '/api/files/:name', reason: 'the one file route' }]
+				}
+			],
+			route_specs: [carved_route_specs[0]!, meta_route]
+		});
+		assert.deepStrictEqual(find_route(surface, '/api/files/:name').applicable_middleware, []);
+		assert.deepStrictEqual(find_route(surface, '/api/files/:name/meta').applicable_middleware, [
+			'body_cap'
+		]);
+		assert_full_middleware_stack(surface, '/api/', ['body_cap']);
+		find_route(surface, '/api/files/:name/meta').applicable_middleware = [];
+		assert.throws(
+			() => assert_full_middleware_stack(surface, '/api/', ['body_cap']),
+			/GET \/api\/files\/:name\/meta has wrong middleware stack/
+		);
+	});
+
+	test('a carve-out of a layer the route is not under relaxes nothing', () => {
+		// `session` reaches only `/api/things`, so the file route lacks it with no carve-out to explain it
+		const surface = generate_app_surface({
+			middleware_specs: [
+				{
+					name: 'session',
+					path: '/api/things',
+					handler: stub_mw,
+					carve_outs: [{ path: '/api/files/*', reason: 'a carve-out outside the layer' }]
+				}
+			],
+			route_specs: carved_route_specs.slice(0, 1)
+		});
+		assert.throws(
+			() => assert_full_middleware_stack(surface, '/api/', ['session']),
+			/has wrong middleware stack/
+		);
+	});
 });
 
 // Exercise the adversarial runner with minimal specs
@@ -428,6 +560,28 @@ describe_adversarial_auth({
 			route_specs: adversarial_specs
 		}),
 	roles: ['admin', 'keeper']
+});
+
+// A `{re}` param whose pattern refuses `test_<name>` reaches its route through
+// a supplied value — without it, `resolve_valid_path` throws in every case.
+describe_adversarial_auth({
+	build: () =>
+		create_app_surface_spec({
+			middleware_specs: adversarial_middleware,
+			route_specs: [
+				{
+					method: 'GET',
+					path: '/:slug{.+\\.git}/info/refs',
+					auth: { account: 'required', actor: 'none' },
+					handler: (c) => c.json({ slug: c.req.param('slug') }),
+					description: 'A route behind a `{re}` param',
+					input: z.null(),
+					output: z.null()
+				}
+			]
+		}),
+	roles: ['admin', 'keeper'],
+	param_values: { 'GET /:slug{.+\\.git}/info/refs': { slug: 'org/repo.git' } }
 });
 
 // Regression guard for typed probes: a `raw_body` POST refuses an untyped

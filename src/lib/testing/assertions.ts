@@ -26,6 +26,11 @@ import {
 	is_error_status,
 	is_json_response
 } from '../http/route_error_check.ts';
+import {
+	middleware_applies,
+	middleware_carves_out,
+	middleware_spec_applies
+} from '../http/schema_helpers.ts';
 
 /**
  * Resolve an absolute path relative to the caller's module.
@@ -186,13 +191,23 @@ export const assert_error_response_declared = async (
 };
 
 /**
- * Verify every route under a path prefix has the exact expected middleware stack.
+ * Verify every route under a path prefix has the exact expected middleware
+ * stack, less the layers that carve it out.
+ *
+ * A route's expected stack is `expected_middleware` in order, without each
+ * name whose surface layers carve the route out: a layer of that name whose
+ * `path` applies to the route and one of whose `carve_outs` does too
+ * (`middleware_carves_out`), with no other layer of the name running on it
+ * (`middleware_spec_applies`) — the rule the surface's `applicable_middleware`
+ * and the route error map read. Anything else is held exactly: a route
+ * missing a name no carve-out explains fails, and so does a carved-out route
+ * still listing the name.
  *
  * @param surface - the app surface to check
  * @param path_prefix - prefix to filter routes (e.g. `'/api/'`)
- * @param expected_middleware - the exact middleware names in order
+ * @param expected_middleware - the full middleware names in order
  * @throws AssertionError if no routes match `path_prefix`, or if any matching
- *   route's `applicable_middleware` does not deep-equal `expected_middleware`.
+ *   route's `applicable_middleware` does not deep-equal its expected stack
  */
 export const assert_full_middleware_stack = (
 	surface: AppSurface,
@@ -201,11 +216,23 @@ export const assert_full_middleware_stack = (
 ): void => {
 	const routes = surface.routes.filter((r) => r.path.startsWith(path_prefix));
 	assert.ok(routes.length > 0, `No routes found under ${path_prefix}`);
+	const is_carved_out = (name: string, route_path: string): boolean => {
+		const layers = surface.middleware.filter((m) => m.name === name);
+		return (
+			layers.some(
+				(m) => middleware_applies(m.path, route_path) && middleware_carves_out(m, route_path)
+			) && !layers.some((m) => middleware_spec_applies(m, route_path))
+		);
+	};
 	for (const route of routes) {
+		const carved = expected_middleware.filter((name) => is_carved_out(name, route.path));
+		const expected = expected_middleware.filter((name) => !carved.includes(name));
 		assert.deepStrictEqual(
 			route.applicable_middleware,
-			expected_middleware,
-			`${route.method} ${route.path} has wrong middleware stack`
+			expected,
+			`${route.method} ${route.path} has wrong middleware stack${
+				carved.length > 0 ? ` (carved out of ${carved.join(', ')})` : ''
+			}`
 		);
 	}
 };

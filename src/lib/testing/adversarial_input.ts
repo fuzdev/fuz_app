@@ -114,7 +114,7 @@ export const describe_adversarial_input = (options: AdversarialTestOptions): voi
 					input_test_count += test_cases.length;
 
 					const app = select_auth_app(apps, route.auth);
-					const base_url = resolve_valid_path(route.path, spec.params);
+					const base_url = resolve_valid_path(route.path, spec.params, options.param_values?.[key]);
 					const is_get = route.method === 'GET';
 
 					describe(key, () => {
@@ -237,7 +237,7 @@ export const describe_adversarial_input = (options: AdversarialTestOptions): voi
 					query_test_count += test_cases.length;
 
 					const app = select_auth_app(apps, route.auth);
-					const base_url = resolve_valid_path(route.path, spec.params);
+					const base_url = resolve_valid_path(route.path, spec.params, options.param_values?.[key]);
 
 					describe(key, () => {
 						for (const tc of test_cases) {

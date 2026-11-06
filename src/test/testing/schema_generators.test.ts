@@ -7,6 +7,7 @@
 import { describe, test, assert } from 'vitest';
 import { z } from 'zod';
 import { Hono } from 'hono';
+import { TrieRouter } from 'hono/router/trie-router';
 import { parse } from '@fuzdev/fuz_schema/schema.ts';
 
 import { generate_valid_body, resolve_valid_path } from '#lib/testing/schema_generators.ts';
@@ -123,11 +124,11 @@ describe('resolve_valid_path — the template read as Hono reads it', () => {
 		['/v1/files:upload', '/v1/files:upload'],
 		['/v1/:bucket/files:upload', '/v1/test_bucket/files:upload'],
 		// a `{re}` goes with its param, a `/` inside it included
-		['/f/:name{[0-9]+}', '/f/test_name'],
-		['/f/:path{.+/.+}', '/f/test_path'],
+		['/f/:name{[a-z_]+}', '/f/test_name'],
+		['/f/:path{[a-z_]+(?:/[a-z]+)?}', '/f/test_path'],
 		// an optional param is filled
 		['/a/:id?', '/a/test_id'],
-		['/a/:id{[0-9]+}?', '/a/test_id'],
+		['/a/:id{[a-z_]+}?', '/a/test_id'],
 		// no params, a wildcard, and the root are left as they are
 		['/health', '/health'],
 		['/api/*', '/api/*'],
@@ -167,14 +168,133 @@ describe('resolve_valid_path — the template read as Hono reads it', () => {
 		}
 	});
 
-	test('a filled value is not held to its {re}', async () => {
-		// the value comes from the params schema alone, so `test_n` misses `[0-9]+`
-		const template = '/f/:n{[0-9]+}';
+	test('a fallback its {re} accepts is kept', async () => {
+		const template = '/f/:slug{[a-z_]+}/x';
+		assert.strictEqual(resolve_valid_path(template), '/f/test_slug/x');
+		const app = new Hono();
+		app.get(template, (c) => c.text(c.req.param('slug')));
+		const res = await app.request(resolve_valid_path(template));
+		assert.strictEqual(await res.text(), 'test_slug');
+	});
+
+	test('a fallback its {re} refuses throws, naming the route and the param', () => {
+		assert.throws(
+			() => resolve_valid_path('/:slug_with_git{.+\\.git}/info/refs'),
+			/the param `slug_with_git` of `\/:slug_with_git\{\.\+\\\.git\}\/info\/refs` resolves to "test_slug_with_git".*`param_values`.*'METHOD \/:slug_with_git/
+		);
+		// a schema-generated value is held to it too
+		assert.throws(
+			() => resolve_valid_path('/f/:n{[0-9]+}', z.strictObject({ n: z.string() })),
+			/the param `n` of `\/f\/:n\{\[0-9\]\+\}`/
+		);
+	});
+
+	test('the {re} is anchored at both ends', () => {
+		// unanchored, `[0-9]` would find a digit in `a1b`, and `a|test_x` would match a prefix
+		assert.throws(() => resolve_valid_path('/f/:n{[0-9]}', undefined, { n: 'a1b' }));
+		assert.throws(() => resolve_valid_path('/f/:n{a|test}', undefined, { n: 'test_x' }));
+		assert.strictEqual(
+			resolve_valid_path('/f/:n{a|test_x}', undefined, { n: 'test_x' }),
+			'/f/test_x'
+		);
+	});
+
+	test('the {re} is grouped before it is anchored, as RegExpRouter reads an alternation, the stricter reading', async () => {
+		// `^a|b$` would take `ab` by its first branch; RegExpRouter refuses it
+		const template = '/f/:n{a|b}';
+		assert.throws(() => resolve_valid_path(template, undefined, { n: 'ab' }));
 		const app = new Hono();
 		app.get(template, (c) => c.text('hit'));
-		const res = await app.request(resolve_valid_path(template));
-		assert.strictEqual(res.status, 404);
-		assert.notStrictEqual(await res.text(), 'hit');
+		assert.strictEqual((await app.request('/f/ab')).status, 404);
+		// TrieRouter leaves the alternation ungrouped and takes it, so refusing is the stricter side
+		const trie_app = new Hono({ router: new TrieRouter() });
+		trie_app.get(template, (c) => c.text('hit'));
+		assert.strictEqual(await (await trie_app.request('/f/ab')).text(), 'hit');
+		assert.strictEqual(resolve_valid_path(template, undefined, { n: 'a' }), '/f/a');
+	});
+
+	test('a supplied value is used before the schema and the fallback', async () => {
+		const template = '/:slug_with_git{.+\\.git}/info/refs';
+		const resolved = resolve_valid_path(template, undefined, { slug_with_git: 'repo.git' });
+		assert.strictEqual(resolved, '/repo.git/info/refs');
+		// over a schema that accepts `test_<name>` too
+		assert.strictEqual(
+			resolve_valid_path('/things/:id', z.strictObject({ id: z.string() }), { id: 'given' }),
+			'/things/given'
+		);
+		const app = new Hono();
+		app.get(template, (c) => c.text(c.req.param('slug_with_git')));
+		const res = await app.request(resolved);
+		assert.strictEqual(await res.text(), 'repo.git');
+	});
+
+	test('a supplied value is tested decoded, as Hono reads it', async () => {
+		const template = '/f/:n{[a-z ]+}';
+		const resolved = resolve_valid_path(template, undefined, { n: 'a b' });
+		assert.strictEqual(resolved, '/f/a%20b');
+		const app = new Hono();
+		app.get(template, (c) => c.text(c.req.param('n')));
+		assert.strictEqual(await (await app.request(resolved)).text(), 'a b');
+	});
+
+	test('a supplied `%` stays encoded as `%25` when tested, as Hono keeps it', async () => {
+		const template = '/f/:n{[^%]+}';
+		assert.throws(() => resolve_valid_path(template, undefined, { n: 'a%b' }), /refuses/);
+		const app = new Hono();
+		app.get(template, (c) => c.text('hit'));
+		assert.strictEqual((await app.request('/f/a%25b')).status, 404);
+		// the pattern sees the `%25` itself, as Hono's router does
+		const kept = '/f/:n{a%25b}';
+		assert.strictEqual(resolve_valid_path(kept, undefined, { n: 'a%b' }), '/f/a%25b');
+		const kept_app = new Hono();
+		kept_app.get(kept, (c) => c.text(c.req.param('n')));
+		assert.strictEqual(await (await kept_app.request('/f/a%25b')).text(), 'a%b');
+	});
+
+	test('a supplied value the URL normalizes away throws by name', () => {
+		for (const n of ['', '.', '..']) {
+			assert.throws(
+				() => resolve_valid_path('/f/:n/x', undefined, { n }),
+				new RegExp(
+					`the param \`n\` of \`/f/:n/x\` is ${JSON.stringify(n).replaceAll('.', '\\.')}, which the URL normalizes away`
+				)
+			);
+		}
+	});
+
+	test('a supplied lone surrogate throws naming the param', () => {
+		assert.throws(
+			() => resolve_valid_path('/f/:n', undefined, { n: '\ud800' }),
+			/the param `n` of `\/f\/:n` holds a lone surrogate/
+		);
+	});
+
+	test('a supplied value its {re} refuses throws', () => {
+		assert.throws(
+			() => resolve_valid_path('/f/:n{[0-9]+}', undefined, { n: 'abc' }),
+			/the value supplied for it,/
+		);
+	});
+
+	test('a supplied value naming no param throws', () => {
+		assert.throws(
+			() => resolve_valid_path('/f/:n', undefined, { m: '1' }),
+			/names `m`, which is no param of `\/f\/:n`/
+		);
+	});
+
+	test('a supplied value holding `/` or `#` stays percent-encoded, as the fallback is', async () => {
+		const template = '/:slug_with_git{.+\\.git}/info/refs';
+		const resolved = resolve_valid_path(template, undefined, { slug_with_git: 'org/re#po.git' });
+		assert.strictEqual(resolved, '/org%2Fre%23po.git/info/refs');
+		// the `#` of a literal segment's fallback is encoded the same way
+		assert.strictEqual(resolve_valid_path('/a/:p#q'), '/a/test_p%23q');
+		const app = new Hono();
+		app.get(template, (c) => c.text(c.req.param('slug_with_git')));
+		const res = await app.request(resolved);
+		assert.strictEqual(await res.text(), 'org/re#po.git');
+		// a `[^/]+` pattern matches the encoded `/`, as Hono reads it
+		assert.strictEqual(resolve_valid_path('/f/:n{[^/]+}', undefined, { n: 'a/b' }), '/f/a%2Fb');
 	});
 });
 

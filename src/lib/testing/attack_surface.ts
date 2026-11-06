@@ -27,7 +27,11 @@ import {
 import { describe_adversarial_input } from './adversarial_input.ts';
 import { describe_adversarial_404 } from './adversarial_404.ts';
 import { create_auth_test_apps, create_route_skip_filter, select_auth_app } from './auth_apps.ts';
-import { resolve_valid_path, to_route_content_type } from './schema_generators.ts';
+import {
+	resolve_valid_path,
+	to_route_content_type,
+	type RouteParamValues
+} from './schema_generators.ts';
 import {
 	assert_surface_matches_snapshot,
 	assert_surface_deterministic,
@@ -84,6 +88,12 @@ export interface AdversarialTestOptions {
 	 * merely have a format is handled by the synthesizer.
 	 */
 	skip_routes?: Array<string>;
+	/**
+	 * Path param values for specific routes (`'METHOD /path'` → param name →
+	 * value), used before the generated ones — needed for a `{re}` param whose
+	 * pattern refuses the generated value. See `RouteParamValues`.
+	 */
+	param_values?: RouteParamValues;
 }
 
 /**
@@ -119,8 +129,14 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
 	// validation accepts. Otherwise the generated request 400s on the path
 	// before ever reaching the 401 / 403 gate the case is asserting.
 	const spec_lookup = build_route_spec_lookup(route_specs);
-	const test_path = (route: { method: string; path: string }): string =>
-		resolve_valid_path(route.path, spec_lookup.get(format_route_key(route))?.params);
+	const test_path = (route: { method: string; path: string }): string => {
+		const key = format_route_key(route);
+		return resolve_valid_path(
+			route.path,
+			spec_lookup.get(key)?.params,
+			options.param_values?.[key]
+		);
+	};
 
 	const apps = create_auth_test_apps(route_specs, roles);
 	// every probe carries the content type a real client sends, so the
@@ -293,6 +309,11 @@ export interface StandardAttackSurfaceOptions {
 	 * handled by the params-schema-aware synthesizer.
 	 */
 	skip_routes?: Array<string>;
+	/**
+	 * Path param values for the three adversarial sub-suites, by route key and
+	 * then param name. See `AdversarialTestOptions.param_values`.
+	 */
+	param_values?: RouteParamValues;
 }
 
 /**
@@ -324,7 +345,8 @@ export const describe_standard_attack_surface_tests = (
 		roles,
 		api_path_prefix = '/api/',
 		security_policy,
-		skip_routes
+		skip_routes,
+		param_values
 	} = options;
 
 	const built = build();
@@ -362,9 +384,9 @@ export const describe_standard_attack_surface_tests = (
 		});
 	});
 
-	describe_adversarial_auth({ build: () => built, roles, skip_routes });
+	describe_adversarial_auth({ build: () => built, roles, skip_routes, param_values });
 
-	describe_adversarial_input({ build: () => built, roles, skip_routes });
+	describe_adversarial_input({ build: () => built, roles, skip_routes, param_values });
 
-	describe_adversarial_404({ build: () => built, roles, skip_routes });
+	describe_adversarial_404({ build: () => built, roles, skip_routes, param_values });
 };

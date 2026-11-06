@@ -18,6 +18,7 @@ import type { TestAccount } from './app_server.ts';
 import { create_test_request_headers } from './test_origin.ts';
 import { parse_any } from '../schema_issues.ts';
 import {
+	decode_route_path,
 	find_mounted_route,
 	is_json_response,
 	to_mounted_routes,
@@ -33,20 +34,11 @@ const mounted_routes_cache: WeakMap<
 
 /**
  * A request path as Hono reads it: the URL's pathname (a query string
- * dropped, `.` and `..` segments resolved), percent-decoded by `decodeURI`
- * with `%25` kept, or the raw path when decoding fails.
+ * dropped, `.` and `..` segments resolved), percent-decoded as
+ * `decode_route_path` decodes it.
  */
-const to_hono_path = (path: string): string => {
-	let pathname = new URL(path, 'http://localhost').pathname;
-	if (pathname.includes('%')) {
-		try {
-			pathname = decodeURI(pathname.replaceAll('%25', '%2525'));
-		} catch {
-			// a malformed escape: Hono matches the raw path
-		}
-	}
-	return pathname;
-};
+const to_hono_path = (path: string): string =>
+	decode_route_path(new URL(path, 'http://localhost').pathname);
 
 /**
  * Find the route spec a request reaches: the first in list (mount) order

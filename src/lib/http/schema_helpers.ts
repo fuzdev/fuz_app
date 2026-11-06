@@ -480,8 +480,23 @@ export const middleware_paths_overlap = (a: string, b: string): boolean => {
 };
 
 /**
+ * Check if a middleware layer carves a route path out: one of its
+ * `carve_outs` applies to it (`middleware_applies`), whether or not its own
+ * `path` does.
+ *
+ * @param spec - the layer's optional `carve_outs`
+ * @param route_path - the route path to check
+ */
+export const middleware_carves_out = (
+	spec: { readonly carve_outs?: ReadonlyArray<{ readonly path: string }> | null },
+	route_path: string
+): boolean =>
+	(spec.carve_outs ?? []).some((carve_out) => middleware_applies(carve_out.path, route_path));
+
+/**
  * Check if a middleware layer runs on a route path: its `path` pattern
- * applies (`middleware_applies`) and none of its `carve_outs` does.
+ * applies (`middleware_applies`) and none of its `carve_outs` does
+ * (`middleware_carves_out`).
  *
  * @param spec - the layer's `path` and optional `carve_outs`
  * @param route_path - the route path to check
@@ -492,6 +507,4 @@ export const middleware_spec_applies = (
 		readonly carve_outs?: ReadonlyArray<{ readonly path: string }> | null;
 	},
 	route_path: string
-): boolean =>
-	middleware_applies(spec.path, route_path) &&
-	!(spec.carve_outs ?? []).some((carve_out) => middleware_applies(carve_out.path, route_path));
+): boolean => middleware_applies(spec.path, route_path) && !middleware_carves_out(spec, route_path);

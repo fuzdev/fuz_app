@@ -416,7 +416,7 @@ or Postgres and runs in the `cross-ts` CI job.
 - `assert_surface_matches_snapshot(surface, path)` — compares live `AppSurface` against a committed JSON snapshot; failure message instructs `gro gen`.
 - `assert_surface_deterministic(build_surface)` — build twice, `deepStrictEqual` results; catches nondeterminism in surface generation.
 - `assert_only_expected_public_routes(surface, list)` — bidirectional: no unexpected public routes, no missing expected ones. Format: `['GET /health', 'POST /api/account/login']`.
-- `assert_full_middleware_stack(surface, prefix, mws)` — every route under `prefix` has exactly `mws` as its middleware chain.
+- `assert_full_middleware_stack(surface, prefix, mws)` — every route under `prefix` has exactly `mws` as its middleware chain, less each layer that carves it out (a layer whose `path` and one of whose `carve_outs` apply to the route, `middleware_carves_out`, with no other layer of its name running there) — the rule `applicable_middleware` and the route error map read. A route missing a layer no carve-out explains fails, and so does a carved-out route still listing it.
 - `get_route_error_schema(lookup, route, status)` — reads the route's error map (`lookup` is `AppSurfaceSpec.route_error_maps`) at a status, a fuz_schema schema.
 - `assert_error_schema_valid(lookup, route, status, body)` — assert the route declares the status, and the body parses against the status's schema (`parse_any`), a union of its definitions' `literal(code)` bodies, so a code the route doesn't declare at the status fails the parse; a mismatch throws an `Error` carrying the issues. Every adversarial refusal runs through it.
 - `assert_error_response_declared(errors, jsonrpc, response, label)` — a JSON error response (400 and up) is one the route's map declares, by `check_route_error` (the DEV error check's rule: 500 `internal_error` / 503 `service_unavailable` always accepted, a JSON-RPC envelope on a `jsonrpc` route skipped, a success or non-JSON response passing); what the attack-surface suite's `correct auth passes guard` holds each answer to.
@@ -509,7 +509,7 @@ naming it.
 - `detect_format(field_schema)` — `detect_json_schema_format` over `to_field_json_schema`: the `format`, `'pattern'` for a regex, or `null`.
 - `generate_valid_value(field, field_schema)` — base-type switch producing a valid sample (UUIDs → nil UUID, strings → `'xxxxxxxxxx'`, numbers → `1`, objects → `generate_valid_object` against the field schema, so a nested refinement is satisfied too, enums → first entry, records → `{}`, a void field → `undefined`, etc.). For branded-string refinements, walks a fallback chain synthesized from the `pattern` string the JSON Schema representation exposes: fixed-length hex (`^[0-9a-f]{N}$` — blake3 / sha256 / md5 digests; `0`.repeat(N)), prefix-lengthed slug (`^<prefix>_[A-Za-z0-9_-]{N}$` — `ApiTokenId`-style ids; `<prefix>_` + `x`.repeat(N)), absolute path prefix, URL prefix, two `/`-joined segments (an `owner/name` slug). First candidate the field accepts is used.
 - `generate_valid_string_param(field, field_schema)` — a string a URL-sourced field (route param, query value) accepts: the nil UUID for a UUID field, else the first of `test_value`, the generated valid value as a string, `1`, `0`, `true`, `false`, the field's JSON Schema `default` or lower bound as a string (a preprocessed integer whose minimum is above one) and a synthesized string the field accepts; `null` when none does. The params and query case generators build their base from it.
-- `resolve_valid_path(path, params_schema?)` — swaps each whole param segment (`:name`, `:name{re}`, optional or not, read as Hono reads a template: `split_route_template` / `parse_route_param`) for a value the params schema accepts; a `:` inside a literal segment (`files:upload`) stays. Prefers `test_<name>` wherever the field schema admits it (the param name keeps failure messages readable); otherwise a UUID param takes the nil UUID and anything else is synthesized from the schema, percent-encoded. A synthesized value containing `/` is refused (it would route elsewhere) and falls back to `test_<name>`.
+- `resolve_valid_path(path, params_schema?, param_values?)` — swaps each whole param segment (`:name`, `:name{re}`, optional or not, read as Hono reads a template: `split_route_template` / `parse_route_param`) for a value the params schema accepts; a `:` inside a literal segment (`files:upload`) stays. Prefers `test_<name>` wherever the field schema admits it (the param name keeps failure messages readable); otherwise a UUID param takes the nil UUID and anything else is synthesized from the schema, percent-encoded. A synthesized value containing `/` is refused (it would route elsewhere) and falls back to `test_<name>`. A value in `param_values` (the route's entry of `RouteParamValues`, `'METHOD /path'` → param name → value, the option the path-resolving suites take) comes first, percent-encoded like the rest. A `:name{re}` param's value, supplied or generated, must match its pattern grouped and anchored, `^(?:re)$` (`compile_route_param_pattern`, over the value as Hono decodes it, `decode_route_path`) — Hono's RegExpRouter reading, the stricter of its routers', as TrieRouter leaves a top-level alternation ungrouped — else it throws naming the route and the param and pointing at `param_values`: no value is guessed from the pattern, and no route is skipped silently. A `param_values` entry naming no param of the path throws too, and so does a supplied `''`, `.` or `..` (the URL normalizes it away) or a lone surrogate. Supplied values are always encoded, so a `{re}` needing a literal `/` can't be met by one.
 - `to_route_content_type(route)` — the `Content-Type` a well-formed request to the route sends: `application/json`, or `application/octet-stream` for a `raw_body` route. Every `POST` route refuses anything else with 415 before its other gates, so every probe in the harnesses (auth, params and query fuzz, 404, data exposure, round trip) sends it, body or not.
 - `generate_valid_object(object_schema, schema) => {value, result}` — required and defaulted fields; when `schema` (refinements included) refuses those, each optional field alone in declaration order, the first that parses; failing that, the optional fields added cumulatively until it parses. Covers a `.refine()` over optional fields (at least one of, exactly one of, both of) at any depth, and, where one optional field suffices, keeps the others (an `acting` declared first) out. Returns the last `parse_any` result (`GeneratedObject`) and leaves the throw to the caller, which renders its issues with `format_issues` (`schema_issues.ts`).
 - `generate_valid_object_with_field(object_schema, schema, base, field)` — a valid object carrying `field`, built from the valid `base`: `base` itself when it carries the field; else the field joins `base`, with the optional fields `base` omits filled as `generate_valid_object` fills them (a pair rule: `scope_kind` needs `scope_id`); failing that, the field replaces `base`'s optional fields, refilled around it (exactly one of: adding `slug` drops `id`). `null` when no object the generator builds carries the field. The body a single-fault case on a field the base omits changes.
@@ -541,7 +541,7 @@ case per route):
 4. **adversarial input validation** — delegated to `describe_adversarial_input`.
 5. **adversarial 404 response validation** — delegated to `describe_adversarial_404`.
 
-Options: `{build: () => AppSurfaceSpec, snapshot_path, expected_public_routes, expected_api_middleware, roles, api_path_prefix?, security_policy?, skip_routes?}`.
+Options: `{build: () => AppSurfaceSpec, snapshot_path, expected_public_routes, expected_api_middleware, roles, api_path_prefix?, security_policy?, skip_routes?, param_values?}`.
 
 `skip_routes` is a list of `'METHOD /path'` surface keys the three
 adversarial sub-suites drop, forwarded to each of them (it also sits on
@@ -550,7 +550,9 @@ adversarial sub-suites drop, forwarded to each of them (it also sits on
 escape hatch for a route that cannot be driven generically at all — a
 handler needing real seeded state, a path segment no schema describes. A
 route whose params merely carry a format needs no entry: `resolve_valid_path`
-synthesizes a segment the route accepts.
+synthesizes a segment the route accepts. A `{re}` param whose pattern refuses
+every generated value takes a `param_values` entry instead, forwarded the same
+way (`RouteParamValues`).
 
 Also exported: `describe_adversarial_auth(options)` (group 3 on its own).
 
@@ -643,7 +645,7 @@ For every route spec, fires a valid request with matching auth and validates
 the response against declared schemas. DB-backed via `create_test_app`.
 Per-route test (`test.each`) — one line per route in the vitest output.
 
-Options: `{setup_test, surface_source, skip_routes?, input_overrides?, success_fixtures?}`.
+Options: `{setup_test, surface_source, skip_routes?, input_overrides?, success_fixtures?, param_values?}`.
 Principals and the 401 check are the RPC round-trip's (`pick_auth_principal`;
 `assert_route_authenticated` over `is_unauthenticated_refusal`, reading the
 flat `error`), and a non-`GET` route called as the authed
@@ -800,7 +802,7 @@ has no JSON Schema form and a field inside a transformed subtree shows only
 there. The input side is a superset, so a transform that deliberately drops a
 blocklisted field is flagged too — skip that output by its key.
 
-Options: `{setup_test, surface_source, sensitive_fields?, admin_only_fields?, skip_routes?}`.
+Options: `{setup_test, surface_source, sensitive_fields?, admin_only_fields?, skip_routes?, param_values?}`.
 `skip_routes` keys a route as `'METHOD /path'`, an RPC or WS method output
 as `'/path method_name'`, and pushed WS params as `'/path method_name params'`
 (the schema-level checks only).
@@ -1257,7 +1259,8 @@ forward to the RPC round-trip's `success_fixtures`, `skip_methods` and
 `input_overrides` (`describe_spine_cross_suites` also forwards
 `rpc_input_overrides` to `rpc_adversarial`) — `rpc_skip_methods` is the
 consumer escape hatch for a method the generic round-trip can't drive in its
-test wiring.
+test wiring. `param_values` (`RouteParamValues`) forwards to both the
+round-trip and data exposure, the two that resolve route paths.
 
 Hard-codes the cross-process-safe set with no `skip` knob; if a future
 consumer needs partial opt-out, add the knob then.

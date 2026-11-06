@@ -29,7 +29,12 @@ import {
 } from '../zod.ts';
 
 import { is_null_schema, is_void_schema } from '../http/schema_helpers.ts';
-import { parse_route_param, split_route_template } from '../http/route_error_check.ts';
+import {
+	compile_route_param_pattern,
+	decode_route_path,
+	parse_route_param,
+	split_route_template
+} from '../http/route_error_check.ts';
 import {
 	assert_zod_schema,
 	format_issues,
@@ -732,6 +737,18 @@ export const to_route_content_type = (route: { raw_body?: boolean }): string =>
 	route.raw_body ? 'application/octet-stream' : 'application/json';
 
 /**
+ * Caller-supplied path param values, keyed by route key (`format_route_key`,
+ * `'METHOD /path'`) and then by param name — what the suites that resolve a
+ * route's path (`resolve_valid_path`) fill a param with before generating
+ * one. A route needs an entry when a param of it is a `:name{re}` whose
+ * pattern refuses every value the generator reaches, as a `{.+\.git}` refuses
+ * `test_<name>`. Each value is the param as the handler reads it, unencoded.
+ * Values are always percent-encoded, so a `{re}` that needs a literal `/` can't
+ * be met by a supplied value: its `/` arrives as `%2F`.
+ */
+export type RouteParamValues = Readonly<Record<string, Readonly<Record<string, string>>>>;
+
+/**
  * Resolve a route path with valid-ish param values so params validation passes.
  * Used when testing input on routes that also have params.
  *
@@ -741,7 +758,8 @@ export const to_route_content_type = (route: { raw_body?: boolean }): string =>
  * (`/v1/files:upload`) stays, and a `{re}` goes with its param. An optional
  * param is filled too.
  *
- * Without a params schema (or for a param the schema doesn't name) each
+ * A value in `param_values` is used first, percent-encoded. Otherwise,
+ * without a params schema (or for a param the schema doesn't name) each
  * param becomes `test_<name>` — fine for an unconstrained segment. With
  * one, `test_<name>` is still preferred wherever the field schema accepts
  * it, because the param name in the URL is what makes a failure message
@@ -750,22 +768,36 @@ export const to_route_content_type = (route: { raw_body?: boolean }): string =>
  * anything else is synthesized by `generate_valid_string`, so a
  * format-constrained segment (a `blake3:…` fact hash, a `tok_…` id)
  * resolves to a value its schema accepts instead of a `test_<name>` that
- * 400s before the route's real gates run. A `{re}` is not read: the value
- * comes from the schema alone.
+ * 400s before the route's real gates run. The synthesized value is
+ * percent-encoded, and a value containing `/` is refused (it would silently
+ * add a path segment and route elsewhere) — both fall back to `test_<name>`.
  *
- * The synthesized value is percent-encoded, and a value containing `/` is
- * refused (it would silently add a path segment and route elsewhere) —
- * both fall back to `test_<name>`.
+ * A `{re}` param's value, supplied or not, must match its pattern, grouped
+ * and anchored as Hono's RegExpRouter reads it — the stricter of its
+ * routers' readings, as TrieRouter leaves a top-level alternation ungrouped
+ * (`compile_route_param_pattern`, over the value as Hono decodes it,
+ * `decode_route_path`) — or the request would reach no route; no value is
+ * guessed from the pattern. A supplied value the URL would normalize away
+ * (`''`, `.`, `..`) is refused by name.
  *
  * @param path - the route's path template
  * @param params_schema - the route's params schema, a Zod or `@fuzdev/fuz_schema` object schema
- * @throws Error when `params_schema` is no object schema, or of neither library
+ * @param param_values - the route's supplied param values by name, its entry of `RouteParamValues`
+ * @throws Error when `params_schema` is no object schema, or of neither library;
+ *   when `param_values` names no param of the path; when a supplied value is
+ *   `''`, `.` or `..`, or holds a lone surrogate, which can't be encoded; and
+ *   when a `{re}` param's value is one its pattern refuses, naming the route
+ *   and the param
  */
-export const resolve_valid_path = (path: string, params_schema?: ValidationSchema): string => {
+export const resolve_valid_path = (
+	path: string,
+	params_schema?: ValidationSchema,
+	param_values?: Readonly<Record<string, string>>
+): string => {
 	const view = params_schema
 		? to_object_schema_view(params_schema, `resolve_valid_path(${path}): the params schema`)
 		: null;
-	const fill = (name: string): string => {
+	const generate = (name: string): string => {
 		const fallback = encodeURIComponent(`test_${name}`);
 		const field_schema = view?.field_schema(name);
 		if (!field_schema) return fallback;
@@ -777,10 +809,53 @@ export const resolve_valid_path = (path: string, params_schema?: ValidationSchem
 		if (generated.includes('/')) return fallback;
 		return encodeURIComponent(generated);
 	};
+	const encode_supplied = (name: string, supplied: string): string => {
+		// the URL drops an empty segment's meaning and resolves `.` and `..` away
+		if (supplied === '' || supplied === '.' || supplied === '..') {
+			throw new Error(
+				`resolve_valid_path: the value supplied for the param \`${name}\` of \`${path}\` is ${JSON.stringify(
+					supplied
+				)}, which the URL normalizes away, so the request would not reach the route`
+			);
+		}
+		try {
+			return encodeURIComponent(supplied);
+		} catch (error) {
+			if (!(error instanceof URIError)) throw error;
+			throw new Error(
+				`resolve_valid_path: the value supplied for the param \`${name}\` of \`${path}\` holds a lone surrogate, which can't be percent-encoded`
+			);
+		}
+	};
+	const names: Set<string> = new Set();
 	const segments = split_route_template(path).map((segment) => {
 		const param = parse_route_param(segment);
-		return param ? fill(param.name) : segment;
+		if (!param) return segment;
+		const { name, pattern } = param;
+		names.add(name);
+		const supplied =
+			param_values && Object.hasOwn(param_values, name) ? param_values[name] : undefined;
+		const value = supplied === undefined ? generate(name) : encode_supplied(name, supplied);
+		if (pattern !== null && !compile_route_param_pattern(pattern).test(decode_route_path(value))) {
+			throw new Error(
+				`resolve_valid_path: the param \`${name}\` of \`${path}\` resolves to ${JSON.stringify(
+					value
+				)}${
+					supplied === undefined ? ',' : ', the value supplied for it,'
+				} which its pattern \`{${pattern}}\` refuses, so the request would reach no route — supply a value the pattern accepts in the suite's \`param_values\`, under the route's key (\`'METHOD ${path}'\`) and then \`${name}\``
+			);
+		}
+		return value;
 	});
+	if (param_values) {
+		for (const name of Object.keys(param_values)) {
+			if (!names.has(name)) {
+				throw new Error(
+					`resolve_valid_path: \`param_values\` names \`${name}\`, which is no param of \`${path}\``
+				);
+			}
+		}
+	}
 	return (path.startsWith('/') ? '/' : '') + segments.join('/');
 };
 

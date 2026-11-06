@@ -30,7 +30,8 @@ import { create_test_request_headers } from './test_origin.ts';
 import {
 	resolve_valid_path,
 	generate_valid_body,
-	to_route_content_type
+	to_route_content_type,
+	type RouteParamValues
 } from './schema_generators.ts';
 import {
 	is_null_schema,
@@ -298,6 +299,12 @@ export interface DataExposureTestOptions {
 	 * (`'/path method_name params'` for params the server pushes over WebSocket).
 	 */
 	skip_routes?: Array<string>;
+	/**
+	 * Path param values for specific routes (`'METHOD /path'` → param name →
+	 * value), used before the generated ones — needed for a `{re}` param whose
+	 * pattern refuses the generated value. See `RouteParamValues`.
+	 */
+	param_values?: RouteParamValues;
 }
 
 /**
@@ -379,7 +386,7 @@ export const describe_data_exposure_tests = (options: DataExposureTestOptions): 
 				const route_key = format_route_key(spec);
 				if (skip_set.has(route_key)) continue;
 
-				const url = resolve_valid_path(spec.path, spec.params);
+				const url = resolve_valid_path(spec.path, spec.params, options.param_values?.[route_key]);
 
 				const res = await fixture.transport(url, {
 					method: spec.method,
@@ -418,7 +425,7 @@ export const describe_data_exposure_tests = (options: DataExposureTestOptions): 
 				const route_key = format_route_key(spec);
 				if (skip_set.has(route_key)) continue;
 
-				const url = resolve_valid_path(spec.path, spec.params);
+				const url = resolve_valid_path(spec.path, spec.params, options.param_values?.[route_key]);
 				const res = await fixture.transport(url, {
 					method: spec.method,
 					headers: {
@@ -459,7 +466,7 @@ export const describe_data_exposure_tests = (options: DataExposureTestOptions): 
 
 				// keeper auth (daemon token) is strictly more privileged than admin
 				const is_elevated = is_elevated_auth(spec.auth);
-				const url = resolve_valid_path(spec.path, spec.params);
+				const url = resolve_valid_path(spec.path, spec.params, options.param_values?.[route_key]);
 				const body = generate_valid_body(spec.input);
 				const headers = pick_auth_headers(spec, fixture, authed_account, admin_account);
 
