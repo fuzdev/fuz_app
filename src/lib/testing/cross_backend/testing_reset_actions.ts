@@ -80,8 +80,21 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import { z } from 'zod';
-import { Uuid, FactHashSchema } from '../../primitive_schemas.ts';
+import { meta } from '@fuzdev/fuz_schema/meta.ts';
+import {
+	array,
+	boolean,
+	max_value,
+	min_value,
+	number,
+	object,
+	optional,
+	pipe,
+	safe_integer,
+	string,
+	void as fuz_void
+} from '@fuzdev/fuz_schema/schema.ts';
+import { Uuid, FactHashSchema } from '../../primitive_schemas_fuz.ts';
 import { fact_hash_bytes } from '@fuzdev/fuz_util/fact_hash.ts';
 
 import { rpc_action, type RpcAction } from '../../actions/action_types.ts';
@@ -110,11 +123,11 @@ import { DEFAULT_TEST_PASSWORD } from '../test_credentials.ts';
 import { TESTING_ACTION_AUTH } from './spine_surface_constants.ts';
 
 /** Output shape for an individual seeded account (keeper or extra). */
-const SeededAccountShape = z.strictObject({
-	account: z.strictObject({ id: Uuid, username: z.string() }),
-	actor: z.strictObject({ id: Uuid }),
-	api_token: z.string(),
-	session_cookie: z.string()
+const SeededAccountShape = object({
+	account: object({ id: Uuid, username: string }),
+	actor: object({ id: Uuid }),
+	api_token: string,
+	session_cookie: string
 });
 
 /**
@@ -148,17 +161,17 @@ export const testing_reset_action_spec = {
 	initiator: 'frontend',
 	auth: TESTING_ACTION_AUTH,
 	side_effects: true,
-	input: z.strictObject({
-		extra_keeper_roles: z.array(z.string()).optional(),
-		extra_accounts: z
-			.array(
-				z.strictObject({
-					username: z.string(),
-					password_value: z.string().optional(),
-					roles: z.array(z.string())
+	input: object({
+		extra_keeper_roles: optional(array(string)),
+		extra_accounts: optional(
+			array(
+				object({
+					username: string,
+					password_value: optional(string),
+					roles: array(string)
 				})
 			)
-			.optional(),
+		),
 		/**
 		 * Additional actor names to seed on the **keeper** account, beyond
 		 * its single bootstrap actor. Drives the multi-actor `acting`
@@ -168,12 +181,13 @@ export const testing_reset_action_spec = {
 		 * production wire path adds a second. Bootstrap-cradle seeding, same
 		 * rationale as `extra_accounts`.
 		 */
-		extra_actors: z.array(z.string()).optional()
+		extra_actors: optional(array(string))
 	}),
-	output: SeededAccountShape.extend({
-		extra_accounts: z.array(SeededAccountShape),
+	output: object({
+		...SeededAccountShape.def,
+		extra_accounts: array(SeededAccountShape),
 		/** The keeper's additional actors (from input `extra_actors`), in order. */
-		extra_actors: z.array(z.strictObject({ id: Uuid, name: z.string() }))
+		extra_actors: array(object({ id: Uuid, name: string }))
 	}),
 	async: true,
 	description:
@@ -215,10 +229,10 @@ export const testing_drain_effects_action_spec = {
 	initiator: 'frontend',
 	auth: TESTING_ACTION_AUTH,
 	side_effects: false,
-	input: z.void(),
-	output: z.strictObject({
-		ok: z.boolean(),
-		tracked: z.boolean().meta({
+	input: fuz_void,
+	output: object({
+		ok: boolean,
+		tracked: meta(boolean, {
 			description:
 				"Whether the backend's audit emitter tracks in-flight writes — false means the drain " +
 				'waited on nothing and is no barrier.'
@@ -233,7 +247,7 @@ export const testing_drain_effects_action_spec = {
  * `_testing_mint_session` — mint an expired-by-construction server-side
  * session for an existing account and return its signed cookie value.
  *
- * `expires_in_seconds` is **constrained negative** (`z.number().int().negative()`)
+ * `expires_in_seconds` is **constrained negative** (a safe integer at most `-1`)
  * so the action is structurally incapable of minting a *usable* session: it
  * can only produce an already-backdated, already-dead `auth_session` row. The
  * daemon-token gate + loopback binding already fence the backdoor, but the
@@ -265,20 +279,16 @@ export const testing_mint_session_action_spec = {
 	initiator: 'frontend',
 	auth: TESTING_ACTION_AUTH,
 	side_effects: true,
-	input: z.strictObject({
+	input: object({
 		account_id: Uuid,
-		expires_in_seconds: z
-			.number()
-			.int()
-			.negative()
-			.meta({
-				description:
-					'Seconds to offset the session row from NOW(). Constrained negative so this ' +
-					'backdoor can ONLY mint an already-expired (backdated) row — never a usable ' +
-					'session for an arbitrary account. Its sole use is the expired-session gate.'
-			})
+		expires_in_seconds: meta(pipe(number, safe_integer, max_value(-1)), {
+			description:
+				'Seconds to offset the session row from NOW(). Constrained negative so this ' +
+				'backdoor can ONLY mint an already-expired (backdated) row — never a usable ' +
+				'session for an arbitrary account. Its sole use is the expired-session gate.'
+		})
 	}),
-	output: z.strictObject({ session_cookie: z.string() }),
+	output: object({ session_cookie: string }),
 	async: true,
 	description:
 		'Test-binary only — mint a backdated-expiry auth_session row for an account and return its ' +
@@ -327,13 +337,13 @@ export const testing_put_fact_action_spec = {
 	initiator: 'frontend',
 	auth: TESTING_ACTION_AUTH,
 	side_effects: true,
-	input: z.strictObject({
-		content: z.string(),
-		content_type: z.string().optional(),
-		holder: Uuid.optional(),
-		external_url: z.string().optional()
+	input: object({
+		content: string,
+		content_type: optional(string),
+		holder: optional(Uuid),
+		external_url: optional(string)
 	}),
-	output: z.strictObject({ hash: FactHashSchema }),
+	output: object({ hash: FactHashSchema }),
 	async: true,
 	description:
 		'Test-binary only — seed a fact row for the blake3 of the UTF-8 content (embedded, or with ' +
@@ -402,16 +412,16 @@ export const testing_flood_notifications_action_spec = {
 	initiator: 'frontend',
 	auth: TESTING_ACTION_AUTH,
 	side_effects: false,
-	input: z.strictObject({
-		count: z.number().int().min(0).max(TESTING_FLOOD_MAX_COUNT).meta({
+	input: object({
+		count: meta(pipe(number, safe_integer, min_value(0), max_value(TESTING_FLOOD_MAX_COUNT)), {
 			description: 'How many notifications to queue.'
 		}),
-		size: z.number().int().min(0).max(TESTING_FLOOD_MAX_SIZE).meta({
+		size: meta(pipe(number, safe_integer, min_value(0), max_value(TESTING_FLOOD_MAX_SIZE)), {
 			description: "The byte length of each notification's `payload` string."
 		})
 	}),
-	output: z.strictObject({
-		queued: z.number().int().meta({
+	output: object({
+		queued: meta(pipe(number, safe_integer), {
 			description: 'The number of notifications asked for — not the number that fit.'
 		})
 	}),
@@ -470,7 +480,7 @@ export const testing_schema_snapshot_action_spec = {
 	initiator: 'frontend',
 	auth: TESTING_ACTION_AUTH,
 	side_effects: false,
-	input: z.strictObject({ exclude_tables: z.array(z.string()).optional() }),
+	input: object({ exclude_tables: optional(array(string)) }),
 	output: SchemaSnapshot,
 	async: true,
 	description:
@@ -507,7 +517,7 @@ export const testing_migration_tracker_action_spec = {
 	initiator: 'frontend',
 	auth: TESTING_ACTION_AUTH,
 	side_effects: false,
-	input: z.void(),
+	input: fuz_void,
 	output: MigrationTracker,
 	async: true,
 	description:
@@ -574,22 +584,25 @@ export const testing_shorten_credential_expiry_action_spec = {
 	initiator: 'frontend',
 	auth: TESTING_ACTION_AUTH,
 	side_effects: true,
-	input: z.strictObject({
+	input: object({
 		account_id: Uuid,
-		seconds: z
-			.number()
-			.int()
-			.min(TESTING_SHORTEN_CREDENTIAL_EXPIRY_MIN_SECONDS)
-			.max(TESTING_SHORTEN_CREDENTIAL_EXPIRY_MAX_SECONDS)
-			.meta({
+		seconds: meta(
+			pipe(
+				number,
+				safe_integer,
+				min_value(TESTING_SHORTEN_CREDENTIAL_EXPIRY_MIN_SECONDS),
+				max_value(TESTING_SHORTEN_CREDENTIAL_EXPIRY_MAX_SECONDS)
+			),
+			{
 				description:
 					'Seconds from now the credentials expire, unless already due sooner — this ' +
 					'backdoor can only shorten a credential, never extend it.'
-			})
+			}
+		)
 	}),
-	output: z.strictObject({
-		sessions: z.number().int().min(0),
-		api_tokens: z.number().int().min(0)
+	output: object({
+		sessions: pipe(number, safe_integer, min_value(0)),
+		api_tokens: pipe(number, safe_integer, min_value(0))
 	}),
 	async: true,
 	description:
@@ -640,7 +653,7 @@ export const testing_action_manifest_action_spec = {
 	initiator: 'frontend',
 	auth: TESTING_ACTION_AUTH,
 	side_effects: false,
-	input: z.void(),
+	input: fuz_void,
 	output: ActionManifest,
 	async: true,
 	description:

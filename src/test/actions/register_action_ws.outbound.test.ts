@@ -13,6 +13,7 @@ import { afterEach, describe, assert, test, vi } from 'vitest';
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
+import { is } from '@fuzdev/fuz_schema/schema.ts';
 import { create_uuid, type Uuid } from '#lib/primitive_schemas.ts';
 
 import { register_action_ws } from '#lib/actions/register_action_ws.ts';
@@ -458,10 +459,8 @@ describe('_testing_flood_notifications', () => {
 	});
 
 	test('the input is a strict object of two bounded integers', () => {
-		assert.ok(input.safeParse({ count: 0, size: 0 }).success);
-		assert.ok(
-			input.safeParse({ count: TESTING_FLOOD_MAX_COUNT, size: TESTING_FLOOD_MAX_SIZE }).success
-		);
+		assert.ok(is(input, { count: 0, size: 0 }));
+		assert.ok(is(input, { count: TESTING_FLOOD_MAX_COUNT, size: TESTING_FLOOD_MAX_SIZE }));
 		for (const bad of [
 			{ count: TESTING_FLOOD_MAX_COUNT + 1, size: 0 },
 			{ count: 0, size: TESTING_FLOOD_MAX_SIZE + 1 },
@@ -473,7 +472,7 @@ describe('_testing_flood_notifications', () => {
 			{ size: 1 },
 			{ count: 1, size: 1, extra: true }
 		]) {
-			assert.strictEqual(input.safeParse(bad).success, false, JSON.stringify(bad));
+			assert.strictEqual(is(input, bad), false, JSON.stringify(bad));
 		}
 	});
 

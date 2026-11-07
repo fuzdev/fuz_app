@@ -40,6 +40,10 @@ import '../assert_dev_env.ts';
  *   and before they build a payload, so the boundaries are read off the
  *   refusal and no burst is ever allocated — which pins the two spines'
  *   limits equal.
+ * - **integral spellings** — over HTTP RPC a `count` written `3.0`, `1e1` or
+ *   `-0` is the integer it spells, refused for having no connection, and one
+ *   written `1.5` is refused `invalid_params` with no reason, as the TS
+ *   twin's safe-integer check reads them.
  *
  * What the suite does **not** assert, because it is each implementation's own:
  * how many frames accepted before the overflow reach the client (the Rust
@@ -76,6 +80,7 @@ import {
 } from '../transports/ws_client.ts';
 import { type BackendCapabilities, test_if } from './capabilities.ts';
 import { cross_rpc_call } from './cross_rpc.ts';
+import { create_rpc_request_text } from '../rpc_helpers.ts';
 import type { SetupTest, TestFixture } from './setup.ts';
 import { open_session_ws, type WsEndpointTarget } from './ws_endpoint.ts';
 
@@ -148,6 +153,22 @@ const FLOOD_LIMIT_CASES: ReadonlyArray<{
 		params: FLOOD_ONE_BYTE_PAST_TOTAL,
 		within: false
 	}
+];
+
+/**
+ * Flood params as raw JSON text, for the spellings `JSON.stringify` loses,
+ * and whether each is within the limits (so refused for no connection).
+ */
+const FLOOD_SPELLING_CASES: ReadonlyArray<{
+	readonly params_json: string;
+	readonly within: boolean;
+}> = [
+	{ params_json: '{"count":3.0,"size":8}', within: true },
+	{ params_json: '{"count":1e1,"size":0}', within: true },
+	{ params_json: '{"count":-0,"size":0}', within: true },
+	{ params_json: '{"count":0,"size":8.0}', within: true },
+	{ params_json: '{"count":1.5,"size":0}', within: false },
+	{ params_json: '{"count":-1.0,"size":0}', within: false }
 ];
 
 /** How long the test waits for the megabyte burst and its response. */
@@ -385,6 +406,33 @@ export const describe_ws_outbound_overflow_cross_tests = (
 						(res.error?.data as { reason?: unknown } | undefined)?.reason,
 						within ? REASON_NO_CONNECTION : undefined,
 						`${name}: ${JSON.stringify(params)}`
+					);
+				}
+			}
+		);
+
+		test_if(
+			rpc_path !== undefined,
+			'over HTTP a flood count spelled as a float is the integer it spells, a fraction refused',
+			async () => {
+				const fixture = await setup_test();
+				const transport = fixture.fresh_transport({ origin: null });
+				for (const { params_json, within } of FLOOD_SPELLING_CASES) {
+					const res = await transport(rpc_path!, {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json',
+							...fixture.create_daemon_token_headers()
+						},
+						body: create_rpc_request_text(FLOOD_METHOD, params_json)
+					});
+					const body = (await res.json()) as Partial<JsonrpcErrorResponseFrame>;
+					assert.ok(body.error, `${params_json}: expected a refusal over HTTP`);
+					assert.strictEqual(body.error.code, INVALID_PARAMS, params_json);
+					assert.strictEqual(
+						(body.error.data as { reason?: unknown } | undefined)?.reason,
+						within ? REASON_NO_CONNECTION : undefined,
+						params_json
 					);
 				}
 			}

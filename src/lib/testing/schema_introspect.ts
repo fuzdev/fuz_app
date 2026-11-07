@@ -36,46 +36,57 @@ import './assert_dev_env.ts';
  * @module
  */
 
-import { z } from 'zod';
+import {
+	array,
+	boolean,
+	nullable,
+	number,
+	pipe,
+	record,
+	safe_integer,
+	string,
+	strip_object,
+	type Infer
+} from '@fuzdev/fuz_schema/schema.ts';
 
 import type { Db } from '../db/db.ts';
 
 /**
- * Per-column structural metadata. The Zod schema is the canonical source
+ * Per-column structural metadata. The schema is the canonical source
  * for the column shape — `SchemaSnapshot` reuses it as the cross-impl
  * `_testing_schema_snapshot` RPC action's wire validator, so the
  * introspection type and the wire contract can't drift apart.
  */
-export const ColumnSnapshot = z.object({
+export const ColumnSnapshot = strip_object({
 	/** SQL standard type name from `information_schema.columns.data_type`. */
-	data_type: z.string(),
+	data_type: string,
 	/** Postgres-native type name from `information_schema.columns.udt_name`. */
-	udt_name: z.string(),
+	udt_name: string,
 	/** `true` when the column accepts NULL. */
-	is_nullable: z.boolean(),
+	is_nullable: boolean,
 	/** Default-value expression as Postgres reports it, or `null` if none. */
-	column_default: z.string().nullable(),
+	column_default: nullable(string),
 	/** `true` when the column was declared GENERATED ... AS IDENTITY. */
-	is_identity: z.boolean()
+	is_identity: boolean
 });
-export type ColumnSnapshot = z.infer<typeof ColumnSnapshot>;
+export type ColumnSnapshot = Infer<typeof ColumnSnapshot>;
 
 /** Per-table structural metadata. */
-export const TableSnapshot = z.object({
+export const TableSnapshot = strip_object({
 	/** Column metadata keyed by column name (sorted on serialization). */
-	columns: z.record(z.string(), ColumnSnapshot),
+	columns: record(ColumnSnapshot),
 	/** Index definitions as Postgres renders them via `pg_indexes.indexdef`. */
-	indexes: z.array(z.object({ name: z.string(), definition: z.string() })),
+	indexes: array(strip_object({ name: string, definition: string })),
 	/** Constraint definitions as Postgres renders them via `pg_get_constraintdef`. */
-	constraints: z.array(z.object({ name: z.string(), type: z.string(), definition: z.string() }))
+	constraints: array(strip_object({ name: string, type: string, definition: string }))
 });
-export type TableSnapshot = z.infer<typeof TableSnapshot>;
+export type TableSnapshot = Infer<typeof TableSnapshot>;
 
 /** Sequence metadata — `data_type` is `bigint` (BIGSERIAL) or `integer` (SERIAL). */
-export const SequenceSnapshot = z.object({
-	data_type: z.string()
+export const SequenceSnapshot = strip_object({
+	data_type: string
 });
-export type SequenceSnapshot = z.infer<typeof SequenceSnapshot>;
+export type SequenceSnapshot = Infer<typeof SequenceSnapshot>;
 
 /**
  * Enum-type metadata — the labels of a `CREATE TYPE ... AS ENUM`, captured in
@@ -83,11 +94,11 @@ export type SequenceSnapshot = z.infer<typeof SequenceSnapshot>;
  * enum's labels are an ordered set, and reordering them is a schema change, so
  * the parity diff compares the arrays positionally.
  */
-export const EnumTypeSnapshot = z.object({
+export const EnumTypeSnapshot = strip_object({
 	/** Enum labels in declared order. */
-	labels: z.array(z.string())
+	labels: array(string)
 });
-export type EnumTypeSnapshot = z.infer<typeof EnumTypeSnapshot>;
+export type EnumTypeSnapshot = Infer<typeof EnumTypeSnapshot>;
 
 /**
  * Normalized database schema snapshot for parity comparison — the single
@@ -98,15 +109,15 @@ export type EnumTypeSnapshot = z.infer<typeof EnumTypeSnapshot>;
  * All fields are deterministically ordered on capture so structural equality
  * via `JSON.stringify` or per-key comparison yields stable results.
  */
-export const SchemaSnapshot = z.object({
+export const SchemaSnapshot = strip_object({
 	/** Tables keyed by name. */
-	tables: z.record(z.string(), TableSnapshot),
+	tables: record(TableSnapshot),
 	/** Sequences keyed by name. */
-	sequences: z.record(z.string(), SequenceSnapshot),
+	sequences: record(SequenceSnapshot),
 	/** Enum types (`CREATE TYPE ... AS ENUM`) keyed by name; labels in declared order. */
-	enums: z.record(z.string(), EnumTypeSnapshot)
+	enums: record(EnumTypeSnapshot)
 });
-export type SchemaSnapshot = z.infer<typeof SchemaSnapshot>;
+export type SchemaSnapshot = Infer<typeof SchemaSnapshot>;
 
 /**
  * A single `schema_version` tracker row — the migration-identity primitive.
@@ -119,25 +130,25 @@ export type SchemaSnapshot = z.infer<typeof SchemaSnapshot>;
  * bootstrapped spines so a migration-name or partitioning drift — invisible
  * to the schema snapshot — is a gated fact, not a latent interop break.
  */
-export const MigrationTrackerEntry = z.object({
+export const MigrationTrackerEntry = strip_object({
 	/** Migration namespace (e.g. `fuz_auth`, `fuz_cell`). */
-	namespace: z.string(),
+	namespace: string,
 	/** Migration name within the namespace (e.g. `full_cell_schema`). */
-	name: z.string(),
+	name: string,
 	/** Per-namespace apply order, starting at 0. */
-	sequence: z.number().int()
+	sequence: pipe(number, safe_integer)
 });
-export type MigrationTrackerEntry = z.infer<typeof MigrationTrackerEntry>;
+export type MigrationTrackerEntry = Infer<typeof MigrationTrackerEntry>;
 
 /**
  * The full `schema_version` tracker as a deterministically-ordered list,
  * wrapped in an object so it round-trips cleanly as a JSON-RPC result.
  * Sorted by `(namespace, sequence)` on capture.
  */
-export const MigrationTracker = z.object({
-	entries: z.array(MigrationTrackerEntry)
+export const MigrationTracker = strip_object({
+	entries: array(MigrationTrackerEntry)
 });
-export type MigrationTracker = z.infer<typeof MigrationTracker>;
+export type MigrationTracker = Infer<typeof MigrationTracker>;
 
 /**
  * Read every `schema_version` row into a deterministic `MigrationTracker`.

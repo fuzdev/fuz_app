@@ -8,7 +8,7 @@ import '../assert_dev_env.ts';
  * carried as **data**. The case references a `method` (an RPC method name
  * or a REST auth-route suffix); the runner
  * (`describe_conformance_table_tests`) resolves the `input` / `output`
- * Zod schemas from the live action-spec registry / `RouteSpec` — the case
+ * schemas from the live action-spec registry / `RouteSpec` — the case
  * never carries a schema. This is the opinionated behavioral/security
  * layer on top of the spec-derived auto-enumeration
  * (`describe_rpc_round_trip_tests` / `describe_rpc_attack_surface_tests`):
@@ -24,8 +24,6 @@ import '../assert_dev_env.ts';
  *
  * @module
  */
-
-import { z } from 'zod';
 
 /**
  * Closed enum of fixture-provisioned principals a case runs `as`. Each
@@ -97,22 +95,20 @@ import { z } from 'zod';
  *   a backdated `auth_session` row behind a still-valid signed cookie
  *   payload, so the authoritative DB-row expiry gate is what refuses it).
  */
-export const ConformancePrincipal = z.enum([
-	'keeper',
-	'daemon',
-	'invalid_daemon',
-	'daemon_browser',
-	'token',
-	'bearer_browser',
-	'malformed_bearer',
-	'scoped_token',
-	'anonymous',
-	'fresh_non_admin',
-	'role_holder',
-	'wrong_role',
-	'expired_session'
-]);
-export type ConformancePrincipal = z.infer<typeof ConformancePrincipal>;
+export type ConformancePrincipal =
+	| 'keeper'
+	| 'daemon'
+	| 'invalid_daemon'
+	| 'daemon_browser'
+	| 'token'
+	| 'bearer_browser'
+	| 'malformed_bearer'
+	| 'scoped_token'
+	| 'anonymous'
+	| 'fresh_non_admin'
+	| 'role_holder'
+	| 'wrong_role'
+	| 'expired_session';
 
 /**
  * The single RPC method the `scoped_token` principal's narrowed token admits.
@@ -149,109 +145,89 @@ export const SCOPED_TOKEN_ADMITTED_METHOD = 'account_verify';
  * Unavailable for principals that present no account (`anonymous`,
  * `bearer_browser`, `malformed_bearer`) — the runner throws.
  */
-export const ConformanceActingBinding = z.enum(['principal', 'extra_actor', 'keeper_actor']);
-export type ConformanceActingBinding = z.infer<typeof ConformanceActingBinding>;
+export type ConformanceActingBinding = 'principal' | 'extra_actor' | 'keeper_actor';
 
 /** The request a conformance case issues. */
-export const ConformanceCaseRequest = z.strictObject({
-	method: z.string().meta({
-		description:
-			'RPC method name (e.g. `admin_account_list`) or a REST auth-route suffix ' +
-			'(e.g. `/login`). A leading `/` selects the REST branch; otherwise the ' +
-			'runner resolves the RPC action from the spec registry.'
-	}),
-	params: z
-		.unknown()
-		.optional()
-		.meta({ description: 'Request params / body. Omit for nullary methods.' }),
-	params_json: z
-		.string()
-		.optional()
-		.meta({
-			description:
-				'RPC params as raw JSON text, sent verbatim in place of `params` — for a ' +
-				'spelling `JSON.stringify` loses (`5.0`, `1e1`, `-0`). Exclusive with ' +
-				'`params` and `acting`; RPC methods only.'
-		}),
-	as: ConformancePrincipal,
-	acting: ConformanceActingBinding.optional().meta({
-		description:
-			'Bind `params.acting` at run time to the named actor (`ConformanceActingBinding`). ' +
-			'Params must be an object or omitted, and must not carry `acting` themselves.'
-	}),
-	verb: z
-		.enum(['POST', 'GET'])
-		.optional()
-		.meta({ description: 'HTTP verb. Defaults to POST; use GET for `side_effects: false` reads.' })
-});
-export type ConformanceCaseRequest = z.infer<typeof ConformanceCaseRequest>;
+export interface ConformanceCaseRequest {
+	/**
+	 * RPC method name (e.g. `admin_account_list`) or a REST auth-route suffix
+	 * (e.g. `/login`). A leading `/` selects the REST branch; otherwise the
+	 * runner resolves the RPC action from the spec registry.
+	 */
+	method: string;
+	/** Request params / body. Omit for nullary methods. */
+	params?: unknown;
+	/**
+	 * RPC params as raw JSON text, sent verbatim in place of `params` — for a
+	 * spelling `JSON.stringify` loses (`5.0`, `1e1`, `-0`). Exclusive with
+	 * `params` and `acting`; RPC methods only.
+	 */
+	params_json?: string;
+	as: ConformancePrincipal;
+	/**
+	 * Bind `params.acting` at run time to the named actor
+	 * (`ConformanceActingBinding`). Params must be an object or omitted, and
+	 * must not carry `acting` themselves.
+	 */
+	acting?: ConformanceActingBinding;
+	/** HTTP verb. Defaults to POST; use GET for `side_effects: false` reads. */
+	verb?: 'POST' | 'GET';
+}
 
 /** The expected response shape a conformance case asserts. */
-export const ConformanceCaseExpectation = z.strictObject({
-	status: z.number().int().meta({ description: 'Expected HTTP status code.' }),
-	error_reason: z
-		.string()
-		.optional()
-		.meta({
-			description:
-				'Expected error reason — pass the IMPORTED `ERROR_*` constant from ' +
-				'`http/error_schemas.ts`, never a string literal. Asserted against the RPC ' +
-				'`error.data.reason` (when the denial carries one) or the REST flat-body ' +
-				'`error` field. The pre-authorization 401 carries `data.reason` too; a denial ' +
-				'that genuinely omits it falls back to the `status` assertion to pin the class.'
-		}),
-	fields: z
-		.record(z.string(), z.unknown())
-		.optional()
-		.meta({
-			description:
-				'Specific field-value assertions on the success `result` (2xx) or the error ' +
-				'`error.data` (non-2xx). Each key must deep-equal the corresponding response field.'
-		}),
-	absent_fields: z
-		.array(z.string())
-		.optional()
-		.meta({
-			description:
-				'Sensitive field names that must NOT appear ANYWHERE (at any depth) in the ' +
-				'normalized response body — the negative-space twin of `fields`. Each name is ' +
-				'searched recursively through the success `result` / error envelope, so a ' +
-				'secret column (`password_hash`, `token_hash`) that leaks at any nesting level ' +
-				'(top-level, inside a list element) fails the case. Pins "this secret never ' +
-				'serializes" on BOTH spines — a serialization regression would otherwise leak ' +
-				'identically and silently on each. Non-vacuous only when the body is known ' +
-				'non-empty (e.g. a list that always contains the caller); note that in the case.'
-		}),
-	headers: z
-		.record(z.string(), z.string().nullable())
-		.optional()
-		.meta({
-			description:
-				'Per-header expectations on the response. Each key is a header name ' +
-				'(case-insensitive); a string value asserts the header is present and equals ' +
-				'it exactly, `null` asserts the header is ABSENT. Independent of this, the ' +
-				'runner enforces an unconditional no-fingerprint invariant on EVERY response ' +
-				'(`Server` / `X-Powered-By` / `WWW-Authenticate` must stay absent on both ' +
-				'spines), so a case only needs `headers` to pin a header beyond that ' +
-				'always-on floor.'
-		}),
-	equivalence_group: z
-		.string()
-		.optional()
-		.meta({
-			description:
-				'Tags this case as a member of an indistinguishability group. After all cases ' +
-				'run, the runner asserts every member of a group produced a BYTE-IDENTICAL ' +
-				'normalized response (`{status, body}`) — checked per impl. This promotes a ' +
-				'masked pair (found-but-unauthorized ≡ not-found, wrong-password ≡ ' +
-				'account-not-found) from "same status + reason" to "wire-indistinguishable", ' +
-				'and holds BOTH impls to it: a prober hitting either spine cannot tell the ' +
-				'members apart. A group needs >= 2 members; a member may still set `fields`. ' +
-				'The negative-space twin of the positive `output`-schema parity the runner ' +
-				'already asserts.'
-		})
-});
-export type ConformanceCaseExpectation = z.infer<typeof ConformanceCaseExpectation>;
+export interface ConformanceCaseExpectation {
+	/** Expected HTTP status code. */
+	status: number;
+	/**
+	 * Expected error reason — pass the IMPORTED `ERROR_*` constant from
+	 * `http/error_schemas.ts`, never a string literal. Asserted against the RPC
+	 * `error.data.reason` (when the denial carries one) or the REST flat-body
+	 * `error` field. The pre-authorization 401 carries `data.reason` too; a
+	 * denial that genuinely omits it falls back to the `status` assertion to pin
+	 * the class.
+	 */
+	error_reason?: string;
+	/**
+	 * Specific field-value assertions on the success `result` (2xx) or the
+	 * error `error.data` (non-2xx). Each key must deep-equal the corresponding
+	 * response field.
+	 */
+	fields?: Record<string, unknown>;
+	/**
+	 * Sensitive field names that must NOT appear ANYWHERE (at any depth) in the
+	 * normalized response body — the negative-space twin of `fields`. Each name
+	 * is searched recursively through the success `result` / error envelope, so
+	 * a secret column (`password_hash`, `token_hash`) that leaks at any nesting
+	 * level (top-level, inside a list element) fails the case. Pins "this secret
+	 * never serializes" on BOTH spines — a serialization regression would
+	 * otherwise leak identically and silently on each. Non-vacuous only when the
+	 * body is known non-empty (e.g. a list that always contains the caller);
+	 * note that in the case.
+	 */
+	absent_fields?: Array<string>;
+	/**
+	 * Per-header expectations on the response. Each key is a header name
+	 * (case-insensitive); a string value asserts the header is present and
+	 * equals it exactly, `null` asserts the header is ABSENT. Independent of
+	 * this, the runner enforces an unconditional no-fingerprint invariant on
+	 * EVERY response (`Server` / `X-Powered-By` / `WWW-Authenticate` must stay
+	 * absent on both spines), so a case only needs `headers` to pin a header
+	 * beyond that always-on floor.
+	 */
+	headers?: Record<string, string | null>;
+	/**
+	 * Tags this case as a member of an indistinguishability group. After all
+	 * cases run, the runner asserts every member of a group produced a
+	 * BYTE-IDENTICAL normalized response (`{status, body}`) — checked per impl.
+	 * This promotes a masked pair (found-but-unauthorized ≡ not-found,
+	 * wrong-password ≡ account-not-found) from "same status + reason" to
+	 * "wire-indistinguishable", and holds BOTH impls to it: a prober hitting
+	 * either spine cannot tell the members apart. A group needs >= 2 members; a
+	 * member may still set `fields`. The negative-space twin of the positive
+	 * `output`-schema parity the runner already asserts.
+	 */
+	equivalence_group?: string;
+}
 
 /**
  * Marks a case as a deferred-by-design gap. The runner routes it through
@@ -260,13 +236,12 @@ export type ConformanceCaseExpectation = z.infer<typeof ConformanceCaseExpectati
  * marker's removal). Use for declared gaps (e.g. facts), never for
  * in-scope gaps (those fail loud as a red `test`).
  */
-export const ConformanceCaseXfail = z.strictObject({
-	tracking_id: z
-		.string()
-		.meta({ description: 'Tracking id for the deferred gap (issue id or tracking slug).' }),
-	reason: z.string().meta({ description: 'Why this case is deferred-by-design.' })
-});
-export type ConformanceCaseXfail = z.infer<typeof ConformanceCaseXfail>;
+export interface ConformanceCaseXfail {
+	/** Tracking id for the deferred gap (issue id or tracking slug). */
+	tracking_id: string;
+	/** Why this case is deferred-by-design. */
+	reason: string;
+}
 
 /**
  * A single conformance case. `name` is the assertion; the optional
@@ -278,14 +253,12 @@ export type ConformanceCaseXfail = z.infer<typeof ConformanceCaseXfail>;
  * non-empty-string check never catches a *wrong* citation — the citation
  * is verified in review.
  */
-export const ConformanceCase = z.strictObject({
-	name: z.string().meta({ description: 'The assertion, used as the test label.' }),
-	request: ConformanceCaseRequest,
-	expect: ConformanceCaseExpectation,
-	note: z
-		.string()
-		.optional()
-		.meta({ description: 'Free-text note printed in the label / failure output.' }),
-	xfail: ConformanceCaseXfail.optional()
-});
-export type ConformanceCase = z.infer<typeof ConformanceCase>;
+export interface ConformanceCase {
+	/** The assertion, used as the test label. */
+	name: string;
+	request: ConformanceCaseRequest;
+	expect: ConformanceCaseExpectation;
+	/** Free-text note printed in the label / failure output. */
+	note?: string;
+	xfail?: ConformanceCaseXfail;
+}

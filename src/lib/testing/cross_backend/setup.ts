@@ -591,7 +591,7 @@ export const capture_schema_snapshot = async (
 		handle.config.name,
 		{ [DAEMON_TOKEN_HEADER]: handle.daemon_token }
 	);
-	// TODO: cast, not parse — `SchemaSnapshot.parse(raw)` would validate the wire
+	// TODO: cast, not parse — `parse(SchemaSnapshot, raw)` would validate the wire
 	// against the schema (the `capture_action_manifest` twin parses + uses a
 	// strict object); parsing here may surface a latent schema-model gap to
 	// reconcile first, so it's left as a follow-up.
@@ -629,7 +629,7 @@ export const parse_capture_answer = <T extends ValidationSchema>(
  * daemon-token channel, then `parse_capture_answer`.
  *
  * (`capture_schema_snapshot` deliberately stays separate: it *casts* rather
- * than parses — narrowing a large snapshot to the Zod model would silently
+ * than parses — narrowing a large snapshot to the schema model would silently
  * drop unmodeled fields the parity diff should still see — and it takes an
  * `exclude_tables` param.)
  */

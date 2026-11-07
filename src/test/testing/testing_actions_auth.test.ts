@@ -23,6 +23,7 @@
  */
 
 import { test, assert, describe } from 'vitest';
+import { parse } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	testing_reset_action_spec,
@@ -86,29 +87,29 @@ describe('_testing_mint_session can only mint already-expired sessions', () => {
 	};
 
 	test('accepts a negative expiry (backdated, already-expired row)', () => {
-		const parsed = testing_mint_session_action_spec.input.safeParse(valid_input);
+		const parsed = parse(testing_mint_session_action_spec.input, valid_input);
 		assert.ok(
-			parsed.success,
-			`negative expiry must parse: ${JSON.stringify(parsed.error?.issues)}`
+			parsed.ok,
+			`negative expiry must parse: ${parsed.ok ? '' : JSON.stringify(parsed.issues)}`
 		);
 	});
 
 	test('rejects a positive expiry (would mint a valid session)', () => {
-		const parsed = testing_mint_session_action_spec.input.safeParse({
+		const parsed = parse(testing_mint_session_action_spec.input, {
 			...valid_input,
 			expires_in_seconds: 60
 		});
 		assert.ok(
-			!parsed.success,
+			!parsed.ok,
 			'a positive expiry must be rejected — the backdoor must not mint a valid session'
 		);
 	});
 
 	test('rejects a zero expiry', () => {
-		const parsed = testing_mint_session_action_spec.input.safeParse({
+		const parsed = parse(testing_mint_session_action_spec.input, {
 			...valid_input,
 			expires_in_seconds: 0
 		});
-		assert.ok(!parsed.success, 'a zero expiry must be rejected');
+		assert.ok(!parsed.ok, 'a zero expiry must be rejected');
 	});
 });
