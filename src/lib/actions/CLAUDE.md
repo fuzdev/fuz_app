@@ -28,8 +28,8 @@ Canonical source of truth. Specs are plain objects typed by TS interfaces
 `satisfies` so their literals survive; nothing parses a spec at runtime, so
 every required field is spelled — no defaults. `input` / `output` are a
 `ValidationSchema`, Zod or `@fuzdev/fuz_schema`. `ActionKind`,
-`ActionInitiator` and `ActionEventPhase` stay Zod enums (`ActionEventData`
-validates with them), built from the const lists `ACTION_KINDS`,
+`ActionInitiator` and `ActionEventPhase` are fuz_schema `one_of`s
+(`ActionEventData` validates with them), built from the const lists `ACTION_KINDS`,
 `ACTION_INITIATORS` and `ACTION_EVENT_PHASES`; `is_action_spec` reads
 `ACTION_KINDS`. Three concrete kinds discriminate on `kind`:
 
@@ -602,7 +602,8 @@ Server→client request/response (ActionPeer): `request_connection(connection_id
 method, params, {timeout_ms?})` sends a `{jsonrpc, method, params, id}` frame to
 exactly one socket and awaits the reply, returning a `PeerRequestOutcome`
 (`{ok: true, value}` | `{ok: false, error: PeerRequestError}` —
-`timeout`/`connection_gone`/`too_many_in_flight`/`client_error`). The registry
+`timeout`/`connection_gone`/`too_many_in_flight`/`client_error`, the last carrying
+the client's error as `parse_inbound_jsonrpc_error` reads it). The registry
 owns the socket + the send; the correlation registry — id allocation, the pending
 map (nested `connection_id → s{n}` id, the nesting being the per-connection
 isolation guarantee), deadlines, and the in-flight cap — is `PendingPeerRequests`
@@ -1075,9 +1076,9 @@ individual protocol actions without an opt-out flag.
 
 ### Individual actions
 
-- **`heartbeat_action`** — `request_response`, `initiator: 'frontend'`, `auth: 'authenticated'`, `side_effects: false`, parameterless `z.void()` input (absent / `null` / `{}` params — the Rust `require_void_params` shapes), empty-object output. Handler is a stateless no-op echo. Client's activity-aware heartbeat timer fires this whenever idle past `DEFAULT_HEARTBEAT_INTERVAL`; server's `register_action_ws` heartbeat tracker counts the incoming message as activity.
-- **`cancel_action`** — `remote_notification`, `initiator: 'frontend'`, `auth: null`, `side_effects: true`. Params: `CancelNotificationParams = z.strictObject({request_id: JsonrpcRequestId})`. **No handler** (`cancel_action = {spec}`) — cancel semantics are dispatcher-owned (`register_action_ws` has the `{request_id → AbortController}` map). Wire format is snake_case `cancel` + `{request_id}`, not MCP's `$/cancelRequest` + `{requestId}` — MCP adoption would happen at an MCP adapter's translation layer, not in the base transport.
-- **`peer_ping_action`** — `request_response`, `initiator: 'both'`, `auth: public`, `side_effects: false`. Input `PingActionInput = {nonce?, timeout_ms?}` (`.default({})`); output `PingResponse = {nonce, protocol_version}`. The client→server invocation drives the **server→client** direction: the handler calls `ctx.request_client('peer/ping', {nonce})`, awaits the echo, validates it against `PingResponse` + checks the nonce, and returns it. Over HTTP RPC (`ctx.request_client` absent) it refuses with `peer_no_transport`, so it's mounted on both the WS endpoint (via this bundle) and the HTTP RPC endpoint (the spine full mount). `timeout_ms` is clamped shorten-only. `data.reason` codes (`peer_timeout` / `peer_connection_gone` / `peer_no_transport` / `peer_too_many_in_flight` / `peer_ping_invalid_reply` / `peer_ping_nonce_mismatch`) + the `PingResponse` shape (whose `protocol_version` is `PEER_PROTOCOL_VERSION`) are the cross-impl wire contract (twins of the Rust `REASON_PEER_*`). The frontend half — `peer_ping_responder` (the echo a client sends back, wired into `FrontendWebsocketTransport`) — lives here too. `peer_ping_action` imports nothing from the dispatch core, so `protocol_action_specs` doesn't drag it into frontend bundles — same discipline as `heartbeat`/`cancel`. See `actions/peer_ping.ts`.
+- **`heartbeat_action`** — `request_response`, `initiator: 'frontend'`, `auth: {account: 'required', actor: 'none'}`, `side_effects: false`, parameterless `void` input (absent / `null` / `{}` params — the Rust `require_void_params` shapes), empty-object output. Handler is a stateless no-op echo. Client's activity-aware heartbeat timer fires this whenever idle past `DEFAULT_HEARTBEAT_INTERVAL`; server's `register_action_ws` heartbeat tracker counts the incoming message as activity.
+- **`cancel_action`** — `remote_notification`, `initiator: 'frontend'`, `auth: null`, `side_effects: true`. Params: `CancelNotificationParams = object({request_id: JsonrpcRequestId})`. **No handler** (`cancel_action = {spec}`) — cancel semantics are dispatcher-owned (`register_action_ws` has the `{request_id → AbortController}` map). Wire format is snake_case `cancel` + `{request_id}`, not MCP's `$/cancelRequest` + `{requestId}` — MCP adoption would happen at an MCP adapter's translation layer, not in the base transport.
+- **`peer_ping_action`** — `request_response`, `initiator: 'both'`, `auth: public`, `side_effects: false`. Input `PingActionInput = {nonce?, timeout_ms?}` (`with_default`, `{}` for an omitted input — the client's pre-send parse of a no-arg call); output `PingResponse = {nonce, protocol_version}`. The client→server invocation drives the **server→client** direction: the handler calls `ctx.request_client('peer/ping', {nonce})`, awaits the echo, validates it against `PingResponse` + checks the nonce, and returns it. A client's error reply reaches the caller as `parse_inbound_jsonrpc_error` reads it (a base-set code, else `internal_error`; a string message, else `'peer error'`; `data` as sent), as on the Rust spine. Over HTTP RPC (`ctx.request_client` absent) it refuses with `peer_no_transport`, so it's mounted on both the WS endpoint (via this bundle) and the HTTP RPC endpoint (the spine full mount). `timeout_ms` is clamped shorten-only. `data.reason` codes (`peer_timeout` / `peer_connection_gone` / `peer_no_transport` / `peer_too_many_in_flight` / `peer_ping_invalid_reply` / `peer_ping_nonce_mismatch`) + the `PingResponse` shape (whose `protocol_version` is `PEER_PROTOCOL_VERSION`) are the cross-impl wire contract (twins of the Rust `REASON_PEER_*`). The frontend half — `peer_ping_responder` (the echo a client sends back, wired into `FrontendWebsocketTransport`) — lives here too. `peer_ping_action` imports nothing from the dispatch core, so `protocol_action_specs` doesn't drag it into frontend bundles — same discipline as `heartbeat`/`cancel`. See `actions/peer_ping.ts`.
 
 ## Event state machine
 
@@ -1087,7 +1088,7 @@ discriminated-union-based state machine used by the reactive client to
 track an action through its lifecycle. Per-symbol semantics on TSDoc;
 high-level shapes that span modules:
 
-- **39-variant discriminated union** — `ActionEventDataUnion<TMethod, TInput, TOutput>` across `kind` + `phase` + `step` (28 for `request_response`, 6 for `remote_notification`, 5 for `local_call`). Narrows `input` / `output` / `error` / `request` / `response` / `notification` / `progress` at each lifecycle point.
+- **Discriminated union** — `ActionEventDataUnion<TMethod, TInput, TOutput>` across `kind` + `phase` + `step`, a variant per lifecycle point of each kind. Narrows `input` / `output` / `error` / `request` / `response` / `notification` / `progress` at each lifecycle point.
 - **Step transitions** — `initial → parsed | failed`, `parsed → handling | failed`, `handling → handled | failed`, `handled`/`failed` terminal. `validate_step_transition(from, to)` throws on illegal moves.
 - **Phase transitions** — chained: `send_request → receive_response`, `receive_request → send_response`; everything else terminal. `validate_phase_transition` enforces.
 - **`ActionEvent.parse()`** — `initial → parsed` via `parse_any(spec.input, …)`. Input validation failures **fail immediately** without routing through an error phase (client-side programming errors, not runtime conditions with handlers); their `invalid_params` `data` is `{validation_errors, reason?}`, `reason` the declared `invalid_reason` the server would answer. Handler errors DO route through `send_error` / `receive_error`. On `receive_response` with error response, transitions to `receive_error` instead of failing; a success response's `result` is validated against `spec.output` (always, not DEV-only — it's inbound data; undeclared keys are dropped rather than refused, so an older client survives an added response field) and `output` becomes the parsed value, or the event moves to `receive_error` with an `internal_error` carrying `data: {reason: ERROR_RESPONSE_OUTPUT_INVALID, validation_errors}` — a remote contract break, deliberately distinct from the `invalid_params` / `validation_error` of bad caller input.
@@ -1276,7 +1277,7 @@ natural fit).
 
 ## Shared type surface (`actions/action_types.ts`)
 
-Sits above `action_spec.ts` (pure Zod) and below the dispatchers. Extracted
+Sits above `action_spec.ts` (types and the kind enums) and below the dispatchers. Extracted
 so composable primitives (e.g. `heartbeat_action`) can name the types
 without pulling in server-only modules.
 

@@ -394,7 +394,7 @@
 													{#if method.input_schema}
 														<pre>{JSON.stringify(method.input_schema, null, 2)}</pre>
 													{:else}
-														<span class="text_50">none (z.void)</span>
+														<span class="text_50">none (void)</span>
 													{/if}
 												</div>
 												<div>
@@ -477,7 +477,7 @@
 													{#if method.input_schema}
 														<pre>{JSON.stringify(method.input_schema, null, 2)}</pre>
 													{:else}
-														<span class="text_50">none (z.void)</span>
+														<span class="text_50">none (void)</span>
 													{/if}
 												</div>
 												<div>

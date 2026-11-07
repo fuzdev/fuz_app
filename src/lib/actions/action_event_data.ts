@@ -1,7 +1,7 @@
 /**
  * Action event data types — discriminated union for state machine data.
  *
- * 39-variant discriminated union across 3 action kinds (request_response,
+ * A discriminated union across the action kinds (request_response,
  * remote_notification, local_call). Each variant narrows the data shape
  * by kind, phase, and step.
  *

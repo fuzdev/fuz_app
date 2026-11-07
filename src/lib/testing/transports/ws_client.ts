@@ -34,11 +34,11 @@ import { JSONRPC_VERSION, type JsonrpcRequest } from '../../http/jsonrpc.ts';
 // Wire-frame types — describe a parsed wire message as observed on the
 // client side in a test, with a type parameter for the `params` /
 // `result` payload so assertions narrow without a cast. Distinct from
-// the Zod-inferred `JsonrpcNotification` / `JsonrpcResponse` /
-// `JsonrpcErrorResponse` in `http/jsonrpc.ts` — the runtime validation
-// schemas intentionally keep `params` / `result` widened to `unknown`,
-// since adding a generic parameter there would break the `z.infer`
-// pattern for a benefit test code owns exclusively.
+// the `JsonrpcNotification` / `JsonrpcResponse` / `JsonrpcErrorResponse`
+// types inferred from the schemas in `http/jsonrpc.ts` — the runtime
+// validation schemas intentionally keep `params` / `result` widened to
+// `unknown`, since a generic parameter there would cost the inferred types
+// for a benefit test code owns exclusively.
 // ---------------------------------------------------------------------
 
 export interface JsonrpcNotificationFrame<P = unknown> {
@@ -183,7 +183,7 @@ const answer_request = async (
 	reply(
 		'error' in outcome
 			? // Test wire-frames keep `code` a plain `number` (not the branded
-				// Zod `JsonrpcServerErrorCode`), so cast at the builder boundary.
+				// `JsonrpcServerErrorCode`), so cast at the builder boundary.
 				create_jsonrpc_error_response(request.id, outcome.error as never)
 			: create_jsonrpc_response(request.id, outcome.result)
 	);

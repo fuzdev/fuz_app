@@ -122,7 +122,7 @@ import { token_scope_admits_method, token_scope_method_capability } from '../aut
 export interface PerformActionInput {
 	/** The resolved spec + handler (transport does method lookup). */
 	action: RpcAction;
-	/** Raw params from the wire envelope (post-`JsonrpcRequest.parse`, pre-`parse_any(spec.input, …)`). */
+	/** Raw params from the wire envelope (validated by `JsonrpcRequest`, pre-`parse_any(spec.input, …)`). */
 	raw_params: unknown;
 	/** JSON-RPC request id — echoed onto the response. */
 	request_id: JsonrpcRequestId;

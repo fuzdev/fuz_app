@@ -77,7 +77,7 @@ export interface CreateBroadcastApiOptions {
  * Builds a typed broadcast API from a set of action specs.
  *
  * For each spec, adds a method keyed by `spec.method` that:
- * - Validates `input` against the spec's Zod schema (logs and returns on failure)
+ * - Validates `input` against the spec's input schema (logs and returns on failure)
  * - Creates a JSON-RPC notification from the validated input
  * - Broadcasts on the registry (filtered by `should_deliver` when supplied)
  *

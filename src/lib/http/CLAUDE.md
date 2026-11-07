@@ -30,7 +30,7 @@ effects, see ../../../docs/architecture.md.
 - `http/client_ip.ts` — `get_client_ip(c)` — reads the resolved IP off the context (set by `proxy.ts`'s middleware). Split out of `proxy.ts` so it's hono-free: dispatch + route modules that only _read_ the IP don't pull `hono/utils/ipaddr`, keeping cross-process test surfaces free of the optional `hono` peer.
 - `http/ip_canonical.ts` — RFC 5952 IPv6 canonicalization + IPv4-mapped collapse, `rate_limit_ip_key` (an IPv6 client's `/64`), and its own `parse_ipv4_bits` / `parse_ipv6_bits` (the grammar of Rust's `IpAddr::from_str`); `IP_LITERAL_CHARS` regex. Imports nothing — the dispatcher keys its IP limiter through it, so it must stay hono-free (`src/test/hono_free_modules.test.ts` walks every `src/lib` module's graph).
 - `http/origin.ts` — origin allowlist: the strict pattern grammar shared with the Rust spine, typed refusals, and the Origin-only middleware.
-- `http/jsonrpc.ts` — JSON-RPC 2.0 envelope schemas (MCP superset), `JsonrpcErrorCode`, `_meta`.
+- `http/jsonrpc.ts` — JSON-RPC 2.0 envelope schemas (MCP superset, fuz_schema), `JsonrpcErrorCode`.
 - `http/jsonrpc_errors.ts` — `ThrownJsonrpcError`, `jsonrpc_errors` throwers, HTTP-status mappings.
 - `http/jsonrpc_helpers.ts` — message builders, type guards, input/result normalizers, and `classify_jsonrpc_message`, the one envelope classifier both transports run.
 - `http/health_schema.ts` — `HEALTH_PATH` + the `HealthResponse` schema (a fuz_schema `object`), browser-safe, shared by the health route spec and the client probe (`ui/backend_probe.svelte.ts`).
@@ -490,12 +490,12 @@ schemas), `http/jsonrpc_errors.ts` runtime (throwable + map),
 `http/jsonrpc_helpers.ts` plumbing (builders, guards, converters).
 
 Follows JSON-RPC 2.0 spec with a partial **MCP superset** posture — params
-are object-only (no positional arrays) and `_meta` / `progressToken` are
-first-class; result is the full JSON-RPC §5 value space (object, array,
-string, number, boolean, null) since the per-action `spec.output` is the
+are object-only (no positional arrays), and the envelopes are fuz_schema
+`loose_object`s that keep members a reader passes over; result is any value
+(`unknown`, which needs its key) since the per-action `spec.output` is the
 actual contract and the MCP object-only result constraint would reject any
-spec declaring `output: z.null()` / primitives on the wire. Schemas sourced
-from the MCP TypeScript SDK for compatibility on the params / `_meta` axis.
+spec declaring a null or primitive output on the wire. A parse returns the
+frame itself, not a copy.
 
 `_meta` is intentionally **not** envelope-validated — that lives in
 per-action schemas so mismatches surface as `invalid_params` rather than
@@ -551,11 +551,12 @@ which holds a declaration to the same rules.
 - `to_thrown_jsonrpc_error(err)` — the one thrown → wire conversion: the `JsonrpcErrorObject` a `ThrownJsonrpcError` carries, recognized by a realm-global `Symbol.for` brand on its prototype (so one from a second fuz_app copy is read too), when its `code` is a JSON-RPC error code; else `null` — a foreign error class with a JSON-RPC-shaped `code` (another library's RPC error) or a `DOMException` included. Read by the REST catch layer, `perform_action`, `create_jsonrpc_error_response_from_thrown`, the frontend HTTP and WS transports, and `ActionEvent`'s handler-throw normalization, each masking everything else its own way
 - `jsonrpc_error_code_to_http_status` / `http_status_to_jsonrpc_error_code` (fall back to 500 / `internal_error`) — the code → status table is module-private; `HTTP_STATUS_TO_JSONRPC_ERROR_CODE` (frozen) is the reverse over the base set
 - `register_jsonrpc_error_code(code, http_status)` — declares a consumer code's status (see **Consumer codes** above)
-- Envelope schemas in `http/jsonrpc.ts`: `JsonrpcRequest`, `JsonrpcNotification`, `JsonrpcResponse`, `JsonrpcErrorResponse`, `JsonrpcResponseOrError`, `JsonrpcMessage`, `JsonrpcMessageFromClientToServer`, `JsonrpcMessageFromServerToClient`. Also `JsonrpcRequestId`, `JsonrpcMethod`, `JsonrpcProgressToken`, `JsonrpcMcpMeta`, `JsonrpcRequestParamsMeta`
+- Envelope schemas in `http/jsonrpc.ts` (fuz_schema): `JsonrpcRequest`, `JsonrpcNotification`, `JsonrpcResponse`, `JsonrpcErrorResponse`, `JsonrpcResponseOrError`, `JsonrpcErrorObject`, `JsonrpcErrorCode` (`JsonrpcServerErrorCode` an integer in the server range, as `is_jsonrpc_error_code` reads it). Also `JsonrpcRequestId`, `JsonrpcMethod`, `JsonrpcResult`, and the params. `JsonrpcMessage`, `JsonrpcMessageFromClientToServer`, and `JsonrpcMessageFromServerToClient` are types only
+- `parse_inbound_jsonrpc_error(error)` — a peer's error reply read as the Rust `parse_inbound_error` reads it: a code off the base set (a consumer's code included) is `internal_error`, a non-string message `'peer error'`, an own `data` kept as sent; what `PendingPeerRequests.resolve` hands the caller
 - Builders in `http/jsonrpc_helpers.ts`: `create_jsonrpc_request`, `create_jsonrpc_notification`, `create_jsonrpc_response`, `create_jsonrpc_error_response`, `create_jsonrpc_error_response_from_thrown` (preserves code/message/data on a thrown JSON-RPC error, via `to_thrown_jsonrpc_error`; plain `Error` → `internal_error` with `{stack}` in DEV)
 - Type guards: `is_jsonrpc_request_id` (rejects NaN/Infinity), `is_jsonrpc_object`, `is_jsonrpc_request` / `_notification` / `_response` / `_error_response`
 - Converters: `to_jsonrpc_message_id`, `to_jsonrpc_params` (normalizes primitives to `{value}`)
-- Classifier: `classify_jsonrpc_message(json)` → `ClassifiedJsonrpcMessage` (`request` / `notification` / `response` / `invalid`, the last carrying the error and the id to answer it on), twin of the Rust `fuz_http::classify` in order and answers. The WS frame handler and the HTTP POST handler switch on it, each keeping its transport's arms: WS refuses batches before it, routes `cancel` and peer responses, and checks duplicate ids and the in-flight ceiling after; POST answers a notification or a response `invalid_request` on `id: null`. Only a refused request envelope carries data — the schema's issues, DEV-only. A `request` carries the frame as parsed, validated but not rebuilt, so an own `__proto__` key in `params` reaches the dispatcher, which refuses it (`ERROR_PARAMS_PROTO_KEY`) as on GET and the Rust spine (a Zod-rebuilt copy drops it).
+- Classifier: `classify_jsonrpc_message(json)` → `ClassifiedJsonrpcMessage` (`request` / `notification` / `response` / `invalid`, the last carrying the error and the id to answer it on), twin of the Rust `fuz_http::classify` in order and answers. The WS frame handler and the HTTP POST handler switch on it, each keeping its transport's arms: WS refuses batches before it, routes `cancel` and peer responses, and checks duplicate ids and the in-flight ceiling after; POST answers a notification or a response `invalid_request` on `id: null`. Only a refused request envelope carries data — the schema's issues, DEV-only. A `request` carries the frame as parsed, validated but not rebuilt, so an own `__proto__` key in `params` reaches the dispatcher, which refuses it (`ERROR_PARAMS_PROTO_KEY`) as on GET and the Rust spine (a rebuilt copy would drop it).
 
 Handlers can `throw jsonrpc_errors.*` — `apply_route_specs`' error-catch
 layer converts to the flat REST body (`{error: <reason>, message?, ...rest_data}`)
