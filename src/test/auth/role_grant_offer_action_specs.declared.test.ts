@@ -24,7 +24,7 @@
  */
 
 import { describe, test, assert } from 'vitest';
-import { is_schema } from '@fuzdev/fuz_schema/schema.ts';
+import { is_schema, parse, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 
 import { ROLE_GRANT_REVOKED_REASON_LENGTH_MAX } from '#lib/auth/account_schema.ts';
 import {
@@ -59,12 +59,7 @@ import {
 	RoleGrantOfferSupersedeParams,
 	RoleGrantRevokedParams
 } from '#lib/auth/role_grant_offer_notifications.ts';
-import {
-	parse_any,
-	to_wire_issues,
-	type ValidationSchema,
-	type WireIssue
-} from '#lib/schema_issues.ts';
+import { to_wire_issues, type WireIssue } from '#lib/schema_issues.ts';
 import { NAME_LENGTH_MAX, NAME_REGEX } from '#lib/auth/name_schema.ts';
 
 const ID = '0f8fad5b-d9cb-469f-a165-70867728950e';
@@ -101,18 +96,18 @@ const REVOKED = {
 	reason: null
 };
 
-const issues_of = (schema: ValidationSchema, input: unknown): Array<WireIssue> | null => {
-	const result = parse_any(schema, input);
+const issues_of = (schema: AnySchema, input: unknown): Array<WireIssue> | null => {
+	const result = parse(schema, input);
 	return result.ok ? null : to_wire_issues(result.issues, input);
 };
 
 /** The issues as `[kind, path, expected]`, or `null` for an acceptance. */
-const shape_of = (schema: ValidationSchema, input: unknown): Array<unknown> | null =>
+const shape_of = (schema: AnySchema, input: unknown): Array<unknown> | null =>
 	issues_of(schema, input)?.map((i) => [i.kind, i.path, i.expected]) ?? null;
 
 /** Each schema that holds an offer, and the offer wrapped as it holds one. */
 const OFFER_HOLDERS: ReadonlyArray<
-	[string, ValidationSchema, (offer: unknown) => unknown, Array<unknown>]
+	[string, AnySchema, (offer: unknown) => unknown, Array<unknown>]
 > = [
 	['RoleGrantOfferJson', RoleGrantOfferJson, (o) => o, []],
 	['RoleGrantOfferCreateOutput', RoleGrantOfferCreateOutput, (o) => ({ offer: o }), ['offer']],
@@ -153,7 +148,7 @@ const OFFER_HOLDERS: ReadonlyArray<
 	]
 ];
 
-const samples: ReadonlyArray<[string, ValidationSchema, ReadonlyArray<unknown>]> = [
+const samples: ReadonlyArray<[string, AnySchema, ReadonlyArray<unknown>]> = [
 	[
 		'RoleGrantOfferCreateInput',
 		RoleGrantOfferCreateInput,
@@ -199,7 +194,7 @@ const samples: ReadonlyArray<[string, ValidationSchema, ReadonlyArray<unknown>]>
 		RoleGrantRevokedParams,
 		[REVOKED, { ...REVOKED, scope_kind: 'classroom', scope_id: ID2 }]
 	],
-	...OFFER_HOLDERS.map(([name, schema, wrap]): [string, ValidationSchema, Array<unknown>] => [
+	...OFFER_HOLDERS.map(([name, schema, wrap]): [string, AnySchema, Array<unknown>] => [
 		name,
 		schema,
 		[
@@ -215,15 +210,15 @@ describe('the role_grant_offer schemas', () => {
 		(_name, schema, values) => {
 			assert.ok(is_schema(schema));
 			for (const value of values) {
-				assert.ok(parse_any(schema, value).ok, JSON.stringify(value));
+				assert.ok(parse(schema, value).ok, JSON.stringify(value));
 			}
 		}
 	);
 
 	test('an omitted list or history input reads as a fresh {}', () => {
 		for (const schema of [RoleGrantOfferListInput, RoleGrantOfferHistoryInput]) {
-			const a = parse_any(schema, undefined);
-			const b = parse_any(schema, undefined);
+			const a = parse(schema, undefined);
+			const b = parse(schema, undefined);
 			assert.ok(a.ok && b.ok);
 			assert.deepStrictEqual(a.value, {});
 			assert.notStrictEqual(a.value, b.value);
@@ -232,9 +227,9 @@ describe('the role_grant_offer schemas', () => {
 
 	test('the safe range bounds the history offset', () => {
 		for (const offset of [Number.MAX_SAFE_INTEGER + 1, 2 ** 53 + 2, 1e16]) {
-			assert.ok(!parse_any(RoleGrantOfferHistoryInput, { offset }).ok, String(offset));
+			assert.ok(!parse(RoleGrantOfferHistoryInput, { offset }).ok, String(offset));
 		}
-		assert.ok(parse_any(RoleGrantOfferHistoryInput, { offset: Number.MAX_SAFE_INTEGER }).ok);
+		assert.ok(parse(RoleGrantOfferHistoryInput, { offset: Number.MAX_SAFE_INTEGER }).ok);
 	});
 });
 

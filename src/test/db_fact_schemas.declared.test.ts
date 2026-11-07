@@ -22,7 +22,6 @@ import {
 	create_serve_cell_fact_route_spec,
 	create_serve_fact_route_spec
 } from '#lib/server/serve_fact_route.ts';
-import type { ValidationSchema } from '#lib/schema_issues.ts';
 
 const HEX = 'a1'.repeat(32);
 const HASH = `${FACT_HASH_PREFIX}${HEX}`;
@@ -38,8 +37,8 @@ const db_specs = new Map(
 	}).map((s) => [`${s.method} ${s.path}`, s])
 );
 
-/** A route slot, typed `ValidationSchema`, as the fuz_schema schema it must be. */
-const fuz_slot = (schema: ValidationSchema | undefined): AnySchema => {
+/** A route slot, typed `AnySchema`, as the fuz_schema schema it must be. */
+const fuz_slot = (schema: AnySchema | undefined): AnySchema => {
 	if (!is_schema(schema)) throw new Error('a route slot is no fuz_schema schema');
 	return schema;
 };

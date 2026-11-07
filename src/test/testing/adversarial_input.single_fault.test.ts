@@ -11,6 +11,7 @@
 
 import { describe, test, assert } from 'vitest';
 import * as s from '@fuzdev/fuz_schema/schema.ts';
+import { parse, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	generate_input_test_cases,
@@ -24,7 +25,6 @@ import {
 } from '#lib/testing/schema_generators.ts';
 import type { SchemaFieldInfo } from '#lib/http/schema_helpers.ts';
 import { create_spine_live_rpc_endpoints } from '#lib/testing/cross_backend/full_spine_mount.ts';
-import { parse_any, type ValidationSchema } from '#lib/schema_issues.ts';
 import { Uuid } from '#lib/primitive_schemas.ts';
 
 const NIL = '00000000-0000-0000-0000-000000000000';
@@ -61,7 +61,7 @@ const NeverWithCode = s.pipe(
 	s.check((v) => v.code === undefined, 'code is not accepted')
 );
 
-const field_of = (schema: ValidationSchema, name: string): SchemaFieldInfo =>
+const field_of = (schema: AnySchema, name: string): SchemaFieldInfo =>
 	to_object_schema_view(schema, 'field_of').fields.find((f) => f.name === name)!;
 
 const cases_on = (cases: Array<InputTestCase>, field: string): Array<InputTestCase> =>
@@ -78,7 +78,7 @@ const body_of = (cases: Array<InputTestCase>, label: string): Record<string, unk
  * its generated valid value, or (a type case on a field no valid body carries)
  * dropped, the whole input parses.
  */
-const is_single_fault = (input: ValidationSchema, c: InputTestCase): boolean => {
+const is_single_fault = (input: AnySchema, c: InputTestCase): boolean => {
 	const view = to_object_schema_view(input, 'is_single_fault: the input');
 	const field = c.field!;
 	const info = view.fields.find((f) => f.name === field)!;
@@ -87,15 +87,15 @@ const is_single_fault = (input: ValidationSchema, c: InputTestCase): boolean => 
 		...body,
 		[field]: generate_valid_value(info, view.field_schema(field)!)
 	};
-	if (parse_any(input, restored).ok) return true;
+	if (parse(input, restored).ok) return true;
 	if (!/^(wrong type|null):/.test(c.label)) return false;
 	const { [field]: _dropped, ...without } = body;
-	return parse_any(input, without).ok;
+	return parse(input, without).ok;
 };
 
 describe('generate_valid_object_with_field', () => {
 	// the pipe's first schema, the object the base is an instance of
-	const object_of = (schema: s.SchemaNode<'pipe'>): ValidationSchema => schema.def[0]!;
+	const object_of = (schema: s.SchemaNode<'pipe'>): AnySchema => schema.def[0]!;
 
 	test('a field the base carries keeps the base', () => {
 		const base = generate_valid_body(ExactlyOne)!;

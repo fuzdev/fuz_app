@@ -1,9 +1,9 @@
 import { UnreachableError } from '@fuzdev/fuz_util/error.ts';
-import { is_schema } from '@fuzdev/fuz_schema/schema.ts';
+import { is_schema, parse } from '@fuzdev/fuz_schema/schema.ts';
 
 import { is_empty_input_handler_guarded } from '../schema_meta.ts';
 import { is_null_schema, is_void_schema } from '../http/schema_helpers.ts';
-import { assert_zod_schema, parse_any } from '../schema_issues.ts';
+import { assert_zod_schema } from '../schema_issues.ts';
 
 import type { ActionSpecUnion, ActionEventPhase } from './action_spec.ts';
 import { ActionRegistry } from './action_registry.ts';
@@ -395,16 +395,16 @@ const to_action_property_key = (method: string): string =>
  * `empty_input_handler_guarded` (`SchemaFieldMeta`, read by
  * `is_empty_input_handler_guarded`). The rule codegen emits `input?:` by and
  * the input-shape invariant tests read. The input is a Zod or a
- * `@fuzdev/fuz_schema` schema, parsed with `parse_any`.
+ * `@fuzdev/fuz_schema` schema, parsed with `parse`.
  *
  * @param spec - the action spec
  * @returns whether the typed surface makes the input optional
  * @throws Error when the input is neither a Zod nor a fuz_schema schema
  */
 export const action_input_is_optional = (spec: Pick<ActionSpecUnion, 'input'>): boolean => {
-	if (parse_any(spec.input, undefined).ok) return true;
+	if (parse(spec.input, undefined).ok) return true;
 	if (is_empty_input_handler_guarded(spec.input)) return false;
-	return parse_any(spec.input, {}).ok;
+	return parse(spec.input, {}).ok;
 };
 
 /**
@@ -441,8 +441,12 @@ const to_spec_schema_library = (
  * failure). Earlier emit shapes declared notifications as `=> void` —
  * regenerate consumer typed clients to pick up the corrected return.
  *
+ * The input is typed by `ActionCallInputs` — the schema's input type, what
+ * the caller passes before the parse — so a defaulted field is optional at the
+ * call while the handler reads it filled in (`ActionInputs`).
+ *
  * Registers exactly the imports the emitted line references on `imports`:
- * `ActionInputs` (when the spec has input), `ActionOutputs` (always),
+ * `ActionCallInputs` (when the spec has input), `ActionOutputs` (always),
  * `RpcClientCallOptions` (async only), and `Result` + `JsonrpcErrorObject`
  * (any return shape that wraps the value in `Result<{value}, {error}>` —
  * every async method, plus sync `local_call` when `sync_returns_value:
@@ -460,7 +464,7 @@ const to_spec_schema_library = (
  * if a request with no params reaches the handler, this is the value the
  * schema is asked to validate. A schema with required fields fails both
  * probes and stays `input:` (required at the typed surface). Refinements
- * and transforms run as part of the parse (`parse_any`), so their accept/reject
+ * and transforms run as part of the parse (`parse`), so their accept/reject
  * decisions feed into the optional/required choice naturally. An input
  * marked `empty_input_handler_guarded` is the exception: its schema accepts
  * `{}` but the handler refuses it, so it stays `input:`
@@ -469,15 +473,15 @@ const to_spec_schema_library = (
  * **No-input detection.** A void or null input — `z.void()`, `z.null()`, or
  * a `@fuzdev/fuz_schema` `literal(undefined)` (`s.void`) or `literal(null)`,
  * read by shape (`is_void_schema`, `is_null_schema`) — emits `input?: void`
- * and no `ActionInputs` import.
+ * and no `ActionCallInputs` import.
  *
  * @param options.sync_returns_value - When true (default), sync `local_call`
  *   methods return the output value directly; when false they're wrapped in
  *   `Result<{value, error}>` like async methods. Set to `false` if your
  *   `FrontendActionsApi` treats every method uniformly.
- * @param options.collections_path - Import path that `ActionInputs` /
+ * @param options.collections_path - Import path that `ActionCallInputs` /
  *   `ActionOutputs` resolve to. Defaults to `'./action_collections.ts'`.
- * @returns one line like `foo: (input: ActionInputs['foo'], options?: RpcClientCallOptions) => Promise<Result<...>>;`
+ * @returns one line like `foo: (input: ActionCallInputs['foo'], options?: RpcClientCallOptions) => Promise<Result<...>>;`
  * @throws Error naming the method when the input is neither a Zod nor a
  *   fuz_schema schema
  */
@@ -492,9 +496,9 @@ const generate_actions_api_method_signature = (
 	const has_input = !is_null_schema(spec.input) && !is_void_schema(spec.input);
 	const input_optional = has_input && action_input_is_optional(spec);
 	const input_param = has_input
-		? `input${input_optional ? '?' : ''}: ActionInputs['${spec.method}']`
+		? `input${input_optional ? '?' : ''}: ActionCallInputs['${spec.method}']`
 		: 'input?: void';
-	if (has_input) imports.add_type(collections_path, 'ActionInputs');
+	if (has_input) imports.add_type(collections_path, 'ActionCallInputs');
 	imports.add_type(collections_path, 'ActionOutputs');
 
 	const is_async =
@@ -839,14 +843,27 @@ export const action_specs: Array<ActionSpecUnion> = Object.values(ActionSpecs);`
 };
 
 /**
- * Emit `ActionInputs` + `ActionOutputs` runtime consts and matching interfaces.
- * The runtime consts reference `specs.{method}_action_spec.input` /
- * `.output`; the interfaces type each as its schema's output: `z.infer` for a
- * Zod schema, `Infer` for a `@fuzdev/fuz_schema` one.
+ * Emit `ActionInputs` + `ActionOutputs` runtime consts and matching
+ * interfaces, plus the `ActionCallInputs` interface. The runtime consts
+ * reference `specs.{method}_action_spec.input` / `.output`.
  *
- * Adds `import {z} from 'zod';` when any schema is Zod's,
- * `import type {Infer} from '@fuzdev/fuz_schema/schema.ts';` when any is
- * fuz_schema's, and the `* as specs` namespace import.
+ * The two sides of a call see different types for one input schema, so the
+ * interfaces split by side:
+ *
+ * - `ActionInputs` types each input as its schema's output (`Infer`) — the
+ *   parsed value a handler, an action event, or a notification receiver reads,
+ *   with defaults filled and transforms applied.
+ * - `ActionCallInputs` types each input as its schema's input (`InferInput`)
+ *   — what a caller passes, before the parse: a `with_default` field is
+ *   optional there and required in `ActionInputs`. The call surfaces
+ *   (`FrontendActionsApi`, `BackendActionsApi`) read it.
+ * - `ActionOutputs` types each output as its schema's output, what a caller
+ *   receives.
+ *
+ * Adds `import {z} from 'zod';` when any schema is Zod's (typed with
+ * `z.infer` / `z.input`), `import type {Infer, InferInput} from
+ * '@fuzdev/fuz_schema/schema.ts';` when any is fuz_schema's, and the
+ * `* as specs` namespace import.
  *
  * @param options.qualify_spec - per-spec qualified identifier callback for
  *   multi-source consumers. The helper appends `.input` / `.output` to the
@@ -879,6 +896,12 @@ export const ActionInputs = {} as const;
 export interface ActionInputs {}
 
 /**
+ * Action inputs as a caller passes them, indexed by method name:
+ * each input schema's input type, before the parse.
+ */
+export interface ActionCallInputs {}
+
+/**
  * Action result schemas indexed by method name.
  * These represent the output data for each action,
  * e.g. JSON-RPC response results and local call return values.
@@ -895,9 +918,14 @@ export interface ActionOutputs {}`;
 		libraries.some((l) => l.input === library || l.output === library);
 	if (uses('zod')) imports.add('zod', 'z');
 	if (uses('fuz_schema')) imports.add_type('@fuzdev/fuz_schema/schema.ts', 'Infer');
+	if (libraries.some((l) => l.input === 'fuz_schema')) {
+		imports.add_type('@fuzdev/fuz_schema/schema.ts', 'InferInput');
+	}
 	const qualify = resolve_spec_qualifier(imports, options);
 	const infer = (library: 'zod' | 'fuz_schema'): string =>
 		library === 'zod' ? 'z.infer' : 'Infer';
+	const infer_input = (library: 'zod' | 'fuz_schema'): string =>
+		library === 'zod' ? 'z.input' : 'InferInput';
 
 	const inputs_value = filtered
 		.map((s) => `\t${to_action_property_key(s.method)}: ${qualify(s)}.input,`)
@@ -906,6 +934,12 @@ export interface ActionOutputs {}`;
 		.map(
 			(s, i) =>
 				`\t${to_action_property_key(s.method)}: ${infer(libraries[i]!.input)}<typeof ${qualify(s)}.input>;`
+		)
+		.join('\n');
+	const call_inputs_type = filtered
+		.map(
+			(s, i) =>
+				`\t${to_action_property_key(s.method)}: ${infer_input(libraries[i]!.input)}<typeof ${qualify(s)}.input>;`
 		)
 		.join('\n');
 	const outputs_value = filtered
@@ -928,6 +962,14 @@ ${inputs_value}
 } as const;
 export interface ActionInputs {
 ${inputs_type}
+}
+
+/**
+ * Action inputs as a caller passes them, indexed by method name:
+ * each input schema's input type, before the parse.
+ */
+export interface ActionCallInputs {
+${call_inputs_type}
 }
 
 /**
@@ -1019,7 +1061,7 @@ ${lines.join('\n')}
  *
  * Imports are registered per emitted line — only what the spec set actually references shows up on
  * `imports`. A spec set with no async methods skips `RpcClientCallOptions`;
- * one with no inputs skips `ActionInputs`; sync `local_call` methods with
+ * one with no inputs skips `ActionCallInputs`; sync `local_call` methods with
  * `sync_returns_value: true` (the default) skip `Result` / `JsonrpcErrorObject`.
  *
  * The interface name is fixed at `FrontendActionsApi` — the symmetric counterpart
@@ -1133,7 +1175,7 @@ ${lines};
  * exclusion list.
  *
  * Adds the `* as specs` namespace import (from `specs_module`), the
- * `ActionInputs` type import (from `collections_path`), and the
+ * `ActionCallInputs` type import (from `collections_path`), and the
  * `ActionSpecUnion` type import.
  *
  * Method signature shape today is `(input) => Promise<void>` — matches the
@@ -1174,7 +1216,7 @@ export const generate_backend_actions_api = (
 
 	if (broadcast.length === 0) {
 		// No backend-initiated remote_notifications — skip `* as specs` and
-		// `ActionInputs` imports that would have nothing to reference.
+		// `ActionCallInputs` imports that would have nothing to reference.
 		return `${interface_doc}
 export interface BackendActionsApi {}
 
@@ -1182,7 +1224,7 @@ export const broadcast_action_specs: ReadonlyArray<ActionSpecUnion> = [];`;
 	}
 
 	const collections_path = options?.collections_path ?? DEFAULT_COLLECTIONS_PATH;
-	imports.add_type(collections_path, 'ActionInputs');
+	imports.add_type(collections_path, 'ActionCallInputs');
 	const qualify = resolve_spec_qualifier(imports, options);
 
 	const interface_body =
@@ -1190,7 +1232,7 @@ export const broadcast_action_specs: ReadonlyArray<ActionSpecUnion> = [];`;
 		broadcast
 			.map(
 				(s) =>
-					`\t${to_action_property_key(s.method)}: (input: ActionInputs['${s.method}']) => Promise<void>;`
+					`\t${to_action_property_key(s.method)}: (input: ActionCallInputs['${s.method}']) => Promise<void>;`
 			)
 			.join('\n') +
 		'\n';

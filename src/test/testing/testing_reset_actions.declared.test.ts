@@ -13,7 +13,6 @@ import { describe, test, assert } from 'vitest';
 import { format_issue, is_schema, parse, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 
 import { create_uuid } from '#lib/primitive_schemas.ts';
-import type { ValidationSchema } from '#lib/schema_issues.ts';
 import {
 	TESTING_FLOOD_MAX_COUNT,
 	TESTING_FLOOD_MAX_SIZE,
@@ -78,8 +77,8 @@ const SPECS = [
 	testing_action_manifest_action_spec
 ];
 
-/** A spec slot, typed `ValidationSchema`, as the fuz_schema schema it must be. */
-const fuz_slot = (schema: ValidationSchema): AnySchema => {
+/** A spec slot, typed `AnySchema`, as the fuz_schema schema it must be. */
+const fuz_slot = (schema: AnySchema): AnySchema => {
 	if (!is_schema(schema)) throw new Error('a spec slot is no fuz_schema schema');
 	return schema;
 };
@@ -92,7 +91,7 @@ const first_issue = (schema: AnySchema, input: unknown) => {
 	return { kind, path, expected, received, message: format_issue(result.issues[0]!) };
 };
 
-const SAMPLES: Array<[name: string, schema: ValidationSchema, samples: ReadonlyArray<unknown>]> = [
+const SAMPLES: Array<[name: string, schema: AnySchema, samples: ReadonlyArray<unknown>]> = [
 	['_testing_drain_effects input', testing_drain_effects_action_spec.input, [undefined]],
 	['_testing_migration_tracker input', testing_migration_tracker_action_spec.input, [undefined]],
 	['_testing_action_manifest input', testing_action_manifest_action_spec.input, [undefined]],

@@ -13,7 +13,7 @@
 
 import { describe, test, assert } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { is_schema } from '@fuzdev/fuz_schema/schema.ts';
+import { is_schema, parse } from '@fuzdev/fuz_schema/schema.ts';
 import { get_schema_entries } from '@fuzdev/fuz_schema/introspect.ts';
 
 import {
@@ -29,7 +29,7 @@ import {
 import { ActingActor } from '#lib/primitive_schemas.ts';
 import { generate_app_surface } from '#lib/http/surface.ts';
 import { action_manifest_entry } from '#lib/testing/cross_backend/action_manifest.ts';
-import { parse_any, to_wire_issues, type WireIssue } from '#lib/schema_issues.ts';
+import { to_wire_issues, type WireIssue } from '#lib/schema_issues.ts';
 import { NAME_LENGTH_MAX, NAME_REGEX } from '#lib/auth/name_schema.ts';
 
 const SURFACE_FIXTURE_PATH = new URL('../fixtures/surface/self_service_role.json', import.meta.url);
@@ -156,9 +156,7 @@ describe('self_service_role_set schemas', () => {
 	});
 
 	test('the input verdicts', () => {
-		const accepted = INPUT_CORPUS.filter(
-			([, input]) => parse_any(SelfServiceRoleSetInput, input).ok
-		);
+		const accepted = INPUT_CORPUS.filter(([, input]) => parse(SelfServiceRoleSetInput, input).ok);
 		assert.deepStrictEqual(
 			accepted.map(([label]) => label),
 			[
@@ -175,7 +173,7 @@ describe('self_service_role_set schemas', () => {
 
 	test('the output verdicts', () => {
 		const accepted = OUTPUT_CORPUS.filter(
-			([, output]) => parse_any(SelfServiceRoleSetOutput, output).ok
+			([, output]) => parse(SelfServiceRoleSetOutput, output).ok
 		);
 		assert.deepStrictEqual(
 			accepted.map(([label]) => label),
@@ -185,11 +183,11 @@ describe('self_service_role_set schemas', () => {
 
 	test('an accepted input comes out as given, acting lowercased', () => {
 		for (const [label, input] of INPUT_CORPUS.slice(0, 5)) {
-			const result = parse_any(SelfServiceRoleSetInput, input);
+			const result = parse(SelfServiceRoleSetInput, input);
 			assert.ok(result.ok, label);
 			assert.deepStrictEqual<unknown>(result.value, input, label);
 		}
-		const result = parse_any(SelfServiceRoleSetInput, {
+		const result = parse(SelfServiceRoleSetInput, {
 			role: 'admin',
 			enabled: true,
 			acting: ID.toUpperCase()
@@ -259,7 +257,7 @@ describe('self_service_role_set schemas', () => {
 			]
 		];
 		for (const [input, issues] of cases) {
-			const result = parse_any(SelfServiceRoleSetInput, input);
+			const result = parse(SelfServiceRoleSetInput, input);
 			assert.ok(!result.ok, JSON.stringify(input));
 			assert.deepStrictEqual(to_wire_issues(result.issues, input), issues, JSON.stringify(input));
 		}

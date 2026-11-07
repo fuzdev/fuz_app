@@ -8,6 +8,7 @@
 
 import { describe, test, assert } from 'vitest';
 import * as s from '@fuzdev/fuz_schema/schema.ts';
+import type { AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	generate_params_test_cases,
@@ -18,7 +19,6 @@ import {
 	to_object_schema_view
 } from '#lib/testing/schema_generators.ts';
 import { ActingActor, FactHashSchema, Uuid } from '#lib/primitive_schemas.ts';
-import type { ValidationSchema } from '#lib/schema_issues.ts';
 
 const NIL_UUID = '00000000-0000-0000-0000-000000000000';
 
@@ -41,7 +41,7 @@ const TableRowsQuery = s.object({
 });
 
 // the generated valid string of each field of `schema`, by name
-const string_param_of = (schema: ValidationSchema, name: string): string | null => {
+const string_param_of = (schema: AnySchema, name: string): string | null => {
 	const view = to_object_schema_view(schema, 'string_param_of');
 	return generate_valid_string_param(
 		view.fields.find((f) => f.name === name)!,

@@ -39,13 +39,13 @@ import {
 	object,
 	one_of,
 	string,
-	type Infer
+	type Infer,
+	type AnySchema
 } from '@fuzdev/fuz_schema/schema.ts';
 
 import { AuthAxisState, type RouteAuth } from '../../http/auth_shape.ts';
 import { RateLimitKey } from '../../rate_limiter.ts';
 import { is_void_schema } from '../../http/schema_helpers.ts';
-import type { ValidationSchema } from '../../schema_issues.ts';
 import type { RequestResponseActionSpec } from '../../actions/action_spec.ts';
 
 /**
@@ -99,7 +99,7 @@ const sorted_strings = (xs: ReadonlyArray<string> | undefined): Array<string> =>
  */
 export const action_manifest_entry = (spec: {
 	readonly method: string;
-	readonly input: ValidationSchema;
+	readonly input: AnySchema;
 	readonly auth: RouteAuth;
 	readonly side_effects: boolean;
 	readonly rate_limit?: RateLimitKey;

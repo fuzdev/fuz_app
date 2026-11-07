@@ -21,6 +21,7 @@ import './assert_dev_env.ts';
  */
 
 import { describe, test, beforeAll, assert } from 'vitest';
+import type { AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { AppSurfaceSpec } from '../http/surface.ts';
 import { format_route_key } from '../http/surface_query.ts';
@@ -39,7 +40,6 @@ import {
 	schema_to_surface
 } from '../http/schema_helpers.ts';
 import { is_keeper_auth, is_public_auth, type RouteAuth } from '../http/auth_shape.ts';
-import type { ValidationSchema } from '../schema_issues.ts';
 import {
 	sensitive_field_blocklist,
 	admin_only_field_blocklist,
@@ -110,7 +110,7 @@ interface OutputSchemaEntry {
 	 */
 	key: string;
 	kind: 'route' | 'rpc' | 'ws';
-	schema: ValidationSchema;
+	schema: AnySchema;
 	/** Whether only admins or the keeper reach it. */
 	elevated: boolean;
 }

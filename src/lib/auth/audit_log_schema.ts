@@ -35,7 +35,7 @@ import {
 } from '@fuzdev/fuz_schema/schema.ts';
 
 import { bounded_string, Email, Timestamp, Uuid } from '../primitive_schemas.ts';
-import { assert_validation_schema, type ValidationSchema } from '../schema_issues.ts';
+import { assert_validation_schema } from '../schema_issues.ts';
 import { AuthSessionJson, SessionId } from './account_schema.ts';
 import { ApiTokenId } from './api_token.ts';
 import { BUILTIN_CREDENTIAL_TYPES } from './credential_type_schema.ts';
@@ -663,7 +663,7 @@ export interface AuditLogConfig {
 	 * Per-event-type metadata schemas. Missing entries skip metadata
 	 * validation for that type (row still written; metadata stored as raw JSONB).
 	 */
-	readonly metadata_schemas: Readonly<Record<string, ValidationSchema>>;
+	readonly metadata_schemas: Readonly<Record<string, AnySchema>>;
 }
 
 /** Builtin fuz_app audit-log config — every existing event type and its metadata schema. */
@@ -681,10 +681,10 @@ export interface CreateAuditLogConfigOptions {
 	 *
 	 * Collisions with builtin event-type strings throw at construction, and so
 	 * does a value that is neither `null` nor a schema of either library.
-	 * Schemas are run via `parse_any` at insert time; mismatches log + count
+	 * Schemas are run via `parse` at insert time; mismatches log + count
 	 * but never throw (fail-open — see the drift counters in `auth/audit_log_queries.ts`).
 	 */
-	extra_events?: Readonly<Record<string, ValidationSchema | null>>;
+	extra_events?: Readonly<Record<string, AnySchema | null>>;
 }
 
 /**
@@ -708,7 +708,7 @@ export const create_audit_log_config = (options?: CreateAuditLogConfigOptions): 
 	if (extra_entries.length === 0) return builtin_audit_log_config;
 	const builtin_set: ReadonlySet<string> = new Set(AUDIT_EVENT_TYPES);
 	const extra_keys: Array<string> = [];
-	const metadata_schemas: Record<string, ValidationSchema> = { ...audit_metadata_schemas };
+	const metadata_schemas: Record<string, AnySchema> = { ...audit_metadata_schemas };
 	for (const [t, schema] of extra_entries) {
 		if (builtin_set.has(t)) {
 			throw new Error(

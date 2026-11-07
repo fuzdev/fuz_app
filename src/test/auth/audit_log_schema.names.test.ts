@@ -13,7 +13,7 @@
  */
 
 import { describe, test, assert } from 'vitest';
-import { is_schema } from '@fuzdev/fuz_schema/schema.ts';
+import { is_schema, parse } from '@fuzdev/fuz_schema/schema.ts';
 import { to_json_schema } from '@fuzdev/fuz_schema/json_schema.ts';
 
 import {
@@ -25,7 +25,7 @@ import {
 	AuditEventTypeName,
 	AuditOutcome
 } from '#lib/auth/audit_log_schema.ts';
-import { parse_any, to_wire_issues, type WireIssue } from '#lib/schema_issues.ts';
+import { to_wire_issues, type WireIssue } from '#lib/schema_issues.ts';
 import { NAME_LENGTH_MAX } from '#lib/auth/name_schema.ts';
 
 /** Names of the grammar and around it, and values that are no string. */
@@ -74,10 +74,10 @@ const OUTCOME_CORPUS: Array<unknown> = [
 
 /** What a parse gave: its output, or its wire issues. */
 const outcome_of = (
-	schema: Parameters<typeof parse_any>[0],
+	schema: Parameters<typeof parse>[0],
 	input: unknown
 ): { ok: true; value: unknown } | { ok: false; issues: Array<WireIssue> } => {
-	const result = parse_any(schema, input);
+	const result = parse(schema, input);
 	return result.ok
 		? { ok: true, value: result.value }
 		: { ok: false, issues: to_wire_issues(result.issues, input) };

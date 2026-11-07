@@ -9,6 +9,7 @@
 import { describe, test, assert } from 'vitest';
 import * as s from '@fuzdev/fuz_schema/schema.ts';
 import { meta } from '@fuzdev/fuz_schema/meta.ts';
+import type { AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	expected_invalid_reason,
@@ -27,11 +28,10 @@ import {
 	ERROR_OUTCOME_INVALID,
 	ERROR_SINCE_SEQ_INVALID
 } from '#lib/http/error_schemas.ts';
-import type { ValidationSchema } from '#lib/schema_issues.ts';
 import { Uuid } from '#lib/primitive_schemas.ts';
 
 /** Each case's label → the reason it owes. */
-const owed = (input: ValidationSchema): Map<string, string | undefined> =>
+const owed = (input: AnySchema): Map<string, string | undefined> =>
 	new Map(
 		generate_rpc_params_test_cases(input).map((tc) => [
 			tc.label,

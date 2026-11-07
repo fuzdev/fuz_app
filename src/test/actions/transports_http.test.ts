@@ -19,7 +19,6 @@ import { meta } from '@fuzdev/fuz_schema/meta.ts';
 
 import { DEFAULT_MAX_GET_URL_LENGTH, FrontendHttpTransport } from '#lib/actions/transports_http.ts';
 import type { ActionSpecUnion } from '#lib/actions/action_spec.ts';
-import type { ValidationSchema } from '#lib/schema_issues.ts';
 import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
 import { is_jsonrpc_error_response } from '#lib/http/jsonrpc_helpers.ts';
 import type { JsonrpcRequest } from '#lib/http/jsonrpc.ts';
@@ -46,7 +45,7 @@ const stub_fetch = (body: string, status: number, status_text = ''): void => {
 const create_spec = (
 	method: string,
 	side_effects: boolean,
-	input: ValidationSchema = optional(object({}))
+	input: AnySchema = optional(object({}))
 ): ActionSpecUnion => ({
 	method,
 	kind: 'request_response',

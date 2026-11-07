@@ -61,6 +61,7 @@ import '../assert_dev_env.ts';
  */
 
 import { assert, describe } from 'vitest';
+import { parse } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	account_session_list_action_spec,
@@ -77,7 +78,6 @@ import {
 	audit_log_event_specs
 } from '../../realtime/audit_log_sse.ts';
 import { SSE_CONNECTED_COMMENT } from '../../realtime/sse_constants.ts';
-import { parse_any } from '../../schema_issues.ts';
 import { create_sse_transport, type SseTransport } from '../transports/sse_transport.ts';
 import { create_rpc_post_init } from '../rpc_helpers.ts';
 import { DEFAULT_TEST_PASSWORD } from '../test_credentials.ts';
@@ -144,7 +144,7 @@ const assert_audit_data_frame = (frame: string): void => {
 	assert.strictEqual(typeof payload.method, 'string', 'audit data frame method must be a string');
 	const spec = audit_log_event_specs.find((s) => s.method === payload.method);
 	assert.ok(spec, `no EventSpec declared for audit method '${String(payload.method)}'`);
-	const result = parse_any(spec.params, payload.params);
+	const result = parse(spec.params, payload.params);
 	assert.ok(
 		result.ok,
 		`audit data frame params mismatch for '${String(payload.method)}': ${

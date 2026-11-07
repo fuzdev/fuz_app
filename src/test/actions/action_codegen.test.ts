@@ -245,7 +245,7 @@ describe('FrontendActionsApi method signature', () => {
 		const imports = new ImportBuilder();
 		const sig = api_signature(create_rr('frontend'), imports);
 		assert.ok(sig.startsWith('thing_create: ('));
-		assert.ok(sig.includes("input: ActionInputs['thing_create']"));
+		assert.ok(sig.includes("input: ActionCallInputs['thing_create']"));
 		assert.ok(sig.includes('options?: RpcClientCallOptions'));
 		assert.ok(
 			sig.includes(
@@ -254,7 +254,7 @@ describe('FrontendActionsApi method signature', () => {
 		);
 		const built = imports.build();
 		assert.ok(
-			built.includes("import type {ActionInputs, ActionOutputs} from './action_collections.ts'")
+			built.includes("import type {ActionCallInputs, ActionOutputs} from './action_collections.ts'")
 		);
 		assert.ok(
 			built.includes(
@@ -275,11 +275,11 @@ describe('FrontendActionsApi method signature', () => {
 		]) {
 			assert.ok(is(spec.input, {}), `${spec.method}: precondition`);
 			const sig = api_signature(spec, new ImportBuilder());
-			assert.ok(sig.includes(`input: ActionInputs['${spec.method}']`), sig);
+			assert.ok(sig.includes(`input: ActionCallInputs['${spec.method}']`), sig);
 		}
 		// an all-optional input outside the list stays optional
 		const sig = api_signature(cell_list_action_spec, new ImportBuilder());
-		assert.ok(sig.includes("input?: ActionInputs['cell_list']"), sig);
+		assert.ok(sig.includes("input?: ActionCallInputs['cell_list']"), sig);
 	});
 
 	test('remote_notification — Promise<Result<{value: void}>> with options arg', () => {
@@ -291,7 +291,7 @@ describe('FrontendActionsApi method signature', () => {
 		const imports = new ImportBuilder();
 		const sig = api_signature(create_rn('backend'), imports);
 		assert.ok(sig.startsWith('thing_created: ('));
-		assert.ok(sig.includes("input: ActionInputs['thing_created']"));
+		assert.ok(sig.includes("input: ActionCallInputs['thing_created']"));
 		assert.ok(sig.includes('options?: RpcClientCallOptions'));
 		assert.ok(
 			sig.includes(
@@ -347,16 +347,16 @@ describe('FrontendActionsApi method signature', () => {
 		assert.ok(!built.includes('RpcClientCallOptions'));
 	});
 
-	test('null-input spec skips ActionInputs import', () => {
+	test('null-input spec skips ActionCallInputs import', () => {
 		// Spec with `input: literal(null)` emits `input?: void` and references no
-		// ActionInputs slot — registering the import would produce a dead
-		// `import type {ActionInputs}` on a consumer that has only null-input
+		// ActionCallInputs slot — registering the import would produce a dead
+		// `import type {ActionCallInputs}` on a consumer that has only null-input
 		// methods.
 		const imports = new ImportBuilder();
 		const sig = api_signature(create_lc('frontend', false), imports);
 		assert.ok(sig.includes('input?: void'));
 		const built = imports.build();
-		assert.ok(!built.includes('ActionInputs'));
+		assert.ok(!built.includes('ActionCallInputs'));
 	});
 
 	// --- optional-input detection ---
@@ -390,7 +390,7 @@ describe('FrontendActionsApi method signature', () => {
 		};
 		const sig = api_signature(spec, imports);
 		assert.ok(
-			sig.includes("input?: ActionInputs['admin_account_list']"),
+			sig.includes("input?: ActionCallInputs['admin_account_list']"),
 			`expected optional input, got: ${sig}`
 		);
 	});
@@ -417,7 +417,7 @@ describe('FrontendActionsApi method signature', () => {
 		};
 		const sig = api_signature(spec, imports);
 		assert.ok(
-			sig.includes("input?: ActionInputs['audit_log_list']"),
+			sig.includes("input?: ActionCallInputs['audit_log_list']"),
 			`expected optional input, got: ${sig}`
 		);
 	});
@@ -444,12 +444,12 @@ describe('FrontendActionsApi method signature', () => {
 		};
 		const sig = api_signature(spec, imports);
 		assert.ok(
-			sig.includes("input: ActionInputs['admin_session_revoke_all']"),
+			sig.includes("input: ActionCallInputs['admin_session_revoke_all']"),
 			`expected required input, got: ${sig}`
 		);
 		// Belt-and-suspenders — must NOT emit the optional shape.
 		assert.ok(
-			!sig.includes("input?: ActionInputs['admin_session_revoke_all']"),
+			!sig.includes("input?: ActionCallInputs['admin_session_revoke_all']"),
 			`expected required input, got optional: ${sig}`
 		);
 	});
@@ -471,7 +471,7 @@ describe('FrontendActionsApi method signature', () => {
 		};
 		const sig = api_signature(spec, imports);
 		assert.ok(
-			sig.includes("input?: ActionInputs['wrapped_input']"),
+			sig.includes("input?: ActionCallInputs['wrapped_input']"),
 			`expected optional input, got: ${sig}`
 		);
 	});
@@ -1039,7 +1039,7 @@ ${block}
 });
 
 describe('generate_action_inputs_outputs', () => {
-	test('emits four pairs (const + interface for inputs and outputs); protocol actions filtered', () => {
+	test('emits the const + interface pairs for inputs and outputs and the call-input interface; protocol actions filtered', () => {
 		const imports = new ImportBuilder();
 		const result = generate_action_inputs_outputs(fixture_specs, imports);
 
@@ -1058,9 +1058,18 @@ describe('generate_action_inputs_outputs', () => {
 		assert.ok(result.includes('thing_create: Infer<typeof specs.thing_create_action_spec.input>;'));
 		assert.ok(!result.includes('heartbeat: Infer<typeof specs.heartbeat_action_spec.input>;'));
 
-		// Registers the `Infer` + namespace imports.
+		// `ActionCallInputs` types each input as the caller passes it.
+		assert.ok(result.includes('export interface ActionCallInputs {'));
+		assert.ok(
+			result.includes('thing_create: InferInput<typeof specs.thing_create_action_spec.input>;')
+		);
+		assert.ok(!result.includes('heartbeat: InferInput<typeof specs.heartbeat_action_spec.input>;'));
+
+		// Registers the `Infer` + `InferInput` + namespace imports.
 		const built = imports.build();
-		assert.ok(built.includes("import type {Infer} from '@fuzdev/fuz_schema/schema.ts';"));
+		assert.ok(
+			built.includes("import type {Infer, InferInput} from '@fuzdev/fuz_schema/schema.ts';")
+		);
 		assert.ok(built.includes("import * as specs from './action_specs.ts';"));
 	});
 
@@ -1172,7 +1181,7 @@ describe('generate_frontend_actions_api', () => {
 		// request_response: signature with options + Promise<Result>.
 		assert.ok(
 			result.includes(
-				"thing_create: (input: ActionInputs['thing_create'], options?: RpcClientCallOptions)"
+				"thing_create: (input: ActionCallInputs['thing_create'], options?: RpcClientCallOptions)"
 			)
 		);
 		// sync local_call: direct return, no options.
@@ -1185,7 +1194,7 @@ describe('generate_frontend_actions_api', () => {
 		assert.ok(built.includes('Result'));
 		assert.ok(built.includes('JsonrpcErrorObject'));
 		assert.ok(built.includes('RpcClientCallOptions'));
-		assert.ok(built.includes('ActionInputs'));
+		assert.ok(built.includes('ActionCallInputs'));
 		assert.ok(built.includes('ActionOutputs'));
 	});
 
@@ -1199,7 +1208,7 @@ describe('generate_frontend_actions_api', () => {
 		// meaningful input" case
 		assert.ok(
 			result.includes(
-				"heartbeat: (input?: ActionInputs['heartbeat'], options?: RpcClientCallOptions)"
+				"heartbeat: (input?: ActionCallInputs['heartbeat'], options?: RpcClientCallOptions)"
 			)
 		);
 		assert.ok(result.includes('cancel:'));
@@ -1257,7 +1266,7 @@ describe('generate_backend_actions_api', () => {
 		assert.ok(result.includes('export interface BackendActionsApi {'));
 		// thing_changed (remote_notification, backend initiator) is in.
 		assert.ok(
-			result.includes("thing_changed: (input: ActionInputs['thing_changed']) => Promise<void>;")
+			result.includes("thing_changed: (input: ActionCallInputs['thing_changed']) => Promise<void>;")
 		);
 		// cancel (remote_notification, frontend initiator) is OUT.
 		assert.ok(!result.includes('cancel:'));
@@ -1277,7 +1286,7 @@ describe('generate_backend_actions_api', () => {
 		const built = imports.build();
 		assert.ok(built.includes("import * as specs from './action_specs.ts';"));
 		assert.ok(built.includes("from './action_collections.ts'"));
-		assert.ok(built.includes('ActionInputs'));
+		assert.ok(built.includes('ActionCallInputs'));
 		assert.ok(built.includes('ActionSpecUnion'));
 	});
 
@@ -1373,8 +1382,10 @@ describe('qualify_spec', () => {
 
 		const built = imports.build();
 		assert.ok(!built.includes('* as specs'));
-		// `Infer` still imported.
-		assert.ok(built.includes("import type {Infer} from '@fuzdev/fuz_schema/schema.ts';"));
+		// `Infer` + `InferInput` still imported.
+		assert.ok(
+			built.includes("import type {Infer, InferInput} from '@fuzdev/fuz_schema/schema.ts';")
+		);
 	});
 
 	test('generate_backend_actions_api uses qualified spec references in array', () => {
@@ -1389,8 +1400,8 @@ describe('qualify_spec', () => {
 
 		const built = imports.build();
 		assert.ok(!built.includes('* as specs'));
-		// ActionInputs + ActionSpecUnion still imported.
-		assert.ok(built.includes('ActionInputs'));
+		// ActionCallInputs + ActionSpecUnion still imported.
+		assert.ok(built.includes('ActionCallInputs'));
 		assert.ok(built.includes('ActionSpecUnion'));
 	});
 
@@ -1587,7 +1598,7 @@ describe('generate_backend_actions_api — streams target exclusion', () => {
 
 		// filer_change is a real broadcast — included.
 		assert.ok(
-			result.includes("filer_change: (input: ActionInputs['filer_change']) => Promise<void>;")
+			result.includes("filer_change: (input: ActionCallInputs['filer_change']) => Promise<void>;")
 		);
 		assert.ok(result.includes('specs.filer_change_action_spec,'));
 		// completion_progress is a streams target — excluded from both interface and array.
@@ -1768,7 +1779,7 @@ describe('non-identifier method names (slash)', () => {
 		const result = generate_frontend_actions_api([slash_spec], imports);
 		assert.ok(
 			result.includes(
-				"'peer/echo': (input: ActionInputs['peer/echo'], options?: RpcClientCallOptions)"
+				"'peer/echo': (input: ActionCallInputs['peer/echo'], options?: RpcClientCallOptions)"
 			)
 		);
 	});

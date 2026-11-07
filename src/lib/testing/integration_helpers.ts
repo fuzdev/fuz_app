@@ -7,6 +7,7 @@ import './assert_dev_env.ts';
  */
 
 import { assert } from 'vitest';
+import { parse } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { RouteSpec, RouteMethod } from '../http/route_spec.ts';
 import { is_null_schema } from '../http/schema_helpers.ts';
@@ -16,7 +17,6 @@ import { ERROR_AUTHENTICATION_REQUIRED } from '../http/error_schemas.ts';
 import { ROLE_ADMIN } from '../auth/role_schema.ts';
 import type { TestAccount } from './app_server.ts';
 import { create_test_request_headers } from './test_origin.ts';
-import { parse_any } from '../schema_issues.ts';
 import {
 	decode_route_path,
 	find_mounted_route,
@@ -191,7 +191,7 @@ export const assert_response_matches_spec = async (
 	}
 
 	if (response.ok) {
-		const result = parse_any(spec.output, body);
+		const result = parse(spec.output, body);
 		if (!result.ok) {
 			throw new Error(
 				`Output schema mismatch for ${method} ${path} (${response.status}): ${JSON.stringify(

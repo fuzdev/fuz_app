@@ -1,8 +1,8 @@
 /**
  * Tests for action_spec.ts — the spec interfaces, the kind/initiator/phase
  * enums and their const lists, `is_action_spec`, and the handler types a spec
- * of either schema library gives (`HandlerForSpec`, `ValidationOutput`,
- * `ValidationInput`). The type pins are checked by `gro typecheck`.
+ * of either schema library gives (`HandlerForSpec`, `Infer`,
+ * `InferInput`). The type pins are checked by `gro typecheck`.
  *
  * @module
  */
@@ -16,7 +16,9 @@ import {
 	optional,
 	string,
 	void as fuz_void,
-	with_default
+	with_default,
+	type InferInput,
+	type Infer
 } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
@@ -38,7 +40,6 @@ import type {
 	ActionContext,
 	HandlerForSpec
 } from '#lib/actions/action_types.ts';
-import type { ValidationInput, ValidationOutput } from '#lib/schema_issues.ts';
 import { ActingActor, type Uuid } from '#lib/primitive_schemas.ts';
 
 describe('ActionKind', () => {
@@ -203,11 +204,11 @@ describe('is_action_spec', () => {
 	});
 });
 
-describe('ValidationOutput / ValidationInput (type-level)', () => {
+describe('Infer / InferInput (type-level)', () => {
 	test('a schema gives its output and input types', () => {
 		const _schema = object({ name: string, n: with_default(number, 1) });
-		expectTypeOf<ValidationOutput<typeof _schema>>().toEqualTypeOf<{ name: string; n: number }>();
-		expectTypeOf<ValidationInput<typeof _schema>>().toEqualTypeOf<{
+		expectTypeOf<Infer<typeof _schema>>().toEqualTypeOf<{ name: string; n: number }>();
+		expectTypeOf<InferInput<typeof _schema>>().toEqualTypeOf<{
 			name: string;
 			n?: number | undefined;
 		}>();

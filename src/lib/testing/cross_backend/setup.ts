@@ -23,15 +23,18 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import { array, literal, parse, string, strip_object } from '@fuzdev/fuz_schema/schema.ts';
+import {
+	array,
+	literal,
+	parse,
+	string,
+	strip_object,
+	type Infer,
+	type AnySchema
+} from '@fuzdev/fuz_schema/schema.ts';
 
 import { USERNAME_LENGTH_MAX, Uuid } from '../../primitive_schemas.ts';
-import {
-	format_issues,
-	parse_any,
-	type ValidationOutput,
-	type ValidationSchema
-} from '../../schema_issues.ts';
+import { format_issues } from '../../schema_issues.ts';
 
 import { DAEMON_TOKEN_HEADER } from '../../auth/daemon_token.ts';
 import { DEFAULT_TEST_PASSWORD } from '../test_credentials.ts';
@@ -608,12 +611,12 @@ export const capture_schema_snapshot = async (
  * @returns the parsed answer, the schema's output
  * @throws Error when `raw` fails `schema`
  */
-export const parse_capture_answer = <T extends ValidationSchema>(
+export const parse_capture_answer = <T extends AnySchema>(
 	method: string,
 	schema: T,
 	raw: unknown
-): ValidationOutput<T> => {
-	const parsed = parse_any(schema, raw);
+): Infer<T> => {
+	const parsed = parse(schema, raw);
 	if (!parsed.ok) {
 		throw new Error(`${method}: the answer fails its schema:\n${format_issues(parsed.issues)}`);
 	}
@@ -632,11 +635,11 @@ export const parse_capture_answer = <T extends ValidationSchema>(
  * drop unmodeled fields the parity diff should still see — and it takes an
  * `exclude_tables` param.)
  */
-const capture_via_daemon = async <T extends ValidationSchema>(
+const capture_via_daemon = async <T extends AnySchema>(
 	handle: ReconstructedBootstrappedBackendHandle,
 	method: string,
 	schema: T
-): Promise<ValidationOutput<T>> => {
+): Promise<Infer<T>> => {
 	const raw = await rpc_via_transport(
 		handle.keeper_daemon_transport,
 		handle.config.rpc_path,

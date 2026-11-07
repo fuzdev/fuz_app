@@ -8,6 +8,7 @@
  */
 
 import { describe, test, assert } from 'vitest';
+import { parse } from '@fuzdev/fuz_schema/schema.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
 
 import {
@@ -16,7 +17,6 @@ import {
 	RoleGrantAssignInput,
 	RoleGrantOfferCreateInput
 } from '#lib/auth/role_grant_offer_action_specs.ts';
-import { parse_any } from '#lib/schema_issues.ts';
 import { NAME_LENGTH_MAX } from '#lib/auth/name_schema.ts';
 
 const SCOPE = '7c9e6679-7425-40de-944b-e07fc1f90ae7' as Uuid;
@@ -39,15 +39,15 @@ describe('grant inputs pair scope_kind with scope_id', () => {
 		test(`${name} refuses a half-scoped input and admits a pair or a null pair`, () => {
 			const base = { to_account_id: TO_ACCOUNT, role: 'teacher' };
 			for (const half of [{ scope_id: SCOPE }, { scope_kind: 'classroom' }]) {
-				const refused = parse_any(schema, { ...base, ...half });
+				const refused = parse(schema, { ...base, ...half });
 				assert.ok(!refused.ok);
 				assert.strictEqual(refused.issues[0]!.message, GRANT_SCOPE_PAIRED_MESSAGE);
 			}
-			const paired = parse_any(schema, { ...base, scope_kind: 'classroom', scope_id: SCOPE });
+			const paired = parse(schema, { ...base, scope_kind: 'classroom', scope_id: SCOPE });
 			assert.ok(paired.ok);
 			assert.strictEqual((paired.value as { scope_kind?: unknown }).scope_kind, 'classroom');
-			assert.ok(parse_any(schema, { ...base, scope_kind: null, scope_id: null }).ok);
-			assert.ok(parse_any(schema, base).ok);
+			assert.ok(parse(schema, { ...base, scope_kind: null, scope_id: null }).ok);
+			assert.ok(parse(schema, base).ok);
 		});
 	}
 });
@@ -81,19 +81,19 @@ describe('grant inputs hold scope_kind to the scope-kind grammar', () => {
 		test(`${name} admits a scope_kind on the grammar and refuses one off it`, () => {
 			const base = { to_account_id: TO_ACCOUNT, role: 'teacher', scope_id: SCOPE };
 			for (const scope_kind of ON_GRAMMAR) {
-				const parsed = parse_any(schema, { ...base, scope_kind });
+				const parsed = parse(schema, { ...base, scope_kind });
 				assert.ok(parsed.ok, JSON.stringify(scope_kind));
 				assert.strictEqual((parsed.value as { scope_kind?: unknown }).scope_kind, scope_kind);
 			}
 			for (const scope_kind of OFF_GRAMMAR) {
-				const refused = parse_any(schema, { ...base, scope_kind });
+				const refused = parse(schema, { ...base, scope_kind });
 				assert.ok(!refused.ok, JSON.stringify(scope_kind));
 				assert.deepStrictEqual(refused.issues[0]!.path, ['scope_kind']);
 			}
 		});
 
 		test(`${name} refuses the index token with the all-zeros uuid`, () => {
-			const refused = parse_any(schema, {
+			const refused = parse(schema, {
 				to_account_id: TO_ACCOUNT,
 				role: 'teacher',
 				scope_kind: 'GLOBAL',

@@ -43,6 +43,7 @@ import '../assert_dev_env.ts';
  */
 
 import { assert, describe, test } from 'vitest';
+import { parse } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { AppSurfaceSpec, RpcEndpointSpec } from '../../http/surface.ts';
 import type { RouteMethod, RouteSpec } from '../../http/route_spec.ts';
@@ -80,7 +81,6 @@ import type { SetupTest, TestFixture } from './setup.ts';
 import { mint_narrowed_api_token } from './narrowed_api_token.ts';
 import { xfail_until } from './xfail.ts';
 import type { WsEndpointTarget } from './ws_endpoint.ts';
-import { parse_any } from '../../schema_issues.ts';
 
 /**
  * Names a seeded `extra_accounts` username for the `role_holder` /
@@ -863,7 +863,7 @@ const assert_rpc_case = (
 			)}`
 		);
 		assert.strictEqual(res.status, c.expect.status, `${c.name}: status`);
-		const parsed = parse_any(action.spec.output, res.result);
+		const parsed = parse(action.spec.output, res.result);
 		assert.ok(
 			parsed.ok,
 			`${c.name}: result does not match spec.output: ${JSON.stringify(
@@ -900,7 +900,7 @@ const assert_rest_case = (
 	const { status, body } = sent;
 	assert.strictEqual(status, c.expect.status, `${c.name}: status`);
 	if (is_success_status(c.expect.status)) {
-		const parsed = parse_any(route.output, body);
+		const parsed = parse(route.output, body);
 		assert.ok(
 			parsed.ok,
 			`${c.name}: body does not match route output: ${JSON.stringify(

@@ -1,7 +1,7 @@
 /**
  * `describe_adversarial_404` over a route whose params and input are
  * fuz_schema and whose 404 is a definition: the stub answers the
- * definition's code, its body validated with `parse_any` against the route's
+ * definition's code, its body validated with `parse` against the route's
  * declared 404.
  *
  * @module

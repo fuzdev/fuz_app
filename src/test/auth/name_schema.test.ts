@@ -29,7 +29,7 @@ import {
 	ScopeKindName
 } from '#lib/auth/scope_kind_schema.ts';
 import { is_route_scope_capability } from '#lib/auth/token_scope.ts';
-import { parse_any, to_wire_issues } from '#lib/schema_issues.ts';
+import { to_wire_issues } from '#lib/schema_issues.ts';
 
 /** Names on the grammar and around it, each with its verdict. */
 const CORPUS: Array<[name: string, valid: boolean]> = [
@@ -252,7 +252,7 @@ describe('the shared name grammar', () => {
 			for (const [row, input] of inputs.entries()) {
 				const name = `${label} ${JSON.stringify(input) ?? String(input)}`;
 				const answer = answers[row]!;
-				const fuz = parse_any(schema, input);
+				const fuz = parse(schema, input);
 				if (answer === 'accepted') {
 					assert.ok(fuz.ok, name);
 					assert.strictEqual(fuz.value, input, name);

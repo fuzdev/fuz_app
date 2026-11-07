@@ -14,7 +14,7 @@
 import { describe, test, assert } from 'vitest';
 import { format_issue, is_schema, parse, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 
-import { WireIssue, type ValidationSchema } from '#lib/schema_issues.ts';
+import { WireIssue } from '#lib/schema_issues.ts';
 import { HealthResponse } from '#lib/http/health_schema.ts';
 import {
 	create_health_route_spec,
@@ -86,8 +86,8 @@ const surface_spec = create_surface_route_spec({
 });
 const audit_shape = create_audit_log_route_shape();
 
-/** A route slot, typed `ValidationSchema`, as the fuz_schema schema it must be. */
-const fuz_slot = (schema: ValidationSchema | undefined): AnySchema => {
+/** A route slot, typed `AnySchema`, as the fuz_schema schema it must be. */
+const fuz_slot = (schema: AnySchema | undefined): AnySchema => {
 	if (!is_schema(schema)) throw new Error('a route slot is no fuz_schema schema');
 	return schema;
 };

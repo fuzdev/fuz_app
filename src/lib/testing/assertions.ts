@@ -13,13 +13,12 @@ import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assert } from 'vitest';
-import type { AnySchema } from '@fuzdev/fuz_schema/schema.ts';
+import { type AnySchema, parse } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { AppSurface, AppSurfaceRoute } from '../http/surface.ts';
 import type { RouteErrorMap } from '../http/route_errors.ts';
 import { format_route_key } from '../http/surface_query.ts';
 import { is_public_auth } from '../http/auth_shape.ts';
-import { parse_any } from '../schema_issues.ts';
 import {
 	check_route_error,
 	format_route_error_check,
@@ -132,7 +131,7 @@ export const get_route_error_schema = (
  * @throws AssertionError if no schema is declared for the route+status pair.
  * @throws Error if the body does not satisfy the declared schema, a code the
  *   route doesn't declare at the status included, its message carrying the
- *   failed parse's issues (`parse_any`).
+ *   failed parse's issues (`parse`).
  */
 export const assert_error_schema_valid = (
 	lookup: ReadonlyMap<string, RouteErrorMap>,
@@ -143,7 +142,7 @@ export const assert_error_schema_valid = (
 	const key = format_route_key(route);
 	const schema = get_route_error_schema(lookup, route, status);
 	assert.ok(schema, `missing error schema for ${status} on ${key}`);
-	const result = parse_any(schema, body);
+	const result = parse(schema, body);
 	if (!result.ok) {
 		throw new Error(
 			`error schema mismatch for ${status} on ${key} (error ${JSON.stringify((body as { error?: unknown } | null)?.error)}): ${JSON.stringify(result.issues)}`

@@ -25,7 +25,7 @@
  */
 
 import { describe, test, assert } from 'vitest';
-import { is_schema } from '@fuzdev/fuz_schema/schema.ts';
+import { is_schema, parse, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	EMAIL_LENGTH_MAX,
@@ -66,24 +66,19 @@ import {
 	InviteListInput,
 	all_admin_action_specs
 } from '#lib/auth/admin_action_specs.ts';
-import {
-	parse_any,
-	to_wire_issues,
-	type ValidationSchema,
-	type WireIssue
-} from '#lib/schema_issues.ts';
+import { to_wire_issues, type WireIssue } from '#lib/schema_issues.ts';
 import { NAME_LENGTH_MAX } from '#lib/auth/name_schema.ts';
 
 const ID = '0f8fad5b-d9cb-469f-a165-70867728950e';
 const NOW = '2026-11-05T12:00:00.000Z';
 
-const issues_of = (schema: ValidationSchema, input: unknown): Array<WireIssue> | null => {
-	const result = parse_any(schema, input);
+const issues_of = (schema: AnySchema, input: unknown): Array<WireIssue> | null => {
+	const result = parse(schema, input);
 	return result.ok ? null : to_wire_issues(result.issues, input);
 };
 
 /** The issues as `[kind, path, expected]`, or `null` for an acceptance. */
-const shape_of = (schema: ValidationSchema, input: unknown): Array<unknown> | null =>
+const shape_of = (schema: AnySchema, input: unknown): Array<unknown> | null =>
 	issues_of(schema, input)?.map((i) => [i.kind, i.path, i.expected]) ?? null;
 
 const settings = {
@@ -93,7 +88,7 @@ const settings = {
 	updated_by_username: 'alice'
 };
 
-const samples: ReadonlyArray<[string, ValidationSchema, ReadonlyArray<unknown>]> = [
+const samples: ReadonlyArray<[string, AnySchema, ReadonlyArray<unknown>]> = [
 	[
 		'InviteCreateInput',
 		InviteCreateInput,
@@ -158,7 +153,7 @@ describe('the admin schemas', () => {
 
 	test.each(samples)('%s takes every valid sample', (_name, schema, values) => {
 		for (const value of values) {
-			assert.ok(parse_any(schema, value).ok, JSON.stringify(value));
+			assert.ok(parse(schema, value).ok, JSON.stringify(value));
 		}
 	});
 
@@ -172,8 +167,8 @@ describe('the admin schemas', () => {
 			AccountDeleteInput,
 			AppSettingsGetInput
 		]) {
-			const a = parse_any(schema, undefined);
-			const b = parse_any(schema, undefined);
+			const a = parse(schema, undefined);
+			const b = parse(schema, undefined);
 			assert.ok(a.ok && b.ok);
 			assert.deepStrictEqual(a.value, {});
 			assert.notStrictEqual(a.value, b.value);
@@ -182,10 +177,10 @@ describe('the admin schemas', () => {
 
 	test('the safe range bounds offset and since_seq', () => {
 		for (const value of [Number.MAX_SAFE_INTEGER + 1, 2 ** 53 + 2, 1e16]) {
-			assert.ok(!parse_any(AdminAccountListInput, { offset: value }).ok, String(value));
-			assert.ok(!parse_any(AuditLogListInput, { since_seq: value }).ok, String(value));
+			assert.ok(!parse(AdminAccountListInput, { offset: value }).ok, String(value));
+			assert.ok(!parse(AuditLogListInput, { since_seq: value }).ok, String(value));
 		}
-		assert.ok(parse_any(AuditLogListInput, { since_seq: Number.MAX_SAFE_INTEGER }).ok);
+		assert.ok(parse(AuditLogListInput, { since_seq: Number.MAX_SAFE_INTEGER }).ok);
 	});
 });
 
@@ -307,7 +302,7 @@ describe('the declared differences, pinned', () => {
 	test('the revoke-all count is a non-negative integer', () => {
 		for (const schema of [AdminSessionRevokeAllOutput, AdminTokenRevokeAllOutput]) {
 			for (const count of [0, 3, -0, Number.MAX_SAFE_INTEGER]) {
-				assert.ok(parse_any(schema, { ok: true, count }).ok, String(count));
+				assert.ok(parse(schema, { ok: true, count }).ok, String(count));
 			}
 			assert.deepStrictEqual(shape_of(schema, { ok: true, count: 1.5 }), [
 				['integer', ['count'], 'integer']
@@ -316,7 +311,7 @@ describe('the declared differences, pinned', () => {
 				['min_value', ['count'], '>= 0']
 			]);
 			for (const count of [-0.5, Number.MIN_VALUE]) {
-				assert.ok(!parse_any(schema, { ok: true, count }).ok, String(count));
+				assert.ok(!parse(schema, { ok: true, count }).ok, String(count));
 			}
 		}
 	});

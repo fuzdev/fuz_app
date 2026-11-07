@@ -10,7 +10,6 @@ import { assert, describe, test } from 'vitest';
 import { is_schema, parse } from '@fuzdev/fuz_schema/schema.ts';
 
 import { AuditStreamQuery } from '#lib/auth/audit_log_route_schema.ts';
-import { parse_any } from '#lib/schema_issues.ts';
 
 describe('AuditStreamQuery', () => {
 	test('is a fuz_schema schema', () => {
@@ -20,7 +19,7 @@ describe('AuditStreamQuery', () => {
 	test('takes an acting UUID or none', () => {
 		assert.isTrue(parse(AuditStreamQuery, {}).ok);
 		// what the query validation calls
-		assert.isTrue(parse_any(AuditStreamQuery, {}).ok);
+		assert.isTrue(parse(AuditStreamQuery, {}).ok);
 		assert.isTrue(parse(AuditStreamQuery, { acting: 'f81d4fae-7dec-11d0-a765-00a0c91e6bf6' }).ok);
 		assert.isFalse(parse(AuditStreamQuery, { acting: 'not-a-uuid' }).ok);
 	});

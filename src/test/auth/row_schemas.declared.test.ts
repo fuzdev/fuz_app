@@ -26,7 +26,7 @@
  */
 
 import { describe, test, assert } from 'vitest';
-import { is_schema } from '@fuzdev/fuz_schema/schema.ts';
+import { is_schema, parse, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	BLAKE3_HASH_MESSAGE,
@@ -71,12 +71,7 @@ import {
 	InviteListOutput
 } from '#lib/auth/admin_action_specs.ts';
 import { InviteJson, InviteWithUsernamesJson } from '#lib/auth/invite_schema.ts';
-import {
-	parse_any,
-	to_wire_issues,
-	type ValidationSchema,
-	type WireIssue
-} from '#lib/schema_issues.ts';
+import { to_wire_issues, type WireIssue } from '#lib/schema_issues.ts';
 
 const ID = '0f8fad5b-d9cb-469f-a165-70867728950e';
 const ID2 = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
@@ -149,21 +144,21 @@ const ENTRY = {
 };
 
 /** The rows holding a `username` and an `email`, each with a valid value. */
-const USERNAME_HOLDERS: ReadonlyArray<[ValidationSchema, Record<string, unknown>]> = [
+const USERNAME_HOLDERS: ReadonlyArray<[AnySchema, Record<string, unknown>]> = [
 	[SessionAccountJson, SESSION_ACCOUNT],
 	[InviteJson, INVITE]
 ];
 
-const issues_of = (schema: ValidationSchema, input: unknown): Array<WireIssue> | null => {
-	const result = parse_any(schema, input);
+const issues_of = (schema: AnySchema, input: unknown): Array<WireIssue> | null => {
+	const result = parse(schema, input);
 	return result.ok ? null : to_wire_issues(result.issues, input);
 };
 
 /** The issues as `[kind, path, expected]`, or `null` for an acceptance. */
-const shape_of = (schema: ValidationSchema, input: unknown): Array<unknown> | null =>
+const shape_of = (schema: AnySchema, input: unknown): Array<unknown> | null =>
 	issues_of(schema, input)?.map((i) => [i.kind, i.path, i.expected]) ?? null;
 
-const samples: ReadonlyArray<[string, ValidationSchema, ReadonlyArray<unknown>]> = [
+const samples: ReadonlyArray<[string, AnySchema, ReadonlyArray<unknown>]> = [
 	['SessionId', SessionId, [HASH, '0'.repeat(64)]],
 	[
 		'SessionAccountJson',
@@ -226,7 +221,7 @@ describe('the row schemas', () => {
 		(_name, schema, values) => {
 			assert.ok(is_schema(schema));
 			for (const value of values) {
-				assert.ok(parse_any(schema, value).ok, JSON.stringify(value));
+				assert.ok(parse(schema, value).ok, JSON.stringify(value));
 			}
 		}
 	);
@@ -281,7 +276,7 @@ describe('the declared differences, pinned', () => {
 			);
 		}
 		const bad = '2026-11-05 12:00:00+00';
-		const cases: ReadonlyArray<[ValidationSchema, unknown, Array<string | number>]> = [
+		const cases: ReadonlyArray<[AnySchema, unknown, Array<string | number>]> = [
 			[AdminAccountJson, { ...ADMIN_ACCOUNT, deleted_at: bad }, ['deleted_at']],
 			[AuthSessionJson, { ...SESSION, expires_at: bad }, ['expires_at']],
 			[AdminSessionJson, { ...ADMIN_SESSION, created_at: bad }, ['created_at']],

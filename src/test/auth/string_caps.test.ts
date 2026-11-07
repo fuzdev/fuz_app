@@ -11,7 +11,7 @@
 
 import { describe, test, assert } from 'vitest';
 import { get_schema_entries } from '@fuzdev/fuz_schema/introspect.ts';
-import { is } from '@fuzdev/fuz_schema/schema.ts';
+import { is, parse, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 
 import { USERNAME_PROVIDED_LENGTH_MAX, UsernameProvided } from '#lib/primitive_schemas.ts';
 import {
@@ -43,7 +43,6 @@ import {
 	ActorSearchInput,
 	ACTOR_SEARCH_QUERY_LENGTH_MAX
 } from '#lib/auth/actor_search_action_specs.ts';
-import { parse_any, type ValidationSchema } from '#lib/schema_issues.ts';
 
 /** U+1F600 — one code point, two UTF-16 code units. */
 const ASTRAL = '\u{1F600}';
@@ -52,8 +51,8 @@ const ASTRAL = '\u{1F600}';
 const astral_of = (units: number): string =>
 	ASTRAL.repeat(Math.floor(units / 2)) + (units % 2 === 0 ? '' : 'a');
 
-// read through `parse_any`
-const capped: Array<[name: string, schema: ValidationSchema, max: number]> = [
+// read through `parse`
+const capped: Array<[name: string, schema: AnySchema, max: number]> = [
 	['UsernameProvided', UsernameProvided, USERNAME_PROVIDED_LENGTH_MAX],
 	['Password', Password, PASSWORD_LENGTH_MAX],
 	['PasswordProvided', PasswordProvided, PASSWORD_LENGTH_MAX],
@@ -99,11 +98,11 @@ describe('length caps count UTF-16 code units', () => {
 		test(`${name}: astral at the cap passes, past it in units is refused`, () => {
 			const at_cap = astral_of(max);
 			assert.strictEqual(at_cap.length, max);
-			assert.ok(parse_any(schema, at_cap).ok);
+			assert.ok(parse(schema, at_cap).ok);
 			const over = astral_of(max + 1);
 			assert.strictEqual(over.length, max + 1);
 			assert.ok(Array.from(over).length <= max, 'at or under the cap in code points');
-			assert.ok(!parse_any(schema, over).ok);
+			assert.ok(!parse(schema, over).ok);
 		});
 	}
 });

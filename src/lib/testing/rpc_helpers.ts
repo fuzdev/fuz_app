@@ -11,7 +11,7 @@ import './assert_dev_env.ts';
  */
 
 import { assert } from 'vitest';
-import { is, parse, type Schema } from '@fuzdev/fuz_schema/schema.ts';
+import { is, parse, type Schema, type Infer, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	JSONRPC_VERSION,
@@ -30,12 +30,6 @@ import type { AppServerContext } from '../server/app_server_context.ts';
 import type { SessionOptions } from '../auth/session_cookie.ts';
 import { create_stub_app_server_context } from './stubs.ts';
 import { TEST_ORIGIN } from './test_origin.ts';
-import {
-	parse_any,
-	type ValidationOutput,
-	type ValidationSchema,
-	type ZodSchemaLike
-} from '../schema_issues.ts';
 
 /**
  * Union accepted by the suite-level `rpc_endpoints` option — eager array or
@@ -200,14 +194,11 @@ export const assert_jsonrpc_error_response = (
  *
  * @param output_schema - optional Zod or `@fuzdev/fuz_schema` schema to validate the `result` field against
  */
-export const assert_jsonrpc_success_response = (
-	body: unknown,
-	output_schema?: ValidationSchema
-): void => {
+export const assert_jsonrpc_success_response = (body: unknown, output_schema?: AnySchema): void => {
 	const result = parse(JsonrpcResponse, body);
 	assert.ok(result.ok, `not a valid JSON-RPC success response: ${JSON.stringify(body)}`);
 	if (output_schema) {
-		const output_result = parse_any(output_schema, result.value.result);
+		const output_result = parse(output_schema, result.value.result);
 		if (!output_result.ok) {
 			assert.fail(
 				`JSON-RPC result does not match output schema: ${JSON.stringify(output_result.issues)}`
@@ -471,7 +462,7 @@ export type RpcCallResultForSpec<TSpec extends RequestResponseActionSpec> =
 			ok: true;
 			status: number;
 			headers: Record<string, string>;
-			result: ValidationOutput<TSpec['output']>;
+			result: Infer<TSpec['output']>;
 	  }
 	| {
 			ok: false;
@@ -488,12 +479,12 @@ export type RpcCallForSpecArgs<TSpec extends RequestResponseActionSpec> = Omit<
 	/** Action spec whose `method` drives the envelope and whose `input`/`output` types pin params + result. */
 	spec: TSpec;
 	/** Params, typed against `spec.input`. */
-	params: ValidationOutput<TSpec['input']>;
+	params: Infer<TSpec['input']>;
 };
 
 /**
  * Typed wrapper over `rpc_call` — binds `params` and the success `result` to
- * the output types of `spec.input` and `spec.output` (`ValidationOutput`) via
+ * the output types of `spec.input` and `spec.output` (`Infer`) via
  * the generic, for a Zod or a fuz_schema spec.
  *
  * Success results are validated at runtime against `spec.output` (same
@@ -514,7 +505,7 @@ export const rpc_call_for_spec = async <TSpec extends RequestResponseActionSpec>
 	if (!res.ok) {
 		return res;
 	}
-	const parsed = parse_any(spec.output, res.result);
+	const parsed = parse(spec.output, res.result);
 	if (!parsed.ok) {
 		throw new Error(
 			`rpc_call_for_spec(${spec.method}) result did not match spec.output: ${JSON.stringify(
@@ -526,7 +517,7 @@ export const rpc_call_for_spec = async <TSpec extends RequestResponseActionSpec>
 		ok: true,
 		status: res.status,
 		headers: res.headers,
-		result: parsed.value as ValidationOutput<TSpec['output']>
+		result: parsed.value as Infer<TSpec['output']>
 	};
 };
 
@@ -538,11 +529,11 @@ export const rpc_call_for_spec = async <TSpec extends RequestResponseActionSpec>
  *
  * @throws Error if the response is a JSON-RPC error, if `rpc_call` throws
  *   on an envelope violation, or if the result fails `output_schema` (a Zod or
- *   `@fuzdev/fuz_schema` schema, parsed with `parse_any`).
+ *   `@fuzdev/fuz_schema` schema, parsed with `parse`).
  */
 export const rpc_call_typed = async <T>(
 	args: RpcCallArgs,
-	output_schema: ZodSchemaLike<T> | Schema<T, any>
+	output_schema: Schema<T, any>
 ): Promise<T> => {
 	const res = await rpc_call(args);
 	if (!res.ok) {
@@ -552,7 +543,7 @@ export const rpc_call_typed = async <T>(
 			} data=${JSON.stringify(res.error.data)}`
 		);
 	}
-	const parsed = parse_any(output_schema, res.result);
+	const parsed = parse(output_schema, res.result);
 	if (!parsed.ok) {
 		throw new Error(
 			`rpc_call_typed(${args.method}) result did not match output schema: ${JSON.stringify(

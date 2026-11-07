@@ -9,12 +9,12 @@
 
 import { test, assert, describe } from 'vitest';
 import { create_deferred, wait } from '@fuzdev/fuz_util/async.ts';
+import { parse } from '@fuzdev/fuz_schema/schema.ts';
 
 import { create_testing_actions } from '#lib/testing/cross_backend/testing_reset_actions.ts';
 import { create_stub_app_deps, create_test_audit_emitter } from '#lib/testing/stubs.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import type { DaemonTokenState } from '#lib/auth/daemon_token.ts';
-import { parse_any } from '#lib/schema_issues.ts';
 
 describe('create_testing_actions — _testing_drain_effects', () => {
 	test('awaits deps.audit.drain_inflight', async () => {
@@ -62,6 +62,6 @@ describe('create_testing_actions — _testing_drain_effects', () => {
 		const result = await drain.handler(undefined, null as never);
 		assert.deepStrictEqual(result, { ok: true, tracked: false });
 		// the answer satisfies the spec's strict output schema either way
-		assert.ok(parse_any(drain.spec.output, result).ok);
+		assert.ok(parse(drain.spec.output, result).ok);
 	});
 });

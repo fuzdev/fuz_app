@@ -11,6 +11,7 @@
  *
  * @module
  */
+import type { AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { RouteAuth } from './auth_shape.ts';
 import type { RouteMethod } from './route_spec.ts';
@@ -25,7 +26,6 @@ import type { MiddlewareSpec } from './middleware_spec.ts';
 import { is_null_schema, middleware_spec_applies } from './schema_helpers.ts';
 import { format_route_key } from './surface_query.ts';
 import type { RateLimitKey } from '../rate_limiter.ts';
-import type { ValidationSchema } from '../schema_issues.ts';
 
 /**
  * A route's error map: every error definition the route can answer with, and
@@ -49,9 +49,9 @@ export interface RouteErrorMapSpec {
 	readonly method: RouteMethod;
 	readonly path: string;
 	readonly auth: RouteAuth;
-	readonly input: ValidationSchema;
-	readonly params?: ValidationSchema;
-	readonly query?: ValidationSchema;
+	readonly input: AnySchema;
+	readonly params?: AnySchema;
+	readonly query?: AnySchema;
 	readonly rate_limit?: RateLimitKey;
 	readonly errors?: ReadonlyArray<RestErrorDef>;
 }

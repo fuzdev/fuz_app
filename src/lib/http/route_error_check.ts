@@ -24,7 +24,7 @@
  * @module
  */
 
-import { is } from '@fuzdev/fuz_schema/schema.ts';
+import { is, parse, type SchemaIssue } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	REST_INTERNAL_ERROR,
@@ -33,7 +33,6 @@ import {
 } from './error_schemas.ts';
 import { is_jsonrpc_error_response } from './jsonrpc_helpers.ts';
 import type { RouteErrorMap } from './route_errors.ts';
-import { parse_any, type AnyIssue } from '../schema_issues.ts';
 
 /**
  * The errors any route can answer with and none declares: the catch layer's
@@ -67,7 +66,7 @@ export const is_json_response = (response: Response): boolean =>
 export type RouteErrorCheck =
 	| { ok: true }
 	| { ok: false; kind: 'undeclared_status' }
-	| { ok: false; kind: 'schema_mismatch'; issues: Array<AnyIssue> };
+	| { ok: false; kind: 'schema_mismatch'; issues: Array<SchemaIssue> };
 
 /**
  * Check a JSON error body against its route's error map.
@@ -92,7 +91,7 @@ export const check_route_error = (
 	}
 	const schema = errors.schemas[status];
 	if (!schema) return { ok: false, kind: 'undeclared_status' };
-	const result = parse_any(schema, body);
+	const result = parse(schema, body);
 	return result.ok ? { ok: true } : { ok: false, kind: 'schema_mismatch', issues: result.issues };
 };
 

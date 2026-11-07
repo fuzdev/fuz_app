@@ -35,7 +35,7 @@ import {
 	bounded_string,
 	type BoundedStringOptions
 } from '#lib/primitive_schemas.ts';
-import { parse_any, to_wire_issues, type WireIssue } from '#lib/schema_issues.ts';
+import { to_wire_issues, type WireIssue } from '#lib/schema_issues.ts';
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
@@ -283,10 +283,10 @@ describe('fuz_schema bounded_string', () => {
 
 /** What a parse gave: its output, or its wire issues. */
 const outcome_of = (
-	schema: Parameters<typeof parse_any>[0],
+	schema: Parameters<typeof parse>[0],
 	input: unknown
 ): { ok: true; value: unknown } | { ok: false; issues: Array<WireIssue> } => {
-	const result = parse_any(schema, input);
+	const result = parse(schema, input);
 	return result.ok
 		? { ok: true, value: result.value }
 		: { ok: false, issues: to_wire_issues(result.issues, input) };
@@ -461,7 +461,7 @@ const ZOD_JSON = {
 
 /** Asserts a parse gave an answer: accepted with `value`, or the refusal's issues. */
 const assert_answer = (
-	schema: Parameters<typeof parse_any>[0],
+	schema: Parameters<typeof parse>[0],
 	input: unknown,
 	answer: Answer,
 	value: unknown,

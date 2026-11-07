@@ -15,6 +15,7 @@
 
 import { describe, test, assert } from 'vitest';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
+import { parse } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	create_serve_fact_route_spec,
@@ -26,7 +27,6 @@ import {
 	ERROR_INVALID_ROUTE_PARAMS
 } from '#lib/http/error_schemas.ts';
 import { resolve_route_error_map } from '#lib/http/route_errors.ts';
-import { parse_any } from '#lib/schema_issues.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -46,12 +46,12 @@ describe('fact route 400 error schema', () => {
 			});
 
 			test('accepts the production body, which omits issues', () => {
-				assert.ok(parse_any(schema!, { error: ERROR_INVALID_ROUTE_PARAMS }).ok);
+				assert.ok(parse(schema!, { error: ERROR_INVALID_ROUTE_PARAMS }).ok);
 			});
 
 			test('accepts the DEV body, which carries issues', () => {
 				assert.ok(
-					parse_any(schema!, {
+					parse(schema!, {
 						error: ERROR_INVALID_ROUTE_PARAMS,
 						issues: [
 							{
@@ -68,7 +68,7 @@ describe('fact route 400 error schema', () => {
 
 			test("refuses a DEV body whose issues are in a library's own shape", () => {
 				assert.ok(
-					!parse_any(schema!, {
+					!parse(schema!, {
 						error: ERROR_INVALID_ROUTE_PARAMS,
 						issues: [{ code: 'invalid_format', path: ['hash'] }]
 					}).ok
@@ -76,9 +76,9 @@ describe('fact route 400 error schema', () => {
 			});
 
 			test('still refuses a different error literal, a body code among them', () => {
-				assert.ok(!parse_any(schema!, { error: 'unauthenticated' }).ok);
-				assert.ok(!parse_any(schema!, { error: ERROR_INVALID_REQUEST_BODY }).ok);
-				assert.ok(!parse_any(schema!, { error: ERROR_INVALID_JSON_BODY }).ok);
+				assert.ok(!parse(schema!, { error: 'unauthenticated' }).ok);
+				assert.ok(!parse(schema!, { error: ERROR_INVALID_REQUEST_BODY }).ok);
+				assert.ok(!parse(schema!, { error: ERROR_INVALID_JSON_BODY }).ok);
 			});
 
 			test('declares no errors of its own', () => {

@@ -20,6 +20,7 @@
  */
 
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
+import type { Infer } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { ActionSpecUnion, RequestResponseActionSpec } from './action_spec.ts';
 import type { Uuid } from '../primitive_schemas.ts';
@@ -28,7 +29,6 @@ import type { BuiltinCredentialType } from '../auth/credential_type_schema.ts';
 import type { Db } from '../db/db.ts';
 import type { JsonrpcRequestId } from '../http/jsonrpc.ts';
 import type { RequestClient } from './peer_request.ts';
-import type { ValidationOutput } from '../schema_issues.ts';
 
 /**
  * A spec paired with its optional handler — the composable unit passed to
@@ -231,10 +231,10 @@ export interface RpcAction {
 export type HandlerForSpec<TSpec extends RequestResponseActionSpec> = [
 	TSpec['auth']['actor']
 ] extends ['required']
-	? ActorActionHandler<ValidationOutput<TSpec['input']>, ValidationOutput<TSpec['output']>>
+	? ActorActionHandler<Infer<TSpec['input']>, Infer<TSpec['output']>>
 	: [TSpec['auth']['account']] extends ['required']
-		? AuthActionHandler<ValidationOutput<TSpec['input']>, ValidationOutput<TSpec['output']>>
-		: ActionHandler<ValidationOutput<TSpec['input']>, ValidationOutput<TSpec['output']>>;
+		? AuthActionHandler<Infer<TSpec['input']>, Infer<TSpec['output']>>
+		: ActionHandler<Infer<TSpec['input']>, Infer<TSpec['output']>>;
 
 /**
  * Pair a spec with a handler while preserving per-method input/output types
@@ -244,7 +244,7 @@ export type HandlerForSpec<TSpec extends RequestResponseActionSpec> = [
  * `ActionHandler<any, any>`, so spec/handler drift (renamed Zod schema,
  * output field removal, input shape change) slips past the typechecker.
  * `rpc_action(spec, handler)` binds the handler signature to
- * `(input: ValidationOutput<spec.input>, ctx) => ValidationOutput<spec.output>` via the
+ * `(input: Infer<spec.input>, ctx) => Infer<spec.output>` via the
  * generic spec parameter — drift surfaces at the call site.
  *
  * The `ctx.auth` narrowing follows the spec's `auth.account` /

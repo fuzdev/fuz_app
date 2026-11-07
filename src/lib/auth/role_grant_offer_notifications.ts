@@ -44,7 +44,8 @@ import {
 	object,
 	one_of,
 	void as fuz_void,
-	type Infer
+	type Infer,
+	parse
 } from '@fuzdev/fuz_schema/schema.ts';
 
 import { Uuid as UuidSchema, bounded_string, type Uuid } from '../primitive_schemas.ts';
@@ -54,7 +55,6 @@ import { create_action_event_spec } from '../actions/action_bridge.ts';
 import type { EventSpec } from '../realtime/sse.ts';
 import type { JsonrpcNotification } from '../http/jsonrpc.ts';
 import { create_jsonrpc_notification } from '../http/jsonrpc_helpers.ts';
-import { parse_any } from '../schema_issues.ts';
 import { RoleName } from './role_schema.ts';
 import { ScopeKindName } from './scope_kind_schema.ts';
 import { RoleGrantOfferJson } from './role_grant_offer_schema.ts';
@@ -284,7 +284,7 @@ export const create_validated_notification_sender = (
 		send_to_account: (account_id, message) => {
 			const spec = notification_spec_by_method.get(message.method);
 			if (spec) {
-				const result = parse_any(spec.input, message.params);
+				const result = parse(spec.input, message.params);
 				if (!result.ok) {
 					log.error(`notification params schema mismatch: ${message.method}`, result.issues);
 				}

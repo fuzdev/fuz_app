@@ -11,11 +11,11 @@
  *
  * @module
  */
+import { parse } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { QueryDeps } from '../db/query_deps.ts';
 import { assert_row } from '../db/assert_row.ts';
 import { columns_sql, iso8601_timestamp_expr, qualify_columns } from '../db/sql_columns.ts';
-import { parse_any } from '../schema_issues.ts';
 import {
 	AUDIT_LOG_DEFAULT_LIMIT,
 	builtin_audit_log_config,
@@ -135,7 +135,7 @@ export const query_audit_log = async <T extends string>(
 	if (input.metadata != null) {
 		const schema = config.metadata_schemas[input.event_type];
 		if (schema) {
-			const result = parse_any(schema, input.metadata);
+			const result = parse(schema, input.metadata);
 			if (!result.ok) {
 				audit_metadata_validation_failures++;
 				console.error(`[audit_log] metadata mismatch for '${input.event_type}':`, result.issues);

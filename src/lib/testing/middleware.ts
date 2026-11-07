@@ -18,6 +18,7 @@ import './assert_dev_env.ts';
 import { vi, test, assert, describe } from 'vitest';
 import { Hono } from 'hono';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
+import { parse } from '@fuzdev/fuz_schema/schema.ts';
 
 import { create_bearer_auth_middleware } from '../auth/bearer_auth.ts';
 import { AUTH_MIDDLEWARE_PATH, ORIGIN_MIDDLEWARE_PATH } from '../auth/middleware.ts';
@@ -45,7 +46,6 @@ import {
 import { get_resolved_auth } from '../auth/resolved_auth.ts';
 import type { TokenScope } from '../auth/token_scope.ts';
 import { create_test_resolved_auth } from './resolved_auth.ts';
-import { parse_any } from '../schema_issues.ts';
 import type { RestErrorDef } from '../http/error_schemas.ts';
 
 // Mock the query modules so test cases can control return values.
@@ -290,7 +290,7 @@ export const describe_bearer_auth_cases = (
 					if (tc.expected_error) {
 						assert.strictEqual(body.error, tc.expected_error.code);
 						assert.strictEqual(res.status, tc.expected_error.status);
-						const parsed = parse_any(tc.expected_error.schema, body);
+						const parsed = parse(tc.expected_error.schema, body);
 						assert.ok(parsed.ok, `error body fails its schema: ${JSON.stringify(body)}`);
 					}
 				}

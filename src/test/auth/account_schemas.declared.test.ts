@@ -24,7 +24,7 @@
  */
 
 import { describe, test, assert } from 'vitest';
-import { is, is_schema, parse } from '@fuzdev/fuz_schema/schema.ts';
+import { is, is_schema, parse, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 
 import { ClientApiTokenJson } from '#lib/auth/account_schema.ts';
 import {
@@ -78,7 +78,7 @@ import {
 	to_error_schemas,
 	type RestErrorDef
 } from '#lib/http/error_schemas.ts';
-import { parse_any, to_wire_issues, type ValidationSchema } from '#lib/schema_issues.ts';
+import { to_wire_issues } from '#lib/schema_issues.ts';
 
 const U = '0d6f7c1e-5a3b-4c2d-8e9f-0123456789ab';
 const TS = '2026-01-02T03:04:05Z';
@@ -97,8 +97,8 @@ const created = { ok: true, account: { id: U, username: 'alice' }, actor: { id: 
 const bootstrap = { token: 't', username: 'Alice', password: 'p'.repeat(PASSWORD_LENGTH_MIN) };
 
 /** The wire issues of a refusal as `[kind, path, expected]`, or `null` for an acceptance. */
-const issues_of = (schema: ValidationSchema, input: unknown): Array<unknown> | null => {
-	const result = parse_any(schema, input);
+const issues_of = (schema: AnySchema, input: unknown): Array<unknown> | null => {
+	const result = parse(schema, input);
 	return result.ok
 		? null
 		: to_wire_issues(result.issues, input).map((i) => [i.kind, i.path, i.expected]);
@@ -113,13 +113,13 @@ const signup_shape = create_signup_route_shape({ signup_account_rate_limited: tr
 const declared = (
 	shape: { readonly errors?: ReadonlyArray<RestErrorDef> },
 	status: number
-): ValidationSchema => {
+): AnySchema => {
 	const schema = to_error_schemas(shape.errors ?? [])[status];
 	if (!schema) throw new Error(`no error declared at ${status}`);
 	return schema;
 };
 
-const samples: ReadonlyArray<[string, ValidationSchema, ReadonlyArray<unknown>]> = [
+const samples: ReadonlyArray<[string, AnySchema, ReadonlyArray<unknown>]> = [
 	['VerifyInput', VerifyInput, [undefined]],
 	['SessionListInput', SessionListInput, [undefined]],
 	['SessionRevokeAllInput', SessionRevokeAllInput, [undefined]],
@@ -201,12 +201,12 @@ describe('the account schemas', () => {
 	test.each(samples)('%s takes every valid sample', (_name, schema, values) => {
 		assert.ok(is_schema(schema));
 		for (const value of values) {
-			assert.ok(parse_any(schema, value).ok, JSON.stringify(value));
+			assert.ok(parse(schema, value).ok, JSON.stringify(value));
 		}
 	});
 
 	test("each route's error schemas take their own errors alone", () => {
-		const cases: ReadonlyArray<[ValidationSchema, string]> = [
+		const cases: ReadonlyArray<[AnySchema, string]> = [
 			[declared(login_shape, 401), ERROR_INVALID_CREDENTIALS],
 			[declared(password_shape, 401), ERROR_INVALID_CREDENTIALS],
 			[declared(signup_shape, 403), ERROR_NO_MATCHING_INVITE],
@@ -216,14 +216,14 @@ describe('the account schemas', () => {
 			[declared(bootstrap_route_shape, 404), ERROR_TOKEN_FILE_MISSING]
 		];
 		for (const [schema, error] of cases) {
-			assert.ok(parse_any(schema, { error }).ok, error);
+			assert.ok(parse(schema, { error }).ok, error);
 			// a loose object: an unknown key passes through
 			const extra = { error, x: 1 };
-			const result = parse_any(schema, extra);
+			const result = parse(schema, extra);
 			assert.ok(result.ok, error);
 			assert.deepStrictEqual(result.value, extra);
-			assert.ok(!parse_any(schema, { error: ERROR_INVALID_REQUEST_BODY }).ok, error);
-			assert.ok(!parse_any(schema, null).ok, error);
+			assert.ok(!parse(schema, { error: ERROR_INVALID_REQUEST_BODY }).ok, error);
+			assert.ok(!parse(schema, null).ok, error);
 		}
 	});
 });
@@ -298,13 +298,13 @@ describe('the declared tightenings, pinned', () => {
 			`{"__proto__":null,"error":"${ERROR_AUTHENTICATION_REQUIRED}","bootstrap_available":true}`
 		]) {
 			const input: unknown = JSON.parse(json);
-			const result = parse_any(REST_AUTHENTICATION_REQUIRED_BOOTSTRAP.schema, input);
+			const result = parse(REST_AUTHENTICATION_REQUIRED_BOOTSTRAP.schema, input);
 			assert.ok(result.ok, json);
 			assert.strictEqual(result.value, input);
 			assert.ok(Object.hasOwn(result.value, '__proto__'), json);
 		}
 		const body: unknown = JSON.parse(`{"__proto__":{"x":1},"error":"${ERROR_INVALID_TOKEN}"}`);
-		const result = parse_any(declared(bootstrap_route_shape, 401), body);
+		const result = parse(declared(bootstrap_route_shape, 401), body);
 		assert.ok(result.ok);
 		assert.strictEqual(result.value, body);
 	});

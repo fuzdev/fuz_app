@@ -19,13 +19,14 @@ import {
 	object,
 	optional,
 	pipe,
-	string
+	string,
+	parse,
+	type AnySchema
 } from '@fuzdev/fuz_schema/schema.ts';
 import { meta } from '@fuzdev/fuz_schema/meta.ts';
 
 import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
 import { to_invalid_params_error } from '#lib/actions/perform_action.ts';
-import { parse_any, type ValidationSchema } from '#lib/schema_issues.ts';
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import { create_action_event } from '#lib/actions/action_event.ts';
 import type { ActionEventEnvironment } from '#lib/actions/action_event_types.ts';
@@ -247,8 +248,8 @@ describe('declared invalid_reason on the RPC dispatcher', () => {
 });
 
 /** The reason `input` answers `params` with, through the dispatcher's mapping. */
-const reason_for = (input: ValidationSchema, params: unknown): unknown => {
-	const result = parse_any(input, params);
+const reason_for = (input: AnySchema, params: unknown): unknown => {
+	const result = parse(input, params);
 	assert.ok(!result.ok, `refused: ${JSON.stringify(params)}`);
 	const data = to_invalid_params_error(input, result.issues, params).data as
 		{ reason?: unknown } | undefined;

@@ -19,9 +19,9 @@
  */
 
 import { Logger, type Logger as LoggerType } from '@fuzdev/fuz_util/log.ts';
+import { parse } from '@fuzdev/fuz_schema/schema.ts';
 
 import { create_jsonrpc_notification, to_jsonrpc_params } from '../http/jsonrpc_helpers.ts';
-import { parse_any } from '../schema_issues.ts';
 import type { ActionSpecUnion } from './action_spec.ts';
 import type { ConnectionRegistry, ConnectionIdentity } from './connection_registry.ts';
 
@@ -91,8 +91,8 @@ export interface CreateBroadcastApiOptions {
  *
  * ```ts
  * export interface BackendActionsApi {
- *   filer_change: (input: ActionInputs['filer_change']) => Promise<void>;
- *   workspace_changed: (input: ActionInputs['workspace_changed']) => Promise<void>;
+ *   filer_change: (input: ActionCallInputs['filer_change']) => Promise<void>;
+ *   workspace_changed: (input: ActionCallInputs['workspace_changed']) => Promise<void>;
  * }
  *
  * const api = create_broadcast_api<BackendActionsApi>({
@@ -116,7 +116,7 @@ export const create_broadcast_api = <TApi extends object>(
 	for (const spec of specs) {
 		const { method } = spec;
 		const send = (input: unknown): void => {
-			const parsed = parse_any(spec.input, input);
+			const parsed = parse(spec.input, input);
 			if (!parsed.ok) {
 				log?.error(`[${method}] input validation failed:`, parsed.issues);
 				return;

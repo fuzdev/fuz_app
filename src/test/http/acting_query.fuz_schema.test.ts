@@ -32,7 +32,7 @@ import { describe, test, assert } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { Hono } from 'hono';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
-import { is, is_schema, object } from '@fuzdev/fuz_schema/schema.ts';
+import { is, is_schema, object, parse } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	create_db_route_specs,
@@ -50,7 +50,7 @@ import { apply_route_specs, attach_route_handler, type RouteSpec } from '#lib/ht
 import { route_raw } from '#lib/http/route_result.ts';
 import { generate_app_surface, type AppSurface } from '#lib/http/surface.ts';
 import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
-import { parse_any, to_wire_issues, WireIssue } from '#lib/schema_issues.ts';
+import { to_wire_issues, WireIssue } from '#lib/schema_issues.ts';
 import { Db } from '#lib/db/db.ts';
 
 const log = new Logger('test', { level: 'off' });
@@ -190,8 +190,8 @@ const ACCEPTED = new Set([
 ]);
 
 /** What a parse gave: own entries, or wire issues without `message`. */
-const outcome_of = (schema: Parameters<typeof parse_any>[0], input: unknown): unknown => {
-	const result = parse_any(schema, input);
+const outcome_of = (schema: Parameters<typeof parse>[0], input: unknown): unknown => {
+	const result = parse(schema, input);
 	if (result.ok) {
 		const value = result.value as Record<string, unknown>;
 		// own keys and their values, `undefined` ones included; the prototype is pinned apart
@@ -267,7 +267,7 @@ describe('the ported `{acting}` queries', () => {
 	test('accept the declared corpus entries, outputting acting lowercased', () => {
 		const query = specs[0]!.query!;
 		for (const [label, input] of CORPUS) {
-			const result = parse_any(query, input);
+			const result = parse(query, input);
 			assert.strictEqual(result.ok, ACCEPTED.has(label), label);
 			if (result.ok) {
 				const { acting } = result.value as { acting?: string };
@@ -288,11 +288,11 @@ describe('the ported `{acting}` queries', () => {
 	test('the output is the record itself unless acting was lowercased', () => {
 		const query = specs[0]!.query!;
 		const lower = query_record({ acting: V1_LOWER });
-		const kept = parse_any(query, lower);
+		const kept = parse(query, lower);
 		assert.ok(kept.ok);
 		assert.strictEqual(kept.value, lower);
 		const upper = query_record({ acting: V1_LOWER.toUpperCase() });
-		const copied = parse_any(query, upper);
+		const copied = parse(query, upper);
 		assert.ok(copied.ok);
 		assert.notStrictEqual(copied.value, upper);
 		assert.strictEqual(Object.getPrototypeOf(copied.value), Object.prototype);

@@ -36,12 +36,12 @@
  */
 
 import { describe, test, assert } from 'vitest';
+import { parse } from '@fuzdev/fuz_schema/schema.ts';
 
 import { all_fuz_auth_action_spec_registries } from '#lib/auth/all_action_spec_registries.ts';
 import { protocol_action_specs } from '#lib/actions/protocol.ts';
 import { action_input_is_optional } from '#lib/actions/action_codegen.ts';
 import { is_empty_input_handler_guarded } from '#lib/schema_meta.ts';
-import { parse_any } from '#lib/schema_issues.ts';
 import { all_cell_action_specs } from '#lib/auth/cell_action_specs.ts';
 import { all_cell_grant_action_specs } from '#lib/auth/cell_grant_action_specs.ts';
 import { all_cell_field_action_specs } from '#lib/auth/cell_field_action_specs.ts';
@@ -64,8 +64,8 @@ describe('action spec input invariants', () => {
 		assert.ok(guarded.length > 0, 'no walked spec marks its input');
 		for (const spec of guarded) {
 			const { method } = spec;
-			assert.ok(parse_any(spec.input, {}).ok, `${method}: {} must reach the handler guard`);
-			assert.ok(!parse_any(spec.input, undefined).ok, `${method}: undefined is no call`);
+			assert.ok(parse(spec.input, {}).ok, `${method}: {} must reach the handler guard`);
+			assert.ok(!parse(spec.input, undefined).ok, `${method}: undefined is no call`);
 			assert.ok(!action_input_is_optional(spec), `${method}: codegen must keep input required`);
 		}
 	});
@@ -74,7 +74,7 @@ describe('action spec input invariants', () => {
 		for (const spec of all_specs) {
 			assert.strictEqual(
 				action_input_is_optional(spec),
-				parse_any(spec.input, undefined).ok,
+				parse(spec.input, undefined).ok,
 				`${spec.method}: the typed surface and the schema disagree on an omitted input`
 			);
 		}
@@ -83,9 +83,9 @@ describe('action spec input invariants', () => {
 	test('every spec input that accepts {} also accepts undefined', () => {
 		for (const spec of all_specs) {
 			if (is_empty_input_handler_guarded(spec.input)) continue;
-			const accepts_empty = parse_any(spec.input, {}).ok;
+			const accepts_empty = parse(spec.input, {}).ok;
 			if (!accepts_empty) continue;
-			const accepts_undefined = parse_any(spec.input, undefined).ok;
+			const accepts_undefined = parse(spec.input, undefined).ok;
 			assert.ok(
 				accepts_undefined,
 				`${

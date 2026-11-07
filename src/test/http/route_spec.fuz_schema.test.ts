@@ -1,6 +1,6 @@
 /**
  * `RouteSpec` schemas written in `@fuzdev/fuz_schema`: params, query and
- * input validated through `parse_any`, refusals answered with canonical
+ * input validated through `parse`, refusals answered with canonical
  * `WireIssue`s under DEV and without them in production, parsed values
  * delivered to the handler, DEV output validation and the DEV error check
  * (mounted outermost, as `create_app_server` mounts it) logging a fuz_schema

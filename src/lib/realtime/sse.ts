@@ -35,10 +35,10 @@ import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { DEV } from 'esm-env';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
+import { parse, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 
 import { utf8_length } from '../actions/transports.ts';
 import { OutboundBudget } from './outbound_budget.ts';
-import { parse_any, type ValidationSchema } from '../schema_issues.ts';
 import {
 	SSE_CONNECTED_COMMENT,
 	SSE_KEEP_ALIVE_COMMENT,
@@ -300,7 +300,7 @@ export interface EventSpec {
 	/** Event method name, used as the JSON-RPC notification `method`. */
 	method: string;
 	/** Schema for the notification `params` payload, Zod or `@fuzdev/fuz_schema`. */
-	params: ValidationSchema;
+	params: AnySchema;
 	/** Human-readable description for surface output and docs. */
 	description: string;
 	/** Channel this event broadcasts on. Omit for cross-channel events. */
@@ -333,7 +333,7 @@ export const create_validated_broadcaster = <T extends SseNotification>(
 			if (!spec) {
 				log.warn(`Unknown event method: '${data.method}'`);
 			} else {
-				const result = parse_any(spec.params, data.params);
+				const result = parse(spec.params, data.params);
 				if (!result.ok) {
 					log.warn(`Params mismatch for '${data.method}':`, result.issues);
 				}

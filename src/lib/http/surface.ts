@@ -33,7 +33,6 @@ import {
 } from './route_errors.ts';
 import { format_route_key } from './surface_query.ts';
 import { find_schema_sensitivity, type Sensitivity } from '../sensitivity.ts';
-import type { ValidationSchema } from '../schema_issues.ts';
 
 // --- Surface types ---
 
@@ -289,7 +288,7 @@ export const events_to_surface = (
 // `z.custom()` is ordinary, so it's recorded on the surface, not warned at startup
 const create_to_surface =
 	(diagnostics: Array<AppSurfaceDiagnostic> | undefined) =>
-	(schema: ValidationSchema, io: 'input' | 'output', source: string): unknown =>
+	(schema: AnySchema, io: 'input' | 'output', source: string): unknown =>
 		schema_to_surface(schema, {
 			io,
 			source,

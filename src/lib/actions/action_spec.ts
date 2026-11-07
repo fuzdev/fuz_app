@@ -8,7 +8,7 @@
  * A spec is a plain object typed by these interfaces, written with
  * `satisfies` (`satisfies RequestResponseActionSpec`) so its literal types
  * survive; nothing parses a spec at runtime. Its `input` and `output` are
- * schemas of either library, Zod or `@fuzdev/fuz_schema` (`ValidationSchema`).
+ * schemas of either library, Zod or `@fuzdev/fuz_schema` (`AnySchema`).
  * The registration-time checks live in `actions/compile_action_registry.ts`.
  *
  * @see `actions/action_rpc.ts` for the JSON-RPC dispatcher
@@ -17,11 +17,15 @@
  * @module
  */
 
-import { one_of, type Infer, type void as fuz_void } from '@fuzdev/fuz_schema/schema.ts';
+import {
+	one_of,
+	type Infer,
+	type void as fuz_void,
+	type AnySchema
+} from '@fuzdev/fuz_schema/schema.ts';
 
 import type { RateLimitKey } from '../rate_limiter.ts';
 import type { RouteAuth } from '../http/auth_shape.ts';
-import type { ValidationSchema, ZodVoidLike } from '../schema_issues.ts';
 
 /** The action kinds, in declaration order — what `ActionKind` and `is_action_spec` read. */
 export const ACTION_KINDS = ['request_response', 'remote_notification', 'local_call'] as const;
@@ -53,9 +57,9 @@ export interface ActionSpec {
 	auth: RouteAuth | null;
 	side_effects: boolean;
 	/** The input schema, Zod or `@fuzdev/fuz_schema`. */
-	input: ValidationSchema;
+	input: AnySchema;
 	/** The output schema, Zod or `@fuzdev/fuz_schema`. */
-	output: ValidationSchema;
+	output: AnySchema;
 	async: boolean;
 	description: string;
 	/**
@@ -106,12 +110,12 @@ export interface RequestResponseActionSpec extends ActionSpec {
 	async: true;
 }
 
-/** A one-way message; its output is a void schema, Zod's `z.void()` or fuz_schema's `s.void`. */
+/** A one-way message; its output is fuz_schema's void schema, `s.void`. */
 export interface RemoteNotificationActionSpec extends ActionSpec {
 	kind: 'remote_notification';
 	auth: null;
 	side_effects: true;
-	output: ZodVoidLike | typeof fuz_void;
+	output: typeof fuz_void;
 	async: true;
 }
 

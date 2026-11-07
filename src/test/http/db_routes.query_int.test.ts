@@ -11,9 +11,10 @@
  */
 
 import { describe, test, assert } from 'vitest';
+import { parse } from '@fuzdev/fuz_schema/schema.ts';
 
 import { create_db_route_specs } from '#lib/http/db_routes.ts';
-import { parse_any, to_wire_issues } from '#lib/schema_issues.ts';
+import { to_wire_issues } from '#lib/schema_issues.ts';
 
 const spec = create_db_route_specs(
 	{ audit: { emit_pool: async () => {} } },
@@ -25,13 +26,13 @@ const query = spec.query!;
 type Outcome = { value: number } | { refused: Array<string> };
 
 const outcome_of = (
-	schema: Parameters<typeof parse_any>[0],
+	schema: Parameters<typeof parse>[0],
 	key: 'offset' | 'limit',
 	value: unknown
 ): Outcome => {
 	const input: Record<string, unknown> = Object.create(null);
 	if (value !== undefined) input[key] = value;
-	const result = parse_any(schema, input);
+	const result = parse(schema, input);
 	if (result.ok) return { value: (result.value as Record<string, number>)[key]! };
 	return { refused: to_wire_issues(result.issues, input).map((i) => i.kind) };
 };
@@ -94,7 +95,7 @@ describe('query_int', () => {
 	}
 
 	test('-0 is answered as 0', () => {
-		const result = parse_any(query, { offset: '-0' });
+		const result = parse(query, { offset: '-0' });
 		assert.ok(result.ok);
 		assert.strictEqual(JSON.stringify(result.value), '{"offset":0,"limit":100}');
 	});

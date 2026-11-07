@@ -31,7 +31,7 @@
  *    `__proto__` key at any depth (`json_has_own_proto_key`) are refused
  *    with `data.reason` `params_proto_key` (`ERROR_PARAMS_PROTO_KEY`), on
  *    every input schema, before it runs; then
- *    `spec.input` parses the params (`parse_any`, Zod or fuz_schema) with
+ *    `spec.input` parses the params (`parse`, Zod or fuz_schema) with
  *    void / `?? {}` rules (`to_input_params`). A refusal is the generic
  *    `invalid params`, with `data.reason` when the first issue's field
  *    declares an `invalid_reason` (`to_invalid_params_error`) and the
@@ -63,6 +63,7 @@
 
 import { DEV } from 'esm-env';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
+import { parse, type SchemaIssue, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 import type { Uuid } from '../primitive_schemas.ts';
 
 import {
@@ -78,12 +79,7 @@ import {
 import type { Db } from '../db/db.ts';
 import { is_db_checkout_error } from '../db/db_checkout_error.ts';
 import { resolve_issues_invalid_reason } from '../schema_meta.ts';
-import {
-	parse_any,
-	to_wire_issues,
-	type AnyIssue,
-	type ValidationSchema
-} from '../schema_issues.ts';
+import { to_wire_issues } from '../schema_issues.ts';
 import { json_has_own_proto_key, to_input_params } from '../http/schema_helpers.ts';
 import { rate_limit_ip_key } from '../http/ip_canonical.ts';
 import { dispatch_with_post_commit_rollback } from '../http/pending_effects.ts';
@@ -122,7 +118,7 @@ import { token_scope_admits_method, token_scope_method_capability } from '../aut
 export interface PerformActionInput {
 	/** The resolved spec + handler (transport does method lookup). */
 	action: RpcAction;
-	/** Raw params from the wire envelope (validated by `JsonrpcRequest`, pre-`parse_any(spec.input, …)`). */
+	/** Raw params from the wire envelope (validated by `JsonrpcRequest`, pre-`parse(spec.input, …)`). */
 	raw_params: unknown;
 	/** JSON-RPC request id — echoed onto the response. */
 	request_id: JsonrpcRequestId;
@@ -340,7 +336,7 @@ export const perform_action = async (
 		);
 	}
 	const params = to_input_params(spec.input, raw_params);
-	const parse_result = parse_any(spec.input, params);
+	const parse_result = parse(spec.input, params);
 	if (!parse_result.ok) {
 		return error_result(to_invalid_params_error(spec.input, parse_result.issues, params));
 	}
@@ -370,7 +366,7 @@ export const perform_action = async (
 
 		// DEV-only output validation — logs on mismatch, never throws.
 		if (DEV) {
-			const output_result = parse_any(spec.output, output);
+			const output_result = parse(spec.output, output);
 			if (!output_result.ok) {
 				log.error(`action output schema mismatch: ${spec.method}`, output_result.issues);
 			}
@@ -436,8 +432,8 @@ const thrown_error_result = (err: unknown, context: string, log: Logger): Perfor
  * @returns the JSON-RPC error object
  */
 export const to_invalid_params_error = (
-	input: ValidationSchema,
-	issues: ReadonlyArray<AnyIssue>,
+	input: AnySchema,
+	issues: ReadonlyArray<SchemaIssue>,
 	params: unknown
 ): JsonrpcErrorObject => {
 	const reason = resolve_issues_invalid_reason(input, issues, params);

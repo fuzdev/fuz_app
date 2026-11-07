@@ -13,6 +13,7 @@ import './assert_dev_env.ts';
  */
 
 import { assert } from 'vitest';
+import type { AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { AppSurfaceRpcEndpoint, AppSurfaceRpcMethod } from '../http/surface.ts';
 import { is_public_auth } from '../http/auth_shape.ts';
@@ -20,7 +21,6 @@ import { JSONRPC_ERROR_CODES } from '../http/jsonrpc_errors.ts';
 import type { JsonrpcErrorCode, JsonrpcRequestId } from '../http/jsonrpc.ts';
 import { ERROR_AUTHENTICATION_REQUIRED, ERROR_INVALID_JSON_BODY } from '../http/error_schemas.ts';
 import { PROTOCOL_ACTION_METHODS } from '../actions/action_codegen.ts';
-import type { ValidationSchema } from '../schema_issues.ts';
 import { TESTING_METHOD_PREFIX } from './surface_invariants.ts';
 import { assert_jsonrpc_error_response } from './rpc_helpers.ts';
 import {
@@ -342,7 +342,7 @@ export const assert_rpc_envelope_refusal = (
  * @throws Error if the base `params`, seeded or generated, fails the input schema
  */
 export const generate_rpc_params_test_cases = (
-	input: ValidationSchema,
+	input: AnySchema,
 	options?: InputTestCaseOptions
 ): Array<InputTestCase> =>
 	generate_input_test_cases(input, options).filter(

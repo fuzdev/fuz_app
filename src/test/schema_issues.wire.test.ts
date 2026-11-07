@@ -7,11 +7,12 @@
 
 import { describe, assert, test } from 'vitest';
 import * as s from '@fuzdev/fuz_schema/schema.ts';
+import { parse, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 
-import { parse_any, to_wire_issues, WireIssue, type ValidationSchema } from '#lib/schema_issues.ts';
+import { to_wire_issues, WireIssue } from '#lib/schema_issues.ts';
 
-const wire_of = (schema: ValidationSchema, input: unknown): Array<WireIssue> => {
-	const result = parse_any(schema, input);
+const wire_of = (schema: AnySchema, input: unknown): Array<WireIssue> => {
+	const result = parse(schema, input);
 	assert.ok(!result.ok, `refused: ${String(input)}`);
 	return to_wire_issues(result.issues, input);
 };

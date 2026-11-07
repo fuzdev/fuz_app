@@ -62,6 +62,7 @@ import '../assert_dev_env.ts';
  *
  * @module
  */
+import type { AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { AppSurfaceSpec, RpcEndpointSpec } from '../../http/surface.ts';
 import type { RouteAuth } from '../../http/auth_shape.ts';
@@ -78,7 +79,6 @@ import {
 import { PROTOCOL_ACTION_METHODS } from '../../actions/action_codegen.ts';
 import { generate_valid_body } from '../schema_generators.ts';
 import type { ConformanceCase, ConformancePrincipal } from './conformance_case.ts';
-import type { ValidationSchema } from '../../schema_issues.ts';
 
 /**
  * The equivalence group every generated anonymous 401 row joins — the
@@ -125,7 +125,7 @@ export interface RpcAuthConformanceOptions {
  * generator can't satisfy sends no params: every gate fires before
  * validation, so the row still pins the gate.
  */
-const to_gate_params = (input: ValidationSchema): Record<string, unknown> | undefined => {
+const to_gate_params = (input: AnySchema): Record<string, unknown> | undefined => {
 	let body: Record<string, unknown> | undefined;
 	try {
 		body = generate_valid_body(input);

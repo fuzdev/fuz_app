@@ -6,6 +6,7 @@
  *
  * @module
  */
+import { parse, type SchemaIssue, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 
 import { create_uuid } from '../primitive_schemas.ts';
 import { to_error_message } from '@fuzdev/fuz_util/error.ts';
@@ -27,14 +28,7 @@ import {
 } from '../http/jsonrpc_errors.ts';
 import { safe_parse_dropping_unknown_keys } from '../http/schema_helpers.ts';
 import { resolve_issues_invalid_reason } from '../schema_meta.ts';
-import {
-	format_issues,
-	parse_any,
-	to_wire_issues,
-	type AnyIssue,
-	type ValidationSchema,
-	type WireIssue
-} from '../schema_issues.ts';
+import { format_issues, to_wire_issues, type WireIssue } from '../schema_issues.ts';
 import type {
 	JsonrpcRequest,
 	JsonrpcResponseOrError,
@@ -69,8 +63,8 @@ export const ERROR_RESPONSE_OUTPUT_INVALID = 'response_output_invalid' as const;
  * `data.reason` reads one value whichever side refused.
  */
 const to_local_invalid_params_data = (
-	input: ValidationSchema,
-	issues: Array<AnyIssue>,
+	input: AnySchema,
+	issues: Array<SchemaIssue>,
 	value: unknown
 ): { validation_errors: Array<WireIssue>; reason?: string } => {
 	const reason = resolve_issues_invalid_reason(input, issues, value);
@@ -219,7 +213,7 @@ export class ActionEvent<
 			}
 		}
 
-		const parsed = parse_any(this.spec.input, this.#data.input);
+		const parsed = parse(this.spec.input, this.#data.input);
 		if (parsed.ok) {
 			this.#transition_step('parsed', { input: parsed.value });
 		} else {
@@ -498,7 +492,7 @@ export class ActionEvent<
 
 	#complete_handling(output: unknown): void {
 		if (output !== undefined && should_validate_output(this.spec.kind, this.#data.phase)) {
-			const parsed = parse_any(this.spec.output, output);
+			const parsed = parse(this.spec.output, output);
 			if (parsed.ok) {
 				this.#transition_step('handled', { output: parsed.value });
 			} else {

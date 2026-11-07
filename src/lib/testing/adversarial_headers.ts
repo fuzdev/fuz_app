@@ -18,8 +18,8 @@ import './assert_dev_env.ts';
  */
 
 import { test, assert, describe } from 'vitest';
+import { parse } from '@fuzdev/fuz_schema/schema.ts';
 
-import { parse_any } from '../schema_issues.ts';
 import { REST_FORBIDDEN_ORIGIN, type RestErrorDef } from '../http/error_schemas.ts';
 import {
 	create_test_middleware_stack_app,
@@ -165,7 +165,7 @@ export const describe_standard_adversarial_headers = (
 				if (tc.expected_error) {
 					assert.strictEqual(body.error, tc.expected_error.code);
 					assert.strictEqual(res.status, tc.expected_error.status);
-					const parsed = parse_any(tc.expected_error.schema, body);
+					const parsed = parse(tc.expected_error.schema, body);
 					assert.ok(parsed.ok, `error body fails its schema: ${JSON.stringify(body)}`);
 				}
 				if (tc.expected_status === 200) {

@@ -15,7 +15,7 @@
  */
 
 import { describe, test, assert } from 'vitest';
-import { is_schema } from '@fuzdev/fuz_schema/schema.ts';
+import { is_schema, parse } from '@fuzdev/fuz_schema/schema.ts';
 
 import { EMAIL_LENGTH_MAX, EMAIL_LENGTH_MESSAGE } from '#lib/primitive_schemas.ts';
 import {
@@ -23,7 +23,7 @@ import {
 	audit_metadata_schemas,
 	type AuditEventType
 } from '#lib/auth/audit_log_schema.ts';
-import { parse_any, to_wire_issues, type WireIssue } from '#lib/schema_issues.ts';
+import { to_wire_issues, type WireIssue } from '#lib/schema_issues.ts';
 
 const ID = '0f8fad5b-d9cb-469f-a165-70867728950e';
 const HASH = 'a'.repeat(64);
@@ -67,7 +67,7 @@ const BASES: Record<AuditEventType, unknown> = {
 };
 
 const issues_of = (event_type: AuditEventType, input: unknown): Array<WireIssue> | null => {
-	const result = parse_any(audit_metadata_schemas[event_type], input);
+	const result = parse(audit_metadata_schemas[event_type], input);
 	return result.ok ? null : to_wire_issues(result.issues, input);
 };
 
@@ -81,7 +81,7 @@ describe('the builtin audit metadata schemas', () => {
 	test('each takes its valid metadata value, returned as it is', () => {
 		for (const event_type of AUDIT_EVENT_TYPES) {
 			const base = BASES[event_type];
-			const result = parse_any(audit_metadata_schemas[event_type], base);
+			const result = parse(audit_metadata_schemas[event_type], base);
 			assert.ok(result.ok, event_type);
 			assert.strictEqual(result.value, base, event_type);
 		}
@@ -89,7 +89,7 @@ describe('the builtin audit metadata schemas', () => {
 
 	test('unknown keys pass through', () => {
 		const metadata = { username: 'alice', extra: { nested: [1] } };
-		const result = parse_any(audit_metadata_schemas.login, metadata);
+		const result = parse(audit_metadata_schemas.login, metadata);
 		assert.ok(result.ok);
 		assert.deepStrictEqual(result.value, metadata);
 	});
