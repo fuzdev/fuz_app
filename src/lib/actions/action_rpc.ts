@@ -15,8 +15,8 @@
 
 import type { Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
-import { z } from 'zod';
 import { DEV } from 'esm-env';
+import { literal, unknown } from '@fuzdev/fuz_schema/schema.ts';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 import { UnreachableError } from '@fuzdev/fuz_util/error.ts';
 
@@ -342,8 +342,8 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 			description: `JSON-RPC 2.0 endpoint — ${actions.length} method${
 				actions.length === 1 ? '' : 's'
 			}`,
-			input: z.null(), // dispatcher owns body parsing; rpc_endpoints surface has the real schemas
-			output: z.any(), // varies by method
+			input: literal(null), // dispatcher owns body parsing; rpc_endpoints surface has the real schemas
+			output: unknown, // varies by method
 			transaction: false // per-action inside dispatcher
 		}),
 		define_route({
@@ -357,8 +357,8 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 			description: `JSON-RPC 2.0 endpoint (side-effect-free reads) — ${actions.length} method${
 				actions.length === 1 ? '' : 's'
 			}`,
-			input: z.null(), // params from query string, validated by dispatcher
-			output: z.any(), // varies by method
+			input: literal(null), // params from query string, validated by dispatcher
+			output: unknown, // varies by method
 			transaction: false // per-action inside dispatcher
 		})
 	];

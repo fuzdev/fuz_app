@@ -7,8 +7,6 @@
  * @module
  */
 
-import { z } from 'zod';
-
 import type {
 	JsonrpcMessageFromClientToServer,
 	JsonrpcMessageFromServerToClient,
@@ -222,8 +220,8 @@ export const utf8_length = (text: string): number => text_encoder.encode(text).b
 // TODO figure out the symmetry of frontend and backend transports (none/partial/full?) --
 // we may also need orthogonal abstractions to clarify the transport role
 
-export const TransportName = z.string(); // not branded for convenience, will just error at runtime, the schema is just for docs atm
-export type TransportName = z.infer<typeof TransportName>;
+/** A transport's name — not branded, for convenience: an unknown one fails at runtime. */
+export type TransportName = string;
 
 /**
  * Per-call options accepted by every transport's `send`. Optional and
