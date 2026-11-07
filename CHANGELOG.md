@@ -1,5 +1,13 @@
 # @fuzdev/fuz_app
 
+## 0.168.1
+
+### Patch Changes
+
+- deps: require `@fuzdev/fuz_schema` `^0.5.5`, so the empty `heartbeat` output types as `Record<string, never>`, not `{}` ([63066fd](https://github.com/fuzdev/fuz_app/commit/63066fd))
+  
+  - a consumer's regenerated `action_collections.ts` reads `Infer<typeof heartbeat_action_spec.output>`, which with fuz_schema 0.5.4 resolved to `{}` and failed `@typescript-eslint/no-generated-empty-object-type`; upgrade `@fuzdev/fuz_schema` to `^0.5.5` beside this release
+
 ## 0.168.0
 
 ### Minor Changes
