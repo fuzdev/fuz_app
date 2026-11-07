@@ -5,7 +5,7 @@ import '../assert_dev_env.ts';
  *
  * The TS pipeline reads queries through Hono's `c.req.query()` — a duplicated
  * key resolves to its **first** occurrence — and only routes that declare a
- * `z.strictObject` query schema 400 unknown keys, in the pipeline's
+ * strict `object` query schema 400 unknown keys, in the pipeline's
  * params → query → 401 → authz → 403 phase order. A derived-serde axum
  * extractor diverges on every axis (a plain-text pre-handler "duplicate
  * field" 400 observable anonymously, silently ignored unknown keys, query

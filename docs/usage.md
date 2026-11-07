@@ -7,11 +7,11 @@ see ../CLAUDE.md. For testing patterns, see ./testing.md.
 
 ## Writing Route Specs
 
-Every route requires `input` and `output` schemas, each Zod or
-`@fuzdev/fuz_schema` (`params` and `query` too; a fuz_schema `params` or
-`query` must be an object schema), and lists in `errors` the error definitions
+Every route requires `input` and `output` schemas, each a
+`@fuzdev/fuz_schema` schema (`params` and `query` too, each an object
+schema), and lists in `errors` the error definitions
 (`rest_error`, `REST_*`) its handler answers beyond the derived ones. Input is auto-validated by middleware
-(`parse_any`); handlers access validated data via `get_route_input(c, schema)`,
+(`parse`); handlers access validated data via `get_route_input(c, schema)`,
 which infers the typed shape from the schema directly.
 
 A handler returns a result and the framework builds the response:
@@ -27,10 +27,10 @@ on `c` before returning carry over.
 import { define_route, get_route_input } from '@fuzdev/fuz_app/http/route_spec.ts';
 import { route_fail, route_ok } from '@fuzdev/fuz_app/http/route_result.ts';
 import { REST_FOREIGN_KEY_VIOLATION } from '@fuzdev/fuz_app/http/error_schemas.ts';
-import { z } from 'zod';
+import { literal, min_length, object, pipe, string } from '@fuzdev/fuz_schema/schema.ts';
 
-const My_Input = z.strictObject({ name: z.string().min(1) });
-const My_Output = z.strictObject({ ok: z.literal(true), id: z.string() });
+const My_Input = object({ name: pipe(string, min_length(1)) });
+const My_Output = object({ ok: literal(true), id: string });
 
 const my_route_spec = define_route({
 	method: 'POST',
@@ -58,9 +58,9 @@ does.
 don't have the schema in scope. Same overloads on `get_route_params` and
 `get_route_query`.
 
-- `z.null()` (or fuz_schema `literal(null)`) for routes with no request body (GET, or POST with no input)
-- `z.strictObject()` (or fuz_schema `object`) for inputs — rejects unknown keys
-- `z.looseObject()` for outputs with variable shapes
+- `literal(null)` for routes with no request body (GET, or POST with no input)
+- `object` for inputs — rejects unknown keys
+- `loose_object` for outputs with variable shapes
 - Input schemas validated in DEV + production (always-on caller contract;
   malformed input returns 400 with `{error}`, plus `issues` — `WireIssue`s —
   in development)
@@ -184,6 +184,7 @@ import { validate_server_env } from '@fuzdev/fuz_app/server/env.ts';
 import { create_audit_emitter } from '@fuzdev/fuz_app/auth/audit_emitter.ts';
 import { create_deno_runtime } from '@fuzdev/fuz_app/runtime/deno.ts';
 import { ConnectionRegistry } from '@fuzdev/fuz_app/actions/connection_registry.ts';
+import { loose_object, string } from '@fuzdev/fuz_schema/schema.ts';
 
 const runtime = create_deno_runtime([]);
 
@@ -204,8 +205,8 @@ const { keyring, allowed_origins, bootstrap_token_path } = env_config;
 // falls back to `builtin_audit_log_config`.
 const audit_log_config = create_audit_log_config({
 	extra_events: {
-		// Either a metadata schema, Zod or `@fuzdev/fuz_schema` (validates metadata):
-		thing_created: z.looseObject({ thing_id: z.string(), name: z.string() }),
+		// Either a `@fuzdev/fuz_schema` metadata schema (validates metadata):
+		thing_created: loose_object({ thing_id: string, name: string }),
 		// …or `null` (registers the event_type without metadata validation):
 		thing_archived: null
 	}
@@ -564,6 +565,7 @@ import { require_request_context } from '@fuzdev/fuz_app/auth/request_context.ts
 import { define_route } from '@fuzdev/fuz_app/http/route_spec.ts';
 import { route_fail, route_raw } from '@fuzdev/fuz_app/http/route_result.ts';
 import { REST_AUTHENTICATION_REQUIRED } from '@fuzdev/fuz_app/http/error_schemas.ts';
+import { literal } from '@fuzdev/fuz_schema/schema.ts';
 
 const registry = new SseRegistry<SseNotification>();
 
@@ -573,8 +575,8 @@ const subscribe_spec = define_route({
 	path: '/subscribe',
 	auth: { account: 'required', actor: 'none' },
 	description: 'Subscribe to events',
-	input: z.null(),
-	output: z.null(),
+	input: literal(null),
+	output: literal(null),
 	handler: async (c, route) => {
 		const resolved = get_resolved_auth(c);
 		// register first, so a revocation from here on finds the stream…
@@ -712,17 +714,18 @@ runs alongside the consumer's callback, and auto-appends
 `on_audit_event` inside the `audit_factory` body and pass
 `audit_log_event_specs` in `event_specs` on `AppServerOptions`.
 
-**Event specs** declare SSE event types with `EventSpec` (its `params` a Zod or
+**Event specs** declare SSE event types with `EventSpec` (its `params` a
 `@fuzdev/fuz_schema` schema) for surface introspection
 and DEV-only validation via `create_validated_broadcaster()`:
 
 ```typescript
 import { type EventSpec, create_validated_broadcaster } from '@fuzdev/fuz_app/realtime/sse.ts';
+import { object, string } from '@fuzdev/fuz_schema/schema.ts';
 
 const event_specs: Array<EventSpec> = [
 	{
 		method: 'thing_created',
-		params: z.strictObject({ id: z.string() }),
+		params: object({ id: string }),
 		description: 'Created',
 		channel: 'things'
 	}
@@ -738,8 +741,8 @@ validated.broadcast('things', { method: 'thing_created', params: { id: '1' } });
 Action specs are plain objects typed by the `ActionSpec` interfaces, declared
 at module scope with `satisfies` and `{method}_action_spec` naming. Every
 required field is spelled (nothing parses a spec, so nothing fills a default), and
-`input` / `output` take a Zod or a `@fuzdev/fuz_schema` schema — a handler's
-types follow either (`ValidationOutput`). This preserves the literal `method` type,
+`input` / `output` take a `@fuzdev/fuz_schema` schema — a handler's types
+follow its output types (`Infer`). This preserves the literal `method` type,
 makes the spec importable without running any factory, drops the
 need for separate `*_METHOD` constants, and lines up with the
 identifier codegen derives from each method (`specs.{method}_action_spec`).
@@ -747,17 +750,18 @@ identifier codegen derives from each method (`specs.{method}_action_spec`).
 ```typescript
 import type { RequestResponseActionSpec } from '@fuzdev/fuz_app/actions/action_spec.ts';
 import { ROLE_ADMIN } from '@fuzdev/fuz_app/auth/role_schema.ts';
-import { ZodActingActor } from '@fuzdev/fuz_app/zod_schemas.ts';
+import { ActingActor } from '@fuzdev/fuz_app/primitive_schemas.ts';
+import { object, string, type Infer } from '@fuzdev/fuz_schema/schema.ts';
 
-// Input/output schemas: strict objects, paired with same-named z.infer exports.
-// `acting?: ZodActingActor` is required on every input whose spec sets
-// `actor: 'required'` — registry-time invariant 2 enforces the biconditional.
-// A fuz_schema input declares `ActingActor` of `primitive_schemas.ts`.
-export const ThingCreateInput = z.strictObject({ name: z.string(), acting: ZodActingActor });
-export type ThingCreateInput = z.infer<typeof ThingCreateInput>;
+// Input/output schemas: strict objects, paired with same-named `Infer` exports.
+// `acting: ActingActor` (an optional field) is required on every input whose
+// spec sets `actor: 'required'` — registry-time invariant 2 enforces the
+// biconditional, finding `ActingActor` by reference.
+export const ThingCreateInput = object({ name: string, acting: ActingActor });
+export type ThingCreateInput = Infer<typeof ThingCreateInput>;
 
-export const ThingCreateOutput = z.strictObject({ id: z.string() });
-export type ThingCreateOutput = z.infer<typeof ThingCreateOutput>;
+export const ThingCreateOutput = object({ id: string });
+export type ThingCreateOutput = Infer<typeof ThingCreateOutput>;
 
 // Module-scope spec. `satisfies` narrows to the literal method string while
 // still checking the shape.
@@ -837,6 +841,7 @@ A `remote_notification` action spec doubles as the SSE `EventSpec` it pushes as:
 ```typescript
 import type { ActionSpec } from '@fuzdev/fuz_app/actions/action_spec.ts';
 import { create_action_event_spec } from '@fuzdev/fuz_app/actions/action_bridge.ts';
+import { object, string, void as fuz_void } from '@fuzdev/fuz_schema/schema.ts';
 
 const thing_created_action: ActionSpec = {
 	method: 'thing_created',
@@ -845,8 +850,8 @@ const thing_created_action: ActionSpec = {
 	auth: null,
 	side_effects: true,
 	async: true,
-	input: z.strictObject({ id: z.string() }),
-	output: z.void(),
+	input: object({ id: string }),
+	output: fuz_void,
 	description: 'A thing was created'
 };
 
@@ -1093,12 +1098,12 @@ pattern applies to both HTTP RPC and WebSocket handlers.
 
 ## Typed Client Codegen
 
-Consumers that hand-write `src/lib/action_specs.ts` (a Zod-backed spec
-array) generate the typed surface `create_rpc_client` consumes from it. Under
+Consumers that hand-write `src/lib/action_specs.ts` (a spec array) generate the typed surface `create_rpc_client` consumes from it. Under
 `gro gen`, each `.gen.ts` generator emits a sibling `.ts` — the committed
 artifact consumers import from. Canonical output:
 
-- **`ActionInputs`** / **`ActionOutputs`** — method→`z.infer<typeof spec.input|output>` maps (`Infer<…>` for a `@fuzdev/fuz_schema` schema; `action_collections.ts`)
+- **`ActionInputs`** / **`ActionOutputs`** — method→`Infer<typeof spec.input|output>` maps, the parsed values handlers and receivers read (`action_collections.ts`)
+- **`ActionCallInputs`** — method→`InferInput<typeof spec.input>`, what a caller passes before the parse (a `with_default` field optional), which `FrontendActionsApi` and `BackendActionsApi` take (`action_collections.ts`)
 - **`FrontendActionsApi`** — typed interface with `(input, options?) => Promise<Result<...>>` signatures (`action_metatypes.ts`)
 
 ```typescript
@@ -1208,7 +1213,7 @@ its input carries a sensitive value or its path and query exceed
 `max_get_url_length` (4096 by default), which go as `POST` — and the endpoint
 answers every `GET` with `Cache-Control: no-store`. A read's params ride in
 the URL, which proxies and server logs record, so tag a credential-like read
-input `.meta({sensitivity: 'secret'})`, or `'personal'` for personal data
+input `meta(…, {sensitivity: 'secret'})`, or `'personal'` for personal data
 such as a search term about people, to keep it in a `POST` body. Pass `path`
 to override the default `/api/rpc`, `http_headers` for extra headers. A
 hand-built `FrontendHttpTransport` derives the same policy from the
@@ -1613,8 +1618,7 @@ string. Content stays duck-typed in `data`.
   incoming `data` payload with the cell's `kind` — the input's on create, the
   existing cell's on update (`kind` is write-once), the source's on each cloned
   row (on the merged data). It accepts or throws, never rewrites: the handler
-  stores the caller's `data` as sent. A thrown `ZodError` or fuz_schema
-  `SchemaError` surfaces as `invalid_params` (`-32602`). Omit to pass payloads through unchecked.
+  stores the caller's `data` as sent. A thrown `SchemaError` surfaces as `invalid_params` (`-32602`). Omit to pass payloads through unchecked.
 - `authorize_create` — a **parent-aware capability gate** (`CellCreateAuthorize`),
   an object of two members. `authorize(auth, {kind, data, parent_id, parent_kind,
 root_id, root_policy}, ctx) => CellCreateVerdict | Promise<CellCreateVerdict>`,

@@ -1,7 +1,7 @@
 /**
  * Tests for action_spec.ts — the spec interfaces, the kind/initiator/phase
  * enums and their const lists, `is_action_spec`, and the handler types a spec
- * of either schema library gives (`HandlerForSpec`, `Infer`,
+ * gives (`HandlerForSpec`, `Infer`,
  * `InferInput`). The type pins are checked by `gro typecheck`.
  *
  * @module

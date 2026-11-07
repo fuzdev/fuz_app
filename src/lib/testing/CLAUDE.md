@@ -278,8 +278,8 @@ per-method auth shape.
 - `cross_backend/action_manifest.ts` — `ActionManifest` / `ActionManifestEntry`
   fuz_schema schema (the `_testing_action_manifest` wire validator) + `build_action_manifest(specs)`,
   which normalizes each spec to `{method, input, side_effects, account, actor, roles,
-  credential_types, rate_limit}` (`input` is `'void'` for a `z.void()` or
-  fuz_schema `s.void` input, by `is_void_schema`, else `'object'` — the Rust
+  credential_types, rate_limit}` (`input` is `'void'` for an `s.void` input, by
+  `is_void_schema`, else `'object'` — the Rust
   `InputShape`; auth axes pass through; `roles` /
   `credential_types` flatten to sorted arrays; `rate_limit` is the declared
   class or an explicit `null`, so a missing key reads as drift rather than a
@@ -419,7 +419,7 @@ or Postgres and runs in the `cross-ts` CI job.
 - `assert_only_expected_public_routes(surface, list)` — bidirectional: no unexpected public routes, no missing expected ones. Format: `['GET /health', 'POST /api/account/login']`.
 - `assert_full_middleware_stack(surface, prefix, mws)` — every route under `prefix` has exactly `mws` as its middleware chain, less each layer that carves it out (a layer whose `path` and one of whose `carve_outs` apply to the route, `middleware_carves_out`, with no other layer of its name running there) — the rule `applicable_middleware` and the route error map read. A route missing a layer no carve-out explains fails, and so does a carved-out route still listing it.
 - `get_route_error_schema(lookup, route, status)` — reads the route's error map (`lookup` is `AppSurfaceSpec.route_error_maps`) at a status, a fuz_schema schema.
-- `assert_error_schema_valid(lookup, route, status, body)` — assert the route declares the status, and the body parses against the status's schema (`parse_any`), a union of its definitions' `literal(code)` bodies, so a code the route doesn't declare at the status fails the parse; a mismatch throws an `Error` carrying the issues. Every adversarial refusal runs through it.
+- `assert_error_schema_valid(lookup, route, status, body)` — assert the route declares the status, and the body parses against the status's schema (`parse`), a union of its definitions' `literal(code)` bodies, so a code the route doesn't declare at the status fails the parse; a mismatch throws an `Error` carrying the issues. Every adversarial refusal runs through it.
 - `assert_error_response_declared(errors, jsonrpc, response, label)` — a JSON error response (400 and up) is one the route's map declares, by `check_route_error` (the DEV error check's rule: 500 `internal_error` / 503 `service_unavailable` always accepted, a JSON-RPC envelope on a `jsonrpc` route skipped, a success or non-JSON response passing); what the attack-surface suite's `correct auth passes guard` holds each answer to.
 
 ### `surface_invariants.ts` — structural + policy invariants
@@ -499,20 +499,18 @@ Support functions:
 
 ### `schema_generators.ts` — valid-value generation
 
-Walks Zod and `@fuzdev/fuz_schema` schemas to generate valid values for
-adversarial/round-trip tests. Every helper takes either library's schema
-(`ValidationSchema`) and parses with `parse_any`; a schema of neither throws,
-naming it.
+Walks `@fuzdev/fuz_schema` schemas to generate valid values for
+adversarial/round-trip tests. A value that is no schema throws, naming it.
 
-- `to_object_schema_view(schema, label)` → `ObjectSchemaView` — the fields (`SchemaFieldInfo[]`, from `http/schema_helpers.ts`) of an object schema of either library through its wrappers, in Zod's type vocabulary (`zod_extract_fields` for Zod; a fuz_schema object of any strictness reads `'object'`, `literal(null)` `'null'`, `literal(undefined)` `'void'`, `one_of` `'enum'`, `variant` `'union'`), and each field's schema, throwing on a schema that is no object schema. `to_body_input(input_schema, label)` is the body generators' gate: `null` for a void or null input, else the object view, and a throw for any other input — no body is never silently what an unbuildable input yields.
+- `to_object_schema_view(schema, label)` → `ObjectSchemaView` — the fields (`SchemaFieldInfo[]`, from `http/schema_helpers.ts`) of an object schema through its wrappers, each `base_type` its innermost kind (an object of any strictness reads `'object'`, `literal(null)` `'null'`, `literal(undefined)` `'void'`, `one_of` `'enum'`, `variant` `'union'`), and each field's schema, throwing on a schema that is no object schema. `to_body_input(input_schema, label)` is the body generators' gate: `null` for a void or null input, else the object view, and a throw for any other input — no body is never silently what an unbuildable input yields.
 
-- `to_field_json_schema(field_schema)` — the field's JSON Schema rendered with `io: 'input'`, so a `.transform()` or pipe field (`Username`) yields its input-side bounds and pattern instead of throwing; a `.nullable()` / `.nullish()` field's one non-null `anyOf` branch (or one non-null `type` of a `type` array) is returned. Both libraries render with `unrepresentable: 'any'`, so it is never `null`: a part JSON Schema can't say (a `z.date()`, a `z.custom()`, a fuz_schema `check`) is left out or `{}` and the bounds around it still read; it throws on a schema an emitter refuses even then. A pipe yields its input stage only, and a `.refine()` never appears (a code-point length bound generates nothing). Every JSON Schema read in the generators goes through it.
+- `to_field_json_schema(field_schema)` — the field's JSON Schema rendered with `io: 'input'`, so a field piped through a `transform` (`Username`) yields its input-side bounds and pattern instead of throwing; a `nullable` field's one non-null `anyOf` branch (or one non-null `type` of a `type` array) is returned. It renders with `unrepresentable: 'any'`, so it is never `null`: a part JSON Schema can't say (a `check`) is left out or `{}` and the bounds around it still read; it throws on a schema the emitter refuses even then. A pipe yields its input stage only, and a `check` never appears (a code-point length bound generates nothing). Every JSON Schema read in the generators goes through it.
 - `detect_format(field_schema)` — `detect_json_schema_format` over `to_field_json_schema`: the `format`, `'pattern'` for a regex, or `null`.
 - `generate_valid_value(field, field_schema)` — base-type switch producing a valid sample (UUIDs → nil UUID, strings → `'xxxxxxxxxx'`, numbers → `1`, objects → `generate_valid_object` against the field schema, so a nested refinement is satisfied too, enums → first entry, records → `{}`, a void field → `undefined`, etc.). For branded-string refinements, walks a fallback chain synthesized from the `pattern` string the JSON Schema representation exposes: fixed-length hex (`^[0-9a-f]{N}$` — blake3 / sha256 / md5 digests; `0`.repeat(N)), prefix-lengthed slug (`^<prefix>_[A-Za-z0-9_-]{N}$` — `ApiTokenId`-style ids; `<prefix>_` + `x`.repeat(N)), absolute path prefix, URL prefix, two `/`-joined segments (an `owner/name` slug). First candidate the field accepts is used.
-- `generate_valid_string_param(field, field_schema)` — a string a URL-sourced field (route param, query value) accepts: the nil UUID for a UUID field, else the first of `test_value`, the generated valid value as a string, `1`, `0`, `true`, `false`, the field's JSON Schema `default` or lower bound as a string (a preprocessed integer whose minimum is above one) and a synthesized string the field accepts; `null` when none does. The params and query case generators build their base from it.
+- `generate_valid_string_param(field, field_schema)` — a string a URL-sourced field (route param, query value) accepts: the nil UUID for a UUID field, else the first of `test_value`, the generated valid value as a string, `1`, `0`, `true`, `false`, the field's JSON Schema `default` or lower bound as a string, each `min_value` / `max_value` bound anywhere in the schema as an integer (a string parsed into an integer whose range excludes the small candidates, as `db_routes`' `query_int` — bounds past a `transform`, which JSON Schema can't say) and a synthesized string the field accepts; `null` when none does. The params and query case generators build their base from it.
 - `resolve_valid_path(path, params_schema?, param_values?)` — swaps each whole param segment (`:name`, `:name{re}`, optional or not, read as Hono reads a template: `split_route_template` / `parse_route_param`) for a value the params schema accepts; a `:` inside a literal segment (`files:upload`) stays. Prefers `test_<name>` wherever the field schema admits it (the param name keeps failure messages readable); otherwise a UUID param takes the nil UUID and anything else is synthesized from the schema, percent-encoded. A synthesized value containing `/` is refused (it would route elsewhere) and falls back to `test_<name>`. A value in `param_values` (the route's entry of `RouteParamValues`, `'METHOD /path'` → param name → value, the option the path-resolving suites take) comes first, percent-encoded like the rest. A `:name{re}` param's value, supplied or generated, must match its pattern grouped and anchored, `^(?:re)$` (`compile_route_param_pattern`, over the value as Hono decodes it, `decode_route_path`) — Hono's RegExpRouter reading, the stricter of its routers', as TrieRouter leaves a top-level alternation ungrouped — else it throws naming the route and the param and pointing at `param_values`: no value is guessed from the pattern, and no route is skipped silently. A `param_values` entry naming no param of the path throws too, and so does a supplied `''`, `.` or `..` (the URL normalizes it away) or a lone surrogate. Supplied values are always encoded, so a `{re}` needing a literal `/` can't be met by one.
 - `to_route_content_type(route)` — the `Content-Type` a well-formed request to the route sends: `application/json`, or `application/octet-stream` for a `raw_body` route. Every `POST` route refuses anything else with 415 before its other gates, so every probe in the harnesses (auth, params and query fuzz, 404, data exposure, round trip) sends it, body or not.
-- `generate_valid_object(object_schema, schema) => {value, result}` — required and defaulted fields; when `schema` (refinements included) refuses those, each optional field alone in declaration order, the first that parses; failing that, the optional fields added cumulatively until it parses. Covers a `.refine()` over optional fields (at least one of, exactly one of, both of) at any depth, and, where one optional field suffices, keeps the others (an `acting` declared first) out. Returns the last `parse_any` result (`GeneratedObject`) and leaves the throw to the caller, which renders its issues with `format_issues` (`schema_issues.ts`).
+- `generate_valid_object(object_schema, schema) => {value, result}` — required and defaulted fields; when `schema` (refinements included) refuses those, each optional field alone in declaration order, the first that parses; failing that, the optional fields added cumulatively until it parses. Covers a `check` over optional fields (at least one of, exactly one of, both of) at any depth, and, where one optional field suffices, keeps the others (an `acting` declared first) out. Returns the last `parse` result (`GeneratedObject`) and leaves the throw to the caller, which renders its issues with `format_issues` (`schema_issues.ts`).
 - `generate_valid_object_with_field(object_schema, schema, base, field)` — a valid object carrying `field`, built from the valid `base`: `base` itself when it carries the field; else the field joins `base`, with the optional fields `base` omits filled as `generate_valid_object` fills them (a pair rule: `scope_kind` needs `scope_id`); failing that, the field replaces `base`'s optional fields, refilled around it (exactly one of: adding `slug` drops `id`). `null` when no object the generator builds carries the field. The body a single-fault case on a field the base omits changes.
 - `generate_valid_body(input_schema) => Record<string, unknown> | undefined` — builds a body satisfying the input schema (`generate_valid_object`); `undefined` for a void or null input. Throws for an input that is no object, void or null schema (`to_body_input`), and with the parse's issues if the generated body fails validation — surfaces broken generation logic with a descriptive error rather than a confusing 400 downstream.
 
@@ -570,7 +568,7 @@ accepts (`assert_error_schema_valid`).
 The generators live in the hono-free `adversarial_input_cases.ts`, so the
 cross-process suites reuse them:
 
-- `generate_input_test_cases(input_schema, options?)` → `InputTestCase[]` — whole-body structural (non-object, extra key when the input refuses unknown keys — a `z.strictObject` or a fuz_schema `object`), missing required fields, one wrong-type per field, null for required non-nullable, one format violation per constrained field, and boundary cases read from the field's input-side JSON Schema (`to_field_json_schema` — through a transform or pipe, and under a nullable's `anyOf`): the empty string, one under `minLength` (above one; a prefix of the valid value) and one over `maxLength`; below `minimum`, above `maximum`, at an exclusive bound, zero and negative for a positive-only field, a non-integer for an integer field and a value off a `multipleOf` grid (each half a step from the valid value, inside the range); the empty array, one under `minItems` (above one; the valid value's own items) and one over `maxItems`. A per-field case is emitted only when the field refuses its value (a `z.coerce` field given a wrong type, a pattern admitting the violation string, a preprocess that repairs the value: dropped), so no generated case is accidentally valid. Each per-field case is single-fault — valid but for the field it breaks: it changes one field of a valid base (`generate_valid_object`'s, or `options.base` (`InputTestCaseOptions`) for an input whose valid shape the generator can't reach), or, for a field that base omits, of the body `generate_valid_object_with_field` builds around it, so a case can't also break an object-level rule. A field no valid body carries keeps its wrong-type and null cases on the base and gets no format or boundary cases. Either base failing the schema throws, naming `options.label` (the method or route) when given. A per-field case names the field it breaks (`InputTestCase.field`; absent on the whole-body cases). A void or null input gets no cases; any other input that is no object schema throws (`to_body_input`).
+- `generate_input_test_cases(input_schema, options?)` → `InputTestCase[]` — whole-body structural (non-object, extra key when the input refuses unknown keys — a fuz_schema `object`), missing required fields, one wrong-type per field, null for required non-nullable, one format violation per constrained field, and boundary cases read from the field's input-side JSON Schema (`to_field_json_schema` — through a transform or pipe, and under a nullable's `anyOf`): the empty string, one under `minLength` (above one; a prefix of the valid value) and one over `maxLength`; below `minimum`, above `maximum`, zero and negative for a positive-only field, and a non-integer for an integer field (half a step from the valid value, inside the range); the empty array, one under `minItems` (above one; the valid value's own items) and one over `maxItems`. A per-field case is emitted only when the field refuses its value (a field whose transform accepts the wrong type, a pattern admitting the violation string, a preprocess that repairs the value: dropped), so no generated case is accidentally valid. Each per-field case is single-fault — valid but for the field it breaks: it changes one field of a valid base (`generate_valid_object`'s, or `options.base` (`InputTestCaseOptions`) for an input whose valid shape the generator can't reach), or, for a field that base omits, of the body `generate_valid_object_with_field` builds around it, so a case can't also break an object-level rule. A field no valid body carries keeps its wrong-type and null cases on the base and gets no format or boundary cases. Either base failing the schema throws, naming `options.label` (the method or route) when given. A per-field case names the field it breaks (`InputTestCase.field`; absent on the whole-body cases). A void or null input gets no cases; any other input that is no object schema throws (`to_body_input`).
 - `expected_invalid_reason(input_schema, test_case)` → `string | undefined` — the `data.reason` an RPC refusal of the case owes: the broken field's `invalid_reason` (`schema_meta.ts`), resolved by the same `resolve_invalid_reason` the dispatcher resolves through, or none for an undeclared field or a whole-body case.
 - `generate_params_test_cases(params_schema)` → `ParamsTestCase[]` — format violations only (unconstrained string params accept anything), each one the field refuses.
 - `generate_query_test_cases(query_schema)` → `QueryTestCase[]` — missing required fields the field refuses to go without (a preprocessed field with a default accepts its absence) + format violations the field refuses.
@@ -783,7 +781,7 @@ waiter on timeout so the `waiters` array doesn't grow.
 Six tests in two top-level groups:
 
 1. **schema-level** (3 tests, no DB) — walks JSON Schema representations:
-   - `no sensitive fields in any output schema` — `sensitive_field_blocklist`, over every route, RPC method and WS method output, and the params the server pushes over WS (a `remote_notification`'s payload, whose `output` is `z.void()`, and the request of a `request_response` with `initiator` `'backend'` or `'both'`)
+   - `no sensitive fields in any output schema` — `sensitive_field_blocklist`, over every route, RPC method and WS method output, and the params the server pushes over WS (a `remote_notification`'s payload, whose `output` is `s.void`, and the request of a `request_response` with `initiator` `'backend'` or `'both'`)
    - `no admin-only fields in non-admin output schemas` — `admin_only_field_blocklist`, over the route outputs a non-admin reaches; routes only, since the blocklist matches by name and domain RPC/WS outputs carry `created_by`/`updated_by` legitimately. Admin-gated means every role in an any-of `roles` (or a WS endpoint's `required_roles`) is `admin` or `keeper`, or the daemon token is required
    - `no sensitive fields in any error schema`
 2. **runtime** (3 tests, DB-backed via `create_test_app`):
@@ -794,7 +792,7 @@ Six tests in two top-level groups:
 Support functions: `collect_json_schema_property_names(schema)` (walks
 `properties`/`patternProperties`/`additionalProperties`/`items`/`prefixItems`/`contains`,
 `allOf`/`anyOf`/`oneOf`/`not`/`if`/`then`/`else`, and `$defs`/`definitions`
-values, where a lazy or `.meta({id})` schema's body sits behind a `$ref`),
+values, where a schema's body may sit behind a `$ref`),
 `assert_output_schemas_no_sensitive_fields(surface_source, fields?, skip_routes?)`,
 `assert_non_admin_schemas_no_admin_fields(surface_source, fields?, skip_routes?)`.
 Both read each output from its spec on both sides (`schema_to_surface`): the
@@ -1005,7 +1003,7 @@ Request builders:
 Response assertions:
 
 - `assert_jsonrpc_error_response(body, expected_code?)` — validates `JsonrpcErrorResponse`; optional code check.
-- `assert_jsonrpc_success_response(body, output_schema?)` — validates `JsonrpcResponse`; optional `output_schema` check on `result`, Zod or fuz_schema (`parse_any`).
+- `assert_jsonrpc_success_response(body, output_schema?)` — validates `JsonrpcResponse`; optional `output_schema` check on `result` (`parse`).
 
 One-shot transport:
 
@@ -1016,7 +1014,7 @@ One-shot transport:
 - `RpcCallArgs` — `{app, path, method, params?, params_json?, headers?, id?, verb?}`. `verb` defaults to `'POST'`; use `'GET'` for `side_effects: false` methods. `params_json` sends raw JSON text in place of `params` (exclusive with it) on either verb.
 - `rpc_call_raw(args)` — the same request as `rpc_call`, the response unparsed: `RpcCallRawResult` `{status, headers, body}` with the whole envelope. `parse_rpc_call_result(raw, method)` turns it into an `RpcCallResult`; `rpc_call` is the two composed.
 - `rpc_call(args)` — merges `RPC_CALL_DEFAULT_HEADERS` (`host: 'localhost'`, `origin: TEST_ORIGIN`, `Content-Type: 'application/json'`) under caller headers. Envelope-shape violations throw; JSON-RPC errors return `{ok: false, error}` so callers assert on `error.code` / `error.data.reason`.
-- `rpc_call_typed<T>(args, output_schema)` — parses the success `result` through the schema, Zod or fuz_schema (`parse_any`); throws on envelope failure, error response, or schema mismatch. Use `rpc_call` when the test needs to assert on error shapes.
+- `rpc_call_typed<T>(args, output_schema)` — parses the success `result` through the schema (`parse`); throws on envelope failure, error response, or schema mismatch. Use `rpc_call` when the test needs to assert on error shapes.
 - `rpc_call_for_spec<TSpec>(args)` — spec-bound variant: takes `{..., spec, params}` in place of `{..., method, params}`. `params` is typed from `spec.input` and the success `result` is typed from `spec.output` (runtime-validated, same contract as `rpc_call_typed`). Error branch stays untyped (JSON-RPC `error.data` shapes vary per call site). Use at happy-path + denial-path call sites; fall back to `rpc_call` for adversarial tests that send deliberately-malformed params.
 
 Registry lookups:
@@ -1947,11 +1945,11 @@ token, no `Origin`).
 
 The cell-layer parity coverage is split across two sibling suites. Cells
 can't ride the generic `describe_rpc_round_trip_tests` (stateful verbs need a
-real id threaded across calls; `cell_get` has a top-level `.refine()`), so —
+real id threaded across calls; `cell_get` has a top-level `check`), so —
 like ws/sse — the full cell surface **live-mounts** on the spine RPC path but
 stays **off** `create_spine_surface_spec`, and these dedicated suites are the
 cell validators (`describe_standard_cross_process_tests`' generic round-trip
-never sees them). Both parse every success response against the verb's Zod
+never sees them). Both parse every success response against the verb's
 **output** schema, so a TS↔Rust envelope drift fails the suite — not just a
 payload-field drift. Call-site primitives (`cross_rpc_call` / `error_reason` /
 `expect_output`) live in `cross_backend/cross_rpc.ts`, shared by every
@@ -1973,7 +1971,7 @@ options shape is `RpcPathCapabilityGatedCrossSuiteOptions` from
 `cross_backend/setup.ts`. `cross_backend/wire_shapes.ts` carries
 `assert_iso8601_seconds` / `assert_iso8601_seconds_nullable` — the byte-level
 gate on the canonical second-precision UTC timestamp shape, which a
-`z.string()` output schema can't catch (a millisecond stamp parses fine).
+`string` output schema can't catch (a millisecond stamp parses fine).
 The shared suites pin it on the account-status account + role grants, a
 session, a minted + listed API token, a cell's `created_at` / `updated_at`,
 an audit row, an admin account listing, and an offer's `created_at` /
@@ -2777,15 +2775,15 @@ round-trip / conformance suites never vary:
 USERNAME_LENGTH_MAX]` = `[3, 39]` boundary edges (just-outside → 400,
   just-inside → 403 no-matching-invite) and the creation regex shape (leading
   non-letter / trailing punctuation / embedded disallowed char → 400; mid-string
-  `_`/`-` accepted), catching an off-by-one or position bug in the TS Zod
-  `.min/.max/.regex` vs the Rust byte-scan `is_valid_username_for_creation`.
+  `_`/`-` accepted), catching an off-by-one or position bug in the TS
+  `Username` bounds and regex vs the Rust byte-scan `is_valid_username_for_creation`.
 - **Email format (creation)** — the optional signup `email` validated to the
   loose `local@domain.tld` shape (TS `Email`, `EMAIL_REGEX` + 254-byte
   bound, Rust `is_valid_email`): malformed (no `@` / no domain dot / empty
   side / dot at a domain edge, beside another dot inside it too / whitespace /
   over-length) → 400, well-formed → 403 no-invite. Accepted siblings include
   the single-char-TLD `a@b.c` and the consecutive dots inside a domain that
-  Zod's `z.email()` rejects — the deliberately-looser shared rule. **Closed a
+  a stricter email grammar rejects — the deliberately-looser shared rule. **Closed a
   real divergence**: the Rust spine previously length-checked the email only,
   accepting any non-empty string TS rejected.
 - **Malformed JSON body** — an unparseable (`{`) or non-object (`[]`) body typed

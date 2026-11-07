@@ -63,8 +63,8 @@ export const env_integer = (options?: EnvIntegerOptions): PipeSchema<number, typ
 		max_value(options?.max ?? Number.MAX_SAFE_INTEGER)
 	);
 
-// the recognized spellings, lowercase, as Zod's `z.stringbool()` defaults and
-// the Rust spine's `parse_stringbool` have them
+// the recognized spellings, lowercase, as the Rust spine's `parse_stringbool`
+// has them
 const STRINGBOOL_VALUES: ReadonlyMap<string, boolean> = new Map([
 	['true', true],
 	['1', true],
@@ -86,8 +86,7 @@ const STRINGBOOL_VALUES: ReadonlyMap<string, boolean> = new Map([
  * `no`, `off`, `n`, or `disabled` for `false`. Anything else is refused,
  * `''` and `' true'` included, so a typo doesn't silently flip a feature.
  *
- * The set and the case rule of Zod's `z.stringbool()` defaults, and the twin
- * of the Rust spine's `parse_stringbool`.
+ * The twin of the Rust spine's `parse_stringbool`, its set and its case rule.
  */
 export const EnvStringbool: PipeSchema<boolean, typeof string> = pipe(
 	string,

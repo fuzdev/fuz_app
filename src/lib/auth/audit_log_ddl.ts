@@ -2,7 +2,7 @@
  * Audit log DDL — `CREATE TABLE` + index statements for the `audit_log` table.
  *
  * Consumed by `auth/migrations.ts`. Separated from `auth/audit_log_schema.ts`
- * so the schema module stays Zod-only (paired with `auth/auth_ddl.ts` and
+ * so the schema module holds schemas only (paired with `auth/auth_ddl.ts` and
  * `auth/role_grant_offer_ddl.ts`).
  *
  * Multi-actor invariants the envelope columns assume:

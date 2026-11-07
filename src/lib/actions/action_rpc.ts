@@ -130,7 +130,7 @@ const envelope_response = (c: Context, envelope: unknown, status: number): Route
  * @returns route specs (GET + POST) ready for `apply_route_specs`
  * @throws Error if two actions share the same `spec.method` (registration-time
  *   duplicate detection); also throws if any action's `spec.input` is a null
- *   schema (`z.null()` or fuz_schema `literal(null)`; JSON-RPC 2.0 §4.2 forbids
+ *   schema (`literal(null)`; JSON-RPC 2.0 §4.2 forbids
  *   `params: null` on the wire — use a void schema for parameterless methods)
  *   or its `spec.output` is a void schema.
  */

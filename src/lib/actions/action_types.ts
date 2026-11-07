@@ -241,7 +241,7 @@ export type HandlerForSpec<TSpec extends RequestResponseActionSpec> = [
  * and selecting the narrowest `ctx.auth` shape the spec literal admits.
  *
  * Constructing `{spec, handler}` literals widens `handler` to
- * `ActionHandler<any, any>`, so spec/handler drift (renamed Zod schema,
+ * `ActionHandler<any, any>`, so spec/handler drift (renamed schema,
  * output field removal, input shape change) slips past the typechecker.
  * `rpc_action(spec, handler)` binds the handler signature to
  * `(input: Infer<spec.input>, ctx) => Infer<spec.output>` via the

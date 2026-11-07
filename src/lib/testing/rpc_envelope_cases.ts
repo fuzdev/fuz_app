@@ -335,7 +335,7 @@ export const assert_rpc_envelope_refusal = (
  * (`invalid_request`) before params validation runs, and the envelope cases
  * cover it. Every case returned owes 400 `invalid_params`.
  *
- * @param input - the method's input schema, Zod or `@fuzdev/fuz_schema`
+ * @param input - the method's input schema
  * @param options - a valid base `params` to seed the cases (`InputTestCaseOptions.base`),
  *   and the method name for error messages
  * @returns the cases, each a `params` object

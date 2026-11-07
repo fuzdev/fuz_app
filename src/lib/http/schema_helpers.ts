@@ -349,7 +349,7 @@ export interface SchemaToSurfaceOptions {
 	/** Names the schema in a thrown error, e.g. `POST /api/thing input`. */
 	source?: string;
 	/**
-	 * Called with the library's message when part of the schema has no JSON
+	 * Called with the emitter's message when part of the schema has no JSON
 	 * Schema form and is left out or written as `{}` there.
 	 */
 	on_unrepresentable?: (message: string) => void;

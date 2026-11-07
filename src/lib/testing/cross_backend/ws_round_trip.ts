@@ -295,7 +295,7 @@ export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptio
 			}
 		);
 
-		// `heartbeat` is parameterless on both spines (`z.void()` /
+		// `heartbeat` is parameterless on both spines (`s.void` /
 		// `require_void_params`): the empty shapes are the no-arg call, and a
 		// declared param is `invalid_params`, not ignored.
 		test_if(capabilities.ws, 'heartbeat admits only the parameterless shapes', async () => {

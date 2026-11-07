@@ -163,7 +163,7 @@ const collect_output_schema_entries = (
 				elevated: endpoint_elevated
 			};
 			if (spec.kind === 'remote_notification') {
-				// its `output` is `z.void()`: the payload is its params
+				// its `output` is `s.void`: the payload is its params
 				entries.push(params_entry);
 				continue;
 			}

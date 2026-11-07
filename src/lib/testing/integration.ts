@@ -457,7 +457,7 @@ export const describe_standard_integration_tests = (
 			});
 
 			// Wire-shape gate: the successful `POST /login` body must strict-parse
-			// against `LoginOutput` (`{ok: true}`). `.strictObject` rejects any
+			// against `LoginOutput` (`{ok: true}`). A strict `object` rejects any
 			// extra field, so a backend leaking `username` / `account_id` (the
 			// Rust spine's old shape) fails here on either impl.
 			test('successful login body strict-parses against LoginOutput', async () => {
@@ -491,7 +491,7 @@ export const describe_standard_integration_tests = (
 			// Wire-shape gate: the authenticated `GET /api/account/status` body
 			// must strict-parse against `AccountStatusOutput` — the full shape
 			// `{account: SessionAccountJson, actor: ActorSummaryJson | null,
-			// role_grants: RoleGrantSummaryJson[]}`. `.strictObject` rejects any
+			// role_grants: RoleGrantSummaryJson[]}`. A strict `object` rejects any
 			// extra or missing field on `account` / `actor` / each role_grant, so
 			// a backend returning the old narrow shape (Rust's `{account:{id,
 			// username}, role_grants:[{role}]}`) fails here on either impl. The

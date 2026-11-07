@@ -5,7 +5,7 @@
  *
  * Consumed by `auth/migrations.ts`. Paired with `auth/audit_log_ddl.ts`
  * (audit table) and `auth/role_grant_offer_ddl.ts` (offer table) — DDL lives
- * in `*_ddl.ts`, Zod schemas in `*_schema.ts`.
+ * in `*_ddl.ts`, schemas in `*_schema.ts`.
  *
  * These strings are the body of the frozen `full_auth_schema` migration —
  * never edit them (see the `auth/migrations.ts` module doc for the

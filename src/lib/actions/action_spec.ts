@@ -8,7 +8,7 @@
  * A spec is a plain object typed by these interfaces, written with
  * `satisfies` (`satisfies RequestResponseActionSpec`) so its literal types
  * survive; nothing parses a spec at runtime. Its `input` and `output` are
- * schemas of either library, Zod or `@fuzdev/fuz_schema` (`AnySchema`).
+ * `@fuzdev/fuz_schema` schemas (`AnySchema`).
  * The registration-time checks live in `actions/compile_action_registry.ts`.
  *
  * @see `actions/action_rpc.ts` for the JSON-RPC dispatcher
@@ -56,9 +56,9 @@ export interface ActionSpec {
 	 */
 	auth: RouteAuth | null;
 	side_effects: boolean;
-	/** The input schema, Zod or `@fuzdev/fuz_schema`. */
+	/** The input schema. */
 	input: AnySchema;
-	/** The output schema, Zod or `@fuzdev/fuz_schema`. */
+	/** The output schema. */
 	output: AnySchema;
 	async: boolean;
 	description: string;

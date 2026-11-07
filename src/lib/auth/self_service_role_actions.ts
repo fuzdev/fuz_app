@@ -20,7 +20,7 @@
  * Audit metadata carries `self_service: true` so admin reviewers can
  * distinguish self-toggled role_grants from admin grants/offers. The
  * `role_grant_create` / `role_grant_revoke` metadata schemas declare
- * `self_service: z.boolean().optional()` explicitly, so the field is
+ * `self_service: optional(boolean)` explicitly, so the field is
  * part of the documented schema surface and is round-trip-validated by
  * `query_audit_log`.
  *

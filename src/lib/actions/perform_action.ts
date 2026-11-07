@@ -31,7 +31,7 @@
  *    `__proto__` key at any depth (`json_has_own_proto_key`) are refused
  *    with `data.reason` `params_proto_key` (`ERROR_PARAMS_PROTO_KEY`), on
  *    every input schema, before it runs; then
- *    `spec.input` parses the params (`parse`, Zod or fuz_schema) with
+ *    `spec.input` parses the params (`parse`) with
  *    void / `?? {}` rules (`to_input_params`). A refusal is the generic
  *    `invalid params`, with `data.reason` when the first issue's field
  *    declares an `invalid_reason` (`to_invalid_params_error`) and the
@@ -316,12 +316,12 @@ export const perform_action = async (
 	// step 5: validate params. JSON-RPC 2.0 §4.2 forbids `params: null`;
 	// registration sites reject null-schema inputs. Empty-body convention
 	// (`raw_params ?? {}`) lets all-optional-object methods omit `params`;
-	// a void input (Zod or fuz_schema) reads every empty shape as the no-arg call — see
+	// a void input reads every empty shape as the no-arg call — see
 	// `to_input_params`.
 	//
 	// An own `__proto__` key anywhere in object params is refused first, on
-	// every input: Zod drops a top-level one from a loose object and keeps a
-	// nested one by reference, so a schema alone would store it — a sink for
+	// every input: a loose schema passes it through, so a schema alone would
+	// store it — a sink for
 	// any client that copies the value back with plain assignment. Only an
 	// object is walked, so a non-object `params` is the schema's refusal, as
 	// the Rust twin's shape check answers it ahead of its walk.
@@ -426,8 +426,8 @@ const thrown_error_result = (err: unknown, context: string, log: Logger): Perfor
  * DEV only (`dev_only`). With no declared reason, production sends no `data` at
  * all.
  *
- * @param input - the action's input schema, Zod or fuz_schema
- * @param issues - the failed parse's issues, in the library's order
+ * @param input - the action's input schema
+ * @param issues - the failed parse's issues, in the parse's order
  * @param params - the value that was parsed
  * @returns the JSON-RPC error object
  */

@@ -380,9 +380,8 @@ Env fields carry `meta` (`@fuzdev/fuz_schema/meta.ts`); `sensitivity.ts` adds
 `sensitivity` to fuz_schema's `SchemaMeta` by declaration merging. Importing
 `server/env.ts` or `env/env_schemas.ts` brings the declaration in; a module
 that imports neither and marks a fuz_schema field adds
-`import type {} from '@fuzdev/fuz_app/sensitivity.ts';`. Zod schemas
-(auth input schemas) carry the same keys in `.meta()`, shaped by
-`SchemaFieldMeta` (from `schema_meta.ts`):
+`import type {} from '@fuzdev/fuz_app/sensitivity.ts';`. The keys, in a
+schema's `meta`:
 
 - `description` — human-readable field description (env surface, docs)
 - `sensitivity: 'secret'` — marks sensitive values for masking/redaction; `'personal'` marks personal data (a search term about people), not masked but, like a secret, kept out of read URLs (`schema_has_sensitive_field`)
@@ -475,8 +474,8 @@ in handlers), the action dispatchers (`create_rpc_endpoint` and
 (./usage.md §Rate limiters covers defaults and turning them off). Surface
 exposes `rate_limit_key` on `AppSurfaceRpcMethod` for introspection.
 
-`RouteSpec.query?: ZodObjectLike | AnySchema` declares an optional query parameter
-schema, Zod or a fuz_schema object schema. When
+`RouteSpec.query?: AnySchema` declares an optional query parameter
+schema, an object schema. When
 present, `apply_route_specs` adds query validation middleware that parses
 `c.req.query()` against the schema and returns 400 (`ERROR_INVALID_QUERY_PARAMS`)
 on failure. Validated query data is accessed via `get_route_query(c, schema)`. The query
@@ -523,9 +522,8 @@ HTTP status.
 
 **Declared input reasons.** An RPC input validation failure answers the
 generic `invalid params` (-32602) with no reason, unless the field the first
-issue lands on declares one: `invalid_reason` in its `.meta()`
-(`SchemaFieldMeta`, `schema_meta.ts`), or in fuz_schema's `meta` for a
-`@fuzdev/fuz_schema` input, read through the field's wrappers, the
+issue lands on declares one: `invalid_reason` in its `meta` (`schema_meta.ts` adds the key
+to fuz_schema's `SchemaMeta`), read through the field's wrappers, the
 deepest declaring field along the issue's path winning. Then every refusal of
 that field — missing, wrong type, `null`, out of range, malformed, or a fault
 inside it — carries the reason, on every transport (`perform_action`'s
@@ -534,8 +532,7 @@ Validation issues below). The
 declaration is the one source: the adversarial suites expect it per generated
 case (`expected_invalid_reason`), and the Rust twin owes the same reason on
 every refusal of the field. A body with faults on several fields answers the
-first issue's reason in the library's order (Zod and fuz_schema both report
-fields, then unknown keys), which a twin checking in another order need not
+first issue's reason in the parse's order (fields, then unknown keys), which a twin checking in another order need not
 match, so the reason is defined for a single-fault body only; an unknown key
 on the input itself answers no reason whatever else is wrong, as the Rust
 twin refuses unknown keys first — for a fuz_schema strict `object` input
@@ -554,11 +551,8 @@ message}`, fuz_schema's `SchemaIssue` as JSON, whichever library the schema
 is written in — the REST `issues` of an input refusal (`invalid_request_body`,
 `invalid_route_params`, `invalid_query_params`), the RPC
 `data.issues` of `invalid_params` and of a refused request envelope, and an
-`ActionEvent`'s `validation_errors`. `to_wire_issues` builds it: a
-fuz_schema issue keeps its fields, its `message` the `format_issue` text; a
-Zod issue maps to the kind fuz_schema reports for the same check, with Zod's
-own message, and `received` read from the input at its path; an
-`unrecognized_keys` issue becomes an `unknown_key` per key. The issues are a
+`ActionEvent`'s `validation_errors`. `to_wire_issues` builds it: each
+`SchemaIssue` keeps its fields, its `message` the `format_issue` text. The issues are a
 development diagnostic: the wire carries them only under `DEV` (`dev_only`,
 which in production skips the mapping too), and the Rust spine never sends
 them.
@@ -684,7 +678,7 @@ and `RouteContext` (HTTP) handlers. The Rust `fuz_actions` spine pins the same
 discard-on-rollback contract. Note that
 WS sends via `NotificationSender.send_to_account` are NOT
 wrapped by `create_validated_broadcaster` (which only guards SSE
-`broadcast(channel, data)`) — the Zod `input` schemas on
+`broadcast(channel, data)`) — the `input` schemas on
 `RemoteNotificationActionSpec`s are contracts for consumers, not enforced at
 send time.
 

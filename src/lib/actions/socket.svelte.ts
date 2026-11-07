@@ -562,7 +562,7 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 	 *
 	 * An `undefined` `params` is omitted from the frame rather than sent as
 	 * `{}` — the absent form is the parameterless call every server admits
-	 * for a `z.void()` input, including servers that refuse `{}`.
+	 * for a void input, including servers that refuse `{}`.
 	 *
 	 * Callers supplying an explicit `options.id` are responsible for
 	 * uniqueness — the pending map is keyed by id, and a duplicate silently
@@ -620,7 +620,7 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 			const id = options.id ?? ++this.#next_request_id;
 			// an `undefined` `params` is omitted, never defaulted to `{}` — the
 			// absent form is JSON-RPC 2.0 §4.2's parameterless call and the one
-			// shape every server admits for a `z.void()` input, including
+			// shape every server admits for a void input, including
 			// servers that refuse `{}`
 			const frame: QueuedRequest['frame'] =
 				params === undefined

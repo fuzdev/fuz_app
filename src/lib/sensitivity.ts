@@ -3,9 +3,8 @@
  *
  * Used by env schemas and action input schemas to control masking/redaction
  * in startup logs, surface explorers, and test output, and to keep values
- * out of URLs. A Zod schema declares it with `.meta({sensitivity})`
- * (`SchemaFieldMeta`, read by `schema_sensitivity`); a `@fuzdev/fuz_schema`
- * schema with `meta(schema, {sensitivity})`, the key this module adds to
+ * out of URLs. A `@fuzdev/fuz_schema` schema declares it with
+ * `meta(schema, {sensitivity})`, the key this module adds to
  * fuz_schema's `SchemaMeta` by declaration merging, read by
  * `find_schema_sensitivity`. `server/env.ts` and `env/env_schemas.ts` import
  * this module for the declaration, so a consumer of either has the key; a
@@ -46,8 +45,7 @@ declare module '@fuzdev/fuz_schema/meta.ts' {
 
 /**
  * The strongest `sensitivity` declared on any schema a `@fuzdev/fuz_schema`
- * field reaches — `'secret'` over `'personal'` — the fuz_schema twin of
- * `schema_sensitivity`. Fail-safe: `find_schema_meta` reads every wrapper,
+ * field reaches — `'secret'` over `'personal'`. Fail-safe: `find_schema_meta` reads every wrapper,
  * every schema and action of a `pipe` (not only its first), every option of a
  * union, and a `lazy`'s schema, so a secret stays masked however the field is
  * wrapped, `message` included, which carries the metadata of the schema it

@@ -9,12 +9,6 @@
  * all reach for the same primitives without going through auth. A URL is
  * `Url` from `@fuzdev/fuz_util/url.ts`.
  *
- * The Zod forms a consumer's Zod schema embeds — `ZodUuid`,
- * `ZodUuidWithDefault`, `ZodFactHashSchema`, `ZodUsername`,
- * `ZodActingActor` — are in `zod_schemas.ts`, built on the grammars here and
- * sharing their output types, so a value parsed by either goes where the
- * other's is taken.
- *
  * Client-safe: nothing here imports `@fuzdev/blake3-wasm`, so wire schemas
  * that validate a hash don't pull the WASM binary into a bundle.
  *
@@ -210,9 +204,9 @@ export const is_email_within_length_max = (s: string): boolean =>
  * Deliberately permissive — a structural shape check (`EMAIL_REGEX` plus the
  * `EMAIL_LENGTH_MAX` byte bound), not RFC 5322 conformance or deliverability
  * (real delivery is proven by a confirmation email). The rule is one explicit
- * regex the Rust spine's `is_valid_email` mirrors, looser than Zod's
- * `z.email()` (2+ char TLD, no consecutive dots), which rejected addresses
- * like `a@b.c`. The length bound is the UTF-8 **byte** count (RFC 5321
+ * regex the Rust spine's `is_valid_email` mirrors, looser than grammars
+ * requiring a 2+ char TLD and no consecutive dots, which reject addresses like
+ * `a@b.c`. The length bound is the UTF-8 **byte** count (RFC 5321
  * measures octets), so a multibyte address is bounded identically to the
  * Rust spine's `s.len()`. No transform: case is preserved and surrounding
  * whitespace is rejected (not trimmed), so storage is verbatim and the
@@ -238,11 +232,9 @@ export const create_uuid = (): Uuid => crypto.randomUUID() as Uuid;
 /**
  * The UUID grammar of RFC 9562, in either case: five groups of hex digits,
  * 8-4-4-4-12, with a version from 1 to 8 and the RFC's variant, or the nil or
- * the max UUID. It is `z.uuid()`'s own but for the max UUID, which `z.uuid()`
- * spells in lowercase only, where RFC 9562 §4 reads a UUID case-insensitively.
- * The same source as the pattern fuz_schema's `uuid` renders to JSON Schema,
- * which a test holds it to, the `pattern` of `ZodUuid`, and the grammar of
- * the Rust spine's `is_valid_uuid`.
+ * the max UUID, read case-insensitively as RFC 9562 §4 reads a UUID. The same
+ * source as the pattern fuz_schema's `uuid` renders to JSON Schema, which a
+ * test holds it to, and the grammar of the Rust spine's `is_valid_uuid`.
  */
 export const UUID_REGEX =
 	/^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$/;
@@ -265,7 +257,7 @@ export type UuidWithDefault = Infer<typeof UuidWithDefault>;
  * A timestamp on the wire: a date and time of RFC 3339 in UTC, fuz_schema's
  * `iso_datetime`, which both spines' `YYYY-MM-DDTHH:MM:SSZ`
  * (`iso8601_timestamp_column`) and a `toISOString()` stamp satisfy. Not
- * branded, unlike the Zod `Datetime` of `zod_schemas.ts`.
+ * branded.
  */
 export const Timestamp = pipe(string, iso_datetime);
 export type Timestamp = Infer<typeof Timestamp>;
@@ -293,7 +285,7 @@ export const BLAKE3_HASH_MESSAGE = 'Expected a 64-character lowercase hex blake3
 export const Blake3Hash = pipe(string, message(regex(BLAKE3_HASH_REGEX), BLAKE3_HASH_MESSAGE));
 export type Blake3Hash = Infer<typeof Blake3Hash>;
 
-/** The `description` of `ActingActor`, which `ZodActingActor` carries too. */
+/** The `description` of `ActingActor`. */
 export const ACTING_ACTOR_DESCRIPTION =
 	'Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.';
 
@@ -316,7 +308,7 @@ export const ACTING_ACTOR_DESCRIPTION =
  * 2: `auth.actor !== 'none'` ⟺ input (or query, on REST GETs) declares
  * `acting?: ActingActor`. The dispatcher finds it by reference
  * (`input_schema_declares_acting`), so an input declares this export, not a
- * copy of it; a Zod input declares `ZodActingActor` (`zod_schemas.ts`).
+ * copy of it.
  */
 export const ActingActor = meta(optional(Uuid), { description: ACTING_ACTOR_DESCRIPTION });
 export type ActingActor = Infer<typeof ActingActor>;

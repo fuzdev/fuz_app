@@ -60,7 +60,7 @@ export const audit_log_expr = iso8601_timestamp_expr(AUDIT_LOG_COLUMNS, ['create
 
 /**
  * Process-wide counter for audit metadata validation failures. `query_audit_log`
- * increments on `safeParse` mismatch and writes the row anyway (fail-open —
+ * increments on a `parse` mismatch and writes the row anyway (fail-open —
  * schema drift should not break auth flows). Independent of the
  * unknown-event-type counter — `create_audit_log_config` keeps the two in
  * sync, but a hand-rolled `AuditLogConfig` (or a cast escape) can have a

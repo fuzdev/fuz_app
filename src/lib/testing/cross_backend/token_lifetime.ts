@@ -8,8 +8,8 @@ import '../assert_dev_env.ts';
  * ## Why this suite exists
  *
  * The action-manifest parity gate captures `{method, side_effects, auth}` and
- * **no param schemas**, while the TS spine validates params against a Zod
- * `strictObject` and the Rust spine hand-parses with `params.get(...)`. So a
+ * **no param schemas**, while the TS spine validates params against a strict
+ * `object` and the Rust spine hand-parses with `params.get(...)`. So a
  * spine that silently ignored the `lifetime` field would answer the same mint
  * request with a **200 and an eternal token** — same method, same status,
  * nothing red anywhere. The forcing function has to observe the *stored*
@@ -135,7 +135,7 @@ export const describe_token_lifetime_cross_tests = (
 				created.expires_at !== null,
 				'a ttl mint must return a non-null expires_at — null means the spine dropped the field'
 			);
-			// Byte-shape gate: `z.string()` accepts a millisecond stamp too, so
+			// Byte-shape gate: `Timestamp` accepts a millisecond stamp too, so
 			// `expect_output` above can't tell the two spines apart.
 			assert_iso8601_seconds(created.expires_at, 'token_create.expires_at');
 			const expires_ms = Date.parse(created.expires_at);

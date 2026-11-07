@@ -47,7 +47,7 @@ import '../assert_dev_env.ts';
  * **Login input validation:** malformed login input → 400 `invalid_request_body`
  * on every spine — whitespace-only username (empty after trim), over-long
  * username (> 255), empty password, and an unknown body key (strict object).
- * TS runs the full `LoginInput` Zod schema; the Rust spine enforces the same
+ * TS runs the full `LoginInput` schema; the Rust spine enforces the same
  * shape in `account_login` (the convergence the suite closed: the Rust spine
  * previously let three of these fall through to a lookup-miss 401, and TS let a
  * whitespace-only identifier through to a 401). Asserted via the error reason,
@@ -60,8 +60,70 @@ import '../assert_dev_env.ts';
  *
  * **Length + format creation parity:** the full `Username` shape —
  * `[USERNAME_LENGTH_MIN, USERNAME_LENGTH_MAX]` = `[3, 39]` and the regex
- * `^[a-zA-Z][0-9a-zA-Z_-]*[0-9a-zA-Z]$` — pinned across both backends. The TS
- * Zod `.min()/.max()/.regex()` and the Rust hand-rolled byte-scan
+ * `^[a-zA-Z][0-9a-zA-Z_-]*[0-9a-zA-Z]import '../assert_dev_env.ts';
+
+/**
+ * Cross-backend identity-primitive parity for fuz_app's own spine over real
+ * HTTP — the identity primitives (`Username`, `UsernameProvided`,
+ * `Email`) and the login/signup input handling that enforces them, pinned
+ * facet-by-facet so a TS↔Rust divergence in any one surfaces as a failure:
+ * how usernames are **canonicalized** on the login lookup, the **ASCII-only
+ * creation invariant** that bounds what can ever be stored, and the **email
+ * format** rule applied at signup.
+ *
+ * `UsernameProvided` (login/lookup) canonicalizes the submitted username via
+ * `.trim().toLowerCase()`, and the DB matches case-insensitively
+ * (`LOWER(username) = LOWER($1)`); `Username` (creation) lowercases at store
+ * **and** restricts to ASCII via `^[a-zA-Z][0-9a-zA-Z_-]*[0-9a-zA-Z]$`. The
+ * Rust spine must produce the same canonical form, the same case-insensitive
+ * lookup, **and** the same ASCII-only rejection — or a username that logs in on
+ * TS silently 401s on Rust, or a non-ASCII username storable on one backend
+ * reopens the homograph-collision surface. The spec-derived round-trip +
+ * conformance suites never vary username casing or charset, so this corner was
+ * unpinned.
+ *
+ * **Canonicalization (login lookup):**
+ *
+ * - **case-insensitive login** — an account created `Mixed_Case` logs in via an
+ *   all-uppercase submission (proves the *lookup* folds case, not merely that
+ *   the stored form was lowercased).
+ * - **whitespace-trim login** — the same shape logs in with surrounding
+ *   whitespace (proves `.trim()` on the lookup path). The trimmed set is JS
+ *   `String.prototype.trim`'s on every spine: U+FEFF padding is trimmed (→
+ *   200, and alone → 400 empty), U+0085 is not (→ 401 lookup miss).
+ * - **no Unicode case-fold collision (negative)** — a Turkish-`İ` (U+0130)
+ *   variant of an existing ASCII username must NOT match. Both JS
+ *   `.toLowerCase()` and Rust `str::to_lowercase()` map `İ` → `i` + U+0307
+ *   (combining dot above), never plain `i`, so the cased homograph stays a
+ *   distinct, non-existent username → 401 on every backend.
+ *
+ * **Username-or-email login lookup:** the login identifier resolves against
+ * **username or email** — TS `query_account_by_username_or_email`, Rust the
+ * converged `query_account_with_password_hash` OR-lookup (this was the
+ * divergence the suite closed: the Rust spine previously matched username
+ * only). An account created with an email logs in via that email,
+ * case-insensitively (`Email` stores the original case; folding rides the
+ * `LOWER(email) = LOWER($1)` lookup), and username login keeps working when an
+ * email is present. A non-existent email → 401.
+ *
+ * **Login input validation:** malformed login input → 400 `invalid_request_body`
+ * on every spine — whitespace-only username (empty after trim), over-long
+ * username (> 255), empty password, and an unknown body key (strict object).
+ * TS runs the full `LoginInput` schema; the Rust spine enforces the same
+ * shape in `account_login` (the convergence the suite closed: the Rust spine
+ * previously let three of these fall through to a lookup-miss 401, and TS let a
+ * whitespace-only identifier through to a 401). Asserted via the error reason,
+ * not just the status, so a same-status-wrong-body backend still fails.
+ *
+ * **ASCII-only creation invariant:** a non-ASCII username is rejected at signup
+ * input validation → 400 on every backend, so no Unicode username is ever
+ * stored — the precondition the login no-collision case relies on. (ASCII-only
+ * is the intended invariant for both spines, not an accident of the TS regex.)
+ *
+ * **Length + format creation parity:** the full `Username` shape —
+ * `[USERNAME_LENGTH_MIN, USERNAME_LENGTH_MAX]` = `[3, 39]` and the regex
+ — pinned across both backends. The TS
+ * `Username` bounds and regex and the Rust hand-rolled byte-scan
  * (`is_valid_username_for_creation`) are independent reimplementations of the
  * same rule, so each length boundary is tested just-outside (→ 400) and
  * just-inside (→ 403 no-matching-invite, the settle for a valid username on a
@@ -85,8 +147,8 @@ import '../assert_dev_env.ts';
  * edges, no whitespace — `White_Space ∪ {U+FEFF}` — plus a 254-byte (RFC 5321
  * octet) length bound), Rust the hand-rolled `is_valid_email`. A malformed email → 400, a well-formed one →
  * 403 no-matching-invite (the same accept/reject settle the username tables
- * use). The accepted siblings include the single-char-TLD `a@b.c` that Zod's
- * `z.email()` would reject — the deliberately-looser rule both spines now
+ * use). The accepted siblings include the single-char-TLD `a@b.c` that a
+ * stricter email grammar rejects — the deliberately-looser rule both spines
  * share. This closed a real divergence: the Rust spine previously
  * length-checked the email only, accepting any non-empty string TS rejected.
  *
@@ -265,7 +327,7 @@ interface SignupEmailCase {
  * edge (beside another dot inside the domain too), surrounding whitespace,
  * over the length bound — so a backend policing only one of them is caught.
  * The accepted siblings are the don't-over-reject control and include the
- * shapes Zod's `z.email()` rejects but our looser rule accepts — single-char
+ * shapes a stricter email grammar rejects but our looser rule accepts — single-char
  * TLD `a@b.c` and consecutive dots `a..b@c.d` and `a@b..c` — pinning the
  * deliberately-looser shared rule in both directions.
  * Every case rides a valid username so the rejection (or the 403 no-invite
@@ -310,17 +372,17 @@ const SIGNUP_EMAIL_CASES: ReadonlyArray<SignupEmailCase> = [
 	{ email: 'user@example.com', label: 'well-formed', status: VALID_USERNAME_NO_INVITE_STATUS },
 	{
 		email: 'a@b.c',
-		label: 'single-char TLD (looser than z.email)',
+		label: 'single-char TLD (the looser rule)',
 		status: VALID_USERNAME_NO_INVITE_STATUS
 	},
 	{
 		email: 'a..b@c.d',
-		label: 'consecutive dots (looser than z.email)',
+		label: 'consecutive dots (the looser rule)',
 		status: VALID_USERNAME_NO_INVITE_STATUS
 	},
 	{
 		email: 'user@example..com',
-		label: 'consecutive dots inside the domain (looser than z.email)',
+		label: 'consecutive dots inside the domain (the looser rule)',
 		status: VALID_USERNAME_NO_INVITE_STATUS
 	},
 	{
@@ -644,7 +706,7 @@ export const describe_identity_parity_cross_tests = (
 	// shape on both spines (TS `Email` regex + 254-byte bound, Rust `is_valid_email`):
 	// malformed → 400, well-formed → 403 no-invite. The username is fixed-valid so
 	// each case isolates the email; the `a@b.c` accept pins the deliberately
-	// looser-than-`z.email()` rule the validator port converged on.
+	// looser rule both spines share.
 	describe('signup email format parity', () => {
 		for (const { email, label, status } of SIGNUP_EMAIL_CASES) {
 			test(`${label} → ${status}`, async () => {

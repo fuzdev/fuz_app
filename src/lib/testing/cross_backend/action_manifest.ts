@@ -61,9 +61,10 @@ export const ActionManifestEntry = object({
 	/** RPC method name (`spec.method`). */
 	method: string,
 	/**
-	 * `'void'` when the input is a void schema (`is_void_schema`: `z.void()`
-	 * or fuz_schema `s.void`, a parameterless method), else `'object'` — the
-	 * Rust spine's declared `InputShape`, which its dispatcher enforces. A `z.strictObject({})` input is `'object'`.
+	 * `'void'` when the input is a void schema (`is_void_schema`: `s.void`, a
+	 * parameterless method), else `'object'` — the Rust spine's declared
+	 * `InputShape`, which its dispatcher enforces. An `object({})` input is
+	 * `'object'`.
 	 */
 	input: one_of(['void', 'object']),
 	/** `true` when the action declares `side_effects` (mutation; POST-only on the RPC transport). */

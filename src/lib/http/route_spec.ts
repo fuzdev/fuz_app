@@ -9,10 +9,10 @@
  * which checks the handler's results against the route.
  *
  * Input/output schemas align with SAES `ActionSpec` conventions, and each is
- * a Zod or `@fuzdev/fuz_schema` schema (`AnySchema`):
- * - `input`: the request body schema (`z.null()` or `literal(null)` for no body)
+ * a `@fuzdev/fuz_schema` schema (`AnySchema`):
+ * - `input`: the request body schema (`literal(null)` for no body)
  * - `output`: the success response body schema
- * - a strict object for inputs (reject unknown keys): `z.strictObject()` or `object`
+ * - a strict object for inputs (reject unknown keys): `object`
  *
  * @module
  */
@@ -178,9 +178,9 @@ declare const ROUTE_SPEC_BRAND: unique symbol;
  * A single route definition — the unit of the surface map.
  *
  * `input` and `output` schemas align with SAES `ActionSpec` naming. Every
- * schema field takes a Zod or a `@fuzdev/fuz_schema` schema, validated through
- * `parse`. Use `z.null()` (or fuz_schema's `literal(null)`) for routes with
- * no request body (GET, DELETE without body).
+ * schema field takes a `@fuzdev/fuz_schema` schema, validated through
+ * `parse`. Use `literal(null)` for routes with no request body (GET, DELETE
+ * without body).
  */
 export interface RouteSpec {
 	method: RouteMethod;
@@ -190,9 +190,9 @@ export interface RouteSpec {
 	handler: RouteHandler;
 	description: string;
 	/**
-	 * URL path parameter schema. Use `z.strictObject()` (or fuz_schema's
-	 * `object`) with string fields matching `:param` segments. A fuz_schema
-	 * schema must be an object schema under any wrappers (`get_schema_entries`);
+	 * URL path parameter schema. Use an `object` with string fields matching
+	 * `:param` segments. It must be an object schema under any wrappers
+	 * (`get_schema_entries`);
 	 * `apply_route_specs` throws on one that isn't.
 	 *
 	 * REST-only — actions dispatch through a single JSON-RPC endpoint and encode
@@ -200,12 +200,11 @@ export interface RouteSpec {
 	 */
 	params?: AnySchema;
 	/**
-	 * URL query parameter schema. Use `z.strictObject()` (or fuz_schema's
-	 * `object`) with string fields; a fuz_schema schema must be an object
-	 * schema, as for `params`.
+	 * URL query parameter schema. Use an `object` with string fields; it must
+	 * be an object schema, as for `params`.
 	 */
 	query?: AnySchema;
-	/** Request body schema. Use `z.null()` (or `literal(null)`) for routes with no body. */
+	/** Request body schema. Use `literal(null)` for routes with no body. */
 	input: AnySchema;
 	/** Success response body schema. */
 	output: AnySchema;
@@ -213,7 +212,7 @@ export interface RouteSpec {
 	 * Marks a route whose request and/or response carries **raw bytes or a
 	 * streaming protocol** rather than JSON — git smart-HTTP, file-store
 	 * binary uploads/downloads, raw internal callbacks. Disambiguates the
-	 * overloaded `input: z.null()`, which otherwise can't distinguish "no
+	 * overloaded `input: literal(null)`, which otherwise can't distinguish "no
 	 * body" (`GET /health`) from "raw bytes" (a binary upload).
 	 *
 	 * A `raw_body` `POST` takes any `Content-Type` a browser can't send
@@ -476,7 +475,7 @@ export const to_route_response = (c: Context, result: RouteResult): Response => 
  * Get validated input from the Hono context.
  *
  * Call after the input validation middleware has run. Pass the route's
- * `input` schema, Zod or `@fuzdev/fuz_schema`, to infer the typed shape
+ * `input` schema to infer the typed shape
  * directly (`Infer`):
  *
  * ```ts
@@ -659,8 +658,8 @@ const create_query_validation = (query_schema?: AnySchema): Array<MiddlewareHand
  * never throws. Non-2xx responses are the DEV error check's
  * (`create_dev_route_error_check`), which `create_app_server` mounts
  * outermost so it sees what every layer answers. Non-JSON responses (SSE,
- * binary) are skipped. The schema is Zod or `@fuzdev/fuz_schema`, parsed
- * with `parse`; the log carries the library's own issues. In production,
+ * binary) are skipped. The schema is parsed with `parse`; the log carries
+ * its issues. In production,
  * returns the handler unchanged.
  */
 const wrap_output_validation = (
@@ -839,10 +838,10 @@ const build_rest_error_body = (err: JsonrpcErrorObject): Record<string, unknown>
  * registries (`compile_action_registry`) share the same helper with
  * `input` only — `ActionSpec` has no `query` shape.
  *
- * Every schema slot (`params`, `query`, `input`, `output`) must hold a Zod
- * or a `@fuzdev/fuz_schema` schema (`assert_validation_schema`), and every
+ * Every schema slot (`params`, `query`, `input`, `output`) must hold a
+ * `@fuzdev/fuz_schema` schema (`assert_validation_schema`), and every
  * `errors` entry an error definition (`rest_error`): anything else throws
- * naming the route and the slot. A `@fuzdev/fuz_schema` `params` or `query`
+ * naming the route and the slot. A `params` or `query`
  * must be an object schema (`get_schema_entries`), as the path params and
  * query string are an object: one that isn't throws naming the route.
  *
@@ -854,7 +853,7 @@ const build_rest_error_body = (err: JsonrpcErrorObject): Record<string, unknown>
  * @param authorize - optional authorization phase; runs after the pre-authorization guards and before the post-authorization guards
  * @param db - used for transaction wrapping and `RouteContext`
  * @mutates `app`
- * @throws Error if two specs share the same `method` + `path` (each combination must be unique), if a schema slot holds a value of neither library or an `errors` entry is not a definition, if any spec violates a cross-axis auth invariant or the actor-acting biconditional, or if a fuz_schema `params` or `query` is not an object schema
+ * @throws Error if two specs share the same `method` + `path` (each combination must be unique), if a schema slot holds a value that is no schema or an `errors` entry is not a definition, if any spec violates a cross-axis auth invariant or the actor-acting biconditional, or if a `params` or `query` is not an object schema
  */
 export const apply_route_specs = (
 	app: Hono,

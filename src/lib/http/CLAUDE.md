@@ -52,10 +52,10 @@ consumers.
 - `auth: RouteAuth` — flat record `{account, actor, roles?, credential_types?, required_scope?}` from `http/auth_shape.ts`. `account` / `actor` are `'none' | 'optional' | 'required'`. `required_scope` names the capability a narrowed api token's scope must admit — `surface:<name>`, a non-RPC surface refused to every narrowed token (an `rpc:<method>` capability throws at registration: it is the dispatcher's per-method gate, which a route never reaches) — and is route-spec-only: `compile_action_registry` rejects it on an `ActionSpec`, where the dispatcher derives `rpc:<method>` from `spec.method`. Otherwise the same shape governs `ActionSpec.auth` (see `actions/CLAUDE.md`).
 - `handler: RouteHandler` — `(c: Context, route: RouteContext) => RouteResult | Promise<RouteResult>`, a result the framework answers with (§Handlers and results)
 - `description` — free-text, surfaced in `AppSurface`
-- `params?: ZodObjectLike | AnySchema` — strict-object schema for URL path params (`ZodObjectLike` is a Zod object by structure, `schema_issues.ts`)
-- `query?: ZodObjectLike | AnySchema` — strict-object schema for URL query string
-- `input: ValidationSchema` — request body schema; `z.null()` (or fuz_schema `literal(null)`) for no-body (GET/DELETE)
-- `output: ValidationSchema` — success response schema
+- `params?: AnySchema` — strict-object schema for URL path params
+- `query?: AnySchema` — strict-object schema for URL query string
+- `input: AnySchema` — request body schema; `literal(null)` for no-body (GET/DELETE)
+- `output: AnySchema` — success response schema
 - `mints_credential?: boolean` — the route issues a session cookie while declaring no auth (login, signup, bootstrap); assembly refuses it outside `AUTH_MIDDLEWARE_PATH`, as it does any route whose `auth.account` is not `'none'` (`assert_credential_routes_in_auth_scope` in `auth/middleware.ts`)
 - `reads_credential?: boolean` — the handler reads the resolved account while the route declares no auth gate, answering an anonymous caller itself (account status, the cell-scoped fact read, `create_rpc_endpoint`'s pair, whose dispatcher gates per action); held inside `AUTH_MIDDLEWARE_PATH` by the same assertion. Such a handler reads the account through `get_public_account_id` (`auth/request_context.ts`), which answers a scope-narrowed token as anonymous — the RPC pair excepted, its dispatcher gating each method
 - `rate_limit?: RateLimitKey` — metadata only (`'ip' | 'account' | 'both'`); auto-derives 429
@@ -63,20 +63,18 @@ consumers.
 - `jsonrpc?: boolean` — the route answers JSON-RPC envelopes, not REST bodies; set by `create_rpc_endpoint`, read by the DEV error check and `assert_response_matches_spec`
 - `transaction?: boolean` — declarative transaction wrapping (see below)
 
-Every schema field takes a Zod or a `@fuzdev/fuz_schema` schema
-(`ValidationSchema`, `schema_issues.ts`), validated through `parse_any`, its
-refusals answered with `to_wire_issues`'s `WireIssue`s either way. A slot
-holding a value of neither library throws at registration, naming the route
+Every schema field takes a `@fuzdev/fuz_schema` schema (`AnySchema`),
+validated through `parse`, its refusals answered with `to_wire_issues`'s
+`WireIssue`s. A slot holding a value that is no schema throws at registration, naming the route
 and the slot (`assert_validation_schema`) — in an assembled app, surface
 generation (`schema_to_surface`) reads most slots first and throws the same
 refusal; `params`, `query` and an `errors` entry
-may be absent. A fuz_schema `params` or `query` must be an object schema
+may be absent. A `params` or `query` must be an object schema
 under any wrappers (`get_schema_entries`); `apply_route_specs` throws naming
 the route on one that isn't. Input/output naming mirrors SAES `ActionSpec`. Use a strict object for
-inputs — `z.strictObject()` or fuz_schema's `object` — the surface diagnostic
-warns on non-strict objects because unknown keys are silently stripped by Zod
-4's default `z.object()` (and by fuz_schema's `strip_object`, kept by its
-`loose_object`); the warning names the library's strict form.
+inputs — fuz_schema's `object` — the surface diagnostic warns on non-strict
+objects because unknown keys are silently stripped by `strip_object` and
+kept by `loose_object`.
 
 ### Handlers and results
 
@@ -164,7 +162,7 @@ wrapper). See `auth/signup_routes.ts`.
 3. **Pre-authorization auth guards** — every gate that reads only what the auth middleware set, in coarse-to-fine order: `require_auth` (401 `ERROR_AUTHENTICATION_REQUIRED`) when `auth.account === 'required'` or `auth.actor === 'required'`; `require_credential_types(types)` (403 `ERROR_CREDENTIAL_TYPE_REQUIRED` with `required_credential_types: ReadonlyArray<string>`) when `auth.credential_types?.length`; `require_token_scope(capability)` (403 `ERROR_TOKEN_SCOPE_REQUIRED` with `required_scope`, the token-scope refusal) when `auth.required_scope` names a capability. All fire before any body parsing — so a caller they refuse never sees route-shape information from input parse failures — and before actor resolution, so a wrong channel costs no DB work and never learns account state (e.g. that the account is multi-actor). The `AuthGuardResolver` (e.g. `fuz_auth_guard_resolver` from `auth/auth_guard_resolver.ts`) returns this set as `pre_authorization: Array<MiddlewareHandler>`.
 4. **Authorization phase** — when `spec.auth.actor !== 'none'`, resolves the acting actor against the resolved credential's account (`get_resolved_auth`, set by the auth middleware) plus the `acting` selector (`validated_query.acting` on GETs; read off the raw body on mutations, since body validation now runs after the gates), builds `RequestContext` via `build_request_context`, and sets `REQUEST_CONTEXT_KEY`. When `auth.account !== 'none' && auth.actor === 'none'`, an account-only context is built. Resolution failures return 400 `ERROR_ACTOR_REQUIRED` (with `available[]`) or `ERROR_ACTOR_NOT_ON_ACCOUNT` (or 500 `ERROR_NO_ACTORS_ON_ACCOUNT` on signup-invariant violation, 500 `ERROR_ACCOUNT_VANISHED` on torn account/actor reads after a successful resolve). Public routes (`account: 'none' && actor: 'none'`) skip this phase entirely.
 5. **Post-authorization auth guards** — `require_role(roles)` (403 `ERROR_INSUFFICIENT_PERMISSIONS` with `required_roles: ReadonlyArray<string>`) when `auth.roles?.length`. The only gate in this phase, because it is the only one that reads `REQUEST_CONTEXT_KEY` (populated by step 4) rather than the auth middleware's own context vars. Multi-role specs admit any-of via `has_any_scoped_role(ctx, roles, null)`.
-6. **Input validation** — JSON body parsed + validated; mismatch returns 400 `ERROR_INVALID_JSON_BODY` (not JSON) or `ERROR_INVALID_REQUEST_BODY` (schema failure with `issues`). Every schema refusal's `issues` are `WireIssue`s (`to_wire_issues`, `schema_issues.ts`), sent under DEV only (`dev_only`). Skipped on GET and on a null input (`is_null_schema`: `z.null()` or `literal(null)`). The validated input lands on `c.var.validated_input`.
+6. **Input validation** — JSON body parsed + validated; mismatch returns 400 `ERROR_INVALID_JSON_BODY` (not JSON) or `ERROR_INVALID_REQUEST_BODY` (schema failure with `issues`). Every schema refusal's `issues` are `WireIssue`s (`to_wire_issues`, `schema_issues.ts`), sent under DEV only (`dev_only`). Skipped on GET and on a null input (`is_null_schema`: `literal(null)`). The validated input lands on `c.var.validated_input`.
 7. **Handler** — wrapped in transaction when `use_transaction` (see above), receives `RouteContext`; its result becomes the response (`to_route_response`)
 8. **Error catch** — catches a thrown JSON-RPC error (`ThrownJsonrpcError`, recognized by brand through `to_thrown_jsonrpc_error`, so one from a second fuz_app copy maps too; a foreign error class carrying a JSON-RPC `code` falls to the generic path) → maps to HTTP status + the flat REST error body (`{error: <reason>, message?, ...rest_data}`); catches generic `Error` → 500 `{error: 'internal_error', message?}` (message only in DEV). The reason string comes from `err.data.reason` when set (consumer-supplied canonical reason override) or from `jsonrpc_error_code_to_name(err.code)` (e.g. `-32003 → 'not_found'`). The flat shape matches what middleware and direct handlers emit — REST callers see one envelope across every emit site, while the JSON-RPC dispatcher keeps its own `{jsonrpc, id, error: {code, message, data}}` envelope on the RPC mount.
 9. **DEV-only output validation** — a 2xx JSON body against `spec.output` (see below); error responses are the outer DEV error check's
@@ -184,8 +182,7 @@ Duplicate `method path` pairs throw at registration.
 
 Validated values are accessed via `get_route_input(c, schema)`,
 `get_route_params(c, schema)`, `get_route_query(c, schema)` — pass the
-matching schema, Zod or fuz_schema, and the return type infers as
-`ValidationOutput<typeof schema>`.
+matching schema, and the return type infers as `Infer<typeof schema>`.
 Each helper has a `<T>(c)` overload (no schema arg) for callers without the
 schema in scope.
 
@@ -224,8 +221,8 @@ action-handler surfaces (REST, RPC, WS); see ../../../docs/architecture.md
 - `RateLimitKey` (`rate_limiter.ts`) — `'ip' | 'account' | 'both'`
 
 `RouteSpec.errors` and `MiddlewareSpec.errors` are lists of definitions
-(`ReadonlyArray<RestErrorDef>`), so a Zod error entry is impossible by type,
-and `apply_route_specs` refuses anything else at registration.
+(`ReadonlyArray<RestErrorDef>`), so a bare schema is impossible by type, and
+`apply_route_specs` refuses anything else at registration.
 
 All error bodies are loose objects — intentional because multiple
 producers (middleware + handler) can emit different extra fields at the
@@ -287,8 +284,8 @@ beside them.
 
 The same auto-derivation pattern is **not** appropriate for
 consumer-authored inputs (or handler outputs). A consumer's spec declares
-the exact `acting?: ActingActor` slot (`ActingActor` of `primitive_schemas.ts`,
-or `ZodActingActor` of `zod_schemas.ts` for a Zod input), and the framework
+the exact `acting?: ActingActor` slot (`ActingActor` of `primitive_schemas.ts`),
+and the framework
 reads it back via reference-equality to drive the authorization phase — auto-extending
 schemas at registration time would obscure the source of truth ("did the
 spec declare this, or did the framework graft it on?") and quietly shadow
@@ -311,7 +308,7 @@ confirmation.
 
 ## Schema Helpers
 
-`http/schema_helpers.ts` is the canonical home for shared schema introspection (Zod, and fuz_schema where a helper takes either)
+`http/schema_helpers.ts` is the canonical home for shared schema introspection
 — extracted to break a circular dependency between `http/route_spec.ts`
 (input validation) and `http/surface.ts` (surface generation).
 
@@ -322,15 +319,15 @@ generation logic.
 
 Key helpers:
 
-- `is_null_schema(schema)` — a `ZodNull` by its traits (`zod_has_trait`), or a fuz_schema `literal(null)` (a kind check, not parse-null, to avoid false positives from `z.nullable(z.string())`)
-- `is_void_schema(schema)` — a `ZodVoid` by its traits, or a fuz_schema `literal(undefined)` (what `s.void` is, a `meta` copy included; a kind check like `is_null_schema`, so neither `z.undefined()` nor an optional schema is void); a void input declares a parameterless RPC method
+- `is_null_schema(schema)` — a `literal(null)` (a kind check, not parse-null, to avoid false positives from `nullable(string)`)
+- `is_void_schema(schema)` — a `literal(undefined)` (what `s.void` is, a `meta` copy included; a kind check like `is_null_schema`, so an optional schema is not void); a void input declares a parameterless RPC method
 - `to_void_params(raw_params)` — reads absent, `null`, and `{}` params of a void input as the no-arg call (`undefined`), passing any other shape through for the void schema to refuse — the twin of the Rust spine's `require_void_params`
-- `to_input_params(input, raw_params)` — the one params normalizer every receiving end runs before the input parse (`parse_any`), Zod or fuz_schema: `to_void_params` for a void input, else absent/`null` → `{}`; used by both the server dispatch core (`perform_action`) and the peer receive path (`ActionDispatcher`)
+- `to_input_params(input, raw_params)` — the one params normalizer every receiving end runs before the input parse (`parse`): `to_void_params` for a void input, else absent/`null` → `{}`; used by both the server dispatch core (`perform_action`) and the peer receive path (`ActionDispatcher`)
 - `json_has_own_proto_key(value)` — whether any object in a parsed JSON value has an own `__proto__` key, by an iterative walk (no recursion — `JSON.parse` nests deeper than the call stack); the dispatcher refuses such params with `ERROR_PARAMS_PROTO_KEY`. Twin of the Rust `fuz_http::json_has_own_proto_key`
-- `safe_parse_dropping_unknown_keys(schema, value)` — the forward-compatible read of a remote-authored payload, Zod or fuz_schema, returning `parse_any`'s `{ok, value}` / `{ok: false, issues}`: while every issue is an unknown key (`unknown_key_targets`), strips them from a copy and reparses — after the first parse that reports unknown keys, one schema-guided pass deletes every key a strict fuz_schema `object` doesn't name anywhere the schema reaches (entries, array items, record values, the `variant` option), as a fuz_schema parse reports at most a hundred issues; a key under a fuz_schema `union` is never stripped (the union fails as one issue of its own), and a later `pipe` stage is stripped only as reported — until nothing is left to strip, capped at `UNKNOWN_KEY_PASSES_MAX` passes (the last failure returned past it); any other issue still fails. A Zod union of strict objects reports the key and is stripped, a fuz_schema `union` reports one issue of its own and is not. Used for response `result`s (`ActionEvent`) and peer replies (`peer/ping`); matches serde's ignore-unknown-fields default on the Rust spine
-- `is_strict_object_schema(schema)` — detects `z.strictObject()` by its `def.catchall` being a `ZodNever` (by traits), or a fuz_schema `object` (not `strip_object` / `loose_object`); a fuz_schema `pipe` is read through to its first schema when no stage is a `transform` (so a refined `object` reads strict), while any Zod `ZodPipe` — even `O.pipe(O)` with no transform — reads not strict
-- `schema_to_surface(schema, {io?, source?, on_unrepresentable?}?)` — throws first on a value of neither library (`assert_validation_schema`, naming `source`, so an assembled app's slot of neither library fails boot as registration would refuse it, not as an unwritable JSON Schema); Zod or fuz_schema → JSON Schema (the Zod schema's own `.toJSONSchema()` or fuz_schema's `to_json_schema`, by `is_schema`), on the side `io` names (`'output'` by default), with `$schema` and `default` keys stripped recursively (defaults may be non-deterministic; `$schema` is snapshot noise). `null` for a null or void schema. A part JSON Schema can't say (an output-side transform, a `z.custom()`, a fuz_schema `check`) is left out or written as `{}` (`unrepresentable: 'any'`) and reported to `on_unrepresentable`; a schema with nothing describable (`{}` from a schema other than `z.unknown()` / `z.any()`) or one an emitter refuses outright throws, prefixed with `source` — so a root-level transform output (`z.unknown().transform(f)` included), `z.custom()` or `z.date()` fails server assembly. It never answers `null` for a failure, which would read as "no input" and drop the schema from every suite that reads the surface
-- `SchemaFieldInfo` — one field of an object schema of either library (`name`, `base_type` in Zod's vocabulary, `required`, `has_default`, `nullable`), what `zod_extract_fields` (`zod.ts`) and the testing generators' `to_object_schema_view` produce; here rather than in `zod.ts` so the generators' types reach no Zod-typed module
+- `safe_parse_dropping_unknown_keys(schema, value)` — the forward-compatible read of a remote-authored payload, returning `parse`'s `{ok, value}` / `{ok: false, issues}`: while every issue is an unknown key (`unknown_key_targets`), strips them from a copy and reparses — after the first parse that reports unknown keys, one schema-guided pass deletes every key a strict `object` doesn't name anywhere the schema reaches (entries, array items, record values, the `variant` option), as a parse reports at most a hundred issues; a key under a `union` is never stripped (the union fails as one issue of its own), and a later `pipe` stage is stripped only as reported — until nothing is left to strip, capped at `UNKNOWN_KEY_PASSES_MAX` passes (the last failure returned past it); any other issue still fails. Used for response `result`s (`ActionEvent`) and peer replies (`peer/ping`); matches serde's ignore-unknown-fields default on the Rust spine
+- `is_strict_object_schema(schema)` — detects an `object` (not `strip_object` / `loose_object`); a `pipe` is read through to its first schema when no stage is a `transform` (so a refined `object` reads strict)
+- `schema_to_surface(schema, {io?, source?, on_unrepresentable?}?)` — throws first on a value that is no schema (`assert_validation_schema`, naming `source`, so an assembled app's slot holding none fails boot as registration would refuse it, not as an unwritable JSON Schema); a schema → JSON Schema (`to_json_schema`), on the side `io` names (`'output'` by default), with `$schema` and `default` keys stripped recursively (defaults may be non-deterministic; `$schema` is snapshot noise). `null` for a null or void schema. A part JSON Schema can't say (an output-side transform, a `check`) is left out or written as `{}` (`unrepresentable: 'any'`) and reported to `on_unrepresentable`; a schema with nothing describable (`{}` from a schema other than `unknown`) or one the emitter refuses outright throws, prefixed with `source` — so a root-level transform output fails server assembly. It never answers `null` for a failure, which would read as "no input" and drop the schema from every suite that reads the surface
+- `SchemaFieldInfo` — one field of an object schema (`name`, `base_type`, `required`, `has_default`, `nullable`), what the testing generators' `to_object_schema_view` produces
 - `middleware_applies(mw_path, route_path)` — Hono pattern matching: `'*'`, exact, `'/api/*'` prefix (handles `prefix.slice(0, -1)` so `/api/*` also matches the bare `/api`)
 - `middleware_carves_out(spec, route_path)` — one of the layer's `carve_outs` applies to the route; the carve-out half of `middleware_spec_applies`, which `assert_full_middleware_stack` reads to relax a carved-out route's expected stack
 - `middleware_spec_applies(spec, route_path)` — the layer runs on the route: its `path` applies and none of its `carve_outs` does; what the route error map takes middleware definitions by
@@ -353,7 +350,7 @@ policy invariants.
 
 `generate_app_surface(options)` emits a `warning` diagnostic for every
 input schema that's not strict (unknown keys silently strip under
-`z.object()`), writes every schema through `schema_to_surface` — inputs,
+`strip_object`), writes every schema through `schema_to_surface` — inputs,
 params and query on the input side (what the server accepts, so a
 `Username` transform keeps its bounds and pattern), outputs, error bodies and
 event params on the output side — with an `info` diagnostic (category
@@ -525,7 +522,7 @@ own by casting `as JsonrpcErrorCode`, and declare each one's HTTP status with
 - `request_cancelled` (-32010, HTTP 499) — caller-initiated cancellation (nginx "client closed").
 
 **`invalid_params` vs `validation_error`** — use `invalid_params` (standard
-code) for Zod parse failures; reserve `validation_error` (app code) for
+code) for schema parse failures; reserve `validation_error` (app code) for
 business rules.
 
 **`rate_limited` vs `queue_overflow`** — both 429; reverse map
@@ -631,7 +628,7 @@ must run only after the transaction commits.
 - Structurally satisfied by both `RouteContext` (HTTP) and `ActionContext` (RPC + WS) — they share the `{log, post_commit_effects}` shape, which is why this helper lives in `http/` rather than `actions/` or `auth/`.
 
 WS sends are **not** wrapped by `create_validated_broadcaster` (that only
-guards SSE `broadcast(channel, data)`). Zod input schemas on
+guards SSE `broadcast(channel, data)`). The input schemas of
 `RemoteNotificationActionSpec`s are contracts for consumers, not enforced
 at send time.
 
@@ -754,5 +751,5 @@ Interfaces exported for consumer use: `TableInfo`, `TableWithCount`,
 
 - **Middleware ordering** is assembled by `create_app_server` — see the root ../../../CLAUDE.md §Middleware Ordering. The invariants `http/` needs consumers to uphold: trusted-proxy runs before auth/rate-limit; origin verification runs before session parsing; `client_ip` must be set before any handler or rate limiter reads it
 - **No re-exports.** Import every symbol from its canonical source module. `http/surface.ts` no longer re-exports schema helpers — go through `http/schema_helpers.ts`
-- **Input/output schemas align with SAES.** When wiring RPC via `actions/action_rpc.ts`, the same Zod types flow through unchanged (see `actions/CLAUDE.md` §Single JSON-RPC 2.0 endpoint)
+- **Input/output schemas align with SAES.** When wiring RPC via `actions/action_rpc.ts`, the same schemas flow through unchanged (see `actions/CLAUDE.md` §Single JSON-RPC 2.0 endpoint)
 - **Error modules are complementary, not redundant.** `http/error_schemas.ts` is declaration-first (for routes and surface); `http/jsonrpc_errors.ts` is throw-first (for handlers and the catch layer). A single `ERROR_*` code can be raised either way depending on whether the handler needs to also attach diagnostic fields

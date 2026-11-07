@@ -1481,8 +1481,7 @@ limit. `JSON.parse` reads `"__proto__"` as an ordinary own key, but a client
 that copies stored JSON back with plain assignment — any shallow copy or
 deep-merge loop over cell `data` — hits the prototype setter instead, the
 classic prototype-pollution sink. Without the walk the key would be stored and
-served: Zod drops a top-level one from a loose object and passes a nested one
-through by reference, and the Rust spine keeps both. Own `constructor` and
+served: a loose schema passes it through, and the Rust spine keeps it. Own `constructor` and
 `prototype` keys are inert on a plain object and stay admitted. The walk is
 iterative and linear in the body's nodes. The Rust spine
 (`fuz_http::json_has_own_proto_key`) answers the same body.

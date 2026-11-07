@@ -6,7 +6,7 @@ import '../assert_dev_env.ts';
  * The stateful suites (the cell verbs, account lifecycle, role grants, tokens,
  * facts, audit reads) POST raw JSON-RPC envelopes over a cross-process
  * `FetchTransport`, threading ids and auth headers across calls, and parse
- * every success `result` against the verb's declared Zod **output** schema —
+ * every success `result` against the verb's declared **output** schema —
  * the wire-shape parity gate. A TS↔Rust envelope drift, not just a payload
  * field drift, fails the assertion.
  *
@@ -82,7 +82,7 @@ export const error_reason = (r: RpcResult): unknown =>
 
 /**
  * Assert the call succeeded and the `result` matches the verb's declared
- * output schema, Zod or `@fuzdev/fuz_schema` — the wire-shape parity gate.
+ * output schema — the wire-shape parity gate.
  * Returns the parsed output.
  */
 export const expect_output = <T>(r: RpcResult, schema: Schema<T, any>): T => {

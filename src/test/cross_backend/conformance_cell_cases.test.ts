@@ -1,5 +1,5 @@
 /**
- * Ties the `empty_input_handler_guarded` input marker (`SchemaFieldMeta`) to
+ * Ties the `empty_input_handler_guarded` input marker (`schema_meta.ts`) to
  * the runtime guard it stands for.
  *
  * The marker exempts an action from the input-shape invariant and keeps its

@@ -849,14 +849,14 @@ export const create_fuz_authorization_handler = (
  *
  * REST is bi-located: GETs declare `acting` on `query`, mutations on `input`.
  * Query validation still runs ahead of the authorization phase, so the GET
- * half reads a typed Zod field. Input validation now runs *after* the
+ * half reads a typed field. Input validation now runs *after* the
  * authority gates (nothing about a route's body shape reaches a caller those
  * gates refuse), so the mutation half reads the raw body instead.
  *
  * The raw read mirrors `create_input_validation`'s own skip conditions exactly
  * — GETs and null-input specs — so this never parses a body the route itself
  * would have left alone. That matters for the routes carrying raw bytes rather
- * than JSON (git smart-HTTP, binary uploads): they declare `input: z.null()`,
+ * than JSON (git smart-HTTP, binary uploads): they declare `input: literal(null)`,
  * so their stream reaches the handler untouched, and they carry `acting` on
  * `query` regardless.
  *

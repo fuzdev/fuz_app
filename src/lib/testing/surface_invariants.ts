@@ -600,7 +600,7 @@ export const assert_no_unexpected_public_mutations = (
  * Query-string-driven filtering (audit log, list endpoints) should use params schemas
  * or query string parsing, not input schemas.
  *
- * Note: RPC endpoints (`create_rpc_endpoint`) use `input: z.null()` on their
+ * Note: RPC endpoints (`create_rpc_endpoint`) use `input: literal(null)` on their
  * route specs — the dispatcher handles body/query parsing internally. Real input
  * schemas live in `rpc_endpoints` surface, not on routes; see
  * `assert_rpc_ws_surface_invariants` for the parallel checks over RPC/WS

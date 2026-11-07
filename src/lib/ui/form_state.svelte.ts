@@ -28,7 +28,7 @@
  * <script lang="ts">
  *   const form_state = new FormState<'username'>();
  *   let username = $state.raw('');
- *   const username_valid = $derived(Username.safeParse(username).success);
+ *   const username_valid = $derived(is(Username, username));
  *   const can_submit = $derived(username.trim() && username_valid);
  *
  *   const handle_submit = async () => {

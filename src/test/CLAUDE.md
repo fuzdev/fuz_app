@@ -569,7 +569,7 @@ format regex parity** (both `[3, 39]` boundary edges + the creation-regex shape,
 rejected → 400 / accepted → 403 no-matching-invite), and **email format**
 (the optional signup `email` validated to the loose `local@domain.tld` shape —
 TS `Email` regex + 254-byte bound, Rust `is_valid_email`: malformed → 400,
-well-formed → 403, the single-char-TLD `a@b.c` accepted looser than `z.email()`;
+well-formed → 403, the single-char-TLD `a@b.c` accepted;
 **closed the Rust length-only-email divergence**). Assertions check the error
 reason, not just the status. The `create_account({email})` fixture plumbing rides the
 production signup body against the username-scoped invite. In-process leg

@@ -12,7 +12,7 @@ import '../assert_dev_env.ts';
  * generic round-trip would tombstone the bootstrapped keeper). They
  * live-mount on every spine's RPC path but stay off the declared surface,
  * so this dedicated suite is their cross-impl validator. Every success
- * `result` is parsed against the verb's declared Zod **output** schema, so
+ * `result` is parsed against the verb's declared **output** schema, so
  * a TS↔Rust envelope drift fails the assertion.
  *
  * @module
@@ -345,7 +345,7 @@ export const describe_account_lifecycle_cross_tests = (
 					failure,
 					'keeper-removal guard must emit an account_delete outcome=failure audit row with reason cannot_delete_keeper'
 				);
-				// Byte-shape gate on the audit row's timestamp — `z.string()` in
+				// Byte-shape gate on the audit row's timestamp — the `Timestamp` in
 				// `AuditLogEventWithUsernamesJson` accepts a millisecond stamp too.
 				assert_iso8601_seconds(failure.created_at, 'audit_log_list.created_at');
 			}

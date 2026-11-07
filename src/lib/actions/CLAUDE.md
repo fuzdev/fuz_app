@@ -17,9 +17,8 @@ ordering see the root ../../../CLAUDE.md §Action Spec System (SAES) and
 to the code. This file documents the cross-cutting invariants and the
 shapes that span multiple files.
 
-Every exported Zod schema is paired with a same-named `z.infer` type export
-— ecosystem-wide rule (Skill(fuz-stack) §Zod schemas). New schemas keep
-the pair invariant.
+Every exported schema is a `@fuzdev/fuz_schema` schema paired with a
+same-named `Infer` type export. New schemas keep the pair invariant.
 
 ## Action specs (`actions/action_spec.ts`)
 
@@ -27,14 +26,14 @@ Canonical source of truth. Specs are plain objects typed by TS interfaces
 (`ActionSpec` and its three kinds, `ActionSpecUnion`), written with
 `satisfies` so their literals survive; nothing parses a spec at runtime, so
 every required field is spelled — no defaults. `input` / `output` are a
-`ValidationSchema`, Zod or `@fuzdev/fuz_schema`. `ActionKind`,
+`@fuzdev/fuz_schema` schema (`AnySchema`). `ActionKind`,
 `ActionInitiator` and `ActionEventPhase` are fuz_schema `one_of`s
 (`ActionEventData` validates with them), built from the const lists `ACTION_KINDS`,
 `ACTION_INITIATORS` and `ACTION_EVENT_PHASES`; `is_action_spec` reads
 `ACTION_KINDS`. Three concrete kinds discriminate on `kind`:
 
 - `request_response` — `auth: RouteAuth` (non-null), `side_effects` arbitrary, `output` arbitrary, `async: true`.
-- `remote_notification` — `auth: null`, `side_effects: true`, `output` a void schema (`ZodVoidLike` — a `z.void()` by structure — or fuz_schema's `s.void`), `async: true`.
+- `remote_notification` — `auth: null`, `side_effects: true`, `output` fuz_schema's void schema, `s.void`, `async: true`.
 - `local_call` — `auth: null`, `side_effects` arbitrary, `output` arbitrary, `async` boolean.
 
 `RouteAuth` is the flat record
@@ -88,12 +87,12 @@ non-`remote_notification` kind.
 `create_rpc_endpoint` and `register_action_ws`. Validates these checks in
 order and returns the `Map<method, RpcAction>` the dispatchers use:
 
-- **Schema slots** — `input` and `output` each hold a Zod or a fuz_schema schema (via `assert_validation_schema`, `schema_issues.ts`), on every spec; a value of neither library throws naming the action and the slot.
+- **Schema slots** — `input` and `output` each hold a fuz_schema schema (via `assert_validation_schema`, `schema_issues.ts`), on every spec; a value that is no schema throws naming the action and the slot.
 - **Auth-shape cross-axis invariants** — roles imply a required actor, no accountless actor, nothing to gate on unrestricted auth (via `assert_route_auth_invariants`).
 - **Auth-shape biconditional** — `actor !== 'none' ⟺ input declares acting?: ActingActor` (via `assert_route_auth_acting_biconditional`).
 - **No `auth.required_scope`** — the slot is route-spec-only; nothing mounts a guard from it on an action, so declaring it would be a control that silently does nothing. Narrowed tokens are gated per method by the scope check in `perform_action`, which derives the `rpc:<method>` capability from `spec.method` rather than trusting a hand-written one.
 - **Rate-limit account axis** — `rate_limit: 'account' | 'both'` requires `auth.account === 'required'`.
-- **JSON-RPC §4.2 wire validity** — `request_response` specs with a handler may not use a null schema (`z.null()`, fuz_schema `literal(null)`) for input (use a void schema, `z.void()` or fuz_schema `s.void`, for nullary), nor a void schema for output (a response always carries a `result`, which clients validate against `spec.output`; use a null schema when there's nothing to return). Both are detected by shape (`is_null_schema` / `is_void_schema`), so a `meta` copy counts.
+- **JSON-RPC §4.2 wire validity** — `request_response` specs with a handler may not use a null schema (`literal(null)`) for input (use a void schema, `s.void`, for nullary), nor a void schema for output (a response always carries a `result`, which clients validate against `spec.output`; use a null schema when there's nothing to return). Both are detected by shape (`is_null_schema` / `is_void_schema`), so a `meta` copy counts.
 - **Unique method names** across the array.
 
 Only `request_response` specs with a handler reach the dispatch map;
@@ -138,11 +137,11 @@ and options on each function's TSDoc.
 - `get_executor_phases(spec, executor)` — phases an executor participates in for the spec.
 - `get_handler_return_type` — TS type a phase handler must return; side-effect imports `ActionOutputs`.
 - `generate_phase_handlers` — per-action typed handler-map fragment.
-- `generate_frontend_actions_api` — typed `FrontendActionsApi` interface. A void or null input of either library (`is_void_schema`, `is_null_schema`) emits `input?: void`; otherwise each method's `input?:` follows `action_input_is_optional` (parsed with `parse_any`) — the schema accepts `undefined`, or accepts `{}` and is not marked `.meta({empty_input_handler_guarded: true})` (`SchemaFieldMeta`, read by `is_empty_input_handler_guarded` in `schema_meta.ts` — set on `cell_get`, `cell_field_list` and `cell_item_list`, whose `{}` reaches a handler guard that refuses it with a declared reason, so their input stays required; a consumer marks its own the same way); an input-shape invariant test reads the same rule.
-- `generate_action_method_enums` — up to nine `@fuzdev/fuz_schema` `one_of` + `Infer` pairs, importing `{one_of, type Infer}` from `@fuzdev/fuz_schema/schema.ts`; a const's `def` is its method array, so a Zod schema holding one wraps it as `z.enum(ActionMethod.def)`.
+- `generate_frontend_actions_api` — typed `FrontendActionsApi` interface. A void or null input (`is_void_schema`, `is_null_schema`) emits `input?: void`; otherwise each method's `input?:` follows `action_input_is_optional` (by `parse`) — the schema accepts `undefined`, or accepts `{}` and is not marked `meta(…, {empty_input_handler_guarded: true})` (read by `is_empty_input_handler_guarded` in `schema_meta.ts` — set on `cell_get`, `cell_field_list` and `cell_item_list`, whose `{}` reaches a handler guard that refuses it with a declared reason, so their input stays required; a consumer marks its own the same way); an input-shape invariant test reads the same rule. Each input is typed `ActionCallInputs[method]`, the schema's input type — what a caller passes before the parse, so a `with_default` field is optional at the call.
+- `generate_action_method_enums` — up to nine `@fuzdev/fuz_schema` `one_of` + `Infer` pairs, importing `{one_of, type Infer}` from `@fuzdev/fuz_schema/schema.ts`; a const's `def` is its method array.
 - `generate_typed_action_event_alias` — fixed-shape `TypedActionEvent<TMethod, TPhase, TStep>` alias.
 - `generate_action_specs_record` — `ActionSpecs` runtime const + type + `action_specs` array. The const is annotated with the type (`readonly` members), so a consumer's declaration emit names the type instead of writing every spec's schema types out, which past enough specs is TS7056. The type is an alias, not an interface: an alias has an implicit index signature, so `Object.values(ActionSpecs)` stays typed and `action_specs` checks each spec against `ActionSpecUnion` (over an interface it is `any[]`).
-- `generate_action_inputs_outputs` — `ActionInputs` + `ActionOutputs` runtime consts + interfaces, each schema typed as its output: `z.infer<typeof …>` for a Zod schema, fuz_schema's `Infer<typeof …>` for a `@fuzdev/fuz_schema` one, importing `z` and `Infer` only when a schema of that library is present; a schema of neither throws naming the method.
+- `generate_action_inputs_outputs` — `ActionInputs` + `ActionOutputs` runtime consts + interfaces, plus the `ActionCallInputs` interface, importing `Infer` and `InferInput`; a value that is no schema throws naming the method. The two sides of a call see one input schema differently, so its types split by side: `ActionInputs` is each input's output type (`Infer<typeof …>`) — the parsed value a handler, an action event (`ActionEventDatas`) or a notification receiver reads, defaults filled and transforms applied; `ActionCallInputs` is its input type (`InferInput<typeof …>`) — what a caller passes, which the call surfaces (`FrontendActionsApi`, `BackendActionsApi`) take, so a `with_default` field is optional there and required in `ActionInputs`. `ActionOutputs` is each output's output type, what a caller receives.
 - `generate_action_event_datas` — `ActionEventDatas` interface; per-spec variants.
 - `generate_frontend_action_handlers` — `FrontendActionHandlers` interface (Tier 2 only).
 - `generate_backend_actions_api` — `BackendActionsApi` interface + `broadcast_action_specs` array.
@@ -260,9 +259,8 @@ interface RpcAction {
 ### `rpc_action(spec, handler)` — typed binder
 
 `rpc_action<TSpec extends RequestResponseActionSpec>(spec, handler)` pins
-the handler's input / output types to `ValidationOutput<TSpec['input']>` /
-`ValidationOutput<TSpec['output']>` (`schema_issues.ts`: fuz_schema's `Infer`
-or Zod's `z.output`, per spec) and tightens `ctx.auth` per the conditional
+the handler's input / output types to `Infer<TSpec['input']>` /
+`Infer<TSpec['output']>` and tightens `ctx.auth` per the conditional
 `HandlerForSpec<TSpec>`:
 
 - `auth.actor === 'required'` → `ctx.auth: RequestActorContext`.
@@ -294,7 +292,7 @@ Pipeline (401 → authz → 403 → 429 → 400 → handler):
 2. Authorization phase — `apply_authorization_phase` against `account_id` + `read_acting(auth, raw_params)`, which takes the selector off the raw params (malformed reads as omitted) since validation runs later. Test escape hatch via `preset.request_context`
 3. Post-authorization auth (403) — credential-type gate, then token scope, then role
 4. Rate limit (429) — throttle-requests semantics, ahead of validation so malformed params charge the budget and a throttled caller pays no schema work
-5. Validate params (400) — first, object params holding an own `__proto__` key at any depth are refused on every input with `data.reason` `params_proto_key` (`json_has_own_proto_key` in `http/schema_helpers.ts`, an iterative walk; `ERROR_PARAMS_PROTO_KEY`; the Rust twin walks after its params-shape check, so a non-object `params` stays the schema's reasonless refusal); then `spec.input` parses them (`parse_any`, `schema_issues.ts` — a Zod or fuz_schema schema) with void / `?? {}` rules; a void input (`is_void_schema`: `z.void()` or fuz_schema `s.void`) reads absent, `null` (GET `?params=null`), and `{}` alike as the no-arg call (`to_input_params` in `http/schema_helpers.ts`, via `to_void_params`, the twin of the Rust `require_void_params`; the peer receive path in `ActionDispatcher` runs the same normalizer) and refuses any other shape. A refusal is `to_invalid_params_error`: the generic `invalid params`, `data.reason` when the first issue's field declares an `invalid_reason` in its `.meta()` and no issue sits on the input itself, such as an unknown key (`resolve_issues_invalid_reason`, `schema_meta.ts` — see ../../../docs/architecture.md §Error Schema System), and the issues DEV-only, as `WireIssue`s (`to_wire_issues`)
+5. Validate params (400) — first, object params holding an own `__proto__` key at any depth are refused on every input with `data.reason` `params_proto_key` (`json_has_own_proto_key` in `http/schema_helpers.ts`, an iterative walk; `ERROR_PARAMS_PROTO_KEY`; the Rust twin walks after its params-shape check, so a non-object `params` stays the schema's reasonless refusal); then `spec.input` parses them (`parse`) with void / `?? {}` rules; a void input (`is_void_schema`: `s.void`) reads absent, `null` (GET `?params=null`), and `{}` alike as the no-arg call (`to_input_params` in `http/schema_helpers.ts`, via `to_void_params`, the twin of the Rust `require_void_params`; the peer receive path in `ActionDispatcher` runs the same normalizer) and refuses any other shape. A refusal is `to_invalid_params_error`: the generic `invalid params`, `data.reason` when the first issue's field declares an `invalid_reason` in its `meta` and no issue sits on the input itself, such as an unknown key (`resolve_issues_invalid_reason`, `schema_meta.ts` — see ../../../docs/architecture.md §Error Schema System), and the issues DEV-only, as `WireIssue`s (`to_wire_issues`)
 6. Dispatch + DEV output validation + error normalization — `spec.side_effects` picks transaction vs pool. `ThrownJsonrpcError` preserves code + data; generic throws become `internal_error`
 
 `PerformActionInput` carries `auth` (the request's `ResolvedAuth`, `null` for
@@ -320,7 +318,7 @@ validation and produces the **same failure mode** as REST routes'
 `wrap_output_validation` (`http/route_spec.ts`) — log an error, return
 the response unchanged, do not throw, do not mutate status.
 
-- HTTP RPC + WebSocket dispatch — `actions/perform_action.ts` `if (DEV) spec.output.safeParse(output)` inside the shared dispatch core. Production hot path short-circuits (no parse).
+- HTTP RPC + WebSocket dispatch — `actions/perform_action.ts` `if (DEV) parse(spec.output, output)` inside the shared dispatch core. Production hot path short-circuits (no parse).
 
 Caller-facing `input` schemas are validated **always** (DEV + production)
 — they're the contract with external callers. Server-authored `output`
@@ -1091,7 +1089,7 @@ high-level shapes that span modules:
 - **Discriminated union** — `ActionEventDataUnion<TMethod, TInput, TOutput>` across `kind` + `phase` + `step`, a variant per lifecycle point of each kind. Narrows `input` / `output` / `error` / `request` / `response` / `notification` / `progress` at each lifecycle point.
 - **Step transitions** — `initial → parsed | failed`, `parsed → handling | failed`, `handling → handled | failed`, `handled`/`failed` terminal. `validate_step_transition(from, to)` throws on illegal moves.
 - **Phase transitions** — chained: `send_request → receive_response`, `receive_request → send_response`; everything else terminal. `validate_phase_transition` enforces.
-- **`ActionEvent.parse()`** — `initial → parsed` via `parse_any(spec.input, …)`. Input validation failures **fail immediately** without routing through an error phase (client-side programming errors, not runtime conditions with handlers); their `invalid_params` `data` is `{validation_errors, reason?}`, `reason` the declared `invalid_reason` the server would answer. Handler errors DO route through `send_error` / `receive_error`. On `receive_response` with error response, transitions to `receive_error` instead of failing; a success response's `result` is validated against `spec.output` (always, not DEV-only — it's inbound data; undeclared keys are dropped rather than refused, so an older client survives an added response field) and `output` becomes the parsed value, or the event moves to `receive_error` with an `internal_error` carrying `data: {reason: ERROR_RESPONSE_OUTPUT_INVALID, validation_errors}` — a remote contract break, deliberately distinct from the `invalid_params` / `validation_error` of bad caller input.
+- **`ActionEvent.parse()`** — `initial → parsed` via `parse(spec.input, …)`. Input validation failures **fail immediately** without routing through an error phase (client-side programming errors, not runtime conditions with handlers); their `invalid_params` `data` is `{validation_errors, reason?}`, `reason` the declared `invalid_reason` the server would answer. Handler errors DO route through `send_error` / `receive_error`. On `receive_response` with error response, transitions to `receive_error` instead of failing; a success response's `result` is validated against `spec.output` (always, not DEV-only — it's inbound data; undeclared keys are dropped rather than refused, so an older client survives an added response field) and `output` becomes the parsed value, or the event moves to `receive_error` with an `internal_error` carrying `data: {reason: ERROR_RESPONSE_OUTPUT_INVALID, validation_errors}` — a remote contract break, deliberately distinct from the `invalid_params` / `validation_error` of bad caller input.
 - **Handler throws** — `ThrownJsonrpcError` keeps code/message/data; any other throw becomes `internal_error` carrying the thrown message. When the error answers a remote caller (`receive_request` / `send_response`), the raw message goes through `dev_only` like the server dispatch core.
 - **Protocol message creation is automatic** — transitioning `parsed → handling` on `send_request` materializes the outgoing `JsonrpcRequest` with a fresh `create_uuid()` id; on `send` (notification) it materializes the `JsonrpcNotification`.
 
@@ -1105,7 +1103,7 @@ methods) go to `environment.log`; unset falls back to `console_action_log`
 (warn/error to `console`, debug dropped) so failures are never silent, and
 `log: null` opts out (`resolve_action_log`). An inbound request or notification
 reads its params through the server dispatch core's normalizer
-(`to_input_params`): for a void input (`z.void()` or fuz_schema `s.void`),
+(`to_input_params`): for a void input (`s.void`),
 absent, `null`, and `{}` alike are the no-arg call; for any other input,
 absent or `null` params are `{}` (so an all-optional object input accepts a
 call that omits them).
@@ -1258,8 +1256,8 @@ specs. Counterpart to `register_action_ws`: that handles frontend-initiated
 request-scoped dispatch, this handles backend-initiated broadcast.
 Request-scoped streaming stays on `ctx.notify` inside a handler.
 
-Per-method call: validates input against `spec.input`, Zod or fuz_schema
-(`parse_any`; logs + returns on failure), wraps in `JsonrpcNotification`, and sends it on `registry` — a
+Per-method call: validates input against `spec.input`
+(`parse`; logs + returns on failure), wraps in `JsonrpcNotification`, and sends it on `registry` — a
 `BroadcastTarget`, `Pick<ConnectionRegistry, 'broadcast' |
 'broadcast_filtered'>`, typically `app_server.ws_endpoints[path]` or the
 registry a `WsEndpointSpec` supplies. No `Transports` collection and no fallback:

@@ -73,7 +73,7 @@ export interface RustSpineConsumerRpcEndpointsOptions {
 	readonly roles?: RoleRegistry;
 	/**
 	 * Domain methods kept off the declared surface — ones the spec-derived
-	 * suites can't drive (an input whose `.refine()` the generic body generator
+	 * suites can't drive (an input whose `check` the generic body generator
 	 * can't satisfy). They stay mounted on the backend; this only leaves them
 	 * out of what the suites enumerate.
 	 */

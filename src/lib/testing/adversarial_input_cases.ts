@@ -208,8 +208,8 @@ export const generate_input_test_cases = (
 		expected_error: ERROR_INVALID_JSON_BODY
 	});
 
-	// whole-body structural: extra unknown key (enforces strictObject)
-	// only emit if the schema rejects unknown keys (a `z.strictObject`, a fuz_schema `object`)
+	// whole-body structural: extra unknown key (enforces a strict `object`)
+	// only emit if the schema rejects unknown keys
 	if (!accepts(input_schema, { ...base, __adversarial_extra: 'rejected' })) {
 		cases.push({
 			label: 'extra unknown key',
@@ -227,8 +227,8 @@ export const generate_input_test_cases = (
 		const field_base = generate_valid_object_with_field(input_schema, input_schema, base, field);
 
 		// every per-field case breaks the field, so the field itself must refuse
-		// its value — a candidate it accepts (a `z.coerce` field given a wrong
-		// type, a pattern that admits the violation string) is no invalid case.
+		// its value — a candidate it accepts (a field that coerces a wrong type,
+		// a pattern that admits the violation string) is no invalid case.
 		// A type case (wrong type, null) on a field no valid body carries falls
 		// back to the base; a value case — a format or a bound — is built only on
 		// a body that is valid but for the field, or it tests no bound at all

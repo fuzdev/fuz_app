@@ -5,7 +5,7 @@ import '../assert_dev_env.ts';
  *
  * The generic `describe_rpc_round_trip_tests` can't cover cells: the verbs
  * are stateful (update / delete / get-by-id need a real cell id threaded
- * from a prior create) and `cell_get`'s input has a top-level `.refine()`.
+ * from a prior create) and `cell_get`'s input has a top-level `check`.
  * So cells stay off the standard declared surface (`create_spine_surface_spec`)
  * — exactly like ws / sse — and this suite plus its sibling
  * `describe_cell_relations_cross_tests` (grant / field / item / clone / audit)

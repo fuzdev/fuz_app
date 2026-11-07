@@ -642,7 +642,7 @@ export interface AuditLogInput<T extends string = AuditEventType> {
  * Configuration bundle for audit-log event types and metadata schemas.
  *
  * Lets consumers extend the closed `AUDIT_EVENT_TYPES` enum with their own
- * event strings (and metadata schemas, Zod or `@fuzdev/fuz_schema`) without
+ * event strings (and `@fuzdev/fuz_schema` metadata schemas) without
  * forking. Pass to
  * `create_audit_emitter` (or `query_audit_log` for in-tx call sites) as the
  * optional `config` argument; both default to `builtin_audit_log_config`.
@@ -676,11 +676,11 @@ export const builtin_audit_log_config: AuditLogConfig = Object.freeze({
 export interface CreateAuditLogConfigOptions {
 	/**
 	 * Extra event types keyed by event-type string. Value is a metadata
-	 * schema, Zod or `@fuzdev/fuz_schema`, or `null` to register the type
+	 * schema (`@fuzdev/fuz_schema`), or `null` to register the type
 	 * without validation (row still written, metadata stored as raw JSONB).
 	 *
 	 * Collisions with builtin event-type strings throw at construction, and so
-	 * does a value that is neither `null` nor a schema of either library.
+	 * does a value that is neither `null` nor a schema.
 	 * Schemas are run via `parse` at insert time; mismatches log + count
 	 * but never throw (fail-open — see the drift counters in `auth/audit_log_queries.ts`).
 	 */
@@ -699,7 +699,7 @@ export interface CreateAuditLogConfigOptions {
  * `AppDeps.audit` emitter. Builtin handlers omit the `audit_log_config`
  * slot and pick up `builtin_audit_log_config`.
  *
- * @throws Error when an `extra_events` key collides with a builtin event type or fails `AuditEventTypeName` format validation, or its value is neither `null` nor a schema of either library
+ * @throws Error when an `extra_events` key collides with a builtin event type or fails `AuditEventTypeName` format validation, or its value is neither `null` nor a schema
  */
 export const create_audit_log_config = (options?: CreateAuditLogConfigOptions): AuditLogConfig => {
 	const extras = options?.extra_events;

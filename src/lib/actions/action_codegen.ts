@@ -392,14 +392,12 @@ const to_action_property_key = (method: string): string =>
 /**
  * Whether a caller may omit an action's input: its schema accepts `undefined`,
  * or accepts `{}` (what an omitted input is validated as) and is not marked
- * `empty_input_handler_guarded` (`SchemaFieldMeta`, read by
- * `is_empty_input_handler_guarded`). The rule codegen emits `input?:` by and
- * the input-shape invariant tests read. The input is a Zod or a
- * `@fuzdev/fuz_schema` schema, parsed with `parse`.
+ * `empty_input_handler_guarded` (read by `is_empty_input_handler_guarded`).
+ * The rule codegen emits `input?:` by and the input-shape invariant tests
+ * read, parsed with `parse`.
  *
  * @param spec - the action spec
  * @returns whether the typed surface makes the input optional
- * @throws Error when the input is neither a Zod nor a fuz_schema schema
  */
 export const action_input_is_optional = (spec: Pick<ActionSpecUnion, 'input'>): boolean => {
 	if (parse(spec.input, undefined).ok) return true;
@@ -450,23 +448,21 @@ const assert_spec_schema = (spec: ActionSpecUnion, which: 'input' | 'output'): v
  *
  * **Optional-input detection.** The emitted parameter is `input?:` (caller
  * may omit the argument) when either (a) the schema accepts `undefined` —
- * `z.optional(z.strictObject(...))` and similar wrappers — or (b) the
- * schema accepts the empty object `{}` — `z.strictObject({acting:
- * ActingActor})` and other all-optional-fields strict objects. The second
- * probe mirrors the dispatcher's HTTP convention (`raw_params ?? {}` for
- * non-`z.void()` schemas in `actions/action_rpc.ts` / `http/route_spec.ts`):
+ * `optional(object(...))` and similar wrappers — or (b) the schema accepts
+ * the empty object `{}` — `object({acting: ActingActor})` and other
+ * all-optional-fields strict objects. The second probe mirrors the
+ * dispatcher's HTTP convention (`raw_params ?? {}` for non-void schemas in `actions/action_rpc.ts` / `http/route_spec.ts`):
  * if a request with no params reaches the handler, this is the value the
  * schema is asked to validate. A schema with required fields fails both
- * probes and stays `input:` (required at the typed surface). Refinements
- * and transforms run as part of the parse (`parse`), so their accept/reject
+ * probes and stays `input:` (required at the typed surface). Checks and
+ * transforms run as part of the parse (`parse`), so their accept/reject
  * decisions feed into the optional/required choice naturally. An input
  * marked `empty_input_handler_guarded` is the exception: its schema accepts
  * `{}` but the handler refuses it, so it stays `input:`
  * (`action_input_is_optional` is the one rule).
  *
- * **No-input detection.** A void or null input — `z.void()`, `z.null()`, or
- * a `@fuzdev/fuz_schema` `literal(undefined)` (`s.void`) or `literal(null)`,
- * read by shape (`is_void_schema`, `is_null_schema`) — emits `input?: void`
+ * **No-input detection.** A void or null input — `literal(undefined)`
+ * (`s.void`) or `literal(null)`, read by shape (`is_void_schema`, `is_null_schema`) — emits `input?: void`
  * and no `ActionCallInputs` import.
  *
  * @param options.sync_returns_value - When true (default), sync `local_call`
@@ -476,8 +472,7 @@ const assert_spec_schema = (spec: ActionSpecUnion, which: 'input' | 'output'): v
  * @param options.collections_path - Import path that `ActionCallInputs` /
  *   `ActionOutputs` resolve to. Defaults to `'./action_collections.ts'`.
  * @returns one line like `foo: (input: ActionCallInputs['foo'], options?: RpcClientCallOptions) => Promise<Result<...>>;`
- * @throws Error naming the method when the input is neither a Zod nor a
- *   fuz_schema schema
+ * @throws Error naming the method when the input is no schema
  */
 const generate_actions_api_method_signature = (
 	spec: ActionSpecUnion,
@@ -632,8 +627,7 @@ const resolve_spec_qualifier = (
  * `LocalCallActionMethod`, `FrontendActionMethod`, `BackendActionMethod`,
  * `FrontendRequestResponseMethod`, `BackendRequestResponseMethod`,
  * `BroadcastActionMethod`. Pairs each runtime const with an `Infer` type
- * alias under the same identifier. A const's `def` is its array of methods;
- * a Zod schema that holds one takes `z.enum(ActionMethod.def)`.
+ * alias under the same identifier. A const's `def` is its array of methods.
  *
  * Protocol-action methods (`heartbeat`, `cancel`) are filtered out by
  * default — pass `include_protocol_actions: true` if a consumer genuinely
@@ -862,8 +856,7 @@ export const action_specs: Array<ActionSpecUnion> = Object.values(ActionSpecs);`
  *   callback's return value. When set, the helper skips the default
  *   `* as specs` import — the consumer manages its own namespace imports —
  *   and `specs_module` is ignored. Single-source consumers omit it.
- * @throws Error naming the method when an input or output is neither a Zod
- *   nor a fuz_schema schema
+ * @throws Error naming the method when an input or output is no schema
  */
 export const generate_action_inputs_outputs = (
 	specs: ReadonlyArray<ActionSpecUnion>,

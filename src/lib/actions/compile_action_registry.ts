@@ -7,9 +7,9 @@
  * numbered — "registry-time invariant N" elsewhere in the codebase refers to
  * the `RouteAuth` cross-axis set in `http/auth_shape.ts`, a different list):
  *
- * - **Schema slots** — `input` and `output` each hold a Zod or a
- *   `@fuzdev/fuz_schema` schema (`assert_validation_schema`); a value of
- *   neither library throws naming the action and the slot. Fires for every
+ * - **Schema slots** — `input` and `output` each hold a
+ *   `@fuzdev/fuz_schema` schema (`assert_validation_schema`); a value that
+ *   is no schema throws naming the action and the slot. Fires for every
  *   spec, before the checks that read the schemas.
  * - **Auth-shape cross-axis invariants** — per `assert_route_auth_invariants`
  *   in `http/auth_shape.ts`: roles imply a required actor, no accountless
@@ -33,9 +33,8 @@
  *   request there is no key for the per-account bucket.
  * - **JSON-RPC §4.2 wire validity** — `request_response` specs whose
  *   handler will reach the dispatch map must not use a null schema
- *   (`z.null()`, fuz_schema `literal(null)`) for input (the wire format
- *   forbids `"params": null`; use a void schema, `z.void()` or fuz_schema
- *   `s.void`, for parameterless methods), nor a void schema for output (a
+ *   (`literal(null)`) for input (the wire format forbids `"params": null`;
+ *   use a void schema, `s.void`, for parameterless methods), nor a void schema for output (a
  *   response always carries a `result`, which clients validate against
  *   `spec.output`; use a null schema for methods with nothing to return).
  * - **Duplicate method names** — JSON-RPC keys on `method`, so every
@@ -75,7 +74,7 @@ export interface ActionRegistryCompileResult {
  *
  * @param actions - polymorphic action array; HTTP RPC passes `RpcAction[]` (narrower), WebSocket passes `Action[]` (kind-polymorphic — handler-less notification specs are accepted)
  * @param ctx_label - per-spec error-message prefix, e.g. `'RPC action'` or `'WS action'`. Combined with the spec method as `${ctx_label} "${method}"`.
- * @throws Error on a schema slot holding a value of neither library, a cross-axis invariant or biconditional violation, rate-limit/account-axis mismatch, JSON-RPC null-input or void-output, or duplicate method.
+ * @throws Error on a schema slot holding a value that is no schema, a cross-axis invariant or biconditional violation, rate-limit/account-axis mismatch, JSON-RPC null-input or void-output, or duplicate method.
  */
 export const compile_action_registry = (
 	actions: ReadonlyArray<Action>,

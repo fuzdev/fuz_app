@@ -6,7 +6,7 @@ import '../assert_dev_env.ts';
  * A field can carry the right value on both backends and still be a parity
  * defect if the two serialize it differently — a millisecond
  * `2026-05-17T12:34:56.789Z` and a second-precision `2026-05-17T12:34:56Z`
- * both parse as the same instant, so a Zod `z.string()` check and an
+ * both parse as the same instant, so a `Timestamp` check and an
  * `assert.ok(value)` pass on either. These helpers pin the bytes.
  *
  * @module

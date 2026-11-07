@@ -4,7 +4,7 @@
  * `ROLE_GRANT_OFFER_COLUMNS` projection const.
  *
  * Separated from `auth/role_grant_offer_schema.ts` so the schema module stays
- * Zod-only (paired with `auth/auth_ddl.ts` and `auth/audit_log_ddl.ts`).
+ * schemas only (paired with `auth/auth_ddl.ts` and `auth/audit_log_ddl.ts`).
  *
  * An offer is a pending grant awaiting recipient consent. Lifecycle states
  * are mutually exclusive via a CHECK constraint (`role_grant_offer_single_terminal`):

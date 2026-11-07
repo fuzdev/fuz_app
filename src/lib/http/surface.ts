@@ -285,7 +285,7 @@ export const events_to_surface = (
 
 // `schema_to_surface` with its source named, recording each part of a schema
 // with no JSON Schema form as an `info` diagnostic: a transform's output or a
-// `z.custom()` is ordinary, so it's recorded on the surface, not warned at startup
+// `check` is ordinary, so it's recorded on the surface, not warned at startup
 const create_to_surface =
 	(diagnostics: Array<AppSurfaceDiagnostic> | undefined) =>
 	(schema: AnySchema, io: 'input' | 'output', source: string): unknown =>

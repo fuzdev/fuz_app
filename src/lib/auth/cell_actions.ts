@@ -226,7 +226,7 @@ export type CellCreateVerdict = { allow: false } | { allow: true; moderation_req
  *   It runs after the manage and root-only gates, so it decides validity, never
  *   authority: throw `jsonrpc_errors.invalid_params` with
  *   `ERROR_CELL_POLICY_INVALID` (or a reason of the consumer's), or a
- *   `ZodError` or fuz_schema `SchemaError`, which the handler turns into
+ *   `SchemaError`, which the handler turns into
  *   `invalid_params`. **Omitted
  *   refuses every policy** (`ERROR_CELL_POLICY_UNSUPPORTED`, the Rust trait's
  *   default): an authorizer that reads no policy stores none.
@@ -250,7 +250,7 @@ export interface CellCreateAuthorize {
  * existing cell's on an update carrying `data` (`kind` is write-once), the
  * source's for every row a clone writes (on the merged data). It accepts or
  * throws, never rewrites: the handler stores the caller's `data` as sent, and
- * it must not mutate it. A thrown `ZodError` or fuz_schema `SchemaError`
+ * it must not mutate it. A thrown `SchemaError`
  * (`parse_or_throw`) becomes the standard `invalid_params` JSON-RPC error so
  * per-kind validation failures surface to clients with code -32602 (not
  * -32603 / internal); throw a `JsonrpcError`
@@ -389,7 +389,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 
 	/**
 	 * Run the optional `validate_data` deps callback and convert any thrown
-	 * `ZodError` or `SchemaError` (`is_schema_validation_error`) into the
+	 * `SchemaError` (`is_schema_validation_error`) into the
 	 * standard `invalid_params` JSON-RPC error so per-kind validation
 	 * failures surface to clients with code -32602 (not -32603 / internal).
 	 * The dispatcher only converts validation failures of wire-level input
@@ -413,7 +413,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 	/**
 	 * Validate a non-null policy write through the mounted authorizer's
 	 * `validate_policy` — `ERROR_CELL_POLICY_UNSUPPORTED` when there is none
-	 * (no authorizer, or one without the member). A thrown `ZodError` or
+	 * (no authorizer, or one without the member). A thrown
 	 * `SchemaError` becomes `invalid_params`, as `validate_data_or_throw` does.
 	 */
 	const validate_policy_write = (policy: CellPolicy): void => {
@@ -549,7 +549,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 			row = await query_cell_create(ctx, {
 				// Boundary cast: `CellData` is structurally JSON-compatible at
 				// runtime (loose object of JSON-safe values), but its inferred
-				// type carries `T | undefined` from `.optional()` which doesn't
+				// type carries `T | undefined` from `optional` which doesn't
 				// extend `Json`. The DB column is JSONB; the cast trusts the
 				// schema-validated runtime shape.
 				data: input.data as unknown as Json,

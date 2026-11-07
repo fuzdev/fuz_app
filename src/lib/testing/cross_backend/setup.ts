@@ -601,7 +601,7 @@ export const capture_schema_snapshot = async (
 };
 
 /**
- * Parse a `capture_*` probe's answer with `schema`, of either library: the
+ * Parse a `capture_*` probe's answer with `schema`: the
  * parsed value, or a throw naming `method` with the issues, so a shape drift
  * between the TS and Rust answers fails loud at the boundary.
  *
@@ -625,7 +625,7 @@ export const parse_capture_answer = <T extends AnySchema>(
 
 /**
  * Capture a no-arg (void-input) daemon-token introspection RPC, sent with no
- * params, and validate the wire response against `schema`, of either library.
+ * params, and validate the wire response against `schema`.
  * The shared shape behind the parse-based `capture_*` cross-impl parity
  * probes: call a `_testing_*` introspection action over the keeper's
  * daemon-token channel, then `parse_capture_answer`.

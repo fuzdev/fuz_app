@@ -4,8 +4,8 @@ import '../assert_dev_env.ts';
  * The cross-backend differential: each impl is the oracle for the other.
  *
  * A conformance case pins its status and reason on one backend at a time,
- * and an output schema is often loose (`z.looseObject`, or Zod's default
- * strip), so an extra field from one spine — possibly a leak — passes, as
+ * and an output schema is often loose (a `loose_object` or a `strip_object`),
+ * so an extra field from one spine — possibly a leak — passes, as
  * does any body difference on a case pinned by status alone.
  * `describe_differential_conformance_tests` sends every case to two backends,
  * normalizes both responses (`normalize_differential_response`), and asserts

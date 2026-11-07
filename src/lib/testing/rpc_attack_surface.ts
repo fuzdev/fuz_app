@@ -335,7 +335,7 @@ const describe_rpc_adversarial_params = (options: RpcAttackSurfaceOptions): void
 
 			describe(endpoint.path, () => {
 				for (const method of methods_with_input) {
-					// look up the source RpcAction for the Zod schema
+					// look up the source RpcAction for the input schema
 					const action = find_rpc_action(rpc_endpoint_specs, endpoint.path, method.name);
 					if (!action) {
 						test(`${method.name} — missing RpcAction source spec`, () => {

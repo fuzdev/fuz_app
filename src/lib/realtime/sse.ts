@@ -299,7 +299,7 @@ export const create_sse_response = <T = unknown>(
 export interface EventSpec {
 	/** Event method name, used as the JSON-RPC notification `method`. */
 	method: string;
-	/** Schema for the notification `params` payload, Zod or `@fuzdev/fuz_schema`. */
+	/** Schema for the notification `params` payload. */
 	params: AnySchema;
 	/** Human-readable description for surface output and docs. */
 	description: string;

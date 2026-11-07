@@ -100,7 +100,7 @@ export const resolve_rpc_endpoints_for_setup = (
  * @param params - params (omit for parameterless methods; `null` is also
  *                stripped for ergonomic call sites — JSON-RPC 2.0 §4.2
  *                forbids `"params": null` on the wire, and `create_rpc_endpoint`
- *                rejects `z.null()` action input schemas at registration).
+ *                rejects `literal(null)` action input schemas at registration).
  *                Tests that need to construct a literal `"params": null`
  *                envelope (e.g. asserting envelope-level rejection) should
  *                build the body inline rather than route through this helper.
@@ -192,7 +192,7 @@ export const assert_jsonrpc_error_response = (
  * is provided, also validates the `result` field against the declared
  * output schema — matching the REST round-trip's `assert_response_matches_spec`.
  *
- * @param output_schema - optional Zod or `@fuzdev/fuz_schema` schema to validate the `result` field against
+ * @param output_schema - optional schema to validate the `result` field against
  */
 export const assert_jsonrpc_success_response = (body: unknown, output_schema?: AnySchema): void => {
 	const result = parse(JsonrpcResponse, body);
@@ -273,7 +273,7 @@ export interface RpcCallArgs {
 	method: string;
 	/**
 	 * Params for the call. Omit (or pass `undefined`) for parameterless
-	 * (`z.void()`) methods — the helper drops `params` from the envelope
+	 * (`s.void`) methods — the helper drops `params` from the envelope
 	 * either way. See `create_rpc_post_init` for the null-stripping
 	 * affordance and JSON-RPC 2.0 §4.2's prohibition on `params: null`.
 	 */
@@ -485,7 +485,7 @@ export type RpcCallForSpecArgs<TSpec extends RequestResponseActionSpec> = Omit<
 /**
  * Typed wrapper over `rpc_call` — binds `params` and the success `result` to
  * the output types of `spec.input` and `spec.output` (`Infer`) via
- * the generic, for a Zod or a fuz_schema spec.
+ * the generic.
  *
  * Success results are validated at runtime against `spec.output` (same
  * contract as `rpc_call_typed`); a mismatch throws. Error responses come
@@ -528,8 +528,8 @@ export const rpc_call_for_spec = async <TSpec extends RequestResponseActionSpec>
  * assert on specific error shapes.
  *
  * @throws Error if the response is a JSON-RPC error, if `rpc_call` throws
- *   on an envelope violation, or if the result fails `output_schema` (a Zod or
- *   `@fuzdev/fuz_schema` schema, parsed with `parse`).
+ *   on an envelope violation, or if the result fails `output_schema` (parsed with
+ *   `parse`).
  */
 export const rpc_call_typed = async <T>(
 	args: RpcCallArgs,

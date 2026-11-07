@@ -19,7 +19,7 @@
  *   redundant-but-defensive.
  *
  * One exemption, by design: an input marked `empty_input_handler_guarded`
- * (`SchemaFieldMeta` — today `cell_get`, `cell_field_list`, `cell_item_list`)
+ * (`schema_meta.ts` — today `cell_get`, `cell_field_list`, `cell_item_list`)
  * accepts `{}` at the schema and rejects `undefined`, because the handler
  * refuses `{}` with a declared reason; codegen keeps its input required
  * (`action_input_is_optional`). The test holds each marked input to that
