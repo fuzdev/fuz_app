@@ -255,7 +255,7 @@ middleware never sets `TEST_CONTEXT_PRESET_KEY`, and only the symbol counts
 ### `schema_introspect.ts` — `query_schema_snapshot`
 
 - `query_schema_snapshot(db, options?)` — introspects a live DB into a deterministic `SchemaSnapshot` via `pg_catalog` + `information_schema`. Throws on pglet when the snapshot holds an index, unless `accept_pglet_index_definitions` is passed: pglet's `indexdef` omits index modifiers, so its index definitions read as false differences against PostgreSQL and false agreement between two pglet schemas. Captures tables, columns (with `udt_name` to distinguish int4/int8), indexes (`indexdef`), constraints (`pg_get_constraintdef`), sequences, and enum types (`pg_enum` labels in declared `enumsortorder`, so a `cell_visibility` label-set/order drift is gated). The `schema_version` migration tracker is always excluded — it's framework bookkeeping, not domain schema; twin impls keep it identical (same namespaces, names and partitioning), which `query_migration_tracker` + `assert_migration_trackers_equal` gate separately. Twinned by `fuz_db::query_schema_snapshot` (Rust); the `_testing_schema_snapshot` RPC's wire validator is the shared `SchemaSnapshot`, so the enum field must serialize on both sides.
-- `SchemaSnapshot` — the Zod schema is canonical (co-located in `schema_introspect.ts`; the cross-impl `_testing_schema_snapshot` RPC action reuses it as its wire validator, and the type is `z.infer`'d from it). Fully JSON-serializable; every collection deterministically sorted on capture so structural equality is stable across runs.
+- `SchemaSnapshot` — the schema is canonical (a fuz_schema `strip_object`, co-located in `schema_introspect.ts` with its parts; the cross-impl `_testing_schema_snapshot` RPC action reuses it as its wire validator, and the type is `Infer`'d from it). Fully JSON-serializable; every collection deterministically sorted on capture so structural equality is stable across runs.
 - `query_migration_tracker(db)` / `MigrationTracker` — the migration-_identity_ twin of the snapshot: reads the `schema_version` tracker rows (`[{namespace, name, sequence}]`) the snapshot deliberately _excludes_. `MigrationTracker` is the `_testing_migration_tracker` RPC's wire validator; pairs with `assert_migration_trackers_equal` to gate that the two spines record byte-identical migration identity (the swap-freely invariant), catching a migration-name or namespace-partitioning drift the provenance-agnostic schema snapshot can't see.
 
 ### `schema_parity.ts` — `assert_schema_snapshots_equal`
@@ -276,7 +276,7 @@ spine and the Rust `testing_spine_stub` mount the same method set with the same
 per-method auth shape.
 
 - `cross_backend/action_manifest.ts` — `ActionManifest` / `ActionManifestEntry`
-  Zod schema (the `_testing_action_manifest` wire validator) + `build_action_manifest(specs)`,
+  fuz_schema schema (the `_testing_action_manifest` wire validator) + `build_action_manifest(specs)`,
   which normalizes each spec to `{method, input, side_effects, account, actor, roles,
   credential_types, rate_limit}` (`input` is `'void'` for a `z.void()` or
   fuz_schema `s.void` input, by `is_void_schema`, else `'object'` — the Rust
@@ -1444,7 +1444,7 @@ conformance cases assert _expected behavior_ — the security negatives
 (must be refused / must not leak / found-vs-not-found same shape) a
 wire-shape check passes green on even when behavior is wrong.
 
-- `conformance_case.ts` — `ConformanceCase` Zod schema:
+- `conformance_case.ts` — the `ConformanceCase` type (types only; nothing parses a case):
   `{name, request: {method, params?, params_json?, as, acting?, verb?}, expect: {status,
 error_reason?, fields?, headers?, equivalence_group?}, note?, xfail?}`. A case is **data** — `method`
   resolves its `input`/`output` from the live registry (RPC) or `RouteSpec`

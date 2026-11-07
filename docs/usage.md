@@ -747,12 +747,13 @@ identifier codegen derives from each method (`specs.{method}_action_spec`).
 ```typescript
 import type { RequestResponseActionSpec } from '@fuzdev/fuz_app/actions/action_spec.ts';
 import { ROLE_ADMIN } from '@fuzdev/fuz_app/auth/role_schema.ts';
-import { ActingActor } from '@fuzdev/fuz_app/http/auth_shape.ts';
+import { ZodActingActor } from '@fuzdev/fuz_app/zod_schemas.ts';
 
 // Input/output schemas: strict objects, paired with same-named z.infer exports.
-// `acting?: ActingActor` is required on every input whose spec sets
+// `acting?: ZodActingActor` is required on every input whose spec sets
 // `actor: 'required'` — registry-time invariant 2 enforces the biconditional.
-export const ThingCreateInput = z.strictObject({ name: z.string(), acting: ActingActor });
+// A fuz_schema input declares `ActingActor` of `primitive_schemas.ts`.
+export const ThingCreateInput = z.strictObject({ name: z.string(), acting: ZodActingActor });
 export type ThingCreateInput = z.infer<typeof ThingCreateInput>;
 
 export const ThingCreateOutput = z.strictObject({ id: z.string() });

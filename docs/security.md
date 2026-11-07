@@ -1510,11 +1510,10 @@ token's `name` (`API_TOKEN_NAME_LENGTH_MAX`, 255), a cell's `kind` on
 `cell_create` and as a `cell_list` filter (`CELL_KIND_LENGTH_MAX`, 64), and
 the `scope_kind` on `role_grant_offer_create` and `role_grant_assign`
 (`NAME_LENGTH_MAX`, 64, part of its grammar). A longer value is refused `invalid_params`
-before any row is written. Every `.min()` / `.max()` bound on a wire string,
-a bare `.min(1)` aside (it reads the same in either unit), is enforced on
-`String.length` by `bounded_string` (`primitive_schemas.ts`), not by Zod's
-`.max()` alone, whose unit depends on the installed Zod; `Email` is bounded in
-UTF-8 bytes by its own refinement.
+before any row is written. Every length bound on a wire string is enforced on
+`String.length` by `bounded_string` (`primitive_schemas.ts`), whose
+`min_length` / `max_length` count UTF-16 code units; `Email` is bounded in
+UTF-8 bytes by its own check.
 
 | Role        | Granted how                                    | Scope                                                |
 | ----------- | ---------------------------------------------- | ---------------------------------------------------- |
@@ -2153,8 +2152,7 @@ already has an account returns 409 with per-field errors
 (`invite_account_exists_username`, `invite_account_exists_email`). This
 prevents dead-on-arrival invites, and both checks are case-insensitive.
 
-**Username validation**: The `Username` schema (Zod, and its
-`@fuzdev/fuz_schema` twin on `invite_create`; 3-39 chars, starts with letter,
+**Username validation**: The `Username` schema (3-39 chars, starts with letter,
 ends with letter/number, middle allows dash/underscore, no `@` or `.`) is
 enforced on both signup and invite creation inputs. `Email` uses a custom
 regex (`EMAIL_REGEX` in `primitive_schemas.ts`) that requires `@` — the two
