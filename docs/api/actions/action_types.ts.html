@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/BTZoVLbz.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CAODFmXb.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.AxNXE0Uu.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.DDY-WHn5.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.D-mjUu9n.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.ChSj2V2Y.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BcwQFYZ2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/C3BYcZ2u.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CE-egMPB.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/BuQNaWzp.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.BGGl8peH.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/DQRixExC.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.D7FqKTTi.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BL7ZH9U-.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DhdQKFKC.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -89,7 +89,7 @@ type for the account-grain tier.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]
 can narrow via the dispatcher's authorization-phase guarantee.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Single handler context shape across every transport. Consumers inject
 domain deps via factory closures the same way HTTP RPC factories do.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[0--><section class="svelte-pitz0d"><!--[--><section class="svelte-pitz0d"><h4><code>auth<!--[-1--><!--]--></code></h4> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->The authenticated identity, or <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->null<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> for public routes.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--> <!--[0--><p class="row gap_md"><strong>type</strong> <!--[0--><!--[-1--><code class="type-json-view svelte-jzdoj9" title="RequestContext | null"><!--[--><!--[1--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/request_context.ts#RequestContext"><!--[-1-->RequestContext<!--]--></a><!--]--><!--]--><!--]--><!--[0--> | <!--]--><!--[-1--><code data-lang="ts" class="svelte-jqsy8a inline"><!--[-1--><!----><span class="token_keyword">null</span><!----><!--]--></code><!--]--><!--]--></code><!--]--><!--]--><!----></p><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--><!----></section><section class="svelte-pitz0d"><h4><code>request_id<!--[-1--><!--]--></code></h4> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->The JSON-RPC request ID from the envelope.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--> <!--[0--><p class="row gap_md"><strong>type</strong> <!--[0--><!--[0--><!--[0--><!--[0--><a title="string | number" class="declaration-link chip" href="/docs/api/http/jsonrpc.ts#JsonrpcRequestId"><!--[-1-->JsonrpcRequestId<!--]--></a><!--]--><!--]--><!--]--><!--]--><!----></p><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--><!----></section><section class="svelte-pitz0d"><h4><code>connection_id<!--[0--><strong>?</strong><!--]--></code></h4> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Stable per-socket connection id on WebSocket transport; <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->undefined<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->
 on HTTP RPC. Consumers key per-connection domain state on this
-directly; HTTP handlers ignore it.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--> <!--[0--><p class="row gap_md"><strong>type</strong> <!--[0--><!--[0--><!--[0--><!--[0--><a title="string &amp; Brand&lt;&quot;Uuid&quot;>" class="declaration-link chip" href="/docs/api/primitive_schemas.ts#Uuid"><!--[-1-->Uuid<!--]--></a><!--]--><!--]--><!--]--><!--]--><!----></p><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--><!----></section><section class="svelte-pitz0d"><h4><code>request_client<!--[0--><strong>?</strong><!--]--></code></h4> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Initiate a JSON-RPC request to the originating client and await its typed
+directly; HTTP handlers ignore it.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--> <!--[0--><p class="row gap_md"><strong>type</strong> <!--[0--><!--[0--><!--[-1--><code title="Branded&lt;string, &quot;Uuid&quot;>" data-lang="ts" class="svelte-jqsy8a inline"><!--[-1--><!----><span class="token_capitalized_identifier token_class_name">Branded</span><!----><!--]--></code><!--]--><!--]--><!--]--><!----></p><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--><!----></section><section class="svelte-pitz0d"><h4><code>request_client<!--[0--><strong>?</strong><!--]--></code></h4> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Initiate a JSON-RPC request to the originating client and await its typed
 reply — the server→client direction of ActionPeer. Present only on the
 WebSocket transport (it targets the originating socket); <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->undefined<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> on
 HTTP RPC, where there is no return socket. Handlers that depend on it
@@ -165,16 +165,16 @@ The handler implements the behavior.<!--]--><!--]--><!----></p><!--]--><!--]--><
 			
 			<script>
 				{
-					__sveltekit_uehz0x = {
+					__sveltekit_16u9wu = {
 						base: "",
-						version: "63066fdbf417dcb0676f12caf38b1ac4836e5647"
+						version: "1320003f0147c4ffd153b7c30bf0d798074f739c"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.CXlCZqzx.js").then(async (kit) => {
-						kit.init(__sveltekit_uehz0x);
-						const app = await import("/_app/immutable/entry/app.AxNXE0Uu.js");
+						kit.init(__sveltekit_16u9wu);
+						const app = await import("/_app/immutable/entry/app.D-mjUu9n.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],

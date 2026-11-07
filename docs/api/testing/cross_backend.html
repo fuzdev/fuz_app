@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/BTZoVLbz.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CAODFmXb.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.AxNXE0Uu.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.DDY-WHn5.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.D-mjUu9n.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.ChSj2V2Y.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BcwQFYZ2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/C3BYcZ2u.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CE-egMPB.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/BuQNaWzp.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.BGGl8peH.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/DQRixExC.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.D7FqKTTi.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BL7ZH9U-.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DhdQKFKC.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -496,7 +496,7 @@ security suite.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->A
 carried as <!--]--><!--[4--><strong><!--[--><!--[2-->data<!--]--><!--]--><!----></strong><!--]--><!--[2-->. The case references a <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->method<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (an RPC method name
 or a REST auth-route suffix); the runner
 (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/cross_backend/conformance_table.ts#describe_conformance_table_tests"><!--[0--><!--[-1-->describe_conformance_table_tests<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->) resolves the <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->input<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> / <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->output<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->
-Zod schemas from the live action-spec registry / <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/route_spec.ts#RouteSpec"><!--[0--><!--[-1-->RouteSpec<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> — the case
+schemas from the live action-spec registry / <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/route_spec.ts#RouteSpec"><!--[0--><!--[-1-->RouteSpec<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> — the case
 never carries a schema. This is the opinionated behavioral/security
 layer on top of the spec-derived auto-enumeration
 (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/rpc_round_trip.ts#describe_rpc_round_trip_tests"><!--[0--><!--[-1-->describe_rpc_round_trip_tests<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> / <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/rpc_attack_surface.ts#describe_rpc_attack_surface_tests"><!--[0--><!--[-1-->describe_rpc_attack_surface_tests<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->):
@@ -845,12 +845,12 @@ action, twinning the Rust <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--
 registry and serves it on both transports. The reconciliation test
 enumerates <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/cross_backend/full_spine_mount.ts#build_full_spine_rpc_actions"><!--[0--><!--[-1-->build_full_spine_rpc_actions<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> with stub deps and asserts the live method set equals the tagged coverage
 manifest; see <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->src/test/cross_backend/spine_method_coverage.ts<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/testing/cross_backend/identity_parity.ts"><!--[-1-->testing/cross_backend/identity_parity.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Cross-backend identity-primitive parity for fuz_app's own spine over real
-HTTP — the identity primitives (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/primitive_schemas.ts#Username"><!--[0--><!--[-1-->Username<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->, <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/primitive_schemas_fuz.ts#UsernameProvided"><!--[0--><!--[-1-->UsernameProvided<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->,
+HTTP — the identity primitives (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/primitive_schemas.ts#Username"><!--[0--><!--[-1-->Username<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->, <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/primitive_schemas.ts#UsernameProvided"><!--[0--><!--[-1-->UsernameProvided<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->,
 <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/primitive_schemas.ts#Email"><!--[0--><!--[-1-->Email<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->) and the login/signup input handling that enforces them, pinned
 facet-by-facet so a TS↔Rust divergence in any one surfaces as a failure:
 how usernames are <!--]--><!--[4--><strong><!--[--><!--[2-->canonicalized<!--]--><!--]--><!----></strong><!--]--><!--[2--> on the login lookup, the <!--]--><!--[4--><strong><!--[--><!--[2-->ASCII-only
 creation invariant<!--]--><!--]--><!----></strong><!--]--><!--[2--> that bounds what can ever be stored, and the <!--]--><!--[4--><strong><!--[--><!--[2-->email
-format<!--]--><!--]--><!----></strong><!--]--><!--[2--> rule applied at signup.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/primitive_schemas_fuz.ts#UsernameProvided"><!--[0--><!--[-1-->UsernameProvided<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> (login/lookup) canonicalizes the submitted username via
+format<!--]--><!--]--><!----></strong><!--]--><!--[2--> rule applied at signup.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/primitive_schemas.ts#UsernameProvided"><!--[0--><!--[-1-->UsernameProvided<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> (login/lookup) canonicalizes the submitted username via
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->.trim().toLowerCase()<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, and the DB matches case-insensitively
 (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->LOWER(username) = LOWER($1)<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->); <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/primitive_schemas.ts#Username"><!--[0--><!--[-1-->Username<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> (creation) lowercases at store
 <!--]--><!--[4--><strong><!--[--><!--[2-->and<!--]--><!--]--><!----></strong><!--]--><!--[2--> restricts to ASCII via <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->^[a-zA-Z][0-9a-zA-Z_-]*[0-9a-zA-Z]$<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->. The
@@ -2070,7 +2070,10 @@ connection, and a call one past each is refused <!--]--><!--[3--><!--[0--><!--[-
 reason. Both spines check the limits before they look for the connection
 and before they build a payload, so the boundaries are read off the
 refusal and no burst is ever allocated — which pins the two spines'
-limits equal.<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--[8--><p><!--[--><!--[2-->What the suite does <!--]--><!--[4--><strong><!--[--><!--[2-->not<!--]--><!--]--><!----></strong><!--]--><!--[2--> assert, because it is each implementation's own:
+limits equal.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->integral spellings<!--]--><!--]--><!----></strong><!--]--><!--[2--> — over HTTP RPC a <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->count<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> written <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->3.0<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->1e1<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> or
+<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->-0<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> is the integer it spells, refused for having no connection, and one
+written <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->1.5<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> is refused <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->invalid_params<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> with no reason, as the TS
+twin's safe-integer check reads them.<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--[8--><p><!--[--><!--[2-->What the suite does <!--]--><!--[4--><strong><!--[--><!--[2-->not<!--]--><!--]--><!----></strong><!--]--><!--[2--> assert, because it is each implementation's own:
 how many frames accepted before the overflow reach the client (the Rust
 spine discards them all; the TS spine may deliver the first), and the exact
 boundary a burst of tiny frames overflows at.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->The wire literals are deliberate independent copies of the producers'
@@ -2167,16 +2170,16 @@ marker with a tracking id and a reason, nothing more.<!--]--><!--]--><!----></p>
 			
 			<script>
 				{
-					__sveltekit_uehz0x = {
+					__sveltekit_16u9wu = {
 						base: "",
-						version: "63066fdbf417dcb0676f12caf38b1ac4836e5647"
+						version: "1320003f0147c4ffd153b7c30bf0d798074f739c"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.CXlCZqzx.js").then(async (kit) => {
-						kit.init(__sveltekit_uehz0x);
-						const app = await import("/_app/immutable/entry/app.AxNXE0Uu.js");
+						kit.init(__sveltekit_16u9wu);
+						const app = await import("/_app/immutable/entry/app.D-mjUu9n.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],
