@@ -18,8 +18,7 @@ import { describe, test, assert } from 'vitest';
 import { get_schema_entries } from '@fuzdev/fuz_schema/introspect.ts';
 import { is } from '@fuzdev/fuz_schema/schema.ts';
 
-import { USERNAME_PROVIDED_LENGTH_MAX } from '#lib/primitive_schemas.ts';
-import { UsernameProvided } from '#lib/primitive_schemas_fuz.ts';
+import { USERNAME_PROVIDED_LENGTH_MAX, UsernameProvided } from '#lib/primitive_schemas.ts';
 import {
 	Password,
 	PasswordProvided,

@@ -22,7 +22,6 @@ import { parse_or_throw } from '@fuzdev/fuz_schema/schema.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { create_uuid } from '#lib/primitive_schemas.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
-import { ActingActor } from '#lib/http/auth_shape.ts';
 
 import {
 	DEFAULT_WS_RECEIVE_TIMEOUT,
@@ -88,6 +87,7 @@ import {
 	ForeignRpcError,
 	SecondCopyThrownJsonrpcError
 } from '../http/thrown_jsonrpc_error_helpers.ts';
+import { ZodActingActor } from '#lib/zod_schemas.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -128,7 +128,7 @@ const keeper_spec: RequestResponseActionSpec = {
 		credential_types: ['daemon_token']
 	},
 	side_effects: false,
-	input: z.strictObject({ acting: ActingActor }),
+	input: z.strictObject({ acting: ZodActingActor }),
 	output: z.null(),
 	async: true,
 	description: 'keeper only'
@@ -140,7 +140,7 @@ const role_spec: RequestResponseActionSpec = {
 	initiator: 'frontend',
 	auth: { account: 'required', actor: 'required', roles: ['admin'] },
 	side_effects: false,
-	input: z.strictObject({ acting: ActingActor }),
+	input: z.strictObject({ acting: ZodActingActor }),
 	output: z.null(),
 	async: true,
 	description: 'role only'

@@ -17,7 +17,6 @@ import { create_test_app_surface_spec } from '#lib/testing/stubs.ts';
 import { AUTH_MIDDLEWARE_PATH } from '#lib/auth/middleware.ts';
 import { create_health_route_spec } from '#lib/http/common_routes.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
-import { ActingActor } from '#lib/http/auth_shape.ts';
 import { describe_rpc_attack_surface_tests } from '#lib/testing/rpc_attack_surface.ts';
 import type { RouteSpec } from '#lib/http/route_spec.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
@@ -33,6 +32,7 @@ import {
 } from '#lib/testing/rpc_helpers.ts';
 import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
 import { JSONRPC_VERSION } from '#lib/http/jsonrpc.ts';
+import { ZodActingActor } from '#lib/zod_schemas.ts';
 
 const session_options = create_session_config('test_rpc_session');
 
@@ -68,7 +68,7 @@ const admin_mutation_spec: RequestResponseActionSpec = {
 	initiator: 'frontend',
 	auth: { account: 'required', actor: 'required', roles: ['admin'] },
 	side_effects: true,
-	input: z.strictObject({ name: z.string().min(1).max(100), acting: ActingActor }),
+	input: z.strictObject({ name: z.string().min(1).max(100), acting: ZodActingActor }),
 	output: z.strictObject({ id: z.string() }),
 	async: true,
 	description: 'Create a widget'
@@ -85,7 +85,7 @@ const keeper_spec: RequestResponseActionSpec = {
 		credential_types: ['daemon_token']
 	},
 	side_effects: true,
-	input: z.strictObject({ acting: ActingActor }),
+	input: z.strictObject({ acting: ZodActingActor }),
 	output: z.strictObject({ ok: z.literal(true) }),
 	async: true,
 	description: 'Nuke all widgets'

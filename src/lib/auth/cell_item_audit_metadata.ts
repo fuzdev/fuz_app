@@ -9,7 +9,7 @@
 
 import { loose_object, string, type Infer } from '@fuzdev/fuz_schema/schema.ts';
 
-import { Uuid } from '../primitive_schemas_fuz.ts';
+import { Uuid } from '../primitive_schemas.ts';
 
 /** Metadata envelope for `cell_item_insert`. */
 export const CellItemInsertAuditMetadata = loose_object({

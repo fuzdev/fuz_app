@@ -32,17 +32,17 @@ import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_test_app } from '#lib/testing/app_server.ts';
 import { query_create_actor } from '#lib/auth/account_queries.ts';
 import { require_request_context } from '#lib/auth/request_context.ts';
-import { ActingActor } from '#lib/http/auth_shape.ts';
 import { ERROR_ACTOR_REQUIRED, ERROR_INVALID_REQUEST_BODY } from '#lib/http/error_schemas.ts';
 import { define_route, get_route_input, type RouteSpec } from '#lib/http/route_spec.ts';
 import { route_ok } from '#lib/http/route_result.ts';
 
 import { describe_db } from '../auth_db_default.ts';
+import { ZodActingActor } from '#lib/zod_schemas.ts';
 
 const session_options = create_session_config('test_session');
 const ACTING_PATH = '/api/test_acting_echo';
 
-const ActingEchoInput = z.strictObject({ acting: ActingActor, note: z.string() });
+const ActingEchoInput = z.strictObject({ acting: ZodActingActor, note: z.string() });
 
 /**
  * A consumer-shaped mutation route: `actor: 'required'` with `acting` on the

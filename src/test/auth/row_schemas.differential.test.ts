@@ -49,13 +49,11 @@ import {
 	EMAIL_LENGTH_MAX,
 	EMAIL_LENGTH_MESSAGE,
 	EMAIL_REGEX,
-	Email as ZodEmail,
 	USERNAME_LENGTH_MAX,
 	USERNAME_REGEX,
-	Username as ZodUsername,
-	Uuid as ZodUuid
+	Timestamp,
+	USERNAME_CANONICAL_REGEX
 } from '#lib/primitive_schemas.ts';
-import { Timestamp, USERNAME_CANONICAL_REGEX } from '#lib/primitive_schemas_fuz.ts';
 import { NAME_LENGTH_MAX } from '#lib/auth/name_schema.ts';
 import {
 	ActorSummaryJson,
@@ -97,6 +95,7 @@ import {
 	type WireIssue
 } from '#lib/schema_issues.ts';
 import { ZodAuditEventTypeName, ZodAuditOutcome, ZodRoleName } from './zod_name_oracles.ts';
+import { ZodEmail, ZodUsername, ZodUuid } from '#lib/zod_schemas.ts';
 
 // -- the Zod schemas the port replaced --------------------------------------
 

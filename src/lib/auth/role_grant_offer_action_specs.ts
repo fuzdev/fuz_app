@@ -40,7 +40,7 @@ import {
 	type Infer
 } from '@fuzdev/fuz_schema/schema.ts';
 
-import { ActingActor, Uuid, bounded_string } from '../primitive_schemas_fuz.ts';
+import { ActingActor, Uuid, bounded_string } from '../primitive_schemas.ts';
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
 import {
 	ERROR_INSUFFICIENT_PERMISSIONS,

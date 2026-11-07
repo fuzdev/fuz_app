@@ -4,12 +4,11 @@
  * Defines the runtime types for the fuz identity system:
  * `Account`, `Actor`, `RoleGrant`, `AuthSession`, and `ApiToken`.
  *
- * Identifier primitives (`Username`, `UsernameProvided`, `Email`) live
- * in `primitive_schemas.ts` and `primitive_schemas_fuz.ts` — they're general
- * validator shapes that don't depend on the auth domain. The auth-shape request-contract
- * primitive `ActingActor` lives in `http/auth_shape.ts` next to
- * `RouteAuth` (the two pair: `auth.actor !== 'none'` ⟺ input declares
- * `acting?: ActingActor`).
+ * Identifier primitives (`Username`, `UsernameProvided`, `Email`) and the
+ * request-contract primitive `ActingActor` live in `primitive_schemas.ts` —
+ * they're general validator shapes that don't depend on the auth domain.
+ * `ActingActor` pairs with `RouteAuth` in `http/auth_shape.ts`:
+ * `auth.actor !== 'none'` ⟺ input declares `acting?: ActingActor`.
  *
  * The wire schemas are `@fuzdev/fuz_schema` schemas, `SessionId` among them.
  *
@@ -30,8 +29,14 @@ import {
 	type Infer
 } from '@fuzdev/fuz_schema/schema.ts';
 
-import type { Username } from '../primitive_schemas.ts';
-import { Blake3Hash, Email, Timestamp, UsernameCanonical, Uuid } from '../primitive_schemas_fuz.ts';
+import {
+	Blake3Hash,
+	Email,
+	Timestamp,
+	UsernameCanonical,
+	Uuid,
+	type Username
+} from '../primitive_schemas.ts';
 import { RoleName } from './role_schema.ts';
 import { ScopeKindName } from './scope_kind_schema.ts';
 import { ApiTokenId } from './api_token.ts';
@@ -185,7 +190,7 @@ export const has_global_role = (
 
 /**
  * A session's storage key — the blake3 hash of its raw token, branded so a
- * bare `string` can't stand in for one. `Blake3Hash` (`primitive_schemas_fuz.ts`)
+ * bare `string` can't stand in for one. `Blake3Hash` (`primitive_schemas.ts`)
  * is the shape; this is the meaning. Mint only via `hash_session_token`, or a
  * parse of this schema at an external boundary.
  *

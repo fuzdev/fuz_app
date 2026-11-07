@@ -25,7 +25,7 @@ import {
 	type Infer
 } from '@fuzdev/fuz_schema/schema.ts';
 
-import { bounded_string, Timestamp } from '../primitive_schemas_fuz.ts';
+import { bounded_string, Timestamp } from '../primitive_schemas.ts';
 import { TokenScopeInput } from './token_scope.ts';
 import { TokenLifetimeInput } from './token_lifetime.ts';
 

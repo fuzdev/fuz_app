@@ -42,13 +42,11 @@ import { z } from 'zod';
 import { is, parse, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
-	bounded_string as zod_bounded_string,
-	Email as ZodEmail,
-	Username as ZodUsername,
 	USERNAME_PROVIDED_LENGTH_MAX,
-	Uuid as ZodUuid
+	Timestamp,
+	UsernameCanonical,
+	UsernameProvided
 } from '#lib/primitive_schemas.ts';
-import { Timestamp, UsernameCanonical, UsernameProvided } from '#lib/primitive_schemas_fuz.ts';
 import { ClientApiTokenJson } from '#lib/auth/account_schema.ts';
 import {
 	API_TOKEN_NAME_LENGTH_MAX,
@@ -107,6 +105,8 @@ import {
 	type RestErrorDef
 } from '#lib/http/error_schemas.ts';
 import { parse_any, type ValidationSchema } from '#lib/schema_issues.ts';
+import { ZodEmail, ZodUsername, ZodUuid } from '#lib/zod_schemas.ts';
+import { zod_bounded_string } from '../zod_copies.ts';
 
 // -- the Zod schemas the port replaced --------------------------------------
 

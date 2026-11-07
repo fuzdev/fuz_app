@@ -25,7 +25,7 @@ import {
 	type Infer
 } from '@fuzdev/fuz_schema/schema.ts';
 
-import { ActingActor, Timestamp, Uuid } from '../primitive_schemas_fuz.ts';
+import { ActingActor, Timestamp, Uuid } from '../primitive_schemas.ts';
 import { CellRelationListLimit } from './cell_relation_list_limit.ts';
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
 

@@ -47,8 +47,7 @@ import {
 	type Infer
 } from '@fuzdev/fuz_schema/schema.ts';
 
-import type { Uuid } from '../primitive_schemas.ts';
-import { Uuid as UuidSchema, bounded_string } from '../primitive_schemas_fuz.ts';
+import { Uuid as UuidSchema, bounded_string, type Uuid } from '../primitive_schemas.ts';
 import type { RemoteNotificationActionSpec } from '../actions/action_spec.ts';
 import type { Action } from '../actions/action_types.ts';
 import { create_action_event_spec } from '../actions/action_bridge.ts';

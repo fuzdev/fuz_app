@@ -30,23 +30,16 @@ import {
 	type InputTestCase
 } from '#lib/testing/adversarial_input_cases.ts';
 import { detect_format, to_field_json_schema } from '#lib/testing/schema_generators.ts';
-import {
-	bounded_string,
-	Datetime,
-	Email,
-	FactHashSchema,
-	Username,
-	USERNAME_LENGTH_MAX,
-	USERNAME_PROVIDED_LENGTH_MAX,
-	Uuid
-} from '#lib/primitive_schemas.ts';
+import { USERNAME_LENGTH_MAX, USERNAME_PROVIDED_LENGTH_MAX } from '#lib/primitive_schemas.ts';
+import { Datetime, ZodEmail, ZodFactHashSchema, ZodUsername, ZodUuid } from '#lib/zod_schemas.ts';
+import { zod_bounded_string } from '../zod_copies.ts';
 
 /**
  * A Zod transform-then-refine string, the shape of the login username before
  * it moved to fuz_schema: bounded, trimmed and lowercased, then refused when
  * the trim left nothing.
  */
-const ZodTrimmedLogin = bounded_string({ min: 1, max: USERNAME_PROVIDED_LENGTH_MAX })
+const ZodTrimmedLogin = zod_bounded_string({ min: 1, max: USERNAME_PROVIDED_LENGTH_MAX })
 	.transform((s) => s.trim().toLowerCase())
 	.refine((s) => s.length > 0, { message: 'empty after trimming' });
 
@@ -61,7 +54,7 @@ const value_of = (cases: Array<InputTestCase>, label: string): unknown => {
 
 describe('to_field_json_schema', () => {
 	test('renders the input side of a transform', () => {
-		const json = to_field_json_schema(Username);
+		const json = to_field_json_schema(ZodUsername);
 		assert.ok(json);
 		assert.strictEqual(json.minLength, 3);
 		assert.strictEqual(json.maxLength, USERNAME_LENGTH_MAX);
@@ -69,7 +62,7 @@ describe('to_field_json_schema', () => {
 	});
 
 	test("resolves a nullable's one non-null branch", () => {
-		const json = to_field_json_schema(Username.nullish());
+		const json = to_field_json_schema(ZodUsername.nullish());
 		assert.ok(json);
 		assert.strictEqual(json.anyOf, undefined);
 		assert.strictEqual(json.maxLength, USERNAME_LENGTH_MAX);
@@ -134,7 +127,7 @@ describe('to_field_json_schema — fuz_schema', () => {
 });
 
 describe('generate_input_test_cases — transform and pipe fields', () => {
-	const Input = z.strictObject({ username: Username, login: ZodTrimmedLogin });
+	const Input = z.strictObject({ username: ZodUsername, login: ZodTrimmedLogin });
 	// generated per test, so a generator failure fails each test, not collection
 	const generate = () => generate_input_test_cases(Input);
 
@@ -159,7 +152,7 @@ describe('generate_input_test_cases — transform and pipe fields', () => {
 	});
 
 	test('the pattern violation fails the real regex', () => {
-		const json = to_field_json_schema(Username);
+		const json = to_field_json_schema(ZodUsername);
 		const value = value_of(generate(), 'format: username (pattern violation)');
 		assert.strictEqual(typeof value, 'string');
 		assert.isFalse(new RegExp(json.pattern as string).test(value as string));
@@ -178,7 +171,7 @@ describe('generate_input_test_cases — transform and pipe fields', () => {
 
 describe('generate_input_test_cases — bounds under a nullable anyOf', () => {
 	const Input = z.strictObject({
-		username: Username.nullish(),
+		username: ZodUsername.nullish(),
 		count: z.number().int().min(1).max(10).nullable(),
 		tags: z.array(z.string()).min(1).max(3).nullish()
 	});
@@ -234,17 +227,17 @@ describe('generate_input_test_cases — refine-only bounds', () => {
 describe('generate_input_test_cases — no case is accidentally valid', () => {
 	// fields whose generated candidates a naive generator would emit as valid
 	const fixtures: Record<string, z.ZodType> = {
-		username: Username,
-		username_nullish: Username.nullish(),
+		username: ZodUsername,
+		username_nullish: ZodUsername.nullish(),
 		username_provided: ZodTrimmedLogin,
-		email: Email,
-		email_nullish: Email.nullish(),
-		uuid: Uuid,
-		uuid_nullable: Uuid.nullable(),
+		email: ZodEmail,
+		email_nullish: ZodEmail.nullish(),
+		uuid: ZodUuid,
+		uuid_nullable: ZodUuid.nullable(),
 		datetime: Datetime,
 		blake3: z.string().regex(/^[0-9a-f]{64}$/),
-		fact_hash: FactHashSchema.nullish(),
-		bounded: bounded_string({ min: 2, max: 5 }).nullish(),
+		fact_hash: ZodFactHashSchema.nullish(),
+		bounded: zod_bounded_string({ min: 2, max: 5 }).nullish(),
 		piped: z.string().max(5).pipe(z.string().min(2)),
 		trimmed: z.string().trim().min(1).max(4),
 		count: z.number().int().min(1).max(10).nullish(),
@@ -289,8 +282,8 @@ describe('generate_input_test_cases — no case is accidentally valid', () => {
 
 	test('params and query format cases fail their field', () => {
 		const Params = z.strictObject({
-			id: Uuid,
-			name: Username,
+			id: ZodUuid,
+			name: ZodUsername,
 			loose: z.string().regex(/^[^\n]*$/)
 		});
 		const params_cases = generate_params_test_cases(Params);

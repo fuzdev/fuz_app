@@ -8,7 +8,7 @@
 import { assert } from 'vitest';
 import { to_json_schema } from '@fuzdev/fuz_schema/json_schema.ts';
 
-import { Timestamp } from '#lib/primitive_schemas_fuz.ts';
+import { Timestamp } from '#lib/primitive_schemas.ts';
 import type { RestErrorDef } from '#lib/http/error_schemas.ts';
 import { schema_to_surface } from '#lib/http/schema_helpers.ts';
 

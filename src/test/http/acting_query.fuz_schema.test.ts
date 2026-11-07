@@ -1,12 +1,12 @@
 /**
- * The `{acting}` route queries, `@fuzdev/fuz_schema` `object`s over the twin
+ * The `{acting}` route queries, `@fuzdev/fuz_schema` `object`s over
  * `ActingActor`: `GET /health`, `GET /tables` and
  * `DELETE /tables/:name/rows/:id` of `create_db_route_specs`, the bare-hash
  * `GET /api/facts/:hash`, `GET /api/surface`, and `GET /audit/stream`
  * (`AuditStreamQuery`).
  *
  * Each is held to the Zod query it replaced, `z.strictObject({acting})` over
- * the Zod `ActingActor`, on a corpus of query records built as Hono's
+ * `ZodActingActor`, on a corpus of query records built as Hono's
  * `c.req.query()` builds them (null-prototype): the same verdict, the same
  * output, and the same wire issues but for `message`. Their surface entries
  * are the Zod-era ones as JSON, captured in
@@ -47,7 +47,7 @@ import {
 	AuditStreamQuery,
 	create_audit_log_route_shape
 } from '#lib/auth/audit_log_route_schema.ts';
-import { ActingActor, input_schema_declares_acting } from '#lib/http/auth_shape.ts';
+import { input_schema_declares_acting } from '#lib/http/auth_shape.ts';
 import { apply_route_specs, attach_route_handler, type RouteSpec } from '#lib/http/route_spec.ts';
 import { route_raw } from '#lib/http/route_result.ts';
 import { generate_app_surface, type AppSurface } from '#lib/http/surface.ts';
@@ -70,11 +70,12 @@ import {
 	REST_TABLE_NOT_FOUND
 } from '#lib/http/error_schemas.ts';
 import { with_error_moves, type ErrorMove } from '../surface_test_helpers.ts';
+import { ZodActingActor } from '#lib/zod_schemas.ts';
 
 const SURFACE_FIXTURE_PATH = new URL('../fixtures/surface/acting_query.json', import.meta.url);
 
 /** The Zod query every route below declared before the port. */
-const ZodActingQuery = z.strictObject({ acting: ActingActor });
+const ZodActingQuery = z.strictObject({ acting: ZodActingActor });
 
 const PORTED_ROUTE_KEYS = [
 	'GET /health',

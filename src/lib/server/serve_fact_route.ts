@@ -137,7 +137,7 @@ import { join } from 'node:path';
 import type { Context } from 'hono';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 import type { FactHash } from '@fuzdev/fuz_util/hash_schemas.ts';
-import { ActingActor, FactHashSchema, Uuid } from '../primitive_schemas_fuz.ts';
+import { ActingActor, FactHashSchema, Uuid } from '../primitive_schemas.ts';
 import { literal, object } from '@fuzdev/fuz_schema/schema.ts';
 
 import {

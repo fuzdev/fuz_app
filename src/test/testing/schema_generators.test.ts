@@ -11,7 +11,7 @@ import { TrieRouter } from 'hono/router/trie-router';
 import { parse } from '@fuzdev/fuz_schema/schema.ts';
 
 import { generate_valid_body, resolve_valid_path } from '#lib/testing/schema_generators.ts';
-import { FactHashSchema } from '#lib/primitive_schemas.ts';
+import { ZodFactHashSchema } from '#lib/zod_schemas.ts';
 import {
 	account_session_revoke_action_spec,
 	account_token_revoke_action_spec
@@ -51,7 +51,7 @@ describe('generate_valid_body — branded-string synthesis', () => {
 	});
 
 	test('satisfies a `prefix:`-tagged fixed-length hex pattern (the fact-hash shape)', () => {
-		const schema = z.strictObject({ hash: FactHashSchema });
+		const schema = z.strictObject({ hash: ZodFactHashSchema });
 		const body = generate_valid_body(schema);
 		assert.ok(body);
 		assert.strictEqual(body.hash, `blake3:${'0'.repeat(64)}`);
@@ -70,7 +70,7 @@ describe('generate_valid_body — branded-string synthesis', () => {
 
 describe('resolve_valid_path — params-schema-aware synthesis', () => {
 	test('a `blake3:`-tagged hash param resolves to a value its schema accepts', () => {
-		const params = z.strictObject({ hash: FactHashSchema });
+		const params = z.strictObject({ hash: ZodFactHashSchema });
 		const resolved = resolve_valid_path('/api/facts/:hash', params);
 		const segment = decodeURIComponent(resolved.slice('/api/facts/'.length));
 		assert.strictEqual(segment, `blake3:${'0'.repeat(64)}`);
@@ -78,7 +78,7 @@ describe('resolve_valid_path — params-schema-aware synthesis', () => {
 	});
 
 	test('a patterned param is percent-encoded in the emitted path', () => {
-		const params = z.strictObject({ hash: FactHashSchema });
+		const params = z.strictObject({ hash: ZodFactHashSchema });
 		const resolved = resolve_valid_path('/api/facts/:hash', params);
 		// `:` must not reach the URL raw — it would read as a scheme separator
 		// to some routers and as a literal to others.

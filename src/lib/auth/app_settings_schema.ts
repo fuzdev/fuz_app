@@ -8,7 +8,7 @@
 
 import { boolean, nullable, object, string, type Infer } from '@fuzdev/fuz_schema/schema.ts';
 
-import { Uuid } from '../primitive_schemas_fuz.ts';
+import { Uuid } from '../primitive_schemas.ts';
 
 /** App settings row from the database. */
 export interface AppSettings {

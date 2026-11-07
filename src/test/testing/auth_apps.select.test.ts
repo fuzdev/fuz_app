@@ -21,8 +21,8 @@ import { describe, test, assert } from 'vitest';
 import { z } from 'zod';
 
 import { create_auth_test_apps, select_auth_app } from '#lib/testing/auth_apps.ts';
-import { ActingActor } from '#lib/http/auth_shape.ts';
 import { define_route, type RouteSpec } from '#lib/http/route_spec.ts';
+import { ZodActingActor } from '#lib/zod_schemas.ts';
 
 const specs: Array<RouteSpec> = [
 	define_route({
@@ -54,7 +54,7 @@ const specs: Array<RouteSpec> = [
 		},
 		handler: () => route_ok({ ok: true }),
 		description: 'Session-gated admin route',
-		query: z.strictObject({ acting: ActingActor }),
+		query: z.strictObject({ acting: ZodActingActor }),
 		input: z.null(),
 		output: z.strictObject({ ok: z.literal(true) })
 	}),
@@ -69,7 +69,7 @@ const specs: Array<RouteSpec> = [
 		},
 		handler: () => route_ok({ ok: true }),
 		description: 'Keeper route',
-		query: z.strictObject({ acting: ActingActor }),
+		query: z.strictObject({ acting: ZodActingActor }),
 		input: z.null(),
 		output: z.strictObject({ ok: z.literal(true) })
 	})

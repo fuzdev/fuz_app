@@ -34,43 +34,33 @@
  * @module
  */
 
-import { z } from 'zod';
+import type { z } from 'zod';
 import { is_schema, one_of, parse, type Infer } from '@fuzdev/fuz_schema/schema.ts';
 import { get_schema_entries } from '@fuzdev/fuz_schema/introspect.ts';
 
-import { Uuid } from '../primitive_schemas.ts';
-import {
-	ACTING_ACTOR_DESCRIPTION,
-	ActingActor as ActingActorFuz
-} from '../primitive_schemas_fuz.ts';
+import { ActingActor } from '../primitive_schemas.ts';
 import { zod_unwrap_to_object } from '../zod.ts';
 import type { ValidationSchema } from '../schema_issues.ts';
 
 /**
- * `acting` field shared by every input that needs the caller's acting actor.
- * Declaring `acting: ActingActor` on a route or action input signals to the
- * dispatcher's authorization phase to resolve an actor against the
- * authenticated account: it runs `resolve_acting_actor`, builds the
- * actor-bound `RequestContext`, and loads role_grants before auth guards fire.
- *
- * Resolution rules: omitted + 1 actor → use it; omitted + multiple actors →
- * `actor_required` with the available list; supplied + on the account → use
- * it; supplied + foreign actor → `actor_not_on_account`.
- *
- * Account-grain routes — input doesn't declare `acting` and auth doesn't
- * require role_grants — skip resolution entirely; their `RequestContext.actor`
- * is `null` and the audit envelope's `actor_id` stays null.
- *
- * Lives next to `RouteAuth` because the two are paired by registry-time
- * invariant 2: `auth.actor !== 'none'` ⟺ input (or query, on REST GETs)
- * declares `acting?: ActingActor`. Keeping the contract in one module
- * removes the http/ → auth/ import that an earlier split forced.
- *
- * A fuz_schema input declares the twin in `primitive_schemas_fuz.ts`, which
- * the dispatcher finds the same way.
+ * The Zod `ActingActor` forms `input_schema_declares_acting` matches by
+ * reference: `ZodActingActor`, registered when `zod_schemas.ts` loads, so
+ * this module never imports Zod at runtime. A Zod input holding it has loaded
+ * that module, so it is registered before any spec reaches the check.
  */
-export const ActingActor = Uuid.optional().meta({ description: ACTING_ACTOR_DESCRIPTION });
-export type ActingActor = z.infer<typeof ActingActor>;
+const zod_acting_actors: WeakSet<object> = new WeakSet();
+
+/**
+ * Register a Zod schema as the Zod form of `ActingActor`, which
+ * `input_schema_declares_acting` then finds by reference. `zod_schemas.ts`
+ * registers `ZodActingActor`, its one caller.
+ *
+ * @param schema - the Zod `ActingActor`
+ * @internal
+ */
+export const register_zod_acting_actor = (schema: object): void => {
+	zod_acting_actors.add(schema);
+};
 
 /**
  * Read an `acting` selector out of an unvalidated value.
@@ -92,17 +82,17 @@ export type ActingActor = z.infer<typeof ActingActor>;
  * an input schema behind it, so there a malformed selector is final (the
  * status route answers account-only).
  *
- * The grammar is the fuz_schema twin's, which is the Zod `ActingActor`'s and
- * the Rust spine's, so every value reads as the Zod `ActingActor` would, the
- * max UUID in any case included. The id comes back lowercased. A route
- * declaring `acting` on its Zod `query` schema doesn't read it here: that
- * schema runs ahead of the authorization phase, with the same grammar.
+ * The grammar is `ActingActor`'s, which is `ZodActingActor`'s and the Rust
+ * spine's, so every value reads as either would, the max UUID in any case
+ * included. The id comes back lowercased. A route declaring `acting` on its
+ * `query` schema doesn't read it here: that schema runs ahead of the
+ * authorization phase, with the same grammar.
  *
  * @param value - the raw `acting` field, from params / query / body
  * @returns the actor id, or `undefined` when absent or malformed
  */
 export const parse_acting = (value: unknown): string | undefined => {
-	const parsed = parse(ActingActorFuz, value);
+	const parsed = parse(ActingActor, value);
 	return parsed.ok ? parsed.value : undefined;
 };
 
@@ -337,10 +327,10 @@ export const assert_route_auth_invariants = (auth: RouteAuth, context: string): 
 /**
  * Whether a schema declares the canonical `acting?: ActingActor` field.
  * Reference-equality on the exported `ActingActor` schema of the input's
- * library — the Zod one here, the fuz_schema twin in
- * `primitive_schemas_fuz.ts` — so consumer schemas with unrelated `acting`
- * fields don't trip this check, nor does either twin in the other library's
- * object.
+ * library — `ActingActor` (`primitive_schemas.ts`) in a fuz_schema object,
+ * `ZodActingActor` (`zod_schemas.ts`) in a Zod one — so consumer schemas with
+ * unrelated `acting` fields don't trip this check, nor does either form in
+ * the other library's object.
  *
  * Peels through Zod wrappers (`optional`, `nullable`, `default`,
  * `transform`, `pipe`, `prefault`) via `zod_unwrap_to_object` so a spec
@@ -354,10 +344,11 @@ export const assert_route_auth_invariants = (auth: RouteAuth, context: string): 
  * input, say) answers `false`.
  */
 export const input_schema_declares_acting = (schema: ValidationSchema): boolean => {
-	if (is_schema(schema)) return get_schema_entries(schema)?.acting === ActingActorFuz;
+	if (is_schema(schema)) return get_schema_entries(schema)?.acting === ActingActor;
 	const obj = zod_unwrap_to_object(schema as z.ZodType);
 	if (!obj) return false;
-	return (obj.shape as Record<string, z.ZodType | undefined>).acting === ActingActor;
+	const acting = (obj.shape as Record<string, z.ZodType | undefined>).acting;
+	return acting !== undefined && zod_acting_actors.has(acting);
 };
 
 /**
@@ -405,12 +396,12 @@ export const assert_route_auth_acting_biconditional = (
 		throw new Error(
 			`${context}: auth.actor === '${auth.actor}' requires the ${
 				slot_phrase
-			} to declare 'acting?: ActingActor', the Zod one or its fuz_schema twin (registry-time invariant 2)`
+			} to declare 'acting?: ActingActor' (or ZodActingActor in a Zod schema) (registry-time invariant 2)`
 		);
 	}
 	throw new Error(
 		`${context}: ${
 			slot_phrase
-		} declares 'acting?: ActingActor' (Zod or fuz_schema) but auth.actor === 'none' (registry-time invariant 2)`
+		} declares 'acting?: ActingActor' (or ZodActingActor) but auth.actor === 'none' (registry-time invariant 2)`
 	);
 };

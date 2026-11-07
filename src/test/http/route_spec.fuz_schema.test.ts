@@ -37,7 +37,7 @@ import {
 	type RouteSpec
 } from '#lib/http/route_spec.ts';
 import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
-import { Uuid } from '#lib/primitive_schemas_fuz.ts';
+import { Uuid } from '#lib/primitive_schemas.ts';
 import { route_fail, route_ok, route_raw, type RouteRaw } from '#lib/http/route_result.ts';
 import { create_stub_db } from '#lib/testing/stubs.ts';
 import { rest_error } from '#lib/http/error_schemas.ts';

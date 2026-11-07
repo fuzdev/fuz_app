@@ -29,12 +29,12 @@ import { create_test_app } from '#lib/testing/app_server.ts';
 import { query_create_actor } from '#lib/auth/account_queries.ts';
 import { require_request_context } from '#lib/auth/request_context.ts';
 import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
-import { ActingActor } from '#lib/http/auth_shape.ts';
 import { ERROR_ACTOR_REQUIRED, ERROR_CREDENTIAL_TYPE_REQUIRED } from '#lib/http/error_schemas.ts';
 import { define_route, type RouteSpec } from '#lib/http/route_spec.ts';
 import { route_ok } from '#lib/http/route_result.ts';
 
 import { describe_db } from '../auth_db_default.ts';
+import { ZodActingActor } from '#lib/zod_schemas.ts';
 
 const session_options = create_session_config('test_session');
 const SESSION_ONLY_PATH = '/api/test_session_only';
@@ -46,7 +46,7 @@ const create_route_specs = (): Array<RouteSpec> => [
 		path: SESSION_ONLY_PATH,
 		auth: { account: 'required', actor: 'required', credential_types: ['session'] },
 		description: 'Session-channel route that also resolves an acting actor',
-		query: z.strictObject({ acting: ActingActor }),
+		query: z.strictObject({ acting: ZodActingActor }),
 		input: z.null(),
 		output: z.strictObject({ actor_id: z.string().nullable() }),
 		handler: (c) => route_ok({ actor_id: require_request_context(c).actor?.id ?? null })

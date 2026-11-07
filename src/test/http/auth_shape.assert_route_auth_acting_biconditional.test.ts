@@ -18,11 +18,8 @@
 import { describe, test, assert } from 'vitest';
 import { z } from 'zod';
 
-import {
-	ActingActor,
-	assert_route_auth_acting_biconditional,
-	type RouteAuth
-} from '#lib/http/auth_shape.ts';
+import { assert_route_auth_acting_biconditional, type RouteAuth } from '#lib/http/auth_shape.ts';
+import { ZodActingActor } from '#lib/zod_schemas.ts';
 
 /* eslint-disable @typescript-eslint/no-confusing-void-expression */
 
@@ -36,7 +33,7 @@ const public_auth: RouteAuth = {
 	actor: 'none'
 };
 
-const canonical_input = z.strictObject({ acting: ActingActor });
+const canonical_input = z.strictObject({ acting: ZodActingActor });
 
 describe('assert_route_auth_acting_biconditional', () => {
 	test('actor: required + acting declared on input passes', () => {

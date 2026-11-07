@@ -48,9 +48,9 @@ import { stub_route_spec } from '#lib/testing/stubs.ts';
 import {
 	EMAIL_LENGTH_MAX,
 	USERNAME_LENGTH_MAX,
-	USERNAME_LENGTH_MIN
+	USERNAME_LENGTH_MIN,
+	USERNAME_CANONICAL_REGEX
 } from '#lib/primitive_schemas.ts';
-import { USERNAME_CANONICAL_REGEX } from '#lib/primitive_schemas_fuz.ts';
 import {
 	REST_AUTHENTICATION_REQUIRED,
 	REST_INVALID_CREDENTIALS,

@@ -9,13 +9,7 @@
 
 import { nullable, object, string, type Infer } from '@fuzdev/fuz_schema/schema.ts';
 
-import {
-	Email,
-	Timestamp,
-	UsernameCanonical,
-	Uuid,
-	type Username
-} from '../primitive_schemas_fuz.ts';
+import { Email, Timestamp, UsernameCanonical, Uuid, type Username } from '../primitive_schemas.ts';
 
 /** Invite row from the database. */
 export interface Invite {

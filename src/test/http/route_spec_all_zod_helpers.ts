@@ -28,16 +28,16 @@ import { route_fail, route_ok, route_raw, type RouteRaw } from '#lib/http/route_
 import { generate_app_surface, type AppSurface } from '#lib/http/surface.ts';
 import type { MiddlewareSpec } from '#lib/http/middleware_spec.ts';
 import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
-import { Uuid } from '#lib/primitive_schemas.ts';
+import { ZodUuid } from '#lib/zod_schemas.ts';
 import { rest_error } from '#lib/http/error_schemas.ts';
 import { create_dev_route_error_check } from '#lib/http/dev_route_error_check.ts';
 import { resolve_app_route_error_maps } from '#lib/http/route_errors.ts';
 import { create_stub_db } from '#lib/testing/stubs.ts';
 
-const ThingParams = z.strictObject({ thing_id: Uuid });
+const ThingParams = z.strictObject({ thing_id: ZodUuid });
 const ThingQuery = z.strictObject({ mode: z.enum(['a', 'b']) });
 const ThingInput = z.strictObject({ name: z.string().min(1) });
-const ThingOutput = z.strictObject({ id: Uuid, name: z.string(), mode: z.enum(['a', 'b']) });
+const ThingOutput = z.strictObject({ id: ZodUuid, name: z.string(), mode: z.enum(['a', 'b']) });
 // an error is a definition, never a Zod schema
 const THING_NOT_FOUND = rest_error(404, 'thing_not_found');
 
@@ -110,7 +110,7 @@ const view_route = define_route({
 	params: ThingParams,
 	query: ThingViewQuery,
 	input: z.null(),
-	output: z.strictObject({ id: Uuid, limit: z.number().int(), tag: z.string().nullable() }),
+	output: z.strictObject({ id: ZodUuid, limit: z.number().int(), tag: z.string().nullable() }),
 	handler: (c) => {
 		const { thing_id } = get_route_params(c, ThingParams);
 		const { limit, tag } = get_route_query(c, ThingViewQuery);
@@ -125,7 +125,7 @@ const touch_route = define_route({
 	description: 'Touches a thing.',
 	params: ThingParams,
 	input: z.null(),
-	output: z.strictObject({ id: Uuid, touched: z.literal(true) }),
+	output: z.strictObject({ id: ZodUuid, touched: z.literal(true) }),
 	handler: (c) => {
 		const { thing_id } = get_route_params(c, ThingParams);
 		return route_ok({ id: thing_id, touched: true });

@@ -12,7 +12,7 @@ import { meta } from '@fuzdev/fuz_schema/meta.ts';
 import { boolean, literal, object, type Infer } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
-import { ActingActor } from '../primitive_schemas_fuz.ts';
+import { ActingActor } from '../primitive_schemas.ts';
 import { RoleName } from './role_schema.ts';
 
 /** Error reason — caller asked to self-toggle a role outside the configured allowlist. */

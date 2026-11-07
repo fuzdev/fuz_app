@@ -85,7 +85,7 @@ import {
 	type Infer
 } from '@fuzdev/fuz_schema/schema.ts';
 
-import { Uuid, bounded_string } from '../primitive_schemas_fuz.ts';
+import { Uuid, bounded_string } from '../primitive_schemas.ts';
 
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
 import { ActorLookupEntryJson } from './actor_lookup_action_specs.ts';

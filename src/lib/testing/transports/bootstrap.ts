@@ -22,7 +22,7 @@ import '../assert_dev_env.ts';
 
 import { parse, string, strip_object } from '@fuzdev/fuz_schema/schema.ts';
 
-import { Uuid } from '../../primitive_schemas_fuz.ts';
+import { Uuid } from '../../primitive_schemas.ts';
 import { format_issues } from '../../schema_issues.ts';
 
 import type { BackendConfig } from '../cross_backend/backend_config.ts';

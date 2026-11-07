@@ -10,7 +10,7 @@
 import { meta } from '@fuzdev/fuz_schema/meta.ts';
 import type { Infer } from '@fuzdev/fuz_schema/schema.ts';
 
-import { bounded_string } from '../primitive_schemas_fuz.ts';
+import { bounded_string } from '../primitive_schemas.ts';
 
 /** Minimum password length, in UTF-16 code units (OWASP recommendation). */
 export const PASSWORD_LENGTH_MIN = 12;

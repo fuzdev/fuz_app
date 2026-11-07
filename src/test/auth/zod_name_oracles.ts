@@ -14,7 +14,7 @@
 
 import { z } from 'zod';
 
-import { bounded_string } from '#lib/primitive_schemas.ts';
+import { zod_bounded_string as bounded_string } from '../zod_copies.ts';
 import {
 	format_name_length_message,
 	format_name_pattern_message,

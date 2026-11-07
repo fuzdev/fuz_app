@@ -15,8 +15,7 @@ import {
 } from '#lib/testing/adversarial_input_cases.ts';
 import { generate_valid_string_param } from '#lib/testing/schema_generators.ts';
 import { zod_extract_fields } from '#lib/zod.ts';
-import { ActingActor } from '#lib/http/auth_shape.ts';
-import { FactHashSchema, Uuid } from '#lib/primitive_schemas.ts';
+import { ZodActingActor, ZodFactHashSchema, ZodUuid } from '#lib/zod_schemas.ts';
 
 // the URL-sourced integer `db_routes` reads its pagination through
 const query_int = (bounds: z.ZodNumber, fallback: number) =>
@@ -31,7 +30,7 @@ const query_int = (bounds: z.ZodNumber, fallback: number) =>
 	);
 
 const TableRowsQuery = z.strictObject({
-	acting: ActingActor,
+	acting: ZodActingActor,
 	offset: query_int(z.number().int().min(0), 0),
 	limit: query_int(z.number().int().min(1).max(500), 50)
 });
@@ -63,16 +62,16 @@ describe('generate_valid_string_param', () => {
 	});
 
 	test('a uuid gets the nil UUID, an unconstrained string test_value', () => {
-		const Params = z.strictObject({ id: Uuid, name: z.string() });
+		const Params = z.strictObject({ id: ZodUuid, name: z.string() });
 		assert.strictEqual(string_of(Params, 'id'), '00000000-0000-0000-0000-000000000000');
 		assert.strictEqual(string_of(Params, 'name'), 'test_value');
 	});
 
 	test('a patterned field gets a synthesized value', () => {
-		const Params = z.strictObject({ hash: FactHashSchema });
+		const Params = z.strictObject({ hash: ZodFactHashSchema });
 		const value = string_of(Params, 'hash');
 		assert.ok(value);
-		assert.ok(FactHashSchema.safeParse(value).success);
+		assert.ok(ZodFactHashSchema.safeParse(value).success);
 	});
 
 	test('a field no candidate passes is null', () => {
@@ -106,7 +105,7 @@ describe('generate_query_test_cases — valid base', () => {
 	});
 
 	test('every query case fails the schema with its field restored valid but for it', () => {
-		const Query = z.strictObject({ cell_id: Uuid, hash: FactHashSchema });
+		const Query = z.strictObject({ cell_id: ZodUuid, hash: ZodFactHashSchema });
 		const cases = generate_query_test_cases(Query);
 		assert.ok(cases.length > 0);
 		const base = Object.fromEntries(
@@ -144,10 +143,10 @@ describe('generate_query_test_cases — valid base', () => {
 
 describe('generate_params_test_cases — valid base', () => {
 	test('a format case on one param carries a valid value for the other', () => {
-		const Params = z.strictObject({ cell_id: Uuid, hash: FactHashSchema });
+		const Params = z.strictObject({ cell_id: ZodUuid, hash: ZodFactHashSchema });
 		const cases = generate_params_test_cases(Params);
 		const cell_case = cases.find((c) => c.label === 'malformed uuid: param cell_id');
 		assert.ok(cell_case);
-		assert.ok(FactHashSchema.safeParse(cell_case.params.hash).success);
+		assert.ok(ZodFactHashSchema.safeParse(cell_case.params.hash).success);
 	});
 });

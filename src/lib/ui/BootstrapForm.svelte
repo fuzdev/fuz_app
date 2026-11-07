@@ -18,8 +18,7 @@
 	import { autofocus } from '@fuzdev/fuz_ui/autofocus.svelte.ts';
 	import { is } from '@fuzdev/fuz_schema/schema.ts';
 
-	import { USERNAME_LENGTH_MAX, USERNAME_LENGTH_MIN } from '../primitive_schemas.ts';
-	import { Username } from '../primitive_schemas_fuz.ts';
+	import { USERNAME_LENGTH_MAX, USERNAME_LENGTH_MIN, Username } from '../primitive_schemas.ts';
 	import { PASSWORD_LENGTH_MIN } from '../auth/password.ts';
 	import { auth_state_context } from './auth_state.svelte.ts';
 	import { FormState } from './form_state.svelte.ts';

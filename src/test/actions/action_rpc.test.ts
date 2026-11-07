@@ -37,13 +37,13 @@ import {
 	ERROR_TOKEN_SCOPE_REQUIRED
 } from '#lib/http/error_schemas.ts';
 import { RateLimiter } from '#lib/rate_limiter.ts';
-import { ActingActor } from '#lib/http/auth_shape.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
 
 import {
 	ForeignRpcError,
 	SecondCopyThrownJsonrpcError
 } from '../http/thrown_jsonrpc_error_helpers.ts';
+import { ZodActingActor } from '#lib/zod_schemas.ts';
 
 const log = new Logger('test', { level: 'off' });
 const db = create_stub_db();
@@ -483,7 +483,7 @@ describe('POST dispatcher', () => {
 			...create_post_spec(),
 			method: 'admin_action',
 			auth: { account: 'required', actor: 'required', roles: ['admin'] },
-			input: z.strictObject({ name: z.string(), acting: ActingActor })
+			input: z.strictObject({ name: z.string(), acting: ZodActingActor })
 		};
 		const app = create_test_app(
 			[{ spec: admin_spec, handler: () => ({ id: '1' }) }],
@@ -513,7 +513,7 @@ describe('POST dispatcher', () => {
 			...create_post_spec(),
 			method: 'admin_action',
 			auth: { account: 'required', actor: 'required', roles: ['admin'] },
-			input: z.strictObject({ name: z.string(), acting: ActingActor })
+			input: z.strictObject({ name: z.string(), acting: ZodActingActor })
 		};
 		const app = create_test_app(
 			[{ spec: admin_spec, handler: () => ({ id: '1' }) }],
@@ -536,7 +536,7 @@ describe('POST dispatcher', () => {
 			...create_post_spec(),
 			method: 'admin_action',
 			auth: { account: 'required', actor: 'required', roles: ['admin'] },
-			input: z.strictObject({ name: z.string(), acting: ActingActor })
+			input: z.strictObject({ name: z.string(), acting: ZodActingActor })
 		};
 		const app = create_test_app(
 			[{ spec: admin_spec, handler: () => ({ id: '1' }) }],
@@ -995,7 +995,7 @@ describe('POST dispatcher', () => {
 				roles: ['keeper'],
 				credential_types: ['daemon_token']
 			},
-			input: z.strictObject({ name: z.string(), acting: ActingActor })
+			input: z.strictObject({ name: z.string(), acting: ZodActingActor })
 		};
 		const app = create_test_app(
 			[{ spec: keeper_spec, handler: () => ({ id: '1' }) }],
@@ -1022,7 +1022,7 @@ describe('POST dispatcher', () => {
 				roles: ['keeper'],
 				credential_types: ['daemon_token']
 			},
-			input: z.strictObject({ name: z.string(), acting: ActingActor })
+			input: z.strictObject({ name: z.string(), acting: ZodActingActor })
 		};
 		const app = create_test_app(
 			[{ spec: keeper_spec, handler: (input: any) => ({ id: input.name }) }],
@@ -1049,7 +1049,7 @@ describe('POST dispatcher', () => {
 				roles: ['keeper'],
 				credential_types: ['daemon_token']
 			},
-			input: z.strictObject({ name: z.string(), acting: ActingActor })
+			input: z.strictObject({ name: z.string(), acting: ZodActingActor })
 		};
 		const app = create_test_app([{ spec: keeper_spec, handler: () => ({ id: '1' }) }], {
 			auth_context: create_test_request_context('keeper'),
@@ -1076,7 +1076,7 @@ describe('POST dispatcher', () => {
 				roles: ['keeper'],
 				credential_types: ['daemon_token']
 			},
-			input: z.strictObject({ name: z.string(), acting: ActingActor })
+			input: z.strictObject({ name: z.string(), acting: ZodActingActor })
 		};
 		const app = create_test_app([{ spec: keeper_spec, handler: () => ({ id: '1' }) }], {
 			auth_context: create_test_request_context('keeper'),
@@ -1103,7 +1103,7 @@ describe('POST dispatcher', () => {
 				roles: ['keeper'],
 				credential_types: ['daemon_token']
 			},
-			input: z.strictObject({ name: z.string(), acting: ActingActor })
+			input: z.strictObject({ name: z.string(), acting: ZodActingActor })
 		};
 		const app = create_test_app([{ spec: keeper_spec, handler: () => ({ id: '1' }) }], {
 			auth_context: create_test_request_context(),

@@ -22,7 +22,6 @@ import {
 import { route_ok } from '#lib/http/route_result.ts';
 import { env_integer } from '#lib/env/env_schemas.ts';
 import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
-import { ActingActor } from '#lib/http/auth_shape.ts';
 import type { MiddlewareSpec } from '#lib/http/middleware_spec.ts';
 import { generate_app_surface, events_to_surface } from '#lib/http/surface.ts';
 import {
@@ -58,6 +57,7 @@ import {
 	jsonrpc_errors
 } from '#lib/http/jsonrpc_errors.ts';
 import { ForeignRpcError, SecondCopyThrownJsonrpcError } from './thrown_jsonrpc_error_helpers.ts';
+import { ZodActingActor } from '#lib/zod_schemas.ts';
 
 const log = new Logger('test', { level: 'off' });
 const db = create_stub_db();
@@ -183,7 +183,7 @@ describe('apply_route_specs', () => {
 				auth: { account: 'required', actor: 'required', roles: ['admin'] },
 				handler: () => route_ok({ admin: true }),
 				description: 'Admin route',
-				query: z.strictObject({ acting: ActingActor }),
+				query: z.strictObject({ acting: ZodActingActor }),
 				input: z.null(),
 				output: z.strictObject({ admin: z.literal(true) })
 			})
@@ -216,7 +216,7 @@ describe('apply_route_specs', () => {
 				auth: { account: 'required', actor: 'required', roles: ['admin'] },
 				handler: () => route_ok({ admin: true }),
 				description: 'Admin route',
-				query: z.strictObject({ acting: ActingActor }),
+				query: z.strictObject({ acting: ZodActingActor }),
 				input: z.null(),
 				output: z.strictObject({ admin: z.literal(true) })
 			})
@@ -249,7 +249,7 @@ describe('apply_route_specs', () => {
 				auth: { account: 'required', actor: 'required', roles: ['admin'] },
 				handler: () => route_ok({ admin: true }),
 				description: 'Admin route',
-				query: z.strictObject({ acting: ActingActor }),
+				query: z.strictObject({ acting: ZodActingActor }),
 				input: z.null(),
 				output: z.strictObject({ admin: z.literal(true) })
 			})
@@ -301,7 +301,7 @@ describe('auth.required_scope', () => {
 				},
 				handler: () => route_ok({ streamed: true }),
 				description: 'Scope-gated route',
-				query: z.strictObject({ acting: ActingActor }),
+				query: z.strictObject({ acting: ZodActingActor }),
 				input: z.null(),
 				output: z.strictObject({ streamed: z.literal(true) })
 			})
@@ -719,7 +719,7 @@ describe('prefix_route_specs', () => {
 			handler: stub_handler,
 			description: 'Valid keeper spec',
 			input: z.null(),
-			query: z.strictObject({ acting: ActingActor }),
+			query: z.strictObject({ acting: ZodActingActor }),
 			output: z.null()
 		});
 		const violating_duplicate: RouteSpec = {

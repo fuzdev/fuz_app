@@ -25,7 +25,7 @@ import {
 } from '@fuzdev/fuz_schema/schema.ts';
 
 import { ActorSummaryJson, RoleGrantSummaryJson, SessionAccountJson } from './account_schema.ts';
-import { UsernameCanonical, UsernameProvided } from '../primitive_schemas_fuz.ts';
+import { UsernameCanonical, UsernameProvided } from '../primitive_schemas.ts';
 import { Password, PasswordProvided } from './password.ts';
 import { define_route_shape } from '../http/route_spec.ts';
 import {

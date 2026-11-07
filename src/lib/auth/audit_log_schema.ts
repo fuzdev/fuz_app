@@ -34,7 +34,7 @@ import {
 	type Infer
 } from '@fuzdev/fuz_schema/schema.ts';
 
-import { bounded_string, Email, Timestamp, Uuid } from '../primitive_schemas_fuz.ts';
+import { bounded_string, Email, Timestamp, Uuid } from '../primitive_schemas.ts';
 import { assert_validation_schema, type ValidationSchema } from '../schema_issues.ts';
 import { AuthSessionJson, SessionId } from './account_schema.ts';
 import { ApiTokenId } from './api_token.ts';

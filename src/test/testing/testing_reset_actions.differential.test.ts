@@ -16,11 +16,7 @@ import { describe, test, assert } from 'vitest';
 import { z } from 'zod';
 import { is_schema, parse, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 
-import {
-	create_uuid,
-	FactHashSchema as ZodFactHashSchema,
-	Uuid as ZodUuid
-} from '#lib/primitive_schemas.ts';
+import { create_uuid } from '#lib/primitive_schemas.ts';
 import type { ValidationSchema } from '#lib/schema_issues.ts';
 import {
 	TESTING_FLOOD_MAX_COUNT,
@@ -44,6 +40,7 @@ import {
 	show,
 	type DifferentialRow
 } from '../differential_test_helpers.ts';
+import { ZodFactHashSchema, ZodUuid } from '#lib/zod_schemas.ts';
 
 // --- the Zod copies, as the library wrote them ---
 

@@ -31,11 +31,11 @@ import {
 import { define_route, type RouteSpec } from '#lib/http/route_spec.ts';
 import { create_test_raw_api_token } from '#lib/testing/entities.ts';
 import { ROLE_KEEPER, ROLE_ADMIN } from '#lib/auth/role_schema.ts';
-import { ActingActor } from '#lib/http/auth_shape.ts';
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS
 } from '#lib/http/error_schemas.ts';
+import { ZodActingActor } from '#lib/zod_schemas.ts';
 
 const session_options = create_session_config('test_session');
 
@@ -61,7 +61,7 @@ const create_keeper_route_spec = (): RouteSpec =>
 		path: '/api/keeper-only',
 		auth: { account: 'required', actor: 'required', roles: [ROLE_KEEPER] },
 		description: 'Keeper-only endpoint',
-		query: z.strictObject({ acting: ActingActor }),
+		query: z.strictObject({ acting: ZodActingActor }),
 		input: z.null(),
 		output: z.looseObject({ ok: z.literal(true) }),
 		handler: () => route_ok({ ok: true as const })
@@ -74,7 +74,7 @@ const create_admin_route_spec = (): RouteSpec =>
 		path: '/api/admin-only',
 		auth: { account: 'required', actor: 'required', roles: [ROLE_ADMIN] },
 		description: 'Admin-only endpoint',
-		query: z.strictObject({ acting: ActingActor }),
+		query: z.strictObject({ acting: ZodActingActor }),
 		input: z.null(),
 		output: z.looseObject({ ok: z.literal(true) }),
 		handler: () => route_ok({ ok: true as const })

@@ -1,5 +1,6 @@
 /**
- * Tests for the hash schemas `Blake3Hash` (fuz_schema) and `FactHashSchema` (Zod).
+ * Tests for the hash schemas `Blake3Hash` (fuz_schema) and `ZodFactHashSchema`, the Zod
+ * form of `FactHashSchema`.
  *
  * @module
  */
@@ -14,8 +15,8 @@ import {
 	type FactHash
 } from '@fuzdev/fuz_util/hash_schemas.ts';
 
-import { FactHashSchema } from '#lib/primitive_schemas.ts';
-import { Blake3Hash } from '#lib/primitive_schemas_fuz.ts';
+import { Blake3Hash } from '#lib/primitive_schemas.ts';
+import { ZodFactHashSchema } from '#lib/zod_schemas.ts';
 
 /** A syntactically valid (if not content-derived) fact hash literal. */
 const HASH_A = (FACT_HASH_PREFIX + 'a'.repeat(64)) as FactHash;
@@ -101,14 +102,14 @@ describe('Blake3Hash', () => {
 	});
 });
 
-describe('FactHashSchema', () => {
+describe('ZodFactHashSchema', () => {
 	test('parse throws on a malformed value', () => {
-		assert.throws(() => FactHashSchema.parse('blake3:nope'));
+		assert.throws(() => ZodFactHashSchema.parse('blake3:nope'));
 	});
 
 	test('parse round-trips a well-formed hash unchanged', () => {
 		const raw = FACT_HASH_PREFIX + 'a'.repeat(64);
-		assert.strictEqual(FactHashSchema.parse(raw), raw);
+		assert.strictEqual(ZodFactHashSchema.parse(raw), raw);
 	});
 
 	test('agrees with is_fact_hash', () => {
@@ -124,17 +125,17 @@ describe('FactHashSchema', () => {
 			''
 		];
 		for (const c of cases) {
-			assert.strictEqual(FactHashSchema.safeParse(c).success, is_fact_hash(c), c);
+			assert.strictEqual(ZodFactHashSchema.safeParse(c).success, is_fact_hash(c), c);
 		}
 	});
 
 	test('output is fuz_util FactHash', () => {
-		const parsed: FactHash = FactHashSchema.parse(HASH_A);
+		const parsed: FactHash = ZodFactHashSchema.parse(HASH_A);
 		assert.strictEqual(parsed, HASH_A);
 	});
 
 	test('keeps the regex in its JSON Schema', () => {
-		const json = z.toJSONSchema(z.array(FactHashSchema).nullable()) as Record<string, unknown>;
+		const json = z.toJSONSchema(z.array(ZodFactHashSchema).nullable()) as Record<string, unknown>;
 		assert.deepEqual(json.anyOf, [
 			{ type: 'array', items: { type: 'string', pattern: FACT_HASH_EXACT.source } },
 			{ type: 'null' }

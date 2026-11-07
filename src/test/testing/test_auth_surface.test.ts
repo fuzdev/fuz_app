@@ -43,8 +43,7 @@ import {
 	assert_error_codes_well_formed
 } from '#lib/testing/surface_invariants.ts';
 import { rest_error } from '#lib/http/error_schemas.ts';
-import { ActingActor } from '#lib/http/auth_shape.ts';
-import { FactHashSchema } from '#lib/primitive_schemas.ts';
+import { ZodActingActor, ZodFactHashSchema } from '#lib/zod_schemas.ts';
 
 /** The content type every non-`raw_body` POST route requires. */
 const JSON_HEADERS = { 'content-type': 'application/json' };
@@ -162,7 +161,7 @@ describe('create_test_app_from_specs', () => {
 			auth: { account: 'required', actor: 'required', roles: ['admin'] },
 			handler: () => route_ok({ admin: true }),
 			description: 'Admin route',
-			query: z.strictObject({ acting: ActingActor }),
+			query: z.strictObject({ acting: ZodActingActor }),
 			input: z.null(),
 			output: z.strictObject({ admin: z.literal(true) })
 		})
@@ -485,7 +484,7 @@ const adversarial_specs: Array<RouteSpec> = [
 		auth: { account: 'required', actor: 'required', roles: ['admin'] },
 		handler: () => route_ok({ admin: true }),
 		description: 'Admin route',
-		query: z.strictObject({ acting: ActingActor }),
+		query: z.strictObject({ acting: ZodActingActor }),
 		input: z.null(),
 		output: z.strictObject({ admin: z.literal(true) })
 	}),
@@ -495,7 +494,7 @@ const adversarial_specs: Array<RouteSpec> = [
 		auth: { account: 'required', actor: 'required', roles: ['keeper'] },
 		handler: () => route_ok({ keeper: true }),
 		description: 'Keeper role route',
-		query: z.strictObject({ acting: ActingActor }),
+		query: z.strictObject({ acting: ZodActingActor }),
 		input: z.null(),
 		output: z.strictObject({ keeper: z.literal(true) })
 	}),
@@ -510,7 +509,7 @@ const adversarial_specs: Array<RouteSpec> = [
 		},
 		handler: () => route_ok({ keeper: true }),
 		description: 'Keeper auth route',
-		query: z.strictObject({ acting: ActingActor }),
+		query: z.strictObject({ acting: ZodActingActor }),
 		input: z.null(),
 		output: z.strictObject({ keeper: z.literal(true) })
 	}),
@@ -531,7 +530,7 @@ const adversarial_specs: Array<RouteSpec> = [
 		},
 		handler: () => route_ok({ streamed: true }),
 		description: 'Session-channel-gated admin route',
-		query: z.strictObject({ acting: ActingActor }),
+		query: z.strictObject({ acting: ZodActingActor }),
 		input: z.null(),
 		output: z.strictObject({ streamed: z.literal(true) })
 	}),
@@ -545,7 +544,7 @@ const adversarial_specs: Array<RouteSpec> = [
 		method: 'GET',
 		path: '/patterned-params/:hash',
 		auth: { account: 'required', actor: 'none' },
-		params: z.strictObject({ hash: FactHashSchema }),
+		params: z.strictObject({ hash: ZodFactHashSchema }),
 		handler: () => route_ok({ ok: true }),
 		description: 'Protected route with a format-constrained path param',
 		input: z.null(),
@@ -836,7 +835,7 @@ const adversarial_404_specs: Array<RouteSpec> = [
 		handler: stub_handler,
 		description: 'Delete an item',
 		params: z.strictObject({ id: z.uuid() }),
-		query: z.strictObject({ acting: ActingActor }),
+		query: z.strictObject({ acting: ZodActingActor }),
 		input: z.null(),
 		output: z.looseObject({ ok: z.literal(true) }),
 		errors: [rest_error(404, ERROR_ITEM_NOT_FOUND), rest_error(404, ERROR_WIDGET_NOT_FOUND)]

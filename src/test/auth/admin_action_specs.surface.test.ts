@@ -38,9 +38,9 @@ import {
 	EMAIL_LENGTH_MAX,
 	EMAIL_REGEX,
 	USERNAME_LENGTH_MAX,
-	USERNAME_LENGTH_MIN
+	USERNAME_LENGTH_MIN,
+	USERNAME_CANONICAL_REGEX
 } from '#lib/primitive_schemas.ts';
-import { USERNAME_CANONICAL_REGEX } from '#lib/primitive_schemas_fuz.ts';
 import { NAME_LENGTH_MAX, NAME_REGEX } from '#lib/auth/name_schema.ts';
 
 import { with_timestamp_format } from '../surface_test_helpers.ts';

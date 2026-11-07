@@ -25,8 +25,7 @@ import '../assert_dev_env.ts';
 
 import { array, literal, parse, string, strip_object } from '@fuzdev/fuz_schema/schema.ts';
 
-import { USERNAME_LENGTH_MAX } from '../../primitive_schemas.ts';
-import { Uuid } from '../../primitive_schemas_fuz.ts';
+import { USERNAME_LENGTH_MAX, Uuid } from '../../primitive_schemas.ts';
 import {
 	format_issues,
 	parse_any,

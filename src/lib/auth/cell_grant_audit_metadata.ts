@@ -21,7 +21,7 @@ import {
 	type Infer
 } from '@fuzdev/fuz_schema/schema.ts';
 
-import { Uuid } from '../primitive_schemas_fuz.ts';
+import { Uuid } from '../primitive_schemas.ts';
 import { CellGrantLevel } from './cell_grant_action_specs.ts';
 
 /**

@@ -19,7 +19,7 @@ import {
 	type TestAppServer
 } from '#lib/testing/app_server.ts';
 import { TEST_ORIGIN } from '#lib/testing/test_origin.ts';
-import { ActingActor } from '#lib/primitive_schemas_fuz.ts';
+import { ActingActor } from '#lib/primitive_schemas.ts';
 import { ERROR_ACTOR_NOT_ON_ACCOUNT } from '#lib/http/error_schemas.ts';
 
 const session_options = create_session_config('test_session');

@@ -28,16 +28,16 @@ import {
 } from '#lib/auth/self_service_role_action_specs.ts';
 import { ROLE_NAME_LENGTH_MESSAGE, ROLE_NAME_PATTERN_MESSAGE } from '#lib/auth/role_schema.ts';
 import {
-	ActingActor as ZodActingActor,
 	assert_route_auth_acting_biconditional,
 	input_schema_declares_acting
 } from '#lib/http/auth_shape.ts';
-import { ActingActor } from '#lib/primitive_schemas_fuz.ts';
+import { ActingActor } from '#lib/primitive_schemas.ts';
 import { generate_app_surface } from '#lib/http/surface.ts';
 import { action_manifest_entry } from '#lib/testing/cross_backend/action_manifest.ts';
 import { parse_any, to_wire_issues, type WireIssue } from '#lib/schema_issues.ts';
 import { NAME_LENGTH_MAX, NAME_REGEX } from '#lib/auth/name_schema.ts';
 import { ZodRoleName } from './zod_name_oracles.ts';
+import { ZodActingActor } from '#lib/zod_schemas.ts';
 
 const SURFACE_FIXTURE_PATH = new URL('../fixtures/surface/self_service_role.json', import.meta.url);
 

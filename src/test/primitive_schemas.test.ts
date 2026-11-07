@@ -1,7 +1,6 @@
 /**
- * Tests for `primitive_schemas.ts` — Username / Email — and the login
- * `UsernameProvided` of `primitive_schemas_fuz.ts`, which pairs with
- * `Username`.
+ * Tests for `primitive_schemas.ts` — `Username`, `Email`, and the login
+ * `UsernameProvided`, which pairs with `Username`.
  *
  * Pins the canonicalization contract: both `Username` and `UsernameProvided`
  * canonicalize at parse time so every creation / lookup site agrees on a
@@ -19,6 +18,7 @@ import { is, parse, parse_or_throw } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	Username,
+	UsernameProvided,
 	Email,
 	EMAIL_LENGTH_MAX,
 	EMAIL_LENGTH_MESSAGE,
@@ -27,7 +27,6 @@ import {
 	USERNAME_LENGTH_MAX,
 	USERNAME_PROVIDED_LENGTH_MAX
 } from '#lib/primitive_schemas.ts';
-import { UsernameProvided } from '#lib/primitive_schemas_fuz.ts';
 
 /** `UsernameProvided`'s output, throwing on a refusal. */
 const provided = (raw: string): string => parse_or_throw(UsernameProvided, raw);
@@ -70,21 +69,21 @@ const each_string = (
 
 describe('Username', () => {
 	test('lowercases at parse time', () => {
-		assert.strictEqual(Username.parse('Admin'), 'admin');
-		assert.strictEqual(Username.parse('ADMIN'), 'admin');
-		assert.strictEqual(Username.parse('MixedCase42'), 'mixedcase42');
+		assert.strictEqual(parse_or_throw(Username, 'Admin'), 'admin');
+		assert.strictEqual(parse_or_throw(Username, 'ADMIN'), 'admin');
+		assert.strictEqual(parse_or_throw(Username, 'MixedCase42'), 'mixedcase42');
 	});
 
 	test('passes through already-lowercase input unchanged', () => {
-		assert.strictEqual(Username.parse('admin'), 'admin');
-		assert.strictEqual(Username.parse('a1b2c3'), 'a1b2c3');
+		assert.strictEqual(parse_or_throw(Username, 'admin'), 'admin');
+		assert.strictEqual(parse_or_throw(Username, 'a1b2c3'), 'a1b2c3');
 	});
 
 	test('is idempotent under repeat parse', () => {
 		const inputs = ['Admin', 'admin', 'TestUser_42', 'a1b'];
 		for (const raw of inputs) {
-			const once = Username.parse(raw);
-			const twice = Username.parse(once);
+			const once = parse_or_throw(Username, raw);
+			const twice = parse_or_throw(Username, once);
 			assert.strictEqual(once, twice, `Username not idempotent for '${raw}'`);
 		}
 	});
@@ -93,44 +92,44 @@ describe('Username', () => {
 		// Whitespace is rejected outright — no .trim() needed in the transform.
 		// This is the property the Rust port's bootstrap canonicalization was
 		// closing on its side; fuz_app's regex already gates it.
-		assert.ok(!Username.safeParse(' admin').success);
-		assert.ok(!Username.safeParse('admin ').success);
-		assert.ok(!Username.safeParse(' admin ').success);
-		assert.ok(!Username.safeParse('user name').success);
-		assert.ok(!Username.safeParse('user\tname').success);
+		assert.ok(!is(Username, ' admin'));
+		assert.ok(!is(Username, 'admin '));
+		assert.ok(!is(Username, ' admin '));
+		assert.ok(!is(Username, 'user name'));
+		assert.ok(!is(Username, 'user\tname'));
 	});
 
 	test('rejects emails / dots / @ — not a creation-format username', () => {
-		assert.ok(!Username.safeParse('user@example.com').success);
-		assert.ok(!Username.safeParse('user.name').success);
-		assert.ok(!Username.safeParse('a.b').success);
+		assert.ok(!is(Username, 'user@example.com'));
+		assert.ok(!is(Username, 'user.name'));
+		assert.ok(!is(Username, 'a.b'));
 	});
 
 	test('rejects too-short / too-long input', () => {
-		assert.ok(!Username.safeParse('').success);
-		assert.ok(!Username.safeParse('ab').success);
-		assert.ok(!Username.safeParse('a'.repeat(USERNAME_LENGTH_MAX + 1)).success);
-		assert.ok(Username.safeParse('a'.repeat(USERNAME_LENGTH_MIN)).success);
-		assert.ok(Username.safeParse('a'.repeat(USERNAME_LENGTH_MAX)).success);
+		assert.ok(!is(Username, ''));
+		assert.ok(!is(Username, 'ab'));
+		assert.ok(!is(Username, 'a'.repeat(USERNAME_LENGTH_MAX + 1)));
+		assert.ok(is(Username, 'a'.repeat(USERNAME_LENGTH_MIN)));
+		assert.ok(is(Username, 'a'.repeat(USERNAME_LENGTH_MAX)));
 	});
 
 	test('rejects leading or trailing underscore / dash', () => {
 		// Regex `[a-zA-Z][...][0-9a-zA-Z]` anchors start to letter and end to alphanumeric.
-		assert.ok(!Username.safeParse('_admin').success);
-		assert.ok(!Username.safeParse('admin_').success);
-		assert.ok(!Username.safeParse('-admin').success);
-		assert.ok(!Username.safeParse('admin-').success);
+		assert.ok(!is(Username, '_admin'));
+		assert.ok(!is(Username, 'admin_'));
+		assert.ok(!is(Username, '-admin'));
+		assert.ok(!is(Username, 'admin-'));
 	});
 
 	test('accepts mid-string underscores and dashes', () => {
-		assert.strictEqual(Username.parse('test_user'), 'test_user');
-		assert.strictEqual(Username.parse('test-user'), 'test-user');
-		assert.strictEqual(Username.parse('Test_User-42'), 'test_user-42');
+		assert.strictEqual(parse_or_throw(Username, 'test_user'), 'test_user');
+		assert.strictEqual(parse_or_throw(Username, 'test-user'), 'test-user');
+		assert.strictEqual(parse_or_throw(Username, 'Test_User-42'), 'test_user-42');
 	});
 
 	test('requires a leading letter', () => {
-		assert.ok(!Username.safeParse('1admin').success);
-		assert.ok(!Username.safeParse('9user_42').success);
+		assert.ok(!is(Username, '1admin'));
+		assert.ok(!is(Username, '9user_42'));
 	});
 });
 
@@ -258,7 +257,7 @@ describe('Username/UsernameProvided cross-schema parity', () => {
 	test('mixed-case input canonicalizes identically through both schemas', () => {
 		const inputs = ['Admin', 'ADMIN', 'MixedCase42', 'a1b', 'Test_User-42'];
 		for (const raw of inputs) {
-			const via_creation = Username.parse(raw);
+			const via_creation = parse_or_throw(Username, raw);
 			const via_login = provided(raw);
 			assert.strictEqual(
 				via_creation,
@@ -271,7 +270,7 @@ describe('Username/UsernameProvided cross-schema parity', () => {
 	test('lowercase input passes through identically', () => {
 		const inputs = ['admin', 'a1b', 'test_user', 'user-42'];
 		for (const raw of inputs) {
-			assert.strictEqual(Username.parse(raw), provided(raw));
+			assert.strictEqual(parse_or_throw(Username, raw), provided(raw));
 		}
 	});
 
@@ -283,13 +282,13 @@ describe('Username/UsernameProvided cross-schema parity', () => {
 		// and whitespace-surrounded forms that trim cleanly). The parity
 		// invariant above only applies to inputs both schemas accept.
 		// Pinning the asymmetry here makes the boundary explicit.
-		assert.ok(!Username.safeParse(' admin ').success);
+		assert.ok(!is(Username, ' admin '));
 		assert.strictEqual(provided(' admin '), 'admin');
 
-		assert.ok(!Username.safeParse('user@example.com').success);
+		assert.ok(!is(Username, 'user@example.com'));
 		assert.strictEqual(provided('user@example.com'), 'user@example.com');
 
-		assert.ok(!Username.safeParse('1leading_digit').success);
+		assert.ok(!is(Username, '1leading_digit'));
 		assert.strictEqual(provided('1leading_digit'), '1leading_digit');
 	});
 });
@@ -307,44 +306,44 @@ describe('Username homograph rejection (ASCII-only by regex)', () => {
 	// rejection so the regex relaxation surfaces as a test failure.
 	test('rejects Greek letter substitutions', () => {
 		// α (U+03B1 GREEK SMALL LETTER ALPHA) visually matches 'a'
-		assert.ok(!Username.safeParse('αdmin').success);
+		assert.ok(!is(Username, 'αdmin'));
 		// ο (U+03BF GREEK SMALL LETTER OMICRON) visually matches 'o'
-		assert.ok(!Username.safeParse('rοot').success);
+		assert.ok(!is(Username, 'rοot'));
 	});
 
 	test('rejects Cyrillic letter substitutions', () => {
 		// а (U+0430 CYRILLIC SMALL LETTER A) visually matches 'a'
-		assert.ok(!Username.safeParse('аdmin').success);
+		assert.ok(!is(Username, 'аdmin'));
 		// о (U+043E CYRILLIC SMALL LETTER O) visually matches 'o'
-		assert.ok(!Username.safeParse('rоt').success);
+		assert.ok(!is(Username, 'rоt'));
 		// р (U+0440 CYRILLIC SMALL LETTER ER) visually matches 'p'
-		assert.ok(!Username.safeParse('рaypal').success);
+		assert.ok(!is(Username, 'рaypal'));
 	});
 
 	test('rejects full-width Latin substitutions', () => {
 		// ａｄｍｉｎ (U+FF41 .. U+FF4E full-width Latin) visually matches 'admin'
-		assert.ok(!Username.safeParse('ａｄｍｉｎ').success);
+		assert.ok(!is(Username, 'ａｄｍｉｎ'));
 	});
 
 	test('rejects mathematical bold / italic Latin substitutions', () => {
 		// 𝐚 (U+1D41A MATHEMATICAL BOLD SMALL A) visually matches 'a'.
 		// Surrogate pair in UTF-16 — Zod sees the codepoint as outside
 		// [a-zA-Z]. Two char positions but one codepoint.
-		assert.ok(!Username.safeParse('\u{1d41a}dmin').success);
+		assert.ok(!is(Username, '\u{1d41a}dmin'));
 	});
 
 	test('rejects combining marks', () => {
 		// 'a' + U+0301 COMBINING ACUTE ACCENT — looks like 'á' but stays
 		// two codepoints. The combining mark fails the char class.
-		assert.ok(!Username.safeParse('ádmin').success);
+		assert.ok(!is(Username, 'ádmin'));
 	});
 
 	test('accepts plain ASCII (negative control)', () => {
 		// Sanity: the rejection tests above should fail because of the
 		// Unicode char, not the surrounding structure.
-		assert.ok(Username.safeParse('admin').success);
-		assert.ok(Username.safeParse('root').success);
-		assert.ok(Username.safeParse('paypal').success);
+		assert.ok(is(Username, 'admin'));
+		assert.ok(is(Username, 'root'));
+		assert.ok(is(Username, 'paypal'));
 	});
 });
 
@@ -352,8 +351,8 @@ describe('Username homograph rejection (ASCII-only by regex)', () => {
 
 describe('Email', () => {
 	test('accepts well-formed addresses', () => {
-		assert.ok(Email.safeParse('user@example.com').success);
-		assert.ok(Email.safeParse('user+tag@example.co.uk').success);
+		assert.ok(is(Email, 'user@example.com'));
+		assert.ok(is(Email, 'user+tag@example.co.uk'));
 	});
 
 	test('accepts shapes z.email() rejects — the deliberately-looser rule', () => {
@@ -362,43 +361,43 @@ describe('Email', () => {
 		// TLDs, consecutive dots); pinning them keeps the chosen looser rule
 		// honest — a refactor back to `z.email()` (or a stricter regex) turns
 		// these red. The Rust spine's `is_valid_email` accepts them identically.
-		assert.ok(Email.safeParse('a@b.c').success); // single-char TLD
-		assert.ok(Email.safeParse('a..b@c.d').success); // consecutive dots in local
-		assert.ok(Email.safeParse('a@b..c').success); // consecutive dots in domain
+		assert.ok(is(Email, 'a@b.c')); // single-char TLD
+		assert.ok(is(Email, 'a..b@c.d')); // consecutive dots in local
+		assert.ok(is(Email, 'a@b..c')); // consecutive dots in domain
 	});
 
 	test('rejects malformed input', () => {
-		assert.ok(!Email.safeParse('not-an-email').success);
-		assert.ok(!Email.safeParse('').success);
-		assert.ok(!Email.safeParse('@example.com').success); // empty local
-		assert.ok(!Email.safeParse('user@').success); // empty domain
-		assert.ok(!Email.safeParse('user@host').success); // no dot in domain
-		assert.ok(!Email.safeParse('user@.com').success); // domain starts with dot
-		assert.ok(!Email.safeParse('user@com.').success); // domain ends with dot
-		assert.ok(!Email.safeParse('a@@b.c').success); // two `@`
+		assert.ok(!is(Email, 'not-an-email'));
+		assert.ok(!is(Email, ''));
+		assert.ok(!is(Email, '@example.com')); // empty local
+		assert.ok(!is(Email, 'user@')); // empty domain
+		assert.ok(!is(Email, 'user@host')); // no dot in domain
+		assert.ok(!is(Email, 'user@.com')); // domain starts with dot
+		assert.ok(!is(Email, 'user@com.')); // domain ends with dot
+		assert.ok(!is(Email, 'a@@b.c')); // two `@`
 	});
 
 	test('refuses a domain with a dot at either edge, as the Rust is_valid_email does', () => {
 		// a domain with another dot inside still has a dot at its edge
-		assert.ok(!Email.safeParse('a@.b.c').success);
-		assert.ok(!Email.safeParse('a@b.c.').success);
-		assert.ok(!Email.safeParse('a@.b.c.').success);
-		assert.ok(!Email.safeParse('a@..b').success);
-		assert.ok(!Email.safeParse('a@b..').success);
-		assert.ok(!Email.safeParse('a@.').success);
+		assert.ok(!is(Email, 'a@.b.c'));
+		assert.ok(!is(Email, 'a@b.c.'));
+		assert.ok(!is(Email, 'a@.b.c.'));
+		assert.ok(!is(Email, 'a@..b'));
+		assert.ok(!is(Email, 'a@b..'));
+		assert.ok(!is(Email, 'a@.'));
 		// a run of dots inside the domain is not at its edge
-		assert.ok(Email.safeParse('a@b..c').success);
-		assert.ok(Email.safeParse('a@b.c.d').success);
+		assert.ok(is(Email, 'a@b..c'));
+		assert.ok(is(Email, 'a@b.c.d'));
 	});
 
 	test('enforces the length bound', () => {
 		// 254 ASCII chars total: a 242-char local + "@example.com" (12).
 		const at_max = `${'a'.repeat(EMAIL_LENGTH_MAX - 12)}@example.com`;
 		assert.strictEqual(at_max.length, EMAIL_LENGTH_MAX);
-		assert.ok(Email.safeParse(at_max).success);
+		assert.ok(is(Email, at_max));
 		const over_max = `${'a'.repeat(EMAIL_LENGTH_MAX - 11)}@example.com`;
 		assert.strictEqual(over_max.length, EMAIL_LENGTH_MAX + 1);
-		assert.ok(!Email.safeParse(over_max).success);
+		assert.ok(!is(Email, over_max));
 
 		// The bound is UTF-8 BYTES (RFC 5321 octets), matching the Rust spine's
 		// `s.len()`, not JS's UTF-16 `.length`. `\u00fc` (ü) is 2 bytes / 1 code
@@ -408,11 +407,11 @@ describe('Email', () => {
 		const mb_at_max = `${'\u00fc'.repeat(121)}@example.com`;
 		assert.strictEqual(new TextEncoder().encode(mb_at_max).length, EMAIL_LENGTH_MAX);
 		assert.ok(mb_at_max.length < EMAIL_LENGTH_MAX);
-		assert.ok(Email.safeParse(mb_at_max).success);
+		assert.ok(is(Email, mb_at_max));
 		const mb_over = `${'\u00fc'.repeat(122)}@example.com`;
 		assert.strictEqual(new TextEncoder().encode(mb_over).length, EMAIL_LENGTH_MAX + 2);
 		assert.ok(mb_over.length < EMAIL_LENGTH_MAX);
-		assert.ok(!Email.safeParse(mb_over).success);
+		assert.ok(!is(Email, mb_over));
 	});
 
 	test('passes through case unchanged (no canonicalization transform)', () => {
@@ -429,9 +428,9 @@ describe('Email', () => {
 		// DB-side `LOWER()` was the single canonicalization point. Stored
 		// rows with mixed-case emails would round-trip correctly but new
 		// inserts would diverge from the historic storage shape.
-		assert.strictEqual(Email.parse('User@Example.com'), 'User@Example.com');
-		assert.strictEqual(Email.parse('ADMIN@EXAMPLE.COM'), 'ADMIN@EXAMPLE.COM');
-		assert.strictEqual(Email.parse('Mixed.Case+Tag@Foo.Bar'), 'Mixed.Case+Tag@Foo.Bar');
+		assert.strictEqual(parse_or_throw(Email, 'User@Example.com'), 'User@Example.com');
+		assert.strictEqual(parse_or_throw(Email, 'ADMIN@EXAMPLE.COM'), 'ADMIN@EXAMPLE.COM');
+		assert.strictEqual(parse_or_throw(Email, 'Mixed.Case+Tag@Foo.Bar'), 'Mixed.Case+Tag@Foo.Bar');
 	});
 
 	test('rejects whitespace anywhere (surrounding and internal, no trim)', () => {
@@ -440,19 +439,21 @@ describe('Email', () => {
 		// same intent as the case-preservation test) AND internal. Mirrors the
 		// Rust `is_valid_email`, which rejects `White_Space ∪ {U+FEFF}`, so
 		// storage is verbatim on both spines.
-		assert.ok(!Email.safeParse(' user@example.com').success); // leading
-		assert.ok(!Email.safeParse('user@example.com ').success); // trailing
-		assert.ok(!Email.safeParse('us er@example.com').success); // internal (local)
-		assert.ok(!Email.safeParse('user@exa mple.com').success); // internal (domain)
-		assert.ok(!Email.safeParse('user@e\tx.com').success); // tab
-		assert.ok(!Email.safeParse('a\u0085b@c.d').success); // NEL (U+0085)
-		assert.ok(!Email.safeParse('a\ufeffb@c.d').success); // BOM/ZWNBSP (U+FEFF)
+		assert.ok(!is(Email, ' user@example.com')); // leading
+		assert.ok(!is(Email, 'user@example.com ')); // trailing
+		assert.ok(!is(Email, 'us er@example.com')); // internal (local)
+		assert.ok(!is(Email, 'user@exa mple.com')); // internal (domain)
+		assert.ok(!is(Email, 'user@e\tx.com')); // tab
+		assert.ok(!is(Email, 'a\u0085b@c.d')); // NEL (U+0085)
+		assert.ok(!is(Email, 'a\ufeffb@c.d')); // BOM/ZWNBSP (U+FEFF)
 	});
 
-	test('checks the byte bound first and aborts, so the regex never reads an address past it', () => {
-		const length_issue = [{ code: 'custom', message: EMAIL_LENGTH_MESSAGE }];
-		const issues_of = (input: string) =>
-			Email.safeParse(input).error?.issues.map((i) => ({ code: i.code, message: i.message }));
+	test('checks the length bound first, so the regex never reads an address past it', () => {
+		const issues_of = (input: string) => {
+			const result = parse(Email, input);
+			return result.ok ? [] : result.issues.map((i) => ({ kind: i.kind, message: i.message }));
+		};
+		const length_issue = [{ kind: 'max_length', message: EMAIL_LENGTH_MESSAGE }];
 		// off the grammar and past the bound: the length issue alone
 		assert.deepStrictEqual(issues_of('a'.repeat(EMAIL_LENGTH_MAX + 1)), length_issue);
 		assert.deepStrictEqual(issues_of(`a@b${'.'.repeat(1_000_000)}@`), length_issue);
@@ -460,8 +461,8 @@ describe('Email', () => {
 		assert.deepStrictEqual(issues_of(`${'a'.repeat(EMAIL_LENGTH_MAX)}@b.c`), length_issue);
 		// off the grammar within the bound: the grammar issue
 		assert.deepStrictEqual(
-			Email.safeParse('a@b').error?.issues.map((i) => i.code),
-			['invalid_format']
+			issues_of('a@b').map((i) => i.kind),
+			['regex']
 		);
 	});
 });

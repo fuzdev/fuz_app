@@ -47,10 +47,10 @@ import {
 } from '#lib/http/route_error_check.ts';
 import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
 import { jsonrpc_errors } from '#lib/http/jsonrpc_errors.ts';
-import { ActingActor } from '#lib/http/auth_shape.ts';
 import { create_stub_db } from '#lib/testing/stubs.ts';
 import { DbCheckoutError } from '#lib/db/db_checkout_error.ts';
 import { create_test_keyring } from '../auth/session_test_helpers.ts';
+import { ZodActingActor } from '#lib/zod_schemas.ts';
 
 const db = create_stub_db();
 
@@ -228,7 +228,7 @@ describe('the DEV error check — exemptions', () => {
 			{
 				method: 'POST',
 				auth: { account: 'optional', actor: 'optional' },
-				input: z.strictObject({ acting: ActingActor })
+				input: z.strictObject({ acting: ZodActingActor })
 			}
 		);
 		assert.strictEqual(got.status, 500);

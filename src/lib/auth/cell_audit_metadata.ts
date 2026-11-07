@@ -20,7 +20,7 @@ import {
 	type Infer
 } from '@fuzdev/fuz_schema/schema.ts';
 
-import { Uuid } from '../primitive_schemas_fuz.ts';
+import { Uuid } from '../primitive_schemas.ts';
 import { CellModerationDecision, CellPolicy } from './cell_action_specs.ts';
 
 /**

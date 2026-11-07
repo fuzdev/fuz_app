@@ -28,7 +28,7 @@ import {
 	type Infer
 } from '@fuzdev/fuz_schema/schema.ts';
 
-import { ActingActor, Timestamp, Uuid } from '../primitive_schemas_fuz.ts';
+import { ActingActor, Timestamp, Uuid } from '../primitive_schemas.ts';
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
 import { AuditEventTypeName, AuditOutcome } from './audit_log_schema.ts';
 

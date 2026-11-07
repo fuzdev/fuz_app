@@ -32,8 +32,7 @@ import {
 	unknown,
 	with_default
 } from '@fuzdev/fuz_schema/schema.ts';
-import type { Uuid } from '../primitive_schemas.ts';
-import { ActingActor } from '../primitive_schemas_fuz.ts';
+import { ActingActor, type Uuid } from '../primitive_schemas.ts';
 
 import type { Db, DbType } from '../db/db.ts';
 import { define_route, get_route_params, get_route_query, type RouteSpec } from './route_spec.ts';

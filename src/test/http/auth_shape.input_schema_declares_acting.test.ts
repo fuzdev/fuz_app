@@ -32,16 +32,16 @@ import {
 
 import {
 	assert_route_auth_acting_biconditional,
-	input_schema_declares_acting,
-	ActingActor
+	input_schema_declares_acting
 } from '#lib/http/auth_shape.ts';
-import { ActingActor as ActingActorFuz } from '#lib/primitive_schemas_fuz.ts';
+import { ACTING_ACTOR_DESCRIPTION, ActingActor } from '#lib/primitive_schemas.ts';
+import { ZodActingActor, ZodUuid } from '#lib/zod_schemas.ts';
 
 describe('input_schema_declares_acting', () => {
-	test('canonical strictObject({acting: ActingActor}) returns true', () => {
+	test('canonical strictObject({acting: ZodActingActor}) returns true', () => {
 		// The audit-actor migration's standard shape — every listing-style
 		// admin / role-grant-offer / account / audit spec uses this.
-		const schema = z.strictObject({ acting: ActingActor });
+		const schema = z.strictObject({ acting: ZodActingActor });
 		assert.strictEqual(input_schema_declares_acting(schema), true);
 	});
 
@@ -49,7 +49,7 @@ describe('input_schema_declares_acting', () => {
 		// Mixed required + acting — admin_session_revoke_all,
 		// audit_log_role_grant_history, etc. The predicate fires on any
 		// object schema that has the canonical `acting` slot.
-		const schema = z.strictObject({ account_id: z.string(), acting: ActingActor });
+		const schema = z.strictObject({ account_id: z.string(), acting: ZodActingActor });
 		assert.strictEqual(input_schema_declares_acting(schema), true);
 	});
 
@@ -90,17 +90,17 @@ describe('input_schema_declares_acting', () => {
 	// is bypassed at runtime — the handler runs without `ctx.auth`.
 
 	test('z.optional wrapper around the canonical strictObject still returns true', () => {
-		const schema = z.optional(z.strictObject({ acting: ActingActor }));
+		const schema = z.optional(z.strictObject({ acting: ZodActingActor }));
 		assert.strictEqual(input_schema_declares_acting(schema), true);
 	});
 
 	test('z.nullable wrapper around the canonical strictObject still returns true', () => {
-		const schema = z.nullable(z.strictObject({ acting: ActingActor }));
+		const schema = z.nullable(z.strictObject({ acting: ZodActingActor }));
 		assert.strictEqual(input_schema_declares_acting(schema), true);
 	});
 
 	test('default-wrapped strictObject still returns true', () => {
-		const schema = z.strictObject({ acting: ActingActor }).default({});
+		const schema = z.strictObject({ acting: ZodActingActor }).default({});
 		assert.strictEqual(input_schema_declares_acting(schema), true);
 	});
 
@@ -113,37 +113,53 @@ describe('input_schema_declares_acting', () => {
 		assert.strictEqual(input_schema_declares_acting(schema), false);
 	});
 
+	test('a Zod copy of ZodActingActor declares no acting: only the registered schema is matched', () => {
+		// `zod_schemas.ts` registers `ZodActingActor` on load; a schema built
+		// the same way is another object, and no declaration
+		const copy = ZodUuid.optional().meta({ description: ACTING_ACTOR_DESCRIPTION });
+		assert.strictEqual(input_schema_declares_acting(z.strictObject({ acting: copy })), false);
+		assert.strictEqual(
+			input_schema_declares_acting(z.strictObject({ acting: ZodActingActor })),
+			true
+		);
+		// a registered schema elsewhere than `acting` is no declaration either
+		assert.strictEqual(
+			input_schema_declares_acting(z.strictObject({ other: ZodActingActor })),
+			false
+		);
+	});
+
 	test('a fuz_schema input without the twin declares no acting', () => {
 		assert.strictEqual(input_schema_declares_acting(fuz_void), false);
 		assert.strictEqual(input_schema_declares_acting(string), false);
 		assert.strictEqual(input_schema_declares_acting(object({ acting: optional(string) })), false);
-		assert.strictEqual(input_schema_declares_acting(object({ other: ActingActorFuz })), false);
+		assert.strictEqual(input_schema_declares_acting(object({ other: ActingActor })), false);
 	});
 
-	test('a fuz_schema object declaring the twin ActingActor declares acting', () => {
-		assert.strictEqual(input_schema_declares_acting(object({ acting: ActingActorFuz })), true);
+	test('a fuz_schema object declaring ActingActor declares acting', () => {
+		assert.strictEqual(input_schema_declares_acting(object({ acting: ActingActor })), true);
 		assert.strictEqual(
-			input_schema_declares_acting(loose_object({ id: string, acting: ActingActorFuz })),
+			input_schema_declares_acting(loose_object({ id: string, acting: ActingActor })),
 			true
 		);
 		// through the wrappers `get_schema_entries` sees through
 		assert.strictEqual(
-			input_schema_declares_acting(optional(object({ acting: ActingActorFuz }))),
+			input_schema_declares_acting(optional(object({ acting: ActingActor }))),
 			true
 		);
 		assert.strictEqual(
-			input_schema_declares_acting(nullable(object({ acting: ActingActorFuz }))),
+			input_schema_declares_acting(nullable(object({ acting: ActingActor }))),
 			true
 		);
 		assert.strictEqual(
-			input_schema_declares_acting(with_default(object({ acting: ActingActorFuz }), {})),
+			input_schema_declares_acting(with_default(object({ acting: ActingActor }), {})),
 			true
 		);
 		// and a pipe that starts with the object, as Zod's peels a pipe
 		assert.strictEqual(
 			input_schema_declares_acting(
 				pipe(
-					object({ acting: ActingActorFuz }),
+					object({ acting: ActingActor }),
 					transform((v) => v)
 				)
 			),
@@ -152,15 +168,15 @@ describe('input_schema_declares_acting', () => {
 	});
 
 	test('each library finds its own twin only', () => {
-		// reference equality per library: the Zod `ActingActor` in a fuz_schema
-		// object, or the twin in a Zod one, is no declaration
+		// reference equality per library: `ZodActingActor` in a fuz_schema
+		// object, or `ActingActor` in a Zod one, is no declaration
 		assert.strictEqual(
-			input_schema_declares_acting(object({ acting: ActingActor as unknown as typeof string })),
+			input_schema_declares_acting(object({ acting: ZodActingActor as unknown as typeof string })),
 			false
 		);
 		assert.strictEqual(
 			input_schema_declares_acting(
-				z.strictObject({ acting: ActingActorFuz as unknown as z.ZodOptional<z.ZodString> })
+				z.strictObject({ acting: ActingActor as unknown as z.ZodOptional<z.ZodString> })
 			),
 			false
 		);
@@ -179,12 +195,12 @@ describe('input_schema_declares_acting', () => {
 					{ input: fuz_void },
 					'test'
 				),
-			/to declare 'acting\?: ActingActor', the Zod one or its fuz_schema twin/
+			/to declare 'acting\?: ActingActor' \(or ZodActingActor in a Zod schema\)/
 		);
 	});
 
 	test('a fuz_schema input declaring the twin passes on actor: required and refuses actor: none', () => {
-		const input = object({ acting: ActingActorFuz });
+		const input = object({ acting: ActingActor });
 		assert_route_auth_acting_biconditional(
 			{ account: 'required', actor: 'required' },
 			{ input },
@@ -202,7 +218,7 @@ describe('input_schema_declares_acting', () => {
 					{ input },
 					'test'
 				),
-			/declares 'acting\?: ActingActor' \(Zod or fuz_schema\) but auth\.actor === 'none'/
+			/declares 'acting\?: ActingActor' \(or ZodActingActor\) but auth\.actor === 'none'/
 		);
 		assert.throws(
 			() =>

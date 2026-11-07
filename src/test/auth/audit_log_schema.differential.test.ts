@@ -24,12 +24,7 @@ import { describe, test, assert } from 'vitest';
 import { z } from 'zod';
 import { is_schema } from '@fuzdev/fuz_schema/schema.ts';
 
-import {
-	EMAIL_LENGTH_MAX,
-	EMAIL_LENGTH_MESSAGE,
-	Email as ZodEmail,
-	Uuid as ZodUuid
-} from '#lib/primitive_schemas.ts';
+import { EMAIL_LENGTH_MAX, EMAIL_LENGTH_MESSAGE } from '#lib/primitive_schemas.ts';
 import { API_TOKEN_ID_REGEX } from '#lib/auth/api_token.ts';
 import { BUILTIN_CREDENTIAL_TYPES } from '#lib/auth/credential_type_schema.ts';
 import { AUDIT_EVENT_TYPES, audit_metadata_schemas } from '#lib/auth/audit_log_schema.ts';
@@ -39,6 +34,7 @@ import {
 	type ValidationSchema,
 	type WireIssue
 } from '#lib/schema_issues.ts';
+import { ZodEmail, ZodUuid } from '#lib/zod_schemas.ts';
 
 // -- the Zod schemas the port replaced --------------------------------------
 

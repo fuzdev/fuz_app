@@ -15,8 +15,7 @@
 import { meta } from '@fuzdev/fuz_schema/meta.ts';
 import { nullable, object, type Infer } from '@fuzdev/fuz_schema/schema.ts';
 
-import type { Uuid } from '../primitive_schemas.ts';
-import { Timestamp, Uuid as UuidSchema, bounded_string } from '../primitive_schemas_fuz.ts';
+import { Timestamp, Uuid as UuidSchema, bounded_string, type Uuid } from '../primitive_schemas.ts';
 import { RoleName } from './role_schema.ts';
 import { ScopeKindName } from './scope_kind_schema.ts';
 

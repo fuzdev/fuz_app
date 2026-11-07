@@ -22,8 +22,7 @@ import { is_schema, parse, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 import { FACT_HASH_EXACT, FACT_HASH_PREFIX, type FactHash } from '@fuzdev/fuz_util/hash_schemas.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import { FactHashSchema as ZodFactHashSchema, Uuid as ZodUuid } from '#lib/primitive_schemas.ts';
-import { FactHashSchema } from '#lib/primitive_schemas_fuz.ts';
+import { FactHashSchema } from '#lib/primitive_schemas.ts';
 import { create_db_route_specs, type DbRouteDeps } from '#lib/http/db_routes.ts';
 import {
 	create_serve_cell_fact_route_spec,
@@ -32,6 +31,7 @@ import {
 import { VALID_SQL_IDENTIFIER } from '#lib/db/sql_identifier.ts';
 import type { ValidationSchema } from '#lib/schema_issues.ts';
 import { assert_matches_zod, show, type DifferentialRow } from './differential_test_helpers.ts';
+import { ZodFactHashSchema, ZodUuid } from '#lib/zod_schemas.ts';
 
 // --- the Zod copies, as the library wrote them ---
 

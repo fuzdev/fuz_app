@@ -62,7 +62,7 @@ import '../assert_dev_env.ts';
 import { describe, assert } from 'vitest';
 import { object } from '@fuzdev/fuz_schema/schema.ts';
 import { fact_hash_bytes } from '@fuzdev/fuz_util/fact_hash.ts';
-import { FactHashSchema } from '../../primitive_schemas_fuz.ts';
+import { FactHashSchema } from '../../primitive_schemas.ts';
 
 import { CellCreateOutput } from '../../auth/cell_action_specs.ts';
 import {

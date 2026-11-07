@@ -1,9 +1,11 @@
 /**
- * Tests for the fuz_schema twins in `primitive_schemas_fuz.ts`, held to the
- * Zod `Uuid`, `UuidWithDefault`, and `ActingActor` on one vector table, to
- * the Zod `bounded_string` on another, and to the Zod `Username` and `Email`
- * on a third: both libraries give every row the same verdict and output, and
- * `Username` and `Email` the same wire issues but for the declared ones.
+ * Tests for the fuz_schema primitives of `primitive_schemas.ts`, held to
+ * their Zod forms of `zod_schemas.ts` — `ZodUuid`, `ZodUuidWithDefault`, and
+ * `ZodActingActor` on one vector table, `ZodUsername` and `ZodEmail` on
+ * another — and `bounded_string` to a Zod copy, kept in `zod_copies.ts`, of
+ * the Zod one it replaced: both libraries give every row the same verdict and
+ * output, and `Username` and `Email` the same wire issues but for the
+ * declared ones.
  * `Blake3Hash` is held to the Zod one it replaced, rebuilt, its message
  * included;
  * `UsernameCanonical` and `Timestamp`, which have no Zod twin, to their
@@ -19,33 +21,33 @@ import { is_schema, parse } from '@fuzdev/fuz_schema/schema.ts';
 import { to_json_schema } from '@fuzdev/fuz_schema/json_schema.ts';
 
 import {
-	EMAIL_LENGTH_MAX,
-	EMAIL_LENGTH_MESSAGE,
-	Email as ZodEmail,
-	USERNAME_LENGTH_MAX,
-	USERNAME_LENGTH_MIN,
-	USERNAME_REGEX,
-	Username as ZodUsername,
-	Uuid as ZodUuid,
-	UuidWithDefault as ZodUuidWithDefault,
-	bounded_string as zod_bounded_string,
-	type BoundedStringOptions
-} from '#lib/primitive_schemas.ts';
-import {
 	ACTING_ACTOR_DESCRIPTION,
 	ActingActor,
 	BLAKE3_HASH_MESSAGE,
 	Blake3Hash,
+	EMAIL_LENGTH_MAX,
+	EMAIL_LENGTH_MESSAGE,
 	Email,
 	Timestamp,
 	USERNAME_CANONICAL_REGEX,
+	USERNAME_LENGTH_MAX,
+	USERNAME_LENGTH_MIN,
+	USERNAME_REGEX,
 	Username,
 	UsernameCanonical,
 	Uuid,
 	UuidWithDefault,
-	bounded_string
-} from '#lib/primitive_schemas_fuz.ts';
-import { ActingActor as ZodActingActor } from '#lib/http/auth_shape.ts';
+	bounded_string,
+	type BoundedStringOptions
+} from '#lib/primitive_schemas.ts';
+import {
+	ZodActingActor,
+	ZodEmail,
+	ZodUsername,
+	ZodUuid,
+	ZodUuidWithDefault
+} from '#lib/zod_schemas.ts';
+import { zod_bounded_string } from './zod_copies.ts';
 import { parse_any, to_wire_issues, type WireIssue } from '#lib/schema_issues.ts';
 
 /** The shape `crypto.randomUUID()` produces — a lowercase version-4 UUID. */

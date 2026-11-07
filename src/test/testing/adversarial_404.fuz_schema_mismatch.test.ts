@@ -14,7 +14,7 @@ import { loose_object, object, string } from '@fuzdev/fuz_schema/schema.ts';
 
 import { describe_adversarial_404 } from '#lib/testing/adversarial_404.ts';
 import { create_app_surface_spec } from '#lib/http/surface.ts';
-import { Uuid } from '#lib/primitive_schemas_fuz.ts';
+import { Uuid } from '#lib/primitive_schemas.ts';
 import { rest_error } from '#lib/http/error_schemas.ts';
 
 describe('a 404 definition the stub body does not satisfy', () => {

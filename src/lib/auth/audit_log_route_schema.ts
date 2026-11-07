@@ -14,7 +14,7 @@
 import { literal, object, type Infer, type Schema } from '@fuzdev/fuz_schema/schema.ts';
 
 import { define_route_shape, type RouteShape } from '../http/route_spec.ts';
-import { ActingActor } from '../primitive_schemas_fuz.ts';
+import { ActingActor } from '../primitive_schemas.ts';
 
 /**
  * Query schema for the audit-log SSE route, a `@fuzdev/fuz_schema` `object`

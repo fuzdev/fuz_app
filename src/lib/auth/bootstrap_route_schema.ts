@@ -25,7 +25,7 @@ import {
 	type Infer
 } from '@fuzdev/fuz_schema/schema.ts';
 
-import { Username, UsernameCanonical, Uuid } from '../primitive_schemas_fuz.ts';
+import { Username, UsernameCanonical, Uuid } from '../primitive_schemas.ts';
 
 import { Password } from './password.ts';
 import { define_route_shape } from '../http/route_spec.ts';

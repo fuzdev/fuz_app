@@ -10,7 +10,7 @@
 
 import { loose_object, string, type Infer } from '@fuzdev/fuz_schema/schema.ts';
 
-import { Uuid } from '../primitive_schemas_fuz.ts';
+import { Uuid } from '../primitive_schemas.ts';
 
 /**
  * Metadata envelope for `cell_field_set`. Emitted on every successful

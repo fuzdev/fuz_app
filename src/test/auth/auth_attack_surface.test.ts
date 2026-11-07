@@ -15,7 +15,6 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { apply_route_specs, define_route, type RouteSpec } from '#lib/http/route_spec.ts';
 import {
-	ActingActor,
 	is_keeper_auth,
 	is_plain_authenticated_auth,
 	is_public_auth,
@@ -47,6 +46,7 @@ import {
 import type { Uuid } from '#lib/primitive_schemas.ts';
 import { create_stub_db } from '#lib/testing/stubs.ts';
 import { to_iso8601_seconds } from '#lib/timestamp.ts';
+import { ZodActingActor } from '#lib/zod_schemas.ts';
 
 /** The content type every non-`raw_body` POST route requires. */
 const JSON_HEADERS = { 'content-type': 'application/json' };
@@ -151,7 +151,7 @@ const test_route_specs: Array<RouteSpec> = [
 		auth: { account: 'required', actor: 'required', roles: ['admin'] },
 		handler: () => route_ok({ ok: true }),
 		description: 'Requires admin role',
-		query: z.strictObject({ acting: ActingActor }),
+		query: z.strictObject({ acting: ZodActingActor }),
 		input: z.null(),
 		output: z.strictObject({ ok: z.literal(true) })
 	}),
@@ -166,7 +166,7 @@ const test_route_specs: Array<RouteSpec> = [
 		},
 		handler: () => route_ok({ ok: true }),
 		description: 'Requires keeper credentials',
-		query: z.strictObject({ acting: ActingActor }),
+		query: z.strictObject({ acting: ZodActingActor }),
 		input: z.null(),
 		output: z.strictObject({ ok: z.literal(true) })
 	}),
@@ -181,7 +181,7 @@ const test_route_specs: Array<RouteSpec> = [
 		},
 		handler: () => route_ok({ ok: true }),
 		description: 'Requires keeper credentials (DELETE)',
-		query: z.strictObject({ acting: ActingActor }),
+		query: z.strictObject({ acting: ZodActingActor }),
 		input: z.null(),
 		output: z.strictObject({ ok: z.literal(true) })
 	})

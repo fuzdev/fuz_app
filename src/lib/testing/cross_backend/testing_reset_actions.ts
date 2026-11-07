@@ -94,7 +94,7 @@ import {
 	string,
 	void as fuz_void
 } from '@fuzdev/fuz_schema/schema.ts';
-import { Uuid, FactHashSchema } from '../../primitive_schemas_fuz.ts';
+import { Uuid, FactHashSchema } from '../../primitive_schemas.ts';
 import { fact_hash_bytes } from '@fuzdev/fuz_util/fact_hash.ts';
 
 import { rpc_action, type RpcAction } from '../../actions/action_types.ts';

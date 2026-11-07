@@ -39,8 +39,7 @@ import type {
 	HandlerForSpec
 } from '#lib/actions/action_types.ts';
 import type { ValidationInput, ValidationOutput } from '#lib/schema_issues.ts';
-import { ActingActor } from '#lib/primitive_schemas_fuz.ts';
-import type { Uuid } from '#lib/primitive_schemas.ts';
+import { ActingActor, type Uuid } from '#lib/primitive_schemas.ts';
 
 describe('ActionKind', () => {
 	test('accepts valid kinds', () => {

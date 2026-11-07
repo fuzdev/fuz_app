@@ -14,7 +14,7 @@
 
 import { literal, nullable, object, optional, type Infer } from '@fuzdev/fuz_schema/schema.ts';
 
-import { Email, Username, UsernameCanonical, Uuid } from '../primitive_schemas_fuz.ts';
+import { Email, Username, UsernameCanonical, Uuid } from '../primitive_schemas.ts';
 
 import { Password } from './password.ts';
 import { define_route_shape, type RouteShape } from '../http/route_spec.ts';

@@ -27,7 +27,7 @@ import {
 	FRACTIONAL_INDEX_REGEX
 } from '@fuzdev/fuz_util/fractional_index.ts';
 
-import { ActingActor, bounded_string, Timestamp, Uuid } from '../primitive_schemas_fuz.ts';
+import { ActingActor, bounded_string, Timestamp, Uuid } from '../primitive_schemas.ts';
 import { CellRelationListLimit } from './cell_relation_list_limit.ts';
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
 

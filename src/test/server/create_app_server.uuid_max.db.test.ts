@@ -13,8 +13,6 @@ import { z } from 'zod';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_test_app } from '#lib/testing/app_server.ts';
 import { TEST_ORIGIN } from '#lib/testing/test_origin.ts';
-import { ActingActor } from '#lib/http/auth_shape.ts';
-import { Uuid } from '#lib/primitive_schemas.ts';
 import {
 	ERROR_ACTOR_NOT_ON_ACCOUNT,
 	ERROR_INVALID_QUERY_PARAMS,
@@ -25,6 +23,7 @@ import { define_route, get_route_params, type RouteSpec } from '#lib/http/route_
 import { route_ok } from '#lib/http/route_result.ts';
 
 import { describe_db } from '../auth_db_default.ts';
+import { ZodActingActor, ZodUuid } from '#lib/zod_schemas.ts';
 
 const session_options = create_session_config('test_session');
 
@@ -42,8 +41,8 @@ const OFF_GRAMMAR_CASES = [
 	'FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFE'
 ];
 
-const ThingParams = z.strictObject({ id: Uuid });
-const ActingQuery = z.strictObject({ acting: ActingActor });
+const ThingParams = z.strictObject({ id: ZodUuid });
+const ActingQuery = z.strictObject({ acting: ZodActingActor });
 
 const create_route_specs = (): Array<RouteSpec> => [
 	define_route({
@@ -68,7 +67,7 @@ const create_route_specs = (): Array<RouteSpec> => [
 	})
 ];
 
-const EchoInput = z.strictObject({ id: Uuid });
+const EchoInput = z.strictObject({ id: ZodUuid });
 
 const echo_spec = {
 	method: 'test_uuid_echo',
@@ -99,7 +98,7 @@ describe_db('the max UUID in any case through the assembled app', (get_db) => {
 		create_test_app({ session_options, create_route_specs, rpc_endpoints, db: get_db() });
 
 	describe('REST', () => {
-		test('a Zod Uuid params field takes it, lowercased', async () => {
+		test('a Zod ZodUuid params field takes it, lowercased', async () => {
 			const test_app = await setup();
 			for (const id of MAX_UUID_CASES) {
 				const res = await test_app.app.request(`/api/things/${id}`, {
@@ -111,7 +110,7 @@ describe_db('the max UUID in any case through the assembled app', (get_db) => {
 			}
 		});
 
-		test('a Zod ActingActor query takes it, and the authorization phase refuses the actor', async () => {
+		test('a Zod ZodActingActor query takes it, and the authorization phase refuses the actor', async () => {
 			const test_app = await setup();
 			for (const acting of MAX_UUID_CASES) {
 				const res = await test_app.app.request(`/api/acting_echo?acting=${acting}`, {
@@ -124,7 +123,7 @@ describe_db('the max UUID in any case through the assembled app', (get_db) => {
 	});
 
 	describe('controls', () => {
-		test('a Zod Uuid params field still refuses an off-grammar id', async () => {
+		test('a Zod ZodUuid params field still refuses an off-grammar id', async () => {
 			const test_app = await setup();
 			for (const id of OFF_GRAMMAR_CASES) {
 				const res = await test_app.app.request(`/api/things/${encodeURIComponent(id)}`, {
@@ -136,7 +135,7 @@ describe_db('the max UUID in any case through the assembled app', (get_db) => {
 			}
 		});
 
-		test('a Zod ActingActor query still refuses an off-grammar selector', async () => {
+		test('a Zod ZodActingActor query still refuses an off-grammar selector', async () => {
 			const test_app = await setup();
 			for (const acting of OFF_GRAMMAR_CASES) {
 				const res = await test_app.app.request(
@@ -149,7 +148,7 @@ describe_db('the max UUID in any case through the assembled app', (get_db) => {
 			}
 		});
 
-		test('a Zod Uuid input field still refuses an off-grammar id', async () => {
+		test('a Zod ZodUuid input field still refuses an off-grammar id', async () => {
 			const test_app = await setup();
 			for (const id of OFF_GRAMMAR_CASES) {
 				const res = await test_app.app.request('/api/rpc', {
@@ -171,7 +170,7 @@ describe_db('the max UUID in any case through the assembled app', (get_db) => {
 	});
 
 	describe('RPC', () => {
-		test('a Zod Uuid input field takes it, lowercased', async () => {
+		test('a Zod ZodUuid input field takes it, lowercased', async () => {
 			const test_app = await setup();
 			for (const id of MAX_UUID_CASES) {
 				const res = await test_app.app.request('/api/rpc', {

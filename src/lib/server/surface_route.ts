@@ -13,7 +13,7 @@ import { array, literal, loose_object, object } from '@fuzdev/fuz_schema/schema.
 import { define_route, type RouteSpec } from '../http/route_spec.ts';
 import { route_ok } from '../http/route_result.ts';
 import type { AppSurface } from '../http/surface.ts';
-import { ActingActor } from '../primitive_schemas_fuz.ts';
+import { ActingActor } from '../primitive_schemas.ts';
 import { ROLE_ADMIN } from '../auth/role_schema.ts';
 
 /** Options for the surface explorer route. */

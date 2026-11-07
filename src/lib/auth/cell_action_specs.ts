@@ -35,7 +35,7 @@ import {
 	FactHashSchema,
 	Timestamp,
 	Uuid
-} from '../primitive_schemas_fuz.ts';
+} from '../primitive_schemas.ts';
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
 import {
 	all_cell_grant_action_specs,
