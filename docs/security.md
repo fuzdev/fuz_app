@@ -1484,7 +1484,18 @@ classic prototype-pollution sink. Without the walk the key would be stored and
 served: a loose schema passes it through, and the Rust spine keeps it. Own `constructor` and
 `prototype` keys are inert on a plain object and stay admitted. The walk is
 iterative and linear in the body's nodes. The Rust spine
-(`fuz_http::json_has_own_proto_key`) answers the same body.
+(`fuz_http::scan_json_value`) answers the same body.
+
+## NUL in Request Bodies
+
+`"\u0000"` is valid JSON that both spines' parsers accept, but Postgres
+refuses U+0000 in `text` and `jsonb`, so a value holding one would fail its
+write with a 500. The same walk that finds a prototype key (`scan_json_value`)
+finds a NUL in any string or object key, at any depth: the RPC dispatcher
+answers `invalid_params` with `data.reason` `params_nul` (after the proto key,
+the authority gates and the rate limit), and a route's JSON body is 400
+`invalid_request_body`, ahead of its schema. The walk reads the parsed value,
+so of duplicate keys only the kept (last) one counts, on both spines.
 
 ## Authorization
 

@@ -27,9 +27,10 @@
  *    (`request_context.account.id`), settled by authentication, so the gate
  *    sits behind the authority gates by choice rather than necessity: a
  *    caller those gates refuse is answered 403, not 429.
- * 5. **Validate params (400)** — first, object `params` holding an own
- *    `__proto__` key at any depth (`json_has_own_proto_key`) are refused
- *    with `data.reason` `params_proto_key` (`ERROR_PARAMS_PROTO_KEY`), on
+ * 5. **Validate params (400)** — first, one walk of object `params`
+ *    (`scan_json_value`) refuses an own `__proto__` key at any depth, with
+ *    `data.reason` `params_proto_key` (`ERROR_PARAMS_PROTO_KEY`), then
+ *    U+0000 in any string or key, with `params_nul` (`ERROR_PARAMS_NUL`), on
  *    every input schema, before it runs; then
  *    `spec.input` parses the params (`parse`) with
  *    void / `?? {}` rules (`to_input_params`). A refusal is the generic
@@ -80,7 +81,7 @@ import type { Db } from '../db/db.ts';
 import { is_db_checkout_error } from '../db/db_checkout_error.ts';
 import { resolve_issues_invalid_reason } from '../schema_meta.ts';
 import { to_wire_issues } from '../schema_issues.ts';
-import { json_has_own_proto_key, to_input_params } from '../http/schema_helpers.ts';
+import { scan_json_value, to_input_params } from '../http/schema_helpers.ts';
 import { rate_limit_ip_key } from '../http/ip_canonical.ts';
 import { dispatch_with_post_commit_rollback } from '../http/pending_effects.ts';
 import {
@@ -102,6 +103,7 @@ import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,
 	ERROR_CREDENTIAL_TYPE_REQUIRED,
+	ERROR_PARAMS_NUL,
 	ERROR_PARAMS_PROTO_KEY,
 	ERROR_TOKEN_SCOPE_REQUIRED
 } from '../http/error_schemas.ts';
@@ -319,21 +321,25 @@ export const perform_action = async (
 	// a void input reads every empty shape as the no-arg call — see
 	// `to_input_params`.
 	//
-	// An own `__proto__` key anywhere in object params is refused first, on
-	// every input: a loose schema passes it through, so a schema alone would
-	// store it — a sink for
-	// any client that copies the value back with plain assignment. Only an
-	// object is walked, so a non-object `params` is the schema's refusal, as
-	// the Rust twin's shape check answers it ahead of its walk.
-	if (
-		typeof raw_params === 'object' &&
-		raw_params !== null &&
-		!Array.isArray(raw_params) &&
-		json_has_own_proto_key(raw_params)
-	) {
-		return error_result(
-			jsonrpc_error_messages.invalid_params('invalid params', { reason: ERROR_PARAMS_PROTO_KEY })
-		);
+	// One walk of object params refuses, on every input and ahead of the
+	// schema, an own `__proto__` key anywhere (a loose schema passes it
+	// through, so a schema alone would store it — a sink for any client that
+	// copies the value back with plain assignment), then U+0000 in any string
+	// or key (Postgres refuses it in `text` and `jsonb`, so the write would
+	// 500). Only an object is walked, so a non-object `params` is the schema's
+	// refusal, as the Rust twin's shape check answers it ahead of its walk.
+	if (typeof raw_params === 'object' && raw_params !== null && !Array.isArray(raw_params)) {
+		const scan = scan_json_value(raw_params);
+		if (scan.proto_key) {
+			return error_result(
+				jsonrpc_error_messages.invalid_params('invalid params', { reason: ERROR_PARAMS_PROTO_KEY })
+			);
+		}
+		if (scan.nul) {
+			return error_result(
+				jsonrpc_error_messages.invalid_params('invalid params', { reason: ERROR_PARAMS_NUL })
+			);
+		}
 	}
 	const params = to_input_params(spec.input, raw_params);
 	const parse_result = parse(spec.input, params);

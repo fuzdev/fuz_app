@@ -41,7 +41,8 @@ import {
 	is_void_schema,
 	to_void_params,
 	to_input_params,
-	json_has_own_proto_key,
+	scan_json_value,
+	type JsonValueScan,
 	safe_parse_dropping_unknown_keys,
 	UNKNOWN_KEY_PASSES_MAX,
 	schema_to_surface,
@@ -122,38 +123,72 @@ describe('to_input_params', () => {
 	});
 });
 
-describe('json_has_own_proto_key', () => {
-	const has = (json: string): boolean => json_has_own_proto_key(JSON.parse(json));
+describe('scan_json_value', () => {
+	const scan = (json: string): JsonValueScan => scan_json_value(JSON.parse(json));
+	const has = (json: string): boolean => scan(json).proto_key;
+	const has_nul = (json: string): boolean => scan(json).nul;
 
-	test('finds an own key at the top level, nested in an object, and nested in an array', () => {
-		assert.strictEqual(has('{"__proto__":{"x":1}}'), true);
-		assert.strictEqual(has('{"__proto__":null}'), true);
-		assert.strictEqual(has('{"a":1,"b":{"c":{"__proto__":{}}}}'), true);
-		assert.strictEqual(has('{"a":{"b":[1,{"__proto__":{}}]}}'), true);
-		assert.strictEqual(has('[{"__proto__":1}]'), true);
+	describe('proto_key', () => {
+		test('finds an own key at the top level, nested in an object, and nested in an array', () => {
+			assert.strictEqual(has('{"__proto__":{"x":1}}'), true);
+			assert.strictEqual(has('{"__proto__":null}'), true);
+			assert.strictEqual(has('{"a":1,"b":{"c":{"__proto__":{}}}}'), true);
+			assert.strictEqual(has('{"a":{"b":[1,{"__proto__":{}}]}}'), true);
+			assert.strictEqual(has('[{"__proto__":1}]'), true);
+		});
+
+		test('reads an escaped spelling as the key it decodes to', () => {
+			assert.strictEqual(has('{"\\u005f_proto__":1}'), true);
+		});
+
+		test('admits constructor, prototype, a __proto__ value, and a near-miss key', () => {
+			assert.strictEqual(has('{"constructor":{"prototype":{"x":1}}}'), false);
+			assert.strictEqual(has('{"prototype":{}}'), false);
+			assert.strictEqual(has('{"a":"__proto__","b":["__proto__"]}'), false);
+			assert.strictEqual(has('{"__proto":1,"_proto__":1,"__PROTO__":1}'), false);
+			assert.strictEqual(has('{}'), false);
+			assert.strictEqual(has('[]'), false);
+		});
+
+		test('ignores an inherited __proto__ — an object literal sets the prototype', () => {
+			assert.strictEqual(scan_json_value({ __proto__: { x: 1 } }).proto_key, false);
+		});
 	});
 
-	test('reads an escaped spelling as the key it decodes to', () => {
-		assert.strictEqual(has('{"\\u005f_proto__":1}'), true);
+	describe('nul', () => {
+		test('finds U+0000 in a string at any depth, and in a key', () => {
+			assert.strictEqual(has_nul('{"a":"\\u0000"}'), true);
+			assert.strictEqual(has_nul('{"a":"x\\u0000y"}'), true);
+			assert.strictEqual(has_nul('{"a":{"b":[1,"\\u0000"]}}'), true);
+			assert.strictEqual(has_nul('["\\u0000"]'), true);
+			assert.strictEqual(has_nul('"\\u0000"'), true);
+			assert.strictEqual(has_nul('{"\\u0000":1}'), true);
+			assert.strictEqual(has_nul('{"a":{"k\\u0000":null}}'), true);
+		});
+
+		test('admits an escaped backslash before u0000 and other control escapes', () => {
+			// `"\\u0000"` in JSON is a backslash then the text `u0000`
+			assert.strictEqual(has_nul('{"a":"\\\\u0000"}'), false);
+			assert.strictEqual(has_nul('{"a":"\\u0001\\u001f\\t"}'), false);
+			assert.strictEqual(has_nul('{"a":0,"b":null,"c":false}'), false);
+			assert.strictEqual(has_nul('{}'), false);
+		});
+
+		test('walks only the kept value of a duplicated key, as the Rust spine does', () => {
+			assert.strictEqual(has_nul('{"a":"\\u0000","a":"x"}'), false);
+			assert.strictEqual(has_nul('{"a":"x","a":"\\u0000"}'), true);
+		});
 	});
 
-	test('admits constructor, prototype, a __proto__ value, and a near-miss key', () => {
-		assert.strictEqual(has('{"constructor":{"prototype":{"x":1}}}'), false);
-		assert.strictEqual(has('{"prototype":{}}'), false);
-		assert.strictEqual(has('{"a":"__proto__","b":["__proto__"]}'), false);
-		assert.strictEqual(has('{"__proto":1,"_proto__":1,"__PROTO__":1}'), false);
-		assert.strictEqual(has('{}'), false);
-		assert.strictEqual(has('[]'), false);
+	test('reports both findings from one walk', () => {
+		assert.deepStrictEqual(scan('{"__proto__":{},"b":"\\u0000"}'), { proto_key: true, nul: true });
+		assert.deepStrictEqual(scan('{"a":[{"b":1}]}'), { proto_key: false, nul: false });
 	});
 
-	test('reads scalars as holding no key', () => {
+	test('reads non-string scalars as holding nothing', () => {
 		for (const value of [null, undefined, 1, 'x', true]) {
-			assert.strictEqual(json_has_own_proto_key(value), false);
+			assert.deepStrictEqual(scan_json_value(value), { proto_key: false, nul: false });
 		}
-	});
-
-	test('ignores an inherited __proto__ — an object literal sets the prototype', () => {
-		assert.strictEqual(json_has_own_proto_key({ __proto__: { x: 1 } }), false);
 	});
 
 	test('walks nesting deeper than the call stack without throwing', () => {
@@ -162,6 +197,8 @@ describe('json_has_own_proto_key', () => {
 		assert.strictEqual(has(deep), false);
 		const deep_hit = '['.repeat(depth) + '{"__proto__":1}' + ']'.repeat(depth);
 		assert.strictEqual(has(deep_hit), true);
+		const deep_nul = '['.repeat(depth) + '"\\u0000"' + ']'.repeat(depth);
+		assert.strictEqual(has_nul(deep_nul), true);
 	});
 });
 

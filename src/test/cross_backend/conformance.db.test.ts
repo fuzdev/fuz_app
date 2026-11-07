@@ -26,6 +26,7 @@ import { conformance_security_cases } from './conformance_security_cases.ts';
 import { conformance_expiry_cases } from './conformance_expiry_cases.ts';
 import { conformance_app_settings_cases } from './conformance_app_settings_cases.ts';
 import { conformance_void_params_cases } from './conformance_void_params_cases.ts';
+import { conformance_nul_params_cases } from './conformance_nul_params_cases.ts';
 import { conformance_proto_params_cases } from './conformance_proto_params_cases.ts';
 import { conformance_admin_cases } from './conformance_admin_cases.ts';
 import { ACTING_EXTRA_ACTOR_NAME, conformance_acting_cases } from './conformance_acting_cases.ts';
@@ -50,6 +51,7 @@ describe_conformance_table_tests({
 		...conformance_app_settings_cases,
 		...conformance_void_params_cases,
 		...conformance_proto_params_cases,
+		...conformance_nul_params_cases,
 		...conformance_admin_cases,
 		...generate_rpc_auth_conformance_cases({ surface_source: suite_options.surface_source })
 	],

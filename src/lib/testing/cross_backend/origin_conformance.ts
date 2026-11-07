@@ -20,7 +20,11 @@ import '../assert_dev_env.ts';
  * A row may carry a `note` for the reader. The TS unit test reads the table
  * directly; `describe_origin_conformance_cross_tests` sends every row to a
  * backend's `_testing_origin_check` action and compares the answer, so the
- * Rust spine is held to the same rows without reading this file.
+ * Rust spine is held to the same rows without reading this file. A row whose
+ * input holds U+0000 can't reach the action: the dispatcher refuses NUL in
+ * params (`params_nul`) before any handler, and that refusal is what the
+ * suite asserts for it. Its verdict is pinned by the TS unit test and by
+ * `fuz_http`'s own host and origin tests.
  *
  * @module
  */
@@ -46,7 +50,9 @@ import {
 	type Infer
 } from '@fuzdev/fuz_schema/schema.ts';
 
+import { ERROR_PARAMS_NUL } from '../../http/error_schemas.ts';
 import { AllowedOriginsErrorKind } from '../../http/origin.ts';
+import { scan_json_value } from '../../http/schema_helpers.ts';
 import { cross_rpc_call } from './cross_rpc.ts';
 import type { RpcPathCrossSuiteOptions } from './setup.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
@@ -206,7 +212,24 @@ export const describe_origin_conformance_cross_tests = (
 			const transport = fixture.fresh_transport({ origin: null });
 			const headers = fixture.create_daemon_token_headers();
 			const answers: Array<unknown> = [];
+			const wire_checks: typeof checks = [];
 			for (const check of checks) {
+				if (scan_json_value(check.input).nul) {
+					const refused = await cross_rpc_call(
+						transport,
+						rpc_path,
+						testing_origin_check_action_spec.method,
+						check.input,
+						headers
+					);
+					assert.deepStrictEqual(
+						refused.error?.data,
+						{ reason: ERROR_PARAMS_NUL },
+						`${check.label}: a NUL in params is refused before the action`
+					);
+					continue;
+				}
+				wire_checks.push(check);
 				const res = await cross_rpc_call(
 					transport,
 					rpc_path,
@@ -218,7 +241,7 @@ export const describe_origin_conformance_cross_tests = (
 				const parsed = parse(TestingOriginCheckOutput, res.result);
 				answers.push(parsed.ok ? parsed.value : res.result);
 			}
-			assert_origin_conformance(checks, answers, 'backend');
+			assert_origin_conformance(wire_checks, answers, 'backend');
 		});
 	});
 };

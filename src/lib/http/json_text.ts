@@ -14,6 +14,10 @@
  * The check is one linear pass over the text after `JSON.parse` accepts it
  * (`is_serde_json_text`): a few milliseconds a MiB, whatever the text holds.
  *
+ * `"\u0000"` is not refused here: both parsers accept it. Postgres refuses it,
+ * so the input steps do, as an invalid value rather than invalid JSON
+ * (`scan_json_value` in `http/schema_helpers.ts`).
+ *
  * @module
  */
 

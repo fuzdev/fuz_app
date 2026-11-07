@@ -59,7 +59,7 @@ import {
 	to_thrown_jsonrpc_error
 } from './jsonrpc_errors.ts';
 import type { JsonrpcErrorObject } from './jsonrpc.ts';
-import { is_null_schema } from './schema_helpers.ts';
+import { is_null_schema, scan_json_value } from './schema_helpers.ts';
 import { is_json_response } from './route_error_check.ts';
 import { dispatch_with_post_commit_rollback } from './pending_effects.ts';
 import type { MiddlewareSpec } from './middleware_spec.ts';
@@ -554,7 +554,9 @@ const create_content_type_check = (spec: RouteSpec): Array<MiddlewareHandler> =>
  * validated elsewhere, e.g. from `?params=` query string in RPC handlers)
  * and for null-input routes (no body expected). For other routes with input
  * schemas, returns a middleware that parses and validates the JSON body,
- * storing the result on the context as `validated_input`. Input validation
+ * storing the result on the context as `validated_input`. A body that parses
+ * but holds U+0000 in a string or key is `invalid_request_body` ahead of the
+ * schema (`scan_json_value`), since Postgres refuses it. Input validation
  * runs after the authorization phase and the post-authorization guards, so a
  * caller they refuse never sees a parse failure; the authorization phase reads
  * `acting` off the raw body itself (`read_route_acting` in
@@ -576,6 +578,9 @@ const create_input_validation = (
 		if (typeof body !== 'object' || body === null || Array.isArray(body)) {
 			return c.json({ error: ERROR_INVALID_JSON_BODY }, 400);
 		}
+		// U+0000 in any string or key, which Postgres refuses to store, ahead of
+		// the schema, flat as the Rust spine's `parse_json_body` answers it
+		if (scan_json_value(body).nul) return c.json({ error: ERROR_INVALID_REQUEST_BODY }, 400);
 		const result = parse(input_schema, body);
 		if (!result.ok) {
 			return c.json(

@@ -115,10 +115,17 @@ export const to_void_params = (raw_params: unknown): unknown => {
 export const to_input_params = (input: AnySchema, raw_params: unknown): unknown =>
 	is_void_schema(input) ? to_void_params(raw_params) : (raw_params ?? {});
 
+/** What one walk of a parsed JSON value finds (`scan_json_value`). */
+export interface JsonValueScan {
+	/** An object holds an own `__proto__` key, at any depth (`ERROR_PARAMS_PROTO_KEY`). */
+	proto_key: boolean;
+	/** A string or an object key holds U+0000 (`ERROR_PARAMS_NUL`). */
+	nul: boolean;
+}
+
 /**
- * Check whether a parsed JSON value holds an own `__proto__` key in any
- * object, at any depth — what the dispatcher refuses in a request's `params`
- * (`ERROR_PARAMS_PROTO_KEY`).
+ * Walks a parsed JSON value once for the two things a request may not store,
+ * at any depth: an own `__proto__` key, and U+0000 in a string or a key.
  *
  * `JSON.parse` defines `"__proto__"` as an ordinary own key, but the first
  * plain assignment that copies it (`target[key] = value`, as any shallow copy
@@ -127,27 +134,45 @@ export const to_input_params = (input: AnySchema, raw_params: unknown): unknown 
  * own `constructor` or `prototype` key is inert on a plain object and is not
  * checked.
  *
+ * U+0000 is valid JSON (`"\u0000"`), but Postgres refuses it in `text` and in
+ * `jsonb`, so a value holding one fails its write with a 500. The dispatcher
+ * refuses either in `params` (`invalid_params`, the proto key first), and a
+ * route refuses a NUL in its JSON body (`invalid_request_body`), both after
+ * the authority gates as any input refusal is.
+ *
  * Walks with an explicit stack rather than recursion: `JSON.parse` accepts
  * nesting deep enough to overflow the call stack, and the walk is linear in
- * the value's nodes, which the request body limit bounds. The Rust spine's
- * `fuz_http::json_has_own_proto_key` is the twin.
+ * the value's nodes, which the request body limit bounds. It reads the parsed
+ * value, not the text, so of two duplicate keys only the kept one is walked —
+ * as on the Rust spine, whose `serde_json::Value` keeps the last too. The twin
+ * is `fuz_http::scan_json_value`.
  *
  * @param value - a value as `JSON.parse` produced it
- * @returns whether any object in `value` has an own `__proto__` key
+ * @returns what the walk found
  */
-export const json_has_own_proto_key = (value: unknown): boolean => {
+export const scan_json_value = (value: unknown): JsonValueScan => {
+	let proto_key = false;
+	let nul = false;
 	const stack: Array<unknown> = [value];
-	while (stack.length > 0) {
+	while (stack.length > 0 && !(proto_key && nul)) {
 		const current = stack.pop();
+		if (typeof current === 'string') {
+			if (!nul && current.includes('\0')) nul = true;
+			continue;
+		}
 		if (typeof current !== 'object' || current === null) continue;
 		if (Array.isArray(current)) {
 			for (const item of current) stack.push(item);
 			continue;
 		}
-		if (Object.hasOwn(current, '__proto__')) return true;
-		for (const item of Object.values(current)) stack.push(item);
+		const record = current as Record<string, unknown>;
+		for (const key of Object.keys(record)) {
+			if (key === '__proto__') proto_key = true;
+			if (!nul && key.includes('\0')) nul = true;
+			stack.push(record[key]);
+		}
 	}
-	return false;
+	return { proto_key, nul };
 };
 
 /**
