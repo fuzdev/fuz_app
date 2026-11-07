@@ -94,8 +94,9 @@ export const PingActionInput = with_default(
 	// optional, so an empty invocation is valid (server-issued nonce, default
 	// timeout). The server reads absent `params` as `{}` before the schema; the
 	// client's pre-send parse of `app.api['peer/ping']()` reaches the default.
-	// One shared `{}`, which nothing writes to
-	{}
+	// `with_default` hands out one shared value, so it is frozen: a write to
+	// it throws rather than leaking into every later call
+	Object.freeze({})
 );
 export type PingActionInput = Infer<typeof PingActionInput>;
 

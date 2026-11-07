@@ -70,6 +70,7 @@ import {
 	type RouteAuth
 } from './auth_shape.ts';
 import { assert_validation_schema, to_wire_issues } from '../schema_issues.ts';
+import { read_json_body } from './json_text.ts';
 
 /**
  * Two-phase auth guard set returned by `AuthGuardResolver`.
@@ -452,14 +453,18 @@ export const attach_route_handler = <
  *
  * @param c - the Hono context
  * @param result - the handler's result
- * @throws TypeError when `result` is not a result `route_ok`, `route_fail`, or `route_raw` made: a `Response`, a success without a value, a failure without its status or definition, a raw result without a response, `undefined` or `null`
+ * @throws TypeError when `result` is not a result `route_ok`, `route_fail`, or `route_raw` made: a `Response`, a success without a value or with a function or symbol for one, a failure without its status or definition, a raw result without a response, `undefined` or `null`
  */
 export const to_route_response = (c: Context, result: RouteResult): Response => {
 	// each branch checks the field it reads, so a malformed or nullish result
 	// falls through to the throw — a `Response` has its own `ok` and `status`,
-	// but no `value` or `def`
+	// but no `value` or `def`. A function or symbol value is no JSON value:
+	// `JSON.stringify` writes nothing for it, which would answer an empty 200
 	if (result?.ok === true) {
-		if (result.value !== undefined) return c.json(result.value as never);
+		const type = typeof result.value;
+		if (type !== 'undefined' && type !== 'function' && type !== 'symbol') {
+			return c.json(result.value as never);
+		}
 	} else if (result?.ok === 'raw') {
 		if (result.response instanceof Response) return result.response;
 	} else if (!result?.ok && result?.def !== undefined && typeof result.status === 'number') {
@@ -565,12 +570,9 @@ const create_input_validation = (
 	if (is_null_schema(input_schema)) return [];
 
 	const validate: MiddlewareHandler = async (c, next): Promise<Response | void> => {
-		let body: unknown;
-		try {
-			body = await c.req.json();
-		} catch {
-			return c.json({ error: ERROR_INVALID_JSON_BODY }, 400);
-		}
+		const read = await read_json_body(c.req);
+		if (!read.ok) return c.json({ error: ERROR_INVALID_JSON_BODY }, 400);
+		const body = read.value;
 		if (typeof body !== 'object' || body === null || Array.isArray(body)) {
 			return c.json({ error: ERROR_INVALID_JSON_BODY }, 400);
 		}

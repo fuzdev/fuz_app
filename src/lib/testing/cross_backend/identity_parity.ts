@@ -128,6 +128,7 @@ import {
 	SPINE_ACCOUNT_PASSWORD_PATH,
 	SPINE_ACCOUNT_SIGNUP_PATH
 } from './spine_surface_constants.ts';
+import { SERDE_REFUSED_PARAMS_JSON } from '../rpc_envelope_cases.ts';
 
 /**
  * The flat-REST `{error}` reason each terminal login/signup status carries on
@@ -793,11 +794,15 @@ export const describe_identity_parity_cross_tests = (
 		// Bootstrap parses ahead of its window check (so the 400 holds after
 		// bootstrap completed); the password change parses only after its
 		// credential and session-only gates, so it needs a session, and an
-		// anonymous caller still hears 401.
-		const MALFORMED_BODIES = [
+		// anonymous caller still hears 401. A body `serde_json` refuses (a lone
+		// surrogate escape, a number out of `f64` range, nesting 128 deep) is
+		// invalid JSON on both.
+		const MALFORMED_BODIES: ReadonlyArray<readonly [body: string, label: string]> = [
 			['{', 'unparseable'],
-			['[]', 'a non-object array']
-		] as const;
+			['[]', 'a non-object array'],
+			// what the Rust spine's `serde_json` refuses and `JSON.parse` accepts
+			...SERDE_REFUSED_PARAMS_JSON.map(([label, json]) => [json, label] as const)
+		];
 
 		const assert_invalid_json_body = (
 			got: { status: number; text: string },

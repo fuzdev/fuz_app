@@ -79,6 +79,7 @@ import {
 	ERROR_NO_ACTORS_ON_ACCOUNT,
 	ERROR_ACCOUNT_VANISHED
 } from '../http/error_schemas.ts';
+import { read_json_body } from '../http/json_text.ts';
 
 /**
  * The resolved identity context for an authenticated request.
@@ -871,13 +872,10 @@ const read_route_acting = async (c: Context, spec: RouteSpec): Promise<string | 
 	const validated_query = c.get('validated_query') as { acting?: unknown } | undefined;
 	if (validated_query && typeof validated_query.acting === 'string') return validated_query.acting;
 	if (spec.method === 'GET' || is_null_schema(spec.input)) return undefined;
-	let body: unknown;
-	try {
-		body = await c.req.json();
-	} catch {
-		// Malformed body — input validation answers with the 400.
-		return undefined;
-	}
+	const read = await read_json_body(c.req);
+	// Malformed body — input validation answers with the 400.
+	if (!read.ok) return undefined;
+	const body = read.value;
 	if (typeof body !== 'object' || body === null) return undefined;
 	return parse_acting((body as { acting?: unknown }).acting);
 };

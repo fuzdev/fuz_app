@@ -127,6 +127,30 @@ export const type_cases = (c: Context): Array<unknown> => [
 		rate_limit: 'both',
 		handler: () => route_fail(REST_RATE_LIMIT_EXCEEDED, { retry_after: 1 })
 	}),
+	// a failure built by hand carries the definition at its own status and code
+	define_route({
+		...shape,
+		errors: [REST_TABLE_NOT_FOUND],
+		handler: () => ({
+			ok: false as const,
+			status: 404 as const,
+			code: 'table_not_found' as const,
+			body: { error: 'table_not_found' as const },
+			def: REST_TABLE_NOT_FOUND
+		})
+	}),
+	define_route({
+		...shape,
+		errors: [REST_TABLE_NOT_FOUND],
+		// @ts-expect-error a definition at another status and code
+		handler: () => ({
+			ok: false as const,
+			status: 404 as const,
+			code: 'table_not_found' as const,
+			body: { error: 'table_not_found' as const },
+			def: REST_RATE_LIMIT_EXCEEDED
+		})
+	}),
 	// @ts-expect-error a required field is required
 	define_route({ ...shape, rate_limit: 'ip', handler: () => route_fail(REST_RATE_LIMIT_EXCEEDED) }),
 	define_route({

@@ -138,4 +138,8 @@ afterAll(() => cleanup());
 - PGlite WASM cold-start adds ~500-700ms on first connection (cached after)
 - No WAL-based replication or point-in-time recovery
 - File-based daemon tokens assume single-process — multi-process races are possible
+- No DNS-rebinding defense: the TS spine has no host gate, so a page on a
+  name rebound to `127.0.0.1` can reach the daemon's routes. It arrives
+  without the daemon's cookies, so only unauthenticated routes answer it. The
+  Rust spine's opt-in host gate (`forbidden_host`) refuses such a `Host`
 - In-memory rate limiter state resets on restart

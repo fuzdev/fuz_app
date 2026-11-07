@@ -48,6 +48,7 @@ import { type BackendCapabilities, test_if } from './capabilities.ts';
 import type { SetupTest, TestFixture } from './setup.ts';
 import { open_session_ws, type WsEndpointTarget } from './ws_endpoint.ts';
 import { create_holding_peer_ping_responder } from './ws_inbound_dispatch.ts';
+import { SERDE_REFUSED_PARAMS_JSON } from '../rpc_envelope_cases.ts';
 
 const JSONRPC_VERSION = '2.0';
 const PARSE_ERROR = -32700;
@@ -105,6 +106,13 @@ const REFUSED_FRAME_CASES: ReadonlyArray<RefusedFrameCase> = [
 		frame: { text: '{"jsonrpc": "2.0", "id": 1,' },
 		code: PARSE_ERROR
 	},
+	...SERDE_REFUSED_PARAMS_JSON.map(([label, params_json]): RefusedFrameCase => ({
+		name: `a frame holding ${label}`,
+		frame: {
+			text: `{"jsonrpc":"2.0","id":1,"method":"${HEARTBEAT_METHOD}","params":${params_json}}`
+		},
+		code: PARSE_ERROR
+	})),
 	{ name: 'a scalar frame', frame: { json: 5 }, code: INVALID_REQUEST },
 	{ name: 'a bare string frame', frame: { json: HEARTBEAT_METHOD }, code: INVALID_REQUEST },
 	{

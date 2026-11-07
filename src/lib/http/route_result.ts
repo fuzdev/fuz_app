@@ -39,7 +39,8 @@ export interface RouteFail<TStatus extends number, TCode extends string, TBody> 
 	readonly status: TStatus;
 	readonly code: TCode;
 	readonly body: TBody;
-	readonly def: RestErrorDef;
+	/** The definition the failure was made from, at the same status and code. */
+	readonly def: RestErrorDef<TStatus, TCode>;
 }
 
 /** A response the handler built itself, answered as it is (`route_raw`). */

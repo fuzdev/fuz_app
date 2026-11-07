@@ -9,11 +9,26 @@
  */
 
 import { to_error_message } from '@fuzdev/fuz_util/error.ts';
-import { parse, type AnySchema, type Infer, type SchemaResult } from '@fuzdev/fuz_schema/schema.ts';
+import {
+	parse,
+	type AnySchema,
+	type Infer,
+	type SchemaKind,
+	type SchemaResult
+} from '@fuzdev/fuz_schema/schema.ts';
 import { unwrap_schema } from '@fuzdev/fuz_schema/introspect.ts';
 import { to_json_schema } from '@fuzdev/fuz_schema/json_schema.ts';
 
 import { assert_validation_schema, unknown_key_targets } from '../schema_issues.ts';
+
+/**
+ * The kind the testing generators switch on: the innermost layer's
+ * `@fuzdev/fuz_schema` kind, with an object schema of any strictness as
+ * `'object'`, and a `literal(null)` and a `literal(undefined)` (`s.void`) as
+ * `'null'` and `'void'`.
+ */
+export type SchemaFieldBaseType =
+	Exclude<SchemaKind, 'loose_object' | 'strip_object' | 'object_with_rest'> | 'null' | 'void';
 
 /**
  * What the testing generators read of one field of an object schema
@@ -22,14 +37,8 @@ import { assert_validation_schema, unknown_key_targets } from '../schema_issues.
 export interface SchemaFieldInfo {
 	/** The field's key. */
 	name: string;
-	/**
-	 * The innermost kind's name: `'string'`, `'number'`, `'boolean'`,
-	 * `'array'`, `'literal'`, and so on, with an object of any strictness as
-	 * `'object'`, a `literal(null)` as `'null'`, a `literal(undefined)`
-	 * (`s.void`) as `'void'`, a `one_of` as `'enum'`, and a `variant` as
-	 * `'union'`.
-	 */
-	base_type: string;
+	/** The innermost layer's kind, `SchemaFieldBaseType`. */
+	base_type: SchemaFieldBaseType;
 	/** Whether the key must be present: no `optional` layer. */
 	required: boolean;
 	/** Whether the parse fills the key in when it is missing. */

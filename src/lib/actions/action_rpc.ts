@@ -40,6 +40,7 @@ import {
 } from '../http/jsonrpc_helpers.ts';
 import type { RateLimiter } from '../rate_limiter.ts';
 import { perform_action, serialize_action_result } from './perform_action.ts';
+import { parse_json_text, read_json_body } from '../http/json_text.ts';
 
 /**
  * The `Cache-Control` every response of the RPC endpoint's `GET` route carries
@@ -244,13 +245,12 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 	// POST handler — parse JSON-RPC envelope from body
 	const post_handler = async (c: Context, route: RouteContext): Promise<RouteRaw> => {
 		// step 1: parse envelope
-		let body: unknown;
-		try {
-			body = await c.req.json();
-		} catch {
+		const read = await read_json_body(c.req);
+		if (!read.ok) {
 			const error = create_jsonrpc_error_response(null, jsonrpc_error_messages.parse_error());
 			return envelope_response(c, error, 400);
 		}
+		const body = read.value;
 
 		// the classifier the WS path runs; HTTP issues no server-initiated
 		// requests and has no notification semantics, so a response or a
@@ -315,7 +315,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 		let params: unknown;
 		if (params_raw !== undefined) {
 			try {
-				params = JSON.parse(params_raw);
+				params = parse_json_text(params_raw);
 			} catch {
 				const error = create_jsonrpc_error_response(
 					id,

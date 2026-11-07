@@ -1039,22 +1039,17 @@ ${block}
 });
 
 describe('generate_action_inputs_outputs', () => {
-	test('emits the const + interface pairs for inputs and outputs and the call-input interface; protocol actions filtered', () => {
+	test('emits the input, call-input and output interfaces, no runtime consts; protocol actions filtered', () => {
 		const imports = new ImportBuilder();
 		const result = generate_action_inputs_outputs(fixture_specs, imports);
 
-		assert.ok(result.includes('export const ActionInputs = {'));
 		assert.ok(result.includes('export interface ActionInputs {'));
-		assert.ok(result.includes('export const ActionOutputs = {'));
+		assert.ok(result.includes('export interface ActionCallInputs {'));
 		assert.ok(result.includes('export interface ActionOutputs {'));
+		// types only: a const's inferred type is written out whole in a declaration file
+		assert.ok(!result.includes('export const'));
 
-		// Spec-derived value lines — protocol actions filtered out by default.
-		assert.ok(result.includes('thing_create: specs.thing_create_action_spec.input,'));
-		assert.ok(result.includes('thing_create: specs.thing_create_action_spec.output,'));
-		assert.ok(!result.includes('heartbeat: specs.heartbeat_action_spec.input,'));
-		assert.ok(!result.includes('cancel: specs.cancel_action_spec.input,'));
-
-		// `Infer` interface entries — same exclusion.
+		// `Infer` interface entries — protocol actions filtered out by default.
 		assert.ok(result.includes('thing_create: Infer<typeof specs.thing_create_action_spec.input>;'));
 		assert.ok(!result.includes('heartbeat: Infer<typeof specs.heartbeat_action_spec.input>;'));
 
@@ -1078,8 +1073,8 @@ describe('generate_action_inputs_outputs', () => {
 		const result = generate_action_inputs_outputs(fixture_specs, imports, {
 			include_protocol_actions: true
 		});
-		assert.ok(result.includes('heartbeat: specs.heartbeat_action_spec.input,'));
-		assert.ok(result.includes('cancel: specs.cancel_action_spec.input,'));
+		assert.ok(result.includes('heartbeat: Infer<typeof specs.heartbeat_action_spec.input>;'));
+		assert.ok(result.includes('cancel: Infer<typeof specs.cancel_action_spec.input>;'));
 	});
 });
 
@@ -1372,13 +1367,14 @@ describe('qualify_spec', () => {
 		const imports = new ImportBuilder();
 		const result = generate_action_inputs_outputs(fixture_specs, imports, { qualify_spec });
 
-		assert.ok(result.includes('thing_create: local_specs.thing_create_action_spec.input,'));
-		assert.ok(result.includes('thing_create: local_specs.thing_create_action_spec.output,'));
 		assert.ok(
 			result.includes('thing_create: Infer<typeof local_specs.thing_create_action_spec.input>;')
 		);
-		// Default form must not leak — anchor on the leading tab + method.
-		assert.ok(!result.includes('\tthing_create: specs.thing_create_action_spec.input,'));
+		assert.ok(
+			result.includes('thing_create: Infer<typeof local_specs.thing_create_action_spec.output>;')
+		);
+		// Default form must not leak
+		assert.ok(!result.includes('typeof specs.thing_create_action_spec'));
 
 		const built = imports.build();
 		assert.ok(!built.includes('* as specs'));
@@ -1490,10 +1486,9 @@ describe('empty-input behavior', () => {
 	test('generate_action_inputs_outputs — empty bodies, skips the Infer + specs imports', () => {
 		const imports = new ImportBuilder();
 		const result = generate_action_inputs_outputs([], imports);
-		assert.ok(result.includes('export const ActionInputs = {} as const;'));
 		assert.ok(result.includes('export interface ActionInputs {}'));
-		assert.ok(result.includes('export const ActionOutputs = {} as const;'));
 		assert.ok(result.includes('export interface ActionOutputs {}'));
+		assert.ok(!result.includes('export const'));
 		assert.ok(!imports.has_imports());
 	});
 
@@ -1768,9 +1763,8 @@ describe('non-identifier method names (slash)', () => {
 	test('generate_action_inputs_outputs quotes keys and sanitizes identifiers', () => {
 		const imports = new ImportBuilder();
 		const result = generate_action_inputs_outputs([slash_spec], imports);
-		assert.ok(result.includes("'peer/echo': specs.peer_echo_action_spec.input,"));
 		assert.ok(result.includes("'peer/echo': Infer<typeof specs.peer_echo_action_spec.input>;"));
-		assert.ok(result.includes("'peer/echo': specs.peer_echo_action_spec.output,"));
+		assert.ok(result.includes("'peer/echo': Infer<typeof specs.peer_echo_action_spec.output>;"));
 		assert.ok(!result.includes('peer/echo_action_spec'));
 	});
 

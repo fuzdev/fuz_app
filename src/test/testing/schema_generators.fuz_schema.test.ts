@@ -161,14 +161,14 @@ describe('generate_valid_body over fuz_schema', () => {
 });
 
 describe('to_object_schema_view over fuz_schema', () => {
-	test('reads each field in the shared field vocabulary', () => {
+	test('reads each field by its fuz_schema kind', () => {
 		const { fields } = to_object_schema_view(Input, 'Input');
 		const by_name = Object.fromEntries(fields.map((f) => [f.name, f]));
 		assert.strictEqual(by_name.name!.base_type, 'string');
 		assert.strictEqual(by_name.count!.base_type, 'number');
 		assert.strictEqual(by_name.nested!.base_type, 'object');
-		assert.strictEqual(by_name.mode!.base_type, 'enum');
-		assert.strictEqual(by_name.shape!.base_type, 'union');
+		assert.strictEqual(by_name.mode!.base_type, 'one_of');
+		assert.strictEqual(by_name.shape!.base_type, 'variant');
 		assert.strictEqual(by_name.kind!.base_type, 'literal');
 		assert.isTrue(by_name.maybe!.nullable);
 		assert.isFalse(by_name.note!.required);

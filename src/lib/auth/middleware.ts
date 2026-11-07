@@ -110,7 +110,11 @@ export const assert_credential_routes_in_auth_scope = (
 /**
  * Throw unless every origin carve-out names a path and a reason, and stays
  * off the auth middleware's scope: a path that starts with `/` (a Hono pattern
- * like `/hooks/*` or `/health`), a non-blank reason — a carve-out is an
+ * like `/hooks/*` or `/health`) and is no route template — a carve-out matches
+ * a request path exactly or by a trailing `/*` prefix (`middleware_applies`),
+ * so a `:param`, a `{pattern}`, or an inner `*` would match only its own
+ * literal text at runtime while the surface reads it as the template — a
+ * non-blank reason — a carve-out is an
  * argument someone wrote down, never an empty placeholder — and a pattern that
  * matches nothing under `auth_path` (`middleware_paths_overlap`).
  *
@@ -128,7 +132,7 @@ export const assert_credential_routes_in_auth_scope = (
  *
  * @param carve_outs - the carve-outs to check
  * @param auth_path - the auth middleware's path pattern (default `AUTH_MIDDLEWARE_PATH`)
- * @throws Error naming the first carve-out with no path, no reason, or a pattern overlapping `auth_path`
+ * @throws Error naming the first carve-out with no path, a route template, no reason, or a pattern overlapping `auth_path`
  */
 export const assert_origin_carve_outs_valid = (
 	carve_outs: ReadonlyArray<MiddlewareCarveOut>,
@@ -139,6 +143,18 @@ export const assert_origin_carve_outs_valid = (
 			throw new Error(
 				`origin carve-out path ${JSON.stringify(carve_out.path)} must start with / ` +
 					'(a Hono pattern like /hooks/* or /health)'
+			);
+		}
+		const wildcard_at = carve_out.path.indexOf('*');
+		if (
+			/[:{]/.test(carve_out.path) ||
+			(wildcard_at !== -1 &&
+				!(wildcard_at === carve_out.path.length - 1 && carve_out.path.endsWith('/*')))
+		) {
+			throw new Error(
+				`origin carve-out ${carve_out.path} is a route template — a carve-out matches a ` +
+					'request path exactly or by a trailing /* prefix, so a :param, {pattern} or inner * ' +
+					'would match only its own literal text; carve out the literal path or its /* prefix'
 			);
 		}
 		if (carve_out.reason.trim() === '') {

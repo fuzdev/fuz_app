@@ -160,6 +160,7 @@ import {
 import type { ConnectionRegistry, ConnectionIdentity } from './connection_registry.ts';
 import { audit_unmatched_peer_response, type RequestClient } from './peer_request.ts';
 import { perform_action, serialize_action_result } from './perform_action.ts';
+import { parse_json_text } from '../http/json_text.ts';
 
 /**
  * Max inbound frames one socket may have queued while it is still opening —
@@ -758,7 +759,7 @@ export const create_ws_socket_events = (
 		): void => send_error_response(registry, connection_id, id, error);
 		let json;
 		try {
-			json = JSON.parse(String(data));
+			json = parse_json_text(String(data));
 		} catch (error) {
 			log.error('JSON parse error:', error);
 			send_error(null, jsonrpc_error_messages.parse_error());

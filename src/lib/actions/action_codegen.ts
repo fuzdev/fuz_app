@@ -831,9 +831,11 @@ export const action_specs: Array<ActionSpecUnion> = Object.values(ActionSpecs);`
 };
 
 /**
- * Emit `ActionInputs` + `ActionOutputs` runtime consts and matching
- * interfaces, plus the `ActionCallInputs` interface. The runtime consts
- * reference `specs.{method}_action_spec.input` / `.output`.
+ * Emit the `ActionInputs`, `ActionCallInputs` and `ActionOutputs`
+ * interfaces, each member a type over `specs.{method}_action_spec.input` /
+ * `.output`. Types only: the schemas are read off the specs themselves
+ * (`ActionSpecs`), and a type reference stays a reference in a declaration
+ * file, where an unannotated const's inferred type is written out whole.
  *
  * The two sides of a call see different types for one input schema, so the
  * interfaces split by side:
@@ -873,11 +875,9 @@ export const generate_action_inputs_outputs = (
 		// Empty spec list — emit minimal valid output and skip the `Infer` /
 		// `* as specs` imports that would have nothing to reference.
 		return `/**
- * Action parameter schemas indexed by method name.
- * These represent the input data for each action,
- * e.g. JSON-RPC request/notification params and local call arguments.
+ * Action inputs indexed by method name, as parsed: each input schema's output
+ * type, e.g. JSON-RPC request/notification params and local call arguments.
  */
-export const ActionInputs = {} as const;
 export interface ActionInputs {}
 
 /**
@@ -887,11 +887,9 @@ export interface ActionInputs {}
 export interface ActionCallInputs {}
 
 /**
- * Action result schemas indexed by method name.
- * These represent the output data for each action,
+ * Action outputs indexed by method name: each output schema's output type,
  * e.g. JSON-RPC response results and local call return values.
  */
-export const ActionOutputs = {} as const;
 export interface ActionOutputs {}`;
 	}
 
@@ -902,30 +900,20 @@ export interface ActionOutputs {}`;
 	imports.add_types('@fuzdev/fuz_schema/schema.ts', 'Infer', 'InferInput');
 	const qualify = resolve_spec_qualifier(imports, options);
 
-	const inputs_value = filtered
-		.map((s) => `\t${to_action_property_key(s.method)}: ${qualify(s)}.input,`)
-		.join('\n');
 	const inputs_type = filtered
 		.map((s) => `\t${to_action_property_key(s.method)}: Infer<typeof ${qualify(s)}.input>;`)
 		.join('\n');
 	const call_inputs_type = filtered
 		.map((s) => `\t${to_action_property_key(s.method)}: InferInput<typeof ${qualify(s)}.input>;`)
 		.join('\n');
-	const outputs_value = filtered
-		.map((s) => `\t${to_action_property_key(s.method)}: ${qualify(s)}.output,`)
-		.join('\n');
 	const outputs_type = filtered
 		.map((s) => `\t${to_action_property_key(s.method)}: Infer<typeof ${qualify(s)}.output>;`)
 		.join('\n');
 
 	return `/**
- * Action parameter schemas indexed by method name.
- * These represent the input data for each action,
- * e.g. JSON-RPC request/notification params and local call arguments.
+ * Action inputs indexed by method name, as parsed: each input schema's output
+ * type, e.g. JSON-RPC request/notification params and local call arguments.
  */
-export const ActionInputs = {
-${inputs_value}
-} as const;
 export interface ActionInputs {
 ${inputs_type}
 }
@@ -939,13 +927,9 @@ ${call_inputs_type}
 }
 
 /**
- * Action result schemas indexed by method name.
- * These represent the output data for each action,
+ * Action outputs indexed by method name: each output schema's output type,
  * e.g. JSON-RPC response results and local call return values.
  */
-export const ActionOutputs = {
-${outputs_value}
-} as const;
 export interface ActionOutputs {
 ${outputs_type}
 }`;

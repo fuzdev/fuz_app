@@ -45,6 +45,7 @@ import { create_dev_route_error_check } from '#lib/http/dev_route_error_check.ts
 import { resolve_app_route_error_maps } from '#lib/http/route_errors.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_test_keyring } from '../auth/session_test_helpers.ts';
+import { SERDE_REFUSED_PARAMS_JSON } from '#lib/testing/rpc_envelope_cases.ts';
 
 const ThingParams = object({ thing_id: Uuid });
 const ThingQuery = object({ mode: one_of(['a', 'b']) });
@@ -194,6 +195,13 @@ describe('a fuz_schema route refuses', () => {
 
 	test('a non-object body before the schema runs', async () => {
 		const got = await send(`${THING}?mode=a`, '[]');
+		assert.strictEqual(got.status, 400);
+		assert.deepStrictEqual(got.body, { error: 'invalid_json_body' });
+	});
+
+	// what the Rust spine's `serde_json` refuses is invalid JSON on both spines
+	test.each(SERDE_REFUSED_PARAMS_JSON)('%s → invalid_json_body', async (_label, body) => {
+		const got = await send(`${THING}?mode=a`, body);
 		assert.strictEqual(got.status, 400);
 		assert.deepStrictEqual(got.body, { error: 'invalid_json_body' });
 	});

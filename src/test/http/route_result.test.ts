@@ -325,6 +325,14 @@ describe('to_route_response', () => {
 			'a malformed result'
 		],
 		['ok_other', () => ({ ok: 'yes', value: 1 }), 'a malformed result'],
+		// no JSON value: `JSON.stringify` writes nothing for these
+		['ok_function_value', () => ({ ok: true, value: () => 1 }), 'a malformed result'],
+		[
+			'ok_function_with_fields',
+			() => ({ ok: true, value: Object.assign(() => 1, { a: 1 }) }),
+			'a malformed result'
+		],
+		['ok_symbol_value', () => ({ ok: true, value: Symbol('x') }), 'a malformed result'],
 		['raw_no_response', () => ({ ok: 'raw' }), 'a malformed result'],
 		['a 200 Response', (c) => c.json({ n: 1 }), 'a Response'],
 		['a 4xx Response', (c) => c.json({ error: 'x' }, 404), 'a Response'],

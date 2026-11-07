@@ -17,6 +17,7 @@ import './assert_dev_env.ts';
 import { resolve_invalid_reason } from '../schema_meta.ts';
 import { ERROR_INVALID_REQUEST_BODY, ERROR_INVALID_JSON_BODY } from '../http/error_schemas.ts';
 import { parse, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
+import type { SchemaFieldBaseType } from '../http/schema_helpers.ts';
 
 import { format_issues } from '../schema_issues.ts';
 import {
@@ -37,11 +38,11 @@ const accepts = (schema: AnySchema, value: unknown): boolean => parse(schema, va
 // --- Payload generation ---
 
 /** One wrong-type value per base type — one representative is sufficient. */
-const wrong_type_for = (base_type: string): { label: string; value: unknown } | null => {
+const wrong_type_for = (
+	base_type: SchemaFieldBaseType
+): { label: string; value: unknown } | null => {
 	switch (base_type) {
 		case 'string':
-		case 'uuid':
-		case 'email':
 			return { label: 'number instead of string', value: 42 };
 		case 'number':
 			return { label: 'string instead of number', value: 'not_a_number' };
@@ -51,7 +52,7 @@ const wrong_type_for = (base_type: string): { label: string; value: unknown } | 
 			return { label: 'string instead of array', value: 'not_an_array' };
 		case 'object':
 			return { label: 'string instead of object', value: 'not_an_object' };
-		case 'enum':
+		case 'one_of':
 			return { label: 'number instead of enum', value: 42 };
 		default:
 			return null;
@@ -286,7 +287,7 @@ export const generate_input_test_cases = (
 
 		// string length boundaries — `x`s are one UTF-16 unit and one code point
 		// each, so the over-`maxLength` string is over in either count
-		if (field.base_type === 'string' || field.base_type === 'uuid' || field.base_type === 'email') {
+		if (field.base_type === 'string') {
 			if (typeof json.minLength === 'number' && json.minLength > 0) {
 				push_field_case(`empty string: ${field.name}`, '', 'value');
 			}

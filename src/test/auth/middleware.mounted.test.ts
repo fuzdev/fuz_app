@@ -568,6 +568,20 @@ describe('create_app_server — origin carve-outs', () => {
 		);
 	});
 
+	// a carve-out matches the request path exactly or by a trailing `/*`, so a
+	// template would read as one route on the surface and match none at runtime
+	test('a route-template carve-out throws', async () => {
+		for (const path of ['/hooks/:id', '/hooks/{name}', '/hooks/*/ping', '/hooks*']) {
+			await assert_assembly_refused(
+				{
+					...create_server_options(passthrough),
+					origin_carve_outs: [{ path, reason: 'refuses browser callers itself' }]
+				},
+				/is a route template/
+			);
+		}
+	});
+
 	test('a carve-out covering an RPC endpoint throws', async () => {
 		await assert_assembly_refused(
 			{

@@ -76,6 +76,23 @@ export interface RpcEnvelopeCaseOptions {
  */
 export const RPC_NON_OBJECT_PARAMS: ReadonlyArray<string> = ['42', '[1]', '"x"', 'true'];
 
+const BACKSLASH = String.fromCharCode(92);
+
+/**
+ * JSON object texts holding what `serde_json` refuses and `JSON.parse`
+ * accepts — an escaped lone surrogate, a number out of `f64` range, nesting
+ * 128 deep — each with a label. Both spines refuse them as invalid JSON
+ * (`parse_json_text`, `@fuzdev/fuz_app/http/json_text.ts`).
+ */
+export const SERDE_REFUSED_PARAMS_JSON: ReadonlyArray<readonly [label: string, json: string]> = [
+	['a lone surrogate escape', `{"x":"${BACKSLASH}ud800"}`],
+	['a lone surrogate escape in a key', `{"${BACKSLASH}udc00":1}`],
+	['a number out of f64 range', '{"x":1e400}'],
+	['nesting 128 deep', `{"x":${'['.repeat(127)}${']'.repeat(127)}}`],
+	// `JSON.parse` keeps the last key, so only reading the text sees the first
+	['a lone surrogate escape under a duplicated key', `{"x":"${BACKSLASH}ud800","x":1}`]
+];
+
 /** The `data.reason` the dispatchers answer a `GET` of a `side_effects` method with. */
 export const rpc_get_side_effects_reason = (method: string): string =>
 	`method '${method}' has side effects and must use POST`;
@@ -137,6 +154,20 @@ export const create_rpc_envelope_cases = (
 			id: null,
 			reason: null
 		});
+		// what `serde_json` refuses and `JSON.parse` accepts: refused as invalid
+		// JSON on both spines (`parse_json_text`), in `params` and in the GET query
+		for (const [label, params_json] of SERDE_REFUSED_PARAMS_JSON) {
+			post(
+				`${label} in the body → parse_error`,
+				`{"jsonrpc":"2.0","id":${JSON.stringify(id)},"method":${JSON.stringify(m)},"params":${params_json}}`,
+				{ status: 400, code: JSONRPC_ERROR_CODES.parse_error, id: null, reason: null }
+			);
+			get(
+				`GET ${label} in params → invalid_params`,
+				`?method=${q(m)}&id=${id}&params=${q(params_json)}`,
+				{ status: 400, code: JSONRPC_ERROR_CODES.invalid_params, id, reason: null }
+			);
+		}
 		post(
 			'wrong jsonrpc version → invalid_request',
 			JSON.stringify({ jsonrpc: '1.0', id, method: m }),

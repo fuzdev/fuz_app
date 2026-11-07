@@ -25,7 +25,12 @@ import {
 } from '@fuzdev/fuz_schema/introspect.ts';
 import { to_json_schema } from '@fuzdev/fuz_schema/json_schema.ts';
 
-import { is_null_schema, is_void_schema, type SchemaFieldInfo } from '../http/schema_helpers.ts';
+import {
+	is_null_schema,
+	is_void_schema,
+	type SchemaFieldBaseType,
+	type SchemaFieldInfo
+} from '../http/schema_helpers.ts';
 import {
 	compile_route_param_pattern,
 	decode_route_path,
@@ -214,12 +219,12 @@ const schema_layers = (schema: AnySchema): Array<SchemaNode> => {
 };
 
 /**
- * The type name the generators switch on (`SchemaFieldInfo.base_type`): the
- * schema's innermost layer's kind, with an object schema of any strictness
- * `'object'`, a `literal(null)` `'null'`, a `literal(undefined)` (`s.void`)
- * `'void'`, a `one_of` `'enum'`, and a `variant` `'union'`.
+ * The kind the generators switch on (`SchemaFieldInfo.base_type`,
+ * `SchemaFieldBaseType`): the schema's innermost layer's kind, with an object
+ * schema of any strictness `'object'`, and a `literal(null)` and a
+ * `literal(undefined)` (`s.void`) `'null'` and `'void'`.
  */
-const to_base_type = (schema: AnySchema): string => {
+const to_base_type = (schema: AnySchema): SchemaFieldBaseType => {
 	const base = unwrap_schema(schema);
 	switch (base.kind) {
 		case 'object':
@@ -229,10 +234,6 @@ const to_base_type = (schema: AnySchema): string => {
 			return 'object';
 		case 'literal':
 			return base.def === null ? 'null' : base.def === undefined ? 'void' : 'literal';
-		case 'one_of':
-			return 'enum';
-		case 'variant':
-			return 'union';
 		default:
 			return base.kind;
 	}
@@ -370,10 +371,6 @@ const to_literal_values = (field_schema: AnySchema): ReadonlyArray<unknown> => {
 export const generate_valid_value = (field: SchemaFieldInfo, field_schema: AnySchema): unknown => {
 	const format = detect_format(field_schema);
 	switch (field.base_type) {
-		case 'uuid':
-			return '00000000-0000-0000-0000-000000000000';
-		case 'email':
-			return 'test@example.com';
 		case 'string':
 			if (format === 'uuid') return '00000000-0000-0000-0000-000000000000';
 			if (format === 'email') return 'test@example.com';
@@ -413,11 +410,11 @@ export const generate_valid_value = (field: SchemaFieldInfo, field_schema: AnySc
 		case 'null':
 			return null;
 		case 'void':
-		case 'undefined':
 			return undefined;
 		case 'record':
 			return {};
-		case 'union': {
+		case 'union':
+		case 'variant': {
 			// Pick the first variant and recurse. Picking the first option is a
 			// pragmatic default; consumers needing a specific branch can pass
 			// an override via the relevant test helper.
@@ -434,7 +431,7 @@ export const generate_valid_value = (field: SchemaFieldInfo, field_schema: AnySc
 			const values = to_literal_values(field_schema);
 			return values.length > 0 ? values[0] : 'test_value';
 		}
-		case 'enum': {
+		case 'one_of': {
 			const values = to_literal_values(field_schema);
 			return values.length > 0 ? values[0] : 'test';
 		}
@@ -643,7 +640,7 @@ export const generate_valid_string_param = (
 	field_schema: AnySchema
 ): string | null => {
 	const candidates: Array<string> = [];
-	if (field.base_type === 'uuid' || detect_format(field_schema) === 'uuid') {
+	if (detect_format(field_schema) === 'uuid') {
 		candidates.push(NIL_UUID);
 	}
 	candidates.push('test_value');
@@ -777,7 +774,6 @@ export const resolve_valid_path = (
 		const field_schema = view?.field_schema(name);
 		if (!field_schema) return fallback;
 		if (accepts(field_schema, `test_${name}`)) return fallback;
-		if (to_base_type(field_schema) === 'uuid') return NIL_UUID;
 		const format = detect_format(field_schema);
 		if (format === 'uuid') return NIL_UUID;
 		const generated = generate_valid_string(field_schema);
