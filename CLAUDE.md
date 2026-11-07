@@ -157,14 +157,15 @@ Shared helpers accept small `*Deps` from `runtime/deps.ts` (not `Pick<GodType, .
 - `svelte` (^5), `@sveltejs/kit` (^3)
 - `hono` (>=4) — optional, for the server-side modules (routes, middleware, `create_app_server`)
 - `@fuzdev/fuz_util` (>=0.79.0)
-- `@fuzdev/fuz_schema` (^0.5.5) — every schema fuz_app declares and reads: the primitives of `primitive_schemas.ts`, the auth, action, route, wire, env and testing schemas, and the method enums the action codegen emits (`one_of`); the `Branded` behind fuz_util's `FactHash` and the `Uuid` type (one deduped copy, as `Branded` keys on a unique symbol); and `to_json_schema` (`json_schema.ts`), which writes a schema's JSON Schema for the surface (`schema_to_surface`) and the testing generators
+- `@fuzdev/fuz_schema` (^0.5.6) — every schema fuz_app declares and reads: the primitives of `primitive_schemas.ts`, the auth, action, route, wire, env and testing schemas, and the method enums the action codegen emits (`one_of`); the `Branded` behind fuz_util's `FactHash` and the `Uuid` type (one deduped copy, as `Branded` keys on a unique symbol); and `to_json_schema` (`json_schema.ts`), which writes a schema's JSON Schema for the surface (`schema_to_surface`) and the testing generators
 - `@node-rs/argon2` (>=2) — optional, for `auth/password_argon2`
 - `@fuzdev/blake3-wasm` (>=0.2.0) — imported directly by `db/fact_disk_storage` (the streaming hasher); `auth/session_queries` and `auth/api_token` (session and API token hashes) reach it through `@fuzdev/fuz_util/hash_blake3.ts`
 - `pg` (>=8), `@electric-sql/pglite` (>=0.4) or `@fuzdev/pglet-wasm` (>=0.1.2) — optional, for `db/create_db` (`postgres://`, `file://` and `memory://` respectively); `@fuzdev/pglet-wasm` is also the default test database (`testing/db.ts`'s `create_default_db_factory`)
 - `@hono/node-server` (>=1), `@hono/node-ws` (>=1), `ws` (>=8) — optional, for the Node server adapter + WebSocket transport
 - `@hono/bun` (>=1), `@hono/deno` (>=1) — optional, for the Bun and Deno cross-backend testing server adapters (`testing/cross_backend/testing_server_bun.ts`, `testing/cross_backend/testing_server_deno.ts`)
 - `esm-env` (^1) — optional, for the DEV-only output-validation gate
-- `@fuzdev/fuz_css` (>=0.72.0) — optional, the classes and design tokens the `ui/` components are styled with
+- `@fuzdev/fuz_css` (>=0.75.0) — optional, the classes and design tokens the `ui/` components are styled with
+- `@fuzdev/fuz_ui` (>=0.223.0) — optional, for the `ui/` components and state modules (contexts, `PendingButton`, autofocus, icons)
 
 ## Architecture
 
