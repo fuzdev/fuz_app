@@ -29,7 +29,7 @@
  * 	const popover = new Popover();
  * </script>
  *
- * <div class="position:relative" {@attach popover.container}>
+ * <div class="relative" {@attach popover.container}>
  * 	<button type="button" {@attach popover.trigger({position: 'bottom', align: 'center'})}>
  * 		toggle
  * 	</button>

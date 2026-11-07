@@ -329,7 +329,7 @@
 		{:else}
 			<button
 				type="button"
-				class="app-shell-toggle position:fixed bottom:0 left:0 icon_button plain border-radius:0 border_top_right_radius_sm"
+				class="app-shell-toggle fixed bottom:0 left:0 icon_button plain border-radius:0 border_top_right_radius_sm"
 				aria-label="sidebar"
 				aria-keyshortcuts={keyboard_shortcut || undefined}
 				aria-expanded={sidebar_state.show_sidebar}
