@@ -19,7 +19,6 @@
 
 import type { Context, Handler, Hono, MiddlewareHandler } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
-import type { z } from 'zod';
 import { DEV } from 'esm-env';
 import { is_schema, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 import { get_schema_entries } from '@fuzdev/fuz_schema/introspect.ts';
@@ -70,7 +69,8 @@ import {
 	to_wire_issues,
 	type ValidationInput,
 	type ValidationOutput,
-	type ValidationSchema
+	type ValidationSchema,
+	type ZodObjectLike
 } from '../schema_issues.ts';
 
 /**
@@ -200,13 +200,13 @@ export interface RouteSpec {
 	 * REST-only — actions dispatch through a single JSON-RPC endpoint and encode
 	 * everything in `input`, so `params` doesn't appear on `ActionSpec`.
 	 */
-	params?: z.ZodObject | AnySchema;
+	params?: ZodObjectLike | AnySchema;
 	/**
 	 * URL query parameter schema. Use `z.strictObject()` (or fuz_schema's
 	 * `object`) with string fields; a fuz_schema schema must be an object
 	 * schema, as for `params`.
 	 */
-	query?: z.ZodObject | AnySchema;
+	query?: ZodObjectLike | AnySchema;
 	/** Request body schema. Use `z.null()` (or `literal(null)`) for routes with no body. */
 	input: ValidationSchema;
 	/** Success response body schema. */
@@ -612,7 +612,7 @@ const create_input_validation = (
  * @mutates `c.var.validated_params` - set to the parsed and validated path params on success
  */
 const create_params_validation = (
-	params_schema?: z.ZodObject | AnySchema
+	params_schema?: ZodObjectLike | AnySchema
 ): Array<MiddlewareHandler> => {
 	if (!params_schema) return [];
 
@@ -644,7 +644,7 @@ const create_params_validation = (
  * @mutates `c.var.validated_query` - set to the parsed and validated query params on success
  */
 const create_query_validation = (
-	query_schema?: z.ZodObject | AnySchema
+	query_schema?: ZodObjectLike | AnySchema
 ): Array<MiddlewareHandler> => {
 	if (!query_schema) return [];
 
@@ -980,9 +980,9 @@ const assert_schema_slots = (spec: RouteSpec, route_key: string): void => {
 };
 
 // throws unless a fuz_schema `params` / `query` is an object schema under any
-// wrappers; a Zod one is a `z.ZodObject` by its type
+// wrappers; a Zod one is a `ZodObjectLike` by its type
 const assert_object_slot = (
-	schema: z.ZodObject | AnySchema | undefined,
+	schema: ZodObjectLike | AnySchema | undefined,
 	slot: 'params' | 'query',
 	route_key: string
 ): void => {

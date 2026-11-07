@@ -34,7 +34,7 @@ every required field is spelled — no defaults. `input` / `output` are a
 `ACTION_KINDS`. Three concrete kinds discriminate on `kind`:
 
 - `request_response` — `auth: RouteAuth` (non-null), `side_effects` arbitrary, `output` arbitrary, `async: true`.
-- `remote_notification` — `auth: null`, `side_effects: true`, `output` a void schema (`z.ZodVoid` or fuz_schema's `s.void`), `async: true`.
+- `remote_notification` — `auth: null`, `side_effects: true`, `output` a void schema (`ZodVoidLike` — a `z.void()` by structure — or fuz_schema's `s.void`), `async: true`.
 - `local_call` — `auth: null`, `side_effects` arbitrary, `output` arbitrary, `async` boolean.
 
 `RouteAuth` is the flat record

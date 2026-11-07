@@ -30,7 +30,8 @@ import {
 	assert_zod_schema,
 	issue_is_on_input,
 	type AnyIssue,
-	type ValidationSchema
+	type ValidationSchema,
+	type ZodSchemaLike
 } from './schema_issues.ts';
 
 declare module '@fuzdev/fuz_schema/meta.ts' {
@@ -117,7 +118,10 @@ export interface SchemaFieldMeta {
 export const is_empty_input_handler_guarded = (schema: ValidationSchema): boolean => {
 	if (is_schema(schema)) return get_meta(schema)?.empty_input_handler_guarded === true;
 	assert_zod_schema(schema, 'is_empty_input_handler_guarded: the input');
-	return (schema.meta() as SchemaFieldMeta | undefined)?.empty_input_handler_guarded === true;
+	return (
+		((schema as z.ZodType).meta() as SchemaFieldMeta | undefined)?.empty_input_handler_guarded ===
+		true
+	);
 };
 
 /**
@@ -131,10 +135,10 @@ export const is_empty_input_handler_guarded = (schema: ValidationSchema): boolea
  * @returns the declared value, or `undefined` when no layer declares one
  */
 export const schema_meta_value = <TKey extends keyof SchemaFieldMeta>(
-	schema: z.ZodType,
+	schema: ZodSchemaLike,
 	key: TKey
 ): SchemaFieldMeta[TKey] | undefined => {
-	for (const layer of zod_get_schema_layers(schema)) {
+	for (const layer of zod_get_schema_layers(schema as z.ZodType)) {
 		const value = (layer.meta() as SchemaFieldMeta | undefined)?.[key];
 		if (value !== undefined) return value;
 	}
@@ -148,7 +152,7 @@ export const schema_meta_value = <TKey extends keyof SchemaFieldMeta>(
  * @param schema - a field schema, possibly wrapped
  * @returns the declared reason, or `undefined` when no layer declares one
  */
-export const schema_invalid_reason = (schema: z.ZodType): string | undefined =>
+export const schema_invalid_reason = (schema: ZodSchemaLike): string | undefined =>
 	schema_meta_value(schema, 'invalid_reason');
 
 /**
@@ -226,8 +230,8 @@ const walk_sensitivity = (schema: z.ZodType, structural: boolean): Sensitivity |
  * @param schema - a field schema, possibly wrapped
  * @returns the strongest level any reachable layer declares, else `undefined`
  */
-export const schema_sensitivity = (schema: z.ZodType): Sensitivity | undefined =>
-	walk_sensitivity(schema, false);
+export const schema_sensitivity = (schema: ZodSchemaLike): Sensitivity | undefined =>
+	walk_sensitivity(schema as z.ZodType, false);
 
 /**
  * Whether an input schema carries a sensitive value at any depth — `'secret'`
@@ -254,7 +258,7 @@ export const schema_has_sensitive_field = (schema: ValidationSchema): boolean =>
 		return find_schema_meta(schema, 'sensitivity', { structural: true }).length > 0;
 	}
 	assert_zod_schema(schema, 'schema_has_sensitive_field: the input');
-	return walk_sensitivity(schema, true) !== undefined;
+	return walk_sensitivity(schema as z.ZodType, true) !== undefined;
 };
 
 /**

@@ -12,6 +12,8 @@
 
 import type { z } from 'zod';
 
+import type { SchemaFieldInfo } from './http/schema_helpers.ts';
+
 /**
  * Whether `value` carries the Zod trait `trait` — what Zod's own
  * `instanceof` reads (`value._zod.traits.has(trait)`), so it answers as
@@ -209,33 +211,6 @@ export const zod_unwrap_to_object = (schema: z.ZodType): z.ZodObject | null => {
 };
 
 // --- Field extraction ---
-
-/**
- * What the testing generators read of one field of an object schema, of
- * either library: `zod_extract_fields` reads a `ZodObject`'s, and
- * `to_object_schema_view` (`testing/schema_generators.ts`) a schema's of
- * either library.
- */
-export interface SchemaFieldInfo {
-	/** The field's key. */
-	name: string;
-	/**
-	 * The innermost type's name in Zod's vocabulary (`zod_get_base_type`):
-	 * `'string'`, `'number'`, `'boolean'`, `'array'`, `'object'`, `'null'`,
-	 * `'void'`, `'union'`, `'literal'`, `'enum'`, and so on. A
-	 * `@fuzdev/fuz_schema` field reads its innermost kind, an object of any
-	 * strictness as `'object'`, a `literal(null)` as `'null'`, a
-	 * `literal(undefined)` (`s.void`) as `'void'`, a `one_of` as `'enum'`, and
-	 * a `variant` as `'union'`.
-	 */
-	base_type: string;
-	/** Whether the key must be present: no outermost `.optional()` in Zod, no `optional` layer in fuz_schema. */
-	required: boolean;
-	/** Whether the parse fills the key in when it is missing. */
-	has_default: boolean;
-	/** Whether a wrapping layer accepts `null`. */
-	nullable: boolean;
-}
 
 /**
  * Extract field metadata from a Zod object schema.

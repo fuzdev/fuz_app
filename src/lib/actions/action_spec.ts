@@ -17,12 +17,11 @@
  * @module
  */
 
-import type { z } from 'zod';
 import { one_of, type Infer, type void as fuz_void } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { RateLimitKey } from '../rate_limiter.ts';
 import type { RouteAuth } from '../http/auth_shape.ts';
-import type { ValidationSchema } from '../schema_issues.ts';
+import type { ValidationSchema, ZodVoidLike } from '../schema_issues.ts';
 
 /** The action kinds, in declaration order — what `ActionKind` and `is_action_spec` read. */
 export const ACTION_KINDS = ['request_response', 'remote_notification', 'local_call'] as const;
@@ -112,7 +111,7 @@ export interface RemoteNotificationActionSpec extends ActionSpec {
 	kind: 'remote_notification';
 	auth: null;
 	side_effects: true;
-	output: z.ZodVoid | typeof fuz_void;
+	output: ZodVoidLike | typeof fuz_void;
 	async: true;
 }
 

@@ -97,6 +97,7 @@
  * @module
  */
 
+import type { z } from 'zod';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 import type { Uuid } from '../primitive_schemas.ts';
@@ -389,7 +390,7 @@ const is_secret_field = (schema: ValidationSchema, key: string): boolean => {
 		);
 	}
 	if (!is_zod_schema(schema)) return false;
-	const field = zod_maybe_get_field_schema(schema, key);
+	const field = zod_maybe_get_field_schema(schema as z.ZodType, key);
 	return field !== undefined && schema_sensitivity(field) === 'secret';
 };
 

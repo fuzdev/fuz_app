@@ -9,9 +9,9 @@ import {
 	zod_get_field_schema,
 	zod_unwrap_to_object,
 	zod_extract_fields,
-	type SchemaFieldInfo,
 	zod_has_trait
 } from '#lib/zod.ts';
+import type { SchemaFieldInfo } from '#lib/http/schema_helpers.ts';
 
 /** The `zod_extract_fields` info for a single field, the window onto the module-internal predicates. */
 const field_info = (schema: z.ZodType): SchemaFieldInfo =>

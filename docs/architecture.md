@@ -475,7 +475,7 @@ in handlers), the action dispatchers (`create_rpc_endpoint` and
 (./usage.md §Rate limiters covers defaults and turning them off). Surface
 exposes `rate_limit_key` on `AppSurfaceRpcMethod` for introspection.
 
-`RouteSpec.query?: z.ZodObject | AnySchema` declares an optional query parameter
+`RouteSpec.query?: ZodObjectLike | AnySchema` declares an optional query parameter
 schema, Zod or a fuz_schema object schema. When
 present, `apply_route_specs` adds query validation middleware that parses
 `c.req.query()` against the schema and returns 400 (`ERROR_INVALID_QUERY_PARAMS`)

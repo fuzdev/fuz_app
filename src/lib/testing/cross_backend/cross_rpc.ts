@@ -14,12 +14,11 @@ import '../assert_dev_env.ts';
  */
 
 import { assert } from 'vitest';
-import type { z } from 'zod';
 import type { Schema } from '@fuzdev/fuz_schema/schema.ts';
 
 import { create_rpc_post_init } from '../rpc_helpers.ts';
 import type { FetchTransport } from '../transports/fetch_transport.ts';
-import { parse_any } from '../../schema_issues.ts';
+import { parse_any, type ZodSchemaLike } from '../../schema_issues.ts';
 
 /** Minimal JSON-RPC envelope shape the suites read off responses. */
 export interface RpcResult {
@@ -87,7 +86,7 @@ export const error_reason = (r: RpcResult): unknown =>
  * output schema, Zod or `@fuzdev/fuz_schema` — the wire-shape parity gate.
  * Returns the parsed output.
  */
-export const expect_output = <T>(r: RpcResult, schema: z.ZodType<T> | Schema<T, any>): T => {
+export const expect_output = <T>(r: RpcResult, schema: ZodSchemaLike<T> | Schema<T, any>): T => {
 	assert.ok(r.ok, `expected success, got ${JSON.stringify(r.error)}`);
 	const parsed = parse_any(schema, r.result);
 	assert.ok(

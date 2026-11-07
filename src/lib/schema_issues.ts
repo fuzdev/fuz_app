@@ -31,8 +31,72 @@ import type { Result } from '@fuzdev/fuz_util/result.ts';
 
 import { zod_has_trait } from './zod.ts';
 
+/**
+ * What a Zod 4 schema carries on `_zod`, read structurally: the fields
+ * `z.output` and `z.input` read (`output`, `input`), the definition's `type`,
+ * and the traits `zod_has_trait` reads. Every Zod schema has them, so the
+ * dual layer names a Zod schema in its signatures without naming the `zod`
+ * module, and an app without Zod installed typechecks against them.
+ */
+export interface ZodSchemaLikeInternals<TOutput = unknown, TInput = unknown> {
+	/** The output type, what `z.output` reads. */
+	readonly output: TOutput;
+	/** The input type, what `z.input` reads. */
+	readonly input: TInput;
+	/** The schema's definition; `type` names its kind (`'object'`, `'void'`, …). */
+	readonly def: { readonly type: string };
+	/** The names of the schema's classes, what `zod_has_trait` reads. */
+	readonly traits: ReadonlySet<string>;
+}
+
+/**
+ * A Zod 4 schema, by its `_zod` internals alone (`ZodSchemaLikeInternals`) —
+ * `z.ZodType<TOutput, TInput>` as the dual layer's signatures name it. A
+ * schema's output and input types are read from `_zod` exactly as `z.output`
+ * and `z.input` read them, so a signature taking `ZodSchemaLike<T>` infers
+ * `T` from a Zod schema as one taking `z.ZodType<T>` does, and references no
+ * Zod type. A value narrowed to it carries no Zod methods: code that calls
+ * them reads it as `z.ZodType`.
+ *
+ * The classic API only, as `is_zod_schema` accepts: the `optional` member is
+ * one a classic schema has and a `zod/mini` schema lacks (`safeParse` is on
+ * both), so a `zod/mini` schema fails to typecheck here rather than at
+ * registration.
+ */
+export interface ZodSchemaLike<TOutput = unknown, TInput = unknown> {
+	readonly _zod: ZodSchemaLikeInternals<TOutput, TInput>;
+	/** Present on every classic schema, absent from `zod/mini`; the schema's wrapper is never read. */
+	optional(): unknown;
+}
+
+/** A Zod object schema (`z.object`, `z.strictObject`, `z.looseObject`), by its definition's `type`. */
+export interface ZodObjectLike extends ZodSchemaLike {
+	readonly _zod: ZodSchemaLikeInternals & { readonly def: { readonly type: 'object' } };
+}
+
+/** A Zod void schema (`z.void()`), by its definition's `type`. */
+export interface ZodVoidLike extends ZodSchemaLike<void, void> {
+	readonly _zod: ZodSchemaLikeInternals<void, void> & { readonly def: { readonly type: 'void' } };
+}
+
+/**
+ * A Zod issue (`z.core.$ZodIssue`), by the fields every one of its kinds
+ * carries: a `code`, where a `@fuzdev/fuz_schema` issue has a `kind`.
+ */
+export interface ZodIssueLike {
+	readonly code: string;
+	readonly path: ReadonlyArray<PropertyKey>;
+	readonly message: string;
+	readonly input?: unknown;
+}
+
+/** A thrown Zod validation failure (`z.ZodError`), by its issues. */
+export interface ZodErrorLike extends Error {
+	readonly issues: ReadonlyArray<ZodIssueLike>;
+}
+
 /** A schema of either library: a Zod schema or a `@fuzdev/fuz_schema` one. */
-export type ValidationSchema = z.ZodType | AnySchema;
+export type ValidationSchema = ZodSchemaLike | AnySchema;
 
 /**
  * Whether `value` is a Zod schema of the classic API, as `z.ZodType`'s
@@ -41,7 +105,7 @@ export type ValidationSchema = z.ZodType | AnySchema;
  *
  * @param value - any value
  */
-export const is_zod_schema = (value: unknown): value is z.ZodType =>
+export const is_zod_schema = (value: unknown): value is ZodSchemaLike =>
 	zod_has_trait(value, 'ZodType');
 
 /**
@@ -54,7 +118,7 @@ export const is_zod_schema = (value: unknown): value is z.ZodType =>
  * @param label - names the schema in the error, e.g. `` `action 'foo' input` ``
  * @throws Error when `value` is not a Zod schema, saying it is of neither library
  */
-export function assert_zod_schema(value: unknown, label: string): asserts value is z.ZodType {
+export function assert_zod_schema(value: unknown, label: string): asserts value is ZodSchemaLike {
 	if (is_zod_schema(value)) return;
 	throw new Error(`${label} is neither a Zod schema nor a @fuzdev/fuz_schema schema`);
 }
@@ -84,19 +148,19 @@ export function assert_validation_schema(
  */
 export type ValidationOutput<T extends ValidationSchema> = T extends Schema
 	? Infer<T>
-	: T extends z.ZodType
-		? z.output<T>
+	: T extends ZodSchemaLike
+		? T['_zod']['output']
 		: never;
 
 /** The input type of a `ValidationSchema`: fuz_schema's `InferInput` or Zod's `z.input`. */
 export type ValidationInput<T extends ValidationSchema> = T extends Schema
 	? InferInput<T>
-	: T extends z.ZodType
-		? z.input<T>
+	: T extends ZodSchemaLike
+		? T['_zod']['input']
 		: never;
 
 /** One issue of a failed parse, in the library's own shape. */
-export type AnyIssue = z.core.$ZodIssue | SchemaIssue;
+export type AnyIssue = ZodIssueLike | SchemaIssue;
 
 /** What `parse_any` returns: the output, or the failed parse's issues in the library's order. */
 export type ParseAnyResult<T> = Result<{ value: T }, { issues: Array<AnyIssue> }>;
@@ -124,7 +188,7 @@ export const parse_any = <T extends ValidationSchema>(
 			: { ok: false, issues: result.issues };
 	}
 	assert_zod_schema(schema, 'parse_any: the schema');
-	const result = schema.safeParse(value);
+	const result = (schema as z.ZodType).safeParse(value);
 	return result.success
 		? { ok: true, value: result.data as ValidationOutput<T> }
 		: { ok: false, issues: result.error.issues };
@@ -133,7 +197,7 @@ export const parse_any = <T extends ValidationSchema>(
 /**
  * Whether `issue` is Zod's: every Zod issue has a `code`, a fuz_schema issue a `kind`.
  */
-export const is_zod_issue = (issue: AnyIssue): issue is z.core.$ZodIssue => 'code' in issue;
+export const is_zod_issue = (issue: AnyIssue): issue is ZodIssueLike => 'code' in issue;
 
 /**
  * Whether `issue` sits on the input itself rather than on one of its fields:
@@ -183,8 +247,9 @@ export const unknown_key_targets = (
 	const targets: Array<UnknownKeyTarget> = [];
 	for (const issue of issues) {
 		if (is_zod_issue(issue)) {
-			if (issue.code !== 'unrecognized_keys') return null;
-			targets.push({ path: issue.path, keys: issue.keys });
+			const zod_issue = issue as z.core.$ZodIssue;
+			if (zod_issue.code !== 'unrecognized_keys') return null;
+			targets.push({ path: zod_issue.path, keys: zod_issue.keys });
 		} else {
 			if (issue.kind !== 'unknown_key' || issue.path.length === 0) return null;
 			targets.push({ path: issue.path.slice(0, -1), keys: [issue.path.at(-1)!] });
@@ -242,7 +307,7 @@ export const format_issues = (issues: ReadonlyArray<AnyIssue>): string => {
  *
  * @param err - a caught value
  */
-export const is_schema_validation_error = (err: unknown): err is z.ZodError | SchemaError =>
+export const is_schema_validation_error = (err: unknown): err is ZodErrorLike | SchemaError =>
 	zod_has_trait(err, 'ZodError') || err instanceof SchemaError;
 
 /**
@@ -319,7 +384,7 @@ export const to_wire_issues = (
 	const wire: Array<WireIssue> = [];
 	for (const issue of issues) {
 		if (is_zod_issue(issue)) {
-			push_zod_wire_issues(wire, issue, input);
+			push_zod_wire_issues(wire, issue as z.core.$ZodIssue, input);
 		} else {
 			wire.push({
 				kind: issue.kind,

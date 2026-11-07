@@ -24,11 +24,10 @@ import {
 	zod_unwrap_def,
 	zod_get_base_type,
 	zod_unwrap_to_object,
-	zod_extract_fields,
-	type SchemaFieldInfo
+	zod_extract_fields
 } from '../zod.ts';
 
-import { is_null_schema, is_void_schema } from '../http/schema_helpers.ts';
+import { is_null_schema, is_void_schema, type SchemaFieldInfo } from '../http/schema_helpers.ts';
 import {
 	compile_route_param_pattern,
 	decode_route_path,
@@ -282,7 +281,7 @@ const to_object_view = (schema: ValidationSchema, label: string): ObjectSchemaVi
 		};
 	}
 	assert_zod_schema(schema, label);
-	const object_schema = zod_unwrap_to_object(schema);
+	const object_schema = zod_unwrap_to_object(schema as z.ZodType);
 	if (!object_schema) return null;
 	const shape = object_schema.shape as Record<string, z.ZodType>;
 	return {

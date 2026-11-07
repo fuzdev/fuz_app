@@ -89,6 +89,9 @@
     },
     "ws": {
       "optional": true
+    },
+    "zod": {
+      "optional": true
     }
   },
   "devDependencies": {

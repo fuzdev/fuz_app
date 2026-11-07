@@ -22,7 +22,8 @@ import {
 	generate_valid_value,
 	to_object_schema_view
 } from '#lib/testing/schema_generators.ts';
-import { zod_extract_fields, zod_unwrap_to_object, type SchemaFieldInfo } from '#lib/zod.ts';
+import { zod_extract_fields, zod_unwrap_to_object } from '#lib/zod.ts';
+import type { SchemaFieldInfo } from '#lib/http/schema_helpers.ts';
 import { create_spine_live_rpc_endpoints } from '#lib/testing/cross_backend/full_spine_mount.ts';
 import { parse_any, type ValidationSchema } from '#lib/schema_issues.ts';
 

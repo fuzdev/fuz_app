@@ -11,7 +11,6 @@ import './assert_dev_env.ts';
  */
 
 import { assert } from 'vitest';
-import type { z } from 'zod';
 import { is, parse, type Schema } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
@@ -31,7 +30,12 @@ import type { AppServerContext } from '../server/app_server_context.ts';
 import type { SessionOptions } from '../auth/session_cookie.ts';
 import { create_stub_app_server_context } from './stubs.ts';
 import { TEST_ORIGIN } from './test_origin.ts';
-import { parse_any, type ValidationOutput, type ValidationSchema } from '../schema_issues.ts';
+import {
+	parse_any,
+	type ValidationOutput,
+	type ValidationSchema,
+	type ZodSchemaLike
+} from '../schema_issues.ts';
 
 /**
  * Union accepted by the suite-level `rpc_endpoints` option — eager array or
@@ -538,7 +542,7 @@ export const rpc_call_for_spec = async <TSpec extends RequestResponseActionSpec>
  */
 export const rpc_call_typed = async <T>(
 	args: RpcCallArgs,
-	output_schema: z.ZodType<T> | Schema<T, any>
+	output_schema: ZodSchemaLike<T> | Schema<T, any>
 ): Promise<T> => {
 	const res = await rpc_call(args);
 	if (!res.ok) {
