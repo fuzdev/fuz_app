@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/BTZoVLbz.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CAODFmXb.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.D-mjUu9n.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.ChSj2V2Y.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.BhXi0qpx.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.CRpewyaa.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BcwQFYZ2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/C3BYcZ2u.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CE-egMPB.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/DQRixExC.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.D7FqKTTi.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/3x3h2t4G.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.CY0J4Fol.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BL7ZH9U-.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DhdQKFKC.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -310,7 +310,7 @@ runs, and removes each through the remover <!--]--><!--[3--><!--[0--><!--[--><!-
 assembly fails or the server closes. Consumers can also register
 listeners directly on the emitter they return from <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->audit_factory<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> for
 setups that don't pass through <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/server/app_server.ts#create_app_server"><!--[0--><!--[-1-->create_app_server<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/auth/audit_log_ddl.ts"><!--[-1-->auth/audit_log_ddl.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Audit log DDL — <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->CREATE TABLE<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> + index statements for the <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->audit_log<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> table.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Consumed by <!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/auth/migrations.ts"><!--[0--><!--[-1-->auth/migrations.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->. Separated from <!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/auth/audit_log_schema.ts"><!--[0--><!--[-1-->auth/audit_log_schema.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->
-so the schema module stays Zod-only (paired with <!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/auth/auth_ddl.ts"><!--[0--><!--[-1-->auth/auth_ddl.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> and
+so the schema module holds schemas only (paired with <!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/auth/auth_ddl.ts"><!--[0--><!--[-1-->auth/auth_ddl.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> and
 <!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/auth/role_grant_offer_ddl.ts"><!--[0--><!--[-1-->auth/role_grant_offer_ddl.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->).<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Multi-actor invariants the envelope columns assume:<!--]--><!--]--><!----></p><!--]--><!--[9--><!--[-1--><ul><!--[--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->actor_id<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> + <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->account_id<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, when both populated, refer to the same
 account (derivable via <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->actor.account_id<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->). Denormalized for indexed
 audit queries; do not let them disagree.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->target_actor_id<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> + <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->target_account_id<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, same rule when both populated.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->target_account_id<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> is the SSE/WS socket-close key — sessions stay
@@ -347,7 +347,7 @@ security monitoring and operational visibility.<!--]--><!--]--><!----></p><!--]-
 core auth tables (account, actor, role_grant, auth_session, api_token,
 bootstrap_lock, invite, app_settings).<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Consumed by <!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/auth/migrations.ts"><!--[0--><!--[-1-->auth/migrations.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->. Paired with <!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/auth/audit_log_ddl.ts"><!--[0--><!--[-1-->auth/audit_log_ddl.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->
 (audit table) and <!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/auth/role_grant_offer_ddl.ts"><!--[0--><!--[-1-->auth/role_grant_offer_ddl.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> (offer table) — DDL lives
-in <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->*_ddl.ts<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, Zod schemas in <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->*_schema.ts<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->These strings are the body of the frozen <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->full_auth_schema<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> migration —
+in <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->*_ddl.ts<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, schemas in <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->*_schema.ts<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->These strings are the body of the frozen <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->full_auth_schema<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> migration —
 never edit them (see the <!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/auth/migrations.ts"><!--[0--><!--[-1-->auth/migrations.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> module doc for the
 silent-outage rationale). Schema changes ship as new appended migrations,
 so a column retired later still appears below (created by v0, dropped
@@ -868,7 +868,7 @@ grant also closes the revokee's connections gated on the role through
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->deps.connection_closer<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, after the commit.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/auth/role_grant_offer_ddl.ts"><!--[-1-->auth/role_grant_offer_ddl.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Role grant offer DDL — <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->CREATE TABLE<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> + index statements, the index-side
 sentinel constants the queries / migrations interpolate, and the table's
 <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/role_grant_offer_ddl.ts#ROLE_GRANT_OFFER_COLUMNS"><!--[0--><!--[-1-->ROLE_GRANT_OFFER_COLUMNS<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> projection const.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Separated from <!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/auth/role_grant_offer_schema.ts"><!--[0--><!--[-1-->auth/role_grant_offer_schema.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> so the schema module stays
-Zod-only (paired with <!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/auth/auth_ddl.ts"><!--[0--><!--[-1-->auth/auth_ddl.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> and <!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/auth/audit_log_ddl.ts"><!--[0--><!--[-1-->auth/audit_log_ddl.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->).<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->An offer is a pending grant awaiting recipient consent. Lifecycle states
+schemas only (paired with <!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/auth/auth_ddl.ts"><!--[0--><!--[-1-->auth/auth_ddl.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> and <!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/auth/audit_log_ddl.ts"><!--[0--><!--[-1-->auth/audit_log_ddl.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->).<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->An offer is a pending grant awaiting recipient consent. Lifecycle states
 are mutually exclusive via a CHECK constraint (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role_grant_offer_single_terminal<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->):
 at most one of <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->accepted_at<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> / <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->declined_at<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> / <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->retracted_at<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> may be set.
 On accept, the offer's <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->resulting_role_grant_id<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> links to the role_grant row
@@ -956,7 +956,7 @@ the eligible set are rejected with <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role_not_self_service_eligible<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Audit metadata carries <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->self_service: true<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> so admin reviewers can
 distinguish self-toggled role_grants from admin grants/offers. The
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role_grant_create<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> / <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role_grant_revoke<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> metadata schemas declare
-<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->self_service: z.boolean().optional()<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> explicitly, so the field is
+<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->self_service: optional(boolean)<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> explicitly, so the field is
 part of the documented schema surface and is round-trip-validated by
 <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/audit_log_queries.ts#query_audit_log"><!--[0--><!--[-1-->query_audit_log<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Static method name — <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> lives in the input, not the method name —
 so the spec is codegen-compatible (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->satisfies RequestResponseActionSpec<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->)
@@ -1025,16 +1025,16 @@ the reads that answer it as anonymous and the server status read.<!--]--><!--]--
 			
 			<script>
 				{
-					__sveltekit_16u9wu = {
+					__sveltekit_1kw9fyl = {
 						base: "",
-						version: "1320003f0147c4ffd153b7c30bf0d798074f739c"
+						version: "0a9d654304e622a3df8f349800bf34e049d0512f"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.CXlCZqzx.js").then(async (kit) => {
-						kit.init(__sveltekit_16u9wu);
-						const app = await import("/_app/immutable/entry/app.D-mjUu9n.js");
+						kit.init(__sveltekit_1kw9fyl);
+						const app = await import("/_app/immutable/entry/app.BhXi0qpx.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],
