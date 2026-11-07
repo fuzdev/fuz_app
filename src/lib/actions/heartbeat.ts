@@ -11,7 +11,7 @@
  * dispatcher tracks receive time, so incoming heartbeats keep the socket
  * alive without any handler-level state.
  *
- * Parameterless: the input is `z.void()`, so absent, `null`, and `{}` params
+ * Parameterless: the input is `void`, so absent, `null`, and `{}` params
  * are all the no-arg call (`to_void_params`) and anything else is refused —
  * the same shapes the Rust spine's heartbeat admits via
  * `require_void_params`. The output is an empty object. `{client_ts,
@@ -22,7 +22,7 @@
  * @module
  */
 
-import { z } from 'zod';
+import { object, void as fuz_void } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { RequestResponseActionSpec } from './action_spec.ts';
 import type { Action } from './action_types.ts';
@@ -39,8 +39,8 @@ export const heartbeat_action_spec = {
 	initiator: 'frontend',
 	auth: { account: 'required', actor: 'none' },
 	side_effects: false,
-	input: z.void(),
-	output: z.strictObject({}),
+	input: fuz_void,
+	output: object({}),
 	async: true,
 	description: 'Shared activity ping — keeps the socket alive and exercises the dispatch path.'
 } satisfies RequestResponseActionSpec;

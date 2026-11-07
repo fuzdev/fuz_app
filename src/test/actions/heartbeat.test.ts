@@ -11,6 +11,7 @@
 
 import { assert, describe, test } from 'vitest';
 import { z } from 'zod';
+import { is } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import {
@@ -32,10 +33,10 @@ describe('heartbeat_action', () => {
 	test('input is parameterless: empty shapes are the no-arg call, anything else is refused', () => {
 		const { input } = heartbeat_action_spec;
 		for (const params of [undefined, null, {}]) {
-			assert.ok(input.safeParse(to_input_params(input, params)).success, JSON.stringify(params));
+			assert.ok(is(input, to_input_params(input, params)), JSON.stringify(params));
 		}
 		for (const params of [{ stray: 1 }, [], 0]) {
-			assert.ok(!input.safeParse(to_input_params(input, params)).success, JSON.stringify(params));
+			assert.ok(!is(input, to_input_params(input, params)), JSON.stringify(params));
 		}
 	});
 

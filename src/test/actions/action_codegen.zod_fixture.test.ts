@@ -110,7 +110,7 @@ test("fuz_app's own list differs from the fixture only in its fuz_schema methods
 		'cell_audit_list'
 	];
 	// the protocol methods, in `protocol_action_specs`' order
-	const protocol: ReadonlyArray<string> = ['cancel'];
+	const protocol: ReadonlyArray<string> = ['heartbeat', 'cancel', 'peer/ping'];
 	assert.deepStrictEqual(fuz_schema_input_methods, [
 		...admin_inputs,
 		...offers,
@@ -172,7 +172,13 @@ test('the Zod stand-ins give codegen the answers the fuz_schema methods give', (
 	// the void stand-in is reached
 	assert.deepStrictEqual(
 		fuz_schema_input_methods.filter((method) => is_void_schema(own_input(method).input)),
-		['account_verify', 'account_session_list', 'account_session_revoke_all', 'account_token_list']
+		[
+			'account_verify',
+			'account_session_list',
+			'account_session_revoke_all',
+			'account_token_list',
+			'heartbeat'
+		]
 	);
 	// the defaulted stand-in is reached: the defaulted inputs take `undefined`
 	assert.deepStrictEqual(
@@ -190,7 +196,8 @@ test('the Zod stand-ins give codegen the answers the fuz_schema methods give', (
 			'app_settings_get',
 			'role_grant_offer_list',
 			'role_grant_offer_history',
-			'cell_list'
+			'cell_list',
+			'peer/ping'
 		]
 	);
 });

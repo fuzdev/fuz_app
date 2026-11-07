@@ -1185,10 +1185,9 @@ describe('generate_frontend_actions_api', () => {
 		const result = generate_frontend_actions_api(fixture_specs, imports, {
 			include_protocol_actions: true
 		});
-		// heartbeat's input is `z.strictObject({})` (empty object) — `safeParse({})`
-		// succeeds, so the emitted parameter is `input?:`. The protocol-action
-		// fixture is the canonical "no meaningful input" case, exactly the kind
-		// of all-optional shape the probe relaxation targets.
+		// heartbeat's input is `void`, which takes `undefined`, so the emitted
+		// parameter is `input?:` — the protocol-action fixture's canonical "no
+		// meaningful input" case
 		assert.ok(
 			result.includes(
 				"heartbeat: (input?: ActionInputs['heartbeat'], options?: RpcClientCallOptions)"

@@ -35,7 +35,17 @@
  * @module
  */
 
-import { z } from 'zod';
+import {
+	min_value,
+	number,
+	object,
+	optional,
+	parse,
+	pipe,
+	safe_integer,
+	with_default,
+	type Infer
+} from '@fuzdev/fuz_schema/schema.ts';
 
 import { ThrownJsonrpcError, JSONRPC_ERROR_CODES } from '../http/jsonrpc_errors.ts';
 import { safe_parse_dropping_unknown_keys } from '../http/schema_helpers.ts';
@@ -75,32 +85,35 @@ export const REASON_PEER_PING_NONCE_MISMATCH = 'peer_ping_nonce_mismatch';
  * (mirrors the Rust `PingActionInput`): `nonce` defaults to a server-issued
  * value, `timeout_ms` to `DEFAULT_PEER_REQUEST_TIMEOUT` (clamped shorten-only).
  */
-export const PingActionInput = z
-	.strictObject({
-		nonce: z.number().int().optional(),
-		timeout_ms: z.number().int().positive().optional()
-	})
-	// `.default({})` so omitting `params` entirely (undefined) is accepted — both
-	// fields are optional, so an empty invocation is valid (server-issued nonce,
-	// default timeout). Mirrors `heartbeat`'s nullary `.default({})`.
-	.default({});
-export type PingActionInput = z.infer<typeof PingActionInput>;
+export const PingActionInput = with_default(
+	object({
+		nonce: optional(pipe(number, safe_integer)),
+		timeout_ms: optional(pipe(number, safe_integer, min_value(1)))
+	}),
+	// the default reads an omitted input (`undefined`) as `{}`: both fields are
+	// optional, so an empty invocation is valid (server-issued nonce, default
+	// timeout). The server reads absent `params` as `{}` before the schema; the
+	// client's pre-send parse of `app.api['peer/ping']()` reaches the default.
+	// One shared `{}`, which nothing writes to
+	{}
+);
+export type PingActionInput = Infer<typeof PingActionInput>;
 
 /** Params of the server→client `peer/ping` request frame. Twin of the Rust `PingRequest`. */
-export const PingRequestParams = z.strictObject({
-	nonce: z.number().int()
+export const PingRequestParams = object({
+	nonce: pipe(number, safe_integer)
 });
-export type PingRequestParams = z.infer<typeof PingRequestParams>;
+export type PingRequestParams = Infer<typeof PingRequestParams>;
 
 /**
  * The client's reply shape — also the action's output (the handler returns the
  * validated echo). Twin of the Rust `PingResponse`.
  */
-export const PingResponse = z.strictObject({
-	nonce: z.number().int(),
-	protocol_version: z.number().int()
+export const PingResponse = object({
+	nonce: pipe(number, safe_integer),
+	protocol_version: pipe(number, safe_integer)
 });
-export type PingResponse = z.infer<typeof PingResponse>;
+export type PingResponse = Infer<typeof PingResponse>;
 
 /**
  * `ActionSpec` for the shared `peer/ping`. `initiator: 'both'` (the
@@ -225,8 +238,8 @@ export const peer_ping_handler = async (
  * @returns the `PingResponse` echo to send back as the reply's `result`
  */
 export const peer_ping_responder = (params: unknown): PingResponse => {
-	const parsed = PingRequestParams.safeParse(params);
-	return { nonce: parsed.success ? parsed.data.nonce : 0, protocol_version: PEER_PROTOCOL_VERSION };
+	const parsed = parse(PingRequestParams, params);
+	return { nonce: parsed.ok ? parsed.value.nonce : 0, protocol_version: PEER_PROTOCOL_VERSION };
 };
 
 /**
