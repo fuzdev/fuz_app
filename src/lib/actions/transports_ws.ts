@@ -40,8 +40,7 @@ import type {
 	JsonrpcRequestId,
 	JsonrpcResponseOrError,
 	JsonrpcErrorObject,
-	JsonrpcErrorResponse,
-	JsonrpcResult
+	JsonrpcErrorResponse
 } from '../http/jsonrpc.ts';
 import {
 	DEFAULT_WS_MAX_MESSAGE_BYTES,
@@ -279,7 +278,7 @@ export class FrontendWebsocketTransport implements Transport {
 					queue
 				});
 				// any JSON value is a valid result — `null`, primitives, and arrays pass through
-				return create_jsonrpc_response(message.id, result as JsonrpcResult);
+				return create_jsonrpc_response(message.id, result);
 			} catch (error) {
 				const thrown = to_thrown_jsonrpc_error(error);
 				if (thrown) return create_jsonrpc_error_response(message.id, thrown);

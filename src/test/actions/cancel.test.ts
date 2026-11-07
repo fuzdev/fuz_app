@@ -13,6 +13,7 @@
 
 import { assert, describe, test } from 'vitest';
 import { z } from 'zod';
+import { is } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import {
@@ -32,13 +33,10 @@ describe('cancel_action', () => {
 	});
 
 	test('CancelNotificationParams accepts numeric and string ids; rejects extras and missing', () => {
-		assert.strictEqual(CancelNotificationParams.safeParse({ request_id: 1 }).success, true);
-		assert.strictEqual(CancelNotificationParams.safeParse({ request_id: 'abc' }).success, true);
-		assert.strictEqual(CancelNotificationParams.safeParse({}).success, false);
-		assert.strictEqual(
-			CancelNotificationParams.safeParse({ request_id: 1, stray: 1 }).success,
-			false
-		);
+		assert.strictEqual(is(CancelNotificationParams, { request_id: 1 }), true);
+		assert.strictEqual(is(CancelNotificationParams, { request_id: 'abc' }), true);
+		assert.strictEqual(is(CancelNotificationParams, {}), false);
+		assert.strictEqual(is(CancelNotificationParams, { request_id: 1, stray: 1 }), false);
 	});
 
 	test('composable tuple carries the spec and no handler (dispatcher owns cancel)', () => {

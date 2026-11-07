@@ -28,6 +28,7 @@ import './assert_dev_env.ts';
  */
 
 import { describe, test, beforeAll, assert } from 'vitest';
+import { is, parse } from '@fuzdev/fuz_schema/schema.ts';
 
 import { ROLE_ADMIN } from '../auth/role_schema.ts';
 import {
@@ -183,13 +184,13 @@ export const assert_rpc_authenticated = (
 	principal: AuthPrincipal
 ): void => {
 	if (principal === 'public') return;
-	const parsed = JsonrpcErrorResponse.safeParse(body);
-	const data = parsed.success ? parsed.data.error.data : undefined;
+	const parsed = parse(JsonrpcErrorResponse, body);
+	const data = parsed.ok ? parsed.value.error.data : undefined;
 	const reason =
 		data !== null && typeof data === 'object' ? (data as { reason?: unknown }).reason : undefined;
 	if (!is_unauthenticated_refusal(status, reason)) return;
-	const detail = parsed.success
-		? `code ${parsed.data.error.code}, message ${JSON.stringify(parsed.data.error.message)}${
+	const detail = parsed.ok
+		? `code ${parsed.value.error.code}, message ${JSON.stringify(parsed.value.error.message)}${
 				data === undefined ? '' : `, data ${JSON.stringify(data)}`
 			}`
 		: `body ${typeof body === 'string' ? body.slice(0, 500) : JSON.stringify(body).slice(0, 500)}`;
@@ -214,8 +215,7 @@ export const assert_rpc_authenticated = (
  * round-trip outcome.
  */
 const assert_method_implemented = (method: string, body: unknown): void => {
-	const parsed = JsonrpcErrorResponse.safeParse(body);
-	if (parsed.success && parsed.data.error.code === JSONRPC_METHOD_NOT_FOUND) {
+	if (is(JsonrpcErrorResponse, body) && body.error.code === JSONRPC_METHOD_NOT_FOUND) {
 		assert.fail(
 			`method '${method}' is registered on the local surface but the backend` +
 				` returned method-not-found — backend is missing this method (parity gap)`
@@ -270,14 +270,14 @@ const assert_not_crash = (
 	body: unknown,
 	expected: 'refusal' | 'success'
 ): void => {
-	const parsed = JsonrpcErrorResponse.safeParse(body);
-	const code = parsed.success ? parsed.data.error.code : null;
-	const crashed = parsed.success
+	const parsed = parse(JsonrpcErrorResponse, body);
+	const code = parsed.ok ? parsed.value.error.code : null;
+	const crashed = parsed.ok
 		? status === INTERNAL_ERROR_HTTP_STATUS || code === JSONRPC_INTERNAL_ERROR
 		: status >= 500;
 	if (!crashed) return;
-	const message = parsed.success
-		? parsed.data.error.message
+	const message = parsed.ok
+		? parsed.value.error.message
 		: typeof body === 'string'
 			? body.slice(0, 500)
 			: JSON.stringify(body).slice(0, 500);

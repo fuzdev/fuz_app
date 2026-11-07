@@ -185,7 +185,7 @@ const answer_request = async (
 			? // Test wire-frames keep `code` a plain `number` (not the branded
 				// Zod `JsonrpcServerErrorCode`), so cast at the builder boundary.
 				create_jsonrpc_error_response(request.id, outcome.error as never)
-			: create_jsonrpc_response(request.id, outcome.result as never)
+			: create_jsonrpc_response(request.id, outcome.result)
 	);
 };
 

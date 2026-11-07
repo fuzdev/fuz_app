@@ -17,8 +17,8 @@
  * @module
  */
 
-import { z } from 'zod';
-import type { void as fuz_void } from '@fuzdev/fuz_schema/schema.ts';
+import type { z } from 'zod';
+import { one_of, type Infer, type void as fuz_void } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { RateLimitKey } from '../rate_limiter.ts';
 import type { RouteAuth } from '../http/auth_shape.ts';
@@ -26,13 +26,13 @@ import type { ValidationSchema } from '../schema_issues.ts';
 
 /** The action kinds, in declaration order — what `ActionKind` and `is_action_spec` read. */
 export const ACTION_KINDS = ['request_response', 'remote_notification', 'local_call'] as const;
-export const ActionKind = z.enum(ACTION_KINDS);
-export type ActionKind = z.infer<typeof ActionKind>;
+export const ActionKind = one_of(ACTION_KINDS);
+export type ActionKind = Infer<typeof ActionKind>;
 
 /** Which side initiates an action — what `ActionInitiator` reads. */
 export const ACTION_INITIATORS = ['frontend', 'backend', 'both'] as const;
-export const ActionInitiator = z.enum(ACTION_INITIATORS);
-export type ActionInitiator = z.infer<typeof ActionInitiator>;
+export const ActionInitiator = one_of(ACTION_INITIATORS);
+export type ActionInitiator = Infer<typeof ActionInitiator>;
 
 /** The fields every action spec carries; each kind narrows some of them. */
 export interface ActionSpec {
@@ -149,5 +149,5 @@ export const ACTION_EVENT_PHASES = [
 	'receive',
 	'execute'
 ] as const;
-export const ActionEventPhase = z.enum(ACTION_EVENT_PHASES);
-export type ActionEventPhase = z.infer<typeof ActionEventPhase>;
+export const ActionEventPhase = one_of(ACTION_EVENT_PHASES);
+export type ActionEventPhase = Infer<typeof ActionEventPhase>;

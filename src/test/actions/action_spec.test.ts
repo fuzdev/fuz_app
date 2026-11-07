@@ -10,6 +10,7 @@
 import { describe, assert, test, expectTypeOf } from 'vitest';
 import { z } from 'zod';
 import {
+	is,
 	number,
 	object,
 	optional,
@@ -43,41 +44,41 @@ import type { Uuid } from '#lib/primitive_schemas.ts';
 
 describe('ActionKind', () => {
 	test('accepts valid kinds', () => {
-		assert.ok(ActionKind.safeParse('request_response').success);
-		assert.ok(ActionKind.safeParse('remote_notification').success);
-		assert.ok(ActionKind.safeParse('local_call').success);
+		assert.ok(is(ActionKind, 'request_response'));
+		assert.ok(is(ActionKind, 'remote_notification'));
+		assert.ok(is(ActionKind, 'local_call'));
 	});
 
 	test('rejects invalid kind', () => {
-		assert.ok(!ActionKind.safeParse('unknown').success);
+		assert.ok(!is(ActionKind, 'unknown'));
 	});
 
 	test('is built from ACTION_KINDS', () => {
-		assert.deepStrictEqual(ActionKind.options, [...ACTION_KINDS]);
+		assert.deepStrictEqual(ActionKind.def, [...ACTION_KINDS]);
 	});
 });
 
 describe('ActionInitiator', () => {
 	test('accepts valid initiators', () => {
-		assert.ok(ActionInitiator.safeParse('frontend').success);
-		assert.ok(ActionInitiator.safeParse('backend').success);
-		assert.ok(ActionInitiator.safeParse('both').success);
+		assert.ok(is(ActionInitiator, 'frontend'));
+		assert.ok(is(ActionInitiator, 'backend'));
+		assert.ok(is(ActionInitiator, 'both'));
 	});
 
 	test('rejects invalid initiator', () => {
-		assert.ok(!ActionInitiator.safeParse('server').success);
+		assert.ok(!is(ActionInitiator, 'server'));
 	});
 
 	test('is built from ACTION_INITIATORS', () => {
-		assert.deepStrictEqual(ActionInitiator.options, [...ACTION_INITIATORS]);
+		assert.deepStrictEqual(ActionInitiator.def, [...ACTION_INITIATORS]);
 	});
 });
 
 describe('ActionEventPhase', () => {
 	test('is built from ACTION_EVENT_PHASES', () => {
-		assert.deepStrictEqual(ActionEventPhase.options, [...ACTION_EVENT_PHASES]);
-		assert.ok(ActionEventPhase.safeParse('execute').success);
-		assert.ok(!ActionEventPhase.safeParse('unknown').success);
+		assert.deepStrictEqual(ActionEventPhase.def, [...ACTION_EVENT_PHASES]);
+		assert.ok(is(ActionEventPhase, 'execute'));
+		assert.ok(!is(ActionEventPhase, 'unknown'));
 	});
 });
 

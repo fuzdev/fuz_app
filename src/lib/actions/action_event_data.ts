@@ -8,7 +8,7 @@
  * @module
  */
 
-import { z } from 'zod';
+import { nullable, object, string, unknown, type Infer } from '@fuzdev/fuz_schema/schema.ts';
 
 import { ActionEventPhase, ActionKind } from './action_spec.ts';
 import {
@@ -20,22 +20,22 @@ import {
 import { ActionExecutor, ActionEventStep } from './action_event_types.ts';
 
 // Base schema for all action event data
-export const ActionEventData = z.strictObject({
+export const ActionEventData = object({
 	kind: ActionKind,
 	phase: ActionEventPhase,
 	step: ActionEventStep,
-	method: z.string(),
+	method: string,
 	executor: ActionExecutor,
-	input: z.unknown().nullable(),
-	output: z.unknown().nullable(),
-	error: JsonrpcErrorObject.nullable(),
-	progress: z.unknown().nullable(),
+	input: nullable(unknown),
+	output: nullable(unknown),
+	error: nullable(JsonrpcErrorObject),
+	progress: nullable(unknown),
 	// Fields for specific kinds - always present but may be null
-	request: JsonrpcRequest.nullable(),
-	response: JsonrpcResponseOrError.nullable(),
-	notification: JsonrpcNotification.nullable()
+	request: nullable(JsonrpcRequest),
+	response: nullable(JsonrpcResponseOrError),
+	notification: nullable(JsonrpcNotification)
 });
-export type ActionEventData = z.infer<typeof ActionEventData>;
+export type ActionEventData = Infer<typeof ActionEventData>;
 
 // Discriminated union types for narrowing
 export type ActionEventRequestResponseData<

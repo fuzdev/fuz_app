@@ -27,7 +27,7 @@
  * @module
  */
 
-import { z } from 'zod';
+import { object, void as fuz_void, type Infer } from '@fuzdev/fuz_schema/schema.ts';
 
 import { JsonrpcRequestId } from '../http/jsonrpc.ts';
 import type { RemoteNotificationActionSpec } from './action_spec.ts';
@@ -38,10 +38,10 @@ import type { Action } from './action_types.ts';
  * pending request to abort. Must match the id of a request sent on the
  * same socket; cancels from other sockets (or for unknown ids) are ignored.
  */
-export const CancelNotificationParams = z.strictObject({
+export const CancelNotificationParams = object({
 	request_id: JsonrpcRequestId
 });
-export type CancelNotificationParams = z.infer<typeof CancelNotificationParams>;
+export type CancelNotificationParams = Infer<typeof CancelNotificationParams>;
 
 /**
  * `ActionSpec` for the shared cancel. `auth: null` matches every other
@@ -58,7 +58,7 @@ export const cancel_action_spec = {
 	auth: null,
 	side_effects: true,
 	input: CancelNotificationParams,
-	output: z.void(),
+	output: fuz_void,
 	async: true,
 	description:
 		'Client-initiated cancellation of an in-flight request by id. Dispatcher-handled: aborts the ctx.signal of the matching pending request on the same socket. Unknown or completed ids no-op.'

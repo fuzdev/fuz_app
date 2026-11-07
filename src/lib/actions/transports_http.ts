@@ -6,6 +6,7 @@
  */
 
 import { DEV } from 'esm-env';
+import { parse } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	to_thrown_jsonrpc_error,
@@ -262,9 +263,9 @@ const to_error_response_for = (
 	body: unknown,
 	id: JsonrpcRequestId | null
 ): JsonrpcErrorResponse | null => {
-	const parsed = JsonrpcErrorResponse.safeParse(body);
-	if (!parsed.success) return null;
-	const response = parsed.data;
+	const parsed = parse(JsonrpcErrorResponse, body);
+	if (!parsed.ok) return null;
+	const response = parsed.value;
 	if (response.id !== null && String(response.id) !== String(id)) return null;
 	return response;
 };

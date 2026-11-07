@@ -5,6 +5,7 @@
  */
 
 import { describe, assert, test } from 'vitest';
+import { is } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	is_jsonrpc_error_code,
@@ -426,6 +427,8 @@ describe('is_jsonrpc_error_code', () => {
 			-32100,
 			-31999,
 			-32604,
+			-32000.5,
+			-32050.5,
 			0,
 			20,
 			23,
@@ -436,16 +439,13 @@ describe('is_jsonrpc_error_code', () => {
 			null,
 			undefined
 		]) {
-			assert.strictEqual(
-				is_jsonrpc_error_code(value),
-				JsonrpcErrorCode.safeParse(value).success,
-				String(value)
-			);
+			assert.strictEqual(is_jsonrpc_error_code(value), is(JsonrpcErrorCode, value), String(value));
 		}
 	});
 
 	test('refuses a fractional code in the server range, which JSON-RPC forbids', () => {
 		assert.isFalse(is_jsonrpc_error_code(-32000.5));
+		assert.isFalse(is(JsonrpcErrorCode, -32000.5));
 	});
 });
 

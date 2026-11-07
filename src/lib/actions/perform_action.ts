@@ -588,7 +588,7 @@ const perform_action_result_to_envelope = (
 	result: PerformActionResult
 ): JsonrpcResponse | JsonrpcErrorResponse =>
 	result.kind === 'ok'
-		? create_jsonrpc_response(id, result.result as JsonrpcResponse['result'])
+		? create_jsonrpc_response(id, result.result)
 		: create_jsonrpc_error_response(id, result.error);
 
 /** A `PerformActionResult` serialized for the wire: the JSON body and its HTTP status. */

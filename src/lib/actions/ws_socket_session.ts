@@ -111,6 +111,7 @@
 import type { WSContext, WSEvents } from 'hono/ws';
 import type { Logger as LoggerType } from '@fuzdev/fuz_util/log.ts';
 import { UnreachableError } from '@fuzdev/fuz_util/error.ts';
+import { parse } from '@fuzdev/fuz_schema/schema.ts';
 import type { Uuid } from '../primitive_schemas.ts';
 
 import type { RequestContext } from '../auth/request_context.ts';
@@ -800,16 +801,16 @@ export const create_ws_socket_events = (
 				// notification handlers are not a feature yet). Notifications
 				// stay unvalidated — they carry no id to answer an error on.
 				if (classified.method === cancel_action_spec.method) {
-					const parsed = CancelNotificationParams.safeParse(classified.params);
-					if (!parsed.success) {
-						log.debug('cancel: invalid params, ignoring', parsed.error.issues);
+					const parsed = parse(CancelNotificationParams, classified.params);
+					if (!parsed.ok) {
+						log.debug('cancel: invalid params, ignoring', parsed.issues);
 						return;
 					}
-					const controller = pending_controllers.get(parsed.data.request_id);
+					const controller = pending_controllers.get(parsed.value.request_id);
 					if (controller) {
 						controller.abort();
 					} else {
-						log.debug('cancel: no pending request for id', parsed.data.request_id);
+						log.debug('cancel: no pending request for id', parsed.value.request_id);
 					}
 				}
 				return;

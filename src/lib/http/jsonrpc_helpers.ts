@@ -9,6 +9,7 @@
  */
 
 import { DEV } from 'esm-env';
+import { is, parse } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	JsonrpcRequest,
@@ -261,18 +262,17 @@ export const classify_jsonrpc_message = (json: unknown): ClassifiedJsonrpcMessag
 	} else if (!('id' in frame)) {
 		return { kind: 'notification', method, params: frame.params };
 	}
-	const parsed = JsonrpcRequest.safeParse(frame);
-	if (!parsed.success) {
-		return {
-			kind: 'invalid',
-			id,
-			error: jsonrpc_error_messages.invalid_request(
-				dev_only(() => ({ issues: to_wire_issues(parsed.error.issues, frame) }))
-			)
-		};
-	}
-	// the frame itself, validated — not Zod's rebuilt copy, which drops an own
-	// `__proto__` key from `params`, so `{"__proto__": …}` would reach the
-	// action as `{}` and pass a void or strict input the Rust twin refuses
-	return { kind: 'request', request: frame as JsonrpcRequest };
+	// once per request: `is` allocates no result, and the issues are built
+	// only for a refused envelope, only in DEV
+	if (is(JsonrpcRequest, frame)) return { kind: 'request', request: frame };
+	return {
+		kind: 'invalid',
+		id,
+		error: jsonrpc_error_messages.invalid_request(
+			dev_only(() => {
+				const parsed = parse(JsonrpcRequest, frame);
+				return { issues: parsed.ok ? [] : to_wire_issues(parsed.issues, frame) };
+			})
+		)
+	};
 };

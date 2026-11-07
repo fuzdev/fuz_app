@@ -8,8 +8,8 @@
  */
 
 import {
-	JsonrpcMessageFromClientToServer,
-	JsonrpcMessageFromServerToClient,
+	type JsonrpcMessageFromClientToServer,
+	type JsonrpcMessageFromServerToClient,
 	JsonrpcNotification,
 	JsonrpcRequest,
 	JsonrpcResponseOrError,

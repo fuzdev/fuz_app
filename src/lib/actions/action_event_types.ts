@@ -4,16 +4,16 @@
  * @module
  */
 
-import { z } from 'zod';
+import { one_of, type Infer } from '@fuzdev/fuz_schema/schema.ts';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import type { ActionEventPhase, ActionKind, ActionSpecUnion } from './action_spec.ts';
 
-export const ActionExecutor = z.enum(['frontend', 'backend']);
-export type ActionExecutor = z.infer<typeof ActionExecutor>;
+export const ActionExecutor = one_of(['frontend', 'backend']);
+export type ActionExecutor = Infer<typeof ActionExecutor>;
 
-export const ActionEventStep = z.enum(['initial', 'parsed', 'handling', 'handled', 'failed']);
-export type ActionEventStep = z.infer<typeof ActionEventStep>;
+export const ActionEventStep = one_of(['initial', 'parsed', 'handling', 'handled', 'failed']);
+export type ActionEventStep = Infer<typeof ActionEventStep>;
 
 // The constants below use `Record<K, V> = {...}` rather than
 // `as const satisfies Record<K, V>`. The typed annotation gives full

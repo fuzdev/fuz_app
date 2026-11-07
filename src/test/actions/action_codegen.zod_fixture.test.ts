@@ -6,8 +6,8 @@
  * output alone, so the fixture never changes for an all-Zod list.
  *
  * fuz_app's own list, whose account, `self_service_role_set`,
- * `actor_lookup`, `actor_search`, admin, role_grant_offer, and cell methods are
- * `@fuzdev/fuz_schema`, generates the same text but for those types, read by `Infer`, and the
+ * `actor_lookup`, `actor_search`, admin, role_grant_offer, cell, and protocol
+ * methods are `@fuzdev/fuz_schema`, generates the same text but for those types, read by `Infer`, and the
  * `Infer` import. The all-Zod list holds Zod stand-ins for those schemas,
  * which give codegen the answers their own do.
  *
@@ -17,7 +17,10 @@
 import { assert, test } from 'vitest';
 import { readFileSync } from 'node:fs';
 
-import { action_input_is_optional } from '#lib/actions/action_codegen.ts';
+import {
+	action_input_is_optional,
+	is_protocol_action_method
+} from '#lib/actions/action_codegen.ts';
 import { is_null_schema, is_void_schema } from '#lib/http/schema_helpers.ts';
 
 import {
@@ -106,36 +109,45 @@ test("fuz_app's own list differs from the fixture only in its fuz_schema methods
 		'cell_item_list',
 		'cell_audit_list'
 	];
+	// the protocol methods, in `protocol_action_specs`' order
+	const protocol: ReadonlyArray<string> = ['cancel'];
 	assert.deepStrictEqual(fuz_schema_input_methods, [
 		...admin_inputs,
 		...offers,
 		...fully,
-		...cells
+		...cells,
+		...protocol
 	]);
 	assert.deepStrictEqual(fuz_schema_output_methods, [
 		...admin_inputs,
 		...offers,
 		...fully,
-		...cells
+		...cells,
+		...protocol
 	]);
 	const changed = actual.filter((line) => line.includes(': Infer<'));
+	// a method's property key and spec identifier, as codegen writes them
+	const to_key = (method: string): string =>
+		/^[A-Za-z_$][\w$]*$/.test(method) ? method : `'${method}'`;
+	const to_spec = (method: string): string => `${method.replaceAll('/', '_')}_action_spec`;
 	// each method's input and output, in the plain inputs-outputs block, the
-	// protocol-including one, and the qualified one
-	const typed = (ns: string, kind: 'input' | 'output'): Array<string> =>
-		(kind === 'input' ? fuz_schema_input_methods : fuz_schema_output_methods).map(
-			(method) => `\t${method}: Infer<typeof ${ns}.${method}_action_spec.${kind}>;`
-		);
+	// protocol-including one, and the qualified one; the protocol methods only
+	// in the protocol-including one
+	const typed = (ns: string, kind: 'input' | 'output', with_protocol = false): Array<string> =>
+		(kind === 'input' ? fuz_schema_input_methods : fuz_schema_output_methods)
+			.filter((method) => with_protocol || !is_protocol_action_method(method))
+			.map((method) => `\t${to_key(method)}: Infer<typeof ${ns}.${to_spec(method)}.${kind}>;`);
 	assert.deepStrictEqual(changed, [
 		...typed('specs', 'input'),
 		...typed('specs', 'output'),
-		...typed('specs', 'input'),
-		...typed('specs', 'output'),
+		...typed('specs', 'input', true),
+		...typed('specs', 'output', true),
 		...typed('fixture_specs', 'input'),
 		...typed('fixture_specs', 'output')
 	]);
 	let restored = actual.filter((line) => line !== INFER_IMPORT).join('\n');
 	for (const method of new Set([...fuz_schema_input_methods, ...fuz_schema_output_methods])) {
-		restored = restored.replaceAll(`${method}: Infer<`, `${method}: z.infer<`);
+		restored = restored.replaceAll(`${to_key(method)}: Infer<`, `${to_key(method)}: z.infer<`);
 	}
 	assert.strictEqual(restored, expected);
 });

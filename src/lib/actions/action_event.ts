@@ -39,8 +39,7 @@ import type {
 	JsonrpcRequest,
 	JsonrpcResponseOrError,
 	JsonrpcNotification,
-	JsonrpcErrorObject,
-	JsonrpcResult
+	JsonrpcErrorObject
 } from '../http/jsonrpc.ts';
 import type { ActionEventEnvironment, ActionEventStep } from './action_event_types.ts';
 import type { ActionEventData, ActionEventDataUnion } from './action_event_data.ts';
@@ -570,10 +569,7 @@ export class ActionEvent<
 
 		// any JSON value is a valid result; `undefined` (a handler that returned
 		// nothing) has no JSON form, so it goes out as `null`
-		return create_jsonrpc_response(
-			this.#data.request.id,
-			(this.#data.output ?? null) as JsonrpcResult
-		);
+		return create_jsonrpc_response(this.#data.request.id, this.#data.output ?? null);
 	}
 }
 

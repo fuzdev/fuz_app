@@ -5,6 +5,7 @@
  */
 
 import { describe, assert, test } from 'vitest';
+import { is } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	ActionExecutor,
@@ -16,22 +17,22 @@ import {
 
 describe('ActionExecutor', () => {
 	test('accepts frontend', () => {
-		assert.ok(ActionExecutor.safeParse('frontend').success);
+		assert.ok(is(ActionExecutor, 'frontend'));
 	});
 
 	test('accepts backend', () => {
-		assert.ok(ActionExecutor.safeParse('backend').success);
+		assert.ok(is(ActionExecutor, 'backend'));
 	});
 
 	test('rejects invalid values', () => {
-		assert.ok(!ActionExecutor.safeParse('other').success);
+		assert.ok(!is(ActionExecutor, 'other'));
 	});
 });
 
 describe('ActionEventStep', () => {
 	test('accepts all valid steps', () => {
 		for (const step of ['initial', 'parsed', 'handling', 'handled', 'failed']) {
-			assert.ok(ActionEventStep.safeParse(step).success);
+			assert.ok(is(ActionEventStep, step));
 		}
 	});
 });

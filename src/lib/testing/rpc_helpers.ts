@@ -12,7 +12,7 @@ import './assert_dev_env.ts';
 
 import { assert } from 'vitest';
 import { z } from 'zod';
-import type { Schema } from '@fuzdev/fuz_schema/schema.ts';
+import { is, parse, type Schema } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	JSONRPC_VERSION,
@@ -176,13 +176,13 @@ export const assert_jsonrpc_error_response = (
 	body: unknown,
 	expected_code?: JsonrpcErrorCode
 ): void => {
-	const result = JsonrpcErrorResponse.safeParse(body);
-	assert.ok(result.success, `not a valid JSON-RPC error response: ${JSON.stringify(body)}`);
+	const result = parse(JsonrpcErrorResponse, body);
+	assert.ok(result.ok, `not a valid JSON-RPC error response: ${JSON.stringify(body)}`);
 	if (expected_code !== undefined) {
 		assert.strictEqual(
-			result.data.error.code,
+			result.value.error.code,
 			expected_code,
-			`expected error code ${expected_code}, got ${result.data.error.code}`
+			`expected error code ${expected_code}, got ${result.value.error.code}`
 		);
 	}
 };
@@ -200,10 +200,10 @@ export const assert_jsonrpc_success_response = (
 	body: unknown,
 	output_schema?: ValidationSchema
 ): void => {
-	const result = JsonrpcResponse.safeParse(body);
-	assert.ok(result.success, `not a valid JSON-RPC success response: ${JSON.stringify(body)}`);
+	const result = parse(JsonrpcResponse, body);
+	assert.ok(result.ok, `not a valid JSON-RPC success response: ${JSON.stringify(body)}`);
 	if (output_schema) {
-		const output_result = parse_any(output_schema, result.data.result);
+		const output_result = parse_any(output_schema, result.value.result);
 		if (!output_result.ok) {
 			assert.fail(
 				`JSON-RPC result does not match output schema: ${JSON.stringify(output_result.issues)}`
@@ -407,20 +407,18 @@ export const rpc_call_raw = async (args: RpcCallArgs): Promise<RpcCallRawResult>
  */
 export const parse_rpc_call_result = (raw: RpcCallRawResult, method: string): RpcCallResult => {
 	const { status, headers, body } = raw;
-	const success = JsonrpcResponse.safeParse(body);
-	if (success.success) {
-		return { ok: true, status, headers, result: success.data.result };
+	if (is(JsonrpcResponse, body)) {
+		return { ok: true, status, headers, result: body.result };
 	}
-	const error = JsonrpcErrorResponse.safeParse(body);
-	if (error.success) {
+	if (is(JsonrpcErrorResponse, body)) {
 		return {
 			ok: false,
 			status,
 			headers,
 			error: {
-				code: error.data.error.code,
-				message: error.data.error.message,
-				data: error.data.error.data
+				code: body.error.code,
+				message: body.error.message,
+				data: body.error.data
 			}
 		};
 	}
