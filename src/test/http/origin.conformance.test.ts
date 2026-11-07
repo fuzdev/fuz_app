@@ -44,8 +44,8 @@ describe('origin conformance table', () => {
 		}
 	});
 
-	test('every match row names a valid allowlist', () => {
-		for (const row of table.match) {
+	test('every match and host row names a valid allowlist', () => {
+		for (const row of [...table.match, ...table.host]) {
 			assert.ok(parse_allowed_origins(row.patterns).ok, row.patterns);
 		}
 	});
@@ -55,6 +55,8 @@ describe('origin conformance table', () => {
 		assert.strictEqual(new Set(raws).size, raws.length, 'duplicate parse row');
 		const pairs = table.match.map((row) => JSON.stringify([row.patterns, row.origin]));
 		assert.strictEqual(new Set(pairs).size, pairs.length, 'duplicate match row');
+		const hosts = table.host.map((row) => JSON.stringify([row.patterns, row.hosts]));
+		assert.strictEqual(new Set(hosts).size, hosts.length, 'duplicate host row');
 	});
 
 	test('every refusal kind has a message', () => {

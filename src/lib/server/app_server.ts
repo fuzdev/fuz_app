@@ -80,6 +80,7 @@ import { fuz_auth_guard_resolver } from '../auth/auth_guard_resolver.ts';
 import { create_fuz_authorization_handler } from '../auth/request_context.ts';
 import { create_body_limit_middleware_spec } from '../http/body_limit.ts';
 import { admit_origin_wildcards, ALLOWED_ORIGINS_VAR } from '../http/origin_wildcard.ts';
+import { create_host_gate_middleware_spec } from '../http/host.ts';
 import { create_rpc_endpoint } from '../actions/action_rpc.ts';
 import { register_action_ws } from '../actions/register_action_ws.ts';
 import {
@@ -165,6 +166,16 @@ export interface AppServerOptions {
 	 * on any other matcher, flag or not. Defaults to `false`.
 	 */
 	allow_origin_wildcards?: boolean;
+	/**
+	 * Mount the `Host` check (`http/host.ts`), the DNS-rebinding gate, on every
+	 * path ahead of the origin check: a request whose `Host` is neither a
+	 * loopback name nor a host `allowed_origins` names is refused `403`
+	 * `forbidden_host`, and logged at `warn` (rate-limited). Defaults to `true`;
+	 * `false` is for a server reached by names its allowlist doesn't hold, which
+	 * then accepts the rebinding exposure. Twin of the Rust spine's
+	 * `StackOptions::host_gate`.
+	 */
+	host_gate?: boolean;
 	/**
 	 * Paths the origin check skips, each with its reason. The check covers
 	 * every path by default (`ORIGIN_MIDDLEWARE_PATH`) — a request with no
@@ -867,9 +878,12 @@ const assemble_app_server = async (
 				'(an empty list refuses every browser request)'
 		);
 	}
+	const host_gate = options.host_gate ?? true;
 	const wildcards = admit_origin_wildcards(
 		options.allowed_origins,
-		options.allow_origin_wildcards ?? false
+		options.allow_origin_wildcards ?? false,
+		ALLOWED_ORIGINS_VAR,
+		{ host_gate }
 	);
 	if (!wildcards.ok) throw new Error(`create_app_server: ${wildcards.message}`);
 	for (const { entry, warning } of wildcards.wildcards) {
@@ -920,6 +934,11 @@ const assemble_app_server = async (
 		releases.push(deps.audit.add_listener(audit_sse.on_audit_event));
 	}
 
+	// Host gate — ahead of everything but the body cap, as on the Rust stack
+	const host_spec: MiddlewareSpec | null = host_gate
+		? create_host_gate_middleware_spec({ allowed_origins: options.allowed_origins, log })
+		: null;
+
 	// Proxy middleware
 	const proxy_spec = create_proxy_middleware_spec({ ...options.proxy, log });
 
@@ -930,7 +949,11 @@ const assemble_app_server = async (
 		daemon_token_state: options.daemon_token_state,
 		origin_carve_outs: options.origin_carve_outs
 	});
-	const stack_specs: Array<MiddlewareSpec> = [proxy_spec, ...auth_middleware];
+	const stack_specs: Array<MiddlewareSpec> = [
+		...(host_spec ? [host_spec] : []),
+		proxy_spec,
+		...auth_middleware
+	];
 	let middleware_specs = stack_specs;
 	if (options.transform_middleware) {
 		// the transform gets copies in a fresh array, so mutating what it was
@@ -1100,10 +1123,12 @@ const assemble_app_server = async (
 			// that took the server list was checked above)
 			if (endpoint.allowed_origins !== options.allowed_origins) {
 				const label = `ws_endpoints allowed_origins for ${endpoint.path}`;
+				// the host gate reads the server list, not this one
 				const endpoint_wildcards = admit_origin_wildcards(
 					endpoint.allowed_origins,
 					options.allow_origin_wildcards ?? false,
-					label
+					label,
+					{ host_gate: false }
 				);
 				if (!endpoint_wildcards.ok) {
 					throw new Error(`create_app_server: ${endpoint_wildcards.message}`);

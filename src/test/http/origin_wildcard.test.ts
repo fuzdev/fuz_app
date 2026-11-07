@@ -1,7 +1,8 @@
 /**
  * Tests for `http/origin_wildcard.ts` — the wildcard shapes classify as the
  * Rust spine's `OriginPattern::wildcard_kind` does (its table, ported), the
- * text is the Rust `origin_wildcard_warning` with no host gate and no note,
+ * text is the Rust `origin_wildcard_warning` with no note, with and without the
+ * host gate's sentence,
  * and `admit_origin_wildcards` refuses or admits as its Rust twin does.
  *
  * @module
@@ -30,7 +31,7 @@ const pattern = (entry: string): OriginPattern => {
 };
 
 const warning = (entry: string): string => {
-	const text = origin_wildcard_warning(pattern(entry));
+	const text = origin_wildcard_warning(pattern(entry), { host_gate: false });
 	assert.ok(text, `${entry} warns`);
 	return text;
 };
@@ -95,6 +96,23 @@ describe('origin_wildcard_warning', () => {
 				'is same-site with the host you log in at carries the session cookie, and with it ' +
 				'can call the API and open the WebSocket. Name exact origins unless every such page ' +
 				'is trusted'
+		);
+	});
+
+	test('the host gate adds its sentence, as the Rust spine words it', () => {
+		assert.strictEqual(
+			origin_wildcard_warning(pattern('http://localhost:*')),
+			'port wildcard: a page served from ANY port on `localhost` is an allowed origin. The ' +
+				'server trusts every such page: one that is same-site with the host you log in at ' +
+				'carries the session cookie, and with it can call the API and open the WebSocket. ' +
+				'The `Host` check answers to localhost at any port too. Name exact origins unless ' +
+				'every such page is trusted'
+		);
+		const host_text = origin_wildcard_warning(pattern('https://*.example.com'));
+		assert.include(
+			host_text,
+			'WebSocket. The `Host` check answers to the same hosts, on either scheme, so a page ' +
+				'that re-points a matching domain at this machine (DNS rebinding) passes it. Name'
 		);
 	});
 
@@ -182,9 +200,16 @@ describe('admit_origin_wildcards', () => {
 	test('a wildcard is admitted with the opt-in, with what each admits', () => {
 		const result = admit_origin_wildcards(parse(MIXED).origins, true);
 		assert.ok(result.ok);
+		// the host gate is on by default, so its sentence is in the text
 		assert.deepStrictEqual(result.wildcards, [
-			{ entry: 'http://localhost:*', warning: warning('http://localhost:*') },
-			{ entry: 'https://*.example.com', warning: warning('https://*.example.com') }
+			{
+				entry: 'http://localhost:*',
+				warning: origin_wildcard_warning(pattern('http://localhost:*'))
+			},
+			{
+				entry: 'https://*.example.com',
+				warning: origin_wildcard_warning(pattern('https://*.example.com'))
+			}
 		]);
 	});
 

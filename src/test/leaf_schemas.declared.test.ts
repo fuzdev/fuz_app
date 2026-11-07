@@ -39,6 +39,7 @@ import {
 import {
 	OriginConformance,
 	OriginConformanceError,
+	OriginConformanceHostRow,
 	OriginConformanceMatchRow,
 	OriginConformanceParseRow
 } from '#lib/testing/cross_backend/origin_conformance.ts';
@@ -177,12 +178,21 @@ const SAMPLES: Array<[name: string, schema: AnySchema, samples: ReadonlyArray<un
 		[{ patterns: 'http://a', origin: null, allowed: true, note: 'n' }]
 	],
 	[
+		'OriginConformanceHostRow',
+		OriginConformanceHostRow,
+		[
+			{ patterns: 'http://a', hosts: [], allowed: true },
+			{ patterns: 'http://a', hosts: ['a', 'b'], allowed: false, note: 'n' }
+		]
+	],
+	[
 		'OriginConformance',
 		OriginConformance,
 		[
 			{
 				parse: [{ raw: 'http://a', ok: true }],
-				match: [{ patterns: 'http://a', origin: 'http://a', allowed: true }]
+				match: [{ patterns: 'http://a', origin: 'http://a', allowed: true }],
+				host: [{ patterns: 'http://a', hosts: ['a'], allowed: true }]
 			}
 		]
 	]

@@ -120,10 +120,9 @@ export const ERROR_INVALID_CONTENT_LENGTH = 'invalid_content_length' as const;
 export const ERROR_FORBIDDEN_ORIGIN = 'forbidden_origin' as const;
 
 /**
- * The request's `Host` names a host the server doesn't answer to — the Rust
- * spine's DNS-rebinding gate (`host_gate`), its `FORBIDDEN_HOST_REASON`. The
- * TS spine has no host gate; a surface describing a Rust server that mounts
- * one declares it.
+ * The request's `Host` names a host the server doesn't answer to — the
+ * DNS-rebinding gate (`http/host.ts`, the Rust spine's `host_gate`, its
+ * `FORBIDDEN_HOST_REASON`).
  */
 export const ERROR_FORBIDDEN_HOST = 'forbidden_host' as const;
 
@@ -543,7 +542,7 @@ export const REST_TOKEN_SCOPE_REQUIRED = rest_error(403, ERROR_TOKEN_SCOPE_REQUI
 });
 // 403: the origin check, bootstrap, signup
 export const REST_FORBIDDEN_ORIGIN = rest_error(403, ERROR_FORBIDDEN_ORIGIN);
-// 403: the Rust spine's host gate
+// 403: the host gate
 export const REST_FORBIDDEN_HOST = rest_error(403, ERROR_FORBIDDEN_HOST);
 export const REST_ALREADY_BOOTSTRAPPED = rest_error(403, ERROR_ALREADY_BOOTSTRAPPED);
 export const REST_NO_MATCHING_INVITE = rest_error(403, ERROR_NO_MATCHING_INVITE);

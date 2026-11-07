@@ -238,7 +238,7 @@ describe('a failed assembly releases what it acquired', () => {
 		);
 		assert.deepStrictEqual(warnings, [
 			'ws_endpoints allowed_origins for /api/ws_own: ' +
-				`${wildcard_text('http://localhost:*')} (origin http://localhost:*)`
+				`${wildcard_text('http://localhost:*', false)} (origin http://localhost:*)`
 		]);
 	});
 
@@ -560,10 +560,10 @@ const parse_origins = (raw: string): Array<RegExp> => {
 };
 
 /** The wildcard text for `entry`, as `admit_origin_wildcards` renders it. */
-const wildcard_text = (entry: string): string => {
+const wildcard_text = (entry: string, host_gate = true): string => {
 	const result = parse_allowed_origins(entry);
 	if (!result.ok || !result.patterns[0]) throw new Error(entry);
-	const text = origin_wildcard_warning(result.patterns[0]);
+	const text = origin_wildcard_warning(result.patterns[0], { host_gate });
 	if (text === null) throw new Error(entry);
 	return text;
 };

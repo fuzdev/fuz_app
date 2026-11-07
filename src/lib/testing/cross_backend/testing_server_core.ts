@@ -180,7 +180,7 @@ export interface StartTestingServerOptions {
  * interface IP — e.g. `--host 192.168.1.50` — would otherwise slip through.
  * Covers `localhost`, the IPv4 loopback `127.0.0.0/8`, and IPv6 `::1`.
  */
-export const is_loopback_host = (host: string): boolean => {
+export const is_loopback_bind_host = (host: string): boolean => {
 	const h = host.replace(/^\[(.*)\]$/, '$1'); // unwrap an `[::1]`-style IPv6 literal
 	return h === 'localhost' || h === '::1' || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h);
 };
@@ -193,14 +193,14 @@ export const is_loopback_host = (host: string): boolean => {
  * caller's no-domain (or domain) `StartTestingServerOptions.build_app`
  * and the runtime boundary is the `TestingServerAdapter`. Refuses any
  * non-loopback bind host (the test binary must stay on loopback — see
- * `is_loopback_host`).
+ * `is_loopback_bind_host`).
  */
 export const start_testing_server = async (options: StartTestingServerOptions): Promise<void> => {
 	const { adapter, daemon_name, host, port, app_version, build_app } = options;
 	const log = options.log ?? new Logger(`[${daemon_name}]`);
 	const { runtime } = adapter;
 
-	if (!is_loopback_host(host)) {
+	if (!is_loopback_bind_host(host)) {
 		log.error(
 			`FATAL: binding to '${host}' exposes the test binary (which ships deterministic ` +
 				`dev secrets) beyond loopback. Use --host localhost (default), 127.0.0.1, or ::1 instead.`

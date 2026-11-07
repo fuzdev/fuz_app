@@ -452,7 +452,9 @@ describe('create_test_app_surface_spec — auth scope', () => {
 				create_health_route_spec(),
 				{ ...create_health_route_spec(), path: '/hooks/push' }
 			],
-			origin_carve_outs: [{ path: '/hooks/*', reason: 'refuses browser callers itself' }]
+			origin_carve_outs: [{ path: '/hooks/*', reason: 'refuses browser callers itself' }],
+			// the host gate's 403 would cover every route
+			host_gate: false
 		});
 		const origin = spec.surface.middleware.find((m) => m.name === 'origin')!;
 		assert.deepStrictEqual(origin.carve_outs, [

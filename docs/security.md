@@ -2255,6 +2255,33 @@ guard for symmetry — they are loopback-only and never legitimately carry an
 `Origin`, so a header-bearing daemon token is dropped (and the request falls
 through to `credential_type_required` downstream rather than a hard fail).
 
+## DNS Rebinding (Host Gate)
+
+A page on an attacker's domain can re-resolve that domain to `127.0.0.1` and
+talk to a local server same-origin: its GETs carry no `Origin`, so the origin
+check never sees them. The `Host` header still names the attacker's domain.
+
+The host gate (`http/host.ts`, the Rust spine's `fuz_http::host`) refuses a
+request whose `Host` is neither a loopback name (`localhost`, `127.0.0.0/8`,
+`[::1]`, any port) nor a host an `FUZ_ALLOWED_ORIGINS` entry names, with 403
+`{"error": "forbidden_host"}`. A request with no `Host` passes (no browser
+sends one); one with two is refused. It runs on every path, after the body
+cap and ahead of the origin check, and is **on by default** on both spines —
+`host_gate: false` (`AppServerOptions`, `StackOptions`, `BrowserGateSpec`)
+turns it off for a server reached by names its allowlist doesn't hold.
+
+The allowlist doubles as the server's names, so a deploy lists the origin it
+is served from (zap's `FUZ_ALLOWED_ORIGINS=https://{{domain}}`), and nginx must
+forward `Host $host`. A name the list misses — a LAN IP, a second domain, a
+container name a health check uses — gets the 403, browser or not (`curl` and
+`git` send `Host` too); add its origin to the list.
+
+A refusal is logged at `warn`, at most once per minute: the refused `Host`,
+quoted ASCII-only and truncated, the env var to add it to, and the count of
+refusals held back since the last line. The response carries neither, so a
+client learns nothing about the allowlist, and a flood of foreign names
+writes one line a minute and holds no per-host state.
+
 ## External Bearer Auth Is Enabled
 
 External traffic reaches the API over **both** cookie and bearer auth. The

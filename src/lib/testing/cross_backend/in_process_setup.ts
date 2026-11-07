@@ -255,7 +255,7 @@ export interface DefaultInProcessSuiteOptions {
  * factory input the Tier 1 suites read at their top level
  * (`session_options`, `create_route_specs`, `rpc_endpoints`), and the
  * integration suite's `base_url` (`null`, no socket) and `max_body_bytes`
- * (`app_options.max_body_size`) — so the call site spreads once and adds
+ * (`app_options.max_body_size`, `app_options.host_gate`) — so the call site spreads once and adds
  * only suite-specific extras (`roles`, `skip_routes`, `input_overrides`,
  * `db_factories`, ...).
  *
@@ -317,6 +317,7 @@ export const default_in_process_suite_options = <const O extends DefaultInProces
 			bootstrap: options.bootstrap,
 			surface_route: options.app_options?.surface_route,
 			max_body_size: options.app_options?.max_body_size,
+			host_gate: options.app_options?.host_gate,
 			origin_carve_outs: options.app_options?.origin_carve_outs,
 			// `create_test_app` always passes a `daemon_token_state`
 			daemon_token: true

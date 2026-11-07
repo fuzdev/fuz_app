@@ -34,9 +34,10 @@ const health_probes = (
 	}).map((p) => `${p.expected.status} ${p.expected.code} ${p.content_length}`);
 };
 
-test('probes the origin check and the default limit when nothing is configured', () => {
+test('probes the host gate, the origin check and the default limit when nothing is configured', () => {
 	assert.deepStrictEqual(health_probes(), [
 		'403 forbidden_origin 0',
+		'403 forbidden_host 0',
 		`413 payload_too_large ${1024 * 1024 + 1}`,
 		'400 invalid_content_length not-a-length'
 	]);
@@ -45,15 +46,29 @@ test('probes the origin check and the default limit when nothing is configured',
 test('an origin carve-out made through app_options is not probed', () => {
 	assert.deepStrictEqual(
 		health_probes({ origin_carve_outs: [{ path: '/health', reason: 'a test carve-out' }] }),
-		[`413 payload_too_large ${1024 * 1024 + 1}`, '400 invalid_content_length not-a-length']
+		[
+			'403 forbidden_host 0',
+			`413 payload_too_large ${1024 * 1024 + 1}`,
+			'400 invalid_content_length not-a-length'
+		]
 	);
 });
 
 test('the body limit takes the live cap, and none is probed when it is disabled', () => {
 	assert.deepStrictEqual(health_probes({ max_body_size: 2048 }), [
 		'403 forbidden_origin 0',
+		'403 forbidden_host 0',
 		'413 payload_too_large 2049',
 		'400 invalid_content_length not-a-length'
 	]);
-	assert.deepStrictEqual(health_probes({ max_body_size: null }), ['403 forbidden_origin 0']);
+	assert.deepStrictEqual(health_probes({ max_body_size: null }), [
+		'403 forbidden_origin 0',
+		'403 forbidden_host 0'
+	]);
+});
+
+test('no host gate probe with host_gate: false', () => {
+	assert.deepStrictEqual(health_probes({ host_gate: false, max_body_size: null }), [
+		'403 forbidden_origin 0'
+	]);
 });

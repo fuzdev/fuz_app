@@ -70,15 +70,34 @@ export const origin_wildcard_kind = (pattern: OriginPattern): OriginWildcard | n
 };
 
 /**
+ * What the server adds to a wildcard entry's text. The TS spine adds no
+ * note of its own, so only the host gate shapes it — the Rust
+ * `OriginWildcardOptions` without its notes.
+ */
+export interface OriginWildcardOptions {
+	/**
+	 * The server mounts the `Host` check (`http/host.ts`), which the same
+	 * entries widen. On by default, as the gate is.
+	 */
+	readonly host_gate: boolean;
+}
+
+/** The host gate on, as `create_app_server` mounts it by default. */
+export const ORIGIN_WILDCARD_OPTIONS_DEFAULT: OriginWildcardOptions = { host_gate: true };
+
+/**
  * What a wildcard in `pattern` admits — the text `admit_origin_wildcards`
- * warns or refuses with; `null` for an exact entry. The TS spine mounts no
- * `Host` check and adds no note, so this is the Rust text with
- * `OriginWildcardOptions::DEFAULT`.
+ * warns or refuses with; `null` for an exact entry. The Rust
+ * `origin_wildcard_warning` text word for word, with no notes.
  *
  * @param pattern - a parsed allowlist entry
+ * @param options - whether the server mounts the host gate
  * @returns the text, or `null`
  */
-export const origin_wildcard_warning = (pattern: OriginPattern): string | null => {
+export const origin_wildcard_warning = (
+	pattern: OriginPattern,
+	options: OriginWildcardOptions = ORIGIN_WILDCARD_OPTIONS_DEFAULT
+): string | null => {
 	const wildcard = origin_wildcard_kind(pattern);
 	if (wildcard === null) return null;
 	const { host } = pattern;
@@ -106,12 +125,21 @@ export const origin_wildcard_warning = (pattern: OriginPattern): string | null =
 	}
 	const ports =
 		pattern.port === 'any' ? 'ANY port on ' : pattern.port === 'exact' ? 'that port on ' : '';
-	return (
+	const sentences = [
 		`${kind}: a page served from ${ports}${hosts} is an allowed origin. The server trusts ` +
-		'every such page: one that is same-site with the host you log in at carries the ' +
-		'session cookie, and with it can call the API and open the WebSocket. ' +
-		'Name exact origins unless every such page is trusted'
-	);
+			'every such page: one that is same-site with the host you log in at carries the ' +
+			'session cookie, and with it can call the API and open the WebSocket.'
+	];
+	if (options.host_gate) {
+		sentences.push(
+			host_wildcard === null
+				? `The \`Host\` check answers to ${host} at any port too.`
+				: 'The `Host` check answers to the same hosts, on either scheme, so a page that ' +
+						're-points a matching domain at this machine (DNS rebinding) passes it.'
+		);
+	}
+	sentences.push('Name exact origins unless every such page is trusted');
+	return sentences.join(' ');
 };
 
 /** One wildcard entry an allowlist holds, with what it admits. */
@@ -133,6 +161,7 @@ export interface OriginWildcardEntry {
  * @param allowed - whether the operator opted in (`FUZ_ALLOW_ORIGIN_WILDCARDS=true`)
  * @param origins_var - what the list is called in the refusal: the env var it
  *   was read from, or the option that carried it
+ * @param options - whether the server mounts the host gate, which the text names
  * @returns the wildcard entries admitted, or the refusal — naming each
  *   unclassifiable matcher, or else each wildcard entry, what it admits, and
  *   the flag (the Rust spine's boot error, word for word)
@@ -140,7 +169,8 @@ export interface OriginWildcardEntry {
 export const admit_origin_wildcards = (
 	origins: ReadonlyArray<RegExp>,
 	allowed: boolean,
-	origins_var: string = ALLOWED_ORIGINS_VAR
+	origins_var: string = ALLOWED_ORIGINS_VAR,
+	options: OriginWildcardOptions = ORIGIN_WILDCARD_OPTIONS_DEFAULT
 ): Result<{ wildcards: Array<OriginWildcardEntry> }, { message: string }> => {
 	const wildcards: Array<OriginWildcardEntry> = [];
 	const unparsed: Array<RegExp> = [];
@@ -150,7 +180,7 @@ export const admit_origin_wildcards = (
 			unparsed.push(regexp);
 			continue;
 		}
-		const warning = origin_wildcard_warning(pattern);
+		const warning = origin_wildcard_warning(pattern, options);
 		if (warning) wildcards.push({ entry: pattern.entry, warning });
 	}
 	if (unparsed.length > 0) {

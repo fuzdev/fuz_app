@@ -34,12 +34,10 @@ import type { SessionOptions } from '../../auth/session_cookie.ts';
 import { create_signup_route_shape } from '../../auth/signup_route_schema.ts';
 import { create_standard_rpc_actions } from '../../auth/standard_rpc_actions.ts';
 import { create_health_route_spec } from '../../http/common_routes.ts';
-import type { MiddlewareSpec } from '../../http/middleware_spec.ts';
-import { REST_FORBIDDEN_HOST } from '../../http/error_schemas.ts';
 import { prefix_route_specs, type RouteSpec } from '../../http/route_spec.ts';
 import type { AppSurfaceSpec, RpcEndpointSpec } from '../../http/surface.ts';
 import type { AppServerContext } from '../../server/app_server_context.ts';
-import { create_test_app_surface_spec, stub_mw, stub_route_spec } from '../stubs.ts';
+import { create_test_app_surface_spec, stub_route_spec } from '../stubs.ts';
 import { SPINE_ACCOUNT_PATH_PREFIX, SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
 /**
@@ -87,11 +85,11 @@ export interface RustSpineConsumerSurfaceSpecOptions extends RustSpineConsumerRp
 	/** The backend's session config — its cookie name above all. */
 	readonly session_options: SessionOptions<string>;
 	/**
-	 * Whether the server turns on the spine's opt-in host gate
-	 * (`fuz_http::StackOptions::host_gate`), declared as a `host_validation`
-	 * layer at the head of the middleware list.
+	 * Whether the server mounts the spine's host gate
+	 * (`fuz_http::StackOptions::host_gate`, on by default), declared as the
+	 * `host` layer `create_test_app_surface_spec` lists.
 	 *
-	 * @default false
+	 * @default true
 	 */
 	readonly host_gate?: boolean;
 }
@@ -176,8 +174,8 @@ const create_spine_consumer_route_specs = (ctx: AppServerContext): Array<RouteSp
  * on `create_test_app_surface_spec`: the spine routes (health, the account
  * router's paths, signup, and bootstrap as a `surface_only` shape), the RPC
  * endpoint from `create_rust_spine_consumer_rpc_endpoints`, the daemon-token
- * layer every consumer test binary wires, and — with `host_gate` — the
- * `host_validation` layer at the head of the middleware list.
+ * layer every consumer test binary wires, and — unless `host_gate` is
+ * `false` — the host gate's `host` layer.
  *
  * @param options - the consumer's session config, action specs, extras and roles
  * @returns the surface spec, for `describe_spine_cross_suites`'s `surface_source`
@@ -195,15 +193,5 @@ export const create_rust_spine_consumer_surface_spec = (
 		bootstrap: { mode: 'surface_only' },
 		// consumer test binaries wire a daemon-token state (production ones don't)
 		daemon_token: true,
-		transform_middleware: options.host_gate
-			? (specs: Array<MiddlewareSpec>): Array<MiddlewareSpec> => [
-					{
-						name: 'host_validation',
-						path: '*',
-						handler: stub_mw,
-						errors: [REST_FORBIDDEN_HOST]
-					},
-					...specs
-				]
-			: undefined
+		host_gate: options.host_gate ?? true
 	});

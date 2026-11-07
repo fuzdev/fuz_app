@@ -1675,5 +1675,335 @@
 			"allowed": false,
 			"note": "fullwidth digits are not digits"
 		}
+	],
+	"host": [
+		{
+			"patterns": "https://app.example.com",
+			"hosts": [],
+			"allowed": true,
+			"note": "a request without a Host passes"
+		},
+		{
+			"patterns": "https://app.example.com",
+			"hosts": [
+				"localhost"
+			],
+			"allowed": true
+		},
+		{
+			"patterns": "https://app.example.com",
+			"hosts": [
+				"localhost:4460"
+			],
+			"allowed": true,
+			"note": "a loopback name passes at any port"
+		},
+		{
+			"patterns": "https://app.example.com",
+			"hosts": [
+				"LOCALHOST:5173"
+			],
+			"allowed": true,
+			"note": "the name is case-insensitive"
+		},
+		{
+			"patterns": "https://app.example.com",
+			"hosts": [
+				"127.0.0.1"
+			],
+			"allowed": true
+		},
+		{
+			"patterns": "https://app.example.com",
+			"hosts": [
+				"127.0.0.1:4460"
+			],
+			"allowed": true
+		},
+		{
+			"patterns": "https://app.example.com",
+			"hosts": [
+				"127.1.2.3:80"
+			],
+			"allowed": true,
+			"note": "all of 127.0.0.0/8 is loopback"
+		},
+		{
+			"patterns": "https://app.example.com",
+			"hosts": [
+				"[::1]"
+			],
+			"allowed": true
+		},
+		{
+			"patterns": "https://app.example.com",
+			"hosts": [
+				"[::1]:4460"
+			],
+			"allowed": true
+		},
+		{
+			"patterns": "https://app.example.com",
+			"hosts": [
+				"[0:0:0:0:0:0:0:1]"
+			],
+			"allowed": true,
+			"note": "::1 in any IPv6 spelling"
+		},
+		{
+			"patterns": "https://app.example.com",
+			"hosts": [
+				"localhost:65535"
+			],
+			"allowed": true
+		},
+		{
+			"patterns": "https://app.example.com",
+			"hosts": [
+				"[::1]:1"
+			],
+			"allowed": true
+		},
+		{
+			"patterns": "https://app.example.com",
+			"hosts": [
+				"[::1]junk"
+			],
+			"allowed": false,
+			"note": "anything after the name but a port refuses it"
+		},
+		{
+			"patterns": "https://app.example.com",
+			"hosts": [
+				"[::1]:"
+			],
+			"allowed": false
+		},
+		{
+			"patterns": "https://app.example.com",
+			"hosts": [
+				"[::1]:abc"
+			],
+			"allowed": false
+		},
+		{
+			"patterns": "https://app.example.com",
+			"hosts": [
+				"[::1"
+			],
+			"allowed": false
+		},
+		{
+			"patterns": "https://app.example.com",
+			"hosts": [
+				"localhost:abc"
+			],
+			"allowed": false
+		},
+		{
+			"patterns": "https://app.example.com",
+			"hosts": [
+				"localhost: 1"
+			],
+			"allowed": false
+		},
+		{
+			"patterns": "https://app.example.com",
+			"hosts": [
+				"localhost:"
+			],
+			"allowed": false
+		},
+		{
+			"patterns": "https://app.example.com",
+			"hosts": [
+				"localhost:+1"
+			],
+			"allowed": false
+		},
+		{
+			"patterns": "https://app.example.com",
+			"hosts": [
+				"localhost:65536"
+			],
+			"allowed": false,
+			"note": "a port above 65535 is not a port"
+		},
+		{
+			"patterns": "https://app.example.com",
+			"hosts": [
+				"127.0.0.1:4460x"
+			],
+			"allowed": false
+		},
+		{
+			"patterns": "https://app.example.com",
+			"hosts": [
+				"127.0.0.01"
+			],
+			"allowed": false,
+			"note": "an IPv4 octet with a leading zero is not an address"
+		},
+		{
+			"patterns": "http://localhost:4460",
+			"hosts": [
+				"evil.example.com"
+			],
+			"allowed": false
+		},
+		{
+			"patterns": "http://localhost:4460",
+			"hosts": [
+				"evil.example.com:4460"
+			],
+			"allowed": false
+		},
+		{
+			"patterns": "http://localhost:4460",
+			"hosts": [
+				"localhost.evil.example.com:4460"
+			],
+			"allowed": false
+		},
+		{
+			"patterns": "http://localhost:4460",
+			"hosts": [
+				"127.0.0.1.nip.io:4460"
+			],
+			"allowed": false,
+			"note": "a name that resolves to loopback is not loopback"
+		},
+		{
+			"patterns": "http://localhost:4460",
+			"hosts": [
+				"0.0.0.0:4460"
+			],
+			"allowed": false
+		},
+		{
+			"patterns": "http://localhost:4460",
+			"hosts": [
+				"[::ffff:127.0.0.1]:4460"
+			],
+			"allowed": false,
+			"note": "an IPv4-mapped address is not loopback"
+		},
+		{
+			"patterns": "http://localhost:4460",
+			"hosts": [
+				"10.0.0.1:4460"
+			],
+			"allowed": false
+		},
+		{
+			"patterns": "http://localhost:4460",
+			"hosts": [
+				""
+			],
+			"allowed": false,
+			"note": "an empty Host names nothing"
+		},
+		{
+			"patterns": "https://zzz.example.com, http://*.fuz.dev:*",
+			"hosts": [
+				"zzz.example.com"
+			],
+			"allowed": true,
+			"note": "a host an allowed origin names passes"
+		},
+		{
+			"patterns": "https://zzz.example.com, http://*.fuz.dev:*",
+			"hosts": [
+				"ZZZ.example.com"
+			],
+			"allowed": true
+		},
+		{
+			"patterns": "https://zzz.example.com, http://*.fuz.dev:*",
+			"hosts": [
+				"api.fuz.dev:8080"
+			],
+			"allowed": true,
+			"note": "a wildcard entry admits the hosts it admits as origins"
+		},
+		{
+			"patterns": "https://zzz.example.com, http://*.fuz.dev:*",
+			"hosts": [
+				"zzz.example.com:8443"
+			],
+			"allowed": false,
+			"note": "an entry without a port admits the host without one"
+		},
+		{
+			"patterns": "https://zzz.example.com, http://*.fuz.dev:*",
+			"hosts": [
+				"fuz.dev"
+			],
+			"allowed": false
+		},
+		{
+			"patterns": "http://localhost:*, https://zzz.example.com",
+			"hosts": [
+				"evil.example.com@zzz.example.com"
+			],
+			"allowed": false,
+			"note": "userinfo would reshape the origin"
+		},
+		{
+			"patterns": "http://localhost:*, https://zzz.example.com",
+			"hosts": [
+				"zzz.example.com/x"
+			],
+			"allowed": false,
+			"note": "a path would reshape the origin"
+		},
+		{
+			"patterns": "http://localhost:4460",
+			"hosts": [
+				"localhost:4460",
+				"localhost:4460"
+			],
+			"allowed": false,
+			"note": "more than one Host is refused, even the same one twice"
+		},
+		{
+			"patterns": "http://localhost:4460",
+			"hosts": [
+				"localhost:4460",
+				"rebind.example.com"
+			],
+			"allowed": false
+		},
+		{
+			"patterns": "http://localhost:4460",
+			"hosts": [
+				"localhost:4460, rebind.example.com"
+			],
+			"allowed": false,
+			"note": "two Hosts joined into one value, as the runtimes join them"
+		},
+		{
+			"patterns": "http://localhost:4460",
+			"hosts": [
+				"localhost\u0000"
+			],
+			"allowed": false,
+			"note": "a value outside header text is refused"
+		},
+		{
+			"patterns": "http://localhost:4460",
+			"hosts": [
+				"localhost\u007f"
+			],
+			"allowed": false
+		},
+		{
+			"patterns": "http://localhost:4460",
+			"hosts": [
+				"localhost\t"
+			],
+			"allowed": false,
+			"note": "a tab is header text but names no host"
+		}
 	]
 }

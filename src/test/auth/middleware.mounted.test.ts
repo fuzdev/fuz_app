@@ -300,13 +300,20 @@ const build_surface = (transform_middleware?: TransformMiddleware) =>
 	});
 
 describe('create_test_app_surface_spec — transform_middleware', () => {
-	test('the middleware list mirrors the real one: the body limit, the proxy, then the auth stack', () => {
+	test('the middleware list mirrors the real one: the body limit, the host gate, the proxy, then the auth stack', () => {
 		const names: Array<Array<string>> = [];
 		const surface_spec = build_surface((specs) => {
 			names.push(specs.map((s) => s.name));
 			return specs;
 		});
-		const expected = ['trusted_proxy', 'origin', 'session', 'request_context', 'bearer_auth'];
+		const expected = [
+			'host',
+			'trusted_proxy',
+			'origin',
+			'session',
+			'request_context',
+			'bearer_auth'
+		];
 		// the transform gets the stack; the body limit heads the list outside it
 		assert.deepStrictEqual(names, [expected]);
 		assert.deepStrictEqual(
@@ -317,9 +324,10 @@ describe('create_test_app_surface_spec — transform_middleware', () => {
 			build_surface().surface.middleware.map((m) => [m.name, m.path]),
 			[
 				['body_limit', '*'],
+				['host', '*'],
 				['trusted_proxy', '*'],
 				['origin', ORIGIN_MIDDLEWARE_PATH],
-				...expected.slice(2).map((n) => [n, AUTH_MIDDLEWARE_PATH])
+				...expected.slice(3).map((n) => [n, AUTH_MIDDLEWARE_PATH])
 			]
 		);
 	});
@@ -348,7 +356,7 @@ describe('create_test_app_surface_spec — transform_middleware', () => {
 
 	test('layers around the stack are accepted, including a shared stub_mw', () => {
 		const surface_spec = build_surface((specs) => [
-			{ name: 'host_validation', path: '*', handler: stub_mw },
+			{ name: 'request_id', path: '*', handler: stub_mw },
 			...specs,
 			extra('token_policy', AUTH_MIDDLEWARE_PATH)
 		]);
@@ -356,7 +364,8 @@ describe('create_test_app_surface_spec — transform_middleware', () => {
 			surface_spec.surface.middleware.map((m) => m.name),
 			[
 				'body_limit',
-				'host_validation',
+				'request_id',
+				'host',
 				'trusted_proxy',
 				'origin',
 				'session',
@@ -398,7 +407,7 @@ describe('create_test_app_surface_spec — transform mutating what it was handed
 		assert.throws(
 			() =>
 				build_surface((specs) => {
-					specs.splice(2, 1);
+					specs.splice(3, 1);
 					return specs;
 				}),
 			/'session' .*\(missing\)/
@@ -423,7 +432,7 @@ describe('create_test_app_surface_spec — transform mutating what it was handed
 					specs.length = 0;
 					return specs;
 				}),
-			/'trusted_proxy' .*\(missing\)/
+			/'host' .*\(missing\)/
 		);
 	});
 
@@ -510,7 +519,7 @@ describe('create_app_server — transform_middleware', () => {
 		assert.isNull(thrown);
 	});
 
-	test('the transform receives the proxy and auth specs, daemon_token included', async () => {
+	test('the transform receives the host, proxy and auth specs, daemon_token included', async () => {
 		const received: Array<Array<MiddlewareSpec>> = [];
 		const thrown = await assemble(
 			create_server_options((specs) => {
@@ -521,7 +530,15 @@ describe('create_app_server — transform_middleware', () => {
 		assert.isNull(thrown);
 		assert.deepStrictEqual(
 			received[0]!.map((s) => s.name),
-			['trusted_proxy', 'origin', 'daemon_token', 'session', 'request_context', 'bearer_auth']
+			[
+				'host',
+				'trusted_proxy',
+				'origin',
+				'daemon_token',
+				'session',
+				'request_context',
+				'bearer_auth'
+			]
 		);
 	});
 

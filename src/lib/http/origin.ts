@@ -141,9 +141,13 @@ const NEEDS_ASCII_ESCAPE = /[^\x20-\x7e]|["\\]/g;
 
 /**
  * `value` in double quotes, ASCII-only: `"` and `\` backslash-escaped, every
- * other UTF-16 code unit outside `\x20-\x7e` as `\uXXXX`.
+ * other UTF-16 code unit outside `\x20-\x7e` as `\uXXXX` — for a client- or
+ * env-written value shown in a log line. Twin of the Rust `fuz_sys::text::quoted`.
+ *
+ * @param value - the text to quote
+ * @returns the quoted text
  */
-const quote_ascii = (value: string): string =>
+export const quote_ascii = (value: string): string =>
 	'"' +
 	value.replace(NEEDS_ASCII_ESCAPE, (c) =>
 		c === '"' || c === '\\' ? '\\' + c : '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0')

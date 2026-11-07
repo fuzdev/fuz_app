@@ -5,7 +5,8 @@ import '../assert_dev_env.ts';
  * runs it against each backend over the wire.
  *
  * `origin_conformance.json` (beside this module) is the one statement of the
- * allowlist grammar and matcher both spines implement. It holds two tables:
+ * allowlist grammar and matcher, and of the host gate's check over them, both
+ * spines implement. It holds three tables:
  *
  * - **parse** rows — `{raw, ok: true}` or `{raw, errors: [{index?, kind}]}`:
  *   an allowlist value (as `FUZ_ALLOWED_ORIGINS` would carry it) and whether
@@ -13,6 +14,8 @@ import '../assert_dev_env.ts';
  *   list-level refusal) and its `AllowedOriginsErrorKind`.
  * - **match** rows — `{patterns, origin, allowed}`: a valid allowlist, one
  *   `Origin` value (`null` for none), and the request-level answer.
+ * - **host** rows — `{patterns, hosts, allowed}`: a valid allowlist, the
+ *   request's `Host` values (`[]` for none), and the host gate's answer.
  *
  * A row may carry a `note` for the reader. The TS unit test reads the table
  * directly; `describe_origin_conformance_cross_tests` sends every row to a
@@ -80,10 +83,20 @@ export const OriginConformanceMatchRow = object({
 });
 export type OriginConformanceMatchRow = Infer<typeof OriginConformanceMatchRow>;
 
+/** A host row: a valid allowlist, the request's `Host` values, and the host gate's answer. */
+export const OriginConformanceHostRow = object({
+	patterns: string,
+	hosts: array(string),
+	allowed: boolean,
+	note: optional(string)
+});
+export type OriginConformanceHostRow = Infer<typeof OriginConformanceHostRow>;
+
 /** The conformance table, a `@fuzdev/fuz_schema` `object`. */
 export const OriginConformance = object({
 	parse: pipe(array(OriginConformanceParseRow), min_length(1)),
-	match: pipe(array(OriginConformanceMatchRow), min_length(1))
+	match: pipe(array(OriginConformanceMatchRow), min_length(1)),
+	host: pipe(array(OriginConformanceHostRow), min_length(1))
 });
 export type OriginConformance = Infer<typeof OriginConformance>;
 
@@ -113,7 +126,7 @@ export interface OriginConformanceCheck {
  * `{ok: true, allowed: true}`.
  *
  * @param table - the conformance table
- * @returns one check per row, parse rows first
+ * @returns one check per row: parse rows, then match rows, then host rows
  */
 export const to_origin_conformance_checks = (
 	table: OriginConformance
@@ -129,6 +142,11 @@ export const to_origin_conformance_checks = (
 	...table.match.map((row): OriginConformanceCheck => ({
 		label: `match ${JSON.stringify(row.patterns)} × ${JSON.stringify(row.origin)}`,
 		input: { patterns: row.patterns, origin: row.origin },
+		expected: { ok: true, allowed: row.allowed }
+	})),
+	...table.host.map((row): OriginConformanceCheck => ({
+		label: `host ${JSON.stringify(row.patterns)} × ${JSON.stringify(row.hosts)}`,
+		input: { patterns: row.patterns, origin: null, hosts: [...row.hosts] },
 		expected: { ok: true, allowed: row.allowed }
 	}))
 ];

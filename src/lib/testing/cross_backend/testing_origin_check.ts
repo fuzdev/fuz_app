@@ -36,6 +36,7 @@ import {
 	parse_allowed_origins,
 	should_allow_origin
 } from '../../http/origin.ts';
+import { allows_request_hosts } from '../../http/host.ts';
 import { TESTING_ACTION_AUTH } from './spine_surface_constants.ts';
 
 /** Input of `_testing_origin_check`, a `@fuzdev/fuz_schema` `object`. */
@@ -43,7 +44,12 @@ export const TestingOriginCheckInput = object({
 	/** An allowlist value, as `FUZ_ALLOWED_ORIGINS` would carry it. */
 	patterns: string,
 	/** One `Origin` header's value, or `null` for a request without one. */
-	origin: nullable(string)
+	origin: nullable(string),
+	/**
+	 * The request's `Host` header values (`[]` for none), checked by the host
+	 * gate (`allows_request_hosts`); absent, the host gate isn't asked.
+	 */
+	hosts: optional(array(string))
 });
 export type TestingOriginCheckInput = Infer<typeof TestingOriginCheckInput>;
 
@@ -69,7 +75,8 @@ export type TestingOriginCheckOutput = Infer<typeof TestingOriginCheckOutput>;
 /**
  * Answer one `_testing_origin_check` input: parse `patterns` with
  * `parse_allowed_origins`, then run the request-level check for one `Origin`
- * carrying `origin` (`null` — no `Origin` — passes). The action handler and
+ * carrying `origin` (`null` — no `Origin` — passes), and with `hosts` the host
+ * gate's check of those `Host` values too. The action handler and
  * the conformance table's unit test both call this, so the table checks the
  * same function the wire serves.
  *
@@ -90,7 +97,9 @@ export const run_testing_origin_check = (
 	}
 	return {
 		ok: true,
-		allowed: input.origin === null || should_allow_origin(input.origin, parsed.origins)
+		allowed:
+			(input.origin === null || should_allow_origin(input.origin, parsed.origins)) &&
+			(input.hosts === undefined || allows_request_hosts(input.hosts, parsed.origins))
 	};
 };
 
@@ -119,7 +128,7 @@ export const testing_origin_check_action_spec = {
 	async: true,
 	description:
 		"Test-binary only — answer the origin allowlist's parse and request check for one " +
-		'{patterns, origin} pair, for the cross-impl origin conformance table.'
+		'{patterns, origin, hosts?} input, for the cross-impl origin conformance table.'
 } as const satisfies RequestResponseActionSpec;
 
 /** Build the standalone `_testing_origin_check` action (see the spec doc). */

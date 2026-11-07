@@ -805,7 +805,7 @@ custom `min_coverage` to `assert_error_coverage` in their app-specific
 test extensions.
 
 Middleware errors count per route: the origin check's 403, the body limit's
-413 and 400, and the Rust spine's host gate's 403 are declared on every route
+413 and 400, and the host gate's 403 are declared on every route
 they apply to. The integration suite probes each gate a counted route's error
 map declares (`testing/middleware_gate_probes.ts`) and records the refusal, so
 it needs `base_url` (the backend's socket, `null` in-process, which
@@ -1219,8 +1219,8 @@ It declares `/health`, the routes `fuz_auth::account_router` mounts
 (`ACCOUNT_ROUTER_PATHS` — no `/verify`, which only the TS spine serves),
 signup, bootstrap, and one RPC endpoint with the standard actions, any
 `extra_rpc_actions` (opt-in families such as `create_actor_lookup_actions`),
-and the domain specs. `host_gate: true` declares the `host_validation` layer,
-for a server that turns on the spine's opt-in host gate. A server without a
+and the domain specs, and the host gate's `host` layer unless `host_gate:
+false` says the server turns the gate off. A server without a
 signup router (a single-keeper daemon) is not this shape.
 
 The call runs each suite in `SUITE_NAMES` (`testing/cross_backend/spine_suites.ts`),

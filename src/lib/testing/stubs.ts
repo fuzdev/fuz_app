@@ -17,6 +17,7 @@ import type { SessionOptions } from '../auth/session_cookie.ts';
 import type { MiddlewareCarveOut, MiddlewareSpec } from '../http/middleware_spec.ts';
 import { REST_FORBIDDEN_ORIGIN } from '../http/error_schemas.ts';
 import { body_limit_middleware_shape } from '../http/body_limit_schema.ts';
+import { host_gate_middleware_shape } from '../http/host.ts';
 import type { AppDeps } from '../auth/deps.ts';
 import type { AuditEmitter } from '../auth/audit_emitter.ts';
 import { create_realtime_closer } from '../actions/connection_closer.ts';
@@ -413,6 +414,12 @@ export interface CreateTestAppSurfaceSpecOptions {
 	 * read: the spec's handler here is a stub.
 	 */
 	max_body_size?: number | null;
+	/**
+	 * Symmetric with `AppServerOptions.host_gate` — `false` leaves out the host
+	 * gate's spec, so the stub surface matches a server built without it.
+	 * Defaults to `true`.
+	 */
+	host_gate?: boolean;
 }
 
 /**
@@ -450,9 +457,10 @@ const assert_self_resolved_ws_origins = (endpoint: WsEndpointSpec): WsEndpointSp
  * middleware's scope (`assert_endpoint_in_auth_scope`), of a route that
  * reads or mints a credential outside it
  * (`assert_credential_routes_in_auth_scope`), and of a
- * `transform_middleware` that doesn't keep the proxy and auth stack mounted
- * (`assert_middleware_stack_mounted`). The middleware list mirrors the real
- * one: a stub `trusted_proxy` spec at `'*'`, then the stub auth stack (with
+ * `transform_middleware` that doesn't keep the host gate, proxy and auth stack
+ * mounted (`assert_middleware_stack_mounted`). The middleware list mirrors the
+ * real one: the host gate's shape at `'*'` (unless `host_gate` is `false`), a
+ * stub `trusted_proxy` spec at `'*'`, then the stub auth stack (with
  * `daemon_token` when `options.daemon_token` is set). If
  * `create_app_server` changes how it wires routes, update this helper
  * to stay in sync (single source of truth for all consumers). The body
@@ -465,7 +473,7 @@ const assert_self_resolved_ws_origins = (endpoint: WsEndpointSpec): WsEndpointSp
  *   credential, is outside `AUTH_MIDDLEWARE_PATH`, a
  *   `ws_endpoints` spec declares no `allowed_origins` and no `allowed_origins`
  *   option is given, or `transform_middleware` moves, drops, duplicates,
- *   reorders, wraps, or replaces the stub proxy spec or a stub auth spec
+ *   reorders, wraps, or replaces the stub host gate, proxy or auth spec
  */
 export const create_test_app_surface_spec = (
 	options: CreateTestAppSurfaceSpecOptions
@@ -547,8 +555,11 @@ export const create_test_app_surface_spec = (
 	// refused like `create_app_server` refuses it
 	assert_credential_routes_in_auth_scope(route_specs);
 
-	// mirrors `create_app_server`'s `[proxy_spec, ...auth_middleware]`
+	// mirrors `create_app_server`'s `[host_spec, proxy_spec, ...auth_middleware]`
 	const stack_specs: Array<MiddlewareSpec> = [
+		...(options.host_gate === false
+			? []
+			: [{ ...host_gate_middleware_shape, handler: create_stub_mw() }]),
 		{ name: 'trusted_proxy', path: '*', handler: create_stub_mw() },
 		...create_stub_api_middleware({
 			include_daemon_token: options.daemon_token,

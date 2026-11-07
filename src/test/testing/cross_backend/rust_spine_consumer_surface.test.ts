@@ -61,38 +61,38 @@ describe('create_rust_spine_consumer_surface_spec', () => {
 		);
 	});
 
-	test('lists the daemon_token layer, and host_validation only with host_gate', () => {
-		const without = create_rust_spine_consumer_surface_spec({
+	test('lists the daemon_token layer, and the host gate unless host_gate is false', () => {
+		const with_gate = create_rust_spine_consumer_surface_spec({
 			session_options: fuz_session_config,
 			domain_action_specs
 		}).surface.middleware.map((m) => m.name);
-		assert.include(without, 'daemon_token');
-		assert.notInclude(without, 'host_validation');
-		const with_gate = create_rust_spine_consumer_surface_spec({
+		assert.include(with_gate, 'daemon_token');
+		const without = create_rust_spine_consumer_surface_spec({
 			session_options: fuz_session_config,
 			domain_action_specs,
-			host_gate: true
+			host_gate: false
 		}).surface.middleware.map((m) => m.name);
-		// the body limit heads both, ahead of the transformed stack
+		assert.notInclude(without, 'host');
+		// the body limit heads both, the host gate right behind it when on
 		assert.strictEqual(without[0], 'body_limit');
-		assert.deepStrictEqual(with_gate.slice(0, 2), ['body_limit', 'host_validation']);
+		assert.deepStrictEqual(with_gate.slice(0, 2), ['body_limit', 'host']);
 		assert.deepStrictEqual([with_gate[0], ...with_gate.slice(2)], without);
 	});
 
-	test("host_validation declares the gate's 403 forbidden_host on every route", () => {
+	test('the host gate declares its 403 forbidden_host on every route', () => {
 		const spec = create_rust_spine_consumer_surface_spec({
 			session_options: fuz_session_config,
-			domain_action_specs,
-			host_gate: true
+			domain_action_specs
 		});
-		const layer = spec.surface.middleware.find((m) => m.name === 'host_validation')!;
+		const layer = spec.surface.middleware.find((m) => m.name === 'host')!;
 		assert.deepStrictEqual(Object.keys(layer.error_schemas!), ['403']);
 		for (const errors of spec.route_error_maps.values()) {
 			assert.ok(errors.defs.includes(REST_FORBIDDEN_HOST));
 		}
 		const without = create_rust_spine_consumer_surface_spec({
 			session_options: fuz_session_config,
-			domain_action_specs
+			domain_action_specs,
+			host_gate: false
 		});
 		for (const errors of without.route_error_maps.values()) {
 			assert.notInclude(errors.defs, REST_FORBIDDEN_HOST);

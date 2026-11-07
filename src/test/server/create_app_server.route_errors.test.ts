@@ -106,7 +106,10 @@ describe('create_app_server — the body limit declared as a middleware spec', (
 		const { server } = await assemble({ max_body_size: null });
 		const names = server.surface_spec.surface.middleware.map((m) => m.name);
 		assert.notInclude(names, 'body_limit');
-		assert.deepStrictEqual(codes_at(server, 'GET /api/echo'), ['403 forbidden_origin']);
+		assert.deepStrictEqual(codes_at(server, 'GET /api/echo'), [
+			'403 forbidden_host',
+			'403 forbidden_origin'
+		]);
 	});
 
 	test('it runs ahead of the origin check and auth: an over-cap POST from a foreign Origin answers 413', async () => {
