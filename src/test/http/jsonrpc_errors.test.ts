@@ -21,6 +21,7 @@ import {
 	jsonrpc_error_code_to_name,
 	register_jsonrpc_error_code,
 	to_thrown_jsonrpc_error,
+	parse_inbound_jsonrpc_error,
 	HTTP_STATUS_TO_JSONRPC_ERROR_CODE,
 	http_status_to_jsonrpc_error_code,
 	type JsonrpcErrorName
@@ -519,6 +520,83 @@ describe('to_thrown_jsonrpc_error', () => {
 			null
 		]) {
 			assert.isNull(to_thrown_jsonrpc_error(thrown), JSON.stringify(thrown));
+		}
+	});
+});
+
+// the Rust spine's `parse_inbound_error` (`fuz_http`) reads a peer's error reply the same way
+describe('parse_inbound_jsonrpc_error', () => {
+	test('a base-set error passes through, its data as sent', () => {
+		for (const code of Object.values(JSONRPC_ERROR_CODES)) {
+			assert.deepStrictEqual(parse_inbound_jsonrpc_error({ code, message: 'm', data: { a: 1 } }), {
+				code,
+				message: 'm',
+				data: { a: 1 }
+			});
+		}
+		assert.deepStrictEqual(parse_inbound_jsonrpc_error({ code: -32005, message: 'm' }), {
+			code: JSONRPC_ERROR_CODES.validation_error,
+			message: 'm'
+		});
+	});
+
+	test('a code off the base set is internal_error, the message and data kept', () => {
+		for (const code of [
+			-32050, // a consumer's code, in the server range
+			-32011,
+			-32099,
+			-32000.5,
+			-32603.5,
+			-32604,
+			0,
+			2 ** 31,
+			-(2 ** 31) - 1,
+			NaN,
+			'-32603',
+			null,
+			undefined
+		]) {
+			assert.deepStrictEqual(
+				parse_inbound_jsonrpc_error({ code, message: 'client refused', data: 'd' }),
+				{ code: JSONRPC_ERROR_CODES.internal_error, message: 'client refused', data: 'd' },
+				String(code)
+			);
+		}
+	});
+
+	test("a message that isn't a string is 'peer error'", () => {
+		for (const message of [42, null, undefined, { text: 'm' }, ['m']]) {
+			assert.deepStrictEqual(
+				parse_inbound_jsonrpc_error({ code: JSONRPC_ERROR_CODES.forbidden, message }),
+				{ code: JSONRPC_ERROR_CODES.forbidden, message: 'peer error' },
+				JSON.stringify(message)
+			);
+		}
+	});
+
+	test('a string message is kept, empty included', () => {
+		assert.deepStrictEqual(
+			parse_inbound_jsonrpc_error({ code: JSONRPC_ERROR_CODES.forbidden, message: '' }),
+			{ code: JSONRPC_ERROR_CODES.forbidden, message: '' }
+		);
+	});
+
+	test('a present data is kept, null included; an absent one stays absent', () => {
+		const with_null = parse_inbound_jsonrpc_error({ code: -32603, message: 'm', data: null });
+		assert.ok(Object.hasOwn(with_null, 'data'));
+		assert.strictEqual(with_null.data, null);
+		assert.notOk(
+			Object.hasOwn(parse_inbound_jsonrpc_error({ code: -32603, message: 'm' }), 'data')
+		);
+	});
+
+	test("an error that isn't an object reads as one with none of its members", () => {
+		for (const error of [null, undefined, 'boom', -32602, true, [{ code: -32602, message: 'm' }]]) {
+			assert.deepStrictEqual(
+				parse_inbound_jsonrpc_error(error),
+				{ code: JSONRPC_ERROR_CODES.internal_error, message: 'peer error' },
+				JSON.stringify(error)
+			);
 		}
 	});
 });

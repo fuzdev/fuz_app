@@ -410,6 +410,41 @@ const BASE_JSONRPC_ERROR_CODE_SET: ReadonlySet<number> = new Set(
 );
 
 /**
+ * Read the `error` member of a peer's error reply — the reply a connected
+ * client sends to a server-initiated request — as the error the awaiting
+ * caller gets. Twin of the Rust spine's `parse_inbound_error` (`fuz_http`).
+ *
+ * The peer is untrusted, so the read is lenient and always yields a base-set
+ * error: a `code` that isn't one of `JSONRPC_ERROR_CODES` (a consumer's code
+ * included — the wire carries no HTTP status to rebuild one with — and any
+ * non-integer) is `internal_error` (an integral float spelling, `-32002.0`, is
+ * its integer, as on the Rust spine); a `message` that isn't a string is
+ * `'peer error'`; and an own `data` passes through as sent, `null` included.
+ * An `error` that isn't an object (`null`, an array) is read as one with none
+ * of the three.
+ *
+ * @param error - the reply's `error` member, of any shape
+ * @returns the error object the caller sees
+ */
+export const parse_inbound_jsonrpc_error = (error: unknown): JsonrpcErrorObject => {
+	const obj =
+		typeof error === 'object' && error !== null && !Array.isArray(error)
+			? (error as Record<string, unknown>)
+			: null;
+	const code = obj?.code;
+	const message = obj?.message;
+	const parsed: JsonrpcErrorObject = {
+		code:
+			typeof code === 'number' && BASE_JSONRPC_ERROR_CODE_SET.has(code)
+				? (code as JsonrpcErrorCode)
+				: JSONRPC_ERROR_CODES.internal_error,
+		message: typeof message === 'string' ? message : 'peer error'
+	};
+	if (obj !== null && Object.hasOwn(obj, 'data')) parsed.data = obj.data;
+	return parsed;
+};
+
+/**
  * Declare a consumer JSON-RPC error code and the HTTP status it answers, so
  * `jsonrpc_error_code_to_http_status` maps it instead of falling back to 500.
  *

@@ -166,8 +166,8 @@ const peer_request_error_to_jsonrpc = (error: PeerRequestError): ThrownJsonrpcEr
 				{ reason: REASON_PEER_TOO_MANY_IN_FLIGHT }
 			);
 		case 'client_error':
-			// Forward the client's envelope verbatim so its own code / message /
-			// data reach the original caller unchanged.
+			// the client's error, already read to a base-set code and a string
+			// message (`parse_inbound_jsonrpc_error`), reaches the caller as is
 			return new ThrownJsonrpcError(error.error.code, error.error.message, error.error.data);
 	}
 };

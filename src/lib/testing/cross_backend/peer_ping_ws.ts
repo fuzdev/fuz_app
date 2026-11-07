@@ -88,8 +88,9 @@ export interface PeerPingWsTestOptions extends WsEndpointTarget {
  * Register the server-initiated `peer/ping` suite — a positive round-trip
  * plus the security negatives the design doc's §Security surface mandates
  * (unsolicited-response rejection, per-connection id isolation, never-reply
- * `Timeout`, wrong-shape reply rejection, plus client-error forwarding and
- * the HTTP no-transport path). Gated on `capabilities.peer_request`.
+ * `Timeout`, wrong-shape reply rejection, plus client-error forwarding, the
+ * reading of a malformed client error, and the HTTP no-transport path).
+ * Gated on `capabilities.peer_request`.
  */
 export const describe_peer_ping_ws_tests = (options: PeerPingWsTestOptions): void => {
 	const { setup_test, capabilities } = options;
@@ -228,6 +229,55 @@ export const describe_peer_ping_ws_tests = (options: PeerPingWsTestOptions): voi
 					assert.strictEqual(error_reason(frame), 'client_says_no');
 				} finally {
 					await ws.close();
+				}
+			}
+		);
+
+		// The client is untrusted: both spines read its error reply to a base-set
+		// code (anything else, a consumer's code included, is internal_error) and
+		// a string message (else 'peer error'), keeping a present `data` as sent.
+		test_if(
+			capabilities.peer_request,
+			'a client error reply off the base set is read to internal_error, never forwarded raw',
+			async () => {
+				const fixture = await setup_test();
+				const cases: Array<{ error: unknown; code: number; message: string; data?: unknown }> = [
+					{
+						error: { code: -32050, message: 'consumer code', data: { reason: 'client_says_no' } },
+						code: -32603,
+						message: 'consumer code',
+						data: { reason: 'client_says_no' }
+					},
+					{
+						error: { code: -32005.5, message: 42, data: null },
+						code: -32603,
+						message: 'peer error',
+						data: null
+					},
+					{ error: null, code: -32603, message: 'peer error' },
+					{
+						error: { code: -32002, message: 'base code', data: 'kept' },
+						code: -32002,
+						message: 'base code',
+						data: 'kept'
+					}
+				];
+				for (const [i, c] of cases.entries()) {
+					const ws = await open_ws(fixture, () => ({ error: c.error as never }));
+					try {
+						const frame = await ping_raw(ws, 10 + i, { nonce: 1, timeout_ms: 2000 });
+						const label = JSON.stringify(c.error);
+						assert.ok('error' in frame, `${label}: a client error reply must surface as an error`);
+						assert.strictEqual(frame.error.code, c.code, label);
+						assert.strictEqual(frame.error.message, c.message, label);
+						if ('data' in c) {
+							assert.deepStrictEqual(frame.error.data, c.data, label);
+						} else {
+							assert.notOk('data' in frame.error, label);
+						}
+					} finally {
+						await ws.close();
+					}
 				}
 			}
 		);

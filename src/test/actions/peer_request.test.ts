@@ -33,7 +33,7 @@ describe('PendingPeerRequests', () => {
 		assert.strictEqual(pending.size(), 0, 'resolve removes the entry');
 	});
 
-	test('a client error reply forwards the envelope verbatim', async () => {
+	test('a client error reply with a base-set code forwards the envelope unchanged', async () => {
 		const pending = new PendingPeerRequests();
 		const conn = create_uuid();
 		const reg = pending.register(conn);
@@ -45,6 +45,35 @@ describe('PendingPeerRequests', () => {
 		assert.strictEqual(outcome.error.kind, 'client_error');
 		if (outcome.error.kind === 'client_error') {
 			assert.deepStrictEqual(outcome.error.error, err);
+		}
+	});
+
+	test('a client error reply is read as the Rust twin reads it: base-set code, string message', async () => {
+		const pending = new PendingPeerRequests();
+		const conn = create_uuid();
+		const cases: Array<[unknown, unknown]> = [
+			[
+				{ code: -32050, message: 'consumer code', data: { reason: 'r' } },
+				{ code: -32603, message: 'consumer code', data: { reason: 'r' } }
+			],
+			[
+				{ code: -32005.5, message: 7 },
+				{ code: -32603, message: 'peer error' }
+			],
+			[null, { code: -32603, message: 'peer error' }]
+		];
+		for (const [error, expected] of cases) {
+			const reg = pending.register(conn);
+			assert.ok(reg);
+			// a remote frame, as the socket hands it over: `error` unvalidated
+			const response = { jsonrpc: '2.0', id: reg.id, error } as never;
+			assert.ok(pending.resolve(conn, response));
+			const outcome = await reg.outcome;
+			assert.deepStrictEqual(
+				outcome,
+				{ ok: false, error: { kind: 'client_error', error: expected } } as never,
+				JSON.stringify(error)
+			);
 		}
 	});
 

@@ -27,6 +27,7 @@ import type {
 	JsonrpcResult
 } from '../http/jsonrpc.ts';
 import { is_jsonrpc_error_response } from '../http/jsonrpc_helpers.ts';
+import { parse_inbound_jsonrpc_error } from '../http/jsonrpc_errors.ts';
 
 /**
  * Default deadline (ms) for a server→client peer request before it resolves
@@ -49,8 +50,9 @@ export const DEFAULT_MAX_IN_FLIGHT_PEER_REQUESTS_PER_CONNECTION = 256;
  * - `connection_gone` — the socket closed (or was never registered) before a reply.
  * - `too_many_in_flight` — the per-connection in-flight cap was hit.
  * - `client_error` — the client answered with a JSON-RPC error; `error` is
- *   forwarded verbatim so the initiating handler can surface the client's own
- *   code / message / data.
+ *   its envelope read by `parse_inbound_jsonrpc_error` (a base-set code, a
+ *   string message, its `data` as sent), so the initiating handler can surface
+ *   the client's own message and data.
  */
 export type PeerRequestError =
 	| { kind: 'timeout' }
@@ -163,7 +165,9 @@ export class PendingPeerRequests {
 	/**
 	 * Settle the pending request matching an inbound reply. A success response
 	 * resolves `{ok: true, value: result}`; an error response resolves
-	 * `{ok: false, error: {kind: 'client_error', error}}` (forwarded verbatim).
+	 * `{ok: false, error: {kind: 'client_error', error}}`, its `error` read by
+	 * `parse_inbound_jsonrpc_error`, as the Rust twin reads it — the reply is
+	 * remote-authored and unvalidated.
 	 *
 	 * Returns `false` when no entry matches — an unsolicited, cross-connection,
 	 * or already-settled reply — so the caller drops it.
@@ -176,7 +180,10 @@ export class PendingPeerRequests {
 		if (id == null) return false;
 		if (!this.#pending.get(connection_id)?.has(id)) return false;
 		const outcome: PeerRequestOutcome = is_jsonrpc_error_response(response)
-			? { ok: false, error: { kind: 'client_error', error: response.error } }
+			? {
+					ok: false,
+					error: { kind: 'client_error', error: parse_inbound_jsonrpc_error(response.error) }
+				}
 			: { ok: true, value: response.result };
 		this.settle(connection_id, id, outcome);
 		return true;
