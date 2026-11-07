@@ -2,13 +2,12 @@
  * The testing generators over `@fuzdev/fuz_schema` schemas: valid bodies,
  * paths and string params a fuz_schema schema accepts, adversarial cases a
  * fuz_schema input refuses, the RPC output checks, and the throw on an input
- * no body can be generated for or a schema of neither library.
+ * no body can be generated for or a value that is no schema.
  *
  * @module
  */
 
 import { describe, assert, test } from 'vitest';
-import { z } from 'zod';
 import {
 	array,
 	boolean,
@@ -115,36 +114,20 @@ describe('generate_valid_body over fuz_schema', () => {
 
 	test('a void under a wrapper throws, as dispatch reads absent params as `{}` for it', () => {
 		assert.throws(() => generate_valid_body(optional(fuz_void)), /void under wrappers/);
-		assert.throws(() => generate_valid_body(z.void().optional()), /void under wrappers/);
 	});
 
-	test('a record field generates an empty record, in both libraries', () => {
-		const fuz_input = object({ tags: record(string), n: number });
-		const fuz_body = generate_valid_body(fuz_input);
-		assert.deepEqual(fuz_body, { tags: {}, n: 1 });
-		assert.ok(parse(fuz_input, fuz_body).ok);
-		const zod_input = z.strictObject({ tags: z.record(z.string(), z.string()), n: z.number() });
-		const zod_body = generate_valid_body(zod_input);
-		assert.deepEqual(zod_body, { tags: {}, n: 1 });
-		assert.ok(zod_input.safeParse(zod_body).success);
-	});
-
-	test('a void field generates undefined, in both libraries', () => {
-		assert.deepEqual(generate_valid_body(object({ v: fuz_void, n: number })), {
-			v: undefined,
-			n: 1
-		});
-		assert.deepEqual(generate_valid_body(z.strictObject({ v: z.void(), n: z.number() })), {
-			v: undefined,
-			n: 1
-		});
-	});
-
-	test('a zod `z.undefined()` field generates undefined', () => {
-		const input = z.strictObject({ u: z.undefined(), n: z.number() });
+	test('a record field generates an empty record', () => {
+		const input = object({ tags: record(string), n: number });
 		const body = generate_valid_body(input);
-		assert.deepEqual(body, { u: undefined, n: 1 });
-		assert.ok(input.safeParse(body).success);
+		assert.deepEqual(body, { tags: {}, n: 1 });
+		assert.ok(parse(input, body).ok);
+	});
+
+	test('a void field generates undefined', () => {
+		const input = object({ v: fuz_void, n: number });
+		const body = generate_valid_body(input);
+		assert.deepEqual(body, { v: undefined, n: 1 });
+		assert.ok(parse(input, body).ok);
 	});
 
 	test('an input that is no object schema throws', () => {
@@ -154,14 +137,13 @@ describe('generate_valid_body over fuz_schema', () => {
 				/generate_valid_body: the input is no object, void or null schema/
 			);
 		}
-		assert.throws(() => generate_valid_body(z.string()), /innermost type is 'string'/);
 	});
 
 	test('an unrecognized schema throws', () => {
 		for (const schema of [{}, { safeParse: () => ({ success: true }) }]) {
 			assert.throws(
 				() => generate_valid_body(schema as unknown as AnySchema),
-				/generate_valid_body: the input is neither a Zod schema nor a @fuzdev\/fuz_schema schema/
+				/generate_valid_body: the input is .*a @fuzdev\/fuz_schema schema$/
 			);
 		}
 	});
@@ -178,7 +160,7 @@ describe('generate_valid_body over fuz_schema', () => {
 });
 
 describe('to_object_schema_view over fuz_schema', () => {
-	test('reads each field in Zod vocabulary', () => {
+	test('reads each field in the shared field vocabulary', () => {
 		const { fields } = to_object_schema_view(Input, 'Input');
 		const by_name = Object.fromEntries(fields.map((f) => [f.name, f]));
 		assert.strictEqual(by_name.name!.base_type, 'string');
@@ -193,34 +175,35 @@ describe('to_object_schema_view over fuz_schema', () => {
 		assert.isTrue(by_name.name!.required);
 	});
 
-	test('a literal(null) field reads as null, as z.null() does', () => {
+	test('a literal(null) field reads as null', () => {
 		const [field] = to_object_schema_view(object({ n: literal(null) }), 'n').fields;
 		assert.strictEqual(field!.base_type, 'null');
-		assert.strictEqual(
-			to_object_schema_view(z.strictObject({ n: z.null() }), 'n').fields[0]!.base_type,
-			'null'
-		);
 	});
 
-	test('a literal(undefined) field reads as void, as z.void() does', () => {
+	test('a literal(undefined) field reads as void', () => {
 		const [field] = to_object_schema_view(object({ v: fuz_void }), 'v').fields;
 		assert.strictEqual(field!.base_type, 'void');
-		assert.strictEqual(
-			to_object_schema_view(z.strictObject({ v: z.void() }), 'v').fields[0]!.base_type,
-			'void'
-		);
 	});
 
-	test('matches zod_extract_fields on the same shape', () => {
-		const zod_fields = to_object_schema_view(
-			z.strictObject({ a: z.string(), b: z.number().optional(), c: z.boolean().nullable() }),
-			'zod'
-		).fields;
-		const fuz_fields = to_object_schema_view(
+	test('reads required, optional and nullable fields', () => {
+		const { fields } = to_object_schema_view(
 			object({ a: string, b: optional(number), c: nullable(boolean) }),
 			'fuz'
-		).fields;
-		assert.deepEqual(fuz_fields, zod_fields);
+		);
+		assert.deepEqual(
+			fields.map((f) => ({
+				name: f.name,
+				base_type: f.base_type,
+				required: f.required,
+				has_default: f.has_default,
+				nullable: f.nullable
+			})),
+			[
+				{ name: 'a', base_type: 'string', required: true, has_default: false, nullable: false },
+				{ name: 'b', base_type: 'number', required: false, has_default: false, nullable: false },
+				{ name: 'c', base_type: 'boolean', required: true, has_default: false, nullable: true }
+			]
+		);
 	});
 });
 
@@ -283,14 +266,13 @@ describe('generate_input_test_cases over fuz_schema', () => {
 		assert.deepEqual(generate_input_test_cases(fuz_void), []);
 		assert.deepEqual(generate_input_test_cases(literal(null)), []);
 		assert.throws(() => generate_input_test_cases(optional(fuz_void)), /void under wrappers/);
-		assert.throws(() => generate_input_test_cases(z.void().optional()), /void under wrappers/);
 		assert.throws(
 			() => generate_input_test_cases(array(string), { label: 'thing_list' }),
 			/the input for 'thing_list' is no object, void or null schema/
 		);
 		assert.throws(
 			() => generate_input_test_cases({} as unknown as AnySchema),
-			/is neither a Zod schema nor a @fuzdev\/fuz_schema schema/
+			/is .*a @fuzdev\/fuz_schema schema$/
 		);
 	});
 

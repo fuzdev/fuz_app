@@ -1,18 +1,18 @@
 /**
- * `AuditEventTypeName` and `AuditOutcome` (`auth/audit_log_schema.ts`), held
- * to the Zod copies of them they were (`ZodAuditEventTypeName`,
- * `ZodAuditOutcome`): on one corpus each, the
- * same verdict, the same output, and the same wire issues, `message` included
- * where Zod's is one of the custom messages. Two differences are declared for
- * `AuditEventTypeName`: a string both too long and off the grammar gets the
- * length issue alone, where Zod adds the grammar issue after it, and a value
- * that is no string gets fuz_schema's message.
+ * `AuditEventTypeName` and `AuditOutcome` (`auth/audit_log_schema.ts`), on one
+ * corpus each: each row's expected answer was frozen from the Zod copy of the
+ * schema it replaced (`ZOD_EVENT_TYPE_ANSWERS`, `ZOD_OUTCOME_ANSWERS`, in
+ * corpus order): the same verdict, the same output, and the same wire issues,
+ * the message as the custom length or pattern message where Zod's was one.
+ * Two differences are declared for `AuditEventTypeName`: a string both too
+ * long and off the grammar gets the length issue alone, where Zod added the
+ * grammar issue after it, and a value that is no string gets fuz_schema's
+ * message.
  *
  * @module
  */
 
 import { describe, test, assert } from 'vitest';
-import { z } from 'zod';
 import { is_schema } from '@fuzdev/fuz_schema/schema.ts';
 import { to_json_schema } from '@fuzdev/fuz_schema/json_schema.ts';
 
@@ -27,7 +27,6 @@ import {
 } from '#lib/auth/audit_log_schema.ts';
 import { parse_any, to_wire_issues, type WireIssue } from '#lib/schema_issues.ts';
 import { NAME_LENGTH_MAX } from '#lib/auth/name_schema.ts';
-import { ZodAuditEventTypeName, ZodAuditOutcome } from './zod_name_oracles.ts';
 
 /** Names of the grammar and around it, and values that are no string. */
 const EVENT_TYPE_CORPUS: Array<unknown> = [
@@ -84,9 +83,57 @@ const outcome_of = (
 		: { ok: false, issues: to_wire_issues(result.issues, input) };
 };
 
-const CUSTOM_MESSAGES: ReadonlyArray<string> = [
-	AUDIT_EVENT_TYPE_NAME_LENGTH_MESSAGE,
-	AUDIT_EVENT_TYPE_NAME_PATTERN_MESSAGE
+/** A refusal's issues as `[kind, expected, received, message]`, the message as `'L'` (the length message), `'P'` (the pattern message) or `''` (the library's default); `'accepted'` otherwise. */
+type Answer =
+	'accepted' | Array<[kind: string, expected: string, received: string, message: 'L' | 'P' | '']>;
+
+const ZOD_EVENT_TYPE_ANSWERS: Array<Answer> = [
+	'accepted',
+	'accepted',
+	'accepted',
+	'accepted',
+	'accepted',
+	'accepted',
+	'accepted',
+	'accepted',
+	'accepted',
+	'accepted',
+	[['max_length', 'length <= 64', 'string', 'L']],
+	[
+		['max_length', 'length <= 64', 'string', 'L'],
+		['regex', '/^[A-Za-z][A-Za-z0-9_./-]*$/', 'string', 'P']
+	],
+	[
+		['max_length', 'length <= 64', 'string', 'L'],
+		['regex', '/^[A-Za-z][A-Za-z0-9_./-]*$/', 'string', 'P']
+	],
+	[['regex', '/^[A-Za-z][A-Za-z0-9_./-]*$/', 'string', 'P']],
+	[['regex', '/^[A-Za-z][A-Za-z0-9_./-]*$/', 'string', 'P']],
+	[['regex', '/^[A-Za-z][A-Za-z0-9_./-]*$/', 'string', 'P']],
+	[['regex', '/^[A-Za-z][A-Za-z0-9_./-]*$/', 'string', 'P']],
+	[['regex', '/^[A-Za-z][A-Za-z0-9_./-]*$/', 'string', 'P']],
+	[['regex', '/^[A-Za-z][A-Za-z0-9_./-]*$/', 'string', 'P']],
+	[['regex', '/^[A-Za-z][A-Za-z0-9_./-]*$/', 'string', 'P']],
+	[['regex', '/^[A-Za-z][A-Za-z0-9_./-]*$/', 'string', 'P']],
+	[['string', 'string', 'null', '']],
+	[['string', 'string', 'undefined', '']],
+	[['string', 'string', 'number', '']],
+	[['string', 'string', 'boolean', '']],
+	[['string', 'string', 'array', '']],
+	[['string', 'string', 'object', '']]
+];
+
+const ZOD_OUTCOME_ANSWERS: Array<Answer> = [
+	'accepted',
+	'accepted',
+	[['one_of', '"success" | "failure"', 'string', '']],
+	[['one_of', '"success" | "failure"', 'string', '']],
+	[['one_of', '"success" | "failure"', 'string', '']],
+	[['one_of', '"success" | "failure"', 'string', '']],
+	[['one_of', '"success" | "failure"', 'null', '']],
+	[['one_of', '"success" | "failure"', 'undefined', '']],
+	[['one_of', '"success" | "failure"', 'number', '']],
+	[['one_of', '"success" | "failure"', 'array', '']]
 ];
 
 describe('AuditEventTypeName', () => {
@@ -94,7 +141,7 @@ describe('AuditEventTypeName', () => {
 		assert.ok(is_schema(AuditEventTypeName));
 	});
 
-	test('keeps the Zod messages', () => {
+	test('keeps the message text', () => {
 		assert.strictEqual(AUDIT_EVENT_TYPE_NAME_LENGTH_MESSAGE, 'must be at most 64 characters');
 		assert.strictEqual(
 			AUDIT_EVENT_TYPE_NAME_PATTERN_MESSAGE,
@@ -102,49 +149,54 @@ describe('AuditEventTypeName', () => {
 		);
 	});
 
-	test('agrees with its Zod copy on every row but the declared differences', () => {
+	test('gives every row the answer the Zod copy gave, but for the declared differences', () => {
+		assert.strictEqual(ZOD_EVENT_TYPE_ANSWERS.length, EVENT_TYPE_CORPUS.length);
 		let matched = 0;
 		let custom = 0;
 		let declared = 0;
-		for (const input of EVENT_TYPE_CORPUS) {
+		for (const [row, input] of EVENT_TYPE_CORPUS.entries()) {
 			const label = JSON.stringify(input) ?? String(input);
+			const answer = ZOD_EVENT_TYPE_ANSWERS[row]!;
 			const fuz = outcome_of(AuditEventTypeName, input);
-			const zod = outcome_of(ZodAuditEventTypeName, input);
-			assert.strictEqual(fuz.ok, zod.ok, label);
-			if (fuz.ok && zod.ok) {
+			if (answer === 'accepted') {
+				assert.ok(fuz.ok, label);
 				assert.strictEqual(fuz.value, input, label);
-				assert.strictEqual(zod.value, input, label);
 				matched++;
 				continue;
 			}
-			assert.ok(!fuz.ok && !zod.ok);
+			assert.ok(!fuz.ok, label);
 			const too_long_off_grammar =
 				typeof input === 'string' &&
 				input.length > NAME_LENGTH_MAX &&
 				!AUDIT_EVENT_TYPE_NAME_REGEX.test(input);
 			// declared: the one length issue, as fuz_schema's `pipe` stops at its
 			// first failing step
-			const zod_issues = too_long_off_grammar ? zod.issues.slice(0, 1) : zod.issues;
+			const expected = too_long_off_grammar ? answer.slice(0, 1) : answer;
 			if (too_long_off_grammar) {
 				declared++;
 				assert.deepStrictEqual(
-					zod.issues.map((i) => i.kind),
+					answer.map((i) => i[0]),
 					['max_length', 'regex'],
 					label
 				);
 			}
-			assert.strictEqual(fuz.issues.length, zod_issues.length, label);
-			for (let i = 0; i < fuz.issues.length; i++) {
-				const { message: fuz_message, ...fuz_rest } = fuz.issues[i]!;
-				const { message: zod_message, ...zod_rest } = zod_issues[i]!;
-				assert.deepStrictEqual(fuz_rest, zod_rest, label);
-				if (CUSTOM_MESSAGES.includes(zod_message)) {
+			assert.deepStrictEqual(
+				fuz.issues.map((i) => [i.kind, i.expected, i.received]),
+				expected.map((i) => i.slice(0, 3)),
+				label
+			);
+			for (const [i, [, , received, message]] of expected.entries()) {
+				const fuz_message = fuz.issues[i]!.message;
+				if (message === 'L') {
 					custom++;
-					assert.strictEqual(fuz_message, zod_message, label);
+					assert.strictEqual(fuz_message, AUDIT_EVENT_TYPE_NAME_LENGTH_MESSAGE, label);
+				} else if (message === 'P') {
+					custom++;
+					assert.strictEqual(fuz_message, AUDIT_EVENT_TYPE_NAME_PATTERN_MESSAGE, label);
 				} else {
 					// declared: a value that is no string gets fuz_schema's message
 					assert.notStrictEqual(typeof input, 'string', label);
-					assert.strictEqual(fuz_message, `expected string, received ${fuz_rest.received}`);
+					assert.strictEqual(fuz_message, `expected string, received ${received}`);
 				}
 			}
 		}
@@ -153,38 +205,39 @@ describe('AuditEventTypeName', () => {
 		assert.ok(declared >= 2, `${declared} too long and off the grammar`);
 	});
 
-	test('its JSON Schema is its Zod copy’s, byte for byte', () => {
+	test('its JSON Schema is the one the Zod copy wrote, byte for byte', () => {
 		assert.strictEqual(
 			JSON.stringify(to_json_schema(AuditEventTypeName)),
-			JSON.stringify(z.toJSONSchema(ZodAuditEventTypeName))
+			'{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"string","maxLength":64,"pattern":"^[A-Za-z][A-Za-z0-9_./-]*$"}'
 		);
 	});
 });
 
 describe('AuditOutcome', () => {
-	test('agrees with its Zod copy on every row, its issues but for message', () => {
-		for (const input of OUTCOME_CORPUS) {
+	test('gives every row the answer the Zod copy gave', () => {
+		assert.strictEqual(ZOD_OUTCOME_ANSWERS.length, OUTCOME_CORPUS.length);
+		for (const [row, input] of OUTCOME_CORPUS.entries()) {
 			const label = JSON.stringify(input) ?? String(input);
+			const answer = ZOD_OUTCOME_ANSWERS[row]!;
 			const fuz = outcome_of(AuditOutcome, input);
-			const zod = outcome_of(ZodAuditOutcome, input);
-			assert.strictEqual(fuz.ok, zod.ok, label);
-			if (fuz.ok && zod.ok) {
-				assert.strictEqual(fuz.value, zod.value, label);
+			if (answer === 'accepted') {
+				assert.ok(fuz.ok, label);
+				assert.strictEqual(fuz.value, input, label);
 				continue;
 			}
-			assert.ok(!fuz.ok && !zod.ok);
+			assert.ok(!fuz.ok, label);
 			assert.deepStrictEqual(
-				fuz.issues.map(({ message: _, ...rest }) => rest),
-				zod.issues.map(({ message: _, ...rest }) => rest),
+				fuz.issues.map((i) => [i.kind, i.expected, i.received]),
+				answer.map((i) => i.slice(0, 3)),
 				label
 			);
 		}
 	});
 
-	test('its JSON Schema is its Zod copy’s, byte for byte', () => {
+	test('its JSON Schema is the one the Zod copy wrote, byte for byte', () => {
 		assert.strictEqual(
 			JSON.stringify(to_json_schema(AuditOutcome)),
-			JSON.stringify(z.toJSONSchema(ZodAuditOutcome))
+			'{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"string","enum":["success","failure"]}'
 		);
 	});
 });

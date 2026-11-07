@@ -12,7 +12,16 @@
  */
 
 import { describe, assert, test, vi } from 'vitest';
-import { z } from 'zod';
+import {
+	literal,
+	number,
+	object,
+	optional,
+	string,
+	void as fuz_void,
+	type AnySchema
+} from '@fuzdev/fuz_schema/schema.ts';
+import { meta } from '@fuzdev/fuz_schema/meta.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { create_frontend_rpc_client } from '#lib/actions/frontend_rpc_client.ts';
@@ -34,8 +43,8 @@ const ping_spec = {
 	initiator: 'frontend',
 	auth: { account: 'none', actor: 'none' },
 	side_effects: false,
-	input: z.null(),
-	output: z.strictObject({ pong: z.literal(true) }),
+	input: literal(null),
+	output: object({ pong: literal(true) }),
 	async: true,
 	description: 'Health check'
 } satisfies ActionSpecUnion;
@@ -46,8 +55,8 @@ const echo_spec = {
 	initiator: 'frontend',
 	auth: { account: 'none', actor: 'none' },
 	side_effects: true,
-	input: z.strictObject({ message: z.string() }),
-	output: z.strictObject({ message: z.string() }),
+	input: object({ message: string }),
+	output: object({ message: string }),
 	async: true,
 	description: 'Echo back the input'
 } satisfies ActionSpecUnion;
@@ -331,13 +340,13 @@ describe('create_frontend_rpc_client — HTTP reads', () => {
 	});
 
 	test('a read whose input carries a secret or personal field at any depth is a POST', async () => {
-		const sensitive_inputs: Array<[string, z.ZodType]> = [
-			['secret_read', z.strictObject({ token: z.string().meta({ sensitivity: 'secret' }) })],
-			['personal_read', z.strictObject({ query: z.string().meta({ sensitivity: 'personal' }) })],
+		const sensitive_inputs: Array<[string, AnySchema]> = [
+			['secret_read', object({ token: meta(string, { sensitivity: 'secret' }) })],
+			['personal_read', object({ query: meta(string, { sensitivity: 'personal' }) })],
 			[
 				'nested_read',
-				z.strictObject({
-					filter: z.strictObject({ email: z.string().meta({ sensitivity: 'personal' }) }).optional()
+				object({
+					filter: optional(object({ email: meta(string, { sensitivity: 'personal' }) }))
 				})
 			]
 		];
@@ -474,8 +483,8 @@ describe('create_frontend_rpc_client — ws', () => {
 			initiator: 'frontend',
 			auth: null,
 			side_effects: true,
-			input: z.strictObject({ n: z.number() }),
-			output: z.void(),
+			input: object({ n: number }),
+			output: fuz_void,
 			async: true,
 			description: 'note'
 		} satisfies ActionSpecUnion;

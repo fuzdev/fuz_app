@@ -6,9 +6,19 @@
 
 import { describe, assert, test } from 'vitest';
 import { Hono } from 'hono';
-import { z } from 'zod';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
-import { literal, void as fuz_void } from '@fuzdev/fuz_schema/schema.ts';
+import {
+	array,
+	literal,
+	loose_object,
+	nullable,
+	number,
+	object,
+	optional,
+	string,
+	void as fuz_void,
+	type AnySchema
+} from '@fuzdev/fuz_schema/schema.ts';
 import { meta } from '@fuzdev/fuz_schema/meta.ts';
 
 import { create_rpc_endpoint, RPC_GET_CACHE_CONTROL } from '#lib/actions/action_rpc.ts';
@@ -37,13 +47,12 @@ import {
 	ERROR_TOKEN_SCOPE_REQUIRED
 } from '#lib/http/error_schemas.ts';
 import { RateLimiter } from '#lib/rate_limiter.ts';
-import type { Uuid } from '#lib/primitive_schemas.ts';
+import { ActingActor, type Uuid } from '#lib/primitive_schemas.ts';
 
 import {
 	ForeignRpcError,
 	SecondCopyThrownJsonrpcError
 } from '../http/thrown_jsonrpc_error_helpers.ts';
-import { ZodActingActor } from '#lib/zod_schemas.ts';
 
 const log = new Logger('test', { level: 'off' });
 const db = create_stub_db();
@@ -54,8 +63,8 @@ const create_post_spec = (): RequestResponseActionSpec => ({
 	initiator: 'frontend',
 	auth: { account: 'required', actor: 'none' },
 	side_effects: true,
-	input: z.strictObject({ name: z.string() }),
-	output: z.strictObject({ id: z.string() }),
+	input: object({ name: string }),
+	output: object({ id: string }),
 	async: true,
 	description: 'Create a thing'
 });
@@ -66,8 +75,8 @@ const create_get_spec = (): RequestResponseActionSpec => ({
 	initiator: 'frontend',
 	auth: { account: 'none', actor: 'none' },
 	side_effects: false,
-	input: z.void(),
-	output: z.strictObject({ items: z.array(z.string()) }),
+	input: fuz_void,
+	output: object({ items: array(string) }),
 	async: true,
 	description: 'List things'
 });
@@ -78,8 +87,8 @@ const create_get_with_input_spec = (): RequestResponseActionSpec => ({
 	initiator: 'frontend',
 	auth: { account: 'none', actor: 'none' },
 	side_effects: false,
-	input: z.strictObject({ query: z.string(), limit: z.number() }),
-	output: z.strictObject({ results: z.array(z.string()) }),
+	input: object({ query: string, limit: number }),
+	output: object({ results: array(string) }),
 	async: true,
 	description: 'Search things'
 });
@@ -90,11 +99,11 @@ const create_meta_spec = (): RequestResponseActionSpec => ({
 	initiator: 'frontend',
 	auth: { account: 'none', actor: 'none' },
 	side_effects: true,
-	input: z.strictObject({
-		name: z.string(),
-		_meta: z.looseObject({ progressToken: z.string().optional() }).optional()
+	input: object({
+		name: string,
+		_meta: optional(loose_object({ progressToken: optional(string) }))
 	}),
-	output: z.strictObject({ ok: z.literal(true) }),
+	output: object({ ok: literal(true) }),
 	async: true,
 	description: 'Action with _meta in input schema'
 });
@@ -195,58 +204,7 @@ describe('create_rpc_endpoint', () => {
 		);
 	});
 
-	test('throws on z.void() output spec (a response always carries a result)', () => {
-		const void_output_spec: RequestResponseActionSpec = {
-			method: 'thing_void_output',
-			kind: 'request_response',
-			initiator: 'frontend',
-			auth: { account: 'none', actor: 'none' },
-			side_effects: true,
-			input: z.void(),
-			output: z.void(),
-			async: true,
-			description: 'Void-output action'
-		};
-		assert.throws(
-			() =>
-				create_rpc_endpoint({
-					action_ip_rate_limiter: null,
-					action_account_rate_limiter: null,
-					path: '/api/rpc',
-					actions: [{ spec: void_output_spec, handler: () => undefined }],
-					log
-				}),
-			/RPC action "thing_void_output".*void schema for output.*z\.void\(\).*s\.void.*z\.null\(\).*literal\(null\)/s
-		);
-	});
-
-	test('throws on z.null() input spec (JSON-RPC 2.0 forbids `params: null`)', () => {
-		const legacy_null_spec: RequestResponseActionSpec = {
-			method: 'thing_legacy_null',
-			kind: 'request_response',
-			initiator: 'frontend',
-			auth: { account: 'none', actor: 'none' },
-			side_effects: false,
-			input: z.null(),
-			output: z.strictObject({ ok: z.literal(true) }),
-			async: true,
-			description: 'Legacy null-input action'
-		};
-		assert.throws(
-			() =>
-				create_rpc_endpoint({
-					action_ip_rate_limiter: null,
-					action_account_rate_limiter: null,
-					path: '/api/rpc',
-					actions: [{ spec: legacy_null_spec, handler: () => ({ ok: true as const }) }],
-					log
-				}),
-			/RPC action "thing_legacy_null".*null schema for input.*z\.null\(\).*literal\(null\).*z\.void\(\).*s\.void/s
-		);
-	});
-
-	// the registry reads either library's void and null by shape
-	test('throws on a fuz_schema void output, as on z.void()', () => {
+	test('throws on a void output spec (a response always carries a result)', () => {
 		for (const output of [fuz_void, meta(fuz_void, { description: 'nothing' })]) {
 			const spec: RequestResponseActionSpec = {
 				method: 'thing_fuz_void_output',
@@ -257,7 +215,7 @@ describe('create_rpc_endpoint', () => {
 				input: fuz_void,
 				output,
 				async: true,
-				description: 'fuz_schema void-output action'
+				description: 'Void-output action'
 			};
 			assert.throws(
 				() =>
@@ -273,7 +231,7 @@ describe('create_rpc_endpoint', () => {
 		}
 	});
 
-	test('throws on a fuz_schema literal(null) input, as on z.null()', () => {
+	test('throws on a literal(null) input spec (JSON-RPC 2.0 forbids `params: null`)', () => {
 		const spec: RequestResponseActionSpec = {
 			method: 'thing_fuz_null_input',
 			kind: 'request_response',
@@ -281,9 +239,9 @@ describe('create_rpc_endpoint', () => {
 			auth: { account: 'none', actor: 'none' },
 			side_effects: false,
 			input: literal(null),
-			output: z.strictObject({ ok: z.literal(true) }),
+			output: object({ ok: literal(true) }),
 			async: true,
-			description: 'fuz_schema null-input action'
+			description: 'Null-input action'
 		};
 		assert.throws(
 			() =>
@@ -298,7 +256,7 @@ describe('create_rpc_endpoint', () => {
 		);
 	});
 
-	test('accepts a fuz_schema void input', () => {
+	test('accepts a void input', () => {
 		const spec: RequestResponseActionSpec = {
 			method: 'thing_fuz_void_input',
 			kind: 'request_response',
@@ -306,9 +264,9 @@ describe('create_rpc_endpoint', () => {
 			auth: { account: 'none', actor: 'none' },
 			side_effects: false,
 			input: fuz_void,
-			output: z.strictObject({ ok: z.literal(true) }),
+			output: object({ ok: literal(true) }),
 			async: true,
-			description: 'fuz_schema void-input action'
+			description: 'Void-input action'
 		};
 		const specs = create_rpc_endpoint({
 			action_ip_rate_limiter: null,
@@ -483,7 +441,7 @@ describe('POST dispatcher', () => {
 			...create_post_spec(),
 			method: 'admin_action',
 			auth: { account: 'required', actor: 'required', roles: ['admin'] },
-			input: z.strictObject({ name: z.string(), acting: ZodActingActor })
+			input: object({ name: string, acting: ActingActor })
 		};
 		const app = create_test_app(
 			[{ spec: admin_spec, handler: () => ({ id: '1' }) }],
@@ -513,7 +471,7 @@ describe('POST dispatcher', () => {
 			...create_post_spec(),
 			method: 'admin_action',
 			auth: { account: 'required', actor: 'required', roles: ['admin'] },
-			input: z.strictObject({ name: z.string(), acting: ZodActingActor })
+			input: object({ name: string, acting: ActingActor })
 		};
 		const app = create_test_app(
 			[{ spec: admin_spec, handler: () => ({ id: '1' }) }],
@@ -536,7 +494,7 @@ describe('POST dispatcher', () => {
 			...create_post_spec(),
 			method: 'admin_action',
 			auth: { account: 'required', actor: 'required', roles: ['admin'] },
-			input: z.strictObject({ name: z.string(), acting: ZodActingActor })
+			input: object({ name: string, acting: ActingActor })
 		};
 		const app = create_test_app(
 			[{ spec: admin_spec, handler: () => ({ id: '1' }) }],
@@ -763,7 +721,7 @@ describe('POST dispatcher', () => {
 	});
 
 	test('object input schemas treat missing params as empty object', async () => {
-		// Mirrors audit_log_list / audit_log_role_grant_history shape: strictObject
+		// Mirrors audit_log_list / audit_log_role_grant_history shape: a strict object
 		// with every field nullish. Callers that don't pass `params` on the
 		// envelope must not trip schema validation — the handler gets `{}`.
 		let received_input: unknown = 'sentinel';
@@ -773,8 +731,8 @@ describe('POST dispatcher', () => {
 			initiator: 'frontend',
 			auth: { account: 'none', actor: 'none' },
 			side_effects: false,
-			input: z.strictObject({ foo: z.string().nullish() }),
-			output: z.strictObject({ ok: z.literal(true) }),
+			input: object({ foo: optional(nullable(string)) }),
+			output: object({ ok: literal(true) }),
 			async: true,
 			description: 'All-optional object input'
 		};
@@ -995,7 +953,7 @@ describe('POST dispatcher', () => {
 				roles: ['keeper'],
 				credential_types: ['daemon_token']
 			},
-			input: z.strictObject({ name: z.string(), acting: ZodActingActor })
+			input: object({ name: string, acting: ActingActor })
 		};
 		const app = create_test_app(
 			[{ spec: keeper_spec, handler: () => ({ id: '1' }) }],
@@ -1022,7 +980,7 @@ describe('POST dispatcher', () => {
 				roles: ['keeper'],
 				credential_types: ['daemon_token']
 			},
-			input: z.strictObject({ name: z.string(), acting: ZodActingActor })
+			input: object({ name: string, acting: ActingActor })
 		};
 		const app = create_test_app(
 			[{ spec: keeper_spec, handler: (input: any) => ({ id: input.name }) }],
@@ -1049,7 +1007,7 @@ describe('POST dispatcher', () => {
 				roles: ['keeper'],
 				credential_types: ['daemon_token']
 			},
-			input: z.strictObject({ name: z.string(), acting: ZodActingActor })
+			input: object({ name: string, acting: ActingActor })
 		};
 		const app = create_test_app([{ spec: keeper_spec, handler: () => ({ id: '1' }) }], {
 			auth_context: create_test_request_context('keeper'),
@@ -1076,7 +1034,7 @@ describe('POST dispatcher', () => {
 				roles: ['keeper'],
 				credential_types: ['daemon_token']
 			},
-			input: z.strictObject({ name: z.string(), acting: ZodActingActor })
+			input: object({ name: string, acting: ActingActor })
 		};
 		const app = create_test_app([{ spec: keeper_spec, handler: () => ({ id: '1' }) }], {
 			auth_context: create_test_request_context('keeper'),
@@ -1103,7 +1061,7 @@ describe('POST dispatcher', () => {
 				roles: ['keeper'],
 				credential_types: ['daemon_token']
 			},
-			input: z.strictObject({ name: z.string(), acting: ZodActingActor })
+			input: object({ name: string, acting: ActingActor })
 		};
 		const app = create_test_app([{ spec: keeper_spec, handler: () => ({ id: '1' }) }], {
 			auth_context: create_test_request_context(),
@@ -1629,8 +1587,8 @@ describe('rate limit', () => {
 		initiator: 'frontend',
 		auth: { account: 'required', actor: 'none' },
 		side_effects: true,
-		input: z.strictObject({ name: z.string() }),
-		output: z.strictObject({ ok: z.literal(true) }),
+		input: object({ name: string }),
+		output: object({ ok: literal(true) }),
 		async: true,
 		description: 'Account-keyed throttled action',
 		rate_limit: 'account'
@@ -1968,14 +1926,14 @@ describe('rate limit', () => {
 });
 
 describe('review probe: prototype-shaped params keys, POST and GET', () => {
-	const read_spec = (method: string, input: z.ZodType): RequestResponseActionSpec => ({
+	const read_spec = (method: string, input: AnySchema): RequestResponseActionSpec => ({
 		method,
 		kind: 'request_response',
 		initiator: 'frontend',
 		auth: { account: 'none', actor: 'none' },
 		side_effects: false,
 		input,
-		output: z.looseObject({}),
+		output: loose_object({}),
 		async: true,
 		description: method
 	});
@@ -1983,10 +1941,10 @@ describe('review probe: prototype-shaped params keys, POST and GET', () => {
 	const app = create_test_app(
 		(
 			[
-				['p_void', z.void()],
-				['p_strict', z.strictObject({ a: z.string() })],
-				['p_loose', z.looseObject({ a: z.string() })],
-				['p_nested', z.strictObject({ f: z.strictObject({ a: z.string() }) })]
+				['p_void', fuz_void],
+				['p_strict', object({ a: string })],
+				['p_loose', loose_object({ a: string })],
+				['p_nested', object({ f: object({ a: string }) })]
 			] as const
 		).map(([method, input]) => ({
 			spec: read_spec(method, input),

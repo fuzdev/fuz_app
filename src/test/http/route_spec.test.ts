@@ -7,8 +7,16 @@
 import { describe, assert, test } from 'vitest';
 import { Hono } from 'hono';
 import { meta } from '@fuzdev/fuz_schema/meta.ts';
-import { object, string, with_default } from '@fuzdev/fuz_schema/schema.ts';
-import { z } from 'zod';
+import {
+	boolean,
+	literal,
+	min_length,
+	number,
+	object,
+	pipe,
+	string,
+	with_default
+} from '@fuzdev/fuz_schema/schema.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import {
@@ -57,7 +65,7 @@ import {
 	jsonrpc_errors
 } from '#lib/http/jsonrpc_errors.ts';
 import { ForeignRpcError, SecondCopyThrownJsonrpcError } from './thrown_jsonrpc_error_helpers.ts';
-import { ZodActingActor } from '#lib/zod_schemas.ts';
+import { ActingActor, Uuid } from '#lib/primitive_schemas.ts';
 
 const log = new Logger('test', { level: 'off' });
 const db = create_stub_db();
@@ -72,8 +80,8 @@ describe('apply_route_specs', () => {
 				auth: { account: 'none', actor: 'none' },
 				handler: () => route_ok({ ok: true }),
 				description: 'Test route',
-				input: z.null(),
-				output: z.strictObject({ ok: z.literal(true) })
+				input: literal(null),
+				output: object({ ok: literal(true) })
 			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
@@ -93,8 +101,8 @@ describe('apply_route_specs', () => {
 				auth: { account: 'none', actor: 'none' },
 				handler: () => route_ok({ created: true }),
 				description: 'Create route',
-				input: z.null(),
-				output: z.strictObject({ created: z.literal(true) })
+				input: literal(null),
+				output: object({ created: literal(true) })
 			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
@@ -115,8 +123,8 @@ describe('apply_route_specs', () => {
 				auth: { account: 'none', actor: 'none' },
 				handler: () => route_ok({ public: true }),
 				description: 'Public route',
-				input: z.null(),
-				output: z.strictObject({ public: z.literal(true) })
+				input: literal(null),
+				output: object({ public: literal(true) })
 			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
@@ -134,8 +142,8 @@ describe('apply_route_specs', () => {
 				auth: { account: 'required', actor: 'none' },
 				handler: () => route_ok({ secret: true }),
 				description: 'Protected route',
-				input: z.null(),
-				output: z.strictObject({ secret: z.literal(true) })
+				input: literal(null),
+				output: object({ secret: literal(true) })
 			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
@@ -164,8 +172,8 @@ describe('apply_route_specs', () => {
 				auth: { account: 'required', actor: 'none' },
 				handler: () => route_ok({ secret: true }),
 				description: 'Protected route',
-				input: z.null(),
-				output: z.strictObject({ secret: z.literal(true) })
+				input: literal(null),
+				output: object({ secret: literal(true) })
 			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
@@ -183,9 +191,9 @@ describe('apply_route_specs', () => {
 				auth: { account: 'required', actor: 'required', roles: ['admin'] },
 				handler: () => route_ok({ admin: true }),
 				description: 'Admin route',
-				query: z.strictObject({ acting: ZodActingActor }),
-				input: z.null(),
-				output: z.strictObject({ admin: z.literal(true) })
+				query: object({ acting: ActingActor }),
+				input: literal(null),
+				output: object({ admin: literal(true) })
 			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
@@ -216,9 +224,9 @@ describe('apply_route_specs', () => {
 				auth: { account: 'required', actor: 'required', roles: ['admin'] },
 				handler: () => route_ok({ admin: true }),
 				description: 'Admin route',
-				query: z.strictObject({ acting: ZodActingActor }),
-				input: z.null(),
-				output: z.strictObject({ admin: z.literal(true) })
+				query: object({ acting: ActingActor }),
+				input: literal(null),
+				output: object({ admin: literal(true) })
 			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
@@ -249,9 +257,9 @@ describe('apply_route_specs', () => {
 				auth: { account: 'required', actor: 'required', roles: ['admin'] },
 				handler: () => route_ok({ admin: true }),
 				description: 'Admin route',
-				query: z.strictObject({ acting: ZodActingActor }),
-				input: z.null(),
-				output: z.strictObject({ admin: z.literal(true) })
+				query: object({ acting: ActingActor }),
+				input: literal(null),
+				output: object({ admin: literal(true) })
 			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
@@ -301,9 +309,9 @@ describe('auth.required_scope', () => {
 				},
 				handler: () => route_ok({ streamed: true }),
 				description: 'Scope-gated route',
-				query: z.strictObject({ acting: ZodActingActor }),
-				input: z.null(),
-				output: z.strictObject({ streamed: z.literal(true) })
+				query: object({ acting: ActingActor }),
+				input: literal(null),
+				output: object({ streamed: literal(true) })
 			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
@@ -426,9 +434,9 @@ describe('query validation', () => {
 					return route_ok({ query: q.q });
 				},
 				description: 'Search',
-				query: z.strictObject({ q: z.string().min(1) }),
-				input: z.null(),
-				output: z.strictObject({ query: z.string() })
+				query: object({ q: pipe(string, min_length(1)) }),
+				input: literal(null),
+				output: object({ query: string })
 			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
@@ -448,9 +456,9 @@ describe('query validation', () => {
 				auth: { account: 'none', actor: 'none' },
 				handler: () => route_ok({ ok: true }),
 				description: 'Search',
-				query: z.strictObject({ q: z.string().min(1) }),
-				input: z.null(),
-				output: z.strictObject({ ok: z.literal(true) })
+				query: object({ q: pipe(string, min_length(1)) }),
+				input: literal(null),
+				output: object({ ok: literal(true) })
 			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
@@ -466,13 +474,13 @@ describe('query validation', () => {
 					path: ['q'],
 					expected: 'string',
 					received: 'undefined',
-					message: 'Invalid input: expected string, received undefined'
+					message: 'q: expected string, received undefined'
 				}
 			]
 		});
 	});
 
-	test('returns 400 for extra unknown query param with strictObject', async () => {
+	test('returns 400 for extra unknown query param with a strict object', async () => {
 		const app = new Hono();
 		const specs: Array<RouteSpec> = [
 			define_route({
@@ -481,9 +489,9 @@ describe('query validation', () => {
 				auth: { account: 'none', actor: 'none' },
 				handler: () => route_ok({ ok: true }),
 				description: 'Search',
-				query: z.strictObject({ q: z.string() }),
-				input: z.null(),
-				output: z.strictObject({ ok: z.literal(true) })
+				query: object({ q: string }),
+				input: literal(null),
+				output: object({ ok: literal(true) })
 			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
@@ -499,7 +507,7 @@ describe('query validation', () => {
 					path: ['extra'],
 					expected: 'no unknown keys',
 					received: 'string',
-					message: 'Unrecognized key: "extra"'
+					message: 'extra: expected no unknown keys, received string'
 				}
 			]
 		});
@@ -514,8 +522,8 @@ describe('query validation', () => {
 				auth: { account: 'none', actor: 'none' },
 				handler: () => route_ok({ ok: true }),
 				description: 'Test',
-				input: z.null(),
-				output: z.strictObject({ ok: z.literal(true) })
+				input: literal(null),
+				output: object({ ok: literal(true) })
 			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
@@ -535,9 +543,9 @@ describe('route params validation', () => {
 				auth: { account: 'none', actor: 'none' },
 				handler: () => route_ok({ ok: true }),
 				description: 'Get a thing',
-				params: z.strictObject({ id: z.uuid() }),
-				input: z.null(),
-				output: z.strictObject({ ok: z.literal(true) })
+				params: object({ id: Uuid }),
+				input: literal(null),
+				output: object({ ok: literal(true) })
 			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
@@ -553,7 +561,7 @@ describe('route params validation', () => {
 					path: ['id'],
 					expected: 'uuid',
 					received: 'string',
-					message: 'Invalid UUID'
+					message: 'id: expected uuid, received string'
 				}
 			]
 		});
@@ -591,8 +599,8 @@ describe('prefix_route_specs', () => {
 				auth: { account: 'none', actor: 'none' },
 				handler: stub_handler,
 				description: 'List items',
-				input: z.null(),
-				output: z.null()
+				input: literal(null),
+				output: literal(null)
 			}),
 			define_route({
 				method: 'POST',
@@ -600,8 +608,8 @@ describe('prefix_route_specs', () => {
 				auth: { account: 'required', actor: 'none' },
 				handler: stub_handler,
 				description: 'Create item',
-				input: z.null(),
-				output: z.null()
+				input: literal(null),
+				output: literal(null)
 			})
 		];
 
@@ -618,8 +626,8 @@ describe('prefix_route_specs', () => {
 				auth: { account: 'none', actor: 'none' },
 				handler: stub_handler,
 				description: 'Root route',
-				input: z.null(),
-				output: z.null()
+				input: literal(null),
+				output: literal(null)
 			}),
 			define_route({
 				method: 'GET',
@@ -627,8 +635,8 @@ describe('prefix_route_specs', () => {
 				auth: { account: 'none', actor: 'none' },
 				handler: stub_handler,
 				description: 'Sub route',
-				input: z.null(),
-				output: z.null()
+				input: literal(null),
+				output: literal(null)
 			})
 		];
 
@@ -651,8 +659,8 @@ describe('prefix_route_specs', () => {
 				},
 				handler,
 				description: 'Delete item',
-				input: z.null(),
-				output: z.null()
+				input: literal(null),
+				output: literal(null)
 			})
 		];
 
@@ -677,8 +685,8 @@ describe('prefix_route_specs', () => {
 				auth: { account: 'none', actor: 'none' },
 				handler: stub_handler,
 				description: 'First',
-				input: z.null(),
-				output: z.null()
+				input: literal(null),
+				output: literal(null)
 			}),
 			define_route({
 				method: 'GET',
@@ -686,8 +694,8 @@ describe('prefix_route_specs', () => {
 				auth: { account: 'none', actor: 'none' },
 				handler: stub_handler,
 				description: 'Second',
-				input: z.null(),
-				output: z.null()
+				input: literal(null),
+				output: literal(null)
 			})
 		];
 		assert.throws(
@@ -718,9 +726,9 @@ describe('prefix_route_specs', () => {
 			auth: keeper_auth,
 			handler: stub_handler,
 			description: 'Valid keeper spec',
-			input: z.null(),
-			query: z.strictObject({ acting: ZodActingActor }),
-			output: z.null()
+			input: literal(null),
+			query: object({ acting: ActingActor }),
+			output: literal(null)
 		});
 		const violating_duplicate: RouteSpec = {
 			...valid_spec,
@@ -743,8 +751,8 @@ describe('prefix_route_specs', () => {
 				auth: { account: 'none', actor: 'none' },
 				handler: stub_handler,
 				description: 'Get items',
-				input: z.null(),
-				output: z.null()
+				input: literal(null),
+				output: literal(null)
 			}),
 			define_route({
 				method: 'POST',
@@ -752,8 +760,8 @@ describe('prefix_route_specs', () => {
 				auth: { account: 'none', actor: 'none' },
 				handler: stub_handler,
 				description: 'Create item',
-				input: z.null(),
-				output: z.null()
+				input: literal(null),
+				output: literal(null)
 			})
 		];
 		// should not throw
@@ -770,8 +778,8 @@ describe('prefix_route_specs immutability', () => {
 				auth: { account: 'none', actor: 'none' },
 				handler: stub_handler,
 				description: 'Test route',
-				input: z.null(),
-				output: z.null()
+				input: literal(null),
+				output: literal(null)
 			})
 		];
 
@@ -852,8 +860,8 @@ describe('generate_app_surface', () => {
 				auth: { account: 'none', actor: 'none' },
 				handler: stub_handler,
 				description: 'Health check',
-				input: z.null(),
-				output: z.null()
+				input: literal(null),
+				output: literal(null)
 			}),
 			define_route({
 				method: 'POST',
@@ -861,8 +869,8 @@ describe('generate_app_surface', () => {
 				auth: { account: 'none', actor: 'none' },
 				handler: stub_handler,
 				description: 'Login',
-				input: z.null(),
-				output: z.null()
+				input: literal(null),
+				output: literal(null)
 			}),
 			define_route({
 				method: 'GET',
@@ -870,8 +878,8 @@ describe('generate_app_surface', () => {
 				auth: { account: 'required', actor: 'none' },
 				handler: stub_handler,
 				description: 'Protected resource',
-				input: z.null(),
-				output: z.null()
+				input: literal(null),
+				output: literal(null)
 			})
 		];
 
@@ -900,8 +908,8 @@ describe('generate_app_surface', () => {
 				auth: { account: 'required', actor: 'required', roles: ['admin'] },
 				handler: stub_handler,
 				description: 'Test route',
-				input: z.null(),
-				output: z.null()
+				input: literal(null),
+				output: literal(null)
 			})
 		];
 
@@ -921,8 +929,8 @@ describe('generate_app_surface', () => {
 					auth: { account: 'none', actor: 'none' },
 					handler: stub_handler,
 					description: 'Test endpoint',
-					input: z.null(),
-					output: z.null()
+					input: literal(null),
+					output: literal(null)
 				})
 			]
 		});
@@ -938,8 +946,8 @@ describe('generate_app_surface', () => {
 				auth: { account: 'none', actor: 'none' },
 				handler: stub_handler,
 				description: 'A',
-				input: z.null(),
-				output: z.null()
+				input: literal(null),
+				output: literal(null)
 			}),
 			define_route({
 				method: 'GET',
@@ -947,8 +955,8 @@ describe('generate_app_surface', () => {
 				auth: { account: 'required', actor: 'none' },
 				handler: stub_handler,
 				description: 'B',
-				input: z.null(),
-				output: z.null()
+				input: literal(null),
+				output: literal(null)
 			}),
 			define_route({
 				method: 'GET',
@@ -961,8 +969,8 @@ describe('generate_app_surface', () => {
 				},
 				handler: stub_handler,
 				description: 'C',
-				input: z.null(),
-				output: z.null()
+				input: literal(null),
+				output: literal(null)
 			})
 		];
 
@@ -1003,7 +1011,7 @@ describe('generate_app_surface', () => {
 		const specs: Array<EventSpec> = [
 			{
 				method: 'run_created',
-				params: z.strictObject({ run_id: z.string() }),
+				params: object({ run_id: string }),
 				description: 'A run was created',
 				channel: 'runs'
 			}
@@ -1035,7 +1043,7 @@ describe('generate_app_surface', () => {
 		const event_specs: Array<EventSpec> = [
 			{
 				method: 'test',
-				params: z.strictObject({ id: z.string() }),
+				params: object({ id: string }),
 				description: 'Test event'
 			}
 		];
@@ -1060,8 +1068,8 @@ describe('generate_app_surface', () => {
 					auth: { account: 'none', actor: 'none' },
 					handler: stub_handler,
 					description: 'Health',
-					input: z.null(),
-					output: z.null()
+					input: literal(null),
+					output: literal(null)
 				})
 			]
 		});
@@ -1078,8 +1086,8 @@ describe('generate_app_surface', () => {
 					auth: { account: 'required', actor: 'none' },
 					handler: stub_handler,
 					description: 'Protected',
-					input: z.null(),
-					output: z.null()
+					input: literal(null),
+					output: literal(null)
 				})
 			]
 		});
@@ -1098,8 +1106,8 @@ describe('generate_app_surface', () => {
 					auth: { account: 'required', actor: 'required', roles: ['admin'] },
 					handler: stub_handler,
 					description: 'Admin',
-					input: z.null(),
-					output: z.null()
+					input: literal(null),
+					output: literal(null)
 				})
 			]
 		});
@@ -1119,8 +1127,8 @@ describe('generate_app_surface', () => {
 					auth: { account: 'none', actor: 'none' },
 					handler: stub_handler,
 					description: 'Create',
-					input: z.strictObject({ name: z.string() }),
-					output: z.null()
+					input: object({ name: string }),
+					output: literal(null)
 				})
 			]
 		});
@@ -1139,8 +1147,8 @@ describe('generate_app_surface', () => {
 					auth: { account: 'required', actor: 'none' },
 					handler: stub_handler,
 					description: 'Login',
-					input: z.strictObject({ username: z.string() }),
-					output: z.null(),
+					input: object({ username: string }),
+					output: literal(null),
 					errors: [REST_INVALID_CREDENTIALS, rest_error(400, 'name_taken')]
 				})
 			]
@@ -1171,8 +1179,8 @@ describe('generate_app_surface', () => {
 					auth: { account: 'required', actor: 'required', roles: ['admin'] },
 					handler: stub_handler,
 					description: 'Test',
-					input: z.strictObject({ x: z.number() }),
-					output: z.null(),
+					input: object({ x: number }),
+					output: literal(null),
 					errors: [REST_RATE_LIMIT_EXCEEDED]
 				})
 			]
@@ -1192,8 +1200,8 @@ describe('input validation', () => {
 				path: '/test',
 				auth: { account: 'none', actor: 'none' },
 				description: 'content type test',
-				input: z.strictObject({ name: z.string() }),
-				output: z.strictObject({ ok: z.literal(true) }),
+				input: object({ name: string }),
+				output: object({ ok: literal(true) }),
 				handler: async () => route_ok({ ok: true })
 			})
 		];
@@ -1273,8 +1281,8 @@ describe('GET body validation guard', () => {
 				path: '/items',
 				auth: { account: 'none', actor: 'none' },
 				description: 'List items',
-				input: z.strictObject({ limit: z.number() }),
-				output: z.strictObject({ ok: z.boolean() }),
+				input: object({ limit: number }),
+				output: object({ ok: boolean }),
 				handler: () => route_ok({ ok: true })
 			})
 		];
@@ -1295,8 +1303,8 @@ describe('GET body validation guard', () => {
 				path: '/health',
 				auth: { account: 'none', actor: 'none' },
 				description: 'Health',
-				input: z.null(),
-				output: z.strictObject({ ok: z.boolean() }),
+				input: literal(null),
+				output: object({ ok: boolean }),
 				handler: () => route_ok({ ok: true })
 			})
 		];
@@ -1314,8 +1322,8 @@ describe('GET body validation guard', () => {
 				path: '/create',
 				auth: { account: 'none', actor: 'none' },
 				description: 'Create',
-				input: z.strictObject({ name: z.string() }),
-				output: z.strictObject({ ok: z.boolean() }),
+				input: object({ name: string }),
+				output: object({ ok: boolean }),
 				handler: () => route_ok({ ok: true })
 			})
 		];
@@ -1336,8 +1344,8 @@ describe('GET body validation guard', () => {
 			path: '/items',
 			auth: { account: 'none', actor: 'none' },
 			description: 'List items',
-			input: z.strictObject({ limit: z.number() }),
-			output: z.strictObject({ ok: z.boolean() }),
+			input: object({ limit: number }),
+			output: object({ ok: boolean }),
 			handler: () => route_ok({ ok: true })
 		});
 
@@ -1350,13 +1358,13 @@ describe('GET body validation guard', () => {
 
 describe('schema_to_surface', () => {
 	test('is exported and converts object schemas', () => {
-		const result = schema_to_surface(z.strictObject({ name: z.string() }));
+		const result = schema_to_surface(object({ name: string }));
 		assert.ok(result);
 		assert.strictEqual(typeof result, 'object');
 	});
 
 	test('returns null for null schemas', () => {
-		const result = schema_to_surface(z.null());
+		const result = schema_to_surface(literal(null));
 		assert.strictEqual(result, null);
 	});
 });
@@ -1366,7 +1374,7 @@ describe('events_to_surface', () => {
 		const specs: Array<EventSpec> = [
 			{
 				method: 'thing_created',
-				params: z.strictObject({ id: z.string(), name: z.string() }),
+				params: object({ id: string, name: string }),
 				description: 'A thing was created',
 				channel: 'things'
 			}
@@ -1388,7 +1396,7 @@ describe('events_to_surface', () => {
 		const specs: Array<EventSpec> = [
 			{
 				method: 'test',
-				params: z.null(),
+				params: literal(null),
 				description: 'Test'
 			}
 		];
@@ -1411,8 +1419,8 @@ describe('error catch layer', () => {
 					});
 				},
 				description: 'Test',
-				input: z.null(),
-				output: z.null()
+				input: literal(null),
+				output: literal(null)
 			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
@@ -1434,8 +1442,8 @@ describe('error catch layer', () => {
 					throw jsonrpc_errors.not_found('user');
 				},
 				description: 'Test',
-				input: z.null(),
-				output: z.null()
+				input: literal(null),
+				output: literal(null)
 			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
@@ -1462,8 +1470,8 @@ describe('error catch layer', () => {
 					});
 				},
 				description: 'Test',
-				input: z.null(),
-				output: z.null()
+				input: literal(null),
+				output: literal(null)
 			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
@@ -1491,8 +1499,8 @@ describe('error catch layer', () => {
 					throw jsonrpc_errors.unauthenticated();
 				},
 				description: 'Test',
-				input: z.null(),
-				output: z.null()
+				input: literal(null),
+				output: literal(null)
 			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
@@ -1525,8 +1533,8 @@ describe('error catch layer', () => {
 					});
 				},
 				description: 'Test',
-				input: z.null(),
-				output: z.null()
+				input: literal(null),
+				output: literal(null)
 			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
@@ -1560,8 +1568,8 @@ describe('error catch layer', () => {
 					});
 				},
 				description: 'Test',
-				input: z.null(),
-				output: z.null()
+				input: literal(null),
+				output: literal(null)
 			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
@@ -1589,8 +1597,8 @@ describe('error catch layer', () => {
 					});
 				},
 				description: 'Test',
-				input: z.null(),
-				output: z.null()
+				input: literal(null),
+				output: literal(null)
 			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
@@ -1612,8 +1620,8 @@ describe('error catch layer', () => {
 					throw new DOMException('The operation was aborted.', 'AbortError');
 				},
 				description: 'Test',
-				input: z.null(),
-				output: z.null()
+				input: literal(null),
+				output: literal(null)
 			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
@@ -1634,8 +1642,8 @@ describe('error catch layer', () => {
 					throw new Error('something broke');
 				},
 				description: 'Test',
-				input: z.null(),
-				output: z.null()
+				input: literal(null),
+				output: literal(null)
 			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
@@ -1657,8 +1665,8 @@ describe('error catch layer', () => {
 				auth: { account: 'none', actor: 'none' },
 				handler: () => route_ok({ ok: true }),
 				description: 'Test',
-				input: z.null(),
-				output: z.strictObject({ ok: z.literal(true) })
+				input: literal(null),
+				output: object({ ok: literal(true) })
 			})
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
@@ -1702,8 +1710,8 @@ describe('error catch layer', () => {
 						throw error;
 					},
 					description: 'Test',
-					input: z.null(),
-					output: z.null()
+					input: literal(null),
+					output: literal(null)
 				})
 			];
 			apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
@@ -1723,8 +1731,8 @@ describe('apply_route_specs content type', () => {
 			auth: { account: 'none', actor: 'none' },
 			handler: () => route_ok({ ok: true }),
 			description: 'Test route',
-			input: z.null(),
-			output: z.strictObject({ ok: z.boolean() }),
+			input: literal(null),
+			output: object({ ok: boolean }),
 			...overrides
 		}) as RouteSpec;
 

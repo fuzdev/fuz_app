@@ -368,8 +368,7 @@ describe_db('self_service_role_actions', (get_db) => {
 			assert.strictEqual(res.error.code, JSONRPC_ERROR_CODES.invalid_params);
 			// the input's issues: `acting` off the UUID grammar reads as omitted to the
 			// authorization phase, so validation is what refuses it; the role, too long
-			// and off the grammar, gets the one length issue, the Zod schema a grammar
-			// issue too
+			// and off the grammar, gets the one length issue
 			assert.deepStrictEqual(res.error.data, {
 				issues: [
 					{

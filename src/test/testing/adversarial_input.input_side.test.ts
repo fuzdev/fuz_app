@@ -1,27 +1,15 @@
 /**
  * Format and boundary cases read from a field's input side —
  * `to_field_json_schema` renders `io: 'input'` and resolves a nullable's
- * `anyOf`, so a field carrying a `.transform()` or pipe (`Username`) and a
- * `.nullish()` field keep the cases a bare field gets — and the guard that no
- * generated case is accidentally valid.
+ * `anyOf`, so a field carrying a transform or pipe (`Username`) and an
+ * optional nullable field keep the cases a bare field gets — and the guard
+ * that no generated case is accidentally valid.
  *
  * @module
  */
 
 import { describe, test, assert } from 'vitest';
-import { z } from 'zod';
-import {
-	check,
-	integer,
-	max_length,
-	min_length,
-	nullable,
-	number,
-	object,
-	pipe,
-	string,
-	uuid
-} from '@fuzdev/fuz_schema/schema.ts';
+import * as s from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	generate_input_test_cases,
@@ -30,18 +18,17 @@ import {
 	type InputTestCase
 } from '#lib/testing/adversarial_input_cases.ts';
 import { detect_format, to_field_json_schema } from '#lib/testing/schema_generators.ts';
-import { USERNAME_LENGTH_MAX, USERNAME_PROVIDED_LENGTH_MAX } from '#lib/primitive_schemas.ts';
-import { Datetime, ZodEmail, ZodFactHashSchema, ZodUsername, ZodUuid } from '#lib/zod_schemas.ts';
-import { zod_bounded_string } from '../zod_copies.ts';
-
-/**
- * A Zod transform-then-refine string, the shape of the login username before
- * it moved to fuz_schema: bounded, trimmed and lowercased, then refused when
- * the trim left nothing.
- */
-const ZodTrimmedLogin = zod_bounded_string({ min: 1, max: USERNAME_PROVIDED_LENGTH_MAX })
-	.transform((s) => s.trim().toLowerCase())
-	.refine((s) => s.length > 0, { message: 'empty after trimming' });
+import {
+	Blake3Hash,
+	bounded_string,
+	Email,
+	FactHashSchema,
+	Timestamp,
+	Username,
+	USERNAME_LENGTH_MAX,
+	UsernameProvided,
+	Uuid
+} from '#lib/primitive_schemas.ts';
 
 const labels_of = (cases: Array<InputTestCase>, field: string): Array<string> =>
 	cases.filter((c) => c.field === field).map((c) => c.label);
@@ -54,63 +41,66 @@ const value_of = (cases: Array<InputTestCase>, label: string): unknown => {
 
 describe('to_field_json_schema', () => {
 	test('renders the input side of a transform', () => {
-		const json = to_field_json_schema(ZodUsername);
+		const json = to_field_json_schema(Username);
 		assert.ok(json);
 		assert.strictEqual(json.minLength, 3);
 		assert.strictEqual(json.maxLength, USERNAME_LENGTH_MAX);
 		assert.strictEqual(typeof json.pattern, 'string');
 	});
 
-	test("resolves a nullable's one non-null branch", () => {
-		const json = to_field_json_schema(ZodUsername.nullish());
-		assert.ok(json);
-		assert.strictEqual(json.anyOf, undefined);
-		assert.strictEqual(json.maxLength, USERNAME_LENGTH_MAX);
-	});
-
-	test('keeps a union of two non-null branches whole', () => {
-		const json = to_field_json_schema(z.union([z.string().max(3), z.number(), z.null()]));
-		assert.ok(json);
-		assert.ok(Array.isArray(json.anyOf));
-		assert.strictEqual(json.maxLength, undefined);
-	});
-
-	test('writes a type JSON Schema cannot represent with no constraints', () => {
-		const { $schema: _, ...json } = to_field_json_schema(z.date());
-		assert.deepEqual(json, {});
-	});
-
-	test('keeps the bounds of the branches beside one JSON Schema cannot represent', () => {
-		const json = to_field_json_schema(z.union([z.string().max(3), z.date()]));
-		assert.deepEqual(json.anyOf, [{ type: 'string', maxLength: 3 }, {}]);
-	});
-
-	test("resolves a bare nullable's type array to its one non-null type", () => {
-		assert.strictEqual(to_field_json_schema(z.boolean().nullable()).type, 'boolean');
-	});
-});
-
-describe('to_field_json_schema — fuz_schema', () => {
 	test('reads the bounds of a pipe', () => {
-		const json = to_field_json_schema(pipe(string, min_length(2), max_length(8)));
+		const json = to_field_json_schema(s.pipe(s.string, s.min_length(2), s.max_length(8)));
 		assert.ok(json);
 		assert.strictEqual(json.type, 'string');
 		assert.strictEqual(json.minLength, 2);
 		assert.strictEqual(json.maxLength, 8);
 	});
 
+	test("resolves a nullable's one non-null branch", () => {
+		const json = to_field_json_schema(s.optional(s.nullable(Username)));
+		assert.ok(json);
+		assert.strictEqual(json.anyOf, undefined);
+		assert.strictEqual(json.maxLength, USERNAME_LENGTH_MAX);
+	});
+
 	test("resolves a nullable's one non-null type", () => {
 		// a bare `integer` folds to `type: ['integer', 'null']`, an anyOf when it has keywords
-		assert.strictEqual(to_field_json_schema(nullable(pipe(number, integer))).type, 'integer');
-		assert.strictEqual(to_field_json_schema(nullable(pipe(string, max_length(4)))).maxLength, 4);
+		assert.strictEqual(
+			to_field_json_schema(s.nullable(s.pipe(s.number, s.integer))).type,
+			'integer'
+		);
+		assert.strictEqual(
+			to_field_json_schema(s.nullable(s.pipe(s.string, s.max_length(4)))).maxLength,
+			4
+		);
+		assert.strictEqual(to_field_json_schema(s.nullable(s.boolean)).type, 'boolean');
+	});
+
+	test('keeps a union of two non-null branches whole', () => {
+		const json = to_field_json_schema(
+			s.union([s.pipe(s.string, s.max_length(3)), s.number, s.literal(null)])
+		);
+		assert.ok(json);
+		assert.ok(Array.isArray(json.anyOf));
+		assert.strictEqual(json.maxLength, undefined);
+	});
+
+	test('writes a type JSON Schema cannot represent with no constraints', () => {
+		const { $schema: _, ...json } = to_field_json_schema(s.bigint);
+		assert.deepEqual(json, {});
+	});
+
+	test('keeps the bounds of the branches beside one JSON Schema cannot represent', () => {
+		const json = to_field_json_schema(s.union([s.pipe(s.string, s.max_length(3)), s.bigint]));
+		assert.deepEqual(json.anyOf, [{ type: 'string', maxLength: 3 }, {}]);
 	});
 
 	test('keeps the bounds around a check JSON Schema cannot say', () => {
 		const json = to_field_json_schema(
-			pipe(
-				string,
-				max_length(5),
-				check((s: string) => s !== 'x')
+			s.pipe(
+				s.string,
+				s.max_length(5),
+				s.check((v: string) => v !== 'x')
 			)
 		);
 		assert.ok(json);
@@ -118,16 +108,19 @@ describe('to_field_json_schema — fuz_schema', () => {
 	});
 
 	test('reads a format', () => {
-		assert.strictEqual(detect_format(pipe(string, uuid)), 'uuid');
+		assert.strictEqual(detect_format(s.pipe(s.string, s.uuid)), 'uuid');
 	});
 
 	test('throws on a schema fuz_schema refuses in either mode', () => {
-		assert.throws(() => to_field_json_schema(object({ constructor: string })), /Object\.prototype/);
+		assert.throws(
+			() => to_field_json_schema(s.object({ constructor: s.string })),
+			/Object\.prototype/
+		);
 	});
 });
 
 describe('generate_input_test_cases — transform and pipe fields', () => {
-	const Input = z.strictObject({ username: ZodUsername, login: ZodTrimmedLogin });
+	const Input = s.object({ username: Username, login: UsernameProvided });
 	// generated per test, so a generator failure fails each test, not collection
 	const generate = () => generate_input_test_cases(Input);
 
@@ -147,12 +140,12 @@ describe('generate_input_test_cases — transform and pipe fields', () => {
 	});
 
 	test("a pipe's input-side bounds generate cases", () => {
-		const Piped = z.strictObject({ p: z.string().max(5).pipe(z.string().min(2)) });
+		const Piped = s.object({ p: s.pipe(s.pipe(s.string, s.max_length(5)), s.min_length(2)) });
 		assert.include(labels_of(generate_input_test_cases(Piped), 'p'), 'over maxLength: p (6 chars)');
 	});
 
 	test('the pattern violation fails the real regex', () => {
-		const json = to_field_json_schema(ZodUsername);
+		const json = to_field_json_schema(Username);
 		const value = value_of(generate(), 'format: username (pattern violation)');
 		assert.strictEqual(typeof value, 'string');
 		assert.isFalse(new RegExp(json.pattern as string).test(value as string));
@@ -170,14 +163,14 @@ describe('generate_input_test_cases — transform and pipe fields', () => {
 });
 
 describe('generate_input_test_cases — bounds under a nullable anyOf', () => {
-	const Input = z.strictObject({
-		username: ZodUsername.nullish(),
-		count: z.number().int().min(1).max(10).nullable(),
-		tags: z.array(z.string()).min(1).max(3).nullish()
+	const Input = s.object({
+		username: s.optional(s.nullable(Username)),
+		count: s.nullable(s.pipe(s.number, s.integer, s.min_value(1), s.max_value(10))),
+		tags: s.optional(s.nullable(s.pipe(s.array(s.string), s.min_length(1), s.max_length(3))))
 	});
 	const generate = () => generate_input_test_cases(Input);
 
-	test('a nullish string field gets its format and length cases', () => {
+	test('an optional nullable string field gets its format and length cases', () => {
 		assert.includeMembers(labels_of(generate(), 'username'), [
 			'format: username (pattern violation)',
 			'empty string: username',
@@ -192,7 +185,7 @@ describe('generate_input_test_cases — bounds under a nullable anyOf', () => {
 		]);
 	});
 
-	test('a nullish array field gets its item-count bounds', () => {
+	test('an optional nullable array field gets its item-count bounds', () => {
 		assert.includeMembers(labels_of(generate(), 'tags'), [
 			'empty array for minItems > 0: tags',
 			'over maxItems: tags (4 items)'
@@ -203,10 +196,14 @@ describe('generate_input_test_cases — bounds under a nullable anyOf', () => {
 describe('generate_input_test_cases — union fields', () => {
 	test("a union's branch format generates its violation", () => {
 		// two datetime grammars behind one refine, as a `since` filter declares
-		const Since = z
-			.union([z.iso.datetime().max(30), z.iso.datetime({ precision: -1 })])
-			.refine((v) => Number(v.slice(0, 4)) >= 1);
-		const cases = generate_input_test_cases(z.strictObject({ since: Since.optional() }));
+		const Since = s.pipe(
+			s.union([
+				s.pipe(s.string, s.iso_datetime, s.max_length(30)),
+				s.pipe(s.string, s.regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}Z$/))
+			]),
+			s.check((v: string) => Number(v.slice(0, 4)) >= 1)
+		);
+		const cases = generate_input_test_cases(s.object({ since: s.optional(Since) }));
 		assert.include(labels_of(cases, 'since'), 'format: since (malformed datetime)');
 	});
 });
@@ -214,8 +211,11 @@ describe('generate_input_test_cases — union fields', () => {
 describe('generate_input_test_cases — refine-only bounds', () => {
 	test('a bound only a refinement enforces generates no boundary case', () => {
 		// a code-point length JSON Schema can't express
-		const CodePoints = z.string().refine((s) => Array.from(s).length <= 39);
-		const cases = generate_input_test_cases(z.strictObject({ name: CodePoints }));
+		const CodePoints = s.pipe(
+			s.string,
+			s.check((v: string) => Array.from(v).length <= 39)
+		);
+		const cases = generate_input_test_cases(s.object({ name: CodePoints }));
 		assert.deepEqual(labels_of(cases, 'name'), [
 			'missing: name',
 			'wrong type: name (number instead of string)',
@@ -226,44 +226,43 @@ describe('generate_input_test_cases — refine-only bounds', () => {
 
 describe('generate_input_test_cases — no case is accidentally valid', () => {
 	// fields whose generated candidates a naive generator would emit as valid
-	const fixtures: Record<string, z.ZodType> = {
-		username: ZodUsername,
-		username_nullish: ZodUsername.nullish(),
-		username_provided: ZodTrimmedLogin,
-		email: ZodEmail,
-		email_nullish: ZodEmail.nullish(),
-		uuid: ZodUuid,
-		uuid_nullable: ZodUuid.nullable(),
-		datetime: Datetime,
-		blake3: z.string().regex(/^[0-9a-f]{64}$/),
-		fact_hash: ZodFactHashSchema.nullish(),
-		bounded: zod_bounded_string({ min: 2, max: 5 }).nullish(),
-		piped: z.string().max(5).pipe(z.string().min(2)),
-		trimmed: z.string().trim().min(1).max(4),
-		count: z.number().int().min(1).max(10).nullish(),
-		positive: z.number().positive().lt(100),
-		tags: z.array(z.string()).min(1).max(3).nullish(),
+	const fixtures: Record<string, s.Schema> = {
+		username: Username,
+		username_nullish: s.optional(s.nullable(Username)),
+		username_provided: UsernameProvided,
+		email: Email,
+		email_nullish: s.optional(s.nullable(Email)),
+		uuid: Uuid,
+		uuid_nullable: s.nullable(Uuid),
+		datetime: Timestamp,
+		blake3: Blake3Hash,
+		fact_hash: s.optional(s.nullable(FactHashSchema)),
+		bounded: s.optional(s.nullable(bounded_string({ min: 2, max: 5 }))),
+		piped: s.pipe(s.pipe(s.string, s.max_length(5)), s.min_length(2)),
+		// bounded ahead of the trim, so the base is generated within it
+		trimmed: s.pipe(
+			s.string,
+			s.max_length(4),
+			s.transform((v: string) => v.trim()),
+			s.min_length(1)
+		),
+		count: s.optional(s.nullable(s.pipe(s.number, s.integer, s.min_value(1), s.max_value(10)))),
+		positive: s.pipe(s.number, s.min_value(1), s.max_value(99)),
+		tags: s.optional(s.nullable(s.pipe(s.array(s.string), s.min_length(1), s.max_length(3)))),
 		// a pattern that admits the pattern-violation string
-		permissive_pattern: z.string().regex(/^[^\n]*$/),
-		// a coercion that accepts the wrong-type value
-		coerced: z.coerce.string(),
-		// a preprocess that accepts the empty and over-long strings
-		padded: z.preprocess(
-			(v) => (typeof v === 'string' ? v.padEnd(1, 'x').slice(0, 4) : v),
-			z.string().min(1).max(4)
-		)
+		permissive_pattern: s.pipe(s.string, s.regex(/^[^\n]*$/))
 	};
-	const Input = z.strictObject(fixtures);
+	const Input = s.object(fixtures);
 	const generate = () => generate_input_test_cases(Input);
 
 	test('every case fails the input schema, and every per-field case fails its field', () => {
 		const cases = generate();
 		assert.ok(cases.length > Object.keys(fixtures).length);
 		for (const c of cases) {
-			assert.isFalse(Input.safeParse(c.body).success, c.label);
+			assert.isFalse(s.parse(Input, c.body).ok, c.label);
 			if (c.field === undefined) continue;
 			const value = (c.body as Record<string, unknown>)[c.field];
-			assert.isFalse(fixtures[c.field]!.safeParse(value).success, c.label);
+			assert.isFalse(s.parse(fixtures[c.field]!, value).ok, c.label);
 		}
 	});
 
@@ -272,19 +271,13 @@ describe('generate_input_test_cases — no case is accidentally valid', () => {
 			labels_of(generate(), 'permissive_pattern'),
 			'format: permissive_pattern (pattern violation)'
 		);
-		assert.notInclude(
-			labels_of(generate(), 'coerced'),
-			'wrong type: coerced (number instead of string)'
-		);
-		assert.notInclude(labels_of(generate(), 'padded'), 'empty string: padded');
-		assert.notInclude(labels_of(generate(), 'padded'), 'over maxLength: padded (5 chars)');
 	});
 
 	test('params and query format cases fail their field', () => {
-		const Params = z.strictObject({
-			id: ZodUuid,
-			name: ZodUsername,
-			loose: z.string().regex(/^[^\n]*$/)
+		const Params = s.object({
+			id: Uuid,
+			name: Username,
+			loose: s.pipe(s.string, s.regex(/^[^\n]*$/))
 		});
 		const params_cases = generate_params_test_cases(Params);
 		assert.includeMembers(
@@ -292,7 +285,7 @@ describe('generate_input_test_cases — no case is accidentally valid', () => {
 			['malformed uuid: param id', 'pattern violation: param name']
 		);
 		for (const c of params_cases) {
-			assert.isFalse(Params.safeParse(c.params).success, c.label);
+			assert.isFalse(s.parse(Params, c.params).ok, c.label);
 		}
 		const query_cases = generate_query_test_cases(Params);
 		assert.include(
@@ -300,7 +293,7 @@ describe('generate_input_test_cases — no case is accidentally valid', () => {
 			'pattern violation: query name'
 		);
 		for (const c of query_cases) {
-			assert.isFalse(Params.safeParse(c.query).success, c.label);
+			assert.isFalse(s.parse(Params, c.query).ok, c.label);
 		}
 	});
 });

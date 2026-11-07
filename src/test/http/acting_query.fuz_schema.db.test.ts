@@ -80,7 +80,7 @@ const read_error = async (res: Response): Promise<unknown> =>
 	((await res.json()) as { error?: unknown }).error;
 
 describe('GET /api/surface `?acting=` through the route stack', () => {
-	test('the served surface lists the route with the Zod-era query schema', async () => {
+	test('the served surface lists the route with the captured query schema', async () => {
 		const { test_app, admin, request } = await setup();
 		try {
 			const res = await request(`?acting=${admin.actor.id}`);

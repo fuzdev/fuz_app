@@ -9,7 +9,7 @@
  */
 
 import { describe, test, assert } from 'vitest';
-import { z } from 'zod';
+import { array, literal, number, string, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	FrontendWebsocketTransport,
@@ -602,23 +602,23 @@ describe('FrontendWebsocketTransport non-object results', () => {
 		}
 	});
 
-	const make_spec = (method: string, output: z.ZodType) =>
+	const make_spec = (method: string, output: AnySchema) =>
 		({
 			method,
 			kind: 'request_response',
 			initiator: 'frontend',
 			auth: { account: 'none', actor: 'none' },
 			side_effects: true,
-			input: z.null(),
+			input: literal(null),
 			output,
 			async: true,
 			description: method
 		}) satisfies ActionSpecUnion;
 
 	const specs = [
-		make_spec('returns_null', z.null()),
-		make_spec('returns_number', z.number()),
-		make_spec('returns_array', z.array(z.string()))
+		make_spec('returns_null', literal(null)),
+		make_spec('returns_number', number),
+		make_spec('returns_array', array(string))
 	];
 	const results: Record<string, unknown> = {
 		returns_null: null,

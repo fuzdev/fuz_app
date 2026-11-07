@@ -1,47 +1,19 @@
 /**
  * `GET /tables/:name`'s paging query, `offset` and `limit`, each a
  * `query_int` — a string of decimal digits with an optional sign, then a safe
- * integer within its bounds, its default when absent — held to the Zod
- * preprocess it replaced, kept here, over a table of spellings: the same
- * verdict and the same output on every row. The issues differ, as the refusal
- * is fuz_schema's: a spelling off the pattern is a `regex` issue where Zod's
- * was a `number` issue (its `NaN`), and a `safe_integer` issue past the safe
- * integers, where Zod gave `max_value` (two of them on `limit`, one per bound
- * it passed), or `number` for a spelling past the finite numbers. The Rust
- * twin's `str::parse::<i64>` reads the same spellings.
+ * integer within its bounds, its default when absent — over a table of
+ * spellings, each with its output or the kinds of its issues: a spelling off
+ * the pattern is a `regex` issue, and one past the safe integers a
+ * `safe_integer` issue. The Rust twin's `str::parse::<i64>` reads the same
+ * spellings.
  *
  * @module
  */
 
 import { describe, test, assert } from 'vitest';
-import { z } from 'zod';
 
-import {
-	create_db_route_specs,
-	DB_TABLE_ROWS_DEFAULT_LIMIT,
-	DB_TABLE_ROWS_LIMIT_MAX
-} from '#lib/http/db_routes.ts';
+import { create_db_route_specs } from '#lib/http/db_routes.ts';
 import { parse_any, to_wire_issues } from '#lib/schema_issues.ts';
-
-/** The Zod `query_int` the route declared before the port. */
-const zod_query_int = (bounds: z.ZodNumber, fallback: number) =>
-	z.preprocess(
-		(v) =>
-			v === undefined
-				? undefined
-				: typeof v === 'string' && /^[+-]?\d+$/.test(v)
-					? Number(v)
-					: Number.NaN,
-		bounds.default(fallback)
-	);
-
-const ZodPagingQuery = z.strictObject({
-	offset: zod_query_int(z.number().int().min(0), 0),
-	limit: zod_query_int(
-		z.number().int().min(1).max(DB_TABLE_ROWS_LIMIT_MAX),
-		DB_TABLE_ROWS_DEFAULT_LIMIT
-	)
-});
 
 const spec = create_db_route_specs(
 	{ audit: { emit_pool: async () => {} } },
@@ -115,14 +87,8 @@ describe('query_int', () => {
 				['offset', offset],
 				['limit', limit]
 			] as const) {
-				const fuz = outcome_of(query, key, value);
-				assert.deepStrictEqual(fuz, expected, `${key} ${label(value)}`);
-				// the same verdict and output as the Zod preprocess
-				const zod = outcome_of(ZodPagingQuery, key, value);
-				assert.strictEqual('value' in fuz, 'value' in zod, `${key} ${label(value)} verdict`);
-				if ('value' in fuz && 'value' in zod) {
-					assert.ok(Object.is(fuz.value, zod.value), `${key} ${label(value)} output`);
-				}
+				const got = outcome_of(query, key, value);
+				assert.deepStrictEqual(got, expected, `${key} ${label(value)}`);
 			}
 		});
 	}

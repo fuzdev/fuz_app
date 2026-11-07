@@ -3,7 +3,7 @@
  * `ActionManifestEntry` mapper the cross-impl manifest-parity gate dumps.
  *
  * Pins the normalization contract both impls must match: `input` reads
- * `'void'` for a void input (`z.void()` or fuz_schema `s.void`) and `'object'`
+ * `'void'` for a void input (`s.void`) and `'object'`
  * for anything else, auth axes pass through, `roles` / `credential_types` flatten to sorted arrays (absent and
  * empty both → `[]`), `side_effects` passes through, `rate_limit` is always
  * present (`null` when undeclared), and entries sort by `method`. A drift in
@@ -14,8 +14,7 @@
  */
 
 import { describe, test, assert } from 'vitest';
-import { z } from 'zod';
-import { is, object, void as fuz_void, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
+import { is, object, string, void as fuz_void, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 import { meta } from '@fuzdev/fuz_schema/meta.ts';
 
 import {
@@ -31,10 +30,10 @@ const spec = (
 	auth: RouteAuth,
 	side_effects = false,
 	rate_limit?: RateLimitKey,
-	input: z.ZodType = z.strictObject({})
+	input: AnySchema = object({})
 ): {
 	method: string;
-	input: z.ZodType;
+	input: AnySchema;
 	auth: RouteAuth;
 	side_effects: boolean;
 	rate_limit?: RateLimitKey;
@@ -102,28 +101,16 @@ describe('action_manifest_entry', () => {
 		assert.deepStrictEqual(entry.credential_types, ['daemon_token', 'session']);
 	});
 
-	test('a z.void() input is void and every other input is an object', () => {
-		const auth: RouteAuth = { account: 'required', actor: 'none' };
-		assert.strictEqual(
-			action_manifest_entry(spec('account_verify', auth, false, undefined, z.void())).input,
-			'void'
-		);
-		// `z.strictObject({})` admits the same calls but is an object schema.
-		for (const input of [z.strictObject({}), z.strictObject({ id: z.string() })]) {
-			assert.strictEqual(
-				action_manifest_entry(spec('x', auth, false, undefined, input)).input,
-				'object'
-			);
-		}
-	});
-
-	test('a fuz_schema void input is void and a fuz_schema object is an object', () => {
+	test('a void input is void and every other input is an object', () => {
 		const auth: RouteAuth = { account: 'required', actor: 'none' };
 		const entry_input = (input: AnySchema) =>
-			action_manifest_entry({ method: 'x', input, auth, side_effects: false }).input;
+			action_manifest_entry(spec('x', auth, false, undefined, input)).input;
 		assert.strictEqual(entry_input(fuz_void), 'void');
 		assert.strictEqual(entry_input(meta(fuz_void, { description: 'no params' })), 'void');
-		assert.strictEqual(entry_input(object({})), 'object');
+		// `object({})` admits the same calls but is an object schema
+		for (const input of [object({}), object({ id: string })]) {
+			assert.strictEqual(entry_input(input), 'object');
+		}
 	});
 
 	test('side_effects passes through for mutations', () => {

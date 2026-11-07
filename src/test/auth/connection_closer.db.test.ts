@@ -51,9 +51,8 @@
  */
 
 import { describe, test, assert } from 'vitest';
-import { parse_or_throw } from '@fuzdev/fuz_schema/schema.ts';
+import * as s from '@fuzdev/fuz_schema/schema.ts';
 import { Hono, type Context } from 'hono';
-import { z } from 'zod';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { create_uuid, type Uuid } from '#lib/primitive_schemas.ts';
 import { wait } from '@fuzdev/fuz_util/async.ts';
@@ -272,7 +271,7 @@ describe_db('connection_closer wiring', (get_db) => {
 					create_audit_emitter({ ...params, on_audit_event: (e) => audit_events.push(e) })
 			});
 			// blake3 hash format but not a real session
-			const bogus_hash = parse_or_throw(SessionId, 'a'.repeat(64));
+			const bogus_hash = s.parse_or_throw(SessionId, 'a'.repeat(64));
 			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
@@ -2031,8 +2030,8 @@ describe_db('connection_closer wiring', (get_db) => {
 			initiator: 'frontend',
 			auth: { account: 'required', actor: 'none' },
 			side_effects: true,
-			input: z.void(),
-			output: z.strictObject({ n: z.bigint() }),
+			input: s.void,
+			output: s.object({ n: s.bigint }),
 			async: true,
 			description: 'revoke every session of the caller, then return a value JSON cannot carry'
 		} satisfies RequestResponseActionSpec;

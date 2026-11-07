@@ -310,7 +310,7 @@ children in the `cell_get` bundle + forward lists — no-existence-leak-via-edge
 and **clone D8** (a cloner who can't view a child silently drops it; an admin
 read of the clone confirms, and the `cell_clone` audit row records no skipped
 count), and a taken item position → `cell_item_position_taken` — each response
-parsed against its Zod output schema; the CRUD suite also pages `cell_list`,
+parsed against its output schema; the CRUD suite also pages `cell_list`,
 holding a page to visible rows filled to `limit` past a newer run of hidden
 ones — and
 `describe_cell_gated_create_cross_tests` + `describe_cell_moderate_cross_tests` —
@@ -563,7 +563,7 @@ case-insensitively both directions — the corner that surfaced and closed the
 Rust spine's username-only divergence), **login input validation** (malformed
 login input → 400 `invalid_request_body` on every spine: whitespace-only / over-long
 username, empty password, unknown body key — closed a status+body divergence
-cluster between TS's Zod schema and the Rust hand-rolled checks), the
+cluster between TS's input schema and the Rust hand-rolled checks), the
 **ASCII-only creation invariant** (non-ASCII username → 400), **length +
 format regex parity** (both `[3, 39]` boundary edges + the creation-regex shape,
 rejected → 400 / accepted → 403 no-matching-invite), and **email format**

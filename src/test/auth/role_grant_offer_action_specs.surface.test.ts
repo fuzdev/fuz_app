@@ -1,5 +1,5 @@
 /**
- * The role_grant_offer domain's surface, held to the Zod-era one captured in
+ * The role_grant_offer domain's surface, held to the one captured in
  * `fixtures/surface/role_grant_offer.json`: the RPC and WS entries of the
  * methods, the notifications as event specs, and the diagnostics. Equal as
  * JSON apart from the declared moves, each applied to the capture here:
@@ -75,7 +75,7 @@ const NULLABLE_SCOPE_KIND = {
 };
 
 // declared: every offer's `scope_kind` node, `z.string().nullable()` at capture,
-// gains the grammar; the node is found by its Zod-era form
+// gains the grammar; the node is found by its form at capture
 const with_strict_scope_kind = (value: unknown): unknown => {
 	if (Array.isArray(value)) return value.map(with_strict_scope_kind);
 	if (typeof value !== 'object' || value === null) return value;
@@ -146,11 +146,11 @@ describe('role_grant_offer surface', () => {
 		assert.deepStrictEqual(head.diagnostics, []);
 	});
 
-	test('the RPC entries are the Zod-era ones but for the declared moves', () => {
+	test('the RPC entries are the captured ones but for the declared moves', () => {
 		assert.deepStrictEqual(surface.rpc_endpoints[0]!.methods, with_declared_moves(head.rpc));
 	});
 
-	test('the events are the Zod-era ones but for the declared moves', () => {
+	test('the events are the captured ones but for the declared moves', () => {
 		const expected = (with_declared_moves(head.events) as SurfaceCapture['events']).map((e) =>
 			e.method === HEAD_REVOKE_NOTIFICATION_METHOD
 				? {
@@ -163,7 +163,7 @@ describe('role_grant_offer surface', () => {
 		assert.deepStrictEqual(surface.events, expected);
 	});
 
-	test('the WS entries are the Zod-era ones, then the notifications', () => {
+	test('the WS entries are the captured ones, then the notifications', () => {
 		const methods = surface.ws_endpoints[0]!.methods;
 		const protocol = protocol_actions.length;
 		assert.deepStrictEqual(

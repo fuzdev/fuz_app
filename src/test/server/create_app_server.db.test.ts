@@ -16,13 +16,15 @@ import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { meta } from '@fuzdev/fuz_schema/meta.ts';
 import {
+	boolean,
+	literal,
+	loose_object,
 	object,
 	parse_or_throw,
 	string,
 	void as fuz_void,
 	with_default
 } from '@fuzdev/fuz_schema/schema.ts';
-import { z } from 'zod';
 
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_health_route_spec } from '#lib/http/common_routes.ts';
@@ -309,8 +311,8 @@ describe('create_app_server', () => {
 						path: '/effect-test',
 						auth: { account: 'none', actor: 'none' },
 						description: 'Route with failing effect',
-						input: z.null(),
-						output: z.strictObject({ ok: z.boolean() }),
+						input: literal(null),
+						output: object({ ok: boolean }),
 						handler: async (c) => {
 							const effects = c.var.pending_effects;
 							effects.push(Promise.reject(new Error('effect failed')));
@@ -352,8 +354,8 @@ describe('create_app_server', () => {
 						path: '/effect-test',
 						auth: { account: 'none', actor: 'none' },
 						description: 'Route with failing effect',
-						input: z.null(),
-						output: z.strictObject({ ok: z.boolean() }),
+						input: literal(null),
+						output: object({ ok: boolean }),
 						handler: async (c) => {
 							c.var.pending_effects.push(Promise.reject(new Error('effect failed')));
 							return route_ok({ ok: true });
@@ -393,8 +395,8 @@ describe('create_app_server', () => {
 						path: '/echo',
 						auth: { account: 'none', actor: 'none' },
 						description: 'Echo input',
-						input: z.looseObject({ data: z.string() }),
-						output: z.looseObject({ ok: z.boolean() }),
+						input: loose_object({ data: string }),
+						output: loose_object({ ok: boolean }),
 						handler: async () => route_ok({ ok: true })
 					})
 				]
@@ -439,8 +441,8 @@ describe('create_app_server', () => {
 						path: '/echo',
 						auth: { account: 'none', actor: 'none' },
 						description: 'Echo input',
-						input: z.looseObject({ data: z.string() }),
-						output: z.looseObject({ ok: z.boolean() }),
+						input: loose_object({ data: string }),
+						output: loose_object({ ok: boolean }),
 						handler: async () => route_ok({ ok: true })
 					})
 				]
@@ -482,8 +484,8 @@ describe('create_app_server', () => {
 						path: '/echo',
 						auth: { account: 'none', actor: 'none' },
 						description: 'Echo input',
-						input: z.looseObject({ data: z.string() }),
-						output: z.looseObject({ ok: z.boolean() }),
+						input: loose_object({ data: string }),
+						output: loose_object({ ok: boolean }),
 						handler: async () => route_ok({ ok: true })
 					})
 				]
@@ -528,8 +530,8 @@ describe('create_app_server', () => {
 						path: '/api/echo',
 						auth: { account: 'required', actor: 'none' },
 						description: 'Echo input',
-						input: z.looseObject({ data: z.string() }),
-						output: z.looseObject({ ok: z.boolean() }),
+						input: loose_object({ data: string }),
+						output: loose_object({ ok: boolean }),
 						handler: async () => route_ok({ ok: true })
 					})
 				]
@@ -565,8 +567,8 @@ describe('create_app_server', () => {
 						path: '/echo',
 						auth: { account: 'none', actor: 'none' },
 						description: 'Echo input',
-						input: z.looseObject({ data: z.string() }),
-						output: z.looseObject({ ok: z.boolean() }),
+						input: loose_object({ data: string }),
+						output: loose_object({ ok: boolean }),
 						handler: async () => route_ok({ ok: true })
 					})
 				]
@@ -644,8 +646,8 @@ describe('create_app_server', () => {
 			initiator: 'frontend',
 			auth: { account: 'none', actor: 'none' },
 			side_effects: false,
-			input: z.void(),
-			output: z.strictObject({ ok: z.literal(true) }),
+			input: fuz_void,
+			output: object({ ok: literal(true) }),
 			async: true,
 			description: 'Test action.'
 		} as const;
@@ -682,41 +684,40 @@ describe('create_app_server', () => {
 		assert.deepEqual(body, { jsonrpc: '2.0', id: 1, result: { ok: true } });
 	});
 
-	test('a fuz_schema void input answers every params shape as z.void() does', async () => {
-		const received: Record<string, Array<unknown>> = { zod_void: [], fuz_void: [] };
-		const create_spec = (method: 'zod_void' | 'fuz_void') =>
-			({
-				method,
-				kind: 'request_response',
-				initiator: 'frontend',
-				auth: { account: 'none', actor: 'none' },
-				side_effects: false,
-				input: method === 'zod_void' ? z.void() : fuz_void,
-				output: z.strictObject({ ok: z.literal(true) }),
-				async: true,
-				description: 'Void-input parity action.'
-			}) as const;
+	test('a void input answers every params shape as pinned', async () => {
+		const received: Array<unknown> = [];
+		const method = 'void_input';
+		const spec = {
+			method,
+			kind: 'request_response',
+			initiator: 'frontend',
+			auth: { account: 'none', actor: 'none' },
+			side_effects: false,
+			input: fuz_void,
+			output: object({ ok: literal(true) }),
+			async: true,
+			description: 'Void-input action.'
+		} as const;
 		const result = await create_app_server(
 			await create_config({
 				rpc_endpoints: [
 					{
 						path: '/api/rpc',
-						actions: (['zod_void', 'fuz_void'] as const).map((method) => ({
-							spec: create_spec(method),
-							handler: async (input: unknown) => {
-								received[method]!.push(input);
-								return { ok: true as const };
+						actions: [
+							{
+								spec,
+								handler: async (input: unknown) => {
+									received.push(input);
+									return { ok: true as const };
+								}
 							}
-						}))
+						]
 					}
 				]
 			})
 		);
 		const surface_methods = result.surface_spec.surface.rpc_endpoints[0]!.methods;
-		const surface_input = (name: string) =>
-			surface_methods.find((m) => m.name === name)!.input_schema;
-		assert.isNull(surface_input('zod_void'));
-		assert.isNull(surface_input('fuz_void'));
+		assert.isNull(surface_methods.find((m) => m.name === method)!.input_schema);
 
 		const post = async (envelope: Record<string, unknown>): Promise<Response> =>
 			result.app.request('/api/rpc', {
@@ -731,8 +732,7 @@ describe('create_app_server', () => {
 				}`,
 				{ headers: { origin: TEST_ORIGIN } }
 			);
-		// each case pins the z.void() answer — status and JSON-RPC error code, or
-		// the result — and the fuz_schema void must give the same
+		// each case pins the answer: status and JSON-RPC error code, or the result
 		const cases: Array<{
 			label: string;
 			send: (method: string) => Promise<Response>;
@@ -764,23 +764,19 @@ describe('create_app_server', () => {
 			}
 		];
 		for (const { label, send, status, code } of cases) {
-			for (const method of ['zod_void', 'fuz_void']) {
-				const res = await send(method);
-				const body = await res.json();
-				const ctx = `${method} ${label}: ${JSON.stringify(body)}`;
-				assert.strictEqual(res.status, status, ctx);
-				if (code === null) {
-					assert.deepEqual(body, { jsonrpc: '2.0', id: 1, result: { ok: true } }, ctx);
-				} else {
-					assert.strictEqual(body.error.code, code, ctx);
-				}
+			const res = await send(method);
+			const body = await res.json();
+			const ctx = `${label}: ${JSON.stringify(body)}`;
+			assert.strictEqual(res.status, status, ctx);
+			if (code === null) {
+				assert.deepEqual(body, { jsonrpc: '2.0', id: 1, result: { ok: true } }, ctx);
+			} else {
+				assert.strictEqual(body.error.code, code, ctx);
 			}
 		}
 		// the handler sees the no-arg call as `undefined` on every accepted shape
 		const accepted = cases.filter((c) => c.code === null).length;
-		for (const method of ['zod_void', 'fuz_void']) {
-			assert.deepEqual(received[method], Array(accepted).fill(undefined), method);
-		}
+		assert.deepEqual(received, Array(accepted).fill(undefined));
 	});
 
 	test('rpc_endpoints factory form receives AppServerContext and auto-mounts', async () => {
@@ -791,8 +787,8 @@ describe('create_app_server', () => {
 			initiator: 'frontend',
 			auth: { account: 'none', actor: 'none' },
 			side_effects: false,
-			input: z.void(),
-			output: z.strictObject({ ok: z.literal(true) }),
+			input: fuz_void,
+			output: object({ ok: literal(true) }),
 			async: true,
 			description: 'Factory-form test action.'
 		} as const;

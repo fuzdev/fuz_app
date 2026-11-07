@@ -327,7 +327,7 @@ describe('Username homograph rejection (ASCII-only by regex)', () => {
 
 	test('rejects mathematical bold / italic Latin substitutions', () => {
 		// 𝐚 (U+1D41A MATHEMATICAL BOLD SMALL A) visually matches 'a'.
-		// Surrogate pair in UTF-16 — Zod sees the codepoint as outside
+		// Surrogate pair in UTF-16 — the regex sees the codepoint as outside
 		// [a-zA-Z]. Two char positions but one codepoint.
 		assert.ok(!is(Username, '\u{1d41a}dmin'));
 	});
@@ -355,11 +355,11 @@ describe('Email', () => {
 		assert.ok(is(Email, 'user+tag@example.co.uk'));
 	});
 
-	test('accepts shapes z.email() rejects — the deliberately-looser rule', () => {
+	test('accepts shapes a strict email rule rejects — the deliberately-looser rule', () => {
 		// `Email` is the loose `local@domain.tld` structural shape, not RFC
-		// conformance. These all pass here but FAIL Zod's `z.email()` (1-char
+		// conformance. These all pass here but FAIL a stricter email rule (1-char
 		// TLDs, consecutive dots); pinning them keeps the chosen looser rule
-		// honest — a refactor back to `z.email()` (or a stricter regex) turns
+		// honest — a refactor to a stricter rule turns
 		// these red. The Rust spine's `is_valid_email` accepts them identically.
 		assert.ok(is(Email, 'a@b.c')); // single-char TLD
 		assert.ok(is(Email, 'a..b@c.d')); // consecutive dots in local

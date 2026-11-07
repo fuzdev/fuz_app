@@ -12,6 +12,9 @@ import { route_ok } from '#lib/http/route_result.ts';
 import { describe, assert, test } from 'vitest';
 import { meta } from '@fuzdev/fuz_schema/meta.ts';
 import {
+	boolean,
+	check,
+	literal,
 	loose_object,
 	message,
 	min_length,
@@ -24,10 +27,11 @@ import {
 	strip_object,
 	transform,
 	union,
+	unknown,
+	void as fuz_void,
 	with_default,
 	with_default_fn
 } from '@fuzdev/fuz_schema/schema.ts';
-import { z } from 'zod';
 
 import {
 	generate_app_surface,
@@ -52,8 +56,8 @@ const create_route = (overrides: Partial<RouteSpec> = {}): RouteSpec =>
 		path: '/test',
 		auth: { account: 'none', actor: 'none' },
 		description: 'Test route',
-		input: z.null(),
-		output: z.strictObject({ ok: z.boolean() }),
+		input: literal(null),
+		output: object({ ok: boolean }),
 		handler: noop_handler,
 		...overrides
 	}) as RouteSpec;
@@ -163,8 +167,8 @@ describe('generate_app_surface', () => {
 
 	test('converts input/output schemas to JSON Schema surface representation', () => {
 		const route = create_route({
-			input: z.strictObject({ name: z.string() }),
-			output: z.strictObject({ id: z.string() })
+			input: object({ name: string }),
+			output: object({ id: string })
 		});
 
 		const surface = generate_app_surface({ route_specs: [route], middleware_specs: [] });
@@ -174,7 +178,7 @@ describe('generate_app_surface', () => {
 	});
 
 	test('null input schema produces null surface representation', () => {
-		const route = create_route({ input: z.null() });
+		const route = create_route({ input: literal(null) });
 
 		const surface = generate_app_surface({ route_specs: [route], middleware_specs: [] });
 
@@ -206,7 +210,7 @@ describe('generate_app_surface', () => {
 	});
 
 	test('params_schema is set when params defined', () => {
-		const route = create_route({ params: z.strictObject({ id: z.string() }) });
+		const route = create_route({ params: object({ id: string }) });
 
 		const surface = generate_app_surface({ route_specs: [route], middleware_specs: [] });
 
@@ -222,7 +226,7 @@ describe('generate_app_surface', () => {
 	});
 
 	test('query_schema is set when query defined', () => {
-		const route = create_route({ query: z.strictObject({ q: z.string() }) });
+		const route = create_route({ query: object({ q: string }) });
 
 		const surface = generate_app_surface({ route_specs: [route], middleware_specs: [] });
 
@@ -255,7 +259,7 @@ describe('generate_app_surface', () => {
 		const event_specs: Array<EventSpec> = [
 			{
 				method: 'thing_created',
-				params: z.strictObject({ id: z.string() }),
+				params: object({ id: string }),
 				description: 'Created',
 				channel: 'things'
 			}
@@ -509,7 +513,7 @@ describe('env_schema_to_surface', () => {
 			REQUIRED: string,
 			OPTIONAL: optional(string),
 			DEFAULT: with_default(string, 'x'),
-			// a default of `undefined` is optional and has no default, as in Zod
+			// a default of `undefined` is optional and has no default
 			DEFAULT_UNDEFINED: with_default(optional(string), undefined),
 			DEFAULT_FN: with_default_fn(string, () => 'made'),
 			// an `optional` outside the default answers first
@@ -557,11 +561,11 @@ describe('events_to_surface', () => {
 		const specs: Array<EventSpec> = [
 			{
 				method: 'created',
-				params: z.strictObject({ id: z.string() }),
+				params: object({ id: string }),
 				description: 'Created',
 				channel: 'things'
 			},
-			{ method: 'deleted', params: z.strictObject({ id: z.string() }), description: 'Deleted' }
+			{ method: 'deleted', params: object({ id: string }), description: 'Deleted' }
 		];
 
 		const events = events_to_surface(specs);
@@ -587,11 +591,12 @@ describe('generate_app_surface — JSON Schema writing', () => {
 		const route = create_route({
 			method: 'POST',
 			path: '/named',
-			input: z.strictObject({
-				name: z
-					.string()
-					.min(3)
-					.transform((s) => s.toLowerCase())
+			input: object({
+				name: pipe(
+					string,
+					min_length(3),
+					transform((s: string) => s.toLowerCase())
+				)
 			})
 		});
 		const surface = generate_app_surface({ route_specs: [route], middleware_specs: [] });
@@ -603,7 +608,12 @@ describe('generate_app_surface — JSON Schema writing', () => {
 	test('writes an output transform as {} and records an info diagnostic', () => {
 		const route = create_route({
 			path: '/status',
-			output: z.strictObject({ name: z.string().transform((s) => s.toLowerCase()) })
+			output: object({
+				name: pipe(
+					string,
+					transform((s: string) => s.toLowerCase())
+				)
+			})
 		});
 		const surface = generate_app_surface({ route_specs: [route], middleware_specs: [] });
 		const output = surface.routes[0]!.output_schema as Record<string, any>;
@@ -616,37 +626,41 @@ describe('generate_app_surface — JSON Schema writing', () => {
 	});
 
 	test('throws naming the route for an output with no JSON Schema form', () => {
-		const route = create_route({ path: '/blob', output: z.custom<Blob>((v) => v instanceof Blob) });
+		const route = create_route({
+			path: '/blob',
+			output: pipe(
+				unknown,
+				check((v) => v instanceof Blob)
+			)
+		});
 		assert.throws(
 			() => generate_app_surface({ route_specs: [route], middleware_specs: [] }),
 			/^GET \/blob output: has no JSON Schema form/
 		);
 	});
 
-	test('writes z.void() as null, a parameterless input', () => {
-		const route = create_route({ method: 'POST', path: '/ping', input: z.void() });
+	test('writes a void schema as null, a parameterless input', () => {
+		const route = create_route({ method: 'POST', path: '/ping', input: fuz_void });
 		const surface = generate_app_surface({ route_specs: [route], middleware_specs: [] });
 		assert.strictEqual(surface.routes[0]!.input_schema, null);
 	});
 
 	test('writes fuz_schema schemas with their own emitter', () => {
-		// `RouteSpec` and `EventSpec` type their schemas as Zod today; the cast
-		// stands in for the widening that lets a fuz_schema schema reach here
 		const route = create_route({
 			method: 'POST',
 			path: '/things',
-			input: object({ name: pipe(string, min_length(1)), n: with_default(number, 1) }) as never,
+			input: object({ name: pipe(string, min_length(1)), n: with_default(number, 1) }),
 			output: object({
 				id: string,
 				size: pipe(
 					string,
 					transform((s: string) => s.length)
 				)
-			}) as never
+			})
 		});
 		const event: EventSpec = {
 			method: 'thing_created',
-			params: object({ id: string }) as never,
+			params: object({ id: string }),
 			description: 'Created'
 		};
 		const surface = generate_app_surface({
@@ -686,17 +700,6 @@ describe('the non-strict input warning', () => {
 			route_specs: [create_route({ method: 'POST', input })],
 			middleware_specs: []
 		}).diagnostics.filter((d) => d.level === 'warning');
-
-	test('names z.strictObject() for a Zod input', () => {
-		assert.deepStrictEqual(warnings(z.object({ x: z.string() })), [
-			{
-				level: 'warning',
-				category: 'schema',
-				message: 'Input schema is not z.strictObject() — unknown keys will be silently stripped',
-				source: 'POST /test input'
-			}
-		]);
-	});
 
 	test('names the strict fuz_schema object for a strip_object or loose_object input', () => {
 		const expected: Array<AppSurfaceDiagnostic> = [

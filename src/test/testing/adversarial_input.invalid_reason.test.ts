@@ -7,7 +7,8 @@
  */
 
 import { describe, test, assert } from 'vitest';
-import { z } from 'zod';
+import * as s from '@fuzdev/fuz_schema/schema.ts';
+import { meta } from '@fuzdev/fuz_schema/meta.ts';
 
 import {
 	expected_invalid_reason,
@@ -27,6 +28,7 @@ import {
 	ERROR_SINCE_SEQ_INVALID
 } from '#lib/http/error_schemas.ts';
 import type { ValidationSchema } from '#lib/schema_issues.ts';
+import { Uuid } from '#lib/primitive_schemas.ts';
 
 /** Each case's label → the reason it owes. */
 const owed = (input: ValidationSchema): Map<string, string | undefined> =>
@@ -39,7 +41,10 @@ const owed = (input: ValidationSchema): Map<string, string | undefined> =>
 
 describe('expected_invalid_reason', () => {
 	test('every per-field case names its field, and whole-body cases name none', () => {
-		const Input = z.strictObject({ a: z.string().min(1), b: z.number().int().min(0) });
+		const Input = s.object({
+			a: s.pipe(s.string, s.min_length(1)),
+			b: s.pipe(s.number, s.integer, s.min_value(0))
+		});
 		for (const tc of generate_input_test_cases(Input)) {
 			if (tc.label === 'non-object body (array)' || tc.label === 'extra unknown key') {
 				assert.strictEqual(tc.field, undefined, tc.label);
@@ -51,10 +56,14 @@ describe('expected_invalid_reason', () => {
 	});
 
 	test('a declared field owes its reason on every case kind, an undeclared one none', () => {
-		const Input = z.strictObject({
-			count: z.number().int().min(1).max(5).meta({ invalid_reason: 'count_invalid' }),
-			id: z.uuid().optional(),
-			mode: z.enum(['a', 'b']).nullish().meta({ invalid_reason: 'mode_invalid' })
+		const Input = s.object({
+			count: meta(s.pipe(s.number, s.integer, s.min_value(1), s.max_value(5)), {
+				invalid_reason: 'count_invalid'
+			}),
+			id: s.optional(Uuid),
+			mode: meta(s.optional(s.nullable(s.one_of(['a', 'b']))), {
+				invalid_reason: 'mode_invalid'
+			})
 		});
 		const cases = owed(Input);
 		assert.strictEqual(cases.get('extra unknown key'), undefined);
@@ -67,7 +76,7 @@ describe('expected_invalid_reason', () => {
 		assert.strictEqual(cases.get('format: id (malformed uuid)'), undefined);
 		// and the owed reason is what the schema's own failure resolves to
 		for (const tc of generate_rpc_params_test_cases(Input)) {
-			assert.ok(!Input.safeParse(tc.body).success, tc.label);
+			assert.ok(!s.parse(Input, tc.body).ok, tc.label);
 		}
 	});
 

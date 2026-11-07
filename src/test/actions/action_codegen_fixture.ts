@@ -1,19 +1,22 @@
 /**
- * A generated file built from every codegen block over an all-Zod spec list —
- * fuz_app's own action specs and synthetic specs of each kind — the input of
- * `action_codegen.zod_fixture.test.ts`, which holds it to the text the
- * Zod-only codegen emitted, and holds fuz_app's own list, whose
- * `@fuzdev/fuz_schema` inputs and outputs (`account_token_revoke`,
- * `self_service_role_set`, `actor_lookup`, `actor_search`, the
- * role_grant_offer methods, the admin methods' inputs and outputs, the
- * account methods' inputs and outputs, the cell methods' inputs and
- * outputs, and the protocol methods' inputs and outputs), to that text with
- * those types read by `Infer`.
+ * A generated file built from every codegen block over fuz_app's own action
+ * specs and synthetic specs of each input shape — the input of
+ * `action_codegen.fixture.test.ts`, which holds the generated text to the
+ * frozen `fixtures/action_codegen/fuz_expected.txt`.
  *
  * @module
  */
 
-import { z } from 'zod';
+import {
+	array,
+	literal,
+	number,
+	object,
+	optional,
+	string,
+	void as fuz_void,
+	with_default
+} from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	ImportBuilder,
@@ -36,9 +39,6 @@ import { all_cell_grant_action_specs } from '#lib/auth/cell_grant_action_specs.t
 import { all_cell_field_action_specs } from '#lib/auth/cell_field_action_specs.ts';
 import { all_cell_item_action_specs } from '#lib/auth/cell_item_action_specs.ts';
 import { all_cell_audit_action_specs } from '#lib/auth/cell_audit_action_specs.ts';
-import { parse_any } from '#lib/schema_issues.ts';
-import { is_void_schema } from '#lib/http/schema_helpers.ts';
-import { is_schema } from '@fuzdev/fuz_schema/schema.ts';
 
 // one spec per input shape the signature reads: void, null, optional, defaulted, required
 const synthetic_specs: Array<ActionSpecUnion> = [
@@ -48,8 +48,8 @@ const synthetic_specs: Array<ActionSpecUnion> = [
 		initiator: 'backend',
 		auth: null,
 		side_effects: true,
-		input: z.strictObject({ id: z.string() }),
-		output: z.void(),
+		input: object({ id: string }),
+		output: fuz_void,
 		async: true,
 		description: 'a backend broadcast'
 	},
@@ -59,8 +59,8 @@ const synthetic_specs: Array<ActionSpecUnion> = [
 		initiator: 'frontend',
 		auth: null,
 		side_effects: true,
-		input: z.void(),
-		output: z.void(),
+		input: fuz_void,
+		output: fuz_void,
 		async: true,
 		description: 'a frontend notification with no input'
 	},
@@ -70,8 +70,8 @@ const synthetic_specs: Array<ActionSpecUnion> = [
 		initiator: 'frontend',
 		auth: null,
 		side_effects: false,
-		input: z.null(),
-		output: z.null(),
+		input: literal(null),
+		output: literal(null),
 		async: false,
 		description: 'a sync local call with a null input'
 	},
@@ -81,8 +81,8 @@ const synthetic_specs: Array<ActionSpecUnion> = [
 		initiator: 'frontend',
 		auth: null,
 		side_effects: false,
-		input: z.strictObject({ path: z.string() }).optional(),
-		output: z.strictObject({ text: z.string() }),
+		input: optional(object({ path: string })),
+		output: object({ text: string }),
 		async: true,
 		description: 'an async local call with an optional input'
 	},
@@ -92,8 +92,8 @@ const synthetic_specs: Array<ActionSpecUnion> = [
 		initiator: 'frontend',
 		auth: { account: 'required', actor: 'none' },
 		side_effects: false,
-		input: z.strictObject({ limit: z.number().optional() }).default({}),
-		output: z.strictObject({ items: z.array(z.string()) }),
+		input: with_default(object({ limit: optional(number) }), {}),
+		output: object({ items: array(string) }),
 		async: true,
 		description: 'a read with a defaulted input and a method that is no identifier'
 	},
@@ -103,8 +103,8 @@ const synthetic_specs: Array<ActionSpecUnion> = [
 		initiator: 'backend',
 		auth: { account: 'none', actor: 'none' },
 		side_effects: true,
-		input: z.strictObject({ question: z.string() }),
-		output: z.strictObject({ answer: z.string() }),
+		input: object({ question: string }),
+		output: object({ answer: string }),
 		async: true,
 		description: 'a backend-initiated request'
 	}
@@ -128,63 +128,8 @@ const fuz_app_specs: Array<ActionSpecUnion> = [
 	).values()
 ];
 
-/**
- * The Zod stand-in for a `@fuzdev/fuz_schema` input. Codegen reads an input
- * for its library, whether it is null or void, and whether it takes
- * `undefined` or `{}` (or carries the `empty_input_handler_guarded` marker): a
- * required key, as most of these inputs have, gives every answer theirs does,
- * which `action_codegen.zod_fixture.test.ts` holds it to.
- */
-const ZodRequiredInput = z.strictObject({ required: z.string() });
-
-/**
- * The Zod stand-in for such an input that takes `undefined`, as the defaulted
- * inputs of the listings do: an object of optional keys with a `{}` default,
- * which takes `undefined` and `{}` as theirs do.
- */
-const ZodDefaultedInput = z.strictObject({ optional: z.string().optional() }).default({});
-
-/** The Zod stand-in for a `@fuzdev/fuz_schema` `void` input, read by shape as `z.void()` is. */
-const ZodVoidInput = z.void();
-
-/** The Zod stand-in for a `@fuzdev/fuz_schema` output, of which codegen reads only the library. */
-const ZodOutput = z.strictObject({});
-
-/** The spec with each `@fuzdev/fuz_schema` side replaced by its Zod stand-in. */
-const to_zod_spec = (spec: ActionSpecUnion): ActionSpecUnion =>
-	({
-		...spec,
-		input: is_schema(spec.input)
-			? is_void_schema(spec.input)
-				? ZodVoidInput
-				: parse_any(spec.input, undefined).ok
-					? ZodDefaultedInput
-					: ZodRequiredInput
-			: spec.input,
-		output: is_schema(spec.output) ? ZodOutput : spec.output
-	}) as ActionSpecUnion;
-
-/**
- * The methods of fuz_app's own list whose input is `@fuzdev/fuz_schema`, in
- * the fixture's order.
- */
-export const fuz_schema_input_methods: ReadonlyArray<string> = fuz_app_specs
-	.filter((spec) => is_schema(spec.input))
-	.map((spec) => spec.method);
-
-/**
- * The methods of fuz_app's own list whose output is `@fuzdev/fuz_schema`, in
- * the fixture's order.
- */
-export const fuz_schema_output_methods: ReadonlyArray<string> = fuz_app_specs
-	.filter((spec) => is_schema(spec.output))
-	.map((spec) => spec.method);
-
 /** fuz_app's own specs and the synthetic ones, in the fixture's order. */
 export const fixture_specs: Array<ActionSpecUnion> = [...fuz_app_specs, ...synthetic_specs];
-
-/** The all-Zod spec list the fixture is generated from. */
-export const zod_fixture_specs: Array<ActionSpecUnion> = fixture_specs.map(to_zod_spec);
 
 /**
  * Every codegen block over `specs` composed into one file: once with the

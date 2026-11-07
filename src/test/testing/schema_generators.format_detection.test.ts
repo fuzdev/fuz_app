@@ -1,55 +1,56 @@
 /**
  * Coverage for `detect_format`'s `anyOf` descent.
  *
- * `.nullish()` / `.nullable()` wrap formats so `z.toJSONSchema` produces
+ * `nullable` wraps formats so the JSON Schema writer produces
  * `anyOf: [{format: ...}, {type: 'null'}]` instead of a top-level
  * `format`. Without the anyOf descent, format-aware adversarial cases
- * (malformed uuid / email / etc.) silently disappear for any field
- * declared `email.nullish()` — a regression that wouldn't fail any
+ * (malformed uuid / pattern / etc.) silently disappear for any field
+ * declared `nullable(Uuid)` — a regression that wouldn't fail any
  * existing test.
  *
  * @module
  */
 
 import { describe, test, assert } from 'vitest';
-import { z } from 'zod';
+import { nullable, optional, pipe, regex, string } from '@fuzdev/fuz_schema/schema.ts';
 
 import { detect_format } from '#lib/testing/schema_generators.ts';
+import { Email, Uuid } from '#lib/primitive_schemas.ts';
 
 describe('detect_format — anyOf descent', () => {
-	test('detects email through .nullish()', () => {
-		assert.strictEqual(detect_format(z.email().nullish()), 'email');
+	test('detects the email pattern through optional(nullable(..))', () => {
+		assert.strictEqual(detect_format(optional(nullable(Email))), 'pattern');
 	});
 
-	test('detects email through .nullable()', () => {
-		assert.strictEqual(detect_format(z.email().nullable()), 'email');
+	test('detects the email pattern through nullable', () => {
+		assert.strictEqual(detect_format(nullable(Email)), 'pattern');
 	});
 
-	test('detects email through .optional()', () => {
-		assert.strictEqual(detect_format(z.email().optional()), 'email');
+	test('detects the email pattern through optional', () => {
+		assert.strictEqual(detect_format(optional(Email)), 'pattern');
 	});
 
-	test('detects uuid through .nullish()', () => {
-		assert.strictEqual(detect_format(z.uuid().nullish()), 'uuid');
+	test('detects uuid through optional(nullable(..))', () => {
+		assert.strictEqual(detect_format(optional(nullable(Uuid))), 'uuid');
 	});
 
-	test('detects uuid through .nullable()', () => {
-		assert.strictEqual(detect_format(z.uuid().nullable()), 'uuid');
+	test('detects uuid through nullable', () => {
+		assert.strictEqual(detect_format(nullable(Uuid)), 'uuid');
 	});
 
 	test('detects bare uuid (no wrapper)', () => {
-		assert.strictEqual(detect_format(z.uuid()), 'uuid');
+		assert.strictEqual(detect_format(Uuid), 'uuid');
 	});
 
-	test('detects pattern through .nullable()', () => {
-		assert.strictEqual(detect_format(z.string().regex(/^abc/).nullable()), 'pattern');
+	test('detects pattern through nullable', () => {
+		assert.strictEqual(detect_format(nullable(pipe(string, regex(/^abc/)))), 'pattern');
 	});
 
 	test('returns null for unconstrained string', () => {
-		assert.strictEqual(detect_format(z.string()), null);
+		assert.strictEqual(detect_format(string), null);
 	});
 
-	test('returns null for unconstrained string wrapped in .nullish()', () => {
-		assert.strictEqual(detect_format(z.string().nullish()), null);
+	test('returns null for unconstrained string wrapped in optional(nullable(..))', () => {
+		assert.strictEqual(detect_format(optional(nullable(string))), null);
 	});
 });

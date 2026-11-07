@@ -254,7 +254,7 @@ describe('a fuz_schema route delivers', () => {
 });
 
 describe('DEV output validation and the DEV error check on a fuz_schema route', () => {
-	// the library's own issues, as for a Zod route, each with no custom `message`
+	// the library's own issues, each with no custom `message`
 	test('logs an output mismatch with the fuz_schema issues', async () => {
 		const got = await send(`${THING}?mode=a`, '{"name":"wrong_output"}');
 		assert.strictEqual(got.status, 200);

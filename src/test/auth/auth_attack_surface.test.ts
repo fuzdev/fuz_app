@@ -10,7 +10,7 @@
 import { route_ok } from '#lib/http/route_result.ts';
 import { describe, assert, test } from 'vitest';
 import { Hono } from 'hono';
-import { z } from 'zod';
+import * as s from '@fuzdev/fuz_schema/schema.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { apply_route_specs, define_route, type RouteSpec } from '#lib/http/route_spec.ts';
@@ -43,10 +43,9 @@ import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS
 } from '#lib/http/error_schemas.ts';
-import type { Uuid } from '#lib/primitive_schemas.ts';
+import { ActingActor, type Uuid } from '#lib/primitive_schemas.ts';
 import { create_stub_db } from '#lib/testing/stubs.ts';
 import { to_iso8601_seconds } from '#lib/timestamp.ts';
-import { ZodActingActor } from '#lib/zod_schemas.ts';
 
 /** The content type every non-`raw_body` POST route requires. */
 const JSON_HEADERS = { 'content-type': 'application/json' };
@@ -133,8 +132,8 @@ const test_route_specs: Array<RouteSpec> = [
 		auth: { account: 'none', actor: 'none' },
 		handler: () => route_ok({ ok: true }),
 		description: 'Public endpoint',
-		input: z.null(),
-		output: z.strictObject({ ok: z.literal(true) })
+		input: s.literal(null),
+		output: s.object({ ok: s.literal(true) })
 	}),
 	define_route({
 		method: 'GET',
@@ -142,8 +141,8 @@ const test_route_specs: Array<RouteSpec> = [
 		auth: { account: 'required', actor: 'none' },
 		handler: () => route_ok({ ok: true }),
 		description: 'Requires authentication',
-		input: z.null(),
-		output: z.strictObject({ ok: z.literal(true) })
+		input: s.literal(null),
+		output: s.object({ ok: s.literal(true) })
 	}),
 	define_route({
 		method: 'POST',
@@ -151,9 +150,9 @@ const test_route_specs: Array<RouteSpec> = [
 		auth: { account: 'required', actor: 'required', roles: ['admin'] },
 		handler: () => route_ok({ ok: true }),
 		description: 'Requires admin role',
-		query: z.strictObject({ acting: ZodActingActor }),
-		input: z.null(),
-		output: z.strictObject({ ok: z.literal(true) })
+		query: s.object({ acting: ActingActor }),
+		input: s.literal(null),
+		output: s.object({ ok: s.literal(true) })
 	}),
 	define_route({
 		method: 'POST',
@@ -166,9 +165,9 @@ const test_route_specs: Array<RouteSpec> = [
 		},
 		handler: () => route_ok({ ok: true }),
 		description: 'Requires keeper credentials',
-		query: z.strictObject({ acting: ZodActingActor }),
-		input: z.null(),
-		output: z.strictObject({ ok: z.literal(true) })
+		query: s.object({ acting: ActingActor }),
+		input: s.literal(null),
+		output: s.object({ ok: s.literal(true) })
 	}),
 	define_route({
 		method: 'DELETE',
@@ -181,9 +180,9 @@ const test_route_specs: Array<RouteSpec> = [
 		},
 		handler: () => route_ok({ ok: true }),
 		description: 'Requires keeper credentials (DELETE)',
-		query: z.strictObject({ acting: ZodActingActor }),
-		input: z.null(),
-		output: z.strictObject({ ok: z.literal(true) })
+		query: s.object({ acting: ActingActor }),
+		input: s.literal(null),
+		output: s.object({ ok: s.literal(true) })
 	})
 ];
 

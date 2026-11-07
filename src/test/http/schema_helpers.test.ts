@@ -5,7 +5,6 @@
  */
 
 import { describe, assert, test } from 'vitest';
-import { z } from 'zod';
 import {
 	array,
 	bigint,
@@ -27,9 +26,11 @@ import {
 	strip_object,
 	transform,
 	union,
+	unknown,
 	variant,
 	void as fuz_void,
 	with_default,
+	with_default_fn,
 	type AnySchema
 } from '@fuzdev/fuz_schema/schema.ts';
 import { meta } from '@fuzdev/fuz_schema/meta.ts';
@@ -48,72 +49,37 @@ import {
 } from '#lib/http/schema_helpers.ts';
 
 describe('is_null_schema', () => {
-	test('returns true for z.null()', () => {
-		assert.strictEqual(is_null_schema(z.null()), true);
-	});
-
-	test('returns false for z.string()', () => {
-		assert.strictEqual(is_null_schema(z.string()), false);
-	});
-
-	test('returns false for z.strictObject()', () => {
-		assert.strictEqual(is_null_schema(z.strictObject({ name: z.string() })), false);
-	});
-
-	test('returns false for z.nullable(z.string()) — accepts null but is not z.null()', () => {
-		assert.strictEqual(is_null_schema(z.nullable(z.string())), false);
-	});
-
-	test('returns false for z.void()', () => {
-		assert.strictEqual(is_null_schema(z.void()), false);
-	});
-
 	test('returns true for a fuz_schema literal(null)', () => {
 		assert.strictEqual(is_null_schema(literal(null)), true);
 	});
 
 	test('returns false for a fuz_schema nullable and other literals', () => {
+		// a nullable accepts null but is not the null schema
 		assert.strictEqual(is_null_schema(nullable(string)), false);
 		assert.strictEqual(is_null_schema(literal('null')), false);
 		assert.strictEqual(is_null_schema(literal(undefined)), false);
 	});
+
+	test('returns false for other fuz_schema schemas', () => {
+		assert.strictEqual(is_null_schema(string), false);
+		assert.strictEqual(is_null_schema(object({ name: string })), false);
+		assert.strictEqual(is_null_schema(fuz_void), false);
+	});
 });
 
 describe('is_void_schema', () => {
-	test('returns true for z.void()', () => {
-		assert.strictEqual(is_void_schema(z.void()), true);
-	});
-
-	test('returns false for z.null()', () => {
-		assert.strictEqual(is_void_schema(z.null()), false);
-	});
-
-	test('returns false for z.undefined()', () => {
-		assert.strictEqual(is_void_schema(z.undefined()), false);
-	});
-
-	test('returns false for z.string()', () => {
-		assert.strictEqual(is_void_schema(z.string()), false);
-	});
-
-	test('returns false for z.strictObject()', () => {
-		assert.strictEqual(is_void_schema(z.strictObject({ name: z.string() })), false);
-	});
-
 	// fuz_schema's void is `literal(undefined)`, detected by shape (kind + def),
 	// so a `meta` copy (a new `{kind, def, run}` object) still reads void
-	const cases: Array<[label: string, schema: z.ZodType | AnySchema, expected: boolean]> = [
-		['z.void()', z.void(), true],
+	const cases: Array<[label: string, schema: AnySchema, expected: boolean]> = [
 		['s.void', fuz_void, true],
 		['literal(undefined)', literal(undefined), true],
 		['meta(s.void, …)', meta(fuz_void, { description: 'no params' }), true],
-		['z.undefined()', z.undefined(), false],
-		['z.null()', z.null(), false],
 		['literal(null)', literal(null), false],
 		['literal("undefined")', literal('undefined'), false],
 		['optional(string)', optional(string), false],
 		['s.string', string, false],
-		['object({})', object({}), false]
+		['object({})', object({}), false],
+		['object({name})', object({ name: string }), false]
 	];
 	for (const [label, schema, expected] of cases) {
 		test(`${label} → ${expected}`, () => {
@@ -129,7 +95,7 @@ describe('to_void_params', () => {
 		}
 	});
 
-	test('passes any other shape through for z.void() to refuse', () => {
+	test('passes any other shape through for a void input to refuse', () => {
 		for (const params of [{ a: 1 }, [], [1], 0, '', false]) {
 			assert.strictEqual(to_void_params(params), params, JSON.stringify(params));
 		}
@@ -137,14 +103,6 @@ describe('to_void_params', () => {
 });
 
 describe('to_input_params', () => {
-	test('applies to_void_params to a z.void() input', () => {
-		for (const params of [undefined, null, {}]) {
-			assert.strictEqual(to_input_params(z.void(), params), undefined, JSON.stringify(params));
-		}
-		const extra = { a: 1 };
-		assert.strictEqual(to_input_params(z.void(), extra), extra);
-	});
-
 	test('applies to_void_params to a fuz_schema void input', () => {
 		for (const input of [fuz_void, meta(fuz_void, { description: 'no params' })]) {
 			for (const params of [undefined, null, {}]) {
@@ -155,14 +113,8 @@ describe('to_input_params', () => {
 		}
 	});
 
-	test('reads absent and null params of a fuz_schema object input as {}', () => {
+	test('reads absent and null params of any other input as {}, passing the rest through', () => {
 		const input = object({ limit: optional(number) });
-		assert.deepStrictEqual(to_input_params(input, undefined), {});
-		assert.deepStrictEqual(to_input_params(input, null), {});
-	});
-
-	test('reads absent and null params of any other input as {}', () => {
-		const input = z.strictObject({ limit: z.number().optional() });
 		assert.deepStrictEqual(to_input_params(input, undefined), {});
 		assert.deepStrictEqual(to_input_params(input, null), {});
 		const params = { limit: 2 };
@@ -214,52 +166,6 @@ describe('json_has_own_proto_key', () => {
 });
 
 describe('safe_parse_dropping_unknown_keys', () => {
-	const schema = z.strictObject({
-		a: z.number(),
-		nested: z.strictObject({ b: z.string() }).optional(),
-		list: z.array(z.strictObject({ c: z.boolean() })).optional()
-	});
-
-	test('passes a matching value through', () => {
-		const result = safe_parse_dropping_unknown_keys(schema, { a: 1 });
-		assert.ok(result.ok);
-		assert.deepStrictEqual(result.value, { a: 1 });
-	});
-
-	test('drops undeclared keys at every depth without mutating the input', () => {
-		const value = { a: 1, x: 0, nested: { b: 'b', y: 0 }, list: [{ c: true, z: 0 }] };
-		const snapshot = structuredClone(value);
-		const result = safe_parse_dropping_unknown_keys(schema, value);
-		assert.ok(result.ok);
-		assert.deepStrictEqual(result.value, { a: 1, nested: { b: 'b' }, list: [{ c: true }] });
-		assert.deepStrictEqual(value, snapshot);
-	});
-
-	test('still fails on any other issue, with the original issues', () => {
-		const result = safe_parse_dropping_unknown_keys(schema, { a: 'nope', x: 0 });
-		assert.ok(!result.ok);
-		const codes = result.issues.map((issue) => ('code' in issue ? issue.code : issue.kind)).sort();
-		assert.deepStrictEqual(codes, ['invalid_type', 'unrecognized_keys']);
-	});
-
-	test('drops an unknown key a Zod union of strict objects reports', () => {
-		const either = z.union([z.strictObject({ a: z.number() }), z.strictObject({ b: z.number() })]);
-		const result = safe_parse_dropping_unknown_keys(either, { a: 1, x: 1 });
-		assert.ok(result.ok);
-		assert.deepStrictEqual(result.value, { a: 1 });
-	});
-
-	test('drops the keys either stage of a pipe refuses', () => {
-		const piped = z
-			.strictObject({ a: z.number(), b: z.number().optional() })
-			.pipe(z.strictObject({ a: z.number() }));
-		const result = safe_parse_dropping_unknown_keys(piped, { a: 1, b: 2, c: 3 });
-		assert.ok(result.ok);
-		assert.deepStrictEqual(result.value, { a: 1 });
-	});
-});
-
-describe('safe_parse_dropping_unknown_keys with fuz_schema', () => {
 	const schema = object({
 		a: number,
 		nested: optional(object({ b: string })),
@@ -581,7 +487,7 @@ describe('is_strict_object_schema', () => {
 		assert.strictEqual(is_strict_object_schema(string), false);
 	});
 
-	test('reads a refined fuz_schema object strict, as a refined z.strictObject() is', () => {
+	test('reads a refined fuz_schema object strict', () => {
 		const refined = pipe(
 			object({ name: string }),
 			check((v) => v.name !== '')
@@ -598,10 +504,6 @@ describe('is_strict_object_schema', () => {
 		);
 		assert.strictEqual(is_strict_object_schema(message(refined, 'bad thing')), true);
 		assert.strictEqual(
-			is_strict_object_schema(z.strictObject({ name: z.string() }).refine((v) => v.name !== '')),
-			true
-		);
-		assert.strictEqual(
 			is_strict_object_schema(
 				pipe(
 					strip_object({ name: string }),
@@ -612,7 +514,7 @@ describe('is_strict_object_schema', () => {
 		);
 	});
 
-	test('reads a transformed object not strict in either library', () => {
+	test('reads a transformed object not strict', () => {
 		assert.strictEqual(
 			is_strict_object_schema(
 				pipe(
@@ -634,161 +536,21 @@ describe('is_strict_object_schema', () => {
 			),
 			false
 		);
-		assert.strictEqual(
-			is_strict_object_schema(z.strictObject({ name: z.string() }).transform((v) => v)),
-			false
-		);
 	});
 
-	test('returns true for z.strictObject()', () => {
-		assert.strictEqual(is_strict_object_schema(z.strictObject({ name: z.string() })), true);
-	});
-
-	test('returns false for z.object()', () => {
-		assert.strictEqual(is_strict_object_schema(z.object({ name: z.string() })), false);
-	});
-
-	test('returns false for z.looseObject()', () => {
-		assert.strictEqual(is_strict_object_schema(z.looseObject({ name: z.string() })), false);
-	});
-
-	test('returns false for z.string()', () => {
-		assert.strictEqual(is_strict_object_schema(z.string()), false);
-	});
-
-	test('returns false for z.null()', () => {
-		assert.strictEqual(is_strict_object_schema(z.null()), false);
+	test('returns false for literal(null) and void', () => {
+		assert.strictEqual(is_strict_object_schema(literal(null)), false);
+		assert.strictEqual(is_strict_object_schema(fuz_void), false);
 	});
 });
 
 describe('schema_to_surface', () => {
-	test('returns null for null schema', () => {
-		assert.strictEqual(schema_to_surface(z.null()), null);
-	});
-
-	test('returns JSON Schema for object schema', () => {
-		const schema = z.strictObject({ name: z.string() });
-		const result = schema_to_surface(schema) as Record<string, unknown>;
-		assert.ok(result);
-		assert.strictEqual(result.type, 'object');
-		assert.ok(result.properties);
-	});
-
-	test('strips $schema from output', () => {
-		const schema = z.strictObject({ id: z.number() });
-		const result = schema_to_surface(schema) as Record<string, unknown>;
-		assert.ok(result);
-		assert.strictEqual('$schema' in result, false);
-	});
-
-	test('returns JSON Schema for string schema', () => {
-		const result = schema_to_surface(z.string()) as Record<string, unknown>;
-		assert.ok(result);
-		assert.strictEqual(result.type, 'string');
-	});
-
-	test('strips default from output to avoid non-deterministic function defaults', () => {
-		const schema = z.strictObject({
-			created: z.string().default(() => new Date().toISOString()),
-			name: z.string()
-		});
-		const result = schema_to_surface(schema) as Record<string, unknown>;
-		assert.ok(result);
-		const props = result.properties as Record<string, Record<string, unknown>>;
-		assert.ok(props.created);
-		assert.ok(props.name);
-		assert.strictEqual('default' in props.created, false);
-		// structural fields preserved
-		assert.strictEqual(props.created.type, 'string');
-		assert.strictEqual(props.name.type, 'string');
-	});
-
-	test('strips default from nested schemas', () => {
-		const schema = z.strictObject({
-			outer: z.strictObject({
-				inner: z.number().default(42)
-			})
-		});
-		const result = schema_to_surface(schema) as Record<string, unknown>;
-		assert.ok(result);
-		const outer = (result.properties as Record<string, Record<string, unknown>>).outer;
-		assert.ok(outer);
-		const inner_props = outer.properties as Record<string, Record<string, unknown>>;
-		assert.ok(inner_props);
-		const inner = inner_props.inner;
-		assert.ok(inner);
-		assert.strictEqual('default' in inner, false);
-		assert.strictEqual(inner.type, 'number');
-	});
-
-	test('surface is deterministic with function defaults', () => {
-		const schema = z.strictObject({
-			ts: z.string().default(() => new Date().toISOString())
-		});
-		const a = schema_to_surface(schema);
-		const b = schema_to_surface(schema);
-		assert.deepStrictEqual(a, b);
-	});
-
-	test('returns null for z.void()', () => {
-		assert.strictEqual(schema_to_surface(z.void()), null);
-	});
-
-	test('describes the input side with io input, through a transform', () => {
-		const schema = z.strictObject({
-			name: z
-				.string()
-				.min(2)
-				.transform((s) => s.toLowerCase())
-		});
-		const gaps: Array<string> = [];
-		const result = schema_to_surface(schema, {
-			io: 'input',
-			on_unrepresentable: (m) => gaps.push(m)
-		}) as Record<string, any>;
-		assert.deepStrictEqual(result.properties.name, { type: 'string', minLength: 2 });
-		assert.deepStrictEqual(gaps, []);
-	});
-
-	test('writes an output-side transform as {} and reports the gap', () => {
-		const schema = z.strictObject({
-			name: z.string().transform((s) => s.toLowerCase()),
-			id: z.number()
-		});
-		const gaps: Array<string> = [];
-		const result = schema_to_surface(schema, {
-			on_unrepresentable: (m) => gaps.push(m)
-		}) as Record<string, any>;
-		assert.deepStrictEqual(result.properties.name, {});
-		assert.deepStrictEqual(result.properties.id, { type: 'number' });
-		assert.deepStrictEqual(result.required, ['name', 'id']);
-		assert.strictEqual(gaps.length, 1);
-		assert.include(gaps[0], 'Transforms');
-	});
-
-	test('throws naming the source for a schema with no JSON Schema form', () => {
-		// a `z.custom()` that refuses null, so `is_null_schema` is false — this
-		// was a silent `null`, reading as "no input"
-		const unconvertible = z.custom<unknown>((v) => v !== null && v !== undefined);
-		assert.throws(
-			() => schema_to_surface(unconvertible, { source: 'POST /api/thing input' }),
-			/^POST \/api\/thing input: has no JSON Schema form: Custom types/
-		);
-	});
-
-	test('z.unknown() is the declared "anything", written as {}', () => {
-		assert.deepStrictEqual(schema_to_surface(z.unknown()), {});
-	});
-});
-
-describe('schema_to_surface — fuz_schema', () => {
 	test('returns null for literal(null)', () => {
 		assert.strictEqual(schema_to_surface(literal(null)), null);
 	});
 
-	test('returns null for s.void on either side, as for z.void()', () => {
+	test('returns null for s.void on either side', () => {
 		for (const io of ['input', 'output'] as const) {
-			assert.strictEqual(schema_to_surface(z.void(), { io }), null);
 			assert.strictEqual(schema_to_surface(fuz_void, { io }), null);
 			assert.strictEqual(
 				schema_to_surface(meta(fuz_void, { description: 'no params' }), { io }),
@@ -815,6 +577,44 @@ describe('schema_to_surface — fuz_schema', () => {
 			required: ['name', 'inner'],
 			additionalProperties: false
 		});
+	});
+
+	test('returns JSON Schema for a string schema', () => {
+		assert.deepStrictEqual(schema_to_surface(string), { type: 'string' });
+	});
+
+	test('strips a function default, so the surface is deterministic', () => {
+		const schema = object({
+			created: with_default_fn(string, () => new Date().toISOString()),
+			name: string
+		});
+		const a = schema_to_surface(schema) as Record<string, any>;
+		assert.deepStrictEqual(a.properties, {
+			created: { type: 'string' },
+			name: { type: 'string' }
+		});
+		assert.deepStrictEqual(schema_to_surface(schema), a);
+	});
+
+	test('describes the input side with io input, through a transform', () => {
+		const schema = object({
+			name: pipe(
+				string,
+				min_length(2),
+				transform((s: string) => s.toLowerCase())
+			)
+		});
+		const gaps: Array<string> = [];
+		const result = schema_to_surface(schema, {
+			io: 'input',
+			on_unrepresentable: (m) => gaps.push(m)
+		}) as Record<string, any>;
+		assert.deepStrictEqual(result.properties.name, { type: 'string', minLength: 2 });
+		assert.deepStrictEqual(gaps, []);
+	});
+
+	test('unknown is the declared "anything", written as {}', () => {
+		assert.deepStrictEqual(schema_to_surface(unknown), {});
 	});
 
 	test('the output side requires a defaulted key, the input side does not', () => {

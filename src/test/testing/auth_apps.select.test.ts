@@ -18,11 +18,11 @@
 
 import { route_ok } from '#lib/http/route_result.ts';
 import { describe, test, assert } from 'vitest';
-import { z } from 'zod';
+import { literal, object } from '@fuzdev/fuz_schema/schema.ts';
 
 import { create_auth_test_apps, select_auth_app } from '#lib/testing/auth_apps.ts';
 import { define_route, type RouteSpec } from '#lib/http/route_spec.ts';
-import { ZodActingActor } from '#lib/zod_schemas.ts';
+import { ActingActor } from '#lib/primitive_schemas.ts';
 
 const specs: Array<RouteSpec> = [
 	define_route({
@@ -31,8 +31,8 @@ const specs: Array<RouteSpec> = [
 		auth: { account: 'none', actor: 'none' },
 		handler: () => route_ok({ ok: true }),
 		description: 'Public',
-		input: z.null(),
-		output: z.strictObject({ ok: z.literal(true) })
+		input: literal(null),
+		output: object({ ok: literal(true) })
 	}),
 	define_route({
 		method: 'GET',
@@ -40,8 +40,8 @@ const specs: Array<RouteSpec> = [
 		auth: { account: 'required', actor: 'none' },
 		handler: () => route_ok({ ok: true }),
 		description: 'Authenticated',
-		input: z.null(),
-		output: z.strictObject({ ok: z.literal(true) })
+		input: literal(null),
+		output: object({ ok: literal(true) })
 	}),
 	define_route({
 		method: 'GET',
@@ -54,9 +54,9 @@ const specs: Array<RouteSpec> = [
 		},
 		handler: () => route_ok({ ok: true }),
 		description: 'Session-gated admin route',
-		query: z.strictObject({ acting: ZodActingActor }),
-		input: z.null(),
-		output: z.strictObject({ ok: z.literal(true) })
+		query: object({ acting: ActingActor }),
+		input: literal(null),
+		output: object({ ok: literal(true) })
 	}),
 	define_route({
 		method: 'POST',
@@ -69,9 +69,9 @@ const specs: Array<RouteSpec> = [
 		},
 		handler: () => route_ok({ ok: true }),
 		description: 'Keeper route',
-		query: z.strictObject({ acting: ZodActingActor }),
-		input: z.null(),
-		output: z.strictObject({ ok: z.literal(true) })
+		query: object({ acting: ActingActor }),
+		input: literal(null),
+		output: object({ ok: literal(true) })
 	})
 ];
 

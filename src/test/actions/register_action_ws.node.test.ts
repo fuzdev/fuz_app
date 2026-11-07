@@ -25,7 +25,7 @@ import type { AddressInfo } from 'node:net';
 import { Hono } from 'hono';
 import { serve, type ServerType } from '@hono/node-server';
 import { createNodeWebSocket } from '@hono/node-ws';
-import { z } from 'zod';
+import { object, string } from '@fuzdev/fuz_schema/schema.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { register_action_ws } from '#lib/actions/register_action_ws.ts';
@@ -61,8 +61,8 @@ const record_spec: RequestResponseActionSpec = {
 	initiator: 'frontend',
 	auth: { account: 'required', actor: 'none' },
 	side_effects: false,
-	input: z.strictObject({ value: z.string() }),
-	output: z.strictObject({ value: z.string() }),
+	input: object({ value: string }),
+	output: object({ value: string }),
 	async: true,
 	description: 'record a value'
 };

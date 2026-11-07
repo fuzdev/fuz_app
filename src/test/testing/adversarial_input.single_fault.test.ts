@@ -10,7 +10,7 @@
  */
 
 import { describe, test, assert } from 'vitest';
-import { z } from 'zod';
+import * as s from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	generate_input_test_cases,
@@ -22,44 +22,47 @@ import {
 	generate_valid_value,
 	to_object_schema_view
 } from '#lib/testing/schema_generators.ts';
-import { zod_extract_fields, zod_unwrap_to_object } from '#lib/zod.ts';
 import type { SchemaFieldInfo } from '#lib/http/schema_helpers.ts';
 import { create_spine_live_rpc_endpoints } from '#lib/testing/cross_backend/full_spine_mount.ts';
 import { parse_any, type ValidationSchema } from '#lib/schema_issues.ts';
+import { Uuid } from '#lib/primitive_schemas.ts';
 
 const NIL = '00000000-0000-0000-0000-000000000000';
 
 // exactly one of `id` / `slug` — the generated base fills `id`
-const ExactlyOne = z
-	.strictObject({
-		id: z.uuid().optional(),
-		slug: z.string().min(3).max(40).optional(),
-		note: z.string().max(20).optional()
-	})
-	.refine((v) => (v.id !== undefined) !== (v.slug !== undefined), {
-		message: 'exactly one of id or slug'
-	});
+const ExactlyOne = s.pipe(
+	s.object({
+		id: s.optional(Uuid),
+		slug: s.optional(s.pipe(s.string, s.min_length(3), s.max_length(40))),
+		note: s.optional(s.pipe(s.string, s.max_length(20)))
+	}),
+	s.check((v) => (v.id !== undefined) !== (v.slug !== undefined), 'exactly one of id or slug')
+);
 
 // both or neither — the generated base fills neither
-const Paired = z
-	.strictObject({
-		to: z.uuid(),
-		scope_kind: z.string().min(1).max(64).nullish(),
-		scope_id: z.uuid().nullish()
-	})
-	.refine((v) => (v.scope_kind == null) === (v.scope_id == null), {
-		message: 'scope_kind and scope_id together'
-	});
+const Paired = s.pipe(
+	s.object({
+		to: Uuid,
+		scope_kind: s.optional(s.nullable(s.pipe(s.string, s.min_length(1), s.max_length(64)))),
+		scope_id: s.optional(s.nullable(Uuid))
+	}),
+	s.check(
+		(v) => (v.scope_kind == null) === (v.scope_id == null),
+		'scope_kind and scope_id together'
+	)
+);
 
 // `code` is valid on no body: the refine refuses every value of it
-const NeverWithCode = z
-	.strictObject({ id: z.uuid(), code: z.string().min(2).max(8).optional() })
-	.refine((v) => v.code === undefined, { message: 'code is not accepted' });
+const NeverWithCode = s.pipe(
+	s.object({
+		id: Uuid,
+		code: s.optional(s.pipe(s.string, s.min_length(2), s.max_length(8)))
+	}),
+	s.check((v) => v.code === undefined, 'code is not accepted')
+);
 
-const field_of = (schema: z.ZodType, name: string): SchemaFieldInfo => {
-	const object_schema = zod_unwrap_to_object(schema)!;
-	return zod_extract_fields(object_schema).find((f) => f.name === name)!;
-};
+const field_of = (schema: ValidationSchema, name: string): SchemaFieldInfo =>
+	to_object_schema_view(schema, 'field_of').fields.find((f) => f.name === name)!;
 
 const cases_on = (cases: Array<InputTestCase>, field: string): Array<InputTestCase> =>
 	cases.filter((c) => c.field === field);
@@ -91,7 +94,8 @@ const is_single_fault = (input: ValidationSchema, c: InputTestCase): boolean => 
 };
 
 describe('generate_valid_object_with_field', () => {
-	const object_of = (schema: z.ZodType) => zod_unwrap_to_object(schema)!;
+	// the pipe's first schema, the object the base is an instance of
+	const object_of = (schema: s.SchemaNode<'pipe'>): ValidationSchema => schema.def[0]!;
 
 	test('a field the base carries keeps the base', () => {
 		const base = generate_valid_body(ExactlyOne)!;
@@ -136,15 +140,16 @@ describe('generate_valid_object_with_field', () => {
 	test("a paired field brings its partner and keeps the base's other branch", () => {
 		// exactly one of `id` / `slug`, and `kind` with `scope` — the base's `id`
 		// must stay, since dropping it leaves neither branch
-		const Both = z
-			.strictObject({
-				id: z.uuid().optional(),
-				slug: z.string().min(3).optional(),
-				kind: z.string().optional(),
-				scope: z.uuid().optional()
-			})
-			.refine((v) => (v.id !== undefined) !== (v.slug !== undefined))
-			.refine((v) => (v.kind === undefined) === (v.scope === undefined));
+		const Both = s.pipe(
+			s.object({
+				id: s.optional(Uuid),
+				slug: s.optional(s.pipe(s.string, s.min_length(3))),
+				kind: s.optional(s.string),
+				scope: s.optional(Uuid)
+			}),
+			s.check((v) => (v.id !== undefined) !== (v.slug !== undefined)),
+			s.check((v) => (v.kind === undefined) === (v.scope === undefined))
+		);
 		const base = generate_valid_body(Both)!;
 		assert.deepEqual(base, { id: NIL });
 		assert.deepEqual(
@@ -179,13 +184,14 @@ describe('generate_valid_object_with_field', () => {
 	});
 
 	test('a seeded base keeps its required values when the field replaces a branch', () => {
-		const Seeded = z
-			.strictObject({
-				id: z.uuid().optional(),
-				slug: z.string().min(3).optional(),
-				count: z.number()
-			})
-			.refine((v) => (v.id !== undefined) !== (v.slug !== undefined));
+		const Seeded = s.pipe(
+			s.object({
+				id: s.optional(Uuid),
+				slug: s.optional(s.pipe(s.string, s.min_length(3))),
+				count: s.number
+			}),
+			s.check((v) => (v.id !== undefined) !== (v.slug !== undefined))
+		);
 		const base = { id: NIL, count: 7 };
 		assert.deepEqual(
 			generate_valid_object_with_field(object_of(Seeded), Seeded, base, field_of(Seeded, 'slug')),
@@ -260,16 +266,21 @@ describe('generate_input_test_cases — single-fault bodies', () => {
 			}
 		}
 		assert.ok(checked > 0);
-		// a fuz_schema input among them
 		assert.ok(methods.has('account_token_revoke'));
 	});
 });
 
 describe('generate_valid_value — two-segment path', () => {
 	test('a slug of two segments is synthesized', () => {
-		const Slug = z.string().regex(/^[a-z0-9]+\/[a-z0-9]+$/);
+		const Slug = s.pipe(s.string, s.regex(/^[a-z0-9]+\/[a-z0-9]+$/));
 		const value = generate_valid_value(
-			{ name: 'slug', base_type: 'string', required: true, has_default: false, nullable: false },
+			{
+				name: 'slug',
+				base_type: 'string',
+				required: true,
+				has_default: false,
+				nullable: false
+			},
 			Slug
 		);
 		assert.strictEqual(value, 'xxxxxxxxxx/xxxxxxxxxx');

@@ -9,9 +9,8 @@
  * registry") fails fast.
  *
  * Also `actor_lookup`'s `@fuzdev/fuz_schema` schemas: their surface entry is
- * the one the Zod schemas wrote, captured in `fixtures/surface/actor_lookup.json`,
- * and the issues an invalid input gets keep the Zod ones' `kind`, `path`,
- * `expected` and `received`, their `message` fuz_schema's text.
+ * the one captured in `fixtures/surface/actor_lookup.json`, and the wire
+ * issues an invalid input gets.
  *
  * @module
  */
@@ -77,7 +76,7 @@ describe('actor_lookup schemas', () => {
 		assert.ok(is_schema(ActorLookupEntryJson));
 	});
 
-	test('the surface entry is the Zod-era one', () => {
+	test('the surface entry is the captured one', () => {
 		const surface = generate_app_surface({
 			route_specs: [],
 			middleware_specs: [],
@@ -87,9 +86,9 @@ describe('actor_lookup schemas', () => {
 		});
 		assert.deepStrictEqual(surface.diagnostics, []);
 		const entry = surface.rpc_endpoints[0]!.methods[0];
-		// equal as JSON, not byte for byte: fuz_schema writes a node's keywords in
-		// its own order (`type` first, metadata last), where Zod wrote `minItems`
-		// and `maxItems` ahead of `type`
+		// equal as JSON, not byte for byte: a node's keywords are written `type`
+		// first, metadata last, where the capture has `minItems` and `maxItems`
+		// ahead of `type`
 		assert.deepStrictEqual(entry, JSON.parse(readFileSync(SURFACE_FIXTURE_PATH, 'utf8')));
 	});
 
@@ -116,7 +115,7 @@ describe('actor_lookup schemas', () => {
 		assert.ok(max.ok);
 	});
 
-	test('an invalid input gets the Zod issue but for its message', () => {
+	test('an invalid input gets its wire issue', () => {
 		const cases: Array<[input: unknown, issues: Array<WireIssue>]> = [
 			[
 				{ ids: [] },

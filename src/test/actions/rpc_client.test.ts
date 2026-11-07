@@ -5,7 +5,7 @@
  */
 
 import { describe, assert, test } from 'vitest';
-import { z } from 'zod';
+import { literal, object, void as fuz_void } from '@fuzdev/fuz_schema/schema.ts';
 
 import { create_rpc_client } from '#lib/actions/rpc_client.ts';
 import { ActionDispatcher } from '#lib/actions/action_dispatcher.ts';
@@ -26,8 +26,8 @@ const ping_spec = {
 	initiator: 'frontend',
 	auth: { account: 'none', actor: 'none' },
 	side_effects: false,
-	input: z.null(),
-	output: z.strictObject({ pong: z.literal(true) }),
+	input: literal(null),
+	output: object({ pong: literal(true) }),
 	async: true,
 	description: 'Health check'
 } satisfies ActionSpecUnion;
@@ -38,8 +38,8 @@ const toggle_spec = {
 	initiator: 'frontend',
 	auth: null,
 	side_effects: false,
-	input: z.null(),
-	output: z.null(),
+	input: literal(null),
+	output: literal(null),
 	async: false,
 	description: 'Toggle menu'
 } satisfies ActionSpecUnion;
@@ -97,8 +97,8 @@ const ping_notification_spec = {
 	initiator: 'frontend',
 	auth: null,
 	side_effects: true,
-	input: z.null(),
-	output: z.void(),
+	input: literal(null),
+	output: fuz_void,
 	async: true,
 	description: 'Notification spec'
 } satisfies ActionSpecUnion;
@@ -109,8 +109,8 @@ const async_local_spec = {
 	initiator: 'frontend',
 	auth: null,
 	side_effects: false,
-	input: z.null(),
-	output: z.null(),
+	input: literal(null),
+	output: literal(null),
 	async: true,
 	description: 'Async local call'
 } satisfies ActionSpecUnion;

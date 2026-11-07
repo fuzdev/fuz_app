@@ -22,7 +22,7 @@
  */
 
 import { test, assert } from 'vitest';
-import { z } from 'zod';
+import { boolean, literal, object, one_of, string } from '@fuzdev/fuz_schema/schema.ts';
 
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_test_app } from '#lib/testing/app_server.ts';
@@ -58,12 +58,12 @@ let token_counter = 0;
 const next_token = (): string => `tok_${++token_counter}`;
 
 /** Shared input/output schemas — the RPC action and the REST route mount the same probe. */
-const probe_input = z.strictObject({ fail: z.boolean(), token: z.string() });
-const probe_output = z.strictObject({ ok: z.literal(true) });
+const probe_input = object({ fail: boolean, token: string });
+const probe_output = object({ ok: literal(true) });
 /** The REST probe whose result can't become a response, by `mode`. */
-const build_probe_input = z.strictObject({
-	mode: z.enum(['bare_response', 'malformed', 'unserializable']),
-	token: z.string()
+const build_probe_input = object({
+	mode: one_of(['bare_response', 'malformed', 'unserializable']),
+	token: string
 });
 
 /** Public, side-effecting probe action: write a row, queue both effect kinds, throw iff `fail`. */

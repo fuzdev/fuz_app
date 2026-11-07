@@ -5,9 +5,19 @@
  */
 
 import { describe, assert, test } from 'vitest';
-import { z } from 'zod';
 import ts from 'typescript';
-import { is } from '@fuzdev/fuz_schema/schema.ts';
+import {
+	array,
+	is,
+	literal,
+	nullable,
+	number,
+	object,
+	optional,
+	string,
+	union,
+	void as fuz_void
+} from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	ImportBuilder,
@@ -41,8 +51,8 @@ const create_rr = (initiator: 'frontend' | 'backend' | 'both'): ActionSpecUnion 
 	initiator,
 	auth: { account: 'required', actor: 'none' },
 	side_effects: true,
-	input: z.strictObject({ name: z.string() }),
-	output: z.strictObject({ id: z.string() }),
+	input: object({ name: string }),
+	output: object({ id: string }),
 	async: true,
 	description: 'Create a thing'
 });
@@ -53,8 +63,8 @@ const create_rn = (initiator: 'frontend' | 'backend' | 'both'): ActionSpecUnion 
 	initiator,
 	auth: null,
 	side_effects: true,
-	input: z.strictObject({ id: z.string() }),
-	output: z.void(),
+	input: object({ id: string }),
+	output: fuz_void,
 	async: true,
 	description: 'A thing was created'
 });
@@ -68,8 +78,8 @@ const create_lc = (
 	initiator,
 	auth: null,
 	side_effects: false,
-	input: z.null(),
-	output: z.null(),
+	input: literal(null),
+	output: literal(null),
 	async: async_,
 	description: 'Toggle the menu'
 });
@@ -79,8 +89,8 @@ const create_lc = (
 describe('ImportBuilder', () => {
 	test('value import', () => {
 		const b = new ImportBuilder();
-		b.add('zod', 'z');
-		assert.strictEqual(b.build(), "import {z} from 'zod';");
+		b.add('node:path', 'join');
+		assert.strictEqual(b.build(), "import {join} from 'node:path';");
 	});
 
 	test('type import uses import type syntax', () => {
@@ -123,7 +133,7 @@ describe('ImportBuilder', () => {
 	test('has_imports', () => {
 		const b = new ImportBuilder();
 		assert.ok(!b.has_imports());
-		b.add('zod', 'z');
+		b.add('node:path', 'join');
 		assert.ok(b.has_imports());
 	});
 
@@ -136,14 +146,14 @@ describe('ImportBuilder', () => {
 
 	test('clear removes all imports', () => {
 		const b = new ImportBuilder();
-		b.add('zod', 'z');
+		b.add('node:path', 'join');
 		b.clear();
 		assert.ok(!b.has_imports());
 	});
 
 	test('preview returns same as build split by line', () => {
 		const b = new ImportBuilder();
-		b.add('zod', 'z');
+		b.add('node:path', 'join');
 		b.add_type('./foo.ts', 'Foo');
 		assert.deepStrictEqual(b.preview(), b.build().split('\n'));
 	});
@@ -338,7 +348,7 @@ describe('FrontendActionsApi method signature', () => {
 	});
 
 	test('null-input spec skips ActionInputs import', () => {
-		// Spec with `input: z.null()` emits `input?: void` and references no
+		// Spec with `input: literal(null)` emits `input?: void` and references no
 		// ActionInputs slot — registering the import would produce a dead
 		// `import type {ActionInputs}` on a consumer that has only null-input
 		// methods.
@@ -351,21 +361,21 @@ describe('FrontendActionsApi method signature', () => {
 
 	// --- optional-input detection ---
 	//
-	// Probes both `safeParse(undefined)` (catches `z.optional(...)` wrappers)
-	// and `safeParse({})` (catches all-optional-fields strict objects, the
-	// canonical `z.strictObject({acting: ActingActor})` audit-actor shape).
-	// Either succeeding flips the emitted parameter to `input?:` so the
-	// caller can omit the argument at the typed surface. Mirrors the
-	// dispatcher's HTTP convention (`raw_params ?? {}` for non-`z.void()`
-	// schemas), so the codegen tracks runtime semantics.
+	// Probes both `undefined` (catches `optional(...)` wrappers) and `{}`
+	// (catches all-optional-fields strict objects, the canonical
+	// `object({acting: ActingActor})` audit-actor shape). Either passing flips
+	// the emitted parameter to `input?:` so the caller can omit the argument
+	// at the typed surface. Mirrors the dispatcher's HTTP convention
+	// (`raw_params ?? {}` for non-void schemas), so the codegen tracks runtime
+	// semantics.
 
 	test('all-optional-fields strict object emits input?: (acting-only audit-actor shape)', () => {
 		// Regression case for the audit-actor migration. Listing-style action
-		// specs replaced `input: z.void()` with `z.strictObject({acting:
-		// ActingActor})` — `acting` is `Uuid.optional()`, so the strict object
-		// itself accepts `{}` but not `undefined`. The earlier
-		// `safeParse(undefined)`-only probe missed this and emitted `input:`
-		// (required), breaking nullary call sites in tx's `AdminRpcApi`.
+		// specs replaced a void input with `object({acting: ActingActor})` —
+		// `acting` is an optional `Uuid`, so the strict object itself accepts
+		// `{}` but not `undefined`. The earlier `undefined`-only probe missed
+		// this and emitted `input:` (required), breaking nullary call sites in
+		// tx's `AdminRpcApi`.
 		const imports = new ImportBuilder();
 		const spec: ActionSpecUnion = {
 			method: 'admin_account_list',
@@ -373,8 +383,8 @@ describe('FrontendActionsApi method signature', () => {
 			initiator: 'frontend',
 			auth: { account: 'required', actor: 'none' },
 			side_effects: false,
-			input: z.strictObject({ acting: z.string().optional() }),
-			output: z.strictObject({ accounts: z.array(z.string()) }),
+			input: object({ acting: optional(string) }),
+			output: object({ accounts: array(string) }),
 			async: true,
 			description: 'List all accounts.'
 		};
@@ -386,7 +396,7 @@ describe('FrontendActionsApi method signature', () => {
 	});
 
 	test('all-nullish-fields strict object emits input?: (audit-log filter shape)', () => {
-		// `z.strictObject({a: z.string().nullish(), b: z.number().nullish()})`
+		// `object({a: optional(nullable(string)), b: optional(nullable(number))})`
 		// is the audit-log / role_grant-history filter shape. Every field is
 		// nullish, so `{}` parses cleanly. Same ergonomic flip as the
 		// acting-only case above.
@@ -397,11 +407,11 @@ describe('FrontendActionsApi method signature', () => {
 			initiator: 'frontend',
 			auth: { account: 'required', actor: 'none' },
 			side_effects: false,
-			input: z.strictObject({
-				event_type: z.string().nullish(),
-				limit: z.number().nullish()
+			input: object({
+				event_type: optional(nullable(string)),
+				limit: optional(nullable(number))
 			}),
-			output: z.strictObject({ events: z.array(z.string()) }),
+			output: object({ events: array(string) }),
 			async: true,
 			description: 'List audit log events.'
 		};
@@ -414,7 +424,7 @@ describe('FrontendActionsApi method signature', () => {
 
 	test('strict object with required field stays required (mixed required + optional)', () => {
 		// Regression guard: the relaxation must not flip schemas that require
-		// at least one field. `z.strictObject({account_id: ..., acting: ...})`
+		// at least one field. `object({account_id: ..., acting: ...})`
 		// is the admin_session_revoke_all shape — `account_id` is required, so
 		// `{}` does not parse, and the typed surface must keep `input:`.
 		const imports = new ImportBuilder();
@@ -424,11 +434,11 @@ describe('FrontendActionsApi method signature', () => {
 			initiator: 'frontend',
 			auth: { account: 'required', actor: 'none' },
 			side_effects: true,
-			input: z.strictObject({
-				account_id: z.string(),
-				acting: z.string().optional()
+			input: object({
+				account_id: string,
+				acting: optional(string)
 			}),
-			output: z.strictObject({ ok: z.literal(true) }),
+			output: object({ ok: literal(true) }),
 			async: true,
 			description: 'Revoke all sessions for an account.'
 		};
@@ -444,8 +454,8 @@ describe('FrontendActionsApi method signature', () => {
 		);
 	});
 
-	test('z.optional(z.strictObject(...)) wrapper still emits input?: (existing probe)', () => {
-		// The pre-relaxation probe (`safeParse(undefined)` only) caught wrapper
+	test('optional(object(...)) wrapper still emits input?: (existing probe)', () => {
+		// The pre-relaxation probe (`undefined` only) caught wrapper
 		// shapes; this test pins that the OR-extended probe still does.
 		const imports = new ImportBuilder();
 		const spec: ActionSpecUnion = {
@@ -454,8 +464,8 @@ describe('FrontendActionsApi method signature', () => {
 			initiator: 'frontend',
 			auth: { account: 'required', actor: 'none' },
 			side_effects: false,
-			input: z.optional(z.strictObject({ account_id: z.string() })),
-			output: z.strictObject({ ok: z.literal(true) }),
+			input: optional(object({ account_id: string })),
+			output: object({ ok: literal(true) }),
 			async: true,
 			description: 'Wrapped optional input.'
 		};
@@ -603,8 +613,8 @@ const fixture_specs: ReadonlyArray<ActionSpecUnion> = [
 		initiator: 'both',
 		auth: { account: 'required', actor: 'none' },
 		side_effects: false,
-		input: z.strictObject({}),
-		output: z.strictObject({}),
+		input: object({}),
+		output: object({}),
 		async: true,
 		description: 'Liveness probe.'
 	},
@@ -614,8 +624,8 @@ const fixture_specs: ReadonlyArray<ActionSpecUnion> = [
 		initiator: 'frontend',
 		auth: null,
 		side_effects: true,
-		input: z.strictObject({ request_id: z.union([z.string(), z.number()]) }),
-		output: z.void(),
+		input: object({ request_id: union([string, number]) }),
+		output: fuz_void,
 		async: true,
 		description: 'Cancel a pending request.'
 	},
@@ -625,8 +635,8 @@ const fixture_specs: ReadonlyArray<ActionSpecUnion> = [
 		initiator: 'frontend',
 		auth: { account: 'required', actor: 'none' },
 		side_effects: true,
-		input: z.strictObject({ name: z.string() }),
-		output: z.strictObject({ id: z.string() }),
+		input: object({ name: string }),
+		output: object({ id: string }),
 		async: true,
 		description: 'Create a thing.'
 	},
@@ -636,8 +646,8 @@ const fixture_specs: ReadonlyArray<ActionSpecUnion> = [
 		initiator: 'backend',
 		auth: null,
 		side_effects: true,
-		input: z.strictObject({ id: z.string() }),
-		output: z.void(),
+		input: object({ id: string }),
+		output: fuz_void,
 		async: true,
 		description: 'A thing changed on the server.'
 	},
@@ -647,8 +657,8 @@ const fixture_specs: ReadonlyArray<ActionSpecUnion> = [
 		initiator: 'frontend',
 		auth: null,
 		side_effects: false,
-		input: z.null(),
-		output: z.null(),
+		input: literal(null),
+		output: literal(null),
 		async: false,
 		description: 'Toggle the main menu.'
 	}
@@ -725,10 +735,9 @@ describe('generate_action_method_enums', () => {
 		// (skipped). Pin both behaviors.
 		assert.ok(result.includes('export const BroadcastActionMethod = one_of(['));
 		assert.ok(!result.includes('export const FrontendRequestResponseMethod'));
-		// Registers the fuz_schema import on the builder, and no zod.
+		// Registers the fuz_schema import on the builder, and nothing else.
 		const built = imports.build();
-		assert.ok(built.includes("import {one_of, type Infer} from '@fuzdev/fuz_schema/schema.ts';"));
-		assert.ok(!built.includes('zod'));
+		assert.strictEqual(built, "import {one_of, type Infer} from '@fuzdev/fuz_schema/schema.ts';");
 	});
 
 	test('BackendRequestResponseMethod selects request_response specs the backend handles', () => {
@@ -758,8 +767,8 @@ describe('generate_action_method_enums', () => {
 				initiator: 'frontend',
 				auth: { account: 'required', actor: 'none' },
 				side_effects: true,
-				input: z.strictObject({}),
-				output: z.strictObject({}),
+				input: object({}),
+				output: object({}),
 				async: true,
 				description: 'create',
 				streams: 'completion_progress'
@@ -770,8 +779,8 @@ describe('generate_action_method_enums', () => {
 				initiator: 'backend',
 				auth: null,
 				side_effects: true,
-				input: z.strictObject({}),
-				output: z.void(),
+				input: object({}),
+				output: fuz_void,
 				async: true,
 				description: 'progress'
 			},
@@ -781,8 +790,8 @@ describe('generate_action_method_enums', () => {
 				initiator: 'backend',
 				auth: null,
 				side_effects: true,
-				input: z.strictObject({}),
-				output: z.void(),
+				input: object({}),
+				output: fuz_void,
 				async: true,
 				description: 'change'
 			}
@@ -1045,15 +1054,13 @@ describe('generate_action_inputs_outputs', () => {
 		assert.ok(!result.includes('heartbeat: specs.heartbeat_action_spec.input,'));
 		assert.ok(!result.includes('cancel: specs.cancel_action_spec.input,'));
 
-		// `z.infer` interface entries — same exclusion.
-		assert.ok(
-			result.includes('thing_create: z.infer<typeof specs.thing_create_action_spec.input>;')
-		);
-		assert.ok(!result.includes('heartbeat: z.infer<typeof specs.heartbeat_action_spec.input>;'));
+		// `Infer` interface entries — same exclusion.
+		assert.ok(result.includes('thing_create: Infer<typeof specs.thing_create_action_spec.input>;'));
+		assert.ok(!result.includes('heartbeat: Infer<typeof specs.heartbeat_action_spec.input>;'));
 
-		// Registers zod + namespace imports.
+		// Registers the `Infer` + namespace imports.
 		const built = imports.build();
-		assert.ok(built.includes("import {z} from 'zod';"));
+		assert.ok(built.includes("import type {Infer} from '@fuzdev/fuz_schema/schema.ts';"));
 		assert.ok(built.includes("import * as specs from './action_specs.ts';"));
 	});
 
@@ -1359,15 +1366,15 @@ describe('qualify_spec', () => {
 		assert.ok(result.includes('thing_create: local_specs.thing_create_action_spec.input,'));
 		assert.ok(result.includes('thing_create: local_specs.thing_create_action_spec.output,'));
 		assert.ok(
-			result.includes('thing_create: z.infer<typeof local_specs.thing_create_action_spec.input>;')
+			result.includes('thing_create: Infer<typeof local_specs.thing_create_action_spec.input>;')
 		);
 		// Default form must not leak — anchor on the leading tab + method.
 		assert.ok(!result.includes('\tthing_create: specs.thing_create_action_spec.input,'));
 
 		const built = imports.build();
 		assert.ok(!built.includes('* as specs'));
-		// zod still required for z.infer.
-		assert.ok(built.includes("import {z} from 'zod';"));
+		// `Infer` still imported.
+		assert.ok(built.includes("import type {Infer} from '@fuzdev/fuz_schema/schema.ts';"));
 	});
 
 	test('generate_backend_actions_api uses qualified spec references in array', () => {
@@ -1469,7 +1476,7 @@ describe('empty-input behavior', () => {
 		assert.ok(!built.includes('* as specs'));
 	});
 
-	test('generate_action_inputs_outputs — empty bodies, skips zod + specs imports', () => {
+	test('generate_action_inputs_outputs — empty bodies, skips the Infer + specs imports', () => {
 		const imports = new ImportBuilder();
 		const result = generate_action_inputs_outputs([], imports);
 		assert.ok(result.includes('export const ActionInputs = {} as const;'));
@@ -1546,8 +1553,8 @@ describe('generate_backend_actions_api — streams target exclusion', () => {
 				initiator: 'frontend',
 				auth: { account: 'required', actor: 'none' },
 				side_effects: true,
-				input: z.strictObject({}),
-				output: z.strictObject({}),
+				input: object({}),
+				output: object({}),
 				async: true,
 				description: 'create',
 				streams: 'completion_progress'
@@ -1558,8 +1565,8 @@ describe('generate_backend_actions_api — streams target exclusion', () => {
 				initiator: 'backend',
 				auth: null,
 				side_effects: true,
-				input: z.strictObject({}),
-				output: z.void(),
+				input: object({}),
+				output: fuz_void,
 				async: true,
 				description: 'progress'
 			},
@@ -1569,8 +1576,8 @@ describe('generate_backend_actions_api — streams target exclusion', () => {
 				initiator: 'backend',
 				auth: null,
 				side_effects: true,
-				input: z.strictObject({}),
-				output: z.void(),
+				input: object({}),
+				output: fuz_void,
 				async: true,
 				description: 'change'
 			}
@@ -1594,7 +1601,7 @@ describe('generate_backend_actions_api — streams target exclusion', () => {
 describe('compose_gen_file', () => {
 	test('assembles banner + imports + blocks into a file body', () => {
 		const imports = new ImportBuilder();
-		imports.add('zod', 'z');
+		imports.add('node:path', 'join');
 		const result = compose_gen_file({
 			origin_path: 'src/lib/foo.gen.ts',
 			imports,
@@ -1605,7 +1612,7 @@ describe('compose_gen_file', () => {
 		const banner_count = result.split('generated by src/lib/foo.gen.ts').length - 1;
 		assert.strictEqual(banner_count, 2);
 		// Imports rendered.
-		assert.ok(result.includes("import {z} from 'zod';"));
+		assert.ok(result.includes("import {join} from 'node:path';"));
 		// Blocks joined with double newlines.
 		assert.ok(result.includes('export const x = 1;'));
 		assert.ok(result.includes('export const y = 2;'));
@@ -1732,8 +1739,8 @@ describe('non-identifier method names (slash)', () => {
 		initiator: 'frontend',
 		auth: { account: 'required', actor: 'none' },
 		side_effects: false,
-		input: z.strictObject({ nonce: z.string() }),
-		output: z.strictObject({ nonce: z.string() }),
+		input: object({ nonce: string }),
+		output: object({ nonce: string }),
 		async: true,
 		description: 'Echo a nonce.'
 	};
@@ -1751,7 +1758,7 @@ describe('non-identifier method names (slash)', () => {
 		const imports = new ImportBuilder();
 		const result = generate_action_inputs_outputs([slash_spec], imports);
 		assert.ok(result.includes("'peer/echo': specs.peer_echo_action_spec.input,"));
-		assert.ok(result.includes("'peer/echo': z.infer<typeof specs.peer_echo_action_spec.input>;"));
+		assert.ok(result.includes("'peer/echo': Infer<typeof specs.peer_echo_action_spec.input>;"));
 		assert.ok(result.includes("'peer/echo': specs.peer_echo_action_spec.output,"));
 		assert.ok(!result.includes('peer/echo_action_spec'));
 	});

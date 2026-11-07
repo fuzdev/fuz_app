@@ -5,7 +5,7 @@
  */
 
 import { describe, test, assert } from 'vitest';
-import { z } from 'zod';
+import { literal, number, object, optional, string } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	filter_protected_routes,
@@ -36,8 +36,8 @@ const test_specs: Array<RouteSpec> = [
 		auth: { account: 'none', actor: 'none' },
 		handler: stub_handler,
 		description: 'Health check',
-		input: z.null(),
-		output: z.null()
+		input: literal(null),
+		output: literal(null)
 	}),
 	define_route({
 		method: 'POST',
@@ -45,8 +45,8 @@ const test_specs: Array<RouteSpec> = [
 		auth: { account: 'none', actor: 'none' },
 		handler: stub_handler,
 		description: 'Login',
-		input: z.strictObject({ username: z.string() }),
-		output: z.null()
+		input: object({ username: string }),
+		output: literal(null)
 	}),
 	define_route({
 		method: 'GET',
@@ -54,8 +54,8 @@ const test_specs: Array<RouteSpec> = [
 		auth: { account: 'required', actor: 'none' },
 		handler: stub_handler,
 		description: 'Current user',
-		input: z.null(),
-		output: z.null()
+		input: literal(null),
+		output: literal(null)
 	}),
 	define_route({
 		method: 'POST',
@@ -63,8 +63,8 @@ const test_specs: Array<RouteSpec> = [
 		auth: { account: 'required', actor: 'required', roles: ['admin'] },
 		handler: stub_handler,
 		description: 'Grant role',
-		input: z.strictObject({ role: z.string() }),
-		output: z.null()
+		input: object({ role: string }),
+		output: literal(null)
 	}),
 	define_route({
 		method: 'DELETE',
@@ -72,8 +72,8 @@ const test_specs: Array<RouteSpec> = [
 		auth: { account: 'required', actor: 'required', roles: ['admin'] },
 		handler: stub_handler,
 		description: 'Revoke role',
-		input: z.null(),
-		output: z.null()
+		input: literal(null),
+		output: literal(null)
 	}),
 	define_route({
 		method: 'POST',
@@ -86,8 +86,8 @@ const test_specs: Array<RouteSpec> = [
 		},
 		handler: stub_handler,
 		description: 'Keeper sync',
-		input: z.null(),
-		output: z.null()
+		input: literal(null),
+		output: literal(null)
 	}),
 	define_route({
 		method: 'GET',
@@ -95,9 +95,9 @@ const test_specs: Array<RouteSpec> = [
 		auth: { account: 'required', actor: 'required', roles: ['admin'] },
 		handler: stub_handler,
 		description: 'Get account by id',
-		input: z.null(),
-		output: z.null(),
-		params: z.strictObject({ id: z.string() })
+		input: literal(null),
+		output: literal(null),
+		params: object({ id: string })
 	}),
 	define_route({
 		method: 'GET',
@@ -105,9 +105,9 @@ const test_specs: Array<RouteSpec> = [
 		auth: { account: 'required', actor: 'required', roles: ['admin'] },
 		handler: stub_handler,
 		description: 'Audit log',
-		input: z.null(),
-		output: z.null(),
-		query: z.strictObject({ limit: z.number().optional() })
+		input: literal(null),
+		output: literal(null),
+		query: object({ limit: optional(number) })
 	}),
 	define_route({
 		method: 'POST',
@@ -115,8 +115,8 @@ const test_specs: Array<RouteSpec> = [
 		auth: { account: 'none', actor: 'none' },
 		handler: stub_handler,
 		description: 'Login with rate limit',
-		input: z.strictObject({ username: z.string() }),
-		output: z.null(),
+		input: object({ username: string }),
+		output: literal(null),
 		rate_limit: 'ip'
 	}),
 	define_route({
@@ -129,8 +129,8 @@ const test_specs: Array<RouteSpec> = [
 		auth: { account: 'required', actor: 'none', credential_types: ['session'] },
 		handler: stub_handler,
 		description: 'Mint an api token',
-		input: z.null(),
-		output: z.null()
+		input: literal(null),
+		output: literal(null)
 	})
 ];
 
@@ -245,8 +245,8 @@ describe('surface_auth_summary', () => {
 					},
 					handler: stub_handler,
 					description: 'Audit stream',
-					input: z.null(),
-					output: z.null()
+					input: literal(null),
+					output: literal(null)
 				})
 			]
 		});

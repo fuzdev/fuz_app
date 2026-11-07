@@ -8,7 +8,6 @@
  */
 
 import { describe, assert, test } from 'vitest';
-import { z } from 'zod';
 import { literal, object, parse, string } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
@@ -39,7 +38,7 @@ describe('resolve_route_error_map — narrowing to the slots a route has', () =>
 			method: 'GET',
 			path: '/x',
 			auth: NONE,
-			input: z.null()
+			input: literal(null)
 		});
 		assert.deepStrictEqual(errors.defs, []);
 		assert.deepStrictEqual(errors.schemas, {});
@@ -50,7 +49,7 @@ describe('resolve_route_error_map — narrowing to the slots a route has', () =>
 			method: 'GET',
 			path: '/x',
 			auth: NONE,
-			input: z.strictObject({ name: z.string() })
+			input: object({ name: string })
 		});
 		assert.deepStrictEqual(rows(errors), []);
 	});
@@ -82,8 +81,8 @@ describe('resolve_route_error_map — narrowing to the slots a route has', () =>
 			method: 'GET',
 			path: '/x',
 			auth: NONE,
-			input: z.null(),
-			query: z.strictObject({ q: z.string() })
+			input: literal(null),
+			query: object({ q: string })
 		});
 		assert.deepStrictEqual(rows(errors), ['400 invalid_query_params']);
 	});
@@ -93,7 +92,7 @@ describe('resolve_route_error_map — narrowing to the slots a route has', () =>
 			method: 'POST',
 			path: '/api/rpc',
 			auth: NONE,
-			input: z.null()
+			input: literal(null)
 		});
 		assert.deepStrictEqual(rows(errors), ['415 unsupported_content_type']);
 	});
@@ -103,7 +102,7 @@ describe('resolve_route_error_map — narrowing to the slots a route has', () =>
 			method: 'GET',
 			path: '/x',
 			auth: { account: 'required', actor: 'none', roles: ['admin'] },
-			input: z.null(),
+			input: literal(null),
 			rate_limit: 'ip'
 		});
 		assert.deepStrictEqual(rows(errors), [
@@ -167,7 +166,7 @@ describe('resolve_route_error_map — the union of derived, middleware, and expl
 
 	test('a middleware layer adds to another at the same status, replacing nothing', () => {
 		const errors = resolve_route_error_map(
-			{ method: 'GET', path: '/api/x', auth: NONE, input: z.null() },
+			{ method: 'GET', path: '/api/x', auth: NONE, input: literal(null) },
 			[mw('a', '*', [gate_403]), mw('b', '*', [other_403])]
 		);
 		assert.deepStrictEqual(rows(errors), ['403 gate_refused', '403 other_refused']);
@@ -180,7 +179,7 @@ describe('resolve_route_error_map — the union of derived, middleware, and expl
 				method: 'GET',
 				path: '/api/x',
 				auth: { account: 'required', actor: 'none' },
-				input: z.null(),
+				input: literal(null),
 				errors: [REST_AUTHENTICATION_REQUIRED, gate_403, rest_error(403, 'gate_refused')]
 			},
 			[mw('a', '*', [gate_403]), mw('b', '*', [gate_403])]
@@ -195,7 +194,7 @@ describe('resolve_route_error_map — the union of derived, middleware, and expl
 			method: 'GET',
 			path: '/api/account/status',
 			auth: { account: 'required', actor: 'none' },
-			input: z.null(),
+			input: literal(null),
 			errors: [REST_AUTHENTICATION_REQUIRED_BOOTSTRAP]
 		});
 		assert.deepStrictEqual(errors.defs, [
@@ -218,7 +217,9 @@ describe('resolve_route_error_map — the union of derived, middleware, and expl
 			mw('carved', '*', [down], [{ path: '/api/files/*', reason: 'its own cap' }])
 		];
 		const at = (path: string): Array<string> =>
-			rows(resolve_route_error_map({ method: 'GET', path, auth: NONE, input: z.null() }, layers));
+			rows(
+				resolve_route_error_map({ method: 'GET', path, auth: NONE, input: literal(null) }, layers)
+			);
 		assert.deepStrictEqual(at('/api/one'), ['403 gate_refused', '403 other_refused', '503 down']);
 		assert.deepStrictEqual(at('/api'), ['403 gate_refused', '503 down']);
 		assert.deepStrictEqual(at('/apiary'), ['503 down']);
@@ -239,7 +240,7 @@ describe('resolve_app_route_error_maps and get_route_error_map', () => {
 		method,
 		path,
 		auth: NONE,
-		input: z.null()
+		input: literal(null)
 	});
 	const layers = [{ path: '*', errors: [rest_error(403, 'gate_refused')] }];
 

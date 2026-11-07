@@ -5,7 +5,7 @@
  * `validated_query` (query validation still runs first), mutations take it
  * from the raw body, because input validation now runs *after* the authority
  * gates. Every route spec the spine itself ships carries `acting` on `query`
- * with `input: z.null()`, so the raw-body half is reachable only from a
+ * with a null `input`, so the raw-body half is reachable only from a
  * consumer-authored mutation route — which is why it gets a route spec of its
  * own here rather than riding on an existing surface.
  *
@@ -26,7 +26,8 @@
  */
 
 import { assert, describe, test } from 'vitest';
-import { z } from 'zod';
+import * as s from '@fuzdev/fuz_schema/schema.ts';
+import { ActingActor } from '#lib/primitive_schemas.ts';
 
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_test_app } from '#lib/testing/app_server.ts';
@@ -37,12 +38,11 @@ import { define_route, get_route_input, type RouteSpec } from '#lib/http/route_s
 import { route_ok } from '#lib/http/route_result.ts';
 
 import { describe_db } from '../auth_db_default.ts';
-import { ZodActingActor } from '#lib/zod_schemas.ts';
 
 const session_options = create_session_config('test_session');
 const ACTING_PATH = '/api/test_acting_echo';
 
-const ActingEchoInput = z.strictObject({ acting: ZodActingActor, note: z.string() });
+const ActingEchoInput = s.object({ acting: ActingActor, note: s.string });
 
 /**
  * A consumer-shaped mutation route: `actor: 'required'` with `acting` on the
@@ -57,7 +57,7 @@ const create_route_specs = (): Array<RouteSpec> => [
 		auth: { account: 'required', actor: 'required' },
 		description: 'Echo the resolved acting actor and the validated body',
 		input: ActingEchoInput,
-		output: z.strictObject({ actor_id: z.string().nullable(), note: z.string() }),
+		output: s.object({ actor_id: s.nullable(s.string), note: s.string }),
 		transaction: false,
 		handler: (c) => {
 			const ctx = require_request_context(c);

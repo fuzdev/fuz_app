@@ -10,7 +10,7 @@
 
 import { describe, assert, test, vi } from 'vitest';
 import { Hono } from 'hono';
-import { z } from 'zod';
+import { literal, object } from '@fuzdev/fuz_schema/schema.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { DEV } from 'esm-env';
 
@@ -23,7 +23,7 @@ import { create_stub_db } from '#lib/testing/stubs.ts';
 
 const db = create_stub_db();
 
-const Output = z.strictObject({ ok: z.literal(true) });
+const Output = object({ ok: literal(true) });
 const REST_SLUG_TAKEN = rest_error(409, 'slug_taken');
 
 /** A JSON body at any status, as the bytes `c.json` writes, answered raw. */
@@ -56,7 +56,7 @@ const request = async (
 		auth: { account: 'none', actor: 'none' },
 		handler,
 		description: 'validation probe',
-		input: z.null(),
+		input: literal(null),
 		output: Output,
 		errors: [REST_SLUG_TAKEN]
 	});

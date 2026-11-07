@@ -18,9 +18,8 @@
 
 import { afterEach, assert, describe, test, vi } from 'vitest';
 import { Hono, type MiddlewareHandler } from 'hono';
-import { z } from 'zod';
-import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { literal, object } from '@fuzdev/fuz_schema/schema.ts';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import {
 	apply_route_specs,
@@ -50,14 +49,14 @@ import { jsonrpc_errors } from '#lib/http/jsonrpc_errors.ts';
 import { create_stub_db } from '#lib/testing/stubs.ts';
 import { DbCheckoutError } from '#lib/db/db_checkout_error.ts';
 import { create_test_keyring } from '../auth/session_test_helpers.ts';
-import { ZodActingActor } from '#lib/zod_schemas.ts';
+import { ActingActor } from '#lib/primitive_schemas.ts';
 
 const db = create_stub_db();
 
 const REST_SLUG_TAKEN = rest_error(409, 'slug_taken');
 
 const probe_auth = { account: 'none', actor: 'none' } as const;
-const ProbeOutput = z.strictObject({ ok: z.literal(true) });
+const ProbeOutput = object({ ok: literal(true) });
 
 /** A probe's handler, checked against the base route; what the types refuse it answers raw. */
 type ProbeHandler = TypedRouteHandler<
@@ -78,7 +77,7 @@ const route = (
 		path: '/v',
 		auth: probe_auth,
 		description: 'error check probe',
-		input: z.null(),
+		input: literal(null),
 		output: ProbeOutput,
 		errors: [REST_SLUG_TAKEN],
 		handler
@@ -180,7 +179,7 @@ describe('the DEV error check — declared statuses and bodies', () => {
 	test('a definition at a derived status adds a branch, replacing none', async () => {
 		const overrides: Partial<RouteSpec> = {
 			method: 'POST',
-			input: z.strictObject({}),
+			input: object({}),
 			errors: [rest_error(400, 'name_taken')]
 		};
 		const derived = await answer(() => json_raw({ error: 'invalid_request_body' }, 400), overrides);
@@ -193,11 +192,11 @@ describe('the DEV error check — declared statuses and bodies', () => {
 
 	test('a GET declares no body code: its 400 is only what its slots derive', async () => {
 		const got = await answer(() => json_raw({ error: 'invalid_request_body' }, 400), {
-			query: z.strictObject({})
+			query: object({})
 		});
 		assert.deepStrictEqual(got.errors, ['Error schema mismatch (400): GET /v']);
 		const query = await answer(() => json_raw({ error: 'invalid_query_params' }, 400), {
-			query: z.strictObject({})
+			query: object({})
 		});
 		assert.deepStrictEqual(query.errors, []);
 	});
@@ -228,7 +227,7 @@ describe('the DEV error check — exemptions', () => {
 			{
 				method: 'POST',
 				auth: { account: 'optional', actor: 'optional' },
-				input: z.strictObject({ acting: ZodActingActor })
+				input: object({ acting: ActingActor })
 			}
 		);
 		assert.strictEqual(got.status, 500);

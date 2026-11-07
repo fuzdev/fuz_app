@@ -7,7 +7,17 @@
  */
 
 import { describe, assert, test } from 'vitest';
-import { z } from 'zod';
+import {
+	array,
+	literal,
+	number,
+	object,
+	string,
+	variant,
+	void as fuz_void,
+	with_default,
+	type AnySchema
+} from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	create_action_event,
@@ -32,8 +42,8 @@ const ping_spec = {
 	initiator: 'both',
 	auth: { account: 'none', actor: 'none' },
 	side_effects: false,
-	input: z.null(),
-	output: z.strictObject({ pong: z.literal(true) }),
+	input: literal(null),
+	output: object({ pong: literal(true) }),
 	async: true,
 	description: 'Health check'
 } satisfies ActionSpecUnion;
@@ -44,8 +54,8 @@ const notify_spec = {
 	initiator: 'backend',
 	auth: null,
 	side_effects: true,
-	input: z.strictObject({ id: z.string() }),
-	output: z.void(),
+	input: object({ id: string }),
+	output: fuz_void,
 	async: true,
 	description: 'Thing changed notification'
 } satisfies ActionSpecUnion;
@@ -56,8 +66,8 @@ const toggle_spec = {
 	initiator: 'frontend',
 	auth: null,
 	side_effects: false,
-	input: z.null(),
-	output: z.null(),
+	input: literal(null),
+	output: literal(null),
 	async: false,
 	description: 'Toggle menu'
 } satisfies ActionSpecUnion;
@@ -220,7 +230,7 @@ describe('ActionEvent receive_response output validation', () => {
 	test('the output is the parsed value, with defaults and transforms applied', async () => {
 		const spec = {
 			...ping_spec,
-			output: z.strictObject({ pong: z.literal(true), count: z.number().default(3) })
+			output: object({ pong: literal(true), count: with_default(number, 3) })
 		} satisfies ActionSpecUnion;
 		const env = new TestEnvironment([spec]);
 		const event = create_action_event(env, spec, null);
@@ -259,14 +269,14 @@ describe('ActionEvent receive_response output validation', () => {
 				path: ['pong'],
 				expected: 'true',
 				received: 'string',
-				message: 'Invalid input: expected true'
+				message: 'pong: expected true, received string'
 			},
 			{
 				kind: 'unknown_key',
 				path: ['extra'],
 				expected: 'no unknown keys',
 				received: 'number',
-				message: 'Unrecognized key: "extra"'
+				message: 'extra: expected no unknown keys, received number'
 			}
 		]);
 		await event.handle_async();
@@ -286,12 +296,12 @@ describe('ActionEvent receive_response output validation', () => {
 	test('unknown keys are dropped at every depth, arrays included', async () => {
 		const spec = {
 			...ping_spec,
-			output: z.strictObject({
-				pong: z.literal(true),
-				items: z.array(z.strictObject({ id: z.number() })),
-				meta: z.discriminatedUnion('kind', [
-					z.strictObject({ kind: z.literal('a'), a: z.number() }),
-					z.strictObject({ kind: z.literal('b') })
+			output: object({
+				pong: literal(true),
+				items: array(object({ id: number })),
+				meta: variant('kind', [
+					object({ kind: literal('a'), a: number }),
+					object({ kind: literal('b') })
 				])
 			})
 		} satisfies ActionSpecUnion;
@@ -341,7 +351,7 @@ describe('ActionEvent receive_response output validation', () => {
 });
 
 describe('ActionEvent send_response result', () => {
-	const run_receive_request = async (output_schema: z.ZodType, handler_output: unknown) => {
+	const run_receive_request = async (output_schema: AnySchema, handler_output: unknown) => {
 		const spec = { ...ping_spec, output: output_schema } satisfies ActionSpecUnion;
 		const env = new TestEnvironment([spec]);
 		env.executor = 'backend';
@@ -355,17 +365,17 @@ describe('ActionEvent send_response result', () => {
 	};
 
 	test('any JSON value goes out as the result unchanged', async () => {
-		assert.deepEqual(await run_receive_request(z.null(), null), {
+		assert.deepEqual(await run_receive_request(literal(null), null), {
 			jsonrpc: '2.0',
 			id: 1,
 			result: null
 		});
-		assert.deepEqual((await run_receive_request(z.number(), 7))?.result, 7);
-		assert.deepEqual((await run_receive_request(z.array(z.number()), [1]))?.result, [1]);
+		assert.deepEqual((await run_receive_request(number, 7))?.result, 7);
+		assert.deepEqual((await run_receive_request(array(number), [1]))?.result, [1]);
 	});
 
 	test('a handler returning nothing sends a null result', async () => {
-		assert.deepEqual(await run_receive_request(z.void(), undefined), {
+		assert.deepEqual(await run_receive_request(fuz_void, undefined), {
 			jsonrpc: '2.0',
 			id: 1,
 			result: null
@@ -464,7 +474,7 @@ describe('ActionEvent handle_sync', () => {
 					path: [],
 					expected: 'null',
 					received: 'object',
-					message: 'Invalid input: expected null, received object'
+					message: 'expected null, received object'
 				}
 			]
 		});

@@ -16,10 +16,10 @@
  */
 
 import { describe, test, assert } from 'vitest';
-import { z } from 'zod';
+import { literal, object, string } from '@fuzdev/fuz_schema/schema.ts';
 
 import { assert_route_auth_acting_biconditional, type RouteAuth } from '#lib/http/auth_shape.ts';
-import { ZodActingActor } from '#lib/zod_schemas.ts';
+import { ActingActor } from '#lib/primitive_schemas.ts';
 
 /* eslint-disable @typescript-eslint/no-confusing-void-expression */
 
@@ -33,7 +33,7 @@ const public_auth: RouteAuth = {
 	actor: 'none'
 };
 
-const canonical_input = z.strictObject({ acting: ZodActingActor });
+const canonical_input = object({ acting: ActingActor });
 
 describe('assert_route_auth_acting_biconditional', () => {
 	test('actor: required + acting declared on input passes', () => {
@@ -48,7 +48,7 @@ describe('assert_route_auth_acting_biconditional', () => {
 		assert.doesNotThrow(() =>
 			assert_route_auth_acting_biconditional(
 				actor_required,
-				{ input: z.null(), query: canonical_input },
+				{ input: literal(null), query: canonical_input },
 				'Test'
 			)
 		);
@@ -61,7 +61,7 @@ describe('assert_route_auth_acting_biconditional', () => {
 			() =>
 				assert_route_auth_acting_biconditional(
 					actor_required,
-					{ input: z.null(), query: z.strictObject({ other: z.string() }) },
+					{ input: literal(null), query: object({ other: string }) },
 					'Route "GET /items"'
 				),
 			Error
@@ -81,7 +81,7 @@ describe('assert_route_auth_acting_biconditional', () => {
 			() =>
 				assert_route_auth_acting_biconditional(
 					actor_required,
-					{ input: z.null() },
+					{ input: literal(null) },
 					'RPC action "foo"'
 				),
 			Error
@@ -101,7 +101,7 @@ describe('assert_route_auth_acting_biconditional', () => {
 			() =>
 				assert_route_auth_acting_biconditional(
 					public_auth,
-					{ input: canonical_input, query: z.null() },
+					{ input: canonical_input, query: literal(null) },
 					'Test'
 				),
 			Error
@@ -124,7 +124,7 @@ describe('assert_route_auth_acting_biconditional', () => {
 			() =>
 				assert_route_auth_acting_biconditional(
 					public_auth,
-					{ input: z.null(), query: canonical_input },
+					{ input: literal(null), query: canonical_input },
 					'Test'
 				),
 			/declares 'acting\?: ActingActor'/
@@ -133,7 +133,7 @@ describe('assert_route_auth_acting_biconditional', () => {
 
 	test('actor: none + neither slot declares acting passes', () => {
 		assert.doesNotThrow(() =>
-			assert_route_auth_acting_biconditional(public_auth, { input: z.null() }, 'Test')
+			assert_route_auth_acting_biconditional(public_auth, { input: literal(null) }, 'Test')
 		);
 	});
 
@@ -144,7 +144,7 @@ describe('assert_route_auth_acting_biconditional', () => {
 		assert.doesNotThrow(() =>
 			assert_route_auth_acting_biconditional(
 				public_auth,
-				{ input: z.null(), query: undefined },
+				{ input: literal(null), query: undefined },
 				'Test'
 			)
 		);
@@ -169,7 +169,7 @@ describe('assert_route_auth_acting_biconditional', () => {
 			() =>
 				assert_route_auth_acting_biconditional(
 					{ account: 'required', actor: 'optional' },
-					{ input: z.null() },
+					{ input: literal(null) },
 					'Test'
 				),
 			/auth\.actor === 'optional'/
@@ -179,7 +179,8 @@ describe('assert_route_auth_acting_biconditional', () => {
 	test('context string appears verbatim in both error branches', () => {
 		const context = 'action.contrived_method';
 		const missing_err = assert.throws(
-			() => assert_route_auth_acting_biconditional(actor_required, { input: z.null() }, context),
+			() =>
+				assert_route_auth_acting_biconditional(actor_required, { input: literal(null) }, context),
 			Error
 		) as unknown as Error;
 		assert.match(missing_err.message, new RegExp(`^${context}:`));

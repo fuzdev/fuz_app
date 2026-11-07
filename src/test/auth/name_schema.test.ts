@@ -30,7 +30,6 @@ import {
 } from '#lib/auth/scope_kind_schema.ts';
 import { is_route_scope_capability } from '#lib/auth/token_scope.ts';
 import { parse_any, to_wire_issues } from '#lib/schema_issues.ts';
-import { ZodCredentialTypeName, ZodGrantPathName } from './zod_name_oracles.ts';
 
 /** Names on the grammar and around it, each with its verdict. */
 const CORPUS: Array<[name: string, valid: boolean]> = [
@@ -54,6 +53,90 @@ const CORPUS: Array<[name: string, valid: boolean]> = [
 	['a.b', false],
 	['a b', false],
 	['rôle', false]
+];
+
+/** A refusal's issues as `[kind, expected, received, message]`, the message as `'L'` (the length message) or `'P'` (the pattern message) or `''` (the library's default); `'accepted'` otherwise. */
+type Answer =
+	'accepted' | Array<[kind: string, expected: string, received: string, message: 'L' | 'P' | '']>;
+
+/** What the Zod `GrantPathName` answered for each input of the test below, in order. */
+const ZOD_GRANT_PATH_ANSWERS: Array<Answer> = [
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	'accepted',
+	'accepted',
+	'accepted',
+	'accepted',
+	[['max_length', 'length <= 64', 'string', 'L']],
+	'accepted',
+	[['max_length', 'length <= 64', 'string', 'L']],
+	[
+		['max_length', 'length <= 64', 'string', 'L'],
+		['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']
+	],
+	[
+		['max_length', 'length <= 64', 'string', 'L'],
+		['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']
+	],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	'accepted',
+	[['string', 'string', 'null', '']],
+	[['string', 'string', 'undefined', '']],
+	[['string', 'string', 'number', '']],
+	[['string', 'string', 'boolean', '']],
+	[['string', 'string', 'array', '']],
+	[['string', 'string', 'object', '']]
+];
+
+/** What the Zod `CredentialTypeName` answered for each input of the test below, in order. */
+const ZOD_CREDENTIAL_TYPE_ANSWERS: Array<Answer> = [
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	'accepted',
+	'accepted',
+	'accepted',
+	'accepted',
+	[['max_length', 'length <= 64', 'string', 'L']],
+	'accepted',
+	[['max_length', 'length <= 64', 'string', 'L']],
+	[
+		['max_length', 'length <= 64', 'string', 'L'],
+		['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']
+	],
+	[
+		['max_length', 'length <= 64', 'string', 'L'],
+		['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']
+	],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	'accepted',
+	[['string', 'string', 'null', '']],
+	[['string', 'string', 'undefined', '']],
+	[['string', 'string', 'number', '']],
+	[['string', 'string', 'boolean', '']],
+	[['string', 'string', 'array', '']],
+	[['string', 'string', 'object', '']]
 ];
 
 describe('the shared name grammar', () => {
@@ -127,7 +210,7 @@ describe('the shared name grammar', () => {
 		}
 	});
 
-	test('GrantPathName and CredentialTypeName agree with their Zod copies', () => {
+	test('GrantPathName and CredentialTypeName give the answers their Zod copies gave', () => {
 		const inputs: Array<unknown> = [
 			'',
 			'a',
@@ -160,30 +243,42 @@ describe('the shared name grammar', () => {
 			['a'],
 			{}
 		];
-		for (const [schema, zod_schema, label] of [
-			[GrantPathName, ZodGrantPathName, 'GrantPathName'],
-			[CredentialTypeName, ZodCredentialTypeName, 'CredentialTypeName']
+		assert.strictEqual(ZOD_GRANT_PATH_ANSWERS.length, inputs.length);
+		assert.strictEqual(ZOD_CREDENTIAL_TYPE_ANSWERS.length, inputs.length);
+		for (const [schema, answers, label] of [
+			[GrantPathName, ZOD_GRANT_PATH_ANSWERS, 'GrantPathName'],
+			[CredentialTypeName, ZOD_CREDENTIAL_TYPE_ANSWERS, 'CredentialTypeName']
 		] as const) {
-			for (const input of inputs) {
+			for (const [row, input] of inputs.entries()) {
 				const name = `${label} ${JSON.stringify(input) ?? String(input)}`;
+				const answer = answers[row]!;
 				const fuz = parse_any(schema, input);
-				const zod = parse_any(zod_schema, input);
-				assert.strictEqual(fuz.ok, zod.ok, name);
-				if (fuz.ok && zod.ok) {
+				if (answer === 'accepted') {
+					assert.ok(fuz.ok, name);
 					assert.strictEqual(fuz.value, input, name);
 					continue;
 				}
-				assert.ok(!fuz.ok && !zod.ok);
+				assert.ok(!fuz.ok, name);
 				const fuz_issues = to_wire_issues(fuz.issues, input);
-				const zod_issues = to_wire_issues(zod.issues, input);
 				// declared: a string too long and off the grammar gets the one length issue
-				const expected = zod_issues.slice(0, 1);
+				const expected = answer.slice(0, 1)[0]!;
 				assert.strictEqual(fuz_issues.length, 1, name);
-				const { message: fuz_message, ...fuz_rest } = fuz_issues[0]!;
-				const { message: zod_message, ...zod_rest } = expected[0]!;
-				assert.deepStrictEqual(fuz_rest, zod_rest, name);
+				const { message: fuz_message, kind, expected: exp, received } = fuz_issues[0]!;
+				assert.deepStrictEqual([kind, exp, received], expected.slice(0, 3), name);
 				// declared: a value that is no string gets fuz_schema's message
-				if (typeof input === 'string') assert.strictEqual(fuz_message, zod_message, name);
+				if (typeof input === 'string') {
+					assert.strictEqual(
+						fuz_message,
+						expected[3] === 'L'
+							? format_name_length_message(
+									label === 'GrantPathName' ? 'Grant-path' : 'Credential-type'
+								)
+							: format_name_pattern_message(
+									label === 'GrantPathName' ? 'Grant-path' : 'Credential-type'
+								),
+						name
+					);
+				}
 			}
 		}
 	});

@@ -1,15 +1,15 @@
 /**
  * The surface of `create_db_route_specs` — `GET /health`, `GET /tables`,
  * `GET /tables/:name`, and `DELETE /tables/:name/rows/:id` — held to the
- * Zod-era one captured in `fixtures/surface/db_routes.json`. Equal as JSON
- * apart from the declared moves, applied to the capture here:
+ * one captured in `fixtures/surface/db_routes.json`. Equal as JSON apart from
+ * the declared moves, applied to the capture here:
  *
  * - the counts and positions the routes answer with (`row_count`, `total`,
- *   `offset`, `limit`) are non-negative integers, where the Zod ones were any
- *   number;
+ *   `offset`, `limit`) are non-negative integers, where the captured ones
+ *   were any number;
  * - `GET /tables/:name`'s paging params, `offset` and `limit`, are strings of
- *   the pattern `^[+-]?\d+$`, their bounds in the description, where the Zod
- *   ones were the integers the preprocess made of them: the steps after the
+ *   the pattern `^[+-]?\d+$`, their bounds in the description, where the
+ *   captured ones were the integers the preprocess made of them: the steps after the
  *   `transform` read a number JSON Schema can't say the string becomes;
  * - so the diagnostics gain one `info` for that query, which names the step
  *   JSON Schema can't say.
@@ -144,7 +144,7 @@ describe('db routes surface', () => {
 		);
 	});
 
-	test('the routes are the Zod-era ones but for the declared moves', () => {
+	test('the routes are the captured ones but for the declared moves', () => {
 		assert.deepStrictEqual(surface.routes, head.routes.map(moved));
 	});
 

@@ -11,7 +11,7 @@
 
 import { describe, assert, test } from 'vitest';
 import { Hono } from 'hono';
-import { z } from 'zod';
+import { literal, object, string } from '@fuzdev/fuz_schema/schema.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import {
@@ -202,8 +202,8 @@ const create_action_spec = (auth: RouteAuth): RequestResponseActionSpec => ({
 	initiator: 'frontend',
 	auth,
 	side_effects: false,
-	input: z.strictObject({ id: z.string() }),
-	output: z.null(),
+	input: object({ id: string }),
+	output: literal(null),
 	async: true,
 	description: 'Get a thing'
 });
@@ -243,8 +243,8 @@ const create_route_spec = (auth: RouteAuth, path = '/things'): RouteSpec =>
 		auth,
 		handler: () => route_ok(null),
 		description: 'Create a thing',
-		input: z.strictObject({ name: z.string() }),
-		output: z.null()
+		input: object({ name: string }),
+		output: literal(null)
 	});
 
 describe('apply_route_specs refuses a spec breaking a cross-axis invariant', () => {

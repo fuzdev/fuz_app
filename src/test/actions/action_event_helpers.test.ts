@@ -5,7 +5,7 @@
  */
 
 import { describe, assert, test } from 'vitest';
-import { z } from 'zod';
+import { number, object } from '@fuzdev/fuz_schema/schema.ts';
 
 import { JSONRPC_INTERNAL_ERROR } from '#lib/http/jsonrpc.ts';
 import type { ActionEventData, ActionEventDataUnion } from '#lib/actions/action_event_data.ts';
@@ -179,8 +179,8 @@ describe('extract_action_result', () => {
 		auth: { account: 'required', actor: 'none' },
 		side_effects: false,
 		async: true,
-		input: z.strictObject({}),
-		output: z.strictObject({ n: z.number() }),
+		input: object({}),
+		output: object({ n: number }),
 		description: 'test'
 	} satisfies RequestResponseActionSpec;
 	const environment: ActionEventEnvironment = {

@@ -38,11 +38,11 @@
  */
 
 import { afterEach, describe, test, assert } from 'vitest';
+import { literal, object, string } from '@fuzdev/fuz_schema/schema.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import type { Hono } from 'hono';
 import type { UpgradeWebSocket, WSEvents } from 'hono/ws';
-import { z } from 'zod';
 import { create_uuid, type Uuid } from '#lib/primitive_schemas.ts';
 
 import { create_session_config } from '#lib/auth/session_cookie.ts';
@@ -730,8 +730,8 @@ describe('create_app_server.ws_endpoints', () => {
 			initiator: 'frontend',
 			auth: null,
 			side_effects: false,
-			input: z.strictObject({}),
-			output: z.strictObject({}),
+			input: object({}),
+			output: object({}),
 			async: true,
 			description: 'frontend-only helper that rides on the registry'
 		};
@@ -854,8 +854,8 @@ describe('create_app_server.ws_endpoints', () => {
 			auth: { account: 'none', actor: 'none' },
 			handler: () => route_ok({ hi: 'from rest' }),
 			description: 'consumer route that overlaps the WS path',
-			input: z.null(),
-			output: z.strictObject({ hi: z.string() })
+			input: literal(null),
+			output: object({ hi: string })
 		});
 		const err = await assert_rejects(() =>
 			create_tracked_app_server({
@@ -880,8 +880,8 @@ describe('create_app_server.ws_endpoints', () => {
 			auth: { account: 'none', actor: 'none' },
 			handler: () => route_ok({ hi: 'posted' }),
 			description: 'consumer POST at the same path as the WS upgrade',
-			input: z.strictObject({}),
-			output: z.strictObject({ hi: z.string() })
+			input: object({}),
+			output: object({ hi: string })
 		});
 		const result = await create_tracked_app_server({
 			...config,

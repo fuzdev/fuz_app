@@ -1,13 +1,13 @@
 /**
  * `describe_rpc_attack_surface_tests`'s `input_overrides`: a method whose
- * input the generator can't satisfy (a `.refine()` pinning a value) builds its
+ * input the generator can't satisfy (a `check` pinning a value) builds its
  * params cases from the override. Without the wiring the generated base fails
  * the schema and collection throws, failing this file.
  *
  * @module
  */
 
-import { z } from 'zod';
+import * as s from '@fuzdev/fuz_schema/schema.ts';
 
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import { create_test_app_surface_spec } from '#lib/testing/stubs.ts';
@@ -21,10 +21,11 @@ const gizmo_register_spec: RequestResponseActionSpec = {
 	initiator: 'frontend',
 	auth: { account: 'required', actor: 'none' },
 	side_effects: true,
-	input: z
-		.strictObject({ code: z.string(), size: z.number().int() })
-		.refine((v) => v.code === 'magic', { message: 'code must be magic' }),
-	output: z.strictObject({ ok: z.literal(true) }),
+	input: s.pipe(
+		s.object({ code: s.string, size: s.pipe(s.number, s.integer) }),
+		s.check((v) => v.code === 'magic', 'code must be magic')
+	),
+	output: s.object({ ok: s.literal(true) }),
 	async: true,
 	description: 'Register a gizmo'
 };

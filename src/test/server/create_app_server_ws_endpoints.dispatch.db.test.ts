@@ -31,8 +31,8 @@
  */
 
 import { afterEach, describe, test, assert, vi } from 'vitest';
+import { literal, object, void as fuz_void } from '@fuzdev/fuz_schema/schema.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
-import { z } from 'zod';
 
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_health_route_spec } from '#lib/http/common_routes.ts';
@@ -98,8 +98,8 @@ const counted_action_spec = {
 	initiator: 'frontend',
 	auth: { account: 'required', actor: 'none' },
 	side_effects: false,
-	input: z.void(),
-	output: z.strictObject({ ok: z.literal(true) }),
+	input: fuz_void,
+	output: object({ ok: literal(true) }),
 	async: true,
 	rate_limit: 'account',
 	description: 'account-throttled no-op'
@@ -612,8 +612,8 @@ describe('create_app_server.ws_endpoints dispatch through the assembled app', ()
 				initiator: 'frontend',
 				auth: { account: 'required', actor: 'none' },
 				side_effects: false,
-				input: z.void(),
-				output: z.strictObject({ ok: z.literal(true) }),
+				input: fuz_void,
+				output: object({ ok: literal(true) }),
 				async: true,
 				description: 'queues a rejecting pending effect'
 			},
@@ -650,8 +650,8 @@ const audited_action_spec = {
 	initiator: 'frontend',
 	auth: { account: 'required', actor: 'none' },
 	side_effects: true,
-	input: z.void(),
-	output: z.strictObject({ ok: z.literal(true) }),
+	input: fuz_void,
+	output: object({ ok: literal(true) }),
 	async: true,
 	description: 'emits one audit row'
 } satisfies RequestResponseActionSpec;

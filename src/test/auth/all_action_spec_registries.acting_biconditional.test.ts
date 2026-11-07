@@ -15,13 +15,9 @@
  * regardless of whether any handler test happens to import the broken
  * registry.
  *
- * Detection mirrors `input_schema_declares_acting` from
- * `http/auth_shape.ts` — reference-equality on the canonical
- * `ActingActor` schema, peeling through Zod wrappers via
- * `zod_unwrap_to_object`. Mirroring the production helper guarantees
- * this test rejects exactly what the registration assertion would
- * reject; using the helper directly would be silently correct today but
- * brittle to detection-logic changes that need to land here first.
+ * Detection is `input_schema_declares_acting` from `http/auth_shape.ts`,
+ * the check the registration assertion runs, so this test rejects exactly
+ * what that assertion would.
  *
  * @module
  */

@@ -10,8 +10,7 @@
  */
 
 import { describe, assert, test } from 'vitest';
-import { z } from 'zod';
-import { object, optional, string } from '@fuzdev/fuz_schema/schema.ts';
+import { object, optional, string, void as fuz_void } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	create_broadcast_api,
@@ -31,8 +30,8 @@ const thing_changed_spec = {
 	initiator: 'backend',
 	auth: null,
 	side_effects: true,
-	input: z.strictObject({ id: z.string(), owner_account_id: z.string().optional() }),
-	output: z.void(),
+	input: object({ id: string, owner_account_id: optional(string) }),
+	output: fuz_void,
 	async: true,
 	description: 'Broadcast notification for tests'
 } satisfies ActionSpecUnion;
@@ -103,7 +102,7 @@ describe('create_broadcast_api', () => {
 			} as never
 		});
 
-		// `id` must be a string; pass a number to trip Zod
+		// `id` must be a string; pass a number to fail validation
 		await api.thing_changed({ id: 42 as unknown as string });
 
 		assert.strictEqual(log_errors.length, 1);
@@ -111,19 +110,17 @@ describe('create_broadcast_api', () => {
 		assert.include(String(first[0]), 'input validation failed');
 	});
 
-	test('validates a fuz_schema input, sending the parsed value', async () => {
+	test('validates the input, sending the parsed value', async () => {
 		const registry = new ConnectionRegistry();
 		const { ws, sends } = create_fake_ws();
 		registry.add_connection(
 			ws,
 			create_test_identity({ session_hash: 'hash_a', account_id: create_uuid() })
 		);
-		const input = object({ id: string, owner_account_id: optional(string) });
-		const spec = { ...thing_changed_spec, input };
 		const log_errors: Array<Array<unknown>> = [];
 		const api = create_broadcast_api<TestApi>({
 			registry,
-			specs: [spec],
+			specs: [thing_changed_spec],
 			log: {
 				error: (...args: Array<unknown>) => log_errors.push(args),
 				info: () => {},

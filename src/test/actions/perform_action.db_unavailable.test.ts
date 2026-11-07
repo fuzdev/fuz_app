@@ -13,8 +13,8 @@
  */
 
 import { describe, assert, test } from 'vitest';
+import { literal, object, void as fuz_void } from '@fuzdev/fuz_schema/schema.ts';
 import { Hono } from 'hono';
-import { z } from 'zod';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
@@ -48,8 +48,8 @@ const spec = (
 	initiator: 'frontend',
 	auth,
 	side_effects: true,
-	input: z.void(),
-	output: z.strictObject({ ok: z.literal(true) }),
+	input: fuz_void,
+	output: object({ ok: literal(true) }),
 	async: true,
 	description: method
 });

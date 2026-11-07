@@ -1,13 +1,13 @@
 /**
  * The surface of the spine's leaf routes — `/health`, `/ready`,
  * `/api/server/status`, `/api/surface`, the audit stream, and the two fact
- * routes — held to the Zod-era one captured in
- * `fixtures/surface/common_routes.json`. Equal as JSON apart from one declared
- * move, applied to the capture here: `/api/server/status`'s `uptime_ms` is a
- * non-negative integer, where the Zod one was any number. Key for key, each
- * `readOnly` annotation moves after its node's keywords, where
- * `to_json_schema` writes metadata (Zod wrote `.readonly()` first): a move of
- * key order alone, applied before the comparison of serializations.
+ * routes — held to the one captured in `fixtures/surface/common_routes.json`.
+ * Equal as JSON apart from one declared move, applied to the capture here:
+ * `/api/server/status`'s `uptime_ms` is a non-negative integer, where the
+ * captured one was any number. Key for key, each `readOnly` annotation moves
+ * after its node's keywords, where `to_json_schema` writes metadata (the
+ * capture has it first): a move of key order alone, applied before the
+ * comparison of serializations.
  *
  * The error schemas are the capture's but for the moves of the error rules,
  * `ERROR_MOVES`: the derived 400 is the codes each route's slots derive — a
@@ -157,7 +157,7 @@ describe('common routes surface', () => {
 		);
 	});
 
-	test('the routes are the Zod-era ones but for the declared moves', () => {
+	test('the routes are the captured ones but for the declared moves', () => {
 		assert.deepStrictEqual(surface.routes, head.routes.map(moved));
 	});
 

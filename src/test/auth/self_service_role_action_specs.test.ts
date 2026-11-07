@@ -1,23 +1,18 @@
 /**
- * `self_service_role_set`'s `@fuzdev/fuz_schema` schemas, held to the Zod
- * schemas they replaced, rebuilt here: the same verdict and output on a corpus
- * of inputs and of outputs, and the same wire issues but for `message`. The
- * surface entry is the Zod schemas' one as JSON, captured in
- * `fixtures/surface/self_service_role.json`, and the acting check still finds
- * the input's `acting`.
+ * `self_service_role_set`'s schemas: their verdict and output on a corpus of
+ * inputs and of outputs, and the wire issues an invalid input gets. The
+ * surface entry matches `fixtures/surface/self_service_role.json` as JSON,
+ * and the acting check still finds the input's `acting`.
  *
- * Declared differences, both in the issues alone: a `role` both too long and
- * outside the grammar gets the length issue alone, where Zod added the
- * grammar issue after it, and each `message` is fuz_schema's text, the
- * `RoleName` custom messages behind the issue's path (`role: Role names
- * must be ...`) where Zod gave them bare.
+ * A `role` both too long and outside the grammar gets the length issue alone,
+ * and each `message` carries the `RoleName` custom messages behind the
+ * issue's path (`role: Role names must be ...`).
  *
  * @module
  */
 
 import { describe, test, assert } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { z } from 'zod';
 import { is_schema } from '@fuzdev/fuz_schema/schema.ts';
 import { get_schema_entries } from '@fuzdev/fuz_schema/introspect.ts';
 
@@ -36,27 +31,8 @@ import { generate_app_surface } from '#lib/http/surface.ts';
 import { action_manifest_entry } from '#lib/testing/cross_backend/action_manifest.ts';
 import { parse_any, to_wire_issues, type WireIssue } from '#lib/schema_issues.ts';
 import { NAME_LENGTH_MAX, NAME_REGEX } from '#lib/auth/name_schema.ts';
-import { ZodRoleName } from './zod_name_oracles.ts';
-import { ZodActingActor } from '#lib/zod_schemas.ts';
 
 const SURFACE_FIXTURE_PATH = new URL('../fixtures/surface/self_service_role.json', import.meta.url);
-
-/** The Zod input `self_service_role_set` declared before the port. */
-const ZodInput = z.strictObject({
-	role: ZodRoleName.meta({ description: 'Role to toggle. Must be in the configured allowlist.' }),
-	enabled: z.boolean().meta({
-		description:
-			'Desired post-call state. `true` grants if not held; `false` revokes if held. Idempotent in both directions.'
-	}),
-	acting: ZodActingActor
-});
-
-/** The Zod output `self_service_role_set` declared before the port. */
-const ZodOutput = z.strictObject({
-	ok: z.literal(true),
-	enabled: z.boolean(),
-	changed: z.boolean()
-});
 
 const ID = '0f8fad5b-d9cb-469f-a165-70867728950e';
 const LONG = 'a'.repeat(NAME_LENGTH_MAX + 1);
@@ -113,33 +89,6 @@ const OUTPUT_CORPUS: Array<[label: string, output: unknown]> = [
 	['array', []]
 ];
 
-/** What a parse gave: its output, or its wire issues. */
-const outcome_of = (
-	schema: Parameters<typeof parse_any>[0],
-	input: unknown
-): { ok: true; value: unknown } | { ok: false; issues: Array<WireIssue> } => {
-	const result = parse_any(schema, input);
-	return result.ok
-		? { ok: true, value: result.value }
-		: { ok: false, issues: to_wire_issues(result.issues, input) };
-};
-
-const without_messages = (issues: Array<WireIssue>): Array<Omit<WireIssue, 'message'>> =>
-	issues.map(({ message: _, ...rest }) => rest);
-
-/**
- * The Zod issues less the one declared difference: a `role` both too long and
- * off the grammar loses its grammar issue, the second of its two.
- */
-const declared_zod_issues = (input: unknown, issues: Array<WireIssue>): Array<WireIssue> => {
-	const role = (input as { role?: unknown } | null)?.role;
-	if (typeof role !== 'string' || role.length <= NAME_LENGTH_MAX) return issues;
-	if (NAME_REGEX.test(role)) return issues;
-	const grammar = issues.findIndex((i) => i.kind === 'regex' && i.path[0] === 'role');
-	assert.ok(grammar > 0 && issues[grammar - 1]!.kind === 'max_length');
-	return issues.filter((_, i) => i !== grammar);
-};
-
 describe('self_service_role_set schemas', () => {
 	test('are fuz_schema schemas', () => {
 		assert.ok(is_schema(SelfServiceRoleSetInput));
@@ -160,7 +109,7 @@ describe('self_service_role_set schemas', () => {
 		);
 	});
 
-	test("the surface entry is the Zod schemas' one as JSON", () => {
+	test('the surface entry is the captured one as JSON', () => {
 		const surface = generate_app_surface({
 			route_specs: [],
 			middleware_specs: [],
@@ -175,9 +124,8 @@ describe('self_service_role_set schemas', () => {
 		const entry = surface.rpc_endpoints[0]!.methods[0]!;
 		const expected = readFileSync(SURFACE_FIXTURE_PATH, 'utf8');
 		assert.deepStrictEqual(entry, JSON.parse(expected));
-		// equal as JSON, not byte for byte: fuz_schema writes the `acting` node's
-		// `description` last, where Zod wrote it first; the `role` node's
-		// keywords are in Zod's order
+		// equal as JSON, not byte for byte: the `acting` node's `description` is
+		// written last, where the capture has it first
 		assert.notStrictEqual(JSON.stringify(entry, null, '\t') + '\n', expected);
 		const properties = (entry.input_schema as { properties: Record<string, object> }).properties;
 		assert.deepStrictEqual(Object.keys(properties.role!), [
@@ -207,58 +155,50 @@ describe('self_service_role_set schemas', () => {
 		});
 	});
 
-	describe('agree with the Zod schemas', () => {
-		const run = (
-			schema: Parameters<typeof parse_any>[0],
-			zod_schema: Parameters<typeof parse_any>[0],
-			corpus: Array<[label: string, input: unknown]>
-		): { matched: number; refused: number } => {
-			let matched = 0;
-			let refused = 0;
-			for (const [label, input] of corpus) {
-				const fuz = outcome_of(schema, input);
-				const zod = outcome_of(zod_schema, input);
-				assert.strictEqual(fuz.ok, zod.ok, label);
-				if (fuz.ok && zod.ok) {
-					matched++;
-					assert.deepStrictEqual(fuz.value, zod.value, label);
-					continue;
-				}
-				assert.ok(!fuz.ok && !zod.ok);
-				refused++;
-				assert.deepStrictEqual(
-					without_messages(fuz.issues),
-					without_messages(declared_zod_issues(input, zod.issues)),
-					label
-				);
-			}
-			return { matched, refused };
-		};
-
-		test('on inputs', () => {
-			const { matched, refused } = run(SelfServiceRoleSetInput, ZodInput, INPUT_CORPUS);
-			assert.ok(matched >= 6, `${matched} matched`);
-			assert.ok(refused >= 20, `${refused} refused`);
-		});
-
-		test('on outputs', () => {
-			const { matched, refused } = run(SelfServiceRoleSetOutput, ZodOutput, OUTPUT_CORPUS);
-			assert.strictEqual(matched, 2);
-			assert.strictEqual(refused, OUTPUT_CORPUS.length - 2);
-		});
-
-		test('acting comes out lowercased, as under Zod', () => {
-			const result = parse_any(SelfServiceRoleSetInput, {
-				role: 'admin',
-				enabled: true,
-				acting: ID.toUpperCase()
-			});
-			assert.ok(result.ok);
-			assert.deepStrictEqual<unknown>(result.value, { role: 'admin', enabled: true, acting: ID });
-		});
+	test('the input verdicts', () => {
+		const accepted = INPUT_CORPUS.filter(
+			([, input]) => parse_any(SelfServiceRoleSetInput, input).ok
+		);
+		assert.deepStrictEqual(
+			accepted.map(([label]) => label),
+			[
+				'enable',
+				'disable',
+				'one letter',
+				'at the cap',
+				'with acting',
+				'with acting uppercase',
+				'with acting undefined'
+			]
+		);
 	});
 
-	test('an invalid input gets the Zod issues in fuz_schema’s words', () => {
+	test('the output verdicts', () => {
+		const accepted = OUTPUT_CORPUS.filter(
+			([, output]) => parse_any(SelfServiceRoleSetOutput, output).ok
+		);
+		assert.deepStrictEqual(
+			accepted.map(([label]) => label),
+			['changed', 'unchanged']
+		);
+	});
+
+	test('an accepted input comes out as given, acting lowercased', () => {
+		for (const [label, input] of INPUT_CORPUS.slice(0, 5)) {
+			const result = parse_any(SelfServiceRoleSetInput, input);
+			assert.ok(result.ok, label);
+			assert.deepStrictEqual<unknown>(result.value, input, label);
+		}
+		const result = parse_any(SelfServiceRoleSetInput, {
+			role: 'admin',
+			enabled: true,
+			acting: ID.toUpperCase()
+		});
+		assert.ok(result.ok);
+		assert.deepStrictEqual<unknown>(result.value, { role: 'admin', enabled: true, acting: ID });
+	});
+
+	test('an invalid input gets its wire issues', () => {
 		const cases: Array<[input: unknown, issues: Array<WireIssue>]> = [
 			[
 				{ role: LONG_OFF_GRAMMAR, enabled: 'yes', extra: 1 },

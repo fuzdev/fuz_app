@@ -14,7 +14,7 @@
 import { route_ok } from '#lib/http/route_result.ts';
 import { define_route, type RouteSpec } from '#lib/http/route_spec.ts';
 import { describe, test, assert } from 'vitest';
-import { z } from 'zod';
+import { literal, object } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
@@ -99,7 +99,7 @@ describe('assert_route_authenticated', () => {
 const BURN_PATH = '/api/widget/burn';
 const PEEK_PATH = '/api/widget/peek';
 
-const ok_output = z.strictObject({ ok: z.literal(true) });
+const ok_output = object({ ok: literal(true) });
 
 // `POST` first, so on a shared account the `GET` after it would 401
 const create_route_specs = (_ctx: AppServerContext): Array<RouteSpec> => [
@@ -109,7 +109,7 @@ const create_route_specs = (_ctx: AppServerContext): Array<RouteSpec> => [
 		auth: { account: 'required', actor: 'none' },
 		handler: () => route_ok({ ok: true }),
 		description: "End the caller's session",
-		input: z.null(),
+		input: literal(null),
 		output: ok_output
 	}),
 	define_route({
@@ -118,7 +118,7 @@ const create_route_specs = (_ctx: AppServerContext): Array<RouteSpec> => [
 		auth: { account: 'required', actor: 'none' },
 		handler: () => route_ok({ ok: true }),
 		description: 'Read as the caller',
-		input: z.null(),
+		input: literal(null),
 		output: ok_output
 	})
 ];

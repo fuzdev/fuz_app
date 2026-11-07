@@ -8,8 +8,7 @@
 import { route_ok } from '#lib/http/route_result.ts';
 import { define_route } from '#lib/http/route_spec.ts';
 import { describe, test, assert } from 'vitest';
-import { z } from 'zod';
-import { string } from '@fuzdev/fuz_schema/schema.ts';
+import { literal, string } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	assert_error_response_declared,
@@ -31,8 +30,8 @@ const spec = create_app_surface_spec({
 			path: '/things/:id',
 			auth: { account: 'none', actor: 'none' },
 			description: 'Gets a thing.',
-			input: z.null(),
-			output: z.null(),
+			input: literal(null),
+			output: literal(null),
 			errors: [REST_THING_NOT_FOUND, REST_THING_TAKEN, REST_THING_INVALID],
 			handler: () => route_ok(null)
 		})

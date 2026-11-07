@@ -1,6 +1,5 @@
 import { assert, test, beforeEach, vi } from 'vitest';
-import { parse } from '@fuzdev/fuz_schema/schema.ts';
-import { z } from 'zod';
+import * as s from '@fuzdev/fuz_schema/schema.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import {
@@ -472,7 +471,7 @@ describe_db('AuditLogQueries', (get_db) => {
 	test('consumer event type round-trips through query_audit_log_list', async () => {
 		const config = create_audit_log_config({
 			extra_events: {
-				classroom_create: z.looseObject({ classroom_id: z.string(), name: z.string() })
+				classroom_create: s.loose_object({ classroom_id: s.string, name: s.string })
 			}
 		});
 		await query_audit_log(
@@ -506,7 +505,7 @@ describe_db('AuditLogQueries', (get_db) => {
 		);
 		const events = await query_audit_log_list(deps);
 		const wire = JSON.parse(JSON.stringify(events[0]));
-		const parsed = parse(AuditLogEventJson, wire);
+		const parsed = s.parse(AuditLogEventJson, wire);
 		assert.ok(
 			parsed.ok,
 			`AuditLogEventJson rejected consumer event_type: ${JSON.stringify(parsed)}`
@@ -522,7 +521,7 @@ describe_db('AuditLogQueries', (get_db) => {
 		try {
 			const config = create_audit_log_config({
 				extra_events: {
-					classroom_create: z.strictObject({ classroom_id: z.string(), name: z.string() })
+					classroom_create: s.object({ classroom_id: s.string, name: s.string })
 				}
 			});
 			const before = get_audit_metadata_validation_failures();
@@ -632,7 +631,7 @@ describe_db('AuditLogQueries', (get_db) => {
 	test('AuditEmitter.emit forwards config to query_audit_log', async () => {
 		const audit_log_config = create_audit_log_config({
 			extra_events: {
-				classroom_create: z.looseObject({ classroom_id: z.string(), name: z.string() })
+				classroom_create: s.loose_object({ classroom_id: s.string, name: s.string })
 			}
 		});
 		const log = new Logger('test', { level: 'off' });

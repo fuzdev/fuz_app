@@ -8,12 +8,7 @@
  */
 
 import { describe, test, assert } from 'vitest';
-import { z } from 'zod';
-import {
-	loose_object as fuz_loose_object,
-	parse,
-	string as fuz_string
-} from '@fuzdev/fuz_schema/schema.ts';
+import * as s from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	AUDIT_EVENT_TYPES,
@@ -72,7 +67,7 @@ describe('create_audit_log_config', () => {
 	});
 
 	test('schema entries populate metadata_schemas; null entries register the type only', () => {
-		const classroom_schema = z.looseObject({ classroom_id: z.string() });
+		const classroom_schema = s.loose_object({ classroom_id: s.string });
 		const config = create_audit_log_config({
 			extra_events: {
 				classroom_create: classroom_schema,
@@ -86,14 +81,6 @@ describe('create_audit_log_config', () => {
 		// null entry: type is registered, but no schema entry — validation skips
 		assert.isTrue(config.event_types.includes('classroom_delete'));
 		assert.isUndefined(config.metadata_schemas.classroom_delete);
-	});
-
-	test('a fuz_schema metadata schema populates metadata_schemas as a Zod one does', () => {
-		const classroom_schema = fuz_loose_object({ classroom_id: fuz_string });
-		const config = create_audit_log_config({
-			extra_events: { classroom_create: classroom_schema }
-		});
-		assert.strictEqual(config.metadata_schemas.classroom_create, classroom_schema);
 	});
 
 	test('rejects an extra_events value that is neither null nor a schema', () => {
@@ -111,7 +98,8 @@ describe('create_audit_log_config', () => {
 			/collides with a builtin/
 		);
 		assert.throws(
-			() => create_audit_log_config({ extra_events: { logout: z.object({ foo: z.string() }) } }),
+			() =>
+				create_audit_log_config({ extra_events: { logout: s.strip_object({ foo: s.string }) } }),
 			/collides with a builtin/
 		);
 	});
@@ -173,14 +161,14 @@ describe('AuditEventTypeName invariant', () => {
 	test('every builtin AUDIT_EVENT_TYPES entry passes the schema', () => {
 		for (const t of AUDIT_EVENT_TYPES) {
 			assert.isTrue(
-				parse(AuditEventTypeName, t).ok,
+				s.parse(AuditEventTypeName, t).ok,
 				`builtin "${t}" failed AuditEventTypeName format`
 			);
 		}
 	});
 
 	test('the length cap comes before the grammar, and reports alone', () => {
-		const result = parse(AuditEventTypeName, `1${'a'.repeat(NAME_LENGTH_MAX)}`);
+		const result = s.parse(AuditEventTypeName, `1${'a'.repeat(NAME_LENGTH_MAX)}`);
 		assert.ok(!result.ok);
 		assert.deepStrictEqual(
 			result.issues.map((i) => i.message),

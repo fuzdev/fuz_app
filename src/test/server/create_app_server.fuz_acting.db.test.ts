@@ -2,14 +2,13 @@
  * An action whose fuz_schema input declares the fuz_schema `ActingActor`
  * twin, through the assembled app: registration accepts it on an
  * actor-required spec, and the authorization phase resolves the actor from
- * its `acting` selector as it does for the Zod `ActingActor`.
+ * its `acting` selector.
  *
  * @module
  */
 
 import { describe, test, assert, beforeAll, afterAll } from 'vitest';
-import { object } from '@fuzdev/fuz_schema/schema.ts';
-import { z } from 'zod';
+import { nullable, object, string } from '@fuzdev/fuz_schema/schema.ts';
 
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_app_server, type AppServer } from '#lib/server/app_server.ts';
@@ -31,7 +30,7 @@ const whoami_spec = {
 	auth: { account: 'required', actor: 'required' },
 	side_effects: false,
 	input: object({ acting: ActingActor }),
-	output: z.strictObject({ actor_id: z.string(), acting: z.string().nullable() }),
+	output: object({ actor_id: string, acting: nullable(string) }),
 	async: true,
 	description: 'Returns the resolved actor and the parsed selector.'
 } as const;

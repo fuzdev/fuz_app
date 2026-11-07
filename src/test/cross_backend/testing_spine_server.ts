@@ -27,7 +27,7 @@
 import { dirname, join } from 'node:path';
 import type { Context } from 'hono';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
-import { z } from 'zod';
+import { parse } from '@fuzdev/fuz_schema/schema.ts';
 
 import { DEFAULT_WS_MAX_MESSAGE_BYTES } from '#lib/actions/transports.ts';
 import { WS_RECEIVE_TIMEOUT_MAX } from '#lib/actions/register_action_ws.ts';
@@ -35,6 +35,7 @@ import { ConnectionRegistry } from '#lib/actions/connection_registry.ts';
 import type { AppSurface } from '#lib/http/surface.ts';
 import { start_daemon_token_rotation } from '#lib/testing/daemon_token_rotation.ts';
 import { load_env } from '#lib/env/load.ts';
+import { EnvStringbool } from '#lib/env/env_schemas.ts';
 import type { RuntimeDeps } from '#lib/runtime/deps.ts';
 import { cell_audit_events } from '#lib/auth/cell_audit_events.ts';
 import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
@@ -120,9 +121,6 @@ const HEALTH_PATH = '/health';
  */
 const WS_MAX_MESSAGE_BYTES = DEFAULT_WS_MAX_MESSAGE_BYTES;
 
-/** Zod's `stringbool` — the env boolean contract the Rust stub's `parse_stringbool` mirrors. */
-const EnvStringbool = z.stringbool();
-
 /**
  * Parse an optional boolean env toggle the way the Rust stub's
  * `parse_stringbool_env` does: unset is `false`; otherwise a case-insensitive
@@ -136,13 +134,13 @@ const EnvStringbool = z.stringbool();
  */
 export const parse_stringbool_env = (name: string, raw: string | undefined): boolean => {
 	if (raw === undefined) return false;
-	const parsed = EnvStringbool.safeParse(raw);
-	if (!parsed.success) {
+	const parsed = parse(EnvStringbool, raw);
+	if (!parsed.ok) {
 		throw new Error(
 			`testing_spine_server: ${name}: expected a boolean string (true/false, 1/0, yes/no, on/off, y/n, enabled/disabled), got ${JSON.stringify(raw)}`
 		);
 	}
-	return parsed.data;
+	return parsed.value;
 };
 
 /** `u32::MAX` — the largest cap the Rust stub's `u32` parse accepts. */

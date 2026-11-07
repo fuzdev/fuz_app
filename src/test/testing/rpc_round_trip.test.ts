@@ -12,7 +12,7 @@
  */
 
 import { describe, test, assert } from 'vitest';
-import { z } from 'zod';
+import { literal, object, void as fuz_void } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import type { RpcAction } from '#lib/actions/action_types.ts';
@@ -193,8 +193,8 @@ const burn_spec: RequestResponseActionSpec = {
 	initiator: 'frontend',
 	auth: { account: 'required', actor: 'none' },
 	side_effects: true,
-	input: z.void(),
-	output: z.strictObject({ ok: z.literal(true) }),
+	input: fuz_void,
+	output: object({ ok: literal(true) }),
 	async: true,
 	description: "End the caller's session"
 };
@@ -205,8 +205,8 @@ const peek_spec: RequestResponseActionSpec = {
 	initiator: 'frontend',
 	auth: { account: 'required', actor: 'none' },
 	side_effects: false,
-	input: z.void(),
-	output: z.strictObject({ ok: z.literal(true) }),
+	input: fuz_void,
+	output: object({ ok: literal(true) }),
 	async: true,
 	description: 'Read as the caller'
 };

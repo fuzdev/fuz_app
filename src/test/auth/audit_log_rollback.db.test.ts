@@ -11,7 +11,7 @@
  */
 
 import { describe, test, assert, beforeAll, afterAll } from 'vitest';
-import { z } from 'zod';
+import * as s from '@fuzdev/fuz_schema/schema.ts';
 
 import { create_test_app, type TestApp } from '#lib/testing/app_server.ts';
 import { create_test_request_headers } from '#lib/testing/test_origin.ts';
@@ -55,7 +55,7 @@ describe('audit rows and the request transaction', () => {
 
 	beforeAll(async () => {
 		const auth = { account: 'none', actor: 'none' } as const;
-		const output = z.strictObject({ ok: z.literal(true) });
+		const output = s.object({ ok: s.literal(true) });
 		const route = (
 			path: string,
 			handler: TypedRouteHandler<[], typeof output, typeof auth, undefined>
@@ -65,7 +65,7 @@ describe('audit rows and the request transaction', () => {
 				path,
 				auth,
 				description: `audit transaction probe ${path}`,
-				input: z.null(),
+				input: s.literal(null),
 				output,
 				handler
 			});

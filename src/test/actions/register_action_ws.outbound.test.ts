@@ -11,9 +11,8 @@
 
 import { afterEach, describe, assert, test, vi } from 'vitest';
 import { Hono, type Context } from 'hono';
-import { z } from 'zod';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
-import { is } from '@fuzdev/fuz_schema/schema.ts';
+import { is, object, string } from '@fuzdev/fuz_schema/schema.ts';
 import { create_uuid, type Uuid } from '#lib/primitive_schemas.ts';
 
 import { register_action_ws } from '#lib/actions/register_action_ws.ts';
@@ -73,8 +72,8 @@ const echo_spec = {
 	initiator: 'frontend',
 	auth: { account: 'required', actor: 'none' },
 	side_effects: false,
-	input: z.strictObject({ value: z.string() }),
-	output: z.strictObject({ value: z.string() }),
+	input: object({ value: string }),
+	output: object({ value: string }),
 	async: true,
 	description: 'echo'
 } satisfies RequestResponseActionSpec;

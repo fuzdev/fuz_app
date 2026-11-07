@@ -10,8 +10,7 @@
  */
 
 import { assert, describe, test } from 'vitest';
-import { z } from 'zod';
-import { is } from '@fuzdev/fuz_schema/schema.ts';
+import { is, object, string } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import {
@@ -64,8 +63,8 @@ describe('heartbeat_action', () => {
 			initiator: 'frontend',
 			auth: { account: 'required', actor: 'none' },
 			side_effects: false,
-			input: z.strictObject({ value: z.string() }),
-			output: z.strictObject({ value: z.string() }),
+			input: object({ value: string }),
+			output: object({ value: string }),
 			async: true,
 			description: 'test consumer echo'
 		} satisfies RequestResponseActionSpec;

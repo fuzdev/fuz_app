@@ -1,16 +1,16 @@
 /**
- * `RoleName` (`auth/role_schema.ts`), held to the Zod copy of it it was
- * (`ZodRoleName`) on one corpus: the same verdict, the same output, and
- * the same wire issues, `message` included where it is one of the two custom
- * messages. Two differences are declared: a string both too long and outside
- * the grammar gets the length issue alone, where Zod adds the grammar issue
- * after it, and a value that is no string gets fuz_schema's message.
+ * `RoleName` (`auth/role_schema.ts`), on one corpus: each row's expected answer was frozen from the Zod copy
+ * of the schema it replaced (`ZOD_ANSWERS`, in corpus order): the same verdict,
+ * the same output, and the same wire issues, the message as the custom length
+ * or pattern message where Zod's was one. Two differences are declared: a
+ * string both too long and outside the grammar gets the length issue alone,
+ * where Zod added the grammar issue after it, and a value that is no string
+ * gets fuz_schema's message.
  *
  * @module
  */
 
 import { describe, test, assert } from 'vitest';
-import { z } from 'zod';
 import { is_schema, parse } from '@fuzdev/fuz_schema/schema.ts';
 import { to_json_schema } from '@fuzdev/fuz_schema/json_schema.ts';
 
@@ -21,7 +21,6 @@ import {
 } from '#lib/auth/role_schema.ts';
 import { parse_any, to_wire_issues, type WireIssue } from '#lib/schema_issues.ts';
 import { NAME_LENGTH_MAX, NAME_REGEX } from '#lib/auth/name_schema.ts';
-import { ZodRoleName } from './zod_name_oracles.ts';
 
 /** Strings of the grammar and around it, and values that are no string. */
 const CORPUS: Array<[label: string, input: unknown]> = [
@@ -109,9 +108,93 @@ const outcome_of = (
 		: { ok: false, issues: to_wire_issues(result.issues, input) };
 };
 
-const CUSTOM_MESSAGES: ReadonlyArray<string> = [
-	ROLE_NAME_LENGTH_MESSAGE,
-	ROLE_NAME_PATTERN_MESSAGE
+/** A refusal's issues as `[kind, expected, received, message]`, the message as `'L'` (the length message), `'P'` (the pattern message) or `''` (the library's default); `'accepted'` otherwise. */
+type Answer =
+	'accepted' | Array<[kind: string, expected: string, received: string, message: 'L' | 'P' | '']>;
+
+const ZOD_ANSWERS: Array<Answer> = [
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	'accepted',
+	'accepted',
+	'accepted',
+	'accepted',
+	'accepted',
+	'accepted',
+	'accepted',
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	'accepted',
+	'accepted',
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['max_length', 'length <= 64', 'string', 'L']],
+	[['max_length', 'length <= 64', 'string', 'L']],
+	[['max_length', 'length <= 64', 'string', 'L']],
+	[
+		['max_length', 'length <= 64', 'string', 'L'],
+		['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']
+	],
+	[
+		['max_length', 'length <= 64', 'string', 'L'],
+		['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']
+	],
+	[
+		['max_length', 'length <= 64', 'string', 'L'],
+		['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']
+	],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[
+		['max_length', 'length <= 64', 'string', 'L'],
+		['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']
+	],
+	[['regex', '/^[a-z]+(?:_[a-z]+)*$/', 'string', 'P']],
+	[['string', 'string', 'null', '']],
+	[['string', 'string', 'undefined', '']],
+	[['string', 'string', 'number', '']],
+	[['string', 'string', 'number', '']],
+	[['string', 'string', 'NaN', '']],
+	[['string', 'string', 'boolean', '']],
+	[['string', 'string', 'bigint', '']],
+	[['string', 'string', 'array', '']],
+	[['string', 'string', 'array', '']],
+	[['string', 'string', 'object', '']],
+	[['string', 'string', 'object', '']],
+	[['string', 'string', 'object', '']]
 ];
 
 describe('RoleName', () => {
@@ -126,46 +209,51 @@ describe('RoleName', () => {
 		);
 	});
 
-	test('agrees with its Zod copy on every row but the declared differences', () => {
+	test('gives every row the answer the Zod copy gave, but for the declared differences', () => {
+		assert.strictEqual(ZOD_ANSWERS.length, CORPUS.length);
 		let matched = 0;
 		let custom = 0;
 		let declared = 0;
-		for (const [label, input] of CORPUS) {
+		for (const [row, [label, input]] of CORPUS.entries()) {
+			const answer = ZOD_ANSWERS[row]!;
 			const fuz = outcome_of(RoleName, input);
-			const zod = outcome_of(ZodRoleName, input);
-			assert.strictEqual(fuz.ok, zod.ok, label);
-			if (fuz.ok && zod.ok) {
+			if (answer === 'accepted') {
+				assert.ok(fuz.ok, label);
 				assert.strictEqual(fuz.value, input, label);
-				assert.strictEqual(zod.value, input, label);
 				matched++;
 				continue;
 			}
-			assert.ok(!fuz.ok && !zod.ok);
+			assert.ok(!fuz.ok, label);
 			const too_long_off_grammar =
 				typeof input === 'string' && input.length > NAME_LENGTH_MAX && !NAME_REGEX.test(input);
 			// declared: a string too long and off the grammar gets the one length
 			// issue, as fuz_schema's `pipe` stops at its first failing step
-			const zod_issues = too_long_off_grammar ? zod.issues.slice(0, 1) : zod.issues;
+			const expected = too_long_off_grammar ? answer.slice(0, 1) : answer;
 			if (too_long_off_grammar) {
 				declared++;
 				assert.deepStrictEqual(
-					zod.issues.map((i) => i.kind),
+					answer.map((i) => i[0]),
 					['max_length', 'regex'],
 					label
 				);
 			}
-			assert.strictEqual(fuz.issues.length, zod_issues.length, label);
-			for (let i = 0; i < fuz.issues.length; i++) {
-				const { message: fuz_message, ...fuz_rest } = fuz.issues[i]!;
-				const { message: zod_message, ...zod_rest } = zod_issues[i]!;
-				assert.deepStrictEqual(fuz_rest, zod_rest, label);
-				if (CUSTOM_MESSAGES.includes(zod_message)) {
+			assert.deepStrictEqual(
+				fuz.issues.map((i) => [i.kind, i.expected, i.received]),
+				expected.map((i) => i.slice(0, 3)),
+				label
+			);
+			for (const [i, [, , received, message]] of expected.entries()) {
+				const fuz_message = fuz.issues[i]!.message;
+				if (message === 'L') {
 					custom++;
-					assert.strictEqual(fuz_message, zod_message, label);
+					assert.strictEqual(fuz_message, ROLE_NAME_LENGTH_MESSAGE, label);
+				} else if (message === 'P') {
+					custom++;
+					assert.strictEqual(fuz_message, ROLE_NAME_PATTERN_MESSAGE, label);
 				} else {
 					// declared: a value that is no string gets fuz_schema's message
 					assert.notStrictEqual(typeof input, 'string', label);
-					assert.strictEqual(fuz_message, `expected string, received ${fuz_rest.received}`);
+					assert.strictEqual(fuz_message, `expected string, received ${received}`);
 				}
 			}
 		}
@@ -196,10 +284,10 @@ describe('RoleName', () => {
 		);
 	});
 
-	test('its JSON Schema is its Zod copy’s, byte for byte', () => {
+	test('its JSON Schema is the one the Zod copy wrote, byte for byte', () => {
 		assert.strictEqual(
 			JSON.stringify(to_json_schema(RoleName)),
-			JSON.stringify(z.toJSONSchema(ZodRoleName))
+			'{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"string","maxLength":64,"pattern":"^[a-z]+(?:_[a-z]+)*$"}'
 		);
 		assert.deepEqual<Record<string, unknown>>(to_json_schema(RoleName), {
 			$schema: 'https://json-schema.org/draft/2020-12/schema',

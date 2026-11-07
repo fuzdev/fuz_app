@@ -1,13 +1,12 @@
 /**
- * Tests for the hash schemas `Blake3Hash` (fuz_schema) and `ZodFactHashSchema`, the Zod
- * form of `FactHashSchema`.
+ * Tests for the hash schemas `Blake3Hash` and `FactHashSchema`.
  *
  * @module
  */
 
 import { describe, test, assert } from 'vitest';
-import { z } from 'zod';
-import { parse } from '@fuzdev/fuz_schema/schema.ts';
+import { to_json_schema } from '@fuzdev/fuz_schema/json_schema.ts';
+import { array as s_array, nullable as s_nullable, parse } from '@fuzdev/fuz_schema/schema.ts';
 import {
 	FACT_HASH_EXACT,
 	FACT_HASH_PREFIX,
@@ -15,8 +14,7 @@ import {
 	type FactHash
 } from '@fuzdev/fuz_util/hash_schemas.ts';
 
-import { Blake3Hash } from '#lib/primitive_schemas.ts';
-import { ZodFactHashSchema } from '#lib/zod_schemas.ts';
+import { Blake3Hash, FactHashSchema } from '#lib/primitive_schemas.ts';
 
 /** A syntactically valid (if not content-derived) fact hash literal. */
 const HASH_A = (FACT_HASH_PREFIX + 'a'.repeat(64)) as FactHash;
@@ -102,40 +100,46 @@ describe('Blake3Hash', () => {
 	});
 });
 
-describe('ZodFactHashSchema', () => {
-	test('parse throws on a malformed value', () => {
-		assert.throws(() => ZodFactHashSchema.parse('blake3:nope'));
+describe('FactHashSchema', () => {
+	test('parse refuses a malformed value', () => {
+		assert.isFalse(parse(FactHashSchema, 'blake3:nope').ok);
 	});
 
 	test('parse round-trips a well-formed hash unchanged', () => {
 		const raw = FACT_HASH_PREFIX + 'a'.repeat(64);
-		assert.strictEqual(ZodFactHashSchema.parse(raw), raw);
+		const result = parse(FactHashSchema, raw);
+		assert.ok(result.ok);
+		assert.strictEqual(result.value, raw);
 	});
 
-	test('agrees with is_fact_hash', () => {
-		const cases = [
-			HASH_A,
-			FACT_HASH_PREFIX + 'a'.repeat(63),
-			FACT_HASH_PREFIX + 'a'.repeat(65),
-			HASH_A + '\n',
-			'sha256:' + 'a'.repeat(64),
-			FACT_HASH_PREFIX + 'A'.repeat(64),
-			'a'.repeat(64),
-			`see ${HASH_A} here`,
-			''
+	test('agrees with is_fact_hash, and with the verdicts the Zod form gave', () => {
+		// [input, the verdict the earlier Zod form gave, frozen]
+		const cases: Array<[string, boolean]> = [
+			[HASH_A, true],
+			[FACT_HASH_PREFIX + 'a'.repeat(63), false],
+			[FACT_HASH_PREFIX + 'a'.repeat(65), false],
+			[HASH_A + '\n', false],
+			['sha256:' + 'a'.repeat(64), false],
+			[FACT_HASH_PREFIX + 'A'.repeat(64), false],
+			['a'.repeat(64), false],
+			[`see ${HASH_A} here`, false],
+			['', false]
 		];
-		for (const c of cases) {
-			assert.strictEqual(ZodFactHashSchema.safeParse(c).success, is_fact_hash(c), c);
+		for (const [c, expected] of cases) {
+			assert.strictEqual(parse(FactHashSchema, c).ok, expected, c);
+			assert.strictEqual(is_fact_hash(c), expected, c);
 		}
 	});
 
 	test('output is fuz_util FactHash', () => {
-		const parsed: FactHash = ZodFactHashSchema.parse(HASH_A);
+		const result = parse(FactHashSchema, HASH_A);
+		assert.ok(result.ok);
+		const parsed: FactHash = result.value;
 		assert.strictEqual(parsed, HASH_A);
 	});
 
 	test('keeps the regex in its JSON Schema', () => {
-		const json = z.toJSONSchema(z.array(ZodFactHashSchema).nullable()) as Record<string, unknown>;
+		const json = to_json_schema(s_nullable(s_array(FactHashSchema)), { io: 'output' });
 		assert.deepEqual(json.anyOf, [
 			{ type: 'array', items: { type: 'string', pattern: FACT_HASH_EXACT.source } },
 			{ type: 'null' }

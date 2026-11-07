@@ -38,7 +38,7 @@ const missing_invite_id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' as Uuid;
 
 describe_db('invite_actions_failure', (get_db) => {
 	describe('invite_create', () => {
-		test('rejects empty input with Zod validation error', async () => {
+		test('rejects empty input with a validation error', async () => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs: create_admin_route_specs,

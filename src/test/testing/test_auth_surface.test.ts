@@ -9,8 +9,24 @@ import { writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { describe, assert, test, afterEach } from 'vitest';
-import { z } from 'zod';
-import { parse } from '@fuzdev/fuz_schema/schema.ts';
+import {
+	brand,
+	check,
+	iso_datetime,
+	literal,
+	loose_object,
+	min_length,
+	number,
+	object,
+	one_of,
+	optional,
+	parse,
+	parse_or_throw,
+	pipe,
+	regex,
+	string,
+	with_default
+} from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	stub,
@@ -43,7 +59,7 @@ import {
 	assert_error_codes_well_formed
 } from '#lib/testing/surface_invariants.ts';
 import { rest_error } from '#lib/http/error_schemas.ts';
-import { ZodActingActor, ZodFactHashSchema } from '#lib/zod_schemas.ts';
+import { ActingActor, Email, FactHashSchema, Uuid } from '#lib/primitive_schemas.ts';
 
 /** The content type every non-`raw_body` POST route requires. */
 const JSON_HEADERS = { 'content-type': 'application/json' };
@@ -143,8 +159,8 @@ describe('create_test_app_from_specs', () => {
 			auth: { account: 'none', actor: 'none' },
 			handler: () => route_ok({ ok: true }),
 			description: 'Public route',
-			input: z.null(),
-			output: z.strictObject({ ok: z.literal(true) })
+			input: literal(null),
+			output: object({ ok: literal(true) })
 		}),
 		define_route({
 			method: 'GET',
@@ -152,8 +168,8 @@ describe('create_test_app_from_specs', () => {
 			auth: { account: 'required', actor: 'none' },
 			handler: () => route_ok({ secret: true }),
 			description: 'Protected route',
-			input: z.null(),
-			output: z.strictObject({ secret: z.literal(true) })
+			input: literal(null),
+			output: object({ secret: literal(true) })
 		}),
 		define_route({
 			method: 'POST',
@@ -161,9 +177,9 @@ describe('create_test_app_from_specs', () => {
 			auth: { account: 'required', actor: 'required', roles: ['admin'] },
 			handler: () => route_ok({ admin: true }),
 			description: 'Admin route',
-			query: z.strictObject({ acting: ZodActingActor }),
-			input: z.null(),
-			output: z.strictObject({ admin: z.literal(true) })
+			query: object({ acting: ActingActor }),
+			input: literal(null),
+			output: object({ admin: literal(true) })
 		})
 	];
 
@@ -209,8 +225,8 @@ const build_test_surface = (): AppSurface => {
 			auth: { account: 'none', actor: 'none' },
 			handler: stub_handler,
 			description: 'Health check',
-			input: z.null(),
-			output: z.null()
+			input: literal(null),
+			output: literal(null)
 		}),
 		define_route({
 			method: 'POST',
@@ -218,8 +234,8 @@ const build_test_surface = (): AppSurface => {
 			auth: { account: 'none', actor: 'none' },
 			handler: stub_handler,
 			description: 'Login',
-			input: z.null(),
-			output: z.null()
+			input: literal(null),
+			output: literal(null)
 		}),
 		define_route({
 			method: 'GET',
@@ -227,8 +243,8 @@ const build_test_surface = (): AppSurface => {
 			auth: { account: 'required', actor: 'none' },
 			handler: stub_handler,
 			description: 'Protected resource',
-			input: z.null(),
-			output: z.null()
+			input: literal(null),
+			output: literal(null)
 		}),
 		define_route({
 			method: 'POST',
@@ -236,8 +252,8 @@ const build_test_surface = (): AppSurface => {
 			auth: { account: 'required', actor: 'required', roles: ['admin'] },
 			handler: stub_handler,
 			description: 'Admin action',
-			input: z.null(),
-			output: z.null()
+			input: literal(null),
+			output: literal(null)
 		})
 	];
 	return generate_app_surface({ middleware_specs: middleware, route_specs: routes });
@@ -332,8 +348,8 @@ describe('assert_full_middleware_stack', () => {
 			auth: { account: 'required', actor: 'none' },
 			handler: stub_handler,
 			description: 'Read a file',
-			input: z.null(),
-			output: z.null()
+			input: literal(null),
+			output: literal(null)
 		}),
 		define_route({
 			method: 'GET',
@@ -341,8 +357,8 @@ describe('assert_full_middleware_stack', () => {
 			auth: { account: 'required', actor: 'none' },
 			handler: stub_handler,
 			description: 'List things',
-			input: z.null(),
-			output: z.null()
+			input: literal(null),
+			output: literal(null)
 		})
 	];
 	// a body cap over `/api/*` that carves `/api/files/*` out
@@ -466,8 +482,8 @@ const adversarial_specs: Array<RouteSpec> = [
 		auth: { account: 'none', actor: 'none' },
 		handler: () => route_ok({ ok: true }),
 		description: 'Public route',
-		input: z.null(),
-		output: z.strictObject({ ok: z.literal(true) })
+		input: literal(null),
+		output: object({ ok: literal(true) })
 	}),
 	define_route({
 		method: 'GET',
@@ -475,8 +491,8 @@ const adversarial_specs: Array<RouteSpec> = [
 		auth: { account: 'required', actor: 'none' },
 		handler: () => route_ok({ secret: true }),
 		description: 'Protected route',
-		input: z.null(),
-		output: z.strictObject({ secret: z.literal(true) })
+		input: literal(null),
+		output: object({ secret: literal(true) })
 	}),
 	define_route({
 		method: 'POST',
@@ -484,9 +500,9 @@ const adversarial_specs: Array<RouteSpec> = [
 		auth: { account: 'required', actor: 'required', roles: ['admin'] },
 		handler: () => route_ok({ admin: true }),
 		description: 'Admin route',
-		query: z.strictObject({ acting: ZodActingActor }),
-		input: z.null(),
-		output: z.strictObject({ admin: z.literal(true) })
+		query: object({ acting: ActingActor }),
+		input: literal(null),
+		output: object({ admin: literal(true) })
 	}),
 	define_route({
 		method: 'DELETE',
@@ -494,9 +510,9 @@ const adversarial_specs: Array<RouteSpec> = [
 		auth: { account: 'required', actor: 'required', roles: ['keeper'] },
 		handler: () => route_ok({ keeper: true }),
 		description: 'Keeper role route',
-		query: z.strictObject({ acting: ZodActingActor }),
-		input: z.null(),
-		output: z.strictObject({ keeper: z.literal(true) })
+		query: object({ acting: ActingActor }),
+		input: literal(null),
+		output: object({ keeper: literal(true) })
 	}),
 	define_route({
 		method: 'POST',
@@ -509,9 +525,9 @@ const adversarial_specs: Array<RouteSpec> = [
 		},
 		handler: () => route_ok({ keeper: true }),
 		description: 'Keeper auth route',
-		query: z.strictObject({ acting: ZodActingActor }),
-		input: z.null(),
-		output: z.strictObject({ keeper: z.literal(true) })
+		query: object({ acting: ActingActor }),
+		input: literal(null),
+		output: object({ keeper: literal(true) })
 	}),
 	define_route({
 		// The audit SSE stream's shape: a role gate *and* a session-channel
@@ -530,9 +546,9 @@ const adversarial_specs: Array<RouteSpec> = [
 		},
 		handler: () => route_ok({ streamed: true }),
 		description: 'Session-channel-gated admin route',
-		query: z.strictObject({ acting: ZodActingActor }),
-		input: z.null(),
-		output: z.strictObject({ streamed: z.literal(true) })
+		query: object({ acting: ActingActor }),
+		input: literal(null),
+		output: object({ streamed: literal(true) })
 	}),
 	define_route({
 		// Regression guard for the params-schema-aware path synthesizer. The
@@ -544,11 +560,11 @@ const adversarial_specs: Array<RouteSpec> = [
 		method: 'GET',
 		path: '/patterned-params/:hash',
 		auth: { account: 'required', actor: 'none' },
-		params: z.strictObject({ hash: ZodFactHashSchema }),
+		params: object({ hash: FactHashSchema }),
 		handler: () => route_ok({ ok: true }),
 		description: 'Protected route with a format-constrained path param',
-		input: z.null(),
-		output: z.strictObject({ ok: z.literal(true) })
+		input: literal(null),
+		output: object({ ok: literal(true) })
 	})
 ];
 
@@ -576,8 +592,8 @@ describe_adversarial_auth({
 					auth: { account: 'required', actor: 'none' },
 					handler: (c) => route_ok({ slug: c.req.param('slug') }),
 					description: 'A route behind a `{re}` param',
-					input: z.null(),
-					output: z.strictObject({ slug: z.string().optional() })
+					input: literal(null),
+					output: object({ slug: optional(string) })
 				})
 			]
 		}),
@@ -597,12 +613,12 @@ describe_adversarial_input({
 					method: 'POST',
 					path: '/raw-upload/:id',
 					auth: { account: 'required', actor: 'none' },
-					params: z.strictObject({ id: z.uuid() }),
-					query: z.strictObject({ size: z.string().regex(/^\d+$/) }),
+					params: object({ id: Uuid }),
+					query: object({ size: pipe(string, regex(/^\d+$/)) }),
 					handler: () => route_ok({ ok: true }),
 					description: 'Raw-byte upload with a uuid param and a numeric query',
-					input: z.null(),
-					output: z.strictObject({ ok: z.literal(true) }),
+					input: literal(null),
+					output: object({ ok: literal(true) }),
 					raw_body: true
 				})
 			]
@@ -614,7 +630,7 @@ describe_adversarial_input({
 
 describe('resolve_valid_path', () => {
 	test('replaces uuid params with nil UUID', () => {
-		const params = z.strictObject({ id: z.uuid() });
+		const params = object({ id: Uuid });
 		assert.strictEqual(
 			resolve_valid_path('/things/:id', params),
 			'/things/00000000-0000-0000-0000-000000000000'
@@ -622,20 +638,20 @@ describe('resolve_valid_path', () => {
 	});
 
 	test('synthesizes a schema-satisfying value for a non-uuid param', () => {
-		const params = z.strictObject({ name: z.string() });
+		const params = object({ name: string });
 		const resolved = resolve_valid_path('/things/:name', params);
-		assert.ok(params.safeParse({ name: resolved.slice('/things/'.length) }).success);
+		assert.ok(parse(params, { name: resolved.slice('/things/'.length) }).ok);
 	});
 
 	test('falls back to the test_ prefix for a param the schema does not name', () => {
-		const params = z.strictObject({ other: z.string() });
+		const params = object({ other: string });
 		assert.strictEqual(resolve_valid_path('/things/:name', params), '/things/test_name');
 	});
 
 	test('handles multiple params', () => {
-		const params = z.strictObject({
-			account_id: z.uuid(),
-			role_grant_id: z.uuid()
+		const params = object({
+			account_id: Uuid,
+			role_grant_id: Uuid
 		});
 		assert.strictEqual(
 			resolve_valid_path('/accounts/:account_id/role_grants/:role_grant_id', params),
@@ -650,63 +666,66 @@ describe('resolve_valid_path', () => {
 
 describe('generate_valid_body', () => {
 	test('returns undefined for null schema', () => {
-		assert.strictEqual(generate_valid_body(z.null()), undefined);
+		assert.strictEqual(generate_valid_body(literal(null)), undefined);
 	});
 
 	test('generates valid body for simple object schema', () => {
-		const schema = z.strictObject({ name: z.string().min(1) });
+		const schema = object({ name: pipe(string, min_length(1)) });
 		const body = generate_valid_body(schema);
 		assert.ok(body);
 		assert.ok(typeof body.name === 'string');
 		assert.ok(body.name.length >= 1);
 		// confirm it actually passes validation
-		schema.parse(body);
+		parse_or_throw(schema, body);
 	});
 
 	test('generates valid body with uuid field', () => {
-		const schema = z.strictObject({ id: z.uuid() });
+		const schema = object({ id: Uuid });
 		const body = generate_valid_body(schema);
 		assert.ok(body);
 		assert.strictEqual(body.id, '00000000-0000-0000-0000-000000000000');
-		schema.parse(body);
+		parse_or_throw(schema, body);
 	});
 
 	test('skips optional fields without defaults', () => {
-		const schema = z.strictObject({
-			required_field: z.string(),
-			optional_field: z.string().optional()
+		const schema = object({
+			required_field: string,
+			optional_field: optional(string)
 		});
 		const body = generate_valid_body(schema);
 		assert.ok(body);
 		assert.ok('required_field' in body);
 		assert.ok(!('optional_field' in body));
-		schema.parse(body);
+		parse_or_throw(schema, body);
 	});
 
 	test('generates valid body with absolute path refinement', () => {
-		const AbsPath = z.string().refine((p) => p.startsWith('/'));
-		const schema = z.strictObject({ path: AbsPath });
+		const AbsPath = pipe(
+			string,
+			check((p) => p.startsWith('/'))
+		);
+		const schema = object({ path: AbsPath });
 		const body = generate_valid_body(schema);
 		assert.ok(body);
 		const path = body.path;
 		assert.ok(typeof path === 'string');
 		assert.ok(path.startsWith('/'));
-		schema.parse(body);
+		parse_or_throw(schema, body);
 	});
 
 	test('generates valid body with date-time field', () => {
-		const schema = z.strictObject({ created: z.iso.datetime() });
+		const schema = object({ created: pipe(string, iso_datetime) });
 		const body = generate_valid_body(schema);
 		assert.ok(body);
 		assert.strictEqual(body.created, '2020-01-01T00:00:00.000Z');
-		schema.parse(body);
+		parse_or_throw(schema, body);
 	});
 
 	test('generates valid body with nested object', () => {
-		const schema = z.strictObject({
-			config: z.strictObject({
-				name: z.string(),
-				count: z.number()
+		const schema = object({
+			config: object({
+				name: string,
+				count: number
 			})
 		});
 		const body = generate_valid_body(schema);
@@ -714,14 +733,14 @@ describe('generate_valid_body', () => {
 		const config = body.config as Record<string, unknown>;
 		assert.ok(typeof config.name === 'string');
 		assert.ok(typeof config.count === 'number');
-		schema.parse(body);
+		parse_or_throw(schema, body);
 	});
 
 	test('generates valid body with nested object containing optional fields', () => {
-		const schema = z.strictObject({
-			settings: z.strictObject({
-				required_field: z.string(),
-				optional_field: z.number().optional()
+		const schema = object({
+			settings: object({
+				required_field: string,
+				optional_field: optional(number)
 			})
 		});
 		const body = generate_valid_body(schema);
@@ -729,67 +748,78 @@ describe('generate_valid_body', () => {
 		const settings = body.settings as Record<string, unknown>;
 		assert.ok('required_field' in settings);
 		assert.ok(!('optional_field' in settings));
-		schema.parse(body);
+		parse_or_throw(schema, body);
 	});
 
 	test('generates valid body with email field', () => {
-		const schema = z.strictObject({ email: z.email() });
+		const schema = object({ email: Email });
 		const body = generate_valid_body(schema);
 		assert.ok(body);
 		assert.strictEqual(body.email, 'test@example.com');
-		schema.parse(body);
+		parse_or_throw(schema, body);
 	});
 
 	test('generates valid body with url refinement', () => {
-		const schema = z.strictObject({ link: z.url() });
+		const schema = object({
+			link: pipe(
+				string,
+				check((v) => URL.canParse(v) && v.startsWith('https://'))
+			)
+		});
 		const body = generate_valid_body(schema);
 		assert.ok(body);
 		const link = body.link;
 		assert.ok(typeof link === 'string');
 		assert.ok(link.startsWith('https://'));
-		schema.parse(body);
+		parse_or_throw(schema, body);
 	});
 
 	test('generates valid body with branded string', () => {
-		const Branded = z
-			.string()
-			.refine((p) => p.startsWith('/'))
-			.brand('AbsPath');
-		const schema = z.strictObject({ path: Branded });
+		const Branded = brand(
+			pipe(
+				string,
+				check((p) => p.startsWith('/'))
+			),
+			'AbsPath'
+		);
+		const schema = object({ path: Branded });
 		const body = generate_valid_body(schema);
 		assert.ok(body);
 		const path = body.path;
 		assert.ok(typeof path === 'string');
 		assert.ok(path.startsWith('/'));
-		schema.parse(body);
+		parse_or_throw(schema, body);
 	});
 
 	test('generates valid body with enum field', () => {
-		const schema = z.strictObject({
-			status: z.enum(['active', 'inactive', 'pending'])
+		const schema = object({
+			status: one_of(['active', 'inactive', 'pending'])
 		});
 		const body = generate_valid_body(schema);
 		assert.ok(body);
 		assert.strictEqual(body.status, 'active');
-		schema.parse(body);
+		parse_or_throw(schema, body);
 	});
 
 	test('includes fields with defaults', () => {
-		const schema = z.strictObject({
-			name: z.string(),
-			color: z.string().default('blue')
+		const schema = object({
+			name: string,
+			color: with_default(string, 'blue')
 		});
 		const body = generate_valid_body(schema);
 		assert.ok(body);
 		assert.ok('name' in body);
 		assert.ok('color' in body);
-		schema.parse(body);
+		parse_or_throw(schema, body);
 	});
 
 	test('throws for unsatisfiable schema', () => {
 		// Refinement that always rejects — generation produces a value that fails validation
-		const schema = z.strictObject({
-			impossible: z.string().refine(() => false, 'always fails')
+		const schema = object({
+			impossible: pipe(
+				string,
+				check(() => false)
+			)
 		});
 		assert.throws(() => generate_valid_body(schema), /generate_valid_body/);
 	});
@@ -822,9 +852,9 @@ const adversarial_404_specs: Array<RouteSpec> = [
 		auth: { account: 'required', actor: 'none' },
 		handler: stub_handler,
 		description: 'Get a thing',
-		params: z.strictObject({ id: z.uuid() }),
-		input: z.null(),
-		output: z.looseObject({ name: z.string() }),
+		params: object({ id: Uuid }),
+		input: literal(null),
+		output: loose_object({ name: string }),
 		errors: [rest_error(404, ERROR_THING_NOT_FOUND)]
 	}),
 	// Route with params + two 404 definitions → should generate a test (uses the first)
@@ -834,10 +864,10 @@ const adversarial_404_specs: Array<RouteSpec> = [
 		auth: { account: 'required', actor: 'required', roles: ['admin'] },
 		handler: stub_handler,
 		description: 'Delete an item',
-		params: z.strictObject({ id: z.uuid() }),
-		query: z.strictObject({ acting: ZodActingActor }),
-		input: z.null(),
-		output: z.looseObject({ ok: z.literal(true) }),
+		params: object({ id: Uuid }),
+		query: object({ acting: ActingActor }),
+		input: literal(null),
+		output: loose_object({ ok: literal(true) }),
 		errors: [rest_error(404, ERROR_ITEM_NOT_FOUND), rest_error(404, ERROR_WIDGET_NOT_FOUND)]
 	}),
 	// Route with params + input + 404 → should generate a test with valid body
@@ -847,9 +877,9 @@ const adversarial_404_specs: Array<RouteSpec> = [
 		auth: { account: 'required', actor: 'none' },
 		handler: stub_handler,
 		description: 'Rename a thing',
-		params: z.strictObject({ id: z.uuid() }),
-		input: z.strictObject({ name: z.string().min(1) }),
-		output: z.looseObject({ ok: z.literal(true) }),
+		params: object({ id: Uuid }),
+		input: object({ name: pipe(string, min_length(1)) }),
+		output: loose_object({ ok: literal(true) }),
 		errors: [rest_error(404, ERROR_THING_NOT_FOUND)]
 	}),
 	// Route with params but no 404 → should be skipped
@@ -859,9 +889,9 @@ const adversarial_404_specs: Array<RouteSpec> = [
 		auth: { account: 'none', actor: 'none' },
 		handler: stub_handler,
 		description: 'Get a widget',
-		params: z.strictObject({ id: z.uuid() }),
-		input: z.null(),
-		output: z.looseObject({ name: z.string() })
+		params: object({ id: Uuid }),
+		input: literal(null),
+		output: loose_object({ name: string })
 	}),
 	// Route with 404 but no params → should be skipped
 	define_route({
@@ -870,8 +900,8 @@ const adversarial_404_specs: Array<RouteSpec> = [
 		auth: { account: 'none', actor: 'none' },
 		handler: stub_handler,
 		description: 'Status check',
-		input: z.null(),
-		output: z.looseObject({ ok: z.literal(true) }),
+		input: literal(null),
+		output: loose_object({ ok: literal(true) }),
 		errors: [rest_error(404, 'not_configured')]
 	})
 ];
@@ -898,8 +928,8 @@ describe_adversarial_404({
 					auth: { account: 'none', actor: 'none' },
 					handler: stub_handler,
 					description: 'Health',
-					input: z.null(),
-					output: z.null()
+					input: literal(null),
+					output: literal(null)
 				})
 			]
 		}),

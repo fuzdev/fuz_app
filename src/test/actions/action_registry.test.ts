@@ -5,7 +5,7 @@
  */
 
 import { describe, assert, test } from 'vitest';
-import { z } from 'zod';
+import { literal, void as fuz_void } from '@fuzdev/fuz_schema/schema.ts';
 
 import { ActionRegistry } from '#lib/actions/action_registry.ts';
 import { is_public_auth } from '#lib/http/auth_shape.ts';
@@ -27,8 +27,8 @@ const rr = (
 		initiator,
 		auth,
 		side_effects: true as const,
-		input: z.null(),
-		output: z.null(),
+		input: literal(null),
+		output: literal(null),
 		async: true as const,
 		description: method,
 		...(streams ? { streams } : {})
@@ -41,8 +41,8 @@ const rn = (method: string, initiator: 'frontend' | 'backend' | 'both' = 'backen
 		initiator,
 		auth: null,
 		side_effects: true as const,
-		input: z.null(),
-		output: z.void(),
+		input: literal(null),
+		output: fuz_void,
 		async: true as const,
 		description: method
 	}) as const;
@@ -54,8 +54,8 @@ const lc = (method: string) =>
 		initiator: 'frontend' as const,
 		auth: null,
 		side_effects: false,
-		input: z.null(),
-		output: z.null(),
+		input: literal(null),
+		output: literal(null),
 		async: false as const,
 		description: method
 	}) as const;

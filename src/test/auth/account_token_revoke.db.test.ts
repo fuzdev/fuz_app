@@ -51,7 +51,7 @@ describe_db('account_token_revoke', (get_db) => {
 			db: get_db()
 		});
 
-	test('the assembled surface carries the Zod-era entry', async () => {
+	test('the assembled surface carries the captured entry', async () => {
 		const test_app = await setup();
 		const method = test_app.surface.rpc_endpoints
 			.flatMap((ep) => ep.methods)
@@ -124,7 +124,7 @@ describe_db('account_token_revoke', (get_db) => {
 		assert.strictEqual(issues.length, 1);
 		assert.strictEqual(issues[0]!.kind, 'regex');
 		assert.deepStrictEqual(issues[0]!.path, ['token_id']);
-		// the received type, as the Zod schema's issue named it too
+		// the received type
 		assert.strictEqual(issues[0]!.received, 'string');
 		for (const issue of issues) assert.ok(is(WireIssue, issue));
 	});

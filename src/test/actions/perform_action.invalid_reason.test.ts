@@ -8,11 +8,11 @@
 
 import { describe, assert, test } from 'vitest';
 import { Hono } from 'hono';
-import { z } from 'zod';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import {
 	array,
 	integer,
+	literal,
 	max_value,
 	min_value,
 	number,
@@ -54,16 +54,21 @@ import {
 const log = new Logger('test', { level: 'off' });
 const db = create_stub_db();
 
-const ThingInput = z.strictObject({
-	count: z.number().int().min(1).max(10).meta({ invalid_reason: 'count_invalid' }),
-	page: z
-		.strictObject({
-			size: z.number().int().min(1).meta({ invalid_reason: 'page_size_invalid' }),
-			cursor: z.string().optional()
-		})
-		.optional()
-		.meta({ invalid_reason: 'page_invalid' }),
-	label: z.string().optional()
+const ThingInput = object({
+	count: meta(pipe(number, integer, min_value(1), max_value(10)), {
+		invalid_reason: 'count_invalid'
+	}),
+	page: meta(
+		optional(
+			object({
+				size: meta(pipe(number, integer, min_value(1)), { invalid_reason: 'page_size_invalid' }),
+				cursor: optional(string)
+			})
+		),
+		{ invalid_reason: 'page_invalid' }
+	),
+	ids: optional(meta(array(number), { invalid_reason: 'ids_invalid' })),
+	label: optional(string)
 });
 
 const thing_spec: RequestResponseActionSpec = {
@@ -73,26 +78,9 @@ const thing_spec: RequestResponseActionSpec = {
 	auth: { account: 'none', actor: 'none' },
 	side_effects: true,
 	input: ThingInput,
-	output: z.strictObject({ ok: z.literal(true) }),
+	output: object({ ok: literal(true) }),
 	async: true,
 	description: 'a thing with declared reasons'
-};
-
-// the same input in fuz_schema, specced through the same dispatcher. `ActionSpec`
-// types its schemas as Zod, so the spec casts it in
-const FuzThingInput = object({
-	count: meta(pipe(number, integer, min_value(1), max_value(10)), {
-		invalid_reason: 'count_invalid'
-	}),
-	ids: optional(meta(array(number), { invalid_reason: 'ids_invalid' })),
-	label: optional(string)
-});
-
-const fuz_thing_spec: RequestResponseActionSpec = {
-	...thing_spec,
-	method: 'fuz_thing_put',
-	input: FuzThingInput,
-	description: 'a fuz_schema thing with declared reasons'
 };
 
 const create_app = (): Hono => {
@@ -101,10 +89,7 @@ const create_app = (): Hono => {
 		app,
 		create_rpc_endpoint({
 			path: '/api/rpc',
-			actions: [
-				{ spec: thing_spec, handler: () => ({ ok: true }) },
-				{ spec: fuz_thing_spec, handler: () => ({ ok: true }) }
-			],
+			actions: [{ spec: thing_spec, handler: () => ({ ok: true }) }],
 			log,
 			action_ip_rate_limiter: null,
 			action_account_rate_limiter: null
@@ -119,8 +104,7 @@ const create_app = (): Hono => {
 /** POST `params`, return the status and `error`. */
 const send = async (
 	app: Hono,
-	params: unknown,
-	method = 'thing_put'
+	params: unknown
 ): Promise<{
 	status: number;
 	result?: unknown;
@@ -129,13 +113,19 @@ const send = async (
 	const res = await app.request('/api/rpc', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ jsonrpc: '2.0', id: '1', method, params })
+		body: JSON.stringify({ jsonrpc: '2.0', id: '1', method: 'thing_put', params })
 	});
 	const body = await res.json();
 	return { status: res.status, result: body.result, error: body.error };
 };
 
 describe('declared invalid_reason on the RPC dispatcher', () => {
+	test('a valid call passes', async () => {
+		const { status, result } = await send(create_app(), { count: 1, ids: [1] });
+		assert.strictEqual(status, 200);
+		assert.deepStrictEqual(result, { ok: true });
+	});
+
 	test('every fault kind on a declared field carries its reason', async () => {
 		const app = create_app();
 		for (const params of [
@@ -153,6 +143,7 @@ describe('declared invalid_reason on the RPC dispatcher', () => {
 			assert.strictEqual(error.data?.reason, 'count_invalid', JSON.stringify(params));
 			// the issues stay beside it under DEV
 			assert.ok(Array.isArray(error.data?.issues));
+			assert.strictEqual(typeof error.data.issues[0].kind, 'string');
 		}
 	});
 
@@ -204,8 +195,20 @@ describe('declared invalid_reason on the RPC dispatcher', () => {
 		}
 	});
 
+	test('an unknown key the issue cap crowds out still answers none', async () => {
+		const app = create_app();
+		const ids = Array.from({ length: 101 }, () => 'x');
+		const crowded = await send(app, { count: 1, ids, extra: true });
+		assert.strictEqual(crowded.status, 400);
+		assert.strictEqual(crowded.error.data?.issues.length, 100);
+		assert.notProperty(crowded.error.data, 'reason');
+		// without the extra key, the crowded field answers its own reason
+		const own = await send(app, { count: 1, ids });
+		assert.strictEqual(own.error.data?.reason, 'ids_invalid');
+	});
+
 	test('the first issue picks the field', async () => {
-		// both fields fail; Zod reports `count` first, in shape order
+		// both fields fail; issues come in entry order, so `count` first
 		const { error } = await send(create_app(), { count: 0, page: { size: 0 } });
 		assert.strictEqual(error.data?.reason, 'count_invalid');
 	});
@@ -219,8 +222,12 @@ describe('declared invalid_reason on the RPC dispatcher', () => {
 		const event = create_action_event(environment, thing_spec, { count: 0 });
 		event.parse();
 		assert.strictEqual(event.data.step, 'failed');
-		const error = event.data.error as { code: number; data?: any };
+		const error = event.data.error as { code: number; message: string; data?: any };
 		assert.strictEqual(error.code, JSONRPC_ERROR_CODES.invalid_params);
+		assert.strictEqual(
+			error.message,
+			'failed to parse input: count: expected >= 1, received number'
+		);
 		assert.strictEqual(error.data?.reason, 'count_invalid');
 		assert.deepStrictEqual(error.data?.validation_errors, [
 			{
@@ -228,7 +235,7 @@ describe('declared invalid_reason on the RPC dispatcher', () => {
 				path: ['count'],
 				expected: '>= 1',
 				received: 'number',
-				message: 'Too small: expected number to be >=1'
+				message: 'count: expected >= 1, received number'
 			}
 		]);
 		const extra = create_action_event(environment, thing_spec, { count: 0, extra: true });
@@ -239,79 +246,7 @@ describe('declared invalid_reason on the RPC dispatcher', () => {
 	});
 });
 
-describe('declared invalid_reason on a fuz_schema-specced action', () => {
-	const send_fuz = (app: Hono, params: unknown) => send(app, params, 'fuz_thing_put');
-
-	test('a valid call passes', async () => {
-		const { status, result } = await send_fuz(create_app(), { count: 1, ids: [1] });
-		assert.strictEqual(status, 200);
-		assert.deepStrictEqual(result, { ok: true });
-	});
-
-	test('every fault kind on a declared field carries its reason', async () => {
-		const app = create_app();
-		for (const params of [{}, { count: null }, { count: 'x' }, { count: 0 }, { count: 1.5 }]) {
-			const { status, error } = await send_fuz(app, params);
-			assert.strictEqual(status, 400, JSON.stringify(params));
-			assert.strictEqual(error.code, JSONRPC_ERROR_CODES.invalid_params);
-			assert.strictEqual(error.message, 'invalid params');
-			assert.strictEqual(error.data?.reason, 'count_invalid', JSON.stringify(params));
-			// the fuz_schema issues stay beside it under DEV
-			assert.ok(Array.isArray(error.data?.issues));
-			assert.strictEqual(typeof error.data.issues[0].kind, 'string');
-		}
-	});
-
-	test('an undeclared field or a whole-input fault carries none', async () => {
-		const app = create_app();
-		for (const params of [
-			{ count: 1, label: 4 },
-			{ count: 1, extra: true },
-			{ count: 0, extra: true }
-		]) {
-			const { status, error } = await send_fuz(app, params);
-			assert.strictEqual(status, 400);
-			assert.strictEqual(error.code, JSONRPC_ERROR_CODES.invalid_params);
-			assert.notProperty(error.data, 'reason', JSON.stringify(params));
-		}
-	});
-
-	test('an unknown key the issue cap crowds out still answers none', async () => {
-		const app = create_app();
-		const ids = Array.from({ length: 101 }, () => 'x');
-		const crowded = await send_fuz(app, { count: 1, ids, extra: true });
-		assert.strictEqual(crowded.status, 400);
-		assert.strictEqual(crowded.error.data?.issues.length, 100);
-		assert.notProperty(crowded.error.data, 'reason');
-		// without the extra key, the crowded field answers its own reason
-		const own = await send_fuz(app, { count: 1, ids });
-		assert.strictEqual(own.error.data?.reason, 'ids_invalid');
-	});
-
-	test('a local ActionEvent parse carries the same reason', () => {
-		const environment: ActionEventEnvironment = {
-			executor: 'frontend',
-			lookup_action_handler: () => undefined,
-			lookup_action_spec: (method) =>
-				method === fuz_thing_spec.method ? fuz_thing_spec : undefined
-		};
-		const event = create_action_event(environment, fuz_thing_spec, { count: 0 });
-		event.parse();
-		assert.strictEqual(event.data.step, 'failed');
-		const error = event.data.error as { code: number; message: string; data?: any };
-		assert.strictEqual(error.code, JSONRPC_ERROR_CODES.invalid_params);
-		assert.strictEqual(
-			error.message,
-			'failed to parse input: count: expected >= 1, received number'
-		);
-		assert.strictEqual(error.data?.reason, 'count_invalid');
-		const extra = create_action_event(environment, fuz_thing_spec, { count: 0, extra: true });
-		extra.parse();
-		assert.notProperty((extra.data.error as { data?: any }).data, 'reason');
-	});
-});
-
-/** The reason `input`, Zod or fuz_schema, answers `params` with, through the dispatcher's mapping. */
+/** The reason `input` answers `params` with, through the dispatcher's mapping. */
 const reason_for = (input: ValidationSchema, params: unknown): unknown => {
 	const result = parse_any(input, params);
 	assert.ok(!result.ok, `refused: ${JSON.stringify(params)}`);

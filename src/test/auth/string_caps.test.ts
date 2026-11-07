@@ -1,15 +1,10 @@
 /**
  * Every length-capped wire string with no grammar of its own counts UTF-16
- * code units at its own site — an astral string at the cap in code units passes, and one past
- * the cap in code units but under it in code points is refused, whichever
- * unit the installed Zod's `.max()` counts.
+ * code units at its own site — an astral string at the cap in code units
+ * passes, and one past the cap in code units but under it in code points is
+ * refused.
  *
- * The per-site complement to `primitive_schemas.bounded_string.test.ts`. These
- * cases only bite on a Zod that counts code points — there a site gone back to
- * a bare `.max()` fails them; on a code unit Zod they pass either way. A
- * `@fuzdev/fuz_schema` site (`actor_search`'s `query`, the passwords, the
- * login username, the token name) counts code units itself, so its cases bite
- * on any install.
+ * The per-site complement to `primitive_schemas.bounded_string.test.ts`.
  *
  * @module
  */
@@ -57,7 +52,7 @@ const ASTRAL = '\u{1F600}';
 const astral_of = (units: number): string =>
 	ASTRAL.repeat(Math.floor(units / 2)) + (units % 2 === 0 ? '' : 'a');
 
-// Zod sites and `@fuzdev/fuz_schema` ones alike, read through `parse_any`
+// read through `parse_any`
 const capped: Array<[name: string, schema: ValidationSchema, max: number]> = [
 	['UsernameProvided', UsernameProvided, USERNAME_PROVIDED_LENGTH_MAX],
 	['Password', Password, PASSWORD_LENGTH_MAX],

@@ -17,10 +17,16 @@
 import { afterEach, describe, assert, test, vi } from 'vitest';
 import { Hono } from 'hono';
 import { WSContext } from 'hono/ws';
-import { z } from 'zod';
-import { parse_or_throw } from '@fuzdev/fuz_schema/schema.ts';
+import {
+	boolean,
+	literal,
+	object,
+	parse_or_throw,
+	string,
+	void as fuz_void
+} from '@fuzdev/fuz_schema/schema.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
-import { create_uuid } from '#lib/primitive_schemas.ts';
+import { ActingActor, create_uuid } from '#lib/primitive_schemas.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
 import {
@@ -87,7 +93,6 @@ import {
 	ForeignRpcError,
 	SecondCopyThrownJsonrpcError
 } from '../http/thrown_jsonrpc_error_helpers.ts';
-import { ZodActingActor } from '#lib/zod_schemas.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -99,8 +104,8 @@ const echo_spec: RequestResponseActionSpec = {
 	initiator: 'frontend',
 	auth: { account: 'required', actor: 'none' },
 	side_effects: false,
-	input: z.strictObject({ value: z.string() }),
-	output: z.strictObject({ value: z.string() }),
+	input: object({ value: string }),
+	output: object({ value: string }),
 	async: true,
 	description: 'echo'
 };
@@ -111,8 +116,8 @@ const no_input_spec: RequestResponseActionSpec = {
 	initiator: 'frontend',
 	auth: { account: 'none', actor: 'none' },
 	side_effects: false,
-	input: z.null(),
-	output: z.null(),
+	input: literal(null),
+	output: literal(null),
 	async: true,
 	description: 'ping'
 };
@@ -128,8 +133,8 @@ const keeper_spec: RequestResponseActionSpec = {
 		credential_types: ['daemon_token']
 	},
 	side_effects: false,
-	input: z.strictObject({ acting: ZodActingActor }),
-	output: z.null(),
+	input: object({ acting: ActingActor }),
+	output: literal(null),
 	async: true,
 	description: 'keeper only'
 };
@@ -140,8 +145,8 @@ const role_spec: RequestResponseActionSpec = {
 	initiator: 'frontend',
 	auth: { account: 'required', actor: 'required', roles: ['admin'] },
 	side_effects: false,
-	input: z.strictObject({ acting: ZodActingActor }),
-	output: z.null(),
+	input: object({ acting: ActingActor }),
+	output: literal(null),
 	async: true,
 	description: 'role only'
 };
@@ -589,12 +594,12 @@ describe('register_action_ws', () => {
 
 	test('a void input answers absent params and {} alike, and refuses a declared key', async () => {
 		// the published socket client sends `{}` for a parameterless call — a
-		// `z.void()` method must read it as the no-arg call over WS too
+		// `void`-input method must read it as the no-arg call over WS too
 		const void_spec: RequestResponseActionSpec = {
 			...no_input_spec,
 			method: 'void_ping',
-			input: z.void(),
-			output: z.strictObject({ ok: z.literal(true) })
+			input: fuz_void,
+			output: object({ ok: literal(true) })
 		};
 		const received: Array<unknown> = [];
 		const h = await build_harness({
@@ -628,8 +633,8 @@ describe('register_action_ws', () => {
 		const void_spec: RequestResponseActionSpec = {
 			...no_input_spec,
 			method: 'void_ping',
-			input: z.void(),
-			output: z.strictObject({ ok: z.literal(true) })
+			input: fuz_void,
+			output: object({ ok: literal(true) })
 		};
 		const received: Array<unknown> = [];
 		const record = (input: unknown) => {
@@ -1504,8 +1509,8 @@ describe('register_action_ws self-revocation', () => {
 		initiator: 'frontend',
 		auth: { account: 'required', actor: 'none' },
 		side_effects: true,
-		input: z.void(),
-		output: z.strictObject({ revoked: z.boolean() }),
+		input: fuz_void,
+		output: object({ revoked: boolean }),
 		async: true,
 		description: 'revoke the session this socket is on'
 	};
@@ -2234,8 +2239,8 @@ describe('register_action_ws rate limit', () => {
 		initiator: 'frontend',
 		auth: { account: 'required', actor: 'none' },
 		side_effects: false,
-		input: z.strictObject({ value: z.string() }),
-		output: z.strictObject({ value: z.string() }),
+		input: object({ value: string }),
+		output: object({ value: string }),
 		async: true,
 		description: 'Account-keyed throttled echo',
 		rate_limit: 'account'
@@ -2375,8 +2380,8 @@ describe('register_action_ws inbound dispatch', () => {
 		initiator: 'frontend',
 		auth: { account: 'required', actor: 'none' },
 		side_effects: false,
-		input: z.void(),
-		output: z.string(),
+		input: fuz_void,
+		output: string,
 		async: true,
 		description: 'held until cancelled or released'
 	};

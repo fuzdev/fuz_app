@@ -7,9 +7,8 @@
  * forgot handler" (or "added handler, forgot registry") fails fast.
  * Also pins the input's `'personal'` query, which keeps a search off the URL,
  * and `actor_search`'s `@fuzdev/fuz_schema` schemas: their surface entry is
- * the one the Zod schemas wrote, captured in `fixtures/surface/actor_search.json`,
- * and the issues an invalid input gets keep the Zod ones' `kind`, `path`,
- * `expected` and `received`, their `message` fuz_schema's text.
+ * the one captured in `fixtures/surface/actor_search.json`, and the wire
+ * issues an invalid input gets.
  *
  * @module
  */
@@ -89,7 +88,7 @@ describe('actor_search schemas', () => {
 		assert.ok(is_schema(ActorSearchOutput));
 	});
 
-	test('the surface entry is the Zod-era one', () => {
+	test('the surface entry is the captured one', () => {
 		const surface = generate_app_surface({
 			route_specs: [],
 			middleware_specs: [],
@@ -99,9 +98,9 @@ describe('actor_search schemas', () => {
 		});
 		assert.deepStrictEqual(surface.diagnostics, []);
 		const entry = surface.rpc_endpoints[0]!.methods[0];
-		// equal as JSON, not byte for byte: fuz_schema writes a node's keywords in
-		// its own order (`type` first, metadata last), where Zod wrote the
-		// `description` of an optional field first
+		// equal as JSON, not byte for byte: a node's keywords are written `type`
+		// first, metadata last, where the capture has the `description` of an
+		// optional field first
 		assert.deepStrictEqual(entry, JSON.parse(readFileSync(SURFACE_FIXTURE_PATH, 'utf8')));
 	});
 
@@ -138,7 +137,7 @@ describe('actor_search schemas', () => {
 		assert.deepStrictEqual<unknown>(upper.value, { query: 'a', scope_ids: [ID] });
 	});
 
-	test('an invalid input gets the Zod issue but for its message', () => {
+	test('an invalid input gets its wire issue', () => {
 		const max = ACTOR_SEARCH_QUERY_LENGTH_MAX;
 		const cap = ACTOR_SEARCH_LIMIT_MAX;
 		const cases: Array<[input: unknown, issue: Array<unknown>]> = [

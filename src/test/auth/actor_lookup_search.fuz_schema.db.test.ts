@@ -1,10 +1,9 @@
 /**
  * `actor_lookup` and `actor_search`, whose schemas are `@fuzdev/fuz_schema`,
- * through an assembled app: the surface carries the Zod-era entries, a valid
+ * through an assembled app: the surface carries the captured entries, a valid
  * call answers the handler's object as it was built, an uppercase id resolves
  * as its lowercase form, and an invalid input is refused with `-32602` and,
- * under DEV, the issue the Zod schemas gave but for its message, fuz_schema's
- * text.
+ * under DEV, its wire issue.
  *
  * @module
  */
@@ -96,7 +95,7 @@ describe_db('actor_lookup and actor_search on fuz_schema', (get_db) => {
 		return { test_app, alpha_id: alpha.actor.id, scope };
 	};
 
-	test('the assembled surface carries the Zod-era entries', async () => {
+	test('the assembled surface carries the captured entries', async () => {
 		const { test_app } = await setup();
 		const methods = test_app.surface.rpc_endpoints.flatMap((ep) => ep.methods);
 		for (const name of [actor_lookup_action_spec.method, actor_search_action_spec.method]) {

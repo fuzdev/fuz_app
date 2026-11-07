@@ -7,7 +7,7 @@
  */
 
 import { describe, test, assert } from 'vitest';
-import { z } from 'zod';
+import { literal, object, string } from '@fuzdev/fuz_schema/schema.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
 import { ErrorCoverageCollector, assert_error_coverage } from '#lib/testing/error_coverage.ts';
@@ -21,9 +21,9 @@ const route = define_route({
 	path: '/api/things/:id',
 	auth: { account: 'required', actor: 'none' },
 	description: 'Gets a thing.',
-	params: z.strictObject({ id: z.string() }),
-	input: z.null(),
-	output: z.null(),
+	params: object({ id: string }),
+	input: literal(null),
+	output: literal(null),
 	// a second shape of the derived 401's code, and a 404 of its own
 	errors: [REST_AUTHENTICATION_REQUIRED_BOOTSTRAP, rest_error(404, 'thing_not_found')],
 	handler: () => route_ok(null)

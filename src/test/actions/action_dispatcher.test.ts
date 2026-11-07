@@ -5,7 +5,14 @@
  */
 
 import { describe, assert, test, vi, afterEach } from 'vitest';
-import { z } from 'zod';
+import {
+	literal,
+	number,
+	object,
+	optional,
+	string,
+	void as fuz_void
+} from '@fuzdev/fuz_schema/schema.ts';
 
 import { ActionDispatcher } from '#lib/actions/action_dispatcher.ts';
 import { Transports, type Transport } from '#lib/actions/transports.ts';
@@ -22,8 +29,8 @@ const ping_spec = {
 	initiator: 'both',
 	auth: { account: 'none', actor: 'none' },
 	side_effects: false,
-	input: z.null(),
-	output: z.strictObject({ pong: z.literal(true) }),
+	input: literal(null),
+	output: object({ pong: literal(true) }),
 	async: true,
 	description: 'Health check'
 } satisfies ActionSpecUnion;
@@ -34,8 +41,8 @@ const notify_spec = {
 	initiator: 'backend',
 	auth: null,
 	side_effects: true,
-	input: z.strictObject({ id: z.string() }),
-	output: z.void(),
+	input: object({ id: string }),
+	output: fuz_void,
 	async: true,
 	description: 'Notification'
 } satisfies ActionSpecUnion;
@@ -46,8 +53,8 @@ const void_request_spec = {
 	initiator: 'backend',
 	auth: { account: 'none', actor: 'none' },
 	side_effects: false,
-	input: z.void(),
-	output: z.strictObject({ ok: z.literal(true) }),
+	input: fuz_void,
+	output: object({ ok: literal(true) }),
 	async: true,
 	description: 'A parameterless backend-initiated request'
 } satisfies ActionSpecUnion;
@@ -58,8 +65,8 @@ const void_notify_spec = {
 	initiator: 'backend',
 	auth: null,
 	side_effects: true,
-	input: z.void(),
-	output: z.void(),
+	input: fuz_void,
+	output: fuz_void,
 	async: true,
 	description: 'A parameterless notification'
 } satisfies ActionSpecUnion;
@@ -70,8 +77,8 @@ const optional_input_spec = {
 	initiator: 'backend',
 	auth: { account: 'none', actor: 'none' },
 	side_effects: false,
-	input: z.strictObject({ limit: z.number().optional() }),
-	output: z.strictObject({ ok: z.literal(true) }),
+	input: object({ limit: optional(number) }),
+	output: object({ ok: literal(true) }),
 	async: true,
 	description: 'A request whose input fields are all optional'
 } satisfies ActionSpecUnion;

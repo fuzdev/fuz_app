@@ -6,7 +6,7 @@
  * `parse_token_lifetime_param` unit tests pin the same rows
  * (`fuz_auth/src/account_action_specs.rs`), and the wire-level agreement is
  * gated by the `token_lifetime` cross suite — this file keeps the TS side's
- * table explicit so a Zod-shape edit can't silently diverge from the
+ * table explicit so a schema-shape edit can't silently diverge from the
  * hand-rolled Rust parser.
  *
  * @module

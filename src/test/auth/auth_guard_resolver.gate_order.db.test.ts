@@ -22,7 +22,8 @@
  */
 
 import { assert, describe, test } from 'vitest';
-import { z } from 'zod';
+import * as s from '@fuzdev/fuz_schema/schema.ts';
+import { ActingActor } from '#lib/primitive_schemas.ts';
 
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_test_app } from '#lib/testing/app_server.ts';
@@ -34,7 +35,6 @@ import { define_route, type RouteSpec } from '#lib/http/route_spec.ts';
 import { route_ok } from '#lib/http/route_result.ts';
 
 import { describe_db } from '../auth_db_default.ts';
-import { ZodActingActor } from '#lib/zod_schemas.ts';
 
 const session_options = create_session_config('test_session');
 const SESSION_ONLY_PATH = '/api/test_session_only';
@@ -46,9 +46,9 @@ const create_route_specs = (): Array<RouteSpec> => [
 		path: SESSION_ONLY_PATH,
 		auth: { account: 'required', actor: 'required', credential_types: ['session'] },
 		description: 'Session-channel route that also resolves an acting actor',
-		query: z.strictObject({ acting: ZodActingActor }),
-		input: z.null(),
-		output: z.strictObject({ actor_id: z.string().nullable() }),
+		query: s.object({ acting: ActingActor }),
+		input: s.literal(null),
+		output: s.object({ actor_id: s.nullable(s.string) }),
 		handler: (c) => route_ok({ actor_id: require_request_context(c).actor?.id ?? null })
 	})
 ];

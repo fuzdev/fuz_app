@@ -8,7 +8,18 @@
 
 import { route_raw } from '#lib/http/route_result.ts';
 import { describe, test, assert } from 'vitest';
-import { z } from 'zod';
+import {
+	array,
+	lazy,
+	literal,
+	object,
+	pipe,
+	string,
+	transform,
+	void as fuz_void,
+	type AnySchema,
+	type Schema
+} from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	assert_output_schemas_no_sensitive_fields,
@@ -28,30 +39,33 @@ import type { ResolvedWsEndpointSpec } from '#lib/actions/ws_endpoint_spec.ts';
 const AUTHED: RouteAuth = { account: 'required', actor: 'none' };
 const ADMIN: RouteAuth = { account: 'required', actor: 'none', roles: ['admin'] };
 
-const Clean = z.strictObject({ name: z.string() });
-const Sensitive = z.strictObject({ password_hash: z.string() });
-const AdminOnly = z.strictObject({ created_by: z.string() });
+const Clean = object({ name: string });
+const Sensitive = object({ password_hash: string });
+const AdminOnly = object({ created_by: string });
 // a transform's output has no JSON Schema form: its subtree is `{}` on the output side
-const TransformedSensitive = z.strictObject({
-	account: Sensitive.transform((x) => x)
+const TransformedSensitive = object({
+	account: pipe(
+		Sensitive,
+		transform((x) => x)
+	)
 });
 
-const route = (output: z.ZodType, auth: RouteAuth = AUTHED): RouteSpec =>
+const route = (output: AnySchema, auth: RouteAuth = AUTHED): RouteSpec =>
 	define_route({
 		method: 'GET',
 		path: '/api/thing',
 		auth,
 		handler: () => route_raw(new Response(null)),
 		description: 'A thing.',
-		input: z.null(),
+		input: literal(null),
 		output
 	});
 
 const rpc_spec = (
-	output: z.ZodType,
+	output: AnySchema,
 	auth: RouteAuth = AUTHED,
 	initiator: RequestResponseActionSpec['initiator'] = 'frontend',
-	input: z.ZodType = z.strictObject({})
+	input: AnySchema = object({})
 ): RequestResponseActionSpec => ({
 	method: 'thing_get',
 	kind: 'request_response',
@@ -64,14 +78,14 @@ const rpc_spec = (
 	description: 'Get a thing.'
 });
 
-const notification_spec = (input: z.ZodType): RemoteNotificationActionSpec => ({
+const notification_spec = (input: AnySchema): RemoteNotificationActionSpec => ({
 	method: 'thing_changed',
 	kind: 'remote_notification',
 	initiator: 'backend',
 	auth: null,
 	side_effects: true,
 	input,
-	output: z.void(),
+	output: fuz_void,
 	async: true,
 	description: 'A thing changed.'
 });
@@ -83,10 +97,10 @@ const ws_endpoint = (
 
 const handler = async () => ({});
 
-const with_route = (output: z.ZodType, auth?: RouteAuth): AppSurfaceSpec =>
+const with_route = (output: AnySchema, auth?: RouteAuth): AppSurfaceSpec =>
 	create_app_surface_spec({ route_specs: [route(output, auth)], middleware_specs: [] });
 
-const with_rpc = (output: z.ZodType, auth?: RouteAuth): AppSurfaceSpec =>
+const with_rpc = (output: AnySchema, auth?: RouteAuth): AppSurfaceSpec =>
 	create_app_surface_spec({
 		route_specs: [],
 		middleware_specs: [],
@@ -94,7 +108,7 @@ const with_rpc = (output: z.ZodType, auth?: RouteAuth): AppSurfaceSpec =>
 	});
 
 const with_ws = (
-	output: z.ZodType,
+	output: AnySchema,
 	auth?: RouteAuth,
 	required_roles?: ResolvedWsEndpointSpec['required_roles']
 ): AppSurfaceSpec =>
@@ -105,7 +119,7 @@ const with_ws = (
 	});
 
 const with_ws_notification = (
-	input: z.ZodType,
+	input: AnySchema,
 	required_roles?: ResolvedWsEndpointSpec['required_roles']
 ): AppSurfaceSpec =>
 	create_app_surface_spec({
@@ -114,7 +128,7 @@ const with_ws_notification = (
 		ws_endpoints: [ws_endpoint([{ spec: notification_spec(input) }], required_roles)]
 	});
 
-const output_names = (schema: z.ZodType): Set<string> =>
+const output_names = (schema: AnySchema): Set<string> =>
 	collect_json_schema_property_names(schema_to_surface(schema, { io: 'output', source: 'test' }));
 
 describe('assert_output_schemas_no_sensitive_fields', () => {
@@ -243,8 +257,11 @@ describe('assert_non_admin_schemas_no_admin_fields', () => {
 });
 
 describe('collect_json_schema_property_names', () => {
-	test('walks tuple items', () => {
-		const names = output_names(z.strictObject({ t: z.tuple([z.string(), Sensitive]) }));
+	test('walks tuple items (`prefixItems`)', () => {
+		const names = collect_json_schema_property_names({
+			type: 'array',
+			prefixItems: [{ type: 'string' }, { type: 'object', properties: { password_hash: {} } }]
+		});
 		assert.ok(names.has('password_hash'));
 	});
 
@@ -253,15 +270,17 @@ describe('collect_json_schema_property_names', () => {
 			password_hash: string;
 			kids: Array<Node>;
 		}
-		const Node: z.ZodType<Node> = z.lazy(() =>
-			z.strictObject({ password_hash: z.string(), kids: z.array(Node) })
-		);
-		assert.ok(output_names(z.strictObject({ n: Node })).has('password_hash'));
+		const Node: Schema<Node> = lazy(() => object({ password_hash: string, kids: array(Node) }));
+		assert.ok(output_names(object({ n: Node })).has('password_hash'));
 	});
 
-	test('walks a registered schema behind a `$ref`', () => {
-		const Registered = z.strictObject({ password_hash: z.string() }).meta({ id: 'Registered' });
-		assert.ok(output_names(z.strictObject({ r: Registered })).has('password_hash'));
+	test('walks a `$defs` entry behind a `$ref`', () => {
+		const names = collect_json_schema_property_names({
+			type: 'object',
+			properties: { r: { $ref: '#/$defs/Registered' } },
+			$defs: { Registered: { type: 'object', properties: { password_hash: {} } } }
+		});
+		assert.ok(names.has('password_hash'));
 	});
 
 	test('walks pattern properties, `not`, conditionals, and `contains`', () => {

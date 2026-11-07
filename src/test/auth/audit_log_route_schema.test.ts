@@ -1,6 +1,6 @@
 /**
  * Tests for the audit-log SSE route's wire schemas. `AuditStreamQuery` is a
- * `@fuzdev/fuz_schema` `object`, held to the Zod query it replaced in
+ * `@fuzdev/fuz_schema` `object`; the `{acting}` query shape is covered in
  * `http/acting_query.fuz_schema.test.ts`.
  *
  * @module
@@ -19,7 +19,7 @@ describe('AuditStreamQuery', () => {
 
 	test('takes an acting UUID or none', () => {
 		assert.isTrue(parse(AuditStreamQuery, {}).ok);
-		// what the query validation calls, for either library
+		// what the query validation calls
 		assert.isTrue(parse_any(AuditStreamQuery, {}).ok);
 		assert.isTrue(parse(AuditStreamQuery, { acting: 'f81d4fae-7dec-11d0-a765-00a0c91e6bf6' }).ok);
 		assert.isFalse(parse(AuditStreamQuery, { acting: 'not-a-uuid' }).ok);

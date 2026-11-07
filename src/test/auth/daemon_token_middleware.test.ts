@@ -1,5 +1,5 @@
 /**
- * Tests for daemon token — generation, validation, Zod schema, and middleware.
+ * Tests for daemon token — generation, validation, schema, and middleware.
  *
  * @module
  */

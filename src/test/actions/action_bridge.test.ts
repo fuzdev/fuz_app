@@ -5,7 +5,7 @@
  */
 
 import { describe, assert, test } from 'vitest';
-import { z } from 'zod';
+import { literal, object, string, void as fuz_void } from '@fuzdev/fuz_schema/schema.ts';
 
 import { create_action_event_spec } from '#lib/actions/action_bridge.ts';
 import type { ActionSpec } from '#lib/actions/action_spec.ts';
@@ -16,8 +16,8 @@ const create_request_response_spec = (): ActionSpec => ({
 	initiator: 'frontend',
 	auth: { account: 'required', actor: 'none' },
 	side_effects: true,
-	input: z.strictObject({ name: z.string() }),
-	output: z.strictObject({ id: z.string() }),
+	input: object({ name: string }),
+	output: object({ id: string }),
 	async: true,
 	description: 'Create a thing'
 });
@@ -28,8 +28,8 @@ const create_notification_spec = (): ActionSpec => ({
 	initiator: 'backend',
 	auth: null,
 	side_effects: true,
-	input: z.strictObject({ id: z.string(), name: z.string() }),
-	output: z.void(),
+	input: object({ id: string, name: string }),
+	output: fuz_void,
 	async: true,
 	description: 'A thing was created'
 });
@@ -40,8 +40,8 @@ const create_local_call_spec = (): ActionSpec => ({
 	initiator: 'frontend',
 	auth: null,
 	side_effects: false,
-	input: z.null(),
-	output: z.null(),
+	input: literal(null),
+	output: literal(null),
 	async: false,
 	description: 'Toggle the menu'
 });
@@ -61,8 +61,8 @@ const notification_spec_cases: Array<{
 			auth: null,
 			side_effects: true,
 			async: true,
-			input: z.strictObject({ run_id: z.string(), status: z.string() }),
-			output: z.void(),
+			input: object({ run_id: string, status: string }),
+			output: fuz_void,
 			description: 'A new run was created'
 		},
 		channel: 'runs'
@@ -76,8 +76,8 @@ const notification_spec_cases: Array<{
 			auth: null,
 			side_effects: true,
 			async: true,
-			input: z.strictObject({ change: z.string(), path: z.string() }),
-			output: z.void(),
+			input: object({ change: string, path: string }),
+			output: fuz_void,
 			description: 'File system change detected'
 		},
 		channel: 'files'

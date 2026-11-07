@@ -8,9 +8,9 @@
  */
 
 import { describe, assert, test, expectTypeOf } from 'vitest';
-import { z } from 'zod';
 import {
 	is,
+	literal,
 	number,
 	object,
 	optional,
@@ -87,8 +87,8 @@ const request_response_spec = {
 	initiator: 'frontend',
 	auth: { account: 'required', actor: 'none' },
 	side_effects: true,
-	input: z.strictObject({ name: z.string() }),
-	output: z.strictObject({ id: z.string() }),
+	input: object({ name: string }),
+	output: object({ id: string }),
 	async: true,
 	description: 'Create a thing'
 } satisfies RequestResponseActionSpec;
@@ -99,8 +99,8 @@ const remote_notification_spec = {
 	initiator: 'backend',
 	auth: null,
 	side_effects: true,
-	input: z.strictObject({ id: z.string() }),
-	output: z.void(),
+	input: object({ id: string }),
+	output: fuz_void,
 	async: true,
 	description: 'A thing was created'
 } satisfies RemoteNotificationActionSpec;
@@ -111,8 +111,8 @@ const local_call_spec = {
 	initiator: 'frontend',
 	auth: null,
 	side_effects: false,
-	input: z.null(),
-	output: z.null(),
+	input: literal(null),
+	output: literal(null),
 	async: false,
 	description: 'Toggle the menu'
 } satisfies LocalCallActionSpec;
@@ -157,12 +157,7 @@ describe('the spec interfaces', () => {
 		no_description satisfies RequestResponseActionSpec;
 		// @ts-expect-error a literal spec has no unknown keys
 		({ ...request_response_spec, extra: 'field' }) satisfies RequestResponseActionSpec;
-		({
-			...remote_notification_spec,
-			// @ts-expect-error a notification's output is a void schema
-			output: z.strictObject({})
-		}) satisfies RemoteNotificationActionSpec;
-		// @ts-expect-error a notification's output is a void schema, fuz_schema's too
+		// @ts-expect-error a notification's output is a void schema
 		({ ...remote_notification_spec, output: object({}) }) satisfies RemoteNotificationActionSpec;
 		// @ts-expect-error a notification has side effects
 		({ ...remote_notification_spec, side_effects: false }) satisfies RemoteNotificationActionSpec;
@@ -171,7 +166,7 @@ describe('the spec interfaces', () => {
 			// @ts-expect-error a local call has no auth shape
 			auth: { account: 'none', actor: 'none' }
 		}) satisfies LocalCallActionSpec;
-		// @ts-expect-error a spec's schemas are Zod or fuz_schema schemas
+		// @ts-expect-error a spec's schemas are schemas
 		({ ...local_call_spec, input: { parse: () => null } }) satisfies LocalCallActionSpec;
 		// a local call may be synchronous
 		({ ...local_call_spec, async: false }) satisfies LocalCallActionSpec;
@@ -209,16 +204,7 @@ describe('is_action_spec', () => {
 });
 
 describe('ValidationOutput / ValidationInput (type-level)', () => {
-	test('a Zod schema gives its output and input types', () => {
-		const _schema = z.strictObject({ name: z.string(), n: z.number().default(1) });
-		expectTypeOf<ValidationOutput<typeof _schema>>().toEqualTypeOf<{ name: string; n: number }>();
-		expectTypeOf<ValidationInput<typeof _schema>>().toEqualTypeOf<{
-			name: string;
-			n?: number | undefined;
-		}>();
-	});
-
-	test('a fuz_schema schema gives its output and input types', () => {
+	test('a schema gives its output and input types', () => {
 		const _schema = object({ name: string, n: with_default(number, 1) });
 		expectTypeOf<ValidationOutput<typeof _schema>>().toEqualTypeOf<{ name: string; n: number }>();
 		expectTypeOf<ValidationInput<typeof _schema>>().toEqualTypeOf<{
@@ -229,11 +215,11 @@ describe('ValidationOutput / ValidationInput (type-level)', () => {
 });
 
 describe('HandlerForSpec (type-level)', () => {
-	test('a Zod spec narrows the handler input and output', () => {
+	test('an account-axis spec narrows the handler input and output, on the auth tier', () => {
 		const _spec = {
 			...request_response_spec,
-			input: z.strictObject({ name: z.string(), n: z.number().default(1) }),
-			output: z.strictObject({ id: z.string() })
+			input: object({ name: string, n: with_default(number, 1) }),
+			output: object({ id: string })
 		} satisfies RequestResponseActionSpec;
 		type Handler = HandlerForSpec<typeof _spec>;
 		expectTypeOf<Parameters<Handler>[0]>().toEqualTypeOf<{ name: string; n: number }>();
@@ -241,7 +227,7 @@ describe('HandlerForSpec (type-level)', () => {
 		expectTypeOf<ReturnType<Handler>>().toEqualTypeOf<{ id: string } | Promise<{ id: string }>>();
 	});
 
-	test('a fuz_schema spec narrows the handler input and output', () => {
+	test('an unauthenticated spec narrows the handler input and output', () => {
 		const _spec = {
 			...request_response_spec,
 			auth: { account: 'none', actor: 'none' },
@@ -254,7 +240,7 @@ describe('HandlerForSpec (type-level)', () => {
 		expectTypeOf<ReturnType<Handler>>().toEqualTypeOf<{ id: string } | Promise<{ id: string }>>();
 	});
 
-	test('a fuz_schema actor-axis spec selects the actor tier and keeps the twin Uuid', () => {
+	test('an actor-axis spec selects the actor tier and keeps the twin Uuid', () => {
 		const _spec = {
 			...request_response_spec,
 			auth: { account: 'required', actor: 'required' },

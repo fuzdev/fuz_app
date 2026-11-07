@@ -6,7 +6,6 @@
 
 import { describe, assert, test, vi } from 'vitest';
 import { Hono } from 'hono';
-import { z } from 'zod';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { object, string } from '@fuzdev/fuz_schema/schema.ts';
 
@@ -512,13 +511,13 @@ describe('create_validated_broadcaster', () => {
 	const test_specs: Array<EventSpec> = [
 		{
 			method: 'run_created',
-			params: z.strictObject({ run_id: z.string(), status: z.string() }),
+			params: object({ run_id: string, status: string }),
 			description: 'A run was created',
 			channel: 'runs'
 		},
 		{
 			method: 'run_updated',
-			params: z.strictObject({ run_id: z.string(), status: z.string() }),
+			params: object({ run_id: string, status: string }),
 			description: 'A run was updated'
 		}
 	];
@@ -567,7 +566,7 @@ describe('create_validated_broadcaster', () => {
 		warn.mockRestore();
 	});
 
-	test('validates a fuz_schema params schema', () => {
+	test('validates params, warning only on invalid ones', () => {
 		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 		const inner = { broadcast: vi.fn() };
 		const warn_log = new Logger('test', { level: 'warn' });

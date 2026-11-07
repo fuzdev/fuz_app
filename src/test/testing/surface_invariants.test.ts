@@ -5,7 +5,15 @@
  */
 
 import { describe, test, assert } from 'vitest';
-import { z } from 'zod';
+import {
+	literal,
+	loose_object,
+	object,
+	one_of,
+	string,
+	union,
+	type AnySchema
+} from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	assert_protected_routes_declare_401,
@@ -30,13 +38,14 @@ import { generate_app_surface, type AppSurface } from '#lib/http/surface.ts';
 import { stub_handler, stub_mw } from '#lib/testing/stubs.ts';
 import { schema_to_surface } from '#lib/http/schema_helpers.ts';
 import { REST_RATE_LIMIT_EXCEEDED } from '#lib/http/error_schemas.ts';
+import { Uuid } from '#lib/primitive_schemas.ts';
 
 /**
- * A surface with its first route's 404 set to a JSON Schema written from a Zod
- * one — a declaration no definition can make (a generic `error`, an enum), for
+ * A surface with its first route's 404 set to a JSON Schema written from a
+ * schema — a declaration no definition can make (a generic `error`, an enum), for
  * the invariants that read the surface as data.
  */
-const with_declared_404 = (surface: AppSurface, schema: z.ZodType): AppSurface => {
+const with_declared_404 = (surface: AppSurface, schema: AnySchema): AppSurface => {
 	surface.routes[0]!.error_schemas = {
 		...surface.routes[0]!.error_schemas,
 		'404': schema_to_surface(schema, { io: 'output' })
@@ -57,8 +66,8 @@ const build_valid_surface = (): AppSurface => {
 			auth: { account: 'none', actor: 'none' },
 			handler: stub_handler,
 			description: 'Health check',
-			input: z.null(),
-			output: z.null()
+			input: literal(null),
+			output: literal(null)
 		}),
 		define_route({
 			method: 'GET',
@@ -66,8 +75,8 @@ const build_valid_surface = (): AppSurface => {
 			auth: { account: 'required', actor: 'none' },
 			handler: stub_handler,
 			description: 'Current user',
-			input: z.null(),
-			output: z.null()
+			input: literal(null),
+			output: literal(null)
 		}),
 		define_route({
 			method: 'POST',
@@ -75,8 +84,8 @@ const build_valid_surface = (): AppSurface => {
 			auth: { account: 'required', actor: 'required', roles: ['admin'] },
 			handler: stub_handler,
 			description: 'Grant role',
-			input: z.strictObject({ role: z.string() }),
-			output: z.null()
+			input: object({ role: string }),
+			output: literal(null)
 		}),
 		define_route({
 			method: 'POST',
@@ -89,8 +98,8 @@ const build_valid_surface = (): AppSurface => {
 			},
 			handler: stub_handler,
 			description: 'Keeper sync',
-			input: z.null(),
-			output: z.null()
+			input: literal(null),
+			output: literal(null)
 		}),
 		define_route({
 			method: 'POST',
@@ -98,8 +107,8 @@ const build_valid_surface = (): AppSurface => {
 			auth: { account: 'required', actor: 'none', credential_types: ['session'] },
 			handler: stub_handler,
 			description: 'Mint an api token',
-			input: z.null(),
-			output: z.null()
+			input: literal(null),
+			output: literal(null)
 		})
 	];
 	return generate_app_surface({ middleware_specs: test_middleware, route_specs: specs });
@@ -181,9 +190,9 @@ describe('assert_input_routes_declare_400', () => {
 					auth: { account: 'none', actor: 'none' },
 					handler: stub_handler,
 					description: 'Takes a thing',
-					params: z.strictObject({ id: z.string() }),
-					input: z.strictObject({ name: z.string() }),
-					output: z.null()
+					params: object({ id: string }),
+					input: object({ name: string }),
+					output: literal(null)
 				})
 			]
 		});
@@ -210,8 +219,8 @@ describe('assert_input_routes_declare_400', () => {
 					auth: { account: 'none', actor: 'none' },
 					handler: stub_handler,
 					description: 'Lists things',
-					input: z.strictObject({ name: z.string() }),
-					output: z.null()
+					input: object({ name: string }),
+					output: literal(null)
 				})
 			]
 		});
@@ -245,8 +254,8 @@ describe('assert_no_duplicate_routes', () => {
 });
 
 describe('assert_error_codes_specific', () => {
-	/** A single-route surface (with params) whose 404 is a JSON Schema written from a Zod one. */
-	const surface_with_404 = (schema: z.ZodType): AppSurface =>
+	/** A single-route surface (with params) whose 404 is a JSON Schema written from a schema. */
+	const surface_with_404 = (schema: AnySchema): AppSurface =>
 		with_declared_404(
 			generate_app_surface({
 				middleware_specs: [],
@@ -257,9 +266,9 @@ describe('assert_error_codes_specific', () => {
 						auth: { account: 'required', actor: 'none' },
 						handler: stub_handler,
 						description: 'Get thing',
-						params: z.strictObject({ id: z.uuid() }),
-						input: z.null(),
-						output: z.null()
+						params: object({ id: Uuid }),
+						input: literal(null),
+						output: literal(null)
 					})
 				]
 			}),
@@ -272,19 +281,19 @@ describe('assert_error_codes_specific', () => {
 
 	test('passes for a literal, an enum, and a union of them', () => {
 		assert_error_codes_specific(
-			surface_with_404(z.looseObject({ error: z.literal('thing_not_found') }))
+			surface_with_404(loose_object({ error: literal('thing_not_found') }))
 		);
 		assert_error_codes_specific(
-			surface_with_404(z.looseObject({ error: z.enum(['thing_not_found', 'parent_not_found']) }))
+			surface_with_404(loose_object({ error: one_of(['thing_not_found', 'parent_not_found']) }))
 		);
 		assert_error_codes_specific(
 			surface_with_404(
-				z.union([
-					z.union([
-						z.looseObject({ error: z.literal('inner_a') }),
-						z.looseObject({ error: z.enum(['inner_b']) })
+				union([
+					union([
+						loose_object({ error: literal('inner_a') }),
+						loose_object({ error: one_of(['inner_b']) })
 					]),
-					z.looseObject({ error: z.literal('outer') })
+					loose_object({ error: literal('outer') })
 				])
 			)
 		);
@@ -292,7 +301,7 @@ describe('assert_error_codes_specific', () => {
 
 	test('fails on a generic error, at any status and on any route', () => {
 		assert.throws(
-			() => assert_error_codes_specific(surface_with_404(z.looseObject({ error: z.string() }))),
+			() => assert_error_codes_specific(surface_with_404(loose_object({ error: string }))),
 			/GET \/api\/things\/:id error schema for status 404 does not name its code/
 		);
 	});
@@ -302,9 +311,9 @@ describe('assert_error_codes_specific', () => {
 			() =>
 				assert_error_codes_specific(
 					surface_with_404(
-						z.union([
-							z.looseObject({ error: z.literal('thing_not_found') }),
-							z.looseObject({ error: z.string() })
+						union([
+							loose_object({ error: literal('thing_not_found') }),
+							loose_object({ error: string })
 						])
 					)
 				),
@@ -424,8 +433,8 @@ describe('assert_sensitive_routes_rate_limited', () => {
 				auth: { account: 'none', actor: 'none' },
 				handler: stub_handler,
 				description: 'Login',
-				input: z.strictObject({ username: z.string() }),
-				output: z.null(),
+				input: object({ username: string }),
+				output: literal(null),
 				rate_limit: 'both'
 			})
 		];
@@ -441,8 +450,8 @@ describe('assert_sensitive_routes_rate_limited', () => {
 				auth: { account: 'none', actor: 'none' },
 				handler: stub_handler,
 				description: 'Login',
-				input: z.strictObject({ username: z.string() }),
-				output: z.null(),
+				input: object({ username: string }),
+				output: literal(null),
 				errors: [REST_RATE_LIMIT_EXCEEDED]
 			})
 		];
@@ -458,8 +467,8 @@ describe('assert_sensitive_routes_rate_limited', () => {
 				auth: { account: 'none', actor: 'none' },
 				handler: stub_handler,
 				description: 'Login',
-				input: z.strictObject({ username: z.string() }),
-				output: z.null()
+				input: object({ username: string }),
+				output: literal(null)
 			})
 		];
 		const surface = generate_app_surface({ middleware_specs: [], route_specs: specs });
@@ -476,8 +485,8 @@ describe('assert_no_unexpected_public_mutations', () => {
 				auth: { account: 'none', actor: 'none' },
 				handler: stub_handler,
 				description: 'Login',
-				input: z.strictObject({ username: z.string() }),
-				output: z.null()
+				input: object({ username: string }),
+				output: literal(null)
 			})
 		];
 		const surface = generate_app_surface({ middleware_specs: [], route_specs: specs });
@@ -492,8 +501,8 @@ describe('assert_no_unexpected_public_mutations', () => {
 				auth: { account: 'none', actor: 'none' },
 				handler: stub_handler,
 				description: 'Webhook',
-				input: z.strictObject({ data: z.string() }),
-				output: z.null()
+				input: object({ data: string }),
+				output: literal(null)
 			})
 		];
 		const surface = generate_app_surface({ middleware_specs: [], route_specs: specs });
@@ -514,8 +523,8 @@ describe('assert_mutation_routes_use_post', () => {
 				auth: { account: 'none', actor: 'none' },
 				handler: stub_handler,
 				description: 'Bad GET with body',
-				input: z.strictObject({ name: z.string() }),
-				output: z.null()
+				input: object({ name: string }),
+				output: literal(null)
 			})
 		];
 		const surface = generate_app_surface({ middleware_specs: [], route_specs: specs });
@@ -541,8 +550,8 @@ describe('assert_keeper_routes_under_prefix', () => {
 				},
 				handler: stub_handler,
 				description: 'List tables',
-				input: z.null(),
-				output: z.null()
+				input: literal(null),
+				output: literal(null)
 			})
 		];
 		const surface = generate_app_surface({ middleware_specs: [], route_specs: specs });
@@ -562,8 +571,8 @@ describe('assert_keeper_routes_under_prefix', () => {
 				},
 				handler: stub_handler,
 				description: 'Admin sync',
-				input: z.null(),
-				output: z.null()
+				input: literal(null),
+				output: literal(null)
 			})
 		];
 		const surface = generate_app_surface({ middleware_specs: [], route_specs: specs });
@@ -586,8 +595,8 @@ describe('assert_keeper_routes_under_prefix', () => {
 				},
 				handler: stub_handler,
 				description: 'Internal sync',
-				input: z.null(),
-				output: z.null()
+				input: literal(null),
+				output: literal(null)
 			})
 		];
 		const surface = generate_app_surface({ middleware_specs: [], route_specs: specs });
@@ -618,8 +627,8 @@ describe('assert_surface_security_policy', () => {
 				auth: { account: 'none', actor: 'none' },
 				handler: stub_handler,
 				description: 'Health check',
-				input: z.null(),
-				output: z.null()
+				input: literal(null),
+				output: literal(null)
 			}),
 			define_route({
 				method: 'POST',
@@ -627,8 +636,8 @@ describe('assert_surface_security_policy', () => {
 				auth: { account: 'none', actor: 'none' },
 				handler: stub_handler,
 				description: 'Login',
-				input: z.strictObject({ username: z.string() }),
-				output: z.null(),
+				input: object({ username: string }),
+				output: literal(null),
 				rate_limit: 'both'
 			})
 		];

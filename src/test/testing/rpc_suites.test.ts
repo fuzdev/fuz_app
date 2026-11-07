@@ -9,7 +9,17 @@
 
 import { describe, test, assert } from 'vitest';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
-import { z } from 'zod';
+import {
+	array,
+	literal,
+	max_length,
+	min_length,
+	number,
+	object,
+	pipe,
+	string,
+	void as fuz_void
+} from '@fuzdev/fuz_schema/schema.ts';
 
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import type { RpcAction } from '#lib/actions/action_types.ts';
@@ -32,7 +42,7 @@ import {
 } from '#lib/testing/rpc_helpers.ts';
 import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
 import { JSONRPC_VERSION } from '#lib/http/jsonrpc.ts';
-import { ZodActingActor } from '#lib/zod_schemas.ts';
+import { ActingActor } from '#lib/primitive_schemas.ts';
 
 const session_options = create_session_config('test_rpc_session');
 
@@ -44,8 +54,8 @@ const public_read_spec: RequestResponseActionSpec = {
 	initiator: 'frontend',
 	auth: { account: 'none', actor: 'none' },
 	side_effects: false,
-	input: z.void(),
-	output: z.strictObject({ items: z.array(z.string()) }),
+	input: fuz_void,
+	output: object({ items: array(string) }),
 	async: true,
 	description: 'List widgets'
 };
@@ -56,8 +66,8 @@ const authed_read_spec: RequestResponseActionSpec = {
 	initiator: 'frontend',
 	auth: { account: 'required', actor: 'none' },
 	side_effects: false,
-	input: z.strictObject({ id: z.string().min(1) }),
-	output: z.strictObject({ name: z.string() }),
+	input: object({ id: pipe(string, min_length(1)) }),
+	output: object({ name: string }),
 	async: true,
 	description: 'Get a widget'
 };
@@ -68,8 +78,8 @@ const admin_mutation_spec: RequestResponseActionSpec = {
 	initiator: 'frontend',
 	auth: { account: 'required', actor: 'required', roles: ['admin'] },
 	side_effects: true,
-	input: z.strictObject({ name: z.string().min(1).max(100), acting: ZodActingActor }),
-	output: z.strictObject({ id: z.string() }),
+	input: object({ name: pipe(string, min_length(1), max_length(100)), acting: ActingActor }),
+	output: object({ id: string }),
 	async: true,
 	description: 'Create a widget'
 };
@@ -85,8 +95,8 @@ const keeper_spec: RequestResponseActionSpec = {
 		credential_types: ['daemon_token']
 	},
 	side_effects: true,
-	input: z.strictObject({ acting: ZodActingActor }),
-	output: z.strictObject({ ok: z.literal(true) }),
+	input: object({ acting: ActingActor }),
+	output: object({ ok: literal(true) }),
 	async: true,
 	description: 'Nuke all widgets'
 };
@@ -144,7 +154,7 @@ describe('rpc_helpers', () => {
 		// Pins the helper's null-stripping affordance — JSON-RPC 2.0 §4.2
 		// forbids `params: null` on the wire, so the helper produces an
 		// envelope without a `params` field for both `undefined` (the
-		// new z.void() convention) and `null` (the legacy z.null() shape).
+		// void-input convention) and `null` (the legacy null-input shape).
 		// Tests that need to construct a literal `"params": null` envelope
 		// must build the body inline.
 		const omitted = create_rpc_post_init('m').body as string;
@@ -215,13 +225,13 @@ describe('rpc_helpers', () => {
 	});
 
 	test('assert_jsonrpc_success_response validates result against output schema', () => {
-		const schema = z.strictObject({ name: z.string(), count: z.number() });
+		const schema = object({ name: string, count: number });
 		const valid = { jsonrpc: '2.0', id: '1', result: { name: 'test', count: 5 } };
 		assert_jsonrpc_success_response(valid, schema);
 	});
 
 	test('assert_jsonrpc_success_response rejects result mismatching output schema', () => {
-		const schema = z.strictObject({ name: z.string(), count: z.number() });
+		const schema = object({ name: string, count: number });
 		const invalid = { jsonrpc: '2.0', id: '1', result: { name: 42 } };
 		assert.throws(() => assert_jsonrpc_success_response(invalid, schema));
 	});

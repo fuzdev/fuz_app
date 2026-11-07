@@ -7,8 +7,14 @@
  */
 
 import { describe, assert, test, vi, afterEach } from 'vitest';
-import { z } from 'zod';
-import { array, object, optional, string, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
+import {
+	array,
+	literal,
+	object,
+	optional,
+	string,
+	type AnySchema
+} from '@fuzdev/fuz_schema/schema.ts';
 import { meta } from '@fuzdev/fuz_schema/meta.ts';
 
 import { DEFAULT_MAX_GET_URL_LENGTH, FrontendHttpTransport } from '#lib/actions/transports_http.ts';
@@ -40,7 +46,7 @@ const stub_fetch = (body: string, status: number, status_text = ''): void => {
 const create_spec = (
 	method: string,
 	side_effects: boolean,
-	input: ValidationSchema = z.strictObject({}).optional()
+	input: ValidationSchema = optional(object({}))
 ): ActionSpecUnion => ({
 	method,
 	kind: 'request_response',
@@ -48,7 +54,7 @@ const create_spec = (
 	auth: { account: 'none', actor: 'none' },
 	side_effects,
 	input,
-	output: z.null(),
+	output: literal(null),
 	async: true,
 	description: method
 });
@@ -313,33 +319,6 @@ describe('FrontendHttpTransport GET reads', () => {
 	});
 
 	test('a read whose input carries a sensitive value at any depth is a POST', async () => {
-		const sensitive_inputs: Array<z.ZodType> = [
-			z.strictObject({ token: z.string().meta({ sensitivity: 'secret' }) }),
-			z
-				.strictObject({
-					filter: z
-						.strictObject({
-							emails: z.array(z.string().meta({ sensitivity: 'personal' }))
-						})
-						.optional()
-				})
-				.optional()
-		];
-		for (const input of sensitive_inputs) {
-			vi.restoreAllMocks();
-			stub_fetch(ok_body('r1'), 200);
-			await new FrontendHttpTransport({
-				url: '/api/rpc',
-				lookup_action_spec: lookup_of(create_spec('thing_get', false, input))
-			}).send(read({ token: 'hunter2' }));
-			const { url, init } = sent();
-			assert.strictEqual(init.method, 'POST');
-			assert.notInclude(url, 'hunter2', 'the value stays out of the URL');
-			assert.include(init.body as string, 'hunter2');
-		}
-	});
-
-	test('a read whose fuz_schema input carries a sensitive value at any depth is a POST', async () => {
 		const sensitive_inputs: Array<AnySchema> = [
 			object({ token: meta(string, { sensitivity: 'secret' }) }),
 			optional(
@@ -360,7 +339,7 @@ describe('FrontendHttpTransport GET reads', () => {
 			assert.notInclude(url, 'hunter2', 'the value stays out of the URL');
 			assert.include(init.body as string, 'hunter2');
 		}
-		// the control: a fuz_schema input with nothing sensitive reads as a GET
+		// the control: an input with nothing sensitive reads as a GET
 		vi.restoreAllMocks();
 		stub_fetch(ok_body('r1'), 200);
 		await new FrontendHttpTransport({
@@ -371,7 +350,7 @@ describe('FrontendHttpTransport GET reads', () => {
 	});
 
 	test('the sensitive check walks each spec once', async () => {
-		const input = z.strictObject({ token: z.string().meta({ sensitivity: 'secret' }) });
+		const input = object({ token: meta(string, { sensitivity: 'secret' }) });
 		const spec = create_spec('thing_get', false, input);
 		const lookup = vi.fn(lookup_of(spec));
 		const transport = new FrontendHttpTransport({ url: '/api/rpc', lookup_action_spec: lookup });

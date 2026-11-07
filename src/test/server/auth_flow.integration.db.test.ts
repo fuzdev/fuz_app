@@ -12,8 +12,7 @@
 
 import { route_ok } from '#lib/http/route_result.ts';
 import { describe, test, assert, beforeAll, afterAll } from 'vitest';
-import { object } from '@fuzdev/fuz_schema/schema.ts';
-import { z } from 'zod';
+import { literal, loose_object, nullable, object, string } from '@fuzdev/fuz_schema/schema.ts';
 
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_health_route_spec } from '#lib/http/common_routes.ts';
@@ -35,7 +34,7 @@ import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS
 } from '#lib/http/error_schemas.ts';
-import { ZodActingActor } from '#lib/zod_schemas.ts';
+import { ActingActor } from '#lib/primitive_schemas.ts';
 
 const session_options = create_session_config('test_session');
 
@@ -46,8 +45,8 @@ const create_authenticated_route_spec = (): RouteSpec =>
 		path: '/api/me',
 		auth: { account: 'required', actor: 'none' },
 		description: 'Return current account info',
-		input: z.null(),
-		output: z.looseObject({ username: z.string(), actor_id: z.string().nullable() }),
+		input: literal(null),
+		output: loose_object({ username: string, actor_id: nullable(string) }),
 		handler: (c) => {
 			const ctx = require_request_context(c);
 			return route_ok({ username: ctx.account.username, actor_id: ctx.actor?.id ?? null });
@@ -61,9 +60,9 @@ const create_keeper_route_spec = (): RouteSpec =>
 		path: '/api/keeper-only',
 		auth: { account: 'required', actor: 'required', roles: [ROLE_KEEPER] },
 		description: 'Keeper-only endpoint',
-		query: z.strictObject({ acting: ZodActingActor }),
-		input: z.null(),
-		output: z.looseObject({ ok: z.literal(true) }),
+		query: object({ acting: ActingActor }),
+		input: literal(null),
+		output: loose_object({ ok: literal(true) }),
 		handler: () => route_ok({ ok: true as const })
 	});
 
@@ -74,9 +73,9 @@ const create_admin_route_spec = (): RouteSpec =>
 		path: '/api/admin-only',
 		auth: { account: 'required', actor: 'required', roles: [ROLE_ADMIN] },
 		description: 'Admin-only endpoint',
-		query: z.strictObject({ acting: ZodActingActor }),
-		input: z.null(),
-		output: z.looseObject({ ok: z.literal(true) }),
+		query: object({ acting: ActingActor }),
+		input: literal(null),
+		output: loose_object({ ok: literal(true) }),
 		handler: () => route_ok({ ok: true as const })
 	});
 

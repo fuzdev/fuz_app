@@ -143,11 +143,11 @@ describe('standard error schemas', () => {
 	});
 
 	test("REST_INVALID_REQUEST_BODY refuses an issue in a library's own shape", () => {
-		const zod_shaped = parse(REST_INVALID_REQUEST_BODY.schema, {
+		const other_shaped = parse(REST_INVALID_REQUEST_BODY.schema, {
 			error: 'invalid_request_body',
 			issues: [{ code: 'invalid_type', message: 'Expected string', path: ['name'] }]
 		});
-		assert.isFalse(zod_shaped.ok);
+		assert.isFalse(other_shaped.ok);
 		const fuz_shaped = parse(REST_INVALID_REQUEST_BODY.schema, {
 			error: 'invalid_request_body',
 			issues: [{ kind: 'string', path: ['name'], expected: 'string', received: 'number' }]

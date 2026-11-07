@@ -1,6 +1,6 @@
 /**
- * The assembled app refuses to boot on a schema slot holding a value of
- * neither library, the throw naming the spec and the slot: an `rpc_endpoints`
+ * The assembled app refuses to boot on a schema slot holding a value that is
+ * not a schema, the throw naming the spec and the slot: an `rpc_endpoints`
  * action's at registration (`compile_action_registry`), a route's, an
  * event's and a `ws_endpoints` action's in surface generation
  * (`schema_to_surface`), and a route's `null` `params`, which surface
@@ -12,8 +12,7 @@
 
 import { route_ok } from '#lib/http/route_result.ts';
 import { describe, assert, test } from 'vitest';
-import { z } from 'zod';
-import { object } from '@fuzdev/fuz_schema/schema.ts';
+import { literal, object, string } from '@fuzdev/fuz_schema/schema.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { create_app_server, type AppServerOptions } from '#lib/server/app_server.ts';
@@ -81,8 +80,8 @@ const route = (overrides: Record<string, unknown>): RouteSpec =>
 		path: '/api/things',
 		auth: { account: 'none', actor: 'none' },
 		description: 'Takes a thing.',
-		input: z.strictObject({ name: z.string() }),
-		output: z.strictObject({ ok: z.literal(true) }),
+		input: object({ name: string }),
+		output: object({ ok: literal(true) }),
 		handler: () => route_ok({ ok: true }),
 		...overrides
 	});
@@ -95,8 +94,8 @@ const action = (slots: { input?: unknown; output?: unknown }): RpcAction =>
 			initiator: 'frontend',
 			auth: { account: 'none', actor: 'none' },
 			side_effects: false,
-			input: z.strictObject({ name: z.string() }),
-			output: z.strictObject({ ok: z.literal(true) }),
+			input: object({ name: string }),
+			output: object({ ok: literal(true) }),
 			async: true,
 			description: 'Takes a thing.',
 			...slots
@@ -108,46 +107,46 @@ const rpc_endpoints = (a: RpcAction): AppServerOptions['rpc_endpoints'] => [
 	{ path: '/api/rpc', actions: [a] }
 ];
 
-describe('create_app_server on a schema slot of neither library', () => {
+describe('create_app_server on a slot that is not a schema', () => {
 	test("an rpc_endpoints action's slot throws at boot, naming the action and the slot", async () => {
-		assert.strictEqual(
+		assert.match(
 			await boot_error({ rpc_endpoints: rpc_endpoints(action({ output: {} })) }),
-			'RPC action "take_thing": output is neither a Zod schema nor a @fuzdev/fuz_schema schema'
+			/^RPC action "take_thing": output is .*a @fuzdev\/fuz_schema schema$/
 		);
 	});
 
 	test("a route's slot throws at boot, naming the route and the slot", async () => {
-		assert.strictEqual(
+		assert.match(
 			await boot_error({ create_route_specs: () => [route({ output: {} })] }),
-			'POST /api/things output is neither a Zod schema nor a @fuzdev/fuz_schema schema'
+			/^POST \/api\/things output is .*a @fuzdev\/fuz_schema schema$/
 		);
 	});
 
 	test("a route's null params throws at boot, naming the route and the slot", async () => {
-		assert.strictEqual(
+		assert.match(
 			await boot_error({
 				create_route_specs: () => [route({ path: '/api/things/:id', params: null })]
 			}),
-			'Route "POST /api/things/:id": params is neither a Zod schema nor a @fuzdev/fuz_schema schema'
+			/^Route "POST \/api\/things\/:id": params is .*a @fuzdev\/fuz_schema schema$/
 		);
 	});
 
 	test("an event spec's params throws at boot, naming the event", async () => {
-		assert.strictEqual(
+		assert.match(
 			await boot_error({
 				event_specs: [{ method: 'thing_happened', description: 'A thing happened.', params: {} }]
 			} as unknown as Partial<AppServerOptions>),
-			'event thing_happened params is neither a Zod schema nor a @fuzdev/fuz_schema schema'
+			/^event thing_happened params is .*a @fuzdev\/fuz_schema schema$/
 		);
 	});
 
 	test("a ws_endpoints action's slot throws at boot, naming the endpoint, the action and the slot", async () => {
-		assert.strictEqual(
+		assert.match(
 			await boot_error({
 				create_upgrade_websocket: () => create_stub_upgrade().upgradeWebSocket,
 				ws_endpoints: [{ path: '/api/ws', actions: [action({ input: {} })], receive_timeout: null }]
 			}),
-			'/api/ws take_thing input is neither a Zod schema nor a @fuzdev/fuz_schema schema'
+			/^\/api\/ws take_thing input is .*a @fuzdev\/fuz_schema schema$/
 		);
 	});
 

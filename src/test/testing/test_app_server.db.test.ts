@@ -5,7 +5,7 @@
  */
 
 import { test, assert, beforeAll, beforeEach, afterAll } from 'vitest';
-import { z } from 'zod';
+import { array, object, string, void as fuz_void } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import type { RpcAction } from '#lib/actions/action_types.ts';
@@ -101,8 +101,8 @@ const widget_list_spec: RequestResponseActionSpec = {
 	initiator: 'frontend',
 	auth: { account: 'none', actor: 'none' },
 	side_effects: false,
-	input: z.void(),
-	output: z.strictObject({ items: z.array(z.string()) }),
+	input: fuz_void,
+	output: object({ items: array(string) }),
 	async: true,
 	description: 'List widgets'
 };

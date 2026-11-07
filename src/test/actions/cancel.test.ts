@@ -12,8 +12,7 @@
  */
 
 import { assert, describe, test } from 'vitest';
-import { z } from 'zod';
-import { is } from '@fuzdev/fuz_schema/schema.ts';
+import { is, object } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import {
@@ -58,8 +57,8 @@ const slow_spec = {
 	initiator: 'frontend',
 	auth: { account: 'required', actor: 'none' },
 	side_effects: false,
-	input: z.strictObject({}),
-	output: z.strictObject({}),
+	input: object({}),
+	output: object({}),
 	async: true,
 	description: 'test — waits until ctx.signal aborts, then throws'
 } satisfies RequestResponseActionSpec;

@@ -8,7 +8,7 @@
  */
 
 import { assert, describe, test } from 'vitest';
-import { z } from 'zod';
+import { literal } from '@fuzdev/fuz_schema/schema.ts';
 
 import { rest_error } from '#lib/http/error_schemas.ts';
 import { resolve_route_error_map } from '#lib/http/route_errors.ts';
@@ -24,7 +24,7 @@ const errors = resolve_route_error_map({
 	method: 'GET',
 	path: '/v',
 	auth: { account: 'none', actor: 'none' },
-	input: z.null(),
+	input: literal(null),
 	errors: [rest_error(409, 'slug_taken'), rest_error(409, 'slug_reserved')]
 });
 

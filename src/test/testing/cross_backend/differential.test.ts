@@ -1,5 +1,5 @@
 import { assert, describe, test } from 'vitest';
-import { z } from 'zod';
+import { object } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { ConformanceCase } from '#lib/testing/cross_backend/conformance_case.ts';
 import { send_conformance_case } from '#lib/testing/cross_backend/conformance_table.ts';
@@ -87,8 +87,8 @@ const probe_rpc_endpoints = [
 					initiator: 'frontend',
 					auth: { account: 'required', actor: 'none' },
 					side_effects: false,
-					input: z.strictObject({}),
-					output: z.strictObject({}),
+					input: object({}),
+					output: object({}),
 					async: true,
 					description: 'A read.'
 				},

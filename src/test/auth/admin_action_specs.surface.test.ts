@@ -1,22 +1,22 @@
 /**
- * The admin domain's surface, held to the Zod-era one captured in
+ * The admin domain's surface, held to the one captured in
  * `fixtures/surface/admin.json`: the RPC and WS entries of every method of
  * `all_admin_action_specs`, and the diagnostics. Equal as JSON apart from the
  * declared moves, each applied to the capture here:
  *
  * - every `Email` node's `pattern` is the current `EMAIL_REGEX`, which refuses
- *   a domain with a dot at its edge, on the inputs and on the Zod outputs
+ *   a domain with a dot at its edge, on the inputs and on the outputs
  *   alike
  * - `invite_create`'s `email` gains `maxLength`, the `max_length` the
  *   fuz_schema `Email` bounds its code units by ahead of its byte `check`
  * - that `check` has no JSON Schema form, an `info` diagnostic on
  *   `invite_create`'s input on each endpoint
- * - the revoke-all outputs' `count` is a non-negative integer, where the Zod
- *   one was any number
+ * - the revoke-all outputs' `count` is a non-negative integer, where the
+ *   captured one was any number
  * - the fuz_schema outputs of the listings (`MOVED_OUTPUT_METHODS`): every
  *   timestamp is a `Timestamp`, gaining `format: 'date-time'` and the
  *   `iso_datetime` `pattern` (an `anyOf` with `null` where nullable); an
- *   account's or an invite's `username`, `{}` at capture (the Zod
+ *   account's or an invite's `username`, `{}` at capture (the captured
  *   `Username`'s transform has no JSON Schema form, an `info` diagnostic on
  *   the output), is `UsernameCanonical`, its bounds and lowercase grammar; a
  *   grant's or an offer's `role` and `scope_kind` take the `RoleName` and
@@ -71,7 +71,7 @@ const capture_surface = () => {
 	});
 };
 
-// declared: every `Email` node, found by its Zod-era pattern, takes the current one
+// declared: every `Email` node, found by its pattern at capture, takes the current one
 const with_email_pattern = (value: unknown): unknown => {
 	if (Array.isArray(value)) return value.map(with_email_pattern);
 	if (typeof value !== 'object' || value === null) return value;
@@ -123,7 +123,7 @@ const with_integer_count = (entry: Record<string, unknown>): Record<string, unkn
 	};
 };
 
-/** The methods whose output moved from Zod to fuz_schema with a row in it. */
+/** The methods whose output moved since the capture with a row in it. */
 const MOVED_OUTPUT_METHODS: ReadonlyArray<unknown> = [
 	'admin_account_list',
 	'admin_session_list',
@@ -141,7 +141,7 @@ const USERNAME_NODE = {
 };
 const NAME_NODE = { type: 'string', maxLength: NAME_LENGTH_MAX, pattern: NAME_REGEX.source };
 
-// declared: in a moved output, the nodes found by their Zod-era form at their keys
+// declared: in a moved output, the nodes found by their form at capture at their keys
 const with_row_nodes = (value: unknown): unknown => {
 	if (Array.isArray(value)) return value.map(with_row_nodes);
 	if (typeof value !== 'object' || value === null) return value;
@@ -218,15 +218,15 @@ describe('admin surface', () => {
 			head.ws.map((m) => m.name),
 			methods
 		);
-		// the Zod-era capture held the Email pattern this test declares the move of
+		// the capture held the Email pattern this test declares the move of
 		assert.include(JSON.stringify(head.rpc), JSON.stringify(HEAD_EMAIL_PATTERN));
 	});
 
-	test('the RPC entries are the Zod-era ones but for the declared moves', () => {
+	test('the RPC entries are the captured ones but for the declared moves', () => {
 		assert.deepStrictEqual(surface.rpc_endpoints[0]!.methods, expected_entries(head.rpc));
 	});
 
-	test('the WS entries are the Zod-era ones but for the declared moves', () => {
+	test('the WS entries are the captured ones but for the declared moves', () => {
 		assert.deepStrictEqual(
 			surface.ws_endpoints[0]!.methods.slice(protocol_actions.length),
 			expected_entries(head.ws)

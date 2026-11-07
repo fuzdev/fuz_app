@@ -1,23 +1,23 @@
 /**
  * The account routes' surface — `/verify`, `/login`, `/logout`, `/password`,
- * `/status`, `/signup` and `/bootstrap` — held to the Zod-era one captured in
+ * `/status`, `/signup` and `/bootstrap` — held to the one captured in
  * `fixtures/surface/account_routes.json`. Equal as JSON apart from the
  * declared moves, each applied to the capture here:
  *
  * - `/login`'s `username` is `UsernameProvided`, whose refusal of a
- *   whitespace-only string is a `regex(/\S/)`, a `pattern`, where the Zod one
+ *   whitespace-only string is a `regex(/\S/)`, a `pattern`, where the captured one
  *   refined the trimmed string
  * - the output `username` of `/logout`, `/signup` and `/bootstrap` is
- *   `UsernameCanonical`, its bounds and lowercase grammar, where the Zod one
+ *   `UsernameCanonical`, its bounds and lowercase grammar, where the captured one
  *   was a plain string (`/logout`) or the creation `Username`, whose transform
  *   has no JSON Schema form (`{}`, and an `info` diagnostic on the output)
- * - `/password`'s revoke counts are non-negative integers, where the Zod ones
- *   were any number
+ * - `/password`'s revoke counts are non-negative integers, where the captured
+ *   ones were any number
  * - `/signup`'s `email` gains `maxLength`, the `max_length` the fuz_schema
  *   `Email` bounds its code units by ahead of its byte `check`, which has no
  *   JSON Schema form, an `info` diagnostic on the input
  * - `/bootstrap`'s `token` gains `maxLength`, `BOOTSTRAP_TOKEN_LENGTH_MAX`,
- *   the token file's cap, where the Zod one had no maximum
+ *   the token file's cap, where the captured one had no maximum
  *
  * The error schemas are the capture's but for the moves of the error rules,
  * `ERROR_MOVES`: the body 400 is the two body definitions, derived for each
@@ -212,7 +212,7 @@ describe('account routes surface', () => {
 		);
 	});
 
-	test('the routes are the Zod-era ones but for the declared moves', () => {
+	test('the routes are the captured ones but for the declared moves', () => {
 		assert.deepStrictEqual(surface.routes, head.routes.map(moved));
 	});
 

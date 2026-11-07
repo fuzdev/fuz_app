@@ -13,7 +13,6 @@
  */
 
 import { test, assert } from 'vitest';
-import { z } from 'zod';
 import * as s from '@fuzdev/fuz_schema/schema.ts';
 
 import {
@@ -122,44 +121,39 @@ describe_db('cell hooks see the kinds', (get_db) => {
 	});
 
 	test("a validator's thrown parse failure answers its issues as WireIssues", async () => {
-		const ZodCounted = z.object({ count: z.number() });
-		const FuzCounted = s.loose_object({ count: s.number });
-		const validate_data: CellActionDeps['validate_data'] = (kind, data) => {
-			if (kind === 'zod') ZodCounted.parse(data);
-			else s.parse_or_throw(FuzCounted, data);
+		const Counted = s.loose_object({ count: s.number });
+		const validate_data: CellActionDeps['validate_data'] = (_kind, data) => {
+			s.parse_or_throw(Counted, data);
 		};
 		const app = await create_cell_test_app(get_db, [], { validate_data });
 		const alice = await app.create_account({ username: 'hooks_issues_alice' });
 		const headers = alice.create_session_headers();
-		for (const [kind, message] of [
-			['zod', 'Invalid input: expected number, received string'],
-			['fuz', 'count: expected number, received string']
-		] as const) {
-			const refused = await call(
-				app,
-				cell_create_action_spec,
-				{ kind, data: { label: 'x', count: 'y' } },
-				headers
-			);
-			assert.ok(!refused.ok, kind);
-			assert.deepStrictEqual(
-				refused.error.data,
+		const refused = await call(
+			app,
+			cell_create_action_spec,
+			{ kind: 'counted', data: { label: 'x', count: 'y' } },
+			headers
+		);
+		assert.ok(!refused.ok);
+		assert.deepStrictEqual(refused.error.data, {
+			issues: [
 				{
-					issues: [
-						{ kind: 'number', path: ['count'], expected: 'number', received: 'string', message }
-					]
-				},
-				kind
-			);
-		}
+					kind: 'number',
+					path: ['count'],
+					expected: 'number',
+					received: 'string',
+					message: 'count: expected number, received string'
+				}
+			]
+		});
 	});
 
 	test('a write stores the caller data, not what the validator parses', async () => {
 		// a stripping parse: a validator that called it and returned its output
 		// would have stored `{label}` alone
-		const Labeled = z.object({ label: z.string() });
+		const Labeled = s.strip_object({ label: s.string });
 		const validate_data: CellActionDeps['validate_data'] = (_kind, data) => {
-			Labeled.parse(data);
+			s.parse_or_throw(Labeled, data);
 		};
 		const app = await create_cell_test_app(get_db, [], { validate_data });
 		const alice = await app.create_account({ username: 'hooks_store_alice' });

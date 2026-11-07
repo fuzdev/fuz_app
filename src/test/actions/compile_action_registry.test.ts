@@ -1,14 +1,13 @@
 /**
  * `compile_action_registry` refuses an `ActionSpec` whose `input` or `output`
- * holds a value of neither library at registration, naming the action and the
+ * holds a value that is not a schema at registration, naming the action and the
  * slot — on every spec, a handler-less or notification spec included — and
- * admits a Zod or a `@fuzdev/fuz_schema` schema in each.
+ * admits a `@fuzdev/fuz_schema` schema in each.
  *
  * @module
  */
 
 import { describe, assert, test } from 'vitest';
-import { z } from 'zod';
 import { literal, object, string } from '@fuzdev/fuz_schema/schema.ts';
 
 import { compile_action_registry } from '#lib/actions/compile_action_registry.ts';
@@ -20,8 +19,8 @@ const base_spec = {
 	initiator: 'frontend',
 	auth: { account: 'none', actor: 'none' },
 	side_effects: false,
-	input: z.strictObject({ name: z.string() }),
-	output: z.strictObject({ ok: z.literal(true) }),
+	input: object({ name: string }),
+	output: object({ ok: literal(true) }),
 	async: true,
 	description: 'Takes a thing.'
 } as const;
@@ -39,16 +38,14 @@ const NOT_SCHEMAS: Array<[string, unknown]> = [
 	['an empty object', {}],
 	['null', null],
 	['undefined', undefined],
-	['a string', 'z.string()'],
+	['a string', 'string'],
 	['a schema-shaped object', { kind: 'string', def: {} }]
 ];
 
 const refusal = (slot: string): RegExp =>
-	new RegExp(
-		`^RPC action "take_thing": ${slot} is neither a Zod schema nor a @fuzdev/fuz_schema schema$`
-	);
+	new RegExp(`^RPC action "take_thing": ${slot} is .*a @fuzdev/fuz_schema schema$`);
 
-describe('compile_action_registry refuses a value of neither library', () => {
+describe('compile_action_registry refuses a value that is not a schema', () => {
 	for (const slot of ['input', 'output'] as const) {
 		for (const [label, value] of NOT_SCHEMAS) {
 			test(`${label} as ${slot}, naming the action and slot`, () => {
@@ -80,11 +77,7 @@ describe('compile_action_registry refuses a value of neither library', () => {
 });
 
 describe('compile_action_registry admits', () => {
-	test('Zod schemas', () => {
-		compile({});
-	});
-
 	test('fuz_schema schemas', () => {
-		compile({ input: object({ name: string }), output: object({ ok: literal(true) }) });
+		compile({});
 	});
 });

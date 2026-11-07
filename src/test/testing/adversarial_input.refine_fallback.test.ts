@@ -1,7 +1,7 @@
 /**
  * Coverage for the refine-fallback branch in `generate_input_test_cases`.
  *
- * A schema with a top-level `.refine()` requiring at least one of N
+ * A schema with a top-level refinement (a `check` piped after the object) requiring at least one of N
  * optional fields fails the initial base-object parse (everything skipped
  * as `!field.required && !field.has_default`). The fallback fills
  * optional fields until parse succeeds — without it, the function throws
@@ -17,128 +17,137 @@
  */
 
 import { describe, test, assert } from 'vitest';
-import { z } from 'zod';
+import * as s from '@fuzdev/fuz_schema/schema.ts';
+import { meta } from '@fuzdev/fuz_schema/meta.ts';
 
 import { generate_input_test_cases } from '#lib/testing/adversarial_input_cases.ts';
 import { generate_valid_body } from '#lib/testing/schema_generators.ts';
+import { Email, Uuid } from '#lib/primitive_schemas.ts';
 
 describe('generate_input_test_cases — refine fallback', () => {
-	test('synthesizes a base body for a top-level .refine() over optional fields', () => {
-		const schema = z
-			.strictObject({
-				a: z.string().optional(),
-				b: z.string().optional()
-			})
-			.refine((v) => v.a != null || v.b != null, {
-				message: 'at least one of a or b is required'
-			});
+	test('synthesizes a base body for a top-level refinement over optional fields', () => {
+		const schema = s.pipe(
+			s.object({ a: s.optional(s.string), b: s.optional(s.string) }),
+			s.check((v) => v.a != null || v.b != null, 'at least one of a or b is required')
+		);
 
 		const cases = generate_input_test_cases(schema);
 		assert.ok(cases.length > 0, 'expected adversarial cases for a refine schema');
 	});
 
 	test('generate_valid_body matches: produces a body that satisfies the refine', () => {
-		const schema = z
-			.strictObject({
-				email: z.string().optional(),
-				username: z.string().optional()
-			})
-			.refine((v) => v.email != null || v.username != null);
+		const schema = s.pipe(
+			s.object({ email: s.optional(s.string), username: s.optional(s.string) }),
+			s.check((v) => v.email != null || v.username != null)
+		);
 
 		const body = generate_valid_body(schema);
 		assert.ok(body, 'expected a body');
-		const parsed = schema.safeParse(body);
-		assert.ok(parsed.success, `body must round-trip: ${JSON.stringify(parsed)}`);
+		const parsed = s.parse(schema, body);
+		assert.ok(parsed.ok, `body must round-trip: ${JSON.stringify(parsed)}`);
 	});
 });
 
 describe('generate_valid_object — single optional field first', () => {
 	test('an optional `acting` declared ahead of an exactly-one-of pair stays out', () => {
-		const schema = z
-			.strictObject({
-				acting: z.uuid().optional(),
-				a: z.string().optional(),
-				b: z.string().optional()
-			})
-			.refine((v) => (v.a !== undefined) !== (v.b !== undefined));
+		const schema = s.pipe(
+			s.object({
+				acting: s.optional(Uuid),
+				a: s.optional(s.string),
+				b: s.optional(s.string)
+			}),
+			s.check((v) => (v.a !== undefined) !== (v.b !== undefined))
+		);
 		assert.deepEqual(generate_valid_body(schema), { a: 'xxxxxxxxxx' });
 	});
 
 	test('an unrelated optional field declared first stays out', () => {
-		const schema = z
-			.strictObject({
-				note: z.string().max(5).optional(),
-				a: z.string().optional(),
-				b: z.string().optional()
-			})
-			.refine((v) => (v.a !== undefined) !== (v.b !== undefined));
+		const schema = s.pipe(
+			s.object({
+				note: s.optional(s.pipe(s.string, s.max_length(5))),
+				a: s.optional(s.string),
+				b: s.optional(s.string)
+			}),
+			s.check((v) => (v.a !== undefined) !== (v.b !== undefined))
+		);
 		assert.deepEqual(generate_valid_body(schema), { a: 'xxxxxxxxxx' });
 	});
 
 	test('a nested refine needing only the second optional field is satisfied', () => {
-		const schema = z.strictObject({
-			t: z
-				.strictObject({ a: z.string().optional(), b: z.string().optional() })
-				.refine((v) => v.a === undefined && v.b !== undefined)
+		const schema = s.object({
+			t: s.pipe(
+				s.object({ a: s.optional(s.string), b: s.optional(s.string) }),
+				s.check((v) => v.a === undefined && v.b !== undefined)
+			)
 		});
 		assert.deepEqual(generate_valid_body(schema), { t: { b: 'xxxxxxxxxx' } });
 	});
 
 	test('an optional field whose generated value is invalid does not poison the fill', () => {
-		const schema = z
-			.strictObject({
-				a: z
-					.string()
-					.regex(/^q{3}$/)
-					.optional(),
-				b: z.string().optional()
-			})
-			.refine((v) => (v.a !== undefined) !== (v.b !== undefined));
+		const schema = s.pipe(
+			s.object({
+				a: s.optional(s.pipe(s.string, s.regex(/^q{3}$/))),
+				b: s.optional(s.string)
+			}),
+			s.check((v) => (v.a !== undefined) !== (v.b !== undefined))
+		);
 		assert.deepEqual(generate_valid_body(schema), { b: 'xxxxxxxxxx' });
 	});
 
 	test('a refine needing two optional fields falls back to the cumulative fill', () => {
-		const schema = z
-			.strictObject({ a: z.string().optional(), b: z.string().optional() })
-			.refine((v) => v.a !== undefined && v.b !== undefined);
-		assert.deepEqual(generate_valid_body(schema), { a: 'xxxxxxxxxx', b: 'xxxxxxxxxx' });
+		const schema = s.pipe(
+			s.object({ a: s.optional(s.string), b: s.optional(s.string) }),
+			s.check((v) => v.a !== undefined && v.b !== undefined)
+		);
+		assert.deepEqual(generate_valid_body(schema), {
+			a: 'xxxxxxxxxx',
+			b: 'xxxxxxxxxx'
+		});
 	});
 
 	test('the cumulative fill stops once the refine passes', () => {
-		const schema = z
-			.strictObject({
-				a: z.string().optional(),
-				b: z.string().optional(),
-				c: z.string().optional()
-			})
-			.refine((v) => v.a !== undefined && v.b !== undefined);
-		assert.deepEqual(generate_valid_body(schema), { a: 'xxxxxxxxxx', b: 'xxxxxxxxxx' });
+		const schema = s.pipe(
+			s.object({
+				a: s.optional(s.string),
+				b: s.optional(s.string),
+				c: s.optional(s.string)
+			}),
+			s.check((v) => v.a !== undefined && v.b !== undefined)
+		);
+		assert.deepEqual(generate_valid_body(schema), {
+			a: 'xxxxxxxxxx',
+			b: 'xxxxxxxxxx'
+		});
 	});
 });
 
 describe('generate_input_test_cases — nested refine fallback', () => {
 	// the shape of an invite input whose target is exactly one of email or username:
 	// the nested refine fails on the required-only `{}`
-	const InviteTarget = z
-		.strictObject({
-			email: z.email().optional(),
-			username: z.string().min(1).optional()
-		})
-		.refine((v) => Boolean(v.email) !== Boolean(v.username), {
-			message: 'exactly one of email or username must be provided'
-		});
-	const InviteCreateInput = z.strictObject({
-		classroom_id: z.uuid(),
-		target: InviteTarget.meta({ description: 'exactly one of `email` or `username`' }),
-		message: z.string().max(100).nullish(),
-		acting: z.uuid().optional()
+	const InviteTarget = s.pipe(
+		s.object({
+			email: s.optional(Email),
+			username: s.optional(s.pipe(s.string, s.min_length(1)))
+		}),
+		s.check(
+			(v) => Boolean(v.email) !== Boolean(v.username),
+			'exactly one of email or username must be provided'
+		)
+	);
+	const InviteCreateInput = s.object({
+		classroom_id: Uuid,
+		target: meta(InviteTarget, {
+			description: 'exactly one of `email` or `username`'
+		}),
+		message: s.optional(s.nullable(s.pipe(s.string, s.max_length(100)))),
+		acting: s.optional(Uuid)
 	});
 
 	test('generate_valid_body fills the nested optional field the refine needs', () => {
 		const body = generate_valid_body(InviteCreateInput);
 		assert.ok(body);
 		assert.deepEqual(body.target, { email: 'test@example.com' });
-		assert.ok(InviteCreateInput.safeParse(body).success);
+		assert.ok(s.parse(InviteCreateInput, body).ok);
 		// the top level needed no optional field
 		assert.notProperty(body, 'message');
 		assert.notProperty(body, 'acting');
@@ -150,16 +159,17 @@ describe('generate_input_test_cases — nested refine fallback', () => {
 		assert.include(labels, 'missing: target');
 		assert.include(labels, 'wrong type: target (string instead of object)');
 		for (const c of cases) {
-			assert.ok(!InviteCreateInput.safeParse(c.body).success, `case passes: ${c.label}`);
+			assert.ok(!s.parse(InviteCreateInput, c.body).ok, `case passes: ${c.label}`);
 		}
 	});
 
 	test('the nested fill recurses through nested refined objects', () => {
-		const schema = z.strictObject({
-			outer: z.strictObject({
-				inner: z
-					.strictObject({ a: z.string().optional(), b: z.string().optional() })
-					.refine((v) => v.a !== undefined || v.b !== undefined)
+		const schema = s.object({
+			outer: s.object({
+				inner: s.pipe(
+					s.object({ a: s.optional(s.string), b: s.optional(s.string) }),
+					s.check((v) => v.a !== undefined || v.b !== undefined)
+				)
 			})
 		});
 		const body = generate_valid_body(schema);
@@ -168,24 +178,26 @@ describe('generate_input_test_cases — nested refine fallback', () => {
 	});
 
 	test('the nested fill satisfies a refine on a wrapper of the object', () => {
-		const schema = z.strictObject({
-			t: z
-				.strictObject({ a: z.string().optional(), b: z.string().optional() })
-				.transform((v) => v)
-				.refine((v) => (v.a !== undefined) !== (v.b !== undefined))
+		const schema = s.object({
+			t: s.pipe(
+				s.object({ a: s.optional(s.string), b: s.optional(s.string) }),
+				s.transform((v: { a?: string; b?: string }) => v),
+				s.check((v) => (v.a !== undefined) !== (v.b !== undefined))
+			)
 		});
 		assert.deepEqual(generate_valid_body(schema), { t: { a: 'xxxxxxxxxx' } });
 	});
 
 	test('an unsatisfiable nested refine still throws, naming the label', () => {
-		const schema = z.strictObject({
-			target: z.strictObject({ a: z.string().optional() }).refine(() => false, {
-				message: 'never valid'
-			})
+		const schema = s.object({
+			target: s.pipe(
+				s.object({ a: s.optional(s.string) }),
+				s.check(() => false, 'never valid')
+			)
 		});
 		assert.throws(
 			() => generate_input_test_cases(schema, { label: 'never_method' }),
-			/generated base object fails validation for 'never_method'[\s\S]*never valid[\s\S]*at target/
+			/generated base object fails validation for 'never_method'[\s\S]*target: expected never valid/
 		);
 	});
 });

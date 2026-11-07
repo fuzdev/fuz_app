@@ -9,8 +9,18 @@
 
 import { describe, assert, test } from 'vitest';
 import type { Context } from 'hono';
-import { z } from 'zod';
-import { array, literal, loose_object, number, string } from '@fuzdev/fuz_schema/schema.ts';
+import {
+	array,
+	brand,
+	literal,
+	loose_object,
+	number,
+	object,
+	optional,
+	string,
+	unknown,
+	with_default
+} from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	attach_route_handler,
@@ -73,12 +83,12 @@ export const type_cases = (c: Context): Array<unknown> => [
 	// literals are kept and arrays read as readonly, against the output's input side
 	define_route({
 		...shape,
-		output: z.strictObject({ ok: z.literal(true), tags: z.array(z.string()) }),
+		output: object({ ok: literal(true), tags: array(string) }),
 		handler: () => route_ok({ ok: true, tags: ['a'] })
 	}),
 	define_route({
 		...shape,
-		output: z.strictObject({ ready: z.literal(true) }),
+		output: object({ ready: literal(true) }),
 		// @ts-expect-error a literal output takes only its literal
 		handler: () => route_ok({ ready: false })
 	}),
@@ -98,12 +108,12 @@ export const type_cases = (c: Context): Array<unknown> => [
 		// @ts-expect-error a fuz_schema output's element
 		handler: () => route_ok({ items: [1] })
 	}),
-	// a zod brand's input side is the plain value, and a default may be left out
+	// a brand's input side is the plain value, and a default may be left out
 	define_route({
 		...shape,
-		output: z.strictObject({
-			id: z.string().brand('Uuid'),
-			tags: z.array(z.string()).default([])
+		output: object({
+			id: brand(string, 'Uuid'),
+			tags: with_default(array(string), [])
 		}),
 		handler: () => route_ok({ id: 'x' })
 	}),
@@ -208,11 +218,11 @@ export const type_cases = (c: Context): Array<unknown> => [
 	// a handler that throws fits any route
 	define_route({ ...shape, handler: unreachable }),
 	// `undefined` is no body, though the output's input side takes it
-	define_route({ ...shape, output: z.unknown(), handler: () => route_ok(null) }),
+	define_route({ ...shape, output: unknown, handler: () => route_ok(null) }),
 	// @ts-expect-error an unknown output takes no `undefined`
-	define_route({ ...shape, output: z.unknown(), handler: () => route_ok(undefined) }),
+	define_route({ ...shape, output: unknown, handler: () => route_ok(undefined) }),
 	// @ts-expect-error nor does an optional one
-	define_route({ ...shape, output: z.string().optional(), handler: () => route_ok(undefined) })
+	define_route({ ...shape, output: optional(string), handler: () => route_ok(undefined) })
 ];
 
 // @ts-expect-error a spec literal has no brand: only `define_route` and `attach_route_handler` make one

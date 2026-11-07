@@ -1,21 +1,16 @@
 /**
- * Tests for the fuz_schema primitives of `primitive_schemas.ts`, held to
- * their Zod forms of `zod_schemas.ts` — `ZodUuid`, `ZodUuidWithDefault`, and
- * `ZodActingActor` on one vector table, `ZodUsername` and `ZodEmail` on
- * another — and `bounded_string` to a Zod copy, kept in `zod_copies.ts`, of
- * the Zod one it replaced: both libraries give every row the same verdict and
- * output, and `Username` and `Email` the same wire issues but for the
- * declared ones.
- * `Blake3Hash` is held to the Zod one it replaced, rebuilt, its message
- * included;
- * `UsernameCanonical` and `Timestamp`, which have no Zod twin, to their
- * grammars.
+ * Tests for the fuz_schema primitives of `primitive_schemas.ts` on vector
+ * tables. Each table's expected column was frozen from the Zod forms these
+ * schemas replaced: the answer each gave for every row, written as data
+ * (`ZOD_*_ANSWERS`, `ZOD_BOUNDED_VERDICTS`, `ZOD_JSON`), with the rows where
+ * the fuz_schema form answers differently listed beside them
+ * (`USERNAME_DECLARED`, `EMAIL_DECLARED`). `UsernameCanonical` and
+ * `Timestamp` are held to their grammars.
  *
  * @module
  */
 
 import { describe, assert, test } from 'vitest';
-import { z } from 'zod';
 import { get_meta } from '@fuzdev/fuz_schema/meta.ts';
 import { is_schema, parse } from '@fuzdev/fuz_schema/schema.ts';
 import { to_json_schema } from '@fuzdev/fuz_schema/json_schema.ts';
@@ -40,23 +35,14 @@ import {
 	bounded_string,
 	type BoundedStringOptions
 } from '#lib/primitive_schemas.ts';
-import {
-	ZodActingActor,
-	ZodEmail,
-	ZodUsername,
-	ZodUuid,
-	ZodUuidWithDefault
-} from '#lib/zod_schemas.ts';
-import { zod_bounded_string } from './zod_copies.ts';
 import { parse_any, to_wire_issues, type WireIssue } from '#lib/schema_issues.ts';
 
-/** The shape `crypto.randomUUID()` produces — a lowercase version-4 UUID. */
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 /** A row's result: the lowercased output, or `null` for a refusal. */
 type Verdict = string | null;
 
-/** One vector: the input and what both twins give for it. */
+/** One vector: the input and what the schema gives for it (frozen from the Zod form). */
 interface UuidVector {
 	input: unknown;
 	expected: Verdict;
@@ -160,11 +146,6 @@ const run_fuz = (input: unknown): Verdict => {
 	return result.ok ? result.value : null;
 };
 
-const run_zod = (input: unknown): Verdict => {
-	const result = ZodUuid.safeParse(input);
-	return result.success ? result.data : null;
-};
-
 describe('fuz_schema Uuid', () => {
 	for (const [name, { input, expected }] of Object.entries(UUID_VECTORS)) {
 		test(`${name}: ${expected === null ? 'refused' : 'accepted, lowercased'}`, () => {
@@ -172,19 +153,11 @@ describe('fuz_schema Uuid', () => {
 		});
 	}
 
-	test('the Zod Uuid gives every row the same verdict and output', () => {
-		for (const [name, { input, expected }] of Object.entries(UUID_VECTORS)) {
-			assert.strictEqual(run_zod(input), expected, name);
-		}
-	});
-
-	test('its JSON Schema is the Zod Uuid’s, the pattern string included', () => {
+	test('its JSON Schema is the one the Zod form wrote, the pattern string included', () => {
 		for (const io of ['input', 'output'] as const) {
 			const fuz_json = to_json_schema(Uuid, { io });
-			const zod_json = z.toJSONSchema(ZodUuid, { io });
-			// the pattern strings are equal, which pins the Zod `Uuid`'s regex to
-			// fuz_schema's `uuid` grammar
-			assert.deepEqual<Record<string, unknown>>(fuz_json, zod_json, io);
+			// the pattern strings are equal, which pins the grammar
+			assert.deepEqual<Record<string, unknown>>(fuz_json, ZOD_JSON.uuid, io);
 			assert(typeof fuz_json.pattern === 'string');
 			// and the pattern matches what the vectors say
 			const regex = new RegExp(fuz_json.pattern);
@@ -193,22 +166,6 @@ describe('fuz_schema Uuid', () => {
 				assert.strictEqual(regex.test(input), expected !== null, `${io} ${name}`);
 			}
 		}
-	});
-
-	test('one Uuid type: either twin’s output is assignable to the other’s', () => {
-		const parsed = parse(Uuid, 'f81d4fae-7dec-41d0-a765-00a0c91e6bf6');
-		assert.ok(parsed.ok);
-		const fuz_out: Uuid = parsed.value;
-		const zod_out: ZodUuid = ZodUuid.parse('f81d4fae-7dec-41d0-a765-00a0c91e6bf6');
-		const zod_from_fuz: ZodUuid = fuz_out;
-		const fuz_from_zod: Uuid = zod_out;
-		// a cast from a plain string keeps working
-		const cast: ZodUuid = 'f81d4fae-7dec-41d0-a765-00a0c91e6bf6' as ZodUuid;
-		assert.strictEqual(zod_from_fuz, fuz_from_zod);
-		assert.strictEqual(cast, zod_out);
-		// @ts-expect-error a plain string is not a Uuid
-		const plain: ZodUuid = 'f81d4fae-7dec-41d0-a765-00a0c91e6bf6';
-		assert.isString(plain);
 	});
 });
 
@@ -226,7 +183,6 @@ describe('fuz_schema UuidWithDefault', () => {
 		assert.ok(result.ok);
 		assert.strictEqual(result.value, 'f81d4fae-7dec-41d0-a765-00a0c91e6bf6');
 		assert.isFalse(parse(UuidWithDefault, 'nope').ok);
-		assert.isFalse(ZodUuidWithDefault.safeParse('nope').success);
 	});
 });
 
@@ -239,17 +195,12 @@ describe('fuz_schema ActingActor', () => {
 		const upper = parse(ActingActor, 'FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF');
 		assert.ok(upper.ok);
 		assert.strictEqual(upper.value, 'ffffffff-ffff-ffff-ffff-ffffffffffff');
-		assert.strictEqual(
-			ZodActingActor.parse('FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF'),
-			'ffffffff-ffff-ffff-ffff-ffffffffffff'
-		);
 		assert.isFalse(parse(ActingActor, null).ok);
 		assert.isFalse(parse(ActingActor, 'not-a-uuid').ok);
 	});
 
-	test('carries the Zod twin’s description', () => {
+	test('carries its description', () => {
 		assert.strictEqual(get_meta(ActingActor)?.description, ACTING_ACTOR_DESCRIPTION);
-		assert.strictEqual(z.globalRegistry.get(ZodActingActor)?.description, ACTING_ACTOR_DESCRIPTION);
 	});
 });
 
@@ -279,14 +230,13 @@ const BOUNDED_STRING_VECTORS: Array<unknown> = [
 ];
 
 describe('fuz_schema bounded_string', () => {
-	test('the Zod bounded_string gives every row the same verdict', () => {
-		for (const options of BOUNDS) {
+	test('gives every row the verdict the Zod form gave, and the input as output', () => {
+		for (const [b, options] of BOUNDS.entries()) {
 			const fuz = bounded_string(options);
-			const zod = zod_bounded_string(options);
-			for (const input of BOUNDED_STRING_VECTORS) {
+			for (const [i, input] of BOUNDED_STRING_VECTORS.entries()) {
 				const label = `${JSON.stringify(options)} ${JSON.stringify(input)}`;
 				const fuz_result = parse(fuz, input);
-				assert.strictEqual(fuz_result.ok, zod.safeParse(input).success, label);
+				assert.strictEqual(fuz_result.ok, ZOD_BOUNDED_VERDICTS[b]![i] === '1', label);
 				if (fuz_result.ok) assert.strictEqual(fuz_result.value, input, label);
 			}
 		}
@@ -310,11 +260,11 @@ describe('fuz_schema bounded_string', () => {
 		);
 	});
 
-	test('its JSON Schema is the Zod bounded_string’s', () => {
-		for (const options of BOUNDS) {
+	test('its JSON Schema is the one the Zod form wrote', () => {
+		for (const [b, options] of BOUNDS.entries()) {
 			assert.deepEqual<Record<string, unknown>>(
 				to_json_schema(bounded_string(options)),
-				z.toJSONSchema(zod_bounded_string(options)),
+				ZOD_JSON.bounded[b]!,
 				JSON.stringify(options)
 			);
 		}
@@ -340,6 +290,195 @@ const outcome_of = (
 	return result.ok
 		? { ok: true, value: result.value }
 		: { ok: false, issues: to_wire_issues(result.issues, input) };
+};
+
+/** A refusal as `[kind, expected, received]` per issue; `'accepted'` otherwise. */
+type Answer = 'accepted' | Array<[string, string, string]>;
+
+const USERNAME_GRAMMAR = '/^[a-zA-Z][0-9a-zA-Z_-]*[0-9a-zA-Z]$/';
+const EMAIL_GRAMMAR = '/^[^\\s\\u0085@]+@[^\\s\\u0085@.]+\\.[^\\s\\u0085@]*[^\\s\\u0085@.]$/';
+const BLAKE3_GRAMMAR = '/^[0-9a-f]{64}$/';
+
+/** What the earlier Zod forms answered for each row of `USERNAME_VECTORS`, in order. */
+const ZOD_USERNAME_ANSWERS: Array<Answer> = [
+	'accepted',
+	'accepted',
+	'accepted',
+	[['min_length', 'length >= 3', 'string']],
+	'accepted',
+	'accepted',
+	'accepted',
+	[['max_length', 'length <= 39', 'string']],
+	[
+		['max_length', 'length <= 39', 'string'],
+		['regex', USERNAME_GRAMMAR, 'string']
+	],
+	[['min_length', 'length >= 3', 'string']],
+	[
+		['min_length', 'length >= 3', 'string'],
+		['regex', USERNAME_GRAMMAR, 'string']
+	],
+	[
+		['min_length', 'length >= 3', 'string'],
+		['regex', USERNAME_GRAMMAR, 'string']
+	],
+	[
+		['min_length', 'length >= 3', 'string'],
+		['regex', USERNAME_GRAMMAR, 'string']
+	],
+	[['regex', USERNAME_GRAMMAR, 'string']],
+	[['regex', USERNAME_GRAMMAR, 'string']],
+	[['regex', USERNAME_GRAMMAR, 'string']],
+	[['regex', USERNAME_GRAMMAR, 'string']],
+	[['regex', USERNAME_GRAMMAR, 'string']],
+	[['regex', USERNAME_GRAMMAR, 'string']],
+	[['regex', USERNAME_GRAMMAR, 'string']],
+	[['regex', USERNAME_GRAMMAR, 'string']],
+	[['string', 'string', 'null']],
+	[['string', 'string', 'undefined']],
+	[['string', 'string', 'number']],
+	[
+		['string', 'string', 'array'],
+		['min_length', 'length >= 3', 'array']
+	]
+];
+
+/** The rows where `Username` answers differently, by index: a length issue alone. */
+const USERNAME_DECLARED: Record<number, Answer> = {
+	8: [['max_length', 'length <= 39', 'string']],
+	10: [['min_length', 'length >= 3', 'string']],
+	11: [['min_length', 'length >= 3', 'string']],
+	12: [['min_length', 'length >= 3', 'string']],
+	24: [['string', 'string', 'array']]
+};
+
+/** What the earlier Zod form answered for each row of `EMAIL_VECTORS`, in order. */
+const ZOD_EMAIL_ANSWERS: Array<Answer> = [
+	'accepted',
+	'accepted',
+	'accepted',
+	'accepted',
+	'accepted',
+	'accepted',
+	[['regex', EMAIL_GRAMMAR, 'string']],
+	[['regex', EMAIL_GRAMMAR, 'string']],
+	[['regex', EMAIL_GRAMMAR, 'string']],
+	[['regex', EMAIL_GRAMMAR, 'string']],
+	[['regex', EMAIL_GRAMMAR, 'string']],
+	[['regex', EMAIL_GRAMMAR, 'string']],
+	[['regex', EMAIL_GRAMMAR, 'string']],
+	[['regex', EMAIL_GRAMMAR, 'string']],
+	[['regex', EMAIL_GRAMMAR, 'string']],
+	[['regex', EMAIL_GRAMMAR, 'string']],
+	[['regex', EMAIL_GRAMMAR, 'string']],
+	[['regex', EMAIL_GRAMMAR, 'string']],
+	[['regex', EMAIL_GRAMMAR, 'string']],
+	'accepted',
+	[['check', 'check', 'string']],
+	[['check', 'check', 'string']],
+	'accepted',
+	[['check', 'check', 'string']],
+	'accepted',
+	[['check', 'check', 'string']],
+	[['string', 'string', 'null']],
+	[['string', 'string', 'undefined']],
+	[['string', 'string', 'number']]
+];
+
+/** The rows where `Email` answers differently, by index: the bound in code units. */
+const EMAIL_DECLARED: Record<number, Answer> = {
+	20: [['max_length', 'length <= 254', 'string']],
+	21: [['max_length', 'length <= 254', 'string']]
+};
+
+/** What the earlier Zod `Blake3Hash` answered for each row of `BLAKE3_VECTORS`, in order. */
+const ZOD_BLAKE3_ANSWERS: Array<Answer> = [
+	'accepted',
+	'accepted',
+	[['regex', BLAKE3_GRAMMAR, 'string']],
+	[['regex', BLAKE3_GRAMMAR, 'string']],
+	[['regex', BLAKE3_GRAMMAR, 'string']],
+	[['regex', BLAKE3_GRAMMAR, 'string']],
+	[['regex', BLAKE3_GRAMMAR, 'string']],
+	[['regex', BLAKE3_GRAMMAR, 'string']],
+	[['string', 'string', 'number']],
+	[['string', 'string', 'null']]
+];
+
+/** The earlier Zod `bounded_string`'s verdicts, per bounds, one digit per row of `BOUNDED_STRING_VECTORS`. */
+const ZOD_BOUNDED_VERDICTS = [
+	'111110111000000', // {"max": 8}
+	'000110011000000', // {"min": 4, "max": 8}
+	'010000000000000' // {"min": 1, "max": 1}
+];
+
+/** The JSON Schemas the earlier Zod forms wrote. */
+const ZOD_JSON = {
+	uuid: {
+		$schema: 'https://json-schema.org/draft/2020-12/schema',
+		type: 'string',
+		format: 'uuid',
+		pattern:
+			'^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$'
+	},
+	bounded: [
+		{
+			$schema: 'https://json-schema.org/draft/2020-12/schema',
+			type: 'string',
+			maxLength: 8
+		},
+		{
+			$schema: 'https://json-schema.org/draft/2020-12/schema',
+			type: 'string',
+			minLength: 4,
+			maxLength: 8
+		},
+		{
+			$schema: 'https://json-schema.org/draft/2020-12/schema',
+			type: 'string',
+			minLength: 1,
+			maxLength: 1
+		}
+	],
+	username: {
+		$schema: 'https://json-schema.org/draft/2020-12/schema',
+		type: 'string',
+		minLength: 3,
+		maxLength: 39,
+		pattern: '^[a-zA-Z][0-9a-zA-Z_-]*[0-9a-zA-Z]$'
+	},
+	email: {
+		$schema: 'https://json-schema.org/draft/2020-12/schema',
+		type: 'string',
+		pattern: '^[^\\s\\u0085@]+@[^\\s\\u0085@.]+\\.[^\\s\\u0085@]*[^\\s\\u0085@.]$'
+	},
+	blake3: {
+		$schema: 'https://json-schema.org/draft/2020-12/schema',
+		type: 'string',
+		pattern: '^[0-9a-f]{64}$'
+	}
+} as const;
+
+/** Asserts a parse gave an answer: accepted with `value`, or the refusal's issues. */
+const assert_answer = (
+	schema: Parameters<typeof parse_any>[0],
+	input: unknown,
+	answer: Answer,
+	value: unknown,
+	label: string
+): void => {
+	const result = outcome_of(schema, input);
+	if (answer === 'accepted') {
+		assert.ok(result.ok, label);
+		assert.strictEqual(result.value, value, label);
+		return;
+	}
+	assert.ok(!result.ok, label);
+	assert.deepStrictEqual(
+		result.issues.map((i) => [i.kind, i.expected, i.received]),
+		answer,
+		label
+	);
 };
 
 const USERNAME_VECTORS: Array<unknown> = [
@@ -371,55 +510,42 @@ const USERNAME_VECTORS: Array<unknown> = [
 ];
 
 describe('fuz_schema Username', () => {
-	test('the Zod Username gives every row the same verdict, output and issues but one', () => {
-		for (const input of USERNAME_VECTORS) {
+	test('gives every row the answer the Zod form gave, but for the declared rows', () => {
+		let agree = 0;
+		for (const [i, input] of USERNAME_VECTORS.entries()) {
 			const label = JSON.stringify(input);
-			const fuz = outcome_of(Username, input);
-			const zod = outcome_of(ZodUsername, input);
-			assert.strictEqual(fuz.ok, zod.ok, label);
-			if (fuz.ok && zod.ok) {
-				assert.strictEqual(fuz.value, zod.value, label);
-				assert.strictEqual(fuz.value, (input as string).toLowerCase(), label);
-				continue;
-			}
-			assert.ok(!fuz.ok && !zod.ok);
-			// declared: a string too short or too long gets the length issue alone,
-			// where Zod adds the grammar issue after it; and a value that is no
-			// string the type issue alone, where the Zod `bounded_string`'s length
-			// check still reads the `length` of an array, adding a `min_length`
-			const zod_issues =
-				zod.issues.length === 2 &&
-				(fuz.issues[0]?.kind.endsWith('_length') ||
-					(fuz.issues[0]?.kind === 'string' && zod.issues[1]!.kind === 'min_length'))
-					? zod.issues.slice(0, 1)
-					: zod.issues;
-			assert.deepStrictEqual(
-				fuz.issues.map(({ message: _, ...rest }) => rest),
-				zod_issues.map(({ message: _, ...rest }) => rest),
-				label
-			);
+			const declared = USERNAME_DECLARED[i];
+			const value = typeof input === 'string' ? input.toLowerCase() : undefined;
+			assert_answer(Username, input, declared ?? ZOD_USERNAME_ANSWERS[i]!, value, label);
+			if (!declared) agree++;
 		}
+		// a string too short or too long gets the length issue alone, where Zod
+		// added the grammar issue after it; a value that is no string gets the
+		// type issue alone, where Zod's length check still read an array
+		assert.strictEqual(Object.keys(USERNAME_DECLARED).length, 5);
+		assert.strictEqual(agree, USERNAME_VECTORS.length - 5);
 	});
 
-	test('a short username gets one issue, where Zod gives two', () => {
-		const fuz = outcome_of(Username, 'a');
-		const zod = outcome_of(ZodUsername, 'a');
-		assert.ok(!fuz.ok && !zod.ok);
+	test('a short username gets one issue, where Zod gave two', () => {
+		const result = outcome_of(Username, 'a');
+		assert.ok(!result.ok);
 		assert.deepStrictEqual(
-			fuz.issues.map((i) => i.kind),
+			result.issues.map((i) => i.kind),
 			['min_length']
 		);
+		const zod_answer = ZOD_USERNAME_ANSWERS[USERNAME_VECTORS.indexOf('a')]!;
+		assert.ok(zod_answer !== 'accepted');
 		assert.deepStrictEqual(
-			zod.issues.map((i) => i.kind),
+			zod_answer.map((i) => i[0]),
 			['min_length', 'regex']
 		);
-		assert.strictEqual(fuz.issues[0]!.expected, `length >= ${USERNAME_LENGTH_MIN}`);
+		assert.strictEqual(result.issues[0]!.expected, `length >= ${USERNAME_LENGTH_MIN}`);
 	});
 
-	test('its JSON Schema is the Zod Username’s on the input side', () => {
+	test('its JSON Schema is the one the Zod form wrote on the input side', () => {
 		assert.deepEqual<Record<string, unknown>>(
 			to_json_schema(Username, { io: 'input' }),
-			z.toJSONSchema(ZodUsername, { io: 'input' })
+			ZOD_JSON.username
 		);
 	});
 });
@@ -457,23 +583,17 @@ const EMAIL_VECTORS: Array<unknown> = [
 ];
 
 describe('fuz_schema Email', () => {
-	test('the Zod Email gives every row the same verdict, output and issues but one', () => {
-		for (const input of EMAIL_VECTORS) {
-			const label = JSON.stringify(input);
-			const fuz = outcome_of(Email, input);
-			const zod = outcome_of(ZodEmail, input);
-			assert.strictEqual(fuz.ok, zod.ok, label);
-			if (fuz.ok && zod.ok) {
-				assert.strictEqual(fuz.value, input, label);
-				assert.strictEqual(zod.value, input, label);
-				continue;
-			}
-			assert.ok(!fuz.ok && !zod.ok);
-			if (typeof input === 'string' && input.length > EMAIL_LENGTH_MAX) {
-				// declared: past the bound in code units, the one length issue, a
-				// `max_length` where Zod gives its byte `check`, after the grammar
-				// issue when the string is off the grammar too
-				assert.deepStrictEqual(fuz.issues, [
+	test('gives every row the answer the Zod form gave, but for the declared rows', () => {
+		for (const [i, input] of EMAIL_VECTORS.entries()) {
+			const declared = EMAIL_DECLARED[i];
+			assert_answer(Email, input, declared ?? ZOD_EMAIL_ANSWERS[i]!, input, JSON.stringify(input));
+			// declared: past the bound in code units, the one length issue, a
+			// `max_length` where Zod gave its byte `check`
+			if (declared) {
+				assert.ok(typeof input === 'string' && input.length > EMAIL_LENGTH_MAX);
+				const result = outcome_of(Email, input);
+				assert.ok(!result.ok);
+				assert.deepStrictEqual(result.issues, [
 					{
 						kind: 'max_length',
 						path: [],
@@ -482,27 +602,21 @@ describe('fuz_schema Email', () => {
 						message: EMAIL_LENGTH_MESSAGE
 					}
 				]);
-				assert.deepStrictEqual(zod.issues.at(-1), {
-					kind: 'check',
-					path: [],
-					expected: 'check',
-					received: 'string',
-					message: EMAIL_LENGTH_MESSAGE
-				});
-				continue;
 			}
-			assert.deepStrictEqual(
-				fuz.issues.map(({ message: _, ...rest }) => rest),
-				zod.issues.map(({ message: _, ...rest }) => rest),
-				label
+		}
+		assert.strictEqual(Object.keys(EMAIL_DECLARED).length, 2);
+	});
+
+	test('the byte bound’s issue carries its message', () => {
+		for (const [i, input] of EMAIL_VECTORS.entries()) {
+			const answer = ZOD_EMAIL_ANSWERS[i]!;
+			if (answer === 'accepted' || answer[0]![0] !== 'check' || EMAIL_DECLARED[i]) continue;
+			const result = outcome_of(Email, input);
+			assert.ok(!result.ok);
+			assert.strictEqual(
+				result.issues.find((issue) => issue.kind === 'check')?.message,
+				EMAIL_LENGTH_MESSAGE
 			);
-			// the byte bound's issue carries the Zod refine's message
-			for (const [i, issue] of fuz.issues.entries()) {
-				if (issue.kind === 'check') {
-					assert.strictEqual(issue.message, EMAIL_LENGTH_MESSAGE, label);
-					assert.strictEqual(zod.issues[i]!.message, EMAIL_LENGTH_MESSAGE, label);
-				}
-			}
 		}
 	});
 
@@ -519,74 +633,61 @@ describe('fuz_schema Email', () => {
 		);
 	});
 
-	test('its JSON Schema is the Zod Email’s with the bound as maxLength', () => {
+	test('its JSON Schema is the one the Zod form wrote, with the bound as maxLength', () => {
 		const fuz_json = to_json_schema(Email, { io: 'input', unrepresentable: 'any' });
-		const zod_json = z.toJSONSchema(ZodEmail, { io: 'input' });
 		assert.deepEqual<Record<string, unknown>>(fuz_json, {
-			...zod_json,
+			...ZOD_JSON.email,
 			maxLength: EMAIL_LENGTH_MAX
 		});
 		assert.throws(() => to_json_schema(Email, { io: 'input' }), /check/);
 	});
 });
 
-describe('fuz_schema Blake3Hash', () => {
-	/** The Zod `Blake3Hash` it replaced, rebuilt. */
-	const ZodBlake3Hash = z
-		.string()
-		.regex(/^[0-9a-f]{64}$/, 'Expected a 64-character lowercase hex blake3 hash');
-	const vectors: ReadonlyArray<unknown> = [
-		'a'.repeat(64),
-		'0123456789abcdef'.repeat(4),
-		'A'.repeat(64),
-		'a'.repeat(63),
-		'a'.repeat(65),
-		'g'.repeat(64),
-		` ${'a'.repeat(64)}`,
-		'',
-		1,
-		null
-	];
+const BLAKE3_VECTORS: ReadonlyArray<unknown> = [
+	'a'.repeat(64),
+	'0123456789abcdef'.repeat(4),
+	'A'.repeat(64),
+	'a'.repeat(63),
+	'a'.repeat(65),
+	'g'.repeat(64),
+	` ${'a'.repeat(64)}`,
+	'',
+	1,
+	null
+];
 
-	test('the Zod Blake3Hash it replaced gives every row the same verdict and output, and its message', () => {
-		for (const input of vectors) {
-			const fuz = outcome_of(Blake3Hash, input);
-			const zod = outcome_of(ZodBlake3Hash, input);
-			assert.deepStrictEqual(fuz.ok, zod.ok, String(input));
-			if (fuz.ok && zod.ok) {
-				assert.strictEqual(fuz.value, zod.value);
-				continue;
-			}
-			assert.ok(!fuz.ok && !zod.ok);
-			assert.deepStrictEqual(
-				fuz.issues.map(({ message: _, ...rest }) => rest),
-				zod.issues.map(({ message: _, ...rest }) => rest)
-			);
+describe('fuz_schema Blake3Hash', () => {
+	test('gives every row the answer the earlier Zod form gave, and its message', () => {
+		for (const [i, input] of BLAKE3_VECTORS.entries()) {
+			assert_answer(Blake3Hash, input, ZOD_BLAKE3_ANSWERS[i]!, input, String(input));
 			if (typeof input === 'string') {
-				assert.deepStrictEqual(
-					fuz.issues.map((i) => i.message),
-					[BLAKE3_HASH_MESSAGE]
-				);
+				const result = outcome_of(Blake3Hash, input);
+				if (!result.ok) {
+					assert.deepStrictEqual(
+						result.issues.map((issue) => issue.message),
+						[BLAKE3_HASH_MESSAGE]
+					);
+				}
 			}
 		}
 	});
 
-	test('its JSON Schema is the Zod Blake3Hash’s', () => {
+	test('its JSON Schema is the one the Zod form wrote', () => {
 		assert.deepEqual<Record<string, unknown>>(
 			to_json_schema(Blake3Hash, { io: 'output' }),
-			z.toJSONSchema(ZodBlake3Hash, { io: 'output' })
+			ZOD_JSON.blake3
 		);
 	});
 });
 
 describe('UsernameCanonical', () => {
-	test('takes what the Zod Username outputs, and refuses a username in another case', () => {
+	test('takes what the Zod Username output, and refuses a username in another case', () => {
+		// the Zod Username answered each of these: the same value, its
+		// lowercase, or a refusal (frozen)
 		for (const input of ['alice', 'ab1', 'a-b_c', 'a'.repeat(USERNAME_LENGTH_MAX)]) {
-			assert.strictEqual(ZodUsername.parse(input), input);
 			assert.ok(parse(UsernameCanonical, input).ok, input);
 		}
 		for (const input of ['Alice', 'ALICE', 'aB1']) {
-			assert.strictEqual(ZodUsername.parse(input), input.toLowerCase());
 			const result = outcome_of(UsernameCanonical, input);
 			assert.ok(!result.ok, input);
 			assert.deepStrictEqual(
@@ -596,7 +697,6 @@ describe('UsernameCanonical', () => {
 		}
 		for (const input of ['ab', 'a'.repeat(USERNAME_LENGTH_MAX + 1), '1ab', 'ab-', '', 1, null]) {
 			assert.ok(!parse(UsernameCanonical, input).ok, String(input));
-			assert.ok(!ZodUsername.safeParse(input).success, String(input));
 		}
 	});
 

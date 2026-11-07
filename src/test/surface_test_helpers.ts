@@ -1,6 +1,6 @@
 /**
- * Declared surface moves that several surface tests apply to their Zod-era
- * captures.
+ * Declared surface moves that several surface tests apply to captures taken
+ * before their schemas moved.
  *
  * @module
  */
@@ -16,8 +16,8 @@ import { schema_to_surface } from '#lib/http/schema_helpers.ts';
 const { $schema: _, ...TIMESTAMP_NODE } = to_json_schema(Timestamp) as Record<string, unknown>;
 
 /**
- * Declared: a timestamp node, a property ending in `_at` that was a Zod
- * `z.string()` (`{type: 'string'}`) or `z.string().nullable()`
+ * Declared: a timestamp node, a property ending in `_at` that was a bare
+ * string (`{type: 'string'}`) or a nullable one
  * (`{type: ['string', 'null']}`) at capture, is `Timestamp` or
  * `nullable(Timestamp)`: the string gains `format` and `pattern`, and the
  * nullable one is an `anyOf` of that and `{type: 'null'}`. Other keys of the

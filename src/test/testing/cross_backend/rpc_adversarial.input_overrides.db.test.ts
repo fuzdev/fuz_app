@@ -1,6 +1,6 @@
 /**
  * `describe_rpc_adversarial_cross_tests`'s `input_overrides`, run in-process:
- * a method whose input the generator can't satisfy (a `.refine()` pinning a
+ * a method whose input the generator can't satisfy (a `check` pinning a
  * value) builds its params cases from the override. Without the wiring the
  * generated base fails the schema and collection throws, failing this file.
  * The cross-process legs run the suite over the spine, where no method needs
@@ -9,7 +9,7 @@
  * @module
  */
 
-import { z } from 'zod';
+import * as s from '@fuzdev/fuz_schema/schema.ts';
 
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import type { RpcEndpointSpec } from '#lib/http/surface.ts';
@@ -29,8 +29,8 @@ const gizmo_list_spec: RequestResponseActionSpec = {
 	initiator: 'frontend',
 	auth: { account: 'required', actor: 'none' },
 	side_effects: false,
-	input: z.strictObject({ limit: z.number().int().optional() }),
-	output: z.strictObject({ items: z.array(z.string()) }),
+	input: s.object({ limit: s.optional(s.pipe(s.number, s.integer)) }),
+	output: s.object({ items: s.array(s.string) }),
 	async: true,
 	description: 'List gizmos'
 };
@@ -42,10 +42,11 @@ const gizmo_register_spec: RequestResponseActionSpec = {
 	initiator: 'frontend',
 	auth: { account: 'required', actor: 'none' },
 	side_effects: true,
-	input: z
-		.strictObject({ code: z.string(), size: z.number().int() })
-		.refine((v) => v.code === 'magic', { message: 'code must be magic' }),
-	output: z.strictObject({ ok: z.literal(true) }),
+	input: s.pipe(
+		s.object({ code: s.string, size: s.pipe(s.number, s.integer) }),
+		s.check((v) => v.code === 'magic', 'code must be magic')
+	),
+	output: s.object({ ok: s.literal(true) }),
 	async: true,
 	description: 'Register a gizmo'
 };

@@ -28,7 +28,7 @@ import type { KnownDivergence } from '#lib/testing/cross_backend/differential.ts
  */
 const ts_dev_issues = (method: ReadonlyArray<string>): KnownDivergence => ({
 	method,
-	tracking_id: 'ts-dev-zod-issues',
+	tracking_id: 'ts-dev-issues',
 	reason: 'TS keeps the validation issues on invalid_params in DEV only; Rust never sends them',
 	what_differs: [{ path: 'body.error.data.issues', b: undefined }]
 });

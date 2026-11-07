@@ -12,7 +12,7 @@
  */
 
 import { test, assert, afterEach, vi } from 'vitest';
-import { z } from 'zod';
+import { object, string } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { ActionEventEnvironment } from '#lib/actions/action_event_types.ts';
 import type { ActionSpecUnion } from '#lib/actions/action_spec.ts';
@@ -28,8 +28,8 @@ const echo_spec = {
 	initiator: 'both',
 	auth: { account: 'none', actor: 'none' },
 	side_effects: false,
-	input: z.strictObject({ text: z.string() }),
-	output: z.strictObject({ text: z.string() }),
+	input: object({ text: string }),
+	output: object({ text: string }),
 	async: true,
 	description: 'Echo'
 } satisfies ActionSpecUnion;

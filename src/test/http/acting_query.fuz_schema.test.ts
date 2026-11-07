@@ -5,13 +5,12 @@
  * `GET /api/facts/:hash`, `GET /api/surface`, and `GET /audit/stream`
  * (`AuditStreamQuery`).
  *
- * Each is held to the Zod query it replaced, `z.strictObject({acting})` over
- * `ZodActingActor`, on a corpus of query records built as Hono's
- * `c.req.query()` builds them (null-prototype): the same verdict, the same
- * output, and the same wire issues but for `message`. Their surface entries
- * are the Zod-era ones as JSON, captured in
- * `fixtures/surface/acting_query.json`, but for `GET /tables`' `row_count`, a
- * non-negative integer where the Zod one was any number
+ * Each is held to the canonical query, `object({acting: ActingActor})`, on
+ * a corpus of query records built as Hono's `c.req.query()` builds them
+ * (null-prototype): the declared verdict, the same output, and the same wire
+ * issues but for `message`. Their surface entries are the captured ones as
+ * JSON, in `fixtures/surface/acting_query.json`, but for `GET /tables`'
+ * `row_count`, a non-negative integer where the captured one was any number
  * (`http/db_routes.surface.test.ts` holds the db routes whole), and the moves
  * of the error rules (`ERROR_MOVES`): each `GET`'s derived 400 is the query
  * and actor codes, and no body or params code (it was one enum of the four input codes beside the
@@ -32,9 +31,8 @@
 import { describe, test, assert } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { Hono } from 'hono';
-import { z } from 'zod';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
-import { is, is_schema } from '@fuzdev/fuz_schema/schema.ts';
+import { is, is_schema, object } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	create_db_route_specs,
@@ -70,12 +68,12 @@ import {
 	REST_TABLE_NOT_FOUND
 } from '#lib/http/error_schemas.ts';
 import { with_error_moves, type ErrorMove } from '../surface_test_helpers.ts';
-import { ZodActingActor } from '#lib/zod_schemas.ts';
+import { ActingActor } from '#lib/primitive_schemas.ts';
 
 const SURFACE_FIXTURE_PATH = new URL('../fixtures/surface/acting_query.json', import.meta.url);
 
-/** The Zod query every route below declared before the port. */
-const ZodActingQuery = z.strictObject({ acting: ZodActingActor });
+/** The canonical `{acting}` query every route below is held to. */
+const CanonicalActingQuery = object({ acting: ActingActor });
 
 const PORTED_ROUTE_KEYS = [
 	'GET /health',
@@ -134,7 +132,7 @@ const own_proto_key = (): Record<string, unknown> => {
 	return record;
 };
 
-/** The corpus, each input a value either library is handed as a query. */
+/** The corpus, each input a value a route is handed as a query. */
 const CORPUS: Array<[label: string, input: unknown]> = [
 	['empty', query_record({})],
 	['v1 lowercase', query_record({ acting: V1_LOWER })],
@@ -175,7 +173,23 @@ const CORPUS: Array<[label: string, input: unknown]> = [
 	['number root', 1]
 ];
 
-/** What a parse gave, in the terms both libraries share. */
+/** The corpus entries a query accepts, by label; it refuses every other. */
+const ACCEPTED = new Set([
+	'empty',
+	'v1 lowercase',
+	'v1 uppercase',
+	'v1 mixed case',
+	'v4 lowercase',
+	'v4 uppercase',
+	'v4 mixed case',
+	'max lowercase',
+	'max uppercase',
+	'nil',
+	'undefined acting',
+	'plain-prototype record'
+]);
+
+/** What a parse gave: own entries, or wire issues without `message`. */
 const outcome_of = (schema: Parameters<typeof parse_any>[0], input: unknown): unknown => {
 	const result = parse_any(schema, input);
 	if (result.ok) {
@@ -235,14 +249,14 @@ describe('the ported `{acting}` queries', () => {
 		);
 	});
 
-	describe('agree with the Zod query', () => {
+	describe('agree with the canonical query', () => {
 		for (const spec of specs) {
 			const key = `${spec.method} ${spec.path}`;
 			test(key, () => {
 				for (const [label, input] of CORPUS) {
 					assert.deepStrictEqual(
 						outcome_of(spec.query!, input),
-						outcome_of(ZodActingQuery, input),
+						outcome_of(CanonicalActingQuery, input),
 						`${key}: ${label}`
 					);
 				}
@@ -250,28 +264,27 @@ describe('the ported `{acting}` queries', () => {
 		}
 	});
 
-	test('the corpus has both verdicts, and outputs acting lowercased', () => {
+	test('accept the declared corpus entries, outputting acting lowercased', () => {
 		const query = specs[0]!.query!;
-		let ok = 0;
-		let refused = 0;
-		for (const [, input] of CORPUS) {
+		for (const [label, input] of CORPUS) {
 			const result = parse_any(query, input);
+			assert.strictEqual(result.ok, ACCEPTED.has(label), label);
 			if (result.ok) {
-				ok++;
 				const { acting } = result.value as { acting?: string };
 				if (acting !== undefined) assert.strictEqual(acting, acting.toLowerCase());
-			} else {
-				refused++;
 			}
 		}
-		assert.ok(ok >= 10, `${ok} accepted`);
-		assert.ok(refused >= 20, `${refused} refused`);
+		for (const label of ACCEPTED) {
+			assert.ok(
+				CORPUS.some(([l]) => l === label),
+				label
+			);
+		}
 	});
 
-	// the one difference in the output: Zod builds a new plain object, fuz_schema
-	// returns the record itself when no entry changed it (its own prototype) and a
-	// plain copy when one did, so no reader of `validated_query` can tell but by
-	// its prototype or identity
+	// the output is the record itself when no entry changed it (its own
+	// prototype) and a plain copy when one did, so no reader of
+	// `validated_query` can tell but by its prototype or identity
 	test('the output is the record itself unless acting was lowercased', () => {
 		const query = specs[0]!.query!;
 		const lower = query_record({ acting: V1_LOWER });
@@ -283,10 +296,6 @@ describe('the ported `{acting}` queries', () => {
 		assert.ok(copied.ok);
 		assert.notStrictEqual(copied.value, upper);
 		assert.strictEqual(Object.getPrototypeOf(copied.value), Object.prototype);
-		const zod = parse_any(ZodActingQuery, lower);
-		assert.ok(zod.ok);
-		assert.notStrictEqual(zod.value, lower);
-		assert.strictEqual(Object.getPrototypeOf(zod.value), Object.prototype);
 	});
 });
 
@@ -343,7 +352,7 @@ const ERROR_MOVES: Record<string, Record<number, ErrorMove>> = {
 
 /**
  * Declared: `GET /tables`' `row_count` is a non-negative integer, where the
- * Zod one was any number.
+ * captured one was any number.
  */
 const with_row_count_move = (route: Record<string, any>): Record<string, any> => {
 	if (`${route.method} ${route.path}` !== 'GET /tables') return route;
@@ -360,7 +369,7 @@ const with_row_count_move = (route: Record<string, any>): Record<string, any> =>
 };
 
 describe('the surface entries of the ported routes', () => {
-	test('are the Zod-era ones as JSON, `description` now written last', () => {
+	test('are the captured ones as JSON, `description` written last', () => {
 		const surface = generate_app_surface({
 			route_specs: create_acting_query_route_specs(),
 			middleware_specs: []
@@ -375,8 +384,8 @@ describe('the surface entries of the ported routes', () => {
 			)
 		);
 		// equal as JSON, not byte for byte: fuz_schema writes a node's keywords in
-		// its own order, `type` first and `description` last, where Zod wrote
-		// `description` first
+		// its own order, `type` first and `description` last, where the capture
+		// has `description` first
 		const written = JSON.stringify(surface.routes, null, '\t') + '\n';
 		assert.notStrictEqual(written, expected);
 		for (const route of surface.routes) {

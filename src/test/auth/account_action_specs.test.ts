@@ -1,8 +1,8 @@
 /**
  * Tests for `account_action_specs.ts` — the length cap on
  * `account_token_create`'s `name`, and `account_token_revoke`'s
- * `@fuzdev/fuz_schema` schemas: their surface entry is the one the Zod
- * schemas wrote, captured in `fixtures/surface/account_token_revoke.json`.
+ * `@fuzdev/fuz_schema` schemas: their surface entry is the one captured in
+ * `fixtures/surface/account_token_revoke.json`.
  *
  * @module
  */
@@ -64,7 +64,7 @@ describe('account_token_revoke schemas', () => {
 		assert.ok(is_schema(TokenRevokeOutput));
 	});
 
-	test('the surface entry is the Zod-era one, byte for byte', () => {
+	test('the surface entry is the captured one, byte for byte', () => {
 		const surface = generate_app_surface({
 			route_specs: [],
 			middleware_specs: [],

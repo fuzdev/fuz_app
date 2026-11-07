@@ -1,8 +1,7 @@
 /**
  * Tests for the cell wire schemas — the length cap on the wire `kind`, on
  * `cell_create` and on the `cell_list` filter, and the verdicts and issues of
- * the spots where the `@fuzdev/fuz_schema` forms read differently from the
- * Zod ones they replaced: the grant principal's `variant`, the item
+ * the spots with a form of their own: the grant principal's `variant`, the item
  * position's pipe, and `cell_list`'s omitted input; the grant principal's
  * `RoleName` and `cell_list`'s closed moderation filter; and that every cell
  * input is strict and `cell_list`'s paging bounds hold.

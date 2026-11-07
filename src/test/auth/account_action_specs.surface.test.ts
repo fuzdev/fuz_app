@@ -1,11 +1,11 @@
 /**
- * The account domain's action surface, held to the Zod-era one captured in
+ * The account domain's action surface, held to the one captured in
  * `fixtures/surface/account.json`: the RPC and WS entries of every method of
  * `all_account_action_specs`, and the diagnostics. Equal as JSON apart from
  * the declared moves, each applied to the capture here:
  *
  * - `account_session_revoke_all`'s `count` is a non-negative integer, where
- *   the Zod one was any number
+ *   the captured one was any number
  * - `account_token_create`'s `expires_at` and every timestamp of an
  *   `account_token_list` row is a `Timestamp`, gaining `format: 'date-time'`
  *   and the `iso_datetime` `pattern` (an `anyOf` with `null` where nullable)
@@ -104,11 +104,11 @@ describe('account surface', () => {
 		);
 	});
 
-	test('the RPC entries are the Zod-era ones but for the declared moves', () => {
+	test('the RPC entries are the captured ones but for the declared moves', () => {
 		assert.deepStrictEqual(surface.rpc_endpoints[0]!.methods, expected_entries(head.rpc));
 	});
 
-	test('the WS entries are the Zod-era ones but for the declared moves', () => {
+	test('the WS entries are the captured ones but for the declared moves', () => {
 		assert.deepStrictEqual(
 			surface.ws_endpoints[0]!.methods.slice(protocol_actions.length),
 			expected_entries(head.ws)

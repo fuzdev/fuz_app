@@ -11,7 +11,7 @@
  */
 
 import { describe, test, assert, vi, beforeEach, afterEach } from 'vitest';
-import { z } from 'zod';
+import { object, string } from '@fuzdev/fuz_schema/schema.ts';
 
 vi.mock('esm-env', () => ({ BROWSER: true, DEV: true, NODE: true }));
 
@@ -1327,7 +1327,7 @@ describe('request()', () => {
 	});
 
 	test('omits params from the frame when not given', async () => {
-		// the absent form is the one shape every server admits for a `z.void()`
+		// the absent form is the one shape every server admits for a `void`
 		// input, including servers that refuse `{}` with `invalid_params`
 		const client = new FrontendWebsocketClient(TEST_URL);
 		client.connect();
@@ -1346,7 +1346,7 @@ describe('request()', () => {
 	});
 
 	test('a parameterless request through FrontendWebsocketTransport reaches the wire without params', async () => {
-		// the path a `z.void()` action takes from the frontend RPC client: the
+		// the path a `void`-input action takes from the frontend RPC client: the
 		// request message has no `params` key, the transport hands the
 		// connection `message.params` (`undefined`), and the frame must keep it
 		// absent rather than defaulting it
@@ -2584,8 +2584,8 @@ describe('will_reconnect and ws.queue routing', () => {
 		initiator: 'frontend',
 		auth: { account: 'none', actor: 'none' },
 		side_effects: true,
-		input: z.strictObject({ message: z.string() }),
-		output: z.strictObject({ message: z.string() }),
+		input: object({ message: string }),
+		output: object({ message: string }),
 		async: true,
 		description: 'Echo back the input'
 	} satisfies ActionSpecUnion;

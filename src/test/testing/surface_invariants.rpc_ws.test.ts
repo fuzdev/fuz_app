@@ -9,7 +9,7 @@
  */
 
 import { describe, test, assert } from 'vitest';
-import { z } from 'zod';
+import { object, string, void as fuz_void } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	assert_rpc_method_descriptions_present,
@@ -34,8 +34,8 @@ const rpc_account_verify_spec: RequestResponseActionSpec = {
 	initiator: 'frontend',
 	auth: { account: 'required', actor: 'none' },
 	side_effects: false,
-	input: z.strictObject({}),
-	output: z.strictObject({}),
+	input: object({}),
+	output: object({}),
 	async: true,
 	description: 'Verify the session.'
 };
@@ -46,8 +46,8 @@ const rpc_admin_list_spec: RequestResponseActionSpec = {
 	initiator: 'frontend',
 	auth: { account: 'required', actor: 'required', roles: ['admin'] },
 	side_effects: false,
-	input: z.strictObject({ acting: z.strictObject({ actor_id: z.string() }) }),
-	output: z.strictObject({}),
+	input: object({ acting: object({ actor_id: string }) }),
+	output: object({}),
 	async: true,
 	description: 'List accounts.'
 };
@@ -58,8 +58,8 @@ const ws_account_verify_spec: RequestResponseActionSpec = {
 	initiator: 'frontend',
 	auth: { account: 'required', actor: 'none' },
 	side_effects: false,
-	input: z.strictObject({}),
-	output: z.strictObject({}),
+	input: object({}),
+	output: object({}),
 	async: true,
 	description: 'Verify session over WS.'
 };
@@ -70,8 +70,8 @@ const ws_role_grant_offer_received_spec: RemoteNotificationActionSpec = {
 	initiator: 'backend',
 	auth: null,
 	side_effects: true,
-	input: z.strictObject({ offer: z.strictObject({ id: z.string() }) }),
-	output: z.void(),
+	input: object({ offer: object({ id: string }) }),
+	output: fuz_void,
 	async: true,
 	description: 'Notify recipient of a new role-grant offer.'
 };
@@ -83,8 +83,8 @@ const rpc_testing_reset_spec: RequestResponseActionSpec = {
 	initiator: 'frontend',
 	auth: { account: 'required', actor: 'none', credential_types: ['daemon_token'] },
 	side_effects: true,
-	input: z.strictObject({}),
-	output: z.strictObject({}),
+	input: object({}),
+	output: object({}),
 	async: true,
 	description: 'Test-binary only — wipe + re-seed.'
 };

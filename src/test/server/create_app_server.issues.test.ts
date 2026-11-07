@@ -1,11 +1,10 @@
 /**
  * The validation issues an assembled app answers a bad REST body and bad RPC
  * params with: `WireIssue`s under DEV, and in production the same body
- * without them. Zod schemas and the fuz_schema inputs of
- * `account_token_revoke`, `actor_search`, `self_service_role_set`,
- * `role_grant_offer_create` and `role_grant_offer_history` alike, and a bad
- * query on `GET /api/surface`, whose `{acting}` query is a fuz_schema
- * `object`.
+ * without them. A test body and the inputs of `account_token_revoke`,
+ * `actor_search`, `self_service_role_set`, `role_grant_offer_create` and
+ * `role_grant_offer_history` alike, and a bad query on `GET /api/surface`,
+ * whose `{acting}` query is an `object`.
  *
  * Vitest runs with `DEV=true`, so each leg imports the server fresh under a
  * scoped `esm-env` mock (the `#lib/testing` harness can't load under
@@ -17,9 +16,17 @@
  */
 
 import { test, assert, afterEach, vi, describe } from 'vitest';
-import { z } from 'zod';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
-import { is, object, pipe, with_default_fn, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
+import {
+	is,
+	literal,
+	number,
+	object,
+	pipe,
+	string,
+	with_default_fn,
+	type AnySchema
+} from '@fuzdev/fuz_schema/schema.ts';
 import { get_schema_entries } from '@fuzdev/fuz_schema/introspect.ts';
 
 import { create_session_config } from '#lib/auth/session_cookie.ts';
@@ -53,7 +60,7 @@ const ORIGIN = 'http://localhost:5173';
 
 const log = new Logger('test', { level: 'off' });
 
-const Body = z.strictObject({ name: z.string(), count: z.number() });
+const Body = object({ name: string, count: number });
 
 // `self_service_role_set`'s fuz_schema input less its `acting`, which only an
 // actor-requiring action may declare, and validation runs after auth there: on
@@ -103,7 +110,7 @@ const create_app = async (dev: boolean) => {
 		auth: { account: 'none', actor: 'none' },
 		description: 'Takes a thing.',
 		input: Body,
-		output: z.strictObject({ ok: z.literal(true) }),
+		output: object({ ok: literal(true) }),
 		handler: () => route_ok({ ok: true })
 	});
 	const server = await create_app_server({
@@ -145,7 +152,7 @@ const create_app = async (dev: boolean) => {
 							auth: { account: 'none', actor: 'none' },
 							side_effects: false,
 							input: Body,
-							output: z.strictObject({ ok: z.literal(true) }),
+							output: object({ ok: literal(true) }),
 							async: true,
 							description: 'Takes a thing.'
 						},
@@ -291,9 +298,8 @@ const post_rpc_self_service_role = async (
 		})
 	});
 
-// the issues that input gets from `self_service_role_set`'s input, in fuz_schema's
-// words: the Zod schema it replaced gave the same issues but for their messages,
-// the role's the bare `RoleName` message where fuz_schema's has its path before it
+// the issues that input gets from `self_service_role_set`'s input, the role's
+// message the `RoleName` pattern message with its path before it
 const SELF_SERVICE_ROLE_ISSUES = [
 	{
 		kind: 'regex',
@@ -323,8 +329,7 @@ const get_surface_bad_query = async (
 ): Promise<Response> =>
 	await app.request('/api/surface?acting=not-a-uuid&x=1', { headers: { origin: ORIGIN } });
 
-// the issues that query gets from `object({acting: ActingActor})`, in fuz_schema's
-// words: the Zod query it replaced gave the same issues but for their messages
+// the issues that query gets from `object({acting: ActingActor})`
 const ACTING_QUERY_ISSUES = [
 	{
 		kind: 'uuid',
@@ -342,8 +347,7 @@ const ACTING_QUERY_ISSUES = [
 	}
 ];
 
-// the issues that input gets from `ActorSearchInput`, in fuz_schema's words: the
-// Zod schema it replaced gave the same issues but for their messages
+// the issues that input gets from `ActorSearchInput`
 const ACTOR_SEARCH_ISSUES = [
 	{
 		kind: 'min_length',
@@ -368,8 +372,7 @@ const ACTOR_SEARCH_ISSUES = [
 	}
 ];
 
-// the issue `tok_short` gets from `TokenRevokeInput`, in fuz_schema's words: the Zod
-// schema it replaced gave the same issue but for its message, Zod's own text
+// the issue `tok_short` gets from `TokenRevokeInput`
 const TOKEN_ID_ISSUE = {
 	kind: 'regex',
 	path: ['token_id'],
@@ -378,28 +381,28 @@ const TOKEN_ID_ISSUE = {
 	message: 'token_id: expected /^tok_[A-Za-z0-9_-]{12}$/, received string'
 };
 
-// the issues `BAD` gets from `Body`, in Zod's order
+// the issues `BAD` gets from `Body`
 const EXPECTED_ISSUES = [
 	{
 		kind: 'string',
 		path: ['name'],
 		expected: 'string',
 		received: 'number',
-		message: 'Invalid input: expected string, received number'
+		message: 'name: expected string, received number'
 	},
 	{
 		kind: 'number',
 		path: ['count'],
 		expected: 'number',
 		received: 'undefined',
-		message: 'Invalid input: expected number, received undefined'
+		message: 'count: expected number, received undefined'
 	},
 	{
 		kind: 'unknown_key',
 		path: ['extra'],
 		expected: 'no unknown keys',
 		received: 'null',
-		message: 'Unrecognized key: "extra"'
+		message: 'extra: expected no unknown keys, received null'
 	}
 ];
 
@@ -457,7 +460,7 @@ describe('an assembled app answers a bad `account_token_revoke` input', () => {
 		assert.ok(is(WireIssue, body.error.data.issues[0]));
 	});
 
-	test('without data in production, as under Zod', async () => {
+	test('without data in production', async () => {
 		const res = await post_rpc_token_revoke(await create_app(false));
 		assert.strictEqual(res.status, 400);
 		assert.deepStrictEqual(await res.json(), {
@@ -479,7 +482,7 @@ describe('an assembled app answers a bad `actor_search` input', () => {
 		});
 	});
 
-	test('without data in production, as under Zod', async () => {
+	test('without data in production', async () => {
 		const res = await post_rpc_actor_search(await create_app(false));
 		assert.strictEqual(res.status, 400);
 		assert.deepStrictEqual(await res.json(), {
@@ -522,7 +525,7 @@ describe('an assembled app answers a bad `self_service_role_set` input', () => {
 		);
 	});
 
-	test('without data in production, as under Zod', async () => {
+	test('without data in production', async () => {
 		const res = await post_rpc_self_service_role(await create_app(false));
 		assert.strictEqual(res.status, 400);
 		assert.deepStrictEqual(await res.json(), {
@@ -546,7 +549,7 @@ const post_rpc_params = async (
 
 // half-scoped, with a field off its grammar and an unknown key: the fields'
 // issues alone, as the `check` that pairs the scope runs only on an input whose
-// fields passed, where Zod added a `check` issue on the input after them
+// fields passed
 const HALF_SCOPED_CREATE = {
 	to_account_id: '0f8fad5b-d9cb-469f-a165-70867728950e',
 	role: 'teacher',
@@ -601,7 +604,7 @@ describe('an assembled app answers a bad `role_grant_offer_create` input', () =>
 		);
 	});
 
-	test('without data in production, as under Zod', async () => {
+	test('without data in production', async () => {
 		const res = await post_rpc_params(await create_app(false), 'offer_thing', HALF_SCOPED_CREATE);
 		assert.strictEqual(res.status, 400);
 		assert.deepStrictEqual(await res.json(), {
@@ -638,7 +641,7 @@ describe('an assembled app answers a bad `role_grant_offer_history` input', () =
 		});
 	});
 
-	test('with its reason and no issues in production, as under Zod', async () => {
+	test('with its reason and no issues in production', async () => {
 		const res = await post_rpc_params(await create_app(false), 'page_thing', { limit: 1.5 });
 		assert.strictEqual(res.status, 400);
 		assert.deepStrictEqual(await res.json(), {
@@ -669,7 +672,7 @@ describe('an assembled app answers a bad `{acting}` route query', () => {
 		});
 	});
 
-	test('without issues in production, as under Zod', async () => {
+	test('without issues in production', async () => {
 		const res = await get_surface_bad_query(await create_app(false));
 		assert.strictEqual(res.status, 400);
 		assert.deepStrictEqual(await res.json(), { error: 'invalid_query_params' });

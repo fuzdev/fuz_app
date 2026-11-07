@@ -12,13 +12,8 @@ import { create_deferred, wait, type Deferred } from '@fuzdev/fuz_util/async.ts'
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
-import { z } from 'zod';
-import { meta as fuz_meta } from '@fuzdev/fuz_schema/meta.ts';
-import {
-	loose_object as fuz_loose_object,
-	nullable as fuz_nullable,
-	string as fuz_string
-} from '@fuzdev/fuz_schema/schema.ts';
+import { meta } from '@fuzdev/fuz_schema/meta.ts';
+import * as s from '@fuzdev/fuz_schema/schema.ts';
 import type {} from '#lib/sensitivity.ts';
 
 import {
@@ -470,7 +465,7 @@ describe('create_audit_emitter — emit', () => {
 			vi.spyOn(console, 'error').mockImplementation(() => {});
 			const audit_log_config = create_audit_log_config({
 				extra_events: {
-					classroom_create: fuz_loose_object({ classroom_id: fuz_string, name: fuz_string })
+					classroom_create: s.loose_object({ classroom_id: s.string, name: s.string })
 				}
 			});
 			const audit = create_audit_emitter({
@@ -505,7 +500,7 @@ describe('create_audit_emitter — emit', () => {
 			vi.spyOn(console, 'error').mockImplementation(() => {});
 			const audit_log_config = create_audit_log_config({
 				extra_events: {
-					classroom_create: z.looseObject({ classroom_id: z.string(), name: z.string() })
+					classroom_create: s.loose_object({ classroom_id: s.string, name: s.string })
 				}
 			});
 			const audit = create_audit_emitter({
@@ -538,10 +533,10 @@ describe('create_audit_emitter — a dropped pool write', () => {
 		} as unknown as Logger;
 		const audit_log_config = create_audit_log_config({
 			extra_events: {
-				probe_event: fuz_nullable(
-					fuz_loose_object({
-						label: fuz_string,
-						secret_thing: fuz_meta(fuz_string, { sensitivity: 'secret' })
+				probe_event: s.nullable(
+					s.loose_object({
+						label: s.string,
+						secret_thing: meta(s.string, { sensitivity: 'secret' })
 					})
 				)
 			}
@@ -573,9 +568,9 @@ describe('create_audit_emitter — a dropped pool write', () => {
 		} as unknown as Logger;
 		const audit_log_config = create_audit_log_config({
 			extra_events: {
-				probe_event: z.looseObject({
-					label: z.string(),
-					secret_thing: z.string().meta({ sensitivity: 'secret' })
+				probe_event: s.loose_object({
+					label: s.string,
+					secret_thing: meta(s.string, { sensitivity: 'secret' })
 				})
 			}
 		});
@@ -600,59 +595,46 @@ describe('create_audit_emitter — a dropped pool write', () => {
 			reset_audit_write_failures();
 		}
 	});
-	test('a metadata key that is an inherited name is logged, masked by the schema alone, on either library', async () => {
-		// `JSON.parse` makes `__proto__` an own key, as a request body would; the
-		// Zod mask once read `constructor` and the rest through the shape's
-		// prototype and threw, losing the line
-		const metadata = (): Record<string, unknown> =>
-			JSON.parse(
-				'{"__proto__":1,"constructor":"c","toString":"t","undeclared":"u","label":"kept","secret_thing":"hunter2"}'
-			);
-		const schemas = {
-			zod: z.looseObject({
-				label: z.string(),
-				secret_thing: z.string().meta({ sensitivity: 'secret' })
-			}),
-			fuz_schema: fuz_loose_object({
-				label: fuz_string,
-				secret_thing: fuz_meta(fuz_string, { sensitivity: 'secret' })
-			})
-		};
-		for (const [library, schema] of Object.entries(schemas)) {
+	test('a metadata key that is an inherited name is logged, masked by the schema alone', async () => {
+		// `JSON.parse` makes `__proto__` an own key, as a request body would; a
+		// mask that reads `constructor` and the rest through a prototype throws,
+		// losing the line
+		const metadata: Record<string, unknown> = JSON.parse(
+			'{"__proto__":1,"constructor":"c","toString":"t","undeclared":"u","label":"kept","secret_thing":"hunter2"}'
+		);
+		const schema = s.loose_object({
+			label: s.string,
+			secret_thing: meta(s.string, { sensitivity: 'secret' })
+		});
+		reset_audit_write_failures();
+		const lines: Array<string> = [];
+		const capture = {
+			error: (...args: Array<unknown>) => lines.push(args.map(String).join(' '))
+		} as unknown as Logger;
+		const audit_log_config = create_audit_log_config({ extra_events: { probe_event: schema } });
+		const db = create_mock_db(vi.fn(() => Promise.reject(new Error('checkout timed out'))));
+		const audit = create_audit_emitter({ db, log: capture, audit_log_config });
+		try {
+			await audit.emit_pool({
+				event_type: 'probe_event',
+				outcome: 'failure',
+				metadata
+			});
+			assert.strictEqual(lines.length, 1, 'one line');
+			const [, row_json] = /^audit row dropped: (.*) error: checkout timed out$/.exec(lines[0]!)!;
+			const row = JSON.parse(row_json!);
+			assert.deepEqual(Object.entries(row.metadata), [
+				['__proto__', 1],
+				['constructor', 'c'],
+				['toString', 't'],
+				['undeclared', 'u'],
+				['label', 'kept'],
+				['secret_thing', '***']
+			]);
+			assert.notInclude(lines[0], 'hunter2');
+			assert.strictEqual(get_audit_write_failures(), 1);
+		} finally {
 			reset_audit_write_failures();
-			const lines: Array<string> = [];
-			const capture = {
-				error: (...args: Array<unknown>) => lines.push(args.map(String).join(' '))
-			} as unknown as Logger;
-			const audit_log_config = create_audit_log_config({ extra_events: { probe_event: schema } });
-			const db = create_mock_db(vi.fn(() => Promise.reject(new Error('checkout timed out'))));
-			const audit = create_audit_emitter({ db, log: capture, audit_log_config });
-			try {
-				await audit.emit_pool({
-					event_type: 'probe_event',
-					outcome: 'failure',
-					metadata: metadata()
-				});
-				assert.strictEqual(lines.length, 1, `${library}: one line`);
-				const [, row_json] = /^audit row dropped: (.*) error: checkout timed out$/.exec(lines[0]!)!;
-				const row = JSON.parse(row_json!);
-				assert.deepEqual(
-					Object.entries(row.metadata),
-					[
-						['__proto__', 1],
-						['constructor', 'c'],
-						['toString', 't'],
-						['undeclared', 'u'],
-						['label', 'kept'],
-						['secret_thing', '***']
-					],
-					library
-				);
-				assert.notInclude(lines[0], 'hunter2', library);
-				assert.strictEqual(get_audit_write_failures(), 1, library);
-			} finally {
-				reset_audit_write_failures();
-			}
 		}
 	});
 });
