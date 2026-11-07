@@ -1,14 +1,36 @@
 /**
  * Zod schema introspection utilities.
  *
- * Generic helpers for walking, unwrapping, and extracting field info from Zod schemas.
- * Used by adversarial input testing, test-data generation, and auth-shape
- * checks.
+ * Generic helpers for walking, unwrapping, and extracting field info from Zod schemas,
+ * and `zod_has_trait`, the structural `instanceof`. Used by adversarial input
+ * testing, test-data generation, auth-shape checks, and the dual-library layer
+ * (`schema_issues.ts`, `http/schema_helpers.ts`). Imports Zod's types only, so
+ * an importer loads no Zod.
  *
  * @module
  */
 
 import type { z } from 'zod';
+
+/**
+ * Whether `value` carries the Zod trait `trait` — what Zod's own
+ * `instanceof` reads (`value._zod.traits.has(trait)`), so it answers as
+ * `value instanceof z[trait]` would, a schema made by another copy of Zod
+ * included, without importing Zod at runtime. The classic API's names are the
+ * classes' (`'ZodType'`, `'ZodObject'`, `'ZodNull'`, `'ZodError'`), the core's
+ * `$`-prefixed (`'$ZodType'`).
+ *
+ * @param value - any value
+ * @param trait - the Zod class name to test for
+ * @returns whether `value` is an instance of that Zod class
+ */
+export const zod_has_trait = (value: unknown, trait: string): boolean => {
+	if (value === null || (typeof value !== 'object' && typeof value !== 'function')) return false;
+	const internals: unknown = (value as { _zod?: unknown })._zod;
+	if (internals === null || typeof internals !== 'object') return false;
+	const traits: unknown = (internals as { traits?: unknown }).traits;
+	return traits instanceof Set && traits.has(trait);
+};
 
 //
 // Schema Introspection

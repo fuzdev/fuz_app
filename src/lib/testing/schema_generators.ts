@@ -12,7 +12,7 @@ import './assert_dev_env.ts';
  * @module
  */
 
-import { z } from 'zod';
+import type { z } from 'zod';
 import { is_schema, type AnySchema, type SchemaNode } from '@fuzdev/fuz_schema/schema.ts';
 import {
 	get_schema_entries,
@@ -79,7 +79,7 @@ import {
 export const to_field_json_schema = (field_schema: ValidationSchema): Record<string, unknown> => {
 	const json: Record<string, unknown> = is_schema(field_schema)
 		? to_json_schema(field_schema, { io: 'input', unrepresentable: 'any' })
-		: z.toJSONSchema(field_schema as z.ZodType, { io: 'input', unrepresentable: 'any' });
+		: (field_schema as z.ZodType).toJSONSchema({ io: 'input', unrepresentable: 'any' });
 	if (Array.isArray(json.anyOf)) {
 		const branches = (json.anyOf as Array<Record<string, unknown>>).filter(
 			(branch) => branch.type !== 'null'

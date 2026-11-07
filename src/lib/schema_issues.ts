@@ -10,7 +10,7 @@
  * @module
  */
 
-import { z } from 'zod';
+import type { z } from 'zod';
 import {
 	array,
 	format_issue,
@@ -29,16 +29,20 @@ import {
 } from '@fuzdev/fuz_schema/schema.ts';
 import type { Result } from '@fuzdev/fuz_util/result.ts';
 
+import { zod_has_trait } from './zod.ts';
+
 /** A schema of either library: a Zod schema or a `@fuzdev/fuz_schema` one. */
 export type ValidationSchema = z.ZodType | AnySchema;
 
 /**
- * Whether `value` is a Zod schema. Zod's `instanceof` reads the schema's
- * traits, so a schema made by another copy of Zod is one too.
+ * Whether `value` is a Zod schema of the classic API, as `z.ZodType`'s
+ * `instanceof` reads it (`zod_has_trait`): by the schema's traits, so a schema
+ * made by another copy of Zod is one too. Imports no Zod at runtime.
  *
  * @param value - any value
  */
-export const is_zod_schema = (value: unknown): value is z.ZodType => value instanceof z.ZodType;
+export const is_zod_schema = (value: unknown): value is z.ZodType =>
+	zod_has_trait(value, 'ZodType');
 
 /**
  * Throw unless `value` is a Zod schema, naming `label` — what a reader of a
@@ -189,9 +193,28 @@ export const unknown_key_targets = (
 	return targets;
 };
 
+// a Zod issue path as `z.prettifyError` writes it: identifier keys dotted,
+// numbers, symbols and other keys bracketed
+const format_zod_path = (path: ReadonlyArray<PropertyKey | { key: PropertyKey }>): string => {
+	const segments: Array<string> = [];
+	for (const seg of path) {
+		const key = typeof seg === 'object' && seg !== null ? seg.key : seg;
+		if (typeof key === 'number') segments.push(`[${key}]`);
+		else if (typeof key === 'symbol') segments.push(`[${JSON.stringify(String(key))}]`);
+		else if (/[^\w$]/.test(key)) segments.push(`[${JSON.stringify(key)}]`);
+		else {
+			if (segments.length) segments.push('.');
+			segments.push(key);
+		}
+	}
+	return segments.join('');
+};
+
 /**
- * A failed parse's issues as text: Zod's `z.prettifyError` text for Zod
- * issues, and for fuz_schema issues their `format_issue` lines.
+ * A failed parse's issues as text. Zod issues read as `z.prettifyError`
+ * writes them — shortest path first, each `✖ message` and, when it has a
+ * path, `  → at path` — without importing Zod at runtime; fuz_schema issues
+ * are their `format_issue` lines.
  *
  * @param issues - a failed parse's issues, all of one library
  */
@@ -199,7 +222,15 @@ export const format_issues = (issues: ReadonlyArray<AnyIssue>): string => {
 	const first = issues[0];
 	if (!first) return '';
 	if (is_zod_issue(first)) {
-		return z.prettifyError({ issues: issues as ReadonlyArray<z.core.$ZodIssue> });
+		const lines: Array<string> = [];
+		const sorted = [...(issues as ReadonlyArray<z.core.$ZodIssue>)].sort(
+			(a, b) => (a.path ?? []).length - (b.path ?? []).length
+		);
+		for (const issue of sorted) {
+			lines.push(`✖ ${issue.message}`);
+			if (issue.path?.length) lines.push(`  → at ${format_zod_path(issue.path)}`);
+		}
+		return lines.join('\n');
 	}
 	return (issues as ReadonlyArray<SchemaIssue>).map(format_issue).join('\n');
 };
@@ -212,7 +243,7 @@ export const format_issues = (issues: ReadonlyArray<AnyIssue>): string => {
  * @param err - a caught value
  */
 export const is_schema_validation_error = (err: unknown): err is z.ZodError | SchemaError =>
-	err instanceof z.ZodError || err instanceof SchemaError;
+	zod_has_trait(err, 'ZodError') || err instanceof SchemaError;
 
 /**
  * A `@fuzdev/fuz_schema` `loose_object`: a validation issue as an error

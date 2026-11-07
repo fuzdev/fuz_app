@@ -9,7 +9,8 @@ import {
 	zod_get_field_schema,
 	zod_unwrap_to_object,
 	zod_extract_fields,
-	type SchemaFieldInfo
+	type SchemaFieldInfo,
+	zod_has_trait
 } from '#lib/zod.ts';
 
 /** The `zod_extract_fields` info for a single field, the window onto the module-internal predicates. */
@@ -436,5 +437,54 @@ describe('zod_extract_fields', () => {
 		assert.ok(!f.required);
 		assert.ok(f.has_default);
 		assert.ok(f.nullable);
+	});
+});
+
+describe('zod_has_trait', () => {
+	test('answers as `instanceof` the Zod class does', () => {
+		const error = z.string().safeParse(1).error;
+		const values: Array<unknown> = [
+			z.null(),
+			z.void(),
+			z.undefined(),
+			z.never(),
+			z.string(),
+			z.object({ a: z.string() }),
+			z.strictObject({ a: z.string() }),
+			z.looseObject({}),
+			z.string().optional(),
+			z.string().transform((s) => s.length),
+			z.strictObject({}).refine(() => true),
+			error,
+			new Error('x'),
+			{},
+			{ _zod: {} },
+			null,
+			undefined,
+			'ZodType',
+			() => 0
+		];
+		const classes = {
+			ZodType: z.ZodType,
+			ZodNull: z.ZodNull,
+			ZodVoid: z.ZodVoid,
+			ZodObject: z.ZodObject,
+			ZodNever: z.ZodNever,
+			ZodError: z.ZodError
+		} as const;
+		for (const [name, cls] of Object.entries(classes)) {
+			for (const [i, value] of values.entries()) {
+				assert.strictEqual(
+					zod_has_trait(value, name),
+					value instanceof (cls as unknown as new () => unknown),
+					`${name} ${i}`
+				);
+			}
+		}
+		// traits that aren't a `Set`, where Zod's own `instanceof` throws
+		assert.isFalse(zod_has_trait({ _zod: { traits: ['ZodType'] } }, 'ZodType'));
+		// a strict object's catchall is a `ZodNever`, a stripping one's absent
+		assert.ok(zod_has_trait(z.strictObject({}).def.catchall, 'ZodNever'));
+		assert.isFalse(zod_has_trait(z.object({}).def.catchall, 'ZodNever'));
 	});
 });

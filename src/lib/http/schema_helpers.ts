@@ -8,7 +8,7 @@
  * @module
  */
 
-import { z } from 'zod';
+import type { z } from 'zod';
 import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 import { is_schema, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 import { unwrap_schema } from '@fuzdev/fuz_schema/introspect.ts';
@@ -22,6 +22,7 @@ import {
 	type ValidationOutput,
 	type ValidationSchema
 } from '../schema_issues.ts';
+import { zod_has_trait } from '../zod.ts';
 
 /**
  * Check if a schema is exactly `z.null()`, or a `@fuzdev/fuz_schema`
@@ -32,7 +33,7 @@ import {
  * null but also accept other values.
  */
 export const is_null_schema = (schema: ValidationSchema): boolean =>
-	schema instanceof z.ZodNull ||
+	zod_has_trait(schema, 'ZodNull') ||
 	(is_schema(schema) && schema.kind === 'literal' && schema.def === null);
 
 /**
@@ -48,7 +49,7 @@ export const is_null_schema = (schema: ValidationSchema): boolean =>
  * void either.
  */
 export const is_void_schema = (schema: ValidationSchema): boolean =>
-	schema instanceof z.ZodVoid ||
+	zod_has_trait(schema, 'ZodVoid') ||
 	(is_schema(schema) && schema.kind === 'literal' && schema.def === undefined);
 
 /**
@@ -321,7 +322,8 @@ const get_at_path = (value: unknown, path: ReadonlyArray<PropertyKey>): unknown 
 export const is_strict_object_schema = (schema: ValidationSchema): boolean =>
 	is_schema(schema)
 		? fuz_schema_untransformed_head(schema)?.kind === 'object'
-		: schema instanceof z.ZodObject && schema.def.catchall instanceof z.ZodNever;
+		: zod_has_trait(schema, 'ZodObject') &&
+			zod_has_trait((schema as z.ZodObject).def.catchall, 'ZodNever');
 
 // the schema a value reaches first through every `pipe` it starts with, or
 // `null` when any of those pipes has a `transform` stage
@@ -367,8 +369,8 @@ export interface SchemaToSurfaceOptions {
  *
  * Returns `null` for a null schema (`is_null_schema`) and a void schema
  * (`is_void_schema`), in either library: no body, no params. Any other
- * schema is written with its library's emitter (`to_json_schema` for fuz_schema, `z.toJSONSchema`
- * for Zod) on the side `options.io` names. A part JSON Schema can't say (a
+ * schema is written with its library's emitter (`to_json_schema` for fuz_schema, the schema's own
+ * `.toJSONSchema()` for Zod) on the side `options.io` names. A part JSON Schema can't say (a
  * transform on the output side, a `z.custom()`, a fuz_schema `check`) is left
  * out or written as `{}` (a `pipe(string, check(…))` writes as
  * `{type: 'string'}`), and `options.on_unrepresentable` hears the library's
@@ -402,7 +404,7 @@ export const schema_to_surface = (
 		strip_json_schema_noise(
 			is_schema(schema)
 				? to_json_schema(schema, { io, unrepresentable })
-				: z.toJSONSchema(schema as z.ZodType, { io, unrepresentable })
+				: (schema as z.ZodType).toJSONSchema({ io, unrepresentable })
 		);
 	const fail = (message: string, cause: unknown): Error =>
 		new Error(`${options?.source ?? 'schema'}: ${message}`, { cause });

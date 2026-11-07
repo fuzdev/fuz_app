@@ -11,7 +11,7 @@ import './assert_dev_env.ts';
  */
 
 import { assert } from 'vitest';
-import { z } from 'zod';
+import type { z } from 'zod';
 import { is, parse, type Schema } from '@fuzdev/fuz_schema/schema.ts';
 
 import {

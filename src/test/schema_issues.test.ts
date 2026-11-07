@@ -114,6 +114,38 @@ describe('format_issues', () => {
 		assert.strictEqual(format_issues(result.error.issues), z.prettifyError(result.error));
 	});
 
+	test('writes Zod issues as `z.prettifyError` writes them, on every kind of path', () => {
+		const Schema = z.strictObject({
+			'a-b': z.string(),
+			list: z.array(z.number()),
+			nested: z.object({ x: z.string(), $y: z.string() }),
+			n: z.number()
+		});
+		for (const value of [
+			{ 'a-b': 1, list: [1, 'x', 2, 'y'], nested: { x: 1, $y: 2 }, n: 'x', extra: 1 },
+			{ list: 'x', nested: null },
+			'x',
+			{ 'a-b': 'ok', list: [], nested: { x: 'x', $y: 'y' }, n: 1, 'k ey': 1, '': 2 }
+		]) {
+			const result = Schema.safeParse(value);
+			assert.ok(!result.success);
+			assert.strictEqual(
+				format_issues(result.error.issues),
+				z.prettifyError(result.error),
+				JSON.stringify(value)
+			);
+		}
+	});
+
+	test('writes symbol and object segments and a missing path as `z.prettifyError` does', () => {
+		const issues = [
+			{ code: 'custom', message: 'a', path: [Symbol('s'), 'b c'], input: 1 },
+			{ code: 'custom', message: 'b', path: [{ key: 'k' }, 0], input: 1 },
+			{ code: 'custom', message: 'c' }
+		] as unknown as Array<z.core.$ZodIssue>;
+		assert.strictEqual(format_issues(issues), z.prettifyError({ issues }));
+	});
+
 	test('writes fuz_schema issues a `format_issue` line each', () => {
 		const issues = issues_of(FuzInput, { a: 'x', inner: {} });
 		assert.strictEqual(issues.length, 2);
