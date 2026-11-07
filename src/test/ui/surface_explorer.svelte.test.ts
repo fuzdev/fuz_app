@@ -236,7 +236,8 @@ test('renders diagnostics warnings', () => {
 			{
 				level: 'warning',
 				category: 'schema',
-				message: 'Input schema is not z.strictObject()',
+				message:
+					'Input schema is not a strict object (@fuzdev/fuz_schema `object`) — unknown keys may not be refused',
 				source: 'POST /api/login input'
 			},
 			{ level: 'info', category: 'config', message: 'Rate limiter disabled' }
@@ -246,7 +247,12 @@ test('renders diagnostics warnings', () => {
 	assert.ok(body.includes('1 warning'), 'should show warning count chip');
 	assert.ok(body.includes('Diagnostics'), 'should show diagnostics section');
 	assert.ok(body.includes('schema'), 'should show category');
-	assert.ok(body.includes('Input schema is not z.strictObject()'), 'should show warning message');
+	assert.ok(
+		body.includes(
+			'Input schema is not a strict object (@fuzdev/fuz_schema `object`) — unknown keys may not be refused'
+		),
+		'should show warning message'
+	);
 	assert.ok(body.includes('Rate limiter disabled'), 'should show info message');
 });
 

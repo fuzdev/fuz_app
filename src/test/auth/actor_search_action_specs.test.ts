@@ -76,7 +76,7 @@ const ASTRAL = '\u{1F600}';
 const issue_of = (input: unknown): Array<unknown> => {
 	const result = parse(ActorSearchInput, input);
 	assert.ok(!result.ok, JSON.stringify(input));
-	const issues = to_wire_issues(result.issues, input);
+	const issues = to_wire_issues(result.issues);
 	assert.strictEqual(issues.length, 1, JSON.stringify(issues));
 	const { kind, path, expected, received, message } = issues[0]!;
 	return [kind, path, expected, received, message];

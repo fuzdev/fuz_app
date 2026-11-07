@@ -1,53 +1,36 @@
 /**
- * Tests for `schema_issues.ts` — parsing a schema and reading its issues.
+ * Tests for `schema_issues.ts` — reading a parse's issues.
  *
  * @module
  */
 
 import { describe, assert, test } from 'vitest';
-import { format_issue, number, object, parse_or_throw, string } from '@fuzdev/fuz_schema/schema.ts';
+import {
+	format_issue,
+	number,
+	object,
+	parse,
+	parse_or_throw,
+	string,
+	type SchemaIssue
+} from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	assert_validation_schema,
 	format_issues,
 	is_schema_validation_error,
 	issue_is_on_input,
-	parse_any,
-	unknown_key_targets,
-	type AnyIssue
+	to_wire_issues,
+	unknown_key_targets
 } from '#lib/schema_issues.ts';
 
 const FuzInput = object({ a: number, inner: object({ b: string }) });
 
-const issues_of = (schema: typeof FuzInput, value: unknown): Array<AnyIssue> => {
-	const result = parse_any(schema, value);
+const issues_of = (schema: typeof FuzInput, value: unknown): Array<SchemaIssue> => {
+	const result = parse(schema, value);
 	assert.ok(!result.ok, `refused: ${JSON.stringify(value)}`);
 	return result.issues;
 };
-
-describe('parse_any', () => {
-	test('returns the output', () => {
-		const value = { a: 1, inner: { b: 'b' } };
-		const result = parse_any(FuzInput, value);
-		assert.ok(result.ok);
-		assert.deepStrictEqual(result.value, value);
-	});
-
-	test('throws on a value that is not a schema', () => {
-		for (const schema of [{}, { safeParse: () => ({ success: true }) }, null]) {
-			assert.throws(
-				() => parse_any(schema as unknown as typeof FuzInput, 1),
-				/^parse_any: the schema is .*a @fuzdev\/fuz_schema schema$/
-			);
-		}
-	});
-
-	test("returns the schema's own issues", () => {
-		const [fuz_issue] = issues_of(FuzInput, { a: 'x', inner: { b: 'b' } });
-		assert.ok(fuz_issue && 'kind' in fuz_issue);
-		assert.strictEqual(fuz_issue.kind, 'number');
-	});
-});
 
 describe('issue_is_on_input', () => {
 	test('an unknown key on the input is on the input', () => {
@@ -90,10 +73,7 @@ describe('format_issues', () => {
 	test('writes fuz_schema issues a `format_issue` line each', () => {
 		const issues = issues_of(FuzInput, { a: 'x', inner: {} });
 		assert.strictEqual(issues.length, 2);
-		assert.strictEqual(
-			format_issues(issues),
-			issues.map((issue) => format_issue(issue as Parameters<typeof format_issue>[0])).join('\n')
-		);
+		assert.strictEqual(format_issues(issues), issues.map(format_issue).join('\n'));
 	});
 
 	test('writes no issues as empty text', () => {
@@ -117,10 +97,39 @@ describe('is_schema_validation_error', () => {
 	});
 });
 
+describe('to_wire_issues', () => {
+	test('keeps each issue as JSON, its message the formatted text', () => {
+		const issues = issues_of(FuzInput, { a: 'x', inner: { b: 'b' } });
+		assert.deepStrictEqual(
+			to_wire_issues(issues),
+			issues.map((issue) => ({
+				kind: issue.kind,
+				path: [...issue.path],
+				expected: issue.expected,
+				received: issue.received,
+				message: format_issue(issue)
+			}))
+		);
+	});
+
+	test('writes a symbol key as its text', () => {
+		const key = Symbol('k');
+		const issue: SchemaIssue = {
+			kind: 'string',
+			path: [key],
+			expected: 'string',
+			received: 'number',
+			message: undefined
+		};
+		const [wire] = to_wire_issues([issue]);
+		assert.deepStrictEqual(wire!.path, ['Symbol(k)']);
+	});
+});
+
 describe('assert_validation_schema', () => {
 	test('assert_validation_schema admits a schema and names the label', () => {
 		assert_validation_schema(FuzInput, 'the input');
-		for (const value of [{}, null, undefined, 'z']) {
+		for (const value of [{}, null, undefined, 'z', { safeParse: () => ({ success: true }) }]) {
 			assert.throws(
 				() => assert_validation_schema(value, 'Route "GET /x": output'),
 				/^Route "GET \/x": output is .*a @fuzdev\/fuz_schema schema$/

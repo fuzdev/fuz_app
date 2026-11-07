@@ -105,7 +105,7 @@ const outcome_of = (
 	const result = parse(schema, input);
 	return result.ok
 		? { ok: true, value: result.value }
-		: { ok: false, issues: to_wire_issues(result.issues, input) };
+		: { ok: false, issues: to_wire_issues(result.issues) };
 };
 
 /** A refusal's issues as `[kind, expected, received, message]`, the message as `'L'` (the length message), `'P'` (the pattern message) or `''` (the library's default); `'accepted'` otherwise. */

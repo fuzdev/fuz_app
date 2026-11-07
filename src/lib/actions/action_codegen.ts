@@ -1,9 +1,9 @@
 import { UnreachableError } from '@fuzdev/fuz_util/error.ts';
-import { is_schema, parse } from '@fuzdev/fuz_schema/schema.ts';
+import { parse } from '@fuzdev/fuz_schema/schema.ts';
 
 import { is_empty_input_handler_guarded } from '../schema_meta.ts';
 import { is_null_schema, is_void_schema } from '../http/schema_helpers.ts';
-import { assert_zod_schema } from '../schema_issues.ts';
+import { assert_validation_schema } from '../schema_issues.ts';
 
 import type { ActionSpecUnion, ActionEventPhase } from './action_spec.ts';
 import { ActionRegistry } from './action_registry.ts';
@@ -408,20 +408,14 @@ export const action_input_is_optional = (spec: Pick<ActionSpecUnion, 'input'>): 
 };
 
 /**
- * Which library a spec's input or output schema is of — the type it is
- * emitted as follows from it: `z.infer` for Zod, fuz_schema's `Infer` for
- * `@fuzdev/fuz_schema`, each the schema's output type.
+ * Throw unless a spec's input or output is a `@fuzdev/fuz_schema` schema,
+ * naming the method and the slot — codegen reads specs nothing has
+ * registered, so it checks them itself.
  *
- * @throws Error naming the method and the schema when it is of neither library
+ * @throws Error naming the method and the slot when it is no schema
  */
-const to_spec_schema_library = (
-	spec: ActionSpecUnion,
-	which: 'input' | 'output'
-): 'zod' | 'fuz_schema' => {
-	const schema: unknown = spec[which];
-	if (is_schema(schema)) return 'fuz_schema';
-	assert_zod_schema(schema, `action '${spec.method}' ${which}`);
-	return 'zod';
+const assert_spec_schema = (spec: ActionSpecUnion, which: 'input' | 'output'): void => {
+	assert_validation_schema(spec[which], `action '${spec.method}' ${which}`);
 };
 
 /**
@@ -492,7 +486,7 @@ const generate_actions_api_method_signature = (
 ): string => {
 	const sync_returns_value = options?.sync_returns_value ?? true;
 	const collections_path = options?.collections_path ?? DEFAULT_COLLECTIONS_PATH;
-	to_spec_schema_library(spec, 'input');
+	assert_spec_schema(spec, 'input');
 	const has_input = !is_null_schema(spec.input) && !is_void_schema(spec.input);
 	const input_optional = has_input && action_input_is_optional(spec);
 	const input_param = has_input
@@ -860,10 +854,8 @@ export const action_specs: Array<ActionSpecUnion> = Object.values(ActionSpecs);`
  * - `ActionOutputs` types each output as its schema's output, what a caller
  *   receives.
  *
- * Adds `import {z} from 'zod';` when any schema is Zod's (typed with
- * `z.infer` / `z.input`), `import type {Infer, InferInput} from
- * '@fuzdev/fuz_schema/schema.ts';` when any is fuz_schema's, and the
- * `* as specs` namespace import.
+ * Adds `import type {Infer, InferInput} from '@fuzdev/fuz_schema/schema.ts';`
+ * and the `* as specs` namespace import.
  *
  * @param options.qualify_spec - per-spec qualified identifier callback for
  *   multi-source consumers. The helper appends `.input` / `.output` to the
@@ -885,7 +877,7 @@ export const generate_action_inputs_outputs = (
 	const filtered = filter_protocol_actions(specs, options?.include_protocol_actions);
 
 	if (filtered.length === 0) {
-		// Empty spec list — emit minimal valid output and skip the `zod` /
+		// Empty spec list — emit minimal valid output and skip the `Infer` /
 		// `* as specs` imports that would have nothing to reference.
 		return `/**
  * Action parameter schemas indexed by method name.
@@ -910,46 +902,27 @@ export const ActionOutputs = {} as const;
 export interface ActionOutputs {}`;
 	}
 
-	const libraries = filtered.map((s) => ({
-		input: to_spec_schema_library(s, 'input'),
-		output: to_spec_schema_library(s, 'output')
-	}));
-	const uses = (library: 'zod' | 'fuz_schema'): boolean =>
-		libraries.some((l) => l.input === library || l.output === library);
-	if (uses('zod')) imports.add('zod', 'z');
-	if (uses('fuz_schema')) imports.add_type('@fuzdev/fuz_schema/schema.ts', 'Infer');
-	if (libraries.some((l) => l.input === 'fuz_schema')) {
-		imports.add_type('@fuzdev/fuz_schema/schema.ts', 'InferInput');
+	for (const s of filtered) {
+		assert_spec_schema(s, 'input');
+		assert_spec_schema(s, 'output');
 	}
+	imports.add_types('@fuzdev/fuz_schema/schema.ts', 'Infer', 'InferInput');
 	const qualify = resolve_spec_qualifier(imports, options);
-	const infer = (library: 'zod' | 'fuz_schema'): string =>
-		library === 'zod' ? 'z.infer' : 'Infer';
-	const infer_input = (library: 'zod' | 'fuz_schema'): string =>
-		library === 'zod' ? 'z.input' : 'InferInput';
 
 	const inputs_value = filtered
 		.map((s) => `\t${to_action_property_key(s.method)}: ${qualify(s)}.input,`)
 		.join('\n');
 	const inputs_type = filtered
-		.map(
-			(s, i) =>
-				`\t${to_action_property_key(s.method)}: ${infer(libraries[i]!.input)}<typeof ${qualify(s)}.input>;`
-		)
+		.map((s) => `\t${to_action_property_key(s.method)}: Infer<typeof ${qualify(s)}.input>;`)
 		.join('\n');
 	const call_inputs_type = filtered
-		.map(
-			(s, i) =>
-				`\t${to_action_property_key(s.method)}: ${infer_input(libraries[i]!.input)}<typeof ${qualify(s)}.input>;`
-		)
+		.map((s) => `\t${to_action_property_key(s.method)}: InferInput<typeof ${qualify(s)}.input>;`)
 		.join('\n');
 	const outputs_value = filtered
 		.map((s) => `\t${to_action_property_key(s.method)}: ${qualify(s)}.output,`)
 		.join('\n');
 	const outputs_type = filtered
-		.map(
-			(s, i) =>
-				`\t${to_action_property_key(s.method)}: ${infer(libraries[i]!.output)}<typeof ${qualify(s)}.output>;`
-		)
+		.map((s) => `\t${to_action_property_key(s.method)}: Infer<typeof ${qualify(s)}.output>;`)
 		.join('\n');
 
 	return `/**

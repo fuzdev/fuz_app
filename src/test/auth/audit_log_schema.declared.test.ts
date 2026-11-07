@@ -68,7 +68,7 @@ const BASES: Record<AuditEventType, unknown> = {
 
 const issues_of = (event_type: AuditEventType, input: unknown): Array<WireIssue> | null => {
 	const result = parse(audit_metadata_schemas[event_type], input);
-	return result.ok ? null : to_wire_issues(result.issues, input);
+	return result.ok ? null : to_wire_issues(result.issues);
 };
 
 describe('the builtin audit metadata schemas', () => {

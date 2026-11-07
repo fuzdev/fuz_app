@@ -327,7 +327,7 @@ describe_db('serve_fact_route', (get_db) => {
 	});
 
 	// Query-shape contract on the bare-hash route — its query schema is
-	// `z.strictObject({acting: ActingActor})`, validated in the pipeline's
+	// `object({acting: ActingActor})`, validated in the pipeline's
 	// params → query → 401 → authz → 403 phase order over Hono's
 	// first-occurrence-wins `c.req.query()`. Pinned as the TS half of the
 	// cross-impl query-shape convergence (the Rust twin's derived-serde

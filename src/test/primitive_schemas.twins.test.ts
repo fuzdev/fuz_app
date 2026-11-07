@@ -289,7 +289,7 @@ const outcome_of = (
 	const result = parse(schema, input);
 	return result.ok
 		? { ok: true, value: result.value }
-		: { ok: false, issues: to_wire_issues(result.issues, input) };
+		: { ok: false, issues: to_wire_issues(result.issues) };
 };
 
 /** A refusal as `[kind, expected, received]` per issue; `'accepted'` otherwise. */

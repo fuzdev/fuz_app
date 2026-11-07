@@ -9,7 +9,7 @@
  */
 
 import { get_schema_entries, get_schema_fields } from '@fuzdev/fuz_schema/introspect.ts';
-import { is_schema, parse, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
+import { parse, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { EventSpec } from '../realtime/sse.ts';
 import type { MiddlewareSpec } from './middleware_spec.ts';
@@ -303,9 +303,9 @@ const create_to_surface =
 				: undefined
 		});
 
-// a fuz_schema input that is not a strict `object`: a `strip_object` drops
-// unknown keys and a `loose_object` keeps them, so the text names neither
-const FUZ_SCHEMA_NOT_STRICT_INPUT_MESSAGE =
+// an input that is not a strict `object`: a `strip_object` drops unknown keys
+// and a `loose_object` keeps them, so the text names neither
+const NOT_STRICT_INPUT_MESSAGE =
 	'Input schema is not a strict object (@fuzdev/fuz_schema `object`) — unknown keys may not be refused';
 
 /**
@@ -326,9 +326,7 @@ export const generate_app_surface = (options: GenerateAppSurfaceOptions): AppSur
 			diagnostics.push({
 				level: 'warning',
 				category: 'schema',
-				message: is_schema(r.input)
-					? FUZ_SCHEMA_NOT_STRICT_INPUT_MESSAGE
-					: 'Input schema is not z.strictObject() — unknown keys will be silently stripped',
+				message: NOT_STRICT_INPUT_MESSAGE,
 				source: `${r.method} ${r.path} input`
 			});
 		}

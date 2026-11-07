@@ -403,7 +403,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 			if (is_schema_validation_error(err)) {
 				throw jsonrpc_errors.invalid_params(
 					'cell.data shape validation failed',
-					dev_only(() => ({ issues: to_wire_issues(err.issues, data) }))
+					dev_only(() => ({ issues: to_wire_issues(err.issues) }))
 				);
 			}
 			throw err;
@@ -424,7 +424,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 			if (is_schema_validation_error(err)) {
 				throw jsonrpc_errors.invalid_params(
 					'cell.policy validation failed',
-					dev_only(() => ({ issues: to_wire_issues(err.issues, policy) }))
+					dev_only(() => ({ issues: to_wire_issues(err.issues) }))
 				);
 			}
 			throw err;

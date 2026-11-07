@@ -8,42 +8,29 @@
  * @module
  */
 
-import type { z } from 'zod';
 import { to_error_message } from '@fuzdev/fuz_util/error.ts';
-import { is_schema, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
+import { parse, type AnySchema, type Infer, type SchemaResult } from '@fuzdev/fuz_schema/schema.ts';
 import { unwrap_schema } from '@fuzdev/fuz_schema/introspect.ts';
 import { to_json_schema } from '@fuzdev/fuz_schema/json_schema.ts';
 
-import {
-	assert_validation_schema,
-	parse_any,
-	unknown_key_targets,
-	type ParseAnyResult,
-	type ValidationOutput,
-	type ValidationSchema
-} from '../schema_issues.ts';
-import { zod_has_trait } from '../zod.ts';
+import { assert_validation_schema, unknown_key_targets } from '../schema_issues.ts';
 
 /**
- * What the testing generators read of one field of an object schema, of
- * either library: `zod_extract_fields` reads a `ZodObject`'s, and
- * `to_object_schema_view` (`testing/schema_generators.ts`) a schema's of
- * either library.
+ * What the testing generators read of one field of an object schema
+ * (`to_object_schema_view`, `testing/schema_generators.ts`).
  */
 export interface SchemaFieldInfo {
 	/** The field's key. */
 	name: string;
 	/**
-	 * The innermost type's name in Zod's vocabulary (`zod_get_base_type`):
-	 * `'string'`, `'number'`, `'boolean'`, `'array'`, `'object'`, `'null'`,
-	 * `'void'`, `'union'`, `'literal'`, `'enum'`, and so on. A
-	 * `@fuzdev/fuz_schema` field reads its innermost kind, an object of any
-	 * strictness as `'object'`, a `literal(null)` as `'null'`, a
-	 * `literal(undefined)` (`s.void`) as `'void'`, a `one_of` as `'enum'`, and
-	 * a `variant` as `'union'`.
+	 * The innermost kind's name: `'string'`, `'number'`, `'boolean'`,
+	 * `'array'`, `'literal'`, and so on, with an object of any strictness as
+	 * `'object'`, a `literal(null)` as `'null'`, a `literal(undefined)`
+	 * (`s.void`) as `'void'`, a `one_of` as `'enum'`, and a `variant` as
+	 * `'union'`.
 	 */
 	base_type: string;
-	/** Whether the key must be present: no outermost `.optional()` in Zod, no `optional` layer in fuz_schema. */
+	/** Whether the key must be present: no `optional` layer. */
 	required: boolean;
 	/** Whether the parse fills the key in when it is missing. */
 	has_default: boolean;
@@ -52,32 +39,28 @@ export interface SchemaFieldInfo {
 }
 
 /**
- * Check if a schema is exactly `z.null()`, or a `@fuzdev/fuz_schema`
- * `literal(null)`.
+ * Check if a schema is exactly `literal(null)`.
  *
  * Reads the schema's kind rather than parsing `null`, to avoid false
- * positives from `z.nullable(z.string())` or similar schemas that accept
- * null but also accept other values.
+ * positives from `nullable(string)` or similar schemas that accept null but
+ * also accept other values.
  */
-export const is_null_schema = (schema: ValidationSchema): boolean =>
-	zod_has_trait(schema, 'ZodNull') ||
-	(is_schema(schema) && schema.kind === 'literal' && schema.def === null);
+export const is_null_schema = (schema: AnySchema): boolean =>
+	schema.kind === 'literal' && schema.def === null;
 
 /**
- * Check if a schema is exactly `z.void()`, or a `@fuzdev/fuz_schema`
- * `literal(undefined)` (what its `s.void` is, `meta` copies included).
+ * Check if a schema is exactly `literal(undefined)` (what `s.void` is,
+ * `meta` copies included).
  *
  * RPC action specs use a void schema to declare a parameterless method —
  * JSON-RPC 2.0 forbids `params: null` (params must be omitted or be a
  * Structured value), so void is the correct schema for "no params" and the
  * dispatcher maps absent params to `undefined` for these specs. Like
  * `is_null_schema`, it reads the schema's kind rather than parsing
- * `undefined`, so an optional schema is not void. `z.undefined()` is not
- * void either.
+ * `undefined`, so an optional schema is not void.
  */
-export const is_void_schema = (schema: ValidationSchema): boolean =>
-	zod_has_trait(schema, 'ZodVoid') ||
-	(is_schema(schema) && schema.kind === 'literal' && schema.def === undefined);
+export const is_void_schema = (schema: AnySchema): boolean =>
+	schema.kind === 'literal' && schema.def === undefined;
 
 /**
  * Normalize the raw `params` of a void input (`is_void_schema`): an absent
@@ -109,18 +92,18 @@ export const to_void_params = (raw_params: unknown): unknown => {
 
 /**
  * Normalize the raw `params` of an RPC call for `input` to validate: for a
- * void input (`is_void_schema`, Zod or fuz_schema), `to_void_params`; for
+ * void input (`is_void_schema`), `to_void_params`; for
  * any other input, an absent or `null` `params` reads as `{}`, so an
  * all-optional object input accepts a call that omits them. Every receiving
  * end — the server dispatch (`perform_action`) and a peer receiving a
  * request or notification (`ActionDispatcher`) — reads params through this,
  * so a peer is never stricter than the server.
  *
- * @param input - the action's input schema, Zod or fuz_schema
+ * @param input - the action's input schema
  * @param raw_params - the call's `params` as parsed off the wire
- * @returns the value the input parse (`parse_any`) reads
+ * @returns the value the input parse (`parse`) reads
  */
-export const to_input_params = (input: ValidationSchema, raw_params: unknown): unknown =>
+export const to_input_params = (input: AnySchema, raw_params: unknown): unknown =>
 	is_void_schema(input) ? to_void_params(raw_params) : (raw_params ?? {});
 
 /**
@@ -159,9 +142,9 @@ export const json_has_own_proto_key = (value: unknown): boolean => {
 };
 
 /**
- * `parse_any(schema, value)`, except that keys the schema doesn't declare are
+ * `parse(schema, value)`, except that keys the schema doesn't declare are
  * dropped rather than refused — the forward-compatible read of a payload a
- * remote authored. Takes a Zod or a `@fuzdev/fuz_schema` schema.
+ * remote authored.
  *
  * Output schemas are strict so the server's DEV output validation catches a
  * handler leaking fields it shouldn't. The receiving side, though, is often
@@ -174,39 +157,37 @@ export const json_has_own_proto_key = (value: unknown): boolean => {
  * never mutated. This matches serde's default on the Rust spine, which
  * ignores unknown fields.
  *
- * A fuz_schema parse reports at most a hundred issues, so a pass that only
+ * A parse reports at most a hundred issues, so a pass that only
  * deleted the reported keys would take a parse per hundred unknown keys,
  * quadratic in a payload of many. So after the first parse that reports
- * unknown keys, one schema-guided pass deletes every key a strict fuz_schema
- * `object` doesn't name anywhere the schema reaches — object entries, array
- * items, record values, the `variant` option the discriminator picks — and
- * the next parse usually succeeds. A key under a fuz_schema `union` is never
+ * unknown keys, one schema-guided pass deletes every key a strict `object`
+ * doesn't name anywhere the schema reaches — object entries, array items,
+ * record values, the `variant` option the discriminator picks — and the next
+ * parse usually succeeds. A key under a `union` is never
  * stripped: which option will match isn't known, and the union fails as one
  * issue of its own. A later `pipe` stage is stripped only as reported, as the
  * pass reads only a pipe's first schema, so keys a later stage refuses that
  * the first names still go a hundred a parse. A pass that finds
  * nothing to strip ends it, and the passes are capped at
- * `UNKNOWN_KEY_PASSES_MAX` for both libraries, past which the last failure is
+ * `UNKNOWN_KEY_PASSES_MAX`, past which the last failure is
  * returned, so the work stays linear in the payload whatever its shape.
  *
- * Unions differ by library. A Zod `z.union` of strict objects reports the
- * unknown key itself (`unrecognized_keys` on the object), so it is stripped,
- * as are a `z.discriminatedUnion`'s matched-branch keys. A fuz_schema `union`
- * reports one issue of its own, so a key inside one is not stripped and the
- * parse fails; a `variant` reports its matched option's issues, so those are.
+ * A `union` reports one issue of its own, so a key inside one is not
+ * stripped and the parse fails; a `variant` reports its matched option's
+ * issues, so those are.
  *
  * Used for a response's `result` (`ActionEvent`) and for a peer's reply to a
  * server-initiated request (`peer/ping`).
  *
- * @param schema - the declared shape, Zod or fuz_schema
+ * @param schema - the declared shape
  * @param value - the remote-authored payload
  * @returns the parse result, with undeclared keys dropped on success
  */
-export const safe_parse_dropping_unknown_keys = <T extends ValidationSchema>(
+export const safe_parse_dropping_unknown_keys = <T extends AnySchema>(
 	schema: T,
 	value: unknown
-): ParseAnyResult<ValidationOutput<T>> => {
-	let parsed = parse_any(schema, value);
+): SchemaResult<Infer<T>> => {
+	let parsed = parse(schema, value);
 	let stripped: unknown;
 	for (let pass = 0; !parsed.ok && pass < UNKNOWN_KEY_PASSES_MAX; pass++) {
 		const targets = unknown_key_targets(parsed.issues);
@@ -215,7 +196,7 @@ export const safe_parse_dropping_unknown_keys = <T extends ValidationSchema>(
 		if (stripped === undefined) {
 			stripped = structuredClone(value);
 			// once: every key a strict `object` the schema reaches doesn't name
-			if (is_schema(schema)) removed = strip_unknown_keys_by_schema(schema, stripped);
+			removed = strip_unknown_keys_by_schema(schema, stripped);
 		}
 		for (const { path, keys } of targets) {
 			const target = get_at_path(stripped, path);
@@ -228,7 +209,7 @@ export const safe_parse_dropping_unknown_keys = <T extends ValidationSchema>(
 			}
 		}
 		if (!removed) return parsed;
-		parsed = parse_any(schema, stripped);
+		parsed = parse(schema, stripped);
 	}
 	return parsed;
 };
@@ -332,29 +313,20 @@ const get_at_path = (value: unknown, path: ReadonlyArray<PropertyKey>): unknown 
 };
 
 /**
- * Check if a schema is a strict object: `z.strictObject()`, or a
- * `@fuzdev/fuz_schema` `object` (which refuses unknown keys, where
- * `strip_object` drops them and `loose_object` keeps them).
+ * Check if a schema is a strict object: an `object` (which refuses unknown
+ * keys, where `strip_object` drops them and `loose_object` keeps them).
  *
- * Strict Zod objects set `catchall` to `ZodNever` to reject unknown keys.
- * Regular `z.object()` has `catchall: undefined` (strips unknown keys in Zod 4).
- * A refined strict object reads strict in both libraries: Zod keeps a
- * `.refine()` on the `ZodObject`, and a fuz_schema `pipe` is read through to
- * its first schema when no stage of it is a `transform` (`message`, `flavor`,
- * `brand` and `meta` keep the kind they wrap). A transformed object is not a
- * strict object in either: Zod's is a `ZodPipe`. The two libraries differ on a
- * pipe without a transform: Zod's `O.pipe(O)` is a `ZodPipe` and reads not
- * strict, where fuz_schema's `pipe(F, F)` reads strict through to `F`.
+ * A refined strict object reads strict: a `pipe` is read through to its first
+ * schema when no stage of it is a `transform` (`message`, `flavor`, `brand`
+ * and `meta` keep the kind they wrap), so `pipe(O, O)` reads strict through
+ * to `O`. A transformed object is not a strict object.
  */
-export const is_strict_object_schema = (schema: ValidationSchema): boolean =>
-	is_schema(schema)
-		? fuz_schema_untransformed_head(schema)?.kind === 'object'
-		: zod_has_trait(schema, 'ZodObject') &&
-			zod_has_trait((schema as z.ZodObject).def.catchall, 'ZodNever');
+export const is_strict_object_schema = (schema: AnySchema): boolean =>
+	untransformed_head(schema)?.kind === 'object';
 
 // the schema a value reaches first through every `pipe` it starts with, or
 // `null` when any of those pipes has a `transform` stage
-const fuz_schema_untransformed_head = (schema: AnySchema): AnySchema | null => {
+const untransformed_head = (schema: AnySchema): AnySchema | null => {
 	let s = schema;
 	while (s.kind === 'pipe') {
 		const stages = s.def as ReadonlyArray<AnySchema>;
@@ -384,10 +356,10 @@ export interface SchemaToSurfaceOptions {
 }
 
 /**
- * Convert a Zod or `@fuzdev/fuz_schema` schema to its JSON Schema for the
- * surface, with `$schema` and `default` stripped at every depth.
+ * Convert a `@fuzdev/fuz_schema` schema to its JSON Schema for the surface
+ * (`to_json_schema`), with `$schema` and `default` stripped at every depth.
  *
- * A value of neither library throws first (`assert_validation_schema`),
+ * A value that is no schema throws first (`assert_validation_schema`),
  * naming `options.source`, so a slot that surface generation reads before
  * any registration does — a route's, an event's `params`, a `ws_endpoints`
  * action's — fails server assembly naming the slot, as registration refuses
@@ -395,44 +367,33 @@ export interface SchemaToSurfaceOptions {
  * write.
  *
  * Returns `null` for a null schema (`is_null_schema`) and a void schema
- * (`is_void_schema`), in either library: no body, no params. Any other
- * schema is written with its library's emitter (`to_json_schema` for fuz_schema, the schema's own
- * `.toJSONSchema()` for Zod) on the side `options.io` names. A part JSON Schema can't say (a
- * transform on the output side, a `z.custom()`, a fuz_schema `check`) is left
- * out or written as `{}` (a `pipe(string, check(…))` writes as
- * `{type: 'string'}`), and `options.on_unrepresentable` hears the library's
- * message, so the surface describes what it can and records the gap.
+ * (`is_void_schema`): no body, no params. Any other schema is written on the
+ * side `options.io` names. A part JSON Schema can't say (a transform on the
+ * output side, a `check`) is left out or written as `{}` (a
+ * `pipe(string, check(…))` writes as `{type: 'string'}`), and
+ * `options.on_unrepresentable` hears the emitter's message, so the surface
+ * describes what it can and records the gap.
  *
  * It never answers `null` for a schema it failed to write, as that would
  * read as "takes no input" and drop the schema out of every suite reading the
  * surface: a schema with no JSON Schema form at all (`{}` where the schema
- * isn't `z.unknown()` or `z.any()`), and one either emitter refuses outright
- * (a fuz_schema entry named like a member of `Object.prototype`, metadata
- * that isn't JSON), throw. So an output whose root is a transform (a Zod
- * `.transform()`, a fuz_schema `pipe(object(…), transform(…))`), a
- * `z.custom()`, or a `z.date()` throws, and since `generate_app_surface`
- * runs at server assembly, a route or action declaring one fails the server
- * at boot. That includes `z.unknown().transform(f)`, though `{}` would
- * describe it: the output side of a transform is unknown, whatever its input.
+ * isn't `unknown`), and one the emitter refuses outright (an entry named like
+ * a member of `Object.prototype`, metadata that isn't JSON), throw. So an
+ * output whose root is a transform (`pipe(object(…), transform(…))`) throws,
+ * and since `generate_app_surface` runs at server assembly, a route or action
+ * declaring one fails the server at boot.
  *
- * @param schema - the schema to describe, Zod or fuz_schema
+ * @param schema - the schema to describe
  * @param options - the side to describe, the schema's name for errors, and a listener for gaps
  * @returns the JSON Schema, or `null` for a null or void schema
- * @throws Error naming `options.source` when the value is of neither library, when the schema can't be written, or when nothing of it can
+ * @throws Error naming `options.source` when the value is no schema, when the schema can't be written, or when nothing of it can
  */
-export const schema_to_surface = (
-	schema: ValidationSchema,
-	options?: SchemaToSurfaceOptions
-): unknown => {
+export const schema_to_surface = (schema: AnySchema, options?: SchemaToSurfaceOptions): unknown => {
 	assert_validation_schema(schema, options?.source ?? 'schema');
 	if (is_null_schema(schema) || is_void_schema(schema)) return null;
 	const io = options?.io ?? 'output';
 	const write = (unrepresentable: 'throw' | 'any'): unknown =>
-		strip_json_schema_noise(
-			is_schema(schema)
-				? to_json_schema(schema, { io, unrepresentable })
-				: (schema as z.ZodType).toJSONSchema({ io, unrepresentable })
-		);
+		strip_json_schema_noise(to_json_schema(schema, { io, unrepresentable }));
 	const fail = (message: string, cause: unknown): Error =>
 		new Error(`${options?.source ?? 'schema'}: ${message}`, { cause });
 	let gap: unknown;
@@ -460,7 +421,7 @@ export const schema_to_surface = (
  * Recursively strip `$schema` and `default` from a JSON Schema value.
  *
  * `$schema` is noise for snapshots. `default` can be non-deterministic
- * when schemas use function defaults (e.g. `z.string().default(() => new Date().toISOString())`),
+ * when schemas use function defaults (e.g. `with_default_fn(string, () => new Date().toISOString())`),
  * and defaults are runtime behavior, not attack surface structure.
  */
 const strip_json_schema_noise = (value: unknown): unknown => {

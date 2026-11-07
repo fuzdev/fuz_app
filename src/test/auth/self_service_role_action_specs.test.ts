@@ -259,7 +259,7 @@ describe('self_service_role_set schemas', () => {
 		for (const [input, issues] of cases) {
 			const result = parse(SelfServiceRoleSetInput, input);
 			assert.ok(!result.ok, JSON.stringify(input));
-			assert.deepStrictEqual(to_wire_issues(result.issues, input), issues, JSON.stringify(input));
+			assert.deepStrictEqual(to_wire_issues(result.issues), issues, JSON.stringify(input));
 		}
 	});
 });

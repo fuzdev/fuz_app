@@ -68,7 +68,7 @@ const to_local_invalid_params_data = (
 	value: unknown
 ): { validation_errors: Array<WireIssue>; reason?: string } => {
 	const reason = resolve_issues_invalid_reason(input, issues, value);
-	const validation_errors = to_wire_issues(issues, value);
+	const validation_errors = to_wire_issues(issues);
 	return reason === undefined ? { validation_errors } : { validation_errors, reason };
 };
 
@@ -199,7 +199,7 @@ export class ActionEvent<
 							)}`,
 							{
 								reason: ERROR_RESPONSE_OUTPUT_INVALID,
-								validation_errors: to_wire_issues(parsed.issues, this.#data.output)
+								validation_errors: to_wire_issues(parsed.issues)
 							}
 						)
 					);
@@ -499,7 +499,7 @@ export class ActionEvent<
 				this.#fail(
 					jsonrpc_error_messages.validation_error(
 						`failed to parse output: ${format_issues(parsed.issues)}`,
-						{ output, validation_errors: to_wire_issues(parsed.issues, output) }
+						{ output, validation_errors: to_wire_issues(parsed.issues) }
 					)
 				);
 			}

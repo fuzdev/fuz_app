@@ -99,9 +99,7 @@ const bootstrap = { token: 't', username: 'Alice', password: 'p'.repeat(PASSWORD
 /** The wire issues of a refusal as `[kind, path, expected]`, or `null` for an acceptance. */
 const issues_of = (schema: AnySchema, input: unknown): Array<unknown> | null => {
 	const result = parse(schema, input);
-	return result.ok
-		? null
-		: to_wire_issues(result.issues, input).map((i) => [i.kind, i.path, i.expected]);
+	return result.ok ? null : to_wire_issues(result.issues).map((i) => [i.kind, i.path, i.expected]);
 };
 
 const [verify_shape, login_shape, , password_shape] = create_account_route_shapes({

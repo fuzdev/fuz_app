@@ -445,7 +445,7 @@ describe('safe_parse_dropping_unknown_keys', () => {
 		const result = safe_parse_dropping_unknown_keys(counted, value);
 		assert.ok(!result.ok);
 		assert.strictEqual(counter.parses, 1 + UNKNOWN_KEY_PASSES_MAX);
-		assert.ok(result.issues.every((issue) => 'kind' in issue && issue.kind === 'unknown_key'));
+		assert.ok(result.issues.every((issue) => issue.kind === 'unknown_key'));
 		// the last pass's issues: the first parse reported the first hundred items
 		const first_index = result.issues[0]!.path[1];
 		assert.strictEqual(first_index, 100 * UNKNOWN_KEY_PASSES_MAX);
@@ -454,7 +454,7 @@ describe('safe_parse_dropping_unknown_keys', () => {
 	test('still fails on any other issue, with the original issues', () => {
 		const result = safe_parse_dropping_unknown_keys(schema, { a: 'nope', x: 0 });
 		assert.ok(!result.ok);
-		const kinds = result.issues.map((issue) => ('kind' in issue ? issue.kind : issue.code)).sort();
+		const kinds = result.issues.map((issue) => issue.kind).sort();
 		assert.deepStrictEqual(kinds, ['number', 'unknown_key']);
 	});
 
@@ -463,7 +463,7 @@ describe('safe_parse_dropping_unknown_keys', () => {
 		const result = safe_parse_dropping_unknown_keys(either, { a: 1, x: 1 });
 		assert.ok(!result.ok);
 		assert.deepStrictEqual(
-			result.issues.map((issue) => ('kind' in issue ? issue.kind : issue.code)),
+			result.issues.map((issue) => issue.kind),
 			['union']
 		);
 	});

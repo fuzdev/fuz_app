@@ -437,7 +437,7 @@ export const to_invalid_params_error = (
 	params: unknown
 ): JsonrpcErrorObject => {
 	const reason = resolve_issues_invalid_reason(input, issues, params);
-	const issues_data = dev_only(() => ({ issues: to_wire_issues(issues, params) }));
+	const issues_data = dev_only(() => ({ issues: to_wire_issues(issues) }));
 	return jsonrpc_error_messages.invalid_params(
 		'invalid params',
 		reason === undefined ? issues_data : { reason, ...issues_data }

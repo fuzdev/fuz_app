@@ -199,7 +199,7 @@ const outcome_of = (schema: Parameters<typeof parse>[0], input: unknown): unknow
 	}
 	return {
 		ok: false,
-		issues: to_wire_issues(result.issues, input).map(({ message: _, ...rest }) => rest)
+		issues: to_wire_issues(result.issues).map(({ message: _, ...rest }) => rest)
 	};
 };
 

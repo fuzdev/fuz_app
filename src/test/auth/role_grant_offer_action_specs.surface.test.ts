@@ -74,7 +74,7 @@ const NULLABLE_SCOPE_KIND = {
 	]
 };
 
-// declared: every offer's `scope_kind` node, `z.string().nullable()` at capture,
+// declared: every offer's `scope_kind` node, a nullable string at capture,
 // gains the grammar; the node is found by its form at capture
 const with_strict_scope_kind = (value: unknown): unknown => {
 	if (Array.isArray(value)) return value.map(with_strict_scope_kind);

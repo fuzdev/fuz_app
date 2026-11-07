@@ -271,7 +271,7 @@ export const classify_jsonrpc_message = (json: unknown): ClassifiedJsonrpcMessag
 		error: jsonrpc_error_messages.invalid_request(
 			dev_only(() => {
 				const parsed = parse(JsonrpcRequest, frame);
-				return { issues: parsed.ok ? [] : to_wire_issues(parsed.issues, frame) };
+				return { issues: parsed.ok ? [] : to_wire_issues(parsed.issues) };
 			})
 		)
 	};

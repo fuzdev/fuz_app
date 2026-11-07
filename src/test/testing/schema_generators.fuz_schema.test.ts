@@ -29,7 +29,9 @@ import {
 	pipe,
 	record,
 	regex,
+	safe_integer,
 	string,
+	transform,
 	union,
 	uuid,
 	variant,
@@ -52,7 +54,6 @@ import {
 } from '#lib/testing/adversarial_input_cases.ts';
 import { assert_jsonrpc_success_response } from '#lib/testing/rpc_helpers.ts';
 import { expect_output } from '#lib/testing/cross_backend/cross_rpc.ts';
-import { parse_any } from '#lib/schema_issues.ts';
 
 const TOKEN_ID = pipe(string, regex(/^tok_[A-Za-z0-9_-]{12}$/));
 
@@ -225,8 +226,35 @@ describe('resolve_valid_path and generate_valid_string_param over fuz_schema', (
 		for (const field of view.fields) {
 			const field_schema = view.field_schema(field.name)!;
 			const value = generate_valid_string_param(field, field_schema);
-			assert.ok(value !== null && parse_any(field_schema, value).ok, field.name);
+			assert.ok(value !== null && parse(field_schema, value).ok, field.name);
 		}
+	});
+
+	test('a URL integer bounded past its transform takes a value in range', () => {
+		// `db_routes`' `query_int` shape: the bounds sit after the transform,
+		// where JSON Schema can't say them, and exclude the small candidates
+		const query_int = (min: number, max: number) =>
+			pipe(
+				pipe(string, regex(/^[+-]?\d+$/), transform(Number)),
+				safe_integer,
+				min_value(min),
+				max_value(max)
+			);
+		const query = object({
+			defaulted: with_default(query_int(5, 100), 5),
+			bare: query_int(7, 1000)
+		});
+		const view = to_object_schema_view(query, 'q');
+		const values: Record<string, string> = {};
+		for (const field of view.fields) {
+			const field_schema = view.field_schema(field.name)!;
+			const value = generate_valid_string_param(field, field_schema);
+			assert.ok(value !== null && parse(field_schema, value).ok, `${field.name}: ${value}`);
+			values[field.name] = value;
+		}
+		assert.deepStrictEqual(values, { defaulted: '5', bare: '7' });
+		// the query case generators build their base from it
+		assert.ok(generate_query_test_cases(query).length > 0);
 	});
 });
 

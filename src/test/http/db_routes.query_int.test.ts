@@ -34,7 +34,7 @@ const outcome_of = (
 	if (value !== undefined) input[key] = value;
 	const result = parse(schema, input);
 	if (result.ok) return { value: (result.value as Record<string, number>)[key]! };
-	return { refused: to_wire_issues(result.issues, input).map((i) => i.kind) };
+	return { refused: to_wire_issues(result.issues).map((i) => i.kind) };
 };
 
 const MAX = Number.MAX_SAFE_INTEGER;

@@ -259,7 +259,7 @@ describe('the shared name grammar', () => {
 					continue;
 				}
 				assert.ok(!fuz.ok, name);
-				const fuz_issues = to_wire_issues(fuz.issues, input);
+				const fuz_issues = to_wire_issues(fuz.issues);
 				// declared: a string too long and off the grammar gets the one length issue
 				const expected = answer.slice(0, 1)[0]!;
 				assert.strictEqual(fuz_issues.length, 1, name);

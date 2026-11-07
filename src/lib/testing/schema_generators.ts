@@ -3,29 +3,27 @@ import './assert_dev_env.ts';
 /**
  * Schema-driven value generation helpers for testing.
  *
- * Walks Zod and `@fuzdev/fuz_schema` schemas to generate valid values for
- * route params, request bodies, and URL paths. Used by adversarial input,
- * adversarial 404, and round-trip validation test suites. A schema of
- * neither library throws, and so does an input no body can be generated
- * for, rather than yielding no body.
+ * Walks `@fuzdev/fuz_schema` schemas to generate valid values for route
+ * params, request bodies, and URL paths. Used by adversarial input,
+ * adversarial 404, and round-trip validation test suites. A value that is no
+ * schema throws, and so does an input no body can be generated for, rather
+ * than yielding no body.
  *
  * @module
  */
 
-import type { z } from 'zod';
-import { is_schema, type AnySchema, type SchemaNode } from '@fuzdev/fuz_schema/schema.ts';
+import {
+	parse,
+	type AnySchema,
+	type SchemaNode,
+	type SchemaResult
+} from '@fuzdev/fuz_schema/schema.ts';
 import {
 	get_schema_entries,
 	get_schema_fields,
 	unwrap_schema
 } from '@fuzdev/fuz_schema/introspect.ts';
 import { to_json_schema } from '@fuzdev/fuz_schema/json_schema.ts';
-import {
-	zod_unwrap_def,
-	zod_get_base_type,
-	zod_unwrap_to_object,
-	zod_extract_fields
-} from '../zod.ts';
 
 import { is_null_schema, is_void_schema, type SchemaFieldInfo } from '../http/schema_helpers.ts';
 import {
@@ -34,51 +32,44 @@ import {
 	parse_route_param,
 	split_route_template
 } from '../http/route_error_check.ts';
-import {
-	assert_zod_schema,
-	format_issues,
-	parse_any,
-	type ParseAnyResult,
-	type ValidationSchema
-} from '../schema_issues.ts';
+import { assert_validation_schema, format_issues } from '../schema_issues.ts';
 
 /**
  * The JSON Schema of a field's input side — where its format, pattern and
- * bounds live. Takes a Zod or a `@fuzdev/fuz_schema` field.
+ * bounds live.
  *
- * Rendered with `io: 'input'`, so a field carrying a `.transform()` or a pipe
+ * Rendered with `io: 'input'`, so a field carrying a `transform` in a pipe
  * (`Username`) still yields the constraints its input is checked against;
  * the default output side throws on a transform. A pipe yields its input
  * side only, so constraints of the stage after it are not here. A
- * `.nullable()` / `.nullish()` field renders as
- * `anyOf: [{…}, {type: 'null'}]`, or a bare type as `type: [type, 'null']`;
+ * `nullable` field renders as `anyOf: [{…}, {type: 'null'}]`, or a bare
+ * type as `type: [type, 'null']`;
  * its one non-null branch or type is returned, so the bounds, pattern and
  * `type` read the same as on the bare field. A union of two or more non-null
  * branches returns the whole schema — its branches' bounds are no single
  * field's bounds.
  *
- * Either library renders with `unrepresentable: 'any'`: a part JSON Schema
- * can't say (a `z.date()`, a `z.custom()`, a fuz_schema `check` or `bigint`)
- * is left out or `{}`, and the bounds around it still read, so a
- * `pipe(string, max_length(n), check(…))` keeps its `maxLength` and a union
- * with a `z.date()` branch keeps its other branches — every case the
- * generators build from it is checked against the field itself before it's
- * used. What an emitter refuses even then (a fuz_schema entry named like a
+ * It renders with `unrepresentable: 'any'`: a part JSON Schema can't say (a
+ * `check` or a `bigint`) is left out or `{}`, and the bounds around it still
+ * read, so a `pipe(string, max_length(n), check(…))` keeps its `maxLength` —
+ * every case the generators build from it is checked against the field itself
+ * before it's used. What the emitter refuses even then (an entry named like a
  * member of `Object.prototype`, metadata that isn't JSON) throws: a mistake in
  * the schema, not a gap in JSON Schema.
  *
- * A `.refine()` is never here: JSON Schema can't express one, so a bound a
- * refinement enforces (a code-point length, a cross-field rule) generates no
- * boundary case.
+ * A `check` is never here: JSON Schema can't express one, so a bound a check
+ * enforces (a code-point length, a cross-field rule) generates no boundary
+ * case.
  *
  * @param field_schema - the field to read
  * @returns the field's input-side JSON Schema
  * @throws Error when the emitter refuses `field_schema` with `unrepresentable: 'any'`
  */
-export const to_field_json_schema = (field_schema: ValidationSchema): Record<string, unknown> => {
-	const json: Record<string, unknown> = is_schema(field_schema)
-		? to_json_schema(field_schema, { io: 'input', unrepresentable: 'any' })
-		: (field_schema as z.ZodType).toJSONSchema({ io: 'input', unrepresentable: 'any' });
+export const to_field_json_schema = (field_schema: AnySchema): Record<string, unknown> => {
+	const json: Record<string, unknown> = to_json_schema(field_schema, {
+		io: 'input',
+		unrepresentable: 'any'
+	});
 	if (Array.isArray(json.anyOf)) {
 		const branches = (json.anyOf as Array<Record<string, unknown>>).filter(
 			(branch) => branch.type !== 'null'
@@ -120,7 +111,7 @@ export const detect_json_schema_format = (json: Record<string, unknown>): string
  * (`to_field_json_schema`). Returns the format string (e.g. `'uuid'`,
  * `'email'`), `'pattern'` for a regex, or `null`.
  */
-export const detect_format = (field_schema: ValidationSchema): string | null =>
+export const detect_format = (field_schema: AnySchema): string | null =>
 	detect_json_schema_format(to_field_json_schema(field_schema));
 
 /**
@@ -134,8 +125,8 @@ export const detect_format = (field_schema: ValidationSchema): string | null =>
  * - Optional prefix: alphanumeric, starting with a letter, ending in `:`
  *   (`blake3:`, `sha256:`). A `_`-joined prefix over a base64url class is
  *   the sibling shape — see `generate_prefix_slug_pattern_value`.
- * - Character class must be exactly `[0-9a-f]` or `[0-9a-fA-F]` (Zod passes
- *   the regex source through verbatim — no character-class reordering).
+ * - Character class must be exactly `[0-9a-f]` or `[0-9a-fA-F]` (the JSON
+ *   Schema carries the regex source verbatim — no character-class reordering).
  * - Fixed-length quantifier `{N}`.
  *
  * Returns `null` when the pattern doesn't match the expected shape; the
@@ -162,8 +153,8 @@ const generate_hex_pattern_value = (pattern: string): string | null => {
  *
  * Coverage today:
  * - Prefix must start with a letter and be alphanumeric (e.g. `tok_`, `ses_`).
- * - Character class must be exactly `[A-Za-z0-9_-]` (Zod passes the regex
- *   source through verbatim — no character-class reordering).
+ * - Character class must be exactly `[A-Za-z0-9_-]` (the JSON Schema carries
+ *   the regex source verbatim — no character-class reordering).
  * - Fixed-length quantifier `{N}`.
  *
  * Known gaps (will fall through to the absolute-path / URL candidates or
@@ -186,18 +177,18 @@ const generate_prefix_slug_pattern_value = (pattern: string): string | null => {
 	return `${prefix}_${'x'.repeat(n)}`;
 };
 
-// --- reading a schema of either library ---
+// --- reading a schema ---
 
-/** Whether `schema` accepts `value`, a parse of either library (`parse_any`). */
-const accepts = (schema: ValidationSchema, value: unknown): boolean => parse_any(schema, value).ok;
+/** Whether `schema` accepts `value`. */
+const accepts = (schema: AnySchema, value: unknown): boolean => parse(schema, value).ok;
 
 /**
- * Every layer of a `@fuzdev/fuz_schema` schema, from the schema itself through
+ * Every layer of a schema, from the schema itself through
  * each `optional`, `nullable`, `with_default`, `with_default_fn`, the first
  * schema of a `pipe`, and a `lazy`'s schema, to what the value is — the
  * layers `unwrap_schema` walks.
  */
-const fuz_schema_layers = (schema: AnySchema): Array<SchemaNode> => {
+const schema_layers = (schema: AnySchema): Array<SchemaNode> => {
 	const layers: Array<SchemaNode> = [];
 	const seen: Set<SchemaNode> = new Set();
 	let s = schema as SchemaNode;
@@ -223,13 +214,12 @@ const fuz_schema_layers = (schema: AnySchema): Array<SchemaNode> => {
 };
 
 /**
- * The type name the generators switch on for a `@fuzdev/fuz_schema` schema,
- * in Zod's vocabulary (`zod_get_base_type`): its innermost layer's kind, with
- * an object schema of any strictness `'object'`, a `literal(null)` `'null'`,
- * a `literal(undefined)` (`s.void`) `'void'`, a `one_of` `'enum'`, and a
- * `variant` `'union'`.
+ * The type name the generators switch on (`SchemaFieldInfo.base_type`): the
+ * schema's innermost layer's kind, with an object schema of any strictness
+ * `'object'`, a `literal(null)` `'null'`, a `literal(undefined)` (`s.void`)
+ * `'void'`, a `one_of` `'enum'`, and a `variant` `'union'`.
  */
-const fuz_schema_base_type = (schema: AnySchema): string => {
+const to_base_type = (schema: AnySchema): string => {
 	const base = unwrap_schema(schema);
 	switch (base.kind) {
 		case 'object':
@@ -248,63 +238,45 @@ const fuz_schema_base_type = (schema: AnySchema): string => {
 	}
 };
 
-// the type name the generators switch on, of either library
-const to_base_type = (schema: ValidationSchema): string =>
-	is_schema(schema) ? fuz_schema_base_type(schema) : zod_get_base_type(schema as z.ZodType);
-
-/** An object schema's fields and the schema of each, of either library. */
+/** An object schema's fields and the schema of each. */
 export interface ObjectSchemaView {
 	/** The fields, in declaration order. */
 	fields: Array<SchemaFieldInfo>;
 	/** The schema of the field named `name`, or `undefined` when there is none. */
-	field_schema: (name: string) => ValidationSchema | undefined;
+	field_schema: (name: string) => AnySchema | undefined;
 }
 
-// the fields of `schema` when its innermost layer is an object schema, else `null`;
-// throws for a schema of neither library
-const to_object_view = (schema: ValidationSchema, label: string): ObjectSchemaView | null => {
-	if (is_schema(schema)) {
-		const entries = get_schema_entries(schema);
-		if (!entries) return null;
-		return {
-			fields: get_schema_fields(schema).map((field) => {
-				const layers = fuz_schema_layers(field.schema);
-				return {
-					name: field.name,
-					base_type: fuz_schema_base_type(field.schema),
-					required: !layers.some((l) => l.kind === 'optional'),
-					has_default: field.has_default,
-					nullable: layers.some((l) => l.kind === 'nullable')
-				};
-			}),
-			field_schema: (name) => (Object.hasOwn(entries, name) ? entries[name] : undefined)
-		};
-	}
-	assert_zod_schema(schema, label);
-	const object_schema = zod_unwrap_to_object(schema as z.ZodType);
-	if (!object_schema) return null;
-	const shape = object_schema.shape as Record<string, z.ZodType>;
+// the fields of `schema` when its innermost layer is an object schema, else
+// `null`; throws for a value that is no schema
+const to_object_view = (schema: AnySchema, label: string): ObjectSchemaView | null => {
+	assert_validation_schema(schema, label);
+	const entries = get_schema_entries(schema);
+	if (!entries) return null;
 	return {
-		fields: zod_extract_fields(object_schema),
-		field_schema: (name) => (Object.hasOwn(shape, name) ? shape[name] : undefined)
+		fields: get_schema_fields(schema).map((field) => {
+			const layers = schema_layers(field.schema);
+			return {
+				name: field.name,
+				base_type: to_base_type(field.schema),
+				required: !layers.some((l) => l.kind === 'optional'),
+				has_default: field.has_default,
+				nullable: layers.some((l) => l.kind === 'nullable')
+			};
+		}),
+		field_schema: (name) => (Object.hasOwn(entries, name) ? entries[name] : undefined)
 	};
 };
 
 /**
- * The fields of an object schema of either library and the schema of each,
- * through its wrappers: the `ZodObject` inside a Zod schema
- * (`zod_unwrap_to_object`, `zod_extract_fields`), or a `@fuzdev/fuz_schema`
- * schema whose innermost layer is an object schema (`get_schema_entries`,
- * `get_schema_fields`).
+ * The fields of an object schema and the schema of each, through its
+ * wrappers: a schema whose innermost layer is an object schema
+ * (`get_schema_entries`, `get_schema_fields`).
  *
- * @param schema - an object schema, possibly wrapped, Zod or fuz_schema
+ * @param schema - an object schema, possibly wrapped
  * @param label - names the schema in the error
- * @throws Error naming `label` when `schema` is no object schema, or of neither library
+ * @throws Error naming `label` when `schema` is no object schema, or no schema
  */
-export const to_object_schema_view = (
-	schema: ValidationSchema,
-	label: string
-): ObjectSchemaView => {
+export const to_object_schema_view = (schema: AnySchema, label: string): ObjectSchemaView => {
 	const view = to_object_view(schema, label);
 	if (!view) {
 		throw new Error(
@@ -317,7 +289,7 @@ export const to_object_schema_view = (
 // --- generating values ---
 
 /** Generate a string that satisfies minLength/maxLength/pattern constraints via JSON Schema. */
-const generate_valid_string = (field_schema: ValidationSchema): string => {
+const generate_valid_string = (field_schema: AnySchema): string => {
 	let min_length = 0;
 	let max_length = Infinity;
 	let pattern: string | null = null;
@@ -346,8 +318,8 @@ const generate_valid_string = (field_schema: ValidationSchema): string => {
 
 	// Email-shaped refinement (the `Email` primitive: loose `local@domain.tld`).
 	// The base `x`-fill has no `@`, so an email-pattern field needs a shaped
-	// candidate — the `z.string().regex()` form exposes a `pattern`, not the
-	// `format: 'email'` the `case 'email'` switch arm keys on.
+	// candidate — the regex form exposes a `pattern`, not the `format: 'email'`
+	// the `case 'email'` switch arm keys on.
 	const as_email = 'test@example.com';
 	if (accepts(field_schema, as_email)) return as_email;
 
@@ -366,60 +338,36 @@ const generate_valid_string = (field_schema: ValidationSchema): string => {
 	return base; // fall through — generate_valid_body will report the failure
 };
 
-// the element schema of an array field, of either library
-const to_array_element = (field_schema: ValidationSchema): ValidationSchema | undefined => {
-	if (is_schema(field_schema)) {
-		const base = unwrap_schema(field_schema);
-		return base.kind === 'array' ? base.def : undefined;
-	}
-	return (zod_unwrap_def(field_schema as z.ZodType) as { element?: z.ZodType }).element;
+// the element schema of an array field
+const to_array_element = (field_schema: AnySchema): AnySchema | undefined => {
+	const base = unwrap_schema(field_schema);
+	return base.kind === 'array' ? base.def : undefined;
 };
 
-// the first option of a union field, of either library
-const to_first_union_option = (field_schema: ValidationSchema): ValidationSchema | undefined => {
-	if (is_schema(field_schema)) {
-		const base = unwrap_schema(field_schema);
-		if (base.kind === 'union') return base.def[0];
-		if (base.kind === 'variant') return base.def.options[0];
-		return undefined;
-	}
-	// Zod 4 represents `z.union` and `z.discriminatedUnion` alike, `def.type ===
-	// 'union'` with a `def.options` array
-	return (zod_unwrap_def(field_schema as z.ZodType) as { options?: Array<z.ZodType> }).options?.[0];
+// the first option of a union field
+const to_first_union_option = (field_schema: AnySchema): AnySchema | undefined => {
+	const base = unwrap_schema(field_schema);
+	if (base.kind === 'union') return base.def[0];
+	if (base.kind === 'variant') return base.def.options[0];
+	return undefined;
 };
 
-// the values a literal or enum field accepts, of either library, in declared order
-const to_literal_values = (field_schema: ValidationSchema): ReadonlyArray<unknown> => {
-	if (is_schema(field_schema)) {
-		const base = unwrap_schema(field_schema);
-		if (base.kind === 'literal') return [base.def];
-		if (base.kind === 'one_of') return base.def;
-		return [];
-	}
-	const def = zod_unwrap_def(field_schema as z.ZodType);
-	// Zod 4 stores literal values on `def.values` (always an array, even for
-	// single-valued literals), and enum entries as an object `{key: value}`
-	if ('values' in def && Array.isArray(def.values)) return def.values as ReadonlyArray<unknown>;
-	if ('entries' in def) {
-		const entries = (def as { entries: unknown }).entries;
-		if (entries && typeof entries === 'object') {
-			return Object.values(entries as Record<string, unknown>);
-		}
-	}
+// the values a literal or enum field accepts, in declared order
+const to_literal_values = (field_schema: AnySchema): ReadonlyArray<unknown> => {
+	const base = unwrap_schema(field_schema);
+	if (base.kind === 'literal') return [base.def];
+	if (base.kind === 'one_of') return base.def;
 	return [];
 };
 
 /**
  * Generate a valid-ish value for a field based on its base type.
  *
- * @param field - the field's info, from `to_object_schema_view` or `zod_extract_fields`
- * @param field_schema - the field's schema, Zod or `@fuzdev/fuz_schema`
+ * @param field - the field's info, from `to_object_schema_view`
+ * @param field_schema - the field's schema
  * @returns the value, checked by the caller against the whole schema
  */
-export const generate_valid_value = (
-	field: SchemaFieldInfo,
-	field_schema: ValidationSchema
-): unknown => {
+export const generate_valid_value = (field: SchemaFieldInfo, field_schema: AnySchema): unknown => {
 	const format = detect_format(field_schema);
 	switch (field.base_type) {
 		case 'uuid':
@@ -431,17 +379,14 @@ export const generate_valid_value = (
 			if (format === 'email') return 'test@example.com';
 			if (format === 'date-time') return '2020-01-01T00:00:00.000Z';
 			return generate_valid_string(field_schema);
-		case 'number':
-		case 'int': {
+		case 'number': {
 			// 1, unless the schema's bounds rule it out (`.negative()`, `.min(10)`)
 			for (const candidate of [1, -1, 0]) {
 				if (accepts(field_schema, candidate)) return candidate;
 			}
 			const json = to_field_json_schema(field_schema);
 			if (typeof json.minimum === 'number') return Math.ceil(json.minimum);
-			if (typeof json.exclusiveMinimum === 'number') return Math.floor(json.exclusiveMinimum) + 1;
 			if (typeof json.maximum === 'number') return Math.floor(json.maximum);
-			if (typeof json.exclusiveMaximum === 'number') return Math.ceil(json.exclusiveMaximum) - 1;
 			return 1; // fall through — generate_valid_body will report the failure
 		}
 		case 'boolean':
@@ -501,8 +446,8 @@ export const generate_valid_value = (
 /** What `generate_valid_object` returns: the object and its last parse. */
 export interface GeneratedObject {
 	value: Record<string, unknown>;
-	/** The last `parse_any` of `value` against the schema — the caller decides whether a failure throws. */
-	result: ParseAnyResult<unknown>;
+	/** The last `parse` of `value` against the schema — the caller decides whether a failure throws. */
+	result: SchemaResult<unknown>;
 }
 
 /**
@@ -518,18 +463,17 @@ export interface GeneratedObject {
  * Shared by the top-level body generators and `generate_valid_value`'s
  * nested-object case, so a refined object validates the same way at any depth.
  *
- * @param object_schema - the object whose fields are generated: a Zod or
- *   `@fuzdev/fuz_schema` object schema, possibly wrapped
+ * @param object_schema - the object whose fields are generated: an object
+ *   schema, possibly wrapped
  * @param schema - the schema the object must satisfy, refinements included
  *   (`object_schema` or a schema wrapping it)
- * @returns the generated object and its last `parse_any` result — the caller
+ * @returns the generated object and its last `parse` result — the caller
  *   decides whether a failure throws
- * @throws Error when `object_schema` is no object schema, or either schema is
- *   of neither library
+ * @throws Error when `object_schema` is no object schema, or no schema
  */
 export const generate_valid_object = (
-	object_schema: ValidationSchema,
-	schema: ValidationSchema
+	object_schema: AnySchema,
+	schema: AnySchema
 ): GeneratedObject =>
 	generate_valid_object_from_view(
 		to_object_schema_view(object_schema, 'generate_valid_object: the object schema'),
@@ -538,7 +482,7 @@ export const generate_valid_object = (
 
 const generate_valid_object_from_view = (
 	view: ObjectSchemaView,
-	schema: ValidationSchema
+	schema: AnySchema
 ): GeneratedObject => {
 	const base: Record<string, unknown> = {};
 	const optional: Array<[string, unknown]> = [];
@@ -565,23 +509,23 @@ const is_optional_field = (field: SchemaFieldInfo): boolean =>
  * @returns the object and its last parse
  */
 const fill_optional_fields = (
-	schema: ValidationSchema,
+	schema: AnySchema,
 	start: Record<string, unknown>,
 	candidates: ReadonlyArray<readonly [string, unknown]>
 ): GeneratedObject => {
-	let result = parse_any(schema, start);
+	let result = parse(schema, start);
 	if (result.ok) return { value: start, result };
 	// each optional field alone, so one the refinement doesn't need stays out
 	for (const [name, field_value] of candidates) {
 		const value = { ...start, [name]: field_value };
-		const single_result = parse_any(schema, value);
+		const single_result = parse(schema, value);
 		if (single_result.ok) return { value, result: single_result };
 	}
 	// then cumulatively, for a refinement needing several
 	const value = { ...start };
 	for (const [name, field_value] of candidates) {
 		value[name] = field_value;
-		result = parse_any(schema, value);
+		result = parse(schema, value);
 		if (result.ok) break;
 	}
 	return { value, result };
@@ -597,19 +541,18 @@ const fill_optional_fields = (
  * replaces `base`'s optional fields, refilled the same way around it (an
  * exactly-one-of rule: adding `slug` means dropping `id`).
  *
- * @param object_schema - the object schema `base` is an instance of, Zod or
- *   `@fuzdev/fuz_schema`, possibly wrapped
+ * @param object_schema - the object schema `base` is an instance of,
+ *   possibly wrapped
  * @param schema - the schema the object must satisfy, refinements included
  * @param base - a valid object, the generated or seeded base
  * @param field - the field the object must carry
  * @returns the object, or `null` when no object the generator can build
  *   carries the field and passes `schema`
- * @throws Error when `object_schema` is no object schema, or either schema is
- *   of neither library
+ * @throws Error when `object_schema` is no object schema, or no schema
  */
 export const generate_valid_object_with_field = (
-	object_schema: ValidationSchema,
-	schema: ValidationSchema,
+	object_schema: AnySchema,
+	schema: AnySchema,
 	base: Record<string, unknown>,
 	field: SchemaFieldInfo
 ): Record<string, unknown> | null => {
@@ -647,21 +590,57 @@ export const generate_valid_object_with_field = (
 const NIL_UUID = '00000000-0000-0000-0000-000000000000';
 
 /**
+ * The bounds of every `min_value` and `max_value` a schema holds, in every
+ * stage of every `pipe` and through its wrappers — including the stages after
+ * a `transform`, which its JSON Schema can't say: a URL string parsed into a
+ * number is bounded only there (`db_routes`' `query_int`).
+ */
+const to_numeric_bounds = (schema: AnySchema): { min: Array<number>; max: Array<number> } => {
+	const bounds: { min: Array<number>; max: Array<number> } = { min: [], max: [] };
+	const seen: Set<SchemaNode> = new Set();
+	const pending: Array<SchemaNode> = [schema as SchemaNode];
+	while (pending.length > 0) {
+		const s = pending.pop()!;
+		if (seen.has(s)) continue;
+		seen.add(s);
+		if (
+			s.kind === 'optional' ||
+			s.kind === 'nullable' ||
+			s.kind === 'with_default' ||
+			s.kind === 'with_default_fn'
+		) {
+			pending.push(s.def.schema);
+		} else if (s.kind === 'pipe') {
+			pending.push(...s.def);
+		} else if (s.kind === 'lazy') {
+			pending.push(s.def());
+		} else if (s.kind === 'min_value' && typeof s.def === 'number') {
+			bounds.min.push(s.def);
+		} else if (s.kind === 'max_value' && typeof s.def === 'number') {
+			bounds.max.push(s.def);
+		}
+	}
+	return bounds;
+};
+
+/**
  * A string a URL-sourced field accepts — a route param or a query value, which
  * arrive as strings whatever the schema parses them into. The nil UUID for a
  * UUID field; else the first the field accepts of `test_value`, the generated
  * valid value written as a string, `1`, `0`, `true` and `false`, the field's
- * JSON Schema `default` or lower bound written as a string (a preprocessed
- * integer whose minimum is above one), and a string synthesized from the
- * field's constraints.
+ * JSON Schema `default` or lower bound written as a string, each
+ * `min_value` and `max_value` bound anywhere in the schema written as an
+ * integer (a string parsed into an integer whose range excludes the small
+ * candidates, `to_numeric_bounds`), and a string synthesized from the field's
+ * constraints.
  *
- * @param field - the field's info, from `to_object_schema_view` or `zod_extract_fields`
- * @param field_schema - the field's schema, Zod or `@fuzdev/fuz_schema`
+ * @param field - the field's info, from `to_object_schema_view`
+ * @param field_schema - the field's schema
  * @returns the string, or `null` when no candidate passes
  */
 export const generate_valid_string_param = (
 	field: SchemaFieldInfo,
-	field_schema: ValidationSchema
+	field_schema: AnySchema
 ): string | null => {
 	const candidates: Array<string> = [];
 	if (field.base_type === 'uuid' || detect_format(field_schema) === 'uuid') {
@@ -684,9 +663,9 @@ export const generate_valid_string_param = (
 		candidates.push(String(fallback));
 	}
 	if (typeof json.minimum === 'number') candidates.push(String(Math.ceil(json.minimum)));
-	if (typeof json.exclusiveMinimum === 'number') {
-		candidates.push(String(Math.floor(json.exclusiveMinimum) + 1));
-	}
+	const bounds = to_numeric_bounds(field_schema);
+	for (const min of bounds.min) candidates.push(String(Math.ceil(min)));
+	for (const max of bounds.max) candidates.push(String(Math.floor(max)));
 	candidates.push(generate_valid_string(field_schema));
 	return candidates.find((c) => accepts(field_schema, c)) ?? null;
 };
@@ -696,22 +675,19 @@ export const generate_valid_string_param = (
  * (`is_void_schema`, `is_null_schema`), which takes no body, else its object
  * view (`to_object_schema_view`).
  *
- * @param input_schema - a route's or action's input schema, Zod or `@fuzdev/fuz_schema`
+ * @param input_schema - a route's or action's input schema
  * @param label - names the input in the error
- * @throws Error naming `label` when the input is of neither library, or is
+ * @throws Error naming `label` when the input is no schema, or is
  *   neither void, null, nor an object schema — no body can be generated for
  *   it, and no body is not the same as one the generator can't build
  */
-export const to_body_input = (
-	input_schema: ValidationSchema,
-	label: string
-): ObjectSchemaView | null => {
+export const to_body_input = (input_schema: AnySchema, label: string): ObjectSchemaView | null => {
 	if (is_null_schema(input_schema) || is_void_schema(input_schema)) return null;
 	const view = to_object_view(input_schema, label);
 	if (!view) {
 		if (to_base_type(input_schema) === 'void') {
 			throw new Error(
-				`${label} is a void under wrappers, which dispatch does not read as void (\`is_void_schema\` is exact): absent params reach it as \`{}\`, which it refuses — declare the input as a bare \`z.void()\` or \`s.void\``
+				`${label} is a void under wrappers, which dispatch does not read as void (\`is_void_schema\` is exact): absent params reach it as \`{}\`, which it refuses — declare the input as a bare \`s.void\``
 			);
 		}
 		throw new Error(
@@ -780,9 +756,9 @@ export type RouteParamValues = Readonly<Record<string, Readonly<Record<string, s
  * (`''`, `.`, `..`) is refused by name.
  *
  * @param path - the route's path template
- * @param params_schema - the route's params schema, a Zod or `@fuzdev/fuz_schema` object schema
+ * @param params_schema - the route's params schema, an object schema
  * @param param_values - the route's supplied param values by name, its entry of `RouteParamValues`
- * @throws Error when `params_schema` is no object schema, or of neither library;
+ * @throws Error when `params_schema` is no object schema, or no schema;
  *   when `param_values` names no param of the path; when a supplied value is
  *   `''`, `.` or `..`, or holds a lone surrogate, which can't be encoded; and
  *   when a `{re}` param's value is one its pattern refuses, naming the route
@@ -790,7 +766,7 @@ export type RouteParamValues = Readonly<Record<string, Readonly<Record<string, s
  */
 export const resolve_valid_path = (
 	path: string,
-	params_schema?: ValidationSchema,
+	params_schema?: AnySchema,
 	param_values?: Readonly<Record<string, string>>
 ): string => {
 	const view = params_schema
@@ -861,16 +837,16 @@ export const resolve_valid_path = (
 /**
  * Generate a valid request body for a route's or action's input schema.
  *
- * @param input_schema - the input schema, Zod or `@fuzdev/fuz_schema`
+ * @param input_schema - the input schema
  * @returns a generated body that passes the schema, or `undefined` for a void
  *   or null input, which takes no body
- * @throws Error if the input is of neither library, or is neither void, null,
+ * @throws Error if the input is no schema, or is neither void, null,
  *   nor an object schema, or if the generated body fails the input — catching
  *   broken `generate_valid_value` logic early with the parse's issues instead
  *   of a confusing 400 in downstream tests
  */
 export const generate_valid_body = (
-	input_schema: ValidationSchema
+	input_schema: AnySchema
 ): Record<string, unknown> | undefined => {
 	const view = to_body_input(input_schema, 'generate_valid_body: the input');
 	if (!view) return undefined;

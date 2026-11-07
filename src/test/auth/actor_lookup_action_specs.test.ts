@@ -66,7 +66,7 @@ const ID = '0f8fad5b-d9cb-469f-a165-70867728950e';
 const issues_of = (input: unknown): Array<WireIssue> => {
 	const result = parse(ActorLookupInput, input);
 	assert.ok(!result.ok, JSON.stringify(input));
-	return to_wire_issues(result.issues, input);
+	return to_wire_issues(result.issues);
 };
 
 describe('actor_lookup schemas', () => {

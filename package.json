@@ -50,8 +50,7 @@
     "hono": ">=4",
     "pg": ">=8",
     "svelte": "^5",
-    "ws": ">=8",
-    "zod": "^4.6"
+    "ws": ">=8"
   },
   "peerDependenciesMeta": {
     "@electric-sql/pglite": {
@@ -88,9 +87,6 @@
       "optional": true
     },
     "ws": {
-      "optional": true
-    },
-    "zod": {
       "optional": true
     }
   },
@@ -133,8 +129,7 @@
     "typescript-eslint": "^8.71.1",
     "vite": "^8.3.4",
     "vitest": "^5.0.0",
-    "ws": "^8.20.1",
-    "zod": "^4.6.7"
+    "ws": "^8.20.1"
   },
   "sideEffects": [
     "**/*.css"

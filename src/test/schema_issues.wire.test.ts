@@ -14,7 +14,7 @@ import { to_wire_issues, WireIssue } from '#lib/schema_issues.ts';
 const wire_of = (schema: AnySchema, input: unknown): Array<WireIssue> => {
 	const result = parse(schema, input);
 	assert.ok(!result.ok, `refused: ${String(input)}`);
-	return to_wire_issues(result.issues, input);
+	return to_wire_issues(result.issues);
 };
 
 describe('to_wire_issues of fuz_schema issues', () => {
@@ -23,7 +23,7 @@ describe('to_wire_issues of fuz_schema issues', () => {
 		const input = { a: { b: [1, 'x'] }, z: null };
 		const result = s.parse(schema, input);
 		assert.ok(!result.ok);
-		const wire = to_wire_issues(result.issues, input);
+		const wire = to_wire_issues(result.issues);
 		assert.deepStrictEqual(wire, [
 			{
 				kind: 'number',
@@ -67,7 +67,7 @@ describe('to_wire_issues of fuz_schema issues', () => {
 			expected: 'string',
 			received: 'number'
 		} as unknown as s.SchemaIssue;
-		const [wire] = to_wire_issues([issue], {});
+		const [wire] = to_wire_issues([issue]);
 		assert.deepStrictEqual(wire!.path, ['Symbol(k)', 'a', 0]);
 		assert.doesNotThrow(() => JSON.stringify(wire));
 	});

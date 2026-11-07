@@ -803,7 +803,7 @@ describe('password change connection_closer wiring', () => {
 		// `reason: 'concurrent_change'` is the only signal an admin reading
 		// the audit log has to distinguish "user typoed" from "two clients
 		// raced." The schema in `audit_log_schema.ts` declares this as a
-		// closed `z.enum(['concurrent_change'])` — any other reason value
+		// closed `literal('concurrent_change')` — any other reason value
 		// would also trip metadata validation in production. Pin both the
 		// handler-to-schema choice and the defense-in-depth credential_type.
 		const failure_audits = audit_events.filter(

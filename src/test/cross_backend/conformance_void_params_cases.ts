@@ -1,5 +1,5 @@
 /**
- * Conformance cases for a `z.void()` input's accepted `params` shapes.
+ * Conformance cases for a `void` input's accepted `params` shapes.
  *
  * JSON-RPC 2.0 lets a parameterless call omit `params`, and an empty by-name
  * structure carries no parameters, so both spines read an absent `params` and

@@ -580,7 +580,7 @@ const create_input_validation = (
 			return c.json(
 				{
 					error: ERROR_INVALID_REQUEST_BODY,
-					issues: dev_only(() => to_wire_issues(result.issues, body))
+					issues: dev_only(() => to_wire_issues(result.issues))
 				},
 				400
 			);
@@ -610,7 +610,7 @@ const create_params_validation = (params_schema?: AnySchema): Array<MiddlewareHa
 			return c.json(
 				{
 					error: ERROR_INVALID_ROUTE_PARAMS,
-					issues: dev_only(() => to_wire_issues(result.issues, raw_params))
+					issues: dev_only(() => to_wire_issues(result.issues))
 				},
 				400
 			);
@@ -640,7 +640,7 @@ const create_query_validation = (query_schema?: AnySchema): Array<MiddlewareHand
 			return c.json(
 				{
 					error: ERROR_INVALID_QUERY_PARAMS,
-					issues: dev_only(() => to_wire_issues(result.issues, raw_query))
+					issues: dev_only(() => to_wire_issues(result.issues))
 				},
 				400
 			);
@@ -944,7 +944,7 @@ export const apply_route_specs = (
 	}
 };
 
-// throws unless every schema slot holds a Zod or fuz_schema schema and every
+// throws unless every schema slot holds a fuz_schema schema and every
 // `errors` entry is a definition; `params` and `query` may be absent
 const assert_schema_slots = (spec: RouteSpec, route_key: string): void => {
 	const label = `Route "${route_key}"`;
@@ -964,14 +964,13 @@ const assert_schema_slots = (spec: RouteSpec, route_key: string): void => {
 	}
 };
 
-// throws unless a fuz_schema `params` / `query` is an object schema under any
-// wrappers; a Zod one is a `ZodObjectLike` by its type
+// throws unless a `params` / `query` is an object schema under any wrappers
 const assert_object_slot = (
 	schema: AnySchema | undefined,
 	slot: 'params' | 'query',
 	route_key: string
 ): void => {
-	if (schema === undefined || !is_schema(schema) || get_schema_entries(schema)) return;
+	if (schema === undefined || get_schema_entries(schema)) return;
 	throw new Error(
 		`Route "${route_key}": ${slot} is a @fuzdev/fuz_schema '${schema.kind}' schema, not an object schema`
 	);

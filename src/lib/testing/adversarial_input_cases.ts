@@ -16,7 +16,9 @@ import './assert_dev_env.ts';
 
 import { resolve_invalid_reason } from '../schema_meta.ts';
 import { ERROR_INVALID_REQUEST_BODY, ERROR_INVALID_JSON_BODY } from '../http/error_schemas.ts';
-import { format_issues, parse_any, type ValidationSchema } from '../schema_issues.ts';
+import { parse, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
+
+import { format_issues } from '../schema_issues.ts';
 import {
 	detect_format,
 	detect_json_schema_format,
@@ -29,8 +31,8 @@ import {
 	type ObjectSchemaView
 } from './schema_generators.ts';
 
-/** Whether `schema` accepts `value`, a parse of either library (`parse_any`). */
-const accepts = (schema: ValidationSchema, value: unknown): boolean => parse_any(schema, value).ok;
+/** Whether `schema` accepts `value`. */
+const accepts = (schema: AnySchema, value: unknown): boolean => parse(schema, value).ok;
 
 // --- Payload generation ---
 
@@ -42,7 +44,6 @@ const wrong_type_for = (base_type: string): { label: string; value: unknown } | 
 		case 'email':
 			return { label: 'number instead of string', value: 42 };
 		case 'number':
-		case 'int':
 			return { label: 'string instead of number', value: 'not_a_number' };
 		case 'boolean':
 			return { label: 'number instead of boolean', value: 42 };
@@ -75,15 +76,12 @@ const format_violation = (format: string): { label: string; value: string } | nu
 
 /**
  * `value` moved by `step`, up when that stays inside the field's numeric range
- * and down otherwise — a number off the integer or `multipleOf` grid that
- * still meets the range, so the grid check is the one a refusal names.
+ * and down otherwise — a number off the integer grid that still meets the
+ * range, so the integer check is the one a refusal names.
  */
 const off_grid_in_range = (json: Record<string, unknown>, value: number, step: number): number => {
 	const up = value + step;
-	const over =
-		(typeof json.maximum === 'number' && up > json.maximum) ||
-		(typeof json.exclusiveMaximum === 'number' && up >= json.exclusiveMaximum);
-	return over ? value - step : up;
+	return typeof json.maximum === 'number' && up > json.maximum ? value - step : up;
 };
 
 // --- Test case types ---
@@ -139,13 +137,13 @@ export interface InputTestCaseOptions {
  * - Null for required non-nullable fields
  * - One format violation per constrained field
  * - String length (empty, one under `minLength`, one over `maxLength`), numeric
- *   (out of range, non-integer, off a `multipleOf` grid) and array-length
+ *   (out of range, non-integer) and array-length
  *   (empty, one under `minItems`, one over `maxItems`) boundaries
  *
  * Format and boundaries come from the field's input-side JSON Schema
- * (`to_field_json_schema`), so a field carrying a `.transform()` or pipe and a
- * `.nullable()` / `.nullish()` field get them too. A bound only a `.refine()`
- * enforces generates nothing — JSON Schema can't express it.
+ * (`to_field_json_schema`), so a field carrying a `transform` in a pipe and a
+ * `nullable` field get them too. A bound only a `check` enforces generates
+ * nothing — JSON Schema can't express it.
  *
  * Each per-field case is single-fault: valid except for the field it breaks.
  * It changes one field of a valid base body — `options.base` when given, else
@@ -158,19 +156,20 @@ export interface InputTestCaseOptions {
  * emitted only when the field refuses its value, so no case is accidentally
  * valid.
  *
- * A void or null input takes no body and gets no cases; an input of neither
- * library, or one that is no object schema, throws rather than yielding none.
+ * A void or null input takes no body and gets no cases; a value that is no
+ * schema, or an input that is no object schema, throws rather than yielding
+ * none.
  *
- * @param input_schema - the input schema to attack, Zod or `@fuzdev/fuz_schema`
+ * @param input_schema - the input schema to attack
  * @param options - a base body to seed the cases, and a label for errors
- * @throws Error if the input is of neither library or is neither void, null,
+ * @throws Error if the input is no schema or is neither void, null,
  *   nor an object schema, or if the base body fails `input_schema` — a seeded
  *   base the schema refuses, or a generated one that surfaces broken
  *   generation logic — naming the issues rather than producing nonsense
  *   adversarial cases.
  */
 export const generate_input_test_cases = (
-	input_schema: ValidationSchema,
+	input_schema: AnySchema,
 	options?: InputTestCaseOptions
 ): Array<InputTestCase> => {
 	const for_label = options?.label === undefined ? '' : ` for '${options.label}'`;
@@ -184,7 +183,7 @@ export const generate_input_test_cases = (
 	let base: Record<string, unknown>;
 	if (options?.base) {
 		base = { ...options.base };
-		const base_result = parse_any(input_schema, base);
+		const base_result = parse(input_schema, base);
 		if (!base_result.ok) {
 			throw new Error(
 				`adversarial_input: the seeded base${for_label} fails validation — ` +
@@ -313,7 +312,7 @@ export const generate_input_test_cases = (
 		}
 
 		// numeric boundaries
-		if (field.base_type === 'number' || field.base_type === 'int') {
+		if (field.base_type === 'number') {
 			if (typeof json.minimum === 'number') {
 				push_field_case(
 					`below minimum: ${field.name} (${json.minimum - 1})`,
@@ -328,41 +327,17 @@ export const generate_input_test_cases = (
 					'value'
 				);
 			}
-			if (typeof json.exclusiveMinimum === 'number') {
-				push_field_case(
-					`at exclusive minimum: ${field.name} (${json.exclusiveMinimum})`,
-					json.exclusiveMinimum,
-					'value'
-				);
-			}
-			if (typeof json.exclusiveMaximum === 'number') {
-				push_field_case(
-					`at exclusive maximum: ${field.name} (${json.exclusiveMaximum})`,
-					json.exclusiveMaximum,
-					'value'
-				);
-			}
 			// 0 and negative for positive-only fields
 			if (typeof json.minimum === 'number' && json.minimum > 0) {
 				push_field_case(`zero for positive-only: ${field.name}`, 0, 'value');
 				push_field_case(`negative for positive-only: ${field.name}`, -1, 'value');
 			}
 			// off the grid by half a step from the valid value, inside the range,
-			// so the integer or `multipleOf` check is the one that refuses
+			// so the integer check is the one that refuses
 			const valid_number = typeof valid_value === 'number' ? valid_value : 1;
 			if (json.type === 'integer') {
 				const value = off_grid_in_range(json, valid_number, 0.5);
 				push_field_case(`non-integer: ${field.name} (${value})`, value, 'value');
-			}
-			if (typeof json.multipleOf === 'number' && json.multipleOf > 0) {
-				// a whole step for an integer field, so the integer check still holds
-				const step = json.type === 'integer' && json.multipleOf > 1 ? 1 : json.multipleOf / 2;
-				const value = off_grid_in_range(json, valid_number, step);
-				push_field_case(
-					`not multipleOf: ${field.name} (${value}, multipleOf ${json.multipleOf})`,
-					value,
-					'value'
-				);
 			}
 		}
 
@@ -405,12 +380,12 @@ export const generate_input_test_cases = (
  * a failure on that field (`resolve_invalid_reason`), or `undefined` — no
  * reason — for an undeclared field or a whole-body case.
  *
- * @param input_schema - the input schema the case was generated from, Zod or `@fuzdev/fuz_schema`
+ * @param input_schema - the input schema the case was generated from
  * @param test_case - a case `generate_input_test_cases` produced from it
  * @returns the owed reason, or `undefined` when the refusal carries none
  */
 export const expected_invalid_reason = (
-	input_schema: ValidationSchema,
+	input_schema: AnySchema,
 	test_case: InputTestCase
 ): string | undefined =>
 	test_case.field === undefined
@@ -428,7 +403,7 @@ export const expected_invalid_reason = (
  *   schema, naming the issues
  */
 const generate_string_record_base = (
-	schema: ValidationSchema,
+	schema: AnySchema,
 	view: ObjectSchemaView,
 	kind: 'params' | 'query'
 ): Record<string, string> => {
@@ -440,7 +415,7 @@ const generate_string_record_base = (
 		}
 		base[field.name] = value;
 	}
-	const result = parse_any(schema, base);
+	const result = parse(schema, base);
 	if (!result.ok) {
 		throw new Error(
 			`adversarial_input: generated ${kind} base fails validation — ` +
@@ -458,13 +433,11 @@ const generate_string_record_base = (
  * params accept any string value, and only a violation the field refuses.
  * Each case breaks one field of a valid params record.
  *
- * @param params_schema - the params schema, a Zod or `@fuzdev/fuz_schema` object schema
+ * @param params_schema - the params schema, an object schema
  * @throws Error if no valid params record can be generated, or `params_schema`
- *   is no object schema or of neither library
+ *   is no object schema or no schema
  */
-export const generate_params_test_cases = (
-	params_schema: ValidationSchema
-): Array<ParamsTestCase> => {
+export const generate_params_test_cases = (params_schema: AnySchema): Array<ParamsTestCase> => {
 	const view = to_object_schema_view(params_schema, 'adversarial_input: the params schema');
 	const cases: Array<ParamsTestCase> = [];
 	const base_params = generate_string_record_base(params_schema, view, 'params');
@@ -496,11 +469,11 @@ export const generate_params_test_cases = (
  *
  * Each case breaks one field of a valid query record.
  *
- * @param query_schema - the query schema, a Zod or `@fuzdev/fuz_schema` object schema
+ * @param query_schema - the query schema, an object schema
  * @throws Error if no valid query record can be generated, or `query_schema`
- *   is no object schema or of neither library
+ *   is no object schema or no schema
  */
-export const generate_query_test_cases = (query_schema: ValidationSchema): Array<QueryTestCase> => {
+export const generate_query_test_cases = (query_schema: AnySchema): Array<QueryTestCase> => {
 	const view = to_object_schema_view(query_schema, 'adversarial_input: the query schema');
 	const cases: Array<QueryTestCase> = [];
 	const base_query = generate_string_record_base(query_schema, view, 'query');

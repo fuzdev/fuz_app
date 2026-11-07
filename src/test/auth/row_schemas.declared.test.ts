@@ -151,7 +151,7 @@ const USERNAME_HOLDERS: ReadonlyArray<[AnySchema, Record<string, unknown>]> = [
 
 const issues_of = (schema: AnySchema, input: unknown): Array<WireIssue> | null => {
 	const result = parse(schema, input);
-	return result.ok ? null : to_wire_issues(result.issues, input);
+	return result.ok ? null : to_wire_issues(result.issues);
 };
 
 /** The issues as `[kind, path, expected]`, or `null` for an acceptance. */

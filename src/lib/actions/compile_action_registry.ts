@@ -121,14 +121,14 @@ export const compile_action_registry = (
 				throw new Error(
 					`${
 						ctx
-					} uses a null schema for input (z.null() or fuz_schema literal(null)) — JSON-RPC 2.0 §4.2 forbids "params": null on the wire. Use a void schema (z.void() or fuz_schema s.void) for parameterless methods.`
+					} uses a null schema for input (literal(null)) — JSON-RPC 2.0 §4.2 forbids "params": null on the wire. Use a void schema (s.void) for parameterless methods.`
 				);
 			}
 			if (is_void_schema(spec.output)) {
 				throw new Error(
 					`${
 						ctx
-					} uses a void schema for output (z.void() or fuz_schema s.void) — a JSON-RPC response always carries a result, and clients validate it against spec.output, so no response could match. Use a null schema (z.null() or fuz_schema literal(null)) for methods with nothing to return.`
+					} uses a void schema for output (s.void) — a JSON-RPC response always carries a result, and clients validate it against spec.output, so no response could match. Use a null schema (literal(null)) for methods with nothing to return.`
 				);
 			}
 			action_map.set(spec.method, { spec, handler: action.handler });
