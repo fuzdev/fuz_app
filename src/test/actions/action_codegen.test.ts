@@ -712,9 +712,9 @@ describe('generate_action_method_enums', () => {
 			'BackendActionMethod',
 			'BackendRequestResponseMethod'
 		]) {
-			assert.ok(result.includes(`export const ${name} = z.enum([`), `missing const ${name}`);
+			assert.ok(result.includes(`export const ${name} = one_of([`), `missing const ${name}`);
 			assert.ok(
-				result.includes(`export type ${name} = z.infer<typeof ${name}>;`),
+				result.includes(`export type ${name} = Infer<typeof ${name}>;`),
 				`missing type ${name}`
 			);
 		}
@@ -722,11 +722,13 @@ describe('generate_action_method_enums', () => {
 		// fixture_specs has no backend-initiated request_response and the only
 		// backend-initiated remote_notification is `thing_changed` — so the
 		// broadcast enum exists but FrontendRequestResponseMethod is empty
-		// (skipped, since z.enum([]) is invalid). Pin both behaviors.
-		assert.ok(result.includes('export const BroadcastActionMethod = z.enum(['));
+		// (skipped). Pin both behaviors.
+		assert.ok(result.includes('export const BroadcastActionMethod = one_of(['));
 		assert.ok(!result.includes('export const FrontendRequestResponseMethod'));
-		// Registers the zod import on the builder.
-		assert.ok(imports.build().includes("import {z} from 'zod';"));
+		// Registers the fuz_schema import on the builder, and no zod.
+		const built = imports.build();
+		assert.ok(built.includes("import {one_of, type Infer} from '@fuzdev/fuz_schema/schema.ts';"));
+		assert.ok(!built.includes('zod'));
 	});
 
 	test('BackendRequestResponseMethod selects request_response specs the backend handles', () => {
@@ -850,9 +852,9 @@ describe('generate_action_method_enums', () => {
 		assert.ok(!result.includes('export const BackendActionMethod'));
 	});
 
-	test('skips empty kinds rather than emitting `z.enum([])`', () => {
+	test('skips empty kinds rather than emitting `one_of([])`', () => {
 		// Spec set with no local_call + no remote_notification → those enums
-		// would be `z.enum([])`, which throws at runtime in zod.
+		// would be `one_of([])`, which types as `never`.
 		const only_rr: ReadonlyArray<ActionSpecUnion> = [create_rr('frontend')];
 		const imports = new ImportBuilder();
 		const result = generate_action_method_enums(only_rr, imports);
@@ -861,13 +863,13 @@ describe('generate_action_method_enums', () => {
 		assert.ok(result.includes('export const RequestResponseActionMethod'));
 		assert.ok(!result.includes('export const RemoteNotificationActionMethod'));
 		assert.ok(!result.includes('export const LocalCallActionMethod'));
-		// No `z.enum([\n\n])` artifact anywhere.
-		assert.ok(!/z\.enum\(\[\s*\]\)/.test(result));
+		// No `one_of([\n\n])` artifact anywhere.
+		assert.ok(!/one_of\(\[\s*\]\)/.test(result));
 	});
 
-	test('empty specs emits nothing and adds no zod import', () => {
+	test('empty specs emits nothing and adds no import', () => {
 		// Defensive: every block ends up empty → helper returns '' and skips
-		// the `zod` import so callers do not emit a dead import line.
+		// the fuz_schema import so callers do not emit a dead import line.
 		const imports = new ImportBuilder();
 		const result = generate_action_method_enums([], imports);
 		assert.strictEqual(result, '');

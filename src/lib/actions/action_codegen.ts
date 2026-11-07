@@ -542,9 +542,10 @@ const generate_actions_api_method_signature = (
 // --------------------------------------------------------------------------
 
 /**
- * Format a `z.enum([...])` runtime const + matching `z.infer` type alias.
- * Caller is responsible for ensuring `methods` is non-empty (`z.enum([])` is
- * invalid) and registering the `zod` import on the `ImportBuilder`.
+ * Format a `@fuzdev/fuz_schema` `one_of([...])` runtime const + matching
+ * `Infer` type alias. Caller is responsible for ensuring `methods` is
+ * non-empty and registering the `one_of` and `Infer` imports on the
+ * `ImportBuilder`.
  */
 const format_method_enum_block = (
 	name: string,
@@ -555,10 +556,10 @@ const format_method_enum_block = (
 	return `/**
  * ${jsdoc}
  */
-export const ${name} = z.enum([
+export const ${name} = one_of([
 ${lines}
 ]);
-export type ${name} = z.infer<typeof ${name}>;`;
+export type ${name} = Infer<typeof ${name}>;`;
 };
 
 /** Discriminator for `generate_action_method_enums` — which method-set enums to emit. */
@@ -627,20 +628,22 @@ const resolve_spec_qualifier = (
 };
 
 /**
- * Emit one or more `z.enum([...])` declarations for action method names —
+ * Emit one or more `@fuzdev/fuz_schema` `one_of([...])` declarations for
+ * action method names —
  * `ActionMethod`, `RequestResponseActionMethod`, `RemoteNotificationActionMethod`,
  * `LocalCallActionMethod`, `FrontendActionMethod`, `BackendActionMethod`,
  * `FrontendRequestResponseMethod`, `BackendRequestResponseMethod`,
- * `BroadcastActionMethod`. Pairs each runtime const with a `z.infer` type
- * alias under the same identifier.
+ * `BroadcastActionMethod`. Pairs each runtime const with an `Infer` type
+ * alias under the same identifier. A const's `def` is its array of methods;
+ * a Zod schema that holds one takes `z.enum(ActionMethod.def)`.
  *
  * Protocol-action methods (`heartbeat`, `cancel`) are filtered out by
  * default — pass `include_protocol_actions: true` if a consumer genuinely
- * wants them on their typed surface. Empty kinds are skipped so the helper
- * never emits `z.enum([])` (zod runtime-throws on that).
+ * wants them on their typed surface. Empty kinds are skipped, so every
+ * emitted const names at least one method.
  *
- * Adds `import {z} from 'zod';` to `imports` only when at least one block
- * is emitted (idempotent).
+ * Adds `import {one_of, type Infer} from '@fuzdev/fuz_schema/schema.ts';` to
+ * `imports` only when at least one block is emitted (idempotent).
  *
  * @param options.emit - subset of enums to emit; defaults to every kind
  * @param options.include_protocol_actions - when true, retains `heartbeat` /
@@ -663,8 +666,9 @@ export const generate_action_method_enums = (
 		jsdoc: string
 	): void => {
 		if (!emit.has(kind)) return;
-		// `z.enum([])` is invalid — skip empty kinds rather than emit broken code.
-		// Consumers that need a kind to exist should check their spec set, not the helper.
+		// skip empty kinds: an enum of no methods types as `never`, which no
+		// consumer wants. Consumers that need a kind to exist should check their
+		// spec set, not the helper
 		if (methods.length === 0) return;
 		blocks.push(format_method_enum_block(name, jsdoc, methods));
 	};
@@ -729,7 +733,8 @@ export const generate_action_method_enums = (
 	);
 
 	if (blocks.length === 0) return '';
-	imports.add('zod', 'z');
+	imports.add('@fuzdev/fuz_schema/schema.ts', 'one_of');
+	imports.add_type('@fuzdev/fuz_schema/schema.ts', 'Infer');
 	return blocks.join('\n\n');
 };
 

@@ -8,8 +8,13 @@
  * fuz_app's own list, whose account, `self_service_role_set`,
  * `actor_lookup`, `actor_search`, admin, role_grant_offer, cell, and protocol
  * methods are `@fuzdev/fuz_schema`, generates the same text but for those types, read by `Infer`, and the
- * `Infer` import. The all-Zod list holds Zod stand-ins for those schemas,
- * which give codegen the answers their own do.
+ * `Infer` import of the qualified file (the plain file's `Infer` shares the
+ * method enums' fuz_schema import, which both lists emit). The all-Zod list
+ * holds Zod stand-ins for those schemas, which give codegen the answers
+ * their own do.
+ *
+ * Regenerate the fixture with
+ * `gro task src/test/fixtures/action_codegen/update.task.ts`.
  *
  * @module
  */
@@ -44,8 +49,9 @@ test('an all-Zod spec list generates the fixture byte for byte', () => {
 test("fuz_app's own list differs from the fixture only in its fuz_schema methods' types", () => {
 	const expected = readFileSync(FIXTURE_PATH, 'utf8');
 	const actual = generate_codegen_fixture(fixture_specs).split('\n');
-	// one `Infer` import per composed file, the plain and the qualified
-	assert.strictEqual(actual.filter((line) => line === INFER_IMPORT).length, 2);
+	// one type-only `Infer` import, the qualified file's: the plain file's
+	// shares the method enums' `one_of` import
+	assert.strictEqual(actual.filter((line) => line === INFER_IMPORT).length, 1);
 	assert.notInclude(expected, INFER_IMPORT);
 	const offers: ReadonlyArray<string> = [
 		'role_grant_offer_create',
