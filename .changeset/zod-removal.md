@@ -6,6 +6,8 @@ break: fuz_app is `@fuzdev/fuz_schema` only — Zod is gone from its schemas, si
 
 break: `zod` is no longer a peer dependency, optional or otherwise
 
+break: the `@fuzdev/fuz_schema` peer is `^0.5.6` (composable `Branded` / `Flavored`)
+
 break: codegen types the call surfaces by each input schema's input type — the new `ActionCallInputs` — so callers pass what the schema accepts before its parse (run `gro gen`)
 
 **Renamed to fuz_schema's names** (no aliases):
