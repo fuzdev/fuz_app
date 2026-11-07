@@ -1,5 +1,19 @@
 # @fuzdev/fuz_app
 
+## 0.173.0
+
+### Minor Changes
+
+- break: upgrade to fuz_css 0.76 and fuz_ui 0.224 - the `@fuzdev/fuz_css` peer is `>=0.76.0` ([c5d9092](https://github.com/fuzdev/fuz_app/commit/c5d9092))
+- break: the `ui/` modules declare `@fuzdev/fuz_ui` as an optional peer, `>=0.224.0` ([e89e660](https://github.com/fuzdev/fuz_app/commit/e89e660))
+- break: U+0000 in a request body is refused on both spines, where Postgres refused it on write with a 500: in RPC `params` (POST, GET, WebSocket) it is `invalid_params` with `data.reason` `params_nul` (`ERROR_PARAMS_NUL`), after the authority gates and the rate limit and after the `params_proto_key` check; in a route's JSON body it is 400 `invalid_request_body`, ahead of the body schema. Any string or object key, at any depth, of the parsed value ([1ada474](https://github.com/fuzdev/fuz_app/commit/1ada474))
+
+  break: `json_has_own_proto_key` is replaced by `scan_json_value` (`http/schema_helpers.ts`), one walk returning a `JsonValueScan` (`{proto_key, nul}`) — read `.proto_key` for the old answer
+
+### Patch Changes
+
+- `PopoverButton`'s container and `AppShell`'s toggle set their position with fuz_css keyword classes, so a position class passed through `popover_container_attrs.class` now overrides the container's default ([570eace](https://github.com/fuzdev/fuz_app/commit/570eace))
+
 ## 0.172.0
 
 ### Minor Changes
@@ -11,17 +25,17 @@
 ### Minor Changes
 
 - break: a JSON body or frame the Rust spine's `serde_json` refuses is refused on the TS spine too — an escaped lone surrogate in a string or a key, a number out of `f64` range (`1e400`), nesting 128 deep or more: `invalid_json_body` on a route, `parse_error` on the RPC POST body and a WS frame, `invalid_params` on `GET /rpc`'s `params`; they were accepted and stored rewritten (U+FFFD, `null`) or failed on a `jsonb` write. `parse_json_text` and `read_json_body` (`http/json_text.ts`) are the reader ([24a0236](https://github.com/fuzdev/fuz_app/commit/24a0236))
-  
+
   break: action codegen no longer emits the `ActionInputs` / `ActionOutputs` runtime consts, only the `ActionInputs`, `ActionCallInputs` and `ActionOutputs` interfaces — run `gro gen`, and import the two as types
-  
+
   break: a hand-built `RouteFail`'s `def` must be the definition at its own status and code (`RestErrorDef<TStatus, TCode>`)
-  
+
   break: `SchemaFieldInfo.base_type` is a `SchemaFieldBaseType`, the innermost fuz_schema kind: `'one_of'` and `'variant'` where it read `'enum'` and `'union'`
-  
+
   break: an origin carve-out that is a route template (`:param`, `{pattern}`, an inner `*`) throws at assembly — a carve-out matches a path exactly or by a trailing `/*`
-  
+
   fix: `route_ok` with a function or symbol value throws as a malformed result before the commit, where it answered an empty 200
-  
+
   fix: `peer/ping`'s default input is a frozen object, as `with_default` shares it across calls
 
 ## 0.170.0
@@ -29,31 +43,31 @@
 ### Minor Changes
 
 - break: fuz_app is `@fuzdev/fuz_schema` only — Zod is gone from its schemas, signatures and dependencies; every slot that took a Zod or a fuz_schema schema takes a fuz_schema schema ([351be5f](https://github.com/fuzdev/fuz_app/commit/351be5f))
-  
+
   break: `zod` is no longer a peer dependency, optional or otherwise
-  
+
   break: the `@fuzdev/fuz_schema` peer is `^0.5.6` (composable `Branded` / `Flavored`)
-  
+
   break: codegen types the call surfaces by each input schema's input type — the new `ActionCallInputs` — so callers pass what the schema accepts before its parse (run `gro gen`)
-  
+
   **Renamed to fuz_schema's names** (no aliases):
-  
+
   - `ValidationSchema` → `AnySchema` (`@fuzdev/fuz_schema/schema.ts`)
   - `ValidationOutput<T>` / `ValidationInput<T>` → `Infer<T>` / `InferInput<T>`
   - `AnyIssue` → `SchemaIssue`
   - `ParseAnyResult<T>` → `SchemaResult<T>`
   - `parse_any(schema, value)` → `parse(schema, value)`, same `{ok, value}` / `{ok: false, issues}` result
-  
+
   **Removed:**
-  
+
   - `zod.ts`, every export: `zod_has_trait`, `zod_unwrap_def`, `zod_get_base_type`, `zod_get_innermost_type`, `zod_get_schema_layers`, `zod_unwrap_to_object`, `zod_get_schema_keys`, `zod_get_field_schema`, `zod_maybe_get_field_schema`, `zod_extract_fields` — read a schema with `@fuzdev/fuz_schema/introspect.ts` (`get_schema_entries`, `get_schema_fields`, `unwrap_schema`); `SchemaFieldInfo` moves to `http/schema_helpers.ts`
   - `zod_schemas.ts`, every export: `ZodUuid`, `ZodUuidWithDefault`, `ZodFactHashSchema`, `ZodUsername`, `ZodEmail`, `ZodActingActor` → the fuz_schema primitives of `primitive_schemas.ts` (`Uuid`, `UuidWithDefault`, `FactHashSchema`, `Username`, `Email`, `ActingActor`); `Datetime`, `DatetimeNow` and `get_datetime_now` have no replacement here — the wire timestamp is `Timestamp`, and an app keeping a branded datetime defines its own
   - `schema_issues.ts`: `is_zod_schema`, `assert_zod_schema`, `is_zod_issue`
   - `schema_meta.ts`: `SchemaFieldMeta` → fuz_schema's `SchemaMeta`, which carries `invalid_reason`, `empty_input_handler_guarded`, `sensitivity` and `readOnly` by declaration merging; `schema_meta_value` → `get_schema_meta` (`@fuzdev/fuz_schema/introspect.ts`); `schema_invalid_reason` → `get_schema_meta(schema, 'invalid_reason')`; `schema_sensitivity` → `find_schema_sensitivity` (`sensitivity.ts`)
   - `http/auth_shape.ts`: `register_zod_acting_actor` (internal) — `input_schema_declares_acting` finds `ActingActor` alone
-  
+
   **Narrowed to fuz_schema:**
-  
+
   - `assert_validation_schema` refuses anything that is no fuz_schema schema, its error ending `is not a @fuzdev/fuz_schema schema`; spec registration, `schema_to_surface` and codegen throw it
   - `format_issues` writes `format_issue` lines; `is_schema_validation_error` is `err instanceof SchemaError`; `issue_is_on_input` and `unknown_key_targets` read `SchemaIssue`s
   - `to_wire_issues(issues)` drops its second parameter, the parsed input, which only Zod issues read; `WireIssue` is unchanged on the wire
@@ -61,19 +75,19 @@
   - `expect_output` (`testing/cross_backend/cross_rpc.ts`) and `rpc_call_typed` (`testing/rpc_helpers.ts`) take a `Schema<T, any>`
   - `is_null_schema`, `is_void_schema`, `is_strict_object_schema`, `schema_to_surface`, `to_input_params`, `safe_parse_dropping_unknown_keys`, `input_schema_declares_acting`, `is_empty_input_handler_guarded`, `schema_has_sensitive_field`, `resolve_invalid_reason`, `resolve_issues_invalid_reason`, `create_audit_log_config`'s metadata schemas, and the testing generators (`to_object_schema_view`, `to_field_json_schema`, `detect_format`, `generate_valid_value`, `generate_valid_object`, `generate_valid_body`, `generate_valid_string_param`, `generate_input_test_cases` and the params and query generators) take an `AnySchema`; `ObjectSchemaView.field_schema` answers one
   - `SchemaFieldInfo.base_type` keeps its names (`'enum'` for a `one_of`, `'union'` for a `variant`, …)
-  
+
   **Codegen.** `generate_action_inputs_outputs` emits `ActionCallInputs` beside `ActionInputs` and `ActionOutputs`, importing `type {Infer, InferInput}` and never `z`:
-  
+
   - `ActionCallInputs[method]` is `InferInput<typeof spec.input>` — what a caller passes. `FrontendActionsApi` (`generate_frontend_actions_api`) and `BackendActionsApi` (`generate_backend_actions_api`) type their `input` by it, so a `with_default` field is optional for the caller, and a `Uuid` param takes a string.
   - `ActionInputs[method]` stays `Infer<typeof spec.input>` — the parsed value a handler, an action event (`ActionEventDatas`) or a notification receiver reads, defaults filled. `ActionOutputs` is unchanged.
-  
+
   **Migration.**
-  
+
   1. Rename the imports above, taking `AnySchema`, `Infer`, `InferInput`, `SchemaIssue`, `SchemaResult` and `parse` from `@fuzdev/fuz_schema/schema.ts`.
   2. Port any remaining Zod schema a spec, route, event or audit config holds to fuz_schema; a Zod schema in one now fails registration.
   3. Run `gro gen`: `action_collections.ts` gains `ActionCallInputs`, and the generated call surfaces import it in place of `ActionInputs`. A hand-written call-side type naming `ActionInputs[method]` for what a caller passes moves to `ActionCallInputs[method]`.
   4. Call `to_wire_issues(issues)` with one argument.
-  
+
   **Fixed:** `generate_valid_string_param` finds a value for a URL integer whose bounds sit past its `transform` (`db_routes`' `query_int` shape) and exclude the small candidates, reading every `min_value` / `max_value` in the schema, where it answered `null`.
 
 ## 0.169.0
@@ -81,19 +95,19 @@
 ### Minor Changes
 
 - break: fuz_app's own schemas are all `@fuzdev/fuz_schema`, the primitives take their plain names, their Zod forms move to `zod_schemas.ts`, and nothing else in fuz_app imports Zod at runtime. ([b77d1d2](https://github.com/fuzdev/fuz_app/commit/b77d1d2))
-  
+
   **The primitives.** `primitive_schemas_fuz.ts` is gone: its schemas are in `primitive_schemas.ts` under the names they had — `bounded_string`, `Username`, `UsernameCanonical`, `UsernameProvided`, `Email`, `Uuid`, `UuidWithDefault`, `Timestamp`, `FactHashSchema`, `Blake3Hash` (with `BLAKE3_HASH_REGEX`, `BLAKE3_HASH_MESSAGE`, `USERNAME_CANONICAL_REGEX`), `ACTING_ACTOR_DESCRIPTION` and `ActingActor` — in place of the Zod schemas `primitive_schemas.ts` held. `ActingActor` is no longer exported from `http/auth_shape.ts`. `UUID_REGEX` is exported. The types keep their names and shapes: `Uuid` is `Branded<string, 'Uuid'>` as before, so `import type {Uuid}` from `primitive_schemas.ts` is unchanged.
-  
+
   **The Zod forms**, for apps whose schemas are still Zod, are in the new `zod_schemas.ts`, the one fuz_app module that imports Zod at runtime: `ZodUuid` (was the Zod `Uuid`), `ZodUuidWithDefault`, `ZodFactHashSchema`, `ZodUsername`, `ZodEmail` (was the Zod `Email`), and `ZodActingActor` (was `ActingActor` of `http/auth_shape.ts`), each with the verdicts, outputs and JSON Schema it had; and `Datetime`, `DatetimeNow` and `get_datetime_now`, same names, new module. The Zod `bounded_string` is removed: build on the fuz_schema `bounded_string`. `input_schema_declares_acting` matches `ZodActingActor` by reference as it did the Zod `ActingActor`, through `register_zod_acting_actor` (`http/auth_shape.ts`, internal), which `zod_schemas.ts` calls when it loads; the registry-time invariant 2 errors name `ZodActingActor`.
-  
+
   **Codegen.** `generate_action_method_enums` emits fuz_schema `one_of` method enums (`ActionMethod` and its siblings) with `Infer` types, importing `{one_of, type Infer}` from `@fuzdev/fuz_schema/schema.ts` in place of `z.enum` and `z.infer`. `ActionInputs` / `ActionOutputs` still type each schema by its own library, `z.infer` for a Zod one.
-  
+
   **The testing seams.** The `_testing_*` action specs of `testing/cross_backend/testing_reset_actions.ts` are fuz_schema, each accepting and refusing what it did; `_testing_mint_session`'s `expires_in_seconds` writes `maximum: -1` where it wrote `exclusiveMaximum: 0`, the same integers. Their refusals carry fuz_schema's issue text, and a non-integer `expires_in_seconds`, `count`, `size` or `seconds` is `kind: 'safe_integer'` where it was `'integer'`, and one past the safe integers `'safe_integer'` where it was `'min_value'` or `'max_value'`. The schema-snapshot and migration-tracker schemas of `testing/schema_introspect.ts` (`SchemaSnapshot`, `TableSnapshot`, `ColumnSnapshot`, `SequenceSnapshot`, `EnumTypeSnapshot`, `MigrationTracker`, `MigrationTrackerEntry`) are `strip_object`s. `ConformancePrincipal`, `ConformanceActingBinding`, `ConformanceCaseRequest`, `ConformanceCaseExpectation`, `ConformanceCaseXfail` and `ConformanceCase` (`testing/cross_backend/conformance_case.ts`) are types only, no longer schemas; nothing parsed them.
-  
+
   **The dual-library layer** reads a consumer's Zod schema without importing Zod: `is_zod_schema`, `is_schema_validation_error`, `is_null_schema`, `is_void_schema` and `is_strict_object_schema` by the schema's traits, through the new `zod_has_trait` (`zod.ts`), which answers as Zod's `instanceof` does; `schema_to_surface` and `to_field_json_schema` by the schema's own `.toJSONSchema()`. `format_issues` writes Zod issues as `z.prettifyError` wrote them, the same text. `zod` stays a required peer.
-  
+
   **Migration.**
-  
+
   1. Regenerate (`gro gen`): `action_metatypes.ts` holds `one_of` enums, and a generated file that held only those enums imports no Zod.
   2. A generated enum's `.options` is `.def`; a Zod schema that embeds one wraps it, `z.enum(ActionMethod.def)`.
   3. A Zod schema embedding a primitive takes its Zod form from `zod_schemas.ts`: `Uuid` → `ZodUuid`, `UuidWithDefault` → `ZodUuidWithDefault`, `FactHashSchema` → `ZodFactHashSchema`, `Username` → `ZodUsername`, `Email` → `ZodEmail`, and `ActingActor` of `http/auth_shape.ts` → `ZodActingActor` (the dispatcher finds only that schema in a Zod input). `Datetime`, `DatetimeNow` and `get_datetime_now` import from `zod_schemas.ts`. A schema ported to fuz_schema takes the plain names from `primitive_schemas.ts`.
@@ -107,7 +121,7 @@
 ### Patch Changes
 
 - deps: require `@fuzdev/fuz_schema` `^0.5.5`, so the empty `heartbeat` output types as `Record<string, never>`, not `{}` ([63066fd](https://github.com/fuzdev/fuz_app/commit/63066fd))
-  
+
   - a consumer's regenerated `action_collections.ts` reads `Infer<typeof heartbeat_action_spec.output>`, which with fuz_schema 0.5.4 resolved to `{}` and failed `@typescript-eslint/no-generated-empty-object-type`; upgrade `@fuzdev/fuz_schema` to `^0.5.5` beside this release
 
 ## 0.168.0
@@ -115,24 +129,24 @@
 ### Minor Changes
 
 - break: the JSON-RPC envelopes and the protocol actions are `@fuzdev/fuz_schema`, and a peer's error reply is read as the Rust spine reads it. ([d232624](https://github.com/fuzdev/fuz_app/commit/d232624))
-  
+
   **What moved.** Every schema of `http/jsonrpc.ts` (`JsonrpcRequestId`, `JsonrpcMethod`, the params, `JsonrpcResult`, `JsonrpcRequest`, `JsonrpcNotification`, `JsonrpcResponse`, `JsonrpcServerErrorCode`, `JsonrpcErrorCode`, `JsonrpcErrorObject`, `JsonrpcErrorResponse`, `JsonrpcResponseOrError`), `ActionEventData` (`actions/action_event_data.ts`), the enums `ActionKind`, `ActionInitiator`, `ActionEventPhase` (`actions/action_spec.ts`), `ActionExecutor` and `ActionEventStep` (`actions/action_event_types.ts`), `CancelNotificationParams` and the `cancel` spec's output, the `heartbeat` spec's input and output, `PingActionInput`, `PingRequestParams`, and `PingResponse` (`actions/peer_ping.ts`), and the input and output of the `/api/rpc` routes `create_rpc_endpoint` makes (`literal(null)` and `unknown`). The envelopes are `loose_object`s, the enums `one_of`s, `PingActionInput` a `with_default` that reads an omitted input as `{}`. The types keep their names, read by `Infer`.
-  
+
   **Removed.** `JsonrpcMcpMeta`, `JsonrpcRequestParamsMeta`, and `JsonrpcProgressToken`, which nothing read. `JsonrpcMessage`, `JsonrpcMessageFromClientToServer`, `JsonrpcMessageFromServerToClient`, and `TransportName` are types only, no longer schemas.
-  
+
   **Verdicts.** Every schema accepts and refuses what it did on any value `JSON.parse` makes, but two (`JsonrpcServerErrorCode` and its dependents, and `JsonrpcResult` and its dependents):
-  
+
   - `JsonrpcServerErrorCode` (and so `JsonrpcErrorCode`, `JsonrpcErrorObject`, and `JsonrpcErrorResponse`) refuses a fractional code, as `is_jsonrpc_error_code` and the Rust spine's `i32` codes do. Only a client reading a server's error response parses one, and no server writes a fraction.
   - `JsonrpcResult` is `unknown`, typed `unknown` where Zod's `z.json()` typed a JSON value: it needs its key, so the success and error envelopes still tell apart. It takes `±Infinity` anywhere in a result (so `JsonrpcResponse`, `JsonrpcResponseOrError`, and `ActionEventData`'s `response` do too), which `JSON.parse` makes of an out-of-range number such as `1e400` and Zod refused; no server writes one. It also takes values no JSON text holds (`undefined` at a present key, a `Date`).
-  
+
   A parse returns the frame itself, not a copy in schema key order. The issues of a refused request envelope, which only DEV responses carry, are fuz_schema's.
-  
+
   **A peer's error reply.** When a connected client answers a server-initiated request (`peer/ping`) with an error, the TS spine reads its `error` as the Rust spine's `parse_inbound_error` does, with the new `parse_inbound_jsonrpc_error` (`http/jsonrpc_errors.ts`): a code off the base set of `JSONRPC_ERROR_CODES` — a consumer's code included, and any non-integer — is `internal_error`, a `message` that isn't a string is `'peer error'`, and a present `data` is kept as sent. A code written as an integral float (`-32002.0`) reads as that integer on both spines. It forwarded the error unread before: a consumer code reached the caller as itself, a fractional code dropped the client's message, and `error: null` threw inside the handler. A cross-backend case pins both spines.
-  
+
   **The surface: the input moves.** `peer/ping`'s `timeout_ms` is written `minimum: 1` in place of `exclusiveMinimum: 0`, the same integers, on the RPC and the WS endpoint. Nothing else on a surface moves.
-  
+
   **Migration.**
-  
+
   1. Regenerate the action collections (`gro gen`): the protocol rows of a generated `action_collections.ts` read `Infer<typeof …>` in place of `z.infer<typeof …>`.
   2. A Zod schema that embeds one of these can't: port it to fuz_schema, or wrap it, as `z.custom<ActionEventData>((v) => is(ActionEventData, v))` does for a Zod cell schema holding `ActionEventData`. An output holding a `JsonrpcRequestId` is a fuz_schema `object`.
   3. `X.safeParse(v)` becomes fuz_schema's `parse(X, v)` or `is(X, v)`, `X.parse(v)` becomes `parse_or_throw(X, v)`, and an enum's `.options` is `.def`.
