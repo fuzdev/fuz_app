@@ -1,5 +1,19 @@
 # @fuzdev/fuz_app
 
+## 0.174.0
+
+### Minor Changes
+
+- Update dependencies (BREAKING CHANGES) ([4b2820a](https://github.com/fuzdev/fuz_app/commit/4b2820a))
+  
+  Breaking dependency changes:
+  - @fuzdev/fuz_util: 0.79.0 → 0.80.0 (minor)
+  - @fuzdev/fuz_css: 0.78.0 → 0.79.0 (minor)
+  - @fuzdev/fuz_ui: 0.224.0 → 0.226.0 (minor)
+- break: upgrade to fuz_css 0.78 - the `@fuzdev/fuz_css` peer is `>=0.78.0` ([24fadac](https://github.com/fuzdev/fuz_app/commit/24fadac))
+  
+  fuz_css 0.77 and 0.78 hold raised surfaces like `shade_10` nearer the ground, derive the default control border by mixing `shade_30` toward `shade_50` (a quarter of the way at no contrast, all the way at high contrast), and move the neutral `.selected` fill to `shade_70`. None of the fuz_css APIs fuz_app imports changed, but its components render on the new surfaces, borders, and selected fill.
+
 ## 0.173.0
 
 ### Minor Changes
