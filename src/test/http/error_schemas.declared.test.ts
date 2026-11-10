@@ -419,7 +419,8 @@ describe('the REST error definitions', () => {
 
 	test('each body is a loose object, keeping an unknown key', () => {
 		for (const [name, def] of exported_defs()) {
-			const input = { ...DEFINITIONS[name]!.sample, extra: 1 };
+			// `unknown`: a sample is typed `object`, so the spread lacks the `error` the body type requires; the test compares identity
+			const input: unknown = { ...DEFINITIONS[name]!.sample, extra: 1 };
 			const result = parse(def.schema, input);
 			assert.ok(result.ok, name);
 			assert.strictEqual(result.value, input, name);
