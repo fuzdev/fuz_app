@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/CkSeWg2M.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/nqpJJcfP.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.Cs0Iqw-t.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.sqR4X_3e.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.DMI5Wl7O.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.VLgtTtHS.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/EpM2J4Cd.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Drx_RGrR.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CE-egMPB.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/BhJhG2EA.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.C9nsUlM1.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/DRTGUeMK.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.lJK2wYeB.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CHEAhmp6.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BbCw5KVU.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -42,7 +42,7 @@
 		<link href="/_app/immutable/chunks/C4JpGhrh.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DUwrxRiL.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/k6TRNp0w.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/La3hJ0tZ.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/BBtSbcs8.js" rel="modulepreload">
 		<link href="/_app/immutable/nodes/7.BaL3A_4D.js" rel="modulepreload">
 		<!--12qhfyh--><!----><!--4fa0a9--><!--[-1--><!--]--><!----><!--15lzmkk--><!----><title>actions - API docs - @fuzdev/fuz_app</title>
 		<link href="/_app/immutable/assets/0.DO5VOVvN.css" rel="stylesheet">
@@ -497,13 +497,13 @@ the socket with no close frame (the client sees an abnormal close, 1006).<!--]--
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->close<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> cuts the socket the same way, so a closed connection whose client
 stopped reading does not hold its buffered frames for the runtime's own
 close timeout — where the runtime can cut a socket ("Runtimes").<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--[14--><!----><h2 id="runtimes"><!--[--><!--[2-->Runtimes<!--]--><!--]--><!----></h2><!----><!--]--><!--[8--><p><!--[--><!--[2-->The buffer is read through the socket Hono's <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->WSContext<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> wraps (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->raw<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->):
-<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->bufferedAmount<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> on Node's <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->ws<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> and on Deno's standard <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->WebSocket<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->,
+<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->bufferedAmount<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> on Node's <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->ws<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (and on a web-standard <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->WebSocket<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->),
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->getBufferedAmount()<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> on Bun's <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->ServerWebSocket<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->. A socket that exposes
 neither reads as never backed up: its frames are still budgeted while they
 wait for the pump, but nothing detects a stall. The cut is <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->terminate()<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->,
-which Node's <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->ws<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> and Bun's <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->ServerWebSocket<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> have. Deno's standard
-<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->WebSocket<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> has no way to drop a socket without the closing handshake, so
-there a stalled connection is closed with <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/transports.ts#WS_CLOSE_OUTBOUND_OVERFLOW"><!--[0--><!--[-1-->WS_CLOSE_OUTBOUND_OVERFLOW<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->
+which Node's <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->ws<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> and Bun's <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->ServerWebSocket<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> have. A socket with no
+<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->terminate<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (a web-standard <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->WebSocket<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> has no way to drop a socket without
+the closing handshake) is closed at a stall with <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/transports.ts#WS_CLOSE_OUTBOUND_OVERFLOW"><!--[0--><!--[-1-->WS_CLOSE_OUTBOUND_OVERFLOW<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->
 instead — a frame the client reads only if it starts reading again — and
 the close deadline cuts nothing: a closed socket whose client is not reading
 stays in the runtime, holding what its buffer held at the close ("Closing"),
@@ -585,16 +585,16 @@ everything and answers nothing.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]-
 			
 			<script>
 				{
-					__sveltekit_1a29dyd = {
+					__sveltekit_pjs7ng = {
 						base: "",
-						version: "cd22f398d425683af08806e9a5c1c76b143a2502"
+						version: "4933f17d497ac49685d2b5674a4b00c8bc174498"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.DBfKG9Mb.js").then(async (kit) => {
-						kit.init(__sveltekit_1a29dyd);
-						const app = await import("/_app/immutable/entry/app.Cs0Iqw-t.js");
+						kit.init(__sveltekit_pjs7ng);
+						const app = await import("/_app/immutable/entry/app.DMI5Wl7O.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],

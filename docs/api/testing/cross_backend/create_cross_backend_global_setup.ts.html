@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/CkSeWg2M.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/nqpJJcfP.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.Cs0Iqw-t.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.sqR4X_3e.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.DMI5Wl7O.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.VLgtTtHS.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/EpM2J4Cd.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Drx_RGrR.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CE-egMPB.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/BhJhG2EA.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.C9nsUlM1.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/DRTGUeMK.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.lJK2wYeB.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CHEAhmp6.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BbCw5KVU.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -42,7 +42,7 @@
 		<link href="/_app/immutable/chunks/C4JpGhrh.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DUwrxRiL.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/k6TRNp0w.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/La3hJ0tZ.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/BBtSbcs8.js" rel="modulepreload">
 		<link href="/_app/immutable/nodes/7.BaL3A_4D.js" rel="modulepreload">
 		<!--12qhfyh--><!----><!--4fa0a9--><!--[-1--><!--]--><!----><!--15lzmkk--><!----><title>testing/cross_backend/create_cross_backend_global_setup.ts - API docs - @fuzdev/fuz_app</title>
 		<link href="/_app/immutable/assets/0.DO5VOVvN.css" rel="stylesheet">
@@ -61,10 +61,10 @@ the matching <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="decla
 and <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->provide<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->s a serializable handle that <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->*.cross.test.ts<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> files read
 with <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/cross_backend/provided_context.ts#inject_backend_handle"><!--[0--><!--[-1-->inject_backend_handle<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->provided_context.ts<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->).<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->A consumer's <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->global_setup.ts<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> collapses to:<!--]--><!--]--><!----></p><!--]--><!--[15--><!--[0--><!--[--><code data-lang="ts" class="svelte-jqsy8a"><!--[-1--><!----><span class="token_special_keyword">import</span> <span class="token_punctuation">{</span>create_cross_backend_global_setup<span class="token_punctuation">}</span> <span class="token_special_keyword">from</span>
   <span class="token_string">'@fuzdev/fuz_app/testing/cross_backend/create_cross_backend_global_setup.ts'</span><span class="token_punctuation">;</span>
-<span class="token_special_keyword">import</span> <span class="token_punctuation">{</span>deno_backend_config<span class="token_punctuation">,</span> rust_backend_config<span class="token_punctuation">}</span> <span class="token_special_keyword">from</span> <span class="token_string">'./my_backend_config.ts'</span><span class="token_punctuation">;</span>
+<span class="token_special_keyword">import</span> <span class="token_punctuation">{</span>node_backend_config<span class="token_punctuation">,</span> rust_backend_config<span class="token_punctuation">}</span> <span class="token_special_keyword">from</span> <span class="token_string">'./my_backend_config.ts'</span><span class="token_punctuation">;</span>
 
 <span class="token_special_keyword">export</span> <span class="token_special_keyword">default</span> <span class="token_function">create_cross_backend_global_setup</span><span class="token_punctuation">({</span>
-  configs<span class="token_operator">:</span> <span class="token_punctuation">{</span>deno<span class="token_operator">:</span> deno_backend_config<span class="token_punctuation">,</span> rust<span class="token_operator">:</span> rust_backend_config<span class="token_punctuation">},</span>
+  configs<span class="token_operator">:</span> <span class="token_punctuation">{</span>node<span class="token_operator">:</span> node_backend_config<span class="token_punctuation">,</span> rust<span class="token_operator">:</span> rust_backend_config<span class="token_punctuation">},</span>
   ensure_databases<span class="token_operator">:</span> <span class="token_boolean">true</span><span class="token_punctuation">,</span>
   before_spawn<span class="token_operator">:</span> <span class="token_punctuation">{</span><span class="token_function_variable token_function">rust</span><span class="token_operator">:</span> <span class="token_punctuation">()</span> <span class="token_operator">=></span> <span class="token_function">prepare_cargo_binary</span><span class="token_punctuation">(</span>my_cargo_binary<span class="token_punctuation">)},</span>
 <span class="token_punctuation">});</span><!----><!--]--></code><!--]--><!--]--><!--]--><!--[8--><p><!--[--><!--[2-->vitest 4's <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->provide<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> hard-rejects non-serializable values, so the live
@@ -89,16 +89,16 @@ backend; a key naming no config throws.<!--]--><!--]--><!----></p><!--]--><!--]-
 			
 			<script>
 				{
-					__sveltekit_1a29dyd = {
+					__sveltekit_pjs7ng = {
 						base: "",
-						version: "cd22f398d425683af08806e9a5c1c76b143a2502"
+						version: "4933f17d497ac49685d2b5674a4b00c8bc174498"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.DBfKG9Mb.js").then(async (kit) => {
-						kit.init(__sveltekit_1a29dyd);
-						const app = await import("/_app/immutable/entry/app.Cs0Iqw-t.js");
+						kit.init(__sveltekit_pjs7ng);
+						const app = await import("/_app/immutable/entry/app.DMI5Wl7O.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],

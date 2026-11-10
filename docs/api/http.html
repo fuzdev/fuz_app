@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/CkSeWg2M.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/nqpJJcfP.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.Cs0Iqw-t.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.sqR4X_3e.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.DMI5Wl7O.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.VLgtTtHS.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/EpM2J4Cd.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Drx_RGrR.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CE-egMPB.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/BhJhG2EA.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.C9nsUlM1.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/DRTGUeMK.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.lJK2wYeB.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CHEAhmp6.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BbCw5KVU.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -42,7 +42,7 @@
 		<link href="/_app/immutable/chunks/C4JpGhrh.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DUwrxRiL.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/k6TRNp0w.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/La3hJ0tZ.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/BBtSbcs8.js" rel="modulepreload">
 		<link href="/_app/immutable/nodes/7.BaL3A_4D.js" rel="modulepreload">
 		<!--12qhfyh--><!----><!--4fa0a9--><!--[-1--><!--]--><!----><!--15lzmkk--><!----><title>http - API docs - @fuzdev/fuz_app</title>
 		<link href="/_app/immutable/assets/0.DO5VOVvN.css" rel="stylesheet">
@@ -82,19 +82,17 @@ that does not parse, and <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[
 The runtimes' HTTP parsers answer their own bodiless <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->400<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> to most of
 these before the application sees them, so this branch is defense in
 depth where they do and the refusal where they do not: Node's refuses
-them all; Deno and Bun hand over a repeated equal header as one combined
-value (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->50, 50<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) and refuse the rest (observed on Node 24.14.1, Deno
-2.8.3, Bun 1.4.3). The Rust spine's parser (hyper) refuses a malformed
-value and differing repeats, and accepts an equal repeat as the one
-value.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->A request whose <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Content-Length<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> exceeds the cap is refused with <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->413<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->
+them all; Bun hands over a repeated equal header as one combined value
+(<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->50, 50<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) and refuses the rest (observed on Node 24.14.1, Bun 1.4.3).
+The Rust spine's parser (hyper) refuses a malformed value and differing
+repeats, and accepts an equal repeat as the one value.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->A request whose <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Content-Length<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> exceeds the cap is refused with <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->413<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->{error: 'payload_too_large'}<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, whatever its method. A digit run of any
 length compares as a number, so one too long to represent exactly is over
-the cap, never unreadable. Over a socket that branch is reached on Node
-and Deno, whose parsers hand over any length below 2^64 and refuse a
-longer one with their own <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->400<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->. <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Bun.serve<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> hands none over: with its
-default options it answers a length past 128 MiB with its own <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->413<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, and
-one of 2^63 - 1 or more with its own <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->400<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (observed on Node 24.14.1,
-Deno 2.8.3, Bun 1.4.3).<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->Both refusals answer on the header alone — without touching
+the cap, never unreadable. Over a socket that branch is reached on Node,
+whose parser hands over any length below 2^64 and refuses a longer one
+with its own <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->400<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->. <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Bun.serve<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> hands none over: with its default options
+it answers a length past 128 MiB with its own <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->413<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, and one of 2^63 - 1
+or more with its own <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->400<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (observed on Node 24.14.1, Bun 1.4.3).<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->Both refusals answer on the header alone — without touching
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->c.req.raw.body<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> — and carry <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Connection: close<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->A request with a well-formed <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Content-Length<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> beside <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Transfer-Encoding<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->,
 or with no <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Content-Length<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, falls through to <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->bodyLimit<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, which measures
 the bytes that arrive: with <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Transfer-Encoding<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> the declared length does
@@ -106,7 +104,7 @@ such a body as its handler reads it instead, so there a refusal made on
 the headers answers first; which status an over-cap body with no declared
 length gets when another refusal also applies is implementation-defined
 across the two (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->docs/security.md<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> §"Body Size Limiting").
-The Node, Deno and Bun parsers refuse a request carrying both headers
+The Node and Bun parsers refuse a request carrying both headers
 with their own <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->400<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->; hyper accepts one, drops its <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Content-Length<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->,
 frames the body as chunked, and closes the connection after the response.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->A well-formed <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Content-Length<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> within the cap is trusted to frame the
 body, as the runtime's HTTP parser enforces.<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--[8--><p><!--[--><!--[2-->What the connection does after the header <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->413<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> is the runtime's
@@ -114,10 +112,7 @@ body, as the runtime's HTTP parser enforces.<!--]--><!--]--><!----></li><!--]-->
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Connection: close<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> header is what does it: without one the adapter
 holds the connection for a drain window and then closes or, the body
 untouched and arriving within the window, reads it off and serves the
-next request.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->Deno<!--]--><!--]--><!----></strong><!--]--><!--[2--> closes once the whole declared body has arrived and holds the
-connection open while a client withholds it; a request pipelined behind
-the body is not served. Neither the header nor what the handler does with
-the body changes that (observed on Deno 2.8.3).<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->Bun<!--]--><!--]--><!----></strong><!--]--><!--[2--> closes at once, the body unread, honouring the header. Bun 1.4.3
+next request.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->Bun<!--]--><!--]--><!----></strong><!--]--><!--[2--> closes at once, the body unread, honouring the header. Bun 1.4.3
 is the tested floor: an older Bun kept the connection after the <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->413<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> and
 served the next request (correctly framed), so run Bun at the floor or
 later.<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/http/client_ip.ts"><!--[-1-->http/client_ip.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Read the resolved client IP off the Hono context.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Split from <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->proxy.ts<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (which pulls <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->hono/utils/ipaddr<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> for trusted-proxy
@@ -340,16 +335,16 @@ error map (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declara
 			
 			<script>
 				{
-					__sveltekit_1a29dyd = {
+					__sveltekit_pjs7ng = {
 						base: "",
-						version: "cd22f398d425683af08806e9a5c1c76b143a2502"
+						version: "4933f17d497ac49685d2b5674a4b00c8bc174498"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.DBfKG9Mb.js").then(async (kit) => {
-						kit.init(__sveltekit_1a29dyd);
-						const app = await import("/_app/immutable/entry/app.Cs0Iqw-t.js");
+						kit.init(__sveltekit_pjs7ng);
+						const app = await import("/_app/immutable/entry/app.DMI5Wl7O.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],
