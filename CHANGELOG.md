@@ -1,5 +1,32 @@
 # @fuzdev/fuz_app
 
+## 0.176.0
+
+### Minor Changes
+
+- break: helpers that spawn take the programs they run from the caller - no helper resolves a command name against the ambient `PATH` and environment ([9cf60c0](https://github.com/fuzdev/fuz_app/commit/9cf60c0))
+  
+  - `CommandDeps`, `CommandResult`, `RunCommandOptions`, `run_command` and `run_command_inherit` are removed from `runtime/deps.ts` and `RuntimeDeps`, with the mock's `command_calls`, `command_inherit_calls` and `mock_command_results`: a caller that runs a program builds its own handle (with gro, `spawn.program` / `spawn.find` from `@fuzdev/gro/spawn.ts`)
+  - `Program`, `ProgramOutput` and `ProgramResult` (`runtime/deps.ts`) are the handle a helper runs - `out(args)` resolving to `{kind, code | signal, stdout, stderr}`, the shape of gro's `SpawnProgram`, which satisfies it with no import of gro; `ProgramFactory` (`(env) => Program | null`) makes one whose environment gains `env`, `null` when it isn't installed; `create_mock_program` with `MockProgram`, `create_mock_program_factory` with `MockProgramFactory`, and `mock_program_exit` (`runtime/mock.ts`) fake them
+  - `create_database(deps, database_url, options?)` takes `{createdb}` (a `ProgramFactory`) and the `DATABASE_URL` in place of a runtime and a database name, and resolves to a `CreateDatabaseResult` (`created` / `exists` / `skipped` / `failed`) in place of the command result; a URL that isn't Postgres is skipped; only a `database "<name>" already exists` refusal reads as existing (in English, so a server with other `lc_messages` reports it `failed`), and the `which createdb` probe is gone
+  - `reset_database` takes `PostgresProgramDeps` (`{createdb, dropdb}`, each a `ProgramFactory`) with `stat` and `remove` in place of `CommandDeps`, and reports an unparseable Postgres URL as `skipped: false`
+  - both target the server `DATABASE_URL` names - host, port, role and query parameters, through `--maintenance-db=<the URL with its database swapped for postgres>` (`template1` for a database named `postgres`) - where they targeted whatever server the ambient libpq environment named: `postgres://localhost/db` now reaches `localhost` over TCP where the bare name used the default socket, so write `postgres:///db` for the socket; a URL's password reaches the tools as `PGPASSWORD` through the factory's `env`, never argv; both pass `--no-password` and end options with `--`
+  - on Debian, where `createdb` and `dropdb` are links to `pg_wrapper`, a gro handle needs `@fuzdev/gro` 0.232.0 or later: an earlier one runs the script as `pg_wrapper`, which exits 0 having done nothing
+  - `reset_database` dispatches on `create_db`'s schemes: `file://` is PGlite (removing the `pglite_data_dir` it's given), `memory://` has nothing to reset, and any other non-Postgres URL is an error instead of reaching `dropdb`; the `pglite` / `pglite:` prefixes are no longer recognized, and `ResetDbResult.db_type` gains `'memory'` (`SetupDbType`)
+  - `parse_db_name` moves from `dev/setup.ts` to `db/postgres_url.ts`, returns `null` for a URL that isn't `postgres://` / `postgresql://`, and percent-decodes the name; `db/postgres_url.ts` also holds `to_maintenance_database_url(server_url, database)` (moved from `testing/cross_backend/postgres_database.ts`, now taking the target database and dropping the password), `is_createdb_already_exists` (moved from there too), `to_maintenance_database_name`, `to_postgres_password_env`, `to_createdb_args`, `to_dropdb_args` and `rewrite_query_pairs`
+  - `ensure_database` passes `--no-password` (a server wanting a password the URL lacks fails at once rather than prompting on the terminal) and `--` before the name, keeps the URL's query parameters as written (a `%20` was re-encoded as `+`, which libpq reads literally), and reports a password with a malformed percent-escape without running `createdb`; `redact_database_url` keeps the other query parameters as written
+  - `setup_bootstrap_token` and `reset_bootstrap_token` use a given `state_dir` with `$HOME` unset, skipping only when both are missing, and log the token's real path
+  - `reset_mock_runtime` also clears `mock_fs_modes`
+  - `is_daemon_running(runtime, pid)` is synchronous and takes `ProcessProbeDeps` in place of running `kill -0`: `probe_process(pid)` sends signal 0 and resolves to a `ProcessProbe` (`'running'` / `'not_permitted'` / `'not_found'`), throwing `RangeError` for a pid naming no single process; `RuntimeDeps` gains it, the mock answers from `mock_processes`, and `runtime/process_id.ts` exports `is_process_id`, `assert_process_id` and `PROCESS_ID_MAX`; such a pid (0, negative, non-integer, out of `pid_t` range) is not running, where `kill -0 0` answered `true`
+- break: remove Deno support - the supported runtimes are Node and Bun ([2f2c247](https://github.com/fuzdev/fuz_app/commit/2f2c247))
+  
+  - `runtime/deno.ts` and `create_deno_runtime` are removed: use `create_node_runtime` (`runtime/node.ts`), which Bun runs too
+  - `testing/cross_backend/testing_server_deno.ts` and `create_deno_testing_adapter` are removed: spawn TS test binaries with `create_node_testing_adapter` or `create_bun_testing_adapter`
+  - `ts_spine_deno_backend_config`, `TS_SPINE_DENO_DEFAULT_PORT` and `TS_SPINE_DENO_ENTRY` are removed from `testing/cross_backend/ts_spine_backend_config.ts`
+  - the optional `@hono/deno` peer dependency is removed
+  - `read_secure_bounded` and `assert_secure_regular_file` are removed from `runtime/secure_file.ts`: `load_secure_file_node` does that read and check itself, and `assert_secure_mode` / `assert_secure_size` stay shared with the mock
+  - `load_env_file` (and `read_env_var`, through it) reads only `ENOENT` as a missing file, no longer an error named `NotFound`
+
 ## 0.175.0
 
 ### Minor Changes
