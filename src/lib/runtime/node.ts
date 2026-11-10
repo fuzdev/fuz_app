@@ -1,8 +1,9 @@
 /**
  * Node.js implementation of `RuntimeDeps`.
  *
- * Provides the same interface as `runtime/deno.ts` but backed by Node.js APIs.
- * Used for running servers in Node.js and for tests (vitest runs in Node).
+ * Backed by Node.js APIs. Used for running servers on Node and Bun (which
+ * implements the `node:*` surface this module touches) and for tests (vitest
+ * runs in Node).
  *
  * @module
  */
@@ -66,7 +67,7 @@ export const create_node_runtime = (
 	read_file_stream: async (path) => {
 		// `createReadStream` is lazy — a missing file surfaces as a stream `error`
 		// event at consume time, not at the call. `stat` first so we honor the
-		// interface's eager-throw contract (matching Deno/mock).
+		// interface's eager-throw contract (matching the mock).
 		await stat(path);
 		return Readable.toWeb(createReadStream(path)) as unknown as ReadableStream<Uint8Array>;
 	},

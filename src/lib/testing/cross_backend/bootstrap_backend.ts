@@ -10,7 +10,7 @@ import '../assert_dev_env.ts';
  * import {bootstrap_backend} from '@fuzdev/fuz_app/testing/cross_backend/bootstrap_backend.ts';
  *
  * export default async function ({provide}) {
- *   const bootstrapped = await bootstrap_backend(deno_backend_config());
+ *   const bootstrapped = await bootstrap_backend(node_backend_config());
  *   provide('backend_handle', bootstrapped);
  *   return async () => {
  *     await bootstrapped.teardown();

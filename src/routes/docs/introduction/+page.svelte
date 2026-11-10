@@ -18,9 +18,8 @@
 			excellent and flexible whole-stack experience for developers, operators, and end-users.
 		</p>
 		<p>
-			fuz_app supports deploying with Deno, Node, and Bun, to servers, static websites, and
-			local-first binaries, with more to come, eventually with compatible alternatives written in
-			Rust.
+			fuz_app supports deploying with Node and Bun, to servers, static websites, and local-first
+			binaries, with more to come, eventually with compatible alternatives written in Rust.
 		</p>
 		<p>
 			For more see the <a href="https://github.com/fuzdev/fuz_app/discussions">discussions</a>.

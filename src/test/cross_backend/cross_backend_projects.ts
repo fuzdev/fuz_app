@@ -47,7 +47,6 @@ export const CROSS_PROJECT_RESOURCES = {
 		stub: { name: 'spine_stub', port: 1177, database: 'fuz_app_test_rust_spine_stub' }
 	},
 	cross_backend_ts_node: { node: { name: 'ts_spine_node', port: 1178, database: null } },
-	cross_backend_ts_deno: { deno: { name: 'ts_spine_deno', port: 1179, database: null } },
 	cross_backend_ts_bun: { bun: { name: 'ts_spine_bun', port: 1180, database: null } },
 	cross_backend_parity: {
 		ts: { name: 'ts_spine_node_parity', port: 1181, database: 'fuz_app_test_ts_spine_parity' },
@@ -176,10 +175,6 @@ export const CROSS_BACKEND_PROJECTS: ReadonlyArray<CrossBackendProjectOptions> =
 		'cross_backend_ts_node',
 		'./src/test/cross_backend/global_setup_ts_node.ts',
 		{ with_node_only: true }
-	),
-	single_backend_project(
-		'cross_backend_ts_deno',
-		'./src/test/cross_backend/global_setup_ts_deno.ts'
 	),
 	single_backend_project('cross_backend_ts_bun', './src/test/cross_backend/global_setup_ts_bun.ts'),
 	...DUAL_SPAWN_PROJECTS

@@ -21,8 +21,8 @@ import './assert_dev_env.ts';
  * HTTP parser (Node's, hyper) refuses such a length with a bodiless 400 of its
  * own before the application sees it, and `fetch` can't send one. In-process
  * the length reaches the body limit unparsed, and the 400 is the limit's own —
- * the answer a Deno or Bun server gives when a request repeats an equal
- * `Content-Length`, which those runtimes hand over joined into one value.
+ * the answer a Bun server gives when a request repeats an equal
+ * `Content-Length`, which Bun hands over joined into one value.
  *
  * `describe_standard_integration_tests` runs one per declared gate of each
  * route it counts and records each answer in its error coverage.

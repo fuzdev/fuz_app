@@ -406,10 +406,10 @@ export interface AppServerOptions {
 	 * A factory rather than the helper itself because Node's adapter needs
 	 * the app: `@hono/node-ws` has no module-level helper, only
 	 * `createNodeWebSocket({app})`, and `create_app_server` is what builds
-	 * the app. Deno and Bun ignore the argument:
+	 * the app. Bun's ignores the argument:
 	 *
 	 * ```ts
-	 * import {upgradeWebSocket} from '@hono/deno'; // or '@hono/bun'
+	 * import {upgradeWebSocket} from '@hono/bun';
 	 * create_upgrade_websocket: () => upgradeWebSocket,
 	 * ```
 	 *

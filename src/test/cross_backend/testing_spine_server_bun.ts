@@ -3,8 +3,8 @@
  *
  * Run via `bun run src/test/cross_backend/testing_spine_server_bun.ts`
  * (the `cross_backend_ts_bun` project's `globalSetup` spawns it). Wires the
- * Bun runtime adapter to the shared `build_spine_app`. Third sibling to the
- * Node + Deno entries — isolates the JS-runtime axis on the same TS surface.
+ * Bun runtime adapter to the shared `build_spine_app`. Sibling to the Node
+ * entry — isolates the JS-runtime axis on the same TS surface.
  * **Never ships in a release** — `src/test/` is excluded from the package
  * build.
  *

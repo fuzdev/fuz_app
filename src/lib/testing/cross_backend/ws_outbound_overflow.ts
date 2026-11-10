@@ -23,8 +23,8 @@ import '../assert_dev_env.ts';
  * - **large, within the budget** — a burst of a few mebibytes, most of the
  *   default budget, arrives the same way: every frame whole, in order, the
  *   response last. Megabyte frames can outrun a socket's buffer, and where
- *   they do — the Deno TS spine, as observed; Node and Bun write the burst
- *   through — the frames behind the first wait on the backend's write pump.
+ *   they do, the frames behind the first wait on the backend's write pump
+ *   (Node and Bun write the burst through, as observed).
  * - **overflow** — a burst far past the budget closes the socket with the code
  *   and the exact reason; the response of the flooding request never arrives;
  *   any flood frames that did arrive form a contiguous prefix of the burst.

@@ -261,7 +261,7 @@ middleware never sets `TEST_CONTEXT_PRESET_KEY`, and only the symbol counts
 ### `schema_parity.ts` — `assert_schema_snapshots_equal`
 
 - `diff_schema_snapshots(a, b)` — structured `Array<SchemaDiff>` between two snapshots; empty array means parity holds.
-- `format_schema_diffs(diffs, labels?)` — human-readable multi-line rendering; labels name the impl on each side (e.g., `{a: 'deno', b: 'rust'}`).
+- `format_schema_diffs(diffs, labels?)` — human-readable multi-line rendering; labels name the impl on each side (e.g., `{a: 'ts', b: 'rust'}`).
 - `assert_schema_snapshots_equal(a, b, labels?)` — throws on drift with a fully-formatted diff message.
 - `SchemaDiff` — tagged-union per drift kind: `table_only_in`, `column_only_in`, `column_field_differs`, `index_only_in`, `index_definition_differs`, `constraint_only_in`, `constraint_differs`, `sequence_only_in`, `sequence_data_type_differs`, `enum_only_in`, `enum_labels_differ` (enum labels compared positionally — declared order is significant).
 - `diff_migration_trackers(a, b)` / `format_migration_tracker_diffs(diffs, labels?)` / `assert_migration_trackers_equal(a, b, labels?)` — the migration-identity twins of the snapshot diff/format/assert, over two `MigrationTracker`s. `MigrationTrackerDiff` is keyed on `(namespace, name)` (the `schema_version` PK): `tracker_row_only_in` (a migration rename or namespace re-partition) and `tracker_sequence_differs` (a re-order).
@@ -313,12 +313,12 @@ DB, snapshot, then compare:
 
 ```ts
 await drop_recreate_db('app_test');
-await spawn_backend(deno_config);
-const snapshot_deno = await query_schema_snapshot(db);
+await spawn_backend(ts_config);
+const snapshot_ts = await query_schema_snapshot(db);
 await drop_recreate_db('app_test');
 await spawn_backend(rust_config);
 const snapshot_rust = await query_schema_snapshot(db);
-assert_schema_snapshots_equal(snapshot_deno, snapshot_rust, { a: 'deno', b: 'rust' });
+assert_schema_snapshots_equal(snapshot_ts, snapshot_rust, { a: 'ts', b: 'rust' });
 ```
 
 Each impl's _own_ tests still gate its DDL correctness independently — this
@@ -366,8 +366,8 @@ field a loose output schema passes on one spine, shows up as a difference.
   sent through `send_conformance_case` (`conformance_table.ts`), both answers
   normalized and diffed. Every HTTP request carries
   `DIFFERENTIAL_REQUEST_HEADERS` (`accept-encoding: identity`), so a runtime's
-  own compression (`Deno.serve` gzips for a request accepting it, as Node's
-  `fetch` sends by default) never reads as a `content-encoding` / `vary`
+  own compression (for a request accepting gzip, as Node's `fetch` sends by
+  default) never reads as a `content-encoding` / `vary`
   difference. The per-case `expect` is not asserted —
   each backend's conformance leg holds it. `KnownDivergence` is the ledger
   row: `{case_name | method, tracking_id, reason, what_differs}`, the names a
@@ -1074,7 +1074,7 @@ run against an in-process Hono harness today and against a spawned backend
 over real HTTP — either the Rust spine (`zzz_server`, another consumer's
 spine server, or the non-domain `testing_spine_stub`) or a **TS** spine binary built on the
 test-server core below (fuz_app's own domain-free `testing_spine_server`, run
-on Node + Deno + Bun). In-process is the fast feedback path; cross-process is the
+on Node + Bun). In-process is the fast feedback path; cross-process is the
 source of truth for wire-shape conformance.
 
 fuz_app's own spines run every single-backend suite below through one
@@ -1171,7 +1171,7 @@ file; the dual-spawn and limiter-enabled suites name their own files.
   family defaults carry the declared surface's mounts (`account_lifecycle`,
   `account_status`) and the runtime-behavior flags (`ws_handshake_pipelining`,
   `ws_refusal_body`) of the family's reference runtime — Node for TS, hyper
-  for Rust; a backend on another runtime (Deno, Bun) overrides them. `cell_crud`
+  for Rust; a backend on another runtime (Bun) overrides them. `cell_crud`
   gates the CRUD parity suite, `cell_relations` the relation / ACL / audit
   parity suite — both `true` on every backend that live-mounts the full cell
   surface (TS spine binary, in-process app, Rust stub). A backend mounting only
@@ -1218,11 +1218,11 @@ file; the dual-spawn and limiter-enabled suites name their own files.
   doesn't mount it (replacing the old runtime 404-sniff-skip).
   No flag covers the body-size smuggling probe: every backend closes the
   connection after an oversized-body 413 (at once on Node, Bun and the Rust
-  spine, once the declared body has arrived on Deno), so the pipelined request
+  spine), so the pipelined request
   goes unanswered. Bun 1.4.3 is the tested floor — an older Bun kept the
   connection and served the next request, correctly framed, and fails the probe.
   `ws_handshake_pipelining` gates the WS round-trip suite's
-  frames-with-the-handshake case (`true` Node/Deno/Rust — frames written in the
+  frames-with-the-handshake case (`true` Node/Rust — frames written in the
   same TCP write as the upgrade request reach the socket; `false` Bun, which
   answers such a request `400` when the upgrade follows an asynchronous check,
   as it does behind auth, and `false` in-process, where there is no socket to
@@ -1292,8 +1292,8 @@ here never reaches it.
   exhaust), and the `conformance_table` runner (the consumer's own cases).
   `src/test/testing/cross_backend/spine_suites.test.ts` imports every module
   under `cross_backend/` and holds the two lists to the ones exporting a
-  `describe_*` function, whatever the export form (the Bun and Deno adapters,
-  which load only on their own runtime, are held to naming no `describe_` at
+  `describe_*` function, whatever the export form (the Bun adapter,
+  which loads only on its own runtime, is held to naming no `describe_` at
   all), so a new suite fails until it is registered or stated standalone; the
   dispatch table
   is a `Record<SuiteName, …>`, so a registered name without an entry fails
@@ -1833,7 +1833,7 @@ queues a burst onto the caller's own connection in one synchronous run, so the
 burst waits at once whether or not the client reads and the overflow is
 deterministic. Cases: a burst within the budget arrives whole and in order
 ahead of its response, the socket left open — a small one, and one of a few
-mebibytes in megabyte frames, most of the default budget, which waits on the backend's write pump where megabyte frames outrun the socket's buffer (Deno; Node and Bun write the burst through); a burst far past it closes the
+mebibytes in megabyte frames, most of the default budget, which waits on the backend's write pump where megabyte frames outrun the socket's buffer (Node and Bun write the burst through, as observed); a burst far past it closes the
 socket with the code and the exact reason, no response for the flooding request
 arrives, and any flood frames that did arrive are a contiguous prefix of the
 burst — while a second connection on the same account keeps dispatching; a
@@ -2071,7 +2071,7 @@ are `src/test/auth/cell_crud_parity.db.test.ts`
 
 - `testing/cross_backend/backend_config.ts` — `BackendConfig` +
   `BackendBootstrapConfig` interfaces. Consumer factories
-  (`deno_backend_config()`, `rust_backend_config()`,
+  (`node_backend_config()`, `rust_backend_config()`,
   `rust_spine_stub_backend_config()`) produce these; fuz_app ships
   `rust_spine_stub_backend_config()` as a convenience preset for the non-domain
   third spine consumer, but otherwise backend-specific paths and env are a
@@ -2961,7 +2961,7 @@ or `null` for a builtin role) is the scope the scoped-assign case uses, and
 
 Both legs run in-process (`conformance_participation.db.test.ts`, plain
 `gro test`) and cross-process (`conformance_participation.cross.test.ts`, TS
-node/deno/bun + Rust stub). Landing the TS `role_grant_assign` action also turned
+node/bun + Rust stub). Landing the TS `role_grant_assign` action also turned
 the `cross_backend_parity` action-manifest gate green (it was Rust-only before).
 Cited property: `docs/identity.md` + the role-gated-participation design
 (admin-only conferral, immediate assign).
@@ -3006,14 +3006,13 @@ re-roll the serve / daemon-info / WS-attach / drain boilerplate:
 
 - `testing/cross_backend/testing_server_core.ts` — `start_testing_server({adapter, daemon_name, host, port, app_version?, build_app})`. Owns the runtime-neutral orchestration: open-host refusal, stale-daemon check, daemon-info write, `serve`, post-serve WS attach, graceful shutdown. Domain-free — the app is the caller's `build_app(context: BuildTestingAppContext): Promise<BuiltTestingApp>` seam (`{app, close}`). WebSocket endpoints mount through `create_app_server`'s `ws_endpoints` on every runtime: the build calls `context.prepare_websocket({max_message_bytes?})`, which asks the adapter for a `PreparedWebsocket` (`{create_upgrade_websocket: (app) => UpgradeWebSocket, attach_to_server?}`) and returns its factory, to pass as `create_upgrade_websocket`; the core runs each `attach_to_server` once `serve` returns (Node's `injectWebSocket`). Shutdown starts the listener's `shutdown` (stop accepting), runs `close` — which must end live WebSockets, as `AppServer.close` does — then awaits the drain, since open sockets would otherwise hold it. Exports the `TestingServerAdapter` (`prepare_websocket: (options?: PrepareWebsocketOptions) => PreparedWebsocket`) / `ServeHandle` / `PreparedWebsocket` / `PrepareWebsocketOptions` / `BuildTestingAppContext` interfaces.
 - `testing/daemon_info.ts` — the `~/.{name}/run/daemon.json` plumbing the core's stale-daemon check and daemon-info write use: `DaemonInfo` (a strict `@fuzdev/fuz_schema` object), `get_app_dir`, `get_daemon_info_path`, `write_daemon_info` (atomic), `read_daemon_info`, `is_daemon_running` (`kill -0`).
-- `testing/cross_backend/testing_server_node.ts` — `create_node_testing_adapter()` (`@hono/node-server` + `@hono/node-ws`). Optional peer deps (like `ws`); only test binaries import them. Its factory sets the `ws` server's `maxPayload` to twice `max_message_bytes` (default `DEFAULT_WS_MAX_MESSAGE_BYTES`) — `@hono/node-ws` takes no option for it, and `ws`'s own default is 100 MiB — so a grossly oversized message is refused at the frame layer (`WS_CLOSE_MESSAGE_TOO_BIG` with no reason) before it is buffered whole, while one just over the limit reaches the per-message check, which sends `WS_CLOSE_MESSAGE_TOO_BIG_REASON` as every other backend does. Bun's adapter sets the same multiple as its frame cap (see below); Deno takes no frame cap and keeps the per-message check alone.
-- `testing/cross_backend/testing_server_deno.ts` — `create_deno_testing_adapter()` (`Deno.serve` + `@hono/deno`, an optional peer dep; `Deno` declared locally so it typechecks under the Node toolchain).
-- `testing/cross_backend/testing_server_bun.ts` — `create_bun_testing_adapter()` (`Bun.serve` + `@hono/bun`'s module-level `getConnInfo`, `upgradeWebSocket`, and `websocket`; `Bun.serve` declared locally so it typechecks under the Node toolchain). Needs the optional `@hono/bun` peer dep (the counterpart to Node's `@hono/node-server` + `@hono/node-ws`; `Bun.serve` is built in). Reuses `create_node_runtime` (Bun implements the `node:fs`/`node:process` surface). WS is module-level + stateless (like Deno) — the `websocket` handler is threaded into `serve`, where `Bun.serve` wants it, so no post-serve attach. It carries `maxPayloadLength` at twice `max_message_bytes` rather than Bun's 16 MiB default: past its cap Bun drops the socket without a close frame (1006), so the headroom leaves a message just over the limit to the per-message check (`WS_CLOSE_MESSAGE_TOO_BIG`, as on Node), while a grossly oversized one is refused before Bun buffers it whole.
+- `testing/cross_backend/testing_server_node.ts` — `create_node_testing_adapter()` (`@hono/node-server` + `@hono/node-ws`). Optional peer deps (like `ws`); only test binaries import them. Its factory sets the `ws` server's `maxPayload` to twice `max_message_bytes` (default `DEFAULT_WS_MAX_MESSAGE_BYTES`) — `@hono/node-ws` takes no option for it, and `ws`'s own default is 100 MiB — so a grossly oversized message is refused at the frame layer (`WS_CLOSE_MESSAGE_TOO_BIG` with no reason) before it is buffered whole, while one just over the limit reaches the per-message check, which sends `WS_CLOSE_MESSAGE_TOO_BIG_REASON` as every other backend does. Bun's adapter sets the same multiple as its frame cap (see below).
+- `testing/cross_backend/testing_server_bun.ts` — `create_bun_testing_adapter()` (`Bun.serve` + `@hono/bun`'s module-level `getConnInfo`, `upgradeWebSocket`, and `websocket`; `Bun.serve` declared locally so it typechecks under the Node toolchain). Needs the optional `@hono/bun` peer dep (the counterpart to Node's `@hono/node-server` + `@hono/node-ws`; `Bun.serve` is built in). Reuses `create_node_runtime` (Bun implements the `node:fs`/`node:process` surface). WS is module-level + stateless — the `websocket` handler is threaded into `serve`, where `Bun.serve` wants it, so no post-serve attach. It carries `maxPayloadLength` at twice `max_message_bytes` rather than Bun's 16 MiB default: past its cap Bun drops the socket without a close frame (1006), so the headroom leaves a message just over the limit to the per-message check (`WS_CLOSE_MESSAGE_TOO_BIG`, as on Node), while a grossly oversized one is refused before Bun buffers it whole.
 - `testing/cross_backend/default_spine_surface.ts` — the canonical no-domain spine surface (account/admin/audit/signup + bootstrap): `spine_session_options`, `spine_roles`, `create_spine_route_specs`, `spine_rpc_endpoints`, `create_spine_surface_spec`. This is the **declared** surface — the `create_standard_rpc_actions` bundle the spec-derived suites auto-enumerate. It passes `daemon_token: true` (both spine binaries mount the daemon-token layer) and leaves `GET /api/surface` at its default, off — the TS spine binary does too, and the Rust `testing_spine_stub` serves none. Shared by the spine_stub cross test, the TS cross tests, and the binary.
 - `testing/cross_backend/full_spine_mount.ts` — `build_full_spine_rpc_actions(deps, options)` — the **full** live RPC mount: the declared bundle **plus** the off-declared-surface families the binary live-mounts (`_testing_*` backdoors, the cell verb set, the opt-in `actor_lookup` / `actor_search` resolvers). `build_full_spine_mount(deps, options)` builds it once for both of the binary's endpoints, returning `FullSpineMount` (`{rpc_actions, ws_actions}`): the WS list is `protocol_actions` plus every RPC action not already among them, twinning the Rust `testing_spine_stub`, which serves one registry on RPC and WS (the one difference is `cancel` — a registered protocol action on TS, owned by the read loop on Rust). Single-sources the mount so the binary and the `spine_method_coverage` reconciliation test build the same list. `create_spine_live_rpc_endpoints()` wraps the list, built on stub deps, as one endpoint at `SPINE_RPC_PATH` — the `live_rpc_endpoints` value the conformance table, the differential and the auth-row generator resolve off-surface methods from (no handler built there runs).
-- `testing/cross_backend/ts_spine_backend_config.ts` — `ts_spine_node_backend_config()` / `ts_spine_deno_backend_config()` / `ts_spine_bun_backend_config()` presets (in-memory pglet, no external infra), the TS analog of `rust_spine_stub_backend_config()`.
+- `testing/cross_backend/ts_spine_backend_config.ts` — `ts_spine_node_backend_config()` / `ts_spine_bun_backend_config()` presets (in-memory pglet, no external infra), the TS analog of `rust_spine_stub_backend_config()`.
 
-fuz_app's own binary wiring (`src/test/cross_backend/testing_spine_server{,_node,_deno,_bun}.ts`) is the worked example: ~one `build_app` over `create_app_backend` + `create_app_server` (`rate_limiters: 'disabled_for_testing'` plus whichever login / action limiters its env toggles built, `build_full_spine_mount`'s two lists on one `rpc_endpoints` entry and two `ws_endpoints` entries — `/api/ws` and the role-gated `SPINE_ROLE_GATED_WS_PATH` — sharing one `registry`, which is also the role-grant-offer `notification_sender`), reusing `default_spine_surface`. `src/test/cross_backend/testing_spine_server.db.test.ts` builds it with the Node adapter in-process and asserts its surface lists both WS endpoints (the gated one with its `required_roles`) and passes the surface invariants. The `_node`/`_deno`/`_bun` entries differ only in which adapter they wire — `build_spine_app` is runtime-agnostic. It leaves `create_app_server`'s `auth_cleanup` off, as the Rust `testing_spine_stub` leaves its twin unscheduled: a background pass would delete rows and write audit rows under a running suite. A consumer's cross-process test binary may schedule it when nothing its suites seed is already expired (the conformance table's `expired_session` principal seeds a backdated session row); an in-process harness leaves it off.
+fuz_app's own binary wiring (`src/test/cross_backend/testing_spine_server{,_node,_bun}.ts`) is the worked example: ~one `build_app` over `create_app_backend` + `create_app_server` (`rate_limiters: 'disabled_for_testing'` plus whichever login / action limiters its env toggles built, `build_full_spine_mount`'s two lists on one `rpc_endpoints` entry and two `ws_endpoints` entries — `/api/ws` and the role-gated `SPINE_ROLE_GATED_WS_PATH` — sharing one `registry`, which is also the role-grant-offer `notification_sender`), reusing `default_spine_surface`. `src/test/cross_backend/testing_spine_server.db.test.ts` builds it with the Node adapter in-process and asserts its surface lists both WS endpoints (the gated one with its `required_roles`) and passes the surface invariants. The `_node`/`_bun` entries differ only in which adapter they wire — `build_spine_app` is runtime-agnostic. It leaves `create_app_server`'s `auth_cleanup` off, as the Rust `testing_spine_stub` leaves its twin unscheduled: a background pass would delete rows and write audit rows under a running suite. A consumer's cross-process test binary may schedule it when nothing its suites seed is already expired (the conformance table's `expired_session` principal seeds a backdated session row); an in-process harness leaves it off.
 
 ### Live-method coverage reconciliation — `method_coverage.ts`
 
@@ -3077,8 +3076,8 @@ no stats engine reinvented. fuz_app ships the primitive; consumers wire
 scenarios + the run.
 fuz_app also ships its **own** `npm run benchmark:cross-impl`
 (`src/benchmarks/cross_impl.bench.ts`) on the back of its TS spine binary —
-ts-node + ts-deno + ts-bun (+ the Rust `spine_stub` when `FUZ_TESTING_RUST_SPINE_STUB_BIN`
-is set). The three TS runtimes are apples-to-apples with each other (same
+ts-node + ts-bun (+ the Rust `spine_stub` when `FUZ_TESTING_RUST_SPINE_STUB_BIN`
+is set). The two TS runtimes are apples-to-apples with each other (same
 in-memory pglet driver); TS-vs-Rust carries the pglet-vs-Postgres DB-layer caveat
 (documented in the run). The artifact (`*.latest.json`) is gitignored.
 

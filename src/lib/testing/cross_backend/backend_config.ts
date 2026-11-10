@@ -6,7 +6,7 @@ import '../assert_dev_env.ts';
  * `BackendConfig` describes a spawnable test binary — argv, mount paths,
  * env vars, bootstrap credentials, daemon-token discovery path, declared
  * capabilities. Consumer projects ship per-backend factories
- * (`deno_backend_config()`, `rust_backend_config()`,
+ * (`node_backend_config()`, `rust_backend_config()`,
  * `rust_spine_stub_backend_config()`) that produce this shape; `spawn_backend`
  * consumes it.
  *
@@ -14,8 +14,8 @@ import '../assert_dev_env.ts';
  * (operational dep on `testing_spine_stub` — path-based discovery, no
  * `package.json` coupling to the stub's source package). Otherwise backend-specific
  * knowledge (binary paths, port choices, env vars) is a consumer
- * concern; fuz_app's testing library knows nothing about Deno, Cargo, or
- * any specific runtime beyond that preset.
+ * concern; fuz_app's testing library knows nothing about Cargo or a
+ * consumer's binary beyond that preset.
  *
  * @module
  */
@@ -55,17 +55,17 @@ export interface BackendBootstrapConfig {
 
 /**
  * Configuration for one spawnable test backend. Consumer factories
- * (`deno_backend_config()`, `rust_backend_config()`) produce these and
+ * (`node_backend_config()`, `rust_backend_config()`) produce these and
  * the runner consumes them through `spawn_backend`.
  *
- * Path defaults match the standard fuz_app surface — Deno + Rust spine
- * (`zzz_server`, `fuz_forge_server`, `testing_spine_stub`) all converge on
+ * Path defaults match the standard fuz_app surface — the TS spine and the Rust
+ * spine servers (`zzz_server`, `fuz_forge_server`, `testing_spine_stub`) all converge on
  * `/api/account/{bootstrap,login,logout,password}`,
  * `/api/rpc`, `/api/ws`, `/health`. Override only when a backend
  * deliberately diverges (which it shouldn't, per the contract).
  */
 export interface BackendConfig {
-	/** Diagnostic label (`"deno"`, `"rust"`, `"spine_stub"`). Surfaces in test output. */
+	/** Diagnostic label (`"ts_spine_node"`, `"rust"`, `"spine_stub"`). Surfaces in test output. */
 	readonly name: string;
 	/** argv passed to the spawn. The first entry is the binary path. */
 	readonly start_command: ReadonlyArray<string>;

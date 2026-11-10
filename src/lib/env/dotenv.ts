@@ -146,7 +146,7 @@ const unescape_double_quoted = (s: string): string => {
  * @param runtime - runtime with `read_text_file` capability
  * @param path - path to env file
  * @returns parsed env record, or `null` if file doesn't exist
- * @throws Error if reading fails for any reason other than `ENOENT` / `NotFound`
+ * @throws Error if reading fails for any reason other than `ENOENT`
  */
 export const load_env_file = async (
 	runtime: Pick<FsReadDeps, 'read_text_file'>,
@@ -156,8 +156,7 @@ export const load_env_file = async (
 		const content = await runtime.read_text_file(path);
 		return parse_dotenv(content);
 	} catch (error: any) {
-		// Node (`ENOENT`) and Deno (`Deno.errors.NotFound`) — handle both.
-		if (error?.code === 'ENOENT' || error?.name === 'NotFound') return null;
+		if (error?.code === 'ENOENT') return null;
 		throw error;
 	}
 };

@@ -38,9 +38,9 @@ import { create_audit_emitter } from '@fuzdev/fuz_app/auth/audit_emitter.ts';
 import { BaseServerEnv } from '@fuzdev/fuz_app/server/env.ts';
 import { create_health_route_spec } from '@fuzdev/fuz_app/http/common_routes.ts';
 import { prefix_route_specs } from '@fuzdev/fuz_app/http/route_spec.ts';
-import { create_deno_runtime } from '@fuzdev/fuz_app/runtime/deno.ts';
+import { create_node_runtime } from '@fuzdev/fuz_app/runtime/node.ts';
 
-const runtime = create_deno_runtime([]);
+const runtime = create_node_runtime();
 
 // 1. Init backend — PGlite file-based DB, auth migrations run automatically
 const keyring_result = create_keyring(cookie_secret);

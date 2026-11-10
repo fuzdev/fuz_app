@@ -15,10 +15,10 @@ import '../assert_dev_env.ts';
  * ```ts
  * import {create_cross_backend_global_setup} from
  *   '@fuzdev/fuz_app/testing/cross_backend/create_cross_backend_global_setup.ts';
- * import {deno_backend_config, rust_backend_config} from './my_backend_config.ts';
+ * import {node_backend_config, rust_backend_config} from './my_backend_config.ts';
  *
  * export default create_cross_backend_global_setup({
- *   configs: {deno: deno_backend_config, rust: rust_backend_config},
+ *   configs: {node: node_backend_config, rust: rust_backend_config},
  *   ensure_databases: true,
  *   before_spawn: {rust: () => prepare_cargo_binary(my_cargo_binary)},
  * });
@@ -43,7 +43,7 @@ import { serialize_bootstrapped_handle } from './setup.ts';
  * Default project-name → backend-name reduction: strips the
  * `cross_backend_` prefix plus an optional `ts_` discriminator (the TS
  * canonical backends carry it to distinguish JS runtimes). So
- * `cross_backend_ts_deno` → `deno` and `cross_backend_rust` → `rust`.
+ * `cross_backend_ts_node` → `node` and `cross_backend_rust` → `rust`.
  */
 const DEFAULT_PROJECT_NAME_PREFIX = /^cross_backend_(?:ts_)?/;
 

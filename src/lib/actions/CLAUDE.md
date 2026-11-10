@@ -532,11 +532,12 @@ which bypasses the budget. A send never waits and never throws.
   (`terminate()` on Node's `ws` and Bun; the client sees 1006), removing it and
   aborting its controller the same way. A close frame gets
   `WS_CLOSE_WRITE_TIMEOUT` (1 s), after which a socket still holding unwritten
-  bytes is cut. Deno's standard `WebSocket` cannot be cut, so there a stalled
-  connection is closed with `WS_CLOSE_OUTBOUND_OVERFLOW` instead, the close
-  deadline cuts nothing, and the runtime keeps the socket until it or the
-  client ends it. The timers are unref'd and cleared when the socket's close
-  arrives (`remove_connection`, which is for a socket that has closed).
+  bytes is cut. A socket with no `terminate` (a web-standard `WebSocket`)
+  cannot be cut, so there a stalled connection is closed with
+  `WS_CLOSE_OUTBOUND_OVERFLOW` instead, the close deadline cuts nothing, and
+  the runtime keeps the socket until it or the client ends it. The timers are
+  unref'd and cleared when the socket's close arrives (`remove_connection`,
+  which is for a socket that has closed).
 - **Other closes.** A revocation, a cap eviction, the shutdown, and
   `close_connection` run the pump's rule once more: the frames still waiting
   are handed to the socket ahead of the close frame while its buffer is below
@@ -546,8 +547,9 @@ which bypasses the budget. A send never waits and never throws.
 - **After a close.** A closed or dropped connection is out of the map, so the
   per-account cap does not count it while its socket is still closing. Where
   the runtime reports its buffer, what it holds for that socket is less than
-  the high-water mark plus one frame, and the close frame — for the close deadline on Node and Bun, and on
-  Deno until the runtime or the client ends the socket.
+  the high-water mark plus one frame, and the close frame — for the close
+  deadline on Node and Bun, and on a socket that cannot be cut until the
+  runtime or the client ends it.
 - **Logging.** One `warn` per overflow (`ws: outbound queue overflow, closing
   the connection`, the Rust spine's line) or stall (`ws: write stalled,
   dropping the connection`), with `{connection_id, account_id, queued_bytes,
@@ -772,7 +774,7 @@ runs after server context is assembled so action lists can depend on
 Hono adapter helper. It is a factory because Node's `createNodeWebSocket({app})`
 needs the app `create_app_server` builds: it is called once, with that app
 (the same instance as `AppServer.app`), after the app exists and before the
-mount — and only when `ws_endpoints` resolves non-empty. Deno and Bun pass
+mount — and only when `ws_endpoints` resolves non-empty. Bun passes
 `() => upgradeWebSocket`. `create_app_server` throws when `ws_endpoints`
 resolves non-empty but the factory is missing; a factory returning `[]` does
 NOT trip the check, so feature-flag gated WS surfaces stay safe.

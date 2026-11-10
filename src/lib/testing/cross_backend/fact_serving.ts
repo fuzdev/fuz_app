@@ -186,7 +186,7 @@ const assert_masked_404 = (got: { status: number; text: string }, label: string)
 	assert.strictEqual(got.status, 404, `${label} did not 404`);
 	assert.strictEqual(got.text, '', `${label}: a masked 404 has no body`);
 	// TODO: the content type isn't pinned — the Node TS spine answers the
-	// bodyless 404 with `text/plain; charset=UTF-8`, Deno, Bun and Rust with none
+	// bodyless 404 with `text/plain; charset=UTF-8`, Bun and Rust with none
 };
 
 export const describe_fact_serving_cross_tests = (options: FactServingCrossTestOptions): void => {

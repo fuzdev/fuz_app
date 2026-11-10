@@ -1,7 +1,7 @@
 /**
  * Cross-process leg of the role-gated-participation capstone.
  *
- * Proves the TS spine binary (node/deno/bun) and the Rust `testing_spine_stub`
+ * Proves the TS spine binary (node/bun) and the Rust `testing_spine_stub`
  * agree, over real HTTP, on conferral of the admin-grantable `participant`
  * app-role: (a) grantability, (b) admin-only conferral (no holder-propagation),
  * (c) `role_grant_assign`. The single-request matrix runs through the

@@ -32,7 +32,7 @@ run the same standard suites against it over real HTTP — a Rust spine
 (`zzz_server`, another consumer's spine server, or the non-domain
 `testing_spine_stub`) or a **TS** spine binary built on the test-server core (`start_testing_server`
 
-- `create_{node,deno,bun}_testing_adapter` in `testing/cross_backend/`, which
+- `create_{node,bun}_testing_adapter` in `testing/cross_backend/`, which
   own the serve / daemon-info / WS-attach / drain boilerplate so a consumer's
   binary is just a `build_app` seam — see `src/lib/testing/CLAUDE.md`
   §"Building a TS test-server binary"). The in-process Hono harness is one
@@ -861,7 +861,7 @@ into any runner that orchestrates both impls.
 
 - `query_schema_snapshot(db, options?)` (`testing/schema_introspect.ts`) — `pg_catalog` / `information_schema` introspection → deterministic `SchemaSnapshot`
 - `diff_schema_snapshots(a, b)` (`testing/schema_parity.ts`) — Tagged-union `Array<SchemaDiff>` per drift kind; empty array means parity holds
-- `format_schema_diffs(diffs, labels?)` (`testing/schema_parity.ts`) — Human-readable multi-line rendering; labels identify the impls (`{a: 'deno', b: 'rust'}`)
+- `format_schema_diffs(diffs, labels?)` (`testing/schema_parity.ts`) — Human-readable multi-line rendering; labels identify the impls (`{a: 'ts', b: 'rust'}`)
 - `assert_schema_snapshots_equal(a, b, labels?)` (`testing/schema_parity.ts`) — Throw on drift with the canonical formatted message
 
 Consumer wiring. Each backend bootstraps against a
@@ -884,7 +884,7 @@ await close();
 snapshots[backend.name] = snapshot;
 
 // At end of runner:
-assert_schema_snapshots_equal(snapshots.deno, snapshots.rust, { a: 'deno', b: 'rust' });
+assert_schema_snapshots_equal(snapshots.ts, snapshots.rust, { a: 'ts', b: 'rust' });
 ```
 
 The snapshot covers tables, columns (with `udt_name` distinguishing
@@ -971,7 +971,7 @@ impls actually boot.
 The in-process suites above drive a Hono app via `http_transport(app)`.
 The **same suite bodies** also run against a real backend binary over real
 HTTP — that's the cross-backend layer in `testing/cross_backend/`. It lets
-any backend implementation (a TS spine on Deno / Node / Bun, a Rust spine,
+any backend implementation (a TS spine on Node / Bun, a Rust spine,
 or a future one) be verified against the same wire-shape contract the TS
 specs own. Drift between implementations becomes a test failure instead of
 a production discovery.
@@ -1018,7 +1018,7 @@ consumer config.
 - `ready` — Backend live-mounts the public `/ready` schema-drift deploy gate (gates `describe_ready_cross_tests`).
 - `account_status` — Backend serves `GET /api/account/status` (bundled into `create_account_route_specs`; `true` for every spine). Gates the integration suite's status wire-shape case — fail-loud on a missing route rather than a silent skip.
 - `peer_request` — Backend can initiate a server→client request and await the typed reply (ActionPeer — `ConnectionRegistry.request_connection`). Gates `describe_peer_ping_ws_tests`. `true` on fuz_app's own spine presets; a backend states it `true` once it wires the `peer/ping` HTTP + WS mount.
-- `ws_handshake_pipelining` — Backend's HTTP server accepts WebSocket frames written in the same TCP write as the upgrade request (`true` for Node/Deno/Rust; `false` for a Bun backend that upgrades after an asynchronous check, as one behind auth does — Bun answers such a request `400`). Gates the WS round-trip suite's frames-with-the-handshake case — the ordering-forced form of "frames that arrive before the connection is admitted wait for admission".
+- `ws_handshake_pipelining` — Backend's HTTP server accepts WebSocket frames written in the same TCP write as the upgrade request (`true` for Node/Rust; `false` for a Bun backend that upgrades after an asynchronous check, as one behind auth does — Bun answers such a request `400`). Gates the WS round-trip suite's frames-with-the-handshake case — the ordering-forced form of "frames that arrive before the connection is admitted wait for admission".
 - `ws_account_actions` — Backend's WebSocket endpoint mounts the self-service account actions, so a socket can revoke the session it runs on (`true` on fuz_app's own spine presets; a consumer states it `true` once its endpoint mounts them). Gates the WS round-trip suite's self-revocation case, and its WS-mutation audit case (which also calls `_testing_drain_effects`).
 - `cell_gated_create` — Backend live-mounts a test `CellCreateAuthorize` policy on its cell layer (`true` only on the reference spine binaries that mount it). Gates `describe_cell_gated_create_cross_tests` (the authorizer and the root `policy` it reads and validates) and `describe_cell_moderate_cross_tests`.
 - `testing_backdoors` — Not a flag: the `_testing_*` backdoors the backend mounts, from `TESTING_BACKDOOR_METHODS`. Checked by `describe_testing_backdoor_cross_tests`, which fires its credential rows at the ones listed; `describe_spine_cross_suites` gates suites on it (below). `[]` in-process.
@@ -1033,7 +1033,7 @@ A family default carries only what the family guarantees: the declared spine
 surface's mounts (`account_lifecycle`, `account_status`) and the
 runtime-behavior flags (`ws_handshake_pipelining`, `ws_refusal_body`) of its
 reference runtime — Node for TS, hyper for Rust; a backend on another runtime
-(Deno, Bun) overrides them. The flags that describe a backend's own mounts —
+(Bun) overrides them. The flags that describe a backend's own mounts —
 `MountFlag`: `ws`, `sse`, `cell_crud`, `cell_relations`, `cell_gated_create`,
 `fact_serving`, `fact_serving_admin_hash`, `ready`, `peer_request`, `ws_account_actions`,
 `ws_role_gated` — have no default, and neither does `testing_backdoors`. The
@@ -1071,9 +1071,9 @@ A `BackendConfig` (`cross_backend/backend_config.ts`) is a plain interface —
 fuz_app ships **shape**, not **targets**. It carries the spawn argv,
 base URL, the `rpc_path` / `ws_path` / `health_path` / `bootstrap_path`
 mounts, the issued `cookie_name`, child-process `env`, bootstrap details,
-and the declared `capabilities`. Consumers supply factories (`deno_backend_config()`,
+and the declared `capabilities`. Consumers supply factories (`node_backend_config()`,
 `rust_backend_config()`, …) near their own backend; fuz_app knows nothing
-about Cargo, Deno, or any specific binary.
+about Cargo or any specific binary.
 
 `spawn_backend(config)` (`cross_backend/spawn_backend.ts`) refuses a
 `base_url` whose port already accepts connections (another cross run or a
@@ -1098,10 +1098,10 @@ defaults don't cover — and they set no timeout of their own.
 ```ts
 // global_setup.ts — one backend per vitest project, provided as `backend_handle`
 import { create_cross_backend_global_setup } from '@fuzdev/fuz_app/testing/cross_backend/create_cross_backend_global_setup.ts';
-import { deno_backend_config, rust_backend_config } from './my_backend_config.ts';
+import { node_backend_config, rust_backend_config } from './my_backend_config.ts';
 
 export default create_cross_backend_global_setup({
-	configs: { deno: deno_backend_config, rust: rust_backend_config },
+	configs: { node: node_backend_config, rust: rust_backend_config },
 	// `createdb` for each config's `postgres:` DATABASE_URL, when it's missing
 	ensure_databases: true
 });
@@ -1357,14 +1357,13 @@ The role-grant-offer notification suite
 socket in every case and fails if it receives anything but the answers to its
 own requests, so a fan-out that reaches past its target account fails there.
 
-### TS spine binaries — three JS runtimes
+### TS spine binaries — two JS runtimes
 
-A consumer's TS backend can be spawned on three JS runtimes against the
+A consumer's TS backend can be spawned on two JS runtimes against the
 **identical** canonical surface, isolating the runtime axis (V8 vs. JSC) on
 the same code:
 
 - `create_node_testing_adapter` (`testing/cross_backend/testing_server_node.ts`) — Node V8
-- `create_deno_testing_adapter` (`testing/cross_backend/testing_server_deno.ts`) — Deno V8
 - `create_bun_testing_adapter` (`testing/cross_backend/testing_server_bun.ts`) — Bun JSC
 
 Bun 1.4.3 is the tested floor for the Bun leg: the body-size smuggling probe
@@ -1395,8 +1394,7 @@ Pass the endpoint's `max_message_bytes` (omitted, both default to
 `DEFAULT_WS_MAX_MESSAGE_BYTES`) so Node's `ws` frame cap and Bun's sit
 at twice it (past its cap Node's `ws` closes 1009 with no reason and Bun
 drops the socket without a close frame, so the headroom leaves a message
-just over the limit to the per-message check's 1009 and its reason);
-Deno's upgrade takes no frame cap. On
+just over the limit to the per-message check's 1009 and its reason). On
 shutdown the core stops accepting connections, runs `close` (which must end
 live WebSockets, as `AppServer.close` does), then awaits the drain. The Bun teardown handles
 Bun's never-resolving `server.stop()` by fire-and-forgetting it; the shared
@@ -1406,7 +1404,7 @@ cleanly.
 For consumers that wire runtime-specific capabilities (e.g. spawning child
 processes for a terminal surface), inject the implementation at the spawn
 entry — the entry already knows its runtime — rather than branching on
-`typeof Deno` inside shared code.
+`typeof Bun` inside shared code.
 
 ### Spine-stub preset
 
@@ -1611,9 +1609,9 @@ describe_differential_conformance_tests({
   asserted here, since each backend's conformance leg already holds them.
 - Every HTTP request asks for an uncompressed response
   (`DIFFERENTIAL_REQUEST_HEADERS`, `accept-encoding: identity`): content
-  negotiation is the server runtime's, not the app's — `Deno.serve`
+  negotiation is the server runtime's, not the app's — a runtime that
   compresses for a request accepting gzip, as Node's `fetch` sends by
-  default — so it would otherwise read as a `content-encoding` and `vary`
+  default, would otherwise read as a `content-encoding` and `vary`
   difference on every case.
 - Set `ws` on both backends (`{name, setup_test, ws: {base_url, ws_path}}`)
   to compare their WebSocket answers instead; the cases are filtered as the

@@ -64,11 +64,11 @@ jobs:
           TEST_DATABASE_URL: postgres://fuz_test:fuz_test@localhost:5432/fuz_test
 
   # The TS spine over real HTTP, WebSocket and SSE on each JS runtime — the
-  # `cross_backend_ts_node`, `cross_backend_ts_deno` and `cross_backend_ts_bun`
-  # vitest projects — and the differential between its Node and Bun runs
-  # (`cross_backend_ts_differential`), which `gro check` leaves out (they exist
-  # only under `FUZ_TEST_CROSS_BACKEND=1`). Each spawns the spine test binary on
-  # an in-memory database, so the job needs no service.
+  # `cross_backend_ts_node` and `cross_backend_ts_bun` vitest projects — and the
+  # differential between its Node and Bun runs (`cross_backend_ts_differential`),
+  # which `gro check` leaves out (they exist only under
+  # `FUZ_TEST_CROSS_BACKEND=1`). Each spawns the spine test binary on an
+  # in-memory database, so the job needs no service.
   #
   # Not run in CI: `cross_backend_rust_spine_stub`, `cross_backend_parity` and
   # `cross_backend_security`. They build and spawn the Rust spine's test binary
@@ -77,13 +77,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
-    # The versions the suites are green on. They pin runtime behavior the
+    # The version the suites are green on. It pins runtime behavior the
     # suites assert and the docs state (Bun 1.4.3 is the tested floor —
     # docs/security.md §Body Size Limiting), so a bump is deliberate: change
     # the version, re-run, re-read what the docs say was observed. The
-    # `cross-canary` workflow runs the same legs on the latest releases.
+    # `cross-canary` workflow runs the same legs on the latest release.
     env:
-      CROSS_DENO_VERSION: 2.8.3
       CROSS_BUN_VERSION: 1.4.3
 
     steps:
@@ -95,10 +94,6 @@ jobs:
         with:
           node-version: '24.14'
           cache: npm
-      - name: Install Deno
-        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
-        with:
-          deno-version: ${{ env.CROSS_DENO_VERSION }}
       - name: Install Bun
         run: |
           curl -fsSL https://bun.sh/install | bash -s "bun-v$CROSS_BUN_VERSION"
@@ -108,9 +103,7 @@ jobs:
       - name: Verify runtime versions
         run: |
           node --version
-          deno --version
           bun --version
-          [ "$(deno --version | head -n 1 | cut -d ' ' -f 2)" = "$CROSS_DENO_VERSION" ]
           [ "$(bun --version)" = "$CROSS_BUN_VERSION" ]
       - run: npm ci
       - run: npx svelte-kit sync

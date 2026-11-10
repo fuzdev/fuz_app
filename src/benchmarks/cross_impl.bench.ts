@@ -1,6 +1,6 @@
 /**
- * Cross-impl latency benchmark for fuz_app's own spine — TS (Node + Deno +
- * Bun), plus the Rust `testing_spine_stub` when its prebuilt binary is
+ * Cross-impl latency benchmark for fuz_app's own spine — TS (Node + Bun),
+ * plus the Rust `testing_spine_stub` when its prebuilt binary is
  * available. Spawns each backend, runs identical RPC round-trip scenarios
  * over real HTTP, prints a per-scenario markdown table + a significance
  * verdict vs the Node TS reference, and writes a JSON artifact.
@@ -13,7 +13,7 @@
  * **DB-layer caveat.** The TS binaries run in-memory pglet while the Rust
  * spine runs real Postgres (`tokio-postgres` can't reach an in-process database) — so the
  * TS-vs-Rust columns are NOT apples-to-apples at the DB layer; the
- * TS-node-vs-TS-deno-vs-TS-bun comparison is (same driver). The Rust column
+ * TS-node-vs-TS-bun comparison is (same driver). The Rust column
  * only appears when `FUZ_TESTING_RUST_SPINE_STUB_BIN` is set (+ its Postgres DB exists — see
  * `rust_spine_stub_backend_config`); TS-only is the zero-infra default.
  *
@@ -39,7 +39,6 @@ import {
 } from '../lib/testing/cross_backend/rust_spine_stub_backend_config.ts';
 import {
 	ts_spine_bun_backend_config,
-	ts_spine_deno_backend_config,
 	ts_spine_node_backend_config
 } from '../lib/testing/cross_backend/ts_spine_backend_config.ts';
 
@@ -48,7 +47,6 @@ const REFERENCE_BACKEND = 'ts_spine_node';
 
 const configs: Array<BackendConfig> = [
 	ts_spine_node_backend_config(),
-	ts_spine_deno_backend_config(),
 	ts_spine_bun_backend_config()
 ];
 

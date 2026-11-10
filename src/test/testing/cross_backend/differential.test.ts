@@ -104,8 +104,8 @@ const probe_read_case: ConformanceCase = {
 	expect: { status: 200 }
 };
 
-// A backend that negotiates content encoding the way `Deno.serve` does: it
-// compresses when the request accepts gzip, and a request naming no
+// A backend that negotiates content encoding itself: it compresses when the
+// request accepts gzip, and a request naming no
 // `accept-encoding` accepts it, as Node's `fetch` sends `gzip, deflate` by
 // default. The other answers as is. Equal bodies, so the only difference a
 // differential could see is the negotiation's headers.

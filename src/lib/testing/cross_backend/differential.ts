@@ -22,10 +22,10 @@ import '../assert_dev_env.ts';
  *
  * Every HTTP request asks for an uncompressed response
  * (`DIFFERENTIAL_REQUEST_HEADERS`): content negotiation is the transport's,
- * not the app's — Deno's `Deno.serve` compresses a response whose request
- * accepts gzip, as Node's `fetch` sends by default, while other servers send
- * it as is — so letting a server choose would read as a `content-encoding` and
- * `vary` difference on every case.
+ * not the app's — a server may compress a response whose request accepts
+ * gzip, as Node's `fetch` sends by default, while another sends it as is — so
+ * letting a server choose would read as a `content-encoding` and `vary`
+ * difference on every case.
  *
  * A difference that is tracked and accepted goes in the **known-divergence
  * ledger** (`KnownDivergence`), matched by case names or by methods, naming
@@ -74,8 +74,8 @@ import type { WsEndpointTarget } from './ws_endpoint.ts';
 /**
  * Headers every HTTP request the differential sends carries, beneath the
  * principal's: `accept-encoding: identity`, so each backend answers
- * uncompressed and a runtime's own compression (`Deno.serve` compresses for a
- * request that accepts gzip) never reads as a header difference.
+ * uncompressed and a runtime's own compression (for a request that accepts
+ * gzip) never reads as a header difference.
  */
 export const DIFFERENTIAL_REQUEST_HEADERS: Readonly<Record<string, string>> = {
 	'accept-encoding': 'identity'

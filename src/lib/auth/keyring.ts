@@ -70,7 +70,7 @@ export type CreateKeyringResult =
  * cookies. Twin of the Rust `Keyring::new`.
  *
  * Returns a discriminated union so callers handle exit/logging their own way
- * (e.g. `Deno.exit(1)` vs `runtime.exit(1)`). CryptoKeys are cached on first use.
+ * (e.g. `process.exit(1)` vs `runtime.exit(1)`). CryptoKeys are cached on first use.
  *
  * **Key rotation is an operational concern.** Put the new key first and keep
  * the old one after it: new cookies are signed with the new key, and cookies

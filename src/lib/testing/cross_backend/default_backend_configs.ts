@@ -5,7 +5,7 @@ import '../assert_dev_env.ts';
  *
  * Two consumer-facing factories — `make_default_ts_backend_config`
  * and `make_default_rust_backend_config` — own the common shape
- * for the JS-runtime (Deno/Node on V8) and Rust families respectively.
+ * for the JS-runtime (Node, Bun) and Rust families respectively.
  * Per-backend factories in consumer projects compose a small
  * declaration against one of these and add consumer-specific env vars
  * via `extra_env`.
@@ -163,13 +163,13 @@ export const ts_default_capabilities: FamilyDefaultCapabilities = Object.freeze(
 	// `GET /api/account/status` is bundled into `create_account_route_specs`, so
 	// every TS backend mounting account routes serves it.
 	account_status: true,
-	// Node (`ws`) and Deno hand frames pipelined with the upgrade request to the
+	// Node (`ws`) hands frames pipelined with the upgrade request to the
 	// socket. A Bun-served backend overrides to `false` (see the bun spine
 	// config) — `Bun.serve` answers such a request `400` when the upgrade
 	// follows an asynchronous check.
 	ws_handshake_pipelining: true,
 	// `@hono/node-ws` drops a refused upgrade's body, so a Node-served backend
-	// sends none. A Deno- or Bun-served one overrides to `true`.
+	// sends none. A Bun-served one overrides to `true`.
 	ws_refusal_body: false
 });
 
@@ -254,7 +254,7 @@ export interface MakeDefaultTsBackendConfigOptions {
 }
 
 /**
- * Shared builder for TS-family backends (Deno + Node). Owns the common
+ * Shared builder for TS-family backends (Node + Bun). Owns the common
  * env baseline (NODE_ENV, HOST, PORT, in-memory pglet, cookie keys,
  * bootstrap token path) so per-backend factories only declare what
  * genuinely differs.

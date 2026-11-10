@@ -42,8 +42,8 @@ export interface CompareCrossImplOptions {
 
 /**
  * Welch-test verdict for every non-reference backend vs the reference, per
- * scenario. With deno + node + rust and `reference: 'deno'` you get
- * `node vs deno` and `rust vs deno` for each scenario.
+ * scenario. With node + bun + rust and `reference: 'node'` you get
+ * `bun vs node` and `rust vs node` for each scenario.
  */
 export const compare_cross_impl = (
 	result: CrossImplBenchResult,

@@ -4,7 +4,7 @@
  * Composable functions that consumer projects (tx, visiones, etc.) use in their
  * `scripts/dev_setup.ts`, `scripts/dev_reset.ts`, etc. All functions accept narrow
  * `*Deps` interfaces from `runtime/deps.ts` — pass a `RuntimeDeps` instance
- * created by `create_deno_runtime()`.
+ * created by `create_node_runtime()`.
  *
  * @module
  */
@@ -160,7 +160,7 @@ export const generate_cookie_key = (): string => generate_secret_hex();
  * @param env_path - path to the .env file
  * @param name - the variable name to read
  * @returns the value, or `undefined` if the file or variable doesn't exist
- * @throws Error if reading fails for any reason other than `ENOENT` / `NotFound`
+ * @throws Error if reading fails for any reason other than `ENOENT`
  */
 export const read_env_var = async (
 	deps: Pick<FsReadDeps, 'read_text_file'>,

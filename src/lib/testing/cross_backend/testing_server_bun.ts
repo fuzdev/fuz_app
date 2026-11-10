@@ -5,10 +5,9 @@ import '../assert_dev_env.ts';
  *
  * Binds `Bun.serve` and `@hono/bun`'s module-level `upgradeWebSocket` +
  * `websocket` handler. The shared `testing/cross_backend/testing_server_core.ts` owns the rest.
- * Third sibling to `testing/cross_backend/testing_server_node.ts` / `testing/cross_backend/testing_server_deno.ts` —
- * together the three isolate the JS-runtime axis (Node V8 / Deno V8 / Bun
- * JSC) on identical TS surfaces, and the Rust spine binary covers the
- * cross-language axis.
+ * Sibling to `testing/cross_backend/testing_server_node.ts` — together the two
+ * isolate the JS-runtime axis (Node V8 / Bun JSC) on identical TS surfaces,
+ * and the Rust spine binary covers the cross-language axis.
  *
  * Needs the optional `@hono/bun` peer dep (the Bun counterpart to Node's
  * `@hono/node-server` + `@hono/node-ws`); `Bun.serve` is built in.
@@ -16,9 +15,8 @@ import '../assert_dev_env.ts';
  * implements the `node:fs` / `node:process` surface `RuntimeDeps` +
  * `testing/daemon_info.ts` touch.
  *
- * `Bun.serve` is declared locally (mirroring `testing/cross_backend/testing_server_deno.ts`'s
- * `Deno` declaration) so this module typechecks under fuz_app's Node-based
- * config without `@types/bun`. It is only ever *run* under Bun.
+ * `Bun.serve` is declared locally so this module typechecks under fuz_app's
+ * Node-based config without `@types/bun`. It is only ever *run* under Bun.
  *
  * @module
  */
@@ -62,8 +60,8 @@ export const create_bun_testing_adapter = (): TestingServerAdapter => {
 		runtime_label: 'Bun',
 		runtime: create_node_runtime(),
 		get_connection_ip: (c) => getConnInfo(c).remote.address,
-		// Bun's WS upgrade is module-level and stateless (like Deno) — no
-		// post-serve attach. The `websocket` handler is threaded into `serve`
+		// Bun's WS upgrade is module-level and stateless — no post-serve
+		// attach. The `websocket` handler is threaded into `serve`
 		// below, where `Bun.serve` wants it, carrying the frame cap.
 		prepare_websocket: (options) => {
 			max_message_bytes = options?.max_message_bytes ?? DEFAULT_WS_MAX_MESSAGE_BYTES;
@@ -103,11 +101,11 @@ export const create_bun_testing_adapter = (): TestingServerAdapter => {
 				// spawning harness blocks on a child that never exits (observed as a
 				// multi-minute hang needing SIGKILL). The force-close still tears the
 				// live sockets down; the `exit(0)` the core fires immediately after
-				// does the real teardown a few ms later. Node/Deno don't need this —
-				// their `shutdown()`/`close()` resolve normally. The `.catch` guards a
+				// does the real teardown a few ms later. Node doesn't need this — its
+				// `close()` resolves normally. The `.catch` guards a
 				// future Bun that rejects rather than hangs; if a future Bun resolves
 				// the promise after a server-initiated close, revert to
-				// `await server.stop(true)` to mirror the Node/Deno adapters.
+				// `await server.stop(true)` to mirror the Node adapter.
 				shutdown: () => {
 					void Promise.resolve(server.stop(true)).catch(() => {});
 					return Promise.resolve();

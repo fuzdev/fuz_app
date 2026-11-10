@@ -405,9 +405,9 @@ describe('format_schema_diffs', () => {
 	test('custom labels flow through', () => {
 		const rendered = format_schema_diffs(
 			[{ kind: 'sequence_data_type_differs', sequence: 'seq', a: 'integer', b: 'bigint' }],
-			{ a: 'deno', b: 'rust' }
+			{ a: 'ts', b: 'rust' }
 		);
-		assert.match(rendered, /deno=integer/);
+		assert.match(rendered, /ts=integer/);
 		assert.match(rendered, /rust=bigint/);
 	});
 
@@ -431,10 +431,10 @@ describe('format_schema_diffs', () => {
 					b: 'CREATE INDEX idx ON t (y)'
 				}
 			],
-			{ a: 'deno', b: 'rust' }
+			{ a: 'ts', b: 'rust' }
 		);
-		assert.match(rendered, /table foo only in deno/);
-		assert.match(rendered, /t\.seq udt_name differs: deno="int4", rust="int8"/);
+		assert.match(rendered, /table foo only in ts/);
+		assert.match(rendered, /t\.seq udt_name differs: ts="int4", rust="int8"/);
 		assert.match(rendered, /index idx on t differs/);
 	});
 
@@ -449,7 +449,7 @@ describe('format_schema_diffs', () => {
 					b: ['private', 'public', 'restricted']
 				}
 			],
-			{ a: 'deno', b: 'rust' }
+			{ a: 'ts', b: 'rust' }
 		);
 		assert.match(rendered, /enum mood only in rust/);
 		assert.match(rendered, /enum cell_visibility labels differ/);
@@ -467,13 +467,13 @@ describe('assert_schema_snapshots_equal', () => {
 			assert_schema_snapshots_equal(
 				create_snapshot({ tables: { foo: create_table() } }),
 				create_snapshot(),
-				{ a: 'deno', b: 'rust' }
+				{ a: 'ts', b: 'rust' }
 			);
 			assert.fail('expected throw');
 		} catch (err) {
 			assert.ok(err instanceof Error);
-			assert.match(err.message, /1 diff\(s\) between deno and rust/);
-			assert.match(err.message, /table foo only in deno/);
+			assert.match(err.message, /1 diff\(s\) between ts and rust/);
+			assert.match(err.message, /table foo only in ts/);
 		}
 	});
 });

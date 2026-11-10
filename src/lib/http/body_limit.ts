@@ -11,20 +11,18 @@
  *   The runtimes' HTTP parsers answer their own bodiless `400` to most of
  *   these before the application sees them, so this branch is defense in
  *   depth where they do and the refusal where they do not: Node's refuses
- *   them all; Deno and Bun hand over a repeated equal header as one combined
- *   value (`50, 50`) and refuse the rest (observed on Node 24.14.1, Deno
- *   2.8.3, Bun 1.4.3). The Rust spine's parser (hyper) refuses a malformed
- *   value and differing repeats, and accepts an equal repeat as the one
- *   value.
+ *   them all; Bun hands over a repeated equal header as one combined value
+ *   (`50, 50`) and refuses the rest (observed on Node 24.14.1, Bun 1.4.3).
+ *   The Rust spine's parser (hyper) refuses a malformed value and differing
+ *   repeats, and accepts an equal repeat as the one value.
  * - A request whose `Content-Length` exceeds the cap is refused with `413`
  *   `{error: 'payload_too_large'}`, whatever its method. A digit run of any
  *   length compares as a number, so one too long to represent exactly is over
- *   the cap, never unreadable. Over a socket that branch is reached on Node
- *   and Deno, whose parsers hand over any length below 2^64 and refuse a
- *   longer one with their own `400`. `Bun.serve` hands none over: with its
- *   default options it answers a length past 128 MiB with its own `413`, and
- *   one of 2^63 - 1 or more with its own `400` (observed on Node 24.14.1,
- *   Deno 2.8.3, Bun 1.4.3).
+ *   the cap, never unreadable. Over a socket that branch is reached on Node,
+ *   whose parser hands over any length below 2^64 and refuses a longer one
+ *   with its own `400`. `Bun.serve` hands none over: with its default options
+ *   it answers a length past 128 MiB with its own `413`, and one of 2^63 - 1
+ *   or more with its own `400` (observed on Node 24.14.1, Bun 1.4.3).
  * - Both refusals answer on the header alone — without touching
  *   `c.req.raw.body` — and carry `Connection: close`.
  * - A request with a well-formed `Content-Length` beside `Transfer-Encoding`,
@@ -38,7 +36,7 @@
  *   the headers answers first; which status an over-cap body with no declared
  *   length gets when another refusal also applies is implementation-defined
  *   across the two (`docs/security.md` §"Body Size Limiting").
- *   The Node, Deno and Bun parsers refuse a request carrying both headers
+ *   The Node and Bun parsers refuse a request carrying both headers
  *   with their own `400`; hyper accepts one, drops its `Content-Length`,
  *   frames the body as chunked, and closes the connection after the response.
  * - A well-formed `Content-Length` within the cap is trusted to frame the
@@ -52,10 +50,6 @@
  *   holds the connection for a drain window and then closes or, the body
  *   untouched and arriving within the window, reads it off and serves the
  *   next request.
- * - **Deno** closes once the whole declared body has arrived and holds the
- *   connection open while a client withholds it; a request pipelined behind
- *   the body is not served. Neither the header nor what the handler does with
- *   the body changes that (observed on Deno 2.8.3).
  * - **Bun** closes at once, the body unread, honouring the header. Bun 1.4.3
  *   is the tested floor: an older Bun kept the connection after the `413` and
  *   served the next request (correctly framed), so run Bun at the floor or

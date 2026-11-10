@@ -694,12 +694,12 @@ also mounts the standard surface + `_testing_drain_effects` so the clone-D8
 no-count-leak check reaches `audit_log_list` in-process). The
 backends:
 
-- `cross_backend_ts_node` / `cross_backend_ts_deno` / `cross_backend_ts_bun` —
-  `fuz_app`'s **own** TS spine binary (`testing_spine_server_{node,deno,bun}.ts`)
-  over real HTTP, in-memory pglet (`memory://`), no external infra (the `ts_deno` / `ts_bun`
-  ones need `deno` / `bun` on PATH). This is the in-repo cross-process coverage
-  of the TS impl's real HTTP path across all three JS runtimes — the in-process
-  suites (default `gro test`) never cross a process boundary. All three mount
+- `cross_backend_ts_node` / `cross_backend_ts_bun` —
+  `fuz_app`'s **own** TS spine binary (`testing_spine_server_{node,bun}.ts`)
+  over real HTTP, in-memory pglet (`memory://`), no external infra (the `ts_bun`
+  one needs `bun` on PATH). This is the in-repo cross-process coverage
+  of the TS impl's real HTTP path on both JS runtimes — the in-process
+  suites (default `gro test`) never cross a process boundary. Both mount
   their WebSocket endpoint through `create_app_server`'s `ws_endpoints`;
   `testing_spine_server.db.test.ts` (plain `gro test`) builds the Node app
   in-process and pins its surface — `/api/ws` and the role-gated `/api/gated/ws` listed, the surface invariants
@@ -731,9 +731,8 @@ turn. Every spawn logs one `spawn_backend(<name>): healthy in <ms>` line.
 npm run test:cross
 # or one project:
 FUZ_TEST_CROSS_BACKEND=1 npx vitest run --project cross_backend_ts_node
-FUZ_TEST_CROSS_BACKEND=1 npx vitest run --project cross_backend_ts_deno
 FUZ_TEST_CROSS_BACKEND=1 npx vitest run --project cross_backend_ts_bun
-# or all three TS runtimes at once:
+# or both TS runtimes at once:
 npm run test:cross:ts
 # the Rust stub rebuilds + creates its DB by default:
 npm run test:cross:rust-spine-stub
@@ -752,10 +751,10 @@ npm run test:cross:ts-differential
 **CI.** `.github/workflows/check.yml`'s `cross-ts` job runs
 `npm run test:cross:ts` and `npm run test:cross:ts-differential` on every push
 to `main` and every pull request, with
-Deno and Bun pinned in the job's `env` to the versions the suites are green
-on; a bump there is a deliberate re-measure. `.github/workflows/cross-canary.yml`
-runs the Deno and Bun legs and the Node-vs-Bun differential weekly (and by
-hand) on the latest release of each and gates nothing. The Rust-backed projects (`cross_backend_rust_spine_stub`,
+Bun pinned in the job's `env` to the version the suites are green on; a bump
+there is a deliberate re-measure. `.github/workflows/cross-canary.yml` runs the
+Bun leg and the Node-vs-Bun differential weekly (and by hand) on the latest Bun
+release and gates nothing. The Rust-backed projects (`cross_backend_rust_spine_stub`,
 `cross_backend_parity`, `cross_backend_security`, `cross_backend_timing`) run
 locally only.
 
@@ -766,9 +765,9 @@ The TS binary + the reusable test-server core/adapters it's built on live in
 ## Cross-impl benchmark
 
 `npm run benchmark:cross-impl` (`src/benchmarks/cross_impl.bench.ts`) spawns
-the TS spine binary on Node + Deno + Bun (+ the Rust `spine_stub` when
+the TS spine binary on Node + Bun (+ the Rust `spine_stub` when
 `FUZ_TESTING_RUST_SPINE_STUB_BIN` is set), runs the shared `default_bench_scenarios`
-over real HTTP, and prints per-scenario tables + a Welch verdict. The three TS
+over real HTTP, and prints per-scenario tables + a Welch verdict. The two TS
 runtimes are apples-to-apples with each other (same in-memory pglet driver);
 TS-vs-Rust carries the pglet-vs-Postgres DB-layer caveat. The `*.latest.json` artifact is
 gitignored.

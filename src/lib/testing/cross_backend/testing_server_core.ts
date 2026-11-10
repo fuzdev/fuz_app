@@ -11,9 +11,8 @@ import '../assert_dev_env.ts';
  * WS attach, graceful shutdown — and delegates the runtime-boundary
  * primitives (HTTP serve, WS upgrade construction, signals, pid, exit) to a
  * `TestingServerAdapter`. The shipped adapters are
- * `testing/cross_backend/testing_server_node.ts` (`@hono/node-server` + `@hono/node-ws`),
- * `testing/cross_backend/testing_server_deno.ts` (`Deno.serve` + `@hono/deno`), and
- * `testing/cross_backend/testing_server_bun.ts` (`Bun.serve` + `@hono/bun`).
+ * `testing/cross_backend/testing_server_node.ts` (`@hono/node-server` + `@hono/node-ws`)
+ * and `testing/cross_backend/testing_server_bun.ts` (`Bun.serve` + `@hono/bun`).
  *
  * The app itself — routes, RPC, DB, `_testing_reset`, WS endpoints — is the
  * caller's `StartTestingServerOptions.build_app` seam, so this core
@@ -27,8 +26,8 @@ import '../assert_dev_env.ts';
  * **NEVER ships in a release.** This module lives under `cross_backend/` and
  * opens with `import '../assert_dev_env.ts';`, which throws on
  * production-bundle load. The runtime adapters reach for the optional
- * `@hono/node-server` / `@hono/node-ws` peer deps; only test binaries import
- * them.
+ * `@hono/node-server` / `@hono/node-ws` / `@hono/bun` peer deps; only test
+ * binaries import them.
  *
  * @module
  */
@@ -65,12 +64,10 @@ export interface PrepareWebsocketOptions {
 	 * past its cap `ws` closes with no reason and Bun drops the socket without a
 	 * close frame, so the headroom leaves a message just over the limit to the
 	 * per-message check `register_action_ws` makes, while a grossly oversized
-	 * one is still refused before it is buffered whole. Deno ignores it — its
-	 * upgrade takes no frame cap — leaving that per-message check alone. Every
-	 * runtime closes a message just over the limit with
-	 * `WS_CLOSE_MESSAGE_TOO_BIG`. The default sits far below `ws`'s own 100 MiB
-	 * and Bun's 16 MiB, so a build raising an endpoint's cap must pass it here
-	 * too.
+	 * one is still refused before it is buffered whole. Both close a message
+	 * just over the limit with `WS_CLOSE_MESSAGE_TOO_BIG`. The default sits far
+	 * below `ws`'s own 100 MiB and Bun's 16 MiB, so a build raising an
+	 * endpoint's cap must pass it here too.
 	 *
 	 * @default DEFAULT_WS_MAX_MESSAGE_BYTES
 	 */
@@ -84,8 +81,7 @@ export interface PrepareWebsocketOptions {
  * `create_app_server` as `AppServerOptions.create_upgrade_websocket`.
  * `attach_to_server` runs after `serve()` returns a `ServeHandle` —
  * Node uses it for `injectWebSocket(server)`, and it does nothing when the
- * factory was never called (no `ws_endpoints`); Deno and Bun leave it
- * undefined.
+ * factory was never called (no `ws_endpoints`); Bun leaves it undefined.
  */
 export interface PreparedWebsocket {
 	create_upgrade_websocket: (app: Hono) => UpgradeWebSocket;
@@ -94,14 +90,14 @@ export interface PreparedWebsocket {
 
 /**
  * Runtime adapter contract for the test-binary entry. Each adapter
- * (`testing/cross_backend/testing_server_node.ts`, `testing/cross_backend/testing_server_deno.ts`,
+ * (`testing/cross_backend/testing_server_node.ts`,
  * `testing/cross_backend/testing_server_bun.ts`) implements this and hands the shape to
  * `start_testing_server`.
  */
 export interface TestingServerAdapter {
-	/** Human-readable runtime label for log output (e.g. `"Node"`, `"Deno"`). */
+	/** Human-readable runtime label for log output (e.g. `"Node"`, `"Bun"`). */
 	runtime_label: string;
-	/** `RuntimeDeps` capability bundle from `create_node_runtime` / `create_deno_runtime`. */
+	/** `RuntimeDeps` capability bundle from `create_node_runtime`. */
 	runtime: RuntimeDeps;
 	/** Extract the raw TCP connection IP from a Hono context. */
 	get_connection_ip: (c: Context) => string | undefined;
@@ -145,7 +141,7 @@ export interface BuiltTestingApp {
 
 /** Options for `start_testing_server`. */
 export interface StartTestingServerOptions {
-	/** Runtime-boundary adapter (Node or Deno). */
+	/** Runtime-boundary adapter (Node or Bun). */
 	adapter: TestingServerAdapter;
 	/**
 	 * Daemon-info namespace — the app name the `daemon.json` is

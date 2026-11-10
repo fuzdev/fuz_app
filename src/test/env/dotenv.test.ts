@@ -227,23 +227,12 @@ describe('load_env_file', () => {
 		assert.deepStrictEqual(result, {});
 	});
 
-	test('returns null on missing file (Node ENOENT)', async () => {
+	test('returns null on missing file (ENOENT)', async () => {
 		const err: any = new Error('not found');
 		err.code = 'ENOENT';
 		const runtime = {
 			// eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
 			read_text_file: (_path: string): Promise<string> => Promise.reject(err)
-		};
-		const result = await load_env_file(runtime, '/missing');
-		assert.strictEqual(result, null);
-	});
-
-	test('returns null on missing file (Deno NotFound)', async () => {
-		class NotFound extends Error {
-			override name = 'NotFound';
-		}
-		const runtime = {
-			read_text_file: (_path: string): Promise<string> => Promise.reject(new NotFound())
 		};
 		const result = await load_env_file(runtime, '/missing');
 		assert.strictEqual(result, null);

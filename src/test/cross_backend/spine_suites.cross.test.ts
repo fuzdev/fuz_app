@@ -1,7 +1,7 @@
 /**
  * Every shipped single-backend cross suite against fuz_app's own spine, in one
  * `describe_spine_cross_suites` call — under each single-backend project, so
- * against the TS spine binaries (Node, Deno, Bun) and the Rust
+ * against the TS spine binaries (Node, Bun) and the Rust
  * `testing_spine_stub`. The spines mount everything, so nothing is excluded,
  * and the two spines agree, so the one override holds the standard bundle's
  * error coverage to the exact set it leaves uncovered on these spines, so a

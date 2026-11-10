@@ -10,7 +10,7 @@ It provides auth, sessions, accounts, database integration, middleware, and more
 the goal being an excellent and flexible whole-stack experience
 for developers, operators, and end-users.
 
-fuz_app supports deploying with Deno, Node, and Bun,
+fuz_app supports deploying with Node and Bun,
 to servers, static websites, and local-first binaries, with more to come,
 eventually with compatible alternatives written in Rust.
 
@@ -35,6 +35,7 @@ Some projects using fuz_app are in progress and will be open source soon.
 Usage currently looks something like this:
 
 ```ts
+import {serve} from '@hono/node-server';
 import {create_app_backend} from '@fuzdev/fuz_app/server/app_backend.ts';
 import {create_app_server} from '@fuzdev/fuz_app/server/app_server.ts';
 
@@ -42,7 +43,7 @@ const backend = await create_app_backend({...});
 
 const {app} = await create_app_server({backend, ...});
 
-Deno.serve({port: PORT, hostname: HOST}, app.fetch);
+serve({fetch: app.fetch, port: PORT, hostname: HOST});
 ```
 
 See [CLAUDE.md](CLAUDE.md) for more usage patterns and the AI-generated docs,

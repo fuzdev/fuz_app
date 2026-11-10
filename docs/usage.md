@@ -182,14 +182,14 @@ import { create_app_backend } from '@fuzdev/fuz_app/server/app_backend.ts';
 import { create_app_server } from '@fuzdev/fuz_app/server/app_server.ts';
 import { validate_server_env } from '@fuzdev/fuz_app/server/env.ts';
 import { create_audit_emitter } from '@fuzdev/fuz_app/auth/audit_emitter.ts';
-import { create_deno_runtime } from '@fuzdev/fuz_app/runtime/deno.ts';
+import { create_node_runtime } from '@fuzdev/fuz_app/runtime/node.ts';
 import { ConnectionRegistry } from '@fuzdev/fuz_app/actions/connection_registry.ts';
 import { loose_object, string } from '@fuzdev/fuz_schema/schema.ts';
 
-const runtime = create_deno_runtime([]);
+const runtime = create_node_runtime();
 
 // 1. Load env, validate (caller handles errors)
-const env = load_env(app_env_schema, (key) => Deno.env.get(key));
+const env = load_env(app_env_schema, runtime.env_get);
 const env_config = validate_server_env(env);
 if (!env_config.ok) {
 	/* log env_config.field + env_config.errors, exit */
@@ -296,11 +296,11 @@ revocation events without a polling delay — spread `protocol_actions`
 plus `create_standard_rpc_actions({...ctx.deps, notification_sender: connection_registry})`
 into `create_app_server`'s
 `ws_endpoints` factory and supply `create_upgrade_websocket`, which returns
-the runtime adapter's `upgradeWebSocket` helper. On Deno and Bun the helper
-is module-level, so the factory ignores the app it's handed:
+the runtime adapter's `upgradeWebSocket` helper. On Bun the helper is
+module-level, so the factory ignores the app it's handed:
 
 ```typescript
-import { upgradeWebSocket } from '@hono/deno'; // or '@hono/bun', whose `websocket` also goes to `Bun.serve`
+import { upgradeWebSocket } from '@hono/bun'; // whose `websocket` also goes to `Bun.serve`
 import { protocol_actions } from '@fuzdev/fuz_app/actions/protocol.ts';
 
 const { app, ws_endpoints } = await create_app_server({
@@ -963,7 +963,7 @@ import { ROLE_ADMIN } from '@fuzdev/fuz_app/auth/role_schema.ts';
 const { registry } = register_action_ws({
 	path: '/api/ws',
 	app,
-	upgradeWebSocket, // from the runtime adapter (`@hono/deno`, or `createNodeWebSocket({app})` on Node)
+	upgradeWebSocket, // from the runtime adapter (`@hono/bun`, or `createNodeWebSocket({app})` on Node)
 	allowed_origins, // required — `validate_server_env`'s `allowed_origins`
 	required_roles: [ROLE_ADMIN], // optional — omit for any authenticated account
 	actions: [...protocol_actions, ...my_actions],

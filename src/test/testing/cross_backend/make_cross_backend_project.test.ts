@@ -41,7 +41,7 @@ describe('make_cross_backend_project', () => {
 
 	test('timeouts are always emitted, never left to the consumer root config', () => {
 		const { test: project } = make_cross_backend_project({
-			name: 'cross_backend_ts_deno',
+			name: 'cross_backend_ts_node',
 			global_setup: GLOBAL_SETUP
 		});
 		assert.ok('testTimeout' in project);

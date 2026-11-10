@@ -185,7 +185,7 @@ export interface BackendCapabilities {
 	 * those frames are in the backend's hands before it can have admitted
 	 * anything.
 	 *
-	 * `true` for Node (`ws`), Deno, and the Rust spine (hyper hands the
+	 * `true` for Node (`ws`) and the Rust spine (hyper hands the
 	 * leftover bytes to the upgraded stream); `false` for a Bun backend that
 	 * upgrades after an asynchronous check, as one behind auth does — `Bun.serve`
 	 * answers such a request `400` (observed on Bun 1.4.3). A backend
@@ -247,7 +247,7 @@ export interface BackendCapabilities {
 	 *
 	 * `false` on Node: `@hono/node-ws` writes a refused upgrade to the raw
 	 * socket with `Content-Length: 0`, dropping the response body. `true` on
-	 * Deno, Bun, and the Rust spine, which send the response as built.
+	 * Bun and the Rust spine, which send the response as built.
 	 */
 	readonly ws_refusal_body: boolean;
 	/**

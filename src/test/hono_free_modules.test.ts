@@ -56,7 +56,6 @@ const HONO_SIDE: ReadonlySet<string> = new Set([
 	'testing/cross_backend/in_process_setup.ts',
 	'testing/cross_backend/testing_reset_actions.ts',
 	'testing/cross_backend/testing_server_bun.ts',
-	'testing/cross_backend/testing_server_deno.ts',
 	'testing/cross_backend/testing_server_node.ts',
 	'testing/middleware.ts',
 	'testing/rate_limiting.ts',

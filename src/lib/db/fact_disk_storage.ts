@@ -1,7 +1,8 @@
 /**
  * Filesystem CAS for fact bytes stored outside Postgres — the disk half of
  * `PgFactStore`, threaded over the injectable `runtime/*Deps` rather than raw
- * `node:fs`, so it runs unchanged under Node, Deno, and a mock runtime.
+ * `node:fs`, so it runs unchanged over `create_node_runtime` and the mock
+ * runtime.
  *
  * Large facts (over the embedded threshold) live on disk at the canonical
  * sharded layout `<facts_dir>/<shard>/<rest>` — `<shard>` is the first 2 hex
@@ -61,7 +62,7 @@ export const FACT_TMP_ORPHAN_MAX_AGE_MS = 60 * 60 * 1000;
 
 /**
  * Filesystem capabilities the disk CAS needs, drawn from `runtime/deps.ts`. A
- * full `RuntimeDeps` (Node or Deno) satisfies this; each function below picks
+ * full `RuntimeDeps` satisfies this; each function below picks
  * the narrow subset it actually uses.
  */
 export type FactDiskStorageDeps = Pick<FsReadDeps, 'stat' | 'readdir' | 'read_file'> &

@@ -29,7 +29,7 @@ const max_threads = Math.max(1, Math.ceil(availableParallelism() / 2));
  *
  * They are **opt-in** — excluded from the default run (so a bare `gro test`
  * is just `unit` + `db`) because they spawn external backends: the TS ones
- * recursively spawn `gro run` / `deno` / `bun`, the Rust ones need a local
+ * recursively spawn `gro run` / `bun`, the Rust ones need a local
  * Postgres and a Cargo workspace to rebuild the stub from. Enable them with
  * `FUZ_TEST_CROSS_BACKEND=1`, then select some, e.g.:
  *

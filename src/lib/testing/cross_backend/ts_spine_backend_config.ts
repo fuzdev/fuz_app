@@ -2,14 +2,14 @@ import '../assert_dev_env.ts';
 
 /**
  * Cross-process `BackendConfig` presets for fuz_app's domain-free **TS**
- * spine test binary (`src/test/cross_backend/testing_spine_server_{node,deno,bun}.ts`).
+ * spine test binary (`src/test/cross_backend/testing_spine_server_{node,bun}.ts`).
  *
  * The TS analog of `rust_spine_stub_backend_config` (which spawns the Rust spine):
  * these spawn fuz_app's own TS impl over real HTTP with no domain layer, so
- * the `cross_backend_ts_node` / `cross_backend_ts_deno` / `cross_backend_ts_bun`
- * self-test projects verify fuz_app's wire path in its own repo across all
- * three JS runtimes. All run against in-memory pglet (`memory://`) — no
- * external Postgres, unlike the Rust path.
+ * the `cross_backend_ts_node` / `cross_backend_ts_bun` self-test projects
+ * verify fuz_app's wire path in its own repo on both JS runtimes. All run
+ * against in-memory pglet (`memory://`) — no external Postgres, unlike the
+ * Rust path.
  *
  * The binary writes its daemon token to `{FUZ_TESTING_TS_SPINE_DIR}/run/daemon_token`;
  * anchoring the dir to `paths.root` makes that equal `paths.daemon_token_path`,
@@ -71,16 +71,6 @@ const ts_spine_capabilities: BackendCapabilities = Object.freeze({
 });
 
 /**
- * Capabilities for the **Deno** spine binary — `ts_spine_capabilities` with
- * `ws_refusal_body: true` (`Deno.upgradeWebSocket` leaves a refused upgrade's
- * response to Hono, body included).
- */
-const ts_spine_deno_capabilities = Object.freeze({
-	...ts_spine_capabilities,
-	ws_refusal_body: true
-});
-
-/**
  * Capabilities for the **Bun** spine binary — `ts_spine_capabilities` with
  * `ws_handshake_pipelining: false` and `ws_refusal_body: true` (`Bun.serve`
  * sends a refused upgrade's response as built).
@@ -102,23 +92,17 @@ const ts_spine_bun_capabilities = Object.freeze({
 /** Default port for the Node TS spine binary — slots beside the Rust `spine_stub` (1177). */
 export const TS_SPINE_NODE_DEFAULT_PORT = 1178;
 
-/** Default port for the Deno TS spine binary. */
-export const TS_SPINE_DENO_DEFAULT_PORT = 1179;
-
 /** Default port for the Bun TS spine binary. */
 export const TS_SPINE_BUN_DEFAULT_PORT = 1180;
 
 /** Entry module spawned for the Node TS spine binary. */
 export const TS_SPINE_NODE_ENTRY = 'src/test/cross_backend/testing_spine_server_node.ts';
 
-/** Entry module spawned for the Deno TS spine binary. */
-export const TS_SPINE_DENO_ENTRY = 'src/test/cross_backend/testing_spine_server_deno.ts';
-
 /** Entry module spawned for the Bun TS spine binary. */
 export const TS_SPINE_BUN_ENTRY = 'src/test/cross_backend/testing_spine_server_bun.ts';
 
 export interface TsSpineBackendConfigOptions {
-	/** Listening port. Defaults per runtime (`1178` Node, `1179` Deno, `1180` Bun). */
+	/** Listening port. Defaults per runtime (`1178` Node, `1180` Bun). */
 	readonly port?: number;
 	/** Database URL. Default `'memory://'` (in-memory pglet). */
 	readonly database_url?: string;
@@ -126,7 +110,7 @@ export interface TsSpineBackendConfigOptions {
 	 * Backend name — labels the spawn in errors and logs, and names its
 	 * directory under `os.tmpdir()` (`default_test_backend_paths`, namespaced
 	 * by the running repo). Defaults per runtime (`ts_spine_node`,
-	 * `ts_spine_deno`, `ts_spine_bun`). Give each
+	 * `ts_spine_bun`). Give each
 	 * backend spawned alongside another of its runtime its own name, so their
 	 * bootstrap and daemon-token files don't collide.
 	 */
@@ -255,52 +239,6 @@ export const ts_spine_bun_backend_config = (
 				...timing_env(options)
 			},
 			capabilities: ts_spine_bun_capabilities
-		}),
-		sse_path: SPINE_SSE_PATH
-	};
-};
-
-/**
- * `BackendConfig` for the Deno TS spine binary. The `--allow-*` set mirrors
- * the cross-process needs (net + read/write for the daemon-token file + env
- * + sys); `--unstable-detect-cjs` matches the ecosystem's Deno test entries.
- */
-export const ts_spine_deno_backend_config = (
-	options: TsSpineBackendConfigOptions = {}
-): BackendConfig => {
-	const {
-		port = TS_SPINE_DENO_DEFAULT_PORT,
-		database_url,
-		enable_login_rate_limit,
-		name = 'ts_spine_deno'
-	} = options;
-	const paths = default_test_backend_paths(name);
-	return {
-		...make_default_ts_backend_config({
-			name,
-			port,
-			start_command: [
-				'deno',
-				'run',
-				'--allow-net',
-				'--allow-read',
-				'--allow-env',
-				'--allow-write',
-				'--allow-sys',
-				'--allow-ffi',
-				'--allow-run',
-				'--unstable-detect-cjs',
-				TS_SPINE_DENO_ENTRY
-			],
-			database_url,
-			paths,
-			daemon_token_dir_env: TS_SPINE_DIR_ENV,
-			extra_env: {
-				...login_rate_limit_env(enable_login_rate_limit),
-				...action_rate_limit_env(options),
-				...timing_env(options)
-			},
-			capabilities: ts_spine_deno_capabilities
 		}),
 		sse_path: SPINE_SSE_PATH
 	};

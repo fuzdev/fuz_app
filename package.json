@@ -15,7 +15,7 @@
     "check": "gro check",
     "test": "gro test",
     "test:cross": "node --conditions=development src/test/cross_backend/run_cross.ts",
-    "test:cross:ts": "FUZ_TEST_CROSS_BACKEND=1 vitest run --project cross_backend_ts_node --project cross_backend_ts_deno --project cross_backend_ts_bun",
+    "test:cross:ts": "FUZ_TEST_CROSS_BACKEND=1 vitest run --project cross_backend_ts_node --project cross_backend_ts_bun",
     "test:cross:rust-spine-stub": "FUZ_TEST_CROSS_BACKEND=1 vitest run --project cross_backend_rust_spine_stub",
     "test:cross:parity": "FUZ_TEST_CROSS_BACKEND=1 vitest run --project cross_backend_parity",
     "test:cross:security": "FUZ_TEST_CROSS_BACKEND=1 vitest run --project cross_backend_security",
@@ -42,7 +42,6 @@
     "@fuzdev/fuz_util": ">=0.81.0",
     "@fuzdev/pglet-wasm": ">=0.1.2",
     "@hono/bun": ">=1",
-    "@hono/deno": ">=1",
     "@hono/node-server": ">=1",
     "@hono/node-ws": ">=1",
     "@node-rs/argon2": ">=2",
@@ -67,9 +66,6 @@
       "optional": true
     },
     "@hono/bun": {
-      "optional": true
-    },
-    "@hono/deno": {
       "optional": true
     },
     "@hono/node-server": {
@@ -106,7 +102,6 @@
     "@fuzdev/mdz": "^0.9.0",
     "@fuzdev/pglet-wasm": "^0.1.2",
     "@hono/bun": "^1.0.1",
-    "@hono/deno": "^1.0.3",
     "@hono/node-server": "^1.19.14",
     "@hono/node-ws": "^1.3.1",
     "@node-rs/argon2": "^2.0.2",

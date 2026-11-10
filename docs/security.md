@@ -729,8 +729,8 @@ What the WebSocket bound leaves:
   (`SocketOpenContext.ws`). A frame a consumer sends on it directly goes around
   the budget and the deadlines; `notify` on the same context goes through them.
 - **A socket the runtime does not report on.** The pump reads the runtime's
-  socket buffer (`bufferedAmount` on Node's `ws` and Deno, `getBufferedAmount()`
-  on Bun). An adapter whose socket exposes neither reads as never backed up:
+  socket buffer (`bufferedAmount` on Node's `ws`, `getBufferedAmount()` on
+  Bun). An adapter whose socket exposes neither reads as never backed up:
   its frames are budgeted while they wait for the pump, and no stall is
   detected.
 - **A closed socket is not counted.** A connection the server closed or
@@ -741,10 +741,10 @@ What the WebSocket bound leaves:
   where the runtime reports its buffer — the buffer holds less than
   `WS_WRITE_HIGH_WATER_BYTES` (64 KiB) plus one frame, and the close frame. On
   Node's `ws` and Bun a socket still holding any of it at the close deadline
-  (1 s) is cut. Deno's standard `WebSocket` cannot be
-  cut: a closed socket whose client is not reading stays in the runtime,
-  holding that much, until the runtime or the client ends it, and the cap does
-  not limit how many such sockets one account leaves behind.
+  (1 s) is cut. A socket with no way to be cut (no `terminate`, as on a
+  web-standard `WebSocket`) whose client is not reading would stay in the
+  runtime, holding that much, until the runtime or the client ends it, and the
+  cap would not limit how many such sockets one account leaves behind.
 - **One frame of any size.** A frame is accepted when nothing is waiting,
   whatever its size, so "one frame" above is as large as the largest message
   the server sends.
@@ -777,11 +777,11 @@ each implementation decides for itself:
   reply queued behind more than that mark of unwritten bytes is not delivered.
   The Rust spine discards every waiting frame.
 - **Cutting a socket.** The cut needs the runtime to drop a socket without the
-  closing handshake: Node's `ws` and Bun do. Deno's standard `WebSocket` cannot,
-  so there a stalled connection is closed with `WS_CLOSE_OUTBOUND_OVERFLOW`
-  instead — removed from the registry and its handlers cancelled all the same —
-  and a stalled or closed socket whose client is not reading stays in the
-  runtime until the runtime or the client ends it.
+  closing handshake: Node's `ws` and Bun do. On a socket that cannot be cut (no
+  `terminate`, as on a web-standard `WebSocket`) a stalled connection is closed
+  with `WS_CLOSE_OUTBOUND_OVERFLOW` instead — removed from the registry and its
+  handlers cancelled all the same — and a stalled or closed socket whose client
+  is not reading stays in the runtime until the runtime or the client ends it.
 - **A stalled SSE stream.** The budget bounds memory, not the connection: a
   stream whose client stopped reading stays open on its socket, holding nothing
   more, until the client goes away or the server shuts down.
@@ -1310,20 +1310,19 @@ they do and the refusal where they do not:
 
 - **Node** refuses every form above, and a repeated `Content-Length` header
   whether or not the values agree.
-- **Deno** and **Bun** refuse them too, except a repeated header with equal
-  values, which reaches the application as one combined value (`50, 50`) —
-  refused here.
+- **Bun** refuses them too, except a repeated header with equal values, which
+  reaches the application as one combined value (`50, 50`) — refused here.
 - **The Rust spine** (hyper) refuses a value that is not digits and a repeated
   header with differing values at parse, and accepts a repeated header with
   equal values as that value. It has no application-level check, and needs
   none: no unparsed length reaches its limit layer.
 
-Observed on Node 24.14.1, Deno 2.8.3 and Bun 1.4.3.
+Observed on Node 24.14.1 and Bun 1.4.3.
 
 A request carrying both `Transfer-Encoding` and a well-formed `Content-Length`
 is measured by the bytes that arrive, since the declared length does not frame
-a chunked body. The Node, Deno and Bun parsers refuse such a request with
-their own 400. hyper accepts it: it removes the `Content-Length`, whichever
+a chunked body. The Node and Bun parsers refuse such a request with their
+own 400. hyper accepts it: it removes the `Content-Length`, whichever
 header came first, frames the body as chunked, and closes the connection after
 its response, so the Rust spine's limit layer sees no declared length and
 counts the bytes that arrive (hyper 1.11.1 or later — an older hyper left a
@@ -1353,17 +1352,10 @@ the runtimes differ:
   deployments, and the Bun leg of the cross-backend suites, at the floor or
   later.
 - **The Rust spine** (hyper) closes at once, without waiting for the body.
-- **Deno** closes only once the whole declared body has arrived. The 413 goes
-  out at once, a request pipelined behind the body is never served, and a
-  client that withholds the body holds the connection open. Observed on Deno
-  2.8.3; neither the `Connection: close` header nor anything the handler does
-  with the request body changes it.
 
-No runtime serves a request behind one refused on its declared length. What
-differs is who reads the body: on Deno the cap bounds what the application
-processes, not what the transport reads off the socket — it takes the declared
-body before it closes. A reverse proxy with its own request-body cap refuses
-an oversized request before it reaches the runtime.
+No runtime serves a request behind one refused on its declared length. A
+reverse proxy with its own request-body cap refuses an oversized request
+before it reaches the runtime.
 
 The limit checks `Content-Length` first and answers from the header alone,
 falling through to Hono's `bodyLimit` only for a request with no
@@ -1393,7 +1385,7 @@ Implementation-defined:
   reaches a handler on either.
 - **A repeated `Content-Length` with equal values.** The TS spine answers 400
   `invalid_content_length` where the runtime hands the repeat to the
-  application (Deno, Bun; Node's parser refuses it first). hyper folds the
+  application (Bun; Node's parser refuses it first). hyper folds the
   repeat into one value before any layer runs, and the request is accepted.
 
 The cross-backend suite
@@ -2434,7 +2426,7 @@ headers.
 ## Process Hardening (systemd)
 
 When running behind nginx on a dedicated server, systemd hardening directives
-limit what the Deno process can do if compromised:
+limit what the server process can do if compromised:
 
 ```ini
 [Service]
@@ -2452,7 +2444,7 @@ ReadWritePaths=/var/lib/{app}
 - `ReadWritePaths` — Allowlist for writable directories (DB sockets, daemon token, logs)
 
 These are defense-in-depth: if an attacker achieves code execution through the
-Deno process, they are sandboxed to the declared paths. Combined with a
+server process, they are sandboxed to the declared paths. Combined with a
 dedicated non-root service user, this limits blast radius significantly.
 
 **When to adopt**: After the deployment is stabilized and server changes are

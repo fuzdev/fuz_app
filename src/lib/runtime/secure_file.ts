@@ -10,14 +10,11 @@
  * ratifies the shape zap produces; a hand-placed `0644` file fails at boot
  * instead of being read.
  *
- * The Node implementation lives here (`load_secure_file_node`, wired as
- * `create_node_runtime().read_secure_file`); the Deno runtime implements the
- * same contract over `Deno.open` in `runtime/deno.ts`, and the mock honors
- * the mode/size checks over its in-memory map (it has no file types). The real
- * runtimes refuse through the shared `assert_secure_regular_file` /
- * `assert_secure_mode` / `assert_secure_size` / `read_secure_bounded` helpers,
- * and the mock through the mode and size ones, so the checks — and their
- * operator-facing messages — can't drift between runtimes.
+ * The real implementation lives here (`load_secure_file_node`, wired as
+ * `create_node_runtime().read_secure_file`), and the mock honors the mode/size
+ * checks over its in-memory map (it has no file types). Both refuse through
+ * the shared `assert_secure_mode` / `assert_secure_size` helpers, so the
+ * checks — and their operator-facing messages — can't drift between them.
  *
  * @module
  */
@@ -42,23 +39,11 @@ export const MAX_SECURE_FILE_SIZE = 4096;
 const modes_apply = process.platform !== 'win32';
 
 /**
- * Refuse anything but a regular file — a FIFO, device node, socket, or
- * directory at the secret's path.
- *
- * @throws Error naming the path
- */
-export const assert_secure_regular_file = (path: string, is_file: boolean): void => {
-	if (!is_file) {
-		throw new Error(`not a regular file: ${path}`);
-	}
-};
-
-/**
  * Refuse any group/other-accessible mode (only `0600`/`0400` pass).
  *
- * Callers own the platform gating: the real runtimes skip the check where
- * modes aren't meaningful (Node on Windows, a `null` Deno mode); the mock
- * checks its simulated modes unconditionally.
+ * Callers own the platform gating: `load_secure_file_node` skips the check
+ * where modes aren't meaningful (Windows); the mock checks its simulated modes
+ * unconditionally.
  *
  * @throws Error naming the path, the offending mode, and the `chmod` fix
  */
@@ -79,32 +64,6 @@ export const assert_secure_size = (path: string, size: number): void => {
 	if (size > MAX_SECURE_FILE_SIZE) {
 		throw new Error(`secure file too large: ${path} (${size} bytes, max ${MAX_SECURE_FILE_SIZE})`);
 	}
-};
-
-/**
- * Drain `read_chunk` into a cap-bounded buffer.
- *
- * Reads up to cap + 1 bytes so a file growing between stat and read is still
- * caught (the stat-time size check alone races). `read_chunk` fills the given
- * target from the file's current position and returns the bytes read
- * (`null`/`0` = EOF) — the seam that lets the Node and Deno handle APIs share
- * one loop.
- *
- * @throws Error when more than `MAX_SECURE_FILE_SIZE` bytes arrive
- */
-export const read_secure_bounded = async (
-	path: string,
-	read_chunk: (target: Uint8Array) => Promise<number | null>
-): Promise<Uint8Array> => {
-	const buffer = new Uint8Array(MAX_SECURE_FILE_SIZE + 1);
-	let total = 0;
-	while (total < buffer.length) {
-		const n = await read_chunk(buffer.subarray(total));
-		if (n === null || n === 0) break;
-		total += n;
-	}
-	assert_secure_size(path, total);
-	return buffer.subarray(0, total);
 };
 
 /**
@@ -142,14 +101,21 @@ export const load_secure_file_node = async (path: string): Promise<Uint8Array> =
 	}
 	try {
 		const s = await handle.stat();
-		assert_secure_regular_file(path, s.isFile());
+		if (!s.isFile()) throw new Error(`not a regular file: ${path}`);
 		if (modes_apply) assert_secure_mode(path, s.mode);
 		assert_secure_size(path, s.size);
-		// `position: null` reads sequentially from the handle's own cursor.
-		return await read_secure_bounded(path, async (target) => {
-			const { bytesRead } = await handle.read(target, 0, target.length, null);
-			return bytesRead;
-		});
+		// read up to cap + 1 bytes so a file growing between stat and read is
+		// still caught (the stat-time size check alone races); `position: null`
+		// reads sequentially from the handle's own cursor
+		const buffer = new Uint8Array(MAX_SECURE_FILE_SIZE + 1);
+		let total = 0;
+		while (total < buffer.length) {
+			const { bytesRead } = await handle.read(buffer, total, buffer.length - total, null);
+			if (bytesRead === 0) break;
+			total += bytesRead;
+		}
+		assert_secure_size(path, total);
+		return buffer.subarray(0, total);
 	} finally {
 		await handle.close();
 	}

@@ -885,7 +885,7 @@ describe('create_proxy_middleware', () => {
 	});
 
 	test('IPv4-mapped IPv6 connection IP is trusted and normalized', async () => {
-		// Deno dual-stack: connection reports ::ffff:127.0.0.1, config has 127.0.0.1
+		// dual-stack socket: connection reports ::ffff:127.0.0.1, config has 127.0.0.1
 		const app = create_test_app(['127.0.0.1'], '::ffff:127.0.0.1');
 		const res = await app.request('/ip', { headers: { 'X-Forwarded-For': '203.0.113.1' } });
 		const body = await res.json();

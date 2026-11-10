@@ -14,8 +14,6 @@ import type {
 } from '#lib/runtime/deps.ts';
 
 // Type-level assertions — compile error if RuntimeDeps doesn't satisfy *Deps.
-// These tests exist for structural verification; create_deno_runtime itself
-// requires Deno APIs and can't run in vitest's Node environment.
 
 test('RuntimeDeps satisfies EnvDeps', () => {
 	const _check: EnvDeps = {} as RuntimeDeps;

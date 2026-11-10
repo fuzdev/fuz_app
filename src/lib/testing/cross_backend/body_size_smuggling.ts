@@ -24,9 +24,6 @@ import '../assert_dev_env.ts';
  * - **Bun** closes at once too, honouring that header. Bun 1.4.3 is the tested
  *   floor: an older Bun kept the connection after the 413 and served the next
  *   request (correctly framed), which fails this suite.
- * - **Deno** closes once the whole declared body has arrived, which this
- *   probe's single write delivers; a client that withholds the body holds a
- *   Deno connection open, and no request behind the body is served either way.
  * - **hyper** (the Rust spine) closes at once.
  *
  * The oversized body is rejected *with* a 413 on every backend — pinned
@@ -42,7 +39,7 @@ import '../assert_dev_env.ts';
  * request carrying both headers — the shape a request-smuggling attack hands a
  * server and a proxy that disagree on which one frames the body — with a
  * `GET` pipelined behind it. What the backends share is the outcome, not the
- * status: the request is refused with `400` (the Node, Deno and Bun parsers)
+ * status: the request is refused with `400` (the Node and Bun parsers)
  * or answered as its chunked body reads (hyper, which drops the
  * `Content-Length`), and either way the server **closes the connection** and
  * the pipelined request is **never served**. The status of the one response

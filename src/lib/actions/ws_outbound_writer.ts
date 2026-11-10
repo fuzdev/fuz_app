@@ -57,13 +57,13 @@
  * ## Runtimes
  *
  * The buffer is read through the socket Hono's `WSContext` wraps (`raw`):
- * `bufferedAmount` on Node's `ws` and on Deno's standard `WebSocket`,
+ * `bufferedAmount` on Node's `ws` (and on a web-standard `WebSocket`),
  * `getBufferedAmount()` on Bun's `ServerWebSocket`. A socket that exposes
  * neither reads as never backed up: its frames are still budgeted while they
  * wait for the pump, but nothing detects a stall. The cut is `terminate()`,
- * which Node's `ws` and Bun's `ServerWebSocket` have. Deno's standard
- * `WebSocket` has no way to drop a socket without the closing handshake, so
- * there a stalled connection is closed with `WS_CLOSE_OUTBOUND_OVERFLOW`
+ * which Node's `ws` and Bun's `ServerWebSocket` have. A socket with no
+ * `terminate` (a web-standard `WebSocket` has no way to drop a socket without
+ * the closing handshake) is closed at a stall with `WS_CLOSE_OUTBOUND_OVERFLOW`
  * instead — a frame the client reads only if it starts reading again — and
  * the close deadline cuts nothing: a closed socket whose client is not reading
  * stays in the runtime, holding what its buffer held at the close ("Closing"),
@@ -104,10 +104,10 @@ export const WS_CLOSE_WRITE_TIMEOUT = 1_000;
 
 /**
  * How many unwritten bytes a socket's buffer may hold before the pump stops
- * handing it waiting frames. Below it the pump keeps writing, so a runtime
- * that reports a frame as buffered until its write completes (Deno) is not
- * held to one frame per turn; at or over it frames wait in the budgeted queue
- * instead of the runtime's unbounded buffer.
+ * handing it waiting frames. Below it the pump keeps writing, so a socket
+ * holding a little unwritten data is not held to one frame per turn; at or
+ * over it frames wait in the budgeted queue instead of the runtime's
+ * unbounded buffer.
  */
 export const WS_WRITE_HIGH_WATER_BYTES = 64 * 1024;
 
@@ -277,9 +277,6 @@ export class WsOutboundWriter {
 			this.#clear_stall_timer();
 			this.#schedule_pump();
 			if (!this.#write(text)) return { kind: 'refused' };
-			// TODO: a runtime that reports a frame as buffered until its write
-			// completes (Deno) arms the deadline and the poll here and clears both
-			// a tick later, for each idle send
 			this.#watch(read_buffered_bytes(this.#ws));
 			return { kind: 'accepted' };
 		}

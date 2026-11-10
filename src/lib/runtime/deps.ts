@@ -2,8 +2,8 @@
  * Shared dependency interfaces for runtime operations.
  *
  * Small composable interfaces that functions accept for only the capabilities
- * they need. Both Deno and Node implementations satisfy all these interfaces
- * via `RuntimeDeps`.
+ * they need. `create_node_runtime` (Node and Bun) and `create_mock_runtime`
+ * satisfy all these interfaces via `RuntimeDeps`.
  *
  * @module
  */
@@ -19,7 +19,7 @@ export interface StatResult {
 	 * directories it is runtime-defined (real OS `stat` reports the directory
 	 * entry's on-disk size, not 0 — only `create_mock_runtime` reports 0).
 	 * Populated by every runtime factory (`create_node_runtime` /
-	 * `create_deno_runtime` / `create_mock_runtime`); optional so loose test
+	 * `create_mock_runtime`); optional so loose test
 	 * stubs that only assert `is_file` / `is_directory` don't have to supply it.
 	 * Callers that need an exact size (e.g. a streaming upload's
 	 * `Content-Length`) read it from a real runtime, where it is always present.
@@ -27,10 +27,10 @@ export interface StatResult {
 	size?: number;
 	/**
 	 * Last-modification time in epoch milliseconds, when the runtime reports it.
-	 * Populated by `create_node_runtime` / `create_deno_runtime`;
-	 * `create_mock_runtime` omits it (so a mock-backed sweep treats every temp as
-	 * unknown-age and never reaps). Optional so loose test stubs that only assert
-	 * `is_file` / `is_directory` don't have to supply it. The orphan-temp sweep
+	 * Populated by `create_node_runtime`; `create_mock_runtime` omits it (so a
+	 * mock-backed sweep treats every temp as unknown-age and never reaps).
+	 * Optional so loose test stubs that only assert `is_file` / `is_directory`
+	 * don't have to supply it. The orphan-temp sweep
 	 * (`db/fact_disk_storage.ts`) reads it to age out stale `.tmp` spill files.
 	 */
 	mtime_ms?: number;
@@ -258,7 +258,7 @@ export interface ProcessDeps {
 }
 
 /**
- * Full runtime capabilities returned by `create_deno_runtime` or `create_node_runtime`.
+ * Full runtime capabilities returned by `create_node_runtime` or `create_mock_runtime`.
  *
  * Extends all `*Deps` interfaces with additional app-level capabilities.
  * Functions should accept narrow `*Deps` interfaces, not this full type —

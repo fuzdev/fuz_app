@@ -2,7 +2,7 @@
  * Cross-process leg of the conformance-table runner proof.
  *
  * Runs the shared `conformance_proof_cases` over real HTTP against each
- * spawned spine (TS node/deno/bun + the Rust `testing_spine_stub`),
+ * spawned spine (TS node/bun + the Rust `testing_spine_stub`),
  * exercising each impl's real auth resolution. Same cases as the
  * in-process leg (`conformance.db.test.ts`) — same-green pins that the
  * runner drives both transports.

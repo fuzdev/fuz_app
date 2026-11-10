@@ -486,7 +486,7 @@ describe('WsOutboundWriter write deadline', () => {
 	test('a socket with no way to be cut is closed with the overflow code instead', async () => {
 		vi.useFakeTimers();
 		const fake = create_fake_ws({ stalled: true });
-		// Deno's standard WebSocket: a buffer to read, no `terminate`
+		// a web-standard WebSocket: a buffer to read, no `terminate`
 		(fake.socket as { terminate?: unknown }).terminate = undefined;
 		const { writer, stalls } = create_writer(fake, 1_000_000);
 		writer.push('x'.repeat(WS_WRITE_HIGH_WATER_BYTES));

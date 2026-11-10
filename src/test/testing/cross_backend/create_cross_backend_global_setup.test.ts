@@ -69,14 +69,14 @@ describe('create_cross_backend_global_setup', () => {
 						calls.push('rust config');
 						return stub_config('postgres://localhost/app_test_rust');
 					},
-					deno: () => {
-						calls.push('deno config');
+					node: () => {
+						calls.push('node config');
 						return stub_config('memory://');
 					}
 				},
 				before_spawn: {
 					rust: () => calls.push('rust hook'),
-					deno: () => calls.push('deno hook')
+					node: () => calls.push('node hook')
 				},
 				ensure_databases: true
 			},

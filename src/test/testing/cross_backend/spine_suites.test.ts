@@ -30,14 +30,11 @@ const CROSS_BACKEND_DIR = fileURLToPath(
 );
 
 /**
- * The adapters that load only on their own runtime (they read `Bun` / `Deno` at
- * module scope), so the guard can't import them under Node. Their source must
+ * The adapters that load only on their own runtime (they read `Bun` at module
+ * scope), so the guard can't import them under Node. Their source must
  * not name a `describe_` identifier at all, whatever the export form.
  */
-const RUNTIME_BOUND_MODULES: ReadonlySet<string> = new Set([
-	'testing_server_bun.ts',
-	'testing_server_deno.ts'
-]);
+const RUNTIME_BOUND_MODULES: ReadonlySet<string> = new Set(['testing_server_bun.ts']);
 
 /**
  * Every module under `testing/cross_backend/` that exports a `describe_*`

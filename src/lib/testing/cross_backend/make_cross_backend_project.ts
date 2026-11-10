@@ -12,7 +12,7 @@
  * ```ts
  * const cross_backend_projects = process.env.FUZ_TEST_CROSS_BACKEND
  *   ? [
- *       make_cross_backend_project({name: 'cross_backend_ts_deno', global_setup: GLOBAL_SETUP}),
+ *       make_cross_backend_project({name: 'cross_backend_ts_node', global_setup: GLOBAL_SETUP}),
  *       make_cross_backend_project({name: 'cross_backend_rust', global_setup: GLOBAL_SETUP}),
  *     ]
  *   : [];
@@ -58,7 +58,7 @@ export interface CrossBackendProjectOptions {
 	 * vitest project name. `create_cross_backend_global_setup` derives the
 	 * backend name from it (by default stripping a `cross_backend_(ts_)?`
 	 * prefix), so name projects `cross_backend_<backend>` (e.g.
-	 * `cross_backend_rust`, `cross_backend_ts_deno`).
+	 * `cross_backend_rust`, `cross_backend_ts_node`).
 	 */
 	readonly name: string;
 	/**
