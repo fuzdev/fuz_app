@@ -206,7 +206,7 @@ export const start_testing_server = async (options: StartTestingServerOptions): 
 
 	const stale = await read_daemon_info(runtime, daemon_name);
 	if (stale) {
-		if (await is_daemon_running(runtime, stale.pid)) {
+		if (is_daemon_running(runtime, stale.pid)) {
 			log.warn('found running server', stale);
 		} else {
 			log.warn(`stale daemon.json (pid ${stale.pid} not running), replacing`);

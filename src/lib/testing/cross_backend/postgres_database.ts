@@ -10,6 +10,13 @@ import '../assert_dev_env.ts';
  * `ensure_database_for_url`), so a test role without `CREATEDB` is never
  * required by default.
  *
+ * `ensure_database` runs `createdb` from `PATH` with the test process's
+ * environment through a synchronous `execFileSync`, unlike the dev helpers in
+ * `dev/setup.ts`, which take program factories from a task root: it runs in a
+ * vitest global setup, which is no task root and has no spawn of its own to
+ * build a handle from. Its argv and password environment come from the same
+ * `db/postgres_url.ts` the dev helpers use.
+ *
  * @module
  */
 
@@ -17,6 +24,13 @@ import { execFileSync } from 'node:child_process';
 
 import { create_db } from '../../db/create_db.ts';
 import { pg_error_code } from '../../db/pg_error.ts';
+import {
+	is_createdb_already_exists,
+	rewrite_query_pairs,
+	to_createdb_args,
+	to_maintenance_database_url,
+	to_postgres_password_env
+} from '../../db/postgres_url.ts';
 
 /** The URL protocols a Postgres connection string carries. */
 export const POSTGRES_URL_PROTOCOLS: ReadonlySet<string> = new Set(['postgres:', 'postgresql:']);
@@ -47,16 +61,6 @@ export const with_database_name = (database_url: string, database: string): stri
 };
 
 /**
- * The URL `createdb` connects through to create a database on the server
- * `server_url` names — the same URL with its database replaced by `postgres`.
- *
- * @param server_url - a `postgres://` URL on the target server
- * @returns the URL of that server's `postgres` maintenance database
- */
-export const to_maintenance_database_url = (server_url: string): string =>
-	with_database_name(server_url, 'postgres');
-
-/**
  * A database URL fit to print: the password, when there is one, replaced —
  * in the userinfo and in the `password` query parameter `pg` and libpq also
  * take. The whole URL rather than its host, which is empty for a socket URL
@@ -68,20 +72,10 @@ export const to_maintenance_database_url = (server_url: string): string =>
 export const redact_database_url = (database_url: string): string => {
 	const url = new URL(database_url);
 	if (url.password) url.password = 'REDACTED';
-	if (url.searchParams.has('password')) url.searchParams.set('password', 'REDACTED');
+	// the raw pairs, so every other parameter prints as written
+	rewrite_query_pairs(url, (pair, key) => (key === 'password' ? 'password=REDACTED' : pair));
 	return url.href;
 };
-
-/**
- * Whether `createdb`'s stderr is its refusal of a database that already
- * exists — Postgres's `database "<name>" already exists`, which `createdb`
- * prints after `database creation failed: ERROR:`.
- *
- * @param stderr - what `createdb` wrote to stderr
- * @param database - the database it was asked to create
- */
-export const is_createdb_already_exists = (stderr: string, database: string): boolean =>
-	stderr.includes(`database "${database}" already exists`);
 
 /** Dependencies of `ensure_database` — the warning a failed `createdb` is reported with. */
 export interface EnsureDatabaseDeps {
@@ -97,10 +91,13 @@ const default_ensure_database_deps: EnsureDatabaseDeps = {
  *
  * Which server it lands on depends on `server_url`. Given one, the database is
  * created on the server that URL names: `createdb` connects through the URL
- * with its database swapped for the `postgres` maintenance database, so host,
- * port, role and query parameters all come from the URL, and a password goes
- * to `createdb` in its environment, never its arguments. Without one,
- * `createdb` reads the libpq environment (`PGHOST` / `PGPORT` / `PGUSER`).
+ * with its database swapped for the maintenance database
+ * (`to_maintenance_database_url`), so host, port, role and query parameters
+ * all come from the URL, and a password goes to `createdb` in its environment
+ * (`to_postgres_password_env`), never its arguments. Without one, `createdb`
+ * reads the libpq environment (`PGHOST` / `PGPORT` / `PGUSER`). The argv is
+ * `to_createdb_args`'s: `--no-password`, so it never waits on a prompt, and
+ * `--` ahead of the name.
  *
  * Idempotent and never throws: a database that already exists is the quiet
  * success case (`is_createdb_already_exists`). Any other failure — no
@@ -118,17 +115,15 @@ export const ensure_database = (
 	server_url?: string,
 	deps: EnsureDatabaseDeps = default_ensure_database_deps
 ): boolean => {
-	const args = [database];
-	const env = { ...process.env };
-	if (server_url !== undefined) {
-		const url = new URL(to_maintenance_database_url(server_url));
-		// any local user can read the process list
-		const password = url.searchParams.get('password') ?? decodeURIComponent(url.password);
-		if (password) env.PGPASSWORD = password;
-		url.password = '';
-		url.searchParams.delete('password');
-		args.unshift(`--maintenance-db=${url.href}`);
+	const password_env = server_url === undefined ? {} : to_postgres_password_env(server_url);
+	if (password_env === null) {
+		deps.warn(
+			`ensure_database: createdb ${database} not run — the URL's password has a malformed percent-escape`
+		);
+		return false;
 	}
+	const args = to_createdb_args(database, server_url);
+	const env = { ...process.env, ...password_env };
 	try {
 		execFileSync('createdb', args, { stdio: ['ignore', 'ignore', 'pipe'], env, encoding: 'utf-8' });
 		return true;
@@ -224,7 +219,9 @@ export const empty_owned_database = async (
 		}
 	} catch (error) {
 		// 3D000 invalid_catalog_name — the server answered, the database is missing
-		const maintenance_url = redact_database_url(to_maintenance_database_url(database_url));
+		const maintenance_url = redact_database_url(
+			to_maintenance_database_url(database_url, owned_name)
+		);
 		const fix =
 			pg_error_code(error) === '3D000'
 				? `the database does not exist and \`createdb\` did not create it — run ` +

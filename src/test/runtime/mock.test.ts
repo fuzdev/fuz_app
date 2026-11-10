@@ -10,7 +10,9 @@ import { describe, assert, test } from 'vitest';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
 import {
+	create_mock_program,
 	create_mock_runtime,
+	mock_program_exit,
 	reset_mock_runtime,
 	set_mock_stdin,
 	MockExitError
@@ -27,7 +29,7 @@ describe('create_mock_runtime', () => {
 		assert.strictEqual(rt.mock_fs.size, 0);
 		assert.strictEqual(rt.mock_dirs.size, 0);
 		assert.strictEqual(rt.exit_calls.length, 0);
-		assert.strictEqual(rt.command_calls.length, 0);
+		assert.strictEqual(rt.mock_processes.size, 0);
 		assert.strictEqual(rt.stdout_writes.length, 0);
 	});
 
@@ -237,40 +239,64 @@ describe('process', () => {
 	});
 });
 
-describe('commands', () => {
-	test('run_command records calls and returns success by default', async () => {
+describe('probe_process', () => {
+	test('a pid with no mock process is not found', () => {
 		const rt = create_mock_runtime();
-
-		const result = await rt.run_command('git', ['status']);
-
-		assert.strictEqual(result.success, true);
-		assert.strictEqual(result.code, 0);
-		assert.strictEqual(rt.command_calls.length, 1);
-		assert.strictEqual(rt.command_calls[0]!.cmd, 'git');
+		assert.strictEqual(rt.probe_process(4242), 'not_found');
 	});
 
-	test('run_command returns mock result when configured', async () => {
+	test('answers from mock_processes', () => {
 		const rt = create_mock_runtime();
-		rt.mock_command_results.set('git status', {
-			success: false,
-			code: 1,
+		rt.mock_processes.set(4242, 'running');
+		rt.mock_processes.set(1, 'not_permitted');
+		assert.strictEqual(rt.probe_process(4242), 'running');
+		assert.strictEqual(rt.probe_process(1), 'not_permitted');
+	});
+
+	test('a pid naming no single process throws, as the real runtime does', () => {
+		const rt = create_mock_runtime();
+		rt.mock_processes.set(0, 'running');
+		for (const pid of [0, -1, 1.5, NaN, 2 ** 31]) {
+			assert.throws(() => rt.probe_process(pid), RangeError, undefined, String(pid));
+		}
+	});
+});
+
+describe('create_mock_program', () => {
+	test('records each call and exits 0 by default', async () => {
+		const program = create_mock_program();
+		const output = await program.out(['--version']);
+		assert.deepStrictEqual(output, mock_program_exit(0));
+		assert.deepStrictEqual(program.calls, [['--version']]);
+	});
+
+	test('answers from respond, and records a copy of the args', async () => {
+		const program = create_mock_program((args) =>
+			args[0] === 'fail' ? mock_program_exit(2, 'boom') : mock_program_exit(0, '', 'ok')
+		);
+		const args = ['fail'];
+		assert.deepStrictEqual(await program.out(args), {
+			kind: 'exited',
+			code: 2,
 			stdout: '',
-			stderr: 'fatal'
+			stderr: 'boom'
 		});
-
-		const result = await rt.run_command('git', ['status']);
-
-		assert.strictEqual(result.success, false);
-		assert.strictEqual(result.code, 1);
+		args.push('mutated');
+		assert.deepStrictEqual(await program.out(['x']), {
+			kind: 'exited',
+			code: 0,
+			stdout: 'ok',
+			stderr: ''
+		});
+		assert.deepStrictEqual(program.calls, [['fail'], ['x']]);
 	});
 
-	test('run_command_inherit records calls', async () => {
-		const rt = create_mock_runtime();
-
-		const code = await rt.run_command_inherit('npm', ['install']);
-
-		assert.strictEqual(code, 0);
-		assert.strictEqual(rt.command_inherit_calls.length, 1);
+	test('a respond that throws rejects the call, as a program that cannot start', async () => {
+		const program = create_mock_program(() => {
+			throw new Error('launch failed');
+		});
+		await assert_rejects(() => program.out([]), /launch failed/);
+		assert.strictEqual(program.calls.length, 1);
 	});
 });
 
@@ -314,7 +340,8 @@ describe('reset_mock_runtime', () => {
 		rt.mock_env.set('X', '1');
 		rt.mock_fs.set('/f', 'c');
 		rt.mock_dirs.add('/d');
-		rt.mock_command_results.set('k', { success: true, code: 0, stdout: '', stderr: '' });
+		rt.mock_fs_modes.set('/f', 0o600);
+		rt.mock_processes.set(4242, 'running');
 		try {
 			rt.exit(0);
 		} catch {
@@ -327,9 +354,9 @@ describe('reset_mock_runtime', () => {
 		assert.strictEqual(rt.mock_fs.size, 0);
 		assert.strictEqual(rt.mock_dirs.size, 0);
 		assert.strictEqual(rt.exit_calls.length, 0);
-		assert.strictEqual(rt.command_calls.length, 0);
+		assert.strictEqual(rt.mock_fs_modes.size, 0);
+		assert.strictEqual(rt.mock_processes.size, 0);
 		assert.strictEqual(rt.stdout_writes.length, 0);
-		assert.strictEqual(rt.mock_command_results.size, 0);
 		assert.strictEqual(rt.stdin_buffer, null);
 	});
 });

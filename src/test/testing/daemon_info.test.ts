@@ -10,6 +10,8 @@ import {
 	is_daemon_running,
 	get_app_dir
 } from '#lib/testing/daemon_info.ts';
+import type { ProcessProbe } from '#lib/runtime/deps.ts';
+import { create_node_runtime } from '#lib/runtime/node.ts';
 
 const MOCK_INFO: DaemonInfo = {
 	version: 1,
@@ -199,29 +201,42 @@ describe('read_daemon_info', () => {
 });
 
 describe('is_daemon_running', () => {
-	test('returns true when process exists', async () => {
-		const runtime = {
-			run_command: (_cmd: string, _args: Array<string>) =>
-				Promise.resolve({
-					success: true,
-					code: 0,
-					stdout: '',
-					stderr: ''
-				})
+	/** A probe answering `probe` for every pid, recording what it was asked. */
+	const create_probe = (probe: ProcessProbe) => {
+		const probed: Array<number> = [];
+		return {
+			probed,
+			probe_process: (pid: number): ProcessProbe => {
+				probed.push(pid);
+				return probe;
+			}
 		};
-		assert.strictEqual(await is_daemon_running(runtime, 12345), true);
+	};
+
+	test('a running process is running', () => {
+		const runtime = create_probe('running');
+		assert.strictEqual(is_daemon_running(runtime, 12345), true);
+		assert.deepStrictEqual(runtime.probed, [12345]);
 	});
 
-	test('returns false when process does not exist', async () => {
-		const runtime = {
-			run_command: (_cmd: string, _args: Array<string>) =>
-				Promise.resolve({
-					success: false,
-					code: 1,
-					stdout: '',
-					stderr: 'No such process'
-				})
-		};
-		assert.strictEqual(await is_daemon_running(runtime, 99999), false);
+	test('a process that does not exist is not running', () => {
+		assert.strictEqual(is_daemon_running(create_probe('not_found'), 99999), false);
+	});
+
+	test("another user's process is not the daemon", () => {
+		// its pid was reused by a process this one may not signal
+		assert.strictEqual(is_daemon_running(create_probe('not_permitted'), 1), false);
+	});
+
+	test('a pid naming no single process is not running, and is never probed', () => {
+		const runtime = create_probe('running');
+		for (const pid of [0, -1, 1.5, NaN, Infinity, 2 ** 31]) {
+			assert.strictEqual(is_daemon_running(runtime, pid), false, String(pid));
+		}
+		assert.deepStrictEqual(runtime.probed, []);
+	});
+
+	test('the node runtime finds this process running', () => {
+		assert.strictEqual(is_daemon_running(create_node_runtime([]), process.pid), true);
 	});
 });

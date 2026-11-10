@@ -21,6 +21,15 @@ the code.
 - `create_db.ts` — URL-based driver auto-detection (`postgres` /
   `pglite-file` for `file://` / `pglet-memory` for `memory://`, over
   `@fuzdev/pglet-wasm`). An in-memory PGlite is `create_pglite_db(new PGlite())`.
+- `postgres_url.ts` — the libpq side of a Postgres `DATABASE_URL`, pure:
+  `parse_db_name`, `to_maintenance_database_url` (database swapped for
+  `postgres`, or `template1` for a target named `postgres`; password removed),
+  `to_postgres_password_env` (`{PGPASSWORD}` or `{}`), `to_createdb_args` /
+  `to_dropdb_args` (`--no-password`, `--maintenance-db`, `--` before the name),
+  `is_createdb_already_exists`, and `rewrite_query_pairs` — every query rewrite
+  edits raw pairs, since `URLSearchParams` reserializes `%20` as `+`, which
+  libpq reads literally. Used by `dev/setup.ts` and
+  `testing/cross_backend/postgres_database.ts`.
 - `db_pg.ts` / `db_pglite.ts` / `db_pglet.ts` — driver adapters. `db_pg.ts`'s
   `create_pg_pool` builds the pool with a bounded checkout
   (`connectionTimeoutMillis`, `DEFAULT_DB_CHECKOUT_TIMEOUT_MS`) whose failure

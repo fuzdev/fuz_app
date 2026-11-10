@@ -1862,6 +1862,64 @@ The `memo` table ships but **MemoStore** (computation caching) has no
 implementation yet, and orphan-fact GC has query helpers but no wired
 action. The Rust spine twins the fact layer (`fuz_fact`, `fuz_fact_serving`).
 
+## Dev Setup Tasks
+
+`dev/setup.ts` holds the helpers a project's dev setup and reset tasks
+compose: the env file, the bootstrap token, the database, a seeded dev
+account. File and env access come from a `RuntimeDeps`. The Postgres client
+programs come through `PostgresProgramDeps`, each a `ProgramFactory`
+(`runtime/deps.ts`): a function the task root writes over its spawn that makes
+the program with extra environment, or returns `null` when it isn't
+installed. The root decides which `createdb` and `dropdb` run and what they
+see; the helper adds only the URL's password. A gro `SpawnProgram` satisfies
+`Program`:
+
+```typescript
+// src/tasks/dev_setup.task.ts
+import { create_database, read_env_var, setup_env_file } from '@fuzdev/fuz_app/dev/setup.ts';
+import { create_node_runtime } from '@fuzdev/fuz_app/runtime/node.ts';
+import { spawn } from '@fuzdev/gro/spawn.ts';
+import type { Task } from '@fuzdev/gro/task.ts';
+
+export const task: Task = {
+	summary: 'first-time setup: .env.development and the database',
+	run: async () => {
+		const runtime = create_node_runtime([]);
+		await setup_env_file(runtime, '.env.development', '.env.development.example');
+		const database_url = await read_env_var(runtime, '.env.development', 'DATABASE_URL');
+		await create_database(
+			// `null` when it isn't installed, which `create_database` reports
+			{ createdb: (env) => spawn.find('createdb', { pass_env: ['PG*'], env }) },
+			database_url ?? ''
+		);
+	}
+};
+```
+
+The database helpers connect where the app connects: to the server
+`DATABASE_URL` names. Each program runs with
+`--maintenance-db=<the URL with its database swapped for postgres>`
+(`template1` when the database is `postgres` itself), so host, port, role,
+and query parameters come from the URL, and `--no-password` keeps it from
+prompting. `postgres://localhost/app` reaches `localhost` over TCP; write
+`postgres:///app` for the default Unix socket. A URL's password reaches the
+program as `PGPASSWORD` in its environment, never its argv, where the process
+list would show it — the factory's `env`, which wins over a host `PGPASSWORD`
+that `pass_env` forwards. A URL with no password leaves the program to libpq's
+other sources: a `PGPASSWORD` passed through, or `~/.pgpass` (gro's spawn
+passes `HOME`). `pass_env: ['PG*']` forwards the libpq variables a shell would
+have given it; anything else the program needs is the root's to pass. A
+failure is reported as it happened, never retried another way.
+
+A URL that isn't Postgres runs neither program: `file://` (PGlite) resets by
+removing the `pglite_data_dir` the caller names, and `memory://` has nothing
+to reset.
+
+On Debian, `createdb` and `dropdb` are links to the `pg_wrapper` script,
+which dispatches on the name it was run as. gro's spawn runs a script by the
+path it was found at from `@fuzdev/gro` 0.232.0; an earlier gro runs it as
+`pg_wrapper`, which exits 0 having done nothing.
+
 ## Testing with Database Factories
 
 ```typescript

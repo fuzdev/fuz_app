@@ -1120,8 +1120,9 @@ var your binary reads its daemon-token directory from — that directory set so
 created on the server it names when it's missing (idempotent `createdb`;
 `ensure_database_for_url` in `testing/cross_backend/postgres_database.ts` is
 the same for a setup of your own), so there is no manual `createdb` step. The
-same module has `with_database_name`, `to_maintenance_database_url` and
-`redact_database_url` for a setup that runs a second backend beside the first.
+same module has `with_database_name` and `redact_database_url` for a setup
+that runs a second backend beside the first; `to_maintenance_database_url` is
+in `db/postgres_url.ts`.
 
 A Rust backend spawns its built binary, not `cargo run`: a build inside the
 spawn runs in the startup window, where a cold one can time out, and its output

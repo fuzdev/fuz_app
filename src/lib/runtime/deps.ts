@@ -5,6 +5,11 @@
  * they need. `create_node_runtime` (Node and Bun) and `create_mock_runtime`
  * satisfy all these interfaces via `RuntimeDeps`.
  *
+ * Running a program is not a `RuntimeDeps` member: a helper that spawns takes
+ * each program it runs as its own `Program` handle, or a `ProgramFactory`
+ * that makes one, from the composition root, so no helper resolves a command
+ * name against the ambient `PATH` and environment.
+ *
  * @module
  */
 
@@ -34,33 +39,6 @@ export interface StatResult {
 	 * (`db/fact_disk_storage.ts`) reads it to age out stale `.tmp` spill files.
 	 */
 	mtime_ms?: number;
-}
-
-/**
- * Result of executing a command.
- *
- * `timed_out` is present only when `timeout_ms` was passed in `RunCommandOptions`
- * and the process was killed after exceeding the timeout. Callers that pass
- * `timeout_ms` should check this flag to distinguish timeout from exit-code failure.
- */
-export interface CommandResult {
-	success: boolean;
-	code: number;
-	stdout: string;
-	stderr: string;
-	timed_out?: boolean;
-}
-
-/**
- * Options for `run_command`.
- */
-export interface RunCommandOptions {
-	/** Working directory for the child process. */
-	cwd?: string;
-	/** AbortSignal to terminate the child process. */
-	signal?: AbortSignal;
-	/** Kill the process and return `timed_out: true` after this many milliseconds. */
-	timeout_ms?: number;
 }
 
 /**
@@ -205,23 +183,58 @@ export interface FsRemoveDeps {
 }
 
 /**
- * Command execution.
+ * How a program run ended: exited with a code, ended by a signal, or stopped
+ * after a timeout or an abort (with the code or signal it then ended by, the
+ * other `null`).
+ *
+ * The shape of `SpawnResult` in `@fuzdev/gro/spawn.ts`, declared here so a
+ * gro program handle satisfies `Program` without fuz_app depending on gro.
  */
-export interface CommandDeps {
+export type ProgramResult =
+	| { readonly kind: 'exited'; readonly code: number }
+	| { readonly kind: 'signaled'; readonly signal: string }
+	| {
+			readonly kind: 'timed_out' | 'aborted';
+			readonly code: number | null;
+			readonly signal: string | null;
+	  };
+
+/** A program run's result with its captured output, as UTF-8 text. */
+export type ProgramOutput = ProgramResult & {
+	readonly stdout: string;
+	readonly stderr: string;
+};
+
+/**
+ * The capability to run one program, resolved and given its environment by
+ * whoever made it: the helper that holds it can run that program with
+ * arguments it chooses, and nothing else.
+ *
+ * A gro `SpawnProgram` (`spawn.program(name, options)` or `spawn.find`, from
+ * `@fuzdev/gro/spawn.ts`) satisfies it, built at a composition root that
+ * decides which binary runs and which environment it gets. A program is
+ * missing when `spawn.find` returns `null`, so a helper takes `Program | null`,
+ * or a `ProgramFactory`, where a missing tool is something to report rather
+ * than a bug.
+ */
+export interface Program {
 	/**
-	 * Run a command and return the result. Never throws — failures surface as
-	 * `success: false`.
-	 *
-	 * `options.cwd` sets the child's working directory. `options.signal` aborts
-	 * the child when the signal fires. `options.timeout_ms` kills the child
-	 * after the given duration and returns `timed_out: true` on the result.
+	 * Run the program with `args` (argv only, never a shell string), stdin
+	 * closed, and capture its output. A non-zero exit is a result, not a throw;
+	 * a program that can't start throws.
 	 */
-	run_command: (
-		cmd: string,
-		args: Array<string>,
-		options?: RunCommandOptions
-	) => Promise<CommandResult>;
+	out: (args: ReadonlyArray<string>) => Promise<ProgramOutput>;
 }
+
+/**
+ * Make a `Program` whose environment gains `env`, or `null` when the program
+ * isn't installed — for a helper that learns at run time what the program's
+ * environment must carry (a password read from a URL), where a gro handle's
+ * environment is fixed when it's made. At a gro task root:
+ * `(env) => spawn.find('createdb', {pass_env: ['PG*'], env})`, where `env`'s
+ * values win over the ones `pass_env` forwards.
+ */
+export type ProgramFactory = (env: Readonly<Record<string, string>>) => Program | null;
 
 /**
  * HTTP fetch capability.
@@ -258,6 +271,27 @@ export interface ProcessDeps {
 }
 
 /**
+ * Whether a process exists, as signal 0 reports it: `'running'`, `'not_permitted'`
+ * (it exists, but this process may not signal it — another user's, `EPERM`),
+ * or `'not_found'` (`ESRCH`).
+ */
+export type ProcessProbe = 'running' | 'not_permitted' | 'not_found';
+
+/**
+ * Process liveness, with no program spawned.
+ */
+export interface ProcessProbeDeps {
+	/**
+	 * Probe the process `pid` names by sending it signal 0, which checks that
+	 * it exists and may be signaled and delivers nothing.
+	 *
+	 * @throws RangeError when `pid` is not a positive integer within `pid_t`
+	 * range — 0 and negative numbers name process groups, never one process
+	 */
+	probe_process: (pid: number) => ProcessProbe;
+}
+
+/**
  * Full runtime capabilities returned by `create_node_runtime` or `create_mock_runtime`.
  *
  * Extends all `*Deps` interfaces with additional app-level capabilities.
@@ -272,10 +306,10 @@ export interface RuntimeDeps
 		FsWriteDeps,
 		FsStreamDeps,
 		FsRemoveDeps,
-		CommandDeps,
 		FetchDeps,
 		TerminalDeps,
 		ProcessDeps,
+		ProcessProbeDeps,
 		LogDeps {
 	/** Get all environment variables. */
 	env_all: () => Record<string, string>;
@@ -283,6 +317,4 @@ export interface RuntimeDeps
 	readonly args: ReadonlyArray<string>;
 	/** Get current working directory. */
 	cwd: () => string;
-	/** Run a command with inherited stdout/stderr (output goes directly to terminal). */
-	run_command_inherit: (cmd: string, args: Array<string>) => Promise<number>;
 }

@@ -1,10 +1,13 @@
 /**
  * Dev workflow helpers for setup, reset, and database management.
  *
- * Composable functions that consumer projects (tx, visiones, etc.) use in their
- * `scripts/dev_setup.ts`, `scripts/dev_reset.ts`, etc. All functions accept narrow
- * `*Deps` interfaces from `runtime/deps.ts` — pass a `RuntimeDeps` instance
- * created by `create_node_runtime()`.
+ * Composable functions that consumer projects use in their dev setup and
+ * reset tasks. File and env access come through narrow `*Deps` interfaces
+ * from `runtime/deps.ts`, which a `RuntimeDeps` from `create_node_runtime()`
+ * satisfies. The Postgres client programs the database helpers run come
+ * through `PostgresProgramDeps`, each a factory the task root writes over its
+ * spawn (with gro, `(env) => spawn.find('createdb', {pass_env: ['PG*'], env})`),
+ * so the root decides which binary runs and which environment it sees.
  *
  * @module
  */
@@ -12,14 +15,22 @@
 import { to_hex } from '@fuzdev/fuz_util/hex.ts';
 
 import type {
-	CommandDeps,
-	CommandResult,
 	EnvDeps,
 	FsReadDeps,
 	FsRemoveDeps,
-	FsWriteDeps
+	FsWriteDeps,
+	ProgramFactory,
+	ProgramOutput
 } from '../runtime/deps.ts';
 import type { QueryDeps } from '../db/query_deps.ts';
+import { is_pg_database_url } from '../db/create_db.ts';
+import {
+	is_createdb_already_exists,
+	parse_db_name,
+	to_createdb_args,
+	to_dropdb_args,
+	to_postgres_password_env
+} from '../db/postgres_url.ts';
 import { load_env_file, parse_dotenv } from '../env/dotenv.ts';
 import { update_env_content } from '../env/update_env_variable.ts';
 import { write_file_atomic } from '../runtime/fs.ts';
@@ -67,14 +78,32 @@ export interface SetupTokenResult {
 	token_path: string;
 }
 
+/**
+ * The kind of database a `DATABASE_URL` names, by the scheme `create_db`
+ * routes on: `postgres://` / `postgresql://`, `file://` (PGlite), `memory://`
+ * (pglet), or `'none'` for an empty or unsupported URL.
+ */
+export type SetupDbType = 'postgres' | 'pglite' | 'memory' | 'none';
+
+/** Result of `create_database`. */
+export type CreateDatabaseResult =
+	/** `createdb` created the database. */
+	| { kind: 'created'; database: string }
+	/** The database already existed. */
+	| { kind: 'exists'; database: string }
+	/** Nothing to create: a URL that isn't Postgres, or no `createdb` installed. */
+	| { kind: 'skipped'; db_type: SetupDbType; message: string }
+	/** The database was not created; `message` is what was logged. */
+	| { kind: 'failed'; message: string };
+
 /** Result of `reset_database`. */
 export interface ResetDbResult {
 	/** Whether the database was actually reset. */
 	reset: boolean;
-	/** Whether the operation was skipped (e.g. pglite with no data dir). */
+	/** Whether there was nothing to reset (no URL, an in-memory URL, PGlite with no data dir). */
 	skipped: boolean;
-	/** What type of database was detected. */
-	db_type: 'postgres' | 'pglite' | 'none';
+	/** What type of database the URL names. */
+	db_type: SetupDbType;
 }
 
 /** Options for `setup_env_file`. */
@@ -93,7 +122,7 @@ export interface SetupEnvOptions {
 
 /** Options for `setup_bootstrap_token`. */
 export interface SetupBootstrapTokenOptions {
-	/** State directory override. Defaults to `~/.{app_name}`. */
+	/** State directory override. Defaults to `~/.{app_name}`, which needs `$HOME`. */
 	state_dir?: string;
 	log?: SetupLogger;
 }
@@ -105,26 +134,87 @@ export interface CreateDatabaseOptions {
 
 /** Options for `reset_database`. */
 export interface ResetDatabaseOptions {
-	/** Directory to remove for file-based pglite. */
+	/**
+	 * The PGlite data directory to remove for a `file://` URL. Named by the
+	 * caller, never derived from the URL, so a mistyped `DATABASE_URL` can't
+	 * aim a recursive remove; without it a `file://` reset is skipped.
+	 */
 	pglite_data_dir?: string;
 	log?: SetupLogger;
 }
 
+/**
+ * The Postgres client programs the database helpers run, each as a factory
+ * that makes the program with extra environment, `null` when it isn't
+ * installed. A helper calls each factory once per run with the environment
+ * that carries `DATABASE_URL`'s password (`{PGPASSWORD}`, or `{}` for a URL
+ * with none), so the password reaches the program the way libpq reads it and
+ * never its argv. At a gro task root:
+ * `(env) => spawn.find('createdb', {pass_env: ['PG*'], env})` — `env` wins over
+ * a host `PGPASSWORD` that `PG*` forwards, and gro's spawn base passes `HOME`
+ * for `~/.pgpass`.
+ *
+ * Each program connects to the server `DATABASE_URL` names: host, port, role,
+ * and query parameters (`sslmode`, a socket `host`) all come from the URL,
+ * through `--maintenance-db` (`to_maintenance_database_url`). With no host,
+ * as in `postgres:///app`, libpq uses its default socket.
+ */
+export interface PostgresProgramDeps {
+	/** Makes `createdb`, or `null` when it isn't installed. */
+	createdb: ProgramFactory;
+	/** Makes `dropdb`, or `null` when it isn't installed. */
+	dropdb: ProgramFactory;
+}
+
 // === Pure utilities ===
 
-/**
- * Extract the database name from a PostgreSQL URL.
- *
- * @returns the database name, or `null` if the URL is invalid or has no path
- */
-export const parse_db_name = (url: string): string | null => {
-	try {
-		const u = new URL(url);
-		const name = u.pathname.slice(1); // remove leading /
-		return name || null;
-	} catch {
-		return null;
+/** What kind of database `database_url` names, by `create_db`'s schemes. */
+const to_setup_db_type = (database_url: string): SetupDbType => {
+	if (is_pg_database_url(database_url)) return 'postgres';
+	if (database_url.startsWith('file://')) return 'pglite';
+	if (database_url.startsWith('memory://')) return 'memory';
+	return 'none';
+};
+
+/** A program output's failure, as text: its stderr, or how it ended. */
+const describe_program_failure = (output: ProgramOutput): string => {
+	const stderr = output.stderr.trim();
+	if (stderr) return stderr;
+	switch (output.kind) {
+		case 'exited':
+			return `exited with code ${output.code}`;
+		case 'signaled':
+			return `ended by ${output.signal}`;
+		default:
+			return output.kind === 'timed_out' ? 'timed out' : 'aborted';
 	}
+};
+
+/** Whether a program output is a clean exit. */
+const is_program_success = (output: ProgramOutput): boolean =>
+	output.kind === 'exited' && output.code === 0;
+
+/**
+ * The hint a failed Postgres client gets when the server wanted a password
+ * `DATABASE_URL` doesn't carry: where else the program can read one.
+ */
+const password_hint = (output: ProgramOutput, password_env: Record<string, string>): string =>
+	output.stderr.includes('password') && password_env.PGPASSWORD === undefined
+		? ' (DATABASE_URL has no password: put it in the URL, or give the program PGPASSWORD ' +
+			'in its environment or a ~/.pgpass entry)'
+		: '';
+
+/**
+ * The URL's password as program environment, or a failure message when its
+ * percent-escape is malformed — never naming the password.
+ */
+const read_password_env = (
+	database_url: string
+): { ok: true; env: Record<string, string> } | { ok: false; message: string } => {
+	const env = to_postgres_password_env(database_url);
+	return env === null
+		? { ok: false, message: "DATABASE_URL's password has a malformed percent-escape" }
+		: { ok: true, env };
 };
 
 /**
@@ -248,12 +338,27 @@ export const setup_env_file = async (
 };
 
 /**
+ * The bootstrap token's state directory: `state_dir` when given, else
+ * `~/.{app_name}`, or `null` when neither is available.
+ */
+const to_token_state_dir = (
+	deps: EnvDeps,
+	app_name: string,
+	state_dir: string | undefined
+): string | null => {
+	if (state_dir !== undefined) return state_dir;
+	const home = deps.env_get('HOME');
+	return home ? `${home}/.${app_name}` : null;
+};
+
+/**
  * Create a bootstrap token file if it doesn't exist.
  *
  * The token is a one-shot secret used to create the first admin account:
  * 32 random bytes as 64 lowercase hex characters plus one LF, the file
- * `openssl rand -hex 32` writes. Stored at
- * `~/.{app_name}/secret_bootstrap_token` by default.
+ * `openssl rand -hex 32` writes. Stored at `{state_dir}/secret_bootstrap_token`,
+ * `state_dir` defaulting to `~/.{app_name}`; skipped only when no `state_dir`
+ * is given and `$HOME` is unset.
  *
  * @param deps - file and env capabilities
  * @param app_name - application name (used for default state directory)
@@ -268,18 +373,16 @@ export const setup_bootstrap_token = async (
 ): Promise<SetupTokenResult> => {
 	const log = options?.log ?? default_setup_logger;
 
-	const home = deps.env_get('HOME');
-	if (!home) {
-		log.skip('$HOME not set, skipping bootstrap token');
+	const state_dir = to_token_state_dir(deps, app_name, options?.state_dir);
+	if (state_dir === null) {
+		log.skip('$HOME not set and no state_dir given, skipping bootstrap token');
 		return { created: false, token_path: '' };
 	}
-
-	const state_dir = options?.state_dir ?? `${home}/.${app_name}`;
 	const token_path = `${state_dir}/secret_bootstrap_token`;
 
 	const stat = await deps.stat(token_path);
 	if (stat?.is_file) {
-		log.skip(`~/.${app_name}/secret_bootstrap_token already exists`);
+		log.skip(`${token_path} already exists`);
 		return { created: false, token_path };
 	}
 
@@ -290,12 +393,13 @@ export const setup_bootstrap_token = async (
 	await deps.mkdir(state_dir, { recursive: true, mode: 0o700 });
 	const token = generate_secret_hex();
 	await write_file_atomic(deps, token_path, token + '\n', { mode: 0o600 });
-	log.ok(`Created ~/.${app_name}/secret_bootstrap_token (one-shot, deleted after first use)`);
+	log.ok(`Created ${token_path} (one-shot, deleted after first use)`);
 	return { created: true, token_path };
 };
 
 /**
- * Remove an existing bootstrap token and create a new one.
+ * Remove an existing bootstrap token and create a new one, in the state
+ * directory `setup_bootstrap_token` uses.
  *
  * @param deps - file, env, and remove capabilities
  * @param app_name - application name
@@ -310,19 +414,17 @@ export const reset_bootstrap_token = async (
 ): Promise<SetupTokenResult> => {
 	const log = options?.log ?? default_setup_logger;
 
-	const home = deps.env_get('HOME');
-	if (!home) {
-		log.skip('$HOME not set');
+	const state_dir = to_token_state_dir(deps, app_name, options?.state_dir);
+	if (state_dir === null) {
+		log.skip('$HOME not set and no state_dir given, skipping bootstrap token');
 		return { created: false, token_path: '' };
 	}
-
-	const state_dir = options?.state_dir ?? `${home}/.${app_name}`;
 	const token_path = `${state_dir}/secret_bootstrap_token`;
 
 	const stat = await deps.stat(token_path);
 	if (stat?.is_file) {
 		await deps.remove(token_path);
-		log.ok('Removed existing bootstrap token');
+		log.ok(`Removed existing ${token_path}`);
 	}
 
 	return setup_bootstrap_token(deps, app_name, { state_dir, log });
@@ -331,55 +433,99 @@ export const reset_bootstrap_token = async (
 // === Database helpers ===
 
 /**
- * Create a PostgreSQL database if `createdb` is available.
+ * Create the PostgreSQL database `database_url` names, on the server it
+ * names, when it's missing.
  *
- * Does not throw — returns the underlying command result so callers can
- * decide how to react to a missing `createdb` or an "already exists" failure.
+ * Runs `createdb --no-password --maintenance-db=<maintenance URL> -- <name>`
+ * (`to_createdb_args`) through the program `deps.createdb` makes, with the
+ * URL's password in its environment (see `PostgresProgramDeps`). A URL that
+ * isn't Postgres (`file://`, `memory://`) has nothing to create and is
+ * skipped, as is a missing `createdb`. Does not throw on a failed `createdb` —
+ * the result says what happened, and the log says why; a `createdb` that
+ * can't start throws.
  *
- * @param deps - command execution capability
- * @param db_name - database name to create
+ * On a server whose `lc_messages` isn't English, an existing database is
+ * reported as `failed`, since only Postgres's English refusal is recognized.
+ * A capped (truncated) output is read as it came: a clean exit is still
+ * success, and a cut stderr is still searched for the refusal.
+ *
+ * @param deps - the `createdb` factory
+ * @param database_url - the `DATABASE_URL` value
  * @param options - logger
- * @returns the command result
- * @mutates external database - invokes `createdb` to create `db_name` when available
+ * @returns what happened
+ * @mutates external database - creates the database on the server `database_url` names
  */
 export const create_database = async (
-	deps: CommandDeps,
-	db_name: string,
+	deps: Pick<PostgresProgramDeps, 'createdb'>,
+	database_url: string,
 	options?: CreateDatabaseOptions
-): Promise<CommandResult> => {
+): Promise<CreateDatabaseResult> => {
 	const log = options?.log ?? default_setup_logger;
 
-	const check = await deps.run_command('which', ['createdb']);
-	if (!check.success) {
-		log.skip('createdb not found — install PostgreSQL or use pglite');
-		return check;
+	const db_type = to_setup_db_type(database_url);
+	if (db_type !== 'postgres') {
+		const message =
+			db_type === 'none'
+				? 'No Postgres DATABASE_URL, skipping database creation'
+				: `A ${db_type} DATABASE_URL needs no createdb`;
+		log.skip(message);
+		return { kind: 'skipped', db_type, message };
 	}
 
-	const result = await deps.run_command('createdb', [db_name]);
-	if (result.success) {
-		log.ok(`Created ${db_name} database`);
-	} else {
-		log.skip(`${db_name} database already exists`);
+	const database = parse_db_name(database_url);
+	if (database === null) {
+		const message = 'Could not parse database name from DATABASE_URL';
+		log.error(message);
+		return { kind: 'failed', message };
 	}
-	return result;
+
+	const password = read_password_env(database_url);
+	if (!password.ok) {
+		log.error(password.message);
+		return { kind: 'failed', message: password.message };
+	}
+
+	const createdb = deps.createdb(password.env);
+	if (createdb === null) {
+		const message =
+			'createdb not found — install PostgreSQL, or use a file:// (PGlite) or memory:// DATABASE_URL';
+		log.skip(message);
+		return { kind: 'skipped', db_type, message };
+	}
+
+	const output = await createdb.out(to_createdb_args(database, database_url));
+	if (is_program_success(output)) {
+		log.ok(`Created ${database} database`);
+		return { kind: 'created', database };
+	}
+	if (is_createdb_already_exists(output.stderr, database)) {
+		log.skip(`${database} database already exists`);
+		return { kind: 'exists', database };
+	}
+	const message = `Failed to create database ${database}: ${describe_program_failure(output)}${password_hint(output, password.env)}`;
+	log.error(message);
+	return { kind: 'failed', message };
 };
 
 /**
  * Reset a database to a clean slate.
  *
- * For PostgreSQL: drops and recreates the database.
- * For pglite: removes the data directory if `pglite_data_dir` is provided.
- * For empty/missing URLs: skips.
+ * For PostgreSQL: drops and recreates the database `database_url` names, on
+ * the server it names, through the programs `deps.dropdb` and `deps.createdb`
+ * make (see `PostgresProgramDeps`; argv from `to_dropdb_args` /
+ * `to_createdb_args`). For PGlite (`file://`): removes
+ * `options.pglite_data_dir` when given. For an in-memory (`memory://`), empty,
+ * or missing URL: skips. An unsupported URL is an error, never dropped.
  *
- * @param deps - command and file capabilities
+ * @param deps - the Postgres program factories and file capabilities
  * @param database_url - the `DATABASE_URL` value
  * @param options - `pglite_data_dir`, logger
  * @returns result describing what happened
- * @mutates external database - drops and recreates the PostgreSQL database, or removes the PGlite data directory
- * @mutates filesystem - removes `options.pglite_data_dir` recursively for PGlite URLs
+ * @mutates external database - drops and recreates the PostgreSQL database on the server `database_url` names
+ * @mutates filesystem - removes `options.pglite_data_dir` recursively for `file://` URLs
  */
 export const reset_database = async (
-	deps: CommandDeps & FsReadDeps & FsRemoveDeps,
+	deps: PostgresProgramDeps & Pick<FsReadDeps, 'stat'> & FsRemoveDeps,
 	database_url: string,
 	options?: ResetDatabaseOptions
 ): Promise<ResetDbResult> => {
@@ -391,43 +537,73 @@ export const reset_database = async (
 		return { reset: false, skipped: true, db_type: 'none' };
 	}
 
-	// pglite
-	if (database_url === 'pglite' || database_url.startsWith('pglite:')) {
+	const db_type = to_setup_db_type(database_url);
+
+	if (db_type === 'none') {
+		log.error('Unsupported DATABASE_URL scheme — expected postgres://, file://, or memory://');
+		return { reset: false, skipped: false, db_type };
+	}
+
+	if (db_type === 'memory') {
+		log.skip('An in-memory database has nothing to reset');
+		return { reset: false, skipped: true, db_type };
+	}
+
+	if (db_type === 'pglite') {
 		const pglite_dir = options?.pglite_data_dir;
 		if (pglite_dir) {
 			const stat = await deps.stat(pglite_dir);
 			if (stat?.is_directory) {
 				await deps.remove(pglite_dir, { recursive: true });
 				log.ok(`Removed pglite directory: ${pglite_dir}`);
-				return { reset: true, skipped: false, db_type: 'pglite' };
+				return { reset: true, skipped: false, db_type };
 			}
 		}
 		log.skip('No pglite directory to remove');
-		return { reset: false, skipped: true, db_type: 'pglite' };
+		return { reset: false, skipped: true, db_type };
 	}
 
-	// PostgreSQL
 	const db_name = parse_db_name(database_url);
 	if (!db_name) {
 		log.error('Could not parse database name from DATABASE_URL');
-		return { reset: false, skipped: true, db_type: 'postgres' };
+		return { reset: false, skipped: false, db_type };
 	}
 
-	const drop = await deps.run_command('dropdb', ['--if-exists', db_name]);
-	if (!drop.success) {
-		log.error(`Failed to drop database: ${drop.stderr}`);
-		return { reset: false, skipped: false, db_type: 'postgres' };
+	const password = read_password_env(database_url);
+	if (!password.ok) {
+		log.error(password.message);
+		return { reset: false, skipped: false, db_type };
+	}
+
+	const dropdb = deps.dropdb(password.env);
+	const createdb = deps.createdb(password.env);
+	if (dropdb === null || createdb === null) {
+		const missing = [dropdb === null && 'dropdb', createdb === null && 'createdb']
+			.filter(Boolean)
+			.join(' and ');
+		log.error(`${missing} not found — install PostgreSQL to reset a Postgres database`);
+		return { reset: false, skipped: false, db_type };
+	}
+
+	const drop = await dropdb.out(to_dropdb_args(db_name, database_url));
+	if (!is_program_success(drop)) {
+		log.error(
+			`Failed to drop database: ${describe_program_failure(drop)}${password_hint(drop, password.env)}`
+		);
+		return { reset: false, skipped: false, db_type };
 	}
 	log.ok(`Dropped database: ${db_name}`);
 
-	const create = await deps.run_command('createdb', [db_name]);
-	if (!create.success) {
-		log.error(`Failed to create database: ${create.stderr}`);
-		return { reset: false, skipped: false, db_type: 'postgres' };
+	const create = await createdb.out(to_createdb_args(db_name, database_url));
+	if (!is_program_success(create)) {
+		log.error(
+			`Failed to create database: ${describe_program_failure(create)}${password_hint(create, password.env)}`
+		);
+		return { reset: false, skipped: false, db_type };
 	}
 	log.ok(`Created database: ${db_name}`);
 
-	return { reset: true, skipped: false, db_type: 'postgres' };
+	return { reset: true, skipped: false, db_type };
 };
 
 // === Dev account helpers ===
@@ -470,7 +646,7 @@ export interface SeedDevAccountDeps extends QueryDeps {
  * requested role grants. Never updates an existing password (rerun would
  * silently rotate it).
  *
- * Intended for `scripts/dev_setup.ts` — do not call in production.
+ * Intended for a dev setup task — do not call in production.
  *
  * @mutates database - inserts an account/actor pair when missing and grants any requested role role_grants
  * @throws Error if an existing account is found without an associated actor row

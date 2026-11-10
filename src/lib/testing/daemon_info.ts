@@ -18,8 +18,15 @@ import {
 	type Infer
 } from '@fuzdev/fuz_schema/schema.ts';
 
-import type { CommandDeps, EnvDeps, FsReadDeps, FsWriteDeps, LogDeps } from '../runtime/deps.ts';
+import type {
+	EnvDeps,
+	FsReadDeps,
+	FsWriteDeps,
+	LogDeps,
+	ProcessProbeDeps
+} from '../runtime/deps.ts';
 import { write_file_atomic } from '../runtime/fs.ts';
+import { is_process_id } from '../runtime/process_id.ts';
 
 /**
  * Get an app's home directory path (`~/.{name}`).
@@ -134,13 +141,16 @@ export const read_daemon_info = async (
 };
 
 /**
- * Check if a process is running by PID.
+ * Whether the daemon a `daemon.json` names is still running: its `pid` is a
+ * process this process may signal (`probe_process`).
  *
- * @param runtime - runtime with command execution capability
- * @param pid - process ID to check
- * @returns `true` if the process is running
+ * A process another user owns (`'not_permitted'`) is not the daemon — its pid
+ * was reused — so it reads as not running, as does a `pid` that names no
+ * single process (0, a negative number, a non-integer, out of `pid_t` range).
+ *
+ * @param runtime - runtime with the process probe
+ * @param pid - the process ID `daemon.json` recorded
+ * @returns `true` if the process is running and this process may signal it
  */
-export const is_daemon_running = async (runtime: CommandDeps, pid: number): Promise<boolean> => {
-	const result = await runtime.run_command('kill', ['-0', String(pid)]);
-	return result.success;
-};
+export const is_daemon_running = (runtime: ProcessProbeDeps, pid: number): boolean =>
+	is_process_id(pid) && runtime.probe_process(pid) === 'running';

@@ -9,7 +9,6 @@
  */
 
 import { Buffer } from 'node:buffer';
-import { spawn } from 'node:child_process';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { stat, mkdir, readFile, readdir, writeFile, rename, rm, open } from 'node:fs/promises';
 import process from 'node:process';
@@ -17,8 +16,9 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { ReadableStream as NodeWebReadableStream } from 'node:stream/web';
 
-import type { RuntimeDeps, StatResult, CommandResult } from './deps.ts';
+import type { RuntimeDeps, StatResult } from './deps.ts';
 import { load_secure_file_node } from './secure_file.ts';
+import { assert_process_id } from './process_id.ts';
 
 /**
  * Create a `RuntimeDeps` backed by Node.js APIs.
@@ -40,6 +40,18 @@ export const create_node_runtime = (
 	args,
 	cwd: () => process.cwd(),
 	exit: (code) => process.exit(code),
+	probe_process: (pid) => {
+		assert_process_id(pid);
+		try {
+			process.kill(pid, 0);
+			return 'running';
+		} catch (error) {
+			const code = (error as NodeJS.ErrnoException).code;
+			if (code === 'ESRCH') return 'not_found';
+			if (code === 'EPERM') return 'not_permitted';
+			throw error;
+		}
+	},
 
 	// === Local File System ===
 	stat: async (path): Promise<StatResult | null> => {
@@ -118,80 +130,6 @@ export const create_node_runtime = (
 
 	// === HTTP ===
 	fetch: globalThis.fetch,
-
-	// === Local Commands ===
-	run_command: (cmd, args, options): Promise<CommandResult> => {
-		return new Promise((resolve) => {
-			const proc = spawn(cmd, args, {
-				stdio: ['ignore', 'pipe', 'pipe'],
-				cwd: options?.cwd
-			});
-
-			const stdout_chunks: Array<Buffer> = [];
-			const stderr_chunks: Array<Buffer> = [];
-			let timed_out = false;
-			let done = false;
-
-			const finish = (result: CommandResult) => {
-				if (done) return;
-				done = true;
-				if (timer !== null) clearTimeout(timer);
-				if (options?.signal) options.signal.removeEventListener('abort', on_abort);
-				resolve(result);
-			};
-
-			const on_abort = () => {
-				proc.kill();
-			};
-
-			const timer =
-				options?.timeout_ms !== undefined
-					? setTimeout(() => {
-							timed_out = true;
-							proc.kill();
-						}, options.timeout_ms)
-					: null;
-
-			if (options?.signal) {
-				if (options.signal.aborted) proc.kill();
-				else options.signal.addEventListener('abort', on_abort, { once: true });
-			}
-
-			proc.stdout.on('data', (chunk: Buffer) => stdout_chunks.push(chunk));
-			proc.stderr.on('data', (chunk: Buffer) => stderr_chunks.push(chunk));
-
-			proc.on('error', (error) => {
-				finish({
-					success: false,
-					code: 1,
-					stdout: '',
-					stderr: `Failed to execute command: ${error.message}`
-				});
-			});
-
-			proc.on('close', (code) => {
-				const result: CommandResult = {
-					success: code === 0 && !timed_out,
-					code: code ?? 1,
-					stdout: Buffer.concat(stdout_chunks).toString('utf-8').trim(),
-					stderr: Buffer.concat(stderr_chunks).toString('utf-8').trim()
-				};
-				if (options?.timeout_ms !== undefined) result.timed_out = timed_out;
-				finish(result);
-			});
-		});
-	},
-
-	run_command_inherit: (cmd, args): Promise<number> => {
-		return new Promise((resolve) => {
-			const proc = spawn(cmd, args, {
-				stdio: 'inherit'
-			});
-
-			proc.on('error', () => resolve(1));
-			proc.on('close', (code) => resolve(code ?? 1));
-		});
-	},
 
 	// === Terminal I/O ===
 	stdout_write: async (data) => {

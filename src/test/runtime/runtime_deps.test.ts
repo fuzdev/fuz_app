@@ -7,7 +7,7 @@ import type {
 	FsReadDeps,
 	FsWriteDeps,
 	FsRemoveDeps,
-	CommandDeps,
+	ProcessProbeDeps,
 	LogDeps,
 	TerminalDeps,
 	ProcessDeps
@@ -35,8 +35,8 @@ test('RuntimeDeps satisfies FsRemoveDeps', () => {
 	_check;
 });
 
-test('RuntimeDeps satisfies CommandDeps', () => {
-	const _check: CommandDeps = {} as RuntimeDeps;
+test('RuntimeDeps satisfies ProcessProbeDeps', () => {
+	const _check: ProcessProbeDeps = {} as RuntimeDeps;
 	_check;
 });
 

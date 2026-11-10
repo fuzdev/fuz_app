@@ -7,16 +7,17 @@
  */
 
 import { describe, test, assert } from 'vitest';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
 import {
 	empty_owned_database,
 	ensure_database,
 	ensure_database_for_url,
-	is_createdb_already_exists,
 	is_postgres_url,
 	redact_database_url,
-	to_maintenance_database_url,
 	with_database_name
 } from '#lib/testing/cross_backend/postgres_database.ts';
 
@@ -47,13 +48,6 @@ describe('with_database_name', () => {
 			'postgres://localhost/fuz_app_test_x'
 		);
 	});
-
-	test('to_maintenance_database_url names the postgres database', () => {
-		assert.strictEqual(
-			to_maintenance_database_url('postgresql://localhost/fuz_app_test_rust_spine_stub'),
-			'postgresql://localhost/postgres'
-		);
-	});
 });
 
 describe('redact_database_url', () => {
@@ -66,6 +60,13 @@ describe('redact_database_url', () => {
 		assert.include(redacted, 'user:REDACTED@db.local');
 		assert.include(redacted, 'password=REDACTED');
 		assert.include(redacted, 'sslmode=require');
+	});
+
+	test('prints every other query parameter as written', () => {
+		assert.strictEqual(
+			redact_database_url('postgres://h/app?options=-c%20search_path%3Dapp&password=x'),
+			'postgres://h/app?options=-c%20search_path%3Dapp&password=REDACTED'
+		);
 	});
 
 	test('leaves a URL with no password as it was', () => {
@@ -82,27 +83,6 @@ describe('ensure_database_for_url', () => {
 });
 
 describe('ensure_database', () => {
-	test("reads createdb's already-exists refusal as success", () => {
-		assert.ok(
-			is_createdb_already_exists(
-				'createdb: error: database creation failed: ERROR:  database "app_test" already exists',
-				'app_test'
-			)
-		);
-		assert.ok(
-			!is_createdb_already_exists(
-				'createdb: error: database creation failed: ERROR:  database "other" already exists',
-				'app_test'
-			)
-		);
-		assert.ok(
-			!is_createdb_already_exists(
-				'createdb: error: connection to server on socket "/x/.s.PGSQL.5432" failed',
-				'app_test'
-			)
-		);
-	});
-
 	test("reports a failure with createdb's stderr instead of swallowing it", () => {
 		const warnings: Array<string> = [];
 		// a port nothing listens on: the connection fails, so createdb (or its absence) reports
@@ -112,6 +92,47 @@ describe('ensure_database', () => {
 		assert.ok(!ok);
 		assert.strictEqual(warnings.length, 1);
 		assert.include(warnings[0], 'createdb fuz_app_ensure_database_probe failed');
+	});
+
+	test("hands createdb the URL's password in its environment and never prompts", () => {
+		// a fake `createdb` first on PATH, recording its argv and PGPASSWORD
+		const dir = mkdtempSync(join(tmpdir(), 'fuz_app_ensure_database_'));
+		const record = join(dir, 'record');
+		writeFileSync(
+			join(dir, 'createdb'),
+			`#!/bin/sh\nprintf '%s\\n' "$@" "PGPASSWORD=$PGPASSWORD" > '${record}'\n`,
+			{ mode: 0o755 }
+		);
+		const path = process.env.PATH;
+		process.env.PATH = `${dir}:${path ?? ''}`;
+		try {
+			const ok = ensure_database('app', 'postgres://u:p%40ss@127.0.0.1:1/x', {
+				warn: (message) => assert.fail(message)
+			});
+			assert.ok(ok);
+		} finally {
+			process.env.PATH = path;
+		}
+		const lines = readFileSync(record, 'utf-8').trimEnd().split('\n');
+		rmSync(dir, { recursive: true });
+		assert.deepStrictEqual(lines, [
+			'--no-password',
+			'--maintenance-db=postgres://u@127.0.0.1:1/postgres',
+			'--',
+			'app',
+			'PGPASSWORD=p@ss'
+		]);
+	});
+
+	test('a password with a malformed percent-escape is reported without running createdb', () => {
+		const warnings: Array<string> = [];
+		const ok = ensure_database('fuz_app_ensure_database_probe', 'postgres://u:p%ZZ@127.0.0.1:1/x', {
+			warn: (message) => warnings.push(message)
+		});
+		assert.ok(!ok);
+		assert.deepStrictEqual(warnings, [
+			"ensure_database: createdb fuz_app_ensure_database_probe not run — the URL's password has a malformed percent-escape"
+		]);
 	});
 });
 

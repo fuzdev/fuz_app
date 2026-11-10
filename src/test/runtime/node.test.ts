@@ -2,13 +2,15 @@
  * Tests for runtime/node.ts - the Node.js `RuntimeDeps`, focused on the file
  * I/O that touches a real disk (stream bridging + `stat().size`). The casts in
  * `read_file_stream` / `write_file_stream` cross Node's `stream/web` and the
- * global DOM stream types, so they only pay off if a real round-trip works.
+ * global DOM stream types, so they only pay off if a real round-trip works —
+ * and `probe_process`, against real processes.
  *
  * @module
  */
 
 import { describe, assert, test, beforeEach, afterEach } from 'vitest';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
+import { spawnSync } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -66,5 +68,28 @@ describe('create_node_runtime streaming + size', () => {
 	test('read_file_stream throws eagerly for a missing file', async () => {
 		const err = await assert_rejects(() => rt.read_file_stream(join(dir, 'nope.bin')));
 		assert.strictEqual((err as NodeJS.ErrnoException).code, 'ENOENT');
+	});
+});
+
+describe('create_node_runtime probe_process', () => {
+	test('this process is running', () => {
+		assert.strictEqual(rt.probe_process(process.pid), 'running');
+	});
+
+	test('an exited child is not found', () => {
+		const child = spawnSync(process.execPath, ['-e', '']);
+		assert.strictEqual(child.status, 0);
+		assert.strictEqual(rt.probe_process(child.pid), 'not_found');
+	});
+
+	test.skipIf(process.getuid?.() === 0)("another user's process is not permitted", () => {
+		// pid 1 is init, owned by root
+		assert.strictEqual(rt.probe_process(1), 'not_permitted');
+	});
+
+	test('a pid naming no single process throws before signaling anything', () => {
+		for (const pid of [0, -1, -process.pid, 1.5, NaN, Infinity, 2 ** 31]) {
+			assert.throws(() => rt.probe_process(pid), RangeError, undefined, String(pid));
+		}
 	});
 });

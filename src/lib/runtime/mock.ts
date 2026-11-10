@@ -8,8 +8,16 @@
  * @module
  */
 
-import type { RuntimeDeps, StatResult, CommandResult, RunCommandOptions } from './deps.ts';
+import type {
+	ProcessProbe,
+	Program,
+	ProgramFactory,
+	ProgramOutput,
+	RuntimeDeps,
+	StatResult
+} from './deps.ts';
 import { assert_secure_mode, assert_secure_size } from './secure_file.ts';
+import { assert_process_id } from './process_id.ts';
 
 /* eslint-disable @typescript-eslint/require-await */
 
@@ -34,14 +42,13 @@ export interface MockRuntime extends RuntimeDeps {
 	mock_dirs: Set<string>;
 	/** Exit calls recorded (exit codes). */
 	exit_calls: Array<number>;
-	/** Commands executed. Captures `options` when passed so tests can assert cwd/timeout/signal. */
-	command_calls: Array<{ cmd: string; args: Array<string>; options?: RunCommandOptions }>;
-	/** Commands executed with inherit. */
-	command_inherit_calls: Array<{ cmd: string; args: Array<string> }>;
+	/**
+	 * Processes `probe_process` finds (pid -> probe). A pid with no entry is
+	 * `'not_found'`.
+	 */
+	mock_processes: Map<number, Exclude<ProcessProbe, 'not_found'>>;
 	/** Stdout writes recorded. */
 	stdout_writes: Array<string>;
-	/** Mock command results (cmd -> result). */
-	mock_command_results: Map<string, CommandResult>;
 	/** Stdin buffer for input simulation. */
 	stdin_buffer: Uint8Array | null;
 	/** Fetch calls recorded. */
@@ -67,7 +74,6 @@ export interface MockRuntime extends RuntimeDeps {
  *
  * await some_function(runtime);
  *
- * assert.strictEqual(runtime.command_calls.length, 1);
  * assert.deepStrictEqual(runtime.exit_calls, [0]);
  * ```
  */
@@ -78,11 +84,8 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 	const mock_fs_modes: Map<string, number> = new Map();
 	const mock_dirs: Set<string> = new Set();
 	const exit_calls: Array<number> = [];
-	const command_calls: Array<{ cmd: string; args: Array<string>; options?: RunCommandOptions }> =
-		[];
-	const command_inherit_calls: Array<{ cmd: string; args: Array<string> }> = [];
+	const mock_processes: Map<number, Exclude<ProcessProbe, 'not_found'>> = new Map();
 	const stdout_writes: Array<string> = [];
-	const mock_command_results: Map<string, CommandResult> = new Map();
 	const fetch_calls: Array<{ input: string | URL | Request; init?: RequestInit }> = [];
 	const mock_fetch_responses: Map<string, Response> = new Map();
 	let stdin_buffer: Uint8Array | null = null;
@@ -95,10 +98,8 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 		mock_fs_modes,
 		mock_dirs,
 		exit_calls,
-		command_calls,
-		command_inherit_calls,
+		mock_processes,
 		stdout_writes,
-		mock_command_results,
 		fetch_calls,
 		mock_fetch_responses,
 		get stdin_buffer() {
@@ -120,6 +121,10 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 		exit: (code) => {
 			exit_calls.push(code);
 			throw new MockExitError(code);
+		},
+		probe_process: (pid) => {
+			assert_process_id(pid);
+			return mock_processes.get(pid) ?? 'not_found';
 		},
 
 		// === Local File System ===
@@ -344,33 +349,6 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 			throw new TypeError(`fetch failed (no mock for ${url})`);
 		},
 
-		// === Local Commands ===
-		run_command: async (cmd, args, options) => {
-			command_calls.push(options ? { cmd, args, options } : { cmd, args });
-
-			const key = `${cmd} ${args.join(' ')}`;
-			const mocked = mock_command_results.get(key);
-			if (mocked) {
-				if (options?.timeout_ms !== undefined && mocked.timed_out === undefined) {
-					return { ...mocked, timed_out: false };
-				}
-				return mocked;
-			}
-
-			const result: CommandResult = { success: true, code: 0, stdout: '', stderr: '' };
-			if (options?.timeout_ms !== undefined) result.timed_out = false;
-			return result;
-		},
-		run_command_inherit: async (cmd, args) => {
-			command_inherit_calls.push({ cmd, args });
-
-			const key = `${cmd} ${args.join(' ')}`;
-			const mocked = mock_command_results.get(key);
-			if (mocked) return mocked.code;
-
-			return 0;
-		},
-
 		// === Terminal I/O ===
 		stdout_write: async (data) => {
 			stdout_writes.push(new TextDecoder().decode(data));
@@ -394,7 +372,7 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 /**
  * Reset a mock runtime to initial state.
  *
- * @mutates runtime - clears all mock state (env, fs, dirs, exit/command/stdout/fetch call records, mock results, stdin buffer)
+ * @mutates runtime - clears all mock state (env, fs, modes, dirs, processes, exit/stdout/fetch call records, fetch responses, stdin buffer)
  */
 export const reset_mock_runtime = (runtime: MockRuntime): void => {
 	runtime.mock_env.clear();
@@ -402,14 +380,100 @@ export const reset_mock_runtime = (runtime: MockRuntime): void => {
 	runtime.mock_fs_bytes.clear();
 	runtime.mock_dirs.clear();
 	runtime.exit_calls.length = 0;
-	runtime.command_calls.length = 0;
-	runtime.command_inherit_calls.length = 0;
+	runtime.mock_fs_modes.clear();
+	runtime.mock_processes.clear();
 	runtime.stdout_writes.length = 0;
-	runtime.mock_command_results.clear();
 	runtime.fetch_calls.length = 0;
 	runtime.mock_fetch_responses.clear();
 	runtime.stdin_buffer = null;
 };
+
+/** A `Program` fake with its calls recorded for assertions. */
+export interface MockProgram extends Program {
+	/** The arguments of each call, in order. */
+	readonly calls: Array<ReadonlyArray<string>>;
+}
+
+/**
+ * Create a fake `Program` for testing a helper that runs one.
+ *
+ * Each call is recorded on `calls`, then answered by `respond`; with no
+ * `respond`, every call exits 0 with empty output. `respond` may throw, as a
+ * program that can't start does.
+ *
+ * @param respond - the output for a call's arguments
+ * @returns the fake program
+ *
+ * @example
+ * ```ts
+ * const git = create_mock_program((args) =>
+ * 	args[0] === 'status' ? mock_program_exit(0, '', 'clean') : mock_program_exit(1, 'unknown')
+ * );
+ * assert.strictEqual((await git.out(['status'])).stdout, 'clean');
+ * assert.deepStrictEqual(git.calls, [['status']]);
+ * ```
+ */
+export const create_mock_program = (
+	respond: (args: ReadonlyArray<string>) => ProgramOutput | Promise<ProgramOutput> = () =>
+		mock_program_exit(0)
+): MockProgram => {
+	const calls: Array<ReadonlyArray<string>> = [];
+	return {
+		calls,
+		out: async (args) => {
+			calls.push([...args]);
+			return respond(args);
+		}
+	};
+};
+
+/** A `ProgramFactory` fake that hands out one program and records each environment asked for. */
+export interface MockProgramFactory extends ProgramFactory {
+	/** The `env` of each call, in order. */
+	readonly envs: Array<Readonly<Record<string, string>>>;
+	/** The program every call returns — `null` for one that isn't installed. */
+	readonly program: MockProgram | null;
+}
+
+/**
+ * Create a fake `ProgramFactory` for testing a helper that makes its program
+ * with extra environment: every call records its `env` and returns `program`.
+ *
+ * @param program - the program to hand out, `null` for one that isn't installed
+ * @returns the fake factory
+ *
+ * @example
+ * ```ts
+ * const createdb = create_mock_program_factory();
+ * await create_database({createdb}, 'postgres://app:pw@localhost/app');
+ * assert.deepStrictEqual(createdb.envs, [{PGPASSWORD: 'pw'}]);
+ * assert.strictEqual(createdb.program?.calls.length, 1);
+ * ```
+ */
+export const create_mock_program_factory = (
+	program: MockProgram | null = create_mock_program()
+): MockProgramFactory => {
+	const envs: Array<Readonly<Record<string, string>>> = [];
+	const factory = (env: Readonly<Record<string, string>>): Program | null => {
+		envs.push({ ...env });
+		return program;
+	};
+	return Object.assign(factory, { envs, program });
+};
+
+/**
+ * A program output that exited with `code`.
+ *
+ * @param code - the exit code
+ * @param stderr - what the program wrote to stderr
+ * @param stdout - what the program wrote to stdout
+ */
+export const mock_program_exit = (code: number, stderr = '', stdout = ''): ProgramOutput => ({
+	kind: 'exited',
+	code,
+	stdout,
+	stderr
+});
 
 /**
  * Set stdin buffer for simulating user input.
