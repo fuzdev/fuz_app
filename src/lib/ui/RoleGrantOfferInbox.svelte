@@ -56,7 +56,7 @@
 	{#if role_grant_offers.incoming.length === 0}
 		<p class="text_50">No pending offers.</p>
 	{:else}
-		<ul class="column gap_md">
+		<ul class="unstyled column gap_md">
 			{#each role_grant_offers.incoming as offer (offer.id)}
 				{@const accepting = role_grant_offers.accept.loading(offer.id)}
 				{@const declining = role_grant_offers.decline.loading(offer.id)}
@@ -104,7 +104,7 @@
 								decline
 							{/snippet}
 							{#snippet popover_content(popover, confirm)}
-								<div class="column gap_sm p_sm">
+								<div class="p_sm">
 									<label>
 										<div class="title">reason (optional)</div>
 										<textarea

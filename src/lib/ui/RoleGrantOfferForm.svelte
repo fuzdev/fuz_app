@@ -119,7 +119,7 @@
 </script>
 
 <form
-	class="width_atmost_md column gap_sm"
+	class="width_atmost_md"
 	onsubmit={(e) => {
 		e.preventDefault();
 		void handle_submit();
