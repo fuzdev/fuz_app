@@ -7,7 +7,7 @@ For design rationale and threat model: ../../../docs/identity.md and
 ../../../docs/security.md. For server assembly and middleware ordering:
 ../../../docs/architecture.md and the root ../../../CLAUDE.md. For migration
 runner contract + operator recipes: ../../../docs/migrations.md. For
-workspace-wide DI vocabulary: Skill(fuz-stack) §Dependency Injection.
+workspace-wide DI vocabulary: Skill(fuz-stack) `dependency-injection.md`.
 
 **CLAUDE.md is a map; TSDoc is the detail.** Per-symbol semantics
 (parameters, error shapes, invariants, fire-and-forget contracts) live on
