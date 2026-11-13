@@ -11,7 +11,7 @@
 	const site = site_context.get();
 </script>
 
-<main class="column align-items:center mx_auto width_atmost_md pb_xl9">
+<main class="box mx_auto width_atmost_md pb_xl9">
 	<section class="box">
 		<header class="box pt_xl">
 			<Svg data={logo_fuz_app} size="var(--icon_size_xl)" />
