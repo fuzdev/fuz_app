@@ -76,7 +76,7 @@
 					</div>
 
 					{#if offer.message}
-						<p class="mb_0">{offer.message}</p>
+						<p>{offer.message}</p>
 					{/if}
 
 					<div class="row gap_sm">
@@ -132,7 +132,7 @@
 					</div>
 
 					{#if row_error}
-						<p class="color_c_50 mb_0">{row_error}</p>
+						<p class="color_c_50">{row_error}</p>
 					{/if}
 				</li>
 			{/each}
