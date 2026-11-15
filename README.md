@@ -11,8 +11,9 @@ the goal being an excellent and flexible whole-stack experience
 for developers, operators, and end-users.
 
 fuz_app supports deploying with Node and Bun,
-to servers, static websites, and local-first binaries, with more to come,
-eventually with compatible alternatives written in Rust.
+to servers, static websites, and local-first binaries, with more to come.
+Its Rust twins are the spine crates in [fuz](https://github.com/fuzdev/fuz),
+which mirror its server layers for building app servers in Rust.
 
 This library has no AI features by design, for that see [zzz](https://github.com/fuzdev/zzz).
 
