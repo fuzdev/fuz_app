@@ -67,200 +67,11 @@ their payload shapes are defined in `auth/role_grant_offer_notifications.ts`
 
 ### Context over props for shared deps
 
-Auth, RPC adapters, sidebar, and role_grant offers all flow through
+Auth, RPC adapters, and role_grant offers all flow through
 `create_context` from `@fuzdev/fuz_ui/context_helpers.ts`. Components
 consume with `const x = x_context.get()` (or a `get_rpc`/`$derived`
 pair when the value may change reactively). New shared state joins the
 pattern rather than reintroducing prop-drilling.
-
-## Shell + layout
-
-- `AppShell.svelte` — sidebar-and-main shell. Props: `children`,
-  `sidebar` (Snippet), `sidebar_width = 180`, `sidebar_label = 'sidebar'`
-  (the open overlay's accessible name), `sidebar_state?`,
-  `keyboard_shortcut?`, `show_toggle?`, `toggle_button?` (receives
-  `{title, show_sidebar, toggle, sidebar_id}`). Provisions
-  `sidebar_state_context` internally (creates one `SidebarState` if the
-  `sidebar_state` prop is not supplied). Requires the SvelteKit runtime
-  (`afterNavigate` from `$app/navigation`). The toggle renders only while
-  `show_toggle && sidebar_state.enabled`, before the sidebar in the DOM;
-  the built-in one is a disclosure (`aria-expanded` + `aria-controls`
-  pointing at the sidebar's id — `SidebarState.sidebar_id` when set, else
-  one from `$props.id()`) with the static name
-  `aria-label="sidebar"`, a dynamic `title`, `aria-keyshortcuts` when
-  `keyboard_shortcut` is set, and a `←` glyph CSS mirrors when closed.
-  The shortcut acts only while the sidebar is enabled, on the current
-  mode's field (so it drives the overlay at narrow widths).
-  - **Custom toggles** (`toggle_button`): give the button
-    `class="app-shell-toggle"` — it renders as a direct child of the root,
-    where a `:global` rule (the snippet's markup carries no scope hash)
-    stacks it one above the sidebar; the z-index applies only to a
-    positioned button, so position it (e.g. `position: fixed`, like the
-    built-in one) — and `aria-controls={sidebar_id}`, which the
-    focus fallback looks up (the first match that takes focus wins).
-    `show_sidebar` is viewport-dependent (the server renders it as wide):
-    attributes are repaired on hydration, but visible content keyed on it
-    changes at narrow widths, so key visible content on CSS or the
-    viewport-free fields.
-  - **Toggles outside the shell** (a top nav's hamburger) set
-    `SidebarState`'s `sidebar_id` option and carry
-    `aria-controls={sidebar_state.sidebar_id}`, so the focus fallback finds
-    them too. `aria-controls` is read as an id list. A set id assumes one
-    shell per state — shells sharing it at the same time would render the
-    same id.
-  - **Two modes, split by `SidebarState.narrow_query`.** Wide: the sidebar
-    sits beside the content (padded by `--sidebar_offset`) and follows
-    `show_sidebar_wide`. Narrow: it starts closed and opens as an overlay
-    (capped at `85vw`) over a scrim, following `show_sidebar_narrow`; the
-    content is `inert` while open. The overlay closes on navigation
-    (`afterNavigate` inside `AppShell` — consumers write nothing), Escape,
-    a scrim click, and widening out of narrow mode (a crossing `$effect`).
-  - **The open overlay is a modal dialog.** While it's open the sidebar
-    carries `role="dialog"`, `aria-modal="true"`, and `aria-label` from
-    `sidebar_label`. They key on the open overlay (`overlay_open`), which
-    reads the viewport — that's what keeps the persistent wide sidebar (the
-    same element) from ever being a dialog — and the server render matches
-    hydration because the overlay always starts closed, as with `inert`.
-    Opening moves
-    focus into it — the content went `inert`, which dropped focus — to the
-    first control that takes focus (`tabIndex >= 0`, checked after each
-    `focus()`), else to the sidebar itself, `tabindex="-1"` while it's the
-    overlay (script-focusable, skipped by Tab; the wide sidebar has none, so
-    a click on its background leaves focus where it was). No focus trap:
-    `inert` already keeps Tab out of the content, and the built-in toggle
-    stays Tab-reachable as a close control. `aria-modal` lets assistive
-    tech hide everything outside the sidebar, the toggle included
-    (Chromium keeps it exposed; WebKit may not), so a sidebar whose
-    screen-reader users need a close control beyond Escape and navigation
-    renders its own.
-  - **Escape** is a window `keydown` listener registered by an `$effect`
-    only while the overlay is open, so listeners registered earlier (a
-    contextmenu's, mounted with the page) see Escape first and can swallow
-    it. It never calls `preventDefault`, so the browser's close requests
-    (dialog `cancel`, `popover="auto"`) stay intact, and it bails while a
-    modal is open (`document.querySelector(':modal')` matches). An open
-    `popover="auto"` isn't `:modal`, so one Escape closes it and the overlay
-    together. A visible `Popover` (`popover.svelte.ts`) is different: its
-    Escape listener sits on `document`, ahead of `window`, and prevents the
-    default, which the overlay's listener skips — so the first Escape closes
-    only the popover. Closing is `flushSync`ed so the content leaves `inert` before
-    focus returns. When focus was inside the sidebar or had fallen to `body`
-    (opening from the content makes it `inert`, which drops focus there), it
-    goes back to the opener if still connected and focusable, else to the
-    first `[aria-controls]` naming the sidebar's id that takes focus (Safari
-    doesn't focus a clicked button, so the opener can be `null`). A
-    narrow-mode close from `keyboard_shortcut` or a scrim click goes through
-    the same close-and-return path; wide mode just toggles. The shortcut
-    bails on an open modal too, so pressing it inside a dialog opened from
-    the overlay doesn't close the overlay behind it.
-  - **No hydration flash.** The mode rules sit in two cascade layers
-    nested under `fuz_app`. `@layer fuz_app.app_shell_base` in the scoped
-    `<style>` holds the base and state rules, which apply in both modes;
-    the narrow overrides are one `<style media={narrow_query}>` in
-    `<svelte:head>` (Svelte attribute-escapes the query; the CSS text is
-    constant), inside `@layer fuz_app.app_shell_narrow`, rendered only
-    while `narrow_query` isn't `null`. Both sheets open with
-    `@layer fuz_app.app_shell_base, fuz_app.app_shell_narrow;`, so the
-    narrow layer wins whatever the selectors' specificity (the scoped ones
-    carry the hash) and whichever sheet the browser meets first — a
-    client-mounted shell appending its head style late changes nothing.
-    The root's state classes read only the viewport-free fields, so the
-    server render and hydration agree and CSS picks the mode; `narrow` only
-    drives `inert`, ARIA, and input routing. The narrow rules are unscoped
-    (they match every `.app-shell` by plain class names), so shells mounted
-    at the same time must share a `narrow_query`. CSP: needs
-    `style-src-elem 'unsafe-inline'` (fuz_ui's CSP default allows it) or
-    the style's hash.
-  - **Layer names are namespaced** under one top-level `fuz_app` layer, so
-    they can't collide with a consumer's and a consumer that layers its own
-    CSS has one name to order against: `@layer fuz_app, overrides;` in a
-    sheet that loads before the shell puts `overrides` above it.
-  - **Never layer a property the reset sets.** fuz_css's reset
-    (`*, ::before, ::after, ::backdrop`) sets `box-sizing`, `border`,
-    `margin`, and `padding`, and it's unlayered, so it beats every layered
-    declaration of those at any specificity. The shell routes such a value
-    through a custom property the layers set and one unlayered rule reads.
-    The content offset is the one case: the layers set `--sidebar_offset`
-    on `.app-shell-content` (`--sidebar_width` under `.wide-open`, `0px`
-    otherwise and in the narrow layer), and
-    `:global(div:where(.app-shell > .app-shell-content)) { padding-left: var(--sidebar_offset, 0px) }`
-    reads it, unscoped at (0,0,1) — above the reset's (0,0,0), below any
-    class selector. The SSR test fails any layered `padding*`, `margin*`,
-    `border*`, or `box-sizing` declaration. No other layered declaration
-    overlaps the reset or fuz_css's element base rules (the sidebar, scrim,
-    and content are `div`s and the glyph a `span`, which fuz_css leaves
-    unstyled; the toggle's only layered property is `z-index`, which
-    `button`'s base rule doesn't set).
-  - **Public class hooks**: `.app-shell` (state classes `.wide-open` /
-    `.narrow-open`), `.app-shell-content`, `.app-shell-sidebar`,
-    `.app-shell-scrim`, `.app-shell-toggle`, `.app-shell-toggle-glyph`.
-    **Any unlayered rule overrides the shell**, at any specificity and in
-    any sheet order, so no specificity matching is needed. The flip side
-    is the reset case above: an unlayered rule that sets a property the
-    shell layers wins over it, which is why the shell keeps reset-owned
-    properties out of its layers. A consumer's own layered rules order
-    against `fuz_app` by first appearance in the document, so keep
-    overrides unlayered or order `fuz_app` first. The rules that must
-    reach consumer markup are `:global` under the scoped root: the toggle's
-    z-index (`.app-shell > .app-shell-toggle`), the glyph mirroring
-    (`.app-shell > .app-shell-toggle .app-shell-toggle-glyph`, so a custom
-    toggle can reuse `.app-shell-toggle-glyph` inside its
-    `.app-shell-toggle`; going through the root's own toggle keeps an outer
-    shell's state off a nested shell's glyph), and
-    `.app-shell-sidebar :modal { visibility: visible }`, which keeps a
-    top-layer dialog opened from the sidebar shown while the sidebar hides.
-  - **CSS variables**: `--sidebar_width` (always the configured width, set
-    from the prop — not the effective offset), `--sidebar_offset` (the
-    effective offset, set on `.app-shell-content`: `--sidebar_width` while
-    the wide sidebar is open, else `0px`; the content's descendants can
-    read it, e.g. to inset a fixed header), `--sidebar_bg` (default
-    `--shade_05`), `--sidebar_z_index` (default `200` in both modes; the
-    scrim shares it, the toggle sits one above), `--sidebar_scrim_bg`
-    (default `--darken_40`). Override the offset by setting
-    `--sidebar_offset` or writing a `padding-left` rule on
-    `.app-shell-content`; a consumer `padding` shorthand there overrides it
-    too. Either applies in both modes and open or closed, since the state
-    classes don't track the viewport — wrap it in the narrow query's negation
-    to keep narrow mode at `0px`. To change only the wide open offset, target
-    `.app-shell.wide-open > .app-shell-content`, also inside that negation.
-- `ColumnLayout.svelte` — fixed `aside` column + fluid `children`
-  column; `column_width = '280px'`, `toggle_label = 'menu'`. Below 64rem of
-  its own width (an `inline-size` container query named `column_layout`;
-  64rem under fuz_css's 62.5% root is fuz_css's `sm` breakpoint, 640px at
-  the default font size) the columns stack and the aside collapses behind a
-  sticky `type="button"` toggle (`menuitem plain` with a `chevron`, text
-  `toggle_label`, `aria-expanded`/`aria-controls`); opened, the aside sits in flow above the content (scrolled into view under the toggle when scroll anchoring would leave it above the view), and `afterNavigate` closes it. With a bounded height, the stacked layout
-  scrolls as one column and the toggle sticks to its top; under a parent
-  that grows with its content, the page scrolls and the toggle scrolls away
-  with it. Above the threshold the toggle is `display: none`. The switch is
-  CSS alone, so the server render shows the right form at any width and
-  hydration changes nothing. The
-  aside column is a plain `<div>` (the toggle's `aria-controls` target), not
-  a landmark, as with `AppShell`'s sidebar; consumers render the landmark
-  inside the snippet - a `<nav aria-label>` for links, or an `<aside aria-label>` for other content. Hooks: `--column_width`, `--column_toggle_bg` (default
-  `--shade_00`). The container can't size from its content, so a
-  shrink-to-fit placement collapses it to zero width.
-- `MenuLink.svelte` — SvelteKit `<a>` with `selected` derived from
-  `page.url.pathname` (fires for exact match + descendant pages).
-  Exact matches additionally get `aria-current="page"`. Takes `path`
-  (resolved via `resolve` from `$app/paths`). The `.highlighted` name is
-  intentionally free for orthogonal emphasis (badges, recent activity).
-- `sidebar_state.svelte.ts` — `SidebarState`, `sidebar_state_context`,
-  `SIDEBAR_NARROW_QUERY_DEFAULT` (`'(max-width: 800px)'`). Options:
-  `enabled?` (reactive getter overriding the internal field) and
-  `narrow_query?` (`null` disables narrow mode; must contain parentheses
-  since it feeds both CSS `media` and `MediaQuery`, which would auto-wrap a
-  paren-less query while CSS wouldn't — throws in DEV), and `sidebar_id?`
-  (the sidebar element's id, read back as the readonly `sidebar_id`, `null`
-  when unset — for toggles outside `AppShell`). Visibility is two
-  viewport-free fields, `show_sidebar_wide` (default `true`, the desktop
-  preference narrow interactions never touch) and `show_sidebar_narrow`
-  (default `false`). `narrow` is the viewport match (`false` in SSR);
-  `show_sidebar` is the effective visibility for the current mode and its
-  setter writes that mode's field, as does `toggle_sidebar` (routed at call
-  time). `close_narrow()` closes the overlay. `activate()` enables and
-  shows wide; its disposer clears `enabled` and both fields — pair with
-  `$effect` for scoped activation.
 
 ## Auth forms
 
@@ -480,7 +291,6 @@ destructive actions.
   `new FormState<'username' | 'password'>()` makes a misspelled field a
   compile error (defaults to `string`). In DEV throws if an input loses
   focus without a `name` attribute — all tracked inputs must be named.
-- `sidebar_state.svelte.ts` — see Shell + layout above.
 
 ## Per-domain state modules
 
@@ -617,9 +427,6 @@ format_scope, global_label)` helper — `global_label = null` renders no
   surfaces). `RoleGrantOfferInbox` / `RoleGrantOfferHistory` accept a
   `format_scope?: FormatScope` prop — same shape as the context, prop
   wins when supplied.
-- `sidebar_state_context` — `() => SidebarState`. Provisioned by
-  `AppShell`. A toggle reading it for `aria-controls` needs the state's
-  `sidebar_id` option set (see Shell + layout).
 
 ## Popovers
 
@@ -633,7 +440,8 @@ format_scope, global_label)` helper — `global_label = null` renders no
   trigger gets `aria-expanded`, and `aria-controls` only while visible with
   content mounted (cleared on hide). While visible, a `document` `keydown`
   listener hides on Escape — preventing the default so enclosing layers
-  (`AppShell`'s overlay) leave it alone, skipping an Escape already
+  (fuz_ui's `AppShell` overlay, pinned by
+  `src/test/ui/app_shell_popover.dom.test.ts`) leave it alone, skipping an Escape already
   prevented, and returning focus to the trigger when it was in the content.
   Only the newest visible popover handles Escape (a module-level stack), so
   nested ones close innermost first, and while a `:modal` is open a popover

@@ -12,7 +12,7 @@
  * name. Escape hides the popover while it's visible, returning focus to the
  * trigger when focus was inside the content. The listener is on `document`,
  * so it runs before `window` listeners, and it prevents the default — so an
- * enclosing layer that skips handled Escapes, like `AppShell`'s narrow
+ * enclosing layer that skips handled Escapes, like fuz_ui's `AppShell` narrow
  * overlay, stays open, and only the popover closes. An Escape another
  * listener already prevented is left alone. With several popovers visible,
  * only the newest handles Escape, so nested ones close innermost first. While

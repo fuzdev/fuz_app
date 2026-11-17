@@ -114,7 +114,7 @@ that subtree.
 - **auth/** — crypto (keyring, session, password, api/daemon tokens, bootstrap), schemas + DDL, `query_*` over `QueryDeps`, middleware, routes, RPC action registries (admin, role-grant-offer, account, self-service-role, actor-lookup, actor-search) + `standard_rpc_actions` bundle, cleanup. → `src/lib/auth/CLAUDE.md`; the digest and credential formats shared with the Rust spine (algorithm, encoding, compare rule): the fuz-stack skill's `twin-impl.md` § Digests
 - **http/** — generic framework: `RouteSpec` + declarative transactions, `define_route` and the handler results (`route_ok` / `route_fail` / `route_raw`), the route error map (derived ∪ middleware ∪ explicit error definitions), JSON-RPC 2.0 envelopes + errors, origin/proxy middleware, `AppSurface` generation, post-commit `emit_after_commit`. → `src/lib/http/CLAUDE.md`
 - **actions/** — SAES (Symmetric Action Event System): `ActionSpec` types, registry-compile invariants, shared `perform_action` core, RPC dispatcher, WS endpoint, notification → SSE event bridge, transports (HTTP, WS frontend), the backend `ConnectionRegistry` (two-phase admission, per-account connection cap, and per-connection outbound byte budget — a connection sent more than its client takes closes with `WS_CLOSE_OUTBOUND_OVERFLOW`), the `ConnectionCloser` capability + `queue_connection_close` (revocations close live connections after their commit) + `create_revocation_guard` (the audit listener), `ActionDispatcher` + server→client peer requests (`peer/ping`), reactive `FrontendWebsocketClient`, typed RPC client. → `src/lib/actions/CLAUDE.md`
-- **ui/** — Svelte 5 components, runes-based `*_state.svelte.ts` modules, `*_rpc_context` DI pattern, auth/admin/role-grant-offer forms, datatable, popovers, layout shell. → `src/lib/ui/CLAUDE.md`
+- **ui/** — Svelte 5 components, runes-based `*_state.svelte.ts` modules, `*_rpc_context` DI pattern, auth/admin/role-grant-offer forms, datatable, popovers. → `src/lib/ui/CLAUDE.md`
 - **testing/** — test utilities exported to consumers; every module but `cross_backend/make_cross_backend_project.ts` first imports `assert_dev_env.ts` (`'./assert_dev_env.ts'`, or `'../assert_dev_env.ts'` from a subdirectory). → `src/lib/testing/CLAUDE.md`
 
 ### Smaller subsystems
@@ -153,7 +153,7 @@ Shared helpers accept small `*Deps` from `runtime/deps.ts` (not `Pick<GodType, .
 - `@hono/bun` (>=1) — optional, for the Bun cross-backend testing server adapter (`testing/cross_backend/testing_server_bun.ts`)
 - `esm-env` (^1) — optional, for the DEV-only output-validation gate
 - `@fuzdev/fuz_css` (>=0.75.0) — optional, the classes and design tokens the `ui/` components are styled with
-- `@fuzdev/fuz_ui` (>=0.223.0) — optional, for the `ui/` components and state modules (contexts, `PendingButton`, autofocus, icons)
+- `@fuzdev/fuz_ui` (>=0.227.0) — optional, for the `ui/` components and state modules (contexts, `PendingButton`, autofocus, icons)
 
 ## Architecture
 
