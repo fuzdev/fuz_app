@@ -1,5 +1,20 @@
 # @fuzdev/fuz_app
 
+## 0.177.0
+
+### Minor Changes
+
+- breaking: remove `ui/AppShell.svelte`, `ui/sidebar_state.svelte.ts`, `ui/MenuLink.svelte`, and `ui/ColumnLayout.svelte`, which moved to fuz_ui 0.229.0 as `@fuzdev/fuz_ui/AppShell.svelte`, `@fuzdev/fuz_ui/sidebar_state.svelte.ts`, `@fuzdev/fuz_ui/MenuLink.svelte`, and `@fuzdev/fuz_ui/ColumnLayout.svelte` ([d3ac422](https://github.com/fuzdev/fuz_app/commit/d3ac422))
+  
+  - switch all four imports in one change: fuz_ui's `AppShell` provides its own `sidebar_state_context`, which fuz_app's never matched
+  - the API changed in the move (fuz_ui's 0.229.0 changelog has the full list): `SidebarState`'s `show_sidebar*`, `toggle_sidebar`, and `sidebar_id` are now `show*`, `toggle()`, and `id`; `MenuLink` takes a resolved `href` in place of `path`; a link to the site root now needs `exact` (it used to match only itself, and now contains every page), and other links select as before, with `exact` available to select an overview only on its own page; `AppShell`'s `sidebar_width` is a CSS length, its `toggle_button` snippet is gone, and its cascade layers are `fuz_ui.app_shell_base` / `fuz_ui.app_shell_narrow`, so a sheet that ordered `@layer fuz_app, overrides;` now orders `fuz_ui`; `ColumnLayout`'s `column_width` and `--column_width` are now `aside_width` and `--column_layout_aside_width`
+
+### Patch Changes
+
+- fix: declaration maps resolve to the shipped source, so go-to-definition lands in `src/lib` ([5759064](https://github.com/fuzdev/fuz_app/commit/5759064))
+- deps: peer '@fuzdev/fuz_schema' `>=0.5.7`, admitting 0.6: the floor is the version whose named schema types (`ObjectSchema`, `StringSchema`, …) this package's declarations print when built against it, and 0.6.0's type changes compile here unchanged ([fd6033e](https://github.com/fuzdev/fuz_app/commit/fd6033e))
+- fix: `RoleGrantOfferForm` and `RoleGrantOfferInbox` no longer add a gap on top of their labels' and list items' flow margins; the inbox's rows rely on fuz_css's `.column` margin reset for their paragraphs ([4163c94](https://github.com/fuzdev/fuz_app/commit/4163c94))
+
 ## 0.176.0
 
 ### Minor Changes
