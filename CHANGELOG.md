@@ -1,10 +1,21 @@
 # @fuzdev/fuz_app
 
+## 0.178.0
+
+### Minor Changes
+
+- breaking: move the Node WebSocket transport to `@hono/node-server` 2, which upgrades sockets itself, and drop the `@hono/node-ws` peer dep ([a6d773a](https://github.com/fuzdev/fuz_app/commit/a6d773a))
+  
+  - `AppServerOptions.create_upgrade_websocket: (app) => UpgradeWebSocket` is replaced by `upgrade_websocket: UpgradeWebSocket`, the runtime adapter's module-level helper: the factory existed only because `@hono/node-ws` built its helper from the app. Bun passes `upgradeWebSocket` from `@hono/bun`; Node passes `upgradeWebSocket` from `@hono/node-server` and gives `serve` a `ws` `WebSocketServer` built with `noServer: true` (`serve({fetch, port, websocket: {server: wss}})`) in place of `injectWebSocket(server)`. Set its `maxPayload` to a small multiple of the endpoint's `max_message_bytes` (the test adapter uses twice) — `ws` defaults to 100 MiB
+  - the `@hono/node-server` peer is `>=2`; remove `@hono/node-ws` from a Node consumer's deps and depend on `ws` (`>=8`) directly, which came transitively through `@hono/node-ws`
+  - testing: `TestingServerAdapter.prepare_websocket` and `BuildTestingAppContext.prepare_websocket` return the `UpgradeWebSocket` helper, to pass as `upgrade_websocket`; `PreparedWebsocket` (with its `attach_to_server` step) and `ServeHandle.native` are gone, as the adapter threads what it prepared into `serve`. The Node adapter builds its `ws` server with `maxPayload` at twice `max_message_bytes`, as before
+  - unchanged on the wire: `@hono/node-server` 2 still answers a refused upgrade with an empty body (`ws_refusal_body: false`), and still neither awaits `onOpen` / `onMessage` nor stops delivering frames before a server close lands
+
 ## 0.177.0
 
 ### Minor Changes
 
-- breaking: remove `ui/AppShell.svelte`, `ui/sidebar_state.svelte.ts`, `ui/MenuLink.svelte`, and `ui/ColumnLayout.svelte`, which moved to fuz_ui 0.229.0 as `@fuzdev/fuz_ui/AppShell.svelte`, `@fuzdev/fuz_ui/sidebar_state.svelte.ts`, `@fuzdev/fuz_ui/MenuLink.svelte`, and `@fuzdev/fuz_ui/ColumnLayout.svelte` ([d3ac422](https://github.com/fuzdev/fuz_app/commit/d3ac422))
+- remove `ui/AppShell.svelte`, `ui/sidebar_state.svelte.ts`, `ui/MenuLink.svelte`, and `ui/ColumnLayout.svelte`, which moved to fuz_ui 0.229.0 as `@fuzdev/fuz_ui/AppShell.svelte`, `@fuzdev/fuz_ui/sidebar_state.svelte.ts`, `@fuzdev/fuz_ui/MenuLink.svelte`, and `@fuzdev/fuz_ui/ColumnLayout.svelte` ([d3ac422](https://github.com/fuzdev/fuz_app/commit/d3ac422)) ([breaking](https://github.com/fuzdev/fuz_app/commit/breaking))
   
   - switch all four imports in one change: fuz_ui's `AppShell` provides its own `sidebar_state_context`, which fuz_app's never matched
   - the API changed in the move (fuz_ui's 0.229.0 changelog has the full list): `SidebarState`'s `show_sidebar*`, `toggle_sidebar`, and `sidebar_id` are now `show*`, `toggle()`, and `id`; `MenuLink` takes a resolved `href` in place of `path`; a link to the site root now needs `exact` (it used to match only itself, and now contains every page), and other links select as before, with `exact` available to select an overview only on its own page; `AppShell`'s `sidebar_width` is a CSS length, its `toggle_button` snippet is gone, and its cascade layers are `fuz_ui.app_shell_base` / `fuz_ui.app_shell_narrow`, so a sheet that ordered `@layer fuz_app, overrides;` now orders `fuz_ui`; `ColumnLayout`'s `column_width` and `--column_width` are now `aside_width` and `--column_layout_aside_width`
