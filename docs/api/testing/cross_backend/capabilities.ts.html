@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/DE7tR5Qr.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/AhpOolso.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.CKWk64sG.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.DcOfMpAG.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.Df_WMcbQ.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.9kuMBgZV.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/lccI8bFS.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/gAhHRp_j.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CdZ8kYh_.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/DS7DKeg7.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.Cv2k9NBb.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/gzmppFjo.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.DQJDblK8.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/lvsDM1jN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CvoG0IXQ.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -242,7 +242,7 @@ mount that endpoint (the TS spine binary + the Rust <!--]--><!--[3--><!--[0--><!
 forks how <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/cross_backend/transport_composition.ts#describe_transport_composition_cross_tests"><!--[0--><!--[-1-->describe_transport_composition_cross_tests<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> reads its WS rows.
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->true<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, an empty refusal body fails the case; <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->false<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, an empty body is
 allowed (the case pins the status alone) and a non-empty one is still
-asserted.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->false<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> on Node: <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->@hono/node-ws<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> writes a refused upgrade to the raw
+asserted.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->false<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> on Node: <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->@hono/node-server<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> writes a refused upgrade to the raw
 socket with <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Content-Length: 0<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, dropping the response body. <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->true<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> on
 Bun and the Rust spine, which send the response as built.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--> <!--[0--><p class="row gap_md"><strong>type</strong> <!--[-1--><code data-lang="ts" class="svelte-jqsy8a inline"><!--[-1--><!----><span class="token_builtin">boolean</span><!----><!--]--></code><!--]--><!----></p><!--]--> <!--[0--><div class="row_wrap gap_md"><!--[0--><!--[--><span class="chip">readonly</span><!--]--><!--]--> <!--[-1--><!--]--></div><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--><!----></section><section class="svelte-pitz0d"><h4><code>testing_backdoors<!--[-1--><!--]--></code></h4> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->The <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->_testing_*<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> backdoors the backend mounts on its RPC endpoint, from
 <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/cross_backend/spine_surface_constants.ts#TESTING_BACKDOOR_METHODS"><!--[0--><!--[-1-->TESTING_BACKDOOR_METHODS<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> (a consumer's own seams stay off it). Not a
@@ -299,7 +299,7 @@ the ordering.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!-
 forks how <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/cross_backend/transport_composition.ts#describe_transport_composition_cross_tests"><!--[0--><!--[-1-->describe_transport_composition_cross_tests<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> reads its WS rows.
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->true<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, an empty refusal body fails the case; <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->false<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, an empty body is
 allowed (the case pins the status alone) and a non-empty one is still
-asserted.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->false<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> on Node: <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->@hono/node-ws<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> writes a refused upgrade to the raw
+asserted.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->false<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> on Node: <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->@hono/node-server<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> writes a refused upgrade to the raw
 socket with <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Content-Length: 0<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, dropping the response body. <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->true<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> on
 Bun and the Rust spine, which send the response as built.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--> <!--[0--><p class="row gap_md"><strong>type</strong> <!--[-1--><code data-lang="ts" class="svelte-jqsy8a inline"><!--[-1--><!----><span class="token_builtin">boolean</span><!----><!--]--></code><!--]--><!----></p><!--]--> <!--[0--><div class="row_wrap gap_md"><!--[0--><!--[--><span class="chip">readonly</span><!--]--><!--]--> <!--[-1--><!--]--></div><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--><!----></section><!--]--></section><!--]--><!----></article><!----></section><section><header><!----><h3 class="tome-section-header svelte-dz8ld7"><div class="flex:1"><!--[0--><div class="word-break:break-all">in_process_capabilities</div><!----><!--]--></div> <a aria-label="hashlink" class="hashlink  svelte-1aeep1w" href="#in_process_capabilities"><!--[-1-->#<!--]--></a> <span class="hashlink-scroll-target svelte-1aeep1w" id="in_process_capabilities" aria-hidden="true"></span><!----><!----></h3><!----></header><!----> <article id="in_process_capabilities"><p class="row justify-content:space-between"><!--[0--><a class="module-link chip " href="/docs/api/testing/cross_backend/capabilities.ts"><!--[-1-->testing/cross_backend/capabilities.ts<!--]--></a><!--]--><!----> <!--[0--><a class="chip" href="https://github.com/fuzdev/fuz_app/blob/main/src/lib/testing/cross_backend/capabilities.ts#L329" target="_blank" rel="noopener">view source</a><!--]--></p>  <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[0--><code data-lang="ts" class="svelte-jqsy8a"><!--[-1--><!----><span class="token_capitalized_identifier token_class_name">BackendCapabilities</span><!----><!--]--></code><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <code data-lang="ts" class="svelte-jqsy8a"><!--[-1--><!----><span class="token_special_keyword">import</span> <span class="token_punctuation">{</span>in_process_capabilities<span class="token_punctuation">}</span> <span class="token_special_keyword">from</span> <span class="token_string">'@fuzdev/fuz_app/testing/cross_backend/capabilities.js'</span><span class="token_punctuation">;</span><!----><!--]--></code><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Capability declarations for the in-process Hono transport. Nearly every
 flag is <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->true<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> because in-process testing exercises the full backend
@@ -323,16 +323,16 @@ call pattern.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!-
 			
 			<script>
 				{
-					__sveltekit_1qipe8d = {
+					__sveltekit_1b8v4u5 = {
 						base: "",
-						version: "019cab879c1384fcc3bd7feb486f5323cfb07bf1"
+						version: "52aeab095d56a0e2fe51f8a8aec9fc0c35a7319f"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.DVvYzo4C.js").then(async (kit) => {
-						kit.init(__sveltekit_1qipe8d);
-						const app = await import("/_app/immutable/entry/app.CKWk64sG.js");
+						kit.init(__sveltekit_1b8v4u5);
+						const app = await import("/_app/immutable/entry/app.Df_WMcbQ.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],

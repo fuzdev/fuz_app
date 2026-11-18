@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/DE7tR5Qr.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/AhpOolso.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.CKWk64sG.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.DcOfMpAG.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.Df_WMcbQ.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.9kuMBgZV.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/lccI8bFS.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/gAhHRp_j.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CdZ8kYh_.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/DS7DKeg7.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.Cv2k9NBb.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/gzmppFjo.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.DQJDblK8.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/lvsDM1jN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CvoG0IXQ.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -123,7 +123,7 @@ session-only on both spines.<!--]--><!--]--><!----></li><!--]--><!--]--><!----><
 its named fields) or, past the RPC front door, the JSON-RPC error envelope
 with the reason on <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->error.data.reason<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->. A WebSocket refusal's body is
 required where the backend declares <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->capabilities.ws_refusal_body<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->; where it
-doesn't (Node's <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->@hono/node-ws<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> drops a refused upgrade's body), an empty
+doesn't (Node's <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->@hono/node-server<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> drops a refused upgrade's body), an empty
 body passes on its status and a body that is sent is still asserted.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[4--><strong><!--[--><!--[2-->Transport.<!--]--><!--]--><!----></strong><!--]--><!--[2--> Given a <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->base_url<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, every probe is written to the socket
 (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/transports/raw_http.ts#raw_http_exchange"><!--[0--><!--[-1-->raw_http_exchange<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->): an upgrade has to be, and an over-cap request sends
 its head alone, as <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->body_size.ts<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> explains — the 413 must arrive without a
@@ -154,16 +154,16 @@ the cap a backend keeps off its RPC path.<!--]--><!--]--><!----></p><!--]--><!--
 			
 			<script>
 				{
-					__sveltekit_1qipe8d = {
+					__sveltekit_1b8v4u5 = {
 						base: "",
-						version: "019cab879c1384fcc3bd7feb486f5323cfb07bf1"
+						version: "52aeab095d56a0e2fe51f8a8aec9fc0c35a7319f"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.DVvYzo4C.js").then(async (kit) => {
-						kit.init(__sveltekit_1qipe8d);
-						const app = await import("/_app/immutable/entry/app.CKWk64sG.js");
+						kit.init(__sveltekit_1b8v4u5);
+						const app = await import("/_app/immutable/entry/app.Df_WMcbQ.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],
