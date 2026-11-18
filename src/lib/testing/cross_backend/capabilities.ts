@@ -245,7 +245,7 @@ export interface BackendCapabilities {
 	 * allowed (the case pins the status alone) and a non-empty one is still
 	 * asserted.
 	 *
-	 * `false` on Node: `@hono/node-ws` writes a refused upgrade to the raw
+	 * `false` on Node: `@hono/node-server` writes a refused upgrade to the raw
 	 * socket with `Content-Length: 0`, dropping the response body. `true` on
 	 * Bun and the Rust spine, which send the response as built.
 	 */

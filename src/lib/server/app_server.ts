@@ -395,39 +395,28 @@ export interface AppServerOptions {
 	rpc_endpoints?: Array<RpcEndpointSpec> | ((context: AppServerContext) => Array<RpcEndpointSpec>);
 
 	/**
-	 * Returns the Hono runtime adapter's `upgradeWebSocket` helper for the
-	 * assembled app. `create_app_server` calls it once, with the app it
-	 * builds (the same instance as `AppServer.app`), after creating the app
-	 * and before mounting `ws_endpoints` — and only when `ws_endpoints`
-	 * resolves non-empty, so it is never called for a server with no
-	 * WebSocket endpoints. Required in that case: assembly throws without it.
-	 * One helper services every mounted endpoint.
+	 * The Hono runtime adapter's `upgradeWebSocket` helper, which services
+	 * every mounted `ws_endpoints` entry. Required when `ws_endpoints`
+	 * resolves non-empty — assembly throws without it — and unused otherwise.
 	 *
-	 * A factory rather than the helper itself because Node's adapter needs
-	 * the app: `@hono/node-ws` has no module-level helper, only
-	 * `createNodeWebSocket({app})`, and `create_app_server` is what builds
-	 * the app. Bun's ignores the argument:
+	 * Bun's is `upgradeWebSocket` from `@hono/bun`, whose `websocket` goes
+	 * to `Bun.serve`. Node's is `upgradeWebSocket` from `@hono/node-server`,
+	 * which upgrades only on a server given a `ws` `WebSocketServer` built
+	 * with `noServer: true`; cap its `maxPayload` near the endpoint's
+	 * `max_message_bytes`, since `ws` defaults to 100 MiB:
 	 *
 	 * ```ts
-	 * import {upgradeWebSocket} from '@hono/bun';
-	 * create_upgrade_websocket: () => upgradeWebSocket,
+	 * import {serve, upgradeWebSocket} from '@hono/node-server';
+	 * import {WebSocketServer} from 'ws';
+	 * const server = await create_app_server({..., upgrade_websocket: upgradeWebSocket});
+	 * const wss = new WebSocketServer({noServer: true, maxPayload: 2 * max_message_bytes});
+	 * serve({fetch: server.app.fetch, port, websocket: {server: wss}});
 	 * ```
 	 *
-	 * Node keeps the adapter so it can attach to the server after `serve()`:
-	 *
-	 * ```ts
-	 * let node_ws: NodeWebSocket | undefined;
-	 * const server = await create_app_server({
-	 *   ...,
-	 *   create_upgrade_websocket: (app) => (node_ws = createNodeWebSocket({app})).upgradeWebSocket,
-	 * });
-	 * node_ws?.injectWebSocket(serve({fetch: server.app.fetch, port}));
-	 * ```
-	 *
-	 * Test harnesses pass `() => stub.upgradeWebSocket` with
+	 * Test harnesses pass `stub.upgradeWebSocket` with
 	 * `create_stub_upgrade` from `testing/ws_round_trip.ts`.
 	 */
-	create_upgrade_websocket?: (app: Hono) => UpgradeWebSocket;
+	upgrade_websocket?: UpgradeWebSocket;
 
 	/**
 	 * WebSocket endpoint specs — single source of truth for both surface
@@ -446,7 +435,7 @@ export interface AppServerOptions {
 	 * form when action lists depend on `ctx.deps` — e.g. when spreading
 	 * `create_standard_rpc_actions({...ctx.deps, notification_sender})` over WS.
 	 *
-	 * When non-empty, `create_upgrade_websocket` must be supplied (throws
+	 * When non-empty, `upgrade_websocket` must be supplied (throws
 	 * otherwise). A factory returning `[]` does NOT trip the check —
 	 * feature-flag gated WS surfaces stay safe.
 	 *
@@ -1053,23 +1042,23 @@ const assemble_app_server = async (
 			: options.ws_endpoints,
 		{ allowed_origins: options.allowed_origins, rpc_endpoints: resolved_rpc_endpoints }
 	);
-	// the endpoints to mount and the adapter factory they need — null when none resolve
+	// the endpoints to mount and the adapter helper they need — null when none resolve
 	let ws_mount: {
 		endpoints: Array<ResolvedWsEndpointSpec>;
-		create_upgrade_websocket: (app: Hono) => UpgradeWebSocket;
+		upgrade_websocket: UpgradeWebSocket;
 	} | null = null;
 	if (resolved_ws_endpoints?.length) {
-		const create_upgrade_websocket = options.create_upgrade_websocket;
-		if (create_upgrade_websocket === undefined) {
+		const upgrade_websocket = options.upgrade_websocket;
+		if (upgrade_websocket === undefined) {
 			throw new Error(
-				'create_app_server: ws_endpoints resolved non-empty but create_upgrade_websocket is missing. ' +
-					"Pass a factory returning the Hono adapter's upgradeWebSocket helper."
+				'create_app_server: ws_endpoints resolved non-empty but upgrade_websocket is missing. ' +
+					"Pass the Hono adapter's upgradeWebSocket helper."
 			);
 		}
 		for (const endpoint of resolved_ws_endpoints) {
 			assert_endpoint_in_auth_scope('ws_endpoints', endpoint.path);
 		}
-		ws_mount = { endpoints: resolved_ws_endpoints, create_upgrade_websocket };
+		ws_mount = { endpoints: resolved_ws_endpoints, upgrade_websocket };
 	}
 
 	// The one revocation listener, registered when a WS endpoint or the audit
@@ -1251,9 +1240,7 @@ const assemble_app_server = async (
 	// matches the "WS mount is route registration" mental model.
 	const mounted_ws_endpoints: Record<string, ConnectionRegistry> = {};
 	if (ws_mount) {
-		// the adapter helper — built from this app, which Node's
-		// `createNodeWebSocket({app})` needs, and only when there is something to mount
-		const upgrade_websocket = ws_mount.create_upgrade_websocket(app);
+		const { upgrade_websocket } = ws_mount;
 		for (const endpoint of ws_mount.endpoints) {
 			const { registry: endpoint_registry } = register_action_ws({
 				app,

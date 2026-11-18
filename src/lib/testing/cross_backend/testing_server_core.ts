@@ -7,26 +7,24 @@ import '../assert_dev_env.ts';
  * A test binary mounts a fuz_app-derived surface over a real HTTP socket so
  * the `cross_backend/*` suites (and the cross-impl bench) can drive it the
  * same way they drive the Rust spine. This module owns the runtime-neutral
- * orchestration — stale-daemon check, daemon-info write, serve, post-serve
- * WS attach, graceful shutdown — and delegates the runtime-boundary
- * primitives (HTTP serve, WS upgrade construction, signals, pid, exit) to a
- * `TestingServerAdapter`. The shipped adapters are
- * `testing/cross_backend/testing_server_node.ts` (`@hono/node-server` + `@hono/node-ws`)
+ * orchestration — stale-daemon check, daemon-info write, serve, graceful
+ * shutdown — and delegates the runtime-boundary primitives (HTTP serve, WS
+ * upgrade, signals, pid, exit) to a `TestingServerAdapter`. The shipped
+ * adapters are `testing/cross_backend/testing_server_node.ts` (`@hono/node-server` + `ws`)
  * and `testing/cross_backend/testing_server_bun.ts` (`Bun.serve` + `@hono/bun`).
  *
  * The app itself — routes, RPC, DB, `_testing_reset`, WS endpoints — is the
  * caller's `StartTestingServerOptions.build_app` seam, so this core
  * stays domain-free. WebSocket endpoints mount through `create_app_server`'s
  * `ws_endpoints`: `build_app` asks its context to prepare the runtime's
- * upgrade helper and passes the resulting factory as
- * `create_upgrade_websocket`; the core attaches it to the server once
- * `serve` returns (Node's `injectWebSocket`). fuz_app's own `testing_spine_server` passes a
+ * upgrade helper and passes it as `upgrade_websocket`; the adapter threads
+ * the prepared frame cap into `serve`. fuz_app's own `testing_spine_server` passes a
  * no-domain build; consumers (fuz_forge) pass their domain build.
  *
  * **NEVER ships in a release.** This module lives under `cross_backend/` and
  * opens with `import '../assert_dev_env.ts';`, which throws on
  * production-bundle load. The runtime adapters reach for the optional
- * `@hono/node-server` / `@hono/node-ws` / `@hono/bun` peer deps; only test
+ * `@hono/node-server` / `ws` / `@hono/bun` peer deps; only test
  * binaries import them.
  *
  * @module
@@ -44,14 +42,10 @@ import type { RuntimeDeps } from '../../runtime/deps.ts';
  *
  * `shutdown` stops accepting new connections at once and settles when the
  * in-flight ones have drained — the core starts it, closes the app (which
- * ends live WebSockets), then awaits it. `native` is an adapter-specific
- * server reference — used by Node's `@hono/node-ws` `injectWebSocket(server)`
- * post-serve hook.
+ * ends live WebSockets), then awaits it.
  */
 export interface ServeHandle {
 	shutdown: () => Promise<void>;
-	/** Adapter-specific server ref for post-serve hooks. Type-erased at the seam. */
-	native?: unknown;
 }
 
 /** Options for `TestingServerAdapter.prepare_websocket`. */
@@ -75,20 +69,6 @@ export interface PrepareWebsocketOptions {
 }
 
 /**
- * Result of an adapter's WS preparation step.
- *
- * `create_upgrade_websocket` is the factory a build passes to
- * `create_app_server` as `AppServerOptions.create_upgrade_websocket`.
- * `attach_to_server` runs after `serve()` returns a `ServeHandle` —
- * Node uses it for `injectWebSocket(server)`, and it does nothing when the
- * factory was never called (no `ws_endpoints`); Bun leaves it undefined.
- */
-export interface PreparedWebsocket {
-	create_upgrade_websocket: (app: Hono) => UpgradeWebSocket;
-	attach_to_server?: (handle: ServeHandle) => void;
-}
-
-/**
  * Runtime adapter contract for the test-binary entry. Each adapter
  * (`testing/cross_backend/testing_server_node.ts`,
  * `testing/cross_backend/testing_server_bun.ts`) implements this and hands the shape to
@@ -101,8 +81,12 @@ export interface TestingServerAdapter {
 	runtime: RuntimeDeps;
 	/** Extract the raw TCP connection IP from a Hono context. */
 	get_connection_ip: (c: Context) => string | undefined;
-	/** Prepare the runtime's WS upgrade helper and its post-serve attach step. */
-	prepare_websocket: (options?: PrepareWebsocketOptions) => PreparedWebsocket;
+	/**
+	 * Prepare WebSocket support for the next `serve` — the frame cap, and on
+	 * Node the `ws` server — and return the runtime's `upgradeWebSocket`
+	 * helper. Called before `serve`, at most once.
+	 */
+	prepare_websocket: (options?: PrepareWebsocketOptions) => UpgradeWebSocket;
 	/** Bind `app.fetch` to `port` on `hostname`; return a `ServeHandle`. */
 	serve: (options: { fetch: Hono['fetch']; port: number; hostname: string }) => ServeHandle;
 	/** Current process pid (for `daemon.json`). */
@@ -116,15 +100,16 @@ export interface TestingServerAdapter {
 /** What the core hands a `StartTestingServerOptions.build_app` seam. */
 export interface BuildTestingAppContext {
 	/**
-	 * Prepare the runtime adapter's WS upgrade helper and return the factory
-	 * to pass to `create_app_server` as `create_upgrade_websocket`. The core
-	 * runs the adapter's attach step once the server is bound, so a build
-	 * that mounts `ws_endpoints` needs nothing else. An HTTP-only build
-	 * doesn't call it. Call it at most once per build: the Node adapter
-	 * attaches one upgrade listener per preparation, and two would race on
-	 * the shared socket.
+	 * Prepare the runtime adapter's WebSocket support and return its
+	 * `upgradeWebSocket` helper, to pass to `create_app_server` as
+	 * `upgrade_websocket`; the adapter threads what it prepared into `serve`,
+	 * so a build that mounts `ws_endpoints` needs nothing else. Call it only
+	 * when mounting: on Node a prepared server routes every `Upgrade:
+	 * websocket` request through the upgrade path, refusing one to a plain
+	 * HTTP route with a bodiless status. Call it at most once per build: the server takes
+	 * one frame cap, the last preparation's.
 	 */
-	prepare_websocket: (options?: PrepareWebsocketOptions) => (app: Hono) => UpgradeWebSocket;
+	prepare_websocket: (options?: PrepareWebsocketOptions) => UpgradeWebSocket;
 }
 
 /** The assembled app a `StartTestingServerOptions.build_app` seam returns. */
@@ -213,13 +198,8 @@ export const start_testing_server = async (options: StartTestingServerOptions): 
 		}
 	}
 
-	const prepared_websockets: Array<PreparedWebsocket> = [];
 	const built = await build_app({
-		prepare_websocket: (ws_options) => {
-			const prepared = adapter.prepare_websocket(ws_options);
-			prepared_websockets.push(prepared);
-			return prepared.create_upgrade_websocket;
-		}
+		prepare_websocket: (ws_options) => adapter.prepare_websocket(ws_options)
 	});
 
 	await write_daemon_info(runtime, daemon_name, {
@@ -232,7 +212,6 @@ export const start_testing_server = async (options: StartTestingServerOptions): 
 
 	log.info(`Listening on http://${host}:${port} (${adapter.runtime_label}, test mode)`);
 	const server = adapter.serve({ fetch: built.app.fetch, port, hostname: host });
-	for (const prepared of prepared_websockets) prepared.attach_to_server?.(server);
 
 	let shutting_down = false;
 	const shutdown = async (): Promise<void> => {

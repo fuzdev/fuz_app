@@ -54,7 +54,7 @@ const assemble = async (endpoint: Partial<WsEndpointSpec>): Promise<AppServer> =
 		backend: create_stub_app_backend({ deps }),
 		session_options: create_session_config('test_session'),
 		create_route_specs: () => [create_health_route_spec()],
-		create_upgrade_websocket: () => create_stub_upgrade().upgradeWebSocket,
+		upgrade_websocket: create_stub_upgrade().upgradeWebSocket,
 		ws_endpoints: [
 			{ path: '/api/ws', actions: [...protocol_actions], receive_timeout: null, ...endpoint }
 		]

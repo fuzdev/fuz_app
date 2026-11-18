@@ -33,7 +33,7 @@ run the same standard suites against it over real HTTP — a Rust spine
 `testing_spine_stub`) or a **TS** spine binary built on the test-server core (`start_testing_server`
 
 - `create_{node,bun}_testing_adapter` in `testing/cross_backend/`, which
-  own the serve / daemon-info / WS-attach / drain boilerplate so a consumer's
+  own the serve / daemon-info / drain boilerplate so a consumer's
   binary is just a `build_app` seam — see `src/lib/testing/CLAUDE.md`
   §"Building a TS test-server binary"). The in-process Hono harness is one
   transport; consumers supply a `BackendConfig` to test against any compatible
@@ -1372,19 +1372,18 @@ requires every backend to close the connection after an oversized-body 413, and
 an older Bun kept it and served the next request (correctly framed).
 
 Each adapter pairs with the runtime-neutral `start_testing_server`
-(`testing_server_core.ts`), which owns serve + daemon-info + WS attach +
-graceful shutdown. The consumer writes a ~40-line spawn entry per runtime that
+(`testing_server_core.ts`), which owns serve + daemon-info + graceful
+shutdown. The consumer writes a ~40-line spawn entry per runtime that
 wires its own app build onto the adapter + core. WebSocket endpoints mount
 through `create_app_server`'s `ws_endpoints` on every runtime: `build_app`
-receives `{prepare_websocket}` and passes its result as
-`create_upgrade_websocket`, and the core attaches it to the server after
-`serve` (Node's `injectWebSocket`):
+receives `{prepare_websocket}` and passes its result as `upgrade_websocket`;
+the adapter threads what it prepared into `serve`:
 
 ```ts
 build_app: async ({prepare_websocket}) => {
 	const server = await create_app_server({
 		...,
-		create_upgrade_websocket: prepare_websocket({max_message_bytes}),
+		upgrade_websocket: prepare_websocket({max_message_bytes}),
 		ws_endpoints: [{path: '/api/ws', actions, max_message_bytes}],
 	});
 	return {app: server.app, close: server.close};

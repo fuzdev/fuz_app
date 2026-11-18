@@ -16,6 +16,7 @@
  */
 
 import { afterEach, assert, describe, test, vi } from 'vitest';
+import type { UpgradeWebSocket } from 'hono/ws';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { create_session_config } from '#lib/auth/session_cookie.ts';
@@ -85,7 +86,7 @@ const acquiring_options = (backend: AppBackend): AppServerOptions => ({
 	create_route_specs: () => [create_health_route_spec()],
 	rate_limiters: 'enforced',
 	audit_log_sse: true,
-	create_upgrade_websocket: () => create_stub_upgrade().upgradeWebSocket,
+	upgrade_websocket: create_stub_upgrade().upgradeWebSocket,
 	ws_endpoints: [ws_endpoint('/api/ws')]
 });
 
@@ -141,13 +142,13 @@ describe('a failed assembly releases what it acquired', () => {
 		assert.deepStrictEqual(harness.errors, [], 'nothing failed to release');
 	});
 
-	test('a throwing create_upgrade_websocket — the original error is rethrown', async () => {
+	test('the first ws mount throwing inside register_action_ws — the original error is rethrown', async () => {
 		const harness = create_harness();
 		const dispose = vi.spyOn(RateLimiter.prototype, 'dispose');
 		const boom = new Error('adapter failed');
 		const thrown = await assemble_rejects({
 			...acquiring_options(harness.backend),
-			create_upgrade_websocket: () => {
+			upgrade_websocket: () => {
 				throw boom;
 			}
 		});
@@ -155,15 +156,15 @@ describe('a failed assembly releases what it acquired', () => {
 		assert_released(harness, dispose);
 	});
 
-	test('ws_endpoints without create_upgrade_websocket', async () => {
+	test('ws_endpoints without upgrade_websocket', async () => {
 		const harness = create_harness();
 		const dispose = vi.spyOn(RateLimiter.prototype, 'dispose');
 		const thrown = await assemble_rejects({
 			...acquiring_options(harness.backend),
-			create_upgrade_websocket: undefined
+			upgrade_websocket: undefined
 		});
 		assert.instanceOf(thrown, Error);
-		assert.match(thrown.message, /create_upgrade_websocket is missing/);
+		assert.match(thrown.message, /upgrade_websocket is missing/);
 		assert_released(harness, dispose);
 	});
 
@@ -182,15 +183,15 @@ describe('a failed assembly releases what it acquired', () => {
 	test('a duplicate ws path fails before any endpoint mounts', async () => {
 		const harness = create_harness();
 		const dispose = vi.spyOn(RateLimiter.prototype, 'dispose');
-		const upgrades = vi.fn(() => create_stub_upgrade().upgradeWebSocket);
+		const upgrades = create_stub_upgrade();
 		const thrown = await assemble_rejects({
 			...acquiring_options(harness.backend),
-			create_upgrade_websocket: upgrades,
+			upgrade_websocket: upgrades.upgradeWebSocket,
 			ws_endpoints: [ws_endpoint('/api/ws'), ws_endpoint('/api/ws')]
 		});
 		assert.instanceOf(thrown, Error);
 		assert.match(thrown.message, /duplicate ws_endpoints path: \/api\/ws/);
-		assert.strictEqual(upgrades.mock.calls.length, 0, 'the adapter was never built');
+		assert.throws(() => upgrades.get_create_events(), /was not called/, 'no endpoint was mounted');
 		assert_released(harness, dispose);
 	});
 
@@ -201,10 +202,10 @@ describe('a failed assembly releases what it acquired', () => {
 		]) {
 			const harness = create_harness();
 			const dispose = vi.spyOn(RateLimiter.prototype, 'dispose');
-			const upgrades = vi.fn(() => create_stub_upgrade().upgradeWebSocket);
+			const upgrades = create_stub_upgrade();
 			const thrown = await assemble_rejects({
 				...acquiring_options(harness.backend),
-				create_upgrade_websocket: upgrades,
+				upgrade_websocket: upgrades.upgradeWebSocket,
 				ws_endpoints: [ws_endpoint('/api/ws'), ws_endpoint('/api/ws_own', { allowed_origins })]
 			});
 			assert.instanceOf(thrown, Error);
@@ -214,7 +215,11 @@ describe('a failed assembly releases what it acquired', () => {
 				),
 				thrown.message
 			);
-			assert.strictEqual(upgrades.mock.calls.length, 0, 'the adapter was never built');
+			assert.throws(
+				() => upgrades.get_create_events(),
+				/was not called/,
+				'no endpoint was mounted'
+			);
 			assert_released(harness, dispose);
 			vi.restoreAllMocks();
 		}
@@ -245,16 +250,16 @@ describe('a failed assembly releases what it acquired', () => {
 	test('a ws path colliding with a GET RouteSpec fails before any endpoint mounts', async () => {
 		const harness = create_harness();
 		const dispose = vi.spyOn(RateLimiter.prototype, 'dispose');
-		const upgrades = vi.fn(() => create_stub_upgrade().upgradeWebSocket);
+		const upgrades = create_stub_upgrade();
 		const thrown = await assemble_rejects({
 			...acquiring_options(harness.backend),
-			create_upgrade_websocket: upgrades,
+			upgrade_websocket: upgrades.upgradeWebSocket,
 			ws_endpoints: [ws_endpoint('/api/ws'), ws_endpoint('/api/health')],
 			create_route_specs: () => [{ ...create_health_route_spec(), path: '/api/health' }]
 		});
 		assert.instanceOf(thrown, Error);
 		assert.match(thrown.message, /collides with a GET RouteSpec: \/api\/health/);
-		assert.strictEqual(upgrades.mock.calls.length, 0, 'the adapter was never built');
+		assert.throws(() => upgrades.get_create_events(), /was not called/, 'no endpoint was mounted');
 		assert_released(harness, dispose);
 	});
 
@@ -289,6 +294,28 @@ describe('a failed assembly releases what it acquired', () => {
 			assert_released(harness, dispose);
 		});
 	}
+
+	test('upgrade_websocket throwing on the second endpoint undoes the first', async () => {
+		const harness = create_harness();
+		const dispose = vi.spyOn(RateLimiter.prototype, 'dispose');
+		const boom = new Error('second mount failed');
+		const stub = create_stub_upgrade();
+		let calls = 0;
+		// called once per endpoint as `register_action_ws` mounts it
+		const upgrade_websocket = ((...args: Parameters<UpgradeWebSocket>) => {
+			calls++;
+			if (calls === 2) throw boom;
+			return stub.upgradeWebSocket(...args);
+		}) as UpgradeWebSocket;
+		const thrown = await assemble_rejects({
+			...acquiring_options(harness.backend),
+			upgrade_websocket,
+			ws_endpoints: [ws_endpoint('/api/ws'), ws_endpoint('/api/ws_second')]
+		});
+		assert.strictEqual(thrown, boom);
+		assert.strictEqual(calls, 2);
+		assert_released(harness, dispose);
+	});
 
 	test('a transform_middleware that moves the auth middleware', async () => {
 		const harness = create_harness();

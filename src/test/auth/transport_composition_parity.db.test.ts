@@ -32,7 +32,7 @@ const setup_test = default_in_process_setup({
 	rpc_endpoints: spine_rpc_endpoints,
 	app_options: {
 		audit_log_sse: true,
-		create_upgrade_websocket: () => create_stub_upgrade().upgradeWebSocket,
+		upgrade_websocket: create_stub_upgrade().upgradeWebSocket,
 		ws_endpoints: [{ path: SPINE_WS_PATH }]
 	}
 });

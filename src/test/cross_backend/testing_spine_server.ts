@@ -101,7 +101,7 @@ export interface BuildSpineAppOptions {
 	readonly daemon_token_path: string;
 	/**
 	 * The core's WS preparation (`BuildTestingAppContext.prepare_websocket`) —
-	 * its factory becomes `create_app_server`'s `create_upgrade_websocket`.
+	 * its helper becomes `create_app_server`'s `upgrade_websocket`.
 	 */
 	readonly prepare_websocket: BuildTestingAppContext['prepare_websocket'];
 	/** WS mount path. Default `/api/ws`. */
@@ -453,7 +453,7 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 		// stub's gated mount shares its connection registry — so a revoked role
 		// must close the gated registrations of one registry and leave the
 		// ungated ones open (`describe_ws_role_gated_cross_tests`).
-		create_upgrade_websocket: prepare_websocket({ max_message_bytes: WS_MAX_MESSAGE_BYTES }),
+		upgrade_websocket: prepare_websocket({ max_message_bytes: WS_MAX_MESSAGE_BYTES }),
 		ws_endpoints: [
 			{
 				path: ws_path,

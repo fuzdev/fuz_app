@@ -53,7 +53,7 @@ import '../assert_dev_env.ts';
  * its named fields) or, past the RPC front door, the JSON-RPC error envelope
  * with the reason on `error.data.reason`. A WebSocket refusal's body is
  * required where the backend declares `capabilities.ws_refusal_body`; where it
- * doesn't (Node's `@hono/node-ws` drops a refused upgrade's body), an empty
+ * doesn't (Node's `@hono/node-server` drops a refused upgrade's body), an empty
  * body passes on its status and a body that is sent is still asserted.
  *
  * **Transport.** Given a `base_url`, every probe is written to the socket
@@ -527,7 +527,7 @@ export const describe_transport_composition_cross_tests = (
 			c.expect.status,
 			`${case_name(c)}: status (body: ${res.text.slice(0, 200)})`
 		);
-		// a backend that declares no WS refusal body (Node's `@hono/node-ws`)
+		// a backend that declares no WS refusal body (Node's `@hono/node-server`)
 		// may answer with an empty one; a body it does send is still asserted
 		if (c.surface === 'ws_upgrade' && !capabilities.ws_refusal_body && res.text === '') return;
 		assert_refusal_body(c, raw_http_parse_json(res.text), res.text);

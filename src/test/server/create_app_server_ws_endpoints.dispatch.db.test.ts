@@ -134,7 +134,7 @@ interface TestServer {
  * `wrap_db` replaces the backend's pool — a `create_gated_db` wrapper, say.
  */
 const create_test_server = async (
-	options: Partial<Omit<AppServerOptions, 'backend' | 'create_upgrade_websocket'>> = {},
+	options: Partial<Omit<AppServerOptions, 'backend' | 'upgrade_websocket'>> = {},
 	audit_factory: AuditFactory = default_audit_factory,
 	wrap_db: (db: Db) => Db = (db) => db
 ): Promise<TestServer> => {
@@ -166,7 +166,7 @@ const create_test_server = async (
 		backend,
 		session_options,
 		create_route_specs: () => [create_health_route_spec()],
-		create_upgrade_websocket: () => stub.upgradeWebSocket,
+		upgrade_websocket: stub.upgradeWebSocket,
 		ws_endpoints: [
 			{ path: WS_PATH, actions: [...protocol_actions, counted_action], receive_timeout: null }
 		],

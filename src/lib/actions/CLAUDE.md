@@ -770,14 +770,13 @@ runs after server context is assembled so action lists can depend on
 `ctx.deps` / `ctx.action_*_rate_limiter`. Each entry is auto-mounted via
 `register_action_ws` against the assembled Hono app.
 
-`create_upgrade_websocket: (app: Hono) => UpgradeWebSocket` returns the
-Hono adapter helper. It is a factory because Node's `createNodeWebSocket({app})`
-needs the app `create_app_server` builds: it is called once, with that app
-(the same instance as `AppServer.app`), after the app exists and before the
-mount — and only when `ws_endpoints` resolves non-empty. Bun passes
-`() => upgradeWebSocket`. `create_app_server` throws when `ws_endpoints`
-resolves non-empty but the factory is missing; a factory returning `[]` does
-NOT trip the check, so feature-flag gated WS surfaces stay safe.
+`upgrade_websocket: UpgradeWebSocket` is the Hono runtime adapter's
+module-level helper — `upgradeWebSocket` from `@hono/bun`, or from
+`@hono/node-server` on Node, whose `serve` must then be given a `ws`
+`WebSocketServer` built with `noServer: true` (`websocket: {server}`).
+`create_app_server` throws when `ws_endpoints` resolves non-empty but the
+helper is missing; a `ws_endpoints` factory returning `[]` does NOT trip the check, so
+feature-flag gated WS surfaces stay safe.
 
 What every auto-mount gets, so no hand mount has to remember it: the
 `action_ip_rate_limiter` / `action_account_rate_limiter` instances the RPC
@@ -873,7 +872,7 @@ HTTP RPC also calls. The socket session owns only WS-specific concerns:
 - **Wire envelope parsing** — `parse_json_text` (`http/json_text.ts`: what the Rust spine's `serde_json` refuses is a `parse_error` here too) → batch rejection → `classify_jsonrpc_message` (`http/jsonrpc_helpers.ts`, the twin of the Rust `fuz_http::classify`, the same classifier the HTTP POST path runs) → per-arm handling: an `invalid` answers its error on its id; a `response` routes to the socket's pending peer request; a `notification` routes `cancel` and is otherwise dropped; a `request` goes on to the duplicate-id and in-flight checks and dispatch. The classifier runs the twin's order — version, then the `method` axis, then `id`, then the `JsonrpcRequest` envelope — so `{method: 'x'}` and `{jsonrpc: '1.0', method: 'x'}` answer `invalid_request` rather than being dropped as notifications; a response is the twin's shape exactly (no string `method`, a string/number `id`, exactly one of `result` / `error`), so a hybrid like `{method, id, result}` stays a dispatchable request; and `params: null`, an array `params`, or a non-string/number `id` answers `invalid_request` (-32600) on both transports rather than reaching the dispatcher as `invalid_params`. Notifications stay unvalidated (they carry no id to echo). A non-object frame answers `id: null`. POST answers a notification or a response `invalid_request` on `id: null`, as the Rust spine does.
 - **Cancel-notification interception** — `{request_id → AbortController}` map; aborts the matching pending controller before the cancel bubbles past the dispatcher
 - **Duplicate live ids refused** — a request whose id names a request still running on the socket is answered `invalid_request` with `data.reason` `ERROR_DUPLICATE_REQUEST_ID` and not dispatched; the running request keeps its controller, its cancel entry, and its reply id. An id is free again once its request is answered. Same refusal on the Rust spine
-- **In-flight ceiling** — at most `MAX_INBOUND_DISPATCHES_PER_CONNECTION` (128) requests run at once per socket (`@hono/node-ws` does not await `onMessage`, so nothing else bounds them); one more is answered `queue_overflow` (`WS_INBOUND_DISPATCH_OVERFLOW_MESSAGE`) and not dispatched, and the socket stays open and keeps reading — a reply to a server-initiated request still gets through. The duplicate check runs first; neither refusal reaches `perform_action`, so neither charges the action rate limiters. Same cap, message, and order as the Rust spine's `MAX_INBOUND_DISPATCHES_PER_CONNECTION`
+- **In-flight ceiling** — at most `MAX_INBOUND_DISPATCHES_PER_CONNECTION` (128) requests run at once per socket (`@hono/node-server` does not await `onMessage`, so nothing else bounds them); one more is answered `queue_overflow` (`WS_INBOUND_DISPATCH_OVERFLOW_MESSAGE`) and not dispatched, and the socket stays open and keeps reading — a reply to a server-initiated request still gets through. The duplicate check runs first; neither refusal reaches `perform_action`, so neither charges the action rate limiters. Same cap, message, and order as the Rust spine's `MAX_INBOUND_DISPATCHES_PER_CONNECTION`
 - **Socket-scoped notify** — `(method, params) => registry.send_to(connection_id, notification)`, threaded into `perform_action` as `notify`
 - **Every send through the registry** — responses, error frames, and notifications all go through `registry.send_to`, so they are held to the connection's outbound budget; a handler that sends past it closes its own socket with `WS_CLOSE_OUTBOUND_OVERFLOW` and gets no response written
 - **Composed abort signal** — `AbortSignal.any([socket_close, per_request_cancel])`, threaded as `signal`
@@ -919,7 +918,7 @@ the registry after the mount returns, releasing it when assembly fails or
 the server closes.
 
 Because `onOpen` awaits, an adapter can deliver `onMessage` before admission
-(`@hono/node-ws` doesn't await `onOpen` at all). Those frames are **queued, not
+(`@hono/node-server` doesn't await `onOpen` at all). Those frames are **queued, not
 dispatched** — nothing runs on a credential that has not been re-read — and
 dispatch in arrival order, back to back, once the socket is admitted and
 `on_socket_open` has completed; a refusal drops them unread. The Rust spine
@@ -941,7 +940,7 @@ returns (it times out); start such a request without awaiting it.
 
 **A server-closed socket dispatches nothing.** An adapter can keep delivering
 frames after the server calls `ws.close(…)`, until the close handshake
-completes — `@hono/node-ws` does, for up to the `ws` close timeout when the
+completes — `@hono/node-server` does, for up to the `ws` close timeout when the
 client withholds its close frame. So every server-side close removes the
 connection from the registry and aborts the socket's controller **at close
 time**: the registry does both for a revocation or a cap eviction, and
@@ -980,7 +979,7 @@ and reaches `on_effect_error` (`create_app_server` threads its own to the
 endpoints it mounts) with `{transport: 'ws', method, path}`. Nothing orders that
 flush against other frames: frames on an admitted socket are not serialized
 (`handle_frame` calls aren't chained, and an adapter need not await
-`onMessage` — `@hono/node-ws` doesn't), so a message's effects can still be
+`onMessage` — `@hono/node-server` doesn't), so a message's effects can still be
 in flight when the caller reads its reply and when the next message
 dispatches. A test that reads the audit log after a WS reply awaits
 `_testing_drain_effects` first, over an emitter built with

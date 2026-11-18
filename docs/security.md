@@ -646,7 +646,7 @@ The Rust spine applies the same cap, policy, close code, and reason.
 
 ## WebSocket Request Bounds
 
-Requests on one socket dispatch concurrently — `@hono/node-ws` does not await
+Requests on one socket dispatch concurrently — `@hono/node-server` does not await
 `onMessage`, so nothing in the adapter serializes them. `register_action_ws`
 (its socket session, `actions/ws_socket_session.ts`) bounds them itself, the same
 way the Rust spine does:

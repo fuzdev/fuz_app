@@ -10,7 +10,7 @@ import '../assert_dev_env.ts';
  * and the Rust spine binary covers the cross-language axis.
  *
  * Needs the optional `@hono/bun` peer dep (the Bun counterpart to Node's
- * `@hono/node-server` + `@hono/node-ws`); `Bun.serve` is built in.
+ * `@hono/node-server` + `ws`); `Bun.serve` is built in.
  * `RuntimeDeps` reuse `create_node_runtime` — Bun
  * implements the `node:fs` / `node:process` surface `RuntimeDeps` +
  * `testing/daemon_info.ts` touch.
@@ -60,12 +60,12 @@ export const create_bun_testing_adapter = (): TestingServerAdapter => {
 		runtime_label: 'Bun',
 		runtime: create_node_runtime(),
 		get_connection_ip: (c) => getConnInfo(c).remote.address,
-		// Bun's WS upgrade is module-level and stateless — no post-serve
-		// attach. The `websocket` handler is threaded into `serve`
-		// below, where `Bun.serve` wants it, carrying the frame cap.
+		// Bun's WS upgrade is module-level and stateless. The `websocket`
+		// handler is threaded into `serve` below, where `Bun.serve` wants it,
+		// carrying the frame cap.
 		prepare_websocket: (options) => {
 			max_message_bytes = options?.max_message_bytes ?? DEFAULT_WS_MAX_MESSAGE_BYTES;
-			return { create_upgrade_websocket: () => upgradeWebSocket };
+			return upgradeWebSocket;
 		},
 		serve: ({ fetch, port, hostname }) => {
 			const server = Bun.serve({
@@ -109,8 +109,7 @@ export const create_bun_testing_adapter = (): TestingServerAdapter => {
 				shutdown: () => {
 					void Promise.resolve(server.stop(true)).catch(() => {});
 					return Promise.resolve();
-				},
-				native: server
+				}
 			};
 			return handle;
 		},

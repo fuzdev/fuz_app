@@ -143,7 +143,7 @@ describe('create_app_server on a slot that is not a schema', () => {
 	test("a ws_endpoints action's slot throws at boot, naming the endpoint, the action and the slot", async () => {
 		assert.match(
 			await boot_error({
-				create_upgrade_websocket: () => create_stub_upgrade().upgradeWebSocket,
+				upgrade_websocket: create_stub_upgrade().upgradeWebSocket,
 				ws_endpoints: [{ path: '/api/ws', actions: [action({ input: {} })], receive_timeout: null }]
 			}),
 			/^\/api\/ws take_thing input is .*a @fuzdev\/fuz_schema schema$/

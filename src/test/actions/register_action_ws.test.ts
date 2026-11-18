@@ -1620,7 +1620,7 @@ describe('register_action_ws self-revocation', () => {
 
 describe('register_action_ws a server-closed socket dispatches nothing', () => {
 	// A runtime adapter can keep delivering inbound frames after the server
-	// calls `ws.close(…)`, until the close handshake completes (`@hono/node-ws`
+	// calls `ws.close(…)`, until the close handshake completes (`@hono/node-server`
 	// does, up to the `ws` close timeout when the client withholds its close
 	// frame). The fake `WSContext` models exactly that client: it records the
 	// close and keeps accepting `on_message`.

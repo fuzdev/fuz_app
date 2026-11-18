@@ -51,7 +51,7 @@ import {
  * mounts the role-gated WS endpoint at `SPINE_ROLE_GATED_WS_PATH`), and every
  * `TESTING_BACKDOOR_METHODS` entry as `testing_backdoors` (`full_spine_mount`
  * mounts them all, on `/api/rpc` and `/api/ws`). The Node
- * binary's preset; `ws_refusal_body` stays `false`, as `@hono/node-ws` drops a
+ * binary's preset; `ws_refusal_body` stays `false`, as `@hono/node-server` drops a
  * refused upgrade's body.
  */
 const ts_spine_capabilities: BackendCapabilities = Object.freeze({

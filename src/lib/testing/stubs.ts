@@ -349,7 +349,7 @@ export interface CreateTestAppSurfaceSpecOptions {
 	 * to both entry points so the attack surface tests see the same WS
 	 * endpoints production auto-mounts. The factory runs once against
 	 * the stub `AppServerContext` this helper already builds. No
-	 * `create_upgrade_websocket` needed — this helper produces an
+	 * `upgrade_websocket` needed — this helper produces an
 	 * `AppSurfaceSpec` only, never mounts.
 	 */
 	ws_endpoints?:
@@ -499,7 +499,7 @@ export const create_test_app_surface_spec = (
 			});
 		}) ?? [];
 	// Resolve ws endpoints (mirrors create_app_server). Surface-only —
-	// no `register_action_ws` call here, so no `create_upgrade_websocket` needed.
+	// no `register_action_ws` call here, so no `upgrade_websocket` needed.
 	const declared_ws_endpoints =
 		typeof options.ws_endpoints === 'function' ? options.ws_endpoints(ctx) : options.ws_endpoints;
 	const resolved_ws_endpoints = resolve_ws_endpoints(

@@ -168,7 +168,7 @@ export const ts_default_capabilities: FamilyDefaultCapabilities = Object.freeze(
 	// config) — `Bun.serve` answers such a request `400` when the upgrade
 	// follows an asynchronous check.
 	ws_handshake_pipelining: true,
-	// `@hono/node-ws` drops a refused upgrade's body, so a Node-served backend
+	// `@hono/node-server` drops a refused upgrade's body, so a Node-served backend
 	// sends none. A Bun-served one overrides to `true`.
 	ws_refusal_body: false
 });

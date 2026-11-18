@@ -2,7 +2,7 @@
  * `register_action_ws` over a real Node WebSocket server, against a client
  * that **withholds its close frame**.
  *
- * `@hono/node-ws` keeps firing `onMessage` after the server calls
+ * `@hono/node-server` keeps firing `onMessage` after the server calls
  * `ws.close(…)`, until the close handshake completes — and a client that
  * never answers the close holds the socket in that state for the `ws` close
  * timeout. A well-behaved client library answers the close itself, so the
@@ -23,8 +23,8 @@
 import { afterEach, assert, describe, test } from 'vitest';
 import type { AddressInfo } from 'node:net';
 import { Hono } from 'hono';
-import { serve, type ServerType } from '@hono/node-server';
-import { createNodeWebSocket } from '@hono/node-ws';
+import { serve, upgradeWebSocket, type ServerType } from '@hono/node-server';
+import { WebSocketServer } from 'ws';
 import { object, string } from '@fuzdev/fuz_schema/schema.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
@@ -108,7 +108,6 @@ const start_server = async (max_connections_per_account?: number): Promise<TestS
 		c.set(TEST_CONTEXT_PRESET_KEY, TEST_CONTEXT_PRESET);
 		await next();
 	});
-	const { upgradeWebSocket, injectWebSocket } = createNodeWebSocket({ app });
 	const recorded: Array<string> = [];
 	const { registry } = register_action_ws({
 		action_ip_rate_limiter: null,
@@ -133,9 +132,16 @@ const start_server = async (max_connections_per_account?: number): Promise<TestS
 		log
 	});
 	const server: ServerType = await new Promise((resolve) => {
-		const s = serve({ fetch: app.fetch, port: 0, hostname: '127.0.0.1' }, () => resolve(s));
+		const s = serve(
+			{
+				fetch: app.fetch,
+				port: 0,
+				hostname: '127.0.0.1',
+				websocket: { server: new WebSocketServer({ noServer: true }) }
+			},
+			() => resolve(s)
+		);
 	});
-	injectWebSocket(server);
 	return {
 		port: (server.address() as AddressInfo).port,
 		registry,

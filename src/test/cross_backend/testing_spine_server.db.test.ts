@@ -5,7 +5,7 @@
  * invariants.
  *
  * In-process: builds the same app `testing_spine_server_node.ts` serves (real
- * `@hono/node-ws` preparation, in-memory pglet) without binding a port. The
+ * `ws` server preparation, in-memory pglet) without binding a port. The
  * spawned binaries' WS behavior is covered by the cross-backend suites.
  *
  * @module
@@ -51,7 +51,7 @@ test('the Node-built spine surface lists its WS endpoints and passes the surface
 		runtime,
 		get_connection_ip: adapter.get_connection_ip,
 		daemon_token_path: join(dir, 'run', 'daemon_token'),
-		prepare_websocket: (options) => adapter.prepare_websocket(options).create_upgrade_websocket
+		prepare_websocket: (options) => adapter.prepare_websocket(options)
 	});
 	try {
 		const ws_paths = built.surface.ws_endpoints.map((endpoint) => endpoint.path);

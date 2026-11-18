@@ -94,7 +94,7 @@
  * ## A server-closed socket dispatches nothing
  *
  * A runtime adapter can keep delivering inbound frames after the server calls
- * `ws.close(…)`, until the close handshake completes (`@hono/node-ws` does —
+ * `ws.close(…)`, until the close handshake completes (`@hono/node-server` does —
  * up to the `ws` close timeout when the client withholds its close frame).
  * So every server-side close — revocation, cap eviction, heartbeat timeout,
  * an oversized message, a refused admission — removes the connection from the
@@ -206,7 +206,7 @@ export const PRE_ADMISSION_QUEUE_BYTES_FACTOR = 4;
  * stays open, and the requests already running keep answering.
  *
  * A runtime adapter can hand frames over without awaiting the previous one's
- * dispatch (`@hono/node-ws` does not await `onMessage`), so without a ceiling
+ * dispatch (`@hono/node-server` does not await `onMessage`), so without a ceiling
  * one socket could hold any number of handlers — and their pooled database
  * work — at once. Shedding rather than queueing keeps the socket reading, so a
  * reply to a server-initiated request still reaches the handler awaiting it.
@@ -947,7 +947,7 @@ export const create_ws_socket_events = (
 
 	return {
 		onOpen: async (_event, ws) => {
-			// An adapter may not await this (`@hono/node-ws` doesn't), so it
+			// An adapter may not await this (`@hono/node-server` doesn't), so it
 			// must never reject.
 			try {
 				await open_socket(ws);

@@ -295,9 +295,8 @@ can call `account_*` / `admin_*` over the live connection and pick up
 revocation events without a polling delay — spread `protocol_actions`
 plus `create_standard_rpc_actions({...ctx.deps, notification_sender: connection_registry})`
 into `create_app_server`'s
-`ws_endpoints` factory and supply `create_upgrade_websocket`, which returns
-the runtime adapter's `upgradeWebSocket` helper. On Bun the helper is
-module-level, so the factory ignores the app it's handed:
+`ws_endpoints` factory and supply `upgrade_websocket`, the runtime adapter's
+module-level `upgradeWebSocket` helper. On Bun:
 
 ```typescript
 import { upgradeWebSocket } from '@hono/bun'; // whose `websocket` also goes to `Bun.serve`
@@ -305,7 +304,7 @@ import { protocol_actions } from '@fuzdev/fuz_app/actions/protocol.ts';
 
 const { app, ws_endpoints } = await create_app_server({
 	// …other options…
-	create_upgrade_websocket: () => upgradeWebSocket,
+	upgrade_websocket: upgradeWebSocket,
 	ws_endpoints: (ctx) => [
 		{
 			path: '/api/ws',
@@ -323,25 +322,26 @@ const { app, ws_endpoints } = await create_app_server({
 ws_endpoints['/api/ws'].send_to_account(account_id, notification);
 ```
 
-On Node, `@hono/node-ws` has no module-level helper — `createNodeWebSocket({app})`
-needs the app, which is why the option is a factory: `create_app_server` calls
-it once with the app it builds, before mounting. Keep the adapter so it can
-attach to the server after `serve()`:
+On Node, `@hono/node-server`'s helper upgrades only on a server given a `ws`
+`WebSocketServer` built with `noServer: true`. Set its `maxPayload` to a small
+multiple of the endpoint's `max_message_bytes` — `ws` defaults to 100 MiB — so
+a message just over the limit reaches the per-message check and gets its close
+reason, while a grossly oversized one is refused at the frame layer:
 
 ```typescript
-import { serve } from '@hono/node-server';
-import { createNodeWebSocket, type NodeWebSocket } from '@hono/node-ws';
+import { serve, upgradeWebSocket } from '@hono/node-server';
+import { WebSocketServer } from 'ws';
+import { DEFAULT_WS_MAX_MESSAGE_BYTES } from '@fuzdev/fuz_app/actions/transports.ts';
 
-let node_ws: NodeWebSocket | undefined;
 const { app } = await create_app_server({
 	// …other options…
-	create_upgrade_websocket: (app) => (node_ws = createNodeWebSocket({ app })).upgradeWebSocket,
+	upgrade_websocket: upgradeWebSocket,
 	ws_endpoints: (ctx) => [
 		{ path: '/api/ws', actions: [...protocol_actions, ...my_app_ws_actions(ctx.deps)] }
 	]
 });
-// set whenever `ws_endpoints` resolved non-empty
-node_ws?.injectWebSocket(serve({ fetch: app.fetch, port }));
+const wss = new WebSocketServer({ noServer: true, maxPayload: 2 * DEFAULT_WS_MAX_MESSAGE_BYTES });
+serve({ fetch: app.fetch, port, websocket: { server: wss } });
 ```
 
 `ws_endpoints` mirrors `rpc_endpoints`: array or factory form, single
@@ -963,7 +963,7 @@ import { ROLE_ADMIN } from '@fuzdev/fuz_app/auth/role_schema.ts';
 const { registry } = register_action_ws({
 	path: '/api/ws',
 	app,
-	upgradeWebSocket, // from the runtime adapter (`@hono/bun`, or `createNodeWebSocket({app})` on Node)
+	upgradeWebSocket, // from the runtime adapter (`@hono/bun`, or `@hono/node-server` on Node)
 	allowed_origins, // required — `validate_server_env`'s `allowed_origins`
 	required_roles: [ROLE_ADMIN], // optional — omit for any authenticated account
 	actions: [...protocol_actions, ...my_actions],
