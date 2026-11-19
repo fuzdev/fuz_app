@@ -25,7 +25,9 @@ import '../assert_dev_env.ts';
 
 import {
 	array,
+	boolean,
 	literal,
+	number,
 	parse,
 	string,
 	strip_object,
@@ -225,6 +227,42 @@ export interface TestFixture {
 	 * RPC over the keeper's daemon-token channel (the driver has no keyring).
 	 */
 	readonly mint_expired_session: () => Promise<string>;
+	/**
+	 * Mint a session for the keeper account, prove it authenticates
+	 * (`assert_credential_authenticates`), revoke it, and return the
+	 * ready-to-send `Cookie` header value (`name=value`): the signed cookie
+	 * still verifies, its `auth_session` row is gone. Throws when the session
+	 * did not authenticate or the revoke removed no row. Backs the
+	 * `revoked_session` conformance principal. In-process mints through the
+	 * session queries and revokes with `query_session_revoke_for_account`;
+	 * cross-process logs the keeper in over the production login route and
+	 * revokes that session with `account_session_revoke`, so the fixture's own
+	 * keeper session lives on.
+	 */
+	readonly mint_revoked_session: () => Promise<string>;
+	/**
+	 * Mint an API token for the keeper account, prove it authenticates, revoke
+	 * it, and return the raw token; throws when it did not authenticate or the
+	 * revoke removed no row. Backs the `revoked_token` conformance principal.
+	 * In-process through the token queries; cross-process over the production
+	 * `account_token_create` and `account_token_revoke`.
+	 */
+	readonly mint_revoked_token: () => Promise<string>;
+	/**
+	 * Return a raw API token that authenticated and whose row is now past its
+	 * `expires_at`. Backs the `expired_token` conformance principal. Both
+	 * fixtures mint an account (`create_account`, so the keeper's own
+	 * credentials live on), prove its eternal token authenticates, then pull
+	 * the account's credential expiries in to `EXPIRED_TOKEN_SHORTEN_SECONDS`
+	 * from now with the statement behind `_testing_shorten_credential_expiry`
+	 * (`query_shorten_credential_expiry`), and wait `EXPIRED_TOKEN_WAIT_MS`, so
+	 * the row expires as a real one does: `expires_at` after `created_at`, then
+	 * passed. Cross-process the statement runs through the backdoor, which the
+	 * backend must mount. In-process it runs directly; backdating the expiry
+	 * into the past instead would skip the wait but leave `expires_at` before
+	 * `created_at`, a row no lifetime writes.
+	 */
+	readonly mint_expired_token: () => Promise<string>;
 	/**
 	 * Whether the suites' audit reads refuse metadata keys an event type
 	 * doesn't declare — the setup's `reject_unknown_audit_metadata_keys`.
@@ -692,6 +730,95 @@ export const EXPIRED_SESSION_OFFSET_SECONDS = -60;
 
 /** Structural subset of `_testing_mint_session`'s output. */
 const MintSessionResponseShape = strip_object({ session_cookie: string });
+
+/**
+ * The seconds `mint_expired_token` pulls a token's expiry in to — over
+ * `_testing_shorten_credential_expiry` cross-process, with its statement
+ * in-process — the backdoor's floor
+ * (`TESTING_SHORTEN_CREDENTIAL_EXPIRY_MIN_SECONDS`, which this module does not
+ * import: its module carries the in-process backend), so the wait is as short
+ * as the backdoor allows; a floor raised past it fails the call loud.
+ */
+export const EXPIRED_TOKEN_SHORTEN_SECONDS = 1;
+
+/**
+ * How long `mint_expired_token` waits after the shorten answers, on both
+ * fixtures: the row's `expires_at` is `EXPIRED_TOKEN_SHORTEN_SECONDS` past the
+ * database's `NOW()` of a statement that ran before the answer, so once this
+ * much has passed on the same clock the row is expired when the token is sent.
+ * The margin covers the timer firing early by its rounding.
+ */
+export const EXPIRED_TOKEN_WAIT_MS = EXPIRED_TOKEN_SHORTEN_SECONDS * 1000 + 50;
+
+/** The account id an `account_verify` answer names, all a liveness check reads of it. */
+const VerifyResponseShape = strip_object({ id: string });
+
+/** What `assert_credential_authenticates` sends and expects. */
+export interface AssertCredentialAuthenticatesOptions {
+	/**
+	 * A transport carrying no credential of its own: an empty jar, refused
+	 * otherwise, since a cookie it carried would answer for the credential.
+	 */
+	readonly transport: FetchTransport;
+	/** The RPC endpoint `account_verify` is mounted on. */
+	readonly rpc_path: string;
+	/** The credential, alone: a `cookie`, an `authorization`, or a daemon token. */
+	readonly headers: Readonly<Record<string, string>>;
+	/** The account the credential must answer as. */
+	readonly account_id: string;
+	/** The fixture accessor checking, named in the error. */
+	readonly accessor: string;
+}
+
+/**
+ * Prove a credential authenticates — `account_verify` answers 200 as the
+ * expected account — before a fixture accessor kills it. A revoked or expired
+ * credential reaches the same lookup a never-issued one does, so without this
+ * a `mint_revoked_*` that minted nothing (or a token that never worked) would
+ * pass every row its principal backs; with it, the principal's refusal can
+ * only come from the revocation or the expiry.
+ *
+ * @param options - the transport, endpoint, credential and expected account
+ * @throws Error naming the accessor when the credential does not answer as the account
+ */
+export const assert_credential_authenticates = async (
+	options: AssertCredentialAuthenticatesOptions
+): Promise<void> => {
+	const { transport, rpc_path, headers, account_id, accessor } = options;
+	if (transport.cookies().length > 0) {
+		throw new Error(
+			`${accessor}: the liveness check's transport carries a cookie jar of its own, which would ` +
+				`answer for the credential — pass a fresh one`
+		);
+	}
+	const response = await transport(rpc_path, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json', ...headers },
+		body: JSON.stringify({ jsonrpc: '2.0', method: 'account_verify', id: 'account_verify' })
+	});
+	const body = (await response.json().catch(() => undefined)) as { result?: unknown } | undefined;
+	const parsed = parse(VerifyResponseShape, body?.result);
+	if (response.status !== 200 || !parsed.ok || parsed.value.id !== account_id) {
+		throw new Error(
+			`${accessor}: the credential did not authenticate as account ${account_id} before it was ` +
+				`killed — account_verify answered ${response.status} ${JSON.stringify(body)}`
+		);
+	}
+};
+
+/** Structural subset of `account_token_create`'s output that the revoked-token mint reads. */
+const MintTokenResponseShape = strip_object({ token: string, id: string });
+
+/** Structural subset of `account_session_list`'s output that the revoked-session mint reads. */
+const SessionListResponseShape = strip_object({
+	sessions: array(strip_object({ id: string, is_current: boolean }))
+});
+
+/** Structural subset of `account_*_revoke`'s output. */
+const RevokeResponseShape = strip_object({ revoked: literal(true) });
+
+/** Structural subset of `_testing_shorten_credential_expiry`'s output. */
+const ShortenResponseShape = strip_object({ api_tokens: number });
 
 /** Output shape of a `_testing_reset` seeded account (keeper or extra). */
 interface SeededAccountResponse {
@@ -1279,6 +1406,132 @@ export const default_cross_process_setup = (
 					);
 				}
 				return `${cookie_name}=${parsed.value.session_cookie}`;
+			},
+			mint_revoked_session: async () => {
+				// a second keeper session over the production login, so the
+				// fixture's own keeper session is not the one revoked
+				const session_transport = create_fetch_transport({ base_url: handle.config.base_url });
+				const login = await session_transport(login_path, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						username: keeper.account.username,
+						password: DEFAULT_TEST_PASSWORD
+					})
+				});
+				if (!login.ok) {
+					const body = await login.text().catch(() => '<unreadable>');
+					throw new Error(
+						`mint_revoked_session: login(${handle.config.name}) failed: status=${login.status} body=${body}`
+					);
+				}
+				await login.arrayBuffer().catch(() => undefined);
+				const session_cookie = extract_cookie_value(
+					session_transport,
+					cookie_name,
+					handle.config.name
+				);
+				await assert_credential_authenticates({
+					transport: create_fetch_transport({ base_url: handle.config.base_url, origin: null }),
+					rpc_path: handle.config.rpc_path,
+					headers: { cookie: `${cookie_name}=${session_cookie}` },
+					account_id: keeper.account.id,
+					accessor: 'mint_revoked_session'
+				});
+				const listed = parse_capture_answer(
+					'account_session_list',
+					SessionListResponseShape,
+					await rpc_via_transport(
+						session_transport,
+						handle.config.rpc_path,
+						'account_session_list',
+						undefined,
+						handle.config.name
+					)
+				);
+				const current = listed.sessions.find((session) => session.is_current);
+				if (!current) {
+					throw new Error(
+						`mint_revoked_session: account_session_list(${handle.config.name}) marked no session current`
+					);
+				}
+				parse_capture_answer(
+					'account_session_revoke',
+					RevokeResponseShape,
+					await rpc_via_transport(
+						session_transport,
+						handle.config.rpc_path,
+						'account_session_revoke',
+						{ session_id: current.id },
+						handle.config.name
+					)
+				);
+				return `${cookie_name}=${session_cookie}`;
+			},
+			mint_revoked_token: async () => {
+				const minted = parse_capture_answer(
+					'account_token_create',
+					MintTokenResponseShape,
+					await rpc_via_transport(
+						keeper_transport,
+						handle.config.rpc_path,
+						'account_token_create',
+						{
+							name: 'conformance revoked token',
+							scope: { kind: 'full' },
+							lifetime: { kind: 'eternal' }
+						},
+						handle.config.name
+					)
+				);
+				await assert_credential_authenticates({
+					transport: create_fetch_transport({ base_url: handle.config.base_url, origin: null }),
+					rpc_path: handle.config.rpc_path,
+					headers: { authorization: `Bearer ${minted.token}` },
+					account_id: keeper.account.id,
+					accessor: 'mint_revoked_token'
+				});
+				parse_capture_answer(
+					'account_token_revoke',
+					RevokeResponseShape,
+					await rpc_via_transport(
+						keeper_transport,
+						handle.config.rpc_path,
+						'account_token_revoke',
+						{ token_id: minted.id },
+						handle.config.name
+					)
+				);
+				return minted.token;
+			},
+			mint_expired_token: async () => {
+				const other = await create_account();
+				await assert_credential_authenticates({
+					transport: create_fetch_transport({ base_url: handle.config.base_url, origin: null }),
+					rpc_path: handle.config.rpc_path,
+					headers: { authorization: `Bearer ${other.api_token}` },
+					account_id: other.account.id,
+					accessor: 'mint_expired_token'
+				});
+				const shortened = parse_capture_answer(
+					'_testing_shorten_credential_expiry',
+					ShortenResponseShape,
+					await rpc_via_transport(
+						refreshed_handle.keeper_daemon_transport,
+						handle.config.rpc_path,
+						'_testing_shorten_credential_expiry',
+						{ account_id: other.account.id, seconds: EXPIRED_TOKEN_SHORTEN_SECONDS },
+						handle.config.name,
+						{ [DAEMON_TOKEN_HEADER]: handle.daemon_token }
+					)
+				);
+				if (shortened.api_tokens < 1) {
+					throw new Error(
+						`mint_expired_token: _testing_shorten_credential_expiry(${handle.config.name}) shortened no token`
+					);
+				}
+				await new Promise((resolve) => setTimeout(resolve, EXPIRED_TOKEN_WAIT_MS));
+				return other.api_token;
 			}
 		};
 	};

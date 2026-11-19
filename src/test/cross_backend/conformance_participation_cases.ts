@@ -86,7 +86,7 @@ export const conformance_participation_cases: ReadonlyArray<ConformanceCase> = [
 		// nonexistent account — proving the gate admitted the app role. Pairs
 		// with the keeper/unregistered 403 cases below: same nil account,
 		// grantable role → 404, non-grantable role → 403.
-		expect: { status: 404 },
+		expect: { status: 404, error_reason: null },
 		note: 'app-defined role is admin-grantable on both spines (gate-pass, account-404)'
 	},
 	{
@@ -213,7 +213,7 @@ export const conformance_participation_cases: ReadonlyArray<ConformanceCase> = [
 		},
 		// The `role_grant_scope_kind_paired` CHECK surfaced as `-32602` at the
 		// input boundary, not a constraint-violation 500 at the write.
-		expect: { status: 400 },
+		expect: { status: 400, error_reason: null },
 		note: 'scope_kind + scope_id are paired on role_grant_assign'
 	},
 	{
@@ -223,7 +223,7 @@ export const conformance_participation_cases: ReadonlyArray<ConformanceCase> = [
 			as: 'keeper',
 			params: { to_account_id: NIL_UUID, role: SPINE_PARTICIPANT_ROLE, scope_kind: 'space' }
 		},
-		expect: { status: 400 },
+		expect: { status: 400, error_reason: null },
 		note: 'scope_kind + scope_id are paired on role_grant_assign'
 	},
 	{
@@ -233,7 +233,7 @@ export const conformance_participation_cases: ReadonlyArray<ConformanceCase> = [
 			as: 'keeper',
 			params: { to_account_id: NIL_UUID, role: SPINE_PARTICIPANT_ROLE, scope_id: SCOPE_UUID }
 		},
-		expect: { status: 400 },
+		expect: { status: 400, error_reason: null },
 		note: 'scope_kind + scope_id are paired on role_grant_offer_create'
 	},
 	{
@@ -250,7 +250,7 @@ export const conformance_participation_cases: ReadonlyArray<ConformanceCase> = [
 		},
 		// The control for the row below: the same input one unit shorter reaches
 		// target resolution and 404s on the nonexistent account.
-		expect: { status: 404 },
+		expect: { status: 404, error_reason: null },
 		note: 'a scope_kind at the cap is admitted on role_grant_assign'
 	},
 	{
@@ -265,7 +265,7 @@ export const conformance_participation_cases: ReadonlyArray<ConformanceCase> = [
 				scope_id: SCOPE_UUID
 			}
 		},
-		expect: { status: 400 },
+		expect: { status: 400, error_reason: null },
 		note: 'scope_kind is capped at the input boundary on role_grant_assign'
 	},
 	{
@@ -282,7 +282,7 @@ export const conformance_participation_cases: ReadonlyArray<ConformanceCase> = [
 		},
 		// Refused at the input boundary: the same offer with a `scope_kind` at
 		// the cap gets past validation to the write.
-		expect: { status: 400 },
+		expect: { status: 400, error_reason: null },
 		note: 'scope_kind is capped at the input boundary on role_grant_offer_create'
 	},
 	{

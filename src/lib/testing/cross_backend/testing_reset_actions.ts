@@ -670,20 +670,43 @@ export const testing_shorten_credential_expiry_action_spec = {
 		'now (shorten-only), for the cross-impl credential-deadline cases.'
 } as const satisfies RequestResponseActionSpec;
 
+/**
+ * The writes behind `_testing_shorten_credential_expiry`: every `auth_session`
+ * and `api_token` row of the account gets `LEAST(expires_at, NOW() + seconds)`,
+ * so nothing moves later and an eternal token gains an expiry.
+ *
+ * Shared by the action and the in-process fixture's `mint_expired_token`, so
+ * both fixtures expire a token with one statement. Unbounded here; the
+ * action's input holds `seconds` to its range.
+ *
+ * @param db - the database, a request transaction or the pool
+ * @param account_id - the account whose credentials expire
+ * @param seconds - the new expiry's offset from the database's `NOW()`
+ * @returns how many sessions and API tokens the statement rewrote
+ * @mutates `auth_session` and `api_token` - the account's rows' `expires_at`
+ */
+export const query_shorten_credential_expiry = async (
+	db: Db,
+	account_id: string,
+	seconds: number
+): Promise<{ sessions: number; api_tokens: number }> => {
+	const params = [account_id, seconds];
+	const sessions = await db.query<{ id: string }>(
+		`UPDATE auth_session SET expires_at = ${SHORTEN_EXPIRES_AT_SQL} WHERE account_id = $1 RETURNING id`,
+		params
+	);
+	const api_tokens = await db.query<{ id: string }>(
+		`UPDATE api_token SET expires_at = ${SHORTEN_EXPIRES_AT_SQL} WHERE account_id = $1 RETURNING id`,
+		params
+	);
+	return { sessions: sessions.length, api_tokens: api_tokens.length };
+};
+
 /** Build the standalone `_testing_shorten_credential_expiry` action (see the spec doc). */
 export const create_testing_shorten_credential_expiry_action = (): RpcAction =>
-	rpc_action(testing_shorten_credential_expiry_action_spec, async (input, ctx) => {
-		const params = [input.account_id, input.seconds];
-		const sessions = await ctx.db.query<{ id: string }>(
-			`UPDATE auth_session SET expires_at = ${SHORTEN_EXPIRES_AT_SQL} WHERE account_id = $1 RETURNING id`,
-			params
-		);
-		const api_tokens = await ctx.db.query<{ id: string }>(
-			`UPDATE api_token SET expires_at = ${SHORTEN_EXPIRES_AT_SQL} WHERE account_id = $1 RETURNING id`,
-			params
-		);
-		return { sessions: sessions.length, api_tokens: api_tokens.length };
-	});
+	rpc_action(testing_shorten_credential_expiry_action_spec, async (input, ctx) =>
+		query_shorten_credential_expiry(ctx.db, input.account_id, input.seconds)
+	);
 
 /**
  * `_testing_action_manifest` — dump the backend's live RPC method set as a

@@ -330,12 +330,14 @@ const RPC_CALL_DEFAULT_HEADERS: Readonly<Record<string, string>> = {
 
 /**
  * The unparsed response `rpc_call_raw` returns: the HTTP status, the
- * response-headers snapshot (lowercased keys), and the JSON body exactly as
- * the server sent it — the whole envelope, `jsonrpc` and `id` included.
+ * response-headers snapshot (lowercased keys), every `Set-Cookie` line in
+ * order (the snapshot keeps one), and the JSON body exactly as the server sent
+ * it — the whole envelope, `jsonrpc` and `id` included.
  */
 export interface RpcCallRawResult {
 	status: number;
 	headers: Record<string, string>;
+	set_cookies: ReadonlyArray<string>;
 	body: unknown;
 }
 
@@ -388,7 +390,12 @@ export const rpc_call_raw = async (args: RpcCallArgs): Promise<RpcCallRawResult>
 	}
 
 	const res = await (typeof app === 'function' ? app(url, init) : app.request(url, init));
-	return { status: res.status, headers: headers_to_record(res.headers), body: await res.json() };
+	return {
+		status: res.status,
+		headers: headers_to_record(res.headers),
+		set_cookies: res.headers.getSetCookie(),
+		body: await res.json()
+	};
 };
 
 /**

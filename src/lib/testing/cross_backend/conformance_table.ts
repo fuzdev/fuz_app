@@ -23,6 +23,15 @@ import '../assert_dev_env.ts';
  * a row may pin further header expectations via `expect.headers`. Headers are
  * deliberately kept out of the equivalence-group `{status, body}` comparison.
  *
+ * On HTTP every response is also held to what it does to the session cookie:
+ * the row's `expect.set_cookie` — omitted meaning none — is matched against
+ * `classify_session_cookie_effect` of its `Set-Cookie` lines, which reads the
+ * clear and the mint through the spine's own formatters, with a floor behind
+ * it that no response outside 2xx mints one (`assert_session_cookie`). An RPC
+ * error row is held to its JSON-RPC `error.code` too, not just the status it
+ * answers. Rows that can't honestly run are refused at collection
+ * (`check_conformance_cases`).
+ *
  * Given `ws`, the runner sends each case as a frame on a WebSocket instead:
  * the principal opens an admitted socket and the frame meets the per-message
  * gates. The frame carries the same JSON-RPC envelope the HTTP body does, so
@@ -49,7 +58,8 @@ import type { AppSurfaceSpec, RpcEndpointSpec } from '../../http/surface.ts';
 import type { RouteMethod, RouteSpec } from '../../http/route_spec.ts';
 import type { RpcAction } from '../../actions/action_types.ts';
 import type { SessionOptions } from '../../auth/session_cookie.ts';
-import { DAEMON_TOKEN_HEADER } from '../../auth/daemon_token.ts';
+import { DAEMON_TOKEN_HEADER, is_daemon_token_shaped } from '../../auth/daemon_token.ts';
+import { API_TOKEN_PREFIX, is_api_token_shaped } from '../../auth/api_token.ts';
 import {
 	find_auth_route,
 	rest_auth_route_suffixes,
@@ -65,7 +75,10 @@ import {
 	type RpcEndpointsSuiteOption
 } from '../rpc_helpers.ts';
 import { account_token_create_action_spec } from '../../auth/account_action_specs.ts';
-import { jsonrpc_error_code_to_http_status } from '../../http/jsonrpc_errors.ts';
+import {
+	http_status_to_jsonrpc_error_code,
+	jsonrpc_error_code_to_http_status
+} from '../../http/jsonrpc_errors.ts';
 import type { JsonrpcErrorCode } from '../../http/jsonrpc.ts';
 import type { FetchTransport } from '../transports/fetch_transport.ts';
 import { create_admitted_ws_transport } from '../transports/ws_transport.ts';
@@ -77,6 +90,11 @@ import {
 	type ConformancePrincipal
 } from './conformance_case.ts';
 import type { BackendCapabilities } from './capabilities.ts';
+import {
+	classify_session_cookie_effect,
+	filter_session_set_cookies,
+	find_session_cookie_mints
+} from './session_cookie_effect.ts';
 import type { SetupTest, TestFixture } from './setup.ts';
 import { mint_narrowed_api_token } from './narrowed_api_token.ts';
 import { xfail_until } from './xfail.ts';
@@ -160,9 +178,9 @@ export const resolve_conformance_rpc_endpoints = (
 
 /**
  * Principals that cannot hold a socket: each presents no usable credential
- * (`anonymous`, the browser-discarded and malformed bearers, the expired
- * session) or one the upgrade refuses (`scoped_token` — a narrowed token is
- * refused `surface:ws_upgrade`), so the upgrade answers before any frame.
+ * (`anonymous`, the browser-discarded and malformed bearers, the dead
+ * credentials) or one the upgrade refuses (`scoped_token` — a narrowed token
+ * is refused `surface:ws_upgrade`), so the upgrade answers before any frame.
  * The front-door table (`describe_transport_composition_cross_tests`) pins
  * those upgrade refusals.
  */
@@ -171,14 +189,21 @@ const WS_UNAVAILABLE_PRINCIPALS: ReadonlySet<ConformancePrincipal> = new Set([
 	'bearer_browser',
 	'malformed_bearer',
 	'expired_session',
+	'tampered_cookie',
+	'wrong_daemon',
+	'unknown_bearer',
+	'revoked_session',
+	'revoked_token',
+	'expired_token',
 	'scoped_token'
 ] satisfies Array<ConformancePrincipal>);
 
 /**
  * Whether a case can run over a WebSocket: an RPC method (not a REST auth
  * route), sent as `POST` (a `GET` row pins the HTTP query path), pinning no
- * header value (a frame has no headers; an absence pin holds vacuously), as
- * a principal that can hold a socket.
+ * header value and no session cookie effect (a frame has no headers; an
+ * absence pin, `'none'` included, holds vacuously), as a principal that can
+ * hold a socket.
  *
  * @param c - the case
  * @returns whether the WS leg runs it
@@ -187,6 +212,7 @@ export const is_ws_conformance_case = (c: ConformanceCase): boolean =>
 	!c.request.method.startsWith('/') &&
 	(c.request.verb ?? 'POST') === 'POST' &&
 	!Object.values(c.expect.headers ?? {}).some((value) => value !== null) &&
+	(c.expect.set_cookie ?? 'none') === 'none' &&
 	!WS_UNAVAILABLE_PRINCIPALS.has(c.request.as);
 
 /** A resolved principal: the transport + headers a case fires through. */
@@ -216,6 +242,47 @@ export interface ResolvedConformancePrincipal {
  * invalid-token path, not the browser-context discard.
  */
 const INVALID_DAEMON_TOKEN_VALUE = 'not-a-valid-daemon-token';
+
+/**
+ * The `wrong_daemon` principal's token: well-shaped (43 base64url characters),
+ * so it passes the shape precheck and is refused by the compare — never the
+ * server's, whose tokens are random.
+ */
+const WRONG_DAEMON_TOKEN_VALUE = 'A'.repeat(43);
+
+/**
+ * The `unknown_bearer` principal's token: well-shaped (the prefix and 43
+ * base64url characters), so it costs the lookup no row answers.
+ */
+const UNKNOWN_BEARER_TOKEN_VALUE = `${API_TOKEN_PREFIX}${'A'.repeat(43)}`;
+
+if (!is_daemon_token_shaped(WRONG_DAEMON_TOKEN_VALUE)) {
+	throw new Error('conformance: WRONG_DAEMON_TOKEN_VALUE must be daemon-token-shaped');
+}
+if (!is_api_token_shaped(UNKNOWN_BEARER_TOKEN_VALUE)) {
+	throw new Error('conformance: UNKNOWN_BEARER_TOKEN_VALUE must be api-token-shaped');
+}
+
+/**
+ * The keeper's session cookie with its MAC corrupted: the first character of
+ * the signature (after the last `.`) changed, so the signature keeps its
+ * shape and the keyring refuses it on the compare, not the shape check.
+ */
+const tamper_session_cookie = (cookie: string): string => {
+	const dot = cookie.lastIndexOf('.');
+	const first = cookie[dot + 1];
+	if (dot === -1 || first === undefined) {
+		throw new Error(`conformance: principal 'tampered_cookie' found no signed session cookie`);
+	}
+	return `${cookie.slice(0, dot + 1)}${first === 'A' ? 'B' : 'A'}${cookie.slice(dot + 2)}`;
+};
+
+/** A dead bearer presented alone: no cookie, no `Origin`, so the token is looked up. */
+const as_lone_bearer = (fixture: TestFixture, token: string): ResolvedConformancePrincipal => ({
+	transport: fixture.fresh_transport({ origin: null }),
+	headers: { authorization: `Bearer ${token}` },
+	suppress_default_origin: true
+});
 
 /**
  * Mint the `scoped_token` principal's narrowed bearer token over the
@@ -255,9 +322,11 @@ const mint_scoped_token = async (
  * Map a `ConformancePrincipal` onto the transport + headers it
  * authenticates with, reading exclusively from the per-test `TestFixture`.
  *
- * The five always-available principals resolve from fixture accessors;
- * `role_holder` / `wrong_role` read a seeded `extra_accounts` entry named
- * via `options.principals` (throws a clear setup error when unconfigured);
+ * The always-available principals resolve from fixture accessors (the dead
+ * credentials that need a server-side state — a revoked session or token, an
+ * expired token — from the fixture's `mint_*` seams); `role_holder` /
+ * `wrong_role` read a seeded `extra_accounts` entry named via
+ * `options.principals` (throws a clear setup error when unconfigured);
  * `scoped_token` mints its narrowed credential over the production path.
  * Also used outside the table by suites that send a principal's requests
  * themselves (`describe_rpc_adversarial_cross_tests`).
@@ -397,6 +466,33 @@ export const resolve_conformance_principal = async (
 				actor_id: fixture.actor.id
 			};
 		}
+		case 'tampered_cookie': {
+			// fresh jar, so the tampered cookie is the only one sent
+			const { cookie } = fixture.create_session_headers();
+			if (!cookie) throw new Error(`conformance: principal 'tampered_cookie' found no cookie`);
+			return {
+				transport: fixture.fresh_transport(),
+				headers: { cookie: tamper_session_cookie(cookie) }
+			};
+		}
+		case 'wrong_daemon':
+			// no Origin, so the token reaches the compare, not the browser-context discard
+			return {
+				transport: fixture.fresh_transport({ origin: null }),
+				headers: { [DAEMON_TOKEN_HEADER]: WRONG_DAEMON_TOKEN_VALUE },
+				suppress_default_origin: true
+			};
+		case 'unknown_bearer':
+			return as_lone_bearer(fixture, UNKNOWN_BEARER_TOKEN_VALUE);
+		case 'revoked_session':
+			return {
+				transport: fixture.fresh_transport(),
+				headers: { cookie: await fixture.mint_revoked_session() }
+			};
+		case 'revoked_token':
+			return as_lone_bearer(fixture, await fixture.mint_revoked_token());
+		case 'expired_token':
+			return as_lone_bearer(fixture, await fixture.mint_expired_token());
 		case 'role_holder':
 		case 'wrong_role': {
 			const username = principals?.[as];
@@ -539,6 +635,47 @@ const assert_response_headers = (headers: Record<string, string>, c: Conformance
 const is_success_status = (status: number): boolean => status >= 200 && status < 300;
 
 /**
+ * Assert a response's session cookie lines against the row's
+ * `expect.set_cookie` (omitted, `'none'`), by the classification both the
+ * runner and the differential read (`classify_session_cookie_effect`) — the
+ * assertion that decides a row.
+ *
+ * Ahead of it runs the floor: a response that is not 2xx mints no session
+ * cookie (`find_session_cookie_mints`, which reads a mint in any shape). It is
+ * a backstop, not a second guarantee: `check_conformance_cases` refuses a
+ * non-2xx row expecting a mint, so on a row the table collected, a refusal
+ * that mints already fails the effect assertion. The floor names the cause
+ * plainly when it does, and holds for a caller asserting a row the collection
+ * never saw.
+ *
+ * @param sent - the response, with every `Set-Cookie` line
+ * @param c - the case
+ * @param cookie_name - the session cookie's name
+ */
+export const assert_session_cookie = (
+	sent: Pick<ConformanceCaseResponse, 'status' | 'set_cookies'>,
+	c: ConformanceCase,
+	cookie_name: string
+): void => {
+	if (!is_success_status(sent.status)) {
+		const mints = find_session_cookie_mints(sent.set_cookies, cookie_name);
+		assert.ok(
+			mints.length === 0,
+			`${c.name}: a ${sent.status} refusal minted a session cookie — ${JSON.stringify(mints)}`
+		);
+	}
+	const expected = c.expect.set_cookie ?? 'none';
+	const actual = classify_session_cookie_effect(sent.set_cookies, cookie_name);
+	assert.strictEqual(
+		actual,
+		expected,
+		`${c.name}: session cookie effect (its Set-Cookie lines: ${JSON.stringify(
+			filter_session_set_cookies(sent.set_cookies, cookie_name)
+		)})`
+	);
+};
+
+/**
  * The wire-distinguishing content a case observed — `{status, body}` where
  * `body` is the success `result` or the error envelope (`{code, message,
  * data?}` for RPC, the flat `{error, ...}` for REST). Equivalence groups
@@ -578,20 +715,22 @@ export type ConformanceCaseTarget =
 
 /**
  * One case's request as sent and its response unparsed: the HTTP status, the
- * response-headers snapshot (lowercased keys), and the JSON body exactly as
- * the server sent it — the whole JSON-RPC envelope for an RPC method,
- * `undefined` for a REST body that is not JSON.
+ * response-headers snapshot (lowercased keys), every `Set-Cookie` line in
+ * order (the snapshot keeps only one), and the JSON body exactly as the server
+ * sent it — the whole JSON-RPC envelope for an RPC method, `undefined` for a
+ * REST body that is not JSON.
  *
- * Over a WebSocket the body is the response frame, the headers are empty (a
- * frame carries none), and the status is the one the HTTP binding answers
- * for the frame's outcome: `200` for a result, else
- * `jsonrpc_error_code_to_http_status` of its error code — so a row's
+ * Over a WebSocket the body is the response frame, the headers and
+ * `Set-Cookie` lines are empty (a frame carries none), and the status is the
+ * one the HTTP binding answers for the frame's outcome: `200` for a result,
+ * else `jsonrpc_error_code_to_http_status` of its error code — so a row's
  * `expect.status` reads as the error code on both transports.
  */
 export interface ConformanceCaseResponse {
 	readonly target: ConformanceCaseTarget;
 	readonly status: number;
 	readonly headers: Record<string, string>;
+	readonly set_cookies: ReadonlyArray<string>;
 	readonly body: unknown;
 }
 
@@ -670,6 +809,7 @@ export const send_conformance_case = async (
 			target: { kind: 'rest', route },
 			status: response.status,
 			headers: headers_to_record(response.headers),
+			set_cookies: response.headers.getSetCookie(),
 			body
 		};
 	}
@@ -762,7 +902,7 @@ const send_ws_frame = async (
 				: typeof code === 'number'
 					? jsonrpc_error_code_to_http_status(code as JsonrpcErrorCode)
 					: 500;
-		return { status, headers: {}, body };
+		return { status, headers: {}, set_cookies: [], body };
 	} finally {
 		await client.close().catch(() => {});
 	}
@@ -838,6 +978,8 @@ const run_case = async (
 		...(options.ws && { ws: options.ws })
 	});
 	assert_response_headers(sent.headers, c);
+	// a frame carries no headers, so the cookie assertions are the HTTP legs'
+	if (!options.ws) assert_session_cookie(sent, c, options.session_options.cookie_name);
 
 	const normalized =
 		sent.target.kind === 'rest'
@@ -886,14 +1028,21 @@ const assert_rpc_case = (
 		c.expect.status,
 		`${c.name}: error status (error ${JSON.stringify(res.error)})`
 	);
-	if (c.expect.error_reason !== undefined) {
-		// A row that *declares* a reason must carry it — present AND equal —
-		// mirroring the REST branch's unconditional `body.error` assertion. The
-		// earlier skip-if-absent form let a backend that dropped the reason pass
-		// a row declaring one, blessing a reason/forensic-parity divergence (the
-		// IDOR-mask / privilege reason is exactly the distinguishing bit). Rows
-		// whose denial genuinely has no reason (the bare `unauthenticated()` 401)
-		// simply omit `error_reason` and are pinned by `status` above.
+	// the code, not just the status it answers: several codes share a status
+	assert.strictEqual(
+		res.error.code,
+		c.expect.error_code ?? http_status_to_jsonrpc_error_code(c.expect.status),
+		`${c.name}: error.code (error ${JSON.stringify(res.error)})`
+	);
+	if (c.expect.error_reason === null) {
+		const { data } = res.error;
+		assert.ok(
+			!(data !== null && typeof data === 'object' && Object.hasOwn(data, 'reason')),
+			`${c.name}: error.data.reason expected absent, got ${JSON.stringify(data)}`
+		);
+	} else if (c.expect.error_reason !== undefined) {
+		// present AND equal: a backend that dropped the reason must not pass a row
+		// declaring one — the reason is the distinguishing bit of a mask
 		const reason = (res.error.data as { reason?: unknown } | undefined)?.reason;
 		assert.strictEqual(reason, c.expect.error_reason, `${c.name}: error.data.reason`);
 	}
@@ -926,6 +1075,51 @@ const assert_rest_case = (
 };
 
 /**
+ * Refuse the rows a table can't honestly run, before any is sent, each throw
+ * naming the case:
+ *
+ * - a REST row pinning `error_reason: null` — a REST error body always names
+ *   its code in `error`, so the row pins that code instead;
+ * - a REST row setting `error_code`, which only a JSON-RPC envelope carries;
+ * - a row whose status is not 2xx expecting the session cookie minted
+ *   (`set_cookie` `'set'` or `'clear_then_set'`) — no refusal may mint one,
+ *   so the row contradicts the floor `assert_session_cookie` holds every
+ *   response to.
+ *
+ * `describe_conformance_table_tests` runs it at collection.
+ *
+ * @param cases - the cases a table would run
+ * @throws Error naming the first case that can't be written
+ */
+export const check_conformance_cases = (cases: ReadonlyArray<ConformanceCase>): void => {
+	for (const c of cases) {
+		const rest = c.request.method.startsWith('/');
+		if (rest && c.expect.error_reason === null) {
+			throw new Error(
+				`conformance: case '${c.name}' pins error_reason null on a REST route, whose error ` +
+					`body always names its code in \`error\` — pin the code instead.`
+			);
+		}
+		if (rest && c.expect.error_code !== undefined) {
+			throw new Error(
+				`conformance: case '${c.name}' sets error_code on a REST route, whose error body ` +
+					`carries no JSON-RPC code — pin error_reason instead.`
+			);
+		}
+		const set_cookie = c.expect.set_cookie ?? 'none';
+		if (
+			!is_success_status(c.expect.status) &&
+			(set_cookie === 'set' || set_cookie === 'clear_then_set')
+		) {
+			throw new Error(
+				`conformance: case '${c.name}' expects a ${c.expect.status} that mints the session ` +
+					`cookie (set_cookie '${set_cookie}') — no refusal may mint one.`
+			);
+		}
+	}
+};
+
+/**
  * Register a `describe` block running every `ConformanceCase` as a
  * vitest `test` (or `xfail_until` for deferred-by-design rows). Drives
  * either transport via the shared `{setup_test, surface_source,
@@ -942,6 +1136,7 @@ export const describe_conformance_table_tests = (options: ConformanceTableOption
 		Array<{ name: string; normalized: NormalizedResponse }>
 	>();
 	const cases = options.ws ? options.cases.filter(is_ws_conformance_case) : options.cases;
+	check_conformance_cases(options.cases);
 	const group_sizes = new Map<string, number>();
 	for (const c of cases) {
 		const group = c.expect.equivalence_group;

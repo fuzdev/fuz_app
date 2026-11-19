@@ -157,22 +157,34 @@ const DUAL_SPAWN_TESTS = DUAL_SPAWN_PROJECTS.flatMap((project) => project.includ
  */
 const NODE_ONLY_CROSS_TESTS = ['src/test/cross_backend/builtin_roles.cross.test.ts'];
 
+/**
+ * Single-backend files that run on the TS spine binaries alone: they pin
+ * routes the TS spine mounts and the Rust spine doesn't (`GET /verify`, which
+ * the Rust account router leaves out — `ACCOUNT_ROUTER_PATHS`).
+ */
+const TS_SPINE_ONLY_CROSS_TESTS = ['src/test/cross_backend/conformance_ts_spine.cross.test.ts'];
+
 const single_backend_project = (
 	name: CrossProjectName,
 	global_setup: string,
-	{ with_node_only = false }: { with_node_only?: boolean } = {}
+	{ with_node_only = false, ts_spine = true }: { with_node_only?: boolean; ts_spine?: boolean } = {}
 ): CrossBackendProjectOptions => ({
 	name,
 	global_setup,
 	include: CROSS_BACKEND_TESTS,
-	exclude: with_node_only ? DUAL_SPAWN_TESTS : [...DUAL_SPAWN_TESTS, ...NODE_ONLY_CROSS_TESTS]
+	exclude: [
+		...DUAL_SPAWN_TESTS,
+		...(with_node_only ? [] : NODE_ONLY_CROSS_TESTS),
+		...(ts_spine ? [] : TS_SPINE_ONLY_CROSS_TESTS)
+	]
 });
 
 /** Every cross project, in the order `run_cross.ts` reports them. */
 export const CROSS_BACKEND_PROJECTS: ReadonlyArray<CrossBackendProjectOptions> = [
 	single_backend_project(
 		'cross_backend_rust_spine_stub',
-		'./src/test/cross_backend/global_setup.ts'
+		'./src/test/cross_backend/global_setup.ts',
+		{ ts_spine: false }
 	),
 	single_backend_project(
 		'cross_backend_ts_node',

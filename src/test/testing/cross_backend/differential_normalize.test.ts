@@ -6,25 +6,34 @@ import {
 	normalize_differential_response
 } from '#lib/testing/cross_backend/differential_normalize.ts';
 
+const COOKIE = 'fuz_session';
+const CLEAR = 'fuz_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0';
+const MINT =
+	'fuz_session=tok:1700000000.c2ln; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=60';
+
 const UUID_A = '0b1c2d3e-4f50-4617-8899-aabbccddeeff';
 const UUID_B = '11111111-2222-4333-8444-555555555555';
 const UUID_C = '99999999-8888-4777-8666-555555555555';
 
 describe('normalize_differential_response', () => {
 	test('numbers volatile values by first appearance, per kind', () => {
-		const n = normalize_differential_response({
-			status: 200,
-			headers: {},
-			body: {
-				a_owner: UUID_A,
-				b_rows: [{ id: UUID_B, owner: UUID_A }],
-				c_at: '2026-10-25T12:00:00Z',
-				d_token: 'secret_fuz_token_abcDEF123_-xyz',
-				e_token_id: 'tok_abC0_d-3xyzA',
-				f_hash: 'a'.repeat(64),
-				g_message: `account ${UUID_B} not found`
-			}
-		});
+		const n = normalize_differential_response(
+			{
+				status: 200,
+				set_cookies: [],
+				headers: {},
+				body: {
+					a_owner: UUID_A,
+					b_rows: [{ id: UUID_B, owner: UUID_A }],
+					c_at: '2026-10-25T12:00:00Z',
+					d_token: 'secret_fuz_token_abcDEF123_-xyz',
+					e_token_id: 'tok_abC0_d-3xyzA',
+					f_hash: 'a'.repeat(64),
+					g_message: `account ${UUID_B} not found`
+				}
+			},
+			COOKIE
+		);
 		assert.deepEqual(n.body, {
 			a_owner: '<uuid:1>',
 			b_rows: [{ id: '<uuid:2>', owner: '<uuid:1>' }],
@@ -37,41 +46,61 @@ describe('normalize_differential_response', () => {
 	});
 
 	test('two responses with different ids in the same relations normalize equal', () => {
-		const a = normalize_differential_response({
-			status: 200,
-			headers: {},
-			body: { owner: UUID_A, rows: [{ id: UUID_B, owner: UUID_A }] }
-		});
-		const b = normalize_differential_response({
-			status: 200,
-			headers: {},
-			body: { owner: UUID_C, rows: [{ id: UUID_A, owner: UUID_C }] }
-		});
+		const a = normalize_differential_response(
+			{
+				status: 200,
+				set_cookies: [],
+				headers: {},
+				body: { owner: UUID_A, rows: [{ id: UUID_B, owner: UUID_A }] }
+			},
+			COOKIE
+		);
+		const b = normalize_differential_response(
+			{
+				status: 200,
+				set_cookies: [],
+				headers: {},
+				body: { owner: UUID_C, rows: [{ id: UUID_A, owner: UUID_C }] }
+			},
+			COOKIE
+		);
 		assert.deepEqual(diff_differential_responses(a, b), []);
 	});
 
 	test('a broken identity relation differs', () => {
-		const a = normalize_differential_response({
-			status: 200,
-			headers: {},
-			body: { owner: UUID_A, rows: [{ owner: UUID_A }] }
-		});
-		const b = normalize_differential_response({
-			status: 200,
-			headers: {},
-			body: { owner: UUID_A, rows: [{ owner: UUID_B }] }
-		});
+		const a = normalize_differential_response(
+			{
+				status: 200,
+				set_cookies: [],
+				headers: {},
+				body: { owner: UUID_A, rows: [{ owner: UUID_A }] }
+			},
+			COOKIE
+		);
+		const b = normalize_differential_response(
+			{
+				status: 200,
+				set_cookies: [],
+				headers: {},
+				body: { owner: UUID_A, rows: [{ owner: UUID_B }] }
+			},
+			COOKIE
+		);
 		assert.deepEqual(diff_differential_responses(a, b), [
 			{ path: 'body.rows[0].owner', a: '<uuid:1>', b: '<uuid:2>' }
 		]);
 	});
 
 	test('non-canonical spellings stay raw', () => {
-		const n = normalize_differential_response({
-			status: 200,
-			headers: {},
-			body: { upper: UUID_A.toUpperCase(), millis: '2026-10-25T12:00:00.123Z' }
-		});
+		const n = normalize_differential_response(
+			{
+				status: 200,
+				set_cookies: [],
+				headers: {},
+				body: { upper: UUID_A.toUpperCase(), millis: '2026-10-25T12:00:00.123Z' }
+			},
+			COOKIE
+		);
 		assert.deepEqual(n.body, {
 			upper: UUID_A.toUpperCase(),
 			millis: '2026-10-25T12:00:00.123Z'
@@ -79,16 +108,24 @@ describe('normalize_differential_response', () => {
 	});
 
 	test('key order is ignored, array order is not', () => {
-		const a = normalize_differential_response({
-			status: 200,
-			headers: {},
-			body: { x: 1, y: [1, 2] }
-		});
-		const b = normalize_differential_response({
-			status: 200,
-			headers: {},
-			body: { y: [2, 1], x: 1 }
-		});
+		const a = normalize_differential_response(
+			{
+				status: 200,
+				set_cookies: [],
+				headers: {},
+				body: { x: 1, y: [1, 2] }
+			},
+			COOKIE
+		);
+		const b = normalize_differential_response(
+			{
+				status: 200,
+				set_cookies: [],
+				headers: {},
+				body: { y: [2, 1], x: 1 }
+			},
+			COOKIE
+		);
 		assert.deepEqual(
 			diff_differential_responses(a, b).map((d) => d.path),
 			['body.y[0]', 'body.y[1]']
@@ -96,26 +133,33 @@ describe('normalize_differential_response', () => {
 	});
 
 	test('header names are sorted, volatile ones dropped, values ignored', () => {
-		const n = normalize_differential_response({
-			status: 200,
-			headers: {
-				'set-cookie': 'session=abc',
-				'content-type': 'application/json',
-				date: 'Sun, 25 Oct 2026 12:00:00 GMT',
-				'content-length': '12',
-				connection: 'keep-alive',
-				'keep-alive': 'timeout=5',
-				'transfer-encoding': 'chunked'
+		const n = normalize_differential_response(
+			{
+				status: 200,
+				set_cookies: [],
+				headers: {
+					'set-cookie': 'session=abc',
+					'content-type': 'application/json',
+					date: 'Sun, 25 Oct 2026 12:00:00 GMT',
+					'content-length': '12',
+					connection: 'keep-alive',
+					'keep-alive': 'timeout=5',
+					'transfer-encoding': 'chunked'
+				},
+				body: null
 			},
-			body: null
-		});
+			COOKIE
+		);
 		assert.deepEqual(n.header_names, ['content-type', 'set-cookie']);
 	});
 });
 
 describe('content addresses', () => {
 	const fact = (hash: string) =>
-		normalize_differential_response({ status: 200, headers: {}, body: { hash } });
+		normalize_differential_response(
+			{ status: 200, headers: {}, set_cookies: [], body: { hash } },
+			COOKIE
+		);
 
 	test('a blake3 content address stays verbatim', () => {
 		const hash = `blake3:${'c'.repeat(64)}`;
@@ -141,19 +185,25 @@ describe('content addresses', () => {
 describe('diff_differential_responses', () => {
 	test('a header one side sent is its own path', () => {
 		const diffs = diff_differential_responses(
-			{ status: 401, body: null, header_names: ['content-type', 'x-extra'] },
-			{ status: 401, body: null, header_names: ['content-type'] }
+			{
+				status: 401,
+				body: null,
+				header_names: ['content-type', 'x-extra'],
+				session_cookie: 'none'
+			},
+			{ status: 401, body: null, header_names: ['content-type'], session_cookie: 'none' }
 		);
 		assert.deepEqual(diffs, [{ path: 'headers.x-extra', a: true, b: undefined }]);
 	});
 
 	test('an object one side lacks diffs key by key', () => {
 		const diffs = diff_differential_responses(
-			{ status: 400, body: { error: { code: -32602 } }, header_names: [] },
+			{ status: 400, body: { error: { code: -32602 } }, header_names: [], session_cookie: 'none' },
 			{
 				status: 400,
 				body: { error: { code: -32602, data: { reason: 'limit_invalid' } } },
-				header_names: []
+				header_names: [],
+				session_cookie: 'none'
 			}
 		);
 		assert.deepEqual(diffs, [{ path: 'body.error.data.reason', a: undefined, b: 'limit_invalid' }]);
@@ -162,8 +212,13 @@ describe('diff_differential_responses', () => {
 	test('an empty object against a missing one differs', () => {
 		assert.deepEqual(
 			diff_differential_responses(
-				{ status: 400, body: { error: { code: -32602, data: {} } }, header_names: [] },
-				{ status: 400, body: { error: { code: -32602 } }, header_names: [] }
+				{
+					status: 400,
+					body: { error: { code: -32602, data: {} } },
+					header_names: [],
+					session_cookie: 'none'
+				},
+				{ status: 400, body: { error: { code: -32602 } }, header_names: [], session_cookie: 'none' }
 			),
 			[{ path: 'body.error.data', a: {}, b: undefined }]
 		);
@@ -171,12 +226,35 @@ describe('diff_differential_responses', () => {
 
 	test('status and a type change both show', () => {
 		const diffs = diff_differential_responses(
-			{ status: 200, body: { n: 1 }, header_names: [] },
-			{ status: 201, body: { n: '1' }, header_names: [] }
+			{ status: 200, body: { n: 1 }, header_names: [], session_cookie: 'none' },
+			{ status: 201, body: { n: '1' }, header_names: [], session_cookie: 'none' }
 		);
 		assert.deepEqual(diffs, [
 			{ path: 'status', a: 200, b: 201 },
 			{ path: 'body.n', a: 1, b: '1' }
+		]);
+	});
+});
+
+describe('session_cookie', () => {
+	const with_cookies = (set_cookies: Array<string>) =>
+		normalize_differential_response(
+			{ status: 200, headers: { 'set-cookie': 'x' }, set_cookies, body: null },
+			COOKIE
+		);
+
+	test('classifies the session cookie lines, ignoring other cookies', () => {
+		assert.strictEqual(with_cookies([]).session_cookie, 'none');
+		assert.strictEqual(with_cookies(['other=1']).session_cookie, 'none');
+		assert.strictEqual(with_cookies([CLEAR]).session_cookie, 'clear');
+		assert.strictEqual(with_cookies(['other=1', MINT]).session_cookie, 'set');
+		assert.strictEqual(with_cookies([CLEAR, MINT]).session_cookie, 'clear_then_set');
+		assert.strictEqual(with_cookies([MINT, CLEAR]).session_cookie, 'unrecognized');
+	});
+
+	test('a clear against a mint differs at session_cookie, though the header names match', () => {
+		assert.deepEqual(diff_differential_responses(with_cookies([CLEAR]), with_cookies([MINT])), [
+			{ path: 'session_cookie', a: 'clear', b: 'set' }
 		]);
 	});
 });

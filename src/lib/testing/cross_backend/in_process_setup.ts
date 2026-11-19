@@ -25,6 +25,16 @@ import type { BootstrapServerOptions } from '../../server/app_server.ts';
 import type { AppServerContext } from '../../server/app_server_context.ts';
 import type { SessionOptions } from '../../auth/session_cookie.ts';
 import { ROLE_KEEPER } from '../../auth/role_schema.ts';
+import {
+	AUTH_SESSION_LIFETIME_MS,
+	query_session_revoke_for_account
+} from '../../auth/session_queries.ts';
+import { generate_api_token } from '../../auth/api_token.ts';
+import {
+	query_create_api_token,
+	query_revoke_api_token_for_account
+} from '../../auth/api_token_queries.ts';
+import { token_scope_full } from '../../auth/token_scope.ts';
 import { create_test_extra_actor } from '../db_entities.ts';
 import {
 	create_test_app,
@@ -36,14 +46,20 @@ import {
 } from '../app_server.ts';
 import { create_test_app_surface_spec } from '../stubs.ts';
 import {
+	find_rpc_action,
 	http_transport,
+	resolve_rpc_endpoints_for_setup,
 	type RpcTestTransport,
 	type RpcEndpointsSuiteOption
 } from '../rpc_helpers.ts';
+import { query_shorten_credential_expiry } from './testing_reset_actions.ts';
 import { in_process_capabilities, type BackendCapabilities } from './capabilities.ts';
 import type { FetchTransport } from '../transports/fetch_transport.ts';
 import {
+	assert_credential_authenticates,
 	EXPIRED_SESSION_OFFSET_SECONDS,
+	EXPIRED_TOKEN_SHORTEN_SECONDS,
+	EXPIRED_TOKEN_WAIT_MS,
 	to_test_account,
 	type SetupTest,
 	type ExtraAccountSpec
@@ -125,6 +141,20 @@ export const default_in_process_setup =
 		// `ExtraAccountSpec` for why this bypass is bootstrap-cradle-only.
 		const extra_accounts: Record<string, TestAccount> = {};
 		const { cookie_name } = options.session_options;
+		// where `account_verify` is mounted, for the liveness checks of the
+		// dead-credential mints; read only when one runs
+		const account_verify_rpc_path = (accessor: string): string => {
+			const found = find_rpc_action(
+				resolve_rpc_endpoints_for_setup(options.rpc_endpoints ?? [], options.session_options),
+				'account_verify'
+			);
+			if (!found) {
+				throw new Error(
+					`${accessor}: the in-process app mounts no account_verify to prove the credential live`
+				);
+			}
+			return found.path;
+		};
 		for (const spec of options.extra_accounts ?? []) {
 			const seeded = await create_test_account_with_credentials({
 				db: test_app.backend.deps.db,
@@ -179,6 +209,78 @@ export const default_in_process_setup =
 					expires_in_seconds: EXPIRED_SESSION_OFFSET_SECONDS
 				});
 				return `${cookie_name}=${session_cookie}`;
+			},
+			// The mints, revocations and the expiry go through the queries the
+			// production paths (and the expiry backdoor) write with, so the rows
+			// match what the cross-process accessors leave; each credential is
+			// proven live first, so its refusal can only be the revocation or the
+			// expiry.
+			mint_revoked_session: async () => {
+				const db = test_app.backend.deps.db;
+				const account_id = test_app.backend.account.id;
+				const { session_cookie, session_hash } = await mint_test_session({
+					db,
+					keyring: test_app.backend.keyring,
+					session_options: options.session_options,
+					account_id,
+					expires_in_seconds: AUTH_SESSION_LIFETIME_MS / 1000
+				});
+				const cookie = `${cookie_name}=${session_cookie}`;
+				await assert_credential_authenticates({
+					transport: in_process_fetch_transport(test_app.app),
+					rpc_path: account_verify_rpc_path('mint_revoked_session'),
+					headers: { cookie },
+					account_id,
+					accessor: 'mint_revoked_session'
+				});
+				if (!(await query_session_revoke_for_account({ db }, session_hash, account_id))) {
+					throw new Error('mint_revoked_session: the revoke removed no session row');
+				}
+				return cookie;
+			},
+			mint_revoked_token: async () => {
+				const deps = { db: test_app.backend.deps.db };
+				const account_id = test_app.backend.account.id;
+				const { token, id, token_hash } = generate_api_token();
+				await query_create_api_token(
+					deps,
+					id,
+					account_id,
+					'conformance revoked token',
+					token_hash,
+					token_scope_full()
+				);
+				await assert_credential_authenticates({
+					transport: in_process_fetch_transport(test_app.app),
+					rpc_path: account_verify_rpc_path('mint_revoked_token'),
+					headers: { authorization: `Bearer ${token}` },
+					account_id,
+					accessor: 'mint_revoked_token'
+				});
+				if (!(await query_revoke_api_token_for_account(deps, id, account_id))) {
+					throw new Error('mint_revoked_token: the revoke removed no token row');
+				}
+				return token;
+			},
+			mint_expired_token: async () => {
+				const other = await test_app.create_account();
+				await assert_credential_authenticates({
+					transport: in_process_fetch_transport(test_app.app),
+					rpc_path: account_verify_rpc_path('mint_expired_token'),
+					headers: { authorization: `Bearer ${other.api_token}` },
+					account_id: other.account.id,
+					accessor: 'mint_expired_token'
+				});
+				const shortened = await query_shorten_credential_expiry(
+					test_app.backend.deps.db,
+					other.account.id,
+					EXPIRED_TOKEN_SHORTEN_SECONDS
+				);
+				if (shortened.api_tokens < 1) {
+					throw new Error('mint_expired_token: the expiry rewrote no token row');
+				}
+				await new Promise((resolve) => setTimeout(resolve, EXPIRED_TOKEN_WAIT_MS));
+				return other.api_token;
 			}
 		};
 	};

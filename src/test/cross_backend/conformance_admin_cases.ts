@@ -64,7 +64,7 @@ const offer_cross_account_cases: Array<ConformanceCase> = OFFER_READ_METHODS.fla
 			{
 				name: `fresh non-admin → ${method} {account_id: NIL} → 403`,
 				request: { method, as: 'fresh_non_admin', params: { account_id: NIL_UUID } },
-				expect: { status: 403 },
+				expect: { status: 403, error_reason: null },
 				note
 			},
 			{
@@ -187,7 +187,7 @@ const event_type_filter_cases: Array<ConformanceCase> = [
 			as: 'keeper',
 			params: { event_type: 'a'.repeat(NAME_LENGTH_MAX + 1) }
 		},
-		expect: { status: 400 },
+		expect: { status: 400, error_reason: null },
 		note: 'auth/audit_log_schema.ts — `AuditEventTypeName` refuses a name past `NAME_LENGTH_MAX` characters'
 	}
 ];

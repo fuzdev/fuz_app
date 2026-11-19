@@ -34,7 +34,7 @@ export const conformance_void_params_cases: ReadonlyArray<ConformanceCase> = [
 	{
 		name: 'keeper → account_verify with a declared key → 400',
 		request: { method: 'account_verify', as: 'keeper', params: { nope: 1 } },
-		expect: { status: 400 },
+		expect: { status: 400, error_reason: null },
 		note: 'a void input still refuses any declared key with invalid_params'
 	}
 ];

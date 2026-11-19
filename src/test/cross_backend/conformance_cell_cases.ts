@@ -117,7 +117,7 @@ const pagination_note =
 const refused_page = (label: string, params: Record<string, unknown>): ConformanceCase => ({
 	name: `keeper → cell_list ${label} → 400`,
 	request: { method: 'cell_list', as: 'keeper', params },
-	expect: { status: 400 },
+	expect: { status: 400, error_reason: null },
 	note: pagination_note
 });
 
@@ -142,25 +142,25 @@ const schema_first_cases: Array<ConformanceCase> = [
 	{
 		name: 'anonymous → cell_list {created_by: NIL, limit: 0} → 400',
 		request: { method: 'cell_list', as: 'anonymous', params: { created_by: NIL_UUID, limit: 0 } },
-		expect: { status: 400 },
+		expect: { status: 400, error_reason: null },
 		note: `${pagination_note}; ${schema_first_note} (not cell_list_created_by_requires_auth)`
 	},
 	{
 		name: "anonymous → cell_list {shared_with: 'bogus'} → 400",
 		request: { method: 'cell_list', as: 'anonymous', params: { shared_with: 'bogus' } },
-		expect: { status: 400 },
+		expect: { status: 400, error_reason: null },
 		note: `auth/cell_action_specs.ts \`CellListInput\` — \`shared_with\` is \`literal('me')\`; ${schema_first_note} (not cell_list_shared_with_requires_auth)`
 	},
 	...(['order_by', 'order_direction'] as const).map((key): ConformanceCase => ({
 		name: `keeper → cell_list {${key}: 'bogus'} → 400`,
 		request: { method: 'cell_list', as: 'keeper', params: { [key]: 'bogus' } },
-		expect: { status: 400 },
+		expect: { status: 400, error_reason: null },
 		note: `auth/cell_action_specs.ts \`CellListInput\` — \`${key}\` is a \`one_of\`, so another value is refused, not defaulted`
 	})),
 	{
 		name: 'keeper → cell_field_list naming neither endpoint, {limit: 0} → 400',
 		request: { method: 'cell_field_list', as: 'keeper', params: { limit: 0 } },
-		expect: { status: 400 },
+		expect: { status: 400, error_reason: null },
 		note: `auth/cell_relation_list_limit.ts — ${schema_first_note}`
 	},
 	{
@@ -170,7 +170,7 @@ const schema_first_cases: Array<ConformanceCase> = [
 			as: 'keeper',
 			params: { parent_id: NIL_UUID, child_id: NIL_UUID, limit: 0 }
 		},
-		expect: { status: 400 },
+		expect: { status: 400, error_reason: null },
 		note: `auth/cell_relation_list_limit.ts — ${schema_first_note}`
 	}
 ];
@@ -199,7 +199,7 @@ const input_cases: Array<ConformanceCase> = [
 	).map(([label, role]): ConformanceCase => ({
 		name: `keeper → cell_grant_create with a role ${label} → 400`,
 		request: { method: 'cell_grant_create', as: 'keeper', params: grant_role_params(role) },
-		expect: { status: 400 },
+		expect: { status: 400, error_reason: null },
 		note: grant_role_note
 	})),
 	{
@@ -233,7 +233,7 @@ const input_cases: Array<ConformanceCase> = [
 		return {
 			name: `keeper → cell_list {moderation: ${shown}} → 400`,
 			request: { method: 'cell_list', as: 'keeper', params: { moderation } },
-			expect: { status: 400 },
+			expect: { status: 400, error_reason: null },
 			note: moderation_filter_note
 		};
 	}),
@@ -327,13 +327,22 @@ const integral_cases: Array<ConformanceCase> = [
 	spelled_case('keeper', 'cell_list', '{"limit":5.0,"offset":1e1}', { status: 200 }),
 	spelled_case('keeper', 'cell_list', '{"limit":1e1}', { status: 200 }),
 	spelled_case('keeper', 'cell_list', '{"offset":-0}', { status: 200 }),
-	spelled_case('keeper', 'cell_list', '{"limit":-0}', { status: 400 }),
-	spelled_case('keeper', 'cell_list', '{"limit":5.5}', { status: 400 }),
-	spelled_case('keeper', 'cell_list', '{"offset":9007199254740992}', { status: 400 }),
+	spelled_case('keeper', 'cell_list', '{"limit":-0}', { status: 400, error_reason: null }),
+	spelled_case('keeper', 'cell_list', '{"limit":5.5}', { status: 400, error_reason: null }),
+	spelled_case('keeper', 'cell_list', '{"offset":9007199254740992}', {
+		status: 400,
+		error_reason: null
+	}),
 	// JS-canonical fractions serde_json's default float parse rounds onto an
 	// integer: TS refuses, Rust admits unless `float_roundtrip` is on
-	spelled_case('keeper', 'cell_list', '{"limit":0.9999999999999999}', { status: 400 }),
-	spelled_case('keeper', 'cell_list', '{"offset":4503599627370495.5}', { status: 400 }),
+	spelled_case('keeper', 'cell_list', '{"limit":0.9999999999999999}', {
+		status: 400,
+		error_reason: null
+	}),
+	spelled_case('keeper', 'cell_list', '{"offset":4503599627370495.5}', {
+		status: 400,
+		error_reason: null
+	}),
 	// a NIL endpoint names no cell, so an admitted page answers the miss — a
 	// refused limit would be the 400 ahead of it
 	spelled_case('keeper', 'cell_item_list', `{"parent_id":"${NIL_UUID}","limit":5.0}`, {
@@ -341,14 +350,16 @@ const integral_cases: Array<ConformanceCase> = [
 		error_reason: ERROR_CELL_NOT_FOUND
 	}),
 	spelled_case('keeper', 'cell_item_list', `{"parent_id":"${NIL_UUID}","limit":5.5}`, {
-		status: 400
+		status: 400,
+		error_reason: null
 	}),
 	spelled_case('keeper', 'cell_field_list', `{"source_id":"${NIL_UUID}","limit":5.0}`, {
 		status: 404,
 		error_reason: ERROR_CELL_NOT_FOUND
 	}),
 	spelled_case('keeper', 'cell_field_list', `{"source_id":"${NIL_UUID}","limit":5.5}`, {
-		status: 400
+		status: 400,
+		error_reason: null
 	})
 ];
 

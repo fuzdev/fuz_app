@@ -335,8 +335,13 @@ declarations (DDL, the method set), this compares answers. Each impl is the
 oracle for the other — a case the table pins by status alone, or an extra
 field a loose output schema passes on one spine, shows up as a difference.
 
-- `cross_backend/differential_normalize.ts` — `normalize_differential_response({status, headers, body})`
-  → `DifferentialResponse` `{status, body, header_names}`. Volatile values
+- `cross_backend/differential_normalize.ts` — `normalize_differential_response({status, headers, set_cookies, body}, session_cookie_name)`
+  → `DifferentialResponse` `{status, body, header_names, session_cookie}`.
+  `session_cookie` is the response's `SessionCookieEffect`, read by the
+  classifier the conformance runner uses (`'unrecognized'` for lines in no
+  known shape), so one spine clearing where the other doesn't, or minting
+  where the other clears, differs at the path `session_cookie` — header
+  names alone can't tell a clear from a mint. Volatile values
   become positional placeholders per kind (`VOLATILE_VALUE_PATTERNS`: API
   tokens, `tok_` token ids, lowercase UUIDs, `ISO8601_SECONDS` timestamps,
   bare 64-hex digests — matched inside any string, object keys included): the
@@ -353,7 +358,7 @@ field a loose output schema passes on one spine, shows up as a difference.
   `set-cookie` carries a fresh credential, and the contract header values are
   the conformance table's `expect.headers` + no-fingerprint floor.
   `diff_differential_responses(a, b)` → `DifferentialDiff[]`, one per leaf
-  path (`status`, `headers.<name>`, `body.error.data.reason`; an object one
+  path (`status`, `headers.<name>`, `session_cookie`, `body.error.data.reason`; an object one
   side lacks diffs key by key, and an empty one against a missing one at its
   own path), `differential_path_covers(covered, path)`,
   `format_differential_diffs(diffs, labels)`.
@@ -375,8 +380,7 @@ field a loose output schema passes on one spine, shows up as a difference.
   difference. The per-case `expect` is not asserted —
   each backend's conformance leg holds it. `KnownDivergence` is the ledger
   row: `{case_name | method, tracking_id, reason, what_differs}`, the names a
-  string or a list, `what_differs` the diff paths covered (a path covers
-  everything under it), each a string or a `KnownDivergencePath`
+  string or a list, `what_differs` the diff paths covered (a path covers everything under it; a cookie difference where one side sends no `Set-Cookie` also differs at `headers.set-cookie`, so its entry names both), each a string or a `KnownDivergencePath`
   `{path, a?, b?}` pinning the value a side shows there (`undefined` for
   nothing). A pin is compared with the normalized leaf value at the differing
   path, so a placeholdered value never matches the raw one, an object pin
@@ -409,7 +413,7 @@ The suite composition is `describe_spine_differential_suites`
 backends and their ledgers. fuz_app also holds two TS runtimes to each other
 with it: the `cross_backend_ts_differential` project
 (`differential_ts.cross.test.ts`) dual-spawns the TS spine binary on Node and
-on Bun, both on `memory://`, against an empty ledger — both run under `DEV`,
+on Bun, both on `memory://`, against an empty ledger, and again over the TS-only `GET /verify` rows (`conformance_verify_cases.ts`) — both run under `DEV`,
 so the DEV-only rows show on both sides and differ nowhere. It needs no Rust
 or Postgres and runs in the `cross-ts` CI job.
 
@@ -1023,7 +1027,7 @@ One-shot transport:
 - `RpcCallResult` — discriminated `{ok: true, status, headers, result}` / `{ok: false, status, headers, error: {code, message, data?}}`. `headers` is the lowercased-key response-header snapshot so callers can assert header-level properties (e.g. the conformance runner's no-fingerprint invariant).
 - `headers_to_record(headers)` — snapshot a `Headers` into a lowercased-key `Record<string, string>` (multi-value collapses to the comma-joined form; `Set-Cookie` keeps only its last value — read `getSetCookie()` for cookies). Used by `rpc_call` and the conformance table's REST branch to thread response headers through for assertions.
 - `RpcCallArgs` — `{app, path, method, params?, params_json?, headers?, id?, verb?}`. `verb` defaults to `'POST'`; use `'GET'` for `side_effects: false` methods. `params_json` sends raw JSON text in place of `params` (exclusive with it) on either verb.
-- `rpc_call_raw(args)` — the same request as `rpc_call`, the response unparsed: `RpcCallRawResult` `{status, headers, body}` with the whole envelope. `parse_rpc_call_result(raw, method)` turns it into an `RpcCallResult`; `rpc_call` is the two composed.
+- `rpc_call_raw(args)` — the same request as `rpc_call`, the response unparsed: `RpcCallRawResult` `{status, headers, set_cookies, body}` with the whole envelope (`set_cookies` every `Set-Cookie` line in order — the headers snapshot folds them). `parse_rpc_call_result(raw, method)` turns it into an `RpcCallResult`; `rpc_call` is the two composed.
 - `rpc_call(args)` — merges `RPC_CALL_DEFAULT_HEADERS` (`host: 'localhost'`, `origin: TEST_ORIGIN`, `Content-Type: 'application/json'`) under caller headers. Envelope-shape violations throw; JSON-RPC errors return `{ok: false, error}` so callers assert on `error.code` / `error.data.reason`.
 - `rpc_call_typed<T>(args, output_schema)` — parses the success `result` through the schema (`parse`); throws on envelope failure, error response, or schema mismatch. Use `rpc_call` when the test needs to assert on error shapes.
 - `rpc_call_for_spec<TSpec>(args)` — spec-bound variant: takes `{..., spec, params}` in place of `{..., method, params}`. `params` is typed from `spec.input` and the success `result` is typed from `spec.output` (runtime-validated, same contract as `rpc_call_typed`). Error branch stays untyped (JSON-RPC `error.data` shapes vary per call site). Use at happy-path + denial-path call sites; fall back to `rpc_call` for adversarial tests that send deliberately-malformed params.
@@ -1146,7 +1150,7 @@ have files of their own.
   between tests, so a hardcoded name like `'user_two'` never collides. Every
   `TestFixture` also exposes
   `fresh_transport({origin?: string | null})` — cookie-jar-free probe;
-  pass `{origin: null}` for bearer-only paths.
+  pass `{origin: null}` for bearer-only paths. It also carries the conformance principals' mints — `mint_expired_session()`, and `mint_revoked_session()` / `mint_revoked_token()` / `mint_expired_token()` for the dead credentials, each proving its credential live through `assert_credential_authenticates` over a cookie-free transport before killing it; in-process they need `account_verify` on the setup's `rpc_endpoints`, and cross-process `mint_expired_token` needs `_testing_shorten_credential_expiry` mounted.
 
   **Keeper ≠ admin.** `fixture.account` is the keeper account holding
   `[ROLE_KEEPER, ROLE_ADMIN]` — the role split mirrors production
@@ -1467,13 +1471,34 @@ wire-shape check passes green on even when behavior is wrong.
 
 - `conformance_case.ts` — the `ConformanceCase` type (types only; nothing parses a case):
   `{name, request: {method, params?, params_json?, as, acting?, verb?}, expect: {status,
-error_reason?, fields?, headers?, equivalence_group?}, note?, xfail?}`. A case is **data** — `method`
+error_reason?, error_code?, fields?, headers?, set_cookie?, equivalence_group?}, note?, xfail?}`. A case is **data** — `method`
   resolves its `input`/`output` from the live registry (RPC) or `RouteSpec`
   (the REST auth routes), so the case never carries a schema. `as` is the
   closed `ConformancePrincipal` enum (`keeper` / `daemon` / `invalid_daemon` /
   `daemon_browser` / `token` / `bearer_browser` / `malformed_bearer` / `scoped_token` / `anonymous` /
-  `fresh_non_admin` / `role_holder` / `wrong_role` / `expired_session`) —
+  `fresh_non_admin` / `role_holder` / `wrong_role` / `expired_session`, and
+  the dead credentials `tampered_cookie` / `wrong_daemon` / `unknown_bearer` /
+  `revoked_session` / `revoked_token` / `expired_token`) —
   fixture accessors, never inline credential minting.
+  The dead credentials each ride a transport carrying nothing else, and each
+  is well-formed, so the leg that refuses it is the one named:
+  `tampered_cookie` is the keeper's cookie with its MAC changed (present and
+  invalid — refused as anonymous and cleared); `wrong_daemon` a token-shaped
+  `X-Daemon-Token` that is not the server's; `unknown_bearer` a token-shaped
+  bearer no row matches; `revoked_session` a session that verified and was
+  revoked (`fixture.mint_revoked_session()` — its cookie still verifies, so it
+  is not cleared); `revoked_token` (`fixture.mint_revoked_token()`);
+  `expired_token` a token past its `expires_at`
+  (`fixture.mint_expired_token()` — on an account of its own, its expiry
+  pulled in to `EXPIRED_TOKEN_SHORTEN_SECONDS` by the statement
+  `_testing_shorten_credential_expiry` runs, `query_shorten_credential_expiry`,
+  then one wait of `EXPIRED_TOKEN_WAIT_MS`, on both fixtures, so the row is
+  one production could hold). Each of the three mints proves its credential
+  live first — `assert_credential_authenticates`, an `account_verify` over a
+  transport carrying only it — and that its revoke removed a row or its expiry rewrote one, and throws
+  otherwise: revocation is a row delete, so without that a credential that
+  never worked would pass as revoked. Each answers as `anonymous` does, row
+  for row.
   `invalid_daemon` sends a malformed `X-Daemon-Token` alongside the keeper
   session cookie over a no-Origin transport: the middleware soft-fail-discards
   the daemon token (matching the Rust spine's `None`), auth falls through to the
@@ -1508,8 +1533,17 @@ error_reason?, fields?, headers?, equivalence_group?}, note?, xfail?}`. A case i
   `error_reason` is the imported
   `ERROR_*` constant (asserted against the RPC `error.data.reason` or the
   REST flat-body `error`; the dispatcher's 401 carries
-  `authentication_required`, and a denial with no reason — a handler's bare
-  `forbidden` — is pinned by `status`). `equivalence_group` is the
+  `authentication_required`). `error_reason: null` pins a denial with no
+  reason — a handler's bare `forbidden` — as carrying no `data.reason` (RPC
+  only: a REST error body always names its code). On every RPC error row the
+  runner also asserts the JSON-RPC `error.code`: `error_code` when the row
+  names one, else the code the status maps to
+  (`http_status_to_jsonrpc_error_code`) — several codes share a status, so a
+  refusal under another one (`invalid_request` at 400) states it.
+  `check_conformance_cases(cases)` (exported) runs when the table is
+  described and throws on a row that can't mean anything: `error_reason: null`
+  or `error_code` on a REST row, and a status outside 2xx beside a
+  `set_cookie` that mints. `equivalence_group` is the
   **negative-space** axis: every case tagged with the same group string must
   produce a **byte-identical** normalized response (`{status, body}`),
   asserted per impl after the case loop. It promotes a masked pair
@@ -1525,7 +1559,19 @@ error_reason?, fields?, headers?, equivalence_group?}, note?, xfail?}`. A case i
   invariant on _every_ response (`conformance_table.ts` `FINGERPRINT_HEADERS`
   — `Server` / `X-Powered-By` / `WWW-Authenticate` must stay absent on both
   spines, so a framework upgrade adding one can't become a silent
-  backend-fingerprinting oracle). Headers are deliberately kept out of the
+  backend-fingerprinting oracle).
+  `set_cookie` is the **session cookie** axis, a `SessionCookieEffect`
+  (`session_cookie_effect.ts`): `'none'`, `'clear'` (exactly the clearing
+  line), `'set'` (exactly one minting line), `'clear_then_set'` (a login
+  carrying a stale cookie). **Omitted means `'none'`**, so every row asserts
+  it mints and clears nothing unless it says otherwise. The lines are compared
+  byte for byte with the spine's own formatters
+  (`classify_session_cookie_effect`; lines in no recognised shape fail the
+  row) — so a drift in the TS formatter itself is caught by the Rust legs,
+  `cookie_attributes` and the credential wire suite, which spell the lines
+  themselves. Behind it sits a floor: a response that is not 2xx never mints
+  a session cookie (`assert_session_cookie`, HTTP legs) — a backstop, since a
+  row can't be written expecting a mint on a refusal. Headers are deliberately kept out of the
   `equivalence_group` `{status, body}` comparison (`Set-Cookie` / `Date` vary).
 - `conformance_table.ts` — `describe_conformance_table_tests({cases,
 setup_test, surface_source, capabilities, rpc_endpoints, live_rpc_endpoints?,
@@ -1546,7 +1592,9 @@ capabilities}` protocol every Tier 1 suite uses, so **one case array runs
   `wrong_role` read a seeded `extra_accounts` username named via
   `options.principals`. `send_conformance_case(c, {fixture, surface_source, principals?,
   resolved_rpc_endpoints, request_headers?})` (exported) is the send half — principal resolved,
-  request sent, the raw `{target, status, headers, body}` back unasserted; the
+  request sent, the raw `{target, status, headers, set_cookies, body}` back
+  unasserted (`set_cookies` every `Set-Cookie` line in order — a headers
+  record folds them; `[]` on the WS leg); the
   table asserts on it, and the cross-backend differential compares two.
   `request_headers` go on the HTTP request beneath the principal's (the
   differential's identity encoding); the WS leg sends none.
@@ -1563,9 +1611,10 @@ capabilities}` protocol every Tier 1 suite uses, so **one case array runs
   `jsonrpc_error_code_to_http_status` (200 for a result) and every row holds
   unchanged. What WS loses is headers — the TS DEV-only `X-Fuz-Auth-Debug`
   among them. `is_ws_conformance_case(c)` (exported) is the filter: RPC, sent
-  `POST`, no header value pinned, a principal that can hold a socket — not
-  `anonymous` / `bearer_browser` / `malformed_bearer` / `expired_session`,
-  refused at the upgrade, nor `scoped_token`, refused `surface:ws_upgrade`
+  `POST`, no header value pinned, a session cookie effect of `'none'`, a
+  principal that can hold a socket — not
+  `anonymous` / `bearer_browser` / `malformed_bearer` / `expired_session` or
+  a dead credential, refused at the upgrade, nor `scoped_token`, refused `surface:ws_upgrade`
   there (a narrowed bearer can never send a frame, so no per-frame scope row
   exists; the front-door table pins the upgrade refusal). An equivalence
   group left with one member on the WS leg is dropped. Cross-process only.

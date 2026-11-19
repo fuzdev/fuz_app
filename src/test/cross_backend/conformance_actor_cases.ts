@@ -30,7 +30,7 @@ export const conformance_actor_cases: ReadonlyArray<ConformanceCase> = [
 	{
 		name: 'keeper → actor_lookup {ids: []} → 400',
 		request: { method: 'actor_lookup', as: 'keeper', params: { ids: [] } },
-		expect: { status: 400 },
+		expect: { status: 400, error_reason: null },
 		note: 'auth/actor_lookup_action_specs.ts — `ids` is bounded to at least one id'
 	},
 	{
@@ -64,7 +64,7 @@ export const conformance_actor_cases: ReadonlyArray<ConformanceCase> = [
 	{
 		name: 'admin → actor_search {limit: 5.5} → 400',
 		request: { method: 'actor_search', as: 'keeper', params_json: '{"query":"a","limit":5.5}' },
-		expect: { status: 400 },
+		expect: { status: 400, error_reason: null },
 		note: '`limit` is fuz_schema `integer`, which refuses a fraction'
 	}
 ];

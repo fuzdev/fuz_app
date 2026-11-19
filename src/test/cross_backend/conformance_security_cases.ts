@@ -231,19 +231,31 @@ const credential_ceiling_cases: ReadonlyArray<ConformanceCase> = [
 	{
 		name: 'bearer token + Origin → account_verify → 401 (browser-context discard, no replay)',
 		request: { method: 'account_verify', as: 'bearer_browser' },
-		expect: { status: 401, equivalence_group: 'bearer_soft_fail' },
+		expect: {
+			status: 401,
+			error_reason: ERROR_AUTHENTICATION_REQUIRED,
+			equivalence_group: 'bearer_soft_fail'
+		},
 		note: 'security.md §Browser/CLI split — a stolen API token cannot be replayed from a browser context; the bearer is discarded when Origin/Referer is present, so the request is wire-indistinguishable from anonymous'
 	},
 	{
 		name: 'malformed bearer → account_verify → 401 (shape precheck, indistinguishable from anonymous)',
 		request: { method: 'account_verify', as: 'malformed_bearer' },
-		expect: { status: 401, equivalence_group: 'bearer_soft_fail' },
+		expect: {
+			status: 401,
+			error_reason: ERROR_AUTHENTICATION_REQUIRED,
+			equivalence_group: 'bearer_soft_fail'
+		},
 		note: 'a bearer value that cannot be a token soft-fails before any database work — no pool checkout, no query — and the refusal says nothing a prober can tell apart from sending no credential'
 	},
 	{
 		name: 'anonymous → account_verify → 401 (bearer soft-fail equivalence baseline)',
 		request: { method: 'account_verify', as: 'anonymous' },
-		expect: { status: 401, equivalence_group: 'bearer_soft_fail' },
+		expect: {
+			status: 401,
+			error_reason: ERROR_AUTHENTICATION_REQUIRED,
+			equivalence_group: 'bearer_soft_fail'
+		},
 		note: 'security.md §Browser/CLI split — the no-credential baseline a discarded or malformed bearer must be byte-identical to (the equivalence group asserts the 401s match)'
 	}
 ];
@@ -569,6 +581,7 @@ const response_header_hygiene_cases: ReadonlyArray<ConformanceCase> = [
 		request: { method: 'admin_account_list', as: 'anonymous' },
 		expect: {
 			status: 401,
+			error_reason: ERROR_AUTHENTICATION_REQUIRED,
 			headers: { server: null, 'x-powered-by': null, 'www-authenticate': null }
 		},
 		note: 'security.md §Response Headers — the app emits no Server / X-Powered-By / WWW-Authenticate; a 401 carries no auth-scheme challenge a prober could use to fingerprint the backend'

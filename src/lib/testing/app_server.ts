@@ -242,7 +242,8 @@ export interface MintTestSessionOptions {
 
 /**
  * Mint a real `auth_session` row for an existing account and return a
- * validly-signed session cookie value referencing it. Test-only — the
+ * validly-signed session cookie value referencing it, with the row's id (the
+ * token's hash) for a caller that revokes it. Test-only — the
  * forge behind the cross-backend expiry conformance cases (the
  * `expired_session` principal): pass a negative `expires_in_seconds` to
  * produce an *expired server-side session* whose signed cookie envelope is
@@ -254,14 +255,14 @@ export interface MintTestSessionOptions {
  */
 export const mint_test_session = async (
 	options: MintTestSessionOptions
-): Promise<{ session_cookie: string }> => {
+): Promise<{ session_cookie: string; session_hash: string }> => {
 	const { db, keyring, session_options, account_id, expires_in_seconds } = options;
 	const session_token = generate_session_token();
 	const session_hash = hash_session_token(session_token);
 	const expires_at = new Date(Date.now() + expires_in_seconds * 1000);
 	await query_create_session({ db }, session_hash, account_id, expires_at);
 	const session_cookie = await create_session_cookie_value(keyring, session_token, session_options);
-	return { session_cookie };
+	return { session_cookie, session_hash };
 };
 
 /**

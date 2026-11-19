@@ -25,7 +25,9 @@ import '../assert_dev_env.ts';
  * @module
  */
 
+import type { JsonrpcErrorCode } from '../../http/jsonrpc.ts';
 import type { XfailMarker } from './xfail.ts';
+import type { SessionCookieEffect } from './session_cookie_effect.ts';
 
 /**
  * Closed enum of fixture-provisioned principals a case runs `as`. Each
@@ -96,6 +98,27 @@ import type { XfailMarker } from './xfail.ts';
  *   server-side session* cookie (minted by `fixture.mint_expired_session()`:
  *   a backdated `auth_session` row behind a still-valid signed cookie
  *   payload, so the authoritative DB-row expiry gate is what refuses it).
+ *
+ * The dead credentials — each presented alone, on a fresh jar, so the request
+ * carries that credential and nothing else; each arrives anonymous, so a row
+ * pins the refusal anonymous gets on its target, byte for byte:
+ *
+ * - `tampered_cookie` — the keeper's session cookie with its MAC corrupted
+ *   (the first character of the signature changed, the signature still
+ *   well-shaped): present and invalid, so besides refusing it the response
+ *   clears the cookie (`expect.set_cookie: 'clear'`).
+ * - `wrong_daemon` — a well-shaped daemon token (43 base64url characters) that
+ *   is not the server's, with no `Origin`, so it reaches the token compare
+ *   rather than the browser-context discard.
+ * - `unknown_bearer` — a well-shaped API token (`secret_fuz_token_` + 43
+ *   base64url characters) no row matches, with no `Origin`.
+ * - `revoked_session` — a session cookie that verifies, whose `auth_session`
+ *   row has been revoked (`fixture.mint_revoked_session()`). The cookie alone
+ *   shows nothing wrong, so it is not cleared.
+ * - `revoked_token` — an API token that was minted and then revoked
+ *   (`fixture.mint_revoked_token()`), with no `Origin`.
+ * - `expired_token` — an API token whose row is past its `expires_at`
+ *   (`fixture.mint_expired_token()`), with no `Origin`.
  */
 export type ConformancePrincipal =
 	| 'keeper'
@@ -110,7 +133,13 @@ export type ConformancePrincipal =
 	| 'fresh_non_admin'
 	| 'role_holder'
 	| 'wrong_role'
-	| 'expired_session';
+	| 'expired_session'
+	| 'tampered_cookie'
+	| 'wrong_daemon'
+	| 'unknown_bearer'
+	| 'revoked_session'
+	| 'revoked_token'
+	| 'expired_token';
 
 /**
  * The single RPC method the `scoped_token` principal's narrowed token admits.
@@ -145,7 +174,8 @@ export const SCOPED_TOKEN_ADMITTED_METHOD = 'account_verify';
  *   a principal on another account names a real actor that is not its own.
  *
  * Unavailable for principals that present no account (`anonymous`,
- * `bearer_browser`, `malformed_bearer`) — the runner throws.
+ * `bearer_browser`, `malformed_bearer`, and the dead credentials
+ * `tampered_cookie` … `expired_token`) — the runner throws.
  */
 export type ConformanceActingBinding = 'principal' | 'extra_actor' | 'keeper_actor';
 
@@ -181,14 +211,36 @@ export interface ConformanceCaseExpectation {
 	/** Expected HTTP status code. */
 	status: number;
 	/**
+	 * The JSON-RPC `error.code` an RPC error row must carry, on the HTTP and WS
+	 * legs alike. Omitted, it is the code the spine maps `status` back to
+	 * (`http_status_to_jsonrpc_error_code` — `invalid_params` for `400`,
+	 * `not_found` for `404`, `rate_limited` for `429`). That mapping is
+	 * many-to-one, so a refusal under another code sharing its status
+	 * (`invalid_request` or `parse_error` at `400`, `method_not_found` at
+	 * `404`, a consumer code `register_jsonrpc_error_code` declared) names its
+	 * code here. RPC rows only: a REST row setting it is refused at collection.
+	 */
+	error_code?: JsonrpcErrorCode;
+	/**
 	 * Expected error reason — pass the IMPORTED `ERROR_*` constant from
 	 * `http/error_schemas.ts`, never a string literal. Asserted against the RPC
-	 * `error.data.reason` (when the denial carries one) or the REST flat-body
-	 * `error` field. The pre-authorization 401 carries `data.reason` too; a
-	 * denial that genuinely omits it falls back to the `status` assertion to pin
-	 * the class.
+	 * `error.data.reason` or the REST flat-body `error` field. `null` pins the
+	 * reason absent: an RPC error carrying no `data.reason` (a handler's bare
+	 * `forbidden`). A REST error body always names its code in `error`, so a REST
+	 * row pins that code instead; `null` there is refused at collection.
+	 * Omitted, the reason is not asserted.
 	 */
-	error_reason?: string;
+	error_reason?: string | null;
+	/**
+	 * What the response does to the session cookie (`SessionCookieEffect`), read
+	 * off its `Set-Cookie` lines for the session cookie's name. Omitted means
+	 * `'none'` — no line for it — so every row that does not name an effect pins
+	 * that it sets and clears nothing. HTTP legs only: a row naming `'clear'`,
+	 * `'set'` or `'clear_then_set'` is no WS case (`is_ws_conformance_case`).
+	 * A row whose status is not 2xx can't name `'set'` or `'clear_then_set'`:
+	 * the collection refuses it, since no refusal may mint a session cookie.
+	 */
+	set_cookie?: SessionCookieEffect;
 	/**
 	 * Specific field-value assertions on the success `result` (2xx) or the
 	 * error `error.data` (non-2xx). Each key must deep-equal the corresponding

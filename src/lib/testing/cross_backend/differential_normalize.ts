@@ -1,5 +1,10 @@
 import '../assert_dev_env.ts';
 
+import {
+	classify_session_cookie_effect,
+	type SessionCookieEffect
+} from './session_cookie_effect.ts';
+
 /**
  * Response normalization for the cross-backend differential.
  *
@@ -40,6 +45,13 @@ import '../assert_dev_env.ts';
  *   and the header values that are contracts are pinned per backend by the
  *   conformance table's `expect.headers` and its no-fingerprint floor. A
  *   header one backend sends and the other doesn't is still a difference.
+ * - **The session cookie's effect, classified.** Since `set-cookie` values are
+ *   not compared, a clear and a mint would both read as the one header name;
+ *   `session_cookie` is what the response does to the session cookie
+ *   (`classify_session_cookie_effect`, the reading the conformance table
+ *   asserts `expect.set_cookie` with), so one backend clearing where the other
+ *   mints, or clearing where the other sends nothing, differs at
+ *   `session_cookie`.
  *
  * `diff_differential_responses` lists every place two normalized responses
  * differ, one entry per leaf path, which is what a known-divergence ledger
@@ -68,6 +80,11 @@ export interface DifferentialResponse {
 	readonly body: unknown;
 	/** Sorted response header names, minus `VOLATILE_HEADER_NAMES`. */
 	readonly header_names: ReadonlyArray<string>;
+	/**
+	 * What the response does to the session cookie, `'unrecognized'` for lines
+	 * of no shape `SessionCookieEffect` names.
+	 */
+	readonly session_cookie: SessionCookieEffect | 'unrecognized';
 }
 
 /** The raw response `normalize_differential_response` takes. */
@@ -75,6 +92,8 @@ export interface DifferentialRawResponse {
 	readonly status: number;
 	/** Header snapshot with lowercased names (`headers_to_record`'s shape). */
 	readonly headers: Readonly<Record<string, string>>;
+	/** Every `Set-Cookie` line, in order. */
+	readonly set_cookies: ReadonlyArray<string>;
 	readonly body: unknown;
 }
 
@@ -121,11 +140,13 @@ export const VOLATILE_VALUE_PATTERNS: ReadonlyArray<VolatileValuePattern> = [
  * Normalize one response into its `DifferentialResponse`. Pure; numbering
  * restarts for every call.
  *
- * @param response - the raw status, header snapshot and JSON body
+ * @param response - the raw status, header snapshot, `Set-Cookie` lines and JSON body
+ * @param session_cookie_name - the session cookie's name, which `session_cookie` classifies
  * @returns the canonical form
  */
 export const normalize_differential_response = (
-	response: DifferentialRawResponse
+	response: DifferentialRawResponse,
+	session_cookie_name: string
 ): DifferentialResponse => {
 	const seen = new Map<string, Map<string, string>>();
 	const placeholder = (kind: string, value: string): string => {
@@ -166,14 +187,17 @@ export const normalize_differential_response = (
 		header_names: Object.keys(response.headers)
 			.map((name) => name.toLowerCase())
 			.filter((name) => !VOLATILE_HEADER_NAMES.includes(name))
-			.sort()
+			.sort(),
+		session_cookie:
+			classify_session_cookie_effect(response.set_cookies, session_cookie_name) ?? 'unrecognized'
 	};
 };
 
 /**
  * One place two normalized responses differ. `path` is dotted from the
- * response root (`status`, `headers.x-example`, `body.error.data.reason`,
- * `body.result.accounts[0]`); `a` / `b` are the values on each side,
+ * response root (`status`, `headers.x-example`, `session_cookie`,
+ * `body.error.data.reason`, `body.result.accounts[0]`); `a` / `b` are the
+ * values on each side,
  * `undefined` where a side has nothing there. A header one side sent and the
  * other didn't is `headers.<name>`, with `true` on the side that sent it.
  * An object one side lacks is compared key by key, so each of its keys is its
@@ -215,8 +239,8 @@ const diff_values = (path: string, a: unknown, b: unknown, out: Array<Differenti
 
 /**
  * Every place two normalized responses differ, in a stable order: status,
- * then header names, then the body depth-first with keys sorted. Empty when
- * the responses are equal.
+ * then header names, then the session cookie's effect, then the body
+ * depth-first with keys sorted. Empty when the responses are equal.
  *
  * @param a - one backend's normalized response
  * @param b - the other's
@@ -234,6 +258,9 @@ export const diff_differential_responses = (
 		if (in_a !== in_b) {
 			out.push({ path: `headers.${name}`, a: in_a || undefined, b: in_b || undefined });
 		}
+	}
+	if (a.session_cookie !== b.session_cookie) {
+		out.push({ path: 'session_cookie', a: a.session_cookie, b: b.session_cookie });
 	}
 	diff_values('body', a.body, b.body, out);
 	return out;

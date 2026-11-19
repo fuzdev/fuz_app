@@ -9,7 +9,8 @@ import '../assert_dev_env.ts';
  * does any body difference on a case pinned by status alone.
  * `describe_differential_conformance_tests` sends every case to two backends,
  * normalizes both responses (`normalize_differential_response`), and asserts
- * they are equal: status, header names, and the whole body.
+ * they are equal: status, header names, what each does to the session cookie,
+ * and the whole body.
  *
  * Each case runs on a fresh fixture per backend — each backend's own
  * `setup_test`, so separate databases and separate keepers, which is why the
@@ -131,7 +132,7 @@ export interface KnownDivergencePath {
  * A tracked, accepted difference between the two backends.
  *
  * `what_differs` lists the normalized-response paths that differ
- * (`DifferentialDiff.path` — `status`, `headers.<name>`,
+ * (`DifferentialDiff.path` — `status`, `headers.<name>`, `session_cookie`,
  * `body.error.data.reason`), each optionally with the value each side shows
  * (`KnownDivergencePath`). A matched case may differ there and nowhere else.
  * An entry naming cases must still differ on each of them; one naming
@@ -298,7 +299,8 @@ export const describe_differential_conformance_tests = (
 				resolved_rpc_endpoints,
 				request_headers: DIFFERENTIAL_REQUEST_HEADERS,
 				...(backend.ws && { ws: backend.ws })
-			})
+			}),
+			options.session_options.cookie_name
 		);
 
 	describe(options.suite_name ?? 'differential conformance', () => {

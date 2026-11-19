@@ -24,6 +24,8 @@ import {
 import { conformance_proof_cases } from './conformance_proof_cases.ts';
 import { conformance_security_cases } from './conformance_security_cases.ts';
 import { conformance_expiry_cases } from './conformance_expiry_cases.ts';
+import { conformance_dead_credential_cases } from './conformance_dead_credential_cases.ts';
+import { conformance_verify_cases } from './conformance_verify_cases.ts';
 import { conformance_app_settings_cases } from './conformance_app_settings_cases.ts';
 import { conformance_void_params_cases } from './conformance_void_params_cases.ts';
 import { conformance_nul_params_cases } from './conformance_nul_params_cases.ts';
@@ -48,6 +50,9 @@ describe_conformance_table_tests({
 		...conformance_proof_cases,
 		...conformance_security_cases,
 		...conformance_expiry_cases,
+		...conformance_dead_credential_cases,
+		// `GET /verify` is the TS spine's alone; in-process is the TS spine
+		...conformance_verify_cases,
 		...conformance_app_settings_cases,
 		...conformance_void_params_cases,
 		...conformance_proto_params_cases,

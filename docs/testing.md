@@ -1497,15 +1497,15 @@ A case is **data** (`ConformanceCase` in `cross_backend/conformance_case.ts`):
 - `as` is the closed `ConformancePrincipal` enum (`keeper`, `daemon`,
   `invalid_daemon`, `daemon_browser`, `token`, `bearer_browser`,
   `malformed_bearer`, `scoped_token`, `anonymous`, `fresh_non_admin`,
-  `role_holder`, `wrong_role`, `expired_session`) — each maps to a fixture
+  `role_holder`, `wrong_role`, `expired_session`, and the dead credentials `tampered_cookie`, `wrong_daemon`, `unknown_bearer`, `revoked_session`, `revoked_token`, `expired_token`) — each maps to a fixture
   accessor, never inline credential minting. `expired_session` is the keeper behind a backdated
   server-side `auth_session` row (a still-valid signed cookie over an expired
-  DB row), isolating the DB-row expiry gate.
+  DB row), isolating the DB-row expiry gate. The dead credentials each arrive alone and well-formed, and answer as `anonymous` does; `revoked_session`, `revoked_token` and `expired_token` come from `fixture.mint_*` accessors that prove the credential live (`account_verify`) before killing it, so a backend needs `account_verify` mounted, and cross-process `_testing_shorten_credential_expiry` for `expired_token` (one `EXPIRED_TOKEN_WAIT_MS` wait per row).
 - `error_reason` is the imported `ERROR_*` constant, asserted against the
   RPC `error.data.reason` (or the REST flat-body `error`). The dispatcher's
-  401 carries `authentication_required`; when a denial carries no reason (a
-  handler's bare `forbidden`), `status` pins the denial class.
+  401 carries `authentication_required`. `error_reason: null` pins a denial carrying no `data.reason` (a handler's bare `forbidden`; RPC rows only). Every RPC error row also asserts `error.code`: `expect.error_code` when given, else the code its status maps to (`http_status_to_jsonrpc_error_code`), so a refusal under another code sharing that status (`invalid_request` at 400) names it.
 - `expect.fields` adds specific field-value assertions on the result/error.
+- `expect.set_cookie` (`SessionCookieEffect`: `'none'`, `'clear'`, `'set'`, `'clear_then_set'`) is what the response does to the session cookie, compared byte for byte with the spine's formatters; **omitted means `'none'`**, so a row on login, signup, bootstrap, logout or password change, or one whose request carries a session cookie that fails verification, states its effect. No response outside 2xx may mint one, and `check_conformance_cases` refuses at collection a row that contradicts that, and `error_reason: null` or `error_code` on a REST row.
 - `request.acting` binds `params.acting` at run time to a real actor id:
   `principal` (the actor of the account the principal's credential names),
   `extra_actor` (the keeper's first `extra_actors` entry), or `keeper_actor`
@@ -1532,8 +1532,7 @@ front-door table's multi-actor row (`multi_actor` on
 the runner reads it through the status the HTTP binding maps its error code
 to, so `expect.status` means the same on both. Only the cases
 `is_ws_conformance_case` admits run: RPC methods sent as `POST`, pinning no
-header value, as a principal that can hold a socket. `anonymous`, the
-discarded or malformed bearers, `expired_session` and `scoped_token` can't —
+header value and no session cookie effect, as a principal that can hold a socket. `anonymous`, the discarded or malformed bearers, `expired_session`, the dead credentials and `scoped_token` can't —
 the upgrade refuses them before any frame (a narrowed token is refused
 `surface:ws_upgrade`, so a per-frame scope refusal is unreachable). An
 equivalence group left with one member on the WS leg is dropped. The WS leg
@@ -1629,7 +1628,7 @@ describe_differential_conformance_tests({
   table's WS leg filters them, and the ledger is checked against what is left.
   A frame has no headers, so a header divergence has no place in a WS ledger.
 - `normalize_differential_response` (`cross_backend/differential_normalize.ts`)
-  gives `{status, body, header_names}`. API tokens, token ids, UUIDs,
+  gives `{status, body, header_names, session_cookie}` (it takes the `Set-Cookie` lines and the session cookie's name; `session_cookie` is the classified effect, `'unrecognized'` for lines in no known shape). API tokens, token ids, UUIDs,
   second-precision timestamps and bare 64-hex digests become positional
   placeholders (`<uuid:1>` for the first UUID, the same placeholder for a
   repeat), so identity within a response survives while values differ. Only
@@ -1644,7 +1643,7 @@ describe_differential_conformance_tests({
 - A tracked difference goes in the ledger: `KnownDivergence` —
   `{case_name | method, tracking_id, reason, what_differs}`, the names a
   string or a list, `what_differs` the diff paths it covers
-  (`body.error.data.reason`, `headers.x-example`), each a string or
+  (`body.error.data.reason`, `headers.x-example`, `session_cookie` — a cookie difference where one side sends no `Set-Cookie` at all also differs at `headers.set-cookie`, so its entry lists both), each a string or
   `{path, a?, b?}` pinning the value a side shows there (`undefined` for
   nothing). A matched case may differ there and nowhere else. Name cases
   where the divergence is case-specific: each named case must still differ,
