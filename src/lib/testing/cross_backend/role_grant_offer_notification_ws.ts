@@ -69,7 +69,10 @@ import { rpc_call } from '../rpc_helpers.ts';
 import { WS_ADMISSION_PROBE_ID } from '../transports/ws_transport.ts';
 import { is_notification_with, is_response_for, type WsClient } from '../transports/ws_client.ts';
 import { ROLE_ADMIN, is_builtin_role } from '../../auth/role_schema.ts';
-import { WS_CLOSE_PERMISSION_REVOKED } from '../../actions/transports.ts';
+import {
+	WS_CLOSE_PERMISSION_REVOKED,
+	WS_CLOSE_PERMISSION_REVOKED_REASON
+} from '../../actions/transports.ts';
 import {
 	ROLE_GRANT_OFFER_RECEIVED_NOTIFICATION_METHOD,
 	ROLE_GRANT_OFFER_ACCEPTED_NOTIFICATION_METHOD,
@@ -446,6 +449,7 @@ export const describe_role_grant_offer_notification_ws_tests = (
 							const closed = await revokee_ws.wait_for_close(5000);
 							assert.ok(closed, 'the gated socket did not close after the revoke');
 							assert.strictEqual(revokee_ws.close_code, WS_CLOSE_PERMISSION_REVOKED);
+							assert.strictEqual(revokee_ws.close_reason, WS_CLOSE_PERMISSION_REVOKED_REASON);
 							const early = revokee_ws.messages.find(is_revoke_frame);
 							if (early) assert_flat_revoke(early);
 							await assert_bystander_heard_nothing(bystander_ws);

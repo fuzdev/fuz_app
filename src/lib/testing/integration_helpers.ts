@@ -13,7 +13,10 @@ import type { RouteSpec, RouteMethod } from '../http/route_spec.ts';
 import { is_null_schema } from '../http/schema_helpers.ts';
 import { get_route_error_map, type RouteErrorMap } from '../http/route_errors.ts';
 import { is_public_auth, type RouteAuth } from '../http/auth_shape.ts';
-import { ERROR_AUTHENTICATION_REQUIRED } from '../http/error_schemas.ts';
+import {
+	ERROR_AUTHENTICATION_REQUIRED,
+	ERROR_CREDENTIAL_TYPE_REQUIRED
+} from '../http/error_schemas.ts';
 import { ROLE_ADMIN } from '../auth/role_schema.ts';
 import type { TestAccount } from './app_server.ts';
 import { create_test_request_headers } from './test_origin.ts';
@@ -25,6 +28,7 @@ import {
 	type MountedRoute
 } from '../http/route_error_check.ts';
 import { assert_error_response_declared } from './assertions.ts';
+import type { RpcTestTransport } from './rpc_helpers.ts';
 
 /** Each spec list's compiled routes, so a list is compiled once. */
 const mounted_routes_cache: WeakMap<
@@ -386,6 +390,49 @@ export const to_principal_headers = (
 	}
 };
 
+/** The two transports a fixture offers, as `to_principal_transport` reads them. */
+export interface PrincipalTransports {
+	readonly transport: RpcTestTransport;
+	readonly fresh_transport: (options?: { readonly origin?: string | null }) => RpcTestTransport;
+}
+
+/**
+ * The transport a principal's request goes through, so the request carries
+ * the principal's credential and nothing else. Cross-process
+ * `fixture.transport` adds the keeper's session cookie from its jar (unless
+ * the request names a `Cookie`) and a default `Origin`:
+ *
+ * - `'daemon_token'` goes cookie-free and without an `Origin`. Behind an
+ *   `Origin` the daemon token is discarded as browser context and the
+ *   keeper's cookie answers in its place, so a daemon-gated call is refused
+ *   for its credential type and its success path goes unexercised.
+ * - `'public'` goes cookie-free with the default `Origin` kept, so a public
+ *   route or method is called anonymously on both legs — over
+ *   `fixture.transport` the keeper's cookie would ride along cross-process
+ *   while in-process the call is anonymous.
+ * - `'admin'`, `'keeper'` and `'authed'` keep the fixture's transport: each
+ *   sends a session `Cookie` header (`to_principal_headers`), which replaces
+ *   the jar's.
+ *
+ * @param principal - the principal `pick_auth_principal` chose
+ * @param fixture - the fixture's transports
+ */
+export const to_principal_transport = (
+	principal: AuthPrincipal,
+	fixture: PrincipalTransports
+): RpcTestTransport => {
+	switch (principal) {
+		case 'daemon_token':
+			return fixture.fresh_transport({ origin: null });
+		case 'public':
+			return fixture.fresh_transport();
+		case 'admin':
+		case 'keeper':
+		case 'authed':
+			return fixture.transport;
+	}
+};
+
 /**
  * Pick request headers matching a route spec's auth requirement
  * (`pick_auth_principal`, then `to_principal_headers`):
@@ -439,3 +486,16 @@ export const round_trip_uses_fresh_account = (
  */
 export const is_unauthenticated_refusal = (status: number, reason: unknown): boolean =>
 	status === 401 && (reason === undefined || reason === ERROR_AUTHENTICATION_REQUIRED);
+
+/**
+ * Whether a response refuses the request for the channel its credential came
+ * on: a 403 reading `credential_type_required`. The round trips send each
+ * principal a credential its auth admits, so this answer to one of them means
+ * the credential was lost on the way or another answered in its place.
+ *
+ * @param status - the HTTP status
+ * @param reason - the refusal's reason: a REST body's `error`, a JSON-RPC
+ *   error's `data.reason`
+ */
+export const is_credential_type_refusal = (status: number, reason: unknown): boolean =>
+	status === 403 && reason === ERROR_CREDENTIAL_TYPE_REQUIRED;

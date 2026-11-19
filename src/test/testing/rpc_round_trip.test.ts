@@ -1,12 +1,14 @@
 /**
- * Tests for the RPC round-trip's principal choice, its 401 guard, and its
- * fresh account for side-effecting calls.
+ * Tests for the RPC round-trip's principal choice and transport, its 401 and
+ * credential-type guards, and its fresh account for side-effecting calls.
  *
  * The behavioral half runs `describe_rpc_round_trip_tests` against a fake
  * fixture whose backend ends the caller's session on a side-effecting
  * method: the round-trip passes only when that call ran on an account of its
  * own, since the shared authed account's later read would otherwise answer
- * 401, which the suite fails.
+ * 401, which the suite fails. The fake backend also discards a daemon token
+ * sent over anything but the cookie-free, `Origin`-free transport, so the
+ * suite passes only when each call went through its principal's transport.
  *
  * @module
  */
@@ -31,9 +33,14 @@ import {
 	pick_rpc_auth
 } from '#lib/testing/rpc_round_trip.ts';
 import {
+	is_credential_type_refusal,
 	is_unauthenticated_refusal,
-	round_trip_uses_fresh_account
+	round_trip_uses_fresh_account,
+	to_principal_transport,
+	type PrincipalTransports
 } from '#lib/testing/integration_helpers.ts';
+import type { RpcTestTransport } from '#lib/testing/rpc_helpers.ts';
+import { ERROR_CREDENTIAL_TYPE_REQUIRED } from '#lib/http/error_schemas.ts';
 
 const session_options = create_session_config('test_rpc_round_trip_session');
 
@@ -117,6 +124,39 @@ describe('pick_rpc_auth', () => {
 	});
 });
 
+describe('to_principal_transport', () => {
+	const fixture_transport: RpcTestTransport = () => Promise.resolve(new Response('fixture'));
+	const fresh_calls: Array<{ readonly origin?: string | null } | undefined> = [];
+	const fresh: RpcTestTransport = () => Promise.resolve(new Response('fresh'));
+	const transports: PrincipalTransports = {
+		transport: fixture_transport,
+		fresh_transport: (options) => {
+			fresh_calls.push(options);
+			return fresh;
+		}
+	};
+
+	test('the daemon token goes cookie-free and without an Origin', () => {
+		fresh_calls.length = 0;
+		assert.strictEqual(to_principal_transport('daemon_token', transports), fresh);
+		assert.deepEqual(fresh_calls, [{ origin: null }]);
+	});
+
+	test('a public call goes cookie-free with the default Origin', () => {
+		fresh_calls.length = 0;
+		assert.strictEqual(to_principal_transport('public', transports), fresh);
+		assert.deepEqual(fresh_calls, [undefined]);
+	});
+
+	test('a session principal keeps the fixture transport', () => {
+		fresh_calls.length = 0;
+		for (const principal of ['admin', 'keeper', 'authed'] as const) {
+			assert.strictEqual(to_principal_transport(principal, transports), fixture_transport);
+		}
+		assert.lengthOf(fresh_calls, 0);
+	});
+});
+
 describe('round_trip_uses_fresh_account', () => {
 	test('only a side-effecting authed call gets a fresh account', () => {
 		assert.isTrue(round_trip_uses_fresh_account('authed', true));
@@ -173,6 +213,62 @@ describe('assert_rpc_authenticated', () => {
 	});
 });
 
+describe('assert_rpc_authenticated credential-type guard', () => {
+	const credential_type_required = {
+		jsonrpc: JSONRPC_VERSION,
+		id: 'test',
+		error: {
+			code: -32002,
+			message: 'forbidden',
+			data: {
+				reason: ERROR_CREDENTIAL_TYPE_REQUIRED,
+				required_credential_types: ['daemon_token']
+			}
+		}
+	};
+
+	test('a 403 credential_type_required to a credentialed call fails, naming the method', () => {
+		for (const principal of ['daemon_token', 'admin', 'keeper', 'authed'] as const) {
+			let message: string | undefined;
+			try {
+				assert_rpc_authenticated('widget_purge', 403, credential_type_required, principal);
+			} catch (e) {
+				message = (e as Error).message;
+			}
+			assert.ok(message, `${principal}: expected a failure`);
+			assert.include(message, `'widget_purge'`);
+			assert.include(message, principal);
+			assert.include(message, ERROR_CREDENTIAL_TYPE_REQUIRED);
+		}
+	});
+
+	test('a 403 naming another reason passes', () => {
+		assert_rpc_authenticated(
+			'widget_purge',
+			403,
+			{
+				jsonrpc: JSONRPC_VERSION,
+				id: 'test',
+				error: { code: -32002, message: 'forbidden', data: { reason: 'insufficient_permissions' } }
+			},
+			'authed'
+		);
+	});
+
+	test('a public call is not checked', () => {
+		assert_rpc_authenticated('widget_login', 403, credential_type_required, 'public');
+	});
+});
+
+describe('is_credential_type_refusal', () => {
+	test('only a 403 reading credential_type_required', () => {
+		assert.isTrue(is_credential_type_refusal(403, ERROR_CREDENTIAL_TYPE_REQUIRED));
+		assert.isFalse(is_credential_type_refusal(401, ERROR_CREDENTIAL_TYPE_REQUIRED));
+		assert.isFalse(is_credential_type_refusal(403, 'insufficient_permissions'));
+		assert.isFalse(is_credential_type_refusal(403, undefined));
+	});
+});
+
 describe('is_unauthenticated_refusal', () => {
 	test('a 401 with authentication_required or no reason', () => {
 		assert.isTrue(is_unauthenticated_refusal(401, 'authentication_required'));
@@ -211,20 +307,39 @@ const peek_spec: RequestResponseActionSpec = {
 	description: 'Read as the caller'
 };
 
+const vault_spec: RequestResponseActionSpec = {
+	method: 'widget_vault',
+	kind: 'request_response',
+	initiator: 'frontend',
+	auth: { account: 'required', actor: 'none', credential_types: ['daemon_token'] },
+	side_effects: false,
+	input: fuz_void,
+	output: object({ ok: literal(true) }),
+	async: true,
+	description: 'Read behind the daemon token'
+};
+
 // `widget_burn` enumerates first, so on a shared account `widget_peek` would 401
 const actions: Array<RpcAction> = [
 	{ spec: burn_spec, handler: () => ({ ok: true }) },
-	{ spec: peek_spec, handler: () => ({ ok: true }) }
+	{ spec: peek_spec, handler: () => ({ ok: true }) },
+	{ spec: vault_spec, handler: () => ({ ok: true }) }
 ];
 
 const rpc_endpoint_spec: RpcEndpointSpec = { path: '/api/rpc', actions };
 
 const create_route_specs = (_ctx: AppServerContext): Array<RouteSpec> => [];
 
+/** The account a success fixture calls as, through its own headers. */
+const fixture_owner = create_account_stub('fixture_owner');
+
+/** Which of the fixture's transports a call went through. */
+type Via = 'fixture' | 'fresh' | 'fresh_no_origin';
+
 /** Session cookies the fake backend still honors. */
-const live_sessions = new Set<string>(['keeper']);
-/** `[method, cookie]` per call the fake backend answered. */
-const calls: Array<[string, string]> = [];
+const live_sessions = new Set<string>(['keeper', 'fixture_owner']);
+/** `[method, cookie, via]` per call the fake backend answered. */
+const calls: Array<[string, string, Via]> = [];
 let account_counter = 0;
 
 const read_cookie = (headers: HeadersInit | undefined): string => {
@@ -235,31 +350,54 @@ const read_cookie = (headers: HeadersInit | undefined): string => {
 const respond = (status: number, body: unknown): Response =>
 	new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
-const fake_transport = async (path: string, init?: RequestInit): Promise<Response> => {
-	const method =
-		init?.method === 'POST'
-			? (JSON.parse(init.body as string) as { method: string }).method
-			: new URL(path, 'http://localhost').searchParams.get('method');
-	const cookie = read_cookie(init?.headers);
-	calls.push([method ?? '', cookie]);
-	if (!live_sessions.has(cookie)) {
-		return respond(401, {
-			jsonrpc: JSONRPC_VERSION,
-			id: 'test',
-			error: {
-				code: -32001,
-				message: 'unauthenticated',
-				data: { reason: 'authentication_required' }
+const create_fake_transport =
+	(via: Via) =>
+	async (path: string, init?: RequestInit): Promise<Response> => {
+		const method =
+			init?.method === 'POST'
+				? (JSON.parse(init.body as string) as { method: string }).method
+				: new URL(path, 'http://localhost').searchParams.get('method');
+		const cookie = read_cookie(init?.headers);
+		calls.push([method ?? '', cookie, via]);
+		// as a spawned backend: the daemon token counts only with no `Origin`,
+		// and behind one the session answering in its place is the wrong channel
+		if (new Headers(init?.headers).has('x-daemon-token')) {
+			if (via === 'fresh_no_origin') {
+				return respond(200, { jsonrpc: JSONRPC_VERSION, id: 'test', result: { ok: true } });
 			}
-		});
-	}
-	if (method === 'widget_burn') live_sessions.delete(cookie);
-	return respond(200, { jsonrpc: JSONRPC_VERSION, id: 'test', result: { ok: true } });
-};
+			return respond(403, {
+				jsonrpc: JSONRPC_VERSION,
+				id: 'test',
+				error: {
+					code: -32002,
+					message: 'forbidden',
+					data: {
+						reason: ERROR_CREDENTIAL_TYPE_REQUIRED,
+						required_credential_types: ['daemon_token']
+					}
+				}
+			});
+		}
+		if (!live_sessions.has(cookie)) {
+			return respond(401, {
+				jsonrpc: JSONRPC_VERSION,
+				id: 'test',
+				error: {
+					code: -32001,
+					message: 'unauthenticated',
+					data: { reason: 'authentication_required' }
+				}
+			});
+		}
+		if (method === 'widget_burn') live_sessions.delete(cookie);
+		return respond(200, { jsonrpc: JSONRPC_VERSION, id: 'test', result: { ok: true } });
+	};
 
 // a fake fixture: the round-trip reads only these members
 const fake_fixture = {
-	transport: fake_transport,
+	transport: create_fake_transport('fixture'),
+	fresh_transport: (options?: { readonly origin?: string | null }) =>
+		create_fake_transport(options?.origin === null ? 'fresh_no_origin' : 'fresh'),
 	...keeper,
 	create_account: async () => {
 		const cookie = `account_${++account_counter}`;
@@ -276,12 +414,17 @@ describe_rpc_round_trip_tests({
 		rpc_endpoints: [rpc_endpoint_spec]
 	}),
 	session_options,
-	rpc_endpoints: [rpc_endpoint_spec]
+	rpc_endpoints: [rpc_endpoint_spec],
+	success_fixtures: new Map([
+		['widget_peek', async () => ({ params: {}, headers: fixture_owner.create_session_headers() })]
+	])
 });
 
 test('the side-effecting call ran on an account of its own', () => {
 	const burns = calls.filter(([method]) => method === 'widget_burn');
-	const peeks = calls.filter(([method]) => method === 'widget_peek');
+	const peeks = calls.filter(
+		([method, cookie]) => method === 'widget_peek' && cookie !== 'fixture_owner'
+	);
 	assert.lengthOf(burns, 1);
 	assert.lengthOf(peeks, 2); // POST and GET
 	const burn_cookie = burns[0]![1];
@@ -290,4 +433,18 @@ test('the side-effecting call ran on an account of its own', () => {
 		assert.isTrue(live_sessions.has(peek_cookie));
 	}
 	assert.isFalse(live_sessions.has(burn_cookie));
+});
+
+test('each call went through the transport of its principal', () => {
+	const vias = (method: string): Array<Via> =>
+		calls.filter(([m]) => m === method).map(([, , via]) => via);
+	// POST and GET, cookie-free and without an `Origin`
+	assert.deepEqual(vias('widget_vault'), ['fresh_no_origin', 'fresh_no_origin']);
+	// a success fixture's own headers go cookie-free, the default `Origin` kept
+	assert.deepEqual(
+		calls.filter(([, cookie]) => cookie === 'fixture_owner'),
+		[['widget_peek', 'fixture_owner', 'fresh']]
+	);
+	// a session principal keeps the fixture's transport
+	assert.deepEqual(vias('widget_burn'), ['fixture']);
 });

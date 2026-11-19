@@ -37,6 +37,7 @@ import {
 	JsonrpcErrorResponse
 } from '../http/jsonrpc.ts';
 import { jsonrpc_error_code_to_http_status } from '../http/jsonrpc_errors.ts';
+import { ERROR_CREDENTIAL_TYPE_REQUIRED } from '../http/error_schemas.ts';
 import type { TestAccount } from './app_server.ts';
 import { generate_valid_body } from './schema_generators.ts';
 import type { AppSurfaceSpec, AppSurfaceRpcMethod } from '../http/surface.ts';
@@ -51,10 +52,12 @@ import {
 	type RpcEndpointsSuiteOption
 } from './rpc_helpers.ts';
 import {
+	is_credential_type_refusal,
 	is_unauthenticated_refusal,
 	pick_auth_principal,
 	round_trip_uses_fresh_account,
 	to_principal_headers,
+	to_principal_transport,
 	type AuthPrincipal,
 	type KeeperHeaderProvider
 } from './integration_helpers.ts';
@@ -75,7 +78,7 @@ export interface RpcRoundTripTestOptions {
 	 * Session config — only needed to resolve factory-form `rpc_endpoints`
 	 * against a stub `AppServerContext` at setup time (the actions' input
 	 * schemas drive params generation; auth/dispatch run against the real
-	 * backend through `fixture.transport`).
+	 * backend through the fixture's transports).
 	 */
 	session_options: SessionOptions<string>;
 	/**
@@ -125,7 +128,10 @@ export interface RpcSuccessFixtureCase {
 	params: Record<string, unknown>;
 	/**
 	 * Auth headers to send in place of the identity the suite picks from the
-	 * method's auth — for a row that only its owner may act on.
+	 * method's auth — for a row that only its owner may act on. They must
+	 * carry a session `Cookie`: the request goes through a cookie-free
+	 * transport with the default `Origin` (`fixture.fresh_transport()`), so a
+	 * bearer or daemon token here would be discarded as browser context.
 	 */
 	headers?: Record<string, string>;
 }
@@ -172,6 +178,14 @@ export const pick_rpc_auth = (
  * answer 401 (a login with a wrong password), and so may a handler refusing
  * an authenticated call with a reason of its own (`invalid_credentials`).
  *
+ * A 403 `credential_type_required` fails too: the principal was picked
+ * because the method's auth admits its credential type
+ * (`pick_auth_principal`), so that refusal means the credential never
+ * arrived as sent — dropped on the way, or another one answering in its
+ * place (a daemon token discarded as browser context behind a session
+ * cookie). A method admitting no credential the round trip sends (a session
+ * or the daemon token) can't be driven here; skip it.
+ *
  * @param method - the RPC method name
  * @param status - the HTTP status
  * @param body - the parsed response body (or raw text when not JSON)
@@ -188,6 +202,13 @@ export const assert_rpc_authenticated = (
 	const data = parsed.ok ? parsed.value.error.data : undefined;
 	const reason =
 		data !== null && typeof data === 'object' ? (data as { reason?: unknown }).reason : undefined;
+	if (is_credential_type_refusal(status, reason)) {
+		assert.fail(
+			`method '${method}' answered 403 ${ERROR_CREDENTIAL_TYPE_REQUIRED} to the ${principal}` +
+				` principal (data ${JSON.stringify(data)}) — the principal was picked because the` +
+				` method's auth admits its credential type, so the credential never arrived as sent`
+		);
+	}
 	if (!is_unauthenticated_refusal(status, reason)) return;
 	const detail = parsed.ok
 		? `code ${parsed.value.error.code}, message ${JSON.stringify(parsed.value.error.message)}${
@@ -391,7 +412,7 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 					const init = create_rpc_post_init(action.spec.method, params);
 					Object.assign(init.headers as Record<string, string>, headers);
 
-					const res = await fixture.transport(ep_spec.path, init);
+					const res = await to_principal_transport(principal, fixture)(ep_spec.path, init);
 					const body = await read_rpc_body(res);
 
 					try {
@@ -434,7 +455,7 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 					);
 
 					const url = create_rpc_get_url(ep_spec.path, action.spec.method, params);
-					const res = await fixture.transport(url, { headers });
+					const res = await to_principal_transport(principal, fixture)(url, { headers });
 					const body = await read_rpc_body(res);
 
 					try {
@@ -464,13 +485,17 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 				assert.ok(surface, `success_fixtures method '${method}' missing from generated surface`);
 
 				const fixture_case = await build(fixture);
-				const headers =
-					fixture_case.headers ??
-					pick_rpc_auth(surface.method_spec, fixture, authed_account, admin_account).headers;
+				const picked = pick_rpc_auth(surface.method_spec, fixture, authed_account, admin_account);
+				const headers = fixture_case.headers ?? picked.headers;
 				const init = create_rpc_post_init(method, fixture_case.params);
 				Object.assign(init.headers as Record<string, string>, headers);
 
-				const res = await fixture.transport(located.path, init);
+				// a fixture's own headers carry a session cookie, sent with no jar so
+				// the keeper's can't stand in for one they lack
+				const transport = fixture_case.headers
+					? fixture.fresh_transport()
+					: to_principal_transport(picked.principal, fixture);
+				const res = await transport(located.path, init);
 				const body = await read_rpc_body(res);
 				try {
 					assert_method_implemented(method, body);

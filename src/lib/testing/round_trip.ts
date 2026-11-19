@@ -26,15 +26,18 @@ import { describe, test, beforeAll, assert } from 'vitest';
 
 import { ROLE_ADMIN } from '../auth/role_schema.ts';
 import { format_route_key } from '../http/surface_query.ts';
+import { ERROR_CREDENTIAL_TYPE_REQUIRED } from '../http/error_schemas.ts';
 import { needs_actor, input_schema_declares_acting } from '../http/auth_shape.ts';
 import type { TestAccount } from './app_server.ts';
 import {
 	assert_response_matches_spec,
+	is_credential_type_refusal,
 	is_unauthenticated_refusal,
 	pick_auth_headers,
 	pick_auth_principal,
 	round_trip_uses_fresh_account,
 	to_principal_headers,
+	to_principal_transport,
 	type AuthPrincipal
 } from './integration_helpers.ts';
 import {
@@ -98,7 +101,10 @@ export interface RoundTripTestOptions {
  * naming no reason, means the credential stopped working — most often because
  * an earlier request ended it. A public route may answer 401 (a login with a
  * wrong password), and so may a handler refusing an authenticated request
- * with a reason of its own (`invalid_credentials`).
+ * with a reason of its own (`invalid_credentials`). A 403
+ * `credential_type_required` fails too, as in `assert_rpc_authenticated`: the
+ * principal was picked because the route's auth admits its credential type,
+ * so that refusal means the credential never arrived as sent.
  *
  * @param route_key - the route, as `METHOD /path`
  * @param status - the HTTP status
@@ -114,6 +120,13 @@ export const assert_route_authenticated = (
 	if (principal === 'public') return;
 	const reason =
 		body !== null && typeof body === 'object' ? (body as { error?: unknown }).error : undefined;
+	if (is_credential_type_refusal(status, reason)) {
+		assert.fail(
+			`${route_key} answered 403 ${ERROR_CREDENTIAL_TYPE_REQUIRED} to the ${principal}` +
+				` principal — the principal was picked because the route's auth admits its` +
+				` credential type, so the credential never arrived as sent`
+		);
+	}
 	if (!is_unauthenticated_refusal(status, reason)) return;
 	assert.fail(
 		`${route_key} answered 401 (${JSON.stringify(reason ?? null)}) to the ${principal}` +
@@ -129,7 +142,8 @@ export const assert_route_authenticated = (
  * 1. Resolve URL with valid params
  * 2. Generate a valid request body (or use override)
  * 3. Pick auth headers matching the route's auth requirement
- * 4. Fire the request through `fixture.transport` and validate the response
+ * 4. Fire the request through the principal's transport (`to_principal_transport`)
+ *    and validate the response
  *
  * SSE routes are skipped by Content-Type sniff. Routes returning non-2xx
  * with valid input are still validated against their declared error schemas.
@@ -217,7 +231,7 @@ export const describe_round_trip_validation = (options: RoundTripTestOptions): v
 				...(body ? { body: JSON.stringify(body) } : {})
 			};
 
-			const res = await fixture.transport(request_url, request_init);
+			const res = await to_principal_transport(principal, fixture)(request_url, request_init);
 
 			if (res.headers.get('Content-Type')?.includes('text/event-stream')) {
 				await res.body?.cancel();
@@ -225,7 +239,7 @@ export const describe_round_trip_validation = (options: RoundTripTestOptions): v
 			}
 
 			try {
-				if (res.status === 401) {
+				if (res.status === 401 || res.status === 403) {
 					const body: unknown = await res
 						.clone()
 						.json()
@@ -265,7 +279,8 @@ export const describe_round_trip_validation = (options: RoundTripTestOptions): v
 				const body = seeded.body;
 				const headers = pick_auth_headers(spec, fixture, authed_account, admin_account);
 
-				const res = await fixture.transport(url, {
+				const transport = to_principal_transport(pick_auth_principal(spec.auth), fixture);
+				const res = await transport(url, {
 					method: spec.method,
 					headers: { ...headers, 'content-type': to_route_content_type(spec) },
 					...(body ? { body: JSON.stringify(body) } : {})

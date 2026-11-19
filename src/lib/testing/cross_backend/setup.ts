@@ -718,6 +718,95 @@ const TestingResetResponseShape = strip_object({
 	extra_actors: array(strip_object({ id: Uuid, name: string }))
 });
 
+/** The seeds a `_testing_reset` answer carries, matched to what was requested. */
+export interface MatchedTestingResetSeeds<TAccount> {
+	/** Each requested account's seed, keyed by the username as requested. */
+	readonly extra_accounts: Readonly<Record<string, TAccount>>;
+	/** The seeded actors in the requested order. */
+	readonly extra_actors: ReadonlyArray<{ id: Uuid; name: string }>;
+}
+
+/**
+ * Match a `_testing_reset` answer's seeded accounts and actors to the request,
+ * by username (as the spines store it, lowercase) and by actor name — never by
+ * position. Every spine implements the backdoor itself, so a seed it drops,
+ * duplicates, renames, or reorders must fail the setup rather than hand a test
+ * the wrong account or none.
+ *
+ * @param backend_name - the backend that answered, for the error
+ * @param requested - the usernames and actor names the reset asked for
+ * @param seeded - the reset's `extra_accounts` and `extra_actors`
+ * @throws Error naming the backend and each missing, unexpected, or duplicated seed
+ */
+export const match_testing_reset_seeds = <
+	TAccount extends { readonly account: { readonly username: string } }
+>(
+	backend_name: string,
+	requested: {
+		readonly usernames: ReadonlyArray<string>;
+		readonly actor_names: ReadonlyArray<string>;
+	},
+	seeded: {
+		readonly extra_accounts: ReadonlyArray<TAccount>;
+		readonly extra_actors: ReadonlyArray<{ id: Uuid; name: string }>;
+	}
+): MatchedTestingResetSeeds<TAccount> => {
+	const problems: Array<string> = [];
+	if (seeded.extra_accounts.length !== requested.usernames.length) {
+		problems.push(
+			`requested ${requested.usernames.length} extra_accounts, got ${seeded.extra_accounts.length}`
+		);
+	}
+	if (seeded.extra_actors.length !== requested.actor_names.length) {
+		problems.push(
+			`requested ${requested.actor_names.length} extra_actors, got ${seeded.extra_actors.length}`
+		);
+	}
+
+	const by_username = new Map<string, TAccount>();
+	for (const s of seeded.extra_accounts) {
+		const { username } = s.account;
+		if (by_username.has(username)) problems.push(`extra account '${username}' seeded twice`);
+		else by_username.set(username, s);
+	}
+	const extra_accounts: Record<string, TAccount> = {};
+	for (const username of requested.usernames) {
+		const key = username.toLowerCase();
+		const s = by_username.get(key);
+		if (!s) {
+			problems.push(`extra account '${username}' missing (no seed with username '${key}')`);
+			continue;
+		}
+		by_username.delete(key);
+		extra_accounts[username] = s;
+	}
+	for (const username of by_username.keys()) {
+		problems.push(`extra account '${username}' seeded but not requested`);
+	}
+
+	const unclaimed_actors = [...seeded.extra_actors];
+	const extra_actors: Array<{ id: Uuid; name: string }> = [];
+	for (const name of requested.actor_names) {
+		const index = unclaimed_actors.findIndex((a) => a.name === name);
+		const [actor] = index === -1 ? [] : unclaimed_actors.splice(index, 1);
+		if (!actor) {
+			problems.push(`extra actor '${name}' missing`);
+			continue;
+		}
+		extra_actors.push(actor);
+	}
+	for (const a of unclaimed_actors) {
+		problems.push(`extra actor '${a.name}' seeded but not requested`);
+	}
+
+	if (problems.length > 0) {
+		throw new Error(
+			`_testing_reset(${backend_name}) seeds don't match the request: ${problems.join('; ')}`
+		);
+	}
+	return { extra_accounts, extra_actors };
+};
+
 /**
  * Fire the `_testing_reset` RPC action over the keeper's daemon-token
  * channel. Wipes the DB, re-seeds a fresh keeper (with any
@@ -734,7 +823,7 @@ const fire_testing_reset = async (
 	}
 ): Promise<{
 	keeper: SeededAccountResponse;
-	extra_accounts: ReadonlyArray<SeededAccountResponse>;
+	extra_accounts: Readonly<Record<string, SeededAccountResponse>>;
 	extra_actors: ReadonlyArray<{ id: Uuid; name: string }>;
 }> => {
 	const raw = await rpc_via_transport(
@@ -761,6 +850,14 @@ const fire_testing_reset = async (
 			)})`
 		);
 	}
+	const matched = match_testing_reset_seeds(
+		handle.config.name,
+		{
+			usernames: (options.extra_accounts ?? []).map((spec) => spec.username),
+			actor_names: options.extra_actors ?? []
+		},
+		parsed.value
+	);
 	return {
 		keeper: {
 			account: parsed.value.account,
@@ -768,8 +865,8 @@ const fire_testing_reset = async (
 			api_token: parsed.value.api_token,
 			session_cookie: parsed.value.session_cookie
 		},
-		extra_accounts: parsed.value.extra_accounts,
-		extra_actors: parsed.value.extra_actors
+		extra_accounts: matched.extra_accounts,
+		extra_actors: matched.extra_actors
 	};
 };
 
@@ -1132,11 +1229,8 @@ export const default_cross_process_setup = (
 		};
 
 		const extra_accounts: Record<string, TestAccount> = {};
-		for (let i = 0; i < extra_account_specs.length; i++) {
-			const spec = extra_account_specs[i];
-			const seeded = seeded_extras[i];
-			if (!spec || !seeded) continue;
-			extra_accounts[spec.username] = to_test_account(seeded, cookie_name);
+		for (const [username, seeded] of Object.entries(seeded_extras)) {
+			extra_accounts[username] = to_test_account(seeded, cookie_name);
 		}
 
 		// Per-test transport — fresh jar carrying the new keeper's cookie

@@ -825,8 +825,10 @@ export const describe_standard_integration_tests = (
 		describe('bearer auth', () => {
 			test('valid bearer token authenticates', async () => {
 				const fixture = await options.setup_test();
+				// a cookie-free transport: beside the keeper's session cookie the
+				// session leg would authenticate first and the bearer go unread
 				const res = await rpc_call_for_spec({
-					app: { request: fixture.transport },
+					app: { request: fixture.fresh_transport({ origin: null }) },
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
@@ -1097,9 +1099,10 @@ export const describe_standard_integration_tests = (
 					'Should not revoke another account token'
 				);
 
-				// User B's bearer token should still work
+				// User B's bearer token should still work — cookie-free, or the
+				// keeper's session would answer for it
 				const verify_b = await rpc_call_for_spec({
-					app: { request: fixture.transport },
+					app: { request: fixture.fresh_transport({ origin: null }) },
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
@@ -1392,7 +1395,9 @@ export const describe_standard_integration_tests = (
 				const bearer_headers = fixture.create_bearer_headers({
 					'content-type': 'application/json'
 				});
-				const res = await fixture.fresh_transport()(password_route.path, {
+				// no `Origin`: cross-process the transport's default one would discard
+				// the bearer on its own, leaving the `Referer` untested
+				const res = await fixture.fresh_transport({ origin: null })(password_route.path, {
 					method: 'POST',
 					headers: { ...bearer_headers, referer: `${TEST_ORIGIN}/admin` }
 				});
@@ -1482,9 +1487,9 @@ export const describe_standard_integration_tests = (
 				const { token: raw_token } = create_res.result;
 				assert.ok(raw_token, 'Expected raw token in create response');
 
-				// Verify bearer token works
+				// Verify bearer token works — cookie-free, so the bearer is what authenticates
 				const verify_before = await rpc_call_for_spec({
-					app: { request: fixture.transport },
+					app: { request: fixture.fresh_transport({ origin: null }) },
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
@@ -1511,9 +1516,10 @@ export const describe_standard_integration_tests = (
 				assert.ok(typeof change_body.tokens_revoked === 'number', 'Expected tokens_revoked count');
 				assert.ok(change_body.tokens_revoked >= 1, 'Expected at least 1 token revoked');
 
-				// Bearer token should now be invalid
+				// Bearer token should now be invalid — cookie-free, so the 401 is the
+				// bearer's and not the keeper's revoked session's
 				const verify_after = await rpc_call_for_spec({
-					app: { request: fixture.transport },
+					app: { request: fixture.fresh_transport({ origin: null }) },
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,

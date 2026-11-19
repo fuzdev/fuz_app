@@ -22,10 +22,11 @@ import '../assert_dev_env.ts';
  *
  * Three cases mirror the upgrade route `register_action_ws` mounts (origin
  * check → `require_auth` → dispatch): an authenticated upgrade round-trips
- * `heartbeat` (the first case), and an anonymous upgrade and a
- * disallowed-origin upgrade are refused (after the spine-parity cases).
- * Per-connection auth is enforced at upgrade time (not per message), so the
- * negative cases assert the upgrade itself rejects rather than a per-message
+ * `heartbeat` (the first case), an anonymous upgrade is refused 401, and a
+ * disallowed-origin upgrade carrying the keeper's valid session is refused 403
+ * (after the spine-parity cases). Per-connection auth is enforced at upgrade
+ * time (not per message), so the negative cases assert the upgrade itself is
+ * refused, at its status (`WsUpgradeRefusedError`), rather than a per-message
  * error frame.
  *
  * Spine-parity cases follow the first. Both spines admit a connection only after
@@ -82,7 +83,6 @@ import '../assert_dev_env.ts';
  */
 
 import { assert, describe } from 'vitest';
-import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
 import { heartbeat_action_spec } from '../../actions/heartbeat.ts';
 import {
@@ -101,6 +101,7 @@ import {
 } from '../../auth/account_action_specs.ts';
 import { DEFAULT_MAX_TOKENS } from '../../auth/account_route_schema.ts';
 import { account_delete_action_spec } from '../../auth/admin_action_specs.ts';
+import { ERROR_FORBIDDEN_ORIGIN } from '../../http/error_schemas.ts';
 import { JSONRPC_ERROR_CODES } from '../../http/jsonrpc_errors.ts';
 import {
 	is_response_for,
@@ -126,7 +127,11 @@ import {
 	SPINE_ACCOUNT_LOGOUT_PATH,
 	SPINE_ACCOUNT_PASSWORD_PATH
 } from './spine_surface_constants.ts';
-import { open_session_ws, type WsEndpointTarget } from './ws_endpoint.ts';
+import {
+	assert_ws_upgrade_refused,
+	open_session_ws,
+	type WsEndpointTarget
+} from './ws_endpoint.ts';
 
 /** Origin guaranteed to fail the `http://localhost:*` allowlist the test backends run with. */
 const DISALLOWED_ORIGIN = 'http://disallowed.example';
@@ -357,16 +362,36 @@ export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptio
 		);
 
 		// Per-connection auth fires at upgrade time (`require_auth`), so an
-		// anonymous socket never opens — the upgrade is refused outright.
-		test_if(capabilities.ws, 'anonymous upgrade is refused', async () => {
-			await assert_rejects(() => create_ws_transport({ base_url, ws_path, cookies: [], origin }));
+		// anonymous socket never opens — the upgrade is refused outright, as
+		// unauthenticated: any other failure (a crash, a wrong path) is not this.
+		test_if(capabilities.ws, 'anonymous upgrade is refused with 401', async () => {
+			await assert_ws_upgrade_refused(
+				() => create_ws_transport({ base_url, ws_path, cookies: [], origin }),
+				401
+			);
 		});
 
-		// Origin is checked before auth, so cookies are irrelevant here.
-		test_if(capabilities.ws, 'disallowed-origin upgrade is refused', async () => {
-			await assert_rejects(() =>
-				create_ws_transport({ base_url, ws_path, cookies: [], origin: DISALLOWED_ORIGIN })
+		// The upgrade carries the keeper's valid session, so only the origin check
+		// can refuse it: a backend with none would admit the socket, and one
+		// checking origin after auth still answers 403 here, not 401.
+		test_if(capabilities.ws, 'disallowed-origin upgrade is refused with 403', async () => {
+			const fixture = await setup_test();
+			const refusal = await assert_ws_upgrade_refused(
+				() =>
+					create_ws_transport({
+						base_url,
+						ws_path,
+						cookies: fixture.transport.cookies(),
+						origin: DISALLOWED_ORIGIN
+					}),
+				403
 			);
+			// a runtime that drops an upgrade refusal's body (`ws_refusal_body`
+			// false) is held to the status alone; a body that is sent is asserted
+			if (capabilities.ws_refusal_body || refusal.body !== '') {
+				const body: unknown = JSON.parse(refusal.body);
+				assert.strictEqual((body as { error?: unknown }).error, ERROR_FORBIDDEN_ORIGIN);
+			}
 		});
 
 		// Every revocation closes with 4001 "Session revoked" — the code and its

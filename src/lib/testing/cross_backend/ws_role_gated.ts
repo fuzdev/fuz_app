@@ -26,7 +26,6 @@ import '../assert_dev_env.ts';
  */
 
 import { assert, describe } from 'vitest';
-import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
 import { heartbeat_action_spec } from '../../actions/heartbeat.ts';
 import {
@@ -45,7 +44,11 @@ import {
 import type { TestAccount } from '../app_server.ts';
 import type { SetupTest, TestFixture } from './setup.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
-import { open_session_ws, type WsEndpointTarget } from './ws_endpoint.ts';
+import {
+	assert_ws_upgrade_refused,
+	open_session_ws,
+	type WsEndpointTarget
+} from './ws_endpoint.ts';
 
 /** How long a socket that must stay open is watched for a close it must not get. */
 const STAYS_OPEN_MS = 1500;
@@ -160,9 +163,9 @@ export const describe_ws_role_gated_cross_tests = (options: WsRoleGatedCrossTest
 					assert.deepStrictEqual(await ungated.request(2, heartbeat_action_spec.method, {}), {});
 
 					// and the gate refuses the account a new gated socket
-					await assert_rejects(
+					await assert_ws_upgrade_refused(
 						() => open_session_ws(gated_target, target, { admitted: false }),
-						/403/
+						403
 					);
 				} finally {
 					await gated.close();

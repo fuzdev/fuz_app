@@ -102,7 +102,7 @@ import type { ConformancePrincipal } from './conformance_case.ts';
 import { resolve_conformance_principal } from './conformance_table.ts';
 import type { RpcPathCrossSuiteOptions, TestFixture } from './setup.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
-import { xfail_until } from './xfail.ts';
+import { xfail_until, type XfailMarker } from './xfail.ts';
 import { expected_invalid_reason, type InputTestCase } from '../adversarial_input_cases.ts';
 
 /** Options for `describe_rpc_adversarial_cross_tests`. */
@@ -136,12 +136,13 @@ export interface RpcAdversarialCrossTestOptions extends RpcPathCrossSuiteOptions
 }
 
 /** Generated params cases of one method marked `xfail_until`, by case label. */
-export interface RpcParamsXfail {
+export interface RpcParamsXfail extends XfailMarker {
 	readonly method: string;
-	/** `InputTestCase.label`s of `generate_rpc_params_test_cases(method's input)`. */
+	/**
+	 * `InputTestCase.label`s of `generate_rpc_params_test_cases(method's input)`.
+	 * A label naming no generated case fails the suite.
+	 */
 	readonly labels: ReadonlyArray<string>;
-	readonly tracking_id: string;
-	readonly reason: string;
 }
 
 const PROTOCOL_METHODS: ReadonlySet<string> = new Set(PROTOCOL_ACTION_METHODS);
@@ -376,15 +377,12 @@ export const describe_rpc_adversarial_cross_tests = (
 					continue;
 				}
 				matched_xfails.add(key);
-				xfail_until(
-					xfail.tracking_id,
-					xfail.reason,
-					`${method}: [${tc.label}] → 400 invalid_params`,
-					async () => {
-						const failure = await check_case(await setup_test(), action, tc);
-						assert.strictEqual(failure, null);
-					}
-				);
+				xfail_until(xfail, `${method}: [${tc.label}] → 400 invalid_params`, async () => {
+					const failure = await check_case(await setup_test(), action, tc);
+					// the failure text itself, so `fails_with` can read the answer;
+					// an assertion would print it truncated
+					if (failure !== null) assert.fail(failure);
+				});
 			}
 			if (param_cases.length === 0) continue;
 

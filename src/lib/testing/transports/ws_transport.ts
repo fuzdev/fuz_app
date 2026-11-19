@@ -19,6 +19,7 @@ import '../assert_dev_env.ts';
  * @module
  */
 
+import type { ClientRequest, IncomingMessage } from 'node:http';
 import { WebSocket, type RawData } from 'ws';
 
 import {
@@ -46,6 +47,32 @@ export interface WsTransportClient extends WsClient {
 	 * @throws Error if called after the socket closed
 	 */
 	send_text: (text: string) => Promise<void>;
+}
+
+/**
+ * How long a refused upgrade's body may take to arrive before the transport
+ * closes the connection and rejects with what came — a refusal whose body
+ * never ends would otherwise leave the open pending forever.
+ */
+export const WS_REFUSAL_BODY_TIMEOUT_MS = 1000;
+
+/**
+ * A WebSocket upgrade the server answered with an HTTP response instead of
+ * `101` — the refusal's status and body, so a test can tell an origin refusal
+ * (403) from a missing credential (401) instead of accepting any failure.
+ */
+export class WsUpgradeRefusedError extends Error {
+	/** The refusal's HTTP status. */
+	readonly status: number;
+	/** The refusal's body as text (empty when it had none). */
+	readonly body: string;
+
+	constructor(url: string, status: number, body: string) {
+		super(`ws upgrade to ${url} refused: Unexpected server response: ${status}`);
+		this.name = 'WsUpgradeRefusedError';
+		this.status = status;
+		this.body = body;
+	}
 }
 
 /** Construction options for `create_ws_transport`. */
@@ -109,7 +136,9 @@ export interface WsTransportOptions {
  * use this directly; one that waits for a push (a broadcast, a targeted
  * notification) opens with `create_admitted_ws_transport` instead.
  *
- * @throws Error if the upgrade fails (status, network) — the rejection
+ * @throws WsUpgradeRefusedError if the server answers the upgrade with an
+ *   HTTP response, carrying its status and body
+ * @throws Error if the upgrade fails otherwise (network) — the rejection
  *   message carries the underlying error so the test surfaces the real
  *   cause rather than hanging.
  */
@@ -166,7 +195,9 @@ export const create_ws_transport = async (
 	// Wait for the upgrade to complete (or fail) before resolving the
 	// factory promise. Suite bodies expect a connected client back.
 	await new Promise<void>((resolve, reject) => {
+		let settled = false;
 		const on_open = (): void => {
+			settled = true;
 			socket.on('error', (err) => {
 				// Post-open errors stash for diagnostics; close handler
 				// resolves the close() awaiters whether or not error fired.
@@ -175,10 +206,37 @@ export const create_ws_transport = async (
 			resolve();
 		};
 		const on_error = (err: Error): void => {
+			if (settled) return;
+			settled = true;
 			reject(new Error(`ws upgrade to ${ws_url} failed: ${err.message}`));
 		};
+		// A listener here takes the refused response over from `ws`, which would
+		// otherwise abort with only the status in an error message; read the
+		// body, then close the connection. The socket is captured on entry: a
+		// finished response drops its `socket`, so `req.destroy()` alone would
+		// leave the connection open. A body that never ends is cut off after
+		// `WS_REFUSAL_BODY_TIMEOUT_MS`, rejecting with what arrived.
+		const on_unexpected_response = (req: ClientRequest, res: IncomingMessage): void => {
+			const tcp = res.socket;
+			const chunks: Array<Buffer> = [];
+			const finish = (): void => {
+				clearTimeout(body_timer);
+				req.destroy();
+				tcp?.destroy();
+				if (settled) return;
+				settled = true;
+				const body = Buffer.concat(chunks).toString('utf-8');
+				reject(new WsUpgradeRefusedError(ws_url, res.statusCode ?? 0, body));
+			};
+			const body_timer = setTimeout(finish, WS_REFUSAL_BODY_TIMEOUT_MS);
+			res.on('data', (chunk: Buffer) => chunks.push(chunk));
+			res.once('end', finish);
+			res.once('close', finish);
+			res.once('error', finish);
+		};
 		socket.once('open', on_open);
-		socket.once('error', on_error);
+		socket.on('error', on_error);
+		socket.once('unexpected-response', on_unexpected_response);
 	});
 
 	const is_closed = (): boolean =>

@@ -257,10 +257,11 @@ export interface BackendCapabilities {
 	/**
 	 * A refused WebSocket upgrade carries its refusal body — the flat
 	 * `{error, ...}` the same refusal answers over plain HTTP. Not a gate: it
-	 * forks how `describe_transport_composition_cross_tests` reads its WS rows.
-	 * `true`, an empty refusal body fails the case; `false`, an empty body is
-	 * allowed (the case pins the status alone) and a non-empty one is still
-	 * asserted.
+	 * forks how `describe_transport_composition_cross_tests` reads its WS rows
+	 * and how `describe_cross_process_ws_tests` reads its disallowed-origin
+	 * refusal. `true`, an empty refusal body fails the case; `false`, an empty
+	 * body is allowed (the case pins the status alone) and a non-empty one is
+	 * still asserted.
 	 *
 	 * `false` on Node: `@hono/node-server` writes a refused upgrade to the raw
 	 * socket with `Content-Length: 0`, dropping the response body. `true` on
@@ -370,8 +371,9 @@ export const in_process_capabilities: BackendCapabilities = Object.freeze({
 	// Cross-process-only: the room verbs are a spine-binary WS mount, and the
 	// suite reads real sockets' pushes.
 	rooms: false,
-	// Read only by the front-door table's WS rows, which skip in-process (no
-	// socket to upgrade); Hono's own refusals carry their bodies.
+	// Read only by the front-door table's WS rows and the WS suite's
+	// disallowed-origin case, neither of which runs in-process (no socket to
+	// upgrade); Hono's own refusals carry their bodies.
 	ws_refusal_body: true,
 	// The in-process app mounts no `_testing_*` action; the suites reading this
 	// are cross-process only.

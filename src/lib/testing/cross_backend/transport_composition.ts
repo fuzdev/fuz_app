@@ -112,7 +112,7 @@ import {
 	SPINE_SSE_PATH,
 	SPINE_WS_PATH
 } from './spine_surface_constants.ts';
-import { xfail_until } from './xfail.ts';
+import { xfail_until, type XfailMarker } from './xfail.ts';
 
 /** A transport's front door, as the table's rows name it. */
 export type TransportCompositionSurface =
@@ -249,7 +249,7 @@ export interface TransportCompositionMultiActorOptions {
 	/** Per-test fixture whose keeper is seeded with at least one `extra_actors` entry. */
 	readonly setup_test: SetupTest;
 	/** Run the multi-actor rows as `xfail_until` — for a backend known to admit them. */
-	readonly xfail?: { readonly tracking_id: string; readonly reason: string };
+	readonly xfail?: XfailMarker;
 }
 
 /** Options for `describe_transport_composition_cross_tests`. */
@@ -348,7 +348,7 @@ const assert_refusal_body = (c: TransportCompositionCase, body: unknown, text: s
 		assert.strictEqual(refusal.error, c.expect.error, `${label}: body.error`);
 	}
 	for (const [key, expected] of Object.entries(c.expect.fields ?? {})) {
-		assert.deepStrictEqual(refusal[key], expected, `${label}: ${key}`);
+		assert.deepStrictEqual(refusal[key], expected, `${label}: ${key} (body: ${text})`);
 	}
 };
 
@@ -600,7 +600,7 @@ export const describe_transport_composition_cross_tests = (
 			if (!is_runnable(c)) {
 				test_if(false, name, body);
 			} else if (multi_actor.xfail) {
-				xfail_until(multi_actor.xfail.tracking_id, multi_actor.xfail.reason, name, body);
+				xfail_until(multi_actor.xfail, name, body);
 			} else {
 				test(name, body);
 			}

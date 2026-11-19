@@ -25,6 +25,8 @@ import '../assert_dev_env.ts';
  * @module
  */
 
+import type { XfailMarker } from './xfail.ts';
+
 /**
  * Closed enum of fixture-provisioned principals a case runs `as`. Each
  * value maps to a `TestFixture` accessor (or a seeded `extra_accounts`
@@ -230,20 +232,6 @@ export interface ConformanceCaseExpectation {
 }
 
 /**
- * Marks a case as a deferred-by-design gap. The runner routes it through
- * `xfail_until` instead of a normal `test` — visible (distinct from pass)
- * and self-cleaning (flips red when the impl starts passing, forcing the
- * marker's removal). Use for declared gaps (e.g. facts), never for
- * in-scope gaps (those fail loud as a red `test`).
- */
-export interface ConformanceCaseXfail {
-	/** Tracking id for the deferred gap (issue id or tracking slug). */
-	tracking_id: string;
-	/** Why this case is deferred-by-design. */
-	reason: string;
-}
-
-/**
  * A single conformance case. `name` is the assertion; the optional
  * free-text `note` is printed in the test label / failure output. A
  * security case's `note` should reference a **public** fuz_app doc
@@ -260,5 +248,13 @@ export interface ConformanceCase {
 	expect: ConformanceCaseExpectation;
 	/** Free-text note printed in the label / failure output. */
 	note?: string;
-	xfail?: ConformanceCaseXfail;
+	/**
+	 * Marks the case a deferred-by-design gap. The runner routes it through
+	 * `xfail_until` instead of a normal `test` — visible (distinct from pass),
+	 * specific (red on any failure but the one `fails_with` names), and
+	 * self-cleaning (flips red when the impl starts passing, forcing the
+	 * marker's removal). Use for declared gaps (e.g. facts), never for
+	 * in-scope gaps (those fail loud as a red `test`).
+	 */
+	xfail?: XfailMarker;
 }

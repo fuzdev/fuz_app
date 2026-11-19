@@ -44,7 +44,9 @@ import {
 	sensitive_field_blocklist,
 	admin_only_field_blocklist,
 	assert_no_sensitive_fields_in_json,
-	pick_auth_headers
+	pick_auth_headers,
+	pick_auth_principal,
+	to_principal_transport
 } from './integration_helpers.ts';
 import type { SetupTest, TestFixture } from './cross_backend/setup.ts';
 
@@ -388,7 +390,8 @@ export const describe_data_exposure_tests = (options: DataExposureTestOptions): 
 
 				const url = resolve_valid_path(spec.path, spec.params, options.param_values?.[route_key]);
 
-				const res = await fixture.transport(url, {
+				// a fresh jar: cross-process `fixture.transport` carries the keeper's cookie
+				const res = await fixture.fresh_transport()(url, {
 					method: spec.method,
 					headers: create_test_request_headers({
 						'content-type': to_route_content_type(spec)
@@ -476,7 +479,10 @@ export const describe_data_exposure_tests = (options: DataExposureTestOptions): 
 					...(body ? { body: JSON.stringify(body) } : {})
 				};
 
-				const res = await fixture.transport(url, request_init);
+				const res = await to_principal_transport(pick_auth_principal(spec.auth), fixture)(
+					url,
+					request_init
+				);
 
 				if (res.headers.get('Content-Type')?.includes('text/event-stream')) {
 					await res.body?.cancel();

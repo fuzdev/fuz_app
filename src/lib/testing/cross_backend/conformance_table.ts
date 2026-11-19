@@ -430,7 +430,13 @@ const assert_fields = (actual: unknown, fields: Record<string, unknown>, label: 
 	);
 	const record = actual as Record<string, unknown>;
 	for (const [key, expected] of Object.entries(fields)) {
-		assert.deepEqual(record[key], expected, `${label}: field '${key}'`);
+		// the actual value in the message: chai truncates the values it prints,
+		// and an `xfail` row's `fails_with` reads the message
+		assert.deepEqual(
+			record[key],
+			expected,
+			`${label}: field '${key}' is ${JSON.stringify(record[key])}`
+		);
 	}
 };
 
@@ -875,7 +881,11 @@ const assert_rpc_case = (
 	}
 
 	assert.ok(!res.ok, `${c.name}: expected error status ${c.expect.status} but got success`);
-	assert.strictEqual(res.status, c.expect.status, `${c.name}: error status`);
+	assert.strictEqual(
+		res.status,
+		c.expect.status,
+		`${c.name}: error status (error ${JSON.stringify(res.error)})`
+	);
 	if (c.expect.error_reason !== undefined) {
 		// A row that *declares* a reason must carry it — present AND equal —
 		// mirroring the REST branch's unconditional `body.error` assertion. The
@@ -898,7 +908,7 @@ const assert_rest_case = (
 	sent: ConformanceCaseResponse
 ): NormalizedResponse => {
 	const { status, body } = sent;
-	assert.strictEqual(status, c.expect.status, `${c.name}: status`);
+	assert.strictEqual(status, c.expect.status, `${c.name}: status (body ${JSON.stringify(body)})`);
 	if (is_success_status(c.expect.status)) {
 		const parsed = parse(route.output, body);
 		assert.ok(
@@ -956,7 +966,7 @@ export const describe_conformance_table_tests = (options: ConformanceTableOption
 				}
 			};
 			if (c.xfail) {
-				xfail_until(c.xfail.tracking_id, c.xfail.reason, label, body);
+				xfail_until(c.xfail, label, body);
 			} else {
 				test(label, body);
 			}

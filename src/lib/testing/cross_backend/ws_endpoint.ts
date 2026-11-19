@@ -8,7 +8,8 @@ import '../assert_dev_env.ts';
  * options (flat, or nested as `ws` on a suite whose socket cases are
  * optional), and open a socket on a fixture account's session through
  * `open_session_ws`, so the cookie read, the missing-cookie assertion and the
- * transport choice are written once. Sockets on another credential — a daemon
+ * transport choice are written once. A refused upgrade is asserted at its
+ * status with `assert_ws_upgrade_refused`. Sockets on another credential — a daemon
  * token, a bearer, a session a case logged in on its own transport — and the
  * raw-socket cases open their own way.
  *
@@ -16,10 +17,12 @@ import '../assert_dev_env.ts';
  */
 
 import { assert } from 'vitest';
+import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
 import {
 	create_admitted_ws_transport,
 	create_ws_transport,
+	WsUpgradeRefusedError,
 	type WsTransportClient,
 	type WsTransportOptions
 } from '../transports/ws_transport.ts';
@@ -96,4 +99,26 @@ export const open_session_ws = (
 		origin: target.origin ?? target.base_url,
 		...transport_options
 	});
+};
+
+/**
+ * Assert `open` fails as an upgrade the server refused with `status` — not a
+ * network error, and not a refusal at another status. Matching the status on
+ * the error's message would also match a port or path in the URL it names.
+ *
+ * @param open - opens the socket the server must refuse
+ * @param status - the refusal's expected HTTP status
+ * @returns the refusal, for a case asserting its body
+ */
+export const assert_ws_upgrade_refused = async (
+	open: () => Promise<unknown>,
+	status: number
+): Promise<WsUpgradeRefusedError> => {
+	const error = await assert_rejects(open);
+	assert.ok(
+		error instanceof WsUpgradeRefusedError,
+		`expected the upgrade refused with ${status}, got: ${error.message}`
+	);
+	assert.strictEqual(error.status, status, `refusal body: ${error.body.slice(0, 200)}`);
+	return error;
 };

@@ -12,10 +12,13 @@ import '../assert_dev_env.ts';
  *
  * - **the cap bounds concurrent sessions, by eviction not refusal** — logging in
  *   `max_sessions + 1` times succeeds every time (a login is never denied for
- *   being the one over the line), and the newest cookie resolves afterward.
- * - **the evicted session is the oldest** — the first login's cookie no longer
- *   authenticates once the cap is exceeded. A spine with no cap authenticates it
- *   fine, which is exactly the defect this catches.
+ *   being the one over the line), every one of the newest `max_sessions`
+ *   cookies resolves afterward, and the account lists exactly `max_sessions`
+ *   sessions.
+ * - **the evicted session is the oldest, and only it** — the first login's
+ *   cookie no longer authenticates once the cap is exceeded. A spine with no
+ *   cap authenticates it fine, and one evicting all but the newest fails the
+ *   newest-`max_sessions` check, which is exactly the defects this catches.
  * - **the session list marks the caller's own session `is_current`** — each
  *   login's `account_session_list` marks exactly one row, its own, over HTTP
  *   and (when `ws` mounts the account actions) over a socket the login
@@ -25,16 +28,19 @@ import '../assert_dev_env.ts';
  * - **an evicted session's socket is closed** (when `ws` is supplied) — the cap
  *   deletes the session row, and a WebSocket never re-reads its session, so
  *   the login that evicts it must close the socket it opened
- *   (`WS_CLOSE_SESSION_REVOKED`), once the eviction has committed. A spine
- *   that only deletes the row leaves the socket running on a dead session.
+ *   (`WS_CLOSE_SESSION_REVOKED` with its reason), once the eviction has
+ *   committed, and leave a socket on a session it kept open and dispatching. A
+ *   spine that only deletes the row leaves the socket running on a dead
+ *   session; one that closes the account's sockets drops the kept one.
  *
  * **Why `max_sessions + 1` logins and not `max_sessions`.** The starting session
  * count isn't zero and isn't guaranteed equal across impls — `create_account`
  * seeds its own session on the Rust cradle. Overshooting by one guarantees at
  * least one eviction whatever the baseline is, and the *oldest* login is the
- * first to go either way. Asserting on the first and last sessions rather than
- * on a row count keeps the case wire-observable (no DB channel) and
- * baseline-independent.
+ * first to go either way. Once the logins overshoot, the account holds exactly
+ * the cap — the newest `max_sessions`, all of them this case's logins — so the
+ * session count and the per-login checks are baseline-independent and
+ * wire-observable (no DB channel).
  *
  * Both surfaces are flat REST (`POST /api/account/login`, `GET /api/account/status`)
  * on every spine, so this is an imperative suite (not a `conformance_table` row)
@@ -57,7 +63,10 @@ import { describe, test, assert } from 'vitest';
 import { parse } from '@fuzdev/fuz_schema/schema.ts';
 
 import { heartbeat_action_spec } from '../../actions/heartbeat.ts';
-import { WS_CLOSE_SESSION_REVOKED } from '../../actions/transports.ts';
+import {
+	WS_CLOSE_SESSION_REVOKED,
+	WS_CLOSE_SESSION_REVOKED_REASON
+} from '../../actions/transports.ts';
 import { DEFAULT_MAX_SESSIONS } from '../../auth/account_route_schema.ts';
 import { SessionListOutput } from '../../auth/account_action_specs.ts';
 import { DEFAULT_TEST_PASSWORD } from '../test_credentials.ts';
@@ -65,7 +74,8 @@ import type { FetchTransport } from '../transports/fetch_transport.ts';
 import { create_ws_transport } from '../transports/ws_transport.ts';
 import { test_if } from './capabilities.ts';
 import { cross_rpc_call, expect_output } from './cross_rpc.ts';
-import type { SetupTest } from './setup.ts';
+import type { SetupTest, TestFixture } from './setup.ts';
+import { login_fresh_session } from './session_login.ts';
 import {
 	SPINE_ACCOUNT_LOGIN_PATH,
 	SPINE_ACCOUNT_STATUS_PATH,
@@ -121,25 +131,19 @@ export const describe_session_cap_cross_tests = (options: SessionCapCrossTestOpt
 	const username = 'session_cap_user';
 
 	/** Log `username` in on a fresh transport — one login, one session, one jar. */
-	const login = async (
-		fixture: Awaited<ReturnType<SetupTest>>,
-		label: string
-	): Promise<FetchTransport> => {
-		const transport = fixture.fresh_transport();
-		const res = await transport(login_path, {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ username, password: DEFAULT_TEST_PASSWORD })
+	const login = (fixture: TestFixture, label: string): Promise<FetchTransport> =>
+		login_fresh_session(fixture, {
+			login_path,
+			username,
+			password: DEFAULT_TEST_PASSWORD,
+			// a refused login past the cap is the defect, not a test fault
+			label: `${label} (the cap evicts, it never refuses)`
 		});
-		assert.strictEqual(res.status, 200, `${label} must succeed — the cap evicts, it never refuses`);
-		assert.ok(transport.cookies().length > 0, `${label} must set a session cookie on its jar`);
-		return transport;
-	};
 
 	describe('per-account session cap parity', () => {
 		test(`logging in ${
 			max_sessions + 1
-		} times evicts the oldest session (newest cookie resolves, first does not)`, async () => {
+		} times evicts the oldest session (the newest ${max_sessions} resolve, the first does not)`, async () => {
 			const fixture = await setup_test();
 			await fixture.create_account({ username, password_value: DEFAULT_TEST_PASSWORD });
 
@@ -160,16 +164,38 @@ export const describe_session_cap_cross_tests = (options: SessionCapCrossTestOpt
 				return res.status;
 			};
 
-			assert.strictEqual(
-				await status_on(sessions[sessions.length - 1]!),
-				200,
-				'the newest session must still resolve — the cap must evict, not refuse'
+			// every one of the newest `max_sessions` still resolves — so the cap
+			// evicts the oldest, not every session but the newest
+			const newest = sessions.slice(1);
+			const newest_statuses = await Promise.all(newest.map(status_on));
+			assert.deepStrictEqual(
+				newest_statuses,
+				newest.map(() => 200),
+				`each of the newest ${max_sessions} sessions must still resolve — the cap must evict ` +
+					'the oldest, not refuse and not evict more'
 			);
 			assert.strictEqual(
 				await status_on(sessions[0]!),
 				401,
 				`the oldest session must be evicted once the account exceeds ${max_sessions} sessions ` +
 					'(a spine with no cap authenticates this cookie)'
+			);
+			// and the account holds exactly the cap — the logins pushed out
+			// whatever it held before them, and nothing past them
+			const { sessions: listed } = expect_output(
+				await cross_rpc_call(
+					newest[newest.length - 1]!,
+					rpc_path,
+					'account_session_list',
+					undefined,
+					{}
+				),
+				SessionListOutput
+			);
+			assert.strictEqual(
+				listed.length,
+				max_sessions,
+				`the account must hold exactly ${max_sessions} sessions after the cap evicts`
 			);
 		});
 
@@ -278,7 +304,10 @@ export const describe_session_cap_cross_tests = (options: SessionCapCrossTestOpt
 
 		// `max_sessions` further logins leave the watched session outside the
 		// newest `max_sessions`, so it is evicted whatever sessions the account
-		// held before it (`create_account` seeds one on some cradles).
+		// held before it (`create_account` seeds one on some cradles). A socket on
+		// the first of those logins — inside the newest `max_sessions` throughout —
+		// must stay open: the eviction closes the evicted session's sockets, not
+		// the account's.
 		test_if(ws !== undefined, 'a session the cap evicts has its open socket closed', async () => {
 			const fixture = await setup_test();
 			await fixture.create_account({
@@ -286,18 +315,25 @@ export const describe_session_cap_cross_tests = (options: SessionCapCrossTestOpt
 				password_value: DEFAULT_TEST_PASSWORD,
 				roles: [...ws_account_roles]
 			});
+			const open_socket = (transport: FetchTransport) =>
+				create_ws_transport({
+					base_url: ws!.base_url,
+					ws_path: ws!.ws_path,
+					cookies: transport.cookies(),
+					origin: ws!.origin
+				});
 			const victim = await login(fixture, 'the login whose socket is watched');
-			const client = await create_ws_transport({
-				base_url: ws!.base_url,
-				ws_path: ws!.ws_path,
-				cookies: victim.cookies(),
-				origin: ws!.origin
-			});
+			const client = await open_socket(victim);
+			let survivor: Awaited<ReturnType<typeof open_socket>> | null = null;
 			try {
 				// admitted and dispatching before the evicting logins
 				await client.request(1, heartbeat_action_spec.method, {});
 				for (let i = 0; i < max_sessions; i++) {
-					await login(fixture, `evicting login ${i + 1}/${max_sessions}`);
+					const evicting = await login(fixture, `evicting login ${i + 1}/${max_sessions}`);
+					if (i === 0) {
+						survivor = await open_socket(evicting);
+						await survivor.request(1, heartbeat_action_spec.method, {});
+					}
 				}
 				const closed = await client.wait_for_close(2000);
 				assert.ok(
@@ -305,8 +341,18 @@ export const describe_session_cap_cross_tests = (options: SessionCapCrossTestOpt
 					`the socket of a session evicted past ${max_sessions} sessions did not close within 2s`
 				);
 				assert.strictEqual(client.close_code, WS_CLOSE_SESSION_REVOKED);
+				assert.strictEqual(client.close_reason, WS_CLOSE_SESSION_REVOKED_REASON);
+				// the socket on a session the cap kept still dispatches — the reply is
+				// the barrier: a close the eviction sent it lands ahead of it
+				assert.ok(survivor, 'the surviving socket was opened');
+				assert.deepStrictEqual(
+					await survivor.request(2, heartbeat_action_spec.method, {}),
+					{},
+					"a kept session's socket must still dispatch"
+				);
+				assert.strictEqual(survivor.close_code, null, "a kept session's socket must stay open");
 			} finally {
-				await client.close();
+				await Promise.all([client.close(), survivor?.close()]);
 			}
 		});
 	});

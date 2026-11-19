@@ -1,12 +1,14 @@
 /**
- * Tests for the REST round-trip's 401 guard and its fresh account for
- * mutations — the twin of `rpc_round_trip.test.ts`.
+ * Tests for the REST round-trip's 401 and credential-type guards and its
+ * fresh account for mutations — the twin of `rpc_round_trip.test.ts`.
  *
  * The behavioral half runs `describe_round_trip_validation` against a fake
  * fixture whose backend ends the caller's session on a `POST`: the round-trip
  * passes only when that request ran on an account of its own, since the
  * shared authed account's later `GET` would otherwise answer 401, which the
- * guard fails.
+ * guard fails. The fake backend also discards a daemon token sent over
+ * anything but the cookie-free, `Origin`-free transport, so the suite passes
+ * only when each request went through its principal's transport.
  *
  * @module
  */
@@ -18,6 +20,7 @@ import { literal, object } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
+import { ERROR_CREDENTIAL_TYPE_REQUIRED } from '#lib/http/error_schemas.ts';
 import { create_test_app_surface_spec } from '#lib/testing/stubs.ts';
 import type { TestAccount } from '#lib/testing/app_server.ts';
 import type { TestFixture } from '#lib/testing/cross_backend/setup.ts';
@@ -84,6 +87,35 @@ describe('assert_route_authenticated', () => {
 		);
 	});
 
+	test('a 403 credential_type_required to a credentialed request fails, naming the route', () => {
+		for (const principal of ['daemon_token', 'admin', 'keeper', 'authed'] as const) {
+			let message: string | undefined;
+			try {
+				assert_route_authenticated(
+					'POST /api/widget/purge',
+					403,
+					{ error: ERROR_CREDENTIAL_TYPE_REQUIRED, required_credential_types: ['daemon_token'] },
+					principal
+				);
+			} catch (e) {
+				message = (e as Error).message;
+			}
+			assert.ok(message, `${principal}: expected a failure`);
+			assert.include(message, 'POST /api/widget/purge');
+			assert.include(message, principal);
+			assert.include(message, ERROR_CREDENTIAL_TYPE_REQUIRED);
+		}
+	});
+
+	test('a 403 naming another reason passes', () => {
+		assert_route_authenticated(
+			'POST /api/widget/purge',
+			403,
+			{ error: 'insufficient_permissions' },
+			'authed'
+		);
+	});
+
 	test('a 401 to a public request passes (a login with a wrong password)', () => {
 		assert_route_authenticated(
 			'POST /api/account/login',
@@ -98,6 +130,7 @@ describe('assert_route_authenticated', () => {
 
 const BURN_PATH = '/api/widget/burn';
 const PEEK_PATH = '/api/widget/peek';
+const VAULT_PATH = '/api/widget/vault';
 
 const ok_output = object({ ok: literal(true) });
 
@@ -120,13 +153,25 @@ const create_route_specs = (_ctx: AppServerContext): Array<RouteSpec> => [
 		description: 'Read as the caller',
 		input: literal(null),
 		output: ok_output
+	}),
+	define_route({
+		method: 'GET',
+		path: VAULT_PATH,
+		auth: { account: 'required', actor: 'none', credential_types: ['daemon_token'] },
+		handler: () => route_ok({ ok: true }),
+		description: 'Read behind the daemon token',
+		input: literal(null),
+		output: ok_output
 	})
 ];
 
+/** Which of the fixture's transports a request went through. */
+type Via = 'fixture' | 'fresh' | 'fresh_no_origin';
+
 /** Session cookies the fake backend still honors. */
 const live_sessions = new Set<string>(['keeper']);
-/** `[METHOD path, cookie]` per request the fake backend answered. */
-const calls: Array<[string, string]> = [];
+/** `[METHOD path, cookie, via]` per request the fake backend answered. */
+const calls: Array<[string, string, Via]> = [];
 let account_counter = 0;
 
 const read_cookie = (headers: HeadersInit | undefined): string => {
@@ -137,18 +182,31 @@ const read_cookie = (headers: HeadersInit | undefined): string => {
 const respond = (status: number, body: unknown): Response =>
 	new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
-const fake_transport = async (path: string, init?: RequestInit): Promise<Response> => {
-	const cookie = read_cookie(init?.headers);
-	const route_key = `${init?.method ?? 'GET'} ${new URL(path, 'http://localhost').pathname}`;
-	calls.push([route_key, cookie]);
-	if (!live_sessions.has(cookie)) return respond(401, { error: 'authentication_required' });
-	if (route_key === `POST ${BURN_PATH}`) live_sessions.delete(cookie);
-	return respond(200, { ok: true });
-};
+const create_fake_transport =
+	(via: Via) =>
+	async (path: string, init?: RequestInit): Promise<Response> => {
+		const cookie = read_cookie(init?.headers);
+		const route_key = `${init?.method ?? 'GET'} ${new URL(path, 'http://localhost').pathname}`;
+		calls.push([route_key, cookie, via]);
+		// as a spawned backend: the daemon token counts only with no `Origin`,
+		// and behind one the session answering in its place is the wrong channel
+		if (new Headers(init?.headers).has('x-daemon-token')) {
+			if (via === 'fresh_no_origin') return respond(200, { ok: true });
+			return respond(403, {
+				error: ERROR_CREDENTIAL_TYPE_REQUIRED,
+				required_credential_types: ['daemon_token']
+			});
+		}
+		if (!live_sessions.has(cookie)) return respond(401, { error: 'authentication_required' });
+		if (route_key === `POST ${BURN_PATH}`) live_sessions.delete(cookie);
+		return respond(200, { ok: true });
+	};
 
 // a fake fixture: the round-trip reads only these members
 const fake_fixture = {
-	transport: fake_transport,
+	transport: create_fake_transport('fixture'),
+	fresh_transport: (options?: { readonly origin?: string | null }) =>
+		create_fake_transport(options?.origin === null ? 'fresh_no_origin' : 'fresh'),
 	actor: { id: '00000000-0000-4000-8000-000000000003' },
 	create_session_headers: () => ({ cookie: `${COOKIE_NAME}=keeper` }),
 	create_bearer_headers: () => ({ authorization: 'Bearer keeper' }),
@@ -175,4 +233,14 @@ test('the mutation ran on an account of its own', () => {
 	assert.notStrictEqual(burn_cookie, peek_cookie);
 	assert.isFalse(live_sessions.has(burn_cookie));
 	assert.isTrue(live_sessions.has(peek_cookie));
+});
+
+test('each request went through the transport of its principal', () => {
+	const vias = (route_key: string): Array<Via> =>
+		calls.filter(([key]) => key === route_key).map(([, , via]) => via);
+	// the daemon token, cookie-free and without an `Origin`
+	assert.deepEqual(vias(`GET ${VAULT_PATH}`), ['fresh_no_origin']);
+	// a session principal keeps the fixture's transport
+	assert.deepEqual(vias(`POST ${BURN_PATH}`), ['fixture']);
+	assert.deepEqual(vias(`GET ${PEEK_PATH}`), ['fixture']);
 });
