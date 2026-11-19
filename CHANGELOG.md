@@ -1,5 +1,14 @@
 # @fuzdev/fuz_app
 
+## 0.180.0
+
+### Minor Changes
+
+- Update dependencies (BREAKING CHANGES) ([1990b4d](https://github.com/fuzdev/fuz_app/commit/1990b4d))
+  
+  Breaking dependency changes:
+  - @fuzdev/fuz_ui: 0.230.0 → 0.231.0 (minor)
+
 ## 0.179.0
 
 ### Minor Changes
