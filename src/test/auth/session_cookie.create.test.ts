@@ -1,6 +1,8 @@
 /**
- * Tests for `create_session_cookie_value` + module-level constants
- * (`SESSION_AGE_MAX`, `session_cookie_options`).
+ * Tests for `create_session_cookie_value`, the `Set-Cookie` formatters
+ * (`format_session_set_cookie`, `format_session_clear_cookie`, and the
+ * cookie grammar predicates they guard with) + module-level constants
+ * (`SESSION_AGE_MAX`, `SESSION_COOKIE_ATTRIBUTES`).
  *
  * Sibling files cover `parse_session` + round-trip
  * (`session_cookie.parse.test.ts`) and `process_session_cookie`
@@ -13,8 +15,12 @@ import { assert, describe, test } from 'vitest';
 
 import {
 	create_session_cookie_value,
+	format_session_clear_cookie,
+	format_session_set_cookie,
+	is_cookie_name,
+	is_cookie_value,
 	SESSION_AGE_MAX,
-	session_cookie_options,
+	SESSION_COOKIE_ATTRIBUTES,
 	type SessionOptions
 } from '#lib/auth/session_cookie.ts';
 import {
@@ -47,16 +53,114 @@ describe('session constants', () => {
 	});
 });
 
-describe('session_cookie_options', () => {
-	test('has strict security settings', () => {
-		assert.deepEqual(session_cookie_options, {
-			path: '/',
-			httpOnly: true,
-			secure: true,
-			sameSite: 'strict',
-			maxAge: SESSION_AGE_MAX
-		});
+describe('session Set-Cookie strings', () => {
+	// Literal copies of the Rust spine's strings (`format_session_set_cookie` /
+	// `format_session_clear_cookie` in `fuz_auth`), which pins the same ones.
+	test("the attributes are fixed, in the Rust spine's order", () => {
+		assert.strictEqual(SESSION_COOKIE_ATTRIBUTES, 'Path=/; HttpOnly; Secure; SameSite=Strict');
 	});
+
+	test('set: the value verbatim, the attributes, then Max-Age', () => {
+		assert.strictEqual(
+			format_session_set_cookie('fuz_session', 'tok:1700000000.c2ln+/A=', 2592000),
+			'fuz_session=tok:1700000000.c2ln+/A=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=2592000'
+		);
+	});
+
+	test('clear: an empty value and Max-Age=0', () => {
+		assert.strictEqual(
+			format_session_clear_cookie('fuz_session'),
+			'fuz_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0'
+		);
+	});
+
+	test('a real signed value is written unencoded', async () => {
+		const keyring = create_test_keyring();
+		const value = await create_session_cookie_value(keyring, TEST_IDENTITY, test_session_options);
+		assert.ok(is_cookie_value(value), 'a signed value is cookie-octets as it is');
+		const header = format_session_set_cookie('fuz_session', value, SESSION_AGE_MAX);
+		assert.ok(header.startsWith(`fuz_session=${value}; `), header);
+		assert.ok(!header.includes('%'), 'nothing is percent-encoded');
+	});
+
+	const refused_values: Array<[label: string, value: string]> = [
+		['a space', 'a b'],
+		['a semicolon', 'a;b'],
+		['a comma', 'a,b'],
+		['a double quote', 'a"b'],
+		['a backslash', 'a\\b'],
+		['a control character', 'a\tb'],
+		['DEL', 'a\x7fb'],
+		['a non-ASCII character', 'a\u00e9b'],
+		['a character above U+00FF', 'a\u0100']
+	];
+	test.each(refused_values)('set refuses a value holding %s', (_label, value) => {
+		assert.strictEqual(is_cookie_value(value), false);
+		assert.throws(() => format_session_set_cookie('fuz_session', value, 60), /cookie-octets/);
+	});
+
+	// the guards sit on a credential path and take a consumer's output: a
+	// value that is no string is refused, never read as its text
+	const non_strings: Array<[label: string, value: unknown]> = [
+		['undefined', undefined],
+		['null', null],
+		['a number', 1],
+		['an object', { toString: () => 'abc' }]
+	];
+	test.each(non_strings)('set refuses a value that is %s', (_label, value) => {
+		assert.strictEqual(is_cookie_value(value as string), false);
+		assert.throws(
+			() => format_session_set_cookie('fuz_session', value as string, 60),
+			/cookie-octets/
+		);
+	});
+	test.each(non_strings)('set and clear refuse a name that is %s', (_label, name) => {
+		assert.strictEqual(is_cookie_name(name as string), false);
+		assert.throws(() => format_session_set_cookie(name as string, 'v', 60), /cookie-name/);
+		assert.throws(() => format_session_clear_cookie(name as string), /cookie-name/);
+	});
+
+	test('a refusal never quotes the value', () => {
+		try {
+			format_session_set_cookie('fuz_session', 'secret value', 60);
+		} catch (e) {
+			assert(e instanceof Error);
+			assert.ok(!e.message.includes('secret value'), e.message);
+			return;
+		}
+		assert.fail('expected a throw');
+	});
+
+	const refused_names: Array<[label: string, name: string]> = [
+		['empty', ''],
+		['an equals sign', 'a=b'],
+		['a space', 'a b'],
+		['a semicolon', 'a;b'],
+		['a non-ASCII character', 'caf\u00e9']
+	];
+	test.each(refused_names)('set and clear refuse a name that is %s', (_label, name) => {
+		assert.strictEqual(is_cookie_name(name), false);
+		assert.throws(() => format_session_set_cookie(name, 'v', 60), /cookie-name/);
+		assert.throws(() => format_session_clear_cookie(name), /cookie-name/);
+	});
+
+	test('every token character is a cookie name; every cookie-octet a value', () => {
+		assert.ok(is_cookie_name("!#$%&'*+-.^_`|~09AZaz"));
+		let octets = '';
+		for (let code = 0x21; code <= 0x7e; code++) {
+			const char = String.fromCharCode(code);
+			if (!'",;\\'.includes(char)) octets += char;
+		}
+		assert.ok(is_cookie_value(octets));
+		assert.ok(is_cookie_value(''), 'the clear cookie writes an empty value');
+	});
+
+	test.each([-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(
+		'set refuses a max_age of %s',
+		(max_age) => {
+			assert.throws(() => format_session_set_cookie('fuz_session', 'v', max_age), /max_age/);
+		}
+	);
 });
 
 describe('create_session_cookie_value', () => {

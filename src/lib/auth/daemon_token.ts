@@ -13,10 +13,24 @@ import { message, pipe, regex, string, type Infer } from '@fuzdev/fuz_schema/sch
 
 import { generate_random_base64url } from '../crypto.ts';
 
-/** Daemon token format, a `@fuzdev/fuz_schema` schema: 43 base64url characters (256 bits). */
+/** Regex for a daemon token: exactly 43 base64url characters (256 bits). */
+export const DAEMON_TOKEN_REGEX = /^[A-Za-z0-9_-]{43}$/;
+
+/**
+ * Whether `raw` has the shape of a daemon token — the daemon leg's precheck,
+ * ahead of the constant-time compare, so an off-form value is discarded
+ * without one. A `true` says nothing about whether the token is the current
+ * one. Twin of the Rust spine's `is_daemon_token_shaped`.
+ *
+ * @param raw - the value of an `X-Daemon-Token` line
+ * @returns `true` when `raw` matches `DAEMON_TOKEN_REGEX`
+ */
+export const is_daemon_token_shaped = (raw: string): boolean => DAEMON_TOKEN_REGEX.test(raw);
+
+/** Daemon token format, a `@fuzdev/fuz_schema` schema over `DAEMON_TOKEN_REGEX`. */
 export const DaemonToken = pipe(
 	string,
-	message(regex(/^[A-Za-z0-9_-]{43}$/), 'Invalid daemon token format')
+	message(regex(DAEMON_TOKEN_REGEX), 'Invalid daemon token format')
 );
 export type DaemonToken = Infer<typeof DaemonToken>;
 

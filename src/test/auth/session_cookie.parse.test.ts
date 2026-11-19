@@ -31,10 +31,16 @@ describe('parse_session', () => {
 		assert.strictEqual(result, undefined);
 	});
 
-	test('returns undefined for empty string', async () => {
+	test('returns undefined for null input', async () => {
+		const keyring = create_test_keyring();
+		const result = await parse_session(null, keyring, test_session_options);
+		assert.strictEqual(result, undefined);
+	});
+
+	test('returns null for the empty string — a cookie sent with no value is invalid, not absent', async () => {
 		const keyring = create_test_keyring();
 		const result = await parse_session('', keyring, test_session_options);
-		assert.strictEqual(result, undefined);
+		assert.strictEqual(result, null);
 	});
 
 	test('returns null for invalid signature', async () => {

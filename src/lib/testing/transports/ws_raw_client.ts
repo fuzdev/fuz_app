@@ -48,6 +48,12 @@ export interface RawWsFrame {
 
 /** A WebSocket client that sends frames and never answers a close. */
 export interface RawWsClient {
+	/**
+	 * The server's `101` response head as it arrived, `latin1`-decoded, through
+	 * its closing blank line — for reading the headers an accepted upgrade
+	 * carries (`raw_http_header_values`).
+	 */
+	handshake: string;
 	/** Every frame the server sent, in order. */
 	frames: Array<RawWsFrame>;
 	/** Send one masked text frame. */
@@ -67,6 +73,13 @@ export interface RawWsConnectOptions {
 	path: string;
 	/** Extra upgrade request headers — `Cookie`, `Origin`. */
 	headers?: Record<string, string>;
+	/**
+	 * Header lines written after `headers`, each `Name: value`, in order and as
+	 * given, `latin1` (one character a byte) — a name may repeat, and a byte
+	 * above `0x7F` goes out as itself. For an upgrade whose credential lines
+	 * must reach the server exactly as a test spells them.
+	 */
+	header_lines?: ReadonlyArray<string>;
 	/**
 	 * Text frames to write in the **same TCP write** as the upgrade request, so
 	 * they are in the server's hands before the handshake is answered — and so
@@ -130,7 +143,14 @@ const take_frames = (buffer: Buffer): { frames: Array<RawWsFrame>; rest: Buffer 
  */
 export const connect_raw_ws = (options: RawWsConnectOptions): Promise<RawWsClient> =>
 	new Promise((resolve, reject) => {
-		const { port, hostname = '127.0.0.1', path, headers = {}, pipelined = [] } = options;
+		const {
+			port,
+			hostname = '127.0.0.1',
+			path,
+			headers = {},
+			header_lines = [],
+			pipelined = []
+		} = options;
 		const socket = connect(port, hostname);
 		const frames: Array<RawWsFrame> = [];
 		const waiters: Array<{
@@ -141,6 +161,7 @@ export const connect_raw_ws = (options: RawWsConnectOptions): Promise<RawWsClien
 		let upgraded = false;
 
 		const client: RawWsClient = {
+			handshake: '',
 			frames,
 			send_text: (text) => {
 				socket.write(encode_client_text(text));
@@ -176,12 +197,16 @@ export const connect_raw_ws = (options: RawWsConnectOptions): Promise<RawWsClien
 				`Sec-WebSocket-Key: ${randomBytes(16).toString('base64')}`,
 				'Sec-WebSocket-Version: 13',
 				...Object.entries(headers).map(([name, value]) => `${name}: ${value}`),
-				'',
 				''
 			].join('\r\n');
+			const raw_lines = header_lines.map((line) => `${line}\r\n`).join('') + '\r\n';
 			// one write, so the pipelined frames can't trail the handshake
 			socket.write(
-				Buffer.concat([Buffer.from(request, 'utf-8'), ...pipelined.map(encode_client_text)])
+				Buffer.concat([
+					Buffer.from(request, 'utf-8'),
+					Buffer.from(raw_lines, 'latin1'),
+					...pipelined.map(encode_client_text)
+				])
 			);
 		});
 		socket.on('data', (chunk: Buffer) => {
@@ -196,6 +221,7 @@ export const connect_raw_ws = (options: RawWsConnectOptions): Promise<RawWsClien
 					return;
 				}
 				upgraded = true;
+				client.handshake = buffer.subarray(0, end + 4).toString('latin1');
 				buffer = buffer.subarray(end + 4);
 				resolve(client);
 			}

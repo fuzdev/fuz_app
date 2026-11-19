@@ -4,7 +4,7 @@
  * The test-binary actions (`_testing_reset`, `_testing_mint_session`,
  * `_testing_put_fact`, `_testing_drain_effects`, `_testing_flood_notifications`,
  * `_testing_schema_snapshot`, `_testing_migration_tracker`,
- * `_testing_action_manifest`, `_testing_origin_check`,
+ * `_testing_action_manifest`, `_testing_origin_check`, `_testing_credential_read`,
  * `_testing_shorten_credential_expiry`, `_testing_room_evict`) are privileged:
  * they run direct DB writes, dump internal state, drive a connection past its
  * limits, evict from the room registry, or answer probes of the server's own configuration — nothing the
@@ -37,6 +37,7 @@ import {
 	testing_room_evict_action_spec,
 	testing_shorten_credential_expiry_action_spec
 } from '#lib/testing/cross_backend/testing_reset_actions.ts';
+import { testing_credential_read_action_spec } from '#lib/testing/cross_backend/testing_credential_read.ts';
 import { testing_origin_check_action_spec } from '#lib/testing/cross_backend/testing_origin_check.ts';
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 
@@ -50,6 +51,7 @@ const testing_action_specs: ReadonlyArray<{ name: string; spec: RequestResponseA
 	{ name: '_testing_migration_tracker', spec: testing_migration_tracker_action_spec },
 	{ name: '_testing_action_manifest', spec: testing_action_manifest_action_spec },
 	{ name: '_testing_origin_check', spec: testing_origin_check_action_spec },
+	{ name: '_testing_credential_read', spec: testing_credential_read_action_spec },
 	{
 		name: '_testing_shorten_credential_expiry',
 		spec: testing_shorten_credential_expiry_action_spec

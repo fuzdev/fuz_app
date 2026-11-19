@@ -9,8 +9,8 @@ import '../assert_dev_env.ts';
  * Cross-process suite modules (which drive a separately-spawned backend binary
  * over HTTP) need only the wire path / role / fixture-URL, not the in-process
  * route handlers. Importing them from `default_spine_surface.ts` used to drag
- * its eager `account_routes.ts` / `signup_routes.ts` imports — and through them
- * `session_middleware` → `hono/cookie` — onto a backend-spawning consumer with
+ * its eager route-factory imports — and through `audit_log_routes.ts`,
+ * `hono/streaming` — onto a backend-spawning consumer with
  * no `hono` peer installed (a Rust-only spine consumer). Keeping these constants
  * on this handler-free leaf lets such a consumer import the path without the
  * peer. `default_spine_surface.ts` imports the ones it uses from here.
@@ -63,6 +63,7 @@ export const TESTING_BACKDOOR_METHODS = [
 	'_testing_migration_tracker',
 	'_testing_action_manifest',
 	'_testing_origin_check',
+	'_testing_credential_read',
 	'_testing_shorten_credential_expiry',
 	'_testing_room_evict'
 ] as const;

@@ -80,7 +80,11 @@ import '../assert_dev_env.ts';
 import { describe, test, assert } from 'vitest';
 
 import { ERROR_RATE_LIMIT_EXCEEDED } from '../../http/error_schemas.ts';
-import { raw_http_exchange, raw_http_parse_response } from '../transports/raw_http.ts';
+import {
+	raw_http_exchange,
+	raw_http_parse_response,
+	raw_http_request
+} from '../transports/raw_http.ts';
 import {
 	default_login_account_rate_limit,
 	default_login_ip_rate_limit
@@ -441,16 +445,18 @@ export const describe_login_security_cross_tests = (
 				// fresh spoofed address and answer 401.
 				const url = new URL(base_url);
 				const body = JSON.stringify({ username: 'probe_xff_lines', password: PROBE_PASSWORD });
-				const request =
-					`POST ${login_path} HTTP/1.1\r\n` +
-					`host: ${url.host}\r\n` +
-					`content-type: application/json\r\n` +
-					`x-forwarded-for: ${XFF_SPOOFED_LINE}\r\n` +
-					`x-forwarded-for: ${XFF_REPEATED_LINES}\r\n` +
-					`content-length: ${body.length}\r\n` +
-					`connection: close\r\n` +
-					`\r\n` +
-					body;
+				const request = raw_http_request({
+					method: 'POST',
+					path: login_path,
+					host: url.host,
+					header_lines: [
+						'content-type: application/json',
+						`x-forwarded-for: ${XFF_SPOOFED_LINE}`,
+						`x-forwarded-for: ${XFF_REPEATED_LINES}`,
+						'connection: close'
+					],
+					body
+				});
 				const { received } = await raw_http_exchange(base_url, request, {
 					read_timeout_ms: LOGIN_RAW_READ_TIMEOUT_MS,
 					until: 'response'

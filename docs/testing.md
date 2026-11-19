@@ -1064,10 +1064,13 @@ mounted), and each it names gets the refused-credential rows. The one call
 requires `_testing_reset` and `_testing_drain_effects`, requires
 `_testing_put_fact` with `fact_serving` and `_testing_room_evict` with `rooms`,
 and skips each suite needing another
-undeclared backdoor — `credential_deadline`
+undeclared backdoor — `credential_conformance`
+(`_testing_credential_read`), `credential_deadline`
 (`_testing_shorten_credential_expiry`), `origin_conformance`
 (`_testing_origin_check`), `ws_outbound_overflow`
-(`_testing_flood_notifications`) — naming it in the skip.
+(`_testing_flood_notifications`) — naming it in the skip. A config that
+declares the whole `TESTING_BACKDOOR_METHODS` list declares every one of
+these, so its binary must mount each.
 
 ### Lifecycle — `BackendConfig` + `spawn_backend`
 
@@ -1292,8 +1295,8 @@ capabilities, so state every mount flag truthfully and the rest follows.
 - A backend whose fallback serves an SPA shell answers an unrouted `GET` `200`:
   pass `overrides: {origin_scope: {unrouted_status: 200}}`.
 - An input the handle doesn't carry comes from `overrides` — or from the
-  config when it can (`session_cookie_codec`'s `cookie_keys` from
-  `SECRET_FUZ_COOKIE_KEYS`); with neither, the call throws naming the suite.
+  config when it can (the `cookie_keys` of `session_cookie_codec` and the two
+  credential conformance suites, from `SECRET_FUZ_COOKIE_KEYS`); with neither, the call throws naming the suite.
 - The suites needing two handles or a limiter-enabled spawn
   (`STANDALONE_CROSS_SUITES`: the differential, `login_security`,
   `ws_action_rate_limit`) and the conformance runner over your own cases stay

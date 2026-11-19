@@ -277,7 +277,8 @@ export interface BackendCapabilities {
 	 * must answer `method_not_found` — and runs its credential-gate rows over
 	 * the declared ones; `describe_spine_cross_suites` requires `_testing_reset`
 	 * and `_testing_drain_effects` (the per-test reset and the audit barrier),
-	 * skips a suite whose backdoor is undeclared, naming it — `credential_deadline`
+	 * skips a suite whose backdoor is undeclared, naming it — `credential_conformance`
+	 * (`_testing_credential_read`), `credential_deadline`
 	 * (`_testing_shorten_credential_expiry`), `origin_conformance`
 	 * (`_testing_origin_check`), `ws_outbound_overflow`
 	 * (`_testing_flood_notifications`) — and requires `_testing_put_fact` of a

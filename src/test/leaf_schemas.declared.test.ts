@@ -37,6 +37,16 @@ import {
 	TestingOriginCheckOutput
 } from '#lib/testing/cross_backend/testing_origin_check.ts';
 import {
+	SessionCookieRead,
+	TestingCredentialReadInput,
+	TestingCredentialReadOutput
+} from '#lib/testing/cross_backend/testing_credential_read.ts';
+import {
+	CredentialConformance,
+	CredentialConformanceRefusedRow,
+	CredentialConformanceRow
+} from '#lib/testing/cross_backend/credential_conformance.ts';
+import {
 	OriginConformance,
 	OriginConformanceError,
 	OriginConformanceHostRow,
@@ -193,6 +203,60 @@ const SAMPLES: Array<[name: string, schema: AnySchema, samples: ReadonlyArray<un
 				parse: [{ raw: 'http://a', ok: true }],
 				match: [{ patterns: 'http://a', origin: 'http://a', allowed: true }],
 				host: [{ patterns: 'http://a', hosts: ['a'], allowed: true }]
+			}
+		]
+	],
+	['SessionCookieRead', SessionCookieRead, ['absent', 'invalid', 'valid']],
+	['TestingCredentialReadInput', TestingCredentialReadInput, [{ lines: [] }, { lines: ['A: b'] }]],
+	[
+		'TestingCredentialReadOutput',
+		TestingCredentialReadOutput,
+		[
+			{ session_cookie: 'absent', bearer_token: null, daemon_token: null },
+			{ session_cookie: 'valid', bearer_token: 't', daemon_token: 'd' }
+		]
+	],
+	[
+		'CredentialConformanceRow',
+		CredentialConformanceRow,
+		[
+			{
+				name: 'n',
+				lines: [],
+				read: { session_cookie: 'invalid', bearer_token: null, daemon_token: null },
+				authenticates: null,
+				clears_session_cookie: true
+			},
+			{
+				name: 'n',
+				lines: ['Cookie: a=b'],
+				read: { session_cookie: 'valid', bearer_token: 't', daemon_token: null },
+				authenticates: 'session',
+				clears_session_cookie: false,
+				note: 'n'
+			}
+		]
+	],
+	[
+		'CredentialConformanceRefusedRow',
+		CredentialConformanceRefusedRow,
+		[{ name: 'n', lines: ['x'], reason: 'invalid_header_line', note: 'n' }]
+	],
+	[
+		'CredentialConformance',
+		CredentialConformance,
+		[
+			{
+				rows: [
+					{
+						name: 'n',
+						lines: [],
+						read: { session_cookie: 'absent', bearer_token: null, daemon_token: null },
+						authenticates: 'daemon_token',
+						clears_session_cookie: false
+					}
+				],
+				refused: [{ name: 'n', lines: ['x'], reason: 'invalid_header_line' }]
 			}
 		]
 	]

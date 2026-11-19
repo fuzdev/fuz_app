@@ -16,6 +16,7 @@ import '../assert_dev_env.ts';
  * - the full cell verb set (CRUD + grant + field + item + audit),
  * - the opt-in `actor_lookup` / `actor_search` resolvers,
  * - the `_testing_origin_check` probe the origin conformance table drives,
+ * - the `_testing_credential_read` probe the credential conformance table drives,
  * - the `_testing_shorten_credential_expiry` seam the credential-deadline
  *   suite drives,
  * - the `_testing_room_evict` seam the rooms suite drives, over the room
@@ -71,6 +72,7 @@ import {
 	create_testing_shorten_credential_expiry_action
 } from './testing_reset_actions.ts';
 import { test_room_authorize } from './test_room_authorize.ts';
+import { create_testing_credential_read_action } from './testing_credential_read.ts';
 import { create_testing_origin_check_action } from './testing_origin_check.ts';
 import { test_cell_gated_create_authorize } from './test_cell_gated_create_authorize.ts';
 import { test_cell_grant_steward_revoke_authorize } from './test_cell_grant_steward_revoke_authorize.ts';
@@ -214,6 +216,12 @@ const build_full_spine_actions = (
 		// the origin conformance table's probe — kept out of
 		// `create_testing_actions` (see its spec doc)
 		create_testing_origin_check_action(),
+		// the credential conformance table's probe, over the binary's keyring and
+		// cookie name — out of `create_testing_actions` for the same reason
+		create_testing_credential_read_action({
+			keyring: deps.keyring,
+			session_options: spine_session_options
+		}),
 		// the credential-deadline suite's shorten-only seam — kept out of
 		// `create_testing_actions` for the same reason
 		create_testing_shorten_credential_expiry_action(),

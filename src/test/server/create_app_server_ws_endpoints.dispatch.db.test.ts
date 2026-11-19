@@ -466,6 +466,35 @@ describe('create_app_server.ws_endpoints dispatch through the assembled app', ()
 		assert.strictEqual(t.stub.upgrades.length, 0);
 	});
 
+	test('an invalid session cookie is cleared on a refused upgrade, never on an accepted one', async () => {
+		const t = await create_test_server();
+		const alice = await t.create_account('alice');
+		const clear = 'test_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0';
+		const stale = { cookie: `${session_options.cookie_name}=stale.invalidsignature` };
+		const upgrade = async (headers: Record<string, string>): Promise<Response> =>
+			t.server.app.request(WS_PATH, {
+				headers: { host: 'localhost', upgrade: 'websocket', ...headers }
+			});
+
+		const refused = await upgrade(stale);
+		assert.strictEqual(refused.status, 401);
+		assert.deepStrictEqual(refused.headers.getSetCookie(), [clear]);
+
+		// the bearer authenticates beside the dead cookie; the adapter's
+		// placeholder response carries no clear for it to copy onto its `101`
+		const accepted = await upgrade({ ...alice.bearer_headers, ...stale });
+		assert.strictEqual(accepted.status, 200);
+		assert.strictEqual(t.stub.upgrades.length, 1);
+		assert.deepStrictEqual(accepted.headers.getSetCookie(), []);
+
+		// the same request without the upgrade falls through to a response like any other
+		const plain = await t.server.app.request(WS_PATH, {
+			headers: { host: 'localhost', ...alice.bearer_headers, ...stale }
+		});
+		assert.strictEqual(plain.status, 404);
+		assert.deepStrictEqual(plain.headers.getSetCookie(), [clear]);
+	});
+
 	test('close ends a socket opened through the upgrade path, and only once', async () => {
 		const t = await create_test_server();
 		const alice = await t.create_account('alice');

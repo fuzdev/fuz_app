@@ -14,8 +14,8 @@ import '../assert_dev_env.ts';
  * single-keeper daemon) is not this shape.
  *
  * The route shapes come from `create_account_route_shapes` and friends, never
- * the live route factories, which statically pull `hono/cookie` and
- * `hono/streaming`. Handlers are never invoked — the suites read `method`,
+ * the live route factories, which statically pull the query layer and, for
+ * the audit stream, `hono/streaming`. Handlers are never invoked — the suites read `method`,
  * `path`, `auth` and the schemas, and live dispatch happens in the spawned
  * binary — so routes and actions carry no-op handlers.
  *

@@ -15,10 +15,13 @@ import type { AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import {
-	session_cookie_options,
-	type SessionOptions,
-	type SessionCookieOptions
+	SESSION_AGE_MAX,
+	create_session_cookie_value,
+	format_session_set_cookie,
+	is_cookie_name,
+	type SessionOptions
 } from '../auth/session_cookie.ts';
+import { generate_session_token } from '../auth/session_queries.ts';
 import type { BootstrapAccountSuccess } from '../auth/bootstrap_account.ts';
 import type { EventSpec } from '../realtime/sse.ts';
 import {
@@ -146,7 +149,12 @@ export interface BootstrapLiveOptions {
 export interface AppServerOptions {
 	/** Pre-initialized backend from `create_app_backend()`. */
 	backend: AppBackend;
-	/** Session options for cookie-based auth. */
+	/**
+	 * Session options for cookie-based auth. Assembly throws on options that
+	 * cannot write the cookie: a `cookie_name` that is no RFC 6265 cookie-name,
+	 * or — found by minting a sample cookie — an `encode_identity` or `max_age`
+	 * the `Set-Cookie` grammar cannot carry.
+	 */
 	session_options: SessionOptions<string>;
 	/**
 	 * Parsed allowed origin patterns, as `parse_allowed_origins` returns them
@@ -700,8 +708,6 @@ export const resolve_rate_limiters = (
  * @internal
  */
 export interface ConfigDiagnosticsInput {
-	/** The session cookie overrides, from `AppServerOptions.session_options`. */
-	cookie_options: Partial<SessionCookieOptions> | undefined;
 	/** The `rate_limiters` mode, defaulted. */
 	rate_limiter_mode: RateLimiterMode;
 	/** The resolved limiters, from `resolve_rate_limiters`. */
@@ -712,7 +718,7 @@ export interface ConfigDiagnosticsInput {
 
 /**
  * The config-level diagnostics `create_app_server` appends to the surface's
- * spec-level ones: a weakened session cookie, and an open rate-limited
+ * spec-level ones: an open rate-limited
  * surface — one warning for `'disabled_for_testing'`, otherwise one per
  * explicitly-null limiter, so a deployment that disables login's limiter but
  * keeps signup's reads differently from one that disables both — and a
@@ -724,32 +730,6 @@ export const collect_config_diagnostics = (
 	input: ConfigDiagnosticsInput
 ): Array<AppSurfaceDiagnostic> => {
 	const diagnostics: Array<AppSurfaceDiagnostic> = [];
-	const { cookie_options } = input;
-	if (cookie_options) {
-		if (cookie_options.secure === false) {
-			diagnostics.push({
-				level: 'warning',
-				category: 'security',
-				message: 'Session cookie secure=false — cookies sent over HTTP'
-			});
-		}
-		if (cookie_options.sameSite && cookie_options.sameSite !== session_cookie_options.sameSite) {
-			diagnostics.push({
-				level: 'warning',
-				category: 'security',
-				message: `Session cookie sameSite='${cookie_options.sameSite}' — weakened from default '${
-					session_cookie_options.sameSite
-				}'`
-			});
-		}
-		if (cookie_options.httpOnly === false) {
-			diagnostics.push({
-				level: 'warning',
-				category: 'security',
-				message: 'Session cookie httpOnly=false — cookie accessible to JS'
-			});
-		}
-	}
 	if (input.rate_limiter_mode === 'disabled_for_testing') {
 		// one warning for the mode rather than one per limiter it nulled
 		diagnostics.push({
@@ -861,6 +841,37 @@ const assemble_app_server = async (
 	const { log } = deps;
 
 	// option checks first, before anything is acquired
+	if (!is_cookie_name(options.session_options.cookie_name)) {
+		// a name the `Cookie` grammar cannot carry would be written as a header
+		// that reads back differently — refused here rather than at the first login
+		throw new Error(
+			`create_app_server: session cookie name ${JSON.stringify(
+				options.session_options.cookie_name
+			)} is not an RFC 6265 cookie-name`
+		);
+	}
+	// Mint a sample cookie the way a login does. Options that cannot write one
+	// — an `encode_identity` emitting a character outside the cookie grammar, a
+	// `max_age` that is no whole number of seconds — would otherwise throw at
+	// the first mint, which for bootstrap comes after its one-shot token is
+	// spent.
+	try {
+		format_session_set_cookie(
+			options.session_options.cookie_name,
+			await create_session_cookie_value(
+				deps.keyring,
+				generate_session_token(),
+				options.session_options
+			),
+			options.session_options.max_age ?? SESSION_AGE_MAX
+		);
+	} catch (error) {
+		throw new Error(
+			'create_app_server: session_options cannot mint a session cookie — ' +
+				(error instanceof Error ? error.message : String(error)),
+			{ cause: error }
+		);
+	}
 	if (options.allowed_origins.length === 0) {
 		throw new Error(
 			'create_app_server: allowed_origins is empty — list at least one origin pattern ' +
@@ -1152,7 +1163,6 @@ const assemble_app_server = async (
 
 	// Config-level diagnostics (concatenated after spec-level from generate_app_surface)
 	const config_diagnostics = collect_config_diagnostics({
-		cookie_options: options.session_options.cookie_options,
 		rate_limiter_mode,
 		rate_limiters,
 		max_body_size: options.max_body_size

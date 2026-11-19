@@ -249,6 +249,7 @@ runs cross-process only:
 | `cell_grant_role` | `auth/cell_grant_role_parity.db.test.ts` |
 | `cell_ref_admission` | standalone cases, not the shared suite: `auth/cell_ref_admission{,.fact_less}.db.test.ts` |
 | `cell_relations` | `auth/cell_relations_parity.db.test.ts` |
+| `credential_conformance` | `auth/credential_headers.conformance.test.ts` (TS unit leg) |
 | `identity_parity` | `cross_backend/identity_parity.db.test.ts` |
 | `origin` | `auth/origin_parity.db.test.ts` |
 | `origin_conformance` | `http/origin.conformance.test.ts` (TS unit leg) |
@@ -329,7 +330,11 @@ status, header names and the whole body, so an extra field one spine sends,
 or a body difference on a row pinned by status alone, fails. Tracked
 differences live in `differential_known_divergences.ts`, each with its
 tracking id and the paths it differs at, and the ledger's closing test fails
-on an entry that no longer differs — all under `npm run test:cross:parity`.
+on an entry that no longer differs; and
+`credential_conformance_copies.cross.test.ts` holds
+`credential_conformance.json` byte-equal to the copy the Rust spine's
+`fuz_testing` embeds, failing when the checkout the stub builds from lacks it
+— all under `npm run test:cross:parity`.
 The differential's suite composition is `spine_differential.ts`
 (`describe_spine_differential_suites`), shared with a second dual-spawn
 project: `cross_backend_ts_differential` (`global_setup_ts_differential.ts`

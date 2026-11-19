@@ -37,7 +37,7 @@ import { create_test_app_surface_spec } from '../stubs.ts';
 // Pure path / role / fixture-URL constants live on the hono-free
 // `spine_surface_constants.ts` leaf so cross-process suite modules can import them
 // without dragging this module's eager in-process route handlers
-// (→ `session_middleware` → `hono/cookie`). Import only the constants this
+// (→ `audit_log_routes` → `hono/streaming`). Import only the constants this
 // module uses internally; callers that need a bare constant reach for the leaf.
 import {
 	SPINE_ACCOUNT_PATH_PREFIX,

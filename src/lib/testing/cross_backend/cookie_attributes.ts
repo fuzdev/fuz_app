@@ -14,7 +14,7 @@ import '../assert_dev_env.ts';
  * legitimately differs per request and per impl), so the attribute contract
  * had no cross-backend pin: the TS spine's attributes were covered by
  * `session_cookie.ts`'s own tests, but the Rust spine's `sign_session_cookie`
- * / `clear_session_cookie` strings were asserted nowhere. This suite closes
+ * / `format_session_clear_cookie` strings were asserted nowhere. This suite closes
  * that gap on both impls by parsing the raw `Set-Cookie` and asserting the
  * attributes directly. Three properties:
  *

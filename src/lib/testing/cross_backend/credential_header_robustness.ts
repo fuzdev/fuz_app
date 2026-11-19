@@ -4,44 +4,32 @@ import '../assert_dev_env.ts';
  * Cross-backend **credential-header robustness** probe — the auth sibling of
  * `body_size_smuggling.ts`.
  *
- * The auth middleware reads a single credential per header (`Authorization`,
- * `X-Daemon-Token`). What a *duplicated*, *oversized*, or *control-char-injected*
- * credential header does is framework-territory — Hono reads its headers via the
- * Web `Headers` API, axum via `http::HeaderMap` — and the two could resolve a
- * duplicate differently (first-vs-last), cap header size differently, or parse a
- * malformed value differently. None of that is exercised over `fetch` (the
- * `FetchTransport` can't emit a duplicate or malformed header), so it had no
- * cross-impl pin. This raw-socket suite sends hand-framed requests and asserts
- * the **security invariants that must hold regardless of how each framework
- * resolves the ambiguity** — so it pins a real property without blessing one
- * resolution over the other:
+ * What a *control-char-injected* or *oversized* credential header does is
+ * framework territory — each spine's HTTP parser decides before the spine
+ * reads a byte — so this raw-socket suite asserts the **security invariants
+ * that must hold however the parser resolves it**, without blessing one
+ * resolution:
  *
- * - **a duplicated credential header never escalates** — a request carrying a
- *   valid keeper `X-Daemon-Token` *and* a second, conflicting one must not
- *   perform a keeper operation. The target omits `confirm`, so the documented
- *   confirm guard (`purge_not_confirmed`) makes the honored-token branch a
- *   guaranteed non-2xx with **zero side effect**, and the discarded-token
- *   branch is a non-2xx auth/credential refusal — so whichever copy the
- *   framework picks, the outcome is non-2xx. The same shape with two garbage
- *   `Authorization` headers pins the bearer path can't be escalated either.
  * - **a control-char-injected credential header can't smuggle or authenticate**
  *   — embedded `CRLF` / bare `CR` in the value never frames a second request
  *   (no smuggle) and never authenticates (the truncated / rejected value is no
  *   token).
- * - **no response desync** — each crafted request yields exactly one HTTP
- *   response (a duplicate header that reframed the request would surface as a
- *   second status line, like the body-size smuggling probe).
+ * - **no response desync** — each crafted request yields at most one HTTP
+ *   response.
  * - **an oversized credential header can't wedge the server** — after a request
  *   with a 64 KiB `X-Daemon-Token` (well past both frameworks' header caps), a
  *   subsequent normal request on a fresh connection still gets a response. The
  *   oversized request's own outcome (4xx / 431 / connection close) is
  *   don't-care; surviving it is the property.
  *
- * Raw-socket by necessity (`fetch` can't emit duplicate or malformed headers),
+ * A *duplicated* credential header is not here: both spines discard one, and
+ * the exact outcome — which credential authenticates, one response — is pinned
+ * row by row in `credential_conformance_wire.ts`.
+ *
+ * Raw-socket by necessity (`fetch` can't emit malformed headers),
  * so — like `body_size_smuggling.ts` — this is **cross-process only** and
- * fixture-free: it needs only the base URL, the RPC path, and a valid daemon
- * token (`handle.daemon_token`, read once at spawn and static for the run, the
- * same credential the `_testing_reset` channel uses). Cited property: `docs/security.md`
+ * fixture-free: it needs only the base URL and the RPC path — every
+ * credential it sends is garbage. Cited property: `docs/security.md`
  * §"Credential Type Hierarchy" (a leaked / conflicting credential header can't
  * escalate the credential ceiling) + §"API Token Security" (bearer handling).
  *
@@ -55,18 +43,17 @@ import {
 	raw_http_count_responses,
 	raw_http_exchange,
 	raw_http_first_status,
+	raw_http_request,
 	RAW_HTTP_READ_TIMEOUT_MS
 } from '../transports/raw_http.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
-/** Options for the credential-header robustness probe — needs the raw URL + a valid daemon token. */
+/** Options for the credential-header robustness probe — needs only the raw URL. */
 export interface CredentialHeaderRobustnessCrossTestOptions {
 	/** Base URL the spawned backend is reachable at (e.g. `http://localhost:1178`). */
 	readonly base_url: string;
 	/** RPC endpoint path to target. Default `/api/rpc`. */
 	readonly rpc_path?: string;
-	/** A valid daemon token (keeper) — `handle.daemon_token`. */
-	readonly daemon_token: string;
 }
 
 /** A well-formed UUID that never names a real row. */
@@ -85,8 +72,7 @@ const is_success_status = (status: number): boolean => status >= 200 && status <
 /**
  * Frame a raw HTTP/1.1 POST with the given extra header lines + JSON body.
  * `Connection: close` so the server closes after one response (the response
- * count is then unambiguous). The body is ASCII JSON, so `body.length` is the
- * byte length — no `Buffer` needed.
+ * count is then unambiguous).
  */
 const rpc_post = (
 	host: string,
@@ -94,14 +80,13 @@ const rpc_post = (
 	header_lines: ReadonlyArray<string>,
 	body: string
 ): string =>
-	`POST ${path} HTTP/1.1\r\n` +
-	`Host: ${host}\r\n` +
-	`Content-Type: application/json\r\n` +
-	header_lines.map((h) => `${h}\r\n`).join('') +
-	`Content-Length: ${body.length}\r\n` +
-	`Connection: close\r\n` +
-	`\r\n` +
-	body;
+	raw_http_request({
+		method: 'POST',
+		path,
+		host,
+		header_lines: ['Content-Type: application/json', ...header_lines, 'Connection: close'],
+		body
+	});
 
 /**
  * A keeper-gated `account_purge` body with `confirm` OMITTED — the confirm
@@ -115,60 +100,11 @@ const purge_body = (id: string): string =>
 export const describe_credential_header_robustness_cross_tests = (
 	options: CredentialHeaderRobustnessCrossTestOptions
 ): void => {
-	const { base_url, daemon_token } = options;
+	const { base_url } = options;
 	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
 	const host = new URL(base_url).host;
 
 	describe('credential-header robustness', () => {
-		test('duplicate X-Daemon-Token (valid + conflicting) never escalates → one non-2xx response', async () => {
-			const req = rpc_post(
-				host,
-				rpc_path,
-				[`${DAEMON_TOKEN_HEADER}: ${daemon_token}`, `${DAEMON_TOKEN_HEADER}: ${GARBAGE_TOKEN}`],
-				purge_body('dup-daemon')
-			);
-			const raw = await send_raw(base_url, req);
-			assert.strictEqual(
-				raw_http_count_responses(raw),
-				1,
-				`a duplicated X-Daemon-Token must yield exactly one response (no desync). Raw head: ${raw.slice(
-					0,
-					120
-				)}`
-			);
-			const status = raw_http_first_status(raw);
-			assert.ok(status !== null, `expected an HTTP response. Raw head: ${raw.slice(0, 120)}`);
-			assert.ok(
-				!is_success_status(status),
-				`a duplicated daemon token must not perform a keeper operation; whichever copy wins, ` +
-					`the result must be non-2xx (got ${status})`
-			);
-		});
-
-		test('duplicate Authorization bearer headers (both garbage) do not authenticate → one non-2xx response', async () => {
-			const req = rpc_post(
-				host,
-				rpc_path,
-				[`Authorization: Bearer ${GARBAGE_TOKEN}`, `Authorization: Bearer ${GARBAGE_TOKEN}-2`],
-				purge_body('dup-bearer')
-			);
-			const raw = await send_raw(base_url, req);
-			assert.strictEqual(
-				raw_http_count_responses(raw),
-				1,
-				`duplicate Authorization headers must yield exactly one response (no desync). Raw head: ${raw.slice(
-					0,
-					120
-				)}`
-			);
-			const status = raw_http_first_status(raw);
-			assert.ok(status !== null, `expected an HTTP response. Raw head: ${raw.slice(0, 120)}`);
-			assert.ok(
-				!is_success_status(status),
-				`garbage bearer tokens (even duplicated) must not authenticate (got ${status})`
-			);
-		});
-
 		test('control-char-injected credential header (CR/LF) cannot smuggle or authenticate', async () => {
 			// Embedded CRLF and a bare CR (header-splitting attempts) in a garbage
 			// `X-Daemon-Token` value. A strict HTTP parser rejects the request

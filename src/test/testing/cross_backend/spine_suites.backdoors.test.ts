@@ -30,7 +30,12 @@ vi.mock('#lib/testing/cross_backend/testing_backdoor.ts', async (import_original
 }));
 
 /** The suites that skip themselves on a backend declaring only the shared backdoors. */
-const SELF_SKIPPING = ['credential_deadline', 'origin_conformance', 'ws_outbound_overflow'];
+const SELF_SKIPPING = [
+	'credential_conformance',
+	'credential_deadline',
+	'origin_conformance',
+	'ws_outbound_overflow'
+];
 
 const capabilities = {
 	ws: false,
@@ -60,6 +65,7 @@ describe('a backend declaring only the shared backdoors', () => {
 		assert.ok(skipped?.type === 'suite');
 		const names = skipped.tasks.map((t) => t.name);
 		for (const [name, backdoor] of [
+			['credential_conformance', '_testing_credential_read'],
 			['credential_deadline', '_testing_shorten_credential_expiry'],
 			['origin_conformance', '_testing_origin_check'],
 			['ws_outbound_overflow', '_testing_flood_notifications']

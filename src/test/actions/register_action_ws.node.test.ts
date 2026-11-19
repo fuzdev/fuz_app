@@ -33,6 +33,8 @@ import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import type { ConnectionRegistry } from '#lib/actions/connection_registry.ts';
 import { WS_CLOSE_CONNECTION_LIMIT, WS_CLOSE_SESSION_REVOKED } from '#lib/actions/transports.ts';
 import { REQUEST_CONTEXT_KEY } from '#lib/auth/request_context.ts';
+import { create_session_config } from '#lib/auth/session_cookie.ts';
+import { create_session_middleware } from '#lib/auth/session_middleware.ts';
 import {
 	RESOLVED_AUTH_KEY,
 	TEST_CONTEXT_PRESET,
@@ -42,13 +44,23 @@ import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
 import { create_test_account } from '#lib/testing/entities.ts';
 import { create_stub_db } from '#lib/testing/stubs.ts';
 import {
+	raw_http_exchange,
+	raw_http_header_values,
+	raw_http_parse_response,
+	raw_http_request,
+	RAW_HTTP_READ_TIMEOUT_MS
+} from '#lib/testing/transports/raw_http.ts';
+import {
 	connect_raw_ws,
 	is_raw_ws_close,
 	raw_ws_close_code,
 	RAW_WS_OPCODE_TEXT,
+	RAW_WS_UPGRADE_HEADERS,
 	type RawWsClient,
 	type RawWsFrame
 } from '#lib/testing/transports/ws_raw_client.ts';
+
+import { create_test_keyring } from '../auth/session_test_helpers.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -86,8 +98,25 @@ interface TestServer {
 	close: () => Promise<void>;
 }
 
-const start_server = async (max_connections_per_account?: number): Promise<TestServer> => {
+const session_options = create_session_config('test_session');
+
+/**
+ * `session_middleware` mounts the session middleware on every path, ahead of
+ * the pre-baked credential, with a layer outside it that marks every response
+ * on the way out.
+ */
+const start_server = async (
+	max_connections_per_account?: number,
+	session_middleware = false
+): Promise<TestServer> => {
 	const app = new Hono();
+	if (session_middleware) {
+		app.use('*', async (c, next) => {
+			await next();
+			c.res.headers.set('X-Outbound-Probe', '1');
+		});
+		app.use('*', create_session_middleware(create_test_keyring(), session_options));
+	}
 	// Stand in for the auth middleware chain: a session credential on one
 	// account, pre-baked (no database behind this test).
 	app.use('/ws', async (c, next) => {
@@ -240,5 +269,54 @@ describe('register_action_ws on Node — a client that withholds its close frame
 		await settle();
 
 		assert.deepStrictEqual(server.recorded, ['oldest, before eviction', 'newest']);
+	});
+});
+
+describe('register_action_ws on Node — the session cookie clear on an upgrade', () => {
+	const CLEAR = 'test_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0';
+	const STALE_COOKIE_LINE = 'Cookie: test_session=stale.invalidsignature';
+	const clients: Array<RawWsClient> = [];
+	let server: TestServer | null = null;
+
+	afterEach(async () => {
+		for (const client of clients.splice(0)) client.destroy();
+		await server?.close();
+		server = null;
+	});
+
+	test('an accepted upgrade carries no clear, though the adapter copies response headers onto its 101', async () => {
+		server = await start_server(undefined, true);
+		const client = await connect_raw_ws({
+			port: server.port,
+			path: '/ws',
+			header_lines: [STALE_COOKIE_LINE]
+		});
+		clients.push(client);
+		// what a layer writes onto the placeholder response reaches the client
+		assert.deepStrictEqual(raw_http_header_values(client.handshake, 'x-outbound-probe'), ['1']);
+		assert.deepStrictEqual(raw_http_header_values(client.handshake, 'set-cookie'), []);
+		// and the socket is live
+		client.send_text(record_request(1, 'after the upgrade'));
+		await client.wait_for(is_response_to(1));
+	});
+
+	test('a refused upgrade carries the clear', async () => {
+		server = await start_server(undefined, true);
+		const host = `127.0.0.1:${server.port}`;
+		const { received } = await raw_http_exchange(
+			`http://${host}`,
+			raw_http_request({
+				method: 'GET',
+				path: '/unrouted',
+				host,
+				header_lines: [
+					...Object.entries(RAW_WS_UPGRADE_HEADERS).map(([name, value]) => `${name}: ${value}`),
+					STALE_COOKIE_LINE
+				]
+			}),
+			{ read_timeout_ms: RAW_HTTP_READ_TIMEOUT_MS, until: 'response' }
+		);
+		assert.strictEqual(raw_http_parse_response(received)?.status, 404);
+		assert.deepStrictEqual(raw_http_header_values(received, 'set-cookie'), [CLEAR]);
 	});
 });

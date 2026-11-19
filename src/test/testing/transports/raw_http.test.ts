@@ -7,7 +7,9 @@ import {
 	raw_http_count_responses,
 	raw_http_exchange,
 	raw_http_first_status,
+	raw_http_header_values,
 	raw_http_parse_response,
+	raw_http_request,
 	raw_http_send_head
 } from '#lib/testing/transports/raw_http.ts';
 
@@ -58,6 +60,64 @@ describe('raw_http_parse_response', () => {
 		assert.ok(response);
 		assert.strictEqual(response.status, 200);
 		assert.strictEqual(response.body, 'partial');
+	});
+});
+
+describe('raw_http_request', () => {
+	test('writes the request line, Host, the lines in order, and the blank line', () => {
+		assert.strictEqual(
+			raw_http_request({
+				method: 'GET',
+				path: '/api/x',
+				host: 'localhost:1',
+				header_lines: ['Cookie: a=1', 'Cookie: b=2', 'Connection: close']
+			}),
+			'GET /api/x HTTP/1.1\r\nHost: localhost:1\r\nCookie: a=1\r\nCookie: b=2\r\nConnection: close\r\n\r\n'
+		);
+	});
+
+	test('a body gets its Content-Length after the lines; an empty one a zero', () => {
+		assert.strictEqual(
+			raw_http_request({
+				method: 'POST',
+				path: '/p',
+				host: 'h',
+				header_lines: ['Content-Type: application/json'],
+				body: '{"a":1}'
+			}),
+			'POST /p HTTP/1.1\r\nHost: h\r\nContent-Type: application/json\r\nContent-Length: 7\r\n\r\n{"a":1}'
+		);
+		assert.strictEqual(
+			raw_http_request({ method: 'POST', path: '/p', host: 'h', header_lines: [], body: '' }),
+			'POST /p HTTP/1.1\r\nHost: h\r\nContent-Length: 0\r\n\r\n'
+		);
+	});
+});
+
+describe('raw_http_header_values', () => {
+	const RESPONSE =
+		'HTTP/1.1 200 OK\r\n' +
+		'Set-Cookie: s=; Max-Age=0\r\n' +
+		'content-type: application/json\r\n' +
+		'set-cookie:  s=new; Max-Age=60 \r\n' +
+		'Content-Length: 22\r\n' +
+		'\r\n' +
+		'Set-Cookie: in-a-body\n';
+
+	test('every value of the header, in order, whatever the name case', () => {
+		assert.deepStrictEqual(raw_http_header_values(RESPONSE, 'set-cookie'), [
+			's=; Max-Age=0',
+			's=new; Max-Age=60'
+		]);
+		assert.deepStrictEqual(raw_http_header_values(RESPONSE, 'Content-Type'), ['application/json']);
+	});
+
+	test('nothing from the body, an absent header, or an incomplete head', () => {
+		assert.deepStrictEqual(raw_http_header_values(RESPONSE, 'x-absent'), []);
+		assert.deepStrictEqual(
+			raw_http_header_values('HTTP/1.1 200 OK\r\nSet-Cookie: a=1\r\n', 'set-cookie'),
+			[]
+		);
 	});
 });
 

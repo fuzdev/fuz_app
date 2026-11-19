@@ -60,6 +60,17 @@ Session cookies and API tokens can grant admin-level access. Only a daemon token
 — which requires local filesystem access — can reach keeper-level operations
 (role_grant management, audit, bootstrap recovery).
 
+Each credential has one accepted spelling in its header, read by one strict
+reader per spine (`auth/credential_headers.ts`, the Rust
+`fuz_auth::credential_headers`) and held to one table of raw header lines,
+`testing/cross_backend/credential_conformance.json`. A value reads exactly or
+it is not that credential — nothing is decoded, unquoted, or repaired, since a
+lenient side would authenticate a request the other refuses. An
+`Authorization` or `X-Daemon-Token` header sent on two lines is discarded,
+never resolved to one of them, and the request continues without that
+credential; `Cookie` lines read as one header, joined with `; `, which is what
+an HTTP/2 client's split cookie means.
+
 ### Credential-channel gating
 
 Ten endpoints declare `credential_types: ['session']` on their `auth`
@@ -211,8 +222,37 @@ legitimate operator.
 
 ## Session Security
 
-- **Cookie attributes**: `HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/` —
-  regression-tested (a cookie attribute change fails the test suite)
+- **Cookie attributes**: `Path=/; HttpOnly; Secure; SameSite=Strict`, fixed —
+  no option weakens them, and both spines write the same `Set-Cookie` string,
+  attribute order included (`SESSION_COOKIE_ATTRIBUTES`, pinned by exact-string
+  tests on each)
+- **One spelling on the wire**: the cookie value is written raw, never
+  percent-encoded, and read back verbatim from the `Cookie` header — the first
+  `name=` pair of the header's lines (several lines read as their `; ` join),
+  each pair stripped of SP and HTAB only. Nothing is percent-decoded or
+  unquoted, and an invalid first pair is not skipped for a later one, so a
+  request authenticates on one spine exactly when it does on the other. The
+  mint refuses a name or value outside RFC 6265 instead of writing a header
+  that would read back differently
+- **An invalid cookie is cleared**: a session cookie that is present and does
+  not verify — malformed, a bad MAC, its signed expiry passed, an empty value
+  — is answered with a clearing `Set-Cookie` on any `/api` response past the
+  body cap and the host and origin gates, never an accepted WebSocket
+  upgrade, whichever credential authenticates the request, and ahead of a
+  `Set-Cookie` the handler appends, so a login carrying a stale cookie keeps
+  its new session. A cookie
+  that verifies but names no live session row is not cleared: the cookie
+  alone doesn't show it, so revoking a session leaves the browser's cookie in
+  place until it expires or a new login replaces it — a logout needs a live
+  session, so it answers 401 and clears nothing. The scope is each spine's
+  router's reading of the path, and the two differ on spellings a browser
+  never sends (`/%61pi/x` clears on the TS spine only, `/api/../health` on the
+  Rust spine only). On the TS spine the clear rides the response the
+  framework builds: a handler that returns a `Response` it built by hand
+  answers without one — the middleware does not rewrite a handler's response
+  — and so does a handler that sets `Set-Cookie` without appending, which
+  replaces the clear; the next ordinary `/api` response carries it. The Rust spine clears
+  every such response
 - **Server-side sessions**: Cookie contains a signed opaque ID (HMAC-SHA256);
   session data is DB-resident, stored as a blake3 hash
 - **Absolute lifetime**: 30-day hard cap, set once at mint on both layers —
@@ -263,6 +303,9 @@ accepted spelling, on both spines.
 
 - **Secret scanning prefix**: `secret_fuz_token_` triggers automatic secret
   scanner detection
+- **One line, exact shape**: `Authorization` must be a single line — `Bearer`
+  in any case, one space, the prefix and 43 base64url characters. Anything
+  else is no credential and costs no database lookup
 - **Blake3-hashed server-side**: Raw token is never stored — only the hash
 - **Required lifetime at mint**: `account_token_create` takes a required
   `lifetime` union — `{kind:'eternal'}` or `{kind:'ttl', days}` — with
@@ -476,6 +519,10 @@ Rotating filesystem credential for keeper-level operations:
   - `require_role(['keeper'])`) and the RPC dispatcher's post-authorization
     auth gate (`check_action_auth_post_authorization`, JSON-RPC endpoints)
     check **both**: daemon token credential type AND an active keeper role_grant
+- **One line, exact shape**: the header must be a single line holding 43
+  base64url characters, checked before the constant-time compare on both
+  spines. A value of any other shape, and an `X-Daemon-Token` sent on two
+  lines, is discarded — the request continues without the credential
 - **Browser context discard**: like bearer tokens, daemon tokens are silently
   discarded when `Origin` or `Referer` is present — the middleware calls
   `next()` without setting a context. Daemon tokens are loopback-only and never
@@ -494,7 +541,7 @@ live as `_testing_*` RPC actions
 `_testing_drain_effects`, `_testing_flood_notifications`,
 `_testing_schema_snapshot`, `_testing_migration_tracker`,
 `_testing_action_manifest`, `_testing_origin_check`,
-`_testing_shorten_credential_expiry`)
+`_testing_credential_read`, `_testing_shorten_credential_expiry`)
 that a consumer's **test
 binary** appends to its RPC endpoint at assembly time (fuz_app's own spine
 binary, like the Rust stub, also serves them on its WS endpoint, behind the

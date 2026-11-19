@@ -76,7 +76,14 @@ export interface RustSpineGlobalSetupOptions extends RustSpineRebuildOptions {
 	readonly database_url?: string | null;
 }
 
-const resolve_workspace_dir = (override: string | undefined): string =>
+/**
+ * The Cargo workspace the Rust spine stub is built from:
+ * `$FUZ_RUST_SPINE_STUB_WORKSPACE_DIR`, else a `fuz` checkout beside this one
+ * (`~/dev/fuz`).
+ *
+ * @param override - a workspace directory that takes precedence over both
+ */
+export const resolve_rust_spine_stub_workspace_dir = (override?: string): string =>
 	override ?? process.env[RUST_WORKSPACE_DIR_ENV] ?? join(homedir(), 'dev', 'fuz');
 
 /**
@@ -142,7 +149,7 @@ export const rebuild_rust_spine_stub = (options: RustSpineRebuildOptions): void 
 	const pinned = process.env[RUST_SPINE_STUB_BIN_ENV];
 	// a pinned binary and no rebuild: nothing to build or resolve
 	if (pinned != null && !rebuild) return;
-	const workspace_dir = resolve_workspace_dir(options.workspace_dir);
+	const workspace_dir = resolve_rust_spine_stub_workspace_dir(options.workspace_dir);
 	assert_workspace_dir(workspace_dir);
 	const built = prepare_cargo_binary({
 		workspace_dir,

@@ -102,14 +102,17 @@ type DualSpawnProject = CrossBackendProjectOptions & { name: CrossProjectName };
 const DUAL_SPAWN_PROJECTS: ReadonlyArray<DualSpawnProject> = [
 	// One dual-spawn serves the parity gates: schema parity (live DDL),
 	// action-manifest parity (live RPC method set + auth), and the differential
-	// (every conformance case sent to both, the answers compared).
+	// (every conformance case sent to both, the answers compared). The copy
+	// check of the credential conformance table rides here too: it reads the
+	// Rust checkout the stub was built from.
 	{
 		name: 'cross_backend_parity',
 		global_setup: './src/test/cross_backend/global_setup_schema_parity.ts',
 		include: [
 			'src/test/cross_backend/schema_parity.cross.test.ts',
 			'src/test/cross_backend/action_manifest_parity.cross.test.ts',
-			'src/test/cross_backend/differential.cross.test.ts'
+			'src/test/cross_backend/differential.cross.test.ts',
+			'src/test/cross_backend/credential_conformance_copies.cross.test.ts'
 		]
 	},
 	// The security gates spawn both backends with the login and action limiters

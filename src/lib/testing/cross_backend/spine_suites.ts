@@ -56,8 +56,9 @@ import '../assert_dev_env.ts';
  * `SPINE_SUITES_REQUIRED_BACKDOORS` (the per-test reset and the audit
  * barrier), `_testing_put_fact` when it declares `fact_serving`, and
  * `_testing_room_evict` when it declares `rooms`; the call throws otherwise. A
- * suite every case of which drives another backdoor (`credential_deadline`,
- * `origin_conformance`, `ws_outbound_overflow`) skips itself on a backend not
+ * suite every case of which drives another backdoor (`credential_conformance`,
+ * `credential_deadline`, `origin_conformance`, `ws_outbound_overflow`) skips
+ * itself on a backend not
  * declaring it, shown like an exclude with a reason
  * naming the backdoor — so an exclude, override or `exclude_cases` entry for
  * it is refused as dead.
@@ -130,6 +131,17 @@ import {
 	describe_credential_deadline_cross_tests,
 	type CredentialDeadlineCrossTestOptions
 } from './credential_deadline.ts';
+import {
+	describe_credential_conformance_cross_tests,
+	type CredentialConformanceCrossTestOptions
+} from './credential_conformance.ts';
+import {
+	CREDENTIAL_BEARER_ACCOUNT_USERNAME,
+	CREDENTIAL_SESSION_ACCOUNT_PASSWORD,
+	CREDENTIAL_SESSION_ACCOUNT_USERNAME,
+	describe_credential_conformance_wire_cross_tests,
+	type CredentialConformanceWireCrossTestOptions
+} from './credential_conformance_wire.ts';
 import {
 	describe_credential_header_robustness_cross_tests,
 	type CredentialHeaderRobustnessCrossTestOptions
@@ -278,6 +290,8 @@ export const SUITE_NAMES = [
 	'cell_ref_admission',
 	'cell_relations',
 	'cookie_attributes',
+	'credential_conformance',
+	'credential_conformance_wire',
 	'credential_deadline',
 	'credential_header_robustness',
 	'fact_serving',
@@ -360,6 +374,8 @@ export interface SuiteOptionsMap {
 	cell_ref_admission: RpcPathCapabilityGatedCrossSuiteOptions;
 	cell_relations: RpcPathCapabilityGatedCrossSuiteOptions;
 	cookie_attributes: CookieAttributesCrossTestOptions;
+	credential_conformance: CredentialConformanceCrossTestOptions;
+	credential_conformance_wire: CredentialConformanceWireCrossTestOptions;
 	credential_deadline: CredentialDeadlineCrossTestOptions;
 	credential_header_robustness: CredentialHeaderRobustnessCrossTestOptions;
 	fact_serving: FactServingCrossTestOptions;
@@ -683,14 +699,67 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 		required: { setup_test: true, capabilities: true, base_url: true, ws_path: true },
 		backdoors: ['_testing_shorten_credential_expiry']
 	},
+	credential_conformance: {
+		derive: (c) => ({
+			setup_test: c.setup(),
+			cookie_name: c.config.cookie_name,
+			cookie_keys: c.handle.config.env.SECRET_FUZ_COOKIE_KEYS ?? '',
+			daemon_token: c.handle.daemon_token,
+			rpc_path: c.config.rpc_path
+		}),
+		describe: describe_credential_conformance_cross_tests,
+		required: { setup_test: true, cookie_name: true, cookie_keys: true, daemon_token: true },
+		backdoors: ['_testing_credential_read']
+	},
+	credential_conformance_wire: {
+		// the session and the API token on accounts of their own, so the account
+		// a request authenticates as says which credential did; `ws_required_roles`
+		// lets each of them, and the keeper behind the daemon token, open a
+		// socket where the upgrade is role-gated
+		derive: (c) => ({
+			setup_test: c.setup({
+				// the daemon token is the keeper's, which holds the builtin roles already
+				extra_keeper_roles: (c.options.ws_required_roles ?? []).filter(
+					(role) => role !== ROLE_KEEPER && role !== ROLE_ADMIN
+				),
+				extra_accounts: [
+					{
+						username: CREDENTIAL_SESSION_ACCOUNT_USERNAME,
+						// the login case signs in as it
+						password_value: CREDENTIAL_SESSION_ACCOUNT_PASSWORD,
+						roles: [...(c.options.ws_required_roles ?? [])]
+					},
+					{
+						username: CREDENTIAL_BEARER_ACCOUNT_USERNAME,
+						roles: [...(c.options.ws_required_roles ?? [])]
+					}
+				]
+			}),
+			capabilities: c.config.capabilities,
+			base_url: c.config.base_url,
+			cookie_name: c.config.cookie_name,
+			cookie_keys: c.handle.config.env.SECRET_FUZ_COOKIE_KEYS ?? '',
+			daemon_token: c.handle.daemon_token,
+			rpc_path: c.config.rpc_path,
+			ws_path: c.config.ws_path
+		}),
+		describe: describe_credential_conformance_wire_cross_tests,
+		required: {
+			setup_test: true,
+			capabilities: true,
+			base_url: true,
+			cookie_name: true,
+			cookie_keys: true,
+			daemon_token: true
+		}
+	},
 	credential_header_robustness: {
 		derive: (c) => ({
 			base_url: c.config.base_url,
-			rpc_path: c.config.rpc_path,
-			daemon_token: c.handle.daemon_token
+			rpc_path: c.config.rpc_path
 		}),
 		describe: describe_credential_header_robustness_cross_tests,
-		required: { base_url: true, daemon_token: true }
+		required: { base_url: true }
 	},
 	fact_serving: {
 		// the multi-actor setup reaches the fallthrough a single-actor keeper can't

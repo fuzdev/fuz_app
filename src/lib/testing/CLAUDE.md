@@ -33,7 +33,7 @@ time (never runtime), where a throwing guard would break `vite build`.
 - `stub_handler()` — a fresh `Response('stub')` as a `route_raw` result, a handler that fits any route (`attach_route_handler(shape, stub_handler)`).
 - `stub_route_spec(shape)` — a spec for a surface that is described and never served: `shape` with a handler that throws when run (the spine routes of `create_rust_spine_consumer_surface_spec`).
 - `stub_mw` — pass-through middleware (`async (_c, next) => next()`).
-- `create_stub_app_deps()` — factory: fresh `AppDeps` with no-op keyring/password/`delete_file`, a `read_secure_file` that throws ENOENT (the no-token-file state), a `create_noop_stub` DB, silent `Logger`, no-op `audit`, an empty `connection_closer`.
+- `create_stub_app_deps()` — factory: fresh `AppDeps` with a stub keyring (`sign` answers `<value>.stub_signature`, so an assembly's sample cookie mint runs; nothing else of it does anything), no-op password/`delete_file`, a `read_secure_file` that throws ENOENT (the no-token-file state), a `create_noop_stub` DB, silent `Logger`, no-op `audit`, an empty `connection_closer`.
 - `create_test_audit_emitter()` — no-op `AuditEmitter`; `emit` / `emit_role_grant_target` / `emit_pool` resolve immediately, `notify` no-op, `add_listener` throws (use `create_recording_audit_emitter` for a listener-accepting emitter), `listener_count` returns 0, `drain_inflight` resolves immediately, `is_tracking_inflight` returns `false`.
 - `create_stub_audit_sse()` — no-op `AuditLogSse` for surface-test wiring without booting real SSE. `on_audit_event` no-op (nothing is broadcast); `required_role` is `admin`; `registry` is a fresh `SseRegistry` (live `.count` / `.close_*` for registry-state tests, isolated per call). For real SSE plumbing build via `create_audit_log_sse` against `create_test_app`.
 - `create_stub_api_middleware({include_daemon_token?, origin_carve_outs?})` — stub `MiddlewareSpec[]` matching `create_auth_middleware_specs`'s output (origin, optional daemon_token, session, request_context, bearer_auth) for surface generation without booting real auth — the same names, paths, order, and declared `errors` (`origin` declares a 403; `bearer_auth` and `daemon_token` declare none, since both soft-fail through `next()`), pinned against the real factory by `auth/middleware.mounted.test.ts`. The surface merges middleware errors into every route under the path, so a stub declaring more would widen the test surface with statuses the live server never returns. Each spec gets its own pass-through handler (not the shared `stub_mw`), so `assert_middleware_stack_mounted` tells the layers apart. See `auth/CLAUDE.md` §Middleware for the real stack.
@@ -849,7 +849,7 @@ these thematic areas:
 
 1. Login/logout lifecycle
 2. Login response body (strict schema)
-3. Cookie attributes (HttpOnly, Secure-in-prod, SameSite)
+3. Cookie attributes (HttpOnly, Secure, SameSite, Path)
 4. Session security (tampering, forgery)
 5. Session revocation (self + revoke-all)
 6. Password change (revokes all sessions + API tokens)
@@ -1354,6 +1354,7 @@ here never reaches it.
   `_testing_room_evict` when `rooms` is; the call throws otherwise. A suite
   every case of which drives another backdoor (`SuiteEntry.backdoors`:
   `credential_deadline` → `_testing_shorten_credential_expiry`,
+  `credential_conformance` → `_testing_credential_read`,
   `origin_conformance` → `_testing_origin_check`, `ws_outbound_overflow` →
   `_testing_flood_notifications`) skips itself on a backend not declaring it,
   as a skipped test beside the excludes whose reason names the backdoor; an
@@ -1399,7 +1400,8 @@ here never reaches it.
   role-gated WS endpoint and its roles) default to the `SPINE_*` constants —
   a suite whose flag is off never reads them, and a backend mounting its own
   overrides them. Anything else comes from the config when it can
-  (`session_cookie_codec`'s `cookie_keys` from `SECRET_FUZ_COOKIE_KEYS`), else
+  (the `cookie_keys` of `session_cookie_codec` and the two
+  credential conformance suites, from `SECRET_FUZ_COOKIE_KEYS`), else
   from `overrides`; with neither, the call throws naming the suite and the
   field — provide it or exclude the suite.
 
@@ -1651,7 +1653,9 @@ without.
 | `cell_relations` | grant / field / item / clone / audit verbs, the relation-read visibility filter (a child the reader can't view is absent, never an edge), a clone dropping children its cloner can't view | `cell_relations` |
 | `cookie_attributes` | the session `Set-Cookie`: `HttpOnly; Secure; SameSite=Strict; Path=/` + `Max-Age` on login, none on a failed login, `Max-Age=0` with the same flags on logout | — |
 | `credential_deadline` | a socket on a session or an API token closes with `WS_CLOSE_SESSION_REVOKED` "Credential expired" at its credential's expiry; an audit stream on a session ends there | `ws`, `sse`; `_testing_shorten_credential_expiry` |
-| `credential_header_robustness` | raw socket: a duplicated, oversized, or control-character credential header never escalates, smuggles a request, desyncs, or wedges the server | — |
+| `credential_conformance` | every row of `credential_conformance.json` through `_testing_credential_read`: how the backend reads the session cookie, the bearer and the daemon token out of a request's header lines, and the lines it refuses as no header lines | `_testing_credential_read` |
+| `credential_conformance_wire` | raw socket: each row's header lines sent as an RPC `POST` and as a WebSocket upgrade — which credential authenticated (the account `account_verify` answers) and the exact clearing `Set-Cookie`, or none; the clear's scope, its order ahead of a login's new cookie, and a minted cookie authenticating as sent | `ws` (the upgrade leg; with `ws_account_actions` an accepted upgrade also answers `account_verify` on the socket, naming the credential) |
+| `credential_header_robustness` | raw socket: an oversized or control-character credential header never escalates, smuggles a request, desyncs, or wedges the server (a duplicated one is `credential_conformance_wire`'s) | — |
 | `fact_serving` | `GET /api/cells/:cell_id/facts/:hash` per reference, the hardening headers, bodyless masked 404s; the admin-only `GET /api/facts/:hash` | `fact_serving` (bare-hash cases also `fact_serving_admin_hash`) |
 | `identity_parity` | `Username` / `UsernameProvided` / `Email` end to end: login canonicalization, username-or-email login, login input validation, ASCII-only creation, the `USERNAME_LENGTH_MIN`..`USERNAME_LENGTH_MAX` edges, email format — each by error reason | — |
 | `origin` | an absent `Origin` on `/api` passes (the foreign-`Origin` 403 is `transport_composition`'s) | — |
@@ -1740,7 +1744,25 @@ What the suites share:
   spine binaries mount, each the twin of the Rust stub's. A suite gated on
   `cell_gated_create` or `rooms` assumes them, which is why those flags are
   cross-only.
-- **Shared fixtures** — `cross_backend/origin_conformance.json` is the
+- **Shared fixtures** — `cross_backend/credential_conformance.json` is the
+  statement of how both spines read the three credential headers: read rows
+  (`{name, lines, read, authenticates, clears_session_cookie}` — raw header
+  lines, a name repeating where a row sends one twice, each leg's reading, and
+  what a request carrying them does) and refused rows (lines the action
+  refuses: no header line, or past its line and line-count caps). A line is bytes, one per character, and live values are
+  `{placeholders}` each leg fills from its own keyring and credentials
+  (`build_credential_conformance_placeholders`). No generator: edit the JSON
+  by hand and copy the file over the other copy — the parity project fails
+  unless the two are byte-identical. Keep it pure ASCII and tab-indented: a
+  byte above `0x7E` or a control character is written as an escape
+  (`\u00a0`, `\t`), since a raw U+00A0 or U+0085 is invisible in a diff:
+  `load_credential_conformance()`,
+  `to_credential_conformance_checks(table, placeholders)`,
+  `assert_credential_conformance(...)`. Its legs: the TS unit leg
+  through the action's input schema and `run_testing_credential_read`, the Rust unit leg in `fuz_testing`
+  over a byte-identical copy it embeds, `_testing_credential_read` over the
+  wire, and the raw-socket suite — and fuz_app's parity project holds the two
+  copies byte-equal. `cross_backend/origin_conformance.json` is the
   statement of the origin allowlist grammar and matcher (parse, host, and match
   rows; edited by hand, never generated): `load_origin_conformance()`,
   `to_origin_conformance_checks(table)`, `assert_origin_conformance(...)`, run
@@ -1843,7 +1865,8 @@ Conventions that hold across them:
   satisfying `RpcTestTransport`. Carries a name-keyed cookie jar that
   updates on every response's `Set-Cookie` and re-sends on every request;
   `Origin` defaults to `base_url` (`origin: null` disables for bearer-only
-  paths). Exposes `cookies()` so `ws_transport` can thread the session
+  paths). A cookie cleared with `Max-Age` of zero or less leaves the jar, as
+  it leaves a browser's. Exposes `cookies()` so `ws_transport` can thread the session
   cookie onto the WS upgrade.
 - `testing/transports/bootstrap.ts` — stateless `bootstrap({transport, config})`
   POSTs `/api/account/bootstrap` against the running binary, parses the
@@ -1889,7 +1912,7 @@ Conventions that hold across them:
   as the `Origin` — through `create_admitted_ws_transport` when `admitted`,
   `create_ws_transport` otherwise. The cookie is the account's static one, so
   a session rotated through `fixture.transport` upgrades stale.
-- `testing/transports/ws_raw_client.ts` — `connect_raw_ws({port, hostname?, path, headers?, pipelined?})`
+- `testing/transports/ws_raw_client.ts` — `connect_raw_ws({port, hostname?, path, headers?, header_lines?, pipelined?})`
   → `RawWsClient` (`{frames, send_text, wait_for, destroy}`), a WebSocket client
   over a raw `node:net` socket for the two things a client library can't do:
   **withhold the close frame** (it never answers one) and put frames in the
@@ -1913,6 +1936,10 @@ Conventions that hold across them:
   framed body are whole), `raw_http_count_responses` (unanchored status-line
   count, so a response concatenated after a body is seen),
   `raw_http_first_status`, `raw_http_header_lines` (headers as CRLF lines),
+  `raw_http_request` (a whole request framed from an array of header lines,
+  written as given, so a name can repeat), `raw_http_header_values` (every
+  value of one response header, in order — the parsed response keeps only the
+  last, which loses all but one `Set-Cookie`),
   `raw_http_parse_json` (a body's JSON, `undefined` when it isn't), and
   `RAW_HTTP_READ_TIMEOUT_MS`, the suites' default read window.
   `raw_http_send_head(base_url, {method?, path, headers, content_length,
@@ -2031,6 +2058,23 @@ Conventions that hold across them:
   mount the mirror (`fuz_testing::create_testing_origin_check_action_spec`)
   keeps an exact action-manifest gate; the spine binary appends it in
   `build_full_spine_rpc_actions`.
+
+  In the hono-free sibling `testing/cross_backend/testing_credential_read.ts`,
+  also **not** bundled: `_testing_credential_read`
+  (`create_testing_credential_read_action(deps)`,
+  `run_testing_credential_read(input, deps)`, `TestingCredentialReadInput` /
+  `TestingCredentialReadOutput`) — reads a list of raw header lines as the
+  credential legs would: `{session_cookie: 'absent' | 'invalid' | 'valid',
+  bearer_token, daemon_token}`, the tokens as read or `null`. Pure: it runs
+  the readers of `auth/credential_headers.ts` and the cookie verify, no
+  database, and never the request's own headers. `lines` is capped
+  (`TESTING_CREDENTIAL_READ_LINES_MAX` lines of at most
+  `TESTING_CREDENTIAL_READ_LINE_LENGTH_MAX` characters, the same bounds on
+  the Rust mirror), and every refusal of it — over a cap, or a line that is no
+  header line: a control byte, DEL, a character above U+00FF, no `:` — is
+  `invalid_params` with `ERROR_TESTING_CREDENTIAL_READ_LINE`. Appended in
+  `build_full_spine_rpc_actions`; the Rust mirror is
+  `fuz_testing::create_testing_credential_read_action_spec`.
 
   Back in `testing_reset_actions.ts`, also **not** bundled:
   `_testing_shorten_credential_expiry`

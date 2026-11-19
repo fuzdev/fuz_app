@@ -17,16 +17,16 @@
 import { DEV } from 'esm-env';
 import type { MiddlewareHandler } from 'hono';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
-import { is } from '@fuzdev/fuz_schema/schema.ts';
 
 import { RESOLVED_AUTH_KEY } from '../hono_context.ts';
 import { get_resolved_auth } from './resolved_auth.ts';
+import { get_header_lines } from '../http/header_lines.ts';
 import { is_browser_context } from '../http/origin.ts';
 import { query_role_grant_find_account_id_for_role } from './role_grant_queries.ts';
 import type { QueryDeps } from '../db/query_deps.ts';
 import { ROLE_KEEPER } from './role_schema.ts';
+import { read_daemon_token } from './credential_headers.ts';
 import {
-	DaemonToken,
 	DAEMON_TOKEN_HEADER,
 	validate_daemon_token,
 	type DaemonTokenState
@@ -59,19 +59,18 @@ export const resolve_keeper_account_id = async (deps: QueryDeps): Promise<string
  * `RESOLVED_AUTH_KEY` on entry, so a layer mounted before the credential legs
  * cannot pre-set an identity that every leg would then skip past.
  *
- * Checks the `X-Daemon-Token` header. Behavior:
- * - No header: pass through.
- * - Header present + `Origin` / `Referer` present: discard the credential
+ * Reads the `X-Daemon-Token` header's lines through `read_daemon_token`.
+ * Behavior:
+ * - No header, a malformed value (fails `is_daemon_token_shaped`), or the
+ *   header sent as more than one line: soft-fail discard (pass through, not
+ *   401) — mirrors the bearer guard and the Rust spine's `resolve.rs`
+ *   (`None`). Downstream a daemon-gated action returns
+ *   `credential_type_required`; a public action proceeds anonymous.
+ * - A shaped token + `Origin` / `Referer` present: discard the credential
  *   (browser context) and pass through — daemon tokens are loopback-only and
  *   never carry an `Origin` in production, so a header-bearing request is not
- *   a legitimate daemon caller. Mirrors the bearer guard: `next()` rather than
- *   401, so downstream auth enforcement returns `credential_type_required`
- *   (not a hard fail). Silent on the wire (anti-enumeration); in `DEV` only,
- *   sets `X-Fuz-Auth-Debug: daemon_token_discarded_browser_context`.
- * - Header present + malformed (fails `DaemonToken`): soft-fail discard (pass through,
- *   not 401) — mirrors the bearer guard and the Rust spine's `resolve.rs`
- *   (`None`). Downstream a daemon-gated action returns `credential_type_required`;
- *   a public action proceeds anonymous.
+ *   a legitimate daemon caller. Silent on the wire (anti-enumeration); in
+ *   `DEV` only, sets `X-Fuz-Auth-Debug: daemon_token_discarded_browser_context`.
  * - Header present + invalid value (not the current/previous token): soft-fail
  *   discard (pass through, not 401) — same downstream behavior.
  * - Header present + valid + `keeper_account_id` null (still pre-bootstrap
@@ -106,9 +105,16 @@ export const create_daemon_token_middleware = (
 			log.debug(`daemon token leg cleared a credential (${cleared.credential_type}) set before it`);
 		}
 		c.set(RESOLVED_AUTH_KEY, null);
-		const token_header = c.req.header(DAEMON_TOKEN_HEADER);
-
-		if (!token_header) {
+		// The header's one shaped value, or nothing: absent, malformed, and sent
+		// as more than one line all read `null` and pass through — a soft-fail
+		// discard, not a 401, mirroring the bearer guard and the Rust spine's
+		// `resolve.rs`. On a daemon-gated action the dispatcher returns
+		// `credential_type_required` downstream; a public action proceeds
+		// anonymous.
+		const token_lines = get_header_lines(c, DAEMON_TOKEN_HEADER);
+		const token_header = read_daemon_token(token_lines);
+		if (token_header === null) {
+			if (token_lines.length > 0) log.debug('daemon token auth soft-fail: malformed token');
 			await next();
 			return;
 		}
@@ -123,18 +129,6 @@ export const create_daemon_token_middleware = (
 		if (is_browser_context(c)) {
 			log.debug('daemon token auth rejected: browser context (Origin/Referer present)');
 			if (DEV) c.header('X-Fuz-Auth-Debug', 'daemon_token_discarded_browser_context');
-			await next();
-			return;
-		}
-
-		// Validate the token format at the I/O boundary. A malformed token is
-		// a soft-fail discard (pass through), not a 401 — mirroring the bearer
-		// guard and the Rust spine's `resolve.rs`, which return `None` on an
-		// unparseable credential. The request falls through: on a daemon-gated
-		// action the dispatcher returns `credential_type_required` downstream; on
-		// a public action it proceeds anonymous.
-		if (!is(DaemonToken, token_header)) {
-			log.debug('daemon token auth soft-fail: malformed token');
 			await next();
 			return;
 		}

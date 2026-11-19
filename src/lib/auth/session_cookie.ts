@@ -32,30 +32,113 @@ const EXPIRES_AT_INTEGER_RE = /^\d+$/;
 const EXPIRES_AT_MAX = 18446744073709551615n;
 
 /**
- * Cookie options for session cookies.
+ * The attributes every session `Set-Cookie` carries, in the order written —
+ * the Rust spine's `SESSION_COOKIE_ATTRIBUTES`, byte for byte. Fixed: the
+ * spine writes one cookie.
+ *
+ * - `Path=/` - sent to every path of the origin
+ * - `HttpOnly` - out of reach of page script
+ * - `Secure` - HTTPS only (Chrome and Firefox treat `localhost` as secure)
+ * - `SameSite=Strict` - never sent on a cross-site request
  */
-export interface SessionCookieOptions {
-	path: string;
-	httpOnly: boolean;
-	secure: boolean;
-	sameSite: 'strict' | 'lax' | 'none';
-	maxAge: number;
-}
+export const SESSION_COOKIE_ATTRIBUTES = 'Path=/; HttpOnly; Secure; SameSite=Strict';
+
+/** RFC 6265's `cookie-name`: an RFC 2616 `token`, one or more characters. */
+const COOKIE_NAME_REGEX = /^[!#$%&'*+\-.0-9A-Z^_`a-z|~]+$/;
+
+/** RFC 6265's unquoted `cookie-value`: zero or more `cookie-octet`s. */
+const COOKIE_VALUE_REGEX = /^[\x21\x23-\x2B\x2D-\x3A\x3C-\x5B\x5D-\x7E]*$/;
 
 /**
- * Default cookie options for session cookies.
+ * Whether `name` is an RFC 6265 `cookie-name` — an HTTP `token`: visible
+ * ASCII less the separators (`=`, `;`, `,`, space, quotes, brackets and the
+ * rest). Twin of the Rust spine's `is_cookie_name`.
  *
- * Uses strict security settings:
- * - `secure: true` - Works on localhost in Chrome/Firefox (treated as secure context)
- * - `sameSite: 'strict'` - Prevents CSRF
- * - `httpOnly: true` - Prevents XSS access to cookie
+ * Anything but a string is refused, whatever its type says: the name is a
+ * consumer's option, and a regex alone would read `undefined` as the text
+ * `undefined`.
+ *
+ * @param name - a cookie name
  */
-export const session_cookie_options: SessionCookieOptions = {
-	path: '/',
-	httpOnly: true,
-	secure: true,
-	sameSite: 'strict',
-	maxAge: SESSION_AGE_MAX
+export const is_cookie_name = (name: string): boolean =>
+	typeof name === 'string' && COOKIE_NAME_REGEX.test(name);
+
+/**
+ * Whether `value` is an RFC 6265 `cookie-value` in its unquoted form — only
+ * `cookie-octet`s: visible ASCII less `"`, `,`, `;` and `\`. Such a value
+ * reads back out of a `Cookie` header exactly as it was written, which is
+ * what a reader that decodes nothing needs. Twin of the Rust spine's
+ * `is_cookie_value`.
+ *
+ * Anything but a string is refused, whatever its type says: the value comes
+ * out of a consumer's `encode_identity` and keyring, and a regex alone would
+ * read `undefined` as the text `undefined`.
+ *
+ * @param value - a cookie value
+ */
+export const is_cookie_value = (value: string): boolean =>
+	typeof value === 'string' && COOKIE_VALUE_REGEX.test(value);
+
+/**
+ * Refuse a session cookie name the `Cookie` grammar cannot carry.
+ *
+ * @param cookie_name - the session cookie's name
+ * @throws Error when `cookie_name` is not an RFC 6265 `cookie-name`
+ */
+const assert_cookie_name = (cookie_name: string): void => {
+	if (!is_cookie_name(cookie_name)) {
+		throw new Error(
+			`session cookie name ${JSON.stringify(cookie_name)} is not an RFC 6265 cookie-name`
+		);
+	}
+};
+
+/**
+ * Build the `Set-Cookie` header value that sets the session cookie:
+ * `<name>=<value>; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=<max_age>`,
+ * the Rust spine's string. The value is written as given — never
+ * percent-encoded or quoted — so the cookie either spine mints verifies on
+ * both.
+ *
+ * @param cookie_name - the session cookie's name
+ * @param value - the signed cookie value (`create_session_cookie_value`)
+ * @param max_age - the cookie's lifetime in seconds
+ * @returns the `Set-Cookie` header value
+ * @throws Error when the name is not an RFC 6265 `cookie-name`, the value holds anything but `cookie-octet`s (an `encode_identity` that emits a space, a `;`, or a non-ASCII character), or `max_age` is not a non-negative safe integer — a header that would read back differently is never written
+ */
+export const format_session_set_cookie = (
+	cookie_name: string,
+	value: string,
+	max_age: number
+): string => {
+	assert_cookie_name(cookie_name);
+	if (!is_cookie_value(value)) {
+		// the value is a credential: say what is wrong with it, never what it is
+		throw new Error(
+			`session cookie '${cookie_name}': the signed value holds a character outside RFC 6265's ` +
+				'cookie-octets — `encode_identity` must emit only visible ASCII without `"`, `,`, `;` or `\\`'
+		);
+	}
+	if (!Number.isSafeInteger(max_age) || max_age < 0) {
+		throw new Error(
+			`session cookie '${cookie_name}': max_age ${max_age} is not a whole number of seconds`
+		);
+	}
+	return `${cookie_name}=${value}; ${SESSION_COOKIE_ATTRIBUTES}; Max-Age=${max_age}`;
+};
+
+/**
+ * Build the `Set-Cookie` header value that clears the session cookie:
+ * `<name>=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0`, the Rust
+ * spine's string.
+ *
+ * @param cookie_name - the session cookie's name
+ * @returns the `Set-Cookie` header value
+ * @throws Error when the name is not an RFC 6265 `cookie-name`
+ */
+export const format_session_clear_cookie = (cookie_name: string): string => {
+	assert_cookie_name(cookie_name);
+	return `${cookie_name}=; ${SESSION_COOKIE_ATTRIBUTES}; Max-Age=0`;
 };
 
 /**
@@ -106,12 +189,16 @@ export interface SessionOptions<TIdentity> {
 	 * Cookie lifetime in seconds. Single source of truth for both the embedded
 	 * `expires_at` (via `create_session_cookie_value`) and the cookie's HTTP
 	 * `Max-Age` attribute (via `set_session_cookie`). Defaults to
-	 * `SESSION_AGE_MAX` (30 days). The `cookie_options` slot intentionally
-	 * cannot carry `maxAge` so the two values can't drift.
+	 * `SESSION_AGE_MAX` (30 days). Every other attribute is fixed
+	 * (`SESSION_COOKIE_ATTRIBUTES`).
 	 */
 	max_age?: number;
-	cookie_options?: Partial<Omit<SessionCookieOptions, 'maxAge'>>;
-	/** Encode identity into the cookie payload (before the `:expires_at` suffix). */
+	/**
+	 * Encode identity into the cookie payload (before the `:expires_at` suffix).
+	 * The payload goes into the cookie as written, so it must hold only RFC
+	 * 6265 `cookie-octet`s (`is_cookie_value`) — `set_session_cookie` throws
+	 * on anything else.
+	 */
 	encode_identity: (identity: TIdentity) => string;
 	/** Decode identity from cookie payload. Return null if invalid. */
 	decode_identity: (payload: string) => TIdentity | null;
@@ -135,19 +222,23 @@ export interface ParsedSession<TIdentity> {
  * The signed value format is `${encode(identity)}:${expires_at}`.
  * Tries all keys in order to support key rotation.
  *
- * @param signed_value - the raw cookie value (signed)
+ * An empty string is a cookie that was sent with no value (`name=`): present
+ * and invalid, like any other value that fails verification. Only a nullish
+ * `signed_value` is "no cookie".
+ *
+ * @param signed_value - the raw cookie value (signed), nullish when the request carries no session cookie
  * @param keyring - key ring for verification
  * @param options - session configuration with decode logic
  * @param now_seconds - current time in seconds (for testing)
- * @returns `ParsedSession` if valid, null if invalid/expired, undefined if empty/missing
+ * @returns `ParsedSession` if valid, null if invalid/expired (the empty string included), undefined if missing
  */
 export const parse_session = async <TIdentity>(
-	signed_value: string | undefined,
+	signed_value: string | null | undefined,
 	keyring: Keyring,
 	options: SessionOptions<TIdentity>,
 	now_seconds?: number
 ): Promise<ParsedSession<TIdentity> | null | undefined> => {
-	if (!signed_value) return undefined;
+	if (signed_value == null) return undefined;
 
 	const result = await keyring.verify(signed_value);
 	if (!result) return null;
@@ -251,7 +342,13 @@ export const fuz_session_config: SessionOptions<string> = create_session_config(
  * retired keys are safe to drop after `SESSION_AGE_MAX` (see
  * `docs/security.md` §Cookie Key Rotation).
  *
- * @param signed_value - the raw cookie value (may be undefined)
+ * The three outcomes are what the cookie alone shows: no cookie (`action:
+ * 'none'`), a cookie that fails verification — unreadable, a bad MAC, a signed
+ * expiry that has passed, an empty identity, an empty value — (`action:
+ * 'clear'`), and a valid one. A valid cookie whose `auth_session` row is gone
+ * is still valid here; nothing clears it.
+ *
+ * @param signed_value - the raw cookie value, nullish when the request carries no session cookie
  * @param keyring - key ring for verification and signing
  * @param options - session configuration
  * @param now_seconds - current time in seconds (for testing)
@@ -259,7 +356,7 @@ export const fuz_session_config: SessionOptions<string> = create_session_config(
  */
 
 export const process_session_cookie = async <TIdentity>(
-	signed_value: string | undefined,
+	signed_value: string | null | undefined,
 	keyring: Keyring,
 	options: SessionOptions<TIdentity>,
 	now_seconds?: number

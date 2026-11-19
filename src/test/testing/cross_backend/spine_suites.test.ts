@@ -298,7 +298,12 @@ describe('describe_spine_cross_suites backdoor declaration', () => {
 			SUITE_NAMES.filter(
 				(n) =>
 					n !== 'testing_backdoor' &&
-					!['credential_deadline', 'origin_conformance', 'ws_outbound_overflow'].includes(n)
+					![
+						'credential_conformance',
+						'credential_deadline',
+						'origin_conformance',
+						'ws_outbound_overflow'
+					].includes(n)
 			).map((n) => [n, 'not under test'])
 		);
 		// out of sorted order, so a comparison that sorts one side only fails

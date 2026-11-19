@@ -115,6 +115,73 @@ export const raw_http_exchange = (
 		socket.on('close', () => finish(true));
 	});
 
+/** One request for `raw_http_request`: its request line, header lines, and body. */
+export interface RawHttpRequest {
+	/** The request method. */
+	readonly method: string;
+	/** Request target, e.g. `/api/rpc`. */
+	readonly path: string;
+	/** The `Host` to send — a base URL's `host`. */
+	readonly host: string;
+	/**
+	 * The header lines after `Host`, each `Name: value`, written in order and
+	 * as given — a name may repeat, which is what `fetch` cannot send. Nothing
+	 * is defaulted: no `Origin`, no `Connection`, no credential.
+	 */
+	readonly header_lines: ReadonlyArray<string>;
+	/**
+	 * The body, `latin1` (one character a byte). When given, `Content-Length`
+	 * is written after the header lines.
+	 */
+	readonly body?: string;
+}
+
+/**
+ * Frame an HTTP/1.1 request from its header lines: the request line, `Host`,
+ * each line of `header_lines`, `Content-Length` when there is a body, the
+ * blank line, the body.
+ *
+ * The lines go out as written. A CR or LF inside one ends it early, so a
+ * caller that puts one there means to split the line.
+ *
+ * @param request - the method, target, host, header lines and body
+ * @returns the request's bytes, for `raw_http_exchange`
+ */
+export const raw_http_request = (request: RawHttpRequest): string => {
+	const { method, path, host, header_lines, body } = request;
+	return (
+		`${method} ${path} HTTP/1.1\r\n` +
+		`Host: ${host}\r\n` +
+		header_lines.map((line) => `${line}\r\n`).join('') +
+		(body === undefined ? '' : `Content-Length: ${body.length}\r\n`) +
+		'\r\n' +
+		(body ?? '')
+	);
+};
+
+/**
+ * Every value of one header in the first response of a raw byte stream, in
+ * the order the server wrote them — `raw_http_parse_response` keeps only the
+ * last, which loses all but one `Set-Cookie`.
+ *
+ * @param raw - the bytes read so far, `latin1`-decoded
+ * @param name - the header name, in any case
+ * @returns the header's values, outer whitespace stripped; `[]` when the head is incomplete or carries none
+ */
+export const raw_http_header_values = (raw: string, name: string): Array<string> => {
+	const head_end = raw.indexOf('\r\n\r\n');
+	if (head_end === -1) return [];
+	const lower_name = name.toLowerCase();
+	const values: Array<string> = [];
+	for (const line of raw.slice(0, head_end).split('\r\n').slice(1)) {
+		const colon = line.indexOf(':');
+		if (colon > 0 && line.slice(0, colon).trim().toLowerCase() === lower_name) {
+			values.push(line.slice(colon + 1).trim());
+		}
+	}
+	return values;
+};
+
 /** Lowercased names of the headers `raw_http_send_head` writes itself. */
 const SEND_HEAD_WRITTEN_HEADERS: ReadonlyArray<string> = ['host', 'content-length'];
 

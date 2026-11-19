@@ -32,11 +32,11 @@ describe('process_session_cookie', () => {
 		assert.strictEqual(result.identity, undefined);
 	});
 
-	test('empty string returns valid=false, action=none', async () => {
+	test('empty string returns valid=false, action=clear — present and invalid', async () => {
 		const keyring = create_test_keyring();
 		const result = await process_session_cookie('', keyring, test_session_options);
 		assert.strictEqual(result.valid, false);
-		assert.strictEqual(result.action, 'none');
+		assert.strictEqual(result.action, 'clear');
 	});
 
 	test('valid cookie returns valid=true, action=none with identity', async () => {

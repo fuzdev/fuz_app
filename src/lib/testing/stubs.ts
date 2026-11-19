@@ -214,7 +214,11 @@ export const create_stub_app_deps = (): AppDeps => ({
 		throw new Error(`ENOENT: no such file or directory: ${path}`);
 	},
 	delete_file: async (_path: string) => {},
-	keyring: create_noop_stub('keyring'),
+	// `sign` answers a string, as a keyring does: `create_app_server` mints a
+	// sample session cookie at assembly and refuses a value that is none
+	keyring: create_noop_stub('keyring', {
+		sign: async (value: string): Promise<string> => `${value}.stub_signature`
+	}),
 	password: create_noop_stub('password'),
 	db: stub_db,
 	log: new Logger('test', { level: 'off' }),

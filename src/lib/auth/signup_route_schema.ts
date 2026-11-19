@@ -1,11 +1,11 @@
 /**
  * Hono-free wire schemas + route shape for `POST /signup`.
  *
- * Split from `signup_routes.ts` (whose handler pulls `hono/cookie` via
- * `session_middleware` to set the new session cookie) so cross-process test
+ * Split from `signup_routes.ts` (whose handler mints the new session through
+ * `session_middleware` and the query layer) so cross-process test
  * suites can build the signup route shape — and assert on the response shape
- * — without dragging the in-process Hono session handler, and its optional
- * `hono` peer, onto a backend-spawning consumer. `signup_routes.ts` imports
+ * — without dragging the in-process session handler and its queries
+ * onto a backend-spawning consumer. `signup_routes.ts` imports
  * these back and attaches the live handler; single source of truth for the
  * wire shape.
  *

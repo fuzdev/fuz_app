@@ -8,8 +8,8 @@ import '../assert_dev_env.ts';
  * `_testing_mint_session`, `_testing_put_fact`,
  * `_testing_flood_notifications`, `_testing_schema_snapshot`,
  * `_testing_migration_tracker`, `_testing_action_manifest`,
- * `_testing_origin_check`, `_testing_shorten_credential_expiry`,
- * `_testing_room_evict`) are privileged test-binary actions the production
+ * `_testing_origin_check`, `_testing_credential_read`,
+ * `_testing_shorten_credential_expiry`, `_testing_room_evict`) are privileged test-binary actions the production
  * wire never exposes — direct DB writes (full auth wipe, forged session row,
  * raw fact insert), the audit barrier, a flood of the caller's own connection,
  * introspection reads (the live schema, the `schema_version` migration
@@ -126,6 +126,9 @@ const BACKDOOR_PARAMS: Readonly<Record<TestingBackdoorMethod, unknown>> = {
 	// The origin conformance probe — a valid `{patterns, origin}` pair, so it
 	// clears the 400 phase like the rest.
 	_testing_origin_check: { patterns: 'http://localhost:*', origin: null },
+	// The credential conformance probe — header lines naming no credential, so
+	// it clears the 400 phase like the rest.
+	_testing_credential_read: { lines: [] },
 	// The credential-expiry rewrite — a valid `{account_id, seconds}` pair (a
 	// syntactically valid UUID; no row needs to match), so it clears the 400
 	// phase like the rest.

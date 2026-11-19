@@ -22,10 +22,11 @@ import type { Logger } from '@fuzdev/fuz_util/log.ts';
 import { RESOLVED_AUTH_KEY } from '../hono_context.ts';
 import { credential_deadline_after } from './credential_deadline.ts';
 import { get_resolved_auth } from './resolved_auth.ts';
-import { is_api_token_shaped } from './api_token.ts';
+import { read_bearer_token } from './credential_headers.ts';
 import { query_validate_api_token } from './api_token_queries.ts';
 import type { QueryDeps } from '../db/query_deps.ts';
 import { get_client_ip } from '../http/client_ip.ts';
+import { get_header_lines } from '../http/header_lines.ts';
 import { is_browser_context } from '../http/origin.ts';
 
 /**
@@ -42,9 +43,10 @@ import { is_browser_context } from '../http/origin.ts';
  * Discards bearer tokens when an `Origin` or `Referer` header is present —
  * `next()` with no identity, as for a bad token — so browsers must use cookie
  * auth, reducing attack surface.
- * A token that fails the `is_api_token_shaped` precheck soft-fails before
- * the database is touched.
- * Auth scheme matching is case-insensitive per RFC 7235.
+ * The token is read by `read_bearer_token`: one `Authorization` line, the
+ * scheme in any case (RFC 7235), one space, an `is_api_token_shaped` value. A
+ * header that reads no token — sent twice included — soft-fails before the
+ * database is touched.
  * On success, sets the `api_token` arm of `ResolvedAuth` (`RESOLVED_AUTH_KEY`):
  * the account, the token id, its scope, and its deadline. The last leg of the
  * chain, it skips when an earlier one (the daemon token or a session cookie)
@@ -74,12 +76,14 @@ export const create_bearer_auth_middleware = (deps: QueryDeps, log: Logger): Mid
 			return;
 		}
 
-		const auth_header = c.req.header('Authorization');
-		// Case-insensitive scheme matching per RFC 7235 §2.1 — defense-in-depth:
-		// without this, a `bearer` (lowercase) header silently bypasses token
-		// validation and browser-context rejection instead of being processed.
-
-		if (!auth_header || auth_header.slice(0, 7).toLowerCase() !== 'bearer ') {
+		// The header's one shaped token, or nothing (`read_bearer_token`): absent,
+		// another scheme, an empty or malformed token, and a header sent as more
+		// than one line all read `null` and soft-fail before any database work —
+		// no pool checkout, no query — so junk bearers cost nothing to refuse.
+		const authorization_lines = get_header_lines(c, 'Authorization');
+		const raw_token = read_bearer_token(authorization_lines);
+		if (raw_token === null) {
+			if (authorization_lines.length > 0) log.debug('bearer auth soft-fail: no token read');
 			await next();
 			return;
 		}
@@ -96,24 +100,6 @@ export const create_bearer_auth_middleware = (deps: QueryDeps, log: Logger): Mid
 			// easy to trip over in tests/tooling, so surface the reason in DEV
 			// only: production never emits it, so it leaks nothing to an attacker.
 			if (DEV) c.header('X-Fuz-Auth-Debug', 'bearer_discarded_browser_context');
-			await next();
-			return;
-		}
-
-		const raw_token = auth_header.slice(7);
-
-		// Empty token body — soft-fail (treat as "no credential").
-		// (The Fetch API trims 'Bearer ' to 'Bearer' which skips this middleware entirely,
-		// but raw HTTP clients may send 'Bearer ' with an empty token.)
-		if (!raw_token) {
-			await next();
-			return;
-		}
-
-		// A value that cannot be a token soft-fails before any database work —
-		// no pool checkout, no query — so junk bearers cost nothing to refuse.
-		if (!is_api_token_shaped(raw_token)) {
-			log.debug('bearer auth soft-fail: malformed token');
 			await next();
 			return;
 		}

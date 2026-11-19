@@ -1,11 +1,11 @@
 /**
  * Hono-free wire schemas + route shapes for the account REST routes.
  *
- * Split from `account_routes.ts` (whose handlers pull `hono/cookie` via
- * `session_middleware`) so cross-process test suites can build the account
+ * Split from `account_routes.ts` (whose handlers mint and end sessions through
+ * `session_middleware` and the query layer) so cross-process test suites can build the account
  * route shapes — and assert on the `POST /login` / `GET /api/account/status`
- * response shapes — without dragging the in-process Hono session handler, and
- * its optional `hono` peer, onto a backend-spawning consumer. `account_routes.ts`
+ * response shapes — without dragging the in-process session handlers and
+ * their queries onto a backend-spawning consumer. `account_routes.ts`
  * imports these back and attaches the live handlers; single source of truth
  * for the wire shape.
  *

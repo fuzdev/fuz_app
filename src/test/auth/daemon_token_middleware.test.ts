@@ -346,6 +346,44 @@ describe('create_daemon_token_middleware', () => {
 		assert.strictEqual(body.credential_type, null);
 	});
 
+	test('a token sent as two header lines is discarded, whichever line is valid', async () => {
+		const state = create_state();
+		const app = create_daemon_app(state);
+		const token = state.current_token;
+		// the raw header list `@hono/node-server` hands over, and the join a
+		// runtime with no per-line view hands over instead
+		const requests: Array<[label: string, init: RequestInit, env: object | undefined]> = [
+			[
+				'two identical lines',
+				{},
+				{ incoming: { rawHeaders: [DAEMON_TOKEN_HEADER, token, DAEMON_TOKEN_HEADER, token] } }
+			],
+			[
+				'valid then garbage',
+				{},
+				{ incoming: { rawHeaders: [DAEMON_TOKEN_HEADER, token, 'x-daemon-token', 'garbage'] } }
+			],
+			[
+				'valid then empty',
+				{},
+				{ incoming: { rawHeaders: [DAEMON_TOKEN_HEADER, token, DAEMON_TOKEN_HEADER, ''] } }
+			],
+			['joined', { headers: { [DAEMON_TOKEN_HEADER]: `${token}, ${token}` } }, undefined]
+		];
+		for (const [label, init, env] of requests) {
+			const res = await app.request('/test', init, env);
+			assert.strictEqual(res.status, 200, label);
+			assert.strictEqual((await res.json()).credential_type, null, label);
+		}
+		// the control: one line through the raw view authenticates
+		const control = await app.request(
+			'/test',
+			{},
+			{ incoming: { rawHeaders: [DAEMON_TOKEN_HEADER, token] } }
+		);
+		assert.strictEqual((await control.json()).credential_type, 'daemon_token');
+	});
+
 	test('a malformed token is refused by its format, before any token compare', async () => {
 		const log = new Logger('test', { level: 'off' });
 		const debug = vi.spyOn(log, 'debug');

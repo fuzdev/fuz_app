@@ -36,7 +36,7 @@ import {
 } from '#lib/hono_context.ts';
 import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
 import type { BuiltinCredentialType } from '#lib/auth/credential_type_schema.ts';
-import { session_cookie_options } from '#lib/auth/session_cookie.ts';
+import { SESSION_COOKIE_ATTRIBUTES } from '#lib/auth/session_cookie.ts';
 import { API_TOKEN_PREFIX } from '#lib/auth/api_token.ts';
 import { PASSWORD_LENGTH_MIN } from '#lib/auth/password.ts';
 import {
@@ -446,16 +446,8 @@ describe('targeted adversarial tests', () => {
 });
 
 describe('static property assertions', () => {
-	test('session cookie uses httpOnly', () => {
-		assert.strictEqual(session_cookie_options.httpOnly, true);
-	});
-
-	test('session cookie uses secure', () => {
-		assert.strictEqual(session_cookie_options.secure, true);
-	});
-
-	test('session cookie uses sameSite strict', () => {
-		assert.strictEqual(session_cookie_options.sameSite, 'strict');
+	test('session cookie is HttpOnly, Secure, SameSite=Strict on the whole origin', () => {
+		assert.strictEqual(SESSION_COOKIE_ATTRIBUTES, 'Path=/; HttpOnly; Secure; SameSite=Strict');
 	});
 
 	test('API token prefix is scannable', () => {

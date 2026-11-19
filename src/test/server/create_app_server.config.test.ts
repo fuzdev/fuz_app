@@ -117,66 +117,25 @@ describe('resolve_rate_limiters', () => {
 describe('collect_config_diagnostics', () => {
 	const enforced = () => resolve({}).limiters;
 
-	test('none for the default cookie and enforced limiters', () => {
+	test('none for enforced limiters', () => {
 		assert.deepStrictEqual(
 			collect_config_diagnostics({
-				cookie_options: undefined,
 				rate_limiter_mode: 'enforced',
 				rate_limiters: enforced(),
 				max_body_size: undefined
 			}),
 			[]
 		);
-		assert.deepStrictEqual(
-			collect_config_diagnostics({
-				cookie_options: { secure: true, sameSite: 'strict', httpOnly: true },
-				rate_limiter_mode: 'enforced',
-				rate_limiters: enforced(),
-				max_body_size: undefined
-			}),
-			[],
-			'the default cookie settings, spelled out, warn about nothing'
-		);
 	});
 
-	test('each weakened cookie setting warns', () => {
-		assert.deepStrictEqual(
-			collect_config_diagnostics({
-				cookie_options: { secure: false, sameSite: 'lax', httpOnly: false },
-				rate_limiter_mode: 'enforced',
-				rate_limiters: enforced(),
-				max_body_size: undefined
-			}),
-			[
-				{
-					level: 'warning',
-					category: 'security',
-					message: 'Session cookie secure=false — cookies sent over HTTP'
-				},
-				{
-					level: 'warning',
-					category: 'security',
-					message: "Session cookie sameSite='lax' — weakened from default 'strict'"
-				},
-				{
-					level: 'warning',
-					category: 'security',
-					message: 'Session cookie httpOnly=false — cookie accessible to JS'
-				}
-			]
-		);
-	});
-
-	test('one warning per explicitly-null limiter, in key order, after the cookie ones', () => {
+	test('one warning per explicitly-null limiter, in key order', () => {
 		const limiters = { ...enforced(), signup_ip_rate_limiter: null, action_ip_rate_limiter: null };
 		const messages = collect_config_diagnostics({
-			cookie_options: { httpOnly: false },
 			rate_limiter_mode: 'enforced',
 			rate_limiters: limiters,
 			max_body_size: undefined
 		}).map((d) => d.message);
 		assert.deepStrictEqual(messages, [
-			'Session cookie httpOnly=false — cookie accessible to JS',
 			'signup IP rate limiter explicitly disabled (null)',
 			'action IP rate limiter explicitly disabled (null)'
 		]);
@@ -185,7 +144,6 @@ describe('collect_config_diagnostics', () => {
 	test('a disabled body size limit warns; a set or omitted one does not', () => {
 		const diagnose = (max_body_size: number | null | undefined) =>
 			collect_config_diagnostics({
-				cookie_options: undefined,
 				rate_limiter_mode: 'enforced',
 				rate_limiters: enforced(),
 				max_body_size
@@ -205,7 +163,6 @@ describe('collect_config_diagnostics', () => {
 
 	test('the disabled mode is one warning, whatever it nulled', () => {
 		const diagnostics = collect_config_diagnostics({
-			cookie_options: undefined,
 			rate_limiter_mode: 'disabled_for_testing',
 			rate_limiters: all_null(),
 			max_body_size: undefined

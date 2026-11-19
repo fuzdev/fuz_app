@@ -38,11 +38,17 @@ provide `encode_identity` and `decode_identity` — the library handles signing,
 expiration, and key rotation.
 
 Cookie value format: `${encode(identity)}:${expires_at}` signed with HMAC-SHA256.
+The value goes on the wire as it is — never percent-encoded — and is read back
+verbatim, so `encode_identity` must emit RFC 6265 cookie-octets (no space,
+`"`, `,`, `;`, `\`, control or non-ASCII character): setting a cookie whose
+value isn't throws. The attributes are fixed
+(`Path=/; HttpOnly; Secure; SameSite=Strict`), and the Rust spine writes and
+reads the same string, so a session survives a move between the two.
 
 The session middleware (`create_session_middleware`, a `SessionOptions<string>`)
 sets the session token on the Hono context under `SESSION_TOKEN_KEY`
 (`'auth_session_id'`, null when invalid/missing), the key the auth chain's session
-leg reads. The key is fixed: the middleware and the leg must agree on it, and no
+leg reads, and clears a cookie that is present and does not verify. The key is fixed: the middleware and the leg must agree on it, and no
 other context variable may share it.
 
 ### String Identity (Standard)

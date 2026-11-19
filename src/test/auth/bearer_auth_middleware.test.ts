@@ -258,6 +258,55 @@ describe('bearer token refused by the query', () => {
 	});
 });
 
+// --- A repeated Authorization header is discarded ---
+
+describe('bearer token sent as two header lines', () => {
+	test('is discarded before any lookup, whichever line is valid', async () => {
+		const { app, mocks } = create_bearer_auth_test_app({
+			name: 'repeated Authorization',
+			expected_status: 'next'
+		});
+		// the raw header list `@hono/node-server` hands over — on a WebSocket
+		// upgrade the Fetch headers beside it hold the first line alone — and the
+		// join a runtime with no per-line view hands over instead
+		const requests: Array<[label: string, init: RequestInit, env: object | undefined]> = [
+			[
+				'valid then garbage',
+				{ headers: { Authorization: `Bearer ${TOKEN_GOOD}` } },
+				{
+					incoming: {
+						rawHeaders: ['Authorization', `Bearer ${TOKEN_GOOD}`, 'Authorization', 'Bearer x']
+					}
+				}
+			],
+			[
+				'two identical lines',
+				{ headers: { Authorization: `Bearer ${TOKEN_GOOD}` } },
+				{
+					incoming: {
+						rawHeaders: [
+							'Authorization',
+							`Bearer ${TOKEN_GOOD}`,
+							'authorization',
+							`Bearer ${TOKEN_GOOD}`
+						]
+					}
+				}
+			],
+			[
+				'joined',
+				{ headers: { Authorization: `Bearer ${TOKEN_GOOD}, Bearer ${TOKEN_GOOD}` } },
+				undefined
+			]
+		];
+		for (const [label, init, env] of requests) {
+			const res = await app.request('/api/test', init, env);
+			assert.strictEqual((await res.json()).resolved_auth, null, label);
+		}
+		assert.strictEqual(mocks.mock_validate.mock.calls.length, 0, 'no lookup ran');
+	});
+});
+
 // --- DEV-only browser-context discard diagnostic header ---
 
 describe('bearer browser-context discard diagnostic (DEV)', () => {
@@ -282,5 +331,37 @@ describe('bearer browser-context discard diagnostic (DEV)', () => {
 			headers: { Authorization: `Bearer ${TOKEN}` }
 		});
 		assert.strictEqual(non_browser.headers.get('X-Fuz-Auth-Debug'), null);
+	});
+
+	test('names no discard for a header that reads as no token', async () => {
+		const { app } = create_bearer_auth_test_app({
+			name: 'browser-context diagnostic needs a shaped token',
+			headers: { Authorization: `Bearer ${TOKEN}` },
+			expected_status: 'next'
+		});
+		// nothing was discarded for the browser context: no token was read at all
+		const unread: Array<[label: string, headers: Record<string, string>, env?: object]> = [
+			['an unshaped token', { Authorization: 'Bearer garbage' }],
+			['another scheme', { Authorization: `Basic ${TOKEN}` }],
+			['two tokens on one line', { Authorization: `Bearer ${TOKEN}, Bearer ${TOKEN}` }],
+			[
+				'the header sent twice',
+				{},
+				{
+					incoming: {
+						rawHeaders: ['Authorization', `Bearer ${TOKEN}`, 'Authorization', `Bearer ${TOKEN}`]
+					}
+				}
+			],
+			['no Authorization header', {}]
+		];
+		for (const [label, headers, env] of unread) {
+			const res = await app.request(
+				'/api/test',
+				{ headers: { ...headers, Origin: 'https://x.example' } },
+				env
+			);
+			assert.strictEqual(res.headers.get('X-Fuz-Auth-Debug'), null, label);
+		}
 	});
 });
