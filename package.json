@@ -94,7 +94,7 @@
     "@fuzdev/fuz_schema": "^0.6.1",
     "@fuzdev/fuz_ui": "^0.230.0",
     "@fuzdev/fuz_util": "^0.83.0",
-    "@fuzdev/gro": "^0.238.0",
+    "@fuzdev/gro": "^0.239.0",
     "@fuzdev/mdz": "^0.11.0",
     "@fuzdev/pglet-wasm": "^0.1.2",
     "@hono/bun": "^1.0.1",
