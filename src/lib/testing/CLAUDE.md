@@ -297,7 +297,7 @@ per-method auth shape.
   `format_action_manifest_diffs` / `assert_action_manifests_equal` (twin of
   `schema_parity.ts`) — asserts exact method-set + per-method input-shape and
   auth-shape parity. `ActionManifestDiff` kinds: `method_only_in`, `input_differs`, `side_effects_differ`,
-  `rate_limit_differs`, `auth_field_differs`, `auth_list_differs`.
+  `rate_limit_differs`, `auth_field_differs`.
 - `cross_backend/setup.ts` `capture_action_manifest(handle)` — dumps a backend's
   manifest over the daemon-token `_testing_action_manifest` channel (twin of
   `capture_schema_snapshot`).
@@ -443,14 +443,13 @@ Structural invariants (options-free, universal):
 - `assert_error_code_status_consistency` — the same `const` error code (a definition's `literal`) never appears at two different HTTP statuses, read through every `anyOf` / `oneOf` branch.
 
 RPC / WS structural invariants (options-free, apply over `surface.rpc_endpoints`
+and `surface.ws_endpoints`):
 
-- `surface.ws_endpoints`):
-
-* `assert_rpc_method_descriptions_present` — every RPC method on every endpoint has a non-empty `description`.
-* `assert_ws_method_descriptions_present` — every WS method on every endpoint has a non-empty `description`.
-* `assert_ws_endpoints_include_protocol_actions` — every WS endpoint includes `heartbeat` + `cancel` + `peer/ping` (the `protocol_actions` spread from `actions/protocol.ts`).
-* `assert_ws_notifications_have_null_auth` — WS method `kind === 'remote_notification' ⟺ auth === null`; guards against drift between spec union and surface emitter.
-* `assert_no_testing_methods` — no `_testing_*` backdoor action (`TESTING_METHOD_PREFIX`) appears as an RPC or WS method on the declared surface. The test-binary actions are live-mounted only; this guards against a future wiring change folding `create_testing_actions(...)` into the surface-generating registry.
+- `assert_rpc_method_descriptions_present` — every RPC method on every endpoint has a non-empty `description`.
+- `assert_ws_method_descriptions_present` — every WS method on every endpoint has a non-empty `description`.
+- `assert_ws_endpoints_include_protocol_actions` — every WS endpoint includes `heartbeat` + `cancel` + `peer/ping` (the `protocol_actions` spread from `actions/protocol.ts`).
+- `assert_ws_notifications_have_null_auth` — WS method `kind === 'remote_notification' ⟺ auth === null`; guards against drift between spec union and surface emitter.
+- `assert_no_testing_methods` — no `_testing_*` backdoor action (`TESTING_METHOD_PREFIX`) appears as an RPC or WS method on the declared surface. The test-binary actions are live-mounted only; this guards against a future wiring change folding `create_testing_actions(...)` into the surface-generating registry.
 
 Per-endpoint duplicate method names and the auth-shape biconditional are
 already enforced at startup by `compile_action_registry` (see
@@ -529,6 +528,7 @@ adversarial/round-trip tests. A value that is no schema throws, naming it.
 - `admin_only_field_blocklist` — `['updated_by', 'created_by']`; never in non-admin response bodies.
 - `collect_json_keys_recursive(value)` — deep walk; returns `Set<string>` of every key at every nesting depth.
 - `assert_no_sensitive_fields_in_json(body, blocklist, context)` — rejects any key in the blocklist at any depth.
+- `to_principal_transport(principal, fixture)` — the transport a principal's request goes through, so it carries that principal's credential and nothing else: cookie-free with no `Origin` for the daemon token, cookie-free for a public call, the fixture's own for a session principal (whose `Cookie` header replaces the jar's). A bearer or anonymous probe over the fixture's transport authenticates as the keeper, whose cookie its jar carries — send those through `fixture.fresh_transport()`.
 - `pick_auth_headers(spec, test_app, authed_account, admin_account)` — `RouteAuth` → appropriate test credentials; role `admin` uses `admin_account`, other roles use bootstrapped keeper, `keeper` uses daemon token.
 
 ## Attack surface suites
@@ -649,9 +649,10 @@ the response against declared schemas. DB-backed via `create_test_app`.
 Per-route test (`test.each`) — one line per route in the vitest output.
 
 Options: `{setup_test, surface_source, skip_routes?, input_overrides?, success_fixtures?, param_values?}`.
-Principals and the 401 check are the RPC round-trip's (`pick_auth_principal`;
-`assert_route_authenticated` over `is_unauthenticated_refusal`, reading the
-flat `error`), and a non-`GET` route called as the authed
+Principals, their transports, and the 401 and credential-type checks are the
+RPC round-trip's (`pick_auth_principal`, `to_principal_transport`;
+`assert_route_authenticated` over `is_unauthenticated_refusal` and
+`is_credential_type_refusal`, reading the flat `error`), and a non-`GET` route called as the authed
 account runs on a fresh account — a generated logout would otherwise end the
 shared session, leaving `/password` and every later authed route a vacuous
 401. `src/test/testing/round_trip.test.ts` pins both, the RPC test's twin.
@@ -684,7 +685,13 @@ rpc_endpoints, skip_methods?, input_overrides?, success_fixtures?}`.
 round-trip; `AuthPrincipal`): none for a public method, the keeper's daemon
 token when `credential_types` names it, the admin account's session for an
 admin-gated method, the keeper's session for another role, else the authed
-account's session. The 401 check is `is_unauthenticated_refusal`: a 401
+account's session. The request goes through `to_principal_transport`, so a
+spawned backend sees only the picked credential — over the fixture's own
+transport it would discard a daemon token as browser context and answer for
+the keeper's session cookie. A 403 `credential_type_required` therefore fails
+(`is_credential_type_refusal`): the principal was picked because the method
+admits its credential type, so a method no picked principal can reach goes in
+`skip_methods`. The 401 check is `is_unauthenticated_refusal`: a 401
 reading `authentication_required` or naming no reason fails; a handler's own
 401 reason on an authenticated call (`invalid_credentials` for a wrong current
 password) passes. So a handler that answers 401 to a valid credential must name
@@ -1014,7 +1021,7 @@ One-shot transport:
 - `RpcTestTransport = (url, init) => Promise<Response>` — duck type `Hono.request` already satisfies.
 - `http_transport(app)` — adapter for anything with a `request()` method.
 - `RpcCallResult` — discriminated `{ok: true, status, headers, result}` / `{ok: false, status, headers, error: {code, message, data?}}`. `headers` is the lowercased-key response-header snapshot so callers can assert header-level properties (e.g. the conformance runner's no-fingerprint invariant).
-- `headers_to_record(headers)` — snapshot a `Headers` into a lowercased-key `Record<string, string>` (multi-value collapses to the comma-joined form; `Set-Cookie` excluded). Used by `rpc_call` and the conformance table's REST branch to thread response headers through for assertions.
+- `headers_to_record(headers)` — snapshot a `Headers` into a lowercased-key `Record<string, string>` (multi-value collapses to the comma-joined form; `Set-Cookie` keeps only its last value — read `getSetCookie()` for cookies). Used by `rpc_call` and the conformance table's REST branch to thread response headers through for assertions.
 - `RpcCallArgs` — `{app, path, method, params?, params_json?, headers?, id?, verb?}`. `verb` defaults to `'POST'`; use `'GET'` for `side_effects: false` methods. `params_json` sends raw JSON text in place of `params` (exclusive with it) on either verb.
 - `rpc_call_raw(args)` — the same request as `rpc_call`, the response unparsed: `RpcCallRawResult` `{status, headers, body}` with the whole envelope. `parse_rpc_call_result(raw, method)` turns it into an `RpcCallResult`; `rpc_call` is the two composed.
 - `rpc_call(args)` — merges `RPC_CALL_DEFAULT_HEADERS` (`host: 'localhost'`, `origin: TEST_ORIGIN`, `Content-Type: 'application/json'`) under caller headers. Envelope-shape violations throw; JSON-RPC errors return `{ok: false, error}` so callers assert on `error.code` / `error.data.reason`.
@@ -1056,7 +1063,7 @@ round-trip coverage from `describe_rpc_attack_surface_tests` +
 `<module>.rpc_suites.db.test.ts` mounting the opt-in factory on the RPC
 endpoint and calling both suites. See ../../test/CLAUDE.md §Composable
 Test Suites for the obligation note; existing
-../../test/auth/\*.rpc_suites.db.test.ts files are templates.
+`src/test/auth/*.rpc_suites.db.test.ts` files are templates.
 
 ## Cross-cutting conventions
 
@@ -1074,24 +1081,25 @@ points:
 
 The standard test suites take a unified
 `{setup_test, surface_source, capabilities}` shape so the same suite bodies
-run against an in-process Hono harness today and against a spawned backend
+run against an in-process Hono harness and against a spawned backend
 over real HTTP — either the Rust spine (`zzz_server`, another consumer's
 spine server, or the non-domain `testing_spine_stub`) or a **TS** spine binary built on the
 test-server core below (fuz_app's own domain-free `testing_spine_server`, run
 on Node + Bun). In-process is the fast feedback path; cross-process is the
 source of truth for wire-shape conformance.
 
-fuz_app's own spines run every single-backend suite below through one
+fuz_app's own spines run every single-backend suite through one
 `describe_spine_cross_suites` call, `src/test/cross_backend/spine_suites.cross.test.ts`
-(§`cross_backend/spine_suites.ts`), so a suite's section names the suite, not a
-file; the dual-spawn and limiter-enabled suites name their own files.
+(§`cross_backend/spine_suites.ts`); the dual-spawn and limiter-enabled suites
+have files of their own.
 
 ### Fixture protocol + capabilities
 
 - `testing/cross_backend/setup.ts` — `SetupTest` / `TestFixture` /
   `CreateTestAccountOptions` types (`fixture.create_account` and
   `fixture.extra_accounts` hand out `TestAccount`s from `app_server.ts`, built
-  by `to_test_account`),
+  by `to_test_account`); the in-process setups live beside it in
+  `testing/cross_backend/in_process_setup.ts`:
   `default_in_process_setup(options)` (wraps `create_test_app`; pass
   `migration_namespaces` for suites needing tables beyond the auth-only
   default — the cell parity suite passes `[CELL_MIGRATION_NS]`, and
@@ -1102,14 +1110,17 @@ file; the dual-spawn and limiter-enabled suites name their own files.
   `session_options` / `create_route_specs` / `rpc_endpoints` pass-through;
   call sites pass the output directly or spread it alongside
   suite-specific extras like `roles`, `skip_routes`, `input_overrides`,
-  `db_factories`). Also exports `BootstrappedBackendHandle` (a
+  `db_factories`). `setup.ts` also exports `BootstrappedBackendHandle` (a
   `BackendHandle` enriched with the keeper's captured credentials) and
   `default_cross_process_setup(handle, options?)` — full runtime body.
   Every per-test invocation unconditionally fires `_testing_reset` over the
   keeper's daemon-token channel: wipes every auth-namespace row (no
   keeper-preserve filter), resets `app_settings` + `bootstrap_lock`, and
   inline-seeds a fresh keeper (`[ROLE_KEEPER, ROLE_ADMIN, ...extra_keeper_roles]`)
-  plus any declared `extra_accounts`. The fixture's `account` / `actor` /
+  plus any declared `extra_accounts`; the seeds a backend answers with are
+  matched to the request by username and actor name
+  (`match_testing_reset_seeds`), and a missing, extra, or duplicated one
+  throws naming the backend. The fixture's `account` / `actor` /
   cookies refresh to the new keeper on every call — in-process and
   cross-process both run against a freshly bootstrapped keeper per test.
   `fixture.create_account()` keeps a separate path: keeper-driven
@@ -1131,9 +1142,9 @@ file; the dual-spawn and limiter-enabled suites name their own files.
   `signup_path` / `login_path` (default `SPINE_ACCOUNT_SIGNUP_PATH` /
   `SPINE_ACCOUNT_LOGIN_PATH`, from `spine_surface_constants.ts`, which also
   carries the other account routes, `SPINE_WS_PATH`, and the prefix).
-  Caller-supplied `username`s pass through _as-is_ now that the DB
-  wipes between tests — hardcoded names like `'user_two'` work and the
-  earlier uniquification prefix is gone. Every `TestFixture` also exposes
+  Caller-supplied `username`s pass through as given — the database is wiped
+  between tests, so a hardcoded name like `'user_two'` never collides. Every
+  `TestFixture` also exposes
   `fresh_transport({origin?: string | null})` — cookie-jar-free probe;
   pass `{origin: null}` for bearer-only paths.
 
@@ -1153,8 +1164,8 @@ file; the dual-spawn and limiter-enabled suites name their own files.
   `account_status` / `peer_request` /
   `ws_handshake_pipelining` / `ws_account_actions` /
   `ws_role_gated` / `rooms` / `ws_refusal_body` — each has a `test_if`
-  reader (`ws_refusal_body` picks how the front-door table reads a WS
-  refusal instead); `peer_request` (server-initiated requests — the ActionPeer
+  reader (`ws_refusal_body` picks how the front-door table and the WS suite's
+  disallowed-origin case read a WS refusal instead); `peer_request` (server-initiated requests — the ActionPeer
   `peer/ping` round-trip) is `true` on fuz_app's Rust and TS spine presets
   (`ConnectionRegistry.request_connection`); a backend states it
   `true` once it wires the `peer/ping` HTTP + WS mount), `test_if(cond, name, fn)`
@@ -1224,7 +1235,7 @@ file; the dual-spawn and limiter-enabled suites name their own files.
   `account_status` gates the integration suite's `account status response body`
   case — `GET /api/account/status` is bundled into `create_account_route_specs`,
   so every spine serves it (`true`); the gate fails loud if a declaring backend
-  doesn't mount it (replacing the old runtime 404-sniff-skip).
+  doesn't mount it.
   No flag covers the body-size smuggling probe: every backend closes the
   connection after an oversized-body 413 (at once on Node, Bun and the Rust
   spine), so the pipelined request
@@ -1281,8 +1292,8 @@ minus their in-process-only knobs (`create_route_specs`,
 One call that runs every shipped single-backend cross suite against one
 spawned backend: `describe_spine_cross_suites(handle, {surface_source,
 session_options, rpc_endpoints, live_rpc_endpoints?, roles?, setup?, exclude?,
-exclude_cases?, overrides?, rpc_success_fixtures?, rpc_skip_methods?, rpc_input_overrides?,
-rpc_max_body_bytes?, ws_max_message_bytes?})`.
+exclude_cases?, overrides?, suite_roles?, ws_required_roles?, rpc_success_fixtures?,
+rpc_skip_methods?, rpc_input_overrides?, rpc_max_body_bytes?, ws_max_message_bytes?})`.
 `live_rpc_endpoints` is the backend's whole live mount; given, `rpc_adversarial`
 also walks the methods it keeps off the declared surface. `rpc_input_overrides`
 reaches the standard bundle's RPC round-trip and `rpc_adversarial`'s
@@ -1403,8 +1414,9 @@ seed on the default). A backend with only the builtin roles passes
 `{cell_grant: ROLE_KEEPER, conferral: ROLE_ADMIN}`: keeper reach is not admin
 reach, so every `cell_grant_role` arm still turns on the grant, while an admin
 views and edits every cell — `describe_cell_grant_role_cross_tests` refuses
-`ROLE_ADMIN` — and the scoped-assign case of `role_grant_participation` skips
-for a builtin. fuz_app's own wiring is
+`ROLE_ADMIN` — and the scoped-assign case of `role_grant_participation` and
+the scoped-revoke case of `role_grant_offer_notification_ws` skip for a
+builtin. fuz_app's own wiring is
 `src/test/cross_backend/spine_suites.cross.test.ts`.
 
 ### `cross_backend/rust_spine_consumer_surface.ts` — `create_rust_spine_consumer_surface_spec`
@@ -1455,7 +1467,7 @@ wire-shape check passes green on even when behavior is wrong.
   `{name, request: {method, params?, params_json?, as, acting?, verb?}, expect: {status,
 error_reason?, fields?, headers?, equivalence_group?}, note?, xfail?}`. A case is **data** — `method`
   resolves its `input`/`output` from the live registry (RPC) or `RouteSpec`
-  (the 6 REST auth routes), so the case never carries a schema. `as` is the
+  (the REST auth routes), so the case never carries a schema. `as` is the
   closed `ConformancePrincipal` enum (`keeper` / `daemon` / `invalid_daemon` /
   `daemon_browser` / `token` / `bearer_browser` / `malformed_bearer` / `scoped_token` / `anonymous` /
   `fresh_non_admin` / `role_holder` / `wrong_role` / `expired_session`) —
@@ -1527,7 +1539,7 @@ session_options, principals?, ws?, suite_name?})`. A case's RPC method
   whole mount built on stub deps for resolution only. Same `{setup_test, surface_source,
 capabilities}` protocol every Tier 1 suite uses, so **one case array runs
   both transports** — in-process (`gro test`) and cross-process (the gate,
-  each backend's real auth resolution). `resolve_conformance_principal` (exported) maps the five
+  each backend's real auth resolution). `resolve_conformance_principal` (exported) maps the
   always-available principals to fixture accessors; `role_holder` /
   `wrong_role` read a seeded `extra_accounts` username named via
   `options.principals`. `send_conformance_case(c, {fixture, surface_source, principals?,
@@ -1585,533 +1597,177 @@ capabilities}` protocol every Tier 1 suite uses, so **one case array runs
   live gates, and the Rust spine dispatches its own. Input-dependent handler
   checks stay hand-written rows. fuz_app spreads it into both conformance
   legs.
-- `xfail.ts` — `xfail_until(tracking_id, reason, name, fn)`, a thin
-  `test.fails` wrapper for deferred-by-design rows (visible + self-cleaning:
-  turns red when the gap closes, forcing marker removal). In-scope gaps fail
-  loud as a normal `test`, not via this marker. Sibling to `test_if` in
+- `xfail.ts` — `xfail_until(marker, name, fn)` for deferred-by-design rows,
+  `marker` an `XfailMarker` `{tracking_id, reason, fails_with}`. `fails_with`
+  is required — a `RegExp` over the thrown message or a predicate over the
+  thrown value — so the test passes only on the tracked failure: any other
+  throw is red, and so is a body that passes (the gap closed; remove the
+  marker). In-scope gaps fail loud as a normal `test`, not via this marker. Sibling to `test_if` in
   `capabilities.ts`.
 
 Wire from a `.db.test.ts` (in-process) and a `.cross.test.ts`
-(cross-process) with the same case array — fuz_app's own runner-proof is
-`../../test/cross_backend/conformance.{db,cross}.test.ts` sharing
-`conformance_proof_cases.ts`, the generated auth rows, and
-`conformance_admin_cases.ts` (offer list/history across accounts, invite
-errors, pagination bounds on the admin lists); two checks the table can't
-express ride beside it on both legs: the duplicate-invite refusal (two
-requests, `describe_invite_duplicate_tests` in `invite_duplicate.ts`) and the
-offer reads' cross-account refusal being identical for the keeper's real id
-and the nil id (`describe_offer_cross_account_tests` in
-`offer_cross_account.ts` — the existing id is known only to the fixture).
-The cross legs pass the spine's live mount, so the table also runs
-`conformance_actor_cases.ts` (`actor_lookup`'s empty-`ids` bound, the
-`actor_search` scope gate) and `conformance_cell_cases.ts` (the cell refusals
-one request reaches with no cell in place: `kind` inside `data`, `cell_get`
-naming neither `id` nor `path`, the relation lists naming neither or both
-endpoints — each `invalid_params` with its declared reason — a grant miss
-`cell_grant_not_found`, the `cell_list` pagination bounds and enum-valued
-filters, and the schema-first rows where a bad page or filter value must answer
-before a handler's reason; `conformance_cell_cases.test.ts` requires a `{}` row
-with a reason for every cell action whose input is marked
-`empty_input_handler_guarded`), with the
-generated rows over the off-surface methods; the in-process leg for those is
-`conformance_off_surface.db.test.ts`, over an app mounting the cell surface
-and the two resolvers. The cross leg runs the same cases
-over WS too, and both legs run `conformance_acting_cases.ts` with the
-generated rows on a keeper seeded with `extra_actors`: no `acting` or a
-malformed one → 400 `actor_required`; the nil id, an unused id and another
-account's real actor → one identical 400 `actor_not_on_account`; acting as
-the extra actor (no grants) → 403 `insufficient_permissions` on an admin
-method over a session and a bearer, and on the keeper-gated `account_purge`
-over the daemon token; acting as the bootstrap actor passes the same gates.
-The role gate reads the resolved actor's grants on both spines.
+(cross-process) with the same case array. Two checks the table can't express
+ride beside it in fuz_app's wiring, on both legs: the duplicate-invite refusal
+(two requests, `describe_invite_duplicate_tests`) and the offer reads'
+cross-account refusal being identical for a real id and the nil id
+(`describe_offer_cross_account_tests` — the existing id is known only to the
+fixture). fuz_app's own case files and wiring are
+`src/test/cross_backend/conformance.{db,cross}.test.ts` and the
+`conformance_*_cases.ts` beside them.
 
-### `cross_backend/ws_round_trip.ts` — `describe_cross_process_ws_tests`
+### Suite modules
 
-Real-upgrade WebSocket coverage of a spawned backend — the cross-process
-counterpart to the in-process `ws_round_trip.ts` harness, kept a separate
-call (not folded into `describe_standard_cross_process_tests`) because it
-needs raw `base_url` / `ws_path` the standard bundle doesn't carry, mirroring
-how `describe_ws_round_trip_tests` sits beside the in-process suites. `describe_cross_process_ws_tests({setup_test, capabilities,
-base_url, ws_path, origin?, rpc_path?, max_message_bytes?, logout_path?,
-password_path?, max_tokens?, ws_account_roles?})` opens a live
-`WebSocket` via `create_ws_transport` (the `ws` npm package) and asserts
-cases against the upgrade route `register_action_ws` mounts (origin →
-`require_auth` → dispatch): authed upgrade round-trips `heartbeat`,
-requests sent the moment the socket opens are all answered (both spines admit a
-connection only after re-reading its credential; frames that arrive first wait
-for that, they are not dropped) — and, gated on
-`capabilities.ws_handshake_pipelining`, the same with the ordering forced:
-frames written in the same TCP write as the upgrade request (`connect_raw_ws`)
-are all answered,
-`heartbeat` admits only the parameterless shapes (a declared param →
-`invalid_params`), a message past `max_message_bytes` (default
-`DEFAULT_WS_MAX_MESSAGE_BYTES`) closes with `WS_CLOSE_MESSAGE_TOO_BIG`,
-anonymous upgrade refused, disallowed-origin upgrade refused, and — gated on
-`rpc_path` — a live socket drops when the account's sessions are revoked
-mid-connection (`account_session_revoke_all` over the keeper session channel;
-asserted via `WsClient.wait_for_close`) and when its account is deleted
-(`account_delete` by the keeper, also gated on
-`capabilities.account_lifecycle`), each with `WS_CLOSE_SESSION_REVOKED` and
-`WS_CLOSE_SESSION_REVOKED_REASON`. The rest of the revocation table closes a second
-account's socket with `WS_CLOSE_SESSION_REVOKED` and
-`WS_CLOSE_SESSION_REVOKED_REASON`: `account_token_revoke` its revoked token's
-bearer socket (a socket on its other token stays open);
-`admin_token_revoke_all`, `POST /logout` (`logout_path`), `POST /password`
-(`password_path`) and `account_purge` (also gated on
-`capabilities.account_lifecycle`) its bearer and session sockets; and
-`max_tokens` further mints (default `DEFAULT_MAX_TOKENS`; `null` skips) the
-bearer socket of the token the cap evicts. The account-wide rows come from
-`cross_backend/revocation_drivers.ts` (`create_account_revocations`, shared
-with the SSE suite), and a case that opens several sockets closes whichever
-opened when a later open fails. The second accounts are created holding
-`ws_account_roles`, for a backend whose WS upgrade requires a role (an
-admin-gated `/api/ws` refuses a roleless account). Per-connection auth is enforced **at upgrade
-time**, so the negative upgrade cases assert the upgrade itself rejects, not
-a per-message error; the close cases prove a revocation closes an
-already-open socket, since per-message dispatch never re-checks credential
-validity. Omit `rpc_path` to skip the close cases (consumers without the
-standard account and admin actions on their RPC endpoint). Two cases are gated
-on `capabilities.ws_account_actions` (the WS endpoint mounts the account
-actions): a socket that revokes its own sessions over that socket is closed
-with `WS_CLOSE_SESSION_REVOKED` and its reason after reading the reply to its request; and (with
-`rpc_path`) a socket mints an API token over WS, and its `token_create` audit
-row is read back after `_testing_drain_effects` — a WS reply can precede its
-audit write, so the drain is the barrier (the binary mounts it via
-`create_testing_actions`).
-Otherwise **consumer-agnostic** — it drives only the `heartbeat` protocol action
-(guaranteed on every WS endpoint by `assert_ws_endpoints_include_protocol_actions`),
-so it validates the transport without touching domain WS methods. Gated on
-`capabilities.ws`; cross-process only (needs a real bound socket — wire from
-a `*.cross.test.ts`, never an in-process setup). Authed cookies come from the
-fresh-per-test keeper via `fixture.transport.cookies()`, not the stale
-globalSetup handle.
+Each `SUITE_NAMES` module in `cross_backend/` exports one
+`describe_<module>_cross_tests(options)`. The exceptions are `standard`
+(`describe_standard_cross_process_tests`), `ws_round_trip`
+(`describe_cross_process_ws_tests`), `sse_round_trip`
+(`describe_cross_process_sse_tests`), `peer_ping_ws`
+(`describe_peer_ping_ws_tests`) and `role_grant_offer_notification_ws`
+(`describe_role_grant_offer_notification_ws_tests`).
 
-### `cross_backend/role_grant_offer_notification_ws.ts` — `describe_role_grant_offer_notification_ws_tests`
+A suite's contract is its module's TSDoc — the cases and why each is
+imperative or a table row on the module or the `describe_*` function, the
+options on its options interface. `describe_spine_cross_suites` derives each
+suite's options from the handle and the inputs §`cross_backend/spine_suites.ts`
+lists; a suite called on its own starts from `to_cross_suite_options(handle)`.
 
-Real-upgrade coverage of the consentful-role-grants WS notification fan-out —
-the server-initiated notifications (`received` → recipient,
-`accepted`/`declined` → grantor, `retracted` → recipient, flat
-`role_grant_revoked` → revokee, global and scoped, and
-`role_grant_offer_supersede` → each superseded sibling's grantor on **both**
-the accept- and revoke-cascade paths).
-`describe_role_grant_offer_notification_ws_tests({setup_test, capabilities,
-base_url, ws_path, ws_required_roles?, scoped_role?, scope_kind?})` opens the
-affected counterparty's socket
-(`create_admitted_ws_transport` — a targeted notification reaches only an
-admitted connection, and the handshake alone doesn't say it is one), drives the
-lifecycle RPC over `fixture.transport`, then
-strict-parses the delivered frame against its canonical `@fuzdev/fuz_schema`
-params schema from `auth/role_grant_offer_notifications.ts` (`parse_or_throw`;
-the guard against serialization drift — field / null / datetime / the flat
-revoke shape with its `scope_kind` and `scope_id` / the supersede `reason` +
-`cause_id`). The scoped-revoke case has the keeper assign `scoped_role`
-(default `SPINE_PARTICIPANT_ROLE`; `spine_suites` passes
-`suite_roles.conferral`) in a `scope_kind` scope (default `'space'`, `null`
-for a builtin role, which skips the case), revokes it, and holds the frame to
-that pair. Every case also opens a **bystander** — a third account's
-admitted socket, party to nothing the case drives — and once the targeted
-frame has landed sends a `heartbeat` on it and asserts it received nothing
-but the answers to its own requests. The barrier is what makes the silence
-mean something: both spines queue a fan-out to every recipient in one pass
-with no await in it, and neither writes a response ahead of a notification
-already queued for the same connection — the TS transport sends both through
-one outbound queue, and the Rust loop writes a connection's queued frames
-before a response (`flush_queued_frames`). So a frame the pass addressed to
-the bystander reaches it ahead of the barrier's response. That is strict on TS,
-which sends a fan-out in one synchronous closure. On Rust, `deliver_all` pushes
-to recipients one after another on one worker while the target's connection
-loop runs on another, so the target's frame can be written while the pass is
-still pushing — a window the barrier's round trip outlasts in practice. The
-check covers every pass of the drain: the Rust `PostCommitEffects::drain_all`
-joins effects whose notify futures push synchronously, so every pass
-completes in the drain's first poll. Unlike `describe_cross_process_ws_tests` (consumer-agnostic,
-`heartbeat`-only), this drives a real **domain** notification family — but one
-built from spine primitives only (accounts / role-grants / offers / WS), zero
-consumer domain, so it lives here and runs against any backend that wires the
-standard RPC actions' `notification_sender` and registers a WS socket: fuz_app's
-own spine self-tests (`testing_spine_server`, whose `connection_registry` is threaded
-as the sender via `spine_rpc_endpoints({notification_sender})`; the Rust
-`testing_spine_stub`, which wires it natively) and downstream twin-impl
-consumers (fuz_forge's Deno + Rust backends call it as a thin invocation).
-Sends queue on the post-commit drain, so `WsClient.wait_for` polls + waits
-(method + predicate filter ignores unrelated frames). Accounts are seeded with
-`ROLE_ADMIN` (the only admin-grantable role) so they can open an admin-gated WS
-where one exists (forge) and be offered the role; harmless on the auth-only
-spine. A backend whose `ws_path` is gated on `ROLE_ADMIN` declares it in
-`ws_required_roles`: the revoke case then revokes the revokee's only admin
-grant and expects its socket to close with `WS_CLOSE_PERMISSION_REVOKED` (the
-notification may or may not land first, and is held to the flat shape when it
-does), where an ungated socket expects the frame. The offer/accept fixtures are `create_pending_role_grant_offer` /
-`create_active_role_grant` (`cross_backend/role_grant_cross_helpers.ts`).
-Gated on `capabilities.ws`; cross-process only. fuz_app's
-`role_grant_offer_notification_ws_gated.cross.test.ts` runs it again over the
-spine binaries' role-gated endpoint with `ws_required_roles` declared.
+One row per suite. "Gate" is the capability flags the suite's cases read
+(`BackendCapabilities`), or the `_testing_*` backdoor a suite skips itself
+without.
 
-### `cross_backend/ws_role_gated.ts` — `describe_ws_role_gated_cross_tests`
+| suite | pins | gate |
+| --- | --- | --- |
+| `account_lifecycle` | soft delete → undelete, keeper-confirmed purge, the `cannot_delete_keeper` guard, session-only self-delete, a deleted account's credentials refused, each audit row, the `include_deleted` listing | `account_lifecycle` |
+| `actor_lookup` | the keeper resolves its own actor in the leak-safe wire shape (the refusals are table rows) | — |
+| `app_settings` | an anonymous signup reads `open_signup` fresh after `app_settings_update` | — |
+| `body_size` | the 1 MiB body cap: cap+1 → 413 `payload_too_large`, exactly the cap not size-rejected, an over-cap chunked body → 413, no upload racing the close | — |
+| `body_size_smuggling` | raw socket: an oversized `POST` + a pipelined `GET` → at most one response; `Content-Length` beside `Transfer-Encoding` → close (Bun 1.4.3 is the tested floor) | — |
+| `cell_crud` | the CRUD lifecycle + authz matrix, each response parsed against its output schema, `cell_list` paging past hidden rows, mistyped `data` | `cell_crud` (clone cases also `cell_relations`) |
+| `cell_gated_create` | the parent-aware `CellCreateAuthorize`: admin-only `space` root, contributions gated by the root's `policy[kind]`, 404 on a hidden parent vs 403 on a visible one, `cell_policy_set` | `cell_gated_create` |
+| `cell_grant_role` | role-shaped `cell_grant`: holder admitted, non-holder excluded, unregistered role refused, the `cell_list shared_with:'me'` role arm | `cell_relations` |
+| `cell_grant_steward` | a scoped `participant` grant's holder revokes a role grant bound to its scope, audited `steward: true`; any other holder gets the 404 mask | `cell_relations` + `cell_gated_create` |
+| `cell_moderate` | the `cell_moderate` transitions and their refusals, the moderation read gate on every read path, the steward arm, `cell_clone` running the authorizer per cell | `cell_gated_create` (fact cases also `fact_serving`) |
+| `cell_ref_admission` | possession-gated fact refs: one refusal for stored and unstored hashes, holders by upload, clones per row, the admin bypass, the ref grammar | `fact_serving` (grant, item, clone cases also `cell_relations`) |
+| `cell_relations` | grant / field / item / clone / audit verbs, the relation-read visibility filter (a child the reader can't view is absent, never an edge), a clone dropping children its cloner can't view | `cell_relations` |
+| `cookie_attributes` | the session `Set-Cookie`: `HttpOnly; Secure; SameSite=Strict; Path=/` + `Max-Age` on login, none on a failed login, `Max-Age=0` with the same flags on logout | — |
+| `credential_deadline` | a socket on a session or an API token closes with `WS_CLOSE_SESSION_REVOKED` "Credential expired" at its credential's expiry; an audit stream on a session ends there | `ws`, `sse`; `_testing_shorten_credential_expiry` |
+| `credential_header_robustness` | raw socket: a duplicated, oversized, or control-character credential header never escalates, smuggles a request, desyncs, or wedges the server | — |
+| `fact_serving` | `GET /api/cells/:cell_id/facts/:hash` per reference, the hardening headers, bodyless masked 404s; the admin-only `GET /api/facts/:hash` | `fact_serving` (bare-hash cases also `fact_serving_admin_hash`) |
+| `identity_parity` | `Username` / `UsernameProvided` / `Email` end to end: login canonicalization, username-or-email login, login input validation, ASCII-only creation, the `USERNAME_LENGTH_MIN`..`USERNAME_LENGTH_MAX` edges, email format — each by error reason | — |
+| `origin` | an absent `Origin` on `/api` passes (the foreign-`Origin` 403 is `transport_composition`'s) | — |
+| `origin_conformance` | every row of `origin_conformance.json` (allowlist parse, host, and match rows) through `_testing_origin_check` | `_testing_origin_check` |
+| `origin_scope` | the origin check off `/api`: a foreign `Origin` on `GET /ready` → 403 | `ready` (the `/ready` rows; the unrouted-path rows are ungated) |
+| `peer_ping_ws` | the server→client `peer/ping` round trip and its negatives (unsolicited response, id isolation, timeout, wrong shape, client error, no transport over HTTP) | `peer_request` |
+| `query_shape` | duplicate-key, unknown-key, and phase-order query semantics on the status route, the RPC `GET`, and the bare-hash fact route | `account_status`, `fact_serving_admin_hash` (per case) |
+| `ready` | anonymous `GET /ready` → `200 {ready: true}` over the committed `expected_schema.json` | `ready` |
+| `role_grant_offer_enumeration` | `role_grant_offer_accept`'s deliberate split: a nonexistent offer → 404 `role_grant_offer_not_found`, a sibling actor's on the caller's own account → 403 `role_grant_offer_actor_mismatch` | — |
+| `role_grant_offer_lifecycle` | a decline or retract by a non-party → 404 identical to a missing offer; of a decided offer → 400 `role_grant_offer_terminal`; one audit row per success, none per refusal; lost grantor authority supersedes pending offers | — |
+| `role_grant_offer_notification_ws` | each offer and role-grant notification strict-parsed against its params schema, with a bystander socket that must receive nothing behind a `heartbeat` barrier | `ws` |
+| `role_grant_participation` | the success paths of app-role conferral: assign + idempotency, a scoped assign, offer → accept, offer replay | — |
+| `role_grant_role_grammar` | an off-grammar `role` or scope kind on the grant verbs → `invalid_params` with no reason and no audit row | — |
+| `rooms_ws` | the room verbs and their notifications in `seq` order, the refusals' codes and reasons, exclusivity, eviction, disconnect, the per-connection limiter | `ws` + `rooms` |
+| `rpc_adversarial` | malformed envelopes and generated invalid params sent as a principal the method admits: status, code, echoed `id`, `data.reason` | — |
+| `session_cap` | a login past the per-account session cap evicts the oldest session and only it, closing its socket with the revoked reason while a kept session's socket stays open; the session list marks the caller's own | — (the socket case runs when given a `ws` target) |
+| `session_cookie_codec` | exactly one accepted spelling of a signed cookie: non-canonical signature or `expires_at` spellings refused | — |
+| `simple_request` | an untyped, CORS-safelisted, or non-JSON `POST` to a JSON route → 415 `unsupported_content_type` | — |
+| `sse_round_trip` | the audit stream: connect, a data frame, a close on each revocation of a stream proven admitted, a session-scoped revoke leaving a sibling session's stream open, the per-session stream cap | `sse` (delete and purge also `account_lifecycle`) |
+| `standard` | the `describe_standard_cross_process_tests` bundle: integration, admin, round trip, RPC round trip, data exposure | `account_status` (the status wire-shape case) |
+| `testing_backdoor` | the backdoor declaration, and every declared `_testing_*` action refusing anonymous, session, and bearer callers | `testing_backdoors` (the declaration) |
+| `token_lifetime` | the API token `lifetime` round trip: ttl mint → `expires_at` on create and list, an eternal control, bad lifetimes → 400, a bearer beside a winning daemon token never touched | — |
+| `token_scope_surface` | the `surface:<name>` half of token scoping: a narrowed bearer refused the audit stream and the bare-hash fact read, anonymous on the status read; scope outranks role | `sse`, `fact_serving_admin_hash`, `account_status` (per case) |
+| `transport_composition` | the front-door table over REST, RPC `POST` and `GET`, the WS upgrade, and the audit stream: foreign `Origin` → 403, over-cap length → 413, no credential → 401, a narrowed bearer → each surface's denial | `ws`, `sse`, `ws_refusal_body` (per row) |
+| `ws_connection_cap` | one socket past the per-account cap closes the oldest with `WS_CLOSE_CONNECTION_LIMIT` and nothing else; a closed connection frees its slot | `ws` |
+| `ws_envelope` | a parse error, a non-object frame, and a batch answered with `id: null`; a notification, a stray response, and `cancel` answered with silence | `ws` (in-flight `cancel` also `peer_request`) |
+| `ws_inbound_dispatch` | a reused live id → `duplicate_request_id`; one past the per-socket in-flight ceiling → `queue_overflow`, socket left open | `peer_request` |
+| `ws_outbound_overflow` | a burst within the outbound budget arrives whole and in order; one past it closes with `WS_CLOSE_OUTBOUND_OVERFLOW` while the account's other connection keeps dispatching | `ws`; `_testing_flood_notifications` |
+| `ws_role_gated` | a revoked global grant of a gating role closes the gated socket with `WS_CLOSE_PERMISSION_REVOKED`, leaves the ungated one open, and refuses a re-upgrade; a scoped revoke closes nothing | `ws` + `ws_role_gated` |
+| `ws_round_trip` | the real upgrade: `heartbeat`, frames sent at open and with the handshake, the message-size close, an anonymous upgrade refused 401 and a foreign-origin one with a valid session refused 403, a close on each revocation, a self-revoking socket, a WS mutation's audit row | `ws` (cases also `ws_handshake_pipelining`, `ws_account_actions`, `account_lifecycle`, `ws_refusal_body`) |
 
-Real-upgrade parity for a **role-gated WebSocket losing its role**: a revoked
-global grant of a role an endpoint's `required_roles` lists closes the account's
-sockets on that endpoint with `WS_CLOSE_PERMISSION_REVOKED` (and its reason),
-while the account's ungated socket on the same connection registry stays open,
-dispatching, and receiving the account's pushes, and a re-upgrade is refused at
-the gate (403); a scoped revoke of a listed role closes nothing — the case
-first opens the gated socket on a global grant of `scoped_role` alone, which
-proves the endpoint lists it. That a closed registration is sent nothing more
-is beyond what a client sees once it has read the close frame; each spine's
-transport tests pin it.
-`describe_ws_role_gated_cross_tests({setup_test, capabilities, base_url,
-ws_path, gated_ws_path, gated_roles, scoped_role, rpc_path?})` — `gated_roles`
-must hold `ROLE_ADMIN` and `scoped_role` (a role an admin can grant scoped).
-fuz_app's spine binaries mount `SPINE_ROLE_GATED_WS_PATH` gated on
-`SPINE_ROLE_GATED_WS_ROLES` (`admin` + `participant`). Gated on
-`capabilities.ws` and `capabilities.ws_role_gated`; cross-process only.
+What the suites share:
 
-### `cross_backend/rooms_ws.ts` — `describe_rooms_ws_cross_tests`
+- **Option bases** (`cross_backend/setup.ts`) — `CrossSuiteOptions`
+  (`setup_test` alone), `CapabilityGatedCrossSuiteOptions` (+ `capabilities`),
+  `RpcPathCrossSuiteOptions` (+ `rpc_path?`), and their intersection
+  `RpcPathCapabilityGatedCrossSuiteOptions`. A suite takes a
+  capability-carrying base only when it gates a case on a flag, so the option
+  type states whether the bundle is read.
+- **`cross_backend/cross_rpc.ts`** — `cross_rpc_call` / `error_reason` /
+  `expect_output`, the call-site primitives most stateful suites use.
+  `RpcResult` carries the HTTP `status` beside the envelope; a reply that is no
+  JSON object throws naming the method, the status and the body's head.
+- **`cross_backend/audit_cross_helpers.ts`** — `list_audit_events(fixture,
+  params, rpc_path?)` drains first (`cross_drain_effects`, which refuses an
+  answer without `tracked: true`), then lists and parses every row's metadata
+  (`assert_audit_event_metadata`), so no reader skips the barrier.
+  `assert_audit_metadata_fields(fixture, metadata, expected, absent?)` compares
+  field by field, so a consumer's added key passes unless the fixture closed
+  the world.
+- **`cross_backend/wire_shapes.ts`** — `assert_iso8601_seconds` /
+  `assert_iso8601_seconds_nullable`, the byte-level check on the
+  second-precision UTC shape, which the `Timestamp` schema alone doesn't hold
+  a response to (a millisecond stamp parses).
+- **`cross_backend/revocation_drivers.ts`** — `create_account_revocations(...)`
+  → `AccountRevocation` rows, the account-wide revocations the WS and SSE
+  suites each close a live connection on, so a row added there is covered on
+  both. The drivers stand alone too (`cross_post_as`,
+  `cross_admin_token_revoke_all`, `cross_account_purge`).
+- **`cross_backend/ws_endpoint.ts`** — `WsEndpointTarget` and
+  `open_session_ws` (see §Cross-process plumbing), and
+  `assert_ws_upgrade_refused(open, status)`, which holds a refused upgrade to
+  its HTTP status and returns the refusal for a body check. A suite that waits for a
+  push or needs connections registered in a known order opens an admitted
+  socket, and a silence is asserted behind a `heartbeat` round trip where the
+  suite has one to send (`ws_role_gated`'s stays-open check is a bounded
+  wait).
+- **`cross_backend/session_login.ts`** — `login_fresh_session(fixture,
+  options)` logs an account in on a fresh transport, so its jar holds exactly
+  that session's cookie.
+- **`cross_backend/role_grant_cross_helpers.ts`** —
+  `create_pending_role_grant_offer` / `create_active_role_grant`, the offer and
+  accept fixtures.
+- **`cross_backend/narrowed_api_token.ts`** — `mint_narrowed_api_token(...)`
+  mints a method-scoped API token through the production `account_token_create`
+  path; shared by the front-door table, the token-scope surface and
+  fact-serving suites, and the conformance table's `scoped_token` principal.
+- **`cross_backend/fact_serving.ts`'s `cross_put_fact`** — seeds a fact through
+  `_testing_put_fact`, with its optional `holder`.
+- **`cross_backend/ws_inbound_dispatch.ts`'s
+  `create_holding_peer_ping_responder`** — holds a request in flight by
+  withholding the `peer/ping` echo until released.
+- **Test policies** — `cross_backend/test_cell_gated_create_authorize.ts` (with
+  `TEST_SPACE_POLICY`), `cross_backend/test_cell_grant_steward_revoke_authorize.ts`
+  and `cross_backend/test_room_authorize.ts` are the policies the reference
+  spine binaries mount, each the twin of the Rust stub's. A suite gated on
+  `cell_gated_create` or `rooms` assumes them, which is why those flags are
+  cross-only.
+- **Shared fixtures** — `cross_backend/origin_conformance.json` is the
+  statement of the origin allowlist grammar and matcher (parse, host, and match
+  rows; edited by hand, never generated): `load_origin_conformance()`,
+  `to_origin_conformance_checks(table)`, `assert_origin_conformance(...)`, run
+  over the wire through `_testing_origin_check` and by the TS unit leg through
+  `run_testing_origin_check`. `cross_backend/expected_schema.json` is the
+  `/ready` contract both spines read — the TS spine through
+  `create_spine_ready_route_spec`, which reads `SPINE_EXPECTED_SCHEMA_URL`, the
+  Rust stub through `FUZ_RUST_SPINE_STUB_EXPECTED_SCHEMA_PATH` — regenerated
+  and drift-guarded by `src/test/cross_backend/spine_expected_schema.db.test.ts`
+  (`UPDATE_SCHEMA_READY=1`).
 
-Real-upgrade parity for the **room verbs** (`actions/room_actions.ts`) and the
-notifications their registry fans out: join, leave, send, state, and watch
-round trips with each event's shape and its room's `seq` in order, and an
-event never reaching the seat that caused it; the refusals' codes and reasons
-(`room_not_found` for a denied and a missing room alike, a malformed room id
-as the input schema's reasonless `invalid_params`, `room_not_joined`,
-`room_member_not_found` — a seat addressing itself included — the payload and
-state bounds in UTF-8 bytes, `room_full`, `room_watch_limit`, and
-`method_not_found` over HTTP); exclusivity (one seat per actor, the newest
-admitted winning, the displaced seat told `room_seat_lost` with `moved_to`,
-a same-connection rejoin moving its own seat) and the rejoin tombstone
-(`room_seat_moved` for a moved seat, a seat released by its disconnect
-rejoined); eviction through `_testing_room_evict` by scope, actor in scope,
-room, and actor, ending seats and watches alike; a closed socket's seat
-leaving as `disconnected`; and the per-connection limiter's `rate_limited`
-(`data.retry_after`), charged by escaped bytes, with a watch and a leave
-still answered past the byte budget and another socket of the account holding
-its own budget.
-Codes and `data.reason` are compared, not messages; the room verbs'
-action-manifest entries are the manifest parity gate's.
-`describe_rooms_ws_cross_tests({setup_test, capabilities, base_url, ws_path,
-rpc_path?})` — runs against a backend mounting the room verbs on `ws_path` over
-an exclusive registry with `test_room_authorize` (`test_room_authorize.ts`, the
-twin of the Rust stub's `TestRoomAuthorize`: the room id's prefix — `open:`,
-`scoped:<scope>:`, `pair:`, `watch:`, `admin:` — picks the rule, `admin:`
-reading the global grant live through the request's database) and the room
-limiter at `DEFAULT_ROOM_RATE_LIMIT`, which `capabilities.rooms` declares.
-Gated on `capabilities.ws` and `capabilities.rooms`; a backend declaring
-`rooms` declares `_testing_room_evict` too, which the eviction case drives and
-`describe_spine_cross_suites` requires; cross-process only. fuz_app's spine binaries mount it all
-(`full_spine_mount.ts`: `create_spine_room_registry`, the verbs on both WS
-endpoints, `_testing_room_evict` on RPC, and `_testing_reset` clearing the
-rooms).
+Conventions that hold across them:
 
-### `cross_backend/peer_ping_ws.ts` — `describe_peer_ping_ws_tests`
-
-The server→client **request/response** sibling of the notification suite above —
-the machinery proof for ActionPeer. `peer/ping` is `initiator: both`; the
-client→server direction already exists as `heartbeat`, this exercises the new
-server→client one. The observable trigger is a client invoking the `peer/ping`
-**action** over its own socket: the handler initiates a `peer/ping` request back
-to that socket (`ctx.request_client`), awaits the client's echo, validates it
-against `PingResponse`, and returns the validated shape — so one client RPC
-drives the whole round-trip and every outcome (success / `Timeout` / wrong-shape
-/ client-error) surfaces as that RPC's wire response. The client attaches an
-`on_request` responder **at construction** (the `create_ws_transport` seam) so
-the inbound server-initiated request is answered as soon as it arrives; the
-security negatives use the raw `WsClient.send` to inject unsolicited /
-cross-connection frames. Cases: the positive round-trip plus
-unsolicited-response rejection, per-connection id isolation (a second
-socket's forged reply for the first's id, then a round-trip on the second
-socket as a barrier, so the first's timeout is asserted to come after the
-forged reply was read — never a deadline that ran out first), never-reply
-`Timeout`, wrong-shape rejection, an undeclared reply key accepted and dropped
-(both spines read the reply forward-compatibly), client-error forwarding, a
-malformed client error read alike on both spines (a code off the base set —
-a consumer's code, a fraction — is `internal_error`, a non-string message
-`'peer error'`, `error: null` neither, a present `data` kept), and the HTTP
-no-transport path. Gated on `capabilities.peer_request` — `true` on
-both the Rust spine and the TS spine (the `ConnectionRegistry.request_connection`
-path + `register_action_ws` response correlation); `peer/ping` is a protocol
-action (manifest-excluded), so parity is behavioral here, not via the manifest
-gate. Cross-process only.
-
-### `cross_backend/ws_inbound_dispatch.ts` — `describe_ws_inbound_dispatch_cross_tests`
-
-Real-upgrade parity for the two refusals a WebSocket request meets ahead of
-dispatch: a request whose id names a request still running on the socket →
-`invalid_request` with `data.reason: 'duplicate_request_id'`, not dispatched
-(the running request answers under its id as usual, and the id frees once it
-has); and past the per-socket in-flight ceiling (128 on both spines) a new
-request → `queue_overflow` with its id, not dispatched, the socket left open,
-the duplicate check first. Requests are held in flight with `peer/ping` — the
-client's responder withholds the server's ping echo until the test releases
-it — so the suite gates on `capabilities.peer_request`.
-`describe_ws_inbound_dispatch_cross_tests({setup_test, capabilities, base_url,
-ws_path})`. The wire literals are independent copies of the producers'
-constants, so a value changed on one spine fails here. Cross-process only.
-
-### `cross_backend/ws_envelope.ts` — `describe_ws_envelope_cross_tests`
-
-Real-upgrade parity for the WS read loop's frame envelope — the socket twin of
-`rpc_adversarial`'s HTTP envelope cases. A frame that is not JSON answers
-`parse_error`, a scalar or bare-string frame and a batch array each answer
-`invalid_request`, all with `id: null` and the socket left open; a
-notification, a stray response matching no server-initiated request, and a
-`cancel` (unknown id, malformed params, or a request in flight) answer no
-frame. The in-flight cancel holds a `peer/ping` with
-`create_holding_peer_ping_responder` (exported from `ws_inbound_dispatch.ts`)
-and pins that the request still answers under its id — neither spine's
-`peer/ping` observes its signal, so the cancel's effect is a consumer seam's
-to pin. Silence is asserted positively: a `heartbeat` probe after the frames,
-and nothing but its response after the mark. Gated on `capabilities.ws`, the
-in-flight cancel also on `capabilities.peer_request`.
-`describe_ws_envelope_cross_tests({setup_test, capabilities, base_url,
-ws_path})`. Cross-process only.
-
-### `cross_backend/ws_outbound_overflow.ts` — `describe_ws_outbound_overflow_cross_tests`
-
-Real-upgrade parity for the **per-connection outbound bound** — the byte
-budget both spines hold a WebSocket's waiting frames to
-(`ConnectionRegistry`'s `outbound_queue_bytes`, the Rust `fuz_realtime`
-outbound queue; same default, same per-frame charge). The close code and its
-reason are wire contract — a client reads `WS_CLOSE_OUTBOUND_OVERFLOW` as "you
-fell behind, reconnect" — so this is the pin that runs on both.
-`describe_ws_outbound_overflow_cross_tests({setup_test, capabilities, base_url,
-ws_path, origin?, rpc_path?})` drives `_testing_flood_notifications`, which
-queues a burst onto the caller's own connection in one synchronous run, so the
-burst waits at once whether or not the client reads and the overflow is
-deterministic. Cases: a burst within the budget arrives whole and in order
-ahead of its response, the socket left open — a small one, and one of a few
-mebibytes in megabyte frames, most of the default budget, which waits on the backend's write pump where megabyte frames outrun the socket's buffer (Node and Bun write the burst through, as observed); a burst far past it closes the
-socket with the code and the exact reason, no response for the flooding request
-arrives, and any flood frames that did arrive are a contiguous prefix of the
-burst — while a second connection on the same account keeps dispatching; a
-burst past the action's own size limit is refused `invalid_params` with the
-socket left open; and, with `rpc_path`, the action over HTTP refuses
-`invalid_params` with reason `no_connection`. Not asserted, because each
-implementation decides them: how many frames accepted before the overflow
-reach the client, and the boundary a burst of tiny frames overflows at. The
-flood action is daemon-token-gated, so the flooding socket upgrades with the
-daemon token and no `Origin` (`create_ws_transport`'s `origin: null`). The wire
-literals are independent copies of the producers' constants. Gated on
-`capabilities.ws`; cross-process only, and only for a backend that mounts the
-flood action on its WS endpoint.
-
-### `cross_backend/ws_connection_cap.ts` — `describe_ws_connection_cap_cross_tests`
-
-Real-upgrade parity for the **per-account WebSocket connection cap** — the
-evict-oldest policy both spines apply (`ConnectionRegistry`'s
-`max_connections_per_account`, the Rust `fuz_realtime` `ConnectionRegistry`).
-The close code, its reason, and which socket closes are wire contract — a
-client reads `WS_CLOSE_CONNECTION_LIMIT` as "superseded, don't reconnect" — so
-this is the pin that runs on both.
-`describe_ws_connection_cap_cross_tests({setup_test, capabilities, base_url,
-ws_path, origin?, max_connections_per_account?})` opens every socket with the
-fresh-per-test keeper's session cookies (one account), each answering a
-`heartbeat` before the next opens (`create_admitted_ws_transport`) so the
-backend registered them in order and
-"oldest" names the same socket on both spines. Cases: one connection past the
-cap closes exactly the oldest with `WS_CLOSE_CONNECTION_LIMIT` +
-`WS_CLOSE_CONNECTION_LIMIT_REASON` while every other socket, the newest included, keeps
-dispatching — and the session then upgrades again (a revoked session couldn't),
-superseding the next-oldest; and a socket held open while a cap's worth of
-others open and close in sequence is never evicted (a backend that leaks closed
-connections in its registry counts them toward the cap, which is what this
-catches). `max_connections_per_account` defaults to
-`DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT`, the cap both spines apply unless
-overridden; pass the consumer's value when it sets one, `null` (cap disabled)
-to skip. **Consumer-agnostic** like the WS round-trip suite (`heartbeat` only).
-A separate call rather than more cases on that suite because each case opens
-more than a cap's worth of real sockets. Gated on `capabilities.ws`;
-cross-process only.
-
-### `cross_backend/session_cap.ts` — `describe_session_cap_cross_tests`
-
-Parity for the per-account session cap over real HTTP: logging in past
-`max_sessions` (default `DEFAULT_MAX_SESSIONS`) never refuses a login and
-evicts the oldest session, and `account_session_list` marks each login's own
-session `is_current` (none for a bearer or daemon-token caller, even with a
-session cookie beside the daemon token).
-`describe_session_cap_cross_tests({setup_test, max_sessions?, login_path?,
-status_path?, rpc_path?, ws?, ws_account_actions?, ws_account_roles?})` —
-pass `ws` (`{base_url, ws_path, origin?}`) to also assert that the evicted
-session's socket is closed with `WS_CLOSE_SESSION_REVOKED` once the evicting
-login commits; omitted, that case is skipped, so a caller passes it only for
-a backend with `capabilities.ws`. `ws_account_actions`
-(`capabilities.ws_account_actions`) also lists the sessions over a login's
-socket and asserts its own row is the one current; `ws_account_roles` gives
-the socket accounts' roles, for a backend whose WS upgrade requires one.
-Cross-process only.
-
-### `cross_backend/sse_round_trip.ts` — `describe_cross_process_sse_tests`
-
-Cross-process counterpart to the in-process `sse_round_trip.ts` harness —
-opens a **real** streaming `fetch` against a spawned backend's audit-log SSE
-endpoint via `create_sse_transport` (built-in `fetch` + `TextDecoder`, no
-dep), threading the fresh-per-test keeper's session cookie. Kept a separate
-call (not folded into `describe_standard_cross_process_tests`) for the same
-reason the WS suite is — it needs raw `base_url` / `sse_path` the standard
-bundle doesn't carry. The cases mirror the in-process audit-log self-test:
-the stream emits the `: connected` comment; a minted secondary's sessions are
-revoked over the keeper's admin channel (`admin_session_revoke_all`),
-broadcasting one `session_revoke_all` audit `data:` frame **without** closing
-the keeper's stream (target ≠ subscriber — secondary minted before the stream
-opens so its `create_account` audit events stay off it); the subscriber's
-_own_ sessions are revoked, all of them (`account_session_revoke_all`, the
-account-wide close) and then just the one (`account_session_revoke`, the
-session-scoped close), each dropping the live stream (asserted via
-`SseTransport.wait_for_close`); the keeper soft-deletes a second admin whose
-stream is open (`account_delete`, also gated on
-`capabilities.account_lifecycle`), dropping it; `admin_token_revoke_all`,
-`POST /logout` (`logout_path`), `POST /password` (`password_path`) and
-`account_purge` (also gated on `capabilities.account_lifecycle`) of a second
-admin each drop its stream — the rows `create_account_revocations`
-(`cross_backend/revocation_drivers.ts`) shares with the WS suite; and one stream past the per-session cap
-(`max_per_scope`, default `AUDIT_LOG_SSE_MAX_PER_SCOPE`; `null` skips) on one
-session closes the oldest and leaves the rest open. The data-frame + close
-cases gate on `rpc_path` (they drive the standard account/admin actions); all
-cases gate on `capabilities.sse`. Cross-process only — wire from a
-`*.cross.test.ts`. It runs on every fuz_app backend — the
-TS spines wire `audit_log_sse` and the Rust `spine_stub` serves the same
-stream.
-
-### `cross_backend/revocation_drivers.ts` — shared revocation drivers
-
-The account-wide revocations both transport suites close a live connection on,
-as one table: `create_account_revocations({capabilities, rpc_path,
-logout_path, password_path})` → `AccountRevocation` rows (`{label, slug,
-gate, revoke(fixture, target)}`) for `admin_token_revoke_all`, `POST /logout`,
-`POST /password`, and `account_purge` (`gate` reads
-`capabilities.account_lifecycle`). `revoke` asserts the revocation succeeded;
-the target must hold `DEFAULT_TEST_PASSWORD`. A revocation added here is
-covered on WS and SSE at once. The drivers stand alone too: `cross_post_as`
-(a JSON `POST` on an account's session, asserting 200),
-`cross_admin_token_revoke_all`, and `cross_account_purge` (over the daemon
-token, no `Origin`).
-
-### `cross_backend/cell_crud.ts` + `cell_relations.ts` + `cell_gated_create.ts` + `cell_moderate.ts` — cell parity suites
-
-The cell-layer parity coverage is split across two sibling suites. Cells
-can't ride the generic `describe_rpc_round_trip_tests` (stateful verbs need a
-real id threaded across calls; `cell_get` has a top-level `check`), so —
-like ws/sse — the full cell surface **live-mounts** on the spine RPC path but
-stays **off** `create_spine_surface_spec`, and these dedicated suites are the
-cell validators (`describe_standard_cross_process_tests`' generic round-trip
-never sees them). Both parse every success response against the verb's
-**output** schema, so a TS↔Rust envelope drift fails the suite — not just a
-payload-field drift. Call-site primitives (`cross_rpc_call` / `error_reason` /
-`expect_output`) live in `cross_backend/cross_rpc.ts`, shared by every
-stateful cross suite (`RpcResult` carries the HTTP `status` beside the
-envelope; a reply that is no JSON object throws naming the method,
-the HTTP status and the body's head), and every
-suite that reads audit rows goes through `cross_backend/audit_cross_helpers.ts`
-— `list_audit_events(fixture, params, rpc_path?)` drains
-(`cross_drain_effects`, the `_testing_drain_effects` barrier, refusing an answer
-without `tracked: true`) before it lists and parses, so no reader skips the
-barrier and every read checks the barrier is live, and parses every row's metadata
-(`assert_audit_event_metadata`, closed to undeclared keys when the fixture's
-setup asked), so every reader holds the rows it reads to their event's
-schema. A suite pinning a row's values uses `assert_audit_metadata_fields(fixture,
-metadata, expected, absent?)` — each field compared on its own so a consumer's
-added key passes, the `absent` keys refused, and the whole object compared only
-when the fixture closed the world; the shared
-options shape is `RpcPathCapabilityGatedCrossSuiteOptions` from
-`cross_backend/setup.ts`. `cross_backend/wire_shapes.ts` carries
-`assert_iso8601_seconds` / `assert_iso8601_seconds_nullable` — the byte-level
-gate on the canonical second-precision UTC timestamp shape, which a
-`string` output schema can't catch (a millisecond stamp parses fine).
-The shared suites pin it on the account-status account + role grants, a
-session, a minted + listed API token, a cell's `created_at` / `updated_at`,
-an audit row, an admin account listing, and an offer's `created_at` /
-`expires_at`. `cross_backend/setup.ts` carries the four bases every
-imperative cross suite aliases: `CrossSuiteOptions` (`setup_test` alone),
-`CapabilityGatedCrossSuiteOptions` (+ `capabilities` — `ready`),
-`RpcPathCrossSuiteOptions` (+ `rpc_path?` — origin, body-size (which adds `base_url`), actor
-lookup, app settings), and the intersection
-`RpcPathCapabilityGatedCrossSuiteOptions` (every `cell_*` suite, query-shape,
-token-scope surface, fact-serving, account lifecycle, testing backdoor). A suite takes the
-capability-carrying variant only when it actually gates cases on a flag, so
-the option type states whether the bundle is read.
-
-- **`describe_cell_crud_cross_tests`** (gates on `capabilities.cell_crud`) —
-  the create → get → update → delete → list lifecycle threading the id, plus
-  the CRUD authz matrix (owner CRUD; anon-public-only / private-404; non-owner
-  edit/read/delete → 404 IDOR mask; admin reaches any; dup active `path` → 409;
-  `path` write by non-admin → 403 on create + update; `cell_get` with no
-  id/path → `invalid_params`; null-auth `cell_list` `created_by` →
-  `invalid_params`; a `kind` at `CELL_KIND_LENGTH_MAX` stored whole, one
-  UTF-16 code unit past it → `invalid_params` on create and as a list filter;
-  `cell_list` pages honoring `limit` + `offset`, a page holding visible rows
-  only and filling to `limit` past a newer run of rows the caller can't see —
-  two owners' private cells, read by a non-owner and by anon — and an admin's
-  pages tiling every row; a `data` that is no `CellData` — a non-object, or a
-  non-string `label` / `summary` — refused 400 `invalid_params` with the
-  generic message and no reason (no `data` beyond a TS spine's DEV-only
-  `issues`, an array of `WireIssue`s) on `cell_create`, on `cell_update` of a
-  missing and of a hidden cell, and, with `cell_relations`, on `cell_clone`'s
-  `with_data_patch` — ahead of the 404 mask the same hidden-cell call answers
-  when well-typed, with the keeper's cell count unchanged; those cases run as
-  the keeper and plain accounts only, so a backend that refuses a non-admin
-  root cell can keep them through `exclude_cases` while excluding the rest).
-- **`describe_cell_relations_cross_tests`** (gates on
-  `capabilities.cell_relations`) — the verbs beyond CRUD: grant lifecycle
-  (actor-shaped editor grant enables edit, manage-tier `cell_grant_list`,
-  revoke), the now-reachable `cell_visibility_manage_only` 403 (editor-grant
-  holder can't flip visibility), field set / forward+reverse list / idempotent
-  delete, item insert / ordered forward+reverse list / move / idempotent
-  delete, an insert or move onto a taken position → `cell_item_position_taken`
-  with the rows unchanged, clone shallow (shares edges) vs deep (clones children), and
-  manage-tier `cell_audit_list` (owner reads the timeline; a viewer-grant
-  holder who can `cell_get` still gets the IDOR 404). Only **actor-shaped**
-  grants are exercised — role-shaped principals need a closed role registry the
-  Rust spine deliberately lacks.
-- **`describe_cell_gated_create_cross_tests`** (`cell_gated_create.ts`) +
-  **`describe_cell_moderate_cross_tests`** (`cell_moderate.ts`)
-  (gate on `capabilities.cell_gated_create`, **cross-only**; both build their
-  spaces on `TEST_SPACE_POLICY`, exported beside the authorizer in
-  `test_cell_gated_create_authorize.ts`) — the parent-aware
-  cell-creation authorizer (`CellCreateAuthorize`, **directory model**) +
-  the `cell_moderate` verb parity proofs. Both spines mount the same
-  `test_cell_gated_create_authorize` policy (its admin bypass and `min_role`
-  read the **global** grant): a `kind: 'space'` **root** is
-  admin-only (a non-admin → **403** `cell_create_forbidden`, and the same for a
-  non-admin `cell_clone` of a viewable space — clone runs the authorizer for
-  every cell it writes); a **contribution**
-  under a space is gated by the root's `policy[kind] = {min_role,
-moderation_required}` (the root's manage-tier `policy` column), with
-  `moderation` set per the verdict (`pending`+private vs
-  `approved`+author-visibility); a **hidden** parent **404**-masks vs a
-  **visible** one **403**s; plain parentless creates stay open. The root policy
-  itself: `cell_policy_set` writes it (audited old and new), answers an
-  editor-grant holder 403 `cell_policy_manage_only` and a non-viewer the 404,
-  refuses a contribution `cell_policy_root_only`, and runs each policy through
-  the authorizer's `validate_policy` (`cell_policy_invalid`); an editor
-  rewriting the root's `data.policy` leaves moderation as the column says. The moderate
-  suite then proves the `pending → approved | rejected` transition and the
-  `approved → rejected` takedown: an admin (root manager) approves → public,
-  the **author** self-approve → 403 (anti-self-approval), a non-viewer → 404, reject → stays private, and a cell
-  with no governing root → 400 `cell_not_a_contribution` for any viewer, the
-  404 mask first for a non-viewer; approval needs a pending post and rejection
-  a pending or approved one (the takedown), else 400 `cell_not_pending` — so a
-  root owner shown a private born-approved contribution can't publish it. It also
-  pins the moderation read gate (a pending or rejected post reaches no
-  non-steward reader past its author and admins on `cell_get`, `cell_list`,
-  `cell_item_list`, and fact serving, even flipped public or granted while
-  approved), `cell_grant_create`'s
-  403 `cell_grant_unapproved`, and the steward arm (a non-admin root owner — a
-  non-`space` root the policy leaves open — reads the queue, `cell_get`, and
-  the fact, and moderates, but still 404s on clone and create-under). The
-  authorizer _behavior_ adds no method/wire shape, so schema + manifest parity
-  are **blind** to a divergence — these are the only gates that catch one (the
-  `cell_moderate` verb itself is manifest-covered). In-process hook coverage is
-  the standalone `auth/cell_create_authorize.db.test.ts` (these cross suites skip
-  in-process, where the default app mounts no authorizer).
-
-`cell_crud` / `cell_relations` gate `true` on TS + Rust (cells run on both, no
-`.skip`); `cell_gated_create` is cross-only (the policy is a spine-binary
-fixture). The in-process legs (plain `gro test`) for crud/relations
-are `src/test/auth/cell_crud_parity.db.test.ts`
-
-- `cell_relations_parity.db.test.ts`, sharing the full-surface
-  `create_cell_parity_setup` (`cell_parity_helpers.ts`) which mounts every cell
-  verb and registers `cell_audit_events` through the audit factory.
+- The transport suites (`ws_round_trip`, `ws_connection_cap`, `sse_round_trip`)
+  drive no consumer domain: the `heartbeat` protocol action, the standard
+  account and admin actions, and (for `ws_round_trip`'s audit case) the
+  `_testing_drain_effects` barrier.
+- Cells, facts, rooms, `/ready`, WS and SSE live-mount on the spine binaries
+  and stay off the declared surface, so the declared-surface suites never see
+  them. They are covered by these suites and, given `live_rpc_endpoints`, by
+  `rpc_adversarial` and the conformance table.
+- Wire literals a suite compares (close codes, reasons, error codes) are
+  independent copies of the producers' constants where the suite says so, so a
+  value changed on one spine fails.
+- `rpc_adversarial` sends its cases as a keeper holding every role a declared
+  method gates on and a single actor; a suite seeding a second actor lists the
+  actor-required methods in `skip_methods`.
 
 ### Cross-process plumbing (consumed by `*.cross.test.ts` suites)
 
@@ -2207,8 +1863,8 @@ are `src/test/auth/cell_crud_parity.db.test.ts`
   request (`{result}` / `{error}` / `undefined` to swallow), the path
   `describe_peer_ping_ws_tests` drives. With no `on_request` the seam is inert
   (a server-initiated request flows to `messages` as before).
-- `testing/transports/ws_transport.ts` — `create_ws_transport({base_url, ws_path, cookies, origin?, on_request?, headers?})` (`origin: null` sends no `Origin`, which a daemon-token upgrade needs), returning a `WsTransportClient` — a `WsClient` plus `send_text(text)`, which writes one frame verbatim (a frame that is not JSON)
-  builds a real-upgrade WS client using the `ws` npm package (optional
+- `testing/transports/ws_transport.ts` — `create_ws_transport({base_url, ws_path, cookies, origin?, on_request?, headers?})` (`origin: null` sends no `Origin`, which a daemon-token upgrade needs; a refused upgrade rejects with `WsUpgradeRefusedError`, carrying the refusal's `status` and `body`), returning a `WsTransportClient` — a `WsClient` plus `send_text(text)`, which writes one frame verbatim (a frame that is not JSON).
+  It builds a real-upgrade WS client using the `ws` npm package (optional
   peerDep; consumers wiring cross-process tests `npm install --save-dev ws`).
   Threads the keeper cookie onto the upgrade so per-action auth succeeds on
   the first message. `on_request` (attached at construction, before the upgrade
@@ -2293,9 +1949,9 @@ are `src/test/auth/cell_crud_parity.db.test.ts`
   (`assert_surface_matches_snapshot`); it is not consumed at test runtime.
 - `testing/cross_backend/testing_reset_actions.ts` —
   `create_testing_actions(deps, options)` factory returning the
-  `_testing_reset` RPC action. Test binaries register it on their RPC
-  endpoint; `default_cross_process_setup` fires it unconditionally per
-  test. Handler first fires the consumer-supplied `reset_state(db)`
+  `_testing_*` backdoor actions, `_testing_reset` among them. Test binaries
+  register them on their RPC endpoint; `default_cross_process_setup` fires
+  `_testing_reset` unconditionally per test. Its handler first fires the consumer-supplied `reset_state(db)`
   callback for domain-state reset — before the auth wipe, because domain
   rows depend on auth rows (a domain table with a restricting FK to `actor`
   must empty before the actor delete) — then DELETEs every auth-namespace
@@ -2406,337 +2062,6 @@ are `src/test/auth/cell_crud_parity.db.test.ts`
   complete action list plus its own spec. Daemon-token-gated like its siblings;
   the Rust mirror is `fuz_testing::create_testing_action_manifest_action_spec`.
 
-### Cell ref admission parity — `cross_backend/cell_ref_admission.ts`
-
-`describe_cell_ref_admission_cross_tests({setup_test, capabilities, rpc_path?})`
-— possession-gated ref admission over real HTTP: a non-admin `cell_create`
-naming a stored fact it never put and one naming an unstored hash get one
-identical `403 cell_ref_not_held` (status + error body); a system-put fact is
-refused too; the uploader's public cell serves the bytes to anyone; a second
-actor putting identical bytes becomes a holder; an editor keeps refs another
-writer introduced and is refused adding (or restoring a dropped) unheld one; a
-shallow and a deep clone carry each row's source refs, while a patch adding an
-unheld ref or moving a child's ref onto the root is refused; the keeper (a
-global admin) is ungated; a grantee who read a fact through a granted cell
-can't name its hash in a cell of its own, before or after the revoke; the ref
-grammar is exact (prose, markup, `blake3:zz`, uppercase, object keys are not
-refs); and a hidden cell's update, a create under a hidden parent, and a clone
-of a hidden source answer `404` whatever `data` names. Facts are put through
-`cross_put_fact` (exported by `fact_serving.ts`), whose `holder` maps onto
-`_testing_put_fact`'s optional `holder` key. Gated on
-`capabilities.fact_serving`; cross-process only. The in-process
-cases are `src/test/auth/cell_ref_admission{,.fact_less}.db.test.ts`.
-
-### Malformed-envelope and invalid-params parity — `cross_backend/rpc_adversarial.ts`
-
-`describe_rpc_adversarial_cross_tests({setup_test, surface_source, rpc_path?,
-live_rpc_endpoints?, skip_methods?, input_overrides?, xfail_params?})` — the
-envelope and params groups of `describe_rpc_attack_surface_tests`, sent over
-`fixture.transport` to a spawned backend. The in-process groups run on stub
-apps, while the Rust spine parses envelopes and params by hand and the
-action-manifest parity gate
-compares no param schemas, so this is what holds the spines to one answer.
-
-- **envelopes** — every `create_rpc_envelope_cases` case, one test each, on a
-  fresh fixture; status, code, echoed `id`, and `data.reason` per case, and a
-  guard test that the endpoint has both a read and an authenticated mutation to
-  carry them.
-- **params** — one test per declared method, sending every
-  `generate_rpc_params_test_cases` case (seeded from the method's
-  `input_overrides` entry when it has one — the cases go as a single-actor
-  principal, so an override omits `acting`) and failing with the list of
-  cases not answered 400 `invalid_params` with the broken field's declared
-  `invalid_reason` as `data.reason` (`expected_invalid_reason`; none for an
-  undeclared field or a whole-body case). `xfail_params`
-  (`RpcParamsXfail` — `{method, labels, tracking_id, reason}`) moves the named
-  cases of a method into one `xfail_until` test each, for a known divergence on
-  one backend; the method's other cases keep their test, and an entry naming no
-  generated case fails. Pass it only for the backend that diverges — fuz_app
-  keys it on `RUST_SPINE_STUB_DEFAULT_NAME`.
-
-The authorized principal is the keeper on the first channel the method's auth
-admits — its session, else its daemon token or API token over a no-`Origin`
-transport — resolved through `resolve_conformance_principal`.
-**Preconditions:** the keeper holds every role a declared method gates on
-(`default_cross_process_setup` seeds `keeper` and `admin`; `extra_keeper_roles`
-for others) and has a single actor. No generated body carries a valid `acting`,
-and a malformed one reads as omitted ahead of validation on both spines, so a
-single-actor keeper resolves its actor and validation refuses; a keeper with a
-second actor answers `actor_required` first, so such a suite lists the
-actor-required methods in `skip_methods`.
-
-**Off the declared surface.** `live_rpc_endpoints` (resolved) adds the methods
-the endpoint at `rpc_path` live-mounts beyond the declared surface — cell
-verbs, opt-in resolvers, `_testing_*` backdoors — to both groups: their
-envelope cases in a group of their own, and a params test per method,
-`_testing_*` included (a daemon-only backdoor goes with the keeper's daemon
-token). fuz_app's spine self-test passes `create_spine_live_rpc_endpoints()`.
-Skips `_testing_*` on the declared surface and `PROTOCOL_ACTION_METHODS`, which
-`generate_rpc_auth_conformance_cases` skips too.
-Ungated; cross-process only.
-
-### Token-scope surface parity — `cross_backend/token_scope_surface.ts`
-
-`describe_token_scope_surface_cross_tests({setup_test, capabilities, rpc_path?,
-sse_path?})` — the `surface:<name>` twin of the conformance slate's
-`token_scope_cases`, which cover only the `rpc:<method>` arm. Token scoping's
-RPC-only rule (_a narrowed api token reaches no non-RPC surface that reads
-account data or carries authority_) is the
-load-bearing half of the design and had **no** cross-impl gate: the schema gate
-can't see it (no column), the action-manifest gate can't see it (no method), and
-the spec-derived suites can't see it (REST routes, off the declared RPC surface).
-
-Mints a narrowed bearer through the production `account_token_create` path and
-fires it at the two surfaces whose denial **body** is observable over plain
-HTTP — the audit SSE stream (`capabilities.sse`) and the admin-only bare-hash
-fact read (`capabilities.fact_serving_admin_hash`) — asserting the exact flat
-`{error: 'token_scope_required', required_scope: 'surface:<name>'}` both spines
-contract on (`token_scope_denied_body` ↔
-`fuz_auth::token_scope_surface_denied_response`).
-
-The account status read (`capabilities.account_status`) answers anonymous
-callers, so rule 3 there is the anonymous answer: a narrowed token on
-`GET /api/account/status` gets the anonymous `401`, status and body byte for
-byte, while the same account's full-scope bearer reads the account.
-
-One case has no prior pin anywhere: **scope outranks role**. A
-narrowed token on an account that _also_ lacks the gating role must hear
-`token_scope_required`, not `insufficient_permissions` — the observable the
-TS↔Rust ordering divergence produced before both spines converged on running the
-surface gate ahead of the role gate. Every other scoped-token probe uses the
-keeper's token, whose account holds the role, so both orderings look identical
-there; that is why the divergence survived as long as it did. Verified to
-discriminate: dropping the route's `required_scope` turns it into a 403
-`insufficient_permissions` + `required_roles`, exactly the pre-convergence shape.
-
-Two non-vacuity controls: the narrowed token must still reach the RPC method it
-_does_ name, and a full bearer must get past the scope gate on the same route.
-The WS upgrade is deliberately omitted — `create_ws_transport` threads cookies,
-not bearer headers, and a refused upgrade's body isn't readable, so it can't
-serve a body-parity gate (its per-spine coverage stays in the two surface
-censuses). Cross-process only.
-
-### Front-door contract — `cross_backend/transport_composition.ts`
-
-`describe_transport_composition_cross_tests({setup_test, capabilities, base_url,
-rpc_path?, origin?, rest_path?, password_path?, ws_path?, sse_path?,
-multi_actor?, rpc_max_body_bytes?})` — the per-transport
-composition table: what each transport answers before per-action dispatch,
-when one request trips several refusals. Rows are REST `POST` (session-only
-`/api/account/logout`), RPC `POST`, RPC `GET`, the WS upgrade (gated on
-`capabilities.ws`) and the audit stream (`capabilities.sse`); columns are a
-foreign `Origin` with the keeper's session (→ 403 `forbidden_origin`), an
-over-cap declared length with a foreign `Origin` and no credential (→ 413
-`payload_too_large`, body-carrying rows only; one byte past the spine default,
-or past `rpc_max_body_bytes` on the RPC row), no credential (→ 401
-`authentication_required`), and a narrowed bearer with no `Origin` (→ 403
-`token_scope_required` naming `rpc:<method>` on RPC and `surface:ws_upgrade` on
-the upgrade; 403 `credential_type_required` on the session-only REST route and
-audit stream); a `/password` cell pins that route's 401 beside `/logout`'s.
-Each case asserts the status and the body — flat `{error}` or the JSON-RPC
-envelope's `error.data`. A WS refusal's body is required where the backend
-declares `capabilities.ws_refusal_body`; where it doesn't (Node's
-`@hono/node-server` drops the body), an empty body passes on its status and a sent
-one is still asserted. The table
-is the exported `transport_composition_cases` data. `multi_actor:
-{setup_test, xfail?}` adds `transport_composition_multi_actor_cases`, run on
-a fixture whose keeper has `extra_actors`: the keeper's session upgrading with
-no `?acting=` → 400 `actor_required` (flat body), the upgrade's actor
-resolution on both spines. `xfail` is for a backend known to admit the
-socket; fuz_app passes none. Given `base_url`, every
-probe is written to the socket (`raw_http_exchange`) and an over-cap request
-sends its head alone; with `base_url: null` the probes go through the
-fixture's transport and only the WS upgrade rows skip — the WS-path rows
-that ask for no upgrade gate on `capabilities.ws` alone. Not in the standard
-bundle. fuz_app's in-process leg is `src/test/auth/transport_composition_parity.db.test.ts`.
-
-`cross_backend/narrowed_api_token.ts` — `mint_narrowed_api_token({app,
-rpc_path, session_headers, methods, name?})` mints a method-scoped api token
-through the production `account_token_create` path and returns the raw bearer
-(throws when the mint is refused). Shared by the front-door table, the
-token-scope surface suite, and the conformance table's `scoped_token`
-principal.
-
-### Credential deadline parity — `cross_backend/credential_deadline.ts`
-
-`describe_credential_deadline_cross_tests({setup_test, capabilities, base_url,
-ws_path, sse_path?, rpc_path?, ws_account_roles?})` — a connection closes when the credential it
-opened on expires: each case pulls a fresh account's credential expiries in to
-two seconds with `_testing_shorten_credential_expiry` before the open, then
-checks the connection still dispatches short of the deadline and closes at it.
-A WebSocket on a session and one on an API token (`capabilities.ws`) close with
-`WS_CLOSE_SESSION_REVOKED` and `WS_CLOSE_CREDENTIAL_EXPIRED_REASON`; an audit
-stream on a session (`capabilities.sse`) ends; and a second seam call asking
-for a later expiry moves nothing (the seam only shortens). API token × audit
-stream is not reachable over the wire — the stock stream is session-only — so
-the Rust spine pins it on a widened gate and the TS twin shares one deadline
-wait across both transports. The cases run concurrently (`describe.concurrent`)
-under one `setup_test()` for the suite, each on its own account, so a leg waits
-out one deadline rather than one per case. `ws_account_roles` gives the
-socket cases' accounts roles, for a backend whose WS upgrade requires one.
-Cross-process only.
-
-### Origin check scope parity — `cross_backend/origin_scope.ts`
-
-`describe_origin_scope_cross_tests({setup_test, capabilities, probe_path?,
-base_url?, unrouted_status?})` — the origin check covers paths outside `/api`:
-on `GET /ready` (`probe_path`), a foreign `Origin` → 403 `forbidden_origin`, an
-absent or allowed one → 200, gated on `capabilities.ready`. On an unrouted
-path, ungated: a foreign `Origin` → 403, an absent one passes to the fallback
-(`unrouted_status`, default 404 — a backend whose fallback serves an SPA shell
-passes 200; the in-process leg runs that shape too), and an over-cap `POST`
-with a foreign `Origin` → 413. Runs both legs (the in-process
-`cross_backend/origin_scope_parity.db.test.ts` + the cross-process
-one call).
-
-### Origin verification parity — `cross_backend/origin.ts`
-
-`describe_origin_cross_tests({setup_test, rpc_path?})` — the
-imperative Origin-verification suite: absent `Origin` → request passes
-(non-browser direct access); the disallowed-`Origin` 403 is the front-door
-table's. Imperative (not a conformance-table row) because absent-Origin needs
-`fresh_transport({origin: null})`. Runs both legs (the
-in-process `auth/origin_parity.db.test.ts` + the cross-process
-one call). The promotion surfaced a twin-impl divergence — the
-Rust spine returned a plain-text body — now converged to the canonical TS
-`{error: "forbidden_origin"}` via `fuz_http::forbidden_origin_response()`.
-
-### Origin allowlist conformance — `cross_backend/origin_conformance.ts`
-
-`cross_backend/origin_conformance.json` is the shared table both spines' origin
-allowlist must satisfy: **parse** rows `{raw, ok: true}` or `{raw, errors:
-[{index?, kind}]}` (every refusal, 1-based position, `AllowedOriginsErrorKind`)
-and **match** rows `{patterns, origin, allowed}` (`origin: null` — no
-`Origin` — passes). A row may carry a `note`. `load_origin_conformance()` reads
-and validates it (`OriginConformance`), `to_origin_conformance_checks(table)`
-flattens it into `_testing_origin_check` inputs with their expected answers, and
-`assert_origin_conformance(checks, answers, backend)` fails once listing every
-row that disagrees. `describe_origin_conformance_cross_tests({setup_test,
-rpc_path?})` sends every row to a backend's `_testing_origin_check` over the
-keeper's daemon-token channel; the TS unit leg runs the same rows through
-`run_testing_origin_check` (`src/test/http/origin.conformance.test.ts`), so the
-Rust spine is held to the table without reading the file. Ungated; edit the
-table by hand — it is the statement of the grammar, not generated output.
-
-### CORS simple-request parity — `cross_backend/simple_request.ts`
-
-`describe_simple_request_cross_tests({setup_test, rpc_path?, login_path?, logout_path?})`
-— a JSON route refuses any `POST` that isn't `application/json` with a flat
-415 `{error: 'unsupported_content_type'}` before reading a credential or the
-body: the CORS-safelisted types in any spelling (`text/plain`, `Text/Plain`,
-form-encoded, multipart) on RPC with a session, untyped RPC (a byte body, so
-`fetch` adds no type), `application/octet-stream` / `+json` / empty-typed RPC
-and login, form-encoded login, a forged `text/plain` logout with a session
-(which must leave the session valid), and an untyped logout with no session
-(415, not 401); a bodyless JSON logout reaches the auth check (401), and
-`application/json` with a charset is dispatched. The TS spine checks per route
-(`apply_route_specs`), the Rust spine in each JSON handler. Runs both legs:
-the in-process `auth/simple_request_parity.db.test.ts` and the cross-process
-one call.
-
-### Query-string shape parity — `cross_backend/query_shape.ts`
-
-`describe_query_shape_cross_tests({setup_test, capabilities, rpc_path?})` —
-the imperative duplicate-key / unknown-key / phase-order query-semantics
-suite over the three spine surfaces that read a query:
-`GET /api/account/status` (no query schema — duplicated `acting` first-wins,
-unknown keys ignored, anonymous junk query → 401 never a query 400), the
-JSON-RPC GET endpoint (`method` / `id` / `params` first-wins — a last-wins
-reader dispatches a different method per backend on the same request), and
-`GET /api/facts/:hash` (gated on `capabilities.fact_serving_admin_hash`; strict schema —
-unknown key / malformed `acting` → 400 `invalid_query_params` **before** the
-401 guard, duplicated `acting` first-wins). Imperative because duplicated
-query keys can't be expressed through the structured RPC helpers. Pinned
-after the Rust spine's derived-serde `Query` extractors were converged onto
-`fuz_http`'s `query_first` / `assert_known_query_keys` (a pre-handler
-"duplicate field" 400 is an anonymously observable backend fingerprint).
-Cross-process only — the per-surface in-process TS pins live beside each
-module's own tests (`account_status.test.ts`, `action_rpc.test.ts`,
-`serve_fact_route.db.test.ts`);
-
-### Grant-verb role and scope-kind grammar parity — `cross_backend/role_grant_role_grammar.ts`
-
-`describe_role_grant_role_grammar_cross_tests({setup_test, rpc_path?})` — an
-off-grammar `role` (uppercase, hyphen, digit, leading, trailing or consecutive
-underscores, space, empty, or all lowercase and one character past the length
-cap) on `role_grant_assign` and `role_grant_offer_create` answers
-`invalid_params` with no `data.reason`, and after the refusals no
-`role_grant_create` / `role_grant_offer_create` audit row carries one of those
-strings. The control — an on-grammar role no registry holds, refused past
-validation with `role_not_web_grantable` — keeps the audit read from being
-vacuous, and the same refusal for a role exactly at the length cap pins that
-boundary. An off-grammar `scope_kind` with its `scope_id` (the same grammar
-and cap, `ScopeKindName`, among them `'GLOBAL'` with the all-zeros uuid, the
-partial unique indexes' key for a global grant) is refused the same way and
-recorded in no row; with an unregistered role, on-grammar ones (one at the cap)
-are refused past validation with the verb's not-grantable reason. Exists
-because the action-manifest parity gate captures no param
-schemas while the Rust spine parses params by hand, and the grant verbs write
-the role and `scope_kind` they refuse into their failure rows. Ungated; cross-process only (it
-reads the audit log behind `_testing_drain_effects`).
-
-### API-token lifetime parity — `cross_backend/token_lifetime.ts`
-
-`describe_token_lifetime_cross_tests({setup_test, rpc_path?})` — the
-imperative round-trip on `account_token_create`'s required `lifetime` union:
-a `{kind:'ttl', days}` mint returns and stores a bounded `expires_at`
-(create output + `account_token_list` read-back), `{kind:'eternal'}` stores
-NULL, an omitted or out-of-range lifetime 400s identically on both
-spines, and a `name` at `API_TOKEN_NAME_LENGTH_MAX` mints and reads back whole
-while one UTF-16 code unit past it is `invalid_params`. It pins the scope cap
-as compact UTF-8 bytes at mint and at read: a two-byte scope at
-`MAX_TOKEN_SCOPE_BYTES`, and an ASCII one under it whose printed `jsonb` text
-is past it, mint, authenticate as bearers and list as `N methods`; one byte
-past the cap is `invalid_params` with `ERROR_TOKEN_SCOPE_INVALID`. It also pins the
-credential legs' order from stored state: a bearer sent beside a winning
-daemon token keeps `last_used_at` null (never validated), against a token used
-alone whose touch lands. Exists because the action-manifest parity gate captures no param
-schemas while the Rust spine hand-parses params — a spine that silently
-dropped the field would answer the same mint with a 200 and an eternal
-token; only the stored-state read-back catches it. Ungated (mint + list are
-on every spine's standard surface). Runs both legs
-(`token_lifetime_parity.db.test.ts` + the cross-process one call).
-
-### Readiness probe parity — `cross_backend/ready.ts`
-
-`describe_ready_cross_tests({setup_test, capabilities, ready_path?})` — the
-imperative `/ready` deploy-gate suite: an anonymous, cookie-jar-free,
-no-Origin `GET /ready` → `200 {ready: true}` on a clean spine bootstrap (the
-deploy-poll shape a gate like zap uses). The `/ready` mechanism + its
-drift → `503` path are per-impl unit tests already (TS `db/schema_ready.ts`,
-Rust `fuz_db::schema_ready` / `fuz_http::ready`); this is the cross-impl
-success-path gate. Gated on `capabilities.ready`. Imperative (not a
-`conformance_table` row) because `/ready` is a public flat-REST route, not a
-JSON-RPC envelope, and the probe needs `fresh_transport({origin: null})` —
-the same reasons the sibling `cross_backend/origin.ts` suite is imperative.
-Runs both legs (`cross_backend/ready_parity.db.test.ts` +
-the cross-process one call).
-
-Both backends read the **same** committed
-`testing/cross_backend/expected_schema.json` (column-presence is engine-portable,
-so one fixture is the cross-impl contract): the TS spine via
-`create_spine_ready_route_spec`, which reads the `SPINE_EXPECTED_SCHEMA_URL`
-`import.meta.url` constant off `spine_surface_constants.ts`; the Rust
-`testing_spine_stub` via the absolute path `rust_spine_stub_backend_config`
-passes through `FUZ_RUST_SPINE_STUB_EXPECTED_SCHEMA_PATH`. The fixture covers the full
-spine bootstrap (auth + cell + fact) and is regenerated +
-drift-guarded by `src/test/cross_backend/spine_expected_schema.db.test.ts`
-(`UPDATE_SCHEMA_READY=1`).
-
-### Session cookie codec parity — `cross_backend/session_cookie_codec.ts`
-
-`describe_session_cookie_codec_cross_tests({setup_test, cookie_name,
-cookie_keys, rpc_path?})` — both spines accept exactly one spelling of a signed
-session cookie. The suite holds the backend's `SECRET_FUZ_COOKIE_KEYS`
-(`cookie_keys`), signs `token:expires_at` itself, and probes `account_verify`
-with: a signature whose final character carries non-zero trailing bits (the
-same MAC under `atob`), an unpadded signature, and correctly signed
-`expires_at` values `+N`, ` N`, `N.0` and one past `u64::MAX` — each refused
-with `authentication_required`. Controls: re-signing the keeper cookie's
-payload reproduces it byte for byte and it authenticates, and a leading-zero
-`0N` authenticates (the `u64` bound is on the value, not the digit count).
-Ungated; cross-process only.
-
 ### Testing-backdoor declaration + credential gate — `cross_backend/testing_backdoor.ts`
 
 `describe_testing_backdoor_cross_tests({setup_test, capabilities, rpc_path?,
@@ -2792,161 +2117,27 @@ this suite stays for consumers whose backends mount the `_testing_*` actions
 without a conformance table over their live mount, and for the declaration
 check.
 
-### Identity-primitive parity — `cross_backend/identity_parity.ts`
+### Limiter-enabled backends — `login_security.ts` + `ws_action_rate_limit.ts`
 
-`describe_identity_parity_cross_tests({setup_test, login_path?, signup_path?, bootstrap_path?, password_path?})` —
-the imperative suite pinning the identity primitives (`Username`,
-`UsernameProvided`, `Email`) + login/signup input handling end-to-end over real
-HTTP (flat REST `/login` + `/signup`, so imperative, not a `conformance_table`
-row). The facets, each a TS↔Rust reimplementation pair that the spec-derived
-round-trip / conformance suites never vary:
+The two standalone suites that need live rate limiters, which no backend the
+standard suites share can have (those fire many loopback logins and actions a
+live limiter would refuse). A backend is started for them by the
+`enable_action_rate_limit` + `action_rate_limit_max_attempts` options on the
+spine backend configs, which set `ACTION_RATE_LIMIT_ENABLED_ENV`
+(`FUZ_ACTION_RATE_LIMIT_ENABLED`) and `ACTION_RATE_LIMIT_MAX_ATTEMPTS_ENV`
+(`FUZ_ACTION_RATE_LIMIT_MAX_ATTEMPTS`) from `spine_surface_constants.ts`, beside
+`enable_login_rate_limit` (`LOGIN_RATE_LIMIT_ENABLED_ENV`) and the
+trusted-proxy allowlist the login cases key on. Each spine binary then builds one
+IP and one account action limiter shared by its RPC and WS mounts, and refuses
+to boot on a cap without the flag.
 
-- **Login canonicalization** — case-insensitive + whitespace-trim lookup
-  (`UsernameProvided` `.trim().toLowerCase()` + `LOWER(username)`), the trimmed
-  set being JS `String.prototype.trim`'s on every spine (U+FEFF padding trimmed,
-  U+0085 not), plus a Turkish-`İ` homograph **no-Unicode-fold-collision**
-  negative.
-- **Username-or-email login** — an account created with an email logs in via
-  that email, case-insensitively both directions; username login still works;
-  non-existent email → 401. This is the corner that surfaced and closed the Rust
-  spine's username-only divergence (it now mirrors TS's
-  `query_account_by_username_or_email`).
-- **Login input validation** — malformed login input → 400 `invalid_request_body`
-  on every spine: whitespace-only username (empty after trim), over-long username
-  (> 255), empty password, unknown body key (strict object). TS runs the full
-  `LoginInput` schema; the Rust spine enforces the same shape in
-  `account_login` (closed a cluster where three of these fell through to a
-  lookup-miss 401 on Rust and a whitespace-only identifier 401'd on TS). Asserted
-  by error reason, not just status.
-- **ASCII-only creation invariant** — non-ASCII username → 400 at signup, and a
-  padded creation name (space, tab, U+0085) → 400, never trimmed into a legal
-  one — at signup, and at bootstrap (`bootstrap_path`, default
-  `/api/account/bootstrap`, `null` to skip), where the body is validated ahead
-  of the window check, so the 400 holds after bootstrap completed. There the
-  `token` past `BOOTSTRAP_TOKEN_LENGTH_MAX` UTF-16 code units is 400 and one at
-  it reaches the closed window's 403, ASCII, two-byte, and astral, so both
-  spines count code units, not bytes or scalar values.
-- **Length + format regex parity** — both `[USERNAME_LENGTH_MIN,
-USERNAME_LENGTH_MAX]` = `[3, 39]` boundary edges (just-outside → 400,
-  just-inside → 403 no-matching-invite) and the creation regex shape (leading
-  non-letter / trailing punctuation / embedded disallowed char → 400; mid-string
-  `_`/`-` accepted), catching an off-by-one or position bug in the TS
-  `Username` bounds and regex vs the Rust byte-scan `is_valid_username_for_creation`.
-- **Email format (creation)** — the optional signup `email` validated to the
-  loose `local@domain.tld` shape (TS `Email`, `EMAIL_REGEX` + 254-byte
-  bound, Rust `is_valid_email`): malformed (no `@` / no domain dot / empty
-  side / dot at a domain edge, beside another dot inside it too / whitespace /
-  over-length) → 400, well-formed → 403 no-invite. Accepted siblings include
-  the single-char-TLD `a@b.c` and the consecutive dots inside a domain that
-  a stricter email grammar rejects — the deliberately-looser shared rule. **Closed a
-  real divergence**: the Rust spine previously length-checked the email only,
-  accepting any non-empty string TS rejected.
-- **Malformed JSON body** — an unparseable (`{`) or non-object (`[]`) body typed
-  `application/json` → 400 `{error: "invalid_json_body"}` and nothing else, on
-  login, signup, bootstrap (ahead of its window check), and the password change
-  (`password_path`, default `/api/account/password`, `null` skips; parsed after
-  its credential and session-only gates, so the case sends a session and an
-  anonymous one still answers 401). A Rust backend needs the spine's
-  `parse_json_body`.
-
-Ungated (login + signup are on every spine). Runs both legs via the shared
-`{setup_test}` protocol: in-process (`identity_parity.db.test.ts`, plain
-`gro test`) and cross-process (the one call).
-The accepted-case 403s rely on `create_spine_route_specs` zeroing
-`signup_fail_floor_ms` (mirroring `login_fail_floor_ms: 0`) so they don't each
-pay the 250ms denial floor.
-
-### Login rate-limit + trusted-proxy parity — `cross_backend/login_security.ts`
-
-`describe_login_security_cross_tests({setup_test, login_path?})` — the imperative
-suite pinning **login rate limiting + `X-Forwarded-For` client-IP resolution**
-over real HTTP on both spines:
-
-- **per-IP limit fires** — `default_login_ip_rate_limit.max_attempts` (5, the
-  shared cap on both impls) failed logins from one forwarded IP → 401, the next →
-  `429` with the canonical `{error: "rate_limit_exceeded", retry_after}` body +
-  `Retry-After: ceil(retry_after)` header (TS
-  `route_fail(REST_RATE_LIMIT_EXCEEDED, {retry_after})` ↔ Rust
-  `route_response::rate_limit_exceeded`).
-- **XFF keying** — exhaust one forwarded IP to 429, then a _distinct_ forwarded IP
-  → 401 (not 429), proving the limiter keys on the resolved `X-Forwarded-For` IP,
-  not the loopback TCP peer (a backend ignoring XFF would 429 the fresh IP too).
-- **a malformed hop stops the walk** — after exhausting one forwarded IP, a
-  chain with that IP left of an `ip:port` entry → 401, not 429: the walk stops at
-  the malformed entry and keys on the connection IP (its audit row says so),
-  never on the client-written entry past it.
-- **a success does not refund the per-IP budget** — the distributed-spray
-  backstop. Failed guesses against distinct usernames from one forwarded IP,
-  interleaved with the attacker's own successful logins, must still 429 within a
-  bounded total-request budget. Both spines used to clear the IP bucket on
-  success; only the account-grain bucket is forgiven now. The **budget bound** is
-  what makes this adversarial — a decrement-instead-of-zero implementation loops
-  to the iteration cap and fails here. Either leg may trip: the aggregate governs
-  the address, so once it fills the attacker's own login is refused too.
-
-**Cross-process only**, on a **dedicated dual-spawn project** (`cross_backend_security`
-via `global_setup_login_security.ts`) — the limiters can't be enabled on a backend
-the standard suites share (they fire many loopback logins a live limiter would
-429), so the standard backends keep every limiter null. Determinism without a
-limiter reset: each case uses its own forwarded IP (a fresh bucket) plus its own
-non-existent username; the spray case additionally mints its attacker account
-over the setup path (loopback, no XFF), so minting can't touch the bucket under
-test. Zero Rust code change — the stub's `FUZ_LOGIN_RATE_LIMIT_ENABLED`
-and `FUZ_TRUSTED_PROXIES` env-gates were already wired; the TS side env-gates the
-limiters in the binary, and `create_spine_route_specs` honors
-`ctx.login_ip_rate_limiter`.
-The in-process counterparts already exist (`describe_rate_limiting_tests` plus the
-proxy middleware tests), so there's no in-process leg. `npm run test:cross:security`.
-Cited property: `docs/security.md` §"Rate Limiting" + §"Trusted Proxy / Client IP".
-
-### Action rate-limit parity over WS — `cross_backend/ws_action_rate_limit.ts`
-
-`describe_ws_action_rate_limit_cross_tests({setup_test, base_url, ws_path,
-rpc_path?, max_attempts})` — the imperative suite pinning **action rate
-limiting over a real WebSocket**, and its budget shared with HTTP RPC, on
-backends started with small shared action limiters (`max_attempts` is the cap
-they were started with, at least 2):
-
-- **account axis over WS** — `account_token_create` (`rate_limit: 'account'`
-  on both spines) with malformed params: `max_attempts` calls answer
-  `invalid_params` (the throttle runs before params validation, so they charge),
-  the next answers `rate_limited` with a positive `data.retry_after`.
-- **one account bucket across transports** — calls split between HTTP RPC and
-  WS exhaust one budget; the call past it is refused on WS and on HTTP (`429`).
-- **IP axis keyed by the forwarded client IP** — `peer/ping` (`rate_limit:
-  'ip'`, public) with malformed params from one `X-Forwarded-For` address, over
-  anonymous HTTP and over a WS whose upgrade carried the header: refused past the
-  cap on both transports, while a second address keeps its own bucket on both.
-- **account axis at the dispatchers** — `cell_create` (`rate_limit:
-  'account'`, on both spines' RPC and WS mounts) with malformed params: refused
-  past the cap over HTTP (`429`) and over WS (`rate_limited`), calls split
-  between the two transports exhaust one budget, and a budget split between
-  `cell_create` and `account_token_create` is one bucket.
-
-Isolation without a limiter reset: each account case runs on the fresh keeper
-the per-test `_testing_reset` seeds (a new account id), and the IP case uses
-TEST-NET-2 addresses nothing else sends. The backends are started by the
-`enable_action_rate_limit` + `action_rate_limit_max_attempts` options on both
-backend configs (`ts_spine_*_backend_config`, `rust_spine_stub_backend_config`),
-which set `ACTION_RATE_LIMIT_ENABLED_ENV` (`FUZ_ACTION_RATE_LIMIT_ENABLED`) and
-`ACTION_RATE_LIMIT_MAX_ATTEMPTS_ENV` (`FUZ_ACTION_RATE_LIMIT_MAX_ATTEMPTS`) from
-`spine_surface_constants.ts` — both spine binaries build one IP + one account
-limiter (the action defaults' windows, the cap replacing both
-`max_attempts`) shared by RPC and WS, and refuse to boot on a cap without the
-flag. Off, neither spine builds an action limiter. Runs under the
-`cross_backend_security` dual-spawn beside the login-security suite. The TS
-spine and the Rust stub both charge every classed action — the auth families
-included — in their dispatchers, after authorization and ahead of params
-validation. The `account_token_create` cases pin an auth family's class (a
-malformed `acting` selector, refused by the dispatcher's own params check,
-still charged), the IP case the WS dispatcher's IP axis, and the `cell_create`
-cases the account axis of a consumer-shaped spec, RPC and WS — reachable over WS on both spines because
-the TS spine serves its full action set on `/api/ws`, as the Rust stub serves
-one registry on both transports. The IP case's addresses are fixed per
-process and their bucket outlives `_testing_reset`, so a vitest retry of it
-would fail.
-Cross-process only; fuz_app's own wiring is
-`src/test/cross_backend/ws_action_rate_limit.cross.test.ts`.
+Neither suite resets a limiter: each case isolates itself with its own
+forwarded IP or the fresh keeper `_testing_reset` seeds. The IP cases'
+addresses are fixed per process and their buckets outlive the reset, so a
+vitest retry of one fails. fuz_app runs both under the dual-spawn
+`cross_backend_security` project (`npm run test:cross:security`); the
+in-process limiter and proxy paths are `describe_rate_limiting_tests` and the
+proxy middleware tests.
 
 ### Timing overrides — `timing_env`
 
@@ -2970,90 +2161,6 @@ Cross-process only; fuz_app's own wiring is
 `src/test/cross_backend/db_checkout_timeout.cross.test.ts`, under the
 `cross_backend_timing` project.
 
-### Role-gated participation parity — `cross_backend/role_grant_participation.ts`
-
-The role-gated-participation capstone — TS↔Rust agreement that an **app-defined
-role is conferred identically** on both spines. A `participant`
-(`grant_paths: ['admin']`) app-role is registered on both spines (`spine_roles`
-in `default_spine_surface.ts` + the Rust `testing_spine_stub`'s `RoleRegistry`,
-which its auth and cell surfaces both read); the cross legs prove the three conferral properties agree.
-
-**Declarative-max, imperative-as-escape-hatch.** The single-request matrix is
-declarative (`conformance_participation_cases.ts`, run via
-`describe_conformance_table_tests`): **(a) grantability** —
-`role_grant_assign` of `participant` passes the admin-grant-path gate and dies
-_past_ it (404, nonexistent account) while a non-grantable role (`keeper`,
-unregistered) is refused _at_ it (403 `role_not_web_grantable`), and the
-`role_grant_offer_create` grant-path gate matches (403
-`role_grant_offer_role_not_grantable`); **(b) admin-only conferral** — a
-non-admin _holder_ of `participant` (and a fresh non-admin) can't offer it (403
-`role_grant_offer_not_authorized` — no holder-propagation); **(c)
-`role_grant_assign` is admin-only** — non-admin holder / fresh → 403
-`insufficient_permissions` (dispatcher gate), anon → 401; plus the
-`to_actor_id`-must-belong-to-`to_account_id` resolution arm (400
-`role_grant_offer_actor_account_mismatch`); **(d) builtin roles are
-global-only** — an unpaired `scope_kind` / `scope_id` → 400 on assign + offer,
-a scoped `admin` → 400 `role_grant_builtin_scoped` on assign + offer, a builtin
-offer from a non-global-admin → 403 `role_grant_offer_not_authorized`.
-
-`describe_role_grant_participation_cross_tests` (this module) is the **imperative
-escape hatch** for the multi-step success paths a static row can't express (they
-need a real recipient): admin **assigns** `participant` to a fresh account
-(`{ok, role_grant_id}` + idempotent re-assign), admin **assigns** a scoped
-`participant` whose `scope_kind` + `scope_id` round-trip through
-`admin_account_list` (distinct from the global grant), and admin **offers**
-`participant` → recipient **accepts** → a role_grant lands. The `role_holder`
-principal is seeded via `extra_accounts: [{username, roles: ['participant']}]`
-(bootstrap-cradle direct grant) and named through `principals.role_holder`.
-The replay cases count audit rows behind `_testing_drain_effects`, so the
-backend must mount it — every spine binary does; an in-process leg mounts
-`create_testing_drain_effects_action` over an emitter built with
-`track_inflight: true` (`conformance_participation.db.test.ts`).
-`role` (default `SPINE_PARTICIPANT_ROLE`) names the role conferred, which must
-be admin-grantable in the backend's registry; `scope_kind` (default `'space'`,
-or `null` for a builtin role) is the scope the scoped-assign case uses, and
-`null` skips it. A backend with only the builtin roles runs the suite with
-`ROLE_ADMIN` — the scoped case skips, as a builtin is global-only.
-
-Both legs run in-process (`conformance_participation.db.test.ts`, plain
-`gro test`) and cross-process (`conformance_participation.cross.test.ts`, TS
-node/bun + Rust stub). Landing the TS `role_grant_assign` action also turned
-the `cross_backend_parity` action-manifest gate green (it was Rust-only before).
-Cited property: `docs/identity.md` + the role-gated-participation design
-(admin-only conferral, immediate assign).
-
-### Offer decline + retract refusals — `cross_backend/role_grant_offer_lifecycle.ts`
-
-`describe_role_grant_offer_lifecycle_cross_tests({setup_test, rpc_path?, role?})` —
-the error paths of the two verbs that end a pending offer without a grant,
-which the WS notification suite drives only on the happy path. Canonical
-answers, from the handlers and the queries behind them
-(`auth/role_grant_offer_actions.ts`, `auth/role_grant_offer_queries.ts`):
-
-- **not a party → 404** `not_found` with reason `role_grant_offer_not_found`.
-  Decline is scoped to the recipient account and retract to the grantor actor,
-  so a stranger, the grantor declining, or the recipient retracting hears what
-  a missing offer answers — the case compares the two refusals whole — and the
-  offer stays pending (`docs/security.md` §"404-over-403 is the general mask").
-  The scope check runs before the terminal check, so a stranger hears 404 on
-  a decided offer too.
-- **decided → 400** `invalid_request` with reason `role_grant_offer_terminal`:
-  a decline or retract after an accept, a second decline, a second retract,
-  and either after the other.
-- **audit**: a decline writes one `role_grant_offer_decline` row
-  (`account_id` / `actor_id` the recipient, `target_*` the grantor, metadata
-  `{offer_id, role, scope_id}` plus `reason` only when one was given), a
-  retract one `role_grant_offer_retract` row (the grantor, targeting the
-  recipient, no target actor on an account-grain offer); refusals write none.
-  Read through `list_audit_events`.
-
-The single-request rows — decline and retract of an id naming no offer → 404
-— are in the conformance security slate, so the differential sends them to
-both spines. The keeper is the grantor and offers `role` — an admin-grantable
-role, `SPINE_PARTICIPANT_ROLE` by default; `ROLE_ADMIN` serves a backend with
-only the builtin roles. Ungated. The
-in-process leg is on the drained setup of `conformance_participation.db.test.ts`.
-
 ### Building a TS test-server binary — `testing_server_core.ts` + adapters
 
 The reusable shape for standing up a **spawnable TS** cross-process test
@@ -3064,11 +2171,27 @@ re-roll the serve / daemon-info / drain boilerplate:
 - `testing/daemon_info.ts` — the `~/.{name}/run/daemon.json` plumbing the core's stale-daemon check and daemon-info write use: `DaemonInfo` (a strict `@fuzdev/fuz_schema` object), `get_app_dir`, `get_daemon_info_path`, `write_daemon_info` (atomic), `read_daemon_info`, `is_daemon_running` (`probe_process`, signal 0 with no program spawned; another user's process or a pid naming no single process reads as not running).
 - `testing/cross_backend/testing_server_node.ts` — `create_node_testing_adapter()` (`@hono/node-server`'s `serve` and module-level `upgradeWebSocket`, over a `ws` `WebSocketServer`). Optional peer deps; only test binaries import them. `prepare_websocket` builds the `ws` server (`noServer: true`) with `maxPayload` at twice `max_message_bytes` (default `DEFAULT_WS_MAX_MESSAGE_BYTES`; `ws`'s own default is 100 MiB), and `serve` hands it to `@hono/node-server`, so a grossly oversized message is refused at the frame layer (`WS_CLOSE_MESSAGE_TOO_BIG` with no reason) before it is buffered whole, while one just over the limit reaches the per-message check, which sends `WS_CLOSE_MESSAGE_TOO_BIG_REASON` as every other backend does. Bun's adapter sets the same multiple as its frame cap (see below).
 - `testing/cross_backend/testing_server_bun.ts` — `create_bun_testing_adapter()` (`Bun.serve` + `@hono/bun`'s module-level `getConnInfo`, `upgradeWebSocket`, and `websocket`; `Bun.serve` declared locally so it typechecks under the Node toolchain). Needs the optional `@hono/bun` peer dep (the counterpart to Node's `@hono/node-server` + `ws`; `Bun.serve` is built in). Reuses `create_node_runtime` (Bun implements the `node:fs`/`node:process` surface). WS is module-level + stateless — the `websocket` handler is threaded into `serve`, where `Bun.serve` wants it. It carries `maxPayloadLength` at twice `max_message_bytes` rather than Bun's 16 MiB default: past its cap Bun drops the socket without a close frame (1006), so the headroom leaves a message just over the limit to the per-message check (`WS_CLOSE_MESSAGE_TOO_BIG`, as on Node), while a grossly oversized one is refused before Bun buffers it whole.
-- `testing/cross_backend/default_spine_surface.ts` — the canonical no-domain spine surface (account/admin/audit/signup + bootstrap): `spine_session_options`, `spine_roles`, `create_spine_route_specs`, `spine_rpc_endpoints`, `create_spine_surface_spec`. This is the **declared** surface — the `create_standard_rpc_actions` bundle the spec-derived suites auto-enumerate. It passes `daemon_token: true` (both spine binaries mount the daemon-token layer) and leaves `GET /api/surface` at its default, off — the TS spine binary does too, and the Rust `testing_spine_stub` serves none. Shared by the spine_stub cross test, the TS cross tests, and the binary.
+- `testing/cross_backend/default_spine_surface.ts` — the canonical no-domain spine surface (account/admin/audit/signup + bootstrap): `spine_session_options`, `spine_roles`, `create_spine_route_specs`, `create_spine_ready_route_spec` (the `/ready` route over the committed `expected_schema.json`), `spine_rpc_endpoints`, `create_spine_surface_spec`. This is the **declared** surface — the `create_standard_rpc_actions` bundle the spec-derived suites auto-enumerate. It passes `daemon_token: true` (both spine binaries mount the daemon-token layer) and leaves `GET /api/surface` at its default, off — the TS spine binary does too, and the Rust `testing_spine_stub` serves none. Shared by the spine_stub cross test, the TS cross tests, and the binary.
 - `testing/cross_backend/full_spine_mount.ts` — `build_full_spine_rpc_actions(deps, options)` — the **full** live RPC mount: the declared bundle **plus** the off-declared-surface families the binary live-mounts (`_testing_*` backdoors, the cell verb set, the opt-in `actor_lookup` / `actor_search` resolvers). `build_full_spine_mount(deps, options)` builds it once for both of the binary's endpoints, returning `FullSpineMount` (`{rpc_actions, ws_actions}`): the WS list is `protocol_actions` plus every RPC action not already among them, then the WS-only room verbs and `room_notification_actions`, twinning the Rust `testing_spine_stub`, which serves one registry on RPC and WS (the one difference is `cancel` — a registered protocol action on TS, owned by the read loop on Rust — and the stub's RPC dispatcher refuses its `ws_only` room verbs). `options.room_registry` is the registry the room verbs, `_testing_room_evict`, and `_testing_reset` (which clears it) share — the binary builds it with `create_spine_room_registry(connections)` (exclusive, the default bounds; the twin of the stub's `stub_room_registry`) over its WS endpoints' connection registry; omitted, one over a fresh connection registry serves enumeration. Single-sources the mount so the binary and the `spine_method_coverage` reconciliation test build the same list. `create_spine_live_rpc_endpoints()` wraps the list, built on stub deps, as one endpoint at `SPINE_RPC_PATH` — the `live_rpc_endpoints` value the conformance table, the differential and the auth-row generator resolve off-surface methods from (no handler built there runs).
 - `testing/cross_backend/ts_spine_backend_config.ts` — `ts_spine_node_backend_config()` / `ts_spine_bun_backend_config()` presets (in-memory pglet, no external infra), the TS analog of `rust_spine_stub_backend_config()`.
 
 fuz_app's own binary wiring (`src/test/cross_backend/testing_spine_server{,_node,_bun}.ts`) is the worked example: ~one `build_app` over `create_app_backend` + `create_app_server` (`rate_limiters: 'disabled_for_testing'` plus whichever login / action limiters its env toggles built, `build_full_spine_mount`'s two lists on one `rpc_endpoints` entry and two `ws_endpoints` entries — `/api/ws` and the role-gated `SPINE_ROLE_GATED_WS_PATH` — sharing one `registry`, which is also the role-grant-offer `notification_sender`), reusing `default_spine_surface`. `src/test/cross_backend/testing_spine_server.db.test.ts` builds it with the Node adapter in-process and asserts its surface lists both WS endpoints (the gated one with its `required_roles`) and passes the surface invariants. The `_node`/`_bun` entries differ only in which adapter they wire — `build_spine_app` is runtime-agnostic. It leaves `create_app_server`'s `auth_cleanup` off, as the Rust `testing_spine_stub` leaves its twin unscheduled: a background pass would delete rows and write audit rows under a running suite. A consumer's cross-process test binary may schedule it when nothing its suites seed is already expired (the conformance table's `expired_session` principal seeds a backdated session row); an in-process harness leaves it off.
+
+The TS spine binary serves the audit stream, `GET /api/admin/audit/stream`:
+`build_spine_app` passes `audit_log_sse: true` and `create_spine_route_specs`
+mounts `create_audit_log_route_specs({stream: ctx.audit_sse})` when
+`ctx.audit_sse` is set (keeps the shared surface snapshot SSE-free, since the surface stub ctx has
+`audit_sse: null`). `capabilities.sse` is a mount flag, so each config states
+it (`ts_spine_backend_config.ts` for the TS spines) and a consumer that doesn't
+wire `audit_log_sse` states `false`. The
+real-HTTP `transports/sse_transport.ts` feeds `describe_cross_process_sse_tests`.
+
+The auth-cost handling for cross-process testing is consumer-side: each
+consumer ships a separate test binary wiring a fast-params
+`TestingArgon2idHasher` from a sibling Rust testing crate. Cross-process
+`bootstrap` + `create_account` are then plain RPC calls against the test
+binary — no DB-direct surgery in fuz_app's testing library, no runtime
+knobs in production code, no shared cookie key with the backend.
 
 ### Live-method coverage reconciliation — `method_coverage.ts`
 
@@ -3076,8 +2199,8 @@ fuz_app's own binary wiring (`src/test/cross_backend/testing_spine_server{,_node
 the **off-declared-surface** methods as drift-proof as the declared ones. The
 spec-derived suites auto-enumerate the declared surface, but a backend's live
 RPC endpoint also mounts methods kept off it (stateful cell verbs, opt-in
-resolvers, `_testing_*` backdoors) that rely on hand-wired imperative suites —
-nothing structurally guaranteed every live method was actually claimed by one.
+resolvers, `_testing_*` backdoors) that rely on hand-wired imperative suites,
+and nothing else guarantees every live method is claimed by one.
 
 The assertion diffs the live method set against a `MethodCoverageEntry`
 manifest both directions (a mounted-but-unclaimed method **and** a stale
@@ -3093,32 +2216,6 @@ guard — a backdoor must never leak _onto_ the declared surface). fuz_app's own
 wiring is the manifest `src/test/cross_backend/spine_method_coverage.ts` + the
 no-DB reconciliation test `spine_method_coverage.test.ts`, which enumerates
 `build_full_spine_rpc_actions` with stub deps against `create_spine_surface_spec`.
-
-The in-process `ws_round_trip` harness stays (it drives the dispatcher
-against a fake upgrade, no wire), but the real-upgrade coverage now lives in
-the cross-process `cross_backend/ws_round_trip.ts` suite below — including
-close-on-revoke (`WsClient.wait_for_close` asserts a live socket is dropped
-once `account_session_revoke_all` commits).
-
-`audit_completeness` is in-process by design (FK-structural introspection
-beyond the `audit_log_list` RPC reads — structurally in-process).
-
-**Cross-process SSE** is wired (see §`cross_backend/sse_round_trip.ts`
-above). The TS spine binary serves `GET /api/admin/audit/stream` —
-`build_spine_app` passes `audit_log_sse: true` and `create_spine_route_specs`
-mounts `create_audit_log_route_specs({stream: ctx.audit_sse})` when
-`ctx.audit_sse` is set (keeps the shared surface snapshot SSE-free, since the surface stub ctx has
-`audit_sse: null`). `capabilities.sse` is scoped to the TS spine configs
-(`ts_spine_backend_config.ts`), not the shared `ts_default_capabilities`,
-which stays honest for consumers who don't wire `audit_log_sse`. The
-real-HTTP `transports/sse_transport.ts` feeds `describe_cross_process_sse_tests`.
-
-The auth-cost handling for cross-process testing is consumer-side: each
-consumer ships a separate test binary wiring a fast-params
-`TestingArgon2idHasher` from a sibling Rust testing crate. Cross-process
-`bootstrap` + `create_account` are then plain RPC calls against the test
-binary — no DB-direct surgery in fuz_app's testing library, no runtime
-knobs in production code, no shared cookie key with the backend.
 
 ### cross_backend/bench/ — cross-impl measurement
 
@@ -3159,8 +2256,6 @@ in-memory pglet driver); TS-vs-Rust carries the pglet-vs-Postgres DB-layer cavea
   `format_cross_impl_json` (self-describing artifact: per backend×scenario
   percentiles off the raw-sample tail, budget, iteration count).
 
-Tail honesty depends on a fuz_util change: `BenchmarkStats` computes order
-statistics (min/max/p50–p99) on raw samples while central-tendency stats
-stay MAD-cleaned — so p99 reflects real tail events. Deeper tiers (resource
-sampling, workload corpora, load/soak) and the static-docs dashboard with
-committed historical fixtures stay deferred until CI automation exists.
+The tail is real: fuz_util's `BenchmarkStats` computes the upper-tail order
+statistics on raw samples while the central-tendency stats stay MAD-cleaned,
+so p99 reflects real tail events.

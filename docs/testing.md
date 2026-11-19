@@ -1008,7 +1008,7 @@ capabilities its backend supports, and the runner filters silently. Adding a
 capability is a one-line change in `capabilities.ts` plus a flag in each
 consumer config.
 
-- `ws` — Backend serves the WebSocket endpoint (gates `describe_cross_process_ws_tests`, `describe_ws_connection_cap_cross_tests`, and `describe_ws_outbound_overflow_cross_tests`).
+- `ws` — Backend serves the WebSocket endpoint. Gates every socket-driving suite (`describe_cross_process_ws_tests`, the connection-cap, outbound-overflow, envelope, notification, role-gated and rooms suites) and the socket cases of the others.
 - `sse` — Backend serves an SSE stream.
 - `cell_crud` — Backend live-mounts the cell CRUD verbs (gates `describe_cell_crud_cross_tests`).
 - `cell_relations` — Backend live-mounts the cell relation / ACL / audit verbs (gates `describe_cell_relations_cross_tests`).
@@ -1017,15 +1017,18 @@ consumer config.
 - `fact_serving_admin_hash` — Backend live-mounts the admin-only bare-hash fact route (`GET /api/facts/:hash`). Gates the bare-hash cases of the fact-serving, query-shape and token-scope-surface suites, so a backend serving only the cell-gated route states `fact_serving: true, fact_serving_admin_hash: false` and runs the rest.
 - `ready` — Backend live-mounts the public `/ready` schema-drift deploy gate (gates `describe_ready_cross_tests`).
 - `account_status` — Backend serves `GET /api/account/status` (bundled into `create_account_route_specs`; `true` for every spine). Gates the integration suite's status wire-shape case — fail-loud on a missing route rather than a silent skip.
-- `peer_request` — Backend can initiate a server→client request and await the typed reply (ActionPeer — `ConnectionRegistry.request_connection`). Gates `describe_peer_ping_ws_tests`. `true` on fuz_app's own spine presets; a backend states it `true` once it wires the `peer/ping` HTTP + WS mount.
+- `peer_request` — Backend can initiate a server→client request and await the typed reply (ActionPeer — `ConnectionRegistry.request_connection`). Gates `describe_peer_ping_ws_tests`, `describe_ws_inbound_dispatch_cross_tests`, and the WS envelope suite's in-flight `cancel` case (both hold a request with `peer/ping`). `true` on fuz_app's own spine presets; a backend states it `true` once it wires the `peer/ping` HTTP + WS mount.
 - `ws_handshake_pipelining` — Backend's HTTP server accepts WebSocket frames written in the same TCP write as the upgrade request (`true` for Node/Rust; `false` for a Bun backend that upgrades after an asynchronous check, as one behind auth does — Bun answers such a request `400`). Gates the WS round-trip suite's frames-with-the-handshake case — the ordering-forced form of "frames that arrive before the connection is admitted wait for admission".
 - `ws_account_actions` — Backend's WebSocket endpoint mounts the self-service account actions, so a socket can revoke the session it runs on (`true` on fuz_app's own spine presets; a consumer states it `true` once its endpoint mounts them). Gates the WS round-trip suite's self-revocation case, and its WS-mutation audit case (which also calls `_testing_drain_effects`).
-- `cell_gated_create` — Backend live-mounts a test `CellCreateAuthorize` policy on its cell layer (`true` only on the reference spine binaries that mount it). Gates `describe_cell_gated_create_cross_tests` (the authorizer and the root `policy` it reads and validates) and `describe_cell_moderate_cross_tests`.
+- `cell_gated_create` — Backend live-mounts a test `CellCreateAuthorize` policy on its cell layer (`true` only on the reference spine binaries that mount it). Gates `describe_cell_gated_create_cross_tests` (the authorizer and the root `policy` it reads and validates) `describe_cell_moderate_cross_tests`, and (with `cell_relations`) `describe_cell_grant_steward_cross_tests`.
+- `ws_role_gated` — Backend mounts a second, role-gated WebSocket endpoint beside its ungated one (`true` only on the reference spine binaries). Gates `describe_ws_role_gated_cross_tests`.
+- `rooms` — Backend mounts the room verbs on its WebSocket endpoint over an exclusive registry and the test room authorizer, with `_testing_room_evict` (`true` only on the reference spine binaries and a consumer test binary mounting the same; a consumer with its own room authorizer states `false`). Gates `describe_rooms_ws_cross_tests`.
+- `ws_refusal_body` — Not a gate: whether a refused WebSocket upgrade carries its refusal body (`false` on Node, where `@hono/node-server` drops it; `true` on Bun and the Rust spine). Picks how the front-door table reads its WS rows and how the WS suite's disallowed-origin case reads its refusal.
 - `testing_backdoors` — Not a flag: the `_testing_*` backdoors the backend mounts, from `TESTING_BACKDOOR_METHODS`. Checked by `describe_testing_backdoor_cross_tests`, which fires its credential rows at the ones listed; `describe_spine_cross_suites` gates suites on it (below). `[]` in-process.
 
 Wiring facts that gate nothing are not capabilities, and the harness doesn't record them.
 
-`in_process_capabilities` (every gating flag on except `peer_request`, `ws_handshake_pipelining`, `ws_account_actions`, and `cell_gated_create`, whose cases are cross-process-only) and the `ts_default_capabilities` /
+`in_process_capabilities` (every gating flag on except `peer_request`, `ws_handshake_pipelining`, `ws_account_actions`, `cell_gated_create`, `ws_role_gated`, and `rooms`, whose cases are cross-process-only) and the `ts_default_capabilities` /
 `rust_default_capabilities` presets in `default_backend_configs.ts` are the
 starting points consumers extend.
 
@@ -1331,8 +1334,9 @@ describe('some feature cross-backend', () => {
 
 `default_cross_process_setup` fires the `_testing_reset` action (wiping the
 keeper row + actor + role_grants + tokens + sessions and re-seeding a fresh
-keeper) then signs up + logs in a per-test account through the production
-RPC surface, so each test starts from clean state without dropping the DB.
+keeper), so each test starts from clean state without dropping the DB;
+`fixture.create_account()` then signs up and logs in a further account through
+the production surface when a test asks for one.
 The reset action factory is `create_testing_actions(deps, {session_options,
 daemon_token_state, reset_state})` — the consumer's test binary registers it
 with a `reset_state` closure that clears its own domain state (workspaces,
@@ -1488,9 +1492,10 @@ A case is **data** (`ConformanceCase` in `cross_backend/conformance_case.ts`):
   from the live action-spec registry (RPC) or `RouteSpec` (the REST auth
   routes), so the spec stays the single source of truth.
 - `as` is the closed `ConformancePrincipal` enum (`keeper`, `daemon`,
-  `token`, `anonymous`, `fresh_non_admin`, `role_holder`, `wrong_role`,
-  `expired_session`) — each maps to a fixture accessor, never inline
-  credential minting. `expired_session` is the keeper behind a backdated
+  `invalid_daemon`, `daemon_browser`, `token`, `bearer_browser`,
+  `malformed_bearer`, `scoped_token`, `anonymous`, `fresh_non_admin`,
+  `role_holder`, `wrong_role`, `expired_session`) — each maps to a fixture
+  accessor, never inline credential minting. `expired_session` is the keeper behind a backdated
   server-side `auth_session` row (a still-valid signed cookie over an expired
   DB row), isolating the DB-row expiry gate.
 - `error_reason` is the imported `ERROR_*` constant, asserted against the
@@ -1577,10 +1582,12 @@ The rows cover the declared gates only. Checks a handler makes from its
 input (an admin-only `account_id`, a self-only path) still need hand-written
 rows.
 
-Deferred-by-design rows mark themselves with `xfail`
-(`xfail_until(tracking_id, reason, ...)` from `cross_backend/xfail.ts`) — a
-`test.fails` wrapper that stays visible in the report and turns red the
-moment the gap closes, forcing the marker's removal. In-scope gaps don't
+Deferred-by-design rows mark themselves with `xfail`, an `XfailMarker`
+`{tracking_id, reason, fails_with}` (`xfail_until(marker, name, fn)` from
+`cross_backend/xfail.ts`). The row stays visible in the report and passes
+only while it fails the way `fails_with` says — a `RegExp` over the error
+message or a predicate. Any other failure is red, and so is the row passing,
+which forces the marker's removal the moment the gap closes. In-scope gaps don't
 get a marker — they fail loud as a normal red `test`.
 
 #### Cross-backend differential
@@ -1688,7 +1695,7 @@ action-manifest parity gate doesn't compare param schemas:
   base, the body each case breaks one field of; an override its input schema
   refuses throws at collection, naming the method.
   A known divergence on one backend goes in `xfail_params` (`{method, labels,
-  tracking_id, reason}`), which runs each named case as its own `xfail_until`
+  tracking_id, reason, fails_with}`), which runs each named case as its own `xfail_until`
   test and leaves the method's other cases in place.
 
 The authorized principal is the keeper on the first channel the method admits

@@ -9,11 +9,18 @@ import '../assert_dev_env.ts';
  *
  * Like the cell suites, these verbs can't ride the generic
  * `describe_rpc_round_trip_tests`: they're stateful and destructive (a
- * generic round-trip would tombstone the bootstrapped keeper). They
- * live-mount on every spine's RPC path but stay off the declared surface,
- * so this dedicated suite is their cross-impl validator. Every success
+ * generic round-trip would tombstone the bootstrapped keeper). They are on
+ * the declared surface, so shape and auth are auto-enumerated; this suite is
+ * the behavioral parity the generic round-trip can't drive. Every success
  * `result` is parsed against the verb's declared **output** schema, so
  * a TS↔Rust envelope drift fails the assertion.
+ *
+ * Also pinned: a soft-deleted account's session and bearer stop
+ * authenticating; a bearer self-delete is 403 `credential_type_required` with
+ * the session left live; the delete, undelete and purge success rows snapshot
+ * the victim's `username`; the keeper guard and a second undelete each write
+ * an `outcome: 'failure'` row; `admin_account_list` with `include_deleted`
+ * lists tombstoned rows with `deleted_at` set.
  *
  * @module
  */

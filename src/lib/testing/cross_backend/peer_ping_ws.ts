@@ -24,7 +24,7 @@ import '../assert_dev_env.ts';
  * `WsClient.send` to inject unsolicited / cross-connection frames.
  *
  * **Per-spec auth.** `peer/ping` is `auth: public` (a liveness echo is
- * non-sensitive — see the design doc); the WS upgrade itself still
+ * non-sensitive); the WS upgrade itself still
  * authenticates, so the suite drives it over the keeper's session.
  *
  * Gated on `capabilities.peer_request`, which a backend declares once it
@@ -86,7 +86,7 @@ export interface PeerPingWsTestOptions extends WsEndpointTarget {
 
 /**
  * Register the server-initiated `peer/ping` suite — a positive round-trip
- * plus the security negatives the design doc's §Security surface mandates
+ * plus the security negatives
  * (unsolicited-response rejection, per-connection id isolation, never-reply
  * `Timeout`, wrong-shape reply rejection, plus client-error forwarding, the
  * reading of a malformed client error, and the HTTP no-transport path).

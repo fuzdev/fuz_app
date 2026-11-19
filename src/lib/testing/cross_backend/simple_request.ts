@@ -15,6 +15,11 @@ import '../assert_dev_env.ts';
  * forged request, which the origin allowlist alone admits when it's a
  * wildcard — and a refused request must leave that session untouched.
  *
+ * Boundaries: `application/json` with a charset is dispatched; a vendor
+ * `+json` type, `application/octet-stream` and an empty type are refused; a
+ * bodyless JSON logout with no session reaches the auth check (401), while an
+ * untyped one is 415 first.
+ *
  * Runs both legs via the shared `setup_test` protocol: in-process
  * (`auth/simple_request_parity.db.test.ts`) and cross-process
  * (`cross_backend/spine_suites.cross.test.ts`). Every spine has the gate,

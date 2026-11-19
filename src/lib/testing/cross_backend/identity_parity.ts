@@ -105,6 +105,10 @@ import '../assert_dev_env.ts';
  * cross-process leg (`cross_backend/spine_suites.cross.test.ts`, the TS spine
  * binaries + Rust `testing_spine_stub` over real HTTP).
  *
+ * The accepted-case rows answer 403 no-matching-invite, so a backend with a
+ * signup denial floor pays it per row; the spine surface zeroes
+ * `signup_fail_floor_ms`.
+ *
  * @module
  */
 

@@ -12,7 +12,7 @@ import '../assert_dev_env.ts';
  * spines.
  *
  * Both spines mount the same directory-model policy (the TS spine binary via
- * `create_test_cell_gated_create_authorize`, the Rust `testing_spine_stub` via
+ * `test_cell_gated_create_authorize`, the Rust `testing_spine_stub` via
  * `TestCellGatedCreateAuthorize`): admin bypasses; a non-admin creating a
  * `kind: 'space'` **root** is denied (admin-only); a **contribution** under a
  * space is gated by the space's `policy[kind] = {min_role, moderation_required}`
