@@ -1105,6 +1105,52 @@ module doc holds the detail; the cross-cutting shape:
   (the displaced or evicted seat's own connection, `moved_to` for a move), and
   `room_watch_ended` — each a `remote_notification` spec with its params schema.
 
+### Room client (`actions/room_client.svelte.ts`)
+
+The frontend side, one `RoomClient` per socket and actor (`acting`), holding a
+reactive `RoomState` per room (`client.room(room_id)`): `members`, `seat`
+(`RoomSeat` — `member_id`, `topology`, `extra`), `seat_status`
+(`RoomSeatStatus`), `watching`, `ended` (`RoomSeatEnded`), `watch_ended`,
+`error`, `local_state`. The module doc holds the reasoning; the shape:
+
+- **Verbs** — `create_room_rpc(socket)` builds the `RoomRpc` the client takes:
+  the room verbs straight over `FrontendWebsocketClient.request`, unqueued,
+  answers parsed with the output schemas forward-compatibly
+  (`safe_parse_dropping_unknown_keys`), never through the RPC client's
+  transports (which fall back to HTTP while the socket is down, where no room
+  verb is mounted), plus `connection` — the open `WebSocket`, else `null`.
+- **Wants, converged one request at a time** — `join`, `leave`, `watch`,
+  `unwatch`, `set_state` record a want; one runner per room sends the requests
+  that close the gap, waiting for each answer (the server dispatches a
+  socket's requests concurrently, so a leave could otherwise overtake its
+  join). Nothing is sent while the socket is down. `send` goes out at once.
+  Every verb runs in `untrack`, so a page's `$effect` may call one (with its
+  opposite in the teardown) without depending on room state.
+- **`seq`** — events before the first join or watch answer buffer, then replay
+  past its `seq`; a live room drops events at or below its last `seq`. A
+  message reaching a live watch while the join is in flight is held for the
+  seat and delivered after `seated`.
+- **Connections** — the client follows `RoomRpc.connection` itself, an
+  `$effect.root` made in the constructor (a no-op on the server) and ended by
+  `dispose`, calling `sync_connection()`, which compares it by identity, so a
+  close and reopen in one batch still counts; `sync_connection` stays public
+  and runs before each request and notification. A seat lost to the old
+  connection is rejoined with `rejoin_of`; a `room_seat_moved` refusal ends it
+  as moved, and a `rate_limited` one is retried after its `retry_after`, up
+  to `ROOM_REJOIN_RATE_LIMITED_RETRIES_MAX` times (`set_timeout` /
+  `clear_timeout` in `RoomClientOptions`). `room_seat_lost` (moved, evicted,
+  room closed) is never rejoined. Watches are taken again.
+- **Notifications** — `receive(method, params)` from the RPC client's
+  `'receive'` handlers (`is_room_notification_method`), parsing each with its
+  params schema. `RoomListener` (`add_listener`) hears `seated`, `unseated`
+  (`RoomUnseatedReason`), member events, and messages, in `seq` order except
+  a message held for the seat, heard once it is taken —
+  `rtc/rtc_mesh.svelte.ts`'s `RtcMesh` follows a room through it. A listener
+  that throws is logged; the others still hear, and the join or replay
+  carries on.
+- **`dispose()`** leaves every seat, drops every watch, and stops following
+  the connection.
+
 ## Protocol actions (`actions/protocol.ts`)
 
 Three shared `{spec, handler}` tuples that every consumer spreads into both
