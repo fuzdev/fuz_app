@@ -23,8 +23,9 @@ import { RtcMesh, type RtcMeshRoom } from '#lib/rtc/rtc_mesh.svelte.ts';
 import { RtcPeer } from '#lib/rtc/rtc_peer.svelte.ts';
 import { decode_rtc_signal, encode_rtc_signal, type RtcSignal } from '#lib/rtc/rtc_signal.ts';
 
-import { create_fake_room_rpc, join_output } from '../actions/room_client_fakes.ts';
-import { create_fake_rtc_deps, create_fake_track, settle } from './rtc_fakes.ts';
+import { create_fake_room_rpc, join_output, member } from '../actions/room_client_fakes.ts';
+import { settle } from '../fake_timers.ts';
+import { create_fake_rtc_deps, create_fake_track } from './rtc_fakes.ts';
 
 const ROOM_ID = 'line_1';
 
@@ -95,12 +96,6 @@ class FakeRoom implements RtcMeshRoom {
 		}
 	}
 }
-
-const member = (member_id: MemberId = create_uuid()): RoomMember => ({
-	member_id,
-	actor_id: create_uuid(),
-	state: null
-});
 
 /** Rooms for several members, relaying each send to the room seated as its addressee. */
 const create_net = () => {

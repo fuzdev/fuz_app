@@ -112,16 +112,11 @@ import {
 	RoomWatchEndedParams,
 	room_join_action_spec,
 	room_leave_action_spec,
-	room_member_joined_notification_spec,
-	room_member_left_notification_spec,
-	room_member_state_notification_spec,
-	room_message_notification_spec,
-	room_seat_lost_notification_spec,
+	room_notification_action_specs,
 	room_send_action_spec,
 	room_state_set_action_spec,
 	room_unwatch_action_spec,
 	room_watch_action_spec,
-	room_watch_ended_notification_spec,
 	type MemberId,
 	type RoomEvictReason,
 	type RoomId,
@@ -226,14 +221,9 @@ export const create_room_rpc = (socket: RoomRpcSocket): RoomRpc => {
 	};
 };
 
-const ROOM_NOTIFICATION_METHODS: ReadonlySet<string> = new Set([
-	room_member_joined_notification_spec.method,
-	room_member_left_notification_spec.method,
-	room_member_state_notification_spec.method,
-	room_message_notification_spec.method,
-	room_seat_lost_notification_spec.method,
-	room_watch_ended_notification_spec.method
-]);
+const ROOM_NOTIFICATION_METHODS: ReadonlySet<string> = new Set(
+	room_notification_action_specs.map((spec) => spec.method)
+);
 
 /** Whether `method` is one of the `room_*` notifications `RoomClient.receive` takes. */
 export const is_room_notification_method = (method: string): boolean =>
@@ -403,7 +393,7 @@ export class RoomState {
 	ended: RoomSeatEnded | null = $state.raw(null);
 	/** Why the server last ended the watch; cleared by the next `watch`. */
 	watch_ended: RoomEvictReason | null = $state.raw(null);
-	/** The last refusal of a verb in this room, `null` once one succeeds. */
+	/** The last refusal of a join, watch, or state set in this room; `null` once one succeeds, and cleared by the next `join`. */
 	error: JsonrpcErrorObject | null = $state.raw(null);
 	/** The member state the caller wants, sent with the join and with every change while seated. */
 	local_state: string | null = $state.raw(null);
@@ -436,8 +426,8 @@ export class RoomState {
 	#seq: number | null = null;
 	/** Events that arrived before the first answer. */
 	#buffer: Array<RoomEvent> = [];
-	/** Join and watch requests in flight, whose answers will make the room live. */
-	#awaiting = 0;
+	/** The join or watch in flight, whose answer will make the room live (the runner sends one request at a time). */
+	#in_flight: 'join' | 'watch' | null = null;
 	/** Messages that reached a live watch while the join was in flight, for the seat it takes. */
 	#held_messages: Array<RoomEvent> = [];
 	/** The wait before a rate-limited rejoin's retry, while one is pending. */
@@ -524,15 +514,7 @@ export class RoomState {
 	}
 
 	#leave(): Promise<void> {
-		this.want_seat = false;
-		this.rejoin_of = null;
-		this.#clear_retry();
-		this.#resolve_join_waiters({ ok: false, error: join_superseded_error(this.room_id) });
-		const seat = this.seat;
-		if (seat) {
-			this.#leave_owed = true;
-			this.#end_seat(seat, 'left');
-		}
+		this.#release_seat('left');
 		this.#kick();
 		return this.#settled();
 	}
@@ -566,11 +548,7 @@ export class RoomState {
 
 	#unwatch(): Promise<void> {
 		this.want_watch = false;
-		if (this.watching) {
-			this.watching = false;
-			this.#unwatch_owed = true;
-			if (!this.seat) this.#reset_stream();
-		}
+		this.#release_watch();
 		this.#kick();
 		return this.#settled();
 	}
@@ -616,12 +594,17 @@ export class RoomState {
 
 	#event(event: RoomEvent): void {
 		if (this.#seq === null) {
-			if (this.#awaiting > 0) this.#buffer.push(event);
+			if (this.#in_flight !== null) this.#buffer.push(event);
 			return;
 		}
 		if (event.params.seq <= this.#seq) return;
 		this.#seq = event.params.seq;
-		if (event.method === 'room_message' && this.want_seat && !this.seat && this.#awaiting > 0) {
+		if (
+			event.method === 'room_message' &&
+			this.want_seat &&
+			!this.seat &&
+			this.#in_flight === 'join'
+		) {
 			// live through a watch, and the join that takes the seat it's for is in flight
 			this.#held_messages.push(event);
 			return;
@@ -632,9 +615,7 @@ export class RoomState {
 	#seat_lost(params: RoomSeatLostParams): void {
 		const seat = this.seat;
 		if (!seat || seat.member_id !== params.member_id) return;
-		this.want_seat = false;
-		this.rejoin_of = null;
-		this.#clear_retry();
+		this.#unwant_seat();
 		this.ended = { reason: params.reason, moved_to: params.moved_to };
 		this.#end_seat(seat, params.reason);
 	}
@@ -669,23 +650,38 @@ export class RoomState {
 	}
 
 	#dispose(): Promise<void> {
+		// before the seat ends, so an `unseated` listener reads the watch as unwanted
 		this.want_watch = false;
+		this.#release_seat('closed');
+		this.#release_watch();
+		this.#kick();
+		return this.#settled();
+	}
+
+	/** Stop wanting the seat, without ending one that stands. */
+	#unwant_seat(): void {
 		this.want_seat = false;
 		this.rejoin_of = null;
 		this.#clear_retry();
+	}
+
+	/** Give up the seat here: waiting joins resolve as superseded, and a standing seat ends, owing the server a `room_leave`. */
+	#release_seat(reason: 'left' | 'closed'): void {
+		this.#unwant_seat();
 		this.#resolve_join_waiters({ ok: false, error: join_superseded_error(this.room_id) });
 		const seat = this.seat;
 		if (seat) {
 			this.#leave_owed = true;
-			this.#end_seat(seat, 'closed');
+			this.#end_seat(seat, reason);
 		}
-		if (this.watching) {
-			this.watching = false;
-			this.#unwatch_owed = true;
-			this.#reset_stream();
-		}
-		this.#kick();
-		return this.#settled();
+	}
+
+	/** Give up a live watch here, owing the server a `room_unwatch`. */
+	#release_watch(): void {
+		if (!this.watching) return;
+		this.watching = false;
+		this.#unwatch_owed = true;
+		if (!this.seat) this.#reset_stream();
 	}
 
 	#apply(event: RoomEvent): void {
@@ -725,7 +721,7 @@ export class RoomState {
 		return updated;
 	}
 
-	/** Apply a join's or watch's answer, then replay what arrived before it. */
+	/** Apply an answer's members unless the live stream has already reached its `seq`. */
 	#apply_snapshot(seq: number, members: ReadonlyArray<RoomMember>): void {
 		if (this.#seq === null || seq > this.#seq) {
 			this.#seq = seq;
@@ -820,144 +816,176 @@ export class RoomState {
 		}
 	}
 
-	/** Send the one request that most closes the gap, if any. @returns whether one was sent */
-	async #step(connection: object): Promise<boolean> {
-		const host = this.#host;
-		const acting = host.acting;
-		const room_id = this.room_id;
-		const lost = (): boolean => host.live_connection() !== connection;
-
-		if (this.#leave_owed) {
-			this.#leave_owed = false;
-			const result = await host.rpc.room_leave({ room_id, acting });
-			if (!result.ok && !lost()) host.log?.warn('[room_client] leave refused:', result.error);
-			return true;
-		}
-
-		if (this.#unwatch_owed) {
-			this.#unwatch_owed = false;
-			const result = await host.rpc.room_unwatch({ room_id, acting });
-			if (!result.ok && !lost()) host.log?.warn('[room_client] unwatch refused:', result.error);
-			return true;
-		}
-
+	/**
+	 * Send the one request that most closes the gap, if any, in priority order:
+	 * what's owed the server, then the seat, the watch, and the member state.
+	 *
+	 * @returns whether one was sent
+	 */
+	#step(connection: object): Promise<boolean> {
+		if (this.#leave_owed) return this.#send_leave(connection);
+		if (this.#unwatch_owed) return this.#send_unwatch(connection);
 		if (this.want_seat && !this.seat && this.#retry_timer === null) {
-			const state = this.local_state ?? undefined;
-			const rejoin_of = this.rejoin_of ?? undefined;
-			this.#awaiting++;
-			let result: RoomRpcResult<RoomJoinOutput>;
-			try {
-				result = await host.rpc.room_join({ room_id, state, rejoin_of, acting });
-			} finally {
-				this.#awaiting--;
-			}
-			const held = this.#held_messages;
-			this.#held_messages = [];
-			if (lost()) {
-				// seated on a connection that has since closed: the next one rejoins it
-				if (result.ok && this.want_seat) this.rejoin_of = result.value.member_id;
-				if (this.#seq === null) this.#buffer = [];
-				return true;
-			}
-			if (!result.ok) {
-				if (this.#seq === null && this.#awaiting === 0) this.#buffer = [];
-				if (!this.want_seat) return true; // left meanwhile, already resolved
-				const wait_ms = this.rejoin_of !== null ? rate_limited_wait_ms(result.error) : null;
-				if (wait_ms !== null && this.#retry_attempts < ROOM_REJOIN_RATE_LIMITED_RETRIES_MAX) {
-					// still rejoining, naming the same seat, once the limiter allows
-					this.#retry_attempts++;
-					this.error = result.error;
-					this.#retry_timer = host.set_timeout(() => {
-						this.#retry_timer = null;
-						this.#kick();
-					}, wait_ms);
-					return true;
-				}
-				this.want_seat = false;
-				this.rejoin_of = null;
-				this.error = result.error;
-				if (error_reason(result.error) === ERROR_ROOM_SEAT_MOVED) {
-					this.ended = { reason: 'moved', moved_to: null };
-				}
-				this.#resolve_join_waiters({ ok: false, error: result.error });
-				return true;
-			}
-			const { value } = result;
-			if (!this.want_seat) {
-				// left while the join was in flight
-				this.#leave_owed = true;
-				if (this.#seq === null && this.#awaiting === 0) this.#buffer = [];
-				return true;
-			}
-			const seat: RoomSeat = {
-				room_id,
-				member_id: value.member_id,
-				topology: value.topology,
-				extra: value.extra
-			};
-			this.rejoin_of = null;
-			this.error = null;
-			this.#state_sent = state ?? null;
-			this.#apply_snapshot(value.seq, value.members);
-			this.seat = seat;
-			this.#emit('seated', seat);
-			this.#replay_buffer();
-			for (const event of held) this.#apply(event);
-			this.#resolve_join_waiters({ ok: true, value: seat });
-			return true;
+			return this.#send_join(connection);
 		}
-
-		if (this.want_watch && !this.watching) {
-			this.#awaiting++;
-			let result: RoomRpcResult<RoomOccupancy>;
-			try {
-				result = await host.rpc.room_watch({ room_id, acting });
-			} finally {
-				this.#awaiting--;
-			}
-			if (lost()) {
-				if (this.#seq === null) this.#buffer = [];
-				return true;
-			}
-			if (!result.ok) {
-				if (this.#seq === null && this.#awaiting === 0) this.#buffer = [];
-				this.want_watch = false;
-				this.error = result.error;
-				return true;
-			}
-			if (!this.want_watch) {
-				this.#unwatch_owed = true;
-				if (this.#seq === null && this.#awaiting === 0) this.#buffer = [];
-				return true;
-			}
-			this.error = null;
-			this.#apply_snapshot(result.value.seq, result.value.members);
-			this.watching = true;
-			this.#replay_buffer();
-			return true;
-		}
-
+		if (this.want_watch && !this.watching) return this.#send_watch(connection);
 		const seat = this.seat;
 		const state = this.local_state;
 		if (seat && state !== null && state !== this.#state_sent) {
-			const result = await host.rpc.room_state_set({ room_id, state, acting });
-			if (lost()) return true;
-			// recorded as sent either way, so a refused state isn't sent again in a loop
-			this.#state_sent = state;
-			if (!result.ok) {
-				this.error = result.error;
-				return true;
-			}
-			this.error = null;
-			// the server tells the other members, not the seat that set it
-			if (this.seat === seat) {
-				const member = this.#set_member_state(seat.member_id, state);
-				if (member) this.#emit('member_state', member);
-			}
+			return this.#send_state(connection, seat, state);
+		}
+		return Promise.resolve(false);
+	}
+
+	/** Whether `connection` closed since the request on it went out. */
+	#lost(connection: object): boolean {
+		return this.#host.live_connection() !== connection;
+	}
+
+	async #send_leave(connection: object): Promise<boolean> {
+		this.#leave_owed = false;
+		const result = await this.#host.rpc.room_leave({
+			room_id: this.room_id,
+			acting: this.#host.acting
+		});
+		if (!result.ok && !this.#lost(connection)) {
+			this.#host.log?.warn('[room_client] leave refused:', result.error);
+		}
+		return true;
+	}
+
+	async #send_unwatch(connection: object): Promise<boolean> {
+		this.#unwatch_owed = false;
+		const result = await this.#host.rpc.room_unwatch({
+			room_id: this.room_id,
+			acting: this.#host.acting
+		});
+		if (!result.ok && !this.#lost(connection)) {
+			this.#host.log?.warn('[room_client] unwatch refused:', result.error);
+		}
+		return true;
+	}
+
+	async #send_join(connection: object): Promise<boolean> {
+		const host = this.#host;
+		const room_id = this.room_id;
+		const state = this.local_state ?? undefined;
+		const rejoin_of = this.rejoin_of ?? undefined;
+		this.#in_flight = 'join';
+		let result: RoomRpcResult<RoomJoinOutput>;
+		try {
+			result = await host.rpc.room_join({ room_id, state, rejoin_of, acting: host.acting });
+		} finally {
+			this.#in_flight = null;
+		}
+		const held = this.#held_messages;
+		this.#held_messages = [];
+		if (this.#lost(connection)) {
+			// seated on a connection that has since closed: the next one rejoins it
+			if (result.ok && this.want_seat) this.rejoin_of = result.value.member_id;
+			if (this.#seq === null) this.#buffer = [];
 			return true;
 		}
+		if (!result.ok) {
+			if (this.#seq === null) this.#buffer = [];
+			if (!this.want_seat) return true; // left meanwhile, already resolved
+			const wait_ms = this.rejoin_of !== null ? rate_limited_wait_ms(result.error) : null;
+			if (wait_ms !== null && this.#retry_attempts < ROOM_REJOIN_RATE_LIMITED_RETRIES_MAX) {
+				// still rejoining, naming the same seat, once the limiter allows
+				this.#retry_attempts++;
+				this.error = result.error;
+				this.#retry_timer = host.set_timeout(() => {
+					this.#retry_timer = null;
+					this.#kick();
+				}, wait_ms);
+				return true;
+			}
+			this.#unwant_seat();
+			this.error = result.error;
+			if (error_reason(result.error) === ERROR_ROOM_SEAT_MOVED) {
+				this.ended = { reason: 'moved', moved_to: null };
+			}
+			this.#resolve_join_waiters({ ok: false, error: result.error });
+			return true;
+		}
+		const { value } = result;
+		if (!this.want_seat) {
+			// left while the join was in flight
+			this.#leave_owed = true;
+			if (this.#seq === null) this.#buffer = [];
+			return true;
+		}
+		const seat: RoomSeat = {
+			room_id,
+			member_id: value.member_id,
+			topology: value.topology,
+			extra: value.extra
+		};
+		this.rejoin_of = null;
+		this.error = null;
+		this.#state_sent = state ?? null;
+		this.#apply_snapshot(value.seq, value.members);
+		this.seat = seat;
+		this.#emit('seated', seat);
+		this.#replay_buffer();
+		for (const event of held) this.#apply(event);
+		this.#resolve_join_waiters({ ok: true, value: seat });
+		return true;
+	}
 
-		return false;
+	async #send_watch(connection: object): Promise<boolean> {
+		this.#in_flight = 'watch';
+		let result: RoomRpcResult<RoomOccupancy>;
+		try {
+			result = await this.#host.rpc.room_watch({
+				room_id: this.room_id,
+				acting: this.#host.acting
+			});
+		} finally {
+			this.#in_flight = null;
+		}
+		if (this.#lost(connection)) {
+			if (this.#seq === null) this.#buffer = [];
+			return true;
+		}
+		if (!result.ok) {
+			if (this.#seq === null) this.#buffer = [];
+			this.want_watch = false;
+			this.error = result.error;
+			return true;
+		}
+		if (!this.want_watch) {
+			this.#unwatch_owed = true;
+			if (this.#seq === null) this.#buffer = [];
+			return true;
+		}
+		this.error = null;
+		this.#apply_snapshot(result.value.seq, result.value.members);
+		this.watching = true;
+		this.#replay_buffer();
+		return true;
+	}
+
+	async #send_state(connection: object, seat: RoomSeat, state: string): Promise<boolean> {
+		const result = await this.#host.rpc.room_state_set({
+			room_id: this.room_id,
+			state,
+			acting: this.#host.acting
+		});
+		if (this.#lost(connection)) return true;
+		// recorded as sent either way, so a refused state isn't sent again in a loop
+		this.#state_sent = state;
+		if (!result.ok) {
+			this.error = result.error;
+			return true;
+		}
+		this.error = null;
+		// the server tells the other members, not the seat that set it
+		if (this.seat === seat) {
+			const member = this.#set_member_state(seat.member_id, state);
+			if (member) this.#emit('member_state', member);
+		}
+		return true;
 	}
 }
 

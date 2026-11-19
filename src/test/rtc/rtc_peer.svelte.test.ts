@@ -20,12 +20,8 @@ import {
 } from '#lib/rtc/rtc_peer.svelte.ts';
 import type { RtcSignal } from '#lib/rtc/rtc_signal.ts';
 
-import {
-	create_fake_rtc_deps,
-	create_fake_track,
-	settle,
-	type FakePeerConnection
-} from './rtc_fakes.ts';
+import { settle } from '../fake_timers.ts';
+import { create_fake_rtc_deps, create_fake_track, type FakePeerConnection } from './rtc_fakes.ts';
 
 /** Two members, ordered so `low` is the polite one. */
 const ids = (): { low: MemberId; high: MemberId } => {

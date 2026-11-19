@@ -36,7 +36,8 @@
  * `seq` orders a room's events, and lets a client drop the events at or below
  * the snapshot a join or watch answered; it is not contiguous per client (an
  * addressed message bumps it, and only the addressee sees that one), and it
- * restarts when a room is deleted and created again.
+ * restarts when a room is deleted and created again. Event order across rooms
+ * is unspecified; within a room it is the `seq`.
  *
  * Nothing here waits: a recipient that cannot take a frame is closed for the
  * overflow (`WS_CLOSE_OUTBOUND_OVERFLOW`) by the connection registry, and its
@@ -443,17 +444,49 @@ interface Tombstone {
 }
 
 /**
- * One room's removals, told as `left`, with `seat_lost` to each removed seat's
- * connection and `watch_ended` to each removed watcher when given.
+ * Why seats and watchers leave a room, which decides what `#remove` tells:
+ * the room hears `room_member_left` for each removed seat, with the
+ * matching reason; a move also
+ * tells each removed seat `room_seat_lost` (`moved_to` its new room), and an
+ * eviction tells each removed seat `room_seat_lost` and each removed watcher
+ * `room_watch_ended`. A leave and a disconnect tell the removed no more.
  */
-interface Removal {
-	room_id: RoomId;
-	seats: ReadonlyArray<MemberId>;
-	watchers: ReadonlyArray<Uuid>;
-	left: RoomLeftReason;
-	seat_lost: { reason: RoomSeatLostReason; moved_to: RoomId | null } | null;
-	watch_ended: RoomEvictReason | null;
-}
+type Departure =
+	| { kind: 'left' }
+	| { kind: 'disconnected' }
+	| { kind: 'moved'; to: RoomId }
+	| { kind: 'evicted'; reason: RoomEvictReason };
+
+/** `actor_id`'s seat in the room on `conn`, or `null`. */
+const conn_seat = (conn: ConnectionRooms, room_id: RoomId, actor_id: Uuid): MemberId | null =>
+	conn.seats.get(room_id)?.get(actor_id) ?? null;
+
+const conn_set_seat = (
+	conn: ConnectionRooms,
+	room_id: RoomId,
+	actor_id: Uuid,
+	member_id: MemberId
+): void => {
+	let by_actor = conn.seats.get(room_id);
+	if (!by_actor) {
+		by_actor = new Map();
+		conn.seats.set(room_id, by_actor);
+	}
+	by_actor.set(actor_id, member_id);
+};
+
+/** Forget `actor_id`'s seat in the room on `conn`, if it is still `member_id`. */
+const conn_clear_seat = (
+	conn: ConnectionRooms,
+	room_id: RoomId,
+	actor_id: Uuid,
+	member_id: MemberId
+): void => {
+	const by_actor = conn.seats.get(room_id);
+	if (!by_actor) return;
+	if (by_actor.get(actor_id) === member_id) by_actor.delete(actor_id);
+	if (by_actor.size === 0) conn.seats.delete(room_id);
+};
 
 const ok = <T>(value: T): RoomResult<T> => ({ ok: true, value });
 const refuse = <T>(error: RoomError): RoomResult<T> => ({ ok: false, error });
@@ -537,15 +570,15 @@ export class RoomRegistry {
 	readonly #connections: ConnectionRegistry;
 	readonly #now: () => number;
 
-	#rooms: Map<RoomId, Room> = new Map();
-	#by_connection: Map<Uuid, ConnectionRooms> = new Map();
+	readonly #rooms: Map<RoomId, Room> = new Map();
+	readonly #by_connection: Map<Uuid, ConnectionRooms> = new Map();
 	/** Joins and watches in flight, by ticket. */
-	#pending: Map<number, Pending> = new Map();
+	readonly #pending: Map<number, Pending> = new Map();
 	#last_ticket = 0;
 	/** Each actor's one seat, on an exclusive registry. */
-	#seat_of_actor: Map<Uuid, { room_id: RoomId; member_id: MemberId }> = new Map();
+	readonly #seat_of_actor: Map<Uuid, { room_id: RoomId; member_id: MemberId }> = new Map();
 	/** Seats ended without a leave, per actor, on an exclusive registry. */
-	#tombstones: Map<Uuid, Array<Tombstone>> = new Map();
+	readonly #tombstones: Map<Uuid, Array<Tombstone>> = new Map();
 	/** The actor count past which the tombstones sweep. */
 	#tombstone_sweep_at = 0;
 
@@ -609,23 +642,15 @@ export class RoomRegistry {
 		const conn = this.#connection_entry(connection_id);
 		if (!conn) return refuse('connection_closed');
 		const member_id = create_uuid();
-		const ticket = ++this.#last_ticket;
-		conn.pending.add(ticket);
-		this.#pending.set(ticket, {
-			kind: { type: 'seat', member_id, rejoin_of },
-			connection_id,
-			actor_id,
-			room_id,
-			refused: null,
-			poisoned: []
-		});
-		const pending = new PendingSeat(member_id, room_id);
-		pending_handles.set(pending, {
-			registry: this,
-			ticket,
-			forget: () => this.#take_pending(ticket)
-		});
-		return ok(pending);
+		return ok(
+			this.#reserve(
+				conn,
+				{ type: 'seat', member_id, rejoin_of },
+				connection_id,
+				actor_id,
+				new PendingSeat(member_id, room_id)
+			)
+		);
 	}
 
 	/**
@@ -665,7 +690,7 @@ export class RoomRegistry {
 		const { connection_id, actor_id, room_id } = entry;
 		const conn = this.#by_connection.get(connection_id);
 		if (!conn || conn.signal.aborted) return refuse('connection_closed');
-		const own_seat = conn.seats.get(room_id)?.get(actor_id) ?? null;
+		const own_seat = conn_seat(conn, room_id, actor_id);
 		if (scope !== null && entry.poisoned.includes(scope)) return refuse('evicted');
 		const now = this.#now();
 		if (exclusive && rejoin_of !== null && this.#rejoin_moved(actor_id, rejoin_of, now)) {
@@ -692,24 +717,13 @@ export class RoomRegistry {
 		if (Math.max(seated - freed, 0) >= cap) return refuse('full');
 
 		for (const d of displaced) {
-			const removed = this.#remove({
-				room_id: d.room_id,
-				seats: [d.member_id],
-				watchers: [],
-				left: 'moved',
-				seat_lost: { reason: 'moved', moved_to: room_id },
-				watch_ended: null
-			});
+			const removed = this.#remove(d.room_id, [d.member_id], [], { kind: 'moved', to: room_id });
 			if (exclusive) {
 				for (const seat of removed) this.#push_tombstone(seat.actor_id, seat.member_id, now, true);
 			}
 		}
 
-		let room = this.#rooms.get(room_id);
-		if (!room) {
-			room = { seq: 0, seats: [], watchers: [] };
-			this.#rooms.set(room_id, room);
-		}
+		const room = this.#room_entry(room_id);
 		room.seats.push({ member_id, connection_id, actor_id, scope, state: member_state });
 		const seq = ++room.seq;
 		this.#send(recipients_of(room, member_id), room_member_joined_notification_spec.method, {
@@ -718,12 +732,7 @@ export class RoomRegistry {
 			member: { member_id, actor_id, state: member_state }
 		} satisfies RoomMemberJoinedParams);
 		const members = members_of(room);
-		let by_actor = conn.seats.get(room_id);
-		if (!by_actor) {
-			by_actor = new Map();
-			conn.seats.set(room_id, by_actor);
-		}
-		by_actor.set(actor_id, member_id);
+		conn_set_seat(conn, room_id, actor_id, member_id);
 		if (exclusive) {
 			this.#seat_of_actor.set(actor_id, { room_id, member_id });
 			this.#settle_tombstones(actor_id, rejoin_of, now);
@@ -743,7 +752,7 @@ export class RoomRegistry {
 	leave(connection_id: Uuid, actor_id: Uuid, room_id: RoomId): boolean {
 		const conn = this.#by_connection.get(connection_id);
 		if (!conn) return false;
-		const seat = conn.seats.get(room_id)?.get(actor_id) ?? null;
+		const seat = conn_seat(conn, room_id, actor_id);
 		let left = false;
 		for (const ticket of conn.pending) {
 			const pending = this.#pending.get(ticket);
@@ -759,14 +768,7 @@ export class RoomRegistry {
 			}
 		}
 		if (seat !== null) {
-			this.#remove({
-				room_id,
-				seats: [seat],
-				watchers: [],
-				left: 'left',
-				seat_lost: null,
-				watch_ended: null
-			});
+			this.#remove(room_id, [seat], [], { kind: 'left' });
 			left = true;
 		}
 		return left;
@@ -789,8 +791,9 @@ export class RoomRegistry {
 		payload: string
 	): RoomResult<number> {
 		if (utf8_length(payload) > this.options.max_payload_bytes) return refuse('payload_too_large');
-		const from = this.#by_connection.get(connection_id)?.seats.get(room_id)?.get(actor_id);
-		if (from === undefined) return refuse('not_joined');
+		const conn = this.#by_connection.get(connection_id);
+		const from = conn ? conn_seat(conn, room_id, actor_id) : null;
+		if (from === null) return refuse('not_joined');
 		const room = this.#rooms.get(room_id);
 		if (!room) return refuse('not_joined');
 		let recipients: Set<Uuid>;
@@ -826,8 +829,9 @@ export class RoomRegistry {
 		member_state: string
 	): RoomResult<number> {
 		if (utf8_length(member_state) > this.options.max_state_bytes) return refuse('state_too_large');
-		const member_id = this.#by_connection.get(connection_id)?.seats.get(room_id)?.get(actor_id);
-		if (member_id === undefined) return refuse('not_joined');
+		const conn = this.#by_connection.get(connection_id);
+		const member_id = conn ? conn_seat(conn, room_id, actor_id) : null;
+		if (member_id === null) return refuse('not_joined');
 		const room = this.#rooms.get(room_id);
 		if (!room) return refuse('not_joined');
 		const seat = room.seats.find((s) => s.member_id === member_id);
@@ -860,23 +864,9 @@ export class RoomRegistry {
 		) {
 			return refuse('watch_limit');
 		}
-		const ticket = ++this.#last_ticket;
-		conn.pending.add(ticket);
-		this.#pending.set(ticket, {
-			kind: { type: 'watch' },
-			connection_id,
-			actor_id,
-			room_id,
-			refused: null,
-			poisoned: []
-		});
-		const pending = new PendingWatch(room_id);
-		pending_handles.set(pending, {
-			registry: this,
-			ticket,
-			forget: () => this.#take_pending(ticket)
-		});
-		return ok(pending);
+		return ok(
+			this.#reserve(conn, { type: 'watch' }, connection_id, actor_id, new PendingWatch(room_id))
+		);
 	}
 
 	/**
@@ -905,11 +895,7 @@ export class RoomRegistry {
 			return refuse('watch_limit');
 		}
 		conn.watches.add(room_id);
-		let room = this.#rooms.get(room_id);
-		if (!room) {
-			room = { seq: 0, seats: [], watchers: [] };
-			this.#rooms.set(room_id, room);
-		}
+		const room = this.#room_entry(room_id);
 		const watcher = room.watchers.find((w) => w.connection_id === connection_id);
 		if (watcher) {
 			watcher.actor_id = entry.actor_id;
@@ -929,14 +915,7 @@ export class RoomRegistry {
 	unwatch(connection_id: Uuid, room_id: RoomId): boolean {
 		const watching = this.#by_connection.get(connection_id)?.watches.has(room_id) ?? false;
 		if (watching) {
-			this.#remove({
-				room_id,
-				seats: [],
-				watchers: [connection_id],
-				left: 'left',
-				seat_lost: null,
-				watch_ended: null
-			});
+			this.#remove(room_id, [], [connection_id], { kind: 'left' });
 		}
 		return watching;
 	}
@@ -992,14 +971,7 @@ export class RoomRegistry {
 			if (seats.length === 0 && watchers.length === 0) continue;
 			evicted.seats += seats.length;
 			evicted.watches += watchers.length;
-			this.#remove({
-				room_id,
-				seats,
-				watchers,
-				left: reason,
-				seat_lost: { reason, moved_to: null },
-				watch_ended: reason
-			});
+			this.#remove(room_id, seats, watchers, { kind: 'evicted', reason });
 		}
 		return evicted;
 	}
@@ -1085,26 +1057,12 @@ export class RoomRegistry {
 			if (pending && pending.refused === null) pending.refused = 'connection_closed';
 		}
 		for (const room_id of conn.watches) {
-			this.#remove({
-				room_id,
-				seats: [],
-				watchers: [connection_id],
-				left: 'disconnected',
-				seat_lost: null,
-				watch_ended: null
-			});
+			this.#remove(room_id, [], [connection_id], { kind: 'disconnected' });
 		}
 		const now = this.#now();
 		for (const [room_id, by_actor] of conn.seats) {
 			for (const member_id of by_actor.values()) {
-				const removed = this.#remove({
-					room_id,
-					seats: [member_id],
-					watchers: [],
-					left: 'disconnected',
-					seat_lost: null,
-					watch_ended: null
-				});
+				const removed = this.#remove(room_id, [member_id], [], { kind: 'disconnected' });
 				if (this.options.exclusive) {
 					for (const seat of removed) {
 						this.#push_tombstone(seat.actor_id, seat.member_id, now, false);
@@ -1112,6 +1070,42 @@ export class RoomRegistry {
 				}
 			}
 		}
+	}
+
+	/** Put a join or watch in flight on `conn`, and hand `pending` its ticket. */
+	#reserve<P extends PendingSeat | PendingWatch>(
+		conn: ConnectionRooms,
+		kind: PendingKind,
+		connection_id: Uuid,
+		actor_id: Uuid,
+		pending: P
+	): P {
+		const ticket = ++this.#last_ticket;
+		conn.pending.add(ticket);
+		this.#pending.set(ticket, {
+			kind,
+			connection_id,
+			actor_id,
+			room_id: pending.room_id,
+			refused: null,
+			poisoned: []
+		});
+		pending_handles.set(pending, {
+			registry: this,
+			ticket,
+			forget: () => this.#take_pending(ticket)
+		});
+		return pending;
+	}
+
+	/** The room by id, created empty when there is none. */
+	#room_entry(room_id: RoomId): Room {
+		let room = this.#rooms.get(room_id);
+		if (!room) {
+			room = { seq: 0, seats: [], watchers: [] };
+			this.#rooms.set(room_id, room);
+		}
+		return room;
 	}
 
 	/** Take a pending seat's or watch's ticket for its admit, or `null` when it is withdrawn, spent, or another registry's. */
@@ -1144,13 +1138,25 @@ export class RoomRegistry {
 	}
 
 	/**
-	 * Remove seats and watchers from one room, then tell everyone what the
-	 * removal says (`Removal`); delete the room if it is left empty.
+	 * Remove seats and watchers from one room, then tell everyone what `why`
+	 * says (`Departure`); delete the room if it is left empty.
 	 *
 	 * @returns the removed seats
 	 */
-	#remove(removal: Removal): Array<Seat> {
-		const { room_id, seats, watchers, left, seat_lost, watch_ended } = removal;
+	#remove(
+		room_id: RoomId,
+		seats: ReadonlyArray<MemberId>,
+		watchers: ReadonlyArray<Uuid>,
+		why: Departure
+	): Array<Seat> {
+		const left: RoomLeftReason = why.kind === 'evicted' ? why.reason : why.kind;
+		const seat_lost: { reason: RoomSeatLostReason; moved_to: RoomId | null } | null =
+			why.kind === 'moved'
+				? { reason: 'moved', moved_to: why.to }
+				: why.kind === 'evicted'
+					? { reason: why.reason, moved_to: null }
+					: null;
+		const watch_ended = why.kind === 'evicted' ? why.reason : null;
 		const room = this.#rooms.get(room_id);
 		if (!room) return [];
 		const removed_seats = room.seats.filter((seat) => seats.includes(seat.member_id));
@@ -1188,12 +1194,8 @@ export class RoomRegistry {
 		if (room.seats.length === 0 && room.watchers.length === 0) this.#rooms.delete(room_id);
 
 		for (const seat of removed_seats) {
-			const by_actor = this.#by_connection.get(seat.connection_id)?.seats;
-			const held = by_actor?.get(room_id);
-			if (by_actor && held) {
-				if (held.get(seat.actor_id) === seat.member_id) held.delete(seat.actor_id);
-				if (held.size === 0) by_actor.delete(room_id);
-			}
+			const conn = this.#by_connection.get(seat.connection_id);
+			if (conn) conn_clear_seat(conn, room_id, seat.actor_id, seat.member_id);
 			const actor_seat = this.#seat_of_actor.get(seat.actor_id);
 			if (actor_seat?.room_id === room_id && actor_seat.member_id === seat.member_id) {
 				this.#seat_of_actor.delete(seat.actor_id);

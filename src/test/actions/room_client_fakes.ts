@@ -95,6 +95,3 @@ export const refusal = (reason: string): { ok: false; error: JsonrpcErrorObject 
 	ok: false,
 	error: jsonrpc_error_messages.conflict(reason, { reason })
 });
-
-/** Let every queued microtask run. */
-export const settle = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));

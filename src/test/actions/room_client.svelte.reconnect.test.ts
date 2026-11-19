@@ -18,15 +18,14 @@ import {
 	type RoomClientOptions
 } from '#lib/actions/room_client.svelte.ts';
 import { jsonrpc_error_messages } from '#lib/http/jsonrpc_errors.ts';
-import { create_fake_timers } from '../rtc/rtc_fakes.ts';
+import { create_fake_timers, settle } from '../fake_timers.ts';
 
 import {
 	create_fake_room_rpc,
 	join_output,
 	member,
 	occupancy,
-	refusal,
-	settle
+	refusal
 } from './room_client_fakes.ts';
 
 const ROOM = 'room_1';

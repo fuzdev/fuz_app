@@ -144,13 +144,7 @@ export class RtcMesh {
 		// untracked, peers and their own state both, so an `$effect` that sets a
 		// track doesn't re-run when a peer comes or goes
 		await untrack(() =>
-			Promise.all(
-				[...this.peers.values()].map((peer) =>
-					peer.set_track(slot, track).catch((error: unknown) => {
-						this.#deps.log?.warn('[rtc_mesh] replaceTrack failed:', peer.remote_member_id, error);
-					})
-				)
-			)
+			Promise.all([...this.peers.values()].map((peer) => this.#set_peer_track(peer, slot, track)))
 		);
 	}
 
@@ -218,11 +212,15 @@ export class RtcMesh {
 		}
 		this.peers.set(member_id, peer);
 		for (const [slot, track] of this.#local_tracks) {
-			if (!track) continue;
-			peer.set_track(slot, track).catch((error: unknown) => {
-				this.#deps.log?.warn('[rtc_mesh] replaceTrack failed:', member_id, error);
-			});
+			if (track) void this.#set_peer_track(peer, slot, track);
 		}
+	}
+
+	/** Set one peer's track, logging a failed `replaceTrack` rather than throwing. */
+	#set_peer_track(peer: RtcPeer, slot: string, track: MediaStreamTrack | null): Promise<void> {
+		return peer.set_track(slot, track).catch((error: unknown) => {
+			this.#deps.log?.warn('[rtc_mesh] replaceTrack failed:', peer.remote_member_id, error);
+		});
 	}
 
 	#remove_peer(member_id: MemberId): void {

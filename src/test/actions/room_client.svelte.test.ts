@@ -28,9 +28,9 @@ import {
 	join_output,
 	member,
 	occupancy,
-	refusal,
-	settle
+	refusal
 } from './room_client_fakes.ts';
+import { settle } from '../fake_timers.ts';
 
 const ROOM = 'room_1';
 
@@ -563,5 +563,40 @@ describe('RoomClient.dispose', () => {
 		assert.ok(!after.ok);
 		await settle();
 		assert.strictEqual(ctx.calls.length, 0);
+	});
+});
+
+describe('releasing a watch and disposing', () => {
+	test('unwatch while seated keeps the seat’s members and stream', async () => {
+		const ctx = setup();
+		const { me, others } = await join(ctx);
+		const watched = ctx.room.watch();
+		await settle();
+		ctx.take('room_watch').resolve(occupancy(ROOM, 6, [...others, me]));
+		await watched;
+		assert.isTrue(ctx.room.watching);
+
+		const unwatched = ctx.room.unwatch();
+		assert.isFalse(ctx.room.watching);
+		assert.deepEqual(ctx.room.members, [...others, me]);
+		await settle();
+		ctx.take('room_unwatch').resolve({ ok: true, value: { unwatched: true } });
+		await unwatched;
+		const b = member();
+		ctx.client.receive('room_member_joined', joined_params(7, b));
+		assert.deepEqual(ctx.room.members, [...others, me, b]);
+	});
+
+	test('dispose: an unseated listener reads the watch as unwanted', async () => {
+		const ctx = setup();
+		const { me, others } = await join(ctx);
+		void ctx.room.watch();
+		await settle();
+		ctx.take('room_watch').resolve(occupancy(ROOM, 6, [...others, me]));
+		await settle();
+		const read: Array<boolean> = [];
+		ctx.room.add_listener({ unseated: () => read.push(ctx.room.want_watch) });
+		void ctx.client.dispose();
+		assert.deepEqual(read, [false]);
 	});
 });

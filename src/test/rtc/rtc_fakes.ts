@@ -3,7 +3,8 @@
  * signaling states well enough for perfect negotiation — offers, answers,
  * implicit rollback, crossing offers, the negotiation-needed flag, ICE
  * credentials and their restart, candidates refused before a remote
- * description — plus fake tracks and timers.
+ * description — plus fake tracks, and `RtcPeerDeps` over them and fake
+ * timers (`../fake_timers.ts`).
  *
  * A fake session description's `sdp` is JSON: the ICE username fragment and
  * the media sections (`mid`, kind, direction). Nothing connects for real: a
@@ -18,6 +19,8 @@
  */
 
 import type { RtcPeerDeps } from '#lib/rtc/rtc_peer.svelte.ts';
+
+import { create_fake_timers, type FakeTimers } from '../fake_timers.ts';
 
 type Kind = 'audio' | 'video';
 
@@ -395,37 +398,6 @@ export class FakePeerConnection extends EventTarget {
 const invalid_state = (what: string): DOMException =>
 	new DOMException(`invalid state: ${what}`, 'InvalidStateError');
 
-/** Fake timers: callbacks wait until a test fires them. */
-export interface FakeTimers {
-	set_timeout: RtcPeerDeps['set_timeout'];
-	clear_timeout: RtcPeerDeps['clear_timeout'];
-	/** The waiting callbacks' delays, in scheduling order. */
-	readonly pending: () => Array<number>;
-	/** Run every waiting callback. */
-	fire_all: () => void;
-}
-
-export const create_fake_timers = (): FakeTimers => {
-	let next = 1;
-	const waiting: Map<number, { callback: () => void; ms: number }> = new Map();
-	return {
-		set_timeout: (callback, ms) => {
-			const handle = next++;
-			waiting.set(handle, { callback, ms });
-			return handle;
-		},
-		clear_timeout: (handle) => {
-			waiting.delete(handle as number);
-		},
-		pending: () => [...waiting.values()].map((w) => w.ms),
-		fire_all: () => {
-			const due = [...waiting.values()];
-			waiting.clear();
-			for (const w of due) w.callback();
-		}
-	};
-};
-
 /** `RtcPeerDeps` over fakes, keeping every connection made, in order. */
 export const create_fake_rtc_deps = (): {
 	deps: RtcPeerDeps;
@@ -446,6 +418,3 @@ export const create_fake_rtc_deps = (): {
 	};
 	return { deps, connections, timers };
 };
-
-/** Let every queued microtask and the current macrotask's follow-ups run. */
-export const settle = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));

@@ -15,13 +15,8 @@ import { RoomClient, type RoomRpc } from '#lib/actions/room_client.svelte.ts';
 import { RtcMesh } from '#lib/rtc/rtc_mesh.svelte.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
 
-import {
-	create_fake_room_rpc,
-	join_output,
-	member,
-	occupancy,
-	settle as settle_tasks
-} from './room_client_fakes.ts';
+import { create_fake_room_rpc, join_output, member, occupancy } from './room_client_fakes.ts';
+import { settle as settle_tasks } from '../fake_timers.ts';
 import { create_fake_rtc_deps, create_fake_track } from '../rtc/rtc_fakes.ts';
 
 // vitest resolves the server builds, whose effects never run — load the client builds

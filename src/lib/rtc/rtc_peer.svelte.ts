@@ -199,7 +199,7 @@ export class RtcPeer {
 				: options.ice_disconnected_restart_ms;
 		this.#transceivers = this.slots.map(() => null);
 		this.#local_tracks = this.slots.map(() => null);
-		this.remote_tracks = Object.fromEntries(this.slots.map((s) => [s.name, null]));
+		this.remote_tracks = this.#no_remote_tracks();
 
 		const pc = deps.create_peer_connection({ iceServers: [...(options.ice_servers ?? [])] });
 		this.#pc = pc;
@@ -285,7 +285,12 @@ export class RtcPeer {
 		this.#pc.close();
 		this.connection_state = 'closed';
 		this.signaling_state = 'closed';
-		this.remote_tracks = Object.fromEntries(this.slots.map((s) => [s.name, null]));
+		this.remote_tracks = this.#no_remote_tracks();
+	}
+
+	/** Every slot's remote track, none received. */
+	#no_remote_tracks(): Record<string, MediaStreamTrack | null> {
+		return Object.fromEntries(this.slots.map((s) => [s.name, null]));
 	}
 
 	async #negotiate(): Promise<void> {
