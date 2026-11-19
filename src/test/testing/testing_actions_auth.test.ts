@@ -5,9 +5,9 @@
  * `_testing_put_fact`, `_testing_drain_effects`, `_testing_flood_notifications`,
  * `_testing_schema_snapshot`, `_testing_migration_tracker`,
  * `_testing_action_manifest`, `_testing_origin_check`,
- * `_testing_shorten_credential_expiry`) are privileged: they run
- * direct DB writes, dump internal state, drive a connection past its limits, or
- * answer probes of the server's own configuration — nothing the
+ * `_testing_shorten_credential_expiry`, `_testing_room_evict`) are privileged:
+ * they run direct DB writes, dump internal state, drive a connection past its
+ * limits, evict from the room registry, or answer probes of the server's own configuration — nothing the
  * production wire exposes. Their only structural
  * fence is the daemon-token credential gate
  * on every spec's `auth` axis. This test pins that wiring directly — the
@@ -34,6 +34,7 @@ import {
 	testing_schema_snapshot_action_spec,
 	testing_migration_tracker_action_spec,
 	testing_action_manifest_action_spec,
+	testing_room_evict_action_spec,
 	testing_shorten_credential_expiry_action_spec
 } from '#lib/testing/cross_backend/testing_reset_actions.ts';
 import { testing_origin_check_action_spec } from '#lib/testing/cross_backend/testing_origin_check.ts';
@@ -52,7 +53,8 @@ const testing_action_specs: ReadonlyArray<{ name: string; spec: RequestResponseA
 	{
 		name: '_testing_shorten_credential_expiry',
 		spec: testing_shorten_credential_expiry_action_spec
-	}
+	},
+	{ name: '_testing_room_evict', spec: testing_room_evict_action_spec }
 ];
 
 describe('_testing_* backdoor action specs carry the daemon-token gate', () => {

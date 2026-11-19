@@ -47,8 +47,10 @@ import {
  * `ws_account_actions` (the binary mounts its full action set on `/api/ws`,
  * the account actions among them),
  * `cell_gated_create` (the binary's `full_spine_mount` mounts the
- * `test_cell_gated_create_authorize` policy), and `ws_role_gated` (the binary
- * mounts the role-gated WS endpoint at `SPINE_ROLE_GATED_WS_PATH`), and every
+ * `test_cell_gated_create_authorize` policy), `ws_role_gated` (the binary
+ * mounts the role-gated WS endpoint at `SPINE_ROLE_GATED_WS_PATH`), and
+ * `rooms` (`full_spine_mount` mounts the room verbs on its WS endpoints over an
+ * exclusive registry and `test_room_authorize`), and every
  * `TESTING_BACKDOOR_METHODS` entry as `testing_backdoors` (`full_spine_mount`
  * mounts them all, on `/api/rpc` and `/api/ws`). The Node
  * binary's preset; `ws_refusal_body` stays `false`, as `@hono/node-server` drops a
@@ -67,6 +69,7 @@ const ts_spine_capabilities: BackendCapabilities = Object.freeze({
 	ws_account_actions: true,
 	cell_gated_create: true,
 	ws_role_gated: true,
+	rooms: true,
 	testing_backdoors: TESTING_BACKDOOR_METHODS
 });
 

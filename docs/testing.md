@@ -1036,7 +1036,7 @@ reference runtime — Node for TS, hyper for Rust; a backend on another runtime
 (Bun) overrides them. The flags that describe a backend's own mounts —
 `MountFlag`: `ws`, `sse`, `cell_crud`, `cell_relations`, `cell_gated_create`,
 `fact_serving`, `fact_serving_admin_hash`, `ready`, `peer_request`, `ws_account_actions`,
-`ws_role_gated` — have no default, and neither does `testing_backdoors`. The
+`ws_role_gated`, `rooms` — have no default, and neither does `testing_backdoors`. The
 family defaults are typed `FamilyDefaultCapabilities` (they omit them) and
 `capabilities` is required, so a config states each one, and one left out
 fails typecheck by name instead of silently skipping its suites:
@@ -1047,7 +1047,7 @@ capabilities: {
   ws: true, sse: true, ready: true, peer_request: true,
   cell_crud: false, cell_relations: false, cell_gated_create: false,
   fact_serving: false, fact_serving_admin_hash: false,
-  ws_account_actions: false, ws_role_gated: false,
+  ws_account_actions: false, ws_role_gated: false, rooms: false,
   testing_backdoors: ['_testing_reset', '_testing_drain_effects'],
 }
 ```
@@ -1059,7 +1059,8 @@ known backdoor it leaves out must answer `method_not_found` (both spines look a
 method up before authenticating, so an anonymous call shows whether it is
 mounted), and each it names gets the refused-credential rows. The one call
 requires `_testing_reset` and `_testing_drain_effects`, requires
-`_testing_put_fact` with `fact_serving`, and skips each suite needing another
+`_testing_put_fact` with `fact_serving` and `_testing_room_evict` with `rooms`,
+and skips each suite needing another
 undeclared backdoor — `credential_deadline`
 (`_testing_shorten_credential_expiry`), `origin_conformance`
 (`_testing_origin_check`), `ws_outbound_overflow`

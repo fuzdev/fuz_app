@@ -384,6 +384,44 @@ export const query_account_has_active_global_role = async (
 };
 
 /**
+ * Actor-grain check: does `actor_id` hold an active **global** role_grant for
+ * `role`, with the actor and its account both active (`deleted_at IS NULL`)?
+ *
+ * The live read an authorizer makes when it must not trust the role grants
+ * the dispatcher loaded for the request — a room authorizer reads inside its
+ * reserve window (`actions/room_actions.ts`). Keyed on the acting actor, not
+ * the account: another actor of the same account holding the role doesn't
+ * count. Twin of the Rust `query_active_actor_holds_any_global_role` for one
+ * role.
+ *
+ * @param deps - query dependencies
+ * @param actor_id - the actor to check
+ * @param role - the role to check for (e.g. `ROLE_ADMIN`)
+ * @returns `true` if the actor and its account are active and the actor holds an active global `role` grant
+ */
+export const query_actor_has_active_global_role = async (
+	deps: QueryDeps,
+	actor_id: Uuid,
+	role: string
+): Promise<boolean> => {
+	const row = await deps.db.query_one<{ exists: boolean }>(
+		`SELECT EXISTS(
+			SELECT 1 FROM role_grant rg
+			JOIN actor act ON act.id = rg.actor_id
+			JOIN account a ON a.id = act.account_id
+			WHERE act.id = $1
+			  AND act.deleted_at IS NULL
+			  AND a.deleted_at IS NULL
+			  AND rg.role = $2
+			  AND rg.scope_id IS NULL
+			  AND ${role_grant_active_sql('rg')}
+		 ) AS exists`,
+		[actor_id, role]
+	);
+	return row?.exists ?? false;
+};
+
+/**
  * Count **active** accounts (`deleted_at IS NULL`) holding an active global
  * role_grant for `role`, counting only grants on **active actors**
  * (`act.deleted_at IS NULL`) — and lock what it counted. Used by the last-admin

@@ -84,6 +84,7 @@ import { meta } from '@fuzdev/fuz_schema/meta.ts';
 import {
 	array,
 	boolean,
+	literal,
 	max_value,
 	min_value,
 	number,
@@ -92,7 +93,9 @@ import {
 	pipe,
 	safe_integer,
 	string,
-	void as fuz_void
+	variant,
+	void as fuz_void,
+	type Infer
 } from '@fuzdev/fuz_schema/schema.ts';
 import { Uuid, FactHashSchema } from '../../primitive_schemas.ts';
 import { fact_hash_bytes } from '@fuzdev/fuz_util/fact_hash.ts';
@@ -101,6 +104,8 @@ import { rpc_action, type RpcAction } from '../../actions/action_types.ts';
 import { jsonrpc_errors } from '../../http/jsonrpc_errors.ts';
 import { emit_after_commit } from '../../http/pending_effects.ts';
 import { protocol_action_specs } from '../../actions/protocol.ts';
+import { RoomEvictReason, RoomId } from '../../actions/room_action_specs.ts';
+import type { RoomRegistry } from '../../actions/room_registry.ts';
 import { query_put_fact } from '../../db/fact_queries.ts';
 import { query_put_fact_holder } from '../../db/fact_holder_queries.ts';
 import type { RequestResponseActionSpec } from '../../actions/action_spec.ts';
@@ -460,6 +465,61 @@ export const create_testing_flood_notifications_action = (): RpcAction =>
 	});
 
 /**
+ * What `_testing_room_evict` evicts — `RoomEvictTarget` on the wire, a
+ * `variant` on `kind` of strict objects.
+ */
+export const TestingRoomEvictTarget = variant('kind', [
+	object({ kind: literal('actor'), actor_id: Uuid }),
+	object({ kind: literal('actor_in_scope'), actor_id: Uuid, scope: string }),
+	object({ kind: literal('room'), room_id: RoomId }),
+	object({ kind: literal('scope'), scope: string })
+]);
+export type TestingRoomEvictTarget = Infer<typeof TestingRoomEvictTarget>;
+
+/**
+ * `_testing_room_evict` — call the backend's room registry's `evict`, as a
+ * consumer does after its own authority change commits, so the cross suites
+ * pin eviction on both spines without a consumer's domain to drive it. The
+ * answer is the registry's `RoomEvicted` count: the seats and watches it
+ * removed and the joins and watches in flight it reached.
+ *
+ * Without side effects, like the room verbs: the registry is memory, so no
+ * transaction opens. `auth` gates on the daemon-token credential, matching
+ * `_testing_reset`. The Rust mirror is
+ * `fuz_testing::create_testing_room_evict_action_spec`.
+ */
+export const testing_room_evict_action_spec = {
+	method: '_testing_room_evict',
+	kind: 'request_response',
+	initiator: 'frontend',
+	auth: TESTING_ACTION_AUTH,
+	side_effects: false,
+	input: object({ target: TestingRoomEvictTarget, reason: RoomEvictReason }),
+	output: object({
+		seats: pipe(number, safe_integer, min_value(0)),
+		watches: pipe(number, safe_integer, min_value(0)),
+		pending: pipe(number, safe_integer, min_value(0))
+	}),
+	async: true,
+	description:
+		"Test-binary only — evict seats, watches, and joins in flight from the backend's room " +
+		'registry, as a consumer does after an authority change commits.'
+} as const satisfies RequestResponseActionSpec;
+
+/**
+ * Build the `_testing_room_evict` action over the registry the backend's room
+ * verbs run on (see the spec doc). Not bundled by `create_testing_actions`: a
+ * backend without rooms has no registry to evict from, so the full-mount layer
+ * (`build_full_spine_rpc_actions`) appends it beside its room verbs.
+ *
+ * @param registry - the backend's room registry
+ */
+export const create_testing_room_evict_action = (registry: RoomRegistry): RpcAction =>
+	rpc_action(testing_room_evict_action_spec, ({ target, reason }) =>
+		registry.evict(target, reason)
+	);
+
+/**
  * `_testing_schema_snapshot` — introspect the live database into a normalized
  * `SchemaSnapshot` for cross-impl parity diffing. The cross-backend harness
  * calls this on each backend, then `assert_schema_snapshots_equal`s the
@@ -688,15 +748,25 @@ const PROTOCOL_METHODS: ReadonlySet<string> = new Set(
  * `build_full_spine_rpc_actions`), so its static spec is folded in here; the
  * Rust mirror folds in its own descriptor the same way.
  *
+ * `ws_only` are the domain actions the backend serves on its WebSocket
+ * endpoint alone (the room verbs), listed with `transport: 'ws'`
+ * (`action_manifest.ts`) — the Rust stub's `ws_only` specs, which its one
+ * registry carries on both transports and its RPC dispatcher refuses.
+ *
  * @param mounted - every other action on the backend's live RPC mount
+ * @param ws_only - the actions only its WebSocket endpoint serves
  */
 export const create_testing_action_manifest_action = (
-	mounted: ReadonlyArray<RpcAction>
+	mounted: ReadonlyArray<RpcAction>,
+	ws_only: ReadonlyArray<RpcAction> = []
 ): RpcAction => {
-	const manifest = build_action_manifest([
-		...mounted.map((action) => action.spec).filter((spec) => !PROTOCOL_METHODS.has(spec.method)),
-		testing_action_manifest_action_spec
-	]);
+	const manifest = build_action_manifest(
+		[
+			...mounted.map((action) => action.spec).filter((spec) => !PROTOCOL_METHODS.has(spec.method)),
+			testing_action_manifest_action_spec
+		],
+		ws_only.map((action) => action.spec)
+	);
 	return rpc_action(testing_action_manifest_action_spec, async () => manifest);
 };
 

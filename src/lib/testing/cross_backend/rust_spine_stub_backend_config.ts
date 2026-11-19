@@ -84,7 +84,9 @@ export const RUST_SPINE_STUB_EXPECTED_SCHEMA_PATH_ENV = 'FUZ_RUST_SPINE_STUB_EXP
  * serves one action registry on `/api/rpc` and `/api/ws`), `cell_gated_create`
  * (it mounts the `TestCellGatedCreateAuthorize` policy on its cell layer), and
  * `ws_role_gated` (it mounts the role-gated WS endpoint at
- * `SPINE_ROLE_GATED_WS_PATH`, sharing its connection registry), and every
+ * `SPINE_ROLE_GATED_WS_PATH`, sharing its connection registry), and `rooms`
+ * (its registry carries the WS-only room verbs over an exclusive room
+ * registry and `TestRoomAuthorize`), and every
  * `TESTING_BACKDOOR_METHODS` entry as `testing_backdoors` (it mounts them all,
  * on one registry for both transports). Named
  * (not inline) so every spine preset is greppable, mirroring
@@ -103,6 +105,7 @@ const rust_spine_stub_capabilities: BackendCapabilities = Object.freeze({
 	ws_account_actions: true,
 	cell_gated_create: true,
 	ws_role_gated: true,
+	rooms: true,
 	testing_backdoors: TESTING_BACKDOOR_METHODS
 });
 

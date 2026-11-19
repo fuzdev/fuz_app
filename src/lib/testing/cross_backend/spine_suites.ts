@@ -54,10 +54,11 @@ import '../assert_dev_env.ts';
  *
  * **Backdoors.** The backend's `capabilities.testing_backdoors` must declare
  * `SPINE_SUITES_REQUIRED_BACKDOORS` (the per-test reset and the audit
- * barrier), and `_testing_put_fact` when it declares `fact_serving`; the call
- * throws otherwise. A suite every case of which drives another backdoor
- * (`credential_deadline`, `origin_conformance`, `ws_outbound_overflow`) skips
- * itself on a backend not declaring it, shown like an exclude with a reason
+ * barrier), `_testing_put_fact` when it declares `fact_serving`, and
+ * `_testing_room_evict` when it declares `rooms`; the call throws otherwise. A
+ * suite every case of which drives another backdoor (`credential_deadline`,
+ * `origin_conformance`, `ws_outbound_overflow`) skips itself on a backend not
+ * declaring it, shown like an exclude with a reason
  * naming the backdoor — so an exclude, override or `exclude_cases` entry for
  * it is refused as dead.
  *
@@ -177,6 +178,7 @@ import {
 	describe_role_grant_role_grammar_cross_tests,
 	type RoleGrantRoleGrammarCrossTestOptions
 } from './role_grant_role_grammar.ts';
+import { describe_rooms_ws_cross_tests, type RoomsWsCrossTestOptions } from './rooms_ws.ts';
 import {
 	describe_rpc_adversarial_cross_tests,
 	type RpcAdversarialCrossTestOptions
@@ -291,6 +293,7 @@ export const SUITE_NAMES = [
 	'role_grant_offer_notification_ws',
 	'role_grant_participation',
 	'role_grant_role_grammar',
+	'rooms_ws',
 	'rpc_adversarial',
 	'session_cap',
 	'session_cookie_codec',
@@ -372,6 +375,7 @@ export interface SuiteOptionsMap {
 	role_grant_offer_notification_ws: RoleGrantOfferNotificationWsTestOptions;
 	role_grant_participation: RoleGrantParticipationCrossTestOptions;
 	role_grant_role_grammar: RoleGrantRoleGrammarCrossTestOptions;
+	rooms_ws: RoomsWsCrossTestOptions;
 	rpc_adversarial: RpcAdversarialCrossTestOptions;
 	session_cap: SessionCapCrossTestOptions;
 	session_cookie_codec: SessionCookieCodecCrossTestOptions;
@@ -790,6 +794,17 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 		describe: describe_role_grant_role_grammar_cross_tests,
 		required: { setup_test: true }
 	},
+	rooms_ws: {
+		derive: (c) => ({
+			setup_test: c.setup(),
+			capabilities: c.config.capabilities,
+			base_url: c.config.base_url,
+			ws_path: c.config.ws_path,
+			rpc_path: c.config.rpc_path
+		}),
+		describe: describe_rooms_ws_cross_tests,
+		required: { setup_test: true, capabilities: true, base_url: true, ws_path: true }
+	},
 	rpc_adversarial: {
 		derive: (c) => ({
 			setup_test: c.setup(),
@@ -1140,6 +1155,12 @@ const validate_spine_cross_suites_options = (
 				'capabilities.testing_backdoors — the fact suites seed through it'
 		);
 	}
+	if (capabilities.rooms && !declared.includes('_testing_room_evict')) {
+		throw new Error(
+			'describe_spine_cross_suites: capabilities.rooms needs _testing_room_evict in ' +
+				'capabilities.testing_backdoors — the rooms suite evicts through it'
+		);
+	}
 };
 
 const run_suite = <K extends SuiteName>(name: K, context: SuiteContext): void => {
@@ -1311,7 +1332,8 @@ export const register_spine_case_exclusions = (
  *   its cases, or an override changing its `capabilities.testing_backdoors`), an exclude,
  *   override or `exclude_cases` entry for a suite that skips itself or isn't
  *   run, a backend not declaring `SPINE_SUITES_REQUIRED_BACKDOORS` (or
- *   `_testing_put_fact` with `fact_serving`), or a suite missing an input the
+ *   `_testing_put_fact` with `fact_serving`, or `_testing_room_evict` with
+ *   `rooms`), or a suite missing an input the
  *   handle doesn't carry
  */
 export const describe_spine_cross_suites = (

@@ -120,7 +120,8 @@ describe('testing_backdoors has no family default', () => {
 		ready: false,
 		peer_request: false,
 		ws_account_actions: false,
-		ws_role_gated: false
+		ws_role_gated: false,
+		rooms: false
 	} as const;
 	const options = {
 		name: 'backdoor_declaration_probe',

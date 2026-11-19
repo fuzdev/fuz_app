@@ -64,7 +64,10 @@ import {
 	create_spine_route_specs,
 	spine_session_options
 } from '#lib/testing/cross_backend/default_spine_surface.ts';
-import { build_full_spine_mount } from '#lib/testing/cross_backend/full_spine_mount.ts';
+import {
+	build_full_spine_mount,
+	create_spine_room_registry
+} from '#lib/testing/cross_backend/full_spine_mount.ts';
 import {
 	ACTION_RATE_LIMIT_ENABLED_ENV,
 	ACTION_RATE_LIMIT_MAX_ATTEMPTS_ENV,
@@ -317,6 +320,12 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 	// wires its audit-revocation guard.
 	const connection_registry = new ConnectionRegistry();
 
+	// The room registry over that same connection registry, so the room verbs
+	// (WS-only, on both endpoints) seat connections the endpoints admitted, and
+	// `_testing_room_evict` and `_testing_reset` reach those seats. Exclusive,
+	// as the Rust stub's (`create_spine_room_registry`).
+	const room_registry = create_spine_room_registry(connection_registry);
+
 	// Login rate limiting is OFF by default — the standard cross suites fire
 	// many login/signup round-trips per backend lifetime from one host (loopback),
 	// which a live limiter would 429. The dedicated security cross project
@@ -388,7 +397,8 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 	// notification family — driving `describe_role_grant_offer_notification_ws_tests`.
 	const full_mount = build_full_spine_mount(app_backend.deps, {
 		notification_sender: connection_registry,
-		daemon_token_state: daemon_token_rotation.state
+		daemon_token_state: daemon_token_rotation.state,
+		room_registry
 	});
 
 	const app_server = await create_app_server({

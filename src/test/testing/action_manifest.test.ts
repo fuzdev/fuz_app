@@ -24,6 +24,9 @@ import {
 } from '#lib/testing/cross_backend/action_manifest.ts';
 import type { RouteAuth } from '#lib/http/auth_shape.ts';
 import type { RateLimitKey } from '#lib/rate_limiter.ts';
+import { all_room_action_specs } from '#lib/actions/room_action_specs.ts';
+import { build_full_spine_rpc_actions } from '#lib/testing/cross_backend/full_spine_mount.ts';
+import { create_stub_app_deps } from '#lib/testing/stubs.ts';
 
 const spec = (
 	method: string,
@@ -139,6 +142,74 @@ describe('build_action_manifest', () => {
 		assert.deepStrictEqual(
 			manifest.methods.map((m) => m.method),
 			['_testing_action_manifest', 'alpha', 'zebra']
+		);
+	});
+});
+
+describe('the transport key', () => {
+	test('a WebSocket-only method says so; every other entry has no `transport` key', () => {
+		const manifest = build_action_manifest(
+			[spec('zeta_read', { account: 'required', actor: 'none' })],
+			[spec('room_send', { account: 'required', actor: 'required' })]
+		);
+		const [room_send, zeta_read] = manifest.methods;
+		assert.strictEqual(room_send?.transport, 'ws');
+		// the key set of a both-transport entry is the one a consumer's published
+		// schema parses, exactly — as the Rust stub's entry pins it
+		assert.deepStrictEqual(Object.keys(zeta_read!).sort(), [
+			'account',
+			'actor',
+			'credential_types',
+			'input',
+			'method',
+			'rate_limit',
+			'roles',
+			'side_effects'
+		]);
+		assert.ok(is(ActionManifestEntry, room_send));
+		assert.ok(is(ActionManifestEntry, zeta_read));
+		assert.notOk(is(ActionManifestEntry, { ...zeta_read, transport: 'both' }));
+	});
+
+	test("the spine's full mount lists the room verbs as WebSocket-only, and nothing else", async () => {
+		const actions = build_full_spine_rpc_actions(create_stub_app_deps(), {
+			daemon_token_state: {
+				current_token: 'stub',
+				previous_token: null,
+				rotated_at: new Date(0),
+				keeper_account_id: null
+			}
+		});
+		const manifest_action = actions.find((a) => a.spec.method === '_testing_action_manifest')!;
+		const manifest = (await manifest_action.handler(undefined, {} as never)) as {
+			methods: Array<ActionManifestEntry>;
+		};
+		const ws_only = manifest.methods.filter((m) => m.transport === 'ws').map((m) => m.method);
+		assert.deepStrictEqual(ws_only.sort(), all_room_action_specs.map((s) => s.method).sort());
+		for (const room_spec of all_room_action_specs) {
+			const entry = manifest.methods.find((m) => m.method === room_spec.method);
+			assert.deepStrictEqual(entry, {
+				method: room_spec.method,
+				input: 'object',
+				side_effects: false,
+				account: 'required',
+				actor: 'required',
+				roles: [],
+				credential_types: [],
+				rate_limit: 'rate_limit' in room_spec ? room_spec.rate_limit : null,
+				transport: 'ws'
+			});
+		}
+		// the room verbs stay off the RPC endpoint
+		for (const room_spec of all_room_action_specs) {
+			assert.notOk(
+				actions.some((a) => a.spec.method === room_spec.method),
+				room_spec.method
+			);
+		}
+		assert.notProperty(
+			manifest.methods.find((m) => m.method === '_testing_room_evict'),
+			'transport'
 		);
 	});
 });

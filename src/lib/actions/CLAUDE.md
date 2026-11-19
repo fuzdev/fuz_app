@@ -1045,6 +1045,66 @@ Two abort signals composed via `AbortSignal.any`:
 - `socket_abort_controller` — per-socket, fires when the socket ends: at the server's close (revocation, cap eviction, heartbeat timeout, …) or the client's. Registered with the registry, which aborts it on the closes it makes. Drives every handler's `ctx.signal`.
 - `pending_controllers: Map<JsonrpcRequestId, AbortController>` — per-request. Registered before dispatch (one entry per running request — a duplicate live id is refused — so its size is the in-flight count the ceiling bounds), cleared in `finally` so late cancels for a completed id (or a reused id) can't null-abort the wrong handler. Unknown cancels no-op.
 
+## Rooms (`actions/room_registry.ts`, `actions/room_action_specs.ts`, `actions/room_actions.ts`)
+
+A generic live-room primitive over one WS endpoint's `ConnectionRegistry` —
+the TS twin of the Rust spine's `fuz_realtime::RoomRegistry` and
+`fuz_actions::room`, one wire, held to it by the `rooms_ws` cross suite. Each
+module doc holds the detail; the cross-cutting shape:
+
+- **`RoomRegistry`** (`new RoomRegistry(connections, options)`) — rooms keyed
+  by a consumer's `RoomId` (1–`ROOM_ID_MAX_LENGTH` printable ASCII), holding
+  seats (random `MemberId` per join, keyed by connection and actor) and watches
+  (one per connection and room, for whichever actor last asked). Options:
+  `exclusive` (one seat per actor across the registry, newest admitted wins,
+  with the rejoin tombstone — `ROOM_REJOIN_TOMBSTONE_TTL_MS`,
+  `ROOM_REJOIN_TOMBSTONES_PER_ACTOR`), `max_members_per_room`,
+  `max_payload_bytes`, `max_state_bytes`, `max_watches_per_connection`
+  (`DEFAULT_ROOM_*`), `topology`. Every method runs without an `await`, so no
+  check is separated from its mutation (the Rust registry's one lock). Each
+  room's events carry a per-room `seq`; an empty room is deleted. Refusals are
+  a `RoomResult` (`RoomError`), not throws.
+- **Two-phase join and watch** — `reserve_seat` / `reserve_watch` before the
+  consumer's authorizer reads, `admit_seat` / `admit_watch` after, so an
+  eviction committing mid-authorizer still reaches the request (an actor or
+  room target refuses it, a scope target poisons it, at most
+  `MAX_POISONED_SCOPES`). The admit consumes the pending entry; a caller that
+  never reaches it calls `withdraw` in a `finally` (the Rust guard's drop). A
+  TS join keeps running after its socket closes, so the admit reads the
+  socket's signal and the close marks every join in flight.
+- **Disconnect** — the first reserve on a connection adds one listener to
+  `ConnectionRegistry.socket_signal(connection_id)` (the registered
+  `abort_controller`'s signal, which every close path aborts; `null` while
+  pending or once gone); its abort releases every seat (`room_member_left`
+  reason `disconnected`), watch, and join in flight on the next microtask, so a
+  close inside a fan-out (an overflow) never re-enters the registry mid-step.
+- **Eviction** — `evict(target, reason)` by `actor`, `actor_in_scope`, `room`,
+  or `scope` (`RoomEvictTarget`), covering seats, watches, and joins in flight;
+  the consumer calls it after its authority change commits
+  (`emit_after_commit`). `clear()` drops everything silently, for a test reset.
+- **The verbs** — `create_room_actions({registry, authorize, limiter},
+  {join_extra?})` returns the `room_*` `RpcAction`s
+  (`all_room_action_specs`), **WS-only**: mount them on a `ws_endpoints` entry
+  (with `room_notification_actions` for the surface), never an RPC endpoint.
+  Actor-required, `side_effects: false`; `room_join` and `room_watch` carry
+  `rate_limit: 'account'`. `RoomAuthorize.authorize({actor_id, account_id,
+  room_id, access}, db)` gets the caller's ids and the pool `db`, never the
+  request's role grants (loaded before the reserve, so possibly older than an
+  eviction); `{allow: false}` answers `room_not_found`, the IDOR mask.
+  `RoomRateLimiter` (`DEFAULT_ROOM_RATE_LIMIT`: 300 requests and 1 MiB per
+  10 s) is per connection, two refilling buckets charged on join, send, and
+  state set — one request plus the payload's or state's `json_escaped_len`,
+  the bytes it adds to each frame — but not watch; `create_room_actions` throws
+  when the limiter can't cover a max-size payload or state
+  (`check_room_limits`). Refusals: the `ERROR_ROOM_*` reasons
+  (`to_room_jsonrpc_error`), `rate_limited` with `data.retry_after`, and
+  `request_cancelled` for a cancelled join or a closed socket.
+- **Notifications** — `room_member_joined`, `room_member_left`,
+  `room_member_state` (to the other members and the watchers),
+  `room_message` (addressee, or the room minus the sender), `room_seat_lost`
+  (the displaced or evicted seat's own connection, `moved_to` for a move), and
+  `room_watch_ended` — each a `remote_notification` spec with its params schema.
+
 ## Protocol actions (`actions/protocol.ts`)
 
 Three shared `{spec, handler}` tuples that every consumer spreads into both

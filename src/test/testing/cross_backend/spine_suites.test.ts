@@ -120,6 +120,8 @@ describe('the spine suite backdoor declarations', () => {
 			// declaring `fact_serving` requires `_testing_put_fact`, so a suite
 			// reading that flag may seed through it
 			if (source.includes('capabilities.fact_serving')) allowed.add('_testing_put_fact');
+			// and declaring `rooms` requires `_testing_room_evict`
+			if (source.includes('capabilities.rooms')) allowed.add('_testing_room_evict');
 			const named: ReadonlySet<string> = new Set([
 				...[...source.matchAll(/['"`](_testing_\w+)['"`]/g)].map(([, m]) => m!),
 				// a call through the action spec or a shared seeder quotes no name
@@ -247,6 +249,13 @@ describe('describe_spine_cross_suites backdoor declaration', () => {
 		assert.throws(
 			call(handle_declaring(HARNESS_ONLY, { fact_serving: true }), {}),
 			/fact_serving needs _testing_put_fact/
+		);
+	});
+
+	test('rooms needs the room evict backdoor declared', () => {
+		assert.throws(
+			call(handle_declaring(HARNESS_ONLY, { rooms: true }), {}),
+			/rooms needs _testing_room_evict/
 		);
 	});
 

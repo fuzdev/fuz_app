@@ -1018,6 +1018,29 @@ export class ConnectionRegistry {
 	}
 
 	/**
+	 * The socket-scoped signal of an admitted connection — its registered
+	 * `abort_controller`'s, which every close path aborts: the registry's own
+	 * closes (a revocation, the cap, an overflow, a stalled write, the
+	 * shutdown) and `register_action_ws`'s (a heartbeat timeout, an oversized
+	 * message, a refused admission, the client's close). `null` once the
+	 * connection is gone, while it is still pending admission, and for one
+	 * registered without a controller.
+	 *
+	 * A room registry (`actions/room_registry.ts`) waits on it, one listener
+	 * per connection, to release the connection's seats and watches. Twin of
+	 * the Rust `ConnectionRegistry::socket_signal` (crate-private there, where
+	 * the room registry shares the crate).
+	 *
+	 * @param connection_id - the id `register_pending` / `add_connection` returned
+	 * @returns the signal, or `null`
+	 */
+	socket_signal(connection_id: Uuid): AbortSignal | null {
+		const entry = this.#connections.get(connection_id);
+		if (!entry?.admitted) return null;
+		return entry.abort_controller?.signal ?? null;
+	}
+
+	/**
 	 * Number of currently **admitted** WebSocket connections.
 	 *
 	 * Read-only counter intended for telemetry, logging, and tests. A

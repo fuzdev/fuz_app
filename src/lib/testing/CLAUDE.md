@@ -283,7 +283,11 @@ per-method auth shape.
   `InputShape`; auth axes pass through; `roles` /
   `credential_types` flatten to sorted arrays; `rate_limit` is the declared
   class or an explicit `null`, so a missing key reads as drift rather than a
-  default). Twin of `schema_introspect.ts`. Excludes the protocol actions
+  default), plus `transport: 'ws'` on a method served on the WebSocket
+  endpoint alone (`build_action_manifest(specs, ws_only_specs)` — the room
+  verbs; the Rust stub's `ws_only` specs) and no `transport` key on every other,
+  so a mount with no WebSocket-only domain method dumps the entries it always
+  has. Twin of `schema_introspect.ts`. Excludes the protocol actions
   (`heartbeat` / `cancel` / `peer/ping`) — `create_testing_action_manifest_action`
   filters them via the `protocol_action_specs` method set (Rust drops
   `PROTOCOL_ACTION_SPECS`); the two impls organize them differently (`peer/ping`
@@ -1148,7 +1152,7 @@ file; the dual-spawn and limiter-enabled suites name their own files.
   `fact_serving_admin_hash` / `ready` /
   `account_status` / `peer_request` /
   `ws_handshake_pipelining` / `ws_account_actions` /
-  `ws_role_gated` / `ws_refusal_body` — each has a `test_if`
+  `ws_role_gated` / `rooms` / `ws_refusal_body` — each has a `test_if`
   reader (`ws_refusal_body` picks how the front-door table reads a WS
   refusal instead); `peer_request` (server-initiated requests — the ActionPeer
   `peer/ping` round-trip) is `true` on fuz_app's Rust and TS spine presets
@@ -1160,7 +1164,7 @@ file; the dual-spawn and limiter-enabled suites name their own files.
   flags that describe a backend's own mounts (`ws`, `sse`, `cell_crud`,
   `cell_relations`, `cell_gated_create`, `fact_serving`,
   `fact_serving_admin_hash`, `ready`,
-  `peer_request`, `ws_account_actions`, `ws_role_gated`), and the family
+  `peer_request`, `ws_account_actions`, `ws_role_gated`, `rooms`), and the family
   defaults (`ts_default_capabilities` / `rust_default_capabilities`, typed
   `FamilyDefaultCapabilities`) omit them and the `testing_backdoors` list (the
   `_testing_*` backdoors the backend mounts, from `TESTING_BACKDOOR_METHODS` —
@@ -1189,6 +1193,11 @@ file; the dual-spawn and limiter-enabled suites name their own files.
   authorizer _behavior_ adds no method/wire shape and so the schema + manifest
   parity gates are blind to an authorizer divergence (the `cell_moderate`
   _verb_ it pairs with is on the manifest, separately gated).
+  `rooms` gates `describe_rooms_ws_cross_tests` — **cross-only** too, and for
+  the same reason: its rooms run on the `test_room_authorize` policy, so it is
+  `true` only on a backend mounting the room verbs over that policy and an
+  exclusive registry (the reference spine binaries); a consumer mounting rooms
+  over its own authorizer states `false`.
   `account_lifecycle` gates `describe_account_lifecycle_cross_tests` (the
   `account_delete` / `account_undelete` / `account_purge` parity suite); unlike
   cells those verbs **are** on the declared surface (in `create_admin_actions`,
@@ -1329,20 +1338,21 @@ here never reaches it.
   undeclared backdoor throws before anything registers.
 - **Backdoors.** `capabilities.testing_backdoors` must declare
   `SPINE_SUITES_REQUIRED_BACKDOORS` (`_testing_reset`, every setup's per-test
-  reset, and `_testing_drain_effects`, the audit-read barrier), and
-  `_testing_put_fact` when `fact_serving` is declared; the call throws
-  otherwise. A suite every case of which drives another backdoor
-  (`SuiteEntry.backdoors`: `credential_deadline` →
-  `_testing_shorten_credential_expiry`, `origin_conformance` →
-  `_testing_origin_check`, `ws_outbound_overflow` →
+  reset, and `_testing_drain_effects`, the audit-read barrier),
+  `_testing_put_fact` when `fact_serving` is declared, and
+  `_testing_room_evict` when `rooms` is; the call throws otherwise. A suite
+  every case of which drives another backdoor (`SuiteEntry.backdoors`:
+  `credential_deadline` → `_testing_shorten_credential_expiry`,
+  `origin_conformance` → `_testing_origin_check`, `ws_outbound_overflow` →
   `_testing_flood_notifications`) skips itself on a backend not declaring it,
   as a skipped test beside the excludes whose reason names the backdoor; an
   exclude, override or `exclude_cases` entry for it throws as dead.
   `spine_suites.test.ts` holds the backdoors each suite module names — quoted
   `_testing_*` names, `testing_*_action_spec` references, and the
   `cross_put_fact` / `cross_drain_effects` seeders — to its entry's
-  `backdoors`, the required pair, or `_testing_put_fact` under
-  `capabilities.fact_serving`; a helper module the suite calls isn't read.
+  `backdoors`, the required pair, `_testing_put_fact` under
+  `capabilities.fact_serving`, or `_testing_room_evict` under
+  `capabilities.rooms`; a helper module the suite calls isn't read.
 - **`exclude_cases`** — `SuiteCaseExclusions`, `{[suite]: {[name path]:
   reason}}`: single tests of a suite that runs, each by its name path (the
   describe titles and the test name joined with `' > '` — what the reporter
@@ -1755,6 +1765,42 @@ must hold `ROLE_ADMIN` and `scoped_role` (a role an admin can grant scoped).
 fuz_app's spine binaries mount `SPINE_ROLE_GATED_WS_PATH` gated on
 `SPINE_ROLE_GATED_WS_ROLES` (`admin` + `participant`). Gated on
 `capabilities.ws` and `capabilities.ws_role_gated`; cross-process only.
+
+### `cross_backend/rooms_ws.ts` — `describe_rooms_ws_cross_tests`
+
+Real-upgrade parity for the **room verbs** (`actions/room_actions.ts`) and the
+notifications their registry fans out: join, leave, send, state, and watch
+round trips with each event's shape and its room's `seq` in order, and an
+event never reaching the seat that caused it; the refusals' codes and reasons
+(`room_not_found` for a denied and a missing room alike, a malformed room id
+as the input schema's reasonless `invalid_params`, `room_not_joined`,
+`room_member_not_found` — a seat addressing itself included — the payload and
+state bounds in UTF-8 bytes, `room_full`, `room_watch_limit`, and
+`method_not_found` over HTTP); exclusivity (one seat per actor, the newest
+admitted winning, the displaced seat told `room_seat_lost` with `moved_to`,
+a same-connection rejoin moving its own seat) and the rejoin tombstone
+(`room_seat_moved` for a moved seat, a seat released by its disconnect
+rejoined); eviction through `_testing_room_evict` by scope, actor in scope,
+room, and actor, ending seats and watches alike; a closed socket's seat
+leaving as `disconnected`; and the per-connection limiter's `rate_limited`
+(`data.retry_after`), charged by escaped bytes, with a watch and a leave
+still answered past the byte budget and another socket of the account holding
+its own budget.
+Codes and `data.reason` are compared, not messages; the room verbs'
+action-manifest entries are the manifest parity gate's.
+`describe_rooms_ws_cross_tests({setup_test, capabilities, base_url, ws_path,
+rpc_path?})` — runs against a backend mounting the room verbs on `ws_path` over
+an exclusive registry with `test_room_authorize` (`test_room_authorize.ts`, the
+twin of the Rust stub's `TestRoomAuthorize`: the room id's prefix — `open:`,
+`scoped:<scope>:`, `pair:`, `watch:`, `admin:` — picks the rule, `admin:`
+reading the global grant live through the request's database) and the room
+limiter at `DEFAULT_ROOM_RATE_LIMIT`, which `capabilities.rooms` declares.
+Gated on `capabilities.ws` and `capabilities.rooms`; a backend declaring
+`rooms` declares `_testing_room_evict` too, which the eviction case drives and
+`describe_spine_cross_suites` requires; cross-process only. fuz_app's spine binaries mount it all
+(`full_spine_mount.ts`: `create_spine_room_registry`, the verbs on both WS
+endpoints, `_testing_room_evict` on RPC, and `_testing_reset` clearing the
+rooms).
 
 ### `cross_backend/peer_ping_ws.ts` — `describe_peer_ping_ws_tests`
 
@@ -2342,8 +2388,16 @@ are `src/test/auth/cell_crud_parity.db.test.ts`
   `_testing_origin_check`. The Rust mirror is
   `fuz_testing::create_testing_shorten_credential_expiry_action_spec`.
 
+  Also not bundled: `_testing_room_evict`
+  (`create_testing_room_evict_action(registry)`, input
+  `{target: TestingRoomEvictTarget, reason}`) — calls the room registry's
+  `evict` and answers its `{seats, watches, pending}` count, so the rooms suite
+  pins eviction without a consumer's domain. It needs the registry the room
+  verbs run on, so the full-mount layer appends it beside them. The Rust mirror
+  is `fuz_testing::create_testing_room_evict_action_spec`.
+
   Also in `testing_reset_actions.ts` — but **not** bundled by
-  `create_testing_actions` — `_testing_action_manifest` (+ `create_testing_action_manifest_action(mounted)`):
+  `create_testing_actions` — `_testing_action_manifest` (+ `create_testing_action_manifest_action(mounted, ws_only?)`, `ws_only` the WebSocket-only actions it lists as `transport: 'ws'`):
   dumps the live RPC registry as a normalized `ActionManifest` for the
   cross-impl manifest-parity gate (see §Cross-impl RPC-manifest parity). It must
   enumerate _every_ mounted method, which `create_testing_actions` (one
@@ -3011,7 +3065,7 @@ re-roll the serve / daemon-info / drain boilerplate:
 - `testing/cross_backend/testing_server_node.ts` — `create_node_testing_adapter()` (`@hono/node-server`'s `serve` and module-level `upgradeWebSocket`, over a `ws` `WebSocketServer`). Optional peer deps; only test binaries import them. `prepare_websocket` builds the `ws` server (`noServer: true`) with `maxPayload` at twice `max_message_bytes` (default `DEFAULT_WS_MAX_MESSAGE_BYTES`; `ws`'s own default is 100 MiB), and `serve` hands it to `@hono/node-server`, so a grossly oversized message is refused at the frame layer (`WS_CLOSE_MESSAGE_TOO_BIG` with no reason) before it is buffered whole, while one just over the limit reaches the per-message check, which sends `WS_CLOSE_MESSAGE_TOO_BIG_REASON` as every other backend does. Bun's adapter sets the same multiple as its frame cap (see below).
 - `testing/cross_backend/testing_server_bun.ts` — `create_bun_testing_adapter()` (`Bun.serve` + `@hono/bun`'s module-level `getConnInfo`, `upgradeWebSocket`, and `websocket`; `Bun.serve` declared locally so it typechecks under the Node toolchain). Needs the optional `@hono/bun` peer dep (the counterpart to Node's `@hono/node-server` + `ws`; `Bun.serve` is built in). Reuses `create_node_runtime` (Bun implements the `node:fs`/`node:process` surface). WS is module-level + stateless — the `websocket` handler is threaded into `serve`, where `Bun.serve` wants it. It carries `maxPayloadLength` at twice `max_message_bytes` rather than Bun's 16 MiB default: past its cap Bun drops the socket without a close frame (1006), so the headroom leaves a message just over the limit to the per-message check (`WS_CLOSE_MESSAGE_TOO_BIG`, as on Node), while a grossly oversized one is refused before Bun buffers it whole.
 - `testing/cross_backend/default_spine_surface.ts` — the canonical no-domain spine surface (account/admin/audit/signup + bootstrap): `spine_session_options`, `spine_roles`, `create_spine_route_specs`, `spine_rpc_endpoints`, `create_spine_surface_spec`. This is the **declared** surface — the `create_standard_rpc_actions` bundle the spec-derived suites auto-enumerate. It passes `daemon_token: true` (both spine binaries mount the daemon-token layer) and leaves `GET /api/surface` at its default, off — the TS spine binary does too, and the Rust `testing_spine_stub` serves none. Shared by the spine_stub cross test, the TS cross tests, and the binary.
-- `testing/cross_backend/full_spine_mount.ts` — `build_full_spine_rpc_actions(deps, options)` — the **full** live RPC mount: the declared bundle **plus** the off-declared-surface families the binary live-mounts (`_testing_*` backdoors, the cell verb set, the opt-in `actor_lookup` / `actor_search` resolvers). `build_full_spine_mount(deps, options)` builds it once for both of the binary's endpoints, returning `FullSpineMount` (`{rpc_actions, ws_actions}`): the WS list is `protocol_actions` plus every RPC action not already among them, twinning the Rust `testing_spine_stub`, which serves one registry on RPC and WS (the one difference is `cancel` — a registered protocol action on TS, owned by the read loop on Rust). Single-sources the mount so the binary and the `spine_method_coverage` reconciliation test build the same list. `create_spine_live_rpc_endpoints()` wraps the list, built on stub deps, as one endpoint at `SPINE_RPC_PATH` — the `live_rpc_endpoints` value the conformance table, the differential and the auth-row generator resolve off-surface methods from (no handler built there runs).
+- `testing/cross_backend/full_spine_mount.ts` — `build_full_spine_rpc_actions(deps, options)` — the **full** live RPC mount: the declared bundle **plus** the off-declared-surface families the binary live-mounts (`_testing_*` backdoors, the cell verb set, the opt-in `actor_lookup` / `actor_search` resolvers). `build_full_spine_mount(deps, options)` builds it once for both of the binary's endpoints, returning `FullSpineMount` (`{rpc_actions, ws_actions}`): the WS list is `protocol_actions` plus every RPC action not already among them, then the WS-only room verbs and `room_notification_actions`, twinning the Rust `testing_spine_stub`, which serves one registry on RPC and WS (the one difference is `cancel` — a registered protocol action on TS, owned by the read loop on Rust — and the stub's RPC dispatcher refuses its `ws_only` room verbs). `options.room_registry` is the registry the room verbs, `_testing_room_evict`, and `_testing_reset` (which clears it) share — the binary builds it with `create_spine_room_registry(connections)` (exclusive, the default bounds; the twin of the stub's `stub_room_registry`) over its WS endpoints' connection registry; omitted, one over a fresh connection registry serves enumeration. Single-sources the mount so the binary and the `spine_method_coverage` reconciliation test build the same list. `create_spine_live_rpc_endpoints()` wraps the list, built on stub deps, as one endpoint at `SPINE_RPC_PATH` — the `live_rpc_endpoints` value the conformance table, the differential and the auth-row generator resolve off-surface methods from (no handler built there runs).
 - `testing/cross_backend/ts_spine_backend_config.ts` — `ts_spine_node_backend_config()` / `ts_spine_bun_backend_config()` presets (in-memory pglet, no external infra), the TS analog of `rust_spine_stub_backend_config()`.
 
 fuz_app's own binary wiring (`src/test/cross_backend/testing_spine_server{,_node,_bun}.ts`) is the worked example: ~one `build_app` over `create_app_backend` + `create_app_server` (`rate_limiters: 'disabled_for_testing'` plus whichever login / action limiters its env toggles built, `build_full_spine_mount`'s two lists on one `rpc_endpoints` entry and two `ws_endpoints` entries — `/api/ws` and the role-gated `SPINE_ROLE_GATED_WS_PATH` — sharing one `registry`, which is also the role-grant-offer `notification_sender`), reusing `default_spine_surface`. `src/test/cross_backend/testing_spine_server.db.test.ts` builds it with the Node adapter in-process and asserts its surface lists both WS endpoints (the gated one with its `required_roles`) and passes the surface invariants. The `_node`/`_bun` entries differ only in which adapter they wire — `build_spine_app` is runtime-agnostic. It leaves `create_app_server`'s `auth_cleanup` off, as the Rust `testing_spine_stub` leaves its twin unscheduled: a background pass would delete rows and write audit rows under a running suite. A consumer's cross-process test binary may schedule it when nothing its suites seed is already expired (the conformance table's `expired_session` principal seeds a backdated session row); an in-process harness leaves it off.

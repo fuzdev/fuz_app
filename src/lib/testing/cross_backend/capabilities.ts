@@ -238,6 +238,23 @@ export interface BackendCapabilities {
 	 */
 	readonly ws_role_gated: boolean;
 	/**
+	 * The room verbs (`create_room_actions` — `room_join`, `room_leave`,
+	 * `room_send`, `room_state_set`, `room_watch`, `room_unwatch`) are mounted
+	 * on the backend's ungated `ws_path`, over an **exclusive** room registry on
+	 * that endpoint's connection registry, with the test room authorizer
+	 * (`test_room_authorize`, the twin of the Rust stub's `TestRoomAuthorize`:
+	 * the room id's prefix picks the rule), the per-connection room limiter at
+	 * `DEFAULT_ROOM_RATE_LIMIT`, and the default registry bounds. Gates
+	 * `describe_rooms_ws_cross_tests`. A backend declaring it also mounts
+	 * `_testing_room_evict`, which the eviction case drives, and declares it in
+	 * `testing_backdoors`, as `describe_spine_cross_suites` requires. Like `cell_gated_create`,
+	 * the authorizer is a test policy, so `true` only on the reference spine
+	 * binaries (the TS spine binary + the Rust `testing_spine_stub`) and on a
+	 * consumer's test binary that mounts the same; a consumer mounting rooms
+	 * over its own authorizer states `false`.
+	 */
+	readonly rooms: boolean;
+	/**
 	 * A refused WebSocket upgrade carries its refusal body — the flat
 	 * `{error, ...}` the same refusal answers over plain HTTP. Not a gate: it
 	 * forks how `describe_transport_composition_cross_tests` reads its WS rows.
@@ -263,7 +280,8 @@ export interface BackendCapabilities {
 	 * (`_testing_shorten_credential_expiry`), `origin_conformance`
 	 * (`_testing_origin_check`), `ws_outbound_overflow`
 	 * (`_testing_flood_notifications`) — and requires `_testing_put_fact` of a
-	 * backend declaring `fact_serving`.
+	 * backend declaring `fact_serving` and `_testing_room_evict` of one
+	 * declaring `rooms`.
 	 *
 	 * fuz_app's spine presets declare every one; the in-process transport none
 	 * (the backdoor suites are cross-process only).
@@ -293,6 +311,7 @@ export type MountFlag = keyof Pick<
 	| 'peer_request'
 	| 'ws_account_actions'
 	| 'ws_role_gated'
+	| 'rooms'
 >;
 
 /**
@@ -306,7 +325,7 @@ export type MountFlag = keyof Pick<
  *   ws: true, sse: true, ready: true, peer_request: true,
  *   cell_crud: false, cell_relations: false, cell_gated_create: false,
  *   fact_serving: false, fact_serving_admin_hash: false,
- *   ws_account_actions: false, ws_role_gated: false,
+ *   ws_account_actions: false, ws_role_gated: false, rooms: false,
  *   testing_backdoors: ['_testing_reset', '_testing_drain_effects'],
  * }
  * ```
@@ -323,7 +342,7 @@ export type FamilyDefaultCapabilities = Omit<BackendCapabilities, MountFlag | 't
  * transport itself supports server-initiated requests),
  * `ws_handshake_pipelining` (raw bytes on a real socket),
  * `ws_account_actions` (a real socket's reply-then-close ordering),
- * `cell_gated_create`, and `ws_role_gated`. Cross-process consumers declare each flag explicitly
+ * `cell_gated_create`, `ws_role_gated`, and `rooms`. Cross-process consumers declare each flag explicitly
  * per backend.
  */
 export const in_process_capabilities: BackendCapabilities = Object.freeze({
@@ -348,6 +367,9 @@ export const in_process_capabilities: BackendCapabilities = Object.freeze({
 	// Cross-process-only: the gated endpoint is a spine-binary mount, and the
 	// case reads a real socket's close.
 	ws_role_gated: false,
+	// Cross-process-only: the room verbs are a spine-binary WS mount, and the
+	// suite reads real sockets' pushes.
+	rooms: false,
 	// Read only by the front-door table's WS rows, which skip in-process (no
 	// socket to upgrade); Hono's own refusals carry their bodies.
 	ws_refusal_body: true,

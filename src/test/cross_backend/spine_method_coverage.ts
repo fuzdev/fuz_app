@@ -257,6 +257,12 @@ export const SPINE_METHOD_COVERAGE: ReadonlyArray<MethodCoverageEntry> = [
 		suite: 'describe_testing_backdoor_cross_tests'
 	},
 	{
+		method: '_testing_room_evict',
+		tier: 'backdoor',
+		suite: 'describe_testing_backdoor_cross_tests',
+		note: 'the eviction seam the rooms suite calls'
+	},
+	{
 		method: '_testing_drain_effects',
 		tier: 'backdoor',
 		suite: 'describe_testing_backdoor_cross_tests',

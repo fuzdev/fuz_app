@@ -27,6 +27,14 @@ import '../assert_dev_env.ts';
  * spurious cross-impl diff. This matches the scope of the in-repo
  * `spine_method_coverage` gate (also over `build_full_spine_rpc_actions`).
  *
+ * **WebSocket-only domain methods are listed, with `transport: 'ws'`.** A
+ * domain method a backend serves on its WebSocket endpoint alone (the room
+ * verbs — the Rust stub's `ws_only` specs) is part of the surface both twins
+ * must mount alike, so it stays in the manifest, and its entry says where it
+ * is served. A method served on both transports carries no `transport` key,
+ * so a mount with no WebSocket-only domain method dumps the same entries it
+ * always has.
+ *
  * Paired with `action_manifest_parity.ts` for the diff + assertion helpers.
  *
  * @module
@@ -35,9 +43,11 @@ import '../assert_dev_env.ts';
 import {
 	array,
 	boolean,
+	literal,
 	nullable,
 	object,
 	one_of,
+	optional,
 	string,
 	type Infer,
 	type AnySchema
@@ -78,7 +88,14 @@ export const ActionManifestEntry = object({
 	/** Permitted credential channels, sorted; `[]` when ungated (any credential). */
 	credential_types: array(string),
 	/** Per-action rate-limit class, or `null` when the action declares none. */
-	rate_limit: nullable(RateLimitKey)
+	rate_limit: nullable(RateLimitKey),
+	/**
+	 * `'ws'` for a method served on the WebSocket transport only (the room
+	 * verbs); absent for one served on both. Absent rather than `'both'` so a
+	 * mount with no WebSocket-only method dumps exactly the keys it always has,
+	 * on both spines (the Rust stub marks its `ws_only` specs the same way).
+	 */
+	transport: optional(literal('ws'))
 });
 export type ActionManifestEntry = Infer<typeof ActionManifestEntry>;
 
@@ -92,19 +109,32 @@ export type ActionManifest = Infer<typeof ActionManifest>;
 const sorted_strings = (xs: ReadonlyArray<string> | undefined): Array<string> =>
 	[...(xs ?? [])].sort();
 
+/** The spec fields a manifest entry reads. */
+export type ActionManifestSpec = Pick<
+	RequestResponseActionSpec,
+	'method' | 'input' | 'auth' | 'side_effects' | 'rate_limit'
+>;
+
 /**
  * Normalize one spec's input shape + auth + side-effects into a manifest
  * entry. Reads the input shape off `is_void_schema(spec.input)`, pulls the
  * four auth axes off `RouteAuth` (the same shape the Rust `AuthSpec` mirrors),
  * and flattens optional `roles` / `credential_types` to sorted arrays.
+ *
+ * @param spec - the method's spec
+ * @param ws_only - whether the method is served on the WebSocket transport
+ *   only, which the entry says as `transport: 'ws'`
  */
-export const action_manifest_entry = (spec: {
-	readonly method: string;
-	readonly input: AnySchema;
-	readonly auth: RouteAuth;
-	readonly side_effects: boolean;
-	readonly rate_limit?: RateLimitKey;
-}): ActionManifestEntry => ({
+export const action_manifest_entry = (
+	spec: {
+		readonly method: string;
+		readonly input: AnySchema;
+		readonly auth: RouteAuth;
+		readonly side_effects: boolean;
+		readonly rate_limit?: RateLimitKey;
+	},
+	ws_only = false
+): ActionManifestEntry => ({
 	method: spec.method,
 	input: is_void_schema(spec.input) ? 'void' : 'object',
 	side_effects: spec.side_effects,
@@ -112,7 +142,8 @@ export const action_manifest_entry = (spec: {
 	actor: spec.auth.actor,
 	roles: sorted_strings(spec.auth.roles),
 	credential_types: sorted_strings(spec.auth.credential_types),
-	rate_limit: spec.rate_limit ?? null
+	rate_limit: spec.rate_limit ?? null,
+	...(ws_only && { transport: 'ws' as const })
 });
 
 /** Deterministic byte-lexicographic method order — matches the Rust `str::cmp` the stub sorts by. */
@@ -125,11 +156,17 @@ const compare_method = (a: ActionManifestEntry, b: ActionManifestEntry): number 
  * serialize identically regardless of mount order. The caller owns the scope
  * it passes (the TS spine passes its full mount; the Rust stub filters
  * `PROTOCOL_ACTION_SPECS` first) — see the module doc.
+ *
+ * @param specs - the methods served on every transport the backend mounts
+ * @param ws_only_specs - the methods served on its WebSocket endpoint only
+ *   (`transport: 'ws'`), e.g. the room verbs
  */
 export const build_action_manifest = (
-	specs: ReadonlyArray<
-		Pick<RequestResponseActionSpec, 'method' | 'input' | 'auth' | 'side_effects' | 'rate_limit'>
-	>
+	specs: ReadonlyArray<ActionManifestSpec>,
+	ws_only_specs: ReadonlyArray<ActionManifestSpec> = []
 ): ActionManifest => ({
-	methods: specs.map(action_manifest_entry).sort(compare_method)
+	methods: [
+		...specs.map((spec) => action_manifest_entry(spec)),
+		...ws_only_specs.map((spec) => action_manifest_entry(spec, true))
+	].sort(compare_method)
 });

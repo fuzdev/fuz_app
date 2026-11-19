@@ -18,9 +18,11 @@ import '../assert_dev_env.ts';
  * - the `_testing_origin_check` probe the origin conformance table drives,
  * - the `_testing_shorten_credential_expiry` seam the credential-deadline
  *   suite drives,
+ * - the `_testing_room_evict` seam the rooms suite drives, over the room
+ *   registry the WebSocket-only room verbs run on,
  * - the `_testing_action_manifest` backdoor, appended last (it dumps the live
  *   method set for the cross-impl manifest-parity gate, so it must enumerate
- *   every method above it).
+ *   every method above it — and the room verbs, as `transport: 'ws'`).
  *
  * Single-sourcing the mount here lets the binary, the in-process parity
  * setup, and the `spine_method_coverage` reconciliation test all build the
@@ -30,7 +32,9 @@ import '../assert_dev_env.ts';
  * The binary's WS endpoint serves the same list: `build_full_spine_mount`
  * builds it once and hands the WS mount the protocol actions plus every RPC
  * action, twinning the Rust `testing_spine_stub`, which compiles one action
- * registry and serves it on both transports. The reconciliation test
+ * registry and serves it on both transports — plus the room verbs and their
+ * notifications, which only the WS endpoint serves (the stub's `ws_only`
+ * specs, which its RPC dispatcher refuses). The reconciliation test
  * enumerates `build_full_spine_rpc_actions` with stub deps and asserts the live method set equals the tagged coverage
  * manifest; see `src/test/cross_backend/spine_method_coverage.ts`.
  *
@@ -38,8 +42,16 @@ import '../assert_dev_env.ts';
  */
 
 import type { Action, RpcAction } from '../../actions/action_types.ts';
+import { ConnectionRegistry } from '../../actions/connection_registry.ts';
 import { peer_ping_action } from '../../actions/peer_ping.ts';
 import { protocol_actions } from '../../actions/protocol.ts';
+import { room_notification_actions } from '../../actions/room_action_specs.ts';
+import {
+	create_room_actions,
+	DEFAULT_ROOM_RATE_LIMIT,
+	RoomRateLimiter
+} from '../../actions/room_actions.ts';
+import { RoomRegistry } from '../../actions/room_registry.ts';
 import type { AppDeps } from '../../auth/deps.ts';
 import type { DaemonTokenState } from '../../auth/daemon_token.ts';
 import type { NotificationSender } from '../../auth/role_grant_offer_notifications.ts';
@@ -55,8 +67,10 @@ import { FACT_DROP_TABLES } from '../../db/fact_ddl.ts';
 import {
 	create_testing_action_manifest_action,
 	create_testing_actions,
+	create_testing_room_evict_action,
 	create_testing_shorten_credential_expiry_action
 } from './testing_reset_actions.ts';
+import { test_room_authorize } from './test_room_authorize.ts';
 import { create_testing_origin_check_action } from './testing_origin_check.ts';
 import { test_cell_gated_create_authorize } from './test_cell_gated_create_authorize.ts';
 import { test_cell_grant_steward_revoke_authorize } from './test_cell_grant_steward_revoke_authorize.ts';
@@ -74,14 +88,30 @@ import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 const SPINE_DOMAIN_RESET_TABLES = [...CELL_DROP_TABLES, ...FACT_DROP_TABLES];
 
 /**
- * `_testing_reset`'s `reset_state` for the full spine mount — empties
- * `SPINE_DOMAIN_RESET_TABLES` on the reset's own transaction.
+ * `_testing_reset`'s `reset_state` for the full spine mount — drops every
+ * room, silently, so no seat or watch outlives its test, then empties
+ * `SPINE_DOMAIN_RESET_TABLES` on the reset's own transaction. The Rust stub's
+ * reset does the same, in the same order.
  */
-const reset_spine_domain_state = async (db: Db): Promise<void> => {
-	for (const table of SPINE_DOMAIN_RESET_TABLES) {
-		await db.query(`DELETE FROM ${table}`);
-	}
-};
+const create_reset_spine_domain_state =
+	(room_registry: RoomRegistry) =>
+	async (db: Db): Promise<void> => {
+		room_registry.clear();
+		for (const table of SPINE_DOMAIN_RESET_TABLES) {
+			await db.query(`DELETE FROM ${table}`);
+		}
+	};
+
+/**
+ * The spine binary's room registry over `connections`: exclusive — one seat
+ * per actor, the newest admitted winning, with the rejoin guard — at the
+ * default bounds. Twin of the Rust stub's `stub_room_registry`.
+ *
+ * @param connections - the connection registry the binary's WS endpoints share
+ * @returns the registry its room verbs and `_testing_room_evict` run on
+ */
+export const create_spine_room_registry = (connections: ConnectionRegistry): RoomRegistry =>
+	new RoomRegistry(connections, { exclusive: true });
 
 /** Options for `build_full_spine_rpc_actions` / `build_full_spine_mount`. */
 export interface FullSpineMountOptions {
@@ -99,6 +129,22 @@ export interface FullSpineMountOptions {
 	 * (the registry is the fan-out target). Omitted for enumeration.
 	 */
 	readonly notification_sender?: NotificationSender | null;
+	/**
+	 * The room registry the room verbs and `_testing_room_evict` run on — built
+	 * by `create_spine_room_registry` over the SAME `ConnectionRegistry` the WS
+	 * endpoints register connections against (a room registry over another
+	 * names no socket, and refuses every join). Omitted for enumeration: a
+	 * registry over a fresh connection registry, which no handler built here
+	 * ever reaches.
+	 */
+	readonly room_registry?: RoomRegistry;
+}
+
+/** The full mount's action lists, built once. */
+interface FullSpineActions {
+	readonly rpc_actions: Array<RpcAction>;
+	/** The room verbs, WS-only. */
+	readonly room_actions: Array<RpcAction>;
 }
 
 /**
@@ -112,13 +158,29 @@ export interface FullSpineMountOptions {
  * runtime-varying inputs are the daemon-token state + notification sender.
  *
  * @param deps - the backend `AppDeps` (stub deps suffice for method enumeration)
- * @param options - daemon-token state + optional WS notification sender
+ * @param options - daemon-token state + optional WS notification sender and room registry
  * @returns every `RpcAction` the binary exposes, in mount order
  */
 export const build_full_spine_rpc_actions = (
 	deps: AppDeps,
 	options: FullSpineMountOptions
-): Array<RpcAction> => {
+): Array<RpcAction> => build_full_spine_actions(deps, options).rpc_actions;
+
+const build_full_spine_actions = (
+	deps: AppDeps,
+	options: FullSpineMountOptions
+): FullSpineActions => {
+	const room_registry =
+		options.room_registry ?? create_spine_room_registry(new ConnectionRegistry({ log: null }));
+	// The room verbs, WS-only, over the test authorizer (twin of the Rust stub's
+	// `TestRoomAuthorize`) — the limiter on at the defaults, which no cross case
+	// nears unless it means to (it is per connection, so a fresh socket starts
+	// with a full budget), as on the stub.
+	const room_actions = create_room_actions({
+		registry: room_registry,
+		authorize: test_room_authorize,
+		limiter: new RoomRateLimiter(DEFAULT_ROOM_RATE_LIMIT)
+	});
 	const actions: Array<RpcAction> = [
 		...create_standard_rpc_actions(
 			{ ...deps, notification_sender: options.notification_sender ?? null },
@@ -127,7 +189,7 @@ export const build_full_spine_rpc_actions = (
 		...create_testing_actions(deps, {
 			session_options: spine_session_options,
 			daemon_token_state: options.daemon_token_state,
-			reset_state: reset_spine_domain_state
+			reset_state: create_reset_spine_domain_state(room_registry)
 		}),
 		// Mount the directory-model `cell_gated_create` test policy (twin of the
 		// Rust stub's `TestCellGatedCreateAuthorize`) so the cross-backend
@@ -155,6 +217,8 @@ export const build_full_spine_rpc_actions = (
 		// the credential-deadline suite's shorten-only seam — kept out of
 		// `create_testing_actions` for the same reason
 		create_testing_shorten_credential_expiry_action(),
+		// the rooms suite's eviction seam, over the registry the room verbs run on
+		create_testing_room_evict_action(room_registry),
 		// `peer/ping` is mounted on the HTTP RPC endpoint too (not just WS) so an
 		// HTTP invocation reaches the handler and refuses with `peer_no_transport`
 		// rather than `method_not_found`. It's a protocol action, so it's filtered
@@ -165,9 +229,9 @@ export const build_full_spine_rpc_actions = (
 	// Append the `_testing_action_manifest` backdoor last — it closes over the
 	// complete `actions` list (plus its own spec) to dump the live method set
 	// for the cross-impl manifest-parity gate, so it must come after every
-	// method it enumerates.
-	actions.push(create_testing_action_manifest_action(actions));
-	return actions;
+	// method it enumerates. The room verbs join it as `transport: 'ws'`.
+	actions.push(create_testing_action_manifest_action(actions, room_actions));
+	return { rpc_actions: actions, room_actions };
 };
 
 /** The spine binary's RPC and WS action sets, built from one action list. */
@@ -176,8 +240,9 @@ export interface FullSpineMount {
 	readonly rpc_actions: Array<RpcAction>;
 	/**
 	 * The WS endpoint's actions: `protocol_actions` first, then every RPC
-	 * action not already among them (`peer/ping` is on both lists). The same
-	 * handler instances as `rpc_actions`.
+	 * action not already among them (`peer/ping` is on both lists), then the
+	 * WS-only room verbs and their notifications. The same handler instances as
+	 * `rpc_actions`.
 	 */
 	readonly ws_actions: Array<Action>;
 }
@@ -195,20 +260,22 @@ export interface FullSpineMount {
  * (never dispatched) on Rust.
  *
  * @param deps - the backend `AppDeps`
- * @param options - daemon-token state + optional WS notification sender
+ * @param options - daemon-token state + optional WS notification sender and room registry
  * @returns the RPC and WS action lists, built once and sharing handler instances
  */
 export const build_full_spine_mount = (
 	deps: AppDeps,
 	options: FullSpineMountOptions
 ): FullSpineMount => {
-	const rpc_actions = build_full_spine_rpc_actions(deps, options);
+	const { rpc_actions, room_actions } = build_full_spine_actions(deps, options);
 	const protocol_methods = new Set(protocol_actions.map((action) => action.spec.method));
 	return {
 		rpc_actions,
 		ws_actions: [
 			...protocol_actions,
-			...rpc_actions.filter((action) => !protocol_methods.has(action.spec.method))
+			...rpc_actions.filter((action) => !protocol_methods.has(action.spec.method)),
+			...room_actions,
+			...room_notification_actions
 		]
 	};
 };

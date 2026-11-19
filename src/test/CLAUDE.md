@@ -283,6 +283,14 @@ role-gated WS endpoint beside `/api/ws`; a revoked global grant of a gating role
 closes the account's gated socket with `WS_CLOSE_PERMISSION_REVOKED`, leaves its
 ungated socket open, refuses a re-upgrade with 403, and a scoped revoke closes
 nothing; gated on `capabilities.ws_role_gated`),
+`rooms_ws` (the real-upgrade `describe_rooms_ws_cross_tests` suite — both
+spines mount the WS-only room verbs over an exclusive room registry and the
+test room authorizer (`test_room_authorize` / the stub's `TestRoomAuthorize`),
+`_testing_room_evict` on RPC, and a `_testing_reset` that clears the rooms:
+join / leave / send / state / watch round trips in `seq` order, the refusals'
+codes and reasons, exclusivity and the rejoin tombstone, eviction ending seats
+and watches, a disconnect leaving as `disconnected`, and the per-connection
+limiter's `rate_limited`; gated on `capabilities.rooms`),
 `role_grant_offer_notification_ws_gated.cross.test.ts` (the role-grant-offer
 notification suite again, over the role-gated endpoint with
 `ws_required_roles` declared — the revoke case expects the close; gated on

@@ -63,7 +63,8 @@ export const TESTING_BACKDOOR_METHODS = [
 	'_testing_migration_tracker',
 	'_testing_action_manifest',
 	'_testing_origin_check',
-	'_testing_shorten_credential_expiry'
+	'_testing_shorten_credential_expiry',
+	'_testing_room_evict'
 ] as const;
 
 /** A `_testing_*` backdoor the shipped cross suites know — see `TESTING_BACKDOOR_METHODS`. */

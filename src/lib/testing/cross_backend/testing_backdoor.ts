@@ -8,14 +8,14 @@ import '../assert_dev_env.ts';
  * `_testing_mint_session`, `_testing_put_fact`,
  * `_testing_flood_notifications`, `_testing_schema_snapshot`,
  * `_testing_migration_tracker`, `_testing_action_manifest`,
- * `_testing_origin_check`, `_testing_shorten_credential_expiry`) are
- * privileged test-binary actions the production
+ * `_testing_origin_check`, `_testing_shorten_credential_expiry`,
+ * `_testing_room_evict`) are privileged test-binary actions the production
  * wire never exposes — direct DB writes (full auth wipe, forged session row,
  * raw fact insert), the audit barrier, a flood of the caller's own connection,
  * introspection reads (the live schema, the `schema_version` migration
  * tracker, and the live RPC registry — the highest info-leak of the set were
- * the gate to break), a probe of the origin allowlist parser, and a rewrite of
- * an account's credential expiries. Their only structural fence
+ * the gate to break), a probe of the origin allowlist parser, a rewrite of
+ * an account's credential expiries, and an eviction from the room registry. Their only structural fence
  * is the **daemon-token** credential gate on
  * each spec's `auth` axis. A test binary live-mounts them on its RPC
  * endpoint (and, on fuz_app's spine binary and the Rust stub, its WS
@@ -132,6 +132,12 @@ const BACKDOOR_PARAMS: Readonly<Record<TestingBackdoorMethod, unknown>> = {
 	_testing_shorten_credential_expiry: {
 		account_id: '00000000-0000-4000-8000-000000000000',
 		seconds: 30
+	},
+	// A room eviction — a valid `{target, reason}` pair naming a room no case
+	// holds, so it clears the 400 phase like the rest.
+	_testing_room_evict: {
+		target: { kind: 'room', room_id: 'open:backdoor-probe' },
+		reason: 'room_closed'
 	}
 };
 
