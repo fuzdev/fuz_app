@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<link rel="icon" href="/favicon.png" />
+		<link rel="icon" href="/logo.svg" sizes="any" type="image/svg+xml" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+		<script>
+			document.documentElement.classList.add(
+				((c) =>
+					c === 'dark' || (c !== 'light' && matchMedia('(prefers-color-scheme:dark)').matches)
+						? 'dark'
+						: 'light')(localStorage.getItem('fuz:color-scheme'))
+			);
+		</script>
+
+		<link href="/_app/immutable/entry/start.Don10HnE.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/payload.DSmR2FwN.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/DclECHGd.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/CMwwKFAY.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/CcVmwyv6.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/DGWDGHf_.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/hWJyV7ZK.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/Ps7GoRyz.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.ByjColFb.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.D9wifPMg.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/pg0D3VT_.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/BYMpAOEn.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/CdZ8kYh_.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/BIrlrR3Y.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.ASeTOKe6.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/BKFGZtr7.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/BkOGAUkd.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/CMLJYHjj.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/2cLBYWta.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/BAFjihPA.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/8Ezm2U4e.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/bNY_P0ZZ.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/C4Z1pMn-.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/B0EoXBDb.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/Dux8aI1v.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/BYE_LrVS.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/7.C9eNhQJe.js" rel="modulepreload">
+		<!--12qhfyh--><!----><!--4fa0a9--><!--[-1--><!--]--><!----><!--1p7q6x9--><!--[0--><style media="(max-width: 800px)">
+			@layer fuz_ui.app_shell_base, fuz_ui.app_shell_narrow;
+			@layer fuz_ui.app_shell_narrow {
+				.app-shell > .app-shell-content {
+					--sidebar_offset: 0px;
+				}
+				.app-shell > .app-shell-sidebar {
+					visibility: hidden;
+					top: 0;
+					height: 100%;
+					translate: -100% 0;
+					width: min(var(--sidebar_width), 85vw);
+				}
+				.app-shell.narrow-open > .app-shell-sidebar {
+					visibility: visible;
+					translate: none;
+				}
+				.app-shell.narrow-open > .app-shell-scrim {
+					display: block;
+				}
+				.app-shell > .app-shell-toggle .app-shell-toggle-glyph {
+					scale: -1 1;
+				}
+				.app-shell.narrow-open > .app-shell-toggle .app-shell-toggle-glyph {
+					scale: none;
+				}
+				@media (prefers-reduced-motion: no-preference) {
+					.app-shell > .app-shell-sidebar {
+						transition:
+							translate 150ms ease-out,
+							visibility 0s 150ms;
+					}
+					.app-shell.narrow-open > .app-shell-sidebar {
+						transition:
+							translate 150ms ease-out,
+							visibility 0s;
+					}
+				}
+			}
+		</style><!--]--><!----><!--15lzmkk--><!----><title>rtc - API docs - @fuzdev/fuz_app</title>
+		<link href="/_app/immutable/assets/0.C3C3MAFV.css" rel="stylesheet">
+		<link href="/_app/immutable/assets/Svg.DfrCKcO9.css" rel="stylesheet">
+		<link href="/_app/immutable/assets/constants.CkpWV7NR.css" rel="stylesheet">
+		<link href="/_app/immutable/assets/TomeContent.DEavojTd.css" rel="stylesheet">
+		<link href="/_app/immutable/assets/api_search.CLU5VtlR.css" rel="stylesheet">
+		<link href="/_app/immutable/assets/_page.DoGJUoQa.css" rel="stylesheet">
+		<link href="/_app/immutable/assets/2.BTWjj5qu.css" rel="stylesheet">
+	</head>
+	<body data-sveltekit-preload-data="hover">
+		<div style="display: contents"><!--[--><!--[--><!--[0--><!--[--><!--[--><!--[0--><!--[--><!--$s1--><!--[0--><!--$s2--><div class="app-shell docs-shell wide-open svelte-1p7q6x9" style="--sidebar_width: 240px;"><div class="app-shell-content svelte-1p7q6x9"><div class="docs svelte-1vnxegx"><!--[0--><div class="docs-primary-nav svelte-vavvgs"><div class="background svelte-vavvgs" aria-hidden="true"></div> <div class="content svelte-vavvgs"><nav aria-label="Primary nav" class="svelte-vavvgs"><div class="breadcrumb  svelte-1k0skcb"><a href="/" class="svelte-1k0skcb"><!--[1--><svg viewBox="0 0 100 100" aria-label="a friendly teal spider facing you" class="svelte-1b36jzq" style="width: 1em; height: 1em; flex-shrink: 1;"><!--[-1--><!--]--><!--[0--><!--[--><path fill="#2e9e6f" d="M 26.253917,88.532336 29.904106,71.394855 40.667193,53.342811 40.258534,49.99234 38.417407,49.000991 22.876908,50.369035 9.4865496,53.880193 2.3019024,57.978424 0.42708056,57.27994 7.2642726,51.086985 20.811326,45.373351 37.960128,42.356792 39.354818,40.107008 38.229925,38.149883 26.030989,27.105568 14.46539,21.861786 8.0479986,18.615387 l -0.41428,-1.710463 8.2789464,1.499862 13.012873,5.003724 13.447448,10.696856 1.680801,-0.729547 0.222439,-1.343157 -3.983998,-12.128053 -5.730215,-9.573597 -0.823624,-5.1744052 1.16944,-1.165102 2.604334,6.3355162 6.612025,7.08777 4.874534,11.55989 2.800804,0.515574 4.48815,-1.359246 1.521623,-8.687062 5.685014,-8.620764 2.75965,-6.8316782 1.094578,1.128569 -1.293029,5.4222362 -4.084776,11.06803 -0.484994,8.377408 0.194311,1.192896 1.42954,1.700726 11.563936,-10.644623 9.878262,-8.331535 8.732915,-3.390708 -0.387305,1.402757 -5.294686,3.023816 -10.445054,10.705792 -9.561599,13.627899 -0.438945,1.602755 1.001398,1.666754 17.376932,3.986302 9.537375,6.940531 4.325785,4.636405 0.211208,1.557106 -6.15842,-4.279925 -10.413771,-5.155697 -15.838715,-1.696223 -0.83461,1.144484 0.774499,2.593247 9.737644,16.194355 3.925704,17.214082 0.07146,10.277289 -1.706242,1.13628 -2.009721,-9.21637 -5.894265,-16.88027 -12.292087,-17.295813 -4.177778,-0.585888 -7.294671,2.935716 -11.138052,16.645915 -6.462422,17.752509 -1.634756,7.206641 -2.070766,-1.52923 z" class="svelte-1b36jzq"></path><!--]--><!--]--></svg><!--]--></a><!--[--><!--[-1--><span class="separator svelte-1k0skcb"><!--[-1-->/<!--]--></span><!--]--><!--[0--><a href="/docs" class="svelte-1k0skcb">docs</a><!--]--><!--[-1--><span class="separator svelte-1k0skcb"><!--[-1-->/<!--]--></span><!--]--><!--[0--><a href="/docs/api" class="svelte-1k0skcb">api</a><!--]--><!--[-1--><span class="separator svelte-1k0skcb"><!--[-1-->/<!--]--></span><!--]--><!--[0--><a href="/docs/api/rtc" class="selected svelte-1k0skcb">rtc</a><!--]--><!--]--></div><!----></nav> <!--[-1--><!--]--> <div class="nav-menu-toggle svelte-1vnxegx"><button class="plain svelte-1vnxegx" type="button" aria-expanded="false" aria-controls="s1-docs-menu">menu</button></div><!----></div></div><!--]--> <div class="columns svelte-1vnxegx"><main class="svelte-1vnxegx"><!----><!--[--><!--[-1--><!--[--><section class="tome-content width_atmost_md mb_xl9 "><header class="mb_xl3 sticky top:0"><!--[0--><h1 class="mt_xl4">rtc</h1><!----><!--]--></header> <!--[0--><!--[-1--><section><p>3 modules</p> <ul class="unstyled"><!--[--><li><h3><!--[0--><a class="module-link chip " href="/docs/api/rtc/rtc_mesh.svelte.ts"><!--[-1-->rtc/rtc_mesh.svelte.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->A full-mesh call over one room: <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/rtc/rtc_mesh.svelte.ts#RtcMesh"><!--[0--><!--[-1-->RtcMesh<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> keeps an <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/rtc/rtc_peer.svelte.ts#RtcPeer"><!--[0--><!--[-1-->RtcPeer<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> to every other
+member of the room while the caller holds a seat in it, carrying the peers'
+signals as room payloads (<!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/rtc/rtc_signal.ts"><!--[0--><!--[-1-->rtc/rtc_signal.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->) and fanning the local tracks
+out to every peer.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->The room is any <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/rtc/rtc_mesh.svelte.ts#RtcMeshRoom"><!--[0--><!--[-1-->RtcMeshRoom<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> — <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/room_client.svelte.ts#RoomClient"><!--[0--><!--[-1-->RoomClient<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->'s <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/room_client.svelte.ts#RoomState"><!--[0--><!--[-1-->RoomState<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> is one. The mesh
+follows its seat: when a seat is taken it connects to each member the join
+answered, then to each member who joins after; a member who leaves has its
+peer closed; when the seat ends (left, lost, or the socket closed) every
+peer closes, and a seat taken again (a rejoin after a reconnect, with a new
+member id) connects afresh. The local tracks outlive the seats: each new
+peer starts with them.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Only the <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->mesh<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> topology is connected: a seat whose join answers another
+one sets <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->error<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> and connects nothing, since an SFU member needs a
+different client. A peer that can't be made (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->new RTCPeerConnection<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->
+refusing a malformed ICE server, say) sets <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->error<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> too, and the mesh
+carries on without it.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->A connection serving several actors hears each room message once, whoever
+it is for, so a message addressed to another member is not this mesh's
+and is dropped.<!--]--><!--]--><!----></p><!--]--><!--[14--><!----><h2 id="sends-one-at-a-time-per-peer"><!--[--><!--[2-->Sends, one at a time per peer<!--]--><!--]--><!----></h2><!----><!--]--><!--[8--><p><!--[--><!--[2-->The server dispatches a socket's requests concurrently, so two <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->room_send<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->
+requests can relay out of order — a candidate ahead of the offer it belongs
+to. Each peer's signals therefore go through one chain: a send waits for the
+previous one's answer. Peers don't wait on each other.<!--]--><!--]--><!----></p><!--]--><!--[14--><!----><h2 id="ice-servers"><!--[--><!--[2-->ICE servers<!--]--><!--]--><!----></h2><!----><!--]--><!--[8--><p><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->ice_servers<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> is a list, or a function of the seat, so servers the join
+answer carries in its <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->extra<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (short-lived TURN credentials, minted per
+join) can be read there.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/rtc/rtc_peer.svelte.ts"><!--[-1-->rtc/rtc_peer.svelte.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->One WebRTC connection to one remote member: <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/rtc/rtc_peer.svelte.ts#RtcPeer"><!--[0--><!--[-1-->RtcPeer<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->, over an injected
+<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->RTCPeerConnection<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, exchanging signals through a <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->send<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> function and an
+<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->on_signal<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> entry rather than any transport, so two peers cross-wire in a
+test and a room carries them in the app (<!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/rtc/rtc_mesh.svelte.ts"><!--[0--><!--[-1-->rtc/rtc_mesh.svelte.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->).<!--]--><!--]--><!----></p><!--]--><!--[14--><!----><h2 id="perfect-negotiation"><!--[--><!--[2-->Perfect negotiation<!--]--><!--]--><!----></h2><!----><!--]--><!--[8--><p><!--[--><!--[2-->Either end may need to renegotiate at any time (an ICE restart, say), so the
+two follow the perfect negotiation pattern: each sends an offer whenever its
+connection says negotiation is needed, and when two offers cross, the
+<!--]--><!--[4--><strong><!--[--><!--[2-->polite<!--]--><!--]--><!----></strong><!--]--><!--[2--> end rolls its own back and answers the other's, while the
+<!--]--><!--[4--><strong><!--[--><!--[2-->impolite<!--]--><!--]--><!----></strong><!--]--><!--[2--> end ignores the offer it receives. Which end is polite is a
+pure function of the two member ids (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/rtc/rtc_peer.svelte.ts#rtc_peer_is_polite"><!--[0--><!--[-1-->rtc_peer_is_polite<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->), so both agree
+without a word: the lower id is polite.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Candidates that arrive before the remote description is set are queued and
+added once it is — a candidate is meaningless without one, and the
+connection refuses it. Candidates that arrive while the impolite end is
+ignoring an offer may belong to it and fail to add, queued or not; that
+failure is expected and dropped.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Inbound signals are handled one at a time, in the order they arrive. A
+caller that delivers them over a channel that can reorder (concurrently
+dispatched requests) serializes its sends per peer, as <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/rtc/rtc_mesh.svelte.ts#RtcMesh"><!--[0--><!--[-1-->RtcMesh<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> does.
+Since no signal is handled while another's remote answer is being applied,
+the standard pattern's "setting a remote answer" flag would never read true
+here, and there is none.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Once <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->close<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> is called, nothing more reaches the connection, and a failure
+of work in flight at the close is expected and not recorded.<!--]--><!--]--><!----></p><!--]--><!--[14--><!----><h2 id="fixed-transceiver-slots"><!--[--><!--[2-->Fixed transceiver slots<!--]--><!--]--><!----></h2><!----><!--]--><!--[8--><p><!--[--><!--[2-->The media a peer carries is a fixed list of slots (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/rtc/rtc_peer.svelte.ts#RtcSlot"><!--[0--><!--[-1-->RtcSlot<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->), each one
+<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->sendrecv<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> transceiver of one kind: <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/rtc/rtc_peer.svelte.ts#RTC_VOICE_SLOTS"><!--[0--><!--[-1-->RTC_VOICE_SLOTS<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> is the microphone's
+audio; camera, screen, and screen audio are further slots of the same shape,
+added to the list when they land. Every slot exists from the start, so
+turning a source on or off is <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->set_track<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> — a <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->replaceTrack<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> on the slot's
+sender, with no renegotiation — and a slot with no track sends nothing.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->The impolite end creates the transceivers, in slot order, and its first
+offer carries them; the polite end adopts the transceivers that offer
+creates on its side, by position, sets them <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->sendrecv<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, and answers. Both
+ends creating their own would give each side two transceivers per slot,
+since a transceiver made by <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->addTransceiver<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> is never matched to a remote
+offer's media section. So both ends must use the same slot list.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Two ends whose lists differ degrade rather than fail: a slot the offer has
+no media section for stays empty (no transceiver, its track kept unsent), a
+media section past the polite end's slots stays <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->recvonly<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> and unnamed, and
+a section whose kind differs from its slot's is logged and skipped, that
+slot staying empty. The slot list is protocol: changing its shape (the
+slots, their order, or their kinds) bumps <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/rtc/rtc_signal.ts#RTC_SIGNAL_VERSION"><!--[0--><!--[-1-->RTC_SIGNAL_VERSION<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->
+(<!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/rtc/rtc_signal.ts"><!--[0--><!--[-1-->rtc/rtc_signal.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->), so mismatched ends refuse each other's signals
+instead of degrading.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Remote media is <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->remote_tracks<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, by slot name: the receiver's track for each
+slot once the far end's description reaches it (muted while the far end
+sends nothing on it).<!--]--><!--]--><!----></p><!--]--><!--[14--><!----><h2 id="ice-restart"><!--[--><!--[2-->ICE restart<!--]--><!--]--><!----></h2><!----><!--]--><!--[8--><p><!--[--><!--[2-->When ICE fails, the peer restarts it (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->restartIce<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, which renegotiates with
+new credentials through the same pattern). A connection that stays
+<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->disconnected<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> past <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->ice_disconnected_restart_ms<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> is restarted too, since a
+disconnect is often a network change that ICE alone won't recover from.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/rtc/rtc_signal.ts"><!--[-1-->rtc/rtc_signal.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->The WebRTC signal envelope: what <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/rtc/rtc_peer.svelte.ts#RtcPeer"><!--[0--><!--[-1-->RtcPeer<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> sends its far end, carried by
+<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/rtc/rtc_mesh.svelte.ts#RtcMesh"><!--[0--><!--[-1-->RtcMesh<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> as a room payload (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->room_send<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->'s <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->payload<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, a string the server
+relays without reading).<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->A signal is one of two things, the two that perfect negotiation exchanges:
+a session description (an offer or an answer) or a trickled ICE candidate.
+On the wire it is the JSON text of one object whose <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->rtc<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> key is the
+envelope's version, <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/rtc/rtc_signal.ts#RTC_SIGNAL_VERSION"><!--[0--><!--[-1-->RTC_SIGNAL_VERSION<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->, beside exactly one of
+<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->description<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> or <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->candidate<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->:<!--]--><!--]--><!----></p><!--]--><!--[15--><!--[0--><!--[--><code data-lang="json" class="svelte-jqsy8a"><!--[-1--><!----><span class="token_punctuation">{</span><span class="token_property">"rtc"</span><span class="token_operator">:</span><span class="token_number">1</span><span class="token_punctuation">,</span><span class="token_property">"description"</span><span class="token_operator">:</span><span class="token_punctuation">{</span><span class="token_property">"type"</span><span class="token_operator">:</span><span class="token_string">"offer"</span><span class="token_punctuation">,</span><span class="token_property">"sdp"</span><span class="token_operator">:</span><span class="token_string">"v=0\r\n…"</span><span class="token_punctuation">}}</span>
+<span class="token_punctuation">{</span><span class="token_property">"rtc"</span><span class="token_operator">:</span><span class="token_number">1</span><span class="token_punctuation">,</span><span class="token_property">"candidate"</span><span class="token_operator">:</span><span class="token_punctuation">{</span><span class="token_property">"candidate"</span><span class="token_operator">:</span><span class="token_string">"candidate:…"</span><span class="token_punctuation">,</span><span class="token_property">"sdpMid"</span><span class="token_operator">:</span><span class="token_string">"0"</span><span class="token_punctuation">,</span><span class="token_property">"sdpMLineIndex"</span><span class="token_operator">:</span><span class="token_number">0</span><span class="token_punctuation">,</span><span class="token_property">"usernameFragment"</span><span class="token_operator">:</span><span class="token_string">"…"</span><span class="token_punctuation">}}</span><!----><!--]--></code><!--]--><!--]--><!--]--><!--[8--><p><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->candidate<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> is <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->RTCIceCandidate.toJSON()<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->. The end of candidates is never
+sent: trickle works without it. The <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->rtc<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> key also tells a signal apart from
+the room's other payloads (a room's text, say): <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/rtc/rtc_signal.ts#decode_rtc_signal"><!--[0--><!--[-1-->decode_rtc_signal<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> answers
+<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->not_rtc_signal<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> for any payload without it, so a room's other listeners can
+read their own. A newer envelope bumps the version, and an older client
+refuses it as <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->unsupported_version<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> rather than misreading it.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><!--]--></ul></section><!--]--><!--]--><!----></section><!--]--><!--]--><!--]--><!----><!----><!----> <section class="box svelte-1vnxegx"><!--[-1--><footer class="box  svelte-jrqc5k"><div class="mb_xl5"><div class="breadcrumb  svelte-1k0skcb"><a href="/" class="svelte-1k0skcb"><!--[1--><svg viewBox="0 0 100 100" aria-label="a friendly teal spider facing you" class="svelte-1b36jzq" style="width: 1em; height: 1em; flex-shrink: 1;"><!--[-1--><!--]--><!--[0--><!--[--><path fill="#2e9e6f" d="M 26.253917,88.532336 29.904106,71.394855 40.667193,53.342811 40.258534,49.99234 38.417407,49.000991 22.876908,50.369035 9.4865496,53.880193 2.3019024,57.978424 0.42708056,57.27994 7.2642726,51.086985 20.811326,45.373351 37.960128,42.356792 39.354818,40.107008 38.229925,38.149883 26.030989,27.105568 14.46539,21.861786 8.0479986,18.615387 l -0.41428,-1.710463 8.2789464,1.499862 13.012873,5.003724 13.447448,10.696856 1.680801,-0.729547 0.222439,-1.343157 -3.983998,-12.128053 -5.730215,-9.573597 -0.823624,-5.1744052 1.16944,-1.165102 2.604334,6.3355162 6.612025,7.08777 4.874534,11.55989 2.800804,0.515574 4.48815,-1.359246 1.521623,-8.687062 5.685014,-8.620764 2.75965,-6.8316782 1.094578,1.128569 -1.293029,5.4222362 -4.084776,11.06803 -0.484994,8.377408 0.194311,1.192896 1.42954,1.700726 11.563936,-10.644623 9.878262,-8.331535 8.732915,-3.390708 -0.387305,1.402757 -5.294686,3.023816 -10.445054,10.705792 -9.561599,13.627899 -0.438945,1.602755 1.001398,1.666754 17.376932,3.986302 9.537375,6.940531 4.325785,4.636405 0.211208,1.557106 -6.15842,-4.279925 -10.413771,-5.155697 -15.838715,-1.696223 -0.83461,1.144484 0.774499,2.593247 9.737644,16.194355 3.925704,17.214082 0.07146,10.277289 -1.706242,1.13628 -2.009721,-9.21637 -5.894265,-16.88027 -12.292087,-17.295813 -4.177778,-0.585888 -7.294671,2.935716 -11.138052,16.645915 -6.462422,17.752509 -1.634756,7.206641 -2.070766,-1.52923 z" class="svelte-1b36jzq"></path><!--]--><!--]--></svg><!--]--></a><!--[--><!--[-1--><span class="separator svelte-1k0skcb"><!--[-1-->/<!--]--></span><!--]--><!--[0--><a href="/docs" class="svelte-1k0skcb">docs</a><!--]--><!--[-1--><span class="separator svelte-1k0skcb"><!--[-1-->/<!--]--></span><!--]--><!--[0--><a href="/docs/api" class="svelte-1k0skcb">api</a><!--]--><!--[-1--><span class="separator svelte-1k0skcb"><!--[-1-->/<!--]--></span><!--]--><!--[0--><a href="/docs/api/rtc" class="selected svelte-1k0skcb">rtc</a><!--]--><!--]--></div><!----></div><!----> <div class="logo box panel p_lg shadow_inset_xs svelte-jrqc5k"><!----> <!--[0--><a href="https://github.com/fuzdev/fuz_app" rel="me" title="source code" class="svelte-jrqc5k"><!--[-1--><svg viewBox="0 0 1024 1024" aria-label="the GitHub logo, an octocat silhouette" class="svelte-1b36jzq" style="width: var(--icon_size_lg); height: var(--icon_size_lg); flex-shrink: 1;"><!--[-1--><!--]--><!--[0--><!--[--><path fill="var(--text_color, #000)" d="M8 0C3.58 0 0 3.58 0 8C0 11.54 2.29 14.53 5.47 15.59C5.87 15.66 6.02 15.42 6.02 15.21C6.02 15.02 6.01 14.39 6.01 13.72C4 14.09 3.48 13.23 3.32 12.78C3.23 12.55 2.84 11.84 2.5 11.65C2.22 11.5 1.82 11.13 2.49 11.12C3.12 11.11 3.57 11.7 3.72 11.94C4.44 13.15 5.59 12.81 6.05 12.6C6.12 12.08 6.33 11.73 6.56 11.53C4.78 11.33 2.92 10.64 2.92 7.58C2.92 6.71 3.23 5.99 3.74 5.43C3.66 5.23 3.38 4.41 3.82 3.31C3.82 3.31 4.49 3.1 6.02 4.13C6.66 3.95 7.34 3.86 8.02 3.86C8.7 3.86 9.38 3.95 10.02 4.13C11.55 3.09 12.22 3.31 12.22 3.31C12.66 4.41 12.38 5.23 12.3 5.43C12.81 5.99 13.12 6.7 13.12 7.58C13.12 10.65 11.25 11.33 9.47 11.53C9.76 11.78 10.01 12.26 10.01 13.01C10.01 14.08 10 14.94 10 15.21C10 15.42 10.15 15.67 10.55 15.59C13.71 14.53 16 11.53 16 8C16 3.58 12.42 0 8 0Z" fill-rule="evenodd" clip-rule="evenodd" transform="scale(64)" class="svelte-1b36jzq"></path><!--]--><!--]--></svg><!--]--><!----></a><!--]--> <!----></div> <!--[0--><div class="root-url svelte-jrqc5k"><a href="https://www.fuz.dev/" class="svelte-jrqc5k">fuz.dev</a></div><!--]--></footer><!--]--></section></main> <div class="tertiary-column svelte-1vnxegx"><aside class="docs-tertiary-nav unstyled "><!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--></aside><!----></div></div></div><!----></div> <div class="app-shell-scrim svelte-1p7q6x9" aria-hidden="true"></div> <!--[-1--><!--]-->  <div class="app-shell-sidebar svelte-1p7q6x9" id="s1-docs-menu"><nav aria-label="Secondary nav" class="docs-secondary-nav p_md"><!----> <div class="docs-list docs-menu  svelte-467p3h"><ul class="unstyled"><!--[--><li class="category svelte-1cy3a68"><!--[-1--><h4 class="mb_sm "><!---->guide<!----></h4><!--]--> <ul class="unstyled"><!--[--><li role="none"><a class="menuitem" href="/docs/introduction"><div class="ellipsis">introduction</div></a></li><!--]--></ul></li><li class="category svelte-1cy3a68"><!--[-1--><h4 class="mb_sm "><!---->reference<!----></h4><!--]--> <ul class="unstyled"><!--[--><li role="none"><a class="menuitem" href="/docs/api"><div class="ellipsis">api</div></a></li><!--]--></ul></li><!--]--></ul><!----></div><!----> <!----></nav><!----> <div class="tertiary-in-sidebar svelte-1vnxegx"><aside class="docs-tertiary-nav unstyled "><!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--></aside><!----></div><!----></div></div><!--]--><!--]--><!--]--><!--]--><!----><!----><!--]--><!--]--><!--]--><!----> <!--[-1--><!--]--><!--]-->
+			
+			<script>
+				{
+					__sveltekit_1ung3t9 = {
+						base: "",
+						version: "4c195240aff00e826fe0fdb2c3bd15927755ac0f"
+					};
+
+					const element = document.currentScript.parentElement;
+
+					import("/_app/immutable/entry/start.Don10HnE.js").then(async (kit) => {
+						kit.init(__sveltekit_1ung3t9);
+						const app = await import("/_app/immutable/entry/app.ByjColFb.js");
+						kit.start(app, element, {
+							node_ids: [0, 2, 7],
+							data: [null,null,null],
+							form: null,
+							error: null
+						});
+					});
+				}
+			</script>
+		</div>
+	</body>
+</html>
