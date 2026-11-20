@@ -108,11 +108,12 @@ export const get_session_cookie = <T>(c: Context, options: SessionOptions<T>): s
  *
  * The middleware runs where it is mounted — `AUTH_MIDDLEWARE_PATH` in the
  * assembled server — so the clear's scope is the router's reading of the
- * path: percent-decoded, dot segments resolved. The Rust spine's clear reads
- * the path as its own router does, raw, so the two differ on spellings a
- * browser never sends: `/%61pi/x` and `/./api/x` are cleared here and not
- * there, `/api/../health` there and not here. Left unconverged on purpose —
- * each spine clears exactly where its own router puts the auth scope.
+ * path: raw, nothing percent-decoded (`get_request_path`), as the Rust
+ * spine's clear reads it, so `/%61pi/x` is cleared on neither. Dot segments
+ * are the one difference, and it is the runtime's: Node and Bun resolve them
+ * before the app sees the request, so `/./api/x` is cleared here and not
+ * there, `/api/../health` there and not here — each spine clears exactly
+ * where its own router puts the auth scope.
  *
  * @param keyring - key ring for cookie verification
  * @param options - session configuration

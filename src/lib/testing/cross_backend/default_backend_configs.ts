@@ -173,7 +173,13 @@ export const ts_default_capabilities: FamilyDefaultCapabilities = Object.freeze(
 	ws_refusal_body: false,
 	// `@hono/node-server` answers an upgrade whose first `Host` line is empty
 	// with a bodiless 400 before the app runs. A Bun-served one overrides to `[]`.
-	ws_upgrade_runtime_refusals: Object.freeze(['empty_host'] as const)
+	ws_upgrade_runtime_refusals: Object.freeze(['empty_host'] as const),
+	// Node builds the request's URL by the WHATWG parser, dot segments resolved;
+	// Bun does the same.
+	runtime_resolves_dot_segments: true,
+	// `create_app_server`'s unmatched-route handler answers outside `/api`
+	// unless the backend mounts a static fallback of its own there.
+	spine_fallback: true
 });
 
 /**
@@ -195,7 +201,12 @@ export const rust_default_capabilities: FamilyDefaultCapabilities = Object.freez
 	// axum sends a refused upgrade's response as built, body included.
 	ws_refusal_body: true,
 	// hyper hands an upgrade with an empty `Host` to the host gate.
-	ws_upgrade_runtime_refusals: Object.freeze([])
+	ws_upgrade_runtime_refusals: Object.freeze([]),
+	// axum routes the raw path, dot segments kept.
+	runtime_resolves_dot_segments: false,
+	// `fuz_actions::server::fallback_group` answers outside `/api` unless the
+	// backend's fallback group is its own.
+	spine_fallback: true
 });
 
 /** Bootstrap block built from the default secrets + supplied paths. */

@@ -39,6 +39,7 @@ import {
 	create_dev_route_error_check,
 	create_route_lookup
 } from '#lib/http/dev_route_error_check.ts';
+import { get_request_path } from '#lib/http/request_target.ts';
 import {
 	compile_route_path,
 	find_mounted_route,
@@ -424,7 +425,7 @@ describe('compile_route_path matches as Hono does', () => {
 
 	for (const [template, paths] of Object.entries(CASES)) {
 		test(template, async () => {
-			const app = new Hono();
+			const app = new Hono({ getPath: get_request_path });
 			app.get(template, (c) => c.text('hit'));
 			const pattern = compile_route_path(template);
 			const lookup = create_route_lookup([{ method: 'GET', path: template }], () => true);
@@ -444,7 +445,7 @@ describe('compile_route_path matches as Hono does', () => {
 			{ method: 'POST', path: '/a/me' },
 			{ method: 'GET', path: '/a/*' }
 		];
-		const app = new Hono();
+		const app = new Hono({ getPath: get_request_path });
 		routes.forEach((r, i) => app.on(r.method, r.path, (c) => c.text(String(i))));
 		const lookup = create_route_lookup(routes, (r) => routes.indexOf(r));
 		const mounted = to_mounted_routes(routes, (r) => routes.indexOf(r));

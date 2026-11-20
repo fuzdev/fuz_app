@@ -122,6 +122,32 @@ export const ERROR_SERVICE_UNAVAILABLE = 'service_unavailable' as const;
 /** Request `Content-Length` header is not a plain run of ASCII digits. */
 export const ERROR_INVALID_CONTENT_LENGTH = 'invalid_content_length' as const;
 
+// --- Routing: what no route answers ---
+
+/**
+ * A request whose method its path doesn't serve (405, with `Allow` naming
+ * the methods it does) — `server/unmatched_route.ts`; the Rust spine's
+ * `fuz_http::METHOD_NOT_ALLOWED_REASON`.
+ */
+export const ERROR_METHOD_NOT_ALLOWED = 'method_not_allowed' as const;
+
+/**
+ * A path under the auth scope that no route serves (404) —
+ * `server/unmatched_route.ts`; the Rust spine's
+ * `fuz_http::ROUTE_NOT_FOUND_REASON`. Distinct from a handler's own
+ * `not_found`, so a client — or a test asking whether a route is mounted —
+ * can tell a missing route from a missing row.
+ */
+export const ERROR_ROUTE_NOT_FOUND = 'route_not_found' as const;
+
+/**
+ * The body of the `404` an unrouted path outside the auth scope answers, as
+ * `text/plain` — no code, since nothing outside the scope speaks the JSON
+ * error convention; the Rust spine's `fuz_actions::server::NOT_FOUND_TEXT`,
+ * byte for byte.
+ */
+export const NOT_FOUND_TEXT = '404 Not Found';
+
 // --- Origin & bearer token verification ---
 
 /** Request origin not in allowlist. */

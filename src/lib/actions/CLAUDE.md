@@ -846,7 +846,7 @@ shape `{account: 'required', actor: 'required', roles?, required_scope:
 6. `upgradeWebSocket`
 
 Only `GET` is mounted (Hono serves `HEAD` through it, guards included), so any
-other method on the path is a 404. Takes
+other method on the path is the app's 405 (`Allow: GET, HEAD`; `server/unmatched_route.ts`), and a `GET` asking for no upgrade its 404. Takes
 `allowed_origins` (required — `create_app_server` passes the server's), the
 required `connection_closer` and action limiters, and optional
 `required_roles`; returns `{registry}`. Most consumers reach for

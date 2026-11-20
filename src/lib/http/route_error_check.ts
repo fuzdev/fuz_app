@@ -54,8 +54,8 @@ export const is_error_status = (status: number): boolean => status >= 400;
 
 /**
  * Whether a response is JSON by its `Content-Type`, the gate before any
- * error check: a non-JSON response (SSE, bytes, Hono's plain-text 404) is no
- * error body to check, whatever its text looks like.
+ * error check: a non-JSON response (SSE, bytes, the plain-text unrouted
+ * 404) is no error body to check, whatever its text looks like.
  *
  * @param response - the response
  */
@@ -214,29 +214,13 @@ const to_route_param_source = (pattern: string): string => `(?:${pattern})`;
  * sets, anchors `^re$` and leaves a top-level alternation ungrouped, so
  * `^a|b$` takes `ab` where the grouped form refuses it. The grouped form is
  * the stricter of the two: a value it accepts both routers accept. Test it
- * against the value as Hono reads it (`decode_route_path`).
+ * against the value as the assembled server's router reads it: the raw,
+ * percent-encoded segment (`get_request_path`).
  *
  * @param pattern - the param's `re` (`RouteParam.pattern`)
  */
 export const compile_route_param_pattern = (pattern: string): RegExp =>
 	new RegExp(`^${to_route_param_source(pattern)}$`);
-
-/**
- * A request path, or a part of one, as Hono's router reads it: percent-decoded
- * by `decodeURI` with `%25` kept, so an encoded `/`, `#`, `?` or `%` stays
- * encoded, or the raw text when decoding fails.
- *
- * @param path - the request pathname, or a percent-encoded segment of one
- */
-export const decode_route_path = (path: string): string => {
-	if (!path.includes('%')) return path;
-	try {
-		return decodeURI(path.replaceAll('%25', '%2525'));
-	} catch {
-		// a malformed escape: Hono matches the raw path
-		return path;
-	}
-};
 
 /** The regexp source of a template with no optional param. */
 const to_route_path_source = (template: string): string => {

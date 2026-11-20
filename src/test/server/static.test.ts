@@ -4,10 +4,19 @@
  * @module
  */
 
-import { describe, assert, test, vi } from 'vitest';
-import type { MiddlewareHandler } from 'hono';
+import { afterAll, beforeAll, describe, assert, test, vi } from 'vitest';
+import { Hono, type MiddlewareHandler } from 'hono';
+import { serveStatic } from '@hono/node-server/serve-static';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
-import { create_static_middleware, type ServeStaticFactory } from '#lib/server/static.ts';
+import { get_request_path } from '#lib/http/request_target.ts';
+import {
+	create_static_middleware,
+	to_static_file_path,
+	type ServeStaticFactory
+} from '#lib/server/static.ts';
 
 /** Create a mock serve_static factory that records calls. */
 const create_mock_serve_static = (): {
@@ -54,16 +63,14 @@ describe('create_static_middleware', () => {
 
 		// Step 1 is a direct serve_static call
 		assert.strictEqual(calls.length, 1); // only step 1 calls factory eagerly
-		assert.strictEqual(calls[0]!.rewriteRequestPath, undefined);
+		assert.deepStrictEqual(calls[0], { root: './build' });
 	});
 
 	test('step 3 spa_fallback uses the provided path', async () => {
 		let rewrite_path: string | undefined;
 		const factory: ServeStaticFactory = (options) => {
 			const handler: MiddlewareHandler = async (_c, next) => {
-				if (options.rewriteRequestPath) {
-					rewrite_path = options.rewriteRequestPath('/anything');
-				}
+				rewrite_path = options.path;
 				await next();
 			};
 			return handler;
@@ -189,9 +196,7 @@ describe('create_static_middleware', () => {
 		let rewrite_path: string | undefined;
 		const factory: ServeStaticFactory = (options) => {
 			const handler: MiddlewareHandler = async (_c, next) => {
-				if (options.rewriteRequestPath) {
-					rewrite_path = options.rewriteRequestPath('/about');
-				}
+				rewrite_path = options.path;
 				await next();
 			};
 			return handler;
@@ -210,9 +215,7 @@ describe('create_static_middleware', () => {
 		let rewrite_path: string | undefined;
 		const factory: ServeStaticFactory = (options) => {
 			const handler: MiddlewareHandler = async (_c, next) => {
-				if (options.rewriteRequestPath) {
-					rewrite_path = options.rewriteRequestPath('/docs/getting-started');
-				}
+				rewrite_path = options.path;
 				await next();
 			};
 			return handler;
@@ -226,4 +229,85 @@ describe('create_static_middleware', () => {
 
 		assert.strictEqual(rewrite_path, '/docs/getting-started.html');
 	});
+});
+
+describe('to_static_file_path', () => {
+	test('decodes each segment of a raw path', () => {
+		assert.strictEqual(to_static_file_path('/a.txt'), '/a.txt');
+		assert.strictEqual(to_static_file_path('/my%20file.txt'), '/my file.txt');
+		assert.strictEqual(to_static_file_path('/caf%C3%A9/x.txt'), '/café/x.txt');
+	});
+
+	test.each([
+		['an escape that does not decode', '/%FF.txt'],
+		['a malformed escape', '/%G0.txt'],
+		['an encoded slash', '/a%2Fb.txt'],
+		['an encoded percent', '/a%25b.txt'],
+		['an encoded percent before two hex digits, decoded once', '/%2541.txt'],
+		['an encoded dot segment', '/a/%2e%2e/b.txt'],
+		['an encoded backslash', '/a%5Cb.txt'],
+		['an encoded NUL', '/a%00b.txt'],
+		['an empty segment', '/a//b.txt']
+	])('names no file for %s', (_label, path) => {
+		assert.strictEqual(to_static_file_path(path), null);
+	});
+});
+
+/**
+ * The static layer over the Node runtime's own `serveStatic`, behind the
+ * assembled server's raw routing: a file whose URL carries an escape is still
+ * found, and a client route whose URL carries one still gets the SPA fallback.
+ */
+describe('static serving under raw routing', () => {
+	let root: string;
+
+	beforeAll(async () => {
+		root = await mkdtemp(join(tmpdir(), 'fuz_app_static_'));
+		await writeFile(join(root, 'plain.txt'), 'plain');
+		await writeFile(join(root, 'my file.txt'), 'spaced');
+		await writeFile(join(root, 'café.txt'), 'accented');
+		await writeFile(join(root, 'about page.html'), 'about');
+		await writeFile(join(root, '%41.txt'), 'percent');
+		await writeFile(join(root, '200.html'), 'spa');
+	});
+
+	afterAll(async () => {
+		await rm(root, { recursive: true, force: true });
+	});
+
+	const create_app = (spa_fallback?: string): Hono => {
+		const app = new Hono({ getPath: get_request_path });
+		for (const handler of create_static_middleware(serveStatic, { root, spa_fallback })) {
+			app.use('/*', handler);
+		}
+		return app;
+	};
+
+	test.each([
+		['/plain.txt', 'plain'],
+		['/my%20file.txt', 'spaced'],
+		['/caf%C3%A9.txt', 'accented'],
+		['/about%20page', 'about']
+	])('%s is served', async (path, body) => {
+		const res = await create_app().request(path);
+		assert.strictEqual(res.status, 200);
+		assert.strictEqual(await res.text(), body);
+	});
+
+	test.each(['/%2541.txt', '/my%2Ffile.txt', '/%FF.txt', '/..%2Fplain.txt'])(
+		'%s is no file',
+		async (path) => {
+			const res = await create_app().request(path);
+			assert.strictEqual(res.status, 404);
+		}
+	);
+
+	test.each(['/users/caf%C3%A9', '/users/a%20b', '/users/plain'])(
+		'the SPA fallback serves the client route %s',
+		async (path) => {
+			const res = await create_app('/200.html').request(path);
+			assert.strictEqual(res.status, 200);
+			assert.strictEqual(await res.text(), 'spa');
+		}
+	);
 });

@@ -391,10 +391,18 @@ const decode_chunked = (raw: string): string | null => {
  * A response carrying neither is delimited by the connection closing, which
  * the bytes alone don't show, so its body is whatever followed the head.
  *
+ * The answer to a `HEAD` has no body whatever its framing headers say
+ * (RFC 9110 §9.3.2): with `head_request` its body is whatever followed the
+ * head, which a conforming server leaves empty.
+ *
  * @param raw - the bytes read so far, `latin1`-decoded
+ * @param options - `head_request`: the request was a `HEAD`
  * @returns the response, or `null` when the head or the framed body is incomplete
  */
-export const raw_http_parse_response = (raw: string): RawHttpResponse | null => {
+export const raw_http_parse_response = (
+	raw: string,
+	options?: { readonly head_request?: boolean }
+): RawHttpResponse | null => {
 	const head_end = raw.indexOf('\r\n\r\n');
 	if (head_end === -1) return null;
 	const [status_line, ...header_lines] = raw.slice(0, head_end).split('\r\n');
@@ -408,6 +416,7 @@ export const raw_http_parse_response = (raw: string): RawHttpResponse | null => 
 	}
 	const status = Number(status_match[1]);
 	const rest = raw.slice(head_end + 4);
+	if (options?.head_request) return { status, headers, body: rest };
 	if (headers['transfer-encoding']?.toLowerCase().includes('chunked')) {
 		const body = decode_chunked(rest);
 		return body === null ? null : { status, headers, body };

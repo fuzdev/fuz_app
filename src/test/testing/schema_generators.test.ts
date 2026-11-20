@@ -22,6 +22,7 @@ import {
 } from '@fuzdev/fuz_schema/schema.ts';
 
 import { generate_valid_body, resolve_valid_path } from '#lib/testing/schema_generators.ts';
+import { get_request_path } from '#lib/http/request_target.ts';
 import { FactHashSchema, Uuid } from '#lib/primitive_schemas.ts';
 import {
 	account_session_revoke_action_spec,
@@ -239,25 +240,28 @@ describe('resolve_valid_path — the template read as Hono reads it', () => {
 		assert.strictEqual(await res.text(), 'repo.git');
 	});
 
-	test('a supplied value is tested decoded, as Hono reads it', async () => {
-		const template = '/f/:n{[a-z ]+}';
+	test('a supplied value is tested encoded, as the server routes it', async () => {
+		// the router matches the raw segment, so a pattern reading a decoded
+		// space refuses its escape
+		assert.throws(() => resolve_valid_path('/f/:n{[a-z ]+}', undefined, { n: 'a b' }), /refuses/);
+		const template = '/f/:n{[a-z%0-9]+}';
 		const resolved = resolve_valid_path(template, undefined, { n: 'a b' });
 		assert.strictEqual(resolved, '/f/a%20b');
-		const app = new Hono();
+		const app = new Hono({ getPath: get_request_path });
 		app.get(template, (c) => c.text(c.req.param('n')));
 		assert.strictEqual(await (await app.request(resolved)).text(), 'a b');
 	});
 
-	test('a supplied `%` stays encoded as `%25` when tested, as Hono keeps it', async () => {
+	test('a supplied `%` is tested as its `%25`, as the server routes it', async () => {
 		const template = '/f/:n{[^%]+}';
 		assert.throws(() => resolve_valid_path(template, undefined, { n: 'a%b' }), /refuses/);
-		const app = new Hono();
+		const app = new Hono({ getPath: get_request_path });
 		app.get(template, (c) => c.text('hit'));
 		assert.strictEqual((await app.request('/f/a%25b')).status, 404);
-		// the pattern sees the `%25` itself, as Hono's router does
+		// the pattern sees the `%25` itself, as the router does
 		const kept = '/f/:n{a%25b}';
 		assert.strictEqual(resolve_valid_path(kept, undefined, { n: 'a%b' }), '/f/a%25b');
-		const kept_app = new Hono();
+		const kept_app = new Hono({ getPath: get_request_path });
 		kept_app.get(kept, (c) => c.text(c.req.param('n')));
 		assert.strictEqual(await (await kept_app.request('/f/a%25b')).text(), 'a%b');
 	});

@@ -3,7 +3,8 @@ import '../assert_dev_env.ts';
 /**
  * The request target conformance table: how both spines decode what a matched
  * route reads of the request target — the query string and the path params —
- * and what a request carrying a given target observably answers.
+ * and what a request carrying a given target observably answers, the routing
+ * of its method and path included.
  *
  * `request_target_conformance.json` (beside this module) has three sections:
  *
@@ -15,14 +16,25 @@ import '../assert_dev_env.ts';
  * - **param** — `{name, segment, read}`: one raw path segment and what the
  *   strict segment reader reads of it — `{"value": text}` or
  *   `{"refused": reason}`.
- * - **wire** — `{name, method, target, as, upgrade?, requires?, expect, note?}`:
- *   a request sent over a raw socket with its target written as is, by the
- *   principal `as` names (`"keeper_session"` or `"none"`), as a WebSocket
- *   upgrade when `upgrade` is set, and only to a backend declaring the
- *   capability `requires` names. `expect` pins the answer's `status`, the
- *   REST `error` code, and on a JSON-RPC answer the envelope's `id` — which
- *   pins the decoding of an echoed value — with its error `code` and
- *   `data.reason`. Never a whole body, and never the DEV-only `issues`.
+ * - **wire** — `{name, method, target, as, origin?, host?, headers?,
+ *   upgrade?, requires?, expect, expect_where_dot_segments_resolved?, note?}`:
+ *   a request sent over a raw socket with its method and target written as
+ *   is, by the principal `as` names (`"keeper_session"`, `"none"`, or
+ *   `"invalid_session"` — the session cookie's name with a value that doesn't
+ *   verify), with `origin` as its one `Origin` line, `host` as its `Host` in
+ *   place of the backend's, and each of `headers` as a line of its own, as a
+ *   WebSocket upgrade when `upgrade` is set, and only to a backend declaring
+ *   every capability `requires` names. `expect`
+ *   pins the answer's `status`, the REST `error` code, and on a JSON-RPC
+ *   answer the envelope's `id` — which pins the decoding of an echoed value —
+ *   with its error `code` and `data.reason`; and where the row routes, the
+ *   `Allow` methods as a set (`[]` for none), a plain-text body byte for
+ *   byte (`text`), the `Content-Type`'s kind of a bodiless `HEAD` answer
+ *   (`media`), and whether the session cookie is cleared (`clears_session`).
+ *   Never a whole JSON body, and never the DEV-only `issues`. A dot-segment
+ *   row's `expect` is the answer where the router reads the raw path, and
+ *   `expect_where_dot_segments_resolved` the answer where the runtime
+ *   resolves dot segments first (`BackendCapabilities.runtime_resolves_dot_segments`).
  *
  * Wire targets name the backend's paths with `{placeholders}`
  * (`REQUEST_TARGET_CONFORMANCE_PLACEHOLDERS`), filled per backend.
@@ -80,16 +92,29 @@ export const RequestTargetConformanceParamRow = object({
 });
 export type RequestTargetConformanceParamRow = Infer<typeof RequestTargetConformanceParamRow>;
 
-/** Who sends a wire row: the keeper's session cookie, or no credential. */
-export const REQUEST_TARGET_CONFORMANCE_PRINCIPALS = ['keeper_session', 'none'] as const;
+/**
+ * Who sends a wire row: the keeper's session cookie, no credential, or the
+ * session cookie's name with a value that doesn't verify — the cookie the
+ * session middleware clears under the auth scope.
+ */
+export const REQUEST_TARGET_CONFORMANCE_PRINCIPALS = [
+	'keeper_session',
+	'none',
+	'invalid_session'
+] as const;
 
 /** The backend capabilities a wire row may require. */
 export const REQUEST_TARGET_CONFORMANCE_REQUIREMENTS = [
 	'ws',
+	'sse',
 	'account_status',
 	'fact_serving',
-	'fact_serving_admin_hash'
+	'fact_serving_admin_hash',
+	'spine_fallback'
 ] as const;
+
+/** The media types a wire row may pin on a bodiless answer: JSON, or plain text. */
+export const REQUEST_TARGET_CONFORMANCE_MEDIA = ['json', 'text'] as const;
 
 /** What a wire row's answer must carry. */
 export const RequestTargetConformanceExpect = object({
@@ -103,7 +128,18 @@ export const RequestTargetConformanceExpect = object({
 			code: optional(pipe(number, integer)),
 			reason: optional(string)
 		})
-	)
+	),
+	/**
+	 * The `Allow` header's methods, compared as a set (a router orders them its
+	 * own way); `[]` is an answer with no `Allow`.
+	 */
+	allow: optional(array(string)),
+	/** The body byte for byte, under a `text/plain` `Content-Type`. */
+	text: optional(string),
+	/** The `Content-Type`'s kind, for an answer with no body to read — a `HEAD`'s. */
+	media: optional(one_of(REQUEST_TARGET_CONFORMANCE_MEDIA)),
+	/** Whether the answer clears the session cookie (`true`) or leaves it alone (`false`). */
+	clears_session: optional(boolean)
 });
 export type RequestTargetConformanceExpect = Infer<typeof RequestTargetConformanceExpect>;
 
@@ -113,9 +149,25 @@ export const RequestTargetConformanceWireRow = object({
 	method: string,
 	target: string,
 	as: one_of(REQUEST_TARGET_CONFORMANCE_PRINCIPALS),
+	/** An `Origin` line to send; none when absent. */
+	origin: optional(string),
+	/** The `Host` to send in place of the backend's own. */
+	host: optional(string),
+	/**
+	 * Header lines to send as written (`name: value`) — a `POST`'s
+	 * `Content-Type`, so a row reaches the router and not a content-type gate.
+	 */
+	headers: optional(array(string)),
 	upgrade: optional(boolean),
-	requires: optional(one_of(REQUEST_TARGET_CONFORMANCE_REQUIREMENTS)),
+	/** The capabilities a backend must declare, every one, to be sent the row. */
+	requires: optional(pipe(array(one_of(REQUEST_TARGET_CONFORMANCE_REQUIREMENTS)), min_length(1))),
 	expect: RequestTargetConformanceExpect,
+	/**
+	 * The answer on a backend whose runtime resolves dot segments before the
+	 * app sees the request (`BackendCapabilities.runtime_resolves_dot_segments`);
+	 * `expect` is then the answer where the path reaches the router raw.
+	 */
+	expect_where_dot_segments_resolved: optional(RequestTargetConformanceExpect),
 	note: optional(string)
 });
 export type RequestTargetConformanceWireRow = Infer<typeof RequestTargetConformanceWireRow>;
@@ -132,7 +184,10 @@ export type RequestTargetConformance = Infer<typeof RequestTargetConformance>;
 export const REQUEST_TARGET_CONFORMANCE_PLACEHOLDERS = [
 	'rpc_path',
 	'ws_path',
-	'account_status_path'
+	'account_status_path',
+	'account_login_path',
+	'sse_path',
+	'health_path'
 ] as const;
 
 /** A placeholder name — see `REQUEST_TARGET_CONFORMANCE_PLACEHOLDERS`. */

@@ -8,13 +8,16 @@
  */
 
 import { describe, test, assert } from 'vitest';
-import { object, string } from '@fuzdev/fuz_schema/schema.ts';
+import { Hono } from 'hono';
+import { literal, object, string } from '@fuzdev/fuz_schema/schema.ts';
 
 import { define_route, type RouteSpec } from '#lib/http/route_spec.ts';
 import { route_ok } from '#lib/http/route_result.ts';
 import { assert_response_matches_spec, find_route_spec } from '#lib/testing/integration_helpers.ts';
 import { rest_error } from '#lib/http/error_schemas.ts';
 import { resolve_app_route_error_maps } from '#lib/http/route_errors.ts';
+import { get_request_path } from '#lib/http/request_target.ts';
+import { create_unmatched_route_handler } from '#lib/server/unmatched_route.ts';
 
 const spec = define_route({
 	method: 'POST',
@@ -203,7 +206,11 @@ describe('assert_response_matches_spec fails an undeclared status', () => {
 
 	test('a non-JSON error at an undeclared status passes', async () => {
 		assert.isNull(await fails(new Response('Internal Server Error', { status: 500 })));
-		assert.isNull(await fails(new Response('404 Not Found', { status: 404 })));
+		assert.isNull(await fails(new Response('nothing here', { status: 404 })));
+	});
+
+	test("the unrouted 404's plain text never passes: no route gave it", async () => {
+		assert.ok(await fails(new Response('404 Not Found', { status: 404 })));
 	});
 
 	test('on a jsonrpc route an envelope at any status passes; a REST body does not', async () => {
@@ -224,6 +231,71 @@ describe('assert_response_matches_spec fails an undeclared status', () => {
 
 	test('a 3xx is not an error status', async () => {
 		assert.isNull(await fails(json({ moved: true }, 301)));
+	});
+});
+
+/**
+ * A route the surface declares but the backend doesn't mount is answered by
+ * the unmatched-route handler, which no route's error map can describe — so
+ * the helper fails it even where the route declares the status, rather than
+ * reading a non-JSON 404 as "no schema applies".
+ */
+describe('assert_response_matches_spec fails an answer no route gave', () => {
+	/** A route that declares a 404 of its own, so a 404 isn't undeclared. */
+	const declares_404 = define_route({
+		method: 'GET',
+		path: '/api/things/:id',
+		auth: { account: 'none', actor: 'none' },
+		description: 'Reads a thing.',
+		input: literal(null),
+		params: object({ id: string }),
+		output: object({ id: string }),
+		errors: [rest_error(404, 'thing_missing')],
+		handler: () => route_ok({ id: 'x' })
+	});
+	const outside = define_route({
+		method: 'GET',
+		path: '/things/:id',
+		auth: { account: 'none', actor: 'none' },
+		description: 'Reads a thing outside the auth scope.',
+		input: literal(null),
+		params: object({ id: string }),
+		output: object({ id: string }),
+		errors: [rest_error(404, 'thing_missing')],
+		handler: () => route_ok({ id: 'x' })
+	});
+
+	/** The assembled server's answer for the routes it doesn't mount, beside the ones it does. */
+	const unmounted_app = (mounted: ReadonlyArray<{ method: string; path: string }>): Hono => {
+		const app = new Hono({ getPath: get_request_path });
+		for (const route of mounted) app.on(route.method, route.path, (c) => c.text('hit'));
+		app.notFound(create_unmatched_route_handler(app.router));
+		return app;
+	};
+
+	test.each([
+		['the JSON route_not_found', declares_404, '/api/things/1', []],
+		['the plain-text 404', outside, '/things/1', []],
+		['the 405', declares_404, '/api/things/1', [{ method: 'POST', path: '/api/things/:id' }]]
+	] as const)('%s', async (_label, route, path, mounted) => {
+		const response = await unmounted_app(mounted).request(path);
+		let err: unknown;
+		try {
+			await assert_response_matches_spec([route], 'GET', path, response);
+		} catch (e) {
+			err = e;
+		}
+		assert.ok(err instanceof Error, `${response.status} passed`);
+		assert.match(err.message, /was answered by no route — the backend doesn't mount it/);
+	});
+
+	test("a route's own 404 still passes", async () => {
+		await assert_response_matches_spec(
+			[declares_404],
+			'GET',
+			'/api/things/1',
+			json({ error: 'thing_missing' }, 404)
+		);
 	});
 });
 
@@ -265,15 +337,17 @@ describe('find_route_spec takes the route Hono dispatches to', () => {
 		assert.strictEqual(find_route_spec([api_id, xy], 'GET', '/api/x:y'), api_id);
 	});
 
-	test('the path is read as Hono reads it', () => {
+	test('the path is read as the server routes it: raw, dot segments resolved', () => {
 		const cafe = route('GET', '/a/café');
 		const digits = route('GET', '/a/:id{[0-9]+}');
 		const ab = route('GET', '/a/b');
 		const things = route('GET', '/things');
 		const root = route('GET', '/');
 		const all = [cafe, digits, ab, things, root];
-		assert.strictEqual(find_route_spec(all, 'GET', '/a/caf%C3%A9'), cafe);
-		assert.strictEqual(find_route_spec(all, 'GET', '/a/%31'), digits);
+		// nothing is percent-decoded: an escape is its own spelling
+		assert.strictEqual(find_route_spec(all, 'GET', '/a/caf%C3%A9'), undefined);
+		assert.strictEqual(find_route_spec(all, 'GET', '/a/%31'), undefined);
+		assert.strictEqual(find_route_spec(all, 'GET', '/a/1'), digits);
 		assert.strictEqual(find_route_spec(all, 'GET', '/a/./b'), ab);
 		assert.strictEqual(find_route_spec(all, 'GET', '/things?x=1'), things);
 		assert.strictEqual(find_route_spec(all, 'GET', ''), root);

@@ -11,9 +11,9 @@
  * status the map lacks, or a body off the status's schema, is logged. A 500
  * `internal_error` and a 503 `service_unavailable` are always accepted, a
  * JSON-RPC error envelope on a `jsonrpc` route is not a REST error body, a
- * non-JSON response is skipped, and so is a request no route spec matches
- * (an unmatched path's 404 is Hono's plain text, no JSON convention to hold
- * it to).
+ * non-JSON response is skipped, and so is a request no route spec matches:
+ * the unmatched-route handler's `405` and `404` (`server/unmatched_route.ts`)
+ * answer for no route, so no route's map can hold them.
  *
  * Logs, never throws — a throw inside it, its logger's included, is swallowed
  * — and leaves the response unchanged. Outside DEV
@@ -49,6 +49,9 @@ import { get_route_error_map, type RouteErrorMap, type RouteErrorMapSpec } from 
  * the app on a different router than the lookup's — a `TrieRouter` where the
  * lookup has a `RegExpRouter`. Where the two differ the cost is a missed DEV
  * log, and rarely a wrong route.
+ *
+ * The path is matched as the app's router matches it: the raw request path
+ * (`get_request_path`), nothing percent-decoded.
  *
  * @param routes - the routes, in the order they were mounted
  * @param to_value - what to keep beside each route

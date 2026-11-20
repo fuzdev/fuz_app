@@ -964,7 +964,7 @@ The attack surface suite runs 3 test groups: per-method auth enforcement (JSON-R
 
 ### WebSocket Endpoint
 
-`register_action_ws` mounts a JSON-RPC 2.0 WebSocket endpoint — one `GET` upgrade route guarded by the origin check, auth, token scope, actor resolution, and an optional role (the route-spec pipeline's guards, in its order; any method but `GET` or `HEAD` on the path is a 404) — and per-message dispatch. It is the primitive `create_app_server`'s `ws_endpoints` mounts each endpoint with — an app built by `create_app_server` declares its endpoints there instead (§Server Assembly above), which also supplies the limiters, the origin default, the surface entry, and the revocation guard. Called directly:
+`register_action_ws` mounts a JSON-RPC 2.0 WebSocket endpoint — one `GET` upgrade route guarded by the origin check, auth, token scope, actor resolution, and an optional role (the route-spec pipeline's guards, in its order; any method but `GET` or `HEAD` on the path is a 405 with `Allow`) — and per-message dispatch. It is the primitive `create_app_server`'s `ws_endpoints` mounts each endpoint with — an app built by `create_app_server` declares its endpoints there instead (§Server Assembly above), which also supplies the limiters, the origin default, the surface entry, and the revocation guard. Called directly:
 
 ```typescript
 import { register_action_ws } from '@fuzdev/fuz_app/actions/register_action_ws.ts';

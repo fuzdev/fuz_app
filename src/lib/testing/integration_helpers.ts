@@ -15,13 +15,15 @@ import { get_route_error_map, type RouteErrorMap } from '../http/route_errors.ts
 import { is_public_auth, type RouteAuth } from '../http/auth_shape.ts';
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
-	ERROR_CREDENTIAL_TYPE_REQUIRED
+	ERROR_CREDENTIAL_TYPE_REQUIRED,
+	ERROR_METHOD_NOT_ALLOWED,
+	ERROR_ROUTE_NOT_FOUND,
+	NOT_FOUND_TEXT
 } from '../http/error_schemas.ts';
 import { ROLE_ADMIN } from '../auth/role_schema.ts';
 import type { TestAccount } from './app_server.ts';
 import { create_test_request_headers } from './test_origin.ts';
 import {
-	decode_route_path,
 	find_mounted_route,
 	is_json_response,
 	to_mounted_routes,
@@ -37,12 +39,11 @@ const mounted_routes_cache: WeakMap<
 > = new WeakMap();
 
 /**
- * A request path as Hono reads it: the URL's pathname (a query string
- * dropped, `.` and `..` segments resolved), percent-decoded as
- * `decode_route_path` decodes it.
+ * A request path as the assembled server routes it: the URL's pathname (a
+ * query string dropped, `.` and `..` segments resolved, as the TS runtimes
+ * resolve them), nothing percent-decoded (`get_request_path`).
  */
-const to_hono_path = (path: string): string =>
-	decode_route_path(new URL(path, 'http://localhost').pathname);
+const to_hono_path = (path: string): string => new URL(path, 'http://localhost').pathname;
 
 /**
  * Find the route spec a request reaches: the first in list (mount) order
@@ -50,7 +51,7 @@ const to_hono_path = (path: string): string =>
  * Hono dispatches by, which the DEV error check reads through Hono's own
  * router (`create_route_lookup`). This lookup is hono-free
  * (`find_mounted_route`), pinned against Hono by the route-lookup tests. The
- * path is read as Hono reads it: its pathname, percent-decoded.
+ * path is read as the server routes it: its pathname, nothing percent-decoded.
  *
  * A path template passed as the path (`/api/things/:id`, a segment that is
  * `*` or starts with `:`) finds its own spec first, outranking mount order.
@@ -143,8 +144,14 @@ export const find_auth_route = (
  * no schema applies: a 2xx on a route with a null output, or an error status
  * the map doesn't declare.
  *
+ * An answer no route gave never passes, whatever the route declares: a
+ * `405`, the JSON `route_not_found` 404, or the plain `NOT_FOUND_TEXT` 404
+ * (`server/unmatched_route.ts`) means the backend doesn't mount the route the
+ * spec describes.
+ *
  * @param route_error_maps - each route's error map, keyed `METHOD path` (`AppSurfaceSpec.route_error_maps`)
- * @throws Error if no route spec matches `method` + `path`, if the body fails
+ * @throws Error if no route spec matches `method` + `path`, if the backend
+ *   answered for no route (the route isn't mounted), if the body fails
  *   its output schema, if a JSON error is at a status the route's map lacks or
  *   off its schema, or if the response is non-JSON despite a declared schema
  *   for its status.
@@ -160,6 +167,8 @@ export const assert_response_matches_spec = async (
 	if (!spec) {
 		throw new Error(`No route spec found for ${method} ${path}`);
 	}
+
+	await assert_route_answered(method, path, response);
 
 	// the DEV error check's gate: only a JSON response has a body to check
 	let body: unknown;
@@ -209,6 +218,35 @@ export const assert_response_matches_spec = async (
 			response,
 			`${method} ${path}`
 		);
+	}
+};
+
+/**
+ * Throw when a response is what the server answers for no route — a `405`,
+ * the `route_not_found` 404, or the plain `NOT_FOUND_TEXT` 404 — so a route
+ * the backend doesn't mount can't pass for one that refused.
+ */
+const assert_route_answered = async (
+	method: string,
+	path: string,
+	response: Response
+): Promise<void> => {
+	const unmounted = `${method} ${path} (${response.status}) was answered by no route — the backend doesn't mount it`;
+	if (response.status === 405) throw new Error(`${unmounted}: ${ERROR_METHOD_NOT_ALLOWED}`);
+	if (response.status !== 404) return;
+	const text = await response.clone().text();
+	if (is_json_response(response)) {
+		let body: unknown;
+		try {
+			body = JSON.parse(text);
+		} catch {
+			return;
+		}
+		if ((body as { error?: unknown } | null)?.error === ERROR_ROUTE_NOT_FOUND) {
+			throw new Error(`${unmounted}: ${ERROR_ROUTE_NOT_FOUND}`);
+		}
+	} else if (text === NOT_FOUND_TEXT) {
+		throw new Error(`${unmounted}: ${JSON.stringify(NOT_FOUND_TEXT)}`);
 	}
 };
 

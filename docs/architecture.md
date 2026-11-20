@@ -356,6 +356,14 @@ handlers for SvelteKit static builds:
 - **Step 2**: `.html` fallback for clean URLs (`/about` → `/about.html`)
 - **Step 3** (optional): SPA fallback for client-side routes (`spa_fallback: '/200.html'`)
 
+The app routes on the raw path, and Hono's `serveStatic` refuses a request
+path holding a `%`, so each step names its file outright
+(`ServeStaticOptions.path`): a path with an escape is decoded once by
+`to_static_file_path` — refused if it doesn't decode or decodes to a dot
+segment, a backslash or a NUL — and the SPA step serves the fallback file
+whatever the client route's spelling. A request nothing here serves falls
+through to the unmatched-route handler (`server/unmatched_route.ts`).
+
 The `serve_static` parameter accepts any factory matching Hono's `serveStatic`
 signature (from `@hono/node-server` or `@hono/bun`). `ServeStaticFactory` is exported
 for consumer use.
@@ -594,8 +602,9 @@ per transport family:
   route spec in mount order matching it, `HEAD` as `GET`) and logs a JSON
   error at a status the route's map doesn't declare, or off its schema. A
   500 `internal_error` and a 503 `service_unavailable` are always accepted,
-  a JSON-RPC error envelope on the RPC endpoint is not a REST body, and an
-  unmatched path is skipped. Streaming and other non-JSON responses
+  a JSON-RPC error envelope on the RPC endpoint is not a REST body, and a
+  request no route spec matches is skipped (the 405 and 404s the
+  unmatched-route handler answers are no route's). Streaming and other non-JSON responses
   are skipped via a `Content-Type` check. Both clone the `Response` body so
   validation does not consume the stream. Beside the error check sits
   `create_dev_set_cookie_check` (`http/dev_set_cookie_check.ts`): when a

@@ -33,7 +33,6 @@ import {
 } from '../http/schema_helpers.ts';
 import {
 	compile_route_param_pattern,
-	decode_route_path,
 	parse_route_param,
 	split_route_template
 } from '../http/route_error_check.ts';
@@ -747,8 +746,8 @@ export type RouteParamValues = Readonly<Record<string, Readonly<Record<string, s
  * A `{re}` param's value, supplied or not, must match its pattern, grouped
  * and anchored as Hono's RegExpRouter reads it — the stricter of its
  * routers' readings, as TrieRouter leaves a top-level alternation ungrouped
- * (`compile_route_param_pattern`, over the value as Hono decodes it,
- * `decode_route_path`) — or the request would reach no route; no value is
+ * (`compile_route_param_pattern`, over the percent-encoded value the router
+ * matches) — or the request would reach no route; no value is
  * guessed from the pattern. A supplied value the URL would normalize away
  * (`''`, `.`, `..`) is refused by name.
  *
@@ -807,7 +806,7 @@ export const resolve_valid_path = (
 		const supplied =
 			param_values && Object.hasOwn(param_values, name) ? param_values[name] : undefined;
 		const value = supplied === undefined ? generate(name) : encode_supplied(name, supplied);
-		if (pattern !== null && !compile_route_param_pattern(pattern).test(decode_route_path(value))) {
+		if (pattern !== null && !compile_route_param_pattern(pattern).test(value)) {
 			throw new Error(
 				`resolve_valid_path: the param \`${name}\` of \`${path}\` resolves to ${JSON.stringify(
 					value

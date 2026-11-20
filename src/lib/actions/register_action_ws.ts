@@ -31,7 +31,9 @@
  * 5. `require_role(required_roles)`, for a gated endpoint (403).
  *
  * Only `GET` is mounted (Hono serves `HEAD` through it), so any other method
- * on the path is a 404. The guards run as middleware ahead of
+ * on the path is the assembled server's 405 (`server/unmatched_route.ts`),
+ * and a `GET` the guards admit that asks for no upgrade passes on to its
+ * 404. The guards run as middleware ahead of
  * `upgradeWebSocket`, whose callback must return `WSEvents` and so cannot
  * produce a refusal.
  *

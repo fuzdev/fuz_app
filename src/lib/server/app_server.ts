@@ -50,6 +50,8 @@ import type { AppServerContext } from './app_server_context.ts';
 import '../hono_context.ts';
 import { create_proxy_middleware_spec } from '../http/proxy.ts';
 import { create_static_middleware, type ServeStaticFactory } from './static.ts';
+import { create_unmatched_route_handler } from './unmatched_route.ts';
+import { get_request_path } from '../http/request_target.ts';
 import { log_startup_summary } from './startup.ts';
 import { create_app_error_handler } from './app_error_handler.ts';
 import {
@@ -773,8 +775,14 @@ export const collect_config_diagnostics = (
  * middleware → auth middleware → bootstrap status → route specs (consumer,
  * bootstrap, RPC endpoints, surface) → surface generation → Hono app assembly
  * (routes, then WS endpoints) → post-route middleware → static serving → the
- * auth cleanup schedule. Database migrations belong to the backend lifecycle —
- * pass `migration_namespaces` to `create_app_backend`.
+ * unmatched-route handler → the auth cleanup schedule. Database migrations
+ * belong to the backend lifecycle — pass `migration_namespaces` to
+ * `create_app_backend`.
+ *
+ * The app routes on the raw request path (`get_request_path`), as the Rust
+ * spine's router does, and answers a request no route serves from
+ * `create_unmatched_route_handler`: a method its path doesn't serve is a 405
+ * with `Allow`, a path no route serves a 404, JSON under the auth scope.
  *
  * When `audit_log_sse` is set, the SSE registry's listener is registered via
  * `backend.deps.audit.add_listener` — no shallow-copy of `AppDeps`. That
@@ -1180,8 +1188,9 @@ const assemble_app_server = async (
 	surface_ref.surface = surface_spec.surface;
 	log_startup_summary(surface_spec.surface, log, options.env_values);
 
-	// Hono app assembly
-	const app = new Hono();
+	// Hono app assembly, routing on the raw path: nothing is percent-decoded
+	// before the router, so every path-keyed layer reads the spelling it matched
+	const app = new Hono({ getPath: get_request_path });
 	// A throw that escapes every route catch — a credential leg's failed read
 	// above all — answers here: 503 for a failed pool checkout, Hono's default
 	// 500 for anything else.
@@ -1306,6 +1315,11 @@ const assemble_app_server = async (
 			app.use('/*', mw);
 		}
 	}
+
+	// What no route answers: a 405 where the path serves another method, else
+	// the 404 — read from the app's own router, so every route registered on
+	// it counts, one added after assembly included
+	app.notFound(create_unmatched_route_handler(app.router));
 
 	// Auth cleanup — opt-in, and last: nothing after it can throw, so a failed
 	// assembly never leaves a schedule running. Its own throw (an invalid

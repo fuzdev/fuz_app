@@ -841,7 +841,8 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			capabilities: c.config.capabilities,
 			base_url: c.config.base_url,
 			rpc_path: c.config.rpc_path,
-			ws_path: c.config.ws_path
+			ws_path: c.config.ws_path,
+			sse_path: c.config.sse_path
 		}),
 		describe: describe_request_target_conformance_wire_cross_tests,
 		required: { setup_test: true, capabilities: true, base_url: true }

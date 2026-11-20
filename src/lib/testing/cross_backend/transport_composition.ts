@@ -40,8 +40,8 @@ import '../assert_dev_env.ts';
  * - **no credential** sends an allowed `Origin` and nothing else.
  * - **WS path, no upgrade** is a `GET` on the WebSocket path with no
  *   `Upgrade` header: the gates answer it as they answer an upgrade, and one
- *   they admit is a 404, as is any method but `GET` (its own cases below the
- *   table).
+ *   they admit is the JSON `route_not_found` 404; any method but `GET` is the
+ *   405 (its own cases below the table).
  * - **narrowed token** sends a bearer minted with a method-scoped scope, and no
  *   `Origin` (a bearer in a browser context is discarded, not refused). The RPC
  *   probe calls a method the scope doesn't name. A narrowed token reaches no
@@ -554,18 +554,23 @@ export const describe_transport_composition_cross_tests = (
 			test_if(is_runnable(c), case_name(c), () => run_case(c, setup_test));
 		}
 		// The WebSocket path serves `GET` alone, and its gates run before the
-		// upgrade is looked at: any other method is a 404, a `GET` asking for no
-		// upgrade is refused by the gates like an upgrade is, and one the gates
-		// admit is a 404 — never an upgrade refusal answered ahead of auth. None
-		// of them upgrades, so they run in-process too.
+		// upgrade is looked at: any other method is the 405 every routed path
+		// answers, a `GET` asking for no upgrade is refused by the gates like an
+		// upgrade is, and one the gates admit is the `route_not_found` 404 —
+		// never an upgrade refusal answered ahead of auth. None of them upgrades,
+		// so they run in-process too.
 		const ws_runnable = capabilities.ws;
-		test_if(ws_runnable, 'ws path × POST with a session → 404', async () => {
+		test_if(ws_runnable, 'ws path × POST with a session → 405', async () => {
 			const fixture = await setup_test();
 			const res = await send_probe(
 				fixture,
 				ws_path_probe('POST', { ...fixture.create_session_headers(), origin: allowed_origin })
 			);
-			assert.strictEqual(res.status, 404, `body: ${res.text.slice(0, 200)}`);
+			assert.strictEqual(res.status, 405, `body: ${res.text.slice(0, 200)}`);
+			assert.strictEqual(
+				(raw_http_parse_json(res.text) as { error?: unknown } | null)?.error,
+				'method_not_allowed'
+			);
 		});
 		test_if(ws_runnable, 'ws path × GET without upgrade, no credential → 401', async () => {
 			const fixture = await setup_test();
@@ -591,6 +596,10 @@ export const describe_transport_composition_cross_tests = (
 				ws_path_probe('GET', { ...fixture.create_session_headers(), origin: allowed_origin })
 			);
 			assert.strictEqual(res.status, 404, `body: ${res.text.slice(0, 200)}`);
+			assert.strictEqual(
+				(raw_http_parse_json(res.text) as { error?: unknown } | null)?.error,
+				'route_not_found'
+			);
 		});
 		const { multi_actor } = options;
 		if (!multi_actor) return;

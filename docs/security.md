@@ -2344,6 +2344,22 @@ guard for symmetry — they are loopback-only and never legitimately carry an
 `Origin`, so a header-bearing daemon token is dropped (and the request falls
 through to `credential_type_required` downstream rather than a hard fail).
 
+**One spelling per path.** The server routes on the raw request path: nothing
+is percent-decoded before the router, so `/%61pi/x` is not `/api/x` — it is an
+unmatched path outside the auth scope — and every path-keyed scope (the auth
+middleware, the origin check's carve-outs, the invalid-cookie clear) reads
+that same raw path, as the Rust spine's do. Dot segments are the one
+difference that remains, and it is the runtime's: Node and Bun resolve
+`/api/../health` to `/health` (the encoded `%2e%2e` included) before the app
+sees the request, while the Rust spine matches the path as sent and answers
+404. Neither reading crosses a scope, since each spine routes and scopes on
+the one path it has.
+
+A method a routed path doesn't serve answers 405 with `Allow`, and a path no
+route serves answers 404 — `{"error": "route_not_found"}` under `/api/`, plain
+text elsewhere — after the host gate and the origin check and ahead of
+authentication, on both spines.
+
 ## DNS Rebinding (Host Gate)
 
 A page on an attacker's domain can re-resolve that domain to `127.0.0.1` and

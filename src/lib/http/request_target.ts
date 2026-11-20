@@ -177,6 +177,20 @@ export const split_request_url = (url: string): { path: string; query: string | 
 };
 
 /**
+ * A request's path as sent — nothing percent-decoded — which the assembled
+ * server routes on (`new Hono({getPath})`), as the Rust spine's router
+ * matches the raw `Uri::path`. So `/%61pi/x` is its own path, not `/api/x`,
+ * on both spines, and every path-keyed layer (the auth and origin scopes,
+ * the origin carve-outs, the session-cookie clear, the unmatched-route
+ * handler) reads the spelling the router matched. Dot segments are the
+ * runtime's: Node and Bun resolve them while building the request's URL,
+ * before this runs.
+ *
+ * @param request - the request, its `url` as the runtime serialized it
+ */
+export const get_request_path = (request: Request): string => split_request_url(request.url).path;
+
+/**
  * Read a request's query string strictly (`read_query_pairs`) — the one read
  * of the query in the spine: the route context's `query_pairs`, a route's
  * query schema, and the WebSocket upgrade's `acting`.
@@ -190,13 +204,13 @@ export const read_request_query_pairs = (c: Context): QueryPairsRead =>
  * Read the matched route's path params, every escape in the request path
  * decoded strictly first — the one read of the path params in the spine.
  *
- * The whole path is read rather than each param's own segments: a literal
- * segment holding an escape that doesn't decode matches no route template,
- * so on a matched route every such escape is inside a param. Once every
- * segment decodes, Hono's own reading of each param — the path decoded by
- * `decodeURI` with `%25` kept, then the param by `decodeURIComponent` — is
- * exactly the strict decoding of its raw text, so the values are taken from
- * Hono's match, which knows which segments each param spans.
+ * The whole path is read rather than each param's own segments: the router
+ * matches the raw path (`get_request_path`), so a literal segment matches
+ * only as the template spells it — no escape at all — and on a matched route
+ * every escape is inside a param. Once every segment decodes, Hono's own
+ * reading of each param — the raw matched text by `decodeURIComponent` — is
+ * exactly its strict decoding, so the values are taken from Hono's match,
+ * which knows which segments each param spans.
  *
  * @param c - the Hono context
  * @returns the params by name, or why the path doesn't decode

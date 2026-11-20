@@ -32,8 +32,9 @@ import '../assert_dev_env.ts';
  * (a `MountFlag`) is never inherited, nor is the `testing_backdoors` list: the
  * family defaults are `FamilyDefaultCapabilities`, which omits them, so every
  * backend config states each one. The family defaults carry only what the family guarantees — the
- * declared spine surface's mounts (`account_lifecycle`, `account_status`) and
- * the runtime behavior of its reference runtime (`ws_handshake_pipelining`,
+ * declared spine surface's mounts and fallback (`account_lifecycle`,
+ * `account_status`, `spine_fallback`) and the runtime behavior of its
+ * reference runtime (`ws_handshake_pipelining`,
  * `ws_refusal_body`: Node for TS, hyper for Rust), which a backend on another
  * runtime overrides.
  *
@@ -293,6 +294,32 @@ export interface BackendCapabilities {
 	 */
 	readonly ws_upgrade_runtime_refusals: ReadonlyArray<WsUpgradeRuntimeRefusal>;
 	/**
+	 * The backend's runtime resolves dot segments — `.` and `..`, literal or
+	 * percent-encoded (`%2e`) — before the app sees the request, so the router
+	 * reads `/api/../health` as `/health`. Not a gate: the request target wire
+	 * leg (`describe_request_target_conformance_wire_cross_tests`) expects a
+	 * dot-segment row's `expect_where_dot_segments_resolved` answer where it is
+	 * `true` and the row's raw-path `expect` where it is `false`, so the
+	 * declaration fails the day the runtime changes.
+	 *
+	 * `true` on Node and Bun, which build the request's URL by the WHATWG URL
+	 * parser (Bun keeps no raw target at all), and in-process, where the
+	 * `Request` does the same; `false` on the Rust spine, whose router matches
+	 * the raw path, dot segments kept.
+	 */
+	readonly runtime_resolves_dot_segments: boolean;
+	/**
+	 * An unmatched path outside the auth scope is answered by the spine's own
+	 * fallback — the plain-text `404 Not Found`. Gates the request target wire leg's
+	 * rows that land outside `/api` (`requires`), so a backend serving a
+	 * static or SPA fallback of its own there declares `false` and keeps the
+	 * rest of the leg; those rows then show as a skipped test.
+	 *
+	 * `true` in both families' defaults, on fuz_app's spine presets and
+	 * in-process.
+	 */
+	readonly spine_fallback: boolean;
+	/**
 	 * The `_testing_*` backdoors the backend mounts on its RPC endpoint, from
 	 * `TESTING_BACKDOOR_METHODS` (a consumer's own seams stay off it). Not a
 	 * flag, but declared like a `MountFlag`: no family default, so every config
@@ -402,6 +429,10 @@ export const in_process_capabilities: BackendCapabilities = Object.freeze({
 	ws_refusal_body: true,
 	// Read only by the request header wire leg, which has no socket in-process.
 	ws_upgrade_runtime_refusals: Object.freeze([]),
+	// A `Request` built from a URL resolves dot segments, as both TS runtimes do.
+	runtime_resolves_dot_segments: true,
+	// The test app serves no fallback of its own.
+	spine_fallback: true,
 	// The in-process app mounts no `_testing_*` action; the suites reading this
 	// are cross-process only.
 	testing_backdoors: Object.freeze([])
