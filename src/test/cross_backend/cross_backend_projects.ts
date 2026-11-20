@@ -102,9 +102,10 @@ type DualSpawnProject = CrossBackendProjectOptions & { name: CrossProjectName };
 const DUAL_SPAWN_PROJECTS: ReadonlyArray<DualSpawnProject> = [
 	// One dual-spawn serves the parity gates: schema parity (live DDL),
 	// action-manifest parity (live RPC method set + auth), and the differential
-	// (every conformance case sent to both, the answers compared). The copy
-	// check of the credential conformance table rides here too: it reads the
-	// Rust checkout the stub was built from.
+	// (every conformance case sent to both, the answers compared), and the
+	// transcript differential (the imperative suites run on each, every
+	// request and answer diffed). The copy check of the credential conformance
+	// table rides here too: it reads the Rust checkout the stub was built from.
 	{
 		name: 'cross_backend_parity',
 		global_setup: './src/test/cross_backend/global_setup_schema_parity.ts',
@@ -112,7 +113,8 @@ const DUAL_SPAWN_PROJECTS: ReadonlyArray<DualSpawnProject> = [
 			'src/test/cross_backend/schema_parity.cross.test.ts',
 			'src/test/cross_backend/action_manifest_parity.cross.test.ts',
 			'src/test/cross_backend/differential.cross.test.ts',
-			'src/test/cross_backend/credential_conformance_copies.cross.test.ts'
+			'src/test/cross_backend/credential_conformance_copies.cross.test.ts',
+			'src/test/cross_backend/transcript_differential.cross.test.ts'
 		]
 	},
 	// The security gates spawn both backends with the login and action limiters
@@ -140,12 +142,16 @@ const DUAL_SPAWN_PROJECTS: ReadonlyArray<DualSpawnProject> = [
 			'src/test/cross_backend/db_checkout_timeout.cross.test.ts'
 		]
 	},
-	// The differential again, between two JS runtimes: the TS spine on Node and
-	// on Bun, both on `memory://` — no Rust, no Postgres, so it runs in CI.
+	// The differential and the transcript differential again, between two JS
+	// runtimes: the TS spine on Node and on Bun, both on `memory://` — no Rust,
+	// no Postgres, so it runs in CI.
 	{
 		name: 'cross_backend_ts_differential',
 		global_setup: './src/test/cross_backend/global_setup_ts_differential.ts',
-		include: ['src/test/cross_backend/differential_ts.cross.test.ts']
+		include: [
+			'src/test/cross_backend/differential_ts.cross.test.ts',
+			'src/test/cross_backend/transcript_differential_ts.cross.test.ts'
+		]
 	}
 ];
 

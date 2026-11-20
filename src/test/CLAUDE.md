@@ -352,6 +352,45 @@ with an empty ledger, plus the TS-only `GET /verify` rows (`conformance_verify_c
 and the DEV-only ones show on both sides, since both binaries run under
 `DEV`. `npm run test:cross:ts-differential`; no Rust, no Postgres.
 
+**Transcript differential.** Both dual-spawn projects also run the imperative
+suites `cookie_attributes`, `identity_parity`, `account_lifecycle` and
+`role_grant_offer_lifecycle` once per backend and compare what each sent and
+got: `transcript_differential.cross.test.ts` (TS spine against
+`testing_spine_stub`, under `cross_backend_parity`, ledger
+`transcript_known_divergences.ts`) and
+`transcript_differential_ts.cross.test.ts` (Node against Bun, under
+`cross_backend_ts_differential`, empty ledger). Every request and answer of a
+test is recorded, `create_account`'s own included (`transcript_record.ts`),
+and side B's `afterEach` diffs the test's two normalized transcripts
+(`transcript_normalize.ts`), so a status beside an asserted reason, a body
+field no assertion reads, or a cookie beside the one a test checks is held
+equal across backends with no edit to the suite.
+
+- **Compared**: status, whole bodies, request and response header names, and
+  the values of `COMPARED_HEADER_VALUES`; from `Set-Cookie`, the session
+  cookie's effect, its lines with the value masked, and the names of every
+  cookie set; timestamps as minute-rounded offsets from the test's earliest
+  response timestamp; an audit row's `seq` relative to the test's smallest,
+  and that smallest one's step from the previous test's.
+- **Erased**: ids, tokens and hashes (positional placeholders numbered
+  across the whole test), framing headers, cookie values, a timestamp shift
+  under half a minute.
+- **Not seen**: a request no suite sends, a relation between two answers of
+  one backend, a bug both backends share, WebSocket and SSE traffic,
+  `_testing_reset`, and the entries after a misalignment.
+
+Entries align on method, path and JSON-RPC method; the diff stops at the
+first entry whose route differs. A closing test fails a test that ran on one
+side only, and on a whole run a ledger row that matched nothing; on a
+filtered or partly skipped run it skips and says which check it left
+unjudged. A failure lands on side B's copy of the test, as
+`[entry] path: a=… b=…` lines with the first differing entry in full, or as
+`transcripts stop lining up at entry [n]`. Set
+`FUZ_TEST_TRANSCRIPT_DUMP_DIR=<dir>` for `raw.json`, `transcripts.json` (what
+was diffed) and `stats.json`. A suite joins by being added to
+`describe_suites` in `transcript_differential.ts`, which repeats the options
+`SUITE_ENTRIES` derives for it.
+
 Three more files, `login_security.cross.test.ts`,
 `ws_action_rate_limit.cross.test.ts` and `bootstrap_rate_limit.cross.test.ts`
 (the bootstrap limiter's 429, body and `Retry-After`, on both spines, from
