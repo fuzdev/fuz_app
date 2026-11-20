@@ -225,41 +225,32 @@ describe('create_test_app', () => {
 		});
 
 		assert.ok(test_app.route_specs.length > 0);
-		// health + 4 account REST (login/logout/password/verify) + 2 RPC (GET + POST) +
+		// health + account REST (status/login/logout/password) + 2 RPC (GET + POST) +
 		// factory-managed routes (surface + server status etc.) = plenty
 		assert.ok(test_app.route_specs.length >= 7);
 	});
 
-	test('REST GET /api/account/verify returns 200 with empty body for authenticated session', async () => {
+	// the retired nginx `auth_request` shim: unrouted, as on the Rust spine,
+	// whatever credential the request carries
+	test('GET /api/account/verify is unrouted → 404, as an unknown account path is', async () => {
 		const test_app = await create_test_app({
 			session_options: fuz_session_config,
 			create_route_specs: test_route_factory,
 			db
 		});
-
-		const res = await test_app.app.request('/api/account/verify', {
-			method: 'GET',
-			headers: test_app.create_session_headers()
-		});
-		assert.strictEqual(res.status, 200);
-		// nginx `auth_request` reads status only; body must be empty so the subrequest
-		// does not carry any payload back to the outer location.
-		const body = await res.text();
-		assert.strictEqual(body, '');
-	});
-
-	test('REST GET /api/account/verify returns 401 without credentials', async () => {
-		const test_app = await create_test_app({
-			session_options: fuz_session_config,
-			create_route_specs: test_route_factory,
-			db
-		});
-
-		const res = await test_app.app.request('/api/account/verify', {
+		const unknown = await test_app.app.request('/api/account/no-such-route', {
 			method: 'GET',
 			headers: create_test_request_headers()
 		});
-		assert.strictEqual(res.status, 401);
+		assert.strictEqual(unknown.status, 404);
+		const unknown_body = await unknown.text();
+		for (const headers of [create_test_request_headers(), test_app.create_session_headers()]) {
+			const res = await test_app.app.request('/api/account/verify', { method: 'GET', headers });
+			assert.strictEqual(res.status, 404);
+			assert.strictEqual(res.headers.get('content-type'), unknown.headers.get('content-type'));
+			assert.strictEqual(await res.text(), unknown_body);
+		}
+		await test_app.cleanup();
 	});
 
 	/** The seven limiter fields of `AppServerContext`. */
@@ -310,7 +301,7 @@ describe('find_route_spec', () => {
 		...prefix_route_specs('/api/account', [
 			define_route({
 				method: 'GET',
-				path: '/verify',
+				path: '/probe',
 				auth: { account: 'required', actor: 'none' },
 				handler: () => route_raw({ status: 200 }),
 				description: 'test',
@@ -330,7 +321,7 @@ describe('find_route_spec', () => {
 	];
 
 	test('exact match', () => {
-		const result = find_route_spec(specs, 'GET', '/api/account/verify');
+		const result = find_route_spec(specs, 'GET', '/api/account/probe');
 		assert.ok(result);
 		assert.strictEqual(result.method, 'GET');
 	});

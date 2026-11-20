@@ -378,7 +378,7 @@ describe('assert_credential_routes_in_auth_scope', () => {
 
 	// the flag is what holds a relative, consumer-prefixed spec in the scope
 	test('the login, signup, and bootstrap shapes are marked as minting', () => {
-		const [, login] = create_account_route_shapes({ login_account_rate_limited: false });
+		const [login] = create_account_route_shapes({ login_account_rate_limited: false });
 		assert.isTrue(login.mints_credential);
 		assert.isTrue(
 			create_signup_route_shape({ signup_account_rate_limited: false }).mints_credential

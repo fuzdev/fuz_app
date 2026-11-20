@@ -1,5 +1,5 @@
 /**
- * The account routes' surface — `/verify`, `/login`, `/logout`, `/password`,
+ * The account routes' surface — `/login`, `/logout`, `/password`,
  * `/status`, `/signup` and `/bootstrap` — held to the one captured in
  * `fixtures/surface/account_routes.json`. Equal as JSON apart from the
  * declared moves, each applied to the capture here:
@@ -167,7 +167,6 @@ const RATE_429: ErrorMove = { from: ['rate_limit_exceeded'], to: [REST_RATE_LIMI
 
 // the declared moves of the error rules, by `METHOD path` and status
 const ERROR_MOVES: Record<string, Record<number, ErrorMove>> = {
-	'GET /verify': { 401: AUTH_401 },
 	'POST /login': { 400: BODY_400, 429: RATE_429 },
 	'POST /logout': { 401: AUTH_401 },
 	'POST /password': {
@@ -208,7 +207,6 @@ describe('account routes surface', () => {
 		assert.deepStrictEqual(
 			head.routes.map((r) => `${r.method} ${r.path}`),
 			[
-				'GET /verify',
 				'POST /login',
 				'POST /logout',
 				'POST /password',

@@ -3,7 +3,7 @@
  *
  * Returns `RouteSpec[]` — caller applies them to Hono via `apply_route_specs`.
  *
- * Four REST flows remain here; each has a concrete reason to stay REST
+ * These REST flows remain here, each with a concrete reason to stay REST
  * rather than moving to `auth/account_actions.ts`:
  *
  * - `POST /login` — issues a signed `Set-Cookie` and pre-handler rate-limits
@@ -11,8 +11,6 @@
  * - `POST /logout` — clears the session cookie.
  * - `POST /password` — cookie clear + revoke-all cascade; rate-limit-shaped
  *   error envelope on 429.
- * - `GET /verify` — empty-body nginx `auth_request` probe. Programmatic
- *   callers should use the `account_verify` RPC action for the typed payload.
  *
  * Session listing/revocation and API token CRUD are on the RPC endpoint —
  * see `auth/account_actions.ts`. Signup is in `auth/signup_routes.ts`. Defaults are
@@ -51,7 +49,7 @@ import {
 } from './request_context.ts';
 import { resolved_auth_session_hash } from './resolved_auth.ts';
 import { attach_route_handler, type RouteSpec } from '../http/route_spec.ts';
-import { route_fail, route_ok, route_raw } from '../http/route_result.ts';
+import { route_fail, route_ok } from '../http/route_result.ts';
 import { rate_limit_ip_key } from '../http/ip_canonical.ts';
 import { parse_acting } from '../http/auth_shape.ts';
 import { reserve_optional, type RateLimiter, type RateLimitReservation } from '../rate_limiter.ts';
@@ -258,8 +256,8 @@ export interface AccountRouteOptions extends AuthSessionRouteOptions {
  * Create account route specs for session-based auth.
  *
  * The returned specs cover the REST flows that stay after the RPC migration:
- * `/status` (account info + bootstrap availability), `/verify` (nginx
- * `auth_request` shim), `/login`, `/logout`, `/password`. `/status` is bundled
+ * `/status` (account info + bootstrap availability), `/login`, `/logout`,
+ * `/password`. `/status` is bundled
  * here (relative path, prefixed to `/api/account/status` by the caller) so
  * every account surface serves it, matching the Rust `account_router`.
  * Self-service session/token management is on `auth/account_actions.ts`.
@@ -293,7 +291,7 @@ export const create_account_route_specs = (
 	} = options;
 	warn_if_fail_floor_disabled('login', login_fail_floor_ms, deps.log);
 
-	const [verify_shape, login_shape, logout_shape, password_shape] = create_account_route_shapes({
+	const [login_shape, logout_shape, password_shape] = create_account_route_shapes({
 		login_account_rate_limited: login_account_rate_limiter !== null
 	});
 
@@ -303,12 +301,6 @@ export const create_account_route_specs = (
 		// it — matching the Rust `account_router`. The standalone
 		// `create_account_status_route_spec` stays the building block.
 		create_account_status_route_spec({ bootstrap_status }),
-		// `auth.account: 'required'`: the handler runs only with a request
-		// context (`define_route`'s guard), so the probe's answer is its status
-		// alone, an empty body
-		attach_route_handler(verify_shape, () => {
-			return route_raw({ status: 200 });
-		}),
 		attach_route_handler(login_shape, async (route) => {
 			// Per-IP rate limit (before any DB/password work). Reserved, not
 			// checked: the attempt counts against the cap from here until it

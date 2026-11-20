@@ -322,9 +322,8 @@ admin RPC contexts (`admin_accounts`, `admin_invites`, `audit_log`,
 `app_settings`).
 
 Only `POST /login`, `POST /logout`, `POST /password`, `POST /signup`,
-`POST /bootstrap`, `GET /verify` (empty-body nginx `auth_request` shim —
-the typed payload lives on the `account_verify` RPC action), and optional
-`GET /audit/stream` (SSE) remain on REST post-migration. Consumer test
+`POST /bootstrap`, and optional `GET /audit/stream` (SSE) remain on REST
+post-migration (a credential probe is the `account_verify` RPC action). Consumer test
 suites must pass `rpc_endpoints` to `describe_standard_integration_tests` /
 `describe_standard_admin_integration_tests` /
 `describe_audit_completeness_tests` — they hard-fail without it.

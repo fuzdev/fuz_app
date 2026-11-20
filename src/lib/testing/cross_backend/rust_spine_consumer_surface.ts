@@ -42,11 +42,10 @@ import { SPINE_ACCOUNT_PATH_PREFIX, SPINE_RPC_PATH } from './spine_surface_const
 
 /**
  * The routes `fuz_auth::account_router` mounts, relative to `/api/account`. An
- * allowlist rather than every account route shape: `/verify` is a TS-only
- * route the Rust router doesn't serve, so declaring it would have the suites
- * probe a 404. A shape fuz_app renames or drops fails the surface build; one
- * it adds stays off the surface until the Rust router mounts it and this list
- * names it.
+ * allowlist rather than every account route shape, so a route the TS spine
+ * gains ahead of the Rust router never has the suites probe a 404: a shape
+ * fuz_app renames or drops fails the surface build; one it adds stays off the
+ * surface until the Rust router mounts it and this list names it.
  */
 export const ACCOUNT_ROUTER_PATHS = ['/status', '/login', '/logout', '/password'] as const;
 

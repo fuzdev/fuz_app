@@ -1,56 +1,6 @@
 {
 	"routes": [
 		{
-			"method": "GET",
-			"path": "/verify",
-			"auth": {
-				"account": "required",
-				"actor": "none",
-				"required_scope": "surface:account_verify"
-			},
-			"applicable_middleware": [],
-			"description": "Session-validity probe for nginx auth_request (empty body; 200, 401, or 403 for a narrowed token)",
-			"is_mutation": false,
-			"transaction": false,
-			"raw_body": false,
-			"rate_limit_key": null,
-			"params_schema": null,
-			"query_schema": null,
-			"input_schema": null,
-			"output_schema": null,
-			"error_schemas": {
-				"401": {
-					"type": "object",
-					"properties": {
-						"error": {
-							"type": "string"
-						}
-					},
-					"required": [
-						"error"
-					],
-					"additionalProperties": {}
-				},
-				"403": {
-					"type": "object",
-					"properties": {
-						"error": {
-							"type": "string",
-							"const": "token_scope_required"
-						},
-						"required_scope": {
-							"type": "string"
-						}
-					},
-					"required": [
-						"error",
-						"required_scope"
-					],
-					"additionalProperties": {}
-				}
-			}
-		},
-		{
 			"method": "POST",
 			"path": "/login",
 			"auth": {

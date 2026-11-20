@@ -413,7 +413,7 @@ The suite composition is `describe_spine_differential_suites`
 backends and their ledgers. fuz_app also holds two TS runtimes to each other
 with it: the `cross_backend_ts_differential` project
 (`differential_ts.cross.test.ts`) dual-spawns the TS spine binary on Node and
-on Bun, both on `memory://`, against an empty ledger, and again over the TS-only `GET /verify` rows (`conformance_verify_cases.ts`) — both run under `DEV`,
+on Bun, both on `memory://`, against an empty ledger — both run under `DEV`,
 so the DEV-only rows show on both sides and differ nowhere. It needs no Rust
 or Postgres and runs in the `cross-ts` CI job.
 
@@ -524,7 +524,7 @@ adversarial/round-trip tests. A value that is no schema throws, naming it.
 ### `integration_helpers.ts` — route lookup + body checks
 
 - `find_route_spec(specs, method, path)` — the first spec in list (mount) order whose method and path template match, as Hono dispatches (the hono-free `find_mounted_route`; the DEV check reads Hono's own router), `HEAD` read as `GET`, the path read as Hono reads it (pathname, percent-decoded); a template passed as the path (a segment that is `*` or starts with `:`) finds its own spec first, outranking mount order.
-- `find_auth_route(specs, suffix, method)` — suffix-ending match for REST auth routes; decouples tests from consumer prefix. `suffix` is typed as `RestAuthRouteSuffix` and throws at runtime on unknown values (only login/logout/password/verify/signup/bootstrap remain on REST).
+- `find_auth_route(specs, suffix, method)` — suffix-ending match for REST auth routes; decouples tests from consumer prefix. `suffix` is typed as `RestAuthRouteSuffix` and throws at runtime on unknown values (only login/logout/password/signup/bootstrap remain on REST).
 - `assert_response_matches_spec(specs, method, path, response, route_error_maps?)` — 2xx → validates against `spec.output`; an error status (400 and up) → `assert_error_response_declared` against the route's error map — the one in `route_error_maps` (`AppSurfaceSpec.route_error_maps`, middleware included), else the route's own: a status the map lacks throws (`Undeclared error status (S): METHOD path: …`), as does a body off its schema, with the DEV error check's exemptions (500 `internal_error`, 503 `service_unavailable`, a JSON-RPC envelope on a `jsonrpc` route). Non-JSON responses allowed only when no schema applies. The round trips and `ErrorCoverageCollector.assert_and_record` run through it.
 - `assert_no_error_info_leakage(body, context)` — rejects field-name patterns (`stack`, `trace`, `sql`, …) + value patterns (`node_modules`, stack-like `at …`, `.ts:NN`).
 - `assert_rate_limit_retry_after_header(response, body)` — `Retry-After` numeric header equals `Math.ceil(body.retry_after)`.
@@ -1433,7 +1433,7 @@ domain_action_specs, extra_rpc_actions?, roles?, exclude_methods?,
 rpc_path?, host_gate?})`, built on `create_test_app_surface_spec` from the hono-free route
 shapes. It declares `/health`, the `ACCOUNT_ROUTER_PATHS` under
 `/api/account` (`/status`, `/login`, `/logout`, `/password` — what
-`fuz_auth::account_router` mounts, so the TS-only `/verify` stays off), signup,
+`fuz_auth::account_router` mounts), signup,
 bootstrap as a `surface_only` shape, the daemon-token layer the consumer test
 binaries wire, the host gate's `host` layer unless `host_gate: false` says the
 server turns the gate off (default on), and one RPC endpoint: the standard actions (over `roles`), the

@@ -22,7 +22,7 @@
  * 3. **A narrowed token is RPC-only.** `methods` denies outright every non-RPC
  *    spine surface that reads account data or carries authority — the
  *    db-admin browser, the bare-hash fact read, the audit SSE stream, the WS
- *    upgrade, the surface explorer, and the `auth_request` probe. See
+ *    upgrade, and the surface explorer. See
  *    `token_scope_admits_non_rpc`, and `docs/security.md` §Token scoping for
  *    the reads that answer it as anonymous and the server status read.
  *
@@ -155,11 +155,9 @@ export const token_scope_admits_non_rpc = (scope: TokenScope): boolean => scope.
 
 /**
  * The non-RPC surfaces the **spine itself** mounts (rule 3). Twin of the Rust
- * `TokenSurface` enum, name for name, except the two only the TS spine serves:
- * `app_surface`, the opt-in `GET /api/surface` explorer
- * (`server/surface_route.ts`), and `account_verify`, the
- * `GET /api/account/verify` nginx `auth_request` probe
- * (`auth/account_route_schema.ts`).
+ * `TokenSurface` enum, name for name, except `app_surface`, the opt-in
+ * `GET /api/surface` explorer (`server/surface_route.ts`), which only the TS
+ * spine serves.
  *
  * Not a registry a consumer registers into. `RouteAuth.required_scope` accepts
  * any well-formed `surface:<name>` (see `is_route_scope_capability`), so a
@@ -179,8 +177,7 @@ export const TOKEN_SURFACES = [
 	'fact_bare',
 	'audit_stream',
 	'ws_upgrade',
-	'app_surface',
-	'account_verify'
+	'app_surface'
 ] as const;
 export type TokenSurface = (typeof TOKEN_SURFACES)[number];
 

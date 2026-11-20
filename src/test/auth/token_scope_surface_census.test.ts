@@ -155,16 +155,10 @@ const CENSUS: ReadonlyArray<CensusEntry> = [
 			"declares `required_scope: 'surface:fact_bare'` — the admin-only bare-hash read serves any stored fact with no per-reference cell check. The sibling per-cell route answers anonymous callers, so it reads the credential through `get_public_account_id`: a narrowed token is the anonymous caller there and reads public cells' facts only, never one its account could otherwise view"
 	},
 	{
-		file: 'auth/account_route_schema.ts',
-		role: 'consults',
-		reason:
-			"declares `required_scope: 'surface:account_verify'` on the `/verify` shape — the nginx `auth_request` probe answers 200 for the account behind any credential, so a narrowed token would pass every location the probe guards as its account; it is not an RPC method, so a narrowed token is refused it"
-	},
-	{
 		file: 'auth/account_routes.ts',
 		role: 'consults',
 		reason:
-			"`/status` hands out the account's email, its verification, and the acting actor's role grants — a non-RPC surface, so it reads the credential through `get_public_account_id` and a narrowed token is answered as the anonymous caller (401 plus the bootstrap flag): the route answers anonymous callers, so a 403 would add nothing to that. `/verify` takes its rule-3 gate from its shape; `/login` mints and `/logout` tears down; `/password` is already credential-gated to the session channel, so no bearer credential arrives"
+			"`/status` hands out the account's email, its verification, and the acting actor's role grants — a non-RPC surface, so it reads the credential through `get_public_account_id` and a narrowed token is answered as the anonymous caller (401 plus the bootstrap flag): the route answers anonymous callers, so a 403 would add nothing to that. `/login` mints and `/logout` tears down; `/password` is already credential-gated to the session channel, so no bearer credential arrives"
 	},
 	{
 		file: 'server/surface_route.ts',
@@ -331,10 +325,6 @@ const RULE_3_SURFACE_SITES: Record<TokenSurface, { file: string; source: string 
 	app_surface: {
 		file: 'server/surface_route.ts',
 		source: "required_scope: 'surface:app_surface'"
-	},
-	account_verify: {
-		file: 'auth/account_route_schema.ts',
-		source: "required_scope: 'surface:account_verify'"
 	},
 	db_admin: null
 };
@@ -549,7 +539,6 @@ describe('token scope surface census', () => {
 			'actions/action_rpc.ts',
 			'actions/perform_action.ts',
 			'actions/register_action_ws.ts',
-			'auth/account_route_schema.ts',
 			'auth/account_routes.ts',
 			'auth/audit_log_route_schema.ts',
 			'server/serve_fact_route.ts',

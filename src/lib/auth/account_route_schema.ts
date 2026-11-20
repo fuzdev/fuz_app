@@ -122,7 +122,7 @@ export const DEFAULT_MAX_TOKENS = 10;
  * context; surface generation attaches a stub.
  *
  * The path is **relative** like the sibling account shapes (`/login`,
- * `/verify`), so it composes under `prefix_route_specs('/api/account', …)` into
+ * `/logout`), so it composes under `prefix_route_specs('/api/account', …)` into
  * `/api/account/status`. `create_account_route_specs` bundles it (so every
  * account surface serves `/status`, matching the Rust `account_router`);
  * mirror Rust by mounting it as part of the account family, not separately.
@@ -147,34 +147,18 @@ export interface AccountRouteShapeOptions {
 }
 
 /**
- * The four account route shapes (`/verify`, `/login`, `/logout`, `/password`)
+ * The account route shapes (`/login`, `/logout`, `/password`)
  * minus their handlers — pure hono-free data. `create_account_route_specs`
  * attaches the live handler to each (`attach_route_handler`); cross-process
  * surface builders attach stubs (`stub_route_spec`). Single source of truth —
  * the shapes can't drift between the live routes and the surface.
  *
- * Returns a fixed 4-tuple `[verify, login, logout, password]` so destructuring
+ * Returns a fixed tuple `[login, logout, password]` so destructuring
  * yields non-optional shapes under `noUncheckedIndexedAccess`, each with the
  * types `attach_route_handler` checks its handler against.
  */
 export const create_account_route_shapes = (options: AccountRouteShapeOptions) =>
 	[
-		define_route_shape({
-			method: 'GET',
-			path: '/verify',
-			// a non-RPC surface: the probe answers 200 for the account behind a
-			// credential, so a narrowed token is refused it (it would otherwise pass
-			// an nginx `auth_request` gate as its account)
-			auth: {
-				account: 'required',
-				actor: 'none',
-				required_scope: 'surface:account_verify'
-			},
-			description:
-				'Session-validity probe for nginx auth_request (empty body; 200, 401, or 403 for a narrowed token)',
-			input: literal(null),
-			output: literal(null)
-		}),
 		define_route_shape({
 			method: 'POST',
 			path: '/login',

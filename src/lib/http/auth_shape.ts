@@ -179,9 +179,9 @@ export interface RouteAuth {
 	 *
 	 * - `surface:<name>` — a non-RPC surface, refused to every narrowed token
 	 *   whatever its method list says (token scoping's rule that a narrowed
-	 *   token is RPC-only). `surface:audit_stream`, `surface:fact_bare`,
-	 *   `surface:account_verify`, and `surface:app_surface` are the spine's
-	 *   route-spec ones; a consumer names its own without registering it.
+	 *   token is RPC-only). `surface:audit_stream`, `surface:fact_bare`, and
+	 *   `surface:app_surface` are the spine's route-spec ones; a consumer names
+	 *   its own without registering it.
 	 *
 	 * The `rpc:<method>` arm of that vocabulary is the dispatcher's per-method
 	 * gate, which a route never reaches, so a route may not declare it.

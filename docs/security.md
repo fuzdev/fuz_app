@@ -386,8 +386,7 @@ mints, the other reads, and one past the cap fails closed on both.
 spine surface that reads account data or carries authority, whatever its
 method list says: the db-admin table browser, the bare-hash fact read
 (`GET /api/facts/:hash`), the audit SSE stream (`GET /audit/stream`), the
-surface explorer (`GET /api/surface`, when mounted), the nginx `auth_request`
-probe (`GET /api/account/verify`, TS spine only), and the WebSocket upgrade.
+surface explorer (`GET /api/surface`, when mounted), and the WebSocket upgrade.
 This is the load-bearing half of the design. The predicate is all-or-nothing
 — no per-surface vocabulary decides what a narrowed token may reach — while
 its placement is per site: each surface declares its refusal (or, below,
@@ -435,8 +434,7 @@ back, and it has two arms:
 - `surface:<name>` — a non-RPC surface, refused to **every** narrowed token
   whatever its method list says. `surface:audit_stream`, `surface:fact_bare`,
   `surface:app_surface` (the opt-in, admin-only `GET /api/surface` explorer —
-  TS spine only), and `surface:account_verify` (the `GET /api/account/verify`
-  nginx `auth_request` probe — TS spine only) are the spine's route-spec
+  TS spine only) are the spine's route-spec
   surfaces; the WS upgrade and the db-admin browser round out the set the
   spine knows.
 

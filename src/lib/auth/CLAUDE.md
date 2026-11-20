@@ -197,7 +197,7 @@ counted, the request proceeds — so the count is how a lost row is seen.
 
 ### Routes
 
-- `auth/account_routes.ts` — `POST /login` / `/logout` / `/password`, `GET /verify` (nginx `auth_request` shim), `GET /api/account/status`. Constants: `DEFAULT_MAX_SESSIONS = 5`, `DEFAULT_MAX_TOKENS = 10`, `DEFAULT_LOGIN_FAIL_FLOOR_MS = 250`, `DEFAULT_LOGIN_FAIL_JITTER_MS = 25`.
+- `auth/account_routes.ts` — `POST /login` / `/logout` / `/password`, `GET /api/account/status`. Constants: `DEFAULT_MAX_SESSIONS = 5`, `DEFAULT_MAX_TOKENS = 10`, `DEFAULT_LOGIN_FAIL_FLOOR_MS = 250`, `DEFAULT_LOGIN_FAIL_JITTER_MS = 25`.
 - `auth/bootstrap_routes.ts` — `POST /bootstrap` + `check_bootstrap_status` (the boot report: the lock read first; a token file left on a bootstrapped database and an unreadable one on an open window each warn; a missing lock row reads unavailable); `BootstrapStatus` runtime ref (`{available}`); `OnBootstrap`, the post-commit callback over what was created. A failed burn answers 500 `token_file_undeletable` with the window left open; the lock race loser closes its window with no audit row and no charge.
 - `auth/signup_routes.ts` — `POST /signup` (open or invite-gated).
 - `auth/audit_log_routes.ts` — optional `GET /audit/stream` (SSE); list/history are on the RPC surface. Takes `stream: {registry, log}` (an `AuditLogSse` satisfies it). The handler admits the stream in two phases — register pending on the `SseRegistry`, re-read the credential (`revalidate_resolved_auth`) and the acting actor's role grants, admit — so a revocation racing the request opens no stream: 401 / 403 from the re-reads, or a 200 whose body is the connect comment alone when the pending registration was closed.
@@ -248,7 +248,7 @@ for each session its cap evicted (`queue_connection_close` on
 committed and is dropped if the handler throws.
 
 REST-only post RPC migration: `/login`, `/logout`, `/password`, `/signup`,
-`/bootstrap`, `/verify` (empty-body shim), optional `/audit/stream`.
+`/bootstrap`, optional `/audit/stream`.
 Everything else listed under §RPC action surfaces.
 
 ### Middleware
@@ -939,12 +939,11 @@ Options: `roles?: RoleRegistry` (drives admin-grant-path lookup),
 - `account_token_list_action_spec` — read; input fuz_schema's `void`; output `{tokens}`, each a `ClientApiTokenJson`.
 - `account_token_revoke_action_spec` — mutation; input `{token_id}`; output `{ok, revoked}`.
 
-`account_verify` is intentionally on both surfaces: the REST `GET /verify`
-shim is a status-only nginx probe; the RPC action returns
-`SessionAccountJson` for programmatic callers. Only the RPC action is open to a
-narrowed token that names it: the REST probe is the `surface:account_verify`
-rule-3 surface, refused to every narrowed token, and `GET /status` answers one
-as the anonymous caller.
+`account_verify` is the credential probe on both spines: it returns
+`SessionAccountJson`, and a narrowed token that names it may call it.
+`GET /status` answers a narrowed token as the anonymous caller. There is no
+REST probe (an nginx `auth_request` gate would need one mounted on both
+spines).
 
 `session_id` validates as `SessionId`, the fuz_schema `Blake3Hash` branded;
 `token_id` as `ApiTokenId` (`tok_[A-Za-z0-9_-]{12}`). Every input and output

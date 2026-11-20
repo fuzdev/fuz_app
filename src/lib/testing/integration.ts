@@ -103,8 +103,7 @@ export interface StandardIntegrationTestOptions {
 	/**
 	 * RPC endpoint specs — required. This suite dispatches
 	 * `account_verify`, `account_session_*`, and `account_token_*` via
-	 * `rpc_call_for_spec` (the `/api/account/verify` REST route is a
-	 * status-only nginx shim with no payload). Hard-fails via
+	 * `rpc_call_for_spec`. Hard-fails via
 	 * `require_rpc_endpoint_path` on setup so consumer projects see a
 	 * clear setup error instead of confusing test failures.
 	 *

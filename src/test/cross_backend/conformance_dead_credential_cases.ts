@@ -5,9 +5,8 @@
  * Each dead credential — a tampered cookie, a daemon token or API token that
  * is not the server's, a revoked session, a revoked or expired API token — is
  * presented alone against an authenticated RPC read and mutation, and the
- * REST routes behind `require_auth` that both spines serve (`GET /verify` is
- * the TS spine's alone — the Rust account router doesn't mount it — so its
- * rows are `conformance_verify_cases.ts`, run on the TS spines only). Each must be refused exactly as sending no credential is: the
+ * REST routes behind `require_auth`. Each must be refused exactly as sending
+ * no credential is: the
  * same 401 and a byte-identical body, so a prober can't tell a dead
  * credential from none, nor one kind of dead credential from another. Every
  * row for a target shares one `equivalence_group` with an `anonymous` row for
@@ -79,7 +78,7 @@ const DEAD_PRINCIPALS: ReadonlyArray<DeadPrincipal> = [
 ];
 
 /** A target that reads a credential: what is sent, and the group its 401s share. */
-export interface DeadCredentialTarget {
+interface DeadCredentialTarget {
 	readonly label: string;
 	readonly request: Omit<ConformanceCaseRequest, 'as'>;
 	readonly equivalence_group: string;
@@ -96,9 +95,7 @@ export interface DeadCredentialTarget {
  *
  * @param target - the request and the group its 401s share
  */
-export const create_dead_credential_rows = (
-	target: DeadCredentialTarget
-): Array<ConformanceCase> => [
+const create_dead_credential_rows = (target: DeadCredentialTarget): Array<ConformanceCase> => [
 	...(target.anonymous_row
 		? [
 				{

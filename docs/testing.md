@@ -1224,7 +1224,7 @@ const rpc_endpoints = create_rust_spine_consumer_rpc_endpoints(surface_options);
 ```
 
 It declares `/health`, the routes `fuz_auth::account_router` mounts
-(`ACCOUNT_ROUTER_PATHS` — no `/verify`, which only the TS spine serves),
+(`ACCOUNT_ROUTER_PATHS`),
 signup, bootstrap, and one RPC endpoint with the standard actions, any
 `extra_rpc_actions` (opt-in families such as `create_actor_lookup_actions`),
 and the domain specs, and the host gate's `host` layer unless `host_gate:

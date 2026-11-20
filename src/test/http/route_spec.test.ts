@@ -329,6 +329,51 @@ describe('auth.required_scope', () => {
 	});
 
 	/**
+	 * The gate stands alone, with no role or actor gate to mount beside: a
+	 * route that admits any account still refuses a narrowed token, since
+	 * answering it would hand the token a non-RPC surface as its account.
+	 */
+	test('an account-only route refuses a narrowed token and admits a full one', async () => {
+		const build_account_only_app = (scope: TokenScope): Hono => {
+			const app = new Hono();
+			app.use('/*', async (c, next) => {
+				const ctx = create_test_request_context();
+				(c as any).set(
+					RESOLVED_AUTH_KEY,
+					create_test_resolved_auth({
+						credential_type: 'api_token',
+						account_id: ctx.account.id,
+						scope
+					})
+				);
+				(c as any).set(REQUEST_CONTEXT_KEY, ctx);
+				(c as any).set(TEST_CONTEXT_PRESET_KEY, TEST_CONTEXT_PRESET);
+				await next();
+			});
+			const specs: Array<RouteSpec> = [
+				define_route({
+					method: 'GET',
+					path: '/probe',
+					auth: { account: 'required', actor: 'none', required_scope: 'surface:probe' },
+					handler: () => route_ok({ ok: true }),
+					description: 'Account-only scope-gated route',
+					input: literal(null),
+					output: object({ ok: literal(true) })
+				})
+			];
+			apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
+			return app;
+		};
+		const refused = await build_account_only_app(token_scope_methods(['account_verify'])).request(
+			'/probe'
+		);
+		assert.strictEqual(refused.status, 403);
+		assert.deepStrictEqual(await refused.json(), token_scope_denied_body('surface:probe'));
+		const admitted = await build_account_only_app(token_scope_full()).request('/probe');
+		assert.strictEqual(admitted.status, 200);
+	});
+
+	/**
 	 * The ordering half, and the reason this slot exists rather than an
 	 * in-handler check: the handler runs after the role gate, so a narrowed
 	 * token whose account also lacks the role would be told about the

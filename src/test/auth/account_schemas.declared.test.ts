@@ -103,7 +103,7 @@ const issues_of = (schema: AnySchema, input: unknown): Array<unknown> | null => 
 	return result.ok ? null : to_wire_issues(result.issues).map((i) => [i.kind, i.path, i.expected]);
 };
 
-const [verify_shape, login_shape, , password_shape] = create_account_route_shapes({
+const [login_shape, , password_shape] = create_account_route_shapes({
 	login_account_rate_limited: true
 });
 const signup_shape = create_signup_route_shape({ signup_account_rate_limited: true });
@@ -160,8 +160,6 @@ const samples: ReadonlyArray<[string, AnySchema, ReadonlyArray<unknown>]> = [
 	['UsernameProvided', UsernameProvided, ['a', ' Admin ', 'user@example.com']],
 	['AccountStatusInput', AccountStatusInput, [null]],
 	['LogoutInput', LogoutInput, [null]],
-	['/verify input', verify_shape.input, [null]],
-	['/verify output', verify_shape.output, [null]],
 	[
 		'REST_AUTHENTICATION_REQUIRED_BOOTSTRAP',
 		REST_AUTHENTICATION_REQUIRED_BOOTSTRAP.schema,

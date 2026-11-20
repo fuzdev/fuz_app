@@ -226,7 +226,7 @@ nothing excluded. A suite added
 to `SUITE_NAMES` runs on every backend with no file of its own, and none runs
 twice. Beside it sit the spine-specific extras: the conformance runner over the
 case files, the notification suite again on the role-gated endpoint, the
-reset-isolation pair, the bootstrap-token probe, the `GET /verify` rows on the TS projects alone (`conformance_ts_spine.cross.test.ts`, `TS_SPINE_ONLY_CROSS_TESTS`), and — under
+reset-isolation pair, the bootstrap-token probe, and — under
 `cross_backend_ts_node` alone (`NODE_ONLY_CROSS_TESTS` in
 `cross_backend_projects.ts`), since the option paths are the harness's —
 `builtin_roles.cross.test.ts`, the role-shaped suites on the builtin roles a
@@ -274,7 +274,6 @@ probe that ran before bootstrap:
 | `conformance.cross.test.ts` | `describe_conformance_table_tests` over the case files below plus the generated per-method auth rows (`generate_rpc_auth_conformance_cases`, over the live mount too), on HTTP and again over WS; the `acting` rows on a keeper seeded with `extra_actors`; the duplicate-invite check (`invite_duplicate.ts`) and the offer reads' existing-vs-absent refusal identity (`offer_cross_account.ts`) beside the table. In-process legs: `conformance.db.test.ts` (HTTP only) and `conformance_off_surface.db.test.ts` (the off-surface rows) |
 | `conformance_participation.cross.test.ts` | `conformance_participation_cases.ts` (the single-request conferral matrix on `role_grant_assign` and `role_grant_offer_create`) on a backend seeding the `participant` role and its holder. In-process leg: `conformance_participation.db.test.ts` |
 | `role_grant_offer_notification_ws_gated.cross.test.ts` | the notification suite again over the role-gated endpoint with `ws_required_roles` declared, so the revoke case expects the close; gated on `ws_role_gated` |
-| `conformance_ts_spine.cross.test.ts` | the conformance runner over `conformance_verify_cases.ts`, under the TS projects only (`TS_SPINE_ONLY_CROSS_TESTS` in `cross_backend_projects.ts` — the Rust stub's project sets `ts_spine: false`); in-process the rows ride `conformance.db.test.ts`, and `differential_ts.cross.test.ts` compares them between Node and Bun |
 | `reset_isolation.cross.test.ts` | `_testing_reset` empties the cell and fact tables between two tests |
 | `bootstrap_token.cross.test.ts` | the result of `bootstrap_token_probe.ts`, which a global setup runs before bootstrap: every refused spelling of the token file, each with its whole body and the file left byte-identical; the burn — with the token's directory unwritable the right token answers 500 `token_file_undeletable`, the file intact and `/status` still open, then the keeper bootstrap succeeds and the file is gone. The probe throws when run as root, which would delete the file anyway |
 | `builtin_roles.cross.test.ts` | Node only, as above |
@@ -287,7 +286,6 @@ The conformance case files, each a `ConformanceCase` array:
 | `conformance_security_cases.ts` | the credential ceiling, privilege gates, IDOR masks, login and signup enumeration (byte-identical `equivalence_group`s), 401-before-400 phase ordering, response-header hygiene |
 | `conformance_expiry_cases.ts` | the `expired_session` principal → 401 on a read and a mutation |
 | `conformance_dead_credential_cases.ts` | each dead credential (`tampered_cookie`, `wrong_daemon`, `unknown_bearer`, `revoked_session`, `revoked_token`, `expired_token`) on an RPC read, an RPC mutation, `POST /logout` and `POST /password` → the 401 `anonymous` gets, byte-identical per target; the tampered cookie cleared; the session-cookie controls (a login mints, a login carrying a stale cookie clears then mints, a refused login clears only, a logout clears) |
-| `conformance_verify_cases.ts` | TS spines only: the same dead credentials and `anonymous` on `GET /verify`, the nginx `auth_request` shim the Rust spine doesn't mount → one identical 401, the tampered cookie cleared |
 | `conformance_admin_cases.ts` | offer list and history across accounts, invite errors, admin-list pagination bounds, the `audit_log_list` `event_type` length cap |
 | `conformance_acting_cases.ts` | `actor_required`, `actor_not_on_account`, the role gate over the resolved actor |
 | `conformance_actor_cases.ts` | off-surface: `actor_lookup`'s empty-`ids` bound, the `actor_search` scope gate |
@@ -348,7 +346,7 @@ project: `cross_backend_ts_differential` (`global_setup_ts_differential.ts`
 brings up the TS spine binary on Node and on Bun, both on `memory://`,
 providing `ts_differential_handle_a`/`_b`) runs
 `differential_ts.cross.test.ts`, the same suites between the two runtimes
-with an empty ledger, plus the TS-only `GET /verify` rows (`conformance_verify_cases.ts`) — the TS-vs-Rust rows are TS-against-Rust differences,
+with an empty ledger — the TS-vs-Rust rows are TS-against-Rust differences,
 and the DEV-only ones show on both sides, since both binaries run under
 `DEV`. `npm run test:cross:ts-differential`; no Rust, no Postgres.
 

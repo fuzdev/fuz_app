@@ -89,7 +89,6 @@ export const rest_auth_route_suffixes = [
 	'/login',
 	'/logout',
 	'/password',
-	'/verify',
 	'/signup',
 	'/bootstrap'
 ] as const;

@@ -17,6 +17,10 @@ import { create_role_registry } from '#lib/auth/role_schema.ts';
 import { fuz_session_config } from '#lib/auth/session_cookie.ts';
 import type { ActionSpecUnion } from '#lib/actions/action_spec.ts';
 import {
+	account_status_route_shape,
+	create_account_route_shapes
+} from '#lib/auth/account_route_schema.ts';
+import {
 	ACCOUNT_ROUTER_PATHS,
 	create_rust_spine_consumer_surface_spec
 } from '#lib/testing/cross_backend/rust_spine_consumer_surface.ts';
@@ -35,7 +39,7 @@ const rpc_methods = (spec: ReturnType<typeof create_rust_spine_consumer_surface_
 	spec.surface.rpc_endpoints.flatMap((e) => e.methods.map((m) => m.name));
 
 describe('create_rust_spine_consumer_surface_spec', () => {
-	test('declares the routes the Rust spine mounts, and no /verify', () => {
+	test('declares the routes the Rust spine mounts, and no others', () => {
 		const spec = create_rust_spine_consumer_surface_spec({
 			session_options: fuz_session_config,
 			domain_action_specs
@@ -53,12 +57,22 @@ describe('create_rust_spine_consumer_surface_spec', () => {
 		]) {
 			assert.include(keys, key);
 		}
-		assert.notInclude(keys, 'GET /api/account/verify');
 		const account_routes = keys.filter((k) => k.includes('/api/account/'));
 		assert.deepStrictEqual(
 			account_routes.map((k) => k.split(' ')[1]!.slice('/api/account'.length)).sort(),
 			[...ACCOUNT_ROUTER_PATHS, '/signup', '/bootstrap'].sort()
 		);
+	});
+
+	// The allowlist is the Rust `account_router`'s paths; the TS account
+	// family must mount the same ones, so a route only one spine serves fails
+	// here rather than hiding off the declared surface.
+	test('the TS account routes are the Rust account router paths', () => {
+		const ts_paths = [
+			account_status_route_shape,
+			...create_account_route_shapes({ login_account_rate_limited: false })
+		].map((shape) => shape.path);
+		assert.deepStrictEqual(ts_paths.sort(), [...ACCOUNT_ROUTER_PATHS].sort());
 	});
 
 	test('lists the daemon_token layer, and the host gate unless host_gate is false', () => {
