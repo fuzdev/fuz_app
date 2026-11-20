@@ -7,6 +7,7 @@
  * @module
  */
 
+import type { Uuid } from '../primitive_schemas.ts';
 import type { QueryDeps } from '../db/query_deps.ts';
 import { assert_row } from '../db/assert_row.ts';
 import { columns_sql, iso8601_timestamp_expr, qualify_columns } from '../db/sql_columns.ts';
@@ -170,4 +171,34 @@ export const query_invite_delete_unclaimed = async (
 		[id]
 	);
 	return rows.length > 0;
+};
+
+/**
+ * Delete every unclaimed invite issued by one of `created_by_actor_ids` — the
+ * invite cascade of an account delete or purge.
+ *
+ * An invite records no authority, so one outliving its issuer's account would
+ * still admit a signup. Deleting is how an invite is revoked
+ * (`query_invite_delete_unclaimed`), so a voided invite answers a signup as a
+ * revoked or unknown one does, and an undelete has nothing to bring back. A
+ * claimed invite stays, as the record of the signup it admitted. Twin of the
+ * Rust `query_invite_delete_unclaimed_by_creators`.
+ *
+ * @param deps - query dependencies
+ * @param created_by_actor_ids - the issuing actors whose unclaimed invites end
+ * @returns the ids of the deleted invites
+ * @mutates `invite` table - deletes every unclaimed row created by `created_by_actor_ids`
+ */
+export const query_invite_delete_unclaimed_by_creators = async (
+	deps: QueryDeps,
+	created_by_actor_ids: ReadonlyArray<Uuid>
+): Promise<Array<Uuid>> => {
+	if (created_by_actor_ids.length === 0) return [];
+	const rows = await deps.db.query<{ id: Uuid }>(
+		`DELETE FROM invite
+		 WHERE created_by = ANY($1) AND claimed_at IS NULL
+		 RETURNING id`,
+		[created_by_actor_ids]
+	);
+	return rows.map((row) => row.id);
 };

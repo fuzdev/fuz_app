@@ -94,13 +94,14 @@ const get_helper_body = (start: number): string => {
 	return lines.slice(0, end).join('\n');
 };
 
-// Module-local `const` helpers that carry `reason: ERROR_*` throws, keyed by name.
+// Module-local `const` helpers, keyed by name — every one, so a helper that
+// throws only through another helper (`require_active_recipient` through
+// `recipient_not_found_error`) is followed too.
 const helper_bodies: Map<string, string> = new Map();
 for (const m of handler_source.matchAll(/^[ \t]*const (\w+) = /gm)) {
 	const name = m[1]!;
 	if (name.endsWith('_handler')) continue;
-	const body = get_helper_body(m.index);
-	if (/\breason:\s*ERROR_/.test(body)) helper_bodies.set(name, body);
+	helper_bodies.set(name, get_helper_body(m.index));
 }
 
 /** Every reason a body throws itself or through the module helpers it calls. */

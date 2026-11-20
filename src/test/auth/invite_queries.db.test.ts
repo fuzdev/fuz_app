@@ -12,7 +12,8 @@ import {
 	query_invite_find_unclaimed_match_for_update,
 	query_invite_claim_unscoped,
 	query_invite_list_all_with_usernames,
-	query_invite_delete_unclaimed
+	query_invite_delete_unclaimed,
+	query_invite_delete_unclaimed_by_creators
 } from '#lib/auth/invite_queries.ts';
 import { query_create_account_with_actor } from '#lib/auth/account_queries.ts';
 import type { QueryDeps } from '#lib/db/query_deps.ts';
@@ -413,6 +414,50 @@ describe_db('InviteQueries', (get_db) => {
 			// invite still exists
 			const all = await query_invite_list_all_with_usernames(deps);
 			assert.strictEqual(all.length, 1);
+		});
+	});
+
+	describe('delete unclaimed by creators', () => {
+		test('deletes the unclaimed invites the actors issued, and only those', async () => {
+			const db = get_db();
+			const deps = { db };
+			const issuer = await query_create_account_with_actor(deps, {
+				username: 'issuer',
+				password_hash: 'hash'
+			});
+			const other = await query_create_account_with_actor(deps, {
+				username: 'other_issuer',
+				password_hash: 'hash'
+			});
+			const open = await query_create_invite(deps, {
+				username: 'invitee_open',
+				created_by: issuer.actor.id
+			});
+			const claimed = await query_create_invite(deps, {
+				username: 'invitee_claimed',
+				created_by: issuer.actor.id
+			});
+			const { account: claimer } = await query_create_account_with_actor(deps, {
+				username: 'invitee_claimed',
+				password_hash: 'hash'
+			});
+			await query_invite_claim_unscoped(deps, claimed.id, claimer.id);
+			const others = await query_create_invite(deps, {
+				username: 'invitee_other',
+				created_by: other.actor.id
+			});
+
+			const deleted = await query_invite_delete_unclaimed_by_creators(deps, [issuer.actor.id]);
+			assert.deepStrictEqual(deleted, [open.id]);
+			const remaining = (await query_invite_list_all_with_usernames(deps)).map((i) => i.id).sort();
+			assert.deepStrictEqual(remaining, [claimed.id, others.id].sort());
+		});
+
+		test('an empty actor list deletes nothing', async () => {
+			const deps = { db: get_db() };
+			await query_create_invite(deps, { username: 'invitee_kept', created_by: null });
+			assert.deepStrictEqual(await query_invite_delete_unclaimed_by_creators(deps, []), []);
+			assert.strictEqual((await query_invite_list_all_with_usernames(deps)).length, 1);
 		});
 	});
 

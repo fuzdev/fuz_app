@@ -49,11 +49,16 @@ import {
 import type { Uuid } from '../primitive_schemas.ts';
 import type { QueryDeps } from '../db/query_deps.ts';
 import { GRANT_PATH_ADMIN } from './grant_path_schema.ts';
-import { query_role_grant_offer_supersede_outgoing } from './role_grant_offer_queries.ts';
+import {
+	query_role_grant_offer_supersede_incoming,
+	query_role_grant_offer_supersede_outgoing
+} from './role_grant_offer_queries.ts';
+import type { SupersededOffer } from './role_grant_offer_schema.ts';
 import {
 	query_account_by_email,
 	query_account_by_id,
 	query_account_by_username,
+	query_account_lock_live,
 	query_account_soft_delete,
 	query_account_undelete,
 	query_actor_soft_delete,
@@ -75,6 +80,7 @@ import { AUDIT_LOG_DEFAULT_LIMIT } from './audit_log_schema.ts';
 import {
 	query_create_invite,
 	query_invite_delete_unclaimed,
+	query_invite_delete_unclaimed_by_creators,
 	query_invite_list_all_with_usernames
 } from './invite_queries.ts';
 import {
@@ -86,6 +92,7 @@ import type { RevokingActionFactoryDeps } from './deps.ts';
 import { is_pg_unique_violation } from '../db/pg_error.ts';
 import {
 	ERROR_ACCOUNT_NOT_FOUND,
+	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,
 	ERROR_INVITE_ACCOUNT_EXISTS_EMAIL,
 	ERROR_INVITE_ACCOUNT_EXISTS_USERNAME,
@@ -315,6 +322,16 @@ export const create_admin_actions = (
 			}
 		}
 
+		// The issuer's account was read before this transaction. A delete
+		// committed since creates nothing — refused as the dead credential it now
+		// is, as `account_token_create` refuses it — and one still to commit
+		// waits on this lock, then deletes the invite with the account's other
+		// unclaimed ones: a delete writes its tombstone first.
+		if (!(await query_account_lock_live(ctx, auth.account.id))) {
+			throw jsonrpc_errors.unauthenticated('unauthenticated', {
+				reason: ERROR_AUTHENTICATION_REQUIRED
+			});
+		}
 		let invite;
 		try {
 			invite = await query_create_invite(ctx, {
@@ -420,20 +437,14 @@ export const create_admin_actions = (
 		}
 	};
 
-	// Supersede every pending offer the removed account's actors made, audited
-	// — the cascade a revoke runs on the revokee's offers. An offer records no
-	// authority, so one outliving its grantor's account would still confer on
-	// accept. No supersede notification: a cascade notifies the grantor, and the
-	// grantor's connections close with its account. `cause_id` is the account.
-	const cancel_outgoing_offers = async (
+	// One `role_grant_offer_supersede` row per offer an account removal ended,
+	// `reason: 'account_deleted'` and `cause_id` the removed account, whichever
+	// side of the offer the account was on.
+	const emit_account_deleted_supersedes = async (
 		ctx: ActionActorContext,
 		target_account_id: Uuid,
-		actors: ReadonlyArray<{ id: Uuid }>
+		superseded: ReadonlyArray<SupersededOffer>
 	): Promise<void> => {
-		const superseded = await query_role_grant_offer_supersede_outgoing(
-			ctx,
-			actors.map((a) => a.id)
-		);
 		for (const offer of superseded) {
 			await deps.audit.emit_role_grant_target(ctx, ctx.auth, {
 				event_type: 'role_grant_offer_supersede',
@@ -450,12 +461,65 @@ export const create_admin_actions = (
 		}
 	};
 
+	// Supersede every pending offer the removed account's actors made, audited
+	// — the cascade a revoke runs on the revokee's offers. An offer records no
+	// authority, so one outliving its grantor's account would still confer on
+	// accept. No supersede notification: a cascade notifies the grantor, and the
+	// grantor's connections close with its account. `cause_id` is the account.
+	const cancel_outgoing_offers = async (
+		ctx: ActionActorContext,
+		target_account_id: Uuid,
+		actors: ReadonlyArray<{ id: Uuid }>
+	): Promise<void> => {
+		const superseded = await query_role_grant_offer_supersede_outgoing(
+			ctx,
+			actors.map((a) => a.id)
+		);
+		await emit_account_deleted_supersedes(ctx, target_account_id, superseded);
+	};
+
+	// Supersede every pending offer made to the deleted account, account- or
+	// actor-addressed, audited as the outgoing cascade is and, like it, with no
+	// notification. An undelete restores the account, so an offer left pending
+	// through the delete would come back with it and could be accepted.
+	const cancel_incoming_offers = async (
+		ctx: ActionActorContext,
+		target_account_id: Uuid
+	): Promise<void> => {
+		const superseded = await query_role_grant_offer_supersede_incoming(ctx, target_account_id);
+		await emit_account_deleted_supersedes(ctx, target_account_id, superseded);
+	};
+
+	// Delete the unclaimed invites the removed account's actors issued, each
+	// audited as an `invite_delete` is. An invite records no authority, so one
+	// outliving its issuer's account would still admit a signup; deleted, it
+	// answers a signup as a revoked one does, and an undelete can't revive it.
+	// A claimed invite is untouched.
+	const void_unclaimed_invites = async (
+		ctx: ActionActorContext,
+		actors: ReadonlyArray<{ id: Uuid }>
+	): Promise<void> => {
+		const invite_ids = await query_invite_delete_unclaimed_by_creators(
+			ctx,
+			actors.map((a) => a.id)
+		);
+		for (const invite_id of invite_ids) {
+			await deps.audit.emit(ctx, {
+				event_type: 'invite_delete',
+				account_id: ctx.auth.account.id,
+				ip: ctx.client_ip,
+				metadata: { invite_id }
+			});
+		}
+	};
+
 	// Soft-delete an account (reversible tombstone). Self-or-admin:
 	// deleting another account requires the admin role. A self-delete is
 	// session-only — enforced here, not on the spec, whose gate stays open so
 	// an admin deleting another account keeps any credential. Tombstones the
-	// account + its actor(s), supersedes the pending offers its actors made,
-	// revokes sessions/tokens, closes sockets, and
+	// account + its actor(s), supersedes the pending offers its actors made and
+	// the ones made to it, revokes sessions/tokens, deletes the unclaimed
+	// invites its actors issued, closes sockets, and
 	// emits `account_delete` + one `actor_delete` per soft-deleted actor —
 	// each carrying its identity snapshot. `delete` = soft.
 	const account_delete_handler = async (
@@ -498,6 +562,7 @@ export const create_admin_actions = (
 			throw jsonrpc_errors.not_found('account', { reason: ERROR_ACCOUNT_NOT_FOUND });
 		}
 		await cancel_outgoing_offers(ctx, target_account_id, actors);
+		await cancel_incoming_offers(ctx, target_account_id);
 		const soft_deleted_actors = [];
 		for (const actor of actors) {
 			if (await query_actor_soft_delete(ctx, actor.id, auth.actor.id)) {
@@ -506,6 +571,7 @@ export const create_admin_actions = (
 		}
 		await query_session_revoke_all_for_account(ctx, target_account_id);
 		await query_revoke_all_api_tokens_for_account(ctx, target_account_id);
+		await void_unclaimed_invites(ctx, actors);
 		// The tombstone ends every credential of the account; its connections
 		// close once that has committed.
 		queue_connection_close(ctx, connection_closer, {
@@ -557,6 +623,9 @@ export const create_admin_actions = (
 		// Before the cascade, whose `ON DELETE CASCADE` would take the offers
 		// with no audit row.
 		await cancel_outgoing_offers(ctx, input.account_id, actors);
+		// Before the cascade too: `invite.created_by` is `ON DELETE SET NULL`, so
+		// the cascade would leave the account's unclaimed invites usable.
+		await void_unclaimed_invites(ctx, actors);
 		const snapshot = await query_purge_account(ctx, input.account_id);
 		if (!snapshot) {
 			await deps.audit.emit(ctx, {
@@ -606,7 +675,10 @@ export const create_admin_actions = (
 	// the self path is unreachable (a tombstoned account can't authenticate).
 	// Clears `deleted_at` on the account + its soft-deleted actor(s) and
 	// emits `account_undelete` + one `actor_undelete` per reactivated actor.
-	// Does NOT restore revoked sessions/tokens. The inverse of `delete`.
+	// The inverse of `delete` for the account, its actors and its role grants —
+	// the delete leaves the grants as they were, inert while no credential of
+	// the account authenticates — and for nothing the delete ended: revoked
+	// sessions and tokens, superseded offers and deleted invites stay ended.
 	const account_undelete_handler = async (
 		input: AccountUndeleteInput,
 		ctx: ActionActorContext

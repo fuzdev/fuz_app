@@ -91,6 +91,8 @@ import {
 	query_accept_offer,
 	RoleGrantOfferActorAccountMismatchError,
 	RoleGrantOfferActorMismatchError,
+	RoleGrantOfferGrantorNotActiveError,
+	RoleGrantOfferRecipientNotActiveError,
 	RoleGrantOfferAlreadyTerminalError,
 	RoleGrantOfferBuiltinRefusedError,
 	RoleGrantOfferExpiredError,
@@ -107,6 +109,7 @@ import {
 	query_revoke_role_grant
 } from './role_grant_queries.ts';
 import { query_actor_by_id, query_active_actors_by_account } from './account_queries.ts';
+import type { Actor } from './account_schema.ts';
 import type { AuditLogEvent } from './audit_log_schema.ts';
 import {
 	has_scoped_role,
@@ -126,6 +129,7 @@ import {
 	type NotificationSender
 } from './role_grant_offer_notifications.ts';
 import {
+	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,
 	ERROR_ROLE_GRANT_NOT_FOUND,
 	ERROR_ROLE_NOT_WEB_GRANTABLE
@@ -363,6 +367,33 @@ export const create_role_grant_offer_actions = (
 		return error;
 	};
 
+	// The refusal for a recipient that is missing or soft-deleted: an actor
+	// named that is no active actor of the account is the mismatch, else the
+	// account is not found. Offer-create and assign answer a deleted recipient
+	// exactly as a missing one, so the call says nothing a missing id wouldn't.
+	const recipient_not_found_error = (to_actor_id: Uuid | null | undefined): ThrownJsonrpcError =>
+		to_actor_id != null
+			? jsonrpc_errors.invalid_params('to_actor_id does not belong to to_account_id', {
+					reason: ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH
+				})
+			: jsonrpc_errors.not_found('account');
+
+	// The recipient's active actors, refusing a recipient that can't receive a
+	// role: a missing or soft-deleted account (no active actor), or a named
+	// actor that is not one of them. Runs after every authority gate, so a
+	// caller refused the conferral learns nothing of the recipient.
+	const require_active_recipient = async (
+		ctx: ActionActorContext,
+		to_account_id: Uuid,
+		to_actor_id: Uuid | null | undefined
+	): Promise<Array<Actor>> => {
+		const actors = await query_active_actors_by_account(ctx, to_account_id);
+		if (to_actor_id != null ? !actors.some((a) => a.id === to_actor_id) : actors.length === 0) {
+			throw recipient_not_found_error(to_actor_id);
+		}
+		return actors;
+	};
+
 	// Returns {offer} only — no auto-accept. Recipient must call
 	// role_grant_offer_accept; admin tests drive the full consent flow over
 	// RPC (see testing/admin_integration.ts `offer_and_accept`), or seed
@@ -419,6 +450,8 @@ export const create_role_grant_offer_actions = (
 			});
 		}
 
+		// Both parties' rules live in the query, after every authority gate above,
+		// so a caller refused the conferral learns nothing of the recipient.
 		let offer;
 		try {
 			offer = await query_role_grant_offer_create(ctx, {
@@ -438,10 +471,21 @@ export const create_role_grant_offer_actions = (
 					reason: ERROR_ROLE_GRANT_OFFER_SELF_TARGET
 				});
 			}
-			if (err instanceof RoleGrantOfferActorAccountMismatchError) {
+			if (
+				err instanceof RoleGrantOfferActorAccountMismatchError ||
+				err instanceof RoleGrantOfferRecipientNotActiveError
+			) {
 				await emit_create_failure_audit(ctx, auth, input);
-				throw jsonrpc_errors.invalid_params('to_actor_id does not belong to to_account_id', {
-					reason: ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH
+				// a named actor is the mismatch, else the account is not found —
+				// the answers `role_grant_assign` gives the same recipient
+				throw recipient_not_found_error(input.to_actor_id);
+			}
+			// The caller's own account was deleted while the request was in flight:
+			// refused as the dead credential it now is, as `account_token_create`
+			// refuses it, with no audit row from an account that is gone.
+			if (err instanceof RoleGrantOfferGrantorNotActiveError) {
+				throw jsonrpc_errors.unauthenticated('unauthenticated', {
+					reason: ERROR_AUTHENTICATION_REQUIRED
 				});
 			}
 			throw err;
@@ -952,19 +996,12 @@ export const create_role_grant_offer_actions = (
 		// active actor of `to_account_id`; otherwise the account's sole active
 		// actor is used (a multi-actor account must name one). A missing /
 		// actorless account 404-masks.
-		const actors = await query_active_actors_by_account(ctx, input.to_account_id);
+		const actors = await require_active_recipient(ctx, input.to_account_id, input.to_actor_id);
 		let target_actor_id: Uuid;
 		if (input.to_actor_id != null) {
-			if (!actors.some((a) => a.id === input.to_actor_id)) {
-				throw jsonrpc_errors.invalid_params('to_actor_id does not belong to to_account_id', {
-					reason: ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH
-				});
-			}
 			target_actor_id = input.to_actor_id;
 		} else if (actors.length === 1) {
 			target_actor_id = actors[0]!.id;
-		} else if (actors.length === 0) {
-			throw jsonrpc_errors.not_found('account');
 		} else {
 			throw jsonrpc_errors.invalid_params('to_actor_id is required for a multi-actor account');
 		}

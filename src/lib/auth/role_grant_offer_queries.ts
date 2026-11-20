@@ -33,6 +33,7 @@ import type {
 	SupersededOffer
 } from './role_grant_offer_schema.ts';
 import { query_audit_log } from './audit_log_queries.ts';
+import { query_account_lock_live_many } from './account_queries.ts';
 import type { AuditLogEvent } from './audit_log_schema.ts';
 import { is_builtin_role, ROLE_ADMIN, ROLE_KEEPER } from './role_schema.ts';
 
@@ -144,7 +145,8 @@ export class RoleGrantOfferBuiltinRefusedError extends Error {
 
 /**
  * Error thrown when `query_role_grant_offer_create` is called with a
- * `to_actor_id` that does not exist or does not belong to `to_account_id`.
+ * `to_actor_id` that is no active actor of `to_account_id` — missing,
+ * tombstoned, or another account's.
  * Surfaces the actor↔account binding mismatch at the boundary instead of
  * letting the FK silently disagree with the recipient field.
  */
@@ -152,6 +154,34 @@ export class RoleGrantOfferActorAccountMismatchError extends Error {
 	constructor() {
 		super('to_actor_id does not belong to to_account_id');
 		this.name = 'RoleGrantOfferActorAccountMismatchError';
+	}
+}
+
+/**
+ * Error thrown by `query_role_grant_offer_create` when the recipient is not an
+ * active account: `to_account_id` names no account, a soft-deleted one, or one
+ * with no active actor. A deleted recipient and one that never existed are the
+ * one refusal, so a caller learns nothing from it that a missing id wouldn't
+ * tell; the handler answers it as `role_grant_assign` answers the same
+ * recipient. Twin of the Rust `RoleGrantOfferError::RecipientNotActive`.
+ */
+export class RoleGrantOfferRecipientNotActiveError extends Error {
+	constructor() {
+		super('the recipient is not an active account');
+		this.name = 'RoleGrantOfferRecipientNotActiveError';
+	}
+}
+
+/**
+ * Error thrown by `query_role_grant_offer_create` when the grantor is not an
+ * active account: its actor is missing or tombstoned, or its account
+ * soft-deleted — a delete that committed while the offer was in flight. Twin
+ * of the Rust `RoleGrantOfferError::GrantorNotActive`.
+ */
+export class RoleGrantOfferGrantorNotActiveError extends Error {
+	constructor() {
+		super('the grantor is not an active account');
+		this.name = 'RoleGrantOfferGrantorNotActiveError';
 	}
 }
 
@@ -177,11 +207,24 @@ export class RoleGrantOfferActorAccountMismatchError extends Error {
  * `query_accept_offer` rejects any actor other than the named one. Closes
  * the audit hole where offer-shape events would otherwise leave
  * `target_actor_id` null even when the recipient binding is known at
- * offer time. The actor↔account binding is verified here in one SELECT.
+ * offer time. A named actor must be an active actor of `to_account_id`.
+ *
+ * Both parties must be active accounts, checked here so every caller — the
+ * spine's handler and a consumer creating offers on its own path — gets the
+ * rule. Both account rows are read under `FOR SHARE` before the insert, in one
+ * statement in id order (`query_account_lock_live_many`): an account delete
+ * writes its tombstone first, so a delete committed before the read is waited
+ * for and seen (the offer is refused), and one after it waits for this
+ * transaction to commit and then supersedes the offer with the party's
+ * others. Run it inside the caller's transaction, which the lock
+ * spans. The self-target check comes first, so an offer to one's own account
+ * is refused as that whatever else it names.
  *
  * @mutates `role_grant_offer` table - inserts a new offer or upserts the matching pending row
  * @throws RoleGrantOfferSelfTargetError if the offering actor belongs to `to_account_id`
- * @throws RoleGrantOfferActorAccountMismatchError if `to_actor_id` is set but does not belong to `to_account_id`
+ * @throws RoleGrantOfferRecipientNotActiveError if `to_account_id` is missing, soft-deleted, or has no active actor
+ * @throws RoleGrantOfferActorAccountMismatchError if `to_actor_id` is set but is no active actor of `to_account_id`
+ * @throws RoleGrantOfferGrantorNotActiveError if the grantor's actor or account is missing or tombstoned
  */
 export const query_role_grant_offer_create = async (
 	deps: QueryDeps,
@@ -203,14 +246,35 @@ export const query_role_grant_offer_create = async (
 	if (grantor && grantor.account_id === input.to_account_id) {
 		throw new RoleGrantOfferSelfTargetError();
 	}
-	if (input.to_actor_id != null) {
-		const target = await deps.db.query_one<{ account_id: Uuid }>(
-			`SELECT account_id FROM actor WHERE id = $1`,
-			[input.to_actor_id]
-		);
-		if (!target || target.account_id !== input.to_account_id) {
-			throw new RoleGrantOfferActorAccountMismatchError();
-		}
+	// Both parties' account rows, locked in one statement in id order — the
+	// order the last-admin guard locks its rows in, so the two never wait on
+	// each other — then judged recipient first, grantor second.
+	const live = await query_account_lock_live_many(
+		deps,
+		grantor ? [input.to_account_id, grantor.account_id] : [input.to_account_id]
+	);
+	// The recipient: a live account with an active actor (the named one, when
+	// an actor is named).
+	if (!live.has(input.to_account_id)) {
+		throw new RoleGrantOfferRecipientNotActiveError();
+	}
+	const recipient_actors = await deps.db.query<{ id: Uuid }>(
+		`SELECT id FROM actor WHERE account_id = $1 AND deleted_at IS NULL`,
+		[input.to_account_id]
+	);
+	if (recipient_actors.length === 0) {
+		throw new RoleGrantOfferRecipientNotActiveError();
+	}
+	if (input.to_actor_id != null && !recipient_actors.some((a) => a.id === input.to_actor_id)) {
+		throw new RoleGrantOfferActorAccountMismatchError();
+	}
+	// The grantor: a live actor of a live account.
+	const grantor_actor = await deps.db.query_one<{ id: Uuid }>(
+		`SELECT id FROM actor WHERE id = $1 AND deleted_at IS NULL`,
+		[input.from_actor_id]
+	);
+	if (!grantor || !grantor_actor || !live.has(grantor.account_id)) {
+		throw new RoleGrantOfferGrantorNotActiveError();
 	}
 	const row = await deps.db.query_one<RoleGrantOffer>(
 		`INSERT INTO role_grant_offer
@@ -822,5 +886,41 @@ export const query_role_grant_offer_supersede_outgoing = async (
 		)
 		${ROLE_GRANT_OFFER_WITH_GRANTOR_SELECT}`,
 		[from_actor_ids]
+	);
+};
+
+/**
+ * Supersede every pending offer **made to** `to_account_id` — the
+ * recipient-side cascade of an account delete.
+ *
+ * An undelete restores the account, so an offer left pending through the
+ * delete would come back with it and could then be accepted; superseding it
+ * in the delete's transaction makes it terminal for good. Matching on
+ * `to_account_id` alone covers the actor-addressed offers too: an offer's
+ * `to_actor_id` is bound to its `to_account_id` at create. Each row carries
+ * the grantor's `from_account_id`, as every supersede cascade's does; the
+ * caller emits a `role_grant_offer_supersede` audit event per entry. Twin of
+ * the Rust `query_role_grant_offer_supersede_incoming`.
+ *
+ * @param deps - query dependencies
+ * @param to_account_id - the recipient account whose pending offers end
+ * @returns the superseded offers, each with its grantor's account
+ * @mutates `role_grant_offer` rows - stamps `superseded_at` on every pending offer to `to_account_id`
+ */
+export const query_role_grant_offer_supersede_incoming = async (
+	deps: QueryDeps,
+	to_account_id: Uuid
+): Promise<Array<SupersededOffer>> => {
+	return deps.db.query<SupersededOffer>(
+		`WITH updated AS (
+			UPDATE role_grant_offer
+			SET superseded_at = NOW()
+			WHERE to_account_id = $1
+			  AND ${offer_pending_predicate('')}
+			-- raw columns; the outer grantor select formats them
+			RETURNING ${columns_sql(ROLE_GRANT_OFFER_COLUMNS)}
+		)
+		${ROLE_GRANT_OFFER_WITH_GRANTOR_SELECT}`,
+		[to_account_id]
 	);
 };

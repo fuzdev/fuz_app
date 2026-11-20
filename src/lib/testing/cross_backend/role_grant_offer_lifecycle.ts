@@ -33,6 +33,20 @@ import '../assert_dev_env.ts';
  *   it (`role_grant_revoked` with the grant as cause, `account_deleted` with
  *   the account). The keeper's own `admin` grant refuses a revoke, 403
  *   `cannot_revoke_keeper_admin`.
+ * - **a recipient's delete ends the offers made to it.** Deleting an account
+ *   supersedes every pending offer to it, account- or actor-addressed and
+ *   whoever made it, each with its `account_deleted` row and the account as
+ *   cause, and the grantor's history lists it superseded. That an undelete
+ *   brings none back is `describe_account_lifecycle_cross_tests`'.
+ * - **a deleted recipient is a missing one.** An offer to a deleted account,
+ *   or naming its actor, answers exactly what one to an account or actor that
+ *   does not exist answers (404 `not_found`, or 400
+ *   `role_grant_offer_actor_account_mismatch` when an actor is named) — the
+ *   answers `role_grant_assign` gives the same requests — and creates
+ *   nothing. A grantor without the authority to confer hears its 403
+ *   `role_grant_offer_not_authorized` whatever the recipient — deleted,
+ *   missing, or live — and an offer to one's own account is
+ *   `role_grant_offer_self_target` whatever actor it names.
  * - **one audit row per success, none per refusal.** A decline writes
  *   `role_grant_offer_decline` attributed to the recipient and targeting the
  *   grantor, a retract `role_grant_offer_retract` attributed to the grantor
@@ -57,7 +71,10 @@ import { assert, describe, test } from 'vitest';
 import { rpc_call, type RpcCallResult } from '../rpc_helpers.ts';
 import {
 	ERROR_CANNOT_REVOKE_KEEPER_ADMIN,
+	ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH,
+	ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED,
 	ERROR_ROLE_GRANT_OFFER_NOT_FOUND,
+	ERROR_ROLE_GRANT_OFFER_SELF_TARGET,
 	ERROR_ROLE_GRANT_OFFER_TERMINAL,
 	RoleGrantOfferDeclineOutput,
 	RoleGrantOfferHistoryOutput,
@@ -584,6 +601,173 @@ export const describe_role_grant_offer_lifecycle_cross_tests = (
 			assert.strictEqual(refused.status, 403);
 			assert.strictEqual(refused.error.code, JSONRPC_ERROR_CODES.forbidden);
 			assert.deepStrictEqual(refused.error.data, { reason: ERROR_CANNOT_REVOKE_KEEPER_ADMIN });
+		});
+	});
+
+	describe("a recipient's delete ends the offers made to it", () => {
+		const delete_account = async (fixture: TestFixture, account: TestAccount): Promise<void> => {
+			assert_ok(
+				await rpc(
+					fixture,
+					'account_delete',
+					{ account_id: account.account.id },
+					fixture.create_session_headers()
+				),
+				'account_delete'
+			);
+		};
+
+		/** The offers `headers`' account made or received, as its history lists them. */
+		const history = async (fixture: TestFixture, headers: Record<string, string>) =>
+			expect_output(
+				await rpc(fixture, 'role_grant_offer_history', {}, headers),
+				RoleGrantOfferHistoryOutput
+			).offers;
+
+		test('deleting the recipient supersedes every pending offer to it, account- and actor-addressed', async () => {
+			const fixture = await setup_test();
+			const recipient = await fixture.create_account({ username: 'incoming_deleted_to' });
+			const bystander = await fixture.create_account({ username: 'incoming_bystander' });
+			const grantor = await fixture.create_account({ username: 'incoming_grantor' });
+			await create_active_role_grant(fixture, grantor, { role: ROLE_ADMIN, rpc_path });
+			const by_account = await create_offer(fixture, recipient);
+			const created = await rpc(
+				fixture,
+				'role_grant_offer_create',
+				{ to_account_id: recipient.account.id, to_actor_id: recipient.actor.id, role },
+				grantor.create_session_headers()
+			);
+			if (!created.ok) assert.fail(`actor-addressed offer: ${JSON.stringify(created)}`);
+			const by_actor = (created.result as { offer: { id: string } }).offer;
+			const control = await create_offer(fixture, bystander);
+
+			await delete_account(fixture, recipient);
+
+			const supersedes = await list_audit_events(
+				fixture,
+				{ event_type: 'role_grant_offer_supersede' },
+				rpc_path
+			);
+			for (const [offer_id, grantor_headers, label] of [
+				[by_account.id, fixture.create_session_headers(), 'the account-addressed offer'],
+				[by_actor.id, grantor.create_session_headers(), 'the actor-addressed offer']
+			] as const) {
+				const rows = supersedes.filter(
+					(e) => (e.metadata as { offer_id?: unknown } | null)?.offer_id === offer_id
+				);
+				assert.strictEqual(rows.length, 1, `one role_grant_offer_supersede row for ${label}`);
+				assert_audit_metadata_fields(fixture, rows[0]!.metadata, {
+					offer_id,
+					role,
+					scope_id: null,
+					reason: 'account_deleted',
+					cause_id: recipient.account.id
+				});
+				const listed = (await history(fixture, grantor_headers)).find((o) => o.id === offer_id);
+				assert.ok(listed?.superseded_at, `the grantor's history lists ${label} superseded`);
+				assert.strictEqual(listed.accepted_at, null, label);
+			}
+			assert.ok(
+				await is_pending(fixture, bystander, control.id),
+				"another account's offer stays pending"
+			);
+		});
+
+		test('an offer to a deleted account or actor answers as one to a missing account or actor does, as role_grant_assign does', async () => {
+			const fixture = await setup_test();
+			const recipient = await fixture.create_account({ username: 'incoming_refused_to' });
+			const live = await fixture.create_account({ username: 'incoming_refused_live' });
+			await delete_account(fixture, recipient);
+
+			const call = (method: string, params: Record<string, unknown>) =>
+				rpc(fixture, method, { ...params, role }, fixture.create_session_headers());
+			const answer = (res: RpcCallResult, label: string) => {
+				assert.ok(!res.ok, `${label} must be refused: ${JSON.stringify(res)}`);
+				return { status: res.status, error: res.error };
+			};
+
+			const deleted_account = { to_account_id: recipient.account.id };
+			const missing_account = { to_account_id: NIL_UUID };
+			const deleted_actor = {
+				to_account_id: recipient.account.id,
+				to_actor_id: recipient.actor.id
+			};
+			const missing_actor = { to_account_id: live.account.id, to_actor_id: NIL_UUID };
+
+			const account_refusal = answer(
+				await call('role_grant_offer_create', missing_account),
+				'an offer to a missing account'
+			);
+			assert.strictEqual(account_refusal.status, 404);
+			assert.strictEqual(account_refusal.error.code, JSONRPC_ERROR_CODES.not_found);
+			const actor_refusal = answer(
+				await call('role_grant_offer_create', missing_actor),
+				'an offer naming a missing actor'
+			);
+			assert.strictEqual(actor_refusal.status, 400);
+			assert.strictEqual(actor_refusal.error.code, JSONRPC_ERROR_CODES.invalid_params);
+			assert.deepStrictEqual(actor_refusal.error.data, {
+				reason: ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH
+			});
+
+			for (const [method, params, expected, label] of [
+				[
+					'role_grant_offer_create',
+					deleted_account,
+					account_refusal,
+					'an offer to a deleted account'
+				],
+				[
+					'role_grant_offer_create',
+					deleted_actor,
+					actor_refusal,
+					'an offer naming a deleted actor'
+				],
+				['role_grant_assign', deleted_account, account_refusal, 'an assign to a deleted account'],
+				['role_grant_assign', missing_account, account_refusal, 'an assign to a missing account'],
+				['role_grant_assign', deleted_actor, actor_refusal, 'an assign naming a deleted actor'],
+				['role_grant_assign', missing_actor, actor_refusal, 'an assign naming a missing actor']
+			] as const) {
+				assert.deepStrictEqual(answer(await call(method, params), label), expected, label);
+			}
+
+			// a grantor with no authority to confer learns nothing of the recipient
+			const unauthorized = await fixture.create_account({ username: 'incoming_refused_by' });
+			const refusals = [];
+			for (const params of [deleted_account, missing_account, { to_account_id: live.account.id }]) {
+				const res = await rpc(
+					fixture,
+					'role_grant_offer_create',
+					{ ...params, role },
+					unauthorized.create_session_headers()
+				);
+				const refusal = answer(res, 'an offer by a grantor without authority');
+				assert.strictEqual(refusal.status, 403);
+				assert.strictEqual(refusal.error.code, JSONRPC_ERROR_CODES.forbidden);
+				assert.deepStrictEqual(refusal.error.data, {
+					reason: ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED
+				});
+				refusals.push(refusal);
+			}
+			assert.deepStrictEqual(refusals[0], refusals[2], 'a deleted recipient: as a live one');
+			assert.deepStrictEqual(refusals[1], refusals[2], 'a missing recipient: as a live one');
+
+			// the self-target check comes first, whatever actor is named
+			const self = answer(
+				await call('role_grant_offer_create', {
+					to_account_id: fixture.account.id,
+					to_actor_id: live.actor.id
+				}),
+				'an offer to oneself naming another account’s actor'
+			);
+			assert.strictEqual(self.status, 400);
+			assert.deepStrictEqual(self.error.data, { reason: ERROR_ROLE_GRANT_OFFER_SELF_TARGET });
+
+			const offers = await history(fixture, fixture.create_session_headers());
+			assert.ok(
+				!offers.some((o) => o.to_account_id === recipient.account.id),
+				'no offer to the deleted account was created'
+			);
 		});
 	});
 };

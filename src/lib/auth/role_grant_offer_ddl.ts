@@ -88,7 +88,13 @@ export const role_grant_offer_expr = iso8601_timestamp_expr(ROLE_GRANT_OFFER_COL
  * `DeclinedOffer` shape every offer-superseding cascade returns (the revoke
  * cascades in `auth/role_grant_queries.ts`, decline + accept-supersede in
  * `auth/role_grant_offer_queries.ts`). The CTE must be named `updated` and
- * `RETURNING` the full offer row.
+ * `RETURNING` the full offer row, and the tail ends the statement.
+ *
+ * Ordered oldest first, by `created_at` then `id`: an `UPDATE … RETURNING`
+ * comes back in no fixed order, and the callers emit an audit row and a
+ * notification per row in the order returned, so without it two runs (or the
+ * two spines) write the same cascade in different orders. Twin of the Rust
+ * `updated_offer_select`.
  */
 export const ROLE_GRANT_OFFER_WITH_GRANTOR_SELECT = `SELECT ${qualify_columns(
 	ROLE_GRANT_OFFER_COLUMNS,
@@ -96,7 +102,8 @@ export const ROLE_GRANT_OFFER_WITH_GRANTOR_SELECT = `SELECT ${qualify_columns(
 	role_grant_offer_expr('u')
 )}, grantor.account_id AS from_account_id
 		FROM updated u
-		JOIN actor grantor ON grantor.id = u.from_actor_id`;
+		JOIN actor grantor ON grantor.id = u.from_actor_id
+		ORDER BY u.created_at, u.id`;
 
 // Frozen v1 body — `expire_audited_at` is added by the appended
 // `role_grant_offer_expire_audited_at` migration (with its partial sweep

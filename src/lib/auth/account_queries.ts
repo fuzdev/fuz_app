@@ -266,9 +266,13 @@ export const query_account_lock_verified = async (
  * token before the new one exists. Run first in the mint's transaction, this
  * read waits on the delete's row lock and then sees its tombstone; once it
  * holds the lock, a delete waits for the mint to commit and then revokes the
- * token. The password is not re-checked: the mint verified none. Twin of the
- * Rust `fuz_auth::query_account_lock_live`; `query_account_lock_verified` has
- * why `FOR SHARE`.
+ * token. The password is not re-checked: the mint verified none. `invite_create`
+ * takes the same lock on its issuer's account, before its insert, so an
+ * invite and a delete of its issuer are ordered: the invite is refused, or the
+ * delete deletes it. An offer locks two accounts, so it takes them together
+ * through `query_account_lock_live_many`. Twin of the Rust
+ * `fuz_auth::query_account_lock_live`; `query_account_lock_verified` has why
+ * `FOR SHARE`.
  *
  * @param deps - query dependencies (must be the mint's transaction)
  * @param id - the account the credential is for
@@ -280,6 +284,39 @@ export const query_account_lock_live = async (deps: QueryDeps, id: string): Prom
 		[id]
 	);
 	return row !== undefined;
+};
+
+/**
+ * Lock several live account rows in one statement, in id order, for a write
+ * that must be ordered against a delete of any of them — the two parties of an
+ * offer (`query_role_grant_offer_create`).
+ *
+ * The rows are locked as the sort returns them, so every caller takes them in
+ * id order, as the last-admin guard
+ * (`query_count_active_accounts_with_global_role_for_update`) takes its
+ * account rows: two transactions locking two of the same accounts never wait
+ * on each other in opposite orders. Taken one statement per account, an offer
+ * between two admins could hold one party's row while the guard held the
+ * other's, each waiting on the other. Ids never change, so the sort key a
+ * concurrent update could move is not one of them. As with
+ * `query_account_lock_live`, a delete committed before the read is waited for
+ * and its tombstone seen; one after it waits for the caller's commit. Twin of
+ * the Rust `fuz_auth::query_account_lock_live_many`.
+ *
+ * @param deps - query dependencies (must be the write's transaction)
+ * @param ids - the accounts to lock
+ * @returns the ids locked: those of the accounts neither deleted nor tombstoned
+ */
+export const query_account_lock_live_many = async (
+	deps: QueryDeps,
+	ids: ReadonlyArray<string>
+): Promise<Set<string>> => {
+	if (ids.length === 0) return new Set();
+	const rows = await deps.db.query<{ id: string }>(
+		`SELECT id FROM account WHERE id = ANY($1) AND deleted_at IS NULL ORDER BY id FOR SHARE`,
+		[ids]
+	);
+	return new Set(rows.map((row) => row.id));
 };
 
 /**

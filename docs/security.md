@@ -1649,6 +1649,16 @@ creation in flight across the delete is refused or revoked under the same
 account-row lock as across a password change, and a credential whose account
 is tombstoned resolves as no credential on both spines.
 
+What comes back with an undelete is the account, its actors, and its role
+grants, which sit inert while it is tombstoned: nothing authenticates as the
+account, it cannot accept or make an offer, and it does not count toward the
+last-admin guard. What does not come back: the pending offers made to it and
+by it, which the delete superseded, and the unclaimed invites it issued,
+which the delete (and a purge) removed — a signup with one answers as a
+signup with no invite does. An offer or an invite being created while its
+issuer is deleted is ordered against the delete by the issuer's account-row
+lock: it is refused, or it commits first and the delete ends it.
+
 **Admin-grant guards on revoke**: `role_grant_revoke` guards a global `admin`
 grant the way removal guards its account. `ERROR_CANNOT_REVOKE_KEEPER_ADMIN`
 (403) refuses the keeper account's — no web path grants it back (bootstrap is
@@ -1919,6 +1929,10 @@ closes the revoke-bypass path:
 - On `account_delete` / `account_purge`, every pending offer any of the
   account's actors made is marked superseded (`reason: 'account_deleted'`,
   `cause_id: <account id>`; purge does it before its cascade deletes them).
+  `account_delete` supersedes the pending offers made TO the account the
+  same way, so an offer does not wait out a delete and come back with the
+  undelete; and an offer cannot be created to a deleted account or actor —
+  the answer is the one a missing account gets, to a non-admin grantor too.
 - On parent-scope cascade (consumer's polymorphic `scope_id` row deleted
   via `query_role_grant_revoke_for_scope`), every pending offer at the scope
   is marked superseded — tuple-matched and orphan, undifferentiated —

@@ -31,6 +31,16 @@ import '../assert_dev_env.ts';
  * another account's session live, and only the new password logs in. The
  * password case needs no lifecycle verb, so it runs on every backend.
  *
+ * What an undelete brings back, and what it doesn't. The account's role
+ * grants are kept through the delete — listed, conferring nothing while no
+ * credential of the account authenticates — and confer again once a fresh
+ * login has a session. Nothing the delete ended comes back: the offers made to
+ * the account, account- and actor-addressed, stay superseded (gone from its
+ * inbox, an accept answers `role_grant_offer_terminal` and grants nothing),
+ * and the unclaimed invites it issued stay deleted, a signup with one
+ * answering what a signup with no invite answers, while the invite it issued
+ * that was already claimed is untouched.
+ *
  * @module
  */
 
@@ -41,8 +51,16 @@ import {
 	AccountUndeleteOutput,
 	AccountPurgeOutput,
 	AdminAccountListOutput,
-	ERROR_CANNOT_DELETE_KEEPER
+	ERROR_CANNOT_DELETE_KEEPER,
+	InviteListOutput
 } from '../../auth/admin_action_specs.ts';
+import {
+	ERROR_ROLE_GRANT_OFFER_TERMINAL,
+	RoleGrantOfferHistoryOutput,
+	RoleGrantOfferListOutput
+} from '../../auth/role_grant_offer_action_specs.ts';
+import { ROLE_ADMIN } from '../../auth/role_schema.ts';
+import { JSONRPC_INVALID_REQUEST } from '../../http/jsonrpc.ts';
 import {
 	ERROR_ACCOUNT_NOT_FOUND,
 	ERROR_AUTHENTICATION_REQUIRED,
@@ -59,6 +77,7 @@ import type { RpcPathCapabilityGatedCrossSuiteOptions, TestFixture } from './set
 import {
 	SPINE_ACCOUNT_LOGIN_PATH,
 	SPINE_ACCOUNT_PASSWORD_PATH,
+	SPINE_ACCOUNT_SIGNUP_PATH,
 	SPINE_RPC_PATH
 } from './spine_surface_constants.ts';
 
@@ -73,6 +92,8 @@ export interface AccountLifecycleCrossTestOptions extends RpcPathCapabilityGated
 	readonly login_path?: string;
 	/** REST password-change route path. Default `/api/account/password`. */
 	readonly password_path?: string;
+	/** REST signup route path. Default `/api/account/signup`. */
+	readonly signup_path?: string;
 }
 
 /** The password the credential cases create their accounts with. */
@@ -88,6 +109,65 @@ export const describe_account_lifecycle_cross_tests = (
 	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
 	const login_path = options.login_path ?? SPINE_ACCOUNT_LOGIN_PATH;
 	const password_path = options.password_path ?? SPINE_ACCOUNT_PASSWORD_PATH;
+	const signup_path = options.signup_path ?? SPINE_ACCOUNT_SIGNUP_PATH;
+
+	/** One RPC call on a fresh transport carrying `headers` alone. */
+	const rpc = (
+		fixture: TestFixture,
+		method: string,
+		params: unknown,
+		headers: Record<string, string>
+	) => cross_rpc_call(fixture.fresh_transport(), rpc_path, method, params, headers);
+
+	/** `account_delete` of `account_id`, as the keeper. */
+	const delete_account = async (fixture: TestFixture, account_id: string): Promise<void> => {
+		const res = await rpc(
+			fixture,
+			'account_delete',
+			{ account_id },
+			fixture.create_session_headers()
+		);
+		assert.ok(res.ok, `account_delete must succeed: ${JSON.stringify(res)}`);
+	};
+	/** `account_undelete` of `account_id`, as the keeper. */
+	const undelete_account = async (fixture: TestFixture, account_id: string): Promise<void> => {
+		const res = await rpc(
+			fixture,
+			'account_undelete',
+			{ account_id },
+			fixture.create_session_headers()
+		);
+		assert.ok(res.ok, `account_undelete must succeed: ${JSON.stringify(res)}`);
+	};
+
+	/** `account`'s `admin_account_list` entry, tombstoned or not. */
+	const listed_account = async (fixture: TestFixture, account_id: string) => {
+		const { accounts } = expect_output(
+			await rpc(
+				fixture,
+				'admin_account_list',
+				{ include_deleted: true },
+				fixture.create_session_headers()
+			),
+			AdminAccountListOutput
+		);
+		const entry = accounts.find((a) => a.account.id === account_id);
+		assert.ok(entry, 'admin_account_list lists the account');
+		return entry;
+	};
+
+	/** A signup with `username` on a fresh transport, its status and body. */
+	const signup = async (
+		fixture: TestFixture,
+		username: string
+	): Promise<{ status: number; body: unknown }> => {
+		const res = await fixture.fresh_transport()(signup_path, {
+			method: 'POST',
+			headers: create_test_request_headers({ 'content-type': 'application/json' }),
+			body: JSON.stringify({ username, password: LIFECYCLE_PASSWORD })
+		});
+		return { status: res.status, body: await res.json() };
+	};
 
 	/**
 	 * `account_verify` carrying `headers` and no other credential — a
@@ -631,6 +711,198 @@ export const describe_account_lifecycle_cross_tests = (
 					}),
 					victim_id,
 					'the fresh session authenticates as the reactivated account'
+				);
+			}
+		);
+
+		test_if(
+			capabilities.account_lifecycle,
+			"an account's role grants are kept through a delete, inert, and confer again after the undelete",
+			async () => {
+				const fixture = await setup_test();
+				const victim = await fixture.create_account({
+					username: 'lifecycle_granted',
+					password_value: LIFECYCLE_PASSWORD,
+					roles: [ROLE_ADMIN]
+				});
+				const victim_id = victim.account.id;
+				// an admin-gated read, so a 200 is the grant conferring
+				const admin_read = (headers: Record<string, string>) =>
+					rpc(fixture, 'admin_account_list', {}, headers);
+				assert.strictEqual(
+					(await admin_read(victim.create_session_headers())).status,
+					200,
+					'the grant confers before the delete'
+				);
+				const admin_grant_ids = (entry: {
+					role_grants: ReadonlyArray<{ id: string; role: string }>;
+				}) => entry.role_grants.filter((g) => g.role === ROLE_ADMIN).map((g) => g.id);
+				const before = admin_grant_ids(await listed_account(fixture, victim_id));
+				assert.strictEqual(before.length, 1, 'one admin grant');
+
+				await delete_account(fixture, victim_id);
+				const during = await listed_account(fixture, victim_id);
+				assert.ok(during.account.deleted_at, 'tombstoned');
+				assert.deepStrictEqual(admin_grant_ids(during), before, 'the grant is kept, listed');
+				await assert_answers_as_anonymous(
+					fixture,
+					victim,
+					victim.create_session_headers(),
+					'no credential of the deleted account authenticates'
+				);
+				assert.strictEqual(
+					(await login(fixture, victim.account.username, LIFECYCLE_PASSWORD)).status,
+					401,
+					'nor can one be minted'
+				);
+
+				await undelete_account(fixture, victim_id);
+				assert.deepStrictEqual(
+					admin_grant_ids(await listed_account(fixture, victim_id)),
+					before,
+					'the same grant after the undelete'
+				);
+				const fresh = await login(fixture, victim.account.username, LIFECYCLE_PASSWORD);
+				assert.ok(fresh.cookie, 'the reactivated account logs in');
+				assert.strictEqual(
+					(await admin_read({ ...anonymous_headers(victim), cookie: fresh.cookie })).status,
+					200,
+					'the grant confers again'
+				);
+			}
+		);
+
+		test_if(
+			capabilities.account_lifecycle,
+			'offers made to an account before its delete stay superseded after the undelete and grant nothing',
+			async () => {
+				const fixture = await setup_test();
+				const victim = await fixture.create_account({
+					username: 'lifecycle_offered',
+					password_value: LIFECYCLE_PASSWORD
+				});
+				const grantor = await fixture.create_account({
+					username: 'lifecycle_offerer',
+					roles: [ROLE_ADMIN]
+				});
+				const victim_id = victim.account.id;
+				const offer = async (headers: Record<string, string>, params: object) => {
+					const res = await rpc(
+						fixture,
+						'role_grant_offer_create',
+						{ to_account_id: victim_id, role: ROLE_ADMIN, ...params },
+						headers
+					);
+					if (!res.ok) assert.fail(`role_grant_offer_create: ${JSON.stringify(res)}`);
+					return (res.result as { offer: { id: string } }).offer.id;
+				};
+				const by_account = await offer(fixture.create_session_headers(), {});
+				const by_actor = await offer(grantor.create_session_headers(), {
+					to_actor_id: victim.actor.id
+				});
+				const inbox = async (headers: Record<string, string>) =>
+					expect_output(
+						await rpc(fixture, 'role_grant_offer_list', {}, headers),
+						RoleGrantOfferListOutput
+					).offers.map((o) => o.id);
+				assert.deepStrictEqual(
+					(await inbox(victim.create_session_headers())).sort(),
+					[by_account, by_actor].sort(),
+					'both offers are pending before the delete'
+				);
+
+				await delete_account(fixture, victim_id);
+				await undelete_account(fixture, victim_id);
+				const fresh = await login(fixture, victim.account.username, LIFECYCLE_PASSWORD);
+				assert.ok(fresh.cookie, 'the reactivated account logs in');
+				const victim_headers = { ...anonymous_headers(victim), cookie: fresh.cookie };
+
+				assert.deepStrictEqual(await inbox(victim_headers), [], 'no offer is pending');
+				for (const offer_id of [by_account, by_actor]) {
+					const res = await rpc(fixture, 'role_grant_offer_accept', { offer_id }, victim_headers);
+					assert.ok(!res.ok, `an accept of a superseded offer is refused: ${JSON.stringify(res)}`);
+					assert.strictEqual(res.status, 400);
+					assert.strictEqual(res.error?.code, JSONRPC_INVALID_REQUEST);
+					assert.strictEqual(error_reason(res), ERROR_ROLE_GRANT_OFFER_TERMINAL);
+				}
+				assert.deepStrictEqual(
+					(await listed_account(fixture, victim_id)).role_grants.filter(
+						(g) => g.role === ROLE_ADMIN
+					),
+					[],
+					'no admin grant was minted'
+				);
+				const { offers } = expect_output(
+					await rpc(fixture, 'role_grant_offer_history', {}, fixture.create_session_headers()),
+					RoleGrantOfferHistoryOutput
+				);
+				const sent = offers.find((o) => o.id === by_account);
+				assert.ok(sent?.superseded_at, "the grantor's history lists it superseded");
+				assert.strictEqual(sent.accepted_at, null);
+			}
+		);
+
+		test_if(
+			capabilities.account_lifecycle,
+			"a deleted account's unclaimed invites are void and stay void after the undelete; a claimed one is untouched",
+			async () => {
+				const fixture = await setup_test();
+				const inviter = await fixture.create_account({
+					username: 'lifecycle_inviter',
+					roles: [ROLE_ADMIN]
+				});
+				const invite = async (username: string) => {
+					const res = await rpc(
+						fixture,
+						'invite_create',
+						{ username },
+						inviter.create_session_headers()
+					);
+					if (!res.ok) assert.fail(`invite_create: ${JSON.stringify(res)}`);
+					return (res.result as { invite: { id: string } }).invite.id;
+				};
+				const open_id = await invite('lifecycle_invitee_open');
+				const claimed_id = await invite('lifecycle_invitee_claimed');
+				assert.strictEqual(
+					(await signup(fixture, 'lifecycle_invitee_claimed')).status,
+					200,
+					'the claimed invite admits its signup'
+				);
+				// what a signup with no invite answers
+				const no_invite = await signup(fixture, 'lifecycle_invitee_none');
+				assert.strictEqual(no_invite.status, 403, 'signup is invite-gated');
+				const invites = async () =>
+					expect_output(
+						await rpc(fixture, 'invite_list', {}, fixture.create_session_headers()),
+						InviteListOutput
+					).invites;
+
+				await delete_account(fixture, inviter.account.id);
+				assert.deepStrictEqual(
+					await signup(fixture, 'lifecycle_invitee_open'),
+					no_invite,
+					"a signup with the deleted account's unclaimed invite answers as one with none"
+				);
+				const during = await invites();
+				assert.ok(!during.some((i) => i.id === open_id), 'the unclaimed invite is gone');
+				assert.ok(
+					during.find((i) => i.id === claimed_id)?.claimed_at,
+					'the claimed invite is untouched'
+				);
+				const voided = (
+					await list_audit_events(fixture, { event_type: 'invite_delete' }, rpc_path)
+				).filter((e) => (e.metadata as { invite_id?: unknown } | null)?.invite_id === open_id);
+				assert.strictEqual(voided.length, 1, 'one invite_delete row for the voided invite');
+
+				await undelete_account(fixture, inviter.account.id);
+				assert.ok(
+					!(await invites()).some((i) => i.id === open_id),
+					'the undelete does not bring the invite back'
+				);
+				assert.deepStrictEqual(
+					await signup(fixture, 'lifecycle_invitee_open'),
+					no_invite,
+					'and a signup with it is still refused'
 				);
 			}
 		);

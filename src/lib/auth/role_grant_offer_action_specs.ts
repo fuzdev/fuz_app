@@ -43,6 +43,7 @@ import {
 import { ActingActor, Uuid, bounded_string } from '../primitive_schemas.ts';
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
 import {
+	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,
 	ERROR_LIMIT_INVALID,
 	ERROR_OFFSET_INVALID,
@@ -377,7 +378,8 @@ export const role_grant_offer_create_action_spec = {
 		ERROR_ROLE_GRANT_OFFER_ROLE_NOT_GRANTABLE,
 		ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED,
 		ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH,
-		ERROR_ROLE_GRANT_BUILTIN_SCOPED
+		ERROR_ROLE_GRANT_BUILTIN_SCOPED,
+		ERROR_AUTHENTICATION_REQUIRED
 	],
 	rate_limit: 'account'
 } satisfies RequestResponseActionSpec;

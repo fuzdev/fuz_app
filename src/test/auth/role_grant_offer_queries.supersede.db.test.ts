@@ -23,12 +23,14 @@ import {
 	query_role_grant_offer_history_for_account,
 	query_role_grant_offer_sweep_expired,
 	query_accept_offer,
+	query_role_grant_offer_create,
+	query_role_grant_offer_supersede_incoming,
 	RoleGrantOfferAlreadyTerminalError,
 	RoleGrantOfferExpiredError
 } from '#lib/auth/role_grant_offer_queries.ts';
 import { query_revoke_role_grant } from '#lib/auth/role_grant_queries.ts';
 import { query_audit_log, query_audit_log_list } from '#lib/auth/audit_log_queries.ts';
-import { create_uuid } from '#lib/primitive_schemas.ts';
+import { create_uuid, type Uuid } from '#lib/primitive_schemas.ts';
 
 import { describe_db } from '../db_fixture.ts';
 import {
@@ -483,5 +485,85 @@ describe_db('role_grant_offer_queries.supersede', (get_db) => {
 		assert.strictEqual(supersede_md.cause_id, offer_a.id);
 		assert.strictEqual(supersede_md.offer_id, offer_b.id);
 		assert.strictEqual(by_type.get('role_grant_revoke')?.length, 1);
+	});
+
+	test('supersede_incoming ends every pending offer to the account, account- and actor-addressed, and nothing else', async () => {
+		const db = get_db();
+		const deps = { db };
+		const grantor_a = await make_account(db, 'incoming_a');
+		const grantor_b = await make_account(db, 'incoming_b');
+		const recipient = await make_account(db, 'incoming_recipient');
+		const bystander = await make_account(db, 'incoming_bystander');
+
+		const by_account = await create_pending_offer(db, grantor_a, recipient, { role: 'teacher' });
+		const by_actor = await query_role_grant_offer_create(deps, {
+			from_actor_id: grantor_b.actor_id,
+			to_account_id: recipient.account_id,
+			to_actor_id: recipient.actor_id,
+			role: 'teacher',
+			expires_at: future(hour)
+		});
+		const declined = await create_pending_offer(db, grantor_b, recipient, { role: 'student' });
+		await query_role_grant_offer_decline(deps, declined.id, recipient.account_id, null);
+		const control = await create_pending_offer(db, grantor_a, bystander, { role: 'teacher' });
+
+		const superseded = await query_role_grant_offer_supersede_incoming(deps, recipient.account_id);
+		assert.deepStrictEqual(
+			superseded.map((o) => o.id).sort(),
+			[by_account.id, by_actor.id].sort(),
+			'both pending offers to the account, the declined one left as it was'
+		);
+		const grantors = new Map(superseded.map((o) => [o.id, o.from_account_id]));
+		assert.strictEqual(grantors.get(by_account.id), grantor_a.account_id);
+		assert.strictEqual(grantors.get(by_actor.id), grantor_b.account_id);
+
+		const declined_row = await select_role_grant_offer(deps, declined.id);
+		assert.strictEqual(declined_row?.superseded_at, null, 'a terminal offer is not stamped');
+		assert.ok(declined_row?.declined_at);
+		const control_row = await select_role_grant_offer(deps, control.id);
+		assert.strictEqual(control_row?.superseded_at, null, "another account's offer stays pending");
+		assert.deepStrictEqual(
+			await query_role_grant_offer_supersede_incoming(deps, recipient.account_id),
+			[],
+			'a second pass finds nothing pending'
+		);
+	});
+
+	// The Postgres engines only (the `pg` and PGlite legs; `pg` needs
+	// `TEST_DATABASE_URL`): pglet returns the rows in write order whether or not
+	// the cascade sorts them, so only those tell an ordered cascade from an
+	// unordered one. The scan is pinned to the heap,
+	// where the refreshed row sits last: through an index the unordered order
+	// would follow whatever key that index has, here a random grantor id. The
+	// second grantor is created first, so the join to the grantors' actors,
+	// whichever side drives it, also puts the first offer last.
+	test('a cascade returns its offers oldest first, whatever order the rows were last written in', async () => {
+		const db = get_db();
+		const deps = { db };
+		const recipient = await make_account(db, 'order_recipient');
+		const second_grantor = await make_account(db, 'order_second');
+		const first_grantor = await make_account(db, 'order_first');
+		const offer = (grantor: { actor_id: Uuid }) =>
+			query_role_grant_offer_create(deps, {
+				from_actor_id: grantor.actor_id,
+				to_account_id: recipient.account_id,
+				to_actor_id: null,
+				role: 'teacher',
+				expires_at: future(hour)
+			});
+		const first = await offer(first_grantor);
+		const second = await offer(second_grantor);
+		// the refresh rewrites `first`'s row last; its `created_at` stays
+		const refreshed = await offer(first_grantor);
+		assert.strictEqual(refreshed.id, first.id);
+		const superseded = await db.transaction(async (tx) => {
+			await tx.query('SET LOCAL enable_indexscan = off');
+			await tx.query('SET LOCAL enable_bitmapscan = off');
+			return query_role_grant_offer_supersede_incoming({ db: tx }, recipient.account_id);
+		});
+		assert.deepStrictEqual(
+			superseded.map((o) => o.id),
+			[first.id, second.id]
+		);
 	});
 });
